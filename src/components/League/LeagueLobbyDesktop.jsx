@@ -31,7 +31,7 @@ import { Eyebrow, Mono } from './LeagueParts';
 import Spectate from './LeagueSpectate';
 import {
   DeskEnter, DeskStat, DeskYourGroup, DeskFollowRail, DeskLeaderboard, DeskPodPanel,
-  DeskFunnel, LDActionModal, LDJoinModal, LDFocus, DeskTabBar, DeskTrainingPanel, TRAIN,
+  DeskFunnel, DeskBracketPending, LDActionModal, LDJoinModal, LDFocus, DeskTabBar, DeskTrainingPanel, TRAIN,
 } from './LeagueDeskParts';
 
 const ACCENT = LX.energy; // teal — the league energy accent (tournament surface)
@@ -161,6 +161,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
 
   const liveCount = React.useMemo(() => [...st.rounds.r1, ...st.rounds.r2, st.rounds.r3].filter((p) => p.status === 'live').length, [st]);
   const humans = React.useMemo(() => Object.values(st.field).filter((p) => p.kind === 'human').length, [st]);
+  const cpus = React.useMemo(() => Object.values(st.field).filter((p) => p.kind === 'cpu').length, [st]); // REAL CPU count (not 16 − humans)
   const onTraining = TRAINING_ON && tab === 'training';
 
   return (
@@ -176,9 +177,11 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
           </div>
         </div>
         <div className="ld-stats">
-          <DeskStat n={liveCount} label={liveCount === 1 ? 'pod live' : 'pods live'} dot={LX.energy} />
+          {/* omit the BRACKET "pods live" stat while the bracket is forthcoming
+              (avoids a confusing "0 pods live" pre-season); shown in fixture mode. */}
+          {!st.bracketPending && <DeskStat n={liveCount} label={liveCount === 1 ? 'pod live' : 'pods live'} dot={LX.energy} />}
           <DeskStat n={humans} label="players" dot={LX.human} muted={humans === 0} />
-          <DeskStat n={16 - humans} label="CPU agents" dot={LX.cpu} />
+          <DeskStat n={cpus} label="CPU agents" dot={LX.cpu} muted={cpus === 0} />
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
           {TRAINING_ON && <DeskTabBar tab={tab} onSwitchTab={switchTab} accent={ACCENT} />}
@@ -223,21 +226,27 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
             </div>
           </div>
 
-          {/* CENTER — THE BRACKET, the hero */}
+          {/* CENTER — THE BRACKET, the hero (or the forthcoming state pre-season) */}
           <div className="lg-scroll ld-center">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, padding: '0 2px' }}>
-              <Eyebrow color={LTOKENS.ink3}>The bracket · 16 → 8 → 4 → champion</Eyebrow>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ width: 9, height: 9, borderRadius: '50%', background: LX.energy, boxShadow: `0 0 7px ${LX.energy}` }} />
-                <Mono style={{ fontSize: 10, color: LX.energy, letterSpacing: '0.08em' }}>YOUR PATH TO THE TROPHY</Mono>
-              </div>
-            </div>
-            <div className="ld-funnel-wrap">
-              <DeskFunnel st={st} accent={ACCENT} onPick={pickPod} selectedId={selectedPod ? selectedPod.id : null} />
-            </div>
-            <div style={{ textAlign: 'center', marginTop: 6 }}>
-              <Mono style={{ fontSize: 10, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>Click any pod to open its live four-player standing</Mono>
-            </div>
+            {st.bracketPending ? (
+              <DeskBracketPending />
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, padding: '0 2px' }}>
+                  <Eyebrow color={LTOKENS.ink3}>The bracket · 16 → 8 → 4 → champion</Eyebrow>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: '50%', background: LX.energy, boxShadow: `0 0 7px ${LX.energy}` }} />
+                    <Mono style={{ fontSize: 10, color: LX.energy, letterSpacing: '0.08em' }}>YOUR PATH TO THE TROPHY</Mono>
+                  </div>
+                </div>
+                <div className="ld-funnel-wrap">
+                  <DeskFunnel st={st} accent={ACCENT} onPick={pickPod} selectedId={selectedPod ? selectedPod.id : null} />
+                </div>
+                <div style={{ textAlign: 'center', marginTop: 6 }}>
+                  <Mono style={{ fontSize: 10, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>Click any pod to open its live four-player standing</Mono>
+                </div>
+              </>
+            )}
           </div>
 
           {/* RIGHT — leaderboard, swaps to the docked League Pod on click */}

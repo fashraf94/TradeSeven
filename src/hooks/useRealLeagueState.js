@@ -15,8 +15,9 @@
 // are synthesized in the adapter.
 //
 // Disabled (the sub-flag is off and no dev param) → every subscription no-ops and
-// state is null, so the seam returns byte-identical fixtures. The fixture
-// `fallback` (passed in) is reused as the cold-start fill (no bespoke empty UI).
+// state is null, so the seam (useLeagueState) returns byte-identical fixtures.
+// When ENABLED, the adapter is the sole source of truth: absent sections come
+// back honestly empty (never the fixture fill), so no `fallback` is threaded.
 
 import { useEffect, useMemo, useState } from 'react';
 import { auth } from '../firebase/config';
@@ -46,7 +47,7 @@ function collectUserIds(myGroup, bracket, fieldGroups) {
   return [...ids];
 }
 
-export default function useRealLeagueState(enabled, fallback) {
+export default function useRealLeagueState(enabled) {
   const uid = auth.currentUser?.uid || null;
   const currentWeek = useMemo(() => {
     try { return isoWeekString(new Date()); } catch { return null; }
@@ -67,7 +68,8 @@ export default function useRealLeagueState(enabled, fallback) {
   }, [enabled, uid]);
 
   // the bracket — id parsed from your group's bracketGameId; null when you're
-  // base-layer-only (the funnel then falls back to the fixture fill).
+  // base-layer-only (the adapter then yields the HONEST empty funnel + the
+  // bracketPending forthcoming state — never the fixture fill).
   const bracketId = useMemo(
     () => parseBracketGameId(myGroup?.bracketGameId)?.bracketId || null,
     [myGroup],
@@ -123,9 +125,9 @@ export default function useRealLeagueState(enabled, fallback) {
   const { state, hasRealData } = useMemo(() => {
     if (!enabled) return { state: null, hasRealData: false };
     return buildLeagueState({
-      myGroup, bracket, fieldGroups, battlesByOwner: battles, names, uid, liveClock, fallback,
+      myGroup, bracket, fieldGroups, battlesByOwner: battles, names, uid, liveClock,
     });
-  }, [enabled, myGroup, bracket, fieldGroups, battles, names, uid, liveClock, fallback]);
+  }, [enabled, myGroup, bracket, fieldGroups, battles, names, uid, liveClock]);
 
   const loading = enabled && !(groupReady && fieldReady);
   return { state, loading, hasRealData };

@@ -171,6 +171,12 @@ export function DeskLeaderboard({ st, accent }) {
         <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, letterSpacing: '0.06em' }}>{players.length} players</Mono>
       </div>
       <div className="lg-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {players.length === 0 && (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '24px 16px', gap: 9 }}>
+            <LIcon name="users" size={20} color={LTOKENS.ink3} stroke={1.8} />
+            <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3, lineHeight: 1.55, maxWidth: 220 }}>Standings appear once the weekly base-layer groups are under way.</Mono>
+          </div>
+        )}
         {players.map((p, i) => {
           const you = p.you;
           return (
@@ -395,6 +401,24 @@ export function DeskFunnel({ st, accent, onPick, selectedId }) {
             ))}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── FORTHCOMING BRACKET — the honest center-stage state when the real adapter
+//    has no bracket doc yet (base-layer-only / pre-season). An explicit, intentional
+//    "opens when the season locks" panel that fills the center column — NOT a TBD
+//    skeleton that reads as broken, and never demo boxes. ─────────────────────
+export function DeskBracketPending() {
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '24px 20px' }}>
+      <div style={{ width: 68, height: 68, borderRadius: 19, marginBottom: 18, background: alpha(LX.energy, 0.14), border: `1px solid ${alpha(LX.energy, 0.34)}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <LIcon name="ranked" size={30} color={LX.energy} stroke={1.9} />
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.02em' }}>The bracket opens when the season locks</div>
+      <div style={{ fontSize: 13.5, color: LTOKENS.ink2, lineHeight: 1.55, margin: '12px auto 0', maxWidth: 440 }}>
+        The tournament funnel — four-player groups narrowing through the semifinals to a single champion — seeds when the season locks. Until then, the weekly base-layer groups are live in the leaderboard; play your group of four to climb.
       </div>
     </div>
   );

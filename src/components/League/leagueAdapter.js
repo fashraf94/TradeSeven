@@ -330,12 +330,42 @@ export function deriveFunnelPath(rounds, uid) {
 }
 
 /**
- * Assemble the full LeagueState. Real sections replace the fixture fallback where
- * data exists. Cold start (no real data at all) → the fixture fallback verbatim
- * (the demo fill; signal-capture stays gated off). A real-data session that lacks
- * a bracket (a base-layer-only player) gets the HONEST empty funnel — never the
- * fixture players, which would masquerade as the viewer's group. Returns
- * { state, hasRealData }.
+ * Honest hero copy for the real-data surface (headline/sub/energy). NEVER the
+ * fixture fill copy — that asserts a populated bracket / settled rounds that do
+ * not exist for a pre-launch, base-layer-only, or cold-start session. Derived
+ * from the real state: a session with no bracket reads as pre-season with the
+ * tournament forthcoming ("the bracket opens when the season locks"); a real
+ * bracket reads as in-season. `energy` drives whether the mobile hero shows its
+ * sub line ('high'|'mid' show it) — so the pre-season sub surfaces once there's
+ * a live base layer to explain.
+ */
+function honestHero({ bracketPending, baseGames, rounds }) {
+  const liveField = (baseGames || []).some((p) => p && p.status === 'live');
+  if (bracketPending) {
+    return {
+      energy: liveField ? 'mid' : 'low',
+      headline: liveField ? 'The base layer is live' : 'League',
+      sub: 'Play your weekly group of four — it feeds the leaderboard. The bracket opens when the season locks.',
+    };
+  }
+  const liveBracket = [...rounds.r1, ...rounds.r2, rounds.r3].some((p) => p && p.status === 'live');
+  return {
+    energy: liveBracket ? 'high' : 'mid',
+    headline: 'League · this season',
+    sub: 'Follow the funnel to the Final Four.',
+  };
+}
+
+/**
+ * Assemble the full LeagueState from the real read-model — the SINGLE truth-
+ * mapping seam. NO fixture data ever reaches the returned state: absent sections
+ * are honestly empty (empty funnel, empty field, honest hero copy), never the
+ * demo fill. This holds even at cold start (no real data at all): whenever the
+ * real adapter is enabled the League tab reflects reality (honest-sparse) rather
+ * than a fake-full demo. `hasRealData` is still returned so the seam keeps
+ * signal-capture gated off until real data is present, and `bracketPending` lets
+ * the surfaces render an explicit "bracket opens when the season locks" state.
+ * Returns { state, hasRealData }.
  *
  * @param {number|null} liveClock seconds to the ET close (computed by the hook)
  */
@@ -347,13 +377,13 @@ export function buildLeagueState({
   names = {},
   uid = null,
   liveClock = null,
-  fallback,
 } = {}) {
   const hasRealData = !!(bracket || myGroup || (fieldGroups && fieldGroups.length));
-  if (!hasRealData) {
-    return { state: fallback, hasRealData: false };
-  }
 
+  // The bracket funnel — real when a bracket doc exists, else the HONEST empty
+  // funnel (no fixture players bleed in). `bracketPending` drives the surfaces'
+  // explicit forthcoming state instead of a TBD skeleton that reads as broken.
+  const bracketPending = !bracket;
   const rounds = bracket
     ? mapBracketToRounds(bracket, { myGroup, battlesByOwner, names, uid, liveClock })
     : emptyRounds();
@@ -362,6 +392,8 @@ export function buildLeagueState({
   // that matches no R1 pod hides the "Your group" card (base-layer-only players).
   const yourGroup = path.groups[0] ? { id: path.groups[0] } : { id: null };
 
+  // The base-layer field → real pods, or an HONEST empty list (never the fixture
+  // demo groups).
   const baseGames = (fieldGroups && fieldGroups.length)
     ? fieldGroups.map((g) => groupToPod(g, {
       names,
@@ -372,17 +404,28 @@ export function buildLeagueState({
       battlesByOwner: (myGroup && g.id === myGroup.id) ? battlesByOwner : {},
       liveClock,
     }))
-    : fallback.baseGames;
+    : [];
+
+  // The leaderboard "field" ← the REAL base-layer seats (real humans + CPUs +
+  // real composite scores), deduped by id. Empty {} when there is no field, so
+  // the header counts + leaderboard render their honest empty state — never the
+  // 16 demo players. Reuses the already-built baseGames seats (single source).
+  const field = {};
+  baseGames.forEach((pod) => (pod.seats || []).forEach((s) => {
+    if (s && s.id && !field[s.id]) field[s.id] = s;
+  }));
 
   return {
     state: {
-      ...fallback, // hero copy + the fixture `field` map + bracketCount stay fixture-sourced (out of Phase-1 mapping scope)
+      ...honestHero({ bracketPending, baseGames, rounds }),
+      field,
       rounds,
       path,
       yourGroup,
       baseGames,
       followLive: [], // no presence source in Phase 1 (live-pulse is Phase 4)
+      bracketPending,
     },
-    hasRealData: true,
+    hasRealData,
   };
 }

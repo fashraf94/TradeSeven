@@ -90,7 +90,15 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
   const openPod = (pod) => { setPodSheet(pod); signal('pod-tap', { podId: pod.id }); };
   const enter = () => { setAction(true); signal('enter-tournament', {}); };
   const pickMode = (m) => { setAction(false); setJoined(m); signal('enter-mode', { mode: m }); };
-  const watchWhileWaiting = () => { setJoined(null); openSpectate(aLivePod, aLivePod.seats.find((s) => s)?.id); };
+  // Only open Spectate on a pod that actually has a seated player — the honest
+  // empty bracket (base-layer-only / cold-start) yields an all-null-seat pod,
+  // and Spectate would crash on it (rankPod filters TBDs → empty → ranked[0]
+  // deref). Mirrors the desktop guard (LeagueLobbyDesktop.watchWhileWaiting).
+  const watchWhileWaiting = () => {
+    setJoined(null);
+    const seat = aLivePod?.seats?.find((s) => s);
+    if (seat) openSpectate(aLivePod, seat.id);
+  };
   const backToLobby = () => { setScreen('lobby'); setSpec(null); };
   // tab-switch: front-end navigation telemetry (joins enter-mode/enter-tournament;
   // NOT a §4 trading-signal). Emitted only on a real switch, never on mount.
