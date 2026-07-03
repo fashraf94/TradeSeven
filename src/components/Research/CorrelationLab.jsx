@@ -27,9 +27,11 @@
  * table that REPLACES the single-driver results while displayed; every row
  * deep-dives into the single-driver analysis. Scans and single runs share the
  * runSeq stale-race guard: a late scan can never overwrite a newer single run,
- * and vice versa. Scan honesty copy is pinned (Change 2): the 0.20 floor
- * caption, "worth investigating, not a discovery", weak rows greyed as
- * "weak/none", unavailable drivers listed — never silently omitted.
+ * and vice versa. Scan honesty copy is pinned (Change 2; Build 2.1 truthful
+ * rewrite): the 20-observation caveat caption, "worth investigating, not a
+ * discovery", established (both windows) vs emerging (20d-only) tiers,
+ * identity rows annotated "group member", weak rows greyed as "weak/none",
+ * unavailable drivers listed — never silently omitted.
  */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
@@ -225,11 +227,14 @@ function scanSummarySentence(summary) {
 }
 
 /**
- * Ranked scan table: signal-tier rows normal, weak-tier greyed with a
- * "weak/none" tag, unavailable (dropped) drivers at the bottom in muted text.
- * Mobile (≤390px) compacts to rank / label / corr20 / tension — the rest lives
- * in the deep dive. Every computed row deep-dives on click (the desktop-only
- * last column is the visible affordance; the whole row is the target).
+ * Ranked scan table (Build 2.1 tiers): established rows normal (gold),
+ * emerging rows amber with an "emerging" tag (20d-only evidence), weak rows
+ * greyed with "weak/none" (or "no data" when nothing was computable),
+ * identity rows annotated "group member", unavailable (dropped) drivers at
+ * the bottom in muted text. Mobile (≤390px) compacts to rank / label /
+ * corr20 / tension — the rest lives in the deep dive. Every computed row
+ * deep-dives on click or Enter/Space (the desktop-only last column is the
+ * visible affordance; the whole row is the target).
  */
 function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
   const summaryText = scanSummarySentence(scan.summary);
@@ -247,16 +252,20 @@ function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
   };
   return (
     <>
-      {/* Header + the pinned honesty captions (Change 2) */}
+      {/* Header + the honesty captions (Change 2; Build 2.1 truthful rewrite —
+          the caption states what a 20-observation statistic can and cannot
+          support, and what "established" requires) */}
       <div style={card}>
         <div style={captionStyle}>Multi-driver scan — ranked by current 20d strength</div>
         <div style={{ fontSize: 13, color: HOLO_COLORS.textPrimary, marginTop: 6, lineHeight: 1.5 }}>
           What this group is tracking most tightly right now — worth investigating, not a discovery.
         </div>
         <div style={subCaptionStyle}>
-          Scanning ~24 drivers on ~500 observations produces spurious correlations up to ≈ |0.12| by
-          chance alone, so rows under the |0.20| floor are indistinguishable from coincidence and
-          render greyed. A broad-market link on top (SPY or a sector twin) is normal for most groups.
+          A 20d reading is only 20 sessions of evidence — chance alone pushes it past |0.20| for
+          roughly two drivers in five, so it is never treated as established by itself. Established
+          rows clear |0.20| on both the 20d and 60d windows; emerging rows clear only the 20d — a
+          lead to watch, not a relationship. Sub-floor rows render greyed. A broad-market link on
+          top (SPY or a sector twin) is normal for most groups.
         </div>
       </div>
 
@@ -277,6 +286,15 @@ function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
         <div style={{ ...card, borderColor: `${AMBER}55` }}>
           <div style={{ fontSize: 13, color: HOLO_COLORS.textSecondary }}>
             Couldn't compute correlations for this group — not enough overlapping history to measure anything.
+          </div>
+        </div>
+      ) : scan.rows.some((r) => r.tier === 'emerging' || (r.tier === 'established' && r.identity)) ? (
+        // Summary is null yet something clears the floor: only group members
+        // (identity rows) or 20d-only leads — say exactly that.
+        <div style={card}>
+          <div style={{ fontSize: 13, color: HOLO_COLORS.textSecondary }}>
+            Nothing established right now — anything clearing |0.20| below is a group member or a
+            20-day-only lead.
           </div>
         </div>
       ) : (
@@ -304,7 +322,8 @@ function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
               </thead>
               <tbody>
                 {scan.rows.map((row, i) => {
-                  const weak = row.tier !== 'signal';
+                  const weak = row.tier === 'weak';
+                  const emerging = row.tier === 'emerging';
                   const tension = row.tensionState ? TENSION_CHIP[row.tensionState] : null;
                   return (
                     <tr
@@ -333,6 +352,14 @@ function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
                       <td style={cellPad}>
                         <span style={{ color: HOLO_COLORS.textPrimary }}>{row.label}</span>
                         <span style={catChip}>{row.category}</span>
+                        {row.identity ? (
+                          // Decision #2: truthful but vacuous — this driver IS
+                          // one of the scanned members; annotated, never hidden.
+                          <span style={{ ...catChip, color: AMBER, borderColor: `${AMBER}55` }}>group member</span>
+                        ) : null}
+                        {emerging ? (
+                          <span style={{ marginLeft: 6, fontSize: 10, color: AMBER }}>emerging</span>
+                        ) : null}
                         {weak ? (
                           // "weak/none" is a MEASURED verdict — a null corr20
                           // means nothing was computable, which is different
@@ -342,7 +369,7 @@ function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
                           </span>
                         ) : null}
                       </td>
-                      <td style={{ ...cellPad, fontFamily: MONO, fontWeight: 700, color: weak ? HOLO_COLORS.textMuted : GOLD }}>
+                      <td style={{ ...cellPad, fontFamily: MONO, fontWeight: 700, color: weak ? HOLO_COLORS.textMuted : emerging ? AMBER : GOLD }}>
                         {fmtCorr(row.corr20)}
                       </td>
                       {isDesktop ? (

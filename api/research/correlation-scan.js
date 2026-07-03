@@ -15,18 +15,38 @@
  * standardizedDivergenceScore). NO episodes, base rates, beta, or lead-lag
  * here — those belong to the deep dive.
  *
- * ── The 0.20 signal floor (pinned honesty guard, Change 2) ─────────────────
- * Scanning ~24 drivers on ~500 observations produces an expected MAX spurious
- * |corr| ≈ 0.12 under no relationship at all (max of ~24 independent
- * Pearson draws, each with sd ≈ 1/√n ≈ 0.045) — sub-floor rows are
- * indistinguishable from coincidence, so they are tier 'weak', rendered
- * greyed as "weak/none", never highlighted, never in the summary. Scan copy
- * never says "discovered", "predicts", or "signal found" — a top row is
- * "worth investigating, not a discovery".
+ * ── The 0.20 floor + established/emerging tier split (Build 2.1, founder
+ *    decision #1 — replaces the V2 Build 2 single 'signal' tier) ───────────
+ * The ranked statistic corr20 is ALWAYS a 20-return window: under no
+ * relationship at all its sampling sd is ≈ 1/√19 ≈ 0.23, so chance alone
+ * pushes a single driver past |0.20| roughly two times in five — a 20d
+ * reading BY ITSELF is never treated as an established relationship. corr60
+ * (sd ≈ 0.13 under the null, ~13% single-driver false-clear) is the steadier
+ * window, so:
+ *   'established' — |corr20| ≥ 0.20 AND |corr60| ≥ 0.20 (both windows clear);
+ *   'emerging'    — |corr20| ≥ 0.20 only (a 20-day lead to watch, possibly
+ *                   noise — never highlighted as a relationship, never in
+ *                   the summary);
+ *   'weak'        — everything else (greyed "weak/none"; null stats "no data").
+ * The summary headlines the top ESTABLISHED non-identity row or is null.
+ * Scan copy never says "discovered", "predicts", or "signal found" — a top
+ * row is "worth investigating, not a discovery".
+ *
+ * ── Identity rows (Build 2.1, founder decision #2) ─────────────────────────
+ * A driver whose wire symbol IS one of the surviving group members
+ * self-correlates (corr = 1.0 for a group of one) — truthful but vacuous.
+ * Such rows carry identity: true (annotated in the UI as a group member,
+ * never silently omitted) and are EXCLUDED from the summary even when
+ * established: the summary must headline an external driver, and even a
+ * diluted multi-member self-link is partially tautological.
  *
  * Caching: same collection (`correlationIntelligence`), doc id
- * sha1(sortedGroup + '|SCAN|' + lookbackDays), same two-sided TTL. Cache ONLY
- * a fully clean run — zero dropped members, zero dropped drivers, AND zero
+ * sha1(sortedGroup + '|SCAN|' + lookbackDays + '|' + registrySalt), same
+ * two-sided TTL. The registry salt (Build 2.1, founder decision #3) is the
+ * sorted key:symbol list, so ANY registry change — key added/removed/renamed
+ * OR a proxy symbol swap (the Fix 1 precedent) — orphans every cached scan
+ * instead of serving rows the new code can't deep-dive. Cache ONLY a fully
+ * clean run — zero dropped members, zero dropped drivers, AND zero
  * uncomputable (core-error) rows (the V0 no-poisoned-cache rule at scan blast
  * radius: a transient XLF failure — whether a failed fetch or a truncated
  * 200 body — must not bake into every scan of this group until close).
@@ -59,8 +79,8 @@ export const config = { maxDuration: 30 };
 
 const SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/; // pinned: accepts BRK.B, BF.B, hyphens
 const LOOKBACK = { DEFAULT: 504, MIN: 150, MAX: 1260 };
-// The pinned signal floor (see the header rationale). |corr20| below this is
-// tier 'weak' — statistically indistinguishable from a no-relationship scan.
+// The pinned floor, applied per window (see the header rationale): clearing
+// it on corr20 alone is 'emerging'; on BOTH windows, 'established'.
 const SCAN_SIGNAL_FLOOR = 0.2;
 // The scan's own chunk discipline (5 concurrent / ~300ms — the fetchAllSeries
 // convention; that helper is single-driver-shaped, so the scan batches the
@@ -85,13 +105,27 @@ const latestValue = (series) => (series && series.length ? series[series.length 
  * corr60 base link is sub-band (|corr60| < 0.15, "no reliable link"). Without
  * this guard a link that EMERGED from ~0 would be called "weakened" whenever
  * corr60 sits at noise-level negative — backwards, and contradicting the
- * deep-dive sentence one click away.
+ * deep-dive sentence one click away. Since Build 2.1 the summary only ever
+ * carries ESTABLISHED rows (|corr60| ≥ 0.20 ⇒ band exists), so this guard is
+ * unreachable there — kept as defense-in-depth against any future tier
+ * loosening.
  */
 function signedChangeWord(corr20, corr60) {
   if (corr20 == null || corr60 == null || Math.abs(corr20 - corr60) < 0.15) return null;
   if (strengthBand(Math.abs(corr60)) === null) return null; // no base link → no change clause
   const moved = corr60 >= 0 ? corr20 - corr60 : corr60 - corr20;
   return moved >= 0 ? 'tightened' : 'weakened';
+}
+
+/**
+ * Build 2.1 tier rule (founder decision #1): 'established' needs BOTH windows
+ * to clear the floor; corr20 alone is 'emerging' (a 20-observation statistic
+ * is one-in-2.5 chance noise at |0.20| — see the header). Null corr20 (or
+ * sub-floor) is 'weak' regardless of corr60.
+ */
+function scanTier(corr20, corr60) {
+  if (corr20 == null || Math.abs(corr20) < SCAN_SIGNAL_FLOOR) return 'weak';
+  return corr60 != null && Math.abs(corr60) >= SCAN_SIGNAL_FLOOR ? 'established' : 'emerging';
 }
 
 /**
@@ -155,9 +189,16 @@ export default async function handler(req, res) {
 
   // Scan cache key: the literal 'SCAN' segment namespaces away from every
   // single-driver key (those carry '<driverKey>:<customSymbol>' there, and no
-  // registry driver is named SCAN).
+  // registry driver is named SCAN). The registry salt (sorted key:symbol
+  // pairs) orphans every cached scan on ANY registry change — a renamed key
+  // or swapped proxy symbol must never serve rows the deployed code can't
+  // deep-dive (Build 2.1 decision #3).
+  const registrySalt = Object.keys(CORRELATION_DRIVERS)
+    .sort()
+    .map((k) => `${k}:${CORRELATION_DRIVERS[k].symbol}`)
+    .join(',');
   const docId = createHash('sha1')
-    .update([...group].sort().join(',') + '|SCAN|' + lookbackDays)
+    .update([...group].sort().join(',') + '|SCAN|' + lookbackDays + '|' + registrySalt)
     .digest('hex');
   const cacheKey = `correlationScan:${docId}`;
 
@@ -213,6 +254,9 @@ export default async function handler(req, res) {
     const memberMaps = survivors.map(
       (s) => new Map([...rowsBySymbol.get(memberWire.get(s))].reverse().map((r) => [r.date, r.close]))
     );
+    // Identity detection (decision #2): a driver whose wire symbol is one of
+    // the SURVIVING members (dropped members aren't in the composite).
+    const survivorWires = new Set(survivors.map((s) => memberWire.get(s)));
 
     // ── Per-driver assembly: the shared V0 core per registry driver ──
     const rows = [];
@@ -247,6 +291,7 @@ export default async function handler(req, res) {
           tensionState: null,
           joinedCloses: core.joinedCloses,
           tier: 'weak',
+          identity: survivorWires.has(registry.symbol),
         });
         continue;
       }
@@ -273,7 +318,8 @@ export default async function handler(req, res) {
         score,
         tensionState: tensionStateFromScore(score),
         joinedCloses: core.joinedCloses,
-        tier: corr20 != null && Math.abs(corr20) >= SCAN_SIGNAL_FLOOR ? 'signal' : 'weak',
+        tier: scanTier(corr20, corr60),
+        identity: survivorWires.has(registry.symbol),
       });
     }
 
@@ -286,10 +332,12 @@ export default async function handler(req, res) {
       return a.driver < b.driver ? -1 : a.driver > b.driver ? 1 : 0;
     });
 
-    // ── Summary input: the top signal-tier row, or null when nothing clears
-    //    the floor. Deterministic fields only — the client assembles the
-    //    sentence (past/present descriptive; no "discovered"/"predicts"). ──
-    const top = rows.find((r) => r.tier === 'signal') ?? null;
+    // ── Summary input: the top ESTABLISHED NON-IDENTITY row, or null.
+    //    Emerging rows never headline (20-day evidence only), identity rows
+    //    never headline (the group tracking itself is vacuous). Deterministic
+    //    fields only — the client assembles the sentence (past/present
+    //    descriptive; no "discovered"/"predicts"). ──
+    const top = rows.find((r) => r.tier === 'established' && !r.identity) ?? null;
     const summary = top
       ? {
           driver: top.driver,

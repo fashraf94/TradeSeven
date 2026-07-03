@@ -295,6 +295,14 @@ function makeReqRes(body) {
 const BASE_REQUEST = { group: ['AAA', 'BBB'], lookbackDays: 400 };
 const REGISTRY_KEYS = Object.keys(CORRELATION_DRIVERS);
 const ENGINEERED = ['XLE', 'HYG', 'GOLD', 'USMV'];
+// Registry salt mirror (Build 2.1 decision #3): sorted key:symbol pairs.
+// Registry-driven on purpose — ANY registry mutation (key add/remove/rename
+// or a proxy symbol swap) changes this string, and the docId pins below prove
+// the endpoint's cache ids move with it (old cached scans orphan).
+const REGISTRY_SALT = [...REGISTRY_KEYS]
+  .sort()
+  .map((k) => `${k}:${CORRELATION_DRIVERS[k].symbol}`)
+  .join(',');
 
 /**
  * Run the handler under vitest fake timers so the real 300ms chunk-throttle
@@ -367,10 +375,11 @@ describe('coverage honesty — every registry driver is a row or a droppedDriver
   it('each row carries the pinned shape and its registry label/category verbatim', () => {
     for (const row of out.rows) {
       expect(Object.keys(row).sort()).toEqual(
-        ['category', 'corr20', 'corr60', 'd', 'driver', 'joinedCloses', 'label', 'score', 'tensionState', 'tier'].sort()
+        ['category', 'corr20', 'corr60', 'd', 'driver', 'identity', 'joinedCloses', 'label', 'score', 'tensionState', 'tier'].sort()
       );
       expect(row.label).toBe(CORRELATION_DRIVERS[row.driver].label);
       expect(row.category).toBe(CORRELATION_DRIVERS[row.driver].category);
+      expect(row.identity).toBe(false); // no canonical member is a driver proxy
     }
   });
 
@@ -450,10 +459,10 @@ describe('engineered correlation values land exactly (cycle-orthogonal construct
 });
 
 describe('required assert (b) — tier assignment straddles the 0.20 floor', () => {
-  it('HYG (0.25) is signal; GOLD (0.15) is weak; the zero block is weak', () => {
+  it('XLE and HYG clear BOTH windows → established; GOLD (0.15) is weak; the zero block is weak', () => {
     const byKey = new Map(out.rows.map((r) => [r.driver, r]));
-    expect(byKey.get('XLE').tier).toBe('signal');
-    expect(byKey.get('HYG').tier).toBe('signal');
+    expect(byKey.get('XLE').tier).toBe('established'); // 0.9 / 0.733 — both ≥ 0.20
+    expect(byKey.get('HYG').tier).toBe('established'); // 0.25 / 0.25 — both ≥ 0.20
     expect(byKey.get('GOLD').tier).toBe('weak');
     for (const row of out.rows.slice(3)) expect(row.tier).toBe('weak');
   });
@@ -520,12 +529,15 @@ describe('summary — deterministic one-liner input from the top signal row', ()
 });
 
 describe('required assert (e) — clean run caching', () => {
-  it('wrote exactly one Firestore doc, at the pinned SCAN docId, with the dual-freshness shape', () => {
+  it('wrote exactly one Firestore doc, at the registry-salted SCAN docId, with the dual-freshness shape', () => {
     expect(store.setCalls).toHaveLength(1);
     const write = store.setCalls[0];
     expect(write.collection).toBe('correlationIntelligence');
-    const expectedId = createHash('sha1').update('AAA,BBB|SCAN|400').digest('hex');
+    const expectedId = createHash('sha1').update(`AAA,BBB|SCAN|400|${REGISTRY_SALT}`).digest('hex');
     expect(write.id).toBe(expectedId);
+    // Salt-invalidation pin: the unsalted (pre-2.1) id must NOT match — a
+    // registry change re-keys every scan doc instead of serving stale rows.
+    expect(write.id).not.toBe(createHash('sha1').update('AAA,BBB|SCAN|400').digest('hex'));
     expect(write.data.payload.rows).toHaveLength(REGISTRY_KEYS.length);
     expect(typeof write.data.computedAt).toBe('string');
     expect(write.data.expiresAt).toBeGreaterThan(Date.now());
@@ -638,29 +650,64 @@ describe('required assert (f) — summary null when nothing clears the floor (se
   it('a no-signal scan is still a CLEAN scan — it caches (second Firestore write)', () => {
     const write = store.setCalls[store.setCalls.length - 1];
     expect(store.setCalls.length).toBe(2);
-    expect(write.id).toBe(createHash('sha1').update('CCC,DDD|SCAN|400').digest('hex'));
+    expect(write.id).toBe(createHash('sha1').update(`CCC,DDD|SCAN|400|${REGISTRY_SALT}`).digest('hex'));
     expect(write.data.payload.summary).toBeNull();
   });
 });
 
-describe('summary change-word attachment guard (V1.1 rule of record)', () => {
-  it('T-group: TLT clears the floor at corr20 0.3 but corr60 0.1 has no band → change is null, never "tightened"', async () => {
-    // The verdict rule only attaches tightened/weakened when the corr60 base
-    // link EXISTS (strengthBand non-null, |corr60| ≥ 0.15). Gap here is 0.2 —
-    // without the guard this summary would claim a sub-band link "tightened".
+describe('Build 2.1 — emerging-tier straddle + summary rule (emerging never headlines)', () => {
+  it('T-group: TLT at corr20 0.3 / corr60 0.1 is EMERGING (20d-only evidence) and the summary is null', async () => {
+    // The tier straddle on the corr60 side of the floor: HYG (0.25/0.25) is
+    // established in the canonical run; TLT here clears corr20 but not
+    // corr60 → 'emerging' — and emerging rows never carry the summary, so
+    // the top-ranked row yields summary null (the UI renders the
+    // nothing-established copy). This fixture doubles as the change-word
+    // attachment-guard scenario from the Build 2 review: pre-2.1 the guard
+    // kept this summary from reading "tightened"; post-2.1 the established
+    // requirement subsumes it (|corr60| ≥ 0.20 ⇒ base band exists).
     const res = await runScanRequest({ group: ['GGG', 'HHH'], lookbackDays: 400, forceRefresh: true });
     expect(res.statusCode).toBe(200);
     const tlt = res.body.rows.find((r) => r.driver === 'TLT');
     expect(tlt.corr20).toBeCloseTo(0.3, 6);
-    expect(tlt.corr60).toBeCloseTo((0 + 0 + 0.3) / 3, 6);
-    expect(tlt.tier).toBe('signal');
-    expect(res.body.rows[0].driver).toBe('TLT'); // the only row clearing the floor on this axis
-    expect(res.body.summary).toEqual({
-      driver: 'TLT',
-      label: 'Long-duration Treasuries (TLT)',
-      band: 'loose', // strengthBand(0.3) — real import, not a mock
+    expect(tlt.corr60).toBeCloseTo((0 + 0 + 0.3) / 3, 6); // 0.1 — below the floor
+    expect(tlt.tier).toBe('emerging');
+    expect(tlt.identity).toBe(false);
+    expect(res.body.rows[0].driver).toBe('TLT'); // rank 1 by |corr20| — ranking is current strength
+    expect(res.body.rows.filter((r) => r.tier === 'established')).toEqual([]); // nothing clears both windows
+    expect(res.body.summary).toBeNull(); // emerging never headlines
+  });
+});
+
+describe('Build 2.1 — identity rows (a scanned member that IS a driver proxy)', () => {
+  let idOut;
+
+  it('group [XLE]: the XLE driver row is identity-annotated at corr 1.0, ranked first, tier established', async () => {
+    const res = await runScanRequest({ group: ['XLE'], lookbackDays: 400, forceRefresh: true });
+    expect(res.statusCode).toBe(200);
+    idOut = res.body;
+    const xle = idOut.rows[0];
+    expect(xle.driver).toBe('XLE'); // |corr| = 1.0 outranks everything
+    expect(xle.identity).toBe(true);
+    expect(xle.corr20).toBeCloseTo(1, 6);
+    expect(xle.corr60).toBeCloseTo(1, 6);
+    expect(xle.tier).toBe('established'); // truthful — the tier is computed, the annotation contextualizes
+    expect(idOut.rows.filter((r) => r.identity)).toHaveLength(1); // only the self-match
+  });
+
+  it('the summary EXCLUDES the identity row and headlines the top established external driver (HYG)', () => {
+    // Every driver shares the Q̂ component with the XLE series, so several
+    // externals are established here; the top by |corr20| is HYG:
+    // corr20 = 0.9·0.25 + √0.19·√0.9375 ≈ 0.647 (band 'moderate'),
+    // corr60 ≈ (0.987 + 0.647 + 0.647)/3 ≈ 0.760 → gap ≈ 0.11 < 0.15 → no change word.
+    const hyg = idOut.rows.find((r) => r.driver === 'HYG');
+    expect(hyg.corr20).toBeCloseTo(0.9 * 0.25 + Math.sqrt(0.19) * Math.sqrt(0.9375), 6);
+    expect(hyg.tier).toBe('established');
+    expect(idOut.summary).toEqual({
+      driver: 'HYG',
+      label: 'High-yield credit (HYG)',
+      band: 'moderate', // strengthBand(≈0.647) — real import, not a mock
       direction: 'positive',
-      change: null, // gap ≥ 0.15 BUT |corr60| = 0.1 < 0.15 → no base link → no change clause
+      change: null, // |corr20 − corr60| ≈ 0.11 — below the 0.15 gap
     });
   });
 });
