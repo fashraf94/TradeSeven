@@ -177,7 +177,9 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
           </div>
         </div>
         <div className="ld-stats">
-          <DeskStat n={liveCount} label={liveCount === 1 ? 'pod live' : 'pods live'} dot={LX.energy} />
+          {/* omit the BRACKET "pods live" stat while the bracket is forthcoming
+              (avoids a confusing "0 pods live" pre-season); shown in fixture mode. */}
+          {!st.bracketPending && <DeskStat n={liveCount} label={liveCount === 1 ? 'pod live' : 'pods live'} dot={LX.energy} />}
           <DeskStat n={humans} label="players" dot={LX.human} muted={humans === 0} />
           <DeskStat n={cpus} label="CPU agents" dot={LX.cpu} muted={cpus === 0} />
         </div>

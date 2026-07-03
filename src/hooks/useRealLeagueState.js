@@ -68,7 +68,8 @@ export default function useRealLeagueState(enabled) {
   }, [enabled, uid]);
 
   // the bracket — id parsed from your group's bracketGameId; null when you're
-  // base-layer-only (the funnel then falls back to the fixture fill).
+  // base-layer-only (the adapter then yields the HONEST empty funnel + the
+  // bracketPending forthcoming state — never the fixture fill).
   const bracketId = useMemo(
     () => parseBracketGameId(myGroup?.bracketGameId)?.bracketId || null,
     [myGroup],

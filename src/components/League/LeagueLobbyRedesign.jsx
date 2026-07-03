@@ -62,7 +62,10 @@ function LobbyHero({ st, accent }) {
         <div style={{ fontSize: big ? 30 : 24, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{st.headline}</div>
         {(big || st.energy === 'mid') && <div style={{ fontSize: 13.5, color: LTOKENS.ink2, lineHeight: 1.5, marginTop: 9, maxWidth: 340 }}>{st.sub}</div>}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 13, flexWrap: 'wrap' }}>
-          <Stat n={liveCount} label={liveCount === 1 ? 'pod live' : 'pods live'} dot={LX.energy} />
+          {/* "pods live" counts BRACKET pods; omit it while the bracket is
+              forthcoming (it would read a confusing "0 pods live" next to a live
+              base layer). bracketPending is undefined in fixture mode → shown. */}
+          {!st.bracketPending && <Stat n={liveCount} label={liveCount === 1 ? 'pod live' : 'pods live'} dot={LX.energy} />}
           <Stat n={humans} label="players" dot={LX.human} muted={humans === 0} />
           <Stat n={cpus} label="CPU agents" dot={LX.cpu} muted={cpus === 0} />
         </div>
