@@ -164,7 +164,11 @@ export function analyzeAgentCompat({ agent, ruleDocs, bundleDocs, groupStatusByI
           ruleDocId: item.ruleId,
           templateId,
           traitId: doc.traitId,
-          note: 'Trait-layer hard conflict outside the sanctioned seed fix — founder decision required (no generic auto-fix).',
+          // Policy (Phase 5 GO): report-only trait-layer HARD conflicts must be
+          // resolved by UNEQUIPPING the trait before the enforce flip —
+          // accept-and-badge is not a sanctioned end-state for hard conflicts
+          // (they would project must-obey indefinitely).
+          note: 'Trait-layer hard conflict outside the sanctioned seed fix — resolve by unequipping the trait before the enforce flip (accept-and-badge is not a sanctioned end-state for hard conflicts; no generic auto-fix).',
         });
       }
       continue;
