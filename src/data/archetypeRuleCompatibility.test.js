@@ -28,6 +28,7 @@ import {
   DRAFT_ONLY_STATES,
   ARCHETYPE_KEYS,
   ZONE1_REFS,
+  PARAM_SWING_NOTES,
   RULE_FAMILIES,
   ARCHETYPE_RULE_COMPATIBILITY,
   EXPECTED_DRAFT_SEED_REVIEWS,
@@ -136,6 +137,16 @@ describe('structural integrity', () => {
     for (const [ref, def] of Object.entries(ZONE1_REFS)) {
       expect(ARCHETYPE_KEYS).toContain(def.archetype);
       expect(def.statement.length, `${ref} statement too short`).toBeGreaterThan(30);
+    }
+  });
+
+  it('PARAM_SWING_NOTES entries name real templates, valid archetypes, and their classified cell is core_conflict (P3: default direction)', () => {
+    for (const [rid, note] of Object.entries(PARAM_SWING_NOTES)) {
+      expect(TEMPLATE_IDS.has(rid), `param-swing note for unknown template ${rid}`).toBe(true);
+      expect(ARCHETYPE_KEYS).toContain(note.archetype);
+      expect(classifyRule(rid, note.archetype)).toBe('core_conflict');
+      expect(note.copyHint.length).toBeGreaterThan(20);
+      expect(note.inStyleSetting.length).toBeGreaterThan(2);
     }
   });
 

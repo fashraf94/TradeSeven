@@ -14,9 +14,19 @@
 //
 // CLASSIFICATION AUTHORITY: each archetype's Zone 1 statements in the six
 // ARCHETYPE_DEF_*_2026-06-24.md docs (repo root), distilled in the WS1 build
-// spec §4.2. Every rule was adjudicated against its ACTUAL template text in
-// src/data/forgeKnowledgeBase.js — not against the audit's example ids (several
-// of which the adjudication overturned; see the Phase 1 adjudication artifact).
+// spec §4.2. Every rule was adjudicated against its ACTUAL template text; the
+// 30 draft needs_review cells were resolved by the Flash + Claude adjudication
+// of July 3, 2026 (WS1 Phase 1 close-out), whose three policy rulings govern
+// future template additions:
+//   P1 — contrarian avoid-the-unloved: categorical gates/avoidance of the
+//        out-of-favor = core_conflict; soft signals with a legitimate
+//        turn-reading = neutral.
+//   P2 — exits are Zone 2: profit targets, trims, and stop management on an
+//        owned position are execution discipline (neutral) absent a separate
+//        Zone 1 hit (guardian's no-churn core can still be that hit).
+//   P3 — param-swing rules classify by DEFAULT direction; the swing is
+//        documented in PARAM_SWING_NOTES; param-aware classification is the
+//        designated post-observe refinement.
 //
 // RESOLUTION ORDER (classifyRule): ruleOverrides > familyDefaults > 'neutral'.
 // A rule id may belong to AT MOST ONE family (tested) — the tag vocabulary
@@ -24,11 +34,8 @@
 // and rules whose direction differs per archetype are handled via overrides.
 //
 // PARAM-INDEPENDENCE: classification is per TEMPLATE id, not per authored
-// paramValues. Param-dependent edge cases (e.g. alloc-tier-preference's
-// attribute select, cap-loosening attacks on native cap rules) are classified
-// by the template's DEFAULT direction, with the swing documented in
-// tensionReason / the adjudication artifact. Runtime param attacks on hard
-// bounds are rung-2 concerns (precedence ladder), not classification concerns.
+// paramValues (P3 above). Param-loosening attacks on native cap rules are
+// rung-2 precedence concerns, not classification concerns.
 //
 // SCOPE BOUNDARY (V1): only template-derived rules classify — the map is keyed
 // by forgeKnowledgeBase template ids, matched from rule docs via `sourceRef`.
@@ -36,19 +43,13 @@
 // and resolve 'neutral'.
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DRAFT MODE
-//
-// TRUE while the map is in the Phase 1 draft → adjudication loop. While true:
-//   * 'needs_review' entries are permitted (each carries tensionReason +
-//     draftLeaning for the adjudication table).
-//   * The zero-needs_review ship gate in the test file is SKIPPED.
-//   * The seeded-rule invariant tolerates ONLY the cells declared in
-//     EXPECTED_DRAFT_SEED_REVIEWS below (no silent growth).
-// Flipping this to false without resolving every needs_review entry fails the
-// suite. Flash + Claude adjudicate at the Phase 1 STOP; CC applies the calls,
-// deletes the needs_review entries (and draftLeaning fields), and flips this.
+// DRAFT MODE — SHIPPED (false) as of the July 3, 2026 adjudication close-out.
+// While false: 'needs_review' is forbidden anywhere in the map, the ship gate
+// (zero-needs_review + shipped-states-only) and the STRICT seeded-rule
+// invariant are live in the test suite. Any future re-draft (e.g. new template
+// batches) flips this back on for the authoring window only.
 // ─────────────────────────────────────────────────────────────────────────────
-export const DRAFT_MODE = true;
+export const DRAFT_MODE = false;
 
 // Shipped taxonomy (design spec §4.2). 'needs_review' is authoring-only.
 export const COMPAT_STATES = ['native', 'neutral', 'core_conflict'];
@@ -122,6 +123,29 @@ export const ZONE1_REFS = {
   'DV-Z1-SPREAD': {
     archetype: 'diversifier',
     statement: 'Spreads, always — breadth is the strategy itself; deliberate concentration or standing single-sector overweight is the core attack.',
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PARAM-SWING NOTES (adjudication policy P3 / close-out rider §4.2)
+//
+// Rules classified by their DEFAULT param direction whose selectable params can
+// reverse that direction. The Phase 2 warning copy for these acknowledges the
+// swing instead of flatly declaring the rule off-style. Param-aware
+// classification is the designated post-observe refinement.
+// ─────────────────────────────────────────────────────────────────────────────
+export const PARAM_SWING_NOTES = {
+  'alloc-tier-preference': {
+    archetype: 'contrarian',
+    defaultDirection: 'Star-tier attribute defaults to "high momentum" (chase)',
+    inStyleSetting: 'Undervalued',
+    copyHint: 'Off-style at its default setting for your Contrarian — the "Undervalued" Star-tier setting fits your style.',
+  },
+  'i-07': {
+    archetype: 'contrarian',
+    defaultDirection: 'prefers sectors with institutional INFLOW (sector-level chase)',
+    inStyleSetting: 'out-of-favor / outflow sector sentiment',
+    copyHint: 'Off-style at its default setting for your Contrarian — pointing it at out-of-favor sector flow fits your style.',
   },
 };
 
@@ -216,6 +240,9 @@ export const ARCHETYPE_RULE_COMPATIBILITY = {
       high_volatility: { state: 'neutral' },
       volatility_avoidance: { state: 'neutral' },
       chase_avoidance: { state: 'neutral' },
+      // profit_locking (th-05/sx-04/sr-01): adjudicated neutral — exits on an
+      // owned position are Zone 2 execution, not a fade instruction (P2).
+      profit_locking: { state: 'neutral' },
       forced_trading: { state: 'neutral' },
       concentration: { state: 'neutral' },
     },
@@ -224,30 +251,8 @@ export const ARCHETYPE_RULE_COMPATIBILITY = {
       'sr-04': { state: 'native' },
       // Sentiment-tailwind overweight = ride what is working.
       'a-08': { state: 'native' },
-      'th-05': {
-        state: 'needs_review',
-        tensionReason: 'Tightening stops to lock profit after a threshold cuts a winner early — tension with let-winners-run (seeded mb-08) and "never fade strength"; but it is threshold-game stop management, not a fade instruction.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'TF-Z1-BUY-STRENGTH',
-      },
-      'sx-04': {
-        state: 'needs_review',
-        tensionReason: 'A fixed profit target sells strength at a preset gain — fade-adjacent; but exits on own terms are Zone 2 execution, not a weakness-buying instruction.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'TF-Z1-BUY-STRENGTH',
-      },
-      'sr-01': {
-        state: 'needs_review',
-        tensionReason: 'Trimming any position above a cap back to target systematically cuts winners — anti-let-run direction; but it trims (keeps the position) rather than exits, and is standard rebalancing discipline.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'TF-Z1-BUY-STRENGTH',
-      },
-      'tv-04': {
-        state: 'needs_review',
-        tensionReason: 'VWAP-reclaim entries buy a name that just dipped (turn-buying) — bottom-fish-adjacent; but the reclaim requirement means the entry is on confirmed recovery strength, not weakness.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'TF-Z1-BUY-STRENGTH',
-      },
+      // Reclaim entries buy CONFIRMED recovery strength, not weakness (adjudicated).
+      'tv-04': { state: 'neutral' },
     },
   },
 
@@ -258,91 +263,38 @@ export const ARCHETYPE_RULE_COMPATIBILITY = {
       chase_avoidance: { state: 'native' },
       profit_locking: { state: 'native' },
       momentum_breakout: { state: 'core_conflict', zone1Ref: 'CN-Z1-DONT-CHASE' },
+      // weakness_avoidance: core_conflict per adjudication policy P1 — hard
+      // gates / categorical avoidance of the out-of-favor delete the hunting
+      // ground (all three members are categorical below-MA exclusions).
+      weakness_avoidance: { state: 'core_conflict', zone1Ref: 'CN-Z1-BUY-WEAKNESS' },
       high_volatility: { state: 'neutral' },
       volatility_avoidance: { state: 'neutral' },
       fundamental_quality: { state: 'neutral' },
       forced_trading: { state: 'neutral' },
       concentration: { state: 'neutral' },
-      // weakness_avoidance: no family default — all three members are
-      // adjudicated per-rule below (the categorical-exclusion reading vs the
-      // "not the broken" discipline reading).
     },
     ruleOverrides: {
       // MACD bullish crossover is TURN detection ("momentum shifting from
       // bearish to bullish") — the contrarian's own second leg, not a chase.
       // Overturns the audit's example classification.
       'tech-macd-bullish': { state: 'neutral' },
-      'tech-volume-surge': {
-        state: 'needs_review',
-        tensionReason: 'Volume-surge preference follows big moves (chase-flavored, "follow the smart money") — but volume confirmation on a washed-out name is exactly the capitulation/accumulation signal a contrarian uses for its turning leg.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'CN-Z1-DONT-CHASE',
-      },
-      // Weakness-avoidance members — categorical below-MA exclusions remove
-      // most washed-out names (the hunting ground), but also align with
-      // "oversold, not broken" (the archetype's own stabilizing-leg bar).
-      'tech-avoid-declining': {
-        state: 'needs_review',
-        tensionReason: 'Hard avoid-below-MA exclusion forbids nearly all oversold names (they are by definition below moving averages) — guts the hunting ground; counter-reading: it encodes "not the broken" / wait-for-reversal, which the archetype itself requires.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CN-Z1-BUY-WEAKNESS',
-      },
-      'risk-avoid-declining-trend': {
-        state: 'needs_review',
-        tensionReason: 'Same direction as tech-avoid-declining with a longer lookback ("Don\'t fight the trend") — categorically excludes the out-of-favor names the archetype exists to buy; counter-reading: falling-knife protection.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CN-Z1-BUY-WEAKNESS',
-      },
-      'se-03': {
-        state: 'needs_review',
-        tensionReason: 'HARD entry gate ("Only enter stocks trading above their N-day moving average") — the strictest form of the family; an oversold name that has merely stabilized cannot pass a 50/200-day MA gate.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CN-Z1-BUY-WEAKNESS',
-      },
-      // Institutional/sentiment ground-blockers: avoid what is being sold /
-      // out-of-favor ↔ that IS the contrarian universe.
-      'r-12': {
-        state: 'needs_review',
-        tensionReason: '"Avoid sectors in the news doghouse" — negative-sentiment sectors are the lagging/out-of-favor ground the archetype leans into (with a floor); a categorical sector exclusion carves it away.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CN-Z1-BUY-WEAKNESS',
-      },
-      'i-02': {
-        state: 'needs_review',
-        tensionReason: '"Strictly avoid where institutions are net selling" (hard Level-1 filter) — washed-out names almost always show institutional distribution, so the filter excludes most legitimate contrarian entries; counter-reading: distribution ≠ oversold, and it filters garbage.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CN-Z1-BUY-WEAKNESS',
-      },
-      'se-08': {
-        state: 'needs_review',
-        tensionReason: 'HARD entry gate on institutional ownership direction ("Only enter where ownership has increased/decreased over N quarters") — at the accumulating default it forbids out-of-favor entries outright.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CN-Z1-BUY-WEAKNESS',
-      },
-      'i-07': {
-        state: 'needs_review',
-        tensionReason: 'Prefer sectors with institutional inflow — soft, but the direction is "fish where money is flowing in," the opposite of leaning lagging sectors.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CN-Z1-BUY-WEAKNESS',
-      },
-      'i-01': {
-        state: 'needs_review',
-        tensionReason: 'Soft preference for institutional accumulation ("can still draft stocks without institutional backing") — mild anti-out-of-favor tilt, but explicitly non-binding and quality-flavored.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'CN-Z1-BUY-WEAKNESS',
-      },
-      'a-08': {
-        state: 'needs_review',
-        tensionReason: 'Overweight sectors with POSITIVE sentiment = ride the loved narrative — sector-level strength-chasing ("what everyone is piling into").',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CN-Z1-DONT-CHASE',
-      },
-      'alloc-tier-preference': {
-        state: 'needs_review',
-        tensionReason: 'Param-swing rule: the Star-tier attribute select DEFAULTS to "high momentum" (chase — conflict direction) but offers "undervalued" (native direction). Classified by default direction per the param-independence policy; the swing is the review question.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CN-Z1-DONT-CHASE',
-      },
+      // P1 soft/turn-reading: volume confirmation doubles as the capitulation/
+      // accumulation signal of the contrarian's turning leg.
+      'tech-volume-surge': { state: 'neutral' },
+      // P1 categorical ground-blockers (hard filters/gates on the unloved).
+      'r-12': { state: 'core_conflict', zone1Ref: 'CN-Z1-BUY-WEAKNESS' },
+      'i-02': { state: 'core_conflict', zone1Ref: 'CN-Z1-BUY-WEAKNESS' },
+      'se-08': { state: 'core_conflict', zone1Ref: 'CN-Z1-BUY-WEAKNESS' },
+      // P3 default direction: prefers sectors with institutional INFLOW —
+      // sector-level chase (see PARAM_SWING_NOTES for the in-style setting).
+      'i-07': { state: 'core_conflict', zone1Ref: 'CN-Z1-BUY-WEAKNESS' },
+      // P1 soft, stock-level accumulation preference with a quality/turn reading.
+      'i-01': { state: 'neutral' },
+      // Standing overweight of the loved — allocation-level chase.
+      'a-08': { state: 'core_conflict', zone1Ref: 'CN-Z1-DONT-CHASE' },
+      // P3 default direction: Star-tier attribute defaults "high momentum"
+      // (see PARAM_SWING_NOTES for the in-style setting).
+      'alloc-tier-preference': { state: 'core_conflict', zone1Ref: 'CN-Z1-DONT-CHASE' },
       'sr-04': { state: 'core_conflict', zone1Ref: 'CN-Z1-DONT-CHASE' }, // add-to-winners as a strategy (spec §4.2 distilled test, verbatim)
       // Contrarian Zone 2 natives: the hard mechanical stop licenses the
       // patient default.
@@ -368,18 +320,11 @@ export const ARCHETYPE_RULE_COMPATIBILITY = {
     },
     ruleOverrides: {
       'th-04': { state: 'native' }, // house-money threshold chasing = riding volatility
-      'sr-01': {
-        state: 'needs_review',
-        tensionReason: 'Trimming winners caps the upside leg of the volatility thesis (profit_locking family direction) — but a trim keeps the position and the family\'s conflict test targets TIGHT locks that preclude the thesis, which a partial rebalance does not.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'SP-Z1-CHASE-VOL',
-      },
-      'a-05': {
-        state: 'needs_review',
-        tensionReason: 'The barbell MANDATES low-ATR anchors (un-zeroable: anchors min 1) — a standing "hold boring ballast" instruction against "I will not buy boring"; counter-reading: the anchors are survival ballast that licenses the rockets, Zone-2-flavored.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'SP-Z1-NO-BORING',
-      },
+      // Partial trim ≠ tight profit lock; the volatility thesis survives (adjudicated).
+      'sr-01': { state: 'neutral' },
+      // The barbell's anchors are the survival floor degen's own doc sanctions
+      // as Zone-2 machinery (adjudicated).
+      'a-05': { state: 'neutral' },
     },
   },
 
@@ -399,47 +344,20 @@ export const ARCHETYPE_RULE_COMPATIBILITY = {
       // patience test and are adjudicated per-rule below.
     },
     ruleOverrides: {
-      // Forced-trading members, per-rule (the conflict-heavy mandatory set).
+      // Forced-trading members, per-rule (adjudicated July 3, 2026):
       'mb-03': { state: 'core_conflict', zone1Ref: 'CP-Z1-NO-JUICE' }, // stagnation-forced swaps = fast in/out churn, verbatim anti-patience
-      'gs-09': {
-        state: 'needs_review',
-        tensionReason: 'Forces a swap of the worst performer after N consecutive negative cycles — reactive forced trading; counter-reading: a persistent portfolio bleed is not "noise", and acting on it is loss control, which the archetype owns.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'CP-Z1-PATIENCE',
-      },
-      'ts-04': {
-        state: 'needs_review',
-        tensionReason: 'Continuous P&L-velocity tier rotation every N minutes = chasing the hottest thing at multiplier level — churn-as-strategy against patience-as-edge; counter-reading: tier reassignment moves no capital in or out of positions.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CP-Z1-NO-JUICE',
-      },
-      'ts-06': {
-        state: 'needs_review',
-        tensionReason: 'Demotes a flatlined Star — stagnation-reactive at tier level; counter-reading: a single demotion on a true flatline protects the multiplier without selling anything (holding through wobbles is untouched).',
-        draftLeaning: 'neutral',
-        zone1Ref: 'CP-Z1-PATIENCE',
-      },
+      'gs-09': { state: 'neutral' },  // persistent bleed is not noise; loss control is guardian-owned
+      'ts-04': { state: 'core_conflict', zone1Ref: 'CP-Z1-NO-JUICE' }, // continuous chase-the-hottest rotation = churn-as-strategy
+      'ts-06': { state: 'neutral' },  // single flatline demotion; sells nothing; protects the multiplier
       'th-04': { state: 'core_conflict', zone1Ref: 'CP-Z1-NO-JUICE' }, // house-money: widen stops past protective bounds to chase the next tier
-      'i-06': {
-        state: 'needs_review',
-        tensionReason: 'Targets crowded hedge-fund names explicitly for "explosive intraday moves" (with reversal risk) — juice-chasing flavor; counter-reading: the instruction pairs it with strict technical exits, and crowding itself is an ownership fact, not a volatility mandate.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CP-Z1-NO-JUICE',
-      },
-      // THE seeded-cell flags (ARCHETYPE_DEFAULT_TRAITS.guardian →
-      // trait-diversifier → a-05, a-09). See EXPECTED_DRAFT_SEED_REVIEWS.
-      'a-05': {
-        state: 'needs_review',
-        tensionReason: 'The barbell MANDATES high-ATR rockets (un-zeroable: rockets min 1, ATR floor ≥2.5%; the guardian SEED equips it at rockets:3 via trait-diversifier@moderate) — a standing "hold explosive names" instruction against "avoid high-ATR / won\'t chase the juice"; counter-reading: a bounded barbell is a recognized capital-preservation shape (anchors dominate, rockets are contained upside).',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'CP-Z1-NO-JUICE',
-      },
-      'a-09': {
-        state: 'needs_review',
-        tensionReason: 'Bench construction "include N high-ATR breakout candidates" — juice on the bench; counter-reading: high_upside is zeroable (min 0, default 1), bench-only until a swap fires, and the rule\'s primary instruction is cross-sector spread (safety-flavored).',
-        draftLeaning: 'neutral',
-        zone1Ref: 'CP-Z1-NO-JUICE',
-      },
+      'i-06': { state: 'core_conflict', zone1Ref: 'CP-Z1-NO-JUICE' },  // explicit "explosive intraday moves" targeting = juice-chasing by name
+      // §E close-out split: a-05's rocket mandate is un-zeroable (rockets min 1)
+      // → conflict; a-09's high-ATR bench leg is zeroable and the rule is
+      // primarily a spread instruction → neutral. The guardian SEED no longer
+      // carries either (trait-steady-anchor replaced trait-diversifier in
+      // ARCHETYPE_DEFAULT_TRAITS — the mandatory §3 seed-map fix).
+      'a-05': { state: 'core_conflict', zone1Ref: 'CP-Z1-NO-JUICE' },
+      'a-09': { state: 'neutral' },
       // Protective natives (spread-for-safety, stops, lock-the-lead, patience).
       'risk-sector-diversification': { state: 'native' },
       'risk-single-stock-limit': { state: 'native' },
@@ -482,37 +400,16 @@ export const ARCHETYPE_RULE_COMPATIBILITY = {
     },
     ruleOverrides: {
       // Vol-ALONE selection instructions — the §4.2 "enter on volatility
-      // alone" test, applied to swap/selection targeting.
-      'tv-15': {
-        state: 'needs_review',
-        tensionReason: '"Swap into the highest-ATR bench stock" — selection by volatility alone, no quality input; counter-reading: mid-battle swap targeting operates within an already quality-screened roster/bench.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'FI-Z1-WORK-NOT-TAPE',
-      },
-      'gs-06': {
-        state: 'needs_review',
-        tensionReason: '"Prioritize high-ATR bench stocks" when trailing — comeback selection by volatility alone; counter-reading: conditional game-state management, not standing entry logic.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'FI-Z1-WORK-NOT-TAPE',
-      },
-      'i-09': {
-        state: 'needs_review',
-        tensionReason: 'Prefer names accumulated by high-turnover transient funds BECAUSE they amplify intraday volatility — tape-first selection; counter-reading: it is an ownership-structure signal, and the quality floor still governs picks.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'FI-Z1-WORK-NOT-TAPE',
-      },
-      'gs-12': {
-        state: 'needs_review',
-        tensionReason: 'Final-evaluation priority for after-hours-catalyst names gated ONLY by ATR — a volatility-gated pick; counter-reading: one end-of-day evaluation, catalyst-driven rather than vol-driven.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'FI-Z1-WORK-NOT-TAPE',
-      },
-      'th-04': {
-        state: 'needs_review',
-        tensionReason: 'House-money stop-widening to chase the next tier is tape-driven improvisation — tension with deliberate low-variance conviction; counter-reading: it is threshold-game stop management, not pick selection, and the audit\'s listing of it as an analyst conflict looks over-broad.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'FI-Z1-WORK-NOT-TAPE',
-      },
+      // alone" test applied to swap/selection targeting (adjudicated: the
+      // rule, not the roster, is what's classified).
+      'tv-15': { state: 'core_conflict', zone1Ref: 'FI-Z1-WORK-NOT-TAPE' },
+      'gs-06': { state: 'core_conflict', zone1Ref: 'FI-Z1-WORK-NOT-TAPE' }, // conditional-when-active: comeback selection by vol alone (not survival machinery)
+      'i-09': { state: 'core_conflict', zone1Ref: 'FI-Z1-WORK-NOT-TAPE' },  // holders chosen BECAUSE they amplify volatility — tape-first selection
+      'gs-12': { state: 'neutral' },  // catalyst-driven (fundamentals-adjacent), one end-of-day evaluation
+      // P2 stop management, not pick selection. Guardian's separate th-04
+      // conflict stands — its core covers risk posture; analyst's covers
+      // selection basis.
+      'th-04': { state: 'neutral' },
     },
   },
 
@@ -531,18 +428,10 @@ export const ARCHETYPE_RULE_COMPATIBILITY = {
       // concentration: no family default — both members adjudicated per-rule.
     },
     ruleOverrides: {
-      'alloc-sector-minimum': {
-        state: 'needs_review',
-        tensionReason: 'A standing minimum to ONE named sector (default 20%, param up to 50%) is a deliberate structural overweight — concentration as an instruction; counter-reading: at low settings a floor in one sector does not make it dominant, and the 35% hard cap (rung 2) bounds the damage under enforce.',
-        draftLeaning: 'core_conflict',
-        zone1Ref: 'DV-Z1-SPREAD',
-      },
-      'sr-04': {
-        state: 'needs_review',
-        tensionReason: 'Pyramiding winners grows single positions unevenly — anti-spread direction; counter-reading: adds are small (default +2%), the library pairs it with position caps, and breadth is disturbed only at the margin.',
-        draftLeaning: 'neutral',
-        zone1Ref: 'DV-Z1-SPREAD',
-      },
+      // Standing single-sector overweight is DV-Z1's named core attack (adjudicated).
+      'alloc-sector-minimum': { state: 'core_conflict', zone1Ref: 'DV-Z1-SPREAD' },
+      // Marginal cap-bounded adds; breadth disturbed only at the margin (adjudicated).
+      'sr-04': { state: 'neutral' },
       // Spread-machinery natives.
       'risk-sector-diversification': { state: 'native' },
       'risk-single-stock-limit': { state: 'native' },
@@ -561,21 +450,14 @@ export const ARCHETYPE_RULE_COMPATIBILITY = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EXPECTED DRAFT SEED REVIEWS (DRAFT_MODE only)
-//
-// The seeded-rule invariant (spec §4.5) requires every ARCHETYPE_DEFAULT_TRAITS
-// rule to classify native/neutral for its archetype. These cells are seeded AND
-// sit in needs_review — the exact situation the spec routes to human
-// adjudication ("bug in seed map or classification — a human adjudicates
-// which"). While DRAFT_MODE is true the invariant test tolerates EXACTLY this
-// list (declared, no silent growth); the ship build tolerates none. Resolving
-// these two cells (fix the seed kit, or the classification, or both) is a
-// Phase 1 STOP decision — see the adjudication artifact.
+// EXPECTED DRAFT SEED REVIEWS — EMPTY at ship (and must stay empty while
+// DRAFT_MODE is false; tested). During the July 3, 2026 draft this carried the
+// two guardian trait-diversifier cells (a-05 / a-09); the close-out resolved
+// them via the §E split (a-05 core_conflict / a-09 neutral) plus the mandatory
+// seed-map fix: ARCHETYPE_DEFAULT_TRAITS.guardian now seeds trait-steady-anchor
+// instead of trait-diversifier, so the strict invariant passes by construction.
 // ─────────────────────────────────────────────────────────────────────────────
-export const EXPECTED_DRAFT_SEED_REVIEWS = [
-  { archetype: 'guardian', ruleId: 'a-05' }, // via trait-diversifier (seeded at rockets:3 @ moderate)
-  { archetype: 'guardian', ruleId: 'a-09' }, // via trait-diversifier (1 high-ATR bench candidate @ default)
-];
+export const EXPECTED_DRAFT_SEED_REVIEWS = [];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PURE HELPERS
@@ -631,7 +513,7 @@ export function getRuleCompatInfo(ruleId, archetype) {
 
 /**
  * The classification state for (ruleId, archetype):
- * 'native' | 'neutral' | 'core_conflict' — plus 'needs_review' while
+ * 'native' | 'neutral' | 'core_conflict' — plus 'needs_review' only while
  * DRAFT_MODE is true. This is the Phase 2 block/warning predicate
  * (`classifyRule(id, arch) === 'core_conflict'`).
  */
@@ -642,7 +524,6 @@ export function classifyRule(ruleId, archetype) {
 /**
  * Every template id that classifies core_conflict for the archetype, with its
  * zone1Ref (for review tooling + the Phase 2 badge/warning surfaces).
- * needs_review entries are NOT conflicts and are excluded.
  *
  * @returns {Array<{ ruleId: string, zone1Ref: string|null, via: string }>}
  */
@@ -674,8 +555,8 @@ export function getConflictsForArchetype(archetype) {
 }
 
 /**
- * Every (archetype, ruleId) cell currently in needs_review — the Phase 1
- * adjudication work-list. Empty once the map ships (tested).
+ * Every (archetype, ruleId) cell currently in needs_review — the draft-window
+ * adjudication work-list. Empty at ship (tested by the zero-needs_review gate).
  *
  * @returns {Array<{ archetype: string, ruleId: string, tensionReason: string,
  *                   draftLeaning: string|null, zone1Ref: string|null }>}

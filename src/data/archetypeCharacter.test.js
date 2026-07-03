@@ -111,9 +111,12 @@ describe('getArchetypeCharacter — composition with live data', () => {
 });
 
 describe('honest hardness — computed live, not authored', () => {
-  it('marks EXACTLY Sector Rotator + Diversifier as hard guardrails', () => {
+  it('marks EXACTLY Diversifier + Sector Rotator + Steady Anchor as hard guardrails', () => {
+    // trait-steady-anchor joined at the WS1 close-out (guardian seed fix): its
+    // risk/allocation-category rules derive hard, so it is enforced by the
+    // same live computation this suite protects.
     const hard = TRAIT_LIBRARY.filter((t) => getTraitEnforcement(t.id).isEnforced).map((t) => t.id).sort();
-    expect(hard).toEqual(['trait-diversifier', 'trait-sector-rotator']);
+    expect(hard).toEqual(['trait-diversifier', 'trait-sector-rotator', 'trait-steady-anchor']);
   });
 
   it('reads Iron Discipline as soft (the spec smoke-gate trap)', () => {

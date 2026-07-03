@@ -80,6 +80,16 @@ export const TRAIT_COMBOS = [
     gradientType: 'discipline',
   },
   {
+    // WS1 close-out: guardian's default kit now seeds trait-steady-anchor in
+    // place of trait-diversifier; this pairing keeps the kit firing the same
+    // Class Title. The entry above stays for users holding trait-diversifier.
+    traitA: 'trait-steady-anchor',
+    traitB: 'trait-penalty-dodger',
+    label: 'Risk Fortress',
+    description: 'Will never have a bad day. Might never have a great one either.',
+    gradientType: 'discipline',
+  },
+  {
     traitA: 'trait-trend-rider',
     traitB: 'trait-breakout-chaser',
     label: 'Momentum Purist',
