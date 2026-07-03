@@ -10,7 +10,20 @@ import { db } from '../firebase/config';
 import { getAgentLevel } from '../constants/agentProgression';
 import { FORGE_LIMITS } from '../constants/agentProgression';
 import { reconcile, RECONCILER_VERSION } from '../utils/ruleConflictReconciler';
-import { CONFLICT_RECONCILER_DETECT_ENABLED } from '../config/featureFlags';
+import { CONFLICT_RECONCILER_DETECT_ENABLED, RULE_COMPAT_MODE } from '../config/featureFlags';
+// WS1 L1 write-path guard (fence-lite-approved sites: createRule,
+// setRuleHardness, updateRule category flip, reforgeBundle carry-forward,
+// plus the equipBundle conflict-equip surface). All guard work is gated on
+// isRuleCompatActive() so RULE_COMPAT_MODE='off' stays byte-identical —
+// zero extra reads, zero classification.
+import {
+  isRuleCompatActive,
+  guardRuleCompatWrite,
+  evaluateRuleCompatWrite,
+  emitRuleCompatEvents,
+  classifyBundleSnapshots,
+} from './ruleCompatGuard';
+import { resolveRuleHardness } from '../components/Forge/workshop/hardSoftHelper';
 
 // ============================================
 // VALIDATION
@@ -123,16 +136,47 @@ function validateRuleInput(ruleData) {
 // RULES CRUD
 // ============================================
 
+// Resolve the agent's archetype for a compat check: prefer the value threaded
+// by the caller (fence-lite rider: batch flows pass it so the guard never does
+// per-rule reads); fall back to ONE agent-doc read. Only called when the guard
+// is active. null (unknown agent/archetype) fails open to 'neutral' downstream.
+async function resolveArchetypeForCompat(agentId, threadedArchetype) {
+  if (threadedArchetype) return threadedArchetype;
+  try {
+    const agentSnap = await getDoc(doc(db, 'agents', agentId));
+    return agentSnap.exists() ? (agentSnap.data().archetype || null) : null;
+  } catch (err) {
+    console.error('[forgeService] compat archetype read failed (failing open):', err);
+    return null;
+  }
+}
+
 /**
  * Create a new rule in the agent's rules subcollection.
  * @param {string} agentId
  * @param {Object} ruleData - { text, source, sourceRef?, visibility?, category?, params? }
+ * @param {Object} [opts]
+ * @param {string} [opts.archetype] - caller-threaded archetype for the compat
+ *   guard (avoids the fallback agent read; see resolveArchetypeForCompat)
  * @returns {string} The new rule document ID
  */
-export const createRule = async (agentId, ruleData) => {
+export const createRule = async (agentId, ruleData, opts = {}) => {
   const errors = validateRuleInput(ruleData);
   if (errors.length > 0) {
     throw new Error(`Invalid rule: ${errors.join('; ')}`);
+  }
+
+  // WS1 A1 guard — create-as-hard block + conflict-equip logging. Template-
+  // derived rules only (sourceRef); manual free-text rules are outside the map.
+  if (isRuleCompatActive() && ruleData.sourceRef) {
+    const archetype = await resolveArchetypeForCompat(agentId, opts.archetype);
+    await guardRuleCompatWrite({
+      archetype,
+      templateId: ruleData.sourceRef,
+      resolvedHardness: resolveRuleHardness({ category: ruleData.category || null }),
+      path: 'create_rule',
+      agentId,
+    }); // throws RuleCompatBlockError under enforce for hard-category conflicts
   }
 
   const rulesRef = collection(db, 'agents', agentId, 'rules');
@@ -182,8 +226,10 @@ export const getRules = async (agentId, { includeDeleted = false } = {}) => {
  * @param {string} agentId
  * @param {string} ruleId
  * @param {Object} updates - Allowed: text, category, visibility, params, isRefined
+ * @param {Object} [opts]
+ * @param {string} [opts.archetype] - caller-threaded archetype for the compat guard
  */
-export const updateRule = async (agentId, ruleId, updates) => {
+export const updateRule = async (agentId, ruleId, updates, opts = {}) => {
   // Validate fields being updated
   if (updates.text !== undefined) {
     if (typeof updates.text !== 'string' || updates.text.trim().length === 0) {
@@ -243,6 +289,30 @@ export const updateRule = async (agentId, ruleId, updates) => {
   }
   filtered.updatedAt = serverTimestamp();
   const ruleRef = doc(db, 'agents', agentId, 'rules', ruleId);
+
+  // WS1 B2 guard — a category flip that lands must-obey (risk/allocation) is a
+  // promote path. Only the hard direction is guarded; the rule doc is read for
+  // its sourceRef only when needed (guard active + category becoming hard).
+  if (
+    isRuleCompatActive() &&
+    'category' in filtered &&
+    resolveRuleHardness({ category: filtered.category || null }) === 'hard'
+  ) {
+    const ruleSnap = await getDoc(ruleRef);
+    const sourceRef = ruleSnap.exists() ? ruleSnap.data().sourceRef || null : null;
+    if (sourceRef) {
+      const archetype = await resolveArchetypeForCompat(agentId, opts.archetype);
+      await guardRuleCompatWrite({
+        archetype,
+        templateId: sourceRef,
+        resolvedHardness: 'hard',
+        path: 'update_rule_category',
+        agentId,
+        ruleDocId: ruleId,
+      }); // throws RuleCompatBlockError under enforce
+    }
+  }
+
   await updateDoc(ruleRef, filtered);
 };
 
@@ -370,8 +440,10 @@ export const removeRuleFromBundle = async (agentId, bundleId, ruleId) => {
  * @param {string} bundleId
  * @param {string} ruleId
  * @param {'hard'|'soft'|null} value
+ * @param {Object} [opts]
+ * @param {string} [opts.archetype] - caller-threaded archetype for the compat guard
  */
-export const setRuleHardness = async (agentId, bundleId, ruleId, value) => {
+export const setRuleHardness = async (agentId, bundleId, ruleId, value, opts = {}) => {
   if (value !== null && value !== 'hard' && value !== 'soft') {
     throw new Error("Rule hardness must be 'hard', 'soft', or null");
   }
@@ -381,6 +453,24 @@ export const setRuleHardness = async (agentId, bundleId, ruleId, value) => {
   const bundle = bundleSnap.data();
   if (bundle.status !== 'draft') throw new Error('Can only edit rules on draft bundles');
   if (!(bundle.ruleIds || []).includes(ruleId)) throw new Error('Rule is not in this bundle');
+
+  // WS1 B1 guard — THE explicit promote path. Soft/clear writes are never
+  // guarded (demote direction is always safe).
+  if (isRuleCompatActive() && value === 'hard') {
+    const ruleSnap = await getDoc(doc(db, 'agents', agentId, 'rules', ruleId));
+    const sourceRef = ruleSnap.exists() ? ruleSnap.data().sourceRef || null : null;
+    if (sourceRef) {
+      const archetype = await resolveArchetypeForCompat(agentId, opts.archetype);
+      await guardRuleCompatWrite({
+        archetype,
+        templateId: sourceRef,
+        resolvedHardness: 'hard',
+        path: 'set_rule_hardness',
+        agentId,
+        ruleDocId: ruleId,
+      }); // throws RuleCompatBlockError under enforce
+    }
+  }
 
   await updateDoc(bundleRef, {
     [`ruleHardness.${ruleId}`]: value === null ? deleteField() : value,
@@ -544,9 +634,47 @@ export const equipBundle = async (agentId, bundleId) => {
   });
   await batch.commit();
 
+  // WS1 B6 — conflict-equip surface. Classify THIS bundle's snapshots against
+  // the agent's archetype (already read above — zero extra reads), log each
+  // conflict (observe + enforce), and hand the list back for the enforce-mode
+  // warning toast. Never blocks: equip of soft conflicts is warn-only by
+  // design, and the classification runs after the committed equip.
+  let compatConflicts = [];
+  if (isRuleCompatActive()) {
+    const archetype = agentData.archetype || null;
+    compatConflicts = classifyBundleSnapshots({
+      archetype,
+      ruleSnapshots: bundle.ruleSnapshots,
+      ruleHardness: bundle.ruleHardness || {},
+    });
+    if (compatConflicts.length > 0) {
+      const ts = new Date().toISOString();
+      await emitRuleCompatEvents({
+        agentId,
+        archetype,
+        mode: RULE_COMPAT_MODE,
+        events: compatConflicts.map((c) => ({
+          type: 'compat_conflict_equip',
+          agentId,
+          archetype,
+          ruleId: c.templateId,
+          ruleDocId: c.ruleDocId,
+          state: 'core_conflict',
+          zone1Ref: c.zone1Ref,
+          hardnessRequested: c.resolvedHardness,
+          path: 'equip_bundle',
+          mode: RULE_COMPAT_MODE,
+          blocked: false,
+          ts,
+        })),
+      });
+    }
+  }
+
   // Return the (gated) equip-time detection result so the hook can surface a
-  // non-blocking, bundle-scoped warning. null when DETECT is off → no toast.
-  return conflictCheckResult;
+  // non-blocking, bundle-scoped warning (null when DETECT is off → no toast),
+  // plus the compat conflicts for the enforce-mode off-style warning.
+  return { conflictCheckResult, compatConflicts };
 };
 
 /**
@@ -605,15 +733,60 @@ export const unequipBundle = async (agentId, bundleId) => {
 
 /**
  * Reforge a bundle — archive old version and create a new draft from its rules.
- * @returns {string} New bundle document ID
+ *
+ * WS1 B3 guard: the carried `ruleHardness` map is a re-write of authored
+ * overrides into a new doc. Under `enforce`, 'hard' overrides on core_conflict
+ * rules are STRIPPED from the carry (each strip logged + reported back for the
+ * inline notice — fence-lite rider 1); under `observe` the carry is unchanged
+ * and each would-strip is logged (blocked:false).
+ *
+ * @param {Object} [opts]
+ * @param {string} [opts.archetype] - caller-threaded archetype for the compat guard
+ * @returns {{ bundleId: string, strippedConflicts: Array<{templateId: string, ruleDocId: string}> }}
  */
-export const reforgeBundle = async (agentId, bundleId) => {
+export const reforgeBundle = async (agentId, bundleId, opts = {}) => {
   const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
   const bundleSnap = await getDoc(bundleRef);
   if (!bundleSnap.exists()) throw new Error('Bundle not found');
   const bundle = bundleSnap.data();
 
   if (bundle.status === 'draft') throw new Error('Cannot reforge a draft bundle — edit it directly');
+
+  // WS1 B3 — evaluate the hard overrides being carried forward.
+  let carriedHardness = bundle.ruleHardness || {};
+  const strippedConflicts = [];
+  const hardOverrideIds = Object.keys(carriedHardness).filter((rid) => carriedHardness[rid] === 'hard');
+  if (isRuleCompatActive() && hardOverrideIds.length > 0) {
+    const archetype = await resolveArchetypeForCompat(agentId, opts.archetype);
+    const events = [];
+    let enforcing = false;
+    for (const rid of hardOverrideIds) {
+      const ruleSnap = await getDoc(doc(db, 'agents', agentId, 'rules', rid));
+      const sourceRef = ruleSnap.exists() ? ruleSnap.data().sourceRef || null : null;
+      if (!sourceRef) continue;
+      const result = evaluateRuleCompatWrite({
+        archetype,
+        templateId: sourceRef,
+        resolvedHardness: 'hard',
+        path: 'reforge_carry',
+        agentId,
+        ruleDocId: rid,
+      });
+      events.push(...result.events);
+      if (result.decision === 'block') {
+        // Strip instead of blocking the whole reforge (approved treatment).
+        enforcing = true;
+        strippedConflicts.push({ templateId: sourceRef, ruleDocId: rid });
+      }
+    }
+    if (events.length > 0) {
+      await emitRuleCompatEvents({ agentId, archetype, mode: RULE_COMPAT_MODE, events });
+    }
+    if (enforcing) {
+      carriedHardness = { ...carriedHardness };
+      for (const s of strippedConflicts) delete carriedHardness[s.ruleDocId];
+    }
+  }
 
   // If equipped, unequip first
   if (bundle.status === 'equipped') {
@@ -635,8 +808,9 @@ export const reforgeBundle = async (agentId, bundleId) => {
     previousVersionId: bundleId,
     status: 'draft',
     ruleIds: bundle.ruleIds || [],
-    // Carry authored hard/soft overrides forward to the reforged draft.
-    ruleHardness: bundle.ruleHardness || {},
+    // Carry authored hard/soft overrides forward to the reforged draft
+    // (minus any enforce-mode conflict strips above).
+    ruleHardness: carriedHardness,
     ruleSnapshots: [],   // Draft bundles don't have snapshots (Amendment 3)
     conflictCheckResult: null,
     createdAt: serverTimestamp(),
@@ -650,7 +824,7 @@ export const reforgeBundle = async (agentId, bundleId) => {
     },
   };
   const docRef = await addDoc(bundlesRef, newBundleDoc);
-  return docRef.id;
+  return { bundleId: docRef.id, strippedConflicts };
 };
 
 /**

@@ -429,7 +429,7 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
           // tier-2 (built-in identity), so a later deliberate user rule out-ranks
           // them. Reconciler treats this as archetype_default.
           provenance: 'archetype_default',
-        });
+        }, { archetype: agent?.archetype }); // WS1 compat guard: archetype threaded (rider 2)
         ruleIds.push(ruleId);
       }
 

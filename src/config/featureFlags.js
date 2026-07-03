@@ -294,6 +294,33 @@ export const CONFLICT_RECONCILER_INJECT_ENABLED = true;
 export const ARCHETYPE_INTEGRITY_MODE = 'observe';
 
 /**
+ * WS1 — Rule-library archetype scoping: tri-state rollout mode.
+ *
+ * Gates the whole rule-vs-archetype compatibility feature together (the
+ * write-path guard in forgeService, the equip warnings + badges, the observe
+ * event stream, and the change-archetype rescan event) so there is exactly one
+ * byte-identical-off regression surface. Three states:
+ *
+ *   'off'     — byte-identical to today. No classification is computed
+ *               anywhere; the guard early-returns before touching the map.
+ *   'observe' — measurement mode. Every conflict-equip and every
+ *               would-be-blocked promotion is classified + logged
+ *               (blocked:false), but NOTHING is blocked and no warning UI
+ *               renders. Vehicle for reading real conflict-equip volume.
+ *   'enforce' — full behavior: soft warning when equipping a core_conflict
+ *               rule; hard block on any write that would make a core_conflict
+ *               rule must-obey (create-as-hard, promote-to-hard, category
+ *               flip, reforge carry-forward — the fence-lite-approved paths).
+ *
+ * Default 'off'. Built/merged DARK; walk 'off' → 'observe' → 'enforce' only
+ * after observing conflict-equip volume (WS1 spec §8.4). INDEPENDENT of
+ * ARCHETYPE_INTEGRITY_MODE — the two flags walk separately. The one-time
+ * pre-launch cleanup script (WS1 Phase 4) live-runs at or before the enforce
+ * step. Classification source: src/data/archetypeRuleCompatibility.js.
+ */
+export const RULE_COMPAT_MODE = 'off';
+
+/**
  * League — Desktop Training Pod tab + Active Training Game card (the desktop
  * League redesign's training addition; see LEAGUE_DESKTOP_TRAINING_POD_BUILD_SPEC).
  *

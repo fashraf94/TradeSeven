@@ -26,6 +26,16 @@ import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idVa
 // re-declared, so the picker, seeder, endpoint, and config can't drift apart.
 import { VALID_ARCHETYPES } from '../_utils/agentArchetypeConfig.js';
 import { waitUntil } from '@vercel/functions';
+// WS1 rescan rider — an archetype change flips the classification input for
+// every already-equipped rule, so under RULE_COMPAT_MODE observe/enforce this
+// endpoint emits one compat_archetype_change_rescan event summarizing the
+// conflicts under the NEW archetype (no UI; observe data only). Both imports
+// are api → src Node-clean data modules (BUILD_RULES §4); the endpoint test's
+// real import of this handler is the dependency-surface guard. The projection
+// helper is the same non-fenced module decide.js uses — read here, never edited.
+import { RULE_COMPAT_MODE } from '../../src/config/featureFlags.js';
+import { getRuleCompatInfo } from '../../src/data/archetypeRuleCompatibility.js';
+import { projectActiveRules } from '../_utils/projectActiveRules.js';
 
 export const config = { maxDuration: 10 };
 
@@ -90,7 +100,9 @@ export default async function handler(req, res) {
 
       const previousArchetype = agent.archetype ?? null;
       tx.update(agentRef, { archetype, updatedAt: nowIso });
-      return { idempotent: false, archetype, previousArchetype };
+      // equippedTraits rides along for the WS1 rescan (projection input) — no
+      // extra read, it is already on the agent snapshot.
+      return { idempotent: false, archetype, previousArchetype, equippedTraits: agent.equippedTraits || [] };
     });
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
@@ -119,6 +131,64 @@ export default async function handler(req, res) {
     );
   }
 
+  // WS1 rescan rider (RULE_COMPAT_MODE observe/enforce only — 'off' is
+  // byte-identical, including the response shape). Projects the agent's
+  // equipped surface exactly as deploy does, classifies each projected rule
+  // under the NEW archetype, and emits ONE summary event. Awaited (never a
+  // silent fire-and-forget); a rescan failure is loud but never fails the
+  // committed archetype change — the response reports rescanLogged instead.
+  let rescanLogged = null;
+  const compatActive = RULE_COMPAT_MODE === 'observe' || RULE_COMPAT_MODE === 'enforce';
+  if (compatActive && !txResult.idempotent) {
+    try {
+      const [rulesSnap, bundlesSnap] = await Promise.all([
+        agentRef.collection('rules').get(),
+        agentRef.collection('bundles').get(),
+      ]);
+      const ruleDocs = rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const bundleDocs = bundlesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const projected = projectActiveRules(txResult.equippedTraits, ruleDocs, bundleDocs);
+      const docById = new Map(ruleDocs.map((r) => [r.id, r]));
+      const conflicts = [];
+      for (const item of projected) {
+        const sourceRef = docById.get(item.ruleId)?.sourceRef || null;
+        if (!sourceRef) continue; // manual rules are outside the map
+        const info = getRuleCompatInfo(sourceRef, txResult.archetype);
+        if (info.state !== 'core_conflict') continue;
+        conflicts.push({
+          ruleId: sourceRef,
+          ruleDocId: item.ruleId,
+          zone1Ref: info.zone1Ref,
+          hardness: item.hardness || null,
+        });
+      }
+      await logSignalDrops({
+        stage: 'rule_compat',
+        userId: user.uid,
+        agentId,
+        archetype: txResult.archetype,
+        mode: RULE_COMPAT_MODE,
+        events: [{
+          type: 'compat_archetype_change_rescan',
+          ruleId: null,
+          path: 'archetype_change_rescan',
+          previousArchetype: txResult.previousArchetype,
+          conflictCount: conflicts.length,
+          hardConflictCount: conflicts.filter((c) => c.hardness === 'hard').length,
+          conflicts: conflicts.slice(0, 30),
+          blocked: false,
+          ts: nowIso,
+        }],
+        eventCount: 1,
+        loggedAt: nowIso,
+      });
+      rescanLogged = true;
+    } catch (rescanErr) {
+      console.error('[change-archetype] compat rescan failed (archetype change committed):', rescanErr?.message || rescanErr);
+      rescanLogged = false;
+    }
+  }
+
   console.log(
     `[change-archetype] agent ${agentId} → ${txResult.archetype} (idempotent=${txResult.idempotent})`,
   );
@@ -127,5 +197,8 @@ export default async function handler(req, res) {
     agentId,
     archetype: txResult.archetype,
     idempotent: txResult.idempotent,
+    // Additive, mode-gated field — absent while RULE_COMPAT_MODE='off' so the
+    // off response stays byte-identical.
+    ...(compatActive ? { rescanLogged } : {}),
   });
 }

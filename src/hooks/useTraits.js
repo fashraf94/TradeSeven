@@ -20,6 +20,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { softDeleteRule } from '../services/forgeService';
+import { isRuleCompatActive } from '../services/ruleCompatGuard';
 import { FORGE_RULE_TEMPLATES } from '../data/forgeKnowledgeBase';
 import { DNA_GROUPS } from '../data/dnaGroups';
 import { TRAIT_LIBRARY, TRAIT_BY_ID } from '../data/traitLibrary';
@@ -192,6 +193,19 @@ export function useTraits(agentId, forge) {
       }
     }
 
+    // WS1 compat guard: resolve archetype ONCE for the whole trait equip
+    // (fence-lite rider 2 — never per-rule fallback reads). Only read when the
+    // guard is active so 'off' stays byte-identical.
+    let compatArchetype = null;
+    if (isRuleCompatActive()) {
+      try {
+        const snap = await getDoc(doc(db, 'agents', agentId));
+        compatArchetype = snap.exists() ? snap.data().archetype || null : null;
+      } catch (err) {
+        console.error('[useTraits] compat archetype read failed (failing open):', err);
+      }
+    }
+
     // Add each rule to the bundle
     // Note: if this fails partway through, some rules may remain in the bundle
     // without a trait entry. These act as standalone rules and can be cleaned up manually.
@@ -214,6 +228,7 @@ export function useTraits(agentId, forge) {
           status: 'active',
           priority: 1,
           traitId: traitId,
+          archetype: compatArchetype,
         });
       }
     } catch (err) {

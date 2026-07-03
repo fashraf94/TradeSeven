@@ -24,6 +24,8 @@ import {
 } from '../services/forgeService';
 import { computeForgeStats } from '../services/forgeStatsService';
 import { buildEquipWarning } from '../utils/conflictSurfaceCopy';
+import { buildBundleEquipCompatWarning } from '../utils/compatSurfaceCopy';
+import { RULE_COMPAT_MODE } from '../config/featureFlags';
 
 // Pre-compute total available rules per category for radar proportional fill
 const categoryTotals = {};
@@ -357,7 +359,7 @@ export function useForge(agentId) {
         ...(options.status && { status: options.status }),
         ...(options.priority != null && { priority: options.priority }),
         ...(options.traitId && { traitId: options.traitId }),
-      });
+      }, { archetype: options.archetype });
 
       try {
         await addRuleToBundleSvc(agentId, targetBundle.id, ruleId);
@@ -408,7 +410,7 @@ export function useForge(agentId) {
       ...(options.status && { status: options.status }),
       ...(options.priority != null && { priority: options.priority }),
       ...(options.traitId && { traitId: options.traitId }),
-    });
+    }, { archetype: options.archetype });
     await loadData();
     return ruleId;
   }, [agentId, loadData]);
@@ -502,10 +504,12 @@ export function useForge(agentId) {
 
   // Author a per-rule hard/soft override on a draft bundle (Phase 3).
   // value: 'hard' | 'soft' | null (null clears → reverts to category default).
-  const setRuleHardness = useCallback(async (bundleId, ruleId, value) => {
+  // A RuleCompatBlockError from the WS1 guard surfaces via its user-facing
+  // err.message (the promote-block copy), same as any service error.
+  const setRuleHardness = useCallback(async (bundleId, ruleId, value, opts = {}) => {
     if (!agentId) return;
     try {
-      await setRuleHardnessSvc(agentId, bundleId, ruleId, value);
+      await setRuleHardnessSvc(agentId, bundleId, ruleId, value, { archetype: opts.archetype });
       await loadData();
     } catch (err) {
       console.error('[useForge] setRuleHardness failed:', err);
@@ -543,17 +547,24 @@ export function useForge(agentId) {
   }, [agentId, forgingBundleId, showToast, loadData]);
 
   // Equip a bundle
-  const equipBundleFn = useCallback(async (bundleId) => {
+  const equipBundleFn = useCallback(async (bundleId, opts = {}) => {
     if (!agentId || equippingBundleId) return;
     setEquippingBundleId(bundleId);
     try {
-      // equipBundleSvc returns the gated equip-time detection result (null when
-      // DETECT is off). Warn, don't block — the equip already succeeded.
-      const conflictCheckResult = await equipBundleSvc(agentId, bundleId);
+      // equipBundleSvc returns { conflictCheckResult, compatConflicts }:
+      // the gated reconciler detection result (null when DETECT is off) plus
+      // the WS1 off-style conflicts ([] unless RULE_COMPAT_MODE is active).
+      // Warn, don't block — the equip already succeeded.
+      const { conflictCheckResult, compatConflicts } = await equipBundleSvc(agentId, bundleId);
       // Report the (committed) equip result BEFORE reloading, and isolate the
       // reload: a transient loadData() failure must not misreport a successful
       // equip as a failure (or swallow the conflict warning).
-      const warning = buildEquipWarning(conflictCheckResult);
+      // Warning precedence: the archetype off-style warning (enforce only —
+      // observe logs silently) > reconciler contradiction > plain success.
+      const compatWarning = RULE_COMPAT_MODE === 'enforce'
+        ? buildBundleEquipCompatWarning({ archetype: opts.archetype, conflicts: compatConflicts })
+        : null;
+      const warning = compatWarning || buildEquipWarning(conflictCheckResult);
       showToast(warning || 'Bundle equipped! Your agent will use these rules in the next battle.');
       try {
         await loadData();
@@ -582,12 +593,21 @@ export function useForge(agentId) {
   }, [agentId, equippingBundleId, showToast, loadData]);
 
   // Reforge a bundle
-  const reforgeBundleFn = useCallback(async (bundleId) => {
+  const reforgeBundleFn = useCallback(async (bundleId, opts = {}) => {
     if (!agentId || forgingBundleId) return;
     try {
-      await reforgeBundleSvc(agentId, bundleId);
+      const { strippedConflicts } = await reforgeBundleSvc(agentId, bundleId, { archetype: opts.archetype });
       await loadData();
-      showToast('Bundle reforged — new draft created');
+      // WS1 fence-lite rider 1: enforce-mode conflict strips surface as a
+      // user-facing inline notice in the reforge flow, never silently.
+      if (strippedConflicts && strippedConflicts.length > 0) {
+        const n = strippedConflicts.length;
+        showToast(
+          `Bundle reforged — ${n} off-style must-obey override${n === 1 ? ' was' : 's were'} reset to soft for your archetype.`
+        );
+      } else {
+        showToast('Bundle reforged — new draft created');
+      }
     } catch (err) {
       console.error('[useForge] reforgeBundle failed:', err);
       showToast(err.message || 'Failed to reforge bundle');
