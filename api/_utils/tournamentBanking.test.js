@@ -15,6 +15,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { computeBankingUpdate, bankGroup, bankAllTournamentGroups, fetchGroupAgentScores } from './tournamentBanking.js';
 import { calculateAssetScoreV3 } from '../../src/utils/baggerBombUtils.js';
+import { BASELINE_POLICY, BASELINE_SOURCE, CAPTURE_STATE } from '../../src/constants/leagueTournament.js';
 
 const NOW = new Date('2026-06-10T21:15:00Z'); // 17:15 ET → etDate 2026-06-10
 const NOW_ISO = NOW.toISOString();
@@ -296,6 +297,285 @@ describe('computeBankingUpdate — the cumulative model in motion', () => {
     const score = update.dayEntry.closeScores.u1;
     expect(score.totalPoints).toBe(45 + liveExpected); // cumulative standing, banked + live
     expect(score.picks[0]).toMatchObject({ bankedPoints: 45, livePoints: liveExpected });
+  });
+});
+
+// ==================== canonical-open policy (Phase 3) ====================
+//
+// A canonical round settles a null baseline ONLY from its frozen
+// `canonicalOpens` snapshot — the banked score of record — never from a fresh
+// re-fetch. A null leg with no snapshot after the session voids terminally
+// (NO_ELIGIBLE_OPEN). Legacy rounds (absent / LEGACY_OPEN_DEFER stamp) settle
+// from the day's fresh open, byte-identical to prior behavior.
+
+describe('computeBankingUpdate — canonical-open policy (Phase 3)', () => {
+  const snap = (open, over = {}) => ({
+    open, capturedAt: '2026-06-10T13:31:00.000Z', priceTimestamp: 5,
+    captureJobId: 'sweep-1', session: '2026-06-10', instrumentId: null, ...over,
+  });
+  const canonicalGroup = (players, canonicalOpens) => battleGroup({
+    baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN,
+    canonicalOpens,
+    players,
+  });
+  const solo = (odUserId, picks) => ([
+    { odUserId, picks },
+    { odUserId: 'u2', picks: [] }, { odUserId: 'u3', picks: [] }, { odUserId: 'u4', picks: [] },
+  ]);
+
+  it('THE consistency invariant: banks against the FROZEN snapshot open, not the vendor-revised open', () => {
+    // Snapshot froze the open at 100; the vendor now reports 101 at banking.
+    // The leg must settle + score against 100 (the banked score of record),
+    // immune to the drift — and banking must never touch canonicalOpens.
+    const group = canonicalGroup(solo('u1', [pick('NVDA', [leg()])]), { NVDA: snap(100) });
+    const quotes = { NVDA: { open: 101, current: 106, previousClose: 99, timestamp: 1 } };
+
+    const update = computeBankingUpdate(group, quotes, OPTS);
+    const nvda = update.players[0].picks[0].legs[0];
+
+    // Settled from the SNAPSHOT (100), NOT the fresh open (101).
+    expect(nvda.baselinePrice).toBe(100);
+    expect(nvda.baselineSource).toBe(BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE);
+    expect(nvda.captureState).toBe(CAPTURE_STATE.CAPTURED);
+
+    // Score of record: live from 100 → 106 (+6%), never the 101-baseline (+4.95%).
+    const expected = calculateAssetScoreV3(
+      { symbol: 'NVDA', baseATR: 2.5, direction: 'long' }, 6, {}, {}, null
+    ).totalPoints;
+    const wrong = calculateAssetScoreV3(
+      { symbol: 'NVDA', baseATR: 2.5, direction: 'long' }, ((106 - 101) / 101) * 100, {}, {}, null
+    ).totalPoints;
+    expect(update.dayEntry.closeScores.u1.totalPoints).toBe(expected);
+    expect(update.dayEntry.closeScores.u1.totalPoints).not.toBe(wrong);
+
+    // Banking NEVER overwrites the immutable snapshot (input left untouched).
+    expect(group.canonicalOpens.NVDA.open).toBe(100);
+  });
+
+  it('copies the capture provenance from the snapshot (a banking-settled leg == a sweep-settled leg)', () => {
+    const group = canonicalGroup(
+      solo('u1', [pick('LLY', [leg()])]),
+      { LLY: snap(812.5, { priceTimestamp: 42, captureJobId: 'sweep-9', instrumentId: 'ins-1' }) },
+    );
+    const update = computeBankingUpdate(group, { LLY: { open: 999, current: 812.5, previousClose: 800, timestamp: 1 } }, OPTS);
+    expect(update.players[0].picks[0].legs[0]).toMatchObject({
+      baselinePrice: 812.5,
+      baselineSource: BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE,
+      baselineCapturedAt: '2026-06-10T13:31:00.000Z',
+      baselinePriceTimestamp: 42,
+      captureJobId: 'sweep-9',
+      baselineSession: '2026-06-10',
+      instrumentId: 'ins-1',
+      captureState: CAPTURE_STATE.CAPTURED,
+    });
+  });
+
+  it('Case 3 terminal void: a null leg with NO snapshot voids (NO_ELIGIBLE_OPEN), contributes 0, never re-fetches', () => {
+    const group = canonicalGroup([
+      { odUserId: 'u1', picks: [pick('NVDA', [leg()])] }, // snapshot present
+      { odUserId: 'u2', picks: [pick('AMD', [leg()])] },  // NO snapshot → void
+      { odUserId: 'u3', picks: [] }, { odUserId: 'u4', picks: [] },
+    ], { NVDA: snap(100) });
+    // A live vendor open exists for AMD — a canonical round must NOT settle from it.
+    const quotes = {
+      NVDA: { open: 100, current: 103, previousClose: 99, timestamp: 1 },
+      AMD: { open: 50, current: 60, previousClose: 50, timestamp: 1 },
+    };
+
+    const update = computeBankingUpdate(group, quotes, OPTS);
+    const amd = update.players[1].picks[0].legs[0];
+
+    expect(amd.baselinePrice).toBeNull();               // NOT settled from the fresh 50
+    expect(amd.captureState).toBe(CAPTURE_STATE.NO_ELIGIBLE_OPEN);
+    expect(update.dayEntry.closeScores.u2.totalPoints).toBe(0); // contributes nothing
+
+    // No re-weight: the settled player scores exactly its own live P&L,
+    // wholly unaffected by the void.
+    const u1Expected = calculateAssetScoreV3(
+      { symbol: 'NVDA', baseATR: 2.5, direction: 'long' }, 3, {}, {}, null
+    ).totalPoints;
+    expect(update.dayEntry.closeScores.u1.totalPoints).toBe(u1Expected);
+    expect(update.warnings.some(w => w.includes('AMD') && w.includes('NO_ELIGIBLE_OPEN'))).toBe(true);
+  });
+
+  it('overnight open-and-closed leg banks 0 against the SNAPSHOT even as the vendor open drifts', () => {
+    // Snapshot=100, vendor=101. The null closed leg settles to 100 and closes
+    // at 100 → banks 0 (zero exposure), NOT 100 → 101.
+    const group = canonicalGroup(
+      solo('u1', [pick('NVDA', [{ ...leg(), closedAt: 'T1' }, leg()])]),
+      { NVDA: snap(100) },
+    );
+    const update = computeBankingUpdate(group, { NVDA: { open: 101, current: 101, previousClose: 100, timestamp: 1 } }, OPTS);
+    const [closedLeg, newLeg] = update.players[0].picks[0].legs;
+    expect(closedLeg.baselinePrice).toBe(100);
+    expect(closedLeg.bankedScore).toBe(0);  // 100 → 100, not 100 → 101
+    expect(newLeg.baselinePrice).toBe(100);
+  });
+
+  it('LEGACY byte-identical: an absent stamp settles from the fresh open, ignoring any snapshot', () => {
+    // Even with a canonicalOpens map present, an unstamped (legacy) round must
+    // settle from the fresh open exactly as before — the STAMP governs, not the
+    // presence of a snapshot.
+    const group = battleGroup({
+      canonicalOpens: { NVDA: snap(100) },
+      players: solo('u1', [pick('NVDA', [leg()])]),
+    });
+    const update = computeBankingUpdate(group, { NVDA: { open: 107, current: 107, previousClose: 100, timestamp: 1 } }, OPTS);
+    const l = update.players[0].picks[0].legs[0];
+    expect(l.baselinePrice).toBe(107);                 // fresh open, not the snapshot 100
+    expect(l.baselineSource).toBe('draft_resolution'); // unchanged — no canonical stamp
+    expect(l.captureState).toBeUndefined();            // legacy legs never touch captureState
+  });
+
+  it('LEGACY_OPEN_DEFER stamp is explicitly legacy: settles from the fresh open', () => {
+    const group = battleGroup({
+      baselinePolicy: BASELINE_POLICY.LEGACY_OPEN_DEFER,
+      canonicalOpens: { NVDA: snap(100) },
+      players: solo('u1', [pick('NVDA', [leg()])]),
+    });
+    const update = computeBankingUpdate(group, { NVDA: { open: 107, current: 107, previousClose: 100, timestamp: 1 } }, OPTS);
+    expect(update.players[0].picks[0].legs[0].baselinePrice).toBe(107);
+  });
+
+  it('bankGroup persists NO canonicalOpens write (the snapshot is the sweep\'s to own, never banking\'s)', async () => {
+    const group = canonicalGroup(solo('u1', [pick('NVDA', [leg()])]), { NVDA: snap(100) });
+    const { db, captured } = makeDb({ groupDoc: group });
+    await bankGroup(db, 'g1', { NVDA: { open: 101, current: 106, previousClose: 99, timestamp: 1 } }, { now: NOW, recordedBy: 'cron' });
+    expect(captured.updates).toHaveLength(1);
+    expect(Object.keys(captured.updates[0])).not.toContain('canonicalOpens');
+    expect(Object.keys(captured.updates[0]).some(k => k.startsWith('canonicalOpens'))).toBe(false);
+  });
+
+  it('a voided leg RECOVERS to the canonical snapshot if one later appears — snapshot-only (review #5)', () => {
+    // A leg voided on an earlier day; the symbol has since opened and a snapshot
+    // was captured. Banking re-settles it CAPTURED from that shared immutable
+    // snapshot (100), NOT the fresh vendor quote (107) — recovery never reads a
+    // divergent fetch. The void is recoverable-until-captured, then locked.
+    const group = canonicalGroup(solo('u1', [pick('NVDA', [leg({ captureState: CAPTURE_STATE.NO_ELIGIBLE_OPEN })])]), { NVDA: snap(100) });
+    const update = computeBankingUpdate(group, { NVDA: { open: 107, current: 106, previousClose: 99, timestamp: 1 } }, OPTS);
+    const l = update.players[0].picks[0].legs[0];
+    expect(l.baselinePrice).toBe(100);                          // from the snapshot, not the 107 quote
+    expect(l.baselineSource).toBe(BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE);
+    expect(l.captureState).toBe(CAPTURE_STATE.CAPTURED);         // locked after recovery
+  });
+
+  it('a voided leg with NO snapshot stays void — no fresh-fetch recovery (review #5)', () => {
+    const group = canonicalGroup(solo('u1', [pick('AMD', [leg({ captureState: CAPTURE_STATE.NO_ELIGIBLE_OPEN })])]), { NVDA: snap(100) }); // AMD absent
+    const update = computeBankingUpdate(group, { AMD: { open: 50, current: 60, previousClose: 50, timestamp: 1 } }, OPTS);
+    const l = update.players[0].picks[0].legs[0];
+    expect(l.baselinePrice).toBeNull();                         // NOT settled from the fresh 50
+    expect(l.captureState).toBe(CAPTURE_STATE.NO_ELIGIBLE_OPEN); // stays void
+    expect(update.dayEntry.closeScores.u1.totalPoints).toBe(0);
+  });
+
+  // A flipped-then-dropped pick: a REAL flip baseline, closed market-closed, on
+  // a symbol that was never captured (no snapshot). The bounded fallback (W7).
+  const droppedRealLeg = () => ([
+    { odUserId: 'u1', picks: [], droppedPicks: [{
+      symbol: 'NVDA', flipCountToday: 0,
+      legs: [{ ...leg({ baselinePrice: 100, baselineSource: BASELINE_SOURCE.FLIP_MARKET_OPEN }), closedAt: 'T1' }],
+    }] },
+    { odUserId: 'u2', picks: [] }, { odUserId: 'u3', picks: [] }, { odUserId: 'u4', picks: [] },
+  ]);
+
+  it('BOUNDED FALLBACK (W7): a real-baseline closed leg with NO snapshot banks at the fresh open, not lost', () => {
+    // No canonical open to honor + no banked==captured invariant (its baseline
+    // is a flip price, not a capture) → it closes at the day's fresh open (106)
+    // and banks its realized P&L, instead of vanishing bank-pending forever.
+    const group = battleGroup({ baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN, canonicalOpens: {}, players: droppedRealLeg() });
+    const update = computeBankingUpdate(group, { NVDA: { open: 106, current: 106, previousClose: 99, timestamp: 1 } }, OPTS);
+    const bankedLeg = update.players[0].droppedPicks[0].legs[0];
+    const expected = calculateAssetScoreV3({ symbol: 'NVDA', baseATR: 2.5, direction: 'long' }, 6, {}, {}, null).totalPoints; // 100 → 106
+    expect(bankedLeg.bankedScore).toBe(expected);                     // recovered, not lost
+    expect(update.dayEntry.closeScores.u1.totalPoints).toBe(expected); // enters the standing
+  });
+
+  it('the fallback is byte-for-byte the legacy behavior for this close-out (W7)', () => {
+    const q = { NVDA: { open: 106, current: 106, previousClose: 99, timestamp: 1 } };
+    const canon = computeBankingUpdate(battleGroup({ baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN, canonicalOpens: {}, players: droppedRealLeg() }), q, OPTS);
+    const legacy = computeBankingUpdate(battleGroup({ players: droppedRealLeg() }), q, OPTS); // no stamp
+    expect(canon.players[0].droppedPicks[0].legs[0].bankedScore)
+      .toBe(legacy.players[0].droppedPicks[0].legs[0].bankedScore);
+    expect(canon.dayEntry.closeScores.u1.totalPoints).toBe(legacy.dayEntry.closeScores.u1.totalPoints);
+  });
+
+  it('a CAPTURED leg still closes at its frozen snapshot, never the fresh open (fallback does not leak)', () => {
+    // With a snapshot present the fallback must NOT fire — the leg closes at the
+    // snapshot (100), preserving banked==captured even though the vendor is 106.
+    const players = droppedRealLeg();
+    players[0].droppedPicks[0].legs[0] = { ...leg({ baselinePrice: 100, baselineSource: BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE }), closedAt: 'T1' };
+    const group = battleGroup({ baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN, canonicalOpens: { NVDA: snap(100) }, players });
+    const update = computeBankingUpdate(group, { NVDA: { open: 106, current: 106, previousClose: 99, timestamp: 1 } }, OPTS);
+    expect(update.players[0].droppedPicks[0].legs[0].bankedScore).toBe(0); // 100 → snapshot 100, not 106
+  });
+});
+
+// ============ end-to-end exposure exclusion (Phases 2–4 integration) ============
+
+describe('computeBankingUpdate — exposure-state exclusion in the composite', () => {
+  const co = (open) => ({ open, capturedAt: '2026-06-10T13:31:00.000Z', priceTimestamp: 1, captureJobId: 'sweep', session: ET_DATE, instrumentId: null });
+
+  it('user_points = sum of SETTLED legs only; a voided slot contributes nothing and the composite is NOT re-weighted', () => {
+    // u1 spans the exposure states: NVDA captured (settles + scores live), AMD
+    // still-null with NO snapshot (→ NO_ELIGIBLE_OPEN void, 0), TSLA flipped (a
+    // preserved realized loss on the closed leg + a new live leg captured from
+    // the snapshot). u2 holds three all-settled names — the full sum — so the
+    // void costs exactly its own upside and nothing more (no re-normalization).
+    const group = battleGroup({
+      baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN,
+      canonicalOpens: { NVDA: co(100), TSLA: co(200), MSFT: co(50), GOOG: co(80) }, // AMD absent → void
+      players: [
+        { odUserId: 'u1', picks: [
+          pick('NVDA', [leg()]),                                       // captured → live +3%
+          pick('AMD', [leg()]),                                        // no snapshot → void, 0
+          pick('TSLA', [                                               // flipped: realized loss + new live
+            { ...leg({ baselinePrice: 200 }), closedAt: 'T1', bankedScore: -20 },
+            leg(),                                                     // new leg, null → captured from snapshot
+          ]),
+        ] },
+        { odUserId: 'u2', picks: [
+          pick('NVDA', [leg()]), pick('MSFT', [leg()]), pick('GOOG', [leg()]), // all settle +3%
+        ] },
+        { odUserId: 'u3', picks: [] },
+        { odUserId: 'u4', picks: [] },
+      ],
+    });
+    const quotes = {
+      NVDA: { open: 100, current: 103, previousClose: 99, timestamp: 1 },
+      TSLA: { open: 200, current: 206, previousClose: 199, timestamp: 1 },
+      MSFT: { open: 50, current: 51.5, previousClose: 49, timestamp: 1 },
+      GOOG: { open: 80, current: 82.4, previousClose: 79, timestamp: 1 },
+      AMD: { open: 40, current: 999, previousClose: 40, timestamp: 1 }, // present but MUST be ignored (no snapshot)
+    };
+    const update = computeBankingUpdate(group, quotes, { ...OPTS, agentScores: { u1: 100, u2: 200 } });
+
+    const gain = calculateAssetScoreV3({ symbol: 'X', baseATR: 2.5, direction: 'long' }, 3, {}, {}, null).totalPoints; // +3% → 45
+
+    // AMD voided: null baseline, terminal state, zero contribution — the fresh
+    // 999 quote is never consulted (no re-fetch).
+    const amdLeg = update.players[0].picks[1].legs[0];
+    expect(amdLeg.baselinePrice).toBeNull();
+    expect(amdLeg.captureState).toBe(CAPTURE_STATE.NO_ELIGIBLE_OPEN);
+
+    // TSLA: the pre-flip realized loss is preserved and summed with the new
+    // captured leg's live gain (a flip cannot erase the loss).
+    const u1 = update.dayEntry.closeScores.u1;
+    const tsla = u1.picks.find(p => p.symbol === 'TSLA');
+    expect(tsla.bankedPoints).toBe(-20);    // realized loss preserved
+    expect(tsla.livePoints).toBe(gain);     // new leg captured from snapshot 200 → 206
+    expect(tsla.totalPoints).toBe(gain - 20);
+
+    // user_points = NVDA(45) + AMD(0) + TSLA(25) = 70 — sum of settled only.
+    expect(u1.totalPoints).toBe(gain + 0 + (gain - 20)); // 70
+    // Composite is agent + 1.5 × user_points, NOT re-normalized by settled count.
+    expect(u1.agentPoints).toBe(100);
+    expect(u1.compositePoints).toBe(100 + 1.5 * (gain + (gain - 20))); // 205
+
+    // Comparison: u2 all-settled banks the FULL sum — the void cost u1 only
+    // AMD's own upside (one +3%), nothing else re-weighted.
+    const u2 = update.dayEntry.closeScores.u2;
+    expect(u2.totalPoints).toBe(gain * 3); // 135
+    expect(u2.compositePoints).toBe(200 + 1.5 * (gain * 3)); // 402.5
   });
 });
 

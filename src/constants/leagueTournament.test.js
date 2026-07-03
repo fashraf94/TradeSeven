@@ -29,6 +29,7 @@ import {
   GROUP_STATUS,
   LEG_DIRECTION,
   BASELINE_SOURCE,
+  BASELINE_POLICY,
   LEDGER_SOURCE,
   TOURNAMENT_TUNING,
   AGENT_LEDGER_SUBCOLLECTION,
@@ -36,6 +37,7 @@ import {
   createClaimSystemState,
   createLeg,
   createPickState,
+  createCanonicalOpenEntry,
   createAgentLedgerEntry,
   createAgentLedgerDoc,
   createTournamentGroupDoc,
@@ -178,6 +180,7 @@ describe('baselineSource vocabulary (ratified June 11, 2026 — P1 docket #3)', 
       CLAIM_EXECUTION: 'claim_execution',
       FLIP_MARKET_OPEN: 'flip_market_open',
       FLIP_MARKET_CLOSED: 'flip_market_closed',
+      CANONICAL_OPEN_CAPTURE: 'canonical_open_capture',
     });
   });
 });
@@ -228,7 +231,7 @@ describe('claimSystem parity with the legacy snake-draft shape', () => {
 describe('createLeg', () => {
   const args = { baselinePrice: 187.5, baselineSource: BASELINE_SOURCE.FLIP_MARKET_OPEN, openedAt: NOW };
 
-  it('defaults long, fresh thresholdHistory, closed-state keys omitted', () => {
+  it('defaults long, fresh thresholdHistory, present-null capture provenance, closed-state keys omitted', () => {
     const leg = createLeg(args);
     expect(leg).toEqual({
       direction: 'long',
@@ -236,9 +239,34 @@ describe('createLeg', () => {
       baselineSource: 'flip_market_open',
       openedAt: NOW,
       thresholdHistory: [],
+      // Canonical-open capture provenance — present-null (like baselinePrice)
+      // by default; populated only by the post-open capture sweep.
+      baselineCapturedAt: null,
+      baselinePriceTimestamp: null,
+      captureJobId: null,
+      baselineSession: null,
+      instrumentId: null,
+      captureState: null,
     });
     expect('closedAt' in leg).toBe(false);
     expect('bankedScore' in leg).toBe(false);
+  });
+
+  it('accepts the canonical_open_capture source and stores capture provenance', () => {
+    const leg = createLeg({
+      ...args,
+      baselineSource: BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE,
+      baselineCapturedAt: NOW,
+      baselinePriceTimestamp: 1719927000,
+      captureJobId: 'job-1',
+      baselineSession: '2026-07-02',
+      instrumentId: null,
+    });
+    expect(leg.baselineSource).toBe('canonical_open_capture');
+    expect(leg.baselineCapturedAt).toBe(NOW);
+    expect(leg.baselinePriceTimestamp).toBe(1719927000);
+    expect(leg.captureJobId).toBe('job-1');
+    expect(leg.baselineSession).toBe('2026-07-02');
   });
 
   it('accepts short; null baselinePrice (market-closed open) is valid', () => {
@@ -310,6 +338,38 @@ describe('createAgentLedgerDoc (P2 — sibling-doc ruling)', () => {
   });
 });
 
+// ==================== CANONICAL-OPEN CAPTURE (Spec §1.1) ====================
+
+describe('BASELINE_POLICY + createCanonicalOpenEntry (canonical-open capture)', () => {
+  it('the policy enum carries the two ratified values', () => {
+    expect(BASELINE_POLICY.LEGACY_OPEN_DEFER).toBe('legacy_open_defer');
+    expect(BASELINE_POLICY.CANONICAL_OPEN).toBe('canonical_open');
+  });
+
+  it('BASELINE_SOURCE gains the canonical_open_capture value', () => {
+    expect(BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE).toBe('canonical_open_capture');
+  });
+
+  it('builds the frozen per-symbol snapshot entry', () => {
+    const e = createCanonicalOpenEntry({
+      open: 812.5, capturedAt: NOW, priceTimestamp: 1719927000, captureJobId: 'job-1', session: '2026-07-02',
+    });
+    expect(e).toEqual({
+      open: 812.5, capturedAt: NOW, priceTimestamp: 1719927000, captureJobId: 'job-1', session: '2026-07-02', instrumentId: null,
+    });
+  });
+
+  it('fail-closed at the shape boundary: rejects a non-positive/absent open', () => {
+    expect(() => createCanonicalOpenEntry({ open: 0, capturedAt: NOW })).toThrow(/open/);
+    expect(() => createCanonicalOpenEntry({ open: -1, capturedAt: NOW })).toThrow(/open/);
+    expect(() => createCanonicalOpenEntry({ open: null, capturedAt: NOW })).toThrow(/open/);
+  });
+
+  it('requires an ISO capturedAt', () => {
+    expect(() => createCanonicalOpenEntry({ open: 10 })).toThrow(/capturedAt/);
+  });
+});
+
 // ==================== GROUP DOC FACTORY ====================
 
 describe('createTournamentGroupDoc', () => {
@@ -327,6 +387,22 @@ describe('createTournamentGroupDoc', () => {
       createdAt: NOW,
       updatedAt: NOW,
     });
+  });
+
+  it('OMITS baselinePolicy by default (byte-identical shape when the call site does not stamp it)', () => {
+    const doc = createTournamentGroupDoc(makeGroupArgs());
+    expect('baselinePolicy' in doc).toBe(false);
+  });
+
+  it('carries baselinePolicy when the call site stamps it (Spec §1.1 canonical-open policy)', () => {
+    const on = createTournamentGroupDoc(makeGroupArgs({ baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN }));
+    expect(on.baselinePolicy).toBe('canonical_open');
+    const off = createTournamentGroupDoc(makeGroupArgs({ baselinePolicy: BASELINE_POLICY.LEGACY_OPEN_DEFER }));
+    expect(off.baselinePolicy).toBe('legacy_open_defer');
+  });
+
+  it('rejects an invalid baselinePolicy', () => {
+    expect(() => createTournamentGroupDoc(makeGroupArgs({ baselinePolicy: 'nope' }))).toThrow(/baselinePolicy/);
   });
 
   it('carries NO agentLedger field — the held-set ledger is the sibling doc (P2 ruling)', () => {

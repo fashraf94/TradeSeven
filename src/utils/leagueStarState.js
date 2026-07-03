@@ -18,9 +18,54 @@
 
 import { detectRedZone } from './baggerBombUtils';
 import { THRESHOLD_MULTIPLIERS } from '../constants/baggerBombScoring';
+import { CAPTURE_STATE } from '../constants/leagueTournament';
 
 const POSITIVE_BADGES = new Set(['bagger', 'doubleBagger', 'tenBagger']);
 const NEGATIVE_BADGES = new Set(['bust', 'crash', 'meltdown']);
+
+// Spec §1.1 (canonical-open policy) — the user-leg SETTLEMENT states, a display
+// axis ORTHOGONAL to the disposition state above (heating/hit/busted/…). These
+// describe where the leg sits in the capture→bank lifecycle, so a Day-0 pick
+// awaiting the open reads "waiting for the open" instead of a broken-looking
+// +0.0×. First-class, never a mult:0 coincidence. Only canonical rounds carry
+// them; a legacy/absent-policy round derives `null` and renders exactly as today.
+export const SETTLE_STATE = Object.freeze({
+  PENDING: 'pending',     // baseline not yet captured (null / PENDING_OPEN)
+  ESTIMATED: 'estimated', // captured, scoring live, today not yet banked
+  OFFICIAL: 'official',   // the day is banked (score of record exists) / fully settled
+  VOID: 'void',           // NO_ELIGIBLE_OPEN — terminal, no contribution, no penalty
+});
+
+/**
+ * The user leg's canonical-open settlement state (or null for legacy rounds).
+ * Reads the pick's LIVE (last) leg — the one the meter animates.
+ *
+ * Boundary (surfaced for review — Spec Deliverable 1): the estimated↔official
+ * flip keys off `dayBanked` (is TODAY's ET date already banked?). An open,
+ * captured leg reads `estimated` intraday and `official` once the day banks;
+ * it RE-ENTERS `estimated` when the next session opens (dayBanked is per-today).
+ * A fully-closed leg (no open leg) is always `official`. The displayed
+ * multiplier is the live scorePick reading in BOTH states (the meter is a
+ * live-quote transform; the authoritative banked percentile-ATR value lives in
+ * the standings, never the live star) — the solid/"banked" vs dashed/"est"
+ * styling is the state signal.
+ *
+ * @param {Object} pick - { legs[] }
+ * @param {{ canonicalPolicy?: boolean, dayBanked?: boolean }} [opts]
+ * @returns {'pending'|'estimated'|'official'|'void'|null}
+ */
+export function deriveSettleState(pick, { canonicalPolicy = false, dayBanked = false } = {}) {
+  if (!canonicalPolicy) return null; // legacy — no new states; render as today
+  const legs = pick?.legs || [];
+  const liveLeg = legs.length > 0 ? legs[legs.length - 1] : null;
+  if (!liveLeg) return null;
+  if (liveLeg.captureState === CAPTURE_STATE.NO_ELIGIBLE_OPEN) return SETTLE_STATE.VOID;
+  const isOpen = liveLeg.closedAt === undefined;
+  const hasBaseline = Number.isFinite(liveLeg.baselinePrice) && liveLeg.baselinePrice > 0;
+  if (isOpen && !hasBaseline) return SETTLE_STATE.PENDING;
+  if (!isOpen || dayBanked) return SETTLE_STATE.OFFICIAL;
+  return SETTLE_STATE.ESTIMATED;
+}
 
 /**
  * The star's live disposition. Precedence (first match wins):

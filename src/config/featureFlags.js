@@ -190,6 +190,29 @@ export const LEAGUE_NEXT_ARC_ENABLED = true;
 export const LEAGUE_BATTLE_VIEW_V2_ENABLED = true;
 
 /**
+ * League — user-layer CANONICAL-OPEN baseline capture.
+ *
+ * When false (default), the user 3-pick layer keeps today's behavior: each
+ * leg baseline is created null and settled at the next open by the nightly
+ * banking pass (Spec §1.1), so held picks read 0× intraday on Day-0.
+ *
+ * When true, a League round is stamped `baselinePolicy: 'canonical_open'` at
+ * creation, and a post-open capture sweep (a later phase) settles each leg's
+ * baseline to the round's canonical session open — sourced from the SAME
+ * `fetchBatchQuotes(...).open` (EODHD /real-time/ item.open) that banking
+ * settles from — so the user layer scores live intraday, consistent with the
+ * banked score of record.
+ *
+ * Phase 1 ships the INERT primitives only (this flag, the capture util, the
+ * snapshot-storage shape + policy stamp, the leg provenance fields). Nothing
+ * reads the stamp or the fields yet, so flag-off is behavior-identical. The
+ * cron sweep + banking consumption land in later phases. Do NOT flip in a
+ * build PR (the PR #510 / LEAGUE_NEXT_ARC_ENABLED precedent) — flip only after
+ * a Vercel preview smoke.
+ */
+export const LEAGUE_CANONICAL_OPEN_CAPTURE = false;
+
+/**
  * League Training — the redesigned Training Draft Board (the agent-fit spine).
  *
  * When false (default), `TrainingDraftRoomScreen` renders TODAY's behavior

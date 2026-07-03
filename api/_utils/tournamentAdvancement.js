@@ -74,6 +74,7 @@ import {
   AGENT_LEDGER_DOC_ID,
   STREAMS_SUBCOLLECTION,
   AGENT_DRAFT_STREAM_DOC_ID,
+  BASELINE_POLICY,
 } from '../../src/constants/leagueTournament.js';
 import {
   transitionStatus,
@@ -83,6 +84,7 @@ import {
 import { ensureCpuAgents, commitCpuUserBoards, padGamesWithCpus } from './tournamentCpu.js';
 import { applyGroupWeekToRanks, applyLockedGameToRanks } from './tournamentRank.js';
 import { upsertLeaderboardForGroups } from './tournamentLeaderboard.js';
+import { LEAGUE_CANONICAL_OPEN_CAPTURE } from '../../src/config/featureFlags.js';
 
 const LOG_PREFIX = '[TournamentAdvancement]';
 
@@ -756,6 +758,9 @@ async function finalizeRound(db, { bracketRef, bracket, roundNumber, nowIso, sum
         roundNumber: nextRoundNumber,
         bracketGameId,
         status: GROUP_STATUS.FORMING,
+        // Spec §1.1 — resolve the baseline policy ONCE from the flag at round
+        // creation; omitted when off (readers default an absent stamp to legacy).
+        ...(LEAGUE_CANONICAL_OPEN_CAPTURE ? { baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN } : {}),
         now: nowIso,
       });
       // P4 companion (a): a dev bracket composes DEV groups — the flag

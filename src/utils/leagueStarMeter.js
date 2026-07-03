@@ -31,7 +31,7 @@
 
 import { buildFlat6BattleModel } from './flat6BattleEnrichment';
 import { scorePick } from '../../api/_utils/tournamentUserScoring.js';
-import { deriveStarState } from './leagueStarState';
+import { deriveStarState, deriveSettleState } from './leagueStarState';
 import { BAGGER_TIERS, BUST_TIERS } from '../constants/baggerBombScoring';
 
 // User picks have no conviction tier — the scorer's `support` fallback (1.0x)
@@ -125,11 +125,16 @@ export function readAgentStars(battle, priceCtx = {}) {
  * complete-state final badge is rendered from the banked snapshot in the
  * component phase, not here — Phase 1 is the live data layer.
  *
+ * `settleState` (Spec §1.1) is the canonical-open settlement axis — orthogonal
+ * to `state` (disposition). It is null for legacy/absent-policy rounds (they
+ * render exactly as today); populated only when `canonicalPolicy` is passed.
+ *
  * @param {Object} pick - { symbol, legs[] }
- * @param {{ quote?: {current:number}, baseATR?: number, justIn?: boolean }} opts
+ * @param {{ quote?: {current:number}, baseATR?: number, justIn?: boolean,
+ *   canonicalPolicy?: boolean, dayBanked?: boolean }} opts
  * @returns {Object} StarRow
  */
-export function readUserStar(pick, { quote, baseATR, justIn = false } = {}) {
+export function readUserStar(pick, { quote, baseATR, justIn = false, canonicalPolicy = false, dayBanked = false } = {}) {
   const result = scorePick({ pick, baseATR, quote });
   const live = result?.liveLegResult;
   const mult = num(live?.multiplier);
@@ -146,6 +151,9 @@ export function readUserStar(pick, { quote, baseATR, justIn = false } = {}) {
     points: num(result?.totalPoints),
     badge: topBadgeLabel(badges, state),
     state,
+    // Canonical-open settlement state (pending/estimated/official/void) or null
+    // for legacy rounds — the render surfaces gate the new treatment on this.
+    settleState: deriveSettleState(pick, { canonicalPolicy, dayBanked }),
     justIn: justIn === true,
   };
 }
@@ -154,18 +162,22 @@ export function readUserStar(pick, { quote, baseATR, justIn = false } = {}) {
  * The user's three stars from a group player + live quotes (keyed by symbol).
  * @param {Object} player - a group players[] entry with picks[]
  * @param {Object<string,{current:number}>} quotesBySymbol
- * @param {{ atrBySymbol?: Object<string,number>, cryptoSymbols?: Set<string> }} [opts]
+ * @param {{ atrBySymbol?: Object<string,number>, cryptoSymbols?: Set<string>,
+ *   canonicalPolicy?: boolean, dayBanked?: boolean }} [opts]
  *   - atrBySymbol: real per-symbol ATR (preferred); else the port-contract default.
  *   - cryptoSymbols: optional set so unknown crypto picks default to 5.0 not 2.5.
+ *   - canonicalPolicy: the round's baselinePolicy is canonical_open (Spec §1.1);
+ *     drives the settlement-state axis. Off/absent → legacy (settleState null).
+ *   - dayBanked: today's ET date is already banked (estimated→official flip).
  * @returns {Object[]} StarRow[]
  */
-export function readUserStars(player, quotesBySymbol = {}, { atrBySymbol = {}, cryptoSymbols = null } = {}) {
+export function readUserStars(player, quotesBySymbol = {}, { atrBySymbol = {}, cryptoSymbols = null, canonicalPolicy = false, dayBanked = false } = {}) {
   const picks = player?.picks || [];
   return picks.map((pick) => {
     const sym = pick?.symbol;
     const baseATR = Number.isFinite(atrBySymbol[sym])
       ? atrBySymbol[sym]
       : (cryptoSymbols?.has?.(sym) ? DEFAULT_USER_ATR_CRYPTO : DEFAULT_USER_ATR_STOCK);
-    return readUserStar(pick, { quote: quotesBySymbol[sym], baseATR });
+    return readUserStar(pick, { quote: quotesBySymbol[sym], baseATR, canonicalPolicy, dayBanked });
   });
 }

@@ -89,6 +89,9 @@ function nextArcSuffix() {
 // mirrors the server's stated rules; it never invents one.
 const ERROR_COPY = Object.freeze({
   window_closed: 'The claim window is closed — it opens at the 4:00 PM ET close and shuts at 9:24 AM ET.',
+  // Phase-4 exposure guard: a canonical round is close-only. Server rejects an
+  // in-hours claim so the leg can't take retroactive exposure at the next open.
+  claims_closed_during_market_hours: 'Claims open after the 4:00 PM ET close — the market is open right now.',
   claim_cap_reached: 'You already have 3 pending claims. Wait for tonight’s processing or drop one.',
   not_in_pool: 'That name isn’t in your group’s claimable pool.',
   drop_not_on_roster: 'You can only drop one of your own three picks.',
