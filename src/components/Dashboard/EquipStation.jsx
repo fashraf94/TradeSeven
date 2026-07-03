@@ -176,7 +176,7 @@ export default function EquipStation({ agent, accent, onOpenAgentRecord, setShow
       setSheet(null);
     }
   };
-  const handleEquipBundle = async (bundleId) => { await equipBundleFn(bundleId); setSheet(null); };
+  const handleEquipBundle = async (bundleId) => { await equipBundleFn(bundleId, { archetype: agent?.archetype }); setSheet(null); };
   const handleUnequipBundle = async (bundleId) => { await unequipBundleFn(bundleId); setSheet(null); };
   const openForge = () => { setSheet(null); setShowForge?.(true); };
 

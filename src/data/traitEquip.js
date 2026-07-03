@@ -14,8 +14,11 @@
 // which is the anti-drift guard. If the hand-equip construction ever changes,
 // update these AND that test in lockstep.
 
-import { FORGE_RULE_TEMPLATES } from './forgeKnowledgeBase';
-import { TRAIT_BY_ID } from './traitLibrary';
+// Explicit .js extensions: this pure module is consumed by plain-Node runners
+// (scripts/rule-compat-cleanup.js) as well as Vite — extensionless specifiers
+// fail Node ESM resolution.
+import { FORGE_RULE_TEMPLATES } from './forgeKnowledgeBase.js';
+import { TRAIT_BY_ID } from './traitLibrary.js';
 
 // id → KB template, mirroring the TEMPLATE_MAP built in useTraits.js
 const TEMPLATE_MAP = new Map(FORGE_RULE_TEMPLATES.map((t) => [t.id, t]));

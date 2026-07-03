@@ -15,7 +15,13 @@ import CategoryAccordion from '../CategoryAccordion';
 import { CATEGORY_ORDER } from '../../../hooks/useForge';
 import { FORGE_RULE_TEMPLATES } from '../../../data/forgeKnowledgeBase';
 import { isHardRule, bundleHardSoftCounts, bundleRuleHardness, classifyRuleHardSoft, ruleCategory } from './hardSoftHelper';
-import { FORGE_HARDSOFT_AUTHORING_ENABLED } from '../../../config/featureFlags';
+import { FORGE_HARDSOFT_AUTHORING_ENABLED, RULE_COMPAT_MODE } from '../../../config/featureFlags';
+// WS1 — off-style (archetype-conflict) warning + badge surface. The pre-add
+// decision comes from the guard's own evaluator (single decision source); the
+// service guard stays authoritative for the write itself.
+import { getRuleCompatInfo } from '../../../data/archetypeRuleCompatibility';
+import { evaluateRuleCompatWrite, emitRuleCompatEvents } from '../../../services/ruleCompatGuard';
+import { buildConflictEquipWarning, buildConflictBadge } from '../../../utils/compatSurfaceCopy';
 
 const STAGES = ['Browse', 'Assemble', 'Hard / Soft', 'Finalize'];
 const LEADS = [
@@ -58,9 +64,13 @@ function BigHardSoft({ isHard, onToggle }) {
   );
 }
 
-export default function BundleBuildFlow({ forge, hasActiveBattle, onClose, onFinalized, showToast }) {
+export default function BundleBuildFlow({ forge, agent, hasActiveBattle, onClose, onFinalized, showToast }) {
   const T = useFK();
   const accent = T.gold;
+  const archetype = agent?.archetype || null;
+  // Off-style surfaces render under enforce only (observe logs silently via
+  // the service guard; off is byte-identical — no classification anywhere).
+  const compatEnforcing = RULE_COMPAT_MODE === 'enforce';
   const [stage, setStage] = useState(0);
   const [workingBundleId, setWorkingBundleId] = useState(null);
   const [name, setName] = useState('');
@@ -128,7 +138,39 @@ export default function BundleBuildFlow({ forge, hasActiveBattle, onClose, onFin
     // result would be invisible/unremovable here.
     if (!workingBundleId) return;
     const template = FORGE_RULE_TEMPLATES.find((t) => t.id === templateId);
-    if (template) { await forge.addRuleToBundle(template, paramValues); setConfigRuleId(null); }
+    if (!template) return;
+    // WS1 — check-before-add (the FORGE_CONFLICT_PAIRS trigger semantics):
+    // soft off-style rules warn and proceed; must-obey-by-category off-style
+    // rules surface the block copy and skip the doomed write. THE decision
+    // comes from the guard's own evaluator with the SAME category resolution
+    // the service uses (firstTemplate.category || template.category), and a
+    // pre-empted block still EMITS its compat_promote_blocked event — the
+    // observe stream must count workshop blocks like every other path.
+    if (compatEnforcing && archetype) {
+      const serviceCategory = template.forgeTemplates?.[0]?.category || template.category || null;
+      const result = evaluateRuleCompatWrite({
+        archetype,
+        templateId,
+        resolvedHardness: classifyRuleHardSoft(serviceCategory),
+        path: 'create_rule',
+        agentId: agent?.id,
+      });
+      if (result.decision === 'block') {
+        // The service is never reached on a pre-empted block, so THIS is the
+        // emission point for its compat_promote_blocked event — otherwise
+        // workshop blocks would vanish from the observe stream.
+        await emitRuleCompatEvents({ agentId: agent?.id, archetype, mode: RULE_COMPAT_MODE, events: result.events });
+        showToast?.(result.blockMessage);
+        return;
+      }
+      if (result.decision === 'warn') {
+        // Warn-and-proceed: no emission here — the service guard emits the
+        // conflict-equip event when the write actually happens (single count).
+        showToast?.(buildConflictEquipWarning({ archetype, templateId, zone1Ref: result.zone1Ref }));
+      }
+    }
+    await forge.addRuleToBundle(template, paramValues, { archetype });
+    setConfigRuleId(null);
   };
   const handleRemoveRule = async (templateId) => {
     if (hasActiveBattle) { showToast?.('Changes apply to your next battle.'); return; }
@@ -145,8 +187,13 @@ export default function BundleBuildFlow({ forge, hasActiveBattle, onClose, onFin
     if (!workingBundleId || !rule?.id) return;
     const desired = makeHard ? 'hard' : 'soft';
     const dflt = classifyRuleHardSoft(ruleCategory(rule));
-    await forge.setRuleHardness(workingBundleId, rule.id, desired === dflt ? null : desired);
+    await forge.setRuleHardness(workingBundleId, rule.id, desired === dflt ? null : desired, { archetype });
   };
+
+  // WS1 render-time off-style derivation (no data writes; enforce only).
+  const isOffStyle = (r) =>
+    compatEnforcing && archetype && r?.sourceRef &&
+    getRuleCompatInfo(r.sourceRef, archetype).state === 'core_conflict';
 
   const commitName = () => {
     const trimmed = name.trim();
@@ -215,7 +262,10 @@ export default function BundleBuildFlow({ forge, hasActiveBattle, onClose, onFin
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.text || r.textTemplate || r.sourceRef}</div>
-                      <Mono style={{ fontSize: 9, letterSpacing: '0.06em', color: T.ink3, textTransform: 'uppercase' }}>{r.category}</Mono>
+                      <Mono style={{ fontSize: 9, letterSpacing: '0.06em', color: T.ink3, textTransform: 'uppercase' }}>
+                        {r.category}
+                        {isOffStyle(r) && <span style={{ color: T.gold, marginLeft: 7 }}>· {buildConflictBadge({ archetype })}</span>}
+                      </Mono>
                     </div>
                     <button className="fw-tap" onClick={() => handleRemoveRule(r.sourceRef)} style={{ all: 'unset', cursor: 'pointer', width: 24, height: 24, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ink3 }}>
                       <Icon name="trash" size={13} color={T.ink3} />
@@ -252,6 +302,7 @@ export default function BundleBuildFlow({ forge, hasActiveBattle, onClose, onFin
                   <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.text || r.textTemplate || r.sourceRef}</div>
                   <div style={{ fontSize: 11, color: T.ink2, marginTop: 4, lineHeight: 1.4 }}>
                     {hard ? <span><b style={{ color: T.risk }}>A hard rule your agent must follow.</b></span> : <span>Treated as a preference it leans on.</span>}
+                    {isOffStyle(r) && <span style={{ color: T.gold }}> · {buildConflictBadge({ archetype })} — it may weigh this against its instincts.</span>}
                   </div>
                 </div>
                 {!canToggle && (

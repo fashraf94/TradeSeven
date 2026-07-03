@@ -427,6 +427,41 @@ const DISCIPLINE_TRAITS = [
   },
 
   {
+    // WS1 Phase 1 close-out (July 3, 2026): guardian's default-kit allocation
+    // trait. Minted because trait-diversifier's a-05 mandates un-zeroable
+    // high-ATR rockets — adjudicated core_conflict for guardian (§E split) —
+    // and no existing trait carried guardian-native allocation rules. All
+    // three rules classify NATIVE for guardian in archetypeRuleCompatibility,
+    // so the strict seeded-rule invariant passes by construction.
+    // trait-diversifier itself is deliberately untouched (may be user-equipped).
+    id: 'trait-steady-anchor',
+    name: 'Steady Anchor',
+    identityStatement: 'Keeps the book spread wide and every position sized to survive',
+    dnaGroup: 'discipline',
+    icon: 'Anchor',
+    source: 'library',
+    tags: ['diversification', 'position-sizing', 'capital-preservation', 'sectors'],
+    ruleIds: ['risk-sector-diversification', 'risk-single-stock-limit', 'alloc-even-spread'],
+    strengthProfiles: {
+      subtle: {
+        'risk-sector-diversification': { n: 3 },
+        'risk-single-stock-limit': { pct: 40 },
+        'alloc-even-spread': { conviction: 'light' },
+      },
+      moderate: {
+        'risk-sector-diversification': { n: 4 },
+        'risk-single-stock-limit': { pct: 30 },
+        'alloc-even-spread': { conviction: 'moderate' },
+      },
+      dominant: {
+        'risk-sector-diversification': { n: 5 },
+        'risk-single-stock-limit': { pct: 25 },
+        'alloc-even-spread': { conviction: 'strong' },
+      },
+    },
+  },
+
+  {
     id: 'trait-let-winners-run',
     name: 'Let Winners Run',
     identityStatement: 'Leans toward holding the best picks through scoring thresholds',
@@ -485,7 +520,9 @@ export const ARCHETYPE_DEFAULT_TRAITS = {
   degen:           ['trait-squeeze-whisperer', 'trait-breakout-chaser', 'trait-active-trader'],
   contrarian:      ['trait-bargain-hunter', 'trait-iron-discipline', 'trait-penalty-dodger'],
   analyst:         ['trait-dual-conviction', 'trait-patient-holder', 'trait-iron-discipline'],
-  guardian:        ['trait-diversifier', 'trait-penalty-dodger', 'trait-iron-discipline'],
+  // WS1 close-out: trait-steady-anchor replaced trait-diversifier (whose a-05
+  // barbell is a guardian core_conflict — un-zeroable high-ATR rocket mandate).
+  guardian:        ['trait-steady-anchor', 'trait-penalty-dodger', 'trait-iron-discipline'],
   diversifier:     ['trait-smart-money-tracker', 'trait-sector-rotator', 'trait-score-adaptor'],
 };
 

@@ -61,7 +61,11 @@ export async function seedDefaultTraits(agentId, archetype, { strength = 'modera
   let rulesAdded = 0;
   for (const spec of ruleSpecs) {
     try {
-      await createRule(agentId, spec);
+      // Archetype threaded so the WS1 compat guard never falls back to a
+      // per-rule agent read (fence-lite rider 2). Seeded kits classify
+      // native/neutral by construction (the seeded-rule invariant), so the
+      // guard never blocks here.
+      await createRule(agentId, spec, { archetype });
       rulesAdded += 1;
     } catch (err) {
       console.warn(`[seedDefaultTraits] rule create failed (${spec.sourceRef}):`, err);
@@ -154,7 +158,8 @@ export async function reseedDefaultTraits(agentId, archetype, { strength = 'mode
   let rulesAdded = 0;
   for (const spec of ruleSpecs) {
     try {
-      await createRule(agentId, spec);
+      // Archetype threaded — see seedDefaultTraits above (fence-lite rider 2).
+      await createRule(agentId, spec, { archetype });
       rulesAdded += 1;
     } catch (err) {
       console.warn(`[reseedDefaultTraits] rule create failed (${spec.sourceRef}):`, err);

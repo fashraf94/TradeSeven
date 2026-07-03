@@ -179,6 +179,7 @@ export default function ForgeWorkshop({ onClose, initialArea = 'overview', user,
             {building === 'rules' && (
               <BundleBuildFlow
                 forge={forge}
+                agent={agent}
                 hasActiveBattle={hasActiveBattle}
                 onClose={() => setBuilding(null)}
                 onFinalized={(name) => { setBuilding(null); setArea('rules'); setFlash({ name, kindLabel: 'rule bundle', accent: T.gold }); }}

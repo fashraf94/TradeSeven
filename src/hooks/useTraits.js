@@ -19,7 +19,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { softDeleteRule } from '../services/forgeService';
+import { softDeleteRule, resolveArchetypeForCompat } from '../services/forgeService';
+import { isRuleCompatActive, evaluateRuleCompatWrite, emitRuleCompatEvents } from '../services/ruleCompatGuard';
+import { classifyRuleHardSoft } from '../components/Forge/workshop/hardSoftHelper';
+import { RULE_COMPAT_MODE } from '../config/featureFlags';
 import { FORGE_RULE_TEMPLATES } from '../data/forgeKnowledgeBase';
 import { DNA_GROUPS } from '../data/dnaGroups';
 import { TRAIT_LIBRARY, TRAIT_BY_ID } from '../data/traitLibrary';
@@ -192,6 +195,41 @@ export function useTraits(agentId, forge) {
       }
     }
 
+    // WS1 compat guard: resolve archetype ONCE for the whole trait equip
+    // (fence-lite rider 2 — never per-rule fallback reads; shared service
+    // resolver). Only read when the guard is active so 'off' stays
+    // byte-identical.
+    let compatArchetype = null;
+    if (isRuleCompatActive()) {
+      compatArchetype = await resolveArchetypeForCompat(agentId, null);
+
+      // All-or-nothing pre-check under enforce: a trait whose rules include a
+      // hard-category conflict can NEVER equip (the service guard would throw
+      // mid-loop, stranding already-created orphan docs on every retry and
+      // burying the reason in a generic failure). Evaluate every rule BEFORE
+      // creating anything; a block emits its event here (the service never
+      // runs for it) and returns the guard's own user-facing copy.
+      if (RULE_COMPAT_MODE === 'enforce' && compatArchetype) {
+        for (const ruleId of def.ruleIds) {
+          const template = TEMPLATE_MAP.get(ruleId);
+          const ft = template?.forgeTemplates?.[0];
+          if (!ft) continue;
+          const result = evaluateRuleCompatWrite({
+            archetype: compatArchetype,
+            templateId: template.id,
+            resolvedHardness: classifyRuleHardSoft(ft.category || template.category || null),
+            path: 'create_rule',
+            agentId,
+          });
+          if (result.decision === 'block') {
+            await emitRuleCompatEvents({ agentId, archetype: compatArchetype, mode: RULE_COMPAT_MODE, events: result.events });
+            forge?.showToast?.(result.blockMessage);
+            return { success: false, error: 'rule_compat_blocked' };
+          }
+        }
+      }
+    }
+
     // Add each rule to the bundle
     // Note: if this fails partway through, some rules may remain in the bundle
     // without a trait entry. These act as standalone rules and can be cleaned up manually.
@@ -214,6 +252,7 @@ export function useTraits(agentId, forge) {
           status: 'active',
           priority: 1,
           traitId: traitId,
+          archetype: compatArchetype,
         });
       }
     } catch (err) {
