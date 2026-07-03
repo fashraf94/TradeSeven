@@ -122,10 +122,19 @@ function signedChangeWord(corr20, corr60) {
  * to clear the floor; corr20 alone is 'emerging' (a 20-observation statistic
  * is one-in-2.5 chance noise at |0.20| — see the header). Null corr20 (or
  * sub-floor) is 'weak' regardless of corr60.
+ *
+ * Build 3 rider (founder smoke of Build 2): the comparison runs on the
+ * 2dp-ROUNDED values — the UI displays fmtCorr = toFixed(2), and a row must
+ * never read "+0.20" while tiered weak/none. Number(toFixed(2)) is the same
+ * rounding the display applies, so display and tier agree by construction.
  */
+const round2 = (v) => (v == null ? null : Number(v.toFixed(2)));
+
 function scanTier(corr20, corr60) {
-  if (corr20 == null || Math.abs(corr20) < SCAN_SIGNAL_FLOOR) return 'weak';
-  return corr60 != null && Math.abs(corr60) >= SCAN_SIGNAL_FLOOR ? 'established' : 'emerging';
+  const r20 = round2(corr20);
+  const r60 = round2(corr60);
+  if (r20 == null || Math.abs(r20) < SCAN_SIGNAL_FLOOR) return 'weak';
+  return r60 != null && Math.abs(r60) >= SCAN_SIGNAL_FLOOR ? 'established' : 'emerging';
 }
 
 /**
