@@ -153,11 +153,14 @@ const fetchCalls = { count: 0, symbols: [] };
 
 function wireFor(symbol) {
   if (symbol === 'BNO.US') return DRIVER_WIRE; // BRENT's registry symbol (Fix 1: BNO ETF proxy)
+  if (symbol === 'XLE.US') return DRIVER_WIRE; // V2: a sector-driver registry symbol
   if (symbol === 'AAA.US') return MEMBER_A_WIRE;
   if (symbol === 'BBB.US') return MEMBER_B_WIRE;
   // EODHD wire forms for the symbol-normalization test: app-form BRK.B must
   // arrive here as BRK-B.US (dot→hyphen), user-entered SPY.US as SPY.US (one
   // suffix). The un-normalized forms (BRK.B.US / SPY.US.US) have no wire.
+  // V2 pair mode reuses these as the CUSTOM DRIVER wire (brk.b→BRK-B.US,
+  // spy.us→SPY.US), which is why they double as both member and driver fixtures.
   if (symbol === 'BRK-B.US') return MEMBER_A_WIRE;
   if (symbol === 'SPY.US') return MEMBER_B_WIRE;
   return null;
@@ -447,6 +450,115 @@ describe('cache + partial-failure contracts', () => {
     expect(res.statusCode).toBe(422);
     expect(res.body.error).toBe('group_unavailable');
     expect(res.body.droppedSymbols).toEqual(['ZZZ']);
+  });
+});
+
+describe('V2 Build 1 — registry expansion (sector driver)', () => {
+  it('a sector driver (XLE) fetches its registry-driven wire symbol and carries the registry label/unit', async () => {
+    const before = fetchCalls.symbols.length;
+    const { req, res } = makeReqRes({
+      group: ['AAA', 'BBB'],
+      driver: 'XLE',
+      lookbackDays: 400,
+      forceRefresh: true,
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    const wireSymbols = fetchCalls.symbols.slice(before);
+    expect(wireSymbols).toContain('XLE.US'); // registry symbol, fetched verbatim (never re-normalized)
+    expect(res.body.meta.driver).toBe('XLE');
+    expect(res.body.meta.driverLabel).toBe('Energy sector (XLE)');
+    expect(res.body.meta.driverUnit).toBe('% change');
+    expect(res.body.beta.interpretation).toBe('group % move per 1% move in Energy sector (XLE)');
+    expect(res.body.beta.unit).toBe('% change');
+    expect(res.body.meta.joinedCloses).toBe(360); // the poison driver-only session inner-joined away
+  });
+});
+
+describe('V2 Build 1 — pair mode (CUSTOM synthetic driver)', () => {
+  it('normalizes customSymbol brk.b → wire BRK-B.US and carries the synthetic label/interpretation', async () => {
+    const before = fetchCalls.symbols.length;
+    const { req, res } = makeReqRes({
+      group: ['AAA', 'BBB'],
+      driver: 'CUSTOM',
+      customSymbol: 'brk.b',
+      lookbackDays: 400,
+      forceRefresh: true,
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    const wireSymbols = fetchCalls.symbols.slice(before);
+    expect(wireSymbols).toContain('BRK-B.US'); // dot→hyphen + exactly one .US suffix
+    expect(wireSymbols).not.toContain('BRK.B.US');
+    expect(wireSymbols).not.toContain('BRK.B');
+    expect(res.body.meta.driver).toBe('CUSTOM');
+    expect(res.body.meta.driverLabel).toBe('BRK.B'); // synthetic label = raw ticker (canonical app form)
+    expect(res.body.meta.driverUnit).toBe('% change');
+    expect(res.body.beta.interpretation).toBe('group % move per 1% move in BRK.B');
+    expect(res.body.beta.unit).toBe('% change');
+  });
+
+  it('two CUSTOM runs with different symbols write two distinct cache docs (cache key incorporates customSymbol)', async () => {
+    const setsBefore = store.setCalls.length;
+    const runCustom = async (customSymbol) => {
+      const { req, res } = makeReqRes({
+        group: ['AAA', 'BBB'],
+        driver: 'CUSTOM',
+        customSymbol,
+        lookbackDays: 400,
+        forceRefresh: true,
+      });
+      await handler(req, res);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.meta.partial).toBe(false);
+    };
+    await runCustom('brk.b'); // driver wire BRK-B.US (MEMBER_A_WIRE)
+    await runCustom('spy.us'); // driver wire SPY.US (MEMBER_B_WIRE)
+    const newWrites = store.setCalls.slice(setsBefore);
+    expect(newWrites).toHaveLength(2); // two Firestore writes, not one collision
+    expect(newWrites.every((w) => w.collection === 'correlationIntelligence')).toBe(true);
+    expect(newWrites[0].id).not.toBe(newWrites[1].id); // distinct docIds → distinct cache keys
+  });
+
+  it('self-correlation (customSymbol == a group member) → 400 custom_symbol_in_group', async () => {
+    const { req, res } = makeReqRes({ group: ['AAA', 'BBB'], driver: 'CUSTOM', customSymbol: 'AAA' });
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('custom_symbol_in_group');
+  });
+
+  it('self-correlation guard is canonicalization-aware (aaa.us == group member AAA) → 400', async () => {
+    const { req, res } = makeReqRes({ group: ['AAA', 'BBB'], driver: 'CUSTOM', customSymbol: 'aaa.us' });
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('custom_symbol_in_group');
+  });
+
+  it('self-correlation guard is wire-form aware: BRK.B in group vs custom BRK-B (identical EODHD series) → 400', async () => {
+    // BRK.B and BRK-B both normalize to the wire symbol BRK-B.US, so they are
+    // the SAME underlying series — the guard must catch it and never fabricate
+    // a corr=1 / beta=1 self-correlation (presentation-honesty).
+    const forward = makeReqRes({ group: ['BRK.B', 'AAPL'], driver: 'CUSTOM', customSymbol: 'BRK-B' });
+    await handler(forward.req, forward.res);
+    expect(forward.res.statusCode).toBe(400);
+    expect(forward.res.body.error).toBe('custom_symbol_in_group');
+    // ...and the reverse (group holds the hyphen form, custom uses the dot form).
+    const reverse = makeReqRes({ group: ['BRK-B', 'AAPL'], driver: 'CUSTOM', customSymbol: 'brk.b' });
+    await handler(reverse.req, reverse.res);
+    expect(reverse.res.statusCode).toBe(400);
+    expect(reverse.res.body.error).toBe('custom_symbol_in_group');
+  });
+
+  it.each([
+    [{ group: ['AAA'], driver: 'CUSTOM' }, 'CUSTOM without a customSymbol'],
+    [{ group: ['AAA'], driver: 'CUSTOM', customSymbol: '   ' }, 'CUSTOM with a blank customSymbol'],
+    [{ group: ['AAA'], driver: 'CUSTOM', customSymbol: 'aa$a' }, 'CUSTOM with an invalid customSymbol'],
+    [{ group: ['AAA'], driver: 'BRENT', customSymbol: 'AAPL' }, 'customSymbol with a non-CUSTOM driver'],
+  ])('400 invalid_custom_symbol: %s', async (body) => {
+    const { req, res } = makeReqRes(body);
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_custom_symbol');
   });
 });
 

@@ -30,16 +30,70 @@ import { buildVerdictSentence } from './correlationVerdict';
 
 // Client-side mirror of the driver registry LABELS only (the api registry is
 // server code — do not import it into the bundle; units/interpretations come
-// back in the response, so the server stays the source of truth).
-const DRIVER_OPTIONS = [
-  { key: 'BRENT', label: 'Brent Crude (BNO proxy)' },
-  { key: 'WTI', label: 'WTI Crude (USO proxy)' },
-  { key: 'GOLD', label: 'Gold (GLD proxy)' },
-  { key: 'VIX', label: 'VIX' },
-  { key: 'TNX', label: '10Y Yield' },
-  { key: 'DXY', label: 'US Dollar (UUP proxy)' },
-  { key: 'SPX', label: 'S&P 500 (SPY)' },
+// back in the response, so the server stays the source of truth). Rendered as
+// <optgroup> sections in this pinned order. The final Custom section is UI-only
+// (pair mode): its 'CUSTOM' key reveals a ticker input and the endpoint builds
+// a synthetic driver from whatever ticker the user enters.
+const DRIVER_GROUPS = [
+  {
+    label: 'Macro',
+    options: [
+      { key: 'BRENT', label: 'Brent Crude (BNO proxy)' },
+      { key: 'WTI', label: 'WTI Crude (USO proxy)' },
+      { key: 'GOLD', label: 'Gold (GLD proxy)' },
+      { key: 'VIX', label: 'VIX' },
+      { key: 'TNX', label: '10Y Yield' },
+      { key: 'DXY', label: 'US Dollar (UUP proxy)' },
+      { key: 'SPX', label: 'S&P 500 (SPY)' },
+    ],
+  },
+  {
+    label: 'Sectors',
+    options: [
+      { key: 'XLE', label: 'Energy sector (XLE)' },
+      { key: 'XLF', label: 'Financials (XLF)' },
+      { key: 'XLK', label: 'Technology (XLK)' },
+      { key: 'XLV', label: 'Healthcare (XLV)' },
+      { key: 'XLI', label: 'Industrials (XLI)' },
+      { key: 'XLY', label: 'Consumer Disc. (XLY)' },
+      { key: 'XLP', label: 'Consumer Staples (XLP)' },
+      { key: 'XLU', label: 'Utilities (XLU)' },
+      { key: 'XLB', label: 'Materials (XLB)' },
+    ],
+  },
+  {
+    label: 'Style factors',
+    options: [
+      { key: 'MTUM', label: 'Momentum factor (MTUM)' },
+      { key: 'VLUE', label: 'Value factor (VLUE)' },
+      { key: 'QUAL', label: 'Quality factor (QUAL)' },
+      { key: 'USMV', label: 'Low-volatility factor (USMV)' },
+    ],
+  },
+  {
+    label: 'Risk & rates',
+    options: [
+      { key: 'HYG', label: 'High-yield credit (HYG)' },
+      { key: 'TLT', label: 'Long-duration Treasuries (TLT)' },
+      { key: 'IWM', label: 'Small caps (IWM)' },
+      { key: 'RSP', label: 'Equal-weight S&P (RSP)' },
+    ],
+  },
+  {
+    label: 'Digital',
+    options: [{ key: 'BTC', label: 'Bitcoin (BTC)' }],
+  },
+  {
+    label: 'Custom',
+    options: [{ key: 'CUSTOM', label: 'Custom ticker…' }],
+  },
 ];
+
+// Flat key→label lookup for driver-label derivation. CUSTOM is intentionally
+// excluded — its label is the user's raw ticker, resolved at render time.
+const DRIVER_LABELS = Object.fromEntries(
+  DRIVER_GROUPS.flatMap((g) => g.options.map((o) => [o.key, o.label]))
+);
 
 const SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/; // mirrors the endpoint's pinned regex
 
@@ -50,6 +104,10 @@ const ERROR_COPY = {
   driver_unavailable: (driverLabel) => `Couldn't fetch ${driverLabel} data right now.`,
   group_unavailable: () => 'None of those tickers returned data — check the symbols.',
   no_overlapping_history: () => "Couldn't get enough overlapping history for that pair.",
+  // Pair-mode 400s surfaced as clean copy (the server owns the self-correlation
+  // guard so the smoke path exercises the real 400, not a client pre-block).
+  custom_symbol_in_group: () => 'That ticker is already in your group — pick a different driver.',
+  invalid_custom_symbol: () => 'Enter a valid ticker for the custom driver.',
 };
 const MONO = "'SF Mono', 'Monaco', 'Consolas', monospace";
 const GOLD = '#F0C75E'; // SeasonPerformanceChart line colors
@@ -411,6 +469,7 @@ const chipStyle = {
 export default function CorrelationLab({ isDesktop, embedded = false }) {
   const [groupInput, setGroupInput] = useState('XOM, CVX, COP');
   const [driverKey, setDriverKey] = useState('BRENT');
+  const [customSymbol, setCustomSymbol] = useState('');
   const [inputError, setInputError] = useState(null);
   const [state, setState] = useState({ status: 'idle', data: null, error: null });
   const [chartTab, setChartTab] = useState('corr');
@@ -419,7 +478,13 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
   // slow response for an OLD query would overwrite a newer result on screen.
   const runSeq = useRef(0);
 
-  const driverLabel = DRIVER_OPTIONS.find((d) => d.key === driverKey)?.label ?? driverKey;
+  const isCustom = driverKey === 'CUSTOM';
+  // CUSTOM's label is the raw ticker (matches the server's synthetic label /
+  // betaInterpretation); registry drivers use the mirrored label.
+  const customTicker = customSymbol.trim().toUpperCase().replace(/\.US$/, '');
+  const driverLabel = isCustom
+    ? customTicker || 'custom ticker'
+    : DRIVER_LABELS[driverKey] ?? driverKey;
 
   const run = useCallback(
     (forceRefresh = false, override) => {
@@ -427,6 +492,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
       // chip's values arrive via `override` rather than the (stale) closure.
       const groupSource = override?.groupInput ?? groupInput;
       const driverSource = override?.driverKey ?? driverKey;
+      const customSource = override?.customSymbol ?? customSymbol;
       const group = [...new Set(groupSource.split(/[\s,]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
       if (group.length < 1 || group.length > 10) {
         setInputError('Enter 1–10 ticker symbols (comma-separated). A single ETF proxy works too.');
@@ -437,12 +503,29 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
         setInputError(`Not a valid ticker: ${bad.join(', ')}`);
         return;
       }
+      // Pair mode: validate the custom ticker with the SAME regex the endpoint
+      // uses before sending. (Self-correlation is left to the server 400 so the
+      // real guard is what users hit.)
+      let customPayload = null;
+      if (driverSource === 'CUSTOM') {
+        const custom = customSource.trim().toUpperCase().replace(/\.US$/, '');
+        if (!SYMBOL_RE.test(custom)) {
+          setInputError('Enter a valid custom ticker (e.g. AAPL, BRK.B).');
+          return;
+        }
+        customPayload = custom;
+      }
       setInputError(null);
       const seq = ++runSeq.current;
       setState({ status: 'loading', data: null, error: null });
       fetchWithAuth('/api/research/correlation', {
         method: 'POST',
-        body: JSON.stringify({ group, driver: driverSource, ...(forceRefresh ? { forceRefresh: true } : {}) }),
+        body: JSON.stringify({
+          group,
+          driver: driverSource,
+          ...(customPayload ? { customSymbol: customPayload } : {}),
+          ...(forceRefresh ? { forceRefresh: true } : {}),
+        }),
       })
         .then(async (r) => {
           if (!r.ok) {
@@ -461,7 +544,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
           setState({ status: 'error', data: null, error: e.message });
         });
     },
-    [groupInput, driverKey]
+    [groupInput, driverKey, customSymbol]
   );
 
   const data = state.data;
@@ -538,11 +621,32 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
               padding: '9px 10px', color: HOLO_COLORS.textPrimary, fontSize: 13,
             }}
           >
-            {DRIVER_OPTIONS.map((d) => (
-              <option key={d.key} value={d.key}>{d.label}</option>
+            {DRIVER_GROUPS.map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.options.map((d) => (
+                  <option key={d.key} value={d.key}>{d.label}</option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
+        {isCustom ? (
+          <label style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={captionStyle}>Custom ticker</span>
+            <input
+              value={customSymbol}
+              onChange={(e) => setCustomSymbol(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
+              placeholder="AAPL"
+              aria-label="Custom driver ticker"
+              style={{
+                width: 110,
+                background: HOLO_COLORS.bgElevated, border: `1px solid ${HOLO_COLORS.borderSubtle}`, borderRadius: 8,
+                padding: '9px 12px', color: HOLO_COLORS.textPrimary, fontSize: 13, fontFamily: MONO, outline: 'none',
+              }}
+            />
+          </label>
+        ) : null}
         <button
           onClick={() => run()}
           disabled={state.status === 'loading'}
