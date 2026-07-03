@@ -12,7 +12,14 @@ import { Eyebrow, Mono, Icon, LIcon, AgentAvatar, Score, StatusBadge } from './L
 import { Funnel, PodCard } from './LeaguePod';
 import { quickPlayTraining, mapLobbyError } from '../../services/tournamentLobbyActions';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
+import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
+import TrainingClimbPreview from './TrainingClimbPreview';
 import LoadoutChooserSheet from './LoadoutChooserSheet';
+
+// Training-tab CLIMB PREVIEW gate — dark by default (flag OR ?trainingClimbPreview=1),
+// resolved once via the shared climbPreviewEnabled(); the pure shouldPreviewClimb
+// predicate then decides per-pod (BATTLE + seated only).
+const CLIMB_PREVIEW_ON = climbPreviewEnabled();
 
 function EnterButton({ accent, onEnter }) {
   return (
@@ -358,7 +365,7 @@ function TrainingReentryBar({ pod, accent, onResume }) {
 // its own one-in-flight async over quickPlayTraining; on success it routes into
 // the fresh DRAFTING pod via onOpenTrainingPod. The server still enforces
 // no_agent / already_active — the client gates are courtesy, not the authority.
-function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, hasAgent, agentLoadout = null }) {
+function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, hasAgent, agentLoadout = null, uid = null }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [chooserOpen, setChooserOpen] = useState(false);
@@ -406,11 +413,17 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
   const start = () => runTrainingForm(null);
   const openChooser = () => { setError(null); setChooserOpen(true); };
 
-  // ── Re-entry state (R1): the bar REPLACES the CTA. ──────────────────────────
+  // ── Re-entry state (R1): the bar REPLACES the CTA. When the climb preview is
+  //    enabled AND the pod is in BATTLE, the real five-day climb takes the bar's
+  //    place (tap → the same onOpenTrainingPod hop); a pre-bell pod keeps the bar. ─
   if (activeTrainingPod) {
     return (
       <div>
-        <TrainingReentryBar pod={activeTrainingPod} accent={accent} onResume={() => onOpenTrainingPod?.(activeTrainingPod)} />
+        {shouldPreviewClimb(activeTrainingPod, CLIMB_PREVIEW_ON) ? (
+          <TrainingClimbPreview pod={activeTrainingPod} uid={uid} onOpen={() => onOpenTrainingPod?.(activeTrainingPod)} viewport="mobile" accent={accent} />
+        ) : (
+          <TrainingReentryBar pod={activeTrainingPod} accent={accent} onResume={() => onOpenTrainingPod?.(activeTrainingPod)} />
+        )}
         <TrainingCpuNote />
       </div>
     );
@@ -478,7 +491,7 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
 // / group / field flow with the reserved pulse slot in FollowRail's place;
 // Training = the inert cold-start shell. The keyed wrapper replays a calm CSS
 // fade on switch (reduced-motion-neutralized globally).
-export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, onSpectate, onOpenMyGame, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout }) {
+export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, onSpectate, onOpenMyGame, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
       {onOpenMyGame && <MyGameBar onOpenMyGame={onOpenMyGame} />}
@@ -486,7 +499,7 @@ export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, 
       <TabBar tab={tab} onSwitchTab={onSwitchTab} accent={accent} />
       <div key={tab} className="lg-tabpanel">
         {tab === 'training' ? (
-          <TrainingShell accent={accent} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} />
+          <TrainingShell accent={accent} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} uid={uid} />
         ) : (
           <>
             <EnterButton accent={accent} onEnter={onEnter} />

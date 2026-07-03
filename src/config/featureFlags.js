@@ -190,6 +190,29 @@ export const LEAGUE_NEXT_ARC_ENABLED = true;
 export const LEAGUE_BATTLE_VIEW_V2_ENABLED = true;
 
 /**
+ * League — Training-tab CLIMB PREVIEW (the second-arc re-entry surface).
+ *
+ * The active-training-battle state of the League Training tab shows the real
+ * five-day Altitude Climb (the Battle-View-V2 hero, `ClimbArena`, fed by the
+ * real-data bridge `buildArenaModel` → `buildClimbSeries`) in place of the flat
+ * "Return to your training pod" re-entry card; tapping the climb routes into the
+ * pod's live battle view via the already-threaded `onOpenTrainingPod`.
+ *
+ * Reuses the real-data arena path so it renders the ACTUAL pod (never the
+ * fixtures-only standalone `LeagueClimb`, which would leak the demo pod onto a
+ * real surface). Scoped to `GROUP_STATUS.BATTLE` pods only — a DRAFTING /
+ * AWAITING_OPEN pod has no climb yet and keeps its existing re-entry card.
+ *
+ * When false (DEFAULT), NOTHING on the Training tab reads the real-data climb —
+ * the re-entry card renders exactly as today, so flag-off is byte-unchanged.
+ * Reachable for a Vercel preview smoke via the dev param `?trainingClimbPreview=1`
+ * (the `?leagueClimb=1` / `?battleViewV2=1` idiom). Unlike the pure-foundation
+ * slices, this flag's read-site DOES swap a production surface, so it defaults
+ * OFF; do NOT flip it in this build PR — flip only after a preview smoke.
+ */
+export const LEAGUE_TRAINING_CLIMB_PREVIEW_ENABLED = false;
+
+/**
  * League — user-layer CANONICAL-OPEN baseline capture.
  *
  * When false (default), the user 3-pick layer keeps today's behavior: each
