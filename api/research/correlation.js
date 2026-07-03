@@ -53,6 +53,10 @@ import {
   computeCorrelationCacheTtlMs,
   MIN_CLOSES_FOR_INFLECTIONS,
 } from './correlationAssembly.js';
+// V2 Build 3 — break context: per-episode technical state at the flag and the
+// 50DMA-conditioned base rates. breakContext.js owns THE chronological→
+// newest-first order adapter for its call-only technicalCalculations use.
+import { computeContextAtFlag, conditionedBaseRates } from './breakContext.js';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
 import { fetchAllSeries } from './fetchDriverSeries.js';
 import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
@@ -250,14 +254,23 @@ export default async function handler(req, res) {
       // the flag (forwardReturns pointed backward): group composite levels and
       // (scaled) driver closes. Additive to the episode; forwardReturns below
       // reads only startCloseIndex/startDate/direction, so ordering is free.
+      // Build 3 — contextAtFlag: the GROUP COMPOSITE's own technical state at
+      // the flag (vs 50DMA, RSI-14 zone). Additive like Change G; cached
+      // pre-Build-3 payloads simply lack the field and the UI null-guards it.
       inflections = detectInflections(divergenceSeries).map((ep) => ({
         ...ep,
         groupInto5d: trailingReturnInto(groupLevels, ep.startCloseIndex),
         driverInto5d: trailingReturnInto(driverCloses, ep.startCloseIndex),
+        contextAtFlag: computeContextAtFlag(groupLevels, ep.startCloseIndex),
       }));
       baseRates = {
         group: forwardReturns(groupLevels, joinedDates, inflections),
         driver: forwardReturns(driverCloses, joinedDates, inflections),
+        // Build 3 — conditioned base rates: GROUP forward returns partitioned
+        // by each episode's own vs50DMA stamp (null stamps join neither side),
+        // non-overlap walked WITHIN each partition, stats tier-gated in-data
+        // (< 3 independent → counts only). Additive to the response shape.
+        byCondition: conditionedBaseRates(groupLevels, joinedDates, inflections),
       };
     }
 

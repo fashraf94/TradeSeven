@@ -376,6 +376,89 @@ describe('V1.1 Change G — per-episode into-break returns', () => {
   });
 });
 
+describe('V2 Build 3 — break context (technical state at the flag) + conditioned base rates', () => {
+  // Independent rebuild of the composite levels (== the endpoint's groupLevels),
+  // plus TEST-LOCAL chronological reference SMA/RSI — the endpoint's
+  // chronological→newest-first order adapter is proven by agreement with a
+  // reference that never reverses anything (test-local reference
+  // implementations are sanctioned; production copies are not).
+  const testLevels = compound(100, groupReturns);
+
+  function refSMA(levels, endIdx, period) {
+    if (endIdx + 1 < period) return null;
+    let s = 0;
+    for (let i = endIdx - period + 1; i <= endIdx; i++) s += levels[i];
+    return s / period;
+  }
+
+  function refRSI(levels, endIdx, period = 14) {
+    if (endIdx + 1 < period + 1) return null;
+    const changes = [];
+    for (let i = 1; i <= endIdx; i++) changes.push(levels[i] - levels[i - 1]);
+    let avgGain = 0;
+    let avgLoss = 0;
+    for (let i = 0; i < period; i++) {
+      const ch = changes[i];
+      if (ch > 0) avgGain += ch;
+      else avgLoss += -ch;
+    }
+    avgGain /= period;
+    avgLoss /= period;
+    for (let i = period; i < changes.length; i++) {
+      const ch = changes[i];
+      avgGain = (avgGain * (period - 1) + (ch > 0 ? ch : 0)) / period;
+      avgLoss = (avgLoss * (period - 1) + (ch < 0 ? -ch : 0)) / period;
+    }
+    if (avgLoss === 0) return 100;
+    return 100 - 100 / (1 + avgGain / avgLoss);
+  }
+
+  it('the engineered episode (c=325 ≥ 50) carries contextAtFlag matching the chronological reference', () => {
+    const ep = out.inflections[0];
+    expect(ep.startCloseIndex).toBe(325); // deep history — every stamp computable
+    const ref50 = refSMA(testLevels, 325, 50);
+    // Reference-derived side, then the hand-determined side for THIS fixture
+    // (the composite sits ~7% above its 50DMA at the flag) — the second
+    // assert guards the first against a degenerate always-equal fixture.
+    expect(ep.contextAtFlag.vs50DMA).toBe(
+      testLevels[325] > Number(ref50.toFixed(4)) ? 'above' : 'below'
+    );
+    expect(ep.contextAtFlag.vs50DMA).toBe('above');
+    const refR = refRSI(testLevels, 325, 14);
+    expect(ep.contextAtFlag.rsi14).toBeCloseTo(refR, 1); // production rounds to 2dp
+    expect(refR).toBeGreaterThan(71); // fixture guard: decisively clear of the 70 zone edge
+    expect(ep.contextAtFlag.rsiZone).toBe('overbought');
+  });
+
+  it('baseRates.byCondition partitions by the episode\'s own stamp with the <3-independent stat gate', () => {
+    expect(out.baseRates.byCondition).toBeDefined();
+    for (const h of [5, 10, 20]) {
+      const above = out.baseRates.byCondition.above50DMA[h];
+      const below = out.baseRates.byCondition.below50DMA[h];
+      // The single 'above' episode lands in the above partition only…
+      expect(above.eligibleCount).toBe(1);
+      expect(above.independentCount).toBe(1);
+      // …and 1 independent is below the tier gate: counts render, stats are
+      // NULL (never a one-episode "median").
+      expect(above.mean).toBeNull();
+      expect(above.median).toBeNull();
+      expect(above.hitRate).toBeNull();
+      // The pinned conditioned shape: exactly the five aggregate fields.
+      expect(Object.keys(above).sort()).toEqual(
+        ['eligibleCount', 'hitRate', 'independentCount', 'mean', 'median'].sort()
+      );
+      // The other side is an honest zero-count block — never a guessed member.
+      expect(below).toEqual({
+        eligibleCount: 0,
+        independentCount: 0,
+        mean: null,
+        median: null,
+        hitRate: null,
+      });
+    }
+  });
+});
+
 describe('response contract details', () => {
   it('headline beta is the LATEST rolling entry (never a separately-computed number)', () => {
     const lastBeta = out.series.beta40[out.series.beta40.length - 1];

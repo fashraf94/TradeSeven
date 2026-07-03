@@ -32,6 +32,13 @@
  *     correct inner join, loudly detonating the exact-zero corr otherwise.
  * The second group (CCC/DDD) follows S — orthogonal to BOTH P and Q, so every
  * driver's corr is exactly 0 and nothing clears the floor.
+ *
+ * V2 Build 3 rider fixture: a fifth mutually-orthogonal pattern U carries the
+ * display/tier-agreement group (III/JJJ); IWM is re-wired to a flat ρ = 0.196
+ * mix on the U axis — a raw corr BELOW the 0.20 floor that DISPLAYS as
+ * "+0.20" (toFixed(2)). Orthogonality keeps IWM at exact 0 against the P/S/T
+ * composites, so every pre-Build-3 assert (zero block membership, ranking,
+ * tiers, summaries) is untouched.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { createHash } from 'crypto';
@@ -97,6 +104,8 @@ const P20 = [-1, -1, -1, -1, -1, 1, 1, 1, -1, 1, 1, 1, -1, -1, 1, -1, 1, 1, -1, 
 const Q20 = [1, 1, 1, 1, 1, 1, 1, 1, -1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1];
 const S20 = [1, 1, 1, -1, -1, 1, 1, -1, 1, -1, -1, 1, 1, -1, 1, -1, 1, -1, -1, -1];
 const T20 = [1, -1, -1, 1, -1, 1, -1, 1, 1, 1, -1, 1, -1, 1, 1, 1, -1, -1, -1, -1];
+// Build 3 rider axis — orthogonal to P, Q, S, AND T (guard-asserted below).
+const U20 = [-1, 1, -1, -1, 1, -1, 1, 1, -1, -1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1];
 
 const N_RETURNS = 360; // 361 joined closes; 18 complete 20-return cycles
 const N_CLOSES = N_RETURNS + 1;
@@ -109,6 +118,10 @@ const GOLD_RHO = Array.from({ length: 18 }, () => 0.15);
 // → vs the T-composite corr20 = 0.3 (signal) but corr60 = 0.1 (sub-band) —
 // the change-word attachment-guard fixture. Vs P- and S-composites: exact 0.
 const TLT_RHO = [...Array.from({ length: 17 }, () => 0), 0.3];
+// Build 3 rider: IWM keys on U at a flat ρ = 0.196 — raw corr20/corr60 land
+// UNDER the 0.20 floor while toFixed(2) displays "+0.20". Vs every other
+// composite (P/S/T): exact 0, so IWM stays in their zero blocks.
+const IWM_RHO = Array.from({ length: 18 }, () => 0.196);
 
 /** driver returns d[t] = 0.01·(ρ_c·base[t%20] + √(1−ρ_c²)·Q[t%20]) */
 function mixReturns(rhoByCycle, base = P20) {
@@ -121,6 +134,7 @@ function mixReturns(rhoByCycle, base = P20) {
 const groupReturns = Array.from({ length: N_RETURNS }, (_, t) => 0.01 * P20[t % 20]);
 const group2Returns = Array.from({ length: N_RETURNS }, (_, t) => 0.01 * S20[t % 20]);
 const group3Returns = Array.from({ length: N_RETURNS }, (_, t) => 0.01 * T20[t % 20]);
+const group4Returns = Array.from({ length: N_RETURNS }, (_, t) => 0.01 * U20[t % 20]); // Build 3 rider
 const defaultDriverReturns = mixReturns(Array.from({ length: 18 }, () => 0)); // pure Q → corr 0
 
 const gen = lehmer(20260703);
@@ -178,6 +192,8 @@ const MEMBER_C_WIRE = toWire(compound(45, group2Returns.map((v, t) => v + wNoise
 const MEMBER_D_WIRE = toWire(compound(55, group2Returns.map((v, t) => v - wNoise[t])));
 const MEMBER_G_WIRE = toWire(compound(35, group3Returns.map((v, t) => v + wNoise[t])));
 const MEMBER_H_WIRE = toWire(compound(65, group3Returns.map((v, t) => v - wNoise[t])));
+const MEMBER_I_WIRE = toWire(compound(40, group4Returns.map((v, t) => v + wNoise[t]))); // Build 3 rider group
+const MEMBER_J_WIRE = toWire(compound(60, group4Returns.map((v, t) => v - wNoise[t])));
 
 // ── Drivers ──
 const DEFAULT_WIRE = toWire(compound(25, defaultDriverReturns)); // shared by all ρ=0 drivers
@@ -221,6 +237,9 @@ registryWires.set(CORRELATION_DRIVERS.BTC.symbol, BTC_WIRE);
 // TLT is T-keyed: exactly 0 vs the P- and S-composites (it stays in their
 // zero blocks) and 0.3/0.1 vs the T-composite (the change-guard fixture).
 registryWires.set(CORRELATION_DRIVERS.TLT.symbol, TLT_WIRE);
+// IWM is U-keyed (Build 3 rider): 0.196/0.196 vs the U-composite, exact 0
+// vs P/S/T — it stays in every pre-Build-3 zero block.
+registryWires.set(CORRELATION_DRIVERS.IWM.symbol, toWire(compound(85, mixReturns(IWM_RHO, U20))));
 
 const memberWires = new Map([
   ['AAA.US', MEMBER_A_WIRE],
@@ -229,6 +248,8 @@ const memberWires = new Map([
   ['DDD.US', MEMBER_D_WIRE],
   ['GGG.US', MEMBER_G_WIRE],
   ['HHH.US', MEMBER_H_WIRE],
+  ['III.US', MEMBER_I_WIRE],
+  ['JJJ.US', MEMBER_J_WIRE],
 ]);
 
 const failSet = new Set(); // wire symbols forced to 404 for the dropped-driver phase
@@ -361,6 +382,17 @@ describe('boundary fixture guards (the fixture itself stays honest)', () => {
     expect(dot(T20, P20)).toBe(0);
     expect(dot(T20, Q20)).toBe(0);
     expect(dot(T20, S20)).toBe(0);
+  });
+
+  it('U20 (the Build 3 rider axis) is ±1, zero-sum, and orthogonal to P/Q/S/T', () => {
+    expect(U20).toHaveLength(20);
+    expect(U20.every((v) => v === 1 || v === -1)).toBe(true);
+    expect(U20.reduce((a, b) => a + b, 0)).toBe(0);
+    const dot = (a, b) => a.reduce((acc, v, i) => acc + v * b[i], 0);
+    expect(dot(U20, P20)).toBe(0);
+    expect(dot(U20, Q20)).toBe(0);
+    expect(dot(U20, S20)).toBe(0);
+    expect(dot(U20, T20)).toBe(0);
   });
 });
 
@@ -709,6 +741,36 @@ describe('Build 2.1 — identity rows (a scanned member that IS a driver proxy)'
       direction: 'positive',
       change: null, // |corr20 − corr60| ≈ 0.11 — below the 0.15 gap
     });
+  });
+});
+
+describe('V2 Build 3 rider — tier assignment uses the 2dp-ROUNDED corr (display and tier agree)', () => {
+  let riderOut;
+
+  it('an engineered raw 0.196 (below the raw floor) displays "+0.20" and tiers established — never "+0.20 weak/none"', async () => {
+    const res = await runScanRequest({ group: ['III', 'JJJ'], lookbackDays: 400, forceRefresh: true });
+    expect(res.statusCode).toBe(200);
+    riderOut = res.body;
+    const iwm = riderOut.rows.find((r) => r.driver === 'IWM');
+    expect(iwm.corr20).toBeCloseTo(0.196, 6);
+    expect(iwm.corr60).toBeCloseTo(0.196, 6);
+    expect(Math.abs(iwm.corr20)).toBeLessThan(0.2); // the raw value genuinely sits under the floor…
+    expect(iwm.corr20.toFixed(2)).toBe('0.20'); // …but the UI displays it as 0.20 (fmtCorr = toFixed(2))
+    expect(iwm.tier).toBe('established'); // both windows round to 0.20 → the tier follows the display
+    expect(riderOut.rows[0].driver).toBe('IWM'); // every other driver is exactly 0 vs the U-composite
+  });
+
+  it('whole-table agreement sweep: a computed row is weak IFF its displayed 20d magnitude is under 0.20', () => {
+    // The founder-smoke property in test form, over the rider run AND the
+    // canonical run: no row may display a corr20 that contradicts its tier.
+    for (const row of [...riderOut.rows, ...out.rows]) {
+      if (row.corr20 == null) {
+        expect(row.tier).toBe('weak');
+        continue;
+      }
+      const displayedMagnitude = Math.abs(Number(row.corr20.toFixed(2)));
+      expect(row.tier === 'weak').toBe(displayedMagnitude < 0.2);
+    }
   });
 });
 

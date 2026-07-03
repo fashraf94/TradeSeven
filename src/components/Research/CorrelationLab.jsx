@@ -136,6 +136,8 @@ const CAPTIONS = {
   leadLag: 'Whether one tends to move first at daily resolution.',
   regimeBreaks: 'Dates when the recent relationship stopped matching the longer pattern.',
   tension: 'How stretched the recent link is versus its own history — not a prediction.',
+  // Build 3 — the state-at-break column (the V1.1 caption idiom).
+  stateAtBreak: "The group's own technical state when the break fired.",
 };
 
 // Change E — three example chips matching the Discover "TRY ONE" idiom.
@@ -184,6 +186,34 @@ function driverTag(ep) {
   if (g < 0 && dr >= 0) return 'driver held up';
   if (g < 0 && dr < 0) return 'joint selloff';
   return 'both rising'; // g >= 0 && dr >= 0
+}
+
+// Build 3 — "State at break" cell text, e.g. "below 50DMA · RSI 38 (neutral)".
+// Nulls render "—" per part (a null is never a guessed state); a missing
+// contextAtFlag (pre-Build-3 cached payload) or an all-null stamp returns
+// null and the cell renders a single "—" (the additive-field rule).
+//
+// RSI display rounding must never contradict the server's zone word (the
+// scanTier-rider rule, one column over): RSI 69.6 is 'neutral', but a bare
+// Math.round would render "RSI 70 (neutral)" against the pinned ≥ 70
+// overbought edge. In the two half-point slivers where the integer crosses a
+// zone boundary, the value renders at 1dp instead ("RSI 69.6 (neutral)").
+function rsiDisplay(rsi14, rsiZone) {
+  const rounded = Math.round(rsi14);
+  const contradicts =
+    (rounded >= 70 && rsiZone !== 'overbought') || (rounded <= 30 && rsiZone !== 'oversold');
+  return contradicts ? rsi14.toFixed(1) : String(rounded);
+}
+
+function stateAtBreak(ep) {
+  const ctx = ep.contextAtFlag;
+  if (!ctx || (ctx.vs50DMA == null && ctx.rsi14 == null)) return null;
+  const smaBit = ctx.vs50DMA != null ? `${ctx.vs50DMA} 50DMA` : '—';
+  const rsiBit =
+    ctx.rsi14 != null
+      ? `RSI ${rsiDisplay(ctx.rsi14, ctx.rsiZone)}${ctx.rsiZone ? ` (${ctx.rsiZone})` : ''}`
+      : '—';
+  return `${smaBit} · ${rsiBit}`;
 }
 
 const pctColor = (v) => (v == null ? HOLO_COLORS.textMuted : v > 0 ? GREEN : v < 0 ? RED : HOLO_COLORS.textSecondary);
@@ -678,6 +708,59 @@ function HorizonBaseRate({ h, group, driver, sinceDate, driverLabel, driverUnit 
         <span style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, lineHeight: 1.5 }}>{sentence}</span>
       </div>
       <DotStrip details={group.details} median={group.median} showMedian={n >= 3} />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Build 3 — conditioned base rates beneath the unconditioned tiers. A line
+// renders ONLY when a 50DMA partition reaches ≥ 3 independent breaks at that
+// horizon (the server already nulls the stats below that, so a sub-3 partition
+// CANNOT render a median even by accident). Copy inherits the tier rules:
+// raw tally at 3–4 independent, percentage only at ≥ 5 — past-tense,
+// sample-bounded. When nothing qualifies anywhere, one muted honest-absence
+// line renders (never a silently missing section); when byCondition is absent
+// entirely (pre-Build-3 cached payload), nothing renders at all.
+// ─────────────────────────────────────────────────────────────────────────────
+const CONDITION_SIDES = [
+  { key: 'below50DMA', label: 'Below the 50DMA' },
+  { key: 'above50DMA', label: 'Above the 50DMA' },
+];
+
+function ConditionedBaseRates({ byCondition }) {
+  if (!byCondition) return null;
+  const lines = [];
+  for (const h of [5, 10, 20]) {
+    for (const side of CONDITION_SIDES) {
+      const b = byCondition[side.key]?.[h];
+      // The server contract IS the gate: conditionedBaseRates nulls every
+      // stat below 3 independent, so a non-null median means the tier
+      // cleared (and hitRate ships non-null with it). One guard — no client
+      // copy of the threshold to drift out of step with the server's.
+      if (!b || b.median == null) continue;
+      const n = b.independentCount;
+      const outcomeBit =
+        n >= 5
+          ? `positive ${Math.round(b.hitRate * 100)}% of the time (n = ${n})`
+          : `${Math.round(b.hitRate * n)} of ${n} positive`;
+      lines.push(
+        <div key={`${side.key}-${h}`} style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, lineHeight: 1.5 }}>
+          {side.label} (n={n}): median {fmtPct(b.median)} at {h}d — {outcomeBit}.
+        </div>
+      );
+    }
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`, paddingTop: 10 }}>
+      <div style={captionStyle}>By the group's 50DMA state at the flag</div>
+      {lines.length ? (
+        lines
+      ) : (
+        <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted }}>
+          Not enough breaks on either side of the 50DMA to summarize separately (fewer than 3
+          independent per side).
+        </div>
+      )}
     </div>
   );
 }
@@ -1219,7 +1302,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                   <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}> · ● independent · ○ clustered (counted once in the aggregate)</span>
                 </div>
                 <div style={{ ...subCaptionStyle, marginTop: 0, marginBottom: 10 }}>
-                  {CAPTIONS.regimeBreaks}
+                  {CAPTIONS.regimeBreaks} State at break: {CAPTIONS.stateAtBreak}
                   {data.meta.driver === 'TNX' ? ' Driver into-break values are % change in the yield level.' : ''}
                 </div>
                 <div style={{ overflowX: 'auto' }}>
@@ -1229,6 +1312,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>Date</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>Type</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>20d / 60d at flag</th>
+                        <th style={{ padding: '4px 8px', fontWeight: 600 }}>State at break</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>Group 5d into break</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>Driver 5d into break</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>Group +5d</th>
@@ -1249,6 +1333,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                           );
                         };
                         const tag = driverTag(ep);
+                        const state = stateAtBreak(ep);
                         return (
                           <tr key={ep.startCloseIndex} style={{ borderTop: `1px solid ${HOLO_COLORS.borderSubtle}` }}>
                             <td style={{ padding: '6px 8px', fontFamily: MONO, color: HOLO_COLORS.textPrimary }}>{ep.startDate}</td>
@@ -1258,6 +1343,9 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                             </td>
                             <td style={{ padding: '6px 8px', fontFamily: MONO, color: HOLO_COLORS.textSecondary }}>
                               {fmtCorr(ep.corr20AtFlag)} / {fmtCorr(ep.corr60AtFlag)}
+                            </td>
+                            <td style={{ padding: '6px 8px', color: state ? HOLO_COLORS.textSecondary : HOLO_COLORS.textMuted, whiteSpace: 'nowrap' }}>
+                              {state ?? '—'}
                             </td>
                             <td style={{ padding: '6px 8px', fontFamily: MONO, color: pctColor(ep.groupInto5d) }}>{fmtPct(ep.groupInto5d)}</td>
                             <td style={{ padding: '6px 8px', fontFamily: MONO, color: pctColor(ep.driverInto5d) }}>{fmtPct(ep.driverInto5d)}</td>
@@ -1290,6 +1378,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                       driverUnit={data.meta.driver === 'TNX' ? '% change in yield level' : data.meta.driverUnit}
                     />
                   ))}
+                  <ConditionedBaseRates byCondition={data.baseRates.byCondition} />
                   <div style={{ fontSize: 10, color: HOLO_COLORS.textMuted }}>
                     Past episodes in this window only — not statistical significance, not a prediction.
                     {data.meta.driver === 'TNX' ? ' TNX forward numbers are % change in the yield level.' : ''}
