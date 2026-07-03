@@ -13,10 +13,11 @@
  *   (f) summary null when nothing clears the floor (second fixture group),
  *   (g) flag-404.
  *
- * Fixture design (deterministic — no Math.random): three ±1 period-20 patterns
- * P, Q, S — each zero-sum, all three MUTUALLY orthogonal over the cycle
- * (guard-asserted). Group composite returns follow P; every driver is built as
- * d[t] = 0.01·(ρ_c·P + √(1−ρ_c²)·Q) with a per-cycle ρ_c, so over the
+ * Fixture design (deterministic — no Math.random): four ±1 period-20 patterns
+ * P, Q, S, T — each zero-sum, all four MUTUALLY orthogonal over the cycle
+ * (guard-asserted). Group composite returns follow P (canonical), S (the
+ * no-signal group), or T (the change-guard group); every driver is built as
+ * d[t] = 0.01·(ρ_c·base + √(1−ρ_c²)·Q) with a per-cycle ρ_c, so over the
  * cycle-complete corr windows (every contiguous 20/60-return window covers
  * each residue exactly 1×/3×) the sample correlation is EXACTLY the ρ mix:
  *   • XLE: ρ = 0.4 (cycles 0–15) then 0.9 (16–17) → corr20 = 0.9,
@@ -89,12 +90,13 @@ function lehmer(seed) {
   };
 }
 
-// Three ±1 zero-sum period-20 patterns, mutually orthogonal over the cycle
-// (guard-asserted below). P is the V0 boundary test's pattern; Q and S were
-// constructed by balancing the (P,Q) sign cells.
+// Four ±1 zero-sum period-20 patterns, mutually orthogonal over the cycle
+// (guard-asserted below). P is the V0 boundary test's pattern; Q, S, and T
+// were constructed by balancing the (P,Q,S) sign cells.
 const P20 = [-1, -1, -1, -1, -1, 1, 1, 1, -1, 1, 1, 1, -1, -1, 1, -1, 1, 1, -1, 1];
 const Q20 = [1, 1, 1, 1, 1, 1, 1, 1, -1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1];
 const S20 = [1, 1, 1, -1, -1, 1, 1, -1, 1, -1, -1, 1, 1, -1, 1, -1, 1, -1, -1, -1];
+const T20 = [1, -1, -1, 1, -1, 1, -1, 1, 1, 1, -1, 1, -1, 1, 1, 1, -1, -1, -1, -1];
 
 const N_RETURNS = 360; // 361 joined closes; 18 complete 20-return cycles
 const N_CLOSES = N_RETURNS + 1;
@@ -103,17 +105,22 @@ const N_CLOSES = N_RETURNS + 1;
 const XLE_RHO = [...Array.from({ length: 16 }, () => 0.4), 0.9, 0.9];
 const HYG_RHO = Array.from({ length: 18 }, () => 0.25);
 const GOLD_RHO = Array.from({ length: 18 }, () => 0.15);
+// TLT keys on T (the THIRD group's axis): flat 0 then 0.3 on the final cycle
+// → vs the T-composite corr20 = 0.3 (signal) but corr60 = 0.1 (sub-band) —
+// the change-word attachment-guard fixture. Vs P- and S-composites: exact 0.
+const TLT_RHO = [...Array.from({ length: 17 }, () => 0), 0.3];
 
-/** driver returns d[t] = 0.01·(ρ_c·P[t%20] + √(1−ρ_c²)·Q[t%20]) */
-function mixReturns(rhoByCycle) {
+/** driver returns d[t] = 0.01·(ρ_c·base[t%20] + √(1−ρ_c²)·Q[t%20]) */
+function mixReturns(rhoByCycle, base = P20) {
   return Array.from({ length: N_RETURNS }, (_, t) => {
     const rho = rhoByCycle[Math.floor(t / 20)];
-    return 0.01 * (rho * P20[t % 20] + Math.sqrt(1 - rho * rho) * Q20[t % 20]);
+    return 0.01 * (rho * base[t % 20] + Math.sqrt(1 - rho * rho) * Q20[t % 20]);
   });
 }
 
 const groupReturns = Array.from({ length: N_RETURNS }, (_, t) => 0.01 * P20[t % 20]);
 const group2Returns = Array.from({ length: N_RETURNS }, (_, t) => 0.01 * S20[t % 20]);
+const group3Returns = Array.from({ length: N_RETURNS }, (_, t) => 0.01 * T20[t % 20]);
 const defaultDriverReturns = mixReturns(Array.from({ length: 18 }, () => 0)); // pure Q → corr 0
 
 const gen = lehmer(20260703);
@@ -169,12 +176,15 @@ const MEMBER_A_WIRE = toWire(compound(30, groupReturns.map((v, t) => v + wNoise[
 const MEMBER_B_WIRE = toWire(compound(70, groupReturns.map((v, t) => v - wNoise[t])));
 const MEMBER_C_WIRE = toWire(compound(45, group2Returns.map((v, t) => v + wNoise[t])));
 const MEMBER_D_WIRE = toWire(compound(55, group2Returns.map((v, t) => v - wNoise[t])));
+const MEMBER_G_WIRE = toWire(compound(35, group3Returns.map((v, t) => v + wNoise[t])));
+const MEMBER_H_WIRE = toWire(compound(65, group3Returns.map((v, t) => v - wNoise[t])));
 
 // ── Drivers ──
 const DEFAULT_WIRE = toWire(compound(25, defaultDriverReturns)); // shared by all ρ=0 drivers
 const XLE_WIRE = toWire(compound(50, mixReturns(XLE_RHO)));
 const HYG_WIRE = toWire(compound(80, mixReturns(HYG_RHO)));
 const GOLD_WIRE = toWire(compound(180, mixReturns(GOLD_RHO)));
+const TLT_WIRE = toWire(compound(95, mixReturns(TLT_RHO, T20)));
 const FLAT_WIRE = toWire(Array.from({ length: N_CLOSES }, () => 100)); // USMV: zero variance → null corr
 
 // TNX: level wire whose SCALED (×0.1) first differences are exactly 0.001·Q —
@@ -208,20 +218,28 @@ registryWires.set(CORRELATION_DRIVERS.GOLD.symbol, GOLD_WIRE);
 registryWires.set(CORRELATION_DRIVERS.USMV.symbol, FLAT_WIRE);
 registryWires.set(CORRELATION_DRIVERS.TNX.symbol, TNX_WIRE);
 registryWires.set(CORRELATION_DRIVERS.BTC.symbol, BTC_WIRE);
+// TLT is T-keyed: exactly 0 vs the P- and S-composites (it stays in their
+// zero blocks) and 0.3/0.1 vs the T-composite (the change-guard fixture).
+registryWires.set(CORRELATION_DRIVERS.TLT.symbol, TLT_WIRE);
 
 const memberWires = new Map([
   ['AAA.US', MEMBER_A_WIRE],
   ['BBB.US', MEMBER_B_WIRE],
   ['CCC.US', MEMBER_C_WIRE],
   ['DDD.US', MEMBER_D_WIRE],
+  ['GGG.US', MEMBER_G_WIRE],
+  ['HHH.US', MEMBER_H_WIRE],
 ]);
 
 const failSet = new Set(); // wire symbols forced to 404 for the dropped-driver phase
+const truncSet = new Set(); // wire symbols served a 1-row body (fetch OK, nothing computable)
 const fetchCalls = { count: 0, symbols: [] };
 
 function wireFor(symbol) {
   if (failSet.has(symbol)) return null;
-  return memberWires.get(symbol) ?? registryWires.get(symbol) ?? null;
+  const wire = memberWires.get(symbol) ?? registryWires.get(symbol) ?? null;
+  if (wire && truncSet.has(symbol)) return Object.freeze([wire[0]]); // newest row only
+  return wire;
 }
 
 vi.stubGlobal('fetch', async (url) => {
@@ -278,13 +296,32 @@ const BASE_REQUEST = { group: ['AAA', 'BBB'], lookbackDays: 400 };
 const REGISTRY_KEYS = Object.keys(CORRELATION_DRIVERS);
 const ENGINEERED = ['XLE', 'HYG', 'GOLD', 'USMV'];
 
+/**
+ * Run the handler under vitest fake timers so the real 300ms chunk-throttle
+ * sleeps collapse to zero wall time (the file measured >90% pure setTimeout
+ * before this). Wire-level realism lives in the REAL handler + fetch stub +
+ * chunk ordering, not in the waits. Fake timers pin Date at the current real
+ * time, so the two-sided TTL math still yields a future expiresAt.
+ */
+async function runScanRequest(body) {
+  const { req, res } = makeReqRes(body);
+  vi.useFakeTimers();
+  try {
+    const pending = handler(req, res);
+    await vi.runAllTimersAsync();
+    await pending;
+  } finally {
+    vi.useRealTimers();
+  }
+  return res;
+}
+
 const store = makeFakeFirestore();
 activeFirestore = store;
 
 // The single canonical clean run every describe below reads from.
-const canonical = makeReqRes({ ...BASE_REQUEST, forceRefresh: true });
-await handler(canonical.req, canonical.res);
-const out = canonical.res.body;
+const canonicalRes = await runScanRequest({ ...BASE_REQUEST, forceRefresh: true });
+const out = canonicalRes.body;
 
 describe('boundary fixture guards (the fixture itself stays honest)', () => {
   it('P/Q/S are ±1, zero-sum, and mutually orthogonal over the 20-cycle', () => {
@@ -305,7 +342,17 @@ describe('boundary fixture guards (the fixture itself stays honest)', () => {
   });
 
   it('the canonical run returned 200', () => {
-    expect(canonical.res.statusCode).toBe(200);
+    expect(canonicalRes.statusCode).toBe(200);
+  });
+
+  it('P/Q/S/T orthogonality extends to T (the third group axis)', () => {
+    expect(T20).toHaveLength(20);
+    expect(T20.every((v) => v === 1 || v === -1)).toBe(true);
+    expect(T20.reduce((a, b) => a + b, 0)).toBe(0);
+    const dot = (a, b) => a.reduce((acc, v, i) => acc + v * b[i], 0);
+    expect(dot(T20, P20)).toBe(0);
+    expect(dot(T20, Q20)).toBe(0);
+    expect(dot(T20, S20)).toBe(0);
   });
 });
 
@@ -487,8 +534,7 @@ describe('required assert (e) — clean run caching', () => {
 
   it('a second identical request (no forceRefresh) serves cached with zero new fetches or writes', async () => {
     const fetchesBefore = fetchCalls.count;
-    const { req, res } = makeReqRes({ ...BASE_REQUEST });
-    await handler(req, res);
+    const res = await runScanRequest({ ...BASE_REQUEST });
     expect(res.statusCode).toBe(200);
     expect(res.body.meta.cached).toBe(true);
     expect(res.body.rows).toHaveLength(REGISTRY_KEYS.length);
@@ -498,8 +544,7 @@ describe('required assert (e) — clean run caching', () => {
 
   it('canonicalization reaches the same cache key: aaa.us + BBB hits the AAA,BBB entry', async () => {
     const fetchesBefore = fetchCalls.count;
-    const { req, res } = makeReqRes({ group: ['aaa.us', 'BBB'], lookbackDays: 400 });
-    await handler(req, res);
+    const res = await runScanRequest({ group: ['aaa.us', 'BBB'], lookbackDays: 400 });
     expect(res.statusCode).toBe(200);
     expect(res.body.meta.cached).toBe(true);
     expect(fetchCalls.count).toBe(fetchesBefore);
@@ -512,8 +557,7 @@ describe('required assert (d) — a failing driver is reported, never cached, ne
   it('XLB wire failure → droppedDrivers row, 24 computed rows, and NO cache write', async () => {
     failSet.add(CORRELATION_DRIVERS.XLB.symbol);
     const setsBefore = store.setCalls.length;
-    const { req, res } = makeReqRes(dirtyBody);
-    await handler(req, res);
+    const res = await runScanRequest(dirtyBody);
     expect(res.statusCode).toBe(200);
     expect(res.body.droppedDrivers).toEqual([{ driver: 'XLB', label: 'Materials (XLB)' }]);
     expect(res.body.rows).toHaveLength(REGISTRY_KEYS.length - 1);
@@ -525,18 +569,39 @@ describe('required assert (d) — a failing driver is reported, never cached, ne
 
   it('the dirty run was not L1-cached either: an identical re-run refetches the wire', async () => {
     const fetchesBefore = fetchCalls.count;
-    const { req, res } = makeReqRes(dirtyBody);
-    await handler(req, res);
+    const res = await runScanRequest(dirtyBody);
     expect(res.statusCode).toBe(200);
     expect(res.body.meta.cached).toBe(false);
     expect(fetchCalls.count).toBeGreaterThan(fetchesBefore);
     failSet.clear(); // restore the wire for the phases below
   });
 
+  it('a driver whose fetch SUCCEEDS with a truncated body → null-stat row (not dropped) and NO cache write', async () => {
+    // The poisoned-cache guard one stage later than a failed fetch: a 200
+    // with a 1-row body is uncomputable (no_overlapping_history) — the row
+    // reports it honestly and the run must NOT bake into either cache layer.
+    truncSet.add(CORRELATION_DRIVERS.XLU.symbol);
+    try {
+      const setsBefore = store.setCalls.length;
+      const res = await runScanRequest(dirtyBody);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.droppedDrivers).toEqual([]); // fetch did not fail
+      const xlu = res.body.rows.find((r) => r.driver === 'XLU');
+      expect(xlu.corr20).toBeNull();
+      expect(xlu.joinedCloses).toBe(1); // one wire row joined against the member calendar
+      expect(xlu.tier).toBe('weak');
+      // Both null-corr rows sort last, tie broken key-asc: USMV then XLU.
+      const tail = res.body.rows.slice(-2).map((r) => r.driver);
+      expect(tail).toEqual(['USMV', 'XLU']);
+      expect(store.setCalls).toHaveLength(setsBefore); // error rows poison the cache gate
+    } finally {
+      truncSet.clear();
+    }
+  });
+
   it('a failing group MEMBER keeps the V0 partial contract: 200, partial, computed over survivors, uncached', async () => {
     const setsBefore = store.setCalls.length;
-    const { req, res } = makeReqRes({ group: ['AAA', 'NOPE'], lookbackDays: 400 });
-    await handler(req, res);
+    const res = await runScanRequest({ group: ['AAA', 'NOPE'], lookbackDays: 400 });
     expect(res.statusCode).toBe(200);
     expect(res.body.meta.partial).toBe(true);
     expect(res.body.meta.droppedSymbols).toEqual(['NOPE']);
@@ -544,12 +609,15 @@ describe('required assert (d) — a failing driver is reported, never cached, ne
     expect(store.setCalls).toHaveLength(setsBefore);
   });
 
-  it('ALL group members failing → 422 group_unavailable', async () => {
-    const { req, res } = makeReqRes({ group: ['ZZZ'] });
-    await handler(req, res);
+  it('ALL group members failing → 422 group_unavailable, WITHOUT spending the driver universe (members-first fetch)', async () => {
+    const fetchesBefore = fetchCalls.count;
+    const res = await runScanRequest({ group: ['ZZZ'] });
     expect(res.statusCode).toBe(422);
     expect(res.body.error).toBe('group_unavailable');
     expect(res.body.droppedSymbols).toEqual(['ZZZ']);
+    // The guaranteed-fail request must cost the member fetch ONLY — never the
+    // ~25-driver quota burn (code-review fix).
+    expect(fetchCalls.count).toBe(fetchesBefore + 1);
   });
 });
 
@@ -557,8 +625,7 @@ describe('required assert (f) — summary null when nothing clears the floor (se
   let out2;
 
   it('the S-pattern group (orthogonal to P and Q) puts every driver under the floor', async () => {
-    const { req, res } = makeReqRes({ group: ['CCC', 'DDD'], lookbackDays: 400, forceRefresh: true });
-    await handler(req, res);
+    const res = await runScanRequest({ group: ['CCC', 'DDD'], lookbackDays: 400, forceRefresh: true });
     expect(res.statusCode).toBe(200);
     out2 = res.body;
     expect(out2.summary).toBeNull();
@@ -576,13 +643,34 @@ describe('required assert (f) — summary null when nothing clears the floor (se
   });
 });
 
+describe('summary change-word attachment guard (V1.1 rule of record)', () => {
+  it('T-group: TLT clears the floor at corr20 0.3 but corr60 0.1 has no band → change is null, never "tightened"', async () => {
+    // The verdict rule only attaches tightened/weakened when the corr60 base
+    // link EXISTS (strengthBand non-null, |corr60| ≥ 0.15). Gap here is 0.2 —
+    // without the guard this summary would claim a sub-band link "tightened".
+    const res = await runScanRequest({ group: ['GGG', 'HHH'], lookbackDays: 400, forceRefresh: true });
+    expect(res.statusCode).toBe(200);
+    const tlt = res.body.rows.find((r) => r.driver === 'TLT');
+    expect(tlt.corr20).toBeCloseTo(0.3, 6);
+    expect(tlt.corr60).toBeCloseTo((0 + 0 + 0.3) / 3, 6);
+    expect(tlt.tier).toBe('signal');
+    expect(res.body.rows[0].driver).toBe('TLT'); // the only row clearing the floor on this axis
+    expect(res.body.summary).toEqual({
+      driver: 'TLT',
+      label: 'Long-duration Treasuries (TLT)',
+      band: 'loose', // strengthBand(0.3) — real import, not a mock
+      direction: 'positive',
+      change: null, // gap ≥ 0.15 BUT |corr60| = 0.1 < 0.15 → no base link → no change clause
+    });
+  });
+});
+
 describe('required assert (g) — flag-404 + validation & config guards', () => {
   it('404s while CORRELATION_LAB_ENABLED is false, before auth or any fetch', async () => {
     labFlag.on = false;
     try {
       const fetchesBefore = fetchCalls.count;
-      const { req, res } = makeReqRes(BASE_REQUEST);
-      await handler(req, res);
+      const res = await runScanRequest(BASE_REQUEST);
       expect(res.statusCode).toBe(404);
       expect(res.body).toEqual({ error: 'not_found' });
       expect(fetchCalls.count).toBe(fetchesBefore); // nothing fetched, nothing revealed
@@ -598,15 +686,13 @@ describe('required assert (g) — flag-404 + validation & config guards', () => 
     [{ group: ['1AAA'] }, 'invalid_symbol'],
     [{ group: ['AAA'], lookbackDays: 'abc' }, 'invalid_lookback'],
   ])('400s on bad input: %j → %s', async (body, expectedError) => {
-    const { req, res } = makeReqRes(body);
-    await handler(req, res);
+    const res = await runScanRequest(body);
     expect(res.statusCode).toBe(400);
     expect(res.body.error).toBe(expectedError);
   });
 
   it('clamps lookbackDays to the [150, 1260] ceiling and echoes the clamp', async () => {
-    const { req, res } = makeReqRes({ group: ['AAA', 'BBB'], lookbackDays: 5000, forceRefresh: true });
-    await handler(req, res);
+    const res = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 5000, forceRefresh: true });
     expect(res.statusCode).toBe(200);
     expect(res.body.meta.lookbackDays).toBe(1260);
     expect(res.body.rows.find((r) => r.driver === 'XLE').joinedCloses).toBe(N_CLOSES); // fixture depth, unclamped by the deeper ask

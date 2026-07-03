@@ -49,9 +49,10 @@ export const MIN_CLOSES_FOR_INFLECTIONS = 300;
  * @param {number} lookbackDays - trading-day cap (already clamped by the caller)
  * @returns {{ error: string, joinedCloses: number } | {
  *   joinedCloses: number, joinedDates: string[], driverCloses: number[],
- *   memberCloses: number[][], driverReturns: number[], memberReturns: number[][],
- *   groupReturns: number[], groupLevels: number[],
+ *   driverReturns: number[], groupReturns: number[], groupLevels: number[],
  *   corr20: Array|null, corr60: Array|null, divergenceSeries: Array }}
+ * (member closes/returns stay internal — they exist only to build the
+ * composite; neither handler consumes them.)
  */
 export function assembleDriverCore({ driverAsc, memberMaps, registry, lookbackDays }) {
   // TNX scale applies to LEVELS, before differencing (registry contract).
@@ -114,9 +115,7 @@ export function assembleDriverCore({ driverAsc, memberMaps, registry, lookbackDa
     joinedCloses,
     joinedDates,
     driverCloses,
-    memberCloses,
     driverReturns,
-    memberReturns,
     groupReturns,
     groupLevels,
     corr20,

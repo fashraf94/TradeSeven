@@ -26,9 +26,10 @@
  *
  * Caching: same collection (`correlationIntelligence`), doc id
  * sha1(sortedGroup + '|SCAN|' + lookbackDays), same two-sided TTL. Cache ONLY
- * a fully clean run — zero dropped members AND zero dropped drivers (the V0
- * no-poisoned-cache rule at scan blast radius: a transient XLF failure must
- * not bake into every scan of this group until close).
+ * a fully clean run — zero dropped members, zero dropped drivers, AND zero
+ * uncomputable (core-error) rows (the V0 no-poisoned-cache rule at scan blast
+ * radius: a transient XLF failure — whether a failed fetch or a truncated
+ * 200 body — must not bake into every scan of this group until close).
  */
 import { createHash } from 'crypto';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
@@ -78,9 +79,17 @@ const latestValue = (series) => (series && series.length ? series[series.length 
  * and the gap ≥ 0.15). Kept semantically identical here because that file
  * inlines the rule inside the sentence builder; if the rule ever changes
  * there, change it here in the same PR.
+ *
+ * Attachment guard (code-review fix): in the rule of record the change
+ * clause lives inside the band !== null branch — it NEVER attaches when the
+ * corr60 base link is sub-band (|corr60| < 0.15, "no reliable link"). Without
+ * this guard a link that EMERGED from ~0 would be called "weakened" whenever
+ * corr60 sits at noise-level negative — backwards, and contradicting the
+ * deep-dive sentence one click away.
  */
 function signedChangeWord(corr20, corr60) {
   if (corr20 == null || corr60 == null || Math.abs(corr20 - corr60) < 0.15) return null;
+  if (strengthBand(Math.abs(corr60)) === null) return null; // no base link → no change clause
   const moved = corr60 >= 0 ? corr20 - corr60 : corr60 - corr20;
   return moved >= 0 ? 'tightened' : 'weakened';
 }
@@ -169,16 +178,15 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── Fetch the deduped symbol universe: group members + ALL registry
-    //    drivers. Members use the repo-standard app→wire normalization;
-    //    driver symbols come exact from the registry, never re-formatted. ──
+    // ── Fetch MEMBERS FIRST (code-review fix): a guaranteed-fail group must
+    //    not spend the full 25-driver universe before its 422 — members are
+    //    1–2 chunks, and with 25 registry symbols (a chunk-size multiple) the
+    //    split costs zero extra fetches and no extra sleeps on the happy
+    //    path. Members use the repo-standard app→wire normalization; driver
+    //    symbols come exact from the registry, never re-formatted. ──
     const driverKeys = Object.keys(CORRELATION_DRIVERS);
     const memberWire = new Map(group.map((s) => [s, `${normalizeSymbolForEODHD(s)}.US`]));
-    const wireSymbols = new Set([
-      ...group.map((s) => memberWire.get(s)),
-      ...driverKeys.map((k) => CORRELATION_DRIVERS[k].symbol),
-    ]);
-    const rowsBySymbol = await fetchSymbolUniverse(wireSymbols, lookbackDays);
+    const rowsBySymbol = await fetchSymbolUniverse(new Set(memberWire.values()), lookbackDays);
 
     // ── Member-side partial-failure contract (identical to V0) ──
     const survivors = group.filter((s) => rowsBySymbol.get(memberWire.get(s)));
@@ -188,6 +196,19 @@ export default async function handler(req, res) {
     }
     const partial = failedSymbols.length > 0;
 
+    // ── Then the driver symbols not already fetched (a member that IS a
+    //    driver proxy, e.g. SPY, fetches once — that driver's row reads the
+    //    member's rows from the merged map). Inter-batch sleep keeps the
+    //    5-concurrent/300ms wire cadence identical to a single batch. ──
+    const driverOnlySymbols = new Set(
+      driverKeys.map((k) => CORRELATION_DRIVERS[k].symbol).filter((sym) => !rowsBySymbol.has(sym))
+    );
+    if (driverOnlySymbols.size > 0) {
+      await sleep(CHUNK_DELAY_MS);
+      const driverRowsBySymbol = await fetchSymbolUniverse(driverOnlySymbols, lookbackDays);
+      for (const [sym, rows] of driverRowsBySymbol) rowsBySymbol.set(sym, rows);
+    }
+
     // ── Reverse-once boundary for members, ONCE for all 25 driver joins ──
     const memberMaps = survivors.map(
       (s) => new Map([...rowsBySymbol.get(memberWire.get(s))].reverse().map((r) => [r.date, r.close]))
@@ -196,6 +217,11 @@ export default async function handler(req, res) {
     // ── Per-driver assembly: the shared V0 core per registry driver ──
     const rows = [];
     const droppedDrivers = [];
+    // Error rows (fetch succeeded, nothing computable) poison the cache the
+    // same way dropped drivers do: a transiently truncated/corrupt wire body
+    // must not bake a null-stat row into every scan of this group until
+    // close. V0 422s-uncached for the identical core errors (code-review fix).
+    let hadErrorRows = false;
     for (const key of driverKeys) {
       const registry = CORRELATION_DRIVERS[key];
       const driverRows = rowsBySymbol.get(registry.symbol);
@@ -207,6 +233,7 @@ export default async function handler(req, res) {
       const driverAsc = [...driverRows].reverse();
       const core = assembleDriverCore({ driverAsc, memberMaps, registry, lookbackDays });
       if (core.error) {
+        hadErrorRows = true;
         // Fetch succeeded but nothing computable (no overlap / degenerate
         // series) — an honest null-stat row, ranked last, never highlighted.
         rows.push({
@@ -287,9 +314,10 @@ export default async function handler(req, res) {
       summary,
     };
 
-    // ── Cache write: FULLY CLEAN RUNS ONLY (zero dropped members AND zero
-    //    dropped drivers); a cache failure never fails the response ──
-    if (!partial && droppedDrivers.length === 0) {
+    // ── Cache write: FULLY CLEAN RUNS ONLY (zero dropped members, zero
+    //    dropped drivers, zero uncomputable rows); a cache failure never
+    //    fails the response ──
+    if (!partial && droppedDrivers.length === 0 && !hadErrorRows) {
       try {
         const ttlMs = computeCorrelationCacheTtlMs();
         await db.collection('correlationIntelligence').doc(docId).set({

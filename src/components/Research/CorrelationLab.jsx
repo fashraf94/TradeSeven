@@ -186,6 +186,19 @@ function driverTag(ep) {
 
 const pctColor = (v) => (v == null ? HOLO_COLORS.textMuted : v > 0 ? GREEN : v < 0 ? RED : HOLO_COLORS.textSecondary);
 
+// Shared group parsing/validation for both run kinds (one rule, no drift).
+// Module-scope on purpose: pure over its argument, so it can never go stale
+// inside the run/runScan useCallback closures.
+function parseGroup(source) {
+  const group = [...new Set(source.split(/[\s,]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
+  if (group.length < 1 || group.length > 10) {
+    return { error: 'Enter 1–10 ticker symbols (comma-separated). A single ETF proxy works too.' };
+  }
+  const bad = group.filter((s) => !SYMBOL_RE.test(s));
+  if (bad.length) return { error: `Not a valid ticker: ${bad.join(', ')}` };
+  return { group };
+}
+
 // ── V2 Build 2 — multi-driver scan helpers ──────────────────────────────────
 
 // Tension chip colors keyed by the server's tensionState — the same states
@@ -258,6 +271,14 @@ function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
             None of the drivers could be fetched just now — nothing was computed. Re-run to retry.
           </div>
         </div>
+      ) : !scan.rows.some((r) => r.corr20 != null) ? (
+        // Honesty guard: the noise-floor sentence claims a MEASUREMENT was
+        // made — when every row is null-stat (nothing computable), say that.
+        <div style={{ ...card, borderColor: `${AMBER}55` }}>
+          <div style={{ fontSize: 13, color: HOLO_COLORS.textSecondary }}>
+            Couldn't compute correlations for this group — not enough overlapping history to measure anything.
+          </div>
+        </div>
       ) : (
         <div style={card}>
           <div style={{ fontSize: 13, color: HOLO_COLORS.textSecondary }}>
@@ -278,7 +299,7 @@ function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
                   <th style={{ ...cellPad, fontWeight: 600 }}>20d</th>
                   {isDesktop ? <th style={{ ...cellPad, fontWeight: 600 }}>60d</th> : null}
                   <th style={{ ...cellPad, fontWeight: 600 }}>Tension</th>
-                  {isDesktop ? <th style={{ ...cellPad, fontWeight: 600 }} aria-hidden="true" /> : null}
+                  {isDesktop ? <th style={{ ...cellPad, fontWeight: 600 }}>Deep dive</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -289,6 +310,18 @@ function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
                     <tr
                       key={row.driver}
                       onClick={() => onDeepDive(row)}
+                      // Keyboard path: on mobile the row IS the only deep-dive
+                      // affordance, so it must be focusable and Enter/Space
+                      // activatable, not click-only.
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Deep dive: ${row.label}`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onDeepDive(row);
+                        }
+                      }}
                       title={`Deep dive: ${row.label}`}
                       style={{
                         borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`,
@@ -301,7 +334,12 @@ function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
                         <span style={{ color: HOLO_COLORS.textPrimary }}>{row.label}</span>
                         <span style={catChip}>{row.category}</span>
                         {weak ? (
-                          <span style={{ marginLeft: 6, fontSize: 10, color: HOLO_COLORS.textMuted }}>weak/none</span>
+                          // "weak/none" is a MEASURED verdict — a null corr20
+                          // means nothing was computable, which is different
+                          // honesty (presentation-honesty, code-review fix).
+                          <span style={{ marginLeft: 6, fontSize: 10, color: HOLO_COLORS.textMuted }}>
+                            {row.corr20 == null ? 'no data' : 'weak/none'}
+                          </span>
                         ) : null}
                       </td>
                       <td style={{ ...cellPad, fontFamily: MONO, fontWeight: 700, color: weak ? HOLO_COLORS.textMuted : GOLD }}>
@@ -676,17 +714,6 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
     ? customTicker || 'custom ticker'
     : DRIVER_LABELS[driverKey] ?? driverKey;
 
-  // Shared group parsing/validation for both run kinds (one rule, no drift).
-  const parseGroup = (source) => {
-    const group = [...new Set(source.split(/[\s,]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
-    if (group.length < 1 || group.length > 10) {
-      return { error: 'Enter 1–10 ticker symbols (comma-separated). A single ETF proxy works too.' };
-    }
-    const bad = group.filter((s) => !SYMBOL_RE.test(s));
-    if (bad.length) return { error: `Not a valid ticker: ${bad.join(', ')}` };
-    return { group };
-  };
-
   const run = useCallback(
     (forceRefresh = false, override) => {
       // Chips fill the inputs AND run immediately; setState is async, so the
@@ -747,9 +774,14 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
   // V2 Build 2 — SCAN ALL: the group against every registry driver. Shares
   // the group input + validation with single runs; the driver select (and any
   // custom ticker) is ignored — scans are registry-only, CUSTOM never scans.
+  // `groupOverride` (canonical string[], e.g. scan.meta.group) pins a refresh
+  // to the DISPLAYED scan's group even if the input box was edited since —
+  // it fills the input too (the chip idiom), so box and table agree.
   const runScan = useCallback(
-    (forceRefresh = false) => {
-      const parsed = parseGroup(groupInput);
+    (forceRefresh = false, groupOverride = null) => {
+      const source = groupOverride ? groupOverride.join(', ') : groupInput;
+      if (groupOverride) setGroupInput(source);
+      const parsed = parseGroup(source);
       if (parsed.error) {
         setInputError(parsed.error);
         return;
@@ -786,10 +818,18 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
 
   // Deep dive from a scan row: select that driver and run the single-driver
   // analysis (the scan is the breadth surface; this is the depth surface).
+  // `group` arrives as an ARGUMENT from the render-scoped scan payload
+  // (scan.meta.group) — the depth surface must analyze the group the clicked
+  // row describes, not whatever the input box says now; passing it (rather
+  // than reading `scan` here) also avoids a stale capture, since this
+  // callback memoizes on [run] alone. The input box is filled to match (the
+  // chip idiom), so the round-tripped canonical group re-parses identically.
   const deepDive = useCallback(
-    (row) => {
+    (row, group) => {
+      const groupInputValue = group.join(', ');
+      setGroupInput(groupInputValue);
       setDriverKey(row.driver);
-      run(false, { driverKey: row.driver });
+      run(false, { groupInput: groupInputValue, driverKey: row.driver });
     },
     [run]
   );
@@ -855,7 +895,9 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
           <input
             value={groupInput}
             onChange={(e) => setGroupInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
+            // Loading gate matches the disabled buttons — Enter mid-scan must
+            // not discard an in-flight ~27-fetch scan whose quota is spent.
+            onKeyDown={(e) => { if (e.key === 'Enter' && state.status !== 'loading') run(); }}
             placeholder="XOM, CVX, COP"
             style={{
               background: HOLO_COLORS.bgElevated, border: `1px solid ${HOLO_COLORS.borderSubtle}`, borderRadius: 8,
@@ -888,7 +930,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
             <input
               value={customSymbol}
               onChange={(e) => setCustomSymbol(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && state.status !== 'loading') run(); }}
               placeholder="AAPL"
               aria-label="Custom driver ticker"
               style={{
@@ -992,9 +1034,17 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
           })()
         : null}
 
-      {/* V2 Build 2 — scan results replace the single-driver results while displayed */}
+      {/* V2 Build 2 — scan results replace the single-driver results while displayed.
+          Deep dive and refresh are bound to the DISPLAYED scan's group
+          (scan.meta.group), captured render-fresh by these inline closures —
+          never to the live input text, which may have been edited since. */}
       {state.status === 'ready' && scan ? (
-        <ScanResults scan={scan} isDesktop={isDesktop} onDeepDive={deepDive} onRefresh={() => runScan(true)} />
+        <ScanResults
+          scan={scan}
+          isDesktop={isDesktop}
+          onDeepDive={(row) => deepDive(row, scan.meta.group)}
+          onRefresh={() => runScan(true, scan.meta.group)}
+        />
       ) : null}
 
       {state.status === 'ready' && data ? (
