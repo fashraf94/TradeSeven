@@ -275,6 +275,37 @@ export function leadLag(returnsGroup, returnsDriver, maxLag = 5) {
 }
 
 /**
+ * Standardized divergence score (SDS) for observation `i` of a divergence
+ * series — the SAME robust statistic detectInflections flags on, exposed as a
+ * pure function so callers (e.g. the endpoint's `divergence.latest`) can surface
+ * the LATEST observation's SDS WITHOUT recomputing the math. BUILD_RULES §4:
+ * one SDS implementation, never a copy — detectInflections calls this too.
+ *
+ * SDS_i = (d_i − median) / (1.4826 × MAD), median/MAD over the trailing
+ * `baselineWindow` divergence observations EXCLUDING i (a robust baseline so one
+ * fat-tailed shock can't inflate the denominator). NOT a z-score — never
+ * presented as sigma evidence. Returns NULL ("unscoreable") when i has no full
+ * trailing baseline (i < baselineWindow), the current or any baseline `d` is
+ * non-finite, or MAD == 0 (degenerate → null, resolution 2).
+ */
+export function standardizedDivergenceScore(divergenceSeries, i, opts = {}) {
+  const { baselineWindow = SDS_BASELINE_WINDOW } = opts;
+  if (!Array.isArray(divergenceSeries)) return null;
+  const d = divergenceSeries[i]?.d;
+  if (!Number.isInteger(i) || i < baselineWindow || !Number.isFinite(d)) return null;
+  const base = [];
+  for (let k = i - baselineWindow; k < i; k++) {
+    const v = divergenceSeries[k]?.d;
+    if (!Number.isFinite(v)) return null; // baseline gap → unscoreable
+    base.push(v);
+  }
+  const med = median(base);
+  const denom = MAD_SCALE * mad(base, med);
+  if (denom < EPS) return null; // MAD == 0 → unscoreable (resolution 2)
+  return (d - med) / denom;
+}
+
+/**
  * Correlation-regime inflection detection over a caller-built divergence
  * series [{ closeIndex, eventDate, d, corr20, corr60 }] (chronological,
  * entries only where BOTH windows exist, aligned by closeIndex).
@@ -305,31 +336,20 @@ export function detectInflections(divergenceSeries, opts = {}) {
   } = opts;
   const len = divergenceSeries.length;
 
-  // Pass 1 — per-observation SDS + raw/emergency qualification.
+  // Pass 1 — per-observation SDS + raw/emergency qualification. The SDS math is
+  // the shared standardizedDivergenceScore helper (single source of truth): a
+  // null return reproduces every original skip (i < baselineWindow, non-finite
+  // current/baseline d, or MAD == 0), so when score !== null the current d is
+  // finite and the floor check is safe.
   const sds = new Array(len).fill(null);
   const raw = new Array(len).fill(false);
   const emerg = new Array(len).fill(false);
   for (let i = 0; i < len; i++) {
-    const d = divergenceSeries[i]?.d;
-    if (i < baselineWindow || !Number.isFinite(d)) continue; // needs a FULL trailing baseline
-    const base = [];
-    let ok = true;
-    for (let k = i - baselineWindow; k < i; k++) {
-      const v = divergenceSeries[k]?.d;
-      if (!Number.isFinite(v)) {
-        ok = false;
-        break;
-      }
-      base.push(v);
-    }
-    if (!ok) continue;
-    const med = median(base);
-    const denom = MAD_SCALE * mad(base, med);
-    if (denom < EPS) continue; // MAD == 0 → unscoreable (resolution 2)
-    const score = (d - med) / denom;
+    const score = standardizedDivergenceScore(divergenceSeries, i, { baselineWindow });
+    if (score === null) continue;
     sds[i] = score;
     const abs = Math.abs(score);
-    const floorOk = Math.abs(d) >= absFloor;
+    const floorOk = Math.abs(divergenceSeries[i].d) >= absFloor;
     raw[i] = abs >= flagSds && floorOk;
     emerg[i] = abs >= emergencySds && floorOk;
   }
@@ -437,4 +457,21 @@ export function forwardReturns(closes, dates, episodes, horizons = [5, 10, 20]) 
     };
   }
   return out;
+}
+
+/**
+ * Trailing return INTO an anchor close index `c` — the forwardReturns formula
+ * pointed backward: levels[c] / levels[c − look] − 1, the `look`-session move
+ * leading into a regime-break flag. OLDEST-FIRST levels (composite levels or
+ * scaled driver closes). Returns NULL when there is no trailing window
+ * (c < look) or a level is non-finite / the base level is zero — never zero.
+ */
+export function trailingReturnInto(levels, c, look = 5) {
+  if (!Array.isArray(levels)) return null;
+  if (!Number.isInteger(c) || !Number.isInteger(look) || look < 1 || c < look) return null;
+  const base = levels[c - look];
+  const cur = levels[c];
+  if (!Number.isFinite(base) || !Number.isFinite(cur) || base === 0) return null;
+  const v = cur / base - 1;
+  return Number.isFinite(v) ? v : null;
 }

@@ -43,6 +43,8 @@ import {
   leadLag,
   detectInflections,
   forwardReturns,
+  standardizedDivergenceScore,
+  trailingReturnInto,
   SDS_BASELINE_WINDOW,
 } from '../_utils/correlationMath.js';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
@@ -252,12 +254,41 @@ export default async function handler(req, res) {
     if (joinedCloses < MIN_CLOSES_FOR_INFLECTIONS) {
       suppressed.inflections = `insufficient joined history (${joinedCloses} closes, ${MIN_CLOSES_FOR_INFLECTIONS} required)`;
     } else {
-      inflections = detectInflections(divergenceSeries);
+      // Change G — enrich each episode with the trailing 5-session return INTO
+      // the flag (forwardReturns pointed backward): group composite levels and
+      // (scaled) driver closes. Additive to the episode; forwardReturns below
+      // reads only startCloseIndex/startDate/direction, so ordering is free.
+      inflections = detectInflections(divergenceSeries).map((ep) => ({
+        ...ep,
+        groupInto5d: trailingReturnInto(groupLevels, ep.startCloseIndex),
+        driverInto5d: trailingReturnInto(driverCloses, ep.startCloseIndex),
+      }));
       baseRates = {
         group: forwardReturns(groupLevels, joinedDates, inflections),
         driver: forwardReturns(driverCloses, joinedDates, inflections),
       };
     }
+
+    // Change F — divergence tension gauge: the LATEST divergence observation's
+    // state (its d and its SDS, via the shared scorer). A raw stretch measure
+    // (SDS only — no |d| floor / persistence), so it can read high without a
+    // flagged episode. Null when the divergence series is empty OR when
+    // inflection detection is suppressed — the gauge and the regime-break card
+    // appear and disappear together (spec: "null when empty/suppressed"). Score
+    // is null when the last obs lacks a full baseline (unscoreable).
+    const lastDiv =
+      !suppressed.inflections && divergenceSeries.length
+        ? divergenceSeries[divergenceSeries.length - 1]
+        : null;
+    const divergence = {
+      latest: lastDiv
+        ? {
+            d: lastDiv.d,
+            score: standardizedDivergenceScore(divergenceSeries, divergenceSeries.length - 1),
+            eventDate: lastDiv.eventDate,
+          }
+        : null,
+    };
 
     // Headline beta = the LATEST element of the rolling series — never a
     // separately-computed point beta (the number and the line cannot disagree).
@@ -290,6 +321,7 @@ export default async function handler(req, res) {
         unit: registry.unit,
       },
       leadLag: lag,
+      divergence,
       inflections,
       baseRates,
       suppressed,

@@ -54,6 +54,9 @@ const StoryDetail = lazy(() => import('./components/FantasyTimes/StoryDetail'));
 const VeraDeepDive = lazy(() => import('./components/FantasyTimes/VeraDeepDive'));
 const SearchDiscover = lazy(() => import('./components/Search/SearchDiscover'));
 const WatchlistEditor = lazy(() => import('./components/Forge/Watchlist/WatchlistEditor'));
+// Correlation Lab: lazy now that the flag is live (deferred review NIT #9) — the
+// dev-param screen and the Discover "Correlations" tab both render this.
+const CorrelationLab = lazy(() => import('./components/Research/CorrelationLab'));
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -115,7 +118,6 @@ import { OnboardingExperience } from './components/Agent';
 import LeagueScreen from './screens/LeagueScreen';
 import { GROUP_STATUS } from './constants/leagueTournament';
 import TournamentDevScreen from './screens/TournamentDevScreen';
-import CorrelationLab from './components/Research/CorrelationLab';
 import AppLoadingScreen from './components/shared/AppLoadingScreen';
 import { ForgeScreen } from './components/Forge';
 import ForgeWorkshop from './components/Forge/workshop/ForgeWorkshop';
@@ -9676,14 +9678,16 @@ export default function PortfolioDuel() {
     );
   }
 
-  // CORRELATION LAB (Correlation Intelligence V0) — flag-gated, no nav setter;
-  // the ?correlationDev=1 mount effect is its only entry. Merged DARK: with
-  // the flag false this block is dead and the screen id falls through to null.
+  // CORRELATION LAB (Correlation Intelligence) — flag-gated dev-param screen;
+  // the ?correlationDev=1 mount effect is its only entry (the live Discover
+  // "Correlations" tab embeds the same component). Lazy-loaded (NIT #9).
   if (CORRELATION_LAB_ENABLED && screen === 'correlationLab') {
     return (
       <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
       <ErrorBoundary name="CorrelationLab" onNavigateDashboard={() => setScreen('dashboard')}>
+      <Suspense fallback={<LoadingFallback />}>
         <CorrelationLab isDesktop={isDesktop} />
+      </Suspense>
       </ErrorBoundary>
       </div>
     );
