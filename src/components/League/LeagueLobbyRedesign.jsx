@@ -51,7 +51,9 @@ function Stat({ n, label, dot, muted }) {
 function LobbyHero({ st, accent }) {
   const big = st.energy === 'high';
   const liveCount = [...st.rounds.r1, ...st.rounds.r2, st.rounds.r3].filter((p) => p.status === 'live').length;
-  const humans = Object.values(st.field).filter((p) => p.kind === 'human').length;
+  const players = Object.values(st.field);
+  const humans = players.filter((p) => p.kind === 'human').length;
+  const cpus = players.filter((p) => p.kind === 'cpu').length; // REAL CPU count (not 16 − humans)
   return (
     <div style={{ position: 'relative', marginBottom: 16 }}>
       {big && <div style={{ position: 'absolute', top: -30, left: '50%', transform: 'translateX(-50%)', width: 280, height: 160, background: `radial-gradient(circle, ${alpha(accent, 0.14)}, transparent 70%)`, pointerEvents: 'none' }} />}
@@ -62,7 +64,7 @@ function LobbyHero({ st, accent }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 13, flexWrap: 'wrap' }}>
           <Stat n={liveCount} label={liveCount === 1 ? 'pod live' : 'pods live'} dot={LX.energy} />
           <Stat n={humans} label="players" dot={LX.human} muted={humans === 0} />
-          <Stat n={16 - humans} label="CPU agents" dot={LX.cpu} />
+          <Stat n={cpus} label="CPU agents" dot={LX.cpu} muted={cpus === 0} />
         </div>
       </div>
     </div>
@@ -159,8 +161,27 @@ function MyGameBar({ onOpenMyGame }) {
 //    Training|Ranked tabs (LobbyTabbed). Extracted verbatim from the original
 //    single-column lobby so the flag-off composition stays byte-identical. ─────
 
+// The forthcoming-bracket state (real adapter, no bracket doc yet). An explicit,
+// intentional "opens when the season locks" panel — NOT a TBD skeleton that reads
+// as broken, and never demo boxes.
+function BracketPendingSection() {
+  return (
+    <div style={{ borderRadius: 20, padding: '22px 18px', marginBottom: 18, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}`, textAlign: 'center' }}>
+      <Eyebrow color={LTOKENS.ink3} style={{ marginBottom: 14 }}>The bracket · forthcoming</Eyebrow>
+      <div style={{ width: 52, height: 52, borderRadius: 15, margin: '0 auto 14px', background: alpha(LX.energy, 0.14), border: `1px solid ${alpha(LX.energy, 0.34)}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <LIcon name="ranked" size={24} color={LX.energy} stroke={1.9} />
+      </div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>The bracket opens when the season locks</div>
+      <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.5, margin: '9px auto 0', maxWidth: 340 }}>
+        The tournament funnel — four-player groups narrowing to a single champion — seeds when the season locks. Until then, play the weekly base-layer groups below; they feed the leaderboard.
+      </div>
+    </div>
+  );
+}
+
 // THE FUNNEL — the hero. resting state of the whole bracket.
 function BracketFunnelSection({ st, onPickPod }) {
+  if (st.bracketPending) return <BracketPendingSection />;
   return (
     <div style={{ borderRadius: 20, padding: '16px 12px 14px', marginBottom: 18, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px', marginBottom: 14 }}>
@@ -188,9 +209,15 @@ function FieldSection({ st, accent, onSpectate }) {
       <div style={{ fontSize: 11.5, color: LTOKENS.ink3, lineHeight: 1.4, marginBottom: 12 }}>
         Always-on groups of four that everyone plays. These feed the leaderboard — they don&apos;t ladder into the bracket.
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {st.baseGames.map((pod) => <PodCard key={pod.id} pod={pod} accent={accent} onSpectate={(seat) => onSpectate(pod, seat.id)} />)}
-      </div>
+      {st.baseGames.length === 0 ? (
+        <div style={{ padding: '15px 14px', borderRadius: 13, background: LTOKENS.surface, border: `1px dashed ${LTOKENS.hair2}`, textAlign: 'center' }}>
+          <Mono style={{ fontSize: 11, color: LTOKENS.ink3, lineHeight: 1.5 }}>Weekly groups appear here once the base-layer week opens.</Mono>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {st.baseGames.map((pod) => <PodCard key={pod.id} pod={pod} accent={accent} onSpectate={(seat) => onSpectate(pod, seat.id)} />)}
+        </div>
+      )}
     </>
   );
 }

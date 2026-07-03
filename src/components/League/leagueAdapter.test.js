@@ -70,17 +70,6 @@ const bracket = {
   },
 };
 
-const fallback = {
-  fill: 'forming',
-  rounds: { r1: [{ id: 'fx' }], r2: [], r3: null },
-  yourGroup: { id: 'east' },
-  baseGames: [{ id: 'fxBase', base: true }],
-  path: { groups: ['fixture'] },
-  followLive: [{ player: { id: 'fx' } }],
-  field: {},
-  headline: 'fixture',
-};
-
 // ── CPU names (ruling A) ─────────────────────────────────────────────────────
 describe('cpuSeatName', () => {
   it('synthesizes "CPU — {server label}" from the deterministic id→archetype map (cross-surface parity)', () => {
@@ -241,15 +230,23 @@ describe('mapBracketToRounds', () => {
   });
 });
 
-// ── buildLeagueState: cold start vs real data ────────────────────────────────
+// ── buildLeagueState: honest-empty vs real data (NO fixture ever leaks) ───────
 describe('buildLeagueState', () => {
-  it('cold start (no real data) returns the fixture fallback untouched, hasRealData=false', () => {
-    const out = buildLeagueState({ fallback });
-    expect(out.hasRealData).toBe(false);
-    expect(out.state).toBe(fallback); // pure fixtures → signal-capture stays gated off
+  it('cold start (no real data) → HONEST empty state, never the fixture demo; hasRealData=false', () => {
+    const out = buildLeagueState({});
+    expect(out.hasRealData).toBe(false); // signal-capture stays gated off
+    // no demo fill: empty field + empty base games + empty funnel, bracket forthcoming
+    expect(out.state.field).toEqual({});
+    expect(out.state.baseGames).toEqual([]);
+    expect(out.state.bracketPending).toBe(true);
+    expect(out.state.rounds.r1.every((p) => p.seats.every((s) => s === null))).toBe(true);
+    expect(out.state.followLive).toEqual([]);
+    // honest hero copy — never a fixture headline
+    expect(out.state.headline).not.toBe('fixture');
+    expect(out.state.sub).toMatch(/season locks/i);
   });
 
-  it('real data → real sections, presence omitted, hasRealData=true', () => {
+  it('real data → real sections, honest hero, presence omitted, hasRealData=true', () => {
     const out = buildLeagueState({
       myGroup: group,
       bracket,
@@ -257,7 +254,6 @@ describe('buildLeagueState', () => {
       battlesByOwner: { u1: battle },
       names: { u1: 'Alice', u2: 'Bob' },
       uid: 'u1',
-      fallback,
     });
     expect(out.hasRealData).toBe(true);
     expect(out.state.rounds.r1).toHaveLength(4);
@@ -265,19 +261,35 @@ describe('buildLeagueState', () => {
     expect(out.state.baseGames[0].base).toBe(true);
     expect(out.state.followLive).toEqual([]); // no presence source in Phase 1
     expect(out.state.path.groups).toEqual(['east', 'r2a', 'r3']);
-    // hero copy stays fixture-sourced (out of Phase-1 mapping scope)
-    expect(out.state.headline).toBe('fixture');
+    // a real bracket → not pending; hero copy is honest, never the fixture demo
+    expect(out.state.bracketPending).toBe(false);
+    expect(out.state.headline).not.toBe('fixture');
   });
 
-  it('real session without a bracket → HONEST empty funnel (no fixture players), real field still real', () => {
-    const out = buildLeagueState({ myGroup: group, bracket: null, fieldGroups: [group], names: {}, uid: 'u1', fallback });
+  it('the leaderboard `field` is REAL base-layer seats (humans + CPUs), never the 16 demo players', () => {
+    const out = buildLeagueState({ fieldGroups: [group], names: { u1: 'Alice', u2: 'Bob' }, uid: 'u1' });
+    const { field } = out.state;
+    // exactly the base-layer group's real members — no fixture ids (atlas/vela/…)
+    expect(Object.keys(field).sort()).toEqual(['cpu-1', 'cpu-2', 'u1', 'u2']);
+    expect(field.u1.kind).toBe('human');
+    expect(field['cpu-1'].kind).toBe('cpu');
+    // real human + CPU counts are both derivable (the header no longer needs 16 − humans)
+    const humans = Object.values(field).filter((p) => p.kind === 'human').length;
+    const cpus = Object.values(field).filter((p) => p.kind === 'cpu').length;
+    expect(humans).toBe(2);
+    expect(cpus).toBe(2);
+  });
+
+  it('real session without a bracket → HONEST empty funnel + bracketPending, real field still real', () => {
+    const out = buildLeagueState({ myGroup: group, bracket: null, fieldGroups: [group], names: {}, uid: 'u1' });
     expect(out.hasRealData).toBe(true);
-    // NOT the fixture rounds — an empty funnel, so fixture players never masquerade as real
-    expect(out.state.rounds).not.toBe(fallback.rounds);
+    expect(out.state.bracketPending).toBe(true);
+    // an empty funnel, so fixture players never masquerade as real
     expect(out.state.rounds.r1).toHaveLength(4);
     expect(out.state.rounds.r1.every((p) => p.seats.every((s) => s === null))).toBe(true);
     // no "Your group" card (id matches no real pod, and never crashes on .id)
     expect(out.state.yourGroup).toEqual({ id: null });
     expect(out.state.baseGames).toHaveLength(1); // real field
+    expect(Object.keys(out.state.field).length).toBeGreaterThan(0);
   });
 });
