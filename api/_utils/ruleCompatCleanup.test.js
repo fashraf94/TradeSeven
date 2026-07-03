@@ -35,7 +35,8 @@ function applyPlan(fix, plan) {
       if (op.action === 'delete') delete b.ruleHardness[op.ruleDocId];
       else b.ruleHardness[op.ruleDocId] = 'soft';
     } else if (op.op === 'swap_seeded_trait') {
-      const { ruleSpecs, equippedTraits: newEntries } = buildSeedPlan([op.addTraitId], 'moderate');
+      // Runner semantics: the replacement seeds at the plan's captured strength.
+      const { ruleSpecs, equippedTraits: newEntries } = buildSeedPlan([op.addTraitId], op.strength || 'moderate');
       ruleSpecs.forEach((spec, i) => fix.ruleDocs.push({ id: `new-${i}`, ...spec, isDeleted: false }));
       fix.agent.equippedTraits = [
         ...fix.agent.equippedTraits.filter((t) => t.traitId !== op.removeTraitId),
@@ -102,6 +103,38 @@ describe('class: category_hard_trait — the guardian seeded-kit fix (§3)', () 
     );
     expect(projectedTraitIds.has('trait-steady-anchor')).toBe(true);
     expect(projectedTraitIds.has('trait-diversifier')).toBe(false);
+  });
+
+  it('the swap op captures and applies the agent\'s PREVIOUS strength (never a silent moderate reset)', () => {
+    const fix = {
+      agent: agent({ equippedTraits: [{ traitId: 'trait-diversifier', strength: 'dominant', isCustom: false, equippedAt: 1 }] }),
+      ruleDocs: [rule('d1', 'a-05', 'allocation', { traitId: 'trait-diversifier', provenance: 'archetype_default' })],
+      bundleDocs: [],
+    };
+    const swap = analyze(fix).plan.find((op) => op.op === 'swap_seeded_trait');
+    expect(swap.strength).toBe('dominant');
+    applyPlan(fix, analyze(fix).plan);
+    const newEntry = fix.agent.equippedTraits.find((t) => t.traitId === SEEDED_TRAIT_FIX.addTraitId);
+    expect(newEntry.strength).toBe('dominant');
+  });
+
+  it('a trait rule whose doc ALSO sits in a bundle with a hard override is DEMOTABLE (override_hard), not report-only', () => {
+    // projectActiveRules applies a carrier bundle's ruleHardness to trait items,
+    // so the bundle demote genuinely fixes it — the trait-layer treatment is
+    // only for hard conflicts no carrier can reach.
+    const fix = {
+      agent: agent({ equippedTraits: [traitEntry('trait-squeeze-whisperer')] }),
+      ruleDocs: [rule('t1', 'tech-bollinger-squeeze', 'technical', { traitId: 'trait-squeeze-whisperer' })],
+      bundleDocs: [bundle('b1', ['t1'], { ruleHardness: { t1: 'hard' } })],
+    };
+    const a = analyze(fix);
+    expect(a.hardConflicts[0]).toMatchObject({ class: 'override_hard', traitId: 'trait-squeeze-whisperer' });
+    expect(a.plan.some((op) => op.op === 'report_only_trait_conflict')).toBe(false);
+    applyPlan(fix, a.plan);
+    const again = analyze(fix);
+    expect(again.hardConflicts).toEqual([]);
+    expect(again.plan).toEqual([]);
+    expect(fix.agent.activeRules.find((i) => i.ruleId === 't1').hardness).toBe('soft');
   });
 
   it('a NON-seed trait hard conflict (contrarian × trait-sector-rotator) is REPORT-ONLY — no auto-fix', () => {
@@ -223,6 +256,42 @@ describe('skips (skip-and-report; battle.* never touched)', () => {
   it('agent with no archetype → skipped no_archetype (fail-open, nothing planned)', () => {
     const a = analyze({ agent: agent({ archetype: null }), ruleDocs: [], bundleDocs: [] });
     expect(a.skipped).toEqual({ reason: 'no_archetype' });
+  });
+});
+
+describe('lurking hard carriers — soft-projecting conflicts stay shuffle-proof', () => {
+  // guardian × a-05 (hard category) in two bundles: b1 carries the explicit
+  // 'soft' that wins first-explicit-wins projection; b2 lurks with 'hard'.
+  // Archiving b1 would resurrect must-obey — the cleanup demotes b2 NOW.
+  const lurking = () => ({
+    agent: agent(),
+    ruleDocs: [rule('ra', 'a-05', 'allocation')],
+    bundleDocs: [
+      bundle('b1', ['ra'], { ruleHardness: { ra: 'soft' } }),
+      bundle('b2', ['ra'], { ruleHardness: { ra: 'hard' } }),
+    ],
+  });
+
+  it('projects soft (census) but plans the lurking carrier demotes anyway', () => {
+    const a = analyze(lurking());
+    expect(a.hardConflicts).toEqual([]);
+    expect(a.softConflicts).toHaveLength(1);
+    expect(a.lurkingHardCarriers).toHaveLength(1);
+    expect(a.lurkingHardCarriers[0].bundleIds).toEqual(['b2']);
+    expect(a.plan).toEqual([
+      { op: 'demote_bundle_override', bundleId: 'b2', ruleDocId: 'ra', action: 'set_soft', previousValue: 'hard' },
+      { op: 'reproject_active_rules' },
+    ]);
+  });
+
+  it('IDEMPOTENT: apply → re-analyze → clean; a b1 archive can no longer resurrect hard', () => {
+    const fix = lurking();
+    applyPlan(fix, analyze(fix).plan);
+    expect(analyze(fix).plan).toEqual([]);
+    // The shuffle that used to resurrect must-obey:
+    fix.bundleDocs.find((b) => b.id === 'b1').status = 'archived';
+    const after = analyze(fix);
+    expect(after.hardConflicts).toEqual([]); // b2 now carries 'soft'
   });
 });
 

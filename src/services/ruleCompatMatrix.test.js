@@ -271,6 +271,30 @@ describe('matrix — B1 setRuleHardness (explicit promote)', () => {
     expect(store.reads).toEqual([bundlePath('b1')]); // exactly the pre-existing read
     expect(transportCalls.current).toHaveLength(0);
   });
+
+  it("ENFORCE × NULL-CLEAR promote: clearing a 'soft' override on a hard-CATEGORY conflict rule resolves hard → BLOCKED (the UI's Hard toggle sends exactly null)", async () => {
+    flagState.mode = 'enforce';
+    seedAgent('guardian');
+    // The post-cleanup shape: a-05 (allocation ⇒ hard by category) demoted 'soft'.
+    seedRule('ra', { sourceRef: 'a-05', category: 'allocation' });
+    store.docs.set(bundlePath('b1'), { status: 'draft', name: 'B', ruleIds: ['ra'], ruleHardness: { ra: 'soft' } });
+    await expect(setRuleHardness(AGENT, 'b1', 'ra', null, { archetype: 'guardian' }))
+      .rejects.toBeInstanceOf(RuleCompatBlockError);
+    expect(store.docs.get(bundlePath('b1')).ruleHardness).toEqual({ ra: 'soft' }); // demote intact
+    expect(events()[0]).toMatchObject({ type: 'compat_promote_blocked', blocked: true, hardnessRequested: 'hard' });
+  });
+
+  it("ENFORCE × null-clear on a NATIVE hard-category rule (and a conflict clear that resolves SOFT) both pass", async () => {
+    flagState.mode = 'enforce';
+    seedAgent('guardian');
+    seedRule('rn2', { sourceRef: 'alloc-sector-cap', category: 'allocation' }); // guardian NATIVE hard-category
+    seedRule('rc2', { sourceRef: 'tech-bollinger-squeeze', category: 'technical' }); // conflict, soft category
+    store.docs.set(bundlePath('b2'), { status: 'draft', name: 'B2', ruleIds: ['rn2', 'rc2'], ruleHardness: { rn2: 'soft', rc2: 'hard' } });
+    await setRuleHardness(AGENT, 'b2', 'rn2', null, { archetype: 'guardian' }); // native: clear→hard is fine
+    await setRuleHardness(AGENT, 'b2', 'rc2', null, { archetype: 'guardian' }); // conflict: clear→soft (category) is a demote
+    expect(store.docs.get(bundlePath('b2')).ruleHardness).toEqual({});
+    expect(events()).toHaveLength(0);
+  });
 });
 
 // ==================== B2 — updateRule ====================
@@ -295,6 +319,15 @@ describe('matrix — B2 updateRule (category-flip promote)', () => {
     await updateRule(AGENT, 'r2', { category: 'allocation' }, { archetype: 'momentum_chaser' }); // native promote: fine
     expect(store.docs.get(rulePath('r1')).category).toBe('technical');
     expect(store.docs.get(rulePath('r2')).category).toBe('allocation');
+    expect(events()).toHaveLength(0);
+  });
+
+  it('ENFORCE × NON-FLIP: the refine flow re-sending an UNCHANGED hard category on a conflict rule passes (no promotion occurred)', async () => {
+    flagState.mode = 'enforce';
+    seedAgent('guardian');
+    seedRule('r9', { sourceRef: 'a-05', category: 'allocation' }); // already hard by category
+    await updateRule(AGENT, 'r9', { text: 'reworded', category: 'allocation' }, { archetype: 'guardian' });
+    expect(store.docs.get(rulePath('r9')).text).toBe('reworded');
     expect(events()).toHaveLength(0);
   });
 
@@ -354,6 +387,20 @@ describe('matrix — B3 reforgeBundle (hard-override carry-forward)', () => {
     expect(events()[0]).toMatchObject({ type: 'compat_promote_blocked', blocked: true, path: 'reforge_carry', ruleDocId: 'rc' });
   });
 
+  it("ENFORCE: a hard-CATEGORY conflict override strips to an explicit 'soft' — deletion would resurrect must-obey via the category default", async () => {
+    flagState.mode = 'enforce';
+    seedAgent('guardian');
+    seedRule('rh', { sourceRef: 'a-05', category: 'allocation' }); // conflict, hard category
+    store.docs.set(bundlePath('b3'), {
+      status: 'forged', name: 'B3', version: 1, ruleIds: ['rh'],
+      ruleHardness: { rh: 'hard' }, ruleSnapshots: [],
+    });
+    const { strippedConflicts } = await reforgeBundle(AGENT, 'b3', { archetype: 'guardian' });
+    expect(strippedConflicts).toEqual([{ templateId: 'a-05', ruleDocId: 'rh' }]);
+    const draft = [...store.docs.values()].find((d) => d.status === 'draft' && d.name === 'B3');
+    expect(draft.ruleHardness).toEqual({ rh: 'soft' }); // explicit demote, NOT a delete
+  });
+
   it('OBSERVE: carry unchanged (would-strip logged blocked:false), nothing stripped', async () => {
     flagState.mode = 'observe';
     seedAgent('guardian');
@@ -396,7 +443,8 @@ describe('matrix — B6 equipBundle (conflict-equip surface; never blocks)', () 
     flagState.mode = 'enforce';
     seedAgent('guardian');
     seedForgedForEquip();
-    const { compatConflicts } = await equipBundle(AGENT, 'b1');
+    const { compatConflicts, archetype } = await equipBundle(AGENT, 'b1');
+    expect(archetype).toBe('guardian'); // returned so un-threaded equip surfaces render correct warning copy
     expect(store.docs.get(agentPath).equippedBundleIds).toEqual(['b1']);   // equip landed
     expect(store.docs.get(agentPath).activeRules).toHaveLength(4);          // nothing filtered
     expect(compatConflicts).toHaveLength(2);

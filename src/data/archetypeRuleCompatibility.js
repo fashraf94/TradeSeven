@@ -74,6 +74,12 @@ export const ARCHETYPE_KEYS = [
 // review + the Phase 2 warning copy ("Off-style for your [Archetype]:
 // [zone1Ref statement]…"). Statements are distilled verbatim-faithful from the
 // six ARCHETYPE_DEF_*_2026-06-24.md Zone 1 sections.
+//
+// LOCKSTEP NOTE: archetypeAdjustments.js `zones.immutableCore` encodes the
+// same Zone 1 prose for the agent-facing prompt. When an archetype's core is
+// re-adjudicated, update BOTH (the ruleHardness.js client/server pairing
+// discipline) — drift here means warnings describe a different identity than
+// the prompt enforces.
 // ─────────────────────────────────────────────────────────────────────────────
 export const ZONE1_REFS = {
   'TF-Z1-BUY-STRENGTH': {

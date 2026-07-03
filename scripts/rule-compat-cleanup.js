@@ -164,7 +164,9 @@ async function main() {
         } else if (op.op === 'swap_seeded_trait') {
           // The §3 seed fix, in the reseed-safe order: create the replacement
           // trait's docs → swap the trait layer → soft-delete the old docs.
-          const { ruleSpecs, equippedTraits: newEntries } = buildSeedPlan([op.addTraitId], 'moderate');
+          // The plan carries the agent's PREVIOUS strength — the replacement
+          // seeds at the same strength, never a silent moderate reset.
+          const { ruleSpecs, equippedTraits: newEntries } = buildSeedPlan([op.addTraitId], op.strength || 'moderate');
           const createdIds = [];
           for (const spec of ruleSpecs) {
             const ref = await agentRef.collection('rules').add({

@@ -29,13 +29,14 @@ import { waitUntil } from '@vercel/functions';
 // WS1 rescan rider — an archetype change flips the classification input for
 // every already-equipped rule, so under RULE_COMPAT_MODE observe/enforce this
 // endpoint emits one compat_archetype_change_rescan event summarizing the
-// conflicts under the NEW archetype (no UI; observe data only). Both imports
-// are api → src Node-clean data modules (BUILD_RULES §4); the endpoint test's
-// real import of this handler is the dependency-surface guard. The projection
-// helper is the same non-fenced module decide.js uses — read here, never edited.
+// conflicts under the NEW archetype (no UI; observe data only). The featureFlags
+// import is api → src and Node-clean (BUILD_RULES §4); its never-mocked
+// dependency-surface guard is the real import in change-archetype.test.js.
+// Classification runs through the SAME kernel the cleanup script uses
+// (collectProjectedConflicts → projectActiveRules + the compat map) so rescan
+// telemetry and the cleanup census can never disagree.
 import { RULE_COMPAT_MODE } from '../../src/config/featureFlags.js';
-import { getRuleCompatInfo } from '../../src/data/archetypeRuleCompatibility.js';
-import { projectActiveRules } from '../_utils/projectActiveRules.js';
+import { collectProjectedConflicts } from '../_utils/ruleCompatCleanup.js';
 
 export const config = { maxDuration: 10 };
 
@@ -145,23 +146,18 @@ export default async function handler(req, res) {
         agentRef.collection('rules').get(),
         agentRef.collection('bundles').get(),
       ]);
-      const ruleDocs = rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      const bundleDocs = bundlesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      const projected = projectActiveRules(txResult.equippedTraits, ruleDocs, bundleDocs);
-      const docById = new Map(ruleDocs.map((r) => [r.id, r]));
-      const conflicts = [];
-      for (const item of projected) {
-        const sourceRef = docById.get(item.ruleId)?.sourceRef || null;
-        if (!sourceRef) continue; // manual rules are outside the map
-        const info = getRuleCompatInfo(sourceRef, txResult.archetype);
-        if (info.state !== 'core_conflict') continue;
-        conflicts.push({
-          ruleId: sourceRef,
-          ruleDocId: item.ruleId,
-          zone1Ref: info.zone1Ref,
-          hardness: item.hardness || null,
-        });
-      }
+      const { conflicts: kernelConflicts } = collectProjectedConflicts({
+        archetype: txResult.archetype,
+        equippedTraits: txResult.equippedTraits,
+        ruleDocs: rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+        bundleDocs: bundlesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      });
+      const conflicts = kernelConflicts.map(({ item, templateId, zone1Ref }) => ({
+        ruleId: templateId,
+        ruleDocId: item.ruleId,
+        zone1Ref,
+        hardness: item.hardness || null,
+      }));
       await logSignalDrops({
         stage: 'rule_compat',
         userId: user.uid,

@@ -551,18 +551,22 @@ export function useForge(agentId) {
     if (!agentId || equippingBundleId) return;
     setEquippingBundleId(bundleId);
     try {
-      // equipBundleSvc returns { conflictCheckResult, compatConflicts }:
+      // equipBundleSvc returns { conflictCheckResult, compatConflicts, archetype }:
       // the gated reconciler detection result (null when DETECT is off) plus
-      // the WS1 off-style conflicts ([] unless RULE_COMPAT_MODE is active).
-      // Warn, don't block — the equip already succeeded.
-      const { conflictCheckResult, compatConflicts } = await equipBundleSvc(agentId, bundleId);
+      // the WS1 off-style conflicts ([] unless RULE_COMPAT_MODE is active) and
+      // the archetype they were classified against. Warn, don't block — the
+      // equip already succeeded.
+      const { conflictCheckResult, compatConflicts, archetype: classifiedArchetype } =
+        await equipBundleSvc(agentId, bundleId);
       // Report the (committed) equip result BEFORE reloading, and isolate the
       // reload: a transient loadData() failure must not misreport a successful
       // equip as a failure (or swallow the conflict warning).
       // Warning precedence: the archetype off-style warning (enforce only —
       // observe logs silently) > reconciler contradiction > plain success.
+      // The service's classified archetype is the fallback so surfaces that
+      // don't thread opts.archetype still render correct copy.
       const compatWarning = RULE_COMPAT_MODE === 'enforce'
-        ? buildBundleEquipCompatWarning({ archetype: opts.archetype, conflicts: compatConflicts })
+        ? buildBundleEquipCompatWarning({ archetype: opts.archetype ?? classifiedArchetype, conflicts: compatConflicts })
         : null;
       const warning = compatWarning || buildEquipWarning(conflictCheckResult);
       showToast(warning || 'Bundle equipped! Your agent will use these rules in the next battle.');

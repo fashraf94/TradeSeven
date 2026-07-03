@@ -39,6 +39,7 @@
 // No Date/randomness in this module — the runner stamps runId/timestamps.
 
 import { projectActiveRules } from './projectActiveRules.js';
+import { classifyByCategory } from './ruleHardness.js'; // the server hard/soft source — never a fourth {'risk','allocation'} copy
 import { getRuleCompatInfo } from '../../src/data/archetypeRuleCompatibility.js';
 import { GROUP_STATUS } from '../../src/constants/leagueTournament.js';
 
@@ -68,6 +69,46 @@ function containingBundles(bundleDocs, ruleDocId) {
 }
 
 /**
+ * The shared classification kernel: project the agent's equipped surface
+ * exactly as deploy does, join docs for sourceRef, classify under the given
+ * archetype, and return the core_conflict items. Used by analyzeAgentCompat
+ * below AND by the change-archetype rescan (api/agent/change-archetype.js) so
+ * the two never drift. Pure.
+ *
+ * @returns {{ projected: Array, docs: Array, docById: Map,
+ *             conflicts: Array<{item, doc, templateId, zone1Ref}> }}
+ */
+export function collectProjectedConflicts({ archetype, equippedTraits, ruleDocs, bundleDocs }) {
+  const docs = (ruleDocs || []).filter((r) => r && !r.isDeleted);
+  const docById = new Map(docs.map((r) => [r.id, r]));
+  const projected = projectActiveRules(equippedTraits || [], docs, bundleDocs || []);
+  const conflicts = [];
+  for (const item of projected) {
+    const doc = docById.get(item.ruleId);
+    const templateId = doc?.sourceRef || null;
+    if (!templateId) continue; // manual rules are outside the map (V1 boundary)
+    const info = getRuleCompatInfo(templateId, archetype);
+    if (info.state !== 'core_conflict') continue;
+    conflicts.push({ item, doc, templateId, zone1Ref: info.zone1Ref });
+  }
+  return { projected, docs, docById, conflicts };
+}
+
+// Demote a single carrier bundle's entry for a rule: soft-category rules
+// DELETE the entry (reverts to the soft category default); hard-category rules
+// SET 'soft' (deletion would resurrect must-obey via the category fallback).
+function demoteOp(bundle, ruleDocId, categoryDefaultHard) {
+  const previousValue = (bundle.ruleHardness || {})[ruleDocId] ?? null;
+  return {
+    op: 'demote_bundle_override',
+    bundleId: bundle.id,
+    ruleDocId,
+    action: categoryDefaultHard ? 'set_soft' : 'delete',
+    previousValue,
+  };
+}
+
+/**
  * Analyze one agent. Pure.
  *
  * @param {Object} p
@@ -87,6 +128,9 @@ export function analyzeAgentCompat({ agent, ruleDocs, bundleDocs, groupStatusByI
     skipped: null,
     hardConflicts: [],
     softConflicts: [],
+    // Soft-PROJECTING conflicts whose carrier bundles still hold demotable
+    // 'hard' state a shuffle could resurrect (their demotes are planned too).
+    lurkingHardCarriers: [],
     dormantHardConflicts: [],
     plan: [],
   };
@@ -102,127 +146,116 @@ export function analyzeAgentCompat({ agent, ruleDocs, bundleDocs, groupStatusByI
     return { ...base, skipped: { reason: 'group_battle_active', groupId: base.groupId } };
   }
 
-  const docs = (ruleDocs || []).filter((r) => r && !r.isDeleted);
-  const docById = new Map(docs.map((r) => [r.id, r]));
-
-  // "Equipped" = what the deploy projection emits — the source of truth.
-  const projected = projectActiveRules(agent.equippedTraits || [], docs, bundleDocs || []);
+  // "Equipped" = what the deploy projection emits — the source of truth
+  // (shared kernel, also used by the change-archetype rescan).
+  const { projected, docs, conflicts } = collectProjectedConflicts({
+    archetype: base.archetype,
+    equippedTraits: agent.equippedTraits || [],
+    ruleDocs,
+    bundleDocs,
+  });
   const projectedIds = new Set(projected.map((i) => i.ruleId));
 
-  for (const item of projected) {
-    const doc = docById.get(item.ruleId);
-    const templateId = doc?.sourceRef || null;
-    if (!templateId) continue; // manual rules are outside the map (V1 boundary)
-    const info = getRuleCompatInfo(templateId, base.archetype);
-    if (info.state !== 'core_conflict') continue;
+  // Ensure every carrier of this rule ends demoted so no bundle shuffle can
+  // resurrect 'hard' (first-explicit-wins projection): 'hard' entries demote
+  // per category; for hard-CATEGORY rules, carriers without an entry also
+  // gain an explicit 'soft'.
+  const planCarrierDemotes = (ruleDocId, categoryDefaultHard) => {
+    for (const b of containingBundles(bundleDocs, ruleDocId)) {
+      const entry = (b.ruleHardness || {})[ruleDocId];
+      if (entry === 'hard') base.plan.push(demoteOp(b, ruleDocId, categoryDefaultHard));
+      else if (categoryDefaultHard && entry !== 'soft') base.plan.push(demoteOp(b, ruleDocId, true));
+    }
+  };
 
+  for (const { item, doc, templateId, zone1Ref } of conflicts) {
     const record = {
       ruleDocId: item.ruleId,
       templateId,
       category: item.category || null,
       hardness: item.hardness,
-      zone1Ref: info.zone1Ref,
+      zone1Ref,
       origin: deriveOrigin(doc),
       traitId: doc.traitId || null,
     };
-
-    if (item.hardness !== 'hard') {
-      base.softConflicts.push(record); // census only — soft conflicts are untouched (badge-only)
-      continue;
-    }
-
-    // ── hard conflict: classify by WHY it is hard (rider 4.3) ──
     const carriers = containingBundles(bundleDocs, item.ruleId);
-    const categoryDefaultHard = item.category === 'risk' || item.category === 'allocation';
+    const categoryDefaultHard = classifyByCategory(item.category) === 'hard';
     const overrideCarriers = carriers.filter((b) => (b.ruleHardness || {})[item.ruleId] === 'hard');
 
-    if (doc.traitId) {
-      // Trait layer — bundle overrides cannot reach it.
-      const isSeededFixCase =
-        base.archetype === SEEDED_TRAIT_FIX.archetype && doc.traitId === SEEDED_TRAIT_FIX.removeTraitId;
-      base.hardConflicts.push({
-        ...record,
-        class: 'category_hard_trait',
-        seededFixCase: isSeededFixCase,
-        bundleIds: [],
-      });
-      if (isSeededFixCase) {
-        if (!base.plan.some((op) => op.op === 'swap_seeded_trait')) {
-          const traitDocIds = docs.filter((r) => r.traitId === SEEDED_TRAIT_FIX.removeTraitId).map((r) => r.id);
-          const prevEntry = (agent.equippedTraits || []).find((t) => t && t.traitId === SEEDED_TRAIT_FIX.removeTraitId) || null;
-          base.plan.push({
-            op: 'swap_seeded_trait',
-            removeTraitId: SEEDED_TRAIT_FIX.removeTraitId,
-            addTraitId: SEEDED_TRAIT_FIX.addTraitId,
-            softDeleteRuleDocIds: traitDocIds,
-            previousEquippedTraitsEntry: prevEntry,
-          });
-        }
-      } else {
-        base.plan.push({
-          op: 'report_only_trait_conflict',
-          ruleDocId: item.ruleId,
-          templateId,
-          traitId: doc.traitId,
-          // Policy (Phase 5 GO): report-only trait-layer HARD conflicts must be
-          // resolved by UNEQUIPPING the trait before the enforce flip —
-          // accept-and-badge is not a sanctioned end-state for hard conflicts
-          // (they would project must-obey indefinitely).
-          note: 'Trait-layer hard conflict outside the sanctioned seed fix — resolve by unequipping the trait before the enforce flip (accept-and-badge is not a sanctioned end-state for hard conflicts; no generic auto-fix).',
-        });
+    if (item.hardness !== 'hard') {
+      // Census only — soft conflicts stay equipped (badge-only). BUT a 'hard'
+      // entry lurking in a non-winning carrier (or a bare hard-category
+      // carrier) could resurrect must-obey after a bundle shuffle — demote
+      // those now so the cleanup's shuffle-proof claim holds for EVERY
+      // projected conflict, not just the currently-hard ones.
+      base.softConflicts.push(record);
+      if (overrideCarriers.length > 0 || (categoryDefaultHard && carriers.length > 0)) {
+        base.lurkingHardCarriers.push({ ...record, bundleIds: overrideCarriers.map((b) => b.id) });
+        planCarrierDemotes(item.ruleId, categoryDefaultHard);
       }
       continue;
     }
 
+    // ── hard conflict: classify by WHY it is hard (rider 4.3) ──
+    // Bundle-carried hardness is demotable through the carriers even for
+    // TRAIT rules — projectActiveRules applies a carrier's ruleHardness entry
+    // to trait items too, so the override/category-bundled paths take
+    // precedence over the trait-layer treatment.
     if (overrideCarriers.length > 0) {
       base.hardConflicts.push({
         ...record,
         class: 'override_hard',
         bundleIds: overrideCarriers.map((b) => b.id),
       });
-      for (const b of overrideCarriers) {
-        base.plan.push({
-          op: 'demote_bundle_override',
-          bundleId: b.id,
-          ruleDocId: item.ruleId,
-          // Soft-category rules: DELETE the entry (reverts to the soft
-          // category default — byte-parity with never-overridden). Hard-
-          // category rules: SET 'soft' (the only demote that works).
-          action: categoryDefaultHard ? 'set_soft' : 'delete',
-          previousValue: 'hard',
-        });
-      }
-      // A hard-CATEGORY rule whose override we just neutralized still needs
-      // 'soft' present in every OTHER carrier so shuffles can't resurrect it.
-      if (categoryDefaultHard) {
-        for (const b of carriers.filter((x) => !overrideCarriers.includes(x))) {
-          if ((b.ruleHardness || {})[item.ruleId] !== 'soft') {
-            base.plan.push({
-              op: 'demote_bundle_override',
-              bundleId: b.id,
-              ruleDocId: item.ruleId,
-              action: 'set_soft',
-              previousValue: (b.ruleHardness || {})[item.ruleId] ?? null,
-            });
-          }
-        }
-      }
+      planCarrierDemotes(item.ruleId, categoryDefaultHard);
+      continue;
+    }
+    if (carriers.length > 0 && categoryDefaultHard) {
+      base.hardConflicts.push({
+        ...record,
+        class: 'category_hard_bundled',
+        bundleIds: carriers.map((b) => b.id),
+      });
+      planCarrierDemotes(item.ruleId, true);
       continue;
     }
 
-    // No override anywhere → hard purely by category, via bundle membership.
+    // Trait layer proper: hard by category with NO carrier bundle to demote
+    // through (the normal seeded/hand-equipped trait shape).
+    const isSeededFixCase =
+      base.archetype === SEEDED_TRAIT_FIX.archetype && doc.traitId === SEEDED_TRAIT_FIX.removeTraitId;
     base.hardConflicts.push({
       ...record,
-      class: 'category_hard_bundled',
-      bundleIds: carriers.map((b) => b.id),
+      class: 'category_hard_trait',
+      seededFixCase: isSeededFixCase,
+      bundleIds: [],
     });
-    for (const b of carriers) {
+    if (isSeededFixCase) {
+      if (!base.plan.some((op) => op.op === 'swap_seeded_trait')) {
+        const traitDocIds = docs.filter((r) => r.traitId === SEEDED_TRAIT_FIX.removeTraitId).map((r) => r.id);
+        const prevEntry = (agent.equippedTraits || []).find((t) => t && t.traitId === SEEDED_TRAIT_FIX.removeTraitId) || null;
+        base.plan.push({
+          op: 'swap_seeded_trait',
+          removeTraitId: SEEDED_TRAIT_FIX.removeTraitId,
+          addTraitId: SEEDED_TRAIT_FIX.addTraitId,
+          softDeleteRuleDocIds: traitDocIds,
+          previousEquippedTraitsEntry: prevEntry,
+          // Preserve the agent's chosen strength — the replacement trait
+          // seeds at the SAME strength, never a silent moderate reset.
+          strength: ['subtle', 'moderate', 'dominant'].includes(prevEntry?.strength) ? prevEntry.strength : 'moderate',
+        });
+      }
+    } else {
       base.plan.push({
-        op: 'demote_bundle_override',
-        bundleId: b.id,
+        op: 'report_only_trait_conflict',
         ruleDocId: item.ruleId,
-        action: 'set_soft',
-        previousValue: (b.ruleHardness || {})[item.ruleId] ?? null,
+        templateId,
+        traitId: doc.traitId,
+        // Policy (Phase 5 GO): report-only trait-layer HARD conflicts must be
+        // resolved by UNEQUIPPING the trait before the enforce flip —
+        // accept-and-badge is not a sanctioned end-state for hard conflicts
+        // (they would project must-obey indefinitely).
+        note: 'Trait-layer hard conflict outside the sanctioned seed fix — resolve by unequipping the trait before the enforce flip (accept-and-badge is not a sanctioned end-state for hard conflicts; no generic auto-fix).',
       });
     }
   }
@@ -233,7 +266,7 @@ export function analyzeAgentCompat({ agent, ruleDocs, bundleDocs, groupStatusByI
     if (projectedIds.has(doc.id)) continue;
     const templateId = doc.sourceRef || null;
     if (!templateId) continue;
-    if (!(doc.category === 'risk' || doc.category === 'allocation')) continue;
+    if (classifyByCategory(doc.category) !== 'hard') continue;
     const info = getRuleCompatInfo(templateId, base.archetype);
     if (info.state !== 'core_conflict') continue;
     base.dormantHardConflicts.push({
@@ -265,6 +298,7 @@ export function buildCleanupReport({ analyses, runId, mode, generatedAt }) {
     softConflictsByArchetype: {},
     hardConflictsByArchetype: {},
     hardByClass: { override_hard: 0, category_hard_bundled: 0, category_hard_trait: 0 },
+    lurkingHardCarriers: 0,
     dormantHardConflicts: 0,
     reportOnlyTraitConflicts: 0,
   };
@@ -287,6 +321,7 @@ export function buildCleanupReport({ analyses, runId, mode, generatedAt }) {
       census.hardConflictsByArchetype[a.archetype] = (census.hardConflictsByArchetype[a.archetype] || 0) + 1;
       census.hardByClass[h.class] += 1;
     }
+    census.lurkingHardCarriers += a.lurkingHardCarriers.length;
     census.dormantHardConflicts += a.dormantHardConflicts.length;
     census.reportOnlyTraitConflicts += a.plan.filter((op) => op.op === 'report_only_trait_conflict').length;
 

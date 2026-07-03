@@ -7,6 +7,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../../data/forgeKnowledgeBase';
 import { createRule, createBundle, addRuleToBundle, forgeBundle, softDeleteRule } from '../../services/forgeService';
 import { updateAgent } from '../../services/agentService';
+// WS1 — pre-check the whole kit BEFORE creating anything: without it, an
+// enforce-mode block mid-batch rolls the entire kit back and every retry of
+// the same quiz answers fails identically (an onboarding dead-end).
+import { isRuleCompatActive, evaluateRuleCompatWrite, emitRuleCompatEvents } from '../../services/ruleCompatGuard';
+import { classifyRuleHardSoft } from './workshop/hardSoftHelper';
+import { RULE_COMPAT_MODE } from '../../config/featureFlags';
 
 // ── Question-to-rule mapping ─────────────────────────────────
 
@@ -395,6 +401,32 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
     if (forging) return;
     setForging(true);
     setError(null);
+
+    // WS1 — all-or-nothing compat pre-check via the guard's own evaluator
+    // (service-parity category resolution). A blocked rule surfaces ITS block
+    // copy with zero writes — no create-and-rollback churn, no dead-end retry
+    // loop — and emits the blocked event here since the service never runs.
+    // Soft conflicts proceed; the service emits their events on the write.
+    if (isRuleCompatActive() && RULE_COMPAT_MODE === 'enforce' && agent?.archetype) {
+      for (const rule of selectedRules) {
+        const template = getTemplate(rule.id);
+        const ft = template?.forgeTemplates?.[0];
+        if (!ft) continue;
+        const result = evaluateRuleCompatWrite({
+          archetype: agent.archetype,
+          templateId: template.id,
+          resolvedHardness: classifyRuleHardSoft(ft.category || template.category || null),
+          path: 'create_rule',
+          agentId,
+        });
+        if (result.decision === 'block') {
+          await emitRuleCompatEvents({ agentId, archetype: agent.archetype, mode: RULE_COMPAT_MODE, events: result.events });
+          setError(`${result.blockMessage} Swap that rule to continue.`);
+          setForging(false);
+          return;
+        }
+      }
+    }
 
     const ruleIds = [];
     try {

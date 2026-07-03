@@ -16,10 +16,12 @@ import { CATEGORY_ORDER } from '../../../hooks/useForge';
 import { FORGE_RULE_TEMPLATES } from '../../../data/forgeKnowledgeBase';
 import { isHardRule, bundleHardSoftCounts, bundleRuleHardness, classifyRuleHardSoft, ruleCategory } from './hardSoftHelper';
 import { FORGE_HARDSOFT_AUTHORING_ENABLED, RULE_COMPAT_MODE } from '../../../config/featureFlags';
-// WS1 — off-style (archetype-conflict) warning + badge surface. Render-time
-// derivation only; all persistence-side blocking lives in forgeService's guard.
+// WS1 — off-style (archetype-conflict) warning + badge surface. The pre-add
+// decision comes from the guard's own evaluator (single decision source); the
+// service guard stays authoritative for the write itself.
 import { getRuleCompatInfo } from '../../../data/archetypeRuleCompatibility';
-import { buildConflictEquipWarning, buildPromoteBlockedMessage, buildConflictBadge } from '../../../utils/compatSurfaceCopy';
+import { evaluateRuleCompatWrite, emitRuleCompatEvents } from '../../../services/ruleCompatGuard';
+import { buildConflictEquipWarning, buildConflictBadge } from '../../../utils/compatSurfaceCopy';
 
 const STAGES = ['Browse', 'Assemble', 'Hard / Soft', 'Finalize'];
 const LEADS = [
@@ -139,17 +141,32 @@ export default function BundleBuildFlow({ forge, agent, hasActiveBattle, onClose
     if (!template) return;
     // WS1 — check-before-add (the FORGE_CONFLICT_PAIRS trigger semantics):
     // soft off-style rules warn and proceed; must-obey-by-category off-style
-    // rules surface the block copy here and skip the doomed write (the service
-    // guard blocks them regardless of surface).
+    // rules surface the block copy and skip the doomed write. THE decision
+    // comes from the guard's own evaluator with the SAME category resolution
+    // the service uses (firstTemplate.category || template.category), and a
+    // pre-empted block still EMITS its compat_promote_blocked event — the
+    // observe stream must count workshop blocks like every other path.
     if (compatEnforcing && archetype) {
-      const info = getRuleCompatInfo(templateId, archetype);
-      if (info.state === 'core_conflict') {
-        const wouldBeHard = classifyRuleHardSoft(ruleCategory(template)) === 'hard';
-        if (wouldBeHard) {
-          showToast?.(buildPromoteBlockedMessage({ archetype, templateId, path: 'create_rule', zone1Ref: info.zone1Ref }));
-          return;
-        }
-        showToast?.(buildConflictEquipWarning({ archetype, templateId, zone1Ref: info.zone1Ref }));
+      const serviceCategory = template.forgeTemplates?.[0]?.category || template.category || null;
+      const result = evaluateRuleCompatWrite({
+        archetype,
+        templateId,
+        resolvedHardness: classifyRuleHardSoft(serviceCategory),
+        path: 'create_rule',
+        agentId: agent?.id,
+      });
+      if (result.decision === 'block') {
+        // The service is never reached on a pre-empted block, so THIS is the
+        // emission point for its compat_promote_blocked event — otherwise
+        // workshop blocks would vanish from the observe stream.
+        await emitRuleCompatEvents({ agentId: agent?.id, archetype, mode: RULE_COMPAT_MODE, events: result.events });
+        showToast?.(result.blockMessage);
+        return;
+      }
+      if (result.decision === 'warn') {
+        // Warn-and-proceed: no emission here — the service guard emits the
+        // conflict-equip event when the write actually happens (single count).
+        showToast?.(buildConflictEquipWarning({ archetype, templateId, zone1Ref: result.zone1Ref }));
       }
     }
     await forge.addRuleToBundle(template, paramValues, { archetype });

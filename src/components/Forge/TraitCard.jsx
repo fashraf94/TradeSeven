@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp, Search, Zap, BarChart3, ArrowUpRight, Compass,
   Target, CheckCheck, Gauge, RefreshCw, ShieldAlert,
-  Lock, Clock, Repeat, PieChart, Rocket,
+  Lock, Clock, Repeat, PieChart, Rocket, Anchor,
 } from 'lucide-react';
 import TraitStrengthToggle from './TraitStrengthToggle';
 import { FORGE_RULE_TEMPLATES } from '../../data/forgeKnowledgeBase';
@@ -13,7 +13,7 @@ import { FORGE_RULE_TEMPLATES } from '../../data/forgeKnowledgeBase';
 const TRAIT_ICONS = {
   TrendingUp, Search, Zap, BarChart3, ArrowUpRight, Compass,
   Target, CheckCheck, Gauge, RefreshCw, ShieldAlert,
-  Lock, Clock, Repeat, PieChart, Rocket,
+  Lock, Clock, Repeat, PieChart, Rocket, Anchor,
 };
 
 function getIcon(name, props) {
@@ -51,6 +51,11 @@ const STRENGTH_DESCRIPTIONS = {
     subtle: 'Follows VWAP loosely — broad institutional flow preference',
     moderate: 'Strict VWAP adherence — confirmed institutional support required',
     dominant: 'Aggressive institutional tracking — tight VWAP with sector rotation',
+  },
+  'trait-steady-anchor': {
+    subtle: 'Light spread discipline — a few sectors, roomy position caps',
+    moderate: 'Balanced spread — four-plus sectors, moderate position caps',
+    dominant: 'Strict spread — wide sector coverage, tight position caps',
   },
   'trait-threshold-harvester': {
     subtle: 'Balanced scoring approach — harvests only after Double Bagger',

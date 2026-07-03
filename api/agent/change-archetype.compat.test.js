@@ -6,9 +6,10 @@
 // flag to 'observe'; the base file runs the real flag ('off') and so also
 // proves the off surface stays byte-identical (no rescanLogged field).
 //
-// The real imports of projectActiveRules + archetypeRuleCompatibility inside
-// the handler are exercised un-mocked (BUILD_RULES §4 dependency-surface
-// guard for the api → src edge).
+// The rescan kernel (ruleCompatCleanup → projectActiveRules + the compat map)
+// is exercised un-mocked here. The §4 dependency-surface guard for the
+// handler's api → src edges (including featureFlags, which THIS file mocks by
+// design) is the base change-archetype.test.js — see its header.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 

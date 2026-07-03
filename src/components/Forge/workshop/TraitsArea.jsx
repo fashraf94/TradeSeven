@@ -13,7 +13,7 @@ import React, { useMemo, useState } from 'react';
 import {
   TrendingUp, Search, Zap, BarChart3, ArrowUpRight, Compass,
   Target, CheckCheck, Gauge, RefreshCw, ShieldAlert,
-  Lock, Clock, Repeat, PieChart, Rocket,
+  Lock, Clock, Repeat, PieChart, Rocket, Anchor,
 } from 'lucide-react';
 import { useFK, alpha, AreaHeader, Orb, Mono, Icon, ShelfHeader, WorkbenchBanner } from './forgeKit';
 import { DNA_GROUPS, TOTAL_TRAIT_SLOTS } from '../../../data/dnaGroups';
@@ -30,7 +30,7 @@ import TraitsExploration from './traits/TraitsExploration';
 const TRAIT_ICONS = {
   TrendingUp, Search, Zap, BarChart3, ArrowUpRight, Compass,
   Target, CheckCheck, Gauge, RefreshCw, ShieldAlert,
-  Lock, Clock, Repeat, PieChart, Rocket,
+  Lock, Clock, Repeat, PieChart, Rocket, Anchor,
 };
 function getTraitIcon(name, props) {
   const Cmp = TRAIT_ICONS[name];

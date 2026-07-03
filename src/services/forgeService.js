@@ -140,7 +140,8 @@ function validateRuleInput(ruleData) {
 // by the caller (fence-lite rider: batch flows pass it so the guard never does
 // per-rule reads); fall back to ONE agent-doc read. Only called when the guard
 // is active. null (unknown agent/archetype) fails open to 'neutral' downstream.
-async function resolveArchetypeForCompat(agentId, threadedArchetype) {
+// Exported so UI pre-checks (useTraits, StarterKit) share the exact resolution.
+export async function resolveArchetypeForCompat(agentId, threadedArchetype) {
   if (threadedArchetype) return threadedArchetype;
   try {
     const agentSnap = await getDoc(doc(db, 'agents', agentId));
@@ -290,17 +291,20 @@ export const updateRule = async (agentId, ruleId, updates, opts = {}) => {
   filtered.updatedAt = serverTimestamp();
   const ruleRef = doc(db, 'agents', agentId, 'rules', ruleId);
 
-  // WS1 B2 guard — a category flip that lands must-obey (risk/allocation) is a
-  // promote path. Only the hard direction is guarded; the rule doc is read for
-  // its sourceRef only when needed (guard active + category becoming hard).
+  // WS1 B2 guard — a category FLIP that lands must-obey (risk/allocation) is a
+  // promote path. Guarded only when the category actually transitions
+  // soft→hard: an update that re-sends an unchanged hard category (the refine
+  // flow always sends { text, category }) is not a promotion and must pass.
   if (
     isRuleCompatActive() &&
     'category' in filtered &&
     resolveRuleHardness({ category: filtered.category || null }) === 'hard'
   ) {
     const ruleSnap = await getDoc(ruleRef);
-    const sourceRef = ruleSnap.exists() ? ruleSnap.data().sourceRef || null : null;
-    if (sourceRef) {
+    const prev = ruleSnap.exists() ? ruleSnap.data() : null;
+    const sourceRef = prev?.sourceRef || null;
+    const prevCategoryHard = resolveRuleHardness({ category: prev?.category || null }) === 'hard';
+    if (sourceRef && !prevCategoryHard) {
       const archetype = await resolveArchetypeForCompat(agentId, opts.archetype);
       await guardRuleCompatWrite({
         archetype,
@@ -454,12 +458,20 @@ export const setRuleHardness = async (agentId, bundleId, ruleId, value, opts = {
   if (bundle.status !== 'draft') throw new Error('Can only edit rules on draft bundles');
   if (!(bundle.ruleIds || []).includes(ruleId)) throw new Error('Rule is not in this bundle');
 
-  // WS1 B1 guard — THE explicit promote path. Soft/clear writes are never
-  // guarded (demote direction is always safe).
-  if (isRuleCompatActive() && value === 'hard') {
+  // WS1 B1 guard — THE explicit promote path. A promote is any write whose
+  // RESULTING resolved hardness is 'hard' when the current resolution is not:
+  // that includes value === 'hard' AND value === null on a hard-CATEGORY rule
+  // (clearing a 'soft' override reverts to the category default 'hard' — the
+  // UI sends exactly null when the desired value equals the default, so the
+  // Hard toggle on a demoted risk/allocation rule takes the null path).
+  // Demote-direction writes ('soft', or clears that resolve soft) never guard.
+  if (isRuleCompatActive() && value !== 'soft') {
     const ruleSnap = await getDoc(doc(db, 'agents', agentId, 'rules', ruleId));
-    const sourceRef = ruleSnap.exists() ? ruleSnap.data().sourceRef || null : null;
-    if (sourceRef) {
+    const ruleData = ruleSnap.exists() ? ruleSnap.data() : null;
+    const sourceRef = ruleData?.sourceRef || null;
+    const prevResolved = resolveRuleHardness({ category: ruleData?.category || null }, (bundle.ruleHardness || {})[ruleId]);
+    const newResolved = resolveRuleHardness({ category: ruleData?.category || null }, value ?? undefined);
+    if (sourceRef && newResolved === 'hard' && prevResolved !== 'hard') {
       const archetype = await resolveArchetypeForCompat(agentId, opts.archetype);
       await guardRuleCompatWrite({
         archetype,
@@ -673,8 +685,9 @@ export const equipBundle = async (agentId, bundleId) => {
 
   // Return the (gated) equip-time detection result so the hook can surface a
   // non-blocking, bundle-scoped warning (null when DETECT is off → no toast),
-  // plus the compat conflicts for the enforce-mode off-style warning.
-  return { conflictCheckResult, compatConflicts };
+  // plus the compat conflicts + the archetype they were classified against
+  // (the hook's warning copy needs it; most equip surfaces don't thread it).
+  return { conflictCheckResult, compatConflicts, archetype: agentData.archetype || null };
 };
 
 /**
@@ -752,18 +765,24 @@ export const reforgeBundle = async (agentId, bundleId, opts = {}) => {
 
   if (bundle.status === 'draft') throw new Error('Cannot reforge a draft bundle — edit it directly');
 
-  // WS1 B3 — evaluate the hard overrides being carried forward.
-  let carriedHardness = bundle.ruleHardness || {};
+  // WS1 B3 — evaluate the hard overrides being carried forward. A blocked
+  // carry is DEMOTED in the new draft's map, not deleted-blindly: deleting the
+  // entry only demotes SOFT-category rules (they revert to the soft category
+  // default); a hard-CATEGORY rule must carry an explicit 'soft' or deletion
+  // resurrects must-obey via the category fallback.
+  const carriedHardness = { ...(bundle.ruleHardness || {}) };
   const strippedConflicts = [];
   const hardOverrideIds = Object.keys(carriedHardness).filter((rid) => carriedHardness[rid] === 'hard');
   if (isRuleCompatActive() && hardOverrideIds.length > 0) {
-    const archetype = await resolveArchetypeForCompat(agentId, opts.archetype);
+    const [archetype, ...ruleSnaps] = await Promise.all([
+      resolveArchetypeForCompat(agentId, opts.archetype),
+      ...hardOverrideIds.map((rid) => getDoc(doc(db, 'agents', agentId, 'rules', rid))),
+    ]);
     const events = [];
-    let enforcing = false;
-    for (const rid of hardOverrideIds) {
-      const ruleSnap = await getDoc(doc(db, 'agents', agentId, 'rules', rid));
-      const sourceRef = ruleSnap.exists() ? ruleSnap.data().sourceRef || null : null;
-      if (!sourceRef) continue;
+    hardOverrideIds.forEach((rid, i) => {
+      const ruleData = ruleSnaps[i].exists() ? ruleSnaps[i].data() : null;
+      const sourceRef = ruleData?.sourceRef || null;
+      if (!sourceRef) return;
       const result = evaluateRuleCompatWrite({
         archetype,
         templateId: sourceRef,
@@ -775,16 +794,16 @@ export const reforgeBundle = async (agentId, bundleId, opts = {}) => {
       events.push(...result.events);
       if (result.decision === 'block') {
         // Strip instead of blocking the whole reforge (approved treatment).
-        enforcing = true;
+        if (resolveRuleHardness({ category: ruleData?.category || null }) === 'hard') {
+          carriedHardness[rid] = 'soft'; // hard category: explicit demote
+        } else {
+          delete carriedHardness[rid];   // soft category: revert to default
+        }
         strippedConflicts.push({ templateId: sourceRef, ruleDocId: rid });
       }
-    }
+    });
     if (events.length > 0) {
       await emitRuleCompatEvents({ agentId, archetype, mode: RULE_COMPAT_MODE, events });
-    }
-    if (enforcing) {
-      carriedHardness = { ...carriedHardness };
-      for (const s of strippedConflicts) delete carriedHardness[s.ruleDocId];
     }
   }
 

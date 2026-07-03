@@ -7,6 +7,12 @@
 // Pattern reference: api/agent/equip-watchlist.test.js (hoisted mock state,
 // request/response helper, beforeEach reset). The fake Firestore here covers
 // only the `agents` collection (single-doc read+write).
+//
+// WS1: this file's REAL (un-mocked) import of the handler — whose graph pulls
+// src/config/featureFlags + api/_utils/ruleCompatCleanup (→ the compat map) —
+// IS the BUILD_RULES §4 dependency-surface guard for those api → src edges.
+// NEVER mock featureFlags here (the .compat.test.js sibling mocks it by
+// design; THIS file is the guard).
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 

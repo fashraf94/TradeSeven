@@ -3,8 +3,14 @@
 // WS1 Phase 2 — defense-in-depth: with the REAL RULE_COMPAT_MODE (no flag
 // mock; currently 'off'), the endpoint 404s before auth or validation — the
 // scouting-board dark-surface pattern. Kept as its own file because the flag
-// is a code constant bound at module load. NOTE: this suite self-skips once
+// is a code constant bound at module load. NOTE: the 404 test self-skips once
 // the flag walks past 'off' (the mocked companion file covers live modes).
+//
+// This file's REAL imports of featureFlags + the handler (whose graph pulls
+// src/data/archetypeRuleCompatibility) ARE the BUILD_RULES §4
+// dependency-surface guard for the endpoint's api → src edges — they run in
+// the Node env and must NEVER be mocked here (the companion .test.js mocks the
+// flag by design; THIS file is the guard).
 
 import { describe, it, expect, vi } from 'vitest';
 
@@ -24,8 +30,17 @@ vi.mock('../_utils/shadowLogger.js', () => ({
   },
 }));
 
+// REAL imports — the §4 dependency-surface guard (see header). Never mock.
 const { RULE_COMPAT_MODE } = await import('../../src/config/featureFlags.js');
 const { default: handler } = await import('./log-rule-compat-event.js');
+const compatMap = await import('../../src/data/archetypeRuleCompatibility.js');
+
+describe('BUILD_RULES §4 dependency-surface guard (Node-clean api → src edges)', () => {
+  it('featureFlags + the compat map load un-mocked in the Node env', () => {
+    expect(typeof RULE_COMPAT_MODE).toBe('string');
+    expect(Array.isArray(compatMap.ARCHETYPE_KEYS)).toBe(true);
+  });
+});
 
 describe('log-rule-compat-event — dark while RULE_COMPAT_MODE is off', () => {
   it.skipIf(RULE_COMPAT_MODE !== 'off')('404s before touching security, auth, or the logger', async () => {
