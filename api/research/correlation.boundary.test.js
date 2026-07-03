@@ -151,6 +151,11 @@ function wireFor(symbol) {
   if (symbol === 'BNO.US') return DRIVER_WIRE; // BRENT's registry symbol (Fix 1: BNO ETF proxy)
   if (symbol === 'AAA.US') return MEMBER_A_WIRE;
   if (symbol === 'BBB.US') return MEMBER_B_WIRE;
+  // EODHD wire forms for the symbol-normalization test: app-form BRK.B must
+  // arrive here as BRK-B.US (dot→hyphen), user-entered SPY.US as SPY.US (one
+  // suffix). The un-normalized forms (BRK.B.US / SPY.US.US) have no wire.
+  if (symbol === 'BRK-B.US') return MEMBER_A_WIRE;
+  if (symbol === 'SPY.US') return MEMBER_B_WIRE;
   return null;
 }
 
@@ -412,11 +417,34 @@ describe('validation + config guards', () => {
     expect(res.body.error).toBe(expectedError);
   });
 
-  it('accepts dotted/hyphenated tickers (BRK.B idiom) at the validation layer', async () => {
-    const { req, res } = makeReqRes({ group: ['BRK.B'], driver: 'BRENT' });
+  it('accepts dotted/hyphenated tickers (BF.B idiom) at the validation layer', async () => {
+    const { req, res } = makeReqRes({ group: ['BF.B'], driver: 'BRENT' });
     await handler(req, res);
-    expect(res.statusCode).toBe(422); // passes validation; fails only at the (unmocked) fetch
+    expect(res.statusCode).toBe(422); // passes validation; fails only at the (unmocked BF-B.US) fetch
     expect(res.body.error).toBe('group_unavailable');
+    expect(res.body.droppedSymbols).toEqual(['BF.B']); // reported in app form, not wire form
+  });
+
+  it('normalizes symbols for EODHD: BRK.B fetches as BRK-B.US and a user-entered SPY.US canonicalizes (never BRK.B.US / SPY.US.US)', async () => {
+    const before = fetchCalls.symbols.length;
+    const { req, res } = makeReqRes({
+      group: ['BRK.B', 'SPY.US'],
+      driver: 'BRENT',
+      lookbackDays: 400,
+      forceRefresh: true,
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.meta.partial).toBe(false);
+    expect(res.body.meta.droppedSymbols).toEqual([]);
+    expect(res.body.meta.group).toEqual(['BRK.B', 'SPY']); // canonical app form: dots kept, trailing .US stripped
+    expect(res.body.meta.joinedCloses).toBe(360);
+    const wireSymbols = fetchCalls.symbols.slice(before);
+    expect(wireSymbols).toContain('BRK-B.US'); // repo-standard dot→hyphen class-share form
+    expect(wireSymbols).toContain('SPY.US'); // exactly one suffix
+    expect(wireSymbols).toContain('BNO.US');
+    expect(wireSymbols).not.toContain('BRK.B.US');
+    expect(wireSymbols).not.toContain('SPY.US.US');
   });
 
   it('clamps lookbackDays to the [150, 1260] ceiling and echoes the clamp', async () => {

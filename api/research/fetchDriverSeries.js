@@ -17,6 +17,8 @@
  * that endpoint's own TIMEFRAME_CONFIG, not an API limit.
  */
 
+import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
+
 const API_BASE = 'https://eodhd.com/api';
 const CHUNK_SIZE = 5;
 const CHUNK_DELAY_MS = 300;
@@ -57,17 +59,21 @@ export async function fetchEodCloses(eodhSymbol, lookbackDays) {
 
 /**
  * Fetch the driver plus every group member (US equities get the `.US` suffix —
- * the SPY.US idiom), chunked 5 concurrent with ~300ms between chunks via
- * Promise.allSettled, mirroring the repo's hand-rolled batch convention.
+ * the SPY.US idiom — after the repo-standard dot→hyphen class-share
+ * normalization: app-form BRK.B fetches as BRK-B.US, the convention every
+ * other EODHD equity path uses via symbolNormalize.js), chunked 5 concurrent
+ * with ~300ms between chunks via Promise.allSettled, mirroring the repo's
+ * hand-rolled batch convention.
  *
  * → { driverRows: rows|null, memberRows: { SYMBOL: rows }, failedSymbols }
- * failedSymbols lists group members (ORIGINAL ticker form, not .US) whose
- * fetch failed or returned no usable rows. A failed driver → driverRows null.
+ * memberRows/failedSymbols are keyed by the ORIGINAL app-form ticker (dots,
+ * no suffix), not the EODHD wire form. A failed driver → driverRows null.
+ * Driver symbols come exact from the registry and are never re-formatted.
  */
 export async function fetchAllSeries({ driverSymbol, groupSymbols, lookbackDays }) {
   const jobs = [
     { key: '__driver__', eodhd: driverSymbol },
-    ...groupSymbols.map((s) => ({ key: s, eodhd: `${s}.US` })),
+    ...groupSymbols.map((s) => ({ key: s, eodhd: `${normalizeSymbolForEODHD(s)}.US` })),
   ];
   const results = new Map();
   for (let i = 0; i < jobs.length; i += CHUNK_SIZE) {

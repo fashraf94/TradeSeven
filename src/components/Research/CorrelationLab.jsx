@@ -22,7 +22,7 @@
  * mechanics (fixed [−1,1] domain for correlations) — the Season component is
  * untouched.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { ChartSkeleton } from './ResearchSkeletons';
@@ -41,6 +41,15 @@ const DRIVER_OPTIONS = [
 ];
 
 const SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/; // mirrors the endpoint's pinned regex
+
+// Single source for the endpoint's coded 422 failures (state.error carries
+// "<status>:<code>"). Message = matched entry; the raw-code detail line shows
+// only for codes NOT in this map — one list, no drift between the two.
+const ERROR_COPY = {
+  driver_unavailable: (driverLabel) => `Couldn't fetch ${driverLabel} data right now.`,
+  group_unavailable: () => 'None of those tickers returned data — check the symbols.',
+  no_overlapping_history: () => "Couldn't get enough overlapping history for that pair.",
+};
 const MONO = "'SF Mono', 'Monaco', 'Consolas', monospace";
 const GOLD = '#F0C75E'; // SeasonPerformanceChart line colors
 const GRAY = '#8B949E';
@@ -343,6 +352,10 @@ export default function CorrelationLab({ isDesktop }) {
   const [inputError, setInputError] = useState(null);
   const [state, setState] = useState({ status: 'idle', data: null, error: null });
   const [chartTab, setChartTab] = useState('corr');
+  // Stale-response guard (the ScoutingBoardSheet cancellation idiom, sequence
+  // form): overlapping runs resolve in arbitrary order, and without this a
+  // slow response for an OLD query would overwrite a newer result on screen.
+  const runSeq = useRef(0);
 
   const driverLabel = DRIVER_OPTIONS.find((d) => d.key === driverKey)?.label ?? driverKey;
 
@@ -359,6 +372,7 @@ export default function CorrelationLab({ isDesktop }) {
         return;
       }
       setInputError(null);
+      const seq = ++runSeq.current;
       setState({ status: 'loading', data: null, error: null });
       fetchWithAuth('/api/research/correlation', {
         method: 'POST',
@@ -372,20 +386,31 @@ export default function CorrelationLab({ isDesktop }) {
           }
           return r.json();
         })
-        .then((data) => setState({ status: 'ready', data, error: null }))
-        .catch((e) => setState({ status: 'error', data: null, error: e.message }));
+        .then((data) => {
+          if (seq !== runSeq.current) return; // a newer run superseded this one
+          setState({ status: 'ready', data, error: null });
+        })
+        .catch((e) => {
+          if (seq !== runSeq.current) return;
+          setState({ status: 'error', data: null, error: e.message });
+        });
     },
     [groupInput, driverKey]
   );
 
   const data = state.data;
-  const corrDates = useMemo(() => (data ? data.series.corr60.map((e) => e.eventDate) : []), [data]);
-  const corr20OnCorr60 = useMemo(() => {
+  // X-axis derives from corr20 — the LONGER series (its windows start 40
+  // sessions earlier). corr60 maps onto it by eventDate; dates before corr60's
+  // first window resolve to null and segmentsOf gaps that line, so a short
+  // joined history (21–60 closes) still draws the valid 20d series instead of
+  // hiding it. corr60's eventDates are a subset of corr20's (same joinedDates).
+  const corrDates = useMemo(() => (data ? data.series.corr20.map((e) => e.eventDate) : []), [data]);
+  const corr20Pts = useMemo(() => (data ? data.series.corr20.map((e) => ({ v: e.value })) : []), [data]);
+  const corr60OnCorr20 = useMemo(() => {
     if (!data) return [];
-    const byDate = new Map(data.series.corr20.map((e) => [e.eventDate, e.value]));
+    const byDate = new Map(data.series.corr60.map((e) => [e.eventDate, e.value]));
     return corrDates.map((d) => ({ v: byDate.get(d) ?? null }));
   }, [data, corrDates]);
-  const corr60Pts = useMemo(() => (data ? data.series.corr60.map((e) => ({ v: e.value })) : []), [data]);
   const betaDates = useMemo(() => (data ? data.series.beta40.map((e) => e.eventDate) : []), [data]);
   const episodeDates = useMemo(() => (data?.inflections ?? []).map((ep) => ep.startDate), [data]);
 
@@ -483,29 +508,26 @@ export default function CorrelationLab({ isDesktop }) {
         <div style={card}><ChartSkeleton height={240} /></div>
       ) : null}
 
-      {state.status === 'error' ? (
-        <div style={{ ...card, borderColor: '#EF444455' }}>
-          <div style={{ fontSize: 13, color: HOLO_COLORS.textPrimary, marginBottom: 8 }}>
-            {/* state.error carries "<status>:<code>" — distinct copy per failure
-                mode so a driver outage never reads as a history problem. */}
-            {String(state.error).includes('driver_unavailable')
-              ? `Couldn't fetch ${driverLabel} data right now.`
-              : String(state.error).includes('group_unavailable')
-                ? 'None of those tickers returned data — check the symbols.'
-                : String(state.error).includes('no_overlapping_history')
-                  ? "Couldn't get enough overlapping history for that pair."
-                  : "Couldn't run that query just now."}
-          </div>
-          {!['driver_unavailable', 'group_unavailable', 'no_overlapping_history'].some((code) => String(state.error).includes(code)) ? (
-            <div style={{ fontSize: 10, color: HOLO_COLORS.textMuted, marginBottom: 8, fontFamily: MONO }}>
-              {String(state.error)}
-            </div>
-          ) : null}
-          <button onClick={() => run()} style={{ background: 'transparent', border: `1px solid ${HOLO_COLORS.borderSubtle}`, borderRadius: 8, color: HOLO_COLORS.textSecondary, padding: '6px 14px', fontSize: 12, cursor: 'pointer' }}>
-            Try again
-          </button>
-        </div>
-      ) : null}
+      {state.status === 'error'
+        ? (() => {
+            const knownCode = Object.keys(ERROR_COPY).find((code) => String(state.error).includes(code));
+            return (
+              <div style={{ ...card, borderColor: '#EF444455' }}>
+                <div style={{ fontSize: 13, color: HOLO_COLORS.textPrimary, marginBottom: 8 }}>
+                  {knownCode ? ERROR_COPY[knownCode](driverLabel) : "Couldn't run that query just now."}
+                </div>
+                {!knownCode ? (
+                  <div style={{ fontSize: 10, color: HOLO_COLORS.textMuted, marginBottom: 8, fontFamily: MONO }}>
+                    {String(state.error)}
+                  </div>
+                ) : null}
+                <button onClick={() => run()} style={{ background: 'transparent', border: `1px solid ${HOLO_COLORS.borderSubtle}`, borderRadius: 8, color: HOLO_COLORS.textSecondary, padding: '6px 14px', fontSize: 12, cursor: 'pointer' }}>
+                  Try again
+                </button>
+              </div>
+            );
+          })()
+        : null}
 
       {state.status === 'ready' && data ? (
         <>
@@ -574,8 +596,8 @@ export default function CorrelationLab({ isDesktop }) {
               corrDates.length ? (
                 <DualSeriesChart
                   title={`Group vs ${driverLabel} — rolling correlation`}
-                  seriesA={corr20OnCorr60}
-                  seriesB={corr60Pts}
+                  seriesA={corr20Pts}
+                  seriesB={corr60OnCorr20}
                   labelA="20d"
                   labelB="60d"
                   domain={[-1, 1]}
@@ -585,7 +607,7 @@ export default function CorrelationLab({ isDesktop }) {
                 />
               ) : (
                 <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted, padding: '24px 0' }}>
-                  Not enough joined history for a 60-day rolling window.
+                  Not enough joined history for a 20-day rolling window.
                 </div>
               )
             ) : (
@@ -672,7 +694,10 @@ export default function CorrelationLab({ isDesktop }) {
                       driver={data.baseRates.driver?.[h]}
                       sinceDate={data.meta.firstEligibleInflectionDate}
                       driverLabel={driverLabel}
-                      driverUnit={data.meta.driverUnit}
+                      // Forward returns are ALWAYS percent-of-level (closes[c+h]/closes[c]−1),
+                      // so TNX must not carry its diff-mode 'yield points (pp)' unit here —
+                      // that label belongs to the diff returns (beta/inflections), not this number.
+                      driverUnit={data.meta.driver === 'TNX' ? '% change in yield level' : data.meta.driverUnit}
                     />
                   ))}
                   <div style={{ fontSize: 10, color: HOLO_COLORS.textMuted }}>

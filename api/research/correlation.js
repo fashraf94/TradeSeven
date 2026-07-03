@@ -120,7 +120,13 @@ export default async function handler(req, res) {
   if (!Array.isArray(body.group) || body.group.length < 1 || body.group.length > 10) {
     return res.status(400).json({ error: 'invalid_group', message: 'group must be 1–10 symbols.' });
   }
-  const group = [...new Set(body.group.map((s) => String(s).trim().toUpperCase()))];
+  // Canonicalize to app-form tickers (uppercase, one trailing '.US' stripped)
+  // BEFORE dedupe/regex/cache-key: 'SPY' and 'SPY.US' must be one member —
+  // otherwise they double-weight the composite and split the cache key. The
+  // fetch helper owns the EODHD wire form (dot→hyphen + '.US').
+  const group = [
+    ...new Set(body.group.map((s) => String(s).trim().toUpperCase().replace(/\.US$/, ''))),
+  ];
   if (!group.every((s) => SYMBOL_RE.test(s))) {
     return res.status(400).json({ error: 'invalid_symbol', message: 'Invalid ticker symbol format.' });
   }
