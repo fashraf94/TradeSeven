@@ -106,9 +106,12 @@ const latestValue = (series) => (series && series.length ? series[series.length 
  * this guard a link that EMERGED from ~0 would be called "weakened" whenever
  * corr60 sits at noise-level negative — backwards, and contradicting the
  * deep-dive sentence one click away. Since Build 2.1 the summary only ever
- * carries ESTABLISHED rows (|corr60| ≥ 0.20 ⇒ band exists), so this guard is
- * unreachable there — kept as defense-in-depth against any future tier
- * loosening.
+ * carries ESTABLISHED rows, so this guard is unreachable there — kept as
+ * defense-in-depth against any future tier loosening. (Build 3 note: the
+ * tier now compares 2dp-ROUNDED values, so 'established' guarantees raw
+ * |corr60| ≥ 0.195, not 0.20 — still safely above strengthBand's 0.15
+ * null-floor, but the margin is 0.045, not 0.05; re-check this guard before
+ * ever raising that floor.)
  */
 function signedChangeWord(corr20, corr60) {
   if (corr20 == null || corr60 == null || Math.abs(corr20 - corr60) < 0.15) return null;
@@ -127,6 +130,11 @@ function signedChangeWord(corr20, corr60) {
  * 2dp-ROUNDED values — the UI displays fmtCorr = toFixed(2), and a row must
  * never read "+0.20" while tiered weak/none. Number(toFixed(2)) is the same
  * rounding the display applies, so display and tier agree by construction.
+ *
+ * Deliberately NOT the shared round2 in src/constants/leagueTournament.js:
+ * that one zero-fills non-finite input, and a null corr here must stay null
+ * (null-never-zero, the correlationMath convention) — 0 is a measured "no
+ * correlation", null is "no answer".
  */
 const round2 = (v) => (v == null ? null : Number(v.toFixed(2)));
 

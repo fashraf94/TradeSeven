@@ -21,7 +21,7 @@
  * No other call site may re-adapt; anything downstream of this module speaks
  * chronological only.
  */
-import { calculateSMA, calculateRSI } from '../_utils/technicalCalculations.js';
+import { calculateSMA, calculateRSI, classifyTrend } from '../_utils/technicalCalculations.js';
 import { forwardReturns } from '../_utils/correlationMath.js';
 
 export const CONTEXT_SMA_PERIOD = 50;
@@ -60,13 +60,24 @@ export function computeContextAtFlag(levels, c) {
   // slice() before reverse() so the caller's array is never mutated.
   const newestFirst = levels.slice(0, c + 1).reverse();
 
+  // A corrupt level anywhere in the prefix nulls EVERY stamp: calculateSMA
+  // would propagate NaN (and 'level > NaN' would stamp a confident 'below')
+  // and calculateRSI silently treats a NaN change as a flat day — both are
+  // guessed states this module's contract forbids. Unreachable through the
+  // current endpoint (computeReturnsSeries rejects non-finite closes), but
+  // this is the reusable home, so it guards its own boundary (the
+  // correlationMath isFiniteNumberArray idiom).
+  if (!newestFirst.every((v) => Number.isFinite(v))) {
+    return { ...NULL_CONTEXT };
+  }
+
   // 50-period SMA ENDING at c (the newest `period` entries of the adapted copy).
   const sma50 = calculateSMA(newestFirst, CONTEXT_SMA_PERIOD);
-  const level = levels[c];
-  // level === sma classifies 'below' — strict greater-than for 'above', the
-  // repo's classifyTrend convention (technicalCalculations.js).
-  const vs50DMA =
-    sma50 == null || !Number.isFinite(level) ? null : level > sma50 ? 'above' : 'below';
+  // classifyTrend owns the equality convention (level === sma is not-above →
+  // 'down'); mapping its vocabulary keeps the two surfaces agreeing by
+  // construction instead of by parallel comparison code.
+  const trend = classifyTrend(levels[c], sma50);
+  const vs50DMA = trend == null ? null : trend === 'up' ? 'above' : 'below';
 
   // RSI-14 at c: Wilder's running average over the full joined history up to
   // c. Wilder RSI is prefix-deterministic, so truncate-then-compute equals the
@@ -100,18 +111,22 @@ export function computeContextAtFlag(levels, c) {
  * @param {number[]} levels - composite levels, CHRONOLOGICAL (oldest-first)
  * @param {string[]} dates - joined dates parallel to levels
  * @param {Array<object>} episodes - contextAtFlag-enriched episodes
- * @param {number[]} horizons
+ * @param {number[]} [horizons] - omit to inherit forwardReturns' own pinned
+ *   [5, 10, 20] default — the horizon list has exactly ONE home, so the
+ *   conditioned and unconditioned blocks can never drift apart
  */
-export function conditionedBaseRates(levels, dates, episodes, horizons = [5, 10, 20]) {
+export function conditionedBaseRates(levels, dates, episodes, horizons) {
   if (!Array.isArray(episodes)) return null;
   const sides = { below50DMA: 'below', above50DMA: 'above' };
   const out = {};
   for (const [key, side] of Object.entries(sides)) {
     const partition = episodes.filter((ep) => ep?.contextAtFlag?.vs50DMA === side);
+    // An undefined `horizons` falls through to forwardReturns' own default
+    // parameter — never a second copy of the pinned list here.
     const fr = forwardReturns(levels, dates, partition, horizons);
     if (fr === null) return null;
     out[key] = {};
-    for (const h of horizons) {
+    for (const h of Object.keys(fr)) {
       const block = fr[h];
       const gated = block.independentCount >= CONDITION_MIN_INDEPENDENT;
       out[key][h] = {

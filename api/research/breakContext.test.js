@@ -19,6 +19,7 @@ import {
   conditionedBaseRates,
   CONDITION_MIN_INDEPENDENT,
 } from './breakContext.js';
+import { forwardReturns } from '../_utils/correlationMath.js';
 
 // ==================== Test-local reference implementations ====================
 // Chronological (oldest-first) SMA over the window ENDING at endIdx, and
@@ -179,6 +180,19 @@ describe('computeContextAtFlag — null conventions (pinned to the module, Phase
     expect(computeContextAtFlag(FIX_B, 10.5)).toEqual(allNull);
     expect(computeContextAtFlag(null, 60)).toEqual(allNull);
   });
+
+  it('a corrupt (non-finite) level anywhere in the prefix nulls EVERY stamp — never a guessed side', () => {
+    // Unguarded, a NaN in the SMA window propagates to `level > NaN` = false
+    // → a confident 'below'; a NaN change reads as a flat day in Wilder RSI.
+    const corrupt = [...FIX_B];
+    corrupt[20] = NaN; // inside both the RSI history and the 50-window at c=60
+    expect(computeContextAtFlag(corrupt, 60)).toEqual({ vs50DMA: null, rsi14: null, rsiZone: null });
+    // Corruption AFTER c sits outside the prefix and must not null the stamp.
+    const laterCorrupt = [...FIX_B];
+    laterCorrupt[80] = NaN;
+    expect(computeContextAtFlag(laterCorrupt, 60).vs50DMA).not.toBeNull();
+    expect(computeContextAtFlag(laterCorrupt, 60).rsi14).not.toBeNull();
+  });
 });
 
 // ==================== Conditioned base rates ====================
@@ -267,8 +281,14 @@ describe('conditionedBaseRates — null-never-zero on invalid input', () => {
     expect(conditionedBaseRates(RAMP, RAMP_DATES.slice(0, 10), [ep(5, 'below')], [5])).toBeNull(); // dates length mismatch
   });
 
-  it('defaults to the pinned [5, 10, 20] horizons', () => {
-    const out = conditionedBaseRates(RAMP, RAMP_DATES, [ep(5, 'below')]);
+  it('defaults to the pinned [5, 10, 20] horizons — forwardReturns\' OWN default (one home, no drift)', () => {
+    const episodes = [ep(5, 'below')];
+    const out = conditionedBaseRates(RAMP, RAMP_DATES, episodes);
     expect(Object.keys(out.below50DMA).map(Number).sort((a, b) => a - b)).toEqual([5, 10, 20]);
+    // Parity pin: an omitted horizons argument falls through to
+    // forwardReturns' default parameter, so the conditioned blocks carry
+    // exactly the horizons the unconditioned baseRates blocks carry.
+    const fr = forwardReturns(RAMP, RAMP_DATES, episodes);
+    expect(Object.keys(out.below50DMA).sort()).toEqual(Object.keys(fr).sort());
   });
 });

@@ -192,13 +192,26 @@ function driverTag(ep) {
 // Nulls render "—" per part (a null is never a guessed state); a missing
 // contextAtFlag (pre-Build-3 cached payload) or an all-null stamp returns
 // null and the cell renders a single "—" (the additive-field rule).
+//
+// RSI display rounding must never contradict the server's zone word (the
+// scanTier-rider rule, one column over): RSI 69.6 is 'neutral', but a bare
+// Math.round would render "RSI 70 (neutral)" against the pinned ≥ 70
+// overbought edge. In the two half-point slivers where the integer crosses a
+// zone boundary, the value renders at 1dp instead ("RSI 69.6 (neutral)").
+function rsiDisplay(rsi14, rsiZone) {
+  const rounded = Math.round(rsi14);
+  const contradicts =
+    (rounded >= 70 && rsiZone !== 'overbought') || (rounded <= 30 && rsiZone !== 'oversold');
+  return contradicts ? rsi14.toFixed(1) : String(rounded);
+}
+
 function stateAtBreak(ep) {
   const ctx = ep.contextAtFlag;
   if (!ctx || (ctx.vs50DMA == null && ctx.rsi14 == null)) return null;
   const smaBit = ctx.vs50DMA != null ? `${ctx.vs50DMA} 50DMA` : '—';
   const rsiBit =
     ctx.rsi14 != null
-      ? `RSI ${Math.round(ctx.rsi14)}${ctx.rsiZone ? ` (${ctx.rsiZone})` : ''}`
+      ? `RSI ${rsiDisplay(ctx.rsi14, ctx.rsiZone)}${ctx.rsiZone ? ` (${ctx.rsiZone})` : ''}`
       : '—';
   return `${smaBit} · ${rsiBit}`;
 }
@@ -720,13 +733,16 @@ function ConditionedBaseRates({ byCondition }) {
   for (const h of [5, 10, 20]) {
     for (const side of CONDITION_SIDES) {
       const b = byCondition[side.key]?.[h];
-      if (!b || b.independentCount < 3 || b.median == null) continue;
+      // The server contract IS the gate: conditionedBaseRates nulls every
+      // stat below 3 independent, so a non-null median means the tier
+      // cleared (and hitRate ships non-null with it). One guard — no client
+      // copy of the threshold to drift out of step with the server's.
+      if (!b || b.median == null) continue;
       const n = b.independentCount;
-      const tally = b.hitRate == null ? null : Math.round(b.hitRate * n);
       const outcomeBit =
-        n >= 5 && b.hitRate != null
+        n >= 5
           ? `positive ${Math.round(b.hitRate * 100)}% of the time (n = ${n})`
-          : `${tally} of ${n} positive`;
+          : `${Math.round(b.hitRate * n)} of ${n} positive`;
       lines.push(
         <div key={`${side.key}-${h}`} style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, lineHeight: 1.5 }}>
           {side.label} (n={n}): median {fmtPct(b.median)} at {h}d — {outcomeBit}.
