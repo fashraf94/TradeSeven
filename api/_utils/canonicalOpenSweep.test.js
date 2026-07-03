@@ -219,3 +219,64 @@ describe('settleLegsFromSweep — a re-marked PENDING leg does not double-audit'
     expect(store.g1.canonicalCaptureLog.length).toBe(1); // no new entry
   });
 });
+
+// ── /code-review reconciliation fixes ──
+describe('canonicalOpens — dot-safe map keys (review #2)', () => {
+  it('a dotted symbol (BRK.B) keys the snapshot under the hyphen form and round-trips to the leg', async () => {
+    const g = group();
+    g.players[0].picks = [pick('BRK.B', [leg()])];
+    stubOpens({ 'BRK.B': 400 });
+    const { db, store } = makeDb({ g1: g });
+    const r = await runCanonicalOpenSweep(db, { now: OPEN_NOW });
+    expect(r).toMatchObject({ captured: 1, snapshots: 1 });
+    // keyed under the dot-safe 'BRK-B', NOT nested under canonicalOpens.BRK.B
+    expect(store.g1.canonicalOpens['BRK-B'].open).toBe(400);
+    expect(store.g1.canonicalOpens.BRK).toBeUndefined();
+    // and the leg settled from that snapshot (the map round-trips)
+    expect(store.g1.players[0].picks[0].legs[0].baselinePrice).toBe(400);
+    expect(store.g1.players[0].picks[0].legs[0].captureState).toBe(CAPTURE_STATE.CAPTURED);
+  });
+
+  it('IDEMPOTENT for a dotted symbol: a second sweep re-fetches nothing (snapshot immutability holds under the key)', async () => {
+    const g = group();
+    g.players[0].picks = [pick('BRK.B', [leg()])];
+    stubOpens({ 'BRK.B': 400 });
+    const { db, store } = makeDb({ g1: g });
+    await runCanonicalOpenSweep(db, { now: OPEN_NOW });
+    fetchBatchQuotes.mockClear();
+    const r2 = await runCanonicalOpenSweep(db, { now: OPEN_NOW });
+    expect(r2).toMatchObject({ captured: 0, snapshots: 0 });
+    expect(fetchBatchQuotes).not.toHaveBeenCalled(); // existingSnaps['BRK-B'] found → no re-fetch
+    expect(store.g1.canonicalOpens['BRK-B'].open).toBe(400);
+  });
+});
+
+describe('canonicalCaptureLog overflow is never fail-invisible (review #3)', () => {
+  it('when the bounded log overflows, the dropped count is recorded durably (+ still marks the leg PENDING)', async () => {
+    const g = group();
+    g.players[0].picks[0].legs[0] = leg(); // null baseline → will go PENDING on a null open
+    // Pre-fill the log to the cap so one new audit forces a drop.
+    g.canonicalCaptureLog = Array.from({ length: 50 }, (_, i) => ({
+      ts: 'earlier', session: '2026-07-02', symbol: `OLD${i}`, reason: 'no_eligible_open', nextRetry: 'next_sweep_arm', captureJobId: 'earlier',
+    }));
+    const { db, store } = makeDb({ g1: g });
+    const res = await settleLegsFromSweep(db, 'g1', { LLY: null }, { capturedAt: NOW_ISO, captureJobId: 'j', session: '2026-07-02' });
+    expect(res.changed).toBe(true);
+    expect(store.g1.canonicalCaptureLog.length).toBe(50);        // still capped
+    expect(store.g1.canonicalCaptureLogDropped).toBe(1);          // but the drop is VISIBLE, not silent
+    expect(store.g1.players[0].picks[0].legs[0].captureState).toBe(CAPTURE_STATE.PENDING_OPEN); // leg state authoritative
+  });
+});
+
+describe('the sweep is bounded by a hard deadline (review #4)', () => {
+  it('a hung fetch is cut off at the deadline and the sweep returns (never blocks the arm)', async () => {
+    fetchBatchQuotes.mockReturnValue(new Promise(() => {})); // never resolves — a hung vendor call
+    const { db } = makeDb({ g1: group() });
+    const r = await runCanonicalOpenSweep(db, { now: OPEN_NOW, timeoutMs: 30 });
+    // The sweep RESOLVED (the test completing is the proof it didn't hang) and
+    // the hung group was isolated as an error, not a block.
+    expect(r.skipped).toBe(false);
+    expect(r.errors).toBe(1);
+    expect(r.captured).toBe(0);
+  }, 5000);
+});

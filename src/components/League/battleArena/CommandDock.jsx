@@ -102,7 +102,9 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
   // Canonical rounds only: legacy stars carry settleState null → pending 0, and
   // wire.canonical is false → the claim label is unchanged.
   const pending = stars.filter((s) => s?.settleState === 'pending').length;
-  const closedForMarket = wire?.canonical && wire?.reason === 'market_hours';
+  // Gate the "claims open after close" copy on `live` — a finished round is not
+  // reopening, so it should read the neutral WIRE CLOSED, not a false promise.
+  const closedForMarket = live && wire?.canonical && wire?.reason === 'market_hours';
   // The optimistic-write + server-authoritative ROLLBACK flip controller, shared
   // VERBATIM with the mobile Your-Portfolio panel (useArenaFlips) so the two never
   // drift on this money-adjacent path.
@@ -116,7 +118,8 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
           <LIcon name="long" size={12} color={c} stroke={2.4} />
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* div wrapper (not span): Eyebrow renders a block <div>, invalid inside a span */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Eyebrow color={c}>Your three</Eyebrow>
             {pending > 0 && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 5,
@@ -125,7 +128,7 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
                 <Mono style={{ fontSize: 8.5, fontWeight: 700, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>{pending} pick{pending === 1 ? '' : 's'} pending</Mono>
               </span>
             )}
-          </span>
+          </div>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
             <LIcon name="flip" size={10} color={c} stroke={2} />
             <Mono style={{ fontSize: 9, color: alpha(c, 0.85), letterSpacing: '0.04em' }}>yours to act · flip a pick or claim</Mono>

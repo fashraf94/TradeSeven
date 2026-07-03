@@ -44,6 +44,7 @@ import { scoreLeg, scorePick, resolveBaseATR, loadAtrPercentiles } from './tourn
 import { fetchBatchQuotes } from './tournamentPrices.js';
 import { formatEtDate } from './tournamentTime.js';
 import { isCryptoSymbol } from './marketDataCache.js';
+import { canonicalOpenKey } from './canonicalOpen.js';
 
 const DAY_KEY_RE = /^day\d+$/;
 
@@ -192,7 +193,7 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
       // writes it (the sweep owns `canonicalOpens`). `snapOpen` is null when
       // no eligible open was ever captured for this symbol. Legacy round:
       // `settleOpen` is the day's fresh open (unchanged).
-      const snapEntry = canonicalPolicy ? (group.canonicalOpens?.[pick.symbol] ?? null) : null;
+      const snapEntry = canonicalPolicy ? (group.canonicalOpens?.[canonicalOpenKey(pick.symbol)] ?? null) : null;
       const snapOpen = snapEntry && Number.isFinite(snapEntry.open) && snapEntry.open > 0
         ? snapEntry.open : null;
       const settleOpen = canonicalPolicy ? snapOpen : open;
@@ -201,12 +202,19 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
       for (const leg of pick.legs) {
         if (leg.baselinePrice == null) {
           if (canonicalPolicy) {
-            // Case 2: the frozen snapshot exists → settle from it and stamp
-            // the same capture provenance the Phase-2 sweep writes, so a
-            // banking-settled leg is indistinguishable from a sweep-settled
-            // one. Case 3: no snapshot after the session → terminal void
-            // (NO_ELIGIBLE_OPEN). A voided leg keeps its null baseline, scores
-            // 0, and contributes nothing — no re-weight, never a re-fetch.
+            // Case 2: the frozen snapshot exists → settle from it and stamp the
+            // canonical-open capture provenance (the metadata reflects the
+            // snapshot's original capture run, not this settle pass). This
+            // branch is ALSO the sanctioned self-heal: a leg voided
+            // NO_ELIGIBLE_OPEN on an earlier day RECOVERS here if the symbol
+            // later opened and a snapshot was captured — recovery settles ONLY
+            // from that shared immutable snapshot (`snapOpen`, the same
+            // canonical open every holder of the symbol got), NEVER a fresh /
+            // late / divergent fetch. So the void is recoverable-until-a-
+            // canonical-open-exists, then locked at CAPTURED — not strictly
+            // terminal. Case 3: still no snapshot → NO_ELIGIBLE_OPEN. A void
+            // leg keeps its null baseline, scores 0, and contributes nothing —
+            // no re-weight, never a re-fetch.
             if (snapOpen != null) {
               leg.baselinePrice = snapOpen;
               leg.baselineSource = BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE;

@@ -445,6 +445,28 @@ describe('computeBankingUpdate — canonical-open policy (Phase 3)', () => {
     expect(Object.keys(captured.updates[0])).not.toContain('canonicalOpens');
     expect(Object.keys(captured.updates[0]).some(k => k.startsWith('canonicalOpens'))).toBe(false);
   });
+
+  it('a voided leg RECOVERS to the canonical snapshot if one later appears — snapshot-only (review #5)', () => {
+    // A leg voided on an earlier day; the symbol has since opened and a snapshot
+    // was captured. Banking re-settles it CAPTURED from that shared immutable
+    // snapshot (100), NOT the fresh vendor quote (107) — recovery never reads a
+    // divergent fetch. The void is recoverable-until-captured, then locked.
+    const group = canonicalGroup(solo('u1', [pick('NVDA', [leg({ captureState: CAPTURE_STATE.NO_ELIGIBLE_OPEN })])]), { NVDA: snap(100) });
+    const update = computeBankingUpdate(group, { NVDA: { open: 107, current: 106, previousClose: 99, timestamp: 1 } }, OPTS);
+    const l = update.players[0].picks[0].legs[0];
+    expect(l.baselinePrice).toBe(100);                          // from the snapshot, not the 107 quote
+    expect(l.baselineSource).toBe(BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE);
+    expect(l.captureState).toBe(CAPTURE_STATE.CAPTURED);         // locked after recovery
+  });
+
+  it('a voided leg with NO snapshot stays void — no fresh-fetch recovery (review #5)', () => {
+    const group = canonicalGroup(solo('u1', [pick('AMD', [leg({ captureState: CAPTURE_STATE.NO_ELIGIBLE_OPEN })])]), { NVDA: snap(100) }); // AMD absent
+    const update = computeBankingUpdate(group, { AMD: { open: 50, current: 60, previousClose: 50, timestamp: 1 } }, OPTS);
+    const l = update.players[0].picks[0].legs[0];
+    expect(l.baselinePrice).toBeNull();                         // NOT settled from the fresh 50
+    expect(l.captureState).toBe(CAPTURE_STATE.NO_ELIGIBLE_OPEN); // stays void
+    expect(update.dayEntry.closeScores.u1.totalPoints).toBe(0);
+  });
 });
 
 // ============ end-to-end exposure exclusion (Phases 2–4 integration) ============

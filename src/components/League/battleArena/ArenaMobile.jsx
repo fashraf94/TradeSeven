@@ -234,7 +234,8 @@ function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, 
   const { dirOf, doFlip, flipError } = flips;
   // Canonical-round pending marker + close-only claim messaging (Deliverables 3-4).
   const pending = stars.filter((s) => s?.settleState === 'pending').length;
-  const closedForMarket = wire?.canonical && wire?.reason === 'market_hours';
+  // Gate on `live` — a finished round isn't reopening (neutral WIRE CLOSED).
+  const closedForMarket = live && wire?.canonical && wire?.reason === 'market_hours';
   return (
     <div style={{ marginTop: 6, borderRadius: 16, padding: '13px 13px',
       background: `linear-gradient(160deg, ${alpha(c, 0.08)}, ${alpha(LTOKENS.bg, 0.5)} 60%)`,
@@ -244,7 +245,8 @@ function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, 
           <LIcon name="long" size={12} color={c} stroke={2.4} />
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* div wrapper (not span): Eyebrow renders a block <div>, invalid inside a span */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Eyebrow color={c}>Your three</Eyebrow>
             {pending > 0 && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 5,
@@ -253,7 +255,7 @@ function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, 
                 <Mono style={{ fontSize: 8.5, fontWeight: 700, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>{pending} pick{pending === 1 ? '' : 's'} pending</Mono>
               </span>
             )}
-          </span>
+          </div>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
             <LIcon name="flip" size={10} color={c} stroke={2} />
             <Mono style={{ fontSize: 9, color: alpha(c, 0.85) }}>yours to act · flip or claim</Mono>

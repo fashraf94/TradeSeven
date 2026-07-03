@@ -30,6 +30,24 @@ import {
 } from '../../src/constants/leagueTournament.js';
 
 /**
+ * The dot-safe key a symbol takes inside any symbol-keyed Firestore MAP (the
+ * `canonicalOpens` snapshot map). Firestore field paths use '.' as a separator,
+ * so `canonicalOpens.{sym}` for a dot-class ticker (e.g. `BRK.B`) would nest
+ * `canonicalOpens.BRK.B` instead of keying the literal `"BRK.B"`, and every
+ * literal-bracket reader would then miss it (fail-invisible + broken
+ * immutability). We normalize to the system's hyphen form — the SAME
+ * convention as symbolNormalize.js / tickerValidation.js / marketDataCache.js
+ * (`.replace(/\./g, '-')`) — so writes and all reads always agree. A no-op for
+ * every current (dot-free) ticker → byte-identical for today's data.
+ *
+ * MUST be applied at every `canonicalOpens` write AND read (this file, the
+ * sweep's settle/idempotency reads, and banking's Case-2 read).
+ */
+export function canonicalOpenKey(symbol) {
+  return String(symbol || '').trim().toUpperCase().replace(/\./g, '-');
+}
+
+/**
  * Fetch the canonical (official session) open for a set of symbols from the
  * PINNED source (fetchBatchQuotes → /real-time/ item.open). Returns, per
  * requested (uppercased) symbol, either
@@ -99,10 +117,11 @@ export async function writeCanonicalOpenSnapshot(db, groupId, opensBySymbol, { c
     const skipped = [];
     const update = {};
     for (const sym of symbols) {
-      if (existing[sym] != null) { skipped.push(sym); continue; } // already captured — no-op
+      const key = canonicalOpenKey(sym); // dot-safe Firestore map key (BRK.B → BRK-B)
+      if (existing[key] != null) { skipped.push(sym); continue; } // already captured — no-op
       const src = opensBySymbol[sym];
       // Build + validate the frozen entry via the canonical factory.
-      update[`canonicalOpens.${sym}`] = createCanonicalOpenEntry({
+      update[`canonicalOpens.${key}`] = createCanonicalOpenEntry({
         open: src.open,
         capturedAt,
         priceTimestamp: src.priceTimestamp ?? null,

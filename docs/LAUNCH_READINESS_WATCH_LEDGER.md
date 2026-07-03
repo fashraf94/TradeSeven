@@ -84,6 +84,45 @@ Friday advancement requires day-5 banking (lands ~17:15 ET nightly); the Friday 
 
 ---
 
+## Canonical-open user-layer capture — deferred items (Phases 1–6, added 2026-07-01)
+
+Reconciliation of the `/code-review` on the canonical-open span. The build is
+merge-dark (`LEAGUE_CANONICAL_OPEN_CAPTURE` still `false`); these are the
+low-severity findings + carried fast-follows acknowledged as launch-safe, plus
+one item the founder must decide before the prod flag walk.
+
+### W7 — #1 close-out lost-points corner (real, narrow) — DECISION PENDING before the flip
+A canonical-round leg with a **real** baseline (e.g. an in-hours flip settled before the first sweep captured its symbol) that later closes while the market is **closed** banks nothing and stays bank-pending — `api/_utils/tournamentBanking.js:236` (close-out requires `settleOpen != null`, and `settleOpen === snapOpen` is null when the symbol never got a snapshot). On legacy this banked against the fresh open, so points are lost + waiver priority shifts. Characterized in the reconciliation report (trigger, reachability, mechanism).
+- **Launch-safe at V1?** Narrow trigger; the lost points are the *conservative* outcome of the deliberate Phase-3 fail-closed choice (never bank against a divergent re-fetch).
+- **Decision (founder):** accept as-is (fail-closed is correct here) vs a **bounded fresh-open fallback** for this one close-out (reopens a small divergence for that leg). Not built this pass.
+
+### W8 — #8 settlement tag dropped in the points headline view
+`src/components/League/battleArena/StarCell.jsx` emits the est/banked tag + dashed underline only in the `mult` headline branch; toggling the arena to `pts` view keeps the settlement caption but drops the tag/underline.
+- **Launch-safe:** user stars render `mult` by default. **Fix when triggered:** also emit the tag/underline in the `pts` branch.
+
+### W9 — #9 close-only claim guard is HTTP-layer only (defense-in-depth)
+The canonical in-hours claim guard lives in `api/tournament/place-claim.js`; the shared placement core and the CPU path (`api/_utils/tournamentCpuClaims.js`) carry no canonical guard.
+- **Launch-safe:** the prod CPU host fires after the close (guard would no-op); the only in-hours CPU trigger is admin/training/preview-only.
+- **Fix when triggered:** move the guard into the shared placement core so every caller inherits it (pairs with the batch-resolver item in W12).
+
+### W10 — #10/#11 the sweep is unconditional cron work (not byte-identical flag-off)
+`api/cron/agent-evaluate.js:153` runs the sweep every open arm regardless of the flag (an extra `fetchEligibleGroupsByStatus` query + a `canonicalOpenSweep` response field); flag-off it filters to zero canonical rounds (no writes), flag-on it can consume up to ~15s of the cron's 50s agent-battle budget.
+- **Launch-safe:** no functional impact flag-off; no 60s breach flag-on.
+- **Watch after the flip:** agent-evaluate deferral rate; if material, run the sweep after the battle loop or on its own budget.
+
+### W11 — smaller nits (docketed, no action at V1)
+- **#12** sweep `captured`/`pending` summary counts are per-leg not per-symbol (`canonicalOpenSweep.js`) — telemetry inflation only, no settlement impact.
+- **#13** `createLeg` does not enum-validate the new `captureState` (`leagueTournament.js`) — latent; no caller passes a non-null value.
+- **#15** `buildArenaModel.js:105` `toLocaleDateString('en-CA')` diverges from the codebase's `Intl.formatToParts` ET-date idiom — byte-identical in the full-ICU browser target; small-ICU only. (#14 provenance-comment accuracy was corrected in this pass — no longer outstanding.)
+
+### W12 — carried fast-follows from the build
+- **Flag-1 fast-follow:** `official` cards showing the literal banked figure (a meter data-source switch); the shipped `official` uses the live/frozen multiplier with official chrome, the banked figure living in standings.
+- **Batch-resolver defense-in-depth:** a market-state guard on `api/_utils/tournamentClaims.js:235` (the null-baseline leg creator) — currently schedule-protected (runs ~9:25am ET, before the open). Pairs with W9.
+- **2026 NYSE holiday / early-close list:** annual maintenance of the year-list used by `isMarketHoliday`/`isEarlyCloseDay`.
+- **Two pre-existing suite failures** (separate tasking, not caused by this build): `buildArenaModel` ask-chips flag-off (`LEAGUE_AGENT_CHAT_ENABLED` on in tests) and `ruleConflictReconciler` DETECT/INJECT flag-default-off.
+
+---
+
 ## Out-of-build pointers (NOT tournament items — separate tickets)
 
 ### X1 — 🎫 [HIGH] Live training-game short scoring (separate ticket, founder-opened)

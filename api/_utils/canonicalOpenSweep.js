@@ -17,7 +17,7 @@
 // null with captureState PENDING_OPEN + an audit entry (never a bare null),
 // retried next arm. NO fenced-file contact.
 
-import { fetchCanonicalOpens, writeCanonicalOpenSnapshot } from './canonicalOpen.js';
+import { fetchCanonicalOpens, writeCanonicalOpenSnapshot, canonicalOpenKey } from './canonicalOpen.js';
 import { fetchEligibleGroupsByStatus } from './tournamentGroupService.js';
 import { isMarketOpenAt, formatEtDate, toIso } from './tournamentTime.js';
 import {
@@ -76,7 +76,7 @@ export async function settleLegsFromSweep(db, groupId, fetchedOpens = {}, { capt
           // Untouched: already settled/captured, or an in-hours flip's live baseline.
           if (leg.baselinePrice != null || leg.baselineCapturedAt != null) return leg;
 
-          const snapEntry = canonicalOpens[sym];
+          const snapEntry = canonicalOpens[canonicalOpenKey(sym)]; // dot-safe key
           if (snapEntry && Number.isFinite(snapEntry.open) && snapEntry.open > 0) {
             changed = true;
             captured.push(sym);
@@ -123,7 +123,20 @@ export async function settleLegsFromSweep(db, groupId, fetchedOpens = {}, { capt
     const update = { players: newPlayers, updatedAt: capturedAt, lastCanonicalSweepAt: capturedAt };
     if (auditEntries.length > 0) {
       const existingLog = Array.isArray(data.canonicalCaptureLog) ? data.canonicalCaptureLog : [];
-      update.canonicalCaptureLog = [...existingLog, ...auditEntries].slice(-CAPTURE_LOG_MAX);
+      const merged = [...existingLog, ...auditEntries];
+      update.canonicalCaptureLog = merged.slice(-CAPTURE_LOG_MAX);
+      // NEVER fail-invisible (leagueTournament.js:143): when the bounded log
+      // overflows, the oldest entries are dropped — so record HOW MANY on a
+      // durable counter (+ WARN), never lose the signal silently. A monitor
+      // watching `canonicalCaptureLogDropped > 0` knows the audit trail was
+      // swamped and a still-PENDING leg may have lost its entry; the leg's own
+      // captureState PENDING_OPEN stays authoritative regardless.
+      const dropped = merged.length - update.canonicalCaptureLog.length;
+      if (dropped > 0) {
+        const prior = Number.isFinite(data.canonicalCaptureLogDropped) ? data.canonicalCaptureLogDropped : 0;
+        update.canonicalCaptureLogDropped = prior + dropped;
+        console.warn(`${LOG_PREFIX} group ${groupId} canonicalCaptureLog overflow — ${dropped} audit entr${dropped === 1 ? 'y' : 'ies'} dropped (total ${update.canonicalCaptureLogDropped}); PENDING legs still carry captureState.`);
+      }
     }
     tx.update(groupRef, update);
     return { captured, pending: newlyPending, changed: true, audit: auditEntries.length };
@@ -131,11 +144,67 @@ export async function settleLegsFromSweep(db, groupId, fetchedOpens = {}, { capt
 }
 
 /**
+ * One group's capture pass: collect its uncaptured null symbols, fetch the
+ * canonical open for those still lacking a snapshot (threading an abort signal
+ * so a hung request can be cut off), write the immutable snapshot, then settle.
+ * Returns per-group counts. Pure of the loop's bookkeeping so it can be raced
+ * against a hard deadline.
+ */
+async function processOneGroup(db, group, { capturedAt, jobId, session, signal }) {
+  const existingSnaps = group.canonicalOpens || {};
+  const nullSymbols = new Set();
+  for (const pl of group.players || []) {
+    for (const pk of pl.picks || []) {
+      for (const leg of pk.legs || []) {
+        if (leg.baselinePrice == null && leg.baselineCapturedAt == null) nullSymbols.add(pk.symbol);
+      }
+    }
+  }
+  if (nullSymbols.size === 0) return { captured: 0, pending: 0, snapshots: 0 };
+
+  // Fetch only symbols that still lack a snapshot (an existing snapshot is
+  // immutable — never re-fetch or overwrite it). Read via the dot-safe key.
+  const toFetch = [...nullSymbols].filter((s) => existingSnaps[canonicalOpenKey(s)] == null);
+  // Thread the deadline's abort signal into the underlying fetch so a hung
+  // vendor request is actually cancelled (fetchBatchQuotes calls fetchImpl(url)).
+  const fetchOpts = signal ? { fetchImpl: (url) => fetch(url, { signal }) } : {};
+  const fetched = toFetch.length > 0 ? await fetchCanonicalOpens(toFetch, fetchOpts) : {};
+
+  const nonNull = {};
+  for (const [s, v] of Object.entries(fetched)) if (v != null) nonNull[s] = v;
+  let snapshots = 0;
+  if (Object.keys(nonNull).length > 0) {
+    const w = await writeCanonicalOpenSnapshot(db, group.id, nonNull, { capturedAt, captureJobId: jobId, session });
+    snapshots = w.written.length;
+  }
+  const res = await settleLegsFromSweep(db, group.id, fetched, { capturedAt, captureJobId: jobId, session });
+  return { captured: res.captured.length, pending: res.pending.length, snapshots };
+}
+
+/**
+ * Race `work(signal)` against a hard `ms` deadline. On timeout the signal is
+ * aborted (cancelling any in-flight fetch that honors it) and the race rejects,
+ * so a hung group can NEVER block the whole sweep / the shared agent-evaluate
+ * arm — the Phase-2 isolation guarantee made real (a throw is caught per group;
+ * a hang is now bounded too, which the try/catch alone could not do).
+ */
+function raceDeadline(ms, work) {
+  const controller = new AbortController();
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => { controller.abort(); reject(new Error(`sweep_group_timeout_${ms}ms`)); }, ms);
+  });
+  return Promise.race([Promise.resolve().then(() => work(controller.signal)), deadline])
+    .finally(() => clearTimeout(timer));
+}
+
+/**
  * The post-open capture sweep. Gates on the ET regular session (injectable
  * `now`), selects active canonical-policy rounds by the STAMP, and for each:
  * fetches the canonical open for its uncaptured null symbols, writes the
  * immutable per-symbol snapshot (idempotent), then settles/marks its legs.
- * Per-group failures are caught and isolated. Returns a structured summary.
+ * Per-group failures are caught and isolated, and each group is bounded by a
+ * hard deadline. Returns a structured summary.
  *
  * @param {Object} db Firestore Admin
  * @param {{now?:Date, timeoutMs?:number, captureJobId?:string}} [opts]
@@ -166,38 +235,19 @@ export async function runCanonicalOpenSweep(db, { now = new Date(), timeoutMs = 
   let errors = 0;
 
   for (const group of canonical) {
-    if (Date.now() - startedAt > timeoutMs) {
+    const remaining = timeoutMs - (Date.now() - startedAt);
+    if (remaining <= 0) {
       deferred = canonical.length - groupsProcessed;
       console.log(`${LOG_PREFIX} timeout ${timeoutMs}ms — ${deferred} group(s) deferred to next arm`);
       break;
     }
     try {
-      const existingSnaps = group.canonicalOpens || {};
-      const nullSymbols = new Set();
-      for (const pl of group.players || []) {
-        for (const pk of pl.picks || []) {
-          for (const leg of pk.legs || []) {
-            if (leg.baselinePrice == null && leg.baselineCapturedAt == null) nullSymbols.add(pk.symbol);
-          }
-        }
-      }
-      if (nullSymbols.size === 0) { groupsProcessed++; continue; }
-
-      // Fetch only symbols that still lack a snapshot (an existing snapshot is
-      // immutable — never re-fetch or overwrite it).
-      const toFetch = [...nullSymbols].filter((s) => existingSnaps[s] == null);
-      const fetched = toFetch.length > 0 ? await fetchCanonicalOpens(toFetch) : {};
-
-      const nonNull = {};
-      for (const [s, v] of Object.entries(fetched)) if (v != null) nonNull[s] = v;
-      if (Object.keys(nonNull).length > 0) {
-        const w = await writeCanonicalOpenSnapshot(db, group.id, nonNull, { capturedAt, captureJobId: jobId, session });
-        snapshotsTotal += w.written.length;
-      }
-
-      const res = await settleLegsFromSweep(db, group.id, fetched, { capturedAt, captureJobId: jobId, session });
-      capturedTotal += res.captured.length;
-      pendingTotal += res.pending.length;
+      // Hard deadline: a hung fetch/tx is cut off at `remaining` (and aborted),
+      // so the sweep — and the awaited agent-evaluate arm — can never block.
+      const r = await raceDeadline(remaining, (signal) => processOneGroup(db, group, { capturedAt, jobId, session, signal }));
+      capturedTotal += r.captured;
+      pendingTotal += r.pending;
+      snapshotsTotal += r.snapshots;
       groupsProcessed++;
     } catch (err) {
       errors++;

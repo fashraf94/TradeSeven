@@ -135,12 +135,17 @@ export const BASELINE_POLICY = Object.freeze({
 });
 
 // Spec §1.1 — a user leg's canonical-open CAPTURE state, written by the Phase-2
-// post-open sweep (and, at Phase 3, terminal-voided by banking). null =
-// legacy/unswept (today's behavior). PENDING_OPEN = swept but no eligible open
-// yet (retried next arm). CAPTURED = baseline settled from the round's canonical
-// open. NO_ELIGIBLE_OPEN = terminal void set at banking when a leg never got an
-// eligible open all session (Phase 3). A PENDING_OPEN leg must always carry a
-// matching audit entry (canonicalCaptureLog) — fail-closed is never fail-invisible.
+// post-open sweep (and, at Phase 3, voided by banking). null = legacy/unswept
+// (today's behavior). PENDING_OPEN = swept but no eligible open yet (retried
+// next arm). CAPTURED = baseline settled from the round's canonical open.
+// NO_ELIGIBLE_OPEN = void set at banking when a leg never got an eligible open
+// all session (Phase 3). This void is RECOVERABLE, not strictly terminal: if the
+// symbol later opens and a snapshot is captured, a subsequent sweep/banking pass
+// re-settles the leg CAPTURED — but ONLY from that shared immutable canonical
+// snapshot, never a fresh/divergent fetch (tournamentBanking.js Case 2) — after
+// which it is locked. A PENDING_OPEN leg must always carry a matching audit
+// entry (canonicalCaptureLog); on log overflow the drop is counted durably
+// (canonicalCaptureLogDropped) — fail-closed is never fail-invisible.
 export const CAPTURE_STATE = Object.freeze({
   PENDING_OPEN: 'PENDING_OPEN',
   CAPTURED: 'CAPTURED',
