@@ -107,7 +107,7 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
   // Flag-on → the persistent Training|Ranked tabs; flag-off → today's lobby,
   // byte-identical (same <Lobby> invocation, untouched).
   const lobby = TABS_ENABLED
-    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} />
+    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} uid={uid} />
     : <Lobby st={st} accent={ACCENT} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} />;
 
   const body = screen === 'spectate' && spec

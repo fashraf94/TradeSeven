@@ -30,11 +30,18 @@ import AgentOrb from '../shared/AgentOrb';
 import LoadoutChooserSheet from './LoadoutChooserSheet';
 import { quickPlayTraining, mapLobbyError } from '../../services/tournamentLobbyActions';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
+import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
+import TrainingClimbPreview from './TrainingClimbPreview';
 
 // Training accent — purple, per the build spec ("training is purple across
 // TradeSeven … visually distinct from the teal tournament surface"). Kept local
 // to the desktop training elements so the tournament surface stays teal.
 export const TRAIN = { base: '#8b5cf6', lt: '#a78bfa' };
+
+// Training-tab CLIMB PREVIEW gate — dark by default (flag OR ?trainingClimbPreview=1),
+// resolved once via the shared climbPreviewEnabled(); the pure shouldPreviewClimb
+// predicate then decides per-pod (BATTLE + seated only).
+const CLIMB_PREVIEW_ON = climbPreviewEnabled();
 
 // small mono score, signed, kept-negative, with the live "%" suffix. Used inside
 // the dense funnel nodes where a full <Score/> would be too heavy.
@@ -575,7 +582,7 @@ function TrainingCpuNote() {
 //    path runs quickPlayTraining and routes into the fresh pod via
 //    onOpenTrainingPod; the server is the sole authority (client gates are
 //    courtesy). Purple throughout, per the build spec.
-export function DeskTrainingPanel({ onOpenTrainingPod, activeTrainingPod = null, hasAgent, agentLoadout = null }) {
+export function DeskTrainingPanel({ onOpenTrainingPod, activeTrainingPod = null, hasAgent, agentLoadout = null, uid = null }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [chooserOpen, setChooserOpen] = useState(false);
@@ -607,11 +614,18 @@ export function DeskTrainingPanel({ onOpenTrainingPod, activeTrainingPod = null,
   const start = () => runTrainingForm(null);
   const openChooser = () => { setError(null); setChooserOpen(true); };
 
-  // ── Re-entry state: the Active Training Game card REPLACES the start CTA. ────
+  // ── Re-entry state: the Active Training Game card REPLACES the start CTA. When
+  //    the climb preview is enabled AND the pod is in BATTLE, the real five-day
+  //    climb takes the card's place (tap → the same onOpenTrainingPod hop); a
+  //    pre-bell pod keeps the card. ─────────────────────────────────────────────
   if (activeTrainingPod) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <ActiveTrainingGameCard pod={activeTrainingPod} onResume={() => onOpenTrainingPod?.(activeTrainingPod)} />
+        {shouldPreviewClimb(activeTrainingPod, CLIMB_PREVIEW_ON) ? (
+          <TrainingClimbPreview pod={activeTrainingPod} uid={uid} onOpen={() => onOpenTrainingPod?.(activeTrainingPod)} viewport="desktop" accent={TRAIN.base} />
+        ) : (
+          <ActiveTrainingGameCard pod={activeTrainingPod} onResume={() => onOpenTrainingPod?.(activeTrainingPod)} />
+        )}
         <TrainingCpuNote />
       </div>
     );

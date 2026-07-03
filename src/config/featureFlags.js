@@ -190,6 +190,34 @@ export const LEAGUE_NEXT_ARC_ENABLED = true;
 export const LEAGUE_BATTLE_VIEW_V2_ENABLED = true;
 
 /**
+ * League — Training-tab CLIMB PREVIEW (the second-arc re-entry surface).
+ *
+ * The active-training-battle state of the League Training tab shows the real
+ * five-day Altitude Climb (the Battle-View-V2 hero, `ClimbArena`, fed by the
+ * real-data bridge `buildArenaModel` → `buildClimbSeries`) in place of the flat
+ * "Return to your training pod" re-entry card; tapping the climb routes into the
+ * pod's live battle view via the already-threaded `onOpenTrainingPod`.
+ *
+ * Reuses the real-data arena path so it renders the ACTUAL pod (never the
+ * fixtures-only standalone `LeagueClimb`, which would leak the demo pod onto a
+ * real surface). Scoped to `GROUP_STATUS.BATTLE` pods only — a DRAFTING /
+ * AWAITING_OPEN pod has no climb yet and keeps its existing re-entry card.
+ *
+ * When false, NOTHING on the Training tab reads the real-data climb — the
+ * re-entry card renders exactly as today (flag-off is byte-unchanged), and the
+ * surface stays reachable via the dev param `?trainingClimbPreview=1` (the
+ * `?leagueClimb=1` / `?battleViewV2=1` idiom).
+ *
+ * ENABLED (founder decision, 2026-07-03): flipped ON in the enabling PR rather
+ * than a separate follow-on — the PR's own Vercel preview (feature ON) is the
+ * smoke surface, and the founder merges manually only after smoking it. Because
+ * the read-site swaps a production surface, the climb goes live at merge; smoke
+ * the preview (a BATTLE training pod → the Training tab shows the real climb,
+ * tap → the battle view) before merging.
+ */
+export const LEAGUE_TRAINING_CLIMB_PREVIEW_ENABLED = true;
+
+/**
  * League — user-layer CANONICAL-OPEN baseline capture.
  *
  * When false (default), the user 3-pick layer keeps today's behavior: each
