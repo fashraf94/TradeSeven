@@ -5,7 +5,7 @@
  * the freshness threshold, and the suppressed-inflections path.
  */
 import { describe, it, expect } from 'vitest';
-import { buildVerdictSentence, strengthBand } from './correlationVerdict.js';
+import { buildVerdictSentence, strengthBand, breakStatePhrase, rsiDisplay } from './correlationVerdict.js';
 
 // Minimal payload shaped like /api/research/correlation's response.
 const mk = (over = {}) => ({
@@ -177,6 +177,63 @@ describe('buildVerdictSentence — full assembly (the energy-trio shape)', () =>
       'Your stocks usually move with Brent Crude (moderate link over the past 3 months) — but that link has weakened this month. ' +
         'The most recent regime break was 2026-07-01 — the 3rd since 2025-01-15. That break is still fresh. ' +
         'Brent Crude has tended to move first by 2 days.'
+    );
+  });
+});
+
+// ── Build 3.1 Change B — the state-at-break phrase (presentation-honesty) ────
+describe('breakStatePhrase — trend words lead, technical detail demoted', () => {
+  const ctx = (over) => ({ vs50DMA: null, rsi14: null, rsiZone: null, ...over });
+
+  it('maps the full uptrend / running-hot pair (spec example)', () => {
+    expect(breakStatePhrase(ctx({ vs50DMA: 'above', rsi14: 73, rsiZone: 'overbought' }))).toEqual({
+      primary: 'uptrend · running hot',
+      secondary: 'above 50DMA · RSI 73',
+    });
+  });
+
+  it('maps downtrend / washed-out (below + oversold)', () => {
+    expect(breakStatePhrase(ctx({ vs50DMA: 'below', rsi14: 24, rsiZone: 'oversold' }))).toEqual({
+      primary: 'downtrend · washed out',
+      secondary: 'below 50DMA · RSI 24',
+    });
+  });
+
+  it('neutral RSI omits the word from the primary line but keeps the number', () => {
+    expect(breakStatePhrase(ctx({ vs50DMA: 'above', rsi14: 55, rsiZone: 'neutral' }))).toEqual({
+      primary: 'uptrend',
+      secondary: 'above 50DMA · RSI 55',
+    });
+  });
+
+  it('a null 50DMA drops the trend word / smaBit but keeps the RSI parts', () => {
+    expect(breakStatePhrase(ctx({ vs50DMA: null, rsi14: 72, rsiZone: 'overbought' }))).toEqual({
+      primary: 'running hot',
+      secondary: 'RSI 72',
+    });
+  });
+
+  it('a null RSI drops the RSI parts but keeps the trend', () => {
+    expect(breakStatePhrase(ctx({ vs50DMA: 'below', rsi14: null, rsiZone: null }))).toEqual({
+      primary: 'downtrend',
+      secondary: 'below 50DMA',
+    });
+  });
+
+  it('an all-null / missing context returns null (cell renders a single "—")', () => {
+    expect(breakStatePhrase(ctx())).toBeNull();
+    expect(breakStatePhrase(null)).toBeNull();
+    expect(breakStatePhrase(undefined)).toBeNull();
+  });
+
+  it('rsiDisplay renders 1dp only in the half-point sliver that would misread the zone', () => {
+    expect(rsiDisplay(69.6, 'neutral')).toBe('69.6'); // round→70 would read overbought
+    expect(rsiDisplay(30.4, 'neutral')).toBe('30.4'); // round→30 would read oversold
+    expect(rsiDisplay(73.2, 'overbought')).toBe('73'); // no contradiction → integer
+    expect(rsiDisplay(55, 'neutral')).toBe('55');
+    // the sliver rule flows through breakStatePhrase's secondary line
+    expect(breakStatePhrase(ctx({ vs50DMA: 'above', rsi14: 69.6, rsiZone: 'neutral' })).secondary).toBe(
+      'above 50DMA · RSI 69.6'
     );
   });
 });

@@ -43,7 +43,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
-import { tensionStateFromScore } from './correlationAssembly.js';
+import { tensionStateFrom } from './correlationAssembly.js';
 
 // ==================== HOISTED MOCK STATE ====================
 const { authReturnValue, labFlag } = vi.hoisted(() => ({
@@ -527,15 +527,28 @@ describe('divergence read + tension states (the Divergence Watch parity contract
     }
   });
 
-  it('tensionStateFromScore pins the Divergence Watch boundaries (|s|<1 calm, <2 elevated, else break)', () => {
-    expect(tensionStateFromScore(null)).toBeNull();
-    expect(tensionStateFromScore(undefined)).toBeNull();
-    expect(tensionStateFromScore(0)).toBe('calm');
-    expect(tensionStateFromScore(-0.99)).toBe('calm');
-    expect(tensionStateFromScore(1)).toBe('elevated');
-    expect(tensionStateFromScore(-1.5)).toBe('elevated');
-    expect(tensionStateFromScore(2)).toBe('break');
-    expect(tensionStateFromScore(-3.7)).toBe('break');
+  it('tensionStateFrom pins all five states and the two-condition break boundary', () => {
+    const FLOOR = 0.25; // ABS_DIVERGENCE_FLOOR (pinned in correlationMath.test.js)
+    // Null / non-finite score → no state; the gap is irrelevant.
+    expect(tensionStateFrom({ score: null, d: 0.9 })).toBeNull();
+    expect(tensionStateFrom({ score: undefined, d: 0.9 })).toBeNull();
+    expect(tensionStateFrom({ score: NaN, d: 0.9 })).toBeNull();
+    // Below the flag score the gap never matters: calm < 1.0 ≤ elevated < 2.0.
+    expect(tensionStateFrom({ score: 0, d: 0.9 })).toBe('calm');
+    expect(tensionStateFrom({ score: -0.99, d: 0.9 })).toBe('calm');
+    expect(tensionStateFrom({ score: 1, d: 0 })).toBe('elevated');
+    expect(tensionStateFrom({ score: -1.5, d: 0.9 })).toBe('elevated');
+    // At/above the flag score, the |d| floor decides stretched vs break.
+    expect(tensionStateFrom({ score: 2.1, d: 0.20 })).toBe('stretched'); // |d| < floor
+    expect(tensionStateFrom({ score: 2.1, d: 0.27 })).toBe('break');     // |d| ≥ floor
+    expect(tensionStateFrom({ score: -2.44, d: -0.22 })).toBe('stretched'); // founder's banks × HYG
+    expect(tensionStateFrom({ score: -3.7, d: -0.9 })).toBe('break');
+    // Both edges are inclusive; a non-finite gap at break score degrades to the
+    // conservative 'stretched' (never a false 'break').
+    expect(tensionStateFrom({ score: 2.0, d: FLOOR })).toBe('break');
+    expect(tensionStateFrom({ score: 2.0, d: FLOOR - 1e-9 })).toBe('stretched');
+    expect(tensionStateFrom({ score: 2.0, d: null })).toBe('stretched');
+    expect(tensionStateFrom({ score: 5, d: undefined })).toBe('stretched');
   });
 });
 

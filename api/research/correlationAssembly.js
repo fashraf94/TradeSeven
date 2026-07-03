@@ -20,6 +20,7 @@ import { getETDate, getMarketState, getNextMarketClose } from '../_utils/marketS
 import {
   computeReturnsSeries,
   rollingCorrelation,
+  ABS_DIVERGENCE_FLOOR,
   SDS_EPISODE_END_THRESHOLD,
   SDS_FLAG_THRESHOLD,
 } from '../_utils/correlationMath.js';
@@ -155,16 +156,29 @@ export function computeCorrelationCacheTtlMs() {
 }
 
 /**
- * SDS → Divergence Watch chip state, the SAME boundaries the Lab's gauge uses
- * (CorrelationLab.jsx divergenceState: |s| < 1 calm, < 2 elevated, else break)
- * expressed through the pinned correlationMath thresholds so the scan's
- * server-side states and the deep dive's client-side words cannot drift.
- * Null score (unscoreable) → null state, rendered as no chip.
+ * (SDS score, raw gap d) → Divergence Watch / scan-chip tension state, the ONE
+ * mapping both surfaces render (the scan sends it per row; the single-driver
+ * endpoint stamps divergence.latest.state via this same helper) so a chip and
+ * the deep-dive gauge can never drift. Build 3.1 coherence fix: 'break' now
+ * requires BOTH conditions the flag logic (detectInflections) requires — the
+ * standardized score AND the absolute gap floor — so the gauge can no longer
+ * claim "in break territory" for a pair the flag itself refuses to flag.
+ *
+ *   null       score null / non-finite (unscoreable → no chip)
+ *   'calm'     |score| < SDS_EPISODE_END_THRESHOLD (1.0)
+ *   'elevated' SDS_EPISODE_END_THRESHOLD ≤ |score| < SDS_FLAG_THRESHOLD (2.0)
+ *   'stretched'|score| ≥ SDS_FLAG_THRESHOLD, |d| < ABS_DIVERGENCE_FLOOR
+ *   'break'    |score| ≥ SDS_FLAG_THRESHOLD, |d| ≥ ABS_DIVERGENCE_FLOOR
+ *
+ * The floor is the SAME exported constant the flag uses — never a literal
+ * copy. A missing/non-finite d at break-level score can't confirm the gap, so
+ * it degrades to the conservative 'stretched', never a false 'break'.
  */
-export function tensionStateFromScore(score) {
+export function tensionStateFrom({ score, d }) {
   if (score == null || !Number.isFinite(score)) return null;
   const a = Math.abs(score);
   if (a < SDS_EPISODE_END_THRESHOLD) return 'calm';
   if (a < SDS_FLAG_THRESHOLD) return 'elevated';
-  return 'break';
+  const clearsFloor = Number.isFinite(d) && Math.abs(d) >= ABS_DIVERGENCE_FLOOR;
+  return clearsFloor ? 'break' : 'stretched';
 }

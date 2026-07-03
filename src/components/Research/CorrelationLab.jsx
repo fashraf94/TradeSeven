@@ -37,7 +37,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { ChartSkeleton } from './ResearchSkeletons';
-import { buildVerdictSentence } from './correlationVerdict';
+import { buildVerdictSentence, breakStatePhrase } from './correlationVerdict';
 
 // Client-side mirror of the driver registry LABELS only (the api registry is
 // server code — do not import it into the bundle; units/interpretations come
@@ -165,14 +165,41 @@ function leadLagSentence(leadLag, driverLabel) {
 
 const directionLabel = (d) => (d === 'weakening' ? 'correlation breakdown' : 'correlation strengthening');
 
-// Change F — plain-language state for the divergence tension gauge (the number
-// stays secondary; "significance" is never used). Null score → not scoreable.
-function divergenceState(score) {
-  if (score == null) return { word: 'not scoreable yet', color: HOLO_COLORS.textMuted };
-  const a = Math.abs(score);
-  if (a < 1) return { word: 'calm', color: HOLO_COLORS.textSecondary };
-  if (a < 2) return { word: 'elevated', color: AMBER };
-  return { word: 'in break territory', color: RED };
+// Change F / Build 3.1 — plain-language state for the Divergence Watch gauge.
+// The state is SERVER-authoritative: correlation.js stamps divergence.latest
+// .state via the shared tensionStateFrom helper (the SAME five states the scan
+// chips use), so the gauge and the chips can't drift and the gauge can no
+// longer claim a break the flag logic refuses — a high score whose raw gap is
+// still small reads 'stretched' (amber), not "in break territory" (red). The
+// number stays secondary; "significance" is never used.
+const TENSION_WORD = {
+  calm: { word: 'calm', color: HOLO_COLORS.textSecondary },
+  elevated: { word: 'elevated', color: AMBER },
+  stretched: {
+    word: 'stretched',
+    color: AMBER,
+    note: 'Unusual versus its own history — but the gap is still small. Not a break.',
+  },
+  break: { word: 'in break territory', color: RED },
+};
+const NOT_SCOREABLE = { word: 'not scoreable yet', color: HOLO_COLORS.textMuted };
+
+export function divergenceState(latest) {
+  if (!latest) return NOT_SCOREABLE;
+  let state = latest.state;
+  if (state === undefined) {
+    // Legacy fallback for pre-3.1 cached payloads (no `state` field yet):
+    // score-only boundaries — never 'stretched', which needs the server's
+    // |d|-floor read. The short cache TTL refreshes the field in within a
+    // trading day, so this branch is transient by construction.
+    const s = latest.score;
+    state =
+      s == null || !Number.isFinite(s) ? null
+      : Math.abs(s) < 1 ? 'calm'
+      : Math.abs(s) < 2 ? 'elevated'
+      : 'break';
+  }
+  return TENSION_WORD[state] ?? NOT_SCOREABLE;
 }
 
 // Change G — one-word driver tag from the signs of the two into-break returns
@@ -188,33 +215,11 @@ function driverTag(ep) {
   return 'both rising'; // g >= 0 && dr >= 0
 }
 
-// Build 3 — "State at break" cell text, e.g. "below 50DMA · RSI 38 (neutral)".
-// Nulls render "—" per part (a null is never a guessed state); a missing
-// contextAtFlag (pre-Build-3 cached payload) or an all-null stamp returns
-// null and the cell renders a single "—" (the additive-field rule).
-//
-// RSI display rounding must never contradict the server's zone word (the
-// scanTier-rider rule, one column over): RSI 69.6 is 'neutral', but a bare
-// Math.round would render "RSI 70 (neutral)" against the pinned ≥ 70
-// overbought edge. In the two half-point slivers where the integer crosses a
-// zone boundary, the value renders at 1dp instead ("RSI 69.6 (neutral)").
-function rsiDisplay(rsi14, rsiZone) {
-  const rounded = Math.round(rsi14);
-  const contradicts =
-    (rounded >= 70 && rsiZone !== 'overbought') || (rounded <= 30 && rsiZone !== 'oversold');
-  return contradicts ? rsi14.toFixed(1) : String(rounded);
-}
-
-function stateAtBreak(ep) {
-  const ctx = ep.contextAtFlag;
-  if (!ctx || (ctx.vs50DMA == null && ctx.rsi14 == null)) return null;
-  const smaBit = ctx.vs50DMA != null ? `${ctx.vs50DMA} 50DMA` : '—';
-  const rsiBit =
-    ctx.rsi14 != null
-      ? `RSI ${rsiDisplay(ctx.rsi14, ctx.rsiZone)}${ctx.rsiZone ? ` (${ctx.rsiZone})` : ''}`
-      : '—';
-  return `${smaBit} · ${rsiBit}`;
-}
+// Build 3.1 (Change B) — the "State at break" cell now leads with trend words
+// (uptrend/downtrend · running hot/washed out) and demotes the technical detail
+// (above 50DMA · RSI 73) to a muted second line. The mapping is the exported
+// pure breakStatePhrase in correlationVerdict.js (presentation-honesty surface,
+// unit-tested there); a null stamp still renders a single "—".
 
 const pctColor = (v) => (v == null ? HOLO_COLORS.textMuted : v > 0 ? GREEN : v < 0 ? RED : HOLO_COLORS.textSecondary);
 
@@ -233,12 +238,16 @@ function parseGroup(source) {
 
 // ── V2 Build 2 — multi-driver scan helpers ──────────────────────────────────
 
-// Tension chip colors keyed by the server's tensionState — the same states
-// (and SDS boundaries, via tensionStateFromScore server-side) as the
-// Divergence Watch gauge above.
+// Tension chip colors keyed by the server's tensionState — the same five states
+// the Divergence Watch gauge renders (both via the shared tensionStateFrom
+// helper server-side), so a chip and the deep dive can't disagree. The gauge
+// spells 'break' as "in break territory"; the compact chip says "break".
+// 'stretched' (Build 3.1) is amber like 'elevated' — a high score whose raw gap
+// is still below the flag floor: unusual, but not a break.
 const TENSION_CHIP = {
   calm: { word: 'calm', color: HOLO_COLORS.textSecondary },
   elevated: { word: 'elevated', color: AMBER },
+  stretched: { word: 'stretched', color: AMBER },
   break: { word: 'break', color: RED },
 };
 
@@ -266,7 +275,7 @@ function scanSummarySentence(summary) {
  * deep-dives on click or Enter/Space (the desktop-only last column is the
  * visible affordance; the whole row is the target).
  */
-function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
+export function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
   const summaryText = scanSummarySentence(scan.summary);
   const cellPad = { padding: '7px 8px' };
   const catChip = {
@@ -713,30 +722,45 @@ function HorizonBaseRate({ h, group, driver, sinceDate, driverLabel, driverUnit 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Build 3 — conditioned base rates beneath the unconditioned tiers. A line
-// renders ONLY when a 50DMA partition reaches ≥ 3 independent breaks at that
-// horizon (the server already nulls the stats below that, so a sub-3 partition
-// CANNOT render a median even by accident). Copy inherits the tier rules:
-// raw tally at 3–4 independent, percentage only at ≥ 5 — past-tense,
-// sample-bounded. When nothing qualifies anywhere, one muted honest-absence
-// line renders (never a silently missing section); when byCondition is absent
-// entirely (pre-Build-3 cached payload), nothing renders at all.
+// Build 3 — conditioned base rates beneath the unconditioned tiers, humanized in
+// Build 3.1. Per-side lines render ONLY when a 50DMA partition reaches ≥ 3
+// independent breaks at that horizon (the server nulls the stats below that, so
+// a sub-3 partition CANNOT render a median even by accident) — raw tally at 3–4
+// independent, percentage only at ≥ 5, past-tense and sample-bounded.
+//
+// Change B: each side is grouped under a trend-word header. Change C — three
+// branches so a trending tape doesn't just restate the unconditioned aggregate:
+//   • ONE-SIDED (every break on one 50DMA side) → a single no-contrast sentence
+//     (no numbers repeated) — the common trending-tape case.
+//   • both sides have breaks AND at least one cleared 3 independent → per-side
+//     grouped lines.
+//   • both sides have breaks but neither cleared 3 independent → the existing
+//     "not enough on either side" copy.
+// byCondition absent (pre-Build-3 cached payload) → nothing renders.
 // ─────────────────────────────────────────────────────────────────────────────
 const CONDITION_SIDES = [
-  { key: 'below50DMA', label: 'Below the 50DMA' },
-  { key: 'above50DMA', label: 'Above the 50DMA' },
+  { key: 'above50DMA', side: 'above', header: 'Breaks that fired in an uptrend (above the 50DMA)' },
+  { key: 'below50DMA', side: 'below', header: 'Breaks that fired in a downtrend (below the 50DMA)' },
 ];
 
-function ConditionedBaseRates({ byCondition }) {
+export function ConditionedBaseRates({ byCondition, inflections }) {
   if (!byCondition) return null;
-  const lines = [];
-  for (const h of [5, 10, 20]) {
-    for (const side of CONDITION_SIDES) {
+
+  // Break counts per 50DMA side from the episode stamps (a null stamp joins
+  // neither side — the SAME partition rule the engine used). Drives the
+  // no-contrast collapse: when every break sits on one side the per-side lines
+  // would just restate the unconditioned aggregate above.
+  const eps = Array.isArray(inflections) ? inflections : [];
+  const aboveN = eps.filter((ep) => ep?.contextAtFlag?.vs50DMA === 'above').length;
+  const belowN = eps.filter((ep) => ep?.contextAtFlag?.vs50DMA === 'below').length;
+  const oneSided = (aboveN > 0 && belowN === 0) || (belowN > 0 && aboveN === 0);
+
+  // Per-side detail lines, tier-gated by the server (median != null ⇒ ≥ 3
+  // independent). One guard — no client copy of the threshold to drift.
+  const sideGroups = CONDITION_SIDES.map((side) => {
+    const lines = [];
+    for (const h of [5, 10, 20]) {
       const b = byCondition[side.key]?.[h];
-      // The server contract IS the gate: conditionedBaseRates nulls every
-      // stat below 3 independent, so a non-null median means the tier
-      // cleared (and hitRate ships non-null with it). One guard — no client
-      // copy of the threshold to drift out of step with the server's.
       if (!b || b.median == null) continue;
       const n = b.independentCount;
       const outcomeBit =
@@ -745,22 +769,46 @@ function ConditionedBaseRates({ byCondition }) {
           : `${Math.round(b.hitRate * n)} of ${n} positive`;
       lines.push(
         <div key={`${side.key}-${h}`} style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, lineHeight: 1.5 }}>
-          {side.label} (n={n}): median {fmtPct(b.median)} at {h}d — {outcomeBit}.
+          +{h}d (n={n}): median {fmtPct(b.median)} — {outcomeBit}.
         </div>
       );
     }
-  }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`, paddingTop: 10 }}>
-      <div style={captionStyle}>By the group's 50DMA state at the flag</div>
-      {lines.length ? (
-        lines
-      ) : (
-        <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted }}>
-          Not enough breaks on either side of the 50DMA to summarize separately (fewer than 3
-          independent per side).
+    return { side, lines };
+  });
+  const hasLines = sideGroups.some((g) => g.lines.length);
+
+  let body;
+  if (oneSided) {
+    const n = aboveN || belowN;
+    const trend = aboveN ? 'an uptrend' : 'a downtrend';
+    body = (
+      <div style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, lineHeight: 1.5 }}>
+        All {n} break{n === 1 ? '' : 's'} fired in {trend} — no contrast to show until breaks
+        occur on both sides.
+      </div>
+    );
+  } else if (hasLines) {
+    body = sideGroups
+      .filter((g) => g.lines.length)
+      .map((g) => (
+        <div key={g.side.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: HOLO_COLORS.textPrimary }}>{g.side.header}</div>
+          {g.lines}
         </div>
-      )}
+      ));
+  } else {
+    body = (
+      <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted }}>
+        Not enough breaks on either side of the 50DMA to summarize separately (fewer than 3
+        independent per side).
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`, paddingTop: 10 }}>
+      <div style={captionStyle}>By the group's 50DMA state at the flag</div>
+      {body}
     </div>
   );
 }
@@ -1172,18 +1220,18 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
           {/* 2 — Headline strip */}
           <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(auto-fit, minmax(200px, 1fr))' : '1fr', gap: 12 }}>
             <div style={card}>
-              <div style={captionStyle}>Correlation — 20d / 60d</div>
+              <div style={captionStyle}>Link — 1-month / 3-month</div>
               <div style={{ display: 'flex', gap: 18, marginTop: 8, alignItems: 'baseline' }}>
                 <span style={{ fontFamily: MONO, fontSize: 26, fontWeight: 700, color: GOLD }}>{fmtCorr(data.byWindow.corr20.value)}</span>
                 <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 600, color: GRAY }}>{fmtCorr(data.byWindow.corr60.value)}</span>
               </div>
               <div style={{ fontSize: 11, color: HOLO_COLORS.textMuted, marginTop: 6 }}>
-                daily returns vs {driverLabel}, {data.meta.joinedCloses} joined sessions
+                (20d / 60d rolling correlation of daily returns) vs {driverLabel}, {data.meta.joinedCloses} joined sessions
               </div>
               <div style={subCaptionStyle}>{CAPTIONS.correlation}</div>
             </div>
             <div style={card}>
-              <div style={captionStyle}>Beta — rolling 40d (latest)</div>
+              <div style={captionStyle}>Move size — when they move together</div>
               {data.beta.latest ? (
                 <>
                   <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'baseline' }}>
@@ -1194,7 +1242,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                       r = {data.beta.latest.r == null ? '—' : data.beta.latest.r.toFixed(2)}{lowFit ? ' · weak fit' : ''}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11, color: HOLO_COLORS.textMuted, marginTop: 6 }}>{data.beta.interpretation}</div>
+                  <div style={{ fontSize: 11, color: HOLO_COLORS.textMuted, marginTop: 6 }}>{data.beta.interpretation} (rolling 40d)</div>
                   <div style={subCaptionStyle}>{CAPTIONS.beta}</div>
                 </>
               ) : (
@@ -1218,7 +1266,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                 if (!div) {
                   return <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted, marginTop: 8 }}>Not enough history yet.</div>;
                 }
-                const st = divergenceState(div.score);
+                const st = divergenceState(div);
                 return (
                   <>
                     <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -1227,7 +1275,9 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                         d {fmtCorr(div.d)}{div.score != null ? ` · SDS ${fmtCorr(div.score)}` : ''}
                       </span>
                     </div>
-                    <div style={subCaptionStyle}>{CAPTIONS.tension}</div>
+                    {/* 'stretched' gets its own honest caption (Build 3.1); every
+                        other state keeps the unchanged Divergence Watch caption. */}
+                    <div style={subCaptionStyle}>{st.note ?? CAPTIONS.tension}</div>
                   </>
                 );
               })()}
@@ -1258,11 +1308,11 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
             {chartTab === 'corr' ? (
               corrDates.length ? (
                 <DualSeriesChart
-                  title={`Group vs ${driverLabel} — rolling correlation`}
+                  title={`Group vs ${driverLabel} — how tightly they've moved together`}
                   seriesA={corr20Pts}
                   seriesB={corr60OnCorr20}
-                  labelA="20d"
-                  labelB="60d"
+                  labelA="1-mo link"
+                  labelB="3-mo link"
                   domain={[-1, 1]}
                   episodeDates={episodeDates}
                   dates={corrDates}
@@ -1333,7 +1383,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                           );
                         };
                         const tag = driverTag(ep);
-                        const state = stateAtBreak(ep);
+                        const phrase = breakStatePhrase(ep.contextAtFlag);
                         return (
                           <tr key={ep.startCloseIndex} style={{ borderTop: `1px solid ${HOLO_COLORS.borderSubtle}` }}>
                             <td style={{ padding: '6px 8px', fontFamily: MONO, color: HOLO_COLORS.textPrimary }}>{ep.startDate}</td>
@@ -1344,8 +1394,19 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                             <td style={{ padding: '6px 8px', fontFamily: MONO, color: HOLO_COLORS.textSecondary }}>
                               {fmtCorr(ep.corr20AtFlag)} / {fmtCorr(ep.corr60AtFlag)}
                             </td>
-                            <td style={{ padding: '6px 8px', color: state ? HOLO_COLORS.textSecondary : HOLO_COLORS.textMuted, whiteSpace: 'nowrap' }}>
-                              {state ?? '—'}
+                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                              {phrase ? (
+                                <>
+                                  {phrase.primary ? (
+                                    <div style={{ color: HOLO_COLORS.textSecondary }}>{phrase.primary}</div>
+                                  ) : null}
+                                  {phrase.secondary ? (
+                                    <div style={{ fontSize: 10, color: HOLO_COLORS.textMuted }}>{phrase.secondary}</div>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <span style={{ color: HOLO_COLORS.textMuted }}>—</span>
+                              )}
                             </td>
                             <td style={{ padding: '6px 8px', fontFamily: MONO, color: pctColor(ep.groupInto5d) }}>{fmtPct(ep.groupInto5d)}</td>
                             <td style={{ padding: '6px 8px', fontFamily: MONO, color: pctColor(ep.driverInto5d) }}>{fmtPct(ep.driverInto5d)}</td>
@@ -1378,7 +1439,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                       driverUnit={data.meta.driver === 'TNX' ? '% change in yield level' : data.meta.driverUnit}
                     />
                   ))}
-                  <ConditionedBaseRates byCondition={data.baseRates.byCondition} />
+                  <ConditionedBaseRates byCondition={data.baseRates.byCondition} inflections={data.inflections} />
                   <div style={{ fontSize: 10, color: HOLO_COLORS.textMuted }}>
                     Past episodes in this window only — not statistical significance, not a prediction.
                     {data.meta.driver === 'TNX' ? ' TNX forward numbers are % change in the yield level.' : ''}

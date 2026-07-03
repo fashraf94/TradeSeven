@@ -118,3 +118,45 @@ export function buildVerdictSentence(data, driverLabel) {
 
   return parts.join(' ');
 }
+
+// ── Break-state phrase (V2 Build 3.1, Change B — vocabulary unification) ──────
+// The GROUP composite's technical state at a flag, humanized: a trend/RSI word
+// pair leads (primary line), the technical detail (50DMA side + RSI value) is
+// demoted to muted secondary text. Presentation-honesty surface: a null part is
+// omitted (never guessed), and an all-null context returns null so the cell
+// renders a single "—". Pure — unit-tested beside the verdict template.
+const TREND_WORD = { above: 'uptrend', below: 'downtrend' };
+const RSI_WORD = { overbought: 'running hot', oversold: 'washed out' }; // neutral omits
+
+/**
+ * RSI display rounding that never contradicts the server's zone word: RSI 69.6
+ * is 'neutral', but a bare round prints "70" against the pinned ≥ 70 overbought
+ * edge — in the two half-point slivers where the integer crosses a zone
+ * boundary, render 1dp instead. The zone word now leads on the primary line,
+ * but the technical "RSI n" must still not read as a different zone.
+ */
+export function rsiDisplay(rsi14, rsiZone) {
+  const rounded = Math.round(rsi14);
+  const contradicts =
+    (rounded >= 70 && rsiZone !== 'overbought') || (rounded <= 30 && rsiZone !== 'oversold');
+  return contradicts ? rsi14.toFixed(1) : String(rounded);
+}
+
+/**
+ * @param {{vs50DMA:('above'|'below'|null), rsi14:(number|null), rsiZone:(string|null)}|null|undefined} ctx
+ *   an episode's contextAtFlag stamp.
+ * @returns {{primary:(string|null), secondary:(string|null)}|null}
+ *   e.g. { primary: 'uptrend · running hot', secondary: 'above 50DMA · RSI 73' };
+ *   null when there is no state to show at all (cell renders "—").
+ */
+export function breakStatePhrase(ctx) {
+  if (!ctx || (ctx.vs50DMA == null && ctx.rsi14 == null)) return null;
+  const trendWord = ctx.vs50DMA != null ? TREND_WORD[ctx.vs50DMA] ?? null : null;
+  const rsiWord = ctx.rsiZone != null ? RSI_WORD[ctx.rsiZone] ?? null : null;
+  const smaBit = ctx.vs50DMA != null ? `${ctx.vs50DMA} 50DMA` : null;
+  const rsiBit = ctx.rsi14 != null ? `RSI ${rsiDisplay(ctx.rsi14, ctx.rsiZone)}` : null;
+  return {
+    primary: [trendWord, rsiWord].filter(Boolean).join(' · ') || null,
+    secondary: [smaBit, rsiBit].filter(Boolean).join(' · ') || null,
+  };
+}

@@ -28,6 +28,9 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 // the SAME scorer the endpoint uses (single-source SDS; BUILD_RULES §4) and to
 // assert the into-break floor the endpoint applies per episode.
 import { standardizedDivergenceScore, trailingReturnInto } from '../_utils/correlationMath.js';
+// Build 3.1 — the deep-dive gauge inherits the shared tension mapping: assert
+// the endpoint stamps divergence.latest.state via this exact helper.
+import { tensionStateFrom } from './correlationAssembly.js';
 
 // ==================== HOISTED MOCK STATE ====================
 const { authReturnValue, labFlag } = vi.hoisted(() => ({
@@ -352,6 +355,15 @@ describe('V1.1 Change F — divergence.latest tension gauge', () => {
     const expectedScore = standardizedDivergenceScore(divSeries, divSeries.length - 1);
     expect(expectedScore).not.toBeNull(); // the last obs has a full 120-obs baseline
     expect(out.divergence.latest.score).toBeCloseTo(expectedScore, 10);
+  });
+
+  it('stamps a coherent tension state via the shared helper (Build 3.1 coherence)', () => {
+    const { d, score, state } = out.divergence.latest;
+    // The endpoint's state IS the shared helper applied to its OWN d/score, so
+    // the deep-dive gauge and the scan chips render one mapping (BUILD_RULES §4
+    // single-source) and the gauge can't claim a state the flag logic refuses.
+    expect(state).toBe(tensionStateFrom({ score, d }));
+    expect(['calm', 'elevated', 'stretched', 'break']).toContain(state);
   });
 });
 
