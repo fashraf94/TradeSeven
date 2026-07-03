@@ -49,6 +49,7 @@ import {
 } from '../_utils/correlationMath.js';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
 import { fetchAllSeries } from './fetchDriverSeries.js';
+import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
 // api→src cross-boundary flag import (scouting-board.js precedent). Node-clean
 // per BUILD_RULES §4; the unmocked handler import in
 // correlation.boundary.test.js is the dependency-surface guard.
@@ -115,9 +116,21 @@ export default async function handler(req, res) {
   // ── Validation (pinned) ──
   const body = req.body || {};
   const driverKey = typeof body.driver === 'string' ? body.driver : null;
-  const registry = driverKey ? CORRELATION_DRIVERS[driverKey] : null;
-  if (!registry) {
+  // CUSTOM is the synthetic pair-mode driver (any equity ticker) — NOT a
+  // registry key. Every other driver must resolve in the registry.
+  const isCustomDriver = driverKey === 'CUSTOM';
+  const baseRegistry = driverKey && !isCustomDriver ? CORRELATION_DRIVERS[driverKey] : null;
+  if (!isCustomDriver && !baseRegistry) {
     return res.status(400).json({ error: 'invalid_driver', message: 'Unknown driver key.' });
+  }
+  // customSymbol is valid ONLY with driver === 'CUSTOM'.
+  const customRaw = typeof body.customSymbol === 'string' ? body.customSymbol.trim() : '';
+  const customPresent = customRaw !== '';
+  if (customPresent && !isCustomDriver) {
+    return res.status(400).json({ error: 'invalid_custom_symbol', message: 'customSymbol is only valid with the CUSTOM driver.' });
+  }
+  if (isCustomDriver && !customPresent) {
+    return res.status(400).json({ error: 'invalid_custom_symbol', message: 'The CUSTOM driver requires a customSymbol.' });
   }
   if (!Array.isArray(body.group) || body.group.length < 1 || body.group.length > 10) {
     return res.status(400).json({ error: 'invalid_group', message: 'group must be 1–10 symbols.' });
@@ -132,6 +145,39 @@ export default async function handler(req, res) {
   if (!group.every((s) => SYMBOL_RE.test(s))) {
     return res.status(400).json({ error: 'invalid_symbol', message: 'Invalid ticker symbol format.' });
   }
+
+  // ── Driver resolution: a registry entry, OR a synthetic CUSTOM (pair-mode)
+  //    entry built from the raw ticker through the SAME canonicalization +
+  //    normalizeSymbolForEODHD path a group member takes (it IS an equity
+  //    ticker). Everything downstream reads `registry` uniformly. ──
+  let registry = baseRegistry;
+  let customSymbol = ''; // canonical app-form; '' for registry drivers (cache key)
+  if (isCustomDriver) {
+    customSymbol = customRaw.toUpperCase().replace(/\.US$/, '');
+    if (!SYMBOL_RE.test(customSymbol)) {
+      return res.status(400).json({ error: 'invalid_custom_symbol', message: 'Invalid custom ticker symbol format.' });
+    }
+    // Self-correlation against a group member is degenerate and confusing.
+    // Compare on the EODHD WIRE form — normalizeSymbolForEODHD collapses dots to
+    // hyphens for share classes, so BRK.B vs BRK-B (which fetch the IDENTICAL
+    // series) are caught, not just literal app-form matches. Matching the wire
+    // form is what actually protects against a fabricated corr=1/beta=1 result.
+    const customWire = `${normalizeSymbolForEODHD(customSymbol)}.US`;
+    if (group.some((g) => `${normalizeSymbolForEODHD(g)}.US` === customWire)) {
+      return res.status(400).json({
+        error: 'custom_symbol_in_group',
+        message: 'The custom ticker is already in the group — self-correlation is degenerate.',
+      });
+    }
+    registry = {
+      symbol: customWire,
+      label: customSymbol,
+      returnMode: 'pct',
+      unit: '% change',
+      betaInterpretation: `group % move per 1% move in ${customSymbol}`,
+    };
+  }
+
   let lookbackDays = LOOKBACK.DEFAULT;
   if (body.lookbackDays !== undefined) {
     if (typeof body.lookbackDays !== 'number' || !Number.isFinite(body.lookbackDays)) {
@@ -145,8 +191,12 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'API not configured' });
   }
 
+  // Cache key incorporates the custom symbol so two CUSTOM runs with different
+  // tickers never collide. The `:<customSymbol>` segment ('' for registry
+  // drivers) changes the key composition for ALL entries — acceptable: daily
+  // expiry, no migration (noted in the PR).
   const docId = createHash('sha1')
-    .update([...group].sort().join(',') + '|' + driverKey + '|' + lookbackDays)
+    .update([...group].sort().join(',') + '|' + driverKey + ':' + customSymbol + '|' + lookbackDays)
     .digest('hex');
   const cacheKey = `correlation:${docId}`;
 
@@ -300,6 +350,7 @@ export default async function handler(req, res) {
         droppedSymbols: failedSymbols,
         partial,
         driver: driverKey,
+        driverLabel: registry.label,
         driverUnit: registry.unit,
         joinedCloses,
         lookbackDays,
