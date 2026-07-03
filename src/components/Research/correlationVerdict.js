@@ -65,8 +65,12 @@ export function buildVerdictSentence(data, driverLabel) {
     const dir = baseCorr >= 0 ? 'move with' : 'move opposite';
     let base = `Your stocks usually ${dir} ${driverLabel} (${band} link ${windowPhrase})`;
     // ── Clause 2 — change (only with BOTH windows and a ≥ 0.15 gap).
+    // Measure the move in the DIRECTION of the base link (corr60's sign), not
+    // by raw magnitude: a positive link that inverts to strongly negative has
+    // weakened, not "tightened" — magnitude alone would mislabel that flip.
     if (corr20 != null && corr60 != null && Math.abs(corr20 - corr60) >= 0.15) {
-      const word = Math.abs(corr20) < Math.abs(corr60) ? 'weakened' : 'tightened';
+      const moved = corr60 >= 0 ? corr20 - corr60 : corr60 - corr20;
+      const word = moved >= 0 ? 'tightened' : 'weakened';
       base += ` — but that link has ${word} this month`;
     }
     sentence1 = `${base}.`;

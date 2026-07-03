@@ -1,6 +1,7 @@
 import React, { useState, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search } from 'lucide-react';
+import { CORRELATION_LAB_ENABLED } from '../../config/featureFlags';
 import { useTheme } from '../../contexts/ThemeContext';
 import ExploreView from './ExploreView';
 import SearchOverlay from './SearchOverlay';
@@ -17,7 +18,10 @@ const TABS = [
   { id: 'rankings', label: 'Rankings' },
   { id: 'institutional', label: 'Institutional' },
   { id: 'screen', label: 'Screen' },
-  { id: 'correlations', label: 'Correlations' },
+  // Flag-gated so CORRELATION_LAB_ENABLED stays a true instant-rollback lever:
+  // flag off → the tab never appears and the surface renders nothing (matches
+  // the endpoint's 404 gate and the featureFlags.js rollback contract).
+  ...(CORRELATION_LAB_ENABLED ? [{ id: 'correlations', label: 'Correlations' }] : []),
 ];
 
 const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) => {
@@ -192,7 +196,7 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) =>
               />
             </Suspense>
           )}
-          {activeTab === 'correlations' && (
+          {CORRELATION_LAB_ENABLED && activeTab === 'correlations' && (
             <Suspense fallback={<div style={{ color: tokens.textMuted, padding: '20px', textAlign: 'center', fontSize: '13px' }}>Loading correlations...</div>}>
               <CorrelationLab isDesktop={isDesktop} embedded />
             </Suspense>

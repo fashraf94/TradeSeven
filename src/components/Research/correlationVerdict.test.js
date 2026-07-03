@@ -81,6 +81,22 @@ describe('buildVerdictSentence — change clause (corr20 vs corr60)', () => {
     const s = buildVerdictSentence(mk({ corr60: 0.5, corr20: 0.55 }), 'Brent');
     expect(s).not.toContain('this month');
   });
+
+  it('a positive link that inverts to strongly negative reads "weakened", not "tightened"', () => {
+    // corr60 +0.5 → base "move with"; corr20 −0.7 is a sign flip (the link
+    // reversed). Magnitude alone (|−0.7|>|0.5|) would wrongly say "tightened".
+    const s = buildVerdictSentence(mk({ corr60: 0.5, corr20: -0.7 }), 'Brent');
+    expect(s).toContain('move with Brent');
+    expect(s).toContain('— but that link has weakened this month');
+    expect(s).not.toContain('tightened');
+  });
+
+  it('a negative (opposite) link getting more negative reads "tightened"', () => {
+    // corr60 −0.4 → base "move opposite"; corr20 −0.8 deepens the opposite link.
+    const s = buildVerdictSentence(mk({ corr60: -0.4, corr20: -0.8 }), 'Brent');
+    expect(s).toContain('move opposite Brent');
+    expect(s).toContain('— but that link has tightened this month');
+  });
 });
 
 describe('buildVerdictSentence — break clause', () => {

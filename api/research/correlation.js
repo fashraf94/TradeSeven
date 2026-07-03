@@ -248,21 +248,6 @@ export default async function handler(req, res) {
     // sentence anchors here, never at the raw lookback start.
     const firstEligibleInflectionDate = divergenceSeries[SDS_BASELINE_WINDOW]?.eventDate ?? null;
 
-    // Change F — divergence tension gauge: surface the LATEST divergence
-    // observation's state (its d and its SDS, via the shared scorer so the
-    // gauge and the flagging engine agree). latest is null when the divergence
-    // series is empty/suppressed; score is null when that obs is unscoreable.
-    const lastDiv = divergenceSeries.length ? divergenceSeries[divergenceSeries.length - 1] : null;
-    const divergence = {
-      latest: lastDiv
-        ? {
-            d: lastDiv.d,
-            score: standardizedDivergenceScore(divergenceSeries, divergenceSeries.length - 1),
-            eventDate: lastDiv.eventDate,
-          }
-        : null,
-    };
-
     let inflections = null;
     let baseRates = null;
     const suppressed = {};
@@ -283,6 +268,27 @@ export default async function handler(req, res) {
         driver: forwardReturns(driverCloses, joinedDates, inflections),
       };
     }
+
+    // Change F — divergence tension gauge: the LATEST divergence observation's
+    // state (its d and its SDS, via the shared scorer). A raw stretch measure
+    // (SDS only — no |d| floor / persistence), so it can read high without a
+    // flagged episode. Null when the divergence series is empty OR when
+    // inflection detection is suppressed — the gauge and the regime-break card
+    // appear and disappear together (spec: "null when empty/suppressed"). Score
+    // is null when the last obs lacks a full baseline (unscoreable).
+    const lastDiv =
+      !suppressed.inflections && divergenceSeries.length
+        ? divergenceSeries[divergenceSeries.length - 1]
+        : null;
+    const divergence = {
+      latest: lastDiv
+        ? {
+            d: lastDiv.d,
+            score: standardizedDivergenceScore(divergenceSeries, divergenceSeries.length - 1),
+            eventDate: lastDiv.eventDate,
+          }
+        : null,
+    };
 
     // Headline beta = the LATEST element of the rolling series — never a
     // separately-computed point beta (the number and the line cannot disagree).
