@@ -60,15 +60,26 @@ Held names use a `stagnant` motion (so forced rotation fires); the **preset**
 Per-tick `atrPercentile` drifts so the fresh ATR differs from the frozen swap-in ATR
 (A1's effect is measurable).
 
-**`gate-replay-harness.js`** — per archetype × preset, captures: full hurdle verdicts
-incl. `blockReason`; forced-rotation **fires vs executed vs vetoed vs capped**;
-swap-window cap hits; the **wake-starvation rate** (Decision 2 gate — a hurdle-clearing
-swap opportunity whose chosen candidate would not fire the `bench_outperformance` wake;
-PASS < 5% + no stress worsening; `wake-but-never-clears` is monitor-only); and the
-fresh-vs-frozen ATR deltas. Emergencies are not synthesized (so 8B stagnation-share and
-emergency-bypass frequency stay with B1's real data). `replayRealBattles` honestly
-reports that recorded battles carry no per-tick/candidate state to gate-replay
-(coverage 0) — synthetic is the instrument.
+**`gate-replay-harness.js`** — drives TWO production-faithful paths: **(A)** Knob-A
+forced rotation (stagnation counter; not wake-gated), and **(H)** a **uniform,
+exogenous haiku-proposal stream** (identical across archetypes, a function of the
+universe only) run through the real **wake** (`evaluateTriggers`) →
+`hurdleFloor.byReason.haiku_decision` → **swap-window** gates as the cron layers them.
+The haiku path gives Guardian (forced-rotation-disabled) a real tempo floor, so the
+**8A ratio gates are falsifiable** rather than vacuously true. Both paths share one
+`trades[]` + one swap-window counter.
+
+Per archetype × preset it captures: full hurdle verdicts incl. `blockReason`;
+forced-rotation **fires vs executed vs vetoed vs capped**; haiku **proposals / woken /
+wake-starved / hurdle-blocked / capped / executed**; the **total tempo** (8A metric);
+swap-window cap hits; the **wake-starvation rate** on the wake-gated haiku path
+(Decision 2 — a proposal whose hurdle would clear but whose tick did not wake Haiku;
+`wake-but-never-clears` is monitor-only) — recorded **FAILED-STRUCTURAL** (the 8C
+divergence; a fenced-`evaluateTriggers` unification item, **not** a B3 knob-tuning
+target); and the fresh-vs-frozen ATR deltas. Emergencies are not synthesized (so 8B
+stagnation-share + emergency-bypass frequency stay with B1's real data).
+`replayRealBattles` honestly reports zero gate-replay coverage from recorded battles
+(no per-tick/candidate state) — synthetic is the instrument.
 
 ```sh
 node scripts/calibration/gate-replay-harness.js          # the "before" picture (table)
