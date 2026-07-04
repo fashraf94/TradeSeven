@@ -81,15 +81,25 @@ export function computeContextAtFlag(levels, c) {
 
   // RSI-14 at c: Wilder's running average over the full joined history up to
   // c. Wilder RSI is prefix-deterministic, so truncate-then-compute equals the
-  // per-bar calculateRSISeries value at c. The zone comes back pinned at
-  // ≥ 70 / 30–70 / ≤ 30 from calculateRSI itself — never re-derived here.
+  // per-bar calculateRSISeries value at c.
   const rsi = calculateRSI(newestFirst, CONTEXT_RSI_PERIOD);
 
-  return {
-    vs50DMA,
-    rsi14: rsi ? rsi.value : null,
-    rsiZone: rsi ? rsi.zone : null,
-  };
+  // Rounding family (fifth & final known member): calculateRSI zones the FULL-
+  // precision RSI, so a raw 69.96 — stored and rendered at the 1dp display
+  // precision as "70.0" — could read 'neutral' at the pinned ≥ 70 edge. Round
+  // to the 1dp display precision FIRST, then zone the rounded value
+  // (≥ 70 overbought / ≤ 30 oversold), so rsi14 and rsiZone agree BY
+  // CONSTRUCTION and the client renders both verbatim (no client-side zoning).
+  // calculateRSI stays untouched (do-not-modify); the display-precision round
+  // is the zone's one home, here.
+  let rsi14 = null;
+  let rsiZone = null;
+  if (rsi) {
+    rsi14 = Number(rsi.value.toFixed(1));
+    rsiZone = rsi14 >= 70 ? 'overbought' : rsi14 <= 30 ? 'oversold' : 'neutral';
+  }
+
+  return { vs50DMA, rsi14, rsiZone };
 }
 
 /**

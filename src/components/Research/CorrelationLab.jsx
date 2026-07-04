@@ -157,6 +157,26 @@ const fmtCorr = (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2));
 const fmtPct = (v, dp = 1) => (v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(dp) + '%');
 const fmtBeta = (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2));
 
+/**
+ * resolveResultLabels — the driver label/unit strings for EVERY result surface,
+ * sourced from the PAYLOAD, never the live <select>. Flipping the driver
+ * dropdown after a run must not relabel a result that belongs to the old
+ * driver: results bind to what was actually computed. Pure over `data`.
+ *   • driverLabel: meta.driverLabel (server, carried since Build 1) → local key
+ *     lookup by meta.driver → em-dash. The live select is NEVER a source, and a
+ *     missing-everything payload renders '—', never a live default.
+ *   • driverUnit: the base-rate forward-return unit. TNX forward returns are
+ *     percent-of-level, so its diff-mode 'yield points' unit must not ride along
+ *     (that unit belongs to beta/inflections, not this number).
+ * (The query bar keeps reflecting live input — it is input, not result.)
+ */
+export function resolveResultLabels(data) {
+  const meta = data?.meta ?? {};
+  const driverLabel = meta.driverLabel ?? DRIVER_LABELS[meta.driver] ?? '—';
+  const driverUnit = meta.driver === 'TNX' ? '% change in yield level' : meta.driverUnit;
+  return { driverLabel, driverUnit };
+}
+
 function leadLagSentence(leadLag, driverLabel) {
   if (!leadLag) return 'Not enough data for a lead-lag read.';
   const r = leadLag.corrAtBestLag == null ? '' : ` (r = ${leadLag.corrAtBestLag.toFixed(2)})`;
@@ -1020,6 +1040,11 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
   // CUSTOM's label is the raw ticker (matches the server's synthetic label /
   // betaInterpretation); registry drivers use the mirrored label.
   const customTicker = customSymbol.trim().toUpperCase().replace(/\.US$/, '');
+  // LIVE (input-state) label — reflects the current select. Used ONLY by
+  // input-adjacent copy: the error notice, whose failed run has no payload to
+  // bind to. Result surfaces derive their label from the payload via
+  // resolveResultLabels(data) — flipping the select after a run must never
+  // relabel results that belong to the driver actually computed.
   const driverLabel = isCustom
     ? customTicker || 'custom ticker'
     : DRIVER_LABELS[driverKey] ?? driverKey;
@@ -1179,6 +1204,11 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
   }, [data]);
 
   const lowFit = data?.beta?.latest?.r != null && Math.abs(data.beta.latest.r) < LOW_R_THRESHOLD;
+
+  // Every result surface below reads its driver label/unit from the PAYLOAD via
+  // this (never the live select). Non-null only in the single-driver ready
+  // state — every consumer sits inside the `data`-guarded result block.
+  const resultLabels = data ? resolveResultLabels(data) : null;
 
   return (
     <div style={{
@@ -1361,7 +1391,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
         <>
           {/* C — plain-language verdict sentence (deterministic; assembled from the payload) */}
           {(() => {
-            const verdict = buildVerdictSentence(data, driverLabel);
+            const verdict = buildVerdictSentence(data, resultLabels.driverLabel);
             return verdict ? (
               <div style={{ ...card, borderColor: `${GOLD}44` }}>
                 <div style={{ fontSize: 15, color: HOLO_COLORS.textPrimary, lineHeight: 1.55 }}>{verdict}</div>
@@ -1378,7 +1408,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                 <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 600, color: GRAY }}>{fmtCorr(data.byWindow.corr60.value)}</span>
               </div>
               <div style={{ fontSize: 11, color: HOLO_COLORS.textMuted, marginTop: 6 }}>
-                (20d / 60d rolling correlation of daily returns) vs {driverLabel}, {data.meta.joinedCloses} joined sessions
+                (20d / 60d rolling correlation of daily returns) vs {resultLabels.driverLabel}, {data.meta.joinedCloses} joined sessions
               </div>
               <div style={subCaptionStyle}>{CAPTIONS.correlation}</div>
             </div>
@@ -1406,7 +1436,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
             <div style={card}>
               <div style={captionStyle}>Lead-lag</div>
               <div style={{ fontSize: 14, color: HOLO_COLORS.textPrimary, marginTop: 8, lineHeight: 1.5 }}>
-                {leadLagSentence(data.leadLag, driverLabel)}
+                {leadLagSentence(data.leadLag, resultLabels.driverLabel)}
               </div>
               {(() => {
                 // H7 — on a flat verdict, show the strongest lagged reading so the
@@ -1471,7 +1501,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
             {chartTab === 'corr' ? (
               corrDates.length ? (
                 <DualSeriesChart
-                  title={`Group vs ${driverLabel} — how tightly they've moved together`}
+                  title={`Group vs ${resultLabels.driverLabel} — how tightly they've moved together`}
                   seriesA={corr20Pts}
                   seriesB={corr60OnCorr20}
                   labelA="1-mo link"
@@ -1536,7 +1566,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>Group +5d</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>+10d</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>+20d</th>
-                        <th style={{ padding: '4px 8px', fontWeight: 600 }}>{driverLabel} +10d</th>
+                        <th style={{ padding: '4px 8px', fontWeight: 600 }}>{resultLabels.driverLabel} +10d</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1600,11 +1630,12 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                       group={data.baseRates.group[h]}
                       driver={data.baseRates.driver?.[h]}
                       sinceDate={data.meta.firstEligibleInflectionDate}
-                      driverLabel={driverLabel}
-                      // Forward returns are ALWAYS percent-of-level (closes[c+h]/closes[c]−1),
-                      // so TNX must not carry its diff-mode 'yield points (pp)' unit here —
-                      // that label belongs to the diff returns (beta/inflections), not this number.
-                      driverUnit={data.meta.driver === 'TNX' ? '% change in yield level' : data.meta.driverUnit}
+                      driverLabel={resultLabels.driverLabel}
+                      // driverUnit: the base-rate forward-return unit, payload-bound
+                      // via resolveResultLabels (TNX forward returns are percent-of-
+                      // level, so its diff-mode 'yield points' unit is dropped here —
+                      // that belongs to the diff returns, beta/inflections, not this).
+                      driverUnit={resultLabels.driverUnit}
                     />
                   ))}
                   <ConditionedBaseRates byCondition={data.baseRates.byCondition} inflections={data.inflections} />

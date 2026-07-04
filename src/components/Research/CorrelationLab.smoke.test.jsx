@@ -22,10 +22,11 @@ import {
   ConditionalCard,
   divergenceState,
   leadLagEvidenceLine,
+  resolveResultLabels,
 } from './CorrelationLab.jsx';
 // Build 4 — the conditional verdict chip is a pure copy helper and lives with
 // the other presentation-honesty templates in correlationVerdict.js.
-import { conditionalVerdict } from './correlationVerdict';
+import { conditionalVerdict, buildVerdictSentence } from './correlationVerdict';
 
 const AMBER = '#f59e0b';
 const RED = '#EF4444';
@@ -506,5 +507,61 @@ describe('conditionalVerdict + ConditionalCard — sign-flip reversal verdict', 
   it('a non-flip block is unaffected — "tighter" still renders for a same-direction asymmetry', () => {
     const v = conditionalVerdict(ddBlock(), ['up', 'down'], 60);
     expect(v.kind).toBe('tighter');
+  });
+});
+
+// ── Display-integrity fast-follow: result labels bind to the PAYLOAD ──────────
+describe('resolveResultLabels — result surfaces bind to the payload, never the live select', () => {
+  it('payload meta.driverLabel wins (the primary, server-carried source)', () => {
+    expect(
+      resolveResultLabels({ meta: { driver: 'GOLD', driverLabel: 'Gold (GLD proxy)' } }).driverLabel
+    ).toBe('Gold (GLD proxy)');
+  });
+
+  it('falls back to the local key lookup when the payload omits the label', () => {
+    expect(resolveResultLabels({ meta: { driver: 'GOLD' } }).driverLabel).toBe('Gold (GLD proxy)');
+  });
+
+  it('renders an em-dash when neither a label nor a known key is present — never a live default', () => {
+    expect(resolveResultLabels({ meta: { driver: 'ZZ_NOT_A_DRIVER' } }).driverLabel).toBe('—');
+    expect(resolveResultLabels({ meta: {} }).driverLabel).toBe('—');
+    expect(resolveResultLabels({}).driverLabel).toBe('—');
+    expect(resolveResultLabels(null).driverLabel).toBe('—');
+  });
+
+  it('driverUnit is payload-bound, with the TNX forward-return override (never the diff-mode unit)', () => {
+    expect(resolveResultLabels({ meta: { driver: 'BRENT', driverUnit: '% change' } }).driverUnit).toBe(
+      '% change'
+    );
+    // TNX forward returns are percent-of-level, so its diff-mode 'yield points'
+    // unit must be dropped here (that unit belongs to beta/inflections).
+    expect(
+      resolveResultLabels({ meta: { driver: 'TNX', driverUnit: 'yield points (pp)' } }).driverUnit
+    ).toBe('% change in yield level');
+  });
+});
+
+describe('result surfaces render the payload driver label, not the component default select', () => {
+  // The bug (pre-existing since V0): driverLabel derived from the live <select>
+  // (default BRENT), so flipping the dropdown AFTER a run relabeled every result
+  // surface while the numbers still belonged to the old driver. Bound to the
+  // payload, a GOLD-run result reads Gold even though the default select is Brent.
+  const goldData = {
+    meta: {
+      driver: 'GOLD',
+      driverLabel: 'Gold (GLD proxy)',
+      joinedCloses: 400,
+      firstEligibleInflectionDate: '2026-01-02',
+    },
+    byWindow: { corr20: { value: 0.62 }, corr60: { value: 0.55 } },
+    inflections: [],
+    leadLag: null,
+  };
+
+  it('the verdict result surface names the PAYLOAD driver (Gold), never the default select (Brent)', () => {
+    const { driverLabel } = resolveResultLabels(goldData);
+    const html = render(<div>{buildVerdictSentence(goldData, driverLabel)}</div>);
+    expect(html).toContain('Gold (GLD proxy)');
+    expect(html).not.toContain('Brent');
   });
 });
