@@ -1,14 +1,16 @@
 // api/cron/process-draft-claims.js
-// Processes pending waiver claims for all active Snake Draft battles.
+// Processes pending waiver claims for all active Snake Draft battles, and
+// (merged 2026-07-04 from the retired pre-market-warmup cron, which shared
+// this schedule) seeds the daily FantasyTimes consensus document.
 // Target execution: 9:25 AM ET Mon-Fri — after the 9:24 AM ET client
 // submission cutoff, before the 9:30 AM ET market open.
 //
 // Schedule: 25 13,14 * * 1-5 — fires at BOTH 13:25 and 14:25 UTC so that
-// exactly one firing lands at 9:25 AM ET under both EDT and EST (same
-// pattern as pre-market-warmup). getClaimProcessingWindow() gates the
-// handler to the 9:20-9:35 AM ET window; the off-DST firing exits early
-// with a skipped response. claimSystem.lastProcessedDay makes processing
-// idempotent per battle trading day.
+// exactly one firing lands at 9:25 AM ET under both EDT and EST.
+// getClaimProcessingWindow() gates the claims path to the 9:20-9:35 AM ET
+// window; the off-DST firing exits early with a skipped response.
+// claimSystem.lastProcessedDay makes processing idempotent per battle trading
+// day. The consensus-seeding block self-gates on isPreMarketWindow().
 //
 // Processing flow:
 //   1. Fetch all battle drafts with claimSystem.enabled
@@ -27,6 +29,12 @@ import {
   fetchEligibleTournamentGroups,
   processClaimsForTournamentGroup,
 } from '../_utils/tournamentClaims.js';
+// Merged 2026-07-04 from the retired pre-market-warmup cron (shared the
+// 25 13,14 schedule): FantasyTimes consensus seeding — the load-bearing half
+// of that cron. seedConsensus/flushExpiredCatalysts are self-contained utils.
+import { isPreMarketWindow, isTodayHoliday, formatDateString, getETDate } from '../_utils/marketSchedule.js';
+import { seedConsensus } from '../_utils/fantasyTimesConsensus.js';
+import { flushExpiredCatalysts } from '../_utils/validatedCatalystCache.js';
 
 // ============================================
 // LOGGING
@@ -528,6 +536,32 @@ export default async function handler(req, res) {
 
   const startTime = Date.now();
   logInfo('Starting claim processing cron job');
+
+  // --- FantasyTimes consensus seeding (merged from the retired
+  // pre-market-warmup cron, which shared this 25 13,14 schedule). Independent
+  // of claim processing and self-gated on the pre-market window, so it fires on
+  // the same ~9:25 AM ET landing. Non-blocking: a failure here must never block
+  // claim processing. The old cron's price-cache "warming" was dropped
+  // deliberately — it wrote a per-serverless-instance in-memory cache invisible
+  // to api/stocks/prices, keyed per-symbol vs that route's composite key, so it
+  // never served a live read. (Behavior note: the old cron skipped consensus on
+  // days with no active battles; seeding is now unconditional on pre-market
+  // trading days — strictly more correct for the FantasyTimes readers.)
+  if (isPreMarketWindow() && !isTodayHoliday()) {
+    try {
+      const todayStr = formatDateString(getETDate());
+      await seedConsensus(todayStr);
+      logInfo(`FantasyTimes consensus seeded for ${todayStr}`);
+    } catch (err) {
+      logWarn(`Consensus seed failed (non-blocking): ${err.message}`);
+    }
+    try {
+      await flushExpiredCatalysts();
+      logInfo('Flushed expired validated catalysts');
+    } catch (err) {
+      logWarn(`Catalyst cache flush failed (non-blocking): ${err.message}`);
+    }
+  }
 
   // DST guard: of the two daily firings (13:25 and 14:25 UTC), admit only
   // the one that lands in the 9:20-9:35 AM ET claim window.
