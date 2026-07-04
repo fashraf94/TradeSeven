@@ -16,7 +16,12 @@ import { renderToString } from 'react-dom/server';
 // module graph load in the Node test env.
 vi.mock('../../firebase/config', () => ({ auth: {}, db: {}, default: {} }));
 
-import { ScanResults, ConditionedBaseRates, divergenceState } from './CorrelationLab.jsx';
+import {
+  ScanResults,
+  ConditionedBaseRates,
+  divergenceState,
+  leadLagEvidenceLine,
+} from './CorrelationLab.jsx';
 
 const AMBER = '#f59e0b';
 const RED = '#EF4444';
@@ -71,6 +76,63 @@ describe('divergenceState — coherent five-state map', () => {
     expect(divergenceState({ score: 1.5, d: 0.9 }).word).toBe('elevated');
     expect(divergenceState({ score: 0.2, d: 0.9 }).word).toBe('calm');
     expect(divergenceState({ score: null, d: 0.9 }).word).toBe('not scoreable yet');
+  });
+});
+
+// ── H7 — the lead-lag evidence line under a flat verdict ──────────────────────
+describe('leadLagEvidenceLine — evidence under coincident / none', () => {
+  // leadLag.table rows are { lag, corr, n }; lag 0 is same-day (maxLag 5 → -5..+5).
+  const mkTable = () => [
+    { lag: -2, corr: -0.11, n: 100 },
+    { lag: -1, corr: 0.3, n: 100 },
+    { lag: 0, corr: 0.52, n: 100 },
+    { lag: 1, corr: 0.28, n: 100 },
+    { lag: 2, corr: -0.41, n: 100 }, // largest |corr| among the nonzero lags
+  ];
+
+  it('coincident: names the strongest lagged reading against same-day', () => {
+    const line = leadLagEvidenceLine({ verdict: 'coincident', lag0Corr: 0.52, table: mkTable() });
+    expect(line).toBe(
+      'Strongest lagged reading: +2d at r = -0.41 — not meaningfully different from same-day (0.52 r).'
+    );
+  });
+
+  it("none verdict also renders (it's the other flat verdict)", () => {
+    const line = leadLagEvidenceLine({ verdict: 'none', lag0Corr: 0.02, table: mkTable() });
+    expect(line).toContain('Strongest lagged reading: +2d at r = -0.41');
+    expect(line).toContain('same-day (0.02 r)');
+  });
+
+  it('a negative best lag prints its sign; a |corr| tie breaks to the nearer lag', () => {
+    const table = [
+      { lag: -1, corr: 0.4, n: 100 },
+      { lag: 0, corr: 0.1, n: 100 },
+      { lag: 3, corr: -0.4, n: 100 }, // equal |corr| but farther → -1 wins
+    ];
+    const line = leadLagEvidenceLine({ verdict: 'coincident', lag0Corr: 0.1, table });
+    expect(line).toContain('-1d at r = 0.40');
+  });
+
+  it('renders nothing for a directional verdict (driver_leads / group_leads keep their sentence)', () => {
+    expect(
+      leadLagEvidenceLine({ verdict: 'driver_leads', bestLag: 2, lag0Corr: 0.3, table: mkTable() })
+    ).toBeNull();
+    expect(
+      leadLagEvidenceLine({ verdict: 'group_leads', bestLag: -1, lag0Corr: 0.3, table: mkTable() })
+    ).toBeNull();
+  });
+
+  it('guards nulls: no leadLag, null table, no usable nonzero row, or missing lag0 → null', () => {
+    expect(leadLagEvidenceLine(null)).toBeNull();
+    expect(leadLagEvidenceLine({ verdict: 'coincident', lag0Corr: 0.5, table: null })).toBeNull();
+    expect(
+      leadLagEvidenceLine({
+        verdict: 'none',
+        lag0Corr: 0.5,
+        table: [{ lag: 1, corr: null, n: 3 }, { lag: 0, corr: 0.5, n: 4 }],
+      })
+    ).toBeNull();
+    expect(leadLagEvidenceLine({ verdict: 'coincident', lag0Corr: null, table: mkTable() })).toBeNull();
   });
 });
 

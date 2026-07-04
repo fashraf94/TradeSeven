@@ -163,6 +163,40 @@ function leadLagSentence(leadLag, driverLabel) {
   return `This group led ${driverLabel} by ${days} ${dayWord}${r}.`;
 }
 
+/**
+ * H7 — the evidence line under a FLAT lead-lag verdict. On a real pair the card's
+ * sentence is identical every time because daily-resolution leads among liquid
+ * assets are genuinely rare (correct, but it reads inert). When the verdict is
+ * `coincident` or `none`, surface the strongest lagged reading from the ALREADY-
+ * SHIPPED `leadLag.table` so the "no lead" verdict shows its evidence: the
+ * largest-|corr| NON-ZERO-lag row against same-day (lag 0). Render-only — the
+ * directional `driver_leads` / `group_leads` paths keep their sentence and get
+ * no extra line. Returns null when there is nothing honest to add (no table,
+ * null lag0, or no usable nonzero-lag row).
+ */
+export function leadLagEvidenceLine(leadLag) {
+  if (!leadLag) return null;
+  if (leadLag.verdict !== 'coincident' && leadLag.verdict !== 'none') return null;
+  const table = Array.isArray(leadLag.table) ? leadLag.table : null;
+  if (!table) return null;
+  const lag0 = leadLag.lag0Corr;
+  if (lag0 == null || !Number.isFinite(lag0)) return null;
+  // Largest-|corr| nonzero-lag row; ties break to the nearer lag. Null / non-finite
+  // corr rows and the lag-0 row are skipped.
+  let best = null;
+  for (const row of table) {
+    if (!row || row.lag === 0 || row.corr == null || !Number.isFinite(row.corr)) continue;
+    const better =
+      best == null ||
+      Math.abs(row.corr) > Math.abs(best.corr) ||
+      (Math.abs(row.corr) === Math.abs(best.corr) && Math.abs(row.lag) < Math.abs(best.lag));
+    if (better) best = row;
+  }
+  if (!best) return null;
+  const signed = `${best.lag > 0 ? '+' : ''}${best.lag}d`;
+  return `Strongest lagged reading: ${signed} at r = ${best.corr.toFixed(2)} — not meaningfully different from same-day (${lag0.toFixed(2)} r).`;
+}
+
 const directionLabel = (d) => (d === 'weakening' ? 'correlation breakdown' : 'correlation strengthening');
 
 // Change F / Build 3.1 — plain-language state for the Divergence Watch gauge.
@@ -1267,6 +1301,16 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
               <div style={{ fontSize: 14, color: HOLO_COLORS.textPrimary, marginTop: 8, lineHeight: 1.5 }}>
                 {leadLagSentence(data.leadLag, driverLabel)}
               </div>
+              {(() => {
+                // H7 — on a flat verdict, show the strongest lagged reading so the
+                // (correctly) inert "no lead" copy carries its evidence.
+                const evidence = leadLagEvidenceLine(data.leadLag);
+                return evidence ? (
+                  <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>
+                    {evidence}
+                  </div>
+                ) : null;
+              })()}
               <div style={subCaptionStyle}>{CAPTIONS.leadLag}</div>
             </div>
             {/* F — divergence tension gauge */}
