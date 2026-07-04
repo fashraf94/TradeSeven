@@ -86,6 +86,24 @@ node scripts/calibration/gate-replay-harness.js          # the "before" picture 
 node scripts/calibration/gate-replay-harness.js --json    # machine-readable
 ```
 
+## `calibrate-knobs.js` (Phase B3 — the calibration run)
+
+Proposes tuned per-archetype `hftConfig` values and **verifies** them through the B2
+harness. It **edits no fenced file** — the tuned table is emitted as data (proposed
+for the Tier-2 fence bundle). Verifies the ordering/ratio gates **per preset
+(trend / chop / stress; flatline excluded)** across a **proposal-rate sweep
+(0.5× / 1× / 2×)** and flags any gate that flips across rates as a mechanism finding;
+widens degen↔mc separation; and verifies provisional **dial bands**
+(`Measured / Standard / Aggressive`) across the full archetype × dial cross-product on
+total tempo (Capital Preserver @ Aggressive stays slower than Speculator @ Measured).
+8B is **real-data only** (B1); wake-starvation is carried **FAILED-STRUCTURAL** (F2),
+never tuned toward.
+
+```sh
+node scripts/calibration/calibrate-knobs.js          # proposed table + gate/sweep/band verdict
+node scripts/calibration/calibrate-knobs.js --json
+```
+
 ## Tests
 
 ```sh

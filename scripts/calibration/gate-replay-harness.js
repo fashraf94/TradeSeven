@@ -101,8 +101,11 @@ export function buildHaikuProposals(universe, { interval = 3 } = {}) {
 }
 
 // Replay one archetype over one synthetic universe (both decision paths).
-export function replayScenario({ archetype, universe, haikuProposals }) {
-  const cfg = getArchetypeConfig(archetype);
+// `config` (optional) injects a CANDIDATE archetype config (B3 tuning); it defaults
+// to the shipped illustrative getArchetypeConfig(archetype). The harness never edits
+// the fenced config — B3 proposes values as data, evaluated through this injection.
+export function replayScenario({ archetype, universe, haikuProposals, config }) {
+  const cfg = config || getArchetypeConfig(archetype);
   const fr = cfg.hftConfig.forcedRotation;
   const swCfg = cfg.hftConfig.swapWindow;
   const held = universe.held;
@@ -265,11 +268,15 @@ export function replayScenario({ archetype, universe, haikuProposals }) {
 }
 
 // Run every archetype over one preset (fixed seed, shared exogenous haiku stream).
-export function replayPreset({ preset, seed = 7, nHeld = 3, nBench = 9, nTicks = 26 }) {
+// `configs` (optional) is a { archetype: config } map of CANDIDATE configs (B3);
+// `interval` sets the haiku proposal cadence (the proposal-rate sweep varies it).
+export function replayPreset({ preset, seed = 7, nHeld = 3, nBench = 9, nTicks = 26, configs, interval }) {
   const universe = genUniverse({ preset, seed, nHeld, nBench, nTicks });
-  const haikuProposals = buildHaikuProposals(universe); // identical across archetypes
+  const haikuProposals = buildHaikuProposals(universe, interval ? { interval } : undefined); // identical across archetypes
   const byArchetype = {};
-  for (const archetype of ORDER) byArchetype[archetype] = replayScenario({ archetype, universe, haikuProposals });
+  for (const archetype of ORDER) {
+    byArchetype[archetype] = replayScenario({ archetype, universe, haikuProposals, config: configs?.[archetype] });
+  }
   return { preset, seed, byArchetype };
 }
 
@@ -349,9 +356,9 @@ export function replayRealBattles(battles) {
   };
 }
 
-export function runAll({ seed = 7, nHeld = 3, nBench = 9, nTicks = 26 } = {}) {
+export function runAll({ seed = 7, nHeld = 3, nBench = 9, nTicks = 26, configs, interval } = {}) {
   const runsByPreset = {};
-  for (const preset of PRESETS) runsByPreset[preset] = replayPreset({ preset, seed, nHeld, nBench, nTicks });
+  for (const preset of PRESETS) runsByPreset[preset] = replayPreset({ preset, seed, nHeld, nBench, nTicks, configs, interval });
   return { seed, nHeld, nBench, nTicks, runsByPreset, unifiedGates: evaluateUnifiedGates(runsByPreset) };
 }
 
