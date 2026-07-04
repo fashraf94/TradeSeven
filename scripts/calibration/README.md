@@ -25,6 +25,14 @@ synthesizes them. The report marks them explicitly under `notCovered`.
 exceeds the retained array — are flagged `censored`; their counts are **FLOOR values**
 (lower bounds), never reported as exact.
 
+**Unknown/missing reason (B1 taxonomy rider):** a trade whose `exitReason` is neither
+an emergency reason nor a recognized non-emergency reason (`stagnation`,
+`haiku_decision`, `gameplan_rotation`) is counted as non-emergency by default-deny,
+which **inflates the 8A tempo metric**. Pre-V1.4-taxonomy (Mar–May) battles can carry
+such reasons, so the report surfaces the unknown/missing share (`unknownReason`, per
+battle + overall, with a `byReason` breakdown and a `taxonomyNote`) as a visible number
+for the B3 run's judgment.
+
 ### Usage
 
 ```sh

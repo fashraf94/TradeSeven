@@ -24,6 +24,12 @@
 // FLOOR values (lower bounds), flagged `censored` so the ledger never reports a
 // truncated count as exact.
 //
+// PROVENANCE / TAXONOMY: a trade whose exitReason is neither an emergency reason
+// nor a recognized non-emergency reason is UNKNOWN/MISSING. Default-deny counts
+// such trades as non-emergency, which INFLATES the 8A tempo metric — a real risk
+// for pre-V1.4-taxonomy (Mar–May) battles. The unknown/missing share is surfaced
+// per battle and overall so B3 can judge how much the 8A number is inflated.
+//
 // Offline + deterministic: no network, no Firestore read/write, no Date.now,
 // no randomness. Time span is derived from the data, never the wall clock.
 //
@@ -46,6 +52,12 @@ import { EMERGENCY_BYPASS_REASONS } from '../../api/_utils/agentRiskManager.js';
 
 export const TRADES_CAP = 50; // agentSwapExecution.js:345 `.slice(-50)`
 
+// Recognized NON-emergency exit reasons (FORGE_KEYSTONE_PHASE8_CALIBRATION_PLAN.md §1).
+// There is no single exported source for these today, so this mirrors the plan's
+// enumeration; keep it in sync if the reason taxonomy grows. A non-emergency trade
+// whose reason is NOT in this set is treated as unknown/missing (see partitionTrades).
+export const KNOWN_NONEMERGENCY_REASONS = new Set(['stagnation', 'haiku_decision', 'gameplan_rotation']);
+
 // --- pure stat helpers (deterministic) ---
 export function median(nums) {
   if (!nums.length) return null;
@@ -55,14 +67,14 @@ export function median(nums) {
 }
 
 const round = (x, d = 2) => (x == null ? null : Math.round(x * 10 ** d) / 10 ** d);
+const sum = (nums) => nums.reduce((a, b) => a + b, 0);
 
 function summarize(nums) {
   if (!nums.length) return { n: 0, median: null, mean: null, min: null, max: null };
-  const sum = nums.reduce((a, b) => a + b, 0);
   return {
     n: nums.length,
     median: round(median(nums)),
-    mean: round(sum / nums.length),
+    mean: round(sum(nums) / nums.length),
     min: Math.min(...nums),
     max: Math.max(...nums),
   };
@@ -94,13 +106,17 @@ export function isTruncated(battle) {
   return false;
 }
 
-// Split a battle's trades[] into emergency vs non-emergency using the FENCED
-// EMERGENCY_BYPASS_REASONS set (default-deny: unknown/missing reason = non-emergency).
+// Split a battle's trades[] using the FENCED EMERGENCY_BYPASS_REASONS set
+// (default-deny: unknown/missing reason = non-emergency). Also tallies the
+// unknown/missing-reason trades that default-deny silently folds into
+// non-emergency, so their 8A-inflating share can be surfaced.
 export function partitionTrades(trades) {
   const nonEmergency = [];
   const emergency = [];
   let stagnation = 0;
+  let unknown = 0;
   const emergencyByReason = {};
+  const unknownByReason = {};
   for (const t of trades) {
     const reason = t?.exitReason;
     if (EMERGENCY_BYPASS_REASONS.has(reason)) {
@@ -109,9 +125,14 @@ export function partitionTrades(trades) {
     } else {
       nonEmergency.push(t);
       if (reason === 'stagnation') stagnation += 1;
+      if (!KNOWN_NONEMERGENCY_REASONS.has(reason)) {
+        unknown += 1;
+        const key = reason == null ? '(missing)' : String(reason);
+        unknownByReason[key] = (unknownByReason[key] || 0) + 1;
+      }
     }
   }
-  return { nonEmergency, emergency, stagnation, emergencyByReason };
+  return { nonEmergency, emergency, stagnation, unknown, emergencyByReason, unknownByReason };
 }
 
 export function aggregateBattles(battles) {
@@ -138,8 +159,11 @@ export function aggregateBattles(battles) {
     const rotations = [];
     let totalStagnation = 0;
     let totalNonEmergency = 0;
+    let totalUnknown = 0;
     const emergencyPerBattle = [];
     const emergencyByReason = {};
+    const unknownByReason = {};
+    const perBattleUnknownSharePct = [];
 
     for (const battle of list) {
       const trades = Array.isArray(battle?.trades) ? battle.trades : [];
@@ -149,13 +173,16 @@ export function aggregateBattles(battles) {
       rotations.push(p.nonEmergency.length);
       totalStagnation += p.stagnation;
       totalNonEmergency += p.nonEmergency.length;
+      totalUnknown += p.unknown;
       emergencyPerBattle.push(p.emergency.length);
-      for (const [r, c] of Object.entries(p.emergencyByReason)) {
-        emergencyByReason[r] = (emergencyByReason[r] || 0) + c;
-      }
+      for (const [r, c] of Object.entries(p.emergencyByReason)) emergencyByReason[r] = (emergencyByReason[r] || 0) + c;
+      for (const [r, c] of Object.entries(p.unknownByReason)) unknownByReason[r] = (unknownByReason[r] || 0) + c;
+      if (trades.length) perBattleUnknownSharePct.push(round((p.unknown / trades.length) * 100));
     }
 
+    const totalTrades = sum(baseline);
     const spanList = list.map((b) => toEpochMs(b?.createdAt)).filter((x) => x != null);
+    const unknownShareOfNonEmergency = totalNonEmergency ? round((totalUnknown / totalNonEmergency) * 100) : null;
     perArchetype[archetype] = {
       battles: list.length,
       censoredBattles: censored,
@@ -164,8 +191,17 @@ export function aggregateBattles(battles) {
       stagnationSharePct: totalNonEmergency ? round((totalStagnation / totalNonEmergency) * 100) : null, // Gate 8B
       emergencyBypass: {
         perBattle: summarize(emergencyPerBattle),
-        total: emergencyPerBattle.reduce((a, b) => a + b, 0),
+        total: sum(emergencyPerBattle),
         byReason: sortObj(emergencyByReason),
+      },
+      // Unknown/missing-reason trades — folded into non-emergency by default-deny,
+      // so this share is the 8A tempo-metric inflation ceiling for real data.
+      unknownReason: {
+        trades: totalUnknown,
+        sharePctOfAllTrades: totalTrades ? round((totalUnknown / totalTrades) * 100) : null,
+        sharePctOfNonEmergency: unknownShareOfNonEmergency,
+        perBattleSharePct: summarize(perBattleUnknownSharePct),
+        byReason: sortObj(unknownByReason),
       },
       provenance: {
         source: 'real',
@@ -175,6 +211,9 @@ export function aggregateBattles(battles) {
           : null,
         censoredNote: censored
           ? `${censored}/${list.length} battles hit the ${TRADES_CAP}-trade cap or report more swaps than retained — their counts are FLOOR values (lower bounds).`
+          : null,
+        taxonomyNote: totalUnknown
+          ? `${totalUnknown} trade(s) (${unknownShareOfNonEmergency}% of non-emergency) carry an unknown/missing exitReason — default-deny counts them as non-emergency, inflating the 8A tempo metric. Likely pre-V1.4-taxonomy battles; inspect unknownReason.byReason.`
           : null,
       },
     };
@@ -190,8 +229,10 @@ export function aggregateBattles(battles) {
     generatedBy: 'scripts/calibration/aggregate-real-battles.js (Knob Calibration B1)',
     tradesCap: TRADES_CAP,
     emergencyBypassReasons: [...EMERGENCY_BYPASS_REASONS].sort(),
+    knownNonEmergencyReasons: [...KNOWN_NONEMERGENCY_REASONS].sort(),
     totalBattles: battles.length,
     totalCensored: Object.values(perArchetype).reduce((a, m) => a + m.censoredBattles, 0),
+    totalUnknownReasonTrades: Object.values(perArchetype).reduce((a, m) => a + m.unknownReason.trades, 0),
     span:
       spanMin != null && spanMax != null
         ? { from: new Date(spanMin).toISOString(), to: new Date(spanMax).toISOString() }
@@ -230,15 +271,18 @@ function loadBattles(path) {
 
 export function formatTable(report) {
   const lines = [];
+  const cell = (v) => (v == null ? 'n/a' : v);
   const spanStr = report.span ? `, ${report.span.from.slice(0, 10)} → ${report.span.to.slice(0, 10)}` : '';
   lines.push(`# Real-battle knob metrics — ${report.totalBattles} battles${spanStr}`);
   lines.push(`# emergency reasons (fenced source): ${report.emergencyBypassReasons.join(', ')}`);
   if (report.totalCensored) {
     lines.push(`# WARNING ${report.totalCensored} censored (${report.tradesCap}-trade cap) — those counts are FLOOR values`);
   }
+  if (report.totalUnknownReasonTrades) {
+    lines.push(`# WARNING ${report.totalUnknownReasonTrades} trades carry an unknown/missing reason — counted as non-emergency (default-deny), inflating 8A. See unkRsn% + unknownReason.byReason`);
+  }
   lines.push('');
-  const cell = (v) => (v == null ? 'n/a' : v);
-  const head = ['archetype', 'battles', 'cens', 'baseline(med)', 'nonEmergRot(med)=8A', 'stagShare%=8B', 'emerg(med)'];
+  const head = ['archetype', 'battles', 'cens', 'baseline(med)', 'nonEmergRot(med)=8A', 'stagShare%=8B', 'emerg(med)', 'unkRsn%(ofNonEmerg)'];
   lines.push(head.join(' | '));
   lines.push(head.map((h) => '-'.repeat(h.length)).join('-|-'));
   for (const [arch, m] of Object.entries(report.perArchetype)) {
@@ -251,6 +295,7 @@ export function formatTable(report) {
         cell(m.nonEmergencyRotationsPerBattle.median),
         cell(m.stagnationSharePct),
         cell(m.emergencyBypass.perBattle.median),
+        cell(m.unknownReason.sharePctOfNonEmergency),
       ].join(' | '),
     );
   }

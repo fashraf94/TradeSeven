@@ -155,6 +155,37 @@ describe('censoring (B1 rider — trades[] 50-cap floor values)', () => {
   });
 });
 
+describe('unknown/missing reason share (B1 taxonomy rider)', () => {
+  it('counts an unrecognized reason as non-emergency AND flags it unknown (8A inflation)', () => {
+    const r = aggregateBattles([battle('degen', ['stagnation', 'legacy_reason_x', undefined])]);
+    const m = r.perArchetype.degen;
+    // all 3 are non-emergency by default-deny; 2 are unknown (legacy string + missing)
+    expect(m.nonEmergencyRotationsPerBattle.median).toBe(3);
+    expect(m.unknownReason.trades).toBe(2);
+    expect(m.unknownReason.sharePctOfNonEmergency).toBeCloseTo(66.67, 1);
+    expect(m.unknownReason.byReason.legacy_reason_x).toBe(1);
+    expect(m.unknownReason.byReason['(missing)']).toBe(1);
+    expect(r.totalUnknownReasonTrades).toBe(2);
+  });
+
+  it('recognized non-emergency reasons are NOT unknown', () => {
+    const r = aggregateBattles([battle('analyst', ['stagnation', 'haiku_decision', 'gameplan_rotation'])]);
+    expect(r.perArchetype.analyst.unknownReason.trades).toBe(0);
+    expect(r.perArchetype.analyst.provenance.taxonomyNote).toBeNull();
+  });
+
+  it('emergency reasons are never counted as unknown', () => {
+    const emergency = [...EMERGENCY_BYPASS_REASONS][0];
+    const r = aggregateBattles([battle('degen', [emergency, emergency])]);
+    expect(r.perArchetype.degen.unknownReason.trades).toBe(0);
+  });
+
+  it('sets a taxonomyNote when unknown reasons exist', () => {
+    const r = aggregateBattles([battle('degen', ['mystery'])]);
+    expect(r.perArchetype.degen.provenance.taxonomyNote).toMatch(/unknown\/missing exitReason/);
+  });
+});
+
 describe('formatTable', () => {
   it('renders a human table and warns on censoring', () => {
     const r = aggregateBattles([
