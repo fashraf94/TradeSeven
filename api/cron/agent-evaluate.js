@@ -46,6 +46,7 @@ import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails, injectDiversifierSectorCap } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
+import { buildFreshAtrPercentileMap, resolveHurdleAtr } from '../_utils/hurdleAtr.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps, seedVwapFireGuard, isReplacementQualified, VWAP_CASCADE_GUARD_N, CASCADE_QUALIFY_TIMEOUT_MS } from '../_utils/agentVwapFloor.js';
 import { getArchetypeConfig, resolveHftConfig } from '../_utils/agentArchetypeConfig.js';
@@ -926,6 +927,14 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     );
     momentumData.techScoresMap = technicalScoresMap;
 
+    // Knob Calibration Task A — narrow hurdle-only ATR freshening. Re-derive the
+    // active position's ATR from the FRESH hourly rankings (Option B) for use ONLY
+    // as the clearsHurdleFloor divisor at the two hurdle call sites below. Stored
+    // asset.baseATR / scoring.thresholds / badges / guardrails / banked score are
+    // untouched. The pure helper is the single source of truth shared with the B2
+    // calibration harness (A0/B0 discovery report, drift rider a).
+    const freshHurdleAtrMap = buildFreshAtrPercentileMap(stockRankingsArray);
+
     // ---- Vision state read (Spec A Phase 2a + fix-up) ----
     // No new Firestore I/O — battle.vision is already in scope from the
     // active-battles fetch. Defensive on two axes:
@@ -1128,7 +1137,9 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
             benchCandidate: { symbol: candidate.symbol, dailyPct: (prices[candidate.symbol]?.changePercent || 0) / 100 },
             reason: 'stagnation',
             archetypeConfig,
-            userATR: score.baseATR,
+            // Narrow hurdle-only ATR freshening (Task A): fresh rankings-derived ATR
+            // for the active position, frozen score.baseATR verbatim when unavailable.
+            userATR: resolveHurdleAtr(score.symbol, freshHurdleAtrMap, score.baseATR).atr,
           }).clears,
         });
       } else {
@@ -1723,7 +1734,9 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           benchCandidate: { symbol: haikuResult.symbolIn, dailyPct: (prices[haikuResult.symbolIn]?.changePercent || 0) / 100 },
           reason: haikuSwapReason,
           archetypeConfig,
-          userATR: activeBaseATR,
+          // Narrow hurdle-only ATR freshening (Task A): fresh rankings-derived ATR
+          // for the active position, frozen activeBaseATR verbatim when unavailable.
+          userATR: resolveHurdleAtr(haikuResult.symbolOut, freshHurdleAtrMap, activeBaseATR).atr,
         });
 
         // Forge Enforcement Keystone V1.4 §4.4 (Knob C) — circuit breaker on the
