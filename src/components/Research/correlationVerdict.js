@@ -17,11 +17,20 @@
 
 // Strength bands on |corr| (pinned V1.1). Returns null for < 0.15 — the caller
 // renders the dedicated "no reliable link" base clause for that floor case.
+//
+// H5 — band on the 2dp-ROUNDED |corr|, the SAME value the UI prints (fmtCorr /
+// scan summary = toFixed(2)), so the band WORD can never contradict the
+// displayed NUMBER at the 0.40 / 0.70 edges (e.g. a raw 0.395 that displays
+// "0.40" must band 'moderate', not 'loose'). Number(x.toFixed(2)) is exactly
+// the display's rounding — the same idiom as the scan-tier round2 and
+// rsiDisplay, the two other members of this rounding family. Input is always
+// Math.abs(...) (non-negative finite) at every call site, so toFixed is safe.
 export function strengthBand(absCorr) {
   if (!Number.isFinite(absCorr)) return null;
-  if (absCorr >= 0.7) return 'strong';
-  if (absCorr >= 0.4) return 'moderate';
-  if (absCorr >= 0.15) return 'loose';
+  const rounded = Number(absCorr.toFixed(2));
+  if (rounded >= 0.7) return 'strong';
+  if (rounded >= 0.4) return 'moderate';
+  if (rounded >= 0.15) return 'loose';
   return null;
 }
 

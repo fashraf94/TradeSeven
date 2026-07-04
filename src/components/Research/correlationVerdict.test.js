@@ -22,17 +22,49 @@ const mk = (over = {}) => ({
   },
 });
 
-describe('strengthBand — pinned |corr| band edges', () => {
-  it('maps each band at its exact boundary', () => {
+describe('strengthBand — pinned |corr| band edges (H5: banded on the 2dp-rounded value)', () => {
+  it('maps each band at its exact rounded boundary', () => {
     expect(strengthBand(0.7)).toBe('strong');
     expect(strengthBand(0.9)).toBe('strong');
-    expect(strengthBand(0.699999)).toBe('moderate');
+    // H5 changed three of these: banding is now on Number(|corr|.toFixed(2)) —
+    // the displayed value — so a value that ROUNDS onto an edge takes the upper
+    // band. Values just below the rounded edge keep the lower band.
+    expect(strengthBand(0.699999)).toBe('strong'); // rounds to 0.70 (pre-H5: 'moderate')
+    expect(strengthBand(0.694)).toBe('moderate'); //  rounds to 0.69 — genuinely below the edge
     expect(strengthBand(0.4)).toBe('moderate');
-    expect(strengthBand(0.399999)).toBe('loose');
+    expect(strengthBand(0.399999)).toBe('moderate'); // rounds to 0.40 (pre-H5: 'loose')
+    expect(strengthBand(0.394)).toBe('loose'); //      rounds to 0.39
     expect(strengthBand(0.15)).toBe('loose');
-    expect(strengthBand(0.149999)).toBeNull(); // < 0.15 → no reliable link
+    expect(strengthBand(0.149999)).toBe('loose'); // rounds to 0.15 (pre-H5: null)
+    expect(strengthBand(0.144)).toBeNull(); //      rounds to 0.14 → no reliable link
     expect(strengthBand(0)).toBeNull();
     expect(strengthBand(NaN)).toBeNull();
+  });
+});
+
+describe('strengthBand — display/word agreement (H5, the rounding-family fix)', () => {
+  // The founder-smoke property in test form: the band WORD may never contradict
+  // the NUMBER the UI prints. Both derive from the same 2dp rounding, so the
+  // agreement holds by construction — this sweeps the 0.395 / 0.695-class
+  // boundary values across the 0.15 / 0.40 / 0.70 edges to prove it, and pins the
+  // pre-H5 bug case (raw 0.395 displayed "0.40" yet banded 'loose').
+  const displayed = (v) => Number(Math.abs(v).toFixed(2)); // exactly what fmtCorr prints, as a number
+  const tierOfNumber = (n) =>
+    n >= 0.7 ? 'strong' : n >= 0.4 ? 'moderate' : n >= 0.15 ? 'loose' : null;
+
+  it('the band word matches the displayed number across the edge slivers (both signs)', () => {
+    const samples = [
+      0.395, -0.395, 0.404, 0.695, -0.695, 0.704, 0.145, 0.154, 0.149999, 0.204,
+      0.196, 0.699999, 0.399999, 0.7, 0.4, 0.15,
+    ];
+    for (const v of samples) {
+      expect(strengthBand(Math.abs(v))).toBe(tierOfNumber(displayed(v)));
+    }
+  });
+
+  it('pins the pre-H5 bug case: raw 0.395 displays "0.40" and now bands moderate (never loose)', () => {
+    expect((0.395).toFixed(2)).toBe('0.40');
+    expect(strengthBand(0.395)).toBe('moderate');
   });
 });
 
