@@ -44,7 +44,20 @@ node scripts/calibration/aggregate-real-battles.js --input export.json --format 
 ```
 
 `--input` is a JSON file: an array of battle docs, or `{ "battles": [...] }`. Produce
-one with your own **read-only** admin export; this script never touches the database.
+one with **`export-agent-battles.js`** (below) or any read-only admin export; the
+aggregation script never touches the database.
+
+### `export-agent-battles.js` — produce `export.json`
+
+Read-only export of `agentBattles` → a local JSON file for the aggregation step.
+Reads Firestore, writes **only** a local file, never mutates the DB. Creds via
+`FIREBASE_ADMIN_CREDENTIALS` in `.env.local` (the `rule-compat-cleanup.js` convention).
+
+```sh
+node scripts/calibration/export-agent-battles.js                    # completed → ./export.json
+node scripts/calibration/export-agent-battles.js --from 2026-03-01 --to 2026-06-01
+node scripts/calibration/aggregate-real-battles.js --input export.json
+```
 
 ## `gate-replay-harness.js` + `synthetic-universe.js` (Phase B2)
 
