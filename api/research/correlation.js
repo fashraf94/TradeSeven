@@ -51,6 +51,7 @@ import {
 import {
   assembleDriverCore,
   computeCorrelationCacheTtlMs,
+  tensionStateFrom,
   MIN_CLOSES_FOR_INFLECTIONS,
 } from './correlationAssembly.js';
 // V2 Build 3 — break context: per-episode technical state at the flag and the
@@ -274,22 +275,30 @@ export default async function handler(req, res) {
       };
     }
 
-    // Change F — divergence tension gauge: the LATEST divergence observation's
-    // state (its d and its SDS, via the shared scorer). A raw stretch measure
-    // (SDS only — no |d| floor / persistence), so it can read high without a
-    // flagged episode. Null when the divergence series is empty OR when
-    // inflection detection is suppressed — the gauge and the regime-break card
-    // appear and disappear together (spec: "null when empty/suppressed"). Score
-    // is null when the last obs lacks a full baseline (unscoreable).
+    // Change F / Build 3.1 — divergence tension gauge: the LATEST divergence
+    // observation's d and SDS, plus the coherent tension `state`. The SDS score
+    // stays a raw stretch measure; the `state` it maps to now applies the flag's
+    // |d| LEVEL floor via the SAME shared helper the scan chips use, so a
+    // high-score / small-gap latest reads 'stretched' rather than claiming a
+    // break on score alone. It remains a latest-observation read (no persistence
+    // gate — see tensionStateFrom), so it can still read 'break' without a
+    // persisted episode; that gauge-vs-episode split is by design. Null when the
+    // divergence series is empty OR inflection detection is suppressed (the gauge
+    // and the regime-break card appear and disappear together). Score — and thus
+    // a non-null state — is null when the last obs lacks a full baseline.
     const lastDiv =
       !suppressed.inflections && divergenceSeries.length
         ? divergenceSeries[divergenceSeries.length - 1]
         : null;
+    const lastScore = lastDiv
+      ? standardizedDivergenceScore(divergenceSeries, divergenceSeries.length - 1)
+      : null;
     const divergence = {
       latest: lastDiv
         ? {
             d: lastDiv.d,
-            score: standardizedDivergenceScore(divergenceSeries, divergenceSeries.length - 1),
+            score: lastScore,
+            state: tensionStateFrom({ score: lastScore, d: lastDiv.d }),
             eventDate: lastDiv.eventDate,
           }
         : null,

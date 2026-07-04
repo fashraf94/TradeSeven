@@ -60,7 +60,7 @@ import { standardizedDivergenceScore } from '../_utils/correlationMath.js';
 import {
   assembleDriverCore,
   computeCorrelationCacheTtlMs,
-  tensionStateFromScore,
+  tensionStateFrom,
   MIN_CLOSES_FOR_INFLECTIONS,
 } from './correlationAssembly.js';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
@@ -325,15 +325,16 @@ export default async function handler(req, res) {
       const score = lastDiv
         ? standardizedDivergenceScore(core.divergenceSeries, core.divergenceSeries.length - 1)
         : null;
+      const d = lastDiv ? lastDiv.d : null;
       rows.push({
         driver: key,
         label: registry.label,
         category: registry.category,
         corr20,
         corr60,
-        d: lastDiv ? lastDiv.d : null,
+        d,
         score,
-        tensionState: tensionStateFromScore(score),
+        tensionState: tensionStateFrom({ score, d }),
         joinedCloses: core.joinedCloses,
         tier: scanTier(corr20, corr60),
         identity: survivorWires.has(registry.symbol),
