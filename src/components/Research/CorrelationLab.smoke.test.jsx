@@ -27,21 +27,35 @@ const render = (el) => renderToString(el).replace(/<!-- -->/g, '');
 
 // ── Change A — the Divergence Watch state map (server-authoritative + fallback) ─
 describe('divergenceState — coherent five-state map', () => {
-  it('renders the server-computed state, spelling break as "in break territory"', () => {
+  it('renders the server-computed state, spelling break as "in break territory" with its H6 explainer', () => {
     expect(divergenceState({ state: 'calm', score: 0.4, d: 0.9 }).word).toBe('calm');
     expect(divergenceState({ state: 'elevated', score: 1.5, d: 0.9 }).word).toBe('elevated');
     expect(divergenceState({ state: 'break', score: 2.6, d: 0.3 })).toMatchObject({
       word: 'in break territory',
       color: RED,
+      note: 'The gap is both unusual and large — this is the condition that logs a regime break in the table below.',
     });
   });
 
-  it('gives stretched the amber color and the pinned "not a break" note', () => {
+  it('appends the H6 strain explainer to stretched’s pinned "not a break" caption (amber)', () => {
     expect(divergenceState({ state: 'stretched', score: -2.44, d: -0.22 })).toEqual({
       word: 'stretched',
       color: AMBER,
-      note: 'Unusual versus its own history — but the gap is still small. Not a break.',
+      note: 'Unusual versus its own history — but the gap is still small. Not a break. The relationship is under strain. From here it either settles back to normal, or — if the gap keeps widening past the break threshold — becomes a regime break like the ones listed below.',
     });
+  });
+
+  it('calm and elevated carry NO explainer note (unchanged — they keep the default caption)', () => {
+    expect(divergenceState({ state: 'calm', score: 0.4, d: 0.9 }).note).toBeUndefined();
+    expect(divergenceState({ state: 'elevated', score: 1.5, d: 0.9 }).note).toBeUndefined();
+  });
+
+  it('the attention-state explainers use no banned predictive words (presentation-honesty)', () => {
+    const BANNED = ['predict', 'expect', 'will likely'];
+    for (const state of ['stretched', 'break']) {
+      const note = divergenceState({ state, score: -2.44, d: -0.22 }).note.toLowerCase();
+      for (const w of BANNED) expect(note).not.toContain(w);
+    }
   });
 
   it('null latest / null state → "not scoreable yet"', () => {

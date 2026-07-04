@@ -172,15 +172,25 @@ const directionLabel = (d) => (d === 'weakening' ? 'correlation breakdown' : 'co
 // longer claim a break the flag logic refuses — a high score whose raw gap is
 // still small reads 'stretched' (amber), not "in break territory" (red). The
 // number stays secondary; "significance" is never used.
+//
+// H6 — the two ATTENTION states carry a plain-MECHANICS explainer describing
+// what the tool does at this state (never a market prediction; banned words:
+// predicts / expect / will likely). Single source, right beside the state
+// words — the `note` the gauge caption already renders. calm / elevated are
+// unchanged (no note → the default Divergence Watch caption).
 const TENSION_WORD = {
   calm: { word: 'calm', color: HOLO_COLORS.textSecondary },
   elevated: { word: 'elevated', color: AMBER },
   stretched: {
     word: 'stretched',
     color: AMBER,
-    note: 'Unusual versus its own history — but the gap is still small. Not a break.',
+    note: 'Unusual versus its own history — but the gap is still small. Not a break. The relationship is under strain. From here it either settles back to normal, or — if the gap keeps widening past the break threshold — becomes a regime break like the ones listed below.',
   },
-  break: { word: 'in break territory', color: RED },
+  break: {
+    word: 'in break territory',
+    color: RED,
+    note: 'The gap is both unusual and large — this is the condition that logs a regime break in the table below.',
+  },
 };
 const NOT_SCOREABLE = { word: 'not scoreable yet', color: HOLO_COLORS.textMuted };
 
@@ -1276,8 +1286,9 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                         d {fmtCorr(div.d)}{div.score != null ? ` · SDS ${fmtCorr(div.score)}` : ''}
                       </span>
                     </div>
-                    {/* 'stretched' gets its own honest caption (Build 3.1); every
-                        other state keeps the unchanged Divergence Watch caption. */}
+                    {/* The two attention states ('stretched', 'break') carry their
+                        own honest caption — the state note (Build 3.1 + H6); calm /
+                        elevated keep the unchanged Divergence Watch caption. */}
                     <div style={subCaptionStyle}>{st.note ?? CAPTIONS.tension}</div>
                   </>
                 );
