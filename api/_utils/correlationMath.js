@@ -80,7 +80,15 @@ function mean(a) {
   return s / a.length;
 }
 
-function median(a) {
+/**
+ * Median of a numeric array (copy-sorts; even length averages the two middle
+ * values). Exported since the Build 4 review: the vol-regime split in
+ * correlation.js needs the SAME median every other statistic in this stack
+ * uses (one implementation per statistical concept — the pearson/SDS/OLS
+ * rule), and exporting the existing helper beats a second inline copy.
+ * NaN on an empty array — callers guard for non-empty input.
+ */
+export function median(a) {
   const s = [...a].sort((x, y) => x - y);
   const mid = s.length >> 1;
   return s.length % 2 === 1 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
@@ -543,25 +551,38 @@ export function maskedPearson(returnsA, returnsB, mask, minN = 2) {
  * inferential upgrade (Fisher-z) is a documented future refinement, not
  * V2 Build 4 scope.
  *
+ * Display agreement (the H5 rounding-family rule, commit 8395606 precedent):
+ * the verdict is decided on the 2dp-ROUNDED corrs — the SAME values the UI
+ * prints (fmtCorr = toFixed(2)) — so the chip word can never contradict the
+ * displayed numbers at the floor edge (raw 0.5951 vs 0.4549 displays as
+ * +0.60 / +0.45, a visible 0.15 gap, and must read asymmetric even though the
+ * raw difference is 0.1402). The shift in the effective raw floor is < 0.005 —
+ * inside the heuristic's own precision. The small epsilon absorbs IEEE-754
+ * representation error in the rounded difference (0.60 − 0.45 must clear a
+ * 0.15 floor whichever side of the true value both doubles land on).
+ *
  * @param {{corr: number, n: number}|null} sideA - a maskedPearson result
  * @param {{corr: number, n: number}|null} sideB - a maskedPearson result
  * @param {number} [floor=0.15] - the pinned asymmetry floor
  * @returns {{asymmetric: boolean, direction: ('A'|'B'|null)}|null}
  *   null when either side is null (no comparison exists — never a fabricated
- *   verdict). asymmetric is true only at |corrA − corrB| ≥ floor. direction =
- *   the LARGER-|corr| side (the side where the link is tighter; for inverse
- *   links that is the more-negative side), null when not asymmetric. The
- *   measure-zero corner |corrA| === |corrB| with a ≥-floor raw difference (an
- *   exact sign-flip tie) also yields direction null — neither side is tighter,
- *   and the UI renders its no-difference verdict rather than picking a winner.
+ *   verdict). asymmetric is true only at |corrA − corrB| ≥ floor (2dp-rounded,
+ *   per the display-agreement rule). direction = the LARGER-|corr| side (the
+ *   side where the link is tighter; for inverse links that is the
+ *   more-negative side), null when not asymmetric. Equal rounded magnitudes
+ *   (the sign-flip corner: displayed +0.30 vs −0.30) also yield direction
+ *   null — neither side displays tighter, and the UI renders its
+ *   no-difference verdict rather than picking a winner on an invisible edge.
  */
+const FLOOR_EPS = 1e-9; // fp guard for the quantized 2dp comparison only
+
 export function compareConditionalSides(sideA, sideB, floor = 0.15) {
   if (sideA == null || sideB == null) return null;
-  const a = sideA.corr;
-  const b = sideB.corr;
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  if (!Number.isFinite(sideA.corr) || !Number.isFinite(sideB.corr)) return null;
   if (!Number.isFinite(floor) || floor < 0) return null;
-  const asymmetric = Math.abs(a - b) >= floor;
+  const a = Number(sideA.corr.toFixed(2));
+  const b = Number(sideB.corr.toFixed(2));
+  const asymmetric = Math.abs(a - b) >= floor - FLOOR_EPS;
   let direction = null;
   if (asymmetric && Math.abs(a) !== Math.abs(b)) {
     direction = Math.abs(a) > Math.abs(b) ? 'A' : 'B';

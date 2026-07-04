@@ -45,6 +45,7 @@ import {
   rollingStd,
   maskedPearson,
   compareConditionalSides,
+  median,
   SDS_BASELINE_WINDOW,
 } from '../_utils/correlationMath.js';
 // V2 Build 2 extraction: the join-and-compute core and the two-sided cache TTL
@@ -121,15 +122,11 @@ export function buildConditionMasks({ driverReturns, groupReturns, groupLevels, 
   const volHigh = new Array(n).fill(false);
   const volCalm = new Array(n).fill(false);
   const volSeries = rollingStd(groupReturns, VOL_REGIME_WINDOW, joinedDates) ?? [];
-  const volValues = volSeries
-    .map((e) => e.value)
-    .filter((v) => v != null)
-    .sort((a, b) => a - b);
-  let volMedian = null;
+  const volValues = volSeries.map((e) => e.value).filter((v) => v != null);
   if (volValues.length) {
-    const mid = volValues.length >> 1;
-    volMedian =
-      volValues.length % 2 === 1 ? volValues[mid] : (volValues[mid - 1] + volValues[mid]) / 2;
+    // The shared median — the SAME implementation every other statistic in the
+    // correlation stack uses (one implementation per concept; review fix).
+    const volMedian = median(volValues);
     for (const e of volSeries) {
       if (e.value == null) continue;
       const i = e.closeIndex - 1; // the return index the window ends at
@@ -146,7 +143,7 @@ export function buildConditionMasks({ driverReturns, groupReturns, groupLevels, 
     else if (trend[i + 1] === 'down') trendDown[i] = true;
   }
 
-  return { driverUp, driverDown, volHigh, volCalm, trendUp, trendDown, volMedian };
+  return { driverUp, driverDown, volHigh, volCalm, trendUp, trendDown };
 }
 
 /**
@@ -162,7 +159,10 @@ export function buildConditionMasks({ driverReturns, groupReturns, groupLevels, 
  * fabricated verdict; direction is remapped from 'A'/'B' to the side key).
  * `counts` carries the raw per-side day counts so the UI's insufficient copy
  * can name the real n of a null side, and `minObs` carries the floor so that
- * copy can never drift from the server's gate.
+ * copy can never drift from the server's gate. `sides` is the ordered
+ * [sideA, sideB] key pair — the SERVER owns the side vocabulary (review fix:
+ * a client-side mirror of these keys fails confidently-wrong on a rename;
+ * JSON object key order is serialization-fragile, an array is not).
  */
 export function computeConditional({ driverReturns, groupReturns, groupLevels, joinedDates, registry }) {
   const masks = buildConditionMasks({ driverReturns, groupReturns, groupLevels, joinedDates });
@@ -175,6 +175,7 @@ export function computeConditional({ driverReturns, groupReturns, groupLevels, j
     return {
       [keyA]: a,
       [keyB]: b,
+      sides: [keyA, keyB],
       asymmetric: cmp ? cmp.asymmetric : null,
       direction: cmp?.direction ? (cmp.direction === 'A' ? keyA : keyB) : null,
       counts: { [keyA]: countOf(maskA), [keyB]: countOf(maskB) },

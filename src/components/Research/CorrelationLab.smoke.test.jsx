@@ -406,3 +406,52 @@ describe('ConditionalCard — render smoke (three rows, pinned caption, honest s
     expect(html).not.toMatch(/\d+(\.\d+)?%/); // no percentages — r values and counts only
   });
 });
+
+// ── Build 4 review fixes — null-never-zero counts + server-owned side keys ────
+describe('conditionalVerdict + ConditionalCard — review fixes', () => {
+  it('a null side with a MISSING count says "couldn\'t measure", never a fabricated n=0', () => {
+    const v = conditionalVerdict(
+      ddBlock({ down: null, asymmetric: null, direction: null, counts: { up: 251 } }),
+      ['up', 'down'],
+      60
+    );
+    expect(v).toEqual({
+      kind: 'unmeasurable',
+      text: "couldn't measure days Brent Crude (BNO proxy) fell",
+    });
+    expect(v.text).not.toContain('n=0');
+  });
+
+  it('the side cell prints a bare dash (no n) when the count is missing', () => {
+    const conditional = {
+      minObs: 60,
+      driverDirection: ddBlock({ down: null, asymmetric: null, direction: null, counts: { up: 251 } }),
+    };
+    const html = render(<ConditionalCard conditional={conditional} isDesktop />);
+    expect(html).not.toContain('(n=0)');
+    expect(html).toContain('—');
+  });
+
+  it('server-sent sides win over the client fallback pair (rename-safe rendering)', () => {
+    // A hypothetical future server rename: volRegime sides become loud/quiet.
+    // The card must render the SERVER keys — real numbers, real labels — not
+    // a false insufficiency from a stale client mirror.
+    const conditional = {
+      minObs: 60,
+      volRegime: {
+        loud: { corr: 0.52, n: 169 },
+        quiet: { corr: 0.47, n: 171 },
+        sides: ['loud', 'quiet'],
+        asymmetric: false,
+        direction: null,
+        counts: { loud: 169, quiet: 171 },
+        labels: { loud: 'loud days', quiet: 'quiet days' },
+      },
+    };
+    const html = render(<ConditionalCard conditional={conditional} isDesktop />);
+    expect(html).toContain('loud days');
+    expect(html).toContain('r = +0.52 (n=169)');
+    expect(html).toContain('no meaningful difference');
+    expect(html).not.toContain('not enough'); // the C6 failure mode never renders
+  });
+});

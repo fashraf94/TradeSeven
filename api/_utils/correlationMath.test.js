@@ -28,6 +28,7 @@ import {
   rollingStd,
   maskedPearson,
   compareConditionalSides,
+  median,
   ABS_DIVERGENCE_FLOOR,
   SDS_BASELINE_WINDOW,
 } from './correlationMath.js';
@@ -666,10 +667,41 @@ describe('compareConditionalSides — the pinned 0.15 asymmetry floor (Build 4)'
     });
   });
 
-  it('exactly 0.15 clears the floor (≥, not >)', () => {
-    expect(compareConditionalSides({ corr: 0.45, n: 80 }, { corr: 0.3, n: 80 }).asymmetric).toBe(
-      true
-    );
+  it('an exact-floor gap clears (≥), across fp representations of "0.15 apart"', () => {
+    // Review fix: 0.45 − 0.3 is 0.15000000000000002 in IEEE-754 (strictly
+    // above the floor), so it alone cannot pin the ≥ edge. These pairs land on
+    // BOTH sides of 0.15's double (0.15 − 0 hits it exactly; 0.3 − 0.15 lands
+    // on it; 0.6 − 0.45 lands 1 ulp above) — every displayed 0.15 gap must be
+    // asymmetric regardless of which double the difference rounds to.
+    for (const [a, b] of [
+      [0.15, 0],
+      [0.3, 0.15],
+      [0.6, 0.45],
+      [-0.45, -0.6],
+    ]) {
+      expect(
+        compareConditionalSides({ corr: a, n: 80 }, { corr: b, n: 80 }).asymmetric,
+        `${a} vs ${b}`
+      ).toBe(true);
+    }
+  });
+
+  it('H5 display agreement: the verdict is decided on the 2dp values the UI prints', () => {
+    // Raw diff 0.1402 (< 0.15) but the card prints +0.60 / +0.45 — a visible
+    // exactly-at-the-floor gap. The word must follow the printed numbers
+    // (the strengthBand rounding-family rule), so this IS asymmetric.
+    expect(compareConditionalSides({ corr: 0.5951, n: 250 }, { corr: 0.4549, n: 250 })).toEqual({
+      asymmetric: true,
+      direction: 'A',
+    });
+    // Near-floor raw diff 0.1498 printing as +0.59 / +0.45 — a 0.14 displayed
+    // gap stays "no meaningful difference" (pins the rounded comparison
+    // against a raw-with-tolerance implementation, which would flip this).
+    // The reverse direction cannot exist: raw ≥ 0.15 always displays ≥ 0.15.
+    expect(compareConditionalSides({ corr: 0.5949, n: 250 }, { corr: 0.4451, n: 250 })).toEqual({
+      asymmetric: false,
+      direction: null,
+    });
   });
 
   it('direction is the LARGER-|corr| side — for inverse links, the more-negative side', () => {
@@ -774,5 +806,19 @@ describe('Build 4 — engineered asymmetry fixture (tight on down-days, loose on
     const up59 = maskedPearson(group, driver, mask59, 60);
     expect(up59).toBeNull();
     expect(compareConditionalSides(up59, down)).toBeNull();
+  });
+});
+
+describe('median — the exported shared implementation (Build 4 review)', () => {
+  it('odd length → middle; even length → mean of the two middle values', () => {
+    expect(median([3, 1, 2])).toBe(2);
+    expect(median([4, 1, 3, 2])).toBe(2.5);
+    expect(median([5])).toBe(5);
+  });
+
+  it('copy-sorts — the caller\'s array is never mutated', () => {
+    const a = [3, 1, 2];
+    median(a);
+    expect(a).toEqual([3, 1, 2]);
   });
 });

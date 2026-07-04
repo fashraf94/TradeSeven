@@ -777,7 +777,6 @@ describe('V2 Build 4 — condition masks (unit, hand fixtures — the index-spac
       if (masks.volHigh[j] || masks.volCalm[j]) readings += 1;
     }
     expect(readings).toBe(60 - 19);
-    expect(masks.volMedian).toBeGreaterThan(0);
   });
 
   it('driver direction: exactly-zero returns are excluded from BOTH sides', () => {
@@ -867,12 +866,17 @@ describe('V2 Build 4 — conditional block end-to-end on the engineered fixture'
     );
     for (const key of ['driverDirection', 'trendState']) {
       expect(Object.keys(out.conditional[key]).sort()).toEqual(
-        ['asymmetric', 'counts', 'direction', 'down', 'labels', 'up'].sort()
+        ['asymmetric', 'counts', 'direction', 'down', 'labels', 'sides', 'up'].sort()
       );
+      // The ordered side-key pair is SERVER-owned (review fix: the UI renders
+      // whatever arrives here, so a side-key rename can never strand a client
+      // mirror into a confidently-wrong insufficiency verdict).
+      expect(out.conditional[key].sides).toEqual(['up', 'down']);
     }
     expect(Object.keys(out.conditional.volRegime).sort()).toEqual(
-      ['asymmetric', 'calm', 'counts', 'direction', 'high', 'labels'].sort()
+      ['asymmetric', 'calm', 'counts', 'direction', 'high', 'labels', 'sides'].sort()
     );
+    expect(out.conditional.volRegime.sides).toEqual(['high', 'calm']);
   });
 
   it('driverDirection: registry-derived labels; constant-magnitude sign classes are honestly unmeasurable (null sides, real counts)', () => {

@@ -181,11 +181,14 @@ export function breakStatePhrase(ctx) {
  * Both-sides-null names the smaller-n side (the binding constraint; tie →
  * side A). The null-side-with-enough-days corner (a degenerate ≥-minObs
  * subset — engineered data only) says "couldn't measure" instead of letting
- * the insufficient template lie about the count. A sub-floor difference is
- * NEVER a percentage and never "significant" — "no meaningful difference" is
- * the whole verdict (the 0.15 floor and the truncation rationale live with
- * compareConditionalSides in correlationMath.js). Pure — no React — so it
- * unit-tests beside buildVerdictSentence/breakStatePhrase.
+ * the insufficient template lie about the count — and so does a null side
+ * whose count is MISSING entirely (malformed/renamed counts): an unknown
+ * count must never be printed as "n=0" (null-never-zero, review fix). A
+ * sub-floor difference is NEVER a percentage and never "significant" — "no
+ * meaningful difference" is the whole verdict (the 0.15 floor and the
+ * truncation rationale live with compareConditionalSides in
+ * correlationMath.js). Pure — no React — so it unit-tests beside
+ * buildVerdictSentence/breakStatePhrase.
  *
  * @param {object|null|undefined} block - conditional.driverDirection / .volRegime / .trendState
  * @param {[string, string]} sides - the block's side keys in [A, B] order
@@ -207,8 +210,10 @@ export function conditionalVerdict(block, sides, minObs = 60) {
     } else {
       side = a == null ? keyA : keyB;
     }
-    const n = counts[side] ?? 0;
-    if (n >= minObs) {
+    const n = counts[side];
+    // A missing count (n == null) or a degenerate ≥-floor subset both mean the
+    // day count can't honestly explain the null side — never fabricate "n=0".
+    if (n == null || n >= minObs) {
       return { kind: 'unmeasurable', text: `couldn't measure ${labels[side] ?? side}` };
     }
     return {

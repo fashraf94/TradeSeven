@@ -871,9 +871,12 @@ export function ConditionedBaseRates({ byCondition, inflections }) {
 // this card, never beside the headline strip.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Row config: response block key, plain-words row name, side keys in render
-// order (side A first). Side LABELS come from the server block (the registry
-// is the label home — TNX reads "days the 10Y yield rose/fell").
+// Row config: response block key, plain-words row name, and a FALLBACK side
+// pair. The authoritative side keys arrive in each block's `sides` array (the
+// server owns the side vocabulary — review fix: a client mirror of the keys
+// fails confidently-wrong on a server-side rename); the pair here covers only
+// blocks without one. Side LABELS come from the server block too (the
+// registry is the label home — TNX reads "days the 10Y yield rose/fell").
 const CONDITIONAL_ROWS = [
   { key: 'driverDirection', name: 'Driver direction', sides: ['up', 'down'] },
   { key: 'volRegime', name: 'Volatility regime', sides: ['high', 'calm'] },
@@ -905,12 +908,21 @@ export function ConditionalCard({ conditional, isDesktop }) {
       {CONDITIONAL_ROWS.map(({ key, name, sides }) => {
         const block = conditional[key];
         if (!block) return null;
-        const verdict = conditionalVerdict(block, sides, minObs);
+        // Server-sent side keys win; the config pair is the fallback.
+        const sideKeys =
+          Array.isArray(block.sides) && block.sides.length === 2 ? block.sides : sides;
+        const verdict = conditionalVerdict(block, sideKeys, minObs);
         const sideCell = (s) => (
           <div key={s} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <span style={{ fontSize: 10, color: HOLO_COLORS.textMuted }}>{block.labels?.[s] ?? s}</span>
             <span style={{ fontFamily: MONO, fontSize: 13, color: block[s] ? HOLO_COLORS.textPrimary : HOLO_COLORS.textMuted }}>
-              {block[s] ? `r = ${fmtCorr(block[s].corr)} (n=${block[s].n})` : `— (n=${block.counts?.[s] ?? 0})`}
+              {/* A null side prints its real day count; a MISSING count prints a
+                  bare dash — an n=0 must never be fabricated (null-never-zero). */}
+              {block[s]
+                ? `r = ${fmtCorr(block[s].corr)} (n=${block[s].n})`
+                : block.counts?.[s] != null
+                  ? `— (n=${block.counts[s]})`
+                  : '—'}
             </span>
           </div>
         );
@@ -927,7 +939,7 @@ export function ConditionalCard({ conditional, isDesktop }) {
             }}
           >
             <div style={{ fontSize: 12, fontWeight: 600, color: HOLO_COLORS.textPrimary }}>{name}</div>
-            {sides.map(sideCell)}
+            {sideKeys.map(sideCell)}
             {verdict ? (
               <span
                 style={{
