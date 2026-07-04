@@ -277,11 +277,12 @@ export default async function handler(req, res) {
 
     // Change F / Build 3.1 — divergence tension gauge: the LATEST divergence
     // observation's d and SDS, plus the coherent tension `state`. The SDS score
-    // stays a raw stretch measure (no |d| floor / persistence — it can read
-    // high without a flagged episode); the `state` it maps to applies the flag's
-    // |d| floor via the SAME shared helper the scan chips use, so a high-score /
-    // small-gap latest reads 'stretched' rather than falsely claiming a break —
-    // the gauge can no longer show a state the flag logic refuses. Null when the
+    // stays a raw stretch measure; the `state` it maps to now applies the flag's
+    // |d| LEVEL floor via the SAME shared helper the scan chips use, so a
+    // high-score / small-gap latest reads 'stretched' rather than claiming a
+    // break on score alone. It remains a latest-observation read (no persistence
+    // gate — see tensionStateFrom), so it can still read 'break' without a
+    // persisted episode; that gauge-vs-episode split is by design. Null when the
     // divergence series is empty OR inflection detection is suppressed (the gauge
     // and the regime-break card appear and disappear together). Score — and thus
     // a non-null state — is null when the last obs lacks a full baseline.

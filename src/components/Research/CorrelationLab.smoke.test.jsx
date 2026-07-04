@@ -112,6 +112,20 @@ describe('ConditionedBaseRates — no-contrast collapse branches', () => {
     expect(html).not.toContain('median');
   });
 
+  it('uses grammatical singular copy when exactly one break fired (n === 1)', () => {
+    const html = render(
+      <ConditionedBaseRates
+        byCondition={{
+          above50DMA: { 5: { independentCount: 0, median: null, hitRate: null } },
+          below50DMA: { 5: { independentCount: 1, median: null, hitRate: null } },
+        }}
+        inflections={below(1)}
+      />
+    );
+    expect(html).toContain('The only break fired in a downtrend');
+    expect(html).not.toContain('All 1 break');
+  });
+
   it('renders per-side grouped lines under trend-word headers when both sides fired', () => {
     const html = render(
       <ConditionedBaseRates

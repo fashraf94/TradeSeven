@@ -160,9 +160,10 @@ export function computeCorrelationCacheTtlMs() {
  * mapping both surfaces render (the scan sends it per row; the single-driver
  * endpoint stamps divergence.latest.state via this same helper) so a chip and
  * the deep-dive gauge can never drift. Build 3.1 coherence fix: 'break' now
- * requires BOTH conditions the flag logic (detectInflections) requires — the
- * standardized score AND the absolute gap floor — so the gauge can no longer
- * claim "in break territory" for a pair the flag itself refuses to flag.
+ * applies BOTH of detectInflections' per-observation LEVEL conditions — the
+ * standardized score AND the absolute gap floor (|score| ≥ flag AND |d| ≥
+ * floor, i.e. detectInflections' `raw` qualification) — so the gauge can no
+ * longer claim "in break territory" on score alone when the gap is small.
  *
  *   null       score null / non-finite (unscoreable → no chip)
  *   'calm'     |score| < SDS_EPISODE_END_THRESHOLD (1.0)
@@ -170,9 +171,15 @@ export function computeCorrelationCacheTtlMs() {
  *   'stretched'|score| ≥ SDS_FLAG_THRESHOLD, |d| < ABS_DIVERGENCE_FLOOR
  *   'break'    |score| ≥ SDS_FLAG_THRESHOLD, |d| ≥ ABS_DIVERGENCE_FLOOR
  *
- * The floor is the SAME exported constant the flag uses — never a literal
- * copy. A missing/non-finite d at break-level score can't confirm the gap, so
- * it degrades to the conservative 'stretched', never a false 'break'.
+ * Scope (pinned): this is a latest-OBSERVATION tension read, not the episode
+ * flag. detectInflections layers a persistence (2-of-3-raw) / emergency (≥3.5)
+ * gate ON TOP of these two level conditions, and that gate is out of scope for
+ * Build 3.1 ("the flag logic itself is untouched"). So an isolated raw spike
+ * can still read 'break' here without opening a regime-break episode — by
+ * design: the gauge reports current tension, the regime-break card reports
+ * episodes. The floor is the SAME exported constant the flag uses — never a
+ * literal copy. A missing/non-finite d at break-level score can't confirm the
+ * gap, so it degrades to the conservative 'stretched', never a false 'break'.
  */
 export function tensionStateFrom({ score, d }) {
   if (score == null || !Number.isFinite(score)) return null;

@@ -781,10 +781,11 @@ export function ConditionedBaseRates({ byCondition, inflections }) {
   if (oneSided) {
     const n = aboveN || belowN;
     const trend = aboveN ? 'an uptrend' : 'a downtrend';
+    // "All 1 break" reads wrong; the lone-break case gets its own lead.
+    const lead = n === 1 ? 'The only break fired' : `All ${n} breaks fired`;
     body = (
       <div style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, lineHeight: 1.5 }}>
-        All {n} break{n === 1 ? '' : 's'} fired in {trend} — no contrast to show until breaks
-        occur on both sides.
+        {lead} in {trend} — no contrast to show until breaks occur on both sides.
       </div>
     );
   } else if (hasLines) {
