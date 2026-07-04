@@ -225,8 +225,12 @@ describe('reconcile — totality, traceability, fail-open', () => {
     expect(result.conflictReport).toEqual([]);
   });
 
-  it('DETECT flag default is off (shadow-safe)', () => {
-    expect(CONFLICT_RECONCILER_DETECT_ENABLED).toBe(false);
+  it('DETECT flag default is ON (flipped to production)', () => {
+    // Flipped ON by the merged reconciler-DETECT flag-flip PR; this pins the
+    // intended production state. The flag gates only the equip-time CALLER —
+    // reconcile() above is pure and detects regardless — so there is no
+    // flag-OFF behavior in this suite that depended on the source default.
+    expect(CONFLICT_RECONCILER_DETECT_ENABLED).toBe(true);
   });
 });
 
@@ -269,8 +273,12 @@ describe('resolveForDeploy — the decide.js seam helper', () => {
     expect(out.report.reconcilerError).toBe('boom');
   });
 
-  it('INJECT flag default is off (deploy byte-identical until flipped)', () => {
-    expect(CONFLICT_RECONCILER_INJECT_ENABLED).toBe(false);
+  it('INJECT flag default is ON (flipped to production)', () => {
+    // Flipped ON by the merged reconciler-INJECT flag-flip PR. The flag-OFF
+    // ("deploy byte-identical") behavior is still covered above by
+    // resolveForDeploy(..., { inject: false }), which drives the seam via the
+    // explicit option rather than relying on the source default.
+    expect(CONFLICT_RECONCILER_INJECT_ENABLED).toBe(true);
   });
 });
 

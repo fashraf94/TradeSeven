@@ -6,9 +6,23 @@
 // dependency-surface guard (BUILD_RULES §4 — never mocked): it proves the whole
 // bridge graph stays node-clean and the scorer is reached, not copied.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { buildArenaModel, liveDayIdx, buildAskChips } from './buildArenaModel';
 import { BASELINE_POLICY, CAPTURE_STATE } from '../../../constants/leagueTournament';
+
+// H1 — LEAGUE_AGENT_CHAT_ENABLED is ON in source (flipped to production). The
+// two-way-ask flag-OFF stub behavior is preserved here by driving the flag
+// through a live getter (the scouting-board.test.js idiom) instead of the source
+// default. importOriginal keeps every OTHER flag real, so the dependency-surface
+// guard above (the real buildArenaModel graph loading clean) is untouched — only
+// this single flag flips, and only inside the test that opts in.
+const { chatFlag } = vi.hoisted(() => ({ chatFlag: { on: true } }));
+vi.mock('../../../config/featureFlags', async (importOriginal) => ({
+  ...(await importOriginal()),
+  get LEAGUE_AGENT_CHAT_ENABLED() {
+    return chatFlag.on;
+  },
+}));
 
 const NOW = Date.parse('2026-06-16T20:30:00.000Z'); // Tue 16:30 ET — claim wire OPEN
 
@@ -197,13 +211,26 @@ describe('buildAskChips — the two-way ask chips (standing-aware)', () => {
   });
 });
 
-describe('buildArenaModel — two-way ask identity + flag-off default', () => {
-  it('exposes battleId/agentId for the ask POST, and ask stays [] with the flag off (stub)', () => {
+describe('buildArenaModel — two-way ask identity + flag gating', () => {
+  it('exposes battleId/agentId for the ask POST, and ask stays [] with the chat flag off (stub)', () => {
+    chatFlag.on = false;
+    try {
+      const m = buildArenaModel({ ...BASE, battle: { ...flat6Battle(), agentId: 'agent-9' } });
+      expect(m.battleId).toBe('b1');
+      expect(m.agentId).toBe('agent-9');
+      // Flag mocked OFF → no chips → today's local-echo stub is byte-identical.
+      expect(m.ask).toEqual([]);
+    } finally {
+      chatFlag.on = true;
+    }
+  });
+
+  it('with the chat flag ON (production default) ask carries the standing-aware chips', () => {
     const m = buildArenaModel({ ...BASE, battle: { ...flat6Battle(), agentId: 'agent-9' } });
     expect(m.battleId).toBe('b1');
     expect(m.agentId).toBe('agent-9');
-    // Flag defaults OFF in tests → no chips → today's stub is byte-identical.
-    expect(m.ask).toEqual([]);
+    expect(m.ask.length).toBeGreaterThan(0);
+    expect(m.ask.every((c) => typeof c.q === 'string' && c.q.length > 0)).toBe(true);
   });
 });
 
