@@ -322,7 +322,20 @@ describe('agent-evaluate cron — Knob B hurdle floor wiring (§4.3)', () => {
 
   it('hook 1 (stagnation seam): clearsQuality calls clearsHurdleFloor with reason stagnation', () => {
     expect(source).toMatch(/clearsQuality:\s*\(candidate\)\s*=>\s*clearsHurdleFloor\(\{/);
-    expect(source).toMatch(/reason:\s*'stagnation',\s*\n\s*archetypeConfig,\s*\n\s*userATR:\s*score\.baseATR/);
+    // Task A narrow freshening: the hurdle now divides by the fresh rankings-derived
+    // ATR (resolveHurdleAtr), frozen score.baseATR verbatim when unavailable.
+    expect(source).toMatch(/reason:\s*'stagnation',\s*\n\s*archetypeConfig,[\s\S]*?userATR:\s*resolveHurdleAtr\(score\.symbol, freshHurdleAtrMap, score\.baseATR\)\.atr/);
+  });
+
+  it('Task A: both hurdle sites divide by the FRESH rankings ATR (resolveHurdleAtr), not the frozen baseATR', () => {
+    // Shared pure helper imported — single source of truth with the B2 harness (drift rider a).
+    expect(source).toMatch(/import\s*\{[^}]*\bresolveHurdleAtr\b[^}]*\}\s*from\s*'\.\.\/_utils\/hurdleAtr\.js'/s);
+    expect(source).toMatch(/import\s*\{[^}]*\bbuildFreshAtrPercentileMap\b[^}]*\}\s*from\s*'\.\.\/_utils\/hurdleAtr\.js'/s);
+    // Map built once per tick from the fresh rankings array.
+    expect(source).toMatch(/const freshHurdleAtrMap = buildFreshAtrPercentileMap\(stockRankingsArray\)/);
+    // Both hurdle call sites resolve the active position's ATR through the helper.
+    expect(source).toMatch(/userATR:\s*resolveHurdleAtr\(score\.symbol, freshHurdleAtrMap, score\.baseATR\)\.atr/);
+    expect(source).toMatch(/userATR:\s*resolveHurdleAtr\(haikuResult\.symbolOut, freshHurdleAtrMap, activeBaseATR\)\.atr/);
   });
 
   it('hook 2 (Haiku): gates execution on clearsHurdleFloor before executeSwapServer', () => {
