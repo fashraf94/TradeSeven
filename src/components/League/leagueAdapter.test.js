@@ -280,6 +280,36 @@ describe('buildLeagueState', () => {
     expect(cpus).toBe(2);
   });
 
+  it('defense-in-depth: a training pod fed to the adapter never reaches THE FIELD or the base games (isTraining !== true gate)', () => {
+    // The service read (selectBaseLayerField) already strips training pods, but if
+    // an unfiltered list ever reaches the adapter, the training seats must not leak
+    // into the leaderboard. Distinct members so leakage would be visible.
+    const trainingPod = {
+      ...group,
+      id: 'train-1',
+      isTraining: true,
+      groupMembers: ['tu1', 'tcpu-1', 'tu2', 'tcpu-2'],
+      players: [
+        { odUserId: 'tu1', picks: [] },
+        { odUserId: 'tcpu-1', isCpu: true, picks: [] },
+        { odUserId: 'tu2', picks: [] },
+        { odUserId: 'tcpu-2', isCpu: true, picks: [] },
+      ],
+    };
+    const out = buildLeagueState({
+      fieldGroups: [group, trainingPod],
+      names: { u1: 'Alice', u2: 'Bob' },
+      uid: 'u1',
+    });
+    // only the real base-layer group becomes a base game
+    expect(out.state.baseGames).toHaveLength(1);
+    expect(out.state.baseGames[0].id).toBe('g1');
+    // the training seats never appear in the leaderboard field; the real ones do
+    expect(Object.keys(out.state.field)).not.toContain('tu1');
+    expect(Object.keys(out.state.field)).not.toContain('tcpu-1');
+    expect(Object.keys(out.state.field).sort()).toEqual(['cpu-1', 'cpu-2', 'u1', 'u2']);
+  });
+
   it('real session without a bracket → HONEST empty funnel + bracketPending, real field still real', () => {
     const out = buildLeagueState({ myGroup: group, bracket: null, fieldGroups: [group], names: {}, uid: 'u1' });
     expect(out.hasRealData).toBe(true);

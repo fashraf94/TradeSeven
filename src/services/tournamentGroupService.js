@@ -28,6 +28,8 @@ import {
   selectActiveLobby,
   selectMyGroup,
   selectMyTrainingPod,
+  selectBaseLayerField,
+  BASE_LAYER_FIELD_OVERFETCH,
 } from '../constants/leagueTournament';
 
 /** One-shot group read. Returns { id, ...data } or null. */
@@ -218,8 +220,20 @@ export function subscribeMyTrainingPod(uid, callback) {
  * order + a hard `limit`, NEVER an unbounded all-groups read. The equality+orderBy
  * needs the composite index added in firestore.indexes.json (baseLayerWeek ASC,
  * updatedAt DESC) AND created in the Firebase Console (the firestore.indexes.json
- * drift is known — if the console prompts for it during smoke, that's expected).
- * Callback receives an array of { id, ...group } (capped). Returns the unsubscribe fn.
+ * drift is known — if the console prompts for it during smoke, that's expected);
+ * the training exclusion below is index-free (client-side), so no NEW index.
+ *
+ * TRAINING EXCLUSION (League field-leak fix): training pods share this collection
+ * and match this same `baseLayerWeek` query, but THE FIELD is base layer + bracket
+ * and must exclude `isTraining: true` pods (CPUs stay by design). We can't cheaply
+ * exclude them query-side — `where('isTraining','!=',true)` needs a new composite
+ * index AND drops docs that omit the flag — so we OVER-FETCH by
+ * BASE_LAYER_FIELD_OVERFETCH and exclude client-side via the pure
+ * selectBaseLayerField (the direct mirror of subscribeMyGroup → selectMyGroup).
+ * The over-fetch is what stops training pods from consuming a `limit` slot: the
+ * cap is applied AFTER the training filter, on a wider read window. Callback
+ * receives an array of { id, ...group } (training-excluded, capped to `max`).
+ * Returns the unsubscribe fn.
  */
 export function subscribeBaseLayerGroups(baseLayerWeek, callback, { max = 12 } = {}) {
   if (!baseLayerWeek) {
@@ -230,10 +244,11 @@ export function subscribeBaseLayerGroups(baseLayerWeek, callback, { max = 12 } =
     collection(db, TOURNAMENT_GROUPS_COLLECTION),
     where('baseLayerWeek', '==', baseLayerWeek),
     orderBy('updatedAt', 'desc'),
-    limit(max)
+    limit(Math.ceil(max * BASE_LAYER_FIELD_OVERFETCH))
   );
   return onSnapshot(groupsQuery, (snapshot) => {
-    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(selectBaseLayerField(docs, max));
   }, (error) => {
     console.error('[TournamentGroupService] Base-layer groups subscription error:', error);
     callback([]);

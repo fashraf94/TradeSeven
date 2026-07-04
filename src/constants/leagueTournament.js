@@ -554,6 +554,43 @@ export function selectMyTrainingPod(docs) {
     .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))[0] ?? null;
 }
 
+// Over-fetch multiplier for the base-layer "field" read (subscribeBaseLayerGroups).
+// Training pods share the tournamentGroups collection and match the same
+// `baseLayerWeek ==` query, so a query-level `limit(max)` would let them consume
+// field slots BEFORE the client can exclude them (a busy training week could crowd
+// real base-layer groups out of the 12-doc window). We pull `max × this` by
+// week+recency, drop training pods client-side (selectBaseLayerField), then take
+// `max` — so training pods neither show NOR consume a slot. Read volume is trivial
+// at this scale, and it avoids the query-level `where('isTraining','!=',true)`
+// route, which would need a NEW composite index AND silently drop docs that omit
+// the field. For the default 12-slot field this is a ~30-doc read window.
+export const BASE_LAYER_FIELD_OVERFETCH = 2.5;
+
+/**
+ * Select the base-layer "field" (the leaderboard's THE FIELD surface) from a set
+ * of weekly base-layer group docs — the pure predicate behind the client
+ * `subscribeBaseLayerGroups`, and the direct mirror of the `selectMyGroup`
+ * training exclusion. THE FIELD is base layer + bracket and INCLUDES CPUs by
+ * design (absolute-score, harmless), but it must EXCLUDE training pods
+ * (`isTraining !== true`): training pods share the `tournamentGroups` collection
+ * and match the same `baseLayerWeek` query, so without this gate the viewer's
+ * training seat + its CPUs leak into the leaderboard. Quick Play is base-layer
+ * (`isTraining: false`) and STAYS — it counts. `!== true` (not `=== false`) so
+ * docs that OMIT the flag (the createTournamentGroupDoc omission idiom) are
+ * correctly treated as non-training — the same semantics selectMyGroup relies on.
+ * Most-recently-updated first, then capped to `max` AFTER the training filter, so
+ * the cap counts only real field groups (training pods never consume a slot); the
+ * read over-fetches by BASE_LAYER_FIELD_OVERFETCH so this client filter has room
+ * to work. Pure — the exclusion + cap are unit-tested without Firestore. `docs`
+ * are { id, ...group }.
+ */
+export function selectBaseLayerField(docs, max = 12) {
+  return (docs ?? [])
+    .filter(g => g?.isTraining !== true)
+    .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))
+    .slice(0, max);
+}
+
 // The group-doc `feed` array's retention cap, shared by every feed writer
 // (the P1b rider-#4 flip feed and the P5 auto-commit entry) — one home so
 // the writers can never drift (P5 code-review convergence).

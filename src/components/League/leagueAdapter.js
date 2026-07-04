@@ -393,17 +393,22 @@ export function buildLeagueState({
   const yourGroup = path.groups[0] ? { id: path.groups[0] } : { id: null };
 
   // The base-layer field → real pods, or an HONEST empty list (never the fixture
-  // demo groups).
+  // demo groups). Defense-in-depth: the read (selectBaseLayerField) already
+  // excludes training pods, but gate here too with the same `!== true` idiom so a
+  // training pod can never reach THE FIELD even if this adapter is fed an
+  // unfiltered list. CPUs are NOT training pods (no isTraining flag) → they stay.
   const baseGames = (fieldGroups && fieldGroups.length)
-    ? fieldGroups.map((g) => groupToPod(g, {
-      names,
-      uid,
-      base: true,
-      // the projection is fetched for the subscribed group only; field pods that
-      // happen to be your group get its agent books, others get [].
-      battlesByOwner: (myGroup && g.id === myGroup.id) ? battlesByOwner : {},
-      liveClock,
-    }))
+    ? fieldGroups
+      .filter((g) => g?.isTraining !== true)
+      .map((g) => groupToPod(g, {
+        names,
+        uid,
+        base: true,
+        // the projection is fetched for the subscribed group only; field pods that
+        // happen to be your group get its agent books, others get [].
+        battlesByOwner: (myGroup && g.id === myGroup.id) ? battlesByOwner : {},
+        liveClock,
+      }))
     : [];
 
   // The leaderboard "field" ← the REAL base-layer seats (real humans + CPUs +

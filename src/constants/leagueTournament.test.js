@@ -101,6 +101,9 @@ import {
   // League Next-Arc Slice 5b-i — the ranked/training split predicates.
   selectMyGroup,
   selectMyTrainingPod,
+  // League field-leak fix — THE FIELD read excludes training pods.
+  selectBaseLayerField,
+  BASE_LAYER_FIELD_OVERFETCH,
   isoWeekString,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
@@ -1133,6 +1136,67 @@ describe('selectMyTrainingPod — the re-entry read + the server already_active 
 
   it('picks the most-recently-updated active pod (the re-entry target / guard subject)', () => {
     expect(selectMyTrainingPod([drafting, awaiting, battle]).id).toBe('t3');
+  });
+});
+
+describe('selectBaseLayerField — THE FIELD read EXCLUDES training pods AND never lets one consume a cap slot', () => {
+  // Mirrors selectMyGroup: base-layer groups (Quick Play / isTraining:false or the
+  // flag OMITTED) count; training pods (isTraining:true) do not. CPUs carry no
+  // isTraining flag, so they stay by design (absolute-score, harmless).
+  const ranked = (id, updatedAt) => ({ id, baseLayerWeek: '2026-W27', updatedAt });
+  const training = (id, updatedAt) => ({ id, baseLayerWeek: '2026-W27', isTraining: true, updatedAt });
+
+  it('THE GATE: a training pod never appears; a base-layer group does — even when the training pod is newer', () => {
+    const t = training('t1', '2026-06-15T23:00:00Z'); // newest of the two
+    const r = ranked('g1', '2026-06-15T10:00:00Z');
+    expect(selectBaseLayerField([t, r], 12).map(g => g.id)).toEqual(['g1']);
+    // training-only → [] (nothing field-eligible, NOT the training pod)
+    expect(selectBaseLayerField([t], 12)).toEqual([]);
+  });
+
+  it('mirrors the selectMyGroup `!== true` idiom: a flag-OMITTING doc AND an explicit isTraining:false both COUNT (Quick Play stays)', () => {
+    const omitted = { id: 'g1', updatedAt: '2026-06-15T10:00:00Z' };                       // no isTraining field
+    const explicitFalse = { id: 'g2', isTraining: false, updatedAt: '2026-06-15T09:00:00Z' }; // Quick Play
+    expect(selectBaseLayerField([omitted, explicitFalse], 12).map(g => g.id).sort()).toEqual(['g1', 'g2']);
+  });
+
+  it('CPUs stay: a base-layer group carrying CPU seats (no isTraining flag) is field-eligible — CPU inclusion is unchanged', () => {
+    const withCpus = { id: 'g1', groupMembers: ['u1', 'cpu-1', 'u2', 'cpu-2'], updatedAt: '2026-06-15T10:00:00Z' };
+    expect(selectBaseLayerField([withCpus], 12).map(g => g.id)).toEqual(['g1']);
+  });
+
+  it('THE SLOT: training pods do NOT consume cap slots — all 12 real groups survive even when 10 NEWER training pods are present', () => {
+    // 12 real base-layer groups, older...
+    const reals = Array.from({ length: 12 }, (_, i) =>
+      ranked(`g${i}`, `2026-06-15T08:${String(i).padStart(2, '0')}:00Z`));
+    // ...plus 10 training pods, every one NEWER than every real group.
+    const trainings = Array.from({ length: 10 }, (_, i) =>
+      training(`t${i}`, `2026-06-15T23:${String(i).padStart(2, '0')}:00Z`));
+    const out = selectBaseLayerField([...trainings, ...reals], 12);
+    // filter-BEFORE-cap: had the cap run first (the bug), the 10 newer training
+    // pods would take 10 of 12 slots, leaving only 2 real groups.
+    expect(out).toHaveLength(12);
+    expect(out.every(g => g.isTraining !== true)).toBe(true);
+    expect(out.map(g => g.id).sort()).toEqual(reals.map(g => g.id).sort());
+  });
+
+  it('caps to `max` by recency AFTER filtering (the most-recent real groups win the slots)', () => {
+    const a = ranked('a', '2026-06-15T08:00:00Z');
+    const b = ranked('b', '2026-06-15T12:00:00Z'); // newest real
+    const c = ranked('c', '2026-06-15T10:00:00Z');
+    expect(selectBaseLayerField([a, b, c], 2).map(g => g.id)).toEqual(['b', 'c']); // 'a' dropped
+  });
+
+  it('empty / null / undefined → []', () => {
+    expect(selectBaseLayerField([], 12)).toEqual([]);
+    expect(selectBaseLayerField(null, 12)).toEqual([]);
+    expect(selectBaseLayerField(undefined)).toEqual([]);
+  });
+
+  it('BASE_LAYER_FIELD_OVERFETCH gives the client filter headroom — a ~24-30 read window for the default 12-slot field', () => {
+    const window = Math.ceil(12 * BASE_LAYER_FIELD_OVERFETCH);
+    expect(window).toBeGreaterThanOrEqual(24);
+    expect(window).toBeLessThanOrEqual(30);
   });
 });
 
