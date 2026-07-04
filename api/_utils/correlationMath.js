@@ -460,6 +460,116 @@ export function forwardReturns(closes, dates, episodes, horizons = [5, 10, 20]) 
 }
 
 /**
+ * Rolling sample standard deviation over full windows only (V2 Build 4 —
+ * the vol-regime condition's raw series). Same rolling conventions as
+ * rollingCorrelation/rollingBeta: OLDEST-FIRST returns, `dates` is the
+ * chronological CLOSES-date array (length = returns.length + 1), entries carry
+ * closeIndex = j + 1 / eventDate = dates[j + 1] for the window ENDING at
+ * return index j, sample (n−1) divisor, [] when the series is shorter than
+ * the window, null on invalid input. Degenerate windows are PRESERVED as
+ * entries with value: null (never dropped, never zero) — with finite inputs
+ * this branch is unreachable (a sample std of finite values is finite, and 0
+ * is a legitimate quiet-window reading, not a degenerate one), but the guard
+ * keeps the null-never-zero contract explicit for future callers.
+ */
+export function rollingStd(returns, window, dates) {
+  if (!isFiniteNumberArray(returns, 1)) return null;
+  if (!Number.isInteger(window) || window < 2) return null;
+  if (!Array.isArray(dates) || dates.length !== returns.length + 1) return null;
+  const out = [];
+  for (let j = window - 1; j < returns.length; j++) {
+    const win = returns.slice(j - window + 1, j + 1);
+    const m = mean(win);
+    let ss = 0;
+    for (const v of win) ss += (v - m) * (v - m);
+    const sd = Math.sqrt(ss / (window - 1));
+    out.push({
+      closeIndex: j + 1,
+      eventDate: dates[j + 1],
+      value: Number.isFinite(sd) ? sd : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Pearson correlation restricted to the observations where mask[i] === true
+ * (STRICT true — truthy non-booleans do not select; the mask is a built
+ * artifact, never coerced data). Mask semantics: same index space as the two
+ * return arrays; the CALLER builds masks (V2 Build 4 — the conditional-
+ * correlation sides). Implemented by extracting the masked pairs and calling
+ * pearson — one Pearson implementation exists in this codebase's correlation
+ * stack (BUILD_RULES §4).
+ *
+ * → { corr, n } where n = the masked pair count, or NULL when n < minN
+ * (the caller's observation floor; defaults to Pearson's own minimum of 2),
+ * when the masked subset is degenerate (~zero variance on either side), or on
+ * invalid/mismatched input. Null, never zero — an insufficient side must stay
+ * distinguishable from a genuinely uncorrelated one.
+ */
+export function maskedPearson(returnsA, returnsB, mask, minN = 2) {
+  if (!isFiniteNumberArray(returnsA, 1) || !isFiniteNumberArray(returnsB, 1)) return null;
+  if (returnsA.length !== returnsB.length) return null;
+  if (!Array.isArray(mask) || mask.length !== returnsA.length) return null;
+  if (!Number.isInteger(minN) || minN < 2) return null;
+  const subA = [];
+  const subB = [];
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] === true) {
+      subA.push(returnsA[i]);
+      subB.push(returnsB[i]);
+    }
+  }
+  if (subA.length < minN) return null;
+  const corr = pearson(subA, subB);
+  if (corr === null) return null;
+  return { corr, n: subA.length };
+}
+
+/**
+ * Side-vs-side comparison for conditional correlation (V2 Build 4).
+ *
+ * THE HONESTY CORE: conditioning on a subset mechanically shrinks measured
+ * correlation on BOTH sides even when the true relationship is perfectly
+ * symmetric — restricting the driver's range truncates its variance, and
+ * correlation within a truncated range is smaller. Side-vs-side is therefore
+ * the ONLY honest comparison; either side vs the full-sample number is a
+ * systematic misread. This function compares sides to each other and to
+ * nothing else.
+ *
+ * Asymmetry floor (pinned, 0.15): at ~250 obs/side and mid-range r, the
+ * sampling SE of the difference of two side correlations is ≈ 0.07, so
+ * sub-0.15 differences are noise-class — the floor sits at ~2 SE. An
+ * inferential upgrade (Fisher-z) is a documented future refinement, not
+ * V2 Build 4 scope.
+ *
+ * @param {{corr: number, n: number}|null} sideA - a maskedPearson result
+ * @param {{corr: number, n: number}|null} sideB - a maskedPearson result
+ * @param {number} [floor=0.15] - the pinned asymmetry floor
+ * @returns {{asymmetric: boolean, direction: ('A'|'B'|null)}|null}
+ *   null when either side is null (no comparison exists — never a fabricated
+ *   verdict). asymmetric is true only at |corrA − corrB| ≥ floor. direction =
+ *   the LARGER-|corr| side (the side where the link is tighter; for inverse
+ *   links that is the more-negative side), null when not asymmetric. The
+ *   measure-zero corner |corrA| === |corrB| with a ≥-floor raw difference (an
+ *   exact sign-flip tie) also yields direction null — neither side is tighter,
+ *   and the UI renders its no-difference verdict rather than picking a winner.
+ */
+export function compareConditionalSides(sideA, sideB, floor = 0.15) {
+  if (sideA == null || sideB == null) return null;
+  const a = sideA.corr;
+  const b = sideB.corr;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  if (!Number.isFinite(floor) || floor < 0) return null;
+  const asymmetric = Math.abs(a - b) >= floor;
+  let direction = null;
+  if (asymmetric && Math.abs(a) !== Math.abs(b)) {
+    direction = Math.abs(a) > Math.abs(b) ? 'A' : 'B';
+  }
+  return { asymmetric, direction };
+}
+
+/**
  * Trailing return INTO an anchor close index `c` — the forwardReturns formula
  * pointed backward: levels[c] / levels[c − look] − 1, the `look`-session move
  * leading into a regime-break flag. OLDEST-FIRST levels (composite levels or

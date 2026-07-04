@@ -25,6 +25,9 @@ import {
   forwardReturns,
   standardizedDivergenceScore,
   trailingReturnInto,
+  rollingStd,
+  maskedPearson,
+  compareConditionalSides,
   ABS_DIVERGENCE_FLOOR,
   SDS_BASELINE_WINDOW,
 } from './correlationMath.js';
@@ -565,5 +568,211 @@ describe('rollingCorrelation', () => {
     expect(rollingCorrelation(a.slice(0, 10), b.slice(0, 10), 20, makeDates(11))).toEqual([]);
     expect(rollingCorrelation(a, b, 20, makeDates(n))).toBeNull(); // dates must be returns + 1
     expect(rollingCorrelation(a, b.slice(0, 50), 20, dates)).toBeNull(); // length mismatch
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// V2 Build 4 — conditional correlation ("when does the link hold?")
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('rollingStd — rolling sample std over full windows (Build 4)', () => {
+  it('hand-computed values with the SAMPLE (n−1) divisor and the closeIndex/eventDate mapping', () => {
+    const returns = [1, 2, 3, 4]; // integers pin the divisor unambiguously
+    const dates = makeDates(5);
+    const series = rollingStd(returns, 3, dates);
+    expect(series).toHaveLength(2);
+    // window [1,2,3]: mean 2, Σ(d²) = 2, SAMPLE var = 2/2 = 1 → sd 1 (the
+    // population divisor would give √(2/3) ≈ 0.816 — this value pins n−1).
+    expect(series[0]).toMatchObject({ closeIndex: 3, eventDate: dates[3] });
+    expect(series[0].value).toBeCloseTo(1, 12);
+    expect(series[1]).toMatchObject({ closeIndex: 4, eventDate: dates[4] });
+    expect(series[1].value).toBeCloseTo(1, 12);
+  });
+
+  it('a constant window reads 0 (a quiet reading is a value, not a degenerate null)', () => {
+    const series = rollingStd([0.01, 0.01, 0.01], 2, makeDates(4));
+    expect(series).toHaveLength(2);
+    for (const e of series) expect(e.value).toBe(0);
+  });
+
+  it('shorter than window → []; invalid input → null (never zero)', () => {
+    expect(rollingStd([0.01], 2, makeDates(2))).toEqual([]);
+    expect(rollingStd([0.01, 0.02], 1, makeDates(3))).toBeNull(); // window < 2
+    expect(rollingStd([0.01, 0.02], 2, makeDates(2))).toBeNull(); // dates ≠ returns + 1
+    expect(rollingStd([0.01, NaN, 0.02], 2, makeDates(4))).toBeNull(); // corrupt input
+    expect(rollingStd(null, 2, makeDates(3))).toBeNull();
+  });
+});
+
+describe('maskedPearson — Pearson over a strict-true mask (Build 4)', () => {
+  const gen = lehmer(40400);
+  const A = Array.from({ length: 120 }, () => (gen() - 0.5) * 0.02);
+  const B = A.map((v) => 0.7 * v + (gen() - 0.5) * 0.01);
+
+  it('an all-true mask reproduces pearson exactly, with n = the full length', () => {
+    const out = maskedPearson(A, B, A.map(() => true));
+    expect(out).not.toBeNull();
+    expect(out.corr).toBe(pearson(A, B));
+    expect(out.n).toBe(A.length);
+  });
+
+  it('a subset mask equals pearson over the hand-extracted subset', () => {
+    const mask = A.map((_, i) => i % 3 === 0);
+    const subA = A.filter((_, i) => mask[i]);
+    const subB = B.filter((_, i) => mask[i]);
+    const out = maskedPearson(A, B, mask);
+    expect(out.corr).toBe(pearson(subA, subB));
+    expect(out.n).toBe(subA.length);
+  });
+
+  it('mask semantics are STRICT === true — truthy non-booleans select nothing', () => {
+    const a = [1, 2, 3, 4];
+    const b = [1, 2, 3, 4];
+    // only indices 0 and 2 are strict true; 1 and 'yes' are truthy but ignored
+    const out = maskedPearson(a, b, [true, 1, true, 'yes']);
+    expect(out.n).toBe(2);
+    expect(out.corr).toBeCloseTo(1, 12);
+  });
+
+  it('null below the caller floor (n < minN), even when the subset itself is computable', () => {
+    const mask = A.map((_, i) => i < 59); // 59 observations
+    expect(maskedPearson(A, B, mask, 60)).toBeNull();
+    expect(maskedPearson(A, B, mask, 59)).not.toBeNull(); // the floor is the only failure
+  });
+
+  it('null on a degenerate masked subset (~zero variance) — never zero', () => {
+    const flat = A.map(() => 0.004);
+    expect(maskedPearson(flat, B, A.map(() => true))).toBeNull();
+  });
+
+  it('null on invalid input: mismatched arrays, wrong-length mask, bad minN', () => {
+    expect(maskedPearson(A, B.slice(0, 100), A.map(() => true))).toBeNull();
+    expect(maskedPearson(A, B, A.slice(0, 100).map(() => true))).toBeNull();
+    expect(maskedPearson(A, B, 'not a mask')).toBeNull();
+    expect(maskedPearson(A, B, A.map(() => true), 1)).toBeNull(); // minN < 2
+    expect(maskedPearson(A, B, A.map(() => true), 60.5)).toBeNull();
+  });
+});
+
+describe('compareConditionalSides — the pinned 0.15 asymmetry floor (Build 4)', () => {
+  it('floor straddle: a 0.13 difference is NOT asymmetric; 0.17 is', () => {
+    expect(compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.37, n: 100 })).toEqual({
+      asymmetric: false,
+      direction: null,
+    });
+    expect(compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.33, n: 100 })).toEqual({
+      asymmetric: true,
+      direction: 'A',
+    });
+  });
+
+  it('exactly 0.15 clears the floor (≥, not >)', () => {
+    expect(compareConditionalSides({ corr: 0.45, n: 80 }, { corr: 0.3, n: 80 }).asymmetric).toBe(
+      true
+    );
+  });
+
+  it('direction is the LARGER-|corr| side — for inverse links, the more-negative side', () => {
+    // QQQ × VIX shape: both sides negative; the tighter side is B.
+    const out = compareConditionalSides({ corr: -0.45, n: 200 }, { corr: -0.72, n: 200 });
+    expect(out).toEqual({ asymmetric: true, direction: 'B' });
+  });
+
+  it('null when either side is null — no comparison is ever fabricated', () => {
+    expect(compareConditionalSides(null, { corr: 0.5, n: 100 })).toBeNull();
+    expect(compareConditionalSides({ corr: 0.5, n: 100 }, null)).toBeNull();
+    expect(compareConditionalSides(null, null)).toBeNull();
+  });
+
+  it('a custom floor overrides the 0.15 default; invalid floors null', () => {
+    expect(
+      compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.4, n: 100 }, 0.05).asymmetric
+    ).toBe(true);
+    expect(compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.4, n: 100 }, -1)).toBeNull();
+    expect(compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.4, n: 100 }, NaN)).toBeNull();
+  });
+
+  it('the exact sign-flip tie (|corrA| === |corrB|, gap ≥ floor) is asymmetric with a NULL direction', () => {
+    // Neither side is tighter — the link FLIPPED. direction must not pick a
+    // winner; the UI renders its no-difference verdict for a null direction.
+    expect(compareConditionalSides({ corr: 0.3, n: 100 }, { corr: -0.3, n: 100 })).toEqual({
+      asymmetric: true,
+      direction: null,
+    });
+  });
+});
+
+describe('Build 4 — the symmetric-truncation discriminator (MANDATORY fixture)', () => {
+  // A perfectly SYMMETRIC engineered relationship: group = 1.0 × driver + noise
+  // with the SAME coupling on driver up-days and down-days. Conditioning on the
+  // driver's sign truncates the driver's variance, so BOTH side correlations
+  // come out well below the full-sample value — while the sides stay equal to
+  // each other (within noise, far under the 0.15 floor). This fixture exists
+  // to kill any implementation or copy that invites comparing a side to the
+  // full-sample headline: the honest read of this data is "no meaningful
+  // difference", never "both regimes weakened the link".
+  const gen = lehmer(20260704);
+  const N = 600;
+  const driver = Array.from({ length: N }, () => (gen() - 0.5) * 0.02); // uniform(−1%, +1%), never exactly 0
+  const noise = Array.from({ length: N }, () => (gen() - 0.5) * 0.0176); // σ tuned for r_full ≈ 0.75
+  const group = driver.map((d, i) => d + noise[i]);
+
+  const upMask = driver.map((d) => d > 0);
+  const downMask = driver.map((d) => d < 0);
+  const full = pearson(group, driver);
+  const up = maskedPearson(group, driver, upMask, 60);
+  const down = maskedPearson(group, driver, downMask, 60);
+
+  it('both sides carry ≥ 60 observations and a strong full-sample link exists', () => {
+    expect(up.n).toBeGreaterThanOrEqual(60);
+    expect(down.n).toBeGreaterThanOrEqual(60);
+    expect(up.n + down.n).toBe(N); // no exact zeros in the driver
+    expect(full).toBeGreaterThan(0.65);
+  });
+
+  it('BOTH side correlations sit well below the full-sample value (the truncation effect itself)', () => {
+    // Range restriction alone drops r from ≈0.75 to ≈0.49 here — with zero
+    // change in the true relationship. This is why side-vs-headline is a
+    // systematic misread.
+    expect(up.corr).toBeLessThan(full - 0.1);
+    expect(down.corr).toBeLessThan(full - 0.1);
+  });
+
+  it('…and the verdict is asymmetric: FALSE — the sides match each other', () => {
+    expect(Math.abs(up.corr - down.corr)).toBeLessThan(0.15);
+    expect(compareConditionalSides(up, down)).toEqual({ asymmetric: false, direction: null });
+  });
+});
+
+describe('Build 4 — engineered asymmetry fixture (tight on down-days, loose on up-days)', () => {
+  // The classic candidate shape: strong coupling when the driver falls, weak
+  // when it rises. compareConditionalSides must flag it and point at the
+  // down side (side B here).
+  const gen = lehmer(77007);
+  const N = 600;
+  const driver = Array.from({ length: N }, () => (gen() - 0.5) * 0.02);
+  const noise = Array.from({ length: N }, () => (gen() - 0.5) * 0.008);
+  const group = driver.map((d, i) => (d < 0 ? 1.0 : 0.12) * d + noise[i]);
+
+  const up = maskedPearson(group, driver, driver.map((d) => d > 0), 60);
+  const down = maskedPearson(group, driver, driver.map((d) => d < 0), 60);
+
+  it('the down side is decisively tighter and the comparison points at it', () => {
+    expect(down.corr - up.corr).toBeGreaterThanOrEqual(0.15);
+    expect(Math.abs(down.corr)).toBeGreaterThan(Math.abs(up.corr));
+    expect(compareConditionalSides(up, down)).toEqual({ asymmetric: true, direction: 'B' });
+  });
+
+  it('min-obs floor: shrinking one side below 60 nulls that side AND the comparison', () => {
+    // Keep only the first 59 up-days in the mask — the up side must null at
+    // the pinned floor and the comparison must refuse to fabricate a verdict.
+    const upIdx = [];
+    driver.forEach((d, i) => {
+      if (d > 0 && upIdx.length < 59) upIdx.push(i);
+    });
+    const mask59 = driver.map((_, i) => upIdx.includes(i));
+    const up59 = maskedPearson(group, driver, mask59, 60);
+    expect(up59).toBeNull();
+    expect(compareConditionalSides(up59, down)).toBeNull();
   });
 });

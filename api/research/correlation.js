@@ -42,6 +42,9 @@ import {
   forwardReturns,
   standardizedDivergenceScore,
   trailingReturnInto,
+  rollingStd,
+  maskedPearson,
+  compareConditionalSides,
   SDS_BASELINE_WINDOW,
 } from '../_utils/correlationMath.js';
 // V2 Build 2 extraction: the join-and-compute core and the two-sided cache TTL
@@ -57,7 +60,9 @@ import {
 // V2 Build 3 — break context: per-episode technical state at the flag and the
 // 50DMA-conditioned base rates. breakContext.js owns THE chronological→
 // newest-first order adapter for its call-only technicalCalculations use.
-import { computeContextAtFlag, conditionedBaseRates } from './breakContext.js';
+// V2 Build 4 adds trendStateSeries from the same adapter home (the per-day
+// vs-50DMA state the trend-state condition masks on).
+import { computeContextAtFlag, conditionedBaseRates, trendStateSeries } from './breakContext.js';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
 import { fetchAllSeries } from './fetchDriverSeries.js';
 import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
@@ -73,10 +78,129 @@ export const config = { maxDuration: 30 };
 const SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/; // pinned: accepts BRK.B, BF.B, hyphens
 const LOOKBACK = { DEFAULT: 504, MIN: 150, MAX: 1260 };
 const BETA_WINDOW = 40;
+// V2 Build 4 — conditional correlation (pinned): 60 observations minimum per
+// side, composite 20d rolling std for the vol-regime split.
+const CONDITIONAL_MIN_OBS = 60;
+const VOL_REGIME_WINDOW = 20;
 
 const markCached = (payload) => ({ ...payload, meta: { ...payload.meta, cached: true } });
 
 const latestValue = (series) => (series && series.length ? series[series.length - 1].value : null);
+
+// ── V2 Build 4 — condition masks + conditional-correlation assembly ─────────
+// Named exports (not a second module): the masks are single-driver-endpoint
+// logic per the Build 4 spec, and the boundary suite already imports this
+// handler file, so the mask construction unit-tests where it lives. The scan
+// endpoint never calls any of this.
+
+/**
+ * The three condition masks over the JOINED chronological sample, all in the
+ * RETURN index space (return i = closes[i]→closes[i+1], ending at close index
+ * i + 1 — the correlationMath.js mapping contract). A day joins a side only
+ * when its condition has a reading; excluded days are false in BOTH masks.
+ *
+ *   driverUp/driverDown — driver return sign; exactly-zero returns excluded.
+ *     (TNX diff mode: the sign of the yield CHANGE — up means the yield rose.)
+ *   volHigh/volCalm — composite 20d rolling std (window ENDING that day) vs
+ *     the MEDIAN of that vol series over the sample; > median = high-vol,
+ *     ≤ median = calm; the first VOL_REGIME_WINDOW − 1 return days have no
+ *     reading. Median over non-null readings; null readings join neither side.
+ *   trendUp/trendDown — composite level vs its 50DMA on the day the return
+ *     lands (trendStateSeries at close index i + 1, the breakContext
+ *     inclusive-window convention); days without a full 50-level window join
+ *     neither side.
+ *
+ * All three are same-day DESCRIPTIVE splits of the sample — nothing here is,
+ * or feeds, a look-ahead signal.
+ */
+export function buildConditionMasks({ driverReturns, groupReturns, groupLevels, joinedDates }) {
+  const n = driverReturns.length;
+  const driverUp = driverReturns.map((r) => r > 0);
+  const driverDown = driverReturns.map((r) => r < 0);
+
+  const volHigh = new Array(n).fill(false);
+  const volCalm = new Array(n).fill(false);
+  const volSeries = rollingStd(groupReturns, VOL_REGIME_WINDOW, joinedDates) ?? [];
+  const volValues = volSeries
+    .map((e) => e.value)
+    .filter((v) => v != null)
+    .sort((a, b) => a - b);
+  let volMedian = null;
+  if (volValues.length) {
+    const mid = volValues.length >> 1;
+    volMedian =
+      volValues.length % 2 === 1 ? volValues[mid] : (volValues[mid - 1] + volValues[mid]) / 2;
+    for (const e of volSeries) {
+      if (e.value == null) continue;
+      const i = e.closeIndex - 1; // the return index the window ends at
+      if (e.value > volMedian) volHigh[i] = true;
+      else volCalm[i] = true;
+    }
+  }
+
+  const trendUp = new Array(n).fill(false);
+  const trendDown = new Array(n).fill(false);
+  const trend = trendStateSeries(groupLevels) ?? [];
+  for (let i = 0; i < n; i++) {
+    if (trend[i + 1] === 'up') trendUp[i] = true;
+    else if (trend[i + 1] === 'down') trendDown[i] = true;
+  }
+
+  return { driverUp, driverDown, volHigh, volCalm, trendUp, trendDown, volMedian };
+}
+
+/**
+ * The `conditional` response block: group×driver correlation split by driver
+ * direction, vol regime, and trend state — side vs side ONLY (the honesty
+ * core lives in compareConditionalSides' JSDoc: conditioning truncates
+ * variance and lowers BOTH sides, so neither side is ever compared to the
+ * full-sample headline, in data or in copy).
+ *
+ * Each side is { corr, n } | null (null below CONDITIONAL_MIN_OBS or
+ * degenerate); asymmetric/direction come from compareConditionalSides
+ * (asymmetric null when either side is null — no comparison, never a
+ * fabricated verdict; direction is remapped from 'A'/'B' to the side key).
+ * `counts` carries the raw per-side day counts so the UI's insufficient copy
+ * can name the real n of a null side, and `minObs` carries the floor so that
+ * copy can never drift from the server's gate.
+ */
+export function computeConditional({ driverReturns, groupReturns, groupLevels, joinedDates, registry }) {
+  const masks = buildConditionMasks({ driverReturns, groupReturns, groupLevels, joinedDates });
+  const sideOf = (mask) => maskedPearson(groupReturns, driverReturns, mask, CONDITIONAL_MIN_OBS);
+  const countOf = (mask) => mask.reduce((acc, m) => acc + (m === true ? 1 : 0), 0);
+  const block = (maskA, maskB, keyA, keyB, labels) => {
+    const a = sideOf(maskA);
+    const b = sideOf(maskB);
+    const cmp = compareConditionalSides(a, b);
+    return {
+      [keyA]: a,
+      [keyB]: b,
+      asymmetric: cmp ? cmp.asymmetric : null,
+      direction: cmp?.direction ? (cmp.direction === 'A' ? keyA : keyB) : null,
+      counts: { [keyA]: countOf(maskA), [keyB]: countOf(maskB) },
+      labels,
+    };
+  };
+  // Direction labels from the registry: "days {noun} rose/fell". TNX carries
+  // directionNoun ("the 10Y yield") — its up-day means the yield rose, and a
+  // bare +/− would be dishonest for a diff-mode driver.
+  const noun = registry.directionNoun ?? registry.label;
+  return {
+    minObs: CONDITIONAL_MIN_OBS,
+    driverDirection: block(masks.driverUp, masks.driverDown, 'up', 'down', {
+      up: `days ${noun} rose`,
+      down: `days ${noun} fell`,
+    }),
+    volRegime: block(masks.volHigh, masks.volCalm, 'high', 'calm', {
+      high: 'high-vol days',
+      calm: 'calm days',
+    }),
+    trendState: block(masks.trendUp, masks.trendDown, 'up', 'down', {
+      up: 'uptrend days',
+      down: 'downtrend days',
+    }),
+  };
+}
 
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) return;
@@ -241,6 +365,20 @@ export default async function handler(req, res) {
     const beta40 = joinedCloses >= BETA_WINDOW + 1 ? rollingBeta(groupReturns, driverReturns, BETA_WINDOW, joinedDates) : null;
     const lag = leadLag(groupReturns, driverReturns, 5);
 
+    // Build 4 — conditional correlation ("when does the link hold?"): a
+    // full-sample read over the joined return index space, independent of the
+    // MIN_CLOSES_FOR_INFLECTIONS episode gate — each side self-nulls below the
+    // 60-observation floor instead. Additive; pre-Build-4 cached payloads
+    // simply lack the field and the UI null-guards it (daily expiry, no
+    // migration — the Build 3 precedent).
+    const conditional = computeConditional({
+      driverReturns,
+      groupReturns,
+      groupLevels,
+      joinedDates,
+      registry,
+    });
+
     // First observation with a FULL trailing SDS baseline — the UI base-rate
     // sentence anchors here, never at the raw lookback start.
     const firstEligibleInflectionDate = divergenceSeries[SDS_BASELINE_WINDOW]?.eventDate ?? null;
@@ -337,6 +475,7 @@ export default async function handler(req, res) {
       },
       leadLag: lag,
       divergence,
+      conditional,
       inflections,
       baseRates,
       suppressed,

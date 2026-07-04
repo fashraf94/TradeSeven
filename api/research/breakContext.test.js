@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest';
 import {
   computeContextAtFlag,
   conditionedBaseRates,
+  trendStateSeries,
   CONDITION_MIN_INDEPENDENT,
 } from './breakContext.js';
 import { forwardReturns } from '../_utils/correlationMath.js';
@@ -290,5 +291,61 @@ describe('conditionedBaseRates — null-never-zero on invalid input', () => {
     // exactly the horizons the unconditioned baseRates blocks carry.
     const fr = forwardReturns(RAMP, RAMP_DATES, episodes);
     expect(Object.keys(out.below50DMA).sort()).toEqual(Object.keys(fr).sort());
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// V2 Build 4 — trendStateSeries (the per-day 50DMA state the conditional-
+// correlation trend masks read)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('trendStateSeries — per-day vs-50DMA state (Build 4)', () => {
+  // The vocabulary bridge: trendStateSeries speaks classifyTrend ('up'/'down'),
+  // contextAtFlag speaks 'above'/'below'. One fixed mapping, asserted below.
+  const AS_SIDE = { up: 'above', down: 'below' };
+
+  it('agrees with the chronological reference on the order-ASYMMETRIC fixture (adapter proof)', () => {
+    // FIX_A punishes a zero- or double-reversal: at c = 119 the true trailing
+    // window means ~108.9 ('up'), the time-flipped window means 200 ('down').
+    const series = trendStateSeries(FIX_A);
+    expect(series).toHaveLength(FIX_A.length);
+    for (let c = 0; c < FIX_A.length; c++) {
+      const ref = refSide(FIX_A, c); // null below a full window
+      expect(series[c], `c=${c}`).toBe(ref == null ? null : ref === 'above' ? 'up' : 'down');
+    }
+    expect(series[FIX_A_C]).toBe('up'); // the anti-coincidence pin
+  });
+
+  it('agrees with computeContextAtFlag at EVERY index of the random-walk fixture (by construction)', () => {
+    // The conditional trend mask and Build 3's episode stamps must never
+    // disagree about the same day — same SMA (4dp rounding included), same
+    // classifyTrend equality rule.
+    const series = trendStateSeries(FIX_B);
+    for (let c = 0; c < FIX_B.length; c++) {
+      const stamp = computeContextAtFlag(FIX_B, c).vs50DMA;
+      expect(series[c] == null ? null : AS_SIDE[series[c]], `c=${c}`).toBe(stamp);
+    }
+  });
+
+  it('nulls every day without a full inclusive window (first 49), first reading at c = 49', () => {
+    const series = trendStateSeries(FIX_B);
+    for (let c = 0; c < 49; c++) expect(series[c], `c=${c}`).toBeNull();
+    expect(series[49]).not.toBeNull();
+  });
+
+  it('corrupt levels → ALL-null series (never a guessed state); non-array → null', () => {
+    const poisoned = [...FIX_B];
+    poisoned[60] = NaN;
+    const series = trendStateSeries(poisoned);
+    expect(series).toHaveLength(poisoned.length);
+    expect(series.every((v) => v === null)).toBe(true);
+    expect(trendStateSeries(null)).toBeNull();
+    expect(trendStateSeries('levels')).toBeNull();
+  });
+
+  it('does not mutate the caller\'s levels array (the slice-before-reverse rule)', () => {
+    const copy = [...FIX_B];
+    trendStateSeries(copy);
+    expect(copy).toEqual(FIX_B);
   });
 });

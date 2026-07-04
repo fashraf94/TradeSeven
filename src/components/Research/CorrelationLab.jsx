@@ -37,7 +37,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { ChartSkeleton } from './ResearchSkeletons';
-import { buildVerdictSentence, breakStatePhrase } from './correlationVerdict';
+import { buildVerdictSentence, breakStatePhrase, conditionalVerdict } from './correlationVerdict';
 
 // Client-side mirror of the driver registry LABELS only (the api registry is
 // server code — do not import it into the bundle; units/interpretations come
@@ -138,6 +138,11 @@ const CAPTIONS = {
   tension: 'How stretched the recent link is versus its own history — not a prediction.',
   // Build 3 — the state-at-break column (the V1.1 caption idiom).
   stateAtBreak: "The group's own technical state when the break fired.",
+  // Build 4 — the conditional card's truncation guard (pinned copy): each side
+  // is a subset, subsetting lowers both readings mechanically, so the ONLY
+  // honest comparison is side vs side — never side vs the headline.
+  conditional:
+    'Each side is measured on a subset of days, which naturally lowers both readings — compare the two sides to each other, not to the headline link above.',
 };
 
 // Change E — three example chips matching the Discover "TRY ONE" idiom.
@@ -859,6 +864,95 @@ export function ConditionedBaseRates({ byCondition, inflections }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// V2 Build 4 — WHEN DOES THE LINK HOLD? Conditional correlation, three
+// same-day splits of the joined sample (driver direction, vol regime, group
+// trend), each read side vs side ONLY. The card caption is the truncation
+// guard (CAPTIONS.conditional) and the layout keeps the side numbers inside
+// this card, never beside the headline strip.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Row config: response block key, plain-words row name, side keys in render
+// order (side A first). Side LABELS come from the server block (the registry
+// is the label home — TNX reads "days the 10Y yield rose/fell").
+const CONDITIONAL_ROWS = [
+  { key: 'driverDirection', name: 'Driver direction', sides: ['up', 'down'] },
+  { key: 'volRegime', name: 'Volatility regime', sides: ['high', 'calm'] },
+  { key: 'trendState', name: 'Group trend', sides: ['up', 'down'] },
+];
+
+// The verdict-chip mapping (pinned copy) lives in correlationVerdict.js with
+// the other pure presentation-honesty helpers — conditionalVerdict, imported
+// above and unit-tested beside buildVerdictSentence/breakStatePhrase.
+
+const CONDITIONAL_CHIP_COLOR = {
+  tighter: GOLD,
+  nodiff: HOLO_COLORS.textSecondary,
+  insufficient: HOLO_COLORS.textMuted,
+  unmeasurable: HOLO_COLORS.textMuted,
+};
+
+export function ConditionalCard({ conditional, isDesktop }) {
+  // Pre-Build-4 cached payloads lack the block entirely — render nothing
+  // (the absence-tolerance rule; daily cache expiry refreshes it).
+  if (!conditional) return null;
+  const minObs = conditional.minObs ?? 60;
+  return (
+    <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div>
+        <div style={captionStyle}>When does the link hold?</div>
+        <div style={subCaptionStyle}>{CAPTIONS.conditional}</div>
+      </div>
+      {CONDITIONAL_ROWS.map(({ key, name, sides }) => {
+        const block = conditional[key];
+        if (!block) return null;
+        const verdict = conditionalVerdict(block, sides, minObs);
+        const sideCell = (s) => (
+          <div key={s} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontSize: 10, color: HOLO_COLORS.textMuted }}>{block.labels?.[s] ?? s}</span>
+            <span style={{ fontFamily: MONO, fontSize: 13, color: block[s] ? HOLO_COLORS.textPrimary : HOLO_COLORS.textMuted }}>
+              {block[s] ? `r = ${fmtCorr(block[s].corr)} (n=${block[s].n})` : `— (n=${block.counts?.[s] ?? 0})`}
+            </span>
+          </div>
+        );
+        return (
+          <div
+            key={key}
+            style={{
+              borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`,
+              paddingTop: 10,
+              display: isDesktop ? 'grid' : 'flex',
+              ...(isDesktop
+                ? { gridTemplateColumns: '130px 1fr 1fr minmax(140px, auto)', gap: 12, alignItems: 'center' }
+                : { flexDirection: 'column', gap: 6 }), // ≤390px: the three rows stack
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 600, color: HOLO_COLORS.textPrimary }}>{name}</div>
+            {sides.map(sideCell)}
+            {verdict ? (
+              <span
+                style={{
+                  justifySelf: isDesktop ? 'end' : undefined,
+                  alignSelf: isDesktop ? 'center' : 'flex-start',
+                  padding: '3px 10px',
+                  borderRadius: 10,
+                  border: `1px solid ${CONDITIONAL_CHIP_COLOR[verdict.kind]}55`,
+                  color: CONDITIONAL_CHIP_COLOR[verdict.kind],
+                  fontSize: 11,
+                  fontWeight: 600,
+                  lineHeight: 1.4,
+                }}
+              >
+                {verdict.text}
+              </span>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const card = {
   background: HOLO_COLORS.bgCard,
@@ -1383,6 +1477,11 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
               <BetaChart beta40={data.series.beta40} dates={betaDates} />
             )}
           </div>
+
+          {/* V2 Build 4 — conditional correlation between the chart and the
+              regime-breaks table. ConditionalCard null-guards the field, so a
+              pre-Build-4 cached payload renders the rest of the page untouched. */}
+          <ConditionalCard conditional={data.conditional} isDesktop={isDesktop} />
 
           {/* 4/5 — Inflections + base rates, or their honest absences */}
           {data.suppressed?.inflections ? (

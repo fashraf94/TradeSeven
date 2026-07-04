@@ -26,8 +26,10 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 // Pure helpers imported directly to cross-check divergence.latest.score against
 // the SAME scorer the endpoint uses (single-source SDS; BUILD_RULES §4) and to
-// assert the into-break floor the endpoint applies per episode.
-import { standardizedDivergenceScore, trailingReturnInto } from '../_utils/correlationMath.js';
+// assert the into-break floor the endpoint applies per episode. Build 4 adds
+// pearson — the independent side-correlation reference for the conditional
+// block's end-to-end cross-check.
+import { standardizedDivergenceScore, trailingReturnInto, pearson } from '../_utils/correlationMath.js';
 // Build 3.1 — the deep-dive gauge inherits the shared tension mapping: assert
 // the endpoint stamps divergence.latest.state via this exact helper.
 import { tensionStateFrom } from './correlationAssembly.js';
@@ -70,8 +72,10 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 // real in the Node/vitest env, so a browser-only dep entering the graph
 // explodes here. NEVER replace this with a mocked handler; the boundary test
 // also only means something if the actual handler, fetchDriverSeries,
-// correlationMath, and serverCache run for real.
-const { default: handler } = await import('./correlation.js');
+// correlationMath, and serverCache run for real. Build 4: buildConditionMasks
+// is a named export of the same handler file (single-driver-endpoint logic),
+// unit-tested here where the mocks already exist.
+const { default: handler, buildConditionMasks } = await import('./correlation.js');
 
 // ==================== Deterministic fixture ====================
 
@@ -157,6 +161,7 @@ const fetchCalls = { count: 0, symbols: [] };
 function wireFor(symbol) {
   if (symbol === 'BNO.US') return DRIVER_WIRE; // BRENT's registry symbol (Fix 1: BNO ETF proxy)
   if (symbol === 'XLE.US') return DRIVER_WIRE; // V2: a sector-driver registry symbol
+  if (symbol === 'TNX.INDX') return DRIVER_WIRE; // Build 4: the diff-mode direction-label fixture
   if (symbol === 'AAA.US') return MEMBER_A_WIRE;
   if (symbol === 'BBB.US') return MEMBER_B_WIRE;
   // EODHD wire forms for the symbol-normalization test: app-form BRK.B must
@@ -739,5 +744,252 @@ describe('validation + config guards', () => {
     } finally {
       vi.stubEnv('EODHD_API_KEY', 'test-key');
     }
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// V2 Build 4 — conditional correlation ("when does the link hold?")
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('V2 Build 4 — condition masks (unit, hand fixtures — the index-space surface)', () => {
+  const mkDates = (n) => makeWeekdays(n);
+
+  it('vol regime: a known high-vol half assigns high/calm around the sample median; the first 19 return days join neither side', () => {
+    // 30 calm returns (±0.1%) then 30 loud ones (±1%): every full-calm window
+    // (j = 19..29) must read calm, every full-loud window (j = 49..59) high.
+    const returns = Array.from({ length: 60 }, (_, t) => (t % 2 === 0 ? 1 : -1) * (t < 30 ? 0.001 : 0.01));
+    const masks = buildConditionMasks({
+      driverReturns: returns,
+      groupReturns: returns,
+      groupLevels: compound(100, returns),
+      joinedDates: mkDates(61),
+    });
+    for (let i = 0; i < 19; i++) {
+      expect(masks.volHigh[i], `i=${i}`).toBe(false); // first-19 exclusion (no reading)
+      expect(masks.volCalm[i], `i=${i}`).toBe(false);
+    }
+    for (let j = 19; j <= 29; j++) expect(masks.volCalm[j], `j=${j}`).toBe(true); // the calm half
+    for (let j = 49; j <= 59; j++) expect(masks.volHigh[j], `j=${j}`).toBe(true); // the high-vol half
+    // Every day with a reading joins EXACTLY one side; excluded days join none.
+    let readings = 0;
+    for (let j = 19; j < 60; j++) {
+      expect(masks.volHigh[j] && masks.volCalm[j], `j=${j}`).toBe(false);
+      if (masks.volHigh[j] || masks.volCalm[j]) readings += 1;
+    }
+    expect(readings).toBe(60 - 19);
+    expect(masks.volMedian).toBeGreaterThan(0);
+  });
+
+  it('driver direction: exactly-zero returns are excluded from BOTH sides', () => {
+    const driverReturns = [0.01, 0, -0.01, 0.02, 0, -0.02];
+    const masks = buildConditionMasks({
+      driverReturns,
+      groupReturns: driverReturns,
+      groupLevels: compound(100, driverReturns),
+      joinedDates: mkDates(7),
+    });
+    expect(masks.driverUp).toEqual([true, false, false, true, false, false]);
+    expect(masks.driverDown).toEqual([false, false, true, false, false, true]);
+  });
+
+  it('trend state: return day i reads the composite state at close index i + 1 (the offset pin)', () => {
+    // Strictly increasing levels: the state is 'up' from the FIRST close with a
+    // full inclusive 50-window (close index 49) — so the first masked RETURN
+    // day is i = 48, not 49 (an unshifted mask) and not 47 (a double shift).
+    const returns = Array.from({ length: 60 }, () => 0.001);
+    const masks = buildConditionMasks({
+      driverReturns: returns,
+      groupReturns: returns,
+      groupLevels: Array.from({ length: 61 }, (_, c) => 100 + c),
+      joinedDates: mkDates(61),
+    });
+    for (let i = 0; i < 48; i++) expect(masks.trendUp[i], `i=${i}`).toBe(false);
+    expect(masks.trendUp[48]).toBe(true);
+    expect(masks.trendUp[59]).toBe(true);
+    expect(masks.trendDown.every((v) => v === false)).toBe(true); // never 'down' on a strict ramp
+  });
+});
+
+describe('V2 Build 4 — conditional block end-to-end on the engineered fixture', () => {
+  // Independent reference: masks + side correlations rebuilt from the test's
+  // OWN fixture CLOSES (never through the endpoint), pearson from the pure
+  // leaf. The returns are recovered from the closes exactly the way the
+  // pipeline recovers them (ratio − 1, then the two-member mean) rather than
+  // reusing the pre-compounding formula arrays: the fixture's periodic
+  // pattern makes many 20d windows IDENTICAL, so the vol series carries exact
+  // ties at the median and a last-ulp float difference between "formula
+  // returns" and "closes-round-trip returns" flips tied days across the
+  // median boundary. Same-op-order recovery makes the reference bit-exact.
+  //
+  // The fixture happens to exercise ALL THREE verdict shapes at once:
+  //   • driverDirection — the fixture driver's returns are EXACTLY ±1%, so
+  //     each sign class is constant → degenerate subsets → null sides WITH
+  //     ≥ 60-day counts (the honest "couldn't measure" corner);
+  //   • volRegime — two real sides whose gap sits under the 0.15 floor
+  //     ("no meaningful difference");
+  //   • trendState — a real ≥ 0.15 asymmetry pointing at downtrend days.
+  const rtReturns = (closes) => closes.slice(1).map((c, i) => c / closes[i] - 1);
+  const refDriver = rtReturns(driverCloses);
+  const refA = rtReturns(memberACloses);
+  const refB = rtReturns(memberBCloses);
+  const refGroup = refA.map((r, i) => (r + refB[i]) / 2); // the endpoint's equal-weight mean, same op order
+  const testLevels = compound(100, refGroup); // == the endpoint's synthetic groupLevels, bit-exact
+
+  const refMasked = (mask) => {
+    const g = [];
+    const d = [];
+    mask.forEach((m, i) => {
+      if (m) {
+        g.push(refGroup[i]);
+        d.push(refDriver[i]);
+      }
+    });
+    return { corr: pearson(g, d), n: g.length };
+  };
+  const refStd = (arr) => {
+    const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+    let ss = 0;
+    for (const v of arr) ss += (v - m) * (v - m);
+    return Math.sqrt(ss / (arr.length - 1));
+  };
+  const refSMA50 = (lv, c) => {
+    if (c + 1 < 50) return null;
+    let s = 0;
+    for (let i = c - 49; i <= c; i++) s += lv[i];
+    return s / 50;
+  };
+
+  it('carries the additive block with the pinned shape (and the old asserts never saw it — additive-field safety)', () => {
+    expect(out.conditional).toBeDefined();
+    expect(out.conditional.minObs).toBe(60);
+    expect(Object.keys(out.conditional).sort()).toEqual(
+      ['driverDirection', 'minObs', 'trendState', 'volRegime'].sort()
+    );
+    for (const key of ['driverDirection', 'trendState']) {
+      expect(Object.keys(out.conditional[key]).sort()).toEqual(
+        ['asymmetric', 'counts', 'direction', 'down', 'labels', 'up'].sort()
+      );
+    }
+    expect(Object.keys(out.conditional.volRegime).sort()).toEqual(
+      ['asymmetric', 'calm', 'counts', 'direction', 'high', 'labels'].sort()
+    );
+  });
+
+  it('driverDirection: registry-derived labels; constant-magnitude sign classes are honestly unmeasurable (null sides, real counts)', () => {
+    const dd = out.conditional.driverDirection;
+    expect(dd.labels).toEqual({
+      up: 'days Brent Crude (BNO proxy) rose',
+      down: 'days Brent Crude (BNO proxy) fell',
+    });
+    const upCount = driverReturns.filter((r) => r > 0).length;
+    expect(dd.counts).toEqual({ up: upCount, down: N_RETURNS - upCount }); // no exact zeros in the fixture
+    expect(dd.counts.up).toBeGreaterThanOrEqual(60);
+    expect(dd.counts.down).toBeGreaterThanOrEqual(60);
+    // Each sign class of the ±1%-exact driver is CONSTANT → zero driver
+    // variance in the subset → null, never a fabricated number (and the
+    // reference agrees the subsets are degenerate).
+    expect(refMasked(driverReturns.map((r) => r > 0)).corr).toBeNull();
+    expect(dd.up).toBeNull();
+    expect(dd.down).toBeNull();
+    expect(dd.asymmetric).toBeNull(); // no comparison without two sides
+    expect(dd.direction).toBeNull();
+  });
+
+  it('volRegime: sides match the independent 20d-std/median reference and sit under the floor → not asymmetric', () => {
+    const vr = out.conditional.volRegime;
+    expect(vr.labels).toEqual({ high: 'high-vol days', calm: 'calm days' });
+    // Reference masks: sample std of the 20 returns ENDING at j vs the median.
+    const sds = [];
+    for (let j = 19; j < N_RETURNS; j++) sds.push({ j, sd: refStd(refGroup.slice(j - 19, j + 1)) });
+    const sorted = sds.map((v) => v.sd).sort((a, b) => a - b);
+    const mid = sorted.length >> 1;
+    const median = sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    const refHigh = new Array(N_RETURNS).fill(false);
+    const refCalm = new Array(N_RETURNS).fill(false);
+    for (const { j, sd } of sds) {
+      if (sd > median) refHigh[j] = true;
+      else refCalm[j] = true;
+    }
+    const expHigh = refMasked(refHigh);
+    const expCalm = refMasked(refCalm);
+    expect(vr.counts).toEqual({ high: expHigh.n, calm: expCalm.n });
+    expect(vr.counts.high + vr.counts.calm).toBe(N_RETURNS - 19); // first-19 exclusion, end to end
+    expect(vr.high.n).toBe(expHigh.n);
+    expect(vr.calm.n).toBe(expCalm.n);
+    expect(vr.high.corr).toBeCloseTo(expHigh.corr, 10);
+    expect(vr.calm.corr).toBeCloseTo(expCalm.corr, 10);
+    // This fixture's two sides differ by ~0.05 — noise-class under the floor.
+    expect(Math.abs(vr.high.corr - vr.calm.corr)).toBeLessThan(0.15);
+    expect(vr.asymmetric).toBe(false);
+    expect(vr.direction).toBeNull();
+  });
+
+  it('trendState: sides match the vs-50DMA reference and the fixture is genuinely asymmetric toward downtrend days', () => {
+    const ts = out.conditional.trendState;
+    expect(ts.labels).toEqual({ up: 'uptrend days', down: 'downtrend days' });
+    const refUp = new Array(N_RETURNS).fill(false);
+    const refDown = new Array(N_RETURNS).fill(false);
+    for (let i = 0; i < N_RETURNS; i++) {
+      const c = i + 1; // the return's own close
+      const sma = refSMA50(testLevels, c);
+      if (sma == null) continue;
+      if (testLevels[c] > Number(sma.toFixed(4))) refUp[i] = true; // production's 4dp SMA rounding
+      else refDown[i] = true;
+    }
+    const expUp = refMasked(refUp);
+    const expDown = refMasked(refDown);
+    expect(ts.counts).toEqual({ up: expUp.n, down: expDown.n });
+    expect(ts.counts.up + ts.counts.down).toBe(N_RETURNS - 48); // first 48 return days have no 50-level window
+    expect(ts.up.corr).toBeCloseTo(expUp.corr, 10);
+    expect(ts.down.corr).toBeCloseTo(expDown.corr, 10);
+    // The engineered breakdown fired while the composite sat below its 50DMA,
+    // so this fixture's link is decisively tighter on downtrend days.
+    expect(ts.down.corr - ts.up.corr).toBeGreaterThanOrEqual(0.15);
+    expect(ts.asymmetric).toBe(true);
+    expect(ts.direction).toBe('down');
+  });
+
+  it('the conditional read is independent of the episode gate: a short-history run still carries the block', async () => {
+    // 160 joined closes (< MIN_CLOSES_FOR_INFLECTIONS = 300) suppresses the
+    // regime-break section but must NOT suppress conditional — its sides
+    // self-null under the 60-observation floor instead.
+    const { req, res } = makeReqRes({ ...BASE_REQUEST, lookbackDays: 160, forceRefresh: true });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.suppressed.inflections).toBeDefined();
+    expect(res.body.conditional).toBeDefined();
+    const dd = res.body.conditional.driverDirection;
+    expect(dd.counts.up + dd.counts.down).toBe(159); // still the full joined return space
+    const ts = res.body.conditional.trendState;
+    expect(ts.counts.up + ts.counts.down).toBe(159 - 48);
+  });
+});
+
+describe('V2 Build 4 — TNX direction labels (diff mode: the mask is the Δ sign, the copy is the yield)', () => {
+  it('labels read "days the 10Y yield rose/fell" and the up-side count is the count of positive yield changes', async () => {
+    const { req, res } = makeReqRes({
+      group: ['AAA', 'BBB'],
+      driver: 'TNX',
+      lookbackDays: 400,
+      forceRefresh: true,
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    const dd = res.body.conditional.driverDirection;
+    expect(dd.labels).toEqual({
+      up: 'days the 10Y yield rose',
+      down: 'days the 10Y yield fell',
+    });
+    // Diff mode: up means the (scaled) yield LEVEL rose. The fixture's driver
+    // closes move ±1% a day, so the Δ sign equals the pct-return sign —
+    // hand-count it from the wire's own closes.
+    const upCount = driverCloses.slice(1).filter((c, i) => c - driverCloses[i] > 0).length;
+    expect(dd.counts).toEqual({ up: upCount, down: N_RETURNS - upCount });
+    // Unlike the pct fixture, diff magnitudes vary with the level — both sides
+    // are measurable and real numbers print.
+    expect(dd.up).not.toBeNull();
+    expect(dd.down).not.toBeNull();
+    expect(dd.up.n).toBe(upCount);
+    expect(dd.down.n).toBe(N_RETURNS - upCount);
   });
 });
