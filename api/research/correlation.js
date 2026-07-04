@@ -178,6 +178,9 @@ export function computeConditional({ driverReturns, groupReturns, groupLevels, j
       sides: [keyA, keyB],
       asymmetric: cmp ? cmp.asymmetric : null,
       direction: cmp?.direction ? (cmp.direction === 'A' ? keyA : keyB) : null,
+      // A meaningful sign reversal between the two subsets — a distinct verdict
+      // from "tighter" (see compareConditionalSides). Null when no comparison.
+      flipped: cmp ? cmp.flipped : null,
       counts: { [keyA]: countOf(maskA), [keyB]: countOf(maskB) },
       labels,
     };

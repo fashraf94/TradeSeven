@@ -455,3 +455,56 @@ describe('conditionalVerdict + ConditionalCard — review fixes', () => {
     expect(html).not.toContain('not enough'); // the C6 failure mode never renders
   });
 });
+
+// ── Founder-folded sign-flip verdict (pre-PR) ─────────────────────────────────
+describe('conditionalVerdict + ConditionalCard — sign-flip reversal verdict', () => {
+  // A flip block: link positive on side A (up), negative on side B (down).
+  const flipBlock = (over = {}) => ({
+    up: { corr: 0.31, n: 240 },
+    down: { corr: -0.29, n: 250 },
+    sides: ['up', 'down'],
+    asymmetric: true,
+    direction: null,
+    flipped: true,
+    counts: { up: 240, down: 250 },
+    labels: { up: 'days the 10Y yield rose', down: 'days the 10Y yield fell' },
+    ...over,
+  });
+
+  it('names the positive and negative sides — never "tighter", never a percentage', () => {
+    const v = conditionalVerdict(flipBlock(), ['up', 'down'], 60);
+    expect(v).toEqual({
+      kind: 'flipped',
+      text: 'same direction on days the 10Y yield rose, opposite on days the 10Y yield fell',
+    });
+    expect(v.text).not.toContain('tighter');
+    expect(v.text).not.toMatch(/%|significan/i);
+  });
+
+  it('identifies the positive side by sign, whichever key holds it', () => {
+    // Reversed signs: side A (up) is now the negative one.
+    const v = conditionalVerdict(
+      flipBlock({ up: { corr: -0.31, n: 240 }, down: { corr: 0.29, n: 250 } }),
+      ['up', 'down'],
+      60
+    );
+    expect(v.text).toBe(
+      'same direction on days the 10Y yield fell, opposite on days the 10Y yield rose'
+    );
+  });
+
+  it('renders the flip chip (gold accent) with both signed side numbers in the card', () => {
+    const conditional = { minObs: 60, driverDirection: flipBlock() };
+    const html = render(<ConditionalCard conditional={conditional} isDesktop />);
+    expect(html).toContain('same direction on days the 10Y yield rose, opposite on days the 10Y yield fell');
+    expect(html).toContain('r = +0.31 (n=240)');
+    expect(html).toContain('r = -0.29 (n=250)');
+    expect(html).not.toContain('tighter');
+    expect(html.toLowerCase()).toContain('#f0c75e'); // GOLD accent, not a caution color
+  });
+
+  it('a non-flip block is unaffected — "tighter" still renders for a same-direction asymmetry', () => {
+    const v = conditionalVerdict(ddBlock(), ['up', 'down'], 60);
+    expect(v.kind).toBe('tighter');
+  });
+});

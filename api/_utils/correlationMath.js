@@ -561,18 +561,33 @@ export function maskedPearson(returnsA, returnsB, mask, minN = 2) {
  * representation error in the rounded difference (0.60 − 0.45 must clear a
  * 0.15 floor whichever side of the true value both doubles land on).
  *
+ * Sign flip (pinned addition — founder decision, pre-PR): when the link is
+ * meaningfully POSITIVE on one side and meaningfully NEGATIVE on the other, it
+ * has REVERSED direction between the two subsets, not merely tightened. This
+ * is a distinct, honest verdict — "tighter on {side}" would hide the reversal.
+ * A flip is the one comparison that SURVIVES the truncation caveat: subsetting
+ * shrinks |r| on both sides but never flips its SIGN, so an opposite-sign
+ * split is a real regime effect, not a range-restriction artifact. Guarded so
+ * a pair merely straddling zero on noise is NOT a flip — BOTH sides must
+ * themselves clear the floor as a level (|corr| ≥ floor: the SAME 0.15 that is
+ * the "is there a link at all" line elsewhere in the stack), so e.g. +0.02
+ * (no link) vs −0.31 stays a "tighter" case, not a fabricated reversal. On a
+ * flip, direction is null — neither side is "tighter"; the UI renders reversal
+ * copy instead.
+ *
  * @param {{corr: number, n: number}|null} sideA - a maskedPearson result
  * @param {{corr: number, n: number}|null} sideB - a maskedPearson result
- * @param {number} [floor=0.15] - the pinned asymmetry floor
- * @returns {{asymmetric: boolean, direction: ('A'|'B'|null)}|null}
+ * @param {number} [floor=0.15] - the pinned asymmetry floor (also the per-side
+ *   level a flip requires — one tunable, both roles move together)
+ * @returns {{asymmetric: boolean, direction: ('A'|'B'|null), flipped: boolean}|null}
  *   null when either side is null (no comparison exists — never a fabricated
  *   verdict). asymmetric is true only at |corrA − corrB| ≥ floor (2dp-rounded,
- *   per the display-agreement rule). direction = the LARGER-|corr| side (the
- *   side where the link is tighter; for inverse links that is the
- *   more-negative side), null when not asymmetric. Equal rounded magnitudes
- *   (the sign-flip corner: displayed +0.30 vs −0.30) also yield direction
- *   null — neither side displays tighter, and the UI renders its
- *   no-difference verdict rather than picking a winner on an invisible edge.
+ *   per the display-agreement rule). flipped is true for a meaningful sign
+ *   reversal (both sides opposite-signed and each |corr| ≥ floor). direction =
+ *   the LARGER-|corr| side (the side where the link is tighter; for inverse
+ *   links that is the more-negative side), and is null when not asymmetric,
+ *   when flipped (no side is "tighter"), or at the equal-rounded-magnitude
+ *   same-direction edge.
  */
 const FLOOR_EPS = 1e-9; // fp guard for the quantized 2dp comparison only
 
@@ -583,11 +598,16 @@ export function compareConditionalSides(sideA, sideB, floor = 0.15) {
   const a = Number(sideA.corr.toFixed(2));
   const b = Number(sideB.corr.toFixed(2));
   const asymmetric = Math.abs(a - b) >= floor - FLOOR_EPS;
+  const flipped =
+    asymmetric &&
+    (a < 0) !== (b < 0) &&
+    Math.abs(a) >= floor - FLOOR_EPS &&
+    Math.abs(b) >= floor - FLOOR_EPS;
   let direction = null;
-  if (asymmetric && Math.abs(a) !== Math.abs(b)) {
+  if (asymmetric && !flipped && Math.abs(a) !== Math.abs(b)) {
     direction = Math.abs(a) > Math.abs(b) ? 'A' : 'B';
   }
-  return { asymmetric, direction };
+  return { asymmetric, direction, flipped };
 }
 
 /**

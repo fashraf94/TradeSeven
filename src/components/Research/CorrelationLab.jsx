@@ -889,6 +889,7 @@ const CONDITIONAL_ROWS = [
 
 const CONDITIONAL_CHIP_COLOR = {
   tighter: GOLD,
+  flipped: GOLD, // a real regime-dependent finding, like 'tighter' — accent, not caution
   nodiff: HOLO_COLORS.textSecondary,
   insufficient: HOLO_COLORS.textMuted,
   unmeasurable: HOLO_COLORS.textMuted,

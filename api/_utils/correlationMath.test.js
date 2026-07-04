@@ -660,10 +660,12 @@ describe('compareConditionalSides — the pinned 0.15 asymmetry floor (Build 4)'
     expect(compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.37, n: 100 })).toEqual({
       asymmetric: false,
       direction: null,
+      flipped: false,
     });
     expect(compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.33, n: 100 })).toEqual({
       asymmetric: true,
       direction: 'A',
+      flipped: false,
     });
   });
 
@@ -693,6 +695,7 @@ describe('compareConditionalSides — the pinned 0.15 asymmetry floor (Build 4)'
     expect(compareConditionalSides({ corr: 0.5951, n: 250 }, { corr: 0.4549, n: 250 })).toEqual({
       asymmetric: true,
       direction: 'A',
+      flipped: false,
     });
     // Near-floor raw diff 0.1498 printing as +0.59 / +0.45 — a 0.14 displayed
     // gap stays "no meaningful difference" (pins the rounded comparison
@@ -701,13 +704,14 @@ describe('compareConditionalSides — the pinned 0.15 asymmetry floor (Build 4)'
     expect(compareConditionalSides({ corr: 0.5949, n: 250 }, { corr: 0.4451, n: 250 })).toEqual({
       asymmetric: false,
       direction: null,
+      flipped: false,
     });
   });
 
   it('direction is the LARGER-|corr| side — for inverse links, the more-negative side', () => {
-    // QQQ × VIX shape: both sides negative; the tighter side is B.
+    // QQQ × VIX shape: both sides negative (same sign — not a flip); tighter is B.
     const out = compareConditionalSides({ corr: -0.45, n: 200 }, { corr: -0.72, n: 200 });
-    expect(out).toEqual({ asymmetric: true, direction: 'B' });
+    expect(out).toEqual({ asymmetric: true, direction: 'B', flipped: false });
   });
 
   it('null when either side is null — no comparison is ever fabricated', () => {
@@ -724,12 +728,39 @@ describe('compareConditionalSides — the pinned 0.15 asymmetry floor (Build 4)'
     expect(compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.4, n: 100 }, NaN)).toBeNull();
   });
 
-  it('the exact sign-flip tie (|corrA| === |corrB|, gap ≥ floor) is asymmetric with a NULL direction', () => {
-    // Neither side is tighter — the link FLIPPED. direction must not pick a
-    // winner; the UI renders its no-difference verdict for a null direction.
+  it('a meaningful sign reversal is flipped:true with a NULL direction (both unequal and equal magnitude)', () => {
+    // The founder-folded flip verdict. Neither side is "tighter" — the link
+    // REVERSES. Unequal magnitudes (+0.30 / −0.31, the reviewer's example) and
+    // the equal-magnitude corner (+0.30 / −0.30) are BOTH flips; direction is
+    // null in each (no winner), so the UI renders reversal copy, not "tighter"
+    // (unequal) and not "no meaningful difference" (the old equal-mag bug).
+    expect(compareConditionalSides({ corr: 0.3, n: 100 }, { corr: -0.31, n: 100 })).toEqual({
+      asymmetric: true,
+      direction: null,
+      flipped: true,
+    });
     expect(compareConditionalSides({ corr: 0.3, n: 100 }, { corr: -0.3, n: 100 })).toEqual({
       asymmetric: true,
       direction: null,
+      flipped: true,
+    });
+  });
+
+  it('a sign difference where ONE side is ~0 is NOT a flip — it is "tighter" on the side with the link', () => {
+    // +0.02 is no link; −0.31 is a real inverse link. Calling this a "flip"
+    // would fabricate a reversal from noise, so the per-side floor excludes it:
+    // it stays a tighter-on-B asymmetry (the honest read — the link is on B).
+    expect(compareConditionalSides({ corr: 0.02, n: 200 }, { corr: -0.31, n: 200 })).toEqual({
+      asymmetric: true,
+      direction: 'B',
+      flipped: false,
+    });
+    // Both sides sub-floor and opposite-signed (±0.10): neither is a real link,
+    // so no flip and no winner → the UI's "no meaningful difference" path.
+    expect(compareConditionalSides({ corr: 0.1, n: 200 }, { corr: -0.1, n: 200 })).toEqual({
+      asymmetric: true,
+      direction: null,
+      flipped: false,
     });
   });
 });
@@ -770,9 +801,13 @@ describe('Build 4 — the symmetric-truncation discriminator (MANDATORY fixture)
     expect(down.corr).toBeLessThan(full - 0.1);
   });
 
-  it('…and the verdict is asymmetric: FALSE — the sides match each other', () => {
+  it('…and the verdict is asymmetric: FALSE — the sides match each other (and same-signed, so never a flip)', () => {
     expect(Math.abs(up.corr - down.corr)).toBeLessThan(0.15);
-    expect(compareConditionalSides(up, down)).toEqual({ asymmetric: false, direction: null });
+    expect(compareConditionalSides(up, down)).toEqual({
+      asymmetric: false,
+      direction: null,
+      flipped: false,
+    });
   });
 });
 
@@ -792,7 +827,14 @@ describe('Build 4 — engineered asymmetry fixture (tight on down-days, loose on
   it('the down side is decisively tighter and the comparison points at it', () => {
     expect(down.corr - up.corr).toBeGreaterThanOrEqual(0.15);
     expect(Math.abs(down.corr)).toBeGreaterThan(Math.abs(up.corr));
-    expect(compareConditionalSides(up, down)).toEqual({ asymmetric: true, direction: 'B' });
+    // Both sides positive (weak vs strong SAME-direction link) — tighter, not a flip.
+    expect(up.corr).toBeGreaterThan(0);
+    expect(down.corr).toBeGreaterThan(0);
+    expect(compareConditionalSides(up, down)).toEqual({
+      asymmetric: true,
+      direction: 'B',
+      flipped: false,
+    });
   });
 
   it('min-obs floor: shrinking one side below 60 nulls that side AND the comparison', () => {
@@ -806,6 +848,36 @@ describe('Build 4 — engineered asymmetry fixture (tight on down-days, loose on
     const up59 = maskedPearson(group, driver, mask59, 60);
     expect(up59).toBeNull();
     expect(compareConditionalSides(up59, down)).toBeNull();
+  });
+});
+
+describe('Build 4 — engineered sign-FLIP fixture (link reverses direction by regime)', () => {
+  // The link tracks the driver on up-days and INVERTS on down-days — a genuine
+  // regime reversal, the case "tighter on {side}" would misdescribe. The sign
+  // flip is the one comparison that survives the truncation caveat (subsetting
+  // shrinks |r| but cannot change its sign), so it is a real finding, not an
+  // artifact.
+  const gen = lehmer(31337);
+  const N = 600;
+  const driver = Array.from({ length: N }, () => (gen() - 0.5) * 0.02);
+  const noise = Array.from({ length: N }, () => (gen() - 0.5) * 0.006);
+  const group = driver.map((d, i) => (d > 0 ? 1.0 : -1.0) * d + noise[i]);
+
+  const up = maskedPearson(group, driver, driver.map((d) => d > 0), 60);
+  const down = maskedPearson(group, driver, driver.map((d) => d < 0), 60);
+
+  it('up-side is strongly positive, down-side strongly negative — a real reversal', () => {
+    expect(up.corr).toBeGreaterThan(0.3);
+    expect(down.corr).toBeLessThan(-0.3);
+    expect(up.n).toBeGreaterThanOrEqual(60);
+    expect(down.n).toBeGreaterThanOrEqual(60);
+  });
+
+  it('the comparison reports flipped:true with a null direction (no side is "tighter")', () => {
+    const cmp = compareConditionalSides(up, down);
+    expect(cmp.asymmetric).toBe(true);
+    expect(cmp.flipped).toBe(true);
+    expect(cmp.direction).toBeNull();
   });
 });
 

@@ -866,7 +866,7 @@ describe('V2 Build 4 — conditional block end-to-end on the engineered fixture'
     );
     for (const key of ['driverDirection', 'trendState']) {
       expect(Object.keys(out.conditional[key]).sort()).toEqual(
-        ['asymmetric', 'counts', 'direction', 'down', 'labels', 'sides', 'up'].sort()
+        ['asymmetric', 'counts', 'direction', 'down', 'flipped', 'labels', 'sides', 'up'].sort()
       );
       // The ordered side-key pair is SERVER-owned (review fix: the UI renders
       // whatever arrives here, so a side-key rename can never strand a client
@@ -874,7 +874,7 @@ describe('V2 Build 4 — conditional block end-to-end on the engineered fixture'
       expect(out.conditional[key].sides).toEqual(['up', 'down']);
     }
     expect(Object.keys(out.conditional.volRegime).sort()).toEqual(
-      ['asymmetric', 'calm', 'counts', 'direction', 'high', 'labels', 'sides'].sort()
+      ['asymmetric', 'calm', 'counts', 'direction', 'flipped', 'high', 'labels', 'sides'].sort()
     );
     expect(out.conditional.volRegime.sides).toEqual(['high', 'calm']);
   });
@@ -897,6 +897,7 @@ describe('V2 Build 4 — conditional block end-to-end on the engineered fixture'
     expect(dd.down).toBeNull();
     expect(dd.asymmetric).toBeNull(); // no comparison without two sides
     expect(dd.direction).toBeNull();
+    expect(dd.flipped).toBeNull(); // no comparison → no flip verdict either
   });
 
   it('volRegime: sides match the independent 20d-std/median reference and sit under the floor → not asymmetric', () => {
@@ -926,6 +927,7 @@ describe('V2 Build 4 — conditional block end-to-end on the engineered fixture'
     expect(Math.abs(vr.high.corr - vr.calm.corr)).toBeLessThan(0.15);
     expect(vr.asymmetric).toBe(false);
     expect(vr.direction).toBeNull();
+    expect(vr.flipped).toBe(false); // both sides same-signed — no reversal
   });
 
   it('trendState: sides match the vs-50DMA reference and the fixture is genuinely asymmetric toward downtrend days', () => {
@@ -951,6 +953,7 @@ describe('V2 Build 4 — conditional block end-to-end on the engineered fixture'
     expect(ts.down.corr - ts.up.corr).toBeGreaterThanOrEqual(0.15);
     expect(ts.asymmetric).toBe(true);
     expect(ts.direction).toBe('down');
+    expect(ts.flipped).toBe(false); // same-direction link, stronger on down — not a reversal
   });
 
   it('the conditional read is independent of the episode gate: a short-history run still carries the block', async () => {
