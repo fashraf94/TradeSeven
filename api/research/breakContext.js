@@ -93,6 +93,49 @@ export function computeContextAtFlag(levels, c) {
 }
 
 /**
+ * Per-day trend state of the composite vs its 50DMA (V2 Build 4 — the
+ * trend-state condition of the conditional-correlation block): chronological
+ * ('up'|'down'|null)[] parallel to `levels`, where day c reads 'up' when
+ * levels[c] > SMA50 ending at c, 'down' otherwise, and null while fewer than
+ * CONTEXT_SMA_PERIOD levels exist up to AND INCLUDING c — the SAME inclusive-
+ * window convention, SMA implementation (with its 4dp rounding), and
+ * classifyTrend equality rule as computeContextAtFlag above, so the
+ * conditional trend mask and Build 3's per-episode vs50DMA stamps agree BY
+ * CONSTRUCTION on every day.
+ *
+ * Phase 0-lite pinned approach: calculateSMA is a POINT function
+ * (technicalCalculations.js:19 — no series export exists), so the series is
+ * assembled as ONE full reverse-copy + a windowed point call per day. Each
+ * slice is exactly the CONTEXT_SMA_PERIOD-element newest-first window ending
+ * at c (index 0 of the slice = the level AT c, the module-header adaptation),
+ * so the pass is O(n · period) — never a per-index full-prefix copy. Days
+ * before a full window produce a short slice, which calculateSMA nulls by its
+ * own length < period rule; classifyTrend maps that null to null (excluded).
+ *
+ * Corrupt input (any non-finite level) returns an all-null series — the
+ * module's guessed-states-forbidden contract; per-window nulling would let a
+ * NaN-adjacent window stamp a confident state.
+ *
+ * @param {number[]} levels - composite levels, CHRONOLOGICAL (oldest-first)
+ * @returns {('up'|'down'|null)[]|null} parallel to levels; null on non-array
+ */
+export function trendStateSeries(levels) {
+  if (!Array.isArray(levels)) return null;
+  const n = levels.length;
+  if (!levels.every((v) => Number.isFinite(v))) return new Array(n).fill(null);
+  // ONE reversal at the adapter boundary (see module header); newestFirst[k]
+  // is the level at chronological index n - 1 - k.
+  const newestFirst = [...levels].reverse();
+  const out = new Array(n).fill(null);
+  for (let c = CONTEXT_SMA_PERIOD - 1; c < n; c++) {
+    const start = n - 1 - c; // newest-first index of chronological day c
+    const sma = calculateSMA(newestFirst.slice(start, start + CONTEXT_SMA_PERIOD), CONTEXT_SMA_PERIOD);
+    out[c] = classifyTrend(levels[c], sma);
+  }
+  return out;
+}
+
+/**
  * 50DMA-conditioned base rates over the GROUP's forward returns only:
  * `{ below50DMA, above50DMA }`, each a per-horizon map of blocks carrying the
  * SAME five aggregate fields as the unconditioned baseRates blocks

@@ -169,3 +169,81 @@ export function breakStatePhrase(ctx) {
     secondary: [smaBit, rsiBit].filter(Boolean).join(' · ') || null,
   };
 }
+
+// ── Conditional-correlation verdict chip (V2 Build 4) ────────────────────────
+
+/**
+ * Verdict chip for one `conditional` condition block (pinned copy):
+ *   flipped   → "same direction on {+ side}, opposite on {− side}"
+ *   asymmetric → "tighter on {winning-side label}"
+ *   not asymmetric → "no meaningful difference"
+ *   either side null → "not enough {side label} (n={n}, {minObs} needed)"
+ *
+ * The flip branch (founder decision, pre-PR) is the honest verdict when the
+ * link reverses sign between subsets: "tighter on {side}" would hide that the
+ * relationship is POSITIVE on one set of days and NEGATIVE on the other. The
+ * copy names both sides by their direction, in the plain vocabulary of the
+ * correlation caption ("same direction" / "opposite"); the server decides the
+ * flip (block.flipped) on the same rounded corrs the cells print.
+ *
+ * Both-sides-null names the smaller-n side (the binding constraint; tie →
+ * side A). The null-side-with-enough-days corner (a degenerate ≥-minObs
+ * subset — engineered data only) says "couldn't measure" instead of letting
+ * the insufficient template lie about the count — and so does a null side
+ * whose count is MISSING entirely (malformed/renamed counts): an unknown
+ * count must never be printed as "n=0" (null-never-zero, review fix). A
+ * sub-floor difference is NEVER a percentage and never "significant" — "no
+ * meaningful difference" is the whole verdict (the 0.15 floor, the flip rule,
+ * and the truncation rationale live with compareConditionalSides in
+ * correlationMath.js). Pure — no React — so it unit-tests beside
+ * buildVerdictSentence/breakStatePhrase.
+ *
+ * @param {object|null|undefined} block - conditional.driverDirection / .volRegime / .trendState
+ * @param {[string, string]} sides - the block's side keys in [A, B] order
+ * @param {number} [minObs=60] - the server floor (conditional.minObs)
+ * @returns {{kind:('flipped'|'tighter'|'nodiff'|'insufficient'|'unmeasurable'), text:string}|null}
+ *   null only on a missing block (old cached shape — the caller renders nothing).
+ */
+export function conditionalVerdict(block, sides, minObs = 60) {
+  if (!block) return null;
+  const [keyA, keyB] = sides;
+  const a = block[keyA];
+  const b = block[keyB];
+  const labels = block.labels ?? {};
+  const counts = block.counts ?? {};
+  if (a == null || b == null) {
+    let side;
+    if (a == null && b == null) {
+      side = (counts[keyB] ?? 0) < (counts[keyA] ?? 0) ? keyB : keyA;
+    } else {
+      side = a == null ? keyA : keyB;
+    }
+    const n = counts[side];
+    // A missing count (n == null) or a degenerate ≥-floor subset both mean the
+    // day count can't honestly explain the null side — never fabricate "n=0".
+    if (n == null || n >= minObs) {
+      return { kind: 'unmeasurable', text: `couldn't measure ${labels[side] ?? side}` };
+    }
+    return {
+      kind: 'insufficient',
+      text: `not enough ${labels[side] ?? side} (n=${n}, ${minObs} needed)`,
+    };
+  }
+  // Sign flip: the link reverses direction between the subsets (both sides are
+  // measurable here, so a.corr / b.corr are safe to read). Name the positive
+  // and negative sides — "tighter on {one}" would hide the reversal.
+  if (block.flipped === true) {
+    const posKey = a.corr >= 0 ? keyA : keyB;
+    const negKey = posKey === keyA ? keyB : keyA;
+    return {
+      kind: 'flipped',
+      text: `same direction on ${labels[posKey] ?? posKey}, opposite on ${labels[negKey] ?? negKey}`,
+    };
+  }
+  // direction is the server-mapped winning-side key; the guard also covers the
+  // exact-|corr|-tie corner, which arrives asymmetric with a null direction.
+  if (block.asymmetric === true && block.direction && labels[block.direction]) {
+    return { kind: 'tighter', text: `tighter on ${labels[block.direction]}` };
+  }
+  return { kind: 'nodiff', text: 'no meaningful difference' };
+}

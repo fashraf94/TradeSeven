@@ -94,6 +94,11 @@ export const CORRELATION_DRIVERS = {
     scale: 0.1,
     unit: 'yield points (pp)',
     betaInterpretation: 'group % move per 1.0 percentage-point yield change',
+    // V2 Build 4 — conditional-correlation direction labels: "days {noun}
+    // rose/fell". Optional field; drivers without it fall back to `label`.
+    // TNX pins the spec copy ("days the 10Y yield rose/fell") because a
+    // diff-mode up-day means the YIELD rose — a bare "+" would be dishonest.
+    directionNoun: 'the 10Y yield',
     category: 'macro',
   },
   DXY: {

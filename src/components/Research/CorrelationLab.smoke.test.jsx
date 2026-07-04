@@ -19,9 +19,13 @@ vi.mock('../../firebase/config', () => ({ auth: {}, db: {}, default: {} }));
 import {
   ScanResults,
   ConditionedBaseRates,
+  ConditionalCard,
   divergenceState,
   leadLagEvidenceLine,
 } from './CorrelationLab.jsx';
+// Build 4 — the conditional verdict chip is a pure copy helper and lives with
+// the other presentation-honesty templates in correlationVerdict.js.
+import { conditionalVerdict } from './correlationVerdict';
 
 const AMBER = '#f59e0b';
 const RED = '#EF4444';
@@ -237,5 +241,270 @@ describe('ConditionedBaseRates — no-contrast collapse branches', () => {
 
   it('renders nothing when byCondition is absent (pre-Build-3 cached payload)', () => {
     expect(render(<ConditionedBaseRates byCondition={null} inflections={[]} />)).toBe('');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// V2 Build 4 — WHEN DOES THE LINK HOLD? (conditional correlation card)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// A realistic full block (the energy-trio shape): asymmetric toward down days.
+const ddBlock = (over = {}) => ({
+  up: { corr: 0.44, n: 251 },
+  down: { corr: 0.61, n: 248 },
+  asymmetric: true,
+  direction: 'down',
+  counts: { up: 251, down: 248 },
+  labels: { up: 'days Brent Crude (BNO proxy) rose', down: 'days Brent Crude (BNO proxy) fell' },
+  ...over,
+});
+
+describe('conditionalVerdict — the pinned chip copy', () => {
+  const SIDES = ['up', 'down'];
+
+  it('asymmetric → "tighter on {winning-side label}" (the down-day classic)', () => {
+    expect(conditionalVerdict(ddBlock(), SIDES, 60)).toEqual({
+      kind: 'tighter',
+      text: 'tighter on days Brent Crude (BNO proxy) fell',
+    });
+  });
+
+  it('not asymmetric → exactly "no meaningful difference" — never a percentage, never "significant"', () => {
+    // The symmetric-truncation discriminator's copy pin: BOTH sides sit below
+    // the full-sample headline (subsetting truncates variance), yet the honest
+    // verdict is that the sides match EACH OTHER.
+    const v = conditionalVerdict(
+      ddBlock({ up: { corr: 0.5, n: 294 }, down: { corr: 0.53, n: 306 }, asymmetric: false, direction: null }),
+      SIDES,
+      60
+    );
+    expect(v).toEqual({ kind: 'nodiff', text: 'no meaningful difference' });
+    expect(v.text).not.toMatch(/%|significan/i);
+  });
+
+  it('a null side → "not enough {side label} (n={real n}, 60 needed)"', () => {
+    const v = conditionalVerdict(
+      ddBlock({ down: null, asymmetric: null, direction: null, counts: { up: 251, down: 41 } }),
+      SIDES,
+      60
+    );
+    expect(v).toEqual({
+      kind: 'insufficient',
+      text: 'not enough days Brent Crude (BNO proxy) fell (n=41, 60 needed)',
+    });
+  });
+
+  it('both sides null names the smaller-n side (the binding constraint)', () => {
+    const v = conditionalVerdict(
+      {
+        up: null,
+        down: null,
+        asymmetric: null,
+        direction: null,
+        counts: { up: 55, down: 12 },
+        labels: { up: 'uptrend days', down: 'downtrend days' },
+      },
+      SIDES,
+      60
+    );
+    expect(v.text).toBe('not enough downtrend days (n=12, 60 needed)');
+  });
+
+  it('a null side with ≥ 60 days (degenerate subset) says "couldn\'t measure", never a lying count', () => {
+    const v = conditionalVerdict(
+      ddBlock({ up: null, asymmetric: null, direction: null, counts: { up: 179, down: 180 } }),
+      SIDES,
+      60
+    );
+    expect(v).toEqual({
+      kind: 'unmeasurable',
+      text: "couldn't measure days Brent Crude (BNO proxy) rose",
+    });
+  });
+
+  it('asymmetric with a NULL direction (the exact sign-flip tie) degrades to the no-difference verdict', () => {
+    const v = conditionalVerdict(ddBlock({ direction: null }), SIDES, 60);
+    expect(v).toEqual({ kind: 'nodiff', text: 'no meaningful difference' });
+  });
+
+  it('missing block (old cached shape) → null, and the server minObs drives the copy', () => {
+    expect(conditionalVerdict(undefined, SIDES, 60)).toBeNull();
+    const v = conditionalVerdict(
+      ddBlock({ down: null, asymmetric: null, direction: null, counts: { up: 251, down: 41 } }),
+      SIDES,
+      80 // a hypothetical future floor must flow into the copy — one home, the server
+    );
+    expect(v.text).toContain('(n=41, 80 needed)');
+  });
+});
+
+describe('ConditionalCard — render smoke (three rows, pinned caption, honest sides)', () => {
+  const conditional = {
+    minObs: 60,
+    driverDirection: ddBlock(),
+    volRegime: {
+      high: { corr: 0.52, n: 169 },
+      calm: { corr: 0.47, n: 171 },
+      asymmetric: false,
+      direction: null,
+      counts: { high: 169, calm: 171 },
+      labels: { high: 'high-vol days', calm: 'calm days' },
+    },
+    trendState: {
+      up: { corr: 0.41, n: 183 },
+      down: null,
+      asymmetric: null,
+      direction: null,
+      counts: { up: 183, down: 44 },
+      labels: { up: 'uptrend days', down: 'downtrend days' },
+    },
+  };
+
+  it('renders the three condition rows with side numbers in the pinned "r = +0.61 (n=248)" form', () => {
+    const html = render(<ConditionalCard conditional={conditional} isDesktop />);
+    expect(html).toContain('When does the link hold?');
+    expect(html).toContain('Driver direction');
+    expect(html).toContain('Volatility regime');
+    expect(html).toContain('Group trend');
+    expect(html).toContain('r = +0.61 (n=248)');
+    expect(html).toContain('r = +0.44 (n=251)');
+    expect(html).toContain('r = +0.52 (n=169)');
+  });
+
+  it('renders the pinned truncation-guard caption verbatim', () => {
+    const html = render(<ConditionalCard conditional={conditional} isDesktop />);
+    expect(html).toContain(
+      'Each side is measured on a subset of days, which naturally lowers both readings — compare the two sides to each other, not to the headline link above.'
+    );
+  });
+
+  it('renders one of each verdict chip: tighter / no meaningful difference / not enough', () => {
+    const html = render(<ConditionalCard conditional={conditional} isDesktop />);
+    expect(html).toContain('tighter on days Brent Crude (BNO proxy) fell');
+    expect(html).toContain('no meaningful difference');
+    expect(html).toContain('not enough downtrend days (n=44, 60 needed)');
+    // the null side prints an honest dash + its real day count, never a number
+    expect(html).toContain('— (n=44)');
+  });
+
+  it('stacks (flex column) on mobile and still renders every row', () => {
+    const html = render(<ConditionalCard conditional={conditional} isDesktop={false} />);
+    expect(html).toContain('flex-direction:column');
+    expect(html).not.toContain('display:grid');
+    expect(html).toContain('Group trend');
+    expect(html).toContain('tighter on days Brent Crude (BNO proxy) fell');
+  });
+
+  it('absence tolerance: a pre-Build-4 cached payload (no conditional field) renders NOTHING without error', () => {
+    expect(render(<ConditionalCard conditional={undefined} isDesktop />)).toBe('');
+    expect(render(<ConditionalCard conditional={null} isDesktop />)).toBe('');
+  });
+
+  it('no banned vocabulary anywhere on the card (presentation-honesty)', () => {
+    const html = render(<ConditionalCard conditional={conditional} isDesktop />);
+    expect(html.toLowerCase()).not.toContain('significan');
+    expect(html).not.toMatch(/\d+(\.\d+)?%/); // no percentages — r values and counts only
+  });
+});
+
+// ── Build 4 review fixes — null-never-zero counts + server-owned side keys ────
+describe('conditionalVerdict + ConditionalCard — review fixes', () => {
+  it('a null side with a MISSING count says "couldn\'t measure", never a fabricated n=0', () => {
+    const v = conditionalVerdict(
+      ddBlock({ down: null, asymmetric: null, direction: null, counts: { up: 251 } }),
+      ['up', 'down'],
+      60
+    );
+    expect(v).toEqual({
+      kind: 'unmeasurable',
+      text: "couldn't measure days Brent Crude (BNO proxy) fell",
+    });
+    expect(v.text).not.toContain('n=0');
+  });
+
+  it('the side cell prints a bare dash (no n) when the count is missing', () => {
+    const conditional = {
+      minObs: 60,
+      driverDirection: ddBlock({ down: null, asymmetric: null, direction: null, counts: { up: 251 } }),
+    };
+    const html = render(<ConditionalCard conditional={conditional} isDesktop />);
+    expect(html).not.toContain('(n=0)');
+    expect(html).toContain('—');
+  });
+
+  it('server-sent sides win over the client fallback pair (rename-safe rendering)', () => {
+    // A hypothetical future server rename: volRegime sides become loud/quiet.
+    // The card must render the SERVER keys — real numbers, real labels — not
+    // a false insufficiency from a stale client mirror.
+    const conditional = {
+      minObs: 60,
+      volRegime: {
+        loud: { corr: 0.52, n: 169 },
+        quiet: { corr: 0.47, n: 171 },
+        sides: ['loud', 'quiet'],
+        asymmetric: false,
+        direction: null,
+        counts: { loud: 169, quiet: 171 },
+        labels: { loud: 'loud days', quiet: 'quiet days' },
+      },
+    };
+    const html = render(<ConditionalCard conditional={conditional} isDesktop />);
+    expect(html).toContain('loud days');
+    expect(html).toContain('r = +0.52 (n=169)');
+    expect(html).toContain('no meaningful difference');
+    expect(html).not.toContain('not enough'); // the C6 failure mode never renders
+  });
+});
+
+// ── Founder-folded sign-flip verdict (pre-PR) ─────────────────────────────────
+describe('conditionalVerdict + ConditionalCard — sign-flip reversal verdict', () => {
+  // A flip block: link positive on side A (up), negative on side B (down).
+  const flipBlock = (over = {}) => ({
+    up: { corr: 0.31, n: 240 },
+    down: { corr: -0.29, n: 250 },
+    sides: ['up', 'down'],
+    asymmetric: true,
+    direction: null,
+    flipped: true,
+    counts: { up: 240, down: 250 },
+    labels: { up: 'days the 10Y yield rose', down: 'days the 10Y yield fell' },
+    ...over,
+  });
+
+  it('names the positive and negative sides — never "tighter", never a percentage', () => {
+    const v = conditionalVerdict(flipBlock(), ['up', 'down'], 60);
+    expect(v).toEqual({
+      kind: 'flipped',
+      text: 'same direction on days the 10Y yield rose, opposite on days the 10Y yield fell',
+    });
+    expect(v.text).not.toContain('tighter');
+    expect(v.text).not.toMatch(/%|significan/i);
+  });
+
+  it('identifies the positive side by sign, whichever key holds it', () => {
+    // Reversed signs: side A (up) is now the negative one.
+    const v = conditionalVerdict(
+      flipBlock({ up: { corr: -0.31, n: 240 }, down: { corr: 0.29, n: 250 } }),
+      ['up', 'down'],
+      60
+    );
+    expect(v.text).toBe(
+      'same direction on days the 10Y yield fell, opposite on days the 10Y yield rose'
+    );
+  });
+
+  it('renders the flip chip (gold accent) with both signed side numbers in the card', () => {
+    const conditional = { minObs: 60, driverDirection: flipBlock() };
+    const html = render(<ConditionalCard conditional={conditional} isDesktop />);
+    expect(html).toContain('same direction on days the 10Y yield rose, opposite on days the 10Y yield fell');
+    expect(html).toContain('r = +0.31 (n=240)');
+    expect(html).toContain('r = -0.29 (n=250)');
+    expect(html).not.toContain('tighter');
+    expect(html.toLowerCase()).toContain('#f0c75e'); // GOLD accent, not a caution color
+  });
+
+  it('a non-flip block is unaffected — "tighter" still renders for a same-direction asymmetry', () => {
+    const v = conditionalVerdict(ddBlock(), ['up', 'down'], 60);
+    expect(v.kind).toBe('tighter');
   });
 });

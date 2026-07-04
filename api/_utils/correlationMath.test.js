@@ -25,6 +25,10 @@ import {
   forwardReturns,
   standardizedDivergenceScore,
   trailingReturnInto,
+  rollingStd,
+  maskedPearson,
+  compareConditionalSides,
+  median,
   ABS_DIVERGENCE_FLOOR,
   SDS_BASELINE_WINDOW,
 } from './correlationMath.js';
@@ -565,5 +569,328 @@ describe('rollingCorrelation', () => {
     expect(rollingCorrelation(a.slice(0, 10), b.slice(0, 10), 20, makeDates(11))).toEqual([]);
     expect(rollingCorrelation(a, b, 20, makeDates(n))).toBeNull(); // dates must be returns + 1
     expect(rollingCorrelation(a, b.slice(0, 50), 20, dates)).toBeNull(); // length mismatch
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// V2 Build 4 — conditional correlation ("when does the link hold?")
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('rollingStd — rolling sample std over full windows (Build 4)', () => {
+  it('hand-computed values with the SAMPLE (n−1) divisor and the closeIndex/eventDate mapping', () => {
+    const returns = [1, 2, 3, 4]; // integers pin the divisor unambiguously
+    const dates = makeDates(5);
+    const series = rollingStd(returns, 3, dates);
+    expect(series).toHaveLength(2);
+    // window [1,2,3]: mean 2, Σ(d²) = 2, SAMPLE var = 2/2 = 1 → sd 1 (the
+    // population divisor would give √(2/3) ≈ 0.816 — this value pins n−1).
+    expect(series[0]).toMatchObject({ closeIndex: 3, eventDate: dates[3] });
+    expect(series[0].value).toBeCloseTo(1, 12);
+    expect(series[1]).toMatchObject({ closeIndex: 4, eventDate: dates[4] });
+    expect(series[1].value).toBeCloseTo(1, 12);
+  });
+
+  it('a constant window reads 0 (a quiet reading is a value, not a degenerate null)', () => {
+    const series = rollingStd([0.01, 0.01, 0.01], 2, makeDates(4));
+    expect(series).toHaveLength(2);
+    for (const e of series) expect(e.value).toBe(0);
+  });
+
+  it('shorter than window → []; invalid input → null (never zero)', () => {
+    expect(rollingStd([0.01], 2, makeDates(2))).toEqual([]);
+    expect(rollingStd([0.01, 0.02], 1, makeDates(3))).toBeNull(); // window < 2
+    expect(rollingStd([0.01, 0.02], 2, makeDates(2))).toBeNull(); // dates ≠ returns + 1
+    expect(rollingStd([0.01, NaN, 0.02], 2, makeDates(4))).toBeNull(); // corrupt input
+    expect(rollingStd(null, 2, makeDates(3))).toBeNull();
+  });
+});
+
+describe('maskedPearson — Pearson over a strict-true mask (Build 4)', () => {
+  const gen = lehmer(40400);
+  const A = Array.from({ length: 120 }, () => (gen() - 0.5) * 0.02);
+  const B = A.map((v) => 0.7 * v + (gen() - 0.5) * 0.01);
+
+  it('an all-true mask reproduces pearson exactly, with n = the full length', () => {
+    const out = maskedPearson(A, B, A.map(() => true));
+    expect(out).not.toBeNull();
+    expect(out.corr).toBe(pearson(A, B));
+    expect(out.n).toBe(A.length);
+  });
+
+  it('a subset mask equals pearson over the hand-extracted subset', () => {
+    const mask = A.map((_, i) => i % 3 === 0);
+    const subA = A.filter((_, i) => mask[i]);
+    const subB = B.filter((_, i) => mask[i]);
+    const out = maskedPearson(A, B, mask);
+    expect(out.corr).toBe(pearson(subA, subB));
+    expect(out.n).toBe(subA.length);
+  });
+
+  it('mask semantics are STRICT === true — truthy non-booleans select nothing', () => {
+    const a = [1, 2, 3, 4];
+    const b = [1, 2, 3, 4];
+    // only indices 0 and 2 are strict true; 1 and 'yes' are truthy but ignored
+    const out = maskedPearson(a, b, [true, 1, true, 'yes']);
+    expect(out.n).toBe(2);
+    expect(out.corr).toBeCloseTo(1, 12);
+  });
+
+  it('null below the caller floor (n < minN), even when the subset itself is computable', () => {
+    const mask = A.map((_, i) => i < 59); // 59 observations
+    expect(maskedPearson(A, B, mask, 60)).toBeNull();
+    expect(maskedPearson(A, B, mask, 59)).not.toBeNull(); // the floor is the only failure
+  });
+
+  it('null on a degenerate masked subset (~zero variance) — never zero', () => {
+    const flat = A.map(() => 0.004);
+    expect(maskedPearson(flat, B, A.map(() => true))).toBeNull();
+  });
+
+  it('null on invalid input: mismatched arrays, wrong-length mask, bad minN', () => {
+    expect(maskedPearson(A, B.slice(0, 100), A.map(() => true))).toBeNull();
+    expect(maskedPearson(A, B, A.slice(0, 100).map(() => true))).toBeNull();
+    expect(maskedPearson(A, B, 'not a mask')).toBeNull();
+    expect(maskedPearson(A, B, A.map(() => true), 1)).toBeNull(); // minN < 2
+    expect(maskedPearson(A, B, A.map(() => true), 60.5)).toBeNull();
+  });
+});
+
+describe('compareConditionalSides — the pinned 0.15 asymmetry floor (Build 4)', () => {
+  it('floor straddle: a 0.13 difference is NOT asymmetric; 0.17 is', () => {
+    expect(compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.37, n: 100 })).toEqual({
+      asymmetric: false,
+      direction: null,
+      flipped: false,
+    });
+    expect(compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.33, n: 100 })).toEqual({
+      asymmetric: true,
+      direction: 'A',
+      flipped: false,
+    });
+  });
+
+  it('an exact-floor gap clears (≥), across fp representations of "0.15 apart"', () => {
+    // Review fix: 0.45 − 0.3 is 0.15000000000000002 in IEEE-754 (strictly
+    // above the floor), so it alone cannot pin the ≥ edge. These pairs land on
+    // BOTH sides of 0.15's double (0.15 − 0 hits it exactly; 0.3 − 0.15 lands
+    // on it; 0.6 − 0.45 lands 1 ulp above) — every displayed 0.15 gap must be
+    // asymmetric regardless of which double the difference rounds to.
+    for (const [a, b] of [
+      [0.15, 0],
+      [0.3, 0.15],
+      [0.6, 0.45],
+      [-0.45, -0.6],
+    ]) {
+      expect(
+        compareConditionalSides({ corr: a, n: 80 }, { corr: b, n: 80 }).asymmetric,
+        `${a} vs ${b}`
+      ).toBe(true);
+    }
+  });
+
+  it('H5 display agreement: the verdict is decided on the 2dp values the UI prints', () => {
+    // Raw diff 0.1402 (< 0.15) but the card prints +0.60 / +0.45 — a visible
+    // exactly-at-the-floor gap. The word must follow the printed numbers
+    // (the strengthBand rounding-family rule), so this IS asymmetric.
+    expect(compareConditionalSides({ corr: 0.5951, n: 250 }, { corr: 0.4549, n: 250 })).toEqual({
+      asymmetric: true,
+      direction: 'A',
+      flipped: false,
+    });
+    // Near-floor raw diff 0.1498 printing as +0.59 / +0.45 — a 0.14 displayed
+    // gap stays "no meaningful difference" (pins the rounded comparison
+    // against a raw-with-tolerance implementation, which would flip this).
+    // The reverse direction cannot exist: raw ≥ 0.15 always displays ≥ 0.15.
+    expect(compareConditionalSides({ corr: 0.5949, n: 250 }, { corr: 0.4451, n: 250 })).toEqual({
+      asymmetric: false,
+      direction: null,
+      flipped: false,
+    });
+  });
+
+  it('direction is the LARGER-|corr| side — for inverse links, the more-negative side', () => {
+    // QQQ × VIX shape: both sides negative (same sign — not a flip); tighter is B.
+    const out = compareConditionalSides({ corr: -0.45, n: 200 }, { corr: -0.72, n: 200 });
+    expect(out).toEqual({ asymmetric: true, direction: 'B', flipped: false });
+  });
+
+  it('null when either side is null — no comparison is ever fabricated', () => {
+    expect(compareConditionalSides(null, { corr: 0.5, n: 100 })).toBeNull();
+    expect(compareConditionalSides({ corr: 0.5, n: 100 }, null)).toBeNull();
+    expect(compareConditionalSides(null, null)).toBeNull();
+  });
+
+  it('a custom floor overrides the 0.15 default; invalid floors null', () => {
+    expect(
+      compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.4, n: 100 }, 0.05).asymmetric
+    ).toBe(true);
+    expect(compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.4, n: 100 }, -1)).toBeNull();
+    expect(compareConditionalSides({ corr: 0.5, n: 100 }, { corr: 0.4, n: 100 }, NaN)).toBeNull();
+  });
+
+  it('a meaningful sign reversal is flipped:true with a NULL direction (both unequal and equal magnitude)', () => {
+    // The founder-folded flip verdict. Neither side is "tighter" — the link
+    // REVERSES. Unequal magnitudes (+0.30 / −0.31, the reviewer's example) and
+    // the equal-magnitude corner (+0.30 / −0.30) are BOTH flips; direction is
+    // null in each (no winner), so the UI renders reversal copy, not "tighter"
+    // (unequal) and not "no meaningful difference" (the old equal-mag bug).
+    expect(compareConditionalSides({ corr: 0.3, n: 100 }, { corr: -0.31, n: 100 })).toEqual({
+      asymmetric: true,
+      direction: null,
+      flipped: true,
+    });
+    expect(compareConditionalSides({ corr: 0.3, n: 100 }, { corr: -0.3, n: 100 })).toEqual({
+      asymmetric: true,
+      direction: null,
+      flipped: true,
+    });
+  });
+
+  it('a sign difference where ONE side is ~0 is NOT a flip — it is "tighter" on the side with the link', () => {
+    // +0.02 is no link; −0.31 is a real inverse link. Calling this a "flip"
+    // would fabricate a reversal from noise, so the per-side floor excludes it:
+    // it stays a tighter-on-B asymmetry (the honest read — the link is on B).
+    expect(compareConditionalSides({ corr: 0.02, n: 200 }, { corr: -0.31, n: 200 })).toEqual({
+      asymmetric: true,
+      direction: 'B',
+      flipped: false,
+    });
+    // Both sides sub-floor and opposite-signed (±0.10): neither is a real link,
+    // so no flip and no winner → the UI's "no meaningful difference" path.
+    expect(compareConditionalSides({ corr: 0.1, n: 200 }, { corr: -0.1, n: 200 })).toEqual({
+      asymmetric: true,
+      direction: null,
+      flipped: false,
+    });
+  });
+});
+
+describe('Build 4 — the symmetric-truncation discriminator (MANDATORY fixture)', () => {
+  // A perfectly SYMMETRIC engineered relationship: group = 1.0 × driver + noise
+  // with the SAME coupling on driver up-days and down-days. Conditioning on the
+  // driver's sign truncates the driver's variance, so BOTH side correlations
+  // come out well below the full-sample value — while the sides stay equal to
+  // each other (within noise, far under the 0.15 floor). This fixture exists
+  // to kill any implementation or copy that invites comparing a side to the
+  // full-sample headline: the honest read of this data is "no meaningful
+  // difference", never "both regimes weakened the link".
+  const gen = lehmer(20260704);
+  const N = 600;
+  const driver = Array.from({ length: N }, () => (gen() - 0.5) * 0.02); // uniform(−1%, +1%), never exactly 0
+  const noise = Array.from({ length: N }, () => (gen() - 0.5) * 0.0176); // σ tuned for r_full ≈ 0.75
+  const group = driver.map((d, i) => d + noise[i]);
+
+  const upMask = driver.map((d) => d > 0);
+  const downMask = driver.map((d) => d < 0);
+  const full = pearson(group, driver);
+  const up = maskedPearson(group, driver, upMask, 60);
+  const down = maskedPearson(group, driver, downMask, 60);
+
+  it('both sides carry ≥ 60 observations and a strong full-sample link exists', () => {
+    expect(up.n).toBeGreaterThanOrEqual(60);
+    expect(down.n).toBeGreaterThanOrEqual(60);
+    expect(up.n + down.n).toBe(N); // no exact zeros in the driver
+    expect(full).toBeGreaterThan(0.65);
+  });
+
+  it('BOTH side correlations sit well below the full-sample value (the truncation effect itself)', () => {
+    // Range restriction alone drops r from ≈0.75 to ≈0.49 here — with zero
+    // change in the true relationship. This is why side-vs-headline is a
+    // systematic misread.
+    expect(up.corr).toBeLessThan(full - 0.1);
+    expect(down.corr).toBeLessThan(full - 0.1);
+  });
+
+  it('…and the verdict is asymmetric: FALSE — the sides match each other (and same-signed, so never a flip)', () => {
+    expect(Math.abs(up.corr - down.corr)).toBeLessThan(0.15);
+    expect(compareConditionalSides(up, down)).toEqual({
+      asymmetric: false,
+      direction: null,
+      flipped: false,
+    });
+  });
+});
+
+describe('Build 4 — engineered asymmetry fixture (tight on down-days, loose on up-days)', () => {
+  // The classic candidate shape: strong coupling when the driver falls, weak
+  // when it rises. compareConditionalSides must flag it and point at the
+  // down side (side B here).
+  const gen = lehmer(77007);
+  const N = 600;
+  const driver = Array.from({ length: N }, () => (gen() - 0.5) * 0.02);
+  const noise = Array.from({ length: N }, () => (gen() - 0.5) * 0.008);
+  const group = driver.map((d, i) => (d < 0 ? 1.0 : 0.12) * d + noise[i]);
+
+  const up = maskedPearson(group, driver, driver.map((d) => d > 0), 60);
+  const down = maskedPearson(group, driver, driver.map((d) => d < 0), 60);
+
+  it('the down side is decisively tighter and the comparison points at it', () => {
+    expect(down.corr - up.corr).toBeGreaterThanOrEqual(0.15);
+    expect(Math.abs(down.corr)).toBeGreaterThan(Math.abs(up.corr));
+    // Both sides positive (weak vs strong SAME-direction link) — tighter, not a flip.
+    expect(up.corr).toBeGreaterThan(0);
+    expect(down.corr).toBeGreaterThan(0);
+    expect(compareConditionalSides(up, down)).toEqual({
+      asymmetric: true,
+      direction: 'B',
+      flipped: false,
+    });
+  });
+
+  it('min-obs floor: shrinking one side below 60 nulls that side AND the comparison', () => {
+    // Keep only the first 59 up-days in the mask — the up side must null at
+    // the pinned floor and the comparison must refuse to fabricate a verdict.
+    const upIdx = [];
+    driver.forEach((d, i) => {
+      if (d > 0 && upIdx.length < 59) upIdx.push(i);
+    });
+    const mask59 = driver.map((_, i) => upIdx.includes(i));
+    const up59 = maskedPearson(group, driver, mask59, 60);
+    expect(up59).toBeNull();
+    expect(compareConditionalSides(up59, down)).toBeNull();
+  });
+});
+
+describe('Build 4 — engineered sign-FLIP fixture (link reverses direction by regime)', () => {
+  // The link tracks the driver on up-days and INVERTS on down-days — a genuine
+  // regime reversal, the case "tighter on {side}" would misdescribe. The sign
+  // flip is the one comparison that survives the truncation caveat (subsetting
+  // shrinks |r| but cannot change its sign), so it is a real finding, not an
+  // artifact.
+  const gen = lehmer(31337);
+  const N = 600;
+  const driver = Array.from({ length: N }, () => (gen() - 0.5) * 0.02);
+  const noise = Array.from({ length: N }, () => (gen() - 0.5) * 0.006);
+  const group = driver.map((d, i) => (d > 0 ? 1.0 : -1.0) * d + noise[i]);
+
+  const up = maskedPearson(group, driver, driver.map((d) => d > 0), 60);
+  const down = maskedPearson(group, driver, driver.map((d) => d < 0), 60);
+
+  it('up-side is strongly positive, down-side strongly negative — a real reversal', () => {
+    expect(up.corr).toBeGreaterThan(0.3);
+    expect(down.corr).toBeLessThan(-0.3);
+    expect(up.n).toBeGreaterThanOrEqual(60);
+    expect(down.n).toBeGreaterThanOrEqual(60);
+  });
+
+  it('the comparison reports flipped:true with a null direction (no side is "tighter")', () => {
+    const cmp = compareConditionalSides(up, down);
+    expect(cmp.asymmetric).toBe(true);
+    expect(cmp.flipped).toBe(true);
+    expect(cmp.direction).toBeNull();
+  });
+});
+
+describe('median — the exported shared implementation (Build 4 review)', () => {
+  it('odd length → middle; even length → mean of the two middle values', () => {
+    expect(median([3, 1, 2])).toBe(2);
+    expect(median([4, 1, 3, 2])).toBe(2.5);
+    expect(median([5])).toBe(5);
+  });
+
+  it('copy-sorts — the caller\'s array is never mutated', () => {
+    const a = [3, 1, 2];
+    median(a);
+    expect(a).toEqual([3, 1, 2]);
   });
 });

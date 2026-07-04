@@ -80,7 +80,15 @@ function mean(a) {
   return s / a.length;
 }
 
-function median(a) {
+/**
+ * Median of a numeric array (copy-sorts; even length averages the two middle
+ * values). Exported since the Build 4 review: the vol-regime split in
+ * correlation.js needs the SAME median every other statistic in this stack
+ * uses (one implementation per statistical concept — the pearson/SDS/OLS
+ * rule), and exporting the existing helper beats a second inline copy.
+ * NaN on an empty array — callers guard for non-empty input.
+ */
+export function median(a) {
   const s = [...a].sort((x, y) => x - y);
   const mid = s.length >> 1;
   return s.length % 2 === 1 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
@@ -457,6 +465,149 @@ export function forwardReturns(closes, dates, episodes, horizons = [5, 10, 20]) 
     };
   }
   return out;
+}
+
+/**
+ * Rolling sample standard deviation over full windows only (V2 Build 4 —
+ * the vol-regime condition's raw series). Same rolling conventions as
+ * rollingCorrelation/rollingBeta: OLDEST-FIRST returns, `dates` is the
+ * chronological CLOSES-date array (length = returns.length + 1), entries carry
+ * closeIndex = j + 1 / eventDate = dates[j + 1] for the window ENDING at
+ * return index j, sample (n−1) divisor, [] when the series is shorter than
+ * the window, null on invalid input. Degenerate windows are PRESERVED as
+ * entries with value: null (never dropped, never zero) — with finite inputs
+ * this branch is unreachable (a sample std of finite values is finite, and 0
+ * is a legitimate quiet-window reading, not a degenerate one), but the guard
+ * keeps the null-never-zero contract explicit for future callers.
+ */
+export function rollingStd(returns, window, dates) {
+  if (!isFiniteNumberArray(returns, 1)) return null;
+  if (!Number.isInteger(window) || window < 2) return null;
+  if (!Array.isArray(dates) || dates.length !== returns.length + 1) return null;
+  const out = [];
+  for (let j = window - 1; j < returns.length; j++) {
+    const win = returns.slice(j - window + 1, j + 1);
+    const m = mean(win);
+    let ss = 0;
+    for (const v of win) ss += (v - m) * (v - m);
+    const sd = Math.sqrt(ss / (window - 1));
+    out.push({
+      closeIndex: j + 1,
+      eventDate: dates[j + 1],
+      value: Number.isFinite(sd) ? sd : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Pearson correlation restricted to the observations where mask[i] === true
+ * (STRICT true — truthy non-booleans do not select; the mask is a built
+ * artifact, never coerced data). Mask semantics: same index space as the two
+ * return arrays; the CALLER builds masks (V2 Build 4 — the conditional-
+ * correlation sides). Implemented by extracting the masked pairs and calling
+ * pearson — one Pearson implementation exists in this codebase's correlation
+ * stack (BUILD_RULES §4).
+ *
+ * → { corr, n } where n = the masked pair count, or NULL when n < minN
+ * (the caller's observation floor; defaults to Pearson's own minimum of 2),
+ * when the masked subset is degenerate (~zero variance on either side), or on
+ * invalid/mismatched input. Null, never zero — an insufficient side must stay
+ * distinguishable from a genuinely uncorrelated one.
+ */
+export function maskedPearson(returnsA, returnsB, mask, minN = 2) {
+  if (!isFiniteNumberArray(returnsA, 1) || !isFiniteNumberArray(returnsB, 1)) return null;
+  if (returnsA.length !== returnsB.length) return null;
+  if (!Array.isArray(mask) || mask.length !== returnsA.length) return null;
+  if (!Number.isInteger(minN) || minN < 2) return null;
+  const subA = [];
+  const subB = [];
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] === true) {
+      subA.push(returnsA[i]);
+      subB.push(returnsB[i]);
+    }
+  }
+  if (subA.length < minN) return null;
+  const corr = pearson(subA, subB);
+  if (corr === null) return null;
+  return { corr, n: subA.length };
+}
+
+/**
+ * Side-vs-side comparison for conditional correlation (V2 Build 4).
+ *
+ * THE HONESTY CORE: conditioning on a subset mechanically shrinks measured
+ * correlation on BOTH sides even when the true relationship is perfectly
+ * symmetric — restricting the driver's range truncates its variance, and
+ * correlation within a truncated range is smaller. Side-vs-side is therefore
+ * the ONLY honest comparison; either side vs the full-sample number is a
+ * systematic misread. This function compares sides to each other and to
+ * nothing else.
+ *
+ * Asymmetry floor (pinned, 0.15): at ~250 obs/side and mid-range r, the
+ * sampling SE of the difference of two side correlations is ≈ 0.07, so
+ * sub-0.15 differences are noise-class — the floor sits at ~2 SE. An
+ * inferential upgrade (Fisher-z) is a documented future refinement, not
+ * V2 Build 4 scope.
+ *
+ * Display agreement (the H5 rounding-family rule, commit 8395606 precedent):
+ * the verdict is decided on the 2dp-ROUNDED corrs — the SAME values the UI
+ * prints (fmtCorr = toFixed(2)) — so the chip word can never contradict the
+ * displayed numbers at the floor edge (raw 0.5951 vs 0.4549 displays as
+ * +0.60 / +0.45, a visible 0.15 gap, and must read asymmetric even though the
+ * raw difference is 0.1402). The shift in the effective raw floor is < 0.005 —
+ * inside the heuristic's own precision. The small epsilon absorbs IEEE-754
+ * representation error in the rounded difference (0.60 − 0.45 must clear a
+ * 0.15 floor whichever side of the true value both doubles land on).
+ *
+ * Sign flip (pinned addition — founder decision, pre-PR): when the link is
+ * meaningfully POSITIVE on one side and meaningfully NEGATIVE on the other, it
+ * has REVERSED direction between the two subsets, not merely tightened. This
+ * is a distinct, honest verdict — "tighter on {side}" would hide the reversal.
+ * A flip is the one comparison that SURVIVES the truncation caveat: subsetting
+ * shrinks |r| on both sides but never flips its SIGN, so an opposite-sign
+ * split is a real regime effect, not a range-restriction artifact. Guarded so
+ * a pair merely straddling zero on noise is NOT a flip — BOTH sides must
+ * themselves clear the floor as a level (|corr| ≥ floor: the SAME 0.15 that is
+ * the "is there a link at all" line elsewhere in the stack), so e.g. +0.02
+ * (no link) vs −0.31 stays a "tighter" case, not a fabricated reversal. On a
+ * flip, direction is null — neither side is "tighter"; the UI renders reversal
+ * copy instead.
+ *
+ * @param {{corr: number, n: number}|null} sideA - a maskedPearson result
+ * @param {{corr: number, n: number}|null} sideB - a maskedPearson result
+ * @param {number} [floor=0.15] - the pinned asymmetry floor (also the per-side
+ *   level a flip requires — one tunable, both roles move together)
+ * @returns {{asymmetric: boolean, direction: ('A'|'B'|null), flipped: boolean}|null}
+ *   null when either side is null (no comparison exists — never a fabricated
+ *   verdict). asymmetric is true only at |corrA − corrB| ≥ floor (2dp-rounded,
+ *   per the display-agreement rule). flipped is true for a meaningful sign
+ *   reversal (both sides opposite-signed and each |corr| ≥ floor). direction =
+ *   the LARGER-|corr| side (the side where the link is tighter; for inverse
+ *   links that is the more-negative side), and is null when not asymmetric,
+ *   when flipped (no side is "tighter"), or at the equal-rounded-magnitude
+ *   same-direction edge.
+ */
+const FLOOR_EPS = 1e-9; // fp guard for the quantized 2dp comparison only
+
+export function compareConditionalSides(sideA, sideB, floor = 0.15) {
+  if (sideA == null || sideB == null) return null;
+  if (!Number.isFinite(sideA.corr) || !Number.isFinite(sideB.corr)) return null;
+  if (!Number.isFinite(floor) || floor < 0) return null;
+  const a = Number(sideA.corr.toFixed(2));
+  const b = Number(sideB.corr.toFixed(2));
+  const asymmetric = Math.abs(a - b) >= floor - FLOOR_EPS;
+  const flipped =
+    asymmetric &&
+    (a < 0) !== (b < 0) &&
+    Math.abs(a) >= floor - FLOOR_EPS &&
+    Math.abs(b) >= floor - FLOOR_EPS;
+  let direction = null;
+  if (asymmetric && !flipped && Math.abs(a) !== Math.abs(b)) {
+    direction = Math.abs(a) > Math.abs(b) ? 'A' : 'B';
+  }
+  return { asymmetric, direction, flipped };
 }
 
 /**
