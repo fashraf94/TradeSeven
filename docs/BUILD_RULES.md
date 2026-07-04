@@ -70,3 +70,7 @@ Every catalog event (see `VISION_PROGRAM_POST_LAUNCH_PLACEMENT_ADDENDUM_A` §4 +
 
 - Specs/reports are Markdown. The founder is non-technical: reports lead with an executive verdict table, then detail.
 - Phase prompts define their own scope; growing past it (file count creeping toward the review threshold on a "small" task) is the signal you've left scope — STOP and report rather than continuing.
+
+## 9. Display-agreement rule
+
+Every displayed decision or label must be derived from **exactly what the user sees**, never from a parallel source that can drift. A verdict, zone word, strength band, chip, or driver label is computed from the same rounded number, the same payload field, or the same rendered response value — never from a raw pre-rounding value, a live input, or a re-derived copy. This one rule underlies the whole display-disagreement bug family (scan tier, RSI zone words, `strengthBand`, the conditional verdict, and now the result-area driver labels and RSI-rounds-before-zoning): when a label and its number come from two sources they eventually disagree in production, so bind them to one source *by construction*. (Codified July 4, 2026 — Correlation-Lab display-integrity fast-follow; founder-cited.)

@@ -196,6 +196,49 @@ describe('computeContextAtFlag — null conventions (pinned to the module, Phase
   });
 });
 
+// ============ Rounding family — RSI zoned at DISPLAY precision ================
+// The fifth & final known member of the rounding family: computeContextAtFlag
+// rounds RSI to the 1dp display precision BEFORE zoning, so the stored rsi14 and
+// rsiZone agree by construction. A raw RSI just under an edge (69.96) that
+// renders "70.0" must read overbought, not neutral. calculateRSI at c = 14
+// (15 levels, no Wilder smoothing) = 100·G/(G+L), so a one-up / one-down / flat
+// construction pins the raw value exactly (verified against the real impl).
+describe('computeContextAtFlag — RSI rounds to display precision, THEN zones', () => {
+  // 15 chronological levels: +G, then −L, then flat to length 15. The RSI at
+  // c = 14 is 100·G/(G+L) at 2dp; the fix rounds that to 1dp before zoning.
+  const atEdge = (G, L) => {
+    const a = [100, 100 + G, 100 + G - L];
+    while (a.length < 15) a.push(a[a.length - 1]);
+    return computeContextAtFlag(a, 14);
+  };
+
+  it('raw 69.96 → 70.0 / overbought (rounds UP across the ≥ 70 edge; neutral pre-fix)', () => {
+    const ctx = atEdge(69.96, 30.04);
+    expect(ctx.rsi14).toBe(70);
+    expect(ctx.rsiZone).toBe('overbought');
+  });
+
+  it('raw 69.94 → 69.9 / neutral (rounds DOWN, stays below the edge)', () => {
+    const ctx = atEdge(69.94, 30.06);
+    expect(ctx.rsi14).toBe(69.9);
+    expect(ctx.rsiZone).toBe('neutral');
+  });
+
+  it('raw 30.04 → 30.0 / oversold (rounds DOWN across the ≤ 30 edge; neutral pre-fix)', () => {
+    const ctx = atEdge(30.04, 69.96);
+    expect(ctx.rsi14).toBe(30);
+    expect(ctx.rsiZone).toBe('oversold');
+  });
+
+  it('rsi14 and rsiZone agree by construction — the zone reads the SAME 1dp value shown', () => {
+    for (const [G, L] of [[69.96, 30.04], [69.94, 30.06], [30.04, 69.96], [55, 45]]) {
+      const ctx = atEdge(G, L);
+      const expected = ctx.rsi14 >= 70 ? 'overbought' : ctx.rsi14 <= 30 ? 'oversold' : 'neutral';
+      expect(ctx.rsiZone).toBe(expected);
+    }
+  });
+});
+
 // ==================== Conditioned base rates ====================
 
 describe('conditionedBaseRates — partition membership (null stamps join neither side)', () => {
