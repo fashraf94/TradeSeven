@@ -717,12 +717,25 @@ describe('metadata', () => {
 // ==================== 16. DETERMINISM ====================
 
 describe('determinism', () => {
-  it('identical input yields identical output', () => {
+  it('identical input yields identical output (excluding the wall-clock computedAt stamp)', () => {
     const spec = {
       filters: [{ field: 'compositeScore', op: 'gte', value: 0 }],
       rankBy: { field: 'compositeScore', direction: 'desc' },
     };
-    expect(screenStocks(makeStocks(), spec)).toEqual(screenStocks(makeStocks(), spec));
+    // computedAt = new Date().toISOString() is a wall-clock stamp, NOT derived
+    // from the input — two sequential runs can straddle a millisecond tick and
+    // differ ONLY there (the pre-existing intermittent flake under parallel
+    // load). The determinism contract is over the input-derived output, so drop
+    // the stamp before comparing. screenStocks.js itself is untouched; the
+    // metadata suite above still pins computedAt as a valid ISO string.
+    const withoutStamp = (out) => {
+      const clone = { ...out };
+      delete clone.computedAt;
+      return clone;
+    };
+    expect(withoutStamp(screenStocks(makeStocks(), spec))).toEqual(
+      withoutStamp(screenStocks(makeStocks(), spec))
+    );
   });
 
   it('ties break on symbol ascending', () => {
