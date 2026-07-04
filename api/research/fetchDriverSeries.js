@@ -34,14 +34,18 @@ function formatDate(date) {
  * the wire order; the endpoint adapter reverses exactly once).
  * → [{ date: 'YYYY-MM-DD', close: number }], non-finite rows filtered out.
  * Throws on missing API key, non-OK response, or a non-array body.
+ *
+ * Optional { signal } (additive; H3): when provided it is threaded to fetch so
+ * a caller can abort a hung socket. Existing callers pass nothing — an
+ * undefined signal is inert, so their behavior is byte-identical.
  */
-export async function fetchEodCloses(eodhSymbol, lookbackDays) {
+export async function fetchEodCloses(eodhSymbol, lookbackDays, { signal } = {}) {
   const apiKey = process.env.EODHD_API_KEY;
   if (!apiKey) throw new Error('EODHD_API_KEY not configured');
   const fromDate = new Date();
   fromDate.setDate(fromDate.getDate() - Math.ceil(lookbackDays * 1.5));
   const url = `${API_BASE}/eod/${encodeURIComponent(eodhSymbol)}?api_token=${apiKey}&fmt=json&period=d&order=d&from=${formatDate(fromDate)}`;
-  const response = await fetch(url);
+  const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`EODHD ${eodhSymbol}: HTTP ${response.status}`);
   const rows = await response.json();
   if (!Array.isArray(rows)) throw new Error(`EODHD ${eodhSymbol}: non-array response`);

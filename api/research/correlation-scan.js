@@ -87,8 +87,34 @@ const SCAN_SIGNAL_FLOOR = 0.2;
 // deduped symbol universe itself through the exported fetchEodCloses).
 const CHUNK_SIZE = 5;
 const CHUNK_DELAY_MS = 300;
+// Per-symbol fetch timeout (H3 — Build 2 review backlog): a single hung EODHD
+// socket could otherwise ride until maxDuration and 504 after the quota was
+// spent. Each per-symbol fetch is raced against this budget; a loser is aborted
+// and converts to the same honest outcome as any other failed fetch (a dropped
+// driver leaves the scan uncached per the clean-run rule; a dropped member
+// follows the existing partial contract). Well under config.maxDuration.
+const PER_FETCH_TIMEOUT_MS = 3500;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * fetchEodCloses raced against PER_FETCH_TIMEOUT_MS. On timeout the AbortController
+ * aborts the in-flight fetch (freeing the socket) and the race rejects, so the
+ * loser lands in the caller's failed/null bucket exactly like a 404 or a
+ * non-array body. Resolves/rejects with the fetch result on the happy path.
+ */
+function fetchEodClosesWithTimeout(symbol, lookbackDays, timeoutMs) {
+  const controller = new AbortController();
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`EODHD ${symbol}: per-fetch timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  const fetchJob = fetchEodCloses(symbol, lookbackDays, { signal: controller.signal });
+  return Promise.race([fetchJob, timeout]).finally(() => clearTimeout(timer));
+}
 const markCached = (payload) => ({ ...payload, meta: { ...payload.meta, cached: true } });
 const latestValue = (series) => (series && series.length ? series[series.length - 1].value : null);
 
@@ -156,7 +182,7 @@ async function fetchSymbolUniverse(wireSymbols, lookbackDays) {
   for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
     const chunk = symbols.slice(i, i + CHUNK_SIZE);
     const settled = await Promise.allSettled(
-      chunk.map((symbol) => fetchEodCloses(symbol, lookbackDays))
+      chunk.map((symbol) => fetchEodClosesWithTimeout(symbol, lookbackDays, PER_FETCH_TIMEOUT_MS))
     );
     settled.forEach((outcome, k) => {
       const rows = outcome.status === 'fulfilled' ? outcome.value : null;

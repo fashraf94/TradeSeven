@@ -254,6 +254,7 @@ const memberWires = new Map([
 
 const failSet = new Set(); // wire symbols forced to 404 for the dropped-driver phase
 const truncSet = new Set(); // wire symbols served a 1-row body (fetch OK, nothing computable)
+const hangSet = new Set(); // wire symbols whose fetch never resolves (H3 per-fetch timeout)
 const fetchCalls = { count: 0, symbols: [] };
 
 function wireFor(symbol) {
@@ -263,11 +264,23 @@ function wireFor(symbol) {
   return wire;
 }
 
-vi.stubGlobal('fetch', async (url) => {
+vi.stubGlobal('fetch', async (url, opts) => {
   const match = String(url).match(/\/eod\/([^?]+)\?/);
   const symbol = match ? decodeURIComponent(match[1]) : '';
   fetchCalls.count += 1;
   fetchCalls.symbols.push(symbol);
+  if (hangSet.has(symbol)) {
+    // A genuinely hung EODHD socket: never resolves on its own, and — like the
+    // real fetch — rejects if/when the caller aborts via the threaded
+    // AbortSignal. The H3 per-fetch timeout race is what cuts it off.
+    return new Promise((_, reject) => {
+      const signal = opts?.signal;
+      if (signal) {
+        if (signal.aborted) reject(new Error('aborted'));
+        else signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      }
+    });
+  }
   const wire = wireFor(symbol);
   if (!wire) return { ok: false, status: 404, json: async () => ({}) };
   return { ok: true, status: 200, json: async () => wire };
@@ -675,6 +688,64 @@ describe('required assert (d) — a failing driver is reported, never cached, ne
     // The guaranteed-fail request must cost the member fetch ONLY — never the
     // ~25-driver quota burn (code-review fix).
     expect(fetchCalls.count).toBe(fetchesBefore + 1);
+  });
+});
+
+describe('H3 — a hung per-symbol fetch is cut off at the timeout (dropped, never cached)', () => {
+  // The Build 2 review backlog item: before H3 a hung EODHD socket could ride
+  // until config.maxDuration and 504 after the quota was already spent. Each
+  // per-symbol fetch now races PER_FETCH_TIMEOUT_MS; the loser is aborted and
+  // converts to the SAME honest outcome as any other failed fetch. Runs on the
+  // existing fake-timer runner — runScanRequest's runAllTimersAsync fires the
+  // per-fetch timeout timers, so no wall time is spent.
+
+  it('a never-resolving DRIVER fetch → droppedDrivers row, every other driver computed, NO cache write', async () => {
+    hangSet.add(CORRELATION_DRIVERS.XLB.symbol);
+    try {
+      const setsBefore = store.setCalls.length;
+      const res = await runScanRequest({ group: ['AAA'], lookbackDays: 400, forceRefresh: true });
+      expect(res.statusCode).toBe(200);
+      // A timed-out driver joins droppedDrivers exactly like a 404 fetch.
+      expect(res.body.droppedDrivers).toEqual([{ driver: 'XLB', label: 'Materials (XLB)' }]);
+      expect(res.body.rows.some((r) => r.driver === 'XLB')).toBe(false);
+      expect(res.body.rows).toHaveLength(REGISTRY_KEYS.length - 1);
+      expect(res.body.meta.partial).toBe(false); // member side intact — partial is a MEMBER contract
+      expect(res.body.meta.cached).toBe(false);
+      // Dropped drivers > 0 → the clean-run rule keeps the scan uncached.
+      expect(store.setCalls).toHaveLength(setsBefore);
+    } finally {
+      hangSet.clear();
+    }
+  });
+
+  it('a hung group MEMBER follows the existing partial contract (survivor scans, uncached)', async () => {
+    hangSet.add('BBB.US');
+    try {
+      const setsBefore = store.setCalls.length;
+      const res = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 400, forceRefresh: true });
+      expect(res.statusCode).toBe(200);
+      expect(res.body.meta.partial).toBe(true);
+      expect(res.body.meta.droppedSymbols).toEqual(['BBB']);
+      expect(res.body.rows).toHaveLength(REGISTRY_KEYS.length); // AAA survives → full driver scan
+      expect(res.body.meta.cached).toBe(false);
+      expect(store.setCalls).toHaveLength(setsBefore);
+    } finally {
+      hangSet.clear();
+    }
+  });
+
+  it('ALL members hung → 422 group_unavailable, no driver universe spent (members-first, timeout-aware)', async () => {
+    hangSet.add('AAA.US');
+    try {
+      const fetchesBefore = fetchCalls.count;
+      const res = await runScanRequest({ group: ['AAA'], lookbackDays: 400, forceRefresh: true });
+      expect(res.statusCode).toBe(422);
+      expect(res.body.error).toBe('group_unavailable');
+      expect(res.body.droppedSymbols).toEqual(['AAA']);
+      expect(fetchCalls.count).toBe(fetchesBefore + 1); // only the member fetch was attempted
+    } finally {
+      hangSet.clear();
+    }
   });
 });
 

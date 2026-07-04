@@ -16,7 +16,12 @@ import { renderToString } from 'react-dom/server';
 // module graph load in the Node test env.
 vi.mock('../../firebase/config', () => ({ auth: {}, db: {}, default: {} }));
 
-import { ScanResults, ConditionedBaseRates, divergenceState } from './CorrelationLab.jsx';
+import {
+  ScanResults,
+  ConditionedBaseRates,
+  divergenceState,
+  leadLagEvidenceLine,
+} from './CorrelationLab.jsx';
 
 const AMBER = '#f59e0b';
 const RED = '#EF4444';
@@ -27,21 +32,35 @@ const render = (el) => renderToString(el).replace(/<!-- -->/g, '');
 
 // ── Change A — the Divergence Watch state map (server-authoritative + fallback) ─
 describe('divergenceState — coherent five-state map', () => {
-  it('renders the server-computed state, spelling break as "in break territory"', () => {
+  it('renders the server-computed state, spelling break as "in break territory" with its H6 explainer', () => {
     expect(divergenceState({ state: 'calm', score: 0.4, d: 0.9 }).word).toBe('calm');
     expect(divergenceState({ state: 'elevated', score: 1.5, d: 0.9 }).word).toBe('elevated');
     expect(divergenceState({ state: 'break', score: 2.6, d: 0.3 })).toMatchObject({
       word: 'in break territory',
       color: RED,
+      note: 'The gap is both unusual and large — this is the condition that logs a regime break in the table below.',
     });
   });
 
-  it('gives stretched the amber color and the pinned "not a break" note', () => {
+  it('appends the H6 strain explainer to stretched’s pinned "not a break" caption (amber)', () => {
     expect(divergenceState({ state: 'stretched', score: -2.44, d: -0.22 })).toEqual({
       word: 'stretched',
       color: AMBER,
-      note: 'Unusual versus its own history — but the gap is still small. Not a break.',
+      note: 'Unusual versus its own history — but the gap is still small. Not a break. The relationship is under strain. From here it either settles back to normal, or — if the gap keeps widening past the break threshold — becomes a regime break like the ones listed below.',
     });
+  });
+
+  it('calm and elevated carry NO explainer note (unchanged — they keep the default caption)', () => {
+    expect(divergenceState({ state: 'calm', score: 0.4, d: 0.9 }).note).toBeUndefined();
+    expect(divergenceState({ state: 'elevated', score: 1.5, d: 0.9 }).note).toBeUndefined();
+  });
+
+  it('the attention-state explainers use no banned predictive words (presentation-honesty)', () => {
+    const BANNED = ['predict', 'expect', 'will likely'];
+    for (const state of ['stretched', 'break']) {
+      const note = divergenceState({ state, score: -2.44, d: -0.22 }).note.toLowerCase();
+      for (const w of BANNED) expect(note).not.toContain(w);
+    }
   });
 
   it('null latest / null state → "not scoreable yet"', () => {
@@ -57,6 +76,63 @@ describe('divergenceState — coherent five-state map', () => {
     expect(divergenceState({ score: 1.5, d: 0.9 }).word).toBe('elevated');
     expect(divergenceState({ score: 0.2, d: 0.9 }).word).toBe('calm');
     expect(divergenceState({ score: null, d: 0.9 }).word).toBe('not scoreable yet');
+  });
+});
+
+// ── H7 — the lead-lag evidence line under a flat verdict ──────────────────────
+describe('leadLagEvidenceLine — evidence under coincident / none', () => {
+  // leadLag.table rows are { lag, corr, n }; lag 0 is same-day (maxLag 5 → -5..+5).
+  const mkTable = () => [
+    { lag: -2, corr: -0.11, n: 100 },
+    { lag: -1, corr: 0.3, n: 100 },
+    { lag: 0, corr: 0.52, n: 100 },
+    { lag: 1, corr: 0.28, n: 100 },
+    { lag: 2, corr: -0.41, n: 100 }, // largest |corr| among the nonzero lags
+  ];
+
+  it('coincident: names the strongest lagged reading against same-day', () => {
+    const line = leadLagEvidenceLine({ verdict: 'coincident', lag0Corr: 0.52, table: mkTable() });
+    expect(line).toBe(
+      'Strongest lagged reading: +2d at r = -0.41 — not meaningfully different from same-day (0.52 r).'
+    );
+  });
+
+  it("none verdict also renders (it's the other flat verdict)", () => {
+    const line = leadLagEvidenceLine({ verdict: 'none', lag0Corr: 0.02, table: mkTable() });
+    expect(line).toContain('Strongest lagged reading: +2d at r = -0.41');
+    expect(line).toContain('same-day (0.02 r)');
+  });
+
+  it('a negative best lag prints its sign; a |corr| tie breaks to the nearer lag', () => {
+    const table = [
+      { lag: -1, corr: 0.4, n: 100 },
+      { lag: 0, corr: 0.1, n: 100 },
+      { lag: 3, corr: -0.4, n: 100 }, // equal |corr| but farther → -1 wins
+    ];
+    const line = leadLagEvidenceLine({ verdict: 'coincident', lag0Corr: 0.1, table });
+    expect(line).toContain('-1d at r = 0.40');
+  });
+
+  it('renders nothing for a directional verdict (driver_leads / group_leads keep their sentence)', () => {
+    expect(
+      leadLagEvidenceLine({ verdict: 'driver_leads', bestLag: 2, lag0Corr: 0.3, table: mkTable() })
+    ).toBeNull();
+    expect(
+      leadLagEvidenceLine({ verdict: 'group_leads', bestLag: -1, lag0Corr: 0.3, table: mkTable() })
+    ).toBeNull();
+  });
+
+  it('guards nulls: no leadLag, null table, no usable nonzero row, or missing lag0 → null', () => {
+    expect(leadLagEvidenceLine(null)).toBeNull();
+    expect(leadLagEvidenceLine({ verdict: 'coincident', lag0Corr: 0.5, table: null })).toBeNull();
+    expect(
+      leadLagEvidenceLine({
+        verdict: 'none',
+        lag0Corr: 0.5,
+        table: [{ lag: 1, corr: null, n: 3 }, { lag: 0, corr: 0.5, n: 4 }],
+      })
+    ).toBeNull();
+    expect(leadLagEvidenceLine({ verdict: 'coincident', lag0Corr: null, table: mkTable() })).toBeNull();
   });
 });
 
