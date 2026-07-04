@@ -346,7 +346,7 @@ export const ARCHETYPE_INTEGRITY_MODE = 'observe';
  * pre-launch cleanup script (WS1 Phase 4) live-runs at or before the enforce
  * step. Classification source: src/data/archetypeRuleCompatibility.js.
  */
-export const RULE_COMPAT_MODE = 'off';
+export const RULE_COMPAT_MODE = 'observe';
 
 /**
  * League — Desktop Training Pod tab + Active Training Game card (the desktop
