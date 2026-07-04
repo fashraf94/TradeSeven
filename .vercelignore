@@ -1,3 +1,12 @@
 node_modules
 .git
 *.log
+
+# H2 — do not deploy test files or dev/migration scripts as live Vercel
+# function slots. Every api/**/*.test.js currently ships as its own deployable
+# function (211 → 154 deployable functions; −57: 45 test files + 12 scripts).
+# None of these paths is imported by any deployed handler (verified), so this
+# is config-only and behavior-neutral.
+api/**/*.test.js
+api/**/*.test.jsx
+api/scripts/**
