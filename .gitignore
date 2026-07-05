@@ -60,3 +60,6 @@ TECHNICAL_CONTEXT_EXPOSURE_AUDIT.md
 
 # Claude Code agent harness — local worktrees for parallel agent runs
 .claude/worktrees/
+
+# WS1 observe-walk — local-only GCS service-account key for the read-back (never commit)
+.gcs-credentials.json
