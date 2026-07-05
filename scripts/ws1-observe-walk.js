@@ -51,7 +51,10 @@
 //   node scripts/ws1-observe-walk.js --live --yes --revert --create --agent <id>  # cleanup only
 // ENV (.env.local): FIREBASE_ADMIN_CREDENTIALS, a web API key (VITE_FIREBASE_API_KEY /
 //   FIREBASE_API_KEY / FIREBASE_WEB_API_KEY — must match the admin project),
-//   GCS_CREDENTIALS (read-back), WS1_WALK_BASE_URL (deployed origin).
+//   WS1_WALK_BASE_URL (deployed origin), and the GCS read-back creds — PREFERRED
+//   GCS_CREDENTIALS_PATH=<path to a gitignored service-account .json> (sidesteps all
+//   multi-line/quoting pain); FALLBACK inline GCS_CREDENTIALS (multi-line tolerated
+//   only if SINGLE-quoted). Missing/unparseable creds → loud UNCONFIRMED, never a crash.
 
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -70,12 +73,33 @@ function die(msg) {
   process.exit(1);
 }
 
+// Parse a .env file. Single-line values keep the exact legacy behavior (strip one
+// surrounding quote pair). A QUOTED value whose opening quote does not close on the
+// same line is accumulated across physical lines until the matching close quote — so a
+// multi-line, single-quoted service-account JSON blob loads intact instead of being
+// truncated at the first newline. (Preferred over inline blobs: GCS_CREDENTIALS_PATH.)
 function parseEnvFile(filePath) {
   if (!existsSync(filePath)) return {};
   const out = {};
-  for (const line of readFileSync(filePath, 'utf8').split('\n')) {
-    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  const lines = readFileSync(filePath, 'utf8').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (!m) continue;
+    const key = m[1];
+    const rawVal = m[2];
+    const q = rawVal[0];
+    if ((q === '"' || q === "'") && rawVal.indexOf(q, 1) === -1) {
+      // Multi-line quoted value: accumulate until the closing quote (or EOF).
+      const acc = [rawVal.slice(1)];
+      for (i++; i < lines.length; i++) {
+        const ci = lines[i].indexOf(q);
+        if (ci !== -1) { acc.push(lines[i].slice(0, ci)); break; }
+        acc.push(lines[i]);
+      }
+      out[key] = acc.join('\n');
+    } else {
+      out[key] = rawVal.replace(/^["']|["']$/g, '');
+    }
   }
   return out;
 }
@@ -186,6 +210,28 @@ function resolveWebApiKey(env) {
     if (v) return { key: v, name };
   }
   return { key: null, name: null };
+}
+
+// Resolve the GCS service-account creds for the read-back. PREFERRED: GCS_CREDENTIALS_PATH
+// → a gitignored .json file (sidesteps all multi-line/quoting pain). FALLBACK: the inline
+// GCS_CREDENTIALS blob (now multi-line-tolerant if single-quoted; see parseEnvFile).
+// Returns the raw JSON STRING (parsed safely downstream) + a source label + a load error.
+function resolveGcsCreds(env) {
+  const p = env.GCS_CREDENTIALS_PATH || process.env.GCS_CREDENTIALS_PATH;
+  if (p) {
+    const abs = path.isAbsolute(p) ? p : path.join(PROJECT_ROOT, p);
+    if (!existsSync(abs)) {
+      return { credsJson: null, source: `path:${abs}`, error: `GCS_CREDENTIALS_PATH points to a missing file: ${abs}.` };
+    }
+    try {
+      return { credsJson: readFileSync(abs, 'utf8'), source: `path:${abs}` };
+    } catch (err) {
+      return { credsJson: null, source: `path:${abs}`, error: `could not read GCS_CREDENTIALS_PATH file ${abs}: ${err?.message || err}.` };
+    }
+  }
+  const inline = env.GCS_CREDENTIALS || process.env.GCS_CREDENTIALS;
+  if (inline) return { credsJson: inline, source: 'inline:GCS_CREDENTIALS' };
+  return { credsJson: null, source: null };
 }
 
 // Mint a Firebase ID token: admin custom token → Identity Toolkit exchange.
@@ -363,36 +409,40 @@ const WRITE_SITE_FALLBACK =
   'and read the local server logs.';
 
 // Confirm persistence via the GCS read-back — and NEVER throw. Every failure mode
-// (creds absent, creds present-but-unparseable, GCS auth/network error, an error/XML
-// body, an empty/garbage listing) degrades to UNCONFIRMED-with-fallback carrying the
-// raw reason, so the walk always completes and writes its report. This is the same
-// safe-parse discipline readResponse() applies to HTTP bodies, extended to the creds
-// string + the read-back. The endpoint 200 is NEVER proof (silent-swallow; backlog).
-async function buildGcsConfirmation({ gcsCreds, agentId, runStart, expectedRescans }) {
-  if (!gcsCreds) {
-    return {
-      source: 'UNCONFIRMED',
-      reason: 'GCS_CREDENTIALS absent',
-      warning:
-        'GCS_CREDENTIALS absent — cannot read back the stream. The endpoint 200 is NOT proof (rule_compat ' +
-        'inherits the shadow-logger silent-swallow; WS1_PRE_ENFORCE_BACKLOG.md). Persistence UNCONFIRMED — do NOT read this as a pass.',
-      writeSiteLoggingFallback: WRITE_SITE_FALLBACK,
-    };
+// (creds path missing, creds absent, creds present-but-unparseable, GCS auth/network
+// error, an error/XML body, an empty/garbage listing) degrades to UNCONFIRMED-with-
+// fallback carrying the raw reason, so the walk always completes and writes its report.
+// This is the same safe-parse discipline readResponse() applies to HTTP bodies, extended
+// to the creds string + the read-back. The endpoint 200 is NEVER proof (silent-swallow).
+async function buildGcsConfirmation({ credsJson, credsSource, credsError, agentId, runStart, expectedRescans }) {
+  const unconfirmed = (reason, warning, extra = {}) => ({
+    source: 'UNCONFIRMED',
+    reason,
+    credsSource: credsSource || null,
+    warning: `${warning} Persistence UNCONFIRMED; the endpoint 200 is NOT proof (rule_compat inherits the shadow-logger silent-swallow; WS1_PRE_ENFORCE_BACKLOG.md) — do NOT read this as a pass.`,
+    writeSiteLoggingFallback: WRITE_SITE_FALLBACK,
+    ...extra,
+  });
+
+  if (credsError) {
+    return unconfirmed('GCS creds not loadable', credsError);
+  }
+  if (!credsJson) {
+    return unconfirmed(
+      'GCS credentials absent',
+      'No GCS_CREDENTIALS_PATH or GCS_CREDENTIALS set — cannot read back the stream.',
+    );
   }
   let credentials;
   try {
-    credentials = JSON.parse(gcsCreds);
+    credentials = JSON.parse(credsJson);
   } catch (err) {
-    return {
-      source: 'UNCONFIRMED',
-      reason: 'GCS_CREDENTIALS present but not valid JSON',
-      warning:
-        `GCS_CREDENTIALS is set but did not parse as JSON (${err?.message || err}). A multi-line service-account ` +
-        'blob in .env.local is truncated to its first line by the simple KEY=VALUE parser — store it as SINGLE-LINE ' +
-        'JSON. Persistence UNCONFIRMED; the endpoint 200 is NOT proof.',
-      rawCredsHead: String(gcsCreds).slice(0, 120),
-      writeSiteLoggingFallback: WRITE_SITE_FALLBACK,
-    };
+    return unconfirmed(
+      'GCS credentials present but not valid JSON',
+      `GCS credentials (${credsSource}) did not parse as JSON (${err?.message || err}). PREFERRED fix: use ` +
+        `GCS_CREDENTIALS_PATH → a gitignored .json file. If kept inline, a multi-line blob must be SINGLE-quoted.`,
+      { rawCredsHead: String(credsJson).slice(0, 120) },
+    );
   }
   try {
     const { Storage } = await import('@google-cloud/storage');
@@ -402,6 +452,7 @@ async function buildGcsConfirmation({ gcsCreds, agentId, runStart, expectedResca
     const rescan = byType.compat_archetype_change_rescan || 0;
     return {
       source: 'gcs_read_back',
+      credsSource: credsSource || null,
       streamRecords: records.length,
       eventCountsByType: byType,
       exactlyOnce: {
@@ -411,15 +462,11 @@ async function buildGcsConfirmation({ gcsCreds, agentId, runStart, expectedResca
       },
     };
   } catch (err) {
-    return {
-      source: 'UNCONFIRMED',
-      reason: 'GCS read-back failed',
-      warning:
-        `GCS read-back threw (${err?.message || err}) — creds scope, bucket access, or an error/XML body from GCS. ` +
-        'Persistence UNCONFIRMED; the endpoint 200 is NOT proof.',
-      rawError: String(err?.stack || err?.message || err).slice(0, 300),
-      writeSiteLoggingFallback: WRITE_SITE_FALLBACK,
-    };
+    return unconfirmed(
+      'GCS read-back failed',
+      `GCS read-back threw (${err?.message || err}) — creds scope, bucket access, or an error/XML body from GCS.`,
+      { rawError: String(err?.stack || err?.message || err).slice(0, 300) },
+    );
   }
 }
 
@@ -438,7 +485,7 @@ async function main() {
   const creds = env.FIREBASE_ADMIN_CREDENTIALS || process.env.FIREBASE_ADMIN_CREDENTIALS;
   const { key: webApiKey, name: webApiKeyName } = resolveWebApiKey(env);
   const baseUrl = (f.baseUrl || env.WS1_WALK_BASE_URL || process.env.WS1_WALK_BASE_URL || '').replace(/\/$/, '');
-  const gcsCreds = env.GCS_CREDENTIALS || process.env.GCS_CREDENTIALS;
+  const { credsJson: gcsCredsJson, source: gcsCredsSource, error: gcsCredsError } = resolveGcsCreds(env);
   if (!creds) die('FIREBASE_ADMIN_CREDENTIALS missing (.env.local).');
   if (!webApiKey) die(`web API key missing — set one of ${WEB_API_KEY_CANDIDATES.join(' / ')} in .env.local (must match the admin service account's Firebase project).`);
   if (!baseUrl) die('base URL missing — pass --base-url or set WS1_WALK_BASE_URL to the deployed origin.');
@@ -487,7 +534,8 @@ async function main() {
     // 4. confirm via GCS read-back (NEVER the HTTP 200 — silent-swallow finding).
     // buildGcsConfirmation never throws: a bad/absent cred or a failed read degrades
     // to UNCONFIRMED so the report below ALWAYS writes, even when nothing is parseable.
-    const confirmation = await buildGcsConfirmation({ gcsCreds, agentId, runStart, expectedRescans: plan.change_archetype.flips.length });
+    console.log(`[gcs] read-back creds source: ${gcsCredsSource || 'none (UNCONFIRMED)'}${gcsCredsError ? ` — ${gcsCredsError}` : ''}`);
+    const confirmation = await buildGcsConfirmation({ credsJson: gcsCredsJson, credsSource: gcsCredsSource, credsError: gcsCredsError, agentId, runStart, expectedRescans: plan.change_archetype.flips.length });
 
     const report = { runStart, agentId, uid, baseUrl, mode: 'observe', plan, confirmation };
     const outPath = f.out || path.join(process.cwd(), `ws1-observe-walk-${runStart.replace(/[:.]/g, '-')}.json`);
@@ -508,4 +556,4 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   main().catch((err) => die(err?.stack || err?.message || String(err)));
 }
 
-export { buildConflictEvent, buildPlan, resolveHardness, resolveWebApiKey, readResponse, buildGcsConfirmation, FIXTURES };
+export { buildConflictEvent, buildPlan, resolveHardness, resolveWebApiKey, resolveGcsCreds, parseEnvFile, readResponse, buildGcsConfirmation, FIXTURES };

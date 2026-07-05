@@ -4,7 +4,10 @@
 // exported pure builders; main() is guarded behind the CLI entrypoint, so no
 // admin/GCS/network is touched. That passing load is the BUILD_RULES §4 guard.
 import { describe, it, expect } from 'vitest';
-import { buildConflictEvent, buildPlan, resolveHardness, resolveWebApiKey, readResponse, buildGcsConfirmation } from './ws1-observe-walk.js';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { buildConflictEvent, buildPlan, resolveHardness, resolveWebApiKey, resolveGcsCreds, parseEnvFile, readResponse, buildGcsConfirmation } from './ws1-observe-walk.js';
 
 const ts = '2026-07-04T00:00:00.000Z';
 
@@ -100,19 +103,75 @@ describe('auth-bridge helpers (fixes from the failed live run)', () => {
 describe('buildGcsConfirmation never throws — the report always writes (crash fix)', () => {
   const args = { agentId: 'ws1walk1', runStart: ts, expectedRescans: 2 };
 
-  it('absent GCS_CREDENTIALS → UNCONFIRMED-with-fallback, not an error', async () => {
-    const c = await buildGcsConfirmation({ ...args, gcsCreds: null });
+  it('absent creds → UNCONFIRMED-with-fallback, not an error', async () => {
+    const c = await buildGcsConfirmation({ ...args, credsJson: null, credsSource: null });
     expect(c.source).toBe('UNCONFIRMED');
-    expect(c.reason).toBe('GCS_CREDENTIALS absent');
+    expect(c.reason).toBe('GCS credentials absent');
     expect(c.writeSiteLoggingFallback).toMatch(/shadowLogger/);
   });
 
-  it('GCS_CREDENTIALS present but non-JSON (the exact line-425 crash) → UNCONFIRMED, raw head, no throw', async () => {
+  it('a load error (missing GCS_CREDENTIALS_PATH file) → UNCONFIRMED with the reason, no throw', async () => {
+    const c = await buildGcsConfirmation({ ...args, credsJson: null, credsSource: 'path:/nope/sa.json', credsError: 'GCS_CREDENTIALS_PATH points to a missing file: /nope/sa.json.' });
+    expect(c.source).toBe('UNCONFIRMED');
+    expect(c.reason).toBe('GCS creds not loadable');
+    expect(c.warning).toMatch(/missing file/);
+  });
+
+  it('creds present but non-JSON (the exact line-425 crash) → UNCONFIRMED, raw head, no throw', async () => {
     // e.g. a multi-line service-account blob truncated to its first line by the env parser
-    const c = await buildGcsConfirmation({ ...args, gcsCreds: '{"type": "service_account",' });
+    const c = await buildGcsConfirmation({ ...args, credsJson: '{"type": "service_account",', credsSource: 'inline:GCS_CREDENTIALS' });
     expect(c.source).toBe('UNCONFIRMED');
     expect(c.reason).toMatch(/not valid JSON/);
     expect(c.rawCredsHead).toMatch(/service_account/);
-    expect(c.writeSiteLoggingFallback).toMatch(/shadowLogger/);
+    expect(c.warning).toMatch(/GCS_CREDENTIALS_PATH/); // points Flash at the preferred fix
+  });
+});
+
+describe('resolveGcsCreds — path preferred, inline fallback, missing path surfaced', () => {
+  it('GCS_CREDENTIALS_PATH is preferred over an inline blob and reads the file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ws1-gcs-'));
+    const p = join(dir, 'sa.json');
+    writeFileSync(p, '{"type":"service_account","project_id":"x"}');
+    const r = resolveGcsCreds({ GCS_CREDENTIALS_PATH: p, GCS_CREDENTIALS: '{"ignored":true}' });
+    expect(r.source).toBe(`path:${p}`);
+    expect(JSON.parse(r.credsJson).project_id).toBe('x');
+    expect(r.error).toBeUndefined();
+  });
+
+  it('a missing GCS_CREDENTIALS_PATH surfaces a load error (no throw, no silent inline fallthrough)', () => {
+    const r = resolveGcsCreds({ GCS_CREDENTIALS_PATH: '/does/not/exist/sa.json' });
+    expect(r.credsJson).toBeNull();
+    expect(r.error).toMatch(/missing file/);
+  });
+
+  it('falls back to the inline blob when no path is set', () => {
+    const r = resolveGcsCreds({ GCS_CREDENTIALS: '{"type":"service_account"}' });
+    expect(r.source).toBe('inline:GCS_CREDENTIALS');
+    expect(r.credsJson).toMatch(/service_account/);
+  });
+
+  it('returns null source when neither is set', () => {
+    expect(resolveGcsCreds({})).toMatchObject({ credsJson: null, source: null });
+  });
+});
+
+describe('parseEnvFile tolerates a multi-line SINGLE-quoted value (the real .env.local shape)', () => {
+  it('accumulates a multi-line quoted blob intact instead of truncating at the first newline', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ws1-env-'));
+    const p = join(dir, '.env.local');
+    // A pretty-printed JSON blob wrapped in single quotes across several physical lines.
+    writeFileSync(p, [
+      'WS1_WALK_BASE_URL=https://example.com',
+      "GCS_CREDENTIALS='{",
+      '  "type": "service_account",',
+      '  "project_id": "fantasytrades"',
+      "}'",
+      'FIREBASE_API_KEY=abc123',
+    ].join('\n'));
+    const env = parseEnvFile(p);
+    expect(env.WS1_WALK_BASE_URL).toBe('https://example.com');
+    expect(env.FIREBASE_API_KEY).toBe('abc123'); // parsing resumes after the closing quote
+    const creds = JSON.parse(env.GCS_CREDENTIALS);
+    expect(creds).toMatchObject({ type: 'service_account', project_id: 'fantasytrades' });
   });
 });
