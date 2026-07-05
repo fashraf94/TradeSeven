@@ -38,8 +38,23 @@ swallow. At minimum the observe baseline must be able to prove persistence, not 
 it from a `200`.
 
 **Interim (this walk).** The observe-walk driver confirms landing by **reading back
-the GCS `signal_drops` stream** (never the HTTP `200`), and — when `GCS_CREDENTIALS`
-are unavailable locally — via temporary **write-site logging** that reports
+the GCS `signal_drops` stream** (never the HTTP `200`), and — when the GCS creds are
+unavailable locally — via temporary **write-site logging** that reports
 persisted-vs-threw. This is a verification workaround, **not** the fix.
 
-**Sources:** `api/_utils/shadowLogger.js:54-56`; `api/agent/log-rule-compat-event.js:100-117`; `BUILD_RULES.md §5`.
+**Walk outcome (2026-07-05) — CLOSED, VERIFIED-with-caveat.** The observe-walk
+(`scripts/ws1-observe-walk.js`) passed the oracle on every live run against the
+deployed stack: `equip_bundle` logged 2 `compat_conflict_equip`, `set_rule_hardness`
+logged 1 `compat_promote_blocked`, both `change-archetype` flips logged a
+`compat_archetype_change_rescan`, the native rule (`ts-01`/guardian) stayed silent, and
+the throwaway test agent reverted clean. **WS1 guard classification is confirmed live.**
+The **GCS read-back persistence confirmation was NOT obtained** (local
+credential-file formatting) — so "each event lands *exactly once* in the stream"
+remains **inferred from the endpoint `200`, not proven from the stream**. That residual
+gap is exactly this MUST-FIX: until the write path distinguishes persisted-vs-swallowed,
+the observe baseline cannot *prove* persistence. **No further observe-walk runs are
+needed to gate enforce — this MUST-FIX is the gate.** The driver already supports
+`GCS_CREDENTIALS_PATH` (a gitignored service-account `.json`) for a future one-shot
+read-back confirmation if desired, but it is not a precondition to closing the walk.
+
+**Sources:** `api/_utils/shadowLogger.js:54-56`; `api/agent/log-rule-compat-event.js:100-117`; `BUILD_RULES.md §5`; walk driver `scripts/ws1-observe-walk.js`.
