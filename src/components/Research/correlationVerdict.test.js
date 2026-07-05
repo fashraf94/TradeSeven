@@ -5,7 +5,7 @@
  * the freshness threshold, and the suppressed-inflections path.
  */
 import { describe, it, expect } from 'vitest';
-import { buildVerdictSentence, strengthBand, breakStatePhrase, rsiDisplay } from './correlationVerdict.js';
+import { buildVerdictSentence, strengthBand, cohesionPhrase, breakStatePhrase, rsiDisplay } from './correlationVerdict.js';
 
 // Minimal payload shaped like /api/research/correlation's response.
 const mk = (over = {}) => ({
@@ -65,6 +65,45 @@ describe('strengthBand — display/word agreement (H5, the rounding-family fix)'
   it('pins the pre-H5 bug case: raw 0.395 displays "0.40" and now bands moderate (never loose)', () => {
     expect((0.395).toFixed(2)).toBe('0.40');
     expect(strengthBand(0.395)).toBe('moderate');
+  });
+});
+
+describe('cohesionPhrase — group-cohesion interpretation (Build 5, sign-aware)', () => {
+  it('maps each POSITIVE band to its pinned phrase', () => {
+    expect(cohesionPhrase(0.85)).toBe('moving as one right now'); // strong
+    expect(cohesionPhrase(0.55)).toBe('mostly moving together'); // moderate
+    expect(cohesionPhrase(0.25)).toBe('loosely aligned — several stories in one group'); // loose
+  });
+
+  it('sub-floor magnitude (|v| < 0.15, either sign) → "not behaving as one group"', () => {
+    expect(cohesionPhrase(0.1)).toBe('not behaving as one group right now');
+    expect(cohesionPhrase(-0.1)).toBe('not behaving as one group right now');
+    expect(cohesionPhrase(0)).toBe('not behaving as one group right now');
+  });
+
+  it('meaningful NEGATIVE cohesion → "pulling in opposite directions" (never a positive band word)', () => {
+    // A group split into anti-correlated camps: the mean of SIGNED pairwise
+    // correlations goes negative. |−0.85| bands 'strong', but the sign must win —
+    // the word may never say "moving as one" against a printed "−0.85" (Rule 9).
+    expect(cohesionPhrase(-0.85)).toBe('pulling in opposite directions right now');
+    expect(cohesionPhrase(-0.55)).toBe('pulling in opposite directions right now');
+    expect(cohesionPhrase(-0.2)).toBe('pulling in opposite directions right now'); // loose-magnitude negative
+  });
+
+  it('non-finite input → null (the caller renders "not enough shared history")', () => {
+    expect(cohesionPhrase(null)).toBeNull();
+    expect(cohesionPhrase(undefined)).toBeNull();
+    expect(cohesionPhrase(NaN)).toBeNull();
+  });
+
+  it('bands on the DISPLAYED (2dp-rounded) value — the phrase flips exactly where fmtCorr flips', () => {
+    expect(cohesionPhrase(0.395)).toBe('mostly moving together'); // prints "+0.40" → moderate
+    expect(cohesionPhrase(0.699999)).toBe('moving as one right now'); // prints "+0.70" → strong
+    expect(cohesionPhrase(0.1449)).toBe('not behaving as one group right now'); // prints "+0.14" → sub-floor
+    expect(cohesionPhrase(0.149999)).toBe('loosely aligned — several stories in one group'); // prints "+0.15" → loose
+    // Negative edges: the band-null (sub-floor) check runs BEFORE the sign check.
+    expect(cohesionPhrase(-0.149999)).toBe('pulling in opposite directions right now'); // "−0.15" → loose mag → divided
+    expect(cohesionPhrase(-0.1449)).toBe('not behaving as one group right now'); // "−0.14" → sub-floor → neutral
   });
 });
 

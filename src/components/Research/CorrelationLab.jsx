@@ -37,7 +37,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { ChartSkeleton } from './ResearchSkeletons';
-import { buildVerdictSentence, breakStatePhrase, conditionalVerdict } from './correlationVerdict';
+import { buildVerdictSentence, breakStatePhrase, conditionalVerdict, cohesionPhrase } from './correlationVerdict';
 
 // Client-side mirror of the driver registry LABELS only (the api registry is
 // server code — do not import it into the bundle; units/interpretations come
@@ -143,6 +143,10 @@ const CAPTIONS = {
   // honest comparison is side vs side — never side vs the headline.
   conditional:
     'Each side is measured on a subset of days, which naturally lowers both readings — compare the two sides to each other, not to the headline link above.',
+  // Build 5 — the group-cohesion caption (pinned copy): member-vs-each-other, and
+  // why a low reading loosens every group-level number on the page.
+  cohesion:
+    "How tightly the group's own members track each other. When this is low, group-level readings on this page describe an average of different stories — read them loosely.",
 };
 
 // Change E — three example chips matching the Discover "TRY ONE" idiom.
@@ -985,6 +989,51 @@ export function ConditionalCard({ conditional, isDesktop }) {
   );
 }
 
+// Build 5 — GROUP COHESION headline card (the mean pairwise correlation among the
+// group's OWN members). Exported like ConditionalCard so the render path — chiefly
+// the absence-tolerance "no block → no card" seam — is unit-testable. Rendered ONLY
+// when the block is present (the endpoint sends it only for groups ≥ 3 members; old
+// cached payloads lack it entirely).
+export function CohesionCard({ cohesion }) {
+  if (!cohesion) return null;
+  const { c20, c60 } = cohesion;
+  // Phrase + pair-disclosure key off the 1-month reading, falling back to the
+  // 3-month when only IT survives (a group flat over 20d but active over 60d, so
+  // c20 nulls while c60 is real). Both windows null → genuinely no shared history.
+  const primary = c20 ?? c60;
+  const phrase =
+    primary == null || primary.value == null
+      ? 'not enough shared history'
+      : // RAW value → cohesionPhrase bands via strengthBand's toFixed(2), the SAME
+        // rounding fmtCorr prints, so the word can't contradict the number (Rule 9).
+        cohesionPhrase(primary.value);
+  const disclosure = primary
+    ? primary.pairsUsed < primary.pairsTotal
+      ? `(${primary.pairsUsed} of ${primary.pairsTotal} pairs)`
+      : `(${primary.pairsTotal} pairs)`
+    : null;
+  return (
+    <div style={card}>
+      <div style={captionStyle}>Group cohesion</div>
+      <div style={{ display: 'flex', gap: 14, marginTop: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: HOLO_COLORS.textMuted }}>
+          1-mo{' '}
+          <span style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, color: GOLD }}>{fmtCorr(c20?.value ?? null)}</span>
+        </span>
+        <span style={{ fontSize: 12, color: HOLO_COLORS.textMuted }}>
+          3-mo{' '}
+          <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 600, color: GRAY }}>{fmtCorr(c60?.value ?? null)}</span>
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: HOLO_COLORS.textMuted, marginTop: 6 }}>
+        {phrase}
+        {disclosure ? ` ${disclosure}` : ''}
+      </div>
+      <div style={subCaptionStyle}>{CAPTIONS.cohesion}</div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const card = {
@@ -1475,6 +1524,9 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                 );
               })()}
             </div>
+            {/* Build 5 — GROUP COHESION (5th card; the auto-fit grid absorbs it, and
+                a null block renders nothing for groups < 3 members / old payloads) */}
+            <CohesionCard cohesion={data.cohesion} />
           </div>
 
           {/* 3 — Rolling chart */}

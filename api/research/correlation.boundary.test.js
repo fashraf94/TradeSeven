@@ -119,6 +119,10 @@ function compound(start, returns) {
 const driverCloses = compound(50, driverReturns); // 360
 const memberACloses = compound(30, memberAReturns);
 const memberBCloses = compound(70, memberBReturns);
+// Build 5 — a THIRD member for the cohesion e2e. Its returns ARE groupReturns (no
+// noise: rA/rB/rC = rg+w / rg−w / rg), so the equal-weight composite stays EXACTLY
+// rg — every group-vs-driver expectation is unchanged; only member count grows.
+const memberCCloses = compound(45, groupReturns);
 
 // 361 consecutive weekday date strings starting Mon 2024-01-01.
 function makeWeekdays(n, startUtcMs = Date.UTC(2024, 0, 1)) {
@@ -153,6 +157,8 @@ const DRIVER_WIRE = toWire(driverCloses, eqDates, {
 });
 const MEMBER_A_WIRE = toWire(memberACloses, eqDates);
 const MEMBER_B_WIRE = toWire(memberBCloses, eqDates);
+// eqDates (not W): the driver's W[200] poison row must still inner-join away.
+const MEMBER_C_WIRE = toWire(memberCCloses, eqDates);
 
 // ==================== fetch stub + request plumbing ====================
 
@@ -164,6 +170,7 @@ function wireFor(symbol) {
   if (symbol === 'TNX.INDX') return DRIVER_WIRE; // Build 4: the diff-mode direction-label fixture
   if (symbol === 'AAA.US') return MEMBER_A_WIRE;
   if (symbol === 'BBB.US') return MEMBER_B_WIRE;
+  if (symbol === 'DDD.US') return MEMBER_C_WIRE; // Build 5: a fresh 3rd member ('CCC' is the unfetchable partial-failure symbol)
   // EODHD wire forms for the symbol-normalization test: app-form BRK.B must
   // arrive here as BRK-B.US (dot→hyphen), user-entered SPY.US as SPY.US (one
   // suffix). The un-normalized forms (BRK.B.US / SPY.US.US) have no wire.
@@ -550,6 +557,42 @@ describe('cache + partial-failure contracts', () => {
     expect(res.statusCode).toBe(422);
     expect(res.body.error).toBe('group_unavailable');
     expect(res.body.droppedSymbols).toEqual(['ZZZ']);
+  });
+});
+
+describe('V2 Build 5 — intra-group cohesion', () => {
+  it('the 2-member canonical run carries cohesion: null (< 3 members — the whole block nulls)', () => {
+    expect(out.cohesion).toBeNull();
+  });
+
+  it('a 3-member group carries the additive cohesion block, computed end-to-end', async () => {
+    const { req, res } = makeReqRes({
+      group: ['AAA', 'BBB', 'DDD'],
+      driver: 'BRENT',
+      lookbackDays: 400,
+      forceRefresh: true,
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    // DDD is a REAL third member — proving it fetched, not silently dropped to a
+    // 2-member partial (which would false-green a `?.` cohesion assert).
+    expect(res.body.meta.group).toEqual(['AAA', 'BBB', 'DDD']);
+    expect(res.body.meta.droppedSymbols).toEqual([]);
+    expect(res.body.meta.partial).toBe(false);
+    expect(res.body.meta.joinedCloses).toBe(360);
+
+    const { cohesion } = res.body;
+    expect(cohesion).not.toBeNull();
+    expect(cohesion.memberCount).toBe(3);
+    for (const c of [cohesion.c20, cohesion.c60]) {
+      expect(c).not.toBeNull();
+      expect(c.pairsTotal).toBe(3); // C(3,2)
+      expect(c.pairsUsed).toBe(3); // all members non-degenerate
+      expect(Number.isFinite(c.value)).toBe(true);
+      // rA/rB/rC = rg+w / rg−w / rg (tiny w) → the members co-move strongly.
+      expect(c.value).toBeGreaterThan(0.5);
+      expect(c.value).toBeLessThanOrEqual(1);
+    }
   });
 });
 

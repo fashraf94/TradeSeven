@@ -151,6 +151,52 @@ export function pearson(returnsA, returnsB) {
 }
 
 /**
+ * Intra-group cohesion (V2 Build 5) — the mean pairwise Pearson correlation
+ * among a group's OWN members over the trailing `window` returns. High = the
+ * group trades as one bloc; low = several stories wearing one label. Driver-
+ * independent by nature.
+ *
+ * @param {number[][]} memberReturns - aligned OLDEST-FIRST return arrays, one per
+ *   member (one joined calendar → equal lengths; the endpoint guarantees non-null).
+ * @param {number} window - trailing observation count (20 or 60).
+ * @returns {{value:number, pairsUsed:number, pairsTotal:number}|null}
+ *   value = mean over the NON-NULL pairs; pairsTotal = C(m,2); pairsUsed = pairs
+ *   that yielded a finite Pearson. Null when fewer than 2 member arrays, or when
+ *   every pair is insufficient/degenerate (pairsUsed === 0).
+ *
+ * The math minimum is 2 arrays (one pair). The PRODUCT policy that "cohesion
+ * needs ≥ 3 members" lives at the endpoint (its memberCount ≥ 3 gate) — do NOT
+ * tighten this guard to 3; the 2-member branch is endpoint-dead but unit-reachable.
+ * Calls the one pearson (BUILD_RULES §4, never a second copy); an insufficient or
+ * degenerate pair contributes NOTHING (never a 0) so a genuine zero pair-corr stays
+ * distinguishable from "no answer" — the module's null-never-zero policy.
+ */
+export function pairwiseCohesion(memberReturns, window) {
+  if (!Array.isArray(memberReturns) || memberReturns.length < 2) return null;
+  if (!Number.isInteger(window) || window < 2) return null;
+  const m = memberReturns.length;
+  const pairsTotal = (m * (m - 1)) / 2; // C(m,2); integer since m(m−1) is even
+  let sum = 0;
+  let pairsUsed = 0;
+  for (let i = 0; i < m; i++) {
+    for (let j = i + 1; j < m; j++) {
+      // Trailing `window` of each aligned array. The length === window guard rejects
+      // a short source (slice caps length) so no partial-window correlation leaks —
+      // complementary to pearson's own ~zero-variance guard, which drops a degenerate
+      // member's pairs. Both exclusions land in pairsUsed, never as a 0.
+      const a = Array.isArray(memberReturns[i]) ? memberReturns[i].slice(-window) : [];
+      const b = Array.isArray(memberReturns[j]) ? memberReturns[j].slice(-window) : [];
+      const r = a.length === window && b.length === window ? pearson(a, b) : null;
+      if (r != null) {
+        sum += r;
+        pairsUsed += 1;
+      }
+    }
+  }
+  return pairsUsed === 0 ? null : { value: sum / pairsUsed, pairsUsed, pairsTotal };
+}
+
+/**
  * Rolling Pearson correlation over full windows only (no partials).
  * `dates` is the chronological CLOSES-date array (length = returns.length + 1)
  * used to stamp eventDate = dates[j + 1] per the index/date mapping contract.

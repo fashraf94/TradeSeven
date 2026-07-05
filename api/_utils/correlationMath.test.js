@@ -18,6 +18,7 @@ import {
   computeReturnsSeries,
   rollingCorrelation,
   pearson,
+  pairwiseCohesion,
   olsBeta,
   rollingBeta,
   leadLag,
@@ -892,5 +893,99 @@ describe('median — the exported shared implementation (Build 4 review)', () =>
     const a = [3, 1, 2];
     median(a);
     expect(a).toEqual([3, 1, 2]);
+  });
+});
+
+// ── pairwiseCohesion — intra-group cohesion (V2 Build 5) ─────────────────────
+describe('pairwiseCohesion', () => {
+  // Period-4 Hadamard rows (zero-sum, mutually orthogonal), tiled to length 60 so
+  // slice(-20) = 5 periods and slice(-60) = 15 periods both stay period-aligned,
+  // zero-sum AND orthogonal → each pair's Pearson is EXACTLY 0, not noisy-≈0.
+  const tile = (pat, times) => Array.from({ length: times }, () => pat).flat();
+  const ORTHO_A = tile([1, -1, 1, -1], 15);
+  const ORTHO_B = tile([1, 1, -1, -1], 15);
+  const ORTHO_C = tile([1, -1, -1, 1], 15);
+
+  // A varied base + two tiny-noise copies → near-perfectly-correlated members.
+  const gen = lehmer(555);
+  const base = Array.from({ length: 60 }, () => (gen() - 0.5) * 0.03);
+  const near1 = base.map((v) => v + (gen() - 0.5) * 0.0004);
+  const near2 = base.map((v) => v + (gen() - 0.5) * 0.0004);
+  const w = (a) => a.slice(-20);
+
+  it('near-identical members → value ≈ 1, every pair used', () => {
+    const r = pairwiseCohesion([base, near1, near2], 20);
+    expect(r.value).toBeGreaterThan(0.99);
+    expect(r.pairsUsed).toBe(3);
+    expect(r.pairsTotal).toBe(3);
+  });
+
+  it('mutually-orthogonal zero-sum members → value exactly 0 at BOTH windows', () => {
+    const r20 = pairwiseCohesion([ORTHO_A, ORTHO_B, ORTHO_C], 20);
+    const r60 = pairwiseCohesion([ORTHO_A, ORTHO_B, ORTHO_C], 60);
+    expect(r20.value).toBeCloseTo(0, 12);
+    expect(r20.pairsUsed).toBe(3);
+    expect(r60.value).toBeCloseTo(0, 12);
+    expect(r60.pairsUsed).toBe(3);
+  });
+
+  it('value is the mean of the individual pairwise Pearsons over the LAST window (pair indexing + slicing)', () => {
+    const members = [base, near1, ORTHO_A];
+    const r = pairwiseCohesion(members, 20);
+    const expected =
+      (pearson(w(base), w(near1)) + pearson(w(base), w(ORTHO_A)) + pearson(w(near1), w(ORTHO_A))) / 3;
+    expect(r.value).toBeCloseTo(expected, 12);
+    expect(r.pairsUsed).toBe(3);
+    expect(r.pairsTotal).toBe(3);
+  });
+
+  it('one degenerate (flat) member → its pairs null, disclosed via pairsUsed < pairsTotal, mean over the rest', () => {
+    const flat = new Array(60).fill(0.004); // zero variance → pearson nulls its two pairs
+    const r = pairwiseCohesion([base, near1, flat], 20);
+    expect(r.pairsUsed).toBe(1); // only (base, near1) survives
+    expect(r.pairsTotal).toBe(3);
+    expect(r.value).toBeCloseTo(pearson(w(base), w(near1)), 12);
+  });
+
+  it('every pair degenerate → null (null-never-zero, not a 0 reading)', () => {
+    const flatA = new Array(60).fill(0.001);
+    const flatB = new Array(60).fill(0.002);
+    expect(pairwiseCohesion([flatA, flatB, flatA], 20)).toBe(null);
+  });
+
+  it('two members with a valid pair → the single-pair value (general primitive; the ≥3 policy is the endpoint\'s)', () => {
+    const r = pairwiseCohesion([base, near1], 20);
+    expect(r.pairsTotal).toBe(1);
+    expect(r.pairsUsed).toBe(1);
+    expect(r.value).toBeCloseTo(pearson(w(base), w(near1)), 12);
+  });
+
+  it('fewer than 2 member arrays → null', () => {
+    expect(pairwiseCohesion([base], 20)).toBe(null);
+    expect(pairwiseCohesion([], 20)).toBe(null);
+    expect(pairwiseCohesion(null, 20)).toBe(null);
+  });
+
+  it('insufficient window (arrays shorter than window) → null', () => {
+    const short = [base.slice(0, 12), near1.slice(0, 12), near2.slice(0, 12)];
+    expect(pairwiseCohesion(short, 20)).toBe(null);
+  });
+
+  it('per-window gating: enough for 20 but not 60 → c20 value, c60 null', () => {
+    const trio = [base.slice(-30), near1.slice(-30), near2.slice(-30)];
+    expect(pairwiseCohesion(trio, 20)).not.toBe(null);
+    expect(pairwiseCohesion(trio, 60)).toBe(null);
+  });
+
+  it('pairsTotal counts every unordered pair (7 members → 21)', () => {
+    const seven = Array.from({ length: 7 }, (_, k) =>
+      base.map((v) => v + k * 1e-6 + (gen() - 0.5) * 0.0002)
+    );
+    expect(pairwiseCohesion(seven, 20).pairsTotal).toBe(21);
+  });
+
+  it('invalid window → null', () => {
+    expect(pairwiseCohesion([base, near1, near2], 1)).toBe(null);
+    expect(pairwiseCohesion([base, near1, near2], 20.5)).toBe(null);
   });
 });

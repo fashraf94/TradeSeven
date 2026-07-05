@@ -46,6 +46,8 @@ import {
   maskedPearson,
   compareConditionalSides,
   median,
+  computeReturnsSeries,
+  pairwiseCohesion,
   SDS_BASELINE_WINDOW,
 } from '../_utils/correlationMath.js';
 // V2 Build 2 extraction: the join-and-compute core and the two-sided cache TTL
@@ -383,6 +385,33 @@ export default async function handler(req, res) {
       registry,
     });
 
+    // Build 5 — intra-group cohesion ("is this group even one thing right now?"):
+    // the mean pairwise correlation among the group's OWN members at 20d/60d. The
+    // aligned per-member return series stay internal to assembleDriverCore (they
+    // only build the composite), so recompute them endpoint-side from the in-scope
+    // memberMaps projected onto the core's (lookback-capped) joinedDates — the SAME
+    // driver-inclusive joined calendar as every other stat on the page (deliberate
+    // page-consistency); the pairwise correlation itself is among MEMBERS only (the
+    // driver is not a cohesion member). 'pct' is bound to correlationAssembly.js's
+    // memberReturns mode — if the core ever changes it, change here too. The core
+    // already returned 422 for a degenerate member above, so these are non-null.
+    const memberReturns = memberMaps.map((m) =>
+      computeReturnsSeries(joinedDates.map((d) => m.get(d)), 'pct')
+    );
+    // Additive; pre-Build-5 cached payloads simply lack the field and the UI
+    // null-guards it (daily expiry, no migration — the Build 3/4 precedent). The
+    // whole block is null below 3 members: a 2-member "cohesion" is one pair
+    // wearing a grand name, and an ETF-proxy group of one has nothing to cohere.
+    const memberCount = survivors.length;
+    const cohesion =
+      memberCount >= 3
+        ? {
+            c20: pairwiseCohesion(memberReturns, 20),
+            c60: pairwiseCohesion(memberReturns, 60),
+            memberCount,
+          }
+        : null;
+
     // First observation with a FULL trailing SDS baseline — the UI base-rate
     // sentence anchors here, never at the raw lookback start.
     const firstEligibleInflectionDate = divergenceSeries[SDS_BASELINE_WINDOW]?.eventDate ?? null;
@@ -480,6 +509,7 @@ export default async function handler(req, res) {
       leadLag: lag,
       divergence,
       conditional,
+      cohesion,
       inflections,
       baseRates,
       suppressed,
