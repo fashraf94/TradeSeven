@@ -77,5 +77,22 @@ describe('auth-bridge helpers (fixes from the failed live run)', () => {
     expect(bad.ok).toBe(false);
     expect(bad.json).toBeNull();
     expect(bad.text).toMatch(/Missing or invalid/);
+    // and it tolerates a fake without a headers/redirected shape (fields default, no throw)
+    expect(bad.location).toBeNull();
+    expect(bad.redirected).toBe(false);
+  });
+
+  it('readResponse captures the Location + redirected of a 3xx (the auth-strip signal the preflight keys on)', async () => {
+    const redirectRes = {
+      status: 308,
+      ok: false,
+      redirected: false,
+      headers: { get: (h) => (h.toLowerCase() === 'location' ? 'https://prod.example.com/api/agent/log-rule-compat-event' : null) },
+      text: async () => 'redirecting',
+    };
+    const r = await readResponse(redirectRes);
+    expect(r.status).toBe(308);
+    expect(r.location).toBe('https://prod.example.com/api/agent/log-rule-compat-event');
+    expect(new URL(r.location).origin).toBe('https://prod.example.com');
   });
 });

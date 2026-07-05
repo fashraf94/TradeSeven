@@ -12,8 +12,14 @@
 //
 // AUTH BRIDGE is verified in ISOLATION before any path runs: it mints a Firebase
 // ID token for the test owner (admin custom token → Identity Toolkit exchange) and
-// POSTs a probe — a broken bridge STOPs at the top (404 = flag not serving observe;
-// 401 = token not accepted), never firing four bare (headerless) POSTs.
+// POSTs a probe with redirect:'manual' — a broken bridge STOPs at the top with the
+// PRECISE cause and never fires four bare (headerless) POSTs:
+//   3xx    = origin redirects → Node fetch strips Authorization across the hop; the
+//            preflight names the final canonical origin to set WS1_WALK_BASE_URL to.
+//   404    = deployed build not serving observe (flag mismatch).
+//   401 (non-JSON) = platform auth wall (Vercel deployment protection / SSO) upstream.
+//   401 'Missing header'      = header stripped in transit (edge/proxy/rewrite).
+//   401 'Invalid/expired token' = token rejected (cross-project key or expiry).
 //   node scripts/ws1-observe-walk.js --live --yes --mint-only   # verify the auth bridge alone
 //
 // The four guarded paths (RULE_COMPAT_MODE='observe' → classify + log, never block):
@@ -167,7 +173,7 @@ async function readResponse(res) {
   const text = await res.text();
   let json = null;
   try { json = JSON.parse(text); } catch { /* non-JSON body */ }
-  return { status: res.status, ok: res.ok, json, text };
+  return { status: res.status, ok: res.ok, json, text, location: res.headers?.get?.('location') ?? null, redirected: res.redirected ?? false };
 }
 
 // The web API key must belong to the SAME Firebase project as the admin service
@@ -214,30 +220,85 @@ async function mintIdToken(getAuth, uid, webApiKey) {
 }
 
 // Authed POST — asserts the token is present before sending (fail fast so a broken
-// auth bridge never fires a bare POST).
+// auth bridge never fires a bare POST). redirect:'manual' is deliberate: Node's fetch
+// DROPS the Authorization header across a cross-origin redirect (WHATWG fetch spec),
+// so a silently-followed 3xx would deliver a headerless request to the endpoint and
+// produce a spurious 'Missing Authorization header' 401. Surfacing the 3xx lets the
+// preflight name the final origin instead of misreporting a stripped header as a bad token.
 function api(baseUrl, endpoint, idToken, payload) {
   if (!idToken || typeof idToken !== 'string' || idToken.length < 20) {
     die(`refusing to POST ${endpoint} with an empty/invalid Authorization token — auth bridge broken.`);
   }
   return fetch(`${baseUrl}${endpoint}`, {
     method: 'POST',
+    redirect: 'manual',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
     body: JSON.stringify(payload),
   });
 }
 
 // Auth + endpoint preflight: POST an empty-events probe with the minted token and
-// distinguish 404 (flag not serving observe) / 401 (token not accepted — auth bridge
-// broken) / else (live + token accepted). STOPs loudly on 404 or 401.
+// classify the response BEFORE any path fires. Each failure signature STOPs loudly
+// with its precise cause — an empty capture is NEVER read as a pass:
+//   • 3xx / opaqueredirect  — the origin redirects; Node's fetch DROPS Authorization
+//       across a cross-origin hop (WHATWG fetch spec), so a followed redirect delivers
+//       a HEADERLESS request and the endpoint answers 401 'Missing header' — NOT a
+//       token problem. Name the final origin from Location so WS1_WALK_BASE_URL can
+//       point straight at it. (This is the signature the founder's mint-only run hit:
+//       a valid 790-char JWT, yet 'Missing or invalid Authorization header'.)
+//   • non-JSON 401/403      — a platform auth wall (Vercel deployment protection / SSO)
+//       intercepts BEFORE the endpoint; the request never reaches it.
+//   • 404                   — the deployed build isn't serving observe (flag mismatch).
+//   • JSON 401              — the endpoint answered; disambiguate by its message
+//       (authMiddleware.js): 'Missing or invalid Authorization header' = header stripped
+//       in transit; 'Invalid or expired token' = token rejected (cross-project/expired).
+// Expected PASS: 400 (authed; the empty-events probe is rejected on content, not auth).
 async function authPreflight(baseUrl, idToken, agentId) {
   const r = await readResponse(await api(baseUrl, '/api/agent/log-rule-compat-event', idToken, { agentId, archetype: TREND_FOLLOWER, mode: 'observe', events: [] }));
+
+  if (r.status === 0 || (r.status >= 300 && r.status < 400)) {
+    let finalOrigin = r.location || '(opaque)';
+    try { finalOrigin = new URL(r.location).origin; } catch { /* opaque / relative */ }
+    const loc = r.location || `(opaque — run \`curl -sI ${baseUrl}/api/agent/log-rule-compat-event\` to read Location)`;
+    die(
+      `preflight: the origin returned a ${r.status || '3xx'} redirect → ${loc}\n` +
+        `Node's fetch STRIPS the Authorization header across a cross-origin redirect (WHATWG fetch spec), so ` +
+        `following it delivers a HEADERLESS request and the endpoint answers 401 'Missing Authorization header' — ` +
+        `NOT a token problem. Point WS1_WALK_BASE_URL at the FINAL canonical origin (${finalOrigin}) and re-run.`,
+    );
+  }
+
+  if (r.json === null && (r.status === 401 || r.status === 403)) {
+    die(
+      `preflight: ${r.status} with a NON-JSON body — a platform auth wall (Vercel deployment protection / SSO) ` +
+        `is intercepting BEFORE the endpoint; the request never reaches log-rule-compat-event.\n` +
+        `Body: ${r.text.slice(0, 160).replace(/\s+/g, ' ')}\n` +
+        `Disable deployment protection for this deployment, or set WS1_WALK_BASE_URL to the public production origin.`,
+    );
+  }
+
   if (r.status === 404) {
     die("preflight: log endpoint returned 404 — the deployed origin is NOT serving observe. Resolve the repo-vs-deployed flag mismatch; do NOT read empty capture as a pass. (Founder A-note.)");
   }
+
   if (r.status === 401) {
-    die(`preflight: log endpoint returned 401 (${r.json?.message || r.json?.error || r.text.slice(0, 120)}) — the minted token was NOT accepted. Auth bridge broken; STOP before firing any path POST.`);
+    const msg = r.json?.message || r.text.slice(0, 120);
+    if (/Missing or invalid Authorization header/i.test(msg)) {
+      die(
+        `preflight: 401 'Missing or invalid Authorization header' — the endpoint answered but saw NO header, though ` +
+          `the script sent 'Authorization: Bearer <token>' (mirrors fetchWithAuth exactly) and no redirect was followed. ` +
+          `An edge/proxy/rewrite in front of the function stripped it. Confirm WS1_WALK_BASE_URL is the DIRECT canonical ` +
+          `origin (no proxy/rewrite) and re-run. STOP — the auth bridge is broken in transit, not in the script.`,
+      );
+    }
+    die(
+      `preflight: 401 '${msg}' — the header arrived but the TOKEN was rejected (expired, revoked, or the web API key ` +
+        `is for a DIFFERENT Firebase project than the admin service account). Verify the web API key and admin creds ` +
+        `are the SAME project. Auth bridge broken; STOP before firing any path POST.`,
+    );
   }
-  return r.status; // expect 400 (authed; empty events invalid) → endpoint live + token accepted
+
+  return r.status; // expect 400 (authed; empty events invalid) → endpoint live + observe + token accepted
 }
 
 async function setupTestAgent(db, FieldValue, agentId, uid) {
