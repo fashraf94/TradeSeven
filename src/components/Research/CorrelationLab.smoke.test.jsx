@@ -20,6 +20,7 @@ import {
   ScanResults,
   ConditionedBaseRates,
   ConditionalCard,
+  CohesionCard,
   divergenceState,
   leadLagEvidenceLine,
   resolveResultLabels,
@@ -563,5 +564,62 @@ describe('result surfaces render the payload driver label, not the component def
     const html = render(<div>{buildVerdictSentence(goldData, driverLabel)}</div>);
     expect(html).toContain('Gold (GLD proxy)');
     expect(html).not.toContain('Brent');
+  });
+});
+
+// ── Build 5 — GROUP COHESION card ─────────────────────────────────────────────
+describe('CohesionCard — intra-group cohesion headline card', () => {
+  it('renders both windows, the "(N pairs)" disclosure, and a phrase that agrees with the printed value', () => {
+    const html = render(
+      <CohesionCard
+        cohesion={{ c20: { value: 0.82, pairsUsed: 3, pairsTotal: 3 }, c60: { value: 0.71, pairsUsed: 3, pairsTotal: 3 }, memberCount: 3 }}
+      />
+    );
+    expect(html).toContain('Group cohesion');
+    expect(html).toContain('+0.82'); // 1-mo via fmtCorr
+    expect(html).toContain('+0.71'); // 3-mo
+    expect(html).toContain('moving as one right now'); // strengthBand(0.82) = strong
+    expect(html).toContain('(3 pairs)'); // pairsUsed === pairsTotal → total form
+  });
+
+  it('discloses partial coverage as "(x of y pairs)" when a member drops out of a window', () => {
+    const html = render(
+      <CohesionCard
+        cohesion={{ c20: { value: 0.5, pairsUsed: 1, pairsTotal: 3 }, c60: { value: 0.5, pairsUsed: 1, pairsTotal: 3 }, memberCount: 3 }}
+      />
+    );
+    expect(html).toContain('(1 of 3 pairs)');
+    expect(html).toContain('mostly moving together'); // moderate
+  });
+
+  it('a meaningfully-negative reading prints "pulling in opposite directions", never "moving as one" (Rule 9)', () => {
+    const html = render(
+      <CohesionCard
+        cohesion={{ c20: { value: -0.83, pairsUsed: 3, pairsTotal: 3 }, c60: { value: -0.6, pairsUsed: 3, pairsTotal: 3 }, memberCount: 3 }}
+      />
+    );
+    expect(html).toContain('-0.83');
+    expect(html).toContain('pulling in opposite directions right now');
+    expect(html).not.toContain('moving as one');
+  });
+
+  it('both windows null (no shared history) → "—" values and the honest phrase, no crash', () => {
+    const html = render(<CohesionCard cohesion={{ c20: null, c60: null, memberCount: 3 }} />);
+    expect(html).toContain('not enough shared history');
+    expect(html).toContain('—');
+  });
+
+  it('c20 null but c60 present → falls back to the 3-month reading (never a false "not enough history")', () => {
+    const html = render(
+      <CohesionCard cohesion={{ c20: null, c60: { value: 0.75, pairsUsed: 3, pairsTotal: 3 }, memberCount: 3 }} />
+    );
+    expect(html).not.toContain('not enough shared history');
+    expect(html).toContain('moving as one right now'); // banded off c60
+    expect(html).toContain('+0.75');
+  });
+
+  it('absence tolerance: no cohesion block (old cached payload / group < 3 members) renders NOTHING', () => {
+    expect(render(<CohesionCard cohesion={undefined} />)).toBe('');
+    expect(render(<CohesionCard cohesion={null} />)).toBe('');
   });
 });

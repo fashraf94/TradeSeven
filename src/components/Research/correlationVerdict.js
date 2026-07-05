@@ -34,6 +34,29 @@ export function strengthBand(absCorr) {
   return null;
 }
 
+// ── Group-cohesion interpretation phrase (V2 Build 5) ─────────────────────────
+// One line describing whether the group's OWN members are behaving as one thing,
+// banded through the SAME strengthBand the whole page uses (one banding impl).
+//
+// Takes the SIGNED cohesion value (not a pre-computed band) because the mean of
+// signed pairwise Pearsons can be NEGATIVE — a group split into anti-correlated
+// camps. strengthBand only sees magnitude, so a raw −0.85 would band 'strong' and,
+// unguarded, read "moving as one" against a printed "−0.85": the display-agreement
+// bug (Rule 9) this must never commit. So the tier comes from strengthBand(|value|)
+// — identical rounding to fmtCorr (both toFixed(2)) — and the SIGN is honored here:
+// a meaningful negative is "pulling in opposite directions", never cohesion.
+// Sub-floor (|value| < 0.15, either sign) is the honest "no reliable cohesion" case.
+// Non-finite input → null (the caller renders "not enough shared history").
+export function cohesionPhrase(value) {
+  if (!Number.isFinite(value)) return null;
+  const band = strengthBand(Math.abs(value));
+  if (band === null) return 'not behaving as one group right now';
+  if (value < 0) return 'pulling in opposite directions right now';
+  if (band === 'strong') return 'moving as one right now';
+  if (band === 'moderate') return 'mostly moving together';
+  return 'loosely aligned — several stories in one group'; // loose (positive)
+}
+
 // English ordinal: 1 → "1st", 2 → "2nd", 3 → "3rd", 11 → "11th", 21 → "21st".
 function ordinal(n) {
   const s = ['th', 'st', 'nd', 'rd'];
