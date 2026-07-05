@@ -357,6 +357,72 @@ async function removeTestAgent(db, agentId) {
   await agentRef.delete().catch(() => {});
 }
 
+const WRITE_SITE_FALLBACK =
+  'To confirm without GCS: run the endpoint locally with a temporary log at api/_utils/shadowLogger.js ' +
+  'appendToStream (after the bucket.file(...).save(...) log "persisted", in the catch log "THREW"), re-drive, ' +
+  'and read the local server logs.';
+
+// Confirm persistence via the GCS read-back — and NEVER throw. Every failure mode
+// (creds absent, creds present-but-unparseable, GCS auth/network error, an error/XML
+// body, an empty/garbage listing) degrades to UNCONFIRMED-with-fallback carrying the
+// raw reason, so the walk always completes and writes its report. This is the same
+// safe-parse discipline readResponse() applies to HTTP bodies, extended to the creds
+// string + the read-back. The endpoint 200 is NEVER proof (silent-swallow; backlog).
+async function buildGcsConfirmation({ gcsCreds, agentId, runStart, expectedRescans }) {
+  if (!gcsCreds) {
+    return {
+      source: 'UNCONFIRMED',
+      reason: 'GCS_CREDENTIALS absent',
+      warning:
+        'GCS_CREDENTIALS absent — cannot read back the stream. The endpoint 200 is NOT proof (rule_compat ' +
+        'inherits the shadow-logger silent-swallow; WS1_PRE_ENFORCE_BACKLOG.md). Persistence UNCONFIRMED — do NOT read this as a pass.',
+      writeSiteLoggingFallback: WRITE_SITE_FALLBACK,
+    };
+  }
+  let credentials;
+  try {
+    credentials = JSON.parse(gcsCreds);
+  } catch (err) {
+    return {
+      source: 'UNCONFIRMED',
+      reason: 'GCS_CREDENTIALS present but not valid JSON',
+      warning:
+        `GCS_CREDENTIALS is set but did not parse as JSON (${err?.message || err}). A multi-line service-account ` +
+        'blob in .env.local is truncated to its first line by the simple KEY=VALUE parser — store it as SINGLE-LINE ' +
+        'JSON. Persistence UNCONFIRMED; the endpoint 200 is NOT proof.',
+      rawCredsHead: String(gcsCreds).slice(0, 120),
+      writeSiteLoggingFallback: WRITE_SITE_FALLBACK,
+    };
+  }
+  try {
+    const { Storage } = await import('@google-cloud/storage');
+    const gcs = new Storage({ credentials });
+    const records = await readBackGcs(gcs, agentId, runStart);
+    const byType = tallyEvents(records);
+    const rescan = byType.compat_archetype_change_rescan || 0;
+    return {
+      source: 'gcs_read_back',
+      streamRecords: records.length,
+      eventCountsByType: byType,
+      exactlyOnce: {
+        compat_conflict_equip: byType.compat_conflict_equip === 2,
+        compat_promote_blocked: byType.compat_promote_blocked === 1,
+        compat_archetype_change_rescan: rescan === expectedRescans,
+      },
+    };
+  } catch (err) {
+    return {
+      source: 'UNCONFIRMED',
+      reason: 'GCS read-back failed',
+      warning:
+        `GCS read-back threw (${err?.message || err}) — creds scope, bucket access, or an error/XML body from GCS. ` +
+        'Persistence UNCONFIRMED; the endpoint 200 is NOT proof.',
+      rawError: String(err?.stack || err?.message || err).slice(0, 300),
+      writeSiteLoggingFallback: WRITE_SITE_FALLBACK,
+    };
+  }
+}
+
 async function main() {
   const f = parseArgs(process.argv);
   const ts = new Date().toISOString();
@@ -418,31 +484,10 @@ async function main() {
       console.log(`[change_archetype → ${to}] ${rc.status} ${rc.text.slice(0, 160)}`);
     }
 
-    // 4. confirm via GCS read-back (NEVER the HTTP 200 — silent-swallow finding)
-    let confirmation;
-    if (gcsCreds) {
-      const { Storage } = await import('@google-cloud/storage');
-      const gcs = new Storage({ credentials: JSON.parse(gcsCreds) });
-      const records = await readBackGcs(gcs, agentId, runStart);
-      const byType = tallyEvents(records);
-      const rescan = byType.compat_archetype_change_rescan || 0;
-      confirmation = {
-        source: 'gcs_read_back',
-        streamRecords: records.length,
-        eventCountsByType: byType,
-        exactlyOnce: {
-          compat_conflict_equip: byType.compat_conflict_equip === 2,
-          compat_promote_blocked: byType.compat_promote_blocked === 1,
-          compat_archetype_change_rescan: rescan === plan.change_archetype.flips.length,
-        },
-      };
-    } else {
-      confirmation = {
-        source: 'UNCONFIRMED',
-        warning: 'GCS_CREDENTIALS absent — cannot read back the stream. The endpoint 200 is NOT proof (rule_compat inherits the shadow-logger silent-swallow; WS1_PRE_ENFORCE_BACKLOG.md). Persistence UNCONFIRMED — do NOT read this as a pass.',
-        writeSiteLoggingFallback: 'To confirm without GCS: run the endpoint locally with a temporary log at api/_utils/shadowLogger.js appendToStream (after the bucket.file(...).save(...) log "persisted", in the catch log "THREW"), re-drive, and read the local server logs.',
-      };
-    }
+    // 4. confirm via GCS read-back (NEVER the HTTP 200 — silent-swallow finding).
+    // buildGcsConfirmation never throws: a bad/absent cred or a failed read degrades
+    // to UNCONFIRMED so the report below ALWAYS writes, even when nothing is parseable.
+    const confirmation = await buildGcsConfirmation({ gcsCreds, agentId, runStart, expectedRescans: plan.change_archetype.flips.length });
 
     const report = { runStart, agentId, uid, baseUrl, mode: 'observe', plan, confirmation };
     const outPath = f.out || path.join(process.cwd(), `ws1-observe-walk-${runStart.replace(/[:.]/g, '-')}.json`);
@@ -463,4 +508,4 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   main().catch((err) => die(err?.stack || err?.message || String(err)));
 }
 
-export { buildConflictEvent, buildPlan, resolveHardness, resolveWebApiKey, readResponse, FIXTURES };
+export { buildConflictEvent, buildPlan, resolveHardness, resolveWebApiKey, readResponse, buildGcsConfirmation, FIXTURES };

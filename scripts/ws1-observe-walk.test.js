@@ -4,7 +4,7 @@
 // exported pure builders; main() is guarded behind the CLI entrypoint, so no
 // admin/GCS/network is touched. That passing load is the BUILD_RULES §4 guard.
 import { describe, it, expect } from 'vitest';
-import { buildConflictEvent, buildPlan, resolveHardness, resolveWebApiKey, readResponse } from './ws1-observe-walk.js';
+import { buildConflictEvent, buildPlan, resolveHardness, resolveWebApiKey, readResponse, buildGcsConfirmation } from './ws1-observe-walk.js';
 
 const ts = '2026-07-04T00:00:00.000Z';
 
@@ -94,5 +94,25 @@ describe('auth-bridge helpers (fixes from the failed live run)', () => {
     expect(r.status).toBe(308);
     expect(r.location).toBe('https://prod.example.com/api/agent/log-rule-compat-event');
     expect(new URL(r.location).origin).toBe('https://prod.example.com');
+  });
+});
+
+describe('buildGcsConfirmation never throws — the report always writes (crash fix)', () => {
+  const args = { agentId: 'ws1walk1', runStart: ts, expectedRescans: 2 };
+
+  it('absent GCS_CREDENTIALS → UNCONFIRMED-with-fallback, not an error', async () => {
+    const c = await buildGcsConfirmation({ ...args, gcsCreds: null });
+    expect(c.source).toBe('UNCONFIRMED');
+    expect(c.reason).toBe('GCS_CREDENTIALS absent');
+    expect(c.writeSiteLoggingFallback).toMatch(/shadowLogger/);
+  });
+
+  it('GCS_CREDENTIALS present but non-JSON (the exact line-425 crash) → UNCONFIRMED, raw head, no throw', async () => {
+    // e.g. a multi-line service-account blob truncated to its first line by the env parser
+    const c = await buildGcsConfirmation({ ...args, gcsCreds: '{"type": "service_account",' });
+    expect(c.source).toBe('UNCONFIRMED');
+    expect(c.reason).toMatch(/not valid JSON/);
+    expect(c.rawCredsHead).toMatch(/service_account/);
+    expect(c.writeSiteLoggingFallback).toMatch(/shadowLogger/);
   });
 });
