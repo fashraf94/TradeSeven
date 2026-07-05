@@ -33,11 +33,25 @@
  * identity rows annotated "group member", weak rows greyed as "weak/none",
  * unavailable drivers listed — never silently omitted.
  */
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { ChartSkeleton } from './ResearchSkeletons';
 import { buildVerdictSentence, breakStatePhrase, conditionalVerdict, cohesionPhrase } from './correlationVerdict';
+// V2 Build 6 — the group validators now live in correlationGroup.js, their new
+// canonical home (the source hooks import the SAME parseGroup/SYMBOL_RE there,
+// and this component imports the hooks: keeping the validators here would be an
+// ESM cycle). In-file callers (run / runScan / the CUSTOM-ticker guard) use the
+// imported bindings unchanged.
+import {
+  parseGroup,
+  SYMBOL_RE,
+  parseLabPrefill,
+  shouldShowProvenance,
+  provenanceLineText,
+} from './correlationGroup';
+import useWatchlistGroup from '../../hooks/useWatchlistGroup';
+import useAgentBookGroup from '../../hooks/useAgentBookGroup';
 
 // Client-side mirror of the driver registry LABELS only (the api registry is
 // server code — do not import it into the bundle; units/interpretations come
@@ -105,8 +119,6 @@ const DRIVER_GROUPS = [
 const DRIVER_LABELS = Object.fromEntries(
   DRIVER_GROUPS.flatMap((g) => g.options.map((o) => [o.key, o.label]))
 );
-
-const SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/; // mirrors the endpoint's pinned regex
 
 // Single source for the endpoint's coded 422 failures (state.error carries
 // "<status>:<code>"). Message = matched entry; the raw-code detail line shows
@@ -296,18 +308,11 @@ function driverTag(ep) {
 
 const pctColor = (v) => (v == null ? HOLO_COLORS.textMuted : v > 0 ? GREEN : v < 0 ? RED : HOLO_COLORS.textSecondary);
 
-// Shared group parsing/validation for both run kinds (one rule, no drift).
-// Module-scope on purpose: pure over its argument, so it can never go stale
-// inside the run/runScan useCallback closures.
-function parseGroup(source) {
-  const group = [...new Set(source.split(/[\s,]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
-  if (group.length < 1 || group.length > 10) {
-    return { error: 'Enter 1–10 ticker symbols (comma-separated). A single ETF proxy works too.' };
-  }
-  const bad = group.filter((s) => !SYMBOL_RE.test(s));
-  if (bad.length) return { error: `Not a valid ticker: ${bad.join(', ')}` };
-  return { group };
-}
+// parseGroup + SYMBOL_RE (the shared group validators) now live in
+// correlationGroup.js — imported at the top of this file. They are re-exported
+// there so the source hooks can reuse the SAME pre-validation without an ESM
+// cycle. In-file callers (run / runScan / the CUSTOM-ticker guard) use the
+// imported bindings unchanged.
 
 // ── V2 Build 2 — multi-driver scan helpers ──────────────────────────────────
 
@@ -1068,6 +1073,60 @@ const chipStyle = {
   fontFamily: 'inherit',
 };
 
+// V2 Build 6 (Change 3) — source chips on the idle state, a row ABOVE the example
+// chips. A chip renders ONLY when its source exists AND yields ≥ 1 valid equity
+// symbol (absent source → no chip; never a disabled mystery button). Each chip
+// fills-and-runs exactly like an example chip (via onPick → handleSourcePick).
+// Exported so the render-only "renders only with a source" seam is smoke-testable.
+export function SourceChips({ watchlistGroup, bookGroup, onPick }) {
+  const sources = [
+    watchlistGroup ? { kind: 'watchlist', group: watchlistGroup } : null,
+    bookGroup ? { kind: 'book', group: bookGroup } : null,
+  ].filter(Boolean);
+  if (!sources.length) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <span style={captionStyle}>Analyze a source</span>
+      {/* flex-wrap → the chips row (and each chip) stacks cleanly at 390px. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {sources.map(({ kind, group }) => (
+          <button key={kind} onClick={() => onPick(kind, group)} style={chipStyle}>
+            {`${group.label} (${group.symbols.length})`}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// V2 Build 6 (Change 3) — the provenance line above the results, shown whenever
+// the analyzed group came from a source or a URL prefill. Copy is assembled by
+// the pure provenanceLineText (source variants + the truncation / crypto-exclusion
+// honesty additions). Render-only: the §9 display-agreement gate (shouldShow-
+// Provenance + the onChange clear) lives at the call site.
+export function ProvenanceLine({ provenance }) {
+  if (!provenance) return null;
+  const text = provenanceLineText(provenance);
+  if (!text) return null;
+  return (
+    <div style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, lineHeight: 1.5 }}>{text}</div>
+  );
+}
+
+// V2 Build 6 — strip the one-shot URL-prefill params after the Lab consumes them
+// so a remount / refresh can't re-apply the deep-link over the user's edits.
+// Non-fatal and self-contained (no router in this app); guarded for SSR/old envs.
+function stripLabPrefillParams() {
+  try {
+    if (typeof window === 'undefined' || !window.history?.replaceState) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('labGroup') && !url.searchParams.has('labDriver')) return;
+    url.searchParams.delete('labGroup');
+    url.searchParams.delete('labDriver');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  } catch { /* leave the URL as-is — never break the Lab over a history write */ }
+}
+
 export default function CorrelationLab({ isDesktop, embedded = false }) {
   const [groupInput, setGroupInput] = useState('XOM, CVX, COP');
   const [driverKey, setDriverKey] = useState('BRENT');
@@ -1078,12 +1137,25 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
   // a scan is displayed; the last-shown result of the other kind is dropped.
   const [state, setState] = useState({ status: 'idle', data: null, error: null, kind: 'single' });
   const [chartTab, setChartTab] = useState('corr');
+  // V2 Build 6 — provenance of the analyzed group: set when a run originates from
+  // a source chip or a URL prefill; carries `groupString` so §9 display-agreement
+  // can bind the line to EXACTLY the group in the box (cleared on manual edit).
+  const [provenance, setProvenance] = useState(null);
   // Stale-response guard (the ScoutingBoardSheet cancellation idiom, sequence
   // form): overlapping runs resolve in arbitrary order, and without this a
   // slow response for an OLD query would overwrite a newer result on screen.
   // SHARED by single runs and scans (pinned): a late scan must not overwrite
   // a newer single run, and vice versa.
   const runSeq = useRef(0);
+  // V2 Build 6 — one-shot guard for the URL-prefill mount effect (StrictMode
+  // double-invokes effects in dev; without this the auto-run fires twice).
+  const prefillDone = useRef(false);
+
+  // V2 Build 6 — read-only source hooks. Each returns { symbols, label, asOf, … }
+  // or null (null = source absent / no valid equity symbol → no chip). They read
+  // Firestore directly via non-fenced idioms and consume SYMBOLS ONLY.
+  const watchlistGroup = useWatchlistGroup();
+  const bookGroup = useAgentBookGroup();
 
   const isCustom = driverKey === 'CUSTOM';
   // CUSTOM's label is the raw ticker (matches the server's synthetic label /
@@ -1218,6 +1290,61 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
     [run]
   );
 
+  // V2 Build 6 — a source chip (watchlist / agent book) fills the group + stamps
+  // provenance, then runs like any example chip. The source provides the GROUP
+  // only; the driver stays the user's current choice (override omits driverKey).
+  // The override is load-bearing: run()'s closure holds the stale groupInput at
+  // call time (run memoizes on [groupInput, driverKey, customSymbol]).
+  const handleSourcePick = useCallback(
+    (kind, g) => {
+      const groupString = g.symbols.join(', ');
+      setGroupInput(groupString);
+      setProvenance({
+        source: kind,
+        label: kind === 'book' ? `${g.agentName}'s current book` : 'your equipped watchlist',
+        count: g.symbols.length,
+        asOf: g.asOf,
+        truncatedFrom: g.truncatedFrom,
+        excludedCrypto: g.excludedCrypto,
+        groupString,
+      });
+      run(false, { groupInput: groupString });
+    },
+    [run]
+  );
+
+  // V2 Build 6 — URL prefill (?labGroup=…&labDriver=…): the free-integration
+  // mechanism. Mount-only; the prefillDone ref makes it StrictMode-double-mount
+  // safe. Params are UNTRUSTED — parseLabPrefill validates fully and ANY invalid
+  // part makes the WHOLE set ignored (clean idle state, console.warn only, never
+  // a crash or partial fill). The run override is load-bearing (same reason as
+  // handleSourcePick / the example chips).
+  //
+  //  • Only the STANDALONE Lab honors the URL: the embedded Discover mount must
+  //    never let a stale ?labGroup hijack its inputs / fire an unsolicited fetch.
+  //  • One-shot: the params are stripped after processing (via replaceState) so a
+  //    remount (SPA nav away and back) can't re-fire the prefill and clobber the
+  //    user's edits. App routes ?labGroup to the standalone screen first, so the
+  //    strip also clears it before any embedded mount could see it.
+  useEffect(() => {
+    if (embedded || prefillDone.current) return;
+    prefillDone.current = true;
+    const search = typeof window !== 'undefined' ? window.location.search : '';
+    let hadLabGroup = false;
+    try { hadLabGroup = !!new URLSearchParams(search).get('labGroup'); } catch { /* malformed — ignore */ }
+    const parsed = parseLabPrefill(search, DRIVER_LABELS);
+    if (parsed) {
+      setGroupInput(parsed.groupInput);
+      setDriverKey(parsed.driverKey);
+      setProvenance({ source: 'url', groupString: parsed.groupInput });
+      run(false, { groupInput: parsed.groupInput, driverKey: parsed.driverKey });
+    } else if (hadLabGroup) {
+      console.warn('[CorrelationLab] ignoring invalid ?labGroup/?labDriver prefill');
+    }
+    if (hadLabGroup) stripLabPrefillParams();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Payload split by kind: `data` keeps its V0 meaning (the single-driver
   // payload) so everything below this line is untouched; `scan` is the
   // scan payload. Exactly one is non-null once ready.
@@ -1283,7 +1410,10 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
           <span style={captionStyle}>Group (1–10 tickers, or one ETF proxy)</span>
           <input
             value={groupInput}
-            onChange={(e) => setGroupInput(e.target.value)}
+            // Editing the group by hand makes it a MANUAL group — clear any source/
+            // URL provenance (§9 display-agreement). Source/URL fills use
+            // setGroupInput directly (not this handler), so only real typing clears.
+            onChange={(e) => { setGroupInput(e.target.value); setProvenance(null); }}
             // Loading gate matches the disabled buttons — Enter mid-scan must
             // not discard an in-flight ~27-fetch scan whose quota is spent.
             onKeyDown={(e) => { if (e.key === 'Enter' && state.status !== 'loading') run(); }}
@@ -1377,6 +1507,9 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
           <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted }}>
             Pick a group and a driver, then Run. Nothing loads until you ask.
           </div>
+          {/* V2 Build 6 — source chips (row above the example chips); renders
+              nothing when neither source exists. */}
+          <SourceChips watchlistGroup={watchlistGroup} bookGroup={bookGroup} onPick={handleSourcePick} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <span style={captionStyle}>Try one</span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -1384,6 +1517,10 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                 <button
                   key={chip.label}
                   onClick={() => {
+                    // An example chip is a MANUAL (non-sourced) origin: clear any
+                    // source/URL provenance so its run can't inherit a stale line
+                    // (§9 — e.g. a chip whose group coincides with a sourced group).
+                    setProvenance(null);
                     setGroupInput(chip.group);
                     setDriverKey(chip.driver);
                     run(false, { groupInput: chip.group, driverKey: chip.driver });
@@ -1422,6 +1559,14 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
             );
           })()
         : null}
+
+      {/* V2 Build 6 — provenance line above the results (scan or single), shown
+          only while it still describes EXACTLY the group in the box (§9). Cleared
+          the moment the group is edited by hand (onChange), and never rendered
+          for a manual group. */}
+      {state.status === 'ready' && shouldShowProvenance(provenance, groupInput) ? (
+        <ProvenanceLine provenance={provenance} />
+      ) : null}
 
       {/* V2 Build 2 — scan results replace the single-driver results while displayed.
           Deep dive and refresh are bound to the DISPLAYED scan's group

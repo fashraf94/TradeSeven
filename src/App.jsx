@@ -2213,6 +2213,19 @@ export default function PortfolioDuel() {
     }
   }, []);
 
+  // Correlation Lab V2 Build 6 — deep-link routing gate. A bare ?labGroup= lands
+  // on the standalone Lab (the prefill/validation itself lives inside
+  // CorrelationLab). UNLIKE the dev-only ?correlationDev, this param is a PUBLIC
+  // deep-link, so it is gated on the flag: when CORRELATION_LAB_ENABLED is the
+  // instant-rollback lever and gets flipped off, external ?labGroup links fall
+  // through to the user's normal screen instead of dead-ending on a blank
+  // fallback. The mechanism ships; the cross-surface callers are follow-ups.
+  useEffect(() => {
+    if (CORRELATION_LAB_ENABLED && new URLSearchParams(window.location.search).get('labGroup')) {
+      setScreen('correlationLab');
+    }
+  }, []);
+
   // League Training Slice 2 — the interactive draft, DARK (no CTA; Slice 3.2
   // owns the entry hero). Reachable ONLY via ?trainingDraft=<groupId> (the
   // dev/preview gate, mirroring ?tournamentDev above) so it can be smoked on a

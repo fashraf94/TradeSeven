@@ -15,12 +15,20 @@ import { renderToString } from 'react-dom/server';
 // test idiom. These pieces never call fetchWithAuth; the mock just lets the
 // module graph load in the Node test env.
 vi.mock('../../firebase/config', () => ({ auth: {}, db: {}, default: {} }));
+// V2 Build 6 — CorrelationLab now imports the two source hooks (which pull in
+// useAgent/UserContext/firestore). Stub them so the presentation-export module
+// graph stays light in the Node test env; the render smokes drive SourceChips /
+// ProvenanceLine with explicit props, never the live hooks.
+vi.mock('../../hooks/useWatchlistGroup', () => ({ default: () => null }));
+vi.mock('../../hooks/useAgentBookGroup', () => ({ default: () => null }));
 
 import {
   ScanResults,
   ConditionedBaseRates,
   ConditionalCard,
   CohesionCard,
+  SourceChips,
+  ProvenanceLine,
   divergenceState,
   leadLagEvidenceLine,
   resolveResultLabels,
@@ -621,5 +629,64 @@ describe('CohesionCard — intra-group cohesion headline card', () => {
   it('absence tolerance: no cohesion block (old cached payload / group < 3 members) renders NOTHING', () => {
     expect(render(<CohesionCard cohesion={undefined} />)).toBe('');
     expect(render(<CohesionCard cohesion={null} />)).toBe('');
+  });
+});
+
+// ── V2 Build 6 — source chips + provenance line render smokes ─────────────────
+describe('SourceChips — renders ONLY with a source', () => {
+  it('renders nothing when neither source exists', () => {
+    expect(render(<SourceChips watchlistGroup={null} bookGroup={null} onPick={() => {}} />)).toBe('');
+  });
+
+  it('renders a labelled chip per present source, never a mystery button for an absent one', () => {
+    const countButtons = (html) => (html.match(/<button/g) || []).length;
+
+    const wl = { symbols: ['XOM', 'CVX', 'COP'], label: 'My watchlist' };
+    const html = render(<SourceChips watchlistGroup={wl} bookGroup={null} onPick={() => {}} />);
+    expect(html).toContain('My watchlist (3)');
+    expect(countButtons(html)).toBe(1); // exactly one chip — no mystery button for the absent source
+    expect(html).not.toContain('book');
+
+    // NB: react-dom/server HTML-escapes the apostrophe in "Viper's" → assert on
+    // the unescaped fragments (agent name + "book (n)").
+    const book = { symbols: ['NVDA', 'MSFT'], label: "Viper's book" };
+    const both = render(<SourceChips watchlistGroup={wl} bookGroup={book} onPick={() => {}} />);
+    expect(both).toContain('My watchlist (3)');
+    expect(both).toContain('Viper');
+    expect(both).toContain('book (2)');
+    expect(countButtons(both)).toBe(2); // exactly one chip per present source
+  });
+});
+
+describe('ProvenanceLine — copy variants + clears on manual edit', () => {
+  it('watchlist provenance names the source, count, and freshness', () => {
+    const html = render(
+      <ProvenanceLine
+        provenance={{ source: 'watchlist', label: 'your equipped watchlist', count: 3, asOf: Date.UTC(2026, 6, 5, 18, 30) }}
+      />
+    );
+    expect(html).toContain('Group: your equipped watchlist');
+    expect(html).toContain('3 tickers');
+    expect(html).toContain('as of Jul 5');
+  });
+
+  it('book provenance surfaces truncation and crypto exclusion honestly', () => {
+    const html = render(
+      <ProvenanceLine
+        provenance={{ source: 'book', label: "Viper's current book", count: 10, truncatedFrom: 14, excludedCrypto: ['BTC'] }}
+      />
+    );
+    expect(html).toContain('current book'); // apostrophe in "Viper's" is HTML-escaped
+    expect(html).toContain('Viper');
+    expect(html).toContain('showing the 10 largest of 14');
+    expect(html).toContain('1 non-equity position excluded — equities only for now');
+  });
+
+  it('url-sourced provenance reads "linked from elsewhere"', () => {
+    expect(render(<ProvenanceLine provenance={{ source: 'url' }} />)).toContain('Group: linked from elsewhere');
+  });
+
+  it('renders NOTHING once provenance is cleared (the manual-edit / §9 post-state)', () => {
+    expect(render(<ProvenanceLine provenance={null} />)).toBe('');
   });
 });
