@@ -4,7 +4,7 @@
 // exported pure builders; main() is guarded behind the CLI entrypoint, so no
 // admin/GCS/network is touched. That passing load is the BUILD_RULES §4 guard.
 import { describe, it, expect } from 'vitest';
-import { buildConflictEvent, buildPlan, resolveHardness } from './ws1-observe-walk.js';
+import { buildConflictEvent, buildPlan, resolveHardness, resolveWebApiKey, readResponse } from './ws1-observe-walk.js';
 
 const ts = '2026-07-04T00:00:00.000Z';
 
@@ -58,5 +58,24 @@ describe('buildPlan', () => {
   });
   it('native control is silence (no event)', () => {
     expect(plan.native_control.event).toBeNull();
+  });
+});
+
+describe('auth-bridge helpers (fixes from the failed live run)', () => {
+  it('resolveWebApiKey honors candidate precedence', () => {
+    expect(resolveWebApiKey({ VITE_FIREBASE_API_KEY: 'k1', FIREBASE_API_KEY: 'k2' })).toEqual({ key: 'k1', name: 'VITE_FIREBASE_API_KEY' });
+    expect(resolveWebApiKey({ FIREBASE_WEB_API_KEY: 'k3' }).key).toBe('k3');
+  });
+
+  it('readResponse parses JSON and passes a non-JSON body through without throwing', async () => {
+    const fakeRes = (status, body) => ({ status, ok: status >= 200 && status < 300, text: async () => body });
+    const ok = await readResponse(fakeRes(200, '{"idToken":"abc"}'));
+    expect(ok).toMatchObject({ status: 200, ok: true, json: { idToken: 'abc' } });
+    // the exact failure the live run hit: a 401 with a non-JSON body must NOT crash
+    const bad = await readResponse(fakeRes(401, 'Missing or invalid Authorization header'));
+    expect(bad.status).toBe(401);
+    expect(bad.ok).toBe(false);
+    expect(bad.json).toBeNull();
+    expect(bad.text).toMatch(/Missing or invalid/);
   });
 });

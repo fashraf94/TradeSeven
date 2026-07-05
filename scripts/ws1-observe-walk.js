@@ -10,6 +10,12 @@
 // DRY-RUN by default (plan + expected events, zero writes/POSTs), `--live --yes`
 // to execute, real test agent, reversible/idempotent, byte-exact report.
 //
+// AUTH BRIDGE is verified in ISOLATION before any path runs: it mints a Firebase
+// ID token for the test owner (admin custom token → Identity Toolkit exchange) and
+// POSTs a probe — a broken bridge STOPs at the top (404 = flag not serving observe;
+// 401 = token not accepted), never firing four bare (headerless) POSTs.
+//   node scripts/ws1-observe-walk.js --live --yes --mint-only   # verify the auth bridge alone
+//
 // The four guarded paths (RULE_COMPAT_MODE='observe' → classify + log, never block):
 //   1. equip_bundle     — mean-reversion bundle (tech-rsi-oversold + tv-06) →
 //                         one compat_conflict_equip each; tech-moving-average-trend
@@ -19,30 +25,27 @@
 //   3. change-archetype — flip momentum_chaser→analyst→momentum_chaser → one
 //                         server-emitted compat_archetype_change_rescan per flip;
 //                         the arrival-at-momentum_chaser rescan carries conflictCount 2.
-//   4. native rule      — ts-01 on Capital Preserver (guardian) → SILENCE (proves
-//                         the classifier isn't over-firing).
+//   4. native rule      — ts-01 on Capital Preserver (guardian) → SILENCE.
 //
 // DECISION LAYER is faithful: it imports getRuleCompatInfo (the classification
 // source of truth; zero-import, Node-clean) and builds events with the SAME field
 // shape as src/services/ruleCompatGuard.js:106-119 (that module can't be imported —
-// it pulls in the client fetchWithAuth → firebase client auth). The PERSISTENCE
-// layer is real: it authenticates as the test agent's owner (admin custom token →
-// Identity Toolkit exchange) and POSTs to the real /api/agent/log-rule-compat-event
-// + /api/agent/change-archetype, then reads back the GCS signal_drops stream.
+// it pulls in the client fetchWithAuth → firebase client auth).
 //
 // CONFIRMATION: never the HTTP 200 (the rule_compat stream inherits the shadow
 // logger's silent error-swallow — WS1_PRE_ENFORCE_BACKLOG.md). Confirmed by reading
 // back gs://fantasytrades/shadow/signal_drops/<date>/; if GCS_CREDENTIALS are
-// absent, persistence is reported UNCONFIRMED (loud) with the write-site-logging
-// fallback instructions — an empty capture is NEVER read as a pass.
+// absent, persistence is reported UNCONFIRMED (loud) — an empty capture is NEVER a pass.
 //
 // USAGE (from project root):
-//   node scripts/ws1-observe-walk.js                              # DRY-RUN: plan + expected events
-//   node scripts/ws1-observe-walk.js --live --yes --create       # live: create a throwaway test agent
+//   node scripts/ws1-observe-walk.js                              # DRY-RUN
+//   node scripts/ws1-observe-walk.js --live --yes --mint-only     # verify auth bridge only
+//   node scripts/ws1-observe-walk.js --live --yes --create        # full walk, throwaway agent
 //   node scripts/ws1-observe-walk.js --live --yes --agent <id> --uid <ownerUid>
-//   node scripts/ws1-observe-walk.js --live --yes --revert       # restore/remove the test agent only
-// ENV (.env.local): FIREBASE_ADMIN_CREDENTIALS, VITE_FIREBASE_API_KEY, GCS_CREDENTIALS (read-back),
-//   WS1_WALK_BASE_URL (deployed origin the endpoints are served from, e.g. https://<app>.vercel.app)
+//   node scripts/ws1-observe-walk.js --live --yes --revert --create --agent <id>  # cleanup only
+// ENV (.env.local): FIREBASE_ADMIN_CREDENTIALS, a web API key (VITE_FIREBASE_API_KEY /
+//   FIREBASE_API_KEY / FIREBASE_WEB_API_KEY — must match the admin project),
+//   GCS_CREDENTIALS (read-back), WS1_WALK_BASE_URL (deployed origin).
 
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -54,6 +57,7 @@ const PROJECT_ROOT = path.resolve(path.dirname(__filename), '..');
 const GCS_BUCKET = 'fantasytrades';
 const TREND_FOLLOWER = 'momentum_chaser';
 const CAPITAL_PRESERVER = 'guardian';
+const WEB_API_KEY_CANDIDATES = ['VITE_FIREBASE_API_KEY', 'FIREBASE_API_KEY', 'FIREBASE_WEB_API_KEY'];
 
 function die(msg) {
   console.error(`\nFATAL: ${msg}`);
@@ -71,13 +75,14 @@ function parseEnvFile(filePath) {
 }
 
 function parseArgs(argv) {
-  const f = { live: false, yes: false, create: false, revert: false, agent: null, uid: null, baseUrl: null, out: null };
+  const f = { live: false, yes: false, create: false, revert: false, mintOnly: false, agent: null, uid: null, baseUrl: null, out: null };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--live') f.live = true;
     else if (a === '--yes') f.yes = true;
     else if (a === '--create') f.create = true;
     else if (a === '--revert') f.revert = true;
+    else if (a === '--mint-only') f.mintOnly = true;
     else if (a === '--agent') f.agent = argv[++i];
     else if (a === '--uid') f.uid = argv[++i];
     else if (a === '--base-url') f.baseUrl = argv[++i];
@@ -89,24 +94,20 @@ function parseArgs(argv) {
 
 // The walk's rule fixtures (real KB template ids → verified compat states).
 const FIXTURES = {
-  // mean-reversion buy-weakness (core_conflict for Trend Follower)
   rsi: { templateId: 'tech-rsi-oversold', category: 'technical', text: 'Prefer stocks with RSI below 30' },
   bollinger: { templateId: 'tv-06', category: 'technical', text: 'Buy near the lower Bollinger band' },
-  // momentum-aligned (native for Trend Follower → silence)
   maTrend: { templateId: 'tech-moving-average-trend', category: 'technical', text: 'Prefer stocks above their moving average' },
-  // native control on a Capital Preserver (silence)
   volCap: { templateId: 'ts-01', category: 'risk', text: 'Volatility-adjusted star cap' },
 };
 
-// category → resolved hardness (mirrors src/.../hardSoftHelper.js: risk|allocation = hard).
 const HARD_CATEGORIES = new Set(['risk', 'allocation']);
 const resolveHardness = (category, override) => override || (HARD_CATEGORIES.has(category) ? 'hard' : 'soft');
 
 // Build a compat event for a conflict, mirroring ruleCompatGuard.js:106-119 exactly.
 // Returns null when the rule is NOT core_conflict for the archetype (SILENCE).
-function buildConflictEvent({ templateId, archetype, path: writePath, resolvedHardness, agentId, ruleDocId, mode = 'observe', ts }) {
+function buildConflictEvent({ templateId, archetype, path: writePath, resolvedHardness, ruleDocId, mode = 'observe', ts }) {
   const info = getRuleCompatInfo(templateId, archetype);
-  if (info.state !== 'core_conflict') return null; // silence — the guard emits nothing
+  if (info.state !== 'core_conflict') return null;
   const wouldBeHard = resolvedHardness === 'hard';
   const enforcing = mode === 'enforce';
   return {
@@ -122,13 +123,12 @@ function buildConflictEvent({ templateId, archetype, path: writePath, resolvedHa
   };
 }
 
-// The expected observe-stream contents for the walk (the plan + the read-back oracle).
 function buildPlan(ts) {
   const equip = [FIXTURES.rsi, FIXTURES.bollinger, FIXTURES.maTrend]
-    .map((r) => buildConflictEvent({ templateId: r.templateId, archetype: TREND_FOLLOWER, path: 'equip_bundle', resolvedHardness: resolveHardness(r.category), agentId: null, ruleDocId: r.templateId, ts }))
-    .filter(Boolean); // maTrend → null (silence)
-  const promote = buildConflictEvent({ templateId: FIXTURES.rsi.templateId, archetype: TREND_FOLLOWER, path: 'set_rule_hardness', resolvedHardness: 'hard', agentId: null, ruleDocId: FIXTURES.rsi.templateId, ts });
-  const nativeControl = buildConflictEvent({ templateId: FIXTURES.volCap.templateId, archetype: CAPITAL_PRESERVER, path: 'set_rule_hardness', resolvedHardness: 'hard', agentId: null, ruleDocId: FIXTURES.volCap.templateId, ts });
+    .map((r) => buildConflictEvent({ templateId: r.templateId, archetype: TREND_FOLLOWER, path: 'equip_bundle', resolvedHardness: resolveHardness(r.category), ruleDocId: r.templateId, ts }))
+    .filter(Boolean);
+  const promote = buildConflictEvent({ templateId: FIXTURES.rsi.templateId, archetype: TREND_FOLLOWER, path: 'set_rule_hardness', resolvedHardness: 'hard', ruleDocId: FIXTURES.rsi.templateId, ts });
+  const nativeControl = buildConflictEvent({ templateId: FIXTURES.volCap.templateId, archetype: CAPITAL_PRESERVER, path: 'set_rule_hardness', resolvedHardness: 'hard', ruleDocId: FIXTURES.volCap.templateId, ts });
   return {
     equip_bundle: { post: { events: equip }, expect: `${equip.length} compat_conflict_equip (tech-rsi-oversold, tv-06); SILENCE for tech-moving-average-trend (native)` },
     set_rule_hardness: { post: { events: [promote] }, expect: '1 compat_promote_blocked, blocked:false (observe never blocks)' },
@@ -140,7 +140,7 @@ function buildPlan(ts) {
 function printDryRun(plan) {
   const L = [];
   L.push('# WS1 observe-walk — DRY-RUN (no writes, no POSTs). Expected rule_compat stream:');
-  L.push(`# RULE_COMPAT_MODE must be 'observe' at the deployed endpoint (preflight enforces non-404).`);
+  L.push(`# RULE_COMPAT_MODE must be 'observe' at the deployed endpoint (preflight enforces non-404 + token accepted).`);
   L.push('');
   L.push('1. equip_bundle  → ' + plan.equip_bundle.expect);
   for (const e of plan.equip_bundle.post.events) L.push(`     • ${e.type} ruleId=${e.ruleId} zone1=${e.zone1Ref} hardness=${e.hardnessRequested} blocked=${e.blocked}`);
@@ -151,7 +151,7 @@ function printDryRun(plan) {
   L.push('4. native_control → ' + plan.native_control.expect);
   L.push(`     • ${plan.native_control.event === null ? 'SILENCE (no event built — correct)' : 'UNEXPECTED EVENT: ' + JSON.stringify(plan.native_control.event)}`);
   L.push('');
-  const records = 1 /* equip POST */ + 1 /* promote POST */ + plan.change_archetype.flips.length; /* one rescan record per flip */
+  const records = 1 + 1 + plan.change_archetype.flips.length;
   const nEquip = plan.equip_bundle.post.events.length;
   L.push(`# Expected stream RECORDS: ${records} (equip POST + promote POST + ${plan.change_archetype.flips.length} rescans).`);
   L.push(`# Expected EVENTS: compat_conflict_equip ×${nEquip}, compat_promote_blocked ×1, compat_archetype_change_rescan ×${plan.change_archetype.flips.length}. Silences: tech-moving-average-trend, ts-01/guardian.`);
@@ -160,39 +160,89 @@ function printDryRun(plan) {
 }
 
 // ---------- LIVE ----------
-async function mintIdToken(admin, uid, webApiKey) {
-  const customToken = await admin.auth().createCustomToken(uid);
+
+// Read a response body safely — NEVER throw on non-JSON (a platform 401/HTML page
+// must not crash the walk). Returns { status, ok, json, text }.
+async function readResponse(res) {
+  const text = await res.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* non-JSON body */ }
+  return { status: res.status, ok: res.ok, json, text };
+}
+
+// The web API key must belong to the SAME Firebase project as the admin service
+// account (the custom-token exchange rejects a cross-project key). Try the known
+// candidate env names — VITE_ vars are read here directly from .env.local (there is
+// no Vite bundler in this Node context), so the VITE_ prefix is fine.
+function resolveWebApiKey(env) {
+  for (const name of WEB_API_KEY_CANDIDATES) {
+    const v = env[name] || process.env[name];
+    if (v) return { key: v, name };
+  }
+  return { key: null, name: null };
+}
+
+// Mint a Firebase ID token: admin custom token → Identity Toolkit exchange.
+// ROBUST: checks the exchange status/body BEFORE parsing, prints the raw body and
+// STOPs loudly on any failure, and asserts the result is a real JWT — it never
+// returns an empty token that would fire a bare (headerless) POST.
+async function mintIdToken(getAuth, uid, webApiKey) {
+  let customToken;
+  try {
+    customToken = await getAuth().createCustomToken(uid);
+  } catch (err) {
+    die(`createCustomToken failed for uid=${uid}: ${err?.message || err}. (The admin service account needs the Service Account Token Creator role / a valid private key.)`);
+  }
   const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${webApiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token: customToken, returnSecureToken: true }),
   });
-  const body = await res.json();
-  if (!res.ok || !body.idToken) die(`custom-token exchange failed (${res.status}): ${JSON.stringify(body).slice(0, 200)}`);
-  return body.idToken;
+  const r = await readResponse(res);
+  if (!r.ok || !r.json?.idToken) {
+    die(
+      `custom-token exchange failed (HTTP ${r.status}). Raw body:\n${r.text.slice(0, 500)}\n` +
+        `Likely: the web API key is for a DIFFERENT Firebase project than the admin service account, or the key is wrong. ` +
+        `STOP — not proceeding to POST with no auth.`,
+    );
+  }
+  const idToken = r.json.idToken;
+  if (typeof idToken !== 'string' || idToken.split('.').length !== 3) {
+    die(`exchange returned a non-JWT idToken (${JSON.stringify(idToken).slice(0, 80)}). STOP.`);
+  }
+  return idToken;
 }
 
-const api = (baseUrl, endpoint, idToken, payload) =>
-  fetch(`${baseUrl}${endpoint}`, {
+// Authed POST — asserts the token is present before sending (fail fast so a broken
+// auth bridge never fires a bare POST).
+function api(baseUrl, endpoint, idToken, payload) {
+  if (!idToken || typeof idToken !== 'string' || idToken.length < 20) {
+    die(`refusing to POST ${endpoint} with an empty/invalid Authorization token — auth bridge broken.`);
+  }
+  return fetch(`${baseUrl}${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
     body: JSON.stringify(payload),
   });
-
-async function preflight(baseUrl, idToken, agentId) {
-  // A well-authed POST with an empty events array → 400 invalid_events (NOT 404),
-  // proving the endpoint is serving observe/enforce. Logs nothing.
-  const res = await api(baseUrl, '/api/agent/log-rule-compat-event', idToken, { agentId, archetype: TREND_FOLLOWER, mode: 'observe', events: [] });
-  if (res.status === 404) {
-    die("preflight: /api/agent/log-rule-compat-event returned 404 — the deployed endpoint is NOT serving observe. The flag did not land where the script hits. STOP; do not read empty capture as a pass. (Founder A-note.)");
-  }
-  return res.status; // expect 400 (empty events) or similar non-404
 }
 
-async function setupTestAgent(db, admin, agentId, uid, ledger) {
-  const now = admin.firestore.FieldValue.serverTimestamp();
+// Auth + endpoint preflight: POST an empty-events probe with the minted token and
+// distinguish 404 (flag not serving observe) / 401 (token not accepted — auth bridge
+// broken) / else (live + token accepted). STOPs loudly on 404 or 401.
+async function authPreflight(baseUrl, idToken, agentId) {
+  const r = await readResponse(await api(baseUrl, '/api/agent/log-rule-compat-event', idToken, { agentId, archetype: TREND_FOLLOWER, mode: 'observe', events: [] }));
+  if (r.status === 404) {
+    die("preflight: log endpoint returned 404 — the deployed origin is NOT serving observe. Resolve the repo-vs-deployed flag mismatch; do NOT read empty capture as a pass. (Founder A-note.)");
+  }
+  if (r.status === 401) {
+    die(`preflight: log endpoint returned 401 (${r.json?.message || r.json?.error || r.text.slice(0, 120)}) — the minted token was NOT accepted. Auth bridge broken; STOP before firing any path POST.`);
+  }
+  return r.status; // expect 400 (authed; empty events invalid) → endpoint live + token accepted
+}
+
+async function setupTestAgent(db, FieldValue, agentId, uid) {
+  const now = FieldValue.serverTimestamp();
   const agentRef = db.collection('agents').doc(agentId);
-  ledger.push({ op: 'delete', ref: `agents/${agentId}` });
   await agentRef.set({ ownerId: uid, archetype: TREND_FOLLOWER, activeBattleId: null, equippedTraits: [], stats: { gamesPlayed: 0 }, equippedBundleIds: [], activeRules: [], _ws1WalkTest: true });
   const ruleDocs = {};
   for (const key of ['rsi', 'bollinger', 'maTrend']) {
@@ -237,59 +287,74 @@ function tallyEvents(records) {
   return byType;
 }
 
+async function removeTestAgent(db, agentId) {
+  const agentRef = db.collection('agents').doc(agentId);
+  for (const sub of ['rules', 'bundles']) {
+    const snap = await agentRef.collection(sub).get();
+    for (const d of snap.docs) await d.ref.delete();
+  }
+  await agentRef.delete().catch(() => {});
+}
+
 async function main() {
   const f = parseArgs(process.argv);
   const ts = new Date().toISOString();
   const plan = buildPlan(ts);
 
-  if (!f.live) {
+  if (!f.live && !f.mintOnly) {
     console.log(printDryRun(plan));
     return;
   }
-  if (!f.yes) die('live run requires --yes (safety).');
+  if (!f.yes) die('live/mint runs require --yes (safety).');
 
   const env = parseEnvFile(path.join(PROJECT_ROOT, '.env.local'));
   const creds = env.FIREBASE_ADMIN_CREDENTIALS || process.env.FIREBASE_ADMIN_CREDENTIALS;
-  const webApiKey = env.VITE_FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY;
+  const { key: webApiKey, name: webApiKeyName } = resolveWebApiKey(env);
   const baseUrl = (f.baseUrl || env.WS1_WALK_BASE_URL || process.env.WS1_WALK_BASE_URL || '').replace(/\/$/, '');
   const gcsCreds = env.GCS_CREDENTIALS || process.env.GCS_CREDENTIALS;
   if (!creds) die('FIREBASE_ADMIN_CREDENTIALS missing (.env.local).');
-  if (!webApiKey) die('VITE_FIREBASE_API_KEY missing — needed to mint a user ID token for the test owner.');
+  if (!webApiKey) die(`web API key missing — set one of ${WEB_API_KEY_CANDIDATES.join(' / ')} in .env.local (must match the admin service account's Firebase project).`);
   if (!baseUrl) die('base URL missing — pass --base-url or set WS1_WALK_BASE_URL to the deployed origin.');
 
   const { initializeApp, getApps, cert } = await import('firebase-admin/app');
-  const adminApp = await import('firebase-admin');
+  const { getAuth } = await import('firebase-admin/auth');
+  const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
   if (getApps().length === 0) initializeApp({ credential: cert(JSON.parse(creds)) });
-  const admin = adminApp.default;
-  const db = admin.firestore();
+  const db = getFirestore();
 
-  const uid = f.uid || (f.create ? `ws1_walk_uid_${Date.now()}` : die('--agent runs need --uid (the agent ownerId).'));
-  const agentId = f.agent || (f.create ? `ws1walk${Date.now()}` : die('pass --agent <id> or --create.'));
-  const ledger = [];
+  const uid = f.uid || (f.create || f.mintOnly ? `ws1_walk_uid_${Date.now()}` : die('--agent runs need --uid (the agent ownerId).'));
+  const agentId = f.agent || (f.create || f.mintOnly ? `ws1walk${Date.now()}` : die('pass --agent <id> or --create.'));
+
+  // ── AUTH BRIDGE — minted + validated BEFORE any path runs ──
+  console.log(`[auth] minting ID token (uid=${uid}, web key from ${webApiKeyName})…`);
+  const idToken = await mintIdToken(getAuth, uid, webApiKey);
+  console.log(`[auth] token minted OK (JWT, ${idToken.length} chars, prefix ${idToken.slice(0, 10)}…).`);
+  const pf = await authPreflight(baseUrl, idToken, agentId);
+  console.log(`[preflight] endpoint live + token accepted (status ${pf}, non-404/401). observe confirmed at the deployed origin.`);
+  if (f.mintOnly) {
+    console.log('\n--mint-only: auth bridge VERIFIED. Re-run with `--live --yes --create` for the full walk.');
+    return;
+  }
+
   const runStart = new Date().toISOString();
-
+  let created = false;
   try {
-    const idToken = await mintIdToken(admin, uid, webApiKey);
-    const pf = await preflight(baseUrl, idToken, agentId);
-    console.log(`[preflight] log endpoint live (status ${pf}, non-404). observe confirmed at the deployed origin.`);
-
-    if (f.revert) { /* revert-only handled in finally */ throw { __revertOnly: true }; }
-
+    if (f.revert) throw { __revertOnly: true };
     let refs = null;
-    if (f.create) refs = await setupTestAgent(db, admin, agentId, uid, ledger);
+    if (f.create) { refs = await setupTestAgent(db, FieldValue, agentId, uid); created = true; }
     else console.log('[setup] --agent mode: assuming the agent already carries the mean-reversion bundle + rules.');
 
     // 1. equip_bundle
     const equipEvents = plan.equip_bundle.post.events.map((e) => ({ ...e, ruleDocId: refs ? refs.ruleDocs[e.ruleId === 'tech-rsi-oversold' ? 'rsi' : 'bollinger'] : e.ruleId }));
-    const r1 = await api(baseUrl, '/api/agent/log-rule-compat-event', idToken, { agentId, archetype: TREND_FOLLOWER, mode: 'observe', events: equipEvents });
-    console.log(`[equip_bundle] POST → ${r1.status} ${JSON.stringify(await r1.json())}`);
+    const r1 = await readResponse(await api(baseUrl, '/api/agent/log-rule-compat-event', idToken, { agentId, archetype: TREND_FOLLOWER, mode: 'observe', events: equipEvents }));
+    console.log(`[equip_bundle] → ${r1.status} ${r1.text.slice(0, 120)}`);
     // 2. set_rule_hardness
-    const r2 = await api(baseUrl, '/api/agent/log-rule-compat-event', idToken, { agentId, archetype: TREND_FOLLOWER, mode: 'observe', events: plan.set_rule_hardness.post.events });
-    console.log(`[set_rule_hardness] POST → ${r2.status} ${JSON.stringify(await r2.json())}`);
+    const r2 = await readResponse(await api(baseUrl, '/api/agent/log-rule-compat-event', idToken, { agentId, archetype: TREND_FOLLOWER, mode: 'observe', events: plan.set_rule_hardness.post.events }));
+    console.log(`[set_rule_hardness] → ${r2.status} ${r2.text.slice(0, 120)}`);
     // 3. change_archetype (two flips; arrival at momentum_chaser carries the conflict count)
     for (const [, to] of plan.change_archetype.flips) {
-      const rc = await api(baseUrl, '/api/agent/change-archetype', idToken, { agentId, archetype: to });
-      console.log(`[change_archetype → ${to}] ${rc.status} ${JSON.stringify(await rc.json())}`);
+      const rc = await readResponse(await api(baseUrl, '/api/agent/change-archetype', idToken, { agentId, archetype: to }));
+      console.log(`[change_archetype → ${to}] ${rc.status} ${rc.text.slice(0, 160)}`);
     }
 
     // 4. confirm via GCS read-back (NEVER the HTTP 200 — silent-swallow finding)
@@ -299,7 +364,7 @@ async function main() {
       const gcs = new Storage({ credentials: JSON.parse(gcsCreds) });
       const records = await readBackGcs(gcs, agentId, runStart);
       const byType = tallyEvents(records);
-      const rescan = records.reduce((n, r) => n + (r.events || []).filter((e) => e.type === 'compat_archetype_change_rescan').length, 0);
+      const rescan = byType.compat_archetype_change_rescan || 0;
       confirmation = {
         source: 'gcs_read_back',
         streamRecords: records.length,
@@ -314,7 +379,7 @@ async function main() {
       confirmation = {
         source: 'UNCONFIRMED',
         warning: 'GCS_CREDENTIALS absent — cannot read back the stream. The endpoint 200 is NOT proof (rule_compat inherits the shadow-logger silent-swallow; WS1_PRE_ENFORCE_BACKLOG.md). Persistence UNCONFIRMED — do NOT read this as a pass.',
-        writeSiteLoggingFallback: 'To confirm without GCS: run the endpoint locally with a temporary log at api/_utils/shadowLogger.js appendToStream (after `await bucket.file(...).save(...)` log "persisted", and in the catch log "THREW"), re-drive, and read the local server logs.',
+        writeSiteLoggingFallback: 'To confirm without GCS: run the endpoint locally with a temporary log at api/_utils/shadowLogger.js appendToStream (after the bucket.file(...).save(...) log "persisted", in the catch log "THREW"), re-drive, and read the local server logs.',
       };
     }
 
@@ -326,14 +391,8 @@ async function main() {
   } catch (err) {
     if (!err?.__revertOnly) console.error(`\n[walk] error: ${err?.stack || err?.message || err}`);
   } finally {
-    // Reversible: remove the throwaway test agent's docs (created ones only).
-    if (f.create || f.revert) {
-      const agentRef = db.collection('agents').doc(agentId);
-      for (const sub of ['rules', 'bundles']) {
-        const snap = await agentRef.collection(sub).get();
-        for (const d of snap.docs) await d.ref.delete();
-      }
-      await agentRef.delete().catch(() => {});
+    if (created || f.revert) {
+      await removeTestAgent(db, agentId);
       console.log(`[revert] removed test agent ${agentId} (+ rules/bundles).`);
     }
   }
@@ -343,4 +402,4 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   main().catch((err) => die(err?.stack || err?.message || String(err)));
 }
 
-export { buildConflictEvent, buildPlan, resolveHardness, FIXTURES };
+export { buildConflictEvent, buildPlan, resolveHardness, resolveWebApiKey, readResponse, FIXTURES };
