@@ -238,7 +238,7 @@ export const LEAGUE_TRAINING_CLIMB_PREVIEW_ENABLED = true;
  * build PR (the PR #510 / LEAGUE_NEXT_ARC_ENABLED precedent) — flip only after
  * a Vercel preview smoke.
  */
-export const LEAGUE_CANONICAL_OPEN_CAPTURE = false;
+export const LEAGUE_CANONICAL_OPEN_CAPTURE = true;
 
 /**
  * "My Tournament" — the compact ranked status/launchpad page a player lands on
@@ -254,7 +254,7 @@ export const LEAGUE_CANONICAL_OPEN_CAPTURE = false;
  * scorer/fence contact. Built/merged DARK behind this flag; flip only after a
  * Vercel preview smoke (the LEAGUE_CANONICAL_OPEN_CAPTURE / PR #510 precedent).
  */
-export const MY_TOURNAMENT_ENABLED = false;
+export const MY_TOURNAMENT_ENABLED = true;
 
 /**
  * League Training — the redesigned Training Draft Board (the agent-fit spine).
