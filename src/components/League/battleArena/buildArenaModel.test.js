@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { buildArenaModel, liveDayIdx, buildAskChips } from './buildArenaModel';
-import { BASELINE_POLICY, CAPTURE_STATE } from '../../../constants/leagueTournament';
+import { BASELINE_POLICY, CAPTURE_STATE, computeComposite } from '../../../constants/leagueTournament';
 
 // H1 — LEAGUE_AGENT_CHAT_ENABLED is ON in source (flipped to production). The
 // two-way-ask flag-OFF stub behavior is preserved here by driving the flag
@@ -191,6 +191,72 @@ describe('buildArenaModel — pre-deploy (no battle)', () => {
     expect(m.voice.live).toEqual([]);
     expect(m.seats).toHaveLength(4);
     expect(m.seats.find((s) => s.you).arch).toBeUndefined(); // no battle → your arch unknown too
+  });
+});
+
+// ── Branch 1 — the live YOUR-seat composite for the orb ──
+describe('buildArenaModel — live YOUR-seat composite (youLiveScore)', () => {
+  const sum = (rows) => rows.reduce((a, s) => a + (Number.isFinite(s?.points) ? s.points : 0), 0);
+  // The live orb is TRAINING-only and requires TODAY's fullday battle doc — the
+  // pod's NOW is 2026-06-16 ET, so the battle must be activated that ET day.
+  const TODAY_BATTLE = { ...flat6Battle(), activatedAt: '2026-06-16T14:00:00.000Z', createdAt: '2026-06-16T14:00:00.000Z' };
+  const liveArgs = (extra = {}) => ({ ...BASE, mode: 'training', battle: TODAY_BATTLE, ...extra });
+
+  it('§9: youLiveScore = computeComposite(priorBankedAgent + Σ agent points, Σ user points) from the SAME rows the dock renders', () => {
+    const m = buildArenaModel(liveArgs());
+    // The fixtures carry compositePoints but no agentPoints → priorBankedAgent 0.
+    expect(typeof m.youLiveScore).toBe('number');
+    expect(m.youLiveScore).toBeCloseTo(computeComposite(sum(m.agentStars), sum(m.userStars)), 6);
+  });
+
+  it('ADDS the prior banked cumulative agent (agent battles are fullday/daily docs) so it settles to the banked composite', () => {
+    const g = makeGroup();
+    g.dailyScores.day2.closeScores['u-you'].agentPoints = 12; // cumulative agent through the last close
+    const m = buildArenaModel(liveArgs({ group: g }));
+    expect(m.youLiveScore).toBeCloseTo(computeComposite(12 + sum(m.agentStars), sum(m.userStars)), 6);
+  });
+
+  it('a non-finite banked agentPoints degrades to 0 — never poisons the orb with NaN', () => {
+    const g = makeGroup();
+    g.dailyScores.day2.closeScores['u-you'].agentPoints = NaN;
+    const m = buildArenaModel(liveArgs({ group: g }));
+    expect(Number.isFinite(m.youLiveScore)).toBe(true);
+    expect(m.youLiveScore).toBeCloseTo(computeComposite(sum(m.agentStars), sum(m.userStars)), 6);
+  });
+
+  it('drives youRank live too — the orb crown/rank and the ask standing agree (§9)', () => {
+    const m = buildArenaModel(liveArgs());
+    const order = [
+      ['u-you', m.youLiveScore],
+      ['cpu-1', m.climb['cpu-1'].at(-1)], ['u-riv', m.climb['u-riv'].at(-1)], ['cpu-2', m.climb['cpu-2'].at(-1)],
+    ].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+    expect(m.youRank).toBe(order.indexOf('u-you') + 1); // ranked by the LIVE score, not the banked 1.4
+  });
+
+  it('is null (orb stays banked) with no battle — rivals, preview, pre-deploy', () => {
+    expect(buildArenaModel(liveArgs({ battle: null })).youLiveScore).toBeNull();
+  });
+
+  it('is null in RANKED mode — Branch 1 is training-only (ranked orb stays banked)', () => {
+    expect(buildArenaModel(liveArgs({ mode: 'ranked' })).youLiveScore).toBeNull();
+  });
+
+  it('is null for a STALE prior-day battle doc — no double-count of an already-banked agent layer', () => {
+    // BASE.battle is activated 2026-06-15 but NOW is 2026-06-16 → not today's fullday doc.
+    expect(buildArenaModel({ ...BASE, mode: 'training' }).youLiveScore).toBeNull();
+  });
+
+  it('is null once TODAY is already banked — the live→final settle to the banked composite', () => {
+    const g = makeGroup();
+    // NOW → ET 2026-06-16; banking that day means the banked series already holds today.
+    g.dailyScores.day3 = { closeScores: { 'u-you': { compositePoints: 1 } }, recordedDate: '2026-06-16' };
+    expect(buildArenaModel(liveArgs({ group: g })).youLiveScore).toBeNull();
+  });
+
+  it('is null when the round is not live (awaiting / complete)', () => {
+    const g = makeGroup();
+    g.status = 'complete';
+    expect(buildArenaModel(liveArgs({ group: g })).youLiveScore).toBeNull();
   });
 });
 

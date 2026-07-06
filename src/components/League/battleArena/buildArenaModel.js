@@ -20,10 +20,12 @@
 import { buildSeat, seatColor } from '../leagueAdapter';
 import { buildClimbSeries } from '../leagueClimbAdapter';
 import { readAgentStars, readUserStars } from '../../../utils/leagueStarMeter';
+import { isFlat6ActivationDay } from '../../../utils/flat6BattleEnrichment';
 import { deriveBeats } from '../../../utils/leagueBeats';
 import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
 import {
   getLatestDayEntry, getWeeklyComposite, rankByScores, WEEK_DAYS_REQUIRED, TOURNAMENT_TUNING, BASELINE_POLICY,
+  GROUP_STATUS, computeComposite,
 } from '../../../constants/leagueTournament';
 import { statusFeedToVoice } from './statusFeedToVoice';
 import { LEAGUE_AGENT_CHAT_ENABLED } from '../../../config/featureFlags';
@@ -167,6 +169,41 @@ export function buildArenaModel({
   // legacy stars carry settleState null so this is 0 (no marker) as today.
   const userPending = userStars.filter((s) => s?.settleState === 'pending').length;
 
+  // ── live YOUR-seat composite (Branch 1) — the orb's banked source (the climb
+  // series / getWeeklyComposite) is the cumulative daily-CLOSE composite: 0
+  // before the first close, frozen intraday. Recompose it LIVE for your OWN seat
+  // from the SAME live star rows the dock renders, so the altitude the orb shows
+  // agrees with those cells by construction (§9 — one source, one tick). Two
+  // accounting asymmetries are handled deliberately:
+  //   • agent battles are fullday/daily docs (AGENT_BATTLE_DURATION_MODE), so
+  //     `agentStars` is TODAY's layer only — add the prior days' BANKED cumulative
+  //     agent (closeScores.agentPoints, the very value every other orb reads) so
+  //     the estimate settles to the banked composite at close, not with a per-day
+  //     jump.
+  //   • user legs persist across the week, so `userStars` is already cumulative.
+  // Gated tightly so it can only ever ADD today's layer once, and only where the
+  // founder scoped it (Branch 1):
+  //   • mode==='training' — training only. Ranked stays banked (its sealed-rival
+  //     cut line + stakes make a live-vs-banked mixed climb a separate call).
+  //   • status BATTLE, not-yet-banked today, a real (owner-only) battle present.
+  //   • now present AND the battle was ACTIVATED today — so a stale prior-day doc
+  //     (the pre-deploy morning window, before today's fullday doc lands) can't
+  //     add its already-banked agent layer a second time. Anything failing these
+  //     falls through to the banked series (the live→final settle; CPU/lobby stay
+  //     banked). k lives in computeComposite (never re-derived).
+  const youOrbLive = mode === 'training'
+    && group?.status === GROUP_STATUS.BATTLE
+    && !dayBanked
+    && !!battle
+    && now != null
+    && isFlat6ActivationDay(battle, now);
+  const sumPoints = (rows) => rows.reduce((acc, s) => acc + (Number.isFinite(s?.points) ? s.points : 0), 0);
+  const bankedAgentRaw = latestDay?.entry?.closeScores?.[uid]?.agentPoints;
+  const priorBankedAgent = Number.isFinite(bankedAgentRaw) ? bankedAgentRaw : 0;
+  const youLiveScore = youOrbLive
+    ? computeComposite(priorBankedAgent + sumPoints(agentStars), sumPoints(userStars))
+    : null;
+
   // ── beats (REUSE deriveBeats; only YOUR stars are knowable — rivals sealed) ──
   const starStates = { you: userStars, agent: agentStars };
   const seatNames = Object.fromEntries(seats.map((s) => [s.id, s.name]));
@@ -212,11 +249,19 @@ export function buildArenaModel({
     reason: win.reason ?? null,
   };
 
-  // ── youRank at the last banked index (REUSE rankByScores; never 0) ──
+  // ── youRank at the last banked index (REUSE rankByScores; never 0). When the
+  // orb runs live for your seat, your RANK must move with it — the same live
+  // score ClimbArena's `at` ranks you by — so the crown/altitude and the voice/
+  // ask standing ("protect the lead" vs "catch up") agree by construction (§9);
+  // rivals stay on their banked series exactly as the orbs do. ──
   const lastIdx = liveDayIdx(climb);
   const ids = seats.map((s) => s.id);
   const scoresAtLast = {};
-  for (const id of ids) scoresAtLast[id] = climb[id]?.[lastIdx] ?? 0;
+  for (const id of ids) {
+    scoresAtLast[id] = (id === uid && youLiveScore != null)
+      ? youLiveScore
+      : (climb[id]?.[lastIdx] ?? 0);
+  }
   const ranked = rankByScores(scoresAtLast, ids);
   const yIdx = ranked.indexOf(uid);
   const youRank = yIdx >= 0 ? yIdx + 1 : ranked.length;
@@ -230,6 +275,7 @@ export function buildArenaModel({
     seats,
     climb,
     youId,
+    youLiveScore, // Branch 1: your live intraday composite for the orb (null = banked)
     agentStars,
     userStars,
     userPending, // canonical-round count of picks awaiting the open (Deliverable 3)
