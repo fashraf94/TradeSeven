@@ -112,10 +112,11 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
-import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED } from './config/featureFlags';
+import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, MY_TOURNAMENT_ENABLED } from './config/featureFlags';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { OnboardingExperience } from './components/Agent';
 import LeagueScreen from './screens/LeagueScreen';
+import MyTournamentScreen from './screens/MyTournamentScreen';
 import { GROUP_STATUS } from './constants/leagueTournament';
 import TournamentDevScreen from './screens/TournamentDevScreen';
 import AppLoadingScreen from './components/shared/AppLoadingScreen';
@@ -2210,6 +2211,16 @@ export default function PortfolioDuel() {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('correlationDev') === '1') {
       setScreen('correlationLab');
+    }
+  }, []);
+
+  // "My Tournament" dev/dark preview — reachable ONLY via ?myTournament=1 (the
+  // correlationDev precedent: the param effect checks no flag; MY_TOURNAMENT_ENABLED
+  // gates the screen block, so while it's false this sets a screen id that never
+  // renders).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('myTournament') === '1') {
+      setScreen('myTournament');
     }
   }, []);
 
@@ -9683,6 +9694,24 @@ export default function PortfolioDuel() {
         <LeagueScreen
           onOpenTrainingPod={onOpenTrainingPod}
           hasAgent={agentLoading ? undefined : hasAgent}
+          agentLoadout={primaryAgent ? { archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName } : null}
+          isDesktop={isDesktop}
+        />
+      </ErrorBoundary>
+      </div>
+    );
+  }
+
+  // MY TOURNAMENT (net-new status/launchpad) — flag-gated; the ?myTournament=1
+  // mount effect is its only entry (no nav item sets it). Mirrors the League
+  // wrapper (sidebar margin + ErrorBoundary). Reads only; opens into the battle
+  // surface internally via LeagueParticipantView.
+  if (MY_TOURNAMENT_ENABLED && screen === 'myTournament') {
+    return (
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
+      <ErrorBoundary name="MyTournament" onNavigateDashboard={() => setScreen('dashboard')}>
+        <MyTournamentScreen
+          onEditInForge={() => setShowForge(true)}
           agentLoadout={primaryAgent ? { archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName } : null}
           isDesktop={isDesktop}
         />

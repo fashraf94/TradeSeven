@@ -241,6 +241,22 @@ export const LEAGUE_TRAINING_CLIMB_PREVIEW_ENABLED = true;
 export const LEAGUE_CANONICAL_OPEN_CAPTURE = false;
 
 /**
+ * "My Tournament" — the compact ranked status/launchpad page a player lands on
+ * after claiming a seat (net-new; the design mockup rebuilt on the app's own
+ * League primitives). It wires REAL base-layer data into three sequential states
+ * (awaiting → drafting resolution → bracket-live), stubs the ranked-only bracket
+ * decorations as honest-empty, and opens into the EXISTING battle surface.
+ *
+ * When false (default), the `myTournament` screen id is unreachable — no nav item
+ * sets it, and the App screen block is flag-gated — so flag-off is byte-identical.
+ * With the flag on, or via the `?myTournament=1` dev-preview param (the
+ * `?correlationDev=1` idiom), the page mounts. Reads only — no scoring/banking/
+ * scorer/fence contact. Built/merged DARK behind this flag; flip only after a
+ * Vercel preview smoke (the LEAGUE_CANONICAL_OPEN_CAPTURE / PR #510 precedent).
+ */
+export const MY_TOURNAMENT_ENABLED = false;
+
+/**
  * League Training — the redesigned Training Draft Board (the agent-fit spine).
  *
  * When false (default), `TrainingDraftRoomScreen` renders TODAY's behavior
