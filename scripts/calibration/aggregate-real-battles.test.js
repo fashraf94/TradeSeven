@@ -9,6 +9,14 @@ import {
   toEpochMs,
   formatTable,
   TRADES_CAP,
+  // Release 1 (Tuned Knob Values Landing V1.1) additions
+  opponentGroup,
+  tempoDivergence,
+  capPinningForBattle,
+  generationIndex,
+  bucketByGeneration,
+  aggregateWithGenerations,
+  formatGenerationReport,
 } from './aggregate-real-battles.js';
 // The import above transitively imports EMERGENCY_BYPASS_REASONS from the FENCED
 // agentRiskManager.js. That this test loads and runs in bare Node/vitest IS the
@@ -196,5 +204,144 @@ describe('formatTable', () => {
     expect(table).toContain('nonEmergRot(med)=8A');
     expect(table).toContain('degen');
     expect(table).toMatch(/censored .* FLOOR values/);
+  });
+
+  it('renders the cap-pin column and the opponent-divergence footnote', () => {
+    const table = formatTable(aggregateBattles([battle('degen', ['stagnation'])]));
+    expect(table).toContain('capPin%@cap');
+    expect(table).toMatch(/opponent tempo divergence/i);
+  });
+});
+
+// ==================== Release 1 — Tuned Knob Values Landing V1.1 ====================
+
+// Build a swap trade `mins` minutes after `baseIso` (real Date math — vitest, not a
+// workflow script, so Date arithmetic is available).
+const at = (baseIso, mins) => new Date(Date.parse(baseIso) + mins * 60000).toISOString();
+const swap = (id, exitReason, iso) => ({ id, exitReason, swappedOutAt: iso });
+
+describe('capPinningForBattle — swap-cap pinning against the deployed cap (§4.1)', () => {
+  const BASE = '2026-07-08T14:00:00.000Z';
+
+  it('flags every rolling window that reaches capPerWindow (analyst cap=4, 60min)', () => {
+    // 6 stagnation swaps at 10-min gaps — all inside one 60-min window.
+    const trades = Array.from({ length: 6 }, (_, i) => swap(`s${i}`, 'stagnation', at(BASE, i * 10)));
+    const cp = capPinningForBattle({ agentContext: { archetype: 'analyst' }, trades });
+    expect(cp.capPerWindow).toBe(4);      // analyst's deployed cap (unchanged by Release 1)
+    expect(cp.windowMinutes).toBe(60);
+    expect(cp.windows).toBe(6);           // one rolling window anchored per cap-subject swap
+    // windows for the 4th/5th/6th swap reach 4/5/6 in-window swaps → pinned (>=4).
+    expect(cp.pinnedWindows).toBe(3);
+  });
+
+  it('does not anchor on or count emergency swaps (countEmergencies=false)', () => {
+    const emergency = [...EMERGENCY_BYPASS_REASONS][0];
+    const trades = [
+      swap('e0', emergency, at(BASE, 0)),
+      swap('e1', emergency, at(BASE, 5)),
+      swap('s0', 'stagnation', at(BASE, 10)),
+    ];
+    const cp = capPinningForBattle({ agentContext: { archetype: 'analyst' }, trades });
+    expect(cp.windows).toBe(1);           // only the single non-emergency swap anchors a window
+    expect(cp.pinnedWindows).toBe(0);     // 1 cap-subject swap in window < cap 4
+  });
+
+  it('reflects the deployed momentum_chaser cap of 6 (Release 1 tuned value)', () => {
+    const trades = Array.from({ length: 6 }, (_, i) => swap(`s${i}`, 'stagnation', at(BASE, i * 5)));
+    const cp = capPinningForBattle({ agentContext: { archetype: 'momentum_chaser' }, trades });
+    expect(cp.capPerWindow).toBe(6);      // tuned 8 → 6
+    expect(cp.pinnedWindows).toBe(1);     // only the 6th swap's window reaches 6
+  });
+
+  it('surfaces per-archetype swapCapPinning in the aggregate report', () => {
+    const trades = Array.from({ length: 6 }, (_, i) => swap(`s${i}`, 'stagnation', at(BASE, i * 10)));
+    const r = aggregateBattles([{ agentContext: { archetype: 'analyst' }, createdAt: BASE, trades }]);
+    const cp = r.perArchetype.analyst.swapCapPinning;
+    expect(cp.capPerWindow).toBe(4);
+    expect(cp.pinnedSharePct).toBe(50);   // 3 pinned / 6 windows
+  });
+});
+
+describe('opponentGroup + tempoDivergence — cpu-opponent vs player-opponent (Decision 2)', () => {
+  it('classifies by isCpu, never by "training"', () => {
+    expect(opponentGroup({ isCpu: true })).toBe('cpu-opponent');
+    expect(opponentGroup({ isCpu: false })).toBe('player-opponent');
+    expect(opponentGroup({})).toBe('player-opponent');   // absent → player
+  });
+
+  it('flags material divergence and clears when the two groups agree', () => {
+    expect(tempoDivergence(1, 5).divergent).toBe(true);   // ratio 5 ≥ 1.5
+    expect(tempoDivergence(2, 2).divergent).toBe(false);  // equal
+    expect(tempoDivergence(0, 2).divergent).toBe(true);   // one group 0, abs gap 2
+    expect(tempoDivergence(0, 1).divergent).toBe(false);  // abs gap 1 < 2
+    expect(tempoDivergence(3, null).divergent).toBe(false); // insufficient data
+    expect(tempoDivergence(3, null).reason).toBe('insufficient-data');
+  });
+
+  it('splits the archetype into both opponent groups AND counts both in the aggregate', () => {
+    const cpuBattle = { agentContext: { archetype: 'degen' }, createdAt: '2026-07-08T14:00:00.000Z', isCpu: true, trades: [trade('stagnation', 0)] };
+    const playerBattle = { agentContext: { archetype: 'degen' }, createdAt: '2026-07-08T14:00:00.000Z', trades: ['stagnation', 'stagnation', 'stagnation', 'stagnation', 'stagnation'].map((r, i) => trade(r, i)) };
+    const r = aggregateBattles([cpuBattle, playerBattle]);
+    const m = r.perArchetype.degen;
+    // aggregate median of [1, 5] = 3 — BOTH groups feed the decision metric
+    expect(m.nonEmergencyRotationsPerBattle.median).toBe(3);
+    expect(m.opponentBreakdown['cpu-opponent'].battles).toBe(1);
+    expect(m.opponentBreakdown['cpu-opponent'].nonEmergencyRotationsPerBattle.median).toBe(1);
+    expect(m.opponentBreakdown['player-opponent'].battles).toBe(1);
+    expect(m.opponentBreakdown['player-opponent'].nonEmergencyRotationsPerBattle.median).toBe(5);
+    expect(m.opponentBreakdown.tempoDivergence.divergent).toBe(true);
+  });
+});
+
+describe('generation bucketing + wholly-contained filter (§5)', () => {
+  const B = '2026-07-08T20:05:00.000Z'; // one boundary (an after-close merge)
+  const boundaryMs = [Date.parse(B)];
+
+  it('generationIndex places timestamps into half-open intervals', () => {
+    expect(generationIndex(Date.parse('2026-07-08T15:00:00Z'), boundaryMs)).toBe(0); // before boundary
+    expect(generationIndex(Date.parse('2026-07-09T15:00:00Z'), boundaryMs)).toBe(1); // after boundary
+    expect(generationIndex(boundaryMs[0], boundaryMs)).toBe(1);                       // ON boundary → next gen
+  });
+
+  const contained0 = { agentContext: { archetype: 'degen' }, createdAt: '2026-07-08T14:00:00Z', completedAt: '2026-07-08T20:00:00Z', trades: [trade('stagnation', 0)] };
+  const contained1 = { agentContext: { archetype: 'degen' }, createdAt: '2026-07-09T14:00:00Z', completedAt: '2026-07-09T20:00:00Z', trades: [trade('stagnation', 0), trade('stagnation', 1)] };
+  const straddler = { agentContext: { archetype: 'degen' }, createdAt: '2026-07-08T14:00:00Z', completedAt: '2026-07-09T20:00:00Z', trades: [trade('stagnation', 0)] };
+  const inflight = { agentContext: { archetype: 'degen' }, createdAt: '2026-07-08T14:00:00Z', completedAt: null, trades: [] };
+
+  it('buckets wholly-contained battles and excludes straddlers / in-flight', () => {
+    const { buckets, straddling } = bucketByGeneration([contained0, contained1, straddler, inflight], [B]);
+    expect(buckets[0]).toEqual([contained0]);
+    expect(buckets[1]).toEqual([contained1]);
+    expect(straddling).toEqual([straddler, inflight]);
+  });
+
+  it('rejects an unparseable boundary rather than silently mis-bucketing', () => {
+    expect(() => bucketByGeneration([contained0], ['not-a-date'])).toThrow(/generation-boundary/);
+  });
+
+  it('aggregateWithGenerations reports one contained comparison per generation + straddler tally', () => {
+    const gen = aggregateWithGenerations([contained0, contained1, straddler, inflight], [B]);
+    expect(gen.mode).toBe('generation-bucketed');
+    expect(gen.generations).toHaveLength(2);
+    expect(gen.generations[0].containedBattles).toBe(1);
+    expect(gen.generations[1].containedBattles).toBe(1);
+    // per-generation reports are full aggregate reports over only contained battles
+    expect(gen.generations[1].report.perArchetype.degen.nonEmergencyRotationsPerBattle.median).toBe(2);
+    // straddlers excluded from BOTH generations, tallied separately
+    expect(gen.straddling.battles).toBe(2);
+    expect(gen.straddling.byArchetype.degen).toBe(2);
+    expect(gen.straddling.note).toMatch(/EXCLUDED|straddle/);
+  });
+
+  it('formatGenerationReport frames each generation and calls out exclusions', () => {
+    const gen = aggregateWithGenerations([contained0, straddler], [B]);
+    const out = formatGenerationReport(gen);
+    expect(out).toContain('generation 0');
+    expect(out).toMatch(/EXCLUDED/);
+  });
+
+  it('is deterministic — same input yields byte-identical JSON', () => {
+    const input = [contained0, contained1, straddler];
+    expect(JSON.stringify(aggregateWithGenerations(input, [B]))).toBe(JSON.stringify(aggregateWithGenerations(input, [B])));
   });
 });

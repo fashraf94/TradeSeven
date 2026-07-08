@@ -6,7 +6,7 @@
 // (degen ≠ guardian at runtime — NOT merely that the call resolves).
 
 import { describe, it, expect } from 'vitest';
-import { ARCHETYPE_CONFIGS, getArchetypeConfig, VALID_ARCHETYPES } from './agentArchetypeConfig.js';
+import { ARCHETYPE_CONFIGS, getArchetypeConfig, VALID_ARCHETYPES, KNOB_CONFIG_VERSION } from './agentArchetypeConfig.js';
 
 const ALL = ['momentum_chaser', 'analyst', 'diversifier', 'contrarian', 'degen', 'guardian'];
 
@@ -66,18 +66,95 @@ describe('agentArchetypeConfig — hftConfig matches §3.3 schema for all 6', ()
     }
   });
 
-  it('matches the §3.3 illustrative launch-seed table exactly', () => {
+  it('matches the seed/anchor values that Release 1 did NOT retune', () => {
+    // degen: only stagnation floor changed (0.6→0.3); these three are unchanged seeds.
     expect(ARCHETYPE_CONFIGS.degen.hftConfig.forcedRotation.pctThreshold).toBe(0.001);
     expect(ARCHETYPE_CONFIGS.degen.hftConfig.forcedRotation.ticksThreshold).toBe(3);
     expect(ARCHETYPE_CONFIGS.degen.hftConfig.hurdleFloor.byReason.haiku_decision.atrMultiplier).toBe(0.2);
-    expect(ARCHETYPE_CONFIGS.degen.hftConfig.hurdleFloor.byReason.stagnation.atrMultiplier).toBe(0.6);
     expect(ARCHETYPE_CONFIGS.degen.hftConfig.swapWindow.capPerWindow).toBe(12);
 
     expect(ARCHETYPE_CONFIGS.guardian.hftConfig.swapWindow.capPerWindow).toBe(2);
     expect(ARCHETYPE_CONFIGS.guardian.hftConfig.swapWindow.windowMinutes).toBe(120);
 
+    // mc: pctThreshold was NOT part of the B4 deltas.
     expect(ARCHETYPE_CONFIGS.momentum_chaser.hftConfig.forcedRotation.pctThreshold).toBe(0.0015);
     expect(ARCHETYPE_CONFIGS.analyst.hftConfig.swapWindow.capPerWindow).toBe(4);
+  });
+});
+
+// Release 1 — Tuned Knob Values Landing V1.1 (B4 deltas + KNOB_CONFIG_VERSION).
+// LOAD-BEARING: this is the LIVE-DEFAULT change, so the tuned table is asserted
+// exactly and the four unchanged archetypes are locked byte-identical.
+describe('Release 1 — B4 tuned knob table', () => {
+  it('exports a monotonic KNOB_CONFIG_VERSION (v2 = B4-tuned degen + mc)', () => {
+    expect(KNOB_CONFIG_VERSION).toBe(2);
+  });
+
+  it('degen: stagnation hurdle floor loosened to 0.3 (only degen knob changed)', () => {
+    const hf = ARCHETYPE_CONFIGS.degen.hftConfig.hurdleFloor;
+    expect(hf.byReason.stagnation.atrMultiplier).toBe(0.3);
+    // and the degen haiku/default floors are the untouched seeds
+    expect(hf.byReason.haiku_decision.atrMultiplier).toBe(0.2);
+    expect(hf.default.atrMultiplier).toBe(0.2);
+  });
+
+  it('momentum_chaser: all five B4 deltas landed exactly', () => {
+    const mc = ARCHETYPE_CONFIGS.momentum_chaser.hftConfig;
+    expect(mc.forcedRotation.ticksThreshold).toBe(5);          // 3 → 5 (fires later)
+    expect(mc.swapWindow.capPerWindow).toBe(6);                // 8 → 6 (tighter ceiling)
+    expect(mc.hurdleFloor.byReason.haiku_decision.atrMultiplier).toBe(0.35); // 0.3 → 0.35
+    expect(mc.hurdleFloor.byReason.stagnation.atrMultiplier).toBe(0.5);      // 0.55 → 0.5
+    expect(mc.hurdleFloor.default.atrMultiplier).toBe(0.35);   // 0.3 → 0.35
+  });
+
+  // The four archetypes the spec (§1) asserts byte-identical, excluding the
+  // file-level KNOB_CONFIG_VERSION constant. Their entire hftConfig is locked so
+  // an accidental edit to a "wrong" archetype fails here, not in production.
+  const UNCHANGED_HFT = {
+    analyst: {
+      forcedRotation: { enabled: true, pctThreshold: 0.003, ticksThreshold: 6, maxTickAgeMinutes: 20, winnerThreshold: 0 },
+      hurdleFloor: {
+        enabled: true,
+        byReason: { haiku_decision: { atrMultiplier: 0.4 }, stagnation: { atrMultiplier: 0.5 } },
+        default: { atrMultiplier: 0.4 },
+        requireBenchPositive: true,
+      },
+      swapWindow: { enabled: true, capPerWindow: 4, windowMinutes: 60, countEmergencies: false },
+    },
+    diversifier: {
+      forcedRotation: { enabled: true, pctThreshold: 0.003, ticksThreshold: 6, maxTickAgeMinutes: 20, winnerThreshold: 0 },
+      hurdleFloor: {
+        enabled: true,
+        byReason: { haiku_decision: { atrMultiplier: 0.4 }, stagnation: { atrMultiplier: 0.5 } },
+        default: { atrMultiplier: 0.4 },
+        requireBenchPositive: true,
+      },
+      swapWindow: { enabled: true, capPerWindow: 4, windowMinutes: 60, countEmergencies: false },
+    },
+    contrarian: {
+      forcedRotation: { enabled: true, pctThreshold: 0.003, ticksThreshold: 6, maxTickAgeMinutes: 20, winnerThreshold: 0 },
+      hurdleFloor: {
+        enabled: true,
+        byReason: { haiku_decision: { atrMultiplier: 0.4 }, stagnation: { atrMultiplier: 0.5 } },
+        default: { atrMultiplier: 0.4 },
+        requireBenchPositive: true,
+      },
+      swapWindow: { enabled: true, capPerWindow: 4, windowMinutes: 60, countEmergencies: false },
+    },
+    guardian: {
+      forcedRotation: { enabled: false, pctThreshold: 0.003, ticksThreshold: 6, maxTickAgeMinutes: 20, winnerThreshold: 0 },
+      hurdleFloor: {
+        enabled: true,
+        byReason: { haiku_decision: { atrMultiplier: 0.5 }, stagnation: { atrMultiplier: 0.5 } },
+        default: { atrMultiplier: 0.5 },
+        requireBenchPositive: true,
+      },
+      swapWindow: { enabled: true, capPerWindow: 2, windowMinutes: 120, countEmergencies: false },
+    },
+  };
+
+  it.each(Object.keys(UNCHANGED_HFT))('%s hftConfig is byte-identical to the pre-Release-1 seed', (name) => {
+    expect(ARCHETYPE_CONFIGS[name].hftConfig).toEqual(UNCHANGED_HFT[name]);
   });
 });
 

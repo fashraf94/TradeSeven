@@ -33,7 +33,7 @@ const GATED = ['stagnation', 'haiku_decision', 'gameplan_rotation'];
 const UNKNOWN = ['news_event', undefined]; // default-deny rows: unknown + missing
 const ALL_REASONS = [...EMERGENCY, ...GATED, ...UNKNOWN];
 
-const degen = getArchetypeConfig('degen');       // forcedRotation ON, cap 12; floors haiku 0.2 / stagnation 0.6 / default 0.2
+const degen = getArchetypeConfig('degen');       // forcedRotation ON, cap 12; floors haiku 0.2 / stagnation 0.3 (B4-tuned) / default 0.2
 const guardian = getArchetypeConfig('guardian');  // forcedRotation OFF, cap 2; floors 0.5 across
 
 // ---- Knob B driver. A FAILING candidate (active winning, bench down 3%): fails
@@ -78,13 +78,13 @@ describe('Gate 6 · Knob B — clearsHurdleFloor bypass IFF emergency (§3.1)', 
     expect(r.clears).toBe(false);
   });
 
-  it('gated unenumerated reason routes through byReason.default (real degen: 0.2, not stagnation 0.6)', () => {
+  it('gated unenumerated reason routes through byReason.default (real degen: 0.2, not stagnation 0.3)', () => {
     // positive bench just below the default floor → below_floor exposes `required`.
     const r = clearsHurdleFloor({ active: { dailyPct: 0 }, benchCandidate: { dailyPct: 0.001 }, reason: 'gameplan_rotation', archetypeConfig: degen, userATR: 2.5 });
     expect(r.clears).toBe(false);
     expect(r.blockReason).toBe('below_floor');
     expect(r.required).toBe(degen.hftConfig.hurdleFloor.default.atrMultiplier); // 0.2
-    expect(r.required).not.toBe(degen.hftConfig.hurdleFloor.byReason.stagnation.atrMultiplier); // not 0.6
+    expect(r.required).not.toBe(degen.hftConfig.hurdleFloor.byReason.stagnation.atrMultiplier); // not 0.3
   });
 
   it('default routing is UNAMBIGUOUS with a distinctive synthetic default (0.99)', () => {
@@ -331,16 +331,16 @@ describe('Gate 6 · §6.2 Knob A × B — a stagnation rotation whose only candi
     reason: 'stagnation', archetypeConfig: degen, userATR: 2.5,
   }).clears;
 
-  it('VETO: the single candidate fails degen stagnation floor (0.6) → returns null', () => {
+  it('VETO: the single candidate fails degen stagnation floor (bench-negative) → returns null', () => {
     const bench = [{ symbol: 'AAA', isCrypto: false }];
-    const prices = { AAA: { changePercent: -3 } }; // bench down 3% → fails bench-positive
+    const prices = { AAA: { changePercent: -3 } }; // bench down 3% → fails bench-positive (floor magnitude irrelevant here)
     const r = pickSwapReplacementCandidate({ benchAssets: bench, prices, outgoingIsCrypto: false, clearsQuality: stagnationQuality(prices) });
     expect(r).toBeNull();
   });
 
   it('positive control: a candidate that CLEARS the floor is returned (no false veto)', () => {
     const bench = [{ symbol: 'AAA', isCrypto: false }];
-    const prices = { AAA: { changePercent: 2 } }; // +2% → 0.02/0.025 = 0.8 ATR ≥ 0.6 → clears
+    const prices = { AAA: { changePercent: 2 } }; // +2% → 0.02/0.025 = 0.8 ATR ≥ 0.3 → clears
     const r = pickSwapReplacementCandidate({ benchAssets: bench, prices, outgoingIsCrypto: false, clearsQuality: stagnationQuality(prices) });
     expect(r?.symbol).toBe('AAA');
   });
