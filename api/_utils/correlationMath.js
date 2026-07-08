@@ -672,3 +672,319 @@ export function trailingReturnInto(levels, c, look = 5) {
   const v = cur / base - 1;
   return Number.isFinite(v) ? v : null;
 }
+
+// ── V3 Phase 1 — relationship-quality metrics (Bucket B) ─────────────────────
+// All seven are PURE and reuse the module's existing statistical concepts
+// (pearson / olsBeta / median) rather than reinlining them — BUILD_RULES §4,
+// one implementation per concept. Null-never-zero throughout: an insufficient
+// or degenerate read stays distinguishable from a genuine 0.
+
+/**
+ * Member contribution (leave-one-out) — which member IS the relationship.
+ * The group composite is an EQUAL-WEIGHT mean of member returns
+ * (correlationAssembly.js), so removing member k re-means over the other m−1.
+ * For each member: corrDelta_k = full − corr(group_without_k, driver) and
+ * betaDelta_k = full − beta(group_without_k, driver) — the drop in the link
+ * when that name is taken out (positive = the name was HOLDING UP the link).
+ *
+ * All statistics are the trailing `window` returns so `full.corr` equals the
+ * headline corr(window) BY CONSTRUCTION (both are pearson of the same trailing
+ * slices) — display-agreement (§9). Default window 60 aligns with corr60.
+ * Beta is reported at the SAME window (label it by that window, never the
+ * rolling-40 headline beta). CALLS pearson (:pearson) and olsBeta (:olsBeta).
+ *
+ * @param {number[][]} memberReturns - aligned OLDEST-FIRST per-member returns
+ * @param {number[]} driverReturns - aligned OLDEST-FIRST driver returns
+ * @param {number} [window=60] - trailing observation count
+ * @param {{minMembers?:number}} [opts]
+ * @returns {{full:{corr:number|null,beta:number|null}, members:Array<{index:number,corrDelta:number|null,betaDelta:number|null}>, window:number, n:number}|null}
+ *   Null below minMembers (a 2-member "contribution" is one pair wearing a
+ *   grand name), on a short/ragged driver series, or when the trailing window
+ *   doesn't fit. Per-member deltas null (never 0) when a side is degenerate.
+ */
+export function memberContribution(memberReturns, driverReturns, window = 60, opts = {}) {
+  const { minMembers = 3 } = opts;
+  if (!Array.isArray(memberReturns) || memberReturns.length < minMembers) return null;
+  if (!isFiniteNumberArray(driverReturns, 2)) return null;
+  if (!Number.isInteger(window) || window < 2 || driverReturns.length < window) return null;
+  const m = memberReturns.length;
+  for (const mr of memberReturns) {
+    if (!isFiniteNumberArray(mr, 2) || mr.length !== driverReturns.length) return null;
+  }
+  const dWin = driverReturns.slice(-window);
+  const memberWins = memberReturns.map((mr) => mr.slice(-window));
+  const groupOf = (skip) => {
+    const denom = skip == null ? m : m - 1;
+    return dWin.map((_, t) => {
+      let s = 0;
+      for (let k = 0; k < m; k++) if (k !== skip) s += memberWins[k][t];
+      return s / denom;
+    });
+  };
+  const fullGroup = groupOf(null);
+  const fullCorr = pearson(fullGroup, dWin);
+  const fullBetaObj = olsBeta(fullGroup, dWin);
+  const fullBeta = fullBetaObj ? fullBetaObj.beta : null;
+  const members = [];
+  for (let k = 0; k < m; k++) {
+    const looGroup = groupOf(k);
+    const looCorr = pearson(looGroup, dWin);
+    const looBetaObj = olsBeta(looGroup, dWin);
+    const looBeta = looBetaObj ? looBetaObj.beta : null;
+    members.push({
+      index: k,
+      corrDelta: fullCorr != null && looCorr != null ? fullCorr - looCorr : null,
+      betaDelta: fullBeta != null && looBeta != null ? fullBeta - looBeta : null,
+    });
+  }
+  return { full: { corr: fullCorr, beta: fullBeta }, members, window, n: window };
+}
+
+/**
+ * SPY-adjusted partial correlation — the closed form for r(group,driver | SPY)
+ * from the three pairwise correlations: (rGD − rGS·rDS)/√((1−rGS²)(1−rDS²)).
+ * This surfaces the market-beta contamination raw correlation hides (§6):
+ * "how linked once the S&P's shared move is removed."
+ *
+ * PURE ARITHMETIC — it does NOT recompute any correlation (the caller passes
+ * pearson outputs measured on ONE shared sample; that same-sample discipline
+ * lives in partialCorrelationWindows). Suppressed when |rDS| > maxDriverMarket
+ * (the driver IS the market — adjusting for SPY is meaningless, not a number to
+ * print). corr:null with NO tag when an input is non-finite / out of range or
+ * the denominator underflows (covers the group-is-market |rGS|→1 degenerate).
+ *
+ * @param {number} rGD @param {number} rGS @param {number} rDS
+ * @param {{maxDriverMarket?:number}} [opts]
+ * @returns {{corr:number|null, suppressed:('driver_is_market'|null)}}
+ */
+export function partialCorrelationSPY(rGD, rGS, rDS, opts = {}) {
+  const { maxDriverMarket = 0.9 } = opts;
+  if (![rGD, rGS, rDS].every((v) => Number.isFinite(v))) return { corr: null, suppressed: null };
+  if (Math.abs(rGS) > 1 || Math.abs(rDS) > 1 || Math.abs(rGD) > 1) return { corr: null, suppressed: null };
+  if (Math.abs(rDS) > maxDriverMarket) return { corr: null, suppressed: 'driver_is_market' };
+  const denom = Math.sqrt((1 - rGS * rGS) * (1 - rDS * rDS));
+  if (!Number.isFinite(denom) || denom < EPS) return { corr: null, suppressed: null };
+  return { corr: clamp1((rGD - rGS * rDS) / denom), suppressed: null };
+}
+
+/**
+ * Per-window SPY-adjusted partial correlation, owning the SAME-SAMPLE
+ * discipline the closed form requires: rGD, rGS and rDS must be measured on
+ * ONE aligned subset. `spyReturns` (from projectAlignedReturns) may carry
+ * per-index nulls where SPY lacks a session on the driver's joined calendar;
+ * per window we keep only indices where ALL THREE are finite, then compute the
+ * three pearsons on that identical subset and adjust. `raw` is rGD on that
+ * shared subset, so raw and adjusted are one sample by construction (§9) — and
+ * when SPY covers every session `raw` equals the headline corr(window) exactly.
+ *
+ * @param {number[]} groupReturns @param {number[]} driverReturns
+ * @param {Array<number|null>} spyReturns - same index space; per-index null allowed
+ * @param {number[]} [windows=[20,60]]
+ * @returns {{[key:string]:{raw:number|null,adjusted:number|null,n:number,suppressed:(string|null)}}|null}
+ *   keys are `w20`/`w60`; null on ragged/invalid input.
+ */
+export function partialCorrelationWindows(groupReturns, driverReturns, spyReturns, windows = [20, 60]) {
+  if (!isFiniteNumberArray(groupReturns, 1) || !isFiniteNumberArray(driverReturns, 1)) return null;
+  if (!Array.isArray(spyReturns)) return null;
+  if (groupReturns.length !== driverReturns.length || spyReturns.length !== groupReturns.length) return null;
+  if (!Array.isArray(windows) || windows.length === 0) return null;
+  const out = {};
+  for (const w of windows) {
+    const key = `w${w}`;
+    if (!Number.isInteger(w) || w < 2) {
+      out[key] = { raw: null, adjusted: null, n: 0, suppressed: null };
+      continue;
+    }
+    const gWin = groupReturns.slice(-w);
+    const dWin = driverReturns.slice(-w);
+    const sWin = spyReturns.slice(-w);
+    const g = [];
+    const d = [];
+    const s = [];
+    for (let i = 0; i < gWin.length; i++) {
+      if (Number.isFinite(gWin[i]) && Number.isFinite(dWin[i]) && Number.isFinite(sWin[i])) {
+        g.push(gWin[i]);
+        d.push(dWin[i]);
+        s.push(sWin[i]);
+      }
+    }
+    const rGD = pearson(g, d);
+    const rGS = pearson(g, s);
+    const rDS = pearson(d, s);
+    const adj = partialCorrelationSPY(rGD, rGS, rDS);
+    out[key] = { raw: rGD, adjusted: adj.corr, n: g.length, suppressed: adj.suppressed };
+  }
+  return out;
+}
+
+/**
+ * Self-percentile — where the LATEST value of a rolling series sits within that
+ * same series' own history: "today's link is in the Nth percentile of its own
+ * past." Operates on the SIGNED value (matches the signed correlation chart —
+ * a −0.8 and a +0.8 sit at opposite ends). `series` is a rollingCorrelation /
+ * rollingStd output (`[{value}]`); `latest` is the last non-null value, so it
+ * equals the number the chart/headline shows (§9).
+ *
+ * percentile = 100 · (#non-null ≤ latest) / (#non-null), latest inclusive, so
+ * the result is in (0, 100]. Null below minObs non-null observations or when
+ * the latest value is null.
+ *
+ * @param {Array<{value:(number|null)}>} series
+ * @param {{minObs?:number}} [opts]
+ * @returns {{percentile:number, n:number, latest:number}|null}
+ */
+export function selfPercentile(series, opts = {}) {
+  const { minObs = 2 } = opts;
+  if (!Array.isArray(series)) return null;
+  const values = [];
+  let latest = null;
+  for (let i = 0; i < series.length; i++) {
+    const v = series[i]?.value;
+    if (Number.isFinite(v)) {
+      values.push(v);
+      latest = v; // chronological → last finite wins
+    }
+  }
+  if (values.length < minObs || latest == null) return null;
+  const countLe = values.reduce((acc, v) => acc + (v <= latest ? 1 : 0), 0);
+  return { percentile: (100 * countLe) / values.length, n: values.length, latest };
+}
+
+/**
+ * Classical OLS beta restricted to the observations where mask[i] === true —
+ * the beta analogue of maskedPearson. Extracts the masked pairs and CALLS
+ * olsBeta (BUILD_RULES §4: the one classical-OLS home), so { beta, alpha, r, n }
+ * carries the same variance-guard/null-never-zero semantics. Null when the
+ * masked subset is smaller than minN or degenerate.
+ */
+export function maskedBeta(returnsGroup, returnsDriver, mask, minN = 2) {
+  if (!isFiniteNumberArray(returnsGroup, 1) || !isFiniteNumberArray(returnsDriver, 1)) return null;
+  if (returnsGroup.length !== returnsDriver.length) return null;
+  if (!Array.isArray(mask) || mask.length !== returnsGroup.length) return null;
+  if (!Number.isInteger(minN) || minN < 2) return null;
+  const subG = [];
+  const subD = [];
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] === true) {
+      subG.push(returnsGroup[i]);
+      subD.push(returnsDriver[i]);
+    }
+  }
+  if (subG.length < minN) return null;
+  return olsBeta(subG, subD);
+}
+
+const CAPTURE_FLOOR_EPS = 1e-9; // fp guard for the quantized 2dp comparison
+// A relative-gap claim needs at least this much ABSOLUTE 2dp beta difference so
+// near-zero betas (0.04 vs 0.03) can't manufacture a 25% "asymmetry" out of
+// rounding noise — 0.05 is 5 hundredths, well above the ±0.005 quantization.
+const CAPTURE_REL_MIN_ABS = 0.05;
+
+/**
+ * Down-capture vs up-capture comparison — the beta analogue of
+ * compareConditionalSides, decided on the DISPLAY-ROUNDED betas (toFixed(2),
+ * the fmtBeta rounding) so the chip word can never contradict the printed
+ * numbers (§9). Betas are unbounded, so "asymmetric" fires when the absolute
+ * gap clears absFloor OR the relative gap clears relFloor (the latter guarded
+ * by CAPTURE_REL_MIN_ABS against near-zero-beta noise). No sign-"flip" concept:
+ * a negative capture beta is meaningful but not a truncation-safe reversal
+ * claim, so it stays out. direction = the larger-|beta| side (null when equal
+ * magnitude or not asymmetric).
+ *
+ * @param {{beta:number,n:number}|null} sideDown - maskedBeta over driver-down days
+ * @param {{beta:number,n:number}|null} sideUp - maskedBeta over driver-up days
+ * @param {{absFloor?:number, relFloor?:number}} [opts]
+ * @returns {{asymmetric:boolean, direction:('down'|'up'|null), betaDown:number, betaUp:number, nDown:number, nUp:number}|null}
+ *   null when either side is null (no comparison — never a fabricated verdict).
+ */
+export function compareCaptureSides(sideDown, sideUp, opts = {}) {
+  const { absFloor = 0.2, relFloor = 0.25 } = opts;
+  if (sideDown == null || sideUp == null) return null;
+  if (!Number.isFinite(sideDown.beta) || !Number.isFinite(sideUp.beta)) return null;
+  if (!Number.isFinite(absFloor) || absFloor < 0 || !Number.isFinite(relFloor) || relFloor < 0) return null;
+  const bd = Number(sideDown.beta.toFixed(2));
+  const bu = Number(sideUp.beta.toFixed(2));
+  const absGap = Math.abs(bd - bu);
+  const maxMag = Math.max(Math.abs(bd), Math.abs(bu));
+  const relGap = maxMag > 0 ? absGap / maxMag : 0;
+  const relQualifies = relGap >= relFloor - CAPTURE_FLOOR_EPS && absGap >= CAPTURE_REL_MIN_ABS - CAPTURE_FLOOR_EPS;
+  const asymmetric = absGap >= absFloor - CAPTURE_FLOOR_EPS || relQualifies;
+  let direction = null;
+  if (asymmetric && Math.abs(bd) !== Math.abs(bu)) {
+    direction = Math.abs(bd) > Math.abs(bu) ? 'down' : 'up';
+  }
+  return { asymmetric, direction, betaDown: bd, betaUp: bu, nDown: sideDown.n, nUp: sideUp.n };
+}
+
+/**
+ * Tail co-movement — on the driver's worst/best days, how often (and how far)
+ * the group moved with it. Turns correlation into risk CONTEXT without
+ * predicting: bottom decile of driver returns when the sample supports it
+ * (⌊n·0.1⌋ ≥ minTailN), else bottom 20%; symmetric for the best days. Reports
+ * raw COUNTS (n-first) — the UI applies the no-%-under-5 tier — plus the median
+ * group return on those days (CALLS median, §4). "co-move" = group also down on
+ * the worst days / also up on the best days.
+ *
+ * @param {number[]} groupReturns @param {number[]} driverReturns
+ * @param {{minTailN?:number}} [opts]
+ * @returns {{worst:{n:number,tailPct:number,coMoveCount:number,groupMedian:number}, best:{…}, sampleN:number}|null}
+ *   null when neither tail can reach minTailN.
+ */
+export function tailCoMovement(groupReturns, driverReturns, opts = {}) {
+  const { minTailN = 5 } = opts;
+  if (!isFiniteNumberArray(groupReturns, 2) || !isFiniteNumberArray(driverReturns, 2)) return null;
+  if (groupReturns.length !== driverReturns.length) return null;
+  const n = driverReturns.length;
+  const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => driverReturns[a] - driverReturns[b]);
+  const decileN = Math.floor(n * 0.1);
+  const useDecile = decileN >= minTailN;
+  const tailN = useDecile ? decileN : Math.floor(n * 0.2);
+  if (tailN < minTailN) return null;
+  const tailPct = useDecile ? 10 : 20;
+  const side = (indices, downward) => {
+    const groupOnTail = indices.map((i) => groupReturns[i]);
+    const coMoveCount = groupOnTail.filter((r) => (downward ? r < 0 : r > 0)).length;
+    return { n: indices.length, tailPct, coMoveCount, groupMedian: median(groupOnTail) };
+  };
+  return {
+    worst: side(order.slice(0, tailN), true),
+    best: side(order.slice(n - tailN), false),
+    sampleN: n,
+  };
+}
+
+/**
+ * Correlation stability ("past stability", never "durability") — over the
+ * rolling correlation series: what SHARE of observed windows shared the latest
+ * window's sign (signPersistence), and what share cleared the link threshold in
+ * magnitude (aboveFraction). A description of the PAST series only — no decay
+ * fit, no forward claim. Operates on the already-computed corr series (no
+ * pearson recompute). Null below minObs non-null windows; signPersistence null
+ * when the latest window is exactly 0 (no defined sign).
+ *
+ * @param {Array<{value:(number|null)}>} series - a rollingCorrelation output
+ * @param {{threshold?:number, minObs?:number}} [opts]
+ * @returns {{signPersistence:number|null, aboveFraction:number, n:number, sign:('positive'|'negative'|null), threshold:number}|null}
+ */
+export function correlationStability(series, opts = {}) {
+  const { threshold = 0.15, minObs = 20 } = opts;
+  if (!Array.isArray(series)) return null;
+  if (!Number.isFinite(threshold) || threshold < 0) return null;
+  const values = [];
+  let latest = null;
+  for (let i = 0; i < series.length; i++) {
+    const v = series[i]?.value;
+    if (Number.isFinite(v)) {
+      values.push(v);
+      latest = v;
+    }
+  }
+  if (values.length < minObs || latest == null) return null;
+  const sign = latest > 0 ? 'positive' : latest < 0 ? 'negative' : null;
+  const signPersistence =
+    sign === null
+      ? null
+      : values.reduce((acc, v) => acc + ((sign === 'positive' ? v > 0 : v < 0) ? 1 : 0), 0) / values.length;
+  const aboveFraction = values.reduce((acc, v) => acc + (Math.abs(v) >= threshold ? 1 : 0), 0) / values.length;
+  return { signPersistence, aboveFraction, n: values.length, sign, threshold };
+}

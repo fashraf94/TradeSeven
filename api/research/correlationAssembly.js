@@ -189,3 +189,43 @@ export function tensionStateFrom({ score, d }) {
   const clearsFloor = Number.isFinite(d) && Math.abs(d) >= ABS_DIVERGENCE_FLOOR;
   return clearsFloor ? 'break' : 'stretched';
 }
+
+/**
+ * Project a date→close Map onto an already-built joined-date axis and return
+ * the aligned OLDEST-FIRST return series — the glue that lets the V3
+ * SPY-adjusted partial correlation measure r(group,SPY) and r(driver,SPY) on
+ * the SAME joined calendar every other stat on the page uses. The map is the
+ * FULL series for a symbol (e.g. SPY); joinedDates is a driver's own
+ * (lookback-capped) join axis, which may lack a session the map has or vice
+ * versa.
+ *
+ * Deliberately NOT computeReturnsSeries: that helper nulls the WHOLE series on
+ * a single gap (a poisoned-window guard for the composite inputs). Here a gap
+ * must null ONLY that one index so partialCorrelationWindows can drop just the
+ * missing session and report an honest n — so the return is length
+ * joinedDates.length − 1 with a per-index null wherever either endpoint close
+ * is absent (or zero, in pct mode). Same index/date mapping as the rest of the
+ * stack: return i spans joinedDates[i]→joinedDates[i+1].
+ *
+ * @param {Map<string, number>} map - date string → close
+ * @param {string[]} joinedDates - chronological join axis
+ * @param {('pct'|'diff')} [mode='pct']
+ * @returns {Array<number|null>|null} null on invalid input
+ */
+export function projectAlignedReturns(map, joinedDates, mode = 'pct') {
+  if (!(map instanceof Map) || !Array.isArray(joinedDates) || joinedDates.length < 2) return null;
+  if (mode !== 'pct' && mode !== 'diff') return null;
+  const out = new Array(joinedDates.length - 1);
+  for (let i = 0; i < joinedDates.length - 1; i++) {
+    const a = map.get(joinedDates[i]);
+    const b = map.get(joinedDates[i + 1]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) {
+      out[i] = null;
+    } else if (mode === 'pct') {
+      out[i] = a === 0 ? null : b / a - 1;
+    } else {
+      out[i] = b - a;
+    }
+  }
+  return out;
+}
