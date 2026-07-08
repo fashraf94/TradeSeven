@@ -20,6 +20,11 @@ import { getETDate, getMarketState, getNextMarketClose } from '../_utils/marketS
 import {
   computeReturnsSeries,
   rollingCorrelation,
+  selfPercentile,
+  correlationStability,
+  partialCorrelationWindows,
+  trailingReturnInto,
+  rollingStd,
   ABS_DIVERGENCE_FLOOR,
   SDS_EPISODE_END_THRESHOLD,
   SDS_FLAG_THRESHOLD,
@@ -228,4 +233,52 @@ export function projectAlignedReturns(map, joinedDates, mode = 'pct') {
     }
   }
   return out;
+}
+
+/**
+ * The V3 relationship-quality fields BOTH surfaces share — the SPY-adjusted
+ * partial correlation, self-percentile, past stability, and driver-side context.
+ * Extracted so the partial-status vocabulary (`skipped:'self'` /
+ * `suppressed:'spy_unavailable'`) — which the UI keys off by string — and the
+ * shared field set live in ONE place, not copy-proliferated across the two
+ * handlers (BUILD_RULES §4 rationale). The deep dive spreads this and adds the
+ * depth-only blocks (member contribution, capture asymmetry, tail co-movement).
+ *
+ * @param {object} p
+ * @param {number[]} p.groupReturns @param {number[]} p.driverReturns
+ * @param {number[]} p.driverCloses @param {string[]} p.joinedDates
+ * @param {Array|null} p.corr20 @param {Array|null} p.corr60 - rollingCorrelation outputs
+ * @param {string} p.driverSymbol - registry wire symbol (SPY.US ⇒ self-skip)
+ * @param {Map<string,number>|null} p.spyMap - SPY date→close, or null if unavailable
+ * @returns {{partial:object, selfPercentile:object, stability:object, driverContext:object}}
+ */
+export function buildRelationshipQualityShared({
+  groupReturns,
+  driverReturns,
+  driverCloses,
+  joinedDates,
+  corr20,
+  corr60,
+  driverSymbol,
+  spyMap,
+}) {
+  const driverIsSpy = driverSymbol === 'SPY.US';
+  const spyReturns = spyMap && !driverIsSpy ? projectAlignedReturns(spyMap, joinedDates) : null;
+  const partial = driverIsSpy
+    ? { w20: { skipped: 'self' }, w60: { skipped: 'self' } }
+    : spyReturns
+      ? partialCorrelationWindows(groupReturns, driverReturns, spyReturns)
+      : { w20: { suppressed: 'spy_unavailable' }, w60: { suppressed: 'spy_unavailable' } };
+  return {
+    partial,
+    selfPercentile: {
+      corr20: selfPercentile(corr20 ?? []),
+      corr60: selfPercentile(corr60 ?? []),
+    },
+    stability: correlationStability(corr20 ?? []),
+    driverContext: {
+      trailingReturn: trailingReturnInto(driverCloses, driverCloses.length - 1, 20),
+      vol: selfPercentile(rollingStd(driverReturns, 20, joinedDates) ?? []),
+    },
+  };
 }

@@ -1079,11 +1079,24 @@ describe('partialCorrelationWindows', () => {
     expect(out.w20.adjusted).toBeCloseTo(partialCorrelationSPY(rGD, rGS, rDS).corr, 12);
   });
 
-  it('a per-index SPY gap drops only that index from the shared subset (honest n)', () => {
+  it('a per-index SPY gap fails the full-window requirement → null raw/adjusted (honest n reported)', () => {
     const spyGap = [...spy];
-    spyGap[95] = null; // inside the last-20 window
+    spyGap[95] = null; // inside the last-20 window → only 19 shared sessions
     const out = partialCorrelationWindows(group, driver, spyGap, [20]);
+    expect(out.w20.raw).toBeNull(); // full-window discipline: never a sub-window number
+    expect(out.w20.adjusted).toBeNull();
     expect(out.w20.n).toBe(19);
+  });
+
+  it('a window longer than the available history is null — no sub-window leak', () => {
+    const thinG = group.slice(0, 30);
+    const thinD = driver.slice(0, 30);
+    const thinS = spy.slice(0, 30);
+    const out = partialCorrelationWindows(thinG, thinD, thinS, [20, 60]);
+    expect(out.w20.n).toBe(20); // a full 20-window exists
+    expect(out.w20.raw).not.toBeNull();
+    expect(out.w60.raw).toBeNull(); // only 30 returns → no full 60-window
+    expect(out.w60.n).toBe(30);
   });
 
   it("suppresses adjusted when the driver is ~SPY, but still reports raw", () => {
@@ -1113,12 +1126,18 @@ describe('selfPercentile', () => {
     expect(mid.n).toBe(4);
   });
 
-  it('skips null windows and nulls below minObs', () => {
+  it('skips interior null windows and nulls below minObs', () => {
     const withGaps = selfPercentile(mk([null, 0.2, null, 0.5]));
     expect(withGaps.n).toBe(2);
     expect(withGaps.latest).toBeCloseTo(0.5, 12);
     expect(selfPercentile(mk([0.5]))).toBeNull(); // minObs 2
     expect(selfPercentile('nope')).toBeNull();
+  });
+
+  it('a null LAST window yields null — no stale "today" reading (§9: latest === the headline value)', () => {
+    // The headline latestValue() returns the last entry (null → "—"); latest
+    // must match, not fall back to an earlier finite reading.
+    expect(selfPercentile(mk([0.2, 0.3, null]))).toBeNull();
   });
 });
 

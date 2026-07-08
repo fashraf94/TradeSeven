@@ -1136,14 +1136,17 @@ describe('V3 Sub-build 1 — relationshipQuality block shape + partial correlati
     expect(p.w60.raw).not.toBeNull();
   });
 
-  it('a SPY reference fetch failure degrades to suppressed:spy_unavailable, response still 200', async () => {
+  it('a SPY reference fetch failure degrades to suppressed:spy_unavailable, 200, and is NOT cached', async () => {
     spyAvailable.on = false;
+    const setsBefore = store.setCalls.length;
     try {
       const { req, res } = makeReqRes({ group: ['AAA', 'BBB'], driver: 'BRENT', lookbackDays: 400, forceRefresh: true });
       await handler(req, res);
       expect(res.statusCode).toBe(200);
       expect(res.body.relationshipQuality.partial.w20).toEqual({ suppressed: 'spy_unavailable' });
       expect(res.body.relationshipQuality.partial.w60).toEqual({ suppressed: 'spy_unavailable' });
+      // A transient SPY outage must not bake a degraded partial into the cache.
+      expect(store.setCalls.length).toBe(setsBefore);
     } finally {
       spyAvailable.on = true;
     }

@@ -56,19 +56,12 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { getFromCache, setInCache } from '../_utils/serverCache.js';
-import {
-  standardizedDivergenceScore,
-  selfPercentile,
-  correlationStability,
-  partialCorrelationWindows,
-  trailingReturnInto,
-  rollingStd,
-} from '../_utils/correlationMath.js';
+import { standardizedDivergenceScore } from '../_utils/correlationMath.js';
 import {
   assembleDriverCore,
   computeCorrelationCacheTtlMs,
   tensionStateFrom,
-  projectAlignedReturns,
+  buildRelationshipQualityShared,
   MIN_CLOSES_FOR_INFLECTIONS,
 } from './correlationAssembly.js';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
@@ -375,32 +368,22 @@ export default async function handler(req, res) {
         : null;
       const d = lastDiv ? lastDiv.d : null;
 
-      // V3 relationship-quality per row (cheap surface only — partial, self-
-      // percentile, past-stability, driver context; contribution/asymmetry/tail
-      // stay deep-dive-natural). Computed from the core series BEFORE they are
-      // discarded above; flag-gated so the row is byte-identical when off.
-      let rq = null;
-      if (CORRELATION_RELATIONSHIP_QUALITY_ENABLED) {
-        const driverIsSpy = registry.symbol === 'SPY.US';
-        const spyReturns = spyMap && !driverIsSpy ? projectAlignedReturns(spyMap, core.joinedDates) : null;
-        const partial = driverIsSpy
-          ? { w20: { skipped: 'self' }, w60: { skipped: 'self' } }
-          : spyReturns
-            ? partialCorrelationWindows(core.groupReturns, core.driverReturns, spyReturns)
-            : { w20: { suppressed: 'spy_unavailable' }, w60: { suppressed: 'spy_unavailable' } };
-        rq = {
-          partial,
-          selfPercentile: {
-            corr20: selfPercentile(core.corr20 ?? []),
-            corr60: selfPercentile(core.corr60 ?? []),
-          },
-          stability: correlationStability(core.corr20 ?? []),
-          driverContext: {
-            trailingReturn: trailingReturnInto(core.driverCloses, core.driverCloses.length - 1, 20),
-            vol: selfPercentile(rollingStd(core.driverReturns, 20, core.joinedDates) ?? []),
-          },
-        };
-      }
+      // V3 relationship-quality per row (the shared cheap surface only — partial,
+      // self-percentile, past-stability, driver context; contribution/asymmetry/
+      // tail stay deep-dive-natural). Computed from the core series BEFORE they
+      // are discarded above; flag-gated so the row is byte-identical when off.
+      const rq = CORRELATION_RELATIONSHIP_QUALITY_ENABLED
+        ? buildRelationshipQualityShared({
+            groupReturns: core.groupReturns,
+            driverReturns: core.driverReturns,
+            driverCloses: core.driverCloses,
+            joinedDates: core.joinedDates,
+            corr20: core.corr20,
+            corr60: core.corr60,
+            driverSymbol: registry.symbol,
+            spyMap,
+          })
+        : null;
 
       rows.push({
         driver: key,

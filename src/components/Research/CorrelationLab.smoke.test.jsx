@@ -729,6 +729,31 @@ describe('RelationshipQualityCard — the deep-dive relationship-quality bundle'
     expect(render(<RelationshipQualityCard rq={null} driverLabel="Gold" isDesktop />)).toBe('');
     expect(render(<RelationshipQualityCard rq={undefined} driverLabel="Gold" isDesktop />)).toBe('');
   });
+
+  it('clamps a sub-0.5 percentile to "1st", never "0th percentile" (a record extreme)', () => {
+    const rq = { ...fullRq, selfPercentile: { corr20: { percentile: 0.4, n: 250, latest: -0.9 }, corr60: null } };
+    const html = render(<RelationshipQualityCard rq={rq} driverLabel="VIX" isDesktop />);
+    expect(html).toContain('1st percentile');
+    expect(html).not.toContain('0th percentile');
+  });
+
+  it('omits the Relationship context card entirely when all three clauses are absent', () => {
+    const rq = {
+      ...fullRq,
+      selfPercentile: { corr20: null, corr60: null },
+      stability: { signPersistence: null, aboveFraction: 0, n: 5, sign: null, threshold: 0.15 },
+      driverContext: { trailingReturn: null, vol: null },
+    };
+    const html = render(<RelationshipQualityCard rq={rq} driverLabel="Gold" isDesktop />);
+    expect(html).not.toContain('Relationship context');
+  });
+
+  it('renders the volatility clause even when the driver trailing return is null', () => {
+    const rq = { ...fullRq, driverContext: { trailingReturn: null, vol: { percentile: 65, n: 480, latest: 0.01 } } };
+    const html = render(<RelationshipQualityCard rq={rq} driverLabel="Gold" isDesktop />);
+    expect(html).toContain('Relationship context'); // the card still renders
+    expect(html).toContain('65th percentile'); // the vol read isn't suppressed by a null move
+  });
 });
 
 describe('ScanResults — the desktop S&P-adjusted column (only when the server sent rq)', () => {

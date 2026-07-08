@@ -1171,6 +1171,15 @@ export function RelationshipQualityCard({ rq, driverLabel, isDesktop }) {
   const label = driverLabel ?? 'the driver';
   const { contribution, partial, selfPercentile, captureAsymmetry, tail, stability, driverContext } = rq;
 
+  // "Relationship context" clause presence — the card is omitted entirely when
+  // none has data (absence-tolerance), and the move / volatility clauses render
+  // independently so a null trailing return can't hide a valid volatility read.
+  const driverMove = driverContext?.trailingReturn;
+  const driverVol = driverContext?.vol;
+  const hasPctLine = !!selfPercentile?.corr20;
+  const hasStabLine = !!(stability?.sign && stability.signPersistence != null);
+  const hasCtxLine = driverMove != null || !!driverVol;
+
   const w20 = partial?.w20;
   const w60 = partial?.w60;
   const partialSelf = w20?.skipped === 'self';
@@ -1219,37 +1228,48 @@ export function RelationshipQualityCard({ rq, driverLabel, isDesktop }) {
         </div>
       ) : null}
 
-      {/* Self-percentile + past stability + driver-side context. */}
-      <div style={card}>
-        <div style={captionStyle}>Relationship context</div>
-        <div style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, marginTop: 8, lineHeight: 1.6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {selfPercentile?.corr20 ? (
-            <div>
-              Today's 1-month link sat in the{' '}
-              <strong style={{ color: HOLO_COLORS.textPrimary }}>{ordinalNum(Math.round(selfPercentile.corr20.percentile))} percentile</strong>{' '}
-              of its own history ({selfPercentile.corr20.n} windows).
-            </div>
-          ) : null}
-          {stability?.sign && stability.signPersistence != null ? (
-            <div>
-              The link stayed {stability.sign} in{' '}
-              <strong style={{ color: HOLO_COLORS.textPrimary }}>{Math.round(stability.signPersistence * 100)}%</strong>{' '}
-              of the {stability.n} observed 20-day windows.
-            </div>
-          ) : null}
-          {driverContext?.trailingReturn != null ? (
-            <div>
-              {label} itself moved{' '}
-              <strong style={{ color: driverContext.trailingReturn >= 0 ? GREEN : RED }}>{fmtPct(driverContext.trailingReturn)}</strong>{' '}
-              over the past 20 sessions
-              {driverContext.vol
-                ? `; its own volatility sat in the ${ordinalNum(Math.round(driverContext.vol.percentile))} percentile of its history`
-                : ''}
-              .
-            </div>
-          ) : null}
+      {/* Self-percentile + past stability + driver-side context. Omitted when
+          none of the three clauses has data (absence-tolerance). */}
+      {hasPctLine || hasStabLine || hasCtxLine ? (
+        <div style={card}>
+          <div style={captionStyle}>Relationship context</div>
+          <div style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, marginTop: 8, lineHeight: 1.6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {hasPctLine ? (
+              <div>
+                Today's 1-month link sat in the{' '}
+                <strong style={{ color: HOLO_COLORS.textPrimary }}>
+                  {ordinalNum(Math.max(1, Math.round(selfPercentile.corr20.percentile)))} percentile
+                </strong>{' '}
+                of its own history ({selfPercentile.corr20.n} windows).
+              </div>
+            ) : null}
+            {hasStabLine ? (
+              <div>
+                The link stayed {stability.sign} in{' '}
+                <strong style={{ color: HOLO_COLORS.textPrimary }}>{Math.round(stability.signPersistence * 100)}%</strong>{' '}
+                of the {stability.n} observed 20-day windows.
+              </div>
+            ) : null}
+            {hasCtxLine ? (
+              <div>
+                {driverMove != null ? (
+                  <>
+                    {label} itself moved{' '}
+                    <strong style={{ color: driverMove >= 0 ? GREEN : RED }}>{fmtPct(driverMove)}</strong>{' '}
+                    over the past 20 sessions
+                    {driverVol
+                      ? `; its own volatility sat in the ${ordinalNum(Math.max(1, Math.round(driverVol.percentile)))} percentile of its history`
+                      : ''}
+                    .
+                  </>
+                ) : (
+                  `${label}'s own volatility sat in the ${ordinalNum(Math.max(1, Math.round(driverVol.percentile)))} percentile of its history.`
+                )}
+              </div>
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <ContributionSection contribution={contribution} />
       <CaptureSection captureAsymmetry={captureAsymmetry} label={label} />

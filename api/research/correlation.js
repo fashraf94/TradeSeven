@@ -49,12 +49,9 @@ import {
   computeReturnsSeries,
   pairwiseCohesion,
   memberContribution,
-  partialCorrelationWindows,
-  selfPercentile,
   maskedBeta,
   compareCaptureSides,
   tailCoMovement,
-  correlationStability,
   SDS_BASELINE_WINDOW,
 } from '../_utils/correlationMath.js';
 // V2 Build 2 extraction: the join-and-compute core and the two-sided cache TTL
@@ -65,7 +62,7 @@ import {
   assembleDriverCore,
   computeCorrelationCacheTtlMs,
   tensionStateFrom,
-  projectAlignedReturns,
+  buildRelationshipQualityShared,
   MIN_CLOSES_FOR_INFLECTIONS,
 } from './correlationAssembly.js';
 // V2 Build 3 — break context: per-episode technical state at the flag and the
@@ -429,6 +426,10 @@ export default async function handler(req, res) {
     // is omitted from the payload → byte-identical to today. Pure math over the
     // series already assembled, except the one guarded SPY reference fetch.
     let relationshipQuality = null;
+    // True when the SPY reference was needed (flag on, driver isn't SPY) but its
+    // fetch failed — the run must NOT cache a degraded partial, mirroring the
+    // scan's clean-run rule (a dropped SPX driver leaves the scan uncached).
+    let spyReferenceMissing = false;
     if (CORRELATION_RELATIONSHIP_QUALITY_ENABLED) {
       // Partial correlation needs SPY on the SAME joined calendar. The driver IS
       // SPY (registry SPX, or a CUSTOM 'SPY') → self, no fetch, no partial.
@@ -443,14 +444,23 @@ export default async function handler(req, res) {
         } catch {
           spyMap = null; // SPY reference unavailable → suppressed, never fails the response
         }
+        spyReferenceMissing = spyMap === null;
       }
-      const spyReturns = spyMap ? projectAlignedReturns(spyMap, joinedDates) : null;
-      const partial = driverIsSpy
-        ? { w20: { skipped: 'self' }, w60: { skipped: 'self' } }
-        : spyReturns
-          ? partialCorrelationWindows(groupReturns, driverReturns, spyReturns)
-          : { w20: { suppressed: 'spy_unavailable' }, w60: { suppressed: 'spy_unavailable' } };
 
+      // The four fields both surfaces share (partial / self-percentile / stability
+      // / driver context) — one implementation, in correlationAssembly.js.
+      const shared = buildRelationshipQualityShared({
+        groupReturns,
+        driverReturns,
+        driverCloses,
+        joinedDates,
+        corr20,
+        corr60,
+        driverSymbol: registry.symbol,
+        spyMap,
+      });
+
+      // ── Depth-only blocks (the scan never computes these) ──
       // Member contribution reuses the memberReturns already built for cohesion;
       // ≥3 members (the cohesion gate) — a 2-member leave-one-out is vacuous.
       const contributionCore =
@@ -477,19 +487,10 @@ export default async function handler(req, res) {
       };
 
       relationshipQuality = {
+        ...shared,
         contribution,
-        partial,
-        selfPercentile: {
-          corr20: selfPercentile(corr20 ?? []),
-          corr60: selfPercentile(corr60 ?? []),
-        },
         captureAsymmetry,
         tail: tailCoMovement(groupReturns, driverReturns),
-        stability: correlationStability(corr20 ?? []),
-        driverContext: {
-          trailingReturn: trailingReturnInto(driverCloses, driverCloses.length - 1, 20),
-          vol: selfPercentile(rollingStd(driverReturns, 20, joinedDates) ?? []),
-        },
       };
     }
 
@@ -605,8 +606,10 @@ export default async function handler(req, res) {
       ...(CORRELATION_RELATIONSHIP_QUALITY_ENABLED ? { relationshipQuality } : {}),
     };
 
-    // ── Cache write: NON-PARTIAL ONLY; a cache failure never fails the response ──
-    if (!partial) {
+    // ── Cache write: NON-PARTIAL ONLY, and never when the SPY reference was
+    //    needed-but-unavailable (a transient SPY outage must not bake a degraded
+    //    partial into the cache); a cache failure never fails the response ──
+    if (!partial && !spyReferenceMissing) {
       try {
         const ttlMs = computeCorrelationCacheTtlMs();
         await db.collection('correlationIntelligence').doc(docId).set({

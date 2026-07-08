@@ -808,6 +808,15 @@ export function partialCorrelationWindows(groupReturns, driverReturns, spyReturn
         s.push(sWin[i]);
       }
     }
+    // Full-window discipline (the rollingCorrelation / pairwiseCohesion rule):
+    // only a COMPLETE trailing window is reported. This guarantees `raw` equals
+    // the headline corr(window) by construction (§9) and prevents a thin-history
+    // window (fewer than w base returns) or a gappy SPY series from surfacing a
+    // sub-window number mislabeled w20/w60. g.length can only be ≤ w.
+    if (g.length < w) {
+      out[key] = { raw: null, adjusted: null, n: g.length, suppressed: null };
+      continue;
+    }
     const rGD = pearson(g, d);
     const rGS = pearson(g, s);
     const rDS = pearson(d, s);
@@ -835,17 +844,18 @@ export function partialCorrelationWindows(groupReturns, driverReturns, spyReturn
  */
 export function selfPercentile(series, opts = {}) {
   const { minObs = 2 } = opts;
-  if (!Array.isArray(series)) return null;
+  if (!Array.isArray(series) || series.length === 0) return null;
   const values = [];
-  let latest = null;
-  for (let i = 0; i < series.length; i++) {
-    const v = series[i]?.value;
-    if (Number.isFinite(v)) {
-      values.push(v);
-      latest = v; // chronological → last finite wins
-    }
+  for (const e of series) {
+    const v = e?.value;
+    if (Number.isFinite(v)) values.push(v);
   }
-  if (values.length < minObs || latest == null) return null;
+  // `latest` is the LAST ENTRY's value — the SAME number latestValue() feeds the
+  // headline — so the percentile's "today" reading can never diverge from the
+  // displayed corr (§9). A degenerate/absent last window (value null) has no
+  // reading today → null, exactly as the headline then renders "—".
+  const latest = series[series.length - 1]?.value;
+  if (!Number.isFinite(latest) || values.length < minObs) return null;
   const countLe = values.reduce((acc, v) => acc + (v <= latest ? 1 : 0), 0);
   return { percentile: (100 * countLe) / values.length, n: values.length, latest };
 }
