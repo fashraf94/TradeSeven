@@ -48,6 +48,13 @@ import {
   median,
   computeReturnsSeries,
   pairwiseCohesion,
+  memberContribution,
+  partialCorrelationWindows,
+  selfPercentile,
+  maskedBeta,
+  compareCaptureSides,
+  tailCoMovement,
+  correlationStability,
   SDS_BASELINE_WINDOW,
 } from '../_utils/correlationMath.js';
 // V2 Build 2 extraction: the join-and-compute core and the two-sided cache TTL
@@ -58,6 +65,7 @@ import {
   assembleDriverCore,
   computeCorrelationCacheTtlMs,
   tensionStateFrom,
+  projectAlignedReturns,
   MIN_CLOSES_FOR_INFLECTIONS,
 } from './correlationAssembly.js';
 // V2 Build 3 — break context: per-episode technical state at the flag and the
@@ -67,12 +75,15 @@ import {
 // vs-50DMA state the trend-state condition masks on).
 import { computeContextAtFlag, conditionedBaseRates, trendStateSeries } from './breakContext.js';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
-import { fetchAllSeries } from './fetchDriverSeries.js';
+import { fetchAllSeries, fetchEodCloses } from './fetchDriverSeries.js';
 import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
 // api→src cross-boundary flag import (scouting-board.js precedent). Node-clean
 // per BUILD_RULES §4; the unmocked handler import in
 // correlation.boundary.test.js is the dependency-surface guard.
-import { CORRELATION_LAB_ENABLED } from '../../src/config/featureFlags.js';
+import {
+  CORRELATION_LAB_ENABLED,
+  CORRELATION_RELATIONSHIP_QUALITY_ENABLED,
+} from '../../src/config/featureFlags.js';
 
 // Up to 11 EODHD fetches in 3 throttled chunks (~600ms of deliberate sleep)
 // plus Firestore round-trips — heavier than scouting-board's read-only 10s.
@@ -412,6 +423,76 @@ export default async function handler(req, res) {
           }
         : null;
 
+    // V3 Phase 1 Sub-build 1 — relationship-quality bundle (Bucket B). Additive
+    // and flag-gated: while CORRELATION_RELATIONSHIP_QUALITY_ENABLED is off the
+    // block is never computed, the extra SPY fetch never happens, and the field
+    // is omitted from the payload → byte-identical to today. Pure math over the
+    // series already assembled, except the one guarded SPY reference fetch.
+    let relationshipQuality = null;
+    if (CORRELATION_RELATIONSHIP_QUALITY_ENABLED) {
+      // Partial correlation needs SPY on the SAME joined calendar. The driver IS
+      // SPY (registry SPX, or a CUSTOM 'SPY') → self, no fetch, no partial.
+      const driverIsSpy = registry.symbol === 'SPY.US';
+      let spyMap = null;
+      if (!driverIsSpy) {
+        try {
+          const spyRows = await fetchEodCloses('SPY.US', lookbackDays);
+          if (Array.isArray(spyRows) && spyRows.length) {
+            spyMap = new Map(spyRows.map((r) => [r.date, r.close]));
+          }
+        } catch {
+          spyMap = null; // SPY reference unavailable → suppressed, never fails the response
+        }
+      }
+      const spyReturns = spyMap ? projectAlignedReturns(spyMap, joinedDates) : null;
+      const partial = driverIsSpy
+        ? { w20: { skipped: 'self' }, w60: { skipped: 'self' } }
+        : spyReturns
+          ? partialCorrelationWindows(groupReturns, driverReturns, spyReturns)
+          : { w20: { suppressed: 'spy_unavailable' }, w60: { suppressed: 'spy_unavailable' } };
+
+      // Member contribution reuses the memberReturns already built for cohesion;
+      // ≥3 members (the cohesion gate) — a 2-member leave-one-out is vacuous.
+      const contributionCore =
+        memberCount >= 3 ? memberContribution(memberReturns, driverReturns, 60) : null;
+      const contribution = contributionCore
+        ? { ...contributionCore, memberSymbols: survivors }
+        : null;
+
+      // Down/up-capture beta asymmetry — the trivial sign masks only (no vol/
+      // trend), each side self-nulls below the 60-observation floor.
+      const driverDown = driverReturns.map((r) => r < 0);
+      const driverUp = driverReturns.map((r) => r > 0);
+      const sideDown = maskedBeta(groupReturns, driverReturns, driverDown, CONDITIONAL_MIN_OBS);
+      const sideUp = maskedBeta(groupReturns, driverReturns, driverUp, CONDITIONAL_MIN_OBS);
+      const captureAsymmetry = {
+        minObs: CONDITIONAL_MIN_OBS,
+        down: sideDown,
+        up: sideUp,
+        comparison: compareCaptureSides(sideDown, sideUp),
+        counts: {
+          down: driverDown.reduce((acc, m) => acc + (m === true ? 1 : 0), 0),
+          up: driverUp.reduce((acc, m) => acc + (m === true ? 1 : 0), 0),
+        },
+      };
+
+      relationshipQuality = {
+        contribution,
+        partial,
+        selfPercentile: {
+          corr20: selfPercentile(corr20 ?? []),
+          corr60: selfPercentile(corr60 ?? []),
+        },
+        captureAsymmetry,
+        tail: tailCoMovement(groupReturns, driverReturns),
+        stability: correlationStability(corr20 ?? []),
+        driverContext: {
+          trailingReturn: trailingReturnInto(driverCloses, driverCloses.length - 1, 20),
+          vol: selfPercentile(rollingStd(driverReturns, 20, joinedDates) ?? []),
+        },
+      };
+    }
+
     // First observation with a FULL trailing SDS baseline — the UI base-rate
     // sentence anchors here, never at the raw lookback start.
     const firstEligibleInflectionDate = divergenceSeries[SDS_BASELINE_WINDOW]?.eventDate ?? null;
@@ -519,6 +600,9 @@ export default async function handler(req, res) {
         // beta may be null per the variance guard — the UI gaps the line, never zeros it.
         beta40: (beta40 ?? []).map((e) => ({ eventDate: e.eventDate, beta: e.beta, r: e.r })),
       },
+      // Additive, flag-gated: omitted entirely when the flag is off (byte-identical
+      // payload); the UI null-guards it exactly like conditional/cohesion.
+      ...(CORRELATION_RELATIONSHIP_QUALITY_ENABLED ? { relationshipQuality } : {}),
     };
 
     // ── Cache write: NON-PARTIAL ONLY; a cache failure never fails the response ──

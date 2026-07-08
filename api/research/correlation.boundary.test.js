@@ -35,9 +35,11 @@ import { standardizedDivergenceScore, trailingReturnInto, pearson } from '../_ut
 import { tensionStateFrom } from './correlationAssembly.js';
 
 // ==================== HOISTED MOCK STATE ====================
-const { authReturnValue, labFlag } = vi.hoisted(() => ({
+const { authReturnValue, labFlag, rqFlag, spyAvailable } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   labFlag: { on: true }, // default ON so the flag guard doesn't 404 the behavior tests
+  rqFlag: { on: true }, // V3 relationship-quality: default ON so the RQ behavior tests run
+  spyAvailable: { on: true }, // toggles the SPY.US wire to exercise the spy_unavailable path
 }));
 
 let activeFirestore = null;
@@ -64,6 +66,7 @@ vi.mock('../_utils/authMiddleware.js', () => ({
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get CORRELATION_LAB_ENABLED() { return labFlag.on; },
+  get CORRELATION_RELATIONSHIP_QUALITY_ENABLED() { return rqFlag.on; },
 }));
 
 // BUILD_RULES §4 dependency-surface guard: correlation.js imports
@@ -186,6 +189,9 @@ vi.stubGlobal('fetch', async (url) => {
   const symbol = match ? decodeURIComponent(match[1]) : '';
   fetchCalls.count += 1;
   fetchCalls.symbols.push(symbol);
+  // V3: the SPY.US reference can be forced unavailable to exercise the deep
+  // dive's spy_unavailable degrade path (the wire is otherwise always served).
+  if (symbol === 'SPY.US' && !spyAvailable.on) return { ok: false, status: 404, json: async () => ({}) };
   const wire = wireFor(symbol);
   if (!wire) return { ok: false, status: 404, json: async () => ({}) };
   return { ok: true, status: 200, json: async () => wire };
@@ -1041,5 +1047,120 @@ describe('V2 Build 4 — TNX direction labels (diff mode: the mask is the Δ sig
     expect(dd.down).not.toBeNull();
     expect(dd.up.n).toBe(upCount);
     expect(dd.down.n).toBe(N_RETURNS - upCount);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// V3 Phase 1 Sub-build 1 — relationship-quality bundle (Bucket B)
+// The canonical `out` run is flag-ON (rqFlag default true) and 2-member; the SPY
+// reference wire is MEMBER_B_WIRE, which covers every joined session, so the
+// partial's `raw` must equal the headline corr by construction.
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('V3 Sub-build 1 — relationshipQuality block shape + partial correlation', () => {
+  it('carries the additive block with the pinned top-level shape (old asserts never saw it)', () => {
+    expect(out.relationshipQuality).toBeDefined();
+    expect(Object.keys(out.relationshipQuality).sort()).toEqual(
+      ['captureAsymmetry', 'contribution', 'driverContext', 'partial', 'selfPercentile', 'stability', 'tail'].sort()
+    );
+    // The 2-member canonical run is below the ≥3 contribution gate.
+    expect(out.relationshipQuality.contribution).toBeNull();
+  });
+
+  it('partial-correlation raw equals the headline corr when SPY covers every joined session (§9)', () => {
+    const p = out.relationshipQuality.partial;
+    expect(p.w20.n).toBe(20);
+    expect(p.w60.n).toBe(60);
+    expect(p.w20.raw).toBeCloseTo(out.byWindow.corr20.value, 12);
+    expect(p.w60.raw).toBeCloseTo(out.byWindow.corr60.value, 12);
+    // BNO vs SPY(=member B) sits below the 0.9 market floor → adjusted is computed.
+    expect(p.w60.suppressed).toBeNull();
+    expect(p.w60.adjusted).not.toBeNull();
+  });
+
+  it('self-percentile latest equals the displayed corr (§9); stability + driver-context are populated', () => {
+    const rq = out.relationshipQuality;
+    expect(rq.selfPercentile.corr20.latest).toBeCloseTo(out.byWindow.corr20.value, 12);
+    expect(rq.selfPercentile.corr60.latest).toBeCloseTo(out.byWindow.corr60.value, 12);
+    expect(rq.stability.n).toBeGreaterThan(0);
+    expect(['positive', 'negative', null]).toContain(rq.stability.sign);
+    expect(Number.isFinite(rq.driverContext.trailingReturn)).toBe(true);
+    expect(rq.driverContext.vol.n).toBeGreaterThan(0);
+  });
+
+  it('a 3-member run carries member contribution: full.corr equals corr60, one entry per survivor', async () => {
+    const { req, res } = makeReqRes({
+      group: ['AAA', 'BBB', 'DDD'],
+      driver: 'BRENT',
+      lookbackDays: 400,
+      forceRefresh: true,
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    const c = res.body.relationshipQuality.contribution;
+    expect(c).not.toBeNull();
+    expect(c.window).toBe(60);
+    expect(c.memberSymbols).toEqual(['AAA', 'BBB', 'DDD']);
+    expect(c.members).toHaveLength(3);
+    // §9/§4: the leave-one-out "full" corr is the headline 3-month corr by construction.
+    expect(c.full.corr).toBeCloseTo(res.body.byWindow.corr60.value, 12);
+  });
+
+  it('the driver being SPY is a self-skip (no partial, and no SECOND SPY reference fetch)', async () => {
+    const before = fetchCalls.symbols.length;
+    const { req, res } = makeReqRes({ group: ['AAA', 'BBB'], driver: 'SPX', lookbackDays: 400, forceRefresh: true });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.relationshipQuality.partial.w20).toEqual({ skipped: 'self' });
+    expect(res.body.relationshipQuality.partial.w60).toEqual({ skipped: 'self' });
+    // SPY.US was fetched once (as the driver) — the RQ code skips the reference fetch.
+    const spyFetches = fetchCalls.symbols.slice(before).filter((s) => s === 'SPY.US');
+    expect(spyFetches).toHaveLength(1);
+  });
+
+  it("a driver that IS the market is suppressed as 'driver_is_market' (raw still reported)", async () => {
+    // CUSTOM driver DDD == groupReturns; the SPY reference == member B (rg − tiny w),
+    // so corr(driver, SPY) ≈ 0.998 > 0.9 → the S&P-adjusted link is meaningless.
+    const { req, res } = makeReqRes({
+      group: ['AAA', 'BBB'],
+      driver: 'CUSTOM',
+      customSymbol: 'DDD',
+      lookbackDays: 400,
+      forceRefresh: true,
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    const p = res.body.relationshipQuality.partial;
+    expect(p.w60.suppressed).toBe('driver_is_market');
+    expect(p.w60.adjusted).toBeNull();
+    expect(p.w60.raw).not.toBeNull();
+  });
+
+  it('a SPY reference fetch failure degrades to suppressed:spy_unavailable, response still 200', async () => {
+    spyAvailable.on = false;
+    try {
+      const { req, res } = makeReqRes({ group: ['AAA', 'BBB'], driver: 'BRENT', lookbackDays: 400, forceRefresh: true });
+      await handler(req, res);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.relationshipQuality.partial.w20).toEqual({ suppressed: 'spy_unavailable' });
+      expect(res.body.relationshipQuality.partial.w60).toEqual({ suppressed: 'spy_unavailable' });
+    } finally {
+      spyAvailable.on = true;
+    }
+  });
+
+  it('dark: with the relationship-quality flag off, the field is omitted (byte-identical payload) and no SPY fetch', async () => {
+    rqFlag.on = false;
+    try {
+      const before = fetchCalls.symbols.length;
+      const { req, res } = makeReqRes({ ...BASE_REQUEST, forceRefresh: true });
+      await handler(req, res);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.relationshipQuality).toBeUndefined();
+      expect(JSON.stringify(res.body)).not.toContain('relationshipQuality');
+      expect(fetchCalls.symbols.slice(before)).not.toContain('SPY.US'); // no reference fetch while dark
+    } finally {
+      rqFlag.on = true;
+    }
   });
 });
