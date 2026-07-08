@@ -216,6 +216,24 @@ describe('buildArenaModel — live YOUR-seat composite (youLiveScore)', () => {
     expect(m.youLiveScore).toBeCloseTo(computeComposite(12 + sum(m.agentStars), sum(m.userStars)), 6);
   });
 
+  it('week-to-date includes 1.5× the user PRIOR banked days (cumulative Σuser) — no term snaps in at close', () => {
+    // The user layer is a cumulative snapshot, not a per-day term: scorePick banks
+    // a closed leg AND scores the live leg from its Monday baseline, so a prior
+    // day's realized flip rides in Σuser (and thus in the composite). Adding the
+    // closed banked leg (+8 user pts) must move youLiveScore by exactly 1.5×8 —
+    // proving the "missing 1.5× user prior days" drop does not exist (Item A).
+    const withPrior = makeGroup();
+    withPrior.players[0].picks = [{ symbol: 'GE', legs: [
+      { direction: 'long', baselinePrice: 40, closedAt: '2026-06-15T20:00:00.000Z', bankedScore: 8 }, // a prior banked day
+      { direction: 'long', baselinePrice: 40 }, // today's live leg (GE 40→40 → 0 live pts)
+    ] }];
+    const withoutPrior = makeGroup();
+    withoutPrior.players[0].picks = [{ symbol: 'GE', legs: [{ direction: 'long', baselinePrice: 40 }] }];
+    const a = buildArenaModel(liveArgs({ group: withPrior }));
+    const b = buildArenaModel(liveArgs({ group: withoutPrior }));
+    expect(a.youLiveScore - b.youLiveScore).toBeCloseTo(1.5 * 8, 6);
+  });
+
   it('a non-finite banked agentPoints degrades to 0 — never poisons the orb with NaN', () => {
     const g = makeGroup();
     g.dailyScores.day2.closeScores['u-you'].agentPoints = NaN;

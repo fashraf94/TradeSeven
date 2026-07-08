@@ -134,7 +134,11 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                 </linearGradient>
               </defs>
               <line x1={x} y1={yTop} x2={x} y2={plotB} stroke={`url(#bv2cl${s.id})`} strokeWidth={s.id === youId ? 4 : 2.5} strokeLinecap="round" />
-              {live && s.scores.slice(0, lastIdx).map((v, k) => (
+              {/* Trail dots = the seat's prior banked closes. A rival's orb sits AT
+                  its scores[lastIdx], so its dots stop before lastIdx; but when your
+                  live orb lifts OFF scores[lastIdx] (youLiveScore), that banked close
+                  would otherwise vanish — include it as a dot so your trail stays whole. */}
+              {live && s.scores.slice(0, (s.id === youId && youLiveScore != null) ? lastIdx + 1 : lastIdx).map((v, k) => (
                 <circle key={k} cx={x} cy={Y(v)} r={2.2} fill={LTOKENS.bg} stroke={s.color} strokeWidth={1.3} strokeOpacity={0.5} />
               ))}
             </g>
