@@ -46,7 +46,7 @@ function ClimbAtmosphere({ tone }) {
   );
 }
 
-export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPlayer, dayIdx: dayIdxProp = null, compact = false }) {
+export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPlayer, dayIdx: dayIdxProp = null, compact = false, youLiveScore = null }) {
   const live = state === 'live'; const calm = state === 'awaiting';
   const ranked = mode === 'ranked';
   // Real data supplies the true last-banked index; the fixture preview falls back
@@ -56,7 +56,12 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
 
   const rows = seats.map((s) => ({ ...s, scores: climb[s.id] || [] }));
   const lastIdx = calm ? 0 : dayIdx;
-  const at = (s) => s.scores[lastIdx] ?? 0;
+  // Your OWN seat's CURRENT altitude reads the live composite when the host
+  // supplies one (Branch 1 — the intraday number the banked series can't move);
+  // every rival seat, and every prior banked day, stays on the banked series, so
+  // only your live/current point moves. Feeds the orb number, altitude, rank, and
+  // cut uniformly (all read through `at`), so they never disagree.
+  const at = (s) => (s.id === youId && youLiveScore != null ? youLiveScore : (s.scores[lastIdx] ?? 0));
   const ranking = [...rows].sort((a, b) => at(b) - at(a));
   const leaderId = ranking[0]?.id;
   const rankOf = (id) => ranking.findIndex((s) => s.id === id) + 1;
@@ -129,7 +134,11 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                 </linearGradient>
               </defs>
               <line x1={x} y1={yTop} x2={x} y2={plotB} stroke={`url(#bv2cl${s.id})`} strokeWidth={s.id === youId ? 4 : 2.5} strokeLinecap="round" />
-              {live && s.scores.slice(0, lastIdx).map((v, k) => (
+              {/* Trail dots = the seat's prior banked closes. A rival's orb sits AT
+                  its scores[lastIdx], so its dots stop before lastIdx; but when your
+                  live orb lifts OFF scores[lastIdx] (youLiveScore), that banked close
+                  would otherwise vanish — include it as a dot so your trail stays whole. */}
+              {live && s.scores.slice(0, (s.id === youId && youLiveScore != null) ? lastIdx + 1 : lastIdx).map((v, k) => (
                 <circle key={k} cx={x} cy={Y(v)} r={2.2} fill={LTOKENS.bg} stroke={s.color} strokeWidth={1.3} strokeOpacity={0.5} />
               ))}
             </g>

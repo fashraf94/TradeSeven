@@ -65,7 +65,7 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
       {/* THE HERO — the competition climb */}
       <div style={{ position: 'relative', marginTop: 11 }}>
         <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
-          w={HERO_W} h={HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} />
+          w={HERO_W} h={HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} youLiveScore={D.youLiveScore} />
         {live && eng.beat && (
           <div style={{ position: 'absolute', top: 12, left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 25, pointerEvents: 'none' }}>
             <BeatCaption beat={eng.beat} />

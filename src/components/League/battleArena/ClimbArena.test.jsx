@@ -45,6 +45,33 @@ describe('ClimbArena — cut label vs the at-rest (Day-0) state', () => {
   });
 });
 
+describe('ClimbArena — youLiveScore overrides the your-seat orb (Branch 1)', () => {
+  it('renders your LIVE composite in the orb instead of the banked value', () => {
+    const banked = render({ climb: FLAT });                    // banked: you at 0
+    const live = render({ climb: FLAT, youLiveScore: 6.5 });   // your live intraday composite
+    // Anchor to the orb's TEXT node (>6.5<) — the seeded atmosphere sprays decimals
+    // into style attributes, but never as element text.
+    expect(live).toContain('>6.5<');       // the live number is on your orb
+    expect(banked).not.toContain('>6.5<'); // the banked orb never showed it
+  });
+  it('lifts your orb off the Day-0 base camp — a live you-score separates the field', () => {
+    // FLAT banked = every seat tied at 0 (at rest, no trails). A live you-score
+    // means only YOUR current point moved, so the field separates and trails draw.
+    expect(render({ climb: FLAT })).not.toContain('bv2cl');
+    expect(render({ climb: FLAT, youLiveScore: 6.5 })).toContain('bv2cl');
+  });
+  it('leaves rival orbs on the banked series (youLiveScore touches only the you-seat)', () => {
+    // rivals keep their banked spread → the cut still computes from their series.
+    expect(render({ climb: SPREAD, youLiveScore: 99 })).toContain('CUT · TOP 2 ADVANCE');
+  });
+  it('fills your trail — your last banked close becomes a dot when the live orb lifts off it (Item C)', () => {
+    // Trail dots render at r="2.2". When your orb goes live it leaves scores[lastIdx];
+    // that banked close is now drawn as a dot, so the live render has exactly one more.
+    const dots = (html) => (html.match(/r="2.2"/g) || []).length;
+    expect(dots(render({ climb: SPREAD, youLiveScore: 6.5 }))).toBe(dots(render({ climb: SPREAD })) + 1);
+  });
+});
+
 describe('ClimbArena — under-orb name row is desktop-only', () => {
   it('shows seat names on the desktop climb', () => {
     const html = render({ climb: SPREAD, compact: false });
