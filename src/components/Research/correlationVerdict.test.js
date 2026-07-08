@@ -5,7 +5,15 @@
  * the freshness threshold, and the suppressed-inflections path.
  */
 import { describe, it, expect } from 'vitest';
-import { buildVerdictSentence, strengthBand, cohesionPhrase, breakStatePhrase, rsiDisplay } from './correlationVerdict.js';
+import {
+  buildVerdictSentence,
+  strengthBand,
+  cohesionPhrase,
+  breakStatePhrase,
+  rsiDisplay,
+  contributionVerdict,
+  captureVerdict,
+} from './correlationVerdict.js';
 
 // Minimal payload shaped like /api/research/correlation's response.
 const mk = (over = {}) => ({
@@ -306,5 +314,107 @@ describe('breakStatePhrase — trend words lead, technical detail demoted', () =
     expect(breakStatePhrase(ctx({ vs50DMA: 'above', rsi14: 69.6, rsiZone: 'neutral' })).secondary).toBe(
       'above 50DMA · RSI 69.6'
     );
+  });
+});
+
+// ── contributionVerdict (V3) ──────────────────────────────────────────────────
+
+describe('contributionVerdict', () => {
+  const block = (members, memberSymbols) => ({ members, memberSymbols });
+
+  it('names the top contributor only when it beats the runner-up by ≥ 0.10 on rounded deltas', () => {
+    const v = contributionVerdict(
+      block(
+        [
+          { index: 0, corrDelta: 0.31 },
+          { index: 1, corrDelta: 0.08 },
+          { index: 2, corrDelta: 0.05 },
+        ],
+        ['NVDA', 'AMD', 'AVGO']
+      )
+    );
+    expect(v.kind).toBe('single');
+    expect(v.topIndex).toBe(0);
+    expect(v.direction).toBe('carried');
+    expect(v.text).toBe('NVDA carried this link the most');
+  });
+
+  it('falls back to broad-based when the top margin is under 0.10', () => {
+    const v = contributionVerdict(
+      block(
+        [
+          { index: 0, corrDelta: 0.18 },
+          { index: 1, corrDelta: 0.15 },
+          { index: 2, corrDelta: 0.12 },
+        ],
+        ['A', 'B', 'C']
+      )
+    );
+    expect(v.kind).toBe('broad');
+    expect(v.text).toBe('broad-based — no single member dominated');
+  });
+
+  it('a negative top delta reads as pulling against the link', () => {
+    const v = contributionVerdict(
+      block(
+        [
+          { index: 0, corrDelta: -0.4 },
+          { index: 1, corrDelta: 0.05 },
+          { index: 2, corrDelta: 0.02 },
+        ],
+        ['XOM', 'AAPL', 'MSFT']
+      )
+    );
+    expect(v.kind).toBe('single');
+    expect(v.direction).toBe('against');
+    expect(v.text).toBe('XOM pulled against this link the most');
+  });
+
+  it('null below 3 members or fewer than 2 measurable deltas', () => {
+    expect(contributionVerdict(block([{ index: 0, corrDelta: 0.3 }], ['A']))).toBeNull();
+    expect(
+      contributionVerdict(
+        block([{ index: 0, corrDelta: 0.3 }, { index: 1, corrDelta: null }, { index: 2, corrDelta: null }], ['A', 'B', 'C'])
+      )
+    ).toBeNull();
+    expect(contributionVerdict(null)).toBeNull();
+  });
+});
+
+// ── captureVerdict (V3) ───────────────────────────────────────────────────────
+
+describe('captureVerdict', () => {
+  it('names the stronger side when the comparison is asymmetric', () => {
+    const v = captureVerdict({
+      down: { beta: 1.5, n: 120 },
+      up: { beta: 1.1, n: 130 },
+      comparison: { asymmetric: true, direction: 'down', betaDown: 1.5, betaUp: 1.1, nDown: 120, nUp: 130 },
+      counts: { down: 120, up: 130 },
+      minObs: 60,
+    });
+    expect(v).toEqual({ kind: 'asymmetric', text: 'stronger on down days' });
+  });
+
+  it('symmetric → no meaningful difference', () => {
+    const v = captureVerdict({
+      down: { beta: 1.02, n: 120 },
+      up: { beta: 0.98, n: 130 },
+      comparison: { asymmetric: false, direction: null, betaDown: 1.02, betaUp: 0.98, nDown: 120, nUp: 130 },
+      counts: { down: 120, up: 130 },
+      minObs: 60,
+    });
+    expect(v.kind).toBe('symmetric');
+  });
+
+  it('a side below the floor names the real count; a null block → null', () => {
+    const v = captureVerdict({
+      down: null,
+      up: { beta: 1.0, n: 130 },
+      comparison: null,
+      counts: { down: 40, up: 130 },
+      minObs: 60,
+    });
+    expect(v).toEqual({ kind: 'insufficient', text: 'not enough down days (n=40, 60 needed)' });
+    expect(captureVerdict(null)).toBeNull();
   });
 });

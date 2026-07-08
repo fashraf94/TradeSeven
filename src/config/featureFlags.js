@@ -418,3 +418,19 @@ export const SCOUTING_BOARD_ENABLED = true;
  * instant-rollback lever.
  */
 export const CORRELATION_LAB_ENABLED = true;
+
+/**
+ * Correlation Intelligence V3 Phase 1, Sub-build 1 — the "relationship-quality"
+ * bundle (member contribution, SPY-adjusted partial correlation, self-percentile,
+ * down/up beta-capture asymmetry, tail co-movement, past stability, driver-side
+ * context). Additive-only: pure math over data already fetched.
+ *
+ * Built/merged DARK (FALSE). While FALSE the two research endpoints compute the
+ * new `relationshipQuality` / `rq` blocks NOWHERE and skip the extra SPY fetch in
+ * the deep dive, so the payload is byte-identical to today; the Lab renders no new
+ * cards. Nested under CORRELATION_LAB_ENABLED — meaningless when the Lab is off.
+ *
+ * Flip in a one-line follow-up PR after a founder Vercel-preview smoke (the
+ * SCOUTING_BOARD_ENABLED precedent) — never in the build PR.
+ */
+export const CORRELATION_RELATIONSHIP_QUALITY_ENABLED = false;
