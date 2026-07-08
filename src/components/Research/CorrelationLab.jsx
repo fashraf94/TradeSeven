@@ -37,7 +37,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { ChartSkeleton } from './ResearchSkeletons';
-import { buildVerdictSentence, breakStatePhrase, conditionalVerdict, cohesionPhrase } from './correlationVerdict';
+import {
+  buildVerdictSentence,
+  breakStatePhrase,
+  conditionalVerdict,
+  cohesionPhrase,
+  contributionVerdict,
+  captureVerdict,
+} from './correlationVerdict';
 // V2 Build 6 — the group validators now live in correlationGroup.js, their new
 // canonical home (the source hooks import the SAME parseGroup/SYMBOL_RE there,
 // and this component imports the hooks: keeping the validators here would be an
@@ -159,6 +166,15 @@ const CAPTIONS = {
   // why a low reading loosens every group-level number on the page.
   cohesion:
     "How tightly the group's own members track each other. When this is low, group-level readings on this page describe an average of different stories — read them loosely.",
+  // V3 Phase 1 — relationship-quality captions (past-tense, sample-bounded).
+  partial:
+    "The link with the S&P 500's shared move stripped out — how much of it stayed once the broad market was accounted for. A historical measure, never a claim about true exposure.",
+  contribution:
+    'How much each member accounted for the 3-month link, by leaving it out one at a time. A larger positive number means the link leaned on that name.',
+  capture:
+    "How big the group's move was on the driver's down days versus its up days, in this sample — a past risk read, not a forecast.",
+  tail:
+    "How often the group moved with the driver on its most extreme days in this sample — counts first, never a percentage of a handful of days.",
 };
 
 // Change E — three example chips matching the Discover "TRY ONE" idiom.
@@ -355,6 +371,10 @@ function scanSummarySentence(summary) {
  */
 export function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
   const summaryText = scanSummarySentence(scan.summary);
+  // V3: the one desktop-only "S&P-adj 20d" column, shown only when the server
+  // sent per-row rq (flag on) — one added comparison, per the comparison-tax rule.
+  const showAdjusted = isDesktop && scan.rows.some((r) => r.rq);
+  const droppedColSpan = isDesktop ? (showAdjusted ? 5 : 4) : 2;
   const cellPad = { padding: '7px 8px' };
   const catChip = {
     marginLeft: 6,
@@ -433,6 +453,7 @@ export function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
                   <th style={{ ...cellPad, fontWeight: 600 }}>Driver</th>
                   <th style={{ ...cellPad, fontWeight: 600 }}>20d</th>
                   {isDesktop ? <th style={{ ...cellPad, fontWeight: 600 }}>60d</th> : null}
+                  {showAdjusted ? <th style={{ ...cellPad, fontWeight: 600 }}>{'S&P-adj 20d'}</th> : null}
                   <th style={{ ...cellPad, fontWeight: 600 }}>Tension</th>
                   {isDesktop ? <th style={{ ...cellPad, fontWeight: 600 }}>Deep dive</th> : null}
                 </tr>
@@ -492,6 +513,18 @@ export function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
                       {isDesktop ? (
                         <td style={{ ...cellPad, fontFamily: MONO, color: GRAY }}>{fmtCorr(row.corr60)}</td>
                       ) : null}
+                      {showAdjusted ? (
+                        // The S&P-adjusted 20d link, or a dash for self/suppressed/
+                        // absent — the deep dive carries the raw-vs-adjusted detail.
+                        <td style={{ ...cellPad, fontFamily: MONO, color: GRAY }}>
+                          {row.rq?.partial?.w20 &&
+                          !row.rq.partial.w20.skipped &&
+                          !row.rq.partial.w20.suppressed &&
+                          row.rq.partial.w20.adjusted != null
+                            ? fmtCorr(row.rq.partial.w20.adjusted)
+                            : '—'}
+                        </td>
+                      ) : null}
                       <td style={cellPad}>
                         {tension ? (
                           <span style={{ color: tension.color, fontSize: 11, fontWeight: 600 }}>{tension.word}</span>
@@ -509,7 +542,7 @@ export function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
                   <tr key={dd.driver} style={{ borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`, opacity: 0.45 }}>
                     <td style={{ ...cellPad, fontFamily: MONO, color: HOLO_COLORS.textMuted }}>—</td>
                     <td style={{ ...cellPad, color: HOLO_COLORS.textSecondary }}>{dd.label}</td>
-                    <td style={{ ...cellPad, color: HOLO_COLORS.textMuted, fontStyle: 'italic' }} colSpan={isDesktop ? 4 : 2}>
+                    <td style={{ ...cellPad, color: HOLO_COLORS.textMuted, fontStyle: 'italic' }} colSpan={droppedColSpan}>
                       unavailable
                     </td>
                   </tr>
@@ -1035,6 +1068,192 @@ export function CohesionCard({ cohesion }) {
         {disclosure ? ` ${disclosure}` : ''}
       </div>
       <div style={subCaptionStyle}>{CAPTIONS.cohesion}</div>
+    </div>
+  );
+}
+
+// ── V3 Phase 1 Sub-build 1 — relationship-quality cards (Bucket B) ────────────
+// One deep-dive wrapper; every sub-section null-guards its own field so a
+// pre-flag / suppressed / <3-member payload renders only what it truthfully
+// has (the absence-tolerance rule). Every number binds to the SAME rounded
+// payload field its label reads (fmtCorr/fmtBeta = toFixed(2), the §9 idiom);
+// copy is past-tense and sample-bounded. Verdict words come from the pure,
+// unit-tested contributionVerdict/captureVerdict — never re-derived here.
+
+const PARTIAL_MARKET_NOTE =
+  "This driver moved almost 1-for-1 with the S&P, so the S&P-adjusted link isn't meaningful.";
+
+// English ordinal for a percentile integer (1→1st, 2→2nd, 21→21st).
+function ordinalNum(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
+
+function ContributionSection({ contribution }) {
+  if (!contribution || !Array.isArray(contribution.members) || contribution.members.length < 3) return null;
+  const verdict = contributionVerdict(contribution);
+  const symbols = Array.isArray(contribution.memberSymbols) ? contribution.memberSymbols : [];
+  return (
+    <div style={card}>
+      <div style={captionStyle}>Who drove this link</div>
+      {verdict ? (
+        <div style={{ fontSize: 12, fontWeight: 600, marginTop: 8, color: verdict.kind === 'single' ? GOLD : HOLO_COLORS.textSecondary }}>
+          {verdict.text}
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+        {contribution.members.map((m) => (
+          <div key={m.index} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+            <span style={{ color: HOLO_COLORS.textMuted }}>{symbols[m.index] ?? `member ${m.index + 1}`}</span>
+            <span style={{ fontFamily: MONO, color: HOLO_COLORS.textSecondary }}>{fmtCorr(m.corrDelta)}</span>
+          </div>
+        ))}
+      </div>
+      <div style={subCaptionStyle}>{CAPTIONS.contribution}</div>
+    </div>
+  );
+}
+
+function CaptureSection({ captureAsymmetry, label }) {
+  if (!captureAsymmetry) return null;
+  const { down, up, minObs } = captureAsymmetry;
+  const verdict = captureVerdict(captureAsymmetry, minObs ?? 60);
+  const cell = (title, side) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span style={{ fontSize: 10, color: HOLO_COLORS.textMuted }}>{title}</span>
+      <span style={{ fontFamily: MONO, fontSize: 14, color: side ? HOLO_COLORS.textPrimary : HOLO_COLORS.textMuted }}>
+        {side ? `β = ${fmtBeta(side.beta)} (n=${side.n})` : '—'}
+      </span>
+    </div>
+  );
+  return (
+    <div style={card}>
+      <div style={captionStyle}>Down days vs up days</div>
+      <div style={{ display: 'flex', gap: 20, marginTop: 8 }}>
+        {cell(`${label} down`, down)}
+        {cell(`${label} up`, up)}
+      </div>
+      {verdict ? (
+        <div style={{ fontSize: 11, fontWeight: 600, marginTop: 8, color: verdict.kind === 'asymmetric' ? GOLD : HOLO_COLORS.textSecondary }}>
+          {verdict.text}
+        </div>
+      ) : null}
+      <div style={subCaptionStyle}>{CAPTIONS.capture}</div>
+    </div>
+  );
+}
+
+function TailSection({ tail, label }) {
+  if (!tail) return null;
+  const line = (t, dir) => {
+    if (!t) return null;
+    const moveWord = dir === 'weakest' ? 'down' : 'up';
+    return (
+      <div style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, marginTop: 6, lineHeight: 1.5 }}>
+        On the {t.n} {dir} {label} days in this sample, the group was also {moveWord} on{' '}
+        <strong style={{ color: HOLO_COLORS.textPrimary }}>{t.coMoveCount}</strong> of them (median {fmtPct(t.groupMedian)}).
+      </div>
+    );
+  };
+  return (
+    <div style={card}>
+      <div style={captionStyle}>On {label}'s most extreme days</div>
+      {line(tail.worst, 'weakest')}
+      {line(tail.best, 'strongest')}
+      <div style={subCaptionStyle}>{CAPTIONS.tail}</div>
+    </div>
+  );
+}
+
+export function RelationshipQualityCard({ rq, driverLabel, isDesktop }) {
+  if (!rq) return null;
+  const label = driverLabel ?? 'the driver';
+  const { contribution, partial, selfPercentile, captureAsymmetry, tail, stability, driverContext } = rq;
+
+  const w20 = partial?.w20;
+  const w60 = partial?.w60;
+  const partialSelf = w20?.skipped === 'self';
+  const partialUnavailable = w20?.suppressed === 'spy_unavailable';
+  const bothMarket = w20?.suppressed === 'driver_is_market' && w60?.suppressed === 'driver_is_market';
+  const partialRow = (windowLabel, w) => {
+    if (!w) return null;
+    const marketProxy = w.suppressed === 'driver_is_market';
+    return (
+      <div key={windowLabel} style={{ display: 'flex', gap: 14, alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: HOLO_COLORS.textMuted, width: 40 }}>{windowLabel}</span>
+        <span style={{ fontSize: 11, color: HOLO_COLORS.textMuted }}>
+          raw <span style={{ fontFamily: MONO, fontSize: 14, color: GRAY }}>{fmtCorr(w.raw)}</span>
+        </span>
+        <span style={{ fontSize: 11, color: HOLO_COLORS.textMuted }}>
+          S&amp;P-adj{' '}
+          {marketProxy ? (
+            <span style={{ fontSize: 11, color: AMBER }}>market proxy</span>
+          ) : (
+            <span style={{ fontFamily: MONO, fontSize: 14, color: GOLD }}>{fmtCorr(w.adjusted)}</span>
+          )}
+        </span>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isDesktop ? '1fr 1fr' : '1fr' }}>
+      {/* Partial correlation (keystone) — hidden entirely when the driver IS SPY. */}
+      {!partialSelf ? (
+        <div style={card}>
+          <div style={captionStyle}>Link, S&amp;P-adjusted</div>
+          {partialUnavailable ? (
+            <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted, marginTop: 8 }}>
+              S&amp;P reference data was unavailable for this run.
+            </div>
+          ) : bothMarket ? (
+            <div style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, marginTop: 8, lineHeight: 1.5 }}>{PARTIAL_MARKET_NOTE}</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+              {partialRow('1-mo', w20)}
+              {partialRow('3-mo', w60)}
+            </div>
+          )}
+          <div style={subCaptionStyle}>{CAPTIONS.partial}</div>
+        </div>
+      ) : null}
+
+      {/* Self-percentile + past stability + driver-side context. */}
+      <div style={card}>
+        <div style={captionStyle}>Relationship context</div>
+        <div style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, marginTop: 8, lineHeight: 1.6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {selfPercentile?.corr20 ? (
+            <div>
+              Today's 1-month link sat in the{' '}
+              <strong style={{ color: HOLO_COLORS.textPrimary }}>{ordinalNum(Math.round(selfPercentile.corr20.percentile))} percentile</strong>{' '}
+              of its own history ({selfPercentile.corr20.n} windows).
+            </div>
+          ) : null}
+          {stability?.sign && stability.signPersistence != null ? (
+            <div>
+              The link stayed {stability.sign} in{' '}
+              <strong style={{ color: HOLO_COLORS.textPrimary }}>{Math.round(stability.signPersistence * 100)}%</strong>{' '}
+              of the {stability.n} observed 20-day windows.
+            </div>
+          ) : null}
+          {driverContext?.trailingReturn != null ? (
+            <div>
+              {label} itself moved{' '}
+              <strong style={{ color: driverContext.trailingReturn >= 0 ? GREEN : RED }}>{fmtPct(driverContext.trailingReturn)}</strong>{' '}
+              over the past 20 sessions
+              {driverContext.vol
+                ? `; its own volatility sat in the ${ordinalNum(Math.round(driverContext.vol.percentile))} percentile of its history`
+                : ''}
+              .
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <ContributionSection contribution={contribution} />
+      <CaptureSection captureAsymmetry={captureAsymmetry} label={label} />
+      <TailSection tail={tail} label={label} />
     </div>
   );
 }
@@ -1722,6 +1941,14 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
               regime-breaks table. ConditionalCard null-guards the field, so a
               pre-Build-4 cached payload renders the rest of the page untouched. */}
           <ConditionalCard conditional={data.conditional} isDesktop={isDesktop} />
+
+          {/* V3 Phase 1 — relationship-quality bundle. Absence-tolerant: renders
+              only when the server sent data.relationshipQuality behind its flag. */}
+          <RelationshipQualityCard
+            rq={data.relationshipQuality}
+            driverLabel={resultLabels.driverLabel}
+            isDesktop={isDesktop}
+          />
 
           {/* 4/5 — Inflections + base rates, or their honest absences */}
           {data.suppressed?.inflections ? (
