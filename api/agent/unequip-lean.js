@@ -1,14 +1,15 @@
-// api/agent/unequip-watchlist.js
+// api/agent/unequip-lean.js
 //
-// Phase 5B1 — POST /api/agent/unequip-watchlist. Clears the agent's equipped
-// watchlist (equippedWatchlistId / Name / At → null).
+// Release 2 (Fenced Customization Bundle V1.1) — POST /api/agent/unequip-lean
+// (spec Phase 1 item 2). Removes one standing lean by adjustment id.
 //
-// Idempotent: unequipping when nothing is equipped is a 200 no-op with no
-// shadow log (V-10). Blocked while the agent has an active battle, mirroring
-// the equip endpoint and the equipBundle activeBattleId guard.
+// DARK-INERT (404 while STANDING_LEANS_ENABLED is false) and battle-locked
+// like the equip side — lean state is frozen into the battle snapshot at
+// creation, so mid-battle writes are refused rather than silently ignored
+// (master spec §3.1 battle-lock; unlike bundles, there is no mid-battle
+// sub-flow that needs lean unequips).
 //
-// Pattern reference: api/forge/watchlists/[id]/uncommit.js (transaction body,
-// sentinel error map, shadow-log fire-and-forget).
+// Pattern reference: api/agent/unequip-watchlist.js.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
@@ -16,18 +17,22 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
+import { STANDING_LEANS_ENABLED } from '../../src/config/featureFlags.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
 
-const SENTINEL_PREFIX = '__unequip_watchlist:';
+const SENTINEL_PREFIX = '__unequip_lean:';
 const SENTINEL_TO_HTTP = Object.freeze({
   agent_not_found: [404, 'agent_not_found', 'Agent not found.'],
-  forbidden:       [403, 'forbidden',       'Not authorized for this agent.'],
-  battle_active:   [409, 'battle_active',   'Cannot unequip a watchlist while the agent has an active battle.'],
+  forbidden:       [403, 'forbidden',       'Not authorized for this resource.'],
+  battle_active:   [409, 'battle_active',   'Cannot change standing leans while the agent has an active battle.'],
 });
 
 export default async function handler(req, res) {
+  if (!STANDING_LEANS_ENABLED) {
+    return res.status(404).json({ error: 'not_found' });
+  }
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60_000 } })) {
     return;
   }
@@ -38,11 +43,17 @@ export default async function handler(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
-  const { agentId } = req.body || {};
+  const { agentId, adjustmentId } = req.body || {};
   if (!isValidForgeId(agentId)) {
     return res.status(400).json({
       error: 'invalid_agent_id',
       message: `agentId must match ${FORGE_ID_REGEX} and be ≤${FORGE_ID_MAX_LEN} chars`,
+    });
+  }
+  if (typeof adjustmentId !== 'string' || adjustmentId.length === 0 || adjustmentId.length > 16) {
+    return res.status(400).json({
+      error: 'invalid_adjustment_id',
+      message: 'adjustmentId is required.',
     });
   }
 
@@ -59,19 +70,20 @@ export default async function handler(req, res) {
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
       if (agent.activeBattleId) throw new Error(SENTINEL_PREFIX + 'battle_active');
 
-      // Idempotent: nothing equipped → 200 no-op, no write.
-      if (!agent.equippedWatchlistId) {
-        return { idempotent: true };
+      const current = Array.isArray(agent.standingLeans) ? agent.standingLeans : [];
+      const remaining = current.filter((l) => l?.adjustmentId !== adjustmentId);
+
+      // Idempotent: not equipped → 200 no-op, no write.
+      if (remaining.length === current.length) {
+        return { idempotent: true, standingLeans: current };
       }
 
       // settingsRev rides structurally (Release 2 changelog #7).
       txUpdateAgentSettings(tx, agentRef, {
-        equippedWatchlistId: null,
-        equippedWatchlistName: null,
-        equippedAt: null,
+        standingLeans: remaining,
         updatedAt: nowIso,
       });
-      return { idempotent: false };
+      return { idempotent: false, standingLeans: remaining };
     });
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
@@ -82,29 +94,28 @@ export default async function handler(req, res) {
         return res.status(statusCode).json({ error: errorKey, message: humanCopy });
       }
     }
-    console.error('[Phase5B1] unequip-watchlist error:', txErr);
-    return res.status(500).json({ error: 'server_error', message: 'Could not unequip watchlist.' });
+    console.error('[unequip-lean] error:', txErr);
+    return res.status(500).json({ error: 'server_error', message: 'Could not unequip lean.' });
   }
 
-  // Shadow log only on a real state change (no log on idempotent no-op).
   if (!txResult.idempotent) {
     waitUntil(
       logSignalDrops({
-        stage: 'watchlist_unequip',
+        stage: 'standing_lean_unequip',
         userId: user.uid,
         agentId,
+        adjustmentId,
         loggedAt: nowIso,
       }).catch(() => {}),
     );
   }
 
-  console.log(
-    `[Phase5B1] unequip-watchlist: agent ${agentId} (idempotent=${txResult.idempotent})`,
-  );
+  console.log(`[unequip-lean] agent ${agentId} - ${adjustmentId} (idempotent=${txResult.idempotent})`);
 
   return res.status(200).json({
     agentId,
-    equippedWatchlistId: null,
+    adjustmentId,
+    standingLeans: txResult.standingLeans,
     idempotent: txResult.idempotent,
   });
 }

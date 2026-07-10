@@ -41,7 +41,10 @@ vi.mock('../firebase/config', () => ({ db: { __fake: true } }));
 vi.mock('../utils/fetchWithAuth', () => ({
   fetchWithAuth: async (url, options) => {
     transportCalls.current.push({ url, body: JSON.parse(options.body) });
-    return { ok: true };
+    // B6 wrapper tests install a per-test responder (real fetch responses
+    // carry .json); every other path only cares about .ok.
+    if (typeof transportCalls.responder === 'function') return transportCalls.responder(url, options);
+    return { ok: true, json: async () => ({}) };
   },
 }));
 
@@ -108,7 +111,7 @@ vi.mock('firebase/firestore', () => ({
 }));
 
 const {
-  createRule, updateRule, setRuleHardness, reforgeBundle, equipBundle,
+  createRule, updateRule, setRuleHardness, reforgeBundle, equipBundle, unequipBundle,
 } = await import('./forgeService.js');
 const { RuleCompatBlockError } = await import('./ruleCompatGuard.js');
 
@@ -148,6 +151,7 @@ beforeEach(() => {
   store.failReadPaths.clear();
   store.autoId = 0;
   transportCalls.current = [];
+  transportCalls.responder = null;
 });
 
 // ==================== A1 — createRule ====================
@@ -424,65 +428,64 @@ describe('matrix — B3 reforgeBundle (hard-override carry-forward)', () => {
 });
 
 // ==================== B6 — equipBundle ====================
+//
+// Release 2 settingsRev migration (D3, 2026-07-10): the equip write moved
+// server-side (POST /api/agent/equip-bundle) — the client function is now a
+// thin authenticated wrapper. The write-path matrix coverage that lived here
+// (warn-only equip, classification + equip_bundle events, §6.3 written-state
+// deep-equality across modes) moved WITH the write path to
+// api/agent/equip-bundle.test.js + api/agent/equip-bundle.compat.test.js.
+// What remains client-side to prove is the wrapper contract.
 
-describe('matrix — B6 equipBundle (conflict-equip surface; never blocks)', () => {
-  const seedForgedForEquip = () => {
-    store.docs.set(bundlePath('b1'), {
-      status: 'forged', name: 'B', ruleIds: ['s1', 's2', 's3', 's4'],
-      ruleHardness: {},
-      ruleSnapshots: [
-        { id: 's1', sourceRef: 'a-05', category: 'allocation', text: 't1' },              // conflict, hard
-        { id: 's2', sourceRef: 'tech-bollinger-squeeze', category: 'technical', text: 't2' }, // conflict, soft
-        { id: 's3', sourceRef: 'ts-01', category: 'tier_strategy', text: 't3' },          // native
-        { id: 's4', sourceRef: null, category: 'risk', text: 't4' },                      // manual — outside map
-      ],
+describe('matrix — B6 equipBundle (thin client wrapper since the D3 migration)', () => {
+  it('POSTs to /api/agent/equip-bundle and unwraps the preserved return contract', async () => {
+    transportCalls.current = [];
+    transportCalls.responder = () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        agentId: AGENT,
+        bundleId: 'b1',
+        conflictCheckResult: null,
+        compatConflicts: [{ templateId: 'a-05', ruleDocId: 's1', zone1Ref: 'z', resolvedHardness: 'hard' }],
+        archetype: 'guardian',
+        equippedBundleIds: ['b1'],
+      }),
     });
-  };
-
-  it('ENFORCE: equip PROCEEDS (warn-only surface), both conflicts returned + logged with resolved hardness', async () => {
-    flagState.mode = 'enforce';
-    seedAgent('guardian');
-    seedForgedForEquip();
-    const { compatConflicts, archetype } = await equipBundle(AGENT, 'b1');
-    expect(archetype).toBe('guardian'); // returned so un-threaded equip surfaces render correct warning copy
-    expect(store.docs.get(agentPath).equippedBundleIds).toEqual(['b1']);   // equip landed
-    expect(store.docs.get(agentPath).activeRules).toHaveLength(4);          // nothing filtered
-    expect(compatConflicts).toHaveLength(2);
-    expect(compatConflicts.find((c) => c.ruleDocId === 's1')).toMatchObject({ resolvedHardness: 'hard' });
-    expect(compatConflicts.find((c) => c.ruleDocId === 's2')).toMatchObject({ resolvedHardness: 'soft' });
-    expect(events()).toHaveLength(2);
-    expect(events().every((e) => e.type === 'compat_conflict_equip' && e.path === 'equip_bundle' && e.blocked === false)).toBe(true);
+    const out = await equipBundle(AGENT, 'b1');
+    expect(transportCalls.current).toHaveLength(1);
+    expect(transportCalls.current[0]).toMatchObject({
+      url: '/api/agent/equip-bundle',
+      body: { agentId: AGENT, bundleId: 'b1' },
+    });
+    // The pre-migration return contract, preserved for the equip hooks.
+    expect(out).toEqual({
+      conflictCheckResult: null,
+      compatConflicts: [{ templateId: 'a-05', ruleDocId: 's1', zone1Ref: 'z', resolvedHardness: 'hard' }],
+      archetype: 'guardian',
+    });
   });
 
-  it('MODE SNAPSHOT (§6.3): the written agent state is deep-equal across off / observe / enforce', async () => {
-    const run = async (mode) => {
-      store.docs.clear(); store.reads.length = 0; transportCalls.current = [];
-      flagState.mode = mode;
-      seedAgent('guardian');
-      seedForgedForEquip();
-      await equipBundle(AGENT, 'b1');
-      const state = JSON.parse(JSON.stringify({ agent: store.docs.get(agentPath), bundle: store.docs.get(bundlePath('b1')) }));
-      // equippedAt is a wall-clock stamp (new Date() in the service, unrelated
-      // to the mode) — normalize it so the cross-mode compare tests BEHAVIOR,
-      // not millisecond timing between the three runs.
-      expect(typeof state.bundle.equippedAt).toBe('string');
-      state.bundle.equippedAt = '<wall-clock>';
-      return state;
-    };
-    const off = await run('off');
-    const observe = await run('observe');
-    const enforce = await run('enforce');
-    expect(observe).toEqual(off);
-    expect(enforce).toEqual(off); // the only enforce delta is telemetry + the toast — never the written state
+  it('throws the server message string on a non-2xx (callers surface err.message)', async () => {
+    transportCalls.current = [];
+    transportCalls.responder = () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: 'battle_active', message: 'Cannot equip bundle while agent has an active battle. Wait for the battle to complete.' }),
+    });
+    await expect(equipBundle(AGENT, 'b1')).rejects.toThrow(/Cannot equip bundle while agent has an active battle/);
   });
 
-  it('OFF: compatConflicts [] with zero classification and no transport', async () => {
-    flagState.mode = 'off';
-    seedAgent('guardian');
-    seedForgedForEquip();
-    const { compatConflicts } = await equipBundle(AGENT, 'b1');
-    expect(compatConflicts).toEqual([]);
-    expect(transportCalls.current).toHaveLength(0);
+  it('unequipBundle POSTs to /api/agent/unequip-bundle and throws the server message on failure', async () => {
+    transportCalls.current = [];
+    transportCalls.responder = () => ({ ok: true, status: 200, json: async () => ({ equippedBundleIds: [] }) });
+    await unequipBundle(AGENT, 'b1');
+    expect(transportCalls.current[0]).toMatchObject({
+      url: '/api/agent/unequip-bundle',
+      body: { agentId: AGENT, bundleId: 'b1' },
+    });
+    transportCalls.responder = () => ({ ok: false, status: 400, json: async () => ({ message: 'Bundle is not equipped.' }) });
+    await expect(unequipBundle(AGENT, 'b1')).rejects.toThrow('Bundle is not equipped.');
   });
 });
 

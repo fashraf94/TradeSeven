@@ -298,6 +298,43 @@ export const CONFLICT_RECONCILER_DETECT_ENABLED = true;
 export const CONFLICT_RECONCILER_INJECT_ENABLED = true;
 
 /**
+ * Release 2 (Fenced Customization Bundle V1.1) — STANDING LEANS activation.
+ *
+ * Gates the standing-leans surface: the equip/unequip endpoints 404 while
+ * false (the scouting-board defense-in-depth pattern), and — once the Phase-2
+ * fenced edits land — the shared control renderer refuses to render persisted
+ * leans into any prompt while false (read-side guard; data kept, suppression
+ * logged per battle+mode-epoch). "No UI" is never the activation control.
+ *
+ * Boolean by founder ruling D1 (2026-07-10; the spec's STANDING_LEANS_MODE
+ * 'off'|'on' resolved to the house *_ENABLED shape — leans have no observe
+ * half). OFF at merge (DARK-INERT). Flip is a Release-4 staged-activation-walk
+ * step, founder-executed in its own watch window — never in a build PR (the
+ * PR #510 lesson).
+ */
+export const STANDING_LEANS_ENABLED = false;
+
+/**
+ * Release 2 (Fenced Customization Bundle V1.1) — TEMPO DIAL activation.
+ *
+ * Gates the tempo-dial surface: the set-tempo-dial endpoint 404s while false,
+ * and the clamp layer (api/_utils/tempoDialClamp.js) resolves EFFECTIVE tempo
+ * to 'standard' whenever this is false OR the band table's
+ * forKnobConfigVersion mismatches the deployed KNOB_CONFIG_VERSION
+ * (version-bound fail-closed, spec changelog #13) — desired state is kept and
+ * the divergence is visible via the structured provenance object
+ * (suppressionReason), never silent.
+ *
+ * Boolean by founder ruling D1 (2026-07-10; the spec's TEMPO_DIAL_MODE
+ * 'off'|'on' resolved to the house *_ENABLED shape). OFF at merge
+ * (DARK-INERT). Flip is a Release-4 staged-activation-walk step,
+ * founder-executed in its own watch window — never in a build PR (the PR
+ * #510 lesson). The band table itself is PROVISIONAL until promoted from the
+ * B4 acceptance report's real-data cross-check.
+ */
+export const TEMPO_DIAL_ENABLED = false;
+
+/**
  * Archetype Integrity / "Third Path" — tri-state rollout mode.
  *
  * Gates the whole archetype-integrity feature together (the deterministic
@@ -318,6 +355,14 @@ export const CONFLICT_RECONCILER_INJECT_ENABLED = true;
  * directives, 0 "claimed-a-change-but-wrote-null"). One master flag — no per-cap
  * sub-flag (the Diversifier cap is independently safe and rides this flag).
  * See docs/audits/20260625_ARCHETYPE_INTEGRITY_BUILD_PLAN_V2.md.
+ *
+ * Release 2 PR-c (read-side guard): the PROMPT surfaces render a persisted
+ * battle.directive ONLY under 'enforce' — under 'off'/'observe' a directive
+ * at rest is suppressed (data kept, epoch-logged) so a flip-back is clean on
+ * the next eval, and a directive suppressed by a mode flip never resurrects
+ * for that battle. The 'off' write path stays the legacy normalizeDirective
+ * line verbatim; what changed is that its output no longer REACHES a prompt
+ * (master spec §3.6, founder-accepted).
  */
 export const ARCHETYPE_INTEGRITY_MODE = 'observe';
 

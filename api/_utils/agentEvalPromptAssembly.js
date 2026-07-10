@@ -13,6 +13,13 @@ import { resolveModeConfig, TIERED_GAME_MODE } from '../../src/constants/agentGa
 import { getATRRegime } from './agentRegimeClassifier.js';
 import { getFirebaseAdmin } from './firebaseAdmin.js';
 import { isDirectiveActive } from './directiveUtils.js';
+// Release 2 PR-c (fenced site 2, SHA-bound authorization @ 4a0f43e; renderer
+// contract fence-lite signed off 2026-07-10): the shared control renderer is
+// the ONE resolution + rendering source for persisted customization controls
+// (directive, standing leans). Non-fenced pure module; the flags import is
+// api → src Node-clean (BUILD_RULES §4).
+import { resolveControls, renderControlBlocks } from './controlPromptRenderer.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED } from '../../src/config/featureFlags.js';
 import {
   computeGameContext,
   rankAndSelectStories,
@@ -924,23 +931,38 @@ ${triggerLines}`);
     if (riskLines) parts.push(riskLines);
   }
 
-  // 3e3b. Active Directive Thread — the tactical directive from the Coach,
-  //       written to battle.directive by api/agent/chat.js on lock-in.
-  //       Haiku echoes the threadId back in submit_trade_decision when it
-  //       acts on the directive, so the UI can link the trade to its
-  //       originating directive execution card. Omit entirely when no
-  //       active directive exists OR the directive has expired per its
-  //       expiry value (Fix #4 — see api/_utils/directiveUtils.js).
-  //       chat.js never clears battle.directive on expiry; this read
-  //       path is the gate.
-  if (isDirectiveActive(battle?.directive, battle)) {
-    const d = battle.directive;
-    parts.push(
-`ACTIVE DIRECTIVE (from your Coach):
-"${d.text}"
-threadId: ${d.directiveThreadId}
-If your next trade is influenced by this directive, include directiveThreadId: "${d.directiveThreadId}" in your submit_trade_decision response.`
-    );
+  // 3e3b. Persisted customization controls (Release 2 PR-c — the read-side
+  //       guard): the Coach directive (battle.directive, written by
+  //       api/agent/chat.js on lock-in; Haiku echoes the threadId back in
+  //       submit_trade_decision) and the standing-leans snapshot, rendered
+  //       through the SHARED control renderer:
+  //       - the directive renders ONLY under ARCHETYPE_INTEGRITY_MODE
+  //         'enforce' (data kept, suppression epoch-logged by the cron) and
+  //         never resurrects across an enforce→observe→enforce round-trip
+  //         (battle.controlEpochLog is the durable kill record); under
+  //         enforce + active, renderDirectiveBlock reproduces the pre-PR-c
+  //         inline block BYTE-FOR-BYTE (golden + fenced-source tripwire in
+  //         controlPromptRenderer.test.js).
+  //       - leans render only when STANDING_LEANS_ENABLED, minus overridden
+  //         ones (battle.leanOverrides — bound to the directive instance)
+  //         and same-id duplicates of the active directive.
+  //       Expiry stays owned by directiveUtils (Fix #4): chat.js never
+  //       clears battle.directive; the isDirectiveActive pre-gate here is
+  //       the read path's expiry gate, exactly as before.
+  {
+    const controlResolution = resolveControls({
+      modes: {
+        archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+        standingLeansEnabled: STANDING_LEANS_ENABLED,
+      },
+      directive: isDirectiveActive(battle?.directive, battle) ? battle.directive : null,
+      standingLeans: battle.agentContext?.standingLeans,
+      leanOverrides: battle.leanOverrides,
+      controlEpochLog: battle.controlEpochLog,
+    });
+    const { directiveBlock, leansBlock } = renderControlBlocks(controlResolution);
+    if (directiveBlock) parts.push(directiveBlock);
+    if (leansBlock) parts.push(leansBlock);
   }
 
   // 3e4. Institutional Intelligence (only if agent has institutional Forge rules)

@@ -32,7 +32,6 @@ import { getRuleCompatInfo } from '../data/archetypeRuleCompatibility';
 import { buildPromoteBlockedMessage } from '../utils/compatSurfaceCopy';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 // The client's single hard/soft source (never a fourth HARD_CATEGORIES copy).
-import { resolveRuleHardness } from '../components/Forge/workshop/hardSoftHelper';
 
 // The write paths the guard understands (event `path` vocabulary).
 export const COMPAT_WRITE_PATHS = [
@@ -187,33 +186,7 @@ export async function emitRuleCompatEvents({ agentId, archetype, mode, events, t
   }
 }
 
-/**
- * B6 equip-surface helper: classify a bundle's frozen rule snapshots for the
- * agent's archetype. Pure. Returns the conflicts with their per-rule resolved
- * hardness (category ?? the bundle's authored override) so the caller can log
- * + warn. Mode-gated like the evaluator: [] when the flag is off.
- *
- * @param {Object} p
- * @param {string} p.archetype
- * @param {Array<Object>} p.ruleSnapshots - bundle.ruleSnapshots (carry sourceRef + category)
- * @param {Object} [p.ruleHardness]       - bundle.ruleHardness override map
- * @param {string} [p.mode]
- * @returns {Array<{ templateId: string, ruleDocId: string, zone1Ref: string|null, resolvedHardness: 'hard'|'soft' }>}
- */
-export function classifyBundleSnapshots({ archetype, ruleSnapshots, ruleHardness = {}, mode = RULE_COMPAT_MODE }) {
-  if (mode !== 'observe' && mode !== 'enforce') return [];
-  const out = [];
-  for (const snap of ruleSnapshots || []) {
-    if (!snap || !snap.sourceRef) continue; // manual/unknown rules are outside the map
-    const info = getRuleCompatInfo(snap.sourceRef, archetype);
-    if (info.state !== 'core_conflict') continue;
-    const resolvedHardness = resolveRuleHardness(snap, ruleHardness[snap.id]);
-    out.push({
-      templateId: snap.sourceRef,
-      ruleDocId: snap.id,
-      zone1Ref: info.zone1Ref,
-      resolvedHardness,
-    });
-  }
-  return out;
-}
+// B6 equip-surface classifier — EXTRACTED to ruleCompatClassify.js (Release 2
+// settingsRev migration, D3) so the server equip endpoint classifies with the
+// same kernel. Re-exported here so every existing importer keeps working.
+export { classifyBundleSnapshots } from './ruleCompatClassify';

@@ -49,7 +49,20 @@ import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateS
 import { buildFreshAtrPercentileMap, resolveHurdleAtr } from '../_utils/hurdleAtr.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps, seedVwapFireGuard, isReplacementQualified, VWAP_CASCADE_GUARD_N, CASCADE_QUALIFY_TIMEOUT_MS } from '../_utils/agentVwapFloor.js';
-import { getArchetypeConfig, resolveHftConfig } from '../_utils/agentArchetypeConfig.js';
+import { getArchetypeConfig, resolveHftConfig, KNOB_CONFIG_VERSION } from '../_utils/agentArchetypeConfig.js';
+// Release 2 PR-c — control-suppression epoch telemetry (renderer contract,
+// fence-lite signed off 2026-07-10): ONE structured event per battle +
+// mode-epoch, with the battle-doc controlEpochLog entry doubling as the
+// directive no-resurrection record the shared renderer derives from. The
+// resolution here is the SAME pure function the fenced eval assembly calls
+// with the same inputs — purity guarantees the telemetry can never disagree
+// with what the prompt rendered.
+import { FieldValue } from 'firebase-admin/firestore';
+import { isDirectiveActive } from '../_utils/directiveUtils.js';
+import { resolveControls } from '../_utils/controlPromptRenderer.js';
+import { computeEpochKey, shouldLogControlEpoch, buildControlEpochEvent, buildControlEpochLogEntry } from '../_utils/controlSuppressionTelemetry.js';
+import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED } from '../../src/config/featureFlags.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
 // string literal). Zero-import schema module, BUILD_RULES §4.
@@ -1015,6 +1028,52 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // differentiated knobs (e.g. degen forcedRotation on / cap 12 vs guardian off
     // / cap 2). Also closes Gate 0c's live-distribution question via logs.
     console.log(`${LOG_PREFIX} [Gate1] battle=${battle.id} mode=${battle.gameMode || 'baggerbomb_agent'} archetype=${ctx.archetype || 'unknown'} resolved=${archetypeConfig.label} forcedRotation=${archetypeConfig.hftConfig?.forcedRotation?.enabled ? 'on' : 'off'} swapCap=${archetypeConfig.hftConfig?.swapWindow?.capPerWindow}`);
+
+    // ---- Release 2 PR-c: control-suppression mode-epoch telemetry ----
+    // Fires once per battle + mode-epoch (sequence-aware: an
+    // enforce→observe→enforce round-trip logs three entries, and the middle
+    // entry's suppressedDirectiveIds is what keeps the directive dead in
+    // epoch three). The awaited battle-doc write is the DURABLE half; the
+    // in-memory battle.controlEpochLog is updated too so THIS tick's prompt
+    // resolution (inside the fenced eval assembly) already sees the entry —
+    // prompt and durable record can never disagree. A write failure is loud
+    // and non-fatal: the next tick simply retries the same epoch entry.
+    try {
+      const controlModes = {
+        archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+        standingLeansEnabled: STANDING_LEANS_ENABLED,
+        tempoDialEnabled: TEMPO_DIAL_ENABLED,
+      };
+      const epochKey = computeEpochKey(controlModes);
+      if (shouldLogControlEpoch(battle.controlEpochLog, epochKey)) {
+        const activeDirective = isDirectiveActive(battle?.directive, battle) ? battle.directive : null;
+        const epochResolution = resolveControls({
+          modes: controlModes,
+          directive: activeDirective,
+          standingLeans: battle.agentContext?.standingLeans,
+          leanOverrides: battle.leanOverrides,
+          controlEpochLog: battle.controlEpochLog,
+        });
+        const epochEvent = buildControlEpochEvent({
+          battleId: battle.id,
+          epochKey,
+          modes: controlModes,
+          resolution: epochResolution,
+          directive: activeDirective,
+          standingLeans: battle.agentContext?.standingLeans,
+          dialProvenance: null, // PR-b threads the tempo clamp's provenance here
+          deploySha: globalThis.process?.env?.VERCEL_GIT_COMMIT_SHA || null,
+          knobConfigVersion: KNOB_CONFIG_VERSION,
+          dialBandVersion: TEMPO_DIAL_BANDS.forKnobConfigVersion,
+        });
+        const epochEntry = buildControlEpochLogEntry(epochEvent);
+        console.log('[ControlEpoch]', JSON.stringify(epochEvent));
+        await battleRef.update({ controlEpochLog: FieldValue.arrayUnion(epochEntry) });
+        battle.controlEpochLog = [...(battle.controlEpochLog || []), epochEntry];
+      }
+    } catch (epochErr) {
+      console.error(`${LOG_PREFIX} control-epoch telemetry failed (tick continues):`, epochErr?.message || epochErr);
+    }
 
     for (const score of assetScores) {
       const asset = flatPortfolio.find(a => a.symbol === score.symbol);

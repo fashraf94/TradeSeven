@@ -47,6 +47,15 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => '__ts__',
 }));
 
+// R1(a): the equippedTraits write goes through the rev-bumping settings
+// endpoint's thin client — captured in the SAME ordered log so the
+// write-order assertions keep proving create → trait-layer flip → delete.
+vi.mock('./agentService', () => ({
+  updateAgentSettings: async (agentId, set) => {
+    state.calls.push({ fn: 'updateAgentSettings', set });
+  },
+}));
+
 vi.mock('./forgeService', () => ({
   createBundle: async () => {
     state.calls.push({ fn: 'createBundle' });
@@ -109,7 +118,7 @@ describe('seedDefaultTraits (creation path)', () => {
     // Trait rules are an identity layer — never materialized into a bundle.
     expect(callsOf('createBundle')).toHaveLength(0);
     expect(callsOf('addRuleToBundle')).toHaveLength(0);
-    expect(callsOf('updateDoc').find((c) => c.updates?.equippedTraits)).toBeDefined();
+    expect(callsOf('updateAgentSettings').find((c) => c.set?.equippedTraits)).toBeDefined();
     // Creation never deletes/unlinks anything.
     expect(callsOf('softDeleteRule')).toHaveLength(0);
     expect(callsOf('removeRuleFromBundle')).toHaveLength(0);
@@ -135,7 +144,7 @@ describe('reseedDefaultTraits (clean replace)', () => {
     expect(res.replaced).toBe(true);
 
     const firstCreate = firstIdx('createRule');
-    const equippedWrite = state.calls.findIndex((c) => c.fn === 'updateDoc' && c.updates?.equippedTraits);
+    const equippedWrite = state.calls.findIndex((c) => c.fn === 'updateAgentSettings' && c.set?.equippedTraits);
     const firstSoftDelete = firstIdx('softDeleteRule');
 
     expect(firstCreate).toBeGreaterThanOrEqual(0);
@@ -175,7 +184,7 @@ describe('reseedDefaultTraits (clean replace)', () => {
 
     expect(res.seeded).toBe(true);
     expect(callsOf('createRule').length).toBeGreaterThan(0);
-    expect(callsOf('updateDoc').find((c) => c.updates?.equippedTraits)).toBeDefined();
+    expect(callsOf('updateAgentSettings').find((c) => c.set?.equippedTraits)).toBeDefined();
     expect(callsOf('softDeleteRule')).toHaveLength(0); // nothing to clean up
     expect(callsOf('createBundle')).toHaveLength(0);
     expect(callsOf('addRuleToBundle')).toHaveLength(0);

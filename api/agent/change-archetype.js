@@ -17,6 +17,7 @@
 // error map, shadow-log fire-and-forget). Delta: single-doc read+write (agents).
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
@@ -37,6 +38,10 @@ import { waitUntil } from '@vercel/functions';
 // telemetry and the cleanup census can never disagree.
 import { RULE_COMPAT_MODE } from '../../src/config/featureFlags.js';
 import { collectProjectedConflicts } from '../_utils/ruleCompatCleanup.js';
+// Release 2 lean-invalidation rider — same kernel the battle-creation
+// revalidation uses (leanRevalidation.js), so the rider and the snapshot
+// omission can never disagree.
+import { revalidateStandingLeans } from '../_utils/leanRevalidation.js';
 
 export const config = { maxDuration: 10 };
 
@@ -100,10 +105,19 @@ export default async function handler(req, res) {
       }
 
       const previousArchetype = agent.archetype ?? null;
-      tx.update(agentRef, { archetype, updatedAt: nowIso });
+      // settingsRev rides structurally (Release 2 changelog #7) — an
+      // archetype change is a snapshot-feeding config write.
+      txUpdateAgentSettings(tx, agentRef, { archetype, updatedAt: nowIso });
       // equippedTraits rides along for the WS1 rescan (projection input) — no
-      // extra read, it is already on the agent snapshot.
-      return { idempotent: false, archetype, previousArchetype, equippedTraits: agent.equippedTraits || [] };
+      // extra read, it is already on the agent snapshot. standingLeans rides
+      // for the Release-2 lean-invalidation rider (same zero-read rationale).
+      return {
+        idempotent: false,
+        archetype,
+        previousArchetype,
+        equippedTraits: agent.equippedTraits || [],
+        standingLeans: Array.isArray(agent.standingLeans) ? agent.standingLeans : [],
+      };
     });
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
@@ -140,6 +154,32 @@ export default async function handler(req, res) {
   // committed archetype change — the response reports rescanLogged instead.
   let rescanLogged = null;
   const compatActive = RULE_COMPAT_MODE === 'observe' || RULE_COMPAT_MODE === 'enforce';
+
+  // Release 2 lean-invalidation rider (spec Phase 1 item 7 / changelog #17):
+  // an archetype change flips the menu every equipped standing lean is
+  // validated against, so the change records which leans are now invalid
+  // under the NEW archetype. Computed INDEPENDENTLY of RULE_COMPAT_MODE —
+  // the two flags walk separately, so a compat rollback must never silence
+  // lean telemetry. When the compat rescan fires, the rider ATTACHES to that
+  // event (one record per change); when compat is off, it logs standalone.
+  // Presence-gated either way: agents without leans add nothing. Lean DATA
+  // is never mutated — leans are durable desired state (battle-creation
+  // revalidation omits them from snapshots; switching back revalidates them
+  // right back in).
+  const leanInvalidation = (!txResult.idempotent && (txResult.standingLeans || []).length > 0)
+    ? (() => {
+        const { invalidated } = revalidateStandingLeans({
+          standingLeans: txResult.standingLeans,
+          archetypeCodeId: txResult.archetype,
+        });
+        return {
+          equippedCount: txResult.standingLeans.length,
+          invalidatedCount: invalidated.length,
+          invalidated,
+        };
+      })()
+    : null;
+
   if (compatActive && !txResult.idempotent) {
     try {
       const [rulesSnap, bundlesSnap] = await Promise.all([
@@ -174,6 +214,7 @@ export default async function handler(req, res) {
           conflicts: conflicts.slice(0, 30),
           blocked: false,
           ts: nowIso,
+          ...(leanInvalidation ? { leanInvalidation } : {}),
         }],
         eventCount: 1,
         loggedAt: nowIso,
@@ -182,6 +223,22 @@ export default async function handler(req, res) {
     } catch (rescanErr) {
       console.error('[change-archetype] compat rescan failed (archetype change committed):', rescanErr?.message || rescanErr);
       rescanLogged = false;
+    }
+  } else if (leanInvalidation) {
+    // Compat rescan not running — the lean rider still records (standalone
+    // stage; loud on failure, never fails the committed change).
+    try {
+      await logSignalDrops({
+        stage: 'standing_lean_invalidation',
+        userId: user.uid,
+        agentId,
+        archetype: txResult.archetype,
+        previousArchetype: txResult.previousArchetype,
+        ...leanInvalidation,
+        loggedAt: nowIso,
+      });
+    } catch (leanErr) {
+      console.error('[change-archetype] lean-invalidation log failed (archetype change committed):', leanErr?.message || leanErr);
     }
   }
 

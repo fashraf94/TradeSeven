@@ -18,6 +18,7 @@
 // (agents + watchlists), single-doc write (agents).
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
@@ -97,7 +98,8 @@ export default async function handler(req, res) {
       }
 
       const equippedWatchlistName = watchlist.name || '';
-      tx.update(agentRef, {
+      // settingsRev rides structurally (Release 2 changelog #7).
+      txUpdateAgentSettings(tx, agentRef, {
         equippedWatchlistId: watchlistId,
         equippedWatchlistName,
         equippedAt: nowIso,

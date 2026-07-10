@@ -1,14 +1,22 @@
-// api/agent/unequip-watchlist.js
+// api/agent/set-tempo-dial.js
 //
-// Phase 5B1 — POST /api/agent/unequip-watchlist. Clears the agent's equipped
-// watchlist (equippedWatchlistId / Name / At → null).
+// Release 2 (Fenced Customization Bundle V1.1) — POST /api/agent/set-tempo-dial
+// (spec Phase 1 item 3). Writes the agent's DESIRED tempo
+// (agent.dials.tempo ∈ measured|standard|aggressive; absent = default
+// standard). Desired ≠ effective: the clamp layer (tempoDialClamp.js)
+// resolves what a battle actually runs, failing closed to standard whenever
+// the dial is off or the band table's version binding breaks — always
+// visibly, via the provenance object.
 //
-// Idempotent: unequipping when nothing is equipped is a 200 no-op with no
-// shadow log (V-10). Blocked while the agent has an active battle, mirroring
-// the equip endpoint and the equipBundle activeBattleId guard.
+// DARK-INERT: 404s while TEMPO_DIAL_ENABLED is false (the scouting-board
+// pattern). Battle-locked (dial state is snapshot-frozen at battle
+// creation). settingsRev increment on every real write (spec changelog #7).
 //
-// Pattern reference: api/forge/watchlists/[id]/uncommit.js (transaction body,
-// sentinel error map, shadow-log fire-and-forget).
+// An EXPLICIT 'standard' is stored (not deleted): the clamp's
+// selectionSource distinguishes user_dial-standard from default-standard —
+// a PR-b blocking test.
+//
+// Pattern reference: api/agent/equip-lean.js / equip-watchlist.js.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
@@ -16,18 +24,24 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
+import { TEMPO_DIAL_ENABLED } from '../../src/config/featureFlags.js';
+import { VALID_TEMPO_VALUES } from '../_utils/tempoDialBands.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
 
-const SENTINEL_PREFIX = '__unequip_watchlist:';
+const SENTINEL_PREFIX = '__set_tempo_dial:';
 const SENTINEL_TO_HTTP = Object.freeze({
   agent_not_found: [404, 'agent_not_found', 'Agent not found.'],
-  forbidden:       [403, 'forbidden',       'Not authorized for this agent.'],
-  battle_active:   [409, 'battle_active',   'Cannot unequip a watchlist while the agent has an active battle.'],
+  forbidden:       [403, 'forbidden',       'Not authorized for this resource.'],
+  battle_active:   [409, 'battle_active',   'Cannot change the tempo dial while the agent has an active battle.'],
 });
 
 export default async function handler(req, res) {
+  // DARK-INERT gate: the surface does not exist while the flag is off.
+  if (!TEMPO_DIAL_ENABLED) {
+    return res.status(404).json({ error: 'not_found' });
+  }
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60_000 } })) {
     return;
   }
@@ -38,11 +52,17 @@ export default async function handler(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
-  const { agentId } = req.body || {};
+  const { agentId, tempo } = req.body || {};
   if (!isValidForgeId(agentId)) {
     return res.status(400).json({
       error: 'invalid_agent_id',
       message: `agentId must match ${FORGE_ID_REGEX} and be ≤${FORGE_ID_MAX_LEN} chars`,
+    });
+  }
+  if (!VALID_TEMPO_VALUES.includes(tempo)) {
+    return res.status(400).json({
+      error: 'invalid_tempo',
+      message: `tempo must be one of: ${VALID_TEMPO_VALUES.join(', ')}.`,
     });
   }
 
@@ -59,19 +79,19 @@ export default async function handler(req, res) {
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
       if (agent.activeBattleId) throw new Error(SENTINEL_PREFIX + 'battle_active');
 
-      // Idempotent: nothing equipped → 200 no-op, no write.
-      if (!agent.equippedWatchlistId) {
-        return { idempotent: true };
+      // Idempotent: already at this tempo → 200 no-op, no write.
+      if (agent.dials?.tempo === tempo) {
+        return { idempotent: true, previousTempo: tempo };
       }
 
+      const previousTempo = agent.dials?.tempo ?? null;
       // settingsRev rides structurally (Release 2 changelog #7).
       txUpdateAgentSettings(tx, agentRef, {
-        equippedWatchlistId: null,
-        equippedWatchlistName: null,
-        equippedAt: null,
+        // Dotted path: merges into dials without clobbering future siblings.
+        'dials.tempo': tempo,
         updatedAt: nowIso,
       });
-      return { idempotent: false };
+      return { idempotent: false, previousTempo };
     });
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
@@ -82,29 +102,28 @@ export default async function handler(req, res) {
         return res.status(statusCode).json({ error: errorKey, message: humanCopy });
       }
     }
-    console.error('[Phase5B1] unequip-watchlist error:', txErr);
-    return res.status(500).json({ error: 'server_error', message: 'Could not unequip watchlist.' });
+    console.error('[set-tempo-dial] error:', txErr);
+    return res.status(500).json({ error: 'server_error', message: 'Could not set the tempo dial.' });
   }
 
-  // Shadow log only on a real state change (no log on idempotent no-op).
   if (!txResult.idempotent) {
     waitUntil(
       logSignalDrops({
-        stage: 'watchlist_unequip',
+        stage: 'tempo_dial_set',
         userId: user.uid,
         agentId,
+        tempo,
+        previousTempo: txResult.previousTempo,
         loggedAt: nowIso,
       }).catch(() => {}),
     );
   }
 
-  console.log(
-    `[Phase5B1] unequip-watchlist: agent ${agentId} (idempotent=${txResult.idempotent})`,
-  );
+  console.log(`[set-tempo-dial] agent ${agentId} → ${tempo} (idempotent=${txResult.idempotent})`);
 
   return res.status(200).json({
     agentId,
-    equippedWatchlistId: null,
+    tempo,
     idempotent: txResult.idempotent,
   });
 }

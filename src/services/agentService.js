@@ -145,7 +145,28 @@ export const createAgent = async (ownerId, agentData) => {
 // UPDATE OPERATIONS
 // ============================================
 
+// Release 2 (settingsRev migration, founder ruling D3 2026-07-10): fields that
+// feed the battle snapshot / deploy config may ONLY be written through the
+// transactional server endpoints (equip-watchlist, equip-bundle, equip-lean,
+// set-tempo-dial, change-archetype, …) — those bump agent.settingsRev so a
+// mid-deploy config change is detectable, never silent. This client-side
+// blind-merge writer refuses them loudly. Its one live caller writes the
+// cosmetic starterKitCompleted flag, which stays allowed.
+const SETTINGS_GUARDED_FIELDS = Object.freeze([
+  'config', 'archetype', 'activeRules', 'equippedBundleIds', 'equippedTraits',
+  'equippedWatchlistId', 'equippedWatchlistName', 'standingLeans', 'dials',
+  'settingsRev', 'activeBattleId', 'deployedStrategy', 'consolidatedInsight',
+]);
+
 export const updateAgent = async (agentId, updates) => {
+  const guarded = Object.keys(updates || {}).filter((k) =>
+    SETTINGS_GUARDED_FIELDS.some((g) => k === g || k.startsWith(`${g}.`)),
+  );
+  if (guarded.length > 0) {
+    throw new Error(
+      `updateAgent: field(s) [${guarded.join(', ')}] are settings-guarded — use the transactional server endpoint instead (Release 2 settingsRev discipline).`,
+    );
+  }
   try {
     const docRef = doc(db, AGENTS_COLLECTION, agentId);
     await updateDoc(docRef, {
@@ -293,7 +314,12 @@ export const updateAgentStats = async (agentId, result, score) => {
 // and commit state in a transaction. Each throws on a non-2xx response with an
 // Error carrying `status` + `code`. Modeled on forgeWatchlistService.js.
 
-async function toEquipError(response) {
+// Exported since the Release 2 bundle-writer migration: forgeService's
+// equip/unequip-bundle thin clients map endpoint errors through this SAME
+// helper, so every /api/agent/* equip surface throws the one Error shape
+// (message + status + code — callers can branch on code without
+// string-matching human copy).
+export async function toEquipError(response) {
   let data = {};
   try {
     data = await response.json();
@@ -347,6 +373,21 @@ export const changeArchetype = async (agentId, archetype) => {
   const response = await fetchWithAuth('/api/agent/change-archetype', {
     method: 'POST',
     body: JSON.stringify({ agentId, archetype }),
+  });
+  if (!response.ok) throw await toEquipError(response);
+  return response.json();
+};
+
+/**
+ * R1(a) — the allowlisted settings write path (equippedTraits /
+ * deployedStrategy). Routes through POST /api/agent/update-agent-settings so
+ * agent.settingsRev bumps on every real write; identical values are
+ * idempotent no-ops. Resolves with { agentId, fields, idempotent }.
+ */
+export const updateAgentSettings = async (agentId, set) => {
+  const response = await fetchWithAuth('/api/agent/update-agent-settings', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, set }),
   });
   if (!response.ok) throw await toEquipError(response);
   return response.json();

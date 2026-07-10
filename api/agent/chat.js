@@ -574,7 +574,20 @@ export default async function handler(req, res) {
       scratchpad: cleanScratchpad,
       hasDirective: effectiveHasDirective,
       directive: directiveThreadId
-        ? { text: normalizedDirective.text, expiry: normalizedDirective.expiry || 'end_of_battle', directiveThreadId }
+        ? {
+            text: normalizedDirective.text,
+            expiry: normalizedDirective.expiry || 'end_of_battle',
+            directiveThreadId,
+            // Release 2 (spec Phase 1 item 5) — additive id+version from the
+            // gate, so directive-vs-lean opposition binds to both
+            // canonicalTextVersions. Present ONLY when the gate minted them:
+            // the legacy (flag-off) normalizeDirective path writes its exact
+            // pre-Release-2 shape, keeping the OFF state byte-identical.
+            ...(normalizedDirective.adjustmentId != null ? {
+              adjustmentId: normalizedDirective.adjustmentId,
+              canonicalTextVersion: normalizedDirective.canonicalTextVersion ?? null,
+            } : {}),
+          }
         : null,
       directiveThreadId,
       suggestedActions: parsed.suggestedActions || null,
@@ -615,6 +628,12 @@ export default async function handler(req, res) {
           expiry: normalizedDirective.expiry || 'end_of_battle',
           directiveThreadId,
           createdAt: new Date().toISOString(),
+          // Release 2 (spec Phase 1 item 5) — see the exchange record above
+          // (gate-minted only; the flag-off legacy shape stays byte-identical).
+          ...(normalizedDirective.adjustmentId != null ? {
+            adjustmentId: normalizedDirective.adjustmentId,
+            canonicalTextVersion: normalizedDirective.canonicalTextVersion ?? null,
+          } : {}),
         },
       } : {}),
     });
