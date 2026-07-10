@@ -16,7 +16,7 @@
 // classification, never from whether the lever is live. (E2 wires the manifest into
 // the PROMPT; the gate never reads it back.)
 
-import { getAllowlist, isValidAdjustmentId, getCanonicalText } from '../../src/data/archetypeAdjustments.js';
+import { getAllowlist, isValidAdjustmentId, getCanonicalText, getCanonicalTextVersion } from '../../src/data/archetypeAdjustments.js';
 import { parseVoiceLayerResponse } from './gemmaClient.js';
 
 // The one-shot repair-retry is BUDGET-AWARE. chat.js clears the first call's 15s
@@ -76,7 +76,17 @@ function evaluate(proposal, effectiveArchetype) {
   const id = proposal.selectedAdjustmentId;
   if (id && isValidAdjustmentId(effectiveArchetype, id)) {
     return {
-      directive: { text: getCanonicalText(effectiveArchetype, id), expiry: 'end_of_battle' },
+      directive: {
+        text: getCanonicalText(effectiveArchetype, id),
+        expiry: 'end_of_battle',
+        // Release 2 (spec Phase 1 item 5): the minted id + its live text
+        // version ride the directive record, so directive-vs-lean opposition
+        // (conflict groups) and override rulings can bind to BOTH
+        // canonicalTextVersions. Additive — under observe the caller still
+        // discards the whole directive.
+        adjustmentId: id,
+        canonicalTextVersion: getCanonicalTextVersion(effectiveArchetype, id),
+      },
       hasDirective: true,
       status: 'committed',
     };
@@ -140,7 +150,8 @@ function result(directive, hasDirective, proposal, status, repairUsed, fallbackL
  * Gate a (battle-mode, flag-ON) chat turn's directive proposal.
  * Caller guarantees mode==='battle' and ARCHETYPE_INTEGRITY_MODE!=='off'.
  *
- * @returns {{ directive:{text,expiry}|null, hasDirective:boolean,
+ * @returns {{ directive:{text,expiry,adjustmentId,canonicalTextVersion}|null,
+ *             hasDirective:boolean,
  *             fallbackLine:string|null,
  *             outcome:{classification, selectedAdjustmentId, status, repairUsed} }}
  */

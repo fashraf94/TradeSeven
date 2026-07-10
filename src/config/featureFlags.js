@@ -298,6 +298,23 @@ export const CONFLICT_RECONCILER_DETECT_ENABLED = true;
 export const CONFLICT_RECONCILER_INJECT_ENABLED = true;
 
 /**
+ * Release 2 (Fenced Customization Bundle V1.1) — STANDING LEANS activation.
+ *
+ * Gates the standing-leans surface: the equip/unequip endpoints 404 while
+ * false (the scouting-board defense-in-depth pattern), and — once the Phase-2
+ * fenced edits land — the shared control renderer refuses to render persisted
+ * leans into any prompt while false (read-side guard; data kept, suppression
+ * logged per battle+mode-epoch). "No UI" is never the activation control.
+ *
+ * Boolean by founder ruling D1 (2026-07-10; the spec's STANDING_LEANS_MODE
+ * 'off'|'on' resolved to the house *_ENABLED shape — leans have no observe
+ * half). OFF at merge (DARK-INERT). Flip is a Release-4 staged-activation-walk
+ * step, founder-executed in its own watch window — never in a build PR (the
+ * PR #510 lesson).
+ */
+export const STANDING_LEANS_ENABLED = false;
+
+/**
  * Archetype Integrity / "Third Path" — tri-state rollout mode.
  *
  * Gates the whole archetype-integrity feature together (the deterministic

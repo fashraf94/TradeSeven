@@ -38,6 +38,10 @@ import { waitUntil } from '@vercel/functions';
 // telemetry and the cleanup census can never disagree.
 import { RULE_COMPAT_MODE } from '../../src/config/featureFlags.js';
 import { collectProjectedConflicts } from '../_utils/ruleCompatCleanup.js';
+// Release 2 lean-invalidation rider — same kernel the battle-creation
+// revalidation uses (leanRevalidation.js), so the rider and the snapshot
+// omission can never disagree.
+import { revalidateStandingLeans } from '../_utils/leanRevalidation.js';
 
 export const config = { maxDuration: 10 };
 
@@ -105,8 +109,15 @@ export default async function handler(req, res) {
       // an archetype change is a snapshot-feeding config write.
       tx.update(agentRef, { archetype, updatedAt: nowIso, settingsRev: FieldValue.increment(1) });
       // equippedTraits rides along for the WS1 rescan (projection input) — no
-      // extra read, it is already on the agent snapshot.
-      return { idempotent: false, archetype, previousArchetype, equippedTraits: agent.equippedTraits || [] };
+      // extra read, it is already on the agent snapshot. standingLeans rides
+      // for the Release-2 lean-invalidation rider (same zero-read rationale).
+      return {
+        idempotent: false,
+        archetype,
+        previousArchetype,
+        equippedTraits: agent.equippedTraits || [],
+        standingLeans: Array.isArray(agent.standingLeans) ? agent.standingLeans : [],
+      };
     });
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
@@ -161,6 +172,27 @@ export default async function handler(req, res) {
         zone1Ref,
         hardness: item.hardness || null,
       }));
+      // Release 2 lean-invalidation rider (spec Phase 1 item 7 / changelog
+      // #17): an archetype change flips the menu every equipped standing lean
+      // is validated against, so the SAME rescan event records which leans
+      // are now invalid under the NEW archetype. Additive + presence-gated:
+      // agents without leans emit a byte-identical event. Lean DATA is never
+      // mutated — leans are durable desired state (battle-creation
+      // revalidation omits them from snapshots; switching back revalidates
+      // them right back in).
+      const leanInvalidation = (txResult.standingLeans || []).length > 0
+        ? (() => {
+            const { invalidated } = revalidateStandingLeans({
+              standingLeans: txResult.standingLeans,
+              archetypeCodeId: txResult.archetype,
+            });
+            return {
+              equippedCount: txResult.standingLeans.length,
+              invalidatedCount: invalidated.length,
+              invalidated,
+            };
+          })()
+        : null;
       await logSignalDrops({
         stage: 'rule_compat',
         userId: user.uid,
@@ -177,6 +209,7 @@ export default async function handler(req, res) {
           conflicts: conflicts.slice(0, 30),
           blocked: false,
           ts: nowIso,
+          ...(leanInvalidation ? { leanInvalidation } : {}),
         }],
         eventCount: 1,
         loggedAt: nowIso,

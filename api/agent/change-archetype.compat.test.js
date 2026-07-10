@@ -172,3 +172,41 @@ describe('change-archetype — compat rescan (RULE_COMPAT_MODE=observe)', () => 
     expect(activeFirestore._state.agentDocs[AGENT_ID].archetype).toBe('guardian');
   });
 });
+
+describe('change-archetype — Release 2 lean-invalidation rider (rides the rescan event)', () => {
+  it('an agent WITHOUT leans emits a byte-identical rescan event (no leanInvalidation key)', async () => {
+    activeFirestore = conflictFixture();
+    const [req, res] = makeReqRes({ agentId: AGENT_ID, archetype: 'guardian' });
+    await changeArchetypeHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const log = shadowLogCalls.current.find((r) => r.stage === 'rule_compat');
+    expect(log.events[0]).not.toHaveProperty('leanInvalidation');
+  });
+
+  it('an agent WITH leans gets the rider: leans invalid under the NEW archetype are recorded (data never mutated)', async () => {
+    activeFirestore = conflictFixture();
+    // Two momentum_chaser leans equipped; the flip to guardian invalidates both
+    // (not_in_menu) — recorded on the event, NEVER cleared from the agent doc
+    // (leans are durable desired state; a switch-back revalidates them in).
+    activeFirestore._state.agentDocs[AGENT_ID].standingLeans = [
+      { adjustmentId: 'TF-02', version: 1, equippedAt: 't' },
+      { adjustmentId: 'TF-05', version: 1, equippedAt: 't' },
+    ];
+    const [req, res] = makeReqRes({ agentId: AGENT_ID, archetype: 'guardian' });
+    await changeArchetypeHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const log = shadowLogCalls.current.find((r) => r.stage === 'rule_compat');
+    expect(log.events[0].leanInvalidation).toEqual({
+      equippedCount: 2,
+      invalidatedCount: 2,
+      invalidated: [
+        { adjustmentId: 'TF-02', version: 1, reason: 'not_in_menu' },
+        { adjustmentId: 'TF-05', version: 1, reason: 'not_in_menu' },
+      ],
+    });
+    // Lean DATA untouched on the agent doc.
+    expect(activeFirestore._state.agentDocs[AGENT_ID].standingLeans.map((l) => l.adjustmentId)).toEqual(['TF-02', 'TF-05']);
+  });
+});

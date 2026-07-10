@@ -163,3 +163,104 @@ describe('archetypeAdjustments — helpers + the #4 no-fallback-on-write rule', 
     expect(getCanonicalText('analyst', 'FI-404')).toBeNull(); // nonexistent id
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Release 2 — versioning + conflict groups (spec Phase 1 item 1 / changelog #8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+import {
+  ADJUSTMENT_CONFLICT_GROUPS,
+  getAdjustment,
+  getCanonicalTextVersion,
+  getConflictGroups,
+  findEquipConflicts,
+  getOpposedLeanIds,
+} from './archetypeAdjustments.js';
+
+describe('Release 2 — canonicalTextVersion', () => {
+  it('every one of the 46 adjustments carries canonicalTextVersion 1 (integer)', () => {
+    let count = 0;
+    for (const key of SIX_KEYS) {
+      for (const a of ARCHETYPE_ADJUSTMENTS[key].adjustments) {
+        expect(a.canonicalTextVersion, `${key}/${a.id}`).toBe(1);
+        count += 1;
+      }
+    }
+    expect(count).toBe(46);
+  });
+
+  it('getCanonicalTextVersion / getAdjustment resolve valid pairs and null otherwise (no fallback)', () => {
+    expect(getCanonicalTextVersion('guardian', 'CP-04')).toBe(1);
+    expect(getAdjustment('guardian', 'CP-04')).toMatchObject({ id: 'CP-04', canonicalTextVersion: 1 });
+    expect(getCanonicalTextVersion('guardian', 'DV-01')).toBeNull(); // cross-archetype
+    expect(getCanonicalTextVersion('does_not_exist', 'CP-04')).toBeNull(); // unknown archetype
+    expect(getAdjustment('analyst', 'FI-404')).toBeNull(); // nonexistent id
+  });
+});
+
+describe('Release 2 — ADJUSTMENT_CONFLICT_GROUPS (adjudication-gated drafts)', () => {
+  it('covers exactly the six archetypes (an explicit entry each, even when empty)', () => {
+    expect(Object.keys(ADJUSTMENT_CONFLICT_GROUPS).sort()).toEqual([...SIX_KEYS].sort());
+  });
+
+  it('RELEASE-BLOCKING (changelog #8): every group member pins the CURRENT canonicalTextVersion — a text bump invalidates the ruling until re-adjudicated', () => {
+    for (const key of SIX_KEYS) {
+      for (const group of ADJUSTMENT_CONFLICT_GROUPS[key]) {
+        for (const member of group.members) {
+          const live = getCanonicalTextVersion(key, member.id);
+          expect(live, `${key}/${group.groupId}/${member.id}: ruling pinned v${member.version} but live text is v${live} — re-adjudicate the group`).toBe(member.version);
+        }
+      }
+    }
+  });
+
+  it('well-formed groups: ≥2 members, ids valid in their own archetype menu, unique ids within a group, groupId/dimension/rationale present', () => {
+    for (const key of SIX_KEYS) {
+      for (const group of ADJUSTMENT_CONFLICT_GROUPS[key]) {
+        expect(group.groupId).toMatch(/^[A-Z]{2}-G\d+$/);
+        expect(typeof group.dimension).toBe('string');
+        expect(group.rationale.length).toBeGreaterThan(20);
+        expect(group.members.length).toBeGreaterThanOrEqual(2);
+        const ids = group.members.map((m) => m.id);
+        expect(new Set(ids).size).toBe(ids.length);
+        for (const id of ids) {
+          expect(isValidAdjustmentId(key, id), `${key}/${group.groupId}/${id}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('current draft census: TF 0, CN 1, SP 1, CP 1, DV 1, FI 2 groups (adjudication may amend)', () => {
+    expect(ADJUSTMENT_CONFLICT_GROUPS.momentum_chaser).toHaveLength(0);
+    expect(ADJUSTMENT_CONFLICT_GROUPS.contrarian).toHaveLength(1);
+    expect(ADJUSTMENT_CONFLICT_GROUPS.degen).toHaveLength(1);
+    expect(ADJUSTMENT_CONFLICT_GROUPS.guardian).toHaveLength(1);
+    expect(ADJUSTMENT_CONFLICT_GROUPS.diversifier).toHaveLength(1);
+    expect(ADJUSTMENT_CONFLICT_GROUPS.analyst).toHaveLength(2);
+  });
+
+  it('getConflictGroups never falls back (unknown archetype → [])', () => {
+    expect(getConflictGroups('does_not_exist')).toEqual([]);
+    expect(getConflictGroups(undefined)).toEqual([]);
+  });
+
+  it('findEquipConflicts: rejects opposing combinations, allows everything else', () => {
+    // Same group, other member equipped → conflict.
+    expect(findEquipConflicts('guardian', 'CP-05', ['CP-04'])).toEqual(['CP-04']);
+    expect(findEquipConflicts('guardian', 'CP-04', ['CP-05'])).toEqual(['CP-05']);
+    // No group shared → equippable.
+    expect(findEquipConflicts('guardian', 'CP-01', ['CP-04'])).toEqual([]);
+    // Cross-archetype candidate never matches a group.
+    expect(findEquipConflicts('guardian', 'DV-03', ['CP-04'])).toEqual([]);
+    // Grouped candidate with nothing equipped → equippable.
+    expect(findEquipConflicts('analyst', 'FI-05', [])).toEqual([]);
+    // Analyst has two groups — only the shared-group lean conflicts.
+    expect(findEquipConflicts('analyst', 'FI-05', ['FI-03', 'FI-06'])).toEqual(['FI-06']);
+  });
+
+  it('getOpposedLeanIds mirrors the group derivation as directed directive→lean edges', () => {
+    expect(getOpposedLeanIds('diversifier', 'DV-03', ['DV-05', 'DV-01'])).toEqual(['DV-05']);
+    expect(getOpposedLeanIds('diversifier', 'DV-01', ['DV-05'])).toEqual([]);
+    expect(getOpposedLeanIds('momentum_chaser', 'TF-01', ['TF-02'])).toEqual([]); // TF has no groups
+  });
+});

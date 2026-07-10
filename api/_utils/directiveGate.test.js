@@ -34,7 +34,14 @@ describe('gateDirective — valid id → canonical verbatim', () => {
       effectiveArchetype: 'momentum_chaser',
       ...baseDeps(callGemmaVoice),
     });
-    expect(out.directive).toEqual({ text: getCanonicalText('momentum_chaser', 'TF-02'), expiry: 'end_of_battle' });
+    expect(out.directive).toEqual({
+      text: getCanonicalText('momentum_chaser', 'TF-02'),
+      expiry: 'end_of_battle',
+      // Release 2 additive fields: the minted id + its live text version ride
+      // the directive so conflict-group rulings bind to both versions.
+      adjustmentId: 'TF-02',
+      canonicalTextVersion: 1,
+    });
     expect(out.hasDirective).toBe(true);
     expect(out.outcome.status).toBe('committed');
     expect(out.outcome.repairUsed).toBe(false);

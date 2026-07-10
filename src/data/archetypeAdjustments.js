@@ -59,14 +59,14 @@ export const ARCHETYPE_ADJUSTMENTS = {
         "Doesn't own going defensive, shorting, or hedging. Adjusts its own book by conversation in every mode; points the user to real levers only (tournament: flip / claim / board-rank; standard: coach a directive or equip a watchlist — there is no standard-mode trade lever); and may coach a real screen ('go explore'), never promising to bring results back.",
     },
     adjustments: [
-      { id: 'TF-01', canonical: 'Prefer fresh breakouts over extended / late-stage entries', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying beaten-down reversals (becoming a Contrarian)' } },
-      { id: 'TF-02', canonical: 'Require stronger confirmation before entering', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'fading momentum / buying weakness' } },
-      { id: 'TF-03', canonical: 'Narrow to the single strongest sector(s)', policy: { riskDirection: 'neutral', concentrationDirection: 'tighter', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'rotating into lagging/weak sectors' } },
-      { id: 'TF-04', canonical: 'Give winners more room before rotating out', policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'cutting strength early / fading the trend' } },
-      { id: 'TF-05', canonical: 'Reduce position size on new entries', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'abandoning momentum exposure' } },
-      { id: 'TF-06', canonical: 'Avoid low-liquidity / thin momentum names', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'fading momentum / buying weakness' } },
-      { id: 'TF-07', canonical: "Lean harder on the stock's own technicals before acting", policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'ignoring the chart / buying on pedigree' } },
-      { id: 'TF-08', canonical: 'Pause adds after a failed breakout', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing into broken momentum' } },
+      { id: 'TF-01', canonical: 'Prefer fresh breakouts over extended / late-stage entries', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying beaten-down reversals (becoming a Contrarian)' } },
+      { id: 'TF-02', canonical: 'Require stronger confirmation before entering', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'fading momentum / buying weakness' } },
+      { id: 'TF-03', canonical: 'Narrow to the single strongest sector(s)', canonicalTextVersion: 1, policy: { riskDirection: 'neutral', concentrationDirection: 'tighter', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'rotating into lagging/weak sectors' } },
+      { id: 'TF-04', canonical: 'Give winners more room before rotating out', canonicalTextVersion: 1, policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'cutting strength early / fading the trend' } },
+      { id: 'TF-05', canonical: 'Reduce position size on new entries', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'abandoning momentum exposure' } },
+      { id: 'TF-06', canonical: 'Avoid low-liquidity / thin momentum names', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'fading momentum / buying weakness' } },
+      { id: 'TF-07', canonical: "Lean harder on the stock's own technicals before acting", canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'ignoring the chart / buying on pedigree' } },
+      { id: 'TF-08', canonical: 'Pause adds after a failed breakout', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing into broken momentum' } },
     ],
   },
 
@@ -83,14 +83,14 @@ export const ARCHETYPE_ADJUSTMENTS = {
         "Doesn't own momentum-chasing or FOMO entries. Adjusts its own book by conversation in every mode; hands the user toward real levers (tournament: flip / claim; standard: coach a directive or equip a watchlist) and coaches a real momentum screen ('go explore'). Holds the line on pre-stop capitulation rather than caving to fear.",
     },
     adjustments: [
-      { id: 'CN-01', canonical: 'Require a deeper washout before entering (greater oversold depth)', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing strength / buying what is already running' } },
-      { id: 'CN-02', canonical: 'Require a clearer technical turn/stabilization before entering', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying broken names with no turn' } },
-      { id: 'CN-03', canonical: 'Tighten the downside stop', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'removing the stop / holding a broken name to zero' } },
-      { id: 'CN-04', canonical: 'Lean harder into the most out-of-favor / lagging names', policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing beloved momentum leaders' } },
-      { id: 'CN-05', canonical: 'Take profit more eagerly into resistance', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'riding a name into a momentum chase' } },
-      { id: 'CN-06', canonical: 'Demand a stronger fundamental reason underneath the name', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying broken / un-recoverable names' } },
-      { id: 'CN-07', canonical: 'Reduce position size on new entries', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'abandoning the contrarian posture' } },
-      { id: 'CN-08', canonical: 'Hold longer for the reversal before trimming (more patient profit-taking)', policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'flipping to chase strength' } },
+      { id: 'CN-01', canonical: 'Require a deeper washout before entering (greater oversold depth)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing strength / buying what is already running' } },
+      { id: 'CN-02', canonical: 'Require a clearer technical turn/stabilization before entering', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying broken names with no turn' } },
+      { id: 'CN-03', canonical: 'Tighten the downside stop', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'removing the stop / holding a broken name to zero' } },
+      { id: 'CN-04', canonical: 'Lean harder into the most out-of-favor / lagging names', canonicalTextVersion: 1, policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing beloved momentum leaders' } },
+      { id: 'CN-05', canonical: 'Take profit more eagerly into resistance', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'riding a name into a momentum chase' } },
+      { id: 'CN-06', canonical: 'Demand a stronger fundamental reason underneath the name', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying broken / un-recoverable names' } },
+      { id: 'CN-07', canonical: 'Reduce position size on new entries', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'abandoning the contrarian posture' } },
+      { id: 'CN-08', canonical: 'Hold longer for the reversal before trimming (more patient profit-taking)', canonicalTextVersion: 1, policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'flipping to chase strength' } },
     ],
   },
 
@@ -107,13 +107,13 @@ export const ARCHETYPE_ADJUSTMENTS = {
         "Doesn't own boring protection, shorts, or hedges as a mechanic. Adjusts its own book by conversation; hands the user toward real levers (tournament: flip a short / claim a volatile inverse; standard: coach a high-ATR inverse/high-beta screen or equip a watchlist) and, for a genuinely scared casual user, names the honest off-ramp (a hedge on their side, or a different agent for the battle).",
     },
     adjustments: [
-      { id: 'SP-01', canonical: 'Tighten the downside stop', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'removing the survival floor' } },
-      { id: 'SP-02', canonical: 'Hunt slightly-less-extreme volatility (still high-ATR, not top decile)', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying stable, low-volatility names' } },
-      { id: 'SP-03', canonical: 'Trade less frequently — fewer, more-committed swings', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'becoming a slow quality holder' } },
-      { id: 'SP-04', canonical: 'Concentrate into fewer high-conviction movers', policy: { riskDirection: 'higher', concentrationDirection: 'tighter', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'diversifying into safety' } },
-      { id: 'SP-05', canonical: 'Spread across more names (diversify the chaos)', policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'spreading into stable, low-volatility names' } },
-      { id: 'SP-06', canonical: 'Reduce position size on new entries', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'abandoning volatility selection' } },
-      { id: 'SP-07', canonical: 'Require a stronger momentum/technical trigger before piling in', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'picking for quality / stability' } },
+      { id: 'SP-01', canonical: 'Tighten the downside stop', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'removing the survival floor' } },
+      { id: 'SP-02', canonical: 'Hunt slightly-less-extreme volatility (still high-ATR, not top decile)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying stable, low-volatility names' } },
+      { id: 'SP-03', canonical: 'Trade less frequently — fewer, more-committed swings', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'becoming a slow quality holder' } },
+      { id: 'SP-04', canonical: 'Concentrate into fewer high-conviction movers', canonicalTextVersion: 1, policy: { riskDirection: 'higher', concentrationDirection: 'tighter', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'diversifying into safety' } },
+      { id: 'SP-05', canonical: 'Spread across more names (diversify the chaos)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'spreading into stable, low-volatility names' } },
+      { id: 'SP-06', canonical: 'Reduce position size on new entries', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'abandoning volatility selection' } },
+      { id: 'SP-07', canonical: 'Require a stronger momentum/technical trigger before piling in', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'picking for quality / stability' } },
     ],
   },
 
@@ -130,14 +130,14 @@ export const ARCHETYPE_ADJUSTMENTS = {
         "Doesn't own bringing firepower / offense it won't hold. Adjusts its own book by conversation; coaches a real offense screen ('go explore' high arch_scores.degen or high atrPercentile) and points the user to real levers (tournament: board-rank / claim; standard: coach a directive or equip a watchlist — never 'go buy yourself'). May redirect to the archetype that's actually built for the ask.",
     },
     adjustments: [
-      { id: 'CP-01', canonical: 'Raise the quality bar (demand cleaner fundamentals)', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'dropping the quality floor / buying junk' } },
-      { id: 'CP-02', canonical: 'Tighten the volatility ceiling (even lower-beta names)', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing high-beta / volatile names' } },
-      { id: 'CP-03', canonical: 'Hold longer through noise before considering an exit', policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'trading fast / getting shaken out by noise' } },
-      { id: 'CP-04', canonical: 'Widen the stop slightly (more patience on good positions)', policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'reactive fast-trading exits' } },
-      { id: 'CP-05', canonical: 'Tighten the stop slightly (exit a touch sooner on damage)', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing risk for upside' } },
-      { id: 'CP-06', canonical: 'Concentrate into fewer highest-conviction quality names', policy: { riskDirection: 'neutral', concentrationDirection: 'tighter', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'concentrating into high-beta / junk' } },
-      { id: 'CP-07', canonical: 'Spread wider for stability (more diversification)', policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'spreading into volatile / junk names' } },
-      { id: 'CP-08', canonical: 'Require a stronger fundamental catalyst before adding', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing a hot chart with no fundamentals' } },
+      { id: 'CP-01', canonical: 'Raise the quality bar (demand cleaner fundamentals)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'dropping the quality floor / buying junk' } },
+      { id: 'CP-02', canonical: 'Tighten the volatility ceiling (even lower-beta names)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing high-beta / volatile names' } },
+      { id: 'CP-03', canonical: 'Hold longer through noise before considering an exit', canonicalTextVersion: 1, policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'trading fast / getting shaken out by noise' } },
+      { id: 'CP-04', canonical: 'Widen the stop slightly (more patience on good positions)', canonicalTextVersion: 1, policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'reactive fast-trading exits' } },
+      { id: 'CP-05', canonical: 'Tighten the stop slightly (exit a touch sooner on damage)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing risk for upside' } },
+      { id: 'CP-06', canonical: 'Concentrate into fewer highest-conviction quality names', canonicalTextVersion: 1, policy: { riskDirection: 'neutral', concentrationDirection: 'tighter', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'concentrating into high-beta / junk' } },
+      { id: 'CP-07', canonical: 'Spread wider for stability (more diversification)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'spreading into volatile / junk names' } },
+      { id: 'CP-08', canonical: 'Require a stronger fundamental catalyst before adding', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing a hot chart with no fundamentals' } },
     ],
   },
 
@@ -154,13 +154,13 @@ export const ARCHETYPE_ADJUSTMENTS = {
         "Doesn't own conviction / all-in plays. Adjusts its own book by conversation; coaches a real single-sector / concentration screen ('go explore') and points the user to real levers (tournament: claim / board-rank to tilt; standard: coach a directive or equip a watchlist — never 'go concentrate yourself'). May redirect to Speculator / Trend Follower for the concentrated bet.",
     },
     adjustments: [
-      { id: 'DV-01', canonical: 'Tighten the concentration cap (thinner per sector)', policy: { riskDirection: 'lower', concentrationDirection: 'tighter', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'concentrating / going all-in on one sector' } },
-      { id: 'DV-02', canonical: 'Widen the spread (target more sectors)', policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'narrowing into a single theme' } },
-      { id: 'DV-03', canonical: 'Rebalance a creeping sector sooner', policy: { riskDirection: 'lower', concentrationDirection: 'tighter', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'letting one sector run to dominance' } },
-      { id: 'DV-04', canonical: 'Even out the slot distribution (more equal weighting)', policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'tilting heavily into a few names' } },
-      { id: 'DV-05', canonical: 'Allow a slight tilt within the cap (let a winner run toward the limit)', policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'breaching the cap / going all-in' } },
-      { id: 'DV-06', canonical: 'Reduce position size on new entries', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'oversizing into one bet' } },
-      { id: 'DV-07', canonical: 'Prioritize filling an under-represented sector on the next add', policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'piling into an already-heavy sector' } },
+      { id: 'DV-01', canonical: 'Tighten the concentration cap (thinner per sector)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'tighter', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'concentrating / going all-in on one sector' } },
+      { id: 'DV-02', canonical: 'Widen the spread (target more sectors)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'narrowing into a single theme' } },
+      { id: 'DV-03', canonical: 'Rebalance a creeping sector sooner', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'tighter', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'letting one sector run to dominance' } },
+      { id: 'DV-04', canonical: 'Even out the slot distribution (more equal weighting)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'tilting heavily into a few names' } },
+      { id: 'DV-05', canonical: 'Allow a slight tilt within the cap (let a winner run toward the limit)', canonicalTextVersion: 1, policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'breaching the cap / going all-in' } },
+      { id: 'DV-06', canonical: 'Reduce position size on new entries', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'oversizing into one bet' } },
+      { id: 'DV-07', canonical: 'Prioritize filling an under-represented sector on the next add', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'piling into an already-heavy sector' } },
     ],
   },
 
@@ -177,14 +177,14 @@ export const ARCHETYPE_ADJUSTMENTS = {
         "Doesn't own buying hot-but-low-quality names. Adjusts its own book by conversation; coaches a real momentum/volatility screen ('go explore' high momentumScore / atrPercentile regardless of fundamentals) and points the user to real levers (tournament: claim / board-rank; standard: coach a directive or equip a watchlist — never 'go buy junk yourself'). May redirect to Trend Follower / Speculator.",
     },
     adjustments: [
-      { id: 'FI-01', canonical: 'Raise the quality bar (demand stronger fundamentals)', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'dropping the quality floor / buying junk' } },
-      { id: 'FI-02', canonical: 'Require a cleaner technical setup before committing', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing a hot chart regardless of setup' } },
-      { id: 'FI-03', canonical: 'Hold a stalled quality name longer before rotating (more patient)', policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'jumpy momentum-style rotation' } },
-      { id: 'FI-04', canonical: 'Rotate dead-money quality names sooner (more clock-aware)', policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'abandoning the quality gate to chase movement' } },
-      { id: 'FI-05', canonical: 'Concentrate into highest-conviction quality names', policy: { riskDirection: 'neutral', concentrationDirection: 'tighter', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'concentrating into junk / hot charts' } },
-      { id: 'FI-06', canonical: 'Spread across more quality names', policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'spreading into low-quality names' } },
-      { id: 'FI-07', canonical: 'Reduce position size on new entries', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'abandoning the quality discipline' } },
-      { id: 'FI-08', canonical: 'Demand a stronger near-term catalyst before adding', policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying on a hot chart with no fundamentals' } },
+      { id: 'FI-01', canonical: 'Raise the quality bar (demand stronger fundamentals)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'dropping the quality floor / buying junk' } },
+      { id: 'FI-02', canonical: 'Require a cleaner technical setup before committing', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing a hot chart regardless of setup' } },
+      { id: 'FI-03', canonical: 'Hold a stalled quality name longer before rotating (more patient)', canonicalTextVersion: 1, policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'longer', coreAlignment: 'reinforces', forbiddenOpposite: 'jumpy momentum-style rotation' } },
+      { id: 'FI-04', canonical: 'Rotate dead-money quality names sooner (more clock-aware)', canonicalTextVersion: 1, policy: { riskDirection: 'neutral', concentrationDirection: 'neutral', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'abandoning the quality gate to chase movement' } },
+      { id: 'FI-05', canonical: 'Concentrate into highest-conviction quality names', canonicalTextVersion: 1, policy: { riskDirection: 'neutral', concentrationDirection: 'tighter', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'concentrating into junk / hot charts' } },
+      { id: 'FI-06', canonical: 'Spread across more quality names', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'spreading into low-quality names' } },
+      { id: 'FI-07', canonical: 'Reduce position size on new entries', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'abandoning the quality discipline' } },
+      { id: 'FI-08', canonical: 'Demand a stronger near-term catalyst before adding', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying on a hot chart with no fundamentals' } },
     ],
   },
 };
@@ -225,5 +225,153 @@ export const getCanonicalText = (codeId, id) => {
   const hit = getAllowlist(codeId).find((a) => a.id === id);
   return hit ? hit.canonical : null;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Release 2 (Fenced Customization Bundle V1.1) — versioning + conflict groups
+// (spec Phase 1 item 1 / changelog #8). Everything below is additive: the gate,
+// the voice layer, and the eval corpus read only id/canonical/policy/zones.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The full adjustment entry for a valid (codeId, id) pair; null otherwise.
+// Directive-write-path semantics (no fallback), like getCanonicalText.
+export const getAdjustment = (codeId, id) =>
+  getAllowlist(codeId).find((a) => a.id === id) ?? null;
+
+// Current canonicalTextVersion for a valid (codeId, id) pair; null otherwise.
+// Version discipline (spec §3.3): wording-only edits reuse the id and BUMP the
+// version; semantic changes deprecate the id and mint a new one. Equipped
+// leans and conflict-group rulings pin the version they were made against —
+// a bump invalidates them until re-confirmed / re-adjudicated (fail closed).
+export const getCanonicalTextVersion = (codeId, id) =>
+  getAdjustment(codeId, id)?.canonicalTextVersion ?? null;
+
+/**
+ * ADJUSTMENT_CONFLICT_GROUPS — choose-at-most-one sets per archetype (spec
+ * changelog #8: groups replace raw opposition pairs).
+ *
+ * STATUS: PROVISIONAL — drafted by Claude Code from entry SEMANTICS
+ * (2026-07-10); the Phase-1 STOP presents these for Flash+Claude adjudication
+ * (the adjudication artifact carries per-group rationale + canonical texts).
+ *
+ * DRAFTING RULE (semantics, NOT raw policy directions): the policy direction
+ * vocabulary tracks the CONSTRAINT VERB, not the book outcome — e.g. DV-01
+ * "Tighten the concentration cap" is concentrationDirection 'tighter' yet
+ * pushes toward MORE spread, so a raw tighter-vs-wider generator would
+ * wrongly oppose DV-01 to DV-02 (both diversification-reinforcing) and miss
+ * the real DV tension (DV-03 vs DV-05, the zone doc's own contention
+ * question). Each group below names one behavioral dimension whose two ends
+ * cannot be held simultaneously.
+ *
+ * SEMANTICS consumed by the lean service + directive machinery:
+ * - EQUIP REJECTION (undirected): equipping a lean that shares a group with
+ *   an already-equipped lean is refused at write time.
+ * - DIRECTIVE-VS-LEAN OVERRIDE EDGES (directed): an incoming directive
+ *   opposes every equipped lean sharing a group with it; with the user's
+ *   one-battle confirmation the DIRECTIVE wins (the lean suppresses for that
+ *   battle and resumes after). A lean never overrides a directive.
+ * - Membership is version-pinned: a canonicalTextVersion bump anywhere in a
+ *   group invalidates the ruling until re-adjudicated (release-blocking test
+ *   in archetypeAdjustments.test.js).
+ * - An id MAY appear in more than one group (opposition = union over shared
+ *   groups); the current draft happens to be disjoint pairs.
+ */
+export const ADJUSTMENT_CONFLICT_GROUPS = {
+  // No same-menu opposites: the TF menu is uniformly caution/patience-shaped
+  // (nothing widens the aperture, shortens holds, or loosens confirmation).
+  momentum_chaser: [],
+  contrarian: [
+    {
+      groupId: 'CN-G1',
+      dimension: 'profit-taking eagerness',
+      rationale: 'Take profit more eagerly into resistance (CN-05) and hold longer for the reversal before trimming (CN-08) are the two ends of the same exit clock.',
+      members: [
+        { id: 'CN-05', version: 1 },
+        { id: 'CN-08', version: 1 },
+      ],
+    },
+  ],
+  degen: [
+    {
+      groupId: 'SP-G1',
+      dimension: 'concentration breadth',
+      rationale: 'Concentrate into fewer high-conviction movers (SP-04) and spread across more names (SP-05) are direct book-shape opposites.',
+      members: [
+        { id: 'SP-04', version: 1 },
+        { id: 'SP-05', version: 1 },
+      ],
+    },
+  ],
+  guardian: [
+    {
+      groupId: 'CP-G1',
+      dimension: 'stop width',
+      rationale: 'Widen the stop slightly (CP-04) and tighten the stop slightly (CP-05) act on the same stop in opposite directions. CP-03 (hold through NOISE) is deliberately outside: noise-patience and damage-exit speed coexist by the zone doc\'s own noise-vs-damage distinction.',
+      members: [
+        { id: 'CP-04', version: 1 },
+        { id: 'CP-05', version: 1 },
+      ],
+    },
+  ],
+  diversifier: [
+    {
+      groupId: 'DV-G1',
+      dimension: 'rebalance eagerness',
+      rationale: 'Rebalance a creeping sector sooner (DV-03) and allow a slight tilt within the cap (DV-05) are the two answers to the zone doc\'s contention question ("rebalance now, or let a winner run a little longer?"). DV-01 vs DV-02 are NOT opposed despite tighter/wider labels — both reinforce spread.',
+      members: [
+        { id: 'DV-03', version: 1 },
+        { id: 'DV-05', version: 1 },
+      ],
+    },
+  ],
+  analyst: [
+    {
+      groupId: 'FI-G1',
+      dimension: 'rotation patience',
+      rationale: 'Hold a stalled quality name longer (FI-03) and rotate dead-money quality names sooner (FI-04) are the two ends of the clock-awareness dial the zone doc tensions.',
+      members: [
+        { id: 'FI-03', version: 1 },
+        { id: 'FI-04', version: 1 },
+      ],
+    },
+    {
+      groupId: 'FI-G2',
+      dimension: 'concentration breadth',
+      rationale: 'Concentrate into highest-conviction quality names (FI-05) and spread across more quality names (FI-06) are direct book-shape opposites.',
+      members: [
+        { id: 'FI-05', version: 1 },
+        { id: 'FI-06', version: 1 },
+      ],
+    },
+  ],
+};
+
+// Conflict groups for an archetype. Directive-write-path semantics: NO
+// fallback — unknown archetype → [] (nothing can conflict because nothing
+// can equip).
+export const getConflictGroups = (codeId) =>
+  ADJUSTMENT_CONFLICT_GROUPS[codeId] ?? [];
+
+// EQUIP REJECTION (undirected): the already-equipped ids that share a
+// conflict group with the candidate. Empty array = candidate is equippable.
+export const findEquipConflicts = (codeId, candidateId, equippedIds = []) => {
+  const equipped = new Set(equippedIds);
+  const conflicting = new Set();
+  for (const group of getConflictGroups(codeId)) {
+    const memberIds = group.members.map((m) => m.id);
+    if (!memberIds.includes(candidateId)) continue;
+    for (const mid of memberIds) {
+      if (mid !== candidateId && equipped.has(mid)) conflicting.add(mid);
+    }
+  }
+  return [...conflicting];
+};
+
+// DIRECTIVE-VS-LEAN OVERRIDE EDGES (directed: directive → lean). The equipped
+// lean ids an incoming directive (by adjustment id) opposes — i.e. the leans
+// one override confirmation covers. Same group-union derivation as equip
+// rejection; the DIRECTION lives in how the caller uses it (the directive
+// always wins, the lean suppresses).
+export const getOpposedLeanIds = (codeId, directiveAdjustmentId, equippedLeanIds = []) =>
+  findEquipConflicts(codeId, directiveAdjustmentId, equippedLeanIds);
 
 export default ARCHETYPE_ADJUSTMENTS;
