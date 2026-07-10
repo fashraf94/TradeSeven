@@ -311,6 +311,11 @@ export const CONFLICT_RECONCILER_INJECT_ENABLED = true;
  * half). OFF at merge (DARK-INERT). Flip is a Release-4 staged-activation-walk
  * step, founder-executed in its own watch window — never in a build PR (the
  * PR #510 lesson).
+ *
+ * ACTIVATION PREREQUISITE (founder ruling, Phase-2 acceptance 2026-07-10):
+ * the leanOverrides chat-side confirmation flow still needs its voice copy
+ * (flagged since PR-a). Blocks nothing while dark; must be written before
+ * this flag flips.
  */
 export const STANDING_LEANS_ENABLED = false;
 
@@ -337,10 +342,10 @@ export const TEMPO_DIAL_ENABLED = false;
 /**
  * Archetype Integrity / "Third Path" — tri-state rollout mode.
  *
- * Gates the whole archetype-integrity feature together (the deterministic
- * directive gate, the voice-layer four-zone + third-path injection, the
- * Diversifier swap-time sector cap, and the legacy `directives[]` sanitize) so
- * there is exactly one byte-identical-off regression surface. Three states:
+ * Gates the CHAT-DIRECTIVE half of archetype integrity (the deterministic
+ * directive gate, the voice-layer four-zone + third-path injection, and the
+ * legacy `directives[]` sanitize) so there is exactly one
+ * byte-identical-off regression surface for directives. Three states:
  *
  *   'off'     — byte-identical to today. No archetype-aware gating; the directive
  *               path runs the legacy `normalizeDirective` line verbatim.
@@ -352,9 +357,24 @@ export const TEMPO_DIAL_ENABLED = false;
  *
  * Default 'off'. Built/merged DARK; advance 'off' → 'observe' → 'enforce' only
  * after the pre-flip reliability eval clears the hard zeros (0 core-reversing
- * directives, 0 "claimed-a-change-but-wrote-null"). One master flag — no per-cap
- * sub-flag (the Diversifier cap is independently safe and rides this flag).
+ * directives, 0 "claimed-a-change-but-wrote-null").
  * See docs/audits/20260625_ARCHETYPE_INTEGRITY_BUILD_PLAN_V2.md.
+ *
+ * Release 2 PR-e (Phase-0 ruling, decoupled 2026-07-10): the Diversifier
+ * swap-time sector cap NO LONGER rides this flag — it fires under its own
+ * SECTOR_CAP_MODE (below), so the directive walk and the cap walk are
+ * independent Release-4 steps. This flag governs chat directives only
+ * (master spec V1.2 errata #1).
+ *
+ * ROLLBACK RULE (founder-adopted 2026-07-10; docs/RELEASE2_ACTIVATION_RUNBOOK.md):
+ * while any battle carries an active directive, roll back to 'observe',
+ * NEVER 'off'. Know what a rollback does either way: LEAVING 'enforce'
+ * permanently retires every in-flight directive (the next tick's epoch
+ * record kills it; directives never resurrect — PR-c design), whichever
+ * state you land in. There is no "pause" state. The reason 'observe' is
+ * still the only correct target: its write path mints NOTHING, while
+ * 'off' runs the un-gated legacy normalizeDirective line — directives
+ * minted under 'off' would render un-screened on a later re-enforce.
  *
  * Release 2 PR-c (read-side guard): the PROMPT surfaces render a persisted
  * battle.directive ONLY under 'enforce' — under 'off'/'observe' a directive
@@ -365,6 +385,45 @@ export const TEMPO_DIAL_ENABLED = false;
  * (master spec §3.6, founder-accepted).
  */
 export const ARCHETYPE_INTEGRITY_MODE = 'observe';
+
+/**
+ * Release 2 PR-e — the sector-SLOT rule: tri-state rollout mode.
+ *
+ * Gates the Diversifier tournament sector-position cap (the ONE mechanical
+ * archetype-integrity piece), decoupled from ARCHETYPE_INTEGRITY_MODE by
+ * founder ruling (Phase 0, 2026-07-10) so the directive walk and the cap walk
+ * are independent Release-4 steps. House tri-state (the
+ * ARCHETYPE_INTEGRITY_MODE / RULE_COMPAT_MODE shape, per ruling D1):
+ *
+ *   'off'     — the flag's own machinery is fully dark: no injection, no
+ *               measurement, the guardrails array untouched. (One
+ *               flag-INDEPENDENT fix rode PR-e per spec §6: tournament
+ *               checkSectorCap divides by the mode's 6-slot book instead of
+ *               the momentary held count. Identical on a full book — which
+ *               is every known reachable state, since deploys validate
+ *               exactly 6 and forced exits defer without a bench — it
+ *               differs only on a partial book, where the old math
+ *               over-blocked.)
+ *   'observe' — measurement mode. Nothing is blocked and the guardrails array
+ *               is untouched, but every swap the ENFORCE cap would have
+ *               blocked is logged as a `would_block_swap` override (riding
+ *               the eval record's guardrailOverrides telemetry) through the
+ *               SAME checkSectorCap math and the SAME preconditions as the
+ *               enforce path — the measured volume is exactly what enforce
+ *               would do, never a drifted parallel rule. Vehicle for reading
+ *               real would-block volume before the flip.
+ *   'enforce' — full behavior: the min(user, 35%) slot cap is injected at the
+ *               cron call site and blocks the 3rd-in-sector swap (2 of 6
+ *               allowed, 3 of 6 blocked on the flat6 book).
+ *
+ * Default 'off' (DARK-INERT at merge). Scope: TOURNAMENT (flat6) Diversifier
+ * battles only (founder Option A); user-authored maxSectorWeight guardrails
+ * are live Phase-4B behavior and fire under EVERY state of this flag. Walk
+ * 'off' → 'observe' → 'enforce' as a Release-4 staged-activation step,
+ * founder-executed — never in a build PR (the PR #510 lesson). See
+ * api/_utils/agentGuardrails.js (the sector-SLOT rule block).
+ */
+export const SECTOR_CAP_MODE = 'off';
 
 /**
  * WS1 — Rule-library archetype scoping: tri-state rollout mode.

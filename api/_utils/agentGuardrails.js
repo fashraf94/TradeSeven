@@ -19,54 +19,56 @@
 
 import { pickSwapReplacementCandidate } from './agentRiskManager.js';
 import { flattenBenchServer } from './agentScoring.js';
-import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
+import { SECTOR_CAP_MODE } from '../../src/config/featureFlags.js';
 import { getEffectiveArchetype } from './directiveIdentity.js';
-import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
+import { TOURNAMENT_GAME_MODE, AGENT_PICKS_PER_AGENT } from '../../src/constants/leagueTournament.js';
 
-// ============ ARCHETYPE INTEGRITY — Phase F (Diversifier sector-position cap) ============
+// ============ Release 2 PR-e — the sector-SLOT rule (Diversifier position cap) ============
 //
 // The ONE mechanical archetype-integrity piece: every other archetype is
 // identity-only (voice/gate), but Diversifier gets a real enforced swap-time
 // sector-POSITION cap, so "breadth is the strategy" is mechanically true, not just
 // narrated. It caps mid-battle SWAPS only (the initial draft lives in fenced
-// decide.js and is out of scope — R2).
+// decide.js and is out of scope — R2). Named honestly (spec §6): it is a
+// SLOT-count rule — sector share = slots-in-sector / the MODE's slot count,
+// under the EQUAL-WEIGHT-PER-SLOT invariant (Phase 0 confirmed flat6
+// tournament slots are equal-weighted; if weights ever vary, the slot rule's
+// honesty breaks — escalate, never patch here).
 //
 // SCOPE (founder ruling — Option A): TOURNAMENT (flat6) battles only. There the
-// agent book is exactly 6 non-crypto slots, so 2/6 = 33.3% (allowed) .. 3/6 = 50%
-// (blocked): the 35% cap encodes "max 2 per sector." NOTE: collectHeldPositions
-// does NOT exclude crypto — flat6 simply has none, so the denominator (held.length)
-// is a clean 6. Standard/tiered Diversifier books (7 slots incl. a mandatory crypto)
-// are intentionally OUT of scope here.
+// agent book is exactly AGENT_PICKS_PER_AGENT = 6 non-crypto slots, so
+// 2/6 = 33.3% (allowed) .. 3/6 = 50% (blocked): the 35% cap encodes "max 2 per
+// sector." The denominator is the MODE's slot count, never the momentary held
+// count — a partially-filled book must not inflate sector shares (spec §6:
+// "partial-fill construction never trapped"). Standard/tiered Diversifier books
+// (7 slots incl. a mandatory crypto) are intentionally OUT of scope here.
+//
+// FIRING (Release 2 PR-e — decoupled from ARCHETYPE_INTEGRITY_MODE, founder
+// ruling 2026-07-10): the cap fires ONLY under SECTOR_CAP_MODE='enforce'.
+// 'observe' measures without touching a decision — every swap enforce WOULD
+// have blocked is recorded as a `would_block_swap` override through the SAME
+// math and preconditions (see applyGuardrails' sectorSlotObserveCap). 'off' is
+// byte-identical to today.
 //
 // Correction C2 — inject at the CALL SITE, never inside applyGuardrails: the cron
 // skips applyGuardrails entirely when deployedGuardrails is empty, so a synthetic
 // guardrail added inside applyGuardrails would never reach a zero-guardrail
 // Diversifier (the common case — a fresh agent with no equipped rules). We augment
 // the array at the call site instead; the synthetic guardrail makes it non-empty,
-// so the existing `length > 0` skip self-resolves.
+// so the existing `length > 0` skip self-resolves. (The observe path has the same
+// trap: the cron's gate also opens when resolveSectorSlotObserveCap returns a cap.)
 export const DIVERSIFIER_SECTOR_CAP_PCT = 35; // max ~2 of 6 flat6 picks per sector
 
 /**
- * Augment a battle's deployedGuardrails with the Diversifier sector cap.
- * ENFORCE-only and tournament-only; the user can only make the cap TIGHTER
- * (effectiveCap = min(userCap, core 35%)), never looser. Returns the original array
- * unchanged when NOT in ENFORCE mode, the battle is not a tournament, or the
- * effective archetype is not Diversifier — so OFF/OBSERVE are byte-identical.
- *
- * The cap is a mechanical behavior change (it blocks swaps), so unlike the directive
- * gate — which evaluates + logs under OBSERVE — there is no passive half-measure
- * here: OBSERVE leaves swaps untouched and only ENFORCE applies the cap.
- *
- * @param {Array}  guardrails - battle.agentContext.deployedGuardrails (or []).
- * @param {Object} battle     - full battle doc (reads gameMode + agentContext.archetype).
- * @returns {Array} the (possibly augmented) guardrails array.
+ * The shared gate + merge for BOTH firing modes (enforce injection and observe
+ * measurement) — one home so the two can never drift on scope or on the
+ * min(user, core) rule. Returns null outside the rule's scope.
  */
-export function injectDiversifierSectorCap(guardrails, battle) {
+function resolveSectorSlotContext(guardrails, battle) {
   const base = Array.isArray(guardrails) ? guardrails : [];
-  if (ARCHETYPE_INTEGRITY_MODE !== 'enforce') return base;      // off/observe: byte-identical
-  if (battle?.gameMode !== TOURNAMENT_GAME_MODE) return base;   // Option A: tournament only
+  if (battle?.gameMode !== TOURNAMENT_GAME_MODE) return null;   // Option A: tournament only
   // Resolve via the Phase-C resolver (frozen battle snapshot), not a raw agent read.
-  if (getEffectiveArchetype(battle, null) !== 'diversifier') return base;
+  if (getEffectiveArchetype(battle, null) !== 'diversifier') return null;
 
   // The user can only TIGHTEN: effectiveCap = min(ALL user maxSectorWeight caps, core
   // 35%). Take the min over every existing numeric cap so a user's stricter value
@@ -74,15 +76,53 @@ export function injectDiversifierSectorCap(guardrails, battle) {
   const existingCaps = base.filter(g => g?.type === 'maxSectorWeight' && typeof g.value === 'number');
   const userCap = existingCaps.length ? Math.min(...existingCaps.map(g => g.value)) : Infinity;
   const effectiveCap = Math.min(userCap, DIVERSIFIER_SECTOR_CAP_PCT);
+  return { base, existingCaps, userCap, effectiveCap };
+}
+
+/**
+ * Augment a battle's deployedGuardrails with the Diversifier sector-slot cap.
+ * ENFORCE-only and tournament-only; the user can only make the cap TIGHTER
+ * (effectiveCap = min(userCap, core 35%)), never looser. Returns the original
+ * array unchanged when SECTOR_CAP_MODE is not 'enforce', the battle is not a
+ * tournament, or the effective archetype is not Diversifier — so OFF is
+ * byte-identical and OBSERVE never alters the array (its measurement rides
+ * resolveSectorSlotObserveCap → applyGuardrails instead).
+ *
+ * @param {Array}  guardrails - battle.agentContext.deployedGuardrails (or []).
+ * @param {Object} battle     - full battle doc (reads gameMode + agentContext.archetype).
+ * @returns {Array} the (possibly augmented) guardrails array.
+ */
+export function injectDiversifierSectorCap(guardrails, battle) {
+  const base = Array.isArray(guardrails) ? guardrails : [];
+  if (SECTOR_CAP_MODE !== 'enforce') return base; // PR-e decouple: fires on its OWN flag, never ARCHETYPE_INTEGRITY_MODE
+  const ctx = resolveSectorSlotContext(guardrails, battle);
+  if (!ctx) return base;
   console.log(
-    `[Guardrails] Diversifier sector cap: user=${existingCaps.length ? userCap : 'none'} core=${DIVERSIFIER_SECTOR_CAP_PCT} -> effective=${effectiveCap}`,
+    `[Guardrails] Diversifier sector cap: user=${ctx.existingCaps.length ? ctx.userCap : 'none'} core=${DIVERSIFIER_SECTOR_CAP_PCT} -> effective=${ctx.effectiveCap}`,
   );
 
   // UN-SHADOWABLE: drop EVERY existing maxSectorWeight entry and append the synthetic
   // LAST, so applyGuardrails' keep-last dedup (byType) always lands on our cap — no
   // second maxSectorWeight can shadow it, whatever shape the snapshot had.
-  const synthetic = { ...(existingCaps[0] || {}), type: 'maxSectorWeight', value: effectiveCap, enforcement: 'hard' };
+  const synthetic = { ...(ctx.existingCaps[0] || {}), type: 'maxSectorWeight', value: ctx.effectiveCap, enforcement: 'hard' };
   return [...base.filter(g => g?.type !== 'maxSectorWeight'), synthetic];
+}
+
+/**
+ * OBSERVE-mode half (Release 2 PR-e, founder ruling D1: observe logs
+ * would-blocks): resolves the effective slot cap this battle WOULD run under
+ * enforce — same gates, same min(user, core) merge, via the shared context —
+ * or null when SECTOR_CAP_MODE is not 'observe' / outside the rule's scope.
+ * The caller passes the number into applyGuardrails' sectorSlotObserveCap so
+ * the would-block is evaluated under the enforce path's exact preconditions.
+ * NEVER mutates or augments the guardrails array — under observe, user
+ * guardrails behave byte-identically to today.
+ *
+ * @returns {number|null} the effective cap percentage, or null.
+ */
+export function resolveSectorSlotObserveCap(guardrails, battle) {
+  if (SECTOR_CAP_MODE !== 'observe') return null;
+  return resolveSectorSlotContext(guardrails, battle)?.effectiveCap ?? null;
 }
 
 /**
@@ -95,7 +135,7 @@ export function injectDiversifierSectorCap(guardrails, battle) {
  * @property {string} action          - 'forced_exit' | 'blocked_swap' | 'note' |
  *                                      'skipped_incompatible' | 'blocked_by_lock' |
  *                                      'reinforced_haiku' | 'forced_exit_no_bench' |
- *                                      'pending_next_tick'
+ *                                      'pending_next_tick' | 'would_block_swap'
  * @property {string} originalDecision
  * @property {string|null} [replacementSymbol]
  * @property {string} [note]
@@ -111,6 +151,11 @@ export function injectDiversifierSectorCap(guardrails, battle) {
  * @param {Object}   args.prices            - { symbol: { current, changePercent } }.
  * @param {Set<string>} [args.lockedPositions]  - Symbols protected by risk LOCK.
  * @param {Object}   [args.stockRegimes]    - { symbol: regime } (for distressed check).
+ * @param {number|null} [args.sectorSlotObserveCap] - Release 2 PR-e observe mode:
+ *   the effective slot cap from resolveSectorSlotObserveCap, or null (the inert
+ *   default — absent/null is byte-identical to pre-PR-e behavior). When set, a
+ *   proposed SWAP the enforce cap would have blocked is recorded as a
+ *   `would_block_swap` override WITHOUT touching the decision.
  * @returns {{
  *   decision: 'HOLD' | 'SWAP',
  *   symbolOut: string|null,
@@ -127,6 +172,7 @@ export function applyGuardrails({
   prices,
   lockedPositions,
   stockRegimes,
+  sectorSlotObserveCap = null,
 }) {
   const originalDecision = haikuResult?.decision || 'HOLD';
   const passthrough = {
@@ -138,8 +184,11 @@ export function applyGuardrails({
     sourceNote: null,
   };
 
-  // No-op path: no guardrails configured.
-  if (!Array.isArray(guardrails) || guardrails.length === 0) {
+  // No-op path: no guardrails configured — UNLESS observe measurement is on
+  // (a zero-guardrail Diversifier is the C2 common case; the observe volume
+  // read must include it, so an empty array proceeds when the shadow cap is
+  // set and every per-type check below no-ops on the empty index).
+  if ((!Array.isArray(guardrails) || guardrails.length === 0) && typeof sectorSlotObserveCap !== 'number') {
     return passthrough;
   }
   if (!battle || !battle.portfolio) {
@@ -152,7 +201,7 @@ export function applyGuardrails({
 
   // Index guardrails by type for quick lookup.
   const byType = {};
-  for (const g of guardrails) {
+  for (const g of Array.isArray(guardrails) ? guardrails : []) {
     if (g && typeof g.type === 'string') byType[g.type] = g;
   }
 
@@ -239,6 +288,39 @@ export function applyGuardrails({
       });
     } catch (err) {
       console.warn('[Guardrails] maxSectorWeight check failed:', err?.message);
+    }
+  }
+
+  // ---- 3b) Release 2 PR-e: the sector-SLOT rule, OBSERVE mode ----
+  // The would-block shadow runs under the enforce path's EXACT preconditions
+  // (same !forcedBreach precedence, same proposed-SWAP shape, the same
+  // checkSectorCap math), so the logged volume is precisely what 'enforce'
+  // would have blocked — never a drifted parallel rule. The decision is NEVER
+  // touched here; the record rides `overrides` into the eval-record telemetry.
+  if (
+    typeof sectorSlotObserveCap === 'number' &&
+    !forcedBreach &&
+    originalDecision === 'SWAP' &&
+    haikuResult?.symbolOut &&
+    haikuResult?.symbolIn
+  ) {
+    try {
+      const wouldBlock = checkSectorCap({
+        haikuResult,
+        battle,
+        maxSectorValue: sectorSlotObserveCap,
+      });
+      if (wouldBlock) {
+        const observed = {
+          ...wouldBlock,
+          action: 'would_block_swap',
+          note: `[SectorSlot observe] ${wouldBlock.note}`,
+        };
+        overrides.push(observed);
+        console.log('[SectorSlot] would_block', JSON.stringify({ battleId: battle?.id ?? null, ...observed }));
+      }
+    } catch (err) {
+      console.warn('[Guardrails] sector-slot observe check failed:', err?.message);
     }
   }
 
@@ -488,15 +570,29 @@ function pickWorstBreach(positions, prices, battle, evaluatorFn, configuredThres
 }
 
 /**
- * Check whether Haiku's proposed SWAP would push any sector above the cap.
- * Sector weight is computed by slot-count share (BaggerBomb is slot-based, not
- * dollar-weighted) — the simulated post-swap sector map is compared against
- * the cap.
+ * Check whether Haiku's proposed SWAP would push any sector above the cap,
+ * evaluated against the PROJECTED post-trade book (symbolOut removed,
+ * symbolIn added). Sector weight is computed by slot-count share (BaggerBomb
+ * is slot-based, not dollar-weighted) under the EQUAL-WEIGHT-PER-SLOT
+ * invariant — see the sector-SLOT rule block above.
+ *
+ * Release 2 PR-e — the denominator: in TOURNAMENT mode it is the MODE's slot
+ * count (AGENT_PICKS_PER_AGENT = 6, the flat6 book config), NOT the momentary
+ * held count. On a full book the two are identical — and a full book is every
+ * KNOWN reachable state (decide.js validates prescribed deploys to exactly 6;
+ * a forced exit with no bench DEFERS rather than emptying a slot). The
+ * slot-count denominator exists so an UNKNOWN partial state (corrupt doc, a
+ * future path) can never inflate shares and trap construction — 2 in a sector
+ * must read 2/6 whether the book holds 3 or 6 (spec §6: "partial-fill
+ * construction never trapped"). This applies to any tournament maxSectorWeight
+ * check, flag-independent (spec §6 authorizes the fix unconditionally).
+ * Non-tournament books keep the held-count denominator: user caps there are
+ * live Phase-4B behavior this authorization does not change.
  */
 function checkSectorCap({ haikuResult, battle, maxSectorValue }) {
   const { symbolOut, symbolIn } = haikuResult;
   const held = collectHeldPositions(battle);
-  const totalSlots = held.length;
+  const totalSlots = battle?.gameMode === TOURNAMENT_GAME_MODE ? AGENT_PICKS_PER_AGENT : held.length;
   if (totalSlots === 0) return null;
 
   // Resolve incoming sector from bench.

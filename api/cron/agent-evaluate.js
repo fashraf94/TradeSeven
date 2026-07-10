@@ -43,7 +43,7 @@ import {
 import { generateTradeNarration } from '../_utils/voiceLayerTradeNarration.js';
 import { generateAnticipation } from '../_utils/voiceLayerAnticipation.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
-import { applyGuardrails, injectDiversifierSectorCap } from '../_utils/agentGuardrails.js';
+import { applyGuardrails, injectDiversifierSectorCap, resolveSectorSlotObserveCap } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { buildFreshAtrPercentileMap, resolveHurdleAtr } from '../_utils/hurdleAtr.js';
@@ -1698,16 +1698,26 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // strategy guardrails from agentContext and may rewrite Haiku's decision
     // when hard quantitative thresholds are breached. No-op if no strategy
     // is deployed (empty or undefined array).
-    // Phase F (Archetype Integrity) — inject the Diversifier sector cap BEFORE the
+    // Release 2 PR-e (sector-SLOT rule) — inject the Diversifier slot cap BEFORE the
     // length>0 skip, so a tournament Diversifier with zero equipped guardrails still
     // gets the synthetic cap (the C2 trap: applyGuardrails is skipped entirely on an
-    // empty array). ENFORCE-only — OFF/OBSERVE / non-tournament / non-Diversifier
-    // returns the array untouched → byte-identical.
+    // empty array). Injection fires ONLY under SECTOR_CAP_MODE='enforce' (decoupled
+    // from ARCHETYPE_INTEGRITY_MODE, founder ruling 2026-07-10) — OFF/OBSERVE /
+    // non-tournament / non-Diversifier returns the array untouched → byte-identical.
     const deployedGuardrails = injectDiversifierSectorCap(
       battle.agentContext?.deployedGuardrails || [],
       battle,
     );
-    if (deployedGuardrails.length > 0) {
+    // OBSERVE half: the effective cap this battle WOULD run under enforce (or
+    // null off-scope/off-mode). Non-null opens the gate below even on an empty
+    // array — the C2 trap applies to measurement too: a zero-guardrail
+    // Diversifier is the common case, and skipping it would systematically
+    // undercount the would-block volume the flag walk reads.
+    const sectorSlotObserveCap = resolveSectorSlotObserveCap(
+      battle.agentContext?.deployedGuardrails || [],
+      battle,
+    );
+    if (deployedGuardrails.length > 0 || sectorSlotObserveCap !== null) {
       try {
         const result = applyGuardrails({
           haikuResult,
@@ -1716,6 +1726,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           prices,
           lockedPositions,
           stockRegimes,
+          sectorSlotObserveCap,
         });
         guardrailOverrides = result.overrides || [];
         guardrailStatusMessage = result.statusMessage;
