@@ -433,4 +433,4 @@ export const CORRELATION_LAB_ENABLED = true;
  * Flip in a one-line follow-up PR after a founder Vercel-preview smoke (the
  * SCOUTING_BOARD_ENABLED precedent) — never in the build PR.
  */
-export const CORRELATION_RELATIONSHIP_QUALITY_ENABLED = false;
+export const CORRELATION_RELATIONSHIP_QUALITY_ENABLED = true;
