@@ -315,6 +315,26 @@ export const CONFLICT_RECONCILER_INJECT_ENABLED = true;
 export const STANDING_LEANS_ENABLED = false;
 
 /**
+ * Release 2 (Fenced Customization Bundle V1.1) — TEMPO DIAL activation.
+ *
+ * Gates the tempo-dial surface: the set-tempo-dial endpoint 404s while false,
+ * and the clamp layer (api/_utils/tempoDialClamp.js) resolves EFFECTIVE tempo
+ * to 'standard' whenever this is false OR the band table's
+ * forKnobConfigVersion mismatches the deployed KNOB_CONFIG_VERSION
+ * (version-bound fail-closed, spec changelog #13) — desired state is kept and
+ * the divergence is visible via the structured provenance object
+ * (suppressionReason), never silent.
+ *
+ * Boolean by founder ruling D1 (2026-07-10; the spec's TEMPO_DIAL_MODE
+ * 'off'|'on' resolved to the house *_ENABLED shape). OFF at merge
+ * (DARK-INERT). Flip is a Release-4 staged-activation-walk step,
+ * founder-executed in its own watch window — never in a build PR (the PR
+ * #510 lesson). The band table itself is PROVISIONAL until promoted from the
+ * B4 acceptance report's real-data cross-check.
+ */
+export const TEMPO_DIAL_ENABLED = false;
+
+/**
  * Archetype Integrity / "Third Path" — tri-state rollout mode.
  *
  * Gates the whole archetype-integrity feature together (the deterministic
