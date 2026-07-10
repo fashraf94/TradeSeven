@@ -699,4 +699,13 @@ describe('agent-evaluate cron — Release 2 tempo-dial wiring (structural)', () 
   it('the epoch telemetry event carries the clamp provenance (desired-vs-effective rides the same record)', () => {
     expect(source).toMatch(/dialProvenance: dialClamp\.provenance,/);
   });
+
+  it('the epoch GLUE threads the full mode tuple + pre-gated directive + deploy metadata into the orchestrator (PR-f lock)', () => {
+    // The orchestrator itself is unit-tested; this pins the cron's WIRING to
+    // it — a dropped mode flag, an un-gated directive, or lost deploy
+    // metadata here would be invisible to every behavioral test.
+    expect(source).toMatch(
+      /recordControlEpochIfNeeded\(\{\s*battleRef,\s*battle,\s*arrayUnion: FieldValue\.arrayUnion,\s*modes: \{\s*archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,\s*standingLeansEnabled: STANDING_LEANS_ENABLED,\s*tempoDialEnabled: TEMPO_DIAL_ENABLED,\s*\},\s*resolveControls,\s*directive: isDirectiveActive\(battle\?\.directive, battle\) \? battle\.directive : null,\s*dialProvenance: dialClamp\.provenance,\s*deploySha: globalThis\.process\?\.env\?\.VERCEL_GIT_COMMIT_SHA \|\| null,\s*knobConfigVersion: KNOB_CONFIG_VERSION,\s*dialBandVersion: TEMPO_DIAL_BANDS\.forKnobConfigVersion,\s*\}\);/,
+    );
+  });
 });

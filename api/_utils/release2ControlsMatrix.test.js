@@ -58,10 +58,10 @@ vi.mock('./firebaseAdmin.js', () => ({ getFirebaseAdmin: () => ({}) }));
 const { buildStrategyUserPrompt } = await import('./agentPromptAssembly.js');
 const { buildLiveContextBlock } = await import('./agentEvalPromptAssembly.js');
 const { resolveControls, SUPPRESSION_REASONS } = await import('./controlPromptRenderer.js');
-const { computeEpochKey, recordControlEpochIfNeeded } = await import('./controlSuppressionTelemetry.js');
+const { recordControlEpochIfNeeded } = await import('./controlSuppressionTelemetry.js');
 const { revalidateStandingLeans, buildCustomizationSnapshot, STANDING_LEANS_CAP } = await import('./leanRevalidation.js');
 const { computeOpposedLeans, buildLeanOverrideRecords } = await import('./leanOverrides.js');
-const { clampHftConfig, resolveTempoDial, TEMPO_SUPPRESSION_REASONS } = await import('./tempoDialClamp.js');
+const { clampHftConfig, resolveTempoDial, desiredTempoOf, TEMPO_SUPPRESSION_REASONS } = await import('./tempoDialClamp.js');
 const { TEMPO_DIAL_BANDS, VALID_TEMPO_VALUES } = await import('./tempoDialBands.js');
 const { buildSwapProvenance } = await import('./swapProvenance.js');
 // Fenced module — READ/CALL ONLY (BUILD_RULES §1).
@@ -299,16 +299,20 @@ describe('B. one directive opposing both equipped leans — single confirmation,
 
 // ==================== C. TRANSITION SEQUENCES (changelog #16) ====================
 //
-// The real epoch orchestrator drives battle.controlEpochLog exactly as the
-// cron does (durable write stubbed; the in-memory sync is the half the
-// prompts read), and the REAL eval assembly renders each tick. Epochs are
-// tick-observed; a "tick" here = one orchestrator call + one assembly build.
+// battle.controlEpochLog is driven via the SAME extracted orchestrator the
+// cron calls (durable write stubbed; the in-memory sync is the half the
+// prompts read) — the cron's own glue wiring into it is source-locked in
+// agent-evaluate.test.js. The REAL eval assembly renders each tick. Epochs
+// are tick-observed; a "tick" here = one orchestrator call + one assembly
+// build. Epoch keys are asserted as LITERAL strings, never re-derived
+// through computeEpochKey (a self-referential comparison would stay green
+// if the key ever stopped encoding a flag).
 describe('C. mode round-trips both directions — no resurrection, leans resume, epoch events exact', () => {
   const stubRef = { update: async () => {} };
   const arrayUnion = (e) => e;
 
-  const tick = async (battle) => {
-    await recordControlEpochIfNeeded({
+  const tick = async (battle, { dialProvenance = null } = {}) => {
+    const event = await recordControlEpochIfNeeded({
       battleRef: stubRef,
       battle,
       arrayUnion,
@@ -319,8 +323,13 @@ describe('C. mode round-trips both directions — no resurrection, leans resume,
       },
       resolveControls,
       directive: battle.directive ?? null,
+      dialProvenance,
+      deploySha: 'sha-matrix',
+      knobConfigVersion: KNOB_CONFIG_VERSION,
+      dialBandVersion: TEMPO_DIAL_BANDS.forKnobConfigVersion,
     });
-    return buildEval(battle);
+    const out = await buildEval(battle);
+    return { out, event };
   };
 
   const freshBattle = () => mkBattle({
@@ -335,32 +344,42 @@ describe('C. mode round-trips both directions — no resurrection, leans resume,
     const battle = freshBattle();
 
     setFlags({ integrity: 'enforce' });
-    const t1 = await tick(battle);
+    // The first epoch's event carries the tempo provenance + deploy metadata
+    // it was handed (the desired-vs-effective record rides the SAME event).
+    const suppressedDial = resolveTempoDial({ desiredTempo: 'aggressive', dialEnabled: false }).provenance;
+    const { out: t1, event: e1 } = await tick(battle, { dialProvenance: suppressedDial });
     expect(t1).toContain(DIRECTIVE_TEXT);
     expect(t1).toContain(LEAN_LINE);
+    expect(e1.tempo).toMatchObject({
+      tempoDesired: 'aggressive',
+      tempoEffective: 'standard',
+      suppressionReason: TEMPO_SUPPRESSION_REASONS.DIAL_DISABLED,
+    });
+    expect(e1.deploySha).toBe('sha-matrix');
+    expect(e1.knobConfigVersion).toBe(KNOB_CONFIG_VERSION);
 
-    const t2 = await tick(battle); // same epoch — silent
+    const { out: t2, event: e2 } = await tick(battle); // same epoch — silent
+    expect(e2).toBeNull();
     expect(battle.controlEpochLog).toHaveLength(1);
     expect(t2).toContain(DIRECTIVE_TEXT);
 
     setFlags({ integrity: 'observe' });
-    const t3 = await tick(battle);
+    const { out: t3 } = await tick(battle);
     expect(battle.controlEpochLog).toHaveLength(2);
     expect(t3).not.toContain('ACTIVE DIRECTIVE');
     expect(t3).toContain(LEAN_LINE); // leans are NOT epoch-bound
 
     setFlags({ integrity: 'enforce' });
-    const t4 = await tick(battle);
+    const { out: t4 } = await tick(battle);
     expect(battle.controlEpochLog).toHaveLength(3);
     expect(t4).not.toContain('ACTIVE DIRECTIVE'); // epoch-killed — no resurrection
     expect(t4).toContain(LEAN_LINE);              // leans resumed untouched
 
-    // Epoch events exact: keys sequence + the middle entry carries the kill.
-    const keys = battle.controlEpochLog.map((e) => e.epochKey);
-    expect(keys).toEqual([
-      computeEpochKey({ archetypeIntegrityMode: 'enforce', standingLeansEnabled: true, tempoDialEnabled: false }),
-      computeEpochKey({ archetypeIntegrityMode: 'observe', standingLeansEnabled: true, tempoDialEnabled: false }),
-      computeEpochKey({ archetypeIntegrityMode: 'enforce', standingLeansEnabled: true, tempoDialEnabled: false }),
+    // Epoch events exact: LITERAL key sequence + the middle entry carries the kill.
+    expect(battle.controlEpochLog.map((e) => e.epochKey)).toEqual([
+      'integrity=enforce|leans=on|dial=off',
+      'integrity=observe|leans=on|dial=off',
+      'integrity=enforce|leans=on|dial=off',
     ]);
     expect(battle.controlEpochLog[0].suppressedDirectiveIds).toEqual([]);
     expect(battle.controlEpochLog[1].suppressedDirectiveIds).toEqual(['thread-rt']);
@@ -374,19 +393,19 @@ describe('C. mode round-trips both directions — no resurrection, leans resume,
     const battle = freshBattle();
 
     setFlags({ integrity: 'observe' });
-    const t1 = await tick(battle);
+    const { out: t1 } = await tick(battle);
     expect(t1).not.toContain('ACTIVE DIRECTIVE');
     expect(t1).toContain(LEAN_LINE);
     expect(battle.controlEpochLog[0].suppressedDirectiveIds).toEqual(['thread-rt']);
 
     setFlags({ integrity: 'enforce' });
-    const t2 = await tick(battle);
+    const { out: t2 } = await tick(battle);
     expect(battle.controlEpochLog).toHaveLength(2);
     expect(t2).not.toContain('ACTIVE DIRECTIVE'); // dead on arrival — the observe epoch is its kill record
     expect(t2).toContain(LEAN_LINE);
 
     setFlags({ integrity: 'observe' });
-    const t3 = await tick(battle);
+    const { out: t3 } = await tick(battle);
     expect(battle.controlEpochLog).toHaveLength(3);
     expect(t3).not.toContain('ACTIVE DIRECTIVE');
     expect(t3).toContain(LEAN_LINE);
@@ -398,12 +417,33 @@ describe('C. mode round-trips both directions — no resurrection, leans resume,
       standingLeans: [leanSnap('guardian', 'CP-01')],
     });
     setFlags({ integrity: 'observe', leans: true });
-    expect(await tick(battle)).toContain(LEAN_LINE);
+    expect((await tick(battle)).out).toContain(LEAN_LINE);
     setFlags({ integrity: 'observe', leans: false });
-    expect(await tick(battle)).not.toContain('STANDING LEANS');
+    expect((await tick(battle)).out).not.toContain('STANDING LEANS');
     setFlags({ integrity: 'observe', leans: true });
-    expect(await tick(battle)).toContain(LEAN_LINE); // resumed — durable desired state
+    expect((await tick(battle)).out).toContain(LEAN_LINE); // resumed — durable desired state
     expect(battle.controlEpochLog).toHaveLength(3);
+  });
+
+  it('a DIAL flag round-trip opens its own epochs — the c+a → c+a+b enablement flip is observable (literal key pins)', async () => {
+    const battle = mkBattle({
+      archetype: 'guardian',
+      standingLeans: [leanSnap('guardian', 'CP-01')],
+    });
+    setFlags({ integrity: 'observe', leans: true, dial: false });
+    await tick(battle);
+    setFlags({ integrity: 'observe', leans: true, dial: true });
+    await tick(battle);
+    setFlags({ integrity: 'observe', leans: true, dial: false });
+    await tick(battle);
+    // Literal pins: computeEpochKey MUST encode the dial flag — a key that
+    // silently dropped it would make the PR-b enablement flip epoch-invisible
+    // (no event, no tempo provenance logged for the transition).
+    expect(battle.controlEpochLog.map((e) => e.epochKey)).toEqual([
+      'integrity=observe|leans=on|dial=off',
+      'integrity=observe|leans=on|dial=on',
+      'integrity=observe|leans=on|dial=off',
+    ]);
   });
 });
 
@@ -558,28 +598,68 @@ describe('F. version-bound fail-closed — promotion, reversion, missing/unknown
 describe('G. swap provenance — truthful in every dial state, one nested key, exact shape', () => {
   const receiptFor = (args) => buildSwapProvenance(resolveTempoDial(args).provenance);
 
+  // Version VALUES asserted per case (not just key presence): the receipt's
+  // two version fields are the audit trail for WHICH generation clamped.
+  const BAND_V = TEMPO_DIAL_BANDS.forKnobConfigVersion;
   const CASES = [
-    ['default standard (no user value)', { dialEnabled: true }, { tempoDesired: 'standard', tempoEffective: 'standard', selectionSource: 'default' }, false],
-    ['EXPLICIT standard (distinguishable from default)', { desiredTempo: 'standard', dialEnabled: true }, { tempoDesired: 'standard', tempoEffective: 'standard', selectionSource: 'user_dial' }, false],
-    ['applied aggressive', { desiredTempo: 'aggressive', dialEnabled: true }, { tempoDesired: 'aggressive', tempoEffective: 'aggressive', selectionSource: 'user_dial' }, false],
-    ['dial off', { desiredTempo: 'measured', dialEnabled: false }, { tempoDesired: 'measured', tempoEffective: 'standard', suppressionReason: 'dial_disabled' }, true],
-    ['version mismatch', { desiredTempo: 'measured', dialEnabled: true, deployedKnobConfigVersion: 99 }, { tempoDesired: 'measured', tempoEffective: 'standard', suppressionReason: 'band_version_mismatch' }, true],
-    ['unknown value', { desiredTempo: 'warp', dialEnabled: true }, { tempoDesired: 'warp', tempoEffective: 'standard', suppressionReason: 'unknown_tempo_value' }, true],
+    ['default standard (no user value)', { dialEnabled: true }, { tempoDesired: 'standard', tempoEffective: 'standard', selectionSource: 'default', dialBandVersion: BAND_V, knobConfigVersion: KNOB_CONFIG_VERSION }, false],
+    ['EXPLICIT standard (distinguishable from default)', { desiredTempo: 'standard', dialEnabled: true }, { tempoDesired: 'standard', tempoEffective: 'standard', selectionSource: 'user_dial', dialBandVersion: BAND_V, knobConfigVersion: KNOB_CONFIG_VERSION }, false],
+    ['applied aggressive', { desiredTempo: 'aggressive', dialEnabled: true }, { tempoDesired: 'aggressive', tempoEffective: 'aggressive', selectionSource: 'user_dial', dialBandVersion: BAND_V, knobConfigVersion: KNOB_CONFIG_VERSION }, false],
+    // A user-supplied desired value stamps selectionSource 'user_dial' even
+    // when suppressed — the receipt records WHO asked, separately from what
+    // was applied.
+    ['dial off', { desiredTempo: 'measured', dialEnabled: false }, { tempoDesired: 'measured', tempoEffective: 'standard', selectionSource: 'user_dial', suppressionReason: 'dial_disabled', dialBandVersion: BAND_V, knobConfigVersion: KNOB_CONFIG_VERSION }, true],
+    ['version mismatch', { desiredTempo: 'measured', dialEnabled: true, deployedKnobConfigVersion: 99 }, { tempoDesired: 'measured', tempoEffective: 'standard', selectionSource: 'user_dial', suppressionReason: 'band_version_mismatch', dialBandVersion: BAND_V, knobConfigVersion: 99 }, true],
+    ['unknown value', { desiredTempo: 'warp', dialEnabled: true }, { tempoDesired: 'warp', tempoEffective: 'standard', selectionSource: 'user_dial', suppressionReason: 'unknown_tempo_value', dialBandVersion: BAND_V, knobConfigVersion: KNOB_CONFIG_VERSION }, true],
   ];
 
   for (const [label, args, expected, suppressed] of CASES) {
     it(`${label}: the receipt says exactly what happened`, () => {
       const receipt = receiptFor(args);
       expect(Object.keys(receipt)).toEqual(['swapProvenance']); // one nested key — receipt fields can never collide
-      expect(receipt.swapProvenance).toMatchObject(expected);
       const keys = Object.keys(receipt.swapProvenance).sort();
       expect(keys).toEqual(
         suppressed
           ? ['dialBandVersion', 'knobConfigVersion', 'selectionSource', 'suppressionReason', 'tempoDesired', 'tempoEffective']
           : ['dialBandVersion', 'knobConfigVersion', 'selectionSource', 'tempoDesired', 'tempoEffective'],
       );
+      // Exact-equal over the FULL value set (the key check above makes this
+      // total): every field value, versions included, is the truth.
+      expect(receipt.swapProvenance).toEqual(expected);
     });
   }
+
+  it('the BATTLE seam: both cron read paths resolve the desired tempo via desiredTempoOf from the snapshot', () => {
+    // The production wiring is desiredTempoOf(battle) at BOTH call sites
+    // (the eval clamp seam and handleGameplanMeeting's provenance) — this is
+    // the only behavioral coverage of the accessor, so a path regression
+    // (e.g. reading battle.dials instead of agentContext.dials) fails HERE.
+    const battle = mkBattle({ archetype: 'guardian' });
+    battle.agentContext.dials = { tempo: 'aggressive' };
+
+    // Eval seam shape:
+    const clamp = clampHftConfig({
+      hftConfig: { swapWindow: { capPerWindow: 4 } },
+      desiredTempo: desiredTempoOf(battle),
+      dialEnabled: true,
+    });
+    expect(clamp.effectiveTempo).toBe('aggressive');
+    expect(clamp.hftConfig.swapWindow.capPerWindow).toBe(Math.round(4 * 1.3));
+
+    // Gameplan seam shape:
+    const receipt = buildSwapProvenance(resolveTempoDial({ desiredTempo: desiredTempoOf(battle), dialEnabled: true }).provenance);
+    expect(receipt.swapProvenance).toMatchObject({
+      tempoDesired: 'aggressive',
+      tempoEffective: 'aggressive',
+      selectionSource: 'user_dial',
+    });
+
+    // The accessor reads agentContext.dials.tempo and NOTHING else.
+    expect(desiredTempoOf({ dials: { tempo: 'aggressive' } })).toBeUndefined();      // wrong altitude
+    expect(desiredTempoOf({ agentContext: { tempo: 'aggressive' } })).toBeUndefined(); // wrong nesting
+    expect(desiredTempoOf({ agentContext: { dials: {} } })).toBeUndefined();
+    expect(desiredTempoOf(null)).toBeUndefined();
+  });
 
   it('pre-PR-b paths (no provenance) spread to NOTHING — always safe', () => {
     expect(buildSwapProvenance(null)).toEqual({});
@@ -632,8 +712,15 @@ describe('H. safety/structural fields are verbatim at every band; only the five 
       expect(out.hurdleFloor.requireBenchPositive).toBe(true);
       // Unknown/future keys ride through untouched (merge-not-replace).
       expect(out.futureUnknownKnob).toBe(input.futureUnknownKnob);
-      // The input object itself was never mutated.
+      // The INPUT object was never mutated — asserted for ALL FIVE band
+      // leaves: resolveHftConfig hands back the module-level object from the
+      // fenced archetype table, so an in-place write here would compound the
+      // shared config across every battle and tick (the exact bug class an
+      // aliased-output-only check cannot see).
       expect(input.swapWindow.capPerWindow).toBe(4);
+      expect(input.forcedRotation.ticksThreshold).toBe(6);
+      expect(input.hurdleFloor.byReason.haiku_decision.atrMultiplier).toBe(0.4);
+      expect(input.hurdleFloor.byReason.stagnation.atrMultiplier).toBe(0.3);
       expect(input.hurdleFloor.default.atrMultiplier).toBe(0.5);
     });
   }
