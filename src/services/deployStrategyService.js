@@ -175,10 +175,11 @@ export async function deployExperimentToAgent({
   // 5. Write via the rev-bumping settings endpoint (R1(a)): deployedStrategy
   //    feeds the battle snapshot (agentContext.deployedGuardrails reads its
   //    guardrails), so the write must move agent.settingsRev. The endpoint
-  //    stamps lastDeployedAt server-side as an ISO string — matching
-  //    decide.js's own writes (decide.js:523/:1079) and its
-  //    `new Date(agent.lastDeployedAt)` read (the old serverTimestamp()
-  //    Timestamp made that read misparse).
+  //    stamps strategyLastDeployedAt server-side (ISO) — an ADDITIVE field,
+  //    deliberately not lastDeployedAt: decide.js's 2-min deploy cooldown
+  //    reads lastDeployedAt, and this writer's old serverTimestamp() never
+  //    armed it (`new Date(Timestamp)` misparsed to NaN), so strategy
+  //    deploys must keep NOT arming that cooldown post-migration.
   await updateAgentSettings(agent.id, { deployedStrategy });
 
   // 6. Fire-and-forget shadow logger write.

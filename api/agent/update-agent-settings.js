@@ -18,9 +18,14 @@
 //     (txUpdateAgentSettings — spec changelog #7)
 //   - identical-value writes are idempotent 200 no-ops (no phantom revs
 //     from redundant UI persists)
-//   - lastDeployedAt is stamped server-side (ISO) whenever a non-null
-//     deployedStrategy lands — matching decide.js's own ISO writes
-//     (decide.js:523/:1079) and its `new Date(agent.lastDeployedAt)` read.
+//   - strategyLastDeployedAt is stamped server-side (ISO) whenever a
+//     non-null deployedStrategy lands. ADDITIVE field, deliberately NOT
+//     lastDeployedAt: decide.js's 2-min deploy cooldown (decide.js:157-162)
+//     reads lastDeployedAt, and the legacy client writer's serverTimestamp()
+//     never armed it (`new Date(Timestamp)` → Invalid Date → NaN compare →
+//     false), so stamping lastDeployedAt here would newly 429 decide.js
+//     deploys within 2 min of a strategy deploy — a behavior change this
+//     migration must not smuggle in (/code-review, Phase-2).
 //
 // The allowlist is EXACT: any other key in `set` is a 400. Growing it is a
 // deliberate act (add the key + its validator + its test), never a default.
@@ -68,6 +73,31 @@ const FIELD_VALIDATORS = Object.freeze({
   },
 });
 
+// JSON.stringify with recursively SORTED object keys, mirroring its other
+// semantics (undefined properties dropped, undefined array slots → null).
+// The idempotence check compares a client payload against Firestore data,
+// and Firestore map keys come back sorted — insertion order carries no
+// meaning, so it must not read as a change and mint a phantom settingsRev.
+// Array order IS preserved (it is meaningful for equippedTraits). Both sides
+// are JSON-shaped: the request by the validators, the at-rest value because
+// this endpoint (or the JSON-payload client writers it replaced) wrote it.
+function stableStringify(value) {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => stableStringify(v) ?? 'null').join(',')}]`;
+  }
+  const body = Object.keys(value)
+    .sort()
+    .map((k) => {
+      const v = stableStringify(value[k]);
+      return v === undefined ? undefined : `${JSON.stringify(k)}:${v}`;
+    })
+    .filter((s) => s !== undefined)
+    .join(',');
+  return `{${body}}`;
+}
+
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 30, windowMs: 60_000 } })) {
     return;
@@ -93,13 +123,18 @@ export default async function handler(req, res) {
     });
   }
   for (const [key, value] of Object.entries(set)) {
-    const validator = FIELD_VALIDATORS[key];
-    if (!validator) {
+    // Object.hasOwn, never a bare property lookup: JSON bodies can carry own
+    // keys like "__proto__" or "constructor" that a plain FIELD_VALIDATORS[key]
+    // would resolve THROUGH the prototype chain to a non-validator function
+    // (/code-review, Phase-2). Prototype-chain names are simply "not
+    // allowlisted" like any other stranger key.
+    if (!Object.hasOwn(FIELD_VALIDATORS, key)) {
       return res.status(400).json({
         error: 'field_not_allowlisted',
         message: `"${key}" is not an allowlisted settings field (allowed: ${Object.keys(FIELD_VALIDATORS).join(', ')}).`,
       });
     }
+    const validator = FIELD_VALIDATORS[key];
     const problem = validator(value);
     if (problem) {
       return res.status(400).json({ error: 'invalid_field', message: problem });
@@ -120,20 +155,23 @@ export default async function handler(req, res) {
       // NO battle-lock — parity with the migrated client writers (see header).
 
       // Idempotent: every requested field already deep-equals the stored
-      // value → 200 no-op, no phantom settingsRev.
+      // value → 200 no-op, no phantom settingsRev. Stable stringify, not
+      // plain JSON.stringify — Firestore returns map keys in ITS order, not
+      // the client's insertion order, so key order must not read as change.
       const changed = Object.entries(set).some(
-        ([key, value]) => JSON.stringify(agent[key] ?? null) !== JSON.stringify(value ?? null),
+        ([key, value]) => stableStringify(agent[key] ?? null) !== stableStringify(value ?? null),
       );
       if (!changed) {
         return { idempotent: true };
       }
 
       // settingsRev rides structurally (Release 2 changelog #7). A non-null
-      // deployedStrategy also stamps lastDeployedAt (ISO — see header).
-      const stampLastDeployed = 'deployedStrategy' in set && set.deployedStrategy !== null;
+      // deployedStrategy also stamps strategyLastDeployedAt (ISO, additive;
+      // NOT lastDeployedAt — see header for the decide.js cooldown parity).
+      const stampDeployed = 'deployedStrategy' in set && set.deployedStrategy !== null;
       txUpdateAgentSettings(tx, agentRef, {
         ...set,
-        ...(stampLastDeployed ? { lastDeployedAt: nowIso } : {}),
+        ...(stampDeployed ? { strategyLastDeployedAt: nowIso } : {}),
         updatedAt: nowIso,
       });
       return { idempotent: false };

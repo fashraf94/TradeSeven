@@ -12,6 +12,12 @@ import { getETDate, formatDateString, isMarketHoliday, isEarlyCloseDay, getNextM
 // June 2026 import rule (BUILD_RULES §4); the P4 battery's import of this
 // module is the dependency-surface guard.
 import { resolveModeConfig, TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
+// Release 2 PR-a (fenced site 1) — the customization-snapshot builder from
+// the SAME lean-revalidation kernel the strategy prompt and the
+// change-archetype rider use, so the snapshot can never disagree with them.
+// The logic lives in the non-fenced module so future tweaks are ordinary
+// changes, never fence re-authorizations (its graph is Node-clean).
+import { buildCustomizationSnapshot } from './leanRevalidation.js';
 
 // Duration mode: 'fullday' = single trading day (until market close), 'legacy' = multi-day (1d/3d/5d)
 const AGENT_BATTLE_DURATION_MODE = 'fullday';
@@ -167,6 +173,14 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       equippedWatchlist: options.equippedWatchlist
         ? { ...options.equippedWatchlist, snapshotAt: now }
         : null,
+      // Release 2 PR-a (fenced site 1, SHA-bound authorization @ 4a0f43e) —
+      // the four ADDITIVE customization-snapshot keys (standingLeans
+      // post-revalidation, standingLeansInvalidated, dials, settingsRev),
+      // frozen at creation like every sibling snapshot. Nothing renders from
+      // them until the Release-4 staged flag walk (the PR-c read-side guard
+      // gates rendering); the builder + its [LeanRevalidation] event live in
+      // the non-fenced kernel (see the import note above).
+      ...buildCustomizationSnapshot(agentData, now),
       riskTolerance: agentData.config?.risk || 50,
       evaluationInterval: 15,
       consolidatedInsight: agentData.consolidatedInsight || null,

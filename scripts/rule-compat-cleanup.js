@@ -177,7 +177,9 @@ async function main() {
             createdIds.push(ref.id);
           }
           const keptEntries = (agent.equippedTraits || []).filter((t) => t && t.traitId !== op.removeTraitId);
-          await agentRef.update({ equippedTraits: [...keptEntries, ...newEntries], updatedAt: new Date().toISOString() });
+          // settingsRev rides every snapshot-feeding agent-doc write (Release 2
+          // changelog #7) — the script is a settings writer like any endpoint.
+          await agentRef.update({ equippedTraits: [...keptEntries, ...newEntries], settingsRev: FieldValue.increment(1), updatedAt: new Date().toISOString() });
           for (const docId of op.softDeleteRuleDocIds) {
             await agentRef.collection('rules').doc(docId).update({ isDeleted: true, updatedAt: new Date().toISOString() });
           }
@@ -194,7 +196,7 @@ async function main() {
             rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
             bundlesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
           );
-          await agentRef.update({ activeRules: projected, updatedAt: new Date().toISOString() });
+          await agentRef.update({ activeRules: projected, settingsRev: FieldValue.increment(1), updatedAt: new Date().toISOString() });
           await logEntry({ agentId: analysis.agentId, op: 'reproject_active_rules', ruleCount: projected.length });
         }
       }
