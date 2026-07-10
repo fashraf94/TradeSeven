@@ -10,6 +10,7 @@
 // Pattern reference: api/forge/watchlists/[id]/uncommit.js (transaction body,
 // sentinel error map, shadow-log fire-and-forget).
 
+import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
@@ -68,6 +69,9 @@ export default async function handler(req, res) {
         equippedWatchlistName: null,
         equippedAt: null,
         updatedAt: nowIso,
+        // Release 2 (spec changelog #7): monotonic settings revision (see
+        // equip-watchlist.js).
+        settingsRev: FieldValue.increment(1),
       });
       return { idempotent: false };
     });

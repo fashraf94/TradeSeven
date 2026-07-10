@@ -4,13 +4,13 @@
 
 import {
   collection, doc, addDoc, updateDoc, getDoc, getDocs,
-  query, orderBy, serverTimestamp, writeBatch, deleteField
+  query, orderBy, serverTimestamp, deleteField
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getAgentLevel } from '../constants/agentProgression';
 import { FORGE_LIMITS } from '../constants/agentProgression';
-import { reconcile, RECONCILER_VERSION } from '../utils/ruleConflictReconciler';
-import { CONFLICT_RECONCILER_DETECT_ENABLED, RULE_COMPAT_MODE } from '../config/featureFlags';
+import { RULE_COMPAT_MODE } from '../config/featureFlags';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 // WS1 L1 write-path guard (fence-lite-approved sites: createRule,
 // setRuleHardness, updateRule category flip, reforgeBundle carry-forward,
 // plus the equipBundle conflict-equip surface). All guard work is gated on
@@ -21,7 +21,6 @@ import {
   guardRuleCompatWrite,
   evaluateRuleCompatWrite,
   emitRuleCompatEvents,
-  classifyBundleSnapshots,
 } from './ruleCompatGuard';
 import { resolveRuleHardness } from '../components/Forge/workshop/hardSoftHelper';
 
@@ -542,206 +541,46 @@ export const forgeBundle = async (agentId, bundleId) => {
 /**
  * Equip a forged bundle on the agent.
  *
- * SECURITY NOTE (V1): This function runs client-side using the Firebase JS SDK.
- * The battle-active check uses the agent's activeBattleId field (also enforced
- * in the UI by MyBundlesTab). For V1 with trusted beta users this is acceptable.
- * Before public launch, migrate this to a server-side Cloud Function or API
- * endpoint using Admin SDK to enforce the check server-side.
+ * Release 2 (settingsRev migration, founder ruling D3 2026-07-10): the V1
+ * client-side read-check-write (the SECURITY NOTE here used to promise this
+ * exact migration) moved to POST /api/agent/equip-bundle — one Admin-SDK
+ * transaction enforcing ownership + the battle-lock server-side, bumping
+ * agent.settingsRev, and emitting the WS1 conflict-equip events. This thin
+ * client preserves the prior return contract
+ * ({ conflictCheckResult, compatConflicts, archetype }) and throw-message
+ * behavior (callers surface err.message strings).
  */
 export const equipBundle = async (agentId, bundleId) => {
-  // 1. Read agent doc for current equip state, progression level, and battle check
-  const agentRef = doc(db, 'agents', agentId);
-  const agentSnap = await getDoc(agentRef);
-  if (!agentSnap.exists()) throw new Error('Agent not found');
-  const agentData = agentSnap.data();
-
-  // Check no active battle (mirrors MyBundlesTab UI guard)
-  if (agentData.activeBattleId) {
-    throw new Error('Cannot equip bundle while agent has an active battle. Wait for the battle to complete.');
-  }
-
-  // 2. Read bundle and validate status
-  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
-  const bundleSnap = await getDoc(bundleRef);
-  if (!bundleSnap.exists()) throw new Error('Bundle not found');
-  const bundle = bundleSnap.data();
-  if (bundle.status !== 'forged') throw new Error('Bundle must be forged before equipping');
-
-  const currentEquipped = agentData?.equippedBundleIds || [];
-
-  // Amendment 4: Check equipped bundle limit against progression level
-  const level = getAgentLevel(agentData?.stats?.gamesPlayed || 0);
-  const limits = FORGE_LIMITS[level];
-  if (currentEquipped.length >= limits.maxBundles) {
-    throw new Error(
-      `Bundle limit reached for your agent's level (${limits.maxBundles} bundles at ${level}). Unequip a bundle first or level up by playing more games.`
-    );
-  }
-
-  // 4. Gather rule snapshots from all equipped bundles + this one
-  const allSnapshots = [];
-  for (const eid of currentEquipped) {
-    const eSnap = await getDoc(doc(db, 'agents', agentId, 'bundles', eid));
-    if (eSnap.exists()) {
-      const eData = eSnap.data();
-      allSnapshots.push(...(eData.ruleSnapshots || []).map(r => ({
-        ...r, bundleName: eData.name,
-      })));
-    }
-  }
-  allSnapshots.push(...(bundle.ruleSnapshots || []).map(r => ({
-    ...r, bundleName: bundle.name,
-  })));
-
-  // 5. Build activeRules array
-  const activeRules = allSnapshots.map(snap => ({
-    ruleId: snap.id,
-    text: snap.text,
-    textTemplate: snap.textTemplate || null,
-    params: snap.params || null,
-    paramValues: snap.paramValues || null,
-    category: snap.category || null,
-    bundleName: snap.bundleName,
-    // Carried for the conflict reconciler (see forgeBundle snapshot note).
-    sourceRef: snap.sourceRef || null,
-    provenance: snap.provenance || null,
-  }));
-
-  // 5b. Equip-time conflict DETECTION (shadow-safe; gated). Runs the canonical
-  // reconciler over the merged set of ALL equipped bundles (cross-bundle
-  // conflicts a per-bundle check would miss) and records the advisory result on
-  // this bundle. SCOPE NOTE: this set is bundle snapshots ONLY — archetype/trait
-  // rules are bundle-independent (projected at deploy by traitId), so a
-  // bundle-vs-trait conflict is NOT caught here. That is fine: equip-time
-  // detection is advisory; the AUTHORITATIVE resolve runs fresh at deploy over
-  // the full projected set (decide.js, Phase 2). Detection only — it does NOT
-  // alter activeRules. Off by default.
-  let conflictCheckResult = null;
-  if (CONFLICT_RECONCILER_DETECT_ENABLED) {
-    const { conflictReport, coverage, reconcilerError } = reconcile(
-      activeRules, [], agentData?.equippedTraits || [], { legacyDefaultTier: 2 }
-    );
-    conflictCheckResult = {
-      conflicts: conflictReport,
-      coverage,
-      reconcilerVersion: RECONCILER_VERSION,
-      reconcilerError: reconcilerError || null,
-      checkedAt: new Date().toISOString(),
-    };
-  }
-
-  // 6. Batch write: update bundle status + agent doc
-  const batch = writeBatch(db);
-  batch.update(bundleRef, {
-    status: 'equipped',
-    equippedAt: new Date().toISOString(),
-    // Only written when DETECT is on, so a flag-off equip stays byte-identical.
-    ...(CONFLICT_RECONCILER_DETECT_ENABLED && { conflictCheckResult }),
-    updatedAt: serverTimestamp(),
+  const response = await fetchWithAuth('/api/agent/equip-bundle', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, bundleId }),
   });
-  batch.update(agentRef, {
-    equippedBundleIds: [...currentEquipped, bundleId],
-    activeRules,
-    updatedAt: serverTimestamp(),
-  });
-  await batch.commit();
-
-  // WS1 B6 — conflict-equip surface. Classify THIS bundle's snapshots against
-  // the agent's archetype (already read above — zero extra reads), log each
-  // conflict (observe + enforce), and hand the list back for the enforce-mode
-  // warning toast. Never blocks: equip of soft conflicts is warn-only by
-  // design, and the classification runs after the committed equip.
-  let compatConflicts = [];
-  if (isRuleCompatActive()) {
-    const archetype = agentData.archetype || null;
-    compatConflicts = classifyBundleSnapshots({
-      archetype,
-      ruleSnapshots: bundle.ruleSnapshots,
-      ruleHardness: bundle.ruleHardness || {},
-    });
-    if (compatConflicts.length > 0) {
-      const ts = new Date().toISOString();
-      await emitRuleCompatEvents({
-        agentId,
-        archetype,
-        mode: RULE_COMPAT_MODE,
-        events: compatConflicts.map((c) => ({
-          type: 'compat_conflict_equip',
-          agentId,
-          archetype,
-          ruleId: c.templateId,
-          ruleDocId: c.ruleDocId,
-          state: 'core_conflict',
-          zone1Ref: c.zone1Ref,
-          hardnessRequested: c.resolvedHardness,
-          path: 'equip_bundle',
-          mode: RULE_COMPAT_MODE,
-          blocked: false,
-          ts,
-        })),
-      });
-    }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.message || `Could not equip bundle (${response.status})`);
   }
-
-  // Return the (gated) equip-time detection result so the hook can surface a
-  // non-blocking, bundle-scoped warning (null when DETECT is off → no toast),
-  // plus the compat conflicts + the archetype they were classified against
-  // (the hook's warning copy needs it; most equip surfaces don't thread it).
-  return { conflictCheckResult, compatConflicts, archetype: agentData.archetype || null };
+  return {
+    conflictCheckResult: data.conflictCheckResult ?? null,
+    compatConflicts: data.compatConflicts ?? [],
+    archetype: data.archetype ?? null,
+  };
 };
 
 /**
  * Unequip a bundle — revert to forged status and rebuild activeRules.
+ * Server-side since the Release 2 settingsRev migration (see equipBundle).
+ * Deliberately keeps the historical no-battle-lock semantics (reforge
+ * unequips as a sub-step); the server endpoint preserves that.
  */
 export const unequipBundle = async (agentId, bundleId) => {
-  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
-  const bundleSnap = await getDoc(bundleRef);
-  if (!bundleSnap.exists()) throw new Error('Bundle not found');
-  const bundle = bundleSnap.data();
-  if (bundle.status !== 'equipped') throw new Error('Bundle is not equipped');
-
-  const agentRef = doc(db, 'agents', agentId);
-  const agentSnap = await getDoc(agentRef);
-  const agentData = agentSnap.data();
-  const remainingIds = (agentData?.equippedBundleIds || []).filter(id => id !== bundleId);
-
-  // Rebuild activeRules from remaining equipped bundles
-  const allSnapshots = [];
-  for (const eid of remainingIds) {
-    const eSnap = await getDoc(doc(db, 'agents', agentId, 'bundles', eid));
-    if (eSnap.exists()) {
-      const eData = eSnap.data();
-      allSnapshots.push(...(eData.ruleSnapshots || []).map(r => ({
-        ...r, bundleName: eData.name,
-      })));
-    }
+  const response = await fetchWithAuth('/api/agent/unequip-bundle', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, bundleId }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.message || `Could not unequip bundle (${response.status})`);
   }
-
-  const activeRules = allSnapshots.map(snap => ({
-    ruleId: snap.id,
-    text: snap.text,
-    textTemplate: snap.textTemplate || null,
-    params: snap.params || null,
-    paramValues: snap.paramValues || null,
-    category: snap.category || null,
-    bundleName: snap.bundleName,
-    // Carried for the conflict reconciler (see forgeBundle snapshot note).
-    sourceRef: snap.sourceRef || null,
-    provenance: snap.provenance || null,
-  }));
-
-  const batch = writeBatch(db);
-  batch.update(bundleRef, {
-    status: 'forged',
-    equippedAt: null,
-    updatedAt: serverTimestamp(),
-  });
-  batch.update(agentRef, {
-    equippedBundleIds: remainingIds,
-    activeRules,
-    updatedAt: serverTimestamp(),
-  });
-  await batch.commit();
 };
 
 /**

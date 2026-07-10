@@ -16,6 +16,7 @@
 // Pattern reference: api/agent/equip-watchlist.js (transaction body, sentinel
 // error map, shadow-log fire-and-forget). Delta: single-doc read+write (agents).
 
+import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
@@ -100,7 +101,9 @@ export default async function handler(req, res) {
       }
 
       const previousArchetype = agent.archetype ?? null;
-      tx.update(agentRef, { archetype, updatedAt: nowIso });
+      // settingsRev: Release 2 (spec changelog #7) monotonic settings revision —
+      // an archetype change is a snapshot-feeding config write.
+      tx.update(agentRef, { archetype, updatedAt: nowIso, settingsRev: FieldValue.increment(1) });
       // equippedTraits rides along for the WS1 rescan (projection input) — no
       // extra read, it is already on the agent snapshot.
       return { idempotent: false, archetype, previousArchetype, equippedTraits: agent.equippedTraits || [] };

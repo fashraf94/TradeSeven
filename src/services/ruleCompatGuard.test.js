@@ -238,14 +238,23 @@ describe('wiring — forgeService guard call sites (fence-lite table)', () => {
     expect(source).toMatch(/strippedConflicts/);
   });
 
-  it('B6 equipBundle classifies snapshots and emits equip_bundle events', () => {
-    expect(source).toMatch(/classifyBundleSnapshots\(/);
-    expect(source).toMatch(/path: 'equip_bundle'/);
+  it('B6 equip surface classifies snapshots and emits equip_bundle events (server-side since the D3 migration)', () => {
+    // Release 2 settingsRev migration (D3, 2026-07-10): the equip write —
+    // and with it the B6 conflict-equip classification — moved to
+    // api/agent/equip-bundle.js. Same kernel (ruleCompatClassify), same event
+    // shape, same 'equip_bundle' path tag; asserted at the new home. The
+    // client function must stay a thin wrapper (no client classification).
+    const endpointSource = readFileSync(resolve(__dirname, '../../api/agent/equip-bundle.js'), 'utf-8');
+    expect(endpointSource).toMatch(/classifyBundleSnapshots\(/);
+    expect(endpointSource).toMatch(/path: 'equip_bundle'/);
+    expect(source).not.toMatch(/classifyBundleSnapshots\(/);
   });
 
   it('every guard body is gated on isRuleCompatActive() so off adds zero reads', () => {
     const gates = source.match(/isRuleCompatActive\(\)/g) || [];
-    expect(gates.length).toBeGreaterThanOrEqual(5);
+    // 4 guarded rule-write paths remain client-side (A1, B1, B2, B3) since
+    // the B6 equip surface moved server-side with the D3 migration.
+    expect(gates.length).toBeGreaterThanOrEqual(4);
   });
 
   it('archetype threading: seedDefaultTraits, useTraits.equipTrait, and StarterKit pass archetype (rider 2)', () => {
