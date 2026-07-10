@@ -31,15 +31,17 @@ Rationale anchor (B4 §F3): the degen 0.6→0.3 drop is a **deliberate identity-
 
 **Important — what B4 provides.** B4's real per-archetype tempo numbers are **"pending live export"** (B4 lines 15, 45, 56); the sandbox has no DB creds (B4 line 110), so **absolute tempo centers do not exist in B4**. B4 pins **relational** bands (ratios, shares, ordering) verified on the synthetic gate-replay harness. Per B4's own cross-check framing (lines 103–115), the pre-change real battles *validate direction + set the baseline, not the deltas*; the **post-landing re-run** is the true confirmation. This **supersedes the spec §4.3 "[B4 center ± tol]" absolute-center framing** — which cannot be honored because those numbers aren't in B4 and would be fabrication. The relational bands below are the measurable §4.3 acceptance criteria, and every one is derivable from `aggregate-real-battles.js`.
 
-| # | B4 band (pinned) | B4 source | Measured from (`aggregate-real-battles.js`) |
-|---|---|---|---|
-| B4-1 | **degen ÷ mc tempo ratio ∈ [2.08, 2.25]** (named: degen÷mc ≥ ~2) | line 56 | `perArchetype.{degen,momentum_chaser}.nonEmergencyRotationsPerBattle.median` |
-| B4-2 | **degen ≥ 3× guardian** (median non-emergency rotations) | line 56 | same field, degen vs guardian |
-| B4-3 | **mc ≥ 1.5× guardian** | line 56 | same field, mc vs guardian |
-| B4-4 | **8B stagnation share: degen 15–45%, guardian <5%, analyst < degen** | line 57 | `perArchetype.*.stagnationSharePct` (+ `unknownReason.sharePctOfNonEmergency` quoted beside it) |
-| B4-5 | **Ordering (named acceptance check): degen ≫ mc > analyst≈diversifier≈contrarian > guardian** | line 63 | `tempoOrdering` |
+| # | B4 band (pinned) | Grade | B4 source | Measured from (`aggregate-real-battles.js`) |
+|---|---|---|---|---|
+| B4-1 | **degen ÷ mc tempo ratio ∈ [2.08, 2.25]** (named: degen÷mc ≥ ~2) | **diagnostic** (flag-and-look) | line 56 | `perArchetype.{degen,momentum_chaser}.nonEmergencyRotationsPerBattle.median` |
+| B4-2 | **degen ≥ 3× guardian** (median non-emergency rotations) | **gate-grade** | line 56 | same field, degen vs guardian |
+| B4-3 | **mc ≥ 1.5× guardian** | **gate-grade** | line 56 | same field, mc vs guardian |
+| B4-4 | **8B stagnation share: degen 15–45%, guardian <5%, analyst < degen** | **diagnostic** | line 57 | `perArchetype.*.stagnationSharePct` (+ `unknownReason.sharePctOfNonEmergency` quoted beside it) |
+| B4-5 | **Ordering (named acceptance check): degen ≫ mc > analyst≈diversifier≈contrarian > guardian** | **gate-grade** | line 63 | `tempoOrdering` |
 
-**Directional expectation (not an absolute band — the centers are ~0 pre-change):** the frozen baseline (§5.1) will show degen & mc tempo ≈ 0 (the "zero floor"). Post-landing, both move **up off zero**: degen strongly, mc **less** (the tempering), with degen÷mc landing in [2.08, 2.25]. This up-off-zero movement, in the correct ratio and ordering, IS the §4.3 acceptance — evaluated on wholly-contained battles at v2 against the frozen v-pre baseline.
+**Grade (founder ruling, 2026-07-08).** The **gate-grade** relational checks — the ones that gate promotion — are the **ordering (B4-5)** plus the **≥3× / ≥1.5× thresholds (B4-2, B4-3)**. The **degen÷mc ratio (B4-1)** and the **8B stagnation share (B4-4)** are **diagnostic (flag-and-look)**: reported and flagged if off, but never a promotion gate or a revert trigger — live regime can move them legitimately.
+
+**Directional expectation (not an absolute band — the centers are ~0 pre-change):** the frozen baseline (§5.1) will show degen & mc tempo ≈ 0 (the "zero floor"). Post-landing, both move **up off zero**: degen strongly, mc **less** (the tempering). The **§4.3 acceptance is the gate-grade set** — the ordering holds (B4-5) and degen ≥3× / mc ≥1.5× guardian (B4-2/B4-3) — evaluated on wholly-contained battles at v2 against the frozen v-pre baseline. The degen÷mc ratio landing in [2.08, 2.25] is **diagnostic color** on top of that, not itself a gate.
 
 **Caveat carried from B4 (lines 29, 57, 113):** the 8B share and any tempo count inherit the **unknown-reason inflation** risk (pre-V1.4 `exitReason` default-denied to non-emergency). The aggregator surfaces `unknownReason.sharePctOfNonEmergency` per archetype; if that share is material, treat the tempo/8B read as provisional until the taxonomy is reconciled.
 
@@ -82,7 +84,7 @@ Reverting a config that had **no effect** fixes nothing — diagnose first (§4.
 3. **Post-merge attribution:** run the aggregator with `--generation-boundary <the after-close merge timestamp, ISO>`; the promote/revert comparison uses only wholly-contained battles per generation. Straddlers/in-flight are auto-excluded and tallied.
 4. **Monotonic versioning:** merge = **v2**. If reverted, the revert deploy = **v3** (never back to v1).
 5. **N-gated window:** closes when **≥ N = 10 wholly-contained completed battles per changed archetype** (degen, mc) exist at v2. *(N is a Phase-1 judgment: B4 flagged the real corpus (~22 total, all archetypes) as too thin for per-archetype significance (B4 lines 29, 123); 10 wholly-contained per changed archetype is the minimum for a stable median. Flash may adjust.)* cpu-opponent and player-opponent battles **both** count toward N and toward the promote/revert decision (knob physics are opponent-independent); the aggregator splits them and flags material tempo divergence for investigation only.
-6. **Promotion:** B4-1…B4-5 bands hit + ordering check passes + no HARM trigger → PROVISIONAL → **CALIBRATED**; Release 2's dial bands (multipliers 0.7/1.0/1.3, B4 §D) are then authored against confirmed values.
+6. **Promotion:** the **gate-grade** checks pass — ordering (B4-5) + degen ≥3× guardian (B4-2) + mc ≥1.5× guardian (B4-3) — **and** no HARM trigger → PROVISIONAL → **CALIBRATED**. The diagnostic bands (degen÷mc ratio B4-1, 8B share B4-4) are reported and flagged if off but do **not** block promotion (live regime can move them legitimately). Release 2's dial bands (multipliers 0.7/1.0/1.3, B4 §D) are then authored against confirmed values.
 7. **Revert:** HARM trigger → revert PR (v3), diagnose against the harness, re-tune. **No-effect** → diagnose without reverting.
 
 ---
