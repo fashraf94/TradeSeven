@@ -230,7 +230,7 @@ describe('Release 2 — ADJUSTMENT_CONFLICT_GROUPS (adjudication-gated drafts)',
     }
   });
 
-  it('current draft census: TF 0, CN 1, SP 1, CP 1, DV 1, FI 2 groups (adjudication may amend)', () => {
+  it('adjudicated census (Flash+Claude ruling 2026-07-10): TF 0, CN 1, SP 1, CP 1, DV 1, FI 2 groups', () => {
     expect(ADJUSTMENT_CONFLICT_GROUPS.momentum_chaser).toHaveLength(0);
     expect(ADJUSTMENT_CONFLICT_GROUPS.contrarian).toHaveLength(1);
     expect(ADJUSTMENT_CONFLICT_GROUPS.degen).toHaveLength(1);

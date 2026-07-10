@@ -249,11 +249,16 @@ export const getCanonicalTextVersion = (codeId, id) =>
  * ADJUSTMENT_CONFLICT_GROUPS — choose-at-most-one sets per archetype (spec
  * changelog #8: groups replace raw opposition pairs).
  *
- * STATUS: PROVISIONAL — drafted by Claude Code from entry SEMANTICS
- * (2026-07-10); the Phase-1 STOP presents these for Flash+Claude adjudication
- * (the adjudication artifact carries per-group rationale + canonical texts).
+ * STATUS: ADJUDICATED — Flash+Claude ruling of 2026-07-10 (Release 2 Phase-1
+ * STOP; see the adjudication artifact
+ * 2026-07-10_R2_CONFLICT_GROUP_ADJUDICATION_ARTIFACT): all six groups
+ * CONFIRMED as drafted; the CP-03 exclusion (noise≠damage), the
+ * momentum_chaser empty set, and the rejected-pairs table confirmed;
+ * at-most-one-opposition-in-production / machinery-general ratified.
  *
- * DRAFTING RULE (semantics, NOT raw policy directions): the policy direction
+ * DRAFTING RULE — STANDING, founder-ratified 2026-07-10 (§4.1 of the
+ * adjudication artifact): groups are adjudicated from SEMANTICS, never
+ * auto-paired from policy directions. The policy direction
  * vocabulary tracks the CONSTRAINT VERB, not the book outcome — e.g. DV-01
  * "Tighten the concentration cap" is concentrationDirection 'tighter' yet
  * pushes toward MORE spread, so a raw tighter-vs-wider generator would
