@@ -578,11 +578,15 @@ function pickWorstBreach(positions, prices, battle, evaluatorFn, configuredThres
  *
  * Release 2 PR-e — the denominator: in TOURNAMENT mode it is the MODE's slot
  * count (AGENT_PICKS_PER_AGENT = 6, the flat6 book config), NOT the momentary
- * held count. On a full book the two are identical; on a partial book (a
- * no-replacement forced exit) the held count would inflate every share and
- * trap construction — 2 in a sector must read 2/6 whether the book holds 3 or
- * 6 (spec §6: "partial-fill construction never trapped"). Non-tournament
- * books keep the held-count denominator: user maxSectorWeight caps there are
+ * held count. On a full book the two are identical — and a full book is every
+ * KNOWN reachable state (decide.js validates prescribed deploys to exactly 6;
+ * a forced exit with no bench DEFERS rather than emptying a slot). The
+ * slot-count denominator exists so an UNKNOWN partial state (corrupt doc, a
+ * future path) can never inflate shares and trap construction — 2 in a sector
+ * must read 2/6 whether the book holds 3 or 6 (spec §6: "partial-fill
+ * construction never trapped"). This applies to any tournament maxSectorWeight
+ * check, flag-independent (spec §6 authorizes the fix unconditionally).
+ * Non-tournament books keep the held-count denominator: user caps there are
  * live Phase-4B behavior this authorization does not change.
  */
 function checkSectorCap({ haikuResult, battle, maxSectorValue }) {

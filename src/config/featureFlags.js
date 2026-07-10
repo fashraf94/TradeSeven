@@ -368,8 +368,13 @@ export const TEMPO_DIAL_ENABLED = false;
  *
  * ROLLBACK RULE (founder-adopted 2026-07-10; docs/RELEASE2_ACTIVATION_RUNBOOK.md):
  * while any battle carries an active directive, roll back to 'observe',
- * NEVER 'off' — off-mode mints permanent epoch kill records and off-minted
- * directives render as ungated free text.
+ * NEVER 'off'. Know what a rollback does either way: LEAVING 'enforce'
+ * permanently retires every in-flight directive (the next tick's epoch
+ * record kills it; directives never resurrect — PR-c design), whichever
+ * state you land in. There is no "pause" state. The reason 'observe' is
+ * still the only correct target: its write path mints NOTHING, while
+ * 'off' runs the un-gated legacy normalizeDirective line — directives
+ * minted under 'off' would render un-screened on a later re-enforce.
  *
  * Release 2 PR-c (read-side guard): the PROMPT surfaces render a persisted
  * battle.directive ONLY under 'enforce' — under 'off'/'observe' a directive
@@ -390,8 +395,15 @@ export const ARCHETYPE_INTEGRITY_MODE = 'observe';
  * are independent Release-4 steps. House tri-state (the
  * ARCHETYPE_INTEGRITY_MODE / RULE_COMPAT_MODE shape, per ruling D1):
  *
- *   'off'     — byte-identical to today. No injection, no measurement; the
- *               guardrails array and every swap decision are untouched.
+ *   'off'     — the flag's own machinery is fully dark: no injection, no
+ *               measurement, the guardrails array untouched. (One
+ *               flag-INDEPENDENT fix rode PR-e per spec §6: tournament
+ *               checkSectorCap divides by the mode's 6-slot book instead of
+ *               the momentary held count. Identical on a full book — which
+ *               is every known reachable state, since deploys validate
+ *               exactly 6 and forced exits defer without a bench — it
+ *               differs only on a partial book, where the old math
+ *               over-blocked.)
  *   'observe' — measurement mode. Nothing is blocked and the guardrails array
  *               is untouched, but every swap the ENFORCE cap would have
  *               blocked is logged as a `would_block_swap` override (riding

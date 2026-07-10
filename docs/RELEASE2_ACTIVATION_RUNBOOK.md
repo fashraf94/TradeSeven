@@ -10,22 +10,30 @@
 
 **The PR-c read-side guard is the compatibility floor for every Release-2 rollback.** Once any battle document carries customization state (a persisted directive, standing leans in a snapshot, a tempo dial, a `controlEpochLog`), a CODE rollback must never go below the commit that carries the shared control renderer and its read-side guard (`e0d04f1`). Reverting past it would put un-gated readers back in front of persisted control state — a directive or lean at rest would render into prompts with no flag consulted at all.
 
-- **Flag rollbacks are always safe** — that is what the flags are for. This rule is about *code* rollbacks only.
+- **Flag rollbacks are always the first tool** — that is what the flags are for; this rule is about *code* rollbacks only. (But see Rule 2 for what leaving `'enforce'` does to in-flight directives — flag rollbacks are technically clean, not consequence-free.)
 - If an incident ever seems to demand reverting below the floor, the correct move is: flip the flags to their off/observe states first (see Rule 2 for directives), and treat the below-floor revert as its own decision with the battle data in view.
 
-## Rule 2 — Directive rollback: `'observe'`, never `'off'` (ADOPTED 2026-07-10)
+## Rule 2 — Directive rollback: `'observe'`, never `'off'` (ADOPTED 2026-07-10; rationale corrected at Phase-3 review)
 
 **While any battle carries an active directive, roll `ARCHETYPE_INTEGRITY_MODE` back to `'observe'` — never to `'off'`.**
 
-Why both halves of `'off'` hurt during a live incident:
-1. **Permanent kill records.** The mode flip out of `'enforce'` opens a new mode-epoch; the suppression is logged to each battle's `controlEpochLog`, and a suppressed directive **never resurrects for that battle** (by design — no-resurrection is the epoch contract). Rolling to `'off'` when you meant a pause turns every active directive into a permanently killed one.
-2. **Un-gated free text.** Under `'off'` the directive *write* path runs the legacy `normalizeDirective` line verbatim — directives minted while off are free text that no gate ever screened. `'observe'` keeps the gate evaluating (and writing nothing).
+**First, know what any rollback does — there is no "pause" state.** The moment the flag leaves `'enforce'`, the next eval tick logs a suppression epoch on every battle with an active directive, and a suppressed directive **never resurrects for that battle** (by design — no-resurrection is the epoch contract). This happens whether you land on `'observe'` or `'off'`. Rolling back permanently retires the directives that were in flight; flipping back to `'enforce'` later does not restore them. If that price is not acceptable, the rollback is the wrong tool for the incident.
 
-`'observe'` gives you the same immediate outcome you wanted from a rollback — **no directive renders into any prompt** — while keeping the gate on duty and the epoch record honest. The same one-way logic applies at every step of the staged walk: step back one state, never jump to `'off'` while directives are in flight.
+**Given that, why `'observe'` is still the only correct target:** the difference is what gets *written* while you are rolled back.
+- Under `'observe'` the gate stays on duty — it evaluates proposals and **writes nothing**. No new directive state accumulates.
+- Under `'off'` the directive write path runs the legacy `normalizeDirective` line verbatim — chat can mint **free-text directives no gate ever screened**, and because those are new (never-suppressed) records, they WILL render into prompts when you later return to `'enforce'`.
+
+Either state stops directives rendering immediately; `'observe'` is the one that leaves nothing un-screened behind. The same logic applies at every step of the staged walk: step back one state, never jump to `'off'` while directives are in flight.
+
+## Rule 2a — What a paused-then-resumed walk looks like
+
+Because rollback retires in-flight directives permanently, a resumed walk starts CLEAN: returning to `'enforce'` affects only directives minted after the return. Expect coaches' prior directives to be gone (visible in each battle's `controlEpochLog` — the suppression epoch is the audit record), and communicate that before flipping back.
 
 ## Rule 3 — Sector-slot walk reads the observe volume first
 
 `SECTOR_CAP_MODE` walks `'off'` → `'observe'` → `'enforce'`. The `'observe'` state exists to be read: every swap the enforce cap would have blocked lands as a `would_block_swap` override in the evaluation record and a `[SectorSlot] would_block` log line — through the same math and preconditions as enforce, so the measured volume is exactly what enforce will do. Do not skip from `'off'` to `'enforce'`; the observe read is the go/no-go input for the flip.
+
+**How to read the volume:** `would_block_swap` counts everything the core cap would block — *including* swaps a user's own stricter cap already blocked today (those evaluation records carry BOTH a `blocked_swap` and a `would_block_swap`). The flip's *incremental* effect is the set of records with a `would_block_swap` and **no** accompanying `blocked_swap`; the raw count overstates it whenever users run their own sector caps.
 
 ---
 
