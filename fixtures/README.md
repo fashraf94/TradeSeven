@@ -16,7 +16,9 @@ for repo size is recorded per-file below, with the untruncated shape described.
 
 ## Capture manifest
 
-> _Populated during live fetch (Section pending EODHD key availability — see report §0)._
+> 🔴 **No fixtures captured yet — BLOCKED.** The environment's egress policy denies the EODHD host
+> (`eodhd.com:443` → 403 at the proxy), so no live response could be obtained. Capture resumes the moment
+> the founder allowlists EODHD and relaunches. See `docs/discovery/SESSION1_DATA_DISCOVERY_REPORT.md` §0/§12.
 
 | File | Symbol | Grain | Range | Fetch date (UTC) | Request URL pattern (key redacted) | Truncation |
 |---|---|---|---|---|---|---|
