@@ -18,8 +18,8 @@
 //
 // Pattern reference: api/agent/equip-lean.js / equip-watchlist.js.
 
-import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
@@ -85,12 +85,11 @@ export default async function handler(req, res) {
       }
 
       const previousTempo = agent.dials?.tempo ?? null;
-      tx.update(agentRef, {
+      // settingsRev rides structurally (Release 2 changelog #7).
+      txUpdateAgentSettings(tx, agentRef, {
         // Dotted path: merges into dials without clobbering future siblings.
         'dials.tempo': tempo,
         updatedAt: nowIso,
-        // Release 2 (spec changelog #7): monotonic settings revision.
-        settingsRev: FieldValue.increment(1),
       });
       return { idempotent: false, previousTempo };
     });

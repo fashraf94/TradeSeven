@@ -90,14 +90,17 @@ export function buildControlEpochEvent({
   dialBandVersion = null,
   at = new Date().toISOString(),
 }) {
-  const descriptors = resolution?.suppressionDescriptors ?? [];
-  const suppressedByKey = new Map(
-    descriptors.map((d) => [`${d.target}:${d.id}`, d.reason]),
-  );
+  const descriptors = Array.isArray(resolution?.suppressionDescriptors) ? resolution.suppressionDescriptors : [];
+  // Join on the raw descriptor fields — no synthetic key format to keep in
+  // sync with the renderer (a drifted key would silently log a suppressed
+  // control as rendered, the exact telemetry-vs-prompt disagreement this
+  // module exists to prevent).
+  const reasonFor = (target, id) =>
+    descriptors.find((d) => d.target === target && d.id === id)?.reason ?? null;
 
   const controls = [];
   if (directive && directive.directiveThreadId) {
-    const reason = suppressedByKey.get(`directive:${directive.directiveThreadId}`) ?? null;
+    const reason = reasonFor('directive', directive.directiveThreadId);
     controls.push({
       target: 'directive',
       id: directive.directiveThreadId,
@@ -110,11 +113,15 @@ export function buildControlEpochEvent({
     });
   }
   for (const lean of Array.isArray(standingLeans) ? standingLeans : []) {
-    if (!lean || !lean.adjustmentId) continue;
-    const reason = suppressedByKey.get(`lean:${lean.adjustmentId}`) ?? null;
+    if (!lean) continue;
+    // A malformed lean (missing adjustmentId) still appears — under the SAME
+    // fallback id the renderer's descriptor uses — so the event can never
+    // claim "nothing suppressed" while the renderer suppressed one.
+    const id = lean.adjustmentId || 'unknown';
+    const reason = reasonFor('lean', id);
     controls.push({
       target: 'lean',
-      id: lean.adjustmentId,
+      id,
       version: typeof lean.version === 'number' ? lean.version : null,
       desired: 'render',
       effective: reason ? 'suppressed' : 'rendered',

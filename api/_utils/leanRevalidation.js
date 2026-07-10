@@ -20,15 +20,58 @@
 //   - change-archetype.js lean-invalidation rider: invalidated[] under the
 //     NEW archetype rides the existing rescan event.
 
-import { isValidAdjustmentId, getCanonicalText, getCanonicalTextVersion } from '../../src/data/archetypeAdjustments.js';
+import { isValidAdjustmentId, getCanonicalText, getCanonicalTextVersion, findEquipConflicts } from '../../src/data/archetypeAdjustments.js';
+
+// Master spec §3.1 — the domain cap lives here (the validity kernel), and the
+// equip endpoint imports it, so the write path and the snapshot path can
+// never disagree on the limit.
+export const STANDING_LEANS_CAP = 2;
 
 export const LEAN_INVALIDATION_REASONS = Object.freeze({
   MALFORMED: 'malformed',
   NOT_IN_MENU: 'not_in_menu',
   DEPRECATED_VERSION: 'deprecated_version',
+  // At-rest set violations (re-asserted at snapshot time; see
+  // revalidateStandingLeans header): a conflict group adjudicated AFTER two
+  // leans were legally equipped, or a cap tightened after the fact.
+  CONFLICTING_LEAN: 'conflicting_lean',
+  OVER_CAP: 'over_cap',
 });
 
 /**
+ * THE single per-pin validity rule (menu membership + version currency),
+ * shared by the equip write path (api/agent/equip-lean.js maps reasons onto
+ * its HTTP sentinels) and the snapshot revalidation below — one authority,
+ * so equip can never accept a pin revalidation would omit, or vice versa.
+ *
+ * @returns {{ok: true}|{ok: false, reason: string}}
+ */
+export function validateLeanPin(archetypeCodeId, adjustmentId, version) {
+  if (typeof adjustmentId !== 'string' || !adjustmentId || typeof version !== 'number') {
+    return { ok: false, reason: LEAN_INVALIDATION_REASONS.MALFORMED };
+  }
+  if (!isValidAdjustmentId(archetypeCodeId, adjustmentId)) {
+    return { ok: false, reason: LEAN_INVALIDATION_REASONS.NOT_IN_MENU };
+  }
+  if (version !== getCanonicalTextVersion(archetypeCodeId, adjustmentId)) {
+    return { ok: false, reason: LEAN_INVALIDATION_REASONS.DEPRECATED_VERSION };
+  }
+  return { ok: true };
+}
+
+/**
+ * Revalidates the FULL equip-time invariant set, not just per-pin validity:
+ * menu membership + version currency (via validateLeanPin), then the at-rest
+ * SET checks — conflict-group exclusion and the cap. The set checks exist
+ * because the equip-time gate is not sufficient over time: conflict groups
+ * are adjudication-gated and WILL change after leans were legally equipped,
+ * so the last gate before the prompt must re-assert "never both sides of a
+ * contradiction" (spec changelog #8) itself. Deterministic loser on a
+ * conflict/cap breach: the LATER-equipped lean is omitted (missing
+ * equippedAt loses); "data kept" as everywhere — omission + record only.
+ * [Extends the spec Phase-1 item-7 check list (menu + currency) — flagged
+ * for founder ratification in the Phase-1 report.]
+ *
  * @param {Object} p
  * @param {Array<{adjustmentId: string, version: number, equippedAt?: string}>} p.standingLeans
  *   agent.standingLeans (ids-at-rest).
@@ -39,48 +82,68 @@ export const LEAN_INVALIDATION_REASONS = Object.freeze({
  * }}
  */
 export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId } = {}) {
-  const valid = [];
   const invalidated = [];
+
+  // Pass 1 — per-pin validity through the shared rule.
+  const pinValid = [];
   for (const lean of Array.isArray(standingLeans) ? standingLeans : []) {
-    const wellFormed =
-      lean && typeof lean === 'object' &&
-      typeof lean.adjustmentId === 'string' && lean.adjustmentId &&
-      typeof lean.version === 'number';
-    if (!wellFormed) {
+    const verdict = validateLeanPin(archetypeCodeId, lean?.adjustmentId, lean?.version);
+    if (!verdict.ok) {
       invalidated.push({
         adjustmentId: typeof lean?.adjustmentId === 'string' ? lean.adjustmentId : null,
         version: typeof lean?.version === 'number' ? lean.version : null,
-        reason: LEAN_INVALIDATION_REASONS.MALFORMED,
+        reason: verdict.reason,
       });
       continue;
     }
-    // Menu membership under the archetype being snapshotted (no fallback —
-    // an unknown archetype invalidates everything, fail closed).
-    if (!isValidAdjustmentId(archetypeCodeId, lean.adjustmentId)) {
+    pinValid.push(lean);
+  }
+
+  // Pass 2 — at-rest set checks in deterministic equip order (earlier
+  // equippedAt wins; ISO strings compare lexicographically BY CODE POINT —
+  // not localeCompare, whose collation can move punctuation before digits;
+  // a missing stamp sorts as '~' (after all digits) so it loses ties).
+  const sortKey = (l) => String(l.equippedAt ?? '~');
+  const ordered = [...pinValid].sort((a, b) => {
+    const ka = sortKey(a);
+    const kb = sortKey(b);
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
+  const accepted = [];
+  for (const lean of ordered) {
+    const conflicts = findEquipConflicts(
+      archetypeCodeId,
+      lean.adjustmentId,
+      accepted.map((l) => l.adjustmentId),
+    );
+    if (conflicts.length > 0) {
       invalidated.push({
         adjustmentId: lean.adjustmentId,
         version: lean.version,
-        reason: LEAN_INVALIDATION_REASONS.NOT_IN_MENU,
+        reason: LEAN_INVALIDATION_REASONS.CONFLICTING_LEAN,
       });
       continue;
     }
-    // Version currency: the equipped pin must match the LIVE text version —
-    // a bumped canonical means the user confirmed different wording; never
-    // render stale text (they re-confirm by re-equipping at current).
-    const liveVersion = getCanonicalTextVersion(archetypeCodeId, lean.adjustmentId);
-    if (lean.version !== liveVersion) {
+    if (accepted.length >= STANDING_LEANS_CAP) {
       invalidated.push({
         adjustmentId: lean.adjustmentId,
         version: lean.version,
-        reason: LEAN_INVALIDATION_REASONS.DEPRECATED_VERSION,
+        reason: LEAN_INVALIDATION_REASONS.OVER_CAP,
       });
       continue;
     }
-    valid.push({
+    accepted.push(lean);
+  }
+
+  // Snapshot shape (master spec §3.1): id + version + RESOLVED CURRENT text,
+  // in the original equip order for prompt stability.
+  const acceptedIds = new Set(accepted.map((l) => l.adjustmentId));
+  const valid = pinValid
+    .filter((l) => acceptedIds.has(l.adjustmentId))
+    .map((lean) => ({
       adjustmentId: lean.adjustmentId,
       version: lean.version,
       text: getCanonicalText(archetypeCodeId, lean.adjustmentId),
-    });
-  }
+    }));
   return { valid, invalidated };
 }

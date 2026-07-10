@@ -31,23 +31,25 @@
 // archetypeAdjustments are api → src and Node-clean; this endpoint's test
 // file's REAL imports are the dependency-surface guard.
 
-import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
 import { STANDING_LEANS_ENABLED } from '../../src/config/featureFlags.js';
-import {
-  isValidAdjustmentId,
-  getCanonicalTextVersion,
-  findEquipConflicts,
-} from '../../src/data/archetypeAdjustments.js';
+import { findEquipConflicts } from '../../src/data/archetypeAdjustments.js';
+// validateLeanPin is THE per-pin validity authority (menu membership +
+// version currency) shared with battle-creation revalidation — one rule, so
+// equip can never accept a pin the snapshot path would omit (or vice versa).
+// STANDING_LEANS_CAP lives there too (the domain kernel), re-exported here
+// for API-surface convenience.
+import { validateLeanPin, STANDING_LEANS_CAP, LEAN_INVALIDATION_REASONS } from '../_utils/leanRevalidation.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
 
-export const STANDING_LEANS_CAP = 2; // master spec §3.1
+export { STANDING_LEANS_CAP };
 
 const ADJUSTMENT_ID_REGEX = /^[A-Z]{2}-\d{2}$/;
 
@@ -112,14 +114,21 @@ export default async function handler(req, res) {
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
       if (agent.activeBattleId) throw new Error(SENTINEL_PREFIX + 'battle_active');
 
-      // Menu membership under the agent's CURRENT archetype (no fallback).
-      if (!isValidAdjustmentId(agent.archetype, adjustmentId)) {
+      // Menu membership + version currency through the SHARED kernel
+      // (leanRevalidation.validateLeanPin) — its reason vocabulary maps 1:1
+      // onto this endpoint's sentinels, so the write path and the snapshot
+      // path cannot drift.
+      const pinVerdict = validateLeanPin(agent.archetype, adjustmentId, version);
+      if (!pinVerdict.ok) {
+        if (pinVerdict.reason === LEAN_INVALIDATION_REASONS.NOT_IN_MENU) {
+          throw new Error(SENTINEL_PREFIX + 'not_in_menu');
+        }
+        if (pinVerdict.reason === LEAN_INVALIDATION_REASONS.DEPRECATED_VERSION) {
+          throw new Error(SENTINEL_PREFIX + 'deprecated_version');
+        }
+        // 'malformed' cannot reach here (agentId/adjustmentId/version are
+        // request-validated above) — treated as not_in_menu if it ever does.
         throw new Error(SENTINEL_PREFIX + 'not_in_menu');
-      }
-      // Version currency — equipping deprecated wording is refused.
-      const liveVersion = getCanonicalTextVersion(agent.archetype, adjustmentId);
-      if (version !== liveVersion) {
-        throw new Error(SENTINEL_PREFIX + 'deprecated_version');
       }
 
       const current = Array.isArray(agent.standingLeans) ? agent.standingLeans : [];
@@ -131,8 +140,12 @@ export default async function handler(req, res) {
       }
 
       // Conflict-group rejection against the OTHER equipped leans (an
-      // existing pin of this same id is a refresh, not a conflict).
-      const otherIds = current.filter((l) => l?.adjustmentId !== adjustmentId).map((l) => l.adjustmentId);
+      // existing pin of this same id is a refresh, not a conflict). The
+      // filter drops malformed/null entries too — they must never crash the
+      // equip (they are surfaced by revalidation, not here).
+      const otherIds = current
+        .filter((l) => l && typeof l.adjustmentId === 'string' && l.adjustmentId !== adjustmentId)
+        .map((l) => l.adjustmentId);
       const conflicts = findEquipConflicts(agent.archetype, adjustmentId, otherIds);
       if (conflicts.length > 0) {
         const err = new Error(SENTINEL_PREFIX + 'conflicting_lean');
@@ -150,11 +163,10 @@ export default async function handler(req, res) {
         ? current.map((l) => (l?.adjustmentId === adjustmentId ? entry : l))
         : [...current, entry];
 
-      tx.update(agentRef, {
+      // settingsRev rides structurally (Release 2 changelog #7).
+      txUpdateAgentSettings(tx, agentRef, {
         standingLeans,
         updatedAt: nowIso,
-        // Release 2 (spec changelog #7): monotonic settings revision.
-        settingsRev: FieldValue.increment(1),
       });
       return { idempotent: false, refreshed: !!existing, standingLeans };
     });

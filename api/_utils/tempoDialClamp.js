@@ -165,11 +165,13 @@ export function applyTempoToHftConfig(hftConfig, effectiveTempo, multiplier) {
  *   });
  */
 export function clampHftConfig({ hftConfig, desiredTempo, dialEnabled, deployedKnobConfigVersion, bandTable } = {}) {
+  // resolveTempoDial's destructuring defaults fire on undefined values
+  // exactly as on absent keys — plain pass-through.
   const { effectiveTempo, multiplier, provenance } = resolveTempoDial({
     desiredTempo,
     dialEnabled,
-    ...(deployedKnobConfigVersion !== undefined ? { deployedKnobConfigVersion } : {}),
-    ...(bandTable !== undefined ? { bandTable } : {}),
+    deployedKnobConfigVersion,
+    bandTable,
   });
   return {
     hftConfig: applyTempoToHftConfig(hftConfig, effectiveTempo, multiplier),

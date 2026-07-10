@@ -11,6 +11,7 @@ import { getAgentLevel } from '../constants/agentProgression';
 import { FORGE_LIMITS } from '../constants/agentProgression';
 import { RULE_COMPAT_MODE } from '../config/featureFlags';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
+import { toEquipError } from './agentService';
 // WS1 L1 write-path guard (fence-lite-approved sites: createRule,
 // setRuleHardness, updateRule category flip, reforgeBundle carry-forward,
 // plus the equipBundle conflict-equip surface). All guard work is gated on
@@ -555,10 +556,10 @@ export const equipBundle = async (agentId, bundleId) => {
     method: 'POST',
     body: JSON.stringify({ agentId, bundleId }),
   });
+  // The shared equip-endpoint error shape (message + status + code) — the
+  // same mapper every /api/agent/* thin client uses.
+  if (!response.ok) throw await toEquipError(response);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data.message || `Could not equip bundle (${response.status})`);
-  }
   return {
     conflictCheckResult: data.conflictCheckResult ?? null,
     compatConflicts: data.compatConflicts ?? [],
@@ -577,10 +578,7 @@ export const unequipBundle = async (agentId, bundleId) => {
     method: 'POST',
     body: JSON.stringify({ agentId, bundleId }),
   });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.message || `Could not unequip bundle (${response.status})`);
-  }
+  if (!response.ok) throw await toEquipError(response);
 };
 
 /**

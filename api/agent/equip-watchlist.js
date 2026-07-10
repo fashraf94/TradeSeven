@@ -17,8 +17,8 @@
 // sentinel error map, shadow-log fire-and-forget). Delta: two-doc read
 // (agents + watchlists), single-doc write (agents).
 
-import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
@@ -98,15 +98,12 @@ export default async function handler(req, res) {
       }
 
       const equippedWatchlistName = watchlist.name || '';
-      tx.update(agentRef, {
+      // settingsRev rides structurally (Release 2 changelog #7).
+      txUpdateAgentSettings(tx, agentRef, {
         equippedWatchlistId: watchlistId,
         equippedWatchlistName,
         equippedAt: nowIso,
         updatedAt: nowIso,
-        // Release 2 (spec changelog #7): monotonic settings revision — every
-        // transactional config write bumps it. Additive-dark (no reader yet);
-        // Phase 2 stamps it into the battle snapshot.
-        settingsRev: FieldValue.increment(1),
       });
       return {
         idempotent: false,

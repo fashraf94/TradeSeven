@@ -83,3 +83,62 @@ describe('revalidateStandingLeans', () => {
     expect(revalidateStandingLeans({})).toEqual({ valid: [], invalidated: [] });
   });
 });
+
+// ─── /code-review hardening: the shared pin rule + at-rest SET checks ───
+
+import { validateLeanPin, STANDING_LEANS_CAP } from './leanRevalidation.js';
+
+describe('validateLeanPin — the single validity authority the equip endpoint shares', () => {
+  it('accepts a current in-menu pin; refuses cross-menu, stale, malformed with the shared reasons', () => {
+    expect(validateLeanPin('guardian', 'CP-04', 1)).toEqual({ ok: true });
+    expect(validateLeanPin('degen', 'CP-04', 1)).toEqual({ ok: false, reason: LEAN_INVALIDATION_REASONS.NOT_IN_MENU });
+    expect(validateLeanPin('guardian', 'CP-04', 0)).toEqual({ ok: false, reason: LEAN_INVALIDATION_REASONS.DEPRECATED_VERSION });
+    expect(validateLeanPin('guardian', '', 1)).toEqual({ ok: false, reason: LEAN_INVALIDATION_REASONS.MALFORMED });
+    expect(validateLeanPin('guardian', 'CP-04', '1')).toEqual({ ok: false, reason: LEAN_INVALIDATION_REASONS.MALFORMED });
+  });
+});
+
+describe('at-rest SET checks (post-adjudication group changes; cap tightening)', () => {
+  it('omits the LATER-equipped side of a conflict group added after both were legally equipped', () => {
+    const { valid, invalidated } = revalidateStandingLeans({
+      standingLeans: [
+        { adjustmentId: 'CP-05', version: 1, equippedAt: '2026-07-02T00:00:00Z' }, // later — loses
+        { adjustmentId: 'CP-04', version: 1, equippedAt: '2026-07-01T00:00:00Z' }, // earlier — wins
+      ],
+      archetypeCodeId: 'guardian',
+    });
+    expect(valid.map((l) => l.adjustmentId)).toEqual(['CP-04']);
+    expect(invalidated).toEqual([
+      { adjustmentId: 'CP-05', version: 1, reason: LEAN_INVALIDATION_REASONS.CONFLICTING_LEAN },
+    ]);
+  });
+
+  it('a missing equippedAt stamp loses the conflict tie', () => {
+    const { valid, invalidated } = revalidateStandingLeans({
+      standingLeans: [
+        { adjustmentId: 'CP-05', version: 1 }, // unstamped — loses
+        { adjustmentId: 'CP-04', version: 1, equippedAt: '2026-07-01T00:00:00Z' },
+      ],
+      archetypeCodeId: 'guardian',
+    });
+    expect(valid.map((l) => l.adjustmentId)).toEqual(['CP-04']);
+    expect(invalidated[0].reason).toBe(LEAN_INVALIDATION_REASONS.CONFLICTING_LEAN);
+  });
+
+  it('enforces the cap over at-rest data (earliest equips win) and keeps equip order in the snapshot shape', () => {
+    const { valid, invalidated } = revalidateStandingLeans({
+      standingLeans: [
+        { adjustmentId: 'CP-02', version: 1, equippedAt: '2026-07-03T00:00:00Z' }, // 3rd — over cap
+        { adjustmentId: 'CP-01', version: 1, equippedAt: '2026-07-01T00:00:00Z' },
+        { adjustmentId: 'CP-04', version: 1, equippedAt: '2026-07-02T00:00:00Z' },
+      ],
+      archetypeCodeId: 'guardian',
+    });
+    expect(STANDING_LEANS_CAP).toBe(2);
+    // Snapshot order = original array order of the accepted set.
+    expect(valid.map((l) => l.adjustmentId)).toEqual(['CP-01', 'CP-04']);
+    expect(invalidated).toEqual([
+      { adjustmentId: 'CP-02', version: 1, reason: LEAN_INVALIDATION_REASONS.OVER_CAP },
+    ]);
+  });
+});

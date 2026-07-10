@@ -18,10 +18,12 @@
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
+import { snapshotsToActiveRules, gatherBundleSnapshots } from '../_utils/bundleRuleProjection.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
@@ -35,7 +37,9 @@ const SENTINEL_TO_HTTP = Object.freeze({
 });
 
 export default async function handler(req, res) {
-  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60_000 } })) {
+  // 30/min — see equip-bundle.js (composite flows: reforge, archive,
+  // deployExperimentToAgent all unequip mid-flow).
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 30, windowMs: 60_000 } })) {
     return;
   }
   if (req.method !== 'POST') {
@@ -67,57 +71,54 @@ export default async function handler(req, res) {
   let txResult;
   try {
     txResult = await db.runTransaction(async (tx) => {
-      const agentSnap = await tx.get(agentRef);
+      // Batched independent point reads (both refs derive from request params).
+      const bundleRef = bundlesCol.doc(bundleId);
+      const [agentSnap, bundleSnap] = await tx.getAll(agentRef, bundleRef);
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
       // No battle-lock — see header.
 
-      const bundleRef = bundlesCol.doc(bundleId);
-      const bundleSnap = await tx.get(bundleRef);
       if (!bundleSnap.exists) throw new Error(SENTINEL_PREFIX + 'bundle_not_found');
       const bundle = bundleSnap.data();
       if (bundle.status !== 'equipped') throw new Error(SENTINEL_PREFIX + 'not_equipped');
 
-      const remainingIds = (agent.equippedBundleIds || []).filter((id) => id !== bundleId);
+      const currentIds = agent.equippedBundleIds || [];
+      const remainingIds = currentIds.filter((id) => id !== bundleId);
 
-      // Rebuild activeRules from remaining equipped bundles (transactional reads).
-      const allSnapshots = [];
-      if (remainingIds.length > 0) {
-        const remainingSnaps = await tx.getAll(...remainingIds.map((eid) => bundlesCol.doc(eid)));
-        for (const eSnap of remainingSnaps) {
-          if (eSnap.exists) {
-            const eData = eSnap.data();
-            allSnapshots.push(...(eData.ruleSnapshots || []).map((r) => ({ ...r, bundleName: eData.name })));
-          }
-        }
+      // Drifted state (bundle says 'equipped' but the agent never lists it):
+      // heal the bundle doc's status, but do NOT rewrite the agent or bump
+      // settingsRev — a no-op agent write would mint a phantom settings
+      // revision the Phase-2 staleness check would read as a real change.
+      if (remainingIds.length === currentIds.length) {
+        tx.update(bundleRef, {
+          status: 'forged',
+          equippedAt: null,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return { idempotent: true, equippedBundleIds: currentIds };
       }
-      const activeRules = allSnapshots.map((snap) => ({
-        ruleId: snap.id,
-        text: snap.text,
-        textTemplate: snap.textTemplate || null,
-        params: snap.params || null,
-        paramValues: snap.paramValues || null,
-        category: snap.category || null,
-        bundleName: snap.bundleName,
-        // Carried for the conflict reconciler (see forgeBundle snapshot note).
-        sourceRef: snap.sourceRef || null,
-        provenance: snap.provenance || null,
-      }));
+
+      // Rebuild activeRules from the remaining equipped bundles via the
+      // SHARED projection (equip-bundle.js uses the same one — the agent
+      // doc's shape can never depend on which endpoint last wrote it).
+      const activeRules = snapshotsToActiveRules(
+        await gatherBundleSnapshots(tx, bundlesCol, remainingIds),
+      );
 
       tx.update(bundleRef, {
         status: 'forged',
         equippedAt: null,
-        updatedAt: nowIso,
+        // serverTimestamp — see equip-bundle.js (bundle docs stay Timestamp-typed).
+        updatedAt: FieldValue.serverTimestamp(),
       });
-      tx.update(agentRef, {
+      // settingsRev rides structurally (Release 2 changelog #7).
+      txUpdateAgentSettings(tx, agentRef, {
         equippedBundleIds: remainingIds,
         activeRules,
-        // Release 2 (spec changelog #7): monotonic settings revision.
-        settingsRev: FieldValue.increment(1),
         updatedAt: nowIso,
       });
-      return { equippedBundleIds: remainingIds };
+      return { idempotent: false, equippedBundleIds: remainingIds };
     });
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
@@ -132,21 +133,26 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'server_error', message: 'Could not unequip bundle.' });
   }
 
-  waitUntil(
-    logSignalDrops({
-      stage: 'bundle_unequip',
-      userId: user.uid,
-      agentId,
-      bundleId,
-      loggedAt: nowIso,
-    }).catch(() => {}),
-  );
+  // Shadow log only on a real state change (house pattern — no log when the
+  // drifted-state heal path took the idempotent branch).
+  if (!txResult.idempotent) {
+    waitUntil(
+      logSignalDrops({
+        stage: 'bundle_unequip',
+        userId: user.uid,
+        agentId,
+        bundleId,
+        loggedAt: nowIso,
+      }).catch(() => {}),
+    );
+  }
 
-  console.log(`[unequip-bundle] agent ${agentId} ✕ bundle ${bundleId} (remaining=${txResult.equippedBundleIds.length})`);
+  console.log(`[unequip-bundle] agent ${agentId} ✕ bundle ${bundleId} (idempotent=${txResult.idempotent}, remaining=${txResult.equippedBundleIds.length})`);
 
   return res.status(200).json({
     agentId,
     bundleId,
     equippedBundleIds: txResult.equippedBundleIds,
+    idempotent: txResult.idempotent,
   });
 }

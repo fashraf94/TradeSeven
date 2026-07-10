@@ -314,7 +314,12 @@ export const updateAgentStats = async (agentId, result, score) => {
 // and commit state in a transaction. Each throws on a non-2xx response with an
 // Error carrying `status` + `code`. Modeled on forgeWatchlistService.js.
 
-async function toEquipError(response) {
+// Exported since the Release 2 bundle-writer migration: forgeService's
+// equip/unequip-bundle thin clients map endpoint errors through this SAME
+// helper, so every /api/agent/* equip surface throws the one Error shape
+// (message + status + code — callers can branch on code without
+// string-matching human copy).
+export async function toEquipError(response) {
   let data = {};
   try {
     data = await response.json();

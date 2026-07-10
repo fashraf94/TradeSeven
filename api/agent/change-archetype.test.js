@@ -9,10 +9,11 @@
 // only the `agents` collection (single-doc read+write).
 //
 // WS1: this file's REAL (un-mocked) import of the handler — whose graph pulls
-// src/config/featureFlags + api/_utils/ruleCompatCleanup (→ the compat map) —
-// IS the BUILD_RULES §4 dependency-surface guard for those api → src edges.
-// NEVER mock featureFlags here (the .compat.test.js sibling mocks it by
-// design; THIS file is the guard).
+// src/config/featureFlags + api/_utils/ruleCompatCleanup (→ the compat map)
+// + api/_utils/leanRevalidation (→ src/data/archetypeAdjustments, the
+// Release-2 lean rider) — IS the BUILD_RULES §4 dependency-surface guard for
+// those api → src edges. NEVER mock featureFlags here (the .compat.test.js /
+// .leanrider.test.js siblings mock it by design; THIS file is the guard).
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 

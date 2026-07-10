@@ -185,3 +185,22 @@ describe('unequip-bundle', () => {
     expect(noBundle.res.statusCode).toBe(404);
   });
 });
+
+describe('unequip-bundle — drifted state (status says equipped, agent never lists it)', () => {
+  it('heals the bundle doc, skips the agent write entirely (no phantom settingsRev), logs nothing', async () => {
+    const fake = seed({ agent: { equippedBundleIds: ['bundle-2'] } }); // bundle-1 NOT listed
+    const { req, res } = makeReqRes({ body: { agentId: AGENT_ID, bundleId: 'bundle-1' } });
+    await unequipBundleHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.idempotent).toBe(true);
+    expect(res.body.equippedBundleIds).toEqual(['bundle-2']);
+    // Bundle status healed…
+    expect(fake.state.bundleDocs[`${AGENT_ID}/bundle-1`].status).toBe('forged');
+    // …but the agent doc is untouched: no settingsRev mint, no activeRules rewrite.
+    const agent = fake.state.agentDocs[AGENT_ID];
+    expect(agent.settingsRev).toBeUndefined();
+    expect(agent.activeRules).toBeUndefined();
+    expect(shadowLogCalls.current).toHaveLength(0);
+  });
+});

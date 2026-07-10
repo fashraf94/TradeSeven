@@ -27,6 +27,7 @@
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
@@ -35,6 +36,7 @@ import { getAgentLevel, FORGE_LIMITS } from '../../src/constants/agentProgressio
 import { reconcile, RECONCILER_VERSION } from '../../src/utils/ruleConflictReconciler.js';
 import { CONFLICT_RECONCILER_DETECT_ENABLED, RULE_COMPAT_MODE } from '../../src/config/featureFlags.js';
 import { classifyBundleSnapshots } from '../../src/services/ruleCompatClassify.js';
+import { snapshotsToActiveRules, gatherBundleSnapshots } from '../_utils/bundleRuleProjection.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
@@ -49,25 +51,11 @@ const SENTINEL_TO_HTTP = Object.freeze({
   bundle_limit:     [409, 'bundle_limit',     'Bundle limit reached for your agent\'s level. Unequip a bundle first or level up by playing more games.'],
 });
 
-// The frozen snapshot → activeRules projection, byte-identical to the client
-// implementation it replaces (forgeService.equipBundle @ 4a0f43e).
-function snapshotsToActiveRules(allSnapshots) {
-  return allSnapshots.map((snap) => ({
-    ruleId: snap.id,
-    text: snap.text,
-    textTemplate: snap.textTemplate || null,
-    params: snap.params || null,
-    paramValues: snap.paramValues || null,
-    category: snap.category || null,
-    bundleName: snap.bundleName,
-    // Carried for the conflict reconciler (see forgeBundle snapshot note).
-    sourceRef: snap.sourceRef || null,
-    provenance: snap.provenance || null,
-  }));
-}
-
 export default async function handler(req, res) {
-  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60_000 } })) {
+  // 30/min (vs the sibling equips' 10): unequip+equip pairs ride composite
+  // flows (deployExperimentToAgent, loadout rearranging) that the replaced
+  // client-SDK path never throttled — headroom keeps those flows off 429s.
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 30, windowMs: 60_000 } })) {
     return;
   }
   if (req.method !== 'POST') {
@@ -99,15 +87,16 @@ export default async function handler(req, res) {
   let txResult;
   try {
     txResult = await db.runTransaction(async (tx) => {
-      // All reads before the write (Firestore transaction rule).
-      const agentSnap = await tx.get(agentRef);
+      // All reads before the write (Firestore transaction rule). Agent +
+      // bundle refs derive purely from request params → one batched round
+      // trip; validation order is unchanged.
+      const bundleRef = bundlesCol.doc(bundleId);
+      const [agentSnap, bundleSnap] = await tx.getAll(agentRef, bundleRef);
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
       if (agent.activeBattleId) throw new Error(SENTINEL_PREFIX + 'battle_active');
 
-      const bundleRef = bundlesCol.doc(bundleId);
-      const bundleSnap = await tx.get(bundleRef);
       if (!bundleSnap.exists) throw new Error(SENTINEL_PREFIX + 'bundle_not_found');
       const bundle = bundleSnap.data();
       if (bundle.status !== 'forged') throw new Error(SENTINEL_PREFIX + 'not_forged');
@@ -125,18 +114,9 @@ export default async function handler(req, res) {
         throw err;
       }
 
-      // Gather rule snapshots from all equipped bundles + this one (transactional
-      // reads — the client version read these outside any guard).
-      const allSnapshots = [];
-      if (currentEquipped.length > 0) {
-        const equippedSnaps = await tx.getAll(...currentEquipped.map((eid) => bundlesCol.doc(eid)));
-        for (const eSnap of equippedSnaps) {
-          if (eSnap.exists) {
-            const eData = eSnap.data();
-            allSnapshots.push(...(eData.ruleSnapshots || []).map((r) => ({ ...r, bundleName: eData.name })));
-          }
-        }
-      }
+      // Gather rule snapshots from all equipped bundles + this one (shared
+      // transactional projection — the client version read these unguarded).
+      const allSnapshots = await gatherBundleSnapshots(tx, bundlesCol, currentEquipped);
       allSnapshots.push(...(bundle.ruleSnapshots || []).map((r) => ({ ...r, bundleName: bundle.name })));
 
       const activeRules = snapshotsToActiveRules(allSnapshots);
@@ -162,14 +142,15 @@ export default async function handler(req, res) {
         equippedAt: nowIso,
         // Only written when DETECT is on, so a flag-off equip stays byte-identical.
         ...(CONFLICT_RECONCILER_DETECT_ENABLED && { conflictCheckResult }),
-        updatedAt: nowIso,
+        // serverTimestamp keeps bundle.updatedAt Timestamp-typed like every
+        // other bundle writer (forgeService) — no type flip-flop per source.
+        updatedAt: FieldValue.serverTimestamp(),
       });
-      tx.update(agentRef, {
+      // settingsRev rides structurally (Release 2 changelog #7);
+      // additive-dark (no reader until Phase 2 stamps the snapshot).
+      txUpdateAgentSettings(tx, agentRef, {
         equippedBundleIds: [...currentEquipped, bundleId],
         activeRules,
-        // Release 2 (spec changelog #7): monotonic settings revision — every
-        // transactional config write bumps it. Additive-dark (no reader yet).
-        settingsRev: FieldValue.increment(1),
         updatedAt: nowIso,
       });
 
@@ -177,8 +158,9 @@ export default async function handler(req, res) {
         conflictCheckResult,
         archetype: agent.archetype || null,
         equippedBundleIds: [...currentEquipped, bundleId],
-        bundleSnapshotsForCompat: bundle.ruleSnapshots || [],
-        bundleRuleHardness: bundle.ruleHardness || {},
+        // The bundle doc crosses the tx boundary ONCE for the post-commit
+        // WS1 classification (pure fn; its location is unobservable).
+        bundle,
       };
     });
   } catch (txErr) {
@@ -210,27 +192,29 @@ export default async function handler(req, res) {
     try {
       compatConflicts = classifyBundleSnapshots({
         archetype: txResult.archetype,
-        ruleSnapshots: txResult.bundleSnapshotsForCompat,
-        ruleHardness: txResult.bundleRuleHardness,
+        ruleSnapshots: txResult.bundle.ruleSnapshots || [],
+        ruleHardness: txResult.bundle.ruleHardness || {},
       });
       if (compatConflicts.length > 0) {
+        // Event shape matches what the OLD pipeline PERSISTED: the client
+        // posted through log-rule-compat-event.js, whose sanitizeEvent strips
+        // per-event agentId/archetype/mode (the envelope carries them) and
+        // caps at 20 events — mirrored here so at-rest rule_compat records
+        // keep one shape across producers.
         await logSignalDrops({
           stage: 'rule_compat',
           userId: user.uid,
           agentId,
           archetype: txResult.archetype,
           mode: RULE_COMPAT_MODE,
-          events: compatConflicts.map((c) => ({
+          events: compatConflicts.slice(0, 20).map((c) => ({
             type: 'compat_conflict_equip',
-            agentId,
-            archetype: txResult.archetype,
             ruleId: c.templateId,
             ruleDocId: c.ruleDocId,
             state: 'core_conflict',
             zone1Ref: c.zone1Ref,
             hardnessRequested: c.resolvedHardness,
             path: 'equip_bundle',
-            mode: RULE_COMPAT_MODE,
             blocked: false,
             ts: nowIso,
           })),

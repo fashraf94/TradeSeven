@@ -10,6 +10,9 @@
 // This module is zero-import pure — nothing here may be mocked.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import resolveControlsDefault, {
   SUPPRESSION_REASONS,
   deriveKilledDirectiveIds,
@@ -37,6 +40,14 @@ const ENFORCE = Object.freeze({ archetypeIntegrityMode: 'enforce', standingLeans
 const OBSERVE = Object.freeze({ archetypeIntegrityMode: 'observe', standingLeansEnabled: true });
 
 describe('renderDirectiveBlock — byte-exact legacy golden', () => {
+  // The fenced template's literal source lines (agentEvalPromptAssembly.js
+  // 938-943 @ 4a0f43e), with the ${} placeholders verbatim.
+  const FENCED_TEMPLATE =
+    'ACTIVE DIRECTIVE (from your Coach):\n' +
+    '"${d.text}"\n' +
+    'threadId: ${d.directiveThreadId}\n' +
+    'If your next trade is influenced by this directive, include directiveThreadId: "${d.directiveThreadId}" in your submit_trade_decision response.';
+
   it('reproduces the fenced eval assembly directive block byte-for-byte', () => {
     // Hand-specified from agentEvalPromptAssembly.js:938-943 @ 4a0f43e. Do NOT
     // derive this string from the module under test.
@@ -46,6 +57,23 @@ describe('renderDirectiveBlock — byte-exact legacy golden', () => {
       'threadId: thread-123\n' +
       'If your next trade is influenced by this directive, include directiveThreadId: "thread-123" in your submit_trade_decision response.';
     expect(renderDirectiveBlock(DIRECTIVE)).toBe(golden);
+    // …and the golden IS the fenced template instantiated (ties the two).
+    expect(
+      FENCED_TEMPLATE
+        .replace('${d.text}', DIRECTIVE.text)
+        .replaceAll('${d.directiveThreadId}', DIRECTIVE.directiveThreadId),
+    ).toBe(golden);
+  });
+
+  it('the FENCED SOURCE still contains the exact template this golden was copied from (drift tripwire)', () => {
+    // BUILD_RULES §3 "re-verify inherited anchors — they drift": if the
+    // fenced block is ever edited via the sanctioned P4 entry, THIS fails,
+    // forcing the renderer + golden to be re-synced before PR-c swaps the
+    // fenced call site onto renderDirectiveBlock. (The ruleCompatGuard.test.js
+    // readFileSync idiom.)
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const fencedSource = readFileSync(resolve(__dirname, 'agentEvalPromptAssembly.js'), 'utf-8');
+    expect(fencedSource).toContain(FENCED_TEMPLATE);
   });
 
   it('returns null for a missing/malformed directive', () => {
@@ -190,6 +218,33 @@ describe('resolveControls — lean semantics (leans resume; overrides expire wit
     });
     expect(r.directive.effective).toBe(successor);
     expect(r.leans.effective).toEqual([LEAN_B]);
+  });
+
+  it('deduplicates a lean whose OWN id the active directive was minted from (identical sentence never renders twice)', () => {
+    const sameIdDirective = { ...DIRECTIVE, adjustmentId: 'TF-02' };
+    const r = resolveControls({
+      modes: ENFORCE,
+      directive: sameIdDirective,
+      standingLeans: [LEAN_A, LEAN_B], // LEAN_A is TF-02 — the directive's own id
+    });
+    expect(r.directive.effective).toBe(sameIdDirective);
+    expect(r.leans.effective).toEqual([LEAN_B]);
+    expect(r.suppressionDescriptors).toEqual([
+      { target: 'lean', id: 'TF-02', version: 1, reason: SUPPRESSION_REASONS.DUPLICATE_OF_DIRECTIVE },
+    ]);
+    // …and the dedup releases with the directive (lean resumes under observe).
+    const observed = resolveControls({ modes: OBSERVE, directive: sameIdDirective, standingLeans: [LEAN_A] });
+    expect(observed.leans.effective).toEqual([LEAN_A]);
+  });
+
+  it('derives the kill set from controlEpochLog directly (callers cannot forget the derivation)', () => {
+    const log = [{ epochKey: 'integrity=observe|leans=on|dial=off', suppressedDirectiveIds: ['thread-123'] }];
+    const r = resolveControls({ modes: ENFORCE, directive: DIRECTIVE, controlEpochLog: log });
+    expect(r.directive.effective).toBeNull();
+    expect(r.suppressionDescriptors[0].reason).toBe(SUPPRESSION_REASONS.EPOCH_KILLED);
+    // An explicit killedDirectiveIds override wins over the log when provided.
+    const overridden = resolveControls({ modes: ENFORCE, directive: DIRECTIVE, controlEpochLog: log, killedDirectiveIds: [] });
+    expect(overridden.directive.effective).toBe(DIRECTIVE);
   });
 
   it('flags a malformed lean instead of silently dropping it', () => {
@@ -346,5 +401,28 @@ describe('epoch telemetry — one event per battle + mode-epoch, no directive re
       null,
     ])).toEqual(['a', 'b']);
     expect(deriveKilledDirectiveIds(undefined)).toEqual([]);
+  });
+});
+
+describe('telemetry ↔ renderer parity on malformed controls', () => {
+  it('a malformed lean appears in the epoch event under the SAME fallback id the renderer suppressed it with', () => {
+    const malformed = { version: 1, text: 'x' }; // adjustmentId lost
+    const modes = { archetypeIntegrityMode: 'enforce', standingLeansEnabled: true, tempoDialEnabled: false };
+    const resolution = resolveControls({ modes, standingLeans: [malformed] });
+    expect(resolution.suppressionDescriptors).toEqual([
+      { target: 'lean', id: 'unknown', version: 1, reason: SUPPRESSION_REASONS.MALFORMED },
+    ]);
+    const event = buildControlEpochEvent({
+      battleId: 'b1',
+      epochKey: computeEpochKey(modes),
+      modes,
+      resolution,
+      standingLeans: [malformed],
+      at: '2026-07-10T00:00:00.000Z',
+    });
+    // The event can never claim "nothing suppressed" while the renderer suppressed one.
+    expect(event.controls).toEqual([
+      { target: 'lean', id: 'unknown', version: 1, desired: 'render', effective: 'suppressed', reason: SUPPRESSION_REASONS.MALFORMED },
+    ]);
   });
 });

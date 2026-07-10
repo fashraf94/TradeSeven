@@ -52,6 +52,12 @@ export const SUPPRESSION_REASONS = Object.freeze({
   EPOCH_KILLED: 'epoch_killed',
   LEANS_DISABLED: 'leans_disabled',
   OVERRIDDEN_BY_DIRECTIVE: 'overridden_by_directive',
+  // The active directive was minted from the SAME adjustment id as the
+  // equipped lean — the directive already carries the identical canonical
+  // sentence, so the lean suppresses for the battle (rendering both would
+  // double the emphasis of one instruction). No override confirmation is
+  // involved: there is no contradiction to confirm, just deduplication.
+  DUPLICATE_OF_DIRECTIVE: 'duplicate_of_directive',
   MALFORMED: 'malformed',
 });
 
@@ -79,10 +85,15 @@ export function deriveKilledDirectiveIds(controlEpochLog) {
  *
  * @param {Object} p
  * @param {{archetypeIntegrityMode?: string, standingLeansEnabled?: boolean}} [p.modes]
- * @param {{text: string, directiveThreadId: string}|null} [p.directive]
+ * @param {{text: string, directiveThreadId: string, adjustmentId?: string|null}|null} [p.directive]
  *   The ACTIVE battle.directive (caller pre-gates isDirectiveActive) or null.
  * @param {Array<{adjustmentId: string, version: number, text: string}>} [p.standingLeans]
  * @param {Array<{directiveInstanceId: string, leanId: string}>} [p.leanOverrides]
+ * @param {Array<Object>} [p.controlEpochLog]
+ *   battle.controlEpochLog verbatim — the no-resurrection kill set derives
+ *   INTERNALLY from it, so a caller cannot hold the epoch invariant wrong by
+ *   forgetting the derivation. (killedDirectiveIds remains as an explicit
+ *   override for tests/advanced callers and wins when provided.)
  * @param {string[]} [p.killedDirectiveIds]
  * @returns {{
  *   directive: {effective: Object|null},
@@ -95,11 +106,16 @@ export function resolveControls({
   directive = null,
   standingLeans = [],
   leanOverrides = [],
-  killedDirectiveIds = [],
+  controlEpochLog = undefined,
+  killedDirectiveIds = undefined,
 } = {}) {
   const integrityMode = typeof modes.archetypeIntegrityMode === 'string' ? modes.archetypeIntegrityMode : 'off';
   const leansEnabled = modes.standingLeansEnabled === true;
-  const killed = new Set(Array.isArray(killedDirectiveIds) ? killedDirectiveIds : []);
+  const killed = new Set(
+    Array.isArray(killedDirectiveIds)
+      ? killedDirectiveIds
+      : deriveKilledDirectiveIds(controlEpochLog),
+  );
   const suppressionDescriptors = [];
 
   // ---- Directive resolution (enforce-only + no-resurrection) ----
@@ -136,26 +152,25 @@ export function resolveControls({
   const effectiveLeans = [];
   const overrides = Array.isArray(leanOverrides) ? leanOverrides : [];
   for (const lean of Array.isArray(standingLeans) ? standingLeans : []) {
+    // ONE descriptor shape for every lean suppression (this is the Phase-2
+    // telemetry contract surface — a reason-dependent shape would break
+    // consumers that assume one shape per target).
+    const suppressLean = (reason) => suppressionDescriptors.push({
+      target: 'lean',
+      id: lean?.adjustmentId || 'unknown',
+      version: typeof lean?.version === 'number' ? lean.version : null,
+      reason,
+    });
     const wellFormed =
       lean && typeof lean === 'object' &&
       typeof lean.adjustmentId === 'string' && lean.adjustmentId &&
       typeof lean.text === 'string' && lean.text;
     if (!wellFormed) {
-      suppressionDescriptors.push({
-        target: 'lean',
-        id: lean?.adjustmentId || 'unknown',
-        version: typeof lean?.version === 'number' ? lean.version : null,
-        reason: SUPPRESSION_REASONS.MALFORMED,
-      });
+      suppressLean(SUPPRESSION_REASONS.MALFORMED);
       continue;
     }
     if (!leansEnabled) {
-      suppressionDescriptors.push({
-        target: 'lean',
-        id: lean.adjustmentId,
-        version: typeof lean.version === 'number' ? lean.version : null,
-        reason: SUPPRESSION_REASONS.LEANS_DISABLED,
-      });
+      suppressLean(SUPPRESSION_REASONS.LEANS_DISABLED);
       continue;
     }
     // Override suppression binds to the RENDERING directive instance only —
@@ -165,12 +180,15 @@ export function resolveControls({
       (o) => o && o.directiveInstanceId === effectiveDirective.directiveThreadId && o.leanId === lean.adjustmentId,
     );
     if (overridden) {
-      suppressionDescriptors.push({
-        target: 'lean',
-        id: lean.adjustmentId,
-        version: typeof lean.version === 'number' ? lean.version : null,
-        reason: SUPPRESSION_REASONS.OVERRIDDEN_BY_DIRECTIVE,
-      });
+      suppressLean(SUPPRESSION_REASONS.OVERRIDDEN_BY_DIRECTIVE);
+      continue;
+    }
+    // Same-id deduplication: a directive minted from the lean's OWN
+    // adjustment id already renders the identical canonical sentence —
+    // conflict groups self-exclude (no override edge exists), so without
+    // this the one instruction would render twice at double emphasis.
+    if (effectiveDirective && effectiveDirective.adjustmentId && effectiveDirective.adjustmentId === lean.adjustmentId) {
+      suppressLean(SUPPRESSION_REASONS.DUPLICATE_OF_DIRECTIVE);
       continue;
     }
     effectiveLeans.push(lean);

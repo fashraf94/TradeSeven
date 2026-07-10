@@ -11,8 +11,8 @@
 //
 // Pattern reference: api/agent/unequip-watchlist.js.
 
-import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
@@ -78,11 +78,10 @@ export default async function handler(req, res) {
         return { idempotent: true, standingLeans: current };
       }
 
-      tx.update(agentRef, {
+      // settingsRev rides structurally (Release 2 changelog #7).
+      txUpdateAgentSettings(tx, agentRef, {
         standingLeans: remaining,
         updatedAt: nowIso,
-        // Release 2 (spec changelog #7): monotonic settings revision.
-        settingsRev: FieldValue.increment(1),
       });
       return { idempotent: false, standingLeans: remaining };
     });

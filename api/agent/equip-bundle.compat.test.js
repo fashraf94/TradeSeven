@@ -188,7 +188,7 @@ describe('equip-bundle × RULE_COMPAT_MODE (the migrated §6.2/§6.3 matrix cell
     expect(ruleCompatEvents()).toHaveLength(0);
   });
 
-  it('OBSERVE: conflicts logged blocked:false, equip untouched', async () => {
+  it('OBSERVE: conflicts logged blocked:false with the SANITIZED per-event shape (envelope carries agentId/archetype/mode)', async () => {
     flagState.mode = 'observe';
     const fake = seed();
     const { req, res } = makeReqRes({ agentId: AGENT_ID, bundleId: 'b1' });
@@ -197,6 +197,16 @@ describe('equip-bundle × RULE_COMPAT_MODE (the migrated §6.2/§6.3 matrix cell
     expect(fake.state.agentDocs[AGENT_ID].equippedBundleIds).toEqual(['b1']);
     const events = ruleCompatEvents();
     expect(events).toHaveLength(2);
-    expect(events.every((e) => e.blocked === false && e.mode === 'observe')).toBe(true);
+    expect(events.every((e) => e.blocked === false)).toBe(true);
+    // Per-event shape matches what log-rule-compat-event.js's sanitizeEvent
+    // PERSISTS for every other producer: no per-event agentId/archetype/mode
+    // (those live on the envelope), and the envelope carries them.
+    for (const e of events) {
+      expect(e).not.toHaveProperty('agentId');
+      expect(e).not.toHaveProperty('archetype');
+      expect(e).not.toHaveProperty('mode');
+    }
+    const envelope = shadowLogCalls.current.find((c) => c.stage === 'rule_compat');
+    expect(envelope).toMatchObject({ agentId: AGENT_ID, archetype: 'guardian', mode: 'observe' });
   });
 });
