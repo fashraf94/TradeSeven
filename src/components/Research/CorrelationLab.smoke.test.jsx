@@ -28,6 +28,8 @@ import {
   ConditionalCard,
   CohesionCard,
   RelationshipQualityCard,
+  ReadQualityCard,
+  SinceLastScanStrip,
   SourceChips,
   ProvenanceLine,
   divergenceState,
@@ -852,5 +854,88 @@ describe('ProvenanceLine — copy variants + clears on manual edit', () => {
 
   it('renders NOTHING once provenance is cleared (the manual-edit / §9 post-state)', () => {
     expect(render(<ProvenanceLine provenance={null} />)).toBe('');
+  });
+});
+
+// ── V3 Sub-build 2 — READ QUALITY panel + "Since your last scan" strip ────────
+describe('ReadQualityCard (Change 1)', () => {
+  const evidence = {
+    readType: 'market_proxy',
+    readState: 'in_flux',
+    applicableCount: 4,
+    passedCount: 2,
+    failedCount: 2,
+    unavailableCount: 2,
+    criteria: [
+      { id: 'adequate_sample', outcome: 'pass', value: 480, threshold: 300, unit: 'count' },
+      { id: 'stable_link', outcome: 'pass', value: 0.82, threshold: 0.7, unit: 'fraction' },
+      { id: 'group_coheres', outcome: 'not_applicable', value: null, threshold: 0.4, unit: 'correlation' },
+      { id: 'broad_based', outcome: 'not_applicable', value: null, threshold: 'broad_based', unit: 'none' },
+      { id: 'survives_adjustment', outcome: 'fail', value: 0.1, threshold: 0.15, unit: 'correlation' },
+      { id: 'tension_contained', outcome: 'fail', value: 'break', threshold: 'calm|elevated', unit: 'none' },
+    ],
+  };
+
+  it('renders BOTH badge dimensions (type never hides state)', () => {
+    const html = render(<ReadQualityCard evidence={evidence} />);
+    expect(html).toContain('Market-proxy read');
+    expect(html).toContain('currently in flux');
+    expect(html).toContain('Not a prediction.');
+  });
+
+  it('lists every criterion with its actual number and threshold', () => {
+    const html = render(<ReadQualityCard evidence={evidence} />);
+    expect(html).toContain('Adequate sample');
+    expect(html).toContain('480');
+    expect(html).toContain('Survives S&amp;P adjustment');
+  });
+
+  it('absence-tolerant — renders nothing without evidence', () => {
+    expect(render(<ReadQualityCard evidence={null} />)).toBe('');
+  });
+});
+
+describe('SinceLastScanStrip (Change 2)', () => {
+  const rows = [{ driver: 'TNX', label: '10Y Yield' }, { driver: 'HYG', label: 'High Yield (HYG)' }];
+
+  it('names the real baseline day and lists top events', () => {
+    const html = render(
+      <SinceLastScanStrip
+        comparison={{ status: 'available', baselineObservationDay: '2026-07-06', gapTradingDays: 3 }}
+        changes={{ status: 'available', events: [{ driverId: 'TNX', event: 'correlation_strengthened', from: 0.4, to: 0.6, magnitude: 0.2 }] }}
+        rows={rows}
+      />
+    );
+    expect(html).toContain('Since your last scan (2026-07-06 — 3 trading days ago)');
+    expect(html).toContain('10Y Yield link strengthened');
+  });
+
+  it('honest empty state when nothing changed', () => {
+    const html = render(
+      <SinceLastScanStrip comparison={{ status: 'available', baselineObservationDay: '2026-07-06', gapTradingDays: 1 }} changes={{ status: 'available', events: [] }} rows={rows} />
+    );
+    expect(html).toContain('No meaningful changes since 2026-07-06');
+  });
+
+  it('not_comparable → the pinned honest copy', () => {
+    const html = render(<SinceLastScanStrip comparison={{ status: 'not_comparable' }} changes={{ status: 'not_comparable', events: [] }} rows={rows} />);
+    expect(html).toContain('Baseline not comparable');
+  });
+
+  it('no_prior_scan → the pinned honest copy', () => {
+    const html = render(<SinceLastScanStrip comparison={{ status: 'no_prior_scan' }} changes={{ status: 'no_prior_scan', events: [] }} rows={rows} />);
+    expect(html).toContain('No prior scan to compare against yet');
+  });
+
+  it('"and N more" when events exceed 5', () => {
+    const events = Array.from({ length: 8 }, () => ({ driverId: 'TNX', event: 'rank_rose', from: 8, to: 1, magnitude: 7 }));
+    const html = render(
+      <SinceLastScanStrip comparison={{ status: 'available', baselineObservationDay: '2026-07-06', gapTradingDays: 2 }} changes={{ status: 'available', events }} rows={rows} />
+    );
+    expect(html).toContain('and 3 more');
+  });
+
+  it('absence-tolerant — renders nothing without a comparison', () => {
+    expect(render(<SinceLastScanStrip comparison={null} changes={null} rows={rows} />)).toBe('');
   });
 });
