@@ -46,9 +46,10 @@ import { CORRELATION_DRIVERS } from './driverRegistry.js';
 import { tensionStateFrom } from './correlationAssembly.js';
 
 // ==================== HOISTED MOCK STATE ====================
-const { authReturnValue, labFlag } = vi.hoisted(() => ({
+const { authReturnValue, labFlag, rqFlag } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   labFlag: { on: true }, // default ON so the flag guard doesn't 404 the behavior tests
+  rqFlag: { on: true }, // V3 relationship-quality: default ON so the per-row rq behavior tests run
 }));
 
 let activeFirestore = null;
@@ -75,6 +76,7 @@ vi.mock('../_utils/authMiddleware.js', () => ({
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get CORRELATION_LAB_ENABLED() { return labFlag.on; },
+  get CORRELATION_RELATIONSHIP_QUALITY_ENABLED() { return rqFlag.on; },
 }));
 
 // BUILD_RULES §4 dependency-surface guard: correlation-scan.js imports
@@ -419,8 +421,9 @@ describe('coverage honesty — every registry driver is a row or a droppedDriver
 
   it('each row carries the pinned shape and its registry label/category verbatim', () => {
     for (const row of out.rows) {
+      // 'rq' is the additive V3 relationship-quality field (flag ON in tests).
       expect(Object.keys(row).sort()).toEqual(
-        ['category', 'corr20', 'corr60', 'd', 'driver', 'identity', 'joinedCloses', 'label', 'score', 'tensionState', 'tier'].sort()
+        ['category', 'corr20', 'corr60', 'd', 'driver', 'identity', 'joinedCloses', 'label', 'rq', 'score', 'tensionState', 'tier'].sort()
       );
       expect(row.label).toBe(CORRELATION_DRIVERS[row.driver].label);
       expect(row.category).toBe(CORRELATION_DRIVERS[row.driver].category);
@@ -854,6 +857,44 @@ describe('V2 Build 3 rider — tier assignment uses the 2dp-ROUNDED corr (displa
       }
       const displayedMagnitude = Math.abs(Number(row.corr20.toFixed(2)));
       expect(row.tier === 'weak').toBe(displayedMagnitude < 0.2);
+    }
+  });
+});
+
+describe('V3 Sub-build 1 — per-row relationship quality (rq)', () => {
+  it('every canonical row carries the rq block; SPX (SPY.US) is the self-skip; a Q-driver is market-suppressed', () => {
+    for (const row of out.rows) expect(row.rq).toBeDefined();
+    // SPX's wire symbol IS the SPY reference → partial is a self-skip, not a number.
+    const spx = out.rows.find((r) => r.driver === 'SPX');
+    expect(spx.rq.partial.w20).toEqual({ skipped: 'self' });
+    expect(spx.rq.partial.w60).toEqual({ skipped: 'self' });
+    // The SPY reference wire is the ρ=0 DEFAULT series, which every zero-block
+    // driver also serves — so such a driver IS the market here → suppressed.
+    const zeroDriver = out.rows.find((r) => r.driver === 'DXY'); // UUP.US → DEFAULT_WIRE
+    expect(zeroDriver.rq.partial.w60.suppressed).toBe('driver_is_market');
+    expect(zeroDriver.rq.partial.w60.adjusted).toBeNull();
+  });
+
+  it('self-percentile latest equals the displayed corr (§9); partial raw equals the headline corr', () => {
+    const xle = out.rows.find((r) => r.driver === 'XLE');
+    expect(xle.rq.selfPercentile.corr20.latest).toBeCloseTo(xle.corr20, 12);
+    expect(xle.rq.selfPercentile.corr60.latest).toBeCloseTo(xle.corr60, 12);
+    // SPY covers every joined session → raw is the headline corr; SPY(=Q) is
+    // orthogonal to the P-composite group so the adjusted link survives.
+    expect(xle.rq.partial.w20.raw).toBeCloseTo(xle.corr20, 12);
+    expect(xle.rq.partial.w20.suppressed).toBeNull();
+    expect(xle.rq.partial.w20.adjusted).not.toBeNull();
+  });
+
+  it('dark: with the relationship-quality flag off, rows carry no rq (byte-identical row shape)', async () => {
+    rqFlag.on = false;
+    try {
+      const res = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 400, forceRefresh: true });
+      expect(res.statusCode).toBe(200);
+      for (const row of res.body.rows) expect(row.rq).toBeUndefined();
+      expect(JSON.stringify(res.body)).not.toContain('"rq"');
+    } finally {
+      rqFlag.on = true;
     }
   });
 });

@@ -27,6 +27,7 @@ import {
   ConditionedBaseRates,
   ConditionalCard,
   CohesionCard,
+  RelationshipQualityCard,
   SourceChips,
   ProvenanceLine,
   divergenceState,
@@ -629,6 +630,169 @@ describe('CohesionCard — intra-group cohesion headline card', () => {
   it('absence tolerance: no cohesion block (old cached payload / group < 3 members) renders NOTHING', () => {
     expect(render(<CohesionCard cohesion={undefined} />)).toBe('');
     expect(render(<CohesionCard cohesion={null} />)).toBe('');
+  });
+});
+
+// ── V3 Phase 1 Sub-build 1 — relationship-quality bundle render smoke ─────────
+describe('RelationshipQualityCard — the deep-dive relationship-quality bundle', () => {
+  const fullRq = {
+    contribution: {
+      full: { corr: 0.58, beta: 1.2 },
+      members: [
+        { index: 0, corrDelta: 0.31, betaDelta: 0.4 },
+        { index: 1, corrDelta: 0.06, betaDelta: 0.05 },
+        { index: 2, corrDelta: 0.04, betaDelta: 0.03 },
+      ],
+      window: 60,
+      n: 60,
+      memberSymbols: ['NVDA', 'AMD', 'AVGO'],
+    },
+    partial: {
+      w20: { raw: 0.6, adjusted: 0.42, n: 20, suppressed: null },
+      w60: { raw: 0.55, adjusted: 0.38, n: 60, suppressed: null },
+    },
+    selfPercentile: {
+      corr20: { percentile: 82, n: 480, latest: 0.6 },
+      corr60: { percentile: 74, n: 440, latest: 0.55 },
+    },
+    captureAsymmetry: {
+      minObs: 60,
+      down: { beta: 1.5, alpha: 0, r: 0.7, n: 120 },
+      up: { beta: 1.1, alpha: 0, r: 0.6, n: 130 },
+      comparison: { asymmetric: true, direction: 'down', betaDown: 1.5, betaUp: 1.1, nDown: 120, nUp: 130 },
+      counts: { down: 120, up: 130 },
+    },
+    tail: {
+      worst: { n: 24, tailPct: 10, coMoveCount: 20, groupMedian: -0.018 },
+      best: { n: 24, tailPct: 10, coMoveCount: 19, groupMedian: 0.015 },
+      sampleN: 240,
+    },
+    stability: { signPersistence: 0.88, aboveFraction: 0.7, n: 480, sign: 'positive', threshold: 0.15 },
+    driverContext: { trailingReturn: 0.032, vol: { percentile: 65, n: 480, latest: 0.01 } },
+  };
+
+  it('renders the keystone partial, contribution verdict, capture, tail, and context — §9 numbers bound to labels', () => {
+    const html = render(<RelationshipQualityCard rq={fullRq} driverLabel="10Y Yield" isDesktop />);
+    // Partial (raw vs S&P-adjusted), values via fmtCorr.
+    expect(html).toContain('adjusted');
+    expect(html).toContain('+0.60'); // raw w20
+    expect(html).toContain('+0.42'); // S&P-adjusted w20
+    // Member contribution: the pure verdict names the top contributor.
+    expect(html).toContain('NVDA carried this link the most');
+    expect(html).toContain('+0.31'); // the leave-one-out delta the verdict decided on
+    // Capture asymmetry.
+    expect(html).toContain('β = +1.50 (n=120)');
+    expect(html).toContain('stronger on down days');
+    // Tail (n-first — a count, never a % of a handful).
+    expect(html).toContain('On the 24 weakest 10Y Yield days in this sample');
+    // Context strip: self-percentile, past stability, driver-side move.
+    // ("88%" sits inside a <strong>, so assert around the element boundary.)
+    expect(html).toContain('82nd percentile');
+    expect(html).toContain('The link stayed positive in');
+    expect(html).toContain('of the 480 observed 20-day windows');
+    expect(html).toContain('+3.2%'); // the driver's own trailing move
+    // No banned predictive vocabulary.
+    expect(html.toLowerCase()).not.toContain('predict');
+    expect(html.toLowerCase()).not.toContain('will likely');
+  });
+
+  it('a market-proxy driver shows the honest note instead of an adjusted number', () => {
+    const rq = {
+      ...fullRq,
+      partial: {
+        w20: { raw: 0.9, adjusted: null, n: 20, suppressed: 'driver_is_market' },
+        w60: { raw: 0.88, adjusted: null, n: 60, suppressed: 'driver_is_market' },
+      },
+    };
+    const html = render(<RelationshipQualityCard rq={rq} driverLabel="Equal-weight S&P (RSP)" isDesktop />);
+    expect(html).toContain('almost 1-for-1'); // the PARTIAL_MARKET_NOTE
+    expect(html).not.toContain('+0.42');
+  });
+
+  it('the driver being SPY hides the partial card entirely (self-skip), context still renders', () => {
+    const rq = { ...fullRq, partial: { w20: { skipped: 'self' }, w60: { skipped: 'self' } } };
+    const html = render(<RelationshipQualityCard rq={rq} driverLabel="S&P 500 (SPY)" isDesktop />);
+    expect(html).not.toContain('Link,'); // the partial card caption is gone
+    expect(html).toContain('Relationship context'); // the rest still renders
+  });
+
+  it('a missing SPY reference degrades to an honest unavailable note', () => {
+    const rq = {
+      ...fullRq,
+      partial: { w20: { suppressed: 'spy_unavailable' }, w60: { suppressed: 'spy_unavailable' } },
+    };
+    const html = render(<RelationshipQualityCard rq={rq} driverLabel="Gold (GLD proxy)" isDesktop />);
+    expect(html).toContain('reference data was unavailable');
+  });
+
+  it('absence tolerance: no relationshipQuality block (dark / old payload) renders NOTHING', () => {
+    expect(render(<RelationshipQualityCard rq={null} driverLabel="Gold" isDesktop />)).toBe('');
+    expect(render(<RelationshipQualityCard rq={undefined} driverLabel="Gold" isDesktop />)).toBe('');
+  });
+
+  it('clamps a sub-0.5 percentile to "1st", never "0th percentile" (a record extreme)', () => {
+    const rq = { ...fullRq, selfPercentile: { corr20: { percentile: 0.4, n: 250, latest: -0.9 }, corr60: null } };
+    const html = render(<RelationshipQualityCard rq={rq} driverLabel="VIX" isDesktop />);
+    expect(html).toContain('1st percentile');
+    expect(html).not.toContain('0th percentile');
+  });
+
+  it('omits the Relationship context card entirely when all three clauses are absent', () => {
+    const rq = {
+      ...fullRq,
+      selfPercentile: { corr20: null, corr60: null },
+      stability: { signPersistence: null, aboveFraction: 0, n: 5, sign: null, threshold: 0.15 },
+      driverContext: { trailingReturn: null, vol: null },
+    };
+    const html = render(<RelationshipQualityCard rq={rq} driverLabel="Gold" isDesktop />);
+    expect(html).not.toContain('Relationship context');
+  });
+
+  it('renders the volatility clause even when the driver trailing return is null', () => {
+    const rq = { ...fullRq, driverContext: { trailingReturn: null, vol: { percentile: 65, n: 480, latest: 0.01 } } };
+    const html = render(<RelationshipQualityCard rq={rq} driverLabel="Gold" isDesktop />);
+    expect(html).toContain('Relationship context'); // the card still renders
+    expect(html).toContain('65th percentile'); // the vol read isn't suppressed by a null move
+  });
+});
+
+describe('ScanResults — the desktop S&P-adjusted column (only when the server sent rq)', () => {
+  const rqRow = (over) => ({ partial: { w20: { raw: 0.5, adjusted: 0.42, n: 20, suppressed: null }, w60: {} }, ...over });
+  const scanWithRq = {
+    summary: null,
+    rows: [
+      {
+        driver: 'XLK', label: 'Technology (XLK)', category: 'Sectors',
+        corr20: 0.62, corr60: 0.55, d: 0.07, score: 1.1,
+        tensionState: 'elevated', joinedCloses: 400, tier: 'established', identity: false,
+        rq: rqRow(),
+      },
+      {
+        driver: 'SPX', label: 'S&P 500 (SPY)', category: 'Macro',
+        corr20: 0.71, corr60: 0.66, d: 0.05, score: 1.0,
+        tensionState: 'elevated', joinedCloses: 400, tier: 'established', identity: false,
+        rq: { partial: { w20: { skipped: 'self' }, w60: { skipped: 'self' } } },
+      },
+    ],
+    droppedDrivers: [],
+    meta: { computedAt: '2026-07-03T20:00:00Z', cached: false, group: ['AAPL'] },
+  };
+
+  it('renders the S&P-adj header and the adjusted value on desktop; self-skip prints a dash', () => {
+    const html = render(<ScanResults scan={scanWithRq} isDesktop onDeepDive={() => {}} onRefresh={() => {}} />);
+    expect(html).toContain('S&amp;P-adj 20d'); // the header (react escapes &)
+    expect(html).toContain('+0.42'); // the XLK adjusted value
+  });
+
+  it('mobile carries NO adjusted column (comparison-tax: full detail lives in the deep dive)', () => {
+    const html = render(<ScanResults scan={scanWithRq} isDesktop={false} onDeepDive={() => {}} onRefresh={() => {}} />);
+    expect(html).not.toContain('S&amp;P-adj 20d');
+  });
+
+  it('a scan without rq (flag dark) renders no adjusted column at all', () => {
+    const noRq = { ...scanWithRq, rows: scanWithRq.rows.map(({ rq, ...r }) => r) };
+    const html = render(<ScanResults scan={noRq} isDesktop onDeepDive={() => {}} onRefresh={() => {}} />);
+    expect(html).not.toContain('S&amp;P-adj 20d');
   });
 });
 

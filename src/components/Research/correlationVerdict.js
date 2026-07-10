@@ -270,3 +270,75 @@ export function conditionalVerdict(block, sides, minObs = 60) {
   }
   return { kind: 'nodiff', text: 'no meaningful difference' };
 }
+
+// ── V3 Phase 1 — relationship-quality verdicts (Bucket B) ────────────────────
+
+/**
+ * Member-contribution headline (V3): names the member the link leaned on most,
+ * but ONLY when its leave-one-out corrDelta beats the runner-up by ≥ 0.10 on
+ * the 2dp-ROUNDED deltas (the SAME values the card prints via fmtCorr, §9);
+ * otherwise the honest read is "broad-based". A positive top delta means
+ * removing that member would have LOWERED the link (it carried the link); a
+ * negative top delta means removing it would have RAISED the link (it pulled
+ * against it). Past-tense, sample-bounded — never a forward claim.
+ *
+ * @param {object|null|undefined} contribution - the memberContribution block,
+ *   with `memberSymbols` (survivor order) attached by the endpoint.
+ * @param {number} [margin=0.1] - the top-vs-next corrDelta gap required to name a name.
+ * @returns {{kind:('single'|'broad'), text:string, topIndex?:number, direction?:('carried'|'against')}|null}
+ *   null on a missing/degenerate block (fewer than 3 members, or fewer than 2
+ *   measurable deltas — the caller renders nothing).
+ */
+export function contributionVerdict(contribution, margin = 0.1) {
+  if (!contribution || !Array.isArray(contribution.members) || contribution.members.length < 3) return null;
+  const symbols = Array.isArray(contribution.memberSymbols) ? contribution.memberSymbols : [];
+  const scored = contribution.members
+    .map((m) => ({ index: m.index, d: Number.isFinite(m.corrDelta) ? Number(m.corrDelta.toFixed(2)) : null }))
+    .filter((m) => m.d != null)
+    .sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+  if (scored.length < 2) return null;
+  const [top, next] = scored;
+  if (Math.abs(top.d) - Math.abs(next.d) >= margin - 1e-9 && Math.abs(top.d) > 0) {
+    const name = symbols[top.index] ?? `member ${top.index + 1}`;
+    const direction = top.d >= 0 ? 'carried' : 'against';
+    const text =
+      direction === 'carried'
+        ? `${name} carried this link the most`
+        : `${name} pulled against this link the most`;
+    return { kind: 'single', topIndex: top.index, direction, text };
+  }
+  return { kind: 'broad', text: 'broad-based — no single member dominated' };
+}
+
+/**
+ * Down- vs up-capture verdict chip (V3): mirrors conditionalVerdict's shape.
+ *   asymmetric (direction set) → "stronger on {dir} days"
+ *   symmetric                  → "no meaningful difference"
+ *   a side null (below minObs)  → "not enough {dir} days (n={n}, {minObs} needed)"
+ *   a side null with n≥minObs / missing count → "couldn't measure {dir} days"
+ * The server decides asymmetry (`block.comparison`) on the SAME 2dp-rounded
+ * betas the cells print (§9); this only renders words. n-first — no verdict is
+ * fabricated for a side that never cleared the observation floor.
+ *
+ * @param {object|null|undefined} block - the captureAsymmetry block
+ *   ({ down, up, comparison, counts:{down,up}, minObs }).
+ * @param {number} [minObs=60]
+ * @returns {{kind:('asymmetric'|'symmetric'|'insufficient'|'unmeasurable'), text:string}|null}
+ */
+export function captureVerdict(block, minObs = 60) {
+  if (!block) return null;
+  const { down, up, comparison } = block;
+  const counts = block.counts ?? {};
+  if (down == null || up == null) {
+    let side;
+    if (down == null && up == null) side = (counts.up ?? 0) < (counts.down ?? 0) ? 'up' : 'down';
+    else side = down == null ? 'down' : 'up';
+    const n = counts[side];
+    if (n == null || n >= minObs) return { kind: 'unmeasurable', text: `couldn't measure ${side} days` };
+    return { kind: 'insufficient', text: `not enough ${side} days (n=${n}, ${minObs} needed)` };
+  }
+  if (comparison?.asymmetric === true && comparison.direction) {
+    return { kind: 'asymmetric', text: `stronger on ${comparison.direction} days` };
+  }
+  return { kind: 'symmetric', text: 'no meaningful difference' };
+}

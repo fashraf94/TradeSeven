@@ -30,9 +30,18 @@ import {
   maskedPearson,
   compareConditionalSides,
   median,
+  memberContribution,
+  partialCorrelationSPY,
+  partialCorrelationWindows,
+  selfPercentile,
+  maskedBeta,
+  compareCaptureSides,
+  tailCoMovement,
+  correlationStability,
   ABS_DIVERGENCE_FLOOR,
   SDS_BASELINE_WINDOW,
 } from './correlationMath.js';
+import { projectAlignedReturns } from '../research/correlationAssembly.js';
 
 // ── Deterministic fixture helpers ───────────────────────────────────────────
 
@@ -987,5 +996,291 @@ describe('pairwiseCohesion', () => {
   it('invalid window → null', () => {
     expect(pairwiseCohesion([base, near1, near2], 1)).toBe(null);
     expect(pairwiseCohesion([base, near1, near2], 20.5)).toBe(null);
+  });
+});
+
+// ── V3 Phase 1 — relationship-quality metrics (Bucket B) ─────────────────────
+
+// ── memberContribution (leave-one-out) ──────────────────────────────────────
+
+describe('memberContribution', () => {
+  const gen = lehmer(7);
+  const n = 120;
+  const driver = Array.from({ length: n }, () => (gen() - 0.5) * 0.02);
+  const strong = driver.map((v) => 0.9 * v + (gen() - 0.5) * 0.002); // tracks the driver
+  const noiseA = Array.from({ length: n }, () => (gen() - 0.5) * 0.02);
+  const noiseB = Array.from({ length: n }, () => (gen() - 0.5) * 0.02);
+  const members = [strong, noiseA, noiseB];
+  const groupMean = driver.map((_, t) => (strong[t] + noiseA[t] + noiseB[t]) / 3);
+
+  it('full.corr equals an independent pearson of the equal-weight group (§4/§9 identity)', () => {
+    const out = memberContribution(members, driver, 60);
+    expect(out).not.toBeNull();
+    expect(out.window).toBe(60);
+    expect(out.full.corr).toBeCloseTo(pearson(groupMean.slice(-60), driver.slice(-60)), 12);
+    expect(out.full.beta).toBeCloseTo(olsBeta(groupMean.slice(-60), driver.slice(-60)).beta, 12);
+  });
+
+  it('the driver-tracking member carries the largest positive corrDelta', () => {
+    const out = memberContribution(members, driver, 60);
+    const dStrong = out.members[0].corrDelta;
+    expect(dStrong).toBeGreaterThan(out.members[1].corrDelta);
+    expect(dStrong).toBeGreaterThan(out.members[2].corrDelta);
+    // removing the tracking member LOWERS the link → positive delta
+    expect(dStrong).toBeGreaterThan(0);
+  });
+
+  it('null below minMembers, on ragged members, or when the window does not fit', () => {
+    expect(memberContribution([strong, noiseA], driver, 60)).toBeNull(); // 2 members
+    expect(memberContribution([strong, noiseA, noiseB.slice(0, 50)], driver, 60)).toBeNull(); // ragged
+    expect(memberContribution(members, driver, 200)).toBeNull(); // window > series
+    expect(memberContribution('nope', driver, 60)).toBeNull();
+  });
+});
+
+// ── partialCorrelationSPY / partialCorrelationWindows ────────────────────────
+
+describe('partialCorrelationSPY', () => {
+  it('recovers the closed form (rGD − rGS·rDS)/√((1−rGS²)(1−rDS²))', () => {
+    const out = partialCorrelationSPY(0.6, 0.7, 0.5);
+    // (0.6 − 0.35)/sqrt(0.51·0.75) = 0.25/0.618466 = 0.404226
+    expect(out.suppressed).toBeNull();
+    expect(out.corr).toBeCloseTo(0.404226, 5);
+  });
+
+  it("suppresses with 'driver_is_market' when |rDS| exceeds the market floor", () => {
+    const out = partialCorrelationSPY(0.6, 0.4, 0.95);
+    expect(out).toEqual({ corr: null, suppressed: 'driver_is_market' });
+  });
+
+  it('corr null with NO tag on non-finite input, out-of-range r, or denominator underflow', () => {
+    expect(partialCorrelationSPY(NaN, 0.5, 0.5)).toEqual({ corr: null, suppressed: null });
+    expect(partialCorrelationSPY(0.5, 1.2, 0.3)).toEqual({ corr: null, suppressed: null });
+    expect(partialCorrelationSPY(0.5, 1, 0.3)).toEqual({ corr: null, suppressed: null }); // rGS=1 → denom 0
+  });
+});
+
+describe('partialCorrelationWindows', () => {
+  const gen = lehmer(99);
+  const n = 100;
+  const spy = Array.from({ length: n }, () => (gen() - 0.5) * 0.02);
+  const group = spy.map((v) => 0.5 * v + (gen() - 0.5) * 0.02);
+  const driver = spy.map((v) => 0.3 * v + (gen() - 0.5) * 0.02);
+
+  it('raw equals the headline pearson on the trailing window when SPY covers every session (§9)', () => {
+    const out = partialCorrelationWindows(group, driver, spy, [20, 60]);
+    expect(out.w20.n).toBe(20);
+    expect(out.w60.n).toBe(60);
+    expect(out.w20.raw).toBeCloseTo(pearson(group.slice(-20), driver.slice(-20)), 12);
+    expect(out.w60.raw).toBeCloseTo(pearson(group.slice(-60), driver.slice(-60)), 12);
+    const rGD = pearson(group.slice(-20), driver.slice(-20));
+    const rGS = pearson(group.slice(-20), spy.slice(-20));
+    const rDS = pearson(driver.slice(-20), spy.slice(-20));
+    expect(out.w20.adjusted).toBeCloseTo(partialCorrelationSPY(rGD, rGS, rDS).corr, 12);
+  });
+
+  it('a per-index SPY gap fails the full-window requirement → null raw/adjusted (honest n reported)', () => {
+    const spyGap = [...spy];
+    spyGap[95] = null; // inside the last-20 window → only 19 shared sessions
+    const out = partialCorrelationWindows(group, driver, spyGap, [20]);
+    expect(out.w20.raw).toBeNull(); // full-window discipline: never a sub-window number
+    expect(out.w20.adjusted).toBeNull();
+    expect(out.w20.n).toBe(19);
+  });
+
+  it('a window longer than the available history is null — no sub-window leak', () => {
+    const thinG = group.slice(0, 30);
+    const thinD = driver.slice(0, 30);
+    const thinS = spy.slice(0, 30);
+    const out = partialCorrelationWindows(thinG, thinD, thinS, [20, 60]);
+    expect(out.w20.n).toBe(20); // a full 20-window exists
+    expect(out.w20.raw).not.toBeNull();
+    expect(out.w60.raw).toBeNull(); // only 30 returns → no full 60-window
+    expect(out.w60.n).toBe(30);
+  });
+
+  it("suppresses adjusted when the driver is ~SPY, but still reports raw", () => {
+    const nearSpyDriver = spy.map((v) => v + (gen() - 0.5) * 0.0005); // rDS ≈ 1
+    const out = partialCorrelationWindows(group, nearSpyDriver, spy, [60]);
+    expect(out.w60.suppressed).toBe('driver_is_market');
+    expect(out.w60.adjusted).toBeNull();
+    expect(out.w60.raw).not.toBeNull();
+  });
+
+  it('null on ragged/invalid input', () => {
+    expect(partialCorrelationWindows(group, driver.slice(0, 50), spy)).toBeNull();
+    expect(partialCorrelationWindows(group, driver, 'nope')).toBeNull();
+  });
+});
+
+// ── selfPercentile ──────────────────────────────────────────────────────────
+
+describe('selfPercentile', () => {
+  const mk = (vals) => vals.map((v) => ({ value: v }));
+
+  it('latest at the top → 100th percentile; latest in the middle → the ≤-share', () => {
+    expect(selfPercentile(mk([-0.5, 0.1, 0.3, 0.8])).percentile).toBeCloseTo(100, 12);
+    const mid = selfPercentile(mk([0.8, -0.5, 0.1, 0.3]));
+    expect(mid.latest).toBeCloseTo(0.3, 12); // signed, last finite value
+    expect(mid.percentile).toBeCloseTo(75, 12); // −0.5, 0.1, 0.3 are ≤ 0.3
+    expect(mid.n).toBe(4);
+  });
+
+  it('skips interior null windows and nulls below minObs', () => {
+    const withGaps = selfPercentile(mk([null, 0.2, null, 0.5]));
+    expect(withGaps.n).toBe(2);
+    expect(withGaps.latest).toBeCloseTo(0.5, 12);
+    expect(selfPercentile(mk([0.5]))).toBeNull(); // minObs 2
+    expect(selfPercentile('nope')).toBeNull();
+  });
+
+  it('a null LAST window yields null — no stale "today" reading (§9: latest === the headline value)', () => {
+    // The headline latestValue() returns the last entry (null → "—"); latest
+    // must match, not fall back to an earlier finite reading.
+    expect(selfPercentile(mk([0.2, 0.3, null]))).toBeNull();
+  });
+});
+
+// ── maskedBeta ──────────────────────────────────────────────────────────────
+
+describe('maskedBeta', () => {
+  const gen = lehmer(11);
+  const n = 40;
+  const driver = Array.from({ length: n }, () => (gen() - 0.5) * 0.02);
+  const group = driver.map((v) => 1.3 * v + (gen() - 0.5) * 0.004);
+  const mask = Array.from({ length: n }, (_, i) => i % 2 === 0);
+
+  it('equals olsBeta on the extracted masked pairs (§4)', () => {
+    const subG = [];
+    const subD = [];
+    for (let i = 0; i < n; i++) if (mask[i]) { subG.push(group[i]); subD.push(driver[i]); }
+    const expected = olsBeta(subG, subD);
+    const out = maskedBeta(group, driver, mask, 2);
+    expect(out.beta).toBeCloseTo(expected.beta, 12);
+    expect(out.n).toBe(subG.length);
+  });
+
+  it('strict-true mask, minN floor, degenerate → null', () => {
+    const truthy = Array.from({ length: n }, () => 1); // 1 !== true → selects nothing
+    expect(maskedBeta(group, driver, truthy, 2)).toBeNull();
+    expect(maskedBeta(group, driver, mask, 40)).toBeNull(); // masked subset < minN
+  });
+});
+
+// ── compareCaptureSides ─────────────────────────────────────────────────────
+
+describe('compareCaptureSides', () => {
+  it('asymmetric on the absolute floor; direction = larger-|beta| side', () => {
+    const out = compareCaptureSides({ beta: 1.5, n: 100 }, { beta: 1.2, n: 100 });
+    expect(out.asymmetric).toBe(true);
+    expect(out.direction).toBe('down');
+  });
+
+  it('asymmetric via the relative floor once the absolute gap clears the noise guard', () => {
+    const out = compareCaptureSides({ beta: 0.6, n: 80 }, { beta: 0.44, n: 80 });
+    // absGap 0.16 (< 0.20) but relGap 0.267 (≥ 0.25) and absGap ≥ 0.05
+    expect(out.asymmetric).toBe(true);
+    expect(out.direction).toBe('down');
+  });
+
+  it('near-zero betas do NOT manufacture a relative asymmetry', () => {
+    const out = compareCaptureSides({ beta: 0.04, n: 100 }, { beta: 0.03, n: 100 });
+    expect(out.asymmetric).toBe(false);
+    expect(out.direction).toBeNull();
+  });
+
+  it('equal magnitude → no direction; a null side → null verdict', () => {
+    const eq = compareCaptureSides({ beta: 0.5, n: 60 }, { beta: -0.5, n: 60 });
+    expect(eq.asymmetric).toBe(true); // gap 1.0
+    expect(eq.direction).toBeNull(); // |0.5| === |−0.5|
+    expect(compareCaptureSides(null, { beta: 1, n: 60 })).toBeNull();
+  });
+});
+
+// ── tailCoMovement ──────────────────────────────────────────────────────────
+
+describe('tailCoMovement', () => {
+  it('uses the decile when the sample supports it; group median calls the shared median (§4)', () => {
+    const n = 60;
+    const driver = Array.from({ length: n }, (_, i) => (i - 30) * 0.001); // strictly increasing
+    const group = Array.from({ length: n }, (_, i) => (i - 30) * 0.002);
+    const out = tailCoMovement(group, driver);
+    expect(out.sampleN).toBe(60);
+    expect(out.worst.n).toBe(6); // ⌊60·0.1⌋
+    expect(out.worst.tailPct).toBe(10);
+    expect(out.worst.coMoveCount).toBe(6); // group is negative on the 6 worst driver days
+    const worstGroup = [0, 1, 2, 3, 4, 5].map((i) => group[i]);
+    expect(out.worst.groupMedian).toBeCloseTo(median(worstGroup), 12);
+    expect(out.best.tailPct).toBe(10);
+  });
+
+  it('falls back to the 20% tail on a smaller sample, and nulls when neither tail reaches minTailN', () => {
+    const n = 30;
+    const driver = Array.from({ length: n }, (_, i) => (i - 15) * 0.001);
+    const group = Array.from({ length: n }, (_, i) => (i - 15) * 0.002);
+    const out = tailCoMovement(group, driver);
+    expect(out.worst.n).toBe(6); // ⌊30·0.2⌋ (decile ⌊3⌋ < 5)
+    expect(out.worst.tailPct).toBe(20);
+    const tiny = Array.from({ length: 20 }, (_, i) => (i - 10) * 0.001);
+    expect(tailCoMovement(tiny, tiny)).toBeNull();
+  });
+});
+
+// ── correlationStability ────────────────────────────────────────────────────
+
+describe('correlationStability', () => {
+  const mk = (vals) => vals.map((v) => ({ value: v }));
+
+  it('reports sign persistence and time-above-threshold over the non-null windows', () => {
+    const vals = [
+      ...Array(30).fill(0.3), // positive, above 0.15
+      ...Array(9).fill(-0.3), // negative, above 0.15
+      0.05, // latest: positive but below 0.15
+    ];
+    const out = correlationStability(mk(vals));
+    expect(out.n).toBe(40);
+    expect(out.sign).toBe('positive');
+    expect(out.signPersistence).toBeCloseTo(31 / 40, 12); // 30 + the latest
+    expect(out.aboveFraction).toBeCloseTo(39 / 40, 12); // all but the latest
+  });
+
+  it('signPersistence null when the latest window is exactly 0; null below minObs', () => {
+    const out = correlationStability(mk([...Array(30).fill(0.3), 0]));
+    expect(out.sign).toBeNull();
+    expect(out.signPersistence).toBeNull();
+    expect(correlationStability(mk(Array(10).fill(0.3)))).toBeNull(); // minObs 20
+  });
+});
+
+// ── projectAlignedReturns ───────────────────────────────────────────────────
+
+describe('projectAlignedReturns', () => {
+  it('aligns a full map to the join axis exactly like computeReturnsSeries', () => {
+    const dates = ['d0', 'd1', 'd2', 'd3'];
+    const map = new Map([['d0', 100], ['d1', 110], ['d2', 99], ['d3', 99]]);
+    const out = projectAlignedReturns(map, dates);
+    expect(out).toHaveLength(3);
+    expect(out[0]).toBeCloseTo(0.1, 12);
+    expect(out[1]).toBeCloseTo(-0.1, 12);
+    expect(out[2]).toBeCloseTo(0, 12);
+  });
+
+  it('nulls ONLY the indices touching a missing session (never the whole series)', () => {
+    const dates = ['d0', 'd1', 'd2', 'd3'];
+    const map = new Map([['d0', 100], ['d1', 110], ['d3', 99]]); // d2 absent
+    const out = projectAlignedReturns(map, dates);
+    expect(out[0]).toBeCloseTo(0.1, 12); // d0→d1 intact
+    expect(out[1]).toBeNull(); // d1→d2
+    expect(out[2]).toBeNull(); // d2→d3
+  });
+
+  it('diff mode and invalid input', () => {
+    const dates = ['d0', 'd1', 'd2'];
+    const map = new Map([['d0', 4.0], ['d1', 4.4], ['d2', 4.1]]);
+    const out = projectAlignedReturns(map, dates, 'diff');
+    expect(out[0]).toBeCloseTo(0.4, 12);
+    expect(out[1]).toBeCloseTo(-0.3, 12);
+    expect(projectAlignedReturns({}, dates)).toBeNull(); // not a Map
+    expect(projectAlignedReturns(map, ['d0'])).toBeNull(); // < 2 dates
   });
 });

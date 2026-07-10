@@ -61,6 +61,7 @@ import {
   assembleDriverCore,
   computeCorrelationCacheTtlMs,
   tensionStateFrom,
+  buildRelationshipQualityShared,
   MIN_CLOSES_FOR_INFLECTIONS,
 } from './correlationAssembly.js';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
@@ -70,7 +71,10 @@ import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
 // BUILD_RULES §4 — featureFlags and correlationVerdict carry no browser deps;
 // the unmocked handler import in correlation-scan.boundary.test.js is the
 // dependency-surface guard.
-import { CORRELATION_LAB_ENABLED } from '../../src/config/featureFlags.js';
+import {
+  CORRELATION_LAB_ENABLED,
+  CORRELATION_RELATIONSHIP_QUALITY_ENABLED,
+} from '../../src/config/featureFlags.js';
 import { strengthBand } from '../../src/components/Research/correlationVerdict.js';
 
 // ~28 EODHD fetches (group + 25 drivers) in 6 throttled chunks (~1.5s of
@@ -301,6 +305,14 @@ export default async function handler(req, res) {
     // the SURVIVING members (dropped members aren't in the composite).
     const survivorWires = new Set(survivors.map((s) => memberWire.get(s)));
 
+    // V3 relationship-quality: the SPY reference for per-row SPY-adjusted partial
+    // correlation, built ONCE (SPY.US is already in rowsBySymbol as the SPX
+    // driver — no extra fetch). Null if SPY.US failed to fetch, in which case
+    // every row's partial degrades to spy_unavailable; a failed SPX driver
+    // already lands in droppedDrivers, leaving the run uncached (clean-run rule).
+    const spyRows = CORRELATION_RELATIONSHIP_QUALITY_ENABLED ? rowsBySymbol.get('SPY.US') : null;
+    const spyMap = spyRows ? new Map(spyRows.map((r) => [r.date, r.close])) : null;
+
     // ── Per-driver assembly: the shared V0 core per registry driver ──
     const rows = [];
     const droppedDrivers = [];
@@ -335,6 +347,9 @@ export default async function handler(req, res) {
           joinedCloses: core.joinedCloses,
           tier: 'weak',
           identity: survivorWires.has(registry.symbol),
+          // Shape stability: an uncomputable row still carries the rq key (null)
+          // when the flag is on, so the UI never branches on its presence per-row.
+          ...(CORRELATION_RELATIONSHIP_QUALITY_ENABLED ? { rq: null } : {}),
         });
         continue;
       }
@@ -352,6 +367,24 @@ export default async function handler(req, res) {
         ? standardizedDivergenceScore(core.divergenceSeries, core.divergenceSeries.length - 1)
         : null;
       const d = lastDiv ? lastDiv.d : null;
+
+      // V3 relationship-quality per row (the shared cheap surface only — partial,
+      // self-percentile, past-stability, driver context; contribution/asymmetry/
+      // tail stay deep-dive-natural). Computed from the core series BEFORE they
+      // are discarded above; flag-gated so the row is byte-identical when off.
+      const rq = CORRELATION_RELATIONSHIP_QUALITY_ENABLED
+        ? buildRelationshipQualityShared({
+            groupReturns: core.groupReturns,
+            driverReturns: core.driverReturns,
+            driverCloses: core.driverCloses,
+            joinedDates: core.joinedDates,
+            corr20: core.corr20,
+            corr60: core.corr60,
+            driverSymbol: registry.symbol,
+            spyMap,
+          })
+        : null;
+
       rows.push({
         driver: key,
         label: registry.label,
@@ -364,6 +397,7 @@ export default async function handler(req, res) {
         joinedCloses: core.joinedCloses,
         tier: scanTier(corr20, corr60),
         identity: survivorWires.has(registry.symbol),
+        ...(CORRELATION_RELATIONSHIP_QUALITY_ENABLED ? { rq } : {}),
       });
     }
 
