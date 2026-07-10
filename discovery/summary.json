@@ -1,0 +1,1107 @@
+{
+  "generated_at": "2026-07-10T16:11:51.100Z",
+  "study_start": "2023-07-10",
+  "A1_5m_depth": [
+    {
+      "symbol": "AAPL",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "NVDA",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "MSFT",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "KO",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "PG",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "JNJ",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "TSLA",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "AMD",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "COIN",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "AFRM",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "HOOD",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "RKLB",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "SPY",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "XLK",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "XLE",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "SPHB",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    },
+    {
+      "symbol": "SPLV",
+      "depth_probe_first": "2023-06-01 13:30:00",
+      "depth_probe_last": "2023-06-30 20:00:00",
+      "depth_probe_count": 1659,
+      "verdict_36mo": "PASS"
+    }
+  ],
+  "A2_daily_warmup": [
+    {
+      "symbol": "AAPL",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "NVDA",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "MSFT",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "KO",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "PG",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "JNJ",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "TSLA",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "AMD",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "COIN",
+      "daily_first": "2021-04-14",
+      "daily_last": "2026-07-09",
+      "total_sessions": 1315,
+      "sessions_before_study_start": 562,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "AFRM",
+      "daily_first": "2021-01-13",
+      "daily_last": "2026-07-09",
+      "total_sessions": 1377,
+      "sessions_before_study_start": 624,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "HOOD",
+      "daily_first": "2021-07-29",
+      "daily_last": "2026-07-09",
+      "total_sessions": 1241,
+      "sessions_before_study_start": 488,
+      "verdict_550_warmup": "FAIL",
+      "shortfall": 62
+    },
+    {
+      "symbol": "RKLB",
+      "daily_first": "2020-11-24",
+      "daily_last": "2026-07-09",
+      "total_sessions": 1410,
+      "sessions_before_study_start": 657,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "SPY",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "XLK",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "XLE",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "SPHB",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    },
+    {
+      "symbol": "SPLV",
+      "daily_first": "2018-01-02",
+      "daily_last": "2026-07-09",
+      "total_sessions": 2140,
+      "sessions_before_study_start": 1387,
+      "verdict_550_warmup": "PASS",
+      "shortfall": 0
+    }
+  ],
+  "A3_cross_grain": [
+    {
+      "symbol": "AAPL",
+      "sessions_compared": 21,
+      "within_0_1_pct": 20,
+      "verdict": "PARTIAL",
+      "sample_comparisons": [
+        {
+          "date": "2026-06-01",
+          "daily_close": 306.31,
+          "intraday_last_regular_close": 306.320007,
+          "diff_pct": "0.0033",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-02",
+          "daily_close": 315.2,
+          "intraday_last_regular_close": 315.190002,
+          "diff_pct": "-0.0032",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-03",
+          "daily_close": 310.26,
+          "intraday_last_regular_close": 310.380004,
+          "diff_pct": "0.0387",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-04",
+          "daily_close": 311.23,
+          "intraday_last_regular_close": 311.160003,
+          "diff_pct": "-0.0225",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-05",
+          "daily_close": 307.34,
+          "intraday_last_regular_close": 307.390014,
+          "diff_pct": "0.0163",
+          "within_tol": true
+        }
+      ],
+      "outliers": [
+        {
+          "date": "2026-06-26",
+          "daily_close": 283.78,
+          "intraday_last_regular_close": 281.200012,
+          "diff_pct": "-0.9092",
+          "within_tol": false
+        }
+      ]
+    },
+    {
+      "symbol": "TSLA",
+      "sessions_compared": 21,
+      "within_0_1_pct": 20,
+      "verdict": "PARTIAL",
+      "sample_comparisons": [
+        {
+          "date": "2026-06-01",
+          "daily_close": 415.88,
+          "intraday_last_regular_close": 415.709991,
+          "diff_pct": "-0.0409",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-02",
+          "daily_close": 423.74,
+          "intraday_last_regular_close": 423.73999,
+          "diff_pct": "-0.0000",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-03",
+          "daily_close": 423.7,
+          "intraday_last_regular_close": 423.73001,
+          "diff_pct": "0.0071",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-04",
+          "daily_close": 418.45,
+          "intraday_last_regular_close": 418.459991,
+          "diff_pct": "0.0024",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-05",
+          "daily_close": 391,
+          "intraday_last_regular_close": 390.970001,
+          "diff_pct": "-0.0077",
+          "within_tol": true
+        }
+      ],
+      "outliers": [
+        {
+          "date": "2026-06-26",
+          "daily_close": 379.71,
+          "intraday_last_regular_close": 379.190002,
+          "diff_pct": "-0.1369",
+          "within_tol": false
+        }
+      ]
+    },
+    {
+      "symbol": "AFRM",
+      "sessions_compared": 21,
+      "within_0_1_pct": 20,
+      "verdict": "PARTIAL",
+      "sample_comparisons": [
+        {
+          "date": "2026-06-01",
+          "daily_close": 72.91,
+          "intraday_last_regular_close": 72.900001,
+          "diff_pct": "-0.0137",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-02",
+          "daily_close": 71.01,
+          "intraday_last_regular_close": 71,
+          "diff_pct": "-0.0141",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-03",
+          "daily_close": 66.27,
+          "intraday_last_regular_close": 66.25,
+          "diff_pct": "-0.0302",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-04",
+          "daily_close": 68.7,
+          "intraday_last_regular_close": 68.699996,
+          "diff_pct": "-0.0000",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-05",
+          "daily_close": 63.61,
+          "intraday_last_regular_close": 63.604999,
+          "diff_pct": "-0.0079",
+          "within_tol": true
+        }
+      ],
+      "outliers": [
+        {
+          "date": "2026-06-26",
+          "daily_close": 79.49,
+          "intraday_last_regular_close": 79.339996,
+          "diff_pct": "-0.1887",
+          "within_tol": false
+        }
+      ]
+    },
+    {
+      "symbol": "XLK",
+      "sessions_compared": 21,
+      "within_0_1_pct": 20,
+      "verdict": "PARTIAL",
+      "sample_comparisons": [
+        {
+          "date": "2026-06-01",
+          "daily_close": 195.76,
+          "intraday_last_regular_close": 195.740005,
+          "diff_pct": "-0.0102",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-02",
+          "daily_close": 198.21,
+          "intraday_last_regular_close": 198.199996,
+          "diff_pct": "-0.0050",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-03",
+          "daily_close": 196.23,
+          "intraday_last_regular_close": 196.25,
+          "diff_pct": "0.0102",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-04",
+          "daily_close": 193.17,
+          "intraday_last_regular_close": 193.139999,
+          "diff_pct": "-0.0155",
+          "within_tol": true
+        },
+        {
+          "date": "2026-06-05",
+          "daily_close": 180.3,
+          "intraday_last_regular_close": 180.259994,
+          "diff_pct": "-0.0222",
+          "within_tol": true
+        }
+      ],
+      "outliers": [
+        {
+          "date": "2026-06-26",
+          "daily_close": 181.11,
+          "intraday_last_regular_close": 180.880004,
+          "diff_pct": "-0.1270",
+          "within_tol": false
+        }
+      ]
+    }
+  ],
+  "A3_split_adjacent_NVDA": {
+    "split_date": "2024-06-10",
+    "ratio": "10-for-1",
+    "comparisons": [
+      {
+        "date": "2024-06-05",
+        "daily_close_raw": 1224.4,
+        "daily_adjusted_close": 122.2285,
+        "intraday_last_regular_close": 1224.390014,
+        "ratio_intraday_to_dailyRaw": "1.0000",
+        "ratio_intraday_to_dailyAdj": "10.0172"
+      },
+      {
+        "date": "2024-06-06",
+        "daily_close_raw": 1209.98,
+        "daily_adjusted_close": 120.789,
+        "intraday_last_regular_close": 1209.410034,
+        "ratio_intraday_to_dailyRaw": "0.9995",
+        "ratio_intraday_to_dailyAdj": "10.0126"
+      },
+      {
+        "date": "2024-06-07",
+        "daily_close_raw": 1208.88,
+        "daily_adjusted_close": 120.6792,
+        "intraday_last_regular_close": 1208.650024,
+        "ratio_intraday_to_dailyRaw": "0.9998",
+        "ratio_intraday_to_dailyAdj": "10.0154"
+      },
+      {
+        "date": "2024-06-10",
+        "daily_close_raw": 121.79,
+        "daily_adjusted_close": 121.5796,
+        "intraday_last_regular_close": 121.650001,
+        "ratio_intraday_to_dailyRaw": "0.9989",
+        "ratio_intraday_to_dailyAdj": "1.0006"
+      },
+      {
+        "date": "2024-06-11",
+        "daily_close_raw": 120.91,
+        "daily_adjusted_close": 120.711,
+        "intraday_last_regular_close": 120.910003,
+        "ratio_intraday_to_dailyRaw": "1.0000",
+        "ratio_intraday_to_dailyAdj": "1.0016"
+      },
+      {
+        "date": "2024-06-12",
+        "daily_close_raw": 125.2,
+        "daily_adjusted_close": 124.994,
+        "intraday_last_regular_close": 125.269996,
+        "ratio_intraday_to_dailyRaw": "1.0006",
+        "ratio_intraday_to_dailyAdj": "1.0022"
+      },
+      {
+        "date": "2024-06-13",
+        "daily_close_raw": 129.61,
+        "daily_adjusted_close": 129.3967,
+        "intraday_last_regular_close": 129.369995,
+        "ratio_intraday_to_dailyRaw": "0.9981",
+        "ratio_intraday_to_dailyAdj": "0.9998"
+      },
+      {
+        "date": "2024-06-14",
+        "daily_close_raw": 131.88,
+        "daily_adjusted_close": 131.663,
+        "intraday_last_regular_close": 131.979995,
+        "ratio_intraday_to_dailyRaw": "1.0008",
+        "ratio_intraday_to_dailyAdj": "1.0024"
+      }
+    ],
+    "finding": "5m data is UNADJUSTED (raw traded prices). Daily has both raw close and adjusted_close."
+  },
+  "A4_timestamp_semantics": {
+    "gmtoffset_all_zero": true,
+    "first_bar": {
+      "timestamp": 1780320600,
+      "gmtoffset": 0,
+      "datetime": "2026-06-01 13:30:00",
+      "open": 309.535003,
+      "high": 310.679992,
+      "low": 308.5,
+      "close": 310.029998,
+      "volume": 3861073
+    },
+    "last_bar": {
+      "timestamp": 1782849600,
+      "gmtoffset": 0,
+      "datetime": "2026-06-30 20:00:00",
+      "open": 289.359985,
+      "high": 289.359985,
+      "low": 289.359985,
+      "close": 289.359985,
+      "volume": null
+    },
+    "first_session_first_5_bars": [
+      "2026-06-01 13:30:00",
+      "2026-06-01 13:35:00",
+      "2026-06-01 13:40:00",
+      "2026-06-01 13:45:00",
+      "2026-06-01 13:50:00"
+    ],
+    "first_session_last_5_bars": [
+      "2026-06-01 19:40:00",
+      "2026-06-01 19:45:00",
+      "2026-06-01 19:50:00",
+      "2026-06-01 19:55:00",
+      "2026-06-01 20:00:00"
+    ],
+    "bars_outside_regular_session": 0,
+    "bars_at_20_00": 21,
+    "first_bars_per_day": [
+      {
+        "date": "2026-06-01",
+        "first": "2026-06-01 13:30:00",
+        "last": "2026-06-01 20:00:00",
+        "count": 79
+      },
+      {
+        "date": "2026-06-02",
+        "first": "2026-06-02 13:30:00",
+        "last": "2026-06-02 20:00:00",
+        "count": 79
+      },
+      {
+        "date": "2026-06-03",
+        "first": "2026-06-03 13:30:00",
+        "last": "2026-06-03 20:00:00",
+        "count": 79
+      },
+      {
+        "date": "2026-06-04",
+        "first": "2026-06-04 13:30:00",
+        "last": "2026-06-04 20:00:00",
+        "count": 79
+      },
+      {
+        "date": "2026-06-05",
+        "first": "2026-06-05 13:30:00",
+        "last": "2026-06-05 20:00:00",
+        "count": 79
+      }
+    ]
+  },
+  "A5_synthetic_bars": [
+    {
+      "symbol": "AAPL",
+      "total_bars": 1659,
+      "sessions": 21,
+      "synthetic_bars": 21,
+      "per_session_avg": "1.00",
+      "null_volume_bars": 21,
+      "flat_ohlc_bars": 21,
+      "bars_at_20_00_UTC": 21,
+      "all_synth_at_2000": true,
+      "identification_rule": "datetime ends 20:00:00 AND volume === null AND open===high===low===close",
+      "sample_synth": [
+        {
+          "timestamp": 1780344000,
+          "gmtoffset": 0,
+          "datetime": "2026-06-01 20:00:00",
+          "open": 306.309997,
+          "high": 306.309997,
+          "low": 306.309997,
+          "close": 306.309997,
+          "volume": null
+        },
+        {
+          "timestamp": 1780430400,
+          "gmtoffset": 0,
+          "datetime": "2026-06-02 20:00:00",
+          "open": 315.200012,
+          "high": 315.200012,
+          "low": 315.200012,
+          "close": 315.200012,
+          "volume": null
+        },
+        {
+          "timestamp": 1780516800,
+          "gmtoffset": 0,
+          "datetime": "2026-06-03 20:00:00",
+          "open": 310.260009,
+          "high": 310.260009,
+          "low": 310.260009,
+          "close": 310.260009,
+          "volume": null
+        }
+      ]
+    },
+    {
+      "symbol": "TSLA",
+      "total_bars": 1659,
+      "sessions": 21,
+      "synthetic_bars": 21,
+      "per_session_avg": "1.00",
+      "null_volume_bars": 21,
+      "flat_ohlc_bars": 21,
+      "bars_at_20_00_UTC": 21,
+      "all_synth_at_2000": true,
+      "identification_rule": "datetime ends 20:00:00 AND volume === null AND open===high===low===close",
+      "sample_synth": [
+        {
+          "timestamp": 1780344000,
+          "gmtoffset": 0,
+          "datetime": "2026-06-01 20:00:00",
+          "open": 415.880004,
+          "high": 415.880004,
+          "low": 415.880004,
+          "close": 415.880004,
+          "volume": null
+        },
+        {
+          "timestamp": 1780430400,
+          "gmtoffset": 0,
+          "datetime": "2026-06-02 20:00:00",
+          "open": 423.73999,
+          "high": 423.73999,
+          "low": 423.73999,
+          "close": 423.73999,
+          "volume": null
+        },
+        {
+          "timestamp": 1780516800,
+          "gmtoffset": 0,
+          "datetime": "2026-06-03 20:00:00",
+          "open": 423.700012,
+          "high": 423.700012,
+          "low": 423.700012,
+          "close": 423.700012,
+          "volume": null
+        }
+      ]
+    },
+    {
+      "symbol": "AFRM",
+      "total_bars": 1659,
+      "sessions": 21,
+      "synthetic_bars": 21,
+      "per_session_avg": "1.00",
+      "null_volume_bars": 21,
+      "flat_ohlc_bars": 21,
+      "bars_at_20_00_UTC": 21,
+      "all_synth_at_2000": true,
+      "identification_rule": "datetime ends 20:00:00 AND volume === null AND open===high===low===close",
+      "sample_synth": [
+        {
+          "timestamp": 1780344000,
+          "gmtoffset": 0,
+          "datetime": "2026-06-01 20:00:00",
+          "open": 72.910003,
+          "high": 72.910003,
+          "low": 72.910003,
+          "close": 72.910003,
+          "volume": null
+        },
+        {
+          "timestamp": 1780430400,
+          "gmtoffset": 0,
+          "datetime": "2026-06-02 20:00:00",
+          "open": 71.010002,
+          "high": 71.010002,
+          "low": 71.010002,
+          "close": 71.010002,
+          "volume": null
+        },
+        {
+          "timestamp": 1780516800,
+          "gmtoffset": 0,
+          "datetime": "2026-06-03 20:00:00",
+          "open": 66.269996,
+          "high": 66.269996,
+          "low": 66.269996,
+          "close": 66.269996,
+          "volume": null
+        }
+      ]
+    },
+    {
+      "symbol": "XLK",
+      "total_bars": 1659,
+      "sessions": 21,
+      "synthetic_bars": 21,
+      "per_session_avg": "1.00",
+      "null_volume_bars": 21,
+      "flat_ohlc_bars": 21,
+      "bars_at_20_00_UTC": 21,
+      "all_synth_at_2000": true,
+      "identification_rule": "datetime ends 20:00:00 AND volume === null AND open===high===low===close",
+      "sample_synth": [
+        {
+          "timestamp": 1780344000,
+          "gmtoffset": 0,
+          "datetime": "2026-06-01 20:00:00",
+          "open": 195.759994,
+          "high": 195.759994,
+          "low": 195.759994,
+          "close": 195.759994,
+          "volume": null
+        },
+        {
+          "timestamp": 1780430400,
+          "gmtoffset": 0,
+          "datetime": "2026-06-02 20:00:00",
+          "open": 198.210006,
+          "high": 198.210006,
+          "low": 198.210006,
+          "close": 198.210006,
+          "volume": null
+        },
+        {
+          "timestamp": 1780516800,
+          "gmtoffset": 0,
+          "datetime": "2026-06-03 20:00:00",
+          "open": 196.229995,
+          "high": 196.229995,
+          "low": 196.229995,
+          "close": 196.229995,
+          "volume": null
+        }
+      ]
+    }
+  ],
+  "A5_volume_anomalies": {
+    "AAPL": {
+      "zero_volume_bars": 0,
+      "negative_volume_bars": 0
+    },
+    "TSLA": {
+      "zero_volume_bars": 0,
+      "negative_volume_bars": 0
+    },
+    "AFRM": {
+      "zero_volume_bars": 0,
+      "negative_volume_bars": 0
+    },
+    "XLK": {
+      "zero_volume_bars": 0,
+      "negative_volume_bars": 0
+    }
+  },
+  "A6_earnings": {
+    "endpoint_top_level_keys": [
+      "type",
+      "description",
+      "symbols",
+      "earnings"
+    ],
+    "accepts_symbol_list": true,
+    "bulk_response_bytes": 4513,
+    "total_records_24mo": 24,
+    "fields": [
+      "code",
+      "report_date",
+      "date",
+      "before_after_market",
+      "currency",
+      "actual",
+      "estimate",
+      "difference",
+      "percent"
+    ],
+    "by_symbol": {
+      "AAPL": [
+        {
+          "report_date": "2024-08-01",
+          "fiscal_quarter_end": "2024-06-30",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 1.4,
+          "estimate_eps": 1.34,
+          "surprise_pct": 4.4776
+        },
+        {
+          "report_date": "2024-10-31",
+          "fiscal_quarter_end": "2024-09-30",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.97,
+          "estimate_eps": 0.95,
+          "surprise_pct": 2.1053
+        },
+        {
+          "report_date": "2025-01-30",
+          "fiscal_quarter_end": "2024-12-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 2.4,
+          "estimate_eps": 2.34,
+          "surprise_pct": 2.5641
+        },
+        {
+          "report_date": "2025-05-01",
+          "fiscal_quarter_end": "2025-03-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 1.65,
+          "estimate_eps": 1.62,
+          "surprise_pct": 1.8519
+        },
+        {
+          "report_date": "2025-07-31",
+          "fiscal_quarter_end": "2025-06-30",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 1.57,
+          "estimate_eps": 1.43,
+          "surprise_pct": 9.7902
+        },
+        {
+          "report_date": "2025-10-30",
+          "fiscal_quarter_end": "2025-09-30",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 1.85,
+          "estimate_eps": 1.77,
+          "surprise_pct": 4.5198
+        },
+        {
+          "report_date": "2026-01-29",
+          "fiscal_quarter_end": "2025-12-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 2.84,
+          "estimate_eps": 2.67,
+          "surprise_pct": 6.367
+        },
+        {
+          "report_date": "2026-04-30",
+          "fiscal_quarter_end": "2026-03-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 2.01,
+          "estimate_eps": 1.94,
+          "surprise_pct": 3.6082
+        }
+      ],
+      "NVDA": [
+        {
+          "report_date": "2024-08-28",
+          "fiscal_quarter_end": "2024-07-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.68,
+          "estimate_eps": 0.63,
+          "surprise_pct": 7.9365
+        },
+        {
+          "report_date": "2024-11-20",
+          "fiscal_quarter_end": "2024-10-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.81,
+          "estimate_eps": 0.75,
+          "surprise_pct": 8
+        },
+        {
+          "report_date": "2025-02-26",
+          "fiscal_quarter_end": "2025-01-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.89,
+          "estimate_eps": 0.85,
+          "surprise_pct": 4.7059
+        },
+        {
+          "report_date": "2025-05-28",
+          "fiscal_quarter_end": "2025-04-30",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.81,
+          "estimate_eps": 0.75,
+          "surprise_pct": 8
+        },
+        {
+          "report_date": "2025-08-27",
+          "fiscal_quarter_end": "2025-07-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 1.05,
+          "estimate_eps": 1.01,
+          "surprise_pct": 3.9604
+        },
+        {
+          "report_date": "2025-11-19",
+          "fiscal_quarter_end": "2025-10-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 1.3,
+          "estimate_eps": 1.26,
+          "surprise_pct": 3.1746
+        },
+        {
+          "report_date": "2026-02-25",
+          "fiscal_quarter_end": "2026-01-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 1.62,
+          "estimate_eps": 1.54,
+          "surprise_pct": 5.1948
+        },
+        {
+          "report_date": "2026-05-20",
+          "fiscal_quarter_end": "2026-04-30",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 1.87,
+          "estimate_eps": 1.77,
+          "surprise_pct": 5.6497
+        }
+      ],
+      "TSLA": [
+        {
+          "report_date": "2024-07-23",
+          "fiscal_quarter_end": "2024-06-30",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.52,
+          "estimate_eps": 0.56,
+          "surprise_pct": -7.1429
+        },
+        {
+          "report_date": "2024-10-23",
+          "fiscal_quarter_end": "2024-09-30",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.72,
+          "estimate_eps": 0.6,
+          "surprise_pct": 20
+        },
+        {
+          "report_date": "2025-01-29",
+          "fiscal_quarter_end": "2024-12-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.73,
+          "estimate_eps": 0.76,
+          "surprise_pct": -3.9474
+        },
+        {
+          "report_date": "2025-04-22",
+          "fiscal_quarter_end": "2025-03-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.27,
+          "estimate_eps": 0.41,
+          "surprise_pct": -34.1463
+        },
+        {
+          "report_date": "2025-07-23",
+          "fiscal_quarter_end": "2025-06-30",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.4,
+          "estimate_eps": 0.4,
+          "surprise_pct": 0
+        },
+        {
+          "report_date": "2025-10-22",
+          "fiscal_quarter_end": "2025-09-30",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.5,
+          "estimate_eps": 0.56,
+          "surprise_pct": -10.7143
+        },
+        {
+          "report_date": "2026-01-28",
+          "fiscal_quarter_end": "2025-12-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.5,
+          "estimate_eps": 0.45,
+          "surprise_pct": 11.1111
+        },
+        {
+          "report_date": "2026-04-22",
+          "fiscal_quarter_end": "2026-03-31",
+          "before_after_market": "AfterMarket",
+          "actual_eps": 0.41,
+          "estimate_eps": 0.35,
+          "surprise_pct": 17.1429
+        }
+      ]
+    },
+    "scheduled_vs_reported_distinguishable": true,
+    "scheduled_identification_rule": "actual === null → scheduled; actual !== null → reported",
+    "scheduled_sample": [
+      {
+        "code": "AAPL.US",
+        "report_date": "2026-07-30",
+        "date": "2026-06-30",
+        "before_after_market": "AfterMarket",
+        "currency": "USD",
+        "actual": null,
+        "estimate": 1.88,
+        "difference": 0,
+        "percent": null
+      },
+      {
+        "code": "NVDA.US",
+        "report_date": "2026-08-26",
+        "date": "2026-07-31",
+        "before_after_market": "AfterMarket",
+        "currency": "USD",
+        "actual": null,
+        "estimate": 2.01,
+        "difference": 0,
+        "percent": null
+      },
+      {
+        "code": "TSLA.US",
+        "report_date": "2026-07-22",
+        "date": "2026-06-30",
+        "before_after_market": "AfterMarket",
+        "currency": "USD",
+        "actual": null,
+        "estimate": 0.28,
+        "difference": 0,
+        "percent": null
+      }
+    ]
+  },
+  "A7_api_mechanics": {
+    "S_cal_days": 600,
+    "intraday_max_period_source": "API error message: \"Max period length is 600 days\"",
+    "D_daily_span": "whole in one call (R2 returned 1365 records over 5.4 years)",
+    "calls_per_5m_symbol_for_36mo": 2,
+    "earnings_accepts_symbol_list": true,
+    "earnings_bulk_call_covers_universe": true,
+    "rate_limit_headers": {
+      "x-ratelimit-limit": 1200,
+      "interpretation": "per-minute rolling window; recovered between R1/R2/R3"
+    },
+    "full_refresh_budget": {
+      "daily_calls": 215,
+      "intraday_calls": 424,
+      "earnings_calls": 1,
+      "total": 640
+    },
+    "daily_cap": 100000,
+    "budget_verdict": "PASS"
+  }
+}
