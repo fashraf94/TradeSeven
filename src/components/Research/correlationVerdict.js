@@ -298,7 +298,15 @@ export function contributionVerdict(contribution, margin = 0.1) {
     .sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
   if (scored.length < 2) return null;
   const [top, next] = scored;
-  if (Math.abs(top.d) - Math.abs(next.d) >= margin - 1e-9 && Math.abs(top.d) > 0) {
+  // Broad-vs-single is decided by the SHARED server enum (contribution.breadthStatus)
+  // when present, so the card word and the V3 read-quality checklist can never
+  // disagree (finding 8, §9); fall back to the local margin math for
+  // pre-Sub-build-2 cached payloads that lack the enum.
+  const isSingle =
+    contribution.breadthStatus != null
+      ? contribution.breadthStatus === 'single_driver'
+      : Math.abs(top.d) - Math.abs(next.d) >= margin - 1e-9 && Math.abs(top.d) > 0;
+  if (isSingle) {
     const name = symbols[top.index] ?? `member ${top.index + 1}`;
     const direction = top.d >= 0 ? 'carried' : 'against';
     const text =

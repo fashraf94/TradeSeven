@@ -406,6 +406,14 @@ export function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
         </div>
       </div>
 
+      {/* V3 Sub-build 2 — "Since your last scan" strip. Absence-tolerant:
+          renders only when the server sent the summary contract behind its flag. */}
+      <SinceLastScanStrip
+        comparison={scan.summaryContract?.comparison}
+        changes={scan.summaryContract?.changes}
+        rows={scan.rows}
+      />
+
       {/* Summary sentence, the pinned no-signal copy, or the all-unavailable case */}
       {summaryText ? (
         <div style={{ ...card, borderColor: `${GOLD}44` }}>
@@ -1278,6 +1286,145 @@ export function RelationshipQualityCard({ rq, driverLabel, isDesktop }) {
   );
 }
 
+// ── V3 Sub-build 2 — READ QUALITY panel (Change 1) ───────────────────────────
+// A checklist of the facts above — every row derived verbatim from the
+// server-computed `evidence` block (which itself derives from the SAME rounded
+// numbers the cards display, §9). NOT a score; NOT a prediction. Absence-tolerant.
+const CRITERION_LABEL = {
+  adequate_sample: 'Adequate sample',
+  stable_link: 'Stable link',
+  group_coheres: 'Group coheres',
+  broad_based: 'Broad-based',
+  survives_adjustment: 'Survives S&P adjustment',
+  tension_contained: 'Tension contained',
+};
+const READ_TYPE_WORD = { standard: 'Standard read', market_proxy: 'Market-proxy read' };
+const READ_STATE_WORD = { solid: 'solid', fragile: 'fragile', limited: 'limited', in_flux: 'currently in flux' };
+const READ_STATE_COLOR = { solid: GREEN, fragile: AMBER, limited: GRAY, in_flux: RED };
+
+// Format a criterion's value/threshold for display, honoring its unit — the
+// number shown is the one the checklist evaluated (§9).
+function fmtCriterionValue(value, unit) {
+  if (value == null) return '—';
+  if (unit === 'none') return String(value); // enum: breadthStatus / tension state
+  if (unit === 'count') return String(value);
+  return typeof value === 'number' ? value.toFixed(2) : String(value);
+}
+
+export function ReadQualityCard({ evidence }) {
+  if (!evidence || !Array.isArray(evidence.criteria)) return null;
+  const typeWord = READ_TYPE_WORD[evidence.readType] ?? evidence.readType;
+  const stateWord = READ_STATE_WORD[evidence.readState] ?? evidence.readState;
+  const stateColor = READ_STATE_COLOR[evidence.readState] ?? HOLO_COLORS.textSecondary;
+  const mark = (outcome) =>
+    outcome === 'pass' ? { ch: '✓', color: GREEN } : outcome === 'fail' ? { ch: '✗', color: RED } : { ch: 'n·a', color: HOLO_COLORS.textMuted };
+  return (
+    <div style={card}>
+      <div style={captionStyle}>Read quality</div>
+      {/* The badge renders BOTH dimensions — type never hides state (finding 5). */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: HOLO_COLORS.textPrimary }}>{typeWord}</span>
+        <span style={{ fontSize: 13, color: HOLO_COLORS.textMuted }}>·</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: stateColor }}>{stateWord}</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+        {evidence.criteria.map((c) => {
+          const m = mark(c.outcome);
+          const na = c.outcome === 'not_applicable';
+          return (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'baseline', gap: 10, opacity: na ? 0.6 : 1 }}>
+              <span style={{ fontFamily: MONO, fontSize: 12, color: m.color, width: 26, flexShrink: 0 }}>{m.ch}</span>
+              <span style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, flex: 1 }}>{CRITERION_LABEL[c.id] ?? c.id}</span>
+              <span style={{ fontFamily: MONO, fontSize: 12, color: HOLO_COLORS.textPrimary }}>
+                {na ? '—' : fmtCriterionValue(c.value, c.unit)}
+              </span>
+              <span style={{ fontSize: 11, color: HOLO_COLORS.textMuted, whiteSpace: 'nowrap' }}>
+                {c.unit === 'none' || c.unit === 'count' ? `need ${c.threshold}` : `need ≥ ${typeof c.threshold === 'number' ? c.threshold.toFixed(2) : c.threshold}`}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div style={subCaptionStyle}>
+        A checklist of the facts above — how much weight this measurement can carry. Not a prediction.
+      </div>
+    </div>
+  );
+}
+
+// ── V3 Sub-build 2 — "Since your last scan" strip (Change 2) ─────────────────
+// Reads the honest comparison + change events off the scan's summary contract.
+// Names the REAL baseline day (never "prior trading day"); shows the top 5
+// events with "and N more"; renders the pinned empty states. Absence-tolerant.
+function changeEventPhrase(ev, labelOf) {
+  const name = labelOf(ev.driverId);
+  switch (ev.event) {
+    case 'correlation_strengthened': return `${name} link strengthened`;
+    case 'correlation_weakened': return `${name} link weakened`;
+    case 'correlation_sign_flipped': return `${name} link flipped sign`;
+    case 'signal_entered': return `${name} became an established link`;
+    case 'signal_exited': return `${name} dropped below established`;
+    case 'tension_worsened': return `${name} tension rose to ${ev.to}`;
+    case 'tension_recovered': return `${name} tension eased to ${ev.to}`;
+    case 'rank_rose': return `${name} rose in the ranking`;
+    case 'rank_fell': return `${name} fell in the ranking`;
+    case 'became_unavailable': return `${name} couldn't be measured this scan`;
+    case 'became_suppressed': return `${name} S&P-adjustment became suppressed`;
+    case 'driver_removed': return `${name} left the driver set`;
+    default: return `${name} changed`;
+  }
+}
+
+export function SinceLastScanStrip({ comparison, changes, rows }) {
+  if (!comparison) return null;
+  const labelById = new Map((rows ?? []).map((r) => [r.driver, r.label]));
+  const labelOf = (id) => labelById.get(id) ?? id;
+
+  let headline;
+  let body;
+  if (comparison.status === 'no_prior_scan') {
+    headline = 'Since your last scan';
+    body = 'No prior scan to compare against yet.';
+  } else if (comparison.status === 'not_comparable') {
+    headline = 'Since your last scan';
+    body = 'Baseline not comparable (group or method changed).';
+  } else {
+    const gap = comparison.gapTradingDays;
+    const gapWord = gap == null ? '' : ` — ${gap} trading day${gap === 1 ? '' : 's'} ago`;
+    headline = `Since your last scan (${comparison.baselineObservationDay}${gapWord})`;
+    const events = Array.isArray(changes?.events) ? changes.events : [];
+    if (!events.length) {
+      body = `No meaningful changes since ${comparison.baselineObservationDay}.`;
+    } else {
+      const top = events.slice(0, 5);
+      const more = events.length - top.length;
+      body = (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+          {top.map((ev, i) => (
+            <span
+              key={`${ev.driverId}-${ev.event}-${i}`}
+              style={{ padding: '2px 8px', borderRadius: 8, border: `1px solid ${HOLO_COLORS.borderSubtle}`, fontSize: 11, color: HOLO_COLORS.textSecondary }}
+            >
+              {changeEventPhrase(ev, labelOf)}
+            </span>
+          ))}
+          {more > 0 ? <span style={{ fontSize: 11, color: HOLO_COLORS.textMuted, alignSelf: 'center' }}>and {more} more</span> : null}
+        </div>
+      );
+    }
+  }
+  return (
+    <div style={{ ...card, borderColor: `${GOLD}33` }}>
+      <div style={captionStyle}>{headline}</div>
+      {typeof body === 'string' ? (
+        <div style={{ fontSize: 12, color: HOLO_COLORS.textSecondary, marginTop: 6 }}>{body}</div>
+      ) : (
+        body
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const card = {
@@ -1969,6 +2116,10 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
             driverLabel={resultLabels.driverLabel}
             isDesktop={isDesktop}
           />
+
+          {/* V3 Sub-build 2 — READ QUALITY checklist. Absence-tolerant: renders
+              only when the server sent the summary contract behind its flag. */}
+          <ReadQualityCard evidence={data.summaryContract?.evidence} />
 
           {/* 4/5 — Inflections + base rates, or their honest absences */}
           {data.suppressed?.inflections ? (

@@ -52,6 +52,7 @@ import {
   maskedBeta,
   compareCaptureSides,
   tailCoMovement,
+  contributionBreadth,
   SDS_BASELINE_WINDOW,
 } from '../_utils/correlationMath.js';
 // V2 Build 2 extraction: the join-and-compute core and the two-sided cache TTL
@@ -80,7 +81,16 @@ import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
 import {
   CORRELATION_LAB_ENABLED,
   CORRELATION_RELATIONSHIP_QUALITY_ENABLED,
+  CORRELATION_SYNTHESIS_ENABLED,
 } from '../../src/config/featureFlags.js';
+// V3 Sub-build 2 — the summary contract + evidence checklist. Node-clean;
+// the unmocked handler import in correlation.boundary.test.js is the guard.
+import {
+  synthesisActive,
+  buildDeepDiveContract,
+  serializedByteSize,
+  MAX_CONTRACT_BYTES,
+} from './summaryContract.js';
 
 // Up to 11 EODHD fetches in 3 throttled chunks (~600ms of deliberate sleep)
 // plus Firestore round-trips — heavier than scouting-board's read-only 10s.
@@ -302,6 +312,9 @@ export default async function handler(req, res) {
     lookbackDays = Math.min(LOOKBACK.MAX, Math.max(LOOKBACK.MIN, Math.round(body.lookbackDays)));
   }
   const forceRefresh = body.forceRefresh === true;
+  // Group provenance for the summary contract (finding 21 — enum only, never a
+  // user-authored name); an unknown value degrades to 'manual' inside groupIdentity.
+  const groupType = typeof body.groupType === 'string' ? body.groupType : 'manual';
 
   if (!process.env.EODHD_API_KEY) {
     return res.status(500).json({ error: 'API not configured' });
@@ -465,8 +478,11 @@ export default async function handler(req, res) {
       // ≥3 members (the cohesion gate) — a 2-member leave-one-out is vacuous.
       const contributionCore =
         memberCount >= 3 ? memberContribution(memberReturns, driverReturns, 60) : null;
+      // breadthStatus (V3 Sub-build 2) is the SHARED broad-vs-single enum the
+      // card and the read-quality checklist both consume (§9, finding 8) —
+      // additive to the block; memberContribution's own return is untouched.
       const contribution = contributionCore
-        ? { ...contributionCore, memberSymbols: survivors }
+        ? { ...contributionCore, memberSymbols: survivors, breadthStatus: contributionBreadth(contributionCore.members) }
         : null;
 
       // Down/up-capture beta asymmetry — the trivial sign masks only (no vol/
@@ -561,6 +577,12 @@ export default async function handler(req, res) {
     // separately-computed point beta (the number and the line cannot disagree).
     const latestBeta = beta40 && beta40.length ? beta40[beta40.length - 1] : null;
 
+    // V3 Sub-build 2 — synthesis is active only when BOTH flags are on; dataAsOf
+    // is the last joined bar's own eventDate (a DATA concept — no schedule helper),
+    // and observationTradingDay is that day's YYYY-MM-DD (the comparison identity).
+    const synthActive = synthesisActive(CORRELATION_SYNTHESIS_ENABLED, CORRELATION_RELATIONSHIP_QUALITY_ENABLED);
+    const dataAsOf = joinedDates.length ? joinedDates[joinedDates.length - 1] : null;
+
     const payload = {
       meta: {
         group,
@@ -574,6 +596,8 @@ export default async function handler(req, res) {
         firstEligibleInflectionDate,
         computedAt: new Date().toISOString(),
         cached: false,
+        // Additive + flag-gated → byte-identical meta when synthesis is dark.
+        ...(synthActive && dataAsOf ? { dataAsOf, observationTradingDay: dataAsOf } : {}),
       },
       byWindow: {
         corr20: { value: latestValue(corr20) },
@@ -606,19 +630,60 @@ export default async function handler(req, res) {
       ...(CORRELATION_RELATIONSHIP_QUALITY_ENABLED ? { relationshipQuality } : {}),
     };
 
+    // V3 Sub-build 2 — THE SUMMARY CONTRACT (facts-only, versioned) rides INSIDE
+    // the payload as an additive, flag-gated field, so every cache path (fresh
+    // return, Firestore store, cached re-read via doc.payload) carries it with
+    // no merge — and byte-identical when synthesis is dark. The evidence
+    // checklist derives from the SAME rounded numbers the cards display (§9).
+    if (synthActive && dataAsOf && relationshipQuality) {
+      payload.summaryContract = buildDeepDiveContract({
+        generatedAt: payload.meta.computedAt,
+        dataAsOf,
+        observationTradingDay: dataAsOf,
+        lookbackDays,
+        group,
+        groupType,
+        driverId: driverKey,
+        driverType: isCustomDriver ? 'custom' : 'registry',
+        driverSymbol: registry.symbol,
+        corr20: latestValue(corr20),
+        corr60: latestValue(corr60),
+        partial: relationshipQuality.partial,
+        selfPercentile: relationshipQuality.selfPercentile,
+        stability: relationshipQuality.stability,
+        cohesion,
+        contribution: relationshipQuality.contribution,
+        captureAsymmetry: relationshipQuality.captureAsymmetry,
+        tail: relationshipQuality.tail,
+        driverContext: relationshipQuality.driverContext,
+        tensionLatest: divergence.latest
+          ? { d: divergence.latest.d, score: divergence.latest.score, state: divergence.latest.state }
+          : null,
+        memberCount: survivors.length,
+        joinedCloses,
+        inflections,
+      });
+    }
+
     // ── Cache write: NON-PARTIAL ONLY, and never when the SPY reference was
     //    needed-but-unavailable (a transient SPY outage must not bake a degraded
     //    partial into the cache); a cache failure never fails the response ──
     if (!partial && !spyReferenceMissing) {
       try {
         const ttlMs = computeCorrelationCacheTtlMs();
-        await db.collection('correlationIntelligence').doc(docId).set({
-          payload,
-          computedAt: payload.meta.computedAt,
-          expiresAt: Date.now() + ttlMs,
-          ttlMs,
-        });
-        setInCache(cacheKey, payload, Math.floor(ttlMs / 1000));
+        const doc = { payload, computedAt: payload.meta.computedAt, expiresAt: Date.now() + ttlMs, ttlMs };
+        // Doc-size guard (test #18): if the doc exceeds the pinned budget against
+        // Firestore's 1MB limit, SKIP the cache write entirely — no Firestore
+        // write, no L1 cache — and still serve the full response. An oversized
+        // doc is simply not cached (the next request recomputes and serves the
+        // full payload), the same no-poisoned-cache discipline partial/dirty
+        // runs already follow — never a degraded cached read.
+        if (serializedByteSize(doc) > MAX_CONTRACT_BYTES) {
+          console.warn('[correlation] doc over size budget; skipping cache write (response served in full)');
+        } else {
+          await db.collection('correlationIntelligence').doc(docId).set(doc);
+          setInCache(cacheKey, payload, Math.floor(ttlMs / 1000));
+        }
       } catch (cacheErr) {
         console.warn('[correlation] cache write failed:', cacheErr?.message);
       }

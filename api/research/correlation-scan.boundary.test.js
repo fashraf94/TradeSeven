@@ -44,12 +44,19 @@ import { describe, it, expect, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
 import { tensionStateFrom } from './correlationAssembly.js';
+// V3 Sub-build 2 — the scan contract must validate against its schema lock, and
+// the comparison must key off the exact fingerprints the endpoint computes.
+import { validateContract, scanContractSchema } from './summaryContractSchema.js';
+import { driverUniverseHash } from './correlationChanges.js';
+import { getPreviousTradingDay } from '../_utils/marketSchedule.js';
 
 // ==================== HOISTED MOCK STATE ====================
-const { authReturnValue, labFlag, rqFlag } = vi.hoisted(() => ({
+const { authReturnValue, labFlag, rqFlag, synthFlag, bigDoc } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   labFlag: { on: true }, // default ON so the flag guard doesn't 404 the behavior tests
   rqFlag: { on: true }, // V3 relationship-quality: default ON so the per-row rq behavior tests run
+  synthFlag: { on: false }, // V3 Sub-build 2 synthesis: default OFF → canonical run stays byte-identical
+  bigDoc: { on: false }, // forces serializedByteSize over budget to exercise the skip-on-overflow guard
 }));
 
 let activeFirestore = null;
@@ -77,7 +84,15 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get CORRELATION_LAB_ENABLED() { return labFlag.on; },
   get CORRELATION_RELATIONSHIP_QUALITY_ENABLED() { return rqFlag.on; },
+  get CORRELATION_SYNTHESIS_ENABLED() { return synthFlag.on; },
 }));
+
+// Partial-mock the contract module so a test can force the doc over the size
+// budget (real serializedByteSize otherwise); every other export is preserved.
+vi.mock('./summaryContract.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, serializedByteSize: (obj) => (bigDoc.on ? 10_000_000 : actual.serializedByteSize(obj)) };
+});
 
 // BUILD_RULES §4 dependency-surface guard: correlation-scan.js imports
 // src/config/featureFlags.js AND src/components/Research/correlationVerdict.js
@@ -946,6 +961,149 @@ describe('required assert (g) — flag-404 + validation & config guards', () => 
       expect(second.res.body.error).toBe('API not configured');
     } finally {
       vi.stubEnv('EODHD_API_KEY', 'test-key');
+    }
+  });
+});
+
+// ==================== V3 Sub-build 2 — scan summary contract ====================
+describe('scan summary contract + "since your last scan" (Change 2 + 3)', () => {
+  const DOC_ID = createHash('sha1').update(`AAA,BBB|SCAN|400|${REGISTRY_SALT}`).digest('hex');
+  const DOC_KEY = `correlationIntelligence/${DOC_ID}`;
+
+  it('off/on (synthesis dark): the canonical run carries NO summaryContract / dataAsOf (byte-identical)', () => {
+    expect(out.summaryContract).toBeUndefined();
+    expect(out.meta.dataAsOf).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain('summaryContract');
+  });
+
+  it('on/on clean run: schema-valid scan contract, dataAsOf on meta, no user text', async () => {
+    synthFlag.on = true;
+    try {
+      const res = await runScanRequest({ ...BASE_REQUEST, groupType: 'agent_book', forceRefresh: true });
+      const sc = res.body.summaryContract;
+      expect(sc.kind).toBe('scan');
+      expect(sc.contractVersion).toBe(1);
+      expect(sc.group.groupType).toBe('agent_book');
+      expect(res.body.meta.dataAsOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(sc.driverUniverseHash).toBe(driverUniverseHash(REGISTRY_SALT));
+      expect(sc.groupEvidence.breadthStatus).toBe('not_applicable_in_scan');
+      expect(sc.topDrivers.length).toBeGreaterThan(0);
+      expect(sc.topDrivers.length).toBeLessThanOrEqual(10);
+      expect(sc.topDrivers[0].evidence.criteria.map((c) => c.id)).toEqual([
+        'adequate_sample', 'stable_link', 'survives_adjustment', 'tension_contained',
+      ]);
+      const { errors } = validateContract(scanContractSchema[1], sc);
+      expect(errors).toEqual([]);
+    } finally {
+      synthFlag.on = false;
+    }
+  });
+
+  it('same-day recompute never advances the baseline (no_prior_scan preserved across two same-day runs)', async () => {
+    synthFlag.on = true;
+    try {
+      const a = await runScanRequest({ ...BASE_REQUEST, forceRefresh: true });
+      expect(a.body.summaryContract.comparison.status).toBe('no_prior_scan');
+      // the run stored its own snapshot (same observation day)
+      expect(store.docs.get(DOC_KEY).snapshot.observationTradingDay).toBe(a.body.meta.dataAsOf);
+      const b = await runScanRequest({ ...BASE_REQUEST, forceRefresh: true });
+      // identical observation day → the baseline still never advanced
+      expect(b.body.summaryContract.comparison.status).toBe('no_prior_scan');
+    } finally {
+      synthFlag.on = false;
+    }
+  });
+
+  it('a seeded earlier-day baseline → available comparison, 3-day gap, events, priorSnapshot stored', async () => {
+    synthFlag.on = true;
+    try {
+      const first = await runScanRequest({ ...BASE_REQUEST, forceRefresh: true });
+      const currentDay = first.body.meta.dataAsOf;
+      const stored = store.docs.get(DOC_KEY);
+      const baselineDay = getPreviousTradingDay(getPreviousTradingDay(getPreviousTradingDay(currentDay)));
+      // Craft an earlier-day baseline with MATCHING fingerprints; move XLE to
+      // guarantee a strengthen + signal-entry event.
+      const priorSnap = {
+        ...stored.snapshot,
+        observationTradingDay: baselineDay,
+        drivers: stored.snapshot.drivers.map((d) => (d.driverId === 'XLE' ? { ...d, corr20: 0.3, tier: 'emerging' } : { ...d })),
+      };
+      store.docs.set(DOC_KEY, { ...stored, snapshot: priorSnap });
+
+      const res = await runScanRequest({ ...BASE_REQUEST, forceRefresh: true });
+      const cmp = res.body.summaryContract.comparison;
+      expect(cmp.status).toBe('available');
+      expect(cmp.baselineObservationDay).toBe(baselineDay);
+      expect(cmp.gapTradingDays).toBe(3);
+      const xle = res.body.changes.events.filter((e) => e.driverId === 'XLE');
+      expect(xle.some((e) => e.event === 'correlation_strengthened' || e.event === 'signal_entered')).toBe(true);
+      // the contract holds the SAME changes object as the payload (finding 4, §9)
+      expect(res.body.summaryContract.changes).toEqual(res.body.changes);
+      // the new doc stored its own (current-day) snapshot + the carried prior
+      const newDoc = store.docs.get(DOC_KEY);
+      expect(newDoc.snapshot.observationTradingDay).toBe(currentDay);
+      expect(newDoc.priorSnapshot.observationTradingDay).toBe(baselineDay);
+    } finally {
+      synthFlag.on = false;
+    }
+  });
+
+  it('a baseline with a changed membershipHash → not_comparable, ZERO events (never a manufactured story)', async () => {
+    synthFlag.on = true;
+    try {
+      const first = await runScanRequest({ ...BASE_REQUEST, forceRefresh: true });
+      const stored = store.docs.get(DOC_KEY);
+      const baselineDay = getPreviousTradingDay(first.body.meta.dataAsOf);
+      const priorSnap = { ...stored.snapshot, observationTradingDay: baselineDay, membershipHash: 'DIFFERENT_GROUP' };
+      store.docs.set(DOC_KEY, { ...stored, snapshot: priorSnap });
+
+      const res = await runScanRequest({ ...BASE_REQUEST, forceRefresh: true });
+      expect(res.body.summaryContract.comparison.status).toBe('not_comparable');
+      expect(res.body.summaryContract.comparison.baselineMembershipHash).toBe('DIFFERENT_GROUP');
+      expect(res.body.changes.events).toEqual([]);
+    } finally {
+      synthFlag.on = false;
+    }
+  });
+
+  it('on/off (misconfiguration): synthesis stays fully dark and warns', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    synthFlag.on = true;
+    rqFlag.on = false;
+    try {
+      const res = await runScanRequest({ ...BASE_REQUEST, forceRefresh: true });
+      expect(res.body.summaryContract).toBeUndefined();
+      expect(res.body.meta.dataAsOf).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('CORRELATION_SYNTHESIS_ENABLED requires'));
+    } finally {
+      synthFlag.on = false;
+      rqFlag.on = true;
+      warn.mockRestore();
+    }
+  });
+
+  it('over the size budget → SKIP the write entirely (no Firestore, no L1), response served in full', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    synthFlag.on = true;
+    bigDoc.on = true;
+    try {
+      const setsBefore = store.setCalls.length;
+      // A pristine cache key (lookback 401 is used by no other test).
+      const res = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 401, forceRefresh: true });
+      expect(res.statusCode).toBe(200);
+      // full response is served — rows and the contract are intact
+      expect(res.body.rows.length).toBe(REGISTRY_KEYS.length);
+      expect(res.body.summaryContract.kind).toBe('scan');
+      // nothing written to Firestore, no L1 cache entry
+      expect(store.setCalls.length).toBe(setsBefore);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('skipping cache write'));
+      // a follow-up read (no forceRefresh) recomputes, not a cached serve
+      const second = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 401 });
+      expect(second.body.meta.cached).toBe(false);
+    } finally {
+      bigDoc.on = false;
+      synthFlag.on = false;
+      warn.mockRestore();
     }
   });
 });

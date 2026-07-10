@@ -33,13 +33,18 @@ import { standardizedDivergenceScore, trailingReturnInto, pearson } from '../_ut
 // Build 3.1 — the deep-dive gauge inherits the shared tension mapping: assert
 // the endpoint stamps divergence.latest.state via this exact helper.
 import { tensionStateFrom } from './correlationAssembly.js';
+// V3 Sub-build 2 — the summary contract must validate against its own schema
+// lock (additionalProperties:false) end-to-end from the real endpoint.
+import { validateContract, deepDiveContractSchema } from './summaryContractSchema.js';
 
 // ==================== HOISTED MOCK STATE ====================
-const { authReturnValue, labFlag, rqFlag, spyAvailable } = vi.hoisted(() => ({
+const { authReturnValue, labFlag, rqFlag, spyAvailable, synthFlag, bigDoc } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   labFlag: { on: true }, // default ON so the flag guard doesn't 404 the behavior tests
   rqFlag: { on: true }, // V3 relationship-quality: default ON so the RQ behavior tests run
   spyAvailable: { on: true }, // toggles the SPY.US wire to exercise the spy_unavailable path
+  synthFlag: { on: false }, // V3 Sub-build 2 synthesis: default OFF so the pre-synthesis payload is asserted byte-identical
+  bigDoc: { on: false }, // forces serializedByteSize over budget to exercise the skip-on-overflow guard
 }));
 
 let activeFirestore = null;
@@ -67,7 +72,15 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get CORRELATION_LAB_ENABLED() { return labFlag.on; },
   get CORRELATION_RELATIONSHIP_QUALITY_ENABLED() { return rqFlag.on; },
+  get CORRELATION_SYNTHESIS_ENABLED() { return synthFlag.on; },
 }));
+
+// Partial-mock the contract module so a test can force the doc over the size
+// budget (real serializedByteSize otherwise); every other export is preserved.
+vi.mock('./summaryContract.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, serializedByteSize: (obj) => (bigDoc.on ? 10_000_000 : actual.serializedByteSize(obj)) };
+});
 
 // BUILD_RULES §4 dependency-surface guard: correlation.js imports
 // src/config/featureFlags.js (an api→src import). This real handler import —
@@ -1164,6 +1177,133 @@ describe('V3 Sub-build 1 — relationshipQuality block shape + partial correlati
       expect(fetchCalls.symbols.slice(before)).not.toContain('SPY.US'); // no reference fetch while dark
     } finally {
       rqFlag.on = true;
+    }
+  });
+});
+
+// ==================== V3 Sub-build 2 — the summary contract ====================
+describe('summary contract (Change 3) — flag combinations + shape', () => {
+  it('off/on (synthesis dark): the canonical run carries NO summaryContract and NO meta.dataAsOf (byte-identical)', () => {
+    // The canonical `out` run used synthFlag OFF, rqFlag ON.
+    expect(out.summaryContract).toBeUndefined();
+    expect(out.meta.dataAsOf).toBeUndefined();
+    expect(out.meta.observationTradingDay).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain('summaryContract');
+  });
+
+  it('on/on: emits a schema-valid contract inside the payload, with dataAsOf on meta', async () => {
+    synthFlag.on = true;
+    try {
+      const { req, res } = makeReqRes({ ...BASE_REQUEST, groupType: 'watchlist', forceRefresh: true });
+      await handler(req, res);
+      expect(res.statusCode).toBe(200);
+      const sc = res.body.summaryContract;
+      expect(sc).toBeTruthy();
+      expect(sc.kind).toBe('deepDive');
+      expect(sc.contractVersion).toBe(1);
+      expect(sc.group.groupType).toBe('watchlist');
+      expect(sc.group).not.toHaveProperty('label'); // no user text (finding 21)
+      // dataAsOf = the last joined bar's own eventDate (a YYYY-MM-DD string).
+      expect(res.body.meta.dataAsOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(res.body.meta.observationTradingDay).toBe(res.body.meta.dataAsOf);
+      expect(sc.dataAsOf).toBe(res.body.meta.dataAsOf);
+      // Read-quality evidence is present with both dimensions.
+      expect(['standard', 'market_proxy']).toContain(sc.evidence.readType);
+      expect(['solid', 'fragile', 'limited', 'in_flux']).toContain(sc.evidence.readState);
+      expect(sc.evidence.criteria).toHaveLength(6);
+      // The whole thing validates against the revision-1 schema (fails loud on drift).
+      const { valid, errors } = validateContract(deepDiveContractSchema[1], sc);
+      expect(errors).toEqual([]);
+      expect(valid).toBe(true);
+    } finally {
+      synthFlag.on = false;
+    }
+  });
+
+  it('the stored doc carries the contract inside payload (dev-dumpable)', async () => {
+    synthFlag.on = true;
+    try {
+      const { req, res } = makeReqRes({ group: ['AAA', 'BBB', 'DDD'], driver: 'BRENT', lookbackDays: 400, forceRefresh: true });
+      await handler(req, res);
+      expect(res.statusCode).toBe(200);
+      const write = store.setCalls[store.setCalls.length - 1];
+      expect(write.data.payload.summaryContract.kind).toBe('deepDive');
+    } finally {
+      synthFlag.on = false;
+    }
+  });
+
+  it('over the size budget → SKIP the write entirely (no Firestore, no L1), response served in full', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    synthFlag.on = true;
+    bigDoc.on = true;
+    try {
+      const setsBefore = store.setCalls.length;
+      // A pristine cache key (lookback 401 is used by no other test).
+      const { req, res } = makeReqRes({ group: ['AAA', 'BBB', 'DDD'], driver: 'BRENT', lookbackDays: 401, forceRefresh: true });
+      await handler(req, res);
+      expect(res.statusCode).toBe(200);
+      // full response is served — the rolling series are intact
+      expect(res.body.series.corr20.length).toBeGreaterThan(0);
+      expect(res.body.summaryContract.kind).toBe('deepDive');
+      // nothing was written to Firestore, and no L1 cache entry was created
+      expect(store.setCalls.length).toBe(setsBefore);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('skipping cache write'));
+      // a follow-up read (no forceRefresh) must recompute, not serve a cached doc
+      const second = makeReqRes({ group: ['AAA', 'BBB', 'DDD'], driver: 'BRENT', lookbackDays: 401 });
+      await handler(second.req, second.res);
+      expect(second.res.body.meta.cached).toBe(false);
+    } finally {
+      bigDoc.on = false;
+      synthFlag.on = false;
+      warn.mockRestore();
+    }
+  });
+
+  it('under budget again → the write resumes (guard is not sticky)', async () => {
+    synthFlag.on = true;
+    try {
+      const setsBefore = store.setCalls.length;
+      const { req, res } = makeReqRes({ group: ['AAA', 'BBB', 'DDD'], driver: 'BRENT', lookbackDays: 400, forceRefresh: true });
+      await handler(req, res);
+      expect(res.statusCode).toBe(200);
+      expect(store.setCalls.length).toBe(setsBefore + 1);
+    } finally {
+      synthFlag.on = false;
+    }
+  });
+
+  it('on/off (misconfiguration): synthesis stays fully dark and warns', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    synthFlag.on = true;
+    rqFlag.on = false;
+    try {
+      const { req, res } = makeReqRes({ group: ['AAA', 'BBB'], driver: 'BRENT', lookbackDays: 400, forceRefresh: true });
+      await handler(req, res);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.summaryContract).toBeUndefined();
+      expect(res.body.meta.dataAsOf).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('CORRELATION_SYNTHESIS_ENABLED requires'));
+    } finally {
+      synthFlag.on = false;
+      rqFlag.on = true;
+      warn.mockRestore();
+    }
+  });
+
+  it('links.raw come from the displayed headline corr, and breadthStatus is the shared enum', async () => {
+    synthFlag.on = true;
+    try {
+      const { req, res } = makeReqRes({ group: ['AAA', 'BBB', 'DDD'], driver: 'BRENT', lookbackDays: 400, forceRefresh: true });
+      await handler(req, res);
+      const sc = res.body.summaryContract;
+      // §9: the contract's raw link is the DISPLAYED (2dp) headline — the same
+      // number the card prints (fmtCorr = toFixed(2)), not the raw payload float.
+      expect(sc.links.raw20.value).toBe(Number(res.body.byWindow.corr20.value.toFixed(2)));
+      // 3-member group → contribution present with the shared enum on the payload
+      expect(['broad_based', 'single_driver']).toContain(res.body.relationshipQuality.contribution.breadthStatus);
+    } finally {
+      synthFlag.on = false;
     }
   });
 });

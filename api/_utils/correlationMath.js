@@ -741,6 +741,31 @@ export function memberContribution(memberReturns, driverReturns, window = 60, op
 }
 
 /**
+ * Breadth status of a member-contribution block — the SHARED enum the V3
+ * summary contract's read-quality checklist AND the deep-dive card both consume,
+ * so "broad-based" the word and `broad_based` the criterion can never disagree
+ * (Sub-build 2 finding 8, §9). Decided on the SAME 2dp-rounded corrDeltas the
+ * card ranks on: 'single_driver' when the top |corrDelta| beats the runner-up by
+ * ≥ margin and is itself non-zero, else 'broad_based'. Fewer than two measurable
+ * deltas can't name a dominator → 'broad_based'. null on non-array input.
+ *
+ * @param {Array<{corrDelta:number|null}>} members - memberContribution().members
+ * @param {{margin?:number}} [opts]
+ * @returns {('broad_based'|'single_driver')|null}
+ */
+export function contributionBreadth(members, opts = {}) {
+  const { margin = 0.1 } = opts;
+  if (!Array.isArray(members)) return null;
+  const scored = members
+    .map((m) => (Number.isFinite(m.corrDelta) ? Number(m.corrDelta.toFixed(2)) : null))
+    .filter((d) => d != null)
+    .sort((a, b) => Math.abs(b) - Math.abs(a));
+  if (scored.length < 2) return 'broad_based';
+  const [top, next] = scored;
+  return Math.abs(top) - Math.abs(next) >= margin - 1e-9 && Math.abs(top) > 0 ? 'single_driver' : 'broad_based';
+}
+
+/**
  * SPY-adjusted partial correlation — the closed form for r(group,driver | SPY)
  * from the three pairwise correlations: (rGD − rGS·rDS)/√((1−rGS²)(1−rDS²)).
  * This surfaces the market-beta contamination raw correlation hides (§6):

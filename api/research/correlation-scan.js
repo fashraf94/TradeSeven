@@ -56,7 +56,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { getFromCache, setInCache } from '../_utils/serverCache.js';
-import { standardizedDivergenceScore } from '../_utils/correlationMath.js';
+import { standardizedDivergenceScore, computeReturnsSeries, pairwiseCohesion } from '../_utils/correlationMath.js';
 import {
   assembleDriverCore,
   computeCorrelationCacheTtlMs,
@@ -74,8 +74,26 @@ import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
 import {
   CORRELATION_LAB_ENABLED,
   CORRELATION_RELATIONSHIP_QUALITY_ENABLED,
+  CORRELATION_SYNTHESIS_ENABLED,
 } from '../../src/config/featureFlags.js';
 import { strengthBand } from '../../src/components/Research/correlationVerdict.js';
+// V3 Sub-build 2 — the summary contract + the "since your last scan" comparison.
+import {
+  synthesisActive,
+  buildScanContract,
+  membershipHash,
+  serializedByteSize,
+  MAX_CONTRACT_BYTES,
+  METHODOLOGY_VERSION,
+  CHANGE_POLICY_VERSION,
+} from './summaryContract.js';
+import {
+  driverUniverseHash,
+  compactSnapshot,
+  carryPriorSnapshot,
+  buildComparison,
+  computeChanges,
+} from './correlationChanges.js';
 
 // ~28 EODHD fetches (group + 25 drivers) in 6 throttled chunks (~1.5s of
 // deliberate sleep) plus Firestore round-trips — same ceiling as correlation.js.
@@ -180,6 +198,29 @@ function scanTier(corr20, corr60) {
  * a group member that IS a driver proxy, e.g. SPY, fetches once) in chunks of
  * 5 with ~300ms between chunks. → Map<wireSymbol, rows|null>.
  */
+/**
+ * Group cohesion for the scan's groupEvidence (V3 Sub-build 2) — the members'
+ * OWN pairwise correlation on a member-only join axis (the driver isn't a
+ * cohesion member, and the scan has no single driver, so cohesion is
+ * driver-independent here). Uses the SAME pairwiseCohesion as the deep dive
+ * (BUILD_RULES §4). Null below 3 members (a 2-member cohesion is one pair).
+ */
+function computeGroupCohesion(memberMaps, lookbackDays) {
+  if (!Array.isArray(memberMaps) || memberMaps.length < 3) return null;
+  const [first, ...rest] = memberMaps;
+  let dates = [...first.keys()].filter((d) => rest.every((m) => m.has(d)));
+  dates.sort();
+  if (dates.length > lookbackDays) dates = dates.slice(-lookbackDays);
+  if (dates.length < 2) return null;
+  const memberReturns = memberMaps.map((m) => computeReturnsSeries(dates.map((d) => m.get(d)), 'pct'));
+  if (memberReturns.some((r) => r === null)) return null;
+  return {
+    c20: pairwiseCohesion(memberReturns, 20),
+    c60: pairwiseCohesion(memberReturns, 60),
+    memberCount: memberMaps.length,
+  };
+}
+
 async function fetchSymbolUniverse(wireSymbols, lookbackDays) {
   const symbols = [...wireSymbols];
   const bySymbol = new Map();
@@ -229,6 +270,9 @@ export default async function handler(req, res) {
     lookbackDays = Math.min(LOOKBACK.MAX, Math.max(LOOKBACK.MIN, Math.round(body.lookbackDays)));
   }
   const forceRefresh = body.forceRefresh === true;
+  // Group provenance for the summary contract (finding 21 — enum only, never a
+  // user name); an unknown value degrades to 'manual' inside groupIdentity.
+  const groupType = typeof body.groupType === 'string' ? body.groupType : 'manual';
 
   if (!process.env.EODHD_API_KEY) {
     return res.status(500).json({ error: 'API not configured' });
@@ -321,6 +365,10 @@ export default async function handler(req, res) {
     // must not bake a null-stat row into every scan of this group until
     // close. V0 422s-uncached for the identical core errors (code-review fix).
     let hadErrorRows = false;
+    // V3 Sub-build 2 — the scan's observation trading day: the freshest joined
+    // bar across all computed rows. A driver on the equity calendar (e.g. SPY)
+    // pins this to the group's own freshest shared member bar (no schedule helper).
+    let maxObservationDay = null;
     for (const key of driverKeys) {
       const registry = CORRELATION_DRIVERS[key];
       const driverRows = rowsBySymbol.get(registry.symbol);
@@ -355,6 +403,8 @@ export default async function handler(req, res) {
       }
       const corr20 = latestValue(core.corr20);
       const corr60 = latestValue(core.corr60);
+      const lastJoined = core.joinedDates.length ? core.joinedDates[core.joinedDates.length - 1] : null;
+      if (lastJoined && (maxObservationDay === null || lastJoined > maxObservationDay)) maxObservationDay = lastJoined;
       // Tension read mirrors the single-driver gauge gate exactly
       // (correlation.js divergence.latest): below MIN_CLOSES_FOR_INFLECTIONS
       // joined closes the deep dive shows no gauge, so the scan chip nulls too.
@@ -426,6 +476,12 @@ export default async function handler(req, res) {
         }
       : null;
 
+    // V3 Sub-build 2 — synthesis active only when BOTH flags are on; the scan's
+    // observation trading day is the freshest joined bar across computed rows.
+    const synthActive = synthesisActive(CORRELATION_SYNTHESIS_ENABLED, CORRELATION_RELATIONSHIP_QUALITY_ENABLED);
+    const cleanRun = !partial && droppedDrivers.length === 0 && !hadErrorRows;
+    const dataAsOf = maxObservationDay;
+
     const payload = {
       meta: {
         group,
@@ -434,25 +490,88 @@ export default async function handler(req, res) {
         lookbackDays,
         computedAt: new Date().toISOString(),
         cached: false,
+        // Additive + flag-gated → byte-identical meta when synthesis is dark.
+        ...(synthActive && cleanRun && dataAsOf ? { dataAsOf, observationTradingDay: dataAsOf } : {}),
       },
       rows,
       droppedDrivers,
       summary,
     };
 
+    // ── The summary contract + "since your last scan" (Change 2 + 3). Built
+    //    ONLY on a clean run: the comparison is a clean-vs-clean concept (the
+    //    stored baseline is always a clean cached scan; a matching
+    //    driverUniverseHash guarantees identical driver sets, so no spurious
+    //    absence events). The comparison/changes are computed ONCE here and
+    //    referenced by BOTH the payload and the contract (finding 4, §9). The
+    //    existing doc is read at write-time for the snapshot-carry idiom. ──
+    let scanSnapshot = null;
+    let priorSnapshot = null;
+    if (synthActive && cleanRun && dataAsOf) {
+      const universeHash = driverUniverseHash(registrySalt);
+      const fingerprints = {
+        membershipHash: membershipHash(group),
+        driverUniverseHash: universeHash,
+        methodologyVersion: METHODOLOGY_VERSION,
+        changePolicyVersion: CHANGE_POLICY_VERSION,
+      };
+      let existingDoc = null;
+      try {
+        const snap = await db.collection('correlationIntelligence').doc(docId).get();
+        existingDoc = snap.exists ? snap.data() : null;
+      } catch {
+        existingDoc = null; // a read failure degrades to no_prior_scan, never a 500
+      }
+      scanSnapshot = compactSnapshot({ rows, observationTradingDay: dataAsOf, fingerprints });
+      priorSnapshot = carryPriorSnapshot(existingDoc, dataAsOf);
+      const comparison = buildComparison({ prior: priorSnapshot, current: scanSnapshot, fingerprints });
+      const changes = {
+        status: comparison.status,
+        events: comparison.status === 'available' ? computeChanges({ prior: priorSnapshot, current: scanSnapshot }) : [],
+      };
+      const cohesion = computeGroupCohesion(memberMaps, lookbackDays);
+      payload.summaryContract = buildScanContract({
+        generatedAt: payload.meta.computedAt,
+        dataAsOf,
+        observationTradingDay: dataAsOf,
+        lookbackDays,
+        group,
+        groupType,
+        driverUniverseHash: universeHash,
+        rows,
+        cohesion,
+        comparison,
+        changes,
+      });
+      // What-changed on the analytical payload too (finding 4) — the SAME
+      // objects the contract holds, so they can never drift.
+      payload.comparison = comparison;
+      payload.changes = changes;
+    }
+
     // ── Cache write: FULLY CLEAN RUNS ONLY (zero dropped members, zero
     //    dropped drivers, zero uncomputable rows); a cache failure never
-    //    fails the response ──
-    if (!partial && droppedDrivers.length === 0 && !hadErrorRows) {
+    //    fails the response. The doc carries the doc-level `snapshot` (its own
+    //    compact snapshot, so the NEXT scan can carry it forward) and the
+    //    embedded `priorSnapshot`, beside the payload. ──
+    if (cleanRun) {
       try {
         const ttlMs = computeCorrelationCacheTtlMs();
-        await db.collection('correlationIntelligence').doc(docId).set({
-          payload,
-          computedAt: payload.meta.computedAt,
-          expiresAt: Date.now() + ttlMs,
-          ttlMs,
-        });
-        setInCache(cacheKey, payload, Math.floor(ttlMs / 1000));
+        const doc = { payload, computedAt: payload.meta.computedAt, expiresAt: Date.now() + ttlMs, ttlMs };
+        if (scanSnapshot) {
+          doc.snapshot = scanSnapshot;
+          doc.priorSnapshot = priorSnapshot;
+        }
+        // Doc-size guard (test #18): over the pinned budget against Firestore's
+        // 1MB limit → SKIP the cache write entirely (no Firestore write, no L1),
+        // and still serve the full response — the same no-poisoned-cache
+        // discipline as the deep dive. An oversized scan is simply not cached.
+        if (serializedByteSize(doc) > MAX_CONTRACT_BYTES) {
+          console.warn('[correlation-scan] doc over size budget; skipping cache write (response served in full)');
+        } else {
+          await db.collection('correlationIntelligence').doc(docId).set(doc);
+          setInCache(cacheKey, payload, Math.floor(ttlMs / 1000));
+        }
       } catch (cacheErr) {
         console.warn('[correlation-scan] cache write failed:', cacheErr?.message);
       }
