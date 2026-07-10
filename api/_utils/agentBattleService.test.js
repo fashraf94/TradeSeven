@@ -97,3 +97,69 @@ describe('createAgentBattle — equipped watchlist snapshot (V-15)', () => {
     expect(db.added[0].agentContext.deployedGuardrails).toEqual([{ id: 'g1' }]);
   });
 });
+
+// ============================================================
+// Release 2 PR-a (fenced site 1) — the additive customization-snapshot keys
+// ============================================================
+
+describe('createAgentBattle — Release 2 customization snapshot (additive keys)', () => {
+  const CREATE_ARGS = [{}, {}, { duration: '1d' }];
+
+  it('a config-less agent stamps the enumerated additive defaults and NOTHING else changes (off-state invariant)', async () => {
+    const db = makeFakeDb();
+    await createAgentBattle(db, makeAgentData(), ...CREATE_ARGS);
+    const ctx = db.added[0].agentContext;
+    // The enumerated additive keys (spec Build Rule 4)…
+    expect(ctx.standingLeans).toEqual([]);
+    expect(ctx.standingLeansInvalidated).toEqual([]);
+    expect(ctx.dials).toBeNull();
+    expect(ctx.settingsRev).toBe(0);
+    // …and the pre-Release-2 sibling subtrees are untouched (deep-equal
+    // against a doc built from the same fixture with the new keys stripped).
+    const db2 = makeFakeDb();
+    await createAgentBattle(db2, makeAgentData(), ...CREATE_ARGS);
+    const strip = (doc) => {
+      const clone = JSON.parse(JSON.stringify(doc, (k, v) => (v === undefined ? null : v)));
+      delete clone.agentContext.standingLeans;
+      delete clone.agentContext.standingLeansInvalidated;
+      delete clone.agentContext.dials;
+      delete clone.agentContext.settingsRev;
+      delete clone.createdAt; delete clone.startTime; delete clone.endTime; delete clone.activatedAt; delete clone.updatedAt; // wall-clock
+      delete clone.timing;
+      delete clone.agentContext.equippedWatchlist; // carries snapshotAt wall-clock
+      return clone;
+    };
+    expect(strip(db.added[0])).toEqual(strip(db2.added[0]));
+  });
+
+  it('revalidated leans enter the snapshot with CURRENT text; invalid pins go to the durable record instead', async () => {
+    const db = makeFakeDb();
+    await createAgentBattle(db, makeAgentData({
+      standingLeans: [
+        { adjustmentId: 'TF-02', version: 1, equippedAt: 't1' }, // momentum_chaser ✓
+        { adjustmentId: 'CP-04', version: 1, equippedAt: 't2' }, // cross-archetype ✗
+        { adjustmentId: 'TF-05', version: 99, equippedAt: 't3' }, // stale version ✗
+      ],
+      settingsRev: 7,
+    }), ...CREATE_ARGS);
+    const ctx = db.added[0].agentContext;
+    expect(ctx.standingLeans).toEqual([
+      { adjustmentId: 'TF-02', version: 1, text: 'Require stronger confirmation before entering' },
+    ]);
+    expect(ctx.standingLeansInvalidated).toEqual([
+      { adjustmentId: 'CP-04', version: 1, reason: 'not_in_menu' },
+      { adjustmentId: 'TF-05', version: 99, reason: 'deprecated_version' },
+    ]);
+    expect(ctx.settingsRev).toBe(7);
+  });
+
+  it('dials stamp only when the user set one (absent stays absent → clamp selectionSource stays honest)', async () => {
+    const db = makeFakeDb();
+    await createAgentBattle(db, makeAgentData({ dials: { tempo: 'aggressive' } }), ...CREATE_ARGS);
+    expect(db.added[0].agentContext.dials).toEqual({ tempo: 'aggressive' });
+
+    const db2 = makeFakeDb();
+    await createAgentBattle(db2, makeAgentData({ dials: {} }), ...CREATE_ARGS);
+    expect(db2.added[0].agentContext.dials).toBeNull();
+  });
+});

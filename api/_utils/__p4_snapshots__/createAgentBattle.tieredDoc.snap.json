@@ -171,6 +171,10 @@
    }
   ],
   "equippedWatchlist": null,
+  "standingLeans": [],
+  "standingLeansInvalidated": [],
+  "dials": null,
+  "settingsRev": 0,
   "riskTolerance": 60,
   "evaluationInterval": 15,
   "consolidatedInsight": "Patience pays.",

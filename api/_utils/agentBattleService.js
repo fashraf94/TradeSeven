@@ -12,6 +12,10 @@ import { getETDate, formatDateString, isMarketHoliday, isEarlyCloseDay, getNextM
 // June 2026 import rule (BUILD_RULES §4); the P4 battery's import of this
 // module is the dependency-surface guard.
 import { resolveModeConfig, TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
+// Release 2 PR-a (fenced site 1) — the SAME lean-revalidation kernel the
+// strategy prompt and the change-archetype rider use, so the snapshot can
+// never disagree with them (non-fenced pure module; its graph is Node-clean).
+import { revalidateStandingLeans } from './leanRevalidation.js';
 
 // Duration mode: 'fullday' = single trading day (until market close), 'legacy' = multi-day (1d/3d/5d)
 const AGENT_BATTLE_DURATION_MODE = 'fullday';
@@ -167,6 +171,42 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       equippedWatchlist: options.equippedWatchlist
         ? { ...options.equippedWatchlist, snapshotAt: now }
         : null,
+      // Release 2 PR-a (fenced site 1, SHA-bound authorization @ 4a0f43e) —
+      // ADDITIVE customization-snapshot keys, frozen at creation like every
+      // sibling snapshot. Nothing renders from them until the Release-4
+      // staged flag walk (the PR-c read-side guard gates rendering).
+      //   standingLeans: ids-at-rest revalidated through the SHARED kernel
+      //     (menu, version currency, conflict groups, cap — fail closed) and
+      //     resolved to id+version+CURRENT text (master spec §3.1). Invalid
+      //     pins are OMITTED and recorded in standingLeansInvalidated (the
+      //     item-7 durable status record); the [LeanRevalidation] line is
+      //     the event. Agent-doc lean data is never mutated here.
+      //   dials: the DESIRED tempo, stamped only when the user set one —
+      //     absence stays absent so the clamp's selectionSource can
+      //     distinguish default-standard from an explicit user 'standard'.
+      //   settingsRev: the settings revision this snapshot was built from
+      //     (0 for never-configured agents) — the desired-vs-effective
+      //     divergence anchor; the deploy-time CAS is a Release-4 ledger item.
+      ...(() => {
+        const { valid, invalidated } = revalidateStandingLeans({
+          standingLeans: agentData.standingLeans,
+          archetypeCodeId: agentData.archetype,
+        });
+        if (invalidated.length > 0) {
+          console.log('[LeanRevalidation]', JSON.stringify({
+            agentId: agentData.id ?? null,
+            archetype: agentData.archetype ?? null,
+            invalidated,
+            at: now,
+          }));
+        }
+        return {
+          standingLeans: valid,
+          standingLeansInvalidated: invalidated,
+          dials: agentData.dials?.tempo ? { tempo: agentData.dials.tempo } : null,
+          settingsRev: typeof agentData.settingsRev === 'number' ? agentData.settingsRev : 0,
+        };
+      })(),
       riskTolerance: agentData.config?.risk || 50,
       evaluationInterval: 15,
       consolidatedInsight: agentData.consolidatedInsight || null,
