@@ -672,3 +672,27 @@ describe('agent-evaluate cron — VWAP floor wiring (A1/B1/B6)', () => {
     expect(source).toMatch(/Risk swap failed for[\s\S]{0,800}?action: 'risk_swap_failed'/);
   });
 });
+
+// Release 2 PR-b — Gate 7-style structural locks for the tempo-dial wiring.
+// The receipt locks above stay byte-untouched (site-4 NO-EDIT amendment);
+// these pin the SIBLING pattern so provenance can never migrate INTO the
+// receipt call or lose a swap origin path.
+describe('agent-evaluate cron — Release 2 tempo-dial wiring (structural)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('the clamp wraps the mode-resolution seam (desired from the snapshot, flag at the call site)', () => {
+    expect(source).toMatch(/clampHftConfig\(\{\s*hftConfig: resolveHftConfig\(baseArchetypeConfig, battle\.gameMode\),\s*desiredTempo: battle\.agentContext\?\.dials\?\.tempo,\s*dialEnabled: TEMPO_DIAL_ENABLED,/);
+    expect(source).toMatch(/hftConfig: dialClamp\.hftConfig,/);
+  });
+
+  it('stamps the §14 provenance SIBLING at all 4 swap origin paths — receipt spreads still exactly 4 and untouched', () => {
+    const provenanceSpreads = source.match(/\.\.\.buildSwapProvenance\(/g) || [];
+    expect(provenanceSpreads.length).toBe(4);
+    const receiptSpreads = source.match(/\.\.\.buildSwapReceiptSource\(\{/g) || [];
+    expect(receiptSpreads.length).toBe(4); // the Gate-7 count, unchanged
+  });
+
+  it('the epoch telemetry event carries the clamp provenance (desired-vs-effective rides the same record)', () => {
+    expect(source).toMatch(/dialProvenance: dialClamp\.provenance,/);
+  });
+});

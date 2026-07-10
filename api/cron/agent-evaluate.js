@@ -62,6 +62,13 @@ import { isDirectiveActive } from '../_utils/directiveUtils.js';
 import { resolveControls } from '../_utils/controlPromptRenderer.js';
 import { computeEpochKey, shouldLogControlEpoch, buildControlEpochEvent, buildControlEpochLogEntry } from '../_utils/controlSuppressionTelemetry.js';
 import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
+// Release 2 PR-b — the tempo-dial clamp (desired → effective, version-bound
+// fail-closed) at the NON-fenced mode-resolution seam, and the §14 provenance
+// SIBLING spread beside (never inside) the regex-locked receipt at the four
+// swap origin paths (founder amendment: site 4 / buildSwapReceiptSource is
+// NO-EDIT).
+import { clampHftConfig, resolveTempoDial } from '../_utils/tempoDialClamp.js';
+import { buildSwapProvenance } from '../_utils/swapProvenance.js';
 import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED } from '../../src/config/featureFlags.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
@@ -1019,9 +1026,20 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // hftConfig object for every mode today — the hook exists so any future
     // flat6 recalibration is a config entry, never code. Downstream code uses
     // the mode-resolved view.
+    // Release 2 PR-b: the tempo-dial clamp wraps the mode-resolved knobs.
+    // Effective tempo is 'standard' (IDENTITY — the same object reference)
+    // unless TEMPO_DIAL_ENABLED and the band table's forKnobConfigVersion
+    // matches the deployed KNOB_CONFIG_VERSION; every suppression is visible
+    // in dialClamp.provenance (never silent). Direction-aware per B4 §D;
+    // safety fields untouched at every band.
+    const dialClamp = clampHftConfig({
+      hftConfig: resolveHftConfig(baseArchetypeConfig, battle.gameMode),
+      desiredTempo: battle.agentContext?.dials?.tempo,
+      dialEnabled: TEMPO_DIAL_ENABLED,
+    });
     const archetypeConfig = {
       ...baseArchetypeConfig,
-      hftConfig: resolveHftConfig(baseArchetypeConfig, battle.gameMode),
+      hftConfig: dialClamp.hftConfig,
     };
     // Gate 1 — archetype-distribution + behavioral-differentiation probe. Surfaces
     // the live archetype mix and confirms non-analyst archetypes resolve to
@@ -1061,7 +1079,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           resolution: epochResolution,
           directive: activeDirective,
           standingLeans: battle.agentContext?.standingLeans,
-          dialProvenance: null, // PR-b threads the tempo clamp's provenance here
+          dialProvenance: dialClamp.provenance,
           deploySha: globalThis.process?.env?.VERCEL_GIT_COMMIT_SHA || null,
           knobConfigVersion: KNOB_CONFIG_VERSION,
           dialBandVersion: TEMPO_DIAL_BANDS.forKnobConfigVersion,
@@ -1313,6 +1331,9 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           entryMode: battle.executionMode || 'autopilot',
           exitReason: riskResult.reason,
           ...buildSwapReceiptSource({ source: swapSource, archetype: ctx.archetype }),
+          // Release 2 PR-b — the §14 provenance sibling (one nested key;
+          // the receipt's shape-locked return is untouched).
+          ...buildSwapProvenance(dialClamp.provenance),
         };
 
         // Phase 4: snapshot risk-triggered swaps onto trades[i]. Replacement
@@ -1851,6 +1872,8 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
               // origin for Phase 5 Knob C / Phase 7. Discretionary → 'haiku_decision'.
               exitReason: haikuSwapReason,
               ...buildSwapReceiptSource({ source: swapSource, archetype: ctx.archetype }),
+              // Release 2 PR-b — the §14 provenance sibling.
+              ...buildSwapProvenance(dialClamp.provenance),
               // Phase 8: structured reasoning carried onto battle.trades[] via
               // the ...evaluationMetadata spread in executeSwapServer.
               trade_reasoning: haikuResult?.trade_reasoning || null,
@@ -1984,6 +2007,8 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
               // exitReason here). Rides onto trades[] when the proposal is later
               // resolved (executeSwapServer is passed proposal.evaluationMetadata).
               ...buildSwapReceiptSource({ source: 'haiku', archetype: ctx.archetype }),
+              // Release 2 PR-b — the §14 provenance sibling.
+              ...buildSwapProvenance(dialClamp.provenance),
               // Phase 8: structured reasoning carried onto battle.trades[] via
               // the ...evaluationMetadata spread in executeSwapServer (used
               // when this proposal is later resolved into an executed swap).
@@ -2628,6 +2653,10 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
             // NB: this is handleGameplanMeeting (separate fn) — `ctx` is not in scope
             // here; read archetype off battle.agentContext directly.
             ...buildSwapReceiptSource({ source: 'gameplan_meeting', archetype: battle.agentContext?.archetype }),
+            // Release 2 PR-b — the §14 provenance sibling. handleGameplanMeeting
+            // has no dialClamp in scope; resolveTempoDial is pure, so this
+            // resolution is identical to the tick's for the same battle+flags.
+            ...buildSwapProvenance(resolveTempoDial({ desiredTempo: battle.agentContext?.dials?.tempo, dialEnabled: TEMPO_DIAL_ENABLED }).provenance),
             evaluationId: gameplanEvalId }
         );
         // P2 phase 2: confirm + double-down detection (no-op when
