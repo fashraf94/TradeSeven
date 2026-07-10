@@ -50,10 +50,14 @@ export default async function handler(req, res) {
       message: `agentId must match ${FORGE_ID_REGEX} and be ≤${FORGE_ID_MAX_LEN} chars`,
     });
   }
-  if (typeof adjustmentId !== 'string' || adjustmentId.length === 0 || adjustmentId.length > 16) {
+  // Same shape gate as equip-lean (/code-review Phase-5): the loose ≤16-char
+  // check let arbitrary charset (incl. newlines) reach the log line and the
+  // shadow payload below. An unequip of a never-equippable id is the same
+  // idempotent no-op either way.
+  if (typeof adjustmentId !== 'string' || !/^[A-Z]{2}-\d{2}$/.test(adjustmentId)) {
     return res.status(400).json({
       error: 'invalid_adjustment_id',
-      message: 'adjustmentId is required.',
+      message: 'adjustmentId must be an allowlist id (e.g. "CP-04").',
     });
   }
 

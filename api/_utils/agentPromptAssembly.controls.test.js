@@ -50,6 +50,15 @@ describe('PR-c guard — REAL flags (observe / leans off): persisted controls ne
     expect(out).not.toContain('STANDING LEANS');
   });
 
+  it('BYTE-IDENTITY: the eval prompt with controls at rest equals the control-free prompt exactly (not just marker-free)', async () => {
+    // Marker checks can miss a non-marker artifact (a blank part, a
+    // suppression annotation) entering the live prompt (/code-review
+    // Phase-5). Under live flags the two prompts must be the SAME BYTES.
+    const withControls = await buildEval(makeEvalBattle({ directive: DIRECTIVE_AT_REST, standingLeans: LEANS_AT_REST }));
+    const controlFree = await buildEval(makeEvalBattle());
+    expect(withControls).toBe(controlFree);
+  });
+
   it('the strategy prompt ignores at-rest leans while STANDING_LEANS_ENABLED is false (locked goldens stay valid)', () => {
     const withLeans = buildStrategyUserPrompt({
       name: 'Atlas',

@@ -176,7 +176,14 @@ export async function reseedDefaultTraits(agentId, archetype, { strength = 'mode
     // R1(a): via the rev-bumping server endpoint (settingsRev discipline).
     await updateAgentSettings(agentId, { equippedTraits });
   } catch (err) {
-    console.warn('[reseedDefaultTraits] equippedTraits write failed:', err);
+    // ABORT the destructive step 4 (/code-review Phase-5): the server still
+    // carries the OLD trait layer — soft-deleting its rule docs now would
+    // leave the deploy projection reading old traits with zero surviving
+    // rules (a silently inert loadout). The new docs are harmless standalone
+    // rules; the next reseed captures-and-replaces them. Same contract as
+    // useTraits.unequipTrait's persist_failed abort.
+    console.warn('[reseedDefaultTraits] equippedTraits write failed — aborting old-doc soft-deletes:', err);
+    return { seeded: false, reason: 'persist_failed', rulesAdded };
   }
 
   // 4. LAST: soft-delete the captured OLD rule docs (the projection filters
