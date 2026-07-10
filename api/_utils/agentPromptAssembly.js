@@ -4,6 +4,15 @@
 import { getFirebaseAdmin } from './firebaseAdmin.js';
 import { ARCHETYPE_CONSTRAINTS } from './archetypeScoring.js';
 import { isHardRule } from './ruleHardness.js';
+// Release 2 PR-c (fenced site 3, SHA-bound authorization @ 4a0f43e): the
+// strategy prompt renders STANDING LEANS through the same shared renderer +
+// revalidation kernel the eval assembly and the battle snapshot use — one
+// resolution source (BUILD_RULES §9 applied to prompts). Deploy-time has no
+// battle, so only the leans block can render here; the flag import is
+// api → src Node-clean (BUILD_RULES §4).
+import { resolveControls, renderLeansBlock } from './controlPromptRenderer.js';
+import { revalidateStandingLeans } from './leanRevalidation.js';
+import { STANDING_LEANS_ENABLED } from '../../src/config/featureFlags.js';
 
 /**
  * Cacheable system prompt for the Sonnet strategy call.
@@ -131,6 +140,26 @@ export function buildStrategyUserPrompt(agent, equippedWatchlist = null) {
       );
       parts.push(lines.join('\n'));
     }
+  }
+
+  // Release 2 PR-c — standing leans at deploy time. The agent doc's ids-at-
+  // rest pass the SAME revalidation kernel the battle snapshot uses (menu
+  // membership, version currency, conflict groups, cap — fail closed), then
+  // the SAME renderer gate (nothing renders while STANDING_LEANS_ENABLED is
+  // false, so today's prompt is byte-identical — the locked golden tests
+  // prove it). No directive can exist at deploy (the battle doesn't yet), so
+  // only the leans block is consulted here.
+  if (STANDING_LEANS_ENABLED) {
+    const { valid } = revalidateStandingLeans({
+      standingLeans: agent.standingLeans,
+      archetypeCodeId: agent.archetype,
+    });
+    const leansResolution = resolveControls({
+      modes: { standingLeansEnabled: STANDING_LEANS_ENABLED },
+      standingLeans: valid,
+    });
+    const leansBlock = renderLeansBlock(leansResolution.leans.effective);
+    if (leansBlock) parts.push(leansBlock);
   }
 
   parts.push(

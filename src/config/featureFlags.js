@@ -355,6 +355,14 @@ export const TEMPO_DIAL_ENABLED = false;
  * directives, 0 "claimed-a-change-but-wrote-null"). One master flag — no per-cap
  * sub-flag (the Diversifier cap is independently safe and rides this flag).
  * See docs/audits/20260625_ARCHETYPE_INTEGRITY_BUILD_PLAN_V2.md.
+ *
+ * Release 2 PR-c (read-side guard): the PROMPT surfaces render a persisted
+ * battle.directive ONLY under 'enforce' — under 'off'/'observe' a directive
+ * at rest is suppressed (data kept, epoch-logged) so a flip-back is clean on
+ * the next eval, and a directive suppressed by a mode flip never resurrects
+ * for that battle. The 'off' write path stays the legacy normalizeDirective
+ * line verbatim; what changed is that its output no longer REACHES a prompt
+ * (master spec §3.6, founder-accepted).
  */
 export const ARCHETYPE_INTEGRITY_MODE = 'observe';
 

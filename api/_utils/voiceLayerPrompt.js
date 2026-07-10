@@ -18,6 +18,8 @@ import { getArchetypeLabel } from './agentArchetypeConfig.js';
 import { getArchetypeZones, getAllowlist } from '../../src/data/archetypeAdjustments.js';
 import { getEffectiveArchetype } from './directiveIdentity.js';
 import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
+// Release 2 PR-c — the shared control resolution (see buildActiveDirectiveBlock).
+import { resolveControls } from './controlPromptRenderer.js';
 
 // ==================== STATIC CONSTANTS ====================
 
@@ -3304,8 +3306,21 @@ function buildSwapContextBlock({ closedTrade, provenance, rationale }) {
 // Expiry semantics are owned by api/_utils/directiveUtils.js (Fix #4):
 // chat.js does NOT clear battle.directive on expiry; the read path is
 // the gate.
+//
+// Release 2 PR-c (founder scope addition 2026-07-10): this SECOND directive
+// reader shares the eval assembly's resolution — resolveControls with the
+// same mode gate + no-resurrection kill set — so a directive can never
+// render in the voice narration while the eval prompt suppresses it (the
+// BUILD_RULES §9 one-source rule, applied across prompt surfaces). The
+// voice-format TEXT stays local; only the render/suppress DECISION is shared.
 function buildActiveDirectiveBlock(directive, battle) {
   if (!isDirectiveActive(directive, battle)) return null;
+  const resolution = resolveControls({
+    modes: { archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE },
+    directive,
+    controlEpochLog: battle?.controlEpochLog,
+  });
+  if (!resolution.directive.effective) return null;
 
   return `ACTIVE COACH DIRECTIVE (what the user has you working on right now):
 "${String(directive.text).trim()}"

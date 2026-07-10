@@ -65,15 +65,19 @@ describe('renderDirectiveBlock — byte-exact legacy golden', () => {
     ).toBe(golden);
   });
 
-  it('the FENCED SOURCE still contains the exact template this golden was copied from (drift tripwire)', () => {
-    // BUILD_RULES §3 "re-verify inherited anchors — they drift": if the
-    // fenced block is ever edited via the sanctioned P4 entry, THIS fails,
-    // forcing the renderer + golden to be re-synced before PR-c swaps the
-    // fenced call site onto renderDirectiveBlock. (The ruleCompatGuard.test.js
-    // readFileSync idiom.)
+  it('single-source tripwire: post-PR-c the fenced eval assembly delegates to the renderer and carries NO competing inline template', () => {
+    // Pre-PR-c this asserted the fenced source still contained the template
+    // the golden was copied from (drift window). PR-c swapped the fenced
+    // call site onto the renderer, so the invariant FLIPS: the renderer is
+    // now the ONLY source of the directive block — a re-introduced inline
+    // copy in the fenced file would be a second drift-prone source (§9).
     const __dirname = dirname(fileURLToPath(import.meta.url));
     const fencedSource = readFileSync(resolve(__dirname, 'agentEvalPromptAssembly.js'), 'utf-8');
-    expect(fencedSource).toContain(FENCED_TEMPLATE);
+    expect(fencedSource).not.toContain(FENCED_TEMPLATE);
+    expect(fencedSource).toMatch(/renderControlBlocks\(/);
+    expect(fencedSource).toMatch(/resolveControls\(/);
+    // The golden above remains the byte contract renderDirectiveBlock owes
+    // the pre-PR-c prompt (verified against the pre-swap source @ 1416f43).
   });
 
   it('returns null for a missing/malformed directive', () => {

@@ -22,9 +22,12 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Pin the WHOLE module graph to enforce for this file. Every other flag
-// forgeService-adjacent modules read is irrelevant to these imports.
-vi.mock('../../src/config/featureFlags.js', () => ({
+// Pin RULE_COMPAT_MODE to enforce for this whole module graph; every OTHER
+// flag keeps its real value via the importOriginal spread (Release 2 PR-c:
+// the assemblies now read STANDING_LEANS_ENABLED / ARCHETYPE_INTEGRITY_MODE —
+// real values are off/observe, so the goldens still prove flag-off bytes).
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
   RULE_COMPAT_MODE: 'enforce',
 }));
 
