@@ -16,11 +16,14 @@ const { flagState } = vi.hoisted(() => ({
   flagState: { integrity: 'enforce', leans: true },
 }));
 
-vi.mock('../../src/config/featureFlags.js', () => ({
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  // importOriginal spread (the ruleCompatInvariantR convention): every flag
+  // not walked here keeps its REAL value — a whole-literal mock would freeze
+  // unrelated flags at non-live values and hide missing exports.
+  ...(await importOriginal()),
   get ARCHETYPE_INTEGRITY_MODE() { return flagState.integrity; },
   get STANDING_LEANS_ENABLED() { return flagState.leans; },
   get TEMPO_DIAL_ENABLED() { return false; },
-  RULE_COMPAT_MODE: 'off',
 }));
 vi.mock('./firebaseAdmin.js', () => ({ getFirebaseAdmin: () => ({}) }));
 
@@ -87,6 +90,26 @@ describe('PR-c render states (flags walked)', () => {
     expect(out).toContain('STANDING LEANS');
     expect(out).toContain('- "Widen the stop slightly (more patience on good positions)"');
     expect(out).not.toContain('Require stronger confirmation before entering');
+  });
+
+  it('an EXPIRED directive never renders — the isDirectiveActive pre-gate is live in the REAL eval assembly (the expiry leg)', async () => {
+    // 3_games directive created on day 1 of an all-past 5-day calendar:
+    // getCurrentTradingDayServer resolves to day 5 → elapsed 4 ≥ 3 → expired.
+    // Deterministic for any future "today" (every tradingDay is in the past).
+    const expired = {
+      ...DIRECTIVE,
+      expiry: '3_games',
+      createdAt: '2026-07-01T10:00:00.000Z',
+    };
+    const battle = makeEvalBattle({ directive: expired });
+    battle.timing = { tradingDays: ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-06', '2026-07-07'] };
+    const out = await buildEval(battle);
+    expect(out).not.toContain('ACTIVE DIRECTIVE'); // enforce mode, ACTIVE would render — expiry is the only gate here
+    // Positive control on the same shape: end_of_battle stays active and renders.
+    const active = { ...expired, expiry: 'end_of_battle' };
+    const activeBattle = makeEvalBattle({ directive: active });
+    activeBattle.timing = battle.timing;
+    expect(await buildEval(activeBattle)).toContain('ACTIVE DIRECTIVE');
   });
 
   it('the VOICE reader agrees with the eval assembly: renders under enforce, suppresses under observe and under an epoch kill', () => {

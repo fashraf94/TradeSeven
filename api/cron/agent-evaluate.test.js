@@ -684,9 +684,12 @@ describe('agent-evaluate cron — Release 2 tempo-dial wiring (structural)', () 
     expect(source).toMatch(/clampHftConfig\(\{\s*hftConfig: resolveHftConfig\(baseArchetypeConfig, battle\.gameMode\),\s*desiredTempo: desiredTempoOf\(battle\),\s*dialEnabled: TEMPO_DIAL_ENABLED,/);
     expect(source).toMatch(/hftConfig: dialClamp\.hftConfig,/);
     // Both cron read sites resolve the desired tempo through desiredTempoOf —
-    // never a raw agentContext path that could drift from the snapshot shape.
+    // never a raw path that could drift from the snapshot shape. The negative
+    // lock bans EVERY spelling of a direct dials read (`.dials` anywhere),
+    // not just the optional-chained one (/code-review Phase-5: a non-chained
+    // or destructured read evaded the old regex).
     expect((source.match(/desiredTempoOf\(battle\)/g) || []).length).toBe(2);
-    expect(source).not.toMatch(/agentContext\?\.dials\?\.tempo/);
+    expect(source).not.toMatch(/\.dials\b/);
   });
 
   it('stamps the §14 provenance SIBLING at all 4 swap origin paths — receipt spreads still exactly 4 and untouched', () => {

@@ -41,6 +41,8 @@ import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idVa
 export const config = { maxDuration: 10 };
 
 const MAX_EQUIPPED_TRAITS = 20;
+const MAX_TRAIT_ID_CHARS = 64;
+const MAX_EQUIPPED_TRAITS_BYTES = 64 * 1024; // whole-array cap, mirroring deployedStrategy
 const MAX_DEPLOYED_STRATEGY_BYTES = 64 * 1024;
 
 const SENTINEL_PREFIX = '__update_agent_settings:';
@@ -58,6 +60,15 @@ const FIELD_VALIDATORS = Object.freeze({
       if (!entry || typeof entry !== 'object' || typeof entry.traitId !== 'string' || !entry.traitId) {
         return 'every equippedTraits entry must be an object with a string traitId.';
       }
+      if (entry.traitId.length > MAX_TRAIT_ID_CHARS) {
+        return `every traitId must be ≤${MAX_TRAIT_ID_CHARS} chars.`;
+      }
+    }
+    // Whole-payload byte cap (/code-review Phase-5): entries land verbatim in
+    // the agent doc and flow into every battle snapshot — unbounded junk keys
+    // are the same 1 MiB doc-limit class the deployedStrategy cap closes.
+    if (JSON.stringify(value).length > MAX_EQUIPPED_TRAITS_BYTES) {
+      return 'equippedTraits payload too large.';
     }
     return null;
   },

@@ -25,6 +25,8 @@
 
 Either state stops directives rendering immediately; `'observe'` is the one that leaves nothing un-screened behind. The same logic applies at every step of the staged walk: step back one state, never jump to `'off'` while directives are in flight.
 
+**One durability caveat (Phase-5 review, dual-confirmed):** the permanent kill record is a Firestore write that is retried but allowed to fail forward. If that write fails for an ENTIRE rollback window (a sustained Firestore outage — the log line to grep is `[ControlEpoch] durable write failed twice`), a flip BACK to `'enforce'` can lose the kill record and a suppressed directive can render again. Before flipping back after any rollback, confirm no such failure lines occurred during the window (or simply wait one healthy eval tick after the last one).
+
 ## Rule 2a — What a paused-then-resumed walk looks like
 
 Because rollback retires in-flight directives permanently, a resumed walk starts CLEAN: returning to `'enforce'` affects only directives minted after the return. Expect coaches' prior directives to be gone (visible in each battle's `controlEpochLog` — the suppression epoch is the audit record), and communicate that before flipping back.

@@ -5,9 +5,37 @@
 // REAL import of leanRevalidation.js (→ src/data/archetypeAdjustments.js) is
 // the BUILD_RULES §4 dependency-surface guard — never mock it.
 
-import { describe, it, expect } from 'vitest';
-import { revalidateStandingLeans, LEAN_INVALIDATION_REASONS } from './leanRevalidation.js';
+import { describe, it, expect, vi } from 'vitest';
+import { revalidateStandingLeans, buildCustomizationSnapshot, LEAN_INVALIDATION_REASONS } from './leanRevalidation.js';
 import { getCanonicalText } from '../../src/data/archetypeAdjustments.js';
+
+describe('owner-writable at-rest hardening (/code-review Phase-5)', () => {
+  it('a DUPLICATE same-id pin is omitted (first occurrence wins) and never eats a cap slot', () => {
+    const { valid, invalidated } = revalidateStandingLeans({
+      standingLeans: [
+        { adjustmentId: 'CP-04', version: 1, equippedAt: 't1' },
+        { adjustmentId: 'CP-04', version: 1, equippedAt: 't2' }, // duplicate — loses
+        { adjustmentId: 'CP-01', version: 1, equippedAt: 't3' }, // must still fit under the cap
+      ],
+      archetypeCodeId: 'guardian',
+    });
+    expect(valid.map((l) => l.adjustmentId)).toEqual(['CP-04', 'CP-01']); // no double render, no stolen slot
+    expect(invalidated).toEqual([
+      { adjustmentId: 'CP-04', version: 1, reason: LEAN_INVALIDATION_REASONS.DUPLICATE_PIN },
+    ]);
+  });
+
+  it('the snapshot dial is BOUNDED: strings sliced short, non-strings dropped (garbage stays visible to the clamp, never breaks battle creation)', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const snap = (dials) => buildCustomizationSnapshot({ archetype: 'guardian', standingLeans: [], dials }, 't0');
+    expect(snap({ tempo: 'aggressive' }).dials).toEqual({ tempo: 'aggressive' });   // legal value verbatim
+    expect(snap({ tempo: 'warp' }).dials).toEqual({ tempo: 'warp' });               // short garbage stays VISIBLE (the clamp suppresses it)
+    expect(snap({ tempo: 'x'.repeat(500_000) }).dials.tempo).toHaveLength(32);      // 1 MiB attack → 32 chars
+    expect(snap({ tempo: { huge: 'object' } }).dials).toBeNull();                   // non-strings never enter the doc
+    expect(snap(undefined).dials).toBeNull();
+    logSpy.mockRestore();
+  });
+});
 
 describe('revalidateStandingLeans', () => {
   it('passes a current-version, in-menu lean through with the RESOLVED current text (snapshot shape)', () => {

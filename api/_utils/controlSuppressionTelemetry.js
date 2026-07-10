@@ -220,14 +220,29 @@ export async function recordControlEpochIfNeeded({
   });
   const entry = buildControlEpochLogEntry(event);
   console.log('[ControlEpoch]', JSON.stringify(event));
-  try {
-    await battleRef.update({ controlEpochLog: arrayUnion(entry) });
-    // The in-memory sync IS the display-agreement half: the prompt resolution
-    // later this tick derives its kill set from battle.controlEpochLog, so it
-    // must already contain what was just made durable.
-    battle.controlEpochLog = [...(battle.controlEpochLog || []), entry];
-  } catch (writeErr) {
-    console.error('[ControlEpoch] durable write failed (tick continues; next tick retries):', writeErr?.message || writeErr);
+  // TWO write attempts before failing forward (/code-review Phase-5, dual-
+  // confirmed): the retry-next-tick theory holds only while the epoch
+  // persists — if the durable write fails for a WHOLE epoch and the flags
+  // round-trip back, the flip-back key equals the last durable entry's key,
+  // the middle epoch is never recorded, and a suppressed directive would
+  // resurrect. Two attempts shrink that window from "one transient failure"
+  // to "a sustained outage"; the residual is documented in the runbook
+  // (Rule 2: after a rollback, confirm the epoch entry landed — the failure
+  // line below is the thing to grep for — before flipping back).
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await battleRef.update({ controlEpochLog: arrayUnion(entry) });
+      // The in-memory sync IS the display-agreement half: the prompt
+      // resolution later this tick derives its kill set from
+      // battle.controlEpochLog, so it must already contain what was just
+      // made durable.
+      battle.controlEpochLog = [...(battle.controlEpochLog || []), entry];
+      break;
+    } catch (writeErr) {
+      if (attempt === 2) {
+        console.error('[ControlEpoch] durable write failed twice (tick continues; retries while the epoch persists — see runbook Rule 2 before flipping back):', writeErr?.message || writeErr);
+      }
+    }
   }
   return event;
 }
