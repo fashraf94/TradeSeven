@@ -28,14 +28,8 @@ const { buildStrategyUserPrompt } = await import('./agentPromptAssembly.js');
 const { buildLiveContextBlock } = await import('./agentEvalPromptAssembly.js');
 const { buildTradeNarrationPrompt } = await import('./voiceLayerPrompt.js');
 
-const DIRECTIVE = Object.freeze({
-  text: 'Require stronger confirmation before entering',
-  expiry: 'end_of_battle',
-  directiveThreadId: 'thread-123',
-  createdAt: '2026-07-10T00:00:00.000Z',
-  adjustmentId: 'TF-02',
-  canonicalTextVersion: 1,
-});
+// Shared battle fixture (zero-import module — outside the mocked graph).
+import { DIRECTIVE_AT_REST as DIRECTIVE, makeEvalBattle as makeSharedEvalBattle, buildEvalWith } from './__fixtures__/controlsPromptFixtures.js';
 
 // The byte contract (controlPromptRenderer.test.js golden).
 const DIRECTIVE_BLOCK_GOLDEN =
@@ -44,29 +38,11 @@ const DIRECTIVE_BLOCK_GOLDEN =
   'threadId: thread-123\n' +
   'If your next trade is influenced by this directive, include directiveThreadId: "thread-123" in your submit_trade_decision response.';
 
-function makeEvalBattle({ directive = null, standingLeans = undefined, controlEpochLog = undefined } = {}) {
-  return {
-    id: 'battle-1',
-    gameMode: 'baggerbomb_agent',
-    createdAt: '2026-07-10T00:00:00.000Z',
-    timing: { tradingDays: [] },
-    portfolio: { star: [], core: [], support: [], bench: { stocks: [], crypto: null }, startingPrices: {} },
-    agentContext: {
-      agentName: 'Atlas',
-      archetype: 'momentum_chaser',
-      activeRules: [],
-      ...(standingLeans !== undefined ? { standingLeans } : {}),
-    },
-    scoring: { thresholds: {} },
-    trades: [],
-    evaluations: [],
-    ...(directive ? { directive } : {}),
-    ...(controlEpochLog !== undefined ? { controlEpochLog } : {}),
-  };
-}
+// This file's battles carry the directive's OWN archetype so the TF-* leans
+// are menu-valid where the scenario needs them.
+const makeEvalBattle = (opts = {}) => makeSharedEvalBattle({ archetype: 'momentum_chaser', ...opts });
 
-const buildEval = (battle) =>
-  buildLiveContextBlock(battle, {}, {}, [], [], [], [], { vwap: {}, riskStatus: null }, { risk: {} });
+const buildEval = buildEvalWith(buildLiveContextBlock);
 
 beforeEach(() => {
   flagState.integrity = 'enforce';

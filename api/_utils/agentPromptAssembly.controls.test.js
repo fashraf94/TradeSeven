@@ -23,6 +23,8 @@
 // empty inputs and degrade gracefully by design.
 
 import { describe, it, expect, vi } from 'vitest';
+// Shared battle fixture (zero-import module — safe to load before the mocks).
+import { DIRECTIVE_AT_REST, LEANS_AT_REST, makeEvalBattle, buildEvalWith } from './__fixtures__/controlsPromptFixtures.js';
 
 // Infra seam only — fetchInstitutionalContext reaches for the Admin SDK when
 // rules exist; the fixtures carry none, but the import must not boot Firebase.
@@ -31,41 +33,7 @@ vi.mock('./firebaseAdmin.js', () => ({ getFirebaseAdmin: () => ({}) }));
 const { buildStrategyUserPrompt } = await import('./agentPromptAssembly.js');
 const { buildLiveContextBlock } = await import('./agentEvalPromptAssembly.js');
 
-const DIRECTIVE_AT_REST = Object.freeze({
-  text: 'Require stronger confirmation before entering',
-  expiry: 'end_of_battle',
-  directiveThreadId: 'thread-123',
-  createdAt: '2026-07-10T00:00:00.000Z',
-  adjustmentId: 'TF-02',
-  canonicalTextVersion: 1,
-});
-
-const LEANS_AT_REST = Object.freeze([
-  { adjustmentId: 'CP-04', version: 1, text: 'Widen the stop slightly (more patience on good positions)' },
-]);
-
-function makeEvalBattle({ directive = null, standingLeans = undefined } = {}) {
-  return {
-    id: 'battle-1',
-    gameMode: 'baggerbomb_agent',
-    createdAt: '2026-07-10T00:00:00.000Z',
-    timing: { tradingDays: [] },
-    portfolio: { star: [], core: [], support: [], bench: { stocks: [], crypto: null }, startingPrices: {} },
-    agentContext: {
-      agentName: 'Atlas',
-      archetype: 'guardian',
-      activeRules: [],
-      ...(standingLeans !== undefined ? { standingLeans } : {}),
-    },
-    scoring: { thresholds: {} },
-    trades: [],
-    evaluations: [],
-    ...(directive ? { directive } : {}),
-  };
-}
-
-const buildEval = (battle) =>
-  buildLiveContextBlock(battle, {}, {}, [], [], [], [], { vwap: {}, riskStatus: null }, { risk: {} });
+const buildEval = buildEvalWith(buildLiveContextBlock);
 
 describe('PR-c guard — REAL flags (observe / leans off): persisted controls never reach the prompt', () => {
   it('a battle with a directive AND leans AT REST renders neither block (the read-side guard)', async () => {

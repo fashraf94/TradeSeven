@@ -9,6 +9,13 @@
 // Critically includes the inertness case: with a missing producer stamp (ms=0)
 // on a non-new-day tick, the gate must fall back to isNewTradingDay-only (today's
 // behavior), so the change is a no-op until Option B actually stamps computedAt.
+//
+// BUILD_RULES §4 dependency-surface guard: the import below loads the REAL
+// cron module unmocked, so it exercises the cron's whole import surface —
+// including the Release-2 edges (src/config/featureFlags.js,
+// controlPromptRenderer, controlSuppressionTelemetry, tempoDialClamp,
+// swapProvenance). Never add vi.mock for those modules here; a renamed or
+// broken export must fail THIS file's import.
 
 import { describe, it, expect } from 'vitest';
 import { shouldRebuildHotBench } from './agent-evaluate.js';

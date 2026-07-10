@@ -1,10 +1,12 @@
 // api/agent/update-agent-settings.test.js
 //
 // R1(a) settingsRev-completeness migration — handler coverage for the
-// allowlisted settings write path. Verifies the exact-allowlist rejection,
-// per-field validation, ownership, the identical-value idempotent no-op (no
-// phantom settingsRev), the rev bump on real writes, and the server-side
-// ISO lastDeployedAt stamp for non-null deployedStrategy only.
+// allowlisted settings write path. Verifies the exact-allowlist rejection
+// (including prototype-chain key names), per-field validation, ownership,
+// the identical-value idempotent no-op (key-order-blind — no phantom
+// settingsRev), the rev bump on real writes, and the server-side ISO
+// strategyLastDeployedAt stamp for non-null deployedStrategy only
+// (lastDeployedAt itself is never written — decide.js cooldown parity).
 //
 // BUILD_RULES §4 dependency-surface guard: the REAL handler import pulls
 // api/_utils/agentSettingsTx (→ firebase-admin FieldValue) — never mock the
@@ -96,6 +98,23 @@ describe('update-agent-settings — the exact allowlist', () => {
     expect(badStrategy.res.statusCode).toBe(400);
   });
 
+  it('rejects prototype-chain key names as not-allowlisted (never a crash or a chain lookup)', async () => {
+    // JSON bodies can carry own "__proto__"/"constructor"/"hasOwnProperty"
+    // keys; a bare FIELD_VALIDATORS[key] would resolve them THROUGH the
+    // prototype chain to non-validator functions. Object.hasOwn treats them
+    // as stranger keys like any other.
+    for (const key of ['__proto__', 'constructor', 'hasOwnProperty']) {
+      seed();
+      // JSON.parse (not an object literal): a literal __proto__ key sets the
+      // prototype instead of an own property — the wire shape is the attack.
+      const set = JSON.parse(`{"${key}": {"x": 1}}`);
+      const { req, res } = makeReqRes({ agentId: AGENT_ID, set });
+      await handler(req, res);
+      expect(res.statusCode).toBe(400);
+      expect(res.body.error).toBe('field_not_allowlisted');
+    }
+  });
+
   it('rejects an empty/absent set and 403s a foreign agent', async () => {
     seed();
     const empty = makeReqRes({ agentId: AGENT_ID, set: {} });
@@ -110,7 +129,7 @@ describe('update-agent-settings — the exact allowlist', () => {
 });
 
 describe('update-agent-settings — writes + settingsRev discipline', () => {
-  it('writes equippedTraits with a settingsRev bump (no lastDeployedAt stamp)', async () => {
+  it('writes equippedTraits with a settingsRev bump (no deploy stamp)', async () => {
     const fake = seed();
     const entries = [{ traitId: 'trait-iron-discipline', strength: 'moderate' }];
     const { req, res } = makeReqRes({ agentId: AGENT_ID, set: { equippedTraits: entries } });
@@ -120,24 +139,28 @@ describe('update-agent-settings — writes + settingsRev discipline', () => {
     const agent = fake.state.agentDocs[AGENT_ID];
     expect(agent.equippedTraits).toEqual(entries);
     expect(agent.settingsRev).toBeDefined();
-    expect(agent.lastDeployedAt).toBeUndefined();
+    expect(agent.strategyLastDeployedAt).toBeUndefined();
   });
 
-  it('writes a non-null deployedStrategy with an ISO lastDeployedAt stamp; the null CLEAR does not stamp', async () => {
+  it('stamps ISO strategyLastDeployedAt for non-null deployedStrategy — NEVER lastDeployedAt (decide.js cooldown parity); the null CLEAR does not stamp', async () => {
     const fake = seed();
     const strategy = { experimentId: 'e1', bundleId: 'b1', guardrails: [], deployedAt: 't' };
     const deploy = makeReqRes({ agentId: AGENT_ID, set: { deployedStrategy: strategy } });
     await handler(deploy.req, deploy.res);
     const agent = fake.state.agentDocs[AGENT_ID];
     expect(agent.deployedStrategy).toEqual(strategy);
-    expect(typeof agent.lastDeployedAt).toBe('string'); // ISO — decide.js's own write/read type
+    expect(typeof agent.strategyLastDeployedAt).toBe('string'); // ISO, additive field
+    // The cooldown field decide.js:157-162 reads stays untouched — the old
+    // client writer's Timestamp misparse meant strategy deploys never armed
+    // it, and this migration must not change that.
+    expect(agent.lastDeployedAt).toBeUndefined();
 
-    const stampBefore = agent.lastDeployedAt;
+    const stampBefore = agent.strategyLastDeployedAt;
     const clear = makeReqRes({ agentId: AGENT_ID, set: { deployedStrategy: null } });
     await handler(clear.req, clear.res);
     expect(clear.res.statusCode).toBe(200);
     expect(fake.state.agentDocs[AGENT_ID].deployedStrategy).toBeNull();
-    expect(fake.state.agentDocs[AGENT_ID].lastDeployedAt).toBe(stampBefore); // clear never re-stamps
+    expect(fake.state.agentDocs[AGENT_ID].strategyLastDeployedAt).toBe(stampBefore); // clear never re-stamps
   });
 
   it('identical-value writes are idempotent no-ops (no phantom settingsRev)', async () => {
@@ -148,6 +171,24 @@ describe('update-agent-settings — writes + settingsRev discipline', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.idempotent).toBe(true);
     expect(fake.state.agentDocs[AGENT_ID].settingsRev).toBeUndefined();
+  });
+
+  it('the idempotence check is key-order-blind (Firestore returns sorted map keys)', async () => {
+    // At rest: the order Firestore would hand back. The client re-sends the
+    // same values with different insertion order — same data, so this must
+    // be a no-op, not a phantom settingsRev.
+    const fake = seed({
+      deployedStrategy: { bundleId: 'b1', experimentId: 'e1', nested: { a: 1, b: 2 } },
+    });
+    const { req, res } = makeReqRes({
+      agentId: AGENT_ID,
+      set: { deployedStrategy: { nested: { b: 2, a: 1 }, experimentId: 'e1', bundleId: 'b1' } },
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.idempotent).toBe(true);
+    expect(fake.state.agentDocs[AGENT_ID].settingsRev).toBeUndefined();
+    expect(fake.state.agentDocs[AGENT_ID].strategyLastDeployedAt).toBeUndefined();
   });
 
   it('deliberately has NO battle-lock (parity with the migrated client writers)', async () => {

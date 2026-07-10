@@ -56,6 +56,17 @@ export const TEMPO_SUPPRESSION_REASONS = Object.freeze({
 const round2 = (n) => Math.round(n * 100) / 100;
 
 /**
+ * THE snapshot path for a battle's desired tempo (agentContext.dials.tempo,
+ * stamped at fenced site 1 via buildCustomizationSnapshot). Every reader
+ * resolves through this accessor so the snapshot shape lives in ONE place —
+ * the clamp seam and handleGameplanMeeting's provenance resolution can never
+ * drift onto different paths (/code-review, Phase-2).
+ */
+export function desiredTempoOf(battle) {
+  return battle?.agentContext?.dials?.tempo;
+}
+
+/**
  * Resolve desired → effective tempo with full provenance.
  *
  * @param {Object} p
@@ -160,7 +171,7 @@ export function applyTempoToHftConfig(hftConfig, effectiveTempo, multiplier) {
  * The one-call composition for the Phase-2 choke point:
  *   const { hftConfig, provenance } = clampHftConfig({
  *     hftConfig: resolveHftConfig(baseArchetypeConfig, battle.gameMode),
- *     desiredTempo: battle.agentContext?.dials?.tempo,
+ *     desiredTempo: desiredTempoOf(battle),
  *     dialEnabled: TEMPO_DIAL_ENABLED,
  *   });
  */

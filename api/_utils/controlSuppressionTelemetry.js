@@ -167,3 +167,67 @@ export function buildControlEpochLogEntry(event) {
     at: event.at,
   };
 }
+
+/**
+ * THE epoch-recording orchestrator (/code-review, Phase-2): owns the whole
+ * key → should-log → resolve → build → durable-write → in-memory-sync
+ * sequence so the load-bearing invariant — the prompt built later this tick
+ * and the durable record CANNOT disagree — lives in ONE tested function
+ * instead of a loose block inside the 3000-line cron. The caller passes its
+ * Firestore pieces; a write failure is loud and non-fatal (the next tick
+ * simply retries the same epoch entry).
+ *
+ * EPOCHS ARE TICK-OBSERVED by design: a flag round-trip that lands entirely
+ * between cron ticks logs nothing — and correctly so, because no prompt ever
+ * rendered (or suppressed) anything during it; the no-resurrection record
+ * covers epochs a battle actually lived through.
+ *
+ * @returns {Promise<Object|null>} the event if this tick opened a new epoch, else null
+ */
+export async function recordControlEpochIfNeeded({
+  battleRef,
+  battle,
+  arrayUnion,
+  modes,
+  resolveControls,
+  directive,
+  dialProvenance = null,
+  deploySha = null,
+  knobConfigVersion = null,
+  dialBandVersion = null,
+}) {
+  const epochKey = computeEpochKey(modes);
+  if (!shouldLogControlEpoch(battle.controlEpochLog, epochKey)) return null;
+
+  const resolution = resolveControls({
+    modes,
+    directive,
+    standingLeans: battle.agentContext?.standingLeans,
+    leanOverrides: battle.leanOverrides,
+    controlEpochLog: battle.controlEpochLog,
+  });
+  const event = buildControlEpochEvent({
+    battleId: battle.id,
+    epochKey,
+    modes,
+    resolution,
+    directive,
+    standingLeans: battle.agentContext?.standingLeans,
+    dialProvenance,
+    deploySha,
+    knobConfigVersion,
+    dialBandVersion,
+  });
+  const entry = buildControlEpochLogEntry(event);
+  console.log('[ControlEpoch]', JSON.stringify(event));
+  try {
+    await battleRef.update({ controlEpochLog: arrayUnion(entry) });
+    // The in-memory sync IS the display-agreement half: the prompt resolution
+    // later this tick derives its kill set from battle.controlEpochLog, so it
+    // must already contain what was just made durable.
+    battle.controlEpochLog = [...(battle.controlEpochLog || []), entry];
+  } catch (writeErr) {
+    console.error('[ControlEpoch] durable write failed (tick continues; next tick retries):', writeErr?.message || writeErr);
+  }
+  return event;
+}
