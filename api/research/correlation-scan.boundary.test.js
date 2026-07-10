@@ -51,11 +51,12 @@ import { driverUniverseHash } from './correlationChanges.js';
 import { getPreviousTradingDay } from '../_utils/marketSchedule.js';
 
 // ==================== HOISTED MOCK STATE ====================
-const { authReturnValue, labFlag, rqFlag, synthFlag } = vi.hoisted(() => ({
+const { authReturnValue, labFlag, rqFlag, synthFlag, bigDoc } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   labFlag: { on: true }, // default ON so the flag guard doesn't 404 the behavior tests
   rqFlag: { on: true }, // V3 relationship-quality: default ON so the per-row rq behavior tests run
   synthFlag: { on: false }, // V3 Sub-build 2 synthesis: default OFF → canonical run stays byte-identical
+  bigDoc: { on: false }, // forces serializedByteSize over budget to exercise the skip-on-overflow guard
 }));
 
 let activeFirestore = null;
@@ -85,6 +86,13 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   get CORRELATION_RELATIONSHIP_QUALITY_ENABLED() { return rqFlag.on; },
   get CORRELATION_SYNTHESIS_ENABLED() { return synthFlag.on; },
 }));
+
+// Partial-mock the contract module so a test can force the doc over the size
+// budget (real serializedByteSize otherwise); every other export is preserved.
+vi.mock('./summaryContract.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, serializedByteSize: (obj) => (bigDoc.on ? 10_000_000 : actual.serializedByteSize(obj)) };
+});
 
 // BUILD_RULES §4 dependency-surface guard: correlation-scan.js imports
 // src/config/featureFlags.js AND src/components/Research/correlationVerdict.js
@@ -1070,6 +1078,31 @@ describe('scan summary contract + "since your last scan" (Change 2 + 3)', () => 
     } finally {
       synthFlag.on = false;
       rqFlag.on = true;
+      warn.mockRestore();
+    }
+  });
+
+  it('over the size budget → SKIP the write entirely (no Firestore, no L1), response served in full', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    synthFlag.on = true;
+    bigDoc.on = true;
+    try {
+      const setsBefore = store.setCalls.length;
+      // A pristine cache key (lookback 401 is used by no other test).
+      const res = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 401, forceRefresh: true });
+      expect(res.statusCode).toBe(200);
+      // full response is served — rows and the contract are intact
+      expect(res.body.rows.length).toBe(REGISTRY_KEYS.length);
+      expect(res.body.summaryContract.kind).toBe('scan');
+      // nothing written to Firestore, no L1 cache entry
+      expect(store.setCalls.length).toBe(setsBefore);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('skipping cache write'));
+      // a follow-up read (no forceRefresh) recomputes, not a cached serve
+      const second = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 401 });
+      expect(second.body.meta.cached).toBe(false);
+    } finally {
+      bigDoc.on = false;
+      synthFlag.on = false;
       warn.mockRestore();
     }
   });

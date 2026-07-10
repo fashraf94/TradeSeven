@@ -562,14 +562,16 @@ export default async function handler(req, res) {
           doc.snapshot = scanSnapshot;
           doc.priorSnapshot = priorSnapshot;
         }
-        // Doc-size guard (test #18) — drop the STORED payload's nothing-heavy
-        // here (rows are compact), but keep the same overflow discipline as the
-        // deep dive against Firestore's 1MB limit.
+        // Doc-size guard (test #18): over the pinned budget against Firestore's
+        // 1MB limit → SKIP the cache write entirely (no Firestore write, no L1),
+        // and still serve the full response — the same no-poisoned-cache
+        // discipline as the deep dive. An oversized scan is simply not cached.
         if (serializedByteSize(doc) > MAX_CONTRACT_BYTES) {
-          console.warn('[correlation-scan] doc over size budget');
+          console.warn('[correlation-scan] doc over size budget; skipping cache write (response served in full)');
+        } else {
+          await db.collection('correlationIntelligence').doc(docId).set(doc);
+          setInCache(cacheKey, payload, Math.floor(ttlMs / 1000));
         }
-        await db.collection('correlationIntelligence').doc(docId).set(doc);
-        setInCache(cacheKey, payload, Math.floor(ttlMs / 1000));
       } catch (cacheErr) {
         console.warn('[correlation-scan] cache write failed:', cacheErr?.message);
       }

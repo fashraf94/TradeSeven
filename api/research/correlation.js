@@ -673,15 +673,17 @@ export default async function handler(req, res) {
         const ttlMs = computeCorrelationCacheTtlMs();
         const doc = { payload, computedAt: payload.meta.computedAt, expiresAt: Date.now() + ttlMs, ttlMs };
         // Doc-size guard (test #18): if the doc exceeds the pinned budget against
-        // Firestore's 1MB limit, drop the heavy rolling series from the STORED
-        // payload only — the contract stays intact and the HTTP response keeps
-        // the full series (the watchlists.js drop-on-overflow precedent).
+        // Firestore's 1MB limit, SKIP the cache write entirely — no Firestore
+        // write, no L1 cache — and still serve the full response. An oversized
+        // doc is simply not cached (the next request recomputes and serves the
+        // full payload), the same no-poisoned-cache discipline partial/dirty
+        // runs already follow — never a degraded cached read.
         if (serializedByteSize(doc) > MAX_CONTRACT_BYTES) {
-          doc.payload = { ...payload, series: { corr20: [], corr60: [], beta40: [] } };
-          console.warn('[correlation] doc over size budget; stored without rolling series');
+          console.warn('[correlation] doc over size budget; skipping cache write (response served in full)');
+        } else {
+          await db.collection('correlationIntelligence').doc(docId).set(doc);
+          setInCache(cacheKey, payload, Math.floor(ttlMs / 1000));
         }
-        await db.collection('correlationIntelligence').doc(docId).set(doc);
-        setInCache(cacheKey, payload, Math.floor(ttlMs / 1000));
       } catch (cacheErr) {
         console.warn('[correlation] cache write failed:', cacheErr?.message);
       }

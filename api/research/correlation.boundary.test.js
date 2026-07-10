@@ -38,12 +38,13 @@ import { tensionStateFrom } from './correlationAssembly.js';
 import { validateContract, deepDiveContractSchema } from './summaryContractSchema.js';
 
 // ==================== HOISTED MOCK STATE ====================
-const { authReturnValue, labFlag, rqFlag, spyAvailable, synthFlag } = vi.hoisted(() => ({
+const { authReturnValue, labFlag, rqFlag, spyAvailable, synthFlag, bigDoc } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   labFlag: { on: true }, // default ON so the flag guard doesn't 404 the behavior tests
   rqFlag: { on: true }, // V3 relationship-quality: default ON so the RQ behavior tests run
   spyAvailable: { on: true }, // toggles the SPY.US wire to exercise the spy_unavailable path
   synthFlag: { on: false }, // V3 Sub-build 2 synthesis: default OFF so the pre-synthesis payload is asserted byte-identical
+  bigDoc: { on: false }, // forces serializedByteSize over budget to exercise the skip-on-overflow guard
 }));
 
 let activeFirestore = null;
@@ -73,6 +74,13 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   get CORRELATION_RELATIONSHIP_QUALITY_ENABLED() { return rqFlag.on; },
   get CORRELATION_SYNTHESIS_ENABLED() { return synthFlag.on; },
 }));
+
+// Partial-mock the contract module so a test can force the doc over the size
+// budget (real serializedByteSize otherwise); every other export is preserved.
+vi.mock('./summaryContract.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, serializedByteSize: (obj) => (bigDoc.on ? 10_000_000 : actual.serializedByteSize(obj)) };
+});
 
 // BUILD_RULES §4 dependency-surface guard: correlation.js imports
 // src/config/featureFlags.js (an api→src import). This real handler import —
@@ -1220,6 +1228,46 @@ describe('summary contract (Change 3) — flag combinations + shape', () => {
       expect(res.statusCode).toBe(200);
       const write = store.setCalls[store.setCalls.length - 1];
       expect(write.data.payload.summaryContract.kind).toBe('deepDive');
+    } finally {
+      synthFlag.on = false;
+    }
+  });
+
+  it('over the size budget → SKIP the write entirely (no Firestore, no L1), response served in full', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    synthFlag.on = true;
+    bigDoc.on = true;
+    try {
+      const setsBefore = store.setCalls.length;
+      // A pristine cache key (lookback 401 is used by no other test).
+      const { req, res } = makeReqRes({ group: ['AAA', 'BBB', 'DDD'], driver: 'BRENT', lookbackDays: 401, forceRefresh: true });
+      await handler(req, res);
+      expect(res.statusCode).toBe(200);
+      // full response is served — the rolling series are intact
+      expect(res.body.series.corr20.length).toBeGreaterThan(0);
+      expect(res.body.summaryContract.kind).toBe('deepDive');
+      // nothing was written to Firestore, and no L1 cache entry was created
+      expect(store.setCalls.length).toBe(setsBefore);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('skipping cache write'));
+      // a follow-up read (no forceRefresh) must recompute, not serve a cached doc
+      const second = makeReqRes({ group: ['AAA', 'BBB', 'DDD'], driver: 'BRENT', lookbackDays: 401 });
+      await handler(second.req, second.res);
+      expect(second.res.body.meta.cached).toBe(false);
+    } finally {
+      bigDoc.on = false;
+      synthFlag.on = false;
+      warn.mockRestore();
+    }
+  });
+
+  it('under budget again → the write resumes (guard is not sticky)', async () => {
+    synthFlag.on = true;
+    try {
+      const setsBefore = store.setCalls.length;
+      const { req, res } = makeReqRes({ group: ['AAA', 'BBB', 'DDD'], driver: 'BRENT', lookbackDays: 400, forceRefresh: true });
+      await handler(req, res);
+      expect(res.statusCode).toBe(200);
+      expect(store.setCalls.length).toBe(setsBefore + 1);
     } finally {
       synthFlag.on = false;
     }
