@@ -14,10 +14,20 @@
 //     (bustBuffer / vwapFailureTicks / trailStopATR) remain preset-driven via
 //     agentPresetConfig.js — see Decision 2.
 //
-// hftConfig values below are launch-seed and ILLUSTRATIVE (§3.3); calibration
-// (Phase 8 behavioral gates 8A/8B) is post-merge work. They are intentionally
+// hftConfig values: originally launch-seed and ILLUSTRATIVE (§3.3), intentionally
 // differentiated (degen ≠ guardian) so the archetype→physics wire is real at
-// launch (Gate 1).
+// launch (Gate 1). Release 1 (Tuned Knob Values Landing V1.1) replaces the degen
+// and momentum_chaser seeds with the B4-calibrated values (see per-block comments);
+// analyst / diversifier / contrarian / guardian remain the illustrative seeds.
+// KNOB_CONFIG_VERSION (below) tracks generations of this table and is monotonic —
+// a rollback increments it (v2→v3), never reuses a prior number.
+
+// Generation marker for the hftConfig knob table (Release 1, Tuned Knob Values
+// Landing V1.1). v1 = the illustrative launch seeds; v2 = the B4-tuned degen +
+// momentum_chaser values landed here. Monotonic forever: a rollback deploy takes
+// the NEXT number (v3), never a prior one, so post-change battles never conflate
+// with pre-change battles under tick-time resolution.
+export const KNOB_CONFIG_VERSION = 2;
 
 // `.label` is the API-side USER-FACING display name (used in prompts/logs).
 // It mirrors the frontend resolver in src/data/archetypeDisplay.js — the
@@ -33,17 +43,20 @@ export const ARCHETYPE_CONFIGS = {
       canEnterDistressed: false,
     },
     hftConfig: {
-      forcedRotation: { enabled: true, pctThreshold: 0.0015, ticksThreshold: 3, maxTickAgeMinutes: 20, winnerThreshold: 0.0015 },
+      // Release 1 (B4-tuned, KNOB_CONFIG_VERSION 2): mc tempered — later forced-rotation
+      // fires (ticksThreshold 3→5) and a tighter circuit-breaker ceiling (capPerWindow 8→6),
+      // with mixed hurdle-floor moves (haiku 0.3→0.35, stag 0.55→0.5, default 0.3→0.35).
+      forcedRotation: { enabled: true, pctThreshold: 0.0015, ticksThreshold: 5, maxTickAgeMinutes: 20, winnerThreshold: 0.0015 },
       hurdleFloor: {
         enabled: true,
         byReason: {
-          haiku_decision: { atrMultiplier: 0.3 },
-          stagnation: { atrMultiplier: 0.55 },
+          haiku_decision: { atrMultiplier: 0.35 },
+          stagnation: { atrMultiplier: 0.5 },
         },
-        default: { atrMultiplier: 0.3 },
+        default: { atrMultiplier: 0.35 },
         requireBenchPositive: true,
       },
-      swapWindow: { enabled: true, capPerWindow: 8, windowMinutes: 60, countEmergencies: false },
+      swapWindow: { enabled: true, capPerWindow: 6, windowMinutes: 60, countEmergencies: false },
     },
     convictionMods: {
       volumeWeight: 1.2,
@@ -154,7 +167,9 @@ export const ARCHETYPE_CONFIGS = {
         enabled: true,
         byReason: {
           haiku_decision: { atrMultiplier: 0.2 },
-          stagnation: { atrMultiplier: 0.6 },
+          // Release 1 (B4-tuned, KNOB_CONFIG_VERSION 2): degen loosened — stagnation
+          // floor lowered 0.6→0.3 so the mechanical rotation fires off the zero floor.
+          stagnation: { atrMultiplier: 0.3 },
         },
         default: { atrMultiplier: 0.2 },
         requireBenchPositive: true,

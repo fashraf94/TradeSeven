@@ -36,6 +36,16 @@
 // Usage:
 //   node scripts/calibration/aggregate-real-battles.js --input export.json
 //   node scripts/calibration/aggregate-real-battles.js --input export.json --format json --out metrics.json
+//   node scripts/calibration/aggregate-real-battles.js --input export.json --generation-boundary 2026-07-08T20:05:00Z
+//
+// Release 1 (Tuned Knob Values Landing V1.1) additions:
+//   - --generation-boundary <iso>[,<iso>…]: bucket battles by generation; the watch
+//     comparison uses only battles WHOLLY CONTAINED (created AND completed) in one
+//     generation. Straddlers/in-flight are excluded and tallied separately (§5).
+//   - swap-cap pinning per archetype (§4.1 HARM trigger, via the fenced runtime
+//     window counter getRecentSwapCount against the deployed capPerWindow).
+//   - opponent split (cpu-opponent / player-opponent by isCpu): BOTH groups count
+//     toward the decision metric; the split only flags material tempo divergence.
 //
 // `--input` is a JSON file: either an array of battle docs or { "battles": [...] }.
 // Produce one from Firestore with your own read-only admin tooling; THIS SCRIPT
@@ -48,7 +58,17 @@ import { fileURLToPath } from 'node:url';
 // IS the guard that no browser dep enters the graph. Import the constant — never
 // re-list the reasons locally (FORGE_KEYSTONE_PHASE8_CALIBRATION_PLAN.md §5), and
 // NEVER mock this import.
-import { EMERGENCY_BYPASS_REASONS } from '../../api/_utils/agentRiskManager.js';
+// getRecentSwapCount is the FENCED live circuit-breaker window counter (Release 1
+// §4.1). We CALL it (reading/calling fenced exports is permitted; BUILD_RULES §1)
+// so the cap-pinning metric mirrors the runtime window semantics exactly rather
+// than re-implementing them.
+import { EMERGENCY_BYPASS_REASONS, getRecentSwapCount } from '../../api/_utils/agentRiskManager.js';
+// Cap-pinning resolves each archetype's swapWindow (capPerWindow/windowMinutes)
+// from the SAME fenced source the runtime deploys — so the metric measures pinning
+// against the cap actually in force at run time (Release 1 §4.1, "the system's own
+// terms"). A pre-merge baseline run therefore measures the old cap; a post-merge
+// run measures the new one. Calling these exports is permitted (BUILD_RULES §1).
+import { getArchetypeConfig, resolveHftConfig } from '../../api/_utils/agentArchetypeConfig.js';
 
 export const TRADES_CAP = 50; // agentSwapExecution.js:345 `.slice(-50)`
 
@@ -135,6 +155,66 @@ export function partitionTrades(trades) {
   return { nonEmergency, emergency, stagnation, unknown, emergencyByReason, unknownByReason };
 }
 
+// Opponent classification (Release 1 Decision 2 refinement). isCpu is stamped on
+// tournament CPU/padding battles at deploy (agentBattleService.js) and passed
+// through verbatim by export-agent-battles.js. We split by opponent — NOT by
+// "training" — because isCpu covers ranked CPU padding too; the label reflects
+// that honestly. BOTH groups count toward the aggregate decision metric (knob
+// physics are opponent-independent); the split exists only to surface divergence.
+export function opponentGroup(battle) {
+  return battle?.isCpu === true ? 'cpu-opponent' : 'player-opponent';
+}
+
+// Material tempo divergence between the two opponent groups. This is a DIAGNOSTIC
+// flag, never a promote/revert gate — a large gap between cpu-opponent and
+// player-opponent tempo means something opponent-specific is at play and warrants
+// a look. Rule: divergent if the larger median is ≥1.5× the smaller (both > 0), or
+// (when one group is 0) the absolute gap is ≥2 rotations. Raw medians are always
+// surfaced so a human makes the call.
+export function tempoDivergence(cpuMedian, playerMedian, { ratio = 1.5, absolute = 2 } = {}) {
+  if (cpuMedian == null || playerMedian == null) {
+    return { divergent: false, reason: 'insufficient-data', cpuMedian, playerMedian };
+  }
+  const hi = Math.max(cpuMedian, playerMedian);
+  const lo = Math.min(cpuMedian, playerMedian);
+  const absDiff = hi - lo;
+  const ratioVal = lo > 0 ? hi / lo : null;
+  const divergent = lo > 0 ? ratioVal >= ratio : absDiff >= absolute;
+  return {
+    divergent,
+    cpuMedian,
+    playerMedian,
+    absDiff: round(absDiff),
+    ratio: ratioVal == null ? null : round(ratioVal),
+    thresholds: { ratio, absolute },
+  };
+}
+
+// Swap-cap pinning for ONE battle (Release 1 §4.1 HARM trigger, made measurable).
+// For each cap-subject (non-emergency, unless countEmergencies) executed swap, we
+// count the swaps in the trailing windowMinutes window ANCHORED on that swap using
+// the fenced getRecentSwapCount — so the count matches the live breaker exactly. A
+// window that reaches capPerWindow is "pinned". Returns per-battle window tallies;
+// counts inherit the caller's censored flag (a 50-cap-truncated trades[] yields a
+// FLOOR on pinned windows).
+export function capPinningForBattle(battle) {
+  const archetype = battle?.agentContext?.archetype || 'unknown';
+  const sw = resolveHftConfig(getArchetypeConfig(archetype), battle?.gameMode)?.swapWindow;
+  const trades = Array.isArray(battle?.trades) ? battle.trades : [];
+  if (!sw?.enabled || !(sw.capPerWindow > 0) || !(sw.windowMinutes > 0)) {
+    return { capPerWindow: sw?.capPerWindow ?? null, windowMinutes: sw?.windowMinutes ?? null, windows: 0, pinnedWindows: 0 };
+  }
+  const anchors = trades.filter((t) => t
+    && !Number.isNaN(Date.parse(t?.swappedOutAt))
+    && (sw.countEmergencies || !EMERGENCY_BYPASS_REASONS.has(t.exitReason)));
+  let pinnedWindows = 0;
+  for (const t of anchors) {
+    const used = getRecentSwapCount(trades, sw.windowMinutes, t.swappedOutAt, { countEmergencies: sw.countEmergencies });
+    if (used >= sw.capPerWindow) pinnedWindows += 1;
+  }
+  return { capPerWindow: sw.capPerWindow, windowMinutes: sw.windowMinutes, windows: anchors.length, pinnedWindows };
+}
+
 export function aggregateBattles(battles) {
   const groups = new Map();
   let spanMin = null;
@@ -164,6 +244,12 @@ export function aggregateBattles(battles) {
     const emergencyByReason = {};
     const unknownByReason = {};
     const perBattleUnknownSharePct = [];
+    // Release 1 additions: opponent-split tempo + swap-cap pinning.
+    const rotationsByOpponent = { 'cpu-opponent': [], 'player-opponent': [] };
+    let totalWindows = 0;
+    let totalPinnedWindows = 0;
+    const perBattlePinnedSharePct = [];
+    let capParams = { capPerWindow: null, windowMinutes: null };
 
     for (const battle of list) {
       const trades = Array.isArray(battle?.trades) ? battle.trades : [];
@@ -178,6 +264,14 @@ export function aggregateBattles(battles) {
       for (const [r, c] of Object.entries(p.emergencyByReason)) emergencyByReason[r] = (emergencyByReason[r] || 0) + c;
       for (const [r, c] of Object.entries(p.unknownByReason)) unknownByReason[r] = (unknownByReason[r] || 0) + c;
       if (trades.length) perBattleUnknownSharePct.push(round((p.unknown / trades.length) * 100));
+      // Opponent-split tempo (both groups still feed `rotations` above).
+      rotationsByOpponent[opponentGroup(battle)].push(p.nonEmergency.length);
+      // Swap-cap pinning (per-battle, against the deployed cap for this archetype/mode).
+      const cp = capPinningForBattle(battle);
+      if (cp.capPerWindow != null) capParams = { capPerWindow: cp.capPerWindow, windowMinutes: cp.windowMinutes };
+      totalWindows += cp.windows;
+      totalPinnedWindows += cp.pinnedWindows;
+      if (cp.windows) perBattlePinnedSharePct.push(round((cp.pinnedWindows / cp.windows) * 100));
     }
 
     const totalTrades = sum(baseline);
@@ -193,6 +287,38 @@ export function aggregateBattles(battles) {
         perBattle: summarize(emergencyPerBattle),
         total: sum(emergencyPerBattle),
         byReason: sortObj(emergencyByReason),
+      },
+      // Release 1 §4.1 — swap-cap pinning (live-anchored runaway metric). pinnedSharePct
+      // is the share of cap-subject rolling windows that reached capPerWindow; the §4.1
+      // HARM trigger is ≥50% across ≥2 consecutive sessions (the multi-session sustain is
+      // a watch-time judgment, not computed here). Censored battles floor these counts.
+      swapCapPinning: {
+        capPerWindow: capParams.capPerWindow,
+        windowMinutes: capParams.windowMinutes,
+        windows: totalWindows,
+        pinnedWindows: totalPinnedWindows,
+        pinnedSharePct: totalWindows ? round((totalPinnedWindows / totalWindows) * 100) : null,
+        perBattleSharePct: summarize(perBattlePinnedSharePct),
+        censoredNote: censored
+          ? `${censored}/${list.length} battles censored (${TRADES_CAP}-cap) — pinned-window counts are FLOOR values.`
+          : null,
+      },
+      // Release 1 Decision 2 — opponent-split tempo (both groups count toward the
+      // aggregate `nonEmergencyRotationsPerBattle` above; this split only flags a
+      // material cpu-vs-player divergence for investigation, never a gate).
+      opponentBreakdown: {
+        'cpu-opponent': {
+          battles: rotationsByOpponent['cpu-opponent'].length,
+          nonEmergencyRotationsPerBattle: summarize(rotationsByOpponent['cpu-opponent']),
+        },
+        'player-opponent': {
+          battles: rotationsByOpponent['player-opponent'].length,
+          nonEmergencyRotationsPerBattle: summarize(rotationsByOpponent['player-opponent']),
+        },
+        tempoDivergence: tempoDivergence(
+          median(rotationsByOpponent['cpu-opponent']),
+          median(rotationsByOpponent['player-opponent']),
+        ),
       },
       // Unknown/missing-reason trades — folded into non-emergency by default-deny,
       // so this share is the 8A tempo-metric inflation ceiling for real data.
@@ -248,6 +374,81 @@ export function aggregateBattles(battles) {
   };
 }
 
+// ==================== GENERATION BUCKETING (Release 1 §5) ====================
+// Under tick-time resolution, a merge/rollback flips in-flight battles mid-battle,
+// so the promote/revert comparison may only use battles WHOLLY CONTAINED in one
+// generation (created AND completed on the same side of every boundary). These
+// helpers implement that filter; straddlers and still-in-flight battles are
+// excluded and reported separately.
+
+// Interval i is [boundary[i-1], boundary[i]) — half-open. Returns the generation
+// index (0..boundaries.length) for an epoch-ms timestamp. Boundaries should sit in
+// the gap BETWEEN sessions (spec §5.2: merge after market close) so same-session
+// battles never land on a boundary.
+export function generationIndex(ms, sortedBoundaryMs) {
+  let i = 0;
+  while (i < sortedBoundaryMs.length && ms >= sortedBoundaryMs[i]) i += 1;
+  return i;
+}
+
+// Partition battles into per-generation buckets by the wholly-contained rule. A
+// battle joins generation g iff BOTH createdAt and completedAt resolve to g; any
+// straddler — or a battle missing completedAt (still in-flight) — goes to
+// `straddling` and is never used for a per-generation comparison.
+export function bucketByGeneration(battles, boundaryIsos) {
+  const boundaryMs = boundaryIsos.map((s) => Date.parse(s));
+  if (boundaryMs.some((x) => Number.isNaN(x))) {
+    throw new Error(`--generation-boundary: unparseable ISO timestamp in [${boundaryIsos.join(', ')}]`);
+  }
+  const sorted = [...boundaryMs].sort((a, b) => a - b);
+  const buckets = Array.from({ length: sorted.length + 1 }, () => []);
+  const straddling = [];
+  for (const b of battles) {
+    const createdMs = toEpochMs(b?.createdAt);
+    const completedMs = toEpochMs(b?.completedAt);
+    if (createdMs == null || completedMs == null) { straddling.push(b); continue; }
+    const gi = generationIndex(createdMs, sorted);
+    const gc = generationIndex(completedMs, sorted);
+    if (gi === gc) buckets[gi].push(b);
+    else straddling.push(b);
+  }
+  return { sortedBoundaryMs: sorted, buckets, straddling };
+}
+
+// Generation-aware aggregation: one full per-archetype report per generation over
+// only its wholly-contained battles, plus a separate straddler tally. This is the
+// promote/revert-safe view the §5 watch window compares across generations.
+export function aggregateWithGenerations(battles, boundaryIsos) {
+  const { sortedBoundaryMs, buckets, straddling } = bucketByGeneration(battles, boundaryIsos);
+  const boundaries = sortedBoundaryMs.map((ms) => new Date(ms).toISOString());
+  const straddlingByArchetype = {};
+  for (const b of straddling) {
+    const a = b?.agentContext?.archetype || 'unknown';
+    straddlingByArchetype[a] = (straddlingByArchetype[a] || 0) + 1;
+  }
+  return {
+    generatedBy: 'scripts/calibration/aggregate-real-battles.js (Knob Calibration B1 — generation-bucketed)',
+    mode: 'generation-bucketed',
+    boundaries,
+    whollyContainedRule: 'A battle is compared only if createdAt AND completedAt fall in the same generation; straddlers and in-flight battles are excluded (tick-time resolution flips in-flight battles mid-battle).',
+    totalBattles: battles.length,
+    generations: buckets.map((bucket, i) => ({
+      index: i,
+      from: i === 0 ? null : boundaries[i - 1],
+      to: i === boundaries.length ? null : boundaries[i],
+      containedBattles: bucket.length,
+      report: aggregateBattles(bucket),
+    })),
+    straddling: {
+      battles: straddling.length,
+      byArchetype: sortObj(straddlingByArchetype),
+      note: straddling.length
+        ? `${straddling.length} battle(s) straddle a generation boundary or lack completedAt — EXCLUDED from the per-generation comparison.`
+        : null,
+    },
+  };
+}
+
 // --- CLI ---
 function parseArgs(argv) {
   const args = { format: 'table' };
@@ -256,6 +457,7 @@ function parseArgs(argv) {
     if (a === '--input') args.input = argv[++i];
     else if (a === '--format') args.format = argv[++i];
     else if (a === '--out') args.out = argv[++i];
+    else if (a === '--generation-boundary') args.generationBoundary = argv[++i];
   }
   return args;
 }
@@ -282,10 +484,12 @@ export function formatTable(report) {
     lines.push(`# WARNING ${report.totalUnknownReasonTrades} trades carry an unknown/missing reason — counted as non-emergency (default-deny), inflating 8A. See unkRsn% + unknownReason.byReason`);
   }
   lines.push('');
-  const head = ['archetype', 'battles', 'cens', 'baseline(med)', 'nonEmergRot(med)=8A', 'stagShare%=8B', 'emerg(med)', 'unkRsn%(ofNonEmerg)'];
+  const head = ['archetype', 'battles', 'cens', 'baseline(med)', 'nonEmergRot(med)=8A', 'stagShare%=8B', 'emerg(med)', 'unkRsn%(ofNonEmerg)', 'capPin%@cap'];
   lines.push(head.join(' | '));
   lines.push(head.map((h) => '-'.repeat(h.length)).join('-|-'));
   for (const [arch, m] of Object.entries(report.perArchetype)) {
+    const cp = m.swapCapPinning;
+    const capPinCell = cp.pinnedSharePct == null ? 'n/a' : `${cp.pinnedSharePct}@${cell(cp.capPerWindow)}`;
     lines.push(
       [
         arch,
@@ -296,26 +500,59 @@ export function formatTable(report) {
         cell(m.stagnationSharePct),
         cell(m.emergencyBypass.perBattle.median),
         cell(m.unknownReason.sharePctOfNonEmergency),
+        capPinCell,
       ].join(' | '),
     );
   }
   lines.push('');
   lines.push('# descriptive tempo ordering (NOT a gate — 8A/8B asserted in the B3 run):');
   lines.push('#   ' + report.tempoOrdering.map((t) => `${t.archetype}=${t.medianNonEmergencyRotations}`).join(' > '));
+  // Opponent-split divergence flags (diagnostic only — both groups count toward the decision).
+  const diverged = Object.entries(report.perArchetype)
+    .filter(([, m]) => m.opponentBreakdown.tempoDivergence.divergent)
+    .map(([a, m]) => `${a} (cpu=${m.opponentBreakdown.tempoDivergence.cpuMedian} vs player=${m.opponentBreakdown.tempoDivergence.playerMedian})`);
+  lines.push(diverged.length
+    ? `# OPPONENT TEMPO DIVERGENCE (investigate, not a gate): ${diverged.join('; ')}`
+    : '# opponent tempo divergence: none flagged (cpu-opponent ≈ player-opponent).');
+  lines.push('# capPin%@cap = share of cap-subject rolling windows that reached capPerWindow (§4.1 HARM: ≥50% across ≥2 sessions).');
   lines.push('# NOT covered here (synthesized by B2): hurdle-floor rejection rate, vetoed forced-rotation fire frequency.');
+  return lines.join('\n');
+}
+
+// Generation-bucketed formatter (Release 1 §5): render each generation's report via
+// formatTable, framed by its window, with the excluded-straddler tally called out.
+export function formatGenerationReport(gen) {
+  const lines = [];
+  lines.push(`# Generation-bucketed knob metrics — ${gen.totalBattles} battles across ${gen.generations.length} generation(s)`);
+  lines.push(`# boundaries: ${gen.boundaries.join(', ') || '(none)'}`);
+  lines.push(`# rule: ${gen.whollyContainedRule}`);
+  if (gen.straddling.note) lines.push(`# EXCLUDED ${gen.straddling.note}`);
+  for (const g of gen.generations) {
+    lines.push('');
+    lines.push(`## generation ${g.index} [${g.from || '-inf'} → ${g.to || '+inf'}] — ${g.containedBattles} wholly-contained battle(s)`);
+    lines.push(g.containedBattles ? formatTable(g.report) : '# (no wholly-contained battles in this generation)');
+  }
   return lines.join('\n');
 }
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.input) {
-    console.error('Usage: node scripts/calibration/aggregate-real-battles.js --input <export.json> [--format json|table] [--out <file>]');
+    console.error('Usage: node scripts/calibration/aggregate-real-battles.js --input <export.json> [--format json|table] [--out <file>] [--generation-boundary <iso>[,<iso>...]]');
     console.error('  --input: JSON array of agentBattles docs, or { "battles": [...] }. This script never reads/writes Firestore.');
+    console.error('  --generation-boundary: ISO timestamp(s) partitioning time into generations; the comparison uses only battles wholly contained in one generation (Release 1 §5).');
     process.exit(1);
   }
   const battles = loadBattles(args.input);
-  const report = aggregateBattles(battles);
-  const out = args.format === 'json' ? JSON.stringify(report, null, 2) : formatTable(report);
+  const boundaries = args.generationBoundary
+    ? args.generationBoundary.split(',').map((s) => s.trim()).filter(Boolean)
+    : null;
+  const report = boundaries && boundaries.length
+    ? aggregateWithGenerations(battles, boundaries)
+    : aggregateBattles(battles);
+  const out = args.format === 'json'
+    ? JSON.stringify(report, null, 2)
+    : (report.mode === 'generation-bucketed' ? formatGenerationReport(report) : formatTable(report));
   if (args.out) {
     writeFileSync(args.out, out);
     console.error(`Wrote ${args.format} to ${args.out}`);

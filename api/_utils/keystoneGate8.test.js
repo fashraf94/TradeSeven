@@ -36,7 +36,7 @@ const NOW = Date.parse('2026-05-30T16:00:00.000Z');
 const NOW_ISO = new Date(NOW).toISOString();
 const minAgo = (m) => new Date(NOW - m * 60000).toISOString();
 
-const degen = getArchetypeConfig('degen');       // cap 12, window 60; forcedRotation ON; stagnation floor 0.6
+const degen = getArchetypeConfig('degen');       // cap 12, window 60; forcedRotation ON; stagnation floor 0.3 (B4-tuned)
 const guardian = getArchetypeConfig('guardian');  // cap  2, window 120; forcedRotation OFF; stagnation floor 0.5
 
 // =====================================================================
@@ -122,7 +122,7 @@ describe('Gate 8C · margin-coherence characterization — trigger wake vs hurdl
 
     // The WINNER position is the rotation candidate. Against the SAME bench (+2%),
     // its bench-minus-active margin (0.2x) is below the degen stagnation floor
-    // (0.6x) — so the swap the wake just invited would be BLOCKED.
+    // (0.3x after the B4 tuning) — so the swap the wake just invited would be BLOCKED.
     const hurdle = clearsHurdleFloor({
       active: { symbol: 'WINNER', dailyPct: 0.015 },
       benchCandidate: { symbol: 'BENCH', dailyPct: 0.02 },
@@ -218,12 +218,15 @@ describe('Gate 8E · no-inversion roll-up — degen out-trades guardian at the m
     expect(guardian.hftConfig.forcedRotation.enabled).toBe(false);
   });
 
-  it('the higher degen stagnation floor (0.6 ≥ guardian 0.5) is NOT an inversion', () => {
-    // A lower floor is EASIER to clear, so in isolation guardian's 0.5 looks more
-    // permissive than degen's 0.6 — but guardian disables forced rotation entirely
-    // and caps at 2, so the floor ordering cannot flip the trade-frequency ordering.
+  it('the B4-loosened degen stagnation floor (0.3 ≤ guardian 0.5) REINFORCES, not inverts, the ordering', () => {
+    // Release 1 (B4) lowered degen's stagnation floor 0.6→0.3, so it is now BELOW
+    // guardian's 0.5. A lower floor is EASIER to clear → MORE permissive, which now
+    // ALIGNS the floor ordering with the trade-frequency ordering (degen out-trades
+    // guardian). Combined with degen's higher cap and enabled forced rotation, this
+    // strengthens the ordering rather than inverting it — the pre-B4 "looks backwards
+    // but is compensated" tension is gone.
     expect(degen.hftConfig.hurdleFloor.byReason.stagnation.atrMultiplier)
-      .toBeGreaterThanOrEqual(guardian.hftConfig.hurdleFloor.byReason.stagnation.atrMultiplier);
+      .toBeLessThanOrEqual(guardian.hftConfig.hurdleFloor.byReason.stagnation.atrMultiplier);
     expect(guardian.hftConfig.forcedRotation.enabled).toBe(false);
   });
 

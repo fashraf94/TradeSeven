@@ -294,7 +294,7 @@ describe('computeBenchVsActiveMargin — canonical margin (§4.3)', () => {
 });
 
 describe('clearsHurdleFloor — Knob B gate (§4.3)', () => {
-  const degen = getArchetypeConfig('degen');       // haiku 0.2 / stagnation 0.6 / default 0.2
+  const degen = getArchetypeConfig('degen');       // haiku 0.2 / stagnation 0.3 (B4-tuned) / default 0.2
   const guardian = getArchetypeConfig('guardian');  // 0.5 across the board
   // Reusable: outgoing flat (0%), incoming up. With userATR=2.5(%) → atr fraction 0.025.
   const call = (overrides = {}) => clearsHurdleFloor({
@@ -307,28 +307,29 @@ describe('clearsHurdleFloor — Knob B gate (§4.3)', () => {
   });
 
   // --- LANDMINE-1 unit assertion (the Phase-4 analog of Phase-3's +2% test) ---
-  it('LANDMINE-1: active -1% vs bench +2%, ATR 2.5% → marginAtrUnits 1.2, clears degen stagnation floor 0.6', () => {
+  it('LANDMINE-1: active -1% vs bench +2%, ATR 2.5% → marginAtrUnits 1.2, clears degen stagnation floor 0.3', () => {
     const r = clearsHurdleFloor({
       active: { dailyPct: -0.01 }, benchCandidate: { dailyPct: 0.02 },
       reason: 'stagnation', archetypeConfig: degen, userATR: 2.5,
     });
     expect(r.clears).toBe(true);
     expect(r.margin.marginAtrUnits).toBeCloseTo(1.2, 10);
-    expect(r.required).toBe(0.6);
+    expect(r.required).toBe(0.3); // B4-tuned degen stagnation floor (was 0.6)
   });
 
-  it('LANDMINE-1: a just-missing margin is below_floor (0.4 ATR < degen stagnation 0.6)', () => {
-    const r = call(); // +1% → 0.4 ATR units, degen stagnation requires 0.6
+  it('LANDMINE-1: a just-missing margin is below_floor (0.2 ATR < degen stagnation 0.3)', () => {
+    // +0.5% → 0.2 ATR units, below the B4-tuned degen stagnation floor of 0.3.
+    const r = call({ benchCandidate: { symbol: 'IN', dailyPct: 0.005 } });
     expect(r.clears).toBe(false);
     expect(r.blockReason).toBe('below_floor');
-    expect(r.margin.marginAtrUnits).toBeCloseTo(0.4, 10);
+    expect(r.margin.marginAtrUnits).toBeCloseTo(0.2, 10);
   });
 
   it('clears when the margin meets the floor exactly (>=)', () => {
-    // bench +1.5% → 0.015/0.025 = 0.6 ATR == degen stagnation floor 0.6
-    const r = call({ benchCandidate: { symbol: 'IN', dailyPct: 0.015 } });
+    // bench +0.75% → 0.0075/0.025 = 0.3 ATR == degen stagnation floor 0.3 (B4-tuned)
+    const r = call({ benchCandidate: { symbol: 'IN', dailyPct: 0.0075 } });
     expect(r.clears).toBe(true);
-    expect(r.margin.marginAtrUnits).toBeCloseTo(0.6, 10);
+    expect(r.margin.marginAtrUnits).toBeCloseTo(0.3, 10);
   });
 
   // --- A2: emergency bypass (load-bearing safety contract) ---
@@ -379,10 +380,13 @@ describe('clearsHurdleFloor — Knob B gate (§4.3)', () => {
     expect(r.clears).toBe(true);
   });
 
-  it('applies different per-reason floors per archetype (degen stagnation 0.6 vs guardian 0.5)', () => {
-    const bench = { symbol: 'IN', dailyPct: 0.0125 }; // 0.0125/0.025 = 0.5 ATR
-    expect(call({ archetypeConfig: degen, benchCandidate: bench }).clears).toBe(false);   // 0.5 < 0.6
-    expect(call({ archetypeConfig: guardian, benchCandidate: bench }).clears).toBe(true); // 0.5 >= 0.5
+  it('applies different per-reason floors per archetype (degen stagnation 0.3 vs guardian 0.5)', () => {
+    // 0.4-ATR margin sits BETWEEN the two floors — after the B4 tuning degen is the
+    // MORE permissive of the pair (0.3), so this now clears degen and blocks guardian
+    // (the pre-B4 version was the mirror image at a 0.5 margin).
+    const bench = { symbol: 'IN', dailyPct: 0.01 }; // 0.01/0.025 = 0.4 ATR
+    expect(call({ archetypeConfig: degen, benchCandidate: bench }).clears).toBe(true);     // 0.4 >= 0.3
+    expect(call({ archetypeConfig: guardian, benchCandidate: bench }).clears).toBe(false); // 0.4 < 0.5
   });
 
   // --- Disabled floor ---
