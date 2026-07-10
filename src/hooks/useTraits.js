@@ -20,6 +20,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { softDeleteRule, resolveArchetypeForCompat } from '../services/forgeService';
+import { updateAgentSettings } from '../services/agentService';
 import { isRuleCompatActive, evaluateRuleCompatWrite, emitRuleCompatEvents } from '../services/ruleCompatGuard';
 import { classifyRuleHardSoft } from '../components/Forge/workshop/hardSoftHelper';
 import { RULE_COMPAT_MODE } from '../config/featureFlags';
@@ -72,11 +73,15 @@ export function useTraits(agentId, forge) {
   }, [agentId]);
 
   // ── Persist equipped traits to agent doc ─────────────────
+  // R1(a) (Release 2, founder ruling 2026-07-10): routed through the
+  // rev-bumping server endpoint — equippedTraits feeds the deploy projection,
+  // so its writes must move agent.settingsRev (raw updateDoc bypassed that).
+  // Error semantics preserved: log, never throw (the orphan auto-unequip
+  // effect below relies on persist being non-fatal).
   const persistTraits = useCallback(async (entries) => {
     if (!agentId) return;
     try {
-      const agentRef = doc(db, 'agents', agentId);
-      await updateDoc(agentRef, { equippedTraits: entries });
+      await updateAgentSettings(agentId, { equippedTraits: entries });
     } catch (err) {
       console.error('[useTraits] Failed to persist equipped traits:', err);
     }

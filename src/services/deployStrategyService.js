@@ -25,11 +25,11 @@
 import {
   doc,
   setDoc,
-  updateDoc,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { equipBundle, unequipBundle } from './forgeService';
+import { updateAgentSettings } from './agentService';
 import { hashDimensions } from '../utils/dimensionMapper';
 
 const SCHEMA_VERSION = 1;
@@ -111,12 +111,18 @@ export async function deployExperimentToAgent({
   //    the activeRules array focused on the currently-deployed strategy and
   //    avoids hitting the maxBundles ceiling unnecessarily.
   if (prevBundleId && prevBundleId !== bundleId && equippedIds.includes(prevBundleId)) {
+    // R1(a) hardening (founder ruling 2026-07-10): a failed unequip ABORTS
+    // the deploy instead of being swallowed. Continuing used to leave the old
+    // bundle equipped alongside the new one — at the maxBundles ceiling the
+    // follow-up equip then 409s with a misleading "limit reached" and the
+    // deployedStrategy banner goes stale. Failing loudly here leaves state
+    // unchanged and the retry path clean.
     try {
       await unequipBundle(agent.id, prevBundleId);
     } catch (err) {
-      // Non-fatal — log and continue. Worst case is the old bundle stays
-      // equipped alongside the new one; user can clean up in the Advanced tab.
-      console.warn('[deployStrategy] Failed to unequip previous bundle', err);
+      throw new Error(
+        `Could not replace the previous strategy bundle (${err?.message || 'unequip failed'}). Nothing was changed — retry the deploy.`
+      );
     }
   }
 
@@ -166,14 +172,14 @@ export async function deployExperimentToAgent({
     schemaVersion: SCHEMA_VERSION,
   };
 
-  // 5. Write to agent doc. serverTimestamp() used for lastDeployedAt to stay
-  //    consistent with other agent-doc writes in the codebase.
-  const agentRef = doc(db, 'agents', agent.id);
-  await updateDoc(agentRef, {
-    deployedStrategy,
-    lastDeployedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  // 5. Write via the rev-bumping settings endpoint (R1(a)): deployedStrategy
+  //    feeds the battle snapshot (agentContext.deployedGuardrails reads its
+  //    guardrails), so the write must move agent.settingsRev. The endpoint
+  //    stamps lastDeployedAt server-side as an ISO string — matching
+  //    decide.js's own writes (decide.js:523/:1079) and its
+  //    `new Date(agent.lastDeployedAt)` read (the old serverTimestamp()
+  //    Timestamp made that read misparse).
+  await updateAgentSettings(agent.id, { deployedStrategy });
 
   // 6. Fire-and-forget shadow logger write.
   logDeployEvent({
@@ -191,11 +197,8 @@ export async function deployExperimentToAgent({
  */
 export async function clearDeployedStrategy(agentId) {
   if (!agentId) throw new Error('clearDeployedStrategy: agentId required');
-  const agentRef = doc(db, 'agents', agentId);
-  await updateDoc(agentRef, {
-    deployedStrategy: null,
-    updatedAt: serverTimestamp(),
-  });
+  // R1(a): via the rev-bumping settings endpoint (null = the clear gesture).
+  await updateAgentSettings(agentId, { deployedStrategy: null });
 }
 
 /**

@@ -379,6 +379,21 @@ export const changeArchetype = async (agentId, archetype) => {
 };
 
 /**
+ * R1(a) — the allowlisted settings write path (equippedTraits /
+ * deployedStrategy). Routes through POST /api/agent/update-agent-settings so
+ * agent.settingsRev bumps on every real write; identical values are
+ * idempotent no-ops. Resolves with { agentId, fields, idempotent }.
+ */
+export const updateAgentSettings = async (agentId, set) => {
+  const response = await fetchWithAuth('/api/agent/update-agent-settings', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, set }),
+  });
+  if (!response.ok) throw await toEquipError(response);
+  return response.json();
+};
+
+/**
  * Emit the `watchlist_equip` shadow log for the onboarding "born-equipped" path.
  * That path equips the starter watchlist atomically at agent creation (it does
  * NOT call equipWatchlist), so it bypasses the equip endpoint's shadow-log

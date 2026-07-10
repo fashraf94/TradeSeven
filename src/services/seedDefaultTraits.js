@@ -21,7 +21,8 @@
 // can block agent creation. The caller (AgentCreationFlow) also wraps this in
 // try/catch as defense in depth.
 
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
+import { updateAgentSettings } from './agentService';
 import { db } from '../firebase/config';
 import {
   createRule,
@@ -76,11 +77,10 @@ export async function seedDefaultTraits(agentId, archetype, { strength = 'modera
   }
 
   // 2. Persist the equippedTraits trait-layer (byte-identical to hand-equip).
+  //    R1(a): via the rev-bumping server endpoint (settingsRev discipline);
+  //    warn-swallow semantics preserved.
   try {
-    await updateDoc(doc(db, 'agents', agentId), {
-      equippedTraits,
-      updatedAt: serverTimestamp(),
-    });
+    await updateAgentSettings(agentId, { equippedTraits });
   } catch (err) {
     console.warn('[seedDefaultTraits] equippedTraits write failed:', err);
   }
@@ -173,10 +173,8 @@ export async function reseedDefaultTraits(agentId, archetype, { strength = 'mode
   //    docs project by `traitId ∈ equippedTraits`; the old docs stop projecting
   //    the moment their traitId leaves equippedTraits.
   try {
-    await updateDoc(agentRef, {
-      equippedTraits,
-      updatedAt: serverTimestamp(),
-    });
+    // R1(a): via the rev-bumping server endpoint (settingsRev discipline).
+    await updateAgentSettings(agentId, { equippedTraits });
   } catch (err) {
     console.warn('[reseedDefaultTraits] equippedTraits write failed:', err);
   }
