@@ -50,6 +50,8 @@ import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES, ARCHETYPE_CONSTRAINTS
 import { resolveEquippedWatchlist, extractTickerSymbols } from './watchlistEquip.js';
 import { getOwnUserPicks } from './tournamentAgentLedger.js';
 import { sanitizeRuleText } from './tournamentPromptSanitizer.js';
+// Release 2 PR-d — the canonical WS3 watchlist framing (zero-import module).
+import { WATCHLIST_FRAMING_TEXT } from './controlPromptRenderer.js';
 import { toIso } from './tournamentTime.js';
 
 const LOG_PREFIX = '[TournamentBoards]';
@@ -180,10 +182,11 @@ export function buildBoardUserPrompt(agent, { userPicks = [], equippedWatchlist 
         tickerList.join(', '),
       ];
       if (safeThesis) lines.push(`Thesis: "${safeThesis}"`);
-      lines.push(
-        '',
-        'These are user-prioritized opportunities, not mandates — rank a watchlist ticker high only where it is genuinely competitive.'
-      );
+      // Release 2 PR-d (WS3): the local nudge line is replaced by THE
+      // canonical framing constant (§5.1, single-sourced in the shared
+      // renderer — the same sentence set both agentPromptAssembly blocks
+      // carry, so the three copies can never drift).
+      lines.push('', WATCHLIST_FRAMING_TEXT);
       parts.push(lines.join('\n'));
     }
   }

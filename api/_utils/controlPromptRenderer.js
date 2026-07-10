@@ -47,6 +47,20 @@
 //     suppressed, expired, or superseded directive can never keep a lean
 //     suppressed (spec changelog #6).
 
+// Release 2 PR-d (WS3, HELD behind the changelog-#12 gate) — THE canonical
+// watchlist-framing sentence set (spec §5.1, adopted VERBATIM from review;
+// founder ruling D4 2026-07-10: ONE constant, strategy-side only — both
+// agentPromptAssembly blocks + the tournamentAgentBoards copy consume THIS
+// export; no eval-side block exists (deferred with the refusal engine), and
+// no copy anywhere implies refusal). Replaces the per-site "eligibility
+// nudge" phrasing whose over-weighting WS3 measured: the watchlist changes
+// ATTENTION, never eligibility or deterministic controls.
+export const WATCHLIST_FRAMING_TEXT =
+  'USER WATCHLIST. Give these names priority attention, but do not infer a trade requirement. '
+  + 'Evaluate them under the same archetype criteria and guardrails as every other candidate. '
+  + 'When a watched name ranks poorly or lacks sufficient data, state this in your reasoning. '
+  + 'The watchlist changes attention, not eligibility or deterministic controls.';
+
 export const SUPPRESSION_REASONS = Object.freeze({
   MODE_NOT_ENFORCE: 'mode_not_enforce',
   EPOCH_KILLED: 'epoch_killed',

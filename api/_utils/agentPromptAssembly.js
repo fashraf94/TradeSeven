@@ -10,7 +10,7 @@ import { isHardRule } from './ruleHardness.js';
 // resolution source (BUILD_RULES §9 applied to prompts). Deploy-time has no
 // battle, so only the leans block can render here; the flag import is
 // api → src Node-clean (BUILD_RULES §4).
-import { resolveControls, renderLeansBlock } from './controlPromptRenderer.js';
+import { resolveControls, renderLeansBlock, WATCHLIST_FRAMING_TEXT } from './controlPromptRenderer.js';
 import { revalidateStandingLeans } from './leanRevalidation.js';
 import { STANDING_LEANS_ENABLED } from '../../src/config/featureFlags.js';
 
@@ -126,17 +126,17 @@ export function buildStrategyUserPrompt(agent, equippedWatchlist = null) {
         tickerList.join(', '),
       ];
       if (safeThesis) lines.push(`Thesis: "${safeThesis}"`);
+      // Release 2 PR-d (WS3): the eligibility-nudge bullets are replaced by
+      // THE canonical framing constant (spec §5.1 verbatim, single-sourced in
+      // the shared renderer) — attention, never eligibility. The factual
+      // off-universe note survives as data guidance, not a nudge.
       lines.push(
         '',
-        'These are user-prioritized opportunities, not mandates. When building your shortlist:',
-        '- Include every user-equipped ticker that has a plausible directional thesis — even',
-        '  if it would not otherwise rank into your 25-35.',
-        '- Where a user-equipped ticker is genuinely competitive, rank it accordingly high.',
-        '- You may still omit a user-equipped ticker with a clearly poor setup; the user',
-        '  trusts your judgment and does not want forced picks.',
-        '- Some user-equipped tickers may not appear in the STOCK UNIVERSE table and will',
-        '  show no FUND/TECH/BB_FIT/ATR/ARCH scores. Evaluate those on sector, thesis, and',
-        '  market knowledge — absence from the table is not a negative signal.'
+        WATCHLIST_FRAMING_TEXT,
+        '',
+        'Some user-equipped tickers may not appear in the STOCK UNIVERSE table and will',
+        'show no FUND/TECH/BB_FIT/ATR/ARCH scores — absence from the table is a data gap,',
+        'not a signal in either direction.'
       );
       parts.push(lines.join('\n'));
     }
@@ -181,14 +181,16 @@ export function buildPortfolioSystemPrompt(strategyBrief, shortlistCSV, cryptoLi
   const equippedTickers = (equippedBlock && Array.isArray(equippedBlock.tickers))
     ? equippedBlock.tickers.filter((t) => typeof t === 'string' && /^[A-Z0-9.-]{1,12}$/.test(t))
     : [];
+  // Release 2 PR-d (WS3): the "fair consideration / do not exclude" nudge is
+  // replaced by THE canonical framing constant (§5.1, shared renderer). The
+  // factual "-"-scores identification survives — it is data, not framing.
   const equippedNote = equippedTickers.length > 0
     ? `\nUSER-EQUIPPED TICKERS:
 These tickers in AVAILABLE STOCKS were equipped by the user from a personal
 watchlist: ${equippedTickers.join(', ')}.
 Rows showing "-" for FUND/TECH/BB_FIT/ATR are user-equipped tickers outside the
-scored universe — expected, not a data error. Evaluate them on price action,
-sector, and the analyst's guidance. Give them fair consideration; do not exclude
-a ticker solely because its scores are unavailable.\n`
+scored universe — expected, not a data error.
+${WATCHLIST_FRAMING_TEXT}\n`
     : '';
 
   return `You are a portfolio builder for BaggerBomb. Build the mathematically optimal portfolio from the pre-approved shortlist below.

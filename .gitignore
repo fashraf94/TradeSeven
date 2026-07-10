@@ -63,3 +63,4 @@ TECHNICAL_CONTEXT_EXPOSURE_AUDIT.md
 
 # WS1 observe-walk — local-only GCS service-account key for the read-back (never commit)
 .gcs-credentials.json
+api/scripts/watchlist-framing-eval/last-run-report.json
