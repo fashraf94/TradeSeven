@@ -434,3 +434,28 @@ export const CORRELATION_LAB_ENABLED = true;
  * SCOUTING_BOARD_ENABLED precedent) — never in the build PR.
  */
 export const CORRELATION_RELATIONSHIP_QUALITY_ENABLED = true;
+
+/**
+ * Correlation Intelligence V3 Phase 1, Sub-build 2 — the "synthesis + summary
+ * contract" bundle: the server-computed read-quality evidence checklist (a §9
+ * checklist of displayed facts, never a score), the honest "since your last
+ * scan" comparison + change events, and THE SUMMARY CONTRACT — a versioned,
+ * facts-only, presentation-scoped object written beside the payload at cache
+ * time (the object Phase-2 voice narration and future agent consumption both
+ * read — "one engine, two surfaces").
+ *
+ * Built/merged DARK (FALSE). Dependency rule enforced at every read site:
+ * synthesis features compute/serialize/render ONLY when
+ * CORRELATION_SYNTHESIS_ENABLED && CORRELATION_RELATIONSHIP_QUALITY_ENABLED
+ * (see synthesisActive() in api/research/summaryContract.js — the on/off
+ * misconfiguration short-circuits dark with a single console.warn). While
+ * FALSE the two research endpoints add NO summaryContract / evidence /
+ * comparison / dataAsOf fields, so the payload is byte-identical to today and
+ * the Lab renders no new panels. Nested under CORRELATION_LAB_ENABLED and
+ * sibling to CORRELATION_RELATIONSHIP_QUALITY_ENABLED — meaningless when either
+ * is off.
+ *
+ * Flip in a one-line follow-up PR after a founder Vercel-preview smoke (the
+ * CORRELATION_RELATIONSHIP_QUALITY_ENABLED precedent) — never in the build PR.
+ */
+export const CORRELATION_SYNTHESIS_ENABLED = false;
