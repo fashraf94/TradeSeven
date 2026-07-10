@@ -292,7 +292,14 @@ export function useTraits(agentId, forge) {
     const updatedEntries = [...newEntries, traitEntry];
 
     setEquippedTraitEntries(updatedEntries);
-    await persistTraits(updatedEntries);
+    const persisted = await persistTraits(updatedEntries);
+    if (!persisted) {
+      // The trait layer never reached the server: restore local state so the
+      // UI matches reality and report honestly (/code-review Phase-5 — the
+      // created rule docs are harmless standalone rules until re-equip).
+      setEquippedTraitEntries(equippedTraitEntries);
+      return { success: false, error: 'persist_failed' };
+    }
 
     return {
       success: true,
@@ -371,7 +378,11 @@ export function useTraits(agentId, forge) {
       return e;
     });
     setEquippedTraitEntries(updatedEntries);
-    await persistTraits(updatedEntries);
+    const persisted = await persistTraits(updatedEntries);
+    if (!persisted) {
+      setEquippedTraitEntries(equippedTraitEntries);
+      return { success: false, error: 'persist_failed' };
+    }
 
     // Reload forge data to reflect param changes
     if (forge?.reloadData) {

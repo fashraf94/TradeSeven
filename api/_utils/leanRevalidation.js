@@ -36,6 +36,11 @@ export const LEAN_INVALIDATION_REASONS = Object.freeze({
   // leans were legally equipped, or a cap tightened after the fact.
   CONFLICTING_LEAN: 'conflicting_lean',
   OVER_CAP: 'over_cap',
+  // A same-id pin appearing twice at rest (unreachable via equip-lean, which
+  // replaces same-id — but standingLeans is owner-writable via the client
+  // SDK, and a duplicate would render one sentence twice at double emphasis
+  // AND eat a cap slot; /code-review Phase-5). First occurrence wins.
+  DUPLICATE_PIN: 'duplicate_pin',
 });
 
 // The invalidated record is bounded (/code-review, Phase-2): agent.standingLeans
@@ -101,8 +106,11 @@ export function validateLeanPin(archetypeCodeId, adjustmentId, version) {
 export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId } = {}) {
   const invalidated = [];
 
-  // Pass 1 — per-pin validity through the shared rule.
+  // Pass 1 — per-pin validity through the shared rule, plus same-id dedupe
+  // (first occurrence wins; conflict groups self-exclude same-id, so without
+  // this a duplicate at-rest pin would pass every later check twice).
   const pinValid = [];
+  const seenIds = new Set();
   for (const lean of Array.isArray(standingLeans) ? standingLeans : []) {
     const verdict = validateLeanPin(archetypeCodeId, lean?.adjustmentId, lean?.version);
     if (!verdict.ok) {
@@ -113,6 +121,15 @@ export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId } 
       });
       continue;
     }
+    if (seenIds.has(lean.adjustmentId)) {
+      invalidated.push({
+        adjustmentId: lean.adjustmentId,
+        version: lean.version,
+        reason: LEAN_INVALIDATION_REASONS.DUPLICATE_PIN,
+      });
+      continue;
+    }
+    seenIds.add(lean.adjustmentId);
     pinValid.push(lean);
   }
 
@@ -191,7 +208,15 @@ export function buildCustomizationSnapshot(agentData, now) {
   return {
     standingLeans: valid,
     standingLeansInvalidated: invalidated,
-    dials: agentData.dials?.tempo ? { tempo: agentData.dials.tempo } : null,
+    // BOUNDED like the invalidated records above (/code-review Phase-5):
+    // agent.dials is owner-writable via the client SDK, so only a SHORT
+    // STRING may enter the battle doc — a 1 MiB garbage value must never be
+    // able to break battle creation. Sliced, not validated-against-the-menu:
+    // an unknown-but-short desired value stays VISIBLE and fails closed at
+    // the clamp (unknown_tempo_value), preserving desired-vs-effective.
+    dials: typeof agentData.dials?.tempo === 'string' && agentData.dials.tempo
+      ? { tempo: agentData.dials.tempo.slice(0, MAX_INVALIDATED_ID_CHARS) }
+      : null,
     settingsRev: typeof agentData.settingsRev === 'number' ? agentData.settingsRev : 0,
   };
 }

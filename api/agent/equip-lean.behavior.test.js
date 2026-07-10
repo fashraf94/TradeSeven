@@ -207,6 +207,16 @@ describe('unequip-lean', () => {
     expect(shadowLogCalls.current).toHaveLength(0);
   });
 
+  it('rejects non-allowlist-shaped adjustmentIds (the same gate as equip — arbitrary charset never reaches logs)', async () => {
+    seed();
+    for (const bad of ['x'.repeat(16), 'CP-4', 'cp-04', 'CP-04\nforged line', '']) {
+      const { req, res } = makeReqRes({ agentId: AGENT_ID, adjustmentId: bad });
+      await unequipLeanHandler(req, res);
+      expect(res.statusCode, JSON.stringify(bad)).toBe(400);
+      expect(res.body.error).toBe('invalid_adjustment_id');
+    }
+  });
+
   it('battle-locks unequips too (lean state is snapshot-frozen at battle creation)', async () => {
     seed({ activeBattleId: 'battle-9', standingLeans: [{ adjustmentId: 'CP-04', version: 1, equippedAt: 't' }] });
     const { req, res } = makeReqRes({ agentId: AGENT_ID, adjustmentId: 'CP-04' });

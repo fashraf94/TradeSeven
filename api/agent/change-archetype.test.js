@@ -131,6 +131,11 @@ describe('POST /api/agent/change-archetype', () => {
     expect(res.body.agentId).toBe('agent-1');
     expect(res.body.archetype).toBe('guardian');
     expect(res.body.idempotent).toBe(false);
+    // Under the REAL live flag (RULE_COMPAT_MODE='observe') this fake has no
+    // rule/bundle subcollections, so the rescan takes its swallowed-error
+    // branch — asserted explicitly so the branch is never silent
+    // (/code-review Phase-5; the archetype change itself still committed).
+    expect(res.body.rescanLogged).toBe(false);
 
     const agent = fx.state.agentDocs['agent-1'];
     expect(agent.archetype).toBe('guardian');

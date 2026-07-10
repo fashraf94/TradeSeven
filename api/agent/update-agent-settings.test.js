@@ -86,6 +86,22 @@ describe('update-agent-settings — the exact allowlist', () => {
     expect(res.body.error).toBe('field_not_allowlisted');
   });
 
+  it('bounds equippedTraits entries: oversized traitIds and oversized payloads are 400s (the 1 MiB battle-doc class)', async () => {
+    seed();
+    const bigId = makeReqRes({ agentId: AGENT_ID, set: { equippedTraits: [{ traitId: 'x'.repeat(65) }] } });
+    await handler(bigId.req, bigId.res);
+    expect(bigId.res.statusCode).toBe(400);
+    expect(bigId.res.body.error).toBe('invalid_field');
+
+    const bigPayload = makeReqRes({
+      agentId: AGENT_ID,
+      set: { equippedTraits: [{ traitId: 'trait-1', junk: 'y'.repeat(70 * 1024) }] },
+    });
+    await handler(bigPayload.req, bigPayload.res);
+    expect(bigPayload.res.statusCode).toBe(400);
+    expect(bigPayload.res.body.message).toContain('too large');
+  });
+
   it('rejects malformed equippedTraits and deployedStrategy shapes', async () => {
     seed();
     const badTraits = makeReqRes({ agentId: AGENT_ID, set: { equippedTraits: [{ noTraitId: true }] } });

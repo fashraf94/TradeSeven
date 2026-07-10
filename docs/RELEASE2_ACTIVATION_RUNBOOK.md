@@ -25,6 +25,8 @@
 
 Either state stops directives rendering immediately; `'observe'` is the one that leaves nothing un-screened behind. The same logic applies at every step of the staged walk: step back one state, never jump to `'off'` while directives are in flight.
 
+**One durability caveat (Phase-5 review, dual-confirmed):** the permanent kill record is a Firestore write that is retried but allowed to fail forward. If that write fails for an ENTIRE rollback window (a sustained Firestore outage — the log line to grep is `[ControlEpoch] durable write failed twice`), a flip BACK to `'enforce'` can lose the kill record and a suppressed directive can render again. Before flipping back after any rollback, confirm no such failure lines occurred during the window (or simply wait one healthy eval tick after the last one).
+
 ## Rule 2a — What a paused-then-resumed walk looks like
 
 Because rollback retires in-flight directives permanently, a resumed walk starts CLEAN: returning to `'enforce'` affects only directives minted after the return. Expect coaches' prior directives to be gone (visible in each battle's `controlEpochLog` — the suppression epoch is the audit record), and communicate that before flipping back.
@@ -37,15 +39,34 @@ Because rollback retires in-flight directives permanently, a resumed walk starts
 
 ---
 
-## Staged activation walk (Release 4)
+## Staged activation walk (Release 4) — the entries of record (written at Phase 5)
 
-The per-component walk entries (order, watch windows, per-step verification) are a **Phase 5 deliverable** (spec §9: compatibility floor + staged-walk entries + the enforce-prerequisite ledger — PR-c, PR-e, and the flag decoupling itself are Release-4 gates). This section is the placeholder they land in.
+**One flag per watch window. Proposed order: cap → leans → dial** (smallest blast radius first: the cap governs one archetype in one mode; leans change prompts for every equipped user; the dial changes trading physics). Every flip is a one-line PR you merge yourself in its own watch window — never bundled with other work (the PR #510 lesson). Before EVERY step: run `node scripts/release2-dark-smoke.js` on the pre-flip state — it must be GREEN except for the flag you already walked.
 
-Known prerequisites already on record:
-- **`STANDING_LEANS_ENABLED`** — the leanOverrides chat-side confirmation flow still needs its voice copy (flagged since PR-a; recorded on the flag's doc comment). Must exist before the flip.
-- **`TEMPO_DIAL_ENABLED`** — the band table (0.7 / 1.0 / 1.3) is PROVISIONAL until promoted from the B4 acceptance report's real-data cross-check; the version binding self-disables the bands if Release 1 reverts.
-- **`SECTOR_CAP_MODE`** — the observe-volume read (Rule 3).
-- Every flip is founder-executed in its own watch window, never in a build PR (the PR #510 lesson).
+### Walk step 1 — `SECTOR_CAP_MODE`: `'off'` → `'observe'` → `'enforce'`
+- **Enforce-prerequisites:** PR-c..PR-f merged; the decoupling itself deployed (the cap must fire on ITS flag, never `ARCHETYPE_INTEGRITY_MODE` — the decouple test in `agentGuardrails.test.js` is the proof).
+- **`'observe'` window:** watch `[SectorSlot] would_block` log lines and `would_block_swap` entries in tournament Diversifier evaluation records. Read the volume per Rule 3 (the incremental set = `would_block_swap` WITHOUT an accompanying `blocked_swap`).
+- **Go/no-go to `'enforce'`:** the incremental volume looks sane to you (a handful of construction-shaping blocks, not a flood), and no would-block fires on a book that is NOT a tournament Diversifier (that would be a gate bug — STOP).
+- **Verification after `'enforce'`:** the first real block appears in a status feed as `guardrail_block` with `triggeredBy: guardrail_max_sector_weight`; swaps still execute for other archetypes.
+- **Rollback:** flip back to `'observe'` (keeps measuring) or `'off'` (fully dark). No epoch/persistence consequences — the cap holds no durable state.
+
+### Walk step 2 — `STANDING_LEANS_ENABLED`: `false` → `true`
+- **Enforce-prerequisites:** the leanOverrides chat-side confirmation VOICE COPY exists (flagged since PR-a; recorded on the flag doc — this is a hard prerequisite); walk step 1 stable through its window.
+- **What turns on at once:** the equip/unequip-lean endpoints stop 404ing; snapshot stamping was always live (leans data may already exist at rest — it renders for the first time); leans blocks appear in BOTH assemblies post-revalidation.
+- **Watch:** `[LeanRevalidation]` events (omissions should be rare and reasoned: `not_in_menu` after archetype changes, `deprecated_version` after wording bumps); prompt sizes; the conflict-group version-currency test stays green in CI (a menu edit mid-walk invalidates adjudication — release-blocking).
+- **Rollback:** flip to `false`. Leans are durable desired state and RESUME on re-flip (no kill records for leans — proven in the PR-f matrix). Safe both directions.
+
+### Walk step 3 — `TEMPO_DIAL_ENABLED`: `false` → `true`
+- **Enforce-prerequisites:** the band table is promoted from PROVISIONAL (the post-Release-1 real-data cross-check re-pins or confirms 0.7/1.0/1.3); `TEMPO_DIAL_BANDS.forKnobConfigVersion === KNOB_CONFIG_VERSION` (the matrix asserts the live binding — if Release 1 moved the knobs, the bands self-disable and the flip is a visible no-op with `band_version_mismatch` receipts, not a hazard); walk step 2 stable.
+- **What turns on:** set-tempo-dial stops 404ing; the clamp applies desired tempo at the eval seam; `swapProvenance` on new swaps carries `tempoEffective` ≠ `'standard'` for dialed agents.
+- **Watch:** `swapProvenance.suppressionReason` frequency (a burst of `band_version_mismatch` = the binding tripped — expected fail-closed, investigate before proceeding); per-archetype swap-rate drift vs the B4 acceptance envelope.
+- **Rollback:** flip to `false`. Desired dials persist; every receipt shows `dial_disabled` (visible, never silent). Safe both directions.
+
+### After the walk
+The `ARCHETYPE_INTEGRITY_MODE` walk (directives: `'observe'` → `'enforce'`) is a SEPARATE program gated on the pre-flip reliability eval (hard zeros), and is governed by Rule 2 above whenever it moves. It shares no flag with this walk (the PR-e decoupling is what made that true).
+
+### The compatibility floor — precise trigger (spec §8 entry)
+**After the first enforce event ever occurs** (any battle logs a `controlEpochLog` entry under `integrity=enforce`, or any lean/dial has ever rendered/applied), **no assembly/renderer code rollback below the PR-c guard commit is permitted while a "zero active persisted controls" query returns nonzero** — i.e. while any active battle carries a directive, snapshot leans, a dial, or a `controlEpochLog`. Check before any such revert; Rule 1 has the reasoning.
 
 ---
 

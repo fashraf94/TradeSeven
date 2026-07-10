@@ -451,9 +451,32 @@ describe('recordControlEpochIfNeeded — the cron orchestrator (key → should �
     expect(battleRef.update).not.toHaveBeenCalled();
   });
 
-  it('a failed durable write is loud, non-fatal, and leaves the in-memory log unsynced (next tick retries the same entry)', async () => {
+  it('a TRANSIENT write failure is retried within the tick and the second attempt syncs (the resurrection window shrinks)', async () => {
+    // /code-review Phase-5 (dual-confirmed): a write failure lasting a whole
+    // epoch + a flag round-trip could lose the kill record. Two attempts per
+    // tick turn "one transient failure" into "a sustained outage" before the
+    // window opens; the runbook documents the residual.
     const battle = makeBattle();
-    const battleRef = { update: async () => { throw new Error('firestore down'); } };
+    let calls = 0;
+    const battleRef = { update: async () => { calls += 1; if (calls === 1) throw new Error('transient'); } };
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const event = await recordControlEpochIfNeeded({
+      battleRef, battle, arrayUnion: fakeArrayUnion, modes: MODES,
+      resolveControls, directive: DIRECTIVE,
+    });
+    logSpy.mockRestore();
+    expect(event).not.toBeNull();
+    expect(calls).toBe(2);                       // retried once
+    expect(battle.controlEpochLog).toHaveLength(1); // second attempt landed + synced
+    expect(errSpy).not.toHaveBeenCalled();       // a recovered transient is not an error line
+    errSpy.mockRestore();
+  });
+
+  it('a SUSTAINED write failure (both attempts) is loud, non-fatal, and leaves the in-memory log unsynced (next tick retries the same entry)', async () => {
+    const battle = makeBattle();
+    let calls = 0;
+    const battleRef = { update: async () => { calls += 1; throw new Error('firestore down'); } };
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const event = await recordControlEpochIfNeeded({
@@ -462,7 +485,11 @@ describe('recordControlEpochIfNeeded — the cron orchestrator (key → should �
     });
     logSpy.mockRestore();
     expect(event).not.toBeNull(); // non-fatal — the tick continues
-    expect(errSpy).toHaveBeenCalled(); // …but never silently
+    expect(calls).toBe(2);
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[ControlEpoch] durable write failed twice'), // the runbook's grep line
+      expect.anything(),
+    );
     errSpy.mockRestore();
     // Unsynced: shouldLogControlEpoch stays true next tick, so the entry retries.
     expect(battle.controlEpochLog).toBeUndefined();

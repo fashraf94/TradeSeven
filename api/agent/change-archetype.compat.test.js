@@ -3,8 +3,12 @@
 // WS1 Phase 2 — the compat_archetype_change_rescan rider (fence-lite rider 3).
 // Separate file from change-archetype.test.js because the rescan is gated on
 // RULE_COMPAT_MODE, a code constant bound at module load: THIS file mocks the
-// flag to 'observe'; the base file runs the real flag ('off') and so also
-// proves the off surface stays byte-identical (no rescanLogged field).
+// flag to 'observe' with a rescan-capable fake; the base file runs the REAL
+// flag — which is ALSO 'observe' live (header corrected at the Phase-5
+// review; it was never 'off') — against a fake without rule/bundle
+// subcollections, so its happy paths exercise the rescan's swallowed-error
+// branch (rescanLogged:false, asserted there). The true off-surface proof
+// lives in change-archetype.leanrider.test.js under a mocked 'off'.
 //
 // The rescan kernel (ruleCompatCleanup → projectActiveRules + the compat map)
 // is exercised un-mocked here. The §4 dependency-surface guard for the
