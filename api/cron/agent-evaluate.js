@@ -60,14 +60,14 @@ import { getArchetypeConfig, resolveHftConfig, KNOB_CONFIG_VERSION } from '../_u
 import { FieldValue } from 'firebase-admin/firestore';
 import { isDirectiveActive } from '../_utils/directiveUtils.js';
 import { resolveControls } from '../_utils/controlPromptRenderer.js';
-import { computeEpochKey, shouldLogControlEpoch, buildControlEpochEvent, buildControlEpochLogEntry } from '../_utils/controlSuppressionTelemetry.js';
+import { recordControlEpochIfNeeded } from '../_utils/controlSuppressionTelemetry.js';
 import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // Release 2 PR-b — the tempo-dial clamp (desired → effective, version-bound
 // fail-closed) at the NON-fenced mode-resolution seam, and the §14 provenance
 // SIBLING spread beside (never inside) the regex-locked receipt at the four
 // swap origin paths (founder amendment: site 4 / buildSwapReceiptSource is
 // NO-EDIT).
-import { clampHftConfig, resolveTempoDial } from '../_utils/tempoDialClamp.js';
+import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
 import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED } from '../../src/config/featureFlags.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
@@ -419,6 +419,16 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       if (lockAge < EVALUATING_LOCK_TIMEOUT_MS) {
         return false; // Lock held by another process
       }
+    }
+
+    // Release 2 PR-c (/code-review): the epoch telemetry and this tick's
+    // prompt resolution derive the directive kill set from
+    // battle.controlEpochLog, but `battle` came from the run's initial query
+    // snapshot — refresh the log from THIS transaction's own doc read so an
+    // entry appended between the query and the lock is never missed (a stale
+    // read here could double-log an epoch or resurrect a killed directive).
+    if (data) {
+      battle.controlEpochLog = data.controlEpochLog;
     }
 
     // Atomically claim the lock
@@ -1034,7 +1044,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // safety fields untouched at every band.
     const dialClamp = clampHftConfig({
       hftConfig: resolveHftConfig(baseArchetypeConfig, battle.gameMode),
-      desiredTempo: battle.agentContext?.dials?.tempo,
+      desiredTempo: desiredTempoOf(battle),
       dialEnabled: TEMPO_DIAL_ENABLED,
     });
     const archetypeConfig = {
@@ -1048,47 +1058,29 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     console.log(`${LOG_PREFIX} [Gate1] battle=${battle.id} mode=${battle.gameMode || 'baggerbomb_agent'} archetype=${ctx.archetype || 'unknown'} resolved=${archetypeConfig.label} forcedRotation=${archetypeConfig.hftConfig?.forcedRotation?.enabled ? 'on' : 'off'} swapCap=${archetypeConfig.hftConfig?.swapWindow?.capPerWindow}`);
 
     // ---- Release 2 PR-c: control-suppression mode-epoch telemetry ----
-    // Fires once per battle + mode-epoch (sequence-aware: an
-    // enforce→observe→enforce round-trip logs three entries, and the middle
-    // entry's suppressedDirectiveIds is what keeps the directive dead in
-    // epoch three). The awaited battle-doc write is the DURABLE half; the
-    // in-memory battle.controlEpochLog is updated too so THIS tick's prompt
-    // resolution (inside the fenced eval assembly) already sees the entry —
-    // prompt and durable record can never disagree. A write failure is loud
-    // and non-fatal: the next tick simply retries the same epoch entry.
+    // The whole key → should-log → resolve → build → durable-write →
+    // in-memory-sync sequence lives in the tested orchestrator
+    // (controlSuppressionTelemetry.recordControlEpochIfNeeded), so the prompt
+    // built later this tick and the durable record can never disagree. Fires
+    // once per battle + mode-epoch (sequence-aware round-trip re-logging);
+    // failures are loud and non-fatal — the next tick retries the same entry.
     try {
-      const controlModes = {
-        archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
-        standingLeansEnabled: STANDING_LEANS_ENABLED,
-        tempoDialEnabled: TEMPO_DIAL_ENABLED,
-      };
-      const epochKey = computeEpochKey(controlModes);
-      if (shouldLogControlEpoch(battle.controlEpochLog, epochKey)) {
-        const activeDirective = isDirectiveActive(battle?.directive, battle) ? battle.directive : null;
-        const epochResolution = resolveControls({
-          modes: controlModes,
-          directive: activeDirective,
-          standingLeans: battle.agentContext?.standingLeans,
-          leanOverrides: battle.leanOverrides,
-          controlEpochLog: battle.controlEpochLog,
-        });
-        const epochEvent = buildControlEpochEvent({
-          battleId: battle.id,
-          epochKey,
-          modes: controlModes,
-          resolution: epochResolution,
-          directive: activeDirective,
-          standingLeans: battle.agentContext?.standingLeans,
-          dialProvenance: dialClamp.provenance,
-          deploySha: globalThis.process?.env?.VERCEL_GIT_COMMIT_SHA || null,
-          knobConfigVersion: KNOB_CONFIG_VERSION,
-          dialBandVersion: TEMPO_DIAL_BANDS.forKnobConfigVersion,
-        });
-        const epochEntry = buildControlEpochLogEntry(epochEvent);
-        console.log('[ControlEpoch]', JSON.stringify(epochEvent));
-        await battleRef.update({ controlEpochLog: FieldValue.arrayUnion(epochEntry) });
-        battle.controlEpochLog = [...(battle.controlEpochLog || []), epochEntry];
-      }
+      await recordControlEpochIfNeeded({
+        battleRef,
+        battle,
+        arrayUnion: FieldValue.arrayUnion,
+        modes: {
+          archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+          standingLeansEnabled: STANDING_LEANS_ENABLED,
+          tempoDialEnabled: TEMPO_DIAL_ENABLED,
+        },
+        resolveControls,
+        directive: isDirectiveActive(battle?.directive, battle) ? battle.directive : null,
+        dialProvenance: dialClamp.provenance,
+        deploySha: globalThis.process?.env?.VERCEL_GIT_COMMIT_SHA || null,
+        knobConfigVersion: KNOB_CONFIG_VERSION,
+        dialBandVersion: TEMPO_DIAL_BANDS.forKnobConfigVersion,
+      });
     } catch (epochErr) {
       console.error(`${LOG_PREFIX} control-epoch telemetry failed (tick continues):`, epochErr?.message || epochErr);
     }
@@ -2656,7 +2648,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
             // Release 2 PR-b — the §14 provenance sibling. handleGameplanMeeting
             // has no dialClamp in scope; resolveTempoDial is pure, so this
             // resolution is identical to the tick's for the same battle+flags.
-            ...buildSwapProvenance(resolveTempoDial({ desiredTempo: battle.agentContext?.dials?.tempo, dialEnabled: TEMPO_DIAL_ENABLED }).provenance),
+            ...buildSwapProvenance(resolveTempoDial({ desiredTempo: desiredTempoOf(battle), dialEnabled: TEMPO_DIAL_ENABLED }).provenance),
             evaluationId: gameplanEvalId }
         );
         // P2 phase 2: confirm + double-down detection (no-op when

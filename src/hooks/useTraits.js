@@ -77,13 +77,18 @@ export function useTraits(agentId, forge) {
   // rev-bumping server endpoint — equippedTraits feeds the deploy projection,
   // so its writes must move agent.settingsRev (raw updateDoc bypassed that).
   // Error semantics preserved: log, never throw (the orphan auto-unequip
-  // effect below relies on persist being non-fatal).
+  // effect below relies on persist being non-fatal). Returns true/false so
+  // callers with a DESTRUCTIVE follow-up (unequip's rule soft-deletes) can
+  // abort when the server never accepted the trait-layer change
+  // (/code-review, Phase-2).
   const persistTraits = useCallback(async (entries) => {
-    if (!agentId) return;
+    if (!agentId) return false;
     try {
       await updateAgentSettings(agentId, { equippedTraits: entries });
+      return true;
     } catch (err) {
       console.error('[useTraits] Failed to persist equipped traits:', err);
+      return false;
     }
   }, [agentId]);
 
@@ -307,7 +312,15 @@ export function useTraits(agentId, forge) {
     // (cross-trait shared rules live as separate docs under their own traitId).
     const updatedEntries = equippedTraitEntries.filter(e => e.traitId !== traitId);
     setEquippedTraitEntries(updatedEntries);
-    await persistTraits(updatedEntries);
+    const persisted = await persistTraits(updatedEntries);
+    if (!persisted) {
+      // The server still carries the trait layer — soft-deleting its rule
+      // docs now would leave a half-unequipped agent whose deploy projection
+      // reads a trait with no rules (/code-review, Phase-2). Restore local
+      // state to match the server and report the failure.
+      setEquippedTraitEntries(equippedTraitEntries);
+      return { success: false, error: 'persist_failed' };
+    }
     // Best-effort cleanup — never let a reloadData hiccup mask a completed unequip.
     try {
       if (forge?.rules) {

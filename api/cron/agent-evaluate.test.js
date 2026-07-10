@@ -680,9 +680,13 @@ describe('agent-evaluate cron — VWAP floor wiring (A1/B1/B6)', () => {
 describe('agent-evaluate cron — Release 2 tempo-dial wiring (structural)', () => {
   const source = readFileSync(SOURCE_PATH, 'utf-8');
 
-  it('the clamp wraps the mode-resolution seam (desired from the snapshot, flag at the call site)', () => {
-    expect(source).toMatch(/clampHftConfig\(\{\s*hftConfig: resolveHftConfig\(baseArchetypeConfig, battle\.gameMode\),\s*desiredTempo: battle\.agentContext\?\.dials\?\.tempo,\s*dialEnabled: TEMPO_DIAL_ENABLED,/);
+  it('the clamp wraps the mode-resolution seam (desired via the ONE snapshot accessor, flag at the call site)', () => {
+    expect(source).toMatch(/clampHftConfig\(\{\s*hftConfig: resolveHftConfig\(baseArchetypeConfig, battle\.gameMode\),\s*desiredTempo: desiredTempoOf\(battle\),\s*dialEnabled: TEMPO_DIAL_ENABLED,/);
     expect(source).toMatch(/hftConfig: dialClamp\.hftConfig,/);
+    // Both cron read sites resolve the desired tempo through desiredTempoOf —
+    // never a raw agentContext path that could drift from the snapshot shape.
+    expect((source.match(/desiredTempoOf\(battle\)/g) || []).length).toBe(2);
+    expect(source).not.toMatch(/agentContext\?\.dials\?\.tempo/);
   });
 
   it('stamps the §14 provenance SIBLING at all 4 swap origin paths — receipt spreads still exactly 4 and untouched', () => {

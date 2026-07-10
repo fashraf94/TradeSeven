@@ -9,7 +9,7 @@
 //
 // This module is zero-import pure — nothing here may be mocked.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +26,7 @@ import {
   shouldLogControlEpoch,
   buildControlEpochEvent,
   buildControlEpochLogEntry,
+  recordControlEpochIfNeeded,
 } from './controlSuppressionTelemetry.js';
 
 const DIRECTIVE = Object.freeze({
@@ -405,6 +406,66 @@ describe('epoch telemetry — one event per battle + mode-epoch, no directive re
       null,
     ])).toEqual(['a', 'b']);
     expect(deriveKilledDirectiveIds(undefined)).toEqual([]);
+  });
+});
+
+describe('recordControlEpochIfNeeded — the cron orchestrator (key → should → resolve → build → write → sync)', () => {
+  // Injected Firestore stand-ins only — the modules under test stay unmocked
+  // (this file's zero-mock rule), the orchestrator takes its writer as input.
+  const MODES = { archetypeIntegrityMode: 'observe', standingLeansEnabled: true, tempoDialEnabled: false };
+  const makeBattle = (controlEpochLog) => ({
+    id: 'b1',
+    agentContext: { standingLeans: [LEAN_A] },
+    ...(controlEpochLog !== undefined ? { controlEpochLog } : {}),
+  });
+  const fakeArrayUnion = (entry) => ({ __arrayUnion: entry });
+
+  it('a new epoch: builds the event, awaits the durable write, and syncs the in-memory log', async () => {
+    const battle = makeBattle();
+    const updates = [];
+    const battleRef = { update: async (u) => { updates.push(u); } };
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const event = await recordControlEpochIfNeeded({
+      battleRef, battle, arrayUnion: fakeArrayUnion, modes: MODES,
+      resolveControls, directive: DIRECTIVE, deploySha: 'sha-1',
+    });
+    logSpy.mockRestore();
+    expect(event).toMatchObject({ type: 'control_mode_epoch', battleId: 'b1', deploySha: 'sha-1' });
+    expect(updates).toHaveLength(1);
+    const entry = updates[0].controlEpochLog.__arrayUnion;
+    expect(entry.epochKey).toBe(computeEpochKey(MODES));
+    expect(entry.suppressedDirectiveIds).toEqual(['thread-123']); // observe suppresses the directive
+    // The in-memory sync IS the display-agreement half: the prompt built
+    // later this tick derives its kill set from battle.controlEpochLog.
+    expect(battle.controlEpochLog).toEqual([entry]);
+  });
+
+  it('a repeat tick inside the same epoch is a silent no-op (no write, null return)', async () => {
+    const battle = makeBattle([{ epochKey: computeEpochKey(MODES), suppressedDirectiveIds: [] }]);
+    const battleRef = { update: vi.fn() };
+    const out = await recordControlEpochIfNeeded({
+      battleRef, battle, arrayUnion: fakeArrayUnion, modes: MODES,
+      resolveControls, directive: DIRECTIVE,
+    });
+    expect(out).toBeNull();
+    expect(battleRef.update).not.toHaveBeenCalled();
+  });
+
+  it('a failed durable write is loud, non-fatal, and leaves the in-memory log unsynced (next tick retries the same entry)', async () => {
+    const battle = makeBattle();
+    const battleRef = { update: async () => { throw new Error('firestore down'); } };
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const event = await recordControlEpochIfNeeded({
+      battleRef, battle, arrayUnion: fakeArrayUnion, modes: MODES,
+      resolveControls, directive: DIRECTIVE,
+    });
+    logSpy.mockRestore();
+    expect(event).not.toBeNull(); // non-fatal — the tick continues
+    expect(errSpy).toHaveBeenCalled(); // …but never silently
+    errSpy.mockRestore();
+    // Unsynced: shouldLogControlEpoch stays true next tick, so the entry retries.
+    expect(battle.controlEpochLog).toBeUndefined();
   });
 });
 

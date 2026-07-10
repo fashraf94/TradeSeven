@@ -38,6 +38,23 @@ export const LEAN_INVALIDATION_REASONS = Object.freeze({
   OVER_CAP: 'over_cap',
 });
 
+// The invalidated record is bounded (/code-review, Phase-2): agent.standingLeans
+// is owner-writable via the client SDK, so a garbage pin's raw strings must
+// never flow uncapped into the battle doc (a few 100 KB ids could push
+// createAgentBattle past Firestore's 1 MiB doc limit and 500 every deploy —
+// the additive keys must NEVER be able to break battle creation). Valid pins
+// need no cap: they passed isValidAdjustmentId, so their ids are canonical.
+const MAX_INVALIDATED_ID_CHARS = 32;
+const MAX_INVALIDATED_RECORDS = 20;
+const boundId = (id) => (typeof id === 'string' ? id.slice(0, MAX_INVALIDATED_ID_CHARS) : null);
+const boundInvalidated = (records) =>
+  records.length <= MAX_INVALIDATED_RECORDS
+    ? records
+    : [
+        ...records.slice(0, MAX_INVALIDATED_RECORDS),
+        { adjustmentId: null, version: null, reason: LEAN_INVALIDATION_REASONS.MALFORMED, truncatedCount: records.length - MAX_INVALIDATED_RECORDS },
+      ];
+
 /**
  * THE single per-pin validity rule (menu membership + version currency),
  * shared by the equip write path (api/agent/equip-lean.js maps reasons onto
@@ -90,7 +107,7 @@ export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId } 
     const verdict = validateLeanPin(archetypeCodeId, lean?.adjustmentId, lean?.version);
     if (!verdict.ok) {
       invalidated.push({
-        adjustmentId: typeof lean?.adjustmentId === 'string' ? lean.adjustmentId : null,
+        adjustmentId: boundId(lean?.adjustmentId),
         version: typeof lean?.version === 'number' ? lean.version : null,
         reason: verdict.reason,
       });
@@ -145,5 +162,36 @@ export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId } 
       version: lean.version,
       text: getCanonicalText(archetypeCodeId, lean.adjustmentId),
     }));
-  return { valid, invalidated };
+  return { valid, invalidated: boundInvalidated(invalidated) };
+}
+
+/**
+ * The Release-2 customization-snapshot builder (fenced site 1 delegates to
+ * THIS non-fenced function, so future logic tweaks — log payload, new
+ * invalidation reasons, the settingsRev default — are ordinary changes, not
+ * fence re-authorizations). Returns the four additive agentContext keys;
+ * emits the [LeanRevalidation] event line when pins were omitted.
+ *
+ * @param {Object} agentData the full agent doc createAgentBattle received
+ * @param {string} now       the creation timestamp (caller-owned)
+ */
+export function buildCustomizationSnapshot(agentData, now) {
+  const { valid, invalidated } = revalidateStandingLeans({
+    standingLeans: agentData.standingLeans,
+    archetypeCodeId: agentData.archetype,
+  });
+  if (invalidated.length > 0) {
+    console.log('[LeanRevalidation]', JSON.stringify({
+      agentId: agentData.id ?? null,
+      archetype: agentData.archetype ?? null,
+      invalidated,
+      at: now,
+    }));
+  }
+  return {
+    standingLeans: valid,
+    standingLeansInvalidated: invalidated,
+    dials: agentData.dials?.tempo ? { tempo: agentData.dials.tempo } : null,
+    settingsRev: typeof agentData.settingsRev === 'number' ? agentData.settingsRev : 0,
+  };
 }
