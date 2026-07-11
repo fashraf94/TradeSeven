@@ -590,4 +590,4 @@ export const CORRELATION_SYNTHESIS_ENABLED = true;
  * Flip in a one-line follow-up PR after the founder two-gate smoke (the
  * CORRELATION_SYNTHESIS_ENABLED precedent) — never in the build PR.
  */
-export const CORRELATION_EXTENDED_DRIVERS_ENABLED = false;
+export const CORRELATION_EXTENDED_DRIVERS_ENABLED = true;
