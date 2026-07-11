@@ -1,0 +1,11 @@
+{
+  "name": "levelstory-study",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "LevelStory research study — isolated from the TradeSeven product. Zero product imports, zero dependencies (Node built-ins only).",
+  "scripts": {
+    "fetch": "node 01-fetch-history.js",
+    "test": "node --test tests/"
+  }
+}
