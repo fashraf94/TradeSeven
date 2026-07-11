@@ -62,43 +62,49 @@ async function main() {
 
   const perSymbol = {};
   const symbolDaily = []; // for depth sweep
+  const failures = [];    // per-symbol hard failures — recorded, not fatal (Review F1)
 
   for (const sym of list) {
-    process.stdout.write(`\n[${sym}] daily… `);
-    const rawDaily = await client.fetchDaily(sym, CONFIG.fetch.dailyFetchStart, CONFIG.range.studyEnd);
-    const { bars: dailyBars, byDate } = normalizeDaily(rawDaily);
-    symbolDaily.push({ symbol: sym, dailyBars });
-    await writeJson(path.join(NORM_DIR, sym, 'daily.json'), dailyBars);
+    try {
+      process.stdout.write(`\n[${sym}] daily… `);
+      const rawDaily = await client.fetchDaily(sym, CONFIG.fetch.dailyFetchStart, CONFIG.range.studyEnd);
+      const { bars: dailyBars, byDate } = normalizeDaily(rawDaily);
+      symbolDaily.push({ symbol: sym, dailyBars });
+      await writeJson(path.join(NORM_DIR, sym, 'daily.json'), dailyBars);
 
-    process.stdout.write(`5m (chunked)… `);
-    const raw5m = await client.fetchIntradayRange(
-      sym, CONFIG.fetch.intradayFetchStart, addDays(CONFIG.fetch.intradayFetchEnd, 1), CONFIG.fetch.intradayMaxSpanDays,
-    );
-    const { sessions } = normalizeFiveMin(raw5m, byDate);
-    await writeJson(path.join(NORM_DIR, sym, 'sessions.json'), sessions);
+      process.stdout.write(`5m (chunked)… `);
+      const raw5m = await client.fetchIntradayRange(
+        sym, CONFIG.fetch.intradayFetchStart, addDays(CONFIG.fetch.intradayFetchEnd, 1), CONFIG.fetch.intradayMaxSpanDays,
+      );
+      const { sessions } = normalizeFiveMin(raw5m, byDate);
+      await writeJson(path.join(NORM_DIR, sym, 'sessions.json'), sessions);
 
-    // per-symbol QA
-    const xg = crossGrainCheck(sessions, byDate);
-    const xgPass = xg.filter((r) => r.pass).length;
-    const auctionSessions = sessions.filter((s) => s.hasAuction).length;
-    const multiAuction = sessions.filter((s) => s.auctionBarCount > 1).length;
-    const otherBars = sessions.reduce((a, s) => a + s.otherBarCount, 0);
-    const regCounts = {};
-    for (const s of sessions) regCounts[s.regularBarCount] = (regCounts[s.regularBarCount] || 0) + 1;
-    const tzSeen = [...new Set(sessions.map((s) => s.tzAbbrev))].sort();
-    const preStudy = dailyBars.filter((b) => isoBefore(b.date, CONFIG.universe.eligibilityAsOf)).length;
+      // per-symbol QA
+      const xg = crossGrainCheck(sessions, byDate);
+      const xgPass = xg.filter((r) => r.pass).length;
+      const auctionSessions = sessions.filter((s) => s.hasAuction).length;
+      const multiAuction = sessions.filter((s) => s.auctionBarCount > 1).length;
+      const otherBars = sessions.reduce((a, s) => a + s.otherBarCount, 0);
+      const regCounts = {};
+      for (const s of sessions) regCounts[s.regularBarCount] = (regCounts[s.regularBarCount] || 0) + 1;
+      const tzSeen = [...new Set(sessions.map((s) => s.tzAbbrev))].sort();
+      const preStudy = dailyBars.filter((b) => isoBefore(b.date, CONFIG.universe.eligibilityAsOf)).length;
 
-    perSymbol[sym] = {
-      dailyBars: dailyBars.length, preStudySessions: preStudy,
-      fiveMinSessions: sessions.length, auctionSessions, multiAuctionSessions: multiAuction,
-      otherBars, regularBarCountDistribution: regCounts, dstRegimesSeen: tzSeen,
-      crossGrain: { checked: xg.length, pass: xgPass, worstDiffPct: xg.reduce((m, r) => Math.max(m, r.diffPct), 0) },
-    };
-    process.stdout.write(`daily=${dailyBars.length} 5mSess=${sessions.length} auction=${auctionSessions} xg=${xgPass}/${xg.length} tz=${tzSeen.join('/')}`);
+      perSymbol[sym] = {
+        dailyBars: dailyBars.length, preStudySessions: preStudy,
+        fiveMinSessions: sessions.length, auctionSessions, multiAuctionSessions: multiAuction,
+        otherBars, regularBarCountDistribution: regCounts, dstRegimesSeen: tzSeen,
+        crossGrain: { checked: xg.length, pass: xgPass, worstDiffPct: xg.reduce((m, r) => Math.max(m, r.diffPct), 0) },
+      };
+      process.stdout.write(`daily=${dailyBars.length} 5mSess=${sessions.length} auction=${auctionSessions} xg=${xgPass}/${xg.length} tz=${tzSeen.join('/')}`);
 
-    if (sym === 'NVDA') {
-      const adj = adjustmentCheck(sessions.filter((s) => s.etDate >= '2024-06-05' && s.etDate <= '2024-06-14'), byDate);
-      perSymbol[sym].nvdaSplitAdjustment = { checked: adj.length, pass: adj.filter((r) => r.pass).length };
+      if (sym === 'NVDA') {
+        const adj = adjustmentCheck(sessions.filter((s) => s.etDate >= '2024-06-05' && s.etDate <= '2024-06-14'), byDate);
+        perSymbol[sym].nvdaSplitAdjustment = { checked: adj.length, pass: adj.filter((r) => r.pass).length };
+      }
+    } catch (e) {
+      failures.push({ symbol: sym, error: e.message });
+      process.stdout.write(`\n  🔴 [${sym}] FAILED: ${e.message} — skipping, run continues`);
     }
   }
 
@@ -130,6 +136,7 @@ async function main() {
     config: { version: CONFIG.version, studyStart: CONFIG.range.studyStart, studyEnd: CONFIG.range.studyEnd, dailyFetchStart: CONFIG.fetch.dailyFetchStart },
     symbols: list,
     warmup, depth, earnings: earningsInfo,
+    failures,
     perSymbol,
     calls: { total: manifest.length, network: networkCalls.length, cacheHits: manifest.length - networkCalls.length, totalBytes },
     manifestEntries: manifest,
@@ -147,6 +154,10 @@ async function main() {
   console.log(`Warmup: floor date (550 sessions before ${CONFIG.range.studyStart}) = ${warmup.floorDate}; fetch start ${warmup.fetchStart}; mature-name margin +${warmup.matureMarginSessions} sessions`);
   console.log('\nDepth-eligibility sweep (R2, ≥550 pre-study sessions):');
   for (const r of depth) console.log(`  ${r.verdict === 'PASS' ? '✅' : '🔴'} ${r.symbol.padEnd(5)} ${String(r.preStudySessions).padStart(5)} pre-study  margin ${r.margin >= 0 ? '+' : ''}${r.margin}  (first ${r.firstDailyBar})`);
+  if (failures.length) {
+    console.log(`\n🔴 ${failures.length} symbol(s) FAILED (recorded, not cached): ${failures.map((f) => f.symbol).join(', ')}`);
+    for (const f of failures) console.log(`    ${f.symbol}: ${f.error}`);
+  }
   console.log(`\nManifest: ${path.relative(REPO_ROOT, manifestPath)} (committed copy: ${path.relative(REPO_ROOT, committedManifest)})`);
   console.log('Done.');
 }

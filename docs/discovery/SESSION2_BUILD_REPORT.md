@@ -183,7 +183,7 @@ Cross-grain is **100% wherever an auction exists** — the invariant never faile
 
 ## 9. Manifest
 
-`docs/discovery/SESSION2_FETCH_MANIFEST_2026-07-11T05-47-50-235Z.json` — 44 artifacts, ~133.7 MB, every URL redacted. Fields: per-symbol counts, warmup, depth sweep, earnings, and per-artifact `{tag, urlRedacted, fromCache, status, bytes, savedTo}`.
+`docs/discovery/SESSION2_FETCH_MANIFEST_2026-07-11T14-39-05-936Z.json` — 44 artifacts, ~133.7 MB, every URL redacted, `failures: []`. Fields: per-symbol counts, warmup, depth sweep, earnings, per-symbol failures, and per-artifact `{tag, urlRedacted, fromCache, status, bytes, savedTo}`.
 
 ## 10. Founder decisions requested (at this STOP)
 
@@ -199,7 +199,24 @@ No level construction, event detection, feature computation, or aggregation (Ses
 
 ---
 
-## 12. HARD STOP
+## 12. Post-review hardening (code review, xhigh — after the initial commit)
+
+A workflow-backed code review (stopped early; ~23 verified verdicts) surfaced 8 distinct issues in the fetch/normalize code. **7 were fixed** (commit follows this report), tests grew to **54/54 green**:
+
+| # | Sev | Fix |
+|---|---|---|
+| F1 | **HIGH** | **Cache poisoning** — `cachedFetch` wrote error bodies (500-after-retries, 404/422) to disk and the hit-branch served them as `status:200` forever. Now it **never caches a non-ok response** (throws `FETCH_FAILED`), writes **atomically** (temp+rename), and the orchestrator records per-symbol failures and **continues** instead of aborting. Validated end-to-end: a bogus symbol → HTTP 404 → recorded, no cache written, exit 0. This was the critical one for the coming 150–200-name universe fetch. |
+| F2 | MED | `fetchDaily` now guards `JSON.parse` + array shape like its siblings — a rejected symbol or cached error body can't crash `normalizeDaily`. |
+| F3 | LOW | `buildHourly` explicit null guards so a partial-null bar can't poison a bucket's high/low (null→0 coercion). |
+| F4 | LOW | cross-grain / adjustment checks skip a **zero** daily close (not just null) — no divide-by-zero false failure. |
+| F5 | LOW | Intraday cache path bound to `CONFIG.fetch.intradayInterval` (was hardcoded `5m/`). |
+| F6 | LOW | Earnings cache key is now a hash (was `join('-')`, which collides on `BRK-B`-style tickers and overflows filename limits at universe scale). |
+| F7 | LOW | `fetchIntradayToFixture` reads the fixture once (was twice) and guards non-ok. |
+| F8 | note | `auctionAfterLastRegular` is always true given the 16:00 gate — kept as a defensive invariant; noted as non-discriminating. |
+
+Refuted / non-issues: an `onGrid` redundancy (harmless) and the half-day 15:55 fallback (that's the intended F1/F2 behavior above).
+
+## 13. HARD STOP
 
 Tests green, deliverables committed. Awaiting founder review of the config (via the traceability table), the F3 auction-gap policy, the SPHB/SPLV 5m decision, and the frozen universe file. **Session 3 (level construction / lineage) does not begin until the founder greenlights.**
 

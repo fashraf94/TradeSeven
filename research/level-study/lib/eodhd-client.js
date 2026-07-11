@@ -25,6 +25,23 @@ const DATA_DIR = path.join(STUDY_ROOT, 'data');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Atomic cache write: temp file + rename, so a crash mid-write can never leave a
+// truncated/partial file that a later `existsSync` check would then trust as valid.
+async function atomicWrite(full, body) {
+  const tmp = `${full}.tmp-${process.pid}`;
+  await fsp.writeFile(tmp, body);
+  await fsp.rename(tmp, full);
+}
+
+// djb2 hash → short, filesystem-safe, injective-enough cache-key component. Used for the
+// earnings symbol set: a join('-') key collides on tickers containing '-' (BRK-B) and a
+// join of 150–200 names would blow past the filename length limit; a hash avoids both.
+function hashKey(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
 function loadKey() {
   if (process.env.VITE_EODHD_API_KEY) return process.env.VITE_EODHD_API_KEY.trim();
   const envPath = path.join(REPO_ROOT, '.env');
@@ -93,10 +110,17 @@ export function createClient(opts = {}) {
       return { body, fromCache: true };
     }
     const r = await fetchWithRetry(url);
+    if (!r.ok) {
+      // NEVER cache an error body. cachedFetch's hit-branch reports `status: 200`, so a cached
+      // error would be served as a success FOREVER (existsSync short-circuits the network; it
+      // never self-heals) — silently corrupting the dataset. Fail loudly; the orchestrator
+      // records the symbol as failed and continues. (Review F1.)
+      manifest.push({ tag, urlRedacted: redact(url), fromCache: false, status: r.status, bytes: r.bytes, elapsedMs: r.elapsedMs, savedTo: null, error: true });
+      throw new Error(`FETCH_FAILED ${tag}: HTTP ${r.status} (not cached)`);
+    }
     await fsp.mkdir(path.dirname(full), { recursive: true });
-    await fsp.writeFile(full, r.body);
+    await atomicWrite(full, r.body); // temp+rename — a crash mid-write can't leave a trusted partial file
     manifest.push({ tag, urlRedacted: redact(url), fromCache: false, status: r.status, bytes: r.bytes, elapsedMs: r.elapsedMs, savedTo: cacheRel });
-    if (!r.ok) log(`  ⚠ ${tag}: HTTP ${r.status}`);
     return { body: r.body, fromCache: false, status: r.status };
   }
 
@@ -104,15 +128,26 @@ export function createClient(opts = {}) {
   async function fetchDaily(symbol, from, to) {
     const url = `${base}/api/eod/${symbol}${suffix}?api_token=${KEY}&from=${from}&to=${to}&fmt=json`;
     const { body } = await cachedFetch(`raw/${symbol}/daily/${from}_${to}.json`, url, `daily_${symbol}`);
-    return JSON.parse(body);
+    // Guard parse + shape like the sibling fetchers (fetchIntradayChunk/fetchEarnings). A bad
+    // daily body (non-JSON, or a JSON error object) must not flow into normalizeDaily's
+    // rawDaily.map and crash the run with an opaque TypeError. (Review F2.)
+    let parsed;
+    try { parsed = JSON.parse(body); } catch { throw new Error(`DAILY_PARSE_FAILED ${symbol}: non-JSON body`); }
+    if (parsed && !Array.isArray(parsed)) {
+      throw new Error(`DAILY_ERROR ${symbol}: ${parsed.errors ? JSON.stringify(parsed.errors) : JSON.stringify(parsed).slice(0, 200)}`);
+    }
+    return Array.isArray(parsed) ? parsed : [];
   }
 
   // ── Intraday chunk (from/to = UNIX epoch; half-open [fromDate,toDate)) ──────
   async function fetchIntradayChunk(symbol, fromDate, toDate) {
     const fromE = dateToUtcEpoch(fromDate);
     const toE = dateToUtcEpoch(toDate);
-    const url = `${base}/api/intraday/${symbol}${suffix}?api_token=${KEY}&interval=${CONFIG.fetch.intradayInterval}&from=${fromE}&to=${toE}&fmt=json`;
-    const { body } = await cachedFetch(`raw/${symbol}/5m/${fromDate}_${toDate}.json`, url, `5m_${symbol}_${fromDate}`);
+    const iv = CONFIG.fetch.intradayInterval;
+    const url = `${base}/api/intraday/${symbol}${suffix}?api_token=${KEY}&interval=${iv}&from=${fromE}&to=${toE}&fmt=json`;
+    // Cache path uses the SAME interval as the URL — else changing the interval would silently
+    // read/write the wrong-grain cache under a hardcoded '5m/' segment. (Review F5.)
+    const { body } = await cachedFetch(`raw/${symbol}/${iv}/${fromDate}_${toDate}.json`, url, `${iv}_${symbol}_${fromDate}`);
     let parsed;
     try { parsed = JSON.parse(body); } catch { parsed = null; }
     // API 422 span guard (S1 §9): explicit "Max period length is 600 days" error
@@ -170,8 +205,9 @@ export function createClient(opts = {}) {
     const url = `${base}/api/calendar/earnings?api_token=${KEY}&symbols=${codes}&from=${from}&to=${to}&fmt=json`;
     // Cache key MUST include the symbol set — otherwise a later call with a different symbol
     // list is silently served the earlier response (S2 bug: 9-equity call returned an AAPL-only
-    // cache hit). The key captures every request parameter that changes the response.
-    const symKey = symbols.join('-');
+    // cache hit). Use a hash, not join('-'): '-' collides on tickers like BRK-B, and a raw join
+    // of 150–200 names would exceed the filename length limit. (Review F6.)
+    const symKey = `${symbols.length}sym-${hashKey(codes)}`;
     const { body } = await cachedFetch(`raw/_earnings/${symKey}_${from}_${to}.json`, url, `earnings_${symKey}`);
     try { return JSON.parse(body); } catch { return null; }
   }
@@ -182,12 +218,14 @@ export function createClient(opts = {}) {
     const toE = dateToUtcEpoch(toDate);
     const url = `${base}/api/intraday/${symbol}${suffix}?api_token=${KEY}&interval=${CONFIG.fetch.intradayInterval}&from=${fromE}&to=${toE}&fmt=json`;
     if (fs.existsSync(fixtureAbsPath)) {
-      manifest.push({ tag: `fixture_${symbol}_${fromDate}`, urlRedacted: redact(url), fromCache: true, status: 200, bytes: Buffer.byteLength(await fsp.readFile(fixtureAbsPath, 'utf8')), savedTo: fixtureAbsPath });
-      return JSON.parse(await fsp.readFile(fixtureAbsPath, 'utf8'));
+      const body = await fsp.readFile(fixtureAbsPath, 'utf8'); // read once (Review F7)
+      manifest.push({ tag: `fixture_${symbol}_${fromDate}`, urlRedacted: redact(url), fromCache: true, status: 200, bytes: Buffer.byteLength(body), savedTo: fixtureAbsPath });
+      return JSON.parse(body);
     }
     const r = await fetchWithRetry(url);
+    if (!r.ok) throw new Error(`FIXTURE_FETCH_FAILED ${symbol} ${fromDate}: HTTP ${r.status} (not written)`); // don't write an error body (Review F1)
     await fsp.mkdir(path.dirname(fixtureAbsPath), { recursive: true });
-    await fsp.writeFile(fixtureAbsPath, r.body);
+    await atomicWrite(fixtureAbsPath, r.body);
     manifest.push({ tag: `fixture_${symbol}_${fromDate}`, urlRedacted: redact(url), fromCache: false, status: r.status, bytes: r.bytes, elapsedMs: r.elapsedMs, savedTo: fixtureAbsPath });
     return JSON.parse(r.body);
   }

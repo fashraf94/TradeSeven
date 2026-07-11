@@ -181,8 +181,10 @@ export function buildHourly(regularBars) {
     if (inBucket.length === 0) continue; // session may be short (half-day); skip empty buckets
     let high = -Infinity, low = Infinity, vol = 0;
     for (const b of inBucket) {
-      if (b.high > high) high = b.high;
-      if (b.low < low) low = b.low;
+      // Explicit null guards: JS coerces null→0 in `<`/`>`, so one partial-null bar
+      // (b.low === null) would set low=null and then never recover it. (Review F3.)
+      if (b.high != null && b.high > high) high = b.high;
+      if (b.low != null && b.low < low) low = b.low;
       vol += (b.volume || 0);
     }
     out.push({
@@ -191,7 +193,8 @@ export function buildHourly(regularBars) {
       closeEtMinutes: endMin,    // 960 for the last bucket (16:00 ET)
       barCount: inBucket.length,
       open: inBucket[0].open,
-      high, low,
+      high: high === -Infinity ? null : high,  // null-never-zero if every bar's high was null
+      low: low === Infinity ? null : low,
       close: inBucket[inBucket.length - 1].close,
       volume: vol,
     });
@@ -210,7 +213,7 @@ export function crossGrainCheck(sessions, dailyByDate, tolerancePct = CONFIG.adj
   for (const s of sessions) {
     if (s.auctionClose == null) continue;
     const daily = dailyByDate.get(s.etDate);
-    if (!daily || daily.close == null) continue;
+    if (!daily || daily.close == null || daily.close === 0) continue; // skip zero denom like null (Review F4)
     const diffPct = Math.abs(s.auctionClose - daily.close) / daily.close * 100;
     rows.push({ date: s.etDate, auctionClose: s.auctionClose, dailyClose: daily.close, diffPct, pass: diffPct <= tolerancePct });
   }
@@ -226,7 +229,7 @@ export function adjustmentCheck(sessions, dailyByDate, tolerancePct = CONFIG.adj
   for (const s of sessions) {
     if (s.auctionCloseAdj == null) continue;
     const daily = dailyByDate.get(s.etDate);
-    if (!daily || daily.adjustedClose == null) continue;
+    if (!daily || daily.adjustedClose == null || daily.adjustedClose === 0) continue; // skip zero denom like null (Review F4)
     const diffPct = Math.abs(s.auctionCloseAdj - daily.adjustedClose) / daily.adjustedClose * 100;
     rows.push({ date: s.etDate, auctionCloseAdj: s.auctionCloseAdj, dailyAdjClose: daily.adjustedClose, diffPct, pass: diffPct <= tolerancePct });
   }
