@@ -26,7 +26,7 @@
 // narration cache by construction — it is a docId component). promptVersion:
 // the render-instruction contract. modelVersion: pinned to gemmaClient's model
 // (asserted equal in the meta-test) so a model swap invalidates cached voice.
-export const PHRASEBOOK_VERSION = '1.1';
+export const PHRASEBOOK_VERSION = '1.2';
 export const PROMPT_VERSION = '1';
 export const MODEL_VERSION = 'google/gemma-4-26b-a4b-it';
 
@@ -77,10 +77,13 @@ export const PHRASEBOOK = {
     ],
   },
   caveat_in_flux: {
-    slots: ['strain', 'sampleSpan'],
+    // Quality-not-trajectory: "unsettled" describes the read, never where it is
+    // heading. Past-tense {strain} ("broke…"/"stretched…"), sample-bounded by
+    // "during this sample" (no forward lean by implicature).
+    slots: ['strain'],
     variants: [
-      { id: 'flux_a', requires: ['strain', 'sampleSpan'], template: 'The link was in flux {sampleSpan} — {strain}.' },
-      { id: 'flux_b', requires: ['strain', 'sampleSpan'], template: 'This read sat in flux {sampleSpan}: {strain}.' },
+      { id: 'flux_a', requires: ['strain'], template: 'The link {strain} during this sample — the read was unsettled.' },
+      { id: 'flux_b', requires: ['strain'], template: 'During this sample the link {strain}; the read stayed unsettled.' },
     ],
   },
 
@@ -105,12 +108,13 @@ export const PHRASEBOOK = {
 
   // ── Supporting claims (≤2) ──
   tension_elevated: {
-    // Cites the divergence `d` (correlation unit) — the SAME number the gauge
-    // prints via fmtCorr (§9); SDS is never presented as significance.
+    // The plain gap — the 1-month link vs its 3-month level (the divergence `d`,
+    // the gauge's fmtCorr number, §9). No "tension"/"baseline"/forward lean; SDS
+    // is never presented as significance.
     slots: ['value', 'sampleSpan'],
     variants: [
-      { id: 'tens_a', requires: ['value', 'sampleSpan'], template: 'Tension held elevated, the link {value} off its baseline {sampleSpan}.' },
-      { id: 'tens_b', requires: ['value', 'sampleSpan'], template: 'The link sat {value} off its usual level {sampleSpan}.' },
+      { id: 'tens_a', requires: ['value', 'sampleSpan'], template: 'The 1-month link ran {value} above its 3-month level {sampleSpan}.' },
+      { id: 'tens_b', requires: ['value', 'sampleSpan'], template: 'The 1-month link sat {value} above its 3-month level {sampleSpan}.' },
     ],
   },
   percentile_extreme: {

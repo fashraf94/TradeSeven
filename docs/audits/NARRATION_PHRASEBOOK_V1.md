@@ -6,7 +6,7 @@
 > with no causal, forward-looking, advisory, or certainty language. Each claim's sample span is
 > bound to its own measurement window, and every number echoes the card it sits beside.
 
-- phrasebookVersion: `1.1`  ·  promptVersion: `1`  ·  modelVersion: `google/gemma-4-26b-a4b-it`
+- phrasebookVersion: `1.2`  ·  promptVersion: `1`  ·  modelVersion: `google/gemma-4-26b-a4b-it`
 - Approved connectives: _(none)_ · `And` · `But` · `Still,` · `Meanwhile,` · `That said,`
 
 _Optional ChatGPT pass before the flip: "Which of these frames could be read as predictive?"_
@@ -23,8 +23,8 @@ _Optional ChatGPT pass before the flip: "Which of these frames could be read as 
 
 ## Opening caveat — in flux  `caveat_in_flux`
 
-- **flux_a** — The link was in flux across 480 sessions — it broke from its recent range.
-- **flux_b** — This read sat in flux across 480 sessions: it broke from its recent range.
+- **flux_a** — The link broke from its recent range during this sample — the read was unsettled.
+- **flux_b** — During this sample the link broke from its recent range; the read stayed unsettled.
 
 ## Proxy disclosure (driver is the market)  `proxy_disclosure`
 
@@ -40,8 +40,8 @@ _Optional ChatGPT pass before the flip: "Which of these frames could be read as 
 
 ## Supporting — elevated tension  `tension_elevated`
 
-- **tens_a** — Tension held elevated, the link +0.30 off its baseline in this sample.
-- **tens_b** — The link sat +0.30 off its usual level in this sample.
+- **tens_a** — The 1-month link ran +0.30 above its 3-month level in this sample.
+- **tens_b** — The 1-month link sat +0.30 above its 3-month level in this sample.
 
 ## Supporting — percentile extreme  `percentile_extreme`
 

@@ -31,7 +31,7 @@ function render(plan, { variantIndex = 0, connectives = null } = {}) {
 const CLASS_NAMES = [
   'solidStandard', 'fragileStandard', 'limitedStandard', 'inFluxStandard',
   'solidMarketProxy', 'fragileMarketProxy', 'inFluxMarketProxy', 'solidStandardTwoStrong',
-  'tnxDriverContext',
+  'tnxDriverContext', 'elevatedStandard',
 ];
 
 describe('conformance — golden accept (the 8 contract classes)', () => {

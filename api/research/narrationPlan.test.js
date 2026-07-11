@@ -62,11 +62,33 @@ describe('narration plan — the 8 contract classes (selection + ordering)', () 
     expect(p.plan.claims[0].spans.sampleSpan).toBe('across 250 sessions');
   });
 
-  it('in_flux/standard → caveat_in_flux first with the strain statement', () => {
+  it('in_flux/standard → caveat_in_flux first, strain past-tense, no session-count span', () => {
     const p = plan(CLASSES.inFluxStandard());
     expect(p.ok).toBe(true);
     expect(ids(p)[0]).toBe('caveat_in_flux');
-    expect(p.plan.claims[0].spans.strain).toContain('broke from its recent range');
+    expect(p.plan.claims[0].spans.strain).toBe('broke from its recent range'); // no "it" prefix
+    expect(p.plan.claims[0].spans.sampleSpan).toBeUndefined(); // bounded by "during this sample" in the frame
+  });
+
+  it('elevated tension → tension_elevated cites the 1-month link gap (divergence d)', () => {
+    const c = CLASSES.elevatedStandard();
+    const p = plan(c);
+    expect(p.ok).toBe(true);
+    const t = p.plan.claims.find((x) => x.claimId === 'tension_elevated');
+    expect(t).toBeTruthy();
+    expect(t.spans.value).toBe(fmtCorr(c.tension.d.value));
+    expect(t.spans.sampleSpan).toBe('in this sample');
+  });
+
+  it('low_cohesion selects on NEGATIVE cohesion only — never a positive value', () => {
+    const symmetricCapture = { minObs: 60, down: { beta: 1.05, alpha: 0, r: 0.6, n: 120 }, up: { beta: 1.0, alpha: 0, r: 0.5, n: 130 }, comparison: { asymmetric: false, direction: null, betaDown: 1.05, betaUp: 1.0, nDown: 120, nUp: 130 }, counts: { down: 120, up: 130 } };
+    const noTail = { worst: null, best: null, sampleN: 0 };
+    const mk = (cohVal) => deepContract({
+      cohesion: { c20: { value: cohVal, pairsUsed: 3, pairsTotal: 3 }, c60: { value: cohVal, pairsUsed: 3, pairsTotal: 3 }, memberCount: 3 },
+      captureAsymmetry: symmetricCapture, tail: noTail,
+    });
+    expect(ids(plan(mk(-0.25)))).toContain('low_cohesion');
+    expect(ids(plan(mk(0.25)))).not.toContain('low_cohesion');
   });
 
   it('solid/market_proxy → proxy_disclosure at position 1, headline has no adjusted clause', () => {

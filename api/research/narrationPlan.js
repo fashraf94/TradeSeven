@@ -22,7 +22,7 @@ import { validateContract, schemaForKind } from './summaryContractSchema.js';
 import { fmtCorr, fmtPct, fmtBeta, ordinal } from '../../src/components/Research/correlationVerdict.js';
 import { PHRASEBOOK, variantsFor } from './narrationPhrasebook.js';
 
-export const PLAN_BUILDER_VERSION = '1.1';
+export const PLAN_BUILDER_VERSION = '1.2';
 
 // ── Vocabulary (pinned) — each sampleSpan is bound to its OWN window so the
 //    phrase matches the horizon the metric was measured over (§9). ────────────
@@ -61,7 +61,8 @@ const CRITERION_PHRASE = {
 };
 const STABLE_LINK_MISSING = "the link's stability could not be measured";
 const TOO_FEW_CHECKS = 'too few checks applied to be sure';
-const STRAIN_PHRASE = { stretched: 'it stretched to an extreme in the sample', break: 'it broke from its recent range' };
+// Past-tense strain clause (no "it" prefix — the frame supplies the subject).
+const STRAIN_PHRASE = { stretched: 'stretched to an extreme', break: 'broke from its recent range' };
 
 // Supporting-claim priority (pinned).
 const SUPPORTING_ORDER = [
@@ -105,7 +106,8 @@ function buildCaveat(readState, tensionState, criteriaById, sampleSpan) {
   if (readState === 'in_flux') {
     const strain = STRAIN_PHRASE[tensionState];
     if (!strain) return null; // in_flux without a strain state is unbuildable
-    const spans = { strain, sampleSpan };
+    // in_flux is sample-bounded by "during this sample" in the frame — no session-count span.
+    const spans = { strain };
     return claim({ claimId: 'caveat_in_flux', subjectId: 'read_quality', metricId: 'tension.state', fieldPath: 'tension.state', spans, requiredPosition: 1, allowedVariants: prune('caveat_in_flux', spans) });
   }
   // fragile / limited carry the failing/missing criterion IDs as a rendered span.
@@ -214,8 +216,11 @@ function buildSupporting(id, contract, name, tensionState) {
       return claim({ claimId: id, subjectId: 'tail', metricId: 'tail.worst', fieldPath: 'tail.worst', spans, allowedVariants: prune(id, spans) });
     }
     case 'low_cohesion': {
+      // Genuinely low cohesion only — a NEGATIVE mean pairwise correlation (the
+      // group pulling into opposite camps). Never fires on a positive value, so
+      // "split into several stories" can never sit beside a positive {value}.
       const c = contract.cohesion?.c20;
-      if (!okNum(c) || !(c.band === 'loose' || c.value < 0)) return null;
+      if (!okNum(c) || c.value >= 0) return null;
       const spans = { value: renderByUnit(c), sampleSpan: WINDOW_PHRASE[20] }; // c20 = a 1-month window
       return claim({ claimId: id, subjectId: 'cohesion', metricId: 'cohesion.c20', fieldPath: 'cohesion.c20', spans, allowedVariants: prune(id, spans) });
     }

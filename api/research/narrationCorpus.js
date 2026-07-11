@@ -116,6 +116,10 @@ export const CLASSES = {
     selfPercentile: { corr20: { percentile: 73.4, n: 480, latest: 0.62 }, corr60: { percentile: 95, n: 440, latest: 0.55 } },
     driverContext: { trailingReturn: -0.0234, vol: { percentile: 90, n: 480, latest: 0.01 } },
   }),
+  // elevated tension / standard — exercises the tension_elevated frame (the
+  // 1-month link above its 3-month level); 'elevated' is a calm-state, so the
+  // read stays solid rather than in_flux.
+  elevatedStandard: () => deepContract({ tensionLatest: { d: 0.3, score: 1.5, state: 'elevated' } }),
   // (D1) thin solid / standard — no notable support → routes to template.
   thinSolidStandard: () => deepContract({ ...SYMMETRIC_CAPTURE, ...NO_TAIL }),
   // TNX driver_context (diff-mode) — a fragile read (broad_based fails) whose ONLY
