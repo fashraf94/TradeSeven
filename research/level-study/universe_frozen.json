@@ -1,0 +1,33 @@
+{
+  "universeVersion": 1,
+  "frozenAt": "2026-07-11",
+  "studyStart": "2023-07-10",
+  "eligibilityRule": "R2: >=550 daily trading sessions before studyStart (listed roughly pre-May 2021)",
+  "sectorTaxonomy": "SPDR Select Sector (11 GICS sectors)",
+  "notes": "Starter freeze for Session 3 lineage validation. Expand toward 150-200 stratified names before Session 8 aggregation. HOOD (IPO 2021-07-29) and RKLB (de-SPAC 2021-08) excluded by R2/R3; DKNG excluded for the same de-SPAC contamination (SBTech/DEAC shell-era bars). Gap-prone slots filled by PLTR (direct listing 2020-09) and BE (traditional IPO 2018-07), both SPAC-free.",
+  "strata": {
+    "mega_cap_tech": ["AAPL", "NVDA", "MSFT"],
+    "low_volatility": ["KO", "PG", "JNJ"],
+    "high_beta": ["TSLA", "AMD", "COIN"],
+    "gap_prone": ["PLTR", "BE"]
+  },
+  "contextSymbols": {
+    "market": ["SPY"],
+    "sectorETFs": ["XLK", "XLE"],
+    "appetite": ["SPHB", "SPLV"],
+    "note": "Context symbols are NOT study subjects (no events detected on them). SPY + sector ETFs supply 5m direction tags; SPHB/SPLV are daily-only beta-appetite inputs. Full sector-ETF set (all 11 SPDR) added when the universe expands and more sectors are represented."
+  },
+  "symbols": [
+    { "symbol": "AAPL", "sector": "XLK", "stratum": "mega_cap_tech" },
+    { "symbol": "NVDA", "sector": "XLK", "stratum": "mega_cap_tech" },
+    { "symbol": "MSFT", "sector": "XLK", "stratum": "mega_cap_tech" },
+    { "symbol": "KO", "sector": "XLP", "stratum": "low_volatility" },
+    { "symbol": "PG", "sector": "XLP", "stratum": "low_volatility" },
+    { "symbol": "JNJ", "sector": "XLV", "stratum": "low_volatility" },
+    { "symbol": "TSLA", "sector": "XLY", "stratum": "high_beta" },
+    { "symbol": "AMD", "sector": "XLK", "stratum": "high_beta" },
+    { "symbol": "COIN", "sector": "XLF", "stratum": "high_beta" },
+    { "symbol": "PLTR", "sector": "XLK", "stratum": "gap_prone" },
+    { "symbol": "BE", "sector": "XLI", "stratum": "gap_prone" }
+  ]
+}
