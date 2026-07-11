@@ -51,11 +51,12 @@ import { driverUniverseHash } from './correlationChanges.js';
 import { getPreviousTradingDay } from '../_utils/marketSchedule.js';
 
 // ==================== HOISTED MOCK STATE ====================
-const { authReturnValue, labFlag, rqFlag, synthFlag, bigDoc } = vi.hoisted(() => ({
+const { authReturnValue, labFlag, rqFlag, synthFlag, extFlag, bigDoc } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   labFlag: { on: true }, // default ON so the flag guard doesn't 404 the behavior tests
   rqFlag: { on: true }, // V3 relationship-quality: default ON so the per-row rq behavior tests run
   synthFlag: { on: false }, // V3 Sub-build 2 synthesis: default OFF → canonical run stays byte-identical
+  extFlag: { on: false }, // V3 Sub-build 3 extended tier: default OFF → default scan is core-only, byte-identical
   bigDoc: { on: false }, // forces serializedByteSize over budget to exercise the skip-on-overflow guard
 }));
 
@@ -85,6 +86,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   get CORRELATION_LAB_ENABLED() { return labFlag.on; },
   get CORRELATION_RELATIONSHIP_QUALITY_ENABLED() { return rqFlag.on; },
   get CORRELATION_SYNTHESIS_ENABLED() { return synthFlag.on; },
+  get CORRELATION_EXTENDED_DRIVERS_ENABLED() { return extFlag.on; },
 }));
 
 // Partial-mock the contract module so a test can force the doc over the size
@@ -344,16 +346,33 @@ function makeReqRes(body) {
 }
 
 const BASE_REQUEST = { group: ['AAA', 'BBB'], lookbackDays: 400 };
-const REGISTRY_KEYS = Object.keys(CORRELATION_DRIVERS);
+// V3 Sub-build 3 — the DEFAULT (no-opt-in) scan is CORE-ONLY. These mirrors are
+// the core set, so every existing assertion below reflects the default scan and
+// stays byte-identical to the pre-extended-tier state (the effective-universe
+// rule). The extended-scan assertions live in their own describe block.
+const REGISTRY_KEYS = Object.keys(CORRELATION_DRIVERS).filter((k) => CORRELATION_DRIVERS[k].tier !== 'extended');
+const EXTENDED_KEYS = Object.keys(CORRELATION_DRIVERS).filter((k) => CORRELATION_DRIVERS[k].tier === 'extended');
 const ENGINEERED = ['XLE', 'HYG', 'GOLD', 'USMV'];
 // Registry salt mirror (Build 2.1 decision #3): sorted key:symbol pairs.
 // Registry-driven on purpose — ANY registry mutation (key add/remove/rename
 // or a proxy symbol swap) changes this string, and the docId pins below prove
-// the endpoint's cache ids move with it (old cached scans orphan).
+// the endpoint's cache ids move with it (old cached scans orphan). Derived from
+// the CORE set (the default scan's effective universe).
 const REGISTRY_SALT = [...REGISTRY_KEYS]
   .sort()
   .map((k) => `${k}:${CORRELATION_DRIVERS[k].symbol}`)
   .join(',');
+// The full (core + extended) salt — the effective universe of an OPTED-IN
+// extended scan. Distinct from REGISTRY_SALT ⇒ distinct docId family + hash.
+const EXTENDED_SALT = [...Object.keys(CORRELATION_DRIVERS)]
+  .sort()
+  .map((k) => `${k}:${CORRELATION_DRIVERS[k].symbol}`)
+  .join(',');
+// Hardcoded byte-identity regression pin: the core-only docId for the base
+// request. Independently verified equal to the PRE-extended-tier registry's
+// docId (git HEAD), so a future edit that changes a CORE symbol — or that lets
+// an extended driver leak into the default salt — moves this and fails loudly.
+const PREBUILD_GOLDEN_DOCID = 'f45bb764597a2907a9bc787a2e8b9460c32b14b7';
 
 /**
  * Run the handler under vitest fake timers so the real 300ms chunk-throttle
@@ -611,6 +630,10 @@ describe('required assert (e) — clean run caching', () => {
     expect(write.collection).toBe('correlationIntelligence');
     const expectedId = createHash('sha1').update(`AAA,BBB|SCAN|400|${REGISTRY_SALT}`).digest('hex');
     expect(write.id).toBe(expectedId);
+    // Byte-identity pin (V3 Sub-build 3): the default (core-only) scan writes at
+    // the SAME docId as the pre-extended-tier registry — the dark merge orphans
+    // no cached scans. A hardcoded literal so a core-symbol edit fails loudly.
+    expect(write.id).toBe(PREBUILD_GOLDEN_DOCID);
     // Salt-invalidation pin: the unsalted (pre-2.1) id must NOT match — a
     // registry change re-keys every scan doc instead of serving stale rows.
     expect(write.id).not.toBe(createHash('sha1').update('AAA,BBB|SCAN|400').digest('hex'));
@@ -1104,6 +1127,100 @@ describe('scan summary contract + "since your last scan" (Change 2 + 3)', () => 
       bigDoc.on = false;
       synthFlag.on = false;
       warn.mockRestore();
+    }
+  });
+});
+
+// ============ V3 Sub-build 3 — extended driver tier (effective universe) ============
+// The 2×2 flag × opt-in matrix. The invariant: a CORE-only run (any cell except
+// flag-on + opted-in) is byte-identical to the pre-extended-tier scan — same
+// docId (PREBUILD_GOLDEN_DOCID), same driverUniverseHash, 25 rows. An opted-in
+// extended run gets its own docId family + hash (30 rows), and a comparison
+// across opt-in states reads not_comparable with ZERO events.
+describe('V3 Sub-build 3 — extended driver tier', () => {
+  it('flag OFF + no opt-in (default): core-only, the pre-build golden docId (already the canonical path)', async () => {
+    extFlag.on = false;
+    const res = await runScanRequest({ ...BASE_REQUEST, forceRefresh: true });
+    expect(res.body.rows.length).toBe(REGISTRY_KEYS.length); // 25
+    expect(store.setCalls[store.setCalls.length - 1].id).toBe(PREBUILD_GOLDEN_DOCID);
+  });
+
+  it('flag ON + no opt-in: still core-only (the default scan never widens on its own)', async () => {
+    extFlag.on = true;
+    try {
+      const res = await runScanRequest({ ...BASE_REQUEST, forceRefresh: true });
+      expect(res.body.rows.length).toBe(REGISTRY_KEYS.length); // 25 — extended stay out until opted in
+      const keys = new Set(res.body.rows.map((r) => r.driver));
+      for (const k of EXTENDED_KEYS) expect(keys.has(k)).toBe(false);
+      expect(store.setCalls[store.setCalls.length - 1].id).toBe(PREBUILD_GOLDEN_DOCID);
+    } finally {
+      extFlag.on = false;
+    }
+  });
+
+  it('flag OFF + includeExtended:true: the opt-in is INERT while dark (core-only, byte-identical docId)', async () => {
+    extFlag.on = false;
+    const res = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 400, includeExtended: true, forceRefresh: true });
+    expect(res.body.rows.length).toBe(REGISTRY_KEYS.length); // 25
+    expect(store.setCalls[store.setCalls.length - 1].id).toBe(PREBUILD_GOLDEN_DOCID);
+  });
+
+  it('flag ON + includeExtended:true: all 30 drivers, a DISTINCT docId family (extended salt)', async () => {
+    extFlag.on = true;
+    try {
+      const res = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 402, includeExtended: true, forceRefresh: true });
+      expect(res.statusCode).toBe(200);
+      expect(res.body.rows.length).toBe(REGISTRY_KEYS.length + EXTENDED_KEYS.length); // 30
+      const keys = new Set(res.body.rows.map((r) => r.driver));
+      for (const k of EXTENDED_KEYS) expect(keys.has(k)).toBe(true);
+      const extId = createHash('sha1').update(`AAA,BBB|SCAN|402|${EXTENDED_SALT}`).digest('hex');
+      expect(store.setCalls[store.setCalls.length - 1].id).toBe(extId);
+      // distinct from the core scan at the same group/lookback
+      expect(extId).not.toBe(createHash('sha1').update(`AAA,BBB|SCAN|402|${REGISTRY_SALT}`).digest('hex'));
+    } finally {
+      extFlag.on = false;
+    }
+  });
+
+  it('extended scan: the contract driverUniverseHash is the EXTENDED hash, distinct from core', async () => {
+    extFlag.on = true;
+    synthFlag.on = true;
+    try {
+      const res = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 403, includeExtended: true, forceRefresh: true });
+      const sc = res.body.summaryContract;
+      expect(sc.driverUniverseHash).toBe(driverUniverseHash(EXTENDED_SALT));
+      expect(sc.driverUniverseHash).not.toBe(driverUniverseHash(REGISTRY_SALT));
+    } finally {
+      synthFlag.on = false;
+      extFlag.on = false;
+    }
+  });
+
+  it('cross-state comparison (core baseline hash vs extended current) → not_comparable, ZERO events', async () => {
+    extFlag.on = true;
+    synthFlag.on = true;
+    try {
+      const EXT_DOC_ID = createHash('sha1').update(`AAA,BBB|SCAN|404|${EXTENDED_SALT}`).digest('hex');
+      const EXT_DOC_KEY = `correlationIntelligence/${EXT_DOC_ID}`;
+      const first = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 404, includeExtended: true, forceRefresh: true });
+      const stored = store.docs.get(EXT_DOC_KEY);
+      const baselineDay = getPreviousTradingDay(first.body.meta.dataAsOf);
+      // Inject a prior snapshot on an earlier day but carrying the CORE universe
+      // hash (a different opt-in state) — the comparison must refuse to compare.
+      const priorSnap = {
+        ...stored.snapshot,
+        observationTradingDay: baselineDay,
+        driverUniverseHash: driverUniverseHash(REGISTRY_SALT),
+      };
+      store.docs.set(EXT_DOC_KEY, { ...stored, snapshot: priorSnap });
+
+      const res = await runScanRequest({ group: ['AAA', 'BBB'], lookbackDays: 404, includeExtended: true, forceRefresh: true });
+      expect(res.body.summaryContract.comparison.status).toBe('not_comparable');
+      expect(res.body.summaryContract.comparison.baselineDriverUniverseHash).toBe(driverUniverseHash(REGISTRY_SALT));
+      expect(res.body.changes.events).toEqual([]);
+    } finally {
+      synthFlag.on = false;
+      extFlag.on = false;
     }
   });
 });

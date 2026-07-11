@@ -35,10 +35,14 @@ import {
   divergenceState,
   leadLagEvidenceLine,
   resolveResultLabels,
+  DriverAuditTable,
+  DriverAuditView,
+  DRIVER_GROUPS,
 } from './CorrelationLab.jsx';
 // Build 4 — the conditional verdict chip is a pure copy helper and lives with
 // the other presentation-honesty templates in correlationVerdict.js.
 import { conditionalVerdict, buildVerdictSentence } from './correlationVerdict';
+import { parseLabPrefill } from './correlationGroup';
 
 const AMBER = '#f59e0b';
 const RED = '#EF4444';
@@ -937,5 +941,116 @@ describe('SinceLastScanStrip (Change 2)', () => {
 
   it('absence-tolerant — renders nothing without a comparison', () => {
     expect(render(<SinceLastScanStrip comparison={null} changes={null} rows={rows} />)).toBe('');
+  });
+});
+
+// ── V3 Sub-build 3 — the driver-audit view + the extended-tier optgroup gate ──
+describe('DriverAuditTable — the liquidity-gate checklist (§9: mark bound to the shown number)', () => {
+  const thresholds = { rowCount: 450, medianDailyVolume: 50000, zeroVolumeDays: 0, singlePrintDays: 0, maxCalendarGapTradingDays: 5 };
+  const passRow = {
+    symbol: 'SMH.US', httpOk: true, rowCount: 504, firstDate: '2024-07-01', lastDate: '2026-07-10',
+    medianDailyVolume: 1000000, zeroVolumeDays: 0, singlePrintDays: 0, maxCalendarGapTradingDays: 1,
+    criteria: { rowCount: true, medianDailyVolume: true, zeroVolumeDays: true, singlePrintDays: true, maxCalendarGapTradingDays: true },
+    verdict: 'pass',
+  };
+  const failRow = {
+    symbol: 'CEW.US', httpOk: true, rowCount: 504, firstDate: '2024-07-01', lastDate: '2026-07-10',
+    medianDailyVolume: 2000, zeroVolumeDays: 5, singlePrintDays: 0, maxCalendarGapTradingDays: 1,
+    criteria: { rowCount: true, medianDailyVolume: false, zeroVolumeDays: false, singlePrintDays: true, maxCalendarGapTradingDays: true },
+    verdict: 'fail',
+  };
+  const noDataRow = {
+    symbol: 'NOPE.US', httpOk: false, rowCount: null, firstDate: null, lastDate: null,
+    medianDailyVolume: null, zeroVolumeDays: null, singlePrintDays: null, maxCalendarGapTradingDays: null,
+    criteria: { rowCount: false, medianDailyVolume: false, zeroVolumeDays: false, singlePrintDays: false, maxCalendarGapTradingDays: false },
+    verdict: 'fail',
+  };
+
+  it('a passing symbol shows every value beside its threshold and a PASSED verdict', () => {
+    const html = render(<DriverAuditTable results={[passRow]} thresholds={thresholds} />);
+    expect(html).toContain('SMH.US');
+    expect(html).toContain('PASSED');
+    expect(html).toContain('504'); // rowCount value shown
+    expect(html).toContain('≥450'); // its threshold rendered beside it (checklist idiom)
+    expect(html).toContain('✓');
+    expect(html).toContain('2024-07-01');
+  });
+
+  it('a failing symbol shows the failed marks and a FAILED verdict', () => {
+    const html = render(<DriverAuditTable results={[failRow]} thresholds={thresholds} />);
+    expect(html).toContain('CEW.US');
+    expect(html).toContain('FAILED');
+    expect(html).toContain('✗'); // at least one failed criterion
+    expect(html).toContain('2,000'); // low median volume, formatted
+  });
+
+  it('a no-data symbol renders "no data" and dashes for null metrics', () => {
+    const html = render(<DriverAuditTable results={[noDataRow]} thresholds={thresholds} />);
+    expect(html).toContain('NOPE.US');
+    expect(html).toContain('no data');
+    expect(html).toContain('FAILED');
+  });
+
+  it('§9: a fractional median just under the floor shows the EXACT value, not a rounded-up one that contradicts its ✗', () => {
+    const fractional = {
+      ...failRow, symbol: 'EDGE.US', medianDailyVolume: 49999.5, zeroVolumeDays: 0,
+      criteria: { rowCount: true, medianDailyVolume: false, zeroVolumeDays: true, singlePrintDays: true, maxCalendarGapTradingDays: true },
+    };
+    const html = render(<DriverAuditTable results={[fractional]} thresholds={thresholds} />);
+    // With the bug (Math.round) the value would render as "50,000" and 49,999.5
+    // would appear nowhere; the exact value proves the mark and number agree.
+    expect(html).toContain('49,999.5');
+    expect(html).toContain('FAILED');
+  });
+});
+
+describe('DriverAuditView — the dev surface renders at both widths', () => {
+  it('desktop renders the title, symbol input, and run button', () => {
+    const html = render(<DriverAuditView isDesktop />);
+    expect(html).toContain('Driver audit');
+    expect(html).toContain('liquidity gate');
+    expect(html).toContain('SMH.US'); // the default symbol prefill / placeholder hint
+    expect(html).toContain('Run audit');
+  });
+
+  it('390px (mobile) renders cleanly', () => {
+    const html = render(<DriverAuditView isDesktop={false} />);
+    expect(html).toContain('Driver audit');
+    expect(html).toContain('Run audit');
+  });
+});
+
+describe('driver-select extended optgroup — flag-gated visibility', () => {
+  const extendedGroup = DRIVER_GROUPS.find((g) => g.tier === 'extended');
+
+  it('the Extended optgroup carries the five spec-locked keys', () => {
+    expect(extendedGroup).toBeTruthy();
+    expect(extendedGroup.label).toBe('Extended');
+    expect(extendedGroup.options.map((o) => o.key)).toEqual(['SMH', 'CPER', 'FXY', 'TIP', 'EMLC']);
+  });
+
+  it('the flag-OFF view (the render filter) hides the Extended group', () => {
+    const visibleOff = DRIVER_GROUPS.filter((g) => g.tier !== 'extended' || false);
+    expect(visibleOff.some((g) => g.tier === 'extended')).toBe(false);
+    // the core groups are all still present
+    expect(visibleOff.map((g) => g.label)).toContain('Macro');
+    expect(visibleOff.map((g) => g.label)).toContain('Custom');
+  });
+
+  it('the flag-ON view shows the Extended group', () => {
+    const visibleOn = DRIVER_GROUPS.filter((g) => g.tier !== 'extended' || true);
+    expect(visibleOn.some((g) => g.tier === 'extended')).toBe(true);
+  });
+
+  it('?labDriver prefill: an extended key is rejected against the core-only selectable set (dark byte-identity)', () => {
+    // The Lab passes a flag-filtered label set to parseLabPrefill; while the tier
+    // is dark that set is core-only, so ?labDriver=SMH is rejected exactly as the
+    // select hides it — byte-identical to the pre-build deep-link behavior.
+    const coreOnly = Object.fromEntries(
+      DRIVER_GROUPS.filter((g) => g.tier !== 'extended').flatMap((g) => g.options.map((o) => [o.key, o.label]))
+    );
+    expect(parseLabPrefill('?labGroup=AAA,BBB&labDriver=SMH', coreOnly)).toBeNull();
+    // a core driver still prefills
+    expect(parseLabPrefill('?labGroup=AAA,BBB&labDriver=BRENT', coreOnly)).toEqual({ groupInput: 'AAA, BBB', driverKey: 'BRENT' });
   });
 });

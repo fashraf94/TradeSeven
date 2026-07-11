@@ -59,6 +59,7 @@ import {
 } from './correlationGroup';
 import useWatchlistGroup from '../../hooks/useWatchlistGroup';
 import useAgentBookGroup from '../../hooks/useAgentBookGroup';
+import { CORRELATION_EXTENDED_DRIVERS_ENABLED } from '../../config/featureFlags';
 
 // Client-side mirror of the driver registry LABELS only (the api registry is
 // server code — do not import it into the bundle; units/interpretations come
@@ -66,7 +67,7 @@ import useAgentBookGroup from '../../hooks/useAgentBookGroup';
 // <optgroup> sections in this pinned order. The final Custom section is UI-only
 // (pair mode): its 'CUSTOM' key reveals a ticker input and the endpoint builds
 // a synthetic driver from whatever ticker the user enters.
-const DRIVER_GROUPS = [
+export const DRIVER_GROUPS = [
   {
     label: 'Macro',
     options: [
@@ -115,6 +116,19 @@ const DRIVER_GROUPS = [
     label: 'Digital',
     options: [{ key: 'BTC', label: 'Bitcoin (BTC)' }],
   },
+  // V3 Sub-build 3 — the extended tier. `tier:'extended'` groups render only
+  // when CORRELATION_EXTENDED_DRIVERS_ENABLED is on (filtered at the <select>).
+  {
+    label: 'Extended',
+    tier: 'extended',
+    options: [
+      { key: 'SMH', label: 'Semiconductors (SMH)' },
+      { key: 'CPER', label: 'Copper (CPER proxy)' },
+      { key: 'FXY', label: 'Japanese Yen (FXY)' },
+      { key: 'TIP', label: 'TIPS duration (TIP)' },
+      { key: 'EMLC', label: 'EM local-currency bonds (EMLC)' },
+    ],
+  },
   {
     label: 'Custom',
     options: [{ key: 'CUSTOM', label: 'Custom ticker…' }],
@@ -126,6 +140,17 @@ const DRIVER_GROUPS = [
 const DRIVER_LABELS = Object.fromEntries(
   DRIVER_GROUPS.flatMap((g) => g.options.map((o) => [o.key, o.label]))
 );
+
+// V3 Sub-build 3 — the SELECTABLE driver keys (what the <select> actually shows).
+// The `?labDriver=` prefill validates against THIS, not DRIVER_LABELS: while the
+// extended tier is dark, an extended key must be rejected exactly as it is hidden
+// from the select — so a flag-off Lab is byte-identical, including the deep-link
+// path. When the flag is on it equals DRIVER_LABELS.
+const SELECTABLE_DRIVER_LABELS = CORRELATION_EXTENDED_DRIVERS_ENABLED
+  ? DRIVER_LABELS
+  : Object.fromEntries(
+      DRIVER_GROUPS.filter((g) => g.tier !== 'extended').flatMap((g) => g.options.map((o) => [o.key, o.label]))
+    );
 
 // Single source for the endpoint's coded 422 failures (state.error carries
 // "<status>:<code>"). Message = matched entry; the raw-code detail line shows
@@ -405,6 +430,11 @@ export function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
           top (SPY or a sector twin) is normal for most groups.
         </div>
       </div>
+
+      {/* V3 Sub-build 3 — the caption above is UNCHANGED and stays valid with the
+          extended tier: the "two drivers in five past |0.20|" figure is a
+          PER-DRIVER null-sampling rate, so it holds identically at 30 drivers as
+          at 25. The 0.20 floor is applied per driver, not family-wide. */}
 
       {/* V3 Sub-build 2 — "Since your last scan" strip. Absence-tolerant:
           renders only when the server sent the summary contract behind its flag. */}
@@ -1513,6 +1543,147 @@ function stripLabPrefillParams() {
   } catch { /* leave the URL as-is — never break the Lab over a history write */ }
 }
 
+// ── V3 Sub-build 3 — the driver-audit dev view (the liquidity gate UI) ────────
+// Permanent internal tooling, reachable ONLY via the Lab's `?driverAudit=1` dev
+// param; not in any nav. Symbol input → POST /api/research/driver-audit → a
+// table of the pinned admission criteria. Past-tense throughout: it audits
+// history and predicts nothing. Presentation is split out (DriverAuditTable) so
+// the smoke suite can render it without a DOM.
+const AUDIT_PASS = '#10B981';
+const AUDIT_FAIL = '#EF4444';
+
+// §9 display-agreement: each cell shows the server's number AND the server's
+// pass/fail for THAT number — one source (the endpoint's single computation
+// over the fetched bars), so the mark and the value can never disagree.
+function AuditCriterionCell({ value, pass, thresholdLabel }) {
+  return (
+    <td style={{ padding: '6px 10px', fontFamily: MONO, fontSize: 12, whiteSpace: 'nowrap' }}>
+      <span style={{ color: pass ? AUDIT_PASS : AUDIT_FAIL, fontWeight: 700 }}>{pass ? '✓' : '✗'}</span>{' '}
+      <span style={{ color: HOLO_COLORS.textPrimary }}>{value == null ? '—' : value}</span>{' '}
+      <span style={{ color: HOLO_COLORS.textMuted, fontSize: 11 }}>({thresholdLabel})</span>
+    </td>
+  );
+}
+
+export function DriverAuditTable({ results, thresholds }) {
+  const t = thresholds || {};
+  const headers = ['Symbol', `Rows (≥${t.rowCount})`, `Median vol (≥${(t.medianDailyVolume ?? 0).toLocaleString()})`,
+    `Zero-vol (=${t.zeroVolumeDays})`, `Single-print (=${t.singlePrintDays})`, `Max gap (≤${t.maxCalendarGapTradingDays})`, 'Verdict'];
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 640 }}>
+        <thead>
+          <tr>
+            {headers.map((h) => (
+              <th key={h} style={{ ...captionStyle, textAlign: 'left', padding: '6px 10px', borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}`, whiteSpace: 'nowrap' }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {(results || []).map((r) => {
+            const c = r.criteria || {};
+            const verdictPass = r.verdict === 'pass';
+            return (
+              <tr key={r.symbol} style={{ borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}55` }}>
+                <td style={{ padding: '6px 10px', fontFamily: MONO, fontSize: 12, color: HOLO_COLORS.textPrimary }}>
+                  {r.symbol}
+                  {r.httpOk === false ? <span style={{ color: AUDIT_FAIL, marginLeft: 6 }}>· no data</span> : null}
+                  {r.firstDate && r.lastDate ? (
+                    <div style={{ color: HOLO_COLORS.textMuted, fontSize: 11 }}>{r.firstDate} → {r.lastDate}</div>
+                  ) : null}
+                </td>
+                <AuditCriterionCell value={r.rowCount} pass={!!c.rowCount} thresholdLabel={`≥${t.rowCount}`} />
+                {/* §9: show the EXACT median the pass/fail was computed on — no
+                    Math.round, which could render "50,000" beside a ✗ for
+                    "≥50,000" when the raw median is 49,999.5. */}
+                <AuditCriterionCell value={r.medianDailyVolume == null ? null : r.medianDailyVolume.toLocaleString()} pass={!!c.medianDailyVolume} thresholdLabel={`≥${(t.medianDailyVolume ?? 0).toLocaleString()}`} />
+                <AuditCriterionCell value={r.zeroVolumeDays} pass={!!c.zeroVolumeDays} thresholdLabel={`=${t.zeroVolumeDays}`} />
+                <AuditCriterionCell value={r.singlePrintDays} pass={!!c.singlePrintDays} thresholdLabel={`=${t.singlePrintDays}`} />
+                <AuditCriterionCell value={r.maxCalendarGapTradingDays} pass={!!c.maxCalendarGapTradingDays} thresholdLabel={`≤${t.maxCalendarGapTradingDays}`} />
+                <td style={{ padding: '6px 10px', fontFamily: MONO, fontSize: 12, fontWeight: 700, color: verdictPass ? AUDIT_PASS : AUDIT_FAIL }}>
+                  {verdictPass ? 'PASSED' : 'FAILED'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function DriverAuditView({ isDesktop }) {
+  const [symbolsInput, setSymbolsInput] = useState('SMH.US, CPER.US, FXY.US, TIP.US, EMLC.US');
+  const [audit, setAudit] = useState({ status: 'idle', data: null, error: null });
+
+  const runAudit = useCallback(() => {
+    const symbols = [...new Set(symbolsInput.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean))];
+    if (symbols.length < 1 || symbols.length > 10) {
+      setAudit({ status: 'error', data: null, error: 'Enter 1–10 symbols.' });
+      return;
+    }
+    setAudit({ status: 'loading', data: null, error: null });
+    fetchWithAuth('/api/research/driver-audit', { method: 'POST', body: JSON.stringify({ symbols }) })
+      .then(async (r) => {
+        if (!r.ok) {
+          let detail = null;
+          try { detail = await r.json(); } catch { /* opaque error body */ }
+          throw new Error(detail?.error ? `${r.status}:${detail.error}` : `audit_${r.status}`);
+        }
+        return r.json();
+      })
+      .then((data) => setAudit({ status: 'ready', data, error: null }))
+      .catch((e) => setAudit({ status: 'error', data: null, error: e.message }));
+  }, [symbolsInput]);
+
+  return (
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: isDesktop ? 24 : 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={card}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: HOLO_COLORS.textPrimary }}>Driver audit — the liquidity gate</div>
+        <div style={subCaptionStyle}>
+          Two-gate admission for a candidate driver, run against live EODHD data. Gate 1 (availability):
+          adequate clean daily history. Gate 2 (liquidity/data-quality): real trading volume, no stale or
+          single-print days. Every number below is a past-tense fact about the fetched history; the verdict
+          is the conjunction of the pinned thresholds. This audits history and predicts nothing.
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', marginTop: 12 }}>
+          <label style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={captionStyle}>Symbols (1–10, full EODHD form, e.g. SMH.US)</span>
+            <input
+              value={symbolsInput}
+              onChange={(e) => setSymbolsInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && audit.status !== 'loading') runAudit(); }}
+              placeholder="SMH.US, CPER.US"
+              style={{
+                background: HOLO_COLORS.bgElevated, border: `1px solid ${HOLO_COLORS.borderSubtle}`, borderRadius: 8,
+                padding: '9px 12px', color: HOLO_COLORS.textPrimary, fontSize: 13, fontFamily: MONO, outline: 'none',
+              }}
+            />
+          </label>
+          <button
+            onClick={() => runAudit()}
+            disabled={audit.status === 'loading'}
+            style={{
+              padding: '10px 22px', borderRadius: 8, cursor: audit.status === 'loading' ? 'default' : 'pointer',
+              background: HOLO_COLORS.bgElevated, color: HOLO_COLORS.textPrimary, fontSize: 13, fontWeight: 600,
+              textTransform: 'uppercase', letterSpacing: '1px', border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+              opacity: audit.status === 'loading' ? 0.6 : 1,
+            }}
+          >
+            {audit.status === 'loading' ? 'Auditing…' : 'Run audit'}
+          </button>
+          {audit.status === 'error' ? <div style={{ flexBasis: '100%', fontSize: 12, color: AUDIT_FAIL }}>{audit.error}</div> : null}
+        </div>
+      </div>
+      {audit.status === 'ready' && audit.data ? (
+        <div style={card}>
+          <DriverAuditTable results={audit.data.results} thresholds={audit.data.thresholds} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function CorrelationLab({ isDesktop, embedded = false }) {
   const [groupInput, setGroupInput] = useState('XOM, CVX, COP');
   const [driverKey, setDriverKey] = useState('BRENT');
@@ -1523,6 +1694,13 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
   // a scan is displayed; the last-shown result of the other kind is dropped.
   const [state, setState] = useState({ status: 'idle', data: null, error: null, kind: 'single' });
   const [chartTab, setChartTab] = useState('corr');
+  // V3 Sub-build 3 — the "Include extended drivers" scan toggle. Off by default,
+  // sticky per SESSION only (sessionStorage, guarded for the SSR/test render
+  // path). Only ever surfaced when CORRELATION_EXTENDED_DRIVERS_ENABLED is on;
+  // when on AND checked, the scan body carries includeExtended:true.
+  const [includeExtended, setIncludeExtended] = useState(
+    () => typeof sessionStorage !== 'undefined' && sessionStorage.getItem('corrLab.includeExtended') === '1'
+  );
   // V2 Build 6 — provenance of the analyzed group: set when a run originates from
   // a source chip or a URL prefill; carries `groupString` so §9 display-agreement
   // can bind the line to EXACTLY the group in the box (cleared on manual edit).
@@ -1636,6 +1814,9 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
         body: JSON.stringify({
           group: parsed.group,
           ...(forceRefresh ? { forceRefresh: true } : {}),
+          // V3 Sub-build 3 — opt into the extended tier (server ignores it
+          // unless CORRELATION_EXTENDED_DRIVERS_ENABLED is also on).
+          ...(CORRELATION_EXTENDED_DRIVERS_ENABLED && includeExtended ? { includeExtended: true } : {}),
         }),
       })
         .then(async (r) => {
@@ -1655,7 +1836,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
           setState({ status: 'error', data: null, error: e.message, kind: 'scan' });
         });
     },
-    [groupInput]
+    [groupInput, includeExtended]
   );
 
   // Deep dive from a scan row: select that driver and run the single-driver
@@ -1718,7 +1899,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
     const search = typeof window !== 'undefined' ? window.location.search : '';
     let hadLabGroup = false;
     try { hadLabGroup = !!new URLSearchParams(search).get('labGroup'); } catch { /* malformed — ignore */ }
-    const parsed = parseLabPrefill(search, DRIVER_LABELS);
+    const parsed = parseLabPrefill(search, SELECTABLE_DRIVER_LABELS);
     if (parsed) {
       setGroupInput(parsed.groupInput);
       setDriverKey(parsed.driverKey);
@@ -1772,6 +1953,16 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
   // state — every consumer sits inside the `data`-guarded result block.
   const resultLabels = data ? resolveResultLabels(data) : null;
 
+  // V3 Sub-build 3 — the driver-audit dev view (the liquidity gate). Reachable
+  // ONLY via ?driverAudit=1 on the standalone Lab (not the embedded Discover
+  // tab); not in any nav. Every hook above runs unconditionally — this only
+  // swaps what renders. Gated implicitly by CORRELATION_LAB_ENABLED (the Lab is).
+  const isAuditView =
+    !embedded &&
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('driverAudit') === '1';
+  if (isAuditView) return <DriverAuditView isDesktop={isDesktop} />;
+
   return (
     <div style={{
       // Embedded (Discover tab): the parent panel owns width/margins/scroll
@@ -1820,7 +2011,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
               padding: '9px 10px', color: HOLO_COLORS.textPrimary, fontSize: 13,
             }}
           >
-            {DRIVER_GROUPS.map((g) => (
+            {DRIVER_GROUPS.filter((g) => g.tier !== 'extended' || CORRELATION_EXTENDED_DRIVERS_ENABLED).map((g) => (
               <optgroup key={g.label} label={g.label}>
                 {g.options.map((d) => (
                   <option key={d.key} value={d.key}>{d.label}</option>
@@ -1872,6 +2063,30 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
         >
           {state.status === 'loading' && state.kind === 'scan' ? 'Scanning…' : 'Scan all'}
         </button>
+        {/* V3 Sub-build 3 — the extended-tier opt-in. Rendered only when the
+            flag is on; off by default, sticky per session. */}
+        {CORRELATION_EXTENDED_DRIVERS_ENABLED ? (
+          <label
+            style={{
+              flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 12, color: HOLO_COLORS.textSecondary, cursor: 'pointer', userSelect: 'none',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={includeExtended}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setIncludeExtended(next);
+                if (typeof sessionStorage !== 'undefined') {
+                  sessionStorage.setItem('corrLab.includeExtended', next ? '1' : '0');
+                }
+              }}
+              style={{ accentColor: HOLO_COLORS.textPrimary, cursor: 'pointer' }}
+            />
+            Include extended drivers (5)
+          </label>
+        ) : null}
         {inputError ? <div style={{ flexBasis: '100%', fontSize: 12, color: '#EF4444' }}>{inputError}</div> : null}
         {activeMeta?.droppedSymbols?.length ? (
           <div style={{ flexBasis: '100%', fontSize: 12, color: AMBER }}>

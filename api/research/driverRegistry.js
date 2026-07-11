@@ -13,6 +13,20 @@
  * section for pair mode — see CorrelationLab.jsx). Category is metadata for
  * grouping only; the engine reads it nowhere.
  *
+ * TIER (V3 Sub-build 3 — the liquidity gate + extended tier): every entry
+ * carries a `tier` field, 'core' | 'extended'. The original 25 are 'core' — the
+ * default scan universe. The 'extended' drivers are opt-in only (the
+ * comparison-tax rule: more drivers dim existing signals), gated behind
+ * CORRELATION_EXTENDED_DRIVERS_ENABLED, and are two-gate verified (EODHD
+ * availability + liquidity/data-quality) via the driver-audit tool
+ * (api/research/driver-audit.js) BEFORE they were locked here — the CEW/BZ.COMM
+ * lesson made structural. EMLC replaces the shell CEW (which failed Gate 2 in
+ * external review: ≈1.8–3.3k avg volume with zero-volume days). CRITICAL: the
+ * scan's docId salt AND driverUniverseHash derive from the EFFECTIVE scanned
+ * set, not the whole registry (correlation-scan.js), so a core-only scan is
+ * byte-identical to the pre-extended-tier state — the dark merge orphans no
+ * cached scans and manufactures zero not_comparable days.
+ *
  * VERIFIED-LIVE-BEFORE-MERGE PROTOCOL (the BZ.COMM lesson): a symbol only
  * earns a spec lock after one live preview run returns 200 with sane numbers.
  * The V1.2 commodity symbols (BZ.COMM/CL.COMM/GC.COMM/DX.COMM) 404'd on EODHD's
@@ -62,6 +76,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change of BNO ETF',
     betaInterpretation: 'group % move per 1% move in BNO (Brent oil ETF proxy)',
     category: 'macro',
+    tier: 'core',
   },
   WTI: {
     symbol: 'USO.US',
@@ -70,6 +85,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change of USO ETF',
     betaInterpretation: 'group % move per 1% move in USO (WTI oil ETF proxy)',
     category: 'macro',
+    tier: 'core',
   },
   GOLD: {
     symbol: 'GLD.US',
@@ -78,6 +94,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change of GLD ETF',
     betaInterpretation: 'group % move per 1% move in GLD (gold ETF proxy)',
     category: 'macro',
+    tier: 'core',
   },
   VIX: {
     symbol: 'VIX.INDX',
@@ -86,6 +103,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change of VIX index',
     betaInterpretation: 'group % move per 1% VIX move (percent change of the index, not vol points)',
     category: 'macro',
+    tier: 'core',
   },
   TNX: {
     symbol: 'TNX.INDX',
@@ -100,6 +118,7 @@ export const CORRELATION_DRIVERS = {
     // diff-mode up-day means the YIELD rose — a bare "+" would be dishonest.
     directionNoun: 'the 10Y yield',
     category: 'macro',
+    tier: 'core',
   },
   DXY: {
     symbol: 'UUP.US',
@@ -108,6 +127,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change of UUP ETF',
     betaInterpretation: 'group % move per 1% move in UUP (dollar index ETF proxy)',
     category: 'macro',
+    tier: 'core',
   },
   SPX: {
     symbol: 'SPY.US',
@@ -116,6 +136,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% S&P move (SPY)',
     category: 'macro',
+    tier: 'core',
   },
 
   // ── Sectors (SPDR sector ETFs, .US) ──
@@ -126,6 +147,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Energy sector (XLE)',
     category: 'sector',
+    tier: 'core',
   },
   XLF: {
     symbol: 'XLF.US',
@@ -134,6 +156,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Financials (XLF)',
     category: 'sector',
+    tier: 'core',
   },
   XLK: {
     symbol: 'XLK.US',
@@ -142,6 +165,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Technology (XLK)',
     category: 'sector',
+    tier: 'core',
   },
   XLV: {
     symbol: 'XLV.US',
@@ -150,6 +174,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Healthcare (XLV)',
     category: 'sector',
+    tier: 'core',
   },
   XLI: {
     symbol: 'XLI.US',
@@ -158,6 +183,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Industrials (XLI)',
     category: 'sector',
+    tier: 'core',
   },
   XLY: {
     symbol: 'XLY.US',
@@ -166,6 +192,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Consumer Disc. (XLY)',
     category: 'sector',
+    tier: 'core',
   },
   XLP: {
     symbol: 'XLP.US',
@@ -174,6 +201,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Consumer Staples (XLP)',
     category: 'sector',
+    tier: 'core',
   },
   XLU: {
     symbol: 'XLU.US',
@@ -182,6 +210,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Utilities (XLU)',
     category: 'sector',
+    tier: 'core',
   },
   XLB: {
     symbol: 'XLB.US',
@@ -190,6 +219,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Materials (XLB)',
     category: 'sector',
+    tier: 'core',
   },
 
   // ── Style factors (single-factor ETFs, .US) ──
@@ -200,6 +230,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Momentum factor (MTUM)',
     category: 'factor',
+    tier: 'core',
   },
   VLUE: {
     symbol: 'VLUE.US',
@@ -208,6 +239,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Value factor (VLUE)',
     category: 'factor',
+    tier: 'core',
   },
   QUAL: {
     symbol: 'QUAL.US',
@@ -216,6 +248,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Quality factor (QUAL)',
     category: 'factor',
+    tier: 'core',
   },
   USMV: {
     symbol: 'USMV.US',
@@ -224,6 +257,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Low-volatility factor (USMV)',
     category: 'factor',
+    tier: 'core',
   },
 
   // ── Risk & rates (credit / duration / breadth, .US) ──
@@ -234,6 +268,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in High-yield credit (HYG)',
     category: 'risk',
+    tier: 'core',
   },
   TLT: {
     symbol: 'TLT.US',
@@ -242,6 +277,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Long-duration Treasuries (TLT)',
     category: 'risk',
+    tier: 'core',
   },
   IWM: {
     symbol: 'IWM.US',
@@ -250,6 +286,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Small caps (IWM)',
     category: 'risk',
+    tier: 'core',
   },
   RSP: {
     symbol: 'RSP.US',
@@ -258,6 +295,7 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Equal-weight S&P (RSP)',
     category: 'risk',
+    tier: 'core',
   },
 
   // ── Digital ──
@@ -275,5 +313,59 @@ export const CORRELATION_DRIVERS = {
     unit: '% change',
     betaInterpretation: 'group % move per 1% move in Bitcoin (BTC)',
     category: 'digital',
+    tier: 'core',
+  },
+
+  // ══ Extended tier (V3 Sub-build 3 — opt-in, two-gate verified) ═══════════
+  // All .US ETFs on the proven equity path. Standard pct / '% change' /
+  // {label}-templated betaInterpretation (no scale). These enter a scan ONLY
+  // when CORRELATION_EXTENDED_DRIVERS_ENABLED is on AND the user opts in — the
+  // effective-universe rule keeps the default scan's fingerprint unchanged.
+  SMH: {
+    symbol: 'SMH.US',
+    label: 'Semiconductors (SMH)',
+    returnMode: 'pct',
+    unit: '% change',
+    betaInterpretation: 'group % move per 1% move in Semiconductors (SMH)',
+    category: 'sector',
+    tier: 'extended',
+  },
+  CPER: {
+    symbol: 'CPER.US',
+    label: 'Copper (CPER proxy)',
+    returnMode: 'pct',
+    unit: '% change',
+    betaInterpretation: 'group % move per 1% move in Copper (CPER proxy)',
+    category: 'macro',
+    tier: 'extended',
+  },
+  FXY: {
+    symbol: 'FXY.US',
+    label: 'Japanese Yen (FXY)',
+    returnMode: 'pct',
+    unit: '% change',
+    betaInterpretation: 'group % move per 1% move in Japanese Yen (FXY)',
+    category: 'macro',
+    tier: 'extended',
+  },
+  TIP: {
+    symbol: 'TIP.US',
+    label: 'TIPS duration (TIP)',
+    returnMode: 'pct',
+    unit: '% change',
+    betaInterpretation: 'group % move per 1% move in TIPS duration (TIP)',
+    category: 'risk',
+    tier: 'extended',
+  },
+  EMLC: {
+    // Honestly labeled: an EM local-currency BOND proxy — it carries local-rates
+    // exposure, not a clean FX read. Replaces the shell CEW (failed Gate 2).
+    symbol: 'EMLC.US',
+    label: 'EM local-currency bonds (EMLC)',
+    returnMode: 'pct',
+    unit: '% change',
+    betaInterpretation: 'group % move per 1% move in EM local-currency bonds (EMLC)',
+    category: 'macro',
+    tier: 'extended',
   },
 };

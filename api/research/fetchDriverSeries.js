@@ -38,8 +38,16 @@ function formatDate(date) {
  * Optional { signal } (additive; H3): when provided it is threaded to fetch so
  * a caller can abort a hung socket. Existing callers pass nothing — an
  * undefined signal is inert, so their behavior is byte-identical.
+ *
+ * Optional { withVolume } (additive; V3 Sub-build 3 — the liquidity gate): when
+ * true, each row ADDITIONALLY carries the raw OHLC + volume the driver-audit
+ * tool needs to screen a candidate driver (median volume, zero-volume days,
+ * single-print days = raw high==low==open==close). RAW values on purpose —
+ * `close` stays adjusted (adjusted_close ?? close), but single-print detection
+ * is a same-day data-quality check on the un-adjusted bar. Existing callers
+ * pass no flag → rows stay exactly { date, close }, byte-identical.
  */
-export async function fetchEodCloses(eodhSymbol, lookbackDays, { signal } = {}) {
+export async function fetchEodCloses(eodhSymbol, lookbackDays, { signal, withVolume } = {}) {
   const apiKey = process.env.EODHD_API_KEY;
   if (!apiKey) throw new Error('EODHD_API_KEY not configured');
   const fromDate = new Date();
@@ -57,7 +65,19 @@ export async function fetchEodCloses(eodhSymbol, lookbackDays, { signal } = {}) 
   // adjusted_close-less row usable instead of silently filtering the series
   // to empty (which would misreport as driver_unavailable).
   return rows
-    .map((d) => ({ date: d.date, close: Number(d.adjusted_close ?? d.close) }))
+    .map((d) => {
+      const row = { date: d.date, close: Number(d.adjusted_close ?? d.close) };
+      if (withVolume) {
+        // Additive audit fields (raw). Kept out of the closes-only shape so
+        // the join-and-compute callers stay byte-identical.
+        row.volume = Number(d.volume);
+        row.open = Number(d.open);
+        row.high = Number(d.high);
+        row.low = Number(d.low);
+        row.rawClose = Number(d.close);
+      }
+      return row;
+    })
     .filter((r) => typeof r.date === 'string' && Number.isFinite(r.close));
 }
 

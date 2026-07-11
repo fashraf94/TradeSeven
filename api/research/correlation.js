@@ -82,6 +82,7 @@ import {
   CORRELATION_LAB_ENABLED,
   CORRELATION_RELATIONSHIP_QUALITY_ENABLED,
   CORRELATION_SYNTHESIS_ENABLED,
+  CORRELATION_EXTENDED_DRIVERS_ENABLED,
 } from '../../src/config/featureFlags.js';
 // V3 Sub-build 2 — the summary contract + evidence checklist. Node-clean;
 // the unmocked handler import in correlation.boundary.test.js is the guard.
@@ -245,7 +246,13 @@ export default async function handler(req, res) {
   // CUSTOM is the synthetic pair-mode driver (any equity ticker) — NOT a
   // registry key. Every other driver must resolve in the registry.
   const isCustomDriver = driverKey === 'CUSTOM';
-  const baseRegistry = driverKey && !isCustomDriver ? CORRELATION_DRIVERS[driverKey] : null;
+  // V3 Sub-build 3: an EXTENDED-tier driver only resolves when the flag is on.
+  // While dark it is treated exactly like an unknown key (400 invalid_driver),
+  // so a flag-off deep dive is byte-identical to the pre-extended-tier state and
+  // no extended series is fetched or cached.
+  const resolved = driverKey && !isCustomDriver ? CORRELATION_DRIVERS[driverKey] : null;
+  const baseRegistry =
+    resolved && (resolved.tier !== 'extended' || CORRELATION_EXTENDED_DRIVERS_ENABLED) ? resolved : null;
   if (!isCustomDriver && !baseRegistry) {
     return res.status(400).json({ error: 'invalid_driver', message: 'Unknown driver key.' });
   }
