@@ -75,3 +75,12 @@ TECHNICAL_CONTEXT_EXPOSURE_AUDIT.md
 eodhd_key*
 discovery/**/*.secret
 discovery/**/.env*
+
+# ── LevelStory Session 2 (fetch/normalize) — data is NEVER committed ──
+# The full dataset is multi-GB. Only code, config, tests, docs, and the small fetch
+# manifest (copied to docs/discovery/) are committed. Fixtures under fixtures/ ARE
+# committed (small characterization samples) and are intentionally not matched here.
+research/level-study/data/
+research/**/.env*
+research/**/*.secret
+research/**/*.key
