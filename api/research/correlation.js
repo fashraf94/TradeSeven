@@ -30,7 +30,6 @@
  * layer — a transient member failure must not poison the full group's cache
  * key until TTL expiry.
  */
-import { createHash } from 'crypto';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
@@ -92,6 +91,9 @@ import {
   serializedByteSize,
   MAX_CONTRACT_BYTES,
 } from './summaryContract.js';
+// V3 Phase 2 — the deep-dive cache-key hash, extracted so correlation-narrate.js
+// recomputes a byte-identical docId (BUILD_RULES §4, never a copied key formula).
+import { deepDiveDocId } from './correlationCacheKey.js';
 
 // Up to 11 EODHD fetches in 3 throttled chunks (~600ms of deliberate sleep)
 // plus Firestore round-trips — heavier than scouting-board's read-only 10s.
@@ -331,9 +333,7 @@ export default async function handler(req, res) {
   // tickers never collide. The `:<customSymbol>` segment ('' for registry
   // drivers) changes the key composition for ALL entries — acceptable: daily
   // expiry, no migration (noted in the PR).
-  const docId = createHash('sha1')
-    .update([...group].sort().join(',') + '|' + driverKey + ':' + customSymbol + '|' + lookbackDays)
-    .digest('hex');
+  const docId = deepDiveDocId({ group, driverKey, customSymbol, lookbackDays });
   const cacheKey = `correlation:${docId}`;
 
   try {

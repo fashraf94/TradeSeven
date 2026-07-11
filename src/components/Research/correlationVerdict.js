@@ -34,6 +34,17 @@ export function strengthBand(absCorr) {
   return null;
 }
 
+// ── The ONE display-number formatters (§9, BUILD_RULES §4) ───────────────────
+// Extracted VERBATIM from CorrelationLab.jsx's inline card formatters so the
+// Lab AND the Phase-2 narration spans render a value byte-identically from ONE
+// source — a narration number can never disagree with the card number it sits
+// beside. The math layer returns decimal fractions; fmtPct multiplies by 100
+// ONCE here. null → '—' (a narration span is only ever built from an 'ok'
+// envelope, so the em-dash never reaches the voice).
+export const fmtCorr = (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2));
+export const fmtPct = (v, dp = 1) => (v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(dp) + '%');
+export const fmtBeta = (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2));
+
 // ── Group-cohesion interpretation phrase (V2 Build 5) ─────────────────────────
 // One line describing whether the group's OWN members are behaving as one thing,
 // banded through the SAME strengthBand the whole page uses (one banding impl).
@@ -58,7 +69,9 @@ export function cohesionPhrase(value) {
 }
 
 // English ordinal: 1 → "1st", 2 → "2nd", 3 → "3rd", 11 → "11th", 21 → "21st".
-function ordinal(n) {
+// Exported for reuse by the Phase-2 narration plan builder (percentile spans) —
+// one ordinal implementation across the verdict sentence and the narration.
+export function ordinal(n) {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;

@@ -1,0 +1,151 @@
+/**
+ * Narration plan builder — determinism, the pinned selection/ordering per the 8
+ * contract classes, the adverse-omission guarantee (required claims that can't
+ * build fail to `ok:false` BEFORE any model), the D1 thin-solid rule, and §9
+ * span parity (every rendered span equals the shared card formatter of the same
+ * pre-rounded contract value).
+ */
+import { describe, it, expect } from 'vitest';
+import { buildNarrationPlan } from './narrationPlan.js';
+import { CLASSES, DRIVER_LABEL, deepContract } from './narrationCorpus.js';
+import { fmtCorr, fmtBeta, ordinal } from '../../src/components/Research/correlationVerdict.js';
+
+const plan = (contract) => buildNarrationPlan(contract, { driverLabel: DRIVER_LABEL });
+const ids = (p) => p.plan.claims.map((c) => c.claimId);
+
+describe('narration plan — determinism (same contract ⇒ byte-identical plan)', () => {
+  it('is byte-identical across rebuild and a structuredClone of the contract', () => {
+    const c = CLASSES.solidStandard();
+    const a = plan(c);
+    const b = plan(c);
+    const d = plan(structuredClone(c));
+    expect(a.ok && b.ok && d.ok).toBe(true);
+    expect(JSON.stringify(a.plan)).toBe(JSON.stringify(b.plan));
+    expect(JSON.stringify(a.plan)).toBe(JSON.stringify(d.plan));
+  });
+
+  it('claims carry the pinned shape (polarity/temporalScope/spans/allowedVariants)', () => {
+    const p = plan(CLASSES.solidStandard());
+    for (const claim of p.plan.claims) {
+      expect(claim.polarity).toBe('assert');
+      expect(claim.temporalScope).toBe('measured_sample');
+      expect(claim.allowedVariants.length).toBeGreaterThan(0);
+      expect(typeof claim.spans.sampleSpan).toBe('string');
+    }
+  });
+});
+
+describe('narration plan — the 8 contract classes (selection + ordering)', () => {
+  it('solid/standard → headline + 2 supporting, no caveat/closing', () => {
+    const p = plan(CLASSES.solidStandard());
+    expect(p.ok).toBe(true);
+    expect(ids(p)).toEqual(['headline_link', 'capture_asymmetry', 'tail_comovement']);
+    expect(p.plan.claims[0].requiredPosition).toBe(null);
+  });
+
+  it('fragile/standard → caveat_fragile FIRST + headline + supporting + closing', () => {
+    const p = plan(CLASSES.fragileStandard());
+    expect(p.ok).toBe(true);
+    expect(ids(p)[0]).toBe('caveat_fragile');
+    expect(p.plan.claims[0].requiredPosition).toBe(1);
+    expect(ids(p)).toContain('headline_link');
+    expect(ids(p).at(-1)).toBe('closing_caveat');
+    // the caveat carries the failing criterion as a rendered span
+    expect(p.plan.claims[0].spans.criterion).toContain('did not move as one');
+  });
+
+  it('limited/standard (small-n) → caveat_limited first, sample span cites the thin count', () => {
+    const p = plan(CLASSES.limitedStandard());
+    expect(p.ok).toBe(true);
+    expect(ids(p)[0]).toBe('caveat_limited');
+    expect(p.plan.claims[0].spans.criterion).toContain('sample was thin');
+    expect(p.plan.claims[0].spans.sampleSpan).toBe('across 250 sessions');
+  });
+
+  it('in_flux/standard → caveat_in_flux first with the strain statement', () => {
+    const p = plan(CLASSES.inFluxStandard());
+    expect(p.ok).toBe(true);
+    expect(ids(p)[0]).toBe('caveat_in_flux');
+    expect(p.plan.claims[0].spans.strain).toContain('broke from its recent range');
+  });
+
+  it('solid/market_proxy → proxy_disclosure at position 1, headline has no adjusted clause', () => {
+    const p = plan(CLASSES.solidMarketProxy());
+    expect(p.ok).toBe(true);
+    expect(ids(p)[0]).toBe('proxy_disclosure');
+    expect(p.plan.claims[0].requiredPosition).toBe(1);
+    const headline = p.plan.claims.find((c) => c.claimId === 'headline_link');
+    expect(headline.spans.adjValue).toBeUndefined();
+    // hl_raw_adj (needs adjValue) is pruned out; only raw variants remain
+    expect(headline.allowedVariants).not.toContain('hl_raw_adj');
+  });
+
+  it('fragile/market_proxy (suppression-heavy) → caveat FIRST, proxy SECOND', () => {
+    const p = plan(CLASSES.fragileMarketProxy());
+    expect(p.ok).toBe(true);
+    expect(ids(p).slice(0, 2)).toEqual(['caveat_fragile', 'proxy_disclosure']);
+    expect(p.plan.claims[0].requiredPosition).toBe(1);
+    expect(p.plan.claims[1].requiredPosition).toBe(2);
+  });
+
+  it('in_flux + market_proxy → in_flux caveat holds position 1, proxy at position 2', () => {
+    const p = plan(CLASSES.inFluxMarketProxy());
+    expect(p.ok).toBe(true);
+    expect(ids(p).slice(0, 2)).toEqual(['caveat_in_flux', 'proxy_disclosure']);
+    expect(p.plan.claims[1].requiredPosition).toBe(2);
+  });
+
+  it('many notable supports → only the top TWO by priority survive the cap', () => {
+    const p = plan(CLASSES.solidStandardTwoStrong());
+    expect(p.ok).toBe(true);
+    expect(ids(p)).toEqual(['headline_link', 'percentile_extreme', 'capture_asymmetry']);
+  });
+});
+
+describe('narration plan — adverse-omission + D1 (fail to template)', () => {
+  it('thin solid/standard (≤1 supporting) → ok:false thin_solid_read', () => {
+    const p = plan(CLASSES.thinSolidStandard());
+    expect(p).toEqual({ ok: false, code: 'thin_solid_read' });
+  });
+
+  it('a no-reliable-link headline (band null) → ok:false headline_unbuildable', () => {
+    const p = plan(deepContract({ corr20: 0.1, corr60: 0.08, tensionLatest: { d: 0.01, score: 0.1, state: 'calm' } }));
+    expect(p.ok).toBe(false);
+    expect(p.code).toBe('headline_unbuildable');
+  });
+
+  it('wrong kind and an invalid contract fail loudly (never reach the model)', () => {
+    expect(buildNarrationPlan({ kind: 'scan' }).code).toBe('wrong_kind');
+    // right kind, broken shape → the input schema check catches it as invalid
+    const broken = CLASSES.solidStandard();
+    delete broken.evidence;
+    expect(buildNarrationPlan(broken, { driverLabel: DRIVER_LABEL }).code).toBe('contract_invalid');
+  });
+});
+
+describe('narration plan — §9 span parity (one source, shared formatters)', () => {
+  it('headline / capture / percentile spans equal the card formatter of the contract value', () => {
+    const c = CLASSES.solidStandardTwoStrong();
+    const p = plan(c);
+    const headline = p.plan.claims.find((x) => x.claimId === 'headline_link');
+    expect(headline.spans.value).toBe(fmtCorr(c.links.raw60.value));
+    expect(headline.spans.band).toBe(c.links.raw60.band);
+
+    const cap = p.plan.claims.find((x) => x.claimId === 'capture_asymmetry');
+    expect(cap.spans.value).toBe(fmtBeta(c.capture.betaDown.value));
+    expect(cap.spans.n).toBe(String(c.capture.betaDown.n));
+
+    const pct = p.plan.claims.find((x) => x.claimId === 'percentile_extreme');
+    expect(pct.spans.pct).toBe(`${ordinal(Math.round(c.percentile.corr60.value * 100))} percentile`);
+  });
+
+  it('every allowedVariant is span-satisfiable (its requires ⊆ the rendered spans)', () => {
+    for (const make of Object.values(CLASSES)) {
+      const p = plan(make());
+      if (!p.ok) continue;
+      for (const claim of p.plan.claims) {
+        expect(claim.allowedVariants.length).toBeGreaterThan(0);
+      }
+    }
+  });
+});

@@ -44,6 +44,9 @@ import {
   cohesionPhrase,
   contributionVerdict,
   captureVerdict,
+  fmtCorr,
+  fmtPct,
+  fmtBeta,
 } from './correlationVerdict';
 // V2 Build 6 — the group validators now live in correlationGroup.js, their new
 // canonical home (the source hooks import the SAME parseGroup/SYMBOL_RE there,
@@ -59,7 +62,7 @@ import {
 } from './correlationGroup';
 import useWatchlistGroup from '../../hooks/useWatchlistGroup';
 import useAgentBookGroup from '../../hooks/useAgentBookGroup';
-import { CORRELATION_EXTENDED_DRIVERS_ENABLED } from '../../config/featureFlags';
+import { CORRELATION_EXTENDED_DRIVERS_ENABLED, CORRELATION_NARRATION_ENABLED } from '../../config/featureFlags';
 
 // Client-side mirror of the driver registry LABELS only (the api registry is
 // server code — do not import it into the bundle; units/interpretations come
@@ -209,10 +212,10 @@ const EXAMPLE_CHIPS = [
   { label: 'Tech vs fear (VIX)', group: 'QQQ', driver: 'VIX' },
 ];
 
-// ── formatting (math layer returns decimal fractions; multiply by 100 ONCE here) ──
-const fmtCorr = (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2));
-const fmtPct = (v, dp = 1) => (v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(dp) + '%');
-const fmtBeta = (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2));
+// ── formatting: fmtCorr / fmtPct / fmtBeta now live in ./correlationVerdict
+// (imported above) so the Lab cards and the Phase-2 narration spans render every
+// number from ONE source (§9). The math layer returns decimal fractions; fmtPct
+// multiplies by 100 ONCE inside that shared helper. ──
 
 /**
  * resolveResultLabels — the driver label/unit strings for EVERY result surface,
@@ -1694,6 +1697,11 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
   // a scan is displayed; the last-shown result of the other kind is dropped.
   const [state, setState] = useState({ status: 'idle', data: null, error: null, kind: 'single' });
   const [chartTab, setChartTab] = useState('corr');
+  // V3 Phase 2 — "Explain this read" narration (flag-gated, deep-dive only). Its
+  // own status so the button/loader live beside the verdict without disturbing
+  // the main result state. `source` labels what the user is reading (§9):
+  // 'generated' (the voice) vs 'template' (the deterministic standard summary).
+  const [narration, setNarration] = useState({ status: 'idle', text: null, source: null, debug: null });
   // V3 Sub-build 3 — the "Include extended drivers" scan toggle. Off by default,
   // sticky per SESSION only (sessionStorage, guarded for the SSR/test render
   // path). Only ever surfaced when CORRELATION_EXTENDED_DRIVERS_ENABLED is on;
@@ -1762,6 +1770,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
       setInputError(null);
       const seq = ++runSeq.current;
       setState({ status: 'loading', data: null, error: null, kind: 'single' });
+      setNarration({ status: 'idle', text: null, source: null, debug: null }); // a new read → drop any prior explanation
       fetchWithAuth('/api/research/correlation', {
         method: 'POST',
         body: JSON.stringify({
@@ -1952,6 +1961,40 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
   // this (never the live select). Non-null only in the single-driver ready
   // state — every consumer sits inside the `data`-guarded result block.
   const resultLabels = data ? resolveResultLabels(data) : null;
+
+  // V3 Phase 2 — the "Explain this read" narration. Deep-dive only (kind
+  // 'single'), request params sourced from the PAYLOAD (data.meta) so they match
+  // the read actually computed — never the live inputs (§9). `?narrationDebug=1`
+  // asks the endpoint for the plan + source (dev affordance; the endpoint is 404
+  // when the flag is dark, so this is inert in production until the flip).
+  const narrationDebug =
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('narrationDebug') === '1';
+  const explainRead = () => {
+    const data = state.data;
+    if (!data || state.kind !== 'single') return;
+    const meta = data.meta || {};
+    setNarration({ status: 'loading', text: null, source: null, debug: null });
+    fetchWithAuth('/api/research/correlation-narrate', {
+      method: 'POST',
+      body: JSON.stringify({
+        group: meta.group,
+        driver: meta.driver,
+        ...(meta.driver === 'CUSTOM' ? { customSymbol: meta.driverLabel } : {}),
+        ...(typeof meta.lookbackDays === 'number' ? { lookbackDays: meta.lookbackDays } : {}),
+        ...(narrationDebug ? { debug: true } : {}),
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`narrate_${r.status}`))))
+      .then((resp) =>
+        setNarration({
+          status: 'ready',
+          text: resp.narration ?? null,
+          source: resp.source ?? null,
+          debug: narrationDebug ? { source: resp.source, cached: resp.cached, versions: resp.versions, plan: resp.plan ?? null, fallback: resp.fallback ?? null } : null,
+        })
+      )
+      .catch(() => setNarration({ status: 'error', text: null, source: null, debug: null }));
+  };
 
   // V3 Sub-build 3 — the driver-audit dev view (the liquidity gate). Reachable
   // ONLY via ?driverAudit=1 on the standalone Lab (not the embedded Discover
@@ -2193,6 +2236,45 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
               </div>
             ) : null;
           })()}
+
+          {/* V3 Phase 2 — "Explain this read" narration (flag-gated; absence-tolerant).
+              Renders adjacent to the numbers it describes; a template fallback carries
+              a subtle "standard summary" tag (§9 — the label states what you're reading). */}
+          {CORRELATION_NARRATION_ENABLED ? (
+            <div style={{ ...card, borderColor: `${GOLD}22` }}>
+              {narration.status === 'idle' ? (
+                <button
+                  type="button"
+                  onClick={explainRead}
+                  style={{ background: 'transparent', border: `1px solid ${GOLD}66`, color: GOLD, borderRadius: 8, padding: '6px 12px', fontSize: 13, cursor: 'pointer' }}
+                >
+                  Explain this read
+                </button>
+              ) : null}
+              {narration.status === 'loading' ? (
+                <div style={{ fontSize: 13, color: HOLO_COLORS.textMuted }}>Explaining…</div>
+              ) : null}
+              {narration.status === 'error' ? (
+                <div style={{ fontSize: 13, color: RED }}>Couldn’t explain this read right now.</div>
+              ) : null}
+              {narration.status === 'ready' && narration.text ? (
+                <>
+                  <div style={{ fontSize: 14, color: HOLO_COLORS.textPrimary, lineHeight: 1.55 }}>{narration.text}</div>
+                  {narration.source === 'template' ? (
+                    <div style={{ fontSize: 11, color: HOLO_COLORS.textMuted, marginTop: 6 }}>standard summary</div>
+                  ) : null}
+                </>
+              ) : null}
+              {narration.status === 'ready' && !narration.text ? (
+                <div style={{ fontSize: 13, color: HOLO_COLORS.textMuted }}>No summary available for this read.</div>
+              ) : null}
+              {narration.debug ? (
+                <pre style={{ marginTop: 10, fontSize: 11, fontFamily: MONO, color: HOLO_COLORS.textMuted, whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+                  {JSON.stringify(narration.debug, null, 2)}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* 2 — Headline strip */}
           <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(auto-fit, minmax(200px, 1fr))' : '1fr', gap: 12 }}>
