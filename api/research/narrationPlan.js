@@ -22,12 +22,33 @@ import { validateContract, schemaForKind } from './summaryContractSchema.js';
 import { fmtCorr, fmtPct, fmtBeta, ordinal } from '../../src/components/Research/correlationVerdict.js';
 import { PHRASEBOOK, variantsFor } from './narrationPhrasebook.js';
 
-export const PLAN_BUILDER_VERSION = '1';
+export const PLAN_BUILDER_VERSION = '1.1';
 
-// ── Vocabulary (pinned) ──────────────────────────────────────────────────────
-const WINDOW_60_PHRASE = 'over the past 3 months'; // corr60 — matches buildVerdictSentence
-const WINDOW_20_PHRASE = 'over the past month'; // corr20 fallback
+// ── Vocabulary (pinned) — each sampleSpan is bound to its OWN window so the
+//    phrase matches the horizon the metric was measured over (§9). ────────────
+const WINDOW_PHRASE = { 20: 'over the past month', 60: 'over the past 3 months' };
+const SAMPLE_PHRASE = 'in this sample'; // sample-wide reads (tension, capture, tail, vol)
+const DRIVER_MOVE_PHRASE = 'over the past 20 sessions'; // driverContext.trailingReturn — matches the card
 const sessionsPhrase = (n) => `across ${n} sessions`;
+
+// Render a numeric span from its envelope's OWN unit field — the ONE place the
+// display unit is decided (§9 / diff-mode drivers). correlation → fmtCorr,
+// beta → fmtBeta, return_fraction → fmtPct(1dp), fraction → fmtPct(0dp),
+// standard_deviations → " SD", counts → String. Reads the contract's pre-rounded
+// value verbatim — never re-rounds.
+function renderByUnit(env) {
+  const { value, unit } = env;
+  switch (unit) {
+    case 'correlation': return fmtCorr(value);
+    case 'beta': return fmtBeta(value);
+    case 'return_fraction': return fmtPct(value, 1);
+    case 'fraction': return fmtPct(value, 0);
+    case 'standard_deviations': return `${value.toFixed(2)} SD`;
+    case 'count':
+    case 'trading_days': return String(value);
+    default: return String(value);
+  }
+}
 
 // Failing/missing criterion → a rendered clause (server span, lexicon-clean).
 const CRITERION_PHRASE = {
@@ -111,7 +132,7 @@ function buildCaveat(readState, tensionState, criteriaById, sampleSpan) {
 
 // ── Proxy disclosure ─────────────────────────────────────────────────────────
 function buildProxy(name, requiredPosition) {
-  const spans = { name, sampleSpan: WINDOW_60_PHRASE };
+  const spans = { name, sampleSpan: WINDOW_PHRASE[60] };
   const allowedVariants = prune('proxy_disclosure', spans);
   if (!allowedVariants.length) return null;
   return claim({ claimId: 'proxy_disclosure', subjectId: 'read_type', metricId: 'evidence.readType', fieldPath: 'links.adjusted60', spans, requiredPosition, allowedVariants, suppressedFamilies: ['adjusted_link'] });
@@ -123,28 +144,28 @@ function buildHeadline(contract, name, marketProxy) {
   // Prefer the 60d headline; fall back to 20d. A null band (|corr| < 0.15) is a
   // "no reliable link" read — not narratable via the band frames → template floor.
   let link = null;
-  let windowPhrase = null;
-  if (okNum(raw60) && raw60.band) { link = raw60; windowPhrase = WINDOW_60_PHRASE; }
-  else if (okNum(raw20) && raw20.band) { link = raw20; windowPhrase = WINDOW_20_PHRASE; }
+  let window = null;
+  if (okNum(raw60) && raw60.band) { link = raw60; window = 60; }
+  else if (okNum(raw20) && raw20.band) { link = raw20; window = 20; }
   if (!link) return null;
 
   const spans = {
     name,
     direction: link.value >= 0 ? 'with' : 'against',
     band: link.band,
-    value: fmtCorr(link.value),
-    sampleSpan: windowPhrase,
+    value: renderByUnit(link),
+    sampleSpan: WINDOW_PHRASE[window],
   };
   const suppressedFamilies = [];
   // Adjusted clause only for a standard read whose adjusted link is an ok band.
   if (!marketProxy) {
     const adj = okNum(adjusted60) && adjusted60.band ? adjusted60 : (okNum(adjusted20) && adjusted20.band ? adjusted20 : null);
-    if (adj) { spans.adjBand = adj.band; spans.adjValue = fmtCorr(adj.value); }
+    if (adj) { spans.adjBand = adj.band; spans.adjValue = renderByUnit(adj); }
     else suppressedFamilies.push('adjusted_link');
   } else {
     suppressedFamilies.push('adjusted_link'); // the proxy claim IS the adjusted statement
   }
-  const metricId = windowPhrase === WINDOW_60_PHRASE ? 'links.raw60' : 'links.raw20';
+  const metricId = window === 60 ? 'links.raw60' : 'links.raw20';
   return claim({ claimId: 'headline_link', subjectId: 'group_vs_driver', metricId, fieldPath: metricId, spans, allowedVariants: prune('headline_link', spans), suppressedFamilies });
 }
 
@@ -154,45 +175,61 @@ function buildHeadline(contract, name, marketProxy) {
 function buildSupporting(id, contract, name, tensionState) {
   switch (id) {
     case 'tension_elevated': {
-      if (tensionState !== 'elevated' || !okNum(contract.tension?.sds)) return null;
-      const spans = { sds: `${contract.tension.sds.value.toFixed(2)} SD`, sampleSpan: WINDOW_60_PHRASE };
-      return claim({ claimId: id, subjectId: 'tension', metricId: 'tension.sds', fieldPath: 'tension.sds', spans, allowedVariants: prune(id, spans) });
+      // Cite the divergence `d` (correlation unit) — the number the gauge prints
+      // via fmtCorr (§9), never the SDS-as-significance.
+      if (tensionState !== 'elevated' || !okNum(contract.tension?.d)) return null;
+      const spans = { value: renderByUnit(contract.tension.d), sampleSpan: SAMPLE_PHRASE };
+      return claim({ claimId: id, subjectId: 'tension', metricId: 'tension.d', fieldPath: 'tension.d', spans, allowedVariants: prune(id, spans) });
     }
     case 'percentile_extreme': {
-      const p = okNum(contract.percentile?.corr60) ? contract.percentile.corr60 : (okNum(contract.percentile?.corr20) ? contract.percentile.corr20 : null);
-      if (!p || (p.value > 0.1 && p.value < 0.9)) return null;
-      const spans = { pct: `${ordinal(Math.round(p.value * 100))} percentile`, sampleSpan: WINDOW_60_PHRASE };
-      return claim({ claimId: id, subjectId: 'percentile', metricId: 'percentile', fieldPath: 'percentile', spans, allowedVariants: prune(id, spans) });
+      // Prefer the 1-month percentile (the one the card shows) when IT is extreme,
+      // else the 3-month; the sampleSpan tracks whichever window was used.
+      const isExtreme = (e) => okNum(e) && (e.value <= 0.1 || e.value >= 0.9);
+      let p = null; let window = null;
+      if (isExtreme(contract.percentile?.corr20)) { p = contract.percentile.corr20; window = 20; }
+      else if (isExtreme(contract.percentile?.corr60)) { p = contract.percentile.corr60; window = 60; }
+      if (!p) return null;
+      const spans = { pct: `${ordinal(Math.round(p.value * 100))} percentile`, sampleSpan: WINDOW_PHRASE[window] };
+      return claim({ claimId: id, subjectId: 'percentile', metricId: `percentile.corr${window}`, fieldPath: `percentile.corr${window}`, spans, allowedVariants: prune(id, spans) });
     }
     case 'capture_asymmetry': {
+      // Two-sided: both betas with their own n, and the stronger side named.
       const cmp = contract.capture?.comparison?.value;
       if (cmp !== 'down' && cmp !== 'up') return null; // only a named-direction asymmetry
-      const betaEnv = cmp === 'down' ? contract.capture.betaDown : contract.capture.betaUp;
-      if (!okNum(betaEnv) || betaEnv.n == null) return null;
-      const spans = { direction: cmp, value: fmtBeta(betaEnv.value), n: String(betaEnv.n), sampleSpan: WINDOW_60_PHRASE };
-      return claim({ claimId: id, subjectId: 'capture', metricId: `capture.beta${cmp === 'down' ? 'Down' : 'Up'}`, fieldPath: 'capture', spans, allowedVariants: prune(id, spans) });
+      const bDown = contract.capture.betaDown;
+      const bUp = contract.capture.betaUp;
+      if (!okNum(bDown) || !okNum(bUp) || bDown.n == null || bUp.n == null) return null;
+      const spans = {
+        direction: cmp,
+        betaDown: renderByUnit(bDown), betaUp: renderByUnit(bUp),
+        nDown: String(bDown.n), nUp: String(bUp.n),
+        sampleSpan: SAMPLE_PHRASE,
+      };
+      return claim({ claimId: id, subjectId: 'capture', metricId: 'capture', fieldPath: 'capture', spans, allowedVariants: prune(id, spans) });
     }
     case 'tail_comovement': {
       const w = contract.tail?.worst;
       if (!w || !okNum(w.n) || !okNum(w.coMoveCount)) return null;
-      const spans = { n: String(w.n.value), coMoveCount: String(w.coMoveCount.value), sampleSpan: WINDOW_60_PHRASE };
+      const spans = { name, n: String(w.n.value), coMoveCount: String(w.coMoveCount.value), sampleSpan: SAMPLE_PHRASE };
       return claim({ claimId: id, subjectId: 'tail', metricId: 'tail.worst', fieldPath: 'tail.worst', spans, allowedVariants: prune(id, spans) });
     }
     case 'low_cohesion': {
       const c = contract.cohesion?.c20;
       if (!okNum(c) || !(c.band === 'loose' || c.value < 0)) return null;
-      const spans = { value: fmtCorr(c.value), sampleSpan: WINDOW_60_PHRASE };
+      const spans = { value: renderByUnit(c), sampleSpan: WINDOW_PHRASE[20] }; // c20 = a 1-month window
       return claim({ claimId: id, subjectId: 'cohesion', metricId: 'cohesion.c20', fieldPath: 'cohesion.c20', spans, allowedVariants: prune(id, spans) });
     }
     case 'driver_context': {
       const vol = contract.driverContext?.volPercentile;
       const ret = contract.driverContext?.trailingReturn;
       if (okNum(vol) && vol.value >= 0.8) {
-        const spans = { name, volpct: `${ordinal(Math.round(vol.value * 100))} percentile`, sampleSpan: WINDOW_60_PHRASE };
+        const spans = { name, volpct: `${ordinal(Math.round(vol.value * 100))} percentile`, sampleSpan: SAMPLE_PHRASE };
         return claim({ claimId: id, subjectId: 'driver_context', metricId: 'driverContext.volPercentile', fieldPath: 'driverContext.volPercentile', spans, allowedVariants: prune(id, spans) });
       }
       if (okNum(ret) && Math.abs(ret.value) >= 0.1) {
-        const spans = { name, ret: fmtPct(ret.value, 1), sampleSpan: WINDOW_60_PHRASE };
+        // renderByUnit consumes the envelope's own unit (return_fraction → fmtPct) so
+        // a diff-mode driver's trailing move formats from the contract, not a guess.
+        const spans = { name, ret: renderByUnit(ret), sampleSpan: DRIVER_MOVE_PHRASE };
         return claim({ claimId: id, subjectId: 'driver_context', metricId: 'driverContext.trailingReturn', fieldPath: 'driverContext.trailingReturn', spans, allowedVariants: prune(id, spans) });
       }
       return null;

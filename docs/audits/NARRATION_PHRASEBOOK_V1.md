@@ -3,9 +3,10 @@
 > **This is the product's voice.** Read it like copy, not like constants. The model may only
 > pick one approved frame per claim and one approved connective; it fills the `{slots}` with
 > server-rendered values and authors nothing else. Every frame is past-tense and sample-bounded,
-> with no causal, forward-looking, advisory, or certainty language.
+> with no causal, forward-looking, advisory, or certainty language. Each claim's sample span is
+> bound to its own measurement window, and every number echoes the card it sits beside.
 
-- phrasebookVersion: `1`  ·  promptVersion: `1`  ·  modelVersion: `google/gemma-4-26b-a4b-it`
+- phrasebookVersion: `1.1`  ·  promptVersion: `1`  ·  modelVersion: `google/gemma-4-26b-a4b-it`
 - Approved connectives: _(none)_ · `And` · `But` · `Still,` · `Meanwhile,` · `That said,`
 
 _Optional ChatGPT pass before the flip: "Which of these frames could be read as predictive?"_
@@ -17,8 +18,8 @@ _Optional ChatGPT pass before the flip: "Which of these frames could be read as 
 
 ## Opening caveat — fragile read  `caveat_fragile`
 
-- **frag_a** — This was a fragile read across 480 sessions: the sample was thin.
-- **frag_b** — The read held across 480 sessions but stayed fragile — the sample was thin.
+- **frag_a** — This was a fragile read across 480 sessions: the group did not move as one and one member carried it.
+- **frag_b** — The read held across 480 sessions but stayed fragile — the group did not move as one and one member carried it.
 
 ## Opening caveat — in flux  `caveat_in_flux`
 
@@ -39,33 +40,33 @@ _Optional ChatGPT pass before the flip: "Which of these frames could be read as 
 
 ## Supporting — elevated tension  `tension_elevated`
 
-- **tens_a** — Tension held elevated at 0.80 SD over the past 3 months.
-- **tens_b** — The link sat 0.80 SD above its usual spread over the past 3 months.
+- **tens_a** — Tension held elevated, the link +0.30 off its baseline in this sample.
+- **tens_b** — The link sat +0.30 off its usual level in this sample.
 
 ## Supporting — percentile extreme  `percentile_extreme`
 
-- **pct_a** — The link ranked 92nd percentile against its own history over the past 3 months.
-- **pct_b** — Measured over the past 3 months, the link ranked 92nd percentile of its own range.
+- **pct_a** — The link sat in the 92nd percentile of its own history over the past month.
+- **pct_b** — Measured over the past month, the link ranked in the 92nd percentile of its own history.
 
-## Supporting — capture asymmetry  `capture_asymmetry`
+## Supporting — capture asymmetry (two-sided)  `capture_asymmetry`
 
-- **cap_a** — The group tracked harder on with days, +0.55 beta across 120 sessions over the past 3 months.
-- **cap_b** — On with days the group moved more, +0.55 beta over 120 sessions over the past 3 months.
+- **cap_a** — The group ran +1.30 beta on 120 down days and +0.90 on 130 up days, stronger on down days in this sample.
+- **cap_b** — Stronger on down days in this sample, the group ran +1.30 beta across 120 down days versus +0.90 across 130 up days.
 
 ## Supporting — tail co-movement  `tail_comovement`
 
-- **tail_a** — On its 120 sharpest down days, the group co-moved 18 times over the past 3 months.
-- **tail_b** — Across its 120 worst sessions, the group moved together 18 times over the past 3 months.
+- **tail_a** — On the 24 weakest 10Y Yield days, the group moved down on 18 of them in this sample.
+- **tail_b** — On 10Y Yield's 24 weakest days in this sample, the group moved down on 18 of them.
 
 ## Supporting — low cohesion  `low_cohesion`
 
-- **coh_a** — The group split into several stories at once, +0.55 internal cohesion over the past 3 months.
-- **coh_b** — Its members split several ways over the past 3 months, +0.55 internal cohesion.
+- **coh_a** — The group split into several stories at once, -0.20 internal cohesion over the past month.
+- **coh_b** — Its members split several ways over the past month, -0.20 internal cohesion.
 
 ## Supporting — driver context  `driver_context`
 
-- **dc_vol** — 10Y Yield's own swings sat in the 88th percentile of its range over the past 3 months.
-- **dc_ret** — 10Y Yield itself moved +12.0% over the past 3 months.
+- **dc_vol** — 10Y Yield's own volatility sat in the 88th percentile of its history in this sample.
+- **dc_ret** — 10Y Yield itself moved +12.0% over the past 20 sessions.
 
 ## Closing caveat  `closing_caveat`
 

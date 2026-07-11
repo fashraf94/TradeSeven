@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildNarrationPlan } from './narrationPlan.js';
 import { CLASSES, DRIVER_LABEL, deepContract } from './narrationCorpus.js';
-import { fmtCorr, fmtBeta, ordinal } from '../../src/components/Research/correlationVerdict.js';
+import { fmtCorr, fmtBeta, fmtPct, ordinal } from '../../src/components/Research/correlationVerdict.js';
 
 const plan = (contract) => buildNarrationPlan(contract, { driverLabel: DRIVER_LABEL });
 const ids = (p) => p.plan.claims.map((c) => c.claimId);
@@ -131,12 +131,39 @@ describe('narration plan — §9 span parity (one source, shared formatters)', (
     expect(headline.spans.value).toBe(fmtCorr(c.links.raw60.value));
     expect(headline.spans.band).toBe(c.links.raw60.band);
 
+    // two-sided capture: both betas + both n's + the stronger side named
     const cap = p.plan.claims.find((x) => x.claimId === 'capture_asymmetry');
-    expect(cap.spans.value).toBe(fmtBeta(c.capture.betaDown.value));
-    expect(cap.spans.n).toBe(String(c.capture.betaDown.n));
+    expect(cap.spans.betaDown).toBe(fmtBeta(c.capture.betaDown.value));
+    expect(cap.spans.betaUp).toBe(fmtBeta(c.capture.betaUp.value));
+    expect(cap.spans.nDown).toBe(String(c.capture.betaDown.n));
+    expect(cap.spans.nUp).toBe(String(c.capture.betaUp.n));
+    expect(cap.spans.direction).toBe(c.capture.comparison.value);
 
+    // percentile prefers corr20 (card-shown); corr20 not extreme here → falls to corr60
     const pct = p.plan.claims.find((x) => x.claimId === 'percentile_extreme');
     expect(pct.spans.pct).toBe(`${ordinal(Math.round(c.percentile.corr60.value * 100))} percentile`);
+    expect(pct.spans.sampleSpan).toBe('over the past 3 months');
+  });
+
+  it('R2: TNX driver_context renders the trailing move from the envelope unit, over 20 sessions', () => {
+    const c = CLASSES.tnxDriverContext();
+    const p = plan(c);
+    expect(p.ok).toBe(true);
+    expect(ids(p)[0]).toBe('caveat_fragile'); // fragile (broad_based fails) so the read isn't thin
+    const dc = p.plan.claims.find((x) => x.claimId === 'driver_context');
+    expect(dc).toBeTruthy();
+    expect(dc.spans.ret).toBe(fmtPct(c.driverContext.trailingReturn.value, 1)); // return_fraction unit → fmtPct
+    expect(dc.spans.sampleSpan).toBe('over the past 20 sessions');
+  });
+
+  it('R3: a caveat with multiple failing criteria joins them via the phrase table', () => {
+    const c = deepContract({
+      cohesion: { c20: { value: 0.3, pairsUsed: 3, pairsTotal: 3 }, c60: { value: 0.3, pairsUsed: 3, pairsTotal: 3 }, memberCount: 3 },
+      contribution: { full: { corr: 0.62, beta: 1.1 }, members: [{ index: 0, corrDelta: 0.2, betaDelta: 0.1 }, { index: 1, corrDelta: 0.02, betaDelta: 0.05 }, { index: 2, corrDelta: 0.01, betaDelta: 0.03 }], window: 60, n: 60, memberSymbols: ['CVX', 'XOM', 'XLE'], breadthStatus: 'single_driver' },
+    });
+    const caveat = plan(c).plan.claims[0];
+    expect(caveat.claimId).toBe('caveat_fragile');
+    expect(caveat.spans.criterion).toBe('the group did not move as one and one member carried it');
   });
 
   it('every allowedVariant is span-satisfiable (its requires ⊆ the rendered spans)', () => {

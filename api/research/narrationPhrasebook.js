@@ -26,7 +26,7 @@
 // narration cache by construction — it is a docId component). promptVersion:
 // the render-instruction contract. modelVersion: pinned to gemmaClient's model
 // (asserted equal in the meta-test) so a model swap invalidates cached voice.
-export const PHRASEBOOK_VERSION = '1';
+export const PHRASEBOOK_VERSION = '1.1';
 export const PROMPT_VERSION = '1';
 export const MODEL_VERSION = 'google/gemma-4-26b-a4b-it';
 
@@ -51,7 +51,7 @@ export const BANNED_LEXICON = [
 // no-present-tense-universal guard). Kept in sync with the frames below by the
 // structural meta-test.
 export const APPROVED_PAST_VERBS = [
-  'moved', 'held', 'tracked', 'was', 'were', 'ranked', 'sat', 'split',
+  'moved', 'held', 'tracked', 'was', 'were', 'ranked', 'ran', 'sat', 'split',
   'described', 'stayed', 'measured', 'co-moved',
 ];
 
@@ -105,31 +105,37 @@ export const PHRASEBOOK = {
 
   // ── Supporting claims (≤2) ──
   tension_elevated: {
-    slots: ['sds', 'sampleSpan'],
+    // Cites the divergence `d` (correlation unit) — the SAME number the gauge
+    // prints via fmtCorr (§9); SDS is never presented as significance.
+    slots: ['value', 'sampleSpan'],
     variants: [
-      { id: 'tens_a', requires: ['sds', 'sampleSpan'], template: 'Tension held elevated at {sds} {sampleSpan}.' },
-      { id: 'tens_b', requires: ['sds', 'sampleSpan'], template: 'The link sat {sds} above its usual spread {sampleSpan}.' },
+      { id: 'tens_a', requires: ['value', 'sampleSpan'], template: 'Tension held elevated, the link {value} off its baseline {sampleSpan}.' },
+      { id: 'tens_b', requires: ['value', 'sampleSpan'], template: 'The link sat {value} off its usual level {sampleSpan}.' },
     ],
   },
   percentile_extreme: {
     slots: ['pct', 'sampleSpan'],
     variants: [
-      { id: 'pct_a', requires: ['pct', 'sampleSpan'], template: 'The link ranked {pct} against its own history {sampleSpan}.' },
-      { id: 'pct_b', requires: ['pct', 'sampleSpan'], template: 'Measured {sampleSpan}, the link ranked {pct} of its own range.' },
+      { id: 'pct_a', requires: ['pct', 'sampleSpan'], template: 'The link sat in the {pct} of its own history {sampleSpan}.' },
+      { id: 'pct_b', requires: ['pct', 'sampleSpan'], template: 'Measured {sampleSpan}, the link ranked in the {pct} of its own history.' },
     ],
   },
   capture_asymmetry: {
-    slots: ['direction', 'value', 'n', 'sampleSpan'],
+    // Two-sided — echoes the "Down days vs up days" card: both betas with their
+    // own n, and a grammatical {direction} slot naming the stronger side.
+    slots: ['direction', 'betaDown', 'betaUp', 'nDown', 'nUp', 'sampleSpan'],
     variants: [
-      { id: 'cap_a', requires: ['direction', 'value', 'n', 'sampleSpan'], template: 'The group tracked harder on {direction} days, {value} beta across {n} sessions {sampleSpan}.' },
-      { id: 'cap_b', requires: ['direction', 'value', 'n', 'sampleSpan'], template: 'On {direction} days the group moved more, {value} beta over {n} sessions {sampleSpan}.' },
+      { id: 'cap_a', requires: ['direction', 'betaDown', 'betaUp', 'nDown', 'nUp', 'sampleSpan'], template: 'The group ran {betaDown} beta on {nDown} down days and {betaUp} on {nUp} up days, stronger on {direction} days {sampleSpan}.' },
+      { id: 'cap_b', requires: ['direction', 'betaDown', 'betaUp', 'nDown', 'nUp', 'sampleSpan'], template: 'Stronger on {direction} days {sampleSpan}, the group ran {betaDown} beta across {nDown} down days versus {betaUp} across {nUp} up days.' },
     ],
   },
   tail_comovement: {
-    slots: ['n', 'coMoveCount', 'sampleSpan'],
+    // Echoes the tail card ("On the N weakest {driver} days ... the group was also
+    // down on M of them") with the driver named.
+    slots: ['name', 'n', 'coMoveCount', 'sampleSpan'],
     variants: [
-      { id: 'tail_a', requires: ['n', 'coMoveCount', 'sampleSpan'], template: 'On its {n} sharpest down days, the group co-moved {coMoveCount} times {sampleSpan}.' },
-      { id: 'tail_b', requires: ['n', 'coMoveCount', 'sampleSpan'], template: 'Across its {n} worst sessions, the group moved together {coMoveCount} times {sampleSpan}.' },
+      { id: 'tail_a', requires: ['name', 'n', 'coMoveCount', 'sampleSpan'], template: 'On the {n} weakest {name} days, the group moved down on {coMoveCount} of them {sampleSpan}.' },
+      { id: 'tail_b', requires: ['name', 'n', 'coMoveCount', 'sampleSpan'], template: "On {name}'s {n} weakest days {sampleSpan}, the group moved down on {coMoveCount} of them." },
     ],
   },
   low_cohesion: {
@@ -140,9 +146,12 @@ export const PHRASEBOOK = {
     ],
   },
   driver_context: {
+    // Echoes the "Relationship context" card: the trailing move over the past 20
+    // sessions (rendered from the envelope's own unit), and the volatility
+    // percentile of its history.
     slots: ['name', 'volpct', 'ret', 'sampleSpan'],
     variants: [
-      { id: 'dc_vol', requires: ['name', 'volpct', 'sampleSpan'], template: "{name}'s own swings sat in the {volpct} of its range {sampleSpan}." },
+      { id: 'dc_vol', requires: ['name', 'volpct', 'sampleSpan'], template: "{name}'s own volatility sat in the {volpct} of its history {sampleSpan}." },
       { id: 'dc_ret', requires: ['name', 'ret', 'sampleSpan'], template: '{name} itself moved {ret} {sampleSpan}.' },
     ],
   },

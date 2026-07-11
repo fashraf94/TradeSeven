@@ -31,6 +31,7 @@ function render(plan, { variantIndex = 0, connectives = null } = {}) {
 const CLASS_NAMES = [
   'solidStandard', 'fragileStandard', 'limitedStandard', 'inFluxStandard',
   'solidMarketProxy', 'fragileMarketProxy', 'inFluxMarketProxy', 'solidStandardTwoStrong',
+  'tnxDriverContext',
 ];
 
 describe('conformance — golden accept (the 8 contract classes)', () => {
@@ -67,14 +68,14 @@ describe('conformance — adversarial reject (each MUST fail)', () => {
   const pProxy = mkPlan(CLASSES.solidMarketProxy); // [proxy, headline, capture, tail]
   const pLimited = mkPlan(CLASSES.limitedStandard); // [caveat_limited, headline, capture, tail, closing]
 
-  const capVal = pSolid.claims[1].spans.value; // beta, e.g. +1.30
-  const capN = pSolid.claims[1].spans.n; // e.g. 120
+  const betaDown = pSolid.claims[1].spans.betaDown; // e.g. +1.30 (capture down-day beta)
+  const nDown = pSolid.claims[1].spans.nDown; // e.g. 120
   const tailN = pSolid.claims[2].spans.n; // e.g. 24
   const hlVal = pSolid.claims[0].spans.value; // corr, e.g. +0.55
 
   it('1 right-number-wrong-metric → E_NO_VARIANT_MATCH', () => {
     const g = render(pSolid);
-    g.sentences[0].text = g.sentences[0].text.replace(hlVal, capVal); // corr value → beta value
+    g.sentences[0].text = g.sentences[0].text.replace(hlVal, betaDown); // corr value → beta value
     expect(validateNarration(g, pSolid)).toMatchObject({ valid: false, code: 'E_NO_VARIANT_MATCH', claimIndex: 0 });
   });
 
@@ -111,14 +112,14 @@ describe('conformance — adversarial reject (each MUST fail)', () => {
 
   it('7 n omitted → E_NO_VARIANT_MATCH', () => {
     const g = render(pSolid);
-    g.sentences[1].text = g.sentences[1].text.replace(` across ${capN} sessions`, '');
+    g.sentences[1].text = g.sentences[1].text.replace(` on ${nDown} down days`, '');
     expect(validateNarration(g, pSolid)).toMatchObject({ valid: false, code: 'E_NO_VARIANT_MATCH', claimIndex: 1 });
   });
 
   it('8 borrowed n (another claim\'s n) → E_NO_VARIANT_MATCH', () => {
-    expect(capN).not.toBe(tailN);
+    expect(nDown).not.toBe(tailN);
     const g = render(pSolid);
-    g.sentences[1].text = g.sentences[1].text.replace(capN, tailN);
+    g.sentences[1].text = g.sentences[1].text.replace(nDown, tailN);
     expect(validateNarration(g, pSolid)).toMatchObject({ valid: false, code: 'E_NO_VARIANT_MATCH', claimIndex: 1 });
   });
 
@@ -149,7 +150,7 @@ describe('conformance — adversarial reject (each MUST fail)', () => {
 
   it('13 digit-free comparison → E_NO_VARIANT_MATCH', () => {
     const g = render(pSolid);
-    g.sentences[1].text = g.sentences[1].text.replace(`${capVal} beta`, 'a strong beta');
+    g.sentences[1].text = g.sentences[1].text.replace(`${betaDown} beta`, 'a strong beta');
     expect(validateNarration(g, pSolid).code).toBe('E_NO_VARIANT_MATCH');
   });
 

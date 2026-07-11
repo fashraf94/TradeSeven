@@ -84,6 +84,15 @@ const SYMMETRIC_CAPTURE = {
   },
 };
 const NO_TAIL = { tail: { worst: null, best: null, sampleN: 0 } };
+// broad_based fails (single member carries the link) without touching cohesion —
+// makes the read fragile so driver_context can be the selected supporting claim.
+const SINGLE_DRIVER = {
+  contribution: {
+    full: { corr: 0.62, beta: 1.1 },
+    members: [{ index: 0, corrDelta: 0.2, betaDelta: 0.1 }, { index: 1, corrDelta: 0.02, betaDelta: 0.05 }, { index: 2, corrDelta: 0.01, betaDelta: 0.03 }],
+    window: 60, n: 60, memberSymbols: ['CVX', 'XOM', 'XLE'], breadthStatus: 'single_driver',
+  },
+};
 
 // ── The 8 classes (+ a thin-solid case for the D1 rule) ──────────────────────
 export const CLASSES = {
@@ -109,4 +118,11 @@ export const CLASSES = {
   }),
   // (D1) thin solid / standard — no notable support → routes to template.
   thinSolidStandard: () => deepContract({ ...SYMMETRIC_CAPTURE, ...NO_TAIL }),
+  // TNX driver_context (diff-mode) — a fragile read (broad_based fails) whose ONLY
+  // supporting claim is driver_context, so the trailing-move span renders from the
+  // envelope's own unit (return_fraction → fmtPct) over the past 20 sessions.
+  tnxDriverContext: () => deepContract({
+    ...SINGLE_DRIVER, ...SYMMETRIC_CAPTURE, ...NO_TAIL,
+    driverContext: { trailingReturn: 0.12, vol: { percentile: 55, n: 480, latest: 0.01 } },
+  }),
 };
