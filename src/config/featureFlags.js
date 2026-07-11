@@ -563,3 +563,31 @@ export const CORRELATION_RELATIONSHIP_QUALITY_ENABLED = true;
  * CORRELATION_RELATIONSHIP_QUALITY_ENABLED precedent) — never in the build PR.
  */
 export const CORRELATION_SYNTHESIS_ENABLED = true;
+
+/**
+ * Correlation Intelligence V3 Phase 1, Sub-build 3 — the EXTENDED DRIVER TIER
+ * (Bucket A): five two-gate-verified drivers (SMH, CPER, FXY, TIP, EMLC) added
+ * to the registry as `tier: 'extended'`, admitted as an OPT-IN tier under the
+ * comparison-tax rule (more drivers dim existing signals, so the default scan
+ * stays at the 25 core drivers).
+ *
+ * Built/merged DARK (FALSE). While FALSE the extended drivers enter NO scan and
+ * NO deep dive: the scan's effective driver universe is core-only (so its docId
+ * salt + driverUniverseHash are byte-identical to the pre-build 25-driver
+ * values — the dark merge orphans no cached scans and manufactures zero
+ * not_comparable days), the deep-dive endpoint treats an extended driver key as
+ * invalid_driver, and the Lab hides the "Include extended drivers (5)" scan
+ * toggle + the "Extended" driver-select optgroup. When TRUE, the extended
+ * drivers are scannable ONLY when the user ALSO opts in via the toggle
+ * (includeExtended in the scan body); the deep-dive optgroup becomes selectable.
+ *
+ * The permanent driver-audit tool (api/research/driver-audit.js, reachable via
+ * the Lab's `?driverAudit=1` dev param) is gated by CORRELATION_LAB_ENABLED
+ * ONLY — NOT this flag — so the two-gate verification runs on the Vercel preview
+ * while this tier is still dark. Nested under CORRELATION_LAB_ENABLED —
+ * meaningless when the Lab is off.
+ *
+ * Flip in a one-line follow-up PR after the founder two-gate smoke (the
+ * CORRELATION_SYNTHESIS_ENABLED precedent) — never in the build PR.
+ */
+export const CORRELATION_EXTENDED_DRIVERS_ENABLED = false;

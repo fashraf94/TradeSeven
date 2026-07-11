@@ -75,6 +75,7 @@ import {
   CORRELATION_LAB_ENABLED,
   CORRELATION_RELATIONSHIP_QUALITY_ENABLED,
   CORRELATION_SYNTHESIS_ENABLED,
+  CORRELATION_EXTENDED_DRIVERS_ENABLED,
 } from '../../src/config/featureFlags.js';
 import { strengthBand } from '../../src/components/Research/correlationVerdict.js';
 // V3 Sub-build 2 — the summary contract + the "since your last scan" comparison.
@@ -103,6 +104,10 @@ const SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/; // pinned: accepts BRK.B, BF.B, hyph
 const LOOKBACK = { DEFAULT: 504, MIN: 150, MAX: 1260 };
 // The pinned floor, applied per window (see the header rationale): clearing
 // it on corr20 alone is 'emerging'; on BOTH windows, 'established'.
+// V3 Sub-build 3: the floor is a PER-DRIVER null-sampling threshold (the
+// "roughly two drivers in five past |0.20| by chance" figure is per-driver, not
+// a family-wide rate), so it is unchanged by the extended tier — it holds
+// identically at 30 drivers as at 25. The scan honesty caption stays valid.
 const SCAN_SIGNAL_FLOOR = 0.2;
 // The scan's own chunk discipline (5 concurrent / ~300ms — the fetchAllSeries
 // convention; that helper is single-driver-shaped, so the scan batches the
@@ -278,13 +283,29 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'API not configured' });
   }
 
+  // ── Effective driver universe (V3 Sub-build 3 — the extended-tier rule) ──
+  // Extended drivers are opt-in: included ONLY when the flag is on AND the user
+  // opts in (a small "Include extended drivers" scan-bar toggle → includeExtended).
+  // Everything driver-universe-scoped below — the salt, the docId, the
+  // driverUniverseHash, and the compute loop — reads THIS effective set, never
+  // the whole registry. So a core-only run (flag off, OR flag on but not opted
+  // in) keeps today's exact 25-driver fingerprint: the dark merge orphans zero
+  // cached scans and manufactures zero not_comparable days. An opted-in extended
+  // run gets its own docId family (30-driver salt) and its own universeHash, so
+  // a comparison across opt-in states correctly reads not_comparable.
+  const includeExtended = CORRELATION_EXTENDED_DRIVERS_ENABLED && body.includeExtended === true;
+  const driverKeys = Object.keys(CORRELATION_DRIVERS).filter(
+    (k) => CORRELATION_DRIVERS[k].tier !== 'extended' || includeExtended
+  );
+
   // Scan cache key: the literal 'SCAN' segment namespaces away from every
   // single-driver key (those carry '<driverKey>:<customSymbol>' there, and no
   // registry driver is named SCAN). The registry salt (sorted key:symbol
   // pairs) orphans every cached scan on ANY registry change — a renamed key
   // or swapped proxy symbol must never serve rows the deployed code can't
-  // deep-dive (Build 2.1 decision #3).
-  const registrySalt = Object.keys(CORRELATION_DRIVERS)
+  // deep-dive (Build 2.1 decision #3). Derived from the EFFECTIVE set (above):
+  // core-only ⇒ byte-identical to the pre-extended-tier salt.
+  const registrySalt = [...driverKeys]
     .sort()
     .map((k) => `${k}:${CORRELATION_DRIVERS[k].symbol}`)
     .join(',');
@@ -311,12 +332,12 @@ export default async function handler(req, res) {
     }
 
     // ── Fetch MEMBERS FIRST (code-review fix): a guaranteed-fail group must
-    //    not spend the full 25-driver universe before its 422 — members are
-    //    1–2 chunks, and with 25 registry symbols (a chunk-size multiple) the
-    //    split costs zero extra fetches and no extra sleeps on the happy
+    //    not spend the full driver universe before its 422 — members are
+    //    1–2 chunks, and with the registry symbol count a chunk-size multiple
+    //    the split costs zero extra fetches and no extra sleeps on the happy
     //    path. Members use the repo-standard app→wire normalization; driver
-    //    symbols come exact from the registry, never re-formatted. ──
-    const driverKeys = Object.keys(CORRELATION_DRIVERS);
+    //    symbols come exact from the registry, never re-formatted. `driverKeys`
+    //    is the EFFECTIVE universe computed above (core-only unless opted in). ──
     const memberWire = new Map(group.map((s) => [s, `${normalizeSymbolForEODHD(s)}.US`]));
     const rowsBySymbol = await fetchSymbolUniverse(new Set(memberWire.values()), lookbackDays);
 

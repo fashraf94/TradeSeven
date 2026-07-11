@@ -38,12 +38,13 @@ import { tensionStateFrom } from './correlationAssembly.js';
 import { validateContract, deepDiveContractSchema } from './summaryContractSchema.js';
 
 // ==================== HOISTED MOCK STATE ====================
-const { authReturnValue, labFlag, rqFlag, spyAvailable, synthFlag, bigDoc } = vi.hoisted(() => ({
+const { authReturnValue, labFlag, rqFlag, spyAvailable, synthFlag, extFlag, bigDoc } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   labFlag: { on: true }, // default ON so the flag guard doesn't 404 the behavior tests
   rqFlag: { on: true }, // V3 relationship-quality: default ON so the RQ behavior tests run
   spyAvailable: { on: true }, // toggles the SPY.US wire to exercise the spy_unavailable path
   synthFlag: { on: false }, // V3 Sub-build 2 synthesis: default OFF so the pre-synthesis payload is asserted byte-identical
+  extFlag: { on: false }, // V3 Sub-build 3 extended tier: default OFF so an extended driver key resolves invalid_driver
   bigDoc: { on: false }, // forces serializedByteSize over budget to exercise the skip-on-overflow guard
 }));
 
@@ -73,6 +74,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   get CORRELATION_LAB_ENABLED() { return labFlag.on; },
   get CORRELATION_RELATIONSHIP_QUALITY_ENABLED() { return rqFlag.on; },
   get CORRELATION_SYNTHESIS_ENABLED() { return synthFlag.on; },
+  get CORRELATION_EXTENDED_DRIVERS_ENABLED() { return extFlag.on; },
 }));
 
 // Partial-mock the contract module so a test can force the doc over the size
@@ -194,6 +196,7 @@ function wireFor(symbol) {
   // spy.us→SPY.US), which is why they double as both member and driver fixtures.
   if (symbol === 'BRK-B.US') return MEMBER_A_WIRE;
   if (symbol === 'SPY.US') return MEMBER_B_WIRE;
+  if (symbol === 'SMH.US') return DRIVER_WIRE; // V3 Sub-build 3: an extended-tier driver fixture
   return null;
 }
 
@@ -737,6 +740,29 @@ describe('validation + config guards', () => {
     await handler(req, res);
     expect(res.statusCode).toBe(400);
     expect(res.body.error).toBe(expectedError);
+  });
+
+  // V3 Sub-build 3 — an EXTENDED-tier driver key is gated behind the flag.
+  it('extended driver key + flag OFF → 400 invalid_driver (byte-identical to an unknown key; no fetch)', async () => {
+    extFlag.on = false;
+    const before = fetchCalls.symbols.length;
+    const { req, res } = makeReqRes({ group: ['AAA', 'BBB'], driver: 'SMH', lookbackDays: 400 });
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_driver');
+    expect(fetchCalls.symbols.length).toBe(before); // rejected before any fetch — no extended series touched
+  });
+
+  it('extended driver key + flag ON → resolves (deep dive runs; never invalid_driver)', async () => {
+    extFlag.on = true;
+    try {
+      const { req, res } = makeReqRes({ group: ['AAA', 'BBB'], driver: 'SMH', lookbackDays: 400, forceRefresh: true });
+      await handler(req, res);
+      expect(res.body.error).not.toBe('invalid_driver');
+      expect(res.statusCode).toBe(200); // SMH.US is on the wire → a full deep dive
+    } finally {
+      extFlag.on = false;
+    }
   });
 
   it('accepts dotted/hyphenated tickers (BF.B idiom) at the validation layer', async () => {
