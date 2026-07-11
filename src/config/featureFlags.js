@@ -562,4 +562,4 @@ export const CORRELATION_RELATIONSHIP_QUALITY_ENABLED = true;
  * Flip in a one-line follow-up PR after a founder Vercel-preview smoke (the
  * CORRELATION_RELATIONSHIP_QUALITY_ENABLED precedent) — never in the build PR.
  */
-export const CORRELATION_SYNTHESIS_ENABLED = false;
+export const CORRELATION_SYNTHESIS_ENABLED = true;
