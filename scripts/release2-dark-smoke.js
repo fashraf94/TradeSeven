@@ -57,9 +57,16 @@ for (const [name, expected] of Object.entries(EXPECTED_FLAGS)) {
 
 // ---- 2. Off-state proof ----
 console.log('\n2) Off-state proof (this takes ~30s):');
-const result = spawnSync('npx', ['vitest', 'run', ...OFF_STATE_TEST_FILES], {
+// On Windows the npx launcher is `npx.cmd`; a bare `npx` fails to resolve
+// (ENOENT) and a `.cmd` can't be spawned without a shell (EINVAL, Node's
+// post-CVE-2024-27980 hardening). `shell: true` routes through the platform
+// shell so npx resolves on both Windows and POSIX — without it the proof
+// surfaces as a false RED. Args are hard-coded literal paths (no injection).
+const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+const result = spawnSync(npxCmd, ['vitest', 'run', ...OFF_STATE_TEST_FILES], {
   stdio: ['ignore', 'pipe', 'pipe'],
   encoding: 'utf-8',
+  shell: true,
 });
 const tail = `${result.stdout || ''}\n${result.stderr || ''}`.split('\n').filter((l) => /Test Files|Tests {2}|FAIL/.test(l));
 for (const line of tail) console.log(`   ${line.trim()}`);
