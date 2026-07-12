@@ -62,6 +62,13 @@ test('reportSessionIdxs maps report dates to the first session ≥ date (weekend
   const friday = series.dates[4], saturdayReport = '2024-06-08', monday = series.dates[5];
   assert.equal(series.dates[reportSessionIdxs(series, [friday])[0]], friday);
   assert.equal(series.dates[reportSessionIdxs(series, [saturdayReport])[0]], monday);
+  // a report predating the series must NOT alias to a phantom session-0 report (review fix):
+  // it would fabricate sessions_since_last_earnings and pollute the median inter-report gap.
+  assert.deepEqual(reportSessionIdxs(series, ['2020-01-15']), [], 'pre-series report dropped');
+  const idxs = reportSessionIdxs(series, ['2020-01-15', friday]);
+  assert.deepEqual(idxs, [4], 'only the in-coverage report survives');
+  const early = earningsAt(series, 10, reportSessionIdxs(series, ['2020-01-15']));
+  assert.equal(early.sessions_since_last_earnings, null, 'no in-coverage report → null, not i−0');
 });
 
 test('6.11 — determinism: two identical assembly runs produce byte-identical feature sets', () => {

@@ -31,6 +31,26 @@ test('6.8 — RVOL baselines are time-of-day-matched: a 10:00 touch compares aga
   assert.equal(rvolApproach(pre, 600, baselines.slice(0, 19)), null);
 });
 
+test('6.8b — RVOL is split-adjusted (S3-C1 basis): pre-split baselines compare 1:1 with post-split volume', () => {
+  // Baselines are PRE-split sessions: raw volume 100/bar at adjFactor 0.1 (→ 1000 adjusted shares).
+  // The event session is POST-split: raw volume 1000/bar at adjFactor 1 (→ 1000 adjusted shares).
+  // On the adjusted basis activity is IDENTICAL → rvol must be exactly 1.0 (raw comparison → 10×).
+  const mkSess = (etDate, rawVol, f) => {
+    const bars = [];
+    for (let et = 570; et <= 955; et += 5) {
+      const b = { etMinutes: et, adjFactor: f, volume: rawVol, adjOpen: 100, adjHigh: 100.02, adjLow: 99.98, adjClose: 100, epoch: 0 };
+      bars.push(b);
+    }
+    return { etDate, regular: bars };
+  };
+  const baselines = [];
+  for (let k = 0; k < 20; k++) baselines.push(mkSess(`2024-05-${String(k + 1).padStart(2, '0')}`, 100, 0.1));
+  const ev = mkSess('2024-06-14', 1000, 1);
+  const pre = preTouchBars(ev.regular, 600);
+  const rvol = rvolApproach(pre, 600, baselines);
+  assert.ok(Math.abs(rvol - 1.0) < 1e-9, `identical adjusted activity across a 10:1 split → rvol 1.0 (got ${rvol})`);
+});
+
 test('rvol buckets follow the pre-registered edges (S5-C1: <0.8 / 0.8–1.5 / ≥1.5)', () => {
   assert.equal(rvolBucket(0.79), 'LOW');
   assert.equal(rvolBucket(0.8), 'MID');

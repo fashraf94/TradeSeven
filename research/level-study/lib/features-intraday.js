@@ -31,10 +31,15 @@ export function todBucket(touchEtMin) {
   return null;
 }
 
-/** Cumulative session volume through bars with etMinutes < cutoff (null volume = no trades = 0). */
+/**
+ * Cumulative session volume through bars with etMinutes < cutoff, on the SPLIT-ADJUSTED share
+ * basis (S3-C1: volume ÷ adjFactor — raw share counts are not comparable across a split, and
+ * NVDA's 10:1 sits inside the study window; a post-split event vs pre-split baselines would
+ * otherwise inflate rvol up to ~10×). Null volume = no trades = 0.
+ */
 function cumVolBefore(bars, cutoff) {
   let s = 0;
-  for (const b of bars) { if (b.etMinutes >= cutoff) break; s += b.volume ?? 0; }
+  for (const b of bars) { if (b.etMinutes >= cutoff) break; s += (b.volume ?? 0) / (b.adjFactor || 1); }
   return s;
 }
 
@@ -45,7 +50,7 @@ function cumVolBefore(bars, cutoff) {
  */
 export function rvolApproach(preBars, touchEtMin, baselineSessions) {
   if (!preBars.length || !baselineSessions || baselineSessions.length < RVOL_DAYS) return null;
-  const own = preBars.reduce((a, b) => a + (b.volume ?? 0), 0);
+  const own = preBars.reduce((a, b) => a + (b.volume ?? 0) / (b.adjFactor || 1), 0); // S3-C1 basis, matching the baselines
   const cuts = baselineSessions.slice(-RVOL_DAYS).map((s) => cumVolBefore(s.regular || [], touchEtMin));
   const avg = cuts.reduce((a, b) => a + b, 0) / cuts.length;
   return avg > 0 ? own / avg : null;

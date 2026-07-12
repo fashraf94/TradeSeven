@@ -283,7 +283,7 @@ export function primaryOriginAt(series, L, dir) {
   const k = LEG.swingFractalK, up = dir === 'up';
   const price = up ? series.aLow : series.aHigh;
   const isSwing = up ? series.isSwingLow : series.isSwingHigh;
-  const lo = Math.max(k, L - PRIMARY.lookbackSessions);
+  const lo = Math.max(k, L - PRIMARY.lookbackSessions + 1); // exactly lookbackSessions candidates (review fix: was 253)
   for (let j = lo; j <= L - k; j++) {
     if (!isSwing[j]) continue;
     let ok = false, valid = true;
@@ -339,7 +339,9 @@ export function extensionAt(series, i, side) {
 /** Map earnings report dates → session indices (first session ≥ report date). Sorted, deduped. */
 export function reportSessionIdxs(series, reportDates) {
   const out = [];
+  if (!series.n) return out;
   for (const d of [...reportDates].sort()) {
+    if (d < series.dates[0]) continue; // a report predating the series is NOT a session-0 report (review fix: phantom report polluted since/expected)
     const at = idxBefore(series, d, true);
     const idx = (at >= 0 && series.dates[at] === d) ? at : at + 1; // first session ≥ d
     if (idx < series.n && (out.length === 0 || out[out.length - 1] !== idx)) out.push(idx);

@@ -185,8 +185,9 @@ export function groupFeaturesAt({ series, i, peers, spy, sector }) {
     }
     if (fresh) hitExtreme += 1;
   }
-  out.peer_level_event_rate_prior_5d = hitPrior / peers.length;
-  out.peer_fresh_extreme_rate_prior_5d = hitExtreme / peers.length;
+  // A truncated prior window is uncomputable, not a 0-rate (review fix; mirrors the next_5d guard).
+  out.peer_level_event_rate_prior_5d = prior.length === 5 ? hitPrior / peers.length : null;
+  out.peer_fresh_extreme_rate_prior_5d = prior.length === 5 ? hitExtreme / peers.length : null;
   out.peer_level_event_rate_next_5d = next.length === 5 ? hitNext / peers.length : null;
 
   // rs_rank_in_group: own trailing-20d return ranked among self + peers (1 = strongest)
