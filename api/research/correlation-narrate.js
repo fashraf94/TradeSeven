@@ -23,7 +23,7 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { getFromCache, setInCache } from '../_utils/serverCache.js';
 import { callGemmaVoiceWithRetry, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
-import { deepDiveDocId } from './correlationCacheKey.js';
+import { deriveDeepDiveKey, isValidDocId } from './correlationCacheKey.js';
 import { buildNarrationPlan, PLAN_BUILDER_VERSION } from './narrationPlan.js';
 import { validateNarration, VALIDATOR_VERSION, RETRY_REASONS } from './narrationConformance.js';
 import {
@@ -43,10 +43,6 @@ import {
 // LLM latency + a Firestore round-trip; matches the correlation endpoints.
 export const config = { maxDuration: 30 };
 
-// Mirrors of correlation.js's request canonicalization (a divergence only ever
-// yields a 409 no_contract — a fail-safe lookup miss, never wrong data).
-const SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/;
-const LOOKBACK = { DEFAULT: 504, MIN: 150, MAX: 1260 };
 const RATE_LIMIT = { limit: 6, windowMs: 60000 };
 const MODEL_TIMEOUT_MS = 25000;
 const MODEL_TEMPERATURE = 0.2; // low — the model selects a frame, it does not author
@@ -172,26 +168,23 @@ export default async function handler(req, res) {
   if (!user) return;
 
   try {
-    // ── Canonicalize the request → recompute the SAME deep-dive docId ──
+    // ── Resolve the deep-dive docId ──
+    // Primary: the docId the deep dive returned in meta (validated as a sha1 hex
+    // string before use — never trust raw input as a Firestore path). This is the
+    // durable fix for docId drift: the key is COMPUTED ONCE by the deep dive and
+    // passed through, not re-derived here.
+    // Fallback (older clients that don't send a docId): re-derive via the SAME
+    // shared rule the deep dive wrote under (deriveDeepDiveKey), so there is no
+    // second defaulting/canonicalization rule that could drift.
     const body = req.body || {};
-    const driverKey = typeof body.driver === 'string' && body.driver ? body.driver : null;
-    if (!driverKey) return res.status(400).json({ error: 'invalid_driver' });
-    if (!Array.isArray(body.group) || body.group.length < 1 || body.group.length > 10) {
-      return res.status(400).json({ error: 'invalid_group' });
+    let docId;
+    if (isValidDocId(body.docId)) {
+      docId = body.docId;
+    } else {
+      const derived = deriveDeepDiveKey(body);
+      if (derived.error) return res.status(400).json({ error: derived.error });
+      docId = derived.docId;
     }
-    const group = [...new Set(body.group.map((s) => String(s).trim().toUpperCase().replace(/\.US$/, '')))];
-    if (!group.every((s) => SYMBOL_RE.test(s))) return res.status(400).json({ error: 'invalid_symbol' });
-    const customSymbol = driverKey === 'CUSTOM'
-      ? String(body.customSymbol || '').trim().toUpperCase().replace(/\.US$/, '')
-      : '';
-    let lookbackDays = LOOKBACK.DEFAULT;
-    if (body.lookbackDays !== undefined) {
-      if (typeof body.lookbackDays !== 'number' || !Number.isFinite(body.lookbackDays)) {
-        return res.status(400).json({ error: 'invalid_lookback' });
-      }
-      lookbackDays = Math.min(LOOKBACK.MAX, Math.max(LOOKBACK.MIN, Math.round(body.lookbackDays)));
-    }
-    const docId = deepDiveDocId({ group, driverKey, customSymbol, lookbackDays });
 
     const db = getFirebaseAdmin();
 
@@ -204,9 +197,10 @@ export default async function handler(req, res) {
     }
     const contract = doc.payload.summaryContract;
     if (!contract || contract.kind !== 'deepDive') return res.status(409).json({ error: 'no_contract' });
-    const driverLabel = doc.payload.meta?.driverLabel || driverKey;
-    // returnMode drives diff-mode (yield) unit phrasing; CUSTOM/unknown → 'pct'.
-    const driverReturnMode = CORRELATION_DRIVERS[driverKey]?.returnMode || 'pct';
+    const driverLabel = doc.payload.meta?.driverLabel || doc.payload.meta?.driver || (typeof body.driver === 'string' ? body.driver : null);
+    // returnMode drives diff-mode (yield) unit phrasing; sourced from the driver
+    // the doc was computed under (falls back to the request); CUSTOM/unknown → 'pct'.
+    const driverReturnMode = CORRELATION_DRIVERS[doc.payload.meta?.driver ?? body.driver]?.returnMode || 'pct';
     const debug = body.debug === true; // ?narrationDebug=1 dev affordance (endpoint is 404 when dark)
 
     // ── Versioned narration cache identity ──

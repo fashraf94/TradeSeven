@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { buildNarrationPlan, PLAN_BUILDER_VERSION } from './narrationPlan.js';
 import { VALIDATOR_VERSION } from './narrationConformance.js';
 import { templateFor, fillSlots } from './narrationPhrasebook.js';
-import { deepDiveDocId } from './correlationCacheKey.js';
+import { deepDiveDocId, deriveDeepDiveKey } from './correlationCacheKey.js';
 import { CLASSES, DRIVER_LABEL } from './narrationCorpus.js';
 
 // ── hoisted mock state ───────────────────────────────────────────────────────
@@ -124,6 +124,48 @@ describe('narrate — guards', () => {
   it('invalid request body → 400', async () => {
     expect((await call({ ...REQ, group: [] })).code).toBe(400);
     expect((await call({ ...REQ, driver: 123 })).code).toBe(400);
+  });
+});
+
+// ── docId drift fix (BUILD_RULES §4 — pass the id through, don't re-derive) ────
+describe('narrate — docId resolution', () => {
+  it('the EXACT live failure: analysis omitted lookbackDays, narrate sends 504 — round trip succeeds', async () => {
+    // the deep dive writes under the id derived from {group, driver} (lookback defaulted)
+    const writtenDocId = deriveDeepDiveKey({ group: REQ.group, driver: REQ.driver }).docId;
+    const payload = makePayload(CLASSES.solidStandard());
+    payload.meta.docId = writtenDocId; // as the deep dive now returns it
+    firestore = makeFirestore(new Map([[writtenDocId, { payload, expiresAt: FUTURE }]]));
+    gemma.current = ok(goodContent(CLASSES.solidStandard()));
+    // narrate sends the returned docId AND lookbackDays:504 (the live request shape)
+    const r = await call({ group: REQ.group, driver: REQ.driver, lookbackDays: 504, docId: writtenDocId });
+    expect(r.code).toBe(200);
+    expect(r.body.source).toBe('generated');
+    // and the docId-less fallback resolves too (the shared rule canonicalizes identically)
+    const r2 = await call({ group: REQ.group, driver: REQ.driver, lookbackDays: 504 });
+    expect(r2.code).toBe(200);
+  });
+
+  it('the supplied docId WINS over re-derivation (a differing lookback cannot drift the key)', async () => {
+    seed(CLASSES.solidStandard()); // seeded at DOC_ID (lookback 504)
+    gemma.current = ok(goodContent(CLASSES.solidStandard()));
+    // lookbackDays:252 would re-derive a DIFFERENT id, but the passed docId is used
+    const r = await call({ group: REQ.group, driver: REQ.driver, lookbackDays: 252, docId: DOC_ID });
+    expect(r.code).toBe(200);
+    expect(r.body.source).toBe('generated');
+  });
+
+  it('a mismatched docId (valid shape, no such doc) → 409 no_contract, not an error', async () => {
+    seed(CLASSES.solidStandard());
+    const r = await call({ group: REQ.group, driver: REQ.driver, docId: 'a'.repeat(40) });
+    expect(r.code).toBe(409);
+    expect(r.body).toEqual({ error: 'no_contract' });
+  });
+
+  it('a garbage-shaped docId is never used as a path — falls back to derivation', async () => {
+    seed(CLASSES.solidStandard());
+    gemma.current = ok(goodContent(CLASSES.solidStandard()));
+    const r = await call({ group: REQ.group, driver: REQ.driver, docId: '../../etc/passwd' });
+    expect(r.code).toBe(200); // ignored the bad id, derived from params, found the doc
   });
 });
 
