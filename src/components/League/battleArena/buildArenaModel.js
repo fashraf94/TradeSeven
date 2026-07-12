@@ -20,6 +20,7 @@
 import { buildSeat, seatColor } from '../leagueAdapter';
 import { buildClimbSeries } from '../leagueClimbAdapter';
 import { readAgentStars, readUserStars, readDroppedPickLedger } from '../../../utils/leagueStarMeter';
+import { resolveBaseATR } from '../../../../api/_utils/tournamentUserScoring.js';
 import { isFlat6ActivationDay } from '../../../utils/flat6BattleEnrichment';
 import { deriveBeats } from '../../../utils/leagueBeats';
 import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
@@ -169,8 +170,35 @@ export function buildArenaModel({
 
   // ── stars (REUSE the Phase-1 meter readers) ──
   const agentStars = battle ? readAgentStars(battle, priceCtx) : [];
+  // User-layer ATR basis (Phase 2.5 — closes R1). Score held picks against the SAME
+  // per-symbol percentile ATR banking uses (resolveBaseATR over stockRankings),
+  // NOT the port-contract preview default (2.5/5.0), so the live star cells + orb
+  // match each surface's own banked score of record. Applied to BOTH training and
+  // ranked (founder Amendment 1 — pre-launch, 0 ranked players; ranked was showing
+  // the same 1.6–3× overstated preview against its own banked composite). The
+  // scoring FORMULA is IMPORTED (resolveBaseATR), never re-derived — one formula, no
+  // drift. When the rankings doc is unavailable client-side (atrPercentiles null),
+  // resolveBaseATR returns null → atrBySymbol stays empty → readUserStar falls back
+  // to the port-contract ATR, matching banking's own null path; cryptoSymbols keeps
+  // the crypto 5.0 fallback there (banking uses isCryptoSymbol → 5.0). A held name
+  // missing from the ~255-symbol universe resolves to 4.0 ((undefined‖0.5)×8),
+  // exactly as banking would — NOT the 2.5 default (fallback parity is the point).
+  const userAtrPercentiles = priceCtx?.atrPercentiles ?? null;
+  const heldSymbolList = (myPlayer?.picks || []).map((p) => p?.symbol).filter(Boolean);
+  const userAtrBySymbol = {};
+  for (const sym of heldSymbolList) {
+    const a = resolveBaseATR(sym, userAtrPercentiles);
+    if (Number.isFinite(a)) userAtrBySymbol[sym] = a;
+  }
+  // Crypto detection for the degraded-null fallback (mirrors isCryptoSymbol's .CC
+  // convention; the VALID_CRYPTO_SYMBOLS known-list edge is a double-degraded rarity).
+  const userCryptoSymbols = new Set(heldSymbolList.filter((s) => /\.CC$/i.test(s)));
   const userStars = myPlayer
-    ? readUserStars(myPlayer, quotesFromPrices(priceCtx?.effectivePrices, myPlayer), { canonicalPolicy, dayBanked })
+    ? readUserStars(
+      myPlayer,
+      quotesFromPrices(priceCtx?.effectivePrices, myPlayer),
+      { atrBySymbol: userAtrBySymbol, cryptoSymbols: userCryptoSymbols, canonicalPolicy, dayBanked },
+    )
     : [];
   // Layer-level pending marker (Spec Deliverable 3) — canonical rounds only;
   // legacy stars carry settleState null so this is 0 (no marker) as today.
@@ -280,14 +308,22 @@ export function buildArenaModel({
   // preserved: youOrbLive (training-only, activation-day/today-only, not-yet-banked,
   // real battle), the NaN priorBankedAgent guard, and youRank ranks by youLiveScore
   // (below) so the standing chip can't disagree with the orb. At close, dayBanked
-  // flips → youLiveScore null → the orb hands off to compositePoints. The DEPARTED
-  // points hand off with NO jump — swaps are fixed lockedPoints, dropped picks use
-  // their stored bankedScore (leg.bankedScore, banking-computed). Two PRE-EXISTING
-  // #572 residuals remain on HELD picks only and are NOT introduced/removed here:
-  // (a) the live preview ATR (2.5/5.0) vs the nightly percentile ATR banking uses
-  // ((atrPercentile||0.5)×8) — a basis delta; (b) the last live-tick price vs the
-  // official close print — trivial convergence. So "no settle-step" is exact for the
-  // departed points; the held-pick ATR delta is a separate, documented residual.
+  // flips → youLiveScore null → the orb hands off to compositePoints. Residual
+  // bookkeeping — all three named (founder ruling), so no hidden settle-step:
+  //   • R1 — CLOSED (Phase 2.5): held picks now score against the percentile ATR
+  //     banking uses (userAtrBySymbol, above), not the 2.5/5.0 preview — the
+  //     systematic 1.6–3× basis error is gone.
+  //   • R2 — the same-day dropped final leg (A3): contributes 0 live, banks at
+  //     close; announced in the ledger ("banks at close · —"). The ONLY announced
+  //     residual.
+  //   • R3 — intraday ATR-version drift: the client reads stockRankings on a 10-min
+  //     cache (converging to banking's close version), so the held-pick multiplier
+  //     can move when the ATR VERSION refreshes even if the price hasn't. Small,
+  //     converges at close, NOT systematic — deliberately UNSMOOTHED (smoothing
+  //     would reintroduce display-vs-bank drift).
+  //   • plus the trivial last-live-tick vs official-close-print price convergence.
+  // The departed points themselves hand off with NO jump (swaps = fixed lockedPoints;
+  // dropped = stored leg.bankedScore).
   const swapBanked = agentDeparted?.total ?? 0;
   const droppedBanked = userDeparted?.total ?? 0;
   const youLiveScore = youOrbLive

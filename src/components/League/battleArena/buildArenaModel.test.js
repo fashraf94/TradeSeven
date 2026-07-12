@@ -425,6 +425,60 @@ describe('fence tripwire — the orb agent-half depends on fresh daily docs (ful
   });
 });
 
+describe('buildArenaModel — user ATR basis parity (Phase 2.5, R1)', () => {
+  const sumRows = (rows) => rows.reduce((a, s) => a + (Number.isFinite(s?.points) ? s.points : 0), 0);
+  const heldGroup = (symbol = 'GE') => {
+    const g = makeGroup();
+    g.players[0].picks = [{ symbol, legs: [{ direction: 'long', baselinePrice: 100, thresholdHistory: [] }] }];
+    return g;
+  };
+  // GE +5% live; extra merges atrPercentiles / other effectivePrices
+  const px = (extra = {}) => ({ ...PRICE_CTX, effectivePrices: { ...PRICE_CTX.effectivePrices, GE: 105 }, ...extra });
+
+  it('RANKED too (Amendment 1): held picks score against the percentile ATR (resolveBaseATR), not the 2.5/5.0 preview', () => {
+    const g = heldGroup();
+    // deliberate rewrite of the old "ranked byte-identical (user cells)" expectation:
+    // ranked was showing the overstated preview multiplier; it now rides banking's basis.
+    const preview = buildArenaModel({ ...BASE, mode: 'ranked', group: g, priceCtx: px() });                          // no rankings → default 2.5
+    const banked = buildArenaModel({ ...BASE, mode: 'ranked', group: g, priceCtx: px({ atrPercentiles: { GE: 0.9 } }) }); // 0.9 → (0.9)×8 = 7.2
+    const geP = preview.userStars.find((s) => s.tk === 'GE');
+    const geB = banked.userStars.find((s) => s.tk === 'GE');
+    expect(geP.mult).toBeCloseTo(5 / 2.5, 5); // +5% / preview 2.5 = 2.0 (the 1.6–3× overstatement)
+    expect(geB.mult).toBeCloseTo(5 / 7.2, 5); // +5% / percentile 7.2 ≈ 0.69 — shrinks to the banked basis
+    expect(Math.abs(geB.points)).toBeLessThan(Math.abs(geP.points)); // whole cell moves on ONE scorePick call
+  });
+
+  it('missing symbol → 4.0 ((undefined ‖ 0.5)×8), NOT the 2.5 default — fallback parity with banking', () => {
+    const g = heldGroup();
+    const m = buildArenaModel({ ...BASE, group: g, priceCtx: px({ atrPercentiles: { AAPL: 0.5 } }) }); // GE absent from rankings
+    const ge = m.userStars.find((s) => s.tk === 'GE');
+    expect(ge.mult).toBeCloseTo(5 / 4.0, 5); // +5% / 4.0 (banking's missing-symbol path), not /2.5
+  });
+
+  it('degraded null (no rankings client-side): port-contract fallback; a .CC crypto pick → 5.0, not 2.5', () => {
+    const g = heldGroup('BTC.CC');
+    const priceCtx = { ...PRICE_CTX, effectivePrices: { ...PRICE_CTX.effectivePrices, 'BTC.CC': 105 } }; // no atrPercentiles
+    const m = buildArenaModel({ ...BASE, group: g, priceCtx });
+    const btc = m.userStars.find((s) => s.tk === 'BTC.CC');
+    expect(btc.mult).toBeCloseTo(5 / 5.0, 5); // +5% / crypto 5.0 (banking's null path), not /2.5
+  });
+
+  it('§9 identity holds on the new basis: the training orb sums the percentile-basis userStars', () => {
+    const g = heldGroup();
+    const TODAY = { ...flat6Battle(), activatedAt: '2026-06-16T14:00:00.000Z', createdAt: '2026-06-16T14:00:00.000Z' };
+    const m = buildArenaModel({ ...BASE, mode: 'training', battle: TODAY, group: g, priceCtx: px({ atrPercentiles: { GE: 0.9 } }) });
+    // no trades / no dropped picks here → orb = computeComposite(Σagent, Σuser-on-the-new-basis)
+    expect(m.youLiveScore).toBeCloseTo(computeComposite(sumRows(m.agentStars), sumRows(m.userStars)), 5);
+  });
+
+  it('no atrPercentiles (fixtures/legacy caller) → default ATR, byte-identical to pre-2.5', () => {
+    const g = heldGroup();
+    const withArg = buildArenaModel({ ...BASE, group: g, priceCtx: px() });            // priceCtx has no atrPercentiles
+    const geP = withArg.userStars.find((s) => s.tk === 'GE');
+    expect(geP.mult).toBeCloseTo(5 / 2.5, 5); // the port-contract default path is preserved for callers that pass nothing
+  });
+});
+
 describe('buildAskChips — the two-way ask chips (standing-aware)', () => {
   it('the strategy starter set + one standing-aware slot; every chip is a { q } prompt', () => {
     const chips = buildAskChips(1);

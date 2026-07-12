@@ -20,14 +20,16 @@
 // not on this path). The co-located test loading clean in Node is the HARD
 // dependency-surface guard. Copying the scorer stays off the table (§4).
 //
-// PREVIEW vs AUTHORITY (founder item 2): the user-pick live multiplier here is a
-// PREVIEW. Lacking the rankings doc client-side, user picks default to the
-// port-contract ATR (2.5 stock / 5.0 crypto) unless the caller supplies a real
-// per-symbol ATR; the nightly banking pass (precise percentile ATR) is
-// AUTHORITATIVE for what actually banks. We validate display-vs-bank drift on
-// real data in the component phase. If it ever drifts far enough to mislead
-// "will it hit", the fix is feeding the client the real ATR for display —
-// NEVER loosening the thresholds.
+// ATR BASIS (founder item 2 — RESOLVED Phase 2.5, R1): the user-pick multiplier
+// rides the caller-supplied per-symbol ATR (`atrBySymbol`). The ARENA now supplies
+// the SAME percentile ATR banking uses — buildArenaModel reads stockRankings and
+// passes resolveBaseATR(sym, atrPercentiles) for every held pick — so the live
+// basis == the banked basis (R1 closed), up to a small intraday ATR-version drift
+// that converges at close (R3). A caller that supplies NO `atrBySymbol` still falls
+// back to the port-contract ATR (2.5 stock / 5.0 crypto) — the documented degraded
+// path, matching banking's own null path (resolveBaseATR → null → 2.5/5.0). The
+// nightly banking pass remains AUTHORITATIVE for what actually banks; if the two
+// ever diverge, the fix is the shared ATR source — NEVER loosening the thresholds.
 
 import { buildFlat6BattleModel } from './flat6BattleEnrichment';
 import { scorePick } from '../../api/_utils/tournamentUserScoring.js';
