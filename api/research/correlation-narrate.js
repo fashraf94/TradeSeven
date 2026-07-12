@@ -27,8 +27,9 @@ import { deepDiveDocId } from './correlationCacheKey.js';
 import { buildNarrationPlan, PLAN_BUILDER_VERSION } from './narrationPlan.js';
 import { validateNarration, VALIDATOR_VERSION, RETRY_REASONS } from './narrationConformance.js';
 import {
-  PHRASEBOOK, CONNECTIVES, PHRASEBOOK_VERSION, PROMPT_VERSION, MODEL_VERSION, templateFor,
+  PHRASEBOOK, PHRASEBOOK_VERSION, PROMPT_VERSION, MODEL_VERSION, templateFor,
 } from './narrationPhrasebook.js';
+import { CORRELATION_DRIVERS } from './driverRegistry.js';
 // The deterministic template floor (the "standard summary") — pure, Node-clean.
 import { buildVerdictSentence } from '../../src/components/Research/correlationVerdict.js';
 // api→src flag import (scouting-board / correlation.js precedent). Node-clean;
@@ -101,8 +102,7 @@ function buildRenderSystemPrompt() {
     '1. Output STRICT JSON: {"sentences":[{"claimId":"...","variantId":"...","text":"..."}]}.',
     '2. Exactly one sentence per plan claim, in the SAME order as the plan.',
     '3. For each claim, choose ONE of its approved variant templates and fill every {slot} with the EXACT value the plan gives — never invent, round, negate, or reword a value.',
-    '4. You may prefix a sentence with ONE approved connective and nothing else. Approved connectives: ' + JSON.stringify(CONNECTIVES) + '.',
-    '5. Keep every word of the template. Do not add clauses, causes, forecasts, advice, or certainty language.',
+    '4. Output ONLY the chosen template with its slots filled — no connective, no prefix, no extra words. Do not add clauses, causes, forecasts, advice, or certainty language.',
   ].join('\n');
 }
 function buildRenderUserMessage(plan) {
@@ -205,6 +205,8 @@ export default async function handler(req, res) {
     const contract = doc.payload.summaryContract;
     if (!contract || contract.kind !== 'deepDive') return res.status(409).json({ error: 'no_contract' });
     const driverLabel = doc.payload.meta?.driverLabel || driverKey;
+    // returnMode drives diff-mode (yield) unit phrasing; CUSTOM/unknown → 'pct'.
+    const driverReturnMode = CORRELATION_DRIVERS[driverKey]?.returnMode || 'pct';
     const debug = body.debug === true; // ?narrationDebug=1 dev affordance (endpoint is 404 when dark)
 
     // ── Versioned narration cache identity ──
@@ -227,7 +229,7 @@ export default async function handler(req, res) {
     }
 
     // ── Miss → build the deterministic plan ──
-    const planResult = buildNarrationPlan(contract, { driverLabel });
+    const planResult = buildNarrationPlan(contract, { driverLabel, driverReturnMode });
     if (!planResult.ok) {
       return serveTemplate(res, doc.payload, driverLabel, versions, { fallback: 'plan', reason: planResult.code }, debug);
     }

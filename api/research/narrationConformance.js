@@ -14,7 +14,7 @@
  * — one source, BUILD_RULES §4). validateNarration is the sole entry; it never
  * throws and always returns a code drawn from RETRY_REASONS.
  */
-import { PHRASEBOOK, CONNECTIVES, BANNED_LEXICON, templateFor, fillSlots } from './narrationPhrasebook.js';
+import { PHRASEBOOK, BANNED_LEXICON, templateFor, fillSlots } from './narrationPhrasebook.js';
 
 export const VALIDATOR_VERSION = '1';
 
@@ -104,11 +104,9 @@ export function validateNarration(modelOutput, plan) {
     for (const vid of claim.allowedVariants) {
       const tmpl = templateFor(claim.claimId, vid);
       if (!tmpl) continue;
-      const filled = fillSlots(tmpl, claim.spans);
-      for (const conn of CONNECTIVES) {
-        if (target === normStrict(conn + filled)) { matched = { vid, canonical: target }; break; }
-      }
-      if (matched) break;
+      // v1.3: bare frame only — no connective is ever permitted, so any prefix
+      // makes the sentence unequal to the canonical and fails here.
+      if (target === normStrict(fillSlots(tmpl, claim.spans))) { matched = { vid, canonical: target }; break; }
     }
     if (!matched) return fail('E_NO_VARIANT_MATCH', { claimIndex: i, detail: claim.claimId });
     canonicals.push(matched.canonical);

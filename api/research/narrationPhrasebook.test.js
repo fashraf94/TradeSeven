@@ -39,13 +39,8 @@ describe('narration phrasebook — banned lexicon', () => {
     }
   });
 
-  it('no connective contains a banned token', () => {
-    for (const conn of CONNECTIVES) {
-      const words = conn.normalize('NFKC').toLowerCase();
-      for (const { family, re } of BANNED_LEXICON) {
-        expect(re.test(words), `connective "${conn}" tripped ${family}`).toBe(false);
-      }
-    }
+  it('exposes NO connectives — every sentence is a bare rendered frame (v1.3)', () => {
+    expect(CONNECTIVES).toEqual([]);
   });
 });
 

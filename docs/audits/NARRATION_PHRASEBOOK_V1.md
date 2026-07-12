@@ -1,25 +1,26 @@
 # NARRATION_PHRASEBOOK_V1
 
 > **This is the product's voice.** Read it like copy, not like constants. The model may only
-> pick one approved frame per claim and one approved connective; it fills the `{slots}` with
-> server-rendered values and authors nothing else. Every frame is past-tense and sample-bounded,
-> with no causal, forward-looking, advisory, or certainty language. Each claim's sample span is
-> bound to its own measurement window, and every number echoes the card it sits beside.
+> pick one approved frame per claim; it fills the `{slots}` with server-rendered values and
+> authors nothing else — no connectives, no prefixes. Every frame is past-tense and
+> sample-bounded, with no causal, forward-looking, advisory, or certainty language. Each claim's
+> sample span is bound to its own measurement window, and every number echoes the card it sits
+> beside (which defines the terms — so the register stays plain, not textbook).
 
-- phrasebookVersion: `1.2`  ·  promptVersion: `1`  ·  modelVersion: `google/gemma-4-26b-a4b-it`
-- Approved connectives: _(none)_ · `And` · `But` · `Still,` · `Meanwhile,` · `That said,`
+- phrasebookVersion: `1.3`  ·  promptVersion: `2`  ·  modelVersion: `google/gemma-4-26b-a4b-it`
+- Connectives: **none** — every sentence is a bare rendered frame (CONNECTIVES = []).
 
 _Optional ChatGPT pass before the flip: "Which of these frames could be read as predictive?"_
 
 ## Opening caveat — limited read  `caveat_limited`
 
-- **lim_a** — This was a limited read across 480 sessions: the sample was thin.
-- **lim_b** — The read was limited across 480 sessions — the sample was thin.
+- **lim_a** — This was a limited read across 480 sessions: the sample-size check did not hold.
+- **lim_b** — The read was limited across 480 sessions — the sample-size check did not hold.
 
 ## Opening caveat — fragile read  `caveat_fragile`
 
-- **frag_a** — This was a fragile read across 480 sessions: the group did not move as one and one member carried it.
-- **frag_b** — The read held across 480 sessions but stayed fragile — the group did not move as one and one member carried it.
+- **frag_a** — This was a fragile read across 480 sessions: the group-cohesion check did not hold and the broad-based check did not hold.
+- **frag_b** — The read held across 480 sessions but stayed fragile — the group-cohesion check did not hold and the broad-based check did not hold.
 
 ## Opening caveat — in flux  `caveat_in_flux`
 
@@ -40,35 +41,35 @@ _Optional ChatGPT pass before the flip: "Which of these frames could be read as 
 
 ## Supporting — elevated tension  `tension_elevated`
 
-- **tens_a** — The 1-month link ran +0.30 above its 3-month level in this sample.
-- **tens_b** — The 1-month link sat +0.30 above its 3-month level in this sample.
+- **tens_a** — The 1-month link ran +0.30 above its 3-month level, which overlaps it, in this sample.
+- **tens_b** — The 1-month link sat +0.30 above the overlapping 3-month level in this sample.
 
 ## Supporting — percentile extreme  `percentile_extreme`
 
-- **pct_a** — The link sat in the 92nd percentile of its own history over the past month.
-- **pct_b** — Measured over the past month, the link ranked in the 92nd percentile of its own history.
+- **pct_a** — The link ranked in the 92nd percentile among comparable 1-month windows in this sample.
+- **pct_b** — Among comparable 1-month windows, the link ranked in the 92nd percentile in this sample.
 
 ## Supporting — capture asymmetry (two-sided)  `capture_asymmetry`
 
-- **cap_a** — The group ran +1.30 beta on 120 down days and +0.90 on 130 up days, stronger on down days in this sample.
-- **cap_b** — Stronger on down days in this sample, the group ran +1.30 beta across 120 down days versus +0.90 across 130 up days.
+- **cap_a** — On 10Y Yield's down days the estimated beta was +1.30 across 120 days, and on its up days +0.90 across 130 days — stronger on down days in this sample.
+- **cap_b** — The estimated beta was +1.30 on 10Y Yield's 120 down days and +0.90 on its 130 up days, stronger on down days in this sample.
 
 ## Supporting — tail co-movement  `tail_comovement`
 
-- **tail_a** — On the 24 weakest 10Y Yield days, the group moved down on 18 of them in this sample.
-- **tail_b** — On 10Y Yield's 24 weakest days in this sample, the group moved down on 18 of them.
+- **tail_a** — On the 24 largest declines in 10Y Yield, the group moved down on 18 of them in this sample.
+- **tail_b** — Across the 24 largest declines in 10Y Yield in this sample, the group moved down on 18 of them.
 
 ## Supporting — low cohesion  `low_cohesion`
 
-- **coh_a** — The group split into several stories at once, -0.20 internal cohesion over the past month.
-- **coh_b** — Its members split several ways over the past month, -0.20 internal cohesion.
+- **coh_a** — The average pairwise correlation among members was -0.20 over the past month — the group split into several stories.
+- **coh_b** — Among members, the average pairwise correlation was -0.20 over the past month, and they split into several directions.
 
 ## Supporting — driver context  `driver_context`
 
-- **dc_vol** — 10Y Yield's own volatility sat in the 88th percentile of its history in this sample.
-- **dc_ret** — 10Y Yield itself moved +12.0% over the past 20 sessions.
+- **dc_vol** — The size of daily changes in 10Y Yield sat in the 88th percentile of its own history in this sample.
+- **dc_ret** — 10Y Yield's trailing move was +12.0% in the yield level over the past 20 sessions.
 
 ## Closing caveat  `closing_caveat`
 
-- **cc_a** — All of this described the measured window across 480 sessions.
-- **cc_b** — Each line above described the sample across 480 sessions.
+- **cc_a** — Each line above described only its stated window.
+- **cc_b** — Every line above held to its own stated window.

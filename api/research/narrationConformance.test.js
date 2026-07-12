@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import { validateNarration } from './narrationConformance.js';
 import { buildNarrationPlan } from './narrationPlan.js';
 import { CLASSES, DRIVER_LABEL } from './narrationCorpus.js';
-import { templateFor, fillSlots, CONNECTIVES } from './narrationPhrasebook.js';
+import { templateFor, fillSlots } from './narrationPhrasebook.js';
 
 const mkPlan = (make) => buildNarrationPlan(make(), { driverLabel: DRIVER_LABEL }).plan;
 
@@ -44,11 +44,13 @@ describe('conformance — golden accept (the 8 contract classes)', () => {
     });
   }
 
-  it('accepts every variant choice and every approved connective', () => {
+  it('accepts the second variant choice for every claim (no connectives in v1.3)', () => {
     const plan = mkPlan(CLASSES.fragileStandard);
-    // second variant of each claim + rotating connectives
-    const connectives = plan.claims.map((_, i) => CONNECTIVES[i % CONNECTIVES.length]);
-    expect(validateNarration(render(plan, { variantIndex: 1, connectives }), plan).valid).toBe(true);
+    expect(validateNarration(render(plan, { variantIndex: 1 }), plan).valid).toBe(true);
+    // any prefix (a would-be connective) now fails — bare frame only
+    const g = render(plan);
+    g.sentences[0].text = `And ${g.sentences[0].text}`;
+    expect(validateNarration(g, plan).valid).toBe(false);
   });
 
   it('is robust to zero-width, NBSP, and curly-quote noise', () => {
@@ -112,7 +114,7 @@ describe('conformance — adversarial reject (each MUST fail)', () => {
 
   it('7 n omitted → E_NO_VARIANT_MATCH', () => {
     const g = render(pSolid);
-    g.sentences[1].text = g.sentences[1].text.replace(` on ${nDown} down days`, '');
+    g.sentences[1].text = g.sentences[1].text.replace(` across ${nDown} days`, '');
     expect(validateNarration(g, pSolid)).toMatchObject({ valid: false, code: 'E_NO_VARIANT_MATCH', claimIndex: 1 });
   });
 
@@ -150,7 +152,7 @@ describe('conformance — adversarial reject (each MUST fail)', () => {
 
   it('13 digit-free comparison → E_NO_VARIANT_MATCH', () => {
     const g = render(pSolid);
-    g.sentences[1].text = g.sentences[1].text.replace(`${betaDown} beta`, 'a strong beta');
+    g.sentences[1].text = g.sentences[1].text.replace(`estimated beta was ${betaDown}`, 'estimated beta was strong');
     expect(validateNarration(g, pSolid).code).toBe('E_NO_VARIANT_MATCH');
   });
 
@@ -173,22 +175,22 @@ describe('conformance — E_LEXICON defense-in-depth (banned token in a span)', 
   // A hypothetically-compromised span: reconstruct PASSES, but the lexicon scan
   // still rejects a banned token — the backstop the frame lint cannot cover.
   const lexPlan = {
-    planBuilderVersion: '1',
+    planBuilderVersion: '1.3',
     claims: [{
-      claimId: 'closing_caveat', subjectId: 'x', metricId: 'x', fieldPath: 'x',
+      claimId: 'caveat_limited', subjectId: 'x', metricId: 'x', fieldPath: 'x',
       polarity: 'assert', temporalScope: 'measured_sample',
-      spans: { sampleSpan: 'because of drift' }, sampleSpan: 'because of drift',
-      requiredPosition: null, allowedVariants: ['cc_a'], suppressedFamilies: [],
+      spans: { criterion: 'the check failed because of drift', sampleSpan: 'across 480 sessions' }, sampleSpan: 'across 480 sessions',
+      requiredPosition: null, allowedVariants: ['lim_a'], suppressedFamilies: [],
     }],
   };
 
   it('rejects a banned token smuggled through a span → E_LEXICON', () => {
-    const out = { sentences: [{ claimId: 'closing_caveat', variantId: 'cc_a', text: 'All of this described the measured window because of drift.' }] };
+    const out = { sentences: [{ claimId: 'caveat_limited', variantId: 'lim_a', text: 'This was a limited read across 480 sessions: the check failed because of drift.' }] };
     expect(validateNarration(out, lexPlan)).toMatchObject({ valid: false, code: 'E_LEXICON', detail: 'causal' });
   });
 
   it('still catches a zero-width-obfuscated banned token', () => {
-    const out = { sentences: [{ claimId: 'closing_caveat', variantId: 'cc_a', text: 'All of this described the measured window be​cause of drift.' }] };
+    const out = { sentences: [{ claimId: 'caveat_limited', variantId: 'lim_a', text: 'This was a limited read across 480 sessions: the check failed be​cause of drift.' }] };
     expect(validateNarration(out, lexPlan).code).toBe('E_LEXICON');
   });
 });

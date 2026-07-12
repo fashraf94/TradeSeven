@@ -50,15 +50,15 @@ describe('narration plan — the 8 contract classes (selection + ordering)', () 
     expect(p.plan.claims[0].requiredPosition).toBe(1);
     expect(ids(p)).toContain('headline_link');
     expect(ids(p).at(-1)).toBe('closing_caveat');
-    // the caveat carries the failing criterion as a rendered span
-    expect(p.plan.claims[0].spans.criterion).toContain('did not move as one');
+    // the caveat NAMES the failing read-quality check (never "thin sample")
+    expect(p.plan.claims[0].spans.criterion).toContain('group-cohesion check');
   });
 
   it('limited/standard (small-n) → caveat_limited first, sample span cites the thin count', () => {
     const p = plan(CLASSES.limitedStandard());
     expect(p.ok).toBe(true);
     expect(ids(p)[0]).toBe('caveat_limited');
-    expect(p.plan.claims[0].spans.criterion).toContain('sample was thin');
+    expect(p.plan.claims[0].spans.criterion).toContain('sample-size check');
     expect(p.plan.claims[0].spans.sampleSpan).toBe('across 250 sessions');
   });
 
@@ -164,18 +164,21 @@ describe('narration plan — §9 span parity (one source, shared formatters)', (
     // percentile prefers corr20 (card-shown); corr20 not extreme here → falls to corr60
     const pct = p.plan.claims.find((x) => x.claimId === 'percentile_extreme');
     expect(pct.spans.pct).toBe(`${ordinal(Math.round(c.percentile.corr60.value * 100))} percentile`);
-    expect(pct.spans.sampleSpan).toBe('over the past 3 months');
+    expect(pct.spans.set).toBe('comparable 3-month windows'); // names the comparison set
+    expect(pct.spans.sampleSpan).toBe('in this sample');
   });
 
-  it('R2: TNX driver_context renders the trailing move from the envelope unit, over 20 sessions', () => {
+  it('R2: TNX/diff-mode trailing move names the yield-level unit (never a bare %)', () => {
     const c = CLASSES.tnxDriverContext();
-    const p = plan(c);
-    expect(p.ok).toBe(true);
-    expect(ids(p)[0]).toBe('caveat_fragile'); // fragile (broad_based fails) so the read isn't thin
-    const dc = p.plan.claims.find((x) => x.claimId === 'driver_context');
-    expect(dc).toBeTruthy();
-    expect(dc.spans.ret).toBe(fmtPct(c.driverContext.trailingReturn.value, 1)); // return_fraction unit → fmtPct
+    const diff = buildNarrationPlan(c, { driverLabel: DRIVER_LABEL, driverReturnMode: 'diff' });
+    expect(diff.ok).toBe(true);
+    expect(ids(diff)[0]).toBe('caveat_fragile'); // fragile (broad_based fails) so the read isn't thin
+    const dc = diff.plan.claims.find((x) => x.claimId === 'driver_context');
+    expect(dc.spans.ret).toBe(`${fmtPct(c.driverContext.trailingReturn.value, 1)} in the yield level`);
     expect(dc.spans.sampleSpan).toBe('over the past 20 sessions');
+    // a price driver (default pct mode) gets the bare %, no yield phrasing
+    const pctMode = plan(c).plan.claims.find((x) => x.claimId === 'driver_context');
+    expect(pctMode.spans.ret).toBe(fmtPct(c.driverContext.trailingReturn.value, 1));
   });
 
   it('R3: a caveat with multiple failing criteria joins them via the phrase table', () => {
@@ -185,7 +188,7 @@ describe('narration plan — §9 span parity (one source, shared formatters)', (
     });
     const caveat = plan(c).plan.claims[0];
     expect(caveat.claimId).toBe('caveat_fragile');
-    expect(caveat.spans.criterion).toBe('the group did not move as one and one member carried it');
+    expect(caveat.spans.criterion).toBe('the group-cohesion check did not hold and the broad-based check did not hold');
   });
 
   it('every allowedVariant is span-satisfiable (its requires ⊆ the rendered spans)', () => {

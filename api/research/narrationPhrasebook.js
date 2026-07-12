@@ -26,14 +26,14 @@
 // narration cache by construction — it is a docId component). promptVersion:
 // the render-instruction contract. modelVersion: pinned to gemmaClient's model
 // (asserted equal in the meta-test) so a model swap invalidates cached voice.
-export const PHRASEBOOK_VERSION = '1.2';
-export const PROMPT_VERSION = '1';
+export const PHRASEBOOK_VERSION = '1.3';
+export const PROMPT_VERSION = '2';
 export const MODEL_VERSION = 'google/gemma-4-26b-a4b-it';
 
-// Approved connectives — sentence-initial, non-causal glue only. '' is the
-// no-connective case (position 1 uses it). The validator accepts any ONE of
-// these as an optional prefix on a rendered sentence.
-export const CONNECTIVES = ['', 'And ', 'But ', 'Still, ', 'Meanwhile, ', 'That said, '];
+// NO connectives (v1.3): every sentence is exactly a bare rendered frame. The
+// model may not prepend anything — the conformance validator matches the bare
+// canonical, so any connective is rejected.
+export const CONNECTIVES = [];
 
 // ── The banned lexicon (defense-in-depth; ONE source) ────────────────────────
 // Word-boundary regexes, matched over NFKC-normalized, lower-cased text. Ordered
@@ -109,63 +109,68 @@ export const PHRASEBOOK = {
   // ── Supporting claims (≤2) ──
   tension_elevated: {
     // The plain gap — the 1-month link vs its 3-month level (the divergence `d`,
-    // the gauge's fmtCorr number, §9). No "tension"/"baseline"/forward lean; SDS
-    // is never presented as significance.
+    // the gauge's fmtCorr number, §9), NOTING the two windows overlap. No
+    // "tension"/"baseline"/forward lean; SDS is never significance.
     slots: ['value', 'sampleSpan'],
     variants: [
-      { id: 'tens_a', requires: ['value', 'sampleSpan'], template: 'The 1-month link ran {value} above its 3-month level {sampleSpan}.' },
-      { id: 'tens_b', requires: ['value', 'sampleSpan'], template: 'The 1-month link sat {value} above its 3-month level {sampleSpan}.' },
+      { id: 'tens_a', requires: ['value', 'sampleSpan'], template: 'The 1-month link ran {value} above its 3-month level, which overlaps it, {sampleSpan}.' },
+      { id: 'tens_b', requires: ['value', 'sampleSpan'], template: 'The 1-month link sat {value} above the overlapping 3-month level {sampleSpan}.' },
     ],
   },
   percentile_extreme: {
-    slots: ['pct', 'sampleSpan'],
+    // Names the comparison set ("among comparable 1-month windows"), so the rank
+    // is not a bare "percentile" floating free.
+    slots: ['pct', 'set', 'sampleSpan'],
     variants: [
-      { id: 'pct_a', requires: ['pct', 'sampleSpan'], template: 'The link sat in the {pct} of its own history {sampleSpan}.' },
-      { id: 'pct_b', requires: ['pct', 'sampleSpan'], template: 'Measured {sampleSpan}, the link ranked in the {pct} of its own history.' },
+      { id: 'pct_a', requires: ['pct', 'set', 'sampleSpan'], template: 'The link ranked in the {pct} among {set} {sampleSpan}.' },
+      { id: 'pct_b', requires: ['pct', 'set', 'sampleSpan'], template: 'Among {set}, the link ranked in the {pct} {sampleSpan}.' },
     ],
   },
   capture_asymmetry: {
-    // Two-sided — echoes the "Down days vs up days" card: both betas with their
-    // own n, and a grammatical {direction} slot naming the stronger side.
-    slots: ['direction', 'betaDown', 'betaUp', 'nDown', 'nUp', 'sampleSpan'],
+    // Two-sided — echoes the "Down days vs up days" card: the estimated beta on
+    // the driver's OWN down/up days (named), each with its n, stronger side named.
+    slots: ['name', 'direction', 'betaDown', 'betaUp', 'nDown', 'nUp', 'sampleSpan'],
     variants: [
-      { id: 'cap_a', requires: ['direction', 'betaDown', 'betaUp', 'nDown', 'nUp', 'sampleSpan'], template: 'The group ran {betaDown} beta on {nDown} down days and {betaUp} on {nUp} up days, stronger on {direction} days {sampleSpan}.' },
-      { id: 'cap_b', requires: ['direction', 'betaDown', 'betaUp', 'nDown', 'nUp', 'sampleSpan'], template: 'Stronger on {direction} days {sampleSpan}, the group ran {betaDown} beta across {nDown} down days versus {betaUp} across {nUp} up days.' },
+      { id: 'cap_a', requires: ['name', 'direction', 'betaDown', 'betaUp', 'nDown', 'nUp', 'sampleSpan'], template: "On {name}'s down days the estimated beta was {betaDown} across {nDown} days, and on its up days {betaUp} across {nUp} days — stronger on {direction} days {sampleSpan}." },
+      { id: 'cap_b', requires: ['name', 'direction', 'betaDown', 'betaUp', 'nDown', 'nUp', 'sampleSpan'], template: "The estimated beta was {betaDown} on {name}'s {nDown} down days and {betaUp} on its {nUp} up days, stronger on {direction} days {sampleSpan}." },
     ],
   },
   tail_comovement: {
-    // Echoes the tail card ("On the N weakest {driver} days ... the group was also
-    // down on M of them") with the driver named.
+    // Echoes the tail card, driver named; "largest declines in {driver}" instead
+    // of the ambiguous "weakest days".
     slots: ['name', 'n', 'coMoveCount', 'sampleSpan'],
     variants: [
-      { id: 'tail_a', requires: ['name', 'n', 'coMoveCount', 'sampleSpan'], template: 'On the {n} weakest {name} days, the group moved down on {coMoveCount} of them {sampleSpan}.' },
-      { id: 'tail_b', requires: ['name', 'n', 'coMoveCount', 'sampleSpan'], template: "On {name}'s {n} weakest days {sampleSpan}, the group moved down on {coMoveCount} of them." },
+      { id: 'tail_a', requires: ['name', 'n', 'coMoveCount', 'sampleSpan'], template: 'On the {n} largest declines in {name}, the group moved down on {coMoveCount} of them {sampleSpan}.' },
+      { id: 'tail_b', requires: ['name', 'n', 'coMoveCount', 'sampleSpan'], template: 'Across the {n} largest declines in {name} {sampleSpan}, the group moved down on {coMoveCount} of them.' },
     ],
   },
   low_cohesion: {
+    // Leads with the measurement (the mean pairwise correlation among members);
+    // the plain interpretation ("several stories") is secondary.
     slots: ['value', 'sampleSpan'],
     variants: [
-      { id: 'coh_a', requires: ['value', 'sampleSpan'], template: 'The group split into several stories at once, {value} internal cohesion {sampleSpan}.' },
-      { id: 'coh_b', requires: ['value', 'sampleSpan'], template: 'Its members split several ways {sampleSpan}, {value} internal cohesion.' },
+      { id: 'coh_a', requires: ['value', 'sampleSpan'], template: 'The average pairwise correlation among members was {value} {sampleSpan} — the group split into several stories.' },
+      { id: 'coh_b', requires: ['value', 'sampleSpan'], template: 'Among members, the average pairwise correlation was {value} {sampleSpan}, and they split into several directions.' },
     ],
   },
   driver_context: {
-    // Echoes the "Relationship context" card: the trailing move over the past 20
-    // sessions (rendered from the envelope's own unit), and the volatility
-    // percentile of its history.
+    // Echoes the "Relationship context" card: the trailing move (rendered with
+    // the driver's own unit phrasing for diff-mode yields, never a bare %), and
+    // the volatility of the driver's DAILY CHANGES vs its history.
     slots: ['name', 'volpct', 'ret', 'sampleSpan'],
     variants: [
-      { id: 'dc_vol', requires: ['name', 'volpct', 'sampleSpan'], template: "{name}'s own volatility sat in the {volpct} of its history {sampleSpan}." },
-      { id: 'dc_ret', requires: ['name', 'ret', 'sampleSpan'], template: '{name} itself moved {ret} {sampleSpan}.' },
+      { id: 'dc_vol', requires: ['name', 'volpct', 'sampleSpan'], template: 'The size of daily changes in {name} sat in the {volpct} of its own history {sampleSpan}.' },
+      { id: 'dc_ret', requires: ['name', 'ret', 'sampleSpan'], template: "{name}'s trailing move was {ret} {sampleSpan}." },
     ],
   },
 
-  // ── Closing caveat (present iff readState ≠ solid) ──
+  // ── Closing caveat (present iff readState ≠ solid) — each line owns its own
+  //    stated window; no roll-up into one blanket span. ──
   closing_caveat: {
-    slots: ['sampleSpan'],
+    slots: [],
     variants: [
-      { id: 'cc_a', requires: ['sampleSpan'], template: 'All of this described the measured window {sampleSpan}.' },
-      { id: 'cc_b', requires: ['sampleSpan'], template: 'Each line above described the sample {sampleSpan}.' },
+      { id: 'cc_a', requires: [], template: 'Each line above described only its stated window.' },
+      { id: 'cc_b', requires: [], template: 'Every line above held to its own stated window.' },
     ],
   },
 };

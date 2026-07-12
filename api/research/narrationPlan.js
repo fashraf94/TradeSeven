@@ -22,7 +22,7 @@ import { validateContract, schemaForKind } from './summaryContractSchema.js';
 import { fmtCorr, fmtPct, fmtBeta, ordinal } from '../../src/components/Research/correlationVerdict.js';
 import { PHRASEBOOK, variantsFor } from './narrationPhrasebook.js';
 
-export const PLAN_BUILDER_VERSION = '1.2';
+export const PLAN_BUILDER_VERSION = '1.3';
 
 // ── Vocabulary (pinned) — each sampleSpan is bound to its OWN window so the
 //    phrase matches the horizon the metric was measured over (§9). ────────────
@@ -50,17 +50,27 @@ function renderByUnit(env) {
   }
 }
 
-// Failing/missing criterion → a rendered clause (server span, lexicon-clean).
+// The driver's trailing move. For a diff-mode driver (a yield/rate), trailingReturn
+// is cur/base-1 on the yield LEVEL — a "% change in the yield level", not a price
+// return — so name the unit rather than leave a bare %.
+function renderTrailingMove(env, isDiff) {
+  const pct = fmtPct(env.value, 1);
+  return isDiff ? `${pct} in the yield level` : pct;
+}
+
+// Failing/missing criterion → a clause that NAMES the actual read-quality check
+// (the checklist item on the card), never a hardcoded interpretation like "thin
+// sample" (server span, lexicon-clean, plain register).
 const CRITERION_PHRASE = {
-  adequate_sample: 'the sample was thin',
-  stable_link: 'the link wandered across the window',
-  group_coheres: 'the group did not move as one',
-  broad_based: 'one member carried it',
-  survives_adjustment: 'little of it survived the market adjustment',
-  tension_contained: 'the link was under strain',
+  adequate_sample: 'the sample-size check did not hold',
+  stable_link: 'the stable-link check did not hold',
+  group_coheres: 'the group-cohesion check did not hold',
+  broad_based: 'the broad-based check did not hold',
+  survives_adjustment: 'the market-adjustment check did not hold',
+  tension_contained: 'the tension check did not hold',
 };
-const STABLE_LINK_MISSING = "the link's stability could not be measured";
-const TOO_FEW_CHECKS = 'too few checks applied to be sure';
+const STABLE_LINK_MISSING = 'the stable-link check could not run';
+const TOO_FEW_CHECKS = 'too few checks could be run';
 // Past-tense strain clause (no "it" prefix — the frame supplies the subject).
 const STRAIN_PHRASE = { stretched: 'stretched to an extreme', break: 'broke from its recent range' };
 
@@ -174,7 +184,7 @@ function buildHeadline(contract, name, marketProxy) {
 // ── Supporting claims ────────────────────────────────────────────────────────
 // Each returns a claim or null (null = family excluded: envelope not ok or the
 // notable condition did not fire). Supporting claims never fail the plan.
-function buildSupporting(id, contract, name, tensionState) {
+function buildSupporting(id, contract, name, tensionState, isDiff) {
   switch (id) {
     case 'tension_elevated': {
       // Cite the divergence `d` (correlation unit) — the number the gauge prints
@@ -191,7 +201,11 @@ function buildSupporting(id, contract, name, tensionState) {
       if (isExtreme(contract.percentile?.corr20)) { p = contract.percentile.corr20; window = 20; }
       else if (isExtreme(contract.percentile?.corr60)) { p = contract.percentile.corr60; window = 60; }
       if (!p) return null;
-      const spans = { pct: `${ordinal(Math.round(p.value * 100))} percentile`, sampleSpan: WINDOW_PHRASE[window] };
+      const spans = {
+        pct: `${ordinal(Math.round(p.value * 100))} percentile`,
+        set: `comparable ${window === 20 ? '1-month' : '3-month'} windows`,
+        sampleSpan: SAMPLE_PHRASE,
+      };
       return claim({ claimId: id, subjectId: 'percentile', metricId: `percentile.corr${window}`, fieldPath: `percentile.corr${window}`, spans, allowedVariants: prune(id, spans) });
     }
     case 'capture_asymmetry': {
@@ -202,6 +216,7 @@ function buildSupporting(id, contract, name, tensionState) {
       const bUp = contract.capture.betaUp;
       if (!okNum(bDown) || !okNum(bUp) || bDown.n == null || bUp.n == null) return null;
       const spans = {
+        name,
         direction: cmp,
         betaDown: renderByUnit(bDown), betaUp: renderByUnit(bUp),
         nDown: String(bDown.n), nUp: String(bUp.n),
@@ -232,9 +247,9 @@ function buildSupporting(id, contract, name, tensionState) {
         return claim({ claimId: id, subjectId: 'driver_context', metricId: 'driverContext.volPercentile', fieldPath: 'driverContext.volPercentile', spans, allowedVariants: prune(id, spans) });
       }
       if (okNum(ret) && Math.abs(ret.value) >= 0.1) {
-        // renderByUnit consumes the envelope's own unit (return_fraction → fmtPct) so
-        // a diff-mode driver's trailing move formats from the contract, not a guess.
-        const spans = { name, ret: renderByUnit(ret), sampleSpan: DRIVER_MOVE_PHRASE };
+        // Diff-mode (yield) drivers name the unit ("% … in the yield level"); a bare
+        // % would hide that this is a yield-level change, not a price return.
+        const spans = { name, ret: renderTrailingMove(ret, isDiff), sampleSpan: DRIVER_MOVE_PHRASE };
         return claim({ claimId: id, subjectId: 'driver_context', metricId: 'driverContext.trailingReturn', fieldPath: 'driverContext.trailingReturn', spans, allowedVariants: prune(id, spans) });
       }
       return null;
@@ -247,8 +262,10 @@ function buildSupporting(id, contract, name, tensionState) {
 // ── The plan builder ─────────────────────────────────────────────────────────
 /**
  * @param {object} contract - a deep-dive summaryContract (kind:'deepDive')
- * @param {{driverLabel?: string}} [opts] - the driver's DISPLAYED label (the same
- *   string the Lab card shows, §9); falls back to the contract's driver symbol.
+ * @param {{driverLabel?: string, driverReturnMode?: 'pct'|'diff'}} [opts] - the
+ *   driver's DISPLAYED label (the same string the Lab card shows, §9; falls back
+ *   to the contract's driver symbol) and its registry returnMode ('diff' for
+ *   yield/rate drivers → the trailing move is named as a yield-level change).
  * @returns {{ok:true, plan:{planBuilderVersion,claims}} | {ok:false, code, errors?}}
  */
 export function buildNarrationPlan(contract, opts = {}) {
@@ -259,6 +276,7 @@ export function buildNarrationPlan(contract, opts = {}) {
 
   const name = opts.driverLabel || contract.driver?.symbol || contract.driver?.driverId;
   if (!name) return { ok: false, code: 'no_driver_name' };
+  const isDiff = opts.driverReturnMode === 'diff';
 
   const readState = contract.evidence.readState;
   const readType = contract.evidence.readType;
@@ -295,7 +313,7 @@ export function buildNarrationPlan(contract, opts = {}) {
   let supportingCount = 0;
   for (const id of SUPPORTING_ORDER) {
     if (supportingCount >= 2) break;
-    const c = buildSupporting(id, contract, name, tensionState);
+    const c = buildSupporting(id, contract, name, tensionState, isDiff);
     if (c && c.allowedVariants.length) { claims.push(c); supportingCount += 1; }
   }
 
@@ -306,10 +324,10 @@ export function buildNarrationPlan(contract, opts = {}) {
     return { ok: false, code: 'thin_solid_read' };
   }
 
-  // 5. Closing caveat — present iff readState ≠ solid.
+  // 5. Closing caveat — present iff readState ≠ solid. No span: each line already
+  //    owns its stated window, so the closing carries no roll-up value.
   if (readState !== 'solid') {
-    if (!sampleSessions) return { ok: false, code: 'closing_unbuildable' };
-    const spans = { sampleSpan: sampleSessions };
+    const spans = {};
     claims.push(claim({ claimId: 'closing_caveat', subjectId: 'read_quality', metricId: 'evidence.readState', fieldPath: 'evidence', spans, allowedVariants: prune('closing_caveat', spans) }));
   }
 
