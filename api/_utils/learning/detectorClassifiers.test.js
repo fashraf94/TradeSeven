@@ -132,6 +132,35 @@ describe('classifyD2 — volume/momentum confirmation, three-state families', ()
     expect(d2({ volumeRatio: 1.5, upDayVolRatio: 0.9, macdAboveSignal: true }).volume).toBe(D2_FAMILY_STATES.PASS);
     expect(d2({ volumeRatio: 1.0, upDayVolRatio: 1.2, macdAboveSignal: true }).volume).toBe(D2_FAMILY_STATES.PASS);
   });
+
+  describe('intraday volume.ratio is a placeholder → relabeled MISSING (bar-basis fix)', () => {
+    it('intraday: volume family resolves off upDayVolRatio alone; the ~1.0 ratio is ignored', () => {
+      // upDay passes → PASS regardless of the placeholder value.
+      expect(d2({ dataMode: 'intraday', volumeRatio: 1.0, upDayVolRatio: 1.5, macdAboveSignal: true }))
+        .toMatchObject({ volume: D2_FAMILY_STATES.PASS, class: D2_CLASSES.CONFIRMED });
+      // upDay fails → the missing member could have flipped it → UNKNOWN → UNSCORABLE.
+      expect(d2({ dataMode: 'intraday', volumeRatio: 1.0, upDayVolRatio: 1.0, macdAboveSignal: true }))
+        .toMatchObject({ volume: D2_FAMILY_STATES.UNKNOWN, class: D2_CLASSES.UNSCORABLE });
+      // upDay null → both volume members missing → UNKNOWN → UNSCORABLE.
+      expect(d2({ dataMode: 'intraday', volumeRatio: 1.0, upDayVolRatio: null, macdAboveSignal: true }))
+        .toMatchObject({ volume: D2_FAMILY_STATES.UNKNOWN, class: D2_CLASSES.UNSCORABLE });
+    });
+
+    it('intraday: even a nominally-passing volume.ratio (≥1.5) is ignored (it is not a real observation)', () => {
+      // A stray ≥1.5 placeholder must not manufacture a volume PASS either.
+      const r = d2({ dataMode: 'intraday', volumeRatio: 2.0, upDayVolRatio: 1.0, macdAboveSignal: true });
+      expect(r.volume).toBe(D2_FAMILY_STATES.UNKNOWN); // upDay fails, ratio missing → UNKNOWN
+      expect(r.class).toBe(D2_CLASSES.UNSCORABLE);
+    });
+
+    it('pre-market and unlabeled inputs are UNCHANGED (regression guard)', () => {
+      const base = { volumeRatio: 1.0, upDayVolRatio: 1.0, macdAboveSignal: false };
+      expect(d2({ ...base, dataMode: 'premarket' }).volume).toBe(D2_FAMILY_STATES.FAIL);
+      expect(d2(base).volume).toBe(D2_FAMILY_STATES.FAIL); // no dataMode → observed, as before
+      // A non-intraday label other than premarket also leaves it observed.
+      expect(d2({ ...base, dataMode: 'unknown' }).volume).toBe(D2_FAMILY_STATES.FAIL);
+    });
+  });
 });
 
 // ════════════════════════════ D3 (ANNEX A4) ════════════════════════════

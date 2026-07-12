@@ -32,6 +32,7 @@ The scoring engine and `createAgentBattle` document shape are fenced as concepts
 
 ## 3. Discovery protocol
 
+- **`git fetch origin` is the FIRST step of every session — before any `git` comparison against a remote.** A stale remote-tracking ref (a container cloned once and never re-fetched) once showed `origin/main` 72 commits behind reality and lacking a doc that was already merged; the phantom gap briefly drove a real build decision. Never compare against `origin/main` / `@{upstream}` without fetching first, and record the fetch in the report preamble. (Codified July 12, 2026 — L1-foundation stale-ref incident; founder-cited.)
 - Every implementation task begins with a **read-only discovery/verification phase**, then a **hard STOP** for founder review before any writes.
 - Every factual claim about the codebase carries a `path/file.js:line` citation and a **VERIFIED / ASSUMED** marker. VERIFIED means you read the code at that line in this session. Re-verify inherited anchors — they drift.
 - **"Read-only" refers to project state** — working tree, branches, commits, remote. Fetching or deepening git history (`git fetch --unshallow`) for investigation **is permitted** and must be recorded in your report preamble. (Founder ruling, June 10, 2026.)

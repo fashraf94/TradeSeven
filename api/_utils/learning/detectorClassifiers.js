@@ -147,10 +147,25 @@ function resolveFamily(members) {
  * @param {number|null} inputs.upDayVolRatio        momentum.upDayVolRatio      (family: volume)
  * @param {boolean|null} inputs.macdAboveSignal     momentum.macdAboveSignal    (family: momentum)
  * @param {boolean|null} [inputs.macdFreshBullishCross] STRENGTH TIER only — never a vote.
+ * @param {'premarket'|'intraday'|string|null} [inputs.dataMode] source-doc write mode.
+ *        Under 'intraday', volume.ratio is a NEUTRALIZED placeholder and is
+ *        relabeled MISSING (see below).
  * @returns {{class: string, volume: string, momentum: string, momentumStrength: string|null}}
  */
-export function classifyD2({ volumeRatio, upDayVolRatio, macdAboveSignal, macdFreshBullishCross } = {}) {
-  const vr = numericInput(volumeRatio);
+export function classifyD2({ volumeRatio, upDayVolRatio, macdAboveSignal, macdFreshBullishCross, dataMode } = {}) {
+  // BAR-BASIS FIX (L1 Phase A): under an intraday source-doc write, volume.ratio
+  // is a NEUTRALIZED ~1.0 placeholder (compute-index-intelligence.js's
+  // injectIntradayBar sets the synthetic index-0 bar's volume to the trailing
+  // average — see barBasis.js), NOT an observed value. Reading it as observed
+  // makes ~1.0 < 1.5 return the volume vote as FAIL, silently polluting the
+  // UNCONFIRMED arm with entries that may have had genuine confirmation. So it is
+  // MISSING, not observed and not failing. This is INPUT-LABELING ONLY — the
+  // three-state resolveFamily and the truth table below are UNTOUCHED; the family
+  // rule already reasons about a missing member correctly. Only volume.ratio is
+  // affected; upDayVolRatio (a 20-bar ratio, 19 bars genuine) stays observed.
+  const observedVolumeRatio = dataMode === 'intraday' ? null : volumeRatio;
+
+  const vr = numericInput(observedVolumeRatio);
   const uv = numericInput(upDayVolRatio);
   const macd = booleanInput(macdAboveSignal);
 

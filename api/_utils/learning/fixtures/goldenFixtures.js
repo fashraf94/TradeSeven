@@ -118,3 +118,45 @@ export const D2_GOLDEN = Object.freeze([
     expected: D2_CLASSES.INDETERMINATE,
   },
 ]);
+
+// ── D2 intraday bar-basis fix (L1 Phase A) ───────────────────────────────────
+// Under dataMode='intraday', volume.ratio is a NEUTRALIZED ~1.0 placeholder, not
+// an observation, so it is relabeled MISSING and the volume family resolves off
+// upDayVolRatio alone. volumeRatio is deliberately set to 1.0 (the placeholder
+// value) in every intraday case to prove it can NEVER pull the vote to FAIL.
+export const D2_INTRADAY_GOLDEN = Object.freeze([
+  {
+    name: 'intraday + upDayVolRatio passes → volume PASS → classification proceeds (CONFIRMED)',
+    inputs: { dataMode: 'intraday', volumeRatio: 1.0, upDayVolRatio: 1.5, macdAboveSignal: true },
+    expected: D2_CLASSES.CONFIRMED,
+    expectVolume: 'PASS',
+  },
+  {
+    name: 'intraday + upDayVolRatio fails → volume UNKNOWN → UNSCORABLE',
+    inputs: { dataMode: 'intraday', volumeRatio: 1.0, upDayVolRatio: 1.0, macdAboveSignal: true },
+    expected: D2_CLASSES.UNSCORABLE,
+    expectVolume: 'UNKNOWN',
+  },
+  {
+    name: 'intraday + upDayVolRatio null → UNSCORABLE',
+    inputs: { dataMode: 'intraday', volumeRatio: 1.0, upDayVolRatio: null, macdAboveSignal: true },
+    expected: D2_CLASSES.UNSCORABLE,
+    expectVolume: 'UNKNOWN',
+  },
+  {
+    // REGRESSION GUARD: identical inputs, pre-market mode — the real volume.ratio
+    // is observed and behaves exactly as today (1.0 fails → with upDay failing,
+    // volume FAIL; here paired with momentum FAIL → UNCONFIRMED, a scorable arm).
+    name: 'pre-market + real volume.ratio → unchanged today (1.0 fails → FAIL → UNCONFIRMED)',
+    inputs: { dataMode: 'premarket', volumeRatio: 1.0, upDayVolRatio: 1.0, macdAboveSignal: false },
+    expected: D2_CLASSES.UNCONFIRMED,
+    expectVolume: 'FAIL',
+  },
+  {
+    // REGRESSION GUARD: pre-market with a genuinely passing volume.ratio confirms.
+    name: 'pre-market + passing volume.ratio → PASS → CONFIRMED (unchanged today)',
+    inputs: { dataMode: 'premarket', volumeRatio: 2.0, upDayVolRatio: 0.9, macdAboveSignal: true },
+    expected: D2_CLASSES.CONFIRMED,
+    expectVolume: 'PASS',
+  },
+]);
