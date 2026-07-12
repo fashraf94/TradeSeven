@@ -652,6 +652,56 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════
+    // AGENT LEARNING SYSTEM — L1 Foundation (DARK-INERT)
+    // Architecture V1.3 (FROZEN), T13: learning evidence is a
+    // competitive-integrity surface. If a client could write it, a player
+    // could manufacture a lesson and, through it, a leaderboard advantage.
+    // So the DENIALS ship first — before any write path exists — and there
+    // is never a window in which these collections are client-writable.
+    //
+    // ALL writes are server-side (Admin SDK via Vercel serverless), which
+    // bypasses these rules entirely. The ONE client-readable surface is the
+    // dossier, and only for its owning user, because the dossier is what
+    // eventually surfaces to that user. Raw evidence atoms, receipts, and
+    // calibration manifests are NEVER client-readable — they are the
+    // substrate a lesson is derived from, and exposing them exposes other
+    // agents' decision data.
+    //
+    // Manual deploy via Firebase Console required after merge — Firestore
+    // rules don't auto-deploy from code; nothing writes or reads these
+    // collections until Phase B (all behind LEARNING_L1_CAPTURE_ENABLED,
+    // which is false at merge), so there is no urgency.
+    // ═══════════════════════════════════════════
+
+    // Dossier — the ONLY client-readable collection in the set, and only for
+    // the owning user (resource.data.userId). No client writes, ever.
+    match /learningDossiers/{agentId} {
+      allow read: if request.auth != null
+                  && request.auth.uid == resource.data.userId;
+      allow write: if false;  // Admin SDK only
+    }
+
+    // Evidence atoms — raw substrate a lesson is derived from. No client
+    // reads (exposes other agents' decision data), no client writes.
+    match /learningEvidence/{agentId}/atoms/{atomId} {
+      allow read: if false;   // Admin SDK only
+      allow write: if false;  // Admin SDK only
+    }
+
+    // Receipts — the raw record of a decision opportunity, server-authoritative
+    // evidence (T13). No client reads, no client writes.
+    match /learningReceipts/{battleId}/receipts/{receiptId} {
+      allow read: if false;   // Admin SDK only
+      allow write: if false;  // Admin SDK only
+    }
+
+    // Calibration manifest instances. No client reads, no client writes.
+    match /learningCalibration/{manifestVersion} {
+      allow read: if false;   // Admin SDK only
+      allow write: if false;  // Admin SDK only
+    }
+
+    // ═══════════════════════════════════════════
     // Default deny everything else
     // ═══════════════════════════════════════════
     match /{document=**} {
