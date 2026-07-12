@@ -190,7 +190,9 @@ export function DepartedLedger({ kind, departed, onClose, maxWidth, fixed = fals
   const items = departed?.items || [];
   const total = departed?.total || 0;
   const pendingCount = departed?.pendingCount || 0;
-  const tintOf = (v) => (v > 0 ? ST_GOOD : v < 0 ? ST_BAD : LTOKENS.ink2);
+  // Tint from the ROUNDED value so a number that displays '0' (fmtPoints) is never
+  // painted green/red — the color and the integer come from one source (§9).
+  const tintOf = (v) => { const r = Math.round(v); return r > 0 ? ST_GOOD : r < 0 ? ST_BAD : LTOKENS.ink2; };
   const rowBase = { display: 'flex', alignItems: 'center', gap: 9, padding: '9px 11px', borderRadius: 10,
     background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` };
   return (
@@ -207,7 +209,9 @@ export function DepartedLedger({ kind, departed, onClose, maxWidth, fixed = fals
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <ArenaCount value={total} size={20} showSign />
+          {/* Integer (fmtPoints), matching the chip and the per-item rows — banked
+              points are settled/static, so no count-up animation (§9: one format). */}
+          <Mono style={{ fontSize: 20, fontWeight: 800, color: alpha(tintOf(total), 0.95), fontVariantNumeric: 'tabular-nums', display: 'block', lineHeight: 1 }}>{fmtPoints(total)}</Mono>
           <Mono style={{ fontSize: 8, color: LTOKENS.ink3, display: 'block', marginTop: 2, letterSpacing: '0.1em' }}>BANKED</Mono>
         </div>
       </div>

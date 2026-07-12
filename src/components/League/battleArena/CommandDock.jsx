@@ -60,7 +60,10 @@ export function DepartedChip({ kind, departed, onOpen, style }) {
   if (!departed) return null;
   const { total = 0, pendingCount = 0 } = departed;
   const isSwap = kind === 'swap';
-  const tint = total > 0 ? ST_GOOD : total < 0 ? ST_BAD : LTOKENS.ink2;
+  // Tint from the ROUNDED total so a value that displays '0' (fmtPoints) reads
+  // neutral, never a green/red '0' — color and number from one source (§9).
+  const r = Math.round(total);
+  const tint = r > 0 ? ST_GOOD : r < 0 ? ST_BAD : LTOKENS.ink2;
   return (
     <button className="bv2-tap" onClick={onOpen} aria-label={isSwap ? 'Banked from swaps — detail' : 'Dropped picks — detail'}
       style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,

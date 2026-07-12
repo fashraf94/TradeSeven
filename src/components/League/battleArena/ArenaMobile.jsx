@@ -176,7 +176,7 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
         <FreeAgencyDoorway onClose={() => setFaOpen(false)} claim={data ? D.claim : null} onClaim={handlers?.onClaim} maxWidth={SHEET_FIT} fixed />
       )}
       {oppSeat && <OpponentSnapshot seat={oppSeat} composite={D.climb[opp]?.[lastIdx] ?? 0} onClose={() => setOpp(null)} maxWidth={SHEET_FIT} fixed />}
-      {departedView && (
+      {departedView && (departedView === 'swap' ? D.agentDeparted : D.userDeparted) && (
         <DepartedLedger kind={departedView} departed={departedView === 'swap' ? D.agentDeparted : D.userDeparted}
           onClose={() => setDepartedView(null)} maxWidth={SHEET_FIT} fixed />
       )}

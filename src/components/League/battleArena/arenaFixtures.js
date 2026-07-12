@@ -71,9 +71,9 @@ export const ARENA_AGENT_MOVE = Object.freeze({ from: 'SOFI', to: 'MSTR', ago: '
 export const ARENA_AGENT_DEPARTED = Object.freeze({
   total: 21,
   items: Object.freeze([
-    Object.freeze({ out: 'SOFI', in: 'MSTR', pts: 15, day: 1 }),
-    Object.freeze({ out: 'LLY', in: 'NVDA', pts: 12, day: 2 }),
-    Object.freeze({ out: 'PLTR', in: 'AMD', pts: -6, day: 2 }),
+    Object.freeze({ out: 'SOFI', in: 'MSTR', pts: 15 }),
+    Object.freeze({ out: 'LLY', in: 'NVDA', pts: 12 }),
+    Object.freeze({ out: 'PLTR', in: 'AMD', pts: -6 }),
   ]),
 });
 export const ARENA_USER_DEPARTED = Object.freeze({

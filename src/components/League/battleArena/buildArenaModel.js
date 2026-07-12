@@ -228,7 +228,6 @@ export function buildArenaModel({
         out: t.symbolOut ?? null,
         in: t.symbolIn ?? null,
         pts: Number.isFinite(t.lockedPoints) ? t.lockedPoints : 0,
-        day: Number.isFinite(t.swapDay) ? t.swapDay : null,
       }));
     if (swapItems.length > 0) {
       agentDeparted = { total: swapItems.reduce((a, s) => a + s.pts, 0), items: swapItems };

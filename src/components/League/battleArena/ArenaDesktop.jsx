@@ -89,7 +89,7 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
       {done && filmOpen && <FilmRoomOverlay onClose={() => setFilmOpen(false)} />}
       {faOpen && <FreeAgencyDoorway onClose={() => setFaOpen(false)} claim={data ? D.claim : null} onClaim={handlers?.onClaim} />}
       {oppSeat && <OpponentSnapshot seat={oppSeat} composite={D.climb[opp]?.[lastIdx] ?? 0} onClose={() => setOpp(null)} />}
-      {departedView && (
+      {departedView && (departedView === 'swap' ? D.agentDeparted : D.userDeparted) && (
         <DepartedLedger kind={departedView} departed={departedView === 'swap' ? D.agentDeparted : D.userDeparted} onClose={() => setDepartedView(null)} />
       )}
     </div>
