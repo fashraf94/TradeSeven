@@ -10,6 +10,10 @@ export const DATA_DIR = path.join(STUDY_ROOT, 'data');
 export const NORM_DIR = path.join(DATA_DIR, 'normalized');
 
 export const PROBE = [...CONFIG.universe.probe.equities, ...CONFIG.universe.probe.context];
+// S4 §0b (F4): the subset of PROBE that carries 5-min data. SPHB/SPLV are daily-grain only
+// (config.universe.dailyGrainOnly) — their 5m is never fetched, so any test reading
+// sessions.json must iterate FIVE_MIN_PROBE, not PROBE.
+export const FIVE_MIN_PROBE = PROBE.filter((s) => !CONFIG.universe.dailyGrainOnly.includes(s));
 
 export function hasNormalized(sym) {
   return fs.existsSync(path.join(NORM_DIR, sym, 'sessions.json')) &&

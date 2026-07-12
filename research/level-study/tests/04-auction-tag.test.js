@@ -3,9 +3,10 @@
 // (etMin 960) in BOTH DST regimes. (A2; robust to the half-day / vendor-gap exceptions found in S2.)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PROBE, loadSessions } from './_helpers.js';
+import { FIVE_MIN_PROBE, loadSessions } from './_helpers.js';
 
-for (const sym of PROBE) {
+// S4 §0b (F4): SPHB/SPLV are daily-grain only — excluded from the 5m auction-tag loop.
+for (const sym of FIVE_MIN_PROBE) {
   test(`auction tag: ${sym} — ≤1/session, at 16:00 ET on full days, both DST regimes`, () => {
     const sessions = loadSessions(sym);
 

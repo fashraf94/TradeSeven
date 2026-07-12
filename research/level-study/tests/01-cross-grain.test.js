@@ -4,11 +4,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import CONFIG from '../config.js';
 import { crossGrainCheck } from '../lib/normalize.js';
-import { PROBE, loadSessions, loadDaily, byDateOf } from './_helpers.js';
+import { FIVE_MIN_PROBE, loadSessions, loadDaily, byDateOf } from './_helpers.js';
 
 const TOL = CONFIG.adjustment.crossGrainInvariant.tolerancePct; // 0.1
 
-for (const sym of PROBE) {
+// S4 §0b (F4): SPHB/SPLV are daily-grain only — excluded from the 5m cross-grain loop.
+for (const sym of FIVE_MIN_PROBE) {
   test(`cross-grain: ${sym} raw daily close ↔ 5m auction print ≤ ${TOL}% (≥20 sessions)`, () => {
     const rows = crossGrainCheck(loadSessions(sym), byDateOf(loadDaily(sym)));
     assert.ok(rows.length >= 20, `${sym}: only ${rows.length} auctioned sessions (need ≥20)`);

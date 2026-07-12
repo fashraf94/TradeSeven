@@ -117,6 +117,16 @@ export function runLevels(dailyBars, opts = {}) {
 function stepOneDay(series, N, D, symbol, state, opts) {
   const day = buildDaySnapshots(series, N, D, { symbol, enabledFamilies: opts.enabledFamilies });
   lineageStep(state, D, day.snapshots, { unit: day.unit, refClose: day.refClose });
+  // S4: stamp each snapshot with its family's committed (post-EMA) anchor as of D. This is
+  // the single source for the point-in-time episode zone (anchor ± 0.25·u) consumed by
+  // 03-detect-events.js — the same frame the role machine reads (levels.lineage.roleMachine),
+  // so roles and episode zones agree by construction (config.js "unified frame" note). We read
+  // lineage's committed value; no EMA math is duplicated (BUILD_RULES §4). Merge has already
+  // rewritten snap.familyId → survivor, so this resolves to the survivor's anchor.
+  for (const snap of day.snapshots) {
+    const fam = state.families.get(snap.familyId);
+    snap.familyAnchor = fam ? fam.anchor : snap.centroid;
+  }
   return { date: D, atr: day.atr, refClose: day.refClose, unit: day.unit, snapshots: day.snapshots };
 }
 
@@ -371,6 +381,11 @@ export function scanWarnings(allStats, strataOf = () => null) {
     const med = quantile(vals, 0.5);
     const mad = quantile(vals.map((v) => Math.abs(v - med)), 0.5);
     if (!(mad > 0)) continue;
+    // S4 §2.1 MAD sensitivity floor: on a tight distribution 3·MAD is a spuriously narrow
+    // band that cries wolf (e.g. a 2.45 vs 2.32-median role-flip rate with MAD 0.02). Require
+    // MAD ≥ floorFrac·|median| before flagging; genuine outliers (large relative deviation,
+    // e.g. PG's F2/F3 share) still clear this and survive.
+    if (!(mad >= CONFIG.diagnostics.anomalyScan.madMedianFloorFrac * Math.abs(med))) continue;
     for (const s of allStats) {
       const v = fn(s);
       if (v != null && Math.abs(v - med) > 3 * mad) {
@@ -381,8 +396,14 @@ export function scanWarnings(allStats, strataOf = () => null) {
 
   // Cross-strata checks — the check class that would have caught LS3-01.
   const withAtr = allStats.filter((s) => s.atrPctMedian != null);
-  const correlations = {};
-  if (withAtr.length >= 4) {
+  // S4 §2.2: a cross-strata correlation computed over a near-all-zero event vector (e.g.
+  // atrPct_vs_splitRate on 5 split events across 11 symbols) is noise dressed as signal.
+  // Suppress it (report 'insufficient') until the universe carries enough events to correlate.
+  const totalEvents = allStats.reduce((a, s) => a + s.events.merges + s.events.splits + s.events.retirements, 0);
+  let correlations = {};
+  if (totalEvents < CONFIG.diagnostics.anomalyScan.crossStrataMinEvents) {
+    correlations = { status: 'insufficient', totalEvents };
+  } else if (withAtr.length >= 4) {
     const atr = withAtr.map((s) => s.atrPctMedian);
     // Correlate RATES (per 100 study families), never raw counts — raw counts made
     // merges read as ATR-correlated purely because high-vol names carry more families.
@@ -461,8 +482,8 @@ async function main() {
   for (const sym of symbols) {
     const dailyPath = path.join(NORM_DIR, sym, 'daily.json');
     if (!fs.existsSync(dailyPath)) {
-      // The S2 fetcher's default list is the 14-symbol probe — universe symbols outside
-      // it (PLTR, BE) must be fetched explicitly by name.
+      // The fetcher's default scope is now the frozen universe (S4 §0b/F4), so PLTR/BE are
+      // fetched by default; a missing symbol here means the fetch never ran for it.
       failures.push({ symbol: sym, error: `missing ${path.relative(HERE, dailyPath)} — run \`node 01-fetch-history.js ${sym}\` first` });
       console.log(`🔴 ${sym}: no normalized daily data — skipped (fetch it: node 01-fetch-history.js ${sym})`);
       continue;
