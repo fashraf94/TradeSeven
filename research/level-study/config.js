@@ -256,7 +256,7 @@ const CONFIG = {
         // those boundaries with margin (worst bind: floor 6.1% KO, cap 9.0% COIN).
         // Re-confirm on the full universe (PLTR/BE + expansion) — one-line measurement.
         floorPct: 0.26,    // ⚠ S35-C10: floor binds ≤10% ∀s; still catches the genuine low-ATR/degenerate tail
-        capPct: 2.7,       // ⚠ S35-C10: cap is load-bearing — binds only COIN's wildest ~9% (extreme-ATR tail), never its normal regime
+        capPct: 2.71,       // ⚠ S35-C10: cap is load-bearing — binds only COIN's wildest ~9% (extreme-ATR tail), never its normal regime
       },
       multiples: { // v2 starting values — ALL ⚠ provisional (S35-C2); ordering NOT negotiable
         kCluster: 0.5,    // structural pivot grouping DIAMETER bound  (≤ kConfluence)
