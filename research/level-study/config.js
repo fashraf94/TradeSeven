@@ -443,6 +443,9 @@ const CONFIG = {
       // S3-R1 (founder ruling — closes S2 ⚠ flag #6): ET-minute cutoffs, [start, end).
       // open 09:30–10:30, midday 10:30–14:30, power 14:30–16:00, all ET.
       todBucketEtCutoffs: { open: [570, 630], midday: [630, 870], power: [870, 960] }, // S3-R1
+      // S5-C1 (pre-registered BEFORE outcomes; P3's three RVOL buckets). 1.0 = normal volume
+      // for that time of day. Fixed edges, not data-derived — the honest pre-registration.
+      rvolApproachBuckets: { LOW: [null, 0.8], MID: [0.8, 1.5], HIGH: [1.5, null] }, // [lo, hi): LOW <0.8, MID 0.8–1.5, HIGH ≥1.5
     },
     momentumQuality: { // parent §8.3 (stored features)
       keys: ['path_efficiency', 'accel_final_30m', 'pullback_depth_max', 'hl_progression',
@@ -602,6 +605,12 @@ const CONFIG = {
     },
     acceptance: { // parent §15 — a bucket informs trading only when ALL hold
       minN: 30, // in-sample independent episodes (raised from 20)
+      // S5-A2 (pre-registration amendment, founder-ruled 2026-07-12, BEFORE any outcome exists):
+      // the date-clustered bootstrap resamples DATES, so a cell's effective n is its unique-date
+      // count (in-sample events span ~609/609 sessions — every session fires; n=60 on 12 dates is
+      // far weaker than n=60 on 50). Every reported cell carries uniqueDates; failing either
+      // floor → UNCONFIRMED. Reported in every checkpoint/table from S5 forward.
+      minUniqueDates: 15, // S5-A2 — in addition to minN
       minSiblingDiffPoints: 15, // AND its 90% clustered CI excludes zero
       stabilityMustPass: true,
       holdoutMustConfirm: true,
@@ -620,7 +629,12 @@ const CONFIG = {
     P1: { study: 'confirmation-time', q: 'Does hourly_class predict held_EOD from entryAt? (F2+ levels)', endpoint: 'held_EOD', origin: 'entryAt', gate: 'F2+' }, // parent §10.1
     P2: { study: 'bridge', q: 'Per hourly class: distribution of fractionElapsedAtEntry; is remaining MFE-vs-MAE from entryAt still favorable?', endpoint: 'fractionElapsedAtEntry + remaining MFE/MAE', origin: 'entryAt' }, // parent §10.1
     P3: { study: 'touch-time', q: 'Does rvol_approach bucket predict clean_bounce from touchAt? (within F2+, pre_touch only)', endpoint: 'clean_bounce', origin: 'touchAt', gate: 'F2+' }, // parent §10.1
-    P4: { study: 'confirmation-time', q: 'Does family tier (F1/F2/F3) predict held_EOD within SHARP_REJECT?', endpoint: 'held_EOD', origin: 'entryAt', within: 'SHARP_REJECT' }, // parent §10.1
+    // S5-A1 (pre-registration amendment, founder-ruled 2026-07-12, BEFORE any outcome exists):
+    // F3 events are 3–12/symbol over the full window — split by side within SHARP_REJECT the F3
+    // cell is structurally below any honest floor, permanently. P4's primary comparison becomes
+    // F1 vs F2. F3 events are NOT discarded: they pool into F2+ wherever F2+ gates (P1/P2/P3/P6
+    // unchanged) and appear as a descriptive footnote in the exploratory appendix.
+    P4: { study: 'confirmation-time', q: 'Does family tier (F1 vs F2) predict held_EOD within SHARP_REJECT?', endpoint: 'held_EOD', origin: 'entryAt', within: 'SHARP_REJECT', compare: ['F1', 'F2'], f3Disposition: 'pooled into F2+ gates; exploratory footnote only' }, // parent §10.1 as amended S5-A1
     P5: { study: 'confirmation-time', q: 'BREAK_RECLAIM vs DRIFT_HOLD: forward MFE from entryAt (trap-pattern question)', endpoint: 'forward MFE', origin: 'entryAt', compare: ['BREAK_RECLAIM', 'DRIFT_HOLD'] }, // parent §10.1
     P6: { // Addendum §A4.3 (confirmation-time, per side)
       study: 'confirmation-time',

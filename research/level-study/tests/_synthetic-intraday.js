@@ -36,19 +36,25 @@ export function geom(anchor = 100, unit = 1) {
 }
 
 /** One regular 5-min bar centred on `price`. epoch is deterministic (Date.parse of the ISO label). */
-export function bar(etDate, etMinutes, price, { h = 0.02 } = {}) {
+export function bar(etDate, etMinutes, price, { h = 0.02, v = 1000 } = {}) {
   const epoch = Math.floor(Date.parse(`${etDate}T${hhmm(etMinutes)}:00Z`) / 1000);
   return {
     epoch, etDate, etMinutes, role: 'regular', closingAuction: false,
-    open: price, high: price + h, low: price - h, close: price, volume: 1000, adjFactor: 1,
+    open: price, high: price + h, low: price - h, close: price, volume: v, adjFactor: 1,
     adjOpen: price, adjHigh: price + h, adjLow: price - h, adjClose: price, warmup: false,
   };
 }
 
-/** A 5-min session from a price path (one bar per 5 minutes starting 09:30 = etMin 570). */
+/**
+ * A 5-min session from a price path (one bar per 5 minutes starting 09:30 = etMin 570).
+ * Entries may be plain numbers or {p, v?, h?} objects (S5: per-bar volume for RVOL fixtures).
+ */
 export function session5m(etDate, prices, opts = {}) {
   const { startMin = 570, h = 0.02, isFullDay = true, earlyClose = false, hasAuction = true } = opts;
-  const regular = prices.map((p, i) => bar(etDate, startMin + i * 5, p, { h }));
+  const regular = prices.map((x, i) => {
+    const spec = typeof x === 'object' ? x : { p: x };
+    return bar(etDate, startMin + i * 5, spec.p, { h: spec.h ?? h, v: spec.v ?? 1000 });
+  });
   const sessionCloseAdj = regular.length ? regular[regular.length - 1].adjClose : null;
   return { etDate, isFullDay, earlyClose, hasAuction, sessionCloseAdj, regular };
 }

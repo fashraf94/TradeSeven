@@ -160,10 +160,14 @@ export function buildCheckpointReport(allEvents, opts = {}) {
   const top5 = Object.values(bySymbol).sort((a, b) => b - a).slice(0, 5).reduce((a, b) => a + b, 0);
   const uniqueDates = new Set(inSample.map((e) => e.eventDate)).size;
 
-  const cellVerdict = (n) => (n >= MIN_N ? 'PASS' : 'UNDERPOWERED');
+  const minUd = CONFIG.honesty.acceptance.minUniqueDates; // S5-A2: uniqueDates floor, reported in every checkpoint
+  const cellVerdict = (n, ud) => (n >= MIN_N && ud >= minUd ? 'PASS' : 'UNDERPOWERED');
   const sideCells = (arr) => {
     const s = bySide(arr);
-    return { support: s.support, resistance: s.resistance, supportVerdict: cellVerdict(s.support), resistanceVerdict: cellVerdict(s.resistance) };
+    const ud = (side) => new Set(arr.filter((e) => e.side === side).map((e) => e.eventDate)).size;
+    const udS = ud('support'), udR = ud('resistance');
+    return { support: s.support, resistance: s.resistance, supportUniqueDates: udS, resistanceUniqueDates: udR,
+      supportVerdict: cellVerdict(s.support, udS), resistanceVerdict: cellVerdict(s.resistance, udR) };
   };
 
   // Only the S4-KNOWABLE gating cell is scored now; finer splits (hourly class, RVOL bucket,
