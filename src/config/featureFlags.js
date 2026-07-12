@@ -591,3 +591,30 @@ export const CORRELATION_SYNTHESIS_ENABLED = true;
  * CORRELATION_SYNTHESIS_ENABLED precedent) — never in the build PR.
  */
 export const CORRELATION_EXTENDED_DRIVERS_ENABLED = true;
+
+/**
+ * Correlation Intelligence V3 Phase 2 — THE NARRATED LAB: the deep-dive
+ * "Explain this read" voice. A pure deterministic plan builder selects/orders
+ * the claims and renders every value/date/name/band into exact display spans;
+ * the Gemma voice layer RENDERS (picks one approved sentence frame per claim +
+ * a connective — it does not author); a conformance validator proves the output
+ * is exactly the approved frames with the exact server spans and nothing else.
+ * On any plan/model/validation failure the endpoint falls to the deterministic
+ * verdict sentence (the "standard summary"). Narration is strictly downstream of
+ * an existing cached deep-dive contract — the endpoint never recomputes.
+ *
+ * Built/merged DARK (FALSE). Dependency rule enforced at the endpoint guard via
+ * narrationActive() (mirrors summaryContract.js:synthesisActive): narration
+ * computes/serves ONLY when CORRELATION_NARRATION_ENABLED &&
+ * CORRELATION_LAB_ENABLED && CORRELATION_SYNTHESIS_ENABLED (the summary contract
+ * only exists when synthesis is active, so narration must require it). While
+ * FALSE the /api/research/correlation-narrate endpoint returns 404 (dark =
+ * invisible: no reads, no model call, no cache writes) and the Lab renders no
+ * "Explain this read" button — byte-identical to today. Nested under
+ * CORRELATION_LAB_ENABLED and sibling to CORRELATION_SYNTHESIS_ENABLED —
+ * meaningless when either is off.
+ *
+ * Flip in a one-line follow-up PR after a founder Vercel-preview smoke (the
+ * CORRELATION_SYNTHESIS_ENABLED precedent) — never in the build PR.
+ */
+export const CORRELATION_NARRATION_ENABLED = false;
