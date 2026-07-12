@@ -1,8 +1,8 @@
 // api/_utils/learning/detectorClassifiers.test.js
 import { describe, it, expect } from 'vitest';
 import {
-  classifyD1, classifyD2, classifyD3Predicate,
-  D1_CLASSES, D2_CLASSES, D2_FAMILY_STATES, D3_COUNTING_SCOPES,
+  classifyD1, classifyD1DrAbstain, drNullReason, classifyD2, classifyD3Predicate,
+  D1_CLASSES, D1_DR_NULL_REASONS, D2_CLASSES, D2_FAMILY_STATES, D3_COUNTING_SCOPES,
 } from './detectorClassifiers.js';
 
 // ════════════════════════════ D1 (ANNEX A2) ════════════════════════════
@@ -61,6 +61,80 @@ describe('classifyD1 — extension state', () => {
     expect(classifyD1({ bbPercentB: 1.0, distanceToResistancePct: 5, distTo52wkHigh: 5 }).severe).toBe(true);
     // d52=0.5 exactly fires the extended marker
     expect(d1(0.90, 2.0, 0.5)).toBe(D1_CLASSES.INDETERMINATE); // 1 extended (d52), nothing else
+  });
+});
+
+// ════════════════════ D1 dR-abstain variant (Phase A.5) ════════════════════
+describe('classifyD1DrAbstain — null dR abstains (measurement, not adoption)', () => {
+  const abstain = (pB, dR, d52) => classifyD1DrAbstain({ bbPercentB: pB, distanceToResistancePct: dR, distTo52wkHigh: d52 }).class;
+  const specced = (pB, dR, d52) => classifyD1({ bbPercentB: pB, distanceToResistancePct: dR, distTo52wkHigh: d52 }).class;
+
+  it('dR present → identical to the as-specced classifier (delegates)', () => {
+    // Sweep a range of present-dR inputs; abstain must equal as-specced exactly.
+    for (const pB of [0.5, 0.86, 0.96, 1.01]) {
+      for (const dR of [0.5, 1.0, 2.0, 3.0, 5.0]) {
+        for (const d52 of [0.4, 1.0, 2.0, 6.0]) {
+          expect(abstain(pB, dR, d52), `${pB}/${dR}/${d52}`).toBe(specced(pB, dR, d52));
+        }
+      }
+    }
+  });
+
+  it('dR null + both remaining extended markers fire → EXTENDED (2-of-2)', () => {
+    expect(abstain(0.96, null, 0.4)).toBe(D1_CLASSES.EXTENDED);
+  });
+
+  it('THE ASYMMETRY: dR null + only one remaining extended → INDETERMINATE (as-specced with a firing dR would be EXTENDED)', () => {
+    // pB extended, d52 neutral. As-specced with dR=0.5 (extended) → 2 markers → EXTENDED.
+    expect(specced(0.96, 0.5, 1.0)).toBe(D1_CLASSES.EXTENDED);
+    // Abstain drops the dR marker → only 1 extended → INDETERMINATE. This is the
+    // lower-evidence-bar concern the measurement exists to expose (M3).
+    expect(abstain(0.96, null, 1.0)).toBe(D1_CLASSES.INDETERMINATE);
+  });
+
+  it('dR null + severe (pB ≥ 1.00) → EXTENDED (severe path unaffected by dR)', () => {
+    expect(abstain(1.0, null, 5.0)).toBe(D1_CLASSES.EXTENDED);
+  });
+
+  it('dR null + both remaining room markers, zero extended → ROOM', () => {
+    expect(abstain(0.80, null, 3.0)).toBe(D1_CLASSES.ROOM);
+  });
+
+  it('dR null + only one remaining room marker → INDETERMINATE', () => {
+    expect(abstain(0.80, null, 1.0)).toBe(D1_CLASSES.INDETERMINATE); // d52=1.0 neither
+  });
+
+  it('dR CORRUPT (NaN/±∞) still → UNSCORABLE in abstain mode (abstain forgives null ONLY)', () => {
+    expect(abstain(0.96, NaN, 0.4)).toBe(D1_CLASSES.UNSCORABLE);
+    expect(abstain(0.96, Infinity, 0.4)).toBe(D1_CLASSES.UNSCORABLE);
+    expect(abstain(0.96, 'x', 0.4)).toBe(D1_CLASSES.UNSCORABLE);
+  });
+
+  it('pB or d52 null/corrupt still → UNSCORABLE even with dR abstained', () => {
+    expect(abstain(null, null, 0.4)).toBe(D1_CLASSES.UNSCORABLE);
+    expect(abstain(0.96, null, null)).toBe(D1_CLASSES.UNSCORABLE);
+    expect(abstain(NaN, null, 0.4)).toBe(D1_CLASSES.UNSCORABLE);
+  });
+});
+
+describe('drNullReason — blue-sky vs ambiguous (the partial split)', () => {
+  it('dR present → present (regardless of support)', () => {
+    expect(drNullReason({ distanceToResistancePct: 2.0, nearestSupport: null })).toBe(D1_DR_NULL_REASONS.PRESENT);
+    expect(drNullReason({ distanceToResistancePct: 0, nearestSupport: 150 })).toBe(D1_DR_NULL_REASONS.PRESENT);
+  });
+
+  it('dR null + support present → blue_sky (structure exists, nothing overhead)', () => {
+    expect(drNullReason({ distanceToResistancePct: null, nearestSupport: 173.75 })).toBe(D1_DR_NULL_REASONS.BLUE_SKY);
+  });
+
+  it('dR null + no support → ambiguous (the irreducible O1/O2/O4 region)', () => {
+    expect(drNullReason({ distanceToResistancePct: null, nearestSupport: null })).toBe(D1_DR_NULL_REASONS.AMBIGUOUS);
+    expect(drNullReason({ distanceToResistancePct: null, nearestSupport: undefined })).toBe(D1_DR_NULL_REASONS.AMBIGUOUS);
+  });
+
+  it('never throws on malformed input', () => {
+    expect(() => drNullReason()).not.toThrow();
+    expect(drNullReason()).toBe(D1_DR_NULL_REASONS.AMBIGUOUS);
   });
 });
 

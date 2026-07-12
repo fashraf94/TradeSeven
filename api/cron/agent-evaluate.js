@@ -1982,6 +1982,16 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
                   regimeOut: stockRegimes[haikuResult.symbolOut] ?? null,
                   techDocIn: technicalScoresMap?.[haikuResult.symbolIn] ?? null,
                   techDocOut: technicalScoresMap?.[haikuResult.symbolOut] ?? null,
+                  // Phase A.5 — predicate provenance for staleness + the level fields.
+                  // rankingsComputedMs (line ~796) is block-scoped and out of reach here;
+                  // recompute from rankingsResult (function-scoped) with an existence guard.
+                  rankingsComputedAtMs:
+                    rankingsResult?.status === 'fulfilled' && rankingsResult.value?.exists
+                      ? (rankingsResult.value.data().computedAt?.toMillis?.() ?? null)
+                      : null,
+                  // Phase A.5 — M8 / D3 truncation provenance (trades[] cap = 50).
+                  tradeCountAtDecision: battle.scoreState?.tradeCount ?? null,
+                  tradesLenAtDecision: battle.trades?.length ?? null,
                   capturedAt: new Date().toISOString(),
                 });
               } catch (l1Err) {

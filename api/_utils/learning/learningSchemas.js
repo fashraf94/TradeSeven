@@ -1,7 +1,16 @@
 // api/_utils/learning/learningSchemas.js
 //
-// Agent Learning System — L1 Foundation, Phase 2.
-// SHAPES ONLY. No derived values, no computation, no writer for atoms/dossiers.
+// Agent Learning System — L1 Foundation, Phase 2 (+ Phase A.5).
+// SHAPES ONLY. No writer for atoms/dossiers.
+//
+// CONTRACT (reframed in Phase A.5): the receipt carries NO outcome-derived /
+// estimator fields — no MPE, regret, contrast, return, effect, or scoring. It
+// MAY carry deterministic, OUTCOME-BLIND annotations computed from the predicate
+// snapshot alone (the same posture as `dataQuality.nullFlags`): the D1 dual-rule
+// class labels, the dR null-reason, and predicate staleness/provenance added in
+// Phase A.5 read only predicate inputs, level fields, symbol, and timestamps —
+// never any P&L, exit price, or win/loss. This instruments the predicate side so
+// a real capture run can answer what the contract math cannot.
 //
 // These skeleton factories define the stable shape of each collection's docs so
 // the Phase-B estimators can be written against them WITHOUT a migration. Every
@@ -35,15 +44,37 @@ export function makePredicateInputs(overrides = {}) {
     macdAboveSignal: null, // momentum.macdAboveSignal
     macdFreshBullishCross: null, // momentum.macdFreshBullishCross (strength tier only)
     regime: null, // per-stock regime (D3 chop input)
+    // Level fields (from the rankings doc). nearestSupport is the discriminator
+    // that splits a null dR into blue_sky (support present) vs ambiguous.
+    nearestResistance: null, // levels.nearestResistance
+    nearestSupport: null, // levels.nearestSupport
+    distanceToSupportPct: null, // levels.distanceToSupportPct
     dataMode: null, // 'premarket' | 'intraday' — raw source-doc write mode
     dataUpdatedAt: null, // raw source-doc updatedAt
     ...overrides,
   };
 }
 
-// ── learningReceipts/{battleId}/receipts/{receiptId} — RAW decision-opportunity record ──
-// Fields per Build Spec §3 (Appendix §2.12 + §2.10 STATE requirements, NOT its
-// estimators). RAW ONLY — no derived metric, no classification, no scoring.
+// ── Per-symbol DERIVED predicate classification (Phase A.5 — outcome-blind) ──
+// Deterministic labels + staleness/provenance computed from the raw predicate
+// inputs alone. NOT under predicateInputs, so collectNullFlags never scans it.
+export function makePredicateClassification(overrides = {}) {
+  return {
+    d1ClassAsSpecced: null, // classifyD1 — current rule (null dR → UNSCORABLE)
+    d1ClassDrAbstain: null, // classifyD1DrAbstain — proposed rule (null dR abstains)
+    drNullReason: null, // present | blue_sky | ambiguous
+    techDocUpdatedAtMs: null, // this symbol's stockTechnicalScores.updatedAt → ms
+    predicateStalenessMs: null, // decisionAtMs − techDocUpdatedAtMs (null if either null)
+    symbolHourKey: null, // `${symbol}:${floor(techDocUpdatedAtMs/3.6e6)}` — the independence unit
+    techDocPath: null, // `stockTechnicalScores/${symbol}` (provenance / replay)
+    ...overrides,
+  };
+}
+
+// ── learningReceipts/{battleId}/receipts/{receiptId} — decision-opportunity record ──
+// Fields per Build Spec §3 + Phase A.5. Raw predicate inputs + OUTCOME-BLIND
+// derived annotations (see the module contract note above) — no estimator, MPE,
+// contrast, or scoring.
 export function makeReceiptSkeleton(overrides = {}) {
   return {
     schemaVersion: LEARNING_SCHEMA_VERSION,
@@ -94,6 +125,29 @@ export function makeReceiptSkeleton(overrides = {}) {
     predicateInputs: {
       symbolIn: makePredicateInputs(),
       symbolOut: makePredicateInputs(),
+    },
+
+    // DERIVED, outcome-blind (Phase A.5): D1 dual-rule class + dR null-reason +
+    // per-symbol staleness/provenance. symbolIn is the entry (M1–M3 signal of
+    // record); symbolOut is context only. Sibling of predicateInputs.
+    predicateClassification: {
+      symbolIn: makePredicateClassification(),
+      symbolOut: makePredicateClassification(),
+    },
+
+    // Run/receipt-level predicate provenance (Phase A.5).
+    predicateProvenance: {
+      decisionAtMs: null, // Date.parse(timestamp) — the swap instant
+      rankingsComputedAtMs: null, // doc-level rankings computedAt → ms (governs the level-sourced inputs)
+      rankingsDocPath: null, // 'indexIntelligence/stockRankings'
+    },
+
+    // Swap-context counts for M8 / D3 truncation (Phase A.5; outcome-blind).
+    // trades[] is capped at 50 — tradeCount > tradesLen flags a window that could
+    // reach past the cap. Capturing both makes receiptSeq === tradeCount+1 checkable.
+    swapContext: {
+      tradeCountAtDecision: null, // battle.scoreState.tradeCount at decision
+      tradesLenAtDecision: null, // battle.trades.length at decision
     },
 
     // version stamps. In L1 only archetypeIntegrityMode exists as a live source;

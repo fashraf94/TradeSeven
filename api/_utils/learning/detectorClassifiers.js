@@ -123,6 +123,70 @@ export function classifyD1({ bbPercentB, distanceToResistancePct, distTo52wkHigh
   return { class: cls, extendedMarkers, roomMarkers, severe };
 }
 
+// ── D1 dR-abstain VARIANT (L1 Phase A.5 — MEASUREMENT, not an adoption) ────────
+// The `distanceToResistancePct` (dR) predicate is null ~59% of the time (no
+// ≥2-touch resistance strictly above price — the breakout/new-high case), which
+// A2's any-null→UNSCORABLE rule routes to UNSCORABLE, starving EXTENDED. This
+// variant records what a proposed rule WOULD do so Fable can adjudicate on
+// evidence: a null dR ABSTAINS (contributes no marker, does not trigger
+// UNSCORABLE); the ≥2-marker rule then runs over the AVAILABLE markers (pB, d52).
+//
+// classifyD1 above is left BYTE-FOR-BYTE UNTOUCHED — this delegates to it for
+// every case except a null dR, so abstain forgives ONLY a missing dR (a corrupt
+// dR still fails closed, and pB/d52 null/corrupt still → UNSCORABLE).
+export const D1_DR_NULL_REASONS = Object.freeze({
+  PRESENT: 'present',
+  BLUE_SKY: 'blue_sky', // dR null but a support level exists → structure present, nothing overhead
+  AMBIGUOUS: 'ambiguous', // dR null AND no support → insufficient-bars / detector-failed / thin structure collapse (O1/O2/O4)
+});
+
+/**
+ * D1 under the dR-abstain rule. Identical to classifyD1 unless dR is null.
+ * @param {Object} inputs same shape as classifyD1
+ * @returns {{class: string, extendedMarkers: number, roomMarkers: number, severe: boolean}}
+ */
+export function classifyD1DrAbstain(inputs = {}) {
+  const dR = numericInput(inputs.distanceToResistancePct);
+  // dR present (finite) OR corrupt → identical to the as-specced rule; abstain
+  // forgives ONLY a null (missing) dR, never a corrupt one.
+  if (dR !== null) return classifyD1(inputs);
+
+  // dR null → ABSTAIN: classify over pB and d52 only.
+  const pB = numericInput(inputs.bbPercentB);
+  const d52 = numericInput(inputs.distTo52wkHigh);
+  if (pB === null || pB === CORRUPT || d52 === null || d52 === CORRUPT) {
+    return { class: D1_CLASSES.UNSCORABLE, extendedMarkers: 0, roomMarkers: 0, severe: false };
+  }
+  const t = D1_THRESHOLDS;
+  // 2-of-2 asymmetry: with dR abstained, EXTENDED needs BOTH pB and d52 extended.
+  const extendedMarkers = [pB >= t.bbPercentB.extendedGte, d52 <= t.distTo52wkHigh.extendedLte].filter(Boolean).length;
+  const roomMarkers = [pB <= t.bbPercentB.roomLte, d52 >= t.distTo52wkHigh.roomGte].filter(Boolean).length;
+  const severe = pB >= t.bbPercentB.severeGte;
+
+  let cls;
+  if (extendedMarkers >= 2 || severe) cls = D1_CLASSES.EXTENDED;
+  else if (roomMarkers >= 2 && extendedMarkers === 0) cls = D1_CLASSES.ROOM;
+  else cls = D1_CLASSES.INDETERMINATE;
+  return { class: cls, extendedMarkers, roomMarkers, severe };
+}
+
+/**
+ * Classify WHY dR is null, so blue-sky (information) is not silently conflated
+ * with detector-failure (missing data). The discriminator is `nearestSupport`:
+ * dR null with a support level present proves swing structure exists and nothing
+ * is overhead (blue sky); dR null with no support collapses origins O1/O2/O4 and
+ * is irreducibly `ambiguous` (no bar-count/detector-ran flag exists today).
+ * @param {{distanceToResistancePct: number|null, nearestSupport: number|null}} levels
+ * @returns {'present'|'blue_sky'|'ambiguous'}
+ */
+export function drNullReason({ distanceToResistancePct, nearestSupport } = {}) {
+  const dR = numericInput(distanceToResistancePct);
+  if (dR !== null && dR !== CORRUPT) return D1_DR_NULL_REASONS.PRESENT;
+  const ns = numericInput(nearestSupport);
+  if (ns !== null && ns !== CORRUPT) return D1_DR_NULL_REASONS.BLUE_SKY;
+  return D1_DR_NULL_REASONS.AMBIGUOUS;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // D2 — volume/momentum confirmation (ANNEX A3). Three-state families.
 //   Family PASS    — any OBSERVED member passes

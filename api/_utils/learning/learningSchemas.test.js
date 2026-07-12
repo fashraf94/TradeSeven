@@ -42,18 +42,20 @@ describe('learningSchemas — shapes only, null leaves', () => {
     expect(r.barBasisTableVersion).toBe(BAR_BASIS_TABLE_VERSION);
   });
 
-  it('receipt skeleton carries NO derived/estimator/scoring fields', () => {
+  it('receipt skeleton carries NO outcome-derived/estimator tokens (outcome-blind labels permitted)', () => {
     const json = JSON.stringify(makeReceiptSkeleton());
-    // A tripwire against scope creep: none of these may ever appear in the raw shape.
+    // Contract tripwire (Phase A.5 reframe): outcome-blind classification labels
+    // are allowed, but no OUTCOME-DERIVED / estimator token may ever appear.
     for (const banned of ['mpe', 'MPE', 'effectiveReach', 'regret', 'bootstrap', 'estimate', 'smd', 'narration', 'score', 'clopper']) {
       expect(json.toLowerCase()).not.toContain(banned.toLowerCase());
     }
   });
 
-  it('predicate inputs carry exactly the seven predicate fields + regime + raw provenance', () => {
+  it('predicate inputs carry the seven predicate fields + regime + level context + raw provenance', () => {
     expect(Object.keys(makePredicateInputs())).toEqual([
       'bbPercentB', 'distanceToResistancePct', 'distTo52wkHigh', 'volumeRatio',
       'upDayVolRatio', 'macdAboveSignal', 'macdFreshBullishCross', 'regime',
+      'nearestResistance', 'nearestSupport', 'distanceToSupportPct',
       'dataMode', 'dataUpdatedAt',
     ]);
   });

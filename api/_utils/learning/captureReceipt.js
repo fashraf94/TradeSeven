@@ -1,19 +1,46 @@
 // api/_utils/learning/captureReceipt.js
 //
-// Agent Learning System — L1 Foundation, Phase 4 (raw capture, write path only).
+// Agent Learning System — L1 Foundation, Phase 4 (+ Phase A.5).
 //
-// RAW FIELDS ONLY — no derived metric, no classification, no scoring. This module
-// assembles a raw receipt from values already in scope at the swap-execution site
-// and, ONLY when the dark flag is on, writes it server-side (Admin SDK). With the
-// flag off it is a strict no-op: no receipt built, no Firestore call, zero latency.
+// The receipt carries raw predicate inputs plus OUTCOME-BLIND derived annotations
+// (Phase A.5: D1 dual-rule class labels, dR null-reason, predicate staleness /
+// provenance). NO outcome-derived / estimator field — no MPE, regret, contrast,
+// return, effect, or scoring; every derived field reads only predicate inputs,
+// level fields, symbol, and timestamps. This module assembles the receipt from
+// values already in scope at the swap-execution site and, ONLY when the dark flag
+// is on, writes it server-side (Admin SDK). With the flag off it is a strict
+// no-op: no receipt built, no Firestore call, zero latency.
 //
 // Signal Capture Rider §5: catalog events persist via AWAITED in-request writes —
 // fire-and-forget `.catch(() => {})` is forbidden. So the write is awaited and its
 // failure is LOGGED (never silently swallowed), but never allowed to break the
 // (already-completed) trade.
 
-import { makeReceiptSkeleton, makePredicateInputs } from './learningSchemas.js';
+import { makeReceiptSkeleton, makePredicateInputs, makePredicateClassification } from './learningSchemas.js';
+import { classifyD1, classifyD1DrAbstain, drNullReason } from './detectorClassifiers.js';
 import { validateReceipt } from './learningValidators.js';
+
+const MS_PER_HOUR = 3_600_000;
+
+/**
+ * Normalize a timestamp to epoch-ms. Handles a Firestore Timestamp (`.toMillis()`),
+ * an ISO string (`Date.parse`), a raw epoch-ms number, or null/undefined/unparseable
+ * → null. Keeps buildRawReceipt pure and Firestore-type-agnostic (and test-safe).
+ * @returns {number|null}
+ */
+export function toMillis(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v?.toMillis === 'function') {
+    const ms = v.toMillis();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof v === 'string') {
+    const ms = Date.parse(v);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  return null;
+}
 
 const LOG_PREFIX = '[L1-capture]';
 
@@ -36,21 +63,58 @@ export function extractPredicateInputs(snapshot, regime, techDoc = {}) {
     macdAboveSignal: s.momentum?.macdAboveSignal ?? null,
     macdFreshBullishCross: s.momentum?.macdFreshBullishCross ?? null,
     regime: regime ?? null,
+    nearestResistance: s.levels?.nearestResistance ?? null,
+    nearestSupport: s.levels?.nearestSupport ?? null,
+    distanceToSupportPct: s.levels?.distanceToSupportPct ?? null,
     dataMode: techDoc?.mode ?? null,
     dataUpdatedAt: techDoc?.updatedAt ?? null,
   });
 }
 
-/** Collect dotted paths of null/missing predicate inputs (the UNSCORABLE inputs). */
+// The SCORABLE D1/D2 predicate inputs whose nullness is a genuine data-quality
+// signal (the UNSCORABLE inputs). Level context (nearestSupport etc.), regime,
+// and provenance are legitimately null often (e.g. blue sky) and are NOT flagged.
+const SCORABLE_INPUT_KEYS = Object.freeze([
+  'bbPercentB', 'distanceToResistancePct', 'distTo52wkHigh',
+  'volumeRatio', 'upDayVolRatio', 'macdAboveSignal',
+]);
+
+/** Collect dotted paths of null/missing SCORABLE predicate inputs. */
 function collectNullFlags(predicateInputs) {
   const flags = [];
   for (const side of ['symbolIn', 'symbolOut']) {
     const pi = predicateInputs[side] || {};
-    for (const [k, v] of Object.entries(pi)) {
+    for (const k of SCORABLE_INPUT_KEYS) {
+      const v = pi[k];
       if (v === null || v === undefined) flags.push(`predicateInputs.${side}.${k}`);
     }
   }
   return flags;
+}
+
+/**
+ * Build the per-symbol DERIVED, outcome-blind predicate classification: both D1
+ * rule labels, the dR null-reason, and staleness/provenance. Reads only the raw
+ * predicate inputs + this symbol's techDoc timestamp + the decision instant.
+ */
+function buildPredicateClassification(symbol, inputs, techDoc, decisionAtMs) {
+  const techDocUpdatedAtMs = toMillis(techDoc?.updatedAt);
+  const predicateStalenessMs =
+    decisionAtMs !== null && techDocUpdatedAtMs !== null ? decisionAtMs - techDocUpdatedAtMs : null;
+  return makePredicateClassification({
+    d1ClassAsSpecced: classifyD1(inputs).class,
+    d1ClassDrAbstain: classifyD1DrAbstain(inputs).class,
+    drNullReason: drNullReason({
+      distanceToResistancePct: inputs.distanceToResistancePct,
+      nearestSupport: inputs.nearestSupport,
+    }),
+    techDocUpdatedAtMs,
+    predicateStalenessMs,
+    // Bucket on the PREDICATE-COMPUTE time: the independence unit is "entries
+    // sharing an identical predicate," i.e. the same doc compute-hour.
+    symbolHourKey: techDocUpdatedAtMs !== null && symbol ? `${symbol}:${Math.floor(techDocUpdatedAtMs / MS_PER_HOUR)}` : null,
+    techDocPath: symbol ? `stockTechnicalScores/${symbol}` : null,
+  });
 }
 
 /**
@@ -61,6 +125,12 @@ export function buildRawReceipt(raw = {}) {
   const predicateInputs = {
     symbolIn: extractPredicateInputs(raw.snapshotIn, raw.regimeIn, raw.techDocIn),
     symbolOut: extractPredicateInputs(raw.snapshotOut, raw.regimeOut, raw.techDocOut),
+  };
+
+  const decisionAtMs = toMillis(raw.timestamp);
+  const predicateClassification = {
+    symbolIn: buildPredicateClassification(raw.symbolIn, predicateInputs.symbolIn, raw.techDocIn, decisionAtMs),
+    symbolOut: buildPredicateClassification(raw.symbolOut, predicateInputs.symbolOut, raw.techDocOut, decisionAtMs),
   };
 
   return makeReceiptSkeleton({
@@ -97,6 +167,18 @@ export function buildRawReceipt(raw = {}) {
     },
 
     predicateInputs,
+    predicateClassification,
+
+    predicateProvenance: {
+      decisionAtMs,
+      rankingsComputedAtMs: toMillis(raw.rankingsComputedAtMs),
+      rankingsDocPath: raw.rankingsDocPath ?? 'indexIntelligence/stockRankings',
+    },
+
+    swapContext: {
+      tradeCountAtDecision: raw.tradeCountAtDecision ?? null,
+      tradesLenAtDecision: raw.tradesLenAtDecision ?? null,
+    },
 
     versions: {
       // The one live version stamp in L1. The other seven do not exist in the
