@@ -35,9 +35,10 @@ import { buildDaySnapshots } from './lib/level-sources.js';
 import { createLineageState, lineageStep, familiesToObject } from './lib/lineage.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(HERE, '..', '..');
 const NORM_DIR = path.join(HERE, 'data', 'normalized');
 const LEVELS_DIR = path.join(HERE, 'data', 'levels');
-const UNIVERSE_PATH = path.join(HERE, 'universe_frozen.json');
+const UNIVERSE_PATH = path.join(REPO_ROOT, CONFIG.universe.universeFilePath); // single source of truth (config key)
 
 // ── Core: incremental day-forward registry build ─────────────────────────────
 
@@ -73,10 +74,19 @@ export function runLevels(dailyBars, opts = {}) {
     if (i === 0) continue; // no prior data — no registry
     sessions.push(buildOneDay(series, i, D, symbol, state, opts));
   }
-  // Truncated-rebuild hook: one more registry day after the final bar.
+  // Truncated-rebuild hook: one more registry day after the final bar. Uniform validation
+  // with the loop above — a registry day always needs ≥1 prior bar and must respect
+  // startDate, otherwise the truncated path could emit a day the incremental path never
+  // builds (garbage NaN registries instead of a loud error).
   if (opts.finalDay) {
-    if (series.n > 0 && opts.finalDay <= series.dates[series.n - 1]) {
+    if (series.n === 0) {
+      throw new Error(`finalDay ${opts.finalDay}: no prior bars — a registry day needs at least one bar before it`);
+    }
+    if (opts.finalDay <= series.dates[series.n - 1]) {
       throw new Error(`finalDay ${opts.finalDay} must be strictly after the last bar ${series.dates[series.n - 1]}`);
+    }
+    if (opts.finalDay < startDate) {
+      throw new Error(`finalDay ${opts.finalDay} precedes startDate ${startDate}`);
     }
     sessions.push(buildOneDay(series, series.n, opts.finalDay, symbol, state, opts));
   }
@@ -196,8 +206,11 @@ async function main() {
     symbols = uni.symbols.map((s) => s.symbol); // study subjects only; context symbols host no levels
     console.log(`Scope: frozen universe v${uni.universeVersion} (${symbols.length} study symbols)`);
   } else {
-    symbols = [...CONFIG.universe.probe.equities, ...CONFIG.universe.probe.context];
-    console.log(`Scope: no frozen universe file — S2 probe (${symbols.length} symbols); sectorMap stays pending`);
+    // Degraded-checkout fallback (the frozen universe file is committed, so this path is
+    // practically unreachable). Probe EQUITIES only: context symbols are not study
+    // subjects and must not host level registries (universe file note / S3 rulings §C).
+    symbols = [...CONFIG.universe.probe.equities];
+    console.log(`Scope: frozen universe file missing — S2 probe equities only (${symbols.length} symbols)`);
   }
 
   console.log(`LevelStory S3 levels — window ${CONFIG.range.studyStart} → ${CONFIG.range.studyEnd}, basis: adjusted\n`);
@@ -208,8 +221,10 @@ async function main() {
   for (const sym of symbols) {
     const dailyPath = path.join(NORM_DIR, sym, 'daily.json');
     if (!fs.existsSync(dailyPath)) {
-      failures.push({ symbol: sym, error: `missing ${path.relative(HERE, dailyPath)} — run \`npm run fetch\` first` });
-      console.log(`🔴 ${sym}: no normalized daily data — skipped`);
+      // The S2 fetcher's default list is the 14-symbol probe — universe symbols outside
+      // it (PLTR, BE) must be fetched explicitly by name.
+      failures.push({ symbol: sym, error: `missing ${path.relative(HERE, dailyPath)} — run \`node 01-fetch-history.js ${sym}\` first` });
+      console.log(`🔴 ${sym}: no normalized daily data — skipped (fetch it: node 01-fetch-history.js ${sym})`);
       continue;
     }
     try {
@@ -250,8 +265,7 @@ async function main() {
 
   // Anomaly flags (S3 prompt §4.3 — findings for founder review, never auto-tuned).
   console.log('\n════════ ANOMALY SCAN (report, don\'t fix) ════════');
-  const famCounts = allStats.map((s) => s.familyCount).sort((a, b) => a - b);
-  const medFam = famCounts.length ? famCounts[Math.floor(famCounts.length / 2)] : 0;
+  const medFam = quantile(allStats.map((s) => s.familyCount), 0.5) ?? 0;
   const flags = [];
   for (const s of allStats) {
     if (medFam && s.familyCount >= 10 * medFam) flags.push(`${s.symbol}: family count ${s.familyCount} ≥ 10× median (${medFam})`);

@@ -268,7 +268,7 @@ const CONFIG = {
       familyMatchableSameSessionAsFounded: true, // ⚠ CHOICE S3-C11: a family founded earlier in the ascending pass is a match candidate for later snapshots
       roleSideSource: 'nearest_matched_snapshot_pre_update_anchor', // ⚠ CHOICE S3-C12: session role = side of the nearest matched snapshot (distance to pre-update anchor)
       splitExecution: 'nearest_snapshot_keeps_elder_id_each_other_branches', // ⚠ CHOICE S3-C13: at trigger, nearest-to-anchor snapshot stays; every other matched snapshot founds a branch with splitFrom
-      splitRequiresMultipleSnapshots: true, // ⚠ CHOICE S3-C14: the 5-session counter can run on a single wide (chained) snapshot, but execution waits until ≥2 snapshots are matched
+      splitRequiresMultipleSnapshots: true, // ⚠ CHOICE S3-C14 (review-hardened): each of the 5 consecutive counter sessions requires ≥2 matched snapshots AND >1.5% span — counting and execution use the same partitionable-evidence condition
       mergeStateTransfer: 'matchHistory_and_touchHistory_to_survivor_survivor_keeps_anchor_and_roleLog', // ⚠ CHOICE S3-C15: zeroSupportRun = min(survivor, absorbed); absorbed keeps its own roleLog on its record
       weeklyPivotWeek: 'iso_monday_keyed_prior_completed_week', // ⚠ CHOICE S3-C16: prior completed week = latest Monday-keyed week strictly before the session's week, aggregated H/L/last-C
     },

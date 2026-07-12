@@ -40,13 +40,15 @@ function elder(a, b) {
 }
 
 /** Effective side implied by the last role-log entry. */
-export function effectiveSide(fam) {
+function effectiveSide(fam) {
   const last = fam.roleLog[fam.roleLog.length - 1].role;
   return last === 'support' || last === 'resistance_turned_support' ? 'support' : 'resistance';
 }
 
 function foundFamily(state, D, snapshot, splitFrom = null) {
-  const familyId = `${state.symbol}_fam${String(state.seq++).padStart(4, '0')}`;
+  // 6-digit padding keeps lexicographic id order == founding order (the elder tie-break
+  // depends on it) far beyond any plausible per-symbol family count.
+  const familyId = `${state.symbol}_fam${String(state.seq++).padStart(6, '0')}`;
   const fam = {
     familyId,
     symbol: state.symbol,
@@ -89,10 +91,12 @@ export function lineageStep(state, D, snapshots, atr) {
       atr != null ? LIN.matchWithin.atrMult * atr : 0,
     );
     let best = null, bestDist = Infinity;
+    // liveFamilies iterates elder-first (bornDate, familyId), so strict `<` keeps the
+    // elder on an exact-distance tie — the §5.4 tie-break is enforced by iteration order.
     for (const f of liveFamilies(state)) {                 // S3-C11: incl. families founded this pass
       const d = Math.abs(f.anchor - s.centroid);
       if (d > radius) continue;
-      if (d < bestDist || (d === bestDist && best && elder(f, best) === f)) { best = f; bestDist = d; }
+      if (d < bestDist) { best = f; bestDist = d; }
     }
     if (best) {
       s.familyId = best.familyId;
@@ -116,8 +120,14 @@ export function lineageStep(state, D, snapshots, atr) {
     const list = matched.get(fid);
     const prices = list.flatMap((e) => e.snapshot.members.map((m) => m.price));
     const span = prices.length >= 2 ? relPct(Math.max(...prices), Math.min(...prices)) : 0;
-    if (span > LIN.splitSeparationPct) fam.splitRun += 1; else fam.splitRun = 0;
-    if (fam.splitRun >= LIN.splitConsecutiveSessions && list.length >= 2) { // S3-C14
+    // S3-C14 (review-hardened): the counter advances only on sessions with genuinely
+    // PARTITIONABLE evidence — ≥2 matched snapshots AND >1.5% member span. A single wide
+    // chained snapshot neither counts nor executes (its internal span is a confluence-
+    // chaining artifact and it cannot be partitioned); this keeps the 5 consecutive
+    // sessions of evidence and the execution condition the same thing, so a one-day
+    // transient can never fire a split off unrelated accumulation.
+    if (list.length >= 2 && span > LIN.splitSeparationPct) fam.splitRun += 1; else fam.splitRun = 0;
+    if (fam.splitRun >= LIN.splitConsecutiveSessions) {
       // S3-C13: the snapshot nearest the anchor keeps the elder id; others branch.
       const byDist = [...list].sort((a, b) =>
         Math.abs(a.snapshot.centroid - fam.anchor) - Math.abs(b.snapshot.centroid - fam.anchor) ||

@@ -34,7 +34,8 @@ const DEFAULT_FAMILIES = ['structural', 'participation', 'calendar']; // psychol
  * @param {string} D the registry session date (strictly after dates[N−1])
  * @param {object} opts { symbol, enabledFamilies? } — enabledFamilies is a TEST hook to
  *   isolate one source family in synthetic scenarios; the production runner never passes it.
- * @returns {{date, atr, refClose, levels, snapshots}}
+ * @returns {{date, atr, refClose, snapshots}} — every raw method level is embedded as a
+ *   snapshot member; there is deliberately no separate flat level list (one shape only).
  */
 export function buildDaySnapshots(series, N, D, opts = {}) {
   const symbol = opts.symbol || 'SYM';
@@ -48,7 +49,7 @@ export function buildDaySnapshots(series, N, D, opts = {}) {
   if (enabled.has('calendar')) levels.push(...calendarLevels(series, N, D));
 
   const snapshots = confluence(levels, { symbol, date: D, atr, refClose });
-  return { date: D, atr, refClose, levels, snapshots };
+  return { date: D, atr, refClose, snapshots };
 }
 
 // ── availability helper ───────────────────────────────────────────────────────
@@ -133,10 +134,9 @@ function participationLevels(series, N, D) {
  * Returns { idx, crossIdx } where crossIdx is the first bar index at which the running
  * post-swing extreme crossed the 5% threshold (→ firstKnownDate component).
  */
-export function mostRecentSignificantSwing(series, N, kind) {
-  for (let i = N - 1 - K; i >= K; i--) {                            // i+K ≤ N−1: confirmed within prefix
+function mostRecentSignificantSwing(series, N, kind) {
+  for (let i = N - 1 - K; i >= K; i--) {                            // i+K ≤ N−1: confirmed within prefix (so i+1 ≤ N−1 too)
     if (kind === 'high' ? !series.isSwingHigh[i] : !series.isSwingLow[i]) continue;
-    if (i + 1 > N - 1) continue;
     if (kind === 'high') {
       const threshold = series.aHigh[i] * (1 - SIG_PCT / 100);
       const crossIdx = firstCrossingIndex(series.minLowTable, i + 1, N - 1, threshold, 'min');
@@ -159,27 +159,36 @@ function classicalPivots(h, l, c) {
 }
 
 /** ISO Monday of the calendar week containing `iso` (S3-C16). */
-export function weekMonday(iso) {
+function weekMonday(iso) {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
   return d.toISOString().slice(0, 10);
 }
+
+// S3-C7 live flag: calendar levels tradable the session they apply to. Under the literal
+// +1 reading (flag=false), a level whose firstTradableDate falls after the session it
+// applies to is simply never emitted into that session's registry.
+const CAL_SAME_SESSION = L.construction.calendarTradableSameSession;
 
 function calendarLevels(series, N, D) {
   const out = [];
 
   // Daily pivots from D−1 OHLC — apply to session D (parent §5.3: firstKnown = the
   // session they apply to; S3-C7: tradable that same session, derived wholly from prior
-  // completed bars so already known at prior close).
-  const dv = classicalPivots(series.aHigh[N - 1], series.aLow[N - 1], series.aClose[N - 1]);
-  for (const kind of PIVOT_KINDS) {
-    out.push({
-      family: 'calendar', method: 'daily_pivots', kind,
-      price: dv[kind], touchCount: null,
-      formationDate: series.dates[N - 1],
-      firstKnownDate: D,
-      firstTradableDate: D, // ⚠ S3-C7
-    });
+  // completed bars so already known at prior close). Under flag=false a daily pivot's
+  // firstTradable (D+1) postdates its only applicable session, so nothing is emitted —
+  // the calendar-family exclusion the S3 rulings doc describes.
+  if (CAL_SAME_SESSION) {
+    const dv = classicalPivots(series.aHigh[N - 1], series.aLow[N - 1], series.aClose[N - 1]);
+    for (const kind of PIVOT_KINDS) {
+      out.push({
+        family: 'calendar', method: 'daily_pivots', kind,
+        price: dv[kind], touchCount: null,
+        formationDate: series.dates[N - 1],
+        firstKnownDate: D,
+        firstTradableDate: D, // ⚠ S3-C7
+      });
+    }
   }
 
   // Weekly pivots from the prior completed week (Monday-keyed; S3-C16) — apply to every
@@ -201,14 +210,20 @@ function calendarLevels(series, N, D) {
     const wv = classicalPivots(h, l, series.aClose[lastPrior]);
     // First session of D's week: the first hist bar after lastPrior in D's week, else D itself.
     const firstOfCurWeek = lastPrior + 1 <= N - 1 ? series.dates[lastPrior + 1] : D;
-    for (const kind of PIVOT_KINDS) {
-      out.push({
-        family: 'calendar', method: 'weekly_pivots', kind,
-        price: wv[kind], touchCount: null,
-        formationDate: series.dates[lastPrior],
-        firstKnownDate: firstOfCurWeek,
-        firstTradableDate: firstOfCurWeek, // ⚠ S3-C7
-      });
+    // Under flag=false the weekly pivot is tradable from the week's SECOND session.
+    const firstTradable = CAL_SAME_SESSION
+      ? firstOfCurWeek
+      : (firstOfCurWeek !== D && lastPrior + 2 <= N - 1 ? series.dates[lastPrior + 2] : (firstOfCurWeek !== D ? D : null));
+    if (firstTradable != null && firstTradable <= D) {
+      for (const kind of PIVOT_KINDS) {
+        out.push({
+          family: 'calendar', method: 'weekly_pivots', kind,
+          price: wv[kind], touchCount: null,
+          formationDate: series.dates[lastPrior],
+          firstKnownDate: firstOfCurWeek,
+          firstTradableDate: firstTradable, // ⚠ S3-C7
+        });
+      }
     }
   }
 

@@ -111,6 +111,27 @@ The runner writes `data/levels/{symbol}.json` + `data/levels/_stats.json` (both 
 
 Parent §5.3 sets calendar `firstKnownDate` = "the session they apply to" while the general rule says `firstTradableDate = firstKnownDate + 1`. Read literally together, a daily pivot for session D becomes tradable on D+1 — a session it no longer exists for (D+1 has its own pivots from D's bar). That would categorically exclude the calendar family from event referencing, contradicting its status as a first-class confluence family. **Implemented:** calendar levels are tradable the session they apply to (they derive wholly from prior completed bars, so the "+1 = known at prior close" purpose is already satisfied). Flip-back is one config line (`levels.construction.calendarTradableSameSession`) + rebuild if the literal reading was intended. Full rationale: rulings doc §B, S3-C7. All other S3 choices (S3-C1…C16) are conventions with sub-threshold risk, each ⚠-flagged in `config.js` and documented.
 
+## 6b. Mandatory code review (BUILD_RULES §2: ≥10 files / ≥1500 lines) — run and applied
+
+An 8-angle finder pass (line-by-line, removed-behavior, cross-file trace, reuse, simplification, efficiency, altitude, conventions) with adversarial verification was run over the full change set. Outcomes:
+
+**Confirmed and FIXED (follow-up commit):**
+1. `runTruncated`/`finalDay` with an empty truncated prefix silently built a garbage NaN registry day instead of throwing (two finders reproduced it). Uniform validation added — a registry day now always requires ≥1 prior bar and must respect `startDate`.
+2. Split-counter/execution mismatch: the 5-session counter could accumulate on un-partitionable single-snapshot sessions and then a one-day transient fired a permanent split (empirically reproduced). S3-C14 hardened: counting and execution now use the same ≥2-snapshot + >1.5% condition (rulings doc updated).
+3. A daily bar lacking a usable adjustment basis (`adjFactor`/`adjusted_close` null) silently fell back to raw prices, mixing bases within one series (phantom fractal / ATR shock near splits). Now throws — quarantine-until-explained per parent §4.3. All committed fixtures verified clean.
+4. `calendarTradableSameSession` was documented as the S3-C7 remediation switch but no code read it. The flag is now live: flipping it genuinely produces the literal `+1` behavior (calendar daily pivots drop out of their own session's registry; weekly pivots tradable from the week's second session).
+5. familyId ordinals padded 4→6 digits (elder tie-breaks depend on lexicographic == founding order; 4 digits inverted elder semantics past 9,999 families).
+6. Degraded-checkout fallback scope narrowed to probe **equities** (context symbols host no levels — design of record over the prompt's "14-symbol" shorthand; the path is practically unreachable since the universe file is committed) and its false "sectorMap stays pending" message removed; missing-data skip message now names the exact per-symbol fetch command; `universeFilePath` is now read from config (single source of truth); anomaly-scan median now uses the same `quantile()` as the reported stats; plus dead-code cleanup (unreachable tie-break clause, dead guard, unused exports/helper, sparse-table row sizing).
+
+**Confirmed as behavior — REPORTED, not fixed (no spec knob; founder decision territory):**
+- **Role-flip churn + role/zone frame:** roles derive from the nearest snapshot's side vs D−1 close with no hysteresis (spec defines none), so at-the-money families flip often (283 flips / 246 AAPL fixture sessions); separately, S4 episode zones are ANCHOR-based while roles are snapshot-based, and the EMA-lagged anchor can sit on the other side of price on gap days. S4 must pick the role/zone frame; adding a hysteresis knob now would be knob-invention.
+- **F4 enforcement gap in the S2 fetcher:** `01-fetch-history.js` would still fetch SPHB/SPLV 5m on a re-run (data is disk-cached, so no fetch happens until someone re-runs it), and its default list doesn't cover PLTR/BE. Config now records the ruling; enforcing it in the fetcher touches S2 code and two S2 test loops (which currently reference SPHB/SPLV sessions), so it is flagged for founder direction rather than silently changed. Until then: fetch PLTR/BE explicitly (§5) and don't re-run the probe fetch expecting F4 filtering.
+- **Efficiency notes (accepted cost at current scale):** per-snapshot rebuild of the live-family list in `lineageStep`, worst-case O(N²) significant-swing scan, per-call `weekMonday` Date construction — all measured harmless at daily grain (~0.4 s/symbol full window); provably-safe memoizations documented in the review record if scale ever demands them.
+
+**Refuted (with evidence):** config-version-reuse claim (explicit founder ruling "still version 1"; the S2 manifest embeds none of the changed values); sectorMap-references-unfetched-ETFs claim (verbatim founder-frozen transcription; staging documented inside the universe file itself; no current consumer).
+
+**Post-fix verification:** full suite re-run — all 17 Phase A tests and all 10 runnable S2 tests still green; equivalence harness still exact.
+
 ## 7. Isolation & discipline confirmations
 
 - Writes confined to `research/level-study/` and `docs/` — no product file touched, no fenced file read or edited, zero `src/`/`api/` imports.

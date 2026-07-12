@@ -77,17 +77,6 @@ export function flat(v, n) {
   return new Array(n).fill(v);
 }
 
-/** Find the family (in a runLevels result) whose anchor is nearest `price`, optionally filtered. */
-export function familyNearest(result, price, filter = () => true) {
-  let best = null, bestDist = Infinity;
-  for (const fam of Object.values(result.families)) {
-    if (!filter(fam)) continue;
-    const d = Math.abs(fam.anchor - price);
-    if (d < bestDist) { best = fam; bestDist = d; }
-  }
-  return best;
-}
-
 /** Deterministic PRNG (mulberry32) for reproducible "random" day sampling in tests. */
 export function mulberry32(seed) {
   let a = seed >>> 0;

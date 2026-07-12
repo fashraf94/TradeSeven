@@ -47,11 +47,17 @@ export function buildSeries(bars) {
   for (let i = 0; i < n; i++) {
     const b = bars[i];
     dates[i] = b.date;
-    const f = b.adjFactor != null ? b.adjFactor : 1;
+    // Quarantine, don't degrade (parent §4.3): a bar without a usable adjustment basis
+    // would silently mix raw and adjusted prices inside one series — a phantom fractal /
+    // ATR shock near any split. Loud failure quarantines the symbol until explained.
+    if (b.adjFactor == null || b.adjustedClose == null) {
+      throw new Error(`adjustment-basis quarantine: bar ${b.date} has adjFactor=${b.adjFactor}, adjustedClose=${b.adjustedClose} (parent §4.3: quarantine until explained)`);
+    }
+    const f = b.adjFactor;
     aOpen[i] = b.open * f;
     aHigh[i] = b.high * f;
     aLow[i] = b.low * f;
-    aClose[i] = b.adjustedClose != null ? b.adjustedClose : b.close * f;
+    aClose[i] = b.adjustedClose;
     tp[i] = (aHigh[i] + aLow[i] + aClose[i]) / 3;                   // S3-C2: HLC3
     w[i] = b.volume != null ? b.volume / f : 0;                     // S3-C1: V/f
     cumTpw[i] = (i ? cumTpw[i - 1] : 0) + tp[i] * w[i];
@@ -94,7 +100,7 @@ export function buildSeries(bars) {
 /** Range-min/max over aLow/aHigh, inclusive indices. Callers bound r by N−1 (prefix-safe). */
 function buildSparse(arr, pick) {
   const n = arr.length;
-  const levels = n > 1 ? 32 - Math.clz32(n - 1) : 1; // enough rows for spans up to n
+  const levels = n > 0 ? 31 - Math.clz32(n) : 0; // floor(log2 n): query() indexes row ≤ floor(log2 span), span ≤ n
   const table = [arr.slice()];
   for (let j = 1; j <= levels; j++) {
     const span = 1 << j, half = span >> 1;
