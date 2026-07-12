@@ -8,7 +8,8 @@
 // the bottom (`deepFreeze`), which computes nothing; it only prevents mutation so a
 // downstream session can never silently retune a locked knob.
 //
-// Source precedence (Session-2 prompt §3):
+// Source precedence (Session-2 prompt §3; Session-3 prompt §2 adds the S3 rulings):
+//   0. docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md         (S3-R1…S3-R5, S3-C*)
 //   1. docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S2.md         (R1–R3, A1–A3)
 //   2. docs/LEVEL_STUDY_SPEC_V1_1_ADDENDUM_A_CONTEXT_LAYER_V1_1.md   (Addendum §A*)
 //   3. docs/LEVEL_INTERACTION_EVENT_STUDY_SPEC_V1_1.md      (parent §*)
@@ -20,10 +21,19 @@
 //
 // Isolation: this module imports nothing. Product code never imports it. (Parent §2.)
 
-export const STUDY_CONFIG_VERSION = 1; // parent header (line 6): version 1, first built config
+// STUDY_CONFIG_VERSION history (parent header rule — increment on any post-build knob
+// change, never reuse):
+//   1 → S3 build (fixed-percent geometry).
+//   2 → S3.5 rework: unified distance scale, warmup replay, merge timing, role machine.
+//   3 → S3.5-b recalibration (founder-directed): distanceUnit floorPct/capPct set from
+//       the measured 0.25×ATR% distribution so each clamp guard binds ≤10% of
+//       symbol-sessions per symbol (see distanceUnit note, S35-C10). The distance unit
+//       changes materially from the v2 gate → new version so artifact provenance stays
+//       unambiguous (the S3.5 report's v2 gate numbers remain valid for [0.5, 1.5]).
+export const STUDY_CONFIG_VERSION = 3;
 
 const CONFIG = {
-  version: 1, // parent header; increments on any post-build knob change, never reused
+  version: 3, // S3.5-b recalibration — see STUDY_CONFIG_VERSION note above
 
   meta: {
     codename: 'LevelStory', // parent header
@@ -53,9 +63,9 @@ const CONFIG = {
     targetSize: { min: 150, max: 200 },   // parent §4.2 (raised from V1's 75–125 per §13)
     strata: ['mega_cap_tech', 'low_volatility', 'high_beta', 'gap_prone'], // parent §4.2 / §12
 
-    // The frozen full universe is a founder deliverable, PENDING (R2). This session
-    // builds at probe scale only; the fetcher accepts any symbol list as input.
-    universeFilePath: 'research/level-study/universe.frozen.json', // placeholder; founder supplies at Session 3 gate
+    // Starter universe frozen 2026-07-11 (universeVersion 1) — supplied at the Session-3
+    // gate as anticipated by R2. Path updated from the S2 placeholder to the actual file.
+    universeFilePath: 'research/level-study/universe_frozen.json', // S3-R5: actual frozen file (was S2 placeholder)
 
     // Probe set for Session 2 (founder-frozen, S2 prompt §4). HOOD dropped per R2,
     // RKLB dropped per R3. Exactly these 14 are fetched this session.
@@ -68,9 +78,18 @@ const CONFIG = {
     // recorded for the contract; the probe only exercises XLK and XLE.
     sectorEtfs: ['XLC', 'XLY', 'XLP', 'XLE', 'XLF', 'XLV', 'XLI', 'XLB', 'XLRE', 'XLK', 'XLU'], // Addendum §A2.2 (11 SPDR sector ETFs)
     contextEtfs: { market: 'SPY', highBeta: 'SPHB', lowBeta: 'SPLV' }, // Addendum §A3.2, §A8
-    // CHOICE: per-symbol sector map is "frozen with the universe" (Addendum §A2.2) and
-    // is a founder deliverable pending the universe freeze. Left empty at probe scale.
-    sectorMap: {}, // ⚠ CHOICE: awaits founder universe freeze (Addendum §A2.2)
+    // S3-R5: transcribed verbatim from research/level-study/universe_frozen.json
+    // (universeVersion 1, frozen 2026-07-11). Pure data transcription, not a decision.
+    // Closes the S2 "awaits founder universe freeze" flag.
+    sectorMap: { // S3-R5 / Addendum §A2.2 (frozen with the universe)
+      AAPL: 'XLK', NVDA: 'XLK', MSFT: 'XLK',
+      KO: 'XLP', PG: 'XLP', JNJ: 'XLV',
+      TSLA: 'XLY', AMD: 'XLK', COIN: 'XLF',
+      PLTR: 'XLK', BE: 'XLI',
+    },
+    // S3-R4 (F4 ruling): SPHB/SPLV are DAILY-GRAIN ONLY. Their 5m is never fetched or
+    // referenced; beta_appetite_20d is a daily feature.
+    dailyGrainOnly: ['SPHB', 'SPLV'], // S3-R4
   },
 
   // ── Fetch mechanics (A1; parent §4.1, §4.5; Addendum §A6, §A8; A7 from S1) ──
@@ -121,7 +140,13 @@ const CONFIG = {
     regularCloseEtMinutes: 960,           // 16:00 ET
     lastRegularBarOpenEtMinutes: 955,     // 15:55 ET bar (covers 15:55–16:00); S1 §4: 78 regular bars
     fiveMinuteStepMinutes: 5,
-    barsPerRegularSession: 78,            // S1 §4: 78 regular + 1 auction = 79
+    barsPerRegularSession: 78,            // S1 §4: 78 regular + 1 auction = 79 (FULL days only; see halfDay)
+    // S3-R3: session end is derived PER-SESSION from the data, never hardcoded 16:00.
+    halfDay: { // S3-R3 (founder ruling)
+      sessionEndDerivedPerSession: true,  // the 16:00 constants above describe FULL days; never assumed per-session
+      tagField: 'halfDay',                // half-days tagged halfDay: true (normalize's earlyClose is the S2 precursor tag)
+      eodLabelBar: 'last_regular_bar_of_actual_session', // EOD labels use the last regular bar of the actual session
+    },
   },
 
   // ── Self-built hourly bars (parent §3.6, §4.4) ─────────────────────────────
@@ -148,6 +173,16 @@ const CONFIG = {
     excludeFromMath: ['pattern', 'range', 'volume', 'excursion', 'hourly_aggregation'], // A2
     useForSessionClose: true,              // A2: session-close price for EOD outcome labels
     useForCrossGrainInvariant: true,       // A1/A2: the daily-close ↔ auction-print pairing
+    // S3-R2 (F3 ruling): sessions missing the closing-auction print fall back to the last
+    // regular 5m bar (typically 15:55 ET on full days) as session close.
+    eodFallback: { // S3-R2
+      rule: 'last_regular_5m_bar',          // fallback session-close source when no auction print
+      tagField: 'eodSource',                // every session tagged with its EOD source
+      tagValues: { auction: 'auction', fallback: 'fallback_1555' }, // S3-R2 tag vocabulary
+      crossGrainInvariantExempt: true,      // fallback sessions EXPLICITLY EXEMPT from the invariant…
+      tolerancePctNeverLoosened: true,      // …the 0.1% tolerance is NEVER loosened to accommodate them
+      reportFooterItem: 'fallback_session_count', // standing report-footer item
+    },
   },
 
   // ── Adjustment basis (A1; parent §4.3, §3.4) ───────────────────────────────
@@ -172,7 +207,7 @@ const CONFIG = {
         methods: ['swing_sr_clusters'],
         fractalK: 3,             // parent §5.1: fractal pivots, k=3 bars each side
         trailingSessions: 120,   // parent §5.1
-        clusterPct: 0.5,         // parent §5.1: 0.5% clustering
+        // clusterPct (S3: fixed 0.5%) superseded by geometry.multiples.kCluster (S3.5 §3)
         centroid: 'volume_weighted', // parent §5.1
       },
       participation: {
@@ -195,32 +230,153 @@ const CONFIG = {
       moving: { reservedForV2: true, enabled: false }, // parent §5.1: reserved V2, not in V1.1
     },
     confluence: { // parent §5.1
-      alignPct: 0.5,               // families align when within 0.5% of each other
+      // alignPct (S3: fixed 0.5%) superseded by geometry.multiples.kConfluence (S3.5 §3)
       tiers: { F1: 1, F2: 2, F3plus: 3 }, // F1=1 family, F2=2, F3=3+
       countBy: 'family',           // count families, not methods
       storeMethodCombination: true, // exact methods stored on every snapshot
     },
+
+    // ── S3.5 §3 (LS3-01): UNIFIED DISTANCE SCALE ─────────────────────────────
+    // One bounded per-symbol-per-day distance unit; every geometric threshold is an
+    // ordered multiple of it. Supersedes ALL fixed-percent geometry in parent §5.1/§5.4
+    // (S3.5 rulings doc, amendment 2). Ordering invariants are asserted at config load
+    // (validateGeometry below) — a violating config throws, never runs.
+    geometry: {
+      distanceUnit: {
+        // distanceUnit(symbol, D) = clamp(atrMultiple × ATR(14,daily,D−1),
+        //                                 floorPct% × price(D−1), capPct% × price(D−1))
+        atrMultiple: 0.25, // parent §5.4's 0.25-ATR arm — the scale's ATR anchor
+        // ⚠ CHOICE S35-C10 (config v3 recalibration — founder-directed, data-measured):
+        // floorPct/capPct DERIVED from the per-session 0.25×ATR% distribution so each
+        // guard binds in ≤10% of symbol-sessions for EVERY symbol (else the guard, not
+        // ATR, sets the scale). The v2 [0.5, 1.5] band bound the floor for 49–96% of the
+        // low-vol names' sessions and the cap for 64% of COIN's — flattening geometry by
+        // volatility. Measured on the 9 fixture equities (all 3 strata), study + full
+        // history: min_s p10(0.25×ATR%) ≈ 0.27, max_s p90 ≈ 2.66. Values sit just past
+        // those boundaries with margin (worst bind: floor 6.1% KO, cap 9.0% COIN).
+        // Re-confirm on the full universe (PLTR/BE + expansion) — one-line measurement.
+        floorPct: 0.26,    // ⚠ S35-C10: floor binds ≤10% ∀s; still catches the genuine low-ATR/degenerate tail
+        capPct: 2.71,       // ⚠ S35-C10: cap is load-bearing — binds only COIN's wildest ~9% (extreme-ATR tail), never its normal regime
+      },
+      multiples: { // v2 starting values — ALL ⚠ provisional (S35-C2); ordering NOT negotiable
+        kCluster: 0.5,    // structural pivot grouping DIAMETER bound  (≤ kConfluence)
+        kConfluence: 0.5, // confluence grouping DIAMETER bound        (< kMatch, < kMerge)
+        kMerge: 0.8,      // family-anchor merge distance              (< kMatch)
+        kMatch: 1.0,      // family matching radius — the reference scale
+        kSplit: 1.6,      // constituent-separation split threshold    (> kMatch)
+      },
+      // Load-asserted ordering (validateGeometry): kCluster ≤ kConfluence < kMatch;
+      // kMerge < kMatch; kSplit > kMatch; PLUS kConfluence < kMerge — under the
+      // live-support rule (S3.5 §7a) merge evidence requires two DISTINCT snapshots
+      // (level gap > kConfluence·u) with anchors within kMerge·u; kMerge ≤ kConfluence
+      // would make merges structurally unreachable.
+      // Bounded-diameter theorem (dissolves LS3-08): a snapshot's span ≤ kConfluence·u
+      // < kSplit·u, so a single snapshot can NEVER breach the split threshold.
+    },
     significantSwingMovePct: 5, // parent §5.3: AVWAP anchor requires observably ≥5% move (point-in-time)
-    availability: { // parent §5.3
+    availability: { // parent §5.3, tradability as amended by S3.5 (amendment 1)
       fields: ['formationDate', 'firstKnownDate', 'firstTradableDate'],
-      firstTradableOffsetSessions: 1, // firstTradableDate = firstKnownDate + 1
+      // S3.5 amendment 1 (supersedes the universal firstKnownDate+1 formula, which was
+      // the source of the S3-C7 contradiction): firstTradableDate is the first registry
+      // session whose PRIOR-CLOSE INFORMATION SET contains every input required to
+      // construct the dated level. Yields per source:
+      tradability: {
+        rule: 'prior_close_information_set',
+        fractal: 'session after the confirmation close',
+        avwap: 'session after both fractal confirmation and observable ≥5% significance',
+        dailyPivot: 'the session it applies to',
+        weeklyPivot: 'the first trading session of the new week',
+      },
       fractalFirstKnown: 'formationBar + k sessions',       // parent §5.3
       avwapFirstKnown: 'swing confirmed as fractal AND move ≥5% on available data', // parent §5.3
       calendarFirstKnown: 'the session they apply to',      // parent §5.3
       referenceRule: 'firstTradableDate <= eventDate for every referenced level', // parent §3.10/§5.3
     },
-    lineage: { // parent §5.4
+    lineage: { // parent §5.4, as amended by S3.5 (rulings doc amendments 2–6)
       snapshotId: 'dated state (price, zone width, side, methods, tier, as-of)', // parent §5.4
       familyId: 'persistent market structure',                                   // parent §5.4
-      matchWithin: { pct: 0.5, atrMult: 0.25 }, // join family whose anchor within max(0.5%, 0.25 ATR)
+      // matchWithin/mergeWithinPct/splitSeparationPct (S3 fixed/hybrid scales) superseded
+      // by geometry.multiples (S3.5 §3): match = kMatch·u, merge = kMerge·u, split = kSplit·u.
       matchOrder: 'ascending_price',            // parent §5.4
       tieBreak: ['nearest_anchor', 'elder_family'], // nearest wins, elder breaks ties
       matchIgnoresSide: true,                   // role can flip
       anchorEmaAlpha: 0.15,                     // family anchor = slow EMA (α=0.15) of matched centroids
-      mergeWithinPct: 0.4, mergeConsecutiveSessions: 5, // two families within 0.4% for 5 sessions merge
-      splitSeparationPct: 1.5, splitConsecutiveSessions: 5, // constituents separate >1.5% for 5 sessions split
+      mergeConsecutiveSessions: 5,              // parent §5.4 (unchanged: a count, not a distance)
+      splitConsecutiveSessions: 5,              // parent §5.4 (unchanged)
       retireZeroSupportSessions: 20,            // zero method support for 20 sessions retires
       roleStates: ['support', 'resistance', 'resistance_turned_support', 'support_turned_resistance'], // parent §5.4 append-only role log
+
+      // S3.5 §7a (LS3-09 structural dissolution): merge/split runs only advance on
+      // sessions where the family receives a matching snapshot — an unsupported family
+      // can never complete a merge run, so retire-vs-merge conflicts are impossible.
+      liveSupportRequiredForRuns: true, // S3.5 amendment 6
+
+      // S3.5 §4 (LS3-02): warmup lineage replay — lineage is one continuous state
+      // machine from the first session where the distance unit is defined, through the
+      // warmup, into the study window. Warmup sessions build state only, are never
+      // emitted; the study begins with a checkpoint of inherited, real family identity.
+      warmupReplay: { // S3.5 amendment 3
+        enabled: true,
+        startRule: 'first_session_with_ATR14_at_prior_close', // ⚠ CHOICE S35-C3: the unit needs ATR(14,D−1); the structural trailing window fills as history accrues
+        emitFrom: 'startDate (studyStart in production)',
+        checkpointFields: ['bornDate', 'anchor', 'status', 'zeroSupportRun', 'splitRun', 'pending role state', 'roleLog', 'pairRuns'],
+        matchHistoryClearedAtCheckpoint: true, // ⚠ CHOICE S35-C4: warmup match history is state-building only; study artifacts reference only study-window snapshots
+        preStudyFields: ['preStudy', 'preStudyAgeSessions'],  // nothing left-censored silently
+      },
+
+      // S3.5 §5 (LS3-03/LS3-05): merge effective timing + full state-transfer operator.
+      merge: { // S3.5 amendment 4
+        effectiveTiming: 'detection_session', // a merge detected from D's information set applies to D: D's snapshot ownership rewritten absorbed→survivor; same-day role events on the absorbed id suppressed
+        transfer: {
+          touchHistory: 'union sorted by (timestamp, familyId, snapshotId)',
+          sequenceIndex: 'recomputed as merged touchHistory length', // ⚠ CHOICE S35-C5: the only rule coherent under repeated merges
+          matchHistory: 'union, absorbed entries tagged fromFamilyId, sorted (date, snapshotId)',
+          roleLog: 'survivor-owned; absorbed log retained on absorbed record (append-only, never rewritten)',
+          pendingRoleState: 'survivor-only; absorbed pending discarded (measured against a dead anchor)',
+          anchor: 'survivor-only; absorbed anchor recorded in the merge event for audit',
+          counters: 'fired pair-run reset; survivor other runs persist unchanged',
+          s4Hooks: 'transfer absorbed → survivor where survivor empty; survivor wins conflicts (absorbed value recorded in merge event)', // contract specified now; Session 4 populates
+        },
+      },
+
+      // S3.5 §6 (LS3-04): role state machine — anchor frame + hysteresis.
+      roleMachine: { // S3.5 amendment 5
+        frame: 'family_anchor', // unified with S4 episode zones (anchor-based) — roles and zones can never disagree on gap days
+        zoneHalfWidthUnits: 0.25,              // zone = anchor ± 0.25·distanceUnit (reused as flip margin; no new constant)
+        flipBeyondOppositeBoundaryUnits: 0.25, // flip evidence: close beyond the OPPOSITE zone boundary by ≥ 0.25·u
+        confirmSessions: 3,                    // sustained ≥3 consecutive matched registry sessions
+        inputs: 'prior committed anchor, D-1 adjusted close, D-1 distanceUnit', // flip recorded on D only after the third confirming close occurred on D−1 (using D's close would be lookahead)
+        pendingFields: ['pendingSide', 'pendingRun', 'pendingStartDate'],
+        resets: ['close back inside zone', 'close on current-role side', 'gray band (outside zone but short of the flip margin — consecutive-evidence reading)', 'no matching snapshot', 'split', 'retirement'],
+        provisional: true, // ⚠ S35-C6: 3×0.25 is a policy default, not a proven optimum — graduates only via the Session-7 manual-review demotion path
+      },
+    },
+
+    // ── Session-3 construction conventions (02-build-levels.js) ──────────────
+    // Deterministic conventions the builder needs where the specs are silent. Each is a
+    // Session-3 CHOICE (⚠, greppable), recorded in docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md
+    // §B and the traceability table. Pure data — the builder reads these, never derives them.
+    construction: {
+      priceBasis: 'adjusted', // A1 one-basis rule: levels live on the daily adjusted basis (raw OHLC × adjFactor)
+      volumeBasis: 'raw_divided_by_adjFactor', // ⚠ CHOICE S3-C1: VWAP/centroid weights use V/f so split-era share counts are comparable (A1 extension)
+      typicalPrice: 'hlc3', // ⚠ CHOICE S3-C2: AVWAP price input = (H+L+C)/3 (standard anchored-VWAP convention)
+      fractalComparison: 'strict', // ⚠ CHOICE S3-C3: swing high requires STRICTLY greater highs than all k bars each side (ties → no fractal)
+      structuralClusterJoin: 'ascending_price_bounded_diameter_kCluster_units', // S35-C7 (supersedes S3-C4 centroid-chaining): left-greedy groups whose TOTAL SPAN never exceeds kCluster·u; volume-weighted centroid per group
+      confluenceJoin: 'ascending_price_bounded_diameter_kConfluence_units', // S35-C8 (supersedes S3-C5): same rule, unweighted mean centroid; span bound is asserted at build time (bounded-diameter theorem, LS3-08)
+      compositeAvailability: 'max_of_members', // ⚠ CHOICE S3-C6: cluster/snapshot formation/firstKnown/firstTradable = latest member's (conservative, never early); age features must use MEMBER triples or family bornDate
+      // calendarTradableSameSession (S3-C7 flag) RETIRED — the S3.5 tradability amendment
+      // (availability.tradability above) resolves the contradiction at the definition level.
+      sideRule: 'centroid_lte_prior_close_is_support', // ⚠ CHOICE S3-C8: snapshot side vs D−1 adjusted close; exact tie → support (registry data + founding role only — session roles are the roleMachine's)
+      familyObservedCentroid: 'unweighted_mean_of_matched_snapshot_centroids', // ⚠ CHOICE S3-C10: the anchor-EMA input when >1 snapshot matches
+      familyMatchableSameSessionAsFounded: true, // ⚠ CHOICE S3-C11: a family founded earlier in the ascending pass is a match candidate for later snapshots
+      // roleSideSource (S3-C12) RETIRED — superseded by lineage.roleMachine (anchor frame).
+      splitExecution: 'nearest_snapshot_keeps_elder_id_each_other_branches', // ⚠ CHOICE S3-C13: at trigger, nearest-to-anchor snapshot stays; every other matched snapshot founds a branch with splitFrom
+      // splitRequiresMultipleSnapshots (S3-C14) RETIRED — a theorem now, not a rule: the
+      // bounded-diameter confluence bound (kConfluence < kSplit) makes a single-snapshot
+      // split-threshold breach impossible by construction.
+      // mergeStateTransfer (S3-C15) superseded by lineage.merge.transfer (full operator table).
+      weeklyPivotWeek: 'iso_monday_keyed_prior_completed_week', // ⚠ CHOICE S3-C16: prior completed week = latest Monday-keyed week strictly before the session's week, aggregated H/L/last-C
+      distanceMeasure: 'absolute_price_distance_vs_units', // S35-C9 (supersedes S3-C9 midpoint %): all geometric comparisons are |Δprice| vs multiples of the session's distanceUnit
     },
   },
 
@@ -275,9 +431,9 @@ const CONFIG = {
       consol_tightness: '60-min range in ATR',
       tod_bucket: ['open', 'midday', 'power'], // parent §8.2 names; see todBucketEtCutoffs below
       gap_context: { toward: true, away: true, none: true, thresholdAtr: 0.3 }, // parent §8.2: at 0.3 ATR
-      // CHOICE: exact ET cutoffs for open/midday/power are not given in parent §8.2.
-      // Left null; to be pinned in Session 5 (features) before use.
-      todBucketEtCutoffs: null, // ⚠ CHOICE: open/midday/power minute cutoffs unspecified (parent §8.2)
+      // S3-R1 (founder ruling — closes S2 ⚠ flag #6): ET-minute cutoffs, [start, end).
+      // open 09:30–10:30, midday 10:30–14:30, power 14:30–16:00, all ET.
+      todBucketEtCutoffs: { open: [570, 630], midday: [630, 870], power: [870, 960] }, // S3-R1
     },
     momentumQuality: { // parent §8.3 (stored features)
       keys: ['path_efficiency', 'accel_final_30m', 'pullback_depth_max', 'hl_progression',
@@ -313,6 +469,7 @@ const CONFIG = {
         pctAboveMa: [20, 50], // §A3.2 breadth_pct_above_20dma/_50dma
         nhNlNetDays: 63,      // §A3.2 nh_nl_net_63d
         betaAppetite: 'SPHB-SPLV 20-day return spread', // §A3.2 beta_appetite_20d
+        betaAppetiteGrain: 'daily', // S3-R4 (F4 ruling): a daily feature — SPHB/SPLV 5m never fetched/referenced
         volRegimePctile: { spyRealizedVolDays: 20, trailingYears: 2 }, // §A3.2 vol_regime_pctile (warmup-dependent)
       },
     },
@@ -506,5 +663,29 @@ function deepFreeze(obj) {
   }
   return Object.freeze(obj);
 }
+
+// Geometry coherence validation (S3.5 §3) — like deepFreeze, this COMPUTES no config
+// value; it only rejects an incoherent one. The ordering invariants are not negotiable:
+// a violating config must throw at load, never silently produce incoherent lineage.
+export function validateGeometry(geometry) {
+  const { atrMultiple, floorPct, capPct } = geometry.distanceUnit;
+  const { kCluster, kConfluence, kMerge, kMatch, kSplit } = geometry.multiples;
+  const fail = (msg) => { throw new Error(`config geometry invariant violated: ${msg}`); };
+  if (!(atrMultiple > 0)) fail(`atrMultiple ${atrMultiple} must be > 0`);
+  if (!(floorPct > 0 && capPct > 0)) fail('floorPct and capPct must be > 0');
+  if (!(floorPct <= capPct)) fail(`floorPct ${floorPct} must be ≤ capPct ${capPct}`);
+  for (const [k, v] of Object.entries(geometry.multiples)) if (!(v > 0)) fail(`${k} ${v} must be > 0`);
+  if (!(kCluster <= kConfluence)) fail(`kCluster ${kCluster} must be ≤ kConfluence ${kConfluence}`);
+  if (!(kConfluence < kMatch)) fail(`kConfluence ${kConfluence} must be < kMatch ${kMatch}`);
+  if (!(kMerge < kMatch)) fail(`kMerge ${kMerge} must be < kMatch ${kMatch}`);
+  if (!(kSplit > kMatch)) fail(`kSplit ${kSplit} must be > kMatch ${kMatch}`);
+  // Live-support coherence (S3.5 §7a): merge evidence needs two DISTINCT snapshots
+  // (level gap > kConfluence·u) with anchors within kMerge·u — kMerge ≤ kConfluence
+  // would make merges structurally unreachable.
+  if (!(kConfluence < kMerge)) fail(`kConfluence ${kConfluence} must be < kMerge ${kMerge} (merge reachability under live support)`);
+  return geometry;
+}
+
+validateGeometry(CONFIG.levels.geometry);
 
 export default deepFreeze(CONFIG);

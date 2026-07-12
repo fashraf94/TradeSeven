@@ -2,9 +2,9 @@
 
 **Purpose:** every value in `research/level-study/config.js` mapped to its source section, so the founder can review the frozen config against the specs in one pass. Mandatory deliverable (S2 prompt §3).
 
-**Source precedence:** `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S2.md` (R1–R3, A1–A3) → `docs/LEVEL_STUDY_SPEC_V1_1_ADDENDUM_A_CONTEXT_LAYER_V1_1.md` (Addendum §A*) → `docs/LEVEL_INTERACTION_EVENT_STUDY_SPEC_V1_1.md` (parent §*). "S1 §" = `docs/discovery/SESSION1_DATA_DISCOVERY_REPORT.md`.
+**Source precedence:** `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3_5.md` (amendments 1–6, S35-C1…C9) → `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md` (S3-R1…S3-R5, S3-C1…S3-C16) → `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S2.md` (R1–R3, A1–A3) → `docs/LEVEL_STUDY_SPEC_V1_1_ADDENDUM_A_CONTEXT_LAYER_V1_1.md` (Addendum §A*) → `docs/LEVEL_INTERACTION_EVENT_STUDY_SPEC_V1_1.md` (parent §*). "S1 §" = `docs/discovery/SESSION1_DATA_DISCOVERY_REPORT.md`.
 
-**Config version:** `STUDY_CONFIG_VERSION = 1`.
+**Config version:** `STUDY_CONFIG_VERSION = 3` — v2 was the S3.5 LS3-01 rework (unified distance scale, warmup replay, merge timing, role machine); v3 is the S3.5-b founder-directed distanceUnit guard recalibration (floorPct/capPct set from the measured 0.25×ATR% distribution so each clamp binds ≤10% of symbol-sessions per symbol; amendment 7 / S35-C10). Versions never reused; artifact provenance unambiguous.
 
 ---
 
@@ -19,10 +19,14 @@ These are the only values where the specs were silent or ambiguous and Session 2
 | 3 | `fetch.pacingMs` | `300` | Parent §4.5 + S2 prompt say "gentle pacing" — no number | Budget has 156× headroom (S1 §9); 300 ms between calls is conservative, not tuned. | None. Only affects wall-clock of the fetch. |
 | 4 | `fetch.retry` | `maxAttempts 4, baseBackoff 800ms, ×2, on [429,500,502,503,504]` | S2 prompt says "retry-with-backoff on transient failures" — no numbers | Standard exponential backoff; retries only transient HTTP statuses (never 4xx client errors like the 422 span guard). | None material. |
 | 5 | `levels.sourceFamilies.psychological.increments` | `null` | Parent §5.1 says "$5/$10 increments scaled by price band" but gives no band→increment map | Left null rather than invent a mapping. `INCLUDE_ROUND_LEVELS` is default OFF (parent §5.1), so unused in V1.1. | None in V1.1 (feature off). Pin before enabling. |
-| 6 | `features.fingerprint.todBucketEtCutoffs` | `null` | Parent §8.2 names buckets `open/midday/power` but gives no ET minute cutoffs | Left null rather than invent cutoffs. Not needed until Session 5 (features). | None this session. Pin in Session 5. |
+| 6 | ~~`features.fingerprint.todBucketEtCutoffs`~~ **RESOLVED at S3** | `{open:[570,630], midday:[630,870], power:[870,960]}` | (was: parent §8.2 gives no ET cutoffs) | **Founder ruling S3-R1**: open 09:30–10:30, midday 10:30–14:30, power 14:30–16:00 ET. No longer a Session choice. | — |
 | 7 | `hourlyClass.evaluationOrder` | `[SHARP_REJECT, DRIFT_HOLD, BREAK_HOLD, BREAK_RECLAIM, CHOP]` | Parent §7 lists classes as a table; the rules are mutually exclusive by construction, but a residual (`CHOP = else`) implies an order | Table order; `CHOP` is the explicit residual. The P/C/W thresholds are disjoint, so order does not change any classification — recorded for determinism only. | None (rules are disjoint). |
 
 **Not flagged (deliberately):** `corporateActionAdjacentSessions: 2` (parent §3.4 states "±2 sessions" explicitly), `sampleBudget.symbols: 175` (parent §13 states it), all P/C/W thresholds, all ATR multipliers, all lineage knobs — these are verbatim from the specs.
+
+### Session-3 ambiguity register (S3-C1 … S3-C16)
+
+Session 3 added `levels.construction` — the deterministic conventions `02-build-levels.js` needs where the specs are silent (fractal tie handling, clustering algorithm, composite availability, side rule, merge/split denominators, split execution, merge state transfer, weekly-pivot calendar, …). Each is greppable in `config.js` as `⚠ CHOICE S3-C<n>` and is documented with rationale and risk in **`docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md` §B** (single source; not duplicated here). The one materially interpretive choice — **S3-C7, calendar levels tradable the session they apply to** (the literal `firstKnown+1` offset would bar the calendar family from ever being referenced) — is called out there for explicit founder review.
 
 ---
 
@@ -45,12 +49,13 @@ These are the only values where the specs were silent or ambiguous and Session 2
 | `universe.eligibilityAsOf` | `2023-07-10` | R2 |
 | `universe.targetSize` | `{min:150, max:200}` | parent §4.2 |
 | `universe.strata` | `[mega_cap_tech, low_volatility, high_beta, gap_prone]` | parent §4.2 / §12 |
-| `universe.universeFilePath` | placeholder | R2 (founder deliverable, pending) |
+| `universe.universeFilePath` | `research/level-study/universe_frozen.json` | S3-R5 (actual frozen file, universeVersion 1; was S2 placeholder) |
 | `universe.probe.equities` | `[AAPL,NVDA,MSFT,KO,PG,JNJ,TSLA,AMD,COIN]` | S2 §4 |
 | `universe.probe.context` | `[SPY,XLK,XLE,SPHB,SPLV]` | S2 §4 |
 | `universe.sectorEtfs` | 11 SPDRs | Addendum §A2.2 |
 | `universe.contextEtfs` | `{market:SPY, highBeta:SPHB, lowBeta:SPLV}` | Addendum §A3.2, §A8 |
-| `universe.sectorMap` | `{}` | ⚠#… (empty; awaits universe freeze, Addendum §A2.2) |
+| `universe.sectorMap` | 11 symbols → SPDR sector | **S3-R5**: transcribed verbatim from `universe_frozen.json` (Addendum §A2.2 "frozen with the universe"); closes the S2 pending flag |
+| `universe.dailyGrainOnly` | `[SPHB, SPLV]` | **S3-R4** (F4 ruling): 5m never fetched or referenced |
 
 ## 3. Fetch mechanics — `fetch` (A1; parent §4.1, §4.5; Addendum §A5.2, §A6, §A8; S1 §8, §9)
 
@@ -81,7 +86,9 @@ These are the only values where the specs were silent or ambiguous and Session 2
 | `session.regularOpenEtMinutes` | `570` (09:30) | parent §2 |
 | `session.regularCloseEtMinutes` | `960` (16:00) | parent §2 |
 | `session.lastRegularBarOpenEtMinutes` | `955` (15:55) | S1 §4 |
-| `session.barsPerRegularSession` | `78` | S1 §4 (78 regular + 1 auction = 79) |
+| `session.barsPerRegularSession` | `78` | S1 §4 (78 regular + 1 auction = 79; full days only) |
+| `session.halfDay.sessionEndDerivedPerSession` | `true` | **S3-R3**: session end derived per-session from data, never hardcoded 16:00 |
+| `session.halfDay.tagField` / `eodLabelBar` | `halfDay` / `last_regular_bar_of_actual_session` | **S3-R3** |
 
 ## 5. Self-built hourly bars — `hourly` (parent §3.6, §4.4; A2)
 
@@ -105,6 +112,10 @@ These are the only values where the specs were silent or ambiguous and Session 2
 | `closingAuction.excludeFromMath` | `[pattern,range,volume,excursion,hourly_aggregation]` | A2 |
 | `closingAuction.useForSessionClose` | `true` | A2 |
 | `closingAuction.useForCrossGrainInvariant` | `true` | A1 / A2 |
+| `closingAuction.eodFallback.rule` | `last_regular_5m_bar` | **S3-R2** (F3 ruling): auction-gap sessions close on the last regular bar |
+| `closingAuction.eodFallback.tagValues` | `{auction, fallback_1555}` | **S3-R2**: `eodSource` tag vocabulary |
+| `closingAuction.eodFallback.crossGrainInvariantExempt` | `true` | **S3-R2**: fallback sessions exempt; 0.1% tolerance NEVER loosened |
+| `closingAuction.eodFallback.reportFooterItem` | `fallback_session_count` | **S3-R2**: standing footer item |
 
 ## 7. Adjustment basis — `adjustment` (A1; parent §4.3, §3.4; S1 §5)
 
@@ -121,23 +132,30 @@ These are the only values where the specs were silent or ambiguous and Session 2
 
 | Path | Value | Source |
 |---|---|---|
-| `levels.sourceFamilies.structural` | `fractalK 3, trailing 120, cluster 0.5%, vol-weighted centroid` | parent §5.1 |
+| `levels.sourceFamilies.structural` | `fractalK 3, trailing 120, vol-weighted centroid` (fixed 0.5% clustering superseded by `geometry.multiples.kCluster`) | parent §5.1 / **S3.5 amendment 2** |
+| `levels.geometry.distanceUnit` | `clamp(0.25·ATR14, 0.26%·price, 2.7%·price)` | **S3.5 amendment 2** (LS3-01); floor/cap **v3 recalibrated** amendment 7 / ⚠ S35-C10 (each binds ≤10% symbol-sessions ∀s; was 0.5/1.5 in v2) |
+| `levels.geometry.multiples` | `kCluster 0.5 ≤ kConfluence 0.5 < kMerge 0.8 < kMatch 1.0 < kSplit 1.6` | **S3.5 amendment 2**; values ⚠ S35-C2 (provisional); ordering load-asserted (`validateGeometry` throws) |
 | `levels.sourceFamilies.participation` | AVWAP from most recent significant swing | parent §5.1 |
 | `levels.sourceFamilies.calendar` | daily PP/S1/S2/R1/R2 (D−1) + weekly (prior week) | parent §5.1 |
 | `levels.sourceFamilies.psychological` | round numbers, flag `INCLUDE_ROUND_LEVELS`, OFF; `increments null` | parent §5.1 / ⚠#5 |
 | `levels.sourceFamilies.moving` | reserved V2, OFF | parent §5.1 |
-| `levels.confluence.alignPct` | `0.5` | parent §5.1 |
+| `levels.confluence` grouping | bounded-diameter ≤ `kConfluence·u` (fixed 0.5% alignPct superseded) | parent §5.1 / **S3.5 amendment 2** (S35-C8) |
 | `levels.confluence.tiers` | `F1=1, F2=2, F3plus=3` | parent §5.1 |
 | `levels.significantSwingMovePct` | `5` | parent §5.3 |
-| `levels.availability.firstTradableOffsetSessions` | `1` | parent §5.3 |
+| `levels.availability.tradability` | prior-close information-set rule (per-source yields incl. weekly = week's first trading session) | **S3.5 amendment 1** (retires the universal `firstKnown+1` formula and the S3-C7 flag) |
 | `levels.availability.*firstKnown` | fractal/avwap/calendar rules | parent §5.3 |
-| `levels.lineage.matchWithin` | `max(0.5%, 0.25 ATR)` | parent §5.4 |
+| lineage match / merge / split distances | `kMatch·u` / `kMerge·u` / `kSplit·u` (fixed/hybrid S3 scales superseded) | **S3.5 amendment 2** |
 | `levels.lineage.tieBreak` | nearest → elder | parent §5.4 |
 | `levels.lineage.anchorEmaAlpha` | `0.15` | parent §5.4 |
-| `levels.lineage.mergeWithinPct` / `mergeConsecutiveSessions` | `0.4` / `5` | parent §5.4 |
-| `levels.lineage.splitSeparationPct` / `splitConsecutiveSessions` | `1.5` / `5` | parent §5.4 |
+| `levels.lineage.mergeConsecutiveSessions` / `splitConsecutiveSessions` | `5` / `5` | parent §5.4 (counts, not distances — unchanged) |
 | `levels.lineage.retireZeroSupportSessions` | `20` | parent §5.4 |
 | `levels.lineage.roleStates` | 4 states | parent §5.4 |
+| `levels.lineage.liveSupportRequiredForRuns` | `true` | **S3.5 amendment 6** (LS3-09 structural dissolution) |
+| `levels.lineage.warmupReplay` | continuous replay; checkpoint; `preStudy` fields; matchHistory cleared (⚠ S35-C4) | **S3.5 amendment 3** (LS3-02) |
+| `levels.lineage.merge` | effective on the detection session; full transfer operator table (sequenceIndex ⚠ S35-C5) | **S3.5 amendment 4** (LS3-03/05) |
+| `levels.lineage.roleMachine` | anchor frame; zone 0.25u; flip margin 0.25u; 3 confirming D−1 closes; pending state + resets; ⚠ S35-C6 provisional | **S3.5 amendment 5** (LS3-04) |
+| `levels.construction.priceBasis` | `adjusted` | A1 one-basis rule applied to Stage 1 (S3 rulings doc §B) |
+| `levels.construction.*` (16 conventions) | see `config.js` | **⚠ S3-C1…S3-C16** — S3 rulings doc §B has the full register with rationale + risk per choice |
 
 ## 9. Episode / event detection — `episode` (parent §6.1, §6.2)
 
@@ -174,7 +192,7 @@ These are the only values where the specs were silent or ambiguous and Session 2
 | `features.snapshotImmutable` | `true` | Addendum §A1 rule 3 |
 | `features.fingerprint.*` | §8.2 fingerprint set | parent §8.2 |
 | `features.fingerprint.gap_context.thresholdAtr` | `0.3` | parent §8.2 |
-| `features.fingerprint.todBucketEtCutoffs` | `null` | ⚠#6 |
+| `features.fingerprint.todBucketEtCutoffs` | `{open:[570,630], midday:[630,870], power:[870,960]}` | **S3-R1** (founder ruling; closes ⚠#6) |
 | `features.momentumQuality.keys` | §8.3 set; `openingRangeMinutes 30` | parent §8.3 |
 | `features.higherTf.*` | 20/50 stack, 20/50w SMA, 52w, ATR pctile, 20d compression | parent §8.4 |
 | `features.relativeMomentum.*` | 5/20/60d vs SPY & sector, 60d beta, direction tags | parent §8.4 |
@@ -182,6 +200,7 @@ These are the only values where the specs were silent or ambiguous and Session 2
 | `features.group.minEligiblePeers` | `5` | Addendum §A2.1 |
 | `features.group.*.freshExtremeDays` | `63` | Addendum §A2.1 |
 | `features.market.breadth.*` | 20/50 dma, nh-nl 63d, SPHB−SPLV 20d, vol pctile 20d/2yr | Addendum §A3.2 |
+| `features.market.breadth.betaAppetiteGrain` | `daily` | **S3-R4** (F4 ruling) |
 
 ## 12. Regime & breadth — `regime` (Addendum §A3.1, §A6)
 
@@ -278,3 +297,6 @@ These are the only values where the specs were silent or ambiguous and Session 2
 ---
 
 *Traceability table — LevelStory Session 2, Phase 0. Reviewed by the founder at the STOP before the full-universe fetch is greenlit.*
+*Session-3 update (2026-07-12): S3-R1…S3-R5 transcribed (tod buckets, EOD fallback, half-day rule, SPHB/SPLV daily-only, sectorMap); `levels.construction` S3-C1…S3-C16 choice register added — see `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md`.*
+*Session-3.5 update (2026-07-12): `STUDY_CONFIG_VERSION = 2`. Unified distance scale (`levels.geometry`, load-asserted ordering) supersedes all fixed-percent geometry; tradability amendment; warmup replay; merge effective timing + operator table; role state machine; live-support rule. Choice register S35-C1…C9 — see `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3_5.md`.*
+*Session-3.5-b update (2026-07-12): `STUDY_CONFIG_VERSION = 3`. Founder-directed distanceUnit guard recalibration — `floorPct 0.5→0.26`, `capPct 1.5→2.7`, set from the measured `0.25×ATR%` distribution so each clamp binds ≤10% of symbol-sessions per symbol (was 49–96% floor / 64% cap on low-vol / COIN under v2). Amendment 7 / S35-C10; rework report §9.*
