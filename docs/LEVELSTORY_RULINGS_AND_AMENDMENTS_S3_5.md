@@ -2,7 +2,7 @@
 
 **Status:** Spec amendments of record for Session 3.5 (the LS3-* rework). The adversarial review of Session 3 cleared every lookahead path and returned DO NOT SHIP on seven mechanical defects; this session's founder prompt rules the fixes. Recorded per the S3.5 prompt §10.
 **Session:** LevelStory Session 3.5 — lineage rework on branch `claude/level-study-session3-levels-lineage-8v31gp`.
-**Config:** `STUDY_CONFIG_VERSION = 2` — the geometry changes materially from what v1 was built against; version 1 is never reused. Every v2 artifact stamps `configVersion: 2`.
+**Config:** `STUDY_CONFIG_VERSION = 3` — v2 was the unified-geometry rework; v3 is the founder-directed distanceUnit guard recalibration (amendment 7 / S35-C10). Version 1/2 are never reused; every v3 artifact stamps `configVersion: 3`.
 **Precedence:** this document → `LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md` → `LEVELSTORY_RULINGS_AND_AMENDMENTS_S2.md` → Addendum → parent spec.
 
 ---
@@ -59,6 +59,21 @@ Roles derive from the **family anchor** — the same frame Session 4's episode z
 
 ⚠ S35-C6 knob honesty: **3 sessions × 0.25u is a policy default, not a proven optimum.** Post-fix flip rates are reported in the rework report; the knob graduates only through the Session-7 manual-review demotion path.
 
+### Amendment 7 — distanceUnit guard recalibration (config v3, founder-directed) — S35-C10
+
+The v2 clamp band `floorPct 0.5%, capPct 1.5%` (inherited from parent §5.4) was measured to **bind pathologically**: over the 9 fixture equities' study window the floor bound 49–96% of the low-volatility names' sessions (KO 96%, JNJ 92%, PG 88%, MSFT 62%, AAPL 49%) and the cap bound 64% of COIN's — so for those names the GUARD, not ATR, set the distance scale, re-introducing the volatility-confound the unified scale exists to remove (S3.5-b rework report §9).
+
+**Founder ruling:** set `floorPct` / `capPct` from the measured per-session `0.25×ATR%` distribution so **each guard binds in ≤10% of symbol-sessions for every symbol** — i.e. `floorPct ≤ min_s p10(0.25×ATR%)` and `capPct ≥ max_s p90`, keeping each guard live only at its tail. Measured across the 9 fixture equities (all three volatility strata), study + full history: `min_s p10 ≈ 0.27` (KO), `max_s p90 ≈ 2.66` (COIN, full history). Chosen with margin:
+
+```
+floorPct = 0.26   (worst floor-bind 6.1%, KO / full history)
+capPct   = 2.7    (worst cap-bind   9.0%, COIN / full history)
+```
+
+Both ≤10% for every symbol in both windows. `atrMultiple` (0.25) and the `multiples` block are unchanged. Config `STUDY_CONFIG_VERSION` → **3** (post-build knob change; version 1/2 never reused; the S3.5 report's v2 gate numbers remain valid for the [0.5, 1.5] band). ⚠ S35-C10 — values are provisional and derived from the 9-equity fixture subset; **re-confirm on the full universe** (PLTR/BE + expansion) via the one-line measurement in the rework report §9.
+
+Effect (9-equity fixture gate, v2→v3): the F2/F3-share confound dissolves — ATR%↔F3-share −0.67 → **−0.15**, levels/day↔F3-share −0.76 → **−0.19**, ATR%↔merges +0.59 → **−0.07**. Split scarcity is unchanged (that is the separate, still-open `kSplit` magnitude question — not touched here).
+
 ### Amendment 6 — Live support for run accumulation (structural dissolution of LS3-09)
 
 A merge or split run only advances on a session where the family receives a matching snapshot. Consequences, all by construction:
@@ -74,8 +89,9 @@ A merge or split run only advances on a session where the family receives a matc
 
 | # | Choice | Value | Where |
 |---|---|---|---|
-| S35-C1 | distanceUnit cap | 1.5% of price | `config.js` geometry.distanceUnit |
+| S35-C1 | distanceUnit cap (v2) | ~~1.5% of price~~ **superseded by S35-C10** | `config.js` geometry.distanceUnit |
 | S35-C2 | threshold multiples (v2 starting values) | 0.5 / 0.5 / 0.8 / 1.0 / 1.6 | `config.js` geometry.multiples |
+| S35-C10 | distanceUnit floorPct / capPct (v3) | 0.26% / 2.7% (each guard binds ≤10% of symbol-sessions ∀s; measured) | `config.js` geometry.distanceUnit (amendment 7) |
 | S35-C3 | warmup replay start rule | first session with ATR(14) at prior close | `config.js` lineage.warmupReplay |
 | S35-C4 | matchHistory cleared at checkpoint | true | `config.js` lineage.warmupReplay |
 | S35-C5 | sequenceIndex merge rule | recompute from merged touchHistory | `config.js` lineage.merge.transfer |

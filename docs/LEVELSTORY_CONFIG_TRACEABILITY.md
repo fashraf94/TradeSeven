@@ -4,7 +4,7 @@
 
 **Source precedence:** `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3_5.md` (amendments 1–6, S35-C1…C9) → `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md` (S3-R1…S3-R5, S3-C1…S3-C16) → `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S2.md` (R1–R3, A1–A3) → `docs/LEVEL_STUDY_SPEC_V1_1_ADDENDUM_A_CONTEXT_LAYER_V1_1.md` (Addendum §A*) → `docs/LEVEL_INTERACTION_EVENT_STUDY_SPEC_V1_1.md` (parent §*). "S1 §" = `docs/discovery/SESSION1_DATA_DISCOVERY_REPORT.md`.
 
-**Config version:** `STUDY_CONFIG_VERSION = 2` — bumped at Session 3.5: the LS3-01 rework changes the level/lineage geometry materially from what v1 was built and Phase B ran against (unified distance scale, warmup replay, merge timing, role machine). Version 1 is never reused; artifact provenance is unambiguous.
+**Config version:** `STUDY_CONFIG_VERSION = 3` — v2 was the S3.5 LS3-01 rework (unified distance scale, warmup replay, merge timing, role machine); v3 is the S3.5-b founder-directed distanceUnit guard recalibration (floorPct/capPct set from the measured 0.25×ATR% distribution so each clamp binds ≤10% of symbol-sessions per symbol; amendment 7 / S35-C10). Versions never reused; artifact provenance unambiguous.
 
 ---
 
@@ -133,7 +133,7 @@ Session 3 added `levels.construction` — the deterministic conventions `02-buil
 | Path | Value | Source |
 |---|---|---|
 | `levels.sourceFamilies.structural` | `fractalK 3, trailing 120, vol-weighted centroid` (fixed 0.5% clustering superseded by `geometry.multiples.kCluster`) | parent §5.1 / **S3.5 amendment 2** |
-| `levels.geometry.distanceUnit` | `clamp(0.25·ATR14, 0.5%·price, 1.5%·price)` | **S3.5 amendment 2** (LS3-01); cap ⚠ S35-C1 |
+| `levels.geometry.distanceUnit` | `clamp(0.25·ATR14, 0.26%·price, 2.7%·price)` | **S3.5 amendment 2** (LS3-01); floor/cap **v3 recalibrated** amendment 7 / ⚠ S35-C10 (each binds ≤10% symbol-sessions ∀s; was 0.5/1.5 in v2) |
 | `levels.geometry.multiples` | `kCluster 0.5 ≤ kConfluence 0.5 < kMerge 0.8 < kMatch 1.0 < kSplit 1.6` | **S3.5 amendment 2**; values ⚠ S35-C2 (provisional); ordering load-asserted (`validateGeometry` throws) |
 | `levels.sourceFamilies.participation` | AVWAP from most recent significant swing | parent §5.1 |
 | `levels.sourceFamilies.calendar` | daily PP/S1/S2/R1/R2 (D−1) + weekly (prior week) | parent §5.1 |
@@ -299,3 +299,4 @@ Session 3 added `levels.construction` — the deterministic conventions `02-buil
 *Traceability table — LevelStory Session 2, Phase 0. Reviewed by the founder at the STOP before the full-universe fetch is greenlit.*
 *Session-3 update (2026-07-12): S3-R1…S3-R5 transcribed (tod buckets, EOD fallback, half-day rule, SPHB/SPLV daily-only, sectorMap); `levels.construction` S3-C1…S3-C16 choice register added — see `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md`.*
 *Session-3.5 update (2026-07-12): `STUDY_CONFIG_VERSION = 2`. Unified distance scale (`levels.geometry`, load-asserted ordering) supersedes all fixed-percent geometry; tradability amendment; warmup replay; merge effective timing + operator table; role state machine; live-support rule. Choice register S35-C1…C9 — see `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3_5.md`.*
+*Session-3.5-b update (2026-07-12): `STUDY_CONFIG_VERSION = 3`. Founder-directed distanceUnit guard recalibration — `floorPct 0.5→0.26`, `capPct 1.5→2.7`, set from the measured `0.25×ATR%` distribution so each clamp binds ≤10% of symbol-sessions per symbol (was 49–96% floor / 64% cap on low-vol / COIN under v2). Amendment 7 / S35-C10; rework report §9.*

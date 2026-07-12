@@ -2,7 +2,7 @@
 ## Lineage Rework (LS3-01 … LS3-10)
 
 **Branch:** `claude/level-study-session3-levels-lineage-8v31gp` (continuing the S3 branch; started from `2d3a8830`, clean tree).
-**Date:** 2026-07-12. **Config:** `STUDY_CONFIG_VERSION = 2`.
+**Date:** 2026-07-12. **Config:** `STUDY_CONFIG_VERSION = 2` (rework) → **3** (founder-directed distanceUnit guard recalibration, §9).
 **Environment case (prompt §0.2):** `research/level-study/data/` is **absent** here — but the committed daily fixtures cover the FULL study window for the 9 probe equities, so the acceptance gate ran in-session at 9-symbol scope (all three volatility strata; gap_prone/PLTR/BE missing). The 11-symbol confirmation on real data is a founder step (§6). Pre-rework suite state here: 27 runnable green + 44 data-blocked, consistent with 71/71 locally.
 
 ---
@@ -21,7 +21,8 @@
 | Fix 5c — anomaly scan rebuild (LS3-07) | ✅ Hard invariants THROW (`assertRegistryInvariants`, 02-build-levels.js:205); per-symbol + MAD + cross-strata warnings (`scanWarnings`, :340) — the scan now catches exactly what it missed (see §4: it flags the residual finding loudly) |
 | Test hardening (LS3-10, §9 items 1–11) | ✅ All 11 delivered (map in §5) |
 | **Suite** | ✅ **87 tests; 43/43 runnable green here; 44 data-blocked S2 tests unchanged (87/87 expected locally)** |
-| **Acceptance gate (§8)** | ⚠️ **FAIL on the letter of the criterion — with the LS3-01 diagnosis itself CONFIRMED.** See §3; per §12 no knob was touched; STOP for founder decision |
+| **Acceptance gate (§8)** | ⚠️ **FAIL on the letter of the criterion — with the LS3-01 diagnosis itself CONFIRMED.** See §3; per §12 no knob was touched during the rework; STOP for founder decision |
+| **S3.5-b recalibration (config v3, founder-directed follow-up)** | ✅ §9: `floorPct/capPct` set from measured `0.25×ATR%` so each guard binds ≤10% symbol-sessions ∀s; the F2/F3-vs-volatility confound dissolves (ATR%↔F3-share −0.67→−0.15). Split scarcity (separate `kSplit` finding) still open |
 | Branch pushed | ✅ (at STOP) |
 
 ---
@@ -96,6 +97,33 @@ npm test                              # expect 87/87
 npm run levels                        # v2 rebuild: prints stats + anomaly scan; artifacts stamp configVersion 2
 ```
 Then compare the printed cross-strata correlations and zero-event warnings against §3's 9-symbol numbers (expected: same shape — merges everywhere, splits ~zero, F3 flattened). The two decisions this session leaves open: **(1) kSplit magnitude** (accept rare splits, or recalibrate within the ordering constraints — config v3), **(2) floorPct** (the 0.5% floor binds the whole low-vol stratum). Session 4 remains blocked until both are ruled.
+
+## 9. S3.5-b — distanceUnit guard recalibration (config v3, founder-directed follow-up)
+
+**Trigger:** §3's second open finding — "the 0.5% floor binds the entire low-vol stratum." The founder directed: set `floorPct`/`capPct` from the measured `0.25×ATR%` distribution so **each guard binds ≤10% of symbol-sessions for every symbol**. This is a legitimate founder recalibration (not gate-forcing): it makes ATR — not a guard — set the scale, and it does not touch `kSplit` or any lineage rule.
+
+**Measurement** (9 fixture equities, all 3 strata; `x = 100·0.25·ATR14(D−1)/price(D−1)`, the exact clamp comparand):
+
+| | KO | PG | JNJ | MSFT | AAPL | AMD | TSLA | NVDA | COIN |
+|---|---|---|---|---|---|---|---|---|---|
+| study p10 | **0.28** | 0.30 | 0.32 | 0.37 | 0.40 | 0.87 | 0.90 | 0.66 | 1.27 |
+| study p90 | 0.45 | 0.51 | 0.47 | 0.68 | 0.67 | 1.40 | 1.48 | 1.32 | **1.99** |
+
+`min_s p10 ≈ 0.27` (KO), `max_s p90 ≈ 2.66` (COIN, full history). **v2 [0.5, 1.5] bound:** floor 96% KO / 92% JNJ / 88% PG / 62% MSFT / 49% AAPL; cap 64% COIN — the guard, not ATR, set the scale for those names.
+
+**Chosen (config v3):** `floorPct = 0.26`, `capPct = 2.7`. Binding ≤10% for every symbol in BOTH study and full-history windows (worst: floor 6.1% KO, cap 9.0% COIN). Each guard stays *live at its tail* (protective) without dominating. `atrMultiple` and all `multiples` unchanged. ⚠ S35-C10 provisional — derived from the 9-equity subset; **re-confirm on the full universe** (one-line rerun of the measurement).
+
+**Effect (9-equity gate, v2 → v3):** the F2/F3-vs-volatility confound — the finding that motivated this — **dissolves**:
+
+| correlation | v1 (S3) | v2 (rework) | **v3 (recal)** |
+|---|---|---|---|
+| ATR%↔F3-share | −0.83 | −0.67 | **−0.15** |
+| levels/day↔F3-share | −0.94 | −0.76 | **−0.19** |
+| ATR%↔merges | −0.84 | +0.59 | **−0.07** |
+
+Role-flip rates essentially unchanged (~2.1–2.6/100 matched-family sessions). **Splits remain near-zero** (zero-split symbols 8→6; mega_cap_tech still all-zero) — that is the *separate* open `kSplit` finding, deliberately untouched here. So the §8 gate letter is still unmet on splits, but the tier/volatility-confound dimension — the risk to P4 — is now clean on every measured metric. `kSplit` remains the one open founder decision before Session 4.
+
+**Verification:** full suite re-green after re-tuning the three synthetic-bar tests whose geometry was pinned to the v2 unit (13a drift, 13b merge, 15b strong-form — intent preserved: amplitudes/ranges rescaled to the v3 unit, `assertRegistryInvariants` + truncated-equivalence still assert on each). Engine-grain tests (explicit units) and all fixture tests were unaffected. Config loads + `validateGeometry` passes at v3.
 
 ## 7. Discipline confirmations
 

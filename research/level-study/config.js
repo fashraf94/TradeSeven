@@ -21,15 +21,19 @@
 //
 // Isolation: this module imports nothing. Product code never imports it. (Parent §2.)
 
-// S3.5 (LS3-01 rework): STUDY_CONFIG_VERSION bumped 1 → 2. The level/lineage geometry
-// changes materially from what Session 3 built and Phase B ran against (unified distance
-// scale replaces four incompatible fixed-percent scales; warmup lineage replay; merge
-// effective timing; role state machine). Artifact provenance must be unambiguous: every
-// v2 artifact stamps configVersion 2. Version 1 is never reused (parent header rule).
-export const STUDY_CONFIG_VERSION = 2;
+// STUDY_CONFIG_VERSION history (parent header rule — increment on any post-build knob
+// change, never reuse):
+//   1 → S3 build (fixed-percent geometry).
+//   2 → S3.5 rework: unified distance scale, warmup replay, merge timing, role machine.
+//   3 → S3.5-b recalibration (founder-directed): distanceUnit floorPct/capPct set from
+//       the measured 0.25×ATR% distribution so each clamp guard binds ≤10% of
+//       symbol-sessions per symbol (see distanceUnit note, S35-C10). The distance unit
+//       changes materially from the v2 gate → new version so artifact provenance stays
+//       unambiguous (the S3.5 report's v2 gate numbers remain valid for [0.5, 1.5]).
+export const STUDY_CONFIG_VERSION = 3;
 
 const CONFIG = {
-  version: 2, // S3.5 rework — see STUDY_CONFIG_VERSION note above
+  version: 3, // S3.5-b recalibration — see STUDY_CONFIG_VERSION note above
 
   meta: {
     codename: 'LevelStory', // parent header
@@ -242,8 +246,17 @@ const CONFIG = {
         // distanceUnit(symbol, D) = clamp(atrMultiple × ATR(14,daily,D−1),
         //                                 floorPct% × price(D−1), capPct% × price(D−1))
         atrMultiple: 0.25, // parent §5.4's 0.25-ATR arm — the scale's ATR anchor
-        floorPct: 0.5,     // parent §5.4's 0.5% floor — protects low-ATR names
-        capPct: 1.5,       // ⚠ CHOICE S35-C1: cap is load-bearing (S3.5 §3) — 0.25×ATR hits it at ATR = 6% of price; beyond that, radius growth stops so genuinely distinct structures stay distinct
+        // ⚠ CHOICE S35-C10 (config v3 recalibration — founder-directed, data-measured):
+        // floorPct/capPct DERIVED from the per-session 0.25×ATR% distribution so each
+        // guard binds in ≤10% of symbol-sessions for EVERY symbol (else the guard, not
+        // ATR, sets the scale). The v2 [0.5, 1.5] band bound the floor for 49–96% of the
+        // low-vol names' sessions and the cap for 64% of COIN's — flattening geometry by
+        // volatility. Measured on the 9 fixture equities (all 3 strata), study + full
+        // history: min_s p10(0.25×ATR%) ≈ 0.27, max_s p90 ≈ 2.66. Values sit just past
+        // those boundaries with margin (worst bind: floor 6.1% KO, cap 9.0% COIN).
+        // Re-confirm on the full universe (PLTR/BE + expansion) — one-line measurement.
+        floorPct: 0.26,    // ⚠ S35-C10: floor binds ≤10% ∀s; still catches the genuine low-ATR/degenerate tail
+        capPct: 2.7,       // ⚠ S35-C10: cap is load-bearing — binds only COIN's wildest ~9% (extreme-ATR tail), never its normal regime
       },
       multiples: { // v2 starting values — ALL ⚠ provisional (S35-C2); ordering NOT negotiable
         kCluster: 0.5,    // structural pivot grouping DIAMETER bound  (≤ kConfluence)

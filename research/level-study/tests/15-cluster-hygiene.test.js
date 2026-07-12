@@ -57,9 +57,23 @@ test('hygiene b — family vs method counting: structural + AVWAPs sharing the s
     assert.deepEqual(snap.families, ['participation', 'structural'], `${date}: unexpected family set`);
     assert.equal(snap.tier, 'F2', `${date}: tier must count FAMILIES (2), got ${snap.tier}`);
   }
-  // The strong form: 3 methods, still F2 — tier counts families, never methods.
-  const threeMethod = hits.find(({ snap }) =>
-    snap.methods.includes('avwap_high') && snap.methods.includes('avwap_low') && snap.methods.includes('swing_sr_clusters'));
-  assert.ok(threeMethod, 'expected a 3-method snapshot (both AVWAPs + cluster)');
-  assert.equal(threeMethod.snap.tier, 'F2', '3 methods across 2 families must still be F2');
+
+  // The strong form — tier counts families, NEVER methods: a snapshot carrying ≥3 distinct
+  // methods that resolve to exactly 2 families must be F2, not F3. A structural cluster
+  // aligned with BOTH calendar methods (daily + weekly pivots) is the reliably-constructed
+  // instance under the config unit (the two AVWAPs group together, so the participation
+  // scenario above only reaches 2 methods once its cluster co-locates).
+  const fcCloses = [...flat(100, 8), ...zigzag(100, 0.6, 40)];
+  const fcBars = synthBars(fcCloses, { h: 0.15 });
+  const fc = runLevels(fcBars, { symbol: 'FAMC2', startDate: fcBars[30].date, enabledFamilies: ['structural', 'calendar'] });
+  let strongForm = null;
+  for (const s of fc.sessions) {
+    for (const snap of s.snapshots) {
+      if (snap.methods.length >= 3 && snap.families.length === 2) { strongForm = { date: s.date, snap }; break; }
+    }
+    if (strongForm) break;
+  }
+  assert.ok(strongForm, 'expected a ≥3-method snapshot spanning exactly 2 families (structural + daily + weekly)');
+  assert.equal(strongForm.snap.tier, 'F2',
+    `${strongForm.date}: ${strongForm.snap.methods.length} methods (${strongForm.snap.methods}) across 2 families must still be F2`);
 });

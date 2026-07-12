@@ -24,8 +24,11 @@ function assertTruncatedEquivalent(bars, D, opts, label) {
 }
 
 // ── (a) slow centroid drift keeps one familyId ────────────────────────────────
+// Geometry is expressed in the config's distance unit (config v3: low-range synthetic
+// series are floor-bound, so u ≈ floorPct ≈ 0.26 at price ~100). Amplitude/drift are
+// scaled to that unit — a knob change to floorPct re-scales these, not the intent.
 test('scenario a — drift: a slowly drifting zone keeps its familyId (identity, not rebirth)', () => {
-  const closes = [...flat(100, 8), ...zigzag(100, 1.4, 48, { drift: 0.005 })];
+  const closes = [...flat(100, 8), ...zigzag(100, 0.7, 48, { drift: 0.003 })];
   const bars = synthBars(closes, { h: 0.1 });
   const opts = { symbol: 'DRIFT', startDate: START, enabledFamilies: ['structural'] };
   const res = runLevels(bars, opts);
@@ -52,7 +55,7 @@ test('scenario a — drift: a slowly drifting zone keeps its familyId (identity,
   // The support family genuinely TRACKED the drift and never flipped role.
   const trough = res.families[ids.sort((a, b) => res.families[a].anchor - res.families[b].anchor)[0]];
   const firstCentroid = trough.matchHistory[0].centroid;
-  assert.ok(trough.anchor - firstCentroid > 0.3,
+  assert.ok(trough.anchor - firstCentroid > 0.25,
     `anchor should have drifted up with the zone (start ${firstCentroid.toFixed(2)} → ${trough.anchor.toFixed(2)})`);
   assert.deepEqual(trough.roleLog.map((r) => r.role), ['support'], 'no role thrash under the state machine');
 
@@ -61,21 +64,23 @@ test('scenario a — drift: a slowly drifting zone keeps its familyId (identity,
 
 // ── (b) two families converging → merge, elder survives, state transfers ──────
 test('scenario b — merge: converging zones merge under live support; elder survives; merge is effective in the D registry', () => {
-  // Two structural pivot lines converge, then HOLD at a gap of ~0.7 distance units —
-  // wide enough for two snapshots (> kConfluence·u), close enough for the anchors to sit
-  // within kMerge·u — with BOTH families matched every session (live support). The hold
-  // outlasts the 120-session trailing window so old wide pivots age out.
+  // Two structural pivot lines converge, then HOLD at a gap wide enough for two distinct
+  // snapshots (> kConfluence·u) yet close enough for the anchors to sit within kMerge·u,
+  // with BOTH families matched every session (live support). Thin bars (h=0.02) keep the
+  // aHigh/aLow ±h offset small so the amplitude alone sets the line gap under the config
+  // unit (u ≈ 0.26): start span 0.30 (< kSplit·u, no split; > match radius, two families),
+  // hold gap 0.12 (in (kConfluence·u, kMerge·u)). The hold outlasts the 120-session
+  // trailing window so the wider early pivots age out.
   const closes = [
-    ...flat(100.7, 8),
-    ...zigzag(100, 1.4, 15),
+    ...flat(100.15, 8),
+    ...zigzag(100, 0.30, 20),
     ...Array.from({ length: 25 }, (_, cy) => {
-      const amp = 1.4 - (1.25 * (cy + 1)) / 25;
-      const base = 100 + (0.55 * (cy + 1)) / 25;
-      return [base, base + amp / 2, base + amp, base + amp / 2];
+      const amp = 0.30 - (0.18 * (cy + 1)) / 25; // 0.30 → 0.12
+      return [100, 100 + amp / 2, 100 + amp, 100 + amp / 2];
     }).flat(),
-    ...zigzag(100.55, 0.15, 38),
+    ...zigzag(100, 0.12, 45),
   ];
-  const bars = synthBars(closes, { h: 0.1 });
+  const bars = synthBars(closes, { h: 0.02 });
   const opts = { symbol: 'MRG', startDate: START, enabledFamilies: ['structural'] };
   const res = runLevels(bars, opts);
 
