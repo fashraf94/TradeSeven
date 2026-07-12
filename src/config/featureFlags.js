@@ -617,7 +617,7 @@ export const CORRELATION_EXTENDED_DRIVERS_ENABLED = true;
  * Flip in a one-line follow-up PR after a founder Vercel-preview smoke (the
  * CORRELATION_SYNTHESIS_ENABLED precedent) — never in the build PR.
  */
-export const CORRELATION_NARRATION_ENABLED = false;
+export const CORRELATION_NARRATION_ENABLED = true;
 
 /**
  * Agent Learning System — L1 Foundation (Phase A) raw capture.
@@ -642,4 +642,4 @@ export const CORRELATION_NARRATION_ENABLED = false;
  * This flag gates capture ONLY. No dossier/atom writer ships in L1 (Signal
  * Capture Rider §5: capture only, pre-launch). Flip is a Phase-B concern.
  */
-export const LEARNING_L1_CAPTURE_ENABLED = false;
+export const LEARNING_L1_CAPTURE_ENABLED = true;
