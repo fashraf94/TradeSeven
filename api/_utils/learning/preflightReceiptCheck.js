@@ -75,7 +75,9 @@ export function validateCaptureSample(receipts, opts = {}) {
   const list = Array.isArray(receipts) ? receipts : [];
   const n = list.length;
   const checks = [];
-  const add = (name, pass, level, detail) => checks.push({ name, pass, level, detail });
+  // offendingIndices (optional): receipt indices a runner can print as samples.
+  const add = (name, pass, level, detail, offendingIndices) =>
+    checks.push({ name, pass, level, detail, ...(offendingIndices && offendingIndices.length ? { offendingIndices: offendingIndices.slice(0, 5) } : {}) });
 
   if (n === 0) {
     add('sample-nonempty', false, 'error', 'no receipts provided');
@@ -84,25 +86,29 @@ export function validateCaptureSample(receipts, opts = {}) {
 
   // (a) Field presence — every required path present on every receipt.
   const missing = [];
+  const missingIdx = new Set();
   list.forEach((r, i) => {
     for (const p of REQUIRED_PATHS) {
-      if (!pathPresent(r, p)) missing.push(`receipt[${i}].${p}`);
+      if (!pathPresent(r, p)) { missing.push(`receipt[${i}].${p}`); missingIdx.add(i); }
     }
   });
   add('field-presence', missing.length === 0, 'error',
     missing.length === 0 ? `all ${REQUIRED_PATHS.length} required paths present on ${n} receipts`
-      : `${missing.length} missing: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? ' …' : ''}`);
+      : `${missing.length} missing: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? ' …' : ''}`,
+    [...missingIdx]);
 
   // (b) Plausible non-null rates.
-  const techNonNull = list.filter((r) => getPath(r, 'predicateClassification.symbolIn.techDocUpdatedAtMs') != null).length;
-  const techRate = rate(techNonNull, n);
+  const techNullIdx = list.map((r, i) => (getPath(r, 'predicateClassification.symbolIn.techDocUpdatedAtMs') == null ? i : -1)).filter((i) => i >= 0);
+  const techRate = rate(n - techNullIdx.length, n);
   add('predicateComputedAt-nonnull', techRate >= minTechDocNonNullRate, 'error',
-    `techDocUpdatedAtMs non-null ${(techRate * 100).toFixed(0)}% (≥ ${(minTechDocNonNullRate * 100).toFixed(0)}% required)`);
+    `techDocUpdatedAtMs non-null ${(techRate * 100).toFixed(0)}% (≥ ${(minTechDocNonNullRate * 100).toFixed(0)}% required)`,
+    techNullIdx);
 
-  const dataModeNonNull = list.filter((r) => getPath(r, 'predicateInputs.symbolIn.dataMode') != null).length;
-  const dmRate = rate(dataModeNonNull, n);
+  const dmNullIdx = list.map((r, i) => (getPath(r, 'predicateInputs.symbolIn.dataMode') == null ? i : -1)).filter((i) => i >= 0);
+  const dmRate = rate(n - dmNullIdx.length, n);
   add('dataMode-populated', dmRate >= minDataModeNonNullRate, 'error',
-    `dataMode non-null ${(dmRate * 100).toFixed(0)}% (≥ ${(minDataModeNonNullRate * 100).toFixed(0)}% required)`);
+    `dataMode non-null ${(dmRate * 100).toFixed(0)}% (≥ ${(minDataModeNonNullRate * 100).toFixed(0)}% required)`,
+    dmNullIdx);
 
   const drNullCount = list.filter((r) => getPath(r, 'predicateInputs.symbolIn.distanceToResistancePct') === null).length;
   const drNullRate = rate(drNullCount, n);
@@ -118,16 +124,19 @@ export function validateCaptureSample(receipts, opts = {}) {
 
   // (c) receiptSeq === tradeCountAtDecision + 1 invariant.
   const violations = [];
+  const violIdx = [];
   list.forEach((r, i) => {
     const seq = getPath(r, 'receiptSeq');
     const tc = getPath(r, 'swapContext.tradeCountAtDecision');
     if (typeof seq === 'number' && typeof tc === 'number' && seq !== tc + 1) {
       violations.push(`receipt[${i}]: receiptSeq=${seq} ≠ tradeCount+1=${tc + 1}`);
+      violIdx.push(i);
     }
   });
   add('receiptSeq-invariant', violations.length === 0, 'error',
     violations.length === 0 ? 'receiptSeq === tradeCountAtDecision + 1 holds'
-      : `${violations.length} violations: ${violations.slice(0, 5).join('; ')}`);
+      : `${violations.length} violations: ${violations.slice(0, 5).join('; ')}`,
+    violIdx);
 
   // (d) drNullReason discriminator is not stuck.
   const reasons = list.map((r) => getPath(r, 'predicateClassification.symbolIn.drNullReason'));

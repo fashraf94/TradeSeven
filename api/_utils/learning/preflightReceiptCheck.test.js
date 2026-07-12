@@ -59,27 +59,32 @@ describe('validateCaptureSample — pre-flight capture integrity', () => {
     expect(failed(res, 'sample-nonempty')).toBeTruthy();
   });
 
-  it('a missing required field FAILS field-presence', () => {
+  it('a missing required field FAILS field-presence and names the offending index', () => {
     const sample = goodSample();
     delete sample[2].predicateClassification; // drop a whole required sub-object
     const res = validateCaptureSample(sample);
     expect(res.pass).toBe(false);
-    expect(failed(res, 'field-presence')).toBeTruthy();
+    expect(failed(res, 'field-presence').offendingIndices).toContain(2);
   });
 
-  it('all techDoc timestamps null FAILS predicateComputedAt-nonnull', () => {
+  it('all techDoc timestamps null FAILS predicateComputedAt-nonnull with every index', () => {
     const sample = [0, 1, 2, 3].map((i) => mkReceipt({ dR: i % 2 ? null : 2.0, seq: i + 2, tradeCount: i + 1, techUpdatedAt: null }));
     const res = validateCaptureSample(sample);
     expect(res.pass).toBe(false);
-    expect(failed(res, 'predicateComputedAt-nonnull')).toBeTruthy();
+    expect(failed(res, 'predicateComputedAt-nonnull').offendingIndices).toEqual([0, 1, 2, 3]);
   });
 
-  it('a broken receiptSeq invariant FAILS', () => {
+  it('a broken receiptSeq invariant FAILS and names the offender', () => {
     const sample = goodSample();
     sample.push(mkReceipt({ dR: 2.0, seq: 99, tradeCount: 2 })); // 99 ≠ 2+1
     const res = validateCaptureSample(sample);
     expect(res.pass).toBe(false);
-    expect(failed(res, 'receiptSeq-invariant')).toBeTruthy();
+    expect(failed(res, 'receiptSeq-invariant').offendingIndices).toContain(sample.length - 1);
+  });
+
+  it('a passing sample carries no offendingIndices on its checks', () => {
+    const res = validateCaptureSample(goodSample());
+    expect(res.checks.every((c) => c.offendingIndices === undefined)).toBe(true);
   });
 
   it('a stuck discriminator (all ambiguous) FAILS diversity (and dR-null-rate at 100%)', () => {
