@@ -91,16 +91,16 @@ import {
   serializedByteSize,
   MAX_CONTRACT_BYTES,
 } from './summaryContract.js';
-// V3 Phase 2 — the deep-dive cache-key hash, extracted so correlation-narrate.js
-// recomputes a byte-identical docId (BUILD_RULES §4, never a copied key formula).
-import { deepDiveDocId } from './correlationCacheKey.js';
+// V3 Phase 2 — the deep-dive cache-key rule (canonicalize + default + hash) and
+// the lookback bounds, in ONE place, so the narrate endpoint derives an identical
+// docId and can't drift (BUILD_RULES §4 — never a second defaulting rule).
+import { deriveDeepDiveKey, LOOKBACK } from './correlationCacheKey.js';
 
 // Up to 11 EODHD fetches in 3 throttled chunks (~600ms of deliberate sleep)
 // plus Firestore round-trips — heavier than scouting-board's read-only 10s.
 export const config = { maxDuration: 30 };
 
 const SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/; // pinned: accepts BRK.B, BF.B, hyphens
-const LOOKBACK = { DEFAULT: 504, MIN: 150, MAX: 1260 };
 const BETA_WINDOW = 40;
 // V2 Build 4 — conditional correlation (pinned): 60 observations minimum per
 // side, composite 20d rolling std for the vol-regime split.
@@ -330,10 +330,11 @@ export default async function handler(req, res) {
   }
 
   // Cache key incorporates the custom symbol so two CUSTOM runs with different
-  // tickers never collide. The `:<customSymbol>` segment ('' for registry
-  // drivers) changes the key composition for ALL entries — acceptable: daily
-  // expiry, no migration (noted in the PR).
-  const docId = deepDiveDocId({ group, driverKey, customSymbol, lookbackDays });
+  // tickers never collide. Derived via the ONE shared rule (deriveDeepDiveKey) —
+  // the SAME rule the narrate endpoint's fallback uses — from the raw body, so
+  // the written key and any re-derived key cannot drift. (Post-validation here,
+  // so deriveDeepDiveKey never returns an error.)
+  const docId = deriveDeepDiveKey(body).docId;
   const cacheKey = `correlation:${docId}`;
 
   try {
@@ -600,6 +601,10 @@ export default async function handler(req, res) {
         driverUnit: registry.unit,
         joinedCloses,
         lookbackDays,
+        // The cache-key docId, returned so downstream reads (Phase-2 narration)
+        // look the doc up by THIS id instead of re-deriving the hash and risking
+        // drift. Additive + flag-independent (harmless when narration is off).
+        docId,
         firstEligibleInflectionDate,
         computedAt: new Date().toISOString(),
         cached: false,

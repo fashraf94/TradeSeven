@@ -1977,6 +1977,11 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
     fetchWithAuth('/api/research/correlation-narrate', {
       method: 'POST',
       body: JSON.stringify({
+        // The docId the deep dive returned — the narrate endpoint looks the doc
+        // up by THIS id, so a defaulting difference in the params below can never
+        // drift the key. group/driver/lookback stay as a fallback for docs cached
+        // before the id was returned (older payloads lack meta.docId).
+        ...(meta.docId ? { docId: meta.docId } : {}),
         group: meta.group,
         driver: meta.driver,
         ...(meta.driver === 'CUSTOM' ? { customSymbol: meta.driverLabel } : {}),
