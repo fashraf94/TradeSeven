@@ -317,6 +317,11 @@ export function computeStats(result, runtimeMs = null) {
     events: { merges: mergesN, splits: splitsN, retirements: retirementsN, roleFlips: flips },
     ratios: {
       newFamiliesPer100Sessions: result.sessions.length ? round2((100 * foundedInStudy) / result.sessions.length) : null,
+      // Event rates per 100 STUDY families — the volatility-neutral denominator. Raw
+      // event counts scale with how many families a symbol carries (itself ~vol-linked),
+      // so raw counts spuriously correlate with ATR%; per-100-families removes that.
+      mergesPer100Families: famsStudy.length ? round2((100 * mergesN) / famsStudy.length) : null,
+      splitsPer100Families: famsStudy.length ? round2((100 * splitsN) / famsStudy.length) : null,
       mergesPlusSplitsPer100Families: famsStudy.length ? round2((100 * (mergesN + splitsN)) / famsStudy.length) : null,
       retirementShare: famsStudy.length ? round2(retirementsN / famsStudy.length) : null,
       roleFlipsPer100MatchedFamilySessions: matchedFamilySessions ? round2((100 * flips) / matchedFamilySessions) : null,
@@ -350,6 +355,8 @@ export function scanWarnings(allStats, strataOf = () => null) {
   const madChecks = [
     ['familyCountStudy', (s) => s.familyCountStudy],
     ['newFamiliesPer100Sessions', (s) => s.ratios.newFamiliesPer100Sessions],
+    ['mergesPer100Families', (s) => s.ratios.mergesPer100Families],
+    ['splitsPer100Families', (s) => s.ratios.splitsPer100Families],
     ['mergesPlusSplitsPer100Families', (s) => s.ratios.mergesPlusSplitsPer100Families],
     ['retirementShare', (s) => s.ratios.retirementShare],
     ['medianLifespan', (s) => s.medianFamilyLifespanSessions],
@@ -377,8 +384,10 @@ export function scanWarnings(allStats, strataOf = () => null) {
   const correlations = {};
   if (withAtr.length >= 4) {
     const atr = withAtr.map((s) => s.atrPctMedian);
-    correlations.atrPct_vs_mergeRate = pearson(atr, withAtr.map((s) => s.events.merges));
-    correlations.atrPct_vs_splitRate = pearson(atr, withAtr.map((s) => s.events.splits));
+    // Correlate RATES (per 100 study families), never raw counts — raw counts made
+    // merges read as ATR-correlated purely because high-vol names carry more families.
+    correlations.atrPct_vs_mergeRate = pearson(atr, withAtr.map((s) => s.ratios.mergesPer100Families ?? 0));
+    correlations.atrPct_vs_splitRate = pearson(atr, withAtr.map((s) => s.ratios.splitsPer100Families ?? 0));
     correlations.atrPct_vs_F2F3share = pearson(atr, withAtr.map((s) => (s.tierMixPct.F2 ?? 0) + (s.tierMixPct.F3 ?? 0)));
     for (const [k, v] of Object.entries(correlations)) {
       if (v != null && Math.abs(v) >= 0.8) warnings.push(`cross-strata: |${k}| = ${v} — geometry may be confounded with volatility`);
@@ -389,8 +398,8 @@ export function scanWarnings(allStats, strataOf = () => null) {
     if (third >= 1) {
       const bottom = byAtr.slice(0, third), top = byAtr.slice(-third);
       const rate = (grp, fn) => grp.reduce((a, s) => a + fn(s), 0) / grp.length;
-      correlations.tertileRatio_merges = ratioOrNull(rate(top, (s) => s.events.merges), rate(bottom, (s) => s.events.merges));
-      correlations.tertileRatio_splits = ratioOrNull(rate(top, (s) => s.events.splits), rate(bottom, (s) => s.events.splits));
+      correlations.tertileRatio_mergeRate = ratioOrNull(rate(top, (s) => s.ratios.mergesPer100Families ?? 0), rate(bottom, (s) => s.ratios.mergesPer100Families ?? 0));
+      correlations.tertileRatio_splitRate = ratioOrNull(rate(top, (s) => s.ratios.splitsPer100Families ?? 0), rate(bottom, (s) => s.ratios.splitsPer100Families ?? 0));
     }
   }
 

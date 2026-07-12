@@ -70,7 +70,9 @@ floorPct = 0.26   (worst floor-bind 6.1%, KO / full history)
 capPct   = 2.7    (worst cap-bind   9.0%, COIN / full history)
 ```
 
-Both ≤10% for every symbol in both windows. `atrMultiple` (0.25) and the `multiples` block are unchanged. Config `STUDY_CONFIG_VERSION` → **3** (post-build knob change; version 1/2 never reused; the S3.5 report's v2 gate numbers remain valid for the [0.5, 1.5] band). ⚠ S35-C10 — values are provisional and derived from the 9-equity fixture subset; **re-confirm on the full universe** (PLTR/BE + expansion) via the one-line measurement in the rework report §9.
+Both ≤10% for every symbol in both windows. `atrMultiple` (0.25) and the `multiples` block are unchanged. Config `STUDY_CONFIG_VERSION` → **3** (post-build knob change; version 1/2 never reused; the S3.5 report's v2 gate numbers remain valid for the [0.5, 1.5] band).
+
+**Full-universe finalization (stays on v3 — completes, not supersedes, the calibration; nothing consumes v3, artifacts rebuilt).** The criterion is codified as `research/level-study/tools/measure-clamp-binding.js` (reads `data/normalized`, applies the ≤10% rule, prints per-symbol binding + recommended floor/cap). Status: **`floorPct = 0.26` is FINAL** — set by the lowest-vol name (KO, `min_s p10 = 0.270`); PLTR/BE are high-vol and cannot lower it. **`capPct = 2.7` is PENDING** — set by the highest-vol name's p90; the founder reports BE mean ATR% 6.94 > COIN 6.50, so BE likely pushes `max_s p90` above 2.66 and `capPct` above 2.7. The two-symbol measurement (PLTR/BE) is a founder-local step (the S3.5-b container had no PLTR/BE data and no network); running the tool prints the finalized `capPct`, updated as a single literal with the version staying 3.
 
 Effect (9-equity fixture gate, v2→v3): the F2/F3-share confound dissolves — ATR%↔F3-share −0.67 → **−0.15**, levels/day↔F3-share −0.76 → **−0.19**, ATR%↔merges +0.59 → **−0.07**. Split scarcity is unchanged (that is the separate, still-open `kSplit` magnitude question — not touched here).
 

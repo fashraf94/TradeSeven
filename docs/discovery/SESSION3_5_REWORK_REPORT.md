@@ -23,6 +23,7 @@
 | **Suite** | ✅ **87 tests; 43/43 runnable green here; 44 data-blocked S2 tests unchanged (87/87 expected locally)** |
 | **Acceptance gate (§8)** | ⚠️ **FAIL on the letter of the criterion — with the LS3-01 diagnosis itself CONFIRMED.** See §3; per §12 no knob was touched during the rework; STOP for founder decision |
 | **S3.5-b recalibration (config v3, founder-directed follow-up)** | ✅ §9: `floorPct/capPct` set from measured `0.25×ATR%` so each guard binds ≤10% symbol-sessions ∀s; the F2/F3-vs-volatility confound dissolves (ATR%↔F3-share −0.67→−0.15). Split scarcity (separate `kSplit` finding) still open |
+| **S3.5-b finalization + scan-rate fix (§9.1, stays v3)** | ✅ scan merge/split correlations now per-100-family rates (raw made merges read +0.75 ATR-correlated; per-100-fam flat, −0.26). `floorPct 0.26` FINAL (KO-set); `capPct 2.7` PENDING — BE/PLTR data absent in this container, tool `tools/measure-clamp-binding.js` committed for the one-command founder finalize |
 | Branch pushed | ✅ (at STOP) |
 
 ---
@@ -124,6 +125,30 @@ Then compare the printed cross-strata correlations and zero-event warnings again
 Role-flip rates essentially unchanged (~2.1–2.6/100 matched-family sessions). **Splits remain near-zero** (zero-split symbols 8→6; mega_cap_tech still all-zero) — that is the *separate* open `kSplit` finding, deliberately untouched here. So the §8 gate letter is still unmet on splits, but the tier/volatility-confound dimension — the risk to P4 — is now clean on every measured metric. `kSplit` remains the one open founder decision before Session 4.
 
 **Verification:** full suite re-green after re-tuning the three synthetic-bar tests whose geometry was pinned to the v2 unit (13a drift, 13b merge, 15b strong-form — intent preserved: amplitudes/ranges rescaled to the v3 unit, `assertRegistryInvariants` + truncated-equivalence still assert on each). Engine-grain tests (explicit units) and all fixture tests were unaffected. Config loads + `validateGeometry` passes at v3.
+
+### §9.1 Full-universe finalization + scan merge/split-rate fix (stays on config v3)
+
+Two founder-directed follow-ups. **Config version stays 3** — these complete/repair the v3 calibration rather than superseding a validated one; nothing downstream consumes v3 yet and all artifacts are gitignored + rebuilt. Neither touches lineage/geometry behavior.
+
+**(a) Scan merge/split rates → per-100-family denominators.** The anomaly scan's cross-strata `atrPct_vs_mergeRate` / `_splitRate` (and the tertile ratios) were computed on RAW event counts despite the "Rate" name — and raw counts scale with how many families a symbol carries (itself vol-linked), so merges read as spuriously ATR-correlated (**+0.75** on the full 11). Fixed: `computeStats` now exposes `mergesPer100Families` / `splitsPer100Families`; the scan correlates those. On the 9 fixture equities the merge rate is **4.7–10.4 per 100 families, non-monotone in ATR%** (KO 5.0 → JNJ 10.4 → MSFT 5.5 → COIN 5.2), correlation **−0.26** — merges are not volatility-driven once normalized. (Both rates also added to the MAD-outlier battery; the `tertileRatio_merges/splits` keys renamed `…_mergeRate/_splitRate`.)
+
+**(b) Guard finalization on the full universe.** The v3 `floorPct 0.26 / capPct 2.7` were measured on the 9 fixture equities (PLTR/BE weren't in fixtures). Codified the pre-registered criterion as a committed tool — **`tools/measure-clamp-binding.js`** (reads `data/normalized/`, applies "each guard binds ≤10% of symbol-sessions ∀s", prints per-symbol binding + recommended floor/cap). Status:
+
+- **`floorPct = 0.26` is FINAL** — it is set by the lowest-volatility name (`min_s p10 = 0.270`, KO), and PLTR/BE are high-vol gap-prone names that cannot lower it. Confirmed: KO worst floor-bind 6.1% (full history); every symbol ≤10%.
+- **`capPct = 2.7` is PENDING full-universe measurement.** It is set by the highest-vol name's p90 (COIN `max_s p90 = 2.66` among the 9). The founder reports **BE mean ATR% 6.94 > COIN 6.50**, so BE likely raises `max_s p90` above 2.66 and `capPct` above 2.7 — i.e. 2.7 may be *under-set* for BE. **This container has no PLTR/BE data** (no fixtures, no `data/normalized`, and eodhd.com is blocked at the proxy), so I did not guess a value. Founder step (one command):
+
+  ```bash
+  cd research/level-study
+  node 01-fetch-history.js PLTR BE           # if not already local
+  node tools/measure-clamp-binding.js        # prints finalized floorPct/capPct + binding table
+  # if it recommends a capPct > 2.7, update the one literal in config.js
+  #   levels.geometry.distanceUnit.capPct   (floorPct stays 0.26); STUDY_CONFIG_VERSION stays 3
+  npm test && npm run levels                 # rebuild; artifacts stamp v3
+  ```
+
+**Confound correlations (9-equity rebuild, config v3, scan-fixed):** ATR%↔F3-share **−0.08**, levels/day↔F3-share **−0.19**, ATR%↔F2+F3-share **−0.15** — the volatility confound stays dissolved. Split scarcity unchanged (6/9 zero, mega_cap_tech all-zero) — the still-open `kSplit` question, untouched.
+
+**Environment note:** the 11-symbol finalization + rebuild the founder requested cannot run in this remote container (PLTR/BE data absent, network blocked). Everything data-independent is done and verified here on the 9 reconstructable equities; the two-symbol finalize is the one-command founder step above. The 11-symbol binding table and correlations come from that local run.
 
 ## 7. Discipline confirmations
 
