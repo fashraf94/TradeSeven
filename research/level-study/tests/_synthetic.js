@@ -23,11 +23,14 @@ export function weekdayDates(start, n) {
  * which makes typical price (H+L+C)/3 equal the close exactly, so AVWAP positions are
  * analytically steerable while ATR is set independently via h.
  * @param {Array<number|{c,h?,v?}>} closes plain closes or per-bar overrides
- * @param {{start?:string, h?:number, v?:number}} opts defaults: h halfRange, v volume
+ * @param {{start?:string, h?:number, v?:number, dates?:string[]}} opts defaults:
+ *   h halfRange, v volume; `dates` overrides the generated weekday calendar (e.g. to
+ *   construct a Monday-holiday week).
  */
 export function synthBars(closes, opts = {}) {
   const { start = '2024-01-01', h: defH = 0.5, v: defV = 1000 } = opts; // 2024-01-01 is a Monday
-  const dates = weekdayDates(start, closes.length);
+  const dates = opts.dates || weekdayDates(start, closes.length);
+  if (dates.length < closes.length) throw new Error('synthBars: not enough dates');
   let prevClose = null;
   return closes.map((entry, i) => {
     const spec = typeof entry === 'number' ? { c: entry } : entry;
@@ -75,6 +78,20 @@ export function rampTo(from, to, step) {
 /** n copies of value v. */
 export function flat(v, n) {
   return new Array(n).fill(v);
+}
+
+/**
+ * FNV-1a hash of a string → 32-bit seed. Sampling seeds MUST hash the full symbol
+ * string (S3.5 §9.1): the S3 suite seeded from symbol-name LENGTH, so AAPL/TSLA sampled
+ * identical indices and two of the six advertised (symbol, day) pair sets were duplicates.
+ */
+export function fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
 }
 
 /** Deterministic PRNG (mulberry32) for reproducible "random" day sampling in tests. */

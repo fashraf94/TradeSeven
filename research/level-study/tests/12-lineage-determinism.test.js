@@ -25,19 +25,20 @@ test('determinism: snapshot arrival order is irrelevant (ascending-price rule)',
     familyId: null,
   });
   // Three sessions; second session's snapshots contest the same families.
+  // unit = 1 → match radius 1, merge distance 0.8, split span 1.6 (config multiples).
   const sessions = [
-    { D: '2024-01-02', atr: 2, snaps: [mkSnap('s1', 100, 'support', [100]), mkSnap('s2', 103, 'resistance', [103])] },
-    { D: '2024-01-03', atr: 2, snaps: [mkSnap('s3', 100.3, 'support', [100.3]), mkSnap('s4', 100.9, 'support', [100.9]), mkSnap('s5', 103.1, 'resistance', [103.1])] },
-    { D: '2024-01-04', atr: 2, snaps: [mkSnap('s6', 100.2, 'support', [100.2]), mkSnap('s7', 102.8, 'resistance', [102.8])] },
+    { D: '2024-01-02', snaps: [mkSnap('s1', 100, 'support', [100]), mkSnap('s2', 103, 'resistance', [103])] },
+    { D: '2024-01-03', snaps: [mkSnap('s3', 100.3, 'support', [100.3]), mkSnap('s4', 100.9, 'support', [100.9]), mkSnap('s5', 103.1, 'resistance', [103.1])] },
+    { D: '2024-01-04', snaps: [mkSnap('s6', 100.2, 'support', [100.2]), mkSnap('s7', 102.8, 'resistance', [102.8])] },
   ];
 
   const runWith = (orderFn) => {
     const state = createLineageState('ORD');
     const assignments = [];
-    for (const { D, atr, snaps } of sessions) {
+    for (const { D, snaps } of sessions) {
       // fresh snapshot objects each run (lineageStep assigns familyId onto them)
       const copies = snaps.map((s) => ({ ...s, members: s.members.map((m) => ({ ...m })), familyId: null }));
-      lineageStep(state, D, orderFn(copies), atr);
+      lineageStep(state, D, orderFn(copies), { unit: 1, refClose: 101.5 });
       for (const c of [...copies].sort((x, y) => (x.snapshotId < y.snapshotId ? -1 : 1))) {
         assignments.push(`${c.snapshotId}→${c.familyId}`);
       }

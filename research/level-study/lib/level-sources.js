@@ -1,18 +1,23 @@
 // research/level-study/lib/level-sources.js
 //
-// Per-day level-source computation + confluence snapshot assembly (parent §5.1, §5.3).
+// Per-day level-source computation + confluence snapshot assembly (parent §5.1, §5.3;
+// geometry unified per S3.5 §3).
 //
 // buildDaySnapshots(series, N, D, opts) computes the registry content for session D from
 // the first N bars ONLY (bars 0..N−1 = data through D−1 close). It never reads an index
 // ≥ N — that discipline, plus lib/level-series.js's prefix property, is what the
 // equivalence harness (incremental ≡ truncated rebuild) verifies end-to-end.
 //
-// Every method level carries the parent §5.3 availability triple:
-//   formationDate     — the bar that formed the structure
-//   firstKnownDate    — first session on which the structure was detectable
-//   firstTradableDate — first session an event may reference it
-// Composite objects (clusters, confluence snapshots) take the MAX over members (S3-C6,
-// conservative — a composite is never available earlier than its newest constituent).
+// THE DISTANCE UNIT (S3.5 §3, LS3-01): every geometric threshold in the study is an
+// ordered multiple of one bounded per-symbol-per-day unit,
+//   u(D) = clamp(atrMultiple·ATR(14,D−1), floorPct%·price(D−1), capPct%·price(D−1)).
+// Grouping here is BOUNDED-DIAMETER (a group's total span never exceeds its k·u bound),
+// which makes the LS3-08 theorem hold by construction: a single snapshot can never span
+// the split threshold, because kConfluence < kSplit is asserted at config load.
+//
+// Every method level carries the parent §5.3 availability triple; composites take the
+// MAX over members (S3-C6, conservative). Tradability follows the S3.5 amendment: the
+// first registry session whose prior-close information set contains every input.
 //
 // Zero product imports.
 
@@ -20,13 +25,24 @@ import CONFIG from '../config.js';
 import { firstCrossingIndex } from './level-series.js';
 
 const L = CONFIG.levels;
+const GEO = L.geometry;
 const K = L.sourceFamilies.structural.fractalK;                     // 3
 const TRAIL = L.sourceFamilies.structural.trailingSessions;         // 120
-const CLUSTER_PCT = L.sourceFamilies.structural.clusterPct;         // 0.5
-const ALIGN_PCT = L.confluence.alignPct;                            // 0.5
 const SIG_PCT = L.significantSwingMovePct;                          // 5
-const ZONE_ATR_MULT = CONFIG.episode.zoneAtrMult;                   // 0.25
+const ZONE_UNITS = L.lineage.roleMachine.zoneHalfWidthUnits;        // 0.25 (zone = anchor/centroid ± 0.25·u)
 const DEFAULT_FAMILIES = ['structural', 'participation', 'calendar']; // psychological OFF, moving reserved (parent §5.1)
+
+/**
+ * The unified distance unit for a session whose prior bar has the given ATR and close.
+ * ATR null (thin early history) degrades to the floor — but production lineage never
+ * starts before ATR is defined (warmupReplay.startRule).
+ */
+export function distanceUnit(atr, price) {
+  const floor = (GEO.distanceUnit.floorPct / 100) * price;
+  const cap = (GEO.distanceUnit.capPct / 100) * price;
+  const base = atr != null ? GEO.distanceUnit.atrMultiple * atr : floor;
+  return Math.min(Math.max(base, floor), cap);
+}
 
 /**
  * @param {object} series from buildSeries()
@@ -34,33 +50,50 @@ const DEFAULT_FAMILIES = ['structural', 'participation', 'calendar']; // psychol
  * @param {string} D the registry session date (strictly after dates[N−1])
  * @param {object} opts { symbol, enabledFamilies? } — enabledFamilies is a TEST hook to
  *   isolate one source family in synthetic scenarios; the production runner never passes it.
- * @returns {{date, atr, refClose, snapshots}} — every raw method level is embedded as a
- *   snapshot member; there is deliberately no separate flat level list (one shape only).
+ * @returns {{date, atr, refClose, unit, snapshots}} — every raw method level is embedded
+ *   as a snapshot member; there is deliberately no separate flat level list (one shape only).
  */
 export function buildDaySnapshots(series, N, D, opts = {}) {
   const symbol = opts.symbol || 'SYM';
   const enabled = new Set(opts.enabledFamilies || DEFAULT_FAMILIES);
   const atr = series.atr[N - 1];                                    // ATR(14, daily, D−1)
   const refClose = series.aClose[N - 1];                            // D−1 adjusted close
+  const unit = distanceUnit(atr, refClose);                         // S3.5 §3
 
   const levels = [];
-  if (enabled.has('structural')) levels.push(...structuralLevels(series, N, D));
+  if (enabled.has('structural')) levels.push(...structuralLevels(series, N, D, unit));
   if (enabled.has('participation')) levels.push(...participationLevels(series, N, D));
   if (enabled.has('calendar')) levels.push(...calendarLevels(series, N, D));
 
-  const snapshots = confluence(levels, { symbol, date: D, atr, refClose });
-  return { date: D, atr, refClose, snapshots };
+  const snapshots = confluence(levels, { symbol, date: D, atr, refClose, unit });
+  return { date: D, atr, refClose, unit, snapshots };
+}
+
+// ── bounded-diameter grouping (S35-C7/C8; replaces S3 greedy centroid-chaining) ──
+// Deterministic left-greedy rule over price-ascending items: a group opens at the first
+// ungrouped item and absorbs subsequent items while (price − firstMemberPrice) ≤ maxSpan.
+// The group's total span is therefore ≤ maxSpan BY CONSTRUCTION (chaining, which could
+// drift a group arbitrarily wide, is gone).
+function boundedGroups(sortedItems, maxSpan) {
+  const groups = [];
+  let cur = null;
+  for (const it of sortedItems) {
+    if (cur && it.price - cur.members[0].price <= maxSpan) cur.members.push(it);
+    else { cur = { members: [it] }; groups.push(cur); }
+  }
+  return groups;
 }
 
 // ── availability helper ───────────────────────────────────────────────────────
-// firstTradableDate = firstKnownDate + 1 session, "known at prior close" (parent §5.3).
-// When firstKnown is the last available bar (D−1), the next session IS D.
+// Close-discovered sources (fractal, AVWAP): tradable the session after the discovery
+// close (S3.5 tradability amendment — the prior-close information set first contains
+// the level's inputs on the next session). When the discovery close is D−1, that IS D.
 function tradableAfter(series, N, D, firstKnownIdx) {
   return firstKnownIdx + 1 <= N - 1 ? series.dates[firstKnownIdx + 1] : D;
 }
 
 // ── structural: fractal swing S/R clusters (parent §5.1) ─────────────────────
-function structuralLevels(series, N, D) {
+function structuralLevels(series, N, D, unit) {
   const pivots = [];
   const from = Math.max(K, N - TRAIL);                              // formed within trailing 120 sessions
   const to = N - 1 - K;                                             // confirmed: all K right-side bars closed by D−1
@@ -71,30 +104,20 @@ function structuralLevels(series, N, D) {
   if (!pivots.length) return [];
   pivots.sort((a, b) => a.price - b.price || a.idx - b.idx);
 
-  // S3-C4: ascending-price greedy clustering against the running volume-weighted centroid.
-  const clusters = [];
-  let cur = null;
-  for (const p of pivots) {
-    if (cur && Math.abs(p.price - cur.centroid) <= cur.centroid * (CLUSTER_PCT / 100)) {
-      cur.members.push(p);
-      cur.pwSum += p.price * p.w; cur.wSum += p.w; cur.pSum += p.price;
-      cur.centroid = cur.wSum > 0 ? cur.pwSum / cur.wSum : cur.pSum / cur.members.length;
-    } else {
-      cur = { members: [p], pwSum: p.price * p.w, wSum: p.w, pSum: p.price };
-      cur.centroid = cur.wSum > 0 ? cur.pwSum / cur.wSum : p.price;
-      clusters.push(cur);
-    }
-  }
-
-  return clusters.map((c) => {
-    const newestIdx = Math.max(...c.members.map((m) => m.idx));
+  // S35-C7: bounded-diameter grouping (span ≤ kCluster·u); volume-weighted centroid.
+  return boundedGroups(pivots, GEO.multiples.kCluster * unit).map((g) => {
+    const wSum = g.members.reduce((s, m) => s + m.w, 0);
+    const centroid = wSum > 0
+      ? g.members.reduce((s, m) => s + m.price * m.w, 0) / wSum
+      : g.members.reduce((s, m) => s + m.price, 0) / g.members.length;
+    const newestIdx = Math.max(...g.members.map((m) => m.idx));
     const firstKnownIdx = newestIdx + K;                            // §5.3: formation + k sessions
     return {
       family: 'structural',
       method: 'swing_sr_clusters',
       kind: null,
-      price: c.centroid,
-      touchCount: c.members.length,                                 // parent §5.1: touch_count per cluster
+      price: centroid,
+      touchCount: g.members.length,                                 // parent §5.1: touch_count per cluster
       formationDate: series.dates[newestIdx],                       // S3-C6: latest structure-forming bar
       firstKnownDate: series.dates[firstKnownIdx],
       firstTradableDate: tradableAfter(series, N, D, firstKnownIdx),
@@ -165,34 +188,26 @@ function weekMonday(iso) {
   return d.toISOString().slice(0, 10);
 }
 
-// S3-C7 live flag: calendar levels tradable the session they apply to. Under the literal
-// +1 reading (flag=false), a level whose firstTradableDate falls after the session it
-// applies to is simply never emitted into that session's registry.
-const CAL_SAME_SESSION = L.construction.calendarTradableSameSession;
-
 function calendarLevels(series, N, D) {
   const out = [];
 
-  // Daily pivots from D−1 OHLC — apply to session D (parent §5.3: firstKnown = the
-  // session they apply to; S3-C7: tradable that same session, derived wholly from prior
-  // completed bars so already known at prior close). Under flag=false a daily pivot's
-  // firstTradable (D+1) postdates its only applicable session, so nothing is emitted —
-  // the calendar-family exclusion the S3 rulings doc describes.
-  if (CAL_SAME_SESSION) {
-    const dv = classicalPivots(series.aHigh[N - 1], series.aLow[N - 1], series.aClose[N - 1]);
-    for (const kind of PIVOT_KINDS) {
-      out.push({
-        family: 'calendar', method: 'daily_pivots', kind,
-        price: dv[kind], touchCount: null,
-        formationDate: series.dates[N - 1],
-        firstKnownDate: D,
-        firstTradableDate: D, // ⚠ S3-C7
-      });
-    }
+  // Daily pivots from D−1 OHLC — apply to session D. Tradable the session they apply to
+  // (S3.5 tradability amendment: derived wholly from prior completed bars, so D's
+  // prior-close information set contains every input).
+  const dv = classicalPivots(series.aHigh[N - 1], series.aLow[N - 1], series.aClose[N - 1]);
+  for (const kind of PIVOT_KINDS) {
+    out.push({
+      family: 'calendar', method: 'daily_pivots', kind,
+      price: dv[kind], touchCount: null,
+      formationDate: series.dates[N - 1],
+      firstKnownDate: D,
+      firstTradableDate: D,
+    });
   }
 
   // Weekly pivots from the prior completed week (Monday-keyed; S3-C16) — apply to every
-  // session of D's week, so firstKnown = the week's first session (≤ D).
+  // session of D's week; tradable from the week's FIRST trading session (S3.5 amendment;
+  // Monday-holiday weeks simply start on their first actual trading day).
   const curWeek = weekMonday(D);
   let lastPrior = -1;
   for (let i = N - 1; i >= 0; i--) {
@@ -208,29 +223,24 @@ function calendarLevels(series, N, D) {
       if (series.aLow[i] < l) l = series.aLow[i];
     }
     const wv = classicalPivots(h, l, series.aClose[lastPrior]);
-    // First session of D's week: the first hist bar after lastPrior in D's week, else D itself.
+    // First trading session of D's week: the first hist bar after lastPrior in D's week,
+    // else D itself (D is opening its week).
     const firstOfCurWeek = lastPrior + 1 <= N - 1 ? series.dates[lastPrior + 1] : D;
-    // Under flag=false the weekly pivot is tradable from the week's SECOND session.
-    const firstTradable = CAL_SAME_SESSION
-      ? firstOfCurWeek
-      : (firstOfCurWeek !== D && lastPrior + 2 <= N - 1 ? series.dates[lastPrior + 2] : (firstOfCurWeek !== D ? D : null));
-    if (firstTradable != null && firstTradable <= D) {
-      for (const kind of PIVOT_KINDS) {
-        out.push({
-          family: 'calendar', method: 'weekly_pivots', kind,
-          price: wv[kind], touchCount: null,
-          formationDate: series.dates[lastPrior],
-          firstKnownDate: firstOfCurWeek,
-          firstTradableDate: firstTradable, // ⚠ S3-C7
-        });
-      }
+    for (const kind of PIVOT_KINDS) {
+      out.push({
+        family: 'calendar', method: 'weekly_pivots', kind,
+        price: wv[kind], touchCount: null,
+        formationDate: series.dates[lastPrior],
+        firstKnownDate: firstOfCurWeek,
+        firstTradableDate: firstOfCurWeek,
+      });
     }
   }
 
   return out;
 }
 
-// ── confluence: family-counted snapshot assembly (parent §5.1; config levels.confluence) ──
+// ── confluence: family-counted snapshot assembly (parent §5.1; S35-C8 grouping) ──
 function confluence(levels, ctx) {
   if (!levels.length) return [];
   // Deterministic total order: price, then family/method/kind/formationDate tie-breaks.
@@ -239,44 +249,43 @@ function confluence(levels, ctx) {
     cmp(a.family, b.family) || cmp(a.method, b.method) || cmp(a.kind || '', b.kind || '') ||
     cmp(a.formationDate, b.formationDate));
 
-  // S3-C5: ascending-price greedy chaining against the running unweighted mean centroid.
-  const groups = [];
-  let cur = null;
-  for (const lv of sorted) {
-    if (cur && Math.abs(lv.price - cur.centroid) <= cur.centroid * (ALIGN_PCT / 100)) {
-      cur.members.push(lv);
-      cur.centroid = cur.members.reduce((s, m) => s + m.price, 0) / cur.members.length;
-    } else {
-      cur = { members: [lv], centroid: lv.price };
-      groups.push(cur);
-    }
-  }
+  const maxSpan = GEO.multiples.kConfluence * ctx.unit;
+  const groups = boundedGroups(sorted, maxSpan);
 
   const usedIds = new Set();
   return groups.map((g) => {
-    const families = [...new Set(g.members.map((m) => m.family))].sort();
-    const methods = [...new Set(g.members.map((m) => m.method))].sort();
+    const members = g.members;
+    const span = members[members.length - 1].price - members[0].price;
+    // Bounded-diameter theorem guard (LS3-08): by construction span ≤ kConfluence·u,
+    // and validateGeometry guarantees kConfluence < kSplit — assert, never assume.
+    if (span > maxSpan + 1e-9) {
+      throw new Error(`bounded-diameter violated on ${ctx.date}: snapshot span ${span} > ${maxSpan}`);
+    }
+    const centroid = members.reduce((s, m) => s + m.price, 0) / members.length;
+    const families = [...new Set(members.map((m) => m.family))].sort();
+    const methods = [...new Set(members.map((m) => m.method))].sort();
     const tierCount = families.length;                              // count FAMILIES, not methods (§5.1)
-    const zoneHalfWidth = ctx.atr != null ? ZONE_ATR_MULT * ctx.atr : null;
-    let snapshotId = `${ctx.symbol}_${ctx.date}_snap_${g.centroid.toFixed(2)}`;
-    for (let s = 2; usedIds.has(snapshotId); s++) snapshotId = `${ctx.symbol}_${ctx.date}_snap_${g.centroid.toFixed(2)}_${s}`;
+    const zoneHalfWidth = ZONE_UNITS * ctx.unit;                    // 0.25·u (S3.5 §6 frame)
+    let snapshotId = `${ctx.symbol}_${ctx.date}_snap_${centroid.toFixed(2)}`;
+    for (let s = 2; usedIds.has(snapshotId); s++) snapshotId = `${ctx.symbol}_${ctx.date}_snap_${centroid.toFixed(2)}_${s}`;
     usedIds.add(snapshotId);
     return {
       snapshotId,
       date: ctx.date,
-      centroid: g.centroid,
+      centroid,
       zoneHalfWidth,
-      zoneLow: zoneHalfWidth != null ? g.centroid - zoneHalfWidth : null,
-      zoneHigh: zoneHalfWidth != null ? g.centroid + zoneHalfWidth : null,
-      side: g.centroid <= ctx.refClose ? 'support' : 'resistance',  // S3-C8 (tie → support)
+      zoneLow: centroid - zoneHalfWidth,
+      zoneHigh: centroid + zoneHalfWidth,
+      side: centroid <= ctx.refClose ? 'support' : 'resistance',    // S3-C8 (tie → support)
       families,
       tier: tierCount === 1 ? 'F1' : tierCount === 2 ? 'F2' : 'F3', // F3 = 3+ (§5.1)
       methods,                                                      // exact combination stored (§5.1)
-      // S3-C6: composite availability = max over members (conservative).
-      formationDate: maxIso(g.members.map((m) => m.formationDate)),
-      firstKnownDate: maxIso(g.members.map((m) => m.firstKnownDate)),
-      firstTradableDate: maxIso(g.members.map((m) => m.firstTradableDate)),
-      members: g.members,
+      // S3-C6: composite availability = max over members (conservative). Age features
+      // must use MEMBER triples or family bornDate — never this composite triple.
+      formationDate: maxIso(members.map((m) => m.formationDate)),
+      firstKnownDate: maxIso(members.map((m) => m.firstKnownDate)),
+      firstTradableDate: maxIso(members.map((m) => m.firstTradableDate)),
+      members,
       familyId: null,                                               // assigned by the lineage step
     };
   });

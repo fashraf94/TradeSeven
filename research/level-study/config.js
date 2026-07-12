@@ -21,10 +21,15 @@
 //
 // Isolation: this module imports nothing. Product code never imports it. (Parent §2.)
 
-export const STUDY_CONFIG_VERSION = 1; // parent header (line 6): version 1, first built config
+// S3.5 (LS3-01 rework): STUDY_CONFIG_VERSION bumped 1 → 2. The level/lineage geometry
+// changes materially from what Session 3 built and Phase B ran against (unified distance
+// scale replaces four incompatible fixed-percent scales; warmup lineage replay; merge
+// effective timing; role state machine). Artifact provenance must be unambiguous: every
+// v2 artifact stamps configVersion 2. Version 1 is never reused (parent header rule).
+export const STUDY_CONFIG_VERSION = 2;
 
 const CONFIG = {
-  version: 1, // parent header; increments on any post-build knob change, never reused
+  version: 2, // S3.5 rework — see STUDY_CONFIG_VERSION note above
 
   meta: {
     codename: 'LevelStory', // parent header
@@ -198,7 +203,7 @@ const CONFIG = {
         methods: ['swing_sr_clusters'],
         fractalK: 3,             // parent §5.1: fractal pivots, k=3 bars each side
         trailingSessions: 120,   // parent §5.1
-        clusterPct: 0.5,         // parent §5.1: 0.5% clustering
+        // clusterPct (S3: fixed 0.5%) superseded by geometry.multiples.kCluster (S3.5 §3)
         centroid: 'volume_weighted', // parent §5.1
       },
       participation: {
@@ -221,32 +226,117 @@ const CONFIG = {
       moving: { reservedForV2: true, enabled: false }, // parent §5.1: reserved V2, not in V1.1
     },
     confluence: { // parent §5.1
-      alignPct: 0.5,               // families align when within 0.5% of each other
+      // alignPct (S3: fixed 0.5%) superseded by geometry.multiples.kConfluence (S3.5 §3)
       tiers: { F1: 1, F2: 2, F3plus: 3 }, // F1=1 family, F2=2, F3=3+
       countBy: 'family',           // count families, not methods
       storeMethodCombination: true, // exact methods stored on every snapshot
     },
+
+    // ── S3.5 §3 (LS3-01): UNIFIED DISTANCE SCALE ─────────────────────────────
+    // One bounded per-symbol-per-day distance unit; every geometric threshold is an
+    // ordered multiple of it. Supersedes ALL fixed-percent geometry in parent §5.1/§5.4
+    // (S3.5 rulings doc, amendment 2). Ordering invariants are asserted at config load
+    // (validateGeometry below) — a violating config throws, never runs.
+    geometry: {
+      distanceUnit: {
+        // distanceUnit(symbol, D) = clamp(atrMultiple × ATR(14,daily,D−1),
+        //                                 floorPct% × price(D−1), capPct% × price(D−1))
+        atrMultiple: 0.25, // parent §5.4's 0.25-ATR arm — the scale's ATR anchor
+        floorPct: 0.5,     // parent §5.4's 0.5% floor — protects low-ATR names
+        capPct: 1.5,       // ⚠ CHOICE S35-C1: cap is load-bearing (S3.5 §3) — 0.25×ATR hits it at ATR = 6% of price; beyond that, radius growth stops so genuinely distinct structures stay distinct
+      },
+      multiples: { // v2 starting values — ALL ⚠ provisional (S35-C2); ordering NOT negotiable
+        kCluster: 0.5,    // structural pivot grouping DIAMETER bound  (≤ kConfluence)
+        kConfluence: 0.5, // confluence grouping DIAMETER bound        (< kMatch, < kMerge)
+        kMerge: 0.8,      // family-anchor merge distance              (< kMatch)
+        kMatch: 1.0,      // family matching radius — the reference scale
+        kSplit: 1.6,      // constituent-separation split threshold    (> kMatch)
+      },
+      // Load-asserted ordering (validateGeometry): kCluster ≤ kConfluence < kMatch;
+      // kMerge < kMatch; kSplit > kMatch; PLUS kConfluence < kMerge — under the
+      // live-support rule (S3.5 §7a) merge evidence requires two DISTINCT snapshots
+      // (level gap > kConfluence·u) with anchors within kMerge·u; kMerge ≤ kConfluence
+      // would make merges structurally unreachable.
+      // Bounded-diameter theorem (dissolves LS3-08): a snapshot's span ≤ kConfluence·u
+      // < kSplit·u, so a single snapshot can NEVER breach the split threshold.
+    },
     significantSwingMovePct: 5, // parent §5.3: AVWAP anchor requires observably ≥5% move (point-in-time)
-    availability: { // parent §5.3
+    availability: { // parent §5.3, tradability as amended by S3.5 (amendment 1)
       fields: ['formationDate', 'firstKnownDate', 'firstTradableDate'],
-      firstTradableOffsetSessions: 1, // firstTradableDate = firstKnownDate + 1
+      // S3.5 amendment 1 (supersedes the universal firstKnownDate+1 formula, which was
+      // the source of the S3-C7 contradiction): firstTradableDate is the first registry
+      // session whose PRIOR-CLOSE INFORMATION SET contains every input required to
+      // construct the dated level. Yields per source:
+      tradability: {
+        rule: 'prior_close_information_set',
+        fractal: 'session after the confirmation close',
+        avwap: 'session after both fractal confirmation and observable ≥5% significance',
+        dailyPivot: 'the session it applies to',
+        weeklyPivot: 'the first trading session of the new week',
+      },
       fractalFirstKnown: 'formationBar + k sessions',       // parent §5.3
       avwapFirstKnown: 'swing confirmed as fractal AND move ≥5% on available data', // parent §5.3
       calendarFirstKnown: 'the session they apply to',      // parent §5.3
       referenceRule: 'firstTradableDate <= eventDate for every referenced level', // parent §3.10/§5.3
     },
-    lineage: { // parent §5.4
+    lineage: { // parent §5.4, as amended by S3.5 (rulings doc amendments 2–6)
       snapshotId: 'dated state (price, zone width, side, methods, tier, as-of)', // parent §5.4
       familyId: 'persistent market structure',                                   // parent §5.4
-      matchWithin: { pct: 0.5, atrMult: 0.25 }, // join family whose anchor within max(0.5%, 0.25 ATR)
+      // matchWithin/mergeWithinPct/splitSeparationPct (S3 fixed/hybrid scales) superseded
+      // by geometry.multiples (S3.5 §3): match = kMatch·u, merge = kMerge·u, split = kSplit·u.
       matchOrder: 'ascending_price',            // parent §5.4
       tieBreak: ['nearest_anchor', 'elder_family'], // nearest wins, elder breaks ties
       matchIgnoresSide: true,                   // role can flip
       anchorEmaAlpha: 0.15,                     // family anchor = slow EMA (α=0.15) of matched centroids
-      mergeWithinPct: 0.4, mergeConsecutiveSessions: 5, // two families within 0.4% for 5 sessions merge
-      splitSeparationPct: 1.5, splitConsecutiveSessions: 5, // constituents separate >1.5% for 5 sessions split
+      mergeConsecutiveSessions: 5,              // parent §5.4 (unchanged: a count, not a distance)
+      splitConsecutiveSessions: 5,              // parent §5.4 (unchanged)
       retireZeroSupportSessions: 20,            // zero method support for 20 sessions retires
       roleStates: ['support', 'resistance', 'resistance_turned_support', 'support_turned_resistance'], // parent §5.4 append-only role log
+
+      // S3.5 §7a (LS3-09 structural dissolution): merge/split runs only advance on
+      // sessions where the family receives a matching snapshot — an unsupported family
+      // can never complete a merge run, so retire-vs-merge conflicts are impossible.
+      liveSupportRequiredForRuns: true, // S3.5 amendment 6
+
+      // S3.5 §4 (LS3-02): warmup lineage replay — lineage is one continuous state
+      // machine from the first session where the distance unit is defined, through the
+      // warmup, into the study window. Warmup sessions build state only, are never
+      // emitted; the study begins with a checkpoint of inherited, real family identity.
+      warmupReplay: { // S3.5 amendment 3
+        enabled: true,
+        startRule: 'first_session_with_ATR14_at_prior_close', // ⚠ CHOICE S35-C3: the unit needs ATR(14,D−1); the structural trailing window fills as history accrues
+        emitFrom: 'startDate (studyStart in production)',
+        checkpointFields: ['bornDate', 'anchor', 'status', 'zeroSupportRun', 'splitRun', 'pending role state', 'roleLog', 'pairRuns'],
+        matchHistoryClearedAtCheckpoint: true, // ⚠ CHOICE S35-C4: warmup match history is state-building only; study artifacts reference only study-window snapshots
+        preStudyFields: ['preStudy', 'preStudyAgeSessions'],  // nothing left-censored silently
+      },
+
+      // S3.5 §5 (LS3-03/LS3-05): merge effective timing + full state-transfer operator.
+      merge: { // S3.5 amendment 4
+        effectiveTiming: 'detection_session', // a merge detected from D's information set applies to D: D's snapshot ownership rewritten absorbed→survivor; same-day role events on the absorbed id suppressed
+        transfer: {
+          touchHistory: 'union sorted by (timestamp, familyId, snapshotId)',
+          sequenceIndex: 'recomputed as merged touchHistory length', // ⚠ CHOICE S35-C5: the only rule coherent under repeated merges
+          matchHistory: 'union, absorbed entries tagged fromFamilyId, sorted (date, snapshotId)',
+          roleLog: 'survivor-owned; absorbed log retained on absorbed record (append-only, never rewritten)',
+          pendingRoleState: 'survivor-only; absorbed pending discarded (measured against a dead anchor)',
+          anchor: 'survivor-only; absorbed anchor recorded in the merge event for audit',
+          counters: 'fired pair-run reset; survivor other runs persist unchanged',
+          s4Hooks: 'transfer absorbed → survivor where survivor empty; survivor wins conflicts (absorbed value recorded in merge event)', // contract specified now; Session 4 populates
+        },
+      },
+
+      // S3.5 §6 (LS3-04): role state machine — anchor frame + hysteresis.
+      roleMachine: { // S3.5 amendment 5
+        frame: 'family_anchor', // unified with S4 episode zones (anchor-based) — roles and zones can never disagree on gap days
+        zoneHalfWidthUnits: 0.25,              // zone = anchor ± 0.25·distanceUnit (reused as flip margin; no new constant)
+        flipBeyondOppositeBoundaryUnits: 0.25, // flip evidence: close beyond the OPPOSITE zone boundary by ≥ 0.25·u
+        confirmSessions: 3,                    // sustained ≥3 consecutive matched registry sessions
+        inputs: 'prior committed anchor, D-1 adjusted close, D-1 distanceUnit', // flip recorded on D only after the third confirming close occurred on D−1 (using D's close would be lookahead)
+        pendingFields: ['pendingSide', 'pendingRun', 'pendingStartDate'],
+        resets: ['close back inside zone', 'close on current-role side', 'gray band (outside zone but short of the flip margin — consecutive-evidence reading)', 'no matching snapshot', 'split', 'retirement'],
+        provisional: true, // ⚠ S35-C6: 3×0.25 is a policy default, not a proven optimum — graduates only via the Session-7 manual-review demotion path
+      },
     },
 
     // ── Session-3 construction conventions (02-build-levels.js) ──────────────
@@ -258,19 +348,22 @@ const CONFIG = {
       volumeBasis: 'raw_divided_by_adjFactor', // ⚠ CHOICE S3-C1: VWAP/centroid weights use V/f so split-era share counts are comparable (A1 extension)
       typicalPrice: 'hlc3', // ⚠ CHOICE S3-C2: AVWAP price input = (H+L+C)/3 (standard anchored-VWAP convention)
       fractalComparison: 'strict', // ⚠ CHOICE S3-C3: swing high requires STRICTLY greater highs than all k bars each side (ties → no fractal)
-      structuralClusterJoin: 'ascending_price_within_clusterPct_of_running_volume_weighted_centroid', // ⚠ CHOICE S3-C4: deterministic greedy clustering
-      confluenceJoin: 'ascending_price_within_alignPct_of_running_unweighted_mean_centroid', // ⚠ CHOICE S3-C5: cross-family alignment has no volume semantics
-      compositeAvailability: 'max_of_members', // ⚠ CHOICE S3-C6: cluster/snapshot formation/firstKnown/firstTradable = latest member's (conservative, never early)
-      calendarTradableSameSession: true, // ⚠ CHOICE S3-C7: calendar firstTradableDate = the session it applies to (derived wholly from prior completed bars, so already "known at prior close"; the literal +1 offset would bar calendar levels from ever being referenced)
-      sideRule: 'centroid_lte_prior_close_is_support', // ⚠ CHOICE S3-C8: side vs D−1 adjusted close; exact tie → support
-      relativeDistanceDenominator: 'pair_midpoint', // ⚠ CHOICE S3-C9: merge/split %-distances measured against the pair midpoint
+      structuralClusterJoin: 'ascending_price_bounded_diameter_kCluster_units', // S35-C7 (supersedes S3-C4 centroid-chaining): left-greedy groups whose TOTAL SPAN never exceeds kCluster·u; volume-weighted centroid per group
+      confluenceJoin: 'ascending_price_bounded_diameter_kConfluence_units', // S35-C8 (supersedes S3-C5): same rule, unweighted mean centroid; span bound is asserted at build time (bounded-diameter theorem, LS3-08)
+      compositeAvailability: 'max_of_members', // ⚠ CHOICE S3-C6: cluster/snapshot formation/firstKnown/firstTradable = latest member's (conservative, never early); age features must use MEMBER triples or family bornDate
+      // calendarTradableSameSession (S3-C7 flag) RETIRED — the S3.5 tradability amendment
+      // (availability.tradability above) resolves the contradiction at the definition level.
+      sideRule: 'centroid_lte_prior_close_is_support', // ⚠ CHOICE S3-C8: snapshot side vs D−1 adjusted close; exact tie → support (registry data + founding role only — session roles are the roleMachine's)
       familyObservedCentroid: 'unweighted_mean_of_matched_snapshot_centroids', // ⚠ CHOICE S3-C10: the anchor-EMA input when >1 snapshot matches
       familyMatchableSameSessionAsFounded: true, // ⚠ CHOICE S3-C11: a family founded earlier in the ascending pass is a match candidate for later snapshots
-      roleSideSource: 'nearest_matched_snapshot_pre_update_anchor', // ⚠ CHOICE S3-C12: session role = side of the nearest matched snapshot (distance to pre-update anchor)
+      // roleSideSource (S3-C12) RETIRED — superseded by lineage.roleMachine (anchor frame).
       splitExecution: 'nearest_snapshot_keeps_elder_id_each_other_branches', // ⚠ CHOICE S3-C13: at trigger, nearest-to-anchor snapshot stays; every other matched snapshot founds a branch with splitFrom
-      splitRequiresMultipleSnapshots: true, // ⚠ CHOICE S3-C14 (review-hardened): each of the 5 consecutive counter sessions requires ≥2 matched snapshots AND >1.5% span — counting and execution use the same partitionable-evidence condition
-      mergeStateTransfer: 'matchHistory_and_touchHistory_to_survivor_survivor_keeps_anchor_and_roleLog', // ⚠ CHOICE S3-C15: zeroSupportRun = min(survivor, absorbed); absorbed keeps its own roleLog on its record
+      // splitRequiresMultipleSnapshots (S3-C14) RETIRED — a theorem now, not a rule: the
+      // bounded-diameter confluence bound (kConfluence < kSplit) makes a single-snapshot
+      // split-threshold breach impossible by construction.
+      // mergeStateTransfer (S3-C15) superseded by lineage.merge.transfer (full operator table).
       weeklyPivotWeek: 'iso_monday_keyed_prior_completed_week', // ⚠ CHOICE S3-C16: prior completed week = latest Monday-keyed week strictly before the session's week, aggregated H/L/last-C
+      distanceMeasure: 'absolute_price_distance_vs_units', // S35-C9 (supersedes S3-C9 midpoint %): all geometric comparisons are |Δprice| vs multiples of the session's distanceUnit
     },
   },
 
@@ -557,5 +650,29 @@ function deepFreeze(obj) {
   }
   return Object.freeze(obj);
 }
+
+// Geometry coherence validation (S3.5 §3) — like deepFreeze, this COMPUTES no config
+// value; it only rejects an incoherent one. The ordering invariants are not negotiable:
+// a violating config must throw at load, never silently produce incoherent lineage.
+export function validateGeometry(geometry) {
+  const { atrMultiple, floorPct, capPct } = geometry.distanceUnit;
+  const { kCluster, kConfluence, kMerge, kMatch, kSplit } = geometry.multiples;
+  const fail = (msg) => { throw new Error(`config geometry invariant violated: ${msg}`); };
+  if (!(atrMultiple > 0)) fail(`atrMultiple ${atrMultiple} must be > 0`);
+  if (!(floorPct > 0 && capPct > 0)) fail('floorPct and capPct must be > 0');
+  if (!(floorPct <= capPct)) fail(`floorPct ${floorPct} must be ≤ capPct ${capPct}`);
+  for (const [k, v] of Object.entries(geometry.multiples)) if (!(v > 0)) fail(`${k} ${v} must be > 0`);
+  if (!(kCluster <= kConfluence)) fail(`kCluster ${kCluster} must be ≤ kConfluence ${kConfluence}`);
+  if (!(kConfluence < kMatch)) fail(`kConfluence ${kConfluence} must be < kMatch ${kMatch}`);
+  if (!(kMerge < kMatch)) fail(`kMerge ${kMerge} must be < kMatch ${kMatch}`);
+  if (!(kSplit > kMatch)) fail(`kSplit ${kSplit} must be > kMatch ${kMatch}`);
+  // Live-support coherence (S3.5 §7a): merge evidence needs two DISTINCT snapshots
+  // (level gap > kConfluence·u) with anchors within kMerge·u — kMerge ≤ kConfluence
+  // would make merges structurally unreachable.
+  if (!(kConfluence < kMerge)) fail(`kConfluence ${kConfluence} must be < kMerge ${kMerge} (merge reachability under live support)`);
+  return geometry;
+}
+
+validateGeometry(CONFIG.levels.geometry);
 
 export default deepFreeze(CONFIG);

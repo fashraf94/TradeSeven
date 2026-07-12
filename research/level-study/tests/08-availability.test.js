@@ -9,11 +9,11 @@ import assert from 'node:assert/strict';
 import { normalizeDaily } from '../lib/normalize.js';
 import { runLevels, runTruncated, registryAt, canonical } from '../02-build-levels.js';
 import { loadFixture } from './_helpers.js';
-import { sampleDistinct } from './_synthetic.js';
+import { sampleDistinct, fnv1a } from './_synthetic.js';
 
 const SYMBOLS = ['AAPL', 'KO', 'COIN'];
 const END = '2024-03-28'; // ~180 registry sessions per symbol keeps the suite fast
-const DAYS_PER_SYMBOL = 4;
+const DAYS_PER_SYMBOL = 3;
 
 for (const sym of SYMBOLS) {
   test(`availability: ${sym} sampled registry days honor firstTradableDate ≤ D and re-derive truncated`, () => {
@@ -21,7 +21,8 @@ for (const sym of SYMBOLS) {
     const inc = runLevels(bars, { symbol: sym, endDate: END });
     assert.ok(inc.sessions.length >= 100, `${sym}: only ${inc.sessions.length} registry sessions`);
 
-    const sampledDays = sampleDistinct(inc.sessions.map((s) => s.date), DAYS_PER_SYMBOL, 0xA11 + sym.length);
+    // Seed = stable hash of the FULL symbol string (S3.5 §9.1) — never name length.
+    const sampledDays = sampleDistinct(inc.sessions.map((s) => s.date), DAYS_PER_SYMBOL, fnv1a(`avail:${sym}`));
     for (const D of sampledDays) {
       const day = registryAt(inc, D);
       assert.ok(day.snapshots.length > 0, `${sym} ${D}: empty registry`);

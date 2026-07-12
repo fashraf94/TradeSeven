@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { normalizeDaily } from '../lib/normalize.js';
 import { runLevels, runTruncated, canonical } from '../02-build-levels.js';
 import { loadFixture } from './_helpers.js';
-import { sampleDistinct } from './_synthetic.js';
+import { sampleDistinct, fnv1a } from './_synthetic.js';
 
 const CASES = [
   { sym: 'AAPL', end: '2024-03-28' },
@@ -18,11 +18,22 @@ const CASES = [
 ];
 const DAYS_PER_SYMBOL = 3;
 
+// §9.1 regression guard: the S3 seeds derived from symbol-name LENGTH, so AAPL and TSLA
+// (both 4 chars) sampled identical indices. Full-string hashing must separate them.
+test('sampling seeds derive from the full symbol string, not its length', () => {
+  assert.notEqual(fnv1a('equiv:AAPL'), fnv1a('equiv:TSLA'));
+  const days = [...Array(180).keys()].map(String);
+  assert.notDeepEqual(
+    sampleDistinct(days, DAYS_PER_SYMBOL, fnv1a('equiv:AAPL')),
+    sampleDistinct(days, DAYS_PER_SYMBOL, fnv1a('equiv:TSLA')),
+    'same-length symbols must not sample identical index sets');
+});
+
 for (const { sym, end } of CASES) {
   test(`equivalence: ${sym} incremental ≡ truncated rebuild on sampled days (full state)`, () => {
     const { bars } = normalizeDaily(loadFixture(`daily/${sym}_eod_2018-01-01_2026-07-10.json`));
     const timeline = runLevels(bars, { symbol: sym, endDate: end });
-    const sampledDays = sampleDistinct(timeline.sessions.map((s) => s.date), DAYS_PER_SYMBOL, 0xE9 + sym.length);
+    const sampledDays = sampleDistinct(timeline.sessions.map((s) => s.date), DAYS_PER_SYMBOL, fnv1a(`equiv:${sym}`));
 
     for (const D of sampledDays) {
       // Incremental result at D: the forward engine over the FULL array, stopped at D.

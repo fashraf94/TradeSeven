@@ -2,9 +2,9 @@
 
 **Purpose:** every value in `research/level-study/config.js` mapped to its source section, so the founder can review the frozen config against the specs in one pass. Mandatory deliverable (S2 prompt §3).
 
-**Source precedence:** `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md` (S3-R1…S3-R5, S3-C1…S3-C16) → `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S2.md` (R1–R3, A1–A3) → `docs/LEVEL_STUDY_SPEC_V1_1_ADDENDUM_A_CONTEXT_LAYER_V1_1.md` (Addendum §A*) → `docs/LEVEL_INTERACTION_EVENT_STUDY_SPEC_V1_1.md` (parent §*). "S1 §" = `docs/discovery/SESSION1_DATA_DISCOVERY_REPORT.md`.
+**Source precedence:** `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3_5.md` (amendments 1–6, S35-C1…C9) → `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md` (S3-R1…S3-R5, S3-C1…S3-C16) → `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S2.md` (R1–R3, A1–A3) → `docs/LEVEL_STUDY_SPEC_V1_1_ADDENDUM_A_CONTEXT_LAYER_V1_1.md` (Addendum §A*) → `docs/LEVEL_INTERACTION_EVENT_STUDY_SPEC_V1_1.md` (parent §*). "S1 §" = `docs/discovery/SESSION1_DATA_DISCOVERY_REPORT.md`.
 
-**Config version:** `STUDY_CONFIG_VERSION = 1` (unchanged at Session 3 — all consumers of the S3-patched values were unbuilt; `02-build-levels.js` is their first consumer).
+**Config version:** `STUDY_CONFIG_VERSION = 2` — bumped at Session 3.5: the LS3-01 rework changes the level/lineage geometry materially from what v1 was built and Phase B ran against (unified distance scale, warmup replay, merge timing, role machine). Version 1 is never reused; artifact provenance is unambiguous.
 
 ---
 
@@ -132,23 +132,28 @@ Session 3 added `levels.construction` — the deterministic conventions `02-buil
 
 | Path | Value | Source |
 |---|---|---|
-| `levels.sourceFamilies.structural` | `fractalK 3, trailing 120, cluster 0.5%, vol-weighted centroid` | parent §5.1 |
+| `levels.sourceFamilies.structural` | `fractalK 3, trailing 120, vol-weighted centroid` (fixed 0.5% clustering superseded by `geometry.multiples.kCluster`) | parent §5.1 / **S3.5 amendment 2** |
+| `levels.geometry.distanceUnit` | `clamp(0.25·ATR14, 0.5%·price, 1.5%·price)` | **S3.5 amendment 2** (LS3-01); cap ⚠ S35-C1 |
+| `levels.geometry.multiples` | `kCluster 0.5 ≤ kConfluence 0.5 < kMerge 0.8 < kMatch 1.0 < kSplit 1.6` | **S3.5 amendment 2**; values ⚠ S35-C2 (provisional); ordering load-asserted (`validateGeometry` throws) |
 | `levels.sourceFamilies.participation` | AVWAP from most recent significant swing | parent §5.1 |
 | `levels.sourceFamilies.calendar` | daily PP/S1/S2/R1/R2 (D−1) + weekly (prior week) | parent §5.1 |
 | `levels.sourceFamilies.psychological` | round numbers, flag `INCLUDE_ROUND_LEVELS`, OFF; `increments null` | parent §5.1 / ⚠#5 |
 | `levels.sourceFamilies.moving` | reserved V2, OFF | parent §5.1 |
-| `levels.confluence.alignPct` | `0.5` | parent §5.1 |
+| `levels.confluence` grouping | bounded-diameter ≤ `kConfluence·u` (fixed 0.5% alignPct superseded) | parent §5.1 / **S3.5 amendment 2** (S35-C8) |
 | `levels.confluence.tiers` | `F1=1, F2=2, F3plus=3` | parent §5.1 |
 | `levels.significantSwingMovePct` | `5` | parent §5.3 |
-| `levels.availability.firstTradableOffsetSessions` | `1` | parent §5.3 |
+| `levels.availability.tradability` | prior-close information-set rule (per-source yields incl. weekly = week's first trading session) | **S3.5 amendment 1** (retires the universal `firstKnown+1` formula and the S3-C7 flag) |
 | `levels.availability.*firstKnown` | fractal/avwap/calendar rules | parent §5.3 |
-| `levels.lineage.matchWithin` | `max(0.5%, 0.25 ATR)` | parent §5.4 |
+| lineage match / merge / split distances | `kMatch·u` / `kMerge·u` / `kSplit·u` (fixed/hybrid S3 scales superseded) | **S3.5 amendment 2** |
 | `levels.lineage.tieBreak` | nearest → elder | parent §5.4 |
 | `levels.lineage.anchorEmaAlpha` | `0.15` | parent §5.4 |
-| `levels.lineage.mergeWithinPct` / `mergeConsecutiveSessions` | `0.4` / `5` | parent §5.4 |
-| `levels.lineage.splitSeparationPct` / `splitConsecutiveSessions` | `1.5` / `5` | parent §5.4 |
+| `levels.lineage.mergeConsecutiveSessions` / `splitConsecutiveSessions` | `5` / `5` | parent §5.4 (counts, not distances — unchanged) |
 | `levels.lineage.retireZeroSupportSessions` | `20` | parent §5.4 |
 | `levels.lineage.roleStates` | 4 states | parent §5.4 |
+| `levels.lineage.liveSupportRequiredForRuns` | `true` | **S3.5 amendment 6** (LS3-09 structural dissolution) |
+| `levels.lineage.warmupReplay` | continuous replay; checkpoint; `preStudy` fields; matchHistory cleared (⚠ S35-C4) | **S3.5 amendment 3** (LS3-02) |
+| `levels.lineage.merge` | effective on the detection session; full transfer operator table (sequenceIndex ⚠ S35-C5) | **S3.5 amendment 4** (LS3-03/05) |
+| `levels.lineage.roleMachine` | anchor frame; zone 0.25u; flip margin 0.25u; 3 confirming D−1 closes; pending state + resets; ⚠ S35-C6 provisional | **S3.5 amendment 5** (LS3-04) |
 | `levels.construction.priceBasis` | `adjusted` | A1 one-basis rule applied to Stage 1 (S3 rulings doc §B) |
 | `levels.construction.*` (16 conventions) | see `config.js` | **⚠ S3-C1…S3-C16** — S3 rulings doc §B has the full register with rationale + risk per choice |
 
@@ -293,3 +298,4 @@ Session 3 added `levels.construction` — the deterministic conventions `02-buil
 
 *Traceability table — LevelStory Session 2, Phase 0. Reviewed by the founder at the STOP before the full-universe fetch is greenlit.*
 *Session-3 update (2026-07-12): S3-R1…S3-R5 transcribed (tod buckets, EOD fallback, half-day rule, SPHB/SPLV daily-only, sectorMap); `levels.construction` S3-C1…S3-C16 choice register added — see `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md`.*
+*Session-3.5 update (2026-07-12): `STUDY_CONFIG_VERSION = 2`. Unified distance scale (`levels.geometry`, load-asserted ordering) supersedes all fixed-percent geometry; tradability amendment; warmup replay; merge effective timing + operator table; role state machine; live-support rule. Choice register S35-C1…C9 — see `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3_5.md`.*
