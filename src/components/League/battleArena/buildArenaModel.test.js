@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { buildArenaModel, liveDayIdx, buildAskChips } from './buildArenaModel';
+import { buildFlat6BattleModel } from '../../../utils/flat6BattleEnrichment';
 import { BASELINE_POLICY, CAPTURE_STATE, computeComposite } from '../../../constants/leagueTournament';
 
 // H1 — LEAGUE_AGENT_CHAT_ENABLED is ON in source (flipped to production). The
@@ -278,7 +279,7 @@ describe('buildArenaModel — live YOUR-seat composite (youLiveScore)', () => {
   });
 });
 
-describe('buildArenaModel — departed-position points (Phase 1, DISPLAY-ONLY)', () => {
+describe('buildArenaModel — departed-position points (model fields)', () => {
   const sum = (rows) => rows.reduce((a, s) => a + (Number.isFinite(s?.points) ? s.points : 0), 0);
   const TODAY_BATTLE = { ...flat6Battle(), activatedAt: '2026-06-16T14:00:00.000Z', createdAt: '2026-06-16T14:00:00.000Z' };
   const liveArgs = (extra = {}) => ({ ...BASE, mode: 'training', battle: TODAY_BATTLE, ...extra });
@@ -313,18 +314,89 @@ describe('buildArenaModel — departed-position points (Phase 1, DISPLAY-ONLY)',
     expect(buildArenaModel(liveArgs()).userDeparted).toBeNull(); // no droppedPicks → null
   });
 
-  it('DISPLAY-ONLY: surfacing departed points does not move youLiveScore or the star rows', () => {
-    const battle = { ...TODAY_BATTLE, trades: [{ symbolOut: 'LLY', symbolIn: 'NVDA', lockedPoints: 50, swapDay: 2 }] };
+  it('star rows are UNCHANGED by departed points — the ledger is additive to the orb only', () => {
+    const battle = { ...TODAY_BATTLE, trades: [{ symbolOut: 'LLY', symbolIn: 'NVDA', lockedPoints: 50, swapDay: 1 }] };
     const g = makeGroup();
     g.players[0].droppedPicks = [{ symbol: 'KO', legs: [{ direction: 'long', baselinePrice: 60, closedAt: '2026-06-14T20:00:00Z', bankedScore: 40 }] }];
     const withDeparted = buildArenaModel(liveArgs({ battle, group: g }));
     const withoutDeparted = buildArenaModel(liveArgs());
-    expect(withDeparted.agentDeparted.total).toBe(50);
-    expect(withDeparted.userDeparted.total).toBe(40);
-    // the 50 + 40 banked pts are on screen in the ledger but NOT added to the orb this phase
-    expect(withDeparted.youLiveScore).toBeCloseTo(withoutDeparted.youLiveScore, 6);
     expect(sum(withDeparted.agentStars)).toBeCloseTo(sum(withoutDeparted.agentStars), 6);
     expect(sum(withDeparted.userStars)).toBeCloseTo(sum(withoutDeparted.userStars), 6);
+  });
+});
+
+describe('buildArenaModel — orb swap/drop-accurate (Phase 2)', () => {
+  const sum = (rows) => rows.reduce((a, s) => a + (Number.isFinite(s?.points) ? s.points : 0), 0);
+  const TODAY_BATTLE = { ...flat6Battle(), activatedAt: '2026-06-16T14:00:00.000Z', createdAt: '2026-06-16T14:00:00.000Z' };
+  const liveArgs = (extra = {}) => ({ ...BASE, mode: 'training', battle: TODAY_BATTLE, ...extra });
+
+  it('§9 identity: the orb ADDS exactly the sums the chips display (agent ×1, user ×1.5)', () => {
+    const battle = { ...TODAY_BATTLE, trades: [{ symbolOut: 'LLY', symbolIn: 'NVDA', lockedPoints: 50, swapDay: 1 }] };
+    const g = makeGroup();
+    g.players[0].droppedPicks = [{ symbol: 'KO', legs: [{ direction: 'long', baselinePrice: 60, closedAt: '2026-06-14T20:00:00Z', bankedScore: 40 }] }];
+    const withDeparted = buildArenaModel(liveArgs({ battle, group: g }));
+    const base = buildArenaModel(liveArgs());
+    expect(withDeparted.agentDeparted.total).toBe(50);
+    expect(withDeparted.userDeparted.total).toBe(40);
+    // orb rises by the swap term (agent, ×1) + 1.5 × the dropped term (user half)
+    expect(withDeparted.youLiveScore - base.youLiveScore).toBeCloseTo(50 + 1.5 * 40, 6);
+  });
+
+  it('no settle-step (agent): the orb today agent-term == Flat6 liveAgentScore', () => {
+    const battle = { ...TODAY_BATTLE, trades: [{ symbolOut: 'LLY', symbolIn: 'NVDA', lockedPoints: 12, swapDay: 1 }] };
+    const m = buildArenaModel(liveArgs({ battle }));
+    const flat6 = buildFlat6BattleModel(battle, BASE.priceCtx);
+    const agentTodayTerm = sum(m.agentStars) + m.agentDeparted.total; // activeScore(live) + Σ today's swaps
+    expect(Math.round(agentTodayTerm)).toBe(flat6.liveAgentScore); // == the Flat6 number, exactly
+  });
+
+  it('no double-count: today swaps add on TOP of the cumulative priorBankedAgent (Day-1 counted once)', () => {
+    const g = makeGroup();
+    g.dailyScores.day2.closeScores['u-you'].agentPoints = 30; // cumulative agent incl. prior-day swaps
+    const battle = { ...TODAY_BATTLE, trades: [{ symbolOut: 'LLY', symbolIn: 'NVDA', lockedPoints: 15, swapDay: 1 }] };
+    const withTodaySwap = buildArenaModel(liveArgs({ group: g, battle }));
+    const noTodaySwap = buildArenaModel(liveArgs({ group: g }));
+    // today's +15 adds exactly +15 to the agent layer, on top of the 30 — never doubled
+    expect(withTodaySwap.youLiveScore - noTodaySwap.youLiveScore).toBeCloseTo(15, 6);
+  });
+
+  it('user half: a dropped pick banked +M moves the orb by exactly 1.5×M (no sag, no close jump)', () => {
+    const g = makeGroup();
+    g.players[0].droppedPicks = [{ symbol: 'KO', legs: [{ direction: 'long', baselinePrice: 60, closedAt: '2026-06-14T20:00:00Z', bankedScore: 8 }] }];
+    const withDrop = buildArenaModel(liveArgs({ group: g }));
+    const noDrop = buildArenaModel(liveArgs());
+    expect(withDrop.youLiveScore - noDrop.youLiveScore).toBeCloseTo(1.5 * 8, 6);
+  });
+
+  it('the announced A3 residual: a SAME-DAY pending drop adds 0 to the orb (never a fake value)', () => {
+    const g = makeGroup();
+    g.players[0].droppedPicks = [{ symbol: 'F', legs: [{ direction: 'long', baselinePrice: 12, closedAt: '2026-06-16T13:25:00Z' }] }]; // no bankedScore → pending
+    const withPending = buildArenaModel(liveArgs({ group: g }));
+    const noDrop = buildArenaModel(liveArgs());
+    expect(withPending.userDeparted.pendingCount).toBe(1);
+    expect(withPending.userDeparted.total).toBe(0);
+    expect(withPending.youLiveScore).toBeCloseTo(noDrop.youLiveScore, 6); // the pending leg moves nothing
+  });
+
+  it('§9 badge-zero guard: warns (dev) iff a live doc carries non-zero bankedBadgePoints', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    buildArenaModel(liveArgs()); // normal fixture: badges absent/0 → no warn
+    expect(spy).not.toHaveBeenCalled();
+    const battle = { ...TODAY_BATTLE, scoreState: { currentScore: 0, bankedBadgePoints: { total: 7 } } };
+    buildArenaModel(liveArgs({ battle })); // non-zero live badges → the invariant is loud, not silent
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(String(spy.mock.calls[0][0])).toMatch(/bankedBadgePoints/);
+    spy.mockRestore();
+  });
+
+  it('ranked stays byte-identical — the orb never goes live (departed never added off training)', () => {
+    const battle = { ...TODAY_BATTLE, trades: [{ symbolOut: 'LLY', symbolIn: 'NVDA', lockedPoints: 99, swapDay: 1 }] };
+    const g = makeGroup();
+    g.players[0].droppedPicks = [{ symbol: 'KO', legs: [{ direction: 'long', baselinePrice: 60, closedAt: '2026-06-14T20:00:00Z', bankedScore: 99 }] }];
+    const m = buildArenaModel({ ...BASE, mode: 'ranked', battle, group: g });
+    expect(m.youLiveScore).toBeNull();      // ranked orb stays banked
+    expect(m.agentDeparted).toBeNull();
+    expect(m.userDeparted).toBeNull();
   });
 });
 

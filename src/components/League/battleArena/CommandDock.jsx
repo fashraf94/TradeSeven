@@ -69,8 +69,12 @@ export function DepartedChip({ kind, departed, onOpen, style }) {
       style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: '3px 9px', borderRadius: 999, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}`, ...style }}>
       <LIcon name={isSwap ? 'scissors' : 'flag'} size={11} color={LTOKENS.ink3} stroke={2} />
+      {/* Window is EXPLICIT (Phase 2 fold-in): agent swaps are TODAY-only (fresh
+          daily doc; prior swaps ride in the banked altitude), user drops are WEEK-
+          cumulative (droppedPicks persist on the group doc). Same treatment would
+          mis-read as one kind of number — §9 display-agreement. */}
       <Mono style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.05em', color: LTOKENS.ink3, textTransform: 'uppercase' }}>
-        {isSwap ? 'Swaps banked' : 'Dropped'}
+        {isSwap ? 'Swaps · today' : 'Dropped · week'}
       </Mono>
       <Mono style={{ fontSize: 10.5, fontWeight: 700, color: alpha(tint, 0.9), fontVariantNumeric: 'tabular-nums' }}>{fmtPoints(total)}</Mono>
       {pendingCount > 0 && (

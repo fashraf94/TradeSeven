@@ -203,9 +203,9 @@ export function DepartedLedger({ kind, departed, onClose, maxWidth, fixed = fals
           <LIcon name={isSwap ? 'scissors' : 'flag'} size={19} color={c} stroke={2} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Eyebrow color={c}>{isSwap ? 'Banked from swaps' : 'Dropped picks · banked'}</Eyebrow>
+          <Eyebrow color={c}>{isSwap ? 'Banked from swaps · today' : 'Dropped picks · week to date'}</Eyebrow>
           <div style={{ fontSize: 16, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', marginTop: 3 }}>
-            {isSwap ? 'Positions your agent subbed out' : 'Picks you dropped'}
+            {isSwap ? "Positions your agent subbed out today" : 'Picks you dropped this week'}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -217,10 +217,10 @@ export function DepartedLedger({ kind, departed, onClose, maxWidth, fixed = fals
       </div>
 
       <div style={{ fontSize: 11.5, color: LTOKENS.ink2, lineHeight: 1.55, marginBottom: 14 }}>
-        These points are <b style={{ color: LTOKENS.ink }}>earned and no longer moving</b> — settled into your standing.{' '}
+        These points are <b style={{ color: LTOKENS.ink }}>earned and no longer moving</b> — settled into your standing and now in your orb.{' '}
         {isSwap
-          ? 'Each swap locked its exit when the agent subbed the name out.'
-          : 'A dropped pick keeps its banked points — the standing never forgets them.'}
+          ? "Each swap locked its exit when the agent subbed the name out. This is today's agent layer — prior days' swaps are already banked into your altitude."
+          : 'A dropped pick keeps its banked points — the standing never forgets them. This is your week to date (held picks + dropped).'}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>

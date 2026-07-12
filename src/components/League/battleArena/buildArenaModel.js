@@ -176,11 +176,13 @@ export function buildArenaModel({
   // agrees with those cells by construction (§9 — one source, one tick). Two
   // accounting asymmetries are handled deliberately:
   //   • agent battles are fullday/daily docs (AGENT_BATTLE_DURATION_MODE), so
-  //     `agentStars` is TODAY's layer only — add the prior days' BANKED cumulative
-  //     agent (closeScores.agentPoints, the very value every other orb reads) so
-  //     the estimate settles to the banked composite at close, not with a per-day
-  //     jump.
-  //   • user legs persist across the week, so `userStars` is already cumulative.
+  //     `agentStars` is TODAY's HOLDINGS only — add the prior days' BANKED cumulative
+  //     agent (closeScores.agentPoints, the very value every other orb reads) AND
+  //     today's swap-realized points (agentDeparted.total, Σ today's trades) so the
+  //     estimate settles to the banked composite at close, not with a per-day jump.
+  //   • user legs persist across the week, so `userStars` is cumulative for HELD
+  //     picks — add dropped picks' banked points (userDeparted.total) so Σuser is
+  //     the true cumulative week (held + dropped), matching what banking counts.
   // Gated tightly so it can only ever ADD today's layer once, and only where the
   // founder scoped it (Branch 1):
   //   • mode==='training' — training only. Ranked stays banked (its sealed-rival
@@ -200,25 +202,21 @@ export function buildArenaModel({
   const sumPoints = (rows) => rows.reduce((acc, s) => acc + (Number.isFinite(s?.points) ? s.points : 0), 0);
   const bankedAgentRaw = latestDay?.entry?.closeScores?.[uid]?.agentPoints;
   const priorBankedAgent = Number.isFinite(bankedAgentRaw) ? bankedAgentRaw : 0;
-  const youLiveScore = youOrbLive
-    ? computeComposite(priorBankedAgent + sumPoints(agentStars), sumPoints(userStars))
-    : null;
 
-  // ── DEPARTED-POSITION POINTS (Phase 1 — the §9 precondition, DISPLAY ONLY) ──
-  // Two banked sources leave the live star grid but the banked close still
-  // counts them, so the shipped orb under-reports until close. Surface them —
-  // settled/past-tense — so Phase 2 can add them to the orb with every term on
-  // screen. This block is ADDITIVE: it never touches youLiveScore/agentStars/
-  // userStars/the orb. Gated on `youOrbLive` — the SAME condition under which
-  // the live orb runs — so (a) the surfaced sums correspond exactly to what the
-  // Phase-2 live term will add (§9), and (b) ranked/banked/pre-deploy/non-
-  // training render byte-identical (both fields null → no chip).
-  //   • agent: Σ trades[].lockedPoints — the subbed-out positions' realized
-  //     points. trades[] is TODAY's fresh daily doc (Phase-0 A1), so no cross-
-  //     day double-count and no swapDay filter is needed.
-  //   • user: Σ droppedPicks banked (via readDroppedPickLedger → scorePick). A
-  //     SAME-DAY drop's final leg banks post-close, so it shows as a pending
-  //     bank (no number), bounded to the drop day (A3 founder ruling).
+  // ── DEPARTED-POSITION POINTS — surfaced in Phase 1, ADDED to the orb in Phase 2.
+  // Two banked sources leave the live star grid but the banked close still counts
+  // them; the shipped orb under-reported them until close (the §9-blocked settle-
+  // step). They're computed HERE (before youLiveScore) so the orb can add exactly
+  // the numbers the Phase-1 chips display — same objects → §9 identity by
+  // construction. Gated on `youOrbLive` so ranked/banked/pre-deploy/non-training
+  // stay byte-identical (both fields null → no chip, no orb change).
+  //   • agent: Σ TODAY's trades[].lockedPoints (subbed-out realized points).
+  //     trades[] is today's fresh daily doc (Checkpoint A1: fullday, tradingDays=
+  //     [today], swapDay always 1), so it's today-only — no cross-day double-count
+  //     with priorBankedAgent, no swapDay filter.
+  //   • user: Σ droppedPicks banked (readDroppedPickLedger → scorePick). A SAME-DAY
+  //     drop's final leg banks post-close → contributes 0 here and shows as a
+  //     pending bank in the ledger (the announced A3 residual — never added live).
   let agentDeparted = null;
   let userDeparted = null;
   if (youOrbLive) {
@@ -241,6 +239,46 @@ export function buildArenaModel({
       };
     }
   }
+
+  // ── §9 badge-zero invariant (Checkpoint A4 = (b) incidentally zero) ──
+  // The agent today-term below is activeScore(live) + Σ today's swaps and
+  // DELIBERATELY OMITS scoreState.bankedBadgePoints, which is 0 on a live fullday
+  // doc: the doc completes (~4-5pm ET) BEFORE the post-close badge cron
+  // (agent-daily-scores, ~8:45pm ET, status=='active' only), and each morning's
+  // fresh doc inits {total:0} with no carry-forward. IF AGENT_BATTLE_DURATION_MODE
+  // ever reverts to multi-day, docs persist and badges bank into a LIVE doc → this
+  // term under-counts vs the banked close → a silent agent-half settle-step.
+  // RULE (§9): a non-zero live bankedBadgePoints must be SURFACED in the arena (a
+  // third departed source) BEFORE being added to the orb — never silently folded.
+  const liveBadgeTotal = battle?.scoreState?.bankedBadgePoints?.total;
+  if (youOrbLive && Number.isFinite(liveBadgeTotal) && liveBadgeTotal !== 0 && import.meta.env?.DEV) {
+    console.warn(`[buildArenaModel] live bankedBadgePoints=${liveBadgeTotal} ≠ 0 — the orb agent-term omits it (Checkpoint A4). Surface it in the arena before adding to the orb, or the agent half will under-count vs the banked close.`);
+  }
+
+  // ── live YOUR-seat composite (Branch 1 — Phase 2: swap/drop-accurate) ──
+  //   youLiveScore = computeComposite(
+  //     priorBankedAgent + liveAgentScore_today,        // agent half
+  //     Σ(held picks live) + Σ(dropped picks banked),   // user half   (k=1.5 inside)
+  //   )
+  //   liveAgentScore_today = sumPoints(agentStars) [activeScore, LIVE prices]
+  //                          + agentDeparted.total  [Σ today's trades lockedPoints].
+  // Both added terms ARE the exact numbers the Phase-1 chips render (the same
+  // agentDeparted/userDeparted objects) → §9 identity by construction, no parallel
+  // source. Prior days' swaps ride once in priorBankedAgent (Checkpoint A1); same-
+  // day pending drops contribute 0 (the announced A3 residual). Every #572 guard is
+  // preserved: youOrbLive (training-only, activation-day/today-only, not-yet-banked,
+  // real battle), the NaN priorBankedAgent guard, and youRank ranks by youLiveScore
+  // (below) so the standing chip can't disagree with the orb. At close, dayBanked
+  // flips → youLiveScore null → the orb hands off to compositePoints (which counts
+  // the same swaps + dropped picks) with no jump.
+  const swapBanked = agentDeparted?.total ?? 0;
+  const droppedBanked = userDeparted?.total ?? 0;
+  const youLiveScore = youOrbLive
+    ? computeComposite(
+      priorBankedAgent + sumPoints(agentStars) + swapBanked,
+      sumPoints(userStars) + droppedBanked,
+    )
+    : null;
 
   // ── beats (REUSE deriveBeats; only YOUR stars are knowable — rivals sealed) ──
   const starStates = { you: userStars, agent: agentStars };
