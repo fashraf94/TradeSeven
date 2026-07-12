@@ -2,7 +2,7 @@
 //
 // LevelStory Session 2 fetch/normalize orchestrator. First BUILD script.
 //
-//   node 01-fetch-history.js                 # fetch the frozen 14-symbol probe
+//   node 01-fetch-history.js                 # fetch the frozen universe (11 equities + context; SPHB/SPLV daily-only, F4)
 //   node 01-fetch-history.js AAPL NVDA       # fetch an explicit symbol list
 //
 // Fetches (all disk-cached; never refetched):
@@ -34,8 +34,24 @@ const REPO_ROOT = path.resolve(HERE, '..', '..');
 const DATA_DIR = path.join(HERE, 'data');
 const NORM_DIR = path.join(DATA_DIR, 'normalized');
 
-const PROBE = [...CONFIG.universe.probe.equities, ...CONFIG.universe.probe.context];
-const EQUITIES = new Set(CONFIG.universe.probe.equities);
+const UNIVERSE_PATH = path.join(REPO_ROOT, CONFIG.universe.universeFilePath); // single source of truth (config key)
+const DAILY_ONLY = new Set(CONFIG.universe.dailyGrainOnly); // S3-R4 (F4): SPHB/SPLV — 5m never fetched or referenced
+
+// S4 §0b (F4 fetcher-scope): default scope is the FROZEN universe (study equities + context
+// symbols from universe_frozen.json), NOT the stale S2 14-symbol probe. PLTR/BE are included;
+// SPHB/SPLV are fetched daily-grain only (their 5m is skipped below). An explicit CLI list overrides.
+function resolveScope(cli) {
+  if (cli.length) return { list: cli, equities: new Set(cli.filter((s) => !DAILY_ONLY.has(s))), universeVersion: null };
+  if (fs.existsSync(UNIVERSE_PATH)) {
+    const uni = JSON.parse(fs.readFileSync(UNIVERSE_PATH, 'utf8'));
+    const equities = uni.symbols.map((s) => s.symbol); // 11 study subjects (incl. PLTR, BE)
+    const ctx = uni.contextSymbols || {};
+    const context = [...(ctx.market || []), ...(ctx.sectorETFs || []), ...(ctx.appetite || [])];
+    return { list: [...equities, ...context], equities: new Set(equities), universeVersion: uni.universeVersion };
+  }
+  // Degraded-checkout fallback (the frozen file is committed, so practically unreachable).
+  return { list: [...CONFIG.universe.probe.equities, ...CONFIG.universe.probe.context], equities: new Set(CONFIG.universe.probe.equities), universeVersion: null };
+}
 
 function tsStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
@@ -47,12 +63,13 @@ async function writeJson(p, obj) {
 }
 
 async function main() {
-  const symbols = process.argv.slice(2).filter(Boolean);
-  const list = symbols.length ? symbols : PROBE;
+  const cli = process.argv.slice(2).filter(Boolean);
+  const scope = resolveScope(cli);
+  const list = scope.list;
   const client = createClient();
   const startedAt = new Date().toISOString();
 
-  console.log(`LevelStory S2 fetch — ${list.length} symbol(s): ${list.join(', ')}`);
+  console.log(`LevelStory S2 fetch — ${list.length} symbol(s)${scope.universeVersion ? ` (frozen universe v${scope.universeVersion})` : ''}: ${list.join(', ')}`);
   console.log(`daily ${CONFIG.fetch.dailyFetchStart}→${CONFIG.range.studyEnd} | 5m ${CONFIG.fetch.intradayFetchStart}→${CONFIG.fetch.intradayFetchEnd}\n`);
 
   // ── January/EST DST proof fixture (AAPL 5m, Jan 2026) ──────────────────────
@@ -71,6 +88,18 @@ async function main() {
       const { bars: dailyBars, byDate } = normalizeDaily(rawDaily);
       symbolDaily.push({ symbol: sym, dailyBars });
       await writeJson(path.join(NORM_DIR, sym, 'daily.json'), dailyBars);
+
+      if (DAILY_ONLY.has(sym)) {
+        // S3-R4 (F4): SPHB/SPLV are daily-grain only — no 5m is fetched, no sessions.json is
+        // written, and they are excluded from the 5m cross-grain / auction test loops.
+        perSymbol[sym] = {
+          dailyBars: dailyBars.length,
+          preStudySessions: dailyBars.filter((b) => isoBefore(b.date, CONFIG.universe.eligibilityAsOf)).length,
+          fiveMinSessions: null, dailyGrainOnly: true,
+        };
+        process.stdout.write(`daily=${dailyBars.length} (daily-grain only — no 5m per F4)`);
+        continue;
+      }
 
       process.stdout.write(`5m (chunked)… `);
       const raw5m = await client.fetchIntradayRange(
@@ -109,7 +138,7 @@ async function main() {
   }
 
   // ── Earnings (bulk; probe equities) ────────────────────────────────────────
-  const eqs = list.filter((s) => EQUITIES.has(s));
+  const eqs = list.filter((s) => scope.equities.has(s));
   let earningsInfo = null;
   if (eqs.length) {
     console.log(`\n\nearnings (bulk): ${eqs.join(',')}`);

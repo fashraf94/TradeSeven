@@ -293,6 +293,8 @@ Session 3 added `levels.construction` — the deterministic conventions `02-buil
 | `manualReview.demoteBelowAgreementPct` | `80` | Addendum §A4.1 |
 | `sampleBudget.*` | 175 × 29 × 1.5 ≈ 7,600; checkpoint n=30 | parent §13 |
 | `report.viewsPerCohort` | `[pattern,context,comparative,validation]` | Addendum §A7 |
+| `diagnostics.anomalyScan.madMedianFloorFrac` | `0.05` | S4 §2.1 (diagnostics-only; gates `scanWarnings` MAD outliers, no artifact) |
+| `diagnostics.anomalyScan.crossStrataMinEvents` | `20` | S4 §2.2 (diagnostics-only; cross-strata correlations `insufficient` below this) |
 
 ---
 
@@ -300,3 +302,4 @@ Session 3 added `levels.construction` — the deterministic conventions `02-buil
 *Session-3 update (2026-07-12): S3-R1…S3-R5 transcribed (tod buckets, EOD fallback, half-day rule, SPHB/SPLV daily-only, sectorMap); `levels.construction` S3-C1…S3-C16 choice register added — see `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md`.*
 *Session-3.5 update (2026-07-12): `STUDY_CONFIG_VERSION = 2`. Unified distance scale (`levels.geometry`, load-asserted ordering) supersedes all fixed-percent geometry; tradability amendment; warmup replay; merge effective timing + operator table; role state machine; live-support rule. Choice register S35-C1…C9 — see `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3_5.md`.*
 *Session-3.5-b update (2026-07-12): `STUDY_CONFIG_VERSION = 3`. Founder-directed distanceUnit guard recalibration — `floorPct 0.5→0.26`, `capPct 1.5→2.7`, set from the measured `0.25×ATR%` distribution so each clamp binds ≤10% of symbol-sessions per symbol (was 49–96% floor / 64% cap on low-vol / COIN under v2). Amendment 7 / S35-C10; rework report §9.*
+*Session-4 update (2026-07-12): `STUDY_CONFIG_VERSION = 3` (unchanged). Added `diagnostics.anomalyScan` (MAD floor 0.05·|median|, cross-strata event floor 20) — diagnostics-only, gates no computed study value, so no version bump (S4 §2). Episode model built (`03-detect-events.js`, `lib/events.js`) reading `episode` / `crossLevelDedup` config as multiples of the clamped `u`. See `docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S4.md` (amendments 1–7, S4-C1…C10).*

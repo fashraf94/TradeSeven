@@ -647,6 +647,17 @@ const CONFIG = {
     checkpointMinN: 30, // parent §13 / §15: any primary cell < n=30 triggers a scope decision at Session-3 checkpoint
   },
 
+  // ── Diagnostics: anomaly-scan sensitivity guards (S4 §2) ───────────────────
+  // These gate ONLY the anomaly-scan warnings written to _stats.json / console — they
+  // touch no per-symbol level or event artifact, so provenance is unaffected and the
+  // config version stays 3 (no consumer of these values exists downstream — S4 §2).
+  diagnostics: {
+    anomalyScan: {
+      madMedianFloorFrac: 0.05, // S4 §2.1: a metric flags a MAD outlier only when MAD ≥ 5% of |median| (tight distributions can't produce a meaningful MAD)
+      crossStrataMinEvents: 20,  // S4 §2.2: cross-strata correlations reported 'insufficient' below this total event count across the universe
+    },
+  },
+
   // ── Report structure (Addendum §A7) ────────────────────────────────────────
   report: {
     viewsPerCohort: ['pattern', 'context', 'comparative', 'validation'], // Addendum §A7
