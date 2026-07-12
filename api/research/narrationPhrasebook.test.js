@@ -42,6 +42,11 @@ describe('narration phrasebook — banned lexicon', () => {
   it('exposes NO connectives — every sentence is a bare rendered frame (v1.3)', () => {
     expect(CONNECTIVES).toEqual([]);
   });
+
+  it('bans "held" so it can never return to a frame or rendering (v1.4)', () => {
+    expect(BANNED_LEXICON.some((b) => b.re.test('the read held together'))).toBe(true);
+    expect(APPROVED_PAST_VERBS).not.toContain('held');
+  });
 });
 
 describe('narration phrasebook — no future tense', () => {

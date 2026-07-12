@@ -7,7 +7,7 @@
 > sample span is bound to its own measurement window, and every number echoes the card it sits
 > beside (which defines the terms — so the register stays plain, not textbook).
 
-- phrasebookVersion: `1.3`  ·  promptVersion: `2`  ·  modelVersion: `google/gemma-4-26b-a4b-it`
+- phrasebookVersion: `1.4`  ·  promptVersion: `2`  ·  modelVersion: `google/gemma-4-26b-a4b-it`
 - Connectives: **none** — every sentence is a bare rendered frame (CONNECTIVES = []).
 
 _Optional ChatGPT pass before the flip: "Which of these frames could be read as predictive?"_
@@ -20,7 +20,7 @@ _Optional ChatGPT pass before the flip: "Which of these frames could be read as 
 ## Opening caveat — fragile read  `caveat_fragile`
 
 - **frag_a** — This was a fragile read across 480 sessions: the group-cohesion check did not hold and the broad-based check did not hold.
-- **frag_b** — The read held across 480 sessions but stayed fragile — the group-cohesion check did not hold and the broad-based check did not hold.
+- **frag_b** — This read stayed fragile across 480 sessions — the group-cohesion check did not hold and the broad-based check did not hold.
 
 ## Opening caveat — in flux  `caveat_in_flux`
 
@@ -29,14 +29,14 @@ _Optional ChatGPT pass before the flip: "Which of these frames could be read as 
 
 ## Proxy disclosure (driver is the market)  `proxy_disclosure`
 
-- **proxy_a** — 10Y Yield was effectively the market itself over the past 3 months, and no market-adjusted link applied.
-- **proxy_b** — 10Y Yield moved as the market itself over the past 3 months; the market-adjusted view did not apply.
+- **proxy_a** — 10Y Yield's daily moves overlapped closely with the market proxy over the past 3 months, so no market-adjusted link was reported.
+- **proxy_b** — 10Y Yield and the market proxy moved almost as one over the past 3 months, so no market-adjusted link was reported.
 
 ## Headline link  `headline_link`
 
 - **hl_raw** — The group moved with 10Y Yield over the past 3 months, a moderate link at +0.55.
 - **hl_raw_alt** — 10Y Yield and the group moved with each other over the past 3 months, a moderate link at +0.55.
-- **hl_raw_adj** — The group moved with 10Y Yield over the past 3 months, a moderate link at +0.55, and it held moderate at +0.38 after adjusting for the market.
+- **hl_raw_adj** — The group moved with 10Y Yield over the past 3 months, a moderate link at +0.55, and +0.38 after adjusting for the market — still moderate.
 - _(inverse-link reading)_ — The group moved against 10Y Yield over the past 3 months, a moderate link at -0.55.
 
 ## Supporting — elevated tension  `tension_elevated`
@@ -72,4 +72,4 @@ _Optional ChatGPT pass before the flip: "Which of these frames could be read as 
 ## Closing caveat  `closing_caveat`
 
 - **cc_a** — Each line above described only its stated window.
-- **cc_b** — Every line above held to its own stated window.
+- **cc_b** — Every line above stayed within its own stated window.

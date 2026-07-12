@@ -89,7 +89,7 @@ describe('conformance — adversarial reject (each MUST fail)', () => {
 
   it('3 negated disclosure → E_NO_VARIANT_MATCH', () => {
     const g = render(pProxy);
-    g.sentences[0].text = g.sentences[0].text.replace('was effectively the market itself', 'was not the market itself');
+    g.sentences[0].text = g.sentences[0].text.replace('overlapped closely with the market proxy', 'did not overlap with the market proxy');
     expect(validateNarration(g, pProxy)).toMatchObject({ valid: false, code: 'E_NO_VARIANT_MATCH', claimIndex: 0 });
   });
 

@@ -26,7 +26,7 @@
 // narration cache by construction — it is a docId component). promptVersion:
 // the render-instruction contract. modelVersion: pinned to gemmaClient's model
 // (asserted equal in the meta-test) so a model swap invalidates cached voice.
-export const PHRASEBOOK_VERSION = '1.3';
+export const PHRASEBOOK_VERSION = '1.4';
 export const PROMPT_VERSION = '2';
 export const MODEL_VERSION = 'google/gemma-4-26b-a4b-it';
 
@@ -45,13 +45,16 @@ export const BANNED_LEXICON = [
   { family: 'forward', re: /\b(will|'ll|gonna|going to|expects?|forecasts?|predicts?|projects?|projected|tomorrow|upcoming|imminent|soon|next\s+(?:week|month|session|day|quarter|year))\b/ },
   { family: 'advisory', re: /\b(buy|sell|trim|hedge|consider|overweight|underweight|recommend|recommends|allocate|position)\b/ },
   { family: 'certainty', re: /\b(significantly|significant|proven|guarantees?|guaranteed|always|never|definitely|certainly|inevitable|inevitably)\b/ },
+  // Retired phrasings (v1.4): "held" reads as an implied persistence/stability
+  // claim — banned so it can never return to a frame or a rendering.
+  { family: 'retired', re: /\bheld\b/ },
 ];
 
 // Every non-connective frame must contain at least one of these (the
 // no-present-tense-universal guard). Kept in sync with the frames below by the
 // structural meta-test.
 export const APPROVED_PAST_VERBS = [
-  'moved', 'held', 'tracked', 'was', 'were', 'ranked', 'ran', 'sat', 'split',
+  'moved', 'tracked', 'was', 'were', 'ranked', 'ran', 'sat', 'split',
   'described', 'stayed', 'measured', 'co-moved',
 ];
 
@@ -73,7 +76,7 @@ export const PHRASEBOOK = {
     slots: ['criterion', 'sampleSpan'],
     variants: [
       { id: 'frag_a', requires: ['criterion', 'sampleSpan'], template: 'This was a fragile read {sampleSpan}: {criterion}.' },
-      { id: 'frag_b', requires: ['criterion', 'sampleSpan'], template: 'The read held {sampleSpan} but stayed fragile — {criterion}.' },
+      { id: 'frag_b', requires: ['criterion', 'sampleSpan'], template: 'This read stayed fragile {sampleSpan} — {criterion}.' },
     ],
   },
   caveat_in_flux: {
@@ -89,10 +92,12 @@ export const PHRASEBOOK = {
 
   // ── Proxy disclosure (position 1, or 2 behind an in_flux caveat) ──
   proxy_disclosure: {
+    // Describes the mechanism (daily moves overlapping the market proxy), not an
+    // anthropomorphic "was the market itself".
     slots: ['name', 'sampleSpan'],
     variants: [
-      { id: 'proxy_a', requires: ['name', 'sampleSpan'], template: '{name} was effectively the market itself {sampleSpan}, and no market-adjusted link applied.' },
-      { id: 'proxy_b', requires: ['name', 'sampleSpan'], template: '{name} moved as the market itself {sampleSpan}; the market-adjusted view did not apply.' },
+      { id: 'proxy_a', requires: ['name', 'sampleSpan'], template: "{name}'s daily moves overlapped closely with the market proxy {sampleSpan}, so no market-adjusted link was reported." },
+      { id: 'proxy_b', requires: ['name', 'sampleSpan'], template: '{name} and the market proxy moved almost as one {sampleSpan}, so no market-adjusted link was reported.' },
     ],
   },
 
@@ -102,7 +107,7 @@ export const PHRASEBOOK = {
     variants: [
       { id: 'hl_raw', requires: ['name', 'direction', 'band', 'value', 'sampleSpan'], template: 'The group moved {direction} {name} {sampleSpan}, a {band} link at {value}.' },
       { id: 'hl_raw_alt', requires: ['name', 'direction', 'band', 'value', 'sampleSpan'], template: '{name} and the group moved {direction} each other {sampleSpan}, a {band} link at {value}.' },
-      { id: 'hl_raw_adj', requires: ['name', 'direction', 'band', 'value', 'sampleSpan', 'adjBand', 'adjValue'], template: 'The group moved {direction} {name} {sampleSpan}, a {band} link at {value}, and it held {adjBand} at {adjValue} after adjusting for the market.' },
+      { id: 'hl_raw_adj', requires: ['name', 'direction', 'band', 'value', 'sampleSpan', 'adjBand', 'adjValue'], template: 'The group moved {direction} {name} {sampleSpan}, a {band} link at {value}, and {adjValue} after adjusting for the market — still {adjBand}.' },
     ],
   },
 
@@ -170,7 +175,7 @@ export const PHRASEBOOK = {
     slots: [],
     variants: [
       { id: 'cc_a', requires: [], template: 'Each line above described only its stated window.' },
-      { id: 'cc_b', requires: [], template: 'Every line above held to its own stated window.' },
+      { id: 'cc_b', requires: [], template: 'Every line above stayed within its own stated window.' },
     ],
   },
 };
