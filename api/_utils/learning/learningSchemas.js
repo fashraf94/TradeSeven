@@ -60,6 +60,9 @@ export function makePredicateInputs(overrides = {}) {
 // inputs alone. NOT under predicateInputs, so collectNullFlags never scans it.
 export function makePredicateClassification(overrides = {}) {
   return {
+    // 'entry' (symbolIn — the D1 signal of record, M1–M3) | 'exit_context'
+    // (symbolOut — context only, NEVER an entry-extension signal).
+    role: null,
     d1ClassAsSpecced: null, // classifyD1 — current rule (null dR → UNSCORABLE)
     d1ClassDrAbstain: null, // classifyD1DrAbstain — proposed rule (null dR abstains)
     drNullReason: null, // present | blue_sky | ambiguous

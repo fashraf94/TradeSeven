@@ -209,6 +209,12 @@ describe('buildRawReceipt — predicate classification (outcome-blind)', () => {
     expect(r.predicateClassification.symbolOut.d1ClassAsSpecced).toBe('ROOM');
   });
 
+  it('marks the entry vs exit-context role as a first-class field (symbolIn=entry, symbolOut=exit_context)', () => {
+    const r = buildRawReceipt(validRaw());
+    expect(r.predicateClassification.symbolIn.role).toBe('entry');
+    expect(r.predicateClassification.symbolOut.role).toBe('exit_context');
+  });
+
   it('dR null + nearestSupport present → blue_sky; abstain diverges from as-specced', () => {
     const raw = validRaw({
       // pB extended, d52 neutral, dR MISSING but support present (blue sky).

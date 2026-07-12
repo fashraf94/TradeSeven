@@ -96,12 +96,19 @@ function collectNullFlags(predicateInputs) {
  * Build the per-symbol DERIVED, outcome-blind predicate classification: both D1
  * rule labels, the dR null-reason, and staleness/provenance. Reads only the raw
  * predicate inputs + this symbol's techDoc timestamp + the decision instant.
+ * @param {'entry'|'exit_context'} role  symbolIn is the entry (the D1 signal of
+ *   record for M1–M3); symbolOut is exit context only — never an entry signal.
  */
-function buildPredicateClassification(symbol, inputs, techDoc, decisionAtMs) {
+function buildPredicateClassification(symbol, inputs, techDoc, decisionAtMs, role) {
   const techDocUpdatedAtMs = toMillis(techDoc?.updatedAt);
+  // Raw diff, intentionally NOT clamped: it can be slightly NEGATIVE under
+  // clock skew (the doc's updatedAt is a Firestore server timestamp; decisionAtMs
+  // is the Vercel function's `new Date()`). Recording the raw value is honest —
+  // clamping would hide skew — but Part-3 staleness stats must expect negatives.
   const predicateStalenessMs =
     decisionAtMs !== null && techDocUpdatedAtMs !== null ? decisionAtMs - techDocUpdatedAtMs : null;
   return makePredicateClassification({
+    role: role ?? null,
     d1ClassAsSpecced: classifyD1(inputs).class,
     d1ClassDrAbstain: classifyD1DrAbstain(inputs).class,
     drNullReason: drNullReason({
@@ -118,8 +125,11 @@ function buildPredicateClassification(symbol, inputs, techDoc, decisionAtMs) {
 }
 
 /**
- * Assemble a RAW receipt from explicit raw inputs. PURE — no Firestore, no
- * derivation, no classification. Returns the receipt object (schema shape).
+ * Assemble the receipt from explicit raw inputs. PURE (no Firestore I/O) and
+ * OUTCOME-BLIND: it carries raw predicate inputs plus DETERMINISTIC classification
+ * annotations (D1 dual-rule labels, dR null-reason, staleness/provenance) computed
+ * from the predicate snapshot alone — never any outcome/return/estimator/scoring.
+ * Returns the receipt object (schema shape).
  */
 export function buildRawReceipt(raw = {}) {
   const predicateInputs = {
@@ -129,8 +139,9 @@ export function buildRawReceipt(raw = {}) {
 
   const decisionAtMs = toMillis(raw.timestamp);
   const predicateClassification = {
-    symbolIn: buildPredicateClassification(raw.symbolIn, predicateInputs.symbolIn, raw.techDocIn, decisionAtMs),
-    symbolOut: buildPredicateClassification(raw.symbolOut, predicateInputs.symbolOut, raw.techDocOut, decisionAtMs),
+    // symbolIn is the ENTRY (the D1 signal of record); symbolOut is exit CONTEXT.
+    symbolIn: buildPredicateClassification(raw.symbolIn, predicateInputs.symbolIn, raw.techDocIn, decisionAtMs, 'entry'),
+    symbolOut: buildPredicateClassification(raw.symbolOut, predicateInputs.symbolOut, raw.techDocOut, decisionAtMs, 'exit_context'),
   };
 
   return makeReceiptSkeleton({
