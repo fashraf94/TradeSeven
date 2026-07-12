@@ -236,7 +236,7 @@ async function main() {
     symbols = [...CONFIG.universe.probe.equities];
     console.log(`Scope: frozen universe file missing — S2 probe equities only (${symbols.length} symbols)`);
   }
-  console.log(`LevelStory events v${CONFIG.version} — zone anchor ± ${CONFIG.episode.zoneAtrMult}·u, close sep ≥ ${CONFIG.episode.closeSeparationAtr}·u, ≥ ${CONFIG.episode.closeMinSessionsOutside} session outside\n`);
+  console.log(`LevelStory events v${CONFIG.version} — zone anchor ± ${CONFIG.episode.zoneHalfWidthU}·u (=0.25·ATR), close sep ≥ ${CONFIG.episode.closeSeparationU}·u (=1.0·ATR), ≥ ${CONFIG.episode.closeMinSessionsOutside} session outside\n`);
 
   const allStats = [];
   const allEvents = [];

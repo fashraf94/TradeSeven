@@ -8,9 +8,31 @@
 // adjClose ≥ 101.25. Prices are the adjusted 5-min closes; the tight bar range (±0.02) keeps
 // adjClose the sole driver of intersect/separation.
 
+import CONFIG from '../config.js';
+
 function hhmm(etMinutes) {
   const h = Math.floor(etMinutes / 60), m = etMinutes % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+// Config-derived price landmarks for the episode geometry (S4.1). Fixtures reference these instead
+// of magic numbers, so they express the RELATIONSHIPS (inside / just-outside / separated by N×) and
+// stay correct under the corrected zoneHalfWidthU / closeSeparationU rather than silently breaking.
+export function geom(anchor = 100, unit = 1) {
+  const hw = CONFIG.episode.zoneHalfWidthU * unit;   // zone half-width
+  const sep = CONFIG.episode.closeSeparationU * unit; // separation to close
+  const zHi = anchor + hw, zLo = anchor - hw;
+  return {
+    hw, sep, zHi, zLo,
+    inside: anchor,                    // inside the zone
+    probeAbove: zHi + 0.1 * unit,      // just outside above — a probe exit (≪ sep, never closes)
+    sepShortAbove: zHi + 0.9 * sep,    // separated 0.9× (below the close threshold)
+    sepFullAbove: zHi + 1.0 * sep,     // separated exactly 1.0× (close-eligible)
+    sepBeyondAbove: zHi + 1.05 * sep,  // separated > 1.0×
+    aboveSeed: zHi + 0.5 * sep,        // clearly above the zone (approach-from-above seed)
+    belowSeed: zLo - 0.5 * sep,        // clearly below the zone (wrong side)
+    gapBelow: zLo - 0.75 * sep,        // gapped entirely below support
+  };
 }
 
 /** One regular 5-min bar centred on `price`. epoch is deterministic (Date.parse of the ISO label). */

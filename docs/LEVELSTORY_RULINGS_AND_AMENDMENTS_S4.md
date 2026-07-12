@@ -9,9 +9,9 @@
 
 ## §A — Spec amendments (founder-ruled, per the S4 prompt + approval additions A1–A5, R1)
 
-### Amendment 1 — Episode zone frame = family anchor ± 0.25·u (clamped distanceUnit)
+### Amendment 1 — Episode zone frame = family anchor ± (Nu·u) (clamped distanceUnit) — ⚠ multiples corrected by Amendment 8 (S4.1)
 
-Parent §6.1 wrote the episode zone as `anchor ± 0.25 × ATR(14, D−1)` (raw ATR). This is **superseded**: the zone is `anchor ± 0.25 × u`, where `u` is the clamped v3 `distanceUnit` (`lib/level-sources.js:distanceUnit`, read as `session.unit`), and the multiple `0.25` is read from `config.episode.zoneAtrMult` — never hardcoded. Rationale: S3.5 Amendment 5 unified the role-machine frame with the Session-4 episode zone (`config.js` roleMachine `zoneHalfWidthUnits` == `episode.zoneAtrMult`, both 0.25), so **roles and episode zones can never disagree** — they diverge under raw ATR exactly when the floor/cap clamp binds. Likewise the close-separation (`1.0·u`, `config.episode.closeSeparationAtr`) and cross-level-dedup proximity (`0.5·u`, `crossLevelDedup.intersectAtr`) are multiples of the clamped `u`, not raw ATR. Implemented `lib/events.js:episodeZone`.
+Parent §6.1 wrote the episode zone as `anchor ± 0.25 × ATR(14, D−1)` (raw ATR). This is **superseded**: the zone is `anchor ± zoneHalfWidthU × u`, where `u` is the clamped v3 `distanceUnit` (`lib/level-sources.js:distanceUnit`, read as `session.unit`) and the multiple is read from config — never hardcoded. The episode zone shares the **family anchor** (center) with the role machine (S3.5 Amendment 5), so roles and zones agree on *where the level is and which side*; the frame is anchor-based, resolving the raw-ATR divergence under a binding clamp. **⚠ The unit multiples this amendment shipped were wrong (4× too tight) and are corrected by Amendment 8 (S4.1):** `zoneHalfWidthU 0.25→1.0`, `closeSeparationU 1.0→4.0`, `dedupIntersectU 0.5→2.0`; the keys were renamed off `*Atr`. The zone WIDTH is now decoupled from the role zone (episode 1.0·u vs role 0.25·u). Implemented `lib/events.js:episodeZone`.
 
 ### Amendment 2 — Point-in-time anchor via a single-source stamp; `anchorAsOfD` reads strictly < D (A4)
 
@@ -48,6 +48,24 @@ Two guards added to `02-build-levels.js:scanWarnings`, thresholds in `config.dia
 ### Merge / retire attribution (S4 §3.4)
 An episode in flight when its family is absorbed transfers to the survivor; the single event is re-attributed (`levelFamilyId = survivorId`) — no duplicate. If both survivor and absorbed hold open episodes at the merge, the survivor's continues and the absorbed's open episode is dropped (survivor wins, per the S3.5 s4Hooks operator). An episode in flight when its family retires closes with disposition `RETIRED_MIDEPISODE`. Both `GAP_BREAK` and `RETIRED_MIDEPISODE` are recorded but **excluded from the touch base-rate set**. Tested `tests/21`.
 
+### Amendment 8 — Episode geometry unit correction (S4.1)
+
+**The defect (calibration, not logic).** The S4 founder prompt §3.2 restated the Addendum's episode thresholds — specified in **ATR** — as multiples of `u` **without converting the unit**. Since `u = clamp(0.25·ATR, floor, cap) ≈ 0.25·ATR`, every episode threshold shipped **4× too tight**: zone half-width `0.25·u ≈ 0.0625 ATR` (spec 0.25 ATR), close separation `1.0·u ≈ 0.25 ATR` (spec 1.0 ATR), dedup radius `0.5·u ≈ 0.125 ATR` (spec 0.5 ATR). The engine and its 14 tests were correct; only the constants were wrong. (Origin is the founder-side prompt, not the build.)
+
+**The correction** (config stays v3 — no downstream consumer of these values exists):
+
+| Threshold | Addendum (ATR) | S4 shipped | S4.1 corrected | Key rename |
+|---|---|---|---|---|
+| Zone half-width | 0.25 ATR | 0.25·u | **1.0·u** | `zoneAtrMult` → `zoneHalfWidthU` |
+| Episode-close separation | 1.0 ATR | 1.0·u | **4.0·u** | `closeSeparationAtr` → `closeSeparationU` |
+| Cross-level dedup radius | 0.5 ATR | 0.5·u | **2.0·u** | `crossLevelDedup.intersectAtr` → `dedupIntersectU` |
+
+Keys renamed off `*Atr` so the unit can never be misread again; each carries its ATR-equivalent comment. All read from config; **no hardcoded literal in `lib/events.js`**. Regression guard `tests/25` asserts each threshold's ATR equivalent (`thresholdU · atrMultiple` = 0.25 / 1.0 / 0.5), so a future `u` redefinition or a revert to the S4 values fails immediately.
+
+**Role-flip decoupling (§2b).** Widening the episode zone must NOT drag the role-flip threshold, whose flip rate (~2.3 / 100 matched-family sessions) was measured and accepted at 0.5·u (S3.5). The two are already structurally independent — the role machine reads `levels.lineage.roleMachine.{zoneHalfWidthUnits 0.25, flipBeyondOppositeBoundaryUnits 0.25}` (sum 0.5·u), the episode engine reads `config.episode.*` — and this session touches neither `roleMachine.*` nor `lib/lineage.js`, so **flip rates are unchanged by construction** (grep confirms the only readers of the renamed keys are `config.js`, `lib/events.js`, and the `03` banner). `tests/25` asserts the role zone (0.25·u) ≠ the episode zone (1.0·u) — the decoupling. The role machine does not move this session.
+
+**Consequence.** The episode budget the S4 run reported (26.35 events/symbol/month vs the §13 assumption of 1–2; `shad=0` on 10/11 symbols — zones too small for dedup to ever fire) was the loose-filter artifact. The corrected constants widen zones 4× and raise the close threshold 4×, so events fall substantially, episodes lengthen, and dedup becomes live. The corrected §7 checkpoint is the real input to the universe-expansion decision (§D).
+
 ---
 
 ## §R — Recorded accepted consequences (no code change)
@@ -70,7 +88,10 @@ The event-budget checkpoint (parent §13/§15; floor **n ≥ 30** per side per p
 
 | # | Choice | Value | Where |
 |---|---|---|---|
-| S4-C1 | episode zone frame | family anchor ± 0.25·u (clamped distanceUnit, NOT raw ATR) | `lib/events.js:episodeZone`; `config.episode.zoneAtrMult` |
+| S4-C1 | episode zone frame | family anchor ± `zoneHalfWidthU`·u = **1.0·u = 0.25·ATR** (S4.1 corrected from 0.25·u); clamped distanceUnit, NOT raw ATR | `lib/events.js:episodeZone`; `config.episode.zoneHalfWidthU` |
+| S4-C11 | episode close separation | `closeSeparationU`·u = **4.0·u = 1.0·ATR** (S4.1 corrected from 1.0·u) | `config.episode.closeSeparationU` |
+| S4-C12 | cross-level dedup radius | `dedupIntersectU`·u = **2.0·u = 0.5·ATR** (S4.1 corrected from 0.5·u) | `config.episode.crossLevelDedup.dedupIntersectU` |
+| S4-C13 | role-flip threshold | **0.5·u, decoupled** from the episode zone (role machine unchanged) | `config.levels.lineage.roleMachine`; `tests/25` |
 | S4-C2 | point-in-time anchor | `familyAnchor` stamp; `anchorAsOfD` reads strictly < D | `02-build-levels.js:stepOneDay`; `lib/events.js:anchorAsOfD` |
 | S4-C3 | approach side | most recent regular 5m close strictly before the touch bar; opens-inside → prior session close | `lib/events.js` (approachPos) |
 | S4-C4 | close condition | separation ≥ 1.0·u AND ≥ 1 full session fully outside; per-excursion max separation | `lib/events.js`; `config.episode` |
@@ -82,3 +103,4 @@ The event-budget checkpoint (parent §13/§15; floor **n ≥ 30** per side per p
 | S4-C10 | cross-strata event floor | correlations `insufficient` when total events < 20 (diagnostics-only, v3) | `config.diagnostics.anomalyScan`; `02-build-levels.js:scanWarnings` |
 
 *Recorded 2026-07-12 — LevelStory Session 4.*
+*Amended 2026-07-12 — LevelStory Session 4.1 (Amendment 8): episode geometry unit correction (thresholds were 4× too tight); key renames off `*Atr`; role-flip decoupling; regression guard `tests/25`. See `docs/discovery/SESSION4_1_GEOMETRY_CORRECTION_REPORT.md`.*

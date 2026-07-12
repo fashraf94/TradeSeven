@@ -1,10 +1,12 @@
 // Session-4 tests 11–13 + A4 — eligibility, warmup, cross-level dedup, point-in-time anchor.
+// Geometry is config-derived (S4.1) via geom().
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectEvents } from '../lib/events.js';
-import { session5m, fiveMinMap, mkFamily, snap, regSession, mkRegistry } from './_synthetic-intraday.js';
+import { session5m, fiveMinMap, mkFamily, snap, regSession, mkRegistry, geom } from './_synthetic-intraday.js';
 
 const SYM = 'TST';
+const g = geom(100, 1);
 
 // Map snapshotId -> firstTradableDate across a registry (integrity cross-check for test 11).
 function firstTradableById(registry) {
@@ -23,8 +25,8 @@ test('11 — no event references a level with firstTradableDate > eventDate', ()
   ];
   const registry = mkRegistry(SYM, [fam], sessions, {});
   const fiveMinByDate = fiveMinMap([
-    session5m('2023-07-10', [101, 100.0, 100.0]), // premature touch — suppressed
-    session5m('2023-07-14', [101, 100.0]),        // now tradable → event
+    session5m('2023-07-10', [g.aboveSeed, g.inside, g.inside]), // premature touch — suppressed
+    session5m('2023-07-14', [g.aboveSeed, g.inside]),           // now tradable → event
   ]);
   const r = detectEvents({ symbol: SYM, registry, fiveMinByDate });
   assert.equal(r.events.length, 1, 'the premature touch is suppressed; the tradable one fires');
@@ -42,8 +44,8 @@ test('12 — no event falls on a warmup session', () => {
   ];
   const registry = mkRegistry(SYM, [fam], sessions, { studyStart: '2023-07-10' });
   const fiveMinByDate = fiveMinMap([
-    session5m('2023-07-07', [101, 100.0, 100.0]), // a touch on a warmup day — must not fire
-    session5m('2023-07-10', [101, 100.0]),        // study-window touch → event
+    session5m('2023-07-07', [g.aboveSeed, g.inside, g.inside]), // a touch on a warmup day — must not fire
+    session5m('2023-07-10', [g.aboveSeed, g.inside]),           // study-window touch → event
   ]);
   const r = detectEvents({ symbol: SYM, registry, fiveMinByDate, studyStart: '2023-07-10' });
   assert.equal(r.events.length, 1);
@@ -53,7 +55,7 @@ test('12 — no event falls on a warmup session', () => {
 
 test('13 — cross-level dedup: tier → nearest → elder; shadowed family’s episode still advances', () => {
   const A = 'TST_fam000001'; // anchor 100.0, tier F1 (lower)
-  const B = 'TST_fam000002'; // anchor 100.2, tier F2 (higher) — within 0.5·u of A
+  const B = 'TST_fam000002'; // anchor 100.2, tier F2 (higher) — within dedupIntersectU·u of A
   const famA = mkFamily(A, { anchor: 100.0, roleState: 'support' });
   const famB = mkFamily(B, { anchor: 100.2, roleState: 'support' });
   const sessions = [regSession('2023-07-10', [
@@ -61,8 +63,8 @@ test('13 — cross-level dedup: tier → nearest → elder; shadowed family’s 
     snap(B, '2023-07-10', { anchor: 100.2, centroid: 100.2, tier: 'F2' }),
   ], { unit: 1 })];
   const registry = mkRegistry(SYM, [famA, famB], sessions, {});
-  // 100.1 enters BOTH zones (A [99.75,100.25], B [99.95,100.45]); exit above; re-enter.
-  const fiveMinByDate = fiveMinMap([session5m('2023-07-10', [101, 100.1, 100.7, 100.1])]);
+  // 100.1 enters BOTH zones (A [99,101], B [99.2,101.2]); exit above both (104); re-enter.
+  const fiveMinByDate = fiveMinMap([session5m('2023-07-10', [104, 100.1, 104, 100.1])]);
   const r = detectEvents({ symbol: SYM, registry, fiveMinByDate });
   assert.equal(r.events.length, 1, 'a simultaneous double-touch yields ONE event');
   assert.equal(r.events[0].levelFamilyId, B, 'higher tier (F2) wins the touch');
@@ -80,11 +82,11 @@ test('A4 — the zone at D uses the prior anchor stamp (anchorAsOfD reads strict
   ];
   const registry = mkRegistry(SYM, [fam], sessions, {});
   const fiveMinByDate = fiveMinMap([
-    session5m('2023-07-10', [101, 101, 101]),   // no touch; just sets the prior close above
-    session5m('2023-07-11', [101, 100.0]),      // touches the zone centred on the PRIOR anchor (100), not 105
+    session5m('2023-07-10', [g.aboveSeed, g.aboveSeed, g.aboveSeed]), // no touch; just sets the prior close above
+    session5m('2023-07-11', [g.aboveSeed, g.inside]),                 // touches the zone centred on the PRIOR anchor (100), not 105
   ]);
   const r = detectEvents({ symbol: SYM, registry, fiveMinByDate });
-  assert.equal(r.events.length, 1, 'the touch lands on the prior-anchor zone (had D used its own 105 stamp, 100.0 would miss)');
-  assert.ok(Math.abs(r.events[0].zoneLow - 99.75) < 1e-9 && Math.abs(r.events[0].zoneHigh - 100.25) < 1e-9,
-    `zone is anchored on the prior stamp: [${r.events[0].zoneLow}, ${r.events[0].zoneHigh}]`);
+  assert.equal(r.events.length, 1, 'the touch lands on the prior-anchor zone (had D used its own 105 stamp, 100 would miss)');
+  assert.ok(Math.abs(r.events[0].zoneLow - g.zLo) < 1e-9 && Math.abs(r.events[0].zoneHigh - g.zHi) < 1e-9,
+    `zone is anchored on the prior stamp: [${r.events[0].zoneLow}, ${r.events[0].zoneHigh}] (expect [${g.zLo}, ${g.zHi}])`);
 });

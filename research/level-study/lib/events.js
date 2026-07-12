@@ -20,10 +20,12 @@
 import CONFIG from '../config.js';
 
 const EP = CONFIG.episode;
-const ZONE_UNITS = EP.zoneAtrMult;              // 0.25 — half-width in distance units (== roleMachine.zoneHalfWidthUnits)
-const SEP_UNITS = EP.closeSeparationAtr;         // 1.0  — separation to close (× u, NOT raw ATR — S4 §3.2)
-const MIN_OUT = EP.closeMinSessionsOutside;      // 1    — full sessions fully outside to close
-const DEDUP_U = EP.crossLevelDedup.intersectAtr; // 0.5  — cross-level dedup proximity (× u)
+// S4.1: episode thresholds are multiples of the clamped distanceUnit u (NOT raw ATR); their ATR
+// equivalents (0.25 / 1.0 / 0.5 ATR, Addendum §6.1/§6.2) are asserted in tests/25. No literals here.
+const ZONE_UNITS = EP.zoneHalfWidthU;               // 1.0 → half-width 1.0·u = 0.25·ATR
+const SEP_UNITS = EP.closeSeparationU;              // 4.0 → separation 4.0·u = 1.0·ATR
+const MIN_OUT = EP.closeMinSessionsOutside;         // 1   → full sessions fully outside to close
+const DEDUP_U = EP.crossLevelDedup.dedupIntersectU; // 2.0 → dedup radius 2.0·u = 0.5·ATR
 const TIER_RANK = { F1: 1, F2: 2, F3: 3 };       // dedup: highest family tier wins
 const CA_ADJ = (CONFIG.adjustment && CONFIG.adjustment.corporateActionAdjacentSessions) || 2;
 const SECTOR_MAP = CONFIG.universe.sectorMap || {};

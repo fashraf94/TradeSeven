@@ -381,11 +381,16 @@ const CONFIG = {
   },
 
   // ── Stage 2: Event detection / episodes (parent §6) ────────────────────────
+  // GEOMETRY UNIT (S4.1 correction): the Addendum §6.1/§6.2 thresholds are specified in ATR, but
+  // the distanceUnit u = clamp(0.25·ATR, floor, cap) ≈ 0.25·ATR (unclamped). Episode thresholds are
+  // stored here as multiples of u (key suffix `U`), NOT of ATR. S4's `*Atr` names read the ATR
+  // values as u-multiples without converting → every threshold shipped 4× too tight (0.25·u ≈
+  // 0.0625 ATR ≠ 0.25 ATR). Each key below records its ATR equivalent; tests/25 asserts it.
   episode: {
-    zoneAtrMult: 0.25,        // parent §6.1: zone = family anchor ± 0.25 × ATR(14, daily, D−1)
-    atr: { period: 14, grain: 'daily', asOf: 'D-1' }, // parent §6.1
+    zoneHalfWidthU: 1.0,      // ×u = 0.25·ATR (Addendum §6.1 zone half-width). S4.1: was zoneAtrMult 0.25 (4× too tight)
+    atr: { period: 14, grain: 'daily', asOf: 'D-1' }, // parent §6.1 (drives ATR(14) → distanceUnit)
     open: { fromOutside: true, supportFromAbove: true, resistanceFromBelow: true }, // parent §6.1
-    closeSeparationAtr: 1.0,  // parent §6.1: separate ≥1.0 ATR from zone boundary
+    closeSeparationU: 4.0,    // ×u = 1.0·ATR (Addendum §6.1 episode-close separation). S4.1: was closeSeparationAtr 1.0 (4× too tight)
     closeMinSessionsOutside: 1, // parent §6.1: remain outside ≥1 full session
     freshApproachRequired: true, // parent §6.1
     timeOnlyRearm: false,        // parent §6.1: time alone never re-arms
@@ -393,10 +398,14 @@ const CONFIG = {
     touchAt: 'first 5-min bar of zone entry within episode', // parent §3.1/§6.1
     gapThroughDisposition: 'GAP_BREAK', // parent §6.1: gap through zone without trading in it
     crossLevelDedup: { // parent §6.2
-      intersectAtr: 0.5, // anchors within 0.5 ATR not merged by lineage
+      dedupIntersectU: 2.0, // ×u = 0.5·ATR (Addendum §6.2 dedup radius). S4.1: was intersectAtr 0.5 (4× too tight)
       assignOrder: ['highest_family_tier', 'nearest_anchor', 'elder_family'], // parent §6.2
       recordShadowed: true, // losing zones recorded as shadowedFamilyIds; their episode state still advances
     },
+    // The role-flip threshold (0.5·u total) is DECOUPLED and lives in levels.lineage.roleMachine
+    // (zoneHalfWidthUnits 0.25 + flipBeyondOppositeBoundaryUnits 0.25). It must NOT track this zone
+    // (S4.1 §2b): its flip rate was measured and accepted at 0.5·u, and the role machine does not
+    // move this session. episode zone and role zone share the family ANCHOR (center), not the width.
   },
 
   // ── Stage 3: Hourly confirmation taxonomy (parent §7) ──────────────────────
