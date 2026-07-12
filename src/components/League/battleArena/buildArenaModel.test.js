@@ -6,6 +6,7 @@
 // dependency-surface guard (BUILD_RULES §4 — never mocked): it proves the whole
 // bridge graph stays node-clean and the scorer is reached, not copied.
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
 import { buildArenaModel, liveDayIdx, buildAskChips } from './buildArenaModel';
 import { buildFlat6BattleModel } from '../../../utils/flat6BattleEnrichment';
@@ -378,13 +379,14 @@ describe('buildArenaModel — orb swap/drop-accurate (Phase 2)', () => {
     expect(withPending.youLiveScore).toBeCloseTo(noDrop.youLiveScore, 6); // the pending leg moves nothing
   });
 
-  it('§9 badge-zero guard: warns (dev) iff a live doc carries non-zero bankedBadgePoints', () => {
+  it('§9 badge-zero guard: warns ONCE per battle (dev) when a live doc carries non-zero bankedBadgePoints', () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     buildArenaModel(liveArgs()); // normal fixture: badges absent/0 → no warn
     expect(spy).not.toHaveBeenCalled();
-    const battle = { ...TODAY_BATTLE, scoreState: { currentScore: 0, bankedBadgePoints: { total: 7 } } };
-    buildArenaModel(liveArgs({ battle })); // non-zero live badges → the invariant is loud, not silent
-    expect(spy).toHaveBeenCalledTimes(1);
+    const battle = { ...TODAY_BATTLE, id: 'badge-leak-1', scoreState: { currentScore: 0, bankedBadgePoints: { total: 7 } } };
+    buildArenaModel(liveArgs({ battle }));
+    buildArenaModel(liveArgs({ battle })); // same battle id, next price tick → deduped, not re-warned
+    expect(spy).toHaveBeenCalledTimes(1); // once per battle, never every tick
     expect(String(spy.mock.calls[0][0])).toMatch(/bankedBadgePoints/);
     spy.mockRestore();
   });
@@ -397,6 +399,29 @@ describe('buildArenaModel — orb swap/drop-accurate (Phase 2)', () => {
     expect(m.youLiveScore).toBeNull();      // ranked orb stays banked
     expect(m.agentDeparted).toBeNull();
     expect(m.userDeparted).toBeNull();
+  });
+});
+
+describe('fence tripwire — the orb agent-half depends on fresh daily docs (fullday mode)', () => {
+  // agentBattleService.js is FENCED/read-only — this is a SOURCE-TEXT tripwire (the
+  // decide.js/buildThresholds precedent in tournamentUserScoring.test.js), NOT an
+  // edit. AGENT_BATTLE_DURATION_MODE is module-private, so we pin it by text.
+  const battleServiceSource = readFileSync(
+    new URL('../../../../api/_utils/agentBattleService.js', import.meta.url), 'utf8',
+  );
+
+  it("AGENT_BATTLE_DURATION_MODE === 'fullday' — buildArenaModel's no-double-count + badge-zero properties depend on it", () => {
+    // buildArenaModel's agent half adds priorBankedAgent (cumulative week-to-date)
+    // + Σ TODAY's trades[].lockedPoints and DELIBERATELY OMITS bankedBadgePoints —
+    // BOTH correct ONLY because each pod-day is a fresh SINGLE-day battle doc:
+    //   • trades[] is today-only → no double-count with priorBankedAgent (Checkpoint A1),
+    //   • the doc completes before the badge cron → bankedBadgePoints is 0 live (A4).
+    // If this mode flips to a multi-day/persistent doc, trades accumulate across days
+    // (→ double-count) and badges bank into a LIVE doc (→ agent-half under-count).
+    // buildArenaModel's agent half (swapBanked add + the badge-zero omission) MUST be
+    // fixed BEFORE this line changes. If this assertion fails, do not just update it —
+    // fix the orb first.
+    expect(battleServiceSource).toContain("const AGENT_BATTLE_DURATION_MODE = 'fullday'");
   });
 });
 

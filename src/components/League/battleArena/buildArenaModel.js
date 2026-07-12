@@ -57,6 +57,13 @@ export function buildAskChips(youRank) {
 // node-clean for its test — the same discipline leagueAdapter documents.
 const YOU_COLOR = '#5EEAD4';
 
+// DEV-ONLY diagnostic state: battle ids already warned by the §9 badge-zero
+// tripwire, so it fires ONCE per battle instead of every price tick (a warning
+// that fires constantly gets tuned out). Confined to the DEV console.warn path —
+// it never gates the RETURN value, so the transform stays referentially
+// transparent w.r.t. its output.
+const _warnedBadgeLeakBattles = new Set();
+
 /** The last banked day index of a climb series (awaiting/empty → 0). */
 export function liveDayIdx(climb) {
   let maxLen = 0;
@@ -252,7 +259,11 @@ export function buildArenaModel({
   // third departed source) BEFORE being added to the orb — never silently folded.
   const liveBadgeTotal = battle?.scoreState?.bankedBadgePoints?.total;
   if (youOrbLive && Number.isFinite(liveBadgeTotal) && liveBadgeTotal !== 0 && import.meta.env?.DEV) {
-    console.warn(`[buildArenaModel] live bankedBadgePoints=${liveBadgeTotal} ≠ 0 — the orb agent-term omits it (Checkpoint A4). Surface it in the arena before adding to the orb, or the agent half will under-count vs the banked close.`);
+    const badgeKey = battle?.id ?? 'unknown';
+    if (!_warnedBadgeLeakBattles.has(badgeKey)) {
+      _warnedBadgeLeakBattles.add(badgeKey);
+      console.warn(`[buildArenaModel] live bankedBadgePoints=${liveBadgeTotal} ≠ 0 on battle ${badgeKey} — the orb agent-term omits it (Checkpoint A4). Surface it in the arena before adding to the orb, or the agent half will under-count vs the banked close. (This assumes fullday daily docs — see the AGENT_BATTLE_DURATION_MODE tripwire test.)`);
+    }
   }
 
   // ── live YOUR-seat composite (Branch 1 — Phase 2: swap/drop-accurate) ──
@@ -269,8 +280,14 @@ export function buildArenaModel({
   // preserved: youOrbLive (training-only, activation-day/today-only, not-yet-banked,
   // real battle), the NaN priorBankedAgent guard, and youRank ranks by youLiveScore
   // (below) so the standing chip can't disagree with the orb. At close, dayBanked
-  // flips → youLiveScore null → the orb hands off to compositePoints (which counts
-  // the same swaps + dropped picks) with no jump.
+  // flips → youLiveScore null → the orb hands off to compositePoints. The DEPARTED
+  // points hand off with NO jump — swaps are fixed lockedPoints, dropped picks use
+  // their stored bankedScore (leg.bankedScore, banking-computed). Two PRE-EXISTING
+  // #572 residuals remain on HELD picks only and are NOT introduced/removed here:
+  // (a) the live preview ATR (2.5/5.0) vs the nightly percentile ATR banking uses
+  // ((atrPercentile||0.5)×8) — a basis delta; (b) the last live-tick price vs the
+  // official close print — trivial convergence. So "no settle-step" is exact for the
+  // departed points; the held-pick ATR delta is a separate, documented residual.
   const swapBanked = agentDeparted?.total ?? 0;
   const droppedBanked = userDeparted?.total ?? 0;
   const youLiveScore = youOrbLive
