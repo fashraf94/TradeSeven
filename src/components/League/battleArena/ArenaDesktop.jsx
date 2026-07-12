@@ -14,7 +14,7 @@ import React from 'react';
 import { ArenaTopStrip, BeatCaption } from './ArenaPrimitives';
 import { ClimbArena } from './ClimbArena';
 import { DockAgentSix, DockYourThree, DockStatePanel } from './CommandDock';
-import { FreeAgencyDoorway, OpponentSnapshot, FilmRoomOverlay } from './ArenaOverlays';
+import { FreeAgencyDoorway, OpponentSnapshot, FilmRoomOverlay, DepartedLedger } from './ArenaOverlays';
 import { useArenaEngine } from './useArenaEngine';
 import { frameDayIdx } from './arenaStateMap';
 import { liveDayIdx } from './buildArenaModel';
@@ -48,7 +48,8 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
   const [opp, setOpp] = React.useState(null);
   const [filmOpen, setFilmOpen] = React.useState(false);
   const [faOpen, setFaOpen] = React.useState(false);
-  React.useEffect(() => { setOpp(null); setFilmOpen(false); setFaOpen(false); }, [state, mode]);
+  const [departedView, setDepartedView] = React.useState(null); // 'swap' | 'drop' | null
+  React.useEffect(() => { setOpp(null); setFilmOpen(false); setFaOpen(false); setDepartedView(null); }, [state, mode]);
 
   const lastIdx = data ? liveDayIdx(D.climb) : frameDayIdx(state);
   const youRank = D.youRank;
@@ -76,9 +77,11 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
       {/* THE COMMAND DOCK — your stars, always in reach */}
       <div style={{ height: DOCK_H, marginTop: 11, display: 'flex', gap: 12, minHeight: 0 }}>
         <DockAgentSix stars={D.agentStars} dormant={calm} complete={done} beatStar={live ? eng.beatStar : null}
-          flareKey={live ? eng.flareKey : 0} headline={headline} move={D.agentMove} style={{ flex: 1.35 }} />
+          flareKey={live ? eng.flareKey : 0} headline={headline} move={D.agentMove} departed={D.agentDeparted}
+          onOpenDeparted={() => setDepartedView('swap')} style={{ flex: 1.35 }} />
         <DockYourThree stars={D.userStars} dormant={calm} complete={done} state={state} wire={D.wire} wireClock={eng.wireClock}
-          beatStar={live ? eng.beatStar : null} onFlip={handlers?.onFlip} onFlipDrama={eng.flip} onClaim={() => setFaOpen(true)} headline={headline} style={{ flex: 1.3 }} />
+          beatStar={live ? eng.beatStar : null} onFlip={handlers?.onFlip} onFlipDrama={eng.flip} onClaim={() => setFaOpen(true)} headline={headline}
+          departed={D.userDeparted} onOpenDeparted={() => setDepartedView('drop')} style={{ flex: 1.3 }} />
         <DockStatePanel state={state} mode={mode} eng={eng} archName={D.voice.arch} voice={D.voice} pod={D.pod}
           ask={D.ask} youRank={youRank} onFilm={() => setFilmOpen(true)} style={{ flex: 1.02 }} />
       </div>
@@ -86,6 +89,9 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
       {done && filmOpen && <FilmRoomOverlay onClose={() => setFilmOpen(false)} />}
       {faOpen && <FreeAgencyDoorway onClose={() => setFaOpen(false)} claim={data ? D.claim : null} onClaim={handlers?.onClaim} />}
       {oppSeat && <OpponentSnapshot seat={oppSeat} composite={D.climb[opp]?.[lastIdx] ?? 0} onClose={() => setOpp(null)} />}
+      {departedView && (
+        <DepartedLedger kind={departedView} departed={departedView === 'swap' ? D.agentDeparted : D.userDeparted} onClose={() => setDepartedView(null)} />
+      )}
     </div>
   );
 }

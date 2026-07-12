@@ -16,8 +16,9 @@
 import React from 'react';
 import { Mono, Eyebrow, LIcon, Icon } from '../LeagueParts';
 import { LTOKENS, alpha, MONO } from '../leagueTokens';
+import { fmtPoints } from '../../../utils/leagueFormat';
 import { ArenaCount } from './ArenaPrimitives';
-import { OWN_AGENT } from './arenaTheme';
+import { OWN_AGENT, OWN_YOU, ST_GOOD, ST_BAD } from './arenaTheme';
 import { prefersReducedMotion } from './arenaEngineCore';
 
 // a centred modal frame with a dimmed, click-to-close backdrop. `maxWidth`
@@ -170,6 +171,96 @@ export function OpponentSnapshot({ seat, composite, onClose, maxWidth, fixed = f
           A sealed snapshot — <b style={{ color: LTOKENS.ink }}>what</b> {seat.name} is climbing, not why. Their six-stock book, their three picks, their points and their agent&rsquo;s reasoning stay <b style={{ color: LTOKENS.ink }}>sealed until the battle completes</b> — then the Film Room opens.
         </div>
       </div>
+    </AFocus>
+  );
+}
+
+// The DEPARTED-POINTS ledger — the item breakdown behind a DepartedChip. A
+// SETTLED, past-tense list of banked points that have left the live star grid
+// but the banked close still counts:
+//   • kind 'swap' — the agent's subbed-out positions (symbolOut → symbolIn, each
+//     with its locked exit points).
+//   • kind 'drop' — your dropped picks (each with its banked points). A SAME-DAY
+//     drop's final leg banks post-close, so it shows as "banks at close" with NO
+//     number (honest absence, never a fake 0) — bounded to the drop day.
+// Display-only; every number here is already earned. Reuses the AFocus modal.
+export function DepartedLedger({ kind, departed, onClose, maxWidth, fixed = false }) {
+  const isSwap = kind === 'swap';
+  const c = isSwap ? OWN_AGENT : OWN_YOU;
+  const items = departed?.items || [];
+  const total = departed?.total || 0;
+  const pendingCount = departed?.pendingCount || 0;
+  const tintOf = (v) => (v > 0 ? ST_GOOD : v < 0 ? ST_BAD : LTOKENS.ink2);
+  const rowBase = { display: 'flex', alignItems: 'center', gap: 9, padding: '9px 11px', borderRadius: 10,
+    background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` };
+  return (
+    <AFocus onClose={onClose} width={400} maxWidth={maxWidth} fixed={fixed}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: alpha(c, 0.12), border: `1px solid ${alpha(c, 0.34)}` }}>
+          <LIcon name={isSwap ? 'scissors' : 'flag'} size={19} color={c} stroke={2} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Eyebrow color={c}>{isSwap ? 'Banked from swaps' : 'Dropped picks · banked'}</Eyebrow>
+          <div style={{ fontSize: 16, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', marginTop: 3 }}>
+            {isSwap ? 'Positions your agent subbed out' : 'Picks you dropped'}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <ArenaCount value={total} size={20} showSign />
+          <Mono style={{ fontSize: 8, color: LTOKENS.ink3, display: 'block', marginTop: 2, letterSpacing: '0.1em' }}>BANKED</Mono>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11.5, color: LTOKENS.ink2, lineHeight: 1.55, marginBottom: 14 }}>
+        These points are <b style={{ color: LTOKENS.ink }}>earned and no longer moving</b> — settled into your standing.{' '}
+        {isSwap
+          ? 'Each swap locked its exit when the agent subbed the name out.'
+          : 'A dropped pick keeps its banked points — the standing never forgets them.'}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {items.map((it, i) => {
+          if (isSwap) {
+            return (
+              <div key={`${it.out}-${it.in}-${i}`} style={rowBase}>
+                <LIcon name="scissors" size={13} color={LTOKENS.ink3} stroke={2} />
+                <Mono style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: LTOKENS.ink2 }}>
+                  <span style={{ color: LTOKENS.ink3, textDecoration: 'line-through' }}>{it.out ?? '—'}</span>
+                  <span style={{ color: c, margin: '0 6px' }}>→</span>
+                  <span style={{ color: LTOKENS.ink }}>{it.in ?? '—'}</span>
+                </Mono>
+                <Mono style={{ fontSize: 12.5, fontWeight: 800, color: alpha(tintOf(it.pts), 0.95), fontVariantNumeric: 'tabular-nums' }}>{fmtPoints(it.pts)}</Mono>
+              </div>
+            );
+          }
+          // drop row — a same-day pending leg shows honest absence, not a 0
+          return (
+            <div key={`${it.tk}-${i}`} style={{ ...rowBase, opacity: it.pending ? 0.72 : 1 }}>
+              <Mono style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: LTOKENS.ink }}>{it.tk ?? '—'}</Mono>
+              {it.pending ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <Icon name="clock" size={11} color={LTOKENS.ink3} stroke={2.2} />
+                  <Mono style={{ fontSize: 9.5, fontWeight: 700, color: LTOKENS.ink3, letterSpacing: '0.02em' }}>banks at close</Mono>
+                  <Mono style={{ fontSize: 12.5, fontWeight: 800, color: LTOKENS.ink3 }}>—</Mono>
+                </span>
+              ) : (
+                <Mono style={{ fontSize: 12.5, fontWeight: 800, color: alpha(tintOf(it.banked), 0.95), fontVariantNumeric: 'tabular-nums' }}>{fmtPoints(it.banked)}</Mono>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {pendingCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12, padding: '10px 12px', borderRadius: 10,
+          background: alpha(LTOKENS.ink3, 0.08), border: `1px solid ${LTOKENS.hair2}` }}>
+          <Icon name="clock" size={13} color={LTOKENS.ink3} style={{ marginTop: 1 }} />
+          <Mono style={{ fontSize: 10.5, color: LTOKENS.ink2, lineHeight: 1.5 }}>
+            {pendingCount} pick{pendingCount === 1 ? '' : 's'} dropped today {pendingCount === 1 ? 'banks' : 'bank'} at tonight&rsquo;s close — its exit isn&rsquo;t settled yet, so it counts then, not now.
+          </Mono>
+        </div>
+      )}
     </AFocus>
   );
 }

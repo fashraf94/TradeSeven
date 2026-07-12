@@ -65,6 +65,26 @@ export const ARENA_ASK = Object.freeze([
 // The agent's recent landed move (the "swapped SOFI → MSTR · 1h ago" chip).
 export const ARENA_AGENT_MOVE = Object.freeze({ from: 'SOFI', to: 'MSTR', ago: '1h ago' });
 
+// Departed-position points (Phase 1) — settled/past-tense banked points that left
+// the live grid but the close still counts. Preview-only sample so the dev
+// `?battleViewV2=1` surface demonstrates the swap/drop ledgers.
+export const ARENA_AGENT_DEPARTED = Object.freeze({
+  total: 21,
+  items: Object.freeze([
+    Object.freeze({ out: 'SOFI', in: 'MSTR', pts: 15, day: 1 }),
+    Object.freeze({ out: 'LLY', in: 'NVDA', pts: 12, day: 2 }),
+    Object.freeze({ out: 'PLTR', in: 'AMD', pts: -6, day: 2 }),
+  ]),
+});
+export const ARENA_USER_DEPARTED = Object.freeze({
+  total: 18,
+  pendingCount: 1,
+  items: Object.freeze([
+    Object.freeze({ tk: 'KO', banked: 18, pending: false }),
+    Object.freeze({ tk: 'F', banked: 0, pending: true }),
+  ]),
+});
+
 // The live drama beats, in the Phase-1 deriveBeats shape (pts are numbers; tone
 // is semantic). The engine fires these in order on the preview's live clock.
 export const ARENA_BEATS = Object.freeze([

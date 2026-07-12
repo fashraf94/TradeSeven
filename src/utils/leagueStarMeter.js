@@ -181,3 +181,38 @@ export function readUserStars(player, quotesBySymbol = {}, { atrBySymbol = {}, c
     return readUserStar(pick, { quote: quotesBySymbol[sym], baseATR, canonicalPolicy, dayBanked });
   });
 }
+
+/**
+ * The DEPARTED (dropped) user picks → one settled ledger row each. On a claim
+ * approval the whole dropped pick moves to `player.droppedPicks` with its live
+ * leg closed bank-pending (tournamentClaims.js); the banking pass keeps scoring
+ * it, so its banked points stay part of the cumulative standing even though it
+ * has left the live `player.picks` grid (and thus `readUserStars`). This is the
+ * surface for those departed points (Phase-1 §9 precondition). Read-only,
+ * additive: it CALLS the same fenced `scorePick` as `readUserStar` (never a
+ * copy). A dropped pick carries NO live leg — `quote` is omitted, so only its
+ * banked closed legs count.
+ *
+ * `pending` flags a pick whose FINAL leg is closed but not yet banked — a
+ * SAME-DAY drop (the leg banks at the session-open pass, ~17:15 ET). Its final
+ * leg's realized value is not yet known client-side, so the row is a "pending
+ * bank" (no number — honest absence, never a fake 0), bounded to the drop day.
+ *
+ * @param {Object} player - a group players[] entry with droppedPicks[]
+ * @param {{ atrBySymbol?: Object<string,number>, cryptoSymbols?: Set<string> }} [opts]
+ * @returns {Object[]} [{ tk, banked, pending }]
+ */
+export function readDroppedPickLedger(player, { atrBySymbol = {}, cryptoSymbols = null } = {}) {
+  const dropped = player?.droppedPicks || [];
+  return dropped.map((pick) => {
+    const sym = pick?.symbol;
+    const baseATR = Number.isFinite(atrBySymbol[sym])
+      ? atrBySymbol[sym]
+      : (cryptoSymbols?.has?.(sym) ? DEFAULT_USER_ATR_CRYPTO : DEFAULT_USER_ATR_STOCK);
+    const result = scorePick({ pick, baseATR }); // no quote — a dropped pick has no live leg
+    const legs = pick?.legs || [];
+    const lastLeg = legs[legs.length - 1];
+    const pending = !!(lastLeg && lastLeg.closedAt !== undefined && !Number.isFinite(lastLeg.bankedScore));
+    return { tk: sym ?? null, banked: num(result?.bankedPoints), pending };
+  });
+}

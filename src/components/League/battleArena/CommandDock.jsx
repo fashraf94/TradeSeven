@@ -14,10 +14,11 @@
 import React from 'react';
 import { Mono, Eyebrow, LIcon, Icon, clockStr } from '../LeagueParts';
 import { LTOKENS, alpha } from '../leagueTokens';
+import { fmtPoints } from '../../../utils/leagueFormat';
 import { StarCell } from './StarCell';
 import { VoiceLane } from './VoiceLane';
 import { ArenaOrb, MeterKey } from './ArenaPrimitives';
-import { OWN_AGENT, OWN_YOU } from './arenaTheme';
+import { OWN_AGENT, OWN_YOU, ST_GOOD, ST_BAD } from './arenaTheme';
 import { prefersReducedMotion } from './arenaEngineCore';
 import { useArenaFlips } from './useArenaFlips';
 
@@ -47,6 +48,38 @@ export function AgentMoveChip({ move, color }) {
   );
 }
 
+// the DEPARTED-POINTS chip — a SETTLED, past-tense readout of banked points that
+// have left the live star grid but the banked close still counts: the agent's
+// subbed-out swaps (kind 'swap') or your dropped picks (kind 'drop'). Muted (no
+// glow, surface fill) so it reads as "already earned, no longer moving" against
+// the live cells. Shows the aggregate sum (the §9 mechanism — the WHOLE sum, not
+// the latest move) and opens the ledger for the item breakdown. A 'drop' chip
+// with same-day pending legs carries a small pending count (banks at close).
+// Null when there's nothing departed → no chrome (zero-state).
+export function DepartedChip({ kind, departed, onOpen, style }) {
+  if (!departed) return null;
+  const { total = 0, pendingCount = 0 } = departed;
+  const isSwap = kind === 'swap';
+  const tint = total > 0 ? ST_GOOD : total < 0 ? ST_BAD : LTOKENS.ink2;
+  return (
+    <button className="bv2-tap" onClick={onOpen} aria-label={isSwap ? 'Banked from swaps — detail' : 'Dropped picks — detail'}
+      style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '3px 9px', borderRadius: 999, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}`, ...style }}>
+      <LIcon name={isSwap ? 'scissors' : 'flag'} size={11} color={LTOKENS.ink3} stroke={2} />
+      <Mono style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.05em', color: LTOKENS.ink3, textTransform: 'uppercase' }}>
+        {isSwap ? 'Swaps banked' : 'Dropped'}
+      </Mono>
+      <Mono style={{ fontSize: 10.5, fontWeight: 700, color: alpha(tint, 0.9), fontVariantNumeric: 'tabular-nums' }}>{fmtPoints(total)}</Mono>
+      {pendingCount > 0 && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, paddingLeft: 3, borderLeft: `1px solid ${LTOKENS.hair2}` }}>
+          <Icon name="clock" size={9} color={LTOKENS.ink3} stroke={2.2} />
+          <Mono style={{ fontSize: 8.5, fontWeight: 700, color: LTOKENS.ink3 }}>{pendingCount}</Mono>
+        </span>
+      )}
+    </button>
+  );
+}
+
 // a per-pick FLIP control — long↔short, anytime. `compact` (mobile dense row):
 // slightly tighter padding/type. Default off → desktop dock byte-identical.
 export function FlipControl({ dir, onFlip, color = OWN_YOU, compact = false }) {
@@ -61,7 +94,7 @@ export function FlipControl({ dir, onFlip, color = OWN_YOU, compact = false }) {
 }
 
 // ── the agent's six — watch-only ────────────────────────────────────────────
-export function DockAgentSix({ stars, dormant, complete, beatStar, flareKey = 0, headline, move, style }) {
+export function DockAgentSix({ stars, dormant, complete, beatStar, flareKey = 0, headline, move, departed = null, onOpenDeparted, style }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, borderRadius: 16, padding: '13px 14px',
       background: alpha('#0A1520', 0.5), border: `1px solid ${LTOKENS.hair}`, ...style }}>
@@ -82,6 +115,7 @@ export function DockAgentSix({ stars, dormant, complete, beatStar, flareKey = 0,
           </span>
         </div>
         {!dormant && <AgentMoveChip move={move} color={OWN_AGENT} />}
+        {!dormant && <DepartedChip kind="swap" departed={departed} onOpen={onOpenDeparted} />}
       </div>
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: '1fr 1fr', gap: 10, minHeight: 0 }}>
         {stars.map((s) => (
@@ -94,7 +128,7 @@ export function DockAgentSix({ stars, dormant, complete, beatStar, flareKey = 0,
 }
 
 // ── your three — where you act ──────────────────────────────────────────────
-export function DockYourThree({ stars, dormant, complete, state, wire, wireClock, beatStar, onFlip, onFlipDrama, onClaim, headline, style }) {
+export function DockYourThree({ stars, dormant, complete, state, wire, wireClock, beatStar, onFlip, onFlipDrama, onClaim, headline, departed = null, onOpenDeparted, style }) {
   const live = state === 'live';
   const open = live && wire?.open;
   const c = OWN_YOU;
@@ -119,7 +153,7 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* div wrapper (not span): Eyebrow renders a block <div>, invalid inside a span */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <Eyebrow color={c}>Your three</Eyebrow>
             {pending > 0 && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 5,
@@ -128,6 +162,7 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
                 <Mono style={{ fontSize: 8.5, fontWeight: 700, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>{pending} pick{pending === 1 ? '' : 's'} pending</Mono>
               </span>
             )}
+            <DepartedChip kind="drop" departed={departed} onOpen={onOpenDeparted} style={{ marginLeft: 0 }} />
           </div>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
             <LIcon name="flip" size={10} color={c} stroke={2} />

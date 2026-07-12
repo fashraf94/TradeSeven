@@ -19,7 +19,7 @@
 
 import { buildSeat, seatColor } from '../leagueAdapter';
 import { buildClimbSeries } from '../leagueClimbAdapter';
-import { readAgentStars, readUserStars } from '../../../utils/leagueStarMeter';
+import { readAgentStars, readUserStars, readDroppedPickLedger } from '../../../utils/leagueStarMeter';
 import { isFlat6ActivationDay } from '../../../utils/flat6BattleEnrichment';
 import { deriveBeats } from '../../../utils/leagueBeats';
 import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
@@ -204,6 +204,45 @@ export function buildArenaModel({
     ? computeComposite(priorBankedAgent + sumPoints(agentStars), sumPoints(userStars))
     : null;
 
+  // ── DEPARTED-POSITION POINTS (Phase 1 — the §9 precondition, DISPLAY ONLY) ──
+  // Two banked sources leave the live star grid but the banked close still
+  // counts them, so the shipped orb under-reports until close. Surface them —
+  // settled/past-tense — so Phase 2 can add them to the orb with every term on
+  // screen. This block is ADDITIVE: it never touches youLiveScore/agentStars/
+  // userStars/the orb. Gated on `youOrbLive` — the SAME condition under which
+  // the live orb runs — so (a) the surfaced sums correspond exactly to what the
+  // Phase-2 live term will add (§9), and (b) ranked/banked/pre-deploy/non-
+  // training render byte-identical (both fields null → no chip).
+  //   • agent: Σ trades[].lockedPoints — the subbed-out positions' realized
+  //     points. trades[] is TODAY's fresh daily doc (Phase-0 A1), so no cross-
+  //     day double-count and no swapDay filter is needed.
+  //   • user: Σ droppedPicks banked (via readDroppedPickLedger → scorePick). A
+  //     SAME-DAY drop's final leg banks post-close, so it shows as a pending
+  //     bank (no number), bounded to the drop day (A3 founder ruling).
+  let agentDeparted = null;
+  let userDeparted = null;
+  if (youOrbLive) {
+    const swapItems = (Array.isArray(battle?.trades) ? battle.trades : [])
+      .filter((t) => t && (t.symbolOut || t.symbolIn))
+      .map((t) => ({
+        out: t.symbolOut ?? null,
+        in: t.symbolIn ?? null,
+        pts: Number.isFinite(t.lockedPoints) ? t.lockedPoints : 0,
+        day: Number.isFinite(t.swapDay) ? t.swapDay : null,
+      }));
+    if (swapItems.length > 0) {
+      agentDeparted = { total: swapItems.reduce((a, s) => a + s.pts, 0), items: swapItems };
+    }
+    const dropItems = readDroppedPickLedger(myPlayer);
+    if (dropItems.length > 0) {
+      userDeparted = {
+        total: dropItems.reduce((a, d) => a + (Number.isFinite(d.banked) ? d.banked : 0), 0),
+        pendingCount: dropItems.filter((d) => d.pending).length,
+        items: dropItems,
+      };
+    }
+  }
+
   // ── beats (REUSE deriveBeats; only YOUR stars are knowable — rivals sealed) ──
   const starStates = { you: userStars, agent: agentStars };
   const seatNames = Object.fromEntries(seats.map((s) => [s.id, s.name]));
@@ -276,6 +315,8 @@ export function buildArenaModel({
     climb,
     youId,
     youLiveScore, // Branch 1: your live intraday composite for the orb (null = banked)
+    agentDeparted, // Phase 1: subbed-out agent points (Σ trades lockedPoints) — null off-gate
+    userDeparted, // Phase 1: dropped-pick banked points + pending same-day drops — null off-gate
     agentStars,
     userStars,
     userPending, // canonical-round count of picks awaiting the open (Deliverable 3)
