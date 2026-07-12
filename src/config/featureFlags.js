@@ -317,7 +317,7 @@ export const CONFLICT_RECONCILER_INJECT_ENABLED = true;
  * (flagged since PR-a). Blocks nothing while dark; must be written before
  * this flag flips.
  */
-export const STANDING_LEANS_ENABLED = false;
+export const STANDING_LEANS_ENABLED = true;
 
 /**
  * Release 2 (Fenced Customization Bundle V1.1) — TEMPO DIAL activation.
@@ -337,7 +337,7 @@ export const STANDING_LEANS_ENABLED = false;
  * #510 lesson). The band table itself is PROVISIONAL until promoted from the
  * B4 acceptance report's real-data cross-check.
  */
-export const TEMPO_DIAL_ENABLED = false;
+export const TEMPO_DIAL_ENABLED = true;
 
 /**
  * Archetype Integrity / "Third Path" — tri-state rollout mode.
