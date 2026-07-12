@@ -10,7 +10,7 @@
 // Zero product imports.
 
 import CONFIG from '../config.js';
-import { dailyFeaturesAt, idxBefore } from './features-daily.js';
+import { dailyFeaturesAt } from './features-daily.js';
 import { intradayFeatures, etfDirectionAtTouch, rvolBucket } from './features-intraday.js';
 import { groupFeaturesAt } from './features-market.js';
 
@@ -134,6 +134,7 @@ export function assembleEventFeatures({
   spyFiveMinByDate = null, sectorFiveMinByDate = null,
   spyPrevCloseAdjByDate = null, sectorPrevCloseAdjByDate = null,
   marketByDate = null, peers = [], reports = [],
+  dailyCache = null, // optional per-symbol Map: events sharing (eventDate, side) reuse the daily block
 }) {
   const D = event.eventDate;
   const i = series.dateIndex.get(D);
@@ -161,7 +162,10 @@ export function assembleEventFeatures({
   });
   intra.rvol_bucket = rvolBucket(intra.rvol_approach);
 
-  const daily = dailyFeaturesAt(series, i, event.side, { spy: spySeries, sector: sectorSeries, reports });
+  const dailyKey = `${i}:${event.side}`;
+  const daily = (dailyCache && dailyCache.get(dailyKey))
+    || dailyFeaturesAt(series, i, event.side, { spy: spySeries, sector: sectorSeries, reports });
+  if (dailyCache && !dailyCache.has(dailyKey)) dailyCache.set(dailyKey, daily);
 
   const etfDir = (etfMap, prevMap) => {
     if (!etfMap) return null;

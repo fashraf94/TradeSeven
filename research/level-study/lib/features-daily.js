@@ -42,9 +42,23 @@ function smaAt(arr, end, n) { // mean of arr[end-n+1..end]; null on short histor
   return s / n;
 }
 
-function retOver(arr, end, n) { // simple return over n sessions ending at end
+export function retOver(arr, end, n) { // simple return over n sessions ending at end
   if (end - n < 0 || arr[end] == null || arr[end - n] == null || arr[end - n] === 0) return null;
   return arr[end] / arr[end - n] - 1;
+}
+
+/**
+ * Benchmark return between the SAME session dates as [dates[L−n], dates[L]] — EXACT date matches
+ * required (S5 review fix): the study symbols and ETFs share the NYSE calendar, so a missing date
+ * means the benchmark is stale/truncated there, and a stale-window comparison must be null, never
+ * a real-looking number.
+ */
+export function benchRetBetween(series, bench, L, n) {
+  if (!bench || L - n < 0) return null;
+  const bEnd = bench.dateIndex.get(series.dates[L]);
+  const bStart = bench.dateIndex.get(series.dates[L - n]);
+  if (bEnd == null || bStart == null || bEnd <= bStart) return null;
+  return bench.aClose[bStart] > 0 ? bench.aClose[bEnd] / bench.aClose[bStart] - 1 : null;
 }
 
 /** Largest index with date < d (or ≤ d when inclusive) — the point-in-time cursor. -1 if none. */
@@ -161,13 +175,9 @@ function trailingPctile(series, L, valueAt) {
 
 /** Return over n sessions ending at own index L, minus the benchmark's return between the SAME dates. */
 export function relReturn(series, bench, L, n) {
-  if (!bench || L - n < 0) return null;
-  const own = retOver(series.aClose, L, n);
-  const bEnd = idxBefore(bench, series.dates[L], true);
-  const bStart = idxBefore(bench, series.dates[L - n], true);
-  if (own == null || bEnd < 0 || bStart < 0 || bEnd <= bStart) return null;
-  const b = bench.aClose[bEnd] / bench.aClose[bStart] - 1;
-  return own - b;
+  const own = L - n >= 0 ? retOver(series.aClose, L, n) : null;
+  const b = benchRetBetween(series, bench, L, n);
+  return own != null && b != null ? own - b : null;
 }
 
 /** Beta over the trailing betaDays paired daily returns (exact date matches; ≥ 2/3 pairs required). */
@@ -194,9 +204,7 @@ export function relativeMomentumAt(series, spy, sector, i) {
   for (const n of REL.returnsVsSectorDays) out[`ret_${n}d_vs_sector`] = L >= 0 ? relReturn(series, sector, L, n) : null;
   out.beta_60d = L >= 0 ? betaAt(series, spy, L, REL.betaAdjustedExcess.betaDays) : null;
   const r20 = L >= 0 ? retOver(series.aClose, L, 20) : null;
-  const bEnd = (spy && L >= 20) ? idxBefore(spy, series.dates[L], true) : -1;
-  const bStart = (spy && L >= 20) ? idxBefore(spy, series.dates[L - 20], true) : -1;
-  const spy20 = (bEnd > bStart && bStart >= 0) ? spy.aClose[bEnd] / spy.aClose[bStart] - 1 : null;
+  const spy20 = L >= 0 ? benchRetBetween(series, spy, L, 20) : null; // same exact-date guard as relReturn
   out.beta_adj_excess_20d = (out.beta_60d != null && r20 != null && spy20 != null) ? r20 - out.beta_60d * spy20 : null;
   return out;
 }
@@ -308,7 +316,7 @@ export function baseCountAt(series, L, leg, dir) {
   return count;
 }
 
-/** Sign-normalized extension + own-history percentile + bucket (§A4.2). */
+/** Sign-normalized extension + own-history percentile + bucket (§A4.2). One window loop: trailingPctile. */
 export function extensionAt(series, i, side) {
   const L = i - 1;
   const nul = { extension_in_trend_direction_atr: null, extension_pctile: null, extension_bucket: null };
@@ -320,10 +328,8 @@ export function extensionAt(series, i, side) {
   };
   const x = valueAt(L);
   if (x == null) return nul;
-  const vals = [];
-  for (let m = Math.max(0, L - EXT.pctileTrailingSessions + 1); m <= L; m++) { const v = valueAt(m); if (v != null) vals.push(v); }
-  if (vals.length < EXT.pctileMinSessions) return { ...nul, extension_in_trend_direction_atr: x };
-  const p = pctileRank(vals, x);
+  const p = trailingPctile(series, L, valueAt);
+  if (p == null) return { ...nul, extension_in_trend_direction_atr: x };
   const bucket = p < 50 ? 'NOT_EXT' : p > 85 ? 'EXT' : 'MID'; // config trend.extension.buckets
   return { extension_in_trend_direction_atr: x, extension_pctile: p, extension_bucket: bucket };
 }
@@ -383,6 +389,10 @@ export function dailyFeaturesAt(series, i, side, { spy = null, sector = null, re
   const dir = side === 'support' ? 'up' : 'down';
   const leg = L >= 0 ? legOriginAt(series, L, dir) : null;
   const primary = L >= 0 ? primaryOriginAt(series, L, dir) : null;
+  // S5 review fix: move_origin is pre_touch — it may only see reports on sessions ≤ L. Without
+  // this filter, an event-day report next to a fresh gap would reclassify it EARNINGS_GAP using
+  // information not knowable at the prior close (earningsAt filters internally; this call must too).
+  const knownReports = reports.filter((r) => r <= L);
   return {
     ...higherTfAt(series, i),
     ...relativeMomentumAt(series, spy, sector, i),
@@ -390,7 +400,7 @@ export function dailyFeaturesAt(series, i, side, { spy = null, sector = null, re
     current_leg_origin_date: leg ? series.dates[leg.originIdx] : null,
     primary_trend_origin_date: primary ? series.dates[primary.originIdx] : null,
     base_count: L >= 0 ? baseCountAt(series, L, leg, dir) : null,
-    move_origin: L >= 0 ? moveOriginAt(series, L, leg, reports) : null,
+    move_origin: L >= 0 ? moveOriginAt(series, L, leg, knownReports) : null,
     ...earningsAt(series, i, reports),
   };
 }

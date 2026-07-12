@@ -9,27 +9,14 @@
 // Null-never-zero; zero product imports.
 
 import CONFIG from '../config.js';
-import { idxBefore, pctileRank } from './features-daily.js';
+import { idxBefore, pctileRank, retOver, relReturn } from './features-daily.js';
 
 const REG = CONFIG.regime;
 const BR = CONFIG.features.market.breadth;
 const GRP = CONFIG.features.group;
-
-function retOver(series, end, n) {
-  if (end - n < 0 || end >= series.n) return null;
-  const a = series.aClose[end - n], b = series.aClose[end];
-  return a > 0 ? b / a - 1 : null;
-}
-
-/** Return over n sessions ending at own idx, minus SPY between the same dates. Null-safe. */
-function relSpyRet(series, spy, end, n) {
-  const own = retOver(series, end, n);
-  if (own == null || !spy) return null;
-  const b1 = idxBefore(spy, series.dates[end], true), b0 = idxBefore(spy, series.dates[end - n], true);
-  if (b1 < 0 || b0 < 0 || b1 <= b0) return null;
-  const spyR = spy.aClose[b1] / spy.aClose[b0] - 1;
-  return own - spyR;
-}
+// rankAt is registered as the string 'T-21' — parse the offset once (S5 review fix: previously hardcoded).
+const RANK_BACK = Number((String(REG.momoSpread.rankAt).match(/\d+/) || [21])[0]);
+const SPREAD_WIN = REG.momoSpread.spreadWindowSessions; // 20 — the pre-registered measurement window
 
 /**
  * Build the per-session market context for every date in `sessionDates` (the master calendar).
@@ -42,21 +29,22 @@ export function buildMarketContext({ sessionDates, members, spy, sphb, splv }) {
   const out = new Map();
 
   const spreadAt = (t) => {
-    // Addendum §A3.1: at formation F = T−rank sessions back, rank members on trailing
-    // lookbackReturnDays return vs SPY (sector-neutral = demeaned by sector group), then measure
-    // each basket's rel-SPY return over the spreadWindowSessions since formation.
-    const F = t - 21; // rankAt 'T-21'
+    // Addendum §A3.1: rank members at formation F = T−RANK_BACK on the trailing
+    // lookbackReturnDays return vs SPY (as of F's prior close — point-in-time), then measure each
+    // basket's rel-SPY return over the pre-registered SPREAD_WIN sessions ending at D−1.
+    // (S5 review fix: the window is exactly spreadWindowSessions — previously 21 and hardcoded.)
+    const F = t - RANK_BACK;
     if (F < 0) return { neutral: null, raw: null };
     const fDate = sessionDates[F], tDate = sessionDates[t];
     const rows = [];
     for (const m of members) {
-      const fIdx = idxBefore(m.series, fDate);           // strictly before formation date
+      const fIdx = idxBefore(m.series, fDate);           // strictly before the formation date
       const tIdx = idxBefore(m.series, tDate);           // strictly before D
       if (fIdx < 0 || tIdx <= fIdx) continue;
-      const rank = relSpyRet(m.series, spy, fIdx, REG.momoSpread.lookbackReturnDays);
-      const relF = relSpyRet(m.series, spy, tIdx, tIdx - fIdx); // basket performance since formation, vs SPY
-      if (rank == null || relF == null) continue;
-      rows.push({ sector: m.sector, rank, perf: relF });
+      const rank = relReturn(m.series, spy, fIdx, REG.momoSpread.lookbackReturnDays);
+      const perf = relReturn(m.series, spy, tIdx, SPREAD_WIN); // basket performance, rel-SPY, 20 sessions to D−1
+      if (rank == null || perf == null) continue;
+      rows.push({ symbol: m.symbol, sector: m.sector, rank, perf });
     }
     if (rows.length < Math.max(4, Math.floor(n / 2))) return { neutral: null, raw: null };
     const bySector = new Map();
@@ -64,7 +52,9 @@ export function buildMarketContext({ sessionDates, members, spy, sphb, splv }) {
     const secMean = new Map([...bySector].map(([s, v]) => [s, v.reduce((a, b) => a + b, 0) / v.length]));
     const dec = Math.max(1, Math.floor(rows.length * REG.momoSpread.decileFraction));
     const spreadOf = (keyFn) => {
-      const ranked = [...rows].sort((a, b) => keyFn(b) - keyFn(a) || (a.sector < b.sector ? -1 : 1));
+      // ties (e.g. singleton sectors demeaned to exactly 0) break by RAW momentum, then symbol —
+      // never by sector spelling (S5 review fix).
+      const ranked = [...rows].sort((a, b) => keyFn(b) - keyFn(a) || b.rank - a.rank || (a.symbol < b.symbol ? -1 : 1));
       const top = ranked.slice(0, dec), bot = ranked.slice(-dec);
       const avg = (g) => g.reduce((a, r) => a + r.perf, 0) / g.length;
       return (avg(top) - avg(bot)) * 100; // pct
@@ -121,7 +111,7 @@ export function buildMarketContext({ sessionDates, members, spy, sphb, splv }) {
     // beta appetite: SPHB − SPLV 20-day return spread (daily grain per F4)
     if (sphb && splv) {
       const hi = idxBefore(sphb, D), lo = idxBefore(splv, D);
-      const rh = hi >= 0 ? retOver(sphb, hi, 20) : null, rl = lo >= 0 ? retOver(splv, lo, 20) : null;
+      const rh = hi >= 0 ? retOver(sphb.aClose, hi, 20) : null, rl = lo >= 0 ? retOver(splv.aClose, lo, 20) : null;
       if (rh != null && rl != null) ctx.beta_appetite_20d = (rh - rl) * 100;
     }
 
@@ -172,8 +162,8 @@ export function groupFeaturesAt({ series, i, peers, spy, sector }) {
   if (sector && spy) {
     const sIdx = idxBefore(sector, D);
     if (sIdx >= 0) {
-      out.sector_rs_vs_spy_20d = relSpyRet(sector, spy, sIdx, 20);
-      out.sector_rs_vs_spy_60d = relSpyRet(sector, spy, sIdx, 60);
+      out.sector_rs_vs_spy_20d = relReturn(sector, spy, sIdx, 20);
+      out.sector_rs_vs_spy_60d = relReturn(sector, spy, sIdx, 60);
     }
   }
   if (peers.length < GRP.minEligiblePeers) return out;

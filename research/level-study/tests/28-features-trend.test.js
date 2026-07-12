@@ -112,4 +112,14 @@ test('move_origin — gap at the leg origin classifies EARNINGS_GAP / NON_EARNIN
   assert.equal(moveOriginAt(g, g.n - 1, legG, [38]), 'EARNINGS_GAP', 'report within ±1 session of the GAP bar (37)');
   assert.equal(moveOriginAt(g, g.n - 1, legG, [33]), 'NON_EARNINGS_GAP', 'a report far from the gap does not reclassify it');
   assert.equal(moveOriginAt(g, g.n - 1, null, []), null, 'null leg origin → null move_origin (config)');
+
+  // AVAILABILITY (review fix): an event-DAY report adjacent to a fresh gap is post-touch
+  // information — dailyFeaturesAt must filter it out of the pre_touch move_origin classification.
+  const { dailyFeaturesAt } = await import('../lib/features-daily.js');
+  const i = 38; // event the session after the gap bar (L = 37); report lands ON the event date
+  const withEventDayReport = dailyFeaturesAt(g, i, 'support', { reports: [38] });
+  assert.equal(withEventDayReport.move_origin, 'NON_EARNINGS_GAP',
+    'a report dated the event day must not flip a fresh gap to EARNINGS_GAP pre-touch');
+  const withKnownReport = dailyFeaturesAt(g, i, 'support', { reports: [37] });
+  assert.equal(withKnownReport.move_origin, 'EARNINGS_GAP', 'a report already known at D−1 classifies normally');
 });

@@ -186,8 +186,13 @@ async function main() {
   const sectorSeriesByEtf = new Map();
   for (const etf of new Set(Object.values(CONFIG.universe.sectorMap))) sectorSeriesByEtf.set(etf, loadDailySeries(etf));
   const etf5m = new Map();
+  const etfPrevClose = new Map(); // prev-close maps built ONCE per run (review fix: were rebuilt per event)
   for (const etf of ['SPY', 'XLK', 'XLE']) {
-    try { etf5m.set(etf, loadFiveMinByDate(etf).fiveMinByDate); } catch { etf5m.set(etf, null); }
+    try {
+      const m = loadFiveMinByDate(etf).fiveMinByDate;
+      etf5m.set(etf, m);
+      etfPrevClose.set(etf, prevCloseMap(m));
+    } catch { etf5m.set(etf, null); etfPrevClose.set(etf, null); }
   }
   const earningsBySym = loadEarningsDates();
 
@@ -226,14 +231,15 @@ async function main() {
       const reports = reportSessionIdxs(me.series, earningsBySym.get(sym) || []);
 
       const rows = [];
+      const dailyCache = new Map(); // events sharing (eventDate, side) reuse the daily block
       for (const ev of me.events) {
         rows.push(assembleEventFeatures({
           event: ev, series: me.series, fiveMinByDate, sessionDates,
           spySeries, sectorSeries,
           spyFiveMinByDate: etf5m.get('SPY'), sectorFiveMinByDate: sector5m,
-          spyPrevCloseAdjByDate: etf5m.get('SPY') ? prevCloseMap(etf5m.get('SPY')) : null,
-          sectorPrevCloseAdjByDate: sector5m ? prevCloseMap(sector5m) : null,
-          marketByDate, peers, reports,
+          spyPrevCloseAdjByDate: etfPrevClose.get('SPY'),
+          sectorPrevCloseAdjByDate: sectorEtf ? etfPrevClose.get(sectorEtf) || null : null,
+          marketByDate, peers, reports, dailyCache,
         }));
       }
       await writeJson(path.join(FEATURES_DIR, `${sym}.json`), { symbol: sym, configVersion: CONFIG.version, rows });

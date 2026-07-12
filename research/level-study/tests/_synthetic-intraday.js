@@ -52,7 +52,7 @@ export function bar(etDate, etMinutes, price, { h = 0.02, v = 1000 } = {}) {
 export function session5m(etDate, prices, opts = {}) {
   const { startMin = 570, h = 0.02, isFullDay = true, earlyClose = false, hasAuction = true } = opts;
   const regular = prices.map((x, i) => {
-    const spec = typeof x === 'object' ? x : { p: x };
+    const spec = x !== null && typeof x === 'object' ? x : { p: x }; // typeof null === 'object' — a null entry stays a null-price bar
     return bar(etDate, startMin + i * 5, spec.p, { h: spec.h ?? h, v: spec.v ?? 1000 });
   });
   const sessionCloseAdj = regular.length ? regular[regular.length - 1].adjClose : null;

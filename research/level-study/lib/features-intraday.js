@@ -51,6 +51,15 @@ export function rvolApproach(preBars, touchEtMin, baselineSessions) {
   return avg > 0 ? own / avg : null;
 }
 
+// Load-time coherence assert (mirrors config validateGeometry's philosophy): the bucket edges are
+// stored as [lo, hi) pairs — a half-applied founder edit must throw here, never run silently.
+{
+  const B = FP.rvolApproachBuckets;
+  if (B.LOW[1] !== B.MID[0] || B.MID[1] !== B.HIGH[0]) {
+    throw new Error(`config rvolApproachBuckets edges are not adjacent: LOW ${JSON.stringify(B.LOW)} MID ${JSON.stringify(B.MID)} HIGH ${JSON.stringify(B.HIGH)}`);
+  }
+}
+
 export function rvolBucket(rvol) {
   if (rvol == null) return null;
   const B = FP.rvolApproachBuckets;

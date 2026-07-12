@@ -608,8 +608,9 @@ const CONFIG = {
       // S5-A2 (pre-registration amendment, founder-ruled 2026-07-12, BEFORE any outcome exists):
       // the date-clustered bootstrap resamples DATES, so a cell's effective n is its unique-date
       // count (in-sample events span ~609/609 sessions — every session fires; n=60 on 12 dates is
-      // far weaker than n=60 on 50). Every reported cell carries uniqueDates; failing either
-      // floor → UNCONFIRMED. Reported in every checkpoint/table from S5 forward.
+      // far weaker than n=60 on 50). Every reported cell carries uniqueDates. Vocabulary: budget
+      // CHECKPOINTS label a cell failing either floor 'UNDERPOWERED' (pre-outcome power language);
+      // at the S6+ ACCEPTANCE gate the same failure renders the bucket 'UNCONFIRMED' (honesty.verdicts).
       minUniqueDates: 15, // S5-A2 — in addition to minN
       minSiblingDiffPoints: 15, // AND its 90% clustered CI excludes zero
       stabilityMustPass: true,
