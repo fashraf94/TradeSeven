@@ -618,3 +618,28 @@ export const CORRELATION_EXTENDED_DRIVERS_ENABLED = true;
  * CORRELATION_SYNTHESIS_ENABLED precedent) — never in the build PR.
  */
 export const CORRELATION_NARRATION_ENABLED = false;
+
+/**
+ * Agent Learning System — L1 Foundation (Phase A) raw capture.
+ *
+ * THE MASTER KILL-SWITCH for the entire L1 capture path. Release classification
+ * DARK-INERT: nothing user-visible, nothing reaching the trading brain, no
+ * scoring change. Architecture V1.3 (FROZEN).
+ *
+ * When FALSE (default, and the value at merge), the capture path is a strict
+ * NO-OP: the swap-execution site in api/cron/agent-evaluate.js never builds a
+ * receipt, never touches Firestore, and adds ZERO latency to the decision path
+ * (the call is behind a plain `if (LEARNING_L1_CAPTURE_ENABLED)` guard, so the
+ * branch is never entered). The decision path is byte-identical to before this
+ * build.
+ *
+ * When TRUE (a preview-only experiment; NEVER flipped in a build PR), each
+ * executed autopilot swap emits a RAW receipt to learningReceipts/{battleId}/
+ * receipts/{receiptId} via the Admin SDK — raw fields only, no derived metric,
+ * no classification, no scoring. All four learning collections are server-write-
+ * only (firestore.rules), so the receipt can only be written server-side.
+ *
+ * This flag gates capture ONLY. No dossier/atom writer ships in L1 (Signal
+ * Capture Rider §5: capture only, pre-launch). Flip is a Phase-B concern.
+ */
+export const LEARNING_L1_CAPTURE_ENABLED = false;

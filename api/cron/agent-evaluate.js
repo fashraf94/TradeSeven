@@ -69,7 +69,10 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED } from '../../src/config/featureFlags.js';
+// Agent Learning System L1 — raw capture (DARK behind LEARNING_L1_CAPTURE_ENABLED,
+// false at merge). captureSwapReceipt is a strict no-op when the flag is off.
+import { captureSwapReceipt } from '../_utils/learning/captureReceipt.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
 // string literal). Zero-import schema module, BUILD_RULES §4.
@@ -1895,6 +1898,13 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
                 rankingsMap: momentumData.rankingsMap,
               }),
             };
+            // Agent Learning System L1 — raw capture (DARK). Snapshot the
+            // outgoing position BEFORE executeSwapServer closes it (its entry
+            // timestamps live only on the pre-swap position). Nothing runs when
+            // the flag is off — a single null assignment, zero decision-path cost.
+            const l1OutgoingPosition = LEARNING_L1_CAPTURE_ENABLED
+              ? (battle.portfolio?.[validation.resolvedTier]?.[validation.resolvedSlotIndex] || null)
+              : null;
             // P2 phase 1: reserve symbolIn before executing. A reserve
             // loss downgrades to HOLD exactly like a failed swap. No-op
             // (always reserved) for regular battles.
@@ -1926,6 +1936,68 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
             });
 
             summary.swapped++;
+
+            // Agent Learning System L1 — raw capture (DARK, T13 server-authoritative
+            // evidence). Emit a RAW receipt for this executed autopilot swap: raw
+            // fields only, no derived metric, no classification, no scoring. No-op
+            // with zero Firestore ops when the flag is off; when on it is an awaited,
+            // fail-closed, Admin-SDK write that can never break the (already-executed)
+            // trade — the inner try/catch isolates it completely.
+            if (LEARNING_L1_CAPTURE_ENABLED) {
+              try {
+                await captureSwapReceipt({
+                  enabled: true,
+                  db,
+                  agentId: battle.agentId,
+                  battleId: battle.id,
+                  battleDay: currentDay,
+                  timestamp: swapResult.closedTrade?.swappedOutAt || null,
+                  // receiptSeq = the numeric core of the trade id (scoreState.tradeCount+1).
+                  receiptSeq: Number(String(evaluationMetadata.id).replace('trade_', '')) || null,
+                  // Nullish-coalesce (a symbol only ever falls back on null/undefined).
+                  // This is a capture site, NOT one of the five tournament confirm
+                  // sites whose closedTrade-sourcing invariant is asserted separately.
+                  symbolIn: swapResult.closedTrade?.symbolIn ?? haikuResult.symbolIn,
+                  symbolOut: swapResult.closedTrade?.symbolOut ?? haikuResult.symbolOut,
+                  source: swapSource,
+                  exitReason: haikuSwapReason,
+                  haikuSwapReason,
+                  resolvedTier: validation.resolvedTier,
+                  resolvedSlotIndex: validation.resolvedSlotIndex,
+                  // entry state of the NEW position (from executeSwapServer's incomingAsset).
+                  entryMark: swapResult.incomingAsset?.swapPrice ?? null,
+                  entryATR: swapResult.incomingAsset?.baseATR ?? null,
+                  // guardrail-replay state of the OUTGOING position (raw).
+                  outgoingEntryPrice: swapResult.closedTrade?.entryPrice ?? null,
+                  outgoingBaseATR: activeBaseATR ?? null,
+                  thresholdHistory: battle.thresholdHistory?.[haikuResult.symbolOut] ?? null,
+                  outgoingSwappedInAt: l1OutgoingPosition?.swappedInAt ?? null,
+                  outgoingSwappedInDay: l1OutgoingPosition?.swappedInDay ?? null,
+                  // version stamps (only archetypeIntegrityMode exists in L1).
+                  archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+                  // predicate snapshot inputs (already built above, at the decision instant).
+                  snapshotIn: snapshot.symbolIn,
+                  snapshotOut: snapshot.symbolOut,
+                  regimeIn: stockRegimes[haikuResult.symbolIn] ?? null,
+                  regimeOut: stockRegimes[haikuResult.symbolOut] ?? null,
+                  techDocIn: technicalScoresMap?.[haikuResult.symbolIn] ?? null,
+                  techDocOut: technicalScoresMap?.[haikuResult.symbolOut] ?? null,
+                  // Phase A.5 — predicate provenance for staleness + the level fields.
+                  // rankingsComputedMs (line ~796) is block-scoped and out of reach here;
+                  // recompute from rankingsResult (function-scoped) with an existence guard.
+                  rankingsComputedAtMs:
+                    rankingsResult?.status === 'fulfilled' && rankingsResult.value?.exists
+                      ? (rankingsResult.value.data().computedAt?.toMillis?.() ?? null)
+                      : null,
+                  // Phase A.5 — M8 / D3 truncation provenance (trades[] cap = 50).
+                  tradeCountAtDecision: battle.scoreState?.tradeCount ?? null,
+                  tradesLenAtDecision: battle.trades?.length ?? null,
+                  capturedAt: new Date().toISOString(),
+                });
+              } catch (l1Err) {
+                console.error(`${LOG_PREFIX} L1 capture threw (ignored, trade unaffected): ${l1Err?.message}`);
+              }
+            }
 
             // [VWAP Floor B1b] Same in-memory counter reset as the risk-swap
             // branch — keep the incoming symbol's streak from being persisted
