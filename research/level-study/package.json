@@ -6,6 +6,7 @@
   "description": "LevelStory research study — isolated from the TradeSeven product. Zero product imports, zero dependencies (Node built-ins only).",
   "scripts": {
     "fetch": "node 01-fetch-history.js",
-    "test": "node --test tests/"
+    "levels": "node 02-build-levels.js",
+    "test": "node --test \"tests/*.test.js\""
   }
 }

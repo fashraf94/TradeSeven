@@ -8,7 +8,8 @@
 // the bottom (`deepFreeze`), which computes nothing; it only prevents mutation so a
 // downstream session can never silently retune a locked knob.
 //
-// Source precedence (Session-2 prompt §3):
+// Source precedence (Session-2 prompt §3; Session-3 prompt §2 adds the S3 rulings):
+//   0. docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md         (S3-R1…S3-R5, S3-C*)
 //   1. docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S2.md         (R1–R3, A1–A3)
 //   2. docs/LEVEL_STUDY_SPEC_V1_1_ADDENDUM_A_CONTEXT_LAYER_V1_1.md   (Addendum §A*)
 //   3. docs/LEVEL_INTERACTION_EVENT_STUDY_SPEC_V1_1.md      (parent §*)
@@ -53,9 +54,9 @@ const CONFIG = {
     targetSize: { min: 150, max: 200 },   // parent §4.2 (raised from V1's 75–125 per §13)
     strata: ['mega_cap_tech', 'low_volatility', 'high_beta', 'gap_prone'], // parent §4.2 / §12
 
-    // The frozen full universe is a founder deliverable, PENDING (R2). This session
-    // builds at probe scale only; the fetcher accepts any symbol list as input.
-    universeFilePath: 'research/level-study/universe.frozen.json', // placeholder; founder supplies at Session 3 gate
+    // Starter universe frozen 2026-07-11 (universeVersion 1) — supplied at the Session-3
+    // gate as anticipated by R2. Path updated from the S2 placeholder to the actual file.
+    universeFilePath: 'research/level-study/universe_frozen.json', // S3-R5: actual frozen file (was S2 placeholder)
 
     // Probe set for Session 2 (founder-frozen, S2 prompt §4). HOOD dropped per R2,
     // RKLB dropped per R3. Exactly these 14 are fetched this session.
@@ -68,9 +69,18 @@ const CONFIG = {
     // recorded for the contract; the probe only exercises XLK and XLE.
     sectorEtfs: ['XLC', 'XLY', 'XLP', 'XLE', 'XLF', 'XLV', 'XLI', 'XLB', 'XLRE', 'XLK', 'XLU'], // Addendum §A2.2 (11 SPDR sector ETFs)
     contextEtfs: { market: 'SPY', highBeta: 'SPHB', lowBeta: 'SPLV' }, // Addendum §A3.2, §A8
-    // CHOICE: per-symbol sector map is "frozen with the universe" (Addendum §A2.2) and
-    // is a founder deliverable pending the universe freeze. Left empty at probe scale.
-    sectorMap: {}, // ⚠ CHOICE: awaits founder universe freeze (Addendum §A2.2)
+    // S3-R5: transcribed verbatim from research/level-study/universe_frozen.json
+    // (universeVersion 1, frozen 2026-07-11). Pure data transcription, not a decision.
+    // Closes the S2 "awaits founder universe freeze" flag.
+    sectorMap: { // S3-R5 / Addendum §A2.2 (frozen with the universe)
+      AAPL: 'XLK', NVDA: 'XLK', MSFT: 'XLK',
+      KO: 'XLP', PG: 'XLP', JNJ: 'XLV',
+      TSLA: 'XLY', AMD: 'XLK', COIN: 'XLF',
+      PLTR: 'XLK', BE: 'XLI',
+    },
+    // S3-R4 (F4 ruling): SPHB/SPLV are DAILY-GRAIN ONLY. Their 5m is never fetched or
+    // referenced; beta_appetite_20d is a daily feature.
+    dailyGrainOnly: ['SPHB', 'SPLV'], // S3-R4
   },
 
   // ── Fetch mechanics (A1; parent §4.1, §4.5; Addendum §A6, §A8; A7 from S1) ──
@@ -121,7 +131,13 @@ const CONFIG = {
     regularCloseEtMinutes: 960,           // 16:00 ET
     lastRegularBarOpenEtMinutes: 955,     // 15:55 ET bar (covers 15:55–16:00); S1 §4: 78 regular bars
     fiveMinuteStepMinutes: 5,
-    barsPerRegularSession: 78,            // S1 §4: 78 regular + 1 auction = 79
+    barsPerRegularSession: 78,            // S1 §4: 78 regular + 1 auction = 79 (FULL days only; see halfDay)
+    // S3-R3: session end is derived PER-SESSION from the data, never hardcoded 16:00.
+    halfDay: { // S3-R3 (founder ruling)
+      sessionEndDerivedPerSession: true,  // the 16:00 constants above describe FULL days; never assumed per-session
+      tagField: 'halfDay',                // half-days tagged halfDay: true (normalize's earlyClose is the S2 precursor tag)
+      eodLabelBar: 'last_regular_bar_of_actual_session', // EOD labels use the last regular bar of the actual session
+    },
   },
 
   // ── Self-built hourly bars (parent §3.6, §4.4) ─────────────────────────────
@@ -148,6 +164,16 @@ const CONFIG = {
     excludeFromMath: ['pattern', 'range', 'volume', 'excursion', 'hourly_aggregation'], // A2
     useForSessionClose: true,              // A2: session-close price for EOD outcome labels
     useForCrossGrainInvariant: true,       // A1/A2: the daily-close ↔ auction-print pairing
+    // S3-R2 (F3 ruling): sessions missing the closing-auction print fall back to the last
+    // regular 5m bar (typically 15:55 ET on full days) as session close.
+    eodFallback: { // S3-R2
+      rule: 'last_regular_5m_bar',          // fallback session-close source when no auction print
+      tagField: 'eodSource',                // every session tagged with its EOD source
+      tagValues: { auction: 'auction', fallback: 'fallback_1555' }, // S3-R2 tag vocabulary
+      crossGrainInvariantExempt: true,      // fallback sessions EXPLICITLY EXEMPT from the invariant…
+      tolerancePctNeverLoosened: true,      // …the 0.1% tolerance is NEVER loosened to accommodate them
+      reportFooterItem: 'fallback_session_count', // standing report-footer item
+    },
   },
 
   // ── Adjustment basis (A1; parent §4.3, §3.4) ───────────────────────────────
@@ -222,6 +248,30 @@ const CONFIG = {
       retireZeroSupportSessions: 20,            // zero method support for 20 sessions retires
       roleStates: ['support', 'resistance', 'resistance_turned_support', 'support_turned_resistance'], // parent §5.4 append-only role log
     },
+
+    // ── Session-3 construction conventions (02-build-levels.js) ──────────────
+    // Deterministic conventions the builder needs where the specs are silent. Each is a
+    // Session-3 CHOICE (⚠, greppable), recorded in docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S3.md
+    // §B and the traceability table. Pure data — the builder reads these, never derives them.
+    construction: {
+      priceBasis: 'adjusted', // A1 one-basis rule: levels live on the daily adjusted basis (raw OHLC × adjFactor)
+      volumeBasis: 'raw_divided_by_adjFactor', // ⚠ CHOICE S3-C1: VWAP/centroid weights use V/f so split-era share counts are comparable (A1 extension)
+      typicalPrice: 'hlc3', // ⚠ CHOICE S3-C2: AVWAP price input = (H+L+C)/3 (standard anchored-VWAP convention)
+      fractalComparison: 'strict', // ⚠ CHOICE S3-C3: swing high requires STRICTLY greater highs than all k bars each side (ties → no fractal)
+      structuralClusterJoin: 'ascending_price_within_clusterPct_of_running_volume_weighted_centroid', // ⚠ CHOICE S3-C4: deterministic greedy clustering
+      confluenceJoin: 'ascending_price_within_alignPct_of_running_unweighted_mean_centroid', // ⚠ CHOICE S3-C5: cross-family alignment has no volume semantics
+      compositeAvailability: 'max_of_members', // ⚠ CHOICE S3-C6: cluster/snapshot formation/firstKnown/firstTradable = latest member's (conservative, never early)
+      calendarTradableSameSession: true, // ⚠ CHOICE S3-C7: calendar firstTradableDate = the session it applies to (derived wholly from prior completed bars, so already "known at prior close"; the literal +1 offset would bar calendar levels from ever being referenced)
+      sideRule: 'centroid_lte_prior_close_is_support', // ⚠ CHOICE S3-C8: side vs D−1 adjusted close; exact tie → support
+      relativeDistanceDenominator: 'pair_midpoint', // ⚠ CHOICE S3-C9: merge/split %-distances measured against the pair midpoint
+      familyObservedCentroid: 'unweighted_mean_of_matched_snapshot_centroids', // ⚠ CHOICE S3-C10: the anchor-EMA input when >1 snapshot matches
+      familyMatchableSameSessionAsFounded: true, // ⚠ CHOICE S3-C11: a family founded earlier in the ascending pass is a match candidate for later snapshots
+      roleSideSource: 'nearest_matched_snapshot_pre_update_anchor', // ⚠ CHOICE S3-C12: session role = side of the nearest matched snapshot (distance to pre-update anchor)
+      splitExecution: 'nearest_snapshot_keeps_elder_id_each_other_branches', // ⚠ CHOICE S3-C13: at trigger, nearest-to-anchor snapshot stays; every other matched snapshot founds a branch with splitFrom
+      splitRequiresMultipleSnapshots: true, // ⚠ CHOICE S3-C14: the 5-session counter can run on a single wide (chained) snapshot, but execution waits until ≥2 snapshots are matched
+      mergeStateTransfer: 'matchHistory_and_touchHistory_to_survivor_survivor_keeps_anchor_and_roleLog', // ⚠ CHOICE S3-C15: zeroSupportRun = min(survivor, absorbed); absorbed keeps its own roleLog on its record
+      weeklyPivotWeek: 'iso_monday_keyed_prior_completed_week', // ⚠ CHOICE S3-C16: prior completed week = latest Monday-keyed week strictly before the session's week, aggregated H/L/last-C
+    },
   },
 
   // ── Stage 2: Event detection / episodes (parent §6) ────────────────────────
@@ -275,9 +325,9 @@ const CONFIG = {
       consol_tightness: '60-min range in ATR',
       tod_bucket: ['open', 'midday', 'power'], // parent §8.2 names; see todBucketEtCutoffs below
       gap_context: { toward: true, away: true, none: true, thresholdAtr: 0.3 }, // parent §8.2: at 0.3 ATR
-      // CHOICE: exact ET cutoffs for open/midday/power are not given in parent §8.2.
-      // Left null; to be pinned in Session 5 (features) before use.
-      todBucketEtCutoffs: null, // ⚠ CHOICE: open/midday/power minute cutoffs unspecified (parent §8.2)
+      // S3-R1 (founder ruling — closes S2 ⚠ flag #6): ET-minute cutoffs, [start, end).
+      // open 09:30–10:30, midday 10:30–14:30, power 14:30–16:00, all ET.
+      todBucketEtCutoffs: { open: [570, 630], midday: [630, 870], power: [870, 960] }, // S3-R1
     },
     momentumQuality: { // parent §8.3 (stored features)
       keys: ['path_efficiency', 'accel_final_30m', 'pullback_depth_max', 'hl_progression',
@@ -313,6 +363,7 @@ const CONFIG = {
         pctAboveMa: [20, 50], // §A3.2 breadth_pct_above_20dma/_50dma
         nhNlNetDays: 63,      // §A3.2 nh_nl_net_63d
         betaAppetite: 'SPHB-SPLV 20-day return spread', // §A3.2 beta_appetite_20d
+        betaAppetiteGrain: 'daily', // S3-R4 (F4 ruling): a daily feature — SPHB/SPLV 5m never fetched/referenced
         volRegimePctile: { spyRealizedVolDays: 20, trailingYears: 2 }, // §A3.2 vol_regime_pctile (warmup-dependent)
       },
     },
