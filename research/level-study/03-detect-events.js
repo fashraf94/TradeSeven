@@ -160,10 +160,14 @@ export function buildCheckpointReport(allEvents, opts = {}) {
   const top5 = Object.values(bySymbol).sort((a, b) => b - a).slice(0, 5).reduce((a, b) => a + b, 0);
   const uniqueDates = new Set(inSample.map((e) => e.eventDate)).size;
 
-  const cellVerdict = (n) => (n >= MIN_N ? 'PASS' : 'UNDERPOWERED');
+  const minUd = CONFIG.honesty.acceptance.minUniqueDates; // S5-A2: uniqueDates floor, reported in every checkpoint
+  const cellVerdict = (n, ud) => (n >= MIN_N && ud >= minUd ? 'PASS' : 'UNDERPOWERED');
   const sideCells = (arr) => {
     const s = bySide(arr);
-    return { support: s.support, resistance: s.resistance, supportVerdict: cellVerdict(s.support), resistanceVerdict: cellVerdict(s.resistance) };
+    const ud = (side) => new Set(arr.filter((e) => e.side === side).map((e) => e.eventDate)).size;
+    const udS = ud('support'), udR = ud('resistance');
+    return { support: s.support, resistance: s.resistance, supportUniqueDates: udS, resistanceUniqueDates: udR,
+      supportVerdict: cellVerdict(s.support, udS), resistanceVerdict: cellVerdict(s.resistance, udR) };
   };
 
   // Only the S4-KNOWABLE gating cell is scored now; finer splits (hourly class, RVOL bucket,
@@ -172,8 +176,8 @@ export function buildCheckpointReport(allEvents, opts = {}) {
     P1: { base: 'F2+ touch per side', split: '× 5 hourly classes (S5)', cells: sideCells(f2), status: 'BASE_ONLY' },
     P2: { base: 'F2+ touch per side (bridge)', split: '× hourly class (S5)', cells: sideCells(f2), status: 'BASE_ONLY' },
     P3: { base: 'F2+ touch per side', split: '× 3 RVOL buckets (S5)', cells: sideCells(f2), status: 'BASE_ONLY' },
-    P4: { base: 'all-tier touch per side', split: '× 3 tiers within SHARP_REJECT (S5)', cells: sideCells(inSample),
-      f3PerSide: bySide(inSample.filter((e) => e.familyTier === 'F3')), status: 'BASE_ONLY', flag: 'F3 cell may be structurally impossible (F3 share 0.5–1.1% of snapshots)' },
+    P4: { base: 'all-tier touch per side', split: '× F1 vs F2 within SHARP_REJECT (S5-A1; SHARP_REJECT split pending S6)', cells: sideCells(inSample),
+      f3PerSide: bySide(inSample.filter((e) => e.familyTier === 'F3')), status: 'BASE_ONLY', flag: 'S5-A1: primary comparison is F1 vs F2; F3 pools into F2+ gates and appears as an exploratory footnote only' },
     P5: { base: 'requires hourly classes', split: 'BREAK_RECLAIM vs DRIFT_HOLD (S5)', cells: null, status: 'REQUIRES_S5' },
     P6: { base: 'F2+ touch per side', split: '× SHARP_REJECT × EXT/NOT_EXT × 3 regimes (S5/S6)', cells: sideCells(f2), status: 'BASE_ONLY',
       fallback: 'regime interaction drops first; per-side EXT/NOT_EXT protected last (Addendum §A4.3)' },

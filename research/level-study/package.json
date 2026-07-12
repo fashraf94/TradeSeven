@@ -8,6 +8,7 @@
     "fetch": "node 01-fetch-history.js",
     "levels": "node 02-build-levels.js",
     "events": "node 03-detect-events.js",
+    "features": "node 04-features.js",
     "measure-clamp": "node tools/measure-clamp-binding.js",
     "test": "node --test \"tests/*.test.js\""
   }
