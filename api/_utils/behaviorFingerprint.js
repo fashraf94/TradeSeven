@@ -163,6 +163,14 @@ export function rawAxisMetrics(archetypeConfig, resolvedHftConfig) {
   return { tempo, reach, patience, concentration, discipline };
 }
 
+// DEFERRED (code-review #5, test-only/latent): the two constants below are
+// derived once from the imported ARCHETYPE_CONFIGS, not from a `configs` passed
+// to computeFingerprint. Production always passes the real roster, so this is
+// correct in production; only an injected/alternate roster (the blocking tests)
+// would see the disabled-rotation denominator / patience pin reference the real
+// roster's extremes. Folding these into computeAxisRanges(configs) is a clean
+// follow-up if the helper is ever driven with a non-default roster in prod.
+//
 // The largest ENABLED forced-rotation clock across the roster — the constant
 // churn denominator for a disabled-rotation archetype (its swap window alone
 // sets its tempo). Derived, not hardcoded.

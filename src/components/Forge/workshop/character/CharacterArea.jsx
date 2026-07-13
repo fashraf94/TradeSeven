@@ -18,7 +18,7 @@ import {
   Fingerprint, TempoControl, BornWithKit, LeanSlots, LeanEntry, StateNotice, BattleSnapshot, LoadoutSubHead,
 } from './CharacterKit.jsx';
 import { getArchetypeCharacter, getArchetypeRoster } from '../../../../data/archetypeCharacter.js';
-import { ARCHETYPE_ADJUSTMENTS, getAdjustment, getCanonicalTextVersion, findEquipConflicts } from '../../../../data/archetypeAdjustments.js';
+import { ARCHETYPE_ADJUSTMENTS, getAdjustment, getCanonicalText, getCanonicalTextVersion, findEquipConflicts } from '../../../../data/archetypeAdjustments.js';
 import { resolveCharacterState, CHARACTER_STATES } from '../../../../data/characterState.js';
 import { STANDING_LEANS_CAP, LEAN_INVALIDATION_REASONS } from '../../../../../api/_utils/leanRevalidation.js';
 import { STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED } from '../../../../config/featureFlags.js';
@@ -63,10 +63,22 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
   const c = ownArch.colors[0];
   const archId = ownArch.id;
   const menu = menuFor(archId);
-  const [busyId, setBusyId] = React.useState(null);
+  // In-flight action ids (a Set, so concurrent actions don't clear each other).
+  const [busyIds, setBusyIds] = React.useState(() => new Set());
+  const addBusy = (id) => setBusyIds((s) => { const n = new Set(s); n.add(id); return n; });
+  const removeBusy = (id) => setBusyIds((s) => { const n = new Set(s); n.delete(id); return n; });
 
   const standingLeans = agent?.standingLeans || [];
   const desiredTempo = agent?.dials?.tempo || 'standard';
+
+  // Optimistic tempo — the dial + fingerprint reshape instantly; the subscription
+  // reconciles it once the write lands, and a failed write visibly reverts (never
+  // a silent snap-back — the revert is paired with an error toast).
+  const [optimisticTempo, setOptimisticTempo] = React.useState(null);
+  React.useEffect(() => {
+    if (optimisticTempo && desiredTempo === optimisticTempo) setOptimisticTempo(null);
+  }, [desiredTempo, optimisticTempo]);
+  const shownTempo = optimisticTempo || desiredTempo;
 
   // The pure resolver — the single source for state + lean validity + effective tempo.
   const cs = resolveCharacterState({
@@ -78,9 +90,25 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
     tempo: desiredTempo,
   });
   const locked = cs.isBattleLocked;
+  const validById = new Map(cs.leans.valid.map((l) => [l.adjustmentId, l]));
+  const invalidById = new Map(cs.leans.invalidated.map((l) => [l.adjustmentId, l]));
   const validIds = cs.leans.valid.map((l) => l.adjustmentId);
   const staleIds = new Set(cs.leans.invalidated.filter((l) => l.reason === LEAN_INVALIDATION_REASONS.DEPRECATED_VERSION).map((l) => l.adjustmentId));
-  const slotsFull = cs.leans.valid.length >= STANDING_LEANS_CAP;
+
+  // Slot occupancy tracks the RAW standing-leans count — the server's cap authority
+  // counts every pin (valid, stale, or didn't-carry), so the client must too, or it
+  // would offer an Equip the server rejects with lean_limit. Each raw pin renders in
+  // a slot with a Clear action, so a stranded pin can always be freed.
+  const slotsFull = standingLeans.length >= STANDING_LEANS_CAP;
+  const slotPins = standingLeans.map((raw) => {
+    const v = validById.get(raw.adjustmentId);
+    if (v) return { ...v, slotState: 'valid' };
+    const reason = invalidById.get(raw.adjustmentId)?.reason;
+    if (reason === LEAN_INVALIDATION_REASONS.DEPRECATED_VERSION) {
+      return { adjustmentId: raw.adjustmentId, version: raw.version, slotState: 'stale', text: getCanonicalText(archId, raw.adjustmentId) };
+    }
+    return { adjustmentId: raw.adjustmentId, version: raw.version, slotState: 'dropped' };
+  });
 
   // equipped leans enriched with policy (for the fingerprint annotation)
   const equippedLeans = cs.leans.valid.map((l) => ({ ...l, policy: getAdjustment(archId, l.adjustmentId)?.policy }));
@@ -96,34 +124,48 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
   const blockedBy = (adj) => findEquipConflicts(archId, adj.id, validIds)[0] || null;
 
   const toast = (msg) => (showToast ? showToast(msg) : undefined);
+  const toastErr = (err) => {
+    if (err?.code === 'not_found') toast('This control isn\'t live yet.');
+    else if (err?.code === 'battle_active') toast('Locked while a battle is live.');
+    else if (err?.code === 'conflicting_lean') toast('That lean conflicts with one you already have.');
+    else if (err?.code === 'lean_limit') toast('Both slots are full — clear one first.');
+    else if (err?.code === 'deprecated_version') toast('That lean was revised — re-confirm the current wording.');
+    else toast(err?.message || 'Could not update the loadout.');
+  };
   const run = async (id, fn) => {
     if (locked) return toast('Locked while a battle is live.');
-    setBusyId(id);
+    addBusy(id);
     try {
       await fn();
       // agent doc re-delivers via the live subscription; nothing to set locally.
     } catch (err) {
-      if (err?.code === 'not_found') toast('This control isn\'t live yet.');
-      else if (err?.code === 'battle_active') toast('Locked while a battle is live.');
-      else if (err?.code === 'conflicting_lean') toast('That lean conflicts with one you already have.');
-      else if (err?.code === 'lean_limit') toast('Both slots are full — remove one first.');
-      else if (err?.code === 'deprecated_version') toast('That lean was revised — re-confirm the current wording.');
-      else toast(err?.message || 'Could not update the loadout.');
+      toastErr(err);
     } finally {
-      setBusyId(null);
+      removeBusy(id);
     }
   };
   const equip = (id) => run(id, () => equipLean(agent.id, id, getCanonicalTextVersion(archId, id)));
   const remove = (id) => run(id, () => unequipLean(agent.id, id));
   const reconfirm = (id) => run(id, () => equipLean(agent.id, id, getCanonicalTextVersion(archId, id)));
-  const changeTempo = (id) => run(`tempo:${id}`, () => setTempoDial(agent.id, id));
+
+  // Tempo is optimistic: reflect the new position immediately; on failure, revert
+  // the optimistic value (dial + fingerprint snap back) AND surface the error.
+  const changeTempo = (id) => {
+    if (locked) return toast('Locked while a battle is live.');
+    if (id === desiredTempo) return;
+    setOptimisticTempo(id);
+    addBusy(`tempo:${id}`);
+    setTempoDial(agent.id, id)
+      .catch((err) => { setOptimisticTempo(null); toastErr(err); })
+      .finally(() => removeBusy(`tempo:${id}`));
+  };
 
   const menuRef = React.useRef(null);
   const focusMenu = () => { if (menuRef.current) menuRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 
   const fingerprint = (
     <Fingerprint archId={archId} archName={ownArch.name} accent={c}
-      tempo={cs.tempo.desired} liveTempo={cs.tempo.effective} equippedLeans={equippedLeans}
+      tempo={shownTempo} liveTempo={cs.tempo.effective} equippedLeans={equippedLeans}
       compact={compact} barFallback={compact} />
   );
 
@@ -135,8 +177,8 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
       <BornWithKit archName={ownArch.name} equippedTraits={traits?.equippedTraits || []} signatureIds={ownArch.signature || []} compact={compact} />
 
       <div style={{ marginTop: 26 }} ref={menuRef}>
-        <LoadoutSubHead icon="sliders" title="Standing leans" meta={`${cs.leans.valid.length} / ${STANDING_LEANS_CAP} slots`} compact={compact} />
-        <LeanSlots equipped={cs.leans.valid} locked={locked} onRemove={remove} onFocusMenu={focusMenu} compact={compact} />
+        <LoadoutSubHead icon="sliders" title="Standing leans" meta={`${standingLeans.length} / ${STANDING_LEANS_CAP} slots`} compact={compact} />
+        <LeanSlots pins={slotPins} archName={ownArch.name} locked={locked} onRemove={remove} onFocusMenu={focusMenu} compact={compact} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, margin: '18px 0 12px' }}>
           <Mono style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: T.ink2, fontWeight: 600 }}>{ownArch.name} menu</Mono>
           <div style={{ flex: 1, height: 1, background: T.hair }} />
@@ -145,7 +187,7 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {menu.map((adj) => (
             <LeanEntry key={adj.id} archId={archId} lean={adj} state={entryState(adj)} blockedBy={blockedBy(adj)}
-              slotsFull={slotsFull} locked={locked} busy={busyId === adj.id}
+              slotsFull={slotsFull} locked={locked} busy={busyIds.has(adj.id)}
               onEquip={equip} onRemove={remove} onReconfirm={reconfirm} compact={compact} />
           ))}
         </div>
@@ -153,7 +195,7 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
 
       <div style={{ marginTop: 26 }}>
         <LoadoutSubHead icon="compass" title="Tempo" meta="Drives the fingerprint" compact={compact} />
-        <TempoControl archId={archId} archName={ownArch.name} value={cs.tempo.desired} onChange={changeTempo} locked={locked} compact={compact} />
+        <TempoControl archId={archId} archName={ownArch.name} value={shownTempo} onChange={changeTempo} locked={locked} compact={compact} />
       </div>
     </>
   );

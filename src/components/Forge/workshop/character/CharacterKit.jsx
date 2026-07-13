@@ -319,40 +319,56 @@ export function BornWithKit({ archName, equippedTraits = [], signatureIds = [], 
 }
 
 // ── Standing-leans equipped slots ────────────────────────────────────────────
-export function LeanSlots({ equipped = [], locked, onRemove, onFocusMenu, compact }) {
+// Renders ALL raw pins (valid / stale / dropped) so slot occupancy always matches
+// the server's cap authority. A dropped pin (didn't carry to the current
+// archetype) or a stale pin (revised) still holds a server slot, so each is shown
+// with a Clear action — the only way to free the slot from this surface.
+export function LeanSlots({ pins = [], archName, locked, onRemove, onFocusMenu, compact }) {
   const T = useFK();
   const c = T[CH_ACCENT_TOKEN];
   const cells = [];
-  for (let i = 0; i < STANDING_LEANS_CAP; i++) cells.push(equipped[i] || null);
+  for (let i = 0; i < STANDING_LEANS_CAP; i++) cells.push(pins[i] || null);
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-      {cells.map((l, i) => l ? (
-        <div key={l.adjustmentId} style={{ position: 'relative', overflow: 'hidden', minHeight: compact ? 96 : 104, padding: compact ? '12px 13px' : '13px 14px', borderRadius: 14,
-          background: T.surface, border: `1px solid ${alpha(c, 0.4)}`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: c }} />
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-            <div style={{ minWidth: 0 }}>
-              <Mono style={{ fontSize: 8.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: c, display: 'block' }}>Slot {i + 1} · {l.adjustmentId}</Mono>
+      {cells.map((l, i) => {
+        if (!l) {
+          return (
+            <button key={`empty-${i}`} className="fw-tap" onClick={locked ? undefined : onFocusMenu} style={{ all: 'unset', boxSizing: 'border-box', cursor: locked ? 'default' : 'pointer',
+              minHeight: compact ? 96 : 104, padding: compact ? '12px 13px' : '13px 14px', borderRadius: 14, border: `1.4px dashed ${T.hair2}`,
+              background: alpha('#fff', 0.012), display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 8, opacity: locked ? 0.45 : 1 }}>
+              <div style={{ width: 30, height: 30, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px dashed ${T.hair2}` }}>
+                <CIcon name="plus" size={15} color={T.ink2} /></div>
+              <div>
+                <div style={{ fontSize: compact ? 12.5 : 13.5, color: T.ink2, fontWeight: 600 }}>Add a standing lean</div>
+                <Mono style={{ fontSize: 8.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.ink3, display: 'block', marginTop: 3 }}>Slot {i + 1} · from the menu below</Mono>
+              </div>
+            </button>
+          );
+        }
+        const dropped = l.slotState === 'dropped';
+        const stale = l.slotState === 'stale';
+        const accent = dropped ? T.ink3 : stale ? T.gold : c;
+        return (
+          <div key={l.adjustmentId} style={{ position: 'relative', overflow: 'hidden', minHeight: compact ? 96 : 104, padding: compact ? '12px 13px' : '13px 14px', borderRadius: 14,
+            background: dropped ? alpha(T.ink2, 0.05) : T.surface, border: `1px solid ${dropped ? T.hair : alpha(accent, 0.4)}`,
+            display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: accent }} />
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <Mono style={{ fontSize: 8.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: accent, display: 'block' }}>Slot {i + 1} · {l.adjustmentId}</Mono>
+                {(dropped || stale) && <Mono style={{ fontSize: 8, letterSpacing: '0.08em', textTransform: 'uppercase', color: accent, display: 'block', marginTop: 3 }}>{dropped ? "Doesn't apply here" : 'Revised'}</Mono>}
+              </div>
+              {!locked && <button className="fw-tap" onClick={() => onRemove(l.adjustmentId)} title={dropped || stale ? 'Clear this slot' : 'Remove lean'} style={{ all: 'unset', cursor: 'pointer', width: 22, height: 22, flexShrink: 0,
+                borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha(T.ink2, 0.1), border: `1px solid ${T.hair}` }}>
+                <CIcon name="x" size={12} color={T.ink3} stroke={2.2} /></button>}
             </div>
-            {!locked && <button className="fw-tap" onClick={() => onRemove(l.adjustmentId)} title="Remove lean" style={{ all: 'unset', cursor: 'pointer', width: 22, height: 22, flexShrink: 0,
-              borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha(T.ink2, 0.1), border: `1px solid ${T.hair}` }}>
-              <CIcon name="x" size={12} color={T.ink3} stroke={2.2} /></button>}
+            <div style={{ fontSize: compact ? 11 : 12, color: dropped ? T.ink3 : T.ink, lineHeight: 1.4, fontWeight: dropped ? 400 : 500,
+              display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+              {dropped ? `No longer in ${archName || 'this archetype'}'s menu — clear the slot to re-pick.` : l.text}
+            </div>
           </div>
-          <div style={{ fontSize: compact ? 11 : 12, color: T.ink, lineHeight: 1.4, fontWeight: 500,
-            display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{l.text}</div>
-        </div>
-      ) : (
-        <button key={`empty-${i}`} className="fw-tap" onClick={locked ? undefined : onFocusMenu} style={{ all: 'unset', boxSizing: 'border-box', cursor: locked ? 'default' : 'pointer',
-          minHeight: compact ? 96 : 104, padding: compact ? '12px 13px' : '13px 14px', borderRadius: 14, border: `1.4px dashed ${T.hair2}`,
-          background: alpha('#fff', 0.012), display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 8, opacity: locked ? 0.45 : 1 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px dashed ${T.hair2}` }}>
-            <CIcon name="plus" size={15} color={T.ink2} /></div>
-          <div>
-            <div style={{ fontSize: compact ? 12.5 : 13.5, color: T.ink2, fontWeight: 600 }}>Add a standing lean</div>
-            <Mono style={{ fontSize: 8.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.ink3, display: 'block', marginTop: 3 }}>Slot {i + 1} · from the menu below</Mono>
-          </div>
-        </button>
-      ))}
+        );
+      })}
     </div>
   );
 }

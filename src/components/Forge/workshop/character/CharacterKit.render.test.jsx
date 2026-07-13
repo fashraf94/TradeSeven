@@ -86,10 +86,18 @@ describe('CharacterKit — render smoke', () => {
     expect(html).not.toContain('next time');
   });
 
-  it('LeanSlots renders equipped + empty slots', () => {
-    const html = wrap(<LeanSlots equipped={[{ adjustmentId: 'TF-01', version: 1, text: 'Prefer fresh breakouts' }]} locked={false} onRemove={() => {}} onFocusMenu={() => {}} />);
+  it('LeanSlots renders a valid pin + an empty slot', () => {
+    const html = wrap(<LeanSlots pins={[{ adjustmentId: 'TF-01', version: 1, text: 'Prefer fresh breakouts', slotState: 'valid' }]} locked={false} onRemove={() => {}} onFocusMenu={() => {}} />);
     expect(html).toContain('TF-01');
     expect(html).toContain('Add a standing lean'); // the empty slot
+  });
+
+  it('LeanSlots surfaces a dropped (didn\'t-carry) pin with a clear affordance so the server slot can be freed', () => {
+    const html = wrap(<LeanSlots archName="Trend Follower" pins={[{ adjustmentId: 'CN-02', version: 1, slotState: 'dropped' }]} locked={false} onRemove={() => {}} onFocusMenu={() => {}} />);
+    expect(html).toContain('CN-02');
+    expect(html).toContain('apply here');           // "Doesn't apply here" tag
+    expect(html).toContain('clear the slot to re-pick');
+    expect(html).toContain('Clear this slot');      // the clear button
   });
 
   it('BattleSnapshot renders the frozen loadout', () => {
