@@ -50,17 +50,23 @@ describe('behaviorFingerprint — DERIVED from resolved config, not hardcoded (�
         const { archetypeConfig, resolvedHftConfig } = resolveConfigForFingerprint(archetype, tempo);
         const fp = computeFingerprint(archetype, tempo);
 
-        // Tempo ← swapWindow.capPerWindow (the resolved, dial-clamped value)
-        expect(fp.raw.tempo).toBe(resolvedHftConfig.swapWindow.capPerWindow);
+        // Tempo ← capPerWindow ÷ the forced-rotation clock (churn rate). For an
+        // enabled rotation this is exactly cap / ticksThreshold (both resolved).
+        if (resolvedHftConfig.forcedRotation.enabled !== false) {
+          expect(fp.raw.tempo).toBeCloseTo(
+            resolvedHftConfig.swapWindow.capPerWindow / resolvedHftConfig.forcedRotation.ticksThreshold, 10);
+        } else {
+          expect(fp.raw.tempo).toBeGreaterThan(0); // disabled: swap-window-only churn
+        }
         // Reach ← 1 / hurdleFloor.default.atrMultiplier (resolved)
         expect(fp.raw.reach).toBeCloseTo(1 / resolvedHftConfig.hurdleFloor.default.atrMultiplier, 10);
         // Concentration ← top-level sectorConcentrationCap
         expect(fp.raw.concentration).toBe(archetypeConfig.sectorConcentrationCap);
-        // Patience ← forcedRotation.ticksThreshold, or maximal when rotation disabled
+        // Patience ← the STAGNATION hurdle floor (resolved), or maximal when disabled
         if (resolvedHftConfig.forcedRotation.enabled === false) {
-          expect(fp.raw.patience).toBeGreaterThan(6); // above the largest enabled ticks
+          expect(fp.raw.patience).toBeGreaterThan(0.5); // above the largest enabled stagnation floor
         } else {
-          expect(fp.raw.patience).toBe(resolvedHftConfig.forcedRotation.ticksThreshold);
+          expect(fp.raw.patience).toBe(resolvedHftConfig.hurdleFloor.byReason.stagnation.atrMultiplier);
         }
         // Discipline > 0 and equals the documented preset formula
         expect(fp.raw.discipline).toBeGreaterThan(0);
@@ -84,7 +90,7 @@ describe('behaviorFingerprint — a changed knob MOVES the shape (§2.1)', () =>
     const mutated = clone(ARCHETYPE_CONFIGS);
     mutated.momentum_chaser.hftConfig.swapWindow.capPerWindow += 5;
     const after = computeFingerprint('momentum_chaser', 'standard', { configs: mutated });
-    expect(after.raw.tempo).toBe(base.raw.tempo + 5);
+    expect(after.raw.tempo).toBeGreaterThan(base.raw.tempo);
     expect(after.axes.tempo).not.toBeCloseTo(base.axes.tempo, 6);
   });
 
@@ -103,6 +109,48 @@ describe('behaviorFingerprint — a changed knob MOVES the shape (§2.1)', () =>
     const after = computeFingerprint('diversifier', 'standard', { configs: mutated });
     expect(after.raw.concentration).toBe(6);
     expect(after.axes.concentration).toBeGreaterThan(base.axes.concentration);
+  });
+});
+
+describe('behaviorFingerprint — Release-1 tuning direction (founder correction 2026-07-13)', () => {
+  // Real HEAD config is POST-tuning. Reverting the two documented Release-1
+  // changes reconstructs the PRE-tuning disposition, so we can pin the direction
+  // each change must render as.
+  const preTuning = () => {
+    const pre = clone(ARCHETYPE_CONFIGS);
+    // momentum_chaser was TEMPERED: forced-rotation clock 3→5, swap ceiling 8→6,
+    // stagnation floor 0.55→0.5. Revert to pre-tuning values.
+    pre.momentum_chaser.hftConfig.forcedRotation.ticksThreshold = 3;
+    pre.momentum_chaser.hftConfig.swapWindow.capPerWindow = 8;
+    pre.momentum_chaser.hftConfig.hurdleFloor.byReason.stagnation.atrMultiplier = 0.55;
+    // degen was LOOSENED: stagnation floor 0.6→0.3 to make it churn more. Revert.
+    pre.degen.hftConfig.hurdleFloor.byReason.stagnation.atrMultiplier = 0.6;
+    return pre;
+  };
+
+  it("degen's stagnation floor 0.6→0.3 reads as LESS patient (post < pre)", () => {
+    const post = computeFingerprint('degen', 'standard');                       // real HEAD (floor 0.3)
+    const before = computeFingerprint('degen', 'standard', { configs: preTuning() }); // floor 0.6
+    expect(post.raw.patience).toBeLessThan(before.raw.patience);
+    expect(post.axes.patience).toBeLessThan(before.axes.patience);
+  });
+
+  it("momentum_chaser's clock 3→5 tempering reads as LOWER Tempo, not higher Patience", () => {
+    const post = computeFingerprint('momentum_chaser', 'standard');                       // ticks 5, cap 6
+    const before = computeFingerprint('momentum_chaser', 'standard', { configs: preTuning() }); // ticks 3, cap 8
+    // The tempering shows up as LOWER tempo (fires later + tighter ceiling = less churn)...
+    expect(post.raw.tempo).toBeLessThan(before.raw.tempo);
+    // ...and does NOT show up as higher patience (the mis-keying this corrects).
+    expect(post.raw.patience).toBeLessThanOrEqual(before.raw.patience);
+  });
+
+  it('the stagnation CLOCK drives Tempo, not Patience: changing ONLY ticksThreshold moves Tempo and leaves Patience flat', () => {
+    const base = computeFingerprint('momentum_chaser', 'standard');
+    const slower = clone(ARCHETYPE_CONFIGS);
+    slower.momentum_chaser.hftConfig.forcedRotation.ticksThreshold += 3; // longer clock = less churn
+    const after = computeFingerprint('momentum_chaser', 'standard', { configs: slower });
+    expect(after.raw.tempo).toBeLessThan(base.raw.tempo);  // lower tempo
+    expect(after.raw.patience).toBe(base.raw.patience);     // patience untouched by the clock
   });
 });
 
@@ -162,10 +210,13 @@ describe('behaviorFingerprint — disabled forced rotation (guardian) reads maxi
     expect(byTempo.measured.axes.patience).toBe(byTempo.aggressive.axes.patience);
   });
 
-  it('guardian is among the most patient archetypes at standard', () => {
-    const guardian = computeFingerprint('guardian', 'standard');
-    const degen = computeFingerprint('degen', 'standard');
-    expect(guardian.axes.patience).toBeGreaterThan(degen.axes.patience);
+  it('guardian stays the MOST patient archetype at every dial position (founder requirement)', () => {
+    for (const tempo of VALID_TEMPO_VALUES) {
+      const guardian = computeFingerprint('guardian', tempo).axes.patience;
+      for (const archetype of VALID_ARCHETYPES) {
+        expect(guardian).toBeGreaterThanOrEqual(computeFingerprint(archetype, tempo).axes.patience - 1e-9);
+      }
+    }
   });
 });
 

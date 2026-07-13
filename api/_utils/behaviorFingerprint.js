@@ -32,24 +32,31 @@
 // captioned "set by your archetype — the dial doesn't move these").
 //
 // DIAL-RESPONSIVE (move with the tempo dial via applyTempoToHftConfig):
-//   tempo    "How often it rotates"          ← swapWindow.capPerWindow (×mult)
+//   tempo    "How often it rotates"          ← swapWindow.capPerWindow (×mult) ÷
+//                                               forcedRotation.ticksThreshold (÷mult) —
+//                                               the churn RATE (more capacity and/or a
+//                                               shorter forced-rotation clock ⇒ more tempo).
 //   reach    "How far it stretches"          ← 1 / hurdleFloor.default.atrMultiplier (floor ÷mult)
-//   patience "How long it holds through noise"← forcedRotation.ticksThreshold (÷mult),
-//                                               or MAX when forced rotation is DISABLED
-//                                               (guardian never force-rotates → maximally
-//                                               patient AND dial-invariant — a truthful
-//                                               special case).
+//   patience "How long it holds through noise"← hurdleFloor.byReason.stagnation.atrMultiplier
+//                                               (÷mult), or MAX when forced rotation is
+//                                               DISABLED (guardian never force-rotates →
+//                                               maximally patient AND dial-invariant — a
+//                                               truthful special case).
 // FIXED ANCHORS (set at creation, dial-invariant — live OUTSIDE resolveHftConfig):
 //   concentration "How much it piles into what works" ← sectorConcentrationCap (direct)
 //   discipline    "How tightly it cuts"               ← 1 / (preset.trailStopATR × preset.vwapFailureTicks)
 //                                                        via archetypeConfig.defaultPreset
 //
-// WHY capPerWindow (not 1/ticksThreshold) for Tempo: the design/verifier flagged
-// that a naive Tempo←1/ticksThreshold collides with Patience←ticksThreshold (they
-// become mechanical inverses). Binding Tempo to the always-active swap-window
-// ceiling gives each axis its OWN primary field and keeps both dial-responsive
-// without collision. (forcedRotation.ticksThreshold is inert while
-// forcedRotation.enabled is false, so Tempo must not depend on it either.)
+// PATIENCE / TEMPO — the founder correction (2026-07-13): the STAGNATION CLOCK
+// (forcedRotation.ticksThreshold) is a CHURN-CADENCE knob, not a patience knob —
+// Release 1 raised momentum_chaser's threshold 3→5 to TEMPER it (fire later,
+// churn LESS), which must read as lower Tempo, not higher Patience. So the clock
+// lives in Tempo (inverse). Patience is the STAGNATION HURDLE FLOOR: a HIGH floor
+// makes a stagnation swap hard to justify ⇒ it holds through noise (patient); a
+// LOW floor lets rotation fire freely (impatient) — Release 1 lowered degen's
+// stagnation floor 0.6→0.3 precisely to make it churn more, so degen must read
+// LESS patient. (Placing the clock in Patience too would make mc's 3→5 spuriously
+// raise Patience — the very error this corrects; see the blocking test.)
 
 import {
   getArchetypeConfig,
@@ -113,19 +120,32 @@ export function rawAxisMetrics(archetypeConfig, resolvedHftConfig) {
   const hft = resolvedHftConfig || {};
   const fr = hft.forcedRotation || {};
   const sw = hft.swapWindow || {};
+  const rotationEnabled = fr.enabled !== false;
+  const cap = Number.isFinite(sw.capPerWindow) ? sw.capPerWindow : 0;
+  const ticks = fr.ticksThreshold;
   const floorDefault = hft.hurdleFloor?.default?.atrMultiplier;
+  const stagFloor = hft.hurdleFloor?.byReason?.stagnation?.atrMultiplier;
 
-  // Tempo — swap-window ceiling (always active; ×mult under the dial).
-  const tempo = Number.isFinite(sw.capPerWindow) ? sw.capPerWindow : 0;
+  // Tempo — the churn RATE: swap-window ceiling ÷ the forced-rotation clock.
+  // More capacity and/or a SHORTER clock ⇒ more rotation. Both move with the dial
+  // (cap ×mult, clock ÷mult), so aggressive extends tempo. A DISABLED forced
+  // rotation never force-rotates, so its clock is inert — tempo then depends only
+  // on the (still-active, dial-moved) swap window, via a constant churn
+  // denominator that keeps the inert clock from spuriously moving the axis.
+  const churnDenom = rotationEnabled && Number.isFinite(ticks) && ticks > 0 ? ticks : MAX_ENABLED_TICKS;
+  const tempo = churnDenom > 0 ? cap / churnDenom : 0;
 
   // Reach — inverse of the quality-gate floor (lower floor reaches further; ÷mult).
   const reach = Number.isFinite(floorDefault) && floorDefault > 0 ? 1 / floorDefault : 0;
 
-  // Patience — forced-rotation threshold (÷mult, higher = holds longer). A
-  // DISABLED forced rotation means the agent never mechanically rotates → the
-  // most patient posture there is, and dial-invariant. We pin it to the top of
-  // the enabled range (+1) so it reads as maximal without a hardcoded axis value.
-  const patience = fr.enabled === false ? PATIENCE_DISABLED_RAW : (Number.isFinite(fr.ticksThreshold) ? fr.ticksThreshold : 0);
+  // Patience — the STAGNATION hurdle floor (÷mult under the dial). HIGH floor ⇒
+  // stagnation swaps are hard to justify ⇒ it holds ⇒ patient; LOW floor ⇒
+  // rotates freely ⇒ impatient. A DISABLED forced rotation never gives up on a
+  // stalled name ⇒ maximally patient AND dial-invariant (pinned just above the
+  // largest enabled stagnation floor — derived, not a hardcoded magnitude).
+  const patience = !rotationEnabled
+    ? PATIENCE_DISABLED_RAW
+    : (Number.isFinite(stagFloor) ? stagFloor : 0);
 
   // Concentration (ANCHOR) — the per-sector ceiling (higher cap = more willing
   // to pile into one sector). Top-level, NOT dial-touched.
@@ -143,16 +163,34 @@ export function rawAxisMetrics(archetypeConfig, resolvedHftConfig) {
   return { tempo, reach, patience, concentration, discipline };
 }
 
-// The raw patience value for a disabled forced rotation: one tick above the
-// largest ENABLED ticksThreshold across the roster, so "never force-rotates"
-// reads as maximally patient. Derived, not hardcoded to a magnitude.
-const PATIENCE_DISABLED_RAW = (() => {
-  let maxEnabled = 0;
+// The largest ENABLED forced-rotation clock across the roster — the constant
+// churn denominator for a disabled-rotation archetype (its swap window alone
+// sets its tempo). Derived, not hardcoded.
+const MAX_ENABLED_TICKS = (() => {
+  let m = 1;
   for (const cfg of Object.values(ARCHETYPE_CONFIGS)) {
     const fr = cfg?.hftConfig?.forcedRotation;
-    if (fr && fr.enabled !== false && Number.isFinite(fr.ticksThreshold)) maxEnabled = Math.max(maxEnabled, fr.ticksThreshold);
+    if (fr && fr.enabled !== false && Number.isFinite(fr.ticksThreshold)) m = Math.max(m, fr.ticksThreshold);
   }
-  return maxEnabled + 1;
+  return m;
+})();
+
+// The raw patience value for a disabled forced rotation: strictly above the
+// largest enabled STAGNATION FLOOR reachable at ANY dial position (the dial
+// ÷mult raises the floor at Measured), so "never force-rotates" reads as
+// maximally patient at every tempo. Derived, not hardcoded to a magnitude.
+const PATIENCE_DISABLED_RAW = (() => {
+  let maxFloor = 0;
+  for (const archetype of VALID_ARCHETYPES) {
+    const fr = ARCHETYPE_CONFIGS[archetype]?.hftConfig?.forcedRotation;
+    if (!fr || fr.enabled === false) continue; // only enabled archetypes carry a live stagnation floor
+    for (const tempo of VALID_TEMPO_VALUES) {
+      const { resolvedHftConfig } = resolveConfigForFingerprint(archetype, tempo);
+      const f = resolvedHftConfig?.hurdleFloor?.byReason?.stagnation?.atrMultiplier;
+      if (Number.isFinite(f)) maxFloor = Math.max(maxFloor, f);
+    }
+  }
+  return maxFloor + Math.max(0.01, 0.02 * (maxFloor || 1));
 })();
 
 /**
