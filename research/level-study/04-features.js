@@ -66,9 +66,15 @@ function loadEarningsDates() {
   return new Map([...bySym].map(([s, set]) => [s, [...set].sort()]));
 }
 
-/** Per-date prev-session close map for an ETF's 5m sessions (for the direction tags). */
+/**
+ * Per-date prev-session close map for an ETF's 5m sessions (for the direction tags).
+ * S5.6 §3: warmup5m sessions are EXCLUDED. The direction tags are features, and features may
+ * never read a warmup bar — only the RVOL/volume baselines may. Filtering here keeps the first
+ * study session's ETF direction null exactly as it was pre-warmup, so the warmup changes RVOL
+ * and nothing else.
+ */
 function prevCloseMap(fiveMinByDate) {
-  const dates = [...fiveMinByDate.keys()].sort();
+  const dates = [...fiveMinByDate.keys()].filter((d) => !fiveMinByDate.get(d).warmup5m).sort();
   const m = new Map();
   for (let i = 1; i < dates.length; i++) m.set(dates[i], fiveMinByDate.get(dates[i - 1]).sessionCloseAdj);
   return m;
@@ -98,19 +104,83 @@ function cell(rows) {
   return { n, uniqueDates: ud, verdict: n >= MIN_N && ud >= MIN_UD ? 'PASS' : 'UNDERPOWERED' };
 }
 
+/**
+ * A cell for a DESCRIPTIVE class — counts ONLY, never a verdict.
+ *
+ * S56-A2 pre-registers OPEN_TOUCH as described-never-tested: no hypothesis, no verdict, no CI. But
+ * `cell()` stamps `verdict: PASS | UNDERPOWERED` on everything it touches, and `printReread` prints
+ * `c.verdict` generically — so an OPEN_TOUCH row would render as `OPEN_TOUCH … n=812 PASS`, and a
+ * reader (the founder is non-technical and reads the verdict column) would take a descriptive
+ * base-rate class for a cleared hypothesis. A cell may not display a verdict it does not have.
+ * (BUILD_RULES §9: the label and the number come from one source, by construction.)
+ */
+function descriptiveCell(rows) {
+  return { n: rows.length, uniqueDates: new Set(rows.map((r) => r.eventDate)).size };
+}
+
 /** rows = joined {event fields + features.pre_touch} for in-sample touch events. */
 export function buildBudgetReread(rows) {
   const f2 = rows.filter((r) => r.familyTier === 'F2' || r.familyTier === 'F3');
   const side = (arr, s) => arr.filter((r) => r.side === s);
   const out = { acceptance: { minN: MIN_N, minUniqueDates: MIN_UD }, questions: {} };
 
-  // P3 — F2+ × 3 RVOL buckets × side (bucket edges pre-registered, config S5-C1)
+  // P3 — F2+ × 3 RVOL buckets × side, ON hasIntradayApproach === true (S56-A1).
+  //
+  // P3 was ALREADY conditioned this way in fact — an event whose touch bar is the session's first
+  // regular bar has zero pre-touch bars, so rvol_approach is UNDEFINED (100% null, measured) and it
+  // fell into the null_rvol cell. S56-A1 makes the silent conditioning STATED. We are not narrowing
+  // P3; we are telling the truth about its population. The excluded count is reported, never hidden.
+  const f2approach = f2.filter((r) => r.hasIntradayApproach === true);
   const p3 = {};
   for (const s of ['support', 'resistance']) {
-    for (const b of ['LOW', 'MID', 'HIGH']) p3[`${s}.${b}`] = cell(side(f2, s).filter((r) => r.features.pre_touch.rvol_bucket === b));
-    p3[`${s}.null_rvol`] = { n: side(f2, s).filter((r) => r.features.pre_touch.rvol_bucket == null).length };
+    for (const b of ['LOW', 'MID', 'HIGH']) p3[`${s}.${b}`] = cell(side(f2approach, s).filter((r) => r.features.pre_touch.rvol_bucket === b));
+    // Residual nulls WITHIN the approach-bearing population (the 3.2% baseline/spin-up class) —
+    // structurally different from the excluded no-approach events, so reported separately.
+    p3[`${s}.null_rvol`] = { n: side(f2approach, s).filter((r) => r.features.pre_touch.rvol_bucket == null).length };
   }
-  out.questions.P3 = { gate: 'F2+', split: 'rvol_bucket × side', cells: p3 };
+  out.questions.P3 = {
+    gate: 'F2+ AND hasIntradayApproach === true (S56-A1)',
+    split: 'rvol_bucket × side',
+    cells: p3,
+    excludedNoIntradayApproach: {
+      n: f2.filter((r) => r.hasIntradayApproach !== true).length,
+      why: 'no regular bar before the touch bar → zero pre-touch bars → rvol_approach UNDEFINED (not missing). Split below into the true 09:30 gap-opens (OPEN_TOUCH, S56-A2) and data-gap sessions; never pooled into P3.',
+    },
+  };
+
+  // The events with NO intraday approach are NOT one population. Two different things null RVOL:
+  //   OPEN_TOUCH        — the touch bar IS the 09:30 regular open. A real gap-into-the-zone setup:
+  //                       economically coherent, ~30% of episodes, the S56-A2 descriptive class.
+  //   NO_PRE_BAR_DATA_GAP — the session's early bars are MISSING from the vendor feed (thin name,
+  //                       halt, truncated chunk), so the first delivered bar is mid-session. This is
+  //                       a DATA ARTIFACT, not a gap open.
+  // Both are excluded from P3 (neither has a measurable approach), but pooling the artifacts into
+  // OPEN_TOUCH would contaminate the base rates the founder reads for a real economic class. At ~230
+  // names — many thinner than the 11 probes — this is a population, not a rounding error. So they
+  // are separated by the touch bar's ET minute and reported apart.
+  const REG_OPEN = CONFIG.session.regularOpenEtMinutes; // 570 = 09:30 ET
+  const noApproach = rows.filter((r) => r.hasIntradayApproach !== true);
+  const isOpenTouch = (r) => r.touchEtMinutes === REG_OPEN;
+  const openTouch = {}, dataGap = {};
+  for (const s of ['support', 'resistance']) {
+    openTouch[s] = descriptiveCell(side(noApproach.filter(isOpenTouch), s));
+    openTouch[`${s}.F2plus`] = descriptiveCell(side(f2.filter((r) => r.hasIntradayApproach !== true && isOpenTouch(r)), s));
+    dataGap[s] = descriptiveCell(side(noApproach.filter((r) => !isOpenTouch(r)), s));
+  }
+  out.questions.OPEN_TOUCH = {
+    gate: `disposition=touch AND hasIntradayApproach === false AND touchEtMinutes === ${REG_OPEN} (09:30 ET) — S56-A2`,
+    split: 'side',
+    cells: openTouch,
+    descriptiveOnly: true,
+    note: 'DESCRIPTIVE ONLY — no hypothesis is pre-registered on this class, so its cells carry NO verdict. Base rates (held_EOD, clean_bounce, MFE/MAE) are reported in S6. Never pooled into P3.',
+  };
+  out.questions.NO_PRE_BAR_DATA_GAP = {
+    gate: `hasIntradayApproach === false AND touchEtMinutes !== ${REG_OPEN} — the session's early 5m bars are missing from the vendor feed`,
+    split: 'side',
+    cells: dataGap,
+    descriptiveOnly: true,
+    note: 'A DATA ARTIFACT, not an economic class. Excluded from P3 (no measurable approach) and deliberately NOT pooled into OPEN_TOUCH (which is a real gap-into-the-zone setup). Reported so the count is visible rather than silently absorbed. A large number here is a data-quality finding.',
+  };
 
   // P6 — F2+ × EXT/NOT_EXT × side (MID displayed-not-tested) + regime interaction (drops first)
   const p6 = {}, p6x = {};
@@ -152,9 +222,14 @@ export function buildBudgetReread(rows) {
 function printReread(rr) {
   console.log(`\n════════ §7 POST-S5 BUDGET RE-READ (floors: n≥${MIN_N} AND uniqueDates≥${MIN_UD} — S5-A2) ════════`);
   for (const [q, spec] of Object.entries(rr.questions)) {
-    console.log(`  ${q} [gate ${spec.gate}]${spec.split ? ` split ${spec.split}` : ''}`);
+    // A descriptive class is never tested, so it must never LOOK tested. Say so on the header line,
+    // and its cells carry no verdict to print (descriptiveCell) — the two agree by construction.
+    console.log(`  ${q} [gate ${spec.gate}]${spec.split ? ` split ${spec.split}` : ''}${spec.descriptiveOnly ? '  — DESCRIPTIVE ONLY, never tested (no verdict)' : ''}`);
     for (const [k, c] of Object.entries(spec.cells)) {
       console.log(`    ${k.padEnd(24)} n=${String(c.n).padStart(4)}${c.uniqueDates != null ? ` ud=${String(c.uniqueDates).padStart(3)}` : ''}${c.verdict ? ` ${c.verdict}` : ''}${c.minClassSharePctToClearFloor != null ? ` (each hourly class needs ≥${c.minClassSharePctToClearFloor}% share)` : ''}`);
+    }
+    if (spec.excludedNoIntradayApproach) {
+      console.log(`    ${'excluded (no approach)'.padEnd(24)} n=${String(spec.excludedNoIntradayApproach.n).padStart(4)}  — stated, not hidden (S56-A1)`);
     }
     if (spec.regimeInteraction) {
       const dead = Object.values(spec.regimeInteraction).filter((c) => c.verdict === 'UNDERPOWERED').length;
@@ -180,14 +255,28 @@ async function main() {
   const symbols = argv.length ? argv : members.map((m) => m.symbol);
   console.log(`LevelStory features v${CONFIG.version} — ${PRE_TOUCH_KEYS.length} pre_touch features, availability-closed\n`);
 
+  // S5.6 — the sector map is the FROZEN UNIVERSE's, not the config's 11-symbol probe map.
+  //
+  // `CONFIG.universe.sectorMap` only ever held the 11 probe names (it was transcribed from the v1
+  // freeze). Under universe v2 (~230 names) a lookup there returns undefined for every new symbol →
+  // sectorEtf null → sector_direction_at_touch, ret_*_vs_sector and sector_rs_vs_spy_* all null for
+  // the overwhelming majority of the universe. That would silently null the very sector layer the
+  // expansion was bought to switch on. The universe file carries `sector` per member; use it, and
+  // fall back to the config map only for a degraded checkout.
+  const sectorOf = new Map(members.filter((m) => m.sector).map((m) => [m.symbol, m.sector]));
+  const sectorFor = (sym) => sectorOf.get(sym) || CONFIG.universe.sectorMap[sym] || null;
+
   // benchmarks + context symbols
   const spySeries = loadDailySeries('SPY');
   const sphbSeries = loadDailySeries('SPHB'), splvSeries = loadDailySeries('SPLV');
+  const sectorEtfsInUse = [...new Set([...sectorOf.values(), ...Object.values(CONFIG.universe.sectorMap)])];
   const sectorSeriesByEtf = new Map();
-  for (const etf of new Set(Object.values(CONFIG.universe.sectorMap))) sectorSeriesByEtf.set(etf, loadDailySeries(etf));
+  for (const etf of sectorEtfsInUse) sectorSeriesByEtf.set(etf, loadDailySeries(etf));
   const etf5m = new Map();
   const etfPrevClose = new Map(); // prev-close maps built ONCE per run (review fix: were rebuilt per event)
-  for (const etf of ['SPY', 'XLK', 'XLE']) {
+  // 5m context = SPY + EVERY sector ETF the universe actually references (was hardcoded SPY/XLK/XLE
+  // — the cause of the 53.5% sector_rs_vs_spy null, and a trap for the expanded universe).
+  for (const etf of ['SPY', ...sectorEtfsInUse]) {
     try {
       const m = loadFiveMinByDate(etf).fiveMinByDate;
       etf5m.set(etf, m);
@@ -213,6 +302,29 @@ async function main() {
   const regimeNull = [...marketByDate.values()].filter((c) => c.momo_regime == null).length;
   console.log(`⚠ momo_regime null on ${regimeNull}/${marketByDate.size} sessions — and at ${memberCtx.length} symbols the deciles are ~1 name: the regime meter is NOT trustworthy at this scale (expansion evidence)\n`);
 
+  // S5.6 — STALE-ARTIFACT PRECHECK (must run BEFORE the per-symbol loop).
+  //
+  // assembleEventFeatures throws when an event predates S56-A1 (no `hasIntradayApproach`). But that
+  // throw lands in the per-symbol try/catch below, which records a failure and CONTINUES. On a stale
+  // pipeline the throw fires for every symbol → every symbol is skipped → `allRows` is empty →
+  // buildBudgetReread([]) emits an all-zero, all-UNDERPOWERED table, _stats.json is overwritten with
+  // it, the previous run's data/features/{sym}.json survive untouched, and the process exits 0.
+  // A silent all-zero budget re-read is exactly the failure this study cannot tolerate.
+  //
+  // So check the schema up front and ABORT. The pipeline order is levels → events → features; a
+  // stale events artifact means the operator skipped a stage, and the only correct response is to
+  // stop and say so.
+  for (const m of memberCtx) {
+    const bad = m.events.find((ev) => typeof ev.hasIntradayApproach !== 'boolean');
+    if (bad) {
+      console.log(`\n🔴 STALE EVENT ARTIFACT — ${m.symbol}: event ${bad.eventId} has no \`hasIntradayApproach\` (S56-A1).`);
+      console.log('   These events predate S5.6. Re-run the pipeline before features:');
+      console.log('     npm run levels && npm run events && npm run features');
+      console.log('   Aborting so a stale run cannot silently emit an all-zero budget re-read.');
+      process.exit(1);
+    }
+  }
+
   const allRows = [];
   const failures = [];
   const t0 = Date.now();
@@ -223,8 +335,12 @@ async function main() {
     try {
       const t = Date.now();
       const { fiveMinByDate } = loadFiveMinByDate(sym);
-      const sessionDates = [...fiveMinByDate.keys()].sort();
-      const sectorEtf = CONFIG.universe.sectorMap[sym] || null;
+      // S5.6 §3: `sessionDates` is STUDY-WINDOW ONLY — every feature (gap_context, the approach
+      // seed) walks it, and a feature may never read a warmup5m bar. The RVOL/volume baseline
+      // derives its own calendar from `fiveMinByDate` inside assembleEventFeatures, so the warmup
+      // is reachable on exactly that one path and nowhere else.
+      const sessionDates = [...fiveMinByDate.keys()].filter((d) => !fiveMinByDate.get(d).warmup5m).sort();
+      const sectorEtf = sectorFor(sym); // universe-file sector (v2), not the 11-symbol probe map
       const sectorSeries = sectorEtf ? sectorSeriesByEtf.get(sectorEtf) : null;
       const sector5m = sectorEtf ? etf5m.get(sectorEtf) || null : null;
       const peers = memberCtx.filter((m) => m.symbol !== sym && m.sector === me.sector);

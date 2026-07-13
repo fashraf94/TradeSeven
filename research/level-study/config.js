@@ -30,10 +30,15 @@
 //       symbol-sessions per symbol (see distanceUnit note, S35-C10). The distance unit
 //       changes materially from the v2 gate → new version so artifact provenance stays
 //       unambiguous (the S3.5 report's v2 gate numbers remain valid for [0.5, 1.5]).
-export const STUDY_CONFIG_VERSION = 3;
+//   4 → S5.6: universe v2 (11 → ~230 names), the 5-minute warmup (intradayWarmupSessions),
+//       and the P3 `hasIntradayApproach` gate. PROVENANCE MARKER ONLY — no geometric or
+//       statistical knob changes value (geometry, questions, floors, window, holdout are
+//       all unchanged). The bump exists so pre-S5.6 and post-S5.6 artifacts can never be
+//       silently confused. (S5_6 rulings §D.)
+export const STUDY_CONFIG_VERSION = 4;
 
 const CONFIG = {
-  version: 3, // S3.5-b recalibration — see STUDY_CONFIG_VERSION note above
+  version: 4, // S5.6 universe v2 + 5m warmup — see STUDY_CONFIG_VERSION note above
 
   meta: {
     codename: 'LevelStory', // parent header
@@ -111,7 +116,26 @@ const CONFIG = {
     // sessions for mature names (S1 §4) — ~837 margin. Newer names (COIN) return from
     // their listing date regardless; the depth-eligibility utility grades each per R2.
     dailyFetchStart: '2018-01-01', // ⚠ CHOICE: satisfies §A6 "≥550 with margin"; matches S1 fixtures
-    intradayFetchStart: '2023-07-10', // parent §A6: no intraday warmup needed → study window only
+    // The 5m STUDY window start. NOT the fetch start — see intradayWarmupSessions below.
+    intradayFetchStart: '2023-07-10', // = range.studyStart: the first session events may be detected on
+    // S5.6 §3 — THE 5-MINUTE WARMUP. The RVOL baseline needs 20 trailing sessions of 5-MINUTE
+    // data (features-intraday.js RVOL_DAYS=20, guard at :52), but the 5m fetch used to begin
+    // exactly at studyStart. The DAILY warmup existed (dailyFetchStart 2018); the 5m warmup was
+    // never built — so events in the first 20 study sessions nulled RVOL at 72.6% (vs 30.6%
+    // elsewhere), losing 189 events (2.2%) to a pure data artifact.
+    //
+    // The 5m fetch therefore starts 30 TRADING sessions before studyStart (margin over the 20
+    // required). The actual date is DERIVED PER SYMBOL from that symbol's own daily calendar
+    // (01-fetch-history.js:fiveMinWarmupStart) — never a hardcoded calendar date, because
+    // "30 trading sessions" is a market-calendar fact, not a 44-day arithmetic guess.
+    //
+    // HARD RULES (asserted, not merely intended — S5.6 §3):
+    //   - warmup5m bars feed RVOL/volume BASELINES ONLY.
+    //   - NO event may be detected on a warmup5m session (events.js asserts; tests/30).
+    //   - No outcome, and no feature other than the baselines, ever reads them. Enforced by
+    //     construction: the study-window session list and the baseline session list are
+    //     SEPARATE inputs (features.js), so a warmup bar is unreachable from any other path.
+    intradayWarmupSessions: 30, // S5.6 §3: trading sessions of 5m warmup before studyStart
     intradayFetchEnd: '2026-07-10',   // R1 studyEnd
     earningsBulkSymbolList: true,     // S1 §8: endpoint accepts a symbols= list (1 bulk call)
     earningsTrailingMonths: 24,       // Addendum §A5.2 / S1 §8 (24-mo trailing for cadence proxy)

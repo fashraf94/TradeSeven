@@ -61,11 +61,15 @@ export function mkEventFixture(knobs = {}) {
 
   const touchBar = fiveMinByDate.get(D).regular.find((b) => b.etMinutes === touchEtMin);
   if (!touchBar) throw new Error(`fixture: no bar at etMin ${touchEtMin}`);
+  // S56-A1: derived exactly as lib/events.js:hasIntradayApproachOf does — false ⇔ the touch bar IS
+  // the session's first regular bar (zero pre-touch bars ⇒ no approach exists to measure).
+  const firstBar = fiveMinByDate.get(D).regular[0];
   const event = {
     eventId: `TST_fam000001_ep00`, symbol: 'TST', eventDate: D,
     side: knobs.side || 'support', familyTier: knobs.familyTier || 'F2',
     disposition: 'touch', sequenceIndex: 0,
     touchAt: new Date(touchBar.epoch * 1000).toISOString(),
+    hasIntradayApproach: !!firstBar && firstBar.epoch !== touchBar.epoch,
     atrDaily: knobs.atrDaily ?? 1.0,
   };
   return { event, series, fiveMinByDate, sessionDates, D, touchEtMin };

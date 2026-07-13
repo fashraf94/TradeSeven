@@ -25,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import CONFIG from './config.js';
 import { createClient } from './lib/eodhd-client.js';
-import { normalizeDaily, normalizeFiveMin, crossGrainCheck, adjustmentCheck } from './lib/normalize.js';
+import { normalizeDaily, normalizeFiveMin, crossGrainCheck, adjustmentCheck, fiveMinWarmupStart } from './lib/normalize.js';
 import { depthEligibilitySweep } from './lib/depth-eligibility.js';
 import { addDays, isoBefore } from './lib/session-time.js';
 
@@ -101,9 +101,14 @@ async function main() {
         continue;
       }
 
-      process.stdout.write(`5m (chunked)… `);
+      // S5.6 §3: 5m starts `intradayWarmupSessions` (30) TRADING sessions before studyStart, so the
+      // 20-session RVOL baseline is already full on study-session-1. The date is derived from THIS
+      // symbol's own daily calendar — never a hardcoded date and never a calendar-day guess, because
+      // "30 trading sessions" is a market-calendar fact (holidays/half-days make it ~44±2 cal days).
+      const fiveStart = fiveMinWarmupStart(dailyBars);
+      process.stdout.write(`5m from ${fiveStart} (warmup ${CONFIG.fetch.intradayWarmupSessions}s + study)… `);
       const raw5m = await client.fetchIntradayRange(
-        sym, CONFIG.fetch.intradayFetchStart, addDays(CONFIG.fetch.intradayFetchEnd, 1), CONFIG.fetch.intradayMaxSpanDays,
+        sym, fiveStart, addDays(CONFIG.fetch.intradayFetchEnd, 1), CONFIG.fetch.intradayMaxSpanDays,
       );
       const { sessions } = normalizeFiveMin(raw5m, byDate);
       await writeJson(path.join(NORM_DIR, sym, 'sessions.json'), sessions);
@@ -216,4 +221,8 @@ function computeWarmupStart(symbolDaily) {
   };
 }
 
-main().catch((e) => { console.error('\nFATAL:', e.message); process.exit(1); });
+// Entry-point guard: run the fetch ONLY when this file is the process entry, never on import.
+// (Without it, any `import` of this module — a test importing a helper, a tool reusing a function —
+// silently kicks off a live network fetch as an import side effect.)
+const isEntryPoint = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isEntryPoint) main().catch((e) => { console.error('\nFATAL:', e.message); process.exit(1); });

@@ -176,6 +176,35 @@ function touchAtOf(bar) {
   return new Date(bar.epoch * 1000).toISOString();
 }
 
+/**
+ * S56-A1 — `hasIntradayApproach`.
+ *
+ * FALSE ⇔ there is NO regular bar before the episode's touch bar. Such an event has ZERO pre-touch
+ * bars, so there is no approach to measure: `rvol_approach` (and every other 5m fingerprint feature)
+ * is not *missing* for it — it is UNDEFINED. Measured: these events null rvol_approach at 100%,
+ * against 3.2% for events that have a pre-touch bar. The split is binary and structural.
+ *
+ * This is precisely the condition that governs RVOL computability (`features-intraday.js:91`
+ * `!pre.length`), which is why P3 is pre-registered on `hasIntradayApproach === true`.
+ *
+ * ⚠ It is NOT, by itself, the definition of OPEN_TOUCH. "No pre-touch bar" has TWO causes:
+ *    (a) the touch bar IS the 09:30 bar — a real gap-into-the-zone open (the OPEN_TOUCH class), and
+ *    (b) the session's early bars are MISSING from the vendor data (a thin name, a halt, a
+ *        truncated chunk) so the first delivered bar is, say, 11:15 — a DATA GAP, not a gap open.
+ * Both null RVOL and both are excluded from P3, but they are different phenomena and pooling (b)
+ * into OPEN_TOUCH would inflate its base rates with data artifacts — at ~230 names, many thinner
+ * than the 11 probes, that is a real population. So the record also carries `touchEtMinutes`, and
+ * OPEN_TOUCH is defined as (no approach AND touchEtMinutes === the regular open). See 04-features.js.
+ *
+ * Both emit paths derive from THIS ONE function — a GAP_BREAK is emitted on `five.regular[0]` by
+ * construction, so it lands `false` by derivation, never by a hardcoded literal that could drift.
+ */
+function hasIntradayApproachOf(five, bar) {
+  const first = five && five.regular && five.regular.length ? five.regular[0] : null;
+  if (!first || !bar) return false; // no session bars / no bar → no approach exists
+  return first.epoch !== bar.epoch;
+}
+
 function touchKey(t) { return `${t.timestamp}|${t.familyId}|${t.snapshotId}`; }
 function mergeTouchHistories(a, b) {
   const seen = new Set(), out = [];
@@ -208,7 +237,23 @@ export function detectEvents(args) {
   const ckAnchors = checkpointAnchors(registry);
   const caIndex = corporateActionIndex(dailyByDate);
   const families = registry.families || {};
+  // Event records inherit the LEVELS registry's configVersion — they are derived from it, so its
+  // version is their true provenance. But that means a HALF-REBUILT pipeline (`npm run events`
+  // after S5.6 without re-running the slow `npm run levels`) would stamp configVersion-3 records
+  // inside a configVersion-4 envelope (03-detect-events.js), next to configVersion-4 feature rows.
+  // The artifact would then claim two versions at once — precisely the confusion the S5.6 bump
+  // exists to make impossible (config.js STUDY_CONFIG_VERSION note).
+  //
+  // So require agreement. `npm run levels` must be re-run before `npm run events` across a version
+  // change; a mismatch is an operator error, and the only safe response is to stop.
   const configVersion = registry.configVersion != null ? registry.configVersion : CONFIG.version;
+  if (configVersion !== CONFIG.version) {
+    throw new Error(
+      `STALE_LEVELS_REGISTRY ${symbol}: levels registry is configVersion ${configVersion} but the study config is ${CONFIG.version}. `
+      + 'Re-run `npm run levels` before `npm run events` — event records inherit the registry version, '
+      + 'and a half-rebuilt pipeline would emit artifacts claiming two versions at once.',
+    );
+  }
 
   const lineageByDate = new Map();
   for (const ev of (registry.events || [])) {
@@ -294,6 +339,8 @@ export function detectEvents(args) {
       halfDay: !!(ctx.five.earlyClose != null ? ctx.five.earlyClose : !ctx.five.isFullDay),
       eodSource: ctx.five.hasAuction ? 'auction' : 'fallback_1555',
       disposition: 'touch',
+      hasIntradayApproach: hasIntradayApproachOf(ctx.five, bar), // S56-A1: P3 gates on this
+      touchEtMinutes: bar.etMinutes, // S56-A1: separates a true 09:30 gap-open (OPEN_TOUCH) from a data gap
       configVersion,
     };
     s.phase = 'OPEN'; s.openedBar = bar;
@@ -333,6 +380,10 @@ export function detectEvents(args) {
       halfDay: !!(ctx.five.earlyClose != null ? ctx.five.earlyClose : !ctx.five.isFullDay),
       eodSource: ctx.five.hasAuction ? 'auction' : 'fallback_1555',
       disposition: 'GAP_BREAK',
+      // Always false in practice (a GAP_BREAK is emitted on five.regular[0], :459) — but DERIVED,
+      // never hardcoded, so the two emit paths cannot drift apart.
+      hasIntradayApproach: hasIntradayApproachOf(ctx.five, bar),
+      touchEtMinutes: bar.etMinutes,
       configVersion,
     };
     emitted.push({ record, dropped: false });
@@ -346,6 +397,16 @@ export function detectEvents(args) {
     if (D < studyStart) continue; // warmup gate (registry emits study-window only; asserted here)
     const unit = sess.unit;
     const five = fiveMinByDate.get ? fiveMinByDate.get(D) : fiveMinByDate[D];
+    // S5.6 §3 — THE 5m WARMUP GUARD. Since S5.6 the 5m series carries a 30-trading-session
+    // warmup before studyStart, fetched ONLY to populate the RVOL/volume baselines. Those
+    // sessions must never produce an event. The `D < studyStart` gate above already makes this
+    // structurally impossible (the registry is daily-derived and study-window only), so this is
+    // a belt-and-braces assertion: if a warmup5m session ever reaches the detector, the two
+    // date windows have silently drifted apart and every downstream artifact is suspect.
+    // Fail loudly — a warmup event would be an invisible lookahead into the pre-study period.
+    if (five && five.warmup5m) {
+      throw new Error(`WARMUP5M_EVENT_SESSION ${D}: a warmup5m session reached event detection (studyStart ${studyStart}) — warmup 5m bars are RVOL/volume baselines ONLY`);
+    }
     const ctx = { D, atr: sess.atr, unit, five };
 
     // 1) Lineage events dated D (retirements + merges), before bars.

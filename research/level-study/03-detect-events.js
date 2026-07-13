@@ -66,6 +66,7 @@ export function loadFiveMinByDate(sym) {
     map.set(s.etDate, {
       isFullDay: s.isFullDay, earlyClose: s.earlyClose, hasAuction: s.hasAuction,
       sessionCloseAdj: s.sessionCloseAdj,
+      warmup5m: s.warmup5m, // S5.6 §3: carried so consumers can separate baseline-only sessions
       regular: (regByDate.get(s.etDate) || []).sort((a, b) => a.etMinutes - b.etMinutes),
     });
   }

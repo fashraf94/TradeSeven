@@ -49,6 +49,31 @@ export function selectStudyWindow(dailyBars) {
   return dailyBars.filter((b) => !b.warmup);
 }
 
+/**
+ * S5.6 §3 — the 5-minute warmup start for ONE symbol.
+ *
+ * Returns the ISO date of the session exactly `fetch.intradayWarmupSessions` (30) TRADING sessions
+ * before studyStart, read off this symbol's own daily calendar. 30 gives margin over the 20
+ * sessions the RVOL baseline actually needs (features-intraday.js RVOL_DAYS = 20).
+ *
+ * Derived, never hardcoded: 30 trading sessions is ~44 calendar days, but the exact span moves with
+ * holidays. Reading the real calendar makes the warmup exactly 30 sessions deep for every symbol in
+ * every year, with no arithmetic assumption to rot.
+ *
+ * Degenerate case (fewer than 30 pre-study daily bars — impossible for an R2-eligible name, which
+ * needs 550): fall back to the earliest daily bar. Never returns a date at or after studyStart.
+ *
+ * Lives in lib/ (not the runner) so tests can import it WITHOUT executing the fetch orchestrator.
+ * @param {Array<{date:string}>} dailyBars normalized daily bars for the symbol
+ * @returns {string} ISO date to begin the 5m fetch at
+ */
+export function fiveMinWarmupStart(dailyBars) {
+  const want = CONFIG.fetch.intradayWarmupSessions; // 30
+  const pre = dailyBars.map((b) => b.date).filter((d) => isoBefore(d, STUDY_START)).sort();
+  if (!pre.length) return CONFIG.fetch.intradayFetchStart; // no pre-study history → study window only
+  return pre.length >= want ? pre[pre.length - want] : pre[0];
+}
+
 // ── 5-minute classification ──────────────────────────────────────────────────
 
 /**
@@ -108,7 +133,12 @@ export function normalizeFiveMin(raw5m, dailyByDate) {
       adjHigh: f != null ? raw.high * f : null,
       adjLow: f != null ? raw.low * f : null,
       adjClose: f != null ? raw.close * f : null,
-      warmup: false, // A6: 5m fetched for study window only; never warmup
+      // S5.6 §3: 5m is now fetched with a 30-trading-session warmup before studyStart (the RVOL
+      // baseline needs 20 trailing sessions of 5m). A bar dated before studyStart is a warmup5m
+      // bar: it feeds RVOL/volume BASELINES ONLY. It is never an event session, never an outcome
+      // input, and no other feature reads it. (Was hardcoded `warmup: false` — the 5m warmup did
+      // not exist, which nulled RVOL on 72.6% of first-20-session events.)
+      warmup5m: isoBefore(c.etDate, STUDY_START),
     };
     bars.push(bar);
 
@@ -143,6 +173,7 @@ export function normalizeFiveMin(raw5m, dailyByDate) {
       etDate: s.etDate,
       tzAbbrev: etTzAbbrev(s.firstEpoch), // one Intl call per session (DST regime constant within a session)
       adjFactor: f,
+      warmup5m: isoBefore(s.etDate, STUDY_START), // S5.6 §3: RVOL/volume baselines ONLY — never an event session
       isFullDay, earlyClose,
       regularBarCount: s.regular.length,
       otherBarCount: s.otherCount,

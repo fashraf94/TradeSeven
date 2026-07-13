@@ -212,6 +212,20 @@ export function createClient(opts = {}) {
     try { return JSON.parse(body); } catch { return null; }
   }
 
+  // ── Fundamentals (S5.6 §4.2: the sector map is DERIVED FROM DATA, not inherited) ──
+  //
+  // The product's sector map has at least one known error (BE → XLK; Bloom Energy is Industrials),
+  // and peer features depend on ECONOMIC similarity — a wrong sector silently corrupts every peer
+  // rate and RS feature for that name. So the study pulls sector per symbol from the vendor and
+  // cross-checks the product map against it.
+  //
+  // `filter` keeps the response tiny (a full fundamentals doc is ~MB; we need 4 fields).
+  async function fetchFundamentals(symbol, fields = 'General::Sector,General::Industry,General::IPODate,General::Type') {
+    const url = `${base}/api/fundamentals/${symbol}${suffix}?api_token=${KEY}&filter=${encodeURIComponent(fields)}&fmt=json`;
+    const { body } = await cachedFetch(`raw/_fundamentals/${symbol}_${hashKey(fields)}.json`, url, `fundamentals_${symbol}`);
+    try { return JSON.parse(body); } catch { throw new Error(`FUNDAMENTALS_PARSE_FAILED ${symbol}: non-JSON body`); }
+  }
+
   /** Fetch a raw intraday chunk and ALSO write it to an explicit fixture path (committed). */
   async function fetchIntradayToFixture(symbol, fromDate, toDate, fixtureAbsPath) {
     const fromE = dateToUtcEpoch(fromDate);
@@ -232,7 +246,7 @@ export function createClient(opts = {}) {
 
   return {
     fetchDaily, fetchIntradayChunk, fetchIntradayRange, planIntradayChunks,
-    fetchEarnings, fetchIntradayToFixture,
+    fetchEarnings, fetchIntradayToFixture, fetchFundamentals,
     getManifest: () => manifest.slice(),
     paths: { STUDY_ROOT, REPO_ROOT, DATA_DIR },
   };
