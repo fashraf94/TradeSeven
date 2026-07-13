@@ -17,6 +17,9 @@ import { TOTAL_TRAIT_SLOTS } from '../../../data/dnaGroups';
 import { getWatchlistProvenance } from '../../../utils/watchlistProvenance';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
+import { RELEASE3_CHARACTER_TAB_ENABLED } from '../../../config/featureFlags';
+import { tempoLabel } from '../../../data/characterLeanPresentation';
+import { STANDING_LEANS_CAP } from '../../../../api/_utils/leanRevalidation.js';
 
 function Tally({ ready, draft }) {
   const T = useFK();
@@ -172,6 +175,50 @@ function TraitsColumn({ archName, archLine, primary, equippedTraits, onNav }) {
   );
 }
 
+// Release 3 — the Character column (leans + tempo), replacing the Traits column
+// when RELEASE3_CHARACTER_TAB_ENABLED is on. Same shell grammar; the CTA tunes
+// the character in the `03` area.
+function CharacterColumn({ archName, archLine, standingLeans, tempo, onNav }) {
+  const T = useFK();
+  const equipped = standingLeans.length;
+  return (
+    <div className="fw-tap" onClick={() => onNav('traits')} style={{ display: 'flex', flexDirection: 'column', minWidth: 0, padding: '18px 16px 14px', borderRadius: 18, position: 'relative', overflow: 'hidden', background: `linear-gradient(165deg, ${alpha(T.allocation, 0.06)}, ${T.surface})`, border: `1px solid ${T.hair}` }}>
+      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: T.allocation, opacity: 0.85 }} />
+      <ColumnHeader n="03" label="Character" desc="The disposition you read, tune, and explore" icon="dna" color={T.allocation} />
+      <div style={{ marginTop: 14, padding: '12px 13px', borderRadius: 12, background: T.surface, border: `1px solid ${alpha(T.allocation, 0.22)}` }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+          <Mono style={{ fontSize: 8.5, letterSpacing: '0.14em', color: T.ink3, textTransform: 'uppercase' }}>Your agent is a</Mono>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'var(--fw-mono)', fontSize: 8, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, color: T.ink3, background: alpha(T.ink2, 0.08), border: `1px solid ${T.hair}`, padding: '3px 7px', borderRadius: 999 }}>
+            <Icon name="lock" size={8} color={T.ink3} stroke={2.2} />Set at creation
+          </span>
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, letterSpacing: '-0.01em', marginTop: 3 }}>{archName}</div>
+        <div style={{ fontSize: 11, color: T.ink2, marginTop: 3, lineHeight: 1.4 }}>{archLine}</div>
+      </div>
+      <div style={{ marginTop: 12, minHeight: 64 }}>
+        <Mono style={{ fontSize: 9, letterSpacing: '0.1em', color: T.ink3, textTransform: 'uppercase' }}><b style={{ color: T.ink2 }}>{equipped}</b> of {STANDING_LEANS_CAP} standing leans · tempo <b style={{ color: T.ink2 }}>{tempoLabel(tempo)}</b></Mono>
+        {equipped > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            {standingLeans.slice(0, 3).map((l) => (
+              <span key={l.adjustmentId} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, background: T.bg, border: `1px solid ${T.hair}` }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.allocation }} />
+                <span style={{ fontFamily: 'var(--fw-mono)', fontSize: 11, color: T.ink2, fontWeight: 600, whiteSpace: 'nowrap' }}>{l.adjustmentId}</span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 8 }}>No standing leans equipped yet.</div>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.hair}` }}>
+        <button className="fw-tap" onClick={(e) => { e.stopPropagation(); onNav('traits'); }} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: T.allocation, padding: '7px 12px', borderRadius: 9, background: alpha(T.allocation, 0.1), border: `1px solid ${alpha(T.allocation, 0.35)}`, whiteSpace: 'nowrap' }}>
+          <Icon name="dna" size={12} color={T.allocation} />Tune character
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ForgeOverview({ agentName, primary, watchlists = [], bundles = [], equippedTraits = [], rules = [], agent, twoCol = false, onNav, onBuild, onClose }) {
   const T = useFK();
   const rulesById = React.useMemo(() => new Map((rules || []).map((r) => [r.id, r])), [rules]);
@@ -182,15 +229,27 @@ export default function ForgeOverview({ agentName, primary, watchlists = [], bun
   // traits are in-use, not ready-to-equip — surfaced as their own equipped count).
   const { ready: totalReady, draft: totalDraft } = countForgeAggregate(watchlists, bundles);
   const equippedCount = equippedTraits.length;
+  // Release 3 — the `03` bench becomes Character when on (leans + tempo); off is
+  // byte-identical to the Traits card. `?release3Character=1` force-previews.
+  const characterOn =
+    RELEASE3_CHARACTER_TAB_ENABLED ||
+    (typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('release3Character') === '1');
+  const standingLeans = agent?.standingLeans || [];
+  const desiredTempo = agent?.dials?.tempo || 'standard';
 
   const wlPreview = watchlists.slice(0, 2).map((w) => ({ id: w.watchlistId, name: w.name?.trim() || 'Untitled', state: watchlistShelfStatus(w) === 'ready' ? 'ready' : 'draft' }));
   const bPreview = bundles.slice(0, 2).map((b) => ({ id: b.id, name: b.name || 'Bundle', state: bundleShelfStatus(b) === 'ready' ? 'ready' : 'draft' }));
   const trPreview = equippedTraits.slice(0, 2).map((t) => ({ id: t.traitId || t.id, name: t.name || 'Trait', state: 'equipped' }));
+  const leanPreview = standingLeans.slice(0, 2).map((l) => ({ id: l.adjustmentId, name: l.adjustmentId, state: 'equipped' }));
+
+  const characterArea = { id: 'traits', n: '03', label: 'Character', icon: 'dna', color: T.allocation, equipped: standingLeans.length, slots: STANDING_LEANS_CAP, total: standingLeans.length, preview: leanPreview, desc: `Standing leans + tempo · ${tempoLabel(desiredTempo)}` };
+  const traitsArea = { id: 'traits', n: '03', label: 'Traits', icon: 'dna', color: T.allocation, equipped: equippedCount, slots: TOTAL_TRAIT_SLOTS, total: equippedTraits.length, preview: trPreview, desc: 'The disposition that shapes its identity' };
 
   const areas = [
     { id: 'watchlists', n: '01', label: 'Watchlists', icon: 'target', color: primary || T.teal, counts: wlCounts, total: watchlists.length, preview: wlPreview, desc: 'The universe your agent watches' },
     { id: 'rules', n: '02', label: 'Rule bundles', icon: 'rules', color: T.gold, counts: bCounts, total: bundles.length, preview: bPreview, desc: 'How it decides + the limits it respects' },
-    { id: 'traits', n: '03', label: 'Traits', icon: 'dna', color: T.allocation, equipped: equippedCount, slots: TOTAL_TRAIT_SLOTS, total: equippedTraits.length, preview: trPreview, desc: 'The disposition that shapes its identity' },
+    characterOn ? characterArea : traitsArea,
   ];
 
   // ── Desktop: the three-bench dashboard ─────────────────────────────────────
@@ -246,7 +305,9 @@ export default function ForgeOverview({ agentName, primary, watchlists = [], bun
             onNav={onNav}
             onBuild={onBuild}
           />
-          <TraitsColumn archName={archName} archLine={archLine} primary={primary} equippedTraits={equippedTraits} onNav={onNav} />
+          {characterOn
+            ? <CharacterColumn archName={archName} archLine={archLine} standingLeans={standingLeans} tempo={desiredTempo} onNav={onNav} />
+            : <TraitsColumn archName={archName} archLine={archLine} primary={primary} equippedTraits={equippedTraits} onNav={onNav} />}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, marginTop: 18, padding: '12px 14px', borderRadius: 12, background: alpha(T.copper, 0.04), border: `1px solid ${alpha(T.copper, 0.16)}` }}>

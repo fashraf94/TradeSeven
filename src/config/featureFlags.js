@@ -82,6 +82,25 @@ export const FORGE_DESKTOP_ENABLED = true;
 export const TRAITS_EXPLORATION_ENABLED = true;
 
 /**
+ * Release 3 — the Forge's `03 Traits` tab BECOMES `03 Character` (Character/Equip
+ * UI). When true (or via the `?release3Character=1` dev-preview param, the
+ * `?traitsExploration=1` idiom), the `03` slot's nav label reads "Character" and
+ * its body renders the CharacterArea: the archetype identity reading (kept), a
+ * read-only "Born with" kit, standing leans (equip/unequip, 2 slots), the tempo
+ * dial, and a derived behavior fingerprint — the interactive trait library /
+ * SOFT NUDGE / STRENGTH selectors are removed from this surface. The Forge
+ * landing "Traits" card likewise becomes a "Character" card.
+ *
+ * When FALSE (default), the `03` slot renders TODAY's Traits surface byte-for-byte
+ * (label "Traits" → TraitsArea → TraitsExploration) — the instant-rollback
+ * guarantee (off-state proof). It consumes the already-merged Release 2 lean/dial
+ * contracts (equip-lean / unequip-lean / set-tempo-dial), which are LIVE as of
+ * 2026-07-12; this flag gates only the UI. Flip to ship in a one-line follow-up
+ * PR after a Vercel preview smoke test — the TRAITS_EXPLORATION_ENABLED precedent.
+ */
+export const RELEASE3_CHARACTER_TAB_ENABLED = false;
+
+/**
  * Equip bench — the Traits loadout slot (mobile EquipStation + desktop
  * EquipBench) and the TraitsSheet behind it.
  *

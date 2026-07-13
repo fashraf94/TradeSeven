@@ -16,7 +16,7 @@ import { useForge } from '../../../hooks/useForge';
 import { useTraits } from '../../../hooks/useTraits';
 import useIsMobile from '../../../hooks/useIsMobile';
 import { listWatchlists } from '../../../services/forgeWatchlistService';
-import { FORGE_DESKTOP_ENABLED } from '../../../config/featureFlags';
+import { FORGE_DESKTOP_ENABLED, RELEASE3_CHARACTER_TAB_ENABLED } from '../../../config/featureFlags';
 import {
   ForgeKitProvider, fkTokens, injectForgeWorkshopCSS,
   ForgeMark, SegmentSwitcher, ForgeFlash, ForgeToast, Icon,
@@ -25,6 +25,7 @@ import ForgeOverview from './ForgeOverview';
 import WatchlistsArea from './WatchlistsArea';
 import RulesArea from './RulesArea';
 import TraitsArea from './TraitsArea';
+import CharacterArea from './character/CharacterArea';
 import BundleBuildFlow from './BundleBuildFlow';
 
 const FONT_UI = "'Space Grotesk', system-ui, -apple-system, sans-serif";
@@ -60,6 +61,12 @@ export default function ForgeWorkshop({ onClose, initialArea = 'overview', user,
   const agentId = agent?.id || null;
   const hasActiveBattle = !!agent?.activeBattleId;
   const primary = agent?.primaryColor || T.teal;
+  // Release 3 — the `03` slot becomes Character when on; flag-off is byte-identical
+  // to today (label "Traits" → TraitsArea). `?release3Character=1` force-previews.
+  const characterOn =
+    RELEASE3_CHARACTER_TAB_ENABLED ||
+    (typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('release3Character') === '1');
 
   const forge = useForge(agentId);
   const traits = useTraits(agentId, forge);
@@ -102,7 +109,7 @@ export default function ForgeWorkshop({ onClose, initialArea = 'overview', user,
     { id: 'overview', n: '00', label: 'Forge', accent: T.copper },
     { id: 'watchlists', n: '01', label: 'Lists', accent: primary },
     { id: 'rules', n: '02', label: 'Rules', accent: T.gold },
-    { id: 'traits', n: '03', label: 'Traits', accent: T.allocation },
+    { id: 'traits', n: '03', label: characterOn ? 'Character' : 'Traits', accent: T.allocation },
   ];
 
   let body;
@@ -141,6 +148,18 @@ export default function ForgeWorkshop({ onClose, initialArea = 'overview', user,
         agent={agent}
         onBuild={() => setBuilding('rules')}
         onForgeReady={handleForgeReady}
+        twoCol={twoCol}
+      />
+    );
+  } else if (characterOn) {
+    body = (
+      <CharacterArea
+        agent={agent}
+        agentName={agent?.name}
+        primary={primary}
+        traits={traits}
+        hasActiveBattle={hasActiveBattle}
+        showToast={showToast}
         twoCol={twoCol}
       />
     );
