@@ -401,10 +401,13 @@ export function LeanEntry({ archId, lean, state, blockedBy, slotsFull, locked, b
         <div style={{ fontSize: compact ? 12 : 13, color: T.ink, lineHeight: 1.5 }}>{lean.canonical}</div>
       </div>
 
-      {/* derived gloss */}
-      <div style={{ fontSize: compact ? 11.5 : 12, color: T.ink2, marginTop: 9, lineHeight: 1.45 }}>
-        <span style={{ color: T.ink3, fontWeight: 600 }}>What this changes: </span>{gloss}
-      </div>
+      {/* derived gloss — shown ONLY when it synthesizes across dimensions (it
+          earns its place only when it adds beyond the verbatim directive) */}
+      {gloss && (
+        <div style={{ fontSize: compact ? 11.5 : 12, color: T.ink2, marginTop: 9, lineHeight: 1.45 }}>
+          <span style={{ color: T.ink3, fontWeight: 600 }}>What this changes: </span>{gloss}
+        </div>
+      )}
 
       {/* blocked reason — always shown */}
       {blocked && blockedBy && (

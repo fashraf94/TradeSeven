@@ -17,38 +17,52 @@ import { getConflictGroups } from './archetypeAdjustments.js';
 
 // ── Derived lean read (from policy) ──────────────────────────────────────────
 // Policy shape (src/data/archetypeAdjustments.js): { riskDirection, concentration
-// Direction, timeHorizonDirection, coreAlignment, forbiddenOpposite }.
-const RISK_PHRASE = { lower: 'trades more cautiously', higher: 'takes more risk' };
-const CONC_PHRASE = { tighter: 'concentrates the book', wider: 'spreads the book wider' };
-const HORIZON_PHRASE = { longer: 'holds longer', shorter: 'exits sooner' };
+// Direction, timeHorizonDirection, coreAlignment, forbiddenOpposite }. The policy
+// tags are COARSE — they capture risk / concentration / horizon direction, but
+// NOT entry-timing, sizing, or selectivity (all of which map to riskDirection).
+// So a policy-only gloss can't reach directive-level specificity without
+// misattributing; we therefore keep the gloss honest and SPARING.
 
-// A short "what this changes" gloss composed from the non-neutral policy
-// directions. Empty policy / all-neutral falls back to the reinforcement read.
+// Per-dimension gloss fragments (used only when composing a multi-dimension read).
+const GLOSS = {
+  risk: { lower: 'leans to the lower-risk side of its picks', higher: 'reaches for more risk' },
+  concentration: { tighter: 'concentrates into fewer names', wider: 'spreads across more names' },
+  horizon: { longer: 'holds longer before rotating', shorter: 'takes profits sooner' },
+};
+
+// The "what this changes" gloss EARNS ITS PLACE ONLY WHEN IT ADDS: it is shown
+// solely when a lean synthesizes across TWO OR MORE policy dimensions (a read the
+// single verbatim directive doesn't obviously spell out). A single-purpose lean's
+// directive already reads plainly, so we return null and the UI drops the line —
+// never a generic restatement, never a misattributed risk phrase. Returns a
+// composed sentence, or null.
 export function deriveLeanGloss(policy) {
-  if (!policy || typeof policy !== 'object') return 'Sharpens how this archetype already trades.';
+  if (!policy || typeof policy !== 'object') return null;
   const parts = [];
-  if (RISK_PHRASE[policy.riskDirection]) parts.push(RISK_PHRASE[policy.riskDirection]);
-  if (CONC_PHRASE[policy.concentrationDirection]) parts.push(CONC_PHRASE[policy.concentrationDirection]);
-  if (HORIZON_PHRASE[policy.timeHorizonDirection]) parts.push(HORIZON_PHRASE[policy.timeHorizonDirection]);
-  if (!parts.length) return 'Sharpens how this archetype already trades — no change to risk, spread, or holding time.';
-  // Sentence-case the joined fragments: "Trades more cautiously and holds longer."
-  const joined = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  if (GLOSS.risk[policy.riskDirection]) parts.push(GLOSS.risk[policy.riskDirection]);
+  if (GLOSS.concentration[policy.concentrationDirection]) parts.push(GLOSS.concentration[policy.concentrationDirection]);
+  if (GLOSS.horizon[policy.timeHorizonDirection]) parts.push(GLOSS.horizon[policy.timeHorizonDirection]);
+  if (parts.length < 2) return null; // single-purpose → the directive already says it
+  const joined = `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
   return joined.charAt(0).toUpperCase() + joined.slice(1) + '.';
 }
 
-// The one-line note the fingerprint shows for an equipped lean — the leans
-// annotate the disposition, they never reshape it. Derived from the dominant
-// policy direction (risk → concentration → horizon), falling back to a neutral
-// note. Kept terse (no trailing period) to read as an annotation.
+// The fingerprint annotation — the teaching read of WHICH AXES a lean sharpens
+// (it annotates the disposition, never reshapes it). Composes across ALL the
+// non-neutral policy dimensions a lean touches (concentration → horizon → risk),
+// joined with · . Terse, no trailing period. This is the version that teaches.
+const NOTE = {
+  concentration: { tighter: 'tightens what it emphasizes', wider: 'loosens what it emphasizes' },
+  horizon: { longer: 'widens how long it holds', shorter: 'quickens how it exits' },
+  risk: { lower: 'sharpens what it hunts for', higher: 'reaches harder for the move' },
+};
 export function deriveLeanNote(policy) {
   if (!policy || typeof policy !== 'object') return 'sharpens its natural read';
-  if (policy.concentrationDirection === 'tighter') return 'tightens what it emphasizes';
-  if (policy.concentrationDirection === 'wider') return 'loosens what it emphasizes';
-  if (policy.timeHorizonDirection === 'longer') return 'widens how long it holds';
-  if (policy.timeHorizonDirection === 'shorter') return 'quickens how it exits';
-  if (policy.riskDirection === 'lower') return 'sharpens what it hunts for';
-  if (policy.riskDirection === 'higher') return 'reaches harder for the move';
-  return 'sharpens its natural read';
+  const parts = [];
+  if (NOTE.concentration[policy.concentrationDirection]) parts.push(NOTE.concentration[policy.concentrationDirection]);
+  if (NOTE.horizon[policy.timeHorizonDirection]) parts.push(NOTE.horizon[policy.timeHorizonDirection]);
+  if (NOTE.risk[policy.riskDirection]) parts.push(NOTE.risk[policy.riskDirection]);
+  return parts.length ? parts.join(' · ') : 'sharpens its natural read';
 }
 
 // ── Conflict-group reason ────────────────────────────────────────────────────

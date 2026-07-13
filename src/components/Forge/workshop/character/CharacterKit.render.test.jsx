@@ -29,13 +29,22 @@ describe('CharacterKit — render smoke', () => {
     expect(html).toContain('Patience');
   });
 
-  it('LeanEntry shows the VERBATIM canonical directive + a derived gloss', () => {
-    const adj = ARCHETYPE_ADJUSTMENTS.momentum_chaser.adjustments[0]; // TF-01
+  it('LeanEntry shows the VERBATIM directive + id, and DROPS the gloss for a single-purpose lean', () => {
+    const adj = ARCHETYPE_ADJUSTMENTS.momentum_chaser.adjustments[0]; // TF-01 (one policy dimension)
     const html = wrap(<LeanEntry archId="momentum_chaser" lean={adj} state="available" slotsFull={false} locked={false} />);
     expect(html).toContain(adj.canonical);        // verbatim, never paraphrased
     expect(html).toContain('Agent directive');
-    expect(html).toContain('What this changes:');
     expect(html).toContain(adj.id);
+    expect(html).not.toContain('What this changes:'); // no restatement / misattribution of a plain directive
+  });
+
+  it('LeanEntry shows the gloss ONLY when it synthesizes across ≥2 policy dimensions', () => {
+    // SP-04 (degen): riskDirection higher + concentrationDirection tighter
+    const adj = ARCHETYPE_ADJUSTMENTS.degen.adjustments.find((a) => a.id === 'SP-04');
+    const html = wrap(<LeanEntry archId="degen" lean={adj} state="available" slotsFull={false} locked={false} />);
+    expect(html).toContain('What this changes:');
+    expect(html).toContain('Reaches for more risk');        // risk dimension
+    expect(html).toContain('concentrates into fewer names'); // concentration dimension
   });
 
   it('LeanEntry blocked state shows the conflict reason with the group dimension', () => {
