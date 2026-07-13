@@ -393,6 +393,68 @@ export const updateAgentSettings = async (agentId, set) => {
   return response.json();
 };
 
+// ============================================
+// RELEASE 3 — STANDING LEANS + TEMPO DIAL (the Character tab controls)
+// ============================================
+// Thin clients for the already-merged Release 2 endpoints — same pattern as the
+// watchlist/archetype equips above (authenticated, battle-locked server-side,
+// throws the toEquipError shape so callers branch on err.code). None of these
+// touch the agent doc directly: standingLeans + dials are SETTINGS_GUARDED_FIELDS
+// (updateAgent refuses them), so every write goes through the server tx, which
+// bumps settingsRev. No response echoes the new settingsRev — the caller re-reads
+// via the live subscribeToUserAgent snapshot (never assume the write won a race).
+//
+// DARK / rollback note: while STANDING_LEANS_ENABLED / TEMPO_DIAL_ENABLED are
+// false the endpoints answer 404 { error: 'not_found' }; callers must branch on
+// err.code === 'not_found' to render "pending activation" rather than a generic
+// error toast (the dark 404 is a pre-activation signal, not a failure).
+
+/**
+ * Equip a standing lean. `version` MUST be the canonicalTextVersion the UI
+ * displayed (from src/data/archetypeAdjustments.js) — the server rejects a stale
+ * pin with 409 deprecated_version (the re-confirm trigger). Resolves with
+ * { agentId, adjustmentId, version, standingLeans, idempotent }. Failure codes to
+ * branch on: not_in_menu (400), deprecated_version / conflicting_lean / lean_limit
+ * / battle_active (409), forbidden (403), agent_not_found (404), not_found (dark).
+ */
+export const equipLean = async (agentId, adjustmentId, version) => {
+  const response = await fetchWithAuth('/api/agent/equip-lean', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, adjustmentId, version }),
+  });
+  if (!response.ok) throw await toEquipError(response);
+  return response.json();
+};
+
+/**
+ * Unequip a standing lean (idempotent if not equipped). Resolves with
+ * { agentId, adjustmentId, standingLeans, idempotent }.
+ */
+export const unequipLean = async (agentId, adjustmentId) => {
+  const response = await fetchWithAuth('/api/agent/unequip-lean', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, adjustmentId }),
+  });
+  if (!response.ok) throw await toEquipError(response);
+  return response.json();
+};
+
+/**
+ * Set the tempo dial to a DESIRED position ('measured' | 'standard' |
+ * 'aggressive'). The effective tempo is resolved server-side at eval time (fails
+ * closed to 'standard' when the dial is off / band-version mismatches). Resolves
+ * with { agentId, tempo, idempotent }. Failure codes: invalid_tempo (400),
+ * battle_active (409), forbidden (403), agent_not_found (404), not_found (dark).
+ */
+export const setTempoDial = async (agentId, tempo) => {
+  const response = await fetchWithAuth('/api/agent/set-tempo-dial', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, tempo }),
+  });
+  if (!response.ok) throw await toEquipError(response);
+  return response.json();
+};
+
 /**
  * Emit the `watchlist_equip` shadow log for the onboarding "born-equipped" path.
  * That path equips the starter watchlist atomically at agent creation (it does

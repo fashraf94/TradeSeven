@@ -104,6 +104,17 @@ const useAgent = (userId) => {
   const activeRules = useMemo(() => agent?.activeRules || [], [agent]);
   const equippedBundleIds = useMemo(() => agent?.equippedBundleIds || [], [agent]);
 
+  // Release 3 (Character tab) — the DESIRED loadout at rest, read straight off
+  // the live agent-doc subscription (the "re-read after write" primitive: the
+  // snapshot re-delivers the winning state, so the UI never trusts a stale local
+  // write). standingLeans = [{ adjustmentId, version, equippedAt }]; tempo defaults
+  // to 'standard' when unset; settingsRev is the monotonic write counter; an
+  // active battle freezes the loadout (server rejects mutations with 409).
+  const standingLeans = useMemo(() => agent?.standingLeans || [], [agent]);
+  const tempo = useMemo(() => agent?.dials?.tempo || 'standard', [agent]);
+  const settingsRev = useMemo(() => agent?.settingsRev ?? 0, [agent]);
+  const hasActiveBattle = useMemo(() => !!agent?.activeBattleId, [agent]);
+
   const activeDirectives = useMemo(() => {
     if (!agent?.directives) return [];
     const now = new Date();
@@ -199,6 +210,10 @@ const useAgent = (userId) => {
     deployText,
     activeRules,
     equippedBundleIds,
+    standingLeans,
+    tempo,
+    settingsRev,
+    hasActiveBattle,
     activeDirectives,
     groupedDirectives,
     winRate,
