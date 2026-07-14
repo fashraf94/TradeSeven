@@ -98,7 +98,7 @@ export const TRAITS_EXPLORATION_ENABLED = true;
  * 2026-07-12; this flag gates only the UI. Flip to ship in a one-line follow-up
  * PR after a Vercel preview smoke test — the TRAITS_EXPLORATION_ENABLED precedent.
  */
-export const RELEASE3_CHARACTER_TAB_ENABLED = false;
+export const RELEASE3_CHARACTER_TAB_ENABLED = true;
 
 /**
  * Equip bench — the Traits loadout slot (mobile EquipStation + desktop
