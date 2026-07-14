@@ -36,7 +36,11 @@ export default function CharacterArea({ agent, agentName, traits, twoCol = false
   const name = agentName || agent?.name || 'your agent';
 
   return (
-    <div>
+    // The Forge body slot is overflow:hidden with a fixed height (ForgeWorkshop),
+    // so the AREA must own its scroll — same container the TraitsArea surfaces use
+    // (fw-scroll hides the bar; the bottom padding clears the mobile nav overlay).
+    // Without this the tab cannot scroll to its content below the fold.
+    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: compact ? '22px 18px calc(84px + env(safe-area-inset-bottom))' : '22px 24px calc(84px + env(safe-area-inset-bottom))' }}>
       <div style={{ maxWidth: sub === 'character' ? 1160 : 1180, margin: '0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
