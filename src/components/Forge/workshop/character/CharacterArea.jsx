@@ -27,10 +27,10 @@ import { TRAIT_BY_ID } from '../../../../data/traitLibrary.js';
 
 const menuFor = (codeId) => (ARCHETYPE_ADJUSTMENTS[codeId]?.adjustments || []);
 
-export default function CharacterArea({ agent, agentName, traits, twoCol = false, showToast }) {
+export default function CharacterArea({ agent, agentName, traits, twoCol = false, showToast, initialSub = 'character' }) {
   const T = useFK();
   const compact = !twoCol;
-  const [sub, setSub] = React.useState('character');
+  const [sub, setSub] = React.useState(initialSub === 'explore' ? 'explore' : 'character');
   const ownArch = getArchetypeCharacter(agent?.archetype);
   const roster = getArchetypeRoster();
   const name = agentName || agent?.name || 'your agent';
@@ -188,7 +188,10 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
           <div style={{ flex: 1, height: 1, background: T.hair }} />
           <Mono style={{ fontSize: 9, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.ink3 }}>{menu.length} leans · directive shown verbatim</Mono>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* Desktop: a two-up card grid so the full-width menu reads as a compact
+            block (not one very-wide column); mobile keeps a single column.
+            alignItems:start lets each card keep its natural height (flow, no stretch). */}
+        <div style={{ display: 'grid', gridTemplateColumns: compact ? '1fr' : 'repeat(2, minmax(0, 1fr))', alignItems: 'start', gap: 10 }}>
           {menu.map((adj) => (
             <LeanEntry key={adj.id} archId={archId} lean={adj} state={entryState(adj)} blockedBy={blockedBy(adj)}
               slotsFull={slotsFull} locked={locked} busy={busyIds.has(adj.id)}
@@ -214,27 +217,33 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
       )}
 
       {compact ? (
+        // Mobile: single-column flow — identity → what the dial changes → the menu.
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Pane title="How it decides" kicker="IDENTITY" accent={c} pad={16}>
             <RevealVoice arch={ownArch} accent={c} compact />
             <div style={{ marginTop: 18 }}><DecisionFactors arch={ownArch} accent={c} compact /></div>
           </Pane>
-          <Pane title="Your loadout" kicker="TUNE" accent={T.allocation} pad={16}>{loadout}</Pane>
           <Pane title="Behavior fingerprint" kicker="WHAT THIS CHANGES" accent={c} pad={16}>{fingerprint}</Pane>
+          <Pane title="Your loadout" kicker="TUNE" accent={T.allocation} pad={16}>{loadout}</Pane>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.02fr 1fr', gap: 18, alignItems: 'start' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        // Desktop: identity + fingerprint read as a balanced two-column header; the
+        // loadout (the much taller menu) flows FULL-WIDTH beneath, so neither column
+        // strands a void under it — the old sticky-fingerprint / tall-menu split left a
+        // large dead gap. Reading order holds: who it is → what the dial changes → the
+        // menu of things to tune with.
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.05fr 0.95fr', gap: 18, alignItems: 'start' }}>
             <Pane title="How it decides" kicker="IDENTITY" accent={c} pad={20}>
               <RevealVoice arch={ownArch} accent={c} />
               <div style={{ marginTop: 22 }}><DecisionFactors arch={ownArch} accent={c} /></div>
             </Pane>
-            <div style={{ position: 'sticky', top: 0 }}>
-              <Pane title="Behavior fingerprint" kicker="WHAT THIS CHANGES" accent={c} pad={18}>{fingerprint}</Pane>
-            </div>
+            <Pane title="Behavior fingerprint" kicker="WHAT THIS CHANGES" accent={c} pad={18}>{fingerprint}</Pane>
           </div>
-          <Pane title="Your loadout" kicker="TUNE" accent={T.allocation} pad={18}>{loadout}</Pane>
-        </div>
+          <div style={{ marginTop: 18 }}>
+            <Pane title="Your loadout" kicker="TUNE" accent={T.allocation} pad={20}>{loadout}</Pane>
+          </div>
+        </>
       )}
     </div>
   );
