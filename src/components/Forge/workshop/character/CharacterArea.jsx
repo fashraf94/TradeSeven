@@ -35,12 +35,21 @@ export default function CharacterArea({ agent, agentName, traits, twoCol = false
   const roster = getArchetypeRoster();
   const name = agentName || agent?.name || 'your agent';
 
+  // BOTH sub-views share this one scroll owner (the root below); it lives OUTSIDE
+  // the sub ternary, so switching tabs swaps only the child and the owner keeps its
+  // scrollTop. Scroll the tall "Your Character" down, switch to the shorter
+  // "Explore", and the owner stays clamped near the bottom — Explore then reads as
+  // "won't scroll" with its top content stranded above the fold. Reset to the top on
+  // every view change so each sub-view opens fully scrollable from its start.
+  const scrollRef = React.useRef(null);
+  React.useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; }, [sub]);
+
   return (
     // The Forge body slot is overflow:hidden with a fixed height (ForgeWorkshop),
     // so the AREA must own its scroll — same container the TraitsArea surfaces use
     // (fw-scroll hides the bar; the bottom padding clears the mobile nav overlay).
     // Without this the tab cannot scroll to its content below the fold.
-    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: compact ? '22px 18px calc(84px + env(safe-area-inset-bottom))' : '22px 24px calc(84px + env(safe-area-inset-bottom))' }}>
+    <div ref={scrollRef} className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: compact ? '22px 18px calc(84px + env(safe-area-inset-bottom))' : '22px 24px calc(84px + env(safe-area-inset-bottom))' }}>
       <div style={{ maxWidth: sub === 'character' ? 1160 : 1180, margin: '0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
@@ -173,14 +182,30 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
       compact={compact} barFallback={compact} />
   );
 
-  const loadout = (
+  // The dial lives WITH the fingerprint (founder Fix #2): moving it must visibly
+  // reshape the radar in the same viewport — that causal link is the whole point of
+  // the derived read. The "set by your archetype" caption stays anchored inside
+  // <Fingerprint>. The dial sits directly beneath the radar in the same card.
+  const fingerprintTempo = (
+    <>
+      {fingerprint}
+      <div style={{ marginTop: compact ? 16 : 18, paddingTop: compact ? 16 : 18, borderTop: `1px solid ${T.hair}` }}>
+        <LoadoutSubHead icon="compass" title="Tempo" meta="Reshapes the radar above" compact={compact} />
+        <TempoControl archId={archId} archName={ownArch.name} value={shownTempo} onChange={changeTempo} locked={locked} compact={compact} />
+      </div>
+    </>
+  );
+
+  const bornWith = (
+    <BornWithKit archName={ownArch.name} equippedTraits={traits?.equippedTraits || []} signatureIds={ownArch.signature || []} compact={compact} />
+  );
+
+  // The standing-leans menu is the tall interactive surface; it flows full-width
+  // beneath the identity/disposition header so nothing strands a void beside it.
+  const standingLeansSection = (
     <>
       {locked && <div style={{ marginBottom: 18 }}><BattleSnapshot leans={cs.leans.valid} tempo={cs.tempo.effective} compact={compact} /></div>}
-
-      <LoadoutSubHead icon="star" title="Born with" meta="Read-only" accent={T.gold} compact={compact} />
-      <BornWithKit archName={ownArch.name} equippedTraits={traits?.equippedTraits || []} signatureIds={ownArch.signature || []} compact={compact} />
-
-      <div style={{ marginTop: 26 }} ref={menuRef}>
+      <div ref={menuRef}>
         <LoadoutSubHead icon="sliders" title="Standing leans" meta={`${standingLeans.length} / ${STANDING_LEANS_CAP} slots`} compact={compact} />
         <LeanSlots pins={slotPins} archName={ownArch.name} locked={locked} onRemove={remove} onFocusMenu={focusMenu} compact={compact} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, margin: '18px 0 12px' }}>
@@ -199,11 +224,6 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
           ))}
         </div>
       </div>
-
-      <div style={{ marginTop: 26 }}>
-        <LoadoutSubHead icon="compass" title="Tempo" meta="Drives the fingerprint" compact={compact} />
-        <TempoControl archId={archId} archName={ownArch.name} value={shownTempo} onChange={changeTempo} locked={locked} compact={compact} />
-      </div>
     </>
   );
 
@@ -217,31 +237,36 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
       )}
 
       {compact ? (
-        // Mobile: single-column flow — identity → what the dial changes → the menu.
+        // Mobile: single-column flow — identity → fingerprint+dial (tune & see it
+        // move together) → born-with → the standing-leans menu.
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Pane title="How it decides" kicker="IDENTITY" accent={c} pad={16}>
             <RevealVoice arch={ownArch} accent={c} compact />
             <div style={{ marginTop: 18 }}><DecisionFactors arch={ownArch} accent={c} compact /></div>
           </Pane>
-          <Pane title="Behavior fingerprint" kicker="WHAT THIS CHANGES" accent={c} pad={16}>{fingerprint}</Pane>
-          <Pane title="Your loadout" kicker="TUNE" accent={T.allocation} pad={16}>{loadout}</Pane>
+          <Pane title="Behavior fingerprint" kicker="TUNE & SEE" accent={c} pad={16}>{fingerprintTempo}</Pane>
+          <Pane title="Born with" kicker="READ-ONLY" accent={T.gold} pad={16}>{bornWith}</Pane>
+          <Pane title="Standing leans" kicker="TUNE" accent={T.allocation} pad={16}>{standingLeansSection}</Pane>
         </div>
       ) : (
-        // Desktop: identity + fingerprint read as a balanced two-column header; the
-        // loadout (the much taller menu) flows FULL-WIDTH beneath, so neither column
-        // strands a void under it — the old sticky-fingerprint / tall-menu split left a
-        // large dead gap. Reading order holds: who it is → what the dial changes → the
-        // menu of things to tune with.
+        // Desktop: identity (left) | fingerprint + tempo dial + born-with (right) as a
+        // balanced disposition header, then the tall standing-leans menu FULL-WIDTH
+        // beneath. Pairing the dial with the radar keeps the cause (dial) and effect
+        // (fingerprint) in one viewport (founder Fix #2); putting the tall menu
+        // full-width keeps either column from stranding a void beside it.
         <>
           <div style={{ display: 'grid', gridTemplateColumns: '1.05fr 0.95fr', gap: 18, alignItems: 'start' }}>
             <Pane title="How it decides" kicker="IDENTITY" accent={c} pad={20}>
               <RevealVoice arch={ownArch} accent={c} />
               <div style={{ marginTop: 22 }}><DecisionFactors arch={ownArch} accent={c} /></div>
             </Pane>
-            <Pane title="Behavior fingerprint" kicker="WHAT THIS CHANGES" accent={c} pad={18}>{fingerprint}</Pane>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <Pane title="Behavior fingerprint" kicker="TUNE & SEE" accent={c} pad={18}>{fingerprintTempo}</Pane>
+              <Pane title="Born with" kicker="READ-ONLY" accent={T.gold} pad={18}>{bornWith}</Pane>
+            </div>
           </div>
           <div style={{ marginTop: 18 }}>
-            <Pane title="Your loadout" kicker="TUNE" accent={T.allocation} pad={20}>{loadout}</Pane>
+            <Pane title="Standing leans" kicker="TUNE" accent={T.allocation} pad={20}>{standingLeansSection}</Pane>
           </div>
         </>
       )}
