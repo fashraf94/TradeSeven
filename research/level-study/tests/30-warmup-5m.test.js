@@ -71,7 +71,7 @@ test('normalizeFiveMin tags warmup5m strictly by date < studyStart (bars and ses
   const daily = normalizeDaily(['2023-06-30', '2023-07-10', '2023-07-11'].map((date) => ({
     date, open: 100, high: 101, low: 99, close: 100, adjusted_close: 100, volume: 1e6,
   })));
-  const { bars, sessions } = normalizeFiveMin(raw, daily.byDate);
+  const { bars, sessions } = normalizeFiveMin(raw, daily.byDate, null);
 
   for (const b of bars) assert.equal(b.warmup5m, b.etDate < STUDY_START, `${b.etDate}: warmup5m must be (date < ${STUDY_START})`);
   for (const s of sessions) assert.equal(s.warmup5m, s.etDate < STUDY_START, `${s.etDate}: session warmup5m`);

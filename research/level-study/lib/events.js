@@ -205,6 +205,47 @@ function hasIntradayApproachOf(five, bar) {
   return first.epoch !== bar.epoch;
 }
 
+/**
+ * S56-A4 — the HOURLY-CLASS BAR-COVERAGE GUARD (pre-registered, pre-outcome).
+ *
+ * Session 6 assigns the confirmation class (SHARP_REJECT / DRIFT_HOLD / BREAK_HOLD / BREAK_RECLAIM /
+ * CHOP) from the geometry of the hourly bars in the confirmation window. Those bars are AGGREGATES of
+ * 5-minute constituents. If constituents are ABSENT from the vendor feed, the bar's high, low, close
+ * and volume — and therefore its penetration, close-position and wick — are computed from a partial
+ * session. The resulting class is not noisy; it is WRONG, and it is indistinguishable from a real one.
+ *
+ * So: if ANY bar of the confirmation window is missing > 20% of its expected constituents, the class
+ * is ineligible → `hourly_class` is null → the event DROPS from P1, P2 and P5 (S56-A4).
+ *
+ * The window is "touch hourly bar + NEXT hourly bar" (config.hourlyClass.window), so the guard is the
+ * AND over BOTH bars (S56-C2) — a complete touch bar followed by a half-empty next bar still yields a
+ * garbage class. `complete` and `coveragePct` are computed per bucket in normalize.js:buildHourly
+ * against a PER-SESSION expected count (half-days clipped), so a legitimate early close is never
+ * mistaken for a data gap.
+ *
+ * Returns { hourlyClassEligible, touchHourCoveragePct, windowMinCoveragePct }.
+ * A missing NEXT bar (touch in the final bucket) is NOT a coverage failure — the window is simply
+ * shorter; that is an existing S6 concern, not a data-quality one.
+ */
+function hourlyCoverageOf(five, bar) {
+  const buckets = five && five.hourly ? five.hourly : null;
+  if (!buckets || !buckets.length || !bar) {
+    return { hourlyClassEligible: false, touchHourCoveragePct: null, windowMinCoveragePct: null };
+  }
+  const touch = buckets.find((h) => bar.etMinutes >= h.openEtMinutes && bar.etMinutes < h.closeEtMinutes);
+  if (!touch) return { hourlyClassEligible: false, touchHourCoveragePct: null, windowMinCoveragePct: null };
+  const next = buckets.find((h) => h.bucketIndex === touch.bucketIndex + 1) || null;
+
+  const windowBars = next ? [touch, next] : [touch];
+  const eligible = windowBars.every((h) => h.complete === true);
+  const covs = windowBars.map((h) => h.coveragePct).filter((c) => c != null);
+  return {
+    hourlyClassEligible: eligible,
+    touchHourCoveragePct: touch.coveragePct,
+    windowMinCoveragePct: covs.length ? Math.min(...covs) : null,
+  };
+}
+
 function touchKey(t) { return `${t.timestamp}|${t.familyId}|${t.snapshotId}`; }
 function mergeTouchHistories(a, b) {
   const seen = new Set(), out = [];
@@ -341,6 +382,7 @@ export function detectEvents(args) {
       disposition: 'touch',
       hasIntradayApproach: hasIntradayApproachOf(ctx.five, bar), // S56-A1: P3 gates on this
       touchEtMinutes: bar.etMinutes, // S56-A1: separates a true 09:30 gap-open (OPEN_TOUCH) from a data gap
+      ...hourlyCoverageOf(ctx.five, bar), // S56-A4: hourlyClassEligible — P1/P2/P5 gate on this
       configVersion,
     };
     s.phase = 'OPEN'; s.openedBar = bar;
@@ -384,6 +426,7 @@ export function detectEvents(args) {
       // never hardcoded, so the two emit paths cannot drift apart.
       hasIntradayApproach: hasIntradayApproachOf(ctx.five, bar),
       touchEtMinutes: bar.etMinutes,
+      ...hourlyCoverageOf(ctx.five, bar), // S56-A4
       configVersion,
     };
     emitted.push({ record, dropped: false });

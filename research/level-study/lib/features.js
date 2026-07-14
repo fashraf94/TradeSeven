@@ -244,6 +244,9 @@ export function assembleEventFeatures({
     familyTier: event.familyTier, disposition: event.disposition, sequenceIndex: event.sequenceIndex,
     hasIntradayApproach: event.hasIntradayApproach, // S56-A1 (P3 gate)
     touchEtMinutes: event.touchEtMinutes ?? null,   // S56-A1: separates OPEN_TOUCH from a data-gap session
+    hourlyClassEligible: event.hourlyClassEligible ?? null, // S56-A4 (P1/P2/P5 gate)
+    touchHourCoveragePct: event.touchHourCoveragePct ?? null, // S56-A4/A5 diagnostic
+    windowMinCoveragePct: event.windowMinCoveragePct ?? null, // S56-A4/A5 diagnostic
     knownAt, configVersion: CONFIG.version,
     features,
   };

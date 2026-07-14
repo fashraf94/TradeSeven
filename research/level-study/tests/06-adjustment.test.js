@@ -10,7 +10,7 @@ import { loadFixture } from './_helpers.js';
 
 const TOL = CONFIG.adjustment.crossGrainInvariant.tolerancePct; // 0.1
 const { byDate } = normalizeDaily(loadFixture('daily/NVDA_eod_2018-01-01_2026-07-10.json'));
-const { sessions } = normalizeFiveMin(loadFixture('split-adjacent/NVDA_5m_2024-06-05_2024-06-14.json'), byDate);
+const { sessions } = normalizeFiveMin(loadFixture('split-adjacent/NVDA_5m_2024-06-05_2024-06-14.json'), byDate, null);
 
 test(`adjustment: NVDA split-window adjusted 5m auction ≈ daily adjusted_close ≤ ${TOL}%`, () => {
   const rows = adjustmentCheck(sessions, byDate);

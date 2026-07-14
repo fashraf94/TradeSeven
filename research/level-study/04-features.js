@@ -206,14 +206,28 @@ export function buildBudgetReread(rows) {
   }
   out.questions.P4 = { gate: 'all-tier (SHARP_REJECT split pending S6)', split: 'F1 vs F2 × side (S5-A1)', cells: p4 };
 
-  // P1/P2/P5 — still gated on hourly classes (S6): report the base + required class share
+  // P1/P2/P5 — F2+ per side, ON hourlyClassEligible === true (S56-A4).
+  //
+  // These three questions are all computed FROM the hourly confirmation class. S6 builds that class
+  // from the geometry of the confirmation window's hourly bars — and an hourly bar missing >20% of
+  // its 5-minute constituents produces a class that is WRONG, not merely noisy, and that looks
+  // exactly like a real one. So the ineligible events drop here, BEFORE S6 can label them.
+  // The dropped count is stated, never hidden. A large count is a data-quality FINDING.
+  const f2eligible = f2.filter((r) => r.hourlyClassEligible === true);
   const base = {};
   for (const s of ['support', 'resistance']) {
-    const c = cell(side(f2, s));
+    const c = cell(side(f2eligible, s));
     base[s] = { ...c, minClassSharePctToClearFloor: c.n > 0 ? round1((MIN_N / c.n) * 100) : null };
   }
+  const droppedIneligible = f2.filter((r) => r.hourlyClassEligible !== true);
   out.questions.P1_P2_P5 = {
-    gate: 'F2+ per side (hourly-class split pending S6)', cells: base,
+    gate: `F2+ per side AND hourlyClassEligible === true (S56-A4; ≥${CONFIG.hourlyClass.minBarCoveragePct}% bar coverage across the confirmation window)`,
+    cells: base,
+    droppedIncompleteHourlyBars: {
+      n: droppedIneligible.length,
+      pctOfF2: f2.length ? round1((droppedIneligible.length / f2.length) * 100) : null,
+      why: 'an hourly bar in the confirmation window is missing >20% of its expected 5m constituents → hourly_class is null → the event cannot be classed (S56-A4). Dropped BEFORE S6 assigns a label, never after.',
+    },
     note: 'each of the 5 hourly classes needs ≥ minClassSharePct of its side base (plus uniqueDates≥15) to clear the floor',
   };
   return out;
@@ -230,6 +244,10 @@ function printReread(rr) {
     }
     if (spec.excludedNoIntradayApproach) {
       console.log(`    ${'excluded (no approach)'.padEnd(24)} n=${String(spec.excludedNoIntradayApproach.n).padStart(4)}  — stated, not hidden (S56-A1)`);
+    }
+    if (spec.droppedIncompleteHourlyBars) {
+      const d = spec.droppedIncompleteHourlyBars;
+      console.log(`    ${'dropped (incomplete bars)'.padEnd(24)} n=${String(d.n).padStart(4)}  = ${d.pctOfF2}% of F2+ — hourly_class null (S56-A4)`);
     }
     if (spec.regimeInteraction) {
       const dead = Object.values(spec.regimeInteraction).filter((c) => c.verdict === 'UNDERPOWERED').length;
@@ -251,7 +269,12 @@ async function main() {
   const argv = process.argv.slice(2).filter(Boolean);
   let uni = null;
   if (fs.existsSync(UNIVERSE_PATH)) uni = JSON.parse(fs.readFileSync(UNIVERSE_PATH, 'utf8'));
-  const members = uni ? uni.symbols : CONFIG.universe.probe.equities.map((s) => ({ symbol: s, sector: CONFIG.universe.sectorMap[s], stratum: null }));
+  // S5.6 Phase B: A1 cross-grain quarantined symbols are excluded from the study population (their
+  // daily and 5m grains sit on different price bases — see 02-build-levels.js). Loud, never silent.
+  const allMembers = uni ? uni.symbols : CONFIG.universe.probe.equities.map((s) => ({ symbol: s, sector: CONFIG.universe.sectorMap[s], stratum: null }));
+  const quarantined = allMembers.filter((m) => m.quarantined).map((m) => m.symbol);
+  if (quarantined.length) console.log(`🔴 QUARANTINED (A1 cross-grain fail — excluded, founder ruling pending): ${quarantined.join(', ')}`);
+  const members = allMembers.filter((m) => !m.quarantined);
   const symbols = argv.length ? argv : members.map((m) => m.symbol);
   console.log(`LevelStory features v${CONFIG.version} — ${PRE_TOUCH_KEYS.length} pre_touch features, availability-closed\n`);
 
@@ -300,7 +323,18 @@ async function main() {
   await writeJson(path.join(MARKET_DIR, 'context_daily.json'), { configVersion: CONFIG.version, sessions: [...marketByDate.values()] });
   console.log(`market context: ${marketByDate.size} sessions → data/market/context_daily.json`);
   const regimeNull = [...marketByDate.values()].filter((c) => c.momo_regime == null).length;
-  console.log(`⚠ momo_regime null on ${regimeNull}/${marketByDate.size} sessions — and at ${memberCtx.length} symbols the deciles are ~1 name: the regime meter is NOT trustworthy at this scale (expansion evidence)\n`);
+  // The decile width is DERIVED from the universe actually loaded, never asserted. At the 11-symbol
+  // probe this line correctly warned that a decile was ~1 name and the regime meter was untrustworthy.
+  // Under universe v2 a decile is ~23 names — so the warning must now say the opposite, from the same
+  // number. A message that contradicts the count printed beside it is the display-disagreement bug
+  // family (BUILD_RULES §9); bind the words to the value by construction.
+  const decileNames = memberCtx.length * CONFIG.regime.momoSpread.decileFraction;
+  const trustworthy = decileNames >= 5;
+  console.log(
+    `momo_regime null on ${regimeNull}/${marketByDate.size} sessions (${Math.round((regimeNull / marketByDate.size) * 1000) / 10}%) — `
+    + `at ${memberCtx.length} symbols each momentum decile holds ~${Math.round(decileNames)} name(s): `
+    + `${trustworthy ? '✅ the regime meter is now trustworthy (it was NOT at the 11-symbol probe, where a decile was ~1 name)' : '⚠ NOT trustworthy — a decile is too thin to define a momentum basket'}\n`,
+  );
 
   // S5.6 — STALE-ARTIFACT PRECHECK (must run BEFORE the per-symbol loop).
   //
@@ -314,14 +348,27 @@ async function main() {
   // So check the schema up front and ABORT. The pipeline order is levels → events → features; a
   // stale events artifact means the operator skipped a stage, and the only correct response is to
   // stop and say so.
+  // Validate EVERY field the budget re-read gates on. Checking only `hasIntradayApproach` was not
+  // enough: an events artifact built mid-S5.6 (after S56-A1 but before S56-A4) passes that check yet
+  // carries no `hourlyClassEligible` — which `?? null` coerces, so the `=== true` gate in P1/P2/P5
+  // fails for EVERY row. The result is n=0 on both sides, `droppedIncompleteHourlyBars` = 100%, and
+  // a fabricated "total data-quality collapse" written to _stats.json with exit 0. Same silent
+  // all-zero re-read this precheck exists to prevent, arriving through the next field.
+  const REQUIRED = [
+    ['hasIntradayApproach', 'boolean', 'S56-A1 (P3 gate)'],
+    ['hourlyClassEligible', 'boolean', 'S56-A4 (P1/P2/P5 gate)'],
+    ['touchEtMinutes', 'number', 'S56-A1 (OPEN_TOUCH vs data-gap split)'],
+  ];
   for (const m of memberCtx) {
-    const bad = m.events.find((ev) => typeof ev.hasIntradayApproach !== 'boolean');
-    if (bad) {
-      console.log(`\n🔴 STALE EVENT ARTIFACT — ${m.symbol}: event ${bad.eventId} has no \`hasIntradayApproach\` (S56-A1).`);
-      console.log('   These events predate S5.6. Re-run the pipeline before features:');
-      console.log('     npm run levels && npm run events && npm run features');
-      console.log('   Aborting so a stale run cannot silently emit an all-zero budget re-read.');
-      process.exit(1);
+    for (const [field, type, why] of REQUIRED) {
+      const bad = m.events.find((ev) => typeof ev[field] !== type);
+      if (bad) {
+        console.log(`\n🔴 STALE EVENT ARTIFACT — ${m.symbol}: event ${bad.eventId} has no \`${field}\` (${why}).`);
+        console.log('   These events predate the current amendments. Re-run the pipeline before features:');
+        console.log('     npm run levels && npm run events && npm run features');
+        console.log('   Aborting so a stale run cannot silently emit an all-zero budget re-read.');
+        process.exit(1);
+      }
     }
   }
 

@@ -19,6 +19,9 @@ const AUCTION_ET_MIN = CONFIG.closingAuction.detection.etMinutes;   // 960 (16:0
 const OPEN_ET_MIN = CONFIG.session.regularOpenEtMinutes;            // 570 (09:30 ET)
 const LAST_REG_OPEN_ET_MIN = CONFIG.session.lastRegularBarOpenEtMinutes; // 955 (15:55 ET)
 const BUCKETS = CONFIG.hourly.bucketBoundariesEtMinutes;           // [570,630,...,960]
+const STEP = CONFIG.session.fiveMinuteStepMinutes;                 // 5
+const REGULAR_CLOSE_ET_MIN = CONFIG.session.regularCloseEtMinutes;  // 960 (16:00 ET)
+const MIN_BAR_COVERAGE_PCT = CONFIG.hourlyClass.minBarCoveragePct; // 80 (S56-A4)
 const STUDY_START = CONFIG.range.studyStart;                       // '2023-07-10'
 const HOLDOUT_START = CONFIG.range.holdoutStart;                   // '2025-12-10'
 
@@ -105,6 +108,101 @@ export function classifyBar(raw) {
   return { etDate: t.etDate, etMinutes: t.etMinutes, role, closingAuction: isAuction };
 }
 
+/**
+ * S56-A4/A5 — the session's close, in ET minutes, for the EXPECTED-BAR count.
+ *
+ * THE TRAP THIS AVOIDS: deriving the close from the last DELIVERED bar makes the coverage measure
+ * SELF-CERTIFYING. A thin name whose 5m feed simply stops at 11:00 would be read as "the session
+ * ended at 11:00", expect 18 bars, receive 18, and report **100% complete** — so the very symbols
+ * S56-A5 exists to detect would be the ones it certifies as clean, and A4 would pass their events.
+ *
+ * So the close is taken from a source INDEPENDENT of this symbol's regular bars:
+ *
+ *   1. the MARKET SESSION CALENDAR (buildSessionCalendar, below). A session's end is a MARKET fact,
+ *      not a per-symbol one, so the strongest source is the consensus of many liquid instruments.
+ *   2. otherwise the symbol's own AUCTION PRINT, which is emitted independently of the regular bars.
+ *   3. otherwise the FULL-DAY close (16:00) — deliberately conservative: a session whose bars stop
+ *      early reads as INCOMPLETE (events dropped) rather than as complete.
+ *
+ * MEASURED, and the reason the calendar exists: EODHD emits NO closing-auction print on half-days.
+ * On all 7 half-days in the study window, 229/229 symbols have `hasAuction === false`. An earlier
+ * version of this function assumed "the auction prints at the early close (13:00)" and fell back to
+ * 16:00 when it was absent — so every half-day was measured against a 78-bar expectation, read as a
+ * ~53%-covered data gap, and dropped. That dragged EVERY symbol's completeness down by a uniform
+ * ~0.93 points (7 of 754 sessions) and was why not one of the 229 names cleared a 99% floor. The
+ * bias was invisible precisely because it was uniform.
+ *
+ * A trading HALT is the case this must NOT swallow: a halted symbol's bars stop early while the
+ * market runs to 16:00. The calendar says 16:00, the symbol's feed says otherwise, and the session
+ * is correctly flagged incomplete. That is the desired behaviour — a halted symbol's hourly bars are
+ * exactly the ones S56-A4 must refuse to build a class from.
+ */
+function sessionEndOf(auctionEtMinutes, etDate, calendar) {
+  const fromCalendar = calendar ? calendar.get(etDate) : null;
+  if (fromCalendar != null) return fromCalendar;
+  if (auctionEtMinutes != null) return auctionEtMinutes;
+  return REGULAR_CLOSE_ET_MIN;
+}
+
+/**
+ * The MARKET SESSION CALENDAR — etDate → the session's true end in ET minutes.
+ *
+ * Built from the consensus of reference instruments (SPY + the 11 SPDR sector ETFs). They print in
+ * essentially every 5-minute window, so their last regular bar IS the session's last regular bar;
+ * and no single truncated or halted feed can move the MODE of twelve. That is what makes this
+ * non-self-certifying, which a per-symbol derivation can never be (S3-R3 says the session end is
+ * derived per session FROM THE DATA — this honours that while denying any one symbol the ability to
+ * certify its own completeness).
+ *
+ * THE RULE, and why it is not simply "the last bar". A CLOSING PRINT carries a price but NO volume
+ * (`close != null, volume == null`); a regular bar carries volume. So, per reference symbol, take the
+ * last bar of the session that has a price, and:
+ *
+ *   - it has NO volume  ⇒ it IS the closing print, and the session ends AT it.
+ *       full day  16:00 print        → 960
+ *       half-day  13:00 print        → 780   (EODHD emits this; it is NOT at 16:00 — see below)
+ *   - it HAS volume     ⇒ it is an ordinary bar and the session ran one step past it.
+ *       full day, print absent, last traded bar opens 15:55 → 955 + 5 = 960
+ *
+ * That second branch is load-bearing: for eleven consecutive sessions (2025-10-13 → 2025-10-27) the
+ * vendor emitted NO closing print at all, for every symbol. A rule keyed on the print alone would
+ * have mis-dated the close of all eleven. MEASURED: this rule gives 12/12 reference agreement on
+ * every date in the window, half-days and the October gap included.
+ *
+ * @param {Array<{symbol:string, bars:Array}>} refs `bars` as returned by normalizeFiveMin()
+ * @param {number} quorum minimum refs that must agree before a date is trusted
+ * @returns {Map<string, number>} etDate → session close in ET minutes
+ */
+export function buildSessionCalendar(refs, quorum = 3) {
+  const lastBarByDate = new Map(); // etDate → [session close, one per ref]
+  for (const { bars } of refs) {
+    const lastPerDate = new Map();
+    for (const b of bars) {
+      // Only bars inside the regular window that actually PRINTED a price. An empty placeholder bar
+      // (close == null) says nothing about when the session ended.
+      if (b.close == null) continue;
+      if (b.etMinutes < OPEN_ET_MIN || b.etMinutes > REGULAR_CLOSE_ET_MIN) continue;
+      const cur = lastPerDate.get(b.etDate);
+      if (cur == null || b.etMinutes > cur.etMinutes) lastPerDate.set(b.etDate, b);
+    }
+    for (const [etDate, b] of lastPerDate) {
+      const close = b.volume == null ? b.etMinutes : b.etMinutes + STEP;
+      if (!lastBarByDate.has(etDate)) lastBarByDate.set(etDate, []);
+      lastBarByDate.get(etDate).push(close);
+    }
+  }
+  const calendar = new Map();
+  for (const [etDate, opens] of lastBarByDate) {
+    const counts = new Map();
+    for (const o of opens) counts.set(o, (counts.get(o) || 0) + 1);
+    const [mode, n] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+    // Below quorum the references disagree (or too few reported) — trust nothing, fall back.
+    if (n < quorum) continue;
+    calendar.set(etDate, mode);
+  }
+  return calendar;
+}
+
 // ── 5-minute normalization + sessionization ──────────────────────────────────
 
 /**
@@ -112,7 +210,22 @@ export function classifyBar(raw) {
  * @param {Map} dailyByDate output of normalizeDaily().byDate (for split factors + cross-grain)
  * @returns {{bars:Array, sessions:Array}}
  */
-export function normalizeFiveMin(raw5m, dailyByDate) {
+export function normalizeFiveMin(raw5m, dailyByDate, sessionCalendar) {
+  // The calendar is REQUIRED, not defaulted. It was optional-with-a-null-default for exactly one
+  // build, and in that build 03-detect-events.js — which re-normalizes from raw to recover per-bar
+  // arrays — simply forgot to pass it. It silently fell back to a 16:00 close, rebuilt every hourly
+  // bucket against a full-day expectation, and stamped pre-fix coverage onto every event. The
+  // sessions on disk were correct and the events were wrong, and nothing anywhere failed.
+  //
+  // A silent default is what made that undetectable. Passing `null` is now a DELIBERATE act, made
+  // only by the pass that is building the calendar itself (and by fixtures that predate it).
+  if (sessionCalendar === undefined) {
+    throw new Error(
+      'MISSING_SESSION_CALENDAR: normalizeFiveMin requires an explicit sessionCalendar (S56-C3). ' +
+      'Pass the calendar from data/normalized/_session_calendar.json, or pass null to deliberately ' +
+      'opt out (only the calendar-building pass and fixture tests may do that).',
+    );
+  }
   const bars = [];
   const sessionMap = new Map(); // etDate -> { raw regular bars, auction bar, ... }
 
@@ -146,9 +259,44 @@ export function normalizeFiveMin(raw5m, dailyByDate) {
       sessionMap.set(c.etDate, { etDate: c.etDate, firstEpoch: raw.timestamp, regular: [], auctions: [], otherCount: 0, invalidCount: 0, nullVolRegular: 0 });
     }
     const s = sessionMap.get(c.etDate);
-    if (c.role === 'regular') { s.regular.push(bar); if (bar.volume === null) s.nullVolRegular += 1; }
-    else if (c.role === 'auction') s.auctions.push(bar);
-    else if (c.role === 'invalid') s.invalidCount += 1;
+
+    // classifyBar() recognizes the closing auction by a HARDCODED 16:00, which is wrong on a
+    // half-day: EODHD prints the half-day auction at the 13:00 close, so classifyBar tags it
+    // 'regular'. That is why hasAuction was false on all 7 half-days for 229/229 symbols. With the
+    // market calendar in hand the close is known per session, so the print is identified by WHERE
+    // THE SESSION ACTUALLY ENDED rather than by a constant — which is what S3-R3 asked for.
+    const sessionClose = sessionCalendar ? sessionCalendar.get(c.etDate) : null;
+
+    // On a SHORT session, every bar at or after the close is OUT OF SESSION. Two vendor artifacts
+    // make this necessary, and one measured fact makes it the *limit* of what may be inferred:
+    //
+    //   - the 13:00 bar. It carries a price and no volume, so it looks exactly like the 16:00
+    //     closing print. It is NOT a regular 5-minute bar and must not be aggregated into an hourly
+    //     bucket (§4.4 excludes the closing print) nor counted toward the 42 bars the session owed.
+    //   - a spurious 16:00 bar, emitted on some half-days for some symbols (NVDA 2024-07-03 had
+    //     one). classifyBar, keyed on a hardcoded 16:00, tagged it the closing auction — a print
+    //     three hours after the market shut, and a second auction bar in the same session.
+    //
+    // But the 13:00 bar is NOT promoted to `auction`, and that restraint is load-bearing. MEASURED:
+    // on 3 of the 7 half-days it disagrees with the daily close by 0.107–0.118% — just OVER A1's
+    // 0.1% tolerance. It is the last 5-minute print, not the official closing auction. Tagging it
+    // `auction` would newly subject half-days to a cross-grain invariant they have never been
+    // subject to (`hasAuction` was false there, so crossGrainCheck skipped them), and 3 of 7 would
+    // fail — an A1 breach manufactured by this change. A1 is never loosened and sessions are not
+    // quarantined to accommodate an inference the data does not support. So: `hasAuction` stays
+    // false on half-days, exactly as before, and the discrepancy is REPORTED, not absorbed.
+    //
+    // The calendar is used for precisely what it is evidence of — WHEN THE SESSION ENDED — and for
+    // nothing more.
+    const isShortSession = sessionClose != null && sessionClose < REGULAR_CLOSE_ET_MIN;
+    const isPostClose = isShortSession && bar.etMinutes >= sessionClose;
+
+    const role = isPostClose ? 'other' : c.role;
+    if (isPostClose) bar.role = 'other';
+
+    if (role === 'regular') { s.regular.push(bar); if (bar.volume === null) s.nullVolRegular += 1; }
+    else if (role === 'auction') s.auctions.push(bar);
+    else if (role === 'invalid') s.invalidCount += 1;
     else s.otherCount += 1;
   }
 
@@ -167,8 +315,17 @@ export function normalizeFiveMin(raw5m, dailyByDate) {
     const lastRegularClose = s.regular.length ? s.regular[s.regular.length - 1].close : null;
     const sessionClose = auctionClose != null ? auctionClose : lastRegularClose; // A2: prefer auction print
     const isFullDay = s.regular.length === CONFIG.session.barsPerRegularSession; // 78
-    const earlyClose = auction ? auctionEtMinutes < AUCTION_ET_MIN
-      : (lastRegEt != null && lastRegEt < LAST_REG_OPEN_ET_MIN);   // half-day when no 16:00 close
+
+    // The session's true end (S3-R3: derived per session from the data, never a hardcoded 16:00) —
+    // but from the MARKET, not from this symbol's own bars. See sessionEndOf() for why that
+    // distinction is load-bearing.
+    const sessionEnd = sessionEndOf(auctionEtMinutes, s.etDate, sessionCalendar);
+
+    // A half-day is now a fact about the SESSION, not an inference from this symbol's last bar. The
+    // old fallback (`lastRegEt < LAST_REG_OPEN_ET_MIN`) tagged any truncated feed as an early close,
+    // which is the same self-certification bug in a different coat: a symbol that halted at 14:00
+    // would have declared itself a half-day and its missing bars legitimate.
+    const earlyClose = sessionEnd < REGULAR_CLOSE_ET_MIN;
     sessions.push({
       etDate: s.etDate,
       tzAbbrev: etTzAbbrev(s.firstEpoch), // one Intl call per session (DST regime constant within a session)
@@ -188,7 +345,12 @@ export function normalizeFiveMin(raw5m, dailyByDate) {
       lastRegularClose,
       sessionClose,                                                  // A2: EOD outcome-label price
       sessionCloseAdj: (sessionClose != null && f != null) ? sessionClose * f : null,
-      hourly: buildHourly(s.regular),                                // §4.4: auction excluded (only s.regular passed)
+      // S56-A4/A5: the session's close drives the expected-bar count. See sessionEndOf().
+      sessionEndEtMinutes: sessionEnd,
+      // S56-A5: whole-session 5m coverage — the input to the completeness-eligibility floor.
+      // Expected regular bars = slots from the open to the session's close (78 on a full day).
+      expectedRegularBarCount: Math.max(0, Math.floor((sessionEnd - OPEN_ET_MIN) / STEP)),
+      hourly: buildHourly(s.regular, sessionEnd), // §4.4: auction excluded (only s.regular passed)
     });
   }
   sessions.sort((a, b) => (a.etDate < b.etDate ? -1 : 1));
@@ -201,15 +363,56 @@ export function normalizeFiveMin(raw5m, dailyByDate) {
  * Aggregate regular 5-min bars into 9:30-anchored hourly buckets. The closing-auction
  * bar is NOT passed in (A2: excluded from hourly aggregation). Bucket boundaries are
  * ET minutes from config: [570,630,690,750,810,870,930,960] → 6 full hours + 15:30–16:00.
+ *
+ * S56-A4: each bucket carries its own COVERAGE — how many 5m bars it actually got against how many
+ * it should have got. `complete` is the pre-registered usability flag (≥ minBarCoveragePct).
+ * Session 6 reads it to null the hourly class rather than compute a confirmation label from a
+ * partial bar.
+ *
  * @param {Array} regularBars sorted-by-etMinutes regular 5m bars for one session
+ * @param {number|null} sessionEndEtMinutes the session's ACTUAL close (half-days close early; S3-R3
+ *   requires this be derived per session, never assumed 16:00). Defaults to the last bar's slot end.
  */
-export function buildHourly(regularBars) {
+export function buildHourly(regularBars, sessionEndEtMinutes = null) {
+  // The expected-bar count must be measured against the session that ACTUALLY happened. On a
+  // half-day (13:00 ET close) the afternoon buckets legitimately do not exist and the 12:30–13:30
+  // bucket legitimately holds 6 bars, not 12 — calling either "incomplete" would flag every half-day
+  // in the study as a data gap. Derive the close; never hardcode 960. (S3-R3.)
+  const lastBar = regularBars.length ? regularBars[regularBars.length - 1] : null;
+  const sessionEnd = sessionEndEtMinutes != null
+    ? sessionEndEtMinutes
+    : (lastBar ? lastBar.etMinutes + STEP : null);
+
   const out = [];
   for (let i = 0; i < BUCKETS.length - 1; i++) {
     const startMin = BUCKETS[i];
     const endMin = BUCKETS[i + 1];
     const inBucket = regularBars.filter((b) => b.etMinutes >= startMin && b.etMinutes < endMin);
-    if (inBucket.length === 0) continue; // session may be short (half-day); skip empty buckets
+
+    // A bucket is EXPECTED when the session was still open at its start. Distinguish the two very
+    // different reasons a bucket can be empty:
+    //   - the session had already CLOSED (half-day) → the bucket does not exist. Omit it.
+    //   - the session was OPEN but the vendor delivered NO bars → a 0%-covered bucket. EMIT IT,
+    //     flagged incomplete.
+    // Omitting the second case was a real bug: hourlyCoverageOf resolves the window's next bar by
+    // bucketIndex, so an omitted bucket read as "there is no next bar" and the event PASSED the
+    // coverage gate. The guard fired on a 79%-covered next bar but not on a 0%-covered one — it let
+    // through precisely the worst case it exists to catch.
+    const expectedBucket = sessionEnd == null || startMin < sessionEnd;
+    if (inBucket.length === 0 && !expectedBucket) continue; // session had closed — bucket doesn't exist
+    if (inBucket.length === 0) {
+      const effEnd = sessionEnd != null ? Math.min(endMin, sessionEnd) : endMin;
+      out.push({
+        bucketIndex: i, openEtMinutes: startMin, closeEtMinutes: endMin,
+        barCount: 0,
+        expectedBarCount: Math.max(0, Math.floor((effEnd - startMin) / STEP)),
+        missingBarCount: Math.max(0, Math.floor((effEnd - startMin) / STEP)),
+        coveragePct: 0,
+        complete: false, // 0% covered — the strongest possible coverage failure
+        open: null, high: null, low: null, close: null, volume: 0,
+      });
+      continue;
+    }
     let high = -Infinity, low = Infinity, vol = 0;
     for (const b of inBucket) {
       // Explicit null guards: JS coerces null→0 in `<`/`>`, so one partial-null bar
@@ -218,11 +421,20 @@ export function buildHourly(regularBars) {
       if (b.low != null && b.low < low) low = b.low;
       vol += (b.volume || 0);
     }
+    // Expected 5m slots in this bucket, clipped to the session's real close.
+    const effectiveEnd = sessionEnd != null ? Math.min(endMin, sessionEnd) : endMin;
+    const expected = Math.max(0, Math.floor((effectiveEnd - startMin) / STEP));
+    const coveragePct = expected > 0 ? (inBucket.length / expected) * 100 : null;
     out.push({
       bucketIndex: i,
       openEtMinutes: startMin,   // 570 for the first bucket (09:30 ET)
       closeEtMinutes: endMin,    // 960 for the last bucket (16:00 ET)
       barCount: inBucket.length,
+      expectedBarCount: expected,                        // S56-A4 (per-session; half-day clipped)
+      missingBarCount: Math.max(0, expected - inBucket.length),
+      coveragePct: coveragePct != null ? Math.round(coveragePct * 10) / 10 : null,
+      // S56-A4: the pre-registered usability flag. Session 6 nulls hourly_class when this is false.
+      complete: coveragePct != null ? coveragePct >= MIN_BAR_COVERAGE_PCT : false,
       open: inBucket[0].open,
       high: high === -Infinity ? null : high,  // null-never-zero if every bar's high was null
       low: low === Infinity ? null : low,

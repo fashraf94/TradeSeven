@@ -461,7 +461,13 @@ async function main() {
   if (argv.length) symbols = argv;
   else if (fs.existsSync(UNIVERSE_PATH)) {
     const uni = JSON.parse(fs.readFileSync(UNIVERSE_PATH, 'utf8'));
-    symbols = uni.symbols.map((s) => s.symbol); // study subjects only; context symbols host no levels
+    // S5.6 Phase B: quarantined symbols are SKIPPED, loudly. They fail the A1 cross-grain invariant
+    // (their daily and 5m grains sit on different price bases — a vendor spinoff back-adjustment), so
+    // levels built from their daily series could never be touched by their 5m bars. Parent §4.3:
+    // quarantine, don't degrade. They stay in the frozen file, flagged, pending a founder ruling.
+    const quarantined = uni.symbols.filter((s) => s.quarantined).map((s) => s.symbol);
+    if (quarantined.length) console.log(`🔴 QUARANTINED (A1 cross-grain fail — skipped, founder ruling pending): ${quarantined.join(', ')}`);
+    symbols = uni.symbols.filter((s) => !s.quarantined).map((s) => s.symbol); // study subjects only; context symbols host no levels
     const stratumBySymbol = new Map(uni.symbols.map((s) => [s.symbol, s.stratum]));
     strataOf = (sym) => stratumBySymbol.get(sym) || null;
     console.log(`Scope: frozen universe v${uni.universeVersion} (${symbols.length} study symbols)`);

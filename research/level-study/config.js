@@ -171,6 +171,21 @@ const CONFIG = {
       tagField: 'halfDay',                // half-days tagged halfDay: true (normalize's earlyClose is the S2 precursor tag)
       eodLabelBar: 'last_regular_bar_of_actual_session', // EOD labels use the last regular bar of the actual session
     },
+    // S56-C3 — the MARKET SESSION CALENDAR. S3-R3 says the session end is derived per session FROM
+    // THE DATA. It does NOT say from THIS SYMBOL's data — and it must not, because a symbol's own
+    // last delivered bar cannot distinguish "the market closed" from "my feed stopped", so deriving
+    // the end from it lets a truncated session certify its own completeness.
+    //
+    // Nor can the closing auction supply it. MEASURED: EODHD emits no auction print on half-days —
+    // on all 7 in the study window, for 229/229 symbols.
+    //
+    // So the end comes from the consensus of instruments that print in every 5-minute window. No
+    // single truncated or halted feed can move the mode of twelve. See lib/normalize.js.
+    sessionCalendar: {
+      referenceSymbols: ['SPY', 'XLC', 'XLY', 'XLP', 'XLE', 'XLF', 'XLV', 'XLI', 'XLB', 'XLRE', 'XLK', 'XLU'],
+      quorum: 3,        // ≥3 references must agree on a date's last bar before it is trusted
+      minReferences: 6, // fewer than this available ⇒ HARD FAIL, never a silent fall back to 16:00
+    },
   },
 
   // ── Self-built hourly bars (parent §3.6, §4.4) ─────────────────────────────
@@ -436,6 +451,28 @@ const CONFIG = {
   hourlyClass: {
     units: 'daily_ATR', // parent §7: sign-normalized in daily-ATR units
     window: 'touch hourly bar + next hourly bar', // parent §3.2/§7
+
+    // S56-A4 (PRE-REGISTERED, pre-outcome — founder-ruled 2026-07-13) — BAR-COVERAGE GUARD.
+    //
+    // An hourly bar is built from its 5-minute constituents. If those bars are ABSENT from the
+    // vendor feed, the hourly bar is not merely noisy — its high, low, close, volume and therefore
+    // its penetration/close/wick geometry are all computed from a partial session. Session 6 assigns
+    // SHARP_REJECT / BREAK_HOLD / … from exactly this geometry, and a class derived from an
+    // incomplete bar is INDISTINGUISHABLE from a real one. It would simply be wrong, silently.
+    //
+    // This matters now in a way it did not at 11 mega-caps: at 232 names the universe reaches into
+    // far less liquid tickers, where missing bars are not vendor gaps — they are ILLIQUIDITY, which
+    // correlates with volatility, spread and gap behavior (i.e. with what the study measures).
+    //
+    // RULE: if an hourly bar in the confirmation window is missing > 20% of its expected 5-minute
+    // constituents, hourly_class is NULL and the event DROPS from P1, P2 and P5. Dropped events are
+    // counted and reported — never silently discarded. A large count is a FINDING.
+    minBarCoveragePct: 80, // S56-A4: ≥80% of EXPECTED bars present ⇒ usable; >20% absent ⇒ null
+    // ⚠ S56-C2: the window is "touch bar + NEXT bar", so the class is computed from BOTH. The guard
+    // is therefore the AND over every bar of the window, not the touch bar alone — a complete touch
+    // bar followed by a half-empty next bar still yields a garbage class. Strictly more conservative
+    // than the founder's wording ("the touch-hour hourly bar"); recorded as an implementation choice.
+    coverageAppliesTo: 'every_bar_of_the_confirmation_window', // S56-C2
     // P = penetration depth beyond level; C = window-close position (+ toward hold side);
     // W = max rejection wick with close on hold side. (parent §7)
     classes: {
