@@ -86,11 +86,16 @@ import { confidenceToFloat } from '../../src/constants/visionEnums.js';
 import { validateTransition } from '../../src/types/vision/visionValidators.js';
 import { Timestamp } from 'firebase-admin/firestore';
 
-export const config = { maxDuration: 60 };
+// maxDuration raised 60→300 (agent-eval budget-starvation fix, July 2026). The
+// Pro-plan ceiling supports it — tournament-orchestrator.js already runs at 300.
+// This does NOT touch the fenced pre-call guard (agentEvalTransport.js): it only
+// widens the handler's own budget so more than one battle clears that guard per
+// tick. Mitigation, not architecture — see the scale note in the PR.
+export const config = { maxDuration: 300 };
 
 const LOG_PREFIX = '[AgentEval]';
 const EVALUATING_LOCK_TIMEOUT_MS = 120_000; // 2 minutes
-const TIME_BUDGET_MS = 50_000; // 50 seconds — leave 10s buffer for cleanup/response
+const TIME_BUDGET_MS = 290_000; // 290s — leave 10s buffer under the 300s maxDuration for cleanup/response
 
 let anthropicClient = null;
 function getAnthropicClient() {
@@ -99,8 +104,8 @@ function getAnthropicClient() {
     // convention (decide.js, reflect.js, compile-dimensions.js, ...). The SDK
     // retries timeouts and connection errors by default, and this cron cannot
     // absorb retry multiplication: 2 retries × the 20s per-request timeout at
-    // the call site ≈ 60s ≥ this function's maxDuration, which would kill the
-    // invocation and lose the awaited finalUpdate. Phase 2 failureClass
+    // the call site ≈ 60s per battle — enough to blow a single battle's slice of
+    // the shared budget and lose its awaited finalUpdate. Phase 2 failureClass
     // instrumentation measures whether transient errors (429/5xx) are frequent
     // enough to justify a budgeted retry later (founder decision L2: measure
     // first, no retries now). Safe at client level: this file has exactly one
@@ -190,6 +195,20 @@ export default async function handler(req, res) {
     // share one). Regular battles never touch it — their resolution
     // short-circuits on in-memory battle fields before any read.
     const tournamentGroupCache = new Map();
+
+    // Fair-rotation ordering (budget-starvation mitigation). The shared per-tick
+    // time budget only funds a bounded number of Haiku calls, so a stable
+    // processing order starves the SAME tail battles every tick. Process the
+    // neediest first: ascending by the last tick this battle actually STARTED a
+    // Haiku call (cronState.lastEvalStartedAt — written ONLY on a real attempt,
+    // so budget_skipped ticks never refresh it). Never-evaluated battles sort to
+    // the front (''). ISO-8601 timestamps compare chronologically as strings.
+    // This makes starvation FAIR (every battle cycles to the front over
+    // successive ticks), it does NOT make it go away — the real fix is per-battle
+    // fan-out (see the scale note in the PR/report).
+    activeBattles.sort((a, b) =>
+      (a.cronState?.lastEvalStartedAt || '').localeCompare(b.cronState?.lastEvalStartedAt || '')
+    );
 
     // ---- 4. Process each battle sequentially (with time budget) ----
     for (const battle of activeBattles) {
@@ -1480,7 +1499,14 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         const todayET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
-          message: `Gameplan Meeting: ${gameplanTrigger.diagnosis} Proposing rotation to ${gameplanTrigger.toSectors.join('/')}.`,
+          // Bug C: only render the "Proposing rotation to X" clause when a bench
+          // sector was actually ranked. An empty toSectors (no ranked bench
+          // sector — e.g. Trigger 1 with all bench in the dragging sector or no
+          // tech scores) previously rendered "Proposing rotation to ." with a
+          // dangling empty symbol.
+          message: gameplanTrigger.toSectors.length > 0
+            ? `Gameplan Meeting: ${gameplanTrigger.diagnosis} Proposing rotation to ${gameplanTrigger.toSectors.join('/')}.`
+            : `Gameplan Meeting: ${gameplanTrigger.diagnosis}`,
           action: 'gameplan_meeting', source: 'gameplan_meeting',
         });
         scoreUpdate.gameplanMeeting = gameplanTrigger;
@@ -2271,6 +2297,11 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       // call, so it does not increment (semantic fidelity for the token-vs-call
       // forensics that exposed the June 11 outage).
       'cronState.totalHaikuCalls': (battle.cronState?.totalHaikuCalls || 0) + (haikuAttempted ? 1 : 0),
+      // Fair-rotation signal (budget-starvation mitigation): the last tick this
+      // battle actually STARTED a Haiku call. Written ONLY on a real attempt so
+      // budget_skipped ticks don't refresh it — the handler orders battles
+      // ascending by this so the longest-starved battle leads the next tick.
+      ...(haikuAttempted ? { 'cronState.lastEvalStartedAt': now } : {}),
       'cronState.totalTokens.input': (battle.cronState?.totalTokens?.input || 0) + inputTokens,
       'cronState.totalTokens.output': (battle.cronState?.totalTokens?.output || 0) + outputTokens,
       'cronState.consecutiveHolds': consecutiveHolds,
