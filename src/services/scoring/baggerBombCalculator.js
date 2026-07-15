@@ -1,6 +1,6 @@
 // /src/services/scoring/baggerBombCalculator.js
 
-import { BAGGERBOMB, getConvictionMultiplier, SNAKE_DRAFT } from './constants';
+import { BAGGERBOMB, getConvictionMultiplier, SNAKE_DRAFT } from './constants.js';
 
 /**
  * Calculate the number of BaggerBombs triggered based on price movement
