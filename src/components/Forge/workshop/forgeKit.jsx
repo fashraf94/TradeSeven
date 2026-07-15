@@ -79,7 +79,13 @@ export function injectForgeWorkshopCSS() {
   }
   const s = document.createElement('style');
   s.id = '__forge_workshop_css';
-  s.textContent = `
+  s.textContent = FORGE_WORKSHOP_CSS;
+  document.head.appendChild(s);
+}
+
+// Exported so tests can inject the REAL shipped rules (e.g. the .fw-scroll border-box
+// fix) into a headless browser instead of a hand-rolled subset that could drift.
+export const FORGE_WORKSHOP_CSS = `
     @keyframes fwHeat   { 0%{transform:translateX(-130%)} 100%{transform:translateX(130%)} }
     @keyframes fwGlow   { 0%{opacity:0} 28%{opacity:1} 100%{opacity:0} }
     @keyframes fwStamp  { 0%{transform:scale(1.7);opacity:0} 55%{transform:scale(.9);opacity:1} 100%{transform:scale(1)} }
@@ -95,12 +101,17 @@ export function injectForgeWorkshopCSS() {
     .fw-stagger > *:nth-child(4){animation-delay:.15s} .fw-stagger > *:nth-child(5){animation-delay:.2s}
     .fw-stagger > *:nth-child(6){animation-delay:.25s} .fw-stagger > *:nth-child(7){animation-delay:.3s}
     .fw-scroll::-webkit-scrollbar { width: 0; height: 0; }
-    .fw-scroll { scrollbar-width: none; }
+    /* Forge scroll owners set height:100% + their own padding. Without border-box the
+       padding is added OUTSIDE the 100% height, so the owner's border-box overflows the
+       fixed-height body frame (overflow:hidden) by the padding amount; that overhang is
+       clipped, and in the viewport band where content sits between the frame height and
+       frame+padding the owner reports NOT scrollable while content still exceeds the
+       visible frame — the bottom is stranded and unreachable ("Explore can't scroll").
+       (The app's global border-box reset is not reaching these nodes.) */
+    .fw-scroll { scrollbar-width: none; box-sizing: border-box; }
     .fw-tap { cursor: pointer; transition: transform .12s ease, background .15s ease, border-color .15s ease, box-shadow .2s ease; -webkit-tap-highlight-color: transparent; }
     .fw-tap:active { transform: scale(.985); }
   `;
-  document.head.appendChild(s);
-}
 
 // ── Icons (line glyphs, ported from the design) ──────────────────────────────
 export function Icon({ name, size = 18, color = 'currentColor', stroke = 1.7, style }) {
