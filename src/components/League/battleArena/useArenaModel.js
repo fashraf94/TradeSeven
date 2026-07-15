@@ -17,6 +17,7 @@ import { flipPick, placeClaim, mapTournamentActionError } from '../../../service
 import { isCpuUserId } from '../../../constants/leagueTournament';
 import { buildArenaModel } from './buildArenaModel';
 import { useArenaPriceContext } from './useArenaPriceContext';
+import { useAtrPercentiles } from './useAtrPercentiles';
 
 export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   // ── the symbol union (agent six ∪ your three), content-keyed so the price hook
@@ -30,6 +31,12 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   const symbols = React.useMemo(() => (symbolsKey ? symbolsKey.split(',') : []), [symbolsKey]);
 
   const priceCtx = useArenaPriceContext(symbols, battle);
+
+  // ── per-symbol percentile ATR (Phase 2.5, R1) — the SAME basis banking uses,
+  //    so the user star cells + orb score against the percentile ATR, not the
+  //    port-contract preview default. Short-cache fresh (10 min) so it tracks the
+  //    intraday recompute and converges to banking's close version. ──
+  const atrPercentiles = useAtrPercentiles();
 
   // ── claims subcollection (live) ──
   const [claims, setClaims] = React.useState([]);
@@ -61,7 +68,7 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
     () => (group ? buildArenaModel({
       group,
       battle,
-      priceCtx: { ...priceCtx, now: Date.now() }, // now captured at memo eval (relTime/wire)
+      priceCtx: { ...priceCtx, now: Date.now(), atrPercentiles }, // now captured at memo eval (relTime/wire); atrPercentiles = user-layer basis (R1)
       claims,
       displayNames: names,
       uid,
@@ -69,7 +76,7 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
       prevStarStates: prevRef.current,
       compositeContext,
     }) : null),
-    [group, battle, priceCtx, claims, names, uid, mode, compositeContext],
+    [group, battle, priceCtx, atrPercentiles, claims, names, uid, mode, compositeContext],
   );
 
   // adopt the just-built star-states as the next tick's "prev" (after render)

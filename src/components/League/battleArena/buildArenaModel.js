@@ -19,7 +19,8 @@
 
 import { buildSeat, seatColor } from '../leagueAdapter';
 import { buildClimbSeries } from '../leagueClimbAdapter';
-import { readAgentStars, readUserStars } from '../../../utils/leagueStarMeter';
+import { readAgentStars, readUserStars, readDroppedPickLedger } from '../../../utils/leagueStarMeter';
+import { resolveBaseATR } from '../../../../api/_utils/tournamentUserScoring.js';
 import { isFlat6ActivationDay } from '../../../utils/flat6BattleEnrichment';
 import { deriveBeats } from '../../../utils/leagueBeats';
 import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
@@ -56,6 +57,13 @@ export function buildAskChips(youRank) {
 // leagueTokens (which transitively pulls the browser-side commandUI) and stays
 // node-clean for its test — the same discipline leagueAdapter documents.
 const YOU_COLOR = '#5EEAD4';
+
+// DEV-ONLY diagnostic state: battle ids already warned by the §9 badge-zero
+// tripwire, so it fires ONCE per battle instead of every price tick (a warning
+// that fires constantly gets tuned out). Confined to the DEV console.warn path —
+// it never gates the RETURN value, so the transform stays referentially
+// transparent w.r.t. its output.
+const _warnedBadgeLeakBattles = new Set();
 
 /** The last banked day index of a climb series (awaiting/empty → 0). */
 export function liveDayIdx(climb) {
@@ -162,8 +170,35 @@ export function buildArenaModel({
 
   // ── stars (REUSE the Phase-1 meter readers) ──
   const agentStars = battle ? readAgentStars(battle, priceCtx) : [];
+  // User-layer ATR basis (Phase 2.5 — closes R1). Score held picks against the SAME
+  // per-symbol percentile ATR banking uses (resolveBaseATR over stockRankings),
+  // NOT the port-contract preview default (2.5/5.0), so the live star cells + orb
+  // match each surface's own banked score of record. Applied to BOTH training and
+  // ranked (founder Amendment 1 — pre-launch, 0 ranked players; ranked was showing
+  // the same 1.6–3× overstated preview against its own banked composite). The
+  // scoring FORMULA is IMPORTED (resolveBaseATR), never re-derived — one formula, no
+  // drift. When the rankings doc is unavailable client-side (atrPercentiles null),
+  // resolveBaseATR returns null → atrBySymbol stays empty → readUserStar falls back
+  // to the port-contract ATR, matching banking's own null path; cryptoSymbols keeps
+  // the crypto 5.0 fallback there (banking uses isCryptoSymbol → 5.0). A held name
+  // missing from the ~255-symbol universe resolves to 4.0 ((undefined‖0.5)×8),
+  // exactly as banking would — NOT the 2.5 default (fallback parity is the point).
+  const userAtrPercentiles = priceCtx?.atrPercentiles ?? null;
+  const heldSymbolList = (myPlayer?.picks || []).map((p) => p?.symbol).filter(Boolean);
+  const userAtrBySymbol = {};
+  for (const sym of heldSymbolList) {
+    const a = resolveBaseATR(sym, userAtrPercentiles);
+    if (Number.isFinite(a)) userAtrBySymbol[sym] = a;
+  }
+  // Crypto detection for the degraded-null fallback (mirrors isCryptoSymbol's .CC
+  // convention; the VALID_CRYPTO_SYMBOLS known-list edge is a double-degraded rarity).
+  const userCryptoSymbols = new Set(heldSymbolList.filter((s) => /\.CC$/i.test(s)));
   const userStars = myPlayer
-    ? readUserStars(myPlayer, quotesFromPrices(priceCtx?.effectivePrices, myPlayer), { canonicalPolicy, dayBanked })
+    ? readUserStars(
+      myPlayer,
+      quotesFromPrices(priceCtx?.effectivePrices, myPlayer),
+      { atrBySymbol: userAtrBySymbol, cryptoSymbols: userCryptoSymbols, canonicalPolicy, dayBanked },
+    )
     : [];
   // Layer-level pending marker (Spec Deliverable 3) — canonical rounds only;
   // legacy stars carry settleState null so this is 0 (no marker) as today.
@@ -176,11 +211,13 @@ export function buildArenaModel({
   // agrees with those cells by construction (§9 — one source, one tick). Two
   // accounting asymmetries are handled deliberately:
   //   • agent battles are fullday/daily docs (AGENT_BATTLE_DURATION_MODE), so
-  //     `agentStars` is TODAY's layer only — add the prior days' BANKED cumulative
-  //     agent (closeScores.agentPoints, the very value every other orb reads) so
-  //     the estimate settles to the banked composite at close, not with a per-day
-  //     jump.
-  //   • user legs persist across the week, so `userStars` is already cumulative.
+  //     `agentStars` is TODAY's HOLDINGS only — add the prior days' BANKED cumulative
+  //     agent (closeScores.agentPoints, the very value every other orb reads) AND
+  //     today's swap-realized points (agentDeparted.total, Σ today's trades) so the
+  //     estimate settles to the banked composite at close, not with a per-day jump.
+  //   • user legs persist across the week, so `userStars` is cumulative for HELD
+  //     picks — add dropped picks' banked points (userDeparted.total) so Σuser is
+  //     the true cumulative week (held + dropped), matching what banking counts.
   // Gated tightly so it can only ever ADD today's layer once, and only where the
   // founder scoped it (Branch 1):
   //   • mode==='training' — training only. Ranked stays banked (its sealed-rival
@@ -200,8 +237,100 @@ export function buildArenaModel({
   const sumPoints = (rows) => rows.reduce((acc, s) => acc + (Number.isFinite(s?.points) ? s.points : 0), 0);
   const bankedAgentRaw = latestDay?.entry?.closeScores?.[uid]?.agentPoints;
   const priorBankedAgent = Number.isFinite(bankedAgentRaw) ? bankedAgentRaw : 0;
+
+  // ── DEPARTED-POSITION POINTS — surfaced in Phase 1, ADDED to the orb in Phase 2.
+  // Two banked sources leave the live star grid but the banked close still counts
+  // them; the shipped orb under-reported them until close (the §9-blocked settle-
+  // step). They're computed HERE (before youLiveScore) so the orb can add exactly
+  // the numbers the Phase-1 chips display — same objects → §9 identity by
+  // construction. Gated on `youOrbLive` so ranked/banked/pre-deploy/non-training
+  // stay byte-identical (both fields null → no chip, no orb change).
+  //   • agent: Σ TODAY's trades[].lockedPoints (subbed-out realized points).
+  //     trades[] is today's fresh daily doc (Checkpoint A1: fullday, tradingDays=
+  //     [today], swapDay always 1), so it's today-only — no cross-day double-count
+  //     with priorBankedAgent, no swapDay filter.
+  //   • user: Σ droppedPicks banked (readDroppedPickLedger → scorePick). A SAME-DAY
+  //     drop's final leg banks post-close → contributes 0 here and shows as a
+  //     pending bank in the ledger (the announced A3 residual — never added live).
+  let agentDeparted = null;
+  let userDeparted = null;
+  if (youOrbLive) {
+    const swapItems = (Array.isArray(battle?.trades) ? battle.trades : [])
+      .filter((t) => t && (t.symbolOut || t.symbolIn))
+      .map((t) => ({
+        out: t.symbolOut ?? null,
+        in: t.symbolIn ?? null,
+        pts: Number.isFinite(t.lockedPoints) ? t.lockedPoints : 0,
+      }));
+    if (swapItems.length > 0) {
+      agentDeparted = { total: swapItems.reduce((a, s) => a + s.pts, 0), items: swapItems };
+    }
+    const dropItems = readDroppedPickLedger(myPlayer);
+    if (dropItems.length > 0) {
+      userDeparted = {
+        total: dropItems.reduce((a, d) => a + (Number.isFinite(d.banked) ? d.banked : 0), 0),
+        pendingCount: dropItems.filter((d) => d.pending).length,
+        items: dropItems,
+      };
+    }
+  }
+
+  // ── §9 badge-zero invariant (Checkpoint A4 = (b) incidentally zero) ──
+  // The agent today-term below is activeScore(live) + Σ today's swaps and
+  // DELIBERATELY OMITS scoreState.bankedBadgePoints, which is 0 on a live fullday
+  // doc: the doc completes (~4-5pm ET) BEFORE the post-close badge cron
+  // (agent-daily-scores, ~8:45pm ET, status=='active' only), and each morning's
+  // fresh doc inits {total:0} with no carry-forward. IF AGENT_BATTLE_DURATION_MODE
+  // ever reverts to multi-day, docs persist and badges bank into a LIVE doc → this
+  // term under-counts vs the banked close → a silent agent-half settle-step.
+  // RULE (§9): a non-zero live bankedBadgePoints must be SURFACED in the arena (a
+  // third departed source) BEFORE being added to the orb — never silently folded.
+  const liveBadgeTotal = battle?.scoreState?.bankedBadgePoints?.total;
+  if (youOrbLive && Number.isFinite(liveBadgeTotal) && liveBadgeTotal !== 0 && import.meta.env?.DEV) {
+    const badgeKey = battle?.id ?? 'unknown';
+    if (!_warnedBadgeLeakBattles.has(badgeKey)) {
+      _warnedBadgeLeakBattles.add(badgeKey);
+      console.warn(`[buildArenaModel] live bankedBadgePoints=${liveBadgeTotal} ≠ 0 on battle ${badgeKey} — the orb agent-term omits it (Checkpoint A4). Surface it in the arena before adding to the orb, or the agent half will under-count vs the banked close. (This assumes fullday daily docs — see the AGENT_BATTLE_DURATION_MODE tripwire test.)`);
+    }
+  }
+
+  // ── live YOUR-seat composite (Branch 1 — Phase 2: swap/drop-accurate) ──
+  //   youLiveScore = computeComposite(
+  //     priorBankedAgent + liveAgentScore_today,        // agent half
+  //     Σ(held picks live) + Σ(dropped picks banked),   // user half   (k=1.5 inside)
+  //   )
+  //   liveAgentScore_today = sumPoints(agentStars) [activeScore, LIVE prices]
+  //                          + agentDeparted.total  [Σ today's trades lockedPoints].
+  // Both added terms ARE the exact numbers the Phase-1 chips render (the same
+  // agentDeparted/userDeparted objects) → §9 identity by construction, no parallel
+  // source. Prior days' swaps ride once in priorBankedAgent (Checkpoint A1); same-
+  // day pending drops contribute 0 (the announced A3 residual). Every #572 guard is
+  // preserved: youOrbLive (training-only, activation-day/today-only, not-yet-banked,
+  // real battle), the NaN priorBankedAgent guard, and youRank ranks by youLiveScore
+  // (below) so the standing chip can't disagree with the orb. At close, dayBanked
+  // flips → youLiveScore null → the orb hands off to compositePoints. Residual
+  // bookkeeping — all three named (founder ruling), so no hidden settle-step:
+  //   • R1 — CLOSED (Phase 2.5): held picks now score against the percentile ATR
+  //     banking uses (userAtrBySymbol, above), not the 2.5/5.0 preview — the
+  //     systematic 1.6–3× basis error is gone.
+  //   • R2 — the same-day dropped final leg (A3): contributes 0 live, banks at
+  //     close; announced in the ledger ("banks at close · —"). The ONLY announced
+  //     residual.
+  //   • R3 — intraday ATR-version drift: the client reads stockRankings on a 10-min
+  //     cache (converging to banking's close version), so the held-pick multiplier
+  //     can move when the ATR VERSION refreshes even if the price hasn't. Small,
+  //     converges at close, NOT systematic — deliberately UNSMOOTHED (smoothing
+  //     would reintroduce display-vs-bank drift).
+  //   • plus the trivial last-live-tick vs official-close-print price convergence.
+  // The departed points themselves hand off with NO jump (swaps = fixed lockedPoints;
+  // dropped = stored leg.bankedScore).
+  const swapBanked = agentDeparted?.total ?? 0;
+  const droppedBanked = userDeparted?.total ?? 0;
   const youLiveScore = youOrbLive
-    ? computeComposite(priorBankedAgent + sumPoints(agentStars), sumPoints(userStars))
+    ? computeComposite(
+      priorBankedAgent + sumPoints(agentStars) + swapBanked,
+      sumPoints(userStars) + droppedBanked,
+    )
     : null;
 
   // ── beats (REUSE deriveBeats; only YOUR stars are knowable — rivals sealed) ──
@@ -276,6 +405,8 @@ export function buildArenaModel({
     climb,
     youId,
     youLiveScore, // Branch 1: your live intraday composite for the orb (null = banked)
+    agentDeparted, // Phase 1: subbed-out agent points (Σ trades lockedPoints) — null off-gate
+    userDeparted, // Phase 1: dropped-pick banked points + pending same-day drops — null off-gate
     agentStars,
     userStars,
     userPending, // canonical-round count of picks awaiting the open (Deliverable 3)

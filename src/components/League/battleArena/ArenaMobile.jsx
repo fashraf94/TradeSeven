@@ -21,9 +21,9 @@ import { LTOKENS, alpha } from '../leagueTokens';
 import { ArenaTopStrip, BeatCaption, ArenaOrb, MeterKey } from './ArenaPrimitives';
 import { ClimbArena } from './ClimbArena';
 import { StarCell } from './StarCell';
-import { FlipControl, AgentDock, AgentMoveChip } from './CommandDock';
+import { FlipControl, AgentDock, AgentMoveChip, DepartedChip } from './CommandDock';
 import { VoiceLane } from './VoiceLane';
-import { FreeAgencyDoorway, OpponentSnapshot, FilmRoomOverlay } from './ArenaOverlays';
+import { FreeAgencyDoorway, OpponentSnapshot, FilmRoomOverlay, DepartedLedger } from './ArenaOverlays';
 import { useArenaEngine } from './useArenaEngine';
 import { useArenaFlips } from './useArenaFlips';
 import { beatTabs } from './arenaBeatTab';
@@ -76,7 +76,8 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
   const [opp, setOpp] = React.useState(null);
   const [filmOpen, setFilmOpen] = React.useState(false);
   const [faOpen, setFaOpen] = React.useState(false);
-  React.useEffect(() => { setTab('you'); setPulse({}); setOpp(null); setFilmOpen(false); setFaOpen(false); }, [state, mode]);
+  const [departedView, setDepartedView] = React.useState(null); // 'swap' | 'drop' | null
+  React.useEffect(() => { setTab('you'); setPulse({}); setOpp(null); setFilmOpen(false); setFaOpen(false); setDepartedView(null); }, [state, mode]);
 
   const lastIdx = data ? liveDayIdx(D.climb) : frameDayIdx(state);
   const beatStar = live ? eng.beatStar : null;
@@ -151,10 +152,12 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
           <MComplete mode={mode} youRank={D.youRank} onFilm={() => setFilmOpen(true)} />
         ) : tab === 'you' ? (
           <MYourPanel stars={D.userStars} wire={D.wire} live={live} calm={calm} done={done}
-            headline={headline} cellBump={cellBump} flips={flips} onClaim={() => setFaOpen(true)} />
+            headline={headline} cellBump={cellBump} flips={flips} onClaim={() => setFaOpen(true)}
+            departed={D.userDeparted} onOpenDeparted={() => setDepartedView('drop')} />
         ) : tab === 'agent' ? (
           <MAgentPanel stars={D.agentStars} move={D.agentMove} calm={calm} done={done} headline={headline}
-            cellBump={cellBump} flareKey={live ? eng.flareKey : 0} />
+            cellBump={cellBump} flareKey={live ? eng.flareKey : 0}
+            departed={D.agentDeparted} onOpenDeparted={() => setDepartedView('swap')} />
         ) : calm ? (
           <div style={{ marginTop: 6, borderRadius: 16, padding: '14px 15px', background: alpha(LTOKENS.bg, 0.72), border: `1px solid ${alpha(OWN_AGENT, 0.22)}` }}>
             <VoiceLane lines={[{ ...D.voice.wait, t: 'now', _k: 0 }]} archName={D.voice.arch} color={OWN_AGENT} live={false} max={1} />
@@ -173,6 +176,10 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
         <FreeAgencyDoorway onClose={() => setFaOpen(false)} claim={data ? D.claim : null} onClaim={handlers?.onClaim} maxWidth={SHEET_FIT} fixed />
       )}
       {oppSeat && <OpponentSnapshot seat={oppSeat} composite={D.climb[opp]?.[lastIdx] ?? 0} onClose={() => setOpp(null)} maxWidth={SHEET_FIT} fixed />}
+      {departedView && (departedView === 'swap' ? D.agentDeparted : D.userDeparted) && (
+        <DepartedLedger kind={departedView} departed={departedView === 'swap' ? D.agentDeparted : D.userDeparted}
+          onClose={() => setDepartedView(null)} maxWidth={SHEET_FIT} fixed />
+      )}
     </div>
   );
 }
@@ -196,7 +203,7 @@ function MTab({ id, label, color, active, pulse, onClick }) {
 // Exported so the render-smoke can mount it directly (the tab is behind state that
 // renderToString can't reach). `flareKey` bumps the orb's swap-flare ring per agent
 // swap, matching the desktop DockAgentSix drama.
-export function MAgentPanel({ stars, move, calm, done, headline, cellBump, flareKey = 0 }) {
+export function MAgentPanel({ stars, move, calm, done, headline, cellBump, flareKey = 0, departed = null, onOpenDeparted }) {
   return (
     <div style={{ marginTop: 6, borderRadius: 16, padding: '13px 13px', background: alpha('#0A1520', 0.5), border: `1px solid ${LTOKENS.hair}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 11 }}>
@@ -214,6 +221,7 @@ export function MAgentPanel({ stars, move, calm, done, headline, cellBump, flare
           </span>
         </div>
         {!calm && <AgentMoveChip move={move} color={OWN_AGENT} />}
+        {!calm && <DepartedChip kind="swap" departed={departed} onOpen={onOpenDeparted} />}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         {stars.map((s) => (
@@ -228,7 +236,7 @@ export function MAgentPanel({ stars, move, calm, done, headline, cellBump, flare
 // (`flips`) is owned by ArenaMobile and passed in, so an in-flight flip's
 // optimistic override + rollback + error survive this panel unmounting on a tab
 // switch (the desktop dock never unmounts).
-function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, onClaim }) {
+function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, onClaim, departed = null, onOpenDeparted }) {
   const c = OWN_YOU;
   const open = live && wire?.open;
   const { dirOf, doFlip, flipError } = flips;
@@ -246,7 +254,7 @@ function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, 
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* div wrapper (not span): Eyebrow renders a block <div>, invalid inside a span */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <Eyebrow color={c}>Your three</Eyebrow>
             {pending > 0 && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 5,
@@ -255,6 +263,7 @@ function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, 
                 <Mono style={{ fontSize: 8.5, fontWeight: 700, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>{pending} pick{pending === 1 ? '' : 's'} pending</Mono>
               </span>
             )}
+            <DepartedChip kind="drop" departed={departed} onOpen={onOpenDeparted} style={{ marginLeft: 0 }} />
           </div>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
             <LIcon name="flip" size={10} color={c} stroke={2} />

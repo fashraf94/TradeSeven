@@ -5,7 +5,7 @@
 // into the client surface, THIS import would throw. That is the hard
 // dependency-surface guard (founder item 1); keep it real, never mock it.
 import { describe, it, expect } from 'vitest';
-import { readAgentStars, readUserStar, readUserStars } from './leagueStarMeter';
+import { readAgentStars, readUserStar, readUserStars, readDroppedPickLedger } from './leagueStarMeter';
 import { buildFlat6BattleModel } from './flat6BattleEnrichment';
 import { CAPTURE_STATE } from '../constants/leagueTournament';
 
@@ -118,6 +118,56 @@ describe('readUserStars — three picks, default vs supplied ATR', () => {
     // GE: +5% / atr 5 = 1.0 → hit boundary; BTC: +5% / crypto default 5.0 = 1.0 → hit
     expect(rows[0].mult).toBeCloseTo(1, 5);
     expect(rows[1].mult).toBeCloseTo(1, 5);
+  });
+});
+
+describe('readDroppedPickLedger — departed (dropped) user picks', () => {
+  it('empty / absent droppedPicks → []', () => {
+    expect(readDroppedPickLedger({ picks: [] })).toEqual([]);
+    expect(readDroppedPickLedger({})).toEqual([]);
+    expect(readDroppedPickLedger(null)).toEqual([]);
+  });
+
+  it('a fully-banked dropped pick surfaces its banked points, not pending', () => {
+    const player = {
+      droppedPicks: [
+        { symbol: 'LLY', legs: [{ direction: 'long', baselinePrice: 100, closedAt: '2026-07-10T13:30:00Z', bankedScore: 12, thresholdHistory: [] }] },
+      ],
+    };
+    const [row] = readDroppedPickLedger(player);
+    expect(row.tk).toBe('LLY');
+    expect(row.banked).toBe(12);   // the closed leg's banked points
+    expect(row.pending).toBe(false);
+  });
+
+  it('a SAME-DAY drop (final leg closed but not yet banked) → pending, banked counts only prior legs', () => {
+    const player = {
+      droppedPicks: [
+        {
+          symbol: 'NVDA',
+          legs: [
+            { direction: 'long', baselinePrice: 100, closedAt: '2026-07-09T20:00:00Z', bankedScore: 20, thresholdHistory: [] }, // an earlier flip leg (banked)
+            { direction: 'short', baselinePrice: 130, closedAt: '2026-07-12T13:25:00Z', thresholdHistory: [] },                  // today's drop — bankedScore undefined
+          ],
+        },
+      ],
+    };
+    const [row] = readDroppedPickLedger(player);
+    expect(row.tk).toBe('NVDA');
+    expect(row.pending).toBe(true);       // final leg closed-but-unbanked (banks at ~17:15 ET)
+    expect(row.banked).toBe(20);          // only the already-banked earlier leg counts; the pending leg contributes 0
+  });
+
+  it('sums banked across multiple dropped picks; respects supplied/crypto ATR (no throw)', () => {
+    const player = {
+      droppedPicks: [
+        { symbol: 'GE', legs: [{ direction: 'long', baselinePrice: 100, closedAt: '2026-07-10T13:30:00Z', bankedScore: 8, thresholdHistory: [] }] },
+        { symbol: 'BTC', legs: [{ direction: 'long', baselinePrice: 100, closedAt: '2026-07-10T13:30:00Z', bankedScore: 5, thresholdHistory: [] }] },
+      ],
+    };
+    const rows = readDroppedPickLedger(player, { atrBySymbol: { GE: 5 }, cryptoSymbols: new Set(['BTC']) });
+    expect(rows.map((r) => r.tk)).toEqual(['GE', 'BTC']);
+    expect(rows.reduce((a, r) => a + r.banked, 0)).toBe(13);
   });
 });
 

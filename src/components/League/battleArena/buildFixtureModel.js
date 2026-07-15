@@ -12,7 +12,7 @@
 import { frameDayIdx } from './arenaStateMap';
 import {
   ARENA_SEATS, ARENA_CLIMB, ARENA_YOU, ARENA_POD, ARENA_WIRE, ARENA_VOICE, ARENA_ASK,
-  ARENA_BEATS, ARENA_AGENT_MOVE, arenaAgentStars, arenaUserStars,
+  ARENA_BEATS, ARENA_AGENT_MOVE, ARENA_AGENT_DEPARTED, ARENA_USER_DEPARTED, arenaAgentStars, arenaUserStars,
 } from './arenaFixtures';
 
 /**
@@ -30,6 +30,10 @@ export function buildFixtureModel(state) {
     agentStars: arenaAgentStars(state), userStars: arenaUserStars(state),
     voice: ARENA_VOICE, ask: ARENA_ASK, pod: ARENA_POD, wire: ARENA_WIRE,
     agentMove: ARENA_AGENT_MOVE, beats: ARENA_BEATS,
+    // Departed-points ledgers — surfaced during the LIVE state (as with real data,
+    // where they ride the youOrbLive gate); null in awaiting/complete → no chip.
+    agentDeparted: state === 'live' ? ARENA_AGENT_DEPARTED : null,
+    userDeparted: state === 'live' ? ARENA_USER_DEPARTED : null,
     youRank: yi >= 0 ? yi + 1 : ranking.length,
   };
 }
