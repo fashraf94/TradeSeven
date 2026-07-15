@@ -217,6 +217,47 @@ test('§6.11 computeGrid throws on a non-positive ATR', () => {
   assert.throws(() => computeGrid({ orderedSessions: sessions, originIdx: 0, originEtMinutes: 690, originPrice: 100, anchor: 100, atr: 0, side: 'support' }), /atr > 0/);
 });
 
+test('§6.11 computeGrid throws when the ORIGIN session lacks a numeric close (required, not nulled)', () => {
+  // Built directly (the sess() helper defaults a close) to model a broken grain: no numeric close.
+  const noClose = { etDate: '2024-03-05', regular: [lbar('2024-03-05', 690, { c: 100 })], sessionCloseAdj: null };
+  assert.throws(
+    () => computeGrid({ orderedSessions: [noClose], originIdx: 0, originEtMinutes: 690, originPrice: 100, anchor: 100, atr: 1, side: 'support' }),
+    /sessionCloseAdj/,
+    'a missing origin close is a broken-grain data anomaly, surfaced loudly — never a silent null',
+  );
+});
+
+// ── Review fixes (adversarial review, S6 build) ──────────────────────────────────────────────────
+
+test('intraday horizons exclude the bar OPENING at the boundary (open-labeled bars, +Xm off-by-one)', () => {
+  // A favorable spike opens at 705 = origin(690)+15m. It trades [705,710) — the +15..+20 window, AFTER
+  // the +15m horizon — so it must NOT count in mfe.15m, but MUST count in mfe.30m.
+  const s = sess('2024-03-05', [
+    lbar('2024-03-05', 690, { c: 100 }), lbar('2024-03-05', 695, { c: 100 }), lbar('2024-03-05', 700, { c: 100 }),
+    lbar('2024-03-05', 705, { o: 100, c: 100, h: 105, l: 100 }), // opens at +15m
+    lbar('2024-03-05', 710, { c: 100 }),
+  ], { sessionCloseAdj: 100 });
+  const g = computeGrid({ orderedSessions: [s], originIdx: 0, originEtMinutes: 690, originPrice: 100, anchor: 100, atr: 1, side: 'support' });
+  assert.equal(g.mfe['15m'], 0, 'the bar opening AT +15m is excluded from the +15m window');
+  assert.equal(g.mfe['30m'], 5, 'and included from +30m onward');
+});
+
+test('close_position_in_range is clamped to [0,1] when the auction close lies outside the traded band', () => {
+  // Regular bars span [99,101]; the session close (auction) settles at 102, above the band.
+  const s = sess('2024-03-05', [lbar('2024-03-05', 690, { o: 100, c: 100, h: 101, l: 99 })], { sessionCloseAdj: 102 });
+  const g = computeGrid({ orderedSessions: [s], originIdx: 0, originEtMinutes: 690, originPrice: 100, anchor: 100, atr: 1, side: 'support' });
+  assert.equal(g.closePositionInRange, 1, 'a close above the traded high clamps to 1, honoring the 0–1 contract');
+});
+
+test('resolution is null on the last session (no next EOD to resolve against — never fabricated)', () => {
+  const last = sess('2024-03-05', [lbar('2024-03-05', 690, { c: 100 }), lbar('2024-03-05', 695, { c: 100 })], { sessionCloseAdj: 100 });
+  const gLast = computeGrid({ orderedSessions: [last], originIdx: 0, originEtMinutes: 690, originPrice: 100, anchor: 100, atr: 1, side: 'support' });
+  assert.equal(gLast.resolution, null, 'no next session ⇒ resolution null, not a same-session verdict');
+  // With a next session it resolves normally.
+  const gNext = computeGrid({ orderedSessions: [last, flatSession('2024-03-06', 100)], originIdx: 0, originEtMinutes: 690, originPrice: 100, anchor: 100, atr: 1, side: 'support' });
+  assert.equal(gNext.resolution, 'held', 'a next session that never breached ⇒ held');
+});
+
 // ── §4 — peer_confirmations_same_session_before_touch: strictly-before, same-session ordering ─────
 
 test('§4 peer confirmations count same-session peers whose confirmationAt precedes this touchAt', () => {

@@ -62,6 +62,16 @@
 //  S6-C9 "close on hold side" for the rejection wick W = the hourly bar's close at or on the hold
 //        side of the level (dir·(close − anchor) ≥ 0). Boundary case only; SHARP_REJECT additionally
 //        requires C ≥ 0.25, comfortably clear of it.
+//  S6-C10 the "nextOpen" MFE/MAE horizon is measured THROUGH the next session's opening 5-min bar
+//        (its high/low), uniform with every other horizon (each horizon is a bar window; excursions
+//        on highs/lows — parent §9.1). The pure open-price gap is reported separately as
+//        `overnightGap`, so both the through-the-open excursion and the mark-at-the-open gap are
+//        available to Session 7.
+//  S6-C11 required vs degradable close inputs. The ORIGIN session's close is REQUIRED (its session
+//        traded) — computeGrid throws if it is not numeric (byte-identical guard / L-S56-2). The NEXT
+//        session's close/open are degradable: resolution needs a next EOD (else null), overnightGap
+//        needs a next open (else null). close_position needs a non-degenerate range (else null) and is
+//        clamped to the spec's stated [0,1].
 //
 // Pure module: zero product imports; imports ../config.js only. Every exported function is a pure
 // function of its inputs so tests fabricate sessions/events directly (mirrors lib/events.js).
@@ -281,6 +291,15 @@ export function computeGrid({ orderedSessions, originIdx, originEtMinutes, origi
   if (!originSession || !Array.isArray(originSession.regular)) {
     throw new Error('labels: computeGrid requires the origin session with regular bars (byte-identical guard)');
   }
+  // The ORIGIN session's close is a REQUIRED input, not a degradable one: the origin session (touch
+  // session, or entry session on an overnight roll) by definition hosted a tradable bar, so it has a
+  // close. A missing one means the upstream grain is broken (no daily bar ⇒ null adjFactor ⇒ null
+  // adjusted prices) — throw rather than silently null closePositionInRange / overnightGap / feed NaN
+  // into every excursion. (byte-identical guard / L-S56-2.) The NEXT session's close/open stay
+  // null-degradable — a last-session event legitimately has no next EOD.
+  if (typeof originSession.sessionCloseAdj !== 'number') {
+    throw new Error(`labels: origin session ${originSession.etDate} has no numeric sessionCloseAdj — a required outcome input, never silently nulled (byte-identical guard / L-S56-2)`);
+  }
   const nextSession = orderedSessions[originIdx + 1] || null;
   const dir = holdDir(side);
 
@@ -300,8 +319,13 @@ export function computeGrid({ orderedSessions, originIdx, originEtMinutes, origi
   const nextBars = nextSession && Array.isArray(nextSession.regular)
     ? [...nextSession.regular].sort((a, b) => a.etMinutes - b.etMinutes) : [];
 
-  // Bar sets per horizon (cumulative). Intraday horizons are clipped to the origin session.
-  const intradayBars = (minutes) => originFromBars.filter((b) => b.etMinutes <= originEtMinutes + minutes);
+  // Bar sets per horizon (cumulative). Intraday horizons are clipped to the origin session. Bars are
+  // OPEN-labeled (config.session.barLabeling='open'), so the "+Xm" window is the bars whose trading
+  // completes by minute X — i.e. those OPENING strictly before origin+X (etMinutes < origin+X): +15m
+  // is the 3 bars opening at origin, +5, +10, not the bar opening AT +15 (which trades [+15,+20],
+  // after the horizon). This matches the module's own bar-minute model (S6-C7: bar k completes at
+  // (k+1)·5m). Using `<=` would measure one 5-min bar too much.
+  const intradayBars = (minutes) => originFromBars.filter((b) => b.etMinutes < originEtMinutes + minutes);
   const eodBars = originFromBars;
   const nextFirst = nextBars.length ? [nextBars[0]] : null;
 
@@ -374,15 +398,19 @@ export function computeGrid({ orderedSessions, originIdx, originEtMinutes, origi
   }
 
   // close_position_in_range (S6-C8): the origin session's EOD close as a hold-side fraction of the
-  // post-origin high-low range. null when the range is degenerate (high == low) or the close is
-  // unknown.
+  // post-origin high-low range, in [0,1]. null when the range is degenerate (high == low) or the
+  // close is unknown. S6-C11: the range is built from REGULAR bars (A2 excludes the auction print
+  // from range math), but the numerator is the session close, which in production IS the auction
+  // print — so on the rare session where the auction settles outside the traded band the raw
+  // fraction escapes [0,1]. Clamp to honor the spec's stated 0–1 contract (parent §9.1).
   let closePositionInRange = null;
   {
     const hi = maxOrNull(originFromBars, (b) => b.adjHigh);
     const lo = minOrNull(originFromBars, (b) => b.adjLow);
     const eodClose = originSession.sessionCloseAdj;
     if (hi != null && lo != null && hi > lo && typeof eodClose === 'number') {
-      closePositionInRange = side === 'support' ? (eodClose - lo) / (hi - lo) : (hi - eodClose) / (hi - lo);
+      const raw = side === 'support' ? (eodClose - lo) / (hi - lo) : (hi - eodClose) / (hi - lo);
+      closePositionInRange = Math.max(0, Math.min(1, raw));
     }
   }
 
@@ -392,15 +420,14 @@ export function computeGrid({ orderedSessions, originIdx, originEtMinutes, origi
     overnightGap = (dir * (nextFirst[0].adjOpen - originSession.sessionCloseAdj)) / atr;
   }
 
-  // resolution at next EOD (parent §9.1): held / broke / reclaimed_after_break, close+level based.
+  // resolution AT NEXT EOD (parent §9.1): held / broke / reclaimed_after_break, close+level based.
+  // Requires a next session — without a next EOD there is no resolution to state, so it is null (the
+  // event sits at the end of the dataset). Never fabricated from the origin session's own close.
   let resolution = null;
-  {
+  if (nextBars.length && typeof nextSession.sessionCloseAdj === 'number') {
     const everBeyond = resolutionBars.some((b) => breachSigned(b) < -HELD_ATR);
-    const finalClose = nextBars.length ? nextSession.sessionCloseAdj : originSession.sessionCloseAdj;
-    if (typeof finalClose === 'number') {
-      const finalBreach = (dir * (finalClose - anchor)) / atr;
-      resolution = !everBeyond ? 'held' : finalBreach < -HELD_ATR ? 'broke' : 'reclaimed_after_break';
-    }
+    const finalBreach = (dir * (nextSession.sessionCloseAdj - anchor)) / atr;
+    resolution = !everBeyond ? 'held' : finalBreach < -HELD_ATR ? 'broke' : 'reclaimed_after_break';
   }
 
   return {
