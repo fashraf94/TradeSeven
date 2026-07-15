@@ -16,9 +16,9 @@
 // imported by WRITE-TIME surfaces only — never by the fenced files, the
 // projection, or the prompt assemblies.
 
-import { RULE_COMPAT_MODE } from '../config/featureFlags';
-import { getRuleCompatInfo } from '../data/archetypeRuleCompatibility';
-import { resolveRuleHardness } from '../components/Forge/workshop/hardSoftHelper';
+import { RULE_COMPAT_MODE } from '../config/featureFlags.js';
+import { getRuleCompatInfo } from '../data/archetypeRuleCompatibility.js';
+import { resolveRuleHardness } from '../components/Forge/workshop/hardSoftHelper.js';
 
 /**
  * B6 equip-surface helper: classify a bundle's frozen rule snapshots for the

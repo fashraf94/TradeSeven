@@ -5,7 +5,7 @@ import {
   THRESHOLD_MULTIPLIERS as _THRESHOLD_MULTIPLIERS,
   THRESHOLD_POINTS as _THRESHOLD_POINTS,
   CONVICTION_MULTIPLIERS,
-} from '../constants/baggerBombScoring';
+} from '../constants/baggerBombScoring.js';
 
 // ==================== CONSTANTS ====================
 // Re-exported from single source of truth (src/constants/baggerBombScoring.js)
