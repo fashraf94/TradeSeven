@@ -197,7 +197,7 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
   );
 
   const bornWith = (
-    <BornWithKit archName={ownArch.name} equippedTraits={traits?.equippedTraits || []} signatureIds={ownArch.signature || []} compact={compact} />
+    <BornWithKit archName={ownArch.name} equippedTraits={traits?.equippedTraits || []} signatureIds={ownArch.signature || []} colors={ownArch.colors} compact={compact} />
   );
 
   // The standing-leans menu is the tall interactive surface; it flows full-width
@@ -283,6 +283,9 @@ function ExploreRoster({ roster, ownId, agentName, compact }) {
   const isOwn = activeId === ownId;
   // The archetype's declared born-with kit (signature → trait defs), read-only.
   const kit = (arch.signature || []).map((id) => TRAIT_BY_ID[id]).filter(Boolean).map((tr) => ({ id: tr.id, name: tr.name, identityStatement: tr.identityStatement }));
+  // The archetype's standing-lean menu, surfaced READ-ONLY so a browser can see what
+  // each archetype can be tuned toward without equipping (equipping is own-agent only).
+  const menu = menuFor(activeId);
 
   const reader = (
     <>
@@ -295,10 +298,25 @@ function ExploreRoster({ roster, ownId, agentName, compact }) {
       </div>
       <div style={{ display: compact ? 'flex' : 'grid', flexDirection: 'column', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
         <Pane title="Born with" kicker="ITS KIT" accent={T.gold} pad={compact ? 16 : 18}>
-          <BornWithKit archName={arch.name} equippedTraits={kit} signatureIds={arch.signature || []} compact={compact} />
+          <BornWithKit archName={arch.name} equippedTraits={kit} signatureIds={arch.signature || []} colors={arch.colors} compact={compact} />
         </Pane>
         <Pane title="Behavior fingerprint" kicker="DISPOSITION" accent={c} pad={compact ? 16 : 18}>
           <Fingerprint archId={arch.id} archName={arch.name} accent={c} tempo="standard" liveTempo="standard" readonly compact barFallback={compact} />
+        </Pane>
+      </div>
+      {/* READ-ONLY standing-lean menu — reuses the Your-Character LeanEntry card with
+          the Equip affordance removed, so a browser sees what each archetype can be
+          tuned toward without any equip action (that lives on the user's own agent). */}
+      <div style={{ marginTop: 16 }}>
+        <Pane title="What it can be tuned toward" kicker="STANDING LEANS · VIEW ONLY" accent={c} pad={compact ? 16 : 18}>
+          <div style={{ fontSize: compact ? 11.5 : 12.5, color: T.ink3, lineHeight: 1.5, marginBottom: 14 }}>
+            The standing leans a <b style={{ color: T.ink2 }}>{arch.name}</b> can equip — shown to read, not to apply. Each directive is the agent&#x27;s, verbatim. You equip on your own agent, under <b style={{ color: T.ink2 }}>Your Character</b>.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: compact ? '1fr' : 'repeat(2, minmax(0, 1fr))', alignItems: 'start', gap: 10 }}>
+            {menu.map((adj) => (
+              <LeanEntry key={adj.id} archId={arch.id} lean={adj} readOnly accent={c} compact={compact} />
+            ))}
+          </div>
         </Pane>
       </div>
     </>

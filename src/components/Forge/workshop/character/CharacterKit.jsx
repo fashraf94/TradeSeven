@@ -25,6 +25,7 @@ import {
   deriveLeanGloss,
   deriveLeanNote,
   conflictDimension,
+  leanDisplayName,
   TEMPO_POSITIONS,
   tempoLabel,
   tempoMeaning,
@@ -226,7 +227,7 @@ function FingerprintReadout({ T, c, archName, tempo, liveTempo, pending, readonl
                 <div key={l.adjustmentId} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, marginTop: 4, background: c, boxShadow: `0 0 0 3px ${alpha(c, 0.15)}` }} />
                   <div style={{ minWidth: 0, fontSize: 11.5 }}>
-                    <span style={{ fontWeight: 700, color: T.ink }}>{l.adjustmentId}</span>
+                    <span style={{ fontWeight: 700, color: T.ink }}>{leanDisplayName(l.adjustmentId) || l.adjustmentId}</span>
                     <span style={{ color: T.ink3 }}> — {deriveLeanNote(l.policy)}</span>
                   </div>
                 </div>
@@ -282,36 +283,53 @@ export function TempoControl({ archId, archName, value, onChange, locked, compac
 // invisible-but-active; marks which are the archetype's born-with signature.
 const STRENGTH_LABEL = { subtle: 'Subtle', moderate: 'Moderate', dominant: 'Dominant' };
 const STRENGTH_DOTS = { subtle: 1, moderate: 2, dominant: 3 };
-export function BornWithKit({ archName, equippedTraits = [], signatureIds = [], compact }) {
+// The born-with kit renders as feature/HERO cards (not a flat list): each trait is
+// the archetype's identity made visible — a gradient accent from the archetype's own
+// color pair, the trait name as a real heading, the identity statement with room to
+// breathe, and the BORN-WITH star as a badge. Read-only throughout (this is who the
+// agent IS, not something tuned here).
+export function BornWithKit({ archName, equippedTraits = [], signatureIds = [], colors = [], compact }) {
   const T = useFK();
   const sig = new Set(signatureIds);
+  const a = colors[0] || T.gold;
+  const b = colors[1] || a;
   return (
     <div>
-      <div style={{ fontSize: compact ? 11.5 : 12.5, color: T.ink3, lineHeight: 1.5, marginBottom: 12 }}>
-        What <b style={{ color: T.ink2 }}>{archName}</b> comes with. Part of who it is — not something you tune here.
+      <div style={{ fontSize: compact ? 11.5 : 12.5, color: T.ink3, lineHeight: 1.5, marginBottom: 14 }}>
+        What <b style={{ color: T.ink2 }}>{archName}</b> comes with — the core of who it is, not something you tune here.
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: compact ? 12 : 14 }}>
         {equippedTraits.length ? equippedTraits.map((tr) => {
           const id = tr.traitId || tr.id;
           const born = sig.has(id);
           const strength = tr.strength || 'moderate';
           return (
-            <div key={id} style={{ position: 'relative', overflow: 'hidden', padding: compact ? '11px 13px' : '12px 14px', borderRadius: 12,
-              background: alpha('#000', 0.18), border: `1px solid ${T.hair}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ fontSize: compact ? 13 : 14, fontWeight: 700, color: T.ink2 }}>{tr.name || id}</div>
-                {born && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'var(--fw-mono)', fontSize: 8, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, color: T.gold, background: alpha(T.gold, 0.1), border: `1px solid ${alpha(T.gold, 0.3)}`, padding: '2px 6px', borderRadius: 999 }}>
-                  <CIcon name="star" size={8} color={T.gold} />Born with</span>}
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 'auto', fontFamily: 'var(--fw-mono)', fontSize: 8.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.ink3 }}>
-                  <span style={{ display: 'flex', gap: 2 }}>{[0, 1, 2].map((i) => <span key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: i < (STRENGTH_DOTS[strength] || 2) ? T.ink2 : alpha(T.ink2, 0.25) }} />)}</span>
-                  {STRENGTH_LABEL[strength] || strength}
-                </span>
+            <div key={id} style={{ position: 'relative', overflow: 'hidden', borderRadius: 16,
+              background: T.surface, border: `1px solid ${alpha(a, 0.32)}`, boxShadow: `0 6px 22px ${alpha('#000', 0.28)}` }}>
+              {/* archetype gradient accent — top rail + soft corner glow */}
+              <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 3, background: `linear-gradient(90deg, ${a}, ${b})` }} />
+              <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: `radial-gradient(120% 80% at 100% 0%, ${alpha(a, 0.16)}, transparent 58%)` }} />
+              <div style={{ position: 'relative', padding: compact ? '15px 16px' : '18px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  {born && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'var(--fw-mono)', fontSize: compact ? 8.5 : 9, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700, color: T.gold, background: alpha(T.gold, 0.12), border: `1px solid ${alpha(T.gold, 0.42)}`, padding: '3px 9px 3px 7px', borderRadius: 999 }}>
+                    <CIcon name="star" size={compact ? 9 : 10} color={T.gold} />Born with</span>}
+                  <div style={{ flex: 1 }} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'var(--fw-mono)', fontSize: compact ? 8.5 : 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.ink3 }}>
+                    <span style={{ display: 'flex', gap: 2.5 }}>{[0, 1, 2].map((i) => <span key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: i < (STRENGTH_DOTS[strength] || 2) ? a : alpha(T.ink2, 0.25) }} />)}</span>
+                    {STRENGTH_LABEL[strength] || strength}
+                  </span>
+                </div>
+                <div style={{ fontSize: compact ? 18 : 21, fontWeight: 800, color: T.ink, letterSpacing: '-0.02em', lineHeight: 1.12 }}>{tr.name || id}</div>
+                {tr.identityStatement && <div style={{ fontSize: compact ? 12.5 : 13.5, color: T.ink2, marginTop: 9, lineHeight: 1.6, textWrap: 'pretty' }}>{tr.identityStatement}</div>}
               </div>
-              {tr.identityStatement && <div style={{ fontSize: compact ? 11.5 : 12, color: T.ink3, marginTop: 4, lineHeight: 1.45 }}>{tr.identityStatement}</div>}
             </div>
           );
         }) : (
-          <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>This agent's kit is its archetype defaults — nothing extra equipped.</div>
+          <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 16, background: T.surface, border: `1px dashed ${alpha(a, 0.35)}`, padding: compact ? '16px' : '20px' }}>
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 3, background: `linear-gradient(90deg, ${a}, ${b})`, opacity: 0.6 }} />
+            <div style={{ fontSize: compact ? 13.5 : 15, fontWeight: 700, color: T.ink2 }}>Archetype defaults</div>
+            <div style={{ fontSize: compact ? 12 : 13, color: T.ink3, marginTop: 6, lineHeight: 1.55 }}>This agent runs on <b style={{ color: T.ink2 }}>{archName}</b>&#x27;s born-with kit — nothing extra equipped.</div>
+          </div>
         )}
       </div>
     </div>
@@ -355,7 +373,7 @@ export function LeanSlots({ pins = [], archName, locked, onRemove, onFocusMenu, 
             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: accent }} />
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ minWidth: 0 }}>
-                <Mono style={{ fontSize: 8.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: accent, display: 'block' }}>Slot {i + 1} · {l.adjustmentId}</Mono>
+                <Mono style={{ fontSize: 8.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: accent, display: 'block' }}>Slot {i + 1} · {leanDisplayName(l.adjustmentId) || l.adjustmentId}</Mono>
                 {(dropped || stale) && <Mono style={{ fontSize: 8, letterSpacing: '0.08em', textTransform: 'uppercase', color: accent, display: 'block', marginTop: 3 }}>{dropped ? "Doesn't apply here" : 'Revised'}</Mono>}
               </div>
               {!locked && <button className="fw-tap" onClick={() => onRemove(l.adjustmentId)} title={dropped || stale ? 'Clear this slot' : 'Remove lean'} style={{ all: 'unset', cursor: 'pointer', width: 22, height: 22, flexShrink: 0,
@@ -375,16 +393,19 @@ export function LeanSlots({ pins = [], archName, locked, onRemove, onFocusMenu, 
 
 // ── One menu entry ────────────────────────────────────────────────────────────
 // state: 'available' | 'equipped' | 'blocked' | 'stale' (stale = deprecated version)
-export function LeanEntry({ archId, lean, state, blockedBy, slotsFull, locked, busy, onEquip, onRemove, onReconfirm, compact }) {
+// readOnly (Explore): the SAME card, view-only — no Equip/Remove/Re-confirm and no
+// equip-state chrome; the human displayName heads it and the directive stays verbatim.
+export function LeanEntry({ archId, lean, state, blockedBy, slotsFull, locked, busy, onEquip, onRemove, onReconfirm, compact, readOnly, accent }) {
   const T = useFK();
-  const c = T[CH_ACCENT_TOKEN];
-  const equipped = state === 'equipped';
-  const blocked = state === 'blocked';
-  const stale = state === 'stale';
+  const c = accent || T[CH_ACCENT_TOKEN];
+  const equipped = !readOnly && state === 'equipped';
+  const blocked = !readOnly && state === 'blocked';
+  const stale = !readOnly && state === 'stale';
   const disabled = blocked || (!equipped && slotsFull) || locked || busy;
-  const barColor = stale ? T.gold : equipped ? c : blocked ? T.ink3 : 'transparent';
+  const barColor = readOnly ? alpha(c, 0.5) : stale ? T.gold : equipped ? c : blocked ? T.ink3 : 'transparent';
   const gloss = deriveLeanGloss(lean.policy);
   const dim = blocked && blockedBy ? conflictDimension(archId, lean.id) : null;
+  const name = leanDisplayName(lean.id);
 
   return (
     <div style={{ position: 'relative', overflow: 'hidden', padding: compact ? '13px 14px 13px 16px' : '14px 16px 14px 18px', borderRadius: 14,
@@ -392,15 +413,20 @@ export function LeanEntry({ archId, lean, state, blockedBy, slotsFull, locked, b
       border: `1px solid ${stale ? alpha(T.gold, 0.4) : equipped ? alpha(c, 0.42) : T.hair}`,
       opacity: blocked ? 0.62 : 1 }}>
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: barColor }} />
-      {/* head */}
+      {/* head — the human displayName leads; the DB id is a small muted reference */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
-          <Mono style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: c }}>{lean.id}</Mono>
+          {name
+            ? <>
+                <div style={{ fontSize: compact ? 13.5 : 14.5, fontWeight: 700, color: T.ink, letterSpacing: '-0.01em' }}>{name}</div>
+                <Mono style={{ fontSize: 8.5, fontWeight: 600, letterSpacing: '0.1em', color: T.ink3 }}>{lean.id}</Mono>
+              </>
+            : <Mono style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: c }}>{lean.id}</Mono>}
           {equipped && <Badge T={T} c={c} icon="check" label="Equipped" />}
           {stale && <Badge T={T} c={T.gold} icon="refresh" label="Revised" />}
           {blocked && <Badge T={T} c={T.ink3} icon="lock" label="Blocked" muted />}
         </div>
-        {!stale && (equipped ? (
+        {!readOnly && !stale && (equipped ? (
           !locked && <button className="fw-tap" disabled={busy} onClick={() => !busy && onRemove(lean.id)} style={{ all: 'unset', cursor: busy ? 'default' : 'pointer', fontFamily: 'var(--fw-ui)', fontSize: 12, fontWeight: 600,
             color: T.ink3, padding: '6px 12px', borderRadius: 9, background: alpha(T.ink2, 0.08), border: `1px solid ${T.hair}`, whiteSpace: 'nowrap' }}>Remove</button>
         ) : (
@@ -411,7 +437,7 @@ export function LeanEntry({ archId, lean, state, blockedBy, slotsFull, locked, b
         ))}
       </div>
 
-      {/* directive — the CANONICAL text, verbatim */}
+      {/* directive — the CANONICAL text, verbatim (unchanged in every mode) */}
       <div style={{ marginTop: 10, padding: compact ? '9px 11px' : '10px 12px', borderRadius: 10, background: alpha('#000', 0.2), border: `1px solid ${stale ? alpha(T.gold, 0.3) : T.hair}` }}>
         <Mono style={{ fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: stale ? T.gold : alpha(c, 0.9), display: 'block', marginBottom: 4 }}>{stale ? 'Now · agent directive' : 'Agent directive · verbatim'}</Mono>
         <div style={{ fontSize: compact ? 12 : 13, color: T.ink, lineHeight: 1.5 }}>{lean.canonical}</div>
@@ -505,7 +531,7 @@ export function BattleSnapshot({ leans = [], tempo, compact }) {
         {leans.length ? leans.map((l) => (
           <div key={l.adjustmentId} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: c, flexShrink: 0 }} />
-            <span style={{ fontSize: compact ? 12.5 : 13, color: T.ink, lineHeight: 1.4 }}><b style={{ fontFamily: 'var(--fw-mono)', fontSize: 11, color: c }}>{l.adjustmentId}</b> — {l.text}</span>
+            <span style={{ fontSize: compact ? 12.5 : 13, color: T.ink, lineHeight: 1.4 }}><b style={{ color: c }}>{leanDisplayName(l.adjustmentId) || l.adjustmentId}</b> — {l.text}</span>
           </div>
         )) : <div style={{ fontSize: 12, color: T.ink3 }}>No standing leans in this run.</div>}
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 2, paddingTop: 9, borderTop: `1px solid ${T.hair}` }}>

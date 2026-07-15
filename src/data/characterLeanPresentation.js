@@ -100,3 +100,53 @@ export const TEMPO_MEANING = {
   guardian: 'A Capital Preserver at Aggressive is still calmer than a Speculator at Measured. The dial moves it within its lane — never out of it.',
 };
 export const tempoMeaning = (codeId) => TEMPO_MEANING[codeId] || TEMPO_MEANING.analyst;
+
+// ── Lean displayNames (UI chrome ONLY) ───────────────────────────────────────
+// The lean's `id` (TF-01 …) is a DB key, not a user-facing label. This map gives
+// each of the 46 leans a short human title shown as the card heading ABOVE the
+// unchanged, verbatim AGENT DIRECTIVE — never instead of it (Display-Agreement
+// §9: the canonical directive remains the source of truth). Purely presentation:
+// nothing here feeds the prompt/gate, which read id/canonical/policy only.
+//
+// First pass derived from each lean's directive + policy (a 3-lens naming panel +
+// synthesis, 2026-07-15) — delivered as a review artifact for Flash to edit before
+// ship. Two constraints hold the set together:
+//  • Shared directives share a name — "Reduce position size on new entries"
+//    (TF-05/CN-07/SP-06/DV-06/FI-07) → "Smaller Entries"; "Tighten the downside
+//    stop" (CN-03/SP-01) → "Tighter Stop"; "Raise the quality bar" (CP-01/FI-01)
+//    → "Higher Quality"; "Concentrate into … quality names" (CP-06/FI-05) →
+//    "Quality Conviction".
+//  • Conflict-group opposites read as opposites — Sell Into Strength ↔ Ride The
+//    Reversal (CN-G1), High Conviction ↔ Wider Net (SP-G1), Breathing Room ↔
+//    Tighter Leash (CP-G1), Trim The Creep ↔ Slight Tilt (DV-G1), Patient Hold ↔
+//    Cut Dead Money (FI-G1), Quality Conviction ↔ Wider Quality (FI-G2).
+export const LEAN_DISPLAY_NAMES = {
+  // Trend Follower
+  'TF-01': 'Fresh Breakouts', 'TF-02': 'Confirm First', 'TF-03': 'Strongest Sectors',
+  'TF-04': 'Let Winners Run', 'TF-05': 'Smaller Entries', 'TF-06': 'Liquid Names',
+  'TF-07': 'Chart First', 'TF-08': 'Pause After Fails',
+  // Contrarian
+  'CN-01': 'Deeper Washout', 'CN-02': 'Confirmed Turn', 'CN-03': 'Tighter Stop',
+  'CN-04': 'Most Hated', 'CN-05': 'Sell Into Strength', 'CN-06': 'Fundamental Backing',
+  'CN-07': 'Smaller Entries', 'CN-08': 'Ride The Reversal',
+  // Speculator
+  'SP-01': 'Tighter Stop', 'SP-02': 'Tamer Volatility', 'SP-03': 'Fewer Swings',
+  'SP-04': 'High Conviction', 'SP-05': 'Wider Net', 'SP-06': 'Smaller Entries',
+  'SP-07': 'Stronger Trigger',
+  // Capital Preserver
+  'CP-01': 'Higher Quality', 'CP-02': 'Calmer Names', 'CP-03': 'Weather The Noise',
+  'CP-04': 'Breathing Room', 'CP-05': 'Tighter Leash', 'CP-06': 'Quality Conviction',
+  'CP-07': 'Steady Spread', 'CP-08': 'Stronger Catalyst',
+  // Diversifier
+  'DV-01': 'Tighter Focus', 'DV-02': 'More Sectors', 'DV-03': 'Trim The Creep',
+  'DV-04': 'Equal Weight', 'DV-05': 'Slight Tilt', 'DV-06': 'Smaller Entries',
+  'DV-07': 'Fill The Gaps',
+  // Fundamental Investor
+  'FI-01': 'Higher Quality', 'FI-02': 'Cleaner Setup', 'FI-03': 'Patient Hold',
+  'FI-04': 'Cut Dead Money', 'FI-05': 'Quality Conviction', 'FI-06': 'Wider Quality',
+  'FI-07': 'Smaller Entries', 'FI-08': 'Timely Catalyst',
+};
+
+// The human title for a lean id (null if unknown — the UI then shows no title
+// rather than leaking the raw code).
+export const leanDisplayName = (id) => LEAN_DISPLAY_NAMES[id] || null;

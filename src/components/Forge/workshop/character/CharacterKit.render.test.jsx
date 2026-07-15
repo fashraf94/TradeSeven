@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ForgeKitProvider } from '../forgeKit.jsx';
 import { Fingerprint, TempoControl, BornWithKit, LeanSlots, LeanEntry, StateNotice, BattleSnapshot } from './CharacterKit.jsx';
 import { ARCHETYPE_ADJUSTMENTS } from '../../../../data/archetypeAdjustments.js';
+import { leanDisplayName } from '../../../../data/characterLeanPresentation.js';
 
 const wrap = (node) => renderToStaticMarkup(<ForgeKitProvider tokens={{}}>{node}</ForgeKitProvider>);
 
@@ -86,15 +87,15 @@ describe('CharacterKit — render smoke', () => {
     expect(html).not.toContain('next time');
   });
 
-  it('LeanSlots renders a valid pin + an empty slot', () => {
+  it('LeanSlots renders a valid pin by its human name + an empty slot', () => {
     const html = wrap(<LeanSlots pins={[{ adjustmentId: 'TF-01', version: 1, text: 'Prefer fresh breakouts', slotState: 'valid' }]} locked={false} onRemove={() => {}} onFocusMenu={() => {}} />);
-    expect(html).toContain('TF-01');
+    expect(html).toContain(leanDisplayName('TF-01')); // slot labels lead with the name, not the code
     expect(html).toContain('Add a standing lean'); // the empty slot
   });
 
   it('LeanSlots surfaces a dropped (didn\'t-carry) pin with a clear affordance so the server slot can be freed', () => {
     const html = wrap(<LeanSlots archName="Trend Follower" pins={[{ adjustmentId: 'CN-02', version: 1, slotState: 'dropped' }]} locked={false} onRemove={() => {}} onFocusMenu={() => {}} />);
-    expect(html).toContain('CN-02');
+    expect(html).toContain(leanDisplayName('CN-02'));
     expect(html).toContain('apply here');           // "Doesn't apply here" tag
     expect(html).toContain('clear the slot to re-pick');
     expect(html).toContain('Clear this slot');      // the clear button
@@ -104,5 +105,34 @@ describe('CharacterKit — render smoke', () => {
     const html = wrap(<BattleSnapshot leans={[{ adjustmentId: 'TF-01', version: 1, text: 'Prefer fresh breakouts' }]} tempo="aggressive" />);
     expect(html).toContain('Locked in for this battle');
     expect(html).toContain('Aggressive');
+  });
+
+  it('LeanEntry leads with the human displayName; the DB code is demoted, the directive stays verbatim', () => {
+    const adj = ARCHETYPE_ADJUSTMENTS.momentum_chaser.adjustments[0]; // TF-01
+    const html = wrap(<LeanEntry archId="momentum_chaser" lean={adj} state="available" slotsFull={false} locked={false} />);
+    expect(html).toContain(leanDisplayName('TF-01')); // the human title (e.g. "Fresh Breakouts")
+    expect(leanDisplayName('TF-01')).toBeTruthy();     // every lean HAS a name (no code-as-title)
+    expect(html).toContain(adj.canonical);             // verbatim directive unchanged
+    expect(html).toContain('TF-01');                   // code demoted to a reference, not erased
+    expect(html).toContain('Agent directive');
+  });
+
+  it('LeanEntry readOnly (Explore) drops the Equip affordance but keeps the name + verbatim directive', () => {
+    const adj = ARCHETYPE_ADJUSTMENTS.diversifier.adjustments[0]; // DV-01
+    const html = wrap(<LeanEntry archId="diversifier" lean={adj} readOnly accent="#8b5cf6" compact={false} />);
+    expect(html).toContain(leanDisplayName('DV-01'));
+    expect(html).toContain(adj.canonical);       // directive still verbatim in read-only mode
+    expect(html).not.toContain('Equip</button>'); // no equip button
+    expect(html).not.toContain('Slots full');
+    expect(html).not.toContain('Remove</button>');
+  });
+
+  it('BornWithKit renders each trait as a hero card — name heading + description + Born-with badge', () => {
+    const html = wrap(<BornWithKit archName="Trend Follower" colors={['#f0abfc', '#22d3ee']}
+      equippedTraits={[{ traitId: 't1', name: 'Trend Rider', identityStatement: 'Rides the trend until it breaks.', strength: 'dominant' }]} signatureIds={['t1']} />);
+    expect(html).toContain('Trend Rider');                       // name heading
+    expect(html).toContain('Rides the trend until it breaks.');  // description with room to breathe
+    expect(html).toContain('Born with');                         // star badge
+    expect(html).toContain('linear-gradient');                   // archetype gradient accent
   });
 });

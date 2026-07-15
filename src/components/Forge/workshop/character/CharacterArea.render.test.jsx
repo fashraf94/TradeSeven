@@ -54,4 +54,17 @@ describe('CharacterArea — the tab must own its scroll (regression: content bel
       expect(html).toContain('TF-01');          // an equipped lean, below the identity header
     });
   }
+
+  it('Explore surfaces the browsed archetype\'s lean menu READ-ONLY — verbatim directives, no Equip', () => {
+    const html = renderToStaticMarkup(
+      <ForgeKitProvider tokens={{}}>
+        <CharacterArea agent={agent} agentName="Vera" traits={{ equippedTraits: [] }} twoCol initialSub="explore" showToast={() => {}} />
+      </ForgeKitProvider>,
+    );
+    expect(html).toContain('What it can be tuned toward');                                  // the read-only menu section
+    expect(html).toContain('Prefer fresh breakouts over extended / late-stage entries');    // TF-01 directive, verbatim
+    expect(html).toContain('Fresh Breakouts');                                              // its human displayName
+    expect(html).not.toContain('Equip</button>');  // view-only: no equip affordance anywhere in Explore
+    expect(html).not.toContain('Slots full');
+  });
 });
