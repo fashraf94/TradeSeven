@@ -143,16 +143,32 @@ export function assembleEventFeatures({
   const sessionBars = five ? five.regular : [];
   const touchEtMin = touchEtMinutesOf(event, sessionBars);
 
-  // prior session close (approach seed + gap context), from the 5m session map — same source as S4
+  // prior session close (approach seed + gap context), from the 5m session map — same source as S4.
+  // Walks `sessionDates` (STUDY-WINDOW ONLY): gap_context is a feature, so it must never read a
+  // warmup5m bar (S5.6 §3 hard rule). On study-session-1 this stays null, exactly as before.
   const dPos = sessionDates.indexOf(D);
   const prevDate = dPos > 0 ? sessionDates[dPos - 1] : null;
   const prevFive = prevDate ? (fiveMinByDate.get ? fiveMinByDate.get(prevDate) : fiveMinByDate[prevDate]) : null;
   const prevCloseAdj = prevFive ? prevFive.sessionCloseAdj : null;
 
-  // trailing 20 sessions with 5m data (D−20..D−1) for the time-of-day-matched RVOL baseline
+  // Trailing 20 sessions with 5m data (D−20..D−1) for the time-of-day-matched RVOL baseline.
+  //
+  // THE ONE PATH that may see warmup5m sessions (S5.6 §3). The baseline calendar is DERIVED HERE
+  // from `fiveMinByDate` — every 5m session the symbol has, warmup included — rather than taken as
+  // a caller-supplied list.
+  //
+  // That is deliberate, and it is the difference between a guarantee and a hope. `sessionDates` is
+  // now warmup-FILTERED (it must be: gap_context and the approach seed walk it, and a feature may
+  // never read a warmup bar). If the baseline instead defaulted to `sessionDates` when a caller
+  // forgot to pass the full list, it would silently walk the filtered calendar, find <20 baseline
+  // sessions on the first 20 study sessions, and null RVOL on ~189 events — silently reintroducing
+  // the exact bug S5.6 exists to fix, with no error. Deriving from the map removes the parameter,
+  // and with it the possibility of omitting it. There is no call site that can get this wrong.
+  const bDates = [...(fiveMinByDate.keys ? fiveMinByDate.keys() : Object.keys(fiveMinByDate))].sort();
+  const bPos = bDates.indexOf(D);
   const baselineSessions = [];
-  for (let p = dPos - 1; p >= 0 && baselineSessions.length < 20; p--) {
-    const s = fiveMinByDate.get ? fiveMinByDate.get(sessionDates[p]) : fiveMinByDate[sessionDates[p]];
+  for (let p = bPos - 1; p >= 0 && baselineSessions.length < 20; p--) {
+    const s = fiveMinByDate.get ? fiveMinByDate.get(bDates[p]) : fiveMinByDate[bDates[p]];
     if (s && s.regular && s.regular.length) baselineSessions.unshift(s);
   }
 
@@ -215,9 +231,22 @@ export function assembleEventFeatures({
     : (prevFive && prevFive.regular && prevFive.regular.length ? prevFive.regular[prevFive.regular.length - 1] : null);
   const knownAt = lastBar ? new Date((lastBar.epoch + 300) * 1000).toISOString() : null;
 
+  // S56-A1: carried onto the feature row because P3 gates on it and OPEN_TOUCH (S56-A2) is defined
+  // by it. ASSERTED, not defaulted: an event artifact built before S5.6 has no such field, and a
+  // silent `undefined` would read as "no intraday approach" — emptying P3 and sweeping every event
+  // into OPEN_TOUCH. That misread would be invisible in the output. Force the rebuild instead.
+  if (typeof event.hasIntradayApproach !== 'boolean') {
+    throw new Error(`${event.eventId}: hasIntradayApproach missing (got ${event.hasIntradayApproach}) — this event artifact predates S5.6/S56-A1. Re-run \`npm run events\` before \`npm run features\`.`);
+  }
+
   return {
     eventId: event.eventId, symbol: event.symbol, eventDate: D, side: event.side,
     familyTier: event.familyTier, disposition: event.disposition, sequenceIndex: event.sequenceIndex,
+    hasIntradayApproach: event.hasIntradayApproach, // S56-A1 (P3 gate)
+    touchEtMinutes: event.touchEtMinutes ?? null,   // S56-A1: separates OPEN_TOUCH from a data-gap session
+    hourlyClassEligible: event.hourlyClassEligible ?? null, // S56-A4 (P1/P2/P5 gate)
+    touchHourCoveragePct: event.touchHourCoveragePct ?? null, // S56-A4/A5 diagnostic
+    windowMinCoveragePct: event.windowMinCoveragePct ?? null, // S56-A4/A5 diagnostic
     knownAt, configVersion: CONFIG.version,
     features,
   };

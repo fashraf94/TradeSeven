@@ -1,33 +1,2010 @@
 {
-  "universeVersion": 1,
-  "frozenAt": "2026-07-11",
+  "universeVersion": 2,
+  "frozenAt": "2026-07-13",
   "studyStart": "2023-07-10",
-  "eligibilityRule": "R2: >=550 daily trading sessions before studyStart (listed roughly pre-May 2021)",
-  "sectorTaxonomy": "SPDR Select Sector (11 GICS sectors)",
-  "notes": "Starter freeze for Session 3 lineage validation. Expand toward 150-200 stratified names before Session 8 aggregation. HOOD (IPO 2021-07-29) and RKLB (de-SPAC 2021-08) excluded by R2/R3; DKNG excluded for the same de-SPAC contamination (SBTech/DEAC shell-era bars). Gap-prone slots filled by PLTR (direct listing 2020-09) and BE (traditional IPO 2018-07), both SPAC-free.",
-  "strata": {
-    "mega_cap_tech": ["AAPL", "NVDA", "MSFT"],
-    "low_volatility": ["KO", "PG", "JNJ"],
-    "high_beta": ["TSLA", "AMD", "COIN"],
-    "gap_prone": ["PLTR", "BE"]
+  "studyEnd": "2026-07-10",
+  "holdoutStart": "2025-12-10",
+  "configVersion": 4,
+  "provenance": {
+    "basis": "api/_utils/rankingConfig.js STOCK_UNIVERSE (239 tickers, 11 SPDR sectors) — DATA TRANSCRIPTION, never imported.",
+    "pipeline": "239 product tickers → −GOOG −DKNG (founder, pre-sweep) → 237 candidates → R2 sweep (233 PASS / 4 FAIL) → −RKLB (founder, SPAC shell) → 232 frozen.",
+    "eligibilityRule": "R2: ≥550 daily trading sessions before 2023-07-10. Swept with lib/depth-eligibility.js.",
+    "sectorTaxonomy": "SPDR Select Sector (11 GICS sectors).",
+    "sectorSource": "EODHD `General::GicSector` (GICS) — NOT `General::Sector` (Morningstar). The SPDR sector ETFs track GICS, and every sector feature (rs_vs_sector_*, sector_rs_vs_spy_*, sector_direction_at_touch) plus the peer group itself is measured against those ETFs, so a symbol must be grouped with the ETF it is actually a constituent of. Using the Morningstar field would have introduced 3 new errors (ADP, PKG, WBA) to fix 1. Against GICS the product map is right on 234/237. See LESSON L-S56-1 in docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S5_6.md.",
+    "strataRule": "ATR% (median ATR14/close over the study window) tertiles, cut on the FINAL 232. Mechanical, disclosed; replaces the four hand-assigned v1 strata, which did not scale and were never mechanical.",
+    "unchangedFromV1": "Study window, holdout date, geometry, the six pre-registered questions, and every honesty floor are UNCHANGED. Only the symbol set grows.",
+    "amendments": "S56-A1 (hasIntradayApproach / P3), S56-A2 (OPEN_TOUCH), S56-A3 (universe v2), S56-A4 (bar-coverage guard), S56-A5 (completeness floor — pending founder).",
+    "rulingsDoc": "docs/LEVELSTORY_RULINGS_AND_AMENDMENTS_S5_6.md"
   },
+  "counts": {
+    "frozen": 232,
+    "quarantined": 3,
+    "buildable": 229,
+    "bySector": {
+      "XLK": 26,
+      "XLV": 22,
+      "XLI": 22,
+      "XLU": 19,
+      "XLF": 22,
+      "XLB": 20,
+      "XLRE": 20,
+      "XLY": 21,
+      "XLE": 19,
+      "XLP": 22,
+      "XLC": 19
+    },
+    "byStratum": {
+      "MID_VOL": 77,
+      "LOW_VOL": 77,
+      "HIGH_VOL": 78
+    }
+  },
+  "dataIntegrityQuarantine": {
+    "invariant": "A1 / parent §4.3 — |raw daily close − 5m closing-auction print| ≤ 0.1%, NEVER loosened (S3-R2).",
+    "rootCause": "EODHD back-adjusts the DAILY `close` field for SPINOFFS but delivers 5-minute bars AS PRINTED. The A1 premise that the daily close is the raw point-in-time print is FALSE for spinoff names, on every session before the spinoff.",
+    "consequenceIfIncluded": "Levels/ATR are built on the daily (spinoff-adjusted) basis while events are detected on 5m bars that are NOT spinoff-adjusted. For DD the bases differ by 2.39× — every level would sit 139% from every 5m bar. The events would be garbage.",
+    "notFixed": "Deliberate. Re-deriving the adjustment factor from the auction print would make the cross-grain invariant pass BY CONSTRUCTION and destroy the diagnostic that caught this.",
+    "status": "⛔ FOUNDER RULING REQUIRED — quarantined pending ruling (parent §4.3 \"quarantine, don't degrade\").",
+    "symbols": [
+      {
+        "symbol": "DD",
+        "reason": "A1 CROSS-GRAIN FAIL — 589/758 sessions (77.7%). Constant 2.3909× ratio (139.09%) from 2023-05-24 → 2025-10-31; grains re-converge 2025-11-03. DuPont/Qnity spinoff: EODHD spinoff-adjusted the daily close, not the 5m."
+      },
+      {
+        "symbol": "LEN",
+        "reason": "A1 CROSS-GRAIN FAIL — 410/764 sessions (53.7%). Constant 1.0074× ratio (0.74%) from 2023-05-24 → 2025-01-17; grains re-converge 2025-01-21. Lennar/Millrose spinoff."
+      },
+      {
+        "symbol": "K",
+        "reason": "A1 CROSS-GRAIN FAIL — 88/618 sessions (14.2%). Constant 1.0657× ratio (6.57%) from 2023-05-24 → 2023-09-29; grains re-converge 2023-10-02. Kellogg/WK Kellogg spinoff."
+      }
+    ]
+  },
+  "strataCutPoints": {
+    "rule": "median ATR14/close %, tertiles of the frozen 232",
+    "LOW_below": 1.961,
+    "HIGH_atOrAbove": 2.371
+  },
+  "droppedPreSweep": {
+    "GOOG": "Same company as GOOGL (dual share class) — would double-count in peer confirmation, breadth, and the momentum deciles.",
+    "DKNG": "De-SPAC (DEAC/SBTech shell) — shell-era bars are not economically DKNG."
+  },
+  "excludedAtGate": [
+    {
+      "symbol": "RKLB",
+      "productSector": "XLI",
+      "reason": "SPAC SHELL — 64 sessions at $10.35 ± $0.22 / 0.69% daily vol, then ×7.2 vol on 2021-03-01. Shell-era bars sit inside the 504-session extension window and the 252-session trend-origin lookback; they would poison extension percentiles. Same rationale as DKNG."
+    }
+  ],
+  "sectorOverrides": [
+    {
+      "symbol": "AFRM",
+      "sector": "XLF",
+      "why": "FOUNDER OVERRIDE of the vendor (GICS says XLI / Industrials / Professional Services). The sector map exists to capture ECONOMIC PEER SIMILARITY, not taxonomic correctness. Affirm is a BNPL consumer lender; its peers are consumer-finance names, not GE and CAT. A deliberate, reasoned override — not a data error."
+    }
+  ],
+  "sectorMapCorrections": [
+    {
+      "symbol": "BE",
+      "from": "XLK (product)",
+      "to": "XLI (GICS)",
+      "why": "Genuine product error — Bloom Energy is GICS Industrials / Electrical Equipment. The v1 freeze already had XLI. Founder ruling 4."
+    }
+  ],
+  "unresolvedButMoot": [
+    {
+      "symbol": "GEV",
+      "product": "XLI",
+      "gics": "XLU",
+      "why": "Sector disagreement NOT resolved — GEV fails R2 (zero pre-study sessions) and is not in the universe, so it has no sector entry, peer group, or RS benchmark. Recorded so the disagreement cannot be silently inherited if GEV is revisited on a later window."
+    }
+  ],
   "contextSymbols": {
-    "market": ["SPY"],
-    "sectorETFs": ["XLK", "XLE"],
-    "appetite": ["SPHB", "SPLV"],
-    "note": "Context symbols are NOT study subjects (no events detected on them). SPY + sector ETFs supply 5m direction tags; SPHB/SPLV are daily-only beta-appetite inputs. Full sector-ETF set (all 11 SPDR) added when the universe expands and more sectors are represented."
+    "market": [
+      "SPY"
+    ],
+    "sectorETFs": [
+      "XLC",
+      "XLY",
+      "XLP",
+      "XLE",
+      "XLF",
+      "XLV",
+      "XLI",
+      "XLB",
+      "XLRE",
+      "XLK",
+      "XLU"
+    ],
+    "appetite": [
+      "SPHB",
+      "SPLV"
+    ],
+    "note": "SPY + all 11 SPDR sector ETFs supply daily series AND 5m direction tags. SPHB/SPLV are daily-only beta-appetite inputs (S3-R4) and their 5m is never fetched or referenced."
   },
   "symbols": [
-    { "symbol": "AAPL", "sector": "XLK", "stratum": "mega_cap_tech" },
-    { "symbol": "NVDA", "sector": "XLK", "stratum": "mega_cap_tech" },
-    { "symbol": "MSFT", "sector": "XLK", "stratum": "mega_cap_tech" },
-    { "symbol": "KO", "sector": "XLP", "stratum": "low_volatility" },
-    { "symbol": "PG", "sector": "XLP", "stratum": "low_volatility" },
-    { "symbol": "JNJ", "sector": "XLV", "stratum": "low_volatility" },
-    { "symbol": "TSLA", "sector": "XLY", "stratum": "high_beta" },
-    { "symbol": "AMD", "sector": "XLK", "stratum": "high_beta" },
-    { "symbol": "COIN", "sector": "XLF", "stratum": "high_beta" },
-    { "symbol": "PLTR", "sector": "XLK", "stratum": "gap_prone" },
-    { "symbol": "BE", "sector": "XLI", "stratum": "gap_prone" }
-  ]
+    {
+      "symbol": "AAPL",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 2.008,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "ABBV",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.047,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "ABT",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 1.857,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "ACN",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 2.176,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "ADBE",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 2.595,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "ADP",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 1.618,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "AEE",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.732,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "AEP",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.757,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "AFRM",
+      "sector": "XLF",
+      "sectorSource": "founder_override",
+      "productSector": "XLF",
+      "atrPct": 6.166,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "ALB",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 4.924,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "AMAT",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 3.247,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "AMD",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 4.164,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "AMGN",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.174,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "AMT",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 2.284,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "AMZN",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.408,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "AON",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.779,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "APD",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 1.992,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "ARE",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 2.779,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "AVB",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 1.872,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "AVGO",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 3.549,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "AWK",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.988,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "AXP",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 2.038,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "AZO",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 1.994,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "BA",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 2.802,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "BAC",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 2.047,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "BE",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 6.936,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "BKNG",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.203,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "BKR",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.509,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "BLK",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.864,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "BMY",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.272,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "BRK-B",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.365,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "BSX",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 1.915,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "C",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 2.266,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "CAG",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 2.206,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "CAT",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 2.323,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "CB",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.678,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "CCI",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 2.287,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "CE",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 3.697,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "CF",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 2.755,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "CHTR",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 3.126,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "CI",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.332,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "CL",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.681,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "CMCSA",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 2.157,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "CME",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.738,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "CMG",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.558,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "COIN",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 6.5,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "COP",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.334,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "COST",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.702,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "CRM",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 2.624,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "CRWD",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 3.616,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "CSCO",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 1.687,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "CSX",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 1.942,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "CTRA",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.369,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "CTVA",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 2.101,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "CVS",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.513,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "CVX",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 1.872,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "D",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 2.034,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "DD",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 2.078,
+      "quarantined": true,
+      "quarantineReason": "A1 CROSS-GRAIN FAIL — 589/758 sessions (77.7%). Constant 2.3909× ratio (139.09%) from 2023-05-24 → 2025-10-31; grains re-converge 2025-11-03. DuPont/Qnity spinoff: EODHD spinoff-adjusted the daily close, not the 5m.",
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "DE",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 2.217,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "DG",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 2.97,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "DHI",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.886,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "DHR",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.345,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "DIS",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 2.002,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "DLR",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 2.306,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "DLTR",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 3.207,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "DOW",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 2.398,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "DTE",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.696,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "DUK",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.597,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "DVN",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.798,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "EA",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 1.693,
+      "stratum": "LOW_VOL",
+      "studyEndOverride": "2025-11-04",
+      "studyEndOverrideReason": "S56-A6 DEAD TAPE — ATR14% collapsed to 0.31× its own baseline from 2025-11-05 and never recovered; the 169 remaining sessions trade in a 4.8% band pinned near 202.57. Take-private/all-cash-acquisition arbitrage, not price discovery. Events after 2025-11-04 are excluded; ALL earlier history is retained (the name is NOT dropped — that would be survivorship bias)."
+    },
+    {
+      "symbol": "EBAY",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.426,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "ECL",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 1.653,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "ED",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.712,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "EIX",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 2.126,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "ELV",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.478,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "EMR",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 2.103,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "EOG",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.291,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "EQIX",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 2.113,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "EQR",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 1.915,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "ETN",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 2.542,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "ETR",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.855,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "EXC",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.837,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "EXR",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 2.265,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "F",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.644,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "FANG",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.812,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "FCX",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 3.174,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "FDX",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 2.254,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "FE",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.602,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "FMC",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 3.604,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "FOXA",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 2.206,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "GD",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 1.694,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "GE",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 2.444,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "GILD",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.245,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "GIS",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.937,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "GM",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.73,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "GME",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 4.946,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "GOOGL",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 2.391,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "GS",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 2.128,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "HAL",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 3,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "HD",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 1.891,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "HES",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.175,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "HON",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 1.755,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "HSY",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 2.249,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "HUM",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 3.307,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "IBM",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 1.961,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "ICE",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.579,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "IFF",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 2.322,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "INTC",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 4.098,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "INTU",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 2.355,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "IPG",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 2.301,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "IRM",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 2.371,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "ISRG",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.401,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "ITW",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 1.649,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "JNJ",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 1.526,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "JPM",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.83,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "K",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 0.811,
+      "quarantined": true,
+      "quarantineReason": "A1 CROSS-GRAIN FAIL — 88/618 sessions (14.2%). Constant 1.0657× ratio (6.57%) from 2023-05-24 → 2023-09-29; grains re-converge 2023-10-02. Kellogg/WK Kellogg spinoff.",
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "KHC",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.955,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "KLAC",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 3.127,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "KMB",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.659,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "KMI",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 1.871,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "KO",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.392,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "KR",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 2,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "LEN",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.918,
+      "quarantined": true,
+      "quarantineReason": "A1 CROSS-GRAIN FAIL — 410/764 sessions (53.7%). Constant 1.0074× ratio (0.74%) from 2023-05-24 → 2025-01-17; grains re-converge 2025-01-21. Lennar/Millrose spinoff.",
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "LIN",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 1.522,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "LLY",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.742,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "LMT",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 1.819,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "LOW",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.024,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "LRCX",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 3.428,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "LYV",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 2.409,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "MA",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.601,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "MAA",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 1.904,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "MAR",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.024,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "MCD",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 1.593,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "MDLZ",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.824,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "MDT",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 1.774,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "META",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 2.779,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "MLM",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 2.241,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "MMC",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.474,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "MMM",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 2.203,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "MO",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.531,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "MOS",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 3.215,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "MPC",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.714,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "MRK",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.132,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "MS",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 2.151,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "MSFT",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 1.901,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "MTCH",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 3.113,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "MU",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 4.111,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "NEE",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 2.277,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "NEM",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 2.903,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "NFLX",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 2.617,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "NKE",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.519,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "NOC",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 1.845,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "NOW",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 2.738,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "NSC",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 1.991,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "NUE",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 2.714,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "NVDA",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 3.562,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "NVO",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.865,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "NWS",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 2.005,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "O",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 1.607,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "OKE",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.137,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "OMC",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 2.315,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "ORCL",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 2.895,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "ORLY",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 1.838,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "OXY",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.456,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "PANW",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 2.986,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "PARA",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 3.884,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "PCG",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 2.216,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "PEG",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.852,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "PEP",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.664,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "PFE",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.121,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "PG",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.447,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "PGR",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.995,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "PKG",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 1.951,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "PLD",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 2.189,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "PLTR",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 4.857,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "PM",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.815,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "PPG",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 2.014,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "PPL",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.644,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "PSA",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 2.064,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "PSX",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.498,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "PWR",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 2.824,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "QCOM",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 2.788,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "ROST",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 1.926,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "RTX",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 1.876,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "SBAC",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 2.422,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "SBUX",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 2.381,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "SCHW",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 2.279,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "SHOP",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 4.012,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "SHW",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 2.018,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "SLB",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.694,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "SNOW",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 3.75,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "SO",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.634,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "SPG",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 1.88,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "SPGI",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.711,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "SRE",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.892,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "STZ",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 2.199,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "SYK",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 1.869,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "SYY",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.766,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "T",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 1.913,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "TJX",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 1.551,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "TMO",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.278,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "TMUS",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 1.898,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "TRGP",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.468,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "TSLA",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 4.351,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "TSN",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.965,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "TTWO",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 2.242,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "TXN",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 2.499,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "UDR",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 1.98,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "UNH",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.395,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "UNP",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 1.791,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "UPS",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 2.082,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "USB",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 2.273,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "V",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 1.578,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "VICI",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 1.734,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "VLO",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.911,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "VMC",
+      "sector": "XLB",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLB",
+      "atrPct": 2.111,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "VRTX",
+      "sector": "XLV",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLV",
+      "atrPct": 2.255,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "VTR",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 1.978,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "VZ",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 1.768,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "WBA",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 3.553,
+      "stratum": "HIGH_VOL",
+      "studyEndOverride": "2025-05-14",
+      "studyEndOverrideReason": "S56-A6 DEAD TAPE — ATR14% collapsed to 0.2× its own baseline from 2025-05-15 and never recovered; the 73 remaining sessions trade in a 8.95% band pinned near 11.51. Take-private/all-cash-acquisition arbitrage, not price discovery. Events after 2025-05-14 are excluded; ALL earlier history is retained (the name is NOT dropped — that would be survivorship bias)."
+    },
+    {
+      "symbol": "WBD",
+      "sector": "XLC",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLC",
+      "atrPct": 4.063,
+      "stratum": "HIGH_VOL"
+    },
+    {
+      "symbol": "WEC",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.679,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "WELL",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 1.974,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "WFC",
+      "sector": "XLF",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLF",
+      "atrPct": 2.246,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "WM",
+      "sector": "XLI",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLI",
+      "atrPct": 1.522,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "WMB",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 2.048,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "WMT",
+      "sector": "XLP",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLP",
+      "atrPct": 1.607,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "WY",
+      "sector": "XLRE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLRE",
+      "atrPct": 2.219,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "XEL",
+      "sector": "XLU",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLU",
+      "atrPct": 1.824,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "XOM",
+      "sector": "XLE",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLE",
+      "atrPct": 1.966,
+      "stratum": "MID_VOL"
+    },
+    {
+      "symbol": "YUM",
+      "sector": "XLY",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLY",
+      "atrPct": 1.775,
+      "stratum": "LOW_VOL"
+    },
+    {
+      "symbol": "ZS",
+      "sector": "XLK",
+      "sectorSource": "EODHD General::GicSector",
+      "productSector": "XLK",
+      "atrPct": 3.527,
+      "stratum": "HIGH_VOL"
+    }
+  ],
+  "deadTapeTruncation": {
+    "amendment": "S56-A6",
+    "rule": "onset = earliest session whose trailing-20 median ATR14% ≤ 0.3333333333333333 × (median ATR14% over the first 252 study sessions), which stays collapsed through the symbol's last session, and whose tail trades in a ≤10% band. studyEndOverride = the session before onset.",
+    "count": 2,
+    "symbols": [
+      {
+        "symbol": "WBA",
+        "studyEndOverride": "2025-05-14",
+        "deadSessions": 73
+      },
+      {
+        "symbol": "EA",
+        "studyEndOverride": "2025-11-04",
+        "deadSessions": 169
+      }
+    ]
+  }
 }

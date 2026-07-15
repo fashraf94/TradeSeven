@@ -11,7 +11,7 @@ import { loadFixture } from './_helpers.js';
 const { byDate } = normalizeDaily(loadFixture('daily/AAPL_eod_2018-01-01_2026-07-10.json'));
 
 function fullDaySessions(fixtureRel) {
-  const { sessions } = normalizeFiveMin(loadFixture(fixtureRel), byDate);
+  const { sessions } = normalizeFiveMin(loadFixture(fixtureRel), byDate, null);
   return sessions.filter((s) => s.isFullDay);
 }
 

@@ -41,12 +41,17 @@ function pctile(sorted, q) { // type-7 linear interpolation
 const bindLow = (xs, f) => (100 * xs.filter((x) => x < f).length) / xs.length;
 const bindHigh = (xs, c) => (100 * xs.filter((x) => x > c).length) / xs.length;
 
-function xSeries(dailyBars, window) {
+// `studyEnd` is the symbol's own end: CONFIG.range.studyEnd, or its S56-A6 dead-tape override.
+// Measuring the clamp over dead tape is measuring the deal price, not the stock — once a take-private
+// is announced volatility collapses, so it is `floorPct` and not ATR that sets the geometry there.
+// That is exactly why EA and WBA breached the ≤10% floor-binding criterion, and the breach must be
+// re-read on the LIVE tape before it can be called a real breach (founder R3).
+function xSeries(dailyBars, window, studyEnd = STUDY_END) {
   const s = buildSeries(dailyBars);
   const xs = [];
   for (let i = ATR_PERIOD; i < s.n; i++) {          // session at i uses ATR/price at i−1 (distanceUnit call site)
     const D = s.dates[i];
-    if (window === 'study' && !(D >= STUDY_START && D <= STUDY_END)) continue;
+    if (window === 'study' && !(D >= STUDY_START && D <= studyEnd)) continue;
     const atr = s.atr[i - 1], price = s.aClose[i - 1];
     if (atr == null || !(price > 0)) continue;
     xs.push(100 * ATR_MULT * atr / price);
@@ -57,9 +62,21 @@ function xSeries(dailyBars, window) {
 function main() {
   const argv = process.argv.slice(2).filter(Boolean);
   let symbols = argv;
-  if (!symbols.length) {
-    if (!fs.existsSync(UNIVERSE)) { console.error(`No universe file at ${UNIVERSE} and no symbols given.`); process.exit(1); }
-    symbols = JSON.parse(fs.readFileSync(UNIVERSE, 'utf8')).symbols.map((s) => s.symbol);
+  const endOverride = new Map(); // S56-A6 dead-tape truncation
+  if (fs.existsSync(UNIVERSE)) {
+    const uni = JSON.parse(fs.readFileSync(UNIVERSE, 'utf8'));
+    for (const m of uni.symbols) if (m.studyEndOverride) endOverride.set(m.symbol, m.studyEndOverride);
+    if (!symbols.length) {
+      // A1-quarantined names are not in the study population — measuring their clamp would put
+      // symbols with no levels and no events into the criterion the founder rules on.
+      symbols = uni.symbols.filter((s) => !s.quarantined).map((s) => s.symbol);
+      const q = uni.symbols.filter((s) => s.quarantined).map((s) => s.symbol);
+      if (q.length) console.log(`(excluding ${q.length} A1-quarantined: ${q.join(', ')})`);
+    }
+  }
+  if (!symbols.length) { console.error(`No universe file at ${UNIVERSE} and no symbols given.`); process.exit(1); }
+  if (endOverride.size) {
+    console.log(`(S56-A6 dead-tape truncation applied: ${[...endOverride.entries()].map(([s, d]) => `${s}→${d}`).join(', ')})`);
   }
 
   const cur = CONFIG.levels.geometry.distanceUnit;
@@ -75,7 +92,8 @@ function main() {
     // the same shape the levels runner reads and hands straight to buildSeries. Do not
     // re-normalize (that would look for raw EODHD field names and quarantine every bar).
     const bars = JSON.parse(fs.readFileSync(p, 'utf8'));
-    const study = xSeries(bars, 'study'), full = xSeries(bars, 'full');
+    const symEnd = endOverride.get(sym) || STUDY_END; // S56-A6: stop at the dead-tape cut
+    const study = xSeries(bars, 'study', symEnd), full = xSeries(bars, 'full', symEnd);
     if (!study.length) { missing.push(sym); continue; }
     rows.push({ sym, study, full, p10s: pctile(study, 0.10), p90s: pctile(study, 0.90), p10f: pctile(full, 0.10), p90f: pctile(full, 0.90) });
   }

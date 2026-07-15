@@ -25,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import CONFIG from './config.js';
 import { createClient } from './lib/eodhd-client.js';
-import { normalizeDaily, normalizeFiveMin, crossGrainCheck, adjustmentCheck } from './lib/normalize.js';
+import { normalizeDaily, normalizeFiveMin, crossGrainCheck, adjustmentCheck, fiveMinWarmupStart, buildSessionCalendar } from './lib/normalize.js';
 import { depthEligibilitySweep } from './lib/depth-eligibility.js';
 import { addDays, isoBefore } from './lib/session-time.js';
 
@@ -36,6 +36,7 @@ const NORM_DIR = path.join(DATA_DIR, 'normalized');
 
 const UNIVERSE_PATH = path.join(REPO_ROOT, CONFIG.universe.universeFilePath); // single source of truth (config key)
 const DAILY_ONLY = new Set(CONFIG.universe.dailyGrainOnly); // S3-R4 (F4): SPHB/SPLV — 5m never fetched or referenced
+const CALENDAR_REF = new Set(CONFIG.session.sessionCalendar.referenceSymbols); // SPY + 11 SPDR sector ETFs
 
 // S4 §0b (F4 fetcher-scope): default scope is the FROZEN universe (study equities + context
 // symbols from universe_frozen.json), NOT the stale S2 14-symbol probe. PLTR/BE are included;
@@ -77,6 +78,45 @@ async function main() {
   console.log('DST fixture: AAPL 5m Jan 2026 (EST) →', path.relative(REPO_ROOT, janFixture));
   await client.fetchIntradayToFixture('AAPL', '2026-01-01', '2026-02-01', janFixture);
 
+  // ── Pass 0: the MARKET SESSION CALENDAR (S56-A4/A5) ────────────────────────
+  //
+  // A session's END is a market fact. It cannot be taken from a symbol's own last delivered bar
+  // (a truncated feed would certify its own completeness), and it cannot be taken from the closing
+  // auction either — MEASURED: EODHD emits no auction print on half-days, on all 7 in the window,
+  // for 229/229 symbols. So derive it from the consensus of the reference instruments: SPY + the 11
+  // SPDR sector ETFs print in essentially every 5-minute window, and no single truncated feed can
+  // move the mode of twelve. They are fetched here first so the calendar exists before any study
+  // symbol is normalized. Raw 5m is cached, so on a re-run this pass is disk-only.
+  const refs = [];
+  const calRefSymbols = list.filter((s) => CALENDAR_REF.has(s));
+  process.stdout.write(`\nsession calendar — reference instruments (${calRefSymbols.length}): ${calRefSymbols.join(', ')}… `);
+  for (const sym of calRefSymbols) {
+    const rawDaily = await client.fetchDaily(sym, CONFIG.fetch.dailyFetchStart, CONFIG.range.studyEnd);
+    const { byDate } = normalizeDaily(rawDaily);
+    const raw5m = await client.fetchIntradayRange(
+      sym, CONFIG.fetch.intradayFetchStart, addDays(CONFIG.fetch.intradayFetchEnd, 1), CONFIG.fetch.intradayMaxSpanDays,
+    );
+    const { bars } = normalizeFiveMin(raw5m, byDate, null); // null is DELIBERATE — this pass BUILDS the calendar
+    refs.push({ symbol: sym, bars });
+  }
+  if (refs.length < CONFIG.session.sessionCalendar.minReferences) {
+    throw new Error(
+      `SESSION_CALENDAR_UNDERBUILT: only ${refs.length} reference instrument(s) available, need ` +
+      `${CONFIG.session.sessionCalendar.minReferences}. Without the calendar every half-day is measured against a ` +
+      `78-bar expectation and read as a data gap (S56-A4). Refusing to build a biased completeness distribution.`,
+    );
+  }
+  const sessionCalendar = buildSessionCalendar(refs, CONFIG.session.sessionCalendar.quorum);
+  const halfDays = [...sessionCalendar.entries()]
+    .filter(([, end]) => end < CONFIG.session.regularCloseEtMinutes)
+    .map(([d, end]) => `${d}→${end}`);
+  console.log(`${sessionCalendar.size} sessions | ${halfDays.length} half-day(s): ${halfDays.join(', ') || 'none'}`);
+  await writeJson(path.join(NORM_DIR, '_session_calendar.json'), {
+    builtFrom: calRefSymbols, quorum: CONFIG.session.sessionCalendar.quorum,
+    note: 'etDate → session end in ET minutes (S56-C3). Modal, across the reference instruments, of: the session\'s last PRICED bar — if it carries no volume it IS the closing print and the session ends AT it (960 full day, 780 half-day); otherwise the session ran one 5m step past it (955 + 5 = 960, which is what covers 2025-10-13→2025-10-27, when the vendor emitted no closing print at all). Never derived from a study symbol\'s own bars — that would let a truncated feed certify its own completeness.',
+    sessionEndEtMinutes: Object.fromEntries(sessionCalendar),
+  });
+
   const perSymbol = {};
   const symbolDaily = []; // for depth sweep
   const failures = [];    // per-symbol hard failures — recorded, not fatal (Review F1)
@@ -101,11 +141,16 @@ async function main() {
         continue;
       }
 
-      process.stdout.write(`5m (chunked)… `);
+      // S5.6 §3: 5m starts `intradayWarmupSessions` (30) TRADING sessions before studyStart, so the
+      // 20-session RVOL baseline is already full on study-session-1. The date is derived from THIS
+      // symbol's own daily calendar — never a hardcoded date and never a calendar-day guess, because
+      // "30 trading sessions" is a market-calendar fact (holidays/half-days make it ~44±2 cal days).
+      const fiveStart = fiveMinWarmupStart(dailyBars);
+      process.stdout.write(`5m from ${fiveStart} (warmup ${CONFIG.fetch.intradayWarmupSessions}s + study)… `);
       const raw5m = await client.fetchIntradayRange(
-        sym, CONFIG.fetch.intradayFetchStart, addDays(CONFIG.fetch.intradayFetchEnd, 1), CONFIG.fetch.intradayMaxSpanDays,
+        sym, fiveStart, addDays(CONFIG.fetch.intradayFetchEnd, 1), CONFIG.fetch.intradayMaxSpanDays,
       );
-      const { sessions } = normalizeFiveMin(raw5m, byDate);
+      const { sessions } = normalizeFiveMin(raw5m, byDate, sessionCalendar);
       await writeJson(path.join(NORM_DIR, sym, 'sessions.json'), sessions);
 
       // per-symbol QA
@@ -216,4 +261,8 @@ function computeWarmupStart(symbolDaily) {
   };
 }
 
-main().catch((e) => { console.error('\nFATAL:', e.message); process.exit(1); });
+// Entry-point guard: run the fetch ONLY when this file is the process entry, never on import.
+// (Without it, any `import` of this module — a test importing a helper, a tool reusing a function —
+// silently kicks off a live network fetch as an import side effect.)
+const isEntryPoint = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isEntryPoint) main().catch((e) => { console.error('\nFATAL:', e.message); process.exit(1); });

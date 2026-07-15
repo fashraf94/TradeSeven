@@ -116,7 +116,10 @@ export function mkRegistry(symbol, families, sessions, opts = {}) {
     warmupFamilyCounts: { live: families.filter((f) => f.status === 'live').length, retired: 0, merged: 0 },
   };
   return {
-    symbol, configVersion: 3, basis: 'adjusted',
+    // Bound to CONFIG, never a literal: detectEvents now REQUIRES the registry version to match the
+    // study config (a half-rebuilt pipeline must not emit artifacts claiming two versions at once).
+    // A hardcoded number here would make every fixture fail on the next legitimate version bump.
+    symbol, configVersion: CONFIG.version, basis: 'adjusted',
     window: {
       configured: { start: studyStart, end: '2026-07-10' },
       actualFirstSession: opts.actualFirstSession || dates[0] || null,

@@ -33,6 +33,31 @@ const HOLDOUT_START = CONFIG.range.holdoutStart;      // 2025-12-10
 const IN_SAMPLE_MONTHS = CONFIG.range.inSampleMonths; // 29
 const DIAG = CONFIG.diagnostics.anomalyScan;          // S4 §2 guards (MAD floor, cross-strata event floor)
 
+// ── The market session calendar (S56-C3) ─────────────────────────────────────
+//
+// This stage RE-NORMALIZES from the raw cache, because it needs the per-bar `regular` arrays that
+// sessions.json does not store. That means it re-derives the hourly buckets too — and therefore it
+// needs the same session calendar 01-fetch used, or it silently rebuilds every bucket against a
+// 16:00 close and stamps pre-fix coverage onto every event. (It did exactly that for one build: the
+// sessions on disk were right, the events were wrong, and nothing failed.)
+//
+// Missing calendar ⇒ HARD FAILURE. Never a silent fall back to a full-day expectation.
+let _calendar = null;
+function sessionCalendar() {
+  if (_calendar) return _calendar;
+  const p = path.join(NORM_DIR, '_session_calendar.json');
+  if (!fs.existsSync(p)) {
+    throw new Error(
+      `MISSING_SESSION_CALENDAR: ${path.relative(HERE, p)} not found. It is written by 01-fetch-history. ` +
+      'Without it every half-day is measured against a 78-bar expectation and read as a data gap (S56-A4/C3). ' +
+      'Run `npm run fetch` first — refusing to stamp biased coverage onto 166k events.',
+    );
+  }
+  const doc = JSON.parse(fs.readFileSync(p, 'utf8'));
+  _calendar = new Map(Object.entries(doc.sessionEndEtMinutes).map(([d, m]) => [d, Number(m)]));
+  return _calendar;
+}
+
 // ── Load per-bar 5m for a symbol (reconstructed from the raw cache; S4 §0.1) ──
 
 export function loadFiveMinByDate(sym) {
@@ -54,7 +79,7 @@ export function loadFiveMinByDate(sym) {
       }
     }
   }
-  const { bars, sessions } = normalizeFiveMin(raw, byDate);
+  const { bars, sessions } = normalizeFiveMin(raw, byDate, sessionCalendar());
   const regByDate = new Map();
   for (const b of bars) {
     if (b.role !== 'regular') continue;
@@ -66,6 +91,9 @@ export function loadFiveMinByDate(sym) {
     map.set(s.etDate, {
       isFullDay: s.isFullDay, earlyClose: s.earlyClose, hasAuction: s.hasAuction,
       sessionCloseAdj: s.sessionCloseAdj,
+      warmup5m: s.warmup5m, // S5.6 §3: carried so consumers can separate baseline-only sessions
+      hourly: s.hourly,     // S56-A4: per-bucket bar coverage — the hourly-class eligibility guard
+      expectedRegularBarCount: s.expectedRegularBarCount, // S56-A5: whole-session 5m coverage input
       regular: (regByDate.get(s.etDate) || []).sort((a, b) => a.etMinutes - b.etMinutes),
     });
   }
@@ -228,12 +256,32 @@ async function writeJson(p, obj) {
 async function main() {
   const argv = process.argv.slice(2).filter(Boolean);
   let symbols, strataOf = () => null, stratumBySymbol = new Map();
+  // S5.6: the SECTOR stamped on every event record must come from the FROZEN UNIVERSE, not from
+  // `CONFIG.universe.sectorMap` — that map only ever held the 11 v1 probe names, so under universe
+  // v2 it returns null for ~221 of 232 symbols, and the anomaly scan's cross-sector cut plus every
+  // downstream sector grouping would read `sector: null` for the overwhelming majority of events.
+  let sectorBySymbol = new Map();
+  let sectorOf = (sym) => CONFIG.universe.sectorMap[sym] || null; // degraded-checkout fallback
+
   if (argv.length) {
     symbols = argv;
+    // An explicit CLI list still needs real sectors — read them from the frozen file if present.
+    if (fs.existsSync(UNIVERSE_PATH)) {
+      const uni = JSON.parse(fs.readFileSync(UNIVERSE_PATH, 'utf8'));
+      sectorBySymbol = new Map(uni.symbols.map((s) => [s.symbol, s.sector]));
+      stratumBySymbol = new Map(uni.symbols.map((s) => [s.symbol, s.stratum]));
+      sectorOf = (sym) => sectorBySymbol.get(sym) || CONFIG.universe.sectorMap[sym] || null;
+      strataOf = (sym) => stratumBySymbol.get(sym) || null;
+    }
   } else if (fs.existsSync(UNIVERSE_PATH)) {
     const uni = JSON.parse(fs.readFileSync(UNIVERSE_PATH, 'utf8'));
-    symbols = uni.symbols.map((s) => s.symbol);
+    // S5.6 Phase B: skip A1 cross-grain quarantined symbols (see 02-build-levels.js), loudly.
+    const quarantined = uni.symbols.filter((s) => s.quarantined).map((s) => s.symbol);
+    if (quarantined.length) console.log(`🔴 QUARANTINED (A1 cross-grain fail — skipped, founder ruling pending): ${quarantined.join(', ')}`);
+    symbols = uni.symbols.filter((s) => !s.quarantined).map((s) => s.symbol);
+    sectorBySymbol = new Map(uni.symbols.map((s) => [s.symbol, s.sector]));
     stratumBySymbol = new Map(uni.symbols.map((s) => [s.symbol, s.stratum]));
+    sectorOf = (sym) => sectorBySymbol.get(sym) || CONFIG.universe.sectorMap[sym] || null;
     strataOf = (sym) => stratumBySymbol.get(sym) || null;
     console.log(`Scope: frozen universe v${uni.universeVersion} (${symbols.length} study symbols)`);
   } else {
@@ -241,6 +289,24 @@ async function main() {
     console.log(`Scope: frozen universe file missing — S2 probe equities only (${symbols.length} symbols)`);
   }
   console.log(`LevelStory events v${CONFIG.version} — zone anchor ± ${CONFIG.episode.zoneHalfWidthU}·u (=0.25·ATR), close sep ≥ ${CONFIG.episode.closeSeparationU}·u (=1.0·ATR), ≥ ${CONFIG.episode.closeMinSessionsOutside} session outside\n`);
+
+  // S56-A6 — DEAD-TAPE TRUNCATION (founder ruling). Once a take-private is announced the stock pins
+  // to the deal price and realized volatility collapses: the tape is arbitrage, not price discovery.
+  // Level interactions there are meaningless — everything "holds" because nothing MOVES — and those
+  // events would inflate hold rates with non-market behaviour.
+  //
+  // The NAMES ARE KEPT and their live history is retained in full. Dropping a stock BECAUSE it was
+  // acquired would be survivorship bias we introduced ourselves. Only the dead tail is cut, at a
+  // date derived MECHANICALLY from the price series (tools/dead-tape-detect.mjs), never from news.
+  const endOverride = new Map();
+  if (fs.existsSync(UNIVERSE_PATH)) {
+    const u = JSON.parse(fs.readFileSync(UNIVERSE_PATH, 'utf8'));
+    for (const m of u.symbols) if (m.studyEndOverride) endOverride.set(m.symbol, m.studyEndOverride);
+  }
+  if (endOverride.size) {
+    console.log(`✂️  DEAD-TAPE TRUNCATION (S56-A6): ${[...endOverride.entries()].map(([s, d]) => `${s} → events after ${d} excluded`).join(', ')}`);
+  }
+  const deadTapeDropped = {};
 
   const allStats = [];
   const allEvents = [];
@@ -259,10 +325,21 @@ async function main() {
       const { fiveMinByDate, byDate } = loadFiveMinByDate(sym);
       const t = Date.now();
       const result = detectEvents({
-        symbol: sym, sector: CONFIG.universe.sectorMap[sym] || null, stratum: strataOf(sym),
+        symbol: sym, sector: sectorOf(sym), stratum: strataOf(sym), // frozen-universe sector (v2), not the 11-probe config map
         registry, fiveMinByDate, dailyByDate: byDate,
       });
       const runtimeMs = Date.now() - t;
+
+      // S56-A6: cut the dead tail BEFORE stats, so every downstream number — per-symbol diagnostics,
+      // the anomaly scan, the event-budget checkpoint — is computed on the truncated set. Filtering
+      // later would leave the printed diagnostics describing a population the study does not use.
+      const cut = endOverride.get(sym);
+      if (cut) {
+        const before = result.events.length;
+        result.events = result.events.filter((e) => e.eventDate <= cut);
+        deadTapeDropped[sym] = { cutAfter: cut, dropped: before - result.events.length, retained: result.events.length };
+      }
+
       await writeJson(path.join(EVENTS_DIR, `${sym}.json`), { symbol: sym, configVersion: CONFIG.version, events: result.events });
       const stats = computeEventStats(result, registry, runtimeMs);
       allStats.push(stats);
@@ -293,6 +370,17 @@ async function main() {
     anomalyScan: scan,
     checkpoint,
   });
+
+  // S56-A6 — state the truncation as a printed number, never a silent filter.
+  if (Object.keys(deadTapeDropped).length) {
+    console.log('\n──── dead-tape truncation (S56-A6) ────');
+    let tot = 0;
+    for (const [sym, d] of Object.entries(deadTapeDropped)) {
+      tot += d.dropped;
+      console.log(`  ${sym.padEnd(5)} events after ${d.cutAfter} EXCLUDED: ${d.dropped}  (retained ${d.retained})`);
+    }
+    console.log(`  total excluded: ${tot} — dead tape yields few events precisely BECAUSE price does not move.`);
+  }
 
   console.log('\n──── anomaly scan (S4 §2 guards) ────');
   console.log('cross-strata (event-side):', JSON.stringify(scan.correlations));

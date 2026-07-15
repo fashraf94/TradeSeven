@@ -30,10 +30,15 @@
 //       symbol-sessions per symbol (see distanceUnit note, S35-C10). The distance unit
 //       changes materially from the v2 gate → new version so artifact provenance stays
 //       unambiguous (the S3.5 report's v2 gate numbers remain valid for [0.5, 1.5]).
-export const STUDY_CONFIG_VERSION = 3;
+//   4 → S5.6: universe v2 (11 → ~230 names), the 5-minute warmup (intradayWarmupSessions),
+//       and the P3 `hasIntradayApproach` gate. PROVENANCE MARKER ONLY — no geometric or
+//       statistical knob changes value (geometry, questions, floors, window, holdout are
+//       all unchanged). The bump exists so pre-S5.6 and post-S5.6 artifacts can never be
+//       silently confused. (S5_6 rulings §D.)
+export const STUDY_CONFIG_VERSION = 4;
 
 const CONFIG = {
-  version: 3, // S3.5-b recalibration — see STUDY_CONFIG_VERSION note above
+  version: 4, // S5.6 universe v2 + 5m warmup — see STUDY_CONFIG_VERSION note above
 
   meta: {
     codename: 'LevelStory', // parent header
@@ -111,7 +116,26 @@ const CONFIG = {
     // sessions for mature names (S1 §4) — ~837 margin. Newer names (COIN) return from
     // their listing date regardless; the depth-eligibility utility grades each per R2.
     dailyFetchStart: '2018-01-01', // ⚠ CHOICE: satisfies §A6 "≥550 with margin"; matches S1 fixtures
-    intradayFetchStart: '2023-07-10', // parent §A6: no intraday warmup needed → study window only
+    // The 5m STUDY window start. NOT the fetch start — see intradayWarmupSessions below.
+    intradayFetchStart: '2023-07-10', // = range.studyStart: the first session events may be detected on
+    // S5.6 §3 — THE 5-MINUTE WARMUP. The RVOL baseline needs 20 trailing sessions of 5-MINUTE
+    // data (features-intraday.js RVOL_DAYS=20, guard at :52), but the 5m fetch used to begin
+    // exactly at studyStart. The DAILY warmup existed (dailyFetchStart 2018); the 5m warmup was
+    // never built — so events in the first 20 study sessions nulled RVOL at 72.6% (vs 30.6%
+    // elsewhere), losing 189 events (2.2%) to a pure data artifact.
+    //
+    // The 5m fetch therefore starts 30 TRADING sessions before studyStart (margin over the 20
+    // required). The actual date is DERIVED PER SYMBOL from that symbol's own daily calendar
+    // (01-fetch-history.js:fiveMinWarmupStart) — never a hardcoded calendar date, because
+    // "30 trading sessions" is a market-calendar fact, not a 44-day arithmetic guess.
+    //
+    // HARD RULES (asserted, not merely intended — S5.6 §3):
+    //   - warmup5m bars feed RVOL/volume BASELINES ONLY.
+    //   - NO event may be detected on a warmup5m session (events.js asserts; tests/30).
+    //   - No outcome, and no feature other than the baselines, ever reads them. Enforced by
+    //     construction: the study-window session list and the baseline session list are
+    //     SEPARATE inputs (features.js), so a warmup bar is unreachable from any other path.
+    intradayWarmupSessions: 30, // S5.6 §3: trading sessions of 5m warmup before studyStart
     intradayFetchEnd: '2026-07-10',   // R1 studyEnd
     earningsBulkSymbolList: true,     // S1 §8: endpoint accepts a symbols= list (1 bulk call)
     earningsTrailingMonths: 24,       // Addendum §A5.2 / S1 §8 (24-mo trailing for cadence proxy)
@@ -146,6 +170,21 @@ const CONFIG = {
       sessionEndDerivedPerSession: true,  // the 16:00 constants above describe FULL days; never assumed per-session
       tagField: 'halfDay',                // half-days tagged halfDay: true (normalize's earlyClose is the S2 precursor tag)
       eodLabelBar: 'last_regular_bar_of_actual_session', // EOD labels use the last regular bar of the actual session
+    },
+    // S56-C3 — the MARKET SESSION CALENDAR. S3-R3 says the session end is derived per session FROM
+    // THE DATA. It does NOT say from THIS SYMBOL's data — and it must not, because a symbol's own
+    // last delivered bar cannot distinguish "the market closed" from "my feed stopped", so deriving
+    // the end from it lets a truncated session certify its own completeness.
+    //
+    // Nor can the closing auction supply it. MEASURED: EODHD emits no auction print on half-days —
+    // on all 7 in the study window, for 229/229 symbols.
+    //
+    // So the end comes from the consensus of instruments that print in every 5-minute window. No
+    // single truncated or halted feed can move the mode of twelve. See lib/normalize.js.
+    sessionCalendar: {
+      referenceSymbols: ['SPY', 'XLC', 'XLY', 'XLP', 'XLE', 'XLF', 'XLV', 'XLI', 'XLB', 'XLRE', 'XLK', 'XLU'],
+      quorum: 3,        // ≥3 references must agree on a date's last bar before it is trusted
+      minReferences: 6, // fewer than this available ⇒ HARD FAIL, never a silent fall back to 16:00
     },
   },
 
@@ -412,6 +451,28 @@ const CONFIG = {
   hourlyClass: {
     units: 'daily_ATR', // parent §7: sign-normalized in daily-ATR units
     window: 'touch hourly bar + next hourly bar', // parent §3.2/§7
+
+    // S56-A4 (PRE-REGISTERED, pre-outcome — founder-ruled 2026-07-13) — BAR-COVERAGE GUARD.
+    //
+    // An hourly bar is built from its 5-minute constituents. If those bars are ABSENT from the
+    // vendor feed, the hourly bar is not merely noisy — its high, low, close, volume and therefore
+    // its penetration/close/wick geometry are all computed from a partial session. Session 6 assigns
+    // SHARP_REJECT / BREAK_HOLD / … from exactly this geometry, and a class derived from an
+    // incomplete bar is INDISTINGUISHABLE from a real one. It would simply be wrong, silently.
+    //
+    // This matters now in a way it did not at 11 mega-caps: at 232 names the universe reaches into
+    // far less liquid tickers, where missing bars are not vendor gaps — they are ILLIQUIDITY, which
+    // correlates with volatility, spread and gap behavior (i.e. with what the study measures).
+    //
+    // RULE: if an hourly bar in the confirmation window is missing > 20% of its expected 5-minute
+    // constituents, hourly_class is NULL and the event DROPS from P1, P2 and P5. Dropped events are
+    // counted and reported — never silently discarded. A large count is a FINDING.
+    minBarCoveragePct: 80, // S56-A4: ≥80% of EXPECTED bars present ⇒ usable; >20% absent ⇒ null
+    // ⚠ S56-C2: the window is "touch bar + NEXT bar", so the class is computed from BOTH. The guard
+    // is therefore the AND over every bar of the window, not the touch bar alone — a complete touch
+    // bar followed by a half-empty next bar still yields a garbage class. Strictly more conservative
+    // than the founder's wording ("the touch-hour hourly bar"); recorded as an implementation choice.
+    coverageAppliesTo: 'every_bar_of_the_confirmation_window', // S56-C2
     // P = penetration depth beyond level; C = window-close position (+ toward hold side);
     // W = max rejection wick with close on hold side. (parent §7)
     classes: {
