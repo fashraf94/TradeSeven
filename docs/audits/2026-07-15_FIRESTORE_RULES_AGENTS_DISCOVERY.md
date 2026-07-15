@@ -18,6 +18,8 @@
 | **Does the fix touch fenced code (BUILD_RULES §1)?** | ✅ **NO.** This is a `firestore.rules` change only. No fenced file is edited; the scoring engine and `createAgentBattle` shape are untouched. |
 | **First-publish recommendation** | **GO** — scope the first publish to the `agents` **`allow update`** rule only. Emulator-test first (§5), capture the live Console ruleset for rollback first (§5.3). |
 
+> **Founder-review addendum (2026-07-15, §10–§11):** the per-field justification **removes `memory`** from the allowlist (dead client writer that feeds the scored decision prompt — the `stats` pattern), giving the **four-field** list to publish: `['directives', 'lastViewedEvolutionCycle', 'starterKitCompleted', 'updatedAt']` (see §10.3). `directives` is confirmed **not** to bypass the Release-2 epoch/enforce gate (§10.4). The `agentBattles` mismatch is explained in §11 — same bug class, low severity, and it *validates* this discovery's writer-census method.
+
 **The one-paragraph version for Flash:** Today, any signed-in user can reach into *their own* agent document and overwrite *any* field directly from the browser — including the win/loss record the leaderboard ranks on, and the customization fields (leans, dials, archetype, equipped bundles) that the Release-2 server endpoints carefully validate and `settingsRev`-stamp. The app's own JavaScript refuses those writes, but that's honest-client-only; a hand-crafted client ignores it. The fix is a five-word allowlist that says "a client may only touch these five harmless fields; everything else must go through the server." We verified this breaks **nothing** the real app does, because every guarded field is already written server-side (which bypasses these rules), and the one client function that writes `stats` is **dead code with no callers**. So the allowlist is a pure tightening with no downside. It is not yet applied — it's proposed in §7 for you to emulator-test and publish by hand.
 
 ---
@@ -233,6 +235,8 @@ The `agents` doc is **the only live, exploitable, directly-scored owner-can-writ
 
 ### 7.1 Primary change — the `agents` `allow update` allowlist
 
+> **⚠️ SUPERSEDED BY §10 (founder review, 2026-07-15).** The affirmative per-field justification in §10 **removes `memory`** from the allowlist (it is a *dead* client writer that reads directly into the scored decision prompt — the same pattern as `stats`). The list to publish is the **four-field** version in §10.3, not the five-field version shown below. This block is kept for the audit trail; the annotations are otherwise unchanged.
+
 Replace **only** the `allow update` clause at `firestore.rules:149-150`. Everything else in the `agents` block (read/create/delete, and all three subcollections) is **unchanged**.
 
 ```diff
@@ -336,4 +340,98 @@ allow create: if request.auth != null
 
 ---
 
-**HARD STOP.** Nothing published, nothing merged, `firestore.rules` untouched. This report + the §7 proposed diff are the deliverable. Flash reviews, emulator-tests (§5.1), captures the Console backup (§5.3), then publishes §7.1 manually via Console.
+---
+
+# ADDENDUM (founder review, 2026-07-15) — two questions before greenlight
+
+Flash asked for (1) an **affirmative** justification of each allowlisted field — not just "it doesn't break" but "it's legitimately client-writable *and* not a guarded field we'd be leaving a hole on," with special scrutiny on `directives`/`memory` and a roadmap-completeness check; and (2) an explanation of the `agentBattles` allowlist mismatch. Both are **reported, not fixed.**
+
+## 10. Q2b — affirmative justification of the allowlist (per field)
+
+### 10.1 The method
+
+A field earns its place on the allowlist only if it clears **three** bars: (a) a **live** client writer needs it (else denying it is free); (b) it is **not read into any scored or cognition path** the client could thereby influence (else client-writability is a laundering hole); (c) it carries **no server-side gate** (cap / conflict-group / version / `settingsRev`) that a direct write would bypass. Applying all three — not just non-breakage — surfaced one field that should be **removed**.
+
+### 10.2 Per-field verdict
+
+| Field | (a) Live client writer? | (b) Read into scored / cognition path? | (c) Bypasses a gate? | Verdict |
+|---|---|---|---|---|
+| `starterKitCompleted` | ✅ `StarterKit.jsx:380/483` (`updateAgent`) | ❌ — cosmetic onboarding flag, read by no prompt/scorer | ❌ | **KEEP.** The app's own guard already whitelists exactly this field (`agentService.js:153-154`). Unambiguously safe. |
+| `updatedAt` | ✅ every live writer stamps it | ❌ — bookkeeping timestamp | ❌ | **KEEP.** Required, or every legitimate write above fails `hasOnly`. |
+| `directives` | ✅ `OpenChatPanel.jsx:89`, `useAgent.js:165/174` (`addDirective`/`removeDirective`) | ⚠️ **write-dead legacy field** — see §10.4 | ❌ (the gate is on a *different* field) | **KEEP, with the §10.4 flag.** Does **not** bypass the Release-2 epoch/enforce gate. |
+| `lastViewedEvolutionCycle` | ➖ writer `markEvolutionCycleViewed` has **no current caller** | ❌ — pure UX read-state marker (`agentService.js:263-264`), read by no prompt/scorer | ❌ | **KEEP (or drop).** Intended as a client-owned UX field; non-scored; zero risk either way. Flagged as no-current-caller so you may drop it for a tighter list. |
+| **`memory`** | ❌ writer `addMemoryReflection` (`agentService.js:256`) has **no callers** (dead) | ✅ **read directly into the scored decision prompt** — `agentPromptAssembly.js:79-80` ("RECENT GAME MEMORY") and into consolidation → `consolidatedInsight` → eval prompt (`agentConsolidationPrompt.js:137`, `agentEvalPromptAssembly.js:518`) | n/a | **REMOVE — see §10.3.** |
+
+### 10.3 The one change from founder review — remove `memory`
+
+`memory` fails bars (a) and (b) simultaneously, which is the exact `stats` pattern:
+
+- **Dead client writer.** `addMemoryReflection` (`agentService.js:256`) has **zero callers** repo-wide (VERIFIED). No live client path writes `memory`, so denying it breaks nothing.
+- **Reads straight into scored cognition.** `agentPromptAssembly.js:79-80` injects `agent.memory` verbatim into the agent's **trading-decision prompt**; it also feeds the consolidation that produces the guarded `consolidatedInsight` (`agentConsolidationPrompt.js:195`). The **intended** writer is server-side — `reflect.js:223` (Admin SDK, rolling 5-game window).
+- **Therefore** a hand-crafted client `updateDoc({ memory: [...] })` would inject arbitrary text into its own agent's decision prompt, and (unlike the server writer) bypass the 5-entry cap. Denying `memory` closes that path at zero cost — precisely the `stats` reasoning applied a second time.
+
+**Revised allowlist (the version to publish):**
+
+```diff
+       allow update: if request.auth != null
+                     && resource.data.ownerId == request.auth.uid
+                     && request.resource.data.diff(resource.data).affectedKeys()
+-                       .hasOnly(['directives', 'memory', 'lastViewedEvolutionCycle',
+-                                 'starterKitCompleted', 'updatedAt']);
++                       .hasOnly(['directives', 'lastViewedEvolutionCycle',
++                                 'starterKitCompleted', 'updatedAt']);
+```
+
+Add `memory` to the §7.1 comment's "written by the Admin-SDK server endpoints … (`reflect.js`)" list so the reason it's denied is documented in the rule. (If you prefer the absolute-tightest list, `lastViewedEvolutionCycle` may also be dropped — it has no current caller — leaving `['directives', 'starterKitCompleted', 'updatedAt']`. `directives` and `starterKitCompleted` are the only two fields with *confirmed live* client writers.)
+
+### 10.4 `directives` — does allowing it bypass the Release-2 epoch/enforce gating? **No.**
+
+This was the sharpest question, and the answer is layered but clean:
+
+1. **The epoch-governed, enforce-gated directive is a *different field on a different collection*.** The Release-2 gate (spec Phase 1 item 5) governs the **battle-scoped** `agentBattle.directive`, minted **only** through the server chat gate with `adjustmentId` + `canonicalTextVersion` version-binding (`chat.js:631-637`). That lives on the **`agentBattles`** doc — the `agents`-collection rule proposed here does not touch it, and it is server-minted, never a client write. **VERIFIED.**
+2. **The field the client writes — `agents/{id}.directives[]` — is a *write-dead legacy* array.** Server writes to it were removed in Phase 7 (`chat.js:641-644`: "Phase 4 deprecated **reading** that field and Phase 7 stops **writing** to it — directives live and die with the battle"). **VERIFIED.**
+3. **The core scored trade eval ignores it.** `decide.js` reads `directives` **nowhere** (VERIFIED — empty grep).
+4. **The two residual cognition reads are actively neutralized.** `debate.js:120` and `agent-batch-review.js:151` still read a legacy directives array, but through `renderLegacyDirectives` (`legacyDirectiveSanitize.js:36-41`), which returns the empty sentinel `"No active directives"` whenever `ARCHETYPE_INTEGRITY_MODE !== 'off'`. **Production is `'observe'`** (`featureFlags.js:406`), so **the side-door is closed today** — a client-written `agents.directives` contributes nothing to any prompt. **VERIFIED.**
+
+**Residual, flag-gated caveat (the honest part):** if `ARCHETYPE_INTEGRITY_MODE` were ever set back to `'off'`, `debate.js:120` would again render `agent.directives` verbatim into the debate prompt — reopening a cognition side-door that a client-written value could ride. It is **closed now** and the field is **not** the gated one, so keeping `directives` on the allowlist does not bypass Release-2. But because it is a deprecated side-door with live client writers (`OpenChatPanel`), the durable fix is to **retire the client `agents.directives` writer** (route coaching through the server, as Phase 7 did for the server side) — at which point `directives` leaves the allowlist too. Flagged for separate tasking; **not** a blocker for this publish while the flag stays `≠ 'off'`.
+
+### 10.5 Roadmap completeness — will `hasOnly` silently deny a *planned* client write?
+
+A `hasOnly` allowlist denies every unlisted field, including future ones, so the list must be **intended**, not merely currently-complete. Checked:
+
+- **Learning L1/L2 (dossier, evidence, trials, proposal-consent).** The learning system is **server-write-only by architecture** — every `learning*` collection is `allow write: if false` (`firestore.rules:678-702`) with the explicit note "ALL writes are server-side (Admin SDK)… the ONE client-readable surface is the dossier." The V1.3 architecture has **consent → trial → equip** flowing through server-mediated trials that write the *guarded* config/lean fields (`AGENT_LEARNING_SYSTEM_ARCHITECTURE_V1_3.md` §5, lines 50-52, 181) — i.e. the **same Admin-SDK path as today's equip endpoints**, which bypasses these rules. **No L2 proposal-consent write lands as a client write to the `agents` doc.** VERIFIED (code sweep for client `consent`/`proposal`/`L2` writes to `agents` → empty; architecture is server-only).
+- **Customization layer (leans/dials/traits/bundles/watchlist).** Already 100% server-endpoint-mediated (report §3.2). New customization fields will be server-written and *correctly* denied to the client by default.
+- **Server-accreted agent-doc fields** already exist beyond the create shape — e.g. `lessons`, `forgeSuggestions` (`chat.js:649-653`, Admin SDK), `strategyLastDeployedAt` (`update-agent-settings.js:182`). All server-written; the allowlist correctly denies client writes to them, no breakage.
+
+**Conclusion:** the allowlist is forward-compatible with the known roadmap. The one **operational invariant** to adopt: *any future feature that needs a new **client-writable** field on the `agents` doc must add it to this allowlist in the same change* — exactly the discipline the `agentBattles` bug (§11) shows is easy to forget.
+
+## 11. The `agentBattles` allowlist mismatch — is it the bug class we're preventing? **Yes — and it's the cautionary tale that validates the method.**
+
+### 11.1 What is denied, and how it shipped
+
+`agentBattles` `allow update` (`firestore.rules:210-211`) gates writes with `hasOnly([...])`. Two **live** client writes touch fields **absent** from that list, so Firestore denies them — and both are fire-and-forget (`.catch`), so the denial is **silent**:
+
+| Denied write | Site | Consumed by | Landed |
+|---|---|---|---|
+| `livePriceBeacon` | `AgentBattleScreen.jsx:523` (client `updateDoc`) | `agentSwapExecution.js:181` (**fenced**) as the *preferred* intraday price | **PR #547 `5ffbe8b1` (2026-07-02)** — the **same commit that introduced the allowlist** |
+| `portfolio.startingPrices` | `App.jsx:6567` (client `updateDoc`) | scoring baseline (`agent-evaluate.js:586`, `agentSwapExecution.js:192`, `decide.js`) | `166084d2` (2026-07-03) — **after** the allowlist existed; born denied |
+
+The `livePriceBeacon` case is the sharpest illustration of the class: **the very PR that added the restrictive `hasOnly` also added a new client write to that collection and forgot to list its field** — shipping a silently-broken write inside its own change.
+
+### 11.2 Severity — real, but low, and one is even desirable
+
+- **`livePriceBeacon` (LOW–MODERATE).** `agentSwapExecution.js:185-188` *prefers* fresh beacon prices but **falls back** to REST-fetched prices (`currentPrices[symbol]?.current`) when the beacon is absent/stale. With the write denied, `liveData.livePriceBeacon` is never present, so swaps **always** take the 15-min-delayed REST fallback. Net effect: a "fresher swap pricing" optimization that has **never functioned in production** — a real feature degradation, but **not** a crash and **not** a scoring corruption (the fallback is a valid price). *Note:* the consumer `agentSwapExecution.js` is a **fenced** file (BUILD_RULES §1) — I only **read** it; the *write* (`AgentBattleScreen.jsx`) and the *rule* are non-fenced, so a fix need not touch the fence.
+- **`portfolio.startingPrices` (LOW — and the denial is arguably *correct*).** The client tries to overwrite the server's prices with "fresher" ones at deploy (`App.jsx:6554`). Denied, the battle keeps the server-set, **server-validated** baseline (`decide.js:772` `fetchValidatedStartingPrices`; `set-opponent.js:101` writes it via Admin SDK). Since `portfolio.startingPrices` **is** the scoring baseline that `priceChange` computes against, **blocking a client from rewriting it is integrity-good.** This is a silently-failing intended write whose failure happens to protect scoring.
+
+### 11.3 What it means for the `agents` publish
+
+- **Same class, yes.** Both are intended live client writes silently denied by a `hasOnly` list that omitted them — the precise failure mode of a field allowlist. The `.catch` makes it invisible; only a writers-vs-allowlist diff surfaces it.
+- **It validates the discovery method, and does not undermine the `agents` fix.** This mismatch was **found** exactly the way the risk is meant to be managed — by enumerating every live writer and diffing against the allowlist. The `agents` allowlist is built from that same exhaustive enumeration (report §3.1) and, after §10.3, covers every field with a live client writer (`directives`, `starterKitCompleted`, `updatedAt`; plus the intended non-scored `lastViewedEvolutionCycle`). The two fields §10 *removes* (`memory`) or already excluded (`stats`) are **dead** writers, so removing them cannot reproduce this bug. The crucial difference: `agentBattles`' allowlist was written **without** a writer census (it omitted a field from its own PR); the `agents` allowlist is written **from** a verified-complete one.
+- **Recommendation (report, not fix — BUILD_RULES §3):**
+  - `livePriceBeacon`: decide whether the fresh-price optimization is wanted. If yes, **move the beacon write server-side** (a small authed endpoint, Admin SDK) rather than adding `livePriceBeacon` to the client allowlist — a client-written price feeding a fenced swap-pricing path is itself a surface worth keeping off the client. If no, **delete the dead write** at `AgentBattleScreen.jsx:509-535`.
+  - `portfolio.startingPrices`: **do not** add it to the client allowlist (blocking client override of the scoring baseline is correct). Delete the dead client write at `App.jsx:6554-6577`, or move the fresher-price capture server-side into the existing validated-price path.
+  - **Adopt the operational invariant** from §10.5: a `hasOnly` allowlist and the writers to that collection must be kept in lockstep; adding a client write requires updating the allowlist in the same change. The `agentBattles` mismatch is the precedent that makes this a rule, not a suggestion.
+
+---
+
+**HARD STOP.** Nothing published, nothing merged, `firestore.rules` untouched. This report + the §10.3 proposed diff (four-field allowlist, `memory` removed) are the deliverable; §11 is reported for understanding, not fixed. Flash: run the Console-vs-repo drift check (§5.3), the emulator matrix (§5.1 — note test B now must also assert `memory` is **denied**), then publish the §10.3 allowlist manually via Console.
