@@ -72,7 +72,7 @@ import { buildSwapProvenance } from '../_utils/swapProvenance.js';
 import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED } from '../../src/config/featureFlags.js';
 // Agent Learning System L1 — raw capture (DARK behind LEARNING_L1_CAPTURE_ENABLED,
 // false at merge). captureSwapReceipt is a strict no-op when the flag is off.
-import { captureSwapReceipt } from '../_utils/learning/captureReceipt.js';
+import { captureSwapReceipt, resolveEntrySnapshot, classifyEntryAtrSource } from '../_utils/learning/captureReceipt.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
 // string literal). Zero-import schema module, BUILD_RULES §4.
@@ -1971,6 +1971,45 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
             // trade — the inner try/catch isolates it completely.
             if (LEARNING_L1_CAPTURE_ENABLED) {
               try {
+                // Fix 1 (DARK, post-trade, capture-only): the entry symbol's tech
+                // doc is null when it is a hotBench swap-in — allTechSymbols does
+                // not tech-fetch hotBench (a decision-path constraint we do NOT
+                // touch). The doc EXISTS (same atomic batch as the rankings doc),
+                // so refetch it here and rebuild snapshotIn. A failed/absent
+                // refetch degrades to the existing null behavior, recorded honestly.
+                const { snapshotIn: snapshotInForCapture, techDocIn: techDocInForCapture, entrySnapshotSource } =
+                  await resolveEntrySnapshot({
+                    db,
+                    symbol: haikuResult.symbolIn,
+                    primarySnapshotIn: snapshot.symbolIn,
+                    primaryTechDoc: technicalScoresMap?.[haikuResult.symbolIn] ?? null,
+                    momentumData,
+                    technicalScoresMap,
+                  });
+                // Fix 1b: dataMode is not on the per-stock tech doc; source it from
+                // the sibling rankings doc's `mode` (written in the same cron run /
+                // atomic batch). Null stays null — never fabricated.
+                const siblingDataMode =
+                  rankingsResult?.status === 'fulfilled' && rankingsResult.value?.exists
+                    ? (rankingsResult.value.data().mode ?? null)
+                    : null;
+                // Fix 2a: accept entryATR as-is (the value the live guardrails run
+                // on); record ONLY which executeSwapServer branch produced it,
+                // derived from capture-scope data (never re-enters the fence).
+                const entryATRForCapture = swapResult.incomingAsset?.baseATR ?? null;
+                const entryAtrSource = classifyEntryAtrSource({
+                  entryATR: entryATRForCapture,
+                  scoredThreshold: battle.scoring?.thresholds?.[haikuResult.symbolIn]?.threshold,
+                  benchBaseATR: benchAsset?.baseATR,
+                  isCrypto: benchAsset?.isCrypto,
+                });
+                // The entry's regime is null when it's a hotBench swap-in (stockRegimes
+                // is only built for allTechSymbols). When Fix 1 refetched the tech doc,
+                // recompute the entry regime from it (same classifyStockRegime path) so
+                // the entry-side predicate inputs are consistent; otherwise leave null.
+                const regimeInForCapture =
+                  stockRegimes[haikuResult.symbolIn] ??
+                  (techDocInForCapture ? classifyStockRegime(techDocInForCapture) : null);
                 await captureSwapReceipt({
                   enabled: true,
                   db,
@@ -1992,7 +2031,8 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
                   resolvedSlotIndex: validation.resolvedSlotIndex,
                   // entry state of the NEW position (from executeSwapServer's incomingAsset).
                   entryMark: swapResult.incomingAsset?.swapPrice ?? null,
-                  entryATR: swapResult.incomingAsset?.baseATR ?? null,
+                  entryATR: entryATRForCapture,
+                  entryAtrSource, // Fix 2a — provenance only; entryATR unchanged.
                   // guardrail-replay state of the OUTGOING position (raw).
                   outgoingEntryPrice: swapResult.closedTrade?.entryPrice ?? null,
                   outgoingBaseATR: activeBaseATR ?? null,
@@ -2001,13 +2041,16 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
                   outgoingSwappedInDay: l1OutgoingPosition?.swappedInDay ?? null,
                   // version stamps (only archetypeIntegrityMode exists in L1).
                   archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
-                  // predicate snapshot inputs (already built above, at the decision instant).
-                  snapshotIn: snapshot.symbolIn,
+                  // predicate snapshot inputs. snapshotIn/techDocIn are the refetched
+                  // values (Fix 1); entrySnapshotSource records how they resolved.
+                  snapshotIn: snapshotInForCapture,
                   snapshotOut: snapshot.symbolOut,
-                  regimeIn: stockRegimes[haikuResult.symbolIn] ?? null,
+                  entrySnapshotSource,
+                  regimeIn: regimeInForCapture,
                   regimeOut: stockRegimes[haikuResult.symbolOut] ?? null,
-                  techDocIn: technicalScoresMap?.[haikuResult.symbolIn] ?? null,
+                  techDocIn: techDocInForCapture,
                   techDocOut: technicalScoresMap?.[haikuResult.symbolOut] ?? null,
+                  dataMode: siblingDataMode, // Fix 1b — sibling-rankings-doc source.
                   // Phase A.5 — predicate provenance for staleness + the level fields.
                   // rankingsComputedMs (line ~796) is block-scoped and out of reach here;
                   // recompute from rankingsResult (function-scoped) with an existence guard.

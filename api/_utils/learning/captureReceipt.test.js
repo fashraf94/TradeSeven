@@ -2,7 +2,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   captureSwapReceipt, buildRawReceipt, extractPredicateInputs, receiptIdFor, toMillis,
+  resolveEntrySnapshot, classifyEntryAtrSource,
 } from './captureReceipt.js';
+import { classifyD2, D2_CLASSES } from './detectorClassifiers.js';
 
 // A spy Firestore whose every method records the call. Optionally EXPLODES if
 // touched, to prove the flag-off path never reaches Firestore.
@@ -64,6 +66,27 @@ function validRaw(overrides = {}) {
     techDocOut: { mode: 'intraday', updatedAt: '2026-07-12T14:00:00.000Z' },
     capturedAt: '2026-07-12T14:30:01.000Z',
     ...overrides,
+  };
+}
+
+// A tech-doc Firestore mock supporting collection(c).doc(id).get() — for the
+// Fix 1 refetch path (resolveEntrySnapshot). Records reads; can return a doc,
+// a missing doc, or throw.
+function makeTechDocDb({ doc = null, throwOnGet = false } = {}) {
+  const reads = [];
+  return {
+    reads,
+    collection: (c) => ({
+      doc: (id) => ({
+        get: async () => {
+          reads.push({ collection: c, id });
+          if (throwOnGet) throw new Error('firestore get boom');
+          return doc
+            ? { exists: true, data: () => doc }
+            : { exists: false, data: () => undefined };
+        },
+      }),
+    }),
   };
 }
 
@@ -293,5 +316,199 @@ describe('buildRawReceipt — predicate classification (outcome-blind)', () => {
     // The techDocPath value embeds "Scores" but must not trip the quoted-"score" check.
     expect(json).toContain('stocktechnicalscores/nvda');
     expect(json).not.toContain('"score"');
+  });
+});
+
+// ── Fix 1 — dark-path refetch of the entry tech doc (resolveEntrySnapshot) ──
+describe('resolveEntrySnapshot — entry tech-doc refetch + provenance', () => {
+  const REFETCH_TECH_DOC = {
+    bbPercentB: 0.42,
+    factors: { distTo52wkHigh: 3.3, upDayVolRatio: 1.25, macdAboveSignal: true },
+    volumeProfile: { ratio: 1.9 },
+    updatedAt: '2026-07-15T14:00:00.000Z',
+  };
+  const rankingsMap = { CRWD: { levels: { nearestResistance: 707.17, distanceToResistancePct: 242.52 } } };
+
+  it('primary_fetch: tech doc already present → used as-is, NO Firestore read', async () => {
+    const db = makeTechDocDb({ throwOnGet: true }); // would throw if touched
+    const primaryTechDoc = { mode: 'ignored', updatedAt: 'x' };
+    const r = await resolveEntrySnapshot({
+      db, symbol: 'NVDA', primarySnapshotIn: { volatility: { bbPercentB: 0.9 } }, primaryTechDoc,
+      momentumData: { rankingsMap }, technicalScoresMap: { NVDA: primaryTechDoc },
+    });
+    expect(r.entrySnapshotSource).toBe('primary_fetch');
+    expect(r.techDocIn).toBe(primaryTechDoc);
+    expect(db.reads).toHaveLength(0); // guarded: no refetch when already resolved
+  });
+
+  it('capture_refetch: tech doc null but exists → snapshotIn populates from the refetched doc', async () => {
+    const db = makeTechDocDb({ doc: REFETCH_TECH_DOC });
+    const r = await resolveEntrySnapshot({
+      db, symbol: 'CRWD', primarySnapshotIn: { levels: { distanceToResistancePct: 242.52 } }, primaryTechDoc: null,
+      momentumData: { rankingsMap }, technicalScoresMap: {},
+    });
+    expect(r.entrySnapshotSource).toBe('capture_refetch');
+    expect(db.reads).toEqual([{ collection: 'stockTechnicalScores', id: 'CRWD' }]);
+    expect(r.techDocIn).toBe(REFETCH_TECH_DOC);
+    // Tech-doc-sourced fields now populate (were null before the refetch).
+    expect(r.snapshotIn.volatility.bbPercentB).toBe(0.42);
+    expect(r.snapshotIn.smaStack.distTo52wkHigh).toBe(3.3);
+    expect(r.snapshotIn.momentum.macdAboveSignal).toBe(true);
+    // Rankings-sourced level fields still present (from momentumData.rankingsMap).
+    expect(r.snapshotIn.levels.distanceToResistancePct).toBe(242.52);
+  });
+
+  it('refetch_missing: tech doc null and does not exist → nulls preserved, honest label', async () => {
+    const db = makeTechDocDb({ doc: null }); // exists:false
+    const primarySnapshotIn = { levels: { distanceToResistancePct: 242.52 } };
+    const r = await resolveEntrySnapshot({
+      db, symbol: 'CRWD', primarySnapshotIn, primaryTechDoc: null,
+      momentumData: { rankingsMap }, technicalScoresMap: {},
+    });
+    expect(r.entrySnapshotSource).toBe('refetch_missing');
+    expect(r.techDocIn).toBeNull();
+    expect(r.snapshotIn).toBe(primarySnapshotIn); // unchanged nulls
+  });
+
+  it('refetch_error: a failed read degrades to nulls, records refetch_error, never throws', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const db = makeTechDocDb({ throwOnGet: true });
+    const primarySnapshotIn = { levels: { distanceToResistancePct: 242.52 } };
+    const r = await resolveEntrySnapshot({
+      db, symbol: 'CRWD', primarySnapshotIn, primaryTechDoc: null,
+      momentumData: { rankingsMap }, technicalScoresMap: {},
+    });
+    expect(r.entrySnapshotSource).toBe('refetch_error');
+    expect(r.techDocIn).toBeNull();
+    expect(r.snapshotIn).toBe(primarySnapshotIn);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('a refetched entry receipt carries entrySnapshotSource + a populated symbolIn snapshot end-to-end', () => {
+    // Simulate the capture site after a successful refetch: pass the rebuilt
+    // snapshotIn + techDocIn + source into buildRawReceipt.
+    const snapshotIn = {
+      volatility: { bbPercentB: 0.42 }, smaStack: { distTo52wkHigh: 3.3 },
+      levels: { distanceToResistancePct: 242.52, nearestResistance: 707.17 },
+      volume: { ratio: 1.9 }, momentum: { upDayVolRatio: 1.25, macdAboveSignal: true },
+    };
+    const r = buildRawReceipt(validRaw({
+      symbolIn: 'CRWD',
+      snapshotIn, techDocIn: REFETCH_TECH_DOC, entrySnapshotSource: 'capture_refetch',
+    }));
+    expect(r.predicateClassification.symbolIn.entrySnapshotSource).toBe('capture_refetch');
+    expect(r.predicateInputs.symbolIn.bbPercentB).toBe(0.42);
+    expect(r.predicateInputs.symbolIn.distTo52wkHigh).toBe(3.3);
+    // techDocUpdatedAtMs now resolves (was null when the entry was unfetched).
+    expect(r.predicateClassification.symbolIn.techDocUpdatedAtMs).toBe(Date.parse('2026-07-15T14:00:00.000Z'));
+  });
+
+  it('default per-symbol source: techDoc present → primary_fetch, absent → null (legacy callers)', () => {
+    const present = buildRawReceipt(validRaw()); // techDocIn/Out present
+    expect(present.predicateClassification.symbolIn.entrySnapshotSource).toBe('primary_fetch');
+    expect(present.predicateClassification.symbolOut.entrySnapshotSource).toBe('primary_fetch');
+    const absent = buildRawReceipt(validRaw({ techDocIn: null }));
+    expect(absent.predicateClassification.symbolIn.entrySnapshotSource).toBeNull();
+  });
+});
+
+// ── Fix 1b — dataMode sourced from the sibling rankings doc ──
+describe('dataMode — sibling-rankings-doc source (Defect 1b)', () => {
+  it('extractPredicateInputs: explicit dataMode overrides a tech doc that has NO mode', () => {
+    const pi = extractPredicateInputs(
+      { volatility: { bbPercentB: 0.8 } },
+      'choppy',
+      { updatedAt: 'ts' }, // NO mode field — the production reality
+      'intraday',          // sibling-doc mode
+    );
+    expect(pi.dataMode).toBe('intraday');
+    expect(pi.dataUpdatedAt).toBe('ts');
+  });
+
+  it('extractPredicateInputs: omitted dataMode falls back to techDoc.mode (byte-identical legacy)', () => {
+    const pi = extractPredicateInputs({ volatility: { bbPercentB: 0.8 } }, 'choppy', { mode: 'premarket', updatedAt: 'ts' });
+    expect(pi.dataMode).toBe('premarket');
+  });
+
+  it('buildRawReceipt: raw.dataMode populates BOTH symbols even when tech docs lack mode', () => {
+    const r = buildRawReceipt(validRaw({
+      dataMode: 'intraday',
+      techDocIn: { updatedAt: '2026-07-15T14:00:00.000Z' },  // no mode
+      techDocOut: { updatedAt: '2026-07-15T14:00:00.000Z' }, // no mode
+    }));
+    expect(r.predicateInputs.symbolIn.dataMode).toBe('intraday');
+    expect(r.predicateInputs.symbolOut.dataMode).toBe('intraday');
+  });
+
+  it('edge: raw.dataMode null stays null — never fabricated, never falls back to a phantom techDoc.mode', () => {
+    const r = buildRawReceipt(validRaw({
+      dataMode: null,
+      techDocIn: { mode: 'stale_should_be_ignored', updatedAt: 'x' },
+    }));
+    expect(r.predicateInputs.symbolIn.dataMode).toBeNull();
+  });
+
+  it('D2 intraday correction ENGAGES once dataMode populates (the whole point of the fix)', () => {
+    // A receipt whose entry has volumeRatio=1.0 (a neutralized intraday placeholder),
+    // upDayVolRatio=1.1 (<1.2 fail), macdAboveSignal=true.
+    const snap = {
+      volatility: { bbPercentB: 0.5 }, levels: { distanceToResistancePct: 5.0 }, smaStack: { distTo52wkHigh: 5.0 },
+      volume: { ratio: 1.0 }, momentum: { upDayVolRatio: 1.1, macdAboveSignal: true, macdFreshBullishCross: false },
+    };
+    const withMode = buildRawReceipt(validRaw({ snapshotIn: snap, dataMode: 'intraday', techDocIn: { updatedAt: 'x' } }));
+    const noMode = buildRawReceipt(validRaw({ snapshotIn: snap, dataMode: null, techDocIn: { updatedAt: 'x' } }));
+
+    const d2WithMode = classifyD2(withMode.predicateInputs.symbolIn);
+    const d2NoMode = classifyD2(noMode.predicateInputs.symbolIn);
+
+    // Intraday: volume.ratio is relabeled MISSING → volume family UNKNOWN → UNSCORABLE.
+    expect(d2WithMode.class).toBe(D2_CLASSES.UNSCORABLE);
+    expect(d2WithMode.volume).toBe('UNKNOWN');
+    // Null dataMode (the bug): volume.ratio 1.0 read as observed → volume FAIL, so
+    // the classification differs — proving the correction only fires once dataMode populates.
+    expect(d2NoMode.volume).toBe('FAIL');
+    expect(d2WithMode.class).not.toBe(d2NoMode.class);
+  });
+});
+
+// ── Fix 2a — entryAtrSource provenance (classifyEntryAtrSource) ──
+describe('classifyEntryAtrSource — which executeSwapServer branch produced entryATR', () => {
+  it('scored_threshold: entryATR equals a present scoring threshold', () => {
+    expect(classifyEntryAtrSource({ entryATR: 4.2, scoredThreshold: 4.2, benchBaseATR: 8, isCrypto: false }))
+      .toBe('scored_threshold'); // precedence: threshold wins even when benchBaseATR also present
+  });
+
+  it('bench_proxy: no scored threshold, entryATR equals benchAsset.baseATR (the hotBench atrPercentile×8 proxy)', () => {
+    expect(classifyEntryAtrSource({ entryATR: 8, scoredThreshold: undefined, benchBaseATR: 8, isCrypto: false }))
+      .toBe('bench_proxy');
+  });
+
+  it('default_fallback: no threshold, no bench baseATR → 2.5 (stock) / 5.0 (crypto)', () => {
+    expect(classifyEntryAtrSource({ entryATR: 2.5, scoredThreshold: undefined, benchBaseATR: undefined, isCrypto: false }))
+      .toBe('default_fallback');
+    expect(classifyEntryAtrSource({ entryATR: 5.0, scoredThreshold: undefined, benchBaseATR: 0, isCrypto: true }))
+      .toBe('default_fallback');
+  });
+
+  it('unknown: entryATR null, or matches no capture-scope candidate (honest, never guessed)', () => {
+    expect(classifyEntryAtrSource({ entryATR: null, benchBaseATR: 8 })).toBe('unknown');
+    expect(classifyEntryAtrSource({ entryATR: 7.76, scoredThreshold: undefined, benchBaseATR: 8, isCrypto: false }))
+      .toBe('unknown'); // value diverges from every candidate
+  });
+
+  it('buildRawReceipt carries entryAtrSource on the receipt without changing entryATR', () => {
+    const r = buildRawReceipt(validRaw({ entryATR: 8, entryAtrSource: 'bench_proxy' }));
+    expect(r.entryATR).toBe(8);       // value untouched (accept the proxy)
+    expect(r.entryAtrSource).toBe('bench_proxy');
+  });
+
+  it('TRIPWIRE holds with the new provenance fields populated (scored_threshold has no quoted "score")', () => {
+    const r = buildRawReceipt(validRaw({ entryAtrSource: 'scored_threshold', entrySnapshotSource: 'capture_refetch' }));
+    const json = JSON.stringify(r).toLowerCase();
+    for (const banned of ['mpe', 'effectivereach', 'regret', 'bootstrap', 'estimate', 'clopper', 'narration', 'smd', '"score"']) {
+      expect(json, `banned token ${banned}`).not.toContain(banned);
+    }
+    expect(json).toContain('scored_threshold');
   });
 });

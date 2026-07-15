@@ -70,6 +70,14 @@ export function makePredicateClassification(overrides = {}) {
     predicateStalenessMs: null, // decisionAtMs − techDocUpdatedAtMs (null if either null)
     symbolHourKey: null, // `${symbol}:${floor(techDocUpdatedAtMs/3.6e6)}` — the independence unit
     techDocPath: null, // `stockTechnicalScores/${symbol}` (provenance / replay)
+    // How this symbol's tech snapshot was resolved (outcome-blind provenance). Meaningful
+    // primarily for the entry (symbolIn): 'primary_fetch' = present in the in-request
+    // technicalScoresMap; 'capture_refetch' = absent there (a hotBench swap-in, not
+    // tech-fetched) and pulled by the dark-path post-trade refetch; 'refetch_missing' =
+    // no doc exists (genuinely unknowable); 'refetch_error' = the refetch read failed and
+    // nulls were preserved. Lets the M-report tell a refetched entry from a native one and
+    // count how often the doc was genuinely absent.
+    entrySnapshotSource: null,
     ...overrides,
   };
 }
@@ -105,6 +113,12 @@ export function makeReceiptSkeleton(overrides = {}) {
     // entry state of the NEW position (D1/D2 outcome inputs)
     entryMark: null, // executed fill = incomingAsset.swapPrice
     entryATR: null, // baseATR at entry = incomingAsset.baseATR
+    // Provenance of entryATR (outcome-blind): WHICH branch of executeSwapServer's
+    // baseATR selection produced it — 'scored_threshold' | 'bench_proxy' (incl. the
+    // hotBench atrPercentile×8 proxy) | 'default_fallback' | 'unknown'. Records
+    // provenance ONLY; entryATR itself is the value the live guardrails run on and is
+    // never rewritten (founder decision: accept the proxy, label it honestly).
+    entryAtrSource: null,
 
     // guardrail-replay state of the OUTGOING position (D3 Path A initial-state
     // contract). RAW; fields the agent-battle position does not store are null
