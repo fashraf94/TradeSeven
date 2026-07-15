@@ -19,6 +19,7 @@
 import { makeReceiptSkeleton, makePredicateInputs, makePredicateClassification } from './learningSchemas.js';
 import { classifyD1, classifyD1DrAbstain, drNullReason } from './detectorClassifiers.js';
 import { validateReceipt } from './learningValidators.js';
+import { buildTechnicalSnapshot } from '../buildTechnicalSnapshot.js';
 
 const MS_PER_HOUR = 3_600_000;
 
@@ -50,9 +51,14 @@ const LOG_PREFIX = '[L1-capture]';
  * provenance. Pure field reads — no computation.
  * @param {Object} snapshot  buildTechnicalSnapshot(symbol, ...) output (or null)
  * @param {string|null} regime  per-stock regime string (D3 chop input)
- * @param {Object} techDoc  the raw stockTechnicalScores doc for the symbol (for dataMode)
+ * @param {Object} techDoc  the raw stockTechnicalScores doc for the symbol (for dataUpdatedAt)
+ * @param {string|null|undefined} dataMode  the source-doc write mode. The per-stock
+ *   stockTechnicalScores doc carries NO `mode` field — it lives on the sibling rankings
+ *   doc written in the same cron run — so production passes the sibling `mode` here
+ *   (may be null; never fabricated). When omitted (undefined, legacy/test callers) it
+ *   falls back to `techDoc.mode` for byte-identical behavior.
  */
-export function extractPredicateInputs(snapshot, regime, techDoc = {}) {
+export function extractPredicateInputs(snapshot, regime, techDoc = {}, dataMode = undefined) {
   const s = snapshot || {};
   return makePredicateInputs({
     bbPercentB: s.volatility?.bbPercentB ?? null,
@@ -66,9 +72,70 @@ export function extractPredicateInputs(snapshot, regime, techDoc = {}) {
     nearestResistance: s.levels?.nearestResistance ?? null,
     nearestSupport: s.levels?.nearestSupport ?? null,
     distanceToSupportPct: s.levels?.distanceToSupportPct ?? null,
-    dataMode: techDoc?.mode ?? null,
+    dataMode: dataMode !== undefined ? dataMode : (techDoc?.mode ?? null),
     dataUpdatedAt: techDoc?.updatedAt ?? null,
   });
+}
+
+/**
+ * Resolve the ENTRY (symbolIn) technical snapshot for capture, with a DARK,
+ * POST-TRADE, CAPTURE-ONLY refetch. When the in-request `technicalScoresMap`
+ * already carries the symbol's tech doc it is used as-is ('primary_fetch'). When
+ * it does not — the swap-in came from the hotBench, which `allTechSymbols` in
+ * agent-evaluate.js deliberately does NOT tech-fetch (a decision-path constraint
+ * left untouched) — the doc still EXISTS (same atomic batch as the rankings doc),
+ * so this refetches `stockTechnicalScores/{symbol}` and rebuilds the snapshot
+ * ('capture_refetch'). A genuinely absent doc preserves the nulls
+ * ('refetch_missing'); a failed read degrades to nulls ('refetch_error') and
+ * NEVER throws into the (already-executed) swap path. Called only inside the
+ * `if (LEARNING_L1_CAPTURE_ENABLED)` capture block — a strict no-op when the flag
+ * is off (the caller never invokes it).
+ *
+ * @returns {Promise<{snapshotIn: Object, techDocIn: Object|null, entrySnapshotSource: string}>}
+ */
+export async function resolveEntrySnapshot({
+  db, symbol, primarySnapshotIn = null, primaryTechDoc = null, momentumData = {}, technicalScoresMap = {},
+} = {}) {
+  if (primaryTechDoc) {
+    return { snapshotIn: primarySnapshotIn, techDocIn: primaryTechDoc, entrySnapshotSource: 'primary_fetch' };
+  }
+  try {
+    const snap = await db.collection('stockTechnicalScores').doc(symbol).get();
+    if (snap?.exists) {
+      const techDocIn = snap.data();
+      const snapshotIn = buildTechnicalSnapshot(symbol, {
+        momentumData,
+        technicalScoresMap: { ...(technicalScoresMap || {}), [symbol]: techDocIn },
+        rankingsMap: momentumData?.rankingsMap,
+      });
+      return { snapshotIn, techDocIn, entrySnapshotSource: 'capture_refetch' };
+    }
+    return { snapshotIn: primarySnapshotIn, techDocIn: null, entrySnapshotSource: 'refetch_missing' };
+  } catch (err) {
+    // Degrade to the existing null behavior; never throw into the swap path.
+    console.warn(`${LOG_PREFIX} entry tech-doc refetch failed for ${symbol} (nulls preserved): ${err?.message}`);
+    return { snapshotIn: primarySnapshotIn, techDocIn: null, entrySnapshotSource: 'refetch_error' };
+  }
+}
+
+/**
+ * Label WHICH branch of executeSwapServer's baseATR selection produced entryATR,
+ * derived from CAPTURE-SCOPE data ONLY — it never re-enters the fenced
+ * executeSwapServer. Mirrors that selection's precedence (agentSwapExecution.js):
+ *   scoring.thresholds[inSymbol].threshold → 'scored_threshold'
+ *   benchAsset.baseATR                     → 'bench_proxy' (incl. the hotBench atrPercentile×8 proxy)
+ *   isCrypto ? 5.0 : 2.5                    → 'default_fallback'
+ * If the final value matches none of the capture-scope candidates (e.g. in-memory
+ * battle vs the transaction's re-read scoring diverge), it is 'unknown' — honest,
+ * never guessed. Records provenance ONLY; entryATR is unchanged (accept the proxy).
+ */
+export function classifyEntryAtrSource({ entryATR, scoredThreshold, benchBaseATR, isCrypto } = {}) {
+  if (entryATR === null || entryATR === undefined) return 'unknown';
+  const cryptoOrStockDefault = isCrypto ? 5.0 : 2.5;
+  if (scoredThreshold && entryATR === scoredThreshold) return 'scored_threshold';
+  if (!scoredThreshold && benchBaseATR && entryATR === benchBaseATR) return 'bench_proxy';
+  if (!scoredThreshold && !benchBaseATR && entryATR === cryptoOrStockDefault) return 'default_fallback';
+  return 'unknown';
 }
 
 // The SCORABLE D1/D2 predicate inputs whose nullness is a genuine data-quality
@@ -99,7 +166,7 @@ function collectNullFlags(predicateInputs) {
  * @param {'entry'|'exit_context'} role  symbolIn is the entry (the D1 signal of
  *   record for M1–M3); symbolOut is exit context only — never an entry signal.
  */
-function buildPredicateClassification(symbol, inputs, techDoc, decisionAtMs, role) {
+function buildPredicateClassification(symbol, inputs, techDoc, decisionAtMs, role, snapshotSource) {
   const techDocUpdatedAtMs = toMillis(techDoc?.updatedAt);
   // Raw diff, intentionally NOT clamped: it can be slightly NEGATIVE under
   // clock skew (the doc's updatedAt is a Firestore server timestamp; decisionAtMs
@@ -121,6 +188,7 @@ function buildPredicateClassification(symbol, inputs, techDoc, decisionAtMs, rol
     // sharing an identical predicate," i.e. the same doc compute-hour.
     symbolHourKey: techDocUpdatedAtMs !== null && symbol ? `${symbol}:${Math.floor(techDocUpdatedAtMs / MS_PER_HOUR)}` : null,
     techDocPath: symbol ? `stockTechnicalScores/${symbol}` : null,
+    entrySnapshotSource: snapshotSource ?? null,
   });
 }
 
@@ -132,16 +200,26 @@ function buildPredicateClassification(symbol, inputs, techDoc, decisionAtMs, rol
  * Returns the receipt object (schema shape).
  */
 export function buildRawReceipt(raw = {}) {
+  // dataMode is sourced from the sibling rankings doc (Defect 1b): the per-stock
+  // tech doc has no `mode` field. Applied to BOTH symbols (same cron run). When
+  // raw.dataMode is omitted (legacy/test callers) extractPredicateInputs falls
+  // back to techDoc.mode for byte-identical behavior.
   const predicateInputs = {
-    symbolIn: extractPredicateInputs(raw.snapshotIn, raw.regimeIn, raw.techDocIn),
-    symbolOut: extractPredicateInputs(raw.snapshotOut, raw.regimeOut, raw.techDocOut),
+    symbolIn: extractPredicateInputs(raw.snapshotIn, raw.regimeIn, raw.techDocIn, raw.dataMode),
+    symbolOut: extractPredicateInputs(raw.snapshotOut, raw.regimeOut, raw.techDocOut, raw.dataMode),
   };
 
   const decisionAtMs = toMillis(raw.timestamp);
   const predicateClassification = {
     // symbolIn is the ENTRY (the D1 signal of record); symbolOut is exit CONTEXT.
-    symbolIn: buildPredicateClassification(raw.symbolIn, predicateInputs.symbolIn, raw.techDocIn, decisionAtMs, 'entry'),
-    symbolOut: buildPredicateClassification(raw.symbolOut, predicateInputs.symbolOut, raw.techDocOut, decisionAtMs, 'exit_context'),
+    // entrySnapshotSource: the entry may be refetched (see resolveEntrySnapshot);
+    // the caller passes the resolved source. When omitted, derive from techDoc
+    // presence so legacy/test callers stay stable. The exit is always the primary
+    // in-request fetch.
+    symbolIn: buildPredicateClassification(raw.symbolIn, predicateInputs.symbolIn, raw.techDocIn, decisionAtMs, 'entry',
+      raw.entrySnapshotSource ?? (raw.techDocIn ? 'primary_fetch' : null)),
+    symbolOut: buildPredicateClassification(raw.symbolOut, predicateInputs.symbolOut, raw.techDocOut, decisionAtMs, 'exit_context',
+      raw.techDocOut ? 'primary_fetch' : null),
   };
 
   return makeReceiptSkeleton({
@@ -164,6 +242,7 @@ export function buildRawReceipt(raw = {}) {
 
     entryMark: raw.entryMark ?? null,
     entryATR: raw.entryATR ?? null,
+    entryAtrSource: raw.entryAtrSource ?? null,
 
     guardrailReplay: {
       outgoingEntryPrice: raw.outgoingEntryPrice ?? null,
