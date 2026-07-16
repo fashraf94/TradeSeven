@@ -29,11 +29,14 @@ import Flat6BattleView from '../components/Tournament/Flat6BattleView';
 import ClaimFlipWindow from '../components/Tournament/ClaimFlipWindow';
 import DraftPlaybackTheater from '../components/Tournament/DraftPlaybackTheater';
 import GroupFeed from '../components/Tournament/GroupFeed';
+import AwaitingOpenPodView from '../components/Tournament/awaitingOpen/AwaitingOpenPodView';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
 import { useIsMobile } from '../hooks/useIsMobile';
 import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
 import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
 import { subscribeGroup } from '../services/tournamentGroupService';
+import { GROUP_STATUS } from '../constants/leagueTournament';
+import { isTrainingPodDraftV2On } from '../config/featureFlags';
 import { trainingStatusFraming, deriveCompositeContext } from './leagueTrainingBattleFraming';
 
 export default function LeagueTrainingBattleView({ podId, user, onBack = null }) {
@@ -60,6 +63,9 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
 
   const framing = useMemo(() => trainingStatusFraming(pod?.status), [pod?.status]);
   const compositeContext = useMemo(() => deriveCompositeContext(pod, uid), [pod, uid]);
+  // Training Pod Draft V2 (Phase 2) gate. Flag-off (or non-awaiting-open) →
+  // today's video-based composition, byte-identical.
+  const v2On = isTrainingPodDraftV2On();
 
   const page = {
     minHeight: '100vh',
@@ -147,19 +153,29 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
         </div>
       </div>
 
-      {/* Agent layer (6) — only once the agent battle has deployed. */}
-      {myBattle && (
-        <Flat6BattleView battle={myBattle} isOwner compositeContext={compositeContext} />
+      {v2On && pod.status === GROUP_STATUS.AWAITING_OPEN ? (
+        // Phase 2 (L4–L8): the rebuilt awaiting-open pod — no user-draft video;
+        // countdown → user draftboard → best-remaining free agents → relocated
+        // claims. The draft-replay theater is removed from THIS surface only;
+        // the agent (Monday) draft spectator show is untouched.
+        <AwaitingOpenPodView pod={pod} uid={uid} />
+      ) : (
+        <>
+          {/* Agent layer (6) — only once the agent battle has deployed. */}
+          {myBattle && (
+            <Flat6BattleView battle={myBattle} isOwner compositeContext={compositeContext} />
+          )}
+
+          {/* User layer (3) — claims + flips. */}
+          <ClaimFlipWindow group={pod} uid={uid} />
+
+          {/* Draft replay (training writes userDraft + agentDraft streams + agentBoards). */}
+          <DraftPlaybackTheater groupId={pod.id} group={pod} uid={uid} />
+
+          {/* Group feed (null-safe; renders nothing if the pod has no feed). */}
+          <GroupFeed feed={pod.feed} uid={uid} />
+        </>
       )}
-
-      {/* User layer (3) — claims + flips. */}
-      <ClaimFlipWindow group={pod} uid={uid} />
-
-      {/* Draft replay (training writes userDraft + agentDraft streams + agentBoards). */}
-      <DraftPlaybackTheater groupId={pod.id} group={pod} uid={uid} />
-
-      {/* Group feed (null-safe; renders nothing if the pod has no feed). */}
-      <GroupFeed feed={pod.feed} uid={uid} />
     </div>
   );
 }

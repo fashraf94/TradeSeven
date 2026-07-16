@@ -50,16 +50,21 @@ function countdownLabel(win) {
   return win.isOpen ? `Open — claims lock in ${dur} (9:24 AM ET).` : `Closed — the wire opens in ${dur} (4:00 PM ET).`;
 }
 
-export default function ClaimFlipWindow({ group, uid }) {
+export default function ClaimFlipWindow({ group, uid, claimsOnly = false, prefillRequest = null, claims: claimsProp = null }) {
   const { tokens } = useTheme();
   const [tab, setTab] = useState('claims');
-  const [claims, setClaims] = useState([]);
+  const [subClaims, setSubClaims] = useState([]);
   const groupId = group?.id;
 
+  // When the parent supplies `claims` (the awaiting-open pod reads the claims
+  // collection once and passes it down), use it and skip our own subscription;
+  // otherwise subscribe as before — byte-identical for every other caller.
+  const usingExternal = claimsProp != null;
   useEffect(() => {
-    if (!groupId) return undefined;
-    return subscribeClaims(groupId, setClaims);
-  }, [groupId]);
+    if (usingExternal || !groupId) return undefined;
+    return subscribeClaims(groupId, setSubClaims);
+  }, [groupId, usingExternal]);
+  const claims = usingExternal ? claimsProp : subClaims;
 
   const player = useMemo(
     () => (group?.players || []).find(p => p.odUserId === uid) || null,
@@ -87,21 +92,37 @@ export default function ClaimFlipWindow({ group, uid }) {
 
   return (
     <div style={card}>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button style={tabBtn(tab === 'claims')} onClick={() => setTab('claims')}><Gavel size={14} /> Claims</button>
-        <button style={tabBtn(tab === 'flips')} onClick={() => setTab('flips')}><Repeat size={14} /> Flips</button>
-      </div>
-      {tab === 'claims'
-        ? <ClaimsTab tokens={tokens} groupId={groupId} picks={picks} poolNames={poolNames} myClaims={myClaims} pendingCount={pendingCount} win={win} />
+      {claimsOnly ? (
+        // L8: pre-open renders Claims ONLY — Flips are a live-battle long↔short
+        // mechanic, inert pre-open, so the tab is held until the battle opens.
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: tokens.textPrimary }}>
+          <Gavel size={14} /> Claims
+          <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 600, color: tokens.textFaint }}>Flips open when the battle starts</span>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={tabBtn(tab === 'claims')} onClick={() => setTab('claims')}><Gavel size={14} /> Claims</button>
+          <button style={tabBtn(tab === 'flips')} onClick={() => setTab('flips')}><Repeat size={14} /> Flips</button>
+        </div>
+      )}
+      {(claimsOnly || tab === 'claims')
+        ? <ClaimsTab tokens={tokens} groupId={groupId} picks={picks} poolNames={poolNames} myClaims={myClaims} pendingCount={pendingCount} win={win} prefillRequest={prefillRequest} />
         : <FlipsTab tokens={tokens} groupId={groupId} picks={picks} today={today} />}
     </div>
   );
 }
 
 // ── Claims tab ────────────────────────────────────────────────────────────────
-function ClaimsTab({ tokens, groupId, picks, poolNames, myClaims, pendingCount, win }) {
+function ClaimsTab({ tokens, groupId, picks, poolNames, myClaims, pendingCount, win, prefillRequest = null }) {
   const [dropSymbol, setDropSymbol] = useState('');
   const [addSymbol, setAddSymbol] = useState('');
+  // L7: pre-fill the "claim a name" field when the free-agents list requests it.
+  // Nonce-gated so tapping the same symbol twice re-selects it (the effect reruns
+  // only on a new request, never clobbering the user's manual edits between taps).
+  useEffect(() => {
+    if (prefillRequest?.symbol) setAddSymbol(prefillRequest.symbol);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillRequest?.nonce]);
   const [state, dispatch] = useReducer(actionReducer, undefined, initialActionState);
   // Synchronous in-flight guard — a `disabled` prop can't stop a same-tick
   // double-click (React state hasn't committed yet), which would fire two POSTs.
