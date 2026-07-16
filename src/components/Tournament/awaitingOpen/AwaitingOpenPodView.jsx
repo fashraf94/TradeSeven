@@ -25,7 +25,7 @@ import { db } from '../../../firebase/config';
 import { subscribeDraftState, subscribeClaims } from '../../../services/tournamentGroupService';
 import { PICKS_PER_PLAYER, TOURNAMENT_TUNING } from '../../../constants/leagueTournament';
 import { DEFAULT_ARCH } from '../../League/draft/boardModel';
-import { FONT_VARS, injectDraftCSS } from '../../League/draft/draftTokens';
+import { FONT_VARS } from '../../League/draft/draftTokens';
 import {
   buildFreeAgentBoard, sectorMapOf, ownedSectorCountsFrom, heldSymbolsOf, eventsFromPlayers,
 } from './podBoard';
@@ -49,8 +49,6 @@ export default function AwaitingOpenPodView({ pod, uid }) {
   // re-selected, and scroll the claims section into view.
   const [claimPrefill, setClaimPrefill] = useState(null); // { symbol, nonce }
   const claimsRef = useRef(null);
-
-  useEffect(() => { injectDraftCSS(); }, []);
 
   // The universe (static reference doc) — read once (client-legal; the same doc
   // useTrainingDraft reads). Degrades to [] so the board simply shows fewer

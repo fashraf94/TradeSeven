@@ -14,10 +14,8 @@ import { SectorChip, SectionHead } from './podPrimitives';
 export default function UserDraftboard({ pod, uid, events, sectorMap, picksPerPlayer = 3, onResearch = null }) {
   const { tokens } = useTheme();
   const members = useMemo(() => pod?.groupMembers || [], [pod?.groupMembers]);
-  const players = pod?.players || [];
 
   const seatLabel = (odUserId, seatIdx) => (odUserId === uid ? 'You' : `CPU ${seatIdx}`);
-  const isCpuSeat = (odUserId) => (players.find((p) => p.odUserId === odUserId)?.isCpu === true) || odUserId !== uid;
 
   const grid = useMemo(
     () => buildDraftGrid({ events, groupMembers: members, picksPerPlayer }),
@@ -47,7 +45,6 @@ export default function UserDraftboard({ pod, uid, events, sectorMap, picksPerPl
                 border: `1px solid ${you ? `${tokens.teal}4d` : 'transparent'}`,
               }}>
                 <div style={{ fontSize: 11.5, fontWeight: 800, color: you ? tokens.teal : tokens.textSecondary }}>{seatLabel(odUserId, seatIdx)}</div>
-                <div style={{ fontSize: 9, color: tokens.textFaint, marginTop: 1 }}>{isCpuSeat(odUserId) && !you ? 'CPU' : 'You'}</div>
               </div>
             );
           })}

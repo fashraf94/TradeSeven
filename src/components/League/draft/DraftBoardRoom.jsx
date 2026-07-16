@@ -466,7 +466,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {/* left — the table */}
-        <div className="ld-scroll" style={{ width: 290, flexShrink: 0, borderRight: `1px solid ${TOKENS.hair}`, padding: '15px 16px', display: 'flex', flexDirection: 'column', gap: 9, overflowY: 'auto' }}>
+        <div className="ld-scroll" style={{ width: 290, flexShrink: 0, borderRight: `1px solid ${TOKENS.hair}`, padding: v2On && phase === 'your-turn' ? '15px 16px 96px' : '15px 16px', display: 'flex', flexDirection: 'column', gap: 9, overflowY: 'auto' }}>
           <Eyebrow>The table</Eyebrow>
           {seats.map((s) => (
             <SeatCard key={s.odUserId} seat={{ ...s, label: seatLabel(s) }} archKey={archKey} active={s.seatIndex === onClockSeatIdx && isDrafting} picksPerPlayer={PICKS_PER_PLAYER} />
@@ -496,7 +496,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
         </div>
 
         {/* right — the pick panel */}
-        <div style={{ width: 332, flexShrink: 0, borderLeft: `1px solid ${TOKENS.hair}`, padding: '15px 16px', minHeight: 0 }}>
+        <div style={{ width: 332, flexShrink: 0, borderLeft: `1px solid ${TOKENS.hair}`, padding: v2On && phase === 'your-turn' ? '15px 16px 96px' : '15px 16px', minHeight: 0 }}>
           <PickPanel
             phase={phase} pickClock={pickClock} pickNo={pickNo} backToBack={backToBack}
             selected={selectedRow} coach={coach} orbState={(phase === 'waiting' || phase === 'revealing') ? 'reading' : 'ready'}

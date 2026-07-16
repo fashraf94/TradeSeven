@@ -119,8 +119,13 @@ function ClaimsTab({ tokens, groupId, picks, poolNames, myClaims, pendingCount, 
   // L7: pre-fill the "claim a name" field when the free-agents list requests it.
   // Nonce-gated so tapping the same symbol twice re-selects it (the effect reruns
   // only on a new request, never clobbering the user's manual edits between taps).
+  // Resolve to the actual <select> option (case-insensitive) so the pre-fill
+  // never silently mismatches a differently-cased pool symbol.
   useEffect(() => {
-    if (prefillRequest?.symbol) setAddSymbol(prefillRequest.symbol);
+    const sym = prefillRequest?.symbol;
+    if (!sym) return;
+    const match = poolNames.find((s) => s.toUpperCase() === String(sym).toUpperCase());
+    setAddSymbol(match || sym);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillRequest?.nonce]);
   const [state, dispatch] = useReducer(actionReducer, undefined, initialActionState);
