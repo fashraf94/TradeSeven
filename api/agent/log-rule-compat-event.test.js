@@ -8,10 +8,11 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { authReturnValue, shadowLogCalls, shadowLogShouldFail } = vi.hoisted(() => ({
+const { authReturnValue, shadowLogCalls, shadowLogShouldFail, shadowLogReturnsFalse } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   shadowLogCalls: { current: [] },
   shadowLogShouldFail: { current: false },
+  shadowLogReturnsFalse: { current: false },
 }));
 
 vi.mock('../_utils/security.js', () => ({
@@ -30,6 +31,9 @@ vi.mock('../_utils/shadowLogger.js', () => ({
   logSignalDrops: async (record) => {
     if (shadowLogShouldFail.current) throw new Error('gcs down');
     shadowLogCalls.current.push(record);
+    // Mirrors appendToStream's real contract: resolves TRUE on persist, FALSE on
+    // a swallowed GCS write (the actual bug — a lost write never throws).
+    return !shadowLogReturnsFalse.current;
   },
 }));
 vi.mock('../../src/config/featureFlags.js', () => ({
@@ -65,6 +69,7 @@ beforeEach(() => {
   authReturnValue.current = { uid: 'test-user' };
   shadowLogCalls.current = [];
   shadowLogShouldFail.current = false;
+  shadowLogReturnsFalse.current = false;
 });
 
 describe('POST /api/agent/log-rule-compat-event (mode=observe)', () => {
@@ -103,8 +108,20 @@ describe('POST /api/agent/log-rule-compat-event (mode=observe)', () => {
     expect(shadowLogCalls.current).toHaveLength(0);
   });
 
-  it('shadow-log failure surfaces as 500 log_failed (never silent)', async () => {
+  it('shadow-log failure (throws) surfaces as 500 log_failed (never silent)', async () => {
     shadowLogShouldFail.current = true;
+    const [req, res] = makeReqRes({
+      agentId: 'agent-1', archetype: 'momentum_chaser', mode: 'observe', events: [VALID_EVENT],
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toMatchObject({ error: 'log_failed' });
+  });
+
+  it('shadow-log SWALLOWED write (resolves false, no throw) also surfaces as 500 — the real bug class', async () => {
+    // The pre-fix bug: appendToStream swallowed GCS errors and resolved, so a
+    // lost write returned 200. This proves the boolean is now checked.
+    shadowLogReturnsFalse.current = true;
     const [req, res] = makeReqRes({
       agentId: 'agent-1', archetype: 'momentum_chaser', mode: 'observe', events: [VALID_EVENT],
     });

@@ -198,7 +198,7 @@ export default async function handler(req, res) {
         zone1Ref,
         hardness: item.hardness || null,
       }));
-      await logSignalDrops({
+      const rescanPersisted = await logSignalDrops({
         stage: 'rule_compat',
         userId: user.uid,
         agentId,
@@ -219,7 +219,15 @@ export default async function handler(req, res) {
         eventCount: 1,
         loggedAt: nowIso,
       });
-      rescanLogged = true;
+      // Honest status: a swallowed GCS write resolves false (never throws), so
+      // rescanLogged must reflect the boolean, not hard-code true. The committed
+      // archetype change is never failed by a telemetry miss — the response
+      // carries rescanLogged so a broken logger is distinguishable from a quiet
+      // stream (WS1 pre-enforce MUST-FIX).
+      rescanLogged = rescanPersisted === true;
+      if (!rescanLogged) {
+        console.error('[change-archetype] compat rescan did not persist (swallowed GCS write or GCS disabled); archetype change committed.');
+      }
     } catch (rescanErr) {
       console.error('[change-archetype] compat rescan failed (archetype change committed):', rescanErr?.message || rescanErr);
       rescanLogged = false;

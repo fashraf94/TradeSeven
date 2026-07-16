@@ -97,11 +97,14 @@ export default async function handler(req, res) {
   }
 
   const nowIso = new Date().toISOString();
+  let persisted;
   try {
-    // ONE stream record per POST, carrying the sanitized batch. Awaited and
-    // never silently swallowed, so an emit failure surfaces to the client
-    // (which console.errors loudly but does not fail the user's write).
-    await logSignalDrops({
+    // ONE stream record per POST, carrying the sanitized batch. Awaited AND the
+    // boolean return is checked, so a swallowed GCS write (which resolves false,
+    // never throws — shadowLogger.js) surfaces as a 500 instead of a silent 200.
+    // A 500 here surfaces to the client (which console.errors loudly but does
+    // not fail the user's write — ruleCompatGuard.emitRuleCompatEvents).
+    persisted = await logSignalDrops({
       stage: 'rule_compat',
       userId: user.uid,
       agentId,
@@ -112,7 +115,13 @@ export default async function handler(req, res) {
       loggedAt: nowIso,
     });
   } catch (err) {
-    console.error('[log-rule-compat-event] shadow-log emit failed:', err?.message || err);
+    // Defensive: appendToStream is contracted never to throw, but a future
+    // change (or an unexpected sync failure) must still surface, not 200.
+    console.error('[log-rule-compat-event] shadow-log emit threw:', err?.message || err);
+    return res.status(500).json({ error: 'log_failed', message: 'Could not emit compat telemetry.' });
+  }
+  if (!persisted) {
+    console.error('[log-rule-compat-event] shadow-log emit did not persist (swallowed GCS write or GCS disabled).');
     return res.status(500).json({ error: 'log_failed', message: 'Could not emit compat telemetry.' });
   }
 
