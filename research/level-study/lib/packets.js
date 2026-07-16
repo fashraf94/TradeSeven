@@ -9,16 +9,16 @@
 //   The four hand-assigned strata (mega_cap_tech / low_volatility / high_beta / gap_prone) were retired
 //   at S5.6 because they do not scale to ~230 names and were never mechanical. They are replaced by
 //   THREE ATR%-percentile tertiles — LOW_VOL / MID_VOL / HIGH_VOL — computed per symbol over the study
-//   window (median ATR14/close), cut on the R2-PASS set. This lives on each universe member as
-//   `stratum`. (config.manualReview.stratified still lists the dead four-way set — a known config drift;
-//   the frozen ruling S56-A3 wins, so this module stratifies on the universe file's `stratum` field.)
+//   window (median ATR14/close), cut on the R2-PASS set, and carried on each universe member as
+//   `stratum`. STRATA is bound to `config.manualReview.stratified` (now corrected to the S56-A3 tertiles)
+//   so config is the single source of truth; this module stratifies each event by its symbol's `stratum`.
 //
 // Pure module: imports ./stats.js (the seeded PRNG only) + ../config.js. Zero product imports.
 
 import CONFIG from '../config.js';
 import { mulberry32 } from './stats.js';
 
-export const STRATA = ['LOW_VOL', 'MID_VOL', 'HIGH_VOL']; // S56-A3, fixed order
+export const STRATA = CONFIG.manualReview.stratified; // S56-A3 tertiles — single source of truth (config), fixed order
 export const SAMPLE_SIZE = CONFIG.manualReview.sampleSize; // 100 (parent §12)
 export const PACKET_SEED = 0x50_4b_54_31; // "PKT1" — the fixed sampling seed; advance ONLY for a fresh re-draw
 
