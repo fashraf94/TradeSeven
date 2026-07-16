@@ -10,6 +10,9 @@
     "events": "node 03-detect-events.js",
     "features": "node 04-features.js",
     "label": "node 05-confirm-and-label.js",
+    "aggregate:insample": "node 06-aggregate.js insample",
+    "aggregate:holdout": "node 06-aggregate.js holdout",
+    "packets": "node 07-packets.js",
     "measure-clamp": "node tools/measure-clamp-binding.js",
     "test": "node --test \"tests/*.test.js\""
   }

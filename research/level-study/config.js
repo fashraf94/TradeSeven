@@ -66,7 +66,13 @@ const CONFIG = {
     eligibilityMinPreStudySessions: 550, // R2: ≥550 daily sessions before eligibilityAsOf
     eligibilityAsOf: '2023-07-10',        // R2: measured before study start
     targetSize: { min: 150, max: 200 },   // parent §4.2 (raised from V1's 75–125 per §13)
-    strata: ['mega_cap_tech', 'low_volatility', 'high_beta', 'gap_prone'], // parent §4.2 / §12
+    // S56-A3 (ruling of record): the four hand-assigned strata (mega_cap_tech / low_volatility /
+    // high_beta / gap_prone) do not scale to ~230 names and were never mechanical; they are replaced by
+    // three ATR%-percentile tertiles — LOW_VOL / MID_VOL / HIGH_VOL (median ATR14/close over the study
+    // window, cut on the R2-PASS set), carried per member as `stratum` in universe_frozen.json. This is a
+    // TRANSCRIPTION CORRECTION only: no outcome/statistical path reads this value (grep-verified — the
+    // aggregator/statistics never touch it), so STUDY_CONFIG_VERSION is unchanged (not a knob).
+    strata: ['LOW_VOL', 'MID_VOL', 'HIGH_VOL'], // S56-A3 (supersedes the retired parent §4.2/§12 four-way hand strata)
 
     // Starter universe frozen 2026-07-11 (universeVersion 1) — supplied at the Session-3
     // gate as anticipated by R2. Path updated from the S2 placeholder to the actual file.
@@ -717,7 +723,11 @@ const CONFIG = {
   // ── Manual validation (parent §12; Addendum §A4.1) ─────────────────────────
   manualReview: {
     sampleSize: 100, // parent §12
-    stratified: ['mega_cap_tech', 'low_volatility', 'high_beta', 'gap_prone'], // parent §12
+    // S56-A3: the S7 manual-review sample stratifies across the three ATR%-vol tertiles (from each
+    // universe member's `stratum`), NOT the retired four-way hand strata. Transcription correction only —
+    // the packet exporter reads THIS value (lib/packets.js STRATA is bound to it); no outcome path reads
+    // it, so STUDY_CONFIG_VERSION is unchanged.
+    stratified: ['LOW_VOL', 'MID_VOL', 'HIGH_VOL'], // S56-A3 (supersedes the retired parent §12 four-way hand strata)
     garbageGatePct: 10, // parent §12: >10% garbage blocks aggregation
     componentGradingSlices: ['event_validity', 'leg_origin_detection', 'base_count'], // Addendum §A4.1
     demoteBelowAgreementPct: 80, // Addendum §A4.1: <80% agreement demotes that component to exploratory-only

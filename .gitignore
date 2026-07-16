@@ -81,6 +81,9 @@ discovery/**/.env*
 # manifest (copied to docs/discovery/) are committed. Fixtures under fixtures/ ARE
 # committed (small characterization samples) and are intentionally not matched here.
 research/level-study/data/
+# Session 7 aggregation + manual-validation artifacts (reports, chart packets, grades) are
+# generated founder-local from the full dataset and are never committed (S7 §1).
+research/level-study/reports/
 research/**/.env*
 research/**/*.secret
 research/**/*.key
