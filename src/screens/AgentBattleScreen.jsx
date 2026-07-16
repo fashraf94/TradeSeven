@@ -36,9 +36,6 @@ import TermResearchModal from '../components/shared/TermResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import FilmRoomBanner from '../components/FilmRoom/FilmRoomBanner';
 import { CONVICTION_MULTIPLIERS, THRESHOLD_POINTS } from '../constants/baggerBombScoring';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase/config';
-import { isMarketOpen } from '../utils/marketSchedule';
 import { getEquippedWatchlistLabel } from '../utils/watchlistEquipUI';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -419,7 +416,6 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   } = useAgentBattle(agentBattleId);
 
   const loading = idLoading || battleLoading;
-  const isBattleCompleted = agentBattle?.status === 'completed';
 
   // Mark feed as seen when switching to Command Center
   if (activeTab === 'command') {
@@ -506,33 +502,26 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     return () => clearInterval(interval);
   }, [fetchPrices]);
 
-  // ── Price beacon: write live prices to Firestore for cron consumption ────
-
-  useEffect(() => {
-    if (!agentBattleId || isBattleCompleted) return;
-
-    const writeBeacon = () => {
-      if (!isMarketOpen()) return;
-      const prices = {};
-      for (const sym of allSymbols) {
-        const p = effectivePrices[sym];
-        if (p > 0) prices[sym] = p;
-      }
-      if (Object.keys(prices).length === 0) return;
-
-      updateDoc(doc(db, 'agentBattles', agentBattleId), {
-        livePriceBeacon: {
-          prices,
-          updatedAt: new Date().toISOString(),
-          source: 'websocket',
-        },
-      }).catch(err => console.warn('[Beacon] Write failed:', err.message));
-    };
-
-    writeBeacon();
-    const interval = setInterval(writeBeacon, 60000);
-    return () => clearInterval(interval);
-  }, [agentBattleId, isBattleCompleted, allSymbols, effectivePrices]);
+  // ── Price beacon: removed 2026-07-16 (founder ruling) ────────────────────
+  //
+  // A client-side `livePriceBeacon` write once lived here: it pushed the live
+  // (websocket) prices onto the agentBattles doc so the swap cron could prefer
+  // them over its ~15-min-delayed REST feed. It never worked in production — the
+  // agentBattles Firestore rules allowlist (hasOnly) omitted `livePriceBeacon`,
+  // so every write was permission-denied and swallowed by a .catch.
+  //
+  // The founder ruling (Phase 0 discovery, 2026-07-16) is to RETIRE it rather
+  // than restore it. The server has no real-time price feed of its own (only the
+  // delayed EODHD REST endpoint), so the only way to produce a fresh beacon is
+  // either (a) trusting a client-written price that feeds a SCORED input
+  // (exit/entry price -> lockedPoints), which is exactly the client-trust the
+  // Firestore hardening removed — cf. `portfolio.startingPrices` staying denied —
+  // or (b) net-new realtime price infrastructure. Neither is worth it for a
+  // no-real-money game: uniform (delayed) REST pricing for all agents is safe,
+  // consistent, and fair. Agent swaps deliberately price on the server-trusted
+  // REST fallback (see agentSwapExecution.js getPrice()); the beacon is
+  // intentionally never written. Fresh pricing, if the product ever justifies it,
+  // is backlogged as "real-time price infrastructure".
 
   // ── Asset enrichment ──────────────────────────────────────────────────────
 
