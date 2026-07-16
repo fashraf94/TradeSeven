@@ -301,7 +301,7 @@ export const TRAINING_BOARD_REDESIGN_ENABLED = true;
  * in a one-line follow-up PR after a Vercel preview smoke (the
  * TRAINING_BOARD_REDESIGN_ENABLED precedent) — never in the build PR.
  */
-export const TRAINING_POD_DRAFT_V2_ENABLED = false;
+export const TRAINING_POD_DRAFT_V2_ENABLED = true;
 
 // The HUMAN pick clock under V2 (L1: 60s; CPU turns unaffected — they resolve
 // server-side with no clock). Homed HERE, not in the zero-import, test-locked
