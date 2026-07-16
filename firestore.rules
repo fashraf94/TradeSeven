@@ -147,7 +147,9 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.resource.data.ownerId == request.auth.uid;
       allow update: if request.auth != null
-                    && resource.data.ownerId == request.auth.uid;
+              && resource.data.ownerId == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['directives', 'lastViewedEvolutionCycle', 'starterKitCompleted', 'updatedAt']);
       allow delete: if request.auth != null
                     && resource.data.ownerId == request.auth.uid;
 
