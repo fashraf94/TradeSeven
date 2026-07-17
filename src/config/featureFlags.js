@@ -515,7 +515,7 @@ export const SECTOR_CAP_MODE = 'off';
  * pre-launch cleanup script (WS1 Phase 4) live-runs at or before the enforce
  * step. Classification source: src/data/archetypeRuleCompatibility.js.
  */
-export const RULE_COMPAT_MODE = 'observe';
+export const RULE_COMPAT_MODE = 'enforce';
 
 /**
  * League — Desktop Training Pod tab + Active Training Game card (the desktop
