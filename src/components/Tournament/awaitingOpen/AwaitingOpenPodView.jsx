@@ -38,7 +38,7 @@ import AssetResearchModal from '../../draft/AssetResearchModal';
 
 const CLAIM_CAP = TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE; // 3 pending
 
-export default function AwaitingOpenPodView({ pod, uid }) {
+export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
   const podId = pod?.id;
 
   const [universe, setUniverse] = useState(null);
@@ -112,6 +112,27 @@ export default function AwaitingOpenPodView({ pod, uid }) {
 
   const researchSector = researchSym ? (sectorMap.get(researchSym) || null) : null;
 
+  const freeAgents = (
+    <FreeAgentsList
+      board={freeAgentBoard}
+      onResearch={setResearchSym}
+      onClaim={requestClaim}
+      capReached={capReached}
+      pendingCount={pendingCount}
+      claimCap={CLAIM_CAP}
+      pendingSymbols={pendingClaimSymbols}
+    />
+  );
+
+  // Claims builder relocated below the free-agents list (L8). Claims-only
+  // pre-open — Flips are inert until the battle opens. Cap / waiver priority /
+  // wire timing / seat-only render are unchanged (reuse). We pass the already-read
+  // claims array so the collection is read once for this view. Same element,
+  // same props on both layouts — re-arranged, never re-wired.
+  const claimsBuilder = (
+    <ClaimFlipWindow group={pod} uid={uid} claimsOnly prefillRequest={claimPrefill} claims={claims} />
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, ...FONT_VARS }}>
       <PodCountdownHero targetIso={pod?.startAnchor?.anchorIso || null} />
@@ -125,23 +146,29 @@ export default function AwaitingOpenPodView({ pod, uid }) {
         onResearch={setResearchSym}
       />
 
-      <FreeAgentsList
-        board={freeAgentBoard}
-        onResearch={setResearchSym}
-        onClaim={requestClaim}
-        capReached={capReached}
-        pendingCount={pendingCount}
-        claimCap={CLAIM_CAP}
-        pendingSymbols={pendingClaimSymbols}
-      />
-
-      {/* Claims builder relocated below the free-agents list (L8). Claims-only
-          pre-open — Flips are inert until the battle opens. Cap / waiver priority
-          / wire timing / seat-only render are unchanged (reuse). We pass the
-          already-read claims array so the collection is read once for this view. */}
-      <div ref={claimsRef}>
-        <ClaimFlipWindow group={pod} uid={uid} claimsOnly prefillRequest={claimPrefill} claims={claims} />
-      </div>
+      {desktop ? (
+        // Desktop (D-L3): the two-column interactive body — best-remaining free
+        // agents as one wide ranked column (1.7fr) left, the claims builder as a
+        // sticky rail (1fr) right. minmax(0, …) tracks avoid min-content overflow;
+        // the rail sits in a plain (stretched) grid cell so it has row height to
+        // stick within, and pins against the host's bounded-height scroll frame.
+        // claimsRef.scrollIntoView stays and no-ops when the rail is already visible.
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.7fr) minmax(0, 1fr)', gap: 16 }}>
+          <div style={{ minWidth: 0 }}>{freeAgents}</div>
+          <div style={{ minWidth: 0 }}>
+            <div ref={claimsRef} style={{ position: 'sticky', top: 16 }}>
+              {claimsBuilder}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {freeAgents}
+          <div ref={claimsRef}>
+            {claimsBuilder}
+          </div>
+        </>
+      )}
 
       <GroupFeed feed={pod?.feed} uid={uid} />
 

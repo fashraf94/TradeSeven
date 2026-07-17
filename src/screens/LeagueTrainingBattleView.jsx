@@ -36,7 +36,7 @@ import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattle
 import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
 import { subscribeGroup } from '../services/tournamentGroupService';
 import { GROUP_STATUS } from '../constants/leagueTournament';
-import { isTrainingPodDraftV2On } from '../config/featureFlags';
+import { isTrainingPodDraftV2On, isTrainingPodDesktopOn } from '../config/featureFlags';
 import { trainingStatusFraming, deriveCompositeContext } from './leagueTrainingBattleFraming';
 
 export default function LeagueTrainingBattleView({ podId, user, onBack = null }) {
@@ -48,6 +48,11 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
   // Battle View V2 (desktop-only) — runs unconditionally, inert when the gate is
   // off so flag-off / mobile / pre-deploy render today's practice column unchanged.
   const { isDesktop } = useIsMobile();
+  // Awaiting-open DESKTOP layout breakpoint. tabletBreakpoint:1023 → isDesktop at
+  // width ≥ 1024, matching the lobby's DraftBoardRoom useNarrow(< 1024) split
+  // pixel-for-pixel (D2). Separate from the arena's isDesktop above (768) so that
+  // path is byte-unchanged.
+  const { isDesktop: isWideDesktop } = useIsMobile({ tabletBreakpoint: 1023 });
   const [classic, setClassic] = useState(false);
 
   // Pod-by-id read: surfaces the pod in AWAITING_OPEN and BATTLE (subscribeMyGroup
@@ -66,9 +71,14 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
   // Training Pod Draft V2 (Phase 2) gate. Flag-off (or non-awaiting-open) →
   // today's video-based composition, byte-identical.
   const v2On = isTrainingPodDraftV2On();
+  // Awaiting-open DESKTOP layout gate (TRAINING_POD_DESKTOP_ENABLED or
+  // ?trainingPodDesktop=1) — only the V2 awaiting-open body, only at ≥1024. When
+  // off / mobile / not-awaiting-open this is false and `page` stays today's
+  // single-column, document-scroll column (byte-identical).
+  const desktopPod = isTrainingPodDesktopOn() && isWideDesktop
+    && v2On && pod?.status === GROUP_STATUS.AWAITING_OPEN;
 
   const page = {
-    minHeight: '100vh',
     background: tokens.bgApp,
     color: tokens.textPrimary,
     padding: '24px 16px calc(env(safe-area-inset-bottom, 0px) + 130px)',
@@ -76,8 +86,21 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
     display: 'flex',
     flexDirection: 'column',
     gap: 14,
-    maxWidth: 560,
     margin: '0 auto',
+    // Desktop awaiting-open (D1 + D3): widen to the desktop max AND become the
+    // ONE bounded-height scroll frame the sticky claims rail pins inside. Plain
+    // overflow:auto + height only — deliberately NO transform/filter/contain/
+    // will-change/perspective on this element (or any new ancestor) so the
+    // position:fixed AssetResearchModal still escapes to the viewport rather than
+    // being trapped/clipped inside the scroller. Off-target paths keep
+    // minHeight:100vh document scroll at maxWidth 560, byte-identical.
+    maxWidth: desktopPod ? 1180 : 560,
+    // A bounded scroll frame wants a STABLE height — 100vh (not the dynamic
+    // 100dvh; this path is desktop-only, where they're equal, and vh has no
+    // no-support fallback that would unbound the frame and un-stick the rail).
+    ...(desktopPod
+      ? { height: '100vh', overflowY: 'auto' }
+      : { minHeight: '100vh' }),
   };
 
   const backBtn = onBack && (
@@ -158,7 +181,7 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
         // countdown → user draftboard → best-remaining free agents → relocated
         // claims. The draft-replay theater is removed from THIS surface only;
         // the agent (Monday) draft spectator show is untouched.
-        <AwaitingOpenPodView pod={pod} uid={uid} />
+        <AwaitingOpenPodView pod={pod} uid={uid} desktop={desktopPod} />
       ) : (
         <>
           {/* Agent layer (6) — only once the agent battle has deployed. */}

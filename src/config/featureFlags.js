@@ -327,6 +327,44 @@ export function isTrainingPodDraftV2On() {
 }
 
 /**
+ * League Training — Training Pod Draft V2, DESKTOP layout for the rebuilt
+ * AWAITING-OPEN pod (AwaitingOpenPodView). INDEPENDENT of
+ * TRAINING_POD_DRAFT_V2_ENABLED (which is LIVE) — this gates ONLY the desktop
+ * reflow of the awaiting-open body, and only at/above the ≥1024 desktop
+ * breakpoint (useIsMobile({ tabletBreakpoint: 1023 }), matching the lobby's
+ * DraftBoardRoom < 1024 split pixel-for-pixel). Presentation only — no data,
+ * scoring, decision, or claims-logic change; the same V2 children are
+ * re-arranged, never re-wired; the calibration fence is untouched.
+ *
+ * Flag-off (default) = today's single-column AwaitingOpenPodView at EVERY width,
+ * byte-identical (instant rollback). Mobile (< 1024) is byte-identical flag on
+ * or off. Flag-on + desktop = the §2 reflow: full-width countdown + draftboard,
+ * a 1.7fr/1fr body (best-remaining free agents left, the claims builder as a
+ * sticky rail right), full-width feed, the whole view inside one bounded-height
+ * scroll frame the rail pins within (the app's overflow-x:hidden #root breaks a
+ * document-scroll sticky — Phase-0 discovery).
+ *
+ * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview
+ * smoke (the TRAINING_POD_DRAFT_V2_ENABLED precedent) — never in the build PR.
+ */
+export const TRAINING_POD_DESKTOP_ENABLED = false;
+
+/**
+ * The ONE home for the desktop gate — the flag OR the `?trainingPodDesktop=1`
+ * dev-preview override (the `?trainingPodV2=1` idiom). SSR/Node-safe (guards
+ * `window`); a malformed URL degrades to the flag alone.
+ */
+export function isTrainingPodDesktopOn() {
+  if (TRAINING_POD_DESKTOP_ENABLED) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('trainingPodDesktop') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Rule Conflict Reconciler — equip-time DETECTION (shadow-safe half).
  *
  * The agent (BaggerBomb) path has no conflict resolution: contradictory hard
