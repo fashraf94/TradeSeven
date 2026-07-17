@@ -21,7 +21,12 @@ import Flat6BattleView from '../components/Tournament/Flat6BattleView';
 import ClaimFlipWindow from '../components/Tournament/ClaimFlipWindow';
 import RoundBoundaryView from '../components/Tournament/RoundBoundaryView';
 import LeagueLobby from '../components/Tournament/LeagueLobby';
-import { LEAGUE_LOBBY_ENABLED } from '../config/featureFlags';
+import DraftBoardRoom from '../components/League/draft/DraftBoardRoom';
+import LiveDraftPicker from '../components/League/liveDraft/LiveDraftPicker';
+import LiveDraftGlimpse from '../components/League/liveDraft/LiveDraftGlimpse';
+import LiveDraftAwaiting from '../components/League/liveDraft/LiveDraftAwaiting';
+import { releaseSlot } from '../services/liveDraftActions';
+import { LEAGUE_LOBBY_ENABLED, LEAGUE_LIVE_DRAFT } from '../config/featureFlags';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
 import { useIsMobile } from '../hooks/useIsMobile';
 import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
@@ -144,10 +149,16 @@ export default function LeagueParticipantView() {
     // for a signed-in, loaded player with no group, ONLY when the flag is on.
     // Flag-off renders the poster below byte-unchanged (regression-safe); the
     // signed-out / still-loading states keep their copy either way.
-    if (LEAGUE_LOBBY_ENABLED && uid && loaded && !group) {
+    if (uid && loaded && !group && (LEAGUE_LOBBY_ENABLED || LEAGUE_LIVE_DRAFT)) {
+      // Competitive Live Draft: the slot picker sits behind the same "Enter
+      // tournament" no-group surface. Flag-off LEAGUE_LIVE_DRAFT this reduces to
+      // the existing LeagueLobby path (byte-identical).
       return (
         <div style={page}>
-          <LeagueLobby uid={uid} displayName={user?.displayName} />
+          {LEAGUE_LIVE_DRAFT && (
+            <LiveDraftPicker tokens={tokens} currentUserId={uid} displayName={user?.displayName} />
+          )}
+          {LEAGUE_LOBBY_ENABLED && <LeagueLobby uid={uid} displayName={user?.displayName} />}
         </div>
       );
     }
@@ -199,6 +210,46 @@ export default function LeagueParticipantView() {
         />
       </div>
     );
+  }
+
+  // Competitive Live Draft (LEAGUE_LIVE_DRAFT): a slot pod passes FORMING
+  // (awaiting fire) → DRAFTING (the live room) → AWAITING_OPEN (holding) → BATTLE.
+  // selectMyGroup observes these in-flight states (Phase 3). A regular ranked pod
+  // is NEVER isLiveDraft, so this whole block is inert flag-off (byte-identical);
+  // BATTLE/COMPLETE fall through to the existing battle view untouched.
+  if (group.isLiveDraft) {
+    if (group.status === GROUP_STATUS.DRAFTING) {
+      return (
+        <div style={{ minHeight: '100vh', background: tokens.bgApp }}>
+          <DraftBoardRoom user={user} groupId={group.id} mode="competitive" />
+        </div>
+      );
+    }
+    if (group.status === GROUP_STATUS.FORMING) {
+      return (
+        <div style={page}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Trophy size={20} color={tokens.medalGold} />
+            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', flex: 1 }}>League</div>
+          </div>
+          <LiveDraftGlimpse
+            group={group} tokens={tokens} currentUserId={uid}
+            onLeave={() => releaseSlot({ groupId: group.id }).catch(() => {})}
+          />
+        </div>
+      );
+    }
+    if (group.status === GROUP_STATUS.AWAITING_OPEN) {
+      return (
+        <div style={page}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Trophy size={20} color={tokens.medalGold} />
+            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', flex: 1 }}>League</div>
+          </div>
+          <LiveDraftAwaiting group={group} tokens={tokens} currentUserId={uid} />
+        </div>
+      );
+    }
   }
 
   return (
