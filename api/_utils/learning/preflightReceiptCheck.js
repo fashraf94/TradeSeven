@@ -56,6 +56,16 @@ const rate = (num, den) => (den > 0 ? num / den : 0);
 
 /**
  * Validate a short capture sample before the long run.
+ *
+ * EVIDENCE DENOMINATOR (L1 Capture — exclude non-evidence agents): only receipts
+ * positively labelled `evidenceClass === 'live_agent'` count toward the pass rate.
+ * CPU / training / unknown (and legacy unlabelled) receipts are EXCLUDED from the
+ * denominator and counted separately — reported, never silently dropped (the same
+ * posture as the zero-denominator exclusions elsewhere). Every field-presence,
+ * non-null-rate, receiptSeq, and diversity check computes over the live-agent
+ * subset only, so the rate measures the real population instead of being diluted
+ * by prescribed CPU seats.
+ *
  * @param {Array<Object>} receipts  captured receipt docs
  * @param {Object} [opts]
  * @param {number} [opts.expectedDrNullRate=0.59]  projected dR-null share (D1 audit)
@@ -72,16 +82,45 @@ export function validateCaptureSample(receipts, opts = {}) {
     minDataModeNonNullRate = 0.9,
   } = opts;
 
-  const list = Array.isArray(receipts) ? receipts : [];
-  const n = list.length;
   const checks = [];
   // offendingIndices (optional): receipt indices a runner can print as samples.
   const add = (name, pass, level, detail, offendingIndices) =>
     checks.push({ name, pass, level, detail, ...(offendingIndices && offendingIndices.length ? { offendingIndices: offendingIndices.slice(0, 5) } : {}) });
 
+  // Partition on evidence provenance, preserving each live receipt's ORIGINAL
+  // position in the caller's array (liveOrigIdx) so offendingIndices and the
+  // `receipt[i]` labels stay meaningful to the runner — it prints receipts[index]
+  // from that same array. A receipt is evidence ONLY when positively labelled
+  // live_agent; anything else (cpu/training/unknown/absent) is excluded from the
+  // denominator and accounted for separately.
+  const all = Array.isArray(receipts) ? receipts : [];
+  const list = [];
+  const liveOrigIdx = []; // liveOrigIdx[j] === index of list[j] in `all`
+  const excludedByClass = {};
+  let excludedCount = 0;
+  all.forEach((r, i) => {
+    if (r?.evidenceClass === 'live_agent') {
+      list.push(r);
+      liveOrigIdx.push(i);
+    } else {
+      excludedCount += 1;
+      const c = r?.evidenceClass ?? 'unknown';
+      excludedByClass[c] = (excludedByClass[c] || 0) + 1;
+    }
+  });
+  const n = list.length;
+
+  // Always surface the exclusion accounting (info-level; never fails the gate).
+  // Flows through to the runner's CHECKS section as the breadth line.
+  add('evidence-exclusion', true, 'info',
+    `excluded ${excludedCount} cpu/training receipt${excludedCount === 1 ? '' : 's'}; evaluating ${n} live-agent receipt${n === 1 ? '' : 's'}.`);
+
   if (n === 0) {
-    add('sample-nonempty', false, 'error', 'no receipts provided');
-    return { pass: false, checks, summary: { n: 0 } };
+    add('sample-nonempty', false, 'error',
+      excludedCount > 0
+        ? `no live-agent receipts to evaluate (${excludedCount} excluded as non-evidence: ${JSON.stringify(excludedByClass)})`
+        : 'no receipts provided');
+    return { pass: false, checks, summary: { n: 0, excludedCount, excludedByClass } };
   }
 
   // (a) Field presence — every required path present on every receipt.
@@ -89,7 +128,7 @@ export function validateCaptureSample(receipts, opts = {}) {
   const missingIdx = new Set();
   list.forEach((r, i) => {
     for (const p of REQUIRED_PATHS) {
-      if (!pathPresent(r, p)) { missing.push(`receipt[${i}].${p}`); missingIdx.add(i); }
+      if (!pathPresent(r, p)) { missing.push(`receipt[${liveOrigIdx[i]}].${p}`); missingIdx.add(liveOrigIdx[i]); }
     }
   });
   add('field-presence', missing.length === 0, 'error',
@@ -98,13 +137,13 @@ export function validateCaptureSample(receipts, opts = {}) {
     [...missingIdx]);
 
   // (b) Plausible non-null rates.
-  const techNullIdx = list.map((r, i) => (getPath(r, 'predicateClassification.symbolIn.techDocUpdatedAtMs') == null ? i : -1)).filter((i) => i >= 0);
+  const techNullIdx = list.map((r, i) => (getPath(r, 'predicateClassification.symbolIn.techDocUpdatedAtMs') == null ? liveOrigIdx[i] : -1)).filter((i) => i >= 0);
   const techRate = rate(n - techNullIdx.length, n);
   add('predicateComputedAt-nonnull', techRate >= minTechDocNonNullRate, 'error',
     `techDocUpdatedAtMs non-null ${(techRate * 100).toFixed(0)}% (≥ ${(minTechDocNonNullRate * 100).toFixed(0)}% required)`,
     techNullIdx);
 
-  const dmNullIdx = list.map((r, i) => (getPath(r, 'predicateInputs.symbolIn.dataMode') == null ? i : -1)).filter((i) => i >= 0);
+  const dmNullIdx = list.map((r, i) => (getPath(r, 'predicateInputs.symbolIn.dataMode') == null ? liveOrigIdx[i] : -1)).filter((i) => i >= 0);
   const dmRate = rate(n - dmNullIdx.length, n);
   add('dataMode-populated', dmRate >= minDataModeNonNullRate, 'error',
     `dataMode non-null ${(dmRate * 100).toFixed(0)}% (≥ ${(minDataModeNonNullRate * 100).toFixed(0)}% required)`,
@@ -129,8 +168,8 @@ export function validateCaptureSample(receipts, opts = {}) {
     const seq = getPath(r, 'receiptSeq');
     const tc = getPath(r, 'swapContext.tradeCountAtDecision');
     if (typeof seq === 'number' && typeof tc === 'number' && seq !== tc + 1) {
-      violations.push(`receipt[${i}]: receiptSeq=${seq} ≠ tradeCount+1=${tc + 1}`);
-      violIdx.push(i);
+      violations.push(`receipt[${liveOrigIdx[i]}]: receiptSeq=${seq} ≠ tradeCount+1=${tc + 1}`);
+      violIdx.push(liveOrigIdx[i]);
     }
   });
   add('receiptSeq-invariant', violations.length === 0, 'error',
@@ -159,7 +198,9 @@ export function validateCaptureSample(receipts, opts = {}) {
     pass,
     checks,
     summary: {
-      n,
+      n, // live-agent receipts evaluated (the denominator)
+      excludedCount, // non-evidence receipts excluded from the denominator
+      excludedByClass, // { cpu, training, unknown } breakdown of the excluded
       predicateComputedAtNonNullRate: techRate,
       dataModeNonNullRate: dmRate,
       drNullRate,

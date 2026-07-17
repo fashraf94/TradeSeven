@@ -27,7 +27,9 @@
 import { BAR_BASIS_TABLE_VERSION } from './barBasis.js';
 
 /** Bump when any skeleton's shape changes. */
-export const LEARNING_SCHEMA_VERSION = 1;
+// v2 (2026-07-17): added top-level `evidenceClass` (outcome-blind evidence
+// provenance — L1 Capture "exclude non-evidence (CPU) agents").
+export const LEARNING_SCHEMA_VERSION = 2;
 
 // ── The predicate snapshot inputs for ONE symbol (raw values at decision instant) ──
 // These are the exact D1/D2/D3 predicate fields, read raw off the technical
@@ -91,6 +93,15 @@ export function makeReceiptSkeleton(overrides = {}) {
     schemaVersion: LEARNING_SCHEMA_VERSION,
     barBasisTableVersion: BAR_BASIS_TABLE_VERSION,
     capturedAt: null, // ISO string, set at write time
+
+    // Evidence provenance (outcome-blind). WHY this receipt is (or isn't) real
+    // agent evidence: 'live_agent' (a real archetype-driven decision — the only
+    // class the capture guard lets through to a write) | 'cpu' (prescribed
+    // tournament deployment — the drafted six; no real decision) | 'training'
+    // (a training-clone pod) | 'unknown' (unattributable). Derived from the
+    // authoritative isCpu contract + the reserved agentId prefixes; never an
+    // outcome/return/estimator. Lets the pre-flight / M-report filter defensively.
+    evidenceClass: null,
 
     // identity
     agentId: null,

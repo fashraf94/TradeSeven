@@ -66,6 +66,16 @@ describe('sampleBreadth', () => {
     const rs = [mkReceipt({ battleId: 'b1', symbolIn: 'NVDA' }), mkReceipt({ battleId: 'b1', symbolIn: 'AMD' })];
     expect(sampleBreadth(rs).narrow).toBe(true);
   });
+
+  it('describes the EVALUATED (live-agent) subset — excluded receipts do not widen it or suppress narrow', () => {
+    const live1 = mkReceipt({ battleId: 'b1', symbolIn: 'NVDA' }); // live
+    const live2 = mkReceipt({ battleId: 'b1', symbolIn: 'AMD' }); // live, same battle
+    const cpu = { ...mkReceipt({ battleId: 'b2', symbolIn: 'TSLA' }), evidenceClass: 'cpu' }; // excluded, other battle
+    const b = sampleBreadth([live1, live2, cpu]);
+    expect(b.count).toBe(2); // only the live receipts are described
+    expect(new Set(b.battles)).toEqual(new Set(['b1'])); // b2 (cpu) excluded — does not inflate the spread
+    expect(b.narrow).toBe(true); // the live set is one battle — the warning MUST fire
+  });
 });
 
 describe('pickSampleBadReceipts', () => {
@@ -78,10 +88,12 @@ describe('pickSampleBadReceipts', () => {
     expect(picks[0].checkNames.length).toBeGreaterThan(0);
   });
 
-  it('falls back to index 0 when a failed check has no offendingIndices', () => {
-    const res = { checks: [{ name: 'x', level: 'error', pass: false }] };
+  it('skips a failed check that has no offendingIndices (no fabricated sample)', () => {
+    // sample-nonempty is the real instance: it fires when every receipt was excluded
+    // as non-evidence, and there is no specific offender to print.
+    const res = { checks: [{ name: 'sample-nonempty', level: 'error', pass: false }] };
     const picks = pickSampleBadReceipts(res, [{ id: 'r0' }, { id: 'r1' }]);
-    expect(picks[0].index).toBe(0);
+    expect(picks).toEqual([]);
   });
 });
 
@@ -119,5 +131,16 @@ describe('formatReport', () => {
     const result = validateCaptureSample(receipts, { expectedDrNullRate: 0.59 });
     const out = formatReport({ ...base, result, breadth: sampleBreadth(receipts), receipts });
     expect(out).toContain('NARROW SAMPLE');
+  });
+
+  it('FAIL with an excluded receipt FIRST points at the real live offender (original index, not the filtered one)', () => {
+    const cpu = { ...mkReceipt({ battleId: 'b0', seq: 2, tradeCount: 1 }), evidenceClass: 'cpu' }; // raw idx 0 — excluded
+    const brokenLive = mkReceipt({ techUpdatedAt: null, seq: 3, tradeCount: 2 }); // raw idx 1 — live, null techDoc
+    const receipts = [cpu, brokenLive];
+    const result = validateCaptureSample(receipts, { expectedDrNullRate: 0.59 });
+    const out = formatReport({ ...base, result, breadth: sampleBreadth(receipts), receipts });
+    expect(out).toContain('FAIL');
+    expect(out).toContain('SAMPLE BAD RECEIPT — index 1'); // brokenLive, NOT index 0 (the excluded cpu receipt)
+    expect(out).not.toContain('SAMPLE BAD RECEIPT — index 0');
   });
 });

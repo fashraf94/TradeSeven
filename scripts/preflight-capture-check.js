@@ -92,14 +92,20 @@ function dist(receipts, getter) {
 
 /** Descriptive breadth of the sample (NOT a pass/fail gate — visibility only). */
 export function sampleBreadth(receipts) {
-  const battles = [...new Set(receipts.map((r) => r?.battleId).filter((x) => x != null))];
-  const symbols = [...new Set(receipts.map((r) => r?.symbolIn).filter((x) => x != null))];
+  const all = Array.isArray(receipts) ? receipts : [];
+  // Describe the EVALUATED (live-agent) population — the same denominator
+  // validateCaptureSample uses. Excluded cpu/training/legacy receipts must NOT
+  // inflate the battle/symbol spread and suppress the narrow-sample warning; their
+  // count is reported by the evidence-exclusion check line.
+  const evaluated = all.filter((r) => r?.evidenceClass === 'live_agent');
+  const battles = [...new Set(evaluated.map((r) => r?.battleId).filter((x) => x != null))];
+  const symbols = [...new Set(evaluated.map((r) => r?.symbolIn).filter((x) => x != null))];
   return {
-    count: receipts.length,
+    count: evaluated.length,
     battles,
     symbols,
-    dataModeDist: dist(receipts, (r) => r?.predicateInputs?.symbolIn?.dataMode),
-    drNullReasonDist: dist(receipts, (r) => r?.predicateClassification?.symbolIn?.drNullReason),
+    dataModeDist: dist(evaluated, (r) => r?.predicateInputs?.symbolIn?.dataMode),
+    drNullReasonDist: dist(evaluated, (r) => r?.predicateClassification?.symbolIn?.drNullReason),
     narrow: battles.length <= 1 || symbols.length <= 1,
   };
 }
@@ -109,7 +115,12 @@ export function pickSampleBadReceipts(result, receipts) {
   const failed = (result.checks || []).filter((c) => c.level === 'error' && !c.pass);
   const byIndex = new Map();
   for (const c of failed) {
-    const idx = c.offendingIndices && c.offendingIndices[0] != null ? c.offendingIndices[0] : 0;
+    // Only checks that name a concrete offender get a sample receipt. A check with
+    // no offendingIndices (e.g. sample-nonempty, which fires when every receipt was
+    // excluded as non-evidence) has no specific document to show — fabricating
+    // receipts[0] would print an unrelated (often excluded) receipt as "bad".
+    if (!c.offendingIndices || c.offendingIndices[0] == null) continue;
+    const idx = c.offendingIndices[0];
     if (!byIndex.has(idx)) byIndex.set(idx, []);
     byIndex.get(idx).push(c.name);
   }
@@ -125,7 +136,7 @@ export function formatReport({ flags, projectId, result, breadth, receipts }) {
   L.push('══════════════════════════════════════════════════════════════');
   L.push(`  L1 CAPTURE PRE-FLIGHT — ${result.pass ? 'PASS ✓' : 'FAIL ✗'}`);
   L.push('══════════════════════════════════════════════════════════════');
-  L.push(`  project: ${projectId}   (CONFIRM this is PREVIEW, not production)`);
+  L.push(`  project: ${projectId}   (CONFIRM the capture flag is intentionally enabled)`);
   L.push(`  source:  ${flags.battle ? `learningReceipts/${flags.battle}/receipts` : 'collectionGroup(receipts) → learningReceipts/*'} · limit ${flags.limit}`);
   L.push('');
 

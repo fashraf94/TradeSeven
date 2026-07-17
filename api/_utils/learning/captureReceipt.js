@@ -20,8 +20,48 @@ import { makeReceiptSkeleton, makePredicateInputs, makePredicateClassification }
 import { classifyD1, classifyD1DrAbstain, drNullReason } from './detectorClassifiers.js';
 import { validateReceipt } from './learningValidators.js';
 import { buildTechnicalSnapshot } from '../buildTechnicalSnapshot.js';
+// Node-clean constants module (zero imports — VERIFIED), already imported across
+// api/ (§4 dependency-surface: captureReceipt.test.js's import of THIS module is
+// the runtime guard and must never be mocked). The `isCpu` boolean is the
+// authoritative CPU contract (leagueTournament.js §1.1: the flag is the contract,
+// the id prefix a secondary readable signal); CPU_AGENT_ID_PREFIX ('cpu-agent-')
+// is that secondary CPU signal and TRAINING_CLONE_ID_PREFIX ('training-agent-')
+// the in-scope training signal.
+import { TRAINING_CLONE_ID_PREFIX, CPU_AGENT_ID_PREFIX } from '../../../src/constants/leagueTournament.js';
 
 const MS_PER_HOUR = 3_600_000;
+
+/** The evidence-provenance taxonomy stamped on every receipt (outcome-blind). */
+export const EVIDENCE_CLASSES = Object.freeze(['live_agent', 'cpu', 'training', 'unknown']);
+
+/**
+ * Classify a capture opportunity's EVIDENCE provenance from in-scope battle/agent
+ * identity — outcome-blind (reads only identity, never any outcome/return/score).
+ *
+ * A CPU seat runs a prescribed tournament deployment (the drafted six) and a
+ * training clone runs a cloned pod; neither is a real archetype-driven decision,
+ * so a "lesson" from them is about the scripting, not about trading — they are
+ * contaminated evidence and must be excluded from the corpus. Only 'live_agent'
+ * receipts are real evidence.
+ *
+ *   isCpu === true                          → 'cpu'   (authoritative contract)
+ *   agentId startsWith 'training-agent-'    → 'training'
+ *   agentId startsWith 'cpu-agent-'         → 'cpu'   (secondary, belt-and-suspenders)
+ *   agentId is a non-empty string           → 'live_agent'
+ *   otherwise (no attributable agentId)     → 'unknown'
+ *
+ * @param {{isCpu?: boolean, agentId?: string|null}} [args]
+ * @returns {'live_agent'|'cpu'|'training'|'unknown'}
+ */
+export function classifyEvidence({ isCpu, agentId } = {}) {
+  if (isCpu === true) return 'cpu';
+  if (typeof agentId === 'string') {
+    if (agentId.startsWith(TRAINING_CLONE_ID_PREFIX)) return 'training';
+    if (agentId.startsWith(CPU_AGENT_ID_PREFIX)) return 'cpu';
+    if (agentId.length > 0) return 'live_agent';
+  }
+  return 'unknown';
+}
 
 /**
  * Normalize a timestamp to epoch-ms. Handles a Firestore Timestamp (`.toMillis()`),
@@ -225,6 +265,11 @@ export function buildRawReceipt(raw = {}) {
   return makeReceiptSkeleton({
     capturedAt: raw.capturedAt ?? null,
 
+    // Fix 2 — outcome-blind evidence provenance. Prefer the value the caller
+    // already computed (captureSwapReceipt passes it, so the guard and the stamp
+    // never disagree); fall back to deriving it from identity for direct callers.
+    evidenceClass: raw.evidenceClass ?? classifyEvidence({ isCpu: raw.isCpu, agentId: raw.agentId }),
+
     agentId: raw.agentId ?? null,
     battleId: raw.battleId ?? null,
     battleDay: raw.battleDay ?? null,
@@ -310,7 +355,18 @@ export function receiptIdFor(agentId, receiptSeq) {
 export async function captureSwapReceipt({ enabled, db, ...raw } = {}) {
   if (!enabled) return { emitted: false, reason: 'flag_off' };
 
-  const receipt = buildRawReceipt(raw);
+  // Fix 1 — never capture a non-evidence agent. A CPU prescribed deployment or a
+  // training clone has no real archetype-driven entry decision to record, so the
+  // corpus never contains a non-live_agent receipt in the first place: an early
+  // return BEFORE buildRawReceipt, no Firestore write. (The call site applies the
+  // same guard so the post-trade tech-doc refetch is skipped too; this is the
+  // defense-in-depth boundary and the unit-test seam.)
+  const evidenceClass = classifyEvidence({ isCpu: raw.isCpu, agentId: raw.agentId });
+  if (evidenceClass !== 'live_agent') {
+    return { emitted: false, reason: 'non_evidence', evidenceClass };
+  }
+
+  const receipt = buildRawReceipt({ ...raw, evidenceClass });
 
   const { valid, errors } = validateReceipt(receipt);
   if (!valid) {
