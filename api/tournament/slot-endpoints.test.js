@@ -33,6 +33,7 @@ vi.mock('../_utils/authMiddleware.js', () => ({
 import claimHandler from './slot-claim.js';
 import releaseHandler from './slot-release.js';
 import scheduleHandler from './slot-schedule.js';
+import pickHandler from './live-draft-pick.js';
 
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -90,6 +91,7 @@ describe('slot-* endpoints — flag gate + method guard', () => {
       [claimHandler, req('POST', { slotId: 'wed-1900' })],
       [releaseHandler, req('POST', { groupId: 'lds_wed-1900_2026-07-08' })],
       [scheduleHandler, req('GET')],
+      [pickHandler, req('POST', { groupId: 'lds_wed-1900_2026-07-08', symbol: 'NVDA' })],
     ];
     for (const [handler, r] of cases) {
       const res = mockRes();

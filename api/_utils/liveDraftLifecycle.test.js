@@ -20,6 +20,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   fireCompetitiveSlotDraft,
   driveSlotDraftAutopick,
+  applyCompetitivePick,
   findDueSlotGroups,
   findDraftingSlotGroups,
   LIVE_DRAFT_SENTINEL_PREFIX,
@@ -260,6 +261,60 @@ describe('driveSlotDraftAutopick — abandoned draft completes in ONE pass', () 
     expect(r.complete).toBe(true);
     expect(r.autopicked).toBe(2 * PICKS_PER_PLAYER); // both humans' turns autopicked
     for (const p of g(store).players) expect(p.picks).toHaveLength(PICKS_PER_PLAYER);
+  });
+});
+
+// ==================== (C2) HUMAN PICK ====================
+
+describe('applyCompetitivePick — a human pick in a competitive draft', () => {
+  it('applies an explicit human pick, runs the CPU run-up, and refreshes the clock', async () => {
+    const { db, store } = seedDb();
+    await fireCompetitiveSlotDraft(db, WED_ID, { now: FIRE });
+    const before = draftState(store);
+    const sym = before.pool[0]; // a valid board name
+
+    const r = await applyCompetitivePick(db, WED_ID, { odUserId: 'human-1', symbol: sym, now: new Date(FIRE.getTime() + 5000) });
+    expect(r.complete).toBe(false);
+    const st = draftState(store);
+    expect(st.picksByUser['human-1']).toContain(sym.toUpperCase());
+    expect(st.currentPickIndex).toBeGreaterThan(before.currentPickIndex); // advanced past the CPU run-up
+    // a fresh clock (now + PICK_CLOCK), not the anchored driver deadline
+    expect(Date.parse(st.turnDeadline)).toBe(FIRE.getTime() + 5000 + TRAINING_TUNING.PICK_CLOCK_MS);
+  });
+
+  it('rejects a pick out of turn', async () => {
+    const { db } = seedDb({}, ['human-1', 'human-2']);
+    await fireCompetitiveSlotDraft(db, WED_ID, { now: FIRE });
+    // seat 0 (human-1) is on the clock; human-2 cannot pick
+    await expect(applyCompetitivePick(db, WED_ID, { odUserId: 'human-2', symbol: 'SYM00', now: FIRE }))
+      .rejects.toThrow(sentinel('not_your_turn'));
+  });
+
+  it('rejects a pick before fire (no draft) and after completion (not drafting)', async () => {
+    const { db } = seedDb();
+    // FORMING, never fired → no draft state doc
+    await expect(applyCompetitivePick(db, WED_ID, { odUserId: 'human-1', symbol: 'SYM00', now: FIRE }))
+      .rejects.toThrow(sentinel('draft_not_found'));
+    // fire then complete via the driver → AWAITING_OPEN; a late pick is rejected
+    await fireCompetitiveSlotDraft(db, WED_ID, { now: FIRE });
+    await driveSlotDraftAutopick(db, WED_ID, { now: new Date(FIRE.getTime() + 20 * 60 * 1000) });
+    await expect(applyCompetitivePick(db, WED_ID, { odUserId: 'human-1', symbol: 'SYM00', now: new Date(FIRE.getTime() + 21 * 60 * 1000) }))
+      .rejects.toThrow(sentinel('draft_not_active'));
+  });
+
+  it('a human picking their full book completes the draft (honoring the anchor)', async () => {
+    const { db, store } = seedDb();
+    await fireCompetitiveSlotDraft(db, WED_ID, { now: FIRE });
+    let complete = false; let guard = 0;
+    while (!complete && guard++ < 6) {
+      const st = draftState(store);
+      const sym = st.pool.find((s) => !(st.taken || []).includes(s)); // any available name
+      const r = await applyCompetitivePick(db, WED_ID, { odUserId: 'human-1', symbol: sym, now: new Date(FIRE.getTime() + guard * 1000) });
+      complete = r.complete;
+    }
+    expect(complete).toBe(true);
+    expect([GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.BATTLE]).toContain(g(store).status);
+    expect(g(store).players.find((p) => p.odUserId === 'human-1').picks).toHaveLength(PICKS_PER_PLAYER);
   });
 });
 

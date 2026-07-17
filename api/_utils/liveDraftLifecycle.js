@@ -348,3 +348,80 @@ export async function driveSlotDraftAutopick(db, groupId, { now = new Date() } =
     return { groupId, status: GROUP_STATUS.DRAFTING, complete: false, autopicked };
   });
 }
+
+// ==================== (3) HUMAN PICK (the genericized room's submit target) ====================
+
+/**
+ * Apply ONE competitive human pick (an explicit `symbol`, or `autopick`) under
+ * the snake turn guard, then run the CPU seats up to the next human turn. The
+ * final pick triggers the completion handoff inline (with the stale-anchor
+ * guard). On a non-final pick the NEXT human turn gets a FRESH clock
+ * (turnDeadline = now + PICK_CLOCK) — a human who acted resets the timeline, so
+ * the autopick driver never fires on an active draft. Reuses the shared pick
+ * core (chooseHumanPick / advanceCpuSeats / appendPick / computeHandoffWrites)
+ * so training and competitive share one snake engine. Throws
+ * LIVE_DRAFT_SENTINEL_PREFIX errors (draft_not_found / draft_not_active /
+ * not_your_turn / no_pick_available / invalid_pick). Returns
+ * `{ groupId, status, currentPickIndex, complete }`.
+ */
+export async function applyCompetitivePick(db, groupId, { odUserId, symbol = null, autopick = false, now = new Date(), stocks } = {}) {
+  const nowIso = toIso(now);
+  const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
+  const stateRef = draftStateRef(db, groupId);
+
+  let universe = stocks;
+  if ((autopick || symbol == null) && universe === undefined) universe = await readStockUniverse(db);
+
+  return db.runTransaction(async (tx) => {
+    const groupSnap = await tx.get(groupRef);
+    const stateSnap = await tx.get(stateRef);
+    if (!groupSnap.exists || !stateSnap.exists) throw liveDraftError('draft_not_found');
+    const group = { id: groupId, ...groupSnap.data() };
+    const state = stateSnap.data();
+    if (group.isLiveDraft !== true) throw liveDraftError('not_a_slot_group');
+    if (group.status !== GROUP_STATUS.DRAFTING || state.status !== 'drafting') throw liveDraftError('draft_not_active');
+
+    const members = group.groupMembers || [];
+    const seatIdx = state.snakeOrder[state.currentPickIndex];
+    if (members[seatIdx] !== odUserId) throw liveDraftError('not_your_turn');
+
+    const acc = {
+      taken: new Set(state.taken || []),
+      picksByUser: { ...(state.picksByUser || {}) },
+      events: [...(state.events || [])],
+    };
+    for (const id of members) if (!acc.picksByUser[id]) acc.picksByUser[id] = [];
+
+    const human = chooseHumanPick({
+      symbol, autopick, pool: state.pool, taken: acc.taken,
+      universe, archetype: state.archetypeByUser?.[odUserId] || 'analyst',
+    });
+    if (human == null) throw liveDraftError(autopick ? 'no_pick_available' : 'invalid_pick');
+    appendPick(acc, members, { seatIdx, pickIndex: state.currentPickIndex, ...human, liveSource: autopick ? 'autopick' : 'human' });
+
+    const newIndex = advanceCpuSeats(acc, { group, state, fromIndex: state.currentPickIndex + 1 });
+    const total = members.length * PICKS_PER_PLAYER;
+    const baseState = {
+      ...state, taken: [...acc.taken], picksByUser: acc.picksByUser, events: acc.events,
+      currentPickIndex: newIndex, lastActivityAt: nowIso,
+    };
+
+    if (newIndex >= total) {
+      const completeState = { ...baseState, status: 'complete' };
+      const anchor = effectiveBattleAnchor(group, now);
+      const { target, groupUpdate, streamDoc } = computeHandoffWrites(group, completeState, now, {
+        startAnchor: { anchorEtDate: anchor.anchorEtDate, anchorIso: anchor.anchorIso },
+      });
+      if (anchor.restamped) groupUpdate.battleStartWeek = anchor.battleStartWeek;
+      assertTransition(group.status, target);
+      tx.update(groupRef, groupUpdate);
+      tx.set(groupRef.collection('streams').doc('userDraft'), streamDoc);
+      tx.set(stateRef, completeState);
+      return { groupId, status: target, currentPickIndex: newIndex, complete: true };
+    }
+
+    // A human acted → the next human turn gets a FRESH clock from now.
+    tx.set(stateRef, { ...baseState, turnDeadline: new Date(now.getTime() + PICK_CLOCK_MS).toISOString() });
+    return { groupId, status: GROUP_STATUS.DRAFTING, currentPickIndex: newIndex, complete: false };
+  });
+}

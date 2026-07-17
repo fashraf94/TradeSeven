@@ -23,6 +23,7 @@ import { getFirebaseAdmin } from './firebaseAdmin.js';
 import { requireAuth } from './authMiddleware.js';
 import { parseBody, resolveDisplayName } from './lobbyEndpoint.js';
 import { SLOT_SENTINEL_PREFIX } from './liveDraftFormation.js';
+import { LIVE_DRAFT_SENTINEL_PREFIX } from './liveDraftLifecycle.js';
 import { LEAGUE_LIVE_DRAFT } from '../../src/config/featureFlags.js';
 
 const LOG_PREFIX = '[LiveDraftSlot:api]';
@@ -30,7 +31,8 @@ const LOG_PREFIX = '[LiveDraftSlot:api]';
 export { resolveDisplayName };
 
 // Service error code (after the sentinel prefix, before any ':' detail) ->
-// [status, key, copy].
+// [status, key, copy]. Covers both the claim/release/schedule (SLOT_) and the
+// fire/pick lifecycle (LIVE_DRAFT_) sentinels.
 const SLOT_ERROR_TO_HTTP = Object.freeze({
   unknown_slot:          [400, 'unknown_slot', 'That draft slot isn’t on the schedule.'],
   slot_full:             [409, 'slot_full', 'That slot is full — all four seats are taken.'],
@@ -38,6 +40,13 @@ const SLOT_ERROR_TO_HTTP = Object.freeze({
   not_a_slot_group:      [409, 'not_a_slot_group', 'That group isn’t a live-draft slot.'],
   bad_user:              [400, 'bad_user', 'Could not identify your account — please sign in again.'],
   bad_group:             [400, 'bad_group', 'That game reference looks malformed.'],
+  // live-draft pick lifecycle
+  draft_not_found:       [404, 'draft_not_found', 'That draft could not be found.'],
+  draft_not_active:      [409, 'draft_not_active', 'That draft is no longer active.'],
+  not_your_turn:         [409, 'not_your_turn', 'It’s not your turn to pick.'],
+  no_pick_available:     [409, 'no_pick_available', 'No pick is available right now.'],
+  invalid_pick:          [400, 'invalid_pick', 'That name isn’t on the board.'],
+  universe_unavailable:  [503, 'universe_unavailable', 'The market data isn’t ready yet — try again in a few minutes.'],
 });
 
 /**
@@ -48,6 +57,7 @@ const SLOT_ERROR_TO_HTTP = Object.freeze({
 export function mapSlotServiceError(err, res) {
   let msg = typeof err?.message === 'string' ? err.message : '';
   if (msg.startsWith(SLOT_SENTINEL_PREFIX)) msg = msg.slice(SLOT_SENTINEL_PREFIX.length);
+  else if (msg.startsWith(LIVE_DRAFT_SENTINEL_PREFIX)) msg = msg.slice(LIVE_DRAFT_SENTINEL_PREFIX.length);
   const code = msg.split(':')[0].trim();
   const mapped = SLOT_ERROR_TO_HTTP[code];
   if (!mapped) return false;
