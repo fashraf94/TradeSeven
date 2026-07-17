@@ -89,11 +89,20 @@ export default function AwaitingOpenPodView({ pod, uid }) {
     [pod?.userPool, universe, archKey, ownedSectorCounts],
   );
 
-  const pendingCount = useMemo(
-    () => claims.filter((c) => c.odUserId === uid && c.status === 'pending').length,
+  const myPendingClaims = useMemo(
+    () => claims.filter((c) => c.odUserId === uid && c.status === 'pending'),
     [claims, uid],
   );
+  const pendingCount = myPendingClaims.length;
   const capReached = pendingCount >= CLAIM_CAP;
+  // The user's OWN pending-claim ADD symbols (self-scoped — the same filter
+  // ClaimFlipWindow renders with; no other seat's claims are read). A free-agent
+  // row matching one shows a disabled "Pending" pill instead of a live Claim
+  // button, so the same name can't be queued twice.
+  const pendingClaimSymbols = useMemo(
+    () => new Set(myPendingClaims.map((c) => String(c.addSymbol || '').toUpperCase())),
+    [myPendingClaims],
+  );
 
   const requestClaim = (symbol) => {
     setClaimPrefill((prev) => ({ symbol, nonce: (prev?.nonce || 0) + 1 }));
@@ -123,6 +132,7 @@ export default function AwaitingOpenPodView({ pod, uid }) {
         capReached={capReached}
         pendingCount={pendingCount}
         claimCap={CLAIM_CAP}
+        pendingSymbols={pendingClaimSymbols}
       />
 
       {/* Claims builder relocated below the free-agents list (L8). Claims-only

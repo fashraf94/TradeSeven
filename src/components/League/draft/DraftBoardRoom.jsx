@@ -182,20 +182,25 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
   const toggleTier = (id) => setExpandedTiers((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   // L2: research modal (V2). The row this symbol belongs to (for the sector
-  // badge); the "Draft this" CTA is offered only when it's the human's turn AND
-  // the name is still on the live board — otherwise the modal is research-only.
+  // badge on the opened asset). The draft CTA uses the modal's NATIVE acquire
+  // path, so it follows internal navigation and drafts the DISPLAYED stock; the
+  // isAcquirable gate below shows it only for a name still on the live board (and
+  // only on the human's turn) — research-only otherwise.
   const researchRow = researchSym
     ? (board.find((b) => b.symbol === researchSym) || poolRows.find((r) => r.symbol === researchSym) || null)
     : null;
-  const canDraftResearch = v2On && phase === 'your-turn' && !!board.find((b) => b.symbol === researchSym);
   const openResearch = (sym) => setResearchSym(sym);
   const closeResearch = () => setResearchSym(null);
   const draftFromModal = async (sym) => {
+    // Guard: never call submitPick with an empty symbol — that path autopicks
+    // top-fit server-side, which would silently draft the wrong name.
+    if (!sym) return;
     // Same snipe-rank freeze as doConfirm — drafting from the modal is a real pick.
     snipeRanksRef.current = { atIndex: currentPickIndex, ranks: new Map(board.map((b) => [b.symbol, b.boardRank])) };
     const ok = await submitPick(sym, false);
     if (ok) { setSelected(null); closeResearch(); }
   };
+  const isBoardSymbol = (sym) => !!board.find((b) => b.symbol === String(sym || '').toUpperCase());
 
   // L3 + L2 overlays (V2 only), shared by both breakpoints so there is ONE
   // confirm affordance and ONE research modal. The sticky bar is viewport-pinned
@@ -223,10 +228,12 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
           <AssetResearchModal
             asset={{ symbol: researchSym, name: researchSym, sector: researchRow?.sectorName }}
             sector={researchRow?.sectorName}
+            isMyTurn={phase === 'your-turn'}
+            timeRemaining={pickClock ?? 0}
+            canPick={phase === 'your-turn'}
+            onAcquire={(a) => draftFromModal(a?.symbol)}
+            isAcquirable={isBoardSymbol}
             onClose={closeResearch}
-            actionConfig={canDraftResearch
-              ? { label: 'Draft this', onClick: () => draftFromModal(researchSym), variant: 'primary' }
-              : null}
           />
         )}
       </>

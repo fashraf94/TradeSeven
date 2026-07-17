@@ -88,6 +88,11 @@ const AssetResearchModal = ({
   timeRemaining = 0,
   canPick = false,
   onAcquire = null,
+  // Optional per-DISPLAYED-symbol draft gate: (symbol) => boolean. When provided,
+  // the acquire CTA shows only if the currently-displayed asset passes it — so a
+  // modal that navigates internally to an off-board name goes research-only.
+  // Absent (default) → today's behavior for every existing caller.
+  isAcquirable = null,
   onClose,
   // Flexible action button configuration
   // actionConfig: { label: string, onClick: fn, variant: 'primary'|'danger'|'secondary', disabled?: boolean }
@@ -295,6 +300,21 @@ const AssetResearchModal = ({
   // Use real rating from API if available, fall back to mock
   const displayRating = profile?.ratingText || fundamentals.rating;
   const ratingColor = getRatingColor(displayRating);
+
+  // Whether the CURRENTLY-DISPLAYED asset can be drafted right now: the draft
+  // preconditions (your turn + canPick + an onAcquire handler) AND, when the
+  // caller supplies isAcquirable, that predicate for the displayed symbol. So a
+  // modal that navigates to an off-board name hides the draft CTA and falls back
+  // to the research-only Close button below.
+  const acquirePreconditions = isMyTurn && canPick && !!onAcquire;
+  const acquirable = acquirePreconditions
+    && (typeof isAcquirable === 'function' ? !!isAcquirable(currentAsset?.symbol) : true);
+  // The acquire preconditions are met but the per-symbol gate hid the CTA (the
+  // displayed name is off-board) — the ONLY new state this prop introduces, so
+  // it gets the research-only Close fallback below. When isAcquirable is absent,
+  // acquirable === acquirePreconditions, so gatedOut is always false and every
+  // existing caller's action section is byte-identical.
+  const gatedOut = acquirePreconditions && !acquirable;
 
   // Category styles derived from CATEGORY_CONFIG
   const getCategoryStyle = (cat) => {
@@ -1186,8 +1206,10 @@ const AssetResearchModal = ({
               flexShrink: 0,
             }}
           >
-            {/* Draft Mode: ON THE CLOCK - Original behavior */}
-            {isMyTurn && canPick && onAcquire && (
+            {/* Draft Mode: ON THE CLOCK - drafts the DISPLAYED asset (follows
+                internal navigation); gated by `acquirable` so it hides for an
+                off-board displayed name. */}
+            {acquirable && (
               <button
                 onClick={() => {
                   onAcquire(currentAsset);
@@ -1248,8 +1270,10 @@ const AssetResearchModal = ({
               </button>
             )}
 
-            {/* Research Only Mode - Just close button */}
-            {!isMyTurn && !actionConfig && (
+            {/* Research Only Mode - Just close button. Original condition
+                (!isMyTurn) plus the new gated-out case (your turn, but the
+                displayed name is off-board → research-only). */}
+            {!actionConfig && (!isMyTurn || gatedOut) && (
               <button
                 onClick={handleClose}
                 style={{

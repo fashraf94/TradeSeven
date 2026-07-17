@@ -12,7 +12,7 @@
 
 import React from 'react';
 import { useTheme } from '../../../contexts/ThemeContext';
-import { Gavel } from 'lucide-react';
+import { Gavel, Clock } from 'lucide-react';
 import { FitBar, ReturnPct, Mono } from '../../League/draft/draftPrimitives';
 import { SectorChip, SectionHead } from './podPrimitives';
 
@@ -26,7 +26,7 @@ function Signals({ tokens, stock }) {
   );
 }
 
-export default function FreeAgentsList({ board = [], onResearch = null, onClaim = null, capReached = false, pendingCount = 0, claimCap = 3 }) {
+export default function FreeAgentsList({ board = [], onResearch = null, onClaim = null, capReached = false, pendingCount = 0, claimCap = 3, pendingSymbols = null }) {
   const { tokens } = useTheme();
 
   if (!board.length) return null;
@@ -48,7 +48,9 @@ export default function FreeAgentsList({ board = [], onResearch = null, onClaim 
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {board.map((stock) => (
+        {board.map((stock) => {
+          const isPending = pendingSymbols ? pendingSymbols.has(stock.symbol) : false;
+          return (
           <div key={stock.symbol} style={{
             display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
             padding: '11px 12px', borderRadius: 11, background: tokens.bgElevated, border: `1px solid ${tokens.borderDivider}`,
@@ -66,24 +68,40 @@ export default function FreeAgentsList({ board = [], onResearch = null, onClaim 
             <div style={{ width: 168, flexShrink: 0 }}>
               <FitBar fit={stock.fit} tier={stock.tier} w={104} />
             </div>
-            {/* claim */}
-            <button
-              type="button"
-              onClick={() => !capReached && onClaim && onClaim(stock.symbol)}
-              disabled={capReached}
-              title={capReached ? `Wait for processing — ${claimCap} pending` : `Pre-fill a claim for ${stock.symbol}`}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 13px', borderRadius: 9,
-                border: `1px solid ${capReached ? tokens.borderDivider : `${tokens.teal}66`}`,
-                background: capReached ? 'transparent' : `${tokens.teal}1a`,
-                color: capReached ? tokens.textFaint : tokens.teal,
-                fontWeight: 700, fontSize: 12.5, cursor: capReached ? 'not-allowed' : 'pointer', flexShrink: 0,
-              }}
-            >
-              <Gavel size={13} /> Claim
-            </button>
+            {/* claim — a pending claim for this name shows a disabled "Pending"
+                pill (the same name can't be queued twice); otherwise the live
+                Claim button, disabled at the 3-pending cap. */}
+            {isPending ? (
+              <span
+                title={`A claim for ${stock.symbol} is already pending`}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 13px', borderRadius: 9,
+                  border: `1px solid ${tokens.amber}55`, background: `${tokens.amber}14`, color: tokens.amber,
+                  fontWeight: 700, fontSize: 12.5, flexShrink: 0,
+                }}
+              >
+                <Clock size={13} /> Pending
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => !capReached && onClaim && onClaim(stock.symbol)}
+                disabled={capReached}
+                title={capReached ? `Wait for processing — ${claimCap} pending` : `Pre-fill a claim for ${stock.symbol}`}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 13px', borderRadius: 9,
+                  border: `1px solid ${capReached ? tokens.borderDivider : `${tokens.teal}66`}`,
+                  background: capReached ? 'transparent' : `${tokens.teal}1a`,
+                  color: capReached ? tokens.textFaint : tokens.teal,
+                  fontWeight: 700, fontSize: 12.5, cursor: capReached ? 'not-allowed' : 'pointer', flexShrink: 0,
+                }}
+              >
+                <Gavel size={13} /> Claim
+              </button>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
