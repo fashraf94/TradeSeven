@@ -28,6 +28,7 @@ import { RevealRow, SnipeCallout } from './RevealRow';
 import { useDraftReveal } from './useDraftReveal';
 import { DraftForming } from './DraftForming';
 import AssetResearchModal from '../../draft/AssetResearchModal';
+import { makeLiveDraftPick } from '../../../services/tournamentActions';
 
 // Every tier shows its top TIER_CAP by fit; the rest sits behind a per-tier
 // expander. Distribution-robust — holds no matter how the bands fall.
@@ -70,13 +71,20 @@ function coachLineFor({ phase, archKey, selected, topPick, backToBack, pickNo, m
   };
 }
 
-export default function DraftBoardRoom({ user, groupId, onComplete = null, onExit = null }) {
+export default function DraftBoardRoom({ user, groupId, mode = 'training', onComplete = null, onExit = null }) {
+  // Competitive Live Draft (Phase 4): ONE room, both modes. `mode` selects the
+  // pick endpoint (via the hook's submitAction), the room title, and opponent
+  // naming (humans by name vs "CPU N"). Default 'training' → byte-identical to
+  // before this genericization (the reuse-not-fork mandate).
+  const competitive = mode === 'competitive';
+  const roomTitle = competitive ? 'Live Draft' : 'Training Draft';
   // `entered` flips on "Enter the board". It's declared before the hook so the
   // pick clock can be held while the forming intro covers pick #1 (else the 20s
   // clock would autopick the first pick if the user lingers on the intro).
   const [entered, setEntered] = useState(false);
-  const d = useTrainingDraft({ user, groupId, active: true, clockPaused: !entered });
+  const d = useTrainingDraft({ user, groupId, active: true, clockPaused: !entered, submitAction: competitive ? makeLiveDraftPick : null });
   const {
+    group,
     poolRows, humanArchetype, events, snakeOrder, members, currentUserId, myPicks,
     seats, isDrafting, isMyTurn, isComplete, finalStatus, universe,
     currentPickIndex, totalPicks, round, pickClock, clockTotalSec, submitting, error, submitPick, draft,
@@ -144,8 +152,17 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
     return arr;
   }, [events, totalPicks, currentUserId]);
 
-  const seatLabel = (s) => (s.isYou ? 'You' : `CPU ${s.seatIndex}`);
-  const cpuLabel = (odUserId) => `CPU ${members.indexOf(odUserId)}`;
+  // Opponent naming: competitive shows a human rival by name (from the group's
+  // seatNames) and a CPU pad seat as "CPU N"; training is always "CPU N".
+  const seatNames = group?.seatNames || {};
+  const seatLabel = (s) => (s.isYou ? 'You' : (competitive && s.isCpu !== true ? (seatNames[s.odUserId] || 'Rival') : `CPU ${s.seatIndex}`));
+  const cpuLabel = (odUserId) => {
+    if (competitive) {
+      const p = (group?.players || []).find((pl) => pl.odUserId === odUserId);
+      if (p && p.isCpu !== true) return seatNames[odUserId] || 'Rival';
+    }
+    return `CPU ${members.indexOf(odUserId)}`;
+  };
 
   // pre-pick board ranks for snipe detection, captured synchronously at pick
   // time (doConfirm) and tagged with the pick index — the reveal only trusts it
@@ -167,7 +184,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
   // board unlocks / the lineup locks.
   const phase = revealing ? 'revealing' : isComplete ? 'done' : isMyTurn ? 'your-turn' : 'waiting';
   const onClockSeat = seats.find((s) => s.seatIndex === onClockSeatIdx);
-  const onClockLabel = onClockSeat ? (onClockSeat.isYou ? 'You' : `CPU ${onClockSeat.seatIndex}`) : null;
+  const onClockLabel = onClockSeat ? seatLabel(onClockSeat) : null;
   const coach = coachLineFor({ phase, archKey, selected: selectedRow, topPick: board[0], backToBack, pickNo, myPicks, lastReveal });
 
   const doConfirm = async () => {
@@ -287,7 +304,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
   if (showForming) {
     return (
       <div className="ld-scope" style={scopeStyle}>
-        <DraftForming archKey={archKey} seats={formingSeats} ready={!loading} onEnter={() => setEntered(true)} narrow={narrow} />
+        <DraftForming archKey={archKey} seats={formingSeats} ready={!loading} onEnter={() => setEntered(true)} narrow={narrow} mode={mode} />
       </div>
     );
   }
@@ -380,7 +397,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
         <div style={{ padding: '12px 16px 10px', borderBottom: `1px solid ${TOKENS.hair}`, flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 15, fontWeight: 700 }}>Training Draft</span>
+              <span style={{ fontSize: 15, fontWeight: 700 }}>{roomTitle}</span>
               <ArchChip archKey={archKey} size="m" />
             </div>
             <Mono style={{ fontSize: 9.5, color: TOKENS.ink3, letterSpacing: '0.04em' }}>PICK {pickNo}/{totalPicks}</Mono>
@@ -461,9 +478,9 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
       {/* top bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 20px', borderBottom: `1px solid ${TOKENS.hair}`, flexShrink: 0, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
-          <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>Training Draft</div>
+          <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>{roomTitle}</div>
           <ArchChip archKey={archKey} />
-          {practiceBadge}
+          {!competitive && practiceBadge}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <Mono style={{ fontSize: 11, color: TOKENS.ink3, letterSpacing: '0.06em' }}>ROUND {round} · PICK {pickNo} OF {totalPicks}</Mono>

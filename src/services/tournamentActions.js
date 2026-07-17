@@ -74,6 +74,21 @@ export function makeTrainingPick({ groupId, symbol, autopick } = {}) {
   return postTournamentAction(`training-pick${nextArcSuffix()}`, payload);
 }
 
+/**
+ * Competitive Live Draft — the human's live pick in the interactive snake draft
+ * (the ranked/slot sibling of makeTrainingPick). Same shape and turn/CPU-run-up
+ * semantics; the ONLY difference is the endpoint (live-draft-pick vs
+ * training-pick). `autopick:true` is the per-pick-clock timeout. Behind
+ * LEAGUE_LIVE_DRAFT (the endpoint 404s dark); the preview smoke enables the flag
+ * on the branch, so no dark-gate query suffix is needed.
+ */
+export function makeLiveDraftPick({ groupId, symbol, autopick } = {}) {
+  const payload = { groupId };
+  if (autopick === true) payload.autopick = true;
+  if (symbol) payload.symbol = symbol;
+  return postTournamentAction('live-draft-pick', payload);
+}
+
 /** ?nextArc=1 passthrough for the dark-gated training routes (the preview idiom). */
 function nextArcSuffix() {
   try {

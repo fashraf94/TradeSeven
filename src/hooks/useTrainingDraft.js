@@ -34,7 +34,14 @@ import { isTrainingPodDraftV2On, TRAINING_POD_PICK_CLOCK_MS } from '../config/fe
 const OVERLAY_SIZE = 5;
 const norm = (s) => (typeof s === 'string' ? s.trim().toUpperCase() : '');
 
-export function useTrainingDraft({ user, groupId, active = true, clockPaused = false } = {}) {
+// One interactive-draft hook for BOTH modes (the "one room, both modes" reuse):
+// the subscription (group + the shared draft/state doc), board, seats, clock, and
+// turn logic are mode-agnostic. `submitAction` parameterizes the ONLY coupling —
+// the pick endpoint (training-pick vs live-draft-pick). Default (null) →
+// makeTrainingPick, so training is byte-identical. The archetype overlay reads a
+// single `humanArchetype` (training) OR the per-user `archetypeByUser` map
+// (competitive), humanArchetype winning so training is unchanged.
+export function useTrainingDraft({ user, groupId, active = true, clockPaused = false, submitAction = null } = {}) {
   const [group, setGroup] = useState(null);
   const [draft, setDraft] = useState(null);
   const [universe, setUniverse] = useState(null); // indexIntelligence/stockRankings.stocks
@@ -161,7 +168,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
   //      ranking is unusable, return an empty highlight (the board is already
   //      composite-sorted) rather than rendering a broken overlay. ----
   const highlightSet = useMemo(() => {
-    const archetype = draft?.humanArchetype || 'analyst';
+    const archetype = draft?.humanArchetype || draft?.archetypeByUser?.[currentUserId] || 'analyst';
     if (!Array.isArray(universe) || universe.length === 0 || poolSet.size === 0) return new Set();
     const available = universe.filter((s) => {
       const sym = norm(s.symbol);
@@ -172,7 +179,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
     try { ranked = computeArchetypeRankings(available, archetype); } catch { ranked = null; }
     if (!Array.isArray(ranked) || ranked.length === 0) return new Set();
     return new Set(ranked.slice(0, OVERLAY_SIZE).map((s) => norm(s.symbol)));
-  }, [universe, draft?.humanArchetype, poolSet, takenSet]);
+  }, [universe, draft?.humanArchetype, draft?.archetypeByUser, currentUserId, poolSet, takenSet]);
 
   // ---- submit a pick (explicit or autopick) through the server endpoint ----
   const submitPick = useCallback(async (symbol, autopick = false) => {
@@ -182,7 +189,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
     setSubmitting(true);
     setError(null);
     try {
-      await makeTrainingPickAction({ groupId, symbol: symbol ? norm(symbol) : undefined, autopick });
+      await (submitAction || makeTrainingPickAction)({ groupId, symbol: symbol ? norm(symbol) : undefined, autopick });
       // Disarm the current turn's clock on success: it re-arms only when
       // currentPickIndex advances (the effect's dep). Without this, a snapshot
       // lag after an explicit pick would let the still-running interval fire an
@@ -200,7 +207,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
     } finally {
       setSubmitting(false);
     }
-  }, [groupId, submitting]);
+  }, [groupId, submitting, submitAction]);
   submitRef.current = submitPick;
 
   // ---- per-pick countdown: starts on my turn, autopicks on expiry. The client
@@ -252,7 +259,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
     highlightSet,
     // Training Board redesign (read-only widening) — the fit-ranked board inputs.
     poolRows,
-    humanArchetype: draft?.humanArchetype || 'analyst',
+    humanArchetype: draft?.humanArchetype || draft?.archetypeByUser?.[currentUserId] || 'analyst',
     events: draft?.events || [],
     snakeOrder: draft?.snakeOrder || [],
     picksByUser: draft?.picksByUser || {},
