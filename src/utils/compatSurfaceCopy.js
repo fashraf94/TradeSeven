@@ -16,13 +16,17 @@
 // Param-swing rules (PARAM_SWING_NOTES) additionally acknowledge that a
 // non-default setting fits the archetype (rider §4.2).
 
+// Imports carry explicit .js extensions: this module is on the api/ graph
+// since WS1 enforce Phase 2 (ruleCompatEvaluate → the set-rule-hardness /
+// reforge-bundle endpoints), and serverless Node ESM resolves extensioned
+// specifiers only (the banking-cron module-load lesson, commit 0f260391).
 import {
   ZONE1_REFS,
   PARAM_SWING_NOTES,
   getRuleCompatInfo,
-} from '../data/archetypeRuleCompatibility';
-import { getArchetypeDisplayName } from '../data/archetypeDisplay';
-import { FORGE_RULE_TEMPLATES } from '../data/forgeKnowledgeBase';
+} from '../data/archetypeRuleCompatibility.js';
+import { getArchetypeDisplayName } from '../data/archetypeDisplay.js';
+import { FORGE_RULE_TEMPLATES } from '../data/forgeKnowledgeBase.js';
 
 // Paths where must-obey strength comes from the rule's CATEGORY (case 3)
 // rather than an authored override (case 2).

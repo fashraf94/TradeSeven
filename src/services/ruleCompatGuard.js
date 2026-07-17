@@ -28,105 +28,20 @@
 // write time only.
 
 import { RULE_COMPAT_MODE } from '../config/featureFlags';
-import { getRuleCompatInfo } from '../data/archetypeRuleCompatibility';
-import { buildPromoteBlockedMessage } from '../utils/compatSurfaceCopy';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
-// The client's single hard/soft source (never a fourth HARD_CATEGORIES copy).
+// The PURE evaluator kernel — EXTRACTED to ruleCompatEvaluate.js (WS1 enforce
+// Phase 2, the ruleCompatClassify.js D3 precedent) so the server hardness
+// writers (set-rule-hardness / reforge-bundle endpoints) gate with the same
+// kernel without dragging this module's fetchWithAuth (client-only) onto the
+// api/ graph. Re-exported below so every existing importer keeps working.
+import { evaluateRuleCompatWrite, RuleCompatBlockError } from './ruleCompatEvaluate';
 
-// The write paths the guard understands (event `path` vocabulary).
-export const COMPAT_WRITE_PATHS = [
-  'create_rule',
-  'set_rule_hardness',
-  'update_rule_category',
-  'reforge_carry',
-  'equip_bundle',
-  'archetype_change_rescan', // server-side only (change-archetype endpoint)
-];
-
-// True when the guard is live (observe or enforce). Callers use this to skip
-// their own doc reads under 'off' so the off surface stays byte-identical
-// (zero extra Firestore reads, zero classification).
-export function isRuleCompatActive(mode = RULE_COMPAT_MODE) {
-  return mode === 'observe' || mode === 'enforce';
-}
-
-// Thrown by forgeService when an enforce-mode write is blocked. The message is
-// user-facing (useForge surfaces err.message via toast); `compat` carries the
-// structured details for UI/telemetry.
-export class RuleCompatBlockError extends Error {
-  constructor(message, compat) {
-    super(message);
-    this.name = 'RuleCompatBlockError';
-    this.code = 'rule_compat_blocked';
-    this.compat = compat;
-  }
-}
-
-/**
- * The single pure evaluator behind every guarded path.
- *
- * @param {Object} p
- * @param {string} p.archetype        - agent archetype code-id (caller-resolved)
- * @param {string|null} p.templateId  - KB template id (rule doc `sourceRef`);
- *                                      null/unknown (manual rules) → fail-open allow
- * @param {'hard'|'soft'} p.resolvedHardness - what the rule WOULD resolve to
- *                                      after this write (category ?? override)
- * @param {string} p.path             - COMPAT_WRITE_PATHS member
- * @param {string} p.agentId
- * @param {string|null} [p.ruleDocId] - Firestore rule doc id when one exists
- * @param {string} [p.mode]           - injectable for tests; defaults to the flag
- * @returns {{ decision: 'allow'|'warn'|'block', state: string|null,
- *             zone1Ref: string|null, blockMessage: string|null,
- *             events: Array<Object> }}
- */
-export function evaluateRuleCompatWrite({
-  archetype,
-  templateId,
-  resolvedHardness,
-  path,
-  agentId,
-  ruleDocId = null,
-  mode = RULE_COMPAT_MODE,
-}) {
-  // 'off' = byte-identical: no classification is computed at all (§5.1).
-  if (mode !== 'observe' && mode !== 'enforce') {
-    return { decision: 'allow', state: null, zone1Ref: null, blockMessage: null, events: [] };
-  }
-
-  const info = getRuleCompatInfo(templateId, archetype);
-  if (info.state !== 'core_conflict') {
-    return { decision: 'allow', state: info.state, zone1Ref: null, blockMessage: null, events: [] };
-  }
-
-  const wouldBeHard = resolvedHardness === 'hard';
-  const enforcing = mode === 'enforce';
-  const blocked = enforcing && wouldBeHard;
-
-  const event = {
-    type: wouldBeHard ? 'compat_promote_blocked' : 'compat_conflict_equip',
-    agentId,
-    archetype,
-    ruleId: templateId, // template id — the compat map's key vocabulary
-    ruleDocId,
-    state: 'core_conflict',
-    zone1Ref: info.zone1Ref,
-    hardnessRequested: resolvedHardness,
-    path,
-    mode,
-    blocked,
-    ts: new Date().toISOString(),
-  };
-
-  return {
-    decision: blocked ? 'block' : enforcing ? 'warn' : 'allow',
-    state: 'core_conflict',
-    zone1Ref: info.zone1Ref,
-    blockMessage: blocked
-      ? buildPromoteBlockedMessage({ archetype, templateId, path, zone1Ref: info.zone1Ref })
-      : null,
-    events: [event],
-  };
-}
+export {
+  COMPAT_WRITE_PATHS,
+  isRuleCompatActive,
+  RuleCompatBlockError,
+  evaluateRuleCompatWrite,
+} from './ruleCompatEvaluate';
 
 /**
  * Convenience wrapper for the guarded service paths: evaluates, emits any

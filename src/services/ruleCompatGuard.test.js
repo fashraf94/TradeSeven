@@ -216,25 +216,38 @@ describe('classifyBundleSnapshots — the B6 equip surface', () => {
 describe('wiring — forgeService guard call sites (fence-lite table)', () => {
   const source = readFileSync(resolve(__dirname, 'forgeService.js'), 'utf-8');
 
-  it('imports the guard and the tri-state flag', () => {
+  it('imports the guard (A1/B2 remain client-guarded rule-doc writes)', () => {
     expect(source).toMatch(/from '\.\/ruleCompatGuard'/);
-    expect(source).toMatch(/RULE_COMPAT_MODE/);
+    expect(source).toMatch(/guardRuleCompatWrite/);
   });
 
   it('A1 createRule guards create-as-hard on the create_rule path', () => {
     expect(source).toMatch(/path: 'create_rule'/);
   });
 
-  it('B1 setRuleHardness guards the explicit promote on the set_rule_hardness path', () => {
-    expect(source).toMatch(/path: 'set_rule_hardness'/);
+  it('B1 setRuleHardness guards the explicit promote at its SERVER home (WS1 enforce Phase 2 migration)', () => {
+    // The write moved to api/agent/set-rule-hardness.js (the equip D3
+    // precedent) — same kernel (ruleCompatEvaluate), same path tag; asserted
+    // at the new home. The client must stay a thin wrapper (no client gate).
+    const endpointSource = readFileSync(resolve(__dirname, '../../api/agent/set-rule-hardness.js'), 'utf-8');
+    expect(endpointSource).toMatch(/evaluateRuleCompatWrite\(/);
+    expect(endpointSource).toMatch(/path: 'set_rule_hardness'/);
+    expect(source).not.toMatch(/path: 'set_rule_hardness'/);
+    expect(source).toMatch(/\/api\/agent\/set-rule-hardness/);
   });
 
   it('B2 updateRule guards the category flip on the update_rule_category path', () => {
     expect(source).toMatch(/path: 'update_rule_category'/);
   });
 
-  it('B3 reforgeBundle evaluates the carry on the reforge_carry path and reports strips', () => {
-    expect(source).toMatch(/path: 'reforge_carry'/);
+  it('B3 reforgeBundle evaluates the carry at its SERVER home and reports strips (WS1 enforce Phase 2 migration)', () => {
+    const endpointSource = readFileSync(resolve(__dirname, '../../api/agent/reforge-bundle.js'), 'utf-8');
+    expect(endpointSource).toMatch(/evaluateRuleCompatWrite\(/);
+    expect(endpointSource).toMatch(/path: 'reforge_carry'/);
+    expect(endpointSource).toMatch(/strippedConflicts/);
+    expect(source).not.toMatch(/path: 'reforge_carry'/);
+    // The thin client preserves the { bundleId, strippedConflicts } contract.
+    expect(source).toMatch(/\/api\/agent\/reforge-bundle/);
     expect(source).toMatch(/strippedConflicts/);
   });
 
@@ -252,9 +265,11 @@ describe('wiring — forgeService guard call sites (fence-lite table)', () => {
 
   it('every guard body is gated on isRuleCompatActive() so off adds zero reads', () => {
     const gates = source.match(/isRuleCompatActive\(\)/g) || [];
-    // 4 guarded rule-write paths remain client-side (A1, B1, B2, B3) since
-    // the B6 equip surface moved server-side with the D3 migration.
-    expect(gates.length).toBeGreaterThanOrEqual(4);
+    // 2 guarded rule-write paths remain client-side (A1 createRule, B2
+    // updateRule) since the ruleHardness writers (B1, B3) moved server-side
+    // at WS1 enforce Phase 2 — their off-gating is asserted in the endpoint
+    // compat suites (the OFF cells skip the gate's rule-doc read).
+    expect(gates.length).toBeGreaterThanOrEqual(2);
   });
 
   it('archetype threading: seedDefaultTraits, useTraits.equipTrait, and StarterKit pass archetype (rider 2)', () => {
@@ -281,10 +296,10 @@ describe('Invariant R — the guard graph stays off the runtime path', () => {
     'api/_utils/projectActiveRules.js',
   ];
 
-  it('ruleCompatGuard / compatSurfaceCopy are imported by no fenced file, not the projection, not the prompt assemblies', () => {
+  it('ruleCompatGuard / ruleCompatEvaluate / compatSurfaceCopy are imported by no fenced file, not the projection, not the prompt assemblies', () => {
     for (const rel of FORBIDDEN_IMPORTERS) {
       const src = readFileSync(resolve(REPO_ROOT, rel), 'utf-8');
-      expect(/ruleCompatGuard|compatSurfaceCopy/.test(src), `${rel} touches the guard graph`).toBe(false);
+      expect(/ruleCompatGuard|ruleCompatEvaluate|compatSurfaceCopy/.test(src), `${rel} touches the guard graph`).toBe(false);
     }
   });
 });

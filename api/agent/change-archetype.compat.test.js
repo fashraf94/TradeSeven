@@ -17,9 +17,10 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { authReturnValue, shadowLogCalls } = vi.hoisted(() => ({
+const { authReturnValue, shadowLogCalls, shadowLogReturnsFalse } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   shadowLogCalls: { current: [] },
+  shadowLogReturnsFalse: { current: false },
 }));
 
 let activeFirestore = null;
@@ -42,6 +43,8 @@ vi.mock('../_utils/authMiddleware.js', () => ({
 vi.mock('../_utils/shadowLogger.js', () => ({
   logSignalDrops: async (record) => {
     shadowLogCalls.current.push(record);
+    // Mirrors appendToStream: true on persist, false on a swallowed GCS write.
+    return !shadowLogReturnsFalse.current;
   },
 }));
 vi.mock('@vercel/functions', () => ({
@@ -93,6 +96,7 @@ function makeReqRes(body) {
 beforeEach(() => {
   authReturnValue.current = { uid: 'test-user' };
   shadowLogCalls.current = [];
+  shadowLogReturnsFalse.current = false;
   activeFirestore = null;
 });
 
@@ -172,6 +176,23 @@ describe('change-archetype — compat rescan (RULE_COMPAT_MODE=observe)', () => 
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({ archetype: 'guardian', idempotent: false, rescanLogged: false });
+    // The archetype write itself landed.
+    expect(activeFirestore._state.agentDocs[AGENT_ID].archetype).toBe('guardian');
+  });
+
+  it('SWALLOWED rescan write (logSignalDrops resolves false, no throw) → rescanLogged:false, change still committed', async () => {
+    // The real bug class: the rescan computes fine and logSignalDrops resolves,
+    // but the GCS write was swallowed (false). rescanLogged must be honest (not
+    // hard-coded true) so a broken logger is distinguishable from a quiet stream.
+    activeFirestore = conflictFixture();
+    shadowLogReturnsFalse.current = true;
+    const [req, res] = makeReqRes({ agentId: AGENT_ID, archetype: 'guardian' });
+    await changeArchetypeHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ archetype: 'guardian', idempotent: false, rescanLogged: false });
+    // The rescan was attempted (record pushed) but reported not-persisted.
+    expect(shadowLogCalls.current.filter((r) => r.stage === 'rule_compat')).toHaveLength(1);
     // The archetype write itself landed.
     expect(activeFirestore._state.agentDocs[AGENT_ID].archetype).toBe('guardian');
   });

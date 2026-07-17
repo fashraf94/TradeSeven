@@ -187,7 +187,7 @@ export default function BundleBuildFlow({ forge, agent, hasActiveBattle, onClose
     if (!workingBundleId || !rule?.id) return;
     const desired = makeHard ? 'hard' : 'soft';
     const dflt = classifyRuleHardSoft(ruleCategory(rule));
-    await forge.setRuleHardness(workingBundleId, rule.id, desired === dflt ? null : desired, { archetype });
+    await forge.setRuleHardness(workingBundleId, rule.id, desired === dflt ? null : desired);
   };
 
   // WS1 render-time off-style derivation (no data writes; enforce only).

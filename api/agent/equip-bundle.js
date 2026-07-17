@@ -201,7 +201,7 @@ export default async function handler(req, res) {
         // per-event agentId/archetype/mode (the envelope carries them) and
         // caps at 20 events — mirrored here so at-rest rule_compat records
         // keep one shape across producers.
-        await logSignalDrops({
+        const persisted = await logSignalDrops({
           stage: 'rule_compat',
           userId: user.uid,
           agentId,
@@ -221,6 +221,14 @@ export default async function handler(req, res) {
           eventCount: compatConflicts.length,
           loggedAt: nowIso,
         });
+        // Finish the emitter set (WS1 enforce Phase 1 discipline): a swallowed
+        // GCS write resolves false (never throws — shadowLogger.js), so it
+        // would slip past the catch below and leave the conflict-equip stream
+        // silently short. Surface it loudly; the equip is committed, so (like
+        // change-archetype's rescan) a telemetry miss never fails the request.
+        if (persisted !== true) {
+          console.error('[equip-bundle] compat conflict-equip events did not persist (swallowed GCS write or GCS disabled); equip committed.');
+        }
       }
     } catch (compatErr) {
       console.error('[equip-bundle] compat classification failed (equip committed):', compatErr?.message || compatErr);

@@ -506,10 +506,12 @@ export function useForge(agentId) {
   // value: 'hard' | 'soft' | null (null clears → reverts to category default).
   // A RuleCompatBlockError from the WS1 guard surfaces via its user-facing
   // err.message (the promote-block copy), same as any service error.
-  const setRuleHardness = useCallback(async (bundleId, ruleId, value, opts = {}) => {
+  const setRuleHardness = useCallback(async (bundleId, ruleId, value) => {
     if (!agentId) return;
     try {
-      await setRuleHardnessSvc(agentId, bundleId, ruleId, value, { archetype: opts.archetype });
+      // The server endpoint resolves the agent's real archetype in-transaction
+      // (WS1 enforce Phase 2), so no client-side archetype threading here.
+      await setRuleHardnessSvc(agentId, bundleId, ruleId, value);
       await loadData();
     } catch (err) {
       console.error('[useForge] setRuleHardness failed:', err);
@@ -597,10 +599,12 @@ export function useForge(agentId) {
   }, [agentId, equippingBundleId, showToast, loadData]);
 
   // Reforge a bundle
-  const reforgeBundleFn = useCallback(async (bundleId, opts = {}) => {
+  const reforgeBundleFn = useCallback(async (bundleId) => {
     if (!agentId || forgingBundleId) return;
     try {
-      const { strippedConflicts } = await reforgeBundleSvc(agentId, bundleId, { archetype: opts.archetype });
+      // The server endpoint resolves the agent's real archetype in-transaction
+      // (WS1 enforce Phase 2), so no client-side archetype threading here.
+      const { strippedConflicts } = await reforgeBundleSvc(agentId, bundleId);
       await loadData();
       // WS1 fence-lite rider 1: enforce-mode conflict strips surface as a
       // user-facing inline notice in the reforge flow, never silently.

@@ -1,7 +1,17 @@
 // api/_utils/shadowLogger.js
 // Fire-and-forget shadow logging to Google Cloud Storage.
 // Writes structured JSONL records for AI training data capture.
-// NEVER throws. NEVER blocks. All errors are swallowed after console.error.
+// NEVER throws. NEVER blocks. Errors are caught + console.error'd, never rethrown.
+//
+// appendToStream (and the log* wrappers) RESOLVE TO A BOOLEAN: true when the
+// record persisted, false when it was swallowed (write error) or skipped (GCS
+// disabled / init failed). Fire-and-forget callers ignore the return — the
+// `.catch(() => {})` contract still holds, since a boolean-returning promise
+// never rejects. Callers that must PROVE persistence — the rule_compat catalog
+// stream that gates WS1 enforce — check the boolean and surface a failure
+// instead of returning a silent 200 on a lost write.
+// (WS1 pre-enforce MUST-FIX; BUILD_RULES §5 — the shadow logger's silent
+// multi-week data loss is the cautionary tale.)
 
 import { Storage } from '@google-cloud/storage';
 
@@ -33,7 +43,7 @@ function getGCSBucket() {
 
 async function appendToStream(stream, record) {
   const bucket = getGCSBucket();
-  if (!bucket) return;
+  if (!bucket) return false; // GCS disabled / init failed — nothing persisted
 
   try {
     const now = new Date();
@@ -51,8 +61,10 @@ async function appendToStream(stream, record) {
       contentType: 'application/x-ndjson',
       resumable: false,
     });
+    return true; // persisted
   } catch (err) {
     console.error(`[ShadowLogger] ${stream} write failed:`, err.message);
+    return false; // swallowed write error — NOT persisted (never rethrown)
   }
 }
 

@@ -9,6 +9,15 @@
 // nothing but telemetry, and that off is a zero-delta surface (no
 // classification, no extra reads, byte-equal writes).
 //
+// MIGRATION NOTE (WS1 enforce Phase 2): the two ruleHardness writers moved
+// server-side — B1 setRuleHardness → POST /api/agent/set-rule-hardness, B3
+// reforgeBundle → POST /api/agent/reforge-bundle (the B6/D3 equip precedent).
+// Their write-path cells live in the endpoint compat suites
+// (api/agent/set-rule-hardness.compat.test.js,
+// api/agent/reforge-bundle.compat.test.js); here they are thin-client
+// wrapper contracts. A1 createRule and B2 updateRule remain client-guarded
+// rule-doc writes and keep their full cells below.
+//
 // Mock seams (and only these):
 //  - firebase/firestore + ../firebase/config → the in-memory store below
 //  - ../utils/fetchWithAuth → transport capture (the observe stream)
@@ -229,75 +238,46 @@ describe('matrix — A1 createRule (create-as-hard)', () => {
 });
 
 // ==================== B1 — setRuleHardness ====================
+//
+// WS1 enforce Phase 2: the explicit-promote write moved server-side
+// (POST /api/agent/set-rule-hardness — the B6/D3 pattern below), because
+// bundles.ruleHardness is server-mintable only once the bundles field
+// allowlist publishes. The write-path matrix coverage that lived here
+// (enforce block, observe log-not-block, off zero-classification, the
+// null-clear promote) moved WITH the write path to
+// api/agent/set-rule-hardness.compat.test.js. What remains client-side to
+// prove is the wrapper contract.
 
-describe('matrix — B1 setRuleHardness (explicit promote)', () => {
-  const seedDraftBundle = () => {
-    seedRule('rc', { sourceRef: 'tech-bollinger-squeeze', category: 'technical' }); // guardian conflict (soft cat)
-    seedRule('rn', { sourceRef: 'ts-01', category: 'tier_strategy' });              // guardian native
-    store.docs.set(bundlePath('b1'), { status: 'draft', name: 'B', ruleIds: ['rc', 'rn'], ruleHardness: {} });
-  };
-
-  it("ENFORCE × conflict → 'hard': throws, override NOT written, blocked event", async () => {
-    flagState.mode = 'enforce';
-    seedAgent('guardian');
-    seedDraftBundle();
-    await expect(setRuleHardness(AGENT, 'b1', 'rc', 'hard', { archetype: 'guardian' }))
-      .rejects.toBeInstanceOf(RuleCompatBlockError);
-    expect(store.docs.get(bundlePath('b1')).ruleHardness).toEqual({});
-    expect(events()[0]).toMatchObject({ type: 'compat_promote_blocked', blocked: true, path: 'set_rule_hardness', ruleDocId: 'rc' });
-  });
-
-  it("ENFORCE × native → 'hard' and conflict → 'soft': both succeed, no events", async () => {
-    flagState.mode = 'enforce';
-    seedAgent('guardian');
-    seedDraftBundle();
-    await setRuleHardness(AGENT, 'b1', 'rn', 'hard', { archetype: 'guardian' });
-    await setRuleHardness(AGENT, 'b1', 'rc', 'soft', { archetype: 'guardian' }); // demote direction: never guarded
-    expect(store.docs.get(bundlePath('b1')).ruleHardness).toEqual({ rn: 'hard', rc: 'soft' });
-    expect(events()).toHaveLength(0);
-  });
-
-  it("OBSERVE × conflict → 'hard': override IS written, attempt logged", async () => {
-    flagState.mode = 'observe';
-    seedAgent('guardian');
-    seedDraftBundle();
-    await setRuleHardness(AGENT, 'b1', 'rc', 'hard', { archetype: 'guardian' });
-    expect(store.docs.get(bundlePath('b1')).ruleHardness).toEqual({ rc: 'hard' });
-    expect(events()[0]).toMatchObject({ type: 'compat_promote_blocked', blocked: false });
-  });
-
-  it("OFF × conflict → 'hard': written with zero classification (no rule-doc read beyond the service's own bundle read)", async () => {
-    flagState.mode = 'off';
-    seedAgent('guardian');
-    seedDraftBundle();
+describe('matrix — B1 setRuleHardness (thin client wrapper since the WS1 enforce Phase 2 migration)', () => {
+  it('POSTs to /api/agent/set-rule-hardness with the explicit value (null clear included)', async () => {
+    transportCalls.current = [];
+    transportCalls.responder = () => ({ ok: true, status: 200, json: async () => ({ ok: true }) });
     await setRuleHardness(AGENT, 'b1', 'rc', 'hard');
-    expect(store.docs.get(bundlePath('b1')).ruleHardness).toEqual({ rc: 'hard' });
-    expect(store.reads).toEqual([bundlePath('b1')]); // exactly the pre-existing read
+    await setRuleHardness(AGENT, 'b1', 'rc', null);
+    expect(transportCalls.current).toHaveLength(2);
+    expect(transportCalls.current[0]).toMatchObject({
+      url: '/api/agent/set-rule-hardness',
+      body: { agentId: AGENT, bundleId: 'b1', ruleId: 'rc', value: 'hard' },
+    });
+    expect(transportCalls.current[1].body).toMatchObject({ value: null });
+  });
+
+  it('surfaces the server 409 block copy as err.message (callers toast it)', async () => {
+    transportCalls.current = [];
+    transportCalls.responder = () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: 'rule_compat_blocked', message: 'Off-style for your archetype: blocked by the server gate.' }),
+    });
+    await expect(setRuleHardness(AGENT, 'b1', 'rc', 'hard'))
+      .rejects.toThrow('Off-style for your archetype: blocked by the server gate.');
+  });
+
+  it("rejects a bad value client-side without a network call ('hard' | 'soft' | null only)", async () => {
+    transportCalls.current = [];
+    await expect(setRuleHardness(AGENT, 'b1', 'rc', 'firm'))
+      .rejects.toThrow("Rule hardness must be 'hard', 'soft', or null");
     expect(transportCalls.current).toHaveLength(0);
-  });
-
-  it("ENFORCE × NULL-CLEAR promote: clearing a 'soft' override on a hard-CATEGORY conflict rule resolves hard → BLOCKED (the UI's Hard toggle sends exactly null)", async () => {
-    flagState.mode = 'enforce';
-    seedAgent('guardian');
-    // The post-cleanup shape: a-05 (allocation ⇒ hard by category) demoted 'soft'.
-    seedRule('ra', { sourceRef: 'a-05', category: 'allocation' });
-    store.docs.set(bundlePath('b1'), { status: 'draft', name: 'B', ruleIds: ['ra'], ruleHardness: { ra: 'soft' } });
-    await expect(setRuleHardness(AGENT, 'b1', 'ra', null, { archetype: 'guardian' }))
-      .rejects.toBeInstanceOf(RuleCompatBlockError);
-    expect(store.docs.get(bundlePath('b1')).ruleHardness).toEqual({ ra: 'soft' }); // demote intact
-    expect(events()[0]).toMatchObject({ type: 'compat_promote_blocked', blocked: true, hardnessRequested: 'hard' });
-  });
-
-  it("ENFORCE × null-clear on a NATIVE hard-category rule (and a conflict clear that resolves SOFT) both pass", async () => {
-    flagState.mode = 'enforce';
-    seedAgent('guardian');
-    seedRule('rn2', { sourceRef: 'alloc-sector-cap', category: 'allocation' }); // guardian NATIVE hard-category
-    seedRule('rc2', { sourceRef: 'tech-bollinger-squeeze', category: 'technical' }); // conflict, soft category
-    store.docs.set(bundlePath('b2'), { status: 'draft', name: 'B2', ruleIds: ['rn2', 'rc2'], ruleHardness: { rn2: 'soft', rc2: 'hard' } });
-    await setRuleHardness(AGENT, 'b2', 'rn2', null, { archetype: 'guardian' }); // native: clear→hard is fine
-    await setRuleHardness(AGENT, 'b2', 'rc2', null, { archetype: 'guardian' }); // conflict: clear→soft (category) is a demote
-    expect(store.docs.get(bundlePath('b2')).ruleHardness).toEqual({});
-    expect(events()).toHaveLength(0);
   });
 });
 
@@ -364,66 +344,50 @@ describe('matrix — B2 updateRule (category-flip promote)', () => {
 });
 
 // ==================== B3 — reforgeBundle ====================
+//
+// WS1 enforce Phase 2: the whole reforge moved server-side
+// (POST /api/agent/reforge-bundle) — the carry is a ruleHardness re-write,
+// so it moved with setRuleHardness (server-mintable only). The write-path
+// matrix coverage that lived here (enforce strip / hard-category explicit
+// demote / observe carry-unchanged / off byte-equal) moved WITH the write
+// path to api/agent/reforge-bundle.compat.test.js. What remains client-side
+// to prove is the wrapper contract.
 
-describe('matrix — B3 reforgeBundle (hard-override carry-forward)', () => {
-  const seedForgedBundle = () => {
-    seedRule('rc', { sourceRef: 'tech-bollinger-squeeze', category: 'technical' }); // guardian conflict
-    seedRule('rn', { sourceRef: 'ts-01', category: 'tier_strategy' });              // guardian native
-    seedRule('rs', { sourceRef: 'a-05', category: 'allocation' });                  // guardian conflict (soft override below)
-    store.docs.set(bundlePath('b1'), {
-      status: 'forged', name: 'B', version: 1, ruleIds: ['rc', 'rn', 'rs'],
-      ruleHardness: { rc: 'hard', rn: 'hard', rs: 'soft' },
-      ruleSnapshots: [],
+describe('matrix — B3 reforgeBundle (thin client wrapper since the WS1 enforce Phase 2 migration)', () => {
+  it('POSTs to /api/agent/reforge-bundle and unwraps { bundleId, strippedConflicts }', async () => {
+    transportCalls.current = [];
+    transportCalls.responder = () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        agentId: AGENT,
+        bundleId: 'new-draft-1',
+        strippedConflicts: [{ templateId: 'tech-bollinger-squeeze', ruleDocId: 'rc' }],
+        compatLogged: true,
+      }),
     });
-  };
-  const newDraft = () =>
-    [...store.docs.entries()].find(([p, d]) => p.includes('/bundles/auto-') && d.status === 'draft')?.[1];
-
-  it('ENFORCE: strips ONLY the conflict hard-override, logs it blocked:true, returns it for the inline notice', async () => {
-    flagState.mode = 'enforce';
-    seedAgent('guardian');
-    seedForgedBundle();
-    const { bundleId, strippedConflicts } = await reforgeBundle(AGENT, 'b1', { archetype: 'guardian' });
-    expect(bundleId).toMatch(/^auto-/);
-    expect(strippedConflicts).toEqual([{ templateId: 'tech-bollinger-squeeze', ruleDocId: 'rc' }]);
-    expect(newDraft().ruleHardness).toEqual({ rn: 'hard', rs: 'soft' }); // native carry + soft conflict untouched
-    expect(events()).toHaveLength(1);
-    expect(events()[0]).toMatchObject({ type: 'compat_promote_blocked', blocked: true, path: 'reforge_carry', ruleDocId: 'rc' });
-  });
-
-  it("ENFORCE: a hard-CATEGORY conflict override strips to an explicit 'soft' — deletion would resurrect must-obey via the category default", async () => {
-    flagState.mode = 'enforce';
-    seedAgent('guardian');
-    seedRule('rh', { sourceRef: 'a-05', category: 'allocation' }); // conflict, hard category
-    store.docs.set(bundlePath('b3'), {
-      status: 'forged', name: 'B3', version: 1, ruleIds: ['rh'],
-      ruleHardness: { rh: 'hard' }, ruleSnapshots: [],
+    const out = await reforgeBundle(AGENT, 'b1');
+    expect(transportCalls.current).toHaveLength(1);
+    expect(transportCalls.current[0]).toMatchObject({
+      url: '/api/agent/reforge-bundle',
+      body: { agentId: AGENT, bundleId: 'b1' },
     });
-    const { strippedConflicts } = await reforgeBundle(AGENT, 'b3', { archetype: 'guardian' });
-    expect(strippedConflicts).toEqual([{ templateId: 'a-05', ruleDocId: 'rh' }]);
-    const draft = [...store.docs.values()].find((d) => d.status === 'draft' && d.name === 'B3');
-    expect(draft.ruleHardness).toEqual({ rh: 'soft' }); // explicit demote, NOT a delete
+    // The pre-migration return contract, preserved for useForge's inline notice.
+    expect(out).toEqual({
+      bundleId: 'new-draft-1',
+      strippedConflicts: [{ templateId: 'tech-bollinger-squeeze', ruleDocId: 'rc' }],
+    });
   });
 
-  it('OBSERVE: carry unchanged (would-strip logged blocked:false), nothing stripped', async () => {
-    flagState.mode = 'observe';
-    seedAgent('guardian');
-    seedForgedBundle();
-    const { strippedConflicts } = await reforgeBundle(AGENT, 'b1', { archetype: 'guardian' });
-    expect(strippedConflicts).toEqual([]);
-    expect(newDraft().ruleHardness).toEqual({ rc: 'hard', rn: 'hard', rs: 'soft' });
-    expect(events()[0]).toMatchObject({ blocked: false, path: 'reforge_carry' });
-  });
-
-  it('OFF: carry byte-equal, zero guard reads (only the service’s own bundle read), no transport', async () => {
-    flagState.mode = 'off';
-    seedAgent('guardian');
-    seedForgedBundle();
-    const { strippedConflicts } = await reforgeBundle(AGENT, 'b1');
-    expect(strippedConflicts).toEqual([]);
-    expect(newDraft().ruleHardness).toEqual({ rc: 'hard', rn: 'hard', rs: 'soft' });
-    expect(store.reads).toEqual([bundlePath('b1')]);
-    expect(transportCalls.current).toHaveLength(0);
+  it('throws the server message string on a non-2xx (callers surface err.message)', async () => {
+    transportCalls.current = [];
+    transportCalls.responder = () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'is_draft', message: 'Cannot reforge a draft bundle — edit it directly' }),
+    });
+    await expect(reforgeBundle(AGENT, 'b1'))
+      .rejects.toThrow('Cannot reforge a draft bundle — edit it directly');
   });
 });
 
@@ -492,29 +456,40 @@ describe('matrix — B6 equipBundle (thin client wrapper since the D3 migration)
 // ==================== cross-path invariant ====================
 
 describe('matrix — the §6.2 promise: a core_conflict rule cannot become hard through ANY guarded path under enforce', () => {
-  it('create-as-hard, promote, category-flip, and reforge-carry all end with no hard conflict in the store', async () => {
+  it('create-as-hard and category-flip block CLIENT-side; promote and reforge-carry surface the SERVER gate (their store-level proof lives in the endpoint compat suites)', async () => {
     flagState.mode = 'enforce';
     seedAgent('guardian');
-    // A1
+    // A1 — client-guarded rule-doc write.
     await expect(createRule(AGENT, ruleData('a-05', 'allocation'), { archetype: 'guardian' })).rejects.toThrow();
-    // B1
+    // B2 — client-guarded rule-doc write.
     seedRule('rc', { sourceRef: 'tech-bollinger-squeeze', category: 'technical' });
-    store.docs.set(bundlePath('b1'), { status: 'draft', name: 'B', ruleIds: ['rc'], ruleHardness: {} });
-    await expect(setRuleHardness(AGENT, 'b1', 'rc', 'hard', { archetype: 'guardian' })).rejects.toThrow();
-    // B2
     await expect(updateRule(AGENT, 'rc', { category: 'allocation' }, { archetype: 'guardian' })).rejects.toThrow();
-    // B3
-    store.docs.set(bundlePath('b2'), {
-      status: 'forged', name: 'B2', version: 1, ruleIds: ['rc'], ruleHardness: { rc: 'hard' }, ruleSnapshots: [],
-    });
-    const { strippedConflicts } = await reforgeBundle(AGENT, 'b2', { archetype: 'guardian' });
+    // B1 — server-guarded since WS1 enforce Phase 2: the thin client surfaces
+    // the endpoint's 409 block; the override-not-written proof lives in
+    // api/agent/set-rule-hardness.compat.test.js.
+    transportCalls.responder = (url) =>
+      url === '/api/agent/set-rule-hardness'
+        ? { ok: false, status: 409, json: async () => ({ error: 'rule_compat_blocked', message: 'blocked by the server gate' }) }
+        : { ok: true, status: 200, json: async () => ({}) };
+    await expect(setRuleHardness(AGENT, 'b1', 'rc', 'hard')).rejects.toThrow('blocked by the server gate');
+    // B3 — server-guarded: the strip lands server-side and is REPORTED back
+    // for the inline notice; the carried-map proof lives in
+    // api/agent/reforge-bundle.compat.test.js.
+    transportCalls.responder = (url) =>
+      url === '/api/agent/reforge-bundle'
+        ? {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              bundleId: 'new-1',
+              strippedConflicts: [{ templateId: 'tech-bollinger-squeeze', ruleDocId: 'rc' }],
+            }),
+          }
+        : { ok: true, status: 200, json: async () => ({}) };
+    const { strippedConflicts } = await reforgeBundle(AGENT, 'b2');
     expect(strippedConflicts).toHaveLength(1);
 
-    // Final state: no rule doc with a hard category conflict, no bundle map
-    // carrying 'hard' for the conflict doc.
+    // Client-guarded final state: the rule doc never flipped to a hard category.
     expect(store.docs.get(rulePath('rc')).category).toBe('technical');
-    expect(store.docs.get(bundlePath('b1')).ruleHardness).toEqual({});
-    const draft = [...store.docs.values()].find((d) => d.status === 'draft' && d.name === 'B2');
-    expect(draft.ruleHardness).toEqual({});
   });
 });
