@@ -322,10 +322,13 @@ export function cpuNFromUserId(odUserId) {
   return Number(raw);
 }
 
+/** The agents-collection doc-id prefix for CPU system agents (`cpu-agent-{n}`). */
+export const CPU_AGENT_ID_PREFIX = 'cpu-agent-';
+
 /** The deterministic agents-collection doc id for CPU n. */
 export function cpuAgentDocId(n) {
   if (!Number.isInteger(n) || n < 1) throw new Error('cpuAgentDocId: n must be a positive integer');
-  return `cpu-agent-${n}`;
+  return `${CPU_AGENT_ID_PREFIX}${n}`;
 }
 
 // League Training Slice 3 — the per-pod training-agent CLONE id codec. A

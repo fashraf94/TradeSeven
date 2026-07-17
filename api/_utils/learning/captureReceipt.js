@@ -22,18 +22,14 @@ import { validateReceipt } from './learningValidators.js';
 import { buildTechnicalSnapshot } from '../buildTechnicalSnapshot.js';
 // Node-clean constants module (zero imports — VERIFIED), already imported across
 // api/ (§4 dependency-surface: captureReceipt.test.js's import of THIS module is
-// the runtime guard and must never be mocked). TRAINING_CLONE_ID_PREFIX is the
-// exported clone-id codec; the `isCpu` boolean is the authoritative CPU contract
-// (leagueTournament.js §1.1: the flag is the contract, the id prefix a secondary
-// readable signal).
-import { TRAINING_CLONE_ID_PREFIX, cpuAgentDocId } from '../../../src/constants/leagueTournament.js';
+// the runtime guard and must never be mocked). The `isCpu` boolean is the
+// authoritative CPU contract (leagueTournament.js §1.1: the flag is the contract,
+// the id prefix a secondary readable signal); CPU_AGENT_ID_PREFIX ('cpu-agent-')
+// is that secondary CPU signal and TRAINING_CLONE_ID_PREFIX ('training-agent-')
+// the in-scope training signal.
+import { TRAINING_CLONE_ID_PREFIX, CPU_AGENT_ID_PREFIX } from '../../../src/constants/leagueTournament.js';
 
 const MS_PER_HOUR = 3_600_000;
-
-// The CPU agents-doc id prefix, taken from its codec so there is ONE source of
-// truth (cpuAgentDocId(n) === `cpu-agent-${n}` → prefix 'cpu-agent-'). A SECONDARY,
-// readable signal only; the authoritative CPU signal is the isCpu boolean.
-const CPU_AGENT_DOC_ID_PREFIX = cpuAgentDocId(1).slice(0, -1);
 
 /** The evidence-provenance taxonomy stamped on every receipt (outcome-blind). */
 export const EVIDENCE_CLASSES = Object.freeze(['live_agent', 'cpu', 'training', 'unknown']);
@@ -61,7 +57,7 @@ export function classifyEvidence({ isCpu, agentId } = {}) {
   if (isCpu === true) return 'cpu';
   if (typeof agentId === 'string') {
     if (agentId.startsWith(TRAINING_CLONE_ID_PREFIX)) return 'training';
-    if (agentId.startsWith(CPU_AGENT_DOC_ID_PREFIX)) return 'cpu';
+    if (agentId.startsWith(CPU_AGENT_ID_PREFIX)) return 'cpu';
     if (agentId.length > 0) return 'live_agent';
   }
   return 'unknown';

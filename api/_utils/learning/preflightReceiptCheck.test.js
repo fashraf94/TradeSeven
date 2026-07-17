@@ -174,4 +174,17 @@ describe('validateCaptureSample — evidence denominator (exclude non-evidence)'
     const info = res.checks.find((c) => c.name === 'evidence-exclusion');
     expect(info.detail).toBe('excluded 0 cpu/training receipts; evaluating 7 live-agent receipts.');
   });
+
+  it('offendingIndices/receipt[i] use the ORIGINAL caller-array position, not the filtered live index', () => {
+    // Excluded cpu at raw idx 0; fine live at raw idx 1; broken live (null techDoc)
+    // at raw idx 2. The offender must be reported as raw index 2 so the runner's
+    // receipts[index] prints the actually-broken document.
+    const cpu = asClass(mkReceipt({ seq: 2, tradeCount: 1 }), 'cpu');
+    const goodLive = mkReceipt({ dR: null, nearestSupport: 150, seq: 3, tradeCount: 2 });
+    const brokenLive = mkReceipt({ techUpdatedAt: null, dR: 2.0, seq: 4, tradeCount: 3 });
+    const res = validateCaptureSample([cpu, goodLive, brokenLive]);
+    const check = failed(res, 'predicateComputedAt-nonnull');
+    expect(check).toBeTruthy();
+    expect(check.offendingIndices).toEqual([2]); // raw index of brokenLive — NOT filtered live-index 1
+  });
 });
