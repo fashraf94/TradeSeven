@@ -588,6 +588,13 @@ export async function flipAwaitingOpenPods(db, { now = new Date(), includeDev = 
 export async function sweepIdleDraftingPods(db, { now = new Date(), includeDev = false } = {}) {
   const nowMs = now.getTime();
   const pods = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.DRAFTING, { includeDev });
+  // isTraining-scoped BY DESIGN — do NOT widen to competitive DRAFTING pods.
+  // Competitive Live Draft (LEAGUE_LIVE_DRAFT) pods have their OWN completion
+  // guarantee (the dedicated live-draft-fire cron's driveSlotDraftAutopick, which
+  // completes an abandoned draft in one pass and honors battleStartWeek). Sweeping
+  // them here would double-drive them AND resolve with the wrong (next-market-open)
+  // anchor. The "a DRAFTING group without isTraining is never swept" test locks
+  // this exclusion.
   const training = pods.filter(p => p.isTraining === true);
   const summary = { swept: training.length, completed: 0, active: 0, errors: 0 };
 

@@ -247,6 +247,13 @@ describe('SEAM: formation → Monday pipeline (a base-layer + CPU group through 
     expect(mondaySummary.deploys.deployed).toBe(4);
 
     const group = store.get(`tournamentGroups/${groupId}`);
+    // SINGLE-SHOT ATOMICITY (flag-off invariant, deliberately locked — S4): a
+    // competitive pod resolves FORMING → BATTLE in one Monday-pipeline act and
+    // NEVER passes through DRAFTING. Under LEAGUE_LIVE_DRAFT this invariant is the
+    // FLAG-OFF behavior; flag-on, the slot path is the lawful alternative (a slot
+    // pod goes FORMING → DRAFTING → AWAITING_OPEN/BATTLE via the fire cron, and is
+    // excluded from this single-shot resolve by the runMondayPipeline isLiveDraft
+    // guard). See the Competitive Live Draft discovery (docs/audits/20260712_…).
     expect(group.status).toBe(GROUP_STATUS.BATTLE);
     expect(group.players.every(p => p.picks.length === 3)).toBe(true);
 

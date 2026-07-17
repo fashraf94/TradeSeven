@@ -82,11 +82,27 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'group_not_found', message: 'Tournament group not found.' });
     }
     const group = groupSnap.data();
+
+    // FENCE-ADJACENT — the close-only exposure-contract guard (do NOT weaken the
+    // BATTLE path). Competitive Live Draft (LEAGUE_LIVE_DRAFT) update: a
+    // COMPETITIVE slot pod now passes through DRAFTING → AWAITING_OPEN before
+    // BATTLE (it no longer stops at FORMING). In those pre-battle states it has
+    // NO battle and NO legs, so a claim is structurally invalid. This explicit
+    // guard rejects any non-BATTLE competitive live-draft pod — structurally, not
+    // merely time-gated. (The claimsStatusOpen expression below ALSO rejects it —
+    // its AWAITING_OPEN exemption is isTraining-scoped and a live-draft pod is
+    // never isTraining — but the intent is stated here so a future edit to that
+    // expression cannot silently admit a leg-less competitive pod.)
+    if (group.isLiveDraft === true && group.status !== GROUP_STATUS.BATTLE) {
+      return res.status(409).json({ error: 'not_battle', message: 'Claims require a group in battle.' });
+    }
+
     // Slice 4 (Phase A): claims open on a BATTLE pod — and, for TRAINING pods
     // only, on an AWAITING_OPEN pod (the weeknight pre-day-1 window; the pod is
     // flipped to BATTLE by the orchestrator morning tick before the 9:25 AM ET
-    // processing pass). AWAITING_OPEN is a training-only status (LEGAL_TRANSITIONS),
-    // so ranked behavior is unchanged — ranked never enters it.
+    // processing pass). AWAITING_OPEN opens claims ONLY for training pods; a
+    // competitive AWAITING_OPEN pod (Live Draft) is rejected above and by the
+    // isTraining-scoped exemption here — ranked/competitive claims require BATTLE.
     const claimsStatusOpen = group.status === GROUP_STATUS.BATTLE
       || (group.isTraining === true && group.status === GROUP_STATUS.AWAITING_OPEN);
     if (!claimsStatusOpen) {

@@ -1113,6 +1113,18 @@ describe('selectMyGroup — the subscribeMyGroup ranked read EXCLUDES training p
     const newer = { id: 'b', status: GROUP_STATUS.FORMING, updatedAt: '2026-06-15T12:00:00Z' };
     expect(selectMyGroup([older, newer]).id).toBe('b');
   });
+
+  it('COMPETITIVE LIVE DRAFT (Phase 3 gate lift): a competitive DRAFTING/AWAITING_OPEN pod now surfaces; a training one still does not', () => {
+    const compDrafting = { id: 'c1', status: GROUP_STATUS.DRAFTING, updatedAt: '2026-07-08T23:00:00Z' };
+    const compAwaiting = { id: 'c2', status: GROUP_STATUS.AWAITING_OPEN, updatedAt: '2026-07-08T23:05:00Z' };
+    const trainingDrafting = { id: 't2', status: GROUP_STATUS.DRAFTING, isTraining: true, updatedAt: '2026-07-08T23:10:00Z' };
+    expect(selectMyGroup([compDrafting])?.id).toBe('c1');
+    expect(selectMyGroup([compAwaiting])?.id).toBe('c2');
+    // training in-flight pods stay excluded (they route via selectMyTrainingPod)
+    expect(selectMyGroup([trainingDrafting])).toBeNull();
+    // even when the training pod is newer, the competitive in-flight pod is the ranked match
+    expect(selectMyGroup([compDrafting, trainingDrafting])?.id).toBe('c1');
+  });
 });
 
 describe('selectMyTrainingPod — the re-entry read + the server already_active guard (one predicate, both sides)', () => {

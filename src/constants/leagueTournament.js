@@ -516,21 +516,35 @@ export function selectActiveLobby(docs, odUserId) {
 
 /**
  * Pick the caller's ACTIVE RANKED group from a set of their group docs (the
- * basis for the client `subscribeMyGroup`). A group counts only while FORMING
- * or BATTLE, the caller's membership is already guaranteed by the query, and —
- * the load-bearing addition for League Next-Arc training — it must NOT be a
- * training pod (`isTraining !== true`). Training pods share the
- * `tournamentGroups` collection and surface to the same member-scoped query, but
- * the ranked tab renders a matched group through the status-keyed ranked UI
- * (LeagueParticipantView), which would mis-render a training pod; excluding them
- * here is the safety prerequisite that keeps a live training BATTLE pod out of
- * the ranked read. Most-recently-updated wins when several match. Returns the
- * group doc or null. Pure — the exclusion is unit-tested without Firestore.
- * `docs` are { id, ...group }.
+ * basis for the client `subscribeMyGroup`). A group counts while FORMING,
+ * DRAFTING, AWAITING_OPEN, or BATTLE — the caller's membership is already
+ * guaranteed by the query, and — the load-bearing addition for League Next-Arc
+ * training — it must NOT be a training pod (`isTraining !== true`). Training
+ * pods share the `tournamentGroups` collection and surface to the same
+ * member-scoped query, but the ranked tab renders a matched group through the
+ * status-keyed ranked UI (LeagueParticipantView), which would mis-render a
+ * training pod; excluding them here is the safety prerequisite that keeps a live
+ * training pod out of the ranked read.
+ *
+ * DRAFTING/AWAITING_OPEN were added for the Competitive Live Draft (slot
+ * lobbies): a competitive pod now passes through those in-flight states before
+ * BATTLE, so the ranked client must observe them to route into the live draft
+ * room / show the awaiting-open glimpse. Flag-off this is byte-identical — a
+ * competitive (non-training) group NEVER reaches DRAFTING/AWAITING_OPEN unless
+ * LEAGUE_LIVE_DRAFT is on (competitive formation is single-shot FORMING→BATTLE),
+ * and training pods are excluded by the isTraining guard either way.
+ *
+ * Most-recently-updated wins when several match. Returns the group doc or null.
+ * Pure — the exclusion is unit-tested without Firestore. `docs` are { id, ...group }.
  */
 export function selectMyGroup(docs) {
   return (docs ?? [])
-    .filter(g => (g?.status === GROUP_STATUS.FORMING || g?.status === GROUP_STATUS.BATTLE) && g?.isTraining !== true)
+    .filter(g => g?.isTraining !== true && (
+      g?.status === GROUP_STATUS.FORMING ||
+      g?.status === GROUP_STATUS.DRAFTING ||
+      g?.status === GROUP_STATUS.AWAITING_OPEN ||
+      g?.status === GROUP_STATUS.BATTLE
+    ))
     .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))[0] ?? null;
 }
 
