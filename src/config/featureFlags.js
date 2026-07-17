@@ -48,7 +48,7 @@ export const COMMAND_DASHBOARD_DESKTOP_ENABLED = true;
  * flag; flip to ship only after the fenced commit is reviewed for prompt parity
  * and signed off. See FORGE_ENFORCEMENT_KEYSTONE_SPEC and the Phase 3 audit.
  */
-export const FORGE_HARDSOFT_AUTHORING_ENABLED = false;
+export const FORGE_HARDSOFT_AUTHORING_ENABLED = true;
 
 /**
  * Forge — Desktop layout for the Forge workshop shell (ForgeWorkshop).
