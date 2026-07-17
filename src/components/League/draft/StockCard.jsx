@@ -10,7 +10,7 @@ import { TOKENS, DX, alpha, fitColor } from './draftTokens';
 import { Icon } from './draftIcons';
 import { Mono, SectorTag, ReturnPct, FitBar } from './draftPrimitives';
 
-export function StockCard({ stock, selected, onSelect, expanded, onExpand, size = 'd', dim = false, disabled = false }) {
+export function StockCard({ stock, selected, onSelect, expanded, onExpand, size = 'd', dim = false, disabled = false, onResearch = null }) {
   const c = fitColor(stock.tier);
   const big = size === 'd';
   const signals = (small) => (
@@ -35,9 +35,26 @@ export function StockCard({ stock, selected, onSelect, expanded, onExpand, size 
           background: stock.tier === 'top' ? alpha(DX.you, 0.14) : TOKENS.bg, border: `1px solid ${stock.tier === 'top' ? alpha(DX.you, 0.3) : TOKENS.hair}` }}>
           <Mono style={{ fontSize: 11, fontWeight: 700, color: stock.tier === 'top' ? DX.you : TOKENS.ink2 }}>{stock.boardRank}</Mono>
         </div>
-        {/* identity (ticker-only) */}
+        {/* identity (ticker-only). L2: when onResearch is wired, the TICKER is a
+            distinct tap target that opens research (stopPropagation keeps the
+            row-body's select-for-draft intact); without it, the plain symbol as
+            before (flag-off byte-identical). */}
         <div style={{ width: big ? 130 : 96, flexShrink: 0, minWidth: 0 }}>
-          <span style={{ fontSize: big ? 16 : 15, fontWeight: 700, color: TOKENS.ink, letterSpacing: '-0.01em' }}>{stock.symbol}</span>
+          {onResearch ? (
+            <button
+              type="button"
+              className="ld-tap"
+              onClick={(e) => { e.stopPropagation(); onResearch(stock.symbol); }}
+              aria-label={`Research ${stock.symbol}`}
+              title={`Research ${stock.symbol}`}
+              style={{ all: 'unset', cursor: 'pointer', fontSize: big ? 16 : 15, fontWeight: 700, color: TOKENS.ink, letterSpacing: '-0.01em',
+                textDecoration: 'underline', textDecorationStyle: 'dotted', textDecorationColor: alpha(DX.you, 0.5), textUnderlineOffset: 3 }}
+            >
+              {stock.symbol}
+            </button>
+          ) : (
+            <span style={{ fontSize: big ? 16 : 15, fontWeight: 700, color: TOKENS.ink, letterSpacing: '-0.01em' }}>{stock.symbol}</span>
+          )}
           <div style={{ marginTop: 5 }}><SectorTag sector={stock.sectorName} /></div>
         </div>
         {/* reason (desktop) */}

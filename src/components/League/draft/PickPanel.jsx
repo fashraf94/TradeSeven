@@ -18,6 +18,10 @@ export function PickPanel({
   onConfirm, onClear, submitting = false, error = null, myPicks = [],
   onExit = null, onClockLabel = null, clockTotalSec = 20,
   revealRows = [], onSkip = null,
+  // L3 (V2): when false, the Confirm/Clear footer moves to the shared viewport-
+  // pinned action bar (the panel keeps only the selected-pick preview + coach).
+  // Default true → flag-off renders today's in-panel confirm byte-identically.
+  showFooterConfirm = true,
 }) {
   const yourTurn = phase === 'your-turn';
   const waiting = phase === 'waiting';
@@ -126,7 +130,7 @@ export function PickPanel({
       </div>
 
       {/* footer */}
-      {yourTurn && (
+      {yourTurn && showFooterConfirm && (
         <div style={{ display: 'flex', gap: 9 }}>
           {selected && (
             <button className="ld-tap" onClick={onClear} disabled={submitting} style={{ all: 'unset', cursor: submitting ? 'default' : 'pointer', padding: '15px 16px', borderRadius: 13, background: TOKENS.surface, border: `1px solid ${TOKENS.hair2}`, color: TOKENS.ink2, fontWeight: 600, fontSize: 13.5 }}>Clear</button>

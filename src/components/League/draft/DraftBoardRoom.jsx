@@ -13,7 +13,8 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useTrainingDraft } from '../../../hooks/useTrainingDraft';
-import { PICKS_PER_PLAYER, TRAINING_TUNING, GROUP_STATUS, GROUP_SIZE } from '../../../constants/leagueTournament';
+import { isTrainingPodDraftV2On } from '../../../config/featureFlags';
+import { PICKS_PER_PLAYER, GROUP_STATUS, GROUP_SIZE } from '../../../constants/leagueTournament';
 import { TOKENS, DX, alpha, injectDraftCSS, FONT_VARS } from './draftTokens';
 import { Icon } from './draftIcons';
 import { Mono, Eyebrow, ArchChip, ClockRing } from './draftPrimitives';
@@ -26,8 +27,8 @@ import { PickPanel } from './PickPanel';
 import { RevealRow, SnipeCallout } from './RevealRow';
 import { useDraftReveal } from './useDraftReveal';
 import { DraftForming } from './DraftForming';
+import AssetResearchModal from '../../draft/AssetResearchModal';
 
-const CLOCK_TOTAL = Math.max(1, Math.round((TRAINING_TUNING?.PICK_CLOCK_MS || 20000) / 1000));
 // Every tier shows its top TIER_CAP by fit; the rest sits behind a per-tier
 // expander. Distribution-robust — holds no matter how the bands fall.
 const TIER_CAP = 10;
@@ -78,18 +79,21 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
   const {
     poolRows, humanArchetype, events, snakeOrder, members, currentUserId, myPicks,
     seats, isDrafting, isMyTurn, isComplete, finalStatus, universe,
-    currentPickIndex, totalPicks, round, pickClock, submitting, error, submitPick, draft,
+    currentPickIndex, totalPicks, round, pickClock, clockTotalSec, submitting, error, submitPick, draft,
     onClockSeatIdx,
   } = d;
 
   const narrow = useNarrow();
   const [selected, setSelected] = useState(null);
+  const [researchSym, setResearchSym] = useState(null); // L2: the ticker-opened research symbol (V2)
   const [expandedId, setExpandedId] = useState(null);
   const [sectorFilter, setSectorFilter] = useState('All');
   const [query, setQuery] = useState('');
   const [expandedTiers, setExpandedTiers] = useState(() => new Set());
 
   const loading = !draft || universe == null;
+  // The V2 gate (flag OR ?trainingPodV2=1). Off → the board renders byte-identically.
+  const v2On = isTrainingPodDraftV2On();
 
   // clear a stale selection when the turn moves on / the name gets sniped
   useEffect(() => { if (!isMyTurn) setSelected(null); }, [isMyTurn, currentPickIndex]);
@@ -177,6 +181,65 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
   };
   const toggleTier = (id) => setExpandedTiers((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
+  // L2: research modal (V2). The row this symbol belongs to (for the sector
+  // badge on the opened asset). The draft CTA uses the modal's NATIVE acquire
+  // path, so it follows internal navigation and drafts the DISPLAYED stock; the
+  // isAcquirable gate below shows it only for a name still on the live board (and
+  // only on the human's turn) — research-only otherwise.
+  const researchRow = researchSym
+    ? (board.find((b) => b.symbol === researchSym) || poolRows.find((r) => r.symbol === researchSym) || null)
+    : null;
+  const openResearch = (sym) => setResearchSym(sym);
+  const closeResearch = () => setResearchSym(null);
+  const draftFromModal = async (sym) => {
+    // Guard: never call submitPick with an empty symbol — that path autopicks
+    // top-fit server-side, which would silently draft the wrong name.
+    if (!sym) return;
+    // Same snipe-rank freeze as doConfirm — drafting from the modal is a real pick.
+    snipeRanksRef.current = { atIndex: currentPickIndex, ranks: new Map(board.map((b) => [b.symbol, b.boardRank])) };
+    const ok = await submitPick(sym, false);
+    if (ok) { setSelected(null); closeResearch(); }
+  };
+  const isBoardSymbol = (sym) => !!board.find((b) => b.symbol === String(sym || '').toUpperCase());
+
+  // L3 + L2 overlays (V2 only), shared by both breakpoints so there is ONE
+  // confirm affordance and ONE research modal. The sticky bar is viewport-pinned
+  // and shows Confirm/Clear only when a pick is selected; the board scroll regions
+  // carry matching bottom padding so the last rows clear it.
+  const v2Overlays = () => {
+    if (!v2On) return null;
+    return (
+      <>
+        {phase === 'your-turn' && selectedRow && (
+          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 40, boxSizing: 'border-box',
+            padding: '12px 16px calc(12px + env(safe-area-inset-bottom))', background: TOKENS.bg, borderTop: `1px solid ${TOKENS.hair}`,
+            display: 'flex', justifyContent: 'center', boxShadow: `0 -8px 24px ${alpha(TOKENS.bg, 0.6)}` }}>
+            <div style={{ display: 'flex', gap: 9, width: '100%', maxWidth: 720 }}>
+              <button className="ld-tap" onClick={() => setSelected(null)} disabled={submitting}
+                style={{ all: 'unset', cursor: submitting ? 'default' : 'pointer', padding: '14px 18px', borderRadius: 13, background: TOKENS.surface, border: `1px solid ${TOKENS.hair2}`, color: TOKENS.ink2, fontWeight: 600, fontSize: 13.5 }}>Clear</button>
+              <button className="ld-tap" onClick={submitting ? undefined : doConfirm} disabled={submitting}
+                style={{ all: 'unset', cursor: submitting ? 'default' : 'pointer', flex: 1, textAlign: 'center', padding: '14px', borderRadius: 13, background: DX.you, color: TOKENS.bg, fontWeight: 700, fontSize: 15, boxShadow: `0 8px 24px ${alpha(DX.you, 0.3)}`, opacity: submitting ? 0.7 : 1 }}>
+                {submitting ? 'Drafting…' : `Confirm — draft ${selectedRow.symbol}`}
+              </button>
+            </div>
+          </div>
+        )}
+        {researchSym && (
+          <AssetResearchModal
+            asset={{ symbol: researchSym, name: researchSym, sector: researchRow?.sectorName }}
+            sector={researchRow?.sectorName}
+            isMyTurn={phase === 'your-turn'}
+            timeRemaining={pickClock ?? 0}
+            canPick={phase === 'your-turn'}
+            onAcquire={(a) => draftFromModal(a?.symbol)}
+            isAcquirable={isBoardSymbol}
+            onClose={closeResearch}
+          />
+        )}
+      </>
+    );
+  };
+
   const scopeStyle = {
     height: '100%', minHeight: '100vh', background: TOKENS.bg, color: TOKENS.ink,
     fontFamily: 'var(--ld-ui)', ...FONT_VARS, display: 'flex', flexDirection: 'column', position: 'relative',
@@ -235,7 +298,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
   if (loading || (!isDrafting && !revealing)) {
     return (
       <div className="ld-scope" style={{ ...scopeStyle, alignItems: 'center', justifyContent: 'center' }}>
-        <ClockRing seconds={null} total={CLOCK_TOTAL} size={64} />
+        <ClockRing seconds={null} total={clockTotalSec} size={64} />
         <div style={{ color: TOKENS.ink2, marginTop: 16 }}>Loading your draft…</div>
       </div>
     );
@@ -287,7 +350,8 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
               <StockCard key={s.symbol} stock={s} size={size}
                 selected={selected === s.symbol} disabled={phase !== 'your-turn'}
                 onSelect={(sym) => setSelected(sym === selected ? null : sym)}
-                expanded={expandedId === s.symbol} onExpand={setExpandedId} />
+                expanded={expandedId === s.symbol} onExpand={setExpandedId}
+                onResearch={v2On ? openResearch : undefined} />
             ))}
           </div>
           {hidden > 0 && (
@@ -326,7 +390,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
 
         {phase === 'your-turn' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 16px', flexShrink: 0, background: alpha(DX.you, 0.06), borderBottom: `1px solid ${alpha(DX.you, 0.2)}` }}>
-            <ClockRing seconds={pickClock} total={CLOCK_TOTAL} size={58} />
+            <ClockRing seconds={pickClock} total={clockTotalSec} size={58} />
             <div style={{ flex: 1 }}>
               <Mono style={{ fontSize: 9.5, letterSpacing: '0.1em', color: DX.you, fontWeight: 700 }}>YOU'RE ON THE CLOCK</Mono>
               <div style={{ fontSize: 17, fontWeight: 700, marginTop: 1 }}>Pick #{pickNo} overall</div>
@@ -349,7 +413,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
           </div>
         )}
 
-        <div className="ld-scroll" style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 14px', minHeight: 0 }}>
+        <div className="ld-scroll" style={{ flex: 1, overflowY: 'auto', padding: v2On && phase === 'your-turn' ? '12px 16px 96px' : '12px 16px 14px', minHeight: 0 }}>
           {error && <div style={{ borderRadius: 10, padding: '8px 12px', background: alpha(DX.neg, 0.1), border: `1px solid ${alpha(DX.neg, 0.4)}`, color: '#ffd7de', fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
           {revealing ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -369,7 +433,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
           )}
         </div>
 
-        {phase === 'your-turn' && (
+        {!v2On && phase === 'your-turn' && (
           <div style={{ flexShrink: 0, padding: '11px 16px calc(11px + env(safe-area-inset-bottom))', borderTop: `1px solid ${TOKENS.hair}`, background: TOKENS.bg }}>
             {selectedRow ? (
               <div style={{ display: 'flex', gap: 9 }}>
@@ -386,6 +450,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
           </div>
         )}
         {flash && !reduceMotion && <SnipeCallout symbol={flash.symbol} seatLabel={cpuLabel(flash.odUserId)} />}
+        {v2Overlays()}
       </div>
     );
   }
@@ -408,7 +473,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {/* left — the table */}
-        <div className="ld-scroll" style={{ width: 290, flexShrink: 0, borderRight: `1px solid ${TOKENS.hair}`, padding: '15px 16px', display: 'flex', flexDirection: 'column', gap: 9, overflowY: 'auto' }}>
+        <div className="ld-scroll" style={{ width: 290, flexShrink: 0, borderRight: `1px solid ${TOKENS.hair}`, padding: v2On && phase === 'your-turn' ? '15px 16px 96px' : '15px 16px', display: 'flex', flexDirection: 'column', gap: 9, overflowY: 'auto' }}>
           <Eyebrow>The table</Eyebrow>
           {seats.map((s) => (
             <SeatCard key={s.odUserId} seat={{ ...s, label: seatLabel(s) }} archKey={archKey} active={s.seatIndex === onClockSeatIdx && isDrafting} picksPerPlayer={PICKS_PER_PLAYER} />
@@ -432,23 +497,25 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
               {sectorChips()}
             </div>
           </div>
-          <div className="ld-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px' }}>
+          <div className="ld-scroll" style={{ flex: 1, overflowY: 'auto', padding: v2On && phase === 'your-turn' ? '0 20px 96px' : '0 20px 20px' }}>
             {renderTiers('d')}
           </div>
         </div>
 
         {/* right — the pick panel */}
-        <div style={{ width: 332, flexShrink: 0, borderLeft: `1px solid ${TOKENS.hair}`, padding: '15px 16px', minHeight: 0 }}>
+        <div style={{ width: 332, flexShrink: 0, borderLeft: `1px solid ${TOKENS.hair}`, padding: v2On && phase === 'your-turn' ? '15px 16px 96px' : '15px 16px', minHeight: 0 }}>
           <PickPanel
             phase={phase} pickClock={pickClock} pickNo={pickNo} backToBack={backToBack}
             selected={selectedRow} coach={coach} orbState={(phase === 'waiting' || phase === 'revealing') ? 'reading' : 'ready'}
             onConfirm={doConfirm} onClear={() => setSelected(null)} submitting={submitting} error={error}
-            myPicks={myPicks} onExit={onExit} onClockLabel={onClockLabel} clockTotalSec={CLOCK_TOTAL}
+            myPicks={myPicks} onExit={onExit} onClockLabel={onClockLabel} clockTotalSec={clockTotalSec}
             revealRows={revealRows} onSkip={skip}
+            showFooterConfirm={!v2On}
           />
         </div>
       </div>
       {flash && !reduceMotion && <SnipeCallout symbol={flash.symbol} seatLabel={cpuLabel(flash.odUserId)} />}
+      {v2Overlays()}
     </div>
   );
 }

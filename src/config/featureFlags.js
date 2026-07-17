@@ -281,6 +281,52 @@ export const LEAGUE_CANONICAL_OPEN_CAPTURE = false;
 export const TRAINING_BOARD_REDESIGN_ENABLED = true;
 
 /**
+ * League Training — Training Pod Draft V2 (the Draft Lobby & Awaiting-Open
+ * polish; spec 2026-07-16).
+ *
+ * STACKS ON TOP of the already-shipped TRAINING_BOARD_REDESIGN_ENABLED (which is
+ * LIVE — the redesigned DraftBoardRoom). "Flag-off" here means TODAY's
+ * DraftBoardRoom + video-based awaiting-open pod, BYTE-IDENTICAL — it does NOT
+ * mean the legacy sector board (that is TRAINING_BOARD_REDESIGN_ENABLED's own
+ * off-path, a different flag). Do not conflate the two.
+ *
+ * When true — or with the `?trainingPodV2=1` dev-preview param (the
+ * `?trainingBoard=1` idiom) — it delivers L1–L8: a 60s HUMAN pick clock, the
+ * board ticker opening AssetResearchModal (row-body still selects), a sticky
+ * bottom action bar, and the rebuilt awaiting-open pod (countdown → user
+ * draftboard → best-remaining free agents → relocated claims).
+ *
+ * Client UI + reads only — no new writes, the same applyTrainingPick /
+ * place-claim endpoints, the calibration fence untouched. Built/merged DARK; flip
+ * in a one-line follow-up PR after a Vercel preview smoke (the
+ * TRAINING_BOARD_REDESIGN_ENABLED precedent) — never in the build PR.
+ */
+export const TRAINING_POD_DRAFT_V2_ENABLED = true;
+
+// The HUMAN pick clock under V2 (L1: 60s; CPU turns unaffected — they resolve
+// server-side with no clock). Homed HERE, not in the zero-import, test-locked
+// leagueTournament.js, so flag-off stays byte-identical at that module's 20s
+// PICK_CLOCK_MS; the single clock consumer (useTrainingDraft) selects between the
+// two off isTrainingPodDraftV2On().
+export const TRAINING_POD_PICK_CLOCK_MS = 60000;
+
+/**
+ * The ONE home for the V2 gate — the flag OR the `?trainingPodV2=1` dev-preview
+ * override — so every V2 surface (the lobby clock / ticker-modal / sticky bar and
+ * the Phase-2 pod) resolves it identically. SSR/Node-safe (guards `window`); a
+ * malformed URL degrades to the flag alone.
+ */
+export function isTrainingPodDraftV2On() {
+  if (TRAINING_POD_DRAFT_V2_ENABLED) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('trainingPodV2') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Rule Conflict Reconciler — equip-time DETECTION (shadow-safe half).
  *
  * The agent (BaggerBomb) path has no conflict resolution: contradictory hard

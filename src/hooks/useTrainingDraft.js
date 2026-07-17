@@ -29,6 +29,7 @@ import { subscribeGroup, subscribeDraftState } from '../services/tournamentGroup
 import { makeTrainingPick as makeTrainingPickAction, mapTournamentActionError } from '../services/tournamentActions';
 import { computeArchetypeRankings } from '../../api/_utils/archetypeScoring.js';
 import { GROUP_STATUS, PICKS_PER_PLAYER, TRAINING_TUNING } from '../constants/leagueTournament';
+import { isTrainingPodDraftV2On, TRAINING_POD_PICK_CLOCK_MS } from '../config/featureFlags';
 
 const OVERLAY_SIZE = 5;
 const norm = (s) => (typeof s === 'string' ? s.trim().toUpperCase() : '');
@@ -44,6 +45,17 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
   const currentUserId = user?.odUserId || user?.uid || user?.username || null;
   const autopickFiredRef = useRef(false);
   const submitRef = useRef(null);
+
+  // L1 (Training Pod Draft V2): the HUMAN pick clock runs 60s under the V2 gate,
+  // else the module's 20s PICK_CLOCK_MS — resolved off the flag/override so
+  // leagueTournament.js stays zero-import and flag-off is byte-identical. The ring
+  // TOTAL and the running countdown both derive from THIS single value, so they
+  // can never disagree (a stale 20s ring against a 60s clock). CPU turns are
+  // untouched — they carry no clock (they resolve server-side).
+  const clockTotalSec = useMemo(
+    () => Math.max(1, Math.round((isTrainingPodDraftV2On() ? TRAINING_POD_PICK_CLOCK_MS : (TRAINING_TUNING.PICK_CLOCK_MS || 20000)) / 1000)),
+    [],
+  );
 
   // ---- subscriptions: group + live draft state ----
   useEffect(() => {
@@ -198,7 +210,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
   //      autopick; the server idle-sweep remains the true-abandonment backstop. ----
   useEffect(() => {
     if (!isMyTurn || clockPaused) { setPickClock(null); autopickFiredRef.current = false; return undefined; }
-    const total = Math.max(1, Math.round((TRAINING_TUNING.PICK_CLOCK_MS || 20000) / 1000));
+    const total = clockTotalSec;
     setPickClock(total);
     autopickFiredRef.current = false;
     const startedAt = Date.now();
@@ -212,7 +224,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
       }
     }, 250);
     return () => clearInterval(iv);
-  }, [isMyTurn, currentPickIndex, clockPaused]);
+  }, [isMyTurn, currentPickIndex, clockPaused, clockTotalSec]);
 
   // ---- seats (snake HUD) ----
   const seats = useMemo(() => {
@@ -258,6 +270,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
     totalPicks,
     round,
     pickClock,
+    clockTotalSec,
     submitting,
     error,
     submitPick,
