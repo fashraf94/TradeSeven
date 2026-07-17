@@ -4,24 +4,23 @@
 
 import {
   collection, doc, addDoc, updateDoc, getDoc, getDocs,
-  query, orderBy, serverTimestamp, deleteField
+  query, orderBy, serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getAgentLevel } from '../constants/agentProgression';
 import { FORGE_LIMITS } from '../constants/agentProgression';
-import { RULE_COMPAT_MODE } from '../config/featureFlags';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { toEquipError } from './agentService';
-// WS1 L1 write-path guard (fence-lite-approved sites: createRule,
-// setRuleHardness, updateRule category flip, reforgeBundle carry-forward,
-// plus the equipBundle conflict-equip surface). All guard work is gated on
-// isRuleCompatActive() so RULE_COMPAT_MODE='off' stays byte-identical —
-// zero extra reads, zero classification.
+// WS1 L1 write-path guard. CLIENT-guarded sites: createRule (A1) and the
+// updateRule category flip (B2) — rule-doc writes, gated on
+// isRuleCompatActive() so RULE_COMPAT_MODE='off' stays byte-identical (zero
+// extra reads, zero classification). The ruleHardness writers (B1
+// setRuleHardness, B3 reforgeBundle carry) moved SERVER-side at WS1 enforce
+// Phase 2 (set-rule-hardness / reforge-bundle endpoints — the equip-bundle D3
+// pattern), where the same kernel gates them; their thin clients live below.
 import {
   isRuleCompatActive,
   guardRuleCompatWrite,
-  evaluateRuleCompatWrite,
-  emitRuleCompatEvents,
 } from './ruleCompatGuard';
 import { resolveRuleHardness } from '../components/Forge/workshop/hardSoftHelper';
 
@@ -350,10 +349,12 @@ export const createBundle = async (agentId, bundleData) => {
     previousVersionId: null,
     status: 'draft',
     ruleIds: [],
-    // Phase 3 — authored per-rule hard/soft overrides: { [ruleId]: 'hard'|'soft' }.
-    // Empty by default so hard/soft stays category-derived (parity). Consumed by
-    // hardSoftHelper (display) and projectActiveRules (the prompt, once fenced).
-    ruleHardness: {},
+    // ruleHardness (the authored per-rule hard/soft override map) is
+    // deliberately ABSENT since WS1 enforce Phase 2: the field is
+    // server-mintable only (set-rule-hardness / reforge-bundle endpoints;
+    // client writes are denied by the bundles field allowlist), and every
+    // consumer treats a missing map as empty (projectActiveRules:78,
+    // hardSoftHelper.bundleRuleHardness), so omitting it is behavior-identical.
     ruleSnapshots: [],
     conflictCheckResult: null,
     createdAt: serverTimestamp(),
@@ -419,9 +420,13 @@ export const removeRuleFromBundle = async (agentId, bundleId, ruleId) => {
 
   await updateDoc(bundleRef, {
     ruleIds: bundle.ruleIds.filter(id => id !== ruleId),
-    // Drop any authored hard/soft override for the removed rule so the map
-    // never accumulates orphans (and a re-add starts from the category default).
-    [`ruleHardness.${ruleId}`]: deleteField(),
+    // NOTE (WS1 enforce Phase 2): the old client-side prune of the removed
+    // rule's ruleHardness entry is GONE — ruleHardness is server-mintable only
+    // (the bundles field allowlist denies client writes to it). The orphaned
+    // entry is harmless at rest: the projection and every display read
+    // overrides only for ruleIds still listed on the bundle. A re-add resumes
+    // the prior authored override rather than the category default; any
+    // future tidy-up belongs to the server writers.
     updatedAt: serverTimestamp(),
   });
 };
@@ -436,58 +441,31 @@ export const removeRuleFromBundle = async (agentId, bundleId, ruleId) => {
  * that is what makes the assembled prompt byte-identical to today until a user
  * explicitly authors a value.
  *
- * Only draft bundles are editable (Amendment 3), mirroring add/removeRuleToBundle.
- * The override is consumed by hardSoftHelper (display) and, once the fenced
- * prompt path honors it, projectActiveRules (the real prompt).
+ * Server-side since WS1 enforce Phase 2 (the equip-bundle D3 pattern): the
+ * write moved to POST /api/agent/set-rule-hardness — one Admin-SDK transaction
+ * enforcing ownership + draft-only + rule-in-bundle server-side and running
+ * the WS1 B1 promote gate with the same kernel this client used
+ * (ruleCompatEvaluate; observe logs, enforce blocks with a 409 whose message
+ * is the old RuleCompatBlockError copy). bundles.ruleHardness is
+ * server-mintable only — the bundles field allowlist denies client writes.
+ * This thin client preserves the prior throw-message behavior (callers
+ * surface err.message via toast). The old opts.archetype threading is gone:
+ * the server resolves the agent's REAL archetype in-transaction.
  *
  * @param {string} agentId
  * @param {string} bundleId
  * @param {string} ruleId
  * @param {'hard'|'soft'|null} value
- * @param {Object} [opts]
- * @param {string} [opts.archetype] - caller-threaded archetype for the compat guard
  */
-export const setRuleHardness = async (agentId, bundleId, ruleId, value, opts = {}) => {
+export const setRuleHardness = async (agentId, bundleId, ruleId, value) => {
   if (value !== null && value !== 'hard' && value !== 'soft') {
     throw new Error("Rule hardness must be 'hard', 'soft', or null");
   }
-  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
-  const bundleSnap = await getDoc(bundleRef);
-  if (!bundleSnap.exists()) throw new Error('Bundle not found');
-  const bundle = bundleSnap.data();
-  if (bundle.status !== 'draft') throw new Error('Can only edit rules on draft bundles');
-  if (!(bundle.ruleIds || []).includes(ruleId)) throw new Error('Rule is not in this bundle');
-
-  // WS1 B1 guard — THE explicit promote path. A promote is any write whose
-  // RESULTING resolved hardness is 'hard' when the current resolution is not:
-  // that includes value === 'hard' AND value === null on a hard-CATEGORY rule
-  // (clearing a 'soft' override reverts to the category default 'hard' — the
-  // UI sends exactly null when the desired value equals the default, so the
-  // Hard toggle on a demoted risk/allocation rule takes the null path).
-  // Demote-direction writes ('soft', or clears that resolve soft) never guard.
-  if (isRuleCompatActive() && value !== 'soft') {
-    const ruleSnap = await getDoc(doc(db, 'agents', agentId, 'rules', ruleId));
-    const ruleData = ruleSnap.exists() ? ruleSnap.data() : null;
-    const sourceRef = ruleData?.sourceRef || null;
-    const prevResolved = resolveRuleHardness({ category: ruleData?.category || null }, (bundle.ruleHardness || {})[ruleId]);
-    const newResolved = resolveRuleHardness({ category: ruleData?.category || null }, value ?? undefined);
-    if (sourceRef && newResolved === 'hard' && prevResolved !== 'hard') {
-      const archetype = await resolveArchetypeForCompat(agentId, opts.archetype);
-      await guardRuleCompatWrite({
-        archetype,
-        templateId: sourceRef,
-        resolvedHardness: 'hard',
-        path: 'set_rule_hardness',
-        agentId,
-        ruleDocId: ruleId,
-      }); // throws RuleCompatBlockError under enforce
-    }
-  }
-
-  await updateDoc(bundleRef, {
-    [`ruleHardness.${ruleId}`]: value === null ? deleteField() : value,
-    updatedAt: serverTimestamp(),
+  const response = await fetchWithAuth('/api/agent/set-rule-hardness', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, bundleId, ruleId, value }),
   });
+  if (!response.ok) throw await toEquipError(response);
 };
 
 /**
@@ -584,103 +562,34 @@ export const unequipBundle = async (agentId, bundleId) => {
 /**
  * Reforge a bundle — archive old version and create a new draft from its rules.
  *
- * WS1 B3 guard: the carried `ruleHardness` map is a re-write of authored
- * overrides into a new doc. Under `enforce`, 'hard' overrides on core_conflict
- * rules are STRIPPED from the carry (each strip logged + reported back for the
- * inline notice — fence-lite rider 1); under `observe` the carry is unchanged
- * and each would-strip is logged (blocked:false).
+ * Server-side since WS1 enforce Phase 2 (the equip/unequip D3 pattern): the
+ * whole reforge moved to POST /api/agent/reforge-bundle — one Admin-SDK
+ * transaction running the WS1 B3 carry gate server-side (under `enforce`,
+ * 'hard' overrides on core_conflict rules are STRIPPED from the carry, each
+ * strip logged + reported back for the inline notice — fence-lite rider 1;
+ * under `observe` the carry is unchanged and each would-strip is logged
+ * blocked:false), unequipping as a sub-step when equipped (historical
+ * no-battle-lock semantics preserved), archiving the old version, and
+ * creating the new draft with the carried map. bundles.ruleHardness is
+ * server-mintable only — the bundles field allowlist denies client writes,
+ * which is why the carry (a ruleHardness re-write) had to move with it.
+ * This thin client preserves the prior return contract and throw-message
+ * behavior. The old opts.archetype threading is gone: the server resolves
+ * the agent's REAL archetype in-transaction.
  *
- * @param {Object} [opts]
- * @param {string} [opts.archetype] - caller-threaded archetype for the compat guard
  * @returns {{ bundleId: string, strippedConflicts: Array<{templateId: string, ruleDocId: string}> }}
  */
-export const reforgeBundle = async (agentId, bundleId, opts = {}) => {
-  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
-  const bundleSnap = await getDoc(bundleRef);
-  if (!bundleSnap.exists()) throw new Error('Bundle not found');
-  const bundle = bundleSnap.data();
-
-  if (bundle.status === 'draft') throw new Error('Cannot reforge a draft bundle — edit it directly');
-
-  // WS1 B3 — evaluate the hard overrides being carried forward. A blocked
-  // carry is DEMOTED in the new draft's map, not deleted-blindly: deleting the
-  // entry only demotes SOFT-category rules (they revert to the soft category
-  // default); a hard-CATEGORY rule must carry an explicit 'soft' or deletion
-  // resurrects must-obey via the category fallback.
-  const carriedHardness = { ...(bundle.ruleHardness || {}) };
-  const strippedConflicts = [];
-  const hardOverrideIds = Object.keys(carriedHardness).filter((rid) => carriedHardness[rid] === 'hard');
-  if (isRuleCompatActive() && hardOverrideIds.length > 0) {
-    const [archetype, ...ruleSnaps] = await Promise.all([
-      resolveArchetypeForCompat(agentId, opts.archetype),
-      ...hardOverrideIds.map((rid) => getDoc(doc(db, 'agents', agentId, 'rules', rid))),
-    ]);
-    const events = [];
-    hardOverrideIds.forEach((rid, i) => {
-      const ruleData = ruleSnaps[i].exists() ? ruleSnaps[i].data() : null;
-      const sourceRef = ruleData?.sourceRef || null;
-      if (!sourceRef) return;
-      const result = evaluateRuleCompatWrite({
-        archetype,
-        templateId: sourceRef,
-        resolvedHardness: 'hard',
-        path: 'reforge_carry',
-        agentId,
-        ruleDocId: rid,
-      });
-      events.push(...result.events);
-      if (result.decision === 'block') {
-        // Strip instead of blocking the whole reforge (approved treatment).
-        if (resolveRuleHardness({ category: ruleData?.category || null }) === 'hard') {
-          carriedHardness[rid] = 'soft'; // hard category: explicit demote
-        } else {
-          delete carriedHardness[rid];   // soft category: revert to default
-        }
-        strippedConflicts.push({ templateId: sourceRef, ruleDocId: rid });
-      }
-    });
-    if (events.length > 0) {
-      await emitRuleCompatEvents({ agentId, archetype, mode: RULE_COMPAT_MODE, events });
-    }
-  }
-
-  // If equipped, unequip first
-  if (bundle.status === 'equipped') {
-    await unequipBundle(agentId, bundleId);
-  }
-
-  // Archive old bundle
-  await updateDoc(bundleRef, {
-    status: 'archived',
-    archivedAt: new Date().toISOString(),
-    updatedAt: serverTimestamp(),
+export const reforgeBundle = async (agentId, bundleId) => {
+  const response = await fetchWithAuth('/api/agent/reforge-bundle', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, bundleId }),
   });
-
-  // Create new draft with same rules, incremented version
-  const bundlesRef = collection(db, 'agents', agentId, 'bundles');
-  const newBundleDoc = {
-    name: bundle.name,
-    version: (bundle.version || 1) + 1,
-    previousVersionId: bundleId,
-    status: 'draft',
-    ruleIds: bundle.ruleIds || [],
-    // Carry authored hard/soft overrides forward to the reforged draft
-    // (minus any enforce-mode conflict strips above).
-    ruleHardness: carriedHardness,
-    ruleSnapshots: [],   // Draft bundles don't have snapshots (Amendment 3)
-    conflictCheckResult: null,
-    createdAt: serverTimestamp(),
-    forgedAt: null,
-    equippedAt: null,
-    archivedAt: null,
-    performanceData: {
-      battlesEquipped: 0,
-      totalCitations: 0,
-      successfulCitations: 0,
-    },
+  if (!response.ok) throw await toEquipError(response);
+  const data = await response.json().catch(() => ({}));
+  return {
+    bundleId: data.bundleId ?? null,
+    strippedConflicts: data.strippedConflicts ?? [],
   };
-  const docRef = await addDoc(bundlesRef, newBundleDoc);
-  return { bundleId: docRef.id, strippedConflicts };
 };
 
 /**

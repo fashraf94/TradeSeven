@@ -2,21 +2,31 @@
 //
 // firestore.rules.emulator.test.js
 // ─────────────────────────────────────────────────────────────────────────────
-// PROPOSED agents-collection field-allowlist — emulator verification.
+// PROPOSED rules hardening — emulator verification. TWO independent proposals:
 //
-// Verifies the Phase-0 hardening diff (docs/audits/2026-07-15_FIRESTORE_RULES_
-// AGENTS_DISCOVERY.md §10.3): a client may update the agents/{id} doc ONLY with
-// the four-field allowlist
+// 1. AGENTS field-allowlist (docs/audits/2026-07-15_FIRESTORE_RULES_AGENTS_
+//    DISCOVERY.md §10.3): a client may update the agents/{id} doc ONLY with
+//    the four-field allowlist
 //     ['directives', 'lastViewedEvolutionCycle', 'starterKitCompleted', 'updatedAt']
-// and every guarded field (settingsRev, standingLeans, dials, archetype, config,
-// activeRules, memory, stats) plus ownerId is denied — while non-owners and
-// anonymous callers are denied entirely.
+//    and every guarded field (settingsRev, standingLeans, dials, archetype,
+//    config, activeRules, memory, stats) plus ownerId is denied — while
+//    non-owners and anonymous callers are denied entirely.
+//
+// 2. BUNDLES field-allowlist + equipped-value deny (WS1 enforce Phase 2, the
+//    Phase-0 writer census): a client may create/update agents/{id}/bundles
+//    docs ONLY with the census's 20 legitimate client fields — ruleHardness
+//    is EXCLUDED (server-mintable only: set-rule-hardness / reforge-bundle
+//    endpoints) — and a client write may never SET status to 'equipped'
+//    (value-level deny; equipping is the equip-bundle endpoint's transaction).
+//    Writes not touching status on an already-equipped doc still pass (the
+//    dimensions persist-on-launch case), so the value-gate is surgical.
 //
 // READ-ONLY: this test does NOT modify the deployed firestore.rules. It reads the
-// real firestore.rules, applies the PROPOSED `allow update` clause IN MEMORY, and
-// loads that patched string into the emulator. If firestore.rules has drifted so
-// the patch no longer matches exactly once, the test throws loudly (so a stale
-// patch can never silently test the wrong ruleset).
+// real firestore.rules, applies each PROPOSED clause IN MEMORY, and loads the
+// patched string into the emulator. If firestore.rules has drifted so a patch
+// no longer matches exactly once, the test throws loudly (so a stale patch can
+// never silently test the wrong ruleset). Each suite loads ITS OWN patch, so
+// the two proposals verify independently.
 //
 // PREREQUISITES: Java (the Firestore emulator runtime) + Node. Deps already in
 // package.json: @firebase/rules-unit-testing ^5, firebase ^12, vitest ^4.
@@ -61,9 +71,20 @@ const PROPOSED_UPDATE_CLAUSE =
  * Read the real firestore.rules and return it with ONLY the agents `allow update`
  * clause swapped for the proposed four-field allowlist. Throws if the source
  * clause is not present exactly once, or if the patch fails to apply.
+ *
+ * PROPOSAL LANDED (commit 3b5bfc19 "Enhance update rule with field
+ * restrictions"): the four-field hasOnly clause now lives in firestore.rules
+ * itself. When detected, there is nothing to patch — the matrix verifies the
+ * LIVE ruleset (which is exactly what the suite should assert post-publish).
+ * True drift (neither the old bare clause nor the landed allowlist) still
+ * throws loudly below.
  */
 function buildProposedRules() {
   const current = readFileSync(RULES_PATH, 'utf8');
+
+  if (current.includes(".hasOnly(['directives', 'lastViewedEvolutionCycle', 'starterKitCompleted', 'updatedAt'])")) {
+    return current; // the proposal is live in the file — verify as-is
+  }
 
   const matches = current.match(CURRENT_UPDATE_RE) || [];
   if (matches.length !== 1) {
@@ -222,5 +243,259 @@ suite('agents rule — PROPOSED four-field allowlist', () => {
 
   it('DENY   anonymous → { starterKitCompleted }', async () => {
     await assertFails(updateDoc(agentRef(anonDb()), { starterKitCompleted: true }));
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// BUNDLES — proposed field allowlist + equipped-value deny (WS1 enforce Phase 2)
+// ═════════════════════════════════════════════════════════════════════════════
+
+// The Phase-0 census's 20 legitimate client-writable bundle fields — the
+// 21-field union MINUS ruleHardness (server-mintable only).
+const BUNDLE_CLIENT_FIELDS = [
+  'name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots',
+  'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt',
+  'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList',
+  'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion',
+  'compileConfidence', 'compileTransparency',
+];
+
+const FIELD_LIST_LITERAL = `[${BUNDLE_CLIENT_FIELDS.map((f) => `'${f}'`).join(', ')}]`;
+
+// The current bundles block (read + the shared owner-only create,update
+// clause), matched whitespace-tolerantly and ANCHORED on the /bundles/ match
+// header — the rules subcollection shares the clause's first lines but its
+// create,update continues with field validation instead of terminating.
+const CURRENT_BUNDLES_BLOCK_RE =
+  /(match \/bundles\/\{bundleId\} \{\s+allow read: if request\.auth != null\s+&& get\(\/databases\/\$\(database\)\/documents\/agents\/\$\(agentId\)\)\.data\.ownerId == request\.auth\.uid;\s+)allow create, update: if request\.auth != null\s+&& get\(\/databases\/\$\(database\)\/documents\/agents\/\$\(agentId\)\)\.data\.ownerId == request\.auth\.uid;/g;
+
+// The PROPOSED replacement: split create/update, hasOnly the census fields,
+// and deny the 'equipped' VALUE only when the write itself sets status (the
+// surgical value-gate — untouched-status updates on an equipped doc pass).
+const PROPOSED_BUNDLES_CLAUSE =
+  'allow create: if request.auth != null\n' +
+  '                    && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid\n' +
+  `                    && request.resource.data.keys().hasOnly(${FIELD_LIST_LITERAL})\n` +
+  "                    && (!('status' in request.resource.data) || request.resource.data.status != 'equipped');\n" +
+  '        allow update: if request.auth != null\n' +
+  '                    && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid\n' +
+  `                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(${FIELD_LIST_LITERAL})\n` +
+  "                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['status'])\n" +
+  "                        || request.resource.data.status != 'equipped');";
+
+/**
+ * Read the real firestore.rules and return it with ONLY the bundles
+ * create,update clause swapped for the proposed allowlist + value deny.
+ * Throws if the bundles block is not present exactly once.
+ */
+function buildProposedBundlesRules() {
+  const current = readFileSync(RULES_PATH, 'utf8');
+
+  const matches = current.match(CURRENT_BUNDLES_BLOCK_RE) || [];
+  if (matches.length !== 1) {
+    throw new Error(
+      `[proposed-bundles-rules] expected exactly ONE bundles block to patch, ` +
+        `found ${matches.length}. firestore.rules has drifted — re-verify the bundles ` +
+        `block and update CURRENT_BUNDLES_BLOCK_RE (do NOT edit firestore.rules).`,
+    );
+  }
+  CURRENT_BUNDLES_BLOCK_RE.lastIndex = 0;
+
+  const proposed = current.replace(CURRENT_BUNDLES_BLOCK_RE, `$1${PROPOSED_BUNDLES_CLAUSE}`);
+  CURRENT_BUNDLES_BLOCK_RE.lastIndex = 0;
+
+  if (proposed === current || !proposed.includes("request.resource.data.status != 'equipped'")) {
+    throw new Error('[proposed-bundles-rules] patch failed to apply — the proposed clause is not present.');
+  }
+  return proposed;
+}
+
+const BUNDLE_ID = 'bundleDraft1';
+const EQUIPPED_BUNDLE_ID = 'bundleEquipped1';
+
+// A realistic seeded draft bundle carrying every allowlisted field, so each
+// update is a real field mutation. ruleHardness is seeded too (server-owned
+// data at rest) so the DENY cases mutate an EXISTING field, not create one.
+const SEED_BUNDLE = Object.freeze({
+  name: 'Test Bundle',
+  version: 1,
+  previousVersionId: null,
+  status: 'draft',
+  ruleIds: ['r1', 'r2'],
+  ruleHardness: { r1: 'soft' },
+  ruleSnapshots: [],
+  conflictCheckResult: null,
+  createdAt: 'seed',
+  forgedAt: null,
+  equippedAt: null,
+  archivedAt: null,
+  updatedAt: 'seed',
+  performanceData: { battlesEquipped: 0, totalCitations: 0, successfulCitations: 0 },
+  entrySource: 'forge',
+  hiddenFromBundleList: false,
+  dimensionHash: 'h0',
+  dimensionValues: { risk: 1 },
+  dimensionSchemaVersion: 1,
+  compileConfidence: 0.5,
+  compileTransparency: { warnings: [] },
+});
+
+suite('bundles rule — PROPOSED field allowlist + equipped-value deny', () => {
+  let testEnv;
+
+  beforeAll(async () => {
+    const [host, portStr] = EMULATOR_HOST.split(':');
+    testEnv = await initializeTestEnvironment({
+      projectId: 'demo-tradeseven-rules-test',
+      firestore: {
+        rules: buildProposedBundlesRules(), // ← the BUNDLES proposal only
+        host,
+        port: Number(portStr),
+      },
+    });
+  }, 30000);
+
+  afterAll(async () => {
+    await testEnv?.cleanup();
+  });
+
+  beforeEach(async () => {
+    await testEnv.clearFirestore();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'agents', AGENT_ID), SEED_DOC);
+      await setDoc(doc(ctx.firestore(), 'agents', AGENT_ID, 'bundles', BUNDLE_ID), SEED_BUNDLE);
+      await setDoc(doc(ctx.firestore(), 'agents', AGENT_ID, 'bundles', EQUIPPED_BUNDLE_ID), {
+        ...SEED_BUNDLE, status: 'equipped', equippedAt: 'seed',
+      });
+    });
+  });
+
+  const ownerDb = () => testEnv.authenticatedContext(OWNER).firestore();
+  const otherDb = () => testEnv.authenticatedContext(OTHER).firestore();
+  const anonDb = () => testEnv.unauthenticatedContext().firestore();
+  const bundleRef = (db, id = BUNDLE_ID) => doc(db, 'agents', AGENT_ID, 'bundles', id);
+
+  // ── ALLOW: owner updating each of the 20 allowlisted fields ────────────────
+  const ALLOWED_UPDATES = {
+    name: 'Renamed Bundle',
+    version: 2,
+    previousVersionId: 'someOldId',
+    status: 'draft', // the value-gate's ALLOW side — proven surgical below
+    ruleIds: ['r1', 'r2', 'r3'],
+    ruleSnapshots: [{ id: 'r1', text: 't', category: 'technical', visibility: 'private' }],
+    conflictCheckResult: { conflicts: [] },
+    createdAt: serverTimestamp(),
+    forgedAt: '2026-07-16T00:00:00.000Z',
+    equippedAt: null,
+    archivedAt: '2026-07-16T00:00:00.000Z',
+    updatedAt: serverTimestamp(),
+    performanceData: { battlesEquipped: 1, totalCitations: 2, successfulCitations: 1 },
+    entrySource: 'dimensions',
+    hiddenFromBundleList: true,
+    dimensionHash: 'h1',
+    dimensionValues: { risk: 2 },
+    dimensionSchemaVersion: 1,
+    compileConfidence: 0.9,
+    compileTransparency: { warnings: ['w'], mappingNotes: [], appliedClamps: [] },
+  };
+  for (const [field, value] of Object.entries(ALLOWED_UPDATES)) {
+    it(`ALLOW  owner update → { ${field} }`, async () => {
+      await assertSucceeds(updateDoc(bundleRef(ownerDb()), { [field]: value }));
+    });
+  }
+
+  // ── ALLOW: the real creator shapes ──────────────────────────────────────────
+  it('ALLOW  owner create → the createBundle shape (post-Phase-2: NO ruleHardness field)', async () => {
+    await assertSucceeds(
+      setDoc(bundleRef(ownerDb(), 'newDraft1'), {
+        name: 'New Bundle', version: 1, previousVersionId: null, status: 'draft',
+        ruleIds: [], ruleSnapshots: [], conflictCheckResult: null,
+        createdAt: serverTimestamp(), forgedAt: null, equippedAt: null, archivedAt: null,
+        performanceData: { battlesEquipped: 0, totalCitations: 0, successfulCitations: 0 },
+      }),
+    );
+  });
+
+  it("ALLOW  owner create → the dimensions-compile shape (status 'forged', entrySource/hiddenFromBundleList/dimensionHash)", async () => {
+    await assertSucceeds(
+      setDoc(bundleRef(ownerDb(), 'dimBundle1'), {
+        name: 'Strategy Dimensions', version: 1, previousVersionId: null, status: 'forged',
+        ruleIds: ['dim-a'], ruleSnapshots: [{ id: 'dim-a', text: 't', category: 'technical', visibility: 'private' }],
+        conflictCheckResult: null, entrySource: 'dimensions', hiddenFromBundleList: true,
+        dimensionHash: 'abc', createdAt: serverTimestamp(), forgedAt: serverTimestamp(),
+        equippedAt: null, archivedAt: null, updatedAt: serverTimestamp(),
+        performanceData: { battlesEquipped: 0, totalCitations: 0, successfulCitations: 0 },
+      }),
+    );
+  });
+
+  // ── DENY: ruleHardness in every write shape (the WS1 enforce blocker) ───────
+  it('DENY   owner update → { ruleHardness } (whole map)', async () => {
+    await assertFails(updateDoc(bundleRef(ownerDb()), { ruleHardness: { r1: 'hard' } }));
+  });
+
+  it("DENY   owner update → { 'ruleHardness.r1' } (dotted path — affectedKeys reports the top-level key)", async () => {
+    await assertFails(updateDoc(bundleRef(ownerDb()), { 'ruleHardness.r1': 'hard' }));
+  });
+
+  it('DENY   owner update → { name, ruleHardness } (mixed: hasOnly rejects the whole write)', async () => {
+    await assertFails(updateDoc(bundleRef(ownerDb()), { name: 'X', ruleHardness: { r1: 'hard' } }));
+  });
+
+  it('DENY   owner create → a bundle doc INCLUDING ruleHardness', async () => {
+    await assertFails(
+      setDoc(bundleRef(ownerDb(), 'newDraft2'), {
+        name: 'New Bundle', version: 1, previousVersionId: null, status: 'draft',
+        ruleIds: [], ruleHardness: {}, ruleSnapshots: [], conflictCheckResult: null,
+        createdAt: serverTimestamp(), forgedAt: null, equippedAt: null, archivedAt: null,
+        performanceData: { battlesEquipped: 0, totalCitations: 0, successfulCitations: 0 },
+      }),
+    );
+  });
+
+  // ── the status VALUE-gate (surgical: field allowed, one value denied) ───────
+  it("ALLOW  owner update → { status: 'forged' } and { status: 'archived' } (legitimate client transitions)", async () => {
+    await assertSucceeds(updateDoc(bundleRef(ownerDb()), { status: 'forged' }));
+    await assertSucceeds(updateDoc(bundleRef(ownerDb()), { status: 'archived' }));
+  });
+
+  it("DENY   owner update → { status: 'equipped' } (self-equip bypasses the equip transaction)", async () => {
+    await assertFails(updateDoc(bundleRef(ownerDb()), { status: 'equipped' }));
+  });
+
+  it("DENY   owner create → { status: 'equipped' } (born-equipped)", async () => {
+    await assertFails(
+      setDoc(bundleRef(ownerDb(), 'newDraft3'), {
+        name: 'New Bundle', version: 1, previousVersionId: null, status: 'equipped',
+        ruleIds: [], ruleSnapshots: [], conflictCheckResult: null,
+        createdAt: serverTimestamp(), forgedAt: null, equippedAt: null, archivedAt: null,
+        performanceData: { battlesEquipped: 0, totalCitations: 0, successfulCitations: 0 },
+      }),
+    );
+  });
+
+  it('ALLOW  owner update NOT touching status on an EQUIPPED doc (the dimensions persist-on-launch case — the value-gate is surgical)', async () => {
+    await assertSucceeds(
+      updateDoc(bundleRef(ownerDb(), EQUIPPED_BUNDLE_ID), {
+        dimensionValues: { risk: 3 },
+        dimensionSchemaVersion: 1,
+        updatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  // ── DENY: non-owner / anonymous ─────────────────────────────────────────────
+  it('DENY   non-owner update → { name } (allowed field, wrong owner)', async () => {
+    await assertFails(updateDoc(bundleRef(otherDb()), { name: 'X' }));
+  });
+
+  it('DENY   anonymous update → { name }', async () => {
+    await assertFails(updateDoc(bundleRef(anonDb()), { name: 'X' }));
+  });
+
+  // ── delete stays denied (unchanged clause, asserted for completeness) ───────
+  it('DENY   owner delete (no hard deletes — archive instead)', async () => {
+    const { deleteDoc } = await import('firebase/firestore');
+    await assertFails(deleteDoc(bundleRef(ownerDb())));
   });
 });

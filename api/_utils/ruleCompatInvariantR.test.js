@@ -142,7 +142,7 @@ describe('Invariant R — structural: the runtime path never references the comp
     for (const rel of RUNTIME_FILES) {
       const src = readFileSync(resolve(REPO_ROOT, rel), 'utf-8');
       expect(
-        /RULE_COMPAT_MODE|archetypeRuleCompatibility|ruleCompatGuard|compatSurfaceCopy/.test(src),
+        /RULE_COMPAT_MODE|archetypeRuleCompatibility|ruleCompatGuard|ruleCompatEvaluate|compatSurfaceCopy/.test(src),
         `${rel} references the compat build — Invariant R violation`
       ).toBe(false);
     }
