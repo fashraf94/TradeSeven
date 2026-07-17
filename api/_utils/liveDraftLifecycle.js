@@ -45,6 +45,7 @@ import {
   fetchRankedUserPool,
   assertTransition,
 } from './tournamentGroupService.js';
+import { effectiveBattleAnchor } from './liveDraftFormation.js';
 import {
   advanceCpuSeats,
   chooseHumanPick,
@@ -87,16 +88,9 @@ function draftStateRef(db, groupId) {
   return db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId).collection(DRAFT_SUBCOLLECTION).doc(DRAFT_STATE_DOC_ID);
 }
 
-/** The battleStartWeek → the { anchorEtDate, anchorIso } shape computeHandoffWrites
- *  / anchorDateReached expect. A malformed/absent anchor is surfaced, never
- *  silently defaulted to the wrong (next-market-open) rule. */
-function anchorFromBattleStartWeek(group) {
-  const b = group.battleStartWeek;
-  if (!b || typeof b.anchorEtDate !== 'string' || typeof b.anchorIso !== 'string') {
-    throw liveDraftError('missing_battle_start_week', `group ${group.id} has no battleStartWeek anchor`);
-  }
-  return { anchorEtDate: b.anchorEtDate, anchorIso: b.anchorIso };
-}
+// The battle anchor (with the stale-anchor re-derivation guard) lives in
+// liveDraftFormation.effectiveBattleAnchor — re-derived at fire AND completion so
+// a fired-late pod never anchors to a past Monday.
 
 // ==================== QUERIES (fire-cron feed) ====================
 //
@@ -248,7 +242,13 @@ export async function fireCompetitiveSlotDraft(db, groupId, { now = new Date() }
     };
     assertTransition(g.status, GROUP_STATUS.DRAFTING);
     tx.set(stateRef, finalState);
-    tx.update(groupRef, { status: GROUP_STATUS.DRAFTING, updatedAt: nowIso });
+    // Stale-anchor guard: a pod firing LATE (its stamped Monday already past) gets
+    // battleStartWeek re-derived here, so DRAFTING already carries the correct
+    // anchor (completion re-checks independently).
+    const anchor = effectiveBattleAnchor(g, now);
+    const groupUpdate = { status: GROUP_STATUS.DRAFTING, updatedAt: nowIso };
+    if (anchor.restamped) groupUpdate.battleStartWeek = anchor.battleStartWeek;
+    tx.update(groupRef, groupUpdate);
     return finalState;
   });
 
@@ -322,13 +322,19 @@ export async function driveSlotDraftAutopick(db, groupId, { now = new Date() } =
         ...state, taken: [...acc.taken], picksByUser: acc.picksByUser, events: acc.events,
         currentPickIndex: idx, status: 'complete', lastActivityAt: nowIso,
       };
-      const startAnchor = anchorFromBattleStartWeek(group);
-      const { target, groupUpdate, streamDoc } = computeHandoffWrites(group, completeState, now, { startAnchor });
+      // Stale-anchor guard at completion (the authoritative point): re-derive the
+      // next Monday-open if the stamped anchor is past; the inline today-anchor
+      // Monday path is unchanged (today is not stale).
+      const anchor = effectiveBattleAnchor(group, now);
+      const { target, groupUpdate, streamDoc } = computeHandoffWrites(group, completeState, now, {
+        startAnchor: { anchorEtDate: anchor.anchorEtDate, anchorIso: anchor.anchorIso },
+      });
+      if (anchor.restamped) groupUpdate.battleStartWeek = anchor.battleStartWeek;
       assertTransition(group.status, target); // DRAFTING → BATTLE | AWAITING_OPEN
       tx.update(groupRef, groupUpdate);
       tx.set(groupRef.collection('streams').doc('userDraft'), streamDoc);
       tx.set(stateRef, completeState);
-      console.log(`${LOG_PREFIX} slot draft ${groupId} complete → ${target} (autopicked ${autopicked}, anchor ${startAnchor.anchorEtDate})`);
+      console.log(`${LOG_PREFIX} slot draft ${groupId} complete → ${target} (autopicked ${autopicked}, anchor ${anchor.anchorEtDate})`);
       return { groupId, status: target, complete: true, autopicked };
     }
 

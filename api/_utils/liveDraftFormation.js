@@ -207,6 +207,29 @@ export function deriveBattleStartWeek(fireIso) {
   return { mondayEtDate, anchorEtDate, anchorIso: etWallClockInstantIso(anchorEtDate, 9, 30) };
 }
 
+/**
+ * The EFFECTIVE battle anchor for a pod at `now` (fire or completion time), with
+ * the stale-anchor guard. battleStartWeek is stamped at CLAIM (Phase 1); a pod
+ * that fires/completes LATE — a cron gap, or a group that lingered in FORMING
+ * past its stamped Monday — would otherwise carry a PAST anchor and flip straight
+ * to BATTLE on a stale/mid-week date. So: if the stamped anchor's date is still
+ * on-or-after today, use it UNCHANGED (this preserves the inline Monday-pre-open
+ * path — today's Monday is not stale); if it is strictly in the PAST (or absent),
+ * RE-DERIVE the next Monday-open at-or-after `now`. Returns
+ * `{ anchorEtDate, anchorIso, battleStartWeek, restamped }` — when `restamped`,
+ * the caller should also re-stamp group.battleStartWeek so the doc stays honest.
+ */
+export function effectiveBattleAnchor(group, now = new Date()) {
+  const nowEtDate = getEtParts(now).date;
+  const stamped = group?.battleStartWeek;
+  if (stamped && typeof stamped.anchorEtDate === 'string' && typeof stamped.anchorIso === 'string'
+      && stamped.anchorEtDate >= nowEtDate) {
+    return { anchorEtDate: stamped.anchorEtDate, anchorIso: stamped.anchorIso, battleStartWeek: stamped, restamped: false };
+  }
+  const fresh = deriveBattleStartWeek(toIso(now));
+  return { anchorEtDate: fresh.anchorEtDate, anchorIso: fresh.anchorIso, battleStartWeek: fresh, restamped: true };
+}
+
 // ==================== (3) LAZY GROUP + CLAIM / RELEASE ====================
 
 function groupRefFor(db, groupId) {

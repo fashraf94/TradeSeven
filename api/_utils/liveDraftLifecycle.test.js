@@ -234,6 +234,23 @@ describe('driveSlotDraftAutopick — abandoned draft completes in ONE pass', () 
     expect(g(store).status).toBe(GROUP_STATUS.DRAFTING);
   });
 
+  it('FIRED-LATE: a pod whose stamped Monday is past re-derives the anchor at fire AND completion (no stale mid-week battle)', async () => {
+    // Claimed for a Wed with anchor 2026-07-06, but the fire cron lagged a week:
+    // firing on Wed 2026-07-15, the stamped 07-06 Monday is already past.
+    const STALE = { mondayEtDate: '2026-07-06', anchorEtDate: '2026-07-06', anchorIso: '2026-07-06T13:30:00.000Z' };
+    const { db, store } = seedDb({ battleStartWeek: STALE });
+    const FIRE_LATE = new Date('2026-07-15T23:00:00.000Z'); // Wed 7pm EDT, a week late
+
+    await fireCompetitiveSlotDraft(db, WED_ID, { now: FIRE_LATE });
+    // re-stamped at fire to the NEXT Monday (2026-07-20), not the stale 07-06
+    expect(g(store).battleStartWeek.anchorEtDate).toBe('2026-07-20');
+
+    const r = await driveSlotDraftAutopick(db, WED_ID, { now: new Date(FIRE_LATE.getTime() + 20 * 60 * 1000) });
+    expect(r.complete).toBe(true);
+    expect(r.status).toBe(GROUP_STATUS.AWAITING_OPEN); // future Monday → waits, does NOT flip to a stale battle
+    expect(g(store).startAnchor.anchorEtDate).toBe('2026-07-20');
+  });
+
   it('drives a multi-human abandoned draft to completion in one pass', async () => {
     const { db, store } = seedDb({}, ['human-1', 'human-2']);
     await fireCompetitiveSlotDraft(db, WED_ID, { now: FIRE });

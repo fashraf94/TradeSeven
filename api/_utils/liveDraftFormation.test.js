@@ -23,6 +23,7 @@ import { getEtParts } from './tournamentTime.js';
 import {
   nextSlotFireInstant,
   deriveBattleStartWeek,
+  effectiveBattleAnchor,
   slotGroupId,
   claimSlotSeat,
   releaseSlotSeat,
@@ -209,6 +210,37 @@ describe('deriveBattleStartWeek — the next Monday-open at-or-after the slot', 
     expect(b.mondayEtDate).toBe('2026-02-09');
     expect(b.anchorIso).toBe('2026-02-09T14:30:00.000Z'); // 9:30 EST
     expect(getEtParts(new Date(b.anchorIso)).minutes).toBe(9 * 60 + 30);
+  });
+});
+
+// ==================== (B2) effectiveBattleAnchor — stale-anchor guard ====================
+
+describe('effectiveBattleAnchor — re-derive a PAST stamped anchor, keep a current one', () => {
+  const wk = (anchorEtDate) => ({ battleStartWeek: { mondayEtDate: anchorEtDate, anchorEtDate, anchorIso: `${anchorEtDate}T13:30:00.000Z` } });
+
+  it('a FUTURE stamped anchor is used unchanged', () => {
+    const r = effectiveBattleAnchor(wk('2026-07-20'), new Date('2026-07-08T23:00:00.000Z'));
+    expect(r).toMatchObject({ anchorEtDate: '2026-07-20', restamped: false });
+  });
+
+  it('TODAY’s Monday anchor is NOT stale — inline path unchanged', () => {
+    // now is that same Monday pre-open; anchorEtDate === today → not stale
+    const r = effectiveBattleAnchor(wk('2026-07-13'), new Date('2026-07-13T12:45:00.000Z'));
+    expect(r).toMatchObject({ anchorEtDate: '2026-07-13', restamped: false });
+  });
+
+  it('a PAST stamped anchor is RE-DERIVED to the next Monday-open at-or-after now', () => {
+    // stamped Monday 2026-07-06 is in the past when now is Wed 2026-07-15
+    const r = effectiveBattleAnchor(wk('2026-07-06'), new Date('2026-07-15T23:00:00.000Z'));
+    expect(r.restamped).toBe(true);
+    expect(r.anchorEtDate).toBe('2026-07-20'); // the following Monday
+    expect(r.battleStartWeek.mondayEtDate).toBe('2026-07-20');
+  });
+
+  it('a MISSING anchor is re-derived (never silently defaulted)', () => {
+    const r = effectiveBattleAnchor({}, new Date('2026-07-15T23:00:00.000Z'));
+    expect(r.restamped).toBe(true);
+    expect(r.anchorEtDate).toBe('2026-07-20');
   });
 });
 
