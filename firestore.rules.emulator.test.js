@@ -291,6 +291,15 @@ const PROPOSED_BUNDLES_CLAUSE =
 function buildProposedBundlesRules() {
   const current = readFileSync(RULES_PATH, 'utf8');
 
+  // PROPOSAL LANDED detection (symmetric with buildProposedRules): once the
+  // bundles allowlist + equipped-value deny is published into firestore.rules
+  // (runbook §2 syncs the repo file to the Console), there is nothing to
+  // patch — verify the LIVE ruleset as-is. Its unique marker is the
+  // status-value deny, which the pre-proposal owner-only clause never had.
+  if (current.includes("request.resource.data.status != 'equipped'")) {
+    return current;
+  }
+
   const matches = current.match(CURRENT_BUNDLES_BLOCK_RE) || [];
   if (matches.length !== 1) {
     throw new Error(

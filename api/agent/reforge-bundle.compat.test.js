@@ -12,10 +12,11 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { flagState, authReturnValue, shadowLogCalls, sentinels } = vi.hoisted(() => ({
+const { flagState, authReturnValue, shadowLogCalls, shadowLogReturnsFalse, sentinels } = vi.hoisted(() => ({
   flagState: { mode: 'off' },
   authReturnValue: { current: { uid: 'test-user' } },
   shadowLogCalls: { current: [] },
+  shadowLogReturnsFalse: { current: false },
   sentinels: {
     DELETE: { __sentinel: 'delete' },
     TS: '__server_ts__',
@@ -43,7 +44,8 @@ vi.mock('../_utils/authMiddleware.js', () => ({
 vi.mock('../_utils/shadowLogger.js', () => ({
   logSignalDrops: async (record) => {
     shadowLogCalls.current.push(record);
-    return true;
+    // Mirrors appendToStream: true on persist, false on a swallowed GCS write.
+    return !shadowLogReturnsFalse.current;
   },
 }));
 vi.mock('@vercel/functions', () => ({
@@ -149,6 +151,7 @@ beforeEach(() => {
   flagState.mode = 'off';
   authReturnValue.current = { uid: 'test-user' };
   shadowLogCalls.current = [];
+  shadowLogReturnsFalse.current = false;
   activeFirestore = null;
 });
 
@@ -187,6 +190,19 @@ describe('reforge-bundle × RULE_COMPAT_MODE (the migrated B3 matrix cells)', ()
     expect(res.statusCode).toBe(200);
     expect(res.body.strippedConflicts).toEqual([{ templateId: 'a-05', ruleDocId: 'rh' }]);
     expect(newDraft(fake).ruleHardness).toEqual({ rh: 'soft' }); // explicit demote, NOT a delete
+  });
+
+  it('SWALLOWED compat write (logSignalDrops resolves false): reforge still 200, strip lands, compatLogged:false (honest boolean, Phase-1 discipline)', async () => {
+    flagState.mode = 'enforce';
+    shadowLogReturnsFalse.current = true;
+    const fake = seedForged();
+    const { req, res } = makeReqRes({ agentId: AGENT, bundleId: 'b1' });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200); // telemetry never fails the committed reforge
+    expect(res.body).toMatchObject({ compatLogged: false });
+    expect(res.body.strippedConflicts).toEqual([{ templateId: 'tech-bollinger-squeeze', ruleDocId: 'rc' }]);
+    expect(newDraft(fake).ruleHardness).toEqual({ rn: 'hard', rs: 'soft' }); // strip still applied
   });
 
   it('OBSERVE: carry unchanged (would-strip logged blocked:false), nothing stripped', async () => {
