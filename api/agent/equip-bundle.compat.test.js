@@ -15,10 +15,11 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { flagState, authReturnValue, shadowLogCalls } = vi.hoisted(() => ({
+const { flagState, authReturnValue, shadowLogCalls, shadowLogReturnsFalse } = vi.hoisted(() => ({
   flagState: { mode: 'off' },
   authReturnValue: { current: { uid: 'test-user' } },
   shadowLogCalls: { current: [] },
+  shadowLogReturnsFalse: { current: false },
 }));
 
 let activeFirestore = null;
@@ -35,6 +36,8 @@ vi.mock('../_utils/authMiddleware.js', () => ({
 vi.mock('../_utils/shadowLogger.js', () => ({
   logSignalDrops: async (record) => {
     shadowLogCalls.current.push(record);
+    // Mirrors appendToStream: true on persist, false on a swallowed GCS write.
+    return !shadowLogReturnsFalse.current;
   },
 }));
 vi.mock('@vercel/functions', () => ({
@@ -129,6 +132,7 @@ beforeEach(() => {
   flagState.mode = 'off';
   authReturnValue.current = { uid: 'test-user' };
   shadowLogCalls.current = [];
+  shadowLogReturnsFalse.current = false;
   activeFirestore = null;
 });
 
@@ -186,6 +190,25 @@ describe('equip-bundle × RULE_COMPAT_MODE (the migrated §6.2/§6.3 matrix cell
     expect(res.statusCode).toBe(200);
     expect(res.body.compatConflicts).toEqual([]);
     expect(ruleCompatEvents()).toHaveLength(0);
+  });
+
+  it('SWALLOWED conflict-equip write (logSignalDrops resolves false): equip still 200, events attempted, loud error (WS1 Phase-1 discipline — finishes the emitter set)', async () => {
+    flagState.mode = 'enforce';
+    shadowLogReturnsFalse.current = true;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const fake = seed();
+      const { req, res } = makeReqRes({ agentId: AGENT_ID, bundleId: 'b1' });
+      await equipBundleHandler(req, res);
+      expect(res.statusCode).toBe(200); // telemetry never fails the committed equip
+      expect(fake.state.agentDocs[AGENT_ID].equippedBundleIds).toEqual(['b1']);
+      expect(ruleCompatEvents()).toHaveLength(2); // the batch was attempted
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining('did not persist'),
+      );
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it('OBSERVE: conflicts logged blocked:false with the SANITIZED per-event shape (envelope carries agentId/archetype/mode)', async () => {
