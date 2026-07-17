@@ -56,6 +56,16 @@ const rate = (num, den) => (den > 0 ? num / den : 0);
 
 /**
  * Validate a short capture sample before the long run.
+ *
+ * EVIDENCE DENOMINATOR (L1 Capture — exclude non-evidence agents): only receipts
+ * positively labelled `evidenceClass === 'live_agent'` count toward the pass rate.
+ * CPU / training / unknown (and legacy unlabelled) receipts are EXCLUDED from the
+ * denominator and counted separately — reported, never silently dropped (the same
+ * posture as the zero-denominator exclusions elsewhere). Every field-presence,
+ * non-null-rate, receiptSeq, and diversity check computes over the live-agent
+ * subset only, so the rate measures the real population instead of being diluted
+ * by prescribed CPU seats.
+ *
  * @param {Array<Object>} receipts  captured receipt docs
  * @param {Object} [opts]
  * @param {number} [opts.expectedDrNullRate=0.59]  projected dR-null share (D1 audit)
@@ -72,16 +82,36 @@ export function validateCaptureSample(receipts, opts = {}) {
     minDataModeNonNullRate = 0.9,
   } = opts;
 
-  const list = Array.isArray(receipts) ? receipts : [];
-  const n = list.length;
   const checks = [];
   // offendingIndices (optional): receipt indices a runner can print as samples.
   const add = (name, pass, level, detail, offendingIndices) =>
     checks.push({ name, pass, level, detail, ...(offendingIndices && offendingIndices.length ? { offendingIndices: offendingIndices.slice(0, 5) } : {}) });
 
+  // Partition on evidence provenance. A receipt is evidence ONLY when it is
+  // positively labelled live_agent; anything else (cpu/training/unknown/absent)
+  // is excluded from the denominator and accounted for separately.
+  const all = Array.isArray(receipts) ? receipts : [];
+  const list = all.filter((r) => r?.evidenceClass === 'live_agent');
+  const excluded = all.filter((r) => r?.evidenceClass !== 'live_agent');
+  const excludedCount = excluded.length;
+  const excludedByClass = excluded.reduce((acc, r) => {
+    const c = r?.evidenceClass ?? 'unknown';
+    acc[c] = (acc[c] || 0) + 1;
+    return acc;
+  }, {});
+  const n = list.length;
+
+  // Always surface the exclusion accounting (info-level; never fails the gate).
+  // Flows through to the runner's CHECKS section as the breadth line.
+  add('evidence-exclusion', true, 'info',
+    `excluded ${excludedCount} cpu/training receipt${excludedCount === 1 ? '' : 's'}; evaluating ${n} live-agent receipt${n === 1 ? '' : 's'}.`);
+
   if (n === 0) {
-    add('sample-nonempty', false, 'error', 'no receipts provided');
-    return { pass: false, checks, summary: { n: 0 } };
+    add('sample-nonempty', false, 'error',
+      excludedCount > 0
+        ? `no live-agent receipts to evaluate (${excludedCount} excluded as non-evidence: ${JSON.stringify(excludedByClass)})`
+        : 'no receipts provided');
+    return { pass: false, checks, summary: { n: 0, excludedCount, excludedByClass } };
   }
 
   // (a) Field presence — every required path present on every receipt.
@@ -159,7 +189,9 @@ export function validateCaptureSample(receipts, opts = {}) {
     pass,
     checks,
     summary: {
-      n,
+      n, // live-agent receipts evaluated (the denominator)
+      excludedCount, // non-evidence receipts excluded from the denominator
+      excludedByClass, // { cpu, training, unknown } breakdown of the excluded
       predicateComputedAtNonNullRate: techRate,
       dataModeNonNullRate: dmRate,
       drNullRate,

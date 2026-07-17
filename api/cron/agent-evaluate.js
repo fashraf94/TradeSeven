@@ -72,7 +72,7 @@ import { buildSwapProvenance } from '../_utils/swapProvenance.js';
 import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED } from '../../src/config/featureFlags.js';
 // Agent Learning System L1 — raw capture (DARK behind LEARNING_L1_CAPTURE_ENABLED,
 // false at merge). captureSwapReceipt is a strict no-op when the flag is off.
-import { captureSwapReceipt, resolveEntrySnapshot, classifyEntryAtrSource } from '../_utils/learning/captureReceipt.js';
+import { captureSwapReceipt, resolveEntrySnapshot, classifyEntryAtrSource, classifyEvidence } from '../_utils/learning/captureReceipt.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
 // string literal). Zero-import schema module, BUILD_RULES §4.
@@ -1969,7 +1969,16 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
             // with zero Firestore ops when the flag is off; when on it is an awaited,
             // fail-closed, Admin-SDK write that can never break the (already-executed)
             // trade — the inner try/catch isolates it completely.
-            if (LEARNING_L1_CAPTURE_ENABLED) {
+            // Fix 1 (L1 Capture — exclude non-evidence agents): only a real
+            // live agent's decision is evidence. CPU tournament battles already
+            // early-return above (~L731, P4 contract #5) and never reach here;
+            // training-clone battles (not isCpu) DO reach this swap path, so this
+            // evidence gate is what keeps the corpus free of non-live_agent
+            // receipts — and skips the post-trade tech-doc refetch for a seat with
+            // no real entry decision. isCpu is the authoritative CPU contract; the
+            // reserved agentId prefixes are the secondary/training signal. The `&&`
+            // short-circuits when the flag is off, so the no-op path is unchanged.
+            if (LEARNING_L1_CAPTURE_ENABLED && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
               try {
                 // Fix 1 (DARK, post-trade, capture-only): the entry symbol's tech
                 // doc is null when it is a hotBench swap-in — allTechSymbols does
@@ -2014,6 +2023,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
                   enabled: true,
                   db,
                   agentId: battle.agentId,
+                  // Fix 1/2 — evidence-provenance inputs. captureSwapReceipt
+                  // re-derives evidenceClass from these and applies the same guard
+                  // defensively before buildRawReceipt, then stamps it on the receipt.
+                  isCpu: battle.isCpu,
                   battleId: battle.id,
                   battleDay: currentDay,
                   timestamp: swapResult.closedTrade?.swappedOutAt || null,

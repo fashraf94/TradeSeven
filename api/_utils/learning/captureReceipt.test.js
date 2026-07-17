@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   captureSwapReceipt, buildRawReceipt, extractPredicateInputs, receiptIdFor, toMillis,
-  resolveEntrySnapshot, classifyEntryAtrSource,
+  resolveEntrySnapshot, classifyEntryAtrSource, classifyEvidence, EVIDENCE_CLASSES,
 } from './captureReceipt.js';
 import { classifyD2, D2_CLASSES } from './detectorClassifiers.js';
 
@@ -162,6 +162,63 @@ describe('captureSwapReceipt — writes a RAW receipt when the flag is on', () =
     expect(res.reason).toBe('write_error');
     expect(err).toHaveBeenCalled();
     err.mockRestore();
+  });
+});
+
+// ── L1 Capture — exclude non-evidence (CPU/training) agents (Fix 1 + Fix 2) ──
+describe('classifyEvidence + captureSwapReceipt — non-evidence exclusion', () => {
+  it('classifyEvidence: isCpu is authoritative; agentId prefixes are the secondary/training signal', () => {
+    expect(classifyEvidence({ isCpu: true, agentId: 'agent-1' })).toBe('cpu'); // boolean wins over a live-looking id
+    expect(classifyEvidence({ isCpu: false, agentId: 'cpu-agent-15' })).toBe('cpu'); // secondary cpu-agent- prefix
+    expect(classifyEvidence({ agentId: 'training-agent-grp7-u3' })).toBe('training');
+    expect(classifyEvidence({ agentId: 'agent-abc123' })).toBe('live_agent');
+    expect(classifyEvidence({ agentId: '' })).toBe('unknown'); // no attributable id
+    expect(classifyEvidence({})).toBe('unknown');
+    expect(classifyEvidence()).toBe('unknown');
+    // Every result is a member of the published taxonomy.
+    for (const args of [{ isCpu: true }, { agentId: 'training-agent-x' }, { agentId: 'z' }, {}]) {
+      expect(EVIDENCE_CLASSES).toContain(classifyEvidence(args));
+    }
+  });
+
+  it('a CPU agent (isCpu) writes NO receipt — early return before buildRawReceipt, Firestore untouched', async () => {
+    const db = makeSpyDb({ explode: true }); // any Firestore access throws
+    const res = await captureSwapReceipt({ ...validRaw(), isCpu: true, enabled: true, db });
+    expect(res).toEqual({ emitted: false, reason: 'non_evidence', evidenceClass: 'cpu' });
+    expect(db.touched.any).toBe(false);
+    expect(db.sets).toHaveLength(0);
+  });
+
+  it('a training-clone agent writes NO receipt (training-agent- id prefix)', async () => {
+    const raw = validRaw({ agentId: 'training-agent-grp7-u3' });
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res).toEqual({ emitted: false, reason: 'non_evidence', evidenceClass: 'training' });
+    expect(raw.db.sets).toHaveLength(0);
+  });
+
+  it('a cpu-agent- id with no isCpu flag is still excluded (secondary signal)', async () => {
+    const raw = validRaw({ agentId: 'cpu-agent-9' });
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(false);
+    expect(res.reason).toBe('non_evidence');
+    expect(res.evidenceClass).toBe('cpu');
+    expect(raw.db.sets).toHaveLength(0);
+  });
+
+  it('a live agent writes a receipt STAMPED evidenceClass: live_agent', async () => {
+    const raw = validRaw(); // agentId 'agent-1' → live_agent
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(true);
+    expect(raw.db.sets).toHaveLength(1);
+    expect(raw.db.sets[0].data.evidenceClass).toBe('live_agent');
+  });
+
+  it('buildRawReceipt stamps evidenceClass from identity, and an explicit override wins', () => {
+    expect(buildRawReceipt(validRaw()).evidenceClass).toBe('live_agent');
+    expect(buildRawReceipt(validRaw({ agentId: 'cpu-agent-2' })).evidenceClass).toBe('cpu');
+    expect(buildRawReceipt(validRaw({ isCpu: true })).evidenceClass).toBe('cpu');
+    // The caller-computed value is authoritative (guard and stamp never disagree).
+    expect(buildRawReceipt(validRaw({ evidenceClass: 'live_agent', agentId: 'cpu-agent-2' })).evidenceClass).toBe('live_agent');
   });
 });
 

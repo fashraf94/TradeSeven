@@ -118,3 +118,60 @@ describe('validateCaptureSample — pre-flight capture integrity', () => {
     expect(res.pass).toBe(true); // warnings do not fail the pre-flight
   });
 });
+
+// A live receipt carries evidenceClass 'live_agent' by construction (agentId 'a').
+const asClass = (r, evidenceClass) => ({ ...r, evidenceClass });
+
+describe('validateCaptureSample — evidence denominator (exclude non-evidence)', () => {
+  it('excludes cpu/training receipts from the denominator, counts them, computes rate over live only', () => {
+    const cpu = asClass(mkReceipt({ dR: 2.0, seq: 2, tradeCount: 1 }), 'cpu');
+    const training = asClass(mkReceipt({ dR: 2.0, seq: 3, tradeCount: 2 }), 'training');
+    const res = validateCaptureSample([...goodSample(), cpu, training]);
+    expect(res.pass).toBe(true);
+    expect(res.summary.n).toBe(7); // denominator = live-agent receipts only
+    expect(res.summary.excludedCount).toBe(2);
+    expect(res.summary.excludedByClass).toEqual({ cpu: 1, training: 1 });
+    expect(res.summary.drNullRate).toBeCloseTo(4 / 7, 5); // unchanged by the excluded seats
+    const info = res.checks.find((c) => c.name === 'evidence-exclusion');
+    expect(info.level).toBe('info');
+    expect(info.detail).toBe('excluded 2 cpu/training receipts; evaluating 7 live-agent receipts.');
+  });
+
+  it('a BROKEN cpu receipt does not fail the gate — it is excluded from the rate checks (the contamination fix)', () => {
+    // A null-techDoc receipt would tank predicateComputedAt-nonnull IF counted.
+    const brokenCpu = asClass(mkReceipt({ techUpdatedAt: null, seq: 2, tradeCount: 1 }), 'cpu');
+    const res = validateCaptureSample([...goodSample(), brokenCpu]);
+    expect(res.pass).toBe(true); // live rate still clears the bar
+    expect(res.summary.n).toBe(7);
+    expect(res.summary.excludedCount).toBe(1);
+    expect(failed(res, 'predicateComputedAt-nonnull')).toBeFalsy();
+  });
+
+  it('all receipts non-evidence → FAILS sample-nonempty with the exclusion accounting', () => {
+    const cpu1 = asClass(mkReceipt({ seq: 2, tradeCount: 1 }), 'cpu');
+    const tr1 = asClass(mkReceipt({ seq: 3, tradeCount: 2 }), 'training');
+    const res = validateCaptureSample([cpu1, tr1]);
+    expect(res.pass).toBe(false);
+    expect(failed(res, 'sample-nonempty')).toBeTruthy();
+    expect(res.summary.n).toBe(0);
+    expect(res.summary.excludedCount).toBe(2);
+    expect(res.summary.excludedByClass).toEqual({ cpu: 1, training: 1 });
+  });
+
+  it('legacy receipts with NO evidenceClass are treated as non-evidence (excluded as unknown)', () => {
+    const legacy = mkReceipt({ seq: 2, tradeCount: 1 });
+    delete legacy.evidenceClass; // pre-Fix-2 corpus
+    const res = validateCaptureSample([...goodSample(), legacy]);
+    expect(res.summary.n).toBe(7);
+    expect(res.summary.excludedCount).toBe(1);
+    expect(res.summary.excludedByClass).toEqual({ unknown: 1 });
+  });
+
+  it('a healthy all-live sample reports zero exclusions (the clean-corpus confirmation)', () => {
+    const res = validateCaptureSample(goodSample());
+    expect(res.summary.excludedCount).toBe(0);
+    expect(res.summary.excludedByClass).toEqual({});
+    const info = res.checks.find((c) => c.name === 'evidence-exclusion');
+    expect(info.detail).toBe('excluded 0 cpu/training receipts; evaluating 7 live-agent receipts.');
+  });
+});

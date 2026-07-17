@@ -37,6 +37,8 @@ describe('learningSchemas — shapes only, null leaves', () => {
     ]);
     // data quality
     expect(r.dataQuality).toEqual({ nullFlags: [] });
+    // evidence provenance — top-level, null leaf (stamped at build time)
+    expect(r.evidenceClass).toBeNull();
     // versions stamped
     expect(r.schemaVersion).toBe(LEARNING_SCHEMA_VERSION);
     expect(r.barBasisTableVersion).toBe(BAR_BASIS_TABLE_VERSION);

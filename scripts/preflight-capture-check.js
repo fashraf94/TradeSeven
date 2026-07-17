@@ -125,7 +125,7 @@ export function formatReport({ flags, projectId, result, breadth, receipts }) {
   L.push('══════════════════════════════════════════════════════════════');
   L.push(`  L1 CAPTURE PRE-FLIGHT — ${result.pass ? 'PASS ✓' : 'FAIL ✗'}`);
   L.push('══════════════════════════════════════════════════════════════');
-  L.push(`  project: ${projectId}   (CONFIRM this is PREVIEW, not production)`);
+  L.push(`  project: ${projectId}   (CONFIRM the capture flag is intentionally enabled)`);
   L.push(`  source:  ${flags.battle ? `learningReceipts/${flags.battle}/receipts` : 'collectionGroup(receipts) → learningReceipts/*'} · limit ${flags.limit}`);
   L.push('');
 
