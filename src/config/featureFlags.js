@@ -347,7 +347,7 @@ export function isTrainingPodDraftV2On() {
  * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview
  * smoke (the TRAINING_POD_DRAFT_V2_ENABLED precedent) — never in the build PR.
  */
-export const TRAINING_POD_DESKTOP_ENABLED = false;
+export const TRAINING_POD_DESKTOP_ENABLED = true;
 
 /**
  * The ONE home for the desktop gate — the flag OR the `?trainingPodDesktop=1`
