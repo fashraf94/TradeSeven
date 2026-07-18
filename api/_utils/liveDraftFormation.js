@@ -252,27 +252,30 @@ function groupRefFor(db, groupId) {
   return db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
 }
 
-// A competitive slot pod is "active" (occupies the user's one game) from claim
-// through its battle: FORMING → DRAFTING → AWAITING_OPEN → BATTLE.
-const ACTIVE_SLOT_STATUSES = new Set([
+// A group "occupies" a user's battle week from formation through its battle:
+// FORMING → DRAFTING → AWAITING_OPEN → BATTLE.
+const ACTIVE_GROUP_STATUSES = new Set([
   GROUP_STATUS.FORMING, GROUP_STATUS.DRAFTING, GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.BATTLE,
 ]);
 
 /**
- * The id of ANOTHER active competitive (live-draft) group the caller already
- * sits in, or null — the one-competitive-game guard's read. Member-scoped
- * `array-contains` query (the findActiveTrainingPodForUser precedent; a single-
- * field array-contains needs no composite index), filtered in memory to active
- * live-draft groups. `exceptGroupId` is the occurrence being claimed, so a
- * re-claim of one's OWN slot stays idempotent (never self-rejects).
+ * The id of ANOTHER active NON-TRAINING group the caller already holds in the
+ * SAME battle week (`baseLayerWeek`), or null — the per-battle-week one-game
+ * guard's read (founder ruling). ANY competitive game that plays the claimed
+ * slot's week blocks the claim — a slot pod OR a regular ranked pod — while a
+ * game in a DIFFERENT week does not (a current-week pod never blocks a next-week
+ * slot). Member-scoped `array-contains` query (the findActiveTrainingPodForUser
+ * precedent; a single-field array-contains needs no composite index). Training
+ * pods are never counted (isTraining !== true); `exceptGroupId` (the occurrence
+ * being claimed) keeps the same-slot re-claim idempotent.
  */
-async function findOtherActiveSlotGroup(db, odUserId, exceptGroupId) {
+async function findActiveGroupInBattleWeek(db, odUserId, baseLayerWeek, exceptGroupId) {
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
     .where('groupMembers', 'array-contains', odUserId).get();
   for (const d of snap.docs) {
     if (d.id === exceptGroupId) continue;
     const g = d.data();
-    if (g.isLiveDraft === true && ACTIVE_SLOT_STATUSES.has(g.status)) return d.id;
+    if (g.isTraining !== true && ACTIVE_GROUP_STATUSES.has(g.status) && g.baseLayerWeek === baseLayerWeek) return d.id;
   }
   return null;
 }
@@ -328,14 +331,18 @@ export async function claimSlotSeat(db, { slotId, odUserId, displayName = null, 
   const ref = groupRefFor(db, groupId);
   const nowIso = toIso(now);
 
-  // One-competitive-game guard (founder ruling): a user may hold only ONE active
-  // competitive slot pod at a time. Reject if they already sit in a DIFFERENT
-  // active live-draft group (re-claiming THIS occurrence is idempotent, excluded
-  // by id). Pre-transaction read — a cross-doc query can't run inside the
-  // single-doc claim transaction; the residual race (two first-claims of two
-  // different slots in the same instant) is benign and rare.
-  const heldElsewhere = await findOtherActiveSlotGroup(db, odUserId, groupId);
-  if (heldElsewhere) throw slotError('already_in_competitive');
+  // Per-battle-week one-game guard (founder ruling): reject if the user already
+  // holds an active non-training group that plays the SAME week this slot would
+  // (its derived battle week) — a slot pod OR a regular ranked pod. A game in a
+  // DIFFERENT week does not block (a current-week pod never blocks a next-week
+  // slot); the same-slot re-claim is idempotent (excluded by id). Keys on
+  // baseLayerWeek, which the #1 fix made battle-week-accurate. Pre-transaction
+  // read — a cross-doc query can't run inside the single-doc claim tx; the
+  // residual same-instant race is benign and rare. (Ledger: mirror this guard on
+  // the regular-entry write site in the Entry-Flow Consolidation.)
+  const battleWeek = deriveBaseLayerWeek(battleStartWeek);
+  const conflict = await findActiveGroupInBattleWeek(db, odUserId, battleWeek, groupId);
+  if (conflict) throw slotError('already_in_competitive');
 
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);

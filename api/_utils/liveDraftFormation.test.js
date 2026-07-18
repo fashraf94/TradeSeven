@@ -392,22 +392,49 @@ describe('baseLayerWeek is the BATTLE week, not the claim week (finding #1)', ()
   });
 });
 
-describe('one-competitive-game guard (finding #3)', () => {
-  it('rejects a claim when the user already holds another active slot group', async () => {
+describe('per-battle-week one-game guard (finding #3)', () => {
+  // wed-1900 claimed at NOW (Mon 2026-07-06) derives battle week 2026-W29.
+  const seedGroup = (store, id, baseLayerWeek, extra = {}) => store.set(groupPath(id), {
+    status: GROUP_STATUS.BATTLE, baseLayerWeek, groupMembers: ['userA'],
+    players: [{ odUserId: 'userA', picks: [] }], ...extra,
+  });
+
+  it('(a) a same-battle-week REGULAR (non-training) pod blocks the slot claim', async () => {
+    const { db, store } = makeDb();
+    seedGroup(store, 'reg-w29', '2026-W29'); // userA already plays 2026-W29
+    await expect(claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW }))
+      .rejects.toThrow(sentinel('already_in_competitive'));
+  });
+
+  it('(b) a current-week pod does NOT block a NEXT-week slot claim', async () => {
+    const { db, store } = makeDb();
+    seedGroup(store, 'reg-w28', '2026-W28'); // userA plays THIS week; the slot battles next week (W29)
+    const r = await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
+    expect(r).toMatchObject({ created: true, humanCount: 1 }); // allowed — different battle week
+  });
+
+  it('a same-battle-week live-draft pod also blocks (wed + sun both play W29)', async () => {
     const { db } = makeDb();
     await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
     await expect(claimSlotSeat(db, { slotId: 'sun-1900', odUserId: 'userA', now: NOW }))
       .rejects.toThrow(sentinel('already_in_competitive'));
   });
 
-  it('still allows the idempotent re-claim of the SAME slot (excluded by id)', async () => {
+  it('a TRAINING pod in the same week never blocks (isTraining excluded)', async () => {
+    const { db, store } = makeDb();
+    seedGroup(store, 'train-w29', '2026-W29', { isTraining: true });
+    const r = await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
+    expect(r).toMatchObject({ created: true, humanCount: 1 });
+  });
+
+  it('the idempotent re-claim of the SAME slot is allowed (excluded by id)', async () => {
     const { db } = makeDb();
     await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
     const again = await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
-    expect(again).toMatchObject({ alreadyClaimed: true }); // not rejected
+    expect(again).toMatchObject({ alreadyClaimed: true });
   });
 
-  it('does not block a DIFFERENT user from another slot', async () => {
+  it('does not block a DIFFERENT user', async () => {
     const { db } = makeDb();
     await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
     const r = await claimSlotSeat(db, { slotId: 'sun-1900', odUserId: 'userB', now: NOW });
