@@ -497,18 +497,23 @@ describe('agent-evaluate cron — Corpus Capture Patch W1/W2 L1 capture wiring',
     expect(isolations.length).toBe(5);
   });
 
-  it('flag #4 hardening: no proposal path passes a bare {} metadata — both synthesize provenance via the FENCED helper (called, never edited)', () => {
-    expect(source).not.toMatch(/proposal\.evaluationMetadata \|\| \{\},/);
-    const synthesized = source.match(/proposal\.evaluationMetadata \|\| \{\s*\n\s*\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: null \}\)/g) || [];
-    expect(synthesized.length).toBe(2);
-    // /code-review tripwire restore: the fallback syntheses must NOT absorb a
-    // §14 dial-provenance spread — the tempo-dial suite's 4-count would still
-    // pass if one migrated off an origin path into a fallback object, so pin
-    // the pairing here: every buildSwapProvenance stays on an origin path.
-    const fallbackSpans = source.split('proposal.evaluationMetadata || {').slice(1)
-      .map(s => s.slice(0, s.indexOf('},')));
-    expect(fallbackSpans.length).toBe(2);
-    for (const span of fallbackSpans) {
+  it('flag #4 hardening (#5 per-key merge): both proposal metadata fallbacks synthesize the floor then let present keys override — no truthy-{} bypass', () => {
+    // #5 (adversarial review): a whole-object `|| {}` fallback is bypassed by a
+    // truthy empty/partial metadata object. The fix spreads the synthesized
+    // floor FIRST and merges `...(proposal.evaluationMetadata || {})` LAST.
+    expect(source).not.toMatch(/proposal\.evaluationMetadata \|\| \{\},/); // no whole-object fallback
+    const floors = source.match(/\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: null \}\)/g) || [];
+    expect(floors.length).toBe(2); // the two proposal-execution fallbacks (archetype:null variant)
+    const mergeTails = source.match(/\.\.\.\(proposal\.evaluationMetadata \|\| \{\}\),/g) || [];
+    expect(mergeTails.length).toBe(2); // present keys override the floor at both sites
+    // Tripwire restore: the fallback objects must NOT absorb a §14 dial-
+    // provenance spread (the tempo-dial suite's 4-count would otherwise still
+    // pass if one migrated off an origin path into a fallback object). Each
+    // merged fallback spans from its floor spread to its merge tail.
+    const spans = source.split(/\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: null \}\)/).slice(1)
+      .map(s => s.slice(0, s.indexOf('...(proposal.evaluationMetadata || {}),')));
+    expect(spans.length).toBe(2);
+    for (const span of spans) {
       expect(span).not.toContain('buildSwapProvenance');
     }
   });
@@ -533,10 +538,17 @@ describe('agent-evaluate cron — Corpus Capture Patch W3 regimeAtStart wiring',
     expect(source).toMatch(/\bREGIME_STAMP_ENABLED\b[^]*?from '\.\.\/\.\.\/src\/config\/featureFlags\.js'/);
   });
 
-  it('stamps via the gated helper exactly once, writing the regimeAtStart field with an in-memory mirror', () => {
+  it('#2: stamps write-once ATOMICALLY inside one transaction (re-check at write time), mirror only when won', () => {
     const gates = source.match(/shouldStampRegime\(\{ battle, marketContext, enabled: REGIME_STAMP_ENABLED \}\)/g) || [];
-    expect(gates.length).toBe(1);
-    expect(source).toMatch(/await battleRef\.update\(\{ regimeAtStart \}\);\s*\n\s*battle\.regimeAtStart = regimeAtStart;/);
+    expect(gates.length).toBe(1); // pre-filter kept
+    // The write-once check and the write are co-transactional — the prior
+    // guarded-read-then-separate-update raced under lock expiry (120s TTL <
+    // 290s budget). The old non-atomic literal must be GONE.
+    expect(source).not.toMatch(/await battleRef\.update\(\{ regimeAtStart \}\);\s*\n\s*battle\.regimeAtStart = regimeAtStart;/);
+    expect(source).toMatch(/const stamped = await db\.runTransaction\(async \(t\) => \{/);
+    expect(source).toMatch(/if \(!d\.exists \|\| d\.data\(\)\?\.regimeAtStart !== undefined\) return false;/);
+    expect(source).toMatch(/t\.update\(battleRef, \{ regimeAtStart \}\);/);
+    expect(source).toMatch(/if \(stamped\) battle\.regimeAtStart = regimeAtStart;/); // mirror only on win
   });
 
   it('the evaluatingAt lock transaction refreshes regimeAtStart from its own doc read (stale-snapshot re-stamp race fix)', () => {
@@ -566,6 +578,66 @@ describe('agent-evaluate cron — Corpus Capture Patch W3 regimeAtStart wiring',
 
   it('merge-dark contract: REGIME_STAMP_ENABLED defaults FALSE (flips later with the expansion flag, per founder ruling)', () => {
     expect(REGIME_STAMP_ENABLED).toBe(false);
+  });
+});
+
+// Corpus Capture Patch — adversarial-review consolidated fix pass. Static-source
+// guards for the wiring the review confirmed (#3 ordering, #8 entryAtrSource,
+// #9 predicate-instant, #10 ctx-alias). Behavioral load lives on the learning-
+// layer unit tests; these pin the cron-side wiring that has no behavioral seam.
+describe('agent-evaluate cron — adversarial-review fixes (#3/#8/#9/#10)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('#3: both single-swap proposal sites clear pendingProposal BEFORE the capture await (inside the flag guard)', () => {
+    // A field-only clear `battleRef.update({ pendingProposal: null })` (distinct
+    // from the shared `{ pendingProposal: null, proposalHistory: history }`
+    // backstop) precedes each proposal capture — so a hard timeout during
+    // capture cannot leave the proposal re-executable.
+    const preClears = source.match(/await battleRef\.update\(\{ pendingProposal: null \}\);/g) || [];
+    expect(preClears.length).toBe(2); // approved + expired
+    // Ordering per site: each pre-clear precedes a captureSwapReceipt call.
+    for (const seg of source.split('await battleRef.update({ pendingProposal: null });').slice(1)) {
+      const nextCapture = seg.indexOf('await captureSwapReceipt({');
+      const nextClose = seg.indexOf('return ');
+      expect(nextCapture).toBeGreaterThan(-1);
+      // the capture appears before the next branch return (i.e. in the same block)
+      expect(nextClose === -1 || nextCapture < nextClose).toBe(true);
+    }
+  });
+
+  it('#8: entryATR provenance is classified (not omitted) at all four new sites via the shared classifier', () => {
+    // classifyEntryAtrSource is applied per site (never hand-rolled); each new
+    // capture passes entryAtrSource. 4 new sites use `entryAtrSource:` (the
+    // autopilot site uses the shorthand `entryAtrSource,`).
+    const perSite = source.match(/entryAtrSource: \w+EntryAtrSource,/g) || [];
+    expect(perSite.length).toBe(4); // risk, approved, expired, gameplan
+    const classifierCalls = source.match(/classifyEntryAtrSource\(\{/g) || [];
+    expect(classifierCalls.length).toBe(5); // 4 new + 1 autopilot
+  });
+
+  it('#9: both proposal captures pass decisionAtMs = proposal.createdAt (predicate instant ≠ execution timestamp)', () => {
+    const overrides = source.match(/decisionAtMs: proposal\.createdAt \?\? null,/g) || [];
+    expect(overrides.length).toBe(2);
+    // receipt.timestamp stays the execution instant at both proposal sites.
+    expect(source).toMatch(/timestamp: approvedSwapResult\.closedTrade\?\.swappedOutAt \|\| null,/);
+    expect(source).toMatch(/timestamp: expiredSwapResult\.closedTrade\?\.swappedOutAt \|\| null,/);
+  });
+
+  it('#10: ctx is the sole, never-rebound battle.agentContext alias (identity cannot silently re-point)', () => {
+    const decls = source.match(/const ctx = battle\.agentContext \|\| \{\};/g) || [];
+    expect(decls.length).toBe(1);            // single declaration…
+    expect(source).not.toMatch(/\b(let|var) ctx\b/); // …and it's a const (cannot be rebound)
+    expect(source).not.toMatch(/ctx\.archetype\s*=(?!=)/);       // no `ctx.archetype = …` mutation
+    expect(source).not.toMatch(/Object\.assign\(ctx\b/);         // no bulk mutation of the alias
+    expect(source).not.toMatch(/battle\.agentContext\s*=[^=]/);  // frozen object/field never overwritten
+    expect(source).not.toMatch(/archetype: agent\.archetype/);   // never the mutable scalar
+  });
+
+  it('#10: the five capture archetype reads resolve to the same frozen field (2 ctx + 3 battle.agentContext)', () => {
+    const ctxReads = source.match(/archetype: ctx\.archetype \?\? null/g) || [];
+    const battleReads = source.match(/archetype: battle\.agentContext\?\.archetype \?\? null/g) || [];
+    expect(ctxReads.length).toBe(2);   // risk + autopilot (processAgentBattle scope)
+    expect(battleReads.length).toBe(3); // approved + expired + gameplan (ctx out of scope)
   });
 });
 

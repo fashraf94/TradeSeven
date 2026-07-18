@@ -35,6 +35,17 @@
 /** Bump if the stamp's regime taxonomy ever changes meaning. */
 export const REGIME_STAMP_TAXONOMY_VERSION = 1;
 
+/**
+ * Stamp SHAPE version (distinct from the taxonomy version). Bump when the stamp
+ * gains/changes FIELDS — e.g. when a later patch populates drbRegime/drbForDate,
+ * which currently ship null. Rationale (prior-rulings note item 5): null on a
+ * write-once field is ambiguous ("field predates this patch" vs "value genuinely
+ * absent that day"); a shape version lets a T3 consumer disambiguate by one
+ * compare instead of per-field null forensics, on a field that can never be
+ * re-stamped retroactively (the "cheap now, impossible later" class).
+ */
+export const REGIME_STAMP_SHAPE_VERSION = 1;
+
 /** The stamp's provenance literal — the one doc the regime is read from. */
 export const REGIME_STAMP_SOURCE = 'indexIntelligence/marketContext';
 
@@ -60,6 +71,13 @@ export function shouldStampRegime({ battle, marketContext, enabled } = {}) {
   // An 'unknown' regime is a real label and still stamps (recorded verbatim,
   // never adjudicated); only a missing/non-string label skips.
   if (typeof marketContext.regime !== 'string' || marketContext.regime.length === 0) return false;
+  // #4 (adversarial review): require EVERY mandatory provenance field, not just
+  // regime. A doc with a regime label but no updatedAt would stamp observedAt
+  // permanently null — defeating the staleness signal on a write-once field.
+  // Loose `== null` (present-check, catches null AND undefined): the canonical
+  // writer emits updatedAt via FieldValue.serverTimestamp(), which reads back
+  // as a Timestamp OBJECT, so a type check would wrongly reject the normal case.
+  if (marketContext.updatedAt == null) return false;
   return true;
 }
 
@@ -89,5 +107,9 @@ export function buildRegimeAtStart(marketContext, nowIso) {
     // rather than persist a silent permanent null on a write-once field.
     stampedAt: nowIso,
     taxonomyVersion: REGIME_STAMP_TAXONOMY_VERSION,
+    // Shape version — lets consumers tell a pre-DRB-fields stamp from a genuine
+    // absent-that-day null once drbRegime/drbForDate are populated by a later
+    // patch (prior-rulings note item 5). Write-once ⇒ must ship from day one.
+    shapeVersion: REGIME_STAMP_SHAPE_VERSION,
   };
 }

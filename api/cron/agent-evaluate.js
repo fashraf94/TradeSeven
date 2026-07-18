@@ -973,11 +973,30 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // In-memory mirror follows the migration-fields precedent so later code
     // this tick sees the stamped doc state. A stamp failure is logged and
     // swallowed — it must never break the evaluation pass.
+    // shouldStampRegime is a cheap PRE-FILTER (flag / marketContext / regime /
+    // updatedAt) on the in-memory doc; the AUTHORITATIVE write-once guard is the
+    // in-transaction battle-doc read below.
     if (shouldStampRegime({ battle, marketContext, enabled: REGIME_STAMP_ENABLED })) {
       try {
         const regimeAtStart = buildRegimeAtStart(marketContext, new Date().toISOString());
-        await battleRef.update({ regimeAtStart });
-        battle.regimeAtStart = regimeAtStart;
+        // #2 (adversarial review): ATOMIC write-once. The prior guarded-read-
+        // then-separate-update raced under lock EXPIRY — EVALUATING_LOCK_TIMEOUT_MS
+        // (120s) < TIME_BUDGET_MS (290s), so an invocation can still be alive when
+        // another steals its expired lock; both then read regimeAtStart===undefined
+        // (in-memory) and both write, clobbering the write-once field. Re-check the
+        // field AT write time inside one transaction so only the first committer
+        // wins. Reads ONLY battleRef (marketContext is already in hand — zero added
+        // regime-source reads); buildRegimeAtStart is pure so it is computed outside
+        // the txn (no recompute on auto-retry).
+        const stamped = await db.runTransaction(async (t) => {
+          const d = await t.get(battleRef);
+          // Skip if the doc vanished (t.update would throw NOT_FOUND) or is
+          // already stamped — never overwrite the write-once field.
+          if (!d.exists || d.data()?.regimeAtStart !== undefined) return false;
+          t.update(battleRef, { regimeAtStart });
+          return true;
+        });
+        if (stamped) battle.regimeAtStart = regimeAtStart; // mirror only when we won
       } catch (stampErr) {
         console.error(`${LOG_PREFIX} regimeAtStart stamp failed (ignored, evaluation unaffected): ${stampErr?.message}`);
       }
@@ -1512,6 +1531,16 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
               rankingsResult?.status === 'fulfilled' && rankingsResult.value?.exists
                 ? rankingsResult.value.data()
                 : null;
+            // #8 (adversarial review): entryATR provenance via the SAME classifier
+            // the autopilot site uses (never hand-rolled). Inputs are in scope —
+            // `replacement` is the swap-in candidate handed to executeSwapServer.
+            const riskEntryATR = riskSwapResult.incomingAsset?.baseATR ?? null;
+            const riskEntryAtrSource = classifyEntryAtrSource({
+              entryATR: riskEntryATR,
+              scoredThreshold: battle.scoring?.thresholds?.[replacement.symbol]?.threshold,
+              benchBaseATR: replacement?.baseATR,
+              isCrypto: replacement?.isCrypto,
+            });
             await captureSwapReceipt({
               enabled: true,
               db,
@@ -1541,7 +1570,8 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
               resolvedTier: slot.tier,
               resolvedSlotIndex: slot.slotIndex,
               entryMark: riskSwapResult.incomingAsset?.swapPrice ?? null,
-              entryATR: riskSwapResult.incomingAsset?.baseATR ?? null,
+              entryATR: riskEntryATR,
+              entryAtrSource: riskEntryAtrSource, // #8 — provenance, not a second value
               outgoingEntryPrice: riskSwapResult.closedTrade?.entryPrice ?? null,
               outgoingBaseATR: score.baseATR ?? null,
               thresholdHistory: battle.thresholdHistory?.[score.symbol] ?? null,
@@ -2734,14 +2764,19 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
             benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
             // Corpus Capture Patch W2 (P2 flag #4 hardening, founder-approved):
             // a metadata-less proposal must never persist a SOURCELESS swap.
-            // Synthesize minimal provenance via the fenced helper (archetype
-            // null by its own contract for non-'archetype' sources) + the
-            // local entryPreset/entryMode/exitReason site pattern.
-            freshPrices, proposal.evaluationMetadata || {
+            // #5 (adversarial review): PER-KEY merge, not `|| {}` — an empty or
+            // partial metadata object is TRUTHY and would bypass a whole-object
+            // fallback, so spread the synthesized floor FIRST and let any present
+            // real keys override it (spreading a nullish/legacy metadata is a
+            // no-op, so this also covers the fully-absent case). Required floor:
+            // { source, archetype, hftKnobsSource, entryPreset, entryMode,
+            // exitReason }. buildSwapReceiptSource is the fenced helper (called).
+            freshPrices, {
               ...buildSwapReceiptSource({ source: 'haiku', archetype: null }),
               entryPreset: battle.strategyPreset || 'balanced',
               entryMode: battle.executionMode || 'autopilot',
               exitReason: 'haiku_decision',
+              ...(proposal.evaluationMetadata || {}),
             },
             proposal.snapshot || null
           );
@@ -2765,6 +2800,22 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
               && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
             try {
+              // #3 (adversarial review): persist the pending-proposal clear
+              // BEFORE the capture await so a hard timeout during capture cannot
+              // leave the proposal re-executable (capture must never sit between
+              // a durable commit and its durable cleanup). Inside the flag guard
+              // ⇒ the flags-off path is byte-identical; the shared clear at the
+              // resolution level below is the idempotent backstop (and still the
+              // sole clear for the bench-gone / reserve-lost sub-branches).
+              await battleRef.update({ pendingProposal: null });
+              // #8: entryATR provenance via the shared classifier (benchAsset in scope).
+              const approvedEntryATR = approvedSwapResult.incomingAsset?.baseATR ?? null;
+              const approvedEntryAtrSource = classifyEntryAtrSource({
+                entryATR: approvedEntryATR,
+                scoredThreshold: battle.scoring?.thresholds?.[proposal.symbolIn]?.threshold,
+                benchBaseATR: benchAsset?.baseATR,
+                isCrypto: benchAsset?.isCrypto,
+              });
               await captureSwapReceipt({
                 enabled: true,
                 db,
@@ -2775,6 +2826,11 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
                 battleId: battle.id,
                 battleDay: proposal.evaluationMetadata?.tradingDay ?? null,
                 timestamp: approvedSwapResult.closedTrade?.swappedOutAt || null,
+                // #9 (adversarial review): predicates below are proposal-creation
+                // -time (proposal.snapshot), so the predicate/decision instant is
+                // proposal.createdAt — NOT the execution timestamp above. Keeps
+                // the up-to-TTL staleness computable instead of collapsed.
+                decisionAtMs: proposal.createdAt ?? null,
                 // /code-review fix: receiptSeq is the CONVENTION itself —
                 // scoreState.tradeCount+1 at EXECUTION time (battle.* is
                 // pre-refresh here). Deliberately NOT parsed from the
@@ -2792,7 +2848,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
                 resolvedTier: proposal.tier ?? null,
                 resolvedSlotIndex: proposal.slotIndex ?? null,
                 entryMark: approvedSwapResult.incomingAsset?.swapPrice ?? null,
-                entryATR: approvedSwapResult.incomingAsset?.baseATR ?? null,
+                entryATR: approvedEntryATR,
+                entryAtrSource: approvedEntryAtrSource, // #8
                 outgoingEntryPrice: approvedSwapResult.closedTrade?.entryPrice ?? null,
                 outgoingBaseATR: l1ApprovedOutgoingPosition?.baseATR ?? null,
                 thresholdHistory: battle.thresholdHistory?.[proposal.symbolOut] ?? null,
@@ -2910,13 +2967,16 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           db, battle.id, battle,
           proposal.tier, proposal.slotIndex,
           benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
-          // Corpus Capture Patch W2 (P2 flag #4 hardening) — same synthesis as
-          // the 'approved' branch: never persist a sourceless swap.
-          freshPrices, proposal.evaluationMetadata || {
+          // Corpus Capture Patch W2 (P2 flag #4 hardening) — same PER-KEY merge
+          // as the 'approved' branch (#5): synthesized floor first, present
+          // metadata keys override; a truthy empty/partial object no longer
+          // bypasses the floor. Never persist a sourceless swap.
+          freshPrices, {
             ...buildSwapReceiptSource({ source: 'haiku', archetype: null }),
             entryPreset: battle.strategyPreset || 'balanced',
             entryMode: battle.executionMode || 'autopilot',
             exitReason: 'haiku_decision',
+            ...(proposal.evaluationMetadata || {}),
           },
           proposal.snapshot || null
         );
@@ -2939,6 +2999,18 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
             && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
           try {
+            // #3 (adversarial review): clear pendingProposal BEFORE the capture
+            // await (same rationale as the 'approved' branch). Inside the flag
+            // guard ⇒ flags-off byte-identical; shared clear below is the backstop.
+            await battleRef.update({ pendingProposal: null });
+            // #8: entryATR provenance via the shared classifier (benchAsset in scope).
+            const expiredEntryATR = expiredSwapResult.incomingAsset?.baseATR ?? null;
+            const expiredEntryAtrSource = classifyEntryAtrSource({
+              entryATR: expiredEntryATR,
+              scoredThreshold: battle.scoring?.thresholds?.[proposal.symbolIn]?.threshold,
+              benchBaseATR: benchAsset?.baseATR,
+              isCrypto: benchAsset?.isCrypto,
+            });
             await captureSwapReceipt({
               enabled: true,
               db,
@@ -2949,6 +3021,9 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               battleId: battle.id,
               battleDay: proposal.evaluationMetadata?.tradingDay ?? null,
               timestamp: expiredSwapResult.closedTrade?.swappedOutAt || null,
+              // #9: predicate/decision instant is proposal.createdAt (creation-
+              // time snapshots), not the execution timestamp above.
+              decisionAtMs: proposal.createdAt ?? null,
               // /code-review fix: receiptSeq = scoreState.tradeCount+1 at
               // EXECUTION time, never the stale creation-time metadata id
               // (same collision rationale as the 'approved' branch above).
@@ -2961,7 +3036,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               resolvedTier: proposal.tier ?? null,
               resolvedSlotIndex: proposal.slotIndex ?? null,
               entryMark: expiredSwapResult.incomingAsset?.swapPrice ?? null,
-              entryATR: expiredSwapResult.incomingAsset?.baseATR ?? null,
+              entryATR: expiredEntryATR,
+              entryAtrSource: expiredEntryAtrSource, // #8
               outgoingEntryPrice: expiredSwapResult.closedTrade?.entryPrice ?? null,
               outgoingBaseATR: l1ExpiredOutgoingPosition?.baseATR ?? null,
               thresholdHistory: battle.thresholdHistory?.[proposal.symbolOut] ?? null,
@@ -3117,12 +3193,31 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         // Autopilot-site posture: post-commit, triple-gated, try/catch
         // log-and-swallow. NB: separate fn — `ctx` is not in scope; archetype
         // reads off battle.agentContext directly (the :2817 spread precedent).
-        // No predicate snapshots/tech docs in this fn's scope — those fields
-        // stay null and are recorded honestly in dataQuality.nullFlags. Runs
-        // BEFORE refreshBattleFromDoc so battle.* holds decision-time state.
+        // Predicate snapshots/tech docs are not in this fn's scope — those
+        // fields stay null and are recorded honestly. entryATR provenance (#8)
+        // IS available (the swap-in benchAsset is in scope) and is classified.
+        // Runs BEFORE refreshBattleFromDoc so battle.* holds decision-time state.
+        // #3 note: this capture is per-iteration inside the swap loop and the
+        // meeting clear is a single post-loop write, so the capture technically
+        // sits between the swap commit and the meeting clear. It is NOT reordered
+        // here (unlike the single-swap proposal sites): natural idempotency —
+        // findBenchAsset returns null for an already-swapped-in symbol, hitting
+        // `continue` on replay — makes a resumed meeting skip completed swaps and
+        // finish the rest, so a mid-loop death resumes-not-duplicates. Moving the
+        // clear before the loop would instead DROP not-yet-executed swaps. A
+        // strict "capture after cleanup" restructure (defer captures past the
+        // post-loop clear) is deferred pending founder sign-off.
         if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
             && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
           try {
+            // #8: entryATR provenance via the shared classifier (benchAsset in scope).
+            const gameplanEntryATR = gameplanSwapResult.incomingAsset?.baseATR ?? null;
+            const gameplanEntryAtrSource = classifyEntryAtrSource({
+              entryATR: gameplanEntryATR,
+              scoredThreshold: battle.scoring?.thresholds?.[swap.symbolIn]?.threshold,
+              benchBaseATR: benchAsset?.baseATR,
+              isCrypto: benchAsset?.isCrypto,
+            });
             await captureSwapReceipt({
               enabled: true,
               db,
@@ -3146,7 +3241,8 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
               resolvedTier: slot.tier,
               resolvedSlotIndex: slot.slotIndex,
               entryMark: gameplanSwapResult.incomingAsset?.swapPrice ?? null,
-              entryATR: gameplanSwapResult.incomingAsset?.baseATR ?? null,
+              entryATR: gameplanEntryATR,
+              entryAtrSource: gameplanEntryAtrSource, // #8
               outgoingEntryPrice: gameplanSwapResult.closedTrade?.entryPrice ?? null,
               outgoingBaseATR: l1GameplanOutgoingPosition?.baseATR ?? null,
               thresholdHistory: battle.thresholdHistory?.[swap.symbolOut] ?? null,

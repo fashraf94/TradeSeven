@@ -181,7 +181,12 @@ export function makeReceiptSkeleton(overrides = {}) {
 
     // Run/receipt-level predicate provenance (Phase A.5).
     predicateProvenance: {
-      decisionAtMs: null, // Date.parse(timestamp) — the swap instant
+      // The instant the PREDICATE snapshot belongs to. Equals the swap instant
+      // (Date.parse(timestamp)) for a direct swap; for a proposal-sourced
+      // receipt it is proposal.createdAt (predicates frozen at creation), while
+      // receipt.timestamp stays the execution instant — the gap between them is
+      // the computable predicate staleness (#9 adversarial-review fix).
+      decisionAtMs: null,
       rankingsComputedAtMs: null, // doc-level rankings computedAt → ms (governs the level-sourced inputs)
       rankingsDocPath: null, // 'indexIntelligence/stockRankings'
     },

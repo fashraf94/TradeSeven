@@ -253,7 +253,14 @@ export function buildRawReceipt(raw = {}) {
     symbolOut: extractPredicateInputs(raw.snapshotOut, raw.regimeOut, raw.techDocOut, raw.dataMode),
   };
 
-  const decisionAtMs = toMillis(raw.timestamp);
+  // #9 (adversarial review): decisionAtMs is the instant the PREDICATE snapshot
+  // belongs to. For a direct swap that equals the execution timestamp; for a
+  // proposal-sourced receipt the predicates are frozen at proposal CREATION, so
+  // the caller passes proposal.createdAt as raw.decisionAtMs while receipt
+  // .timestamp stays the execution instant — making the up-to-TTL staleness
+  // computable (Date.parse(timestamp) − decisionAtMs) rather than silently
+  // collapsed. Falls back to raw.timestamp when the caller does not override.
+  const decisionAtMs = raw.decisionAtMs != null ? toMillis(raw.decisionAtMs) : toMillis(raw.timestamp);
   const predicateClassification = {
     // symbolIn is the ENTRY (the D1 signal of record); symbolOut is exit CONTEXT.
     // entrySnapshotSource: the entry may be refetched (see resolveEntrySnapshot);
@@ -360,6 +367,9 @@ export function receiptIdFor(agentId, receiptSeq) {
  * logged and swallowed (the trade already executed); it never throws.
  *
  * @returns {Promise<{emitted: boolean, reason?: string, receiptId?: string, errors?: string[]}>}
+ *   reason ∈ {flag_off, non_evidence, invalid, duplicate, write_error}. 'duplicate'
+ *   is a create-only ALREADY_EXISTS refusal (corpus-protective, benign) — distinct
+ *   from a real 'write_error'; neither ever throws into the caller.
  */
 export async function captureSwapReceipt({ enabled, db, ...raw } = {}) {
   if (!enabled) return { emitted: false, reason: 'flag_off' };
@@ -393,15 +403,32 @@ export async function captureSwapReceipt({ enabled, db, ...raw } = {}) {
   }
 
   const receiptId = receiptIdFor(receipt.agentId, receipt.receiptSeq);
+  const ref = db
+    .collection('learningReceipts')
+    .doc(receipt.battleId)
+    .collection('receipts')
+    .doc(receiptId);
   try {
-    await db
-      .collection('learningReceipts')
-      .doc(receipt.battleId)
-      .collection('receipts')
-      .doc(receiptId)
-      .set(receipt);
+    // #1 (adversarial review): CREATE-ONLY, never .set(). receiptId is
+    // deterministic (${agentId}_seq${receiptSeq}); a duplicate seq (e.g. a
+    // stale in-memory tradeCount after a refresh failure) would make .set()
+    // SILENTLY overwrite an already-written receipt while returning
+    // emitted:true — the exact silent corpus loss this whole patch exists to
+    // stop. .create() rejects a duplicate instead, turning it into a loud,
+    // observable refusal. The robust deeper remedy (executeSwapServer
+    // returning the transaction-committed seq) is fence-gated and out of scope.
+    await ref.create(receipt);
     return { emitted: true, receiptId };
   } catch (err) {
+    // firebase-admin surfaces a duplicate as gRPC ALREADY_EXISTS (code 6).
+    // That is CORPUS-PROTECTIVE (the seq is already recorded), not a failure —
+    // report it distinctly and loudly. Both branches are swallowed so the
+    // already-executed trade is never affected; the function never throws.
+    const alreadyExists = err?.code === 6 || /already[_ ]?exists/i.test(String(err?.message ?? err));
+    if (alreadyExists) {
+      console.warn(`${LOG_PREFIX} DUPLICATE receiptId ${receipt.battleId}/${receiptId} REFUSED (create-only; corpus protected) — seq=${receipt.receiptSeq} agent=${receipt.agentId}`);
+      return { emitted: false, reason: 'duplicate', receiptId };
+    }
     // Awaited write, non-silent failure (Rider §5). Never break the trade.
     console.error(`${LOG_PREFIX} receipt write failed for ${receipt.battleId}/${receiptId}: ${err?.message}`);
     return { emitted: false, reason: 'write_error', errors: [String(err?.message || err)] };

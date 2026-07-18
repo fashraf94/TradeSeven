@@ -9,6 +9,7 @@ import {
   buildRegimeAtStart,
   REGIME_STAMP_SOURCE,
   REGIME_STAMP_TAXONOMY_VERSION,
+  REGIME_STAMP_SHAPE_VERSION,
 } from './regimeStamp.js';
 
 const mc = (overrides = {}) => ({
@@ -52,8 +53,19 @@ describe('shouldStampRegime — write-once, if-absent, flag-gated', () => {
     expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { updatedAt: 'x' }, enabled: true })).toBe(false);
     expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { regime: '' }, enabled: true })).toBe(false);
     expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { regime: 42 }, enabled: true })).toBe(false);
-    // 'unknown' is a real upstream label — recorded verbatim, still stamps.
-    expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { regime: 'unknown' }, enabled: true })).toBe(true);
+    // 'unknown' is a real upstream label — recorded verbatim, still stamps
+    // (given a valid updatedAt; see the #4 case below).
+    expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { regime: 'unknown', updatedAt: 'x' }, enabled: true })).toBe(true);
+  });
+
+  it('#4: regime present but updatedAt absent ⇒ skip (never stamp observedAt permanently null on a write-once field)', () => {
+    // Both mandatory provenance fields (regime AND updatedAt) must be present.
+    expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { regime: 'bull' }, enabled: true })).toBe(false);
+    expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { regime: 'bull', updatedAt: null }, enabled: true })).toBe(false);
+    // A Firestore Timestamp OBJECT (what serverTimestamp reads back as) must PASS
+    // the present-check — the guard is `== null`, not a string/type check.
+    const ts = { seconds: 1784000000, nanoseconds: 0, toMillis: () => 1784000000000 };
+    expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { regime: 'bull', updatedAt: ts }, enabled: true })).toBe(true);
   });
 
   it('never throws on malformed input', () => {
@@ -74,9 +86,11 @@ describe('buildRegimeAtStart — Build Spec §5.3 shape', () => {
       drbForDate: null,
       stampedAt: '2026-07-20T14:31:00.000Z',
       taxonomyVersion: REGIME_STAMP_TAXONOMY_VERSION,
+      shapeVersion: REGIME_STAMP_SHAPE_VERSION, // #5 prior-ruling: disambiguates future null fields
     });
     expect(REGIME_STAMP_SOURCE).toBe('indexIntelligence/marketContext');
     expect(REGIME_STAMP_TAXONOMY_VERSION).toBe(1);
+    expect(REGIME_STAMP_SHAPE_VERSION).toBe(1);
   });
 
   it('STALENESS IS RECORDED, NOT ADJUDICATED: a weekend-old observedAt still stamps', () => {
