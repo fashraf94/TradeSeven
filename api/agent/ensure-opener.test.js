@@ -54,6 +54,10 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({
       if (state.injectOpenerBeforeTx) {
         state.battle.chatExchanges = [{ messageType: 'first_message', agentResponse: 'raced' }];
       }
+      // Simulate the battle being deleted during the (long) Gemma window.
+      if (state.deleteBattleBeforeTx) {
+        state.battle = null;
+      }
       const tx = {
         get: async (ref) => docRef(ref.__col, ref.__id).get(),
         update: (ref, data) => { state.updates.push({ col: ref.__col, id: ref.__id, data }); },
@@ -79,7 +83,7 @@ beforeEach(() => {
   state = {
     battle: { __id: 'b1', ownerId: 'owner-1', status: 'active', agentId: 'a1', chatExchanges: [] },
     agent: { __id: 'a1', archetype: 'analyst', stats: { gamesPlayed: 3 } },
-    index: {}, cache: {}, updates: [], injectOpenerBeforeTx: false,
+    index: {}, cache: {}, updates: [], injectOpenerBeforeTx: false, deleteBattleBeforeTx: false,
   };
   gemma.callGemmaVoice.mockReset();
   gemma.parseVoiceLayerResponse.mockReset();
@@ -145,6 +149,26 @@ describe('ensure-opener decision tree', () => {
     expect(res.body.status).toBe('already_present');
     expect(state.updates).toHaveLength(0);
   });
+
+  it('battle_gone: battle deleted during the Gemma window → no write, no 500', async () => {
+    gemma.callGemmaVoice.mockResolvedValue('{"response":"Hi"}');
+    gemma.parseVoiceLayerResponse.mockReturnValue({ response: 'Hi' });
+    state.deleteBattleBeforeTx = true;
+    const res = mkRes();
+    await handler(mkReq(), res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe('battle_gone');
+    expect(state.updates).toHaveLength(0);
+  });
+
+  it('resolves the agent from the battle doc, IGNORING a client-supplied agentId', async () => {
+    gemma.callGemmaVoice.mockResolvedValue('{"response":"Hi"}');
+    gemma.parseVoiceLayerResponse.mockReturnValue({ response: 'Hi' });
+    const res = mkRes();
+    // battle.agentId is 'a1'; a malicious client passes a different id — must be ignored.
+    await handler(mkReq({ battleId: 'b1', agentId: 'evil-arbitrary-id' }), res);
+    expect(res.body.status).toBe('generated'); // used battle.agentId='a1', not the body id
+  });
 });
 
 describe('ensure-opener guards', () => {
@@ -179,6 +203,14 @@ describe('ensure-opener guards', () => {
     const res = mkRes();
     await handler(mkReq(), res);
     expect(res.body.status).toBe('not_active');
+    expect(state.updates).toHaveLength(0);
+  });
+
+  it('422 when the battle has no agentId (early open)', async () => {
+    state.battle.agentId = undefined;
+    const res = mkRes();
+    await handler(mkReq(), res);
+    expect(res.statusCode).toBe(422);
     expect(state.updates).toHaveLength(0);
   });
 });

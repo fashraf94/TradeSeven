@@ -53,8 +53,11 @@ function humanList(items) {
  * @returns {string} the agentResponse text for a first_message exchange
  */
 export function buildTemplateOpener({ agent, battle } = {}) {
-  const archetypeCode = battle?.agentContext?.archetype || agent?.archetype || null;
-  const label = getArchetypeLabel(archetypeCode); // fenced helper; has its own safe fallback
+  // Only accept a non-empty STRING archetype code — a non-string (malformed doc)
+  // would make getArchetypeLabel echo it back and render "[object Object]".
+  const rawArchetype = battle?.agentContext?.archetype ?? agent?.archetype;
+  const archetypeCode = (typeof rawArchetype === 'string' && rawArchetype) ? rawArchetype : null;
+  const label = getArchetypeLabel(archetypeCode); // fenced helper; null → its 'strategist' fallback
   const posture = ARCHETYPE_POSTURE[archetypeCode] || DEFAULT_POSTURE;
 
   const portfolio = battle?.portfolio || {};

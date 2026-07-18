@@ -502,31 +502,36 @@ export default function AgentChat({
   useEffect(() => {
     if (!OPENER_LAZY_FALLBACK_ENABLED) return;
     if (battleStatus !== 'active') return;
-    if (!battleId || !agentId) return;
+    if (!battleId) return; // the server resolves the agent from the battle doc — no agentId needed here
     if (attemptedOpenerBattleIds.has(battleId)) return;
     const hasFirstMessage = (chatExchanges || []).some(
       ex => ex && ex.messageType === 'first_message',
     );
     if (hasFirstMessage) return;
-    attemptedOpenerBattleIds.add(battleId); // unconditional mark — covers all outcomes
+    // Check auth BEFORE marking — a pre-auth render must not burn the one-shot (the
+    // effect re-runs when the next chatExchanges snapshot arrives). We mark only
+    // once we're committed to firing, which preserves both the no-remount-loop
+    // guarantee and the accepted no-retry-on-transient-failure trade-off.
+    const user = getAuth().currentUser;
+    if (!user) return;
+    attemptedOpenerBattleIds.add(battleId);
     (async () => {
       try {
-        const user = getAuth().currentUser;
-        if (!user) return;
         const idToken = await user.getIdToken();
         await fetch('/api/agent/ensure-opener', {
           method: 'POST',
           headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agentId, battleId }),
+          body: JSON.stringify({ battleId }),
         });
         // Ignore the response — the Firestore listener repaints chatExchanges when
         // the write lands. No optimistic insert, no ordering change.
       } catch {
         // A failed backfill must never surface in the chat UI; the battle stays
-        // marked (no remount loop). The deploy attempt already failed independently.
+        // marked (accepted no-retry-this-session trade-off). The deploy attempt
+        // already failed independently.
       }
     })();
-  }, [chatExchanges, battleId, agentId, battleStatus]);
+  }, [chatExchanges, battleId, battleStatus]);
 
   // ── 30s timeout for in-flight bubbles ─────────────────────────────────────
   // Per spec §4.5 refinement: if an optimistic user bubble has been pending

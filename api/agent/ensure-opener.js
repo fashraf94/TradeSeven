@@ -37,12 +37,16 @@ export const config = { maxDuration: 60 };
 
 // Kickoff sentinel for Gemma only — never persisted (mirrors decide.js:1272).
 const FIRST_MESSAGE_KICKOFF = '__FIRST_MESSAGE__';
-// Per-attempt abort — well beyond the fenced deploy path's 15s (the abort that
-// loses the latency race). The whole turn stays inside maxDuration via the
-// shared deadline below (the directiveGate.js:105-116 deadline pattern).
+// Per-attempt Gemma abort — well beyond the fenced deploy path's 15s (the abort
+// that loses the latency race). The whole turn is bounded by an ABSOLUTE deadline
+// measured from handler entry (not from the Gemma phase) with headroom reserved
+// for the transaction commit, so cold start + auth + reads + build + up to two
+// attempts + commit stay under maxDuration:60 (the directiveGate.js:105-116
+// deadline pattern).
 const ATTEMPT_ABORT_MS = 40_000;
-const TURN_BUDGET_MS = 55_000; // absolute ceiling, safely under maxDuration:60
-const MIN_RETRY_MS = 15_000;   // only attempt #2 if at least this much remains
+const HARD_DEADLINE_MS = 52_000; // wall-clock ceiling from handler entry (~8s margin under 60)
+const COMMIT_RESERVE_MS = 6_000; // reserve after Gemma for the tx commit + response
+const MIN_ATTEMPT_MS = 8_000;    // skip an attempt (→ floor) if less than this remains
 
 function hasOpener(chatExchanges) {
   return Array.isArray(chatExchanges)
@@ -69,8 +73,12 @@ async function attemptGemmaOpener({ systemPrompt, abortMs }) {
       ? String(parsed._scratchpad).slice(0, 2000).trim() || null
       : null;
     return { agentResponse: msg, scratchpad };
-  } catch {
-    return null; // abort or transport error → caller decides retry vs floor
+  } catch (err) {
+    // Abort (slow Gemma) is the common case; a hard config error (401/403 rotated
+    // key) is the one worth surfacing — log both so a transport/key outage is
+    // visible in observability rather than silently flooring every opener.
+    console.warn('[ensure-opener] gemma attempt failed:', err?.name === 'AbortError' ? 'timeout' : (err?.message || err));
+    return null; // caller decides retry vs floor
   } finally {
     clearTimeout(timeoutId);
   }
@@ -103,6 +111,9 @@ function buildStatusEntry() {
 }
 
 export default async function handler(req, res) {
+  // Absolute wall-clock anchor for the Gemma budget — measured from the earliest
+  // point in the handler so auth + reads + build all count against the deadline.
+  const handlerStart = Date.now();
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 5, windowMs: 60000 } })) {
     return;
   }
@@ -118,7 +129,10 @@ export default async function handler(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
-  const { agentId, battleId } = req.body || {};
+  // agentId is intentionally NOT read from the body — the agent is resolved
+  // authoritatively from the battle doc below, so a caller cannot fold an
+  // arbitrary agent into their opener.
+  const { battleId } = req.body || {};
   if (!battleId) {
     return res.status(400).json({ error: 'battleId is required' });
   }
@@ -153,13 +167,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: 'no_action_needed' });
     }
 
-    // (3) Empty chat (early open) → generate. Resolve the agent doc from the
-    //     battle's top-level agentId (agentBattleService.js:105).
-    const resolvedAgentId = battle.agentId || agentId;
-    if (!resolvedAgentId) {
+    // (3) Empty chat (early open) → generate. Resolve the agent doc AUTHORITATIVELY
+    //     from the battle's own top-level agentId (agentBattleService.js:105) — never
+    //     a client-supplied id.
+    if (!battle.agentId) {
       return res.status(422).json({ error: 'battle has no agentId' });
     }
-    const agentSnap = await db.collection('agents').doc(resolvedAgentId).get();
+    const agentSnap = await db.collection('agents').doc(battle.agentId).get();
     if (!agentSnap.exists) {
       return res.status(404).json({ error: 'Agent not found' });
     }
@@ -178,12 +192,17 @@ export default async function handler(req, res) {
       ]);
       if (marketCtxDoc.exists) {
         const ctx = marketCtxDoc.data();
-        const regimeLine = `Regime: ${ctx.regime}. ${ctx.regimeDetail || ''}`.trim();
+        // Guard `regime` (the fenced deploy path does not) so a marketContext doc
+        // missing the field degrades to null instead of leaking "Regime: undefined"
+        // into the prompt and suppressing buildFirstMessagePrompt's clean fallback.
+        const regimeLine = ctx.regime
+          ? `Regime: ${ctx.regime}. ${ctx.regimeDetail || ''}`.trim()
+          : null;
         const drb = drbDoc.exists ? drbDoc.data() : null;
         const briefLine = drb && drb.forDate === today && typeof drb.dailyBrief === 'string'
           ? drb.dailyBrief
           : null;
-        anchorContext = [regimeLine, briefLine].filter(Boolean).join(' ');
+        anchorContext = [regimeLine, briefLine].filter(Boolean).join(' ') || null;
       }
       if (cacheDoc.exists) marketSnapshot = cacheDoc.data();
     } catch (err) {
@@ -211,21 +230,22 @@ export default async function handler(req, res) {
       systemPrompt = null;
     }
 
-    // Patient Gemma with ONE deadline-bounded retry. NB: not callGemmaVoiceWithRetry
-    // — it does not retry the invalid-JSON-200 abort that is the actual failure
-    // mode (gemmaClient.js:207).
-    const startedAt = Date.now();
+    // Patient Gemma bounded by the ABSOLUTE deadline (handlerStart + HARD_DEADLINE_MS)
+    // minus a commit reserve, so a slow attempt can never push the commit past
+    // maxDuration. A second attempt only runs when the first failed FAST and budget
+    // remains (a slow first attempt → floor). NB: not callGemmaVoiceWithRetry — it
+    // does not retry the invalid-JSON-200 abort that is the actual failure mode
+    // (gemmaClient.js:207).
+    const attemptBudgetMs = () => Math.min(
+      ATTEMPT_ABORT_MS,
+      (handlerStart + HARD_DEADLINE_MS) - Date.now() - COMMIT_RESERVE_MS,
+    );
     let generated = null;
     if (systemPrompt) {
-      generated = await attemptGemmaOpener({ systemPrompt, abortMs: ATTEMPT_ABORT_MS });
-      if (!generated) {
-        const remaining = (startedAt + TURN_BUDGET_MS) - Date.now();
-        if (remaining >= MIN_RETRY_MS) {
-          generated = await attemptGemmaOpener({
-            systemPrompt,
-            abortMs: Math.min(ATTEMPT_ABORT_MS, remaining - 2_000),
-          });
-        }
+      for (let attempt = 0; attempt < 2 && !generated; attempt++) {
+        const abortMs = attemptBudgetMs();
+        if (abortMs < MIN_ATTEMPT_MS) break; // not enough budget left → template floor
+        generated = await attemptGemmaOpener({ systemPrompt, abortMs });
       }
     }
 
@@ -246,6 +266,7 @@ export default async function handler(req, res) {
     // (canonicalOpen.js:112-139 re-read/conditional-write pattern.)
     const outcome = await db.runTransaction(async (tx) => {
       const snap = await tx.get(battleRef);
+      if (!snap.exists) return 'battle_gone';        // battle deleted during the Gemma window → no write (avoids a 500)
       const ex = Array.isArray(snap.data()?.chatExchanges) ? snap.data().chatExchanges : [];
       if (hasOpener(ex)) return 'already_present';   // another writer won the race
       if (ex.length > 0) return 'no_action_needed';  // content arrived during generation → skip

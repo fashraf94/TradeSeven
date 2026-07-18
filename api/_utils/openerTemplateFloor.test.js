@@ -70,6 +70,15 @@ describe('buildTemplateOpener', () => {
     noSentinels(out);
   });
 
+  it('guards a non-string archetype (malformed doc) — no [object Object]', () => {
+    const out = buildTemplateOpener({
+      battle: { agentContext: { archetype: { code: 'x' } }, portfolio: { star: [{ symbol: 'SPY' }] } },
+    });
+    expect(out).not.toContain('[object Object]');
+    expect(out).toContain('strategist'); // coerced to null → getArchetypeLabel(null) → 'strategist'
+    expect(out).toContain('SPY');
+  });
+
   it('never throws on an empty/undefined argument', () => {
     expect(() => buildTemplateOpener()).not.toThrow();
     expect(() => buildTemplateOpener({})).not.toThrow();
