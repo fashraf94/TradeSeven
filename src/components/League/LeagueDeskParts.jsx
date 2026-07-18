@@ -10,9 +10,9 @@
 //
 // REUSE-FIRST: these compose the existing League data + primitives — LTOKENS/LX,
 // rankPod, the LeagueParts atoms (Eyebrow/Mono/Icon/LIcon/AgentAvatar/Score/
-// StatusBadge/KindMark/Tag/Watchers), PodCard, ActionOption, and AgentOrb — so
-// the desktop surface can't drift from mobile. Scores carry the live app's "%"
-// suffix (via <Score/>), matching the rest of the redesigned surface.
+// StatusBadge/KindMark/Tag/Watchers), and PodCard — so the desktop surface
+// can't drift from mobile. Scores carry the live app's "%" suffix (via
+// <Score/>), matching the rest of the redesigned surface.
 //
 // THE TRAINING ADDITION (build spec): the Training Pod tab + Active Training Game
 // card live here too, in the purple training accent so practice reads as visually
@@ -25,8 +25,6 @@ import { rankPod } from './leagueFixtures';
 import { LTOKENS, LX, alpha, MONO } from './leagueTokens';
 import { Eyebrow, Mono, Icon, LIcon, AgentAvatar, KindMark, Score, StatusBadge, Tag } from './LeagueParts';
 import { PodCard } from './LeaguePod';
-import { ActionOption } from './LeagueAction';
-import AgentOrb from '../shared/AgentOrb';
 import LoadoutChooserSheet from './LoadoutChooserSheet';
 import { quickPlayTraining, mapLobbyError } from '../../services/tournamentLobbyActions';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
@@ -50,30 +48,8 @@ function miniScore(v) {
 }
 
 // ════════════════════════════ THE DESKTOP RAILS ════════════════════════════
-
-// ── EnterTournament — the prominent desktop CTA ────────────────────────────
-export function DeskEnter({ accent, onEnter }) {
-  return (
-    <button
-      className="lg-tap"
-      onClick={onEnter}
-      style={{
-        all: 'unset', boxSizing: 'border-box', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', gap: 12, padding: '11px 18px 11px 12px', borderRadius: 14,
-        background: `linear-gradient(120deg, ${alpha(accent, 0.26)}, ${alpha(accent, 0.1)})`,
-        border: `1px solid ${alpha(accent, 0.5)}`, boxShadow: `0 8px 26px ${alpha(accent, 0.2)}, inset 0 1px 0 ${alpha('#ffffff', 0.07)}`,
-      }}
-    >
-      <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, background: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 14px ${alpha(accent, 0.45)}` }}>
-        <LIcon name="play" size={17} color={LTOKENS.bg} />
-      </div>
-      <div>
-        <div style={{ fontSize: 15.5, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>Enter tournament</div>
-        <Mono style={{ fontSize: 10, color: alpha(accent, 0.95) }}>Claim a seat · top 2 advance</Mono>
-      </div>
-    </button>
-  );
-}
+// (The "Enter tournament" CTA and its Pick-your-mode / Seat-reserved modals are
+// retired — Entry-Flow Consolidation P3. The slot-picker center IS the entry.)
 
 // ── a hero stat (dot · number · label) ─────────────────────────────────────
 export function DeskStat({ n, label, dot, muted }) {
@@ -431,9 +407,10 @@ export function DeskBracketPending() {
   );
 }
 
-// ════════════════════════════ CENTERED MODALS ══════════════════════════════
-// Desktop modals — centered cards (not bottom sheets). Reuse ActionOption +
-// AgentOrb so copy and visuals can't drift from the mobile action layer.
+// ═══════════════════════════ THE FOCUS OVERLAY ══════════════════════════════
+// Centered focus shell — kept for the desktop Spectate overlay. (Its former
+// tenants, the Pick-your-mode / Seat-reserved modals, are retired — Entry-Flow
+// Consolidation P3.)
 
 export function LDFocus({ width = 480, children, onClose }) {
   return (
@@ -441,65 +418,6 @@ export function LDFocus({ width = 480, children, onClose }) {
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(5,6,9,0.74)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', animation: 'lgFadeIn .2s ease both' }} />
       <div style={{ position: 'relative', width, maxWidth: '100%', maxHeight: '90vh', animation: 'lgFadeIn .26s ease both' }}>{children}</div>
     </div>
-  );
-}
-
-export function LDActionModal({ accent, onClose, onPick }) {
-  return (
-    <LDFocus width={560} onClose={onClose}>
-      <div className="lg-scroll" style={{ background: LTOKENS.bg, borderRadius: 22, border: `1px solid ${LTOKENS.hair2}`, padding: '20px 22px 24px', boxShadow: '0 30px 90px rgba(0,0,0,0.6)', maxHeight: '88vh', overflowY: 'auto', color: LTOKENS.ink }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <Eyebrow color={accent}>Enter tournament</Eyebrow>
-          <button className="lg-tap" onClick={onClose} style={{ all: 'unset', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
-            <Icon name="x" size={15} color={LTOKENS.ink2} />
-          </button>
-        </div>
-        <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 18 }}>Pick your mode</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <ActionOption icon="play" color={LX.energy} kicker="Solo · Training" title="Quick Play"
-            body="Jump into a practice group of four against CPU opponents. No stakes, no waiting — start anytime and tune your picks and your agent."
-            honest="Every other seat here is a CPU. Great for learning the format before you enter the bracket."
-            onPick={() => onPick('quick')} />
-          <ActionOption icon="ranked" color={LX.comp} kicker="Competitive · This month's bracket" title="Ranked Play"
-            body="The real bracket. You're drawn into a named group of four — finish top two on combined score and you advance through the funnel toward the Final Four."
-            honest="If your group isn't full of humans, empty seats run as CPU — the same pods you just watched. Honest competition either way."
-            onPick={() => onPick('ranked')} />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 16, padding: '12px 14px', borderRadius: 13, background: alpha(accent, 0.07), border: `1px solid ${alpha(accent, 0.22)}` }}>
-          <Icon name="clock" size={17} color={accent} />
-          <div style={{ fontSize: 12, color: LTOKENS.ink2, lineHeight: 1.45 }}>
-            <b style={{ color: LTOKENS.ink }}>Your group locks Monday.</b> That&apos;s when the draft runs and the trading week begins. Join any time before — your seat is held.
-          </div>
-        </div>
-      </div>
-    </LDFocus>
-  );
-}
-
-export function LDJoinModal({ mode, onClose, onWatch }) {
-  const quick = mode === 'quick';
-  const color = quick ? LX.energy : LX.comp;
-  return (
-    <LDFocus width={460} onClose={onClose}>
-      <div style={{ borderRadius: 22, border: `1px solid ${LTOKENS.hair2}`, overflow: 'hidden', boxShadow: '0 30px 90px rgba(0,0,0,0.6)',
-        background: `radial-gradient(circle at 50% 30%, ${alpha(color, 0.16)}, transparent 62%), ${LTOKENS.bg}`,
-        padding: '40px 34px 34px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', color: LTOKENS.ink }}>
-        <AgentOrb state="ready" size={104} color={color} />
-        <Mono style={{ fontSize: 10.5, letterSpacing: '0.2em', textTransform: 'uppercase', color, marginTop: 26 }}>
-          {quick ? 'Quick Play' : "Ranked · This month's bracket"}
-        </Mono>
-        <div style={{ fontSize: 23, fontWeight: 700, letterSpacing: '-0.02em', marginTop: 9 }}>Seat reserved</div>
-        <div style={{ fontSize: 13.5, color: LTOKENS.ink2, lineHeight: 1.55, marginTop: 11, maxWidth: 340 }}>
-          {quick
-            ? <>Your training group is ready against CPU opponents. <b style={{ color: LTOKENS.ink }}>The draft runs Monday</b> — that&apos;s when trading opens. We&apos;ll bring your picks and agent in then.</>
-            : <>You&apos;re drawn into a group of four for this month&apos;s bracket. <b style={{ color: LTOKENS.ink }}>Your group locks Monday</b> when the draft runs; empty seats run as CPU until humans arrive.</>}
-        </div>
-        <button className="lg-tap" onClick={onWatch} style={{ all: 'unset', cursor: 'pointer', marginTop: 26, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, width: '100%', maxWidth: 320, padding: '14px', borderRadius: 13, background: color, color: LTOKENS.bg, fontWeight: 700, fontSize: 14.5, boxShadow: `0 8px 24px ${alpha(color, 0.32)}` }}>
-          <LIcon name="eyeR" size={16} color={LTOKENS.bg} /> Watch a live game while you wait
-        </button>
-        <button className="lg-tap" onClick={onClose} style={{ all: 'unset', cursor: 'pointer', marginTop: 12, color: LTOKENS.ink3, fontFamily: MONO, fontSize: 11.5, letterSpacing: '0.08em' }}>BACK TO LOBBY</button>
-      </div>
-    </LDFocus>
   );
 }
 

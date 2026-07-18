@@ -43,6 +43,8 @@ describe('LeagueLobbyDesktop render smoke', () => {
     expect(html).toContain('Auto-draft');                   // the fallback lane below the slots
     expect(html).toContain('opens when the season locks');  // the demoted footnote (copy preserved)
     expect(html).toContain('Leaderboard');                  // the right-rail default
+    expect(html).not.toContain('Enter tournament');         // stub CTA retired (P3)
+    expect(html).not.toContain('Pick your mode');           // stub modal retired (P3)
     expect(html.length).toBeGreaterThan(3000);              // real surface, not an early bail
   });
 
