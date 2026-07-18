@@ -62,7 +62,22 @@ function makeDb(initial = {}) {
   const ref = (p) => ({ path: p, get: async () => snap(p) });
   return {
     _store: store,
-    collection: (name) => ({ doc: (id) => ref(`${name}/${id}`) }),
+    collection: (name) => ({
+      doc: (id) => ref(`${name}/${id}`),
+      // array-contains / equality query for the one-competitive-game guard.
+      where: (field, op, value) => ({
+        get: async () => {
+          const docs = [];
+          for (const [path, data] of store.entries()) {
+            if (!path.startsWith(`${name}/`) || path.slice(name.length + 1).includes('/')) continue;
+            const fv = data[field];
+            const match = op === 'array-contains' ? (Array.isArray(fv) && fv.includes(value)) : fv === value;
+            if (match) docs.push({ id: path.split('/').pop(), data: () => structuredClone(data) });
+          }
+          return { docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) };
+        },
+      }),
+    }),
     runTransaction: async (fn) => fn({
       get: async (r) => snap(r.path),
       set: (r, data) => store.set(r.path, structuredClone(data)),

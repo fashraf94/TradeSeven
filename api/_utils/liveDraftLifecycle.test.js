@@ -245,11 +245,14 @@ describe('driveSlotDraftAutopick — abandoned draft completes in ONE pass', () 
     await fireCompetitiveSlotDraft(db, WED_ID, { now: FIRE_LATE });
     // re-stamped at fire to the NEXT Monday (2026-07-20), not the stale 07-06
     expect(g(store).battleStartWeek.anchorEtDate).toBe('2026-07-20');
+    // finding #1: baseLayerWeek re-derives WITH the anchor (the fixture seeds W28)
+    expect(g(store).baseLayerWeek).toBe('2026-W30'); // the 2026-07-20 battle week
 
     const r = await driveSlotDraftAutopick(db, WED_ID, { now: new Date(FIRE_LATE.getTime() + 20 * 60 * 1000) });
     expect(r.complete).toBe(true);
     expect(r.status).toBe(GROUP_STATUS.AWAITING_OPEN); // future Monday → waits, does NOT flip to a stale battle
     expect(g(store).startAnchor.anchorEtDate).toBe('2026-07-20');
+    expect(g(store).baseLayerWeek).toBe('2026-W30'); // stays the re-derived battle week through completion
   });
 
   it('drives a multi-human abandoned draft to completion in one pass', async () => {

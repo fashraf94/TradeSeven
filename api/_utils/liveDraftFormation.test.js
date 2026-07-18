@@ -80,7 +80,23 @@ function makeDb(initial = {}) {
     };
   }
   function makeCollection(prefix) {
-    return { doc: (id) => makeDocRef(`${prefix}/${id}`) };
+    return {
+      doc: (id) => makeDocRef(`${prefix}/${id}`),
+      // Query support for the one-competitive-game guard (array-contains) + any
+      // equality read; direct children of `prefix` only.
+      where: (field, op, value) => ({
+        get: async () => {
+          const docs = [];
+          for (const [path, data] of store.entries()) {
+            if (!path.startsWith(`${prefix}/`) || path.slice(prefix.length + 1).includes('/')) continue;
+            const fv = data[field];
+            const match = op === 'array-contains' ? (Array.isArray(fv) && fv.includes(value)) : fv === value;
+            if (match) docs.push({ id: path.split('/').pop(), data: () => structuredClone(data) });
+          }
+          return { docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) };
+        },
+      }),
+    };
   }
 
   const db = {
@@ -359,6 +375,56 @@ describe('claimSlotSeat / releaseSlotSeat — transactional seat lifecycle', () 
       .rejects.toThrow(sentinel('draft_already_started'));
     await expect(releaseSlotSeat(db, WED_GROUP_ID, { odUserId: 'userA', now: NOW }))
       .rejects.toThrow(sentinel('draft_already_started'));
+  });
+});
+
+// ============ (C2) baseLayerWeek / one-game guard / release lock (P5 fixes) ============
+
+describe('baseLayerWeek is the BATTLE week, not the claim week (finding #1)', () => {
+  it('a Wed claim files the pod under the following Monday’s ISO week', async () => {
+    const { db, store } = makeDb();
+    // claim on Mon 2026-07-06 (ISO week W28); battle starts Mon 2026-07-13 (W29).
+    await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
+    const g = store.get(groupPath(WED_GROUP_ID));
+    expect(g.battleStartWeek.mondayEtDate).toBe('2026-07-13');
+    expect(g.baseLayerWeek).toBe('2026-W29');    // the week it PLAYS
+    expect(g.baseLayerWeek).not.toBe('2026-W28'); // not the claim week (the old bug)
+  });
+});
+
+describe('one-competitive-game guard (finding #3)', () => {
+  it('rejects a claim when the user already holds another active slot group', async () => {
+    const { db } = makeDb();
+    await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
+    await expect(claimSlotSeat(db, { slotId: 'sun-1900', odUserId: 'userA', now: NOW }))
+      .rejects.toThrow(sentinel('already_in_competitive'));
+  });
+
+  it('still allows the idempotent re-claim of the SAME slot (excluded by id)', async () => {
+    const { db } = makeDb();
+    await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
+    const again = await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
+    expect(again).toMatchObject({ alreadyClaimed: true }); // not rejected
+  });
+
+  it('does not block a DIFFERENT user from another slot', async () => {
+    const { db } = makeDb();
+    await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
+    const r = await claimSlotSeat(db, { slotId: 'sun-1900', odUserId: 'userB', now: NOW });
+    expect(r).toMatchObject({ created: true, humanCount: 1 });
+  });
+});
+
+describe('release is locked once the fire instant arrives (finding #4)', () => {
+  it('rejects a release when scheduledDraftAt <= now, even while still FORMING', async () => {
+    const { db, store } = makeDb();
+    await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
+    // now is AT the fire instant (2026-07-08T23:00Z) but the fire cron has not yet
+    // moved the status — the seat is locked to close the release-vs-fire window.
+    const atFire = new Date('2026-07-08T23:00:00.000Z');
+    await expect(releaseSlotSeat(db, WED_GROUP_ID, { odUserId: 'userA', now: atFire }))
+      .rejects.toThrow(sentinel('draft_already_started'));
+    expect(store.get(groupPath(WED_GROUP_ID)).groupMembers).toEqual(['userA']); // seat intact
   });
 });
 

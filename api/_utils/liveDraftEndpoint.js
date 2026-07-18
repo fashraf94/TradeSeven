@@ -37,6 +37,7 @@ const SLOT_ERROR_TO_HTTP = Object.freeze({
   unknown_slot:          [400, 'unknown_slot', 'That draft slot isn’t on the schedule.'],
   slot_full:             [409, 'slot_full', 'That slot is full — all four seats are taken.'],
   draft_already_started: [409, 'draft_already_started', 'That draft has already started — seats are locked.'],
+  already_in_competitive:[409, 'already_in_competitive', 'You’re already in a live draft — finish or leave it before joining another.'],
   not_a_slot_group:      [409, 'not_a_slot_group', 'That group isn’t a live-draft slot.'],
   bad_user:              [400, 'bad_user', 'Could not identify your account — please sign in again.'],
   bad_group:             [400, 'bad_group', 'That game reference looks malformed.'],

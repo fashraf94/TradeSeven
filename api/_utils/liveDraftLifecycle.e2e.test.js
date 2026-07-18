@@ -106,10 +106,13 @@ function makeDb(initial = {}) {
   }
   const snapshotOf = (docs) => ({ docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) });
   function makeCollection(prefix) {
-    const filtered = (field, value) => topLevelDocs(prefix).filter((d) => d.data()[field] === value);
+    const filtered = (field, op, value) => topLevelDocs(prefix).filter((d) => {
+      const fv = d.data()[field];
+      return op === 'array-contains' ? (Array.isArray(fv) && fv.includes(value)) : fv === value;
+    });
     return {
       doc: (id) => makeDocRef(`${prefix}/${id ?? `auto-${++autoSeq}`}`),
-      where: (field, op, value) => ({ get: async () => snapshotOf(filtered(field, value)) }),
+      where: (field, op, value) => ({ get: async () => snapshotOf(filtered(field, op, value)) }),
       get: async () => snapshotOf(topLevelDocs(prefix)),
     };
   }
@@ -275,6 +278,11 @@ describe('Competitive Live Draft — full-lifecycle capstone (the byte-identity 
     // fields, not a look-alike. This is what makes "born differently" the ONLY
     // variable left for the sweep/banking parity below to rule out.
     expect(battle.players.map((p) => p.picks)).toEqual(ctrlPlayers.map((p) => p.picks));
+    // …and the cohort WEEK matches the single-shot pod's: the Wed-claimed pod is
+    // filed under its next-Monday battle week (2026-W29), not the claim week
+    // (finding #1 fixed — baseLayerWeek derives from battleStartWeek).
+    expect(readGroup(store, WED_ID).baseLayerWeek).toBe('2026-W29');
+    expect(readGroup(store, WED_ID).baseLayerWeek).toBe(store.get(groupPath(CTRL_ID)).baseLayerWeek);
 
     // (A) PRE-OPEN: the sweep is a clean session-gated no-op for BOTH pods.
     const preRun = await runCanonicalOpenSweep(db, { now: new Date('2026-07-13T12:00:00.000Z') });

@@ -35,13 +35,19 @@
 //   (f) ROLLING-COMPLETION (completeBankedTrainingPods) — the nightly daily-
 //       scores host completes a training pod the night its 5th day banks.
 //
-// SHARED-HOST SAFETY: AWAITING_OPEN and the in-draft DRAFTING are training-only
-// states and every sweep filters isTraining, so ranked/legacy groups are never
-// seen or moved. DRAFTING is reached ONLY by formTrainingDraft and no other
-// selector queries it. The banker (tournamentBanking.js) is UNTOUCHED — a
-// DRAFTING/AWAITING_OPEN pod is not 'battle', so it is invisible to banking
-// until the open. Zero new cron: (d)/(e) ride the orchestrator tick, (f) rides
-// the daily-scores cron.
+// SHARED-HOST SAFETY: DRAFTING and AWAITING_OPEN carry training pods and —
+// behind LEAGUE_LIVE_DRAFT — competitive slot pods; a regular ranked/legacy
+// group NEVER enters them (ranked formation is single-shot FORMING→BATTLE). The
+// two morning sweeps treat the modes DELIBERATELY differently:
+//   • the IDLE DRAFTING sweep (e) is isTraining-scoped — a competitive DRAFTING
+//     pod has its OWN completion driver (the live-draft-fire cron's
+//     driveSlotDraftAutopick), so it must NOT be double-driven here;
+//   • the AWAITING-OPEN flip (d) is SHARED — it flips BOTH training and
+//     competitive pods to BATTLE on their anchor date (a slot pod reaches BATTLE
+//     ONLY via this flip). Do NOT add an isTraining filter to it.
+// The banker (tournamentBanking.js) is UNTOUCHED — a DRAFTING/AWAITING_OPEN pod
+// is not 'battle', so it is invisible to banking until the open. Zero new cron:
+// (d)/(e) ride the orchestrator tick, (f) rides the daily-scores cron.
 //
 // Anchor rule mirrors the client getBattleStartDate (src/constants/battleTiming
 // .js) — reproduced server-side here. The NYSE calendar is REUSED from
@@ -545,11 +551,14 @@ export async function completeTrainingDraft(db, groupId, { now = new Date() } = 
 // ==================== (d) AWAITING-OPEN FLIP ====================
 
 /**
- * Flip AWAITING_OPEN training pods to BATTLE once their anchor DATE has arrived
- * (current ET date ≥ pod.startAnchor.anchorEtDate). Runs from the orchestrator
- * morning tick. DATE-based by design (see header). Idempotent: a flipped pod
- * leaves the AWAITING_OPEN query, so re-runs write nothing. Returns
- * `{ swept, flipped, pending, errors }`.
+ * Flip AWAITING_OPEN pods to BATTLE once their anchor DATE has arrived (current
+ * ET date ≥ pod.startAnchor.anchorEtDate). SHARED across modes BY DESIGN: it does
+ * NOT filter isTraining, so it flips BOTH training pods AND — behind
+ * LEAGUE_LIVE_DRAFT — competitive slot pods, which reach BATTLE ONLY via this
+ * flip (do NOT add an isTraining filter, or slot pods would strand in
+ * AWAITING_OPEN forever). Runs from the orchestrator morning tick. DATE-based by
+ * design (see header). Idempotent: a flipped pod leaves the AWAITING_OPEN query,
+ * so re-runs write nothing. Returns `{ swept, flipped, pending, errors }`.
  */
 export async function flipAwaitingOpenPods(db, { now = new Date(), includeDev = false } = {}) {
   const nowEtDate = getEtParts(now).date;
@@ -562,7 +571,7 @@ export async function flipAwaitingOpenPods(db, { now = new Date(), includeDev = 
       try {
         await transitionStatus(db, pod.id, GROUP_STATUS.BATTLE, nowIso);
         summary.flipped++;
-        console.log(`${LOG_PREFIX} flipped training pod ${pod.id} awaiting_open → battle (anchor ${pod.startAnchor?.anchorEtDate}, now ${nowEtDate})`);
+        console.log(`${LOG_PREFIX} flipped ${pod.isLiveDraft === true ? 'competitive' : 'training'} pod ${pod.id} awaiting_open → battle (anchor ${pod.startAnchor?.anchorEtDate}, now ${nowEtDate})`);
       } catch (err) {
         summary.errors++;
         console.error(`${LOG_PREFIX} flip failed for ${pod.id}: ${err.message}`);

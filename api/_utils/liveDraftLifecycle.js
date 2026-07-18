@@ -45,7 +45,7 @@ import {
   fetchRankedUserPool,
   assertTransition,
 } from './tournamentGroupService.js';
-import { effectiveBattleAnchor } from './liveDraftFormation.js';
+import { effectiveBattleAnchor, deriveBaseLayerWeek } from './liveDraftFormation.js';
 import {
   advanceCpuSeats,
   chooseHumanPick,
@@ -247,7 +247,10 @@ export async function fireCompetitiveSlotDraft(db, groupId, { now = new Date() }
     // anchor (completion re-checks independently).
     const anchor = effectiveBattleAnchor(g, now);
     const groupUpdate = { status: GROUP_STATUS.DRAFTING, updatedAt: nowIso };
-    if (anchor.restamped) groupUpdate.battleStartWeek = anchor.battleStartWeek;
+    if (anchor.restamped) {
+      groupUpdate.battleStartWeek = anchor.battleStartWeek;
+      groupUpdate.baseLayerWeek = deriveBaseLayerWeek(anchor.battleStartWeek); // keep the cohort week with the anchor
+    }
     tx.update(groupRef, groupUpdate);
     return finalState;
   });
@@ -329,7 +332,10 @@ export async function driveSlotDraftAutopick(db, groupId, { now = new Date() } =
       const { target, groupUpdate, streamDoc } = computeHandoffWrites(group, completeState, now, {
         startAnchor: { anchorEtDate: anchor.anchorEtDate, anchorIso: anchor.anchorIso },
       });
-      if (anchor.restamped) groupUpdate.battleStartWeek = anchor.battleStartWeek;
+      if (anchor.restamped) {
+        groupUpdate.battleStartWeek = anchor.battleStartWeek;
+        groupUpdate.baseLayerWeek = deriveBaseLayerWeek(anchor.battleStartWeek); // keep the cohort week with the anchor
+      }
       assertTransition(group.status, target); // DRAFTING → BATTLE | AWAITING_OPEN
       tx.update(groupRef, groupUpdate);
       tx.set(groupRef.collection('streams').doc('userDraft'), streamDoc);
@@ -412,7 +418,10 @@ export async function applyCompetitivePick(db, groupId, { odUserId, symbol = nul
       const { target, groupUpdate, streamDoc } = computeHandoffWrites(group, completeState, now, {
         startAnchor: { anchorEtDate: anchor.anchorEtDate, anchorIso: anchor.anchorIso },
       });
-      if (anchor.restamped) groupUpdate.battleStartWeek = anchor.battleStartWeek;
+      if (anchor.restamped) {
+        groupUpdate.battleStartWeek = anchor.battleStartWeek;
+        groupUpdate.baseLayerWeek = deriveBaseLayerWeek(anchor.battleStartWeek); // keep the cohort week with the anchor
+      }
       assertTransition(group.status, target);
       tx.update(groupRef, groupUpdate);
       tx.set(groupRef.collection('streams').doc('userDraft'), streamDoc);

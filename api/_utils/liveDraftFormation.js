@@ -208,6 +208,22 @@ export function deriveBattleStartWeek(fireIso) {
 }
 
 /**
+ * The base-layer week label (ISO-8601, e.g. '2026-W29') for a slot pod: the week
+ * its BATTLE starts (battleStartWeek.mondayEtDate), NOT the claim week. A pod
+ * claimed on a Wed/Sat/Sun plays the FOLLOWING ISO week, so keying baseLayerWeek
+ * on the claim instant (isoWeekString(now)) filed it a week early in the base-
+ * layer cohort / leaderboard / advancement (all `baseLayerWeek ==` scoped). This
+ * derives it from the battle Monday so a slot pod sits in the cohort of the week
+ * it actually plays — matching a single-shot pod formed for that week. Re-derived
+ * alongside battleStartWeek whenever the stale-anchor guard restamps.
+ */
+export function deriveBaseLayerWeek(battleStartWeek) {
+  const monday = battleStartWeek?.mondayEtDate;
+  if (typeof monday !== 'string') throw new Error(`${LOG_PREFIX} deriveBaseLayerWeek: missing mondayEtDate`);
+  return isoWeekString(etDateToUtcNoon(monday));
+}
+
+/**
  * The EFFECTIVE battle anchor for a pod at `now` (fire or completion time), with
  * the stale-anchor guard. battleStartWeek is stamped at CLAIM (Phase 1); a pod
  * that fires/completes LATE — a cron gap, or a group that lingered in FORMING
@@ -236,6 +252,31 @@ function groupRefFor(db, groupId) {
   return db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
 }
 
+// A competitive slot pod is "active" (occupies the user's one game) from claim
+// through its battle: FORMING → DRAFTING → AWAITING_OPEN → BATTLE.
+const ACTIVE_SLOT_STATUSES = new Set([
+  GROUP_STATUS.FORMING, GROUP_STATUS.DRAFTING, GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.BATTLE,
+]);
+
+/**
+ * The id of ANOTHER active competitive (live-draft) group the caller already
+ * sits in, or null — the one-competitive-game guard's read. Member-scoped
+ * `array-contains` query (the findActiveTrainingPodForUser precedent; a single-
+ * field array-contains needs no composite index), filtered in memory to active
+ * live-draft groups. `exceptGroupId` is the occurrence being claimed, so a
+ * re-claim of one's OWN slot stays idempotent (never self-rejects).
+ */
+async function findOtherActiveSlotGroup(db, odUserId, exceptGroupId) {
+  const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
+    .where('groupMembers', 'array-contains', odUserId).get();
+  for (const d of snap.docs) {
+    if (d.id === exceptGroupId) continue;
+    const g = d.data();
+    if (g.isLiveDraft === true && ACTIVE_SLOT_STATUSES.has(g.status)) return d.id;
+  }
+  return null;
+}
+
 /**
  * The initial slot-group doc — humans-only (this one seat), FORMING, self-
  * sufficient for the fire pass. NOT the 4-player createTournamentGroupDoc
@@ -247,7 +288,7 @@ function buildInitialSlotGroupDoc({ odUserId, displayName, slotId, scheduledDraf
   return {
     status: GROUP_STATUS.FORMING,
     roundNumber: 1,
-    baseLayerWeek: isoWeekString(now),
+    baseLayerWeek: deriveBaseLayerWeek(battleStartWeek), // the BATTLE week, not the claim week
     isLiveDraft: true,
     slotId,
     scheduledDraftAt,          // ISO UTC — the fire instant (S2: the fire cron finds it by this)
@@ -286,6 +327,15 @@ export async function claimSlotSeat(db, { slotId, odUserId, displayName = null, 
   const groupId = slotGroupId(slotId, fireEtDate);
   const ref = groupRefFor(db, groupId);
   const nowIso = toIso(now);
+
+  // One-competitive-game guard (founder ruling): a user may hold only ONE active
+  // competitive slot pod at a time. Reject if they already sit in a DIFFERENT
+  // active live-draft group (re-claiming THIS occurrence is idempotent, excluded
+  // by id). Pre-transaction read — a cross-doc query can't run inside the
+  // single-doc claim transaction; the residual race (two first-claims of two
+  // different slots in the same instant) is benign and rare.
+  const heldElsewhere = await findOtherActiveSlotGroup(db, odUserId, groupId);
+  if (heldElsewhere) throw slotError('already_in_competitive');
 
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -351,6 +401,13 @@ export async function releaseSlotSeat(db, groupId, { odUserId, now = new Date() 
     const group = snap.data();
     if (group.isLiveDraft !== true) throw slotError('not_a_slot_group');
     if (group.status !== GROUP_STATUS.FORMING) throw slotError('draft_already_started');
+    // Once the fire instant has arrived, the seat is LOCKED even if the fire cron
+    // hasn't advanced the status yet — this closes the release-vs-fire window
+    // (fire reads the human set across multiple transactions while still FORMING;
+    // a release landing mid-fire would desync the seats from the draft state).
+    if (typeof group.scheduledDraftAt === 'string' && group.scheduledDraftAt <= nowIso) {
+      throw slotError('draft_already_started');
+    }
 
     const members = group.groupMembers || [];
     if (!members.includes(odUserId)) {
