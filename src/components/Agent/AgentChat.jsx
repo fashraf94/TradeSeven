@@ -11,6 +11,7 @@ import {
   RENDER_CONFIG,
   resolveMessageType,
 } from '../../utils/renderMessageWithEntities';
+import { OPENER_LAZY_FALLBACK_ENABLED } from '../../config/featureFlags';
 
 // "Didn't respond" means the proposal hit its deadline without the user
 // approving or vetoing. In strategist mode, agent-evaluate.js writes
@@ -341,6 +342,12 @@ function BudgetPips({ used, total }) {
   );
 }
 
+// Lazy-opener backfill dedupe — module-scoped so it SURVIVES the per-tab-switch
+// remount of AgentChat (AgentBattleScreen mounts it under a keyed motion.div). A
+// battleId lands here the first time we fire ensure-opener for it and never
+// re-fires that session, so no remount can loop the endpoint.
+const attemptedOpenerBattleIds = new Set();
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function AgentChat({
@@ -483,6 +490,43 @@ export default function AgentChat({
       return !matched;
     }));
   }, [chatExchanges]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Lazy opener backfill (OPENER_LAZY_FALLBACK_ENABLED) ───────────────────
+  // If the deploy-time opener was silently dropped (Gemma slow → the ~15s abort
+  // in the fenced deploy path), backfill it once via POST /api/agent/ensure-opener.
+  // The guard is data-driven (no local first_message) PLUS a module-scoped Set
+  // that survives this component's per-tab remount — marked BEFORE firing, so
+  // every server outcome (generated / floored / no_action_needed) leaves the
+  // battle marked and a tab remount never re-POSTs. The server is idempotent and
+  // transaction-guarded, so even a stray double-fire cannot duplicate the opener.
+  useEffect(() => {
+    if (!OPENER_LAZY_FALLBACK_ENABLED) return;
+    if (battleStatus !== 'active') return;
+    if (!battleId || !agentId) return;
+    if (attemptedOpenerBattleIds.has(battleId)) return;
+    const hasFirstMessage = (chatExchanges || []).some(
+      ex => ex && ex.messageType === 'first_message',
+    );
+    if (hasFirstMessage) return;
+    attemptedOpenerBattleIds.add(battleId); // unconditional mark — covers all outcomes
+    (async () => {
+      try {
+        const user = getAuth().currentUser;
+        if (!user) return;
+        const idToken = await user.getIdToken();
+        await fetch('/api/agent/ensure-opener', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentId, battleId }),
+        });
+        // Ignore the response — the Firestore listener repaints chatExchanges when
+        // the write lands. No optimistic insert, no ordering change.
+      } catch {
+        // A failed backfill must never surface in the chat UI; the battle stays
+        // marked (no remount loop). The deploy attempt already failed independently.
+      }
+    })();
+  }, [chatExchanges, battleId, agentId, battleStatus]);
 
   // ── 30s timeout for in-flight bubbles ─────────────────────────────────────
   // Per spec §4.5 refinement: if an optimistic user bubble has been pending

@@ -746,3 +746,26 @@ export const CORRELATION_NARRATION_ENABLED = true;
  * Capture Rider §5: capture only, pre-launch). Flip is a Phase-B concern.
  */
 export const LEARNING_L1_CAPTURE_ENABLED = true;
+
+/**
+ * BaggerBomb opener — lazy regeneration + template floor.
+ *
+ * The deploy-time first-message ("opener") is generated synchronously inside the
+ * deploy invocation under a ~15s Gemma abort (api/agent/decide.js
+ * generateFirstMessageOnDeploy). When Gemma is slow it aborts mid-stream, the
+ * truncated body fails JSON parse, and the try/catch swallows it (non-blocking by
+ * design) — so tiered battles intermittently open with a silent timeline.
+ *
+ * When FALSE (default), behavior is byte-identical to today: the client makes no
+ * ensure-opener call and POST /api/agent/ensure-opener no-ops. When TRUE, the
+ * Command Center chat (AgentChat) checks on mount whether a first_message exists
+ * and, if not, calls the non-fenced POST /api/agent/ensure-opener, which
+ * regenerates the opener with a patient (~40s) budget + one deadline-bounded retry
+ * and falls back to a deterministic template opener — so a fresh-deploy chat is
+ * never silent. Late-open (chat already has content, no opener) is a deliberate
+ * no-op. The fenced deploy path is untouched.
+ *
+ * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview smoke
+ * (the SCOUTING_BOARD_ENABLED precedent) — never in the build PR.
+ */
+export const OPENER_LAZY_FALLBACK_ENABLED = false;
