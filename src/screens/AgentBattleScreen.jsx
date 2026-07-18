@@ -986,7 +986,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             >
               <AgentChat
                 battleId={agentBattleId}
-                agentId={battle?.agentId}
+                agentId={agentBattle?.agentId}
                 agentName={agentBattle?.agentContext?.agentName || 'Your Agent'}
                 chatExchanges={chatExchanges}
                 battleStatus={agentBattle?.status}
