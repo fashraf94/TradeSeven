@@ -29,9 +29,11 @@ export default function LiveDraftPicker({ tokens, currentUserId, displayName = n
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const run = async (fn) => {
+  // `entered` fires onEntered for the CLAIM payoff only — a release must never
+  // route the user into the game surface they just left.
+  const run = async (fn, { entered = false } = {}) => {
     setPending(true); setError(null);
-    try { await fn(); await load(); if (onEntered) onEntered(); }
+    try { await fn(); await load(); if (entered && onEntered) onEntered(); }
     catch (e) { setError(mapSlotActionError(e)); }
     finally { setPending(false); }
   };
@@ -66,7 +68,7 @@ export default function LiveDraftPicker({ tokens, currentUserId, displayName = n
               {mine ? (
                 <button onClick={() => run(() => releaseSlot({ groupId: slot.groupId }))} disabled={pending} style={ghostBtn(tokens, !pending)}>Leave</button>
               ) : (
-                <button onClick={() => run(() => claimSlot({ slotId: slot.slotId, displayName }))} disabled={pending || slot.isFull} style={primaryBtn(tokens, !pending && !slot.isFull)}>
+                <button onClick={() => run(() => claimSlot({ slotId: slot.slotId, displayName }), { entered: true })} disabled={pending || slot.isFull} style={primaryBtn(tokens, !pending && !slot.isFull)}>
                   {slot.isFull ? 'Full' : 'Claim seat'}
                 </button>
               )}
