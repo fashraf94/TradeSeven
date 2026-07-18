@@ -165,6 +165,55 @@ describe('captureSwapReceipt — writes a RAW receipt when the flag is on', () =
   });
 });
 
+describe('captureSwapReceipt — W1 archetype identity (Corpus Capture Patch)', () => {
+  it('threads archetype onto the written receipt (top-level, not versions)', async () => {
+    const raw = validRaw({ archetype: 'degen' });
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(true);
+    expect(raw.db.sets[0].data.archetype).toBe('degen');
+    expect(raw.db.sets[0].data.versions.archetypeVersion).toBeNull();
+  });
+
+  it('omitted archetype defaults to null and still writes (absent identity is legal)', async () => {
+    const raw = validRaw(); // no archetype key — legacy-caller shape
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(true);
+    expect(raw.db.sets[0].data.archetype).toBeNull();
+  });
+
+  it('membership is WARN-ONLY: an out-of-set id logs a warning but the receipt is KEPT', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // 'unknown' is the legacy createAgentBattle sentinel — NOT a VALID_ARCHETYPES
+    // member; it must warn and persist (a lost receipt is worse than an odd label).
+    const raw = validRaw({ archetype: 'unknown' });
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(true);
+    expect(raw.db.sets).toHaveLength(1);
+    expect(raw.db.sets[0].data.archetype).toBe('unknown');
+    expect(warn.mock.calls.some(c => String(c[0]).includes('VALID_ARCHETYPES'))).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('a VALID_ARCHETYPES member and null never warn', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await captureSwapReceipt({ ...validRaw({ archetype: 'guardian' }), enabled: true });
+    await captureSwapReceipt({ ...validRaw({ archetype: null }), enabled: true });
+    expect(warn.mock.calls.some(c => String(c[0]).includes('VALID_ARCHETYPES'))).toBe(false);
+    warn.mockRestore();
+  });
+
+  it('FAILS CLOSED on a type violation: non-string/non-null archetype is excluded, never written', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const raw = validRaw({ archetype: 42 });
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(false);
+    expect(res.reason).toBe('invalid');
+    expect(res.errors.join(' ')).toMatch(/archetype:/);
+    expect(raw.db.sets).toHaveLength(0);
+    warn.mockRestore();
+  });
+});
+
 // ── L1 Capture — exclude non-evidence (CPU/training) agents (Fix 1 + Fix 2) ──
 describe('classifyEvidence + captureSwapReceipt — non-evidence exclusion', () => {
   it('classifyEvidence: isCpu is authoritative; agentId prefixes are the secondary/training signal', () => {

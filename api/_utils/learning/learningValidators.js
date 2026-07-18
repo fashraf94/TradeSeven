@@ -57,6 +57,15 @@ export function validateReceipt(receipt) {
   inSet(receipt.source, RECEIPT_SOURCES, 'source', errors);
   inSet(receipt.exitReason, RECEIPT_EXIT_REASONS, 'exitReason', errors);
 
+  // Archetype identity (Corpus Capture Patch W1) — string | null REQUIRED in
+  // shape; any other type/absence fails closed. VALUE membership is
+  // deliberately NOT checked here: it is warn-only at the capture seam
+  // (captureSwapReceipt), because an unknown archetype id must never cause a
+  // receipt drop — a lost receipt is worse than an odd label.
+  if (receipt.archetype !== null && (typeof receipt.archetype !== 'string' || receipt.archetype.length === 0)) {
+    errors.push(`archetype: expected non-empty string or null, got ${JSON.stringify(receipt.archetype)}`);
+  }
+
   // Minimal identity — a receipt with no agent/battle/order is unattributable.
   requireString(receipt.agentId, 'agentId', errors);
   requireString(receipt.battleId, 'battleId', errors);

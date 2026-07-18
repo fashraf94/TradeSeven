@@ -20,6 +20,10 @@ import { makeReceiptSkeleton, makePredicateInputs, makePredicateClassification }
 import { classifyD1, classifyD1DrAbstain, drNullReason } from './detectorClassifiers.js';
 import { validateReceipt } from './learningValidators.js';
 import { buildTechnicalSnapshot } from '../buildTechnicalSnapshot.js';
+// Corpus Capture Patch W1 — warn-only archetype membership set. Reading a
+// fenced file's export is permitted (BUILD_RULES §1: read/call yes, edit no);
+// agentArchetypeConfig is a pure config module (no side effects, Node-clean).
+import { VALID_ARCHETYPES } from '../agentArchetypeConfig.js';
 // Node-clean constants module (zero imports — VERIFIED), already imported across
 // api/ (§4 dependency-surface: captureReceipt.test.js's import of THIS module is
 // the runtime guard and must never be mocked). The `isCpu` boolean is the
@@ -270,6 +274,11 @@ export function buildRawReceipt(raw = {}) {
     // never disagree); fall back to deriving it from identity for direct callers.
     evidenceClass: raw.evidenceClass ?? classifyEvidence({ isCpu: raw.isCpu, agentId: raw.agentId }),
 
+    // W1 — archetype identity from battle.agentContext.archetype (frozen at
+    // battle creation; string | null; absent identity stays null, never a
+    // synthesized 'unknown' — founder ruling July 21 2026).
+    archetype: raw.archetype ?? null,
+
     agentId: raw.agentId ?? null,
     battleId: raw.battleId ?? null,
     battleDay: raw.battleDay ?? null,
@@ -373,6 +382,14 @@ export async function captureSwapReceipt({ enabled, db, ...raw } = {}) {
     // Fail closed: exclude + LOG (never silently accept, never coerce).
     console.warn(`${LOG_PREFIX} receipt excluded (validation failed): ${errors.join('; ')}`);
     return { emitted: false, reason: 'invalid', errors };
+  }
+
+  // W1 — archetype membership is WARN-ONLY (founder ruling): an out-of-set id
+  // (incl. the legacy 'unknown' creation sentinel on old battle docs) is logged
+  // and KEPT — an unknown label must never cause a receipt drop. null (absent
+  // identity) never warns; type violations already failed closed above.
+  if (receipt.archetype !== null && !VALID_ARCHETYPES.includes(receipt.archetype)) {
+    console.warn(`${LOG_PREFIX} archetype '${receipt.archetype}' not in VALID_ARCHETYPES — kept (warn-only membership)`);
   }
 
   const receiptId = receiptIdFor(receipt.agentId, receipt.receiptSeq);

@@ -39,9 +39,23 @@ describe('learningSchemas — shapes only, null leaves', () => {
     expect(r.dataQuality).toEqual({ nullFlags: [] });
     // evidence provenance — top-level, null leaf (stamped at build time)
     expect(r.evidenceClass).toBeNull();
+    // W1 (Corpus Capture Patch) — archetype identity: TOP-LEVEL null leaf
+    // (an identity, not a version; versions.archetypeVersion stays null).
+    expect(r.archetype).toBeNull();
+    expect(r.versions.archetypeVersion).toBeNull();
     // versions stamped
     expect(r.schemaVersion).toBe(LEARNING_SCHEMA_VERSION);
     expect(r.barBasisTableVersion).toBe(BAR_BASIS_TABLE_VERSION);
+  });
+
+  it('W1 (Corpus Capture Patch): schemaVersion is 3 — the corpus E2 partition boundary', () => {
+    // E-labeled epoch mapping (founder ruling July 21 2026): E1 = schemaVersion
+    // <= 2 (no archetype identity); E2 = schemaVersion >= 3 (archetype present).
+    // A silent un-bump would make E2 receipts unpartitionable — pin it.
+    expect(LEARNING_SCHEMA_VERSION).toBe(3);
+    const r = makeReceiptSkeleton({ archetype: 'degen' });
+    expect(r.archetype).toBe('degen');
+    expect(r.schemaVersion).toBe(3);
   });
 
   it('receipt skeleton carries NO outcome-derived/estimator tokens (outcome-blind labels permitted)', () => {

@@ -72,3 +72,26 @@ describe('validateReceipt — closed enums, fail closed (ANNEX A5)', () => {
     expect(validateReceipt(null).valid).toBe(false);
   });
 });
+
+describe('validateReceipt — W1 archetype identity (Corpus Capture Patch)', () => {
+  it('accepts null (absent identity) and any non-empty string', () => {
+    expect(validateReceipt(validReceipt({ archetype: null })).valid).toBe(true);
+    expect(validateReceipt(validReceipt({ archetype: 'degen' })).valid).toBe(true);
+    expect(validateReceipt(validReceipt({ archetype: 'guardian' })).valid).toBe(true);
+  });
+
+  it('membership is NOT the validator\'s job — an out-of-set string stays VALID (warn-only lives at the capture seam)', () => {
+    // A lost receipt is worse than an odd label: the legacy 'unknown' creation
+    // sentinel and genuinely unexpected ids must never fail shape validation.
+    expect(validateReceipt(validReceipt({ archetype: 'unknown' })).valid).toBe(true);
+    expect(validateReceipt(validReceipt({ archetype: 'not_a_real_archetype' })).valid).toBe(true);
+  });
+
+  it('FAILS CLOSED on type violations (presence/type is the fail-closed half)', () => {
+    for (const bad of [undefined, '', 42, false, {}, []]) {
+      const res = validateReceipt(validReceipt({ archetype: bad }));
+      expect(res.valid, `archetype=${JSON.stringify(bad)}`).toBe(false);
+      expect(res.errors.join(' ')).toMatch(/archetype:/);
+    }
+  });
+});
