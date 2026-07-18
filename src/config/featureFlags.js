@@ -768,4 +768,4 @@ export const LEARNING_L1_CAPTURE_ENABLED = true;
  * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview smoke
  * (the SCOUTING_BOARD_ENABLED precedent) — never in the build PR.
  */
-export const OPENER_LAZY_FALLBACK_ENABLED = false;
+export const OPENER_LAZY_FALLBACK_ENABLED = true;
