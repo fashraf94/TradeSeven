@@ -69,7 +69,10 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED } from '../../src/config/featureFlags.js';
+// Corpus Capture Patch W3 — pure regimeAtStart stamp helpers (write-once /
+// flag / shape semantics live there so they are behaviorally unit-testable).
+import { shouldStampRegime, buildRegimeAtStart } from '../_utils/regimeStamp.js';
 // Agent Learning System L1 — raw capture (DARK behind LEARNING_L1_CAPTURE_ENABLED,
 // false at merge). captureSwapReceipt is a strict no-op when the flag is off.
 import { captureSwapReceipt, resolveEntrySnapshot, classifyEntryAtrSource, classifyEvidence } from '../_utils/learning/captureReceipt.js';
@@ -953,6 +956,24 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       const [mcDoc, spyDoc] = intelligenceResult.value;
       if (mcDoc.exists) marketContext = mcDoc.data();
       if (spyDoc.exists) spyData = spyDoc.data();
+    }
+
+    // Corpus Capture Patch W3 — regimeAtStart stamp (DARK behind
+    // REGIME_STAMP_ENABLED, false at merge). Write-once, if-absent, at the
+    // battle's FIRST evaluation tick: reuses the marketContext doc loaded in
+    // the parallel batch above (ZERO added reads; doc-missing ⇒ skip, next
+    // tick retries). Staleness/'unknown' are recorded, never adjudicated.
+    // In-memory mirror follows the migration-fields precedent so later code
+    // this tick sees the stamped doc state. A stamp failure is logged and
+    // swallowed — it must never break the evaluation pass.
+    if (shouldStampRegime({ battle, marketContext, enabled: REGIME_STAMP_ENABLED })) {
+      try {
+        const regimeAtStart = buildRegimeAtStart(marketContext, new Date().toISOString());
+        await battleRef.update({ regimeAtStart });
+        battle.regimeAtStart = regimeAtStart;
+      } catch (stampErr) {
+        console.error(`${LOG_PREFIX} regimeAtStart stamp failed (ignored, evaluation unaffected): ${stampErr?.message}`);
+      }
     }
 
     // ---- Regime classification ----

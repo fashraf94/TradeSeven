@@ -35,6 +35,7 @@ import { dirname, resolve, join, relative, sep } from 'node:path';
 import {
   LEARNING_L1_CAPTURE_ENABLED,
   LEARNING_L1_CAPTURE_EXPANSION_ENABLED,
+  REGIME_STAMP_ENABLED,
 } from '../../src/config/featureFlags.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -507,6 +508,47 @@ describe('agent-evaluate cron — Corpus Capture Patch W1/W2 L1 capture wiring',
     // dark and flips in its own PR; the master flag is NOT reset in this patch.
     expect(LEARNING_L1_CAPTURE_EXPANSION_ENABLED).toBe(false);
     expect(typeof LEARNING_L1_CAPTURE_ENABLED).toBe('boolean');
+  });
+});
+
+// Corpus Capture Patch W3 — regimeAtStart stamp wiring guards. Behavioral load
+// (write-once / flag-off / shape / staleness semantics) lives on the pure
+// helpers' own unit tests (api/_utils/regimeStamp.test.js); these pin the cron
+// wiring: gated call, write-once field, zero added reads, in-memory mirror.
+describe('agent-evaluate cron — Corpus Capture Patch W3 regimeAtStart wiring', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports the pure helpers and the flag', () => {
+    expect(source).toMatch(/import\s*\{\s*shouldStampRegime,\s*buildRegimeAtStart\s*\}\s*from\s*'\.\.\/_utils\/regimeStamp\.js'/);
+    expect(source).toMatch(/\bREGIME_STAMP_ENABLED\b[^]*?from '\.\.\/\.\.\/src\/config\/featureFlags\.js'/);
+  });
+
+  it('stamps via the gated helper exactly once, writing the regimeAtStart field with an in-memory mirror', () => {
+    const gates = source.match(/shouldStampRegime\(\{ battle, marketContext, enabled: REGIME_STAMP_ENABLED \}\)/g) || [];
+    expect(gates.length).toBe(1);
+    expect(source).toMatch(/await battleRef\.update\(\{ regimeAtStart \}\);\s*\n\s*battle\.regimeAtStart = regimeAtStart;/);
+  });
+
+  it('ZERO added reads: the stamp sits after the existing marketContext assignment and adds no new indexIntelligence read', () => {
+    // The stamp must consume the doc loaded by the existing parallel batch —
+    // exactly two indexIntelligence doc refs existed before this patch
+    // (marketContext + SPY in the getAll) plus the stockRankings get; the
+    // stamp adds none.
+    const mcReads = source.match(/collection\('indexIntelligence'\)/g) || [];
+    expect(mcReads.length).toBe(3); // stockRankings + marketContext + SPY — unchanged
+    // Ordering: assignment from the fetched doc precedes the stamp block.
+    const assignIdx = source.indexOf('if (mcDoc.exists) marketContext = mcDoc.data();');
+    const stampIdx = source.indexOf('shouldStampRegime({ battle, marketContext, enabled: REGIME_STAMP_ENABLED })');
+    expect(assignIdx).toBeGreaterThan(-1);
+    expect(stampIdx).toBeGreaterThan(assignIdx);
+  });
+
+  it('a stamp failure is isolated — logged and swallowed, never breaking the evaluation pass', () => {
+    expect(source).toMatch(/regimeAtStart stamp failed \(ignored, evaluation unaffected\)/);
+  });
+
+  it('merge-dark contract: REGIME_STAMP_ENABLED defaults FALSE (flips later with the expansion flag, per founder ruling)', () => {
+    expect(REGIME_STAMP_ENABLED).toBe(false);
   });
 });
 

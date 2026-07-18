@@ -800,3 +800,21 @@ export const LEARNING_L1_CAPTURE_ENABLED = true;
  * recorded in that flip PR.
  */
 export const LEARNING_L1_CAPTURE_EXPANSION_ENABLED = false;
+
+/**
+ * Corpus Capture Patch W3 — write-once `regimeAtStart` stamp on agentBattles
+ * docs, applied at each battle's FIRST evaluation tick (never overwritten).
+ *
+ * Stamps the market-level regime (bull|correction|bear|recovery) from the
+ * indexIntelligence/marketContext doc the evaluator ALREADY loads per battle —
+ * zero added Firestore reads. Unblocks T3 (regime-conditional) learning and
+ * trial conditioning, forward-only from the flip date (Discovery A3 / P1
+ * flag #1: the regime source docs are overwrite-in-place singletons, so
+ * "regime during battle X" is unrecoverable retroactively).
+ *
+ * FALSE at merge (Build Spec §5.6): merge dark → preview smoke → deliberate
+ * flip PR, flipped together with LEARNING_L1_CAPTURE_EXPANSION_ENABLED above.
+ * When FALSE: no battle doc is touched, no stamp field exists — prior
+ * behavior exactly. Already-stamped docs are inert data either way.
+ */
+export const REGIME_STAMP_ENABLED = false;
