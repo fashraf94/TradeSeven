@@ -257,7 +257,7 @@ export const LEAGUE_TRAINING_CLIMB_PREVIEW_ENABLED = true;
  * build PR (the PR #510 / LEAGUE_NEXT_ARC_ENABLED precedent) — flip only after
  * a Vercel preview smoke.
  */
-export const LEAGUE_CANONICAL_OPEN_CAPTURE = false;
+export const LEAGUE_CANONICAL_OPEN_CAPTURE = true;
 
 /**
  * League — Competitive Live Draft (slot lobbies). The interactive live draft
@@ -513,7 +513,7 @@ export const TEMPO_DIAL_ENABLED = true;
  * line verbatim; what changed is that its output no longer REACHES a prompt
  * (master spec §3.6, founder-accepted).
  */
-export const ARCHETYPE_INTEGRITY_MODE = 'observe';
+export const ARCHETYPE_INTEGRITY_MODE = 'enforce';
 
 /**
  * Release 2 PR-e — the sector-SLOT rule: tri-state rollout mode.
@@ -552,7 +552,7 @@ export const ARCHETYPE_INTEGRITY_MODE = 'observe';
  * founder-executed — never in a build PR (the PR #510 lesson). See
  * api/_utils/agentGuardrails.js (the sector-SLOT rule block).
  */
-export const SECTOR_CAP_MODE = 'off';
+export const SECTOR_CAP_MODE = 'true';
 
 /**
  * WS1 — Rule-library archetype scoping: tri-state rollout mode.
@@ -818,3 +818,26 @@ export const LEARNING_L1_CAPTURE_EXPANSION_ENABLED = false;
  * behavior exactly. Already-stamped docs are inert data either way.
  */
 export const REGIME_STAMP_ENABLED = false;
+
+/**
+ * BaggerBomb opener — lazy regeneration + template floor.
+ *
+ * The deploy-time first-message ("opener") is generated synchronously inside the
+ * deploy invocation under a ~15s Gemma abort (api/agent/decide.js
+ * generateFirstMessageOnDeploy). When Gemma is slow it aborts mid-stream, the
+ * truncated body fails JSON parse, and the try/catch swallows it (non-blocking by
+ * design) — so tiered battles intermittently open with a silent timeline.
+ *
+ * When FALSE (default), behavior is byte-identical to today: the client makes no
+ * ensure-opener call and POST /api/agent/ensure-opener no-ops. When TRUE, the
+ * Command Center chat (AgentChat) checks on mount whether a first_message exists
+ * and, if not, calls the non-fenced POST /api/agent/ensure-opener, which
+ * regenerates the opener with a patient (~40s) budget + one deadline-bounded retry
+ * and falls back to a deterministic template opener — so a fresh-deploy chat is
+ * never silent. Late-open (chat already has content, no opener) is a deliberate
+ * no-op. The fenced deploy path is untouched.
+ *
+ * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview smoke
+ * (the SCOUTING_BOARD_ENABLED precedent) — never in the build PR.
+ */
+export const OPENER_LAZY_FALLBACK_ENABLED = true;
