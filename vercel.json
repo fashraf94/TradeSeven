@@ -161,6 +161,10 @@
     {
       "path": "/api/cron/tournament-orchestrator",
       "schedule": "*/10 11,12,13,14,21,22,23 * * 1-5"
+    },
+    {
+      "path": "/api/cron/live-draft-fire",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

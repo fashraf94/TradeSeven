@@ -17,8 +17,11 @@ import { archMeta } from './boardModel';
 const STEP_MS = [450, 850, 1250, 1700, 2300];
 
 // seats: [{ isCpu, isYou, label }] (length GROUP_SIZE). ready = data loaded.
-export function DraftForming({ archKey, seats = [], ready = false, onEnter, narrow = false }) {
+// `mode` ('training' | 'competitive') selects the eyebrow title + the intro copy;
+// default 'training' → byte-identical to before the Phase-4 genericization.
+export function DraftForming({ archKey, seats = [], ready = false, onEnter, narrow = false, mode = 'training' }) {
   const a = archMeta(archKey);
+  const competitive = mode === 'competitive';
   const [step, setStep] = useState(0);
   useEffect(() => {
     const ts = STEP_MS.map((ms, i) => setTimeout(() => setStep(i + 1), ms));
@@ -32,7 +35,7 @@ export function DraftForming({ archKey, seats = [], ready = false, onEnter, narr
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       padding: narrow ? '0 26px' : '0 60px', textAlign: 'center',
       background: `radial-gradient(circle at 50% 28%, ${alpha(DX.you, 0.07)}, transparent 60%)` }}>
-      <Eyebrow color={DX.you} style={{ marginBottom: narrow ? 20 : 22 }}>Training Draft · {canEnter ? 'Table ready' : 'Forming'}</Eyebrow>
+      <Eyebrow color={DX.you} style={{ marginBottom: narrow ? 20 : 22 }}>{competitive ? 'Live Draft' : 'Training Draft'} · {canEnter ? 'Table ready' : 'Forming'}</Eyebrow>
 
       {/* the seats assembling */}
       <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: narrow ? '1fr 1fr' : undefined,
@@ -64,8 +67,13 @@ export function DraftForming({ archKey, seats = [], ready = false, onEnter, narr
         {canEnter ? 'You have the first pick' : 'Seating the table…'}
       </div>
       <div style={{ fontSize: narrow ? 13.5 : 15, color: TOKENS.ink2, lineHeight: 1.55, maxWidth: 560, marginBottom: narrow ? 24 : 28 }}>
-        This is <b style={{ color: TOKENS.ink }}>practice — no stakes.</b> Draft a three-stock lineup against three CPU agents, snake-style.
-        Your board is ranked for a <span style={{ color: a.tint, fontWeight: 600 }}>{a.name}</span> — take from the top and you draft well, every time.
+        {competitive ? (
+          <>Draft a three-stock lineup against your pod, snake-style — empty seats fill with CPUs when the draft fires.{' '}
+          Your board is ranked for a <span style={{ color: a.tint, fontWeight: 600 }}>{a.name}</span> — take from the top and you draft well, every time.</>
+        ) : (
+          <>This is <b style={{ color: TOKENS.ink }}>practice — no stakes.</b> Draft a three-stock lineup against three CPU agents, snake-style.{' '}
+          Your board is ranked for a <span style={{ color: a.tint, fontWeight: 600 }}>{a.name}</span> — take from the top and you draft well, every time.</>
+        )}
       </div>
 
       <button className="ld-tap" onClick={canEnter ? onEnter : undefined} disabled={!canEnter} style={{ all: 'unset', boxSizing: 'border-box',

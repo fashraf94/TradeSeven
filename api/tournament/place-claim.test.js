@@ -361,6 +361,27 @@ describe('Phase A — training-scoped pre-day-1 gate (AWAITING_OPEN)', () => {
   });
 });
 
+describe('Competitive Live Draft — claims gate (FENCE-ADJACENT regression; no behavioral change)', () => {
+  it('rejects a claim on a COMPETITIVE live-draft pod in any pre-BATTLE state (no battle, no legs)', async () => {
+    for (const status of ['forming', 'drafting', 'awaiting_open']) {
+      h.db = makeDb({ groupDoc: battleGroup({ status, isLiveDraft: true }) }).db;
+      const { req, res } = makeReqRes();
+      await handler(req, res);
+      expect(res.statusCode).toBe(409);
+      expect(res.body.error).toBe('not_battle');
+    }
+  });
+
+  it('a live-draft pod in BATTLE is NOT blocked by the guard — claims flow normally (close-only rule intact)', async () => {
+    const { db, captured } = makeDb({ groupDoc: battleGroup({ status: 'battle', isLiveDraft: true }) });
+    h.db = db;
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(captured.added).toHaveLength(1);
+  });
+});
+
 describe('rider #5 "placed"', () => {
   it('the awaited claim-doc write carries the writer fields; response echoes the doc', async () => {
     const { db, captured } = makeDb({ groupDoc: battleGroup() });

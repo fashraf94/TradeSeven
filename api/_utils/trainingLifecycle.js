@@ -35,13 +35,19 @@
 //   (f) ROLLING-COMPLETION (completeBankedTrainingPods) — the nightly daily-
 //       scores host completes a training pod the night its 5th day banks.
 //
-// SHARED-HOST SAFETY: AWAITING_OPEN and the in-draft DRAFTING are training-only
-// states and every sweep filters isTraining, so ranked/legacy groups are never
-// seen or moved. DRAFTING is reached ONLY by formTrainingDraft and no other
-// selector queries it. The banker (tournamentBanking.js) is UNTOUCHED — a
-// DRAFTING/AWAITING_OPEN pod is not 'battle', so it is invisible to banking
-// until the open. Zero new cron: (d)/(e) ride the orchestrator tick, (f) rides
-// the daily-scores cron.
+// SHARED-HOST SAFETY: DRAFTING and AWAITING_OPEN carry training pods and —
+// behind LEAGUE_LIVE_DRAFT — competitive slot pods; a regular ranked/legacy
+// group NEVER enters them (ranked formation is single-shot FORMING→BATTLE). The
+// two morning sweeps treat the modes DELIBERATELY differently:
+//   • the IDLE DRAFTING sweep (e) is isTraining-scoped — a competitive DRAFTING
+//     pod has its OWN completion driver (the live-draft-fire cron's
+//     driveSlotDraftAutopick), so it must NOT be double-driven here;
+//   • the AWAITING-OPEN flip (d) is SHARED — it flips BOTH training and
+//     competitive pods to BATTLE on their anchor date (a slot pod reaches BATTLE
+//     ONLY via this flip). Do NOT add an isTraining filter to it.
+// The banker (tournamentBanking.js) is UNTOUCHED — a DRAFTING/AWAITING_OPEN pod
+// is not 'battle', so it is invisible to banking until the open. Zero new cron:
+// (d)/(e) ride the orchestrator tick, (f) rides the daily-scores cron.
 //
 // Anchor rule mirrors the client getBattleStartDate (src/constants/battleTiming
 // .js) — reproduced server-side here. The NYSE calendar is REUSED from
@@ -182,7 +188,7 @@ async function readDraftState(db, groupId) {
 
 /** The user's agent archetype (the overlay + autopick key on it); 'analyst'
  *  default — the same source deriveServerBoardPrefill uses. */
-async function resolveHumanArchetype(db, odUserId) {
+export async function resolveHumanArchetype(db, odUserId) {
   try {
     // EXCLUDE training clones (Slice 3): the user-layer overlay keys on the
     // player's RANKED archetype. (Runs at draft time, before any clone exists,
@@ -198,7 +204,7 @@ async function resolveHumanArchetype(db, odUserId) {
 
 /** The ranked universe (stock objects) for the human archetype autopick.
  *  Degrades to null (autopick falls back to best-available) on any failure. */
-async function readStockUniverse(db) {
+export async function readStockUniverse(db) {
   try {
     const snap = await db.collection('indexIntelligence').doc('stockRankings').get();
     return snap.exists ? (snap.data().stocks ?? null) : null;
@@ -209,11 +215,20 @@ async function readStockUniverse(db) {
 }
 
 // ---- pure pick choosers ----
+//
+// SHARED DRAFT CORE: these pick-choosers + the handoff builder are the
+// drift-prone draft MATH, reused BY VALUE (not copied) by the Competitive Live
+// Draft lifecycle (api/_utils/liveDraftLifecycle.js) so there is ONE snake/pick
+// engine for both modes — the "one draft, both modes" discovery mandate, and
+// the anti-byte-copy rule the arena price paths already paid for. Exported here
+// rather than moved to a draftCore.js (a future hygiene extraction is ledgered)
+// to keep the training path's diff byte-identical. resolveHumanArchetype /
+// readStockUniverse (above) are exported for the same reuse.
 
 /** A CPU seat's pick: highest still-available name on its deterministic board
  *  (buildCpuUserBoard), falling back to the highest-ranked remaining pool name
  *  — the resolver's board→pool fallback, sequenced live. */
-function chooseCpuPick({ player, pool, taken, ownPicks }) {
+export function chooseCpuPick({ player, pool, taken, ownPicks }) {
   const n = cpuNFromUserId(player.odUserId);
   const board = (n != null) ? buildCpuUserBoard(pool, n) : [];
   const passedOver = [];
@@ -235,7 +250,7 @@ function chooseCpuPick({ player, pool, taken, ownPicks }) {
  *  autopick (timeout / sweep) = top archetype-fit available; R3 fallback to the
  *  best-available (composite-ranked pool head) if the archetype ranking is
  *  unusable. */
-function chooseHumanPick({ symbol, autopick, pool, taken, universe, archetype }) {
+export function chooseHumanPick({ symbol, autopick, pool, taken, universe, archetype }) {
   if (!autopick && symbol != null) {
     const norm = String(symbol).trim().toUpperCase();
     if (!pool.includes(norm)) return null;   // must be on the universal board
@@ -262,7 +277,7 @@ function topArchetypeFit({ universe, archetype, taken, pool }) {
 }
 
 /** Append a pick to the working accumulator (mutates taken/picksByUser/events). */
-function appendPick(acc, members, { seatIdx, pickIndex, symbol, boardRank, fallback, passedOver, liveSource }) {
+export function appendPick(acc, members, { seatIdx, pickIndex, symbol, boardRank, fallback, passedOver, liveSource }) {
   const odUserId = members[seatIdx];
   acc.taken.add(symbol);
   acc.picksByUser[odUserId].push(symbol);
@@ -280,7 +295,7 @@ function appendPick(acc, members, { seatIdx, pickIndex, symbol, boardRank, fallb
 
 /** Advance consecutive CPU seats from `fromIndex` (mutates acc); stops at the
  *  next human turn or the draft end. Returns the new pick index. */
-function advanceCpuSeats(acc, { group, state, fromIndex }) {
+export function advanceCpuSeats(acc, { group, state, fromIndex }) {
   const members = group.groupMembers || [];
   const total = members.length * PICKS_PER_PLAYER;
   let idx = fromIndex;
@@ -299,7 +314,7 @@ function advanceCpuSeats(acc, { group, state, fromIndex }) {
 /** Build the transition-only handoff writes from a completed live state. Pure;
  *  picks are materialized via the SAME createPickState the resolver uses, so the
  *  resulting pod is byte-identical downstream to a Slice 1 resolved pod. */
-function computeHandoffWrites(group, state, now) {
+export function computeHandoffWrites(group, state, now, { startAnchor: startAnchorOverride = null } = {}) {
   const nowIso = toIso(now);
   const nowEtDate = getEtParts(now).date;
   const picksByUser = state.picksByUser || {};
@@ -314,7 +329,11 @@ function computeHandoffWrites(group, state, now) {
   }));
   const taken = new Set(state.taken || []);
   const remainingPool = (state.pool || []).filter(s => !taken.has(s));
-  const startAnchor = nextMarketOpenAnchor(now);
+  // Competitive live-draft pods pass their pre-computed Monday anchor
+  // (group.battleStartWeek → { anchorEtDate, anchorIso }) so completion honors
+  // "battle starts the next Monday-open"; training passes nothing → the
+  // next-market-open-any-day anchor (byte-identical to before).
+  const startAnchor = startAnchorOverride || nextMarketOpenAnchor(now);
   // R1 inline completion-flip: a today-anchor draft lands straight in BATTLE
   // (DRAFTING→BATTLE is legal); a future-anchor draft waits in AWAITING_OPEN.
   const target = anchorDateReached(startAnchor, nowEtDate) ? GROUP_STATUS.BATTLE : GROUP_STATUS.AWAITING_OPEN;
@@ -532,11 +551,14 @@ export async function completeTrainingDraft(db, groupId, { now = new Date() } = 
 // ==================== (d) AWAITING-OPEN FLIP ====================
 
 /**
- * Flip AWAITING_OPEN training pods to BATTLE once their anchor DATE has arrived
- * (current ET date ≥ pod.startAnchor.anchorEtDate). Runs from the orchestrator
- * morning tick. DATE-based by design (see header). Idempotent: a flipped pod
- * leaves the AWAITING_OPEN query, so re-runs write nothing. Returns
- * `{ swept, flipped, pending, errors }`.
+ * Flip AWAITING_OPEN pods to BATTLE once their anchor DATE has arrived (current
+ * ET date ≥ pod.startAnchor.anchorEtDate). SHARED across modes BY DESIGN: it does
+ * NOT filter isTraining, so it flips BOTH training pods AND — behind
+ * LEAGUE_LIVE_DRAFT — competitive slot pods, which reach BATTLE ONLY via this
+ * flip (do NOT add an isTraining filter, or slot pods would strand in
+ * AWAITING_OPEN forever). Runs from the orchestrator morning tick. DATE-based by
+ * design (see header). Idempotent: a flipped pod leaves the AWAITING_OPEN query,
+ * so re-runs write nothing. Returns `{ swept, flipped, pending, errors }`.
  */
 export async function flipAwaitingOpenPods(db, { now = new Date(), includeDev = false } = {}) {
   const nowEtDate = getEtParts(now).date;
@@ -549,7 +571,7 @@ export async function flipAwaitingOpenPods(db, { now = new Date(), includeDev = 
       try {
         await transitionStatus(db, pod.id, GROUP_STATUS.BATTLE, nowIso);
         summary.flipped++;
-        console.log(`${LOG_PREFIX} flipped training pod ${pod.id} awaiting_open → battle (anchor ${pod.startAnchor?.anchorEtDate}, now ${nowEtDate})`);
+        console.log(`${LOG_PREFIX} flipped ${pod.isLiveDraft === true ? 'competitive' : 'training'} pod ${pod.id} awaiting_open → battle (anchor ${pod.startAnchor?.anchorEtDate}, now ${nowEtDate})`);
       } catch (err) {
         summary.errors++;
         console.error(`${LOG_PREFIX} flip failed for ${pod.id}: ${err.message}`);
@@ -575,6 +597,13 @@ export async function flipAwaitingOpenPods(db, { now = new Date(), includeDev = 
 export async function sweepIdleDraftingPods(db, { now = new Date(), includeDev = false } = {}) {
   const nowMs = now.getTime();
   const pods = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.DRAFTING, { includeDev });
+  // isTraining-scoped BY DESIGN — do NOT widen to competitive DRAFTING pods.
+  // Competitive Live Draft (LEAGUE_LIVE_DRAFT) pods have their OWN completion
+  // guarantee (the dedicated live-draft-fire cron's driveSlotDraftAutopick, which
+  // completes an abandoned draft in one pass and honors battleStartWeek). Sweeping
+  // them here would double-drive them AND resolve with the wrong (next-market-open)
+  // anchor. The "a DRAFTING group without isTraining is never swept" test locks
+  // this exclusion.
   const training = pods.filter(p => p.isTraining === true);
   const summary = { swept: training.length, completed: 0, active: 0, errors: 0 };
 

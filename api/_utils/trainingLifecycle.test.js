@@ -466,4 +466,13 @@ describe('sweepIdleDraftingPods — abandonment', () => {
     expect(r).toMatchObject({ swept: 0, completed: 0 });
     expect(store.get('tournamentGroups/ranked').status).toBe(GROUP_STATUS.DRAFTING);
   });
+
+  it('competitive inertness: a LIVE-DRAFT (isLiveDraft) DRAFTING pod is never swept — it is the fire cron’s job', async () => {
+    const { db, store } = makeDb({
+      'tournamentGroups/slot': { status: GROUP_STATUS.DRAFTING, isLiveDraft: true, players: FOUR_PLAYERS },
+    });
+    const r = await sweepIdleDraftingPods(db, { now: BEFORE_OPEN });
+    expect(r).toMatchObject({ swept: 0, completed: 0 });
+    expect(store.get('tournamentGroups/slot').status).toBe(GROUP_STATUS.DRAFTING);
+  });
 });

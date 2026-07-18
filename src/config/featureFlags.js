@@ -260,6 +260,32 @@ export const LEAGUE_TRAINING_CLIMB_PREVIEW_ENABLED = true;
 export const LEAGUE_CANONICAL_OPEN_CAPTURE = false;
 
 /**
+ * League — Competitive Live Draft (slot lobbies). The interactive live draft
+ * as the competitive entry: a weekly schedule of draft slots (config-driven),
+ * a user claims a seat, and a slot with ≥1 human at fire time drafts (CPU fills
+ * the empty seats); a slot nobody claims never materializes.
+ *
+ * When false (DEFAULT, merge-dark), competitive formation behaves EXACTLY as
+ * today: a group forms and is resolved single-shot at the Monday lock (the
+ * runMondayPipeline FORMING path). The slot schedule is never consulted, the
+ * slot-* endpoints 404 (the SCOUTING_BOARD defense-in-depth pattern), no slot
+ * group is ever created, and nothing reads `scheduledDraftAt` / `battleStartWeek`
+ * / `isLiveDraft` — so flag-off is byte-identical (the standing bar).
+ *
+ * When true, the slot picker (Phase 4) claims a seat via the slot-* endpoints;
+ * the first claim lazily creates a FORMING slot group stamped with its fire
+ * instant + Monday battle anchor; a dedicated every-10-minute fire cron (Phase 2)
+ * CPU-fills and opens the interactive draft. The `status==='battle'` firewall is
+ * untouched — a slot group is invisible to the sweep / banking / scorers until
+ * the open, exactly like any other pre-battle group.
+ *
+ * Built/merged DARK behind this flag across Phases 1–5; flip to ship only after
+ * the founder's preview smoke (a real slot claim → draft → battle) — never in a
+ * build PR (the PR #510 / LEAGUE_NEXT_ARC_ENABLED precedent).
+ */
+export const LEAGUE_LIVE_DRAFT = false;
+
+/**
  * League Training — the redesigned Training Draft Board (the agent-fit spine).
  *
  * When false (default), `TrainingDraftRoomScreen` renders TODAY's behavior

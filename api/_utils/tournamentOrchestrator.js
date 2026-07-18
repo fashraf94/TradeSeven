@@ -441,10 +441,19 @@ export async function runMondayPipeline(db, {
   // layer is owned solely by activateTrainingPod (the flip paths + the morning
   // backstop). Without this, resolveGroupAgents here would mis-resolve a training
   // human seat to the RANKED agent and deploy it into the training groupId.
-  const [forming, battle] = await Promise.all([
+  const [formingAll, battle] = await Promise.all([
     fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING, { includeDev: includeDevGroups, excludeTraining: true }),
     fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups, excludeTraining: true }),
   ]);
+  // Competitive Live Draft (LEAGUE_LIVE_DRAFT): a slot group sits in FORMING
+  // awaiting its SCHEDULED draft fire (a standalone cron), NOT this Monday
+  // single-shot resolve — otherwise a Monday-morning tick would steal a
+  // Mon-8:45am slot group before it fires. A 1–3-human slot group is already
+  // excluded upstream (fetchEligibleGroupsByStatus drops players.length !==
+  // GROUP_SIZE); this guard covers the FULL 4-human case that passes that
+  // filter. Flag-INDEPENDENT (keys on the group field), and byte-identical
+  // flag-off (no isLiveDraft group exists until LEAGUE_LIVE_DRAFT is on).
+  const forming = formingAll.filter((g) => g.isLiveDraft !== true);
   const groups = [...forming, ...battle];
 
   const summary = {
