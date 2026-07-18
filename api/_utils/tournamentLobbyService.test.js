@@ -489,6 +489,17 @@ describe('formGroupFromLobby — the mirror guard (slot seat blocks same-battle-
     expect(store.get(`tournamentGroups/${res.groupId}`).status).toBe(GROUP_STATUS.FORMING);
   });
 
+  it('does NOT block the TRAINING direction either: a slot seat never blocks starting a training pod', async () => {
+    // The reciprocal of "training never blocks": training is never BLOCKED.
+    // formTrainingDraft reaches this path via quickPlay({isTraining:true});
+    // holding a same-battle-week slot seat must not reject practice.
+    const { db, store } = withRankings(slotPod('u1', BATTLE_WEEK));
+    const res = await quickPlay(db, { odUserId: 'u1', now: NOW, isTraining: true });
+    const group = store.get(`tournamentGroups/${res.groupId}`);
+    expect(group.status).toBe(GROUP_STATUS.FORMING);
+    expect(group.isTraining).toBe(true);
+  });
+
   it('same-lobby re-entry is unaffected: alreadyFormed returns BEFORE the guard', async () => {
     const { db, store } = withRankings();
     const { id } = await createLobby(db, { createdBy: 'u1', now: NOW });

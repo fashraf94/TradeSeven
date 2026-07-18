@@ -293,11 +293,19 @@ export async function formGroupFromLobby(db, lobbyId, { now = new Date(), isTrai
   // Sits AFTER the alreadyFormed early-return above, so idempotent re-entry of
   // an already-formed lobby is never blocked; exceptGroupId keeps a crash
   // resume of THIS group's own formation idempotent.
-  const battleWeek = deriveBaseLayerWeek(deriveBattleStartWeek(nowIso));
-  for (const humanId of humanIds) {
-    const conflict = await findActiveGroupInBattleWeek(db, humanId, battleWeek, groupId);
-    if (conflict) {
-      throw new Error(`already_in_competitive: ${humanId} already holds ${conflict} for battle week ${battleWeek}`);
+  //
+  // COMPETITIVE ENTRIES ONLY: a TRAINING formation (formTrainingDraft →
+  // quickPlay({isTraining:true}) → here) is never guarded — practice is
+  // no-stakes and independent of competitive play, exactly as the predicate
+  // itself never counts training pods as blockers. The guard is symmetric:
+  // training neither blocks nor is blocked.
+  if (!isTraining) {
+    const battleWeek = deriveBaseLayerWeek(deriveBattleStartWeek(nowIso));
+    for (const humanId of humanIds) {
+      const conflict = await findActiveGroupInBattleWeek(db, humanId, battleWeek, groupId);
+      if (conflict) {
+        throw new Error(`already_in_competitive: ${humanId} already holds ${conflict} for battle week ${battleWeek}`);
+      }
     }
   }
 
