@@ -246,10 +246,10 @@ function LobbyFooter() {
 // FLAG-OFF PATH (LEAGUE_NEXT_ARC_ENABLED off + no ?leagueTabs=1): today's
 // single-column lobby, byte-identical — the extracted sections compose to the
 // same output, FollowRail included.
-export default function Lobby({ st, accent, onEnter, onPickPod, onSpectate, onOpenMyGame }) {
+export default function Lobby({ st, accent, onEnter, onPickPod, onSpectate, onOpenMyGame, activeGroup = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
-      {onOpenMyGame && <MyGameBar onOpenMyGame={onOpenMyGame} />}
+      {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
       <EnterButton accent={accent} onEnter={onEnter} />
       <div style={{ height: 22 }} />
       <LobbyHero st={st} accent={accent} />
@@ -491,10 +491,10 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
 // / group / field flow with the reserved pulse slot in FollowRail's place;
 // Training = the inert cold-start shell. The keyed wrapper replays a calm CSS
 // fade on switch (reduced-motion-neutralized globally).
-export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, onSpectate, onOpenMyGame, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null }) {
+export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
-      {onOpenMyGame && <MyGameBar onOpenMyGame={onOpenMyGame} />}
+      {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
       <LobbyHero st={st} accent={accent} />
       <TabBar tab={tab} onSwitchTab={onSwitchTab} accent={accent} />
       <div key={tab} className="lg-tabpanel">

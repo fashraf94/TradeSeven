@@ -16,7 +16,7 @@ vi.mock('../../hooks/useLeagueState', () => ({
   default: () => ({ state: leagueState('open'), loading: false, isFixtures: true }),
 }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => ({ user: null }) }));
-vi.mock('../../services/tournamentGroupService', () => ({ subscribeMyTrainingPod: () => () => {} }));
+vi.mock('../../services/tournamentGroupService', () => ({ subscribeMyGroup: () => () => {}, subscribeMyTrainingPod: () => () => {} }));
 vi.mock('../../services/leagueSignals', () => ({ logLeagueSignal: () => {} }));
 // These transitively import the Firebase client (env-gated at module eval); stub
 // them so the render smoke stays pure. The start path is exercised in app, not here.

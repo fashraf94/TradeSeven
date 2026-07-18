@@ -17,7 +17,7 @@ import './league.css';
 import useLeagueState from '../../hooks/useLeagueState';
 import { logLeagueSignal } from '../../services/leagueSignals';
 import { useUser } from '../../contexts/UserContext';
-import { subscribeMyTrainingPod } from '../../services/tournamentGroupService';
+import { subscribeMyGroup, subscribeMyTrainingPod } from '../../services/tournamentGroupService';
 import { LEAGUE_NEXT_ARC_ENABLED } from '../../config/featureFlags';
 import { LTOKENS, LX } from './leagueTokens';
 import Lobby, { LobbyTabbed } from './LeagueLobbyRedesign';
@@ -72,6 +72,17 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
     return subscribeMyTrainingPod(uid, setActiveTrainingPod);
   }, [uid]);
 
+  // The per-user active-game signal (Entry-Flow Consolidation Phase 1) — the
+  // caller's competitive group via subscribeMyGroup, which observes a claimed
+  // slot seat through FORMING/DRAFTING/AWAITING_OPEN/BATTLE. Drives BOTH the
+  // conditional MyGameBar (no game → no bar) and the no-game slot-picker center.
+  // Fixture mode has no myGroup, so the bar simply hides there.
+  const [activeGroup, setActiveGroup] = React.useState(null);
+  React.useEffect(() => {
+    if (!uid) { setActiveGroup(null); return undefined; }
+    return subscribeMyGroup(uid, setActiveGroup);
+  }, [uid]);
+
   // seed a dev spectate target once (smoke testing only)
   React.useEffect(() => {
     if (DEV_S === 'spectate-live') {
@@ -107,8 +118,8 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
   // Flag-on → the persistent Training|Ranked tabs; flag-off → today's lobby,
   // byte-identical (same <Lobby> invocation, untouched).
   const lobby = TABS_ENABLED
-    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} uid={uid} />
-    : <Lobby st={st} accent={ACCENT} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} />;
+    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} uid={uid} />
+    : <Lobby st={st} accent={ACCENT} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} />;
 
   const body = screen === 'spectate' && spec
     ? <Spectate pod={spec.pod} focusId={spec.focusId} accent={ACCENT} onBack={backToLobby} onEnter={enter} />

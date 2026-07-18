@@ -23,7 +23,7 @@ import React from 'react';
 import './league.css';
 import useLeagueState from '../../hooks/useLeagueState';
 import { useUser } from '../../contexts/UserContext';
-import { subscribeMyTrainingPod } from '../../services/tournamentGroupService';
+import { subscribeMyGroup, subscribeMyTrainingPod } from '../../services/tournamentGroupService';
 import { logLeagueSignal } from '../../services/leagueSignals';
 import { LEAGUE_TRAINING_POD_ENABLED } from '../../config/featureFlags';
 import { LTOKENS, LX, alpha } from './leagueTokens';
@@ -89,9 +89,10 @@ function findPod(st, id) {
 }
 
 // The front door to the live participant flow (board commit / battle / claims /
-// draft). Shown on BOTH the Ranked and Training surfaces (mobile parity: the
-// mobile lobby renders this regardless of tab) so a player with an active game
-// can always jump back in — including when the training tab is flag-off.
+// draft). Shown on BOTH the Ranked and Training surfaces (mobile parity) but
+// ONLY while the player actually has an active competitive game (the
+// activeGroup gate at each site) — a no-game player enters via the slot-picker
+// center instead, never a bar that leads to an empty page.
 function MyGameBar({ onOpen }) {
   return (
     <button className="lg-tap" onClick={onOpen} style={{ all: 'unset', boxSizing: 'border-box', width: '100%', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 13, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
@@ -125,6 +126,17 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
   React.useEffect(() => {
     if (!TRAINING_ON || !uid) { setActiveTrainingPod(null); return undefined; }
     return subscribeMyTrainingPod(uid, setActiveTrainingPod);
+  }, [uid]);
+
+  // The per-user active-game signal (Entry-Flow Consolidation Phase 1) — the
+  // caller's competitive group via subscribeMyGroup, which observes a claimed
+  // slot seat through FORMING/DRAFTING/AWAITING_OPEN/BATTLE. Drives BOTH the
+  // conditional MyGameBar (no game → no bar) and the no-game slot-picker center.
+  // Fixture mode has no myGroup, so the bar simply hides there.
+  const [activeGroup, setActiveGroup] = React.useState(null);
+  React.useEffect(() => {
+    if (!uid) { setActiveGroup(null); return undefined; }
+    return subscribeMyGroup(uid, setActiveGroup);
   }, [uid]);
 
   const aLivePod = React.useMemo(
@@ -194,7 +206,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
         <div className="ld-grid ld-grid-training">
           {/* MAIN — the training surface (active-game re-entry card or cold-start) */}
           <div className="lg-scroll ld-train-main">
-            {onOpenMyGame && <MyGameBar onOpen={onOpenMyGame} />}
+            {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
             <DeskTrainingPanel
               onOpenTrainingPod={onOpenTrainingPod}
               activeTrainingPod={activeTrainingPod}
@@ -217,7 +229,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
         <div className="ld-grid">
           {/* LEFT — your group + live follows */}
           <div className="lg-scroll ld-rail-left">
-            {onOpenMyGame && <MyGameBar onOpen={onOpenMyGame} />}
+            {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
             <DeskYourGroup st={st} accent={ACCENT} onOpen={pickPod} />
             <DeskFollowRail items={st.followLive} accent={ACCENT} onSpectate={openSpectate} />
             <div style={{ marginTop: 'auto', paddingTop: 8 }}>

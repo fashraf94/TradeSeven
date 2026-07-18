@@ -42,7 +42,7 @@ const coldStart = buildLeagueState({}).state;
 const hooked = vi.hoisted(() => ({ ret: null }));
 vi.mock('../../hooks/useLeagueState', () => ({ default: () => hooked.ret }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => ({ user: null }) }));
-vi.mock('../../services/tournamentGroupService', () => ({ subscribeMyTrainingPod: () => () => {} }));
+vi.mock('../../services/tournamentGroupService', () => ({ subscribeMyGroup: () => () => {}, subscribeMyTrainingPod: () => () => {} }));
 vi.mock('../../services/leagueSignals', () => ({ logLeagueSignal: () => {} }));
 vi.mock('../../services/tournamentLobbyActions', () => ({ quickPlayTraining: () => {}, mapLobbyError: () => 'error' }));
 vi.mock('./LoadoutChooserSheet', () => ({ default: () => null }));
