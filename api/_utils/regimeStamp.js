@@ -54,6 +54,12 @@ export function shouldStampRegime({ battle, marketContext, enabled } = {}) {
   if (!enabled) return false;
   if (!battle || battle.regimeAtStart !== undefined) return false;
   if (!marketContext || typeof marketContext !== 'object') return false;
+  // /code-review fix: a doc that EXISTS but carries no regime label (partial
+  // upstream write) must not burn the write-once slot with an all-null stamp
+  // — skip and let the next tick retry, exactly like the doc-missing case.
+  // An 'unknown' regime is a real label and still stamps (recorded verbatim,
+  // never adjudicated); only a missing/non-string label skips.
+  if (typeof marketContext.regime !== 'string' || marketContext.regime.length === 0) return false;
   return true;
 }
 
@@ -78,7 +84,10 @@ export function buildRegimeAtStart(marketContext, nowIso) {
     // secondary fields ship null until a future patch pays for that read.
     drbRegime: null,
     drbForDate: null,
-    stampedAt: nowIso ?? null,
+    // Deliberately NOT null-coalesced: nowIso is required and caller-supplied;
+    // a forgotten argument should surface loudly (Firestore rejects undefined)
+    // rather than persist a silent permanent null on a write-once field.
+    stampedAt: nowIso,
     taxonomyVersion: REGIME_STAMP_TAXONOMY_VERSION,
   };
 }

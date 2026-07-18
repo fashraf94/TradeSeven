@@ -501,6 +501,16 @@ describe('agent-evaluate cron — Corpus Capture Patch W1/W2 L1 capture wiring',
     expect(source).not.toMatch(/proposal\.evaluationMetadata \|\| \{\},/);
     const synthesized = source.match(/proposal\.evaluationMetadata \|\| \{\s*\n\s*\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: null \}\)/g) || [];
     expect(synthesized.length).toBe(2);
+    // /code-review tripwire restore: the fallback syntheses must NOT absorb a
+    // §14 dial-provenance spread — the tempo-dial suite's 4-count would still
+    // pass if one migrated off an origin path into a fallback object, so pin
+    // the pairing here: every buildSwapProvenance stays on an origin path.
+    const fallbackSpans = source.split('proposal.evaluationMetadata || {').slice(1)
+      .map(s => s.slice(0, s.indexOf('},')));
+    expect(fallbackSpans.length).toBe(2);
+    for (const span of fallbackSpans) {
+      expect(span).not.toContain('buildSwapProvenance');
+    }
   });
 
   it('merge-dark contract: the expansion flag defaults FALSE; the master kill-switch stays a live founder-owned value', () => {
@@ -527,6 +537,13 @@ describe('agent-evaluate cron — Corpus Capture Patch W3 regimeAtStart wiring',
     const gates = source.match(/shouldStampRegime\(\{ battle, marketContext, enabled: REGIME_STAMP_ENABLED \}\)/g) || [];
     expect(gates.length).toBe(1);
     expect(source).toMatch(/await battleRef\.update\(\{ regimeAtStart \}\);\s*\n\s*battle\.regimeAtStart = regimeAtStart;/);
+  });
+
+  it('the evaluatingAt lock transaction refreshes regimeAtStart from its own doc read (stale-snapshot re-stamp race fix)', () => {
+    // Without this, a concurrent invocation holding a pre-stamp query
+    // snapshot passes the write-once guard and overwrites the stamp — the
+    // controlEpochLog PR-c refresh precedent, extended to the stamp field.
+    expect(source).toMatch(/battle\.regimeAtStart = data\.regimeAtStart;/);
   });
 
   it('ZERO added reads: the stamp sits after the existing marketContext assignment and adds no new indexIntelligence read', () => {

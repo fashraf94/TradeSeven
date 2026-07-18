@@ -45,6 +45,17 @@ describe('shouldStampRegime — write-once, if-absent, flag-gated', () => {
     expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: undefined, enabled: true })).toBe(false);
   });
 
+  it('a doc that EXISTS but has no regime label ⇒ skip (never burn the write-once slot on an all-null stamp)', () => {
+    // Partial upstream write: the doc object is truthy but regime is absent —
+    // stamping would permanently record nulls (write-once refuses repair).
+    expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: {}, enabled: true })).toBe(false);
+    expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { updatedAt: 'x' }, enabled: true })).toBe(false);
+    expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { regime: '' }, enabled: true })).toBe(false);
+    expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { regime: 42 }, enabled: true })).toBe(false);
+    // 'unknown' is a real upstream label — recorded verbatim, still stamps.
+    expect(shouldStampRegime({ battle: { id: 'b1' }, marketContext: { regime: 'unknown' }, enabled: true })).toBe(true);
+  });
+
   it('never throws on malformed input', () => {
     expect(() => shouldStampRegime()).not.toThrow();
     expect(shouldStampRegime()).toBe(false);

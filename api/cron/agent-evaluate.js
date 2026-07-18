@@ -454,6 +454,13 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // read here could double-log an epoch or resurrect a killed directive).
     if (data) {
       battle.controlEpochLog = data.controlEpochLog;
+      // Corpus Capture Patch W3 (/code-review fix, same rationale as the
+      // PR-c refresh above): the write-once regimeAtStart guard reads
+      // battle.regimeAtStart, but `battle` came from the run's initial query
+      // snapshot — refresh it from THIS transaction's own doc read so a
+      // stamp written between the query and the lock (another cron overlap /
+      // manual invocation) is never overwritten by a stale-snapshot re-stamp.
+      battle.regimeAtStart = data.regimeAtStart;
     }
 
     // Atomically claim the lock
@@ -1478,6 +1485,33 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
             && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
           try {
+            // /code-review fix (Fix-1 parity): a risk replacement can be a
+            // hotBench swap-in — the in-memory bench is hotBench-AUGMENTED
+            // (merge above, "Merge hotBench assets into battle bench") but
+            // allTechSymbols was built from the pre-augmentation bench, so
+            // the entry symbol may have no tech doc in the in-request maps.
+            // Refetch exactly like the autopilot site; a failed/absent
+            // refetch degrades to nulls, recorded honestly.
+            const { snapshotIn: riskSnapshotIn, techDocIn: riskTechDocIn, entrySnapshotSource: riskEntrySnapshotSource } =
+              await resolveEntrySnapshot({
+                db,
+                symbol: replacement.symbol,
+                primarySnapshotIn: snapshot.symbolIn,
+                primaryTechDoc: technicalScoresMap?.[replacement.symbol] ?? null,
+                momentumData,
+                technicalScoresMap,
+              });
+            // Entry regime: recompute from the refetched doc when the entry
+            // was not in stockRegimes (hotBench swap-in) — the :Fix-1 pattern.
+            const riskRegimeIn =
+              stockRegimes[replacement.symbol] ??
+              (riskTechDocIn ? classifyStockRegime(riskTechDocIn) : null);
+            // /code-review fix: decode the rankings doc ONCE (data() re-decodes
+            // the full doc per call) — template parity with siblingDataMode.
+            const riskRankingsData =
+              rankingsResult?.status === 'fulfilled' && rankingsResult.value?.exists
+                ? rankingsResult.value.data()
+                : null;
             await captureSwapReceipt({
               enabled: true,
               db,
@@ -1489,9 +1523,16 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
               battleId: battle.id,
               battleDay: currentDay,
               timestamp: riskSwapResult.closedTrade?.swappedOutAt || null,
-              // receiptSeq = numeric core of the trade id of record (mirrors
-              // the autopilot site; riskTradeId carries the same-tick offset).
-              receiptSeq: Number(String(evaluationMetadata.id).replace('trade_', '')) || null,
+              // /code-review fix: receiptSeq is the CONVENTION itself —
+              // scoreState.tradeCount+1 at decision time (battle.* is
+              // pre-refresh here). Deliberately NOT parsed from riskTradeId:
+              // its numeric core carries a same-tick non-hold feed-entry
+              // offset that runs AHEAD of tradeCount, which would collide
+              // with a later same-tick capture's seq in the
+              // ${agentId}_seq${n} doc-id space (silent .set() overwrite)
+              // and break the receiptSeq === tradeCountAtDecision+1
+              // invariant the preflight gate enforces.
+              receiptSeq: (battle.scoreState?.tradeCount || 0) + 1,
               symbolIn: riskSwapResult.closedTrade?.symbolIn ?? replacement.symbol,
               symbolOut: riskSwapResult.closedTrade?.symbolOut ?? score.symbol,
               source: swapSource,
@@ -1507,24 +1548,15 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
               outgoingSwappedInAt: l1RiskOutgoingPosition?.swappedInAt ?? null,
               outgoingSwappedInDay: l1RiskOutgoingPosition?.swappedInDay ?? null,
               archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
-              // Predicate snapshots already built for trades[] (:snapshot) —
-              // reuse verbatim. No refetch machinery here (that is the
-              // autopilot site's hotBench-entry hardening; risk replacements
-              // come from the same in-request maps).
-              snapshotIn: snapshot.symbolIn,
+              snapshotIn: riskSnapshotIn,
               snapshotOut: snapshot.symbolOut,
-              regimeIn: stockRegimes[replacement.symbol] ?? null,
+              entrySnapshotSource: riskEntrySnapshotSource,
+              regimeIn: riskRegimeIn,
               regimeOut: stockRegimes[score.symbol] ?? null,
-              techDocIn: technicalScoresMap?.[replacement.symbol] ?? null,
+              techDocIn: riskTechDocIn,
               techDocOut: technicalScoresMap?.[score.symbol] ?? null,
-              dataMode:
-                rankingsResult?.status === 'fulfilled' && rankingsResult.value?.exists
-                  ? (rankingsResult.value.data().mode ?? null)
-                  : null,
-              rankingsComputedAtMs:
-                rankingsResult?.status === 'fulfilled' && rankingsResult.value?.exists
-                  ? (rankingsResult.value.data().computedAt?.toMillis?.() ?? null)
-                  : null,
+              dataMode: riskRankingsData?.mode ?? null,
+              rankingsComputedAtMs: riskRankingsData?.computedAt?.toMillis?.() ?? null,
               tradeCountAtDecision: battle.scoreState?.tradeCount ?? null,
               tradesLenAtDecision: battle.trades?.length ?? null,
               capturedAt: new Date().toISOString(),
@@ -2743,12 +2775,15 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
                 battleId: battle.id,
                 battleDay: proposal.evaluationMetadata?.tradingDay ?? null,
                 timestamp: approvedSwapResult.closedTrade?.swappedOutAt || null,
-                // receiptSeq: the proposal's trade id of record; when metadata
-                // is absent (the flag-#4 case) fall back to the receiptSeq
-                // convention itself (scoreState.tradeCount+1 — battle.* is
-                // still pre-refresh decision-time state here).
-                receiptSeq: Number(String(proposal.evaluationMetadata?.id ?? '').replace('trade_', ''))
-                  || ((battle.scoreState?.tradeCount || 0) + 1),
+                // /code-review fix: receiptSeq is the CONVENTION itself —
+                // scoreState.tradeCount+1 at EXECUTION time (battle.* is
+                // pre-refresh here). Deliberately NOT parsed from the
+                // proposal's evaluationMetadata.id: that id was minted at
+                // proposal CREATION (up to a TTL earlier), so any swap
+                // executed during pendency makes it stale and its seq would
+                // collide with an already-written receipt in the
+                // ${agentId}_seq${n} doc-id space (silent .set() overwrite).
+                receiptSeq: (battle.scoreState?.tradeCount || 0) + 1,
                 symbolIn: approvedSwapResult.closedTrade?.symbolIn ?? proposal.symbolIn,
                 symbolOut: approvedSwapResult.closedTrade?.symbolOut ?? proposal.symbolOut,
                 source: 'haiku',
@@ -2914,10 +2949,10 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               battleId: battle.id,
               battleDay: proposal.evaluationMetadata?.tradingDay ?? null,
               timestamp: expiredSwapResult.closedTrade?.swappedOutAt || null,
-              // receiptSeq: metadata id of record, else the convention itself
-              // (scoreState.tradeCount+1 — battle.* still pre-refresh here).
-              receiptSeq: Number(String(proposal.evaluationMetadata?.id ?? '').replace('trade_', ''))
-                || ((battle.scoreState?.tradeCount || 0) + 1),
+              // /code-review fix: receiptSeq = scoreState.tradeCount+1 at
+              // EXECUTION time, never the stale creation-time metadata id
+              // (same collision rationale as the 'approved' branch above).
+              receiptSeq: (battle.scoreState?.tradeCount || 0) + 1,
               symbolIn: expiredSwapResult.closedTrade?.symbolIn ?? proposal.symbolIn,
               symbolOut: expiredSwapResult.closedTrade?.symbolOut ?? proposal.symbolOut,
               source: 'haiku',
@@ -3098,7 +3133,11 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
               battleId: battle.id,
               battleDay: currentDay,
               timestamp: gameplanSwapResult.closedTrade?.swappedOutAt || null,
-              receiptSeq: Number(String(tradeId).replace('trade_', '')) || null,
+              // /code-review fix: the convention directly (tradeId here is
+              // minted as tradeCount+1 so the values agree — using the
+              // convention keeps all new sites uniform and immune to trade-id
+              // format drift).
+              receiptSeq: (battle.scoreState?.tradeCount || 0) + 1,
               symbolIn: gameplanSwapResult.closedTrade?.symbolIn ?? swap.symbolIn,
               symbolOut: gameplanSwapResult.closedTrade?.symbolOut ?? swap.symbolOut,
               source: 'gameplan_meeting',
