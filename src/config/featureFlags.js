@@ -257,7 +257,7 @@ export const LEAGUE_TRAINING_CLIMB_PREVIEW_ENABLED = true;
  * build PR (the PR #510 / LEAGUE_NEXT_ARC_ENABLED precedent) — flip only after
  * a Vercel preview smoke.
  */
-export const LEAGUE_CANONICAL_OPEN_CAPTURE = false;
+export const LEAGUE_CANONICAL_OPEN_CAPTURE = true;
 
 /**
  * League — Competitive Live Draft (slot lobbies). The interactive live draft
@@ -513,7 +513,7 @@ export const TEMPO_DIAL_ENABLED = true;
  * line verbatim; what changed is that its output no longer REACHES a prompt
  * (master spec §3.6, founder-accepted).
  */
-export const ARCHETYPE_INTEGRITY_MODE = 'observe';
+export const ARCHETYPE_INTEGRITY_MODE = 'enforce';
 
 /**
  * Release 2 PR-e — the sector-SLOT rule: tri-state rollout mode.
@@ -552,7 +552,7 @@ export const ARCHETYPE_INTEGRITY_MODE = 'observe';
  * founder-executed — never in a build PR (the PR #510 lesson). See
  * api/_utils/agentGuardrails.js (the sector-SLOT rule block).
  */
-export const SECTOR_CAP_MODE = 'off';
+export const SECTOR_CAP_MODE = 'true';
 
 /**
  * WS1 — Rule-library archetype scoping: tri-state rollout mode.
