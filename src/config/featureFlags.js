@@ -755,23 +755,69 @@ export const CORRELATION_NARRATION_ENABLED = true;
  * DARK-INERT: nothing user-visible, nothing reaching the trading brain, no
  * scoring change. Architecture V1.3 (FROZEN).
  *
- * When FALSE (default, and the value at merge), the capture path is a strict
- * NO-OP: the swap-execution site in api/cron/agent-evaluate.js never builds a
- * receipt, never touches Firestore, and adds ZERO latency to the decision path
- * (the call is behind a plain `if (LEARNING_L1_CAPTURE_ENABLED)` guard, so the
- * branch is never entered). The decision path is byte-identical to before this
- * build.
+ * When FALSE, the capture path is a strict NO-OP: the swap-execution sites in
+ * api/cron/agent-evaluate.js never build a receipt, never touch Firestore, and
+ * add ZERO latency to the decision path (every call is behind a plain
+ * `if (LEARNING_L1_CAPTURE_ENABLED ...)` guard, so the branch is never
+ * entered). The decision path is byte-identical to pre-L1 behavior.
  *
- * When TRUE (a preview-only experiment; NEVER flipped in a build PR), each
- * executed autopilot swap emits a RAW receipt to learningReceipts/{battleId}/
- * receipts/{receiptId} via the Admin SDK — raw fields only, no derived metric,
- * no classification, no scoring. All four learning collections are server-write-
- * only (firestore.rules), so the receipt can only be written server-side.
+ * When TRUE, each executed swap at a flag-enabled capture site emits a RAW
+ * receipt to learningReceipts/{battleId}/receipts/{receiptId} via the Admin
+ * SDK — raw fields only, no derived metric, no classification, no scoring. All
+ * four learning collections are server-write-only (firestore.rules), so the
+ * receipt can only be written server-side.
+ *
+ * LIVE-STATE PROVENANCE (Corpus Capture Patch Phase 0b, corrects a stale
+ * comment): flipped false → true in the deliberate founder flip PR #600
+ * (commit 400423d8, merged 873d4791, 2026-07-12 — flags-only diff, the
+ * CORRELATION_SYNTHESIS precedent). Capture at the original autopilot site is
+ * LIVE. Founder ruling (Phase 1 greenlight memo, July 21 2026): the flag stays
+ * TRUE — a reset inside a build PR would itself be a flag flip in a build PR,
+ * and would open a corpus gap in the only class currently captured. The three
+ * W2 expansion classes are additionally gated by
+ * LEARNING_L1_CAPTURE_EXPANSION_ENABLED below (false until its own flip PR).
  *
  * This flag gates capture ONLY. No dossier/atom writer ships in L1 (Signal
- * Capture Rider §5: capture only, pre-launch). Flip is a Phase-B concern.
+ * Capture Rider §5: capture only, pre-launch).
  */
 export const LEARNING_L1_CAPTURE_ENABLED = true;
+
+/**
+ * Corpus Capture Patch W2 — L1 capture EXPANSION to the three swap classes
+ * beyond the original autopilot site: risk-manager executed swaps (incl.
+ * stagnation forced rotation), gameplan-meeting rotations, and co-pilot
+ * proposal execution (approved AND expired-auto-exec — 4 physical sites).
+ *
+ * AND-gated with the master kill-switch at every new site:
+ *   LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
+ *     && classifyEvidence(...) === 'live_agent'
+ * The master switch still kills everything; this flag only widens CLASS
+ * coverage, and has no effect on the original autopilot site.
+ *
+ * FALSE at merge (founder ruling, Phase 1 greenlight memo July 21 2026):
+ * merge dark → preview smoke → deliberate flip PR, flipped together with
+ * REGIME_STAMP_ENABLED. The flip date is the corpus E2 full-coverage boundary
+ * recorded in that flip PR.
+ */
+export const LEARNING_L1_CAPTURE_EXPANSION_ENABLED = false;
+
+/**
+ * Corpus Capture Patch W3 — write-once `regimeAtStart` stamp on agentBattles
+ * docs, applied at each battle's FIRST evaluation tick (never overwritten).
+ *
+ * Stamps the market-level regime (bull|correction|bear|recovery) from the
+ * indexIntelligence/marketContext doc the evaluator ALREADY loads per battle —
+ * zero added Firestore reads. Unblocks T3 (regime-conditional) learning and
+ * trial conditioning, forward-only from the flip date (Discovery A3 / P1
+ * flag #1: the regime source docs are overwrite-in-place singletons, so
+ * "regime during battle X" is unrecoverable retroactively).
+ *
+ * FALSE at merge (Build Spec §5.6): merge dark → preview smoke → deliberate
+ * flip PR, flipped together with LEARNING_L1_CAPTURE_EXPANSION_ENABLED above.
+ * When FALSE: no battle doc is touched, no stamp field exists — prior
+ * behavior exactly. Already-stamped docs are inert data either way.
+ */
+export const REGIME_STAMP_ENABLED = false;
 
 /**
  * BaggerBomb opener — lazy regeneration + template floor.

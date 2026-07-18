@@ -27,6 +27,16 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join, relative, sep } from 'node:path';
+// Corpus Capture Patch — §4 dependency-surface guard: this import of the REAL
+// flags module is the runtime guard for agent-evaluate.js's own featureFlags
+// import (it explodes in the Node test env if a browser dep ever enters that
+// graph) — it must NEVER be mocked. It also pins the merge-dark contract in
+// the W1/W2 suite below.
+import {
+  LEARNING_L1_CAPTURE_ENABLED,
+  LEARNING_L1_CAPTURE_EXPANSION_ENABLED,
+  REGIME_STAMP_ENABLED,
+} from '../../src/config/featureFlags.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SOURCE_PATH = resolve(__dirname, 'agent-evaluate.js');
@@ -404,9 +414,17 @@ describe('agent-evaluate cron — Knob §4.6 receipt source wiring (Gate 7)', ()
     expect(source).toMatch(/import\s*\{[^}]*\bbuildSwapReceiptSource\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
   });
 
-  it('stamps the receipt source at all 4 swap origin paths (spread into evaluationMetadata)', () => {
+  it('stamps the receipt source at all 4 swap origin paths (spread into evaluationMetadata) + the 2 flag-#4 fallback syntheses', () => {
+    // Corpus Capture Patch W2 raised the total from 4 → 6: the 4 origin-path
+    // metadata spreads are unchanged, and the two proposal-execution fallbacks
+    // (approved + expired) now synthesize minimal provenance via the SAME
+    // fenced helper instead of passing a bare {} (founder-approved flag-#4
+    // hardening — a metadata-less proposal must never persist a sourceless
+    // swap). The synthesis spelling is pinned by the W1/W2 suite below.
     const spreads = source.match(/\.\.\.buildSwapReceiptSource\(\{/g) || [];
-    expect(spreads.length).toBe(4);
+    expect(spreads.length).toBe(6);
+    const fallbackSyntheses = source.match(/\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: null \}\)/g) || [];
+    expect(fallbackSyntheses.length).toBe(2); // 6 − 2 = the 4 origin paths, untouched
   });
 
   it('Path A (risk loop): source = archetype for stagnation, else risk_manager (mirrors statusFeed)', () => {
@@ -424,6 +442,202 @@ describe('agent-evaluate cron — Knob §4.6 receipt source wiring (Gate 7)', ()
 
   it('Path D (gameplan, dormant): source = gameplan_meeting (archetype off battle.agentContext — ctx not in scope in handleGameplanMeeting)', () => {
     expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: 'gameplan_meeting', archetype: battle\.agentContext\?\.archetype \}\)/);
+  });
+});
+
+// Corpus Capture Patch (W1 + W2) — L1 capture coverage guards. Same
+// static-source posture as the suites above (the handler is not decomposed for
+// behavioral testing; behavioral load lives on captureSwapReceipt's own unit
+// tests). These guard the wiring the patch exists for: every swap-execution
+// class captures, every capture carries archetype, the expansion stays dark
+// until its flip PR, and no proposal path can persist a sourceless swap.
+describe('agent-evaluate cron — Corpus Capture Patch W1/W2 L1 capture wiring', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+  // The capture-call spans: text from each `captureSwapReceipt({` to its
+  // closing `});` — enough to assert per-site fields without executing.
+  const captureBlocks = source.split('await captureSwapReceipt({').slice(1).map(s => s.slice(0, s.indexOf('});')));
+
+  it('all FIVE swap-execution sites invoke captureSwapReceipt (4 executeSwapServer classes; the proposal class has two execution points)', () => {
+    expect(captureBlocks.length).toBe(5);
+    // One capture per executeSwapServer call — no swap class is left out.
+    const swaps = source.match(/await executeSwapServer\(/g) || [];
+    expect(swaps.length).toBe(5);
+  });
+
+  it('every capture call threads archetype from the battle-creation-frozen agentContext (never the mutable agent scalar)', () => {
+    for (const [i, block] of captureBlocks.entries()) {
+      expect(
+        /archetype: (ctx\.archetype|battle\.agentContext\?\.archetype) \?\? null/.test(block),
+        `capture site #${i + 1} missing archetype thread`
+      ).toBe(true);
+    }
+    expect(source).not.toMatch(/archetype: agent\.archetype/);
+  });
+
+  it('the 4 NEW sites are triple-gated (master && expansion && live_agent); the original autopilot site keeps its master-only gate', () => {
+    const tripleGates = source.match(/LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED\s*\n\s*&& classifyEvidence\(/g) || [];
+    expect(tripleGates.length).toBe(4);
+    const masterOnlyGates = source.match(/LEARNING_L1_CAPTURE_ENABLED && classifyEvidence\(/g) || [];
+    expect(masterOnlyGates.length).toBe(1);
+  });
+
+  it('each new class stamps its own source/exitReason pair (enum members — the fail-closed validator would drop anything else)', () => {
+    const joined = captureBlocks.join('\n');
+    // risk-manager class: swapSource ('archetype'|'risk_manager') + riskResult.reason
+    expect(joined).toMatch(/source: swapSource,\s*\n\s*exitReason: riskResult\.reason,/);
+    // gameplan class
+    expect(joined).toMatch(/source: 'gameplan_meeting',\s*\n\s*exitReason: 'gameplan_rotation',/);
+    // proposal class ×2 (approved + expired): source haiku, exitReason from metadata
+    const proposalPairs = joined.match(/source: 'haiku',\s*\n\s*exitReason: proposal\.evaluationMetadata\?\.exitReason \?\? 'haiku_decision',/g) || [];
+    expect(proposalPairs.length).toBe(2);
+  });
+
+  it('every capture is post-commit and isolated: inside a try/catch that logs and swallows (trade unaffected)', () => {
+    const isolations = source.match(/L1 capture threw \(ignored, trade unaffected\)/g) || [];
+    expect(isolations.length).toBe(5);
+  });
+
+  it('flag #4 hardening (#5 per-key merge): both proposal metadata fallbacks synthesize the floor then let present keys override — no truthy-{} bypass', () => {
+    // #5 (adversarial review): a whole-object `|| {}` fallback is bypassed by a
+    // truthy empty/partial metadata object. The fix spreads the synthesized
+    // floor FIRST and merges `...(proposal.evaluationMetadata || {})` LAST.
+    expect(source).not.toMatch(/proposal\.evaluationMetadata \|\| \{\},/); // no whole-object fallback
+    const floors = source.match(/\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: null \}\)/g) || [];
+    expect(floors.length).toBe(2); // the two proposal-execution fallbacks (archetype:null variant)
+    const mergeTails = source.match(/\.\.\.\(proposal\.evaluationMetadata \|\| \{\}\),/g) || [];
+    expect(mergeTails.length).toBe(2); // present keys override the floor at both sites
+    // Tripwire restore: the fallback objects must NOT absorb a §14 dial-
+    // provenance spread (the tempo-dial suite's 4-count would otherwise still
+    // pass if one migrated off an origin path into a fallback object). Each
+    // merged fallback spans from its floor spread to its merge tail.
+    const spans = source.split(/\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: null \}\)/).slice(1)
+      .map(s => s.slice(0, s.indexOf('...(proposal.evaluationMetadata || {}),')));
+    expect(spans.length).toBe(2);
+    for (const span of spans) {
+      expect(span).not.toContain('buildSwapProvenance');
+    }
+  });
+
+  it('merge-dark contract: the expansion flag defaults FALSE; the master kill-switch stays a live founder-owned value', () => {
+    // Founder ruling (Phase 1 greenlight memo, July 21 2026): expansion ships
+    // dark and flips in its own PR; the master flag is NOT reset in this patch.
+    expect(LEARNING_L1_CAPTURE_EXPANSION_ENABLED).toBe(false);
+    expect(typeof LEARNING_L1_CAPTURE_ENABLED).toBe('boolean');
+  });
+});
+
+// Corpus Capture Patch W3 — regimeAtStart stamp wiring guards. Behavioral load
+// (write-once / flag-off / shape / staleness semantics) lives on the pure
+// helpers' own unit tests (api/_utils/regimeStamp.test.js); these pin the cron
+// wiring: gated call, write-once field, zero added reads, in-memory mirror.
+describe('agent-evaluate cron — Corpus Capture Patch W3 regimeAtStart wiring', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports the pure helpers and the flag', () => {
+    expect(source).toMatch(/import\s*\{\s*shouldStampRegime,\s*buildRegimeAtStart\s*\}\s*from\s*'\.\.\/_utils\/regimeStamp\.js'/);
+    expect(source).toMatch(/\bREGIME_STAMP_ENABLED\b[^]*?from '\.\.\/\.\.\/src\/config\/featureFlags\.js'/);
+  });
+
+  it('#2: stamps write-once ATOMICALLY inside one transaction (re-check at write time), mirror only when won', () => {
+    const gates = source.match(/shouldStampRegime\(\{ battle, marketContext, enabled: REGIME_STAMP_ENABLED \}\)/g) || [];
+    expect(gates.length).toBe(1); // pre-filter kept
+    // The write-once check and the write are co-transactional — the prior
+    // guarded-read-then-separate-update raced under lock expiry (120s TTL <
+    // 290s budget). The old non-atomic literal must be GONE.
+    expect(source).not.toMatch(/await battleRef\.update\(\{ regimeAtStart \}\);\s*\n\s*battle\.regimeAtStart = regimeAtStart;/);
+    expect(source).toMatch(/const stamped = await db\.runTransaction\(async \(t\) => \{/);
+    expect(source).toMatch(/if \(!d\.exists \|\| d\.data\(\)\?\.regimeAtStart !== undefined\) return false;/);
+    expect(source).toMatch(/t\.update\(battleRef, \{ regimeAtStart \}\);/);
+    expect(source).toMatch(/if \(stamped\) battle\.regimeAtStart = regimeAtStart;/); // mirror only on win
+  });
+
+  it('the evaluatingAt lock transaction refreshes regimeAtStart from its own doc read (stale-snapshot re-stamp race fix)', () => {
+    // Without this, a concurrent invocation holding a pre-stamp query
+    // snapshot passes the write-once guard and overwrites the stamp — the
+    // controlEpochLog PR-c refresh precedent, extended to the stamp field.
+    expect(source).toMatch(/battle\.regimeAtStart = data\.regimeAtStart;/);
+  });
+
+  it('ZERO added reads: the stamp sits after the existing marketContext assignment and adds no new indexIntelligence read', () => {
+    // The stamp must consume the doc loaded by the existing parallel batch —
+    // exactly two indexIntelligence doc refs existed before this patch
+    // (marketContext + SPY in the getAll) plus the stockRankings get; the
+    // stamp adds none.
+    const mcReads = source.match(/collection\('indexIntelligence'\)/g) || [];
+    expect(mcReads.length).toBe(3); // stockRankings + marketContext + SPY — unchanged
+    // Ordering: assignment from the fetched doc precedes the stamp block.
+    const assignIdx = source.indexOf('if (mcDoc.exists) marketContext = mcDoc.data();');
+    const stampIdx = source.indexOf('shouldStampRegime({ battle, marketContext, enabled: REGIME_STAMP_ENABLED })');
+    expect(assignIdx).toBeGreaterThan(-1);
+    expect(stampIdx).toBeGreaterThan(assignIdx);
+  });
+
+  it('a stamp failure is isolated — logged and swallowed, never breaking the evaluation pass', () => {
+    expect(source).toMatch(/regimeAtStart stamp failed \(ignored, evaluation unaffected\)/);
+  });
+
+  it('merge-dark contract: REGIME_STAMP_ENABLED defaults FALSE (flips later with the expansion flag, per founder ruling)', () => {
+    expect(REGIME_STAMP_ENABLED).toBe(false);
+  });
+});
+
+// Corpus Capture Patch — adversarial-review consolidated fix pass. Static-source
+// guards for the wiring the review confirmed (#3 ordering, #8 entryAtrSource,
+// #9 predicate-instant, #10 ctx-alias). Behavioral load lives on the learning-
+// layer unit tests; these pin the cron-side wiring that has no behavioral seam.
+describe('agent-evaluate cron — adversarial-review fixes (#3/#8/#9/#10)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('#3: both single-swap proposal sites clear pendingProposal BEFORE the capture await (inside the flag guard)', () => {
+    // A field-only clear `battleRef.update({ pendingProposal: null })` (distinct
+    // from the shared `{ pendingProposal: null, proposalHistory: history }`
+    // backstop) precedes each proposal capture — so a hard timeout during
+    // capture cannot leave the proposal re-executable.
+    const preClears = source.match(/await battleRef\.update\(\{ pendingProposal: null \}\);/g) || [];
+    expect(preClears.length).toBe(2); // approved + expired
+    // Ordering per site: each pre-clear precedes a captureSwapReceipt call.
+    for (const seg of source.split('await battleRef.update({ pendingProposal: null });').slice(1)) {
+      const nextCapture = seg.indexOf('await captureSwapReceipt({');
+      const nextClose = seg.indexOf('return ');
+      expect(nextCapture).toBeGreaterThan(-1);
+      // the capture appears before the next branch return (i.e. in the same block)
+      expect(nextClose === -1 || nextCapture < nextClose).toBe(true);
+    }
+  });
+
+  it('#8: entryATR provenance is classified (not omitted) at all four new sites via the shared classifier', () => {
+    // classifyEntryAtrSource is applied per site (never hand-rolled); each new
+    // capture passes entryAtrSource. 4 new sites use `entryAtrSource:` (the
+    // autopilot site uses the shorthand `entryAtrSource,`).
+    const perSite = source.match(/entryAtrSource: \w+EntryAtrSource,/g) || [];
+    expect(perSite.length).toBe(4); // risk, approved, expired, gameplan
+    const classifierCalls = source.match(/classifyEntryAtrSource\(\{/g) || [];
+    expect(classifierCalls.length).toBe(5); // 4 new + 1 autopilot
+  });
+
+  it('#9: both proposal captures pass decisionAtMs = proposal.createdAt (predicate instant ≠ execution timestamp)', () => {
+    const overrides = source.match(/decisionAtMs: proposal\.createdAt \?\? null,/g) || [];
+    expect(overrides.length).toBe(2);
+    // receipt.timestamp stays the execution instant at both proposal sites.
+    expect(source).toMatch(/timestamp: approvedSwapResult\.closedTrade\?\.swappedOutAt \|\| null,/);
+    expect(source).toMatch(/timestamp: expiredSwapResult\.closedTrade\?\.swappedOutAt \|\| null,/);
+  });
+
+  it('#10: ctx is the sole, never-rebound battle.agentContext alias (identity cannot silently re-point)', () => {
+    const decls = source.match(/const ctx = battle\.agentContext \|\| \{\};/g) || [];
+    expect(decls.length).toBe(1);            // single declaration…
+    expect(source).not.toMatch(/\b(let|var) ctx\b/); // …and it's a const (cannot be rebound)
+    expect(source).not.toMatch(/ctx\.archetype\s*=(?!=)/);       // no `ctx.archetype = …` mutation
+    expect(source).not.toMatch(/Object\.assign\(ctx\b/);         // no bulk mutation of the alias
+    expect(source).not.toMatch(/battle\.agentContext\s*=[^=]/);  // frozen object/field never overwritten
+    expect(source).not.toMatch(/archetype: agent\.archetype/);   // never the mutable scalar
+  });
+
+  it('#10: the five capture archetype reads resolve to the same frozen field (2 ctx + 3 battle.agentContext)', () => {
+    const ctxReads = source.match(/archetype: ctx\.archetype \?\? null/g) || [];
+    const battleReads = source.match(/archetype: battle\.agentContext\?\.archetype \?\? null/g) || [];
+    expect(ctxReads.length).toBe(2);   // risk + autopilot (processAgentBattle scope)
+    expect(battleReads.length).toBe(3); // approved + expired + gameplan (ctx out of scope)
   });
 });
 
@@ -692,11 +906,16 @@ describe('agent-evaluate cron — Release 2 tempo-dial wiring (structural)', () 
     expect(source).not.toMatch(/\.dials\b/);
   });
 
-  it('stamps the §14 provenance SIBLING at all 4 swap origin paths — receipt spreads still exactly 4 and untouched', () => {
+  it('stamps the §14 provenance SIBLING at all 4 swap origin paths — origin-path receipt spreads untouched', () => {
     const provenanceSpreads = source.match(/\.\.\.buildSwapProvenance\(/g) || [];
     expect(provenanceSpreads.length).toBe(4);
+    // Corpus Capture Patch W2: total receiptSource spreads are now 6 (4 origin
+    // paths + 2 flag-#4 fallback syntheses — see the Gate-7 test). The dial
+    // provenance sibling deliberately does NOT ride the fallback syntheses
+    // (they are metadata-absent emergency shims, not dial-resolved decisions),
+    // so its count stays 4.
     const receiptSpreads = source.match(/\.\.\.buildSwapReceiptSource\(\{/g) || [];
-    expect(receiptSpreads.length).toBe(4); // the Gate-7 count, unchanged
+    expect(receiptSpreads.length).toBe(6);
   });
 
   it('the epoch telemetry event carries the clamp provenance (desired-vs-effective rides the same record)', () => {

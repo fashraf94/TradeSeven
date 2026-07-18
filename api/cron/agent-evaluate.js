@@ -69,7 +69,10 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED } from '../../src/config/featureFlags.js';
+// Corpus Capture Patch W3 — pure regimeAtStart stamp helpers (write-once /
+// flag / shape semantics live there so they are behaviorally unit-testable).
+import { shouldStampRegime, buildRegimeAtStart } from '../_utils/regimeStamp.js';
 // Agent Learning System L1 — raw capture (DARK behind LEARNING_L1_CAPTURE_ENABLED,
 // false at merge). captureSwapReceipt is a strict no-op when the flag is off.
 import { captureSwapReceipt, resolveEntrySnapshot, classifyEntryAtrSource, classifyEvidence } from '../_utils/learning/captureReceipt.js';
@@ -451,6 +454,13 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // read here could double-log an epoch or resurrect a killed directive).
     if (data) {
       battle.controlEpochLog = data.controlEpochLog;
+      // Corpus Capture Patch W3 (/code-review fix, same rationale as the
+      // PR-c refresh above): the write-once regimeAtStart guard reads
+      // battle.regimeAtStart, but `battle` came from the run's initial query
+      // snapshot — refresh it from THIS transaction's own doc read so a
+      // stamp written between the query and the lock (another cron overlap /
+      // manual invocation) is never overwritten by a stale-snapshot re-stamp.
+      battle.regimeAtStart = data.regimeAtStart;
     }
 
     // Atomically claim the lock
@@ -955,6 +965,43 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       if (spyDoc.exists) spyData = spyDoc.data();
     }
 
+    // Corpus Capture Patch W3 — regimeAtStart stamp (DARK behind
+    // REGIME_STAMP_ENABLED, false at merge). Write-once, if-absent, at the
+    // battle's FIRST evaluation tick: reuses the marketContext doc loaded in
+    // the parallel batch above (ZERO added reads; doc-missing ⇒ skip, next
+    // tick retries). Staleness/'unknown' are recorded, never adjudicated.
+    // In-memory mirror follows the migration-fields precedent so later code
+    // this tick sees the stamped doc state. A stamp failure is logged and
+    // swallowed — it must never break the evaluation pass.
+    // shouldStampRegime is a cheap PRE-FILTER (flag / marketContext / regime /
+    // updatedAt) on the in-memory doc; the AUTHORITATIVE write-once guard is the
+    // in-transaction battle-doc read below.
+    if (shouldStampRegime({ battle, marketContext, enabled: REGIME_STAMP_ENABLED })) {
+      try {
+        const regimeAtStart = buildRegimeAtStart(marketContext, new Date().toISOString());
+        // #2 (adversarial review): ATOMIC write-once. The prior guarded-read-
+        // then-separate-update raced under lock EXPIRY — EVALUATING_LOCK_TIMEOUT_MS
+        // (120s) < TIME_BUDGET_MS (290s), so an invocation can still be alive when
+        // another steals its expired lock; both then read regimeAtStart===undefined
+        // (in-memory) and both write, clobbering the write-once field. Re-check the
+        // field AT write time inside one transaction so only the first committer
+        // wins. Reads ONLY battleRef (marketContext is already in hand — zero added
+        // regime-source reads); buildRegimeAtStart is pure so it is computed outside
+        // the txn (no recompute on auto-retry).
+        const stamped = await db.runTransaction(async (t) => {
+          const d = await t.get(battleRef);
+          // Skip if the doc vanished (t.update would throw NOT_FOUND) or is
+          // already stamped — never overwrite the write-once field.
+          if (!d.exists || d.data()?.regimeAtStart !== undefined) return false;
+          t.update(battleRef, { regimeAtStart });
+          return true;
+        });
+        if (stamped) battle.regimeAtStart = regimeAtStart; // mirror only when we won
+      } catch (stampErr) {
+        console.error(`${LOG_PREFIX} regimeAtStart stamp failed (ignored, evaluation unaffected): ${stampErr?.message}`);
+      }
+    }
+
     // ---- Regime classification ----
     const marketPosture = (marketContext && spyData)
       ? classifyMarketPosture(marketContext, spyData)
@@ -1385,6 +1432,14 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         }
         if (tournamentCtx) reservedSymbolIn = replacement.symbol;
 
+        // Corpus Capture Patch W2 — snapshot the outgoing position BEFORE
+        // executeSwapServer closes it (entry timestamps live only on the
+        // pre-swap position; mirrors the autopilot site's l1OutgoingPosition).
+        // A single null assignment when the expansion is dark.
+        const l1RiskOutgoingPosition = LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
+          ? (battle.portfolio?.[slot.tier]?.[slot.slotIndex] || null)
+          : null;
+
         const riskSwapResult = await executeSwapServer(
           db, battle.id, battle,
           slot.tier, slot.slotIndex,
@@ -1438,6 +1493,108 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         // otherwise be overwritten by these working copies).
         vwapTicks[replacement.symbol] = 0;
         stagnationTicks[replacement.symbol] = 0;
+
+        // Corpus Capture Patch W2 — L1 capture, risk-manager class (incl.
+        // stagnation forced rotation). Copies the autopilot site's posture
+        // exactly: post-commit (swap already persisted above), triple-gated
+        // (master && expansion && live_agent), awaited fail-closed write inside
+        // a dedicated try/catch that can never break the executed trade. Runs
+        // BEFORE refreshBattleFromDoc so battle.* still holds decision-time
+        // state (tradeCount, trades.length, thresholdHistory).
+        if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
+            && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
+          try {
+            // /code-review fix (Fix-1 parity): a risk replacement can be a
+            // hotBench swap-in — the in-memory bench is hotBench-AUGMENTED
+            // (merge above, "Merge hotBench assets into battle bench") but
+            // allTechSymbols was built from the pre-augmentation bench, so
+            // the entry symbol may have no tech doc in the in-request maps.
+            // Refetch exactly like the autopilot site; a failed/absent
+            // refetch degrades to nulls, recorded honestly.
+            const { snapshotIn: riskSnapshotIn, techDocIn: riskTechDocIn, entrySnapshotSource: riskEntrySnapshotSource } =
+              await resolveEntrySnapshot({
+                db,
+                symbol: replacement.symbol,
+                primarySnapshotIn: snapshot.symbolIn,
+                primaryTechDoc: technicalScoresMap?.[replacement.symbol] ?? null,
+                momentumData,
+                technicalScoresMap,
+              });
+            // Entry regime: recompute from the refetched doc when the entry
+            // was not in stockRegimes (hotBench swap-in) — the :Fix-1 pattern.
+            const riskRegimeIn =
+              stockRegimes[replacement.symbol] ??
+              (riskTechDocIn ? classifyStockRegime(riskTechDocIn) : null);
+            // /code-review fix: decode the rankings doc ONCE (data() re-decodes
+            // the full doc per call) — template parity with siblingDataMode.
+            const riskRankingsData =
+              rankingsResult?.status === 'fulfilled' && rankingsResult.value?.exists
+                ? rankingsResult.value.data()
+                : null;
+            // #8 (adversarial review): entryATR provenance via the SAME classifier
+            // the autopilot site uses (never hand-rolled). Inputs are in scope —
+            // `replacement` is the swap-in candidate handed to executeSwapServer.
+            const riskEntryATR = riskSwapResult.incomingAsset?.baseATR ?? null;
+            const riskEntryAtrSource = classifyEntryAtrSource({
+              entryATR: riskEntryATR,
+              scoredThreshold: battle.scoring?.thresholds?.[replacement.symbol]?.threshold,
+              benchBaseATR: replacement?.baseATR,
+              isCrypto: replacement?.isCrypto,
+            });
+            await captureSwapReceipt({
+              enabled: true,
+              db,
+              agentId: battle.agentId,
+              // W1 — archetype identity from the battle-creation-frozen
+              // agentContext. Absent ⇒ null, never 'unknown'.
+              archetype: ctx.archetype ?? null,
+              isCpu: battle.isCpu,
+              battleId: battle.id,
+              battleDay: currentDay,
+              timestamp: riskSwapResult.closedTrade?.swappedOutAt || null,
+              // /code-review fix: receiptSeq is the CONVENTION itself —
+              // scoreState.tradeCount+1 at decision time (battle.* is
+              // pre-refresh here). Deliberately NOT parsed from riskTradeId:
+              // its numeric core carries a same-tick non-hold feed-entry
+              // offset that runs AHEAD of tradeCount, which would collide
+              // with a later same-tick capture's seq in the
+              // ${agentId}_seq${n} doc-id space (silent .set() overwrite)
+              // and break the receiptSeq === tradeCountAtDecision+1
+              // invariant the preflight gate enforces.
+              receiptSeq: (battle.scoreState?.tradeCount || 0) + 1,
+              symbolIn: riskSwapResult.closedTrade?.symbolIn ?? replacement.symbol,
+              symbolOut: riskSwapResult.closedTrade?.symbolOut ?? score.symbol,
+              source: swapSource,
+              exitReason: riskResult.reason,
+              haikuSwapReason: null, // not a Haiku path
+              resolvedTier: slot.tier,
+              resolvedSlotIndex: slot.slotIndex,
+              entryMark: riskSwapResult.incomingAsset?.swapPrice ?? null,
+              entryATR: riskEntryATR,
+              entryAtrSource: riskEntryAtrSource, // #8 — provenance, not a second value
+              outgoingEntryPrice: riskSwapResult.closedTrade?.entryPrice ?? null,
+              outgoingBaseATR: score.baseATR ?? null,
+              thresholdHistory: battle.thresholdHistory?.[score.symbol] ?? null,
+              outgoingSwappedInAt: l1RiskOutgoingPosition?.swappedInAt ?? null,
+              outgoingSwappedInDay: l1RiskOutgoingPosition?.swappedInDay ?? null,
+              archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+              snapshotIn: riskSnapshotIn,
+              snapshotOut: snapshot.symbolOut,
+              entrySnapshotSource: riskEntrySnapshotSource,
+              regimeIn: riskRegimeIn,
+              regimeOut: stockRegimes[score.symbol] ?? null,
+              techDocIn: riskTechDocIn,
+              techDocOut: technicalScoresMap?.[score.symbol] ?? null,
+              dataMode: riskRankingsData?.mode ?? null,
+              rankingsComputedAtMs: riskRankingsData?.computedAt?.toMillis?.() ?? null,
+              tradeCountAtDecision: battle.scoreState?.tradeCount ?? null,
+              tradesLenAtDecision: battle.trades?.length ?? null,
+              capturedAt: new Date().toISOString(),
+            });
+          } catch (l1Err) {
+            console.error(`${LOG_PREFIX} L1 capture threw (ignored, trade unaffected): ${l1Err?.message}`);
+          }
+        }
 
         // Re-read battle doc after swap for accurate state in subsequent
         // processing (re-applies the tournament candidate filter — the
@@ -2023,6 +2180,11 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
                   enabled: true,
                   db,
                   agentId: battle.agentId,
+                  // W1 (Corpus Capture Patch) — archetype identity from the
+                  // battle-creation-frozen agentContext (never the mutable
+                  // agent scalar). Absent ⇒ null, never a synthesized
+                  // 'unknown' (founder ruling July 21 2026).
+                  archetype: ctx.archetype ?? null,
                   // Fix 1/2 — evidence-provenance inputs. captureSwapReceipt
                   // re-derives evidenceClass from these and applies the same guard
                   // defensively before buildRawReceipt, then stamps it on the receipt.
@@ -2591,11 +2753,31 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           // [VWAP Floor B1b] Also dormant: the in-memory counter reset done at
           // the live swap sites is skipped here (maps live in processAgentBattle
           // scope); the tick-start prune covers this path by the next tick.
+          // Corpus Capture Patch W2 — snapshot the outgoing position BEFORE
+          // the swap closes it (mirrors the autopilot site).
+          const l1ApprovedOutgoingPosition = LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
+            ? (battle.portfolio?.[proposal.tier]?.[proposal.slotIndex] || null)
+            : null;
           const approvedSwapResult = await executeSwapServer(
             db, battle.id, battle,
             proposal.tier, proposal.slotIndex,
             benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
-            freshPrices, proposal.evaluationMetadata || {},
+            // Corpus Capture Patch W2 (P2 flag #4 hardening, founder-approved):
+            // a metadata-less proposal must never persist a SOURCELESS swap.
+            // #5 (adversarial review): PER-KEY merge, not `|| {}` — an empty or
+            // partial metadata object is TRUTHY and would bypass a whole-object
+            // fallback, so spread the synthesized floor FIRST and let any present
+            // real keys override it (spreading a nullish/legacy metadata is a
+            // no-op, so this also covers the fully-absent case). Required floor:
+            // { source, archetype, hftKnobsSource, entryPreset, entryMode,
+            // exitReason }. buildSwapReceiptSource is the fenced helper (called).
+            freshPrices, {
+              ...buildSwapReceiptSource({ source: 'haiku', archetype: null }),
+              entryPreset: battle.strategyPreset || 'balanced',
+              entryMode: battle.executionMode || 'autopilot',
+              exitReason: 'haiku_decision',
+              ...(proposal.evaluationMetadata || {}),
+            },
             proposal.snapshot || null
           );
           await confirmTournamentSwap(db, tournamentCtx, battle, {
@@ -2610,6 +2792,83 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
             symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
           });
           summary.swapped++;
+          // Corpus Capture Patch W2 — L1 capture, co-pilot proposal class
+          // (APPROVED path). Dormant today under the autopilot launch guard —
+          // instrumented now so the class enters the corpus the day co-pilot
+          // mode returns. Autopilot-site posture: post-commit, triple-gated,
+          // try/catch log-and-swallow. `ctx` is not in scope in this fn.
+          if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
+              && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
+            try {
+              // #3 (adversarial review): persist the pending-proposal clear
+              // BEFORE the capture await so a hard timeout during capture cannot
+              // leave the proposal re-executable (capture must never sit between
+              // a durable commit and its durable cleanup). Inside the flag guard
+              // ⇒ the flags-off path is byte-identical; the shared clear at the
+              // resolution level below is the idempotent backstop (and still the
+              // sole clear for the bench-gone / reserve-lost sub-branches).
+              await battleRef.update({ pendingProposal: null });
+              // #8: entryATR provenance via the shared classifier (benchAsset in scope).
+              const approvedEntryATR = approvedSwapResult.incomingAsset?.baseATR ?? null;
+              const approvedEntryAtrSource = classifyEntryAtrSource({
+                entryATR: approvedEntryATR,
+                scoredThreshold: battle.scoring?.thresholds?.[proposal.symbolIn]?.threshold,
+                benchBaseATR: benchAsset?.baseATR,
+                isCrypto: benchAsset?.isCrypto,
+              });
+              await captureSwapReceipt({
+                enabled: true,
+                db,
+                agentId: battle.agentId,
+                // W1 — absent ⇒ null, never 'unknown'.
+                archetype: battle.agentContext?.archetype ?? null,
+                isCpu: battle.isCpu,
+                battleId: battle.id,
+                battleDay: proposal.evaluationMetadata?.tradingDay ?? null,
+                timestamp: approvedSwapResult.closedTrade?.swappedOutAt || null,
+                // #9 (adversarial review): predicates below are proposal-creation
+                // -time (proposal.snapshot), so the predicate/decision instant is
+                // proposal.createdAt — NOT the execution timestamp above. Keeps
+                // the up-to-TTL staleness computable instead of collapsed.
+                decisionAtMs: proposal.createdAt ?? null,
+                // /code-review fix: receiptSeq is the CONVENTION itself —
+                // scoreState.tradeCount+1 at EXECUTION time (battle.* is
+                // pre-refresh here). Deliberately NOT parsed from the
+                // proposal's evaluationMetadata.id: that id was minted at
+                // proposal CREATION (up to a TTL earlier), so any swap
+                // executed during pendency makes it stale and its seq would
+                // collide with an already-written receipt in the
+                // ${agentId}_seq${n} doc-id space (silent .set() overwrite).
+                receiptSeq: (battle.scoreState?.tradeCount || 0) + 1,
+                symbolIn: approvedSwapResult.closedTrade?.symbolIn ?? proposal.symbolIn,
+                symbolOut: approvedSwapResult.closedTrade?.symbolOut ?? proposal.symbolOut,
+                source: 'haiku',
+                exitReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
+                haikuSwapReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
+                resolvedTier: proposal.tier ?? null,
+                resolvedSlotIndex: proposal.slotIndex ?? null,
+                entryMark: approvedSwapResult.incomingAsset?.swapPrice ?? null,
+                entryATR: approvedEntryATR,
+                entryAtrSource: approvedEntryAtrSource, // #8
+                outgoingEntryPrice: approvedSwapResult.closedTrade?.entryPrice ?? null,
+                outgoingBaseATR: l1ApprovedOutgoingPosition?.baseATR ?? null,
+                thresholdHistory: battle.thresholdHistory?.[proposal.symbolOut] ?? null,
+                outgoingSwappedInAt: l1ApprovedOutgoingPosition?.swappedInAt ?? null,
+                outgoingSwappedInDay: l1ApprovedOutgoingPosition?.swappedInDay ?? null,
+                archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+                // Proposal-time predicate snapshots (frozen at proposal
+                // creation — the decision instant for this class).
+                snapshotIn: proposal.snapshot?.symbolIn ?? null,
+                snapshotOut: proposal.snapshot?.symbolOut ?? null,
+                regimeOut: proposal.regime ?? null,
+                tradeCountAtDecision: battle.scoreState?.tradeCount ?? null,
+                tradesLenAtDecision: battle.trades?.length ?? null,
+                capturedAt: new Date().toISOString(),
+              });
+            } catch (l1Err) {
+              console.error(`${LOG_PREFIX} L1 capture threw (ignored, trade unaffected): ${l1Err?.message}`);
+            }
+          }
         }
       } catch (err) {
         console.error(`${LOG_PREFIX} Approved proposal execution failed:`, err.message);
@@ -2699,11 +2958,26 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         // co-pilot mode returns. Dormant today under autopilot launch guard.
         // [VWAP Floor B1b] In-memory counter reset also skipped here (see
         // 'approved' branch note) — tick-start prune covers by next tick.
+        // Corpus Capture Patch W2 — snapshot the outgoing position BEFORE
+        // the swap closes it (mirrors the autopilot site).
+        const l1ExpiredOutgoingPosition = LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
+          ? (battle.portfolio?.[proposal.tier]?.[proposal.slotIndex] || null)
+          : null;
         const expiredSwapResult = await executeSwapServer(
           db, battle.id, battle,
           proposal.tier, proposal.slotIndex,
           benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
-          freshPrices, proposal.evaluationMetadata || {},
+          // Corpus Capture Patch W2 (P2 flag #4 hardening) — same PER-KEY merge
+          // as the 'approved' branch (#5): synthesized floor first, present
+          // metadata keys override; a truthy empty/partial object no longer
+          // bypasses the floor. Never persist a sourceless swap.
+          freshPrices, {
+            ...buildSwapReceiptSource({ source: 'haiku', archetype: null }),
+            entryPreset: battle.strategyPreset || 'balanced',
+            entryMode: battle.executionMode || 'autopilot',
+            exitReason: 'haiku_decision',
+            ...(proposal.evaluationMetadata || {}),
+          },
           proposal.snapshot || null
         );
         await confirmTournamentSwap(db, tournamentCtx, battle, {
@@ -2718,6 +2992,70 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
         });
         summary.swapped++;
+        // Corpus Capture Patch W2 — L1 capture, co-pilot proposal class
+        // (EXPIRED-AUTO-EXEC path). Same class as 'approved' above — a
+        // proposal is a decision-outcome only when it RUNS, so both execution
+        // points capture. Dormant today under the autopilot launch guard.
+        if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
+            && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
+          try {
+            // #3 (adversarial review): clear pendingProposal BEFORE the capture
+            // await (same rationale as the 'approved' branch). Inside the flag
+            // guard ⇒ flags-off byte-identical; shared clear below is the backstop.
+            await battleRef.update({ pendingProposal: null });
+            // #8: entryATR provenance via the shared classifier (benchAsset in scope).
+            const expiredEntryATR = expiredSwapResult.incomingAsset?.baseATR ?? null;
+            const expiredEntryAtrSource = classifyEntryAtrSource({
+              entryATR: expiredEntryATR,
+              scoredThreshold: battle.scoring?.thresholds?.[proposal.symbolIn]?.threshold,
+              benchBaseATR: benchAsset?.baseATR,
+              isCrypto: benchAsset?.isCrypto,
+            });
+            await captureSwapReceipt({
+              enabled: true,
+              db,
+              agentId: battle.agentId,
+              // W1 — absent ⇒ null, never 'unknown'.
+              archetype: battle.agentContext?.archetype ?? null,
+              isCpu: battle.isCpu,
+              battleId: battle.id,
+              battleDay: proposal.evaluationMetadata?.tradingDay ?? null,
+              timestamp: expiredSwapResult.closedTrade?.swappedOutAt || null,
+              // #9: predicate/decision instant is proposal.createdAt (creation-
+              // time snapshots), not the execution timestamp above.
+              decisionAtMs: proposal.createdAt ?? null,
+              // /code-review fix: receiptSeq = scoreState.tradeCount+1 at
+              // EXECUTION time, never the stale creation-time metadata id
+              // (same collision rationale as the 'approved' branch above).
+              receiptSeq: (battle.scoreState?.tradeCount || 0) + 1,
+              symbolIn: expiredSwapResult.closedTrade?.symbolIn ?? proposal.symbolIn,
+              symbolOut: expiredSwapResult.closedTrade?.symbolOut ?? proposal.symbolOut,
+              source: 'haiku',
+              exitReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
+              haikuSwapReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
+              resolvedTier: proposal.tier ?? null,
+              resolvedSlotIndex: proposal.slotIndex ?? null,
+              entryMark: expiredSwapResult.incomingAsset?.swapPrice ?? null,
+              entryATR: expiredEntryATR,
+              entryAtrSource: expiredEntryAtrSource, // #8
+              outgoingEntryPrice: expiredSwapResult.closedTrade?.entryPrice ?? null,
+              outgoingBaseATR: l1ExpiredOutgoingPosition?.baseATR ?? null,
+              thresholdHistory: battle.thresholdHistory?.[proposal.symbolOut] ?? null,
+              outgoingSwappedInAt: l1ExpiredOutgoingPosition?.swappedInAt ?? null,
+              outgoingSwappedInDay: l1ExpiredOutgoingPosition?.swappedInDay ?? null,
+              archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+              // Proposal-time predicate snapshots (the decision instant).
+              snapshotIn: proposal.snapshot?.symbolIn ?? null,
+              snapshotOut: proposal.snapshot?.symbolOut ?? null,
+              regimeOut: proposal.regime ?? null,
+              tradeCountAtDecision: battle.scoreState?.tradeCount ?? null,
+              tradesLenAtDecision: battle.trades?.length ?? null,
+              capturedAt: new Date().toISOString(),
+            });
+          } catch (l1Err) {
+            console.error(`${LOG_PREFIX} L1 capture threw (ignored, trade unaffected): ${l1Err?.message}`);
+          }
+        }
       }
     } catch (err) {
       console.error(`${LOG_PREFIX} Expired copilot proposal execution failed:`, err.message);
@@ -2804,6 +3142,11 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         const gameplanEvalId = `gameplan_${swap.symbolOut}_${swap.symbolIn}_${Date.now()}`;
         // [VWAP Floor B1b] In-memory counter reset skipped here too (separate
         // fn, launch-guarded path) — tick-start prune covers by next tick.
+        // Corpus Capture Patch W2 — snapshot the outgoing position BEFORE the
+        // swap closes it (mirrors the autopilot site's l1OutgoingPosition).
+        const l1GameplanOutgoingPosition = LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
+          ? (battle.portfolio?.[slot.tier]?.[slot.slotIndex] || null)
+          : null;
         const gameplanSwapResult = await executeSwapServer(
           db, battle.id, battle,
           slot.tier, slot.slotIndex,
@@ -2846,6 +3189,74 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
           symbolOut: swap.symbolOut, symbolIn: swap.symbolIn,
         });
         summary.swapped++;
+        // Corpus Capture Patch W2 — L1 capture, gameplan-meeting class.
+        // Autopilot-site posture: post-commit, triple-gated, try/catch
+        // log-and-swallow. NB: separate fn — `ctx` is not in scope; archetype
+        // reads off battle.agentContext directly (the :2817 spread precedent).
+        // Predicate snapshots/tech docs are not in this fn's scope — those
+        // fields stay null and are recorded honestly. entryATR provenance (#8)
+        // IS available (the swap-in benchAsset is in scope) and is classified.
+        // Runs BEFORE refreshBattleFromDoc so battle.* holds decision-time state.
+        // #3 note: this capture is per-iteration inside the swap loop and the
+        // meeting clear is a single post-loop write, so the capture technically
+        // sits between the swap commit and the meeting clear. It is NOT reordered
+        // here (unlike the single-swap proposal sites): natural idempotency —
+        // findBenchAsset returns null for an already-swapped-in symbol, hitting
+        // `continue` on replay — makes a resumed meeting skip completed swaps and
+        // finish the rest, so a mid-loop death resumes-not-duplicates. Moving the
+        // clear before the loop would instead DROP not-yet-executed swaps. A
+        // strict "capture after cleanup" restructure (defer captures past the
+        // post-loop clear) is deferred pending founder sign-off.
+        if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
+            && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
+          try {
+            // #8: entryATR provenance via the shared classifier (benchAsset in scope).
+            const gameplanEntryATR = gameplanSwapResult.incomingAsset?.baseATR ?? null;
+            const gameplanEntryAtrSource = classifyEntryAtrSource({
+              entryATR: gameplanEntryATR,
+              scoredThreshold: battle.scoring?.thresholds?.[swap.symbolIn]?.threshold,
+              benchBaseATR: benchAsset?.baseATR,
+              isCrypto: benchAsset?.isCrypto,
+            });
+            await captureSwapReceipt({
+              enabled: true,
+              db,
+              agentId: battle.agentId,
+              // W1 — absent ⇒ null, never 'unknown'.
+              archetype: battle.agentContext?.archetype ?? null,
+              isCpu: battle.isCpu,
+              battleId: battle.id,
+              battleDay: currentDay,
+              timestamp: gameplanSwapResult.closedTrade?.swappedOutAt || null,
+              // /code-review fix: the convention directly (tradeId here is
+              // minted as tradeCount+1 so the values agree — using the
+              // convention keeps all new sites uniform and immune to trade-id
+              // format drift).
+              receiptSeq: (battle.scoreState?.tradeCount || 0) + 1,
+              symbolIn: gameplanSwapResult.closedTrade?.symbolIn ?? swap.symbolIn,
+              symbolOut: gameplanSwapResult.closedTrade?.symbolOut ?? swap.symbolOut,
+              source: 'gameplan_meeting',
+              exitReason: 'gameplan_rotation',
+              haikuSwapReason: null, // not a Haiku path
+              resolvedTier: slot.tier,
+              resolvedSlotIndex: slot.slotIndex,
+              entryMark: gameplanSwapResult.incomingAsset?.swapPrice ?? null,
+              entryATR: gameplanEntryATR,
+              entryAtrSource: gameplanEntryAtrSource, // #8
+              outgoingEntryPrice: gameplanSwapResult.closedTrade?.entryPrice ?? null,
+              outgoingBaseATR: l1GameplanOutgoingPosition?.baseATR ?? null,
+              thresholdHistory: battle.thresholdHistory?.[swap.symbolOut] ?? null,
+              outgoingSwappedInAt: l1GameplanOutgoingPosition?.swappedInAt ?? null,
+              outgoingSwappedInDay: l1GameplanOutgoingPosition?.swappedInDay ?? null,
+              archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+              tradeCountAtDecision: battle.scoreState?.tradeCount ?? null,
+              tradesLenAtDecision: battle.trades?.length ?? null,
+              capturedAt: new Date().toISOString(),
+            });
+          } catch (l1Err) {
+            console.error(`${LOG_PREFIX} L1 capture threw (ignored, trade unaffected): ${l1Err?.message}`);
+          }
+        }
         // Re-read battle after swap (re-applies the tournament filter)
         await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
       } catch (err) {

@@ -29,7 +29,13 @@ import { BAR_BASIS_TABLE_VERSION } from './barBasis.js';
 /** Bump when any skeleton's shape changes. */
 // v2 (2026-07-17): added top-level `evidenceClass` (outcome-blind evidence
 // provenance — L1 Capture "exclude non-evidence (CPU) agents").
-export const LEARNING_SCHEMA_VERSION = 2;
+// v3 (2026-07-21): added top-level `archetype` (Corpus Capture Patch W1 —
+// archetype identity, threaded from battle.agentContext.archetype, frozen at
+// battle creation). Corpus epoch mapping (founder ruling, July 21 2026): E1 =
+// schemaVersion <= 2 (single-site capture, no archetype identity); E2 =
+// schemaVersion >= 3 (archetype present). Epoch labels are E-numbered and
+// deliberately divorced from this counter.
+export const LEARNING_SCHEMA_VERSION = 3;
 
 // ── The predicate snapshot inputs for ONE symbol (raw values at decision instant) ──
 // These are the exact D1/D2/D3 predicate fields, read raw off the technical
@@ -103,6 +109,16 @@ export function makeReceiptSkeleton(overrides = {}) {
     // outcome/return/estimator. Lets the pre-flight / M-report filter defensively.
     evidenceClass: null,
 
+    // Archetype identity (Corpus Capture Patch W1). Top-level — an IDENTITY,
+    // not a version (versions.archetypeVersion stays null until the concept
+    // exists). Source of truth: battle.agentContext.archetype, frozen at battle
+    // creation (agentBattleService createAgentBattle) — never the mutable
+    // agent.archetype scalar. string | null; null = identity absent on the
+    // battle doc (never synthesized to 'unknown' — founder ruling). Value
+    // membership against VALID_ARCHETYPES is warn-only at the capture seam: an
+    // odd label must never cause a receipt drop.
+    archetype: null,
+
     // identity
     agentId: null,
     battleId: null,
@@ -165,7 +181,12 @@ export function makeReceiptSkeleton(overrides = {}) {
 
     // Run/receipt-level predicate provenance (Phase A.5).
     predicateProvenance: {
-      decisionAtMs: null, // Date.parse(timestamp) — the swap instant
+      // The instant the PREDICATE snapshot belongs to. Equals the swap instant
+      // (Date.parse(timestamp)) for a direct swap; for a proposal-sourced
+      // receipt it is proposal.createdAt (predicates frozen at creation), while
+      // receipt.timestamp stays the execution instant — the gap between them is
+      // the computable predicate staleness (#9 adversarial-review fix).
+      decisionAtMs: null,
       rankingsComputedAtMs: null, // doc-level rankings computedAt → ms (governs the level-sourced inputs)
       rankingsDocPath: null, // 'indexIntelligence/stockRankings'
     },

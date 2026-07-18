@@ -10,6 +10,7 @@ import { classifyD2, D2_CLASSES } from './detectorClassifiers.js';
 // touched, to prove the flag-off path never reaches Firestore.
 function makeSpyDb({ explode = false } = {}) {
   const sets = [];
+  const written = new Set(); // paths already committed — for create-only ALREADY_EXISTS
   const touched = { any: false };
   const guard = () => {
     touched.any = true;
@@ -17,11 +18,21 @@ function makeSpyDb({ explode = false } = {}) {
   };
   const docApi = (path) => ({
     collection: (c) => { guard(); return collApi(`${path}/${c}`); },
-    set: async (data) => { guard(); sets.push({ path, data }); },
+    set: async (data) => { guard(); written.add(path); sets.push({ path, data }); },
+    // #1: create-only mirror of firebase-admin DocumentReference.create — throws
+    // gRPC ALREADY_EXISTS (code 6) if the doc already exists, else records the
+    // write into `sets` exactly like set (so existing set-based assertions hold).
+    create: async (data) => {
+      guard();
+      if (written.has(path)) { const err = new Error(`5 ALREADY_EXISTS: ${path}`); err.code = 6; throw err; }
+      written.add(path);
+      sets.push({ path, data });
+    },
   });
   const collApi = (path) => ({ doc: (id) => { guard(); return docApi(`${path}/${id}`); } });
   return {
     sets,
+    written,
     touched,
     collection: (c) => { guard(); return collApi(c); },
   };
@@ -155,13 +166,118 @@ describe('captureSwapReceipt — writes a RAW receipt when the flag is on', () =
   it('a write error is logged and swallowed — never breaks the trade', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const db = {
-      collection: () => ({ doc: () => ({ collection: () => ({ doc: () => ({ set: async () => { throw new Error('boom'); } }) }) }) }),
+      collection: () => ({ doc: () => ({ collection: () => ({ doc: () => ({ create: async () => { throw new Error('boom'); } }) }) }) }),
     };
     const res = await captureSwapReceipt({ ...validRaw(), enabled: true, db });
     expect(res.emitted).toBe(false);
     expect(res.reason).toBe('write_error');
     expect(err).toHaveBeenCalled();
     err.mockRestore();
+  });
+});
+
+describe('captureSwapReceipt — #1 create-only write (no silent overwrite)', () => {
+  it('uses create() — a duplicate receiptId is REFUSED (reason:duplicate), not silently overwritten', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const db = makeSpyDb();
+    // First capture writes the receipt.
+    const first = await captureSwapReceipt({ ...validRaw(), enabled: true, db });
+    expect(first.emitted).toBe(true);
+    expect(db.sets).toHaveLength(1);
+    // A second capture that mints the SAME (agentId, receiptSeq) — the stale-
+    // counter collision the finding describes — must be refused, not overwrite.
+    const dup = await captureSwapReceipt({ ...validRaw({ symbolIn: 'TSLA' }), enabled: true, db });
+    expect(dup.emitted).toBe(false);
+    expect(dup.reason).toBe('duplicate');
+    expect(dup.receiptId).toBe(receiptIdFor('agent-1', 7));
+    // Corpus protected: the first receipt survives, no second write landed.
+    expect(db.sets).toHaveLength(1);
+    expect(db.sets[0].data.symbolIn).toBe('NVDA'); // original, not clobbered by TSLA
+    expect(warn.mock.calls.some(c => /DUPLICATE receiptId/.test(String(c[0])))).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('a real (non-ALREADY_EXISTS) create error still returns write_error', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const db = {
+      collection: () => ({ doc: () => ({ collection: () => ({ doc: () => ({ create: async () => { const e = new Error('deadline exceeded'); e.code = 4; throw e; } }) }) }) }),
+    };
+    const res = await captureSwapReceipt({ ...validRaw(), enabled: true, db });
+    expect(res.emitted).toBe(false);
+    expect(res.reason).toBe('write_error');
+    err.mockRestore();
+  });
+});
+
+describe('captureSwapReceipt — #9 decisionAtMs override (proposal creation-vs-execution)', () => {
+  it('records predicateProvenance.decisionAtMs from a caller override, keeping receipt.timestamp as execution', async () => {
+    const raw = validRaw({
+      timestamp: '2026-07-12T14:30:00.000Z',       // execution instant
+      decisionAtMs: '2026-07-12T14:15:00.000Z',     // proposal-creation instant (15m earlier)
+    });
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(true);
+    const { data } = raw.db.sets[0];
+    expect(data.timestamp).toBe('2026-07-12T14:30:00.000Z'); // execution — unchanged
+    expect(data.predicateProvenance.decisionAtMs).toBe(Date.parse('2026-07-12T14:15:00.000Z'));
+    // Staleness is now computable: execution − decision = 15 minutes.
+    expect(Date.parse(data.timestamp) - data.predicateProvenance.decisionAtMs).toBe(15 * 60 * 1000);
+  });
+
+  it('falls back to raw.timestamp when no decisionAtMs override is passed (direct-swap parity)', async () => {
+    const raw = validRaw({ timestamp: '2026-07-12T14:30:00.000Z' }); // no decisionAtMs
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(true);
+    expect(raw.db.sets[0].data.predicateProvenance.decisionAtMs).toBe(Date.parse('2026-07-12T14:30:00.000Z'));
+  });
+});
+
+describe('captureSwapReceipt — W1 archetype identity (Corpus Capture Patch)', () => {
+  it('threads archetype onto the written receipt (top-level, not versions)', async () => {
+    const raw = validRaw({ archetype: 'degen' });
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(true);
+    expect(raw.db.sets[0].data.archetype).toBe('degen');
+    expect(raw.db.sets[0].data.versions.archetypeVersion).toBeNull();
+  });
+
+  it('omitted archetype defaults to null and still writes (absent identity is legal)', async () => {
+    const raw = validRaw(); // no archetype key — legacy-caller shape
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(true);
+    expect(raw.db.sets[0].data.archetype).toBeNull();
+  });
+
+  it('membership is WARN-ONLY: an out-of-set id logs a warning but the receipt is KEPT', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // 'unknown' is the legacy createAgentBattle sentinel — NOT a VALID_ARCHETYPES
+    // member; it must warn and persist (a lost receipt is worse than an odd label).
+    const raw = validRaw({ archetype: 'unknown' });
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(true);
+    expect(raw.db.sets).toHaveLength(1);
+    expect(raw.db.sets[0].data.archetype).toBe('unknown');
+    expect(warn.mock.calls.some(c => String(c[0]).includes('VALID_ARCHETYPES'))).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('a VALID_ARCHETYPES member and null never warn', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await captureSwapReceipt({ ...validRaw({ archetype: 'guardian' }), enabled: true });
+    await captureSwapReceipt({ ...validRaw({ archetype: null }), enabled: true });
+    expect(warn.mock.calls.some(c => String(c[0]).includes('VALID_ARCHETYPES'))).toBe(false);
+    warn.mockRestore();
+  });
+
+  it('FAILS CLOSED on a type violation: non-string/non-null archetype is excluded, never written', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const raw = validRaw({ archetype: 42 });
+    const res = await captureSwapReceipt({ ...raw, enabled: true });
+    expect(res.emitted).toBe(false);
+    expect(res.reason).toBe('invalid');
+    expect(res.errors.join(' ')).toMatch(/archetype:/);
+    expect(raw.db.sets).toHaveLength(0);
+    warn.mockRestore();
   });
 });
 
