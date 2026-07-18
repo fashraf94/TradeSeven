@@ -283,7 +283,7 @@ export const LEAGUE_CANONICAL_OPEN_CAPTURE = false;
  * the founder's preview smoke (a real slot claim → draft → battle) — never in a
  * build PR (the PR #510 / LEAGUE_NEXT_ARC_ENABLED precedent).
  */
-export const LEAGUE_LIVE_DRAFT = true;
+export const LEAGUE_LIVE_DRAFT = false;
 
 /**
  * League Training — the redesigned Training Draft Board (the agent-fit spine).
