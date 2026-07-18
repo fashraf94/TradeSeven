@@ -118,8 +118,8 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
   // Flag-on → the persistent Training|Ranked tabs; flag-off → today's lobby,
   // byte-identical (same <Lobby> invocation, untouched).
   const lobby = TABS_ENABLED
-    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} uid={uid} />
-    : <Lobby st={st} accent={ACCENT} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} />;
+    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} uid={uid} displayName={user?.displayName} />
+    : <Lobby st={st} accent={ACCENT} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} uid={uid} displayName={user?.displayName} />;
 
   const body = screen === 'spectate' && spec
     ? <Spectate pod={spec.pod} focusId={spec.focusId} accent={ACCENT} onBack={backToLobby} onEnter={enter} />

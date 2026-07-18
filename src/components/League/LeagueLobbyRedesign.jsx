@@ -12,6 +12,8 @@ import { Eyebrow, Mono, Icon, LIcon, AgentAvatar, Score, StatusBadge } from './L
 import { Funnel, PodCard } from './LeaguePod';
 import { quickPlayTraining, mapLobbyError } from '../../services/tournamentLobbyActions';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
+import { LEAGUE_LIVE_DRAFT } from '../../config/featureFlags';
+import SlotCenter from './liveDraft/SlotCenter';
 import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
 import TrainingClimbPreview from './TrainingClimbPreview';
 import LoadoutChooserSheet from './LoadoutChooserSheet';
@@ -189,8 +191,18 @@ function BracketPendingSection() {
   );
 }
 
-// THE FUNNEL — the hero. resting state of the whole bracket.
-function BracketFunnelSection({ st, onPickPod }) {
+// THE FUNNEL — the hero. resting state of the whole bracket. No game → the
+// slot picker takes the center instead (one entry story; a claim routes into
+// the seated surface via onEnterGame); the forthcoming-bracket panel demotes
+// to SlotCenter's footnote line.
+function BracketFunnelSection({ st, onPickPod, activeGroup = null, currentUserId = null, displayName = null, onEnterGame = null }) {
+  if (!activeGroup && LEAGUE_LIVE_DRAFT) {
+    return (
+      <div style={{ marginBottom: 18 }}>
+        <SlotCenter currentUserId={currentUserId} displayName={displayName} onEntered={onEnterGame} />
+      </div>
+    );
+  }
   if (st.bracketPending) return <BracketPendingSection />;
   return (
     <div style={{ borderRadius: 20, padding: '16px 12px 14px', marginBottom: 18, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
@@ -246,7 +258,7 @@ function LobbyFooter() {
 // FLAG-OFF PATH (LEAGUE_NEXT_ARC_ENABLED off + no ?leagueTabs=1): today's
 // single-column lobby, byte-identical — the extracted sections compose to the
 // same output, FollowRail included.
-export default function Lobby({ st, accent, onEnter, onPickPod, onSpectate, onOpenMyGame, activeGroup = null }) {
+export default function Lobby({ st, accent, onEnter, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, uid = null, displayName = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
       {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
@@ -254,7 +266,7 @@ export default function Lobby({ st, accent, onEnter, onPickPod, onSpectate, onOp
       <div style={{ height: 22 }} />
       <LobbyHero st={st} accent={accent} />
       <FollowRail items={st.followLive} onSpectate={onSpectate} />
-      <BracketFunnelSection st={st} onPickPod={onPickPod} />
+      <BracketFunnelSection st={st} onPickPod={onPickPod} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame} />
       <YourGroup st={st} accent={accent} onPick={onPickPod} />
       <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
       <LobbyFooter />
@@ -491,7 +503,7 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
 // / group / field flow with the reserved pulse slot in FollowRail's place;
 // Training = the inert cold-start shell. The keyed wrapper replays a calm CSS
 // fade on switch (reduced-motion-neutralized globally).
-export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null }) {
+export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null, displayName = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
       {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
@@ -505,7 +517,7 @@ export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, 
             <EnterButton accent={accent} onEnter={onEnter} />
             <div style={{ height: 18 }} />
             <PulseSlot />
-            <BracketFunnelSection st={st} onPickPod={onPickPod} />
+            <BracketFunnelSection st={st} onPickPod={onPickPod} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame} />
             <YourGroup st={st} accent={accent} onPick={onPickPod} />
             <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
             <LobbyFooter />

@@ -20,19 +20,29 @@ vi.mock('../../services/tournamentGroupService', () => ({ subscribeMyGroup: () =
 vi.mock('../../services/leagueSignals', () => ({ logLeagueSignal: () => {} }));
 // These transitively import the Firebase client (env-gated at module eval); stub
 // them so the render smoke stays pure. The start path is exercised in app, not here.
-vi.mock('../../services/tournamentLobbyActions', () => ({ quickPlayTraining: () => {}, mapLobbyError: () => 'error' }));
+vi.mock('../../services/tournamentLobbyActions', () => ({ quickPlay: () => Promise.resolve({}), quickPlayTraining: () => {}, mapLobbyError: () => 'error' }));
+// SlotCenter (the no-game center) transitively imports the slot actions, whose
+// fetchWithAuth pulls the env-gated Firebase client — stub like liveDraft.smoke.
+vi.mock('../../services/liveDraftActions', () => ({
+  fetchSlotSchedule: () => Promise.resolve({ slots: [] }),
+  claimSlot: () => Promise.resolve({}),
+  releaseSlot: () => Promise.resolve({}),
+  mapSlotActionError: () => 'error',
+}));
 vi.mock('./LoadoutChooserSheet', () => ({ default: () => null }));
 
 const LeagueLobbyDesktop = (await import('./LeagueLobbyDesktop')).default;
 const { DeskTrainingPanel, ActiveTrainingGameCard } = await import('./LeagueDeskParts');
 
 describe('LeagueLobbyDesktop render smoke', () => {
-  it('composes the tournament surface (bracket funnel + leaderboard + Enter CTA)', () => {
+  it('composes the no-game entry center (slot picker + Auto-draft + footnote) + leaderboard', () => {
+    // SSR runs no effects, so activeGroup stays null → the no-game center: the
+    // slot picker IS the entry, Auto-draft below, the bracket line a footnote.
     const html = renderToString(<LeagueLobbyDesktop onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} />);
-    expect(html).toContain('The bracket');                 // the funnel hero composed
-    expect(html).toContain('YOUR PATH TO THE TROPHY');      // your-path eyebrow
+    expect(html).toContain('Pick a draft slot');            // the picker center
+    expect(html).toContain('Auto-draft');                   // the fallback lane below the slots
+    expect(html).toContain('opens when the season locks');  // the demoted footnote (copy preserved)
     expect(html).toContain('Leaderboard');                  // the right-rail default
-    expect(html).toContain('Enter tournament');             // the ranked CTA
     expect(html.length).toBeGreaterThan(3000);              // real surface, not an early bail
   });
 

@@ -25,7 +25,8 @@ import useLeagueState from '../../hooks/useLeagueState';
 import { useUser } from '../../contexts/UserContext';
 import { subscribeMyGroup, subscribeMyTrainingPod } from '../../services/tournamentGroupService';
 import { logLeagueSignal } from '../../services/leagueSignals';
-import { LEAGUE_TRAINING_POD_ENABLED } from '../../config/featureFlags';
+import { LEAGUE_TRAINING_POD_ENABLED, LEAGUE_LIVE_DRAFT } from '../../config/featureFlags';
+import SlotCenter from './liveDraft/SlotCenter';
 import { LTOKENS, LX, alpha } from './leagueTokens';
 import { Eyebrow, Mono } from './LeagueParts';
 import Spectate from './LeagueSpectate';
@@ -239,9 +240,13 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
             </div>
           </div>
 
-          {/* CENTER — THE BRACKET, the hero (or the forthcoming state pre-season) */}
+          {/* CENTER — no game → the slot picker IS the entry (one entry story;
+              a claim routes straight into the seated surface via onOpenMyGame);
+              in a game → the bracket funnel / forthcoming panel as today. */}
           <div className="lg-scroll ld-center">
-            {st.bracketPending ? (
+            {!activeGroup && LEAGUE_LIVE_DRAFT ? (
+              <SlotCenter currentUserId={uid} displayName={user?.displayName} onEntered={onOpenMyGame} />
+            ) : st.bracketPending ? (
               <DeskBracketPending />
             ) : (
               <>
