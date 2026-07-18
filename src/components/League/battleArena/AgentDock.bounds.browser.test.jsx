@@ -30,6 +30,7 @@ import process from 'node:process';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ArenaDesktop } from './ArenaDesktop';
+import { AgentDock } from './CommandDock';
 import { AD_W, AD_H, DOCK_H } from './arenaLayout';
 
 const CHROME = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium';
@@ -133,6 +134,68 @@ const MEASURE = () => {
   };
 };
 
+// ── change-1 (answer-scroll) fixtures ───────────────────────────────────────
+// A post-answer voice lane: newest-first, so the ANSWER (unique marker) is lines[0] —
+// the top of the voice lane, which sits below the pills and thus below the fold at open.
+const ANSWER_MARK = 'NEWEST_ANSWER_MARKER';
+const LINES_WITH_ANSWER = [
+  { kind: 'answer', q: 'How do we protect the lead?', text: `${ANSWER_MARK} — bank what's working, don't chase; let PLTR run and keep MSTR.`, t: 'now', _k: 991 },
+  { kind: 'read', t: '32m', text: 'PLTR is carrying its weight; COIN and SMCI are dead weight, watching the door.', _k: 3 },
+  { kind: 'trade', t: '1h', ticker: 'MSTR', text: 'Cut SOFI — too quiet for us. MSTR is swinging hard. In.', _k: 2 },
+  { kind: 'anticipation', t: '4m', ticker: 'MSTR', text: 'MSTR earnings after the bell. Holding tight.', _k: 1 },
+  { kind: 'greeting', text: "We're live. I've got the six, you've got your three. Let's climb.", t: 'now', _k: 0 },
+];
+
+// AgentDock in a faithful dock cell (the ArenaDesktop dock row: fixed DOCK_H, the real
+// 1.35/1.3/1.02 width split) so the chat panel gets its real ~359px width and 288px
+// height — but with `lines` we control, so lines[0] can be a landed answer (which the
+// engine-seeded ArenaDesktop path can't produce in static markup). Wrapped in a
+// transform:scale like LeagueBattleArenaLive so the answer-scroll is exercised under
+// the real CSS scaling too (scale<1 is why the scroll must use offsetTop, not rects).
+const dockCellHtml = (scale) => `<div style="width:100%;overflow:hidden"><div style="transform:scale(${scale});transform-origin:top left;width:${AD_W}px">${renderToStaticMarkup(
+  <div style={{ width: AD_W, padding: '0 22px', boxSizing: 'border-box' }}>
+    <div style={{ height: DOCK_H, display: 'flex', gap: 12, minHeight: 0 }}>
+      <div style={{ flex: 1.35 }} />
+      <div style={{ flex: 1.3 }} />
+      <AgentDock live lines={LINES_WITH_ANSWER} archName="Speculator" ask={CHIP_TEXT.map((q) => ({ q }))}
+        onAsk={() => {}} askLive={() => {}} remaining={10} asking={false} chatReady style={{ flex: 1.02 }} />
+    </div>
+  </div>,
+)}</div></div>`;
+
+// In-page: mirror AgentDock's onAnswer effect EXACTLY (well.scrollTop = voice.offsetTop -
+// well.offsetTop — offsetTop is layout px, scale-independent) and report whether the
+// newest entry was below the fold before, and where the voice-lane top lands after. The
+// scale-independence is the point of the test: a getBoundingClientRect delta would
+// under-scroll under transform:scale and leave voiceTopVsWellTop != 0.
+const MEASURE_SCROLL = () => {
+  const well = [...document.querySelectorAll('.bv2-scroll')].find((el) => getComputedStyle(el).overflowY === 'auto');
+  if (!well) return { wellFound: false };
+  const panel = well.parentElement;
+  const cellR = panel.getBoundingClientRect();
+  const voice = well.lastElementChild;       // the div wrapping VoiceLane (pills are before it)
+  const hits = [...well.querySelectorAll('*')].filter((el) => (el.textContent || '').includes('NEWEST_ANSWER_MARKER'));
+  const newest = hits.length ? hits[hits.length - 1] : null;  // deepest element carrying the marker
+  if (!newest) return { wellFound: true, newestFound: false };
+  const onScreen = (r) => r.top < cellR.bottom && r.bottom > cellR.top && r.top >= cellR.top - 1;
+  const beforeVisible = onScreen(newest.getBoundingClientRect());
+  well.scrollTop = voice.offsetTop - well.offsetTop;
+  return {
+    wellFound: true, newestFound: true,
+    wellScrolls: well.scrollHeight > well.clientHeight + 1,
+    scrollTopAfter: Math.round(well.scrollTop),
+    beforeVisible,
+    afterVisible: onScreen(newest.getBoundingClientRect()),
+    // after a correct scroll the voice-lane top sits at the well viewport top (both in
+    // the same scaled space) — nonzero ⇒ the scroll under/over-shot (the scale bug).
+    voiceTopVsWellTop: Math.round(voice.getBoundingClientRect().top - well.getBoundingClientRect().top),
+  };
+};
+
+// Minimal page for the answer-scroll case: the (optionally scaled) dock cell + the
+// shipped CSS. No 1360×800 clip chain needed — this measures the cell's own well.
+const scrollPage = (scale) => `<!doctype html><html><head><meta charset="utf-8"><style>${GLOBAL_CSS}</style></head><body>${dockCellHtml(scale)}</body></html>`;
+
 describe.skipIf(!hasBrowser)('AgentDock — battle composer reachability at design geometry (Chromium)', () => {
   let browser;
   beforeAll(async () => {
@@ -166,6 +229,32 @@ describe.skipIf(!hasBrowser)('AgentDock — battle composer reachability at desi
       expect(d.firstPillAboveComposer, 'first pill overlaps/sits below the composer').toBe(true);
       // Guard that this is the genuine overflow scenario (not a trivially-small case).
       expect(d.wellScrolls, 'the well does not scroll — 6 chips + voice did not exceed it').toBe(true);
+    }, 60000);
+  }
+
+  // scale 1 = design geometry (founder's ask); scale 0.7 = a real sub-1360 desktop, where
+  // the scroll MUST be scale-independent (offsetTop) — this case fails if it regresses to
+  // a getBoundingClientRect delta.
+  for (const scale of [1, 0.7]) {
+    it(`live-chat @scale ${scale}: newest voice entry on screen after an answer lands`, async () => {
+      fs.writeFileSync(path.join(OUT, `arena-answer-scroll-${scale}.html`), scrollPage(scale));
+      const pg = await browser.newPage({ viewport: { width: AD_W + 80, height: AD_H + 200 } });
+      await pg.goto('file://' + path.join(OUT, `arena-answer-scroll-${scale}.html`));
+      const d = await pg.evaluate(MEASURE_SCROLL);
+      await pg.close();
+
+      console.log(`[answer-scroll @${scale}] beforeVisible=${d.beforeVisible} afterVisible=${d.afterVisible} scrollTopAfter=${d.scrollTopAfter}px voiceTopVsWellTop=${d.voiceTopVsWellTop}px`);
+
+      expect(d.wellFound, 'no scroll well found').toBe(true);
+      expect(d.newestFound, 'the newest answer entry was not found in the well').toBe(true);
+      expect(d.wellScrolls, 'the well does not scroll — the answer-scroll case is not exercised').toBe(true);
+      // The reply is below the fold at open (pills fill the well top) …
+      expect(d.beforeVisible, 'newest answer was already on screen before the scroll — case not meaningful').toBe(false);
+      // … and the onAnswer scroll brings it into view.
+      expect(d.scrollTopAfter, 'the well did not scroll on answer').toBeGreaterThan(0);
+      expect(d.afterVisible, 'newest answer entry is not on screen after the answer-scroll').toBe(true);
+      // scale-independence: the voice-lane top must land at the well top at BOTH scales.
+      expect(Math.abs(d.voiceTopVsWellTop), `voice top ${d.voiceTopVsWellTop}px off the well top — scroll mis-targeted under scale`).toBeLessThanOrEqual(2);
     }, 60000);
   }
 });

@@ -207,22 +207,23 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
 
 // ── the agent voice + ask (the live state panel body) ───────────────────────
 // The dock cell is a FIXED 288px (DOCK_H, stretched by the dock row), so on DESKTOP
-// this panel must fit its content inside that box. Structure:
-//   • scroll WELL  — `flex:1; min-height:0; overflow-y:auto`: the ask header + the
-//     suggestion pills + the voice lane. The pills sit at the TOP of the well
-//     (above the voice lane) because the well is anchored at scrollTop:0 — the engine
-//     PREPENDS newest-first (arenaEngineCore applyAnswer/applyBeat) and nothing ever
-//     auto-scrolls it, so the top is exactly what's on screen at battle open. Placing
-//     the pills there keeps them reachable at open even when the voice lane is already
-//     full (max 4 lines); a fresh reply lands directly beneath them.
-//   • COMPOSER     — `flex:0 0 auto`: a pinned, always-visible footer that the pills
-//     can never push below the cell (that was the bug — pills + composer shared one
-//     unshrinkable footer, so 6 long live chips shoved the composer past the fold).
+// this panel fits its content inside that box in two regions:
+//   • scroll WELL — `flex:1; min-height:0; overflow-y:auto`: the suggestion PILLS at
+//     the TOP (visible at open — the well is anchored at scrollTop:0) above the VOICE
+//     LANE. On a new ANSWER the well scrolls so the newest voice entry is in view: the
+//     engine PREPENDS newest-first (arenaEngineCore applyAnswer/applyBeat), so "newest"
+//     is the top of the voice lane, which otherwise sits below the pills, below the fold.
+//   • pinned FOOTER — `flex:0 0 auto`: the ask header (label + "N left today") and the
+//     composer. Both are FIXED height, so they're always visible and the pills can never
+//     push the composer below the cell (that was the bug — pills + composer once shared
+//     one unshrinkable footer, so 6 long live chips shoved the composer past the fold,
+//     where the arena's scale-to-fit overflow:hidden clipped it).
 //
 // `compact` (mobile chat tab) is UNCHANGED (byte-for-byte): tighter padding, the voice
 // lane is a plain block (not a flex:1 scroll region) so it flows in the mobile arena's
 // page scroll, and the ask header + pills + composer flow beneath it. The mobile host
-// page-scrolls with no clip, so nothing there is ever below a fold.
+// page-scrolls with no clip, so nothing there is ever below a fold (and its well is not
+// a scroll container, so the answer-scroll effect below is desktop-only).
 export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, style,
   askLive = null, remaining = null, asking = false, chatReady = false }) {
   const c = OWN_AGENT;
@@ -245,6 +246,26 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
     handleAsk(i);
   };
 
+  // Bring the newest voice-lane entry into view when an ANSWER lands (desktop only — the
+  // compact well isn't a scroll container). The lane is newest-first and the pills sit
+  // above it, so a fresh reply would otherwise render below the fold; this scrolls the
+  // WELL — never scrollIntoView, which would also move the host page — so the newest
+  // entry shows. Keyed on the newest line's _k + kind: fires once per new answer, and
+  // NOT for autonomous beats (swaps etc.), so it never yanks the reader mid-scroll.
+  // Uses offsetTop, NOT getBoundingClientRect: the arena is CSS-transform-scaled, so a
+  // client-rect delta is in scaled px and would under-scroll; offsetTop is layout px and
+  // is scale-independent (well + voice share the position:relative root as offsetParent).
+  const wellRef = React.useRef(null);
+  const voiceRef = React.useRef(null);
+  const newestKey = lines && lines.length ? lines[0]._k : null;
+  const newestKind = lines && lines.length ? lines[0].kind : null;
+  React.useEffect(() => {
+    if (compact || newestKind !== 'answer') return;
+    const well = wellRef.current; const voice = voiceRef.current;
+    if (!well || !voice) return;
+    well.scrollTop = voice.offsetTop - well.offsetTop;
+  }, [compact, newestKey, newestKind]);
+
   // ── the ask affordance in three pieces, shared by both layouts ──
   // header (label + "N left today") — fixed height.
   const askHeader = (
@@ -261,13 +282,13 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
     </div>
   );
 
-  // PINNED-FOOTER INVARIANT — READ BEFORE MOVING THIS. The pills are DATA-DRIVEN and
-  // the .map is UNBOUNDED: `ask` is buildAskChips' six today, but a 7th/8th chip must
-  // stay possible without re-breaking the composer. That is only safe because the pills
-  // live INSIDE the scroll well. NOTHING whose height scales with a data array may move
-  // into the composer's `flex:0 0 auto` footer — do that and tall content pushes the
-  // composer back below the 288px cell and the desktop overflow bug returns. Keep every
-  // variable-height affordance in the well.
+  // PINNED-FOOTER INVARIANT — READ BEFORE MOVING THIS. The desktop footer pins the ask
+  // header + composer, both FIXED height — that is why they're allowed to pin. The pills
+  // are DATA-DRIVEN and the .map is UNBOUNDED: `ask` is buildAskChips' six today, but a
+  // 7th/8th chip must stay possible without re-breaking the composer. That is only safe
+  // because the pills live INSIDE the scroll well. NOTHING whose height scales with a
+  // data array may move into the `flex:0 0 auto` footer — do that and tall content pushes
+  // the composer back below the 288px cell and the desktop overflow bug returns.
   const pills = (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 9 }}>
       {(ask || []).map((qa, i) => {
@@ -336,17 +357,19 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
     );
   }
 
-  // DESKTOP — ask header + pills ride at the TOP of the internal scroll well (visible
-  // at open; see the header note), the voice lane flows beneath them, and the composer
-  // is a pinned, always-visible footer the pills can never push away.
+  // DESKTOP — pills ride at the TOP of the internal scroll well (visible at open), the
+  // voice lane flows beneath them (scrolled into view on a new answer; see the effect
+  // above), and the ask header + composer are a pinned, always-visible footer.
   return (
     <div style={root}>
-      <div className="bv2-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
-        {askHeader}
+      <div ref={wellRef} className="bv2-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
         {pills}
-        <VoiceLane lines={lines} archName={archName} color={c} live={live} max={4} />
+        <div ref={voiceRef}>
+          <VoiceLane lines={lines} archName={archName} color={c} live={live} max={4} />
+        </div>
       </div>
       <div style={{ flexShrink: 0, marginTop: 12, paddingTop: 12, borderTop: `1px solid ${LTOKENS.hair}` }}>
+        {askHeader}
         {composer}
       </div>
     </div>
