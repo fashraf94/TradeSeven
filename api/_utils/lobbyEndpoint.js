@@ -39,6 +39,7 @@ const LOBBY_ERROR_TO_HTTP = Object.freeze({
   lobby_cancelled:            [409, 'lobby_cancelled', 'That game was cancelled.'],
   lobby_empty:                [409, 'lobby_empty', 'That game has no players to start.'],
   lobby_overfull:             [409, 'lobby_overfull', 'That game has too many players to form.'],
+  already_in_competitive:     [409, 'already_in_competitive', 'You already have a competitive game for that battle week — one game per week.'],
   universe_unavailable:       [503, 'universe_unavailable', 'The market data isn’t ready yet — try again in a few minutes.'],
   cpu_board_commit_failed:    [500, 'cpu_board_commit_failed', 'Could not seat the CPU opponents — please try again.'],
   lobby_formed_without_group: [500, 'lobby_formed_without_group', 'That game is in an inconsistent state — please contact support.'],

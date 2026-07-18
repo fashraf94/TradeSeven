@@ -69,6 +69,7 @@ import {
 import { LEAGUE_CANONICAL_OPEN_CAPTURE } from '../../src/config/featureFlags.js';
 import { padGamesWithCpus, ensureCpuAgents, commitCpuUserBoards } from './tournamentCpu.js';
 import { fetchRankedUserPool } from './tournamentGroupService.js';
+import { findActiveGroupInBattleWeek, deriveBattleStartWeek, deriveBaseLayerWeek } from './liveDraftFormation.js';
 
 const LOG_PREFIX = '[TournamentLobby]';
 
@@ -280,6 +281,25 @@ export async function formGroupFromLobby(db, lobbyId, { now = new Date(), isTrai
   const humanIds = lobbyHumanIds(lobby);
   const groupId = lobby.groupId;       // deterministic (== lobbyId)
   const cpuStartN = lobby.cpuStartN;   // reserved at claim (null when 4 humans)
+
+  // THE MIRROR GUARD (Entry-Flow Consolidation P4 — the slot-side ledger note
+  // at liveDraftFormation.claimSlotSeat): reject formation when any seated
+  // human already holds an active non-training group that plays the SAME battle
+  // week this group would. The key is BATTLE-week-normalized — the same
+  // deriveBattleStartWeek Monday-anchor rule the slot side uses — NEVER
+  // isoWeekString(now): slot pods stamp baseLayerWeek as their battle week, so
+  // a formation-week key would silently miss a Wed/Sat/Sun slot seat whose
+  // battle is next Monday (the exact bug class the slot-side #1 fix corrected).
+  // Sits AFTER the alreadyFormed early-return above, so idempotent re-entry of
+  // an already-formed lobby is never blocked; exceptGroupId keeps a crash
+  // resume of THIS group's own formation idempotent.
+  const battleWeek = deriveBaseLayerWeek(deriveBattleStartWeek(nowIso));
+  for (const humanId of humanIds) {
+    const conflict = await findActiveGroupInBattleWeek(db, humanId, battleWeek, groupId);
+    if (conflict) {
+      throw new Error(`already_in_competitive: ${humanId} already holds ${conflict} for battle week ${battleWeek}`);
+    }
+  }
 
   // Pad to GROUP_SIZE from the RESERVED base so two concurrently-forming
   // lobbies can never seat the same cpu-agent (seam fact #1).

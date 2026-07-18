@@ -121,6 +121,7 @@ const ERROR_COPY = Object.freeze({
   missing_target: 'Enter a game code or link to join.',
   invalid_lobby_id: 'That game link looks off — ask your host for a fresh one.',
   not_lobby_owner: 'Only the player who created this game can start it.',
+  already_in_competitive: 'You already have a competitive game for that battle week — finish it first, or leave your draft slot.',
   universe_unavailable: 'The market data isn’t ready yet — try again in a few minutes.',
   cpu_board_commit_failed: 'Couldn’t seat the CPU opponents — please try again.',
   // League Next-Arc Slice 5b-i — training quick-play guards.

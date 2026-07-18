@@ -36,6 +36,7 @@ import {
   cpuAgentDocId,
   isCpuUserId,
 } from '../../src/constants/leagueTournament.js';
+import { deriveBattleStartWeek, deriveBaseLayerWeek } from './liveDraftFormation.js';
 
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -100,13 +101,19 @@ function makeDb(initial = {}) {
   }
 
   function makeCollection(prefix) {
-    const filtered = (field, value) => topLevelDocs(prefix).filter(d => d.data()[field] === value);
+    // Honors the operator: array-contains for the mirror guard's member-scoped
+    // query (the liveDraftFormation.test makeDb idiom); anything else is
+    // equality, as before.
+    const filtered = (field, op, value) => topLevelDocs(prefix).filter(d => {
+      const fv = d.data()[field];
+      return op === 'array-contains' ? (Array.isArray(fv) && fv.includes(value)) : fv === value;
+    });
     return {
       doc: (id) => makeDocRef(`${prefix}/${id ?? `auto-${++autoSeq}`}`),
       where: (field, op, value) => ({
-        get: async () => snapshotOf(filtered(field, value)),
-        limit: (n) => ({ get: async () => snapshotOf(filtered(field, value).slice(0, n)) }),
-        select: () => ({ get: async () => snapshotOf(filtered(field, value)) }),
+        get: async () => snapshotOf(filtered(field, op, value)),
+        limit: (n) => ({ get: async () => snapshotOf(filtered(field, op, value).slice(0, n)) }),
+        select: () => ({ get: async () => snapshotOf(filtered(field, op, value)) }),
       }),
       get: async () => snapshotOf(topLevelDocs(prefix)),
     };
@@ -431,5 +438,75 @@ describe('quickPlay — the solo cold-start', () => {
     expect(group.players[0].odUserId).toBe('solo-1');
     expect(group.players.filter(p => p.isCpu)).toHaveLength(3);
     expect(store.get(`tournamentLobby/${res.lobbyId}`).mode).toBe(LOBBY_MODE.PRIVATE);
+  });
+});
+
+// ==================== THE MIRROR GUARD (Entry-Flow Consolidation P4) ====================
+//
+// The reciprocal of the slot-side per-battle-week one-game guard: a user
+// holding a slot seat must be blocked from forming a REGULAR group that plays
+// the same battle week. The guard keys on the BATTLE week (the same
+// deriveBattleStartWeek Monday-anchor rule the slot side uses) — NOW is a
+// Wednesday, so the battle week is NEXT Monday's ISO week, which is exactly
+// how a Wed-claimed slot pod stamps its baseLayerWeek. A formation-week key
+// (isoWeekString(now)) would miss it — the asserted bug class.
+
+describe('formGroupFromLobby — the mirror guard (slot seat blocks same-battle-week regular entry)', () => {
+  // The battle week a group formed at NOW plays — via the REAL derivations the
+  // guard uses (never a hand-rolled week string).
+  const BATTLE_WEEK = deriveBaseLayerWeek(deriveBattleStartWeek(NOW.toISOString()));
+
+  // A claimed slot pod as buildInitialSlotGroupDoc writes it: FORMING,
+  // isLiveDraft, humans-only, NO isTraining key, battle-week baseLayerWeek.
+  const slotPod = (odUserId, baseLayerWeek, id = 'lds_sun19_2026-06-14') => ({
+    [`tournamentGroups/${id}`]: {
+      status: GROUP_STATUS.FORMING,
+      isLiveDraft: true,
+      baseLayerWeek,
+      groupMembers: [odUserId],
+      players: [{ odUserId, picks: [] }],
+    },
+  });
+
+  it('BLOCKS: a user holding a slot seat for the SAME battle week cannot quick-play', async () => {
+    const { db } = withRankings(slotPod('u1', BATTLE_WEEK));
+    await expect(quickPlay(db, { odUserId: 'u1', now: NOW }))
+      .rejects.toThrow(/^already_in_competitive/);
+  });
+
+  it('does NOT block: a slot seat for a DIFFERENT battle week', async () => {
+    const { db, store } = withRankings(slotPod('u1', '2099-W01'));
+    const res = await quickPlay(db, { odUserId: 'u1', now: NOW });
+    expect(store.get(`tournamentGroups/${res.groupId}`).status).toBe(GROUP_STATUS.FORMING);
+  });
+
+  it('does NOT block: a training pod in the same battle week (isTraining never counts)', async () => {
+    const seed = slotPod('u1', BATTLE_WEEK, 'training-pod-1');
+    seed['tournamentGroups/training-pod-1'].isTraining = true;
+    delete seed['tournamentGroups/training-pod-1'].isLiveDraft;
+    const { db, store } = withRankings(seed);
+    const res = await quickPlay(db, { odUserId: 'u1', now: NOW });
+    expect(store.get(`tournamentGroups/${res.groupId}`).status).toBe(GROUP_STATUS.FORMING);
+  });
+
+  it('same-lobby re-entry is unaffected: alreadyFormed returns BEFORE the guard', async () => {
+    const { db, store } = withRankings();
+    const { id } = await createLobby(db, { createdBy: 'u1', now: NOW });
+    const first = await formGroupFromLobby(db, id, { now: NOW }); // forms clean
+    expect(first.alreadyFormed).toBe(false);
+    // A conflicting slot seat claimed AFTER formation must not break the
+    // idempotent re-entry of the already-formed lobby.
+    Object.entries(slotPod('u1', BATTLE_WEEK)).forEach(([path, doc]) => store.set(path, doc));
+    const again = await formGroupFromLobby(db, id, { now: NOW });
+    expect(again.alreadyFormed).toBe(true);
+    expect(again.groupId).toBe(first.groupId);
+  });
+
+  it('a multi-human lobby is blocked when ANY member holds a same-battle-week game', async () => {
+    const { db } = withRankings(slotPod('u2', BATTLE_WEEK));
+    const { id } = await createLobby(db, { createdBy: 'u1', now: NOW });
+    await joinLobby(db, id, { odUserId: 'u2', now: NOW });
+    await expect(formGroupFromLobby(db, id, { now: NOW }))
+      .rejects.toThrow(/already holds/);
   });
 });

@@ -268,8 +268,15 @@ const ACTIVE_GROUP_STATUSES = new Set([
  * precedent; a single-field array-contains needs no composite index). Training
  * pods are never counted (isTraining !== true); `exceptGroupId` (the occurrence
  * being claimed) keeps the same-slot re-claim idempotent.
+ *
+ * EXPORTED for the MIRROR GUARD (Entry-Flow Consolidation P4): the regular-entry
+ * write site (formGroupFromLobby) runs the same predicate so a slot seat blocks
+ * a same-battle-week regular entry, exactly as a regular game blocks a slot
+ * claim. Callers must pass a BATTLE-week key (deriveBaseLayerWeek of the game's
+ * battle Monday) — never the formation week — because this is a raw string
+ * equality against the stored baseLayerWeek.
  */
-async function findActiveGroupInBattleWeek(db, odUserId, baseLayerWeek, exceptGroupId) {
+export async function findActiveGroupInBattleWeek(db, odUserId, baseLayerWeek, exceptGroupId) {
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
     .where('groupMembers', 'array-contains', odUserId).get();
   for (const d of snap.docs) {
