@@ -56,10 +56,21 @@ export const ARENA_VOICE = Object.freeze({
 });
 
 // The two-way affordance — suggested prompts + answers in the Speculator's voice.
+// RECURRENCE GUARD (must mirror LIVE): the live dock's chips come from
+// buildArenaModel.buildAskChips — the 5 static STRATEGY_CHIPS + 1 standing-aware
+// slot = SIX chips at real length. The old 3-short-chip fixture is exactly why the
+// composer-below-the-fold overflow escaped the preview + render smoke: 3 short chips
+// fit the 288px dock cell where 6 long ones do not. Keep this at parity (count AND
+// length, incl. the standing variant) so the dev `?battleViewV2=1` surface and the
+// smoke tests exercise the same overflow the live path does. The `a` echoes are
+// preview-stub only (flag-off path); the live path sends `q` and never reads `a`.
 export const ARENA_ASK = Object.freeze([
-  { q: "Why'd you cut SOFI?", a: "SOFI was dead weight — barely moving against its range. MSTR swings twice as hard into earnings. I'd rather own the volatility." },
-  { q: 'What are you watching?', a: "PLTR — it's a hair off a BaggerBomb, one good tick and it banks. And COIN the other way: if it slips past Bust I'm cutting it." },
-  { q: 'Why keep SMCI?', a: "It busted, but a Crash needs −1.5× and it's at −1.2×. One session to stabilize before I eat the bigger penalty." },
+  { q: "What's your plan from here?", a: "Ride PLTR while it's working, give MSTR room through earnings, and cut COIN the second it loses the level. No hero holds." },
+  { q: 'Where are we winning and losing right now?', a: "Winning on PLTR and the MSTR swing. Losing on COIN and SMCI — both are on a short leash." },
+  { q: 'How do my three picks compare to your six?', a: "Your three are steadier; my six carry the swing. Together the composite leans aggressive — which is where I want it into the bell." },
+  { q: 'What would you change about our lineup?', a: "Nothing on your side. On mine, SMCI's the weak link — if it doesn't stabilize by the open I rotate the slot." },
+  { q: 'What are you watching for the rest of the battle?', a: "MSTR earnings after the close, and whether COIN slips past Bust. Those two decide our day." },
+  { q: 'How do we protect the lead?', a: "Bank what's working and don't chase — let PLTR run, keep MSTR, add no risk we don't need. The lead's ours to lose." },
 ]);
 
 // The agent's recent landed move (the "swapped SOFI → MSTR · 1h ago" chip).
