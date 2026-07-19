@@ -841,3 +841,28 @@ export const REGIME_STAMP_ENABLED = false;
  * (the SCOUTING_BOARD_ENABLED precedent) — never in the build PR.
  */
 export const OPENER_LAZY_FALLBACK_ENABLED = true;
+
+/**
+ * League Tournament — EMERGENCY ADVANCEMENT FREEZE (tourniquet, not a cure).
+ *
+ * The scoring-model anomaly (docs/audits/LEAGUE_SCORING_ANOMALY_* ) lets
+ * poisoned composites accumulate on in-flight groups. This flag freezes the
+ * irreversible consumers of those composites BEFORE the day-5 ingestion:
+ * bracket advancement + finalScores, the career-rank ratchet (appliedGroups),
+ * and the seasonal-leaderboard week-row upsert for non-training battle groups.
+ * Banking is NOT touched — daily scores keep recording. The actual scoring
+ * fix is a separate §7 pass, sequenced after this deploys and the poisoned
+ * pods are voided.
+ *
+ * DEFAULT = TRUE, and that inversion of the usual dark-launch default is
+ * INTENTIONAL: the safe state is "do not advance". Guarded call sites:
+ * runFridayAdvancement (primary), runWeekSideEffects (defense-in-depth belt),
+ * and upsertLeaderboardForGroups (both leaderboard call sites at one knowledge
+ * point). When frozen, each logs loudly and returns without writes.
+ *
+ * UNFREEZE (a later PR, founder-gated): flip to false ONLY after re-verifying
+ * no group in status=='battle' predates the scoring fix — the poisoned cohort
+ * must be voided first (latest-snapshot locking makes an un-voided group lock
+ * at its unfreeze-day standing, not day-5).
+ */
+export const TOURNAMENT_ADVANCEMENT_FROZEN = true;

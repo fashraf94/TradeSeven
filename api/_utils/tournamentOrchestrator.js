@@ -434,7 +434,7 @@ export async function runMondayPipeline(db, {
   // pending/error counts are logged, not folded into the Monday marker.
   const catchUp = await runFridayAdvancement(db, { now, includeDevGroups });
   if (catchUp.groups > 0 || catchUp.activeBrackets > 0) {
-    console.log(`${LOG_PREFIX} Monday advancement catch-up: ${catchUp.gamesLocked} game(s) locked, ${catchUp.composedGroups.length} group(s) composed, ${catchUp.bankingPending} banking-pending, ${catchUp.errors} error(s)`);
+    console.log(`${LOG_PREFIX} Monday advancement catch-up: ${catchUp.gamesLocked} game(s) locked, ${catchUp.composedGroups.length} group(s) composed, ${catchUp.bankingPending} banking-pending, ${catchUp.frozen ?? 0} frozen, ${catchUp.errors} error(s)`);
   }
 
   // Slice 3: training pods are excluded from the ranked duties — their agent
@@ -838,7 +838,10 @@ export function isDutySatisfied(duty, summary) {
     return summary.deploys.cooled === 0 && summary.deploys.deferred === 0 && summary.deploys.failed === 0;
   }
   if (duty === DUTY.FRIDAY_ADVANCEMENT) {
-    return summary.bankingPending === 0;
+    // Emergency freeze (TOURNAMENT_ADVANCEMENT_FROZEN): a frozen pass withheld
+    // finalization, so it is NOT done — never mark it satisfied (re-ticks
+    // harmlessly until the flag lifts). Flag-off, summary.frozen is 0 → no change.
+    return summary.bankingPending === 0 && (summary.frozen || 0) === 0;
   }
   return false;
 }
@@ -851,6 +854,9 @@ function markerSummary(duty, summary) {
       gamesLocked: summary.gamesLocked,
       composed: summary.composedGroups.length,
       champion: summary.champion?.odUserId ?? null,
+      // Surfaced so the "incomplete (resumes next tick)" log line shows the
+      // freeze explicitly (duty summaries must say what actually happened).
+      frozen: summary.frozen ?? 0,
     };
   }
   return {

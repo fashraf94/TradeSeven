@@ -14,6 +14,16 @@
 // Never mock that import.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// TOURNAMENT_ADVANCEMENT_FROZEN defaults TRUE (the emergency freeze's safe
+// default). This battery exercises NORMAL, flag-OFF advancement — the freeze's
+// own behavior is covered by tournamentAdvancementFreeze.test.js. Override only
+// that flag; every other flag keeps its real value (importOriginal spread).
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  TOURNAMENT_ADVANCEMENT_FROZEN: false,
+}));
+
 import {
   WEEK_DAYS_REQUIRED,
   isWeekBanked,

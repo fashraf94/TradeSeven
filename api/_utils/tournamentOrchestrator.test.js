@@ -18,6 +18,18 @@
 // Node-clean. Never mock that import.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// TOURNAMENT_ADVANCEMENT_FROZEN defaults TRUE (the emergency freeze). This
+// suite drives runMondayPipeline (whose Friday catch-up calls the now-frozen-by-
+// default runFridayAdvancement) and runOrchestratorTick — exercise them in the
+// NORMAL, flag-OFF regime; the freeze's own behavior is covered by
+// tournamentAdvancementFreeze.test.js. Override only this flag (importOriginal
+// spread keeps every other flag real).
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  TOURNAMENT_ADVANCEMENT_FROZEN: false,
+}));
+
 import {
   DUTY,
   TOURNAMENT_DEPLOY_ENABLED,

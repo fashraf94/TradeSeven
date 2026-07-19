@@ -21,6 +21,16 @@
 // api/ → src/ transitive graph stays Node-clean. Never mock these imports.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// TOURNAMENT_ADVANCEMENT_FROZEN defaults TRUE (the emergency freeze's safe
+// default). This seam exercises NORMAL, flag-OFF advancement + leaderboard flow;
+// the freeze's own behavior is covered by tournamentAdvancementFreeze.test.js.
+// Override only that flag (importOriginal spread keeps every other flag real).
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  TOURNAMENT_ADVANCEMENT_FROZEN: false,
+}));
+
 import { createLobby, formGroupFromLobby, quickPlay } from './tournamentLobbyService.js';
 import { runMondayPipeline, sweepTrainingActivation } from './tournamentOrchestrator.js';
 import { runFridayAdvancement } from './tournamentAdvancement.js';
