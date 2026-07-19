@@ -102,7 +102,7 @@ function MyGameBar({ onOpen }) {
   );
 }
 
-export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, hasAgent, agentLoadout, onOpenBaggerBomb }) {
+export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, hasAgent, agentLoadout }) {
   const { state: st, isFixtures } = useLeagueState(DEV_FILL);
   const { user } = useUser();
   const uid = user?.uid;
@@ -238,7 +238,6 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
                 activeTrainingPod={activeTrainingPod}
                 onOpenTrainingPod={onOpenTrainingPod}
                 hasAgent={hasAgent}
-                onOpenBaggerBomb={onOpenBaggerBomb}
                 onSpectate={openSpectate}
               />
             )}

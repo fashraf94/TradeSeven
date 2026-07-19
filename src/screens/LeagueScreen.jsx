@@ -54,7 +54,7 @@ const ARENA_MODE = ['training', 'ranked'].includes(SP.get('c')) ? SP.get('c') : 
 const DESKTOP_FORCE = SP.get('leagueLobbyDesktop') === '1';
 const DESKTOP_OFF = SP.get('leagueLobbyDesktop') === '0';
 
-export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout, isDesktop, onOpenBaggerBomb } = {}) {
+export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout, isDesktop } = {}) {
   const { tokens } = useTheme();
   const [view, setView] = React.useState('home');
   const [climb, setClimb] = React.useState(CLIMB_PREVIEW);
@@ -102,10 +102,9 @@ export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout
         onOpenTrainingPod={onOpenTrainingPod}
         hasAgent={hasAgent}
         agentLoadout={agentLoadout}
-        onOpenBaggerBomb={onOpenBaggerBomb}
       />
     );
   }
 
-  return <LeagueHome onOpenMyGame={() => setView('mygame')} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} onOpenBaggerBomb={onOpenBaggerBomb} />;
+  return <LeagueHome onOpenMyGame={() => setView('mygame')} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} />;
 }

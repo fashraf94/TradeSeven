@@ -6,7 +6,10 @@
 // NEVER reach the seated arm. This test drives the seated module directly (by
 // props), the way liveDraft.smoke renders the center pieces, to lock: the hero
 // START vs RETURN swap (R1: never two training CTAs), the status-driven headline
-// swap, the honest bracket footnote, and the conditional secondary rows.
+// swap, the honest bracket footnote, the draft-not-bracket blurb, and the
+// conditional Spectate row. (The BaggerBomb secondary was scoped then pulled —
+// the underlying AWAITING_OPEN/agent-deploy conflict is ledgered instead; the
+// module must carry no BaggerBomb affordance.)
 //
 // quickPlayTraining / mapLobbyError transitively pull the env-gated Firebase
 // client; stub them (the sibling lobby-smoke pattern) so the render stays pure.
@@ -27,26 +30,25 @@ const WhileYouWait = (await import('./WhileYouWait')).default;
 const liveSt = { rounds: { r1: [{ id: 'p1', status: 'live', seats: [{ id: 's1', you: true }] }], r2: [], r3: null }, baseGames: [] };
 
 describe('WhileYouWait (Seated Waiting Room) render smoke', () => {
-  it('cold-start: hero START CTA + honesty line + both secondaries + bracket footnote', () => {
+  it('cold-start: hero START CTA + honesty line + Spectate + draft blurb + bracket footnote', () => {
     const html = renderToString(
-      <WhileYouWait viewport="mobile" status={GROUP_STATUS.FORMING} st={liveSt} activeTrainingPod={null} onOpenTrainingPod={() => {}} hasAgent onOpenBaggerBomb={() => {}} onSpectate={() => {}} />,
+      <WhileYouWait viewport="mobile" status={GROUP_STATUS.FORMING} st={liveSt} activeTrainingPod={null} onOpenTrainingPod={() => {}} hasAgent onSpectate={() => {}} />,
     );
     expect(html).toContain('While you wait');                              // the waiting headline
     expect(html).toContain('Sharpen up in a Training Pod');               // the hero START CTA
     expect(html).toContain('Practice runs never touch the leaderboard');  // the one quiet honesty line
-    expect(html).toContain('Play a BaggerBomb round');                    // secondary — BaggerBomb
-    expect(html).toContain('deploy your agent');                          // it is the agent-vs-CPU deploy, not PVP
     expect(html).toContain('Watch a live game');                          // secondary — a live pod exists
     expect(html).toContain('before the draft');                           // seated blurb references the draft…
     expect(html).not.toContain('next bracket');                           // …not a bracket (the user holds a slot pod)
     expect(html).toContain('opens when the season locks');                // the honest bracket footnote (precedent copy)
     expect(html).not.toContain('Return to your Training Pod');            // R1: no return CTA without an active pod
+    expect(html).not.toContain('BaggerBomb');                             // the BaggerBomb secondary is pulled
   });
 
   it('active training pod: hero swaps to RETURN, never two training CTAs', () => {
     const pod = { id: 'tp1', status: GROUP_STATUS.BATTLE };
     const html = renderToString(
-      <WhileYouWait viewport="desktop" status={GROUP_STATUS.DRAFTING} st={liveSt} activeTrainingPod={pod} onOpenTrainingPod={() => {}} hasAgent onOpenBaggerBomb={() => {}} onSpectate={() => {}} />,
+      <WhileYouWait viewport="desktop" status={GROUP_STATUS.DRAFTING} st={liveSt} activeTrainingPod={pod} onOpenTrainingPod={() => {}} hasAgent onSpectate={() => {}} />,
     );
     expect(html).toContain('Return to your Training Pod');
     expect(html).not.toContain('Sharpen up in a Training Pod');           // R1: exactly one training CTA
@@ -58,14 +60,10 @@ describe('WhileYouWait (Seated Waiting Room) render smoke', () => {
     expect(html).not.toContain('While you wait');
   });
 
-  it('agent unavailable (null handler) → no BaggerBomb row; no live pod → no Watch row', () => {
-    // The caller passes onOpenBaggerBomb=null when the agent is battle-locked
-    // (e.g. committed to a League pod in BATTLE), so the CTA that "can't fire"
-    // never renders. Likewise the Watch row hides when nothing is live.
+  it('no live pod → no "Watch a live game" row; the hero still renders', () => {
     const emptySt = { rounds: { r1: [], r2: [], r3: null }, baseGames: [] };
-    const html = renderToString(<WhileYouWait status={GROUP_STATUS.AWAITING_OPEN} st={emptySt} onOpenTrainingPod={() => {}} hasAgent />);
+    const html = renderToString(<WhileYouWait status={GROUP_STATUS.AWAITING_OPEN} st={emptySt} onOpenTrainingPod={() => {}} hasAgent onSpectate={() => {}} />);
     expect(html).not.toContain('Watch a live game');
-    expect(html).not.toContain('Play a BaggerBomb round');
     expect(html).toContain('Sharpen up in a Training Pod');               // the hero still renders
   });
 });

@@ -158,7 +158,7 @@ function MyGameBar({ onOpenMyGame }) {
 // content, keeping the honest one-line bracket footnote. SlotCenter owns the
 // LEAGUE_LIVE_DRAFT gate internally (P2c) so flag-off still keeps the Auto-draft
 // entry affordance.
-function BracketFunnelSection({ st, activeGroup = null, currentUserId = null, displayName = null, onEnterGame = null, activeTrainingPod = null, onOpenTrainingPod = null, hasAgent, onOpenBaggerBomb = null, onSpectate = null }) {
+function BracketFunnelSection({ st, activeGroup = null, currentUserId = null, displayName = null, onEnterGame = null, activeTrainingPod = null, onOpenTrainingPod = null, hasAgent, onSpectate = null }) {
   if (!activeGroup) {
     return (
       <div style={{ marginBottom: 18 }}>
@@ -174,7 +174,6 @@ function BracketFunnelSection({ st, activeGroup = null, currentUserId = null, di
       activeTrainingPod={activeTrainingPod}
       onOpenTrainingPod={onOpenTrainingPod}
       hasAgent={hasAgent}
-      onOpenBaggerBomb={onOpenBaggerBomb}
       onSpectate={onSpectate}
     />
   );
@@ -217,14 +216,14 @@ function LobbyFooter() {
 // FLAG-OFF PATH (LEAGUE_NEXT_ARC_ENABLED off + no ?leagueTabs=1): today's
 // single-column lobby, byte-identical — the extracted sections compose to the
 // same output, FollowRail included.
-export default function Lobby({ st, accent, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, uid = null, displayName = null, onOpenTrainingPod = null, activeTrainingPod = null, hasAgent, onOpenBaggerBomb = null }) {
+export default function Lobby({ st, accent, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, uid = null, displayName = null, onOpenTrainingPod = null, activeTrainingPod = null, hasAgent }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
       {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
       <LobbyHero st={st} accent={accent} />
       <FollowRail items={st.followLive} onSpectate={onSpectate} />
       <BracketFunnelSection st={st} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame}
-        activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onOpenBaggerBomb={onOpenBaggerBomb} onSpectate={onSpectate} />
+        activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onSpectate={onSpectate} />
       <YourGroup st={st} accent={accent} onPick={onPickPod} />
       <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
       <LobbyFooter />
@@ -461,7 +460,7 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
 // / group / field flow with the reserved pulse slot in FollowRail's place;
 // Training = the inert cold-start shell. The keyed wrapper replays a calm CSS
 // fade on switch (reduced-motion-neutralized globally).
-export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null, displayName = null, onOpenBaggerBomb = null }) {
+export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null, displayName = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
       {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
@@ -474,7 +473,7 @@ export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectat
           <>
             <PulseSlot />
             <BracketFunnelSection st={st} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame}
-              activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onOpenBaggerBomb={onOpenBaggerBomb} onSpectate={onSpectate} />
+              activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onSpectate={onSpectate} />
             <YourGroup st={st} accent={accent} onPick={onPickPod} />
             <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
             <LobbyFooter />

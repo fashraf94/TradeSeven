@@ -15,18 +15,19 @@
 //     RETURN instead of START.
 //   • Training pod RETURN → onOpenTrainingPod(activeTrainingPod) (App branches on
 //     status: DRAFTING → draft room, else → battle view).
-//   • BaggerBomb (agent vs CPU) → onOpenBaggerBomb: the SAME shared agent-deploy
-//     sequence the Command Center runs (deployAgent -> /api/agent/decide -> the
-//     Battle View). The caller passes null (CTA hidden) when the agent is
-//     battle-locked (activeBattleId set — incl. a League pod in BATTLE), so the
-//     button never renders when the deploy can't fire. onOpenBaggerBomb may be
-//     async (a slow cognition call) — the row shows a busy state while it runs.
 //   • Spectate            → onSpectate(pod, focusId) (the existing overlay), on
 //     the first live pod; the row hides when nothing is live.
 //
+// A BaggerBomb (agent-vs-CPU deploy) secondary was scoped here and pulled: an
+// agent-vs-CPU deploy during a pre-battle slot pod (AWAITING_OPEN) can block the
+// pod's own Monday agent deploy (decide.js's one-active-battle guard skips a busy
+// agent). The underlying conflict is ledgered as a pre-launch must-fix
+// (docs/LAUNCH_READINESS_WATCH_LEDGER.md) rather than papered over with a status
+// gate here. The archetype prediction market is the future occupant of this space.
+//
 // No new endpoint / subscription / game machinery; client-only; dark-only tokens
-// from the shared map (LTOKENS/LX) — no useTheme(), no new palette. The archetype
-// prediction market is the future occupant of this space; this is the cheap V1.
+// from the shared map (LTOKENS/LX) — no useTheme(), no new palette; this is the
+// cheap V1.
 
 import React from 'react';
 import { LTOKENS, LX, alpha } from './leagueTokens';
@@ -36,17 +37,16 @@ import { GROUP_STATUS } from '../../constants/leagueTournament';
 
 // A secondary action row — the MyGameBar vocabulary (full-width all:unset button,
 // surface fill, hairline border, glyph · label · sublabel · arrow).
-function SecondaryRow({ icon, label, sub, accent, onClick, disabled = false }) {
+function SecondaryRow({ icon, label, sub, accent, onClick }) {
   return (
     <button
       type="button"
       className="lg-tap"
       onClick={onClick}
-      disabled={disabled}
       style={{
-        all: 'unset', boxSizing: 'border-box', width: '100%', cursor: disabled ? 'wait' : 'pointer',
+        all: 'unset', boxSizing: 'border-box', width: '100%', cursor: 'pointer',
         display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px',
-        borderRadius: 13, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}`, opacity: disabled ? 0.7 : 1,
+        borderRadius: 13, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}`,
       }}
     >
       <span style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha(accent, 0.14), border: `1px solid ${alpha(accent, 0.3)}` }}>
@@ -69,15 +69,12 @@ export default function WhileYouWait({
   activeTrainingPod = null,
   onOpenTrainingPod = null,
   hasAgent,
-  onOpenBaggerBomb = null,
   onSpectate = null,
 }) {
   const desktop = viewport === 'desktop';
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState(null);
   const inFlight = React.useRef(false);
-  const [bbBusy, setBbBusy] = React.useState(false);
-  const bbInFlight = React.useRef(false);
 
   // A live pod to spectate, if any — the "Watch a live game" target. Reads the
   // same rounds/base-layer shape the rest of the surface reads; the row hides
@@ -116,21 +113,6 @@ export default function WhileYouWait({
     } finally {
       inFlight.current = false;
       setBusy(false);
-    }
-  };
-
-  // Deploy the agent vs CPU — the caller (App) owns the shared deploy sequence and
-  // navigates to the Battle View on success (which unmounts this module). We only
-  // guard re-entry and show a busy state while the (slow) cognition call runs.
-  const runBaggerBomb = async () => {
-    if (!onOpenBaggerBomb || bbInFlight.current) return;
-    bbInFlight.current = true;
-    setBbBusy(true);
-    try {
-      await onOpenBaggerBomb();
-    } finally {
-      bbInFlight.current = false;
-      setBbBusy(false);
     }
   };
 
@@ -196,17 +178,7 @@ export default function WhileYouWait({
         <div role="alert" style={{ fontSize: 12, color: LX.neg, lineHeight: 1.4, paddingLeft: 2 }}>{error}</div>
       )}
 
-      {/* secondaries — reuse-only nav */}
-      {onOpenBaggerBomb && (
-        <SecondaryRow
-          icon={<LIcon name="bolt" size={16} color={accent} />}
-          label={bbBusy ? 'Deploying your agent…' : 'Play a BaggerBomb round'}
-          sub={bbBusy ? 'reading the market · vs CPU' : 'deploy your agent · vs CPU'}
-          accent={accent}
-          onClick={runBaggerBomb}
-          disabled={bbBusy}
-        />
-      )}
+      {/* secondary — reuse-only Spectate (BaggerBomb pulled; see the header note) */}
       {liveWatchPod && onSpectate && (
         <SecondaryRow
           icon={<LIcon name="eyeR" size={16} color={accent} />}

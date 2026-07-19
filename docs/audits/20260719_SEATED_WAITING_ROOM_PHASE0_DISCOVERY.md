@@ -165,3 +165,16 @@ Recorded so this file is a self-contained record of the phase and its resolution
 5. **Both plumbing items approved:** `activeTrainingPod` threaded into `BracketFunnelSection` (mobile); a new `onOpenBaggerBomb` nav prop threaded `App → LeagueScreen → LeagueHome/LeagueLobbyDesktop → WhileYouWait`.
 
 Implementation landed in the follow-on commit (`WhileYouWait.jsx` + the five plumbing edits + `WhileYouWait.smoke.test.jsx`). Suite matches the known 49-files/8-tests baseline (stash-compared), plus one new passing test file.
+
+---
+
+## 12. Follow-up — the BaggerBomb secondary and the agent-deploy conflict (2026-07-19, post-implementation)
+
+The seated module first shipped a "Play a BaggerBomb round" secondary. Its first wiring pointed at `setScreen('baggerBombLobby')` — the **PVP** lobby, a dead end with no users. The corrective pass re-pointed it at the **agent-vs-CPU deploy** (the "shadow is trading · vs CPU" flow): the shared sequence `deployAgent(agentId, handleCreateAgentTrainingBattle)` (`src/services/agentDeploy.js:14` → POST `/api/agent/decide` → the Battle View), gated on the agent's single battle-lock (`agent.activeBattleId`) so the CTA hid when the agent was busy.
+
+Founder review then asked whether that deploy conflicts with the League pod's own Monday agent deploy. **Discovery says yes — the conflict is real:**
+- Competitive slot pods deploy the **real** agent (seats keyed by `odUserId`, no clone — `api/_utils/liveDraftFormation.js:459,488`) and pass through **AWAITING_OPEN** post-draft until the Monday anchor (`api/_utils/liveDraftLifecycle.test.js:191,198,253,302`).
+- The vs-CPU battle defaults to **1 day** (`api/agent/decide.js:691`, `api/_utils/agentBattleService.js:272`).
+- The tournament deploy (`runPrescribedTournamentDeploy`, `api/agent/decide.js:1029`) queries for **any** active `agentBattle` (`:1091-1095`) and **early-returns `battleCreated:false`** if one exists (`:1103-1113`) — so a vs-CPU battle still active on Monday **blocks the pod's own agent deploy**. The agent is absent from its League pod (severity — Day-1 gap vs whole-week — is an open question, since the Tue–Fri redeploy targets *incumbents*: `tournamentOrchestrator.js:687`).
+
+**Resolution (founder decision, 2026-07-19):** the BaggerBomb secondary was **removed** from the module — the training-pod hero and the Spectate secondary remain. The underlying deploy conflict is **ledgered as a pre-launch must-fix** (`docs/LAUNCH_READINESS_WATCH_LEDGER.md` **G2**, incl. the incumbent/whole-week severity question and the two fence-aware fix options) rather than papered over with a status gate on one surface. Anchors in this section verified at HEAD `79bdae5a`.
