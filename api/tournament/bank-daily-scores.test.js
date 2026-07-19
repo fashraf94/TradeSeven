@@ -15,6 +15,16 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 const h = vi.hoisted(() => ({ db: null }));
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => h.db }));
 
+// TOURNAMENT_ADVANCEMENT_FROZEN defaults TRUE (the emergency freeze), which
+// would frozen-skip this suite's leaderboard upsert for its battle group and
+// leave the real leaderboard write path (bank-daily-scores.js:120) unexercised.
+// This battery exercises the NORMAL, flag-OFF success paths; the freeze's skip
+// is covered by tournamentAdvancementFreeze.test.js. Override only this flag.
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  TOURNAMENT_ADVANCEMENT_FROZEN: false,
+}));
+
 import handler from './bank-daily-scores.js';
 
 const SECRET = 'test-admin-secret';

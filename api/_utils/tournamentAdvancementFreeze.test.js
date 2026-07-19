@@ -256,8 +256,14 @@ describe('freeze — the defense-in-depth second belt exists and is distinct', (
   // refactor that drops it must fail here (the p4Flips source-assertion idiom).
   it('runWeekSideEffects carries a flag-gated belt logged distinctly from the primary guard', () => {
     const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'tournamentAdvancement.js'), 'utf8');
-    const belt = src.slice(src.indexOf('async function runWeekSideEffects'));
+    // Bound the slice to runWeekSideEffects' body (up to the next function) so
+    // BOTH assertions are load-bearing — otherwise the slice runs to EOF and
+    // a deleted belt guard could be masked by any later flag mention.
+    const start = src.indexOf('async function runWeekSideEffects');
+    const end = src.indexOf('async function stampEntrySideEffects', start);
+    const belt = src.slice(start, end > start ? end : undefined);
     expect(belt).toContain('TOURNAMENT_ADVANCEMENT_FROZEN');
     expect(belt).toContain('FROZEN[belt]');
+    expect(belt).toContain('return false');
   });
 });
