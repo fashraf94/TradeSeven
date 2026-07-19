@@ -254,6 +254,29 @@ describe('ensureTrainingClones', () => {
     expect(bornWithRuleKeys.length).toBeGreaterThan(0);
   });
 
+  it('override to a different archetype SOFT-DELETES the copied ranked trait docs (closes the resurrection path)', async () => {
+    const { db, store } = makeDb({
+      'agents/ranked1': { ownerId: 'u1', archetype: 'degen', equippedTraits: [{ traitId: 'trait-squeeze-whisperer' }] },
+      // a ranked TRAIT rule doc (degen's) + a manual rule that has no traitId:
+      'agents/ranked1/rules/degen-trait': { traitId: 'trait-squeeze-whisperer', sourceRef: 't-12', isDeleted: false },
+      'agents/ranked1/rules/manual': { traitId: null, sourceRef: 'x-1', isDeleted: false },
+    });
+    const group = { id: 'pod1', players: [{ odUserId: 'u1', isCpu: false }] };
+    await ensureTrainingClones(db, group, {
+      now: new Date(),
+      loadoutSpecByUser: { u1: { archetype: 'guardian' } }, // diverges from degen
+    });
+    const cloneId = trainingCloneDocId('pod1', 'u1');
+    // The copied ranked trait doc (traitId ∉ guardian) is soft-deleted — even if
+    // its traitId ever re-enters equippedTraits, projectActiveRules filters isDeleted.
+    expect(store.get(`agents/${cloneId}/rules/degen-trait`).isDeleted).toBe(true);
+    // The manual rule (no traitId) is untouched.
+    expect(store.get(`agents/${cloneId}/rules/manual`).isDeleted).toBe(false);
+    // guardian born-with docs are present and active.
+    const bornWith = [...store.keys()].filter((k) => k.startsWith(`agents/${cloneId}/rules/bornwith__`));
+    expect(bornWith.length).toBeGreaterThan(0);
+  });
+
   it('override to the SAME archetype does not reseed — pure inherit-forward', async () => {
     const { db, store } = seededDb(); // ranked archetype = degen
     await ensureTrainingClones(db, trainingGroup, {

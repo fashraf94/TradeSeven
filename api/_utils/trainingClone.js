@@ -38,7 +38,7 @@ import {
 // atomic change uses (via change-archetype.js). Converges the clone path onto it:
 // a loadout override that picks a DIFFERENT archetype seeds THAT archetype's
 // born-with traits, so a clone never carries archetype≠traits (the invariant).
-import { seedArchetypeTraitsDeterministic, hasBornWithSet } from './archetypeSeeding.js';
+import { seedArchetypeTraitsDeterministic, hasBornWithSet, softDeleteReplacedTraitRuleDocs } from './archetypeSeeding.js';
 
 const LOG_PREFIX = '[TrainingClone]';
 
@@ -185,7 +185,16 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
     // inert (their traitId is no longer in equippedTraits, projectActiveRules gate).
     if (cloneDoc.archetype && cloneDoc.archetype !== ranked.archetype && hasBornWithSet(cloneDoc.archetype)) {
       const { equippedTraits } = await seedArchetypeTraitsDeterministic(cloneRef, cloneDoc.archetype);
-      if (equippedTraits) cloneDoc.equippedTraits = equippedTraits;
+      if (equippedTraits) {
+        cloneDoc.equippedTraits = equippedTraits;
+        // Soft-delete the copied ranked trait docs the override replaced (traitId
+        // ∉ the new born-with set). They are already inert via the equippedTraits
+        // projection gate, but soft-delete closes the resurrection path: if that
+        // traitId ever re-enters equippedTraits, projectActiveRules still filters
+        // isDeleted, so a stale copied doc can never project. Before the sentinel
+        // write so an interrupted re-provision re-copies then re-marks (idempotent).
+        await softDeleteReplacedTraitRuleDocs(cloneRef, equippedTraits);
+      }
     }
     await cloneRef.set(cloneDoc);
     created.push(odUserId);
