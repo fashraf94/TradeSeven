@@ -116,6 +116,7 @@ import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMEN
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { OnboardingExperience } from './components/Agent';
 import LeagueScreen from './screens/LeagueScreen';
+import { deployAgent } from './services/agentDeploy';
 import { GROUP_STATUS } from './constants/leagueTournament';
 import TournamentDevScreen from './screens/TournamentDevScreen';
 import AppLoadingScreen from './components/shared/AppLoadingScreen';
@@ -6585,6 +6586,18 @@ export default function PortfolioDuel() {
     return agentBattleId;
   };
 
+  // League "While you wait" — the agent-vs-CPU BaggerBomb entry reuses the SAME
+  // shared deploy sequence as the Command Center (deployAgent -> /api/agent/decide
+  // -> handleCreateAgentTrainingBattle, which routes to the Battle View). No second
+  // path invented. Availability is the agent's single battle-lock (activeBattleId):
+  // a battle-locked agent — including one committed to a League pod in BATTLE —
+  // can't deploy, so the seated module hides the CTA (the server's decide guard is
+  // the authority; this is the courtesy client gate).
+  const onLeaguePlayBaggerBomb = async () => {
+    const res = await deployAgent(primaryAgent?.id, handleCreateAgentTrainingBattle);
+    if (!res?.success) showToast('Could not start a BaggerBomb round — try again in a moment.');
+  };
+
   // ============================================
   // AGENT HUB: OPEN EXISTING AGENT BATTLE FROM A DEPLOYMENT CARD
   // Hydrates a currentBattle object from the agentBattles doc so the Battle
@@ -9685,7 +9698,7 @@ export default function PortfolioDuel() {
           hasAgent={agentLoading ? undefined : hasAgent}
           agentLoadout={primaryAgent ? { archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName } : null}
           isDesktop={isDesktop}
-          onOpenBaggerBomb={() => setScreen('baggerBombLobby')}
+          onOpenBaggerBomb={!agentLoading && primaryAgent?.id && !primaryAgent.activeBattleId ? onLeaguePlayBaggerBomb : null}
         />
       </ErrorBoundary>
       </div>

@@ -35,7 +35,10 @@ describe('WhileYouWait (Seated Waiting Room) render smoke', () => {
     expect(html).toContain('Sharpen up in a Training Pod');               // the hero START CTA
     expect(html).toContain('Practice runs never touch the leaderboard');  // the one quiet honesty line
     expect(html).toContain('Play a BaggerBomb round');                    // secondary — BaggerBomb
+    expect(html).toContain('deploy your agent');                          // it is the agent-vs-CPU deploy, not PVP
     expect(html).toContain('Watch a live game');                          // secondary — a live pod exists
+    expect(html).toContain('before the draft');                           // seated blurb references the draft…
+    expect(html).not.toContain('next bracket');                           // …not a bracket (the user holds a slot pod)
     expect(html).toContain('opens when the season locks');                // the honest bracket footnote (precedent copy)
     expect(html).not.toContain('Return to your Training Pod');            // R1: no return CTA without an active pod
   });
@@ -55,7 +58,10 @@ describe('WhileYouWait (Seated Waiting Room) render smoke', () => {
     expect(html).not.toContain('While you wait');
   });
 
-  it('no live pod → no "Watch a live game" row; no bagger handler → no bagger row', () => {
+  it('agent unavailable (null handler) → no BaggerBomb row; no live pod → no Watch row', () => {
+    // The caller passes onOpenBaggerBomb=null when the agent is battle-locked
+    // (e.g. committed to a League pod in BATTLE), so the CTA that "can't fire"
+    // never renders. Likewise the Watch row hides when nothing is live.
     const emptySt = { rounds: { r1: [], r2: [], r3: null }, baseGames: [] };
     const html = renderToString(<WhileYouWait status={GROUP_STATUS.AWAITING_OPEN} st={emptySt} onOpenTrainingPod={() => {}} hasAgent />);
     expect(html).not.toContain('Watch a live game');
