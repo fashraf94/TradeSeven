@@ -206,10 +206,24 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
 }
 
 // ── the agent voice + ask (the live state panel body) ───────────────────────
-// `compact` (mobile chat tab): tighter padding and — crucially — the voice lane is
-// a plain block (not a flex:1 internal-scroll region), so it flows in the mobile
-// arena's page scroll instead of collapsing to 0 height in an auto-height parent.
-// Default off → DockStatePanel's desktop call is byte-identical.
+// The dock cell is a FIXED 288px (DOCK_H, stretched by the dock row), so on DESKTOP
+// this panel fits its content inside that box in two regions:
+//   • scroll WELL — `flex:1; min-height:0; overflow-y:auto`: the suggestion PILLS at
+//     the TOP (visible at open — the well is anchored at scrollTop:0) above the VOICE
+//     LANE. On a new ANSWER the well scrolls so the newest voice entry is in view: the
+//     engine PREPENDS newest-first (arenaEngineCore applyAnswer/applyBeat), so "newest"
+//     is the top of the voice lane, which otherwise sits below the pills, below the fold.
+//   • pinned FOOTER — `flex:0 0 auto`: the ask header (label + "N left today") and the
+//     composer. Both are FIXED height, so they're always visible and the pills can never
+//     push the composer below the cell (that was the bug — pills + composer once shared
+//     one unshrinkable footer, so 6 long live chips shoved the composer past the fold,
+//     where the arena's scale-to-fit overflow:hidden clipped it).
+//
+// `compact` (mobile chat tab) is UNCHANGED (byte-for-byte): tighter padding, the voice
+// lane is a plain block (not a flex:1 scroll region) so it flows in the mobile arena's
+// page scroll, and the ask header + pills + composer flow beneath it. The mobile host
+// page-scrolls with no clip, so nothing there is ever below a fold (and its well is not
+// a scroll container, so the answer-scroll effect below is desktop-only).
 export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, style,
   askLive = null, remaining = null, asking = false, chatReady = false }) {
   const c = OWN_AGENT;
@@ -232,65 +246,131 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
     handleAsk(i);
   };
 
-  return (
-    <div style={{ borderRadius: 16, padding: compact ? '13px 14px' : '15px 17px', position: 'relative', display: 'flex', flexDirection: 'column',
-      background: alpha(LTOKENS.bg, 0.72), backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-      border: `1px solid ${alpha(c, 0.22)}`, boxShadow: '0 18px 50px -18px rgba(0,0,0,0.7)', ...style }}>
-      <div className="bv2-scroll" style={compact ? { minHeight: 0 } : { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
-        <VoiceLane lines={lines} archName={archName} color={c} live={live} max={compact ? 3 : 4} />
+  // Bring the newest voice-lane entry into view when an ANSWER lands (desktop only — the
+  // compact well isn't a scroll container). The lane is newest-first and the pills sit
+  // above it, so a fresh reply would otherwise render below the fold; this scrolls the
+  // WELL — never scrollIntoView, which would also move the host page — so the newest
+  // entry shows. Keyed on the newest line's _k + kind: fires once per new answer, and
+  // NOT for autonomous beats (swaps etc.), so it never yanks the reader mid-scroll.
+  // Uses offsetTop, NOT getBoundingClientRect: the arena is CSS-transform-scaled, so a
+  // client-rect delta is in scaled px and would under-scroll; offsetTop is layout px and
+  // is scale-independent (well + voice share the position:relative root as offsetParent).
+  const wellRef = React.useRef(null);
+  const voiceRef = React.useRef(null);
+  const newestKey = lines && lines.length ? lines[0]._k : null;
+  const newestKind = lines && lines.length ? lines[0].kind : null;
+  React.useEffect(() => {
+    if (compact || newestKind !== 'answer') return;
+    const well = wellRef.current; const voice = voiceRef.current;
+    if (!well || !voice) return;
+    well.scrollTop = voice.offsetTop - well.offsetTop;
+  }, [compact, newestKey, newestKind]);
+
+  // ── the ask affordance in three pieces, shared by both layouts ──
+  // header (label + "N left today") — fixed height.
+  const askHeader = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
+      <LIcon name="spark" size={12} color={c} stroke={2} />
+      <Eyebrow color={c}>Ask your agent</Eyebrow>
+      {/* the quiet, persistent counter — "N left today" (says "today" so the daily
+          reset is never a surprise). Server-fed; absent until the first read. */}
+      {chatOn && Number.isFinite(remaining) && (
+        <Mono style={{ fontSize: 10.5, fontWeight: 600, color: remaining > 0 ? LTOKENS.ink3 : c, marginLeft: 'auto' }}>
+          {remaining} left today
+        </Mono>
+      )}
+    </div>
+  );
+
+  // PINNED-FOOTER INVARIANT — READ BEFORE MOVING THIS. The desktop footer pins the ask
+  // header + composer, both FIXED height — that is why they're allowed to pin. The pills
+  // are DATA-DRIVEN and the .map is UNBOUNDED: `ask` is buildAskChips' six today, but a
+  // 7th/8th chip must stay possible without re-breaking the composer. That is only safe
+  // because the pills live INSIDE the scroll well. NOTHING whose height scales with a
+  // data array may move into the `flex:0 0 auto` footer — do that and tall content pushes
+  // the composer back below the 288px cell and the desktop overflow bug returns.
+  const pills = (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 9 }}>
+      {(ask || []).map((qa, i) => {
+        const on = !chatOn && asked.includes(i); // stub-only "asked" highlight
+        return (
+          <button key={qa.q} className="bv2-tap" onClick={() => tapChip(i, qa)} disabled={chatOn && asking}
+            style={{ all: 'unset', cursor: chatOn && asking ? 'default' : 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 999,
+              // opacity only under the live path — keeps the flag-off stub chip byte-identical
+              opacity: chatOn ? (asking ? 0.5 : 1) : undefined,
+              background: on ? alpha(c, 0.1) : LTOKENS.surface, border: `1px solid ${on ? alpha(c, 0.4) : LTOKENS.hair2}` }}>
+            <Mono style={{ fontSize: 11, fontWeight: 600, color: on ? c : LTOKENS.ink2 }}>{qa.q}</Mono>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // composer (input + send) — fixed height; the ONLY thing pinned in the desktop footer.
+  const composer = chatOn ? (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}`, opacity: asking ? 0.6 : 1 }}>
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitDraft(); } }}
+        disabled={asking}
+        placeholder={asking ? 'Thinking…' : 'Ask anything…'}
+        maxLength={2000}
+        style={{ all: 'unset', flex: 1, minWidth: 0, fontFamily: 'inherit', fontSize: 11.5, color: LTOKENS.ink }}
+      />
+      <button className="bv2-tap" onClick={submitDraft} disabled={asking || !draft.trim()} aria-label="Send"
+        style={{ all: 'unset', cursor: asking || !draft.trim() ? 'default' : 'pointer', width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: alpha(c, draft.trim() && !asking ? 0.14 : 0.06), border: `1px solid ${alpha(c, draft.trim() && !asking ? 0.36 : 0.18)}` }}>
+        <LIcon name="arrowUp" size={13} color={c} stroke={2.2} />
+      </button>
+    </div>
+  ) : (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
+      <Mono style={{ fontSize: 11.5, color: LTOKENS.ink3, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Ask anything…</Mono>
+      <span style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha(c, 0.14), border: `1px solid ${alpha(c, 0.36)}` }}>
+        <LIcon name="arrowUp" size={13} color={c} stroke={2.2} />
+      </span>
+    </div>
+  );
+
+  const root = {
+    borderRadius: 16, padding: compact ? '13px 14px' : '15px 17px', position: 'relative', display: 'flex', flexDirection: 'column',
+    background: alpha(LTOKENS.bg, 0.72), backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+    border: `1px solid ${alpha(c, 0.22)}`, boxShadow: '0 18px 50px -18px rgba(0,0,0,0.7)', ...style,
+  };
+
+  // MOBILE (compact) — voice-lane block, then the ask footer flows in the page scroll.
+  // Byte-for-byte the pre-fix tree; do not restructure this branch.
+  if (compact) {
+    return (
+      <div style={root}>
+        <div className="bv2-scroll" style={{ minHeight: 0 }}>
+          <VoiceLane lines={lines} archName={archName} color={c} live={live} max={3} />
+        </div>
+        <div style={{ marginTop: 13, paddingTop: 12, borderTop: `1px solid ${LTOKENS.hair}` }}>
+          {askHeader}
+          {pills}
+          {composer}
+        </div>
       </div>
-      <div style={{ marginTop: 13, paddingTop: 12, borderTop: `1px solid ${LTOKENS.hair}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
-          <LIcon name="spark" size={12} color={c} stroke={2} />
-          <Eyebrow color={c}>Ask your agent</Eyebrow>
-          {/* the quiet, persistent counter — "N left today" (says "today" so the daily
-              reset is never a surprise). Server-fed; absent until the first read. */}
-          {chatOn && Number.isFinite(remaining) && (
-            <Mono style={{ fontSize: 10.5, fontWeight: 600, color: remaining > 0 ? LTOKENS.ink3 : c, marginLeft: 'auto' }}>
-              {remaining} left today
-            </Mono>
-          )}
+    );
+  }
+
+  // DESKTOP — pills ride at the TOP of the internal scroll well (visible at open), the
+  // voice lane flows beneath them (scrolled into view on a new answer; see the effect
+  // above), and the ask header + composer are a pinned, always-visible footer.
+  return (
+    <div style={root}>
+      <div ref={wellRef} className="bv2-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+        {pills}
+        <div ref={voiceRef}>
+          <VoiceLane lines={lines} archName={archName} color={c} live={live} max={4} />
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 9 }}>
-          {(ask || []).map((qa, i) => {
-            const on = !chatOn && asked.includes(i); // stub-only "asked" highlight
-            return (
-              <button key={qa.q} className="bv2-tap" onClick={() => tapChip(i, qa)} disabled={chatOn && asking}
-                style={{ all: 'unset', cursor: chatOn && asking ? 'default' : 'pointer',
-                  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 999,
-                  // opacity only under the live path — keeps the flag-off stub chip byte-identical
-                  opacity: chatOn ? (asking ? 0.5 : 1) : undefined,
-                  background: on ? alpha(c, 0.1) : LTOKENS.surface, border: `1px solid ${on ? alpha(c, 0.4) : LTOKENS.hair2}` }}>
-                <Mono style={{ fontSize: 11, fontWeight: 600, color: on ? c : LTOKENS.ink2 }}>{qa.q}</Mono>
-              </button>
-            );
-          })}
-        </div>
-        {chatOn ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}`, opacity: asking ? 0.6 : 1 }}>
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitDraft(); } }}
-              disabled={asking}
-              placeholder={asking ? 'Thinking…' : 'Ask anything…'}
-              maxLength={2000}
-              style={{ all: 'unset', flex: 1, minWidth: 0, fontFamily: 'inherit', fontSize: 11.5, color: LTOKENS.ink }}
-            />
-            <button className="bv2-tap" onClick={submitDraft} disabled={asking || !draft.trim()} aria-label="Send"
-              style={{ all: 'unset', cursor: asking || !draft.trim() ? 'default' : 'pointer', width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: alpha(c, draft.trim() && !asking ? 0.14 : 0.06), border: `1px solid ${alpha(c, draft.trim() && !asking ? 0.36 : 0.18)}` }}>
-              <LIcon name="arrowUp" size={13} color={c} stroke={2.2} />
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
-            <Mono style={{ fontSize: 11.5, color: LTOKENS.ink3, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Ask anything…</Mono>
-            <span style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha(c, 0.14), border: `1px solid ${alpha(c, 0.36)}` }}>
-              <LIcon name="arrowUp" size={13} color={c} stroke={2.2} />
-            </span>
-          </div>
-        )}
+      </div>
+      <div style={{ flexShrink: 0, marginTop: 12, paddingTop: 12, borderTop: `1px solid ${LTOKENS.hair}` }}>
+        {askHeader}
+        {composer}
       </div>
     </div>
   );
