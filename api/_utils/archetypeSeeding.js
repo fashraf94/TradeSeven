@@ -41,29 +41,17 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { ARCHETYPE_DEFAULT_TRAITS } from '../../src/data/traitLibrary.js';
 import { buildSeedPlan } from '../../src/data/traitEquip.js';
+import { buildRuleDocFields } from '../../src/data/ruleDocFields.js';
 
 /**
- * Map one buildSeedPlan ruleSpec → the Firestore rule-doc body. Field-for-field
- * identical to forgeService.createRule's ruleDoc (server serverTimestamp()).
+ * Map one buildSeedPlan ruleSpec → the Firestore rule-doc body. Uses the ONE
+ * shared field shape (src/data/ruleDocFields.js) so it cannot drift from
+ * forgeService.createRule; only the admin-SDK server timestamps differ.
+ * (Seeded specs carry provenance:'archetype_default' → reconciler tier 2.)
  */
 function buildSeedRuleDoc(spec) {
   return {
-    text: spec.text,
-    source: spec.source ?? 'forge_discover',
-    sourceRef: spec.sourceRef ?? null,
-    visibility: 'private',
-    category: spec.category ?? null,
-    params: spec.params ?? null,
-    paramValues: spec.paramValues ?? null,
-    textTemplate: spec.textTemplate ?? null,
-    status: spec.status ?? 'active',
-    priority: spec.priority ?? 0,
-    traitId: spec.traitId ?? null,
-    // Source-tier provenance for the conflict reconciler (tier-2 built-in).
-    provenance: spec.provenance ?? null,
-    isRefined: false,
-    isDeleted: false,
-    bundleIds: [],
+    ...buildRuleDocFields(spec),
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   };

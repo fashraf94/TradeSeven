@@ -23,6 +23,7 @@ import {
   guardRuleCompatWrite,
 } from './ruleCompatGuard';
 import { resolveRuleHardness } from '../components/Forge/workshop/hardSoftHelper';
+import { buildRuleDocFields } from '../data/ruleDocFields';
 
 // ============================================
 // VALIDATION
@@ -180,24 +181,12 @@ export const createRule = async (agentId, ruleData, opts = {}) => {
   }
 
   const rulesRef = collection(db, 'agents', agentId, 'rules');
+  // Field shape comes from the ONE shared definition (src/data/ruleDocFields.js)
+  // so the client and the archetype-seeder rule docs cannot drift; only the
+  // client-SDK timestamps are stamped here. (provenance carries the reconciler
+  // source-tier: null → treated as tier-2/assumed.)
   const ruleDoc = {
-    text: ruleData.text,
-    source: ruleData.source,
-    sourceRef: ruleData.sourceRef || null,
-    visibility: ruleData.visibility || 'private',
-    category: ruleData.category || null,
-    params: ruleData.params || null,
-    paramValues: ruleData.paramValues || null,
-    textTemplate: ruleData.textTemplate || null,
-    status: ruleData.status || 'active',
-    priority: ruleData.priority || 0,
-    traitId: ruleData.traitId || null,
-    // Source-tier provenance for the conflict reconciler (tier-1 vs tier-2).
-    // null when unstamped — the reconciler treats missing as tier-2 (assumed).
-    provenance: ruleData.provenance || null,
-    isRefined: false,
-    isDeleted: false,
-    bundleIds: [],
+    ...buildRuleDocFields(ruleData),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
