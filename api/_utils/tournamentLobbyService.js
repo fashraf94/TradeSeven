@@ -268,8 +268,45 @@ async function claimLobbyForFormation(db, lobbyId, nowIso) {
  * Slice 3.0 spine reads the flag to keep it off the leaderboard / career rank /
  * bracket. Stamped only at creation; an idempotent re-entry reuses the frozen doc.
  */
+/**
+ * THE MIRROR GUARD core (Entry-Flow Consolidation P4, symmetric with the
+ * slot-side claimSlotSeat guard): reject a COMPETITIVE entry when any seated
+ * human already holds an active non-training group that plays the SAME battle
+ * week. The key is BATTLE-week-normalized — the same deriveBattleStartWeek
+ * Monday-anchor rule the slot side uses — NEVER isoWeekString(now): slot pods
+ * stamp baseLayerWeek as their battle week, so a formation-week key would
+ * silently miss a Wed/Sat/Sun slot seat whose battle is next Monday (the exact
+ * bug class the slot-side #1 fix corrected). Callers gate on !isTraining (P4b:
+ * practice is never guarded — training neither blocks nor is blocked).
+ */
+async function assertNoCompetitiveConflict(db, humanIds, nowIso, exceptGroupId = null) {
+  const battleWeek = deriveBaseLayerWeek(deriveBattleStartWeek(nowIso));
+  for (const humanId of humanIds) {
+    const conflict = await findActiveGroupInBattleWeek(db, humanId, battleWeek, exceptGroupId);
+    if (conflict) {
+      throw new Error(`already_in_competitive: ${humanId} already holds ${conflict} for battle week ${battleWeek}`);
+    }
+  }
+}
+
 export async function formGroupFromLobby(db, lobbyId, { now = new Date(), isTraining = false } = {}) {
   const nowIso = now.toISOString();
+
+  // MIRROR-GUARD PLACEMENT (P4c, /code-review triage): the guard runs BEFORE
+  // the lobby is claimed OPEN→FORMING, so a rejection mutates NOTHING — the
+  // lobby stays OPEN (joinable, and "Start now" retryable once the conflict
+  // clears), never stranded in FORMING with no cancel path. Guarded for the
+  // OPEN case only: a FORMED lobby re-enters idempotently via the early-return
+  // below, and a FORMING crash-resume always COMPLETES (formation is past the
+  // entry decision; a conflict appearing mid-formation is the same benign
+  // same-instant race class the slot side documents at claimSlotSeat).
+  if (!isTraining) {
+    const preSnap = await lobbyRef(db, lobbyId).get();
+    if (preSnap.exists && preSnap.data().status === LOBBY_STATUS.OPEN) {
+      await assertNoCompetitiveConflict(db, lobbyHumanIds(preSnap.data()), nowIso, lobbyId);
+    }
+  }
+
   const { lobby, alreadyFormed } = await claimLobbyForFormation(db, lobbyId, nowIso);
   if (alreadyFormed) {
     // A FORMED lobby always carries its groupId (set at claim, before FORMED);
@@ -281,33 +318,6 @@ export async function formGroupFromLobby(db, lobbyId, { now = new Date(), isTrai
   const humanIds = lobbyHumanIds(lobby);
   const groupId = lobby.groupId;       // deterministic (== lobbyId)
   const cpuStartN = lobby.cpuStartN;   // reserved at claim (null when 4 humans)
-
-  // THE MIRROR GUARD (Entry-Flow Consolidation P4 — the slot-side ledger note
-  // at liveDraftFormation.claimSlotSeat): reject formation when any seated
-  // human already holds an active non-training group that plays the SAME battle
-  // week this group would. The key is BATTLE-week-normalized — the same
-  // deriveBattleStartWeek Monday-anchor rule the slot side uses — NEVER
-  // isoWeekString(now): slot pods stamp baseLayerWeek as their battle week, so
-  // a formation-week key would silently miss a Wed/Sat/Sun slot seat whose
-  // battle is next Monday (the exact bug class the slot-side #1 fix corrected).
-  // Sits AFTER the alreadyFormed early-return above, so idempotent re-entry of
-  // an already-formed lobby is never blocked; exceptGroupId keeps a crash
-  // resume of THIS group's own formation idempotent.
-  //
-  // COMPETITIVE ENTRIES ONLY: a TRAINING formation (formTrainingDraft →
-  // quickPlay({isTraining:true}) → here) is never guarded — practice is
-  // no-stakes and independent of competitive play, exactly as the predicate
-  // itself never counts training pods as blockers. The guard is symmetric:
-  // training neither blocks nor is blocked.
-  if (!isTraining) {
-    const battleWeek = deriveBaseLayerWeek(deriveBattleStartWeek(nowIso));
-    for (const humanId of humanIds) {
-      const conflict = await findActiveGroupInBattleWeek(db, humanId, battleWeek, groupId);
-      if (conflict) {
-        throw new Error(`already_in_competitive: ${humanId} already holds ${conflict} for battle week ${battleWeek}`);
-      }
-    }
-  }
 
   // Pad to GROUP_SIZE from the RESERVED base so two concurrently-forming
   // lobbies can never seat the same cpu-agent (seam fact #1).
@@ -374,6 +384,10 @@ export async function formGroupFromLobby(db, lobbyId, { now = new Date(), isTrai
  * Returns { lobbyId, groupId, humanCount, cpuNs }.
  */
 export async function quickPlay(db, { odUserId, displayName = null, now = new Date(), isTraining = false } = {}) {
+  // Entry decision BEFORE any artifact exists (P4c): a rejected solo
+  // cold-start leaves NO orphan OPEN lobby hijacking the front door — nothing
+  // is created until the caller has passed the one-game-per-battle-week guard.
+  if (!isTraining) await assertNoCompetitiveConflict(db, [odUserId], now.toISOString());
   const { id } = await createLobby(db, { createdBy: odUserId, displayName, mode: LOBBY_MODE.PRIVATE, now });
   const formed = await formGroupFromLobby(db, id, { now, isTraining });
   return { lobbyId: id, ...formed };

@@ -468,10 +468,14 @@ describe('formGroupFromLobby — the mirror guard (slot seat blocks same-battle-
     },
   });
 
-  it('BLOCKS: a user holding a slot seat for the SAME battle week cannot quick-play', async () => {
-    const { db } = withRankings(slotPod('u1', BATTLE_WEEK));
+  it('BLOCKS: a user holding a slot seat for the SAME battle week cannot quick-play — and NO artifact is created', async () => {
+    const { db, store } = withRankings(slotPod('u1', BATTLE_WEEK));
     await expect(quickPlay(db, { odUserId: 'u1', now: NOW }))
       .rejects.toThrow(/^already_in_competitive/);
+    // P4c: the guard runs before createLobby — a rejected cold-start leaves no
+    // orphan OPEN lobby to hijack the front door, and no group doc.
+    expect([...store.keys()].some(k => k.startsWith('tournamentLobby/'))).toBe(false);
+    expect([...store.keys()].filter(k => k.startsWith('tournamentGroups/'))).toEqual(['tournamentGroups/lds_sun19_2026-06-14']);
   });
 
   it('does NOT block: a slot seat for a DIFFERENT battle week', async () => {
@@ -513,11 +517,33 @@ describe('formGroupFromLobby — the mirror guard (slot seat blocks same-battle-
     expect(again.groupId).toBe(first.groupId);
   });
 
-  it('a multi-human lobby is blocked when ANY member holds a same-battle-week game', async () => {
-    const { db } = withRankings(slotPod('u2', BATTLE_WEEK));
+  it('a multi-human lobby is blocked when ANY member holds a same-battle-week game — and stays OPEN (never stranded FORMING)', async () => {
+    const { db, store } = withRankings(slotPod('u2', BATTLE_WEEK));
     const { id } = await createLobby(db, { createdBy: 'u1', now: NOW });
     await joinLobby(db, id, { odUserId: 'u2', now: NOW });
     await expect(formGroupFromLobby(db, id, { now: NOW }))
       .rejects.toThrow(/already holds/);
+    // P4c: the guard runs before the OPEN→FORMING claim, so a rejection
+    // mutates nothing — the lobby is still joinable and retryable, not a
+    // permanently-FORMING dead end for the innocent members.
+    expect(store.get(`tournamentLobby/${id}`).status).toBe(LOBBY_STATUS.OPEN);
+    expect(store.get(`tournamentGroups/${id}`)).toBeUndefined();
+  });
+
+  it('a FORMING crash-resume COMPLETES even if a conflict appeared mid-formation (no stranding)', async () => {
+    // Simulate a crash after claimLobbyForFormation (lobby FORMING, groupId +
+    // cpuStartN stamped, no group doc yet), then a conflict appearing before
+    // the retry. P4c guards only the OPEN entry decision: the resume must
+    // finish the formation rather than throw forever.
+    const { db, store } = withRankings(slotPod('u1', BATTLE_WEEK));
+    const { id } = await createLobby(db, { createdBy: 'u1', now: NOW });
+    const crashed = store.get(`tournamentLobby/${id}`);
+    crashed.status = LOBBY_STATUS.FORMING;
+    crashed.groupId = id;
+    crashed.cpuStartN = 1;
+    const resumed = await formGroupFromLobby(db, id, { now: NOW });
+    expect(resumed.alreadyFormed).toBe(false);
+    expect(store.get(`tournamentGroups/${id}`).status).toBe(GROUP_STATUS.FORMING);
+    expect(store.get(`tournamentLobby/${id}`).status).toBe(LOBBY_STATUS.FORMED);
   });
 });
