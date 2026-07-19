@@ -14,7 +14,6 @@ import { Eyebrow, Mono, Icon, LIcon, AgentAvatar, Score, StatusBadge } from './L
 import { Funnel, PodCard } from './LeaguePod';
 import { quickPlayTraining, mapLobbyError } from '../../services/tournamentLobbyActions';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
-import { LEAGUE_LIVE_DRAFT } from '../../config/featureFlags';
 import SlotCenter from './liveDraft/SlotCenter';
 import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
 import TrainingClimbPreview from './TrainingClimbPreview';
@@ -172,9 +171,10 @@ function BracketPendingSection() {
 // THE FUNNEL — the hero. resting state of the whole bracket. No game → the
 // slot picker takes the center instead (one entry story; a claim routes into
 // the seated surface via onEnterGame); the forthcoming-bracket panel demotes
-// to SlotCenter's footnote line.
+// to SlotCenter's footnote line. SlotCenter owns the LEAGUE_LIVE_DRAFT gate
+// internally (P2c) so flag-off still keeps the Auto-draft entry affordance.
 function BracketFunnelSection({ st, onPickPod, activeGroup = null, currentUserId = null, displayName = null, onEnterGame = null }) {
-  if (!activeGroup && LEAGUE_LIVE_DRAFT) {
+  if (!activeGroup) {
     return (
       <div style={{ marginBottom: 18 }}>
         <SlotCenter currentUserId={currentUserId} displayName={displayName} onEntered={onEnterGame} />

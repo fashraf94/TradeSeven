@@ -25,7 +25,7 @@ import useLeagueState from '../../hooks/useLeagueState';
 import { useUser } from '../../contexts/UserContext';
 import { subscribeMyGroup, subscribeMyTrainingPod } from '../../services/tournamentGroupService';
 import { logLeagueSignal } from '../../services/leagueSignals';
-import { LEAGUE_TRAINING_POD_ENABLED, LEAGUE_LIVE_DRAFT } from '../../config/featureFlags';
+import { LEAGUE_TRAINING_POD_ENABLED } from '../../config/featureFlags';
 import SlotCenter from './liveDraft/SlotCenter';
 import { LTOKENS, LX, alpha } from './leagueTokens';
 import { Eyebrow, Mono } from './LeagueParts';
@@ -224,9 +224,11 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
 
           {/* CENTER — no game → the slot picker IS the entry (one entry story;
               a claim routes straight into the seated surface via onOpenMyGame);
-              in a game → the bracket funnel / forthcoming panel as today. */}
+              in a game → the bracket funnel / forthcoming panel as today.
+              SlotCenter owns the LEAGUE_LIVE_DRAFT gate internally (P2c) so
+              flag-off still keeps the Auto-draft entry affordance. */}
           <div className="lg-scroll ld-center">
-            {!activeGroup && LEAGUE_LIVE_DRAFT ? (
+            {!activeGroup ? (
               <SlotCenter currentUserId={uid} displayName={user?.displayName} onEntered={onOpenMyGame} />
             ) : st.bracketPending ? (
               <DeskBracketPending />
