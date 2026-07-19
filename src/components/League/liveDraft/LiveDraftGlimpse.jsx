@@ -39,9 +39,12 @@ export default function LiveDraftGlimpse({ group, tokens, currentUserId, onLeave
 
   return (
     <div style={{ background: tokens.bgCard, border: `1px solid ${tokens.borderDivider}`, borderRadius: 14, padding: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em' }}>Your slot is set</div>
-        <div style={{ fontSize: 13, color: tokens.teal, fontWeight: 700 }}>Draft in {countdown}</div>
+      {/* The countdown is the HERO (founder ruling, Entry-Flow P2): the claim
+          payoff reads as arrival + anticipation, so the live tick to the fire
+          instant is the most prominent element, not a caption. */}
+      <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em' }}>Your slot is set</div>
+      <div style={{ fontSize: 32, fontWeight: 800, color: tokens.teal, letterSpacing: '-0.02em', lineHeight: 1.1, marginTop: 8 }}>
+        Draft in {countdown}
       </div>
       <p style={{ color: tokens.textMuted, fontSize: 13, marginTop: 6, marginBottom: 0, lineHeight: 1.5 }}>
         The live draft fires at slot time. Empty seats fill with CPUs — a slot with at least one human always drafts.

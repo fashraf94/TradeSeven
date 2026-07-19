@@ -33,3 +33,18 @@ export const LX = {
   cpu:    '#9A8CE0',   // CPU agent ring — always + a CPU chip badge (League-only identity)
   cut:    CMD.gold,    // the cut line
 };
+
+// Call-site token map for the liveDraft entry surfaces (LiveDraftPicker /
+// AutoDraftFallback) when they mount in the League lobby center. Those
+// components consume the live-app useTheme() token NAMES; this maps them onto
+// the League obsidian palette in ONE shared const so the desktop and mobile
+// mounts can't drift (the participant-view mount keeps passing real useTheme()
+// tokens — the components themselves are untouched).
+export const PICKER_TOKENS = {
+  teal: CMD.teal,
+  bgCard: CMD.surface,
+  borderDivider: CMD.hair,
+  medalGold: CMD.gold,
+  textMuted: CMD.ink2,
+  textFaint: CMD.ink3,
+};

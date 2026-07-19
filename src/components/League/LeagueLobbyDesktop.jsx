@@ -23,15 +23,16 @@ import React from 'react';
 import './league.css';
 import useLeagueState from '../../hooks/useLeagueState';
 import { useUser } from '../../contexts/UserContext';
-import { subscribeMyTrainingPod } from '../../services/tournamentGroupService';
+import { subscribeMyGroup, subscribeMyTrainingPod } from '../../services/tournamentGroupService';
 import { logLeagueSignal } from '../../services/leagueSignals';
 import { LEAGUE_TRAINING_POD_ENABLED } from '../../config/featureFlags';
+import SlotCenter from './liveDraft/SlotCenter';
 import { LTOKENS, LX, alpha } from './leagueTokens';
 import { Eyebrow, Mono } from './LeagueParts';
 import Spectate from './LeagueSpectate';
 import {
-  DeskEnter, DeskStat, DeskYourGroup, DeskFollowRail, DeskLeaderboard, DeskPodPanel,
-  DeskFunnel, DeskBracketPending, LDActionModal, LDJoinModal, LDFocus, DeskTabBar, DeskTrainingPanel, TRAIN,
+  DeskStat, DeskYourGroup, DeskFollowRail, DeskLeaderboard, DeskPodPanel,
+  DeskFunnel, DeskBracketPending, LDFocus, DeskTabBar, DeskTrainingPanel, TRAIN,
 } from './LeagueDeskParts';
 
 const ACCENT = LX.energy; // teal — the league energy accent (tournament surface)
@@ -89,9 +90,10 @@ function findPod(st, id) {
 }
 
 // The front door to the live participant flow (board commit / battle / claims /
-// draft). Shown on BOTH the Ranked and Training surfaces (mobile parity: the
-// mobile lobby renders this regardless of tab) so a player with an active game
-// can always jump back in — including when the training tab is flag-off.
+// draft). Shown on BOTH the Ranked and Training surfaces (mobile parity) but
+// ONLY while the player actually has an active competitive game (the
+// activeGroup gate at each site) — a no-game player enters via the slot-picker
+// center instead, never a bar that leads to an empty page.
 function MyGameBar({ onOpen }) {
   return (
     <button className="lg-tap" onClick={onOpen} style={{ all: 'unset', boxSizing: 'border-box', width: '100%', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 13, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
@@ -113,8 +115,6 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
   // a setState-in-effect that could loop if the real adapter returns a fresh
   // object reference each render.
   const [selectedPodId, setSelectedPodId] = React.useState(null);
-  const [action, setAction] = React.useState(false);
-  const [joined, setJoined] = React.useState(null);        // 'quick' | 'ranked' | null
   const [spec, setSpec] = React.useState(null);            // { pod, focusId }
 
   // Active Training Game (build spec §4) — a member-scoped real-time listener,
@@ -127,10 +127,16 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
     return subscribeMyTrainingPod(uid, setActiveTrainingPod);
   }, [uid]);
 
-  const aLivePod = React.useMemo(
-    () => [...st.rounds.r1, ...st.rounds.r2, st.rounds.r3].find((p) => p.status === 'live') || st.rounds.r1[0],
-    [st],
-  );
+  // The per-user active-game signal (Entry-Flow Consolidation Phase 1) — the
+  // caller's competitive group via subscribeMyGroup, which observes a claimed
+  // slot seat through FORMING/DRAFTING/AWAITING_OPEN/BATTLE. Drives BOTH the
+  // conditional MyGameBar (no game → no bar) and the no-game slot-picker center.
+  // Fixture mode has no myGroup, so the bar simply hides there.
+  const [activeGroup, setActiveGroup] = React.useState(null);
+  React.useEffect(() => {
+    if (!uid) { setActiveGroup(null); return undefined; }
+    return subscribeMyGroup(uid, setActiveGroup);
+  }, [uid]);
 
   // Derived (never stale): the docked pod from the live state, or null.
   const selectedPod = selectedPodId ? findPod(st, selectedPodId) : null;
@@ -140,22 +146,12 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
   const pickPod = (pod) => { setSpec(null); setSelectedPodId(pod.id); signal('pod-tap', { podId: pod.id }); };
   const closePod = () => setSelectedPodId(null);
   const openSpectate = (pod, focusId) => { if (!pod) return; setSpec({ pod, focusId }); signal('spectate-open', { podId: pod.id, focusId }); };
-  const enter = () => { setAction(true); signal('enter-tournament', {}); };
-  const pickMode = (m) => { setAction(false); setJoined(m); signal('enter-mode', { mode: m }); };
-  // Only open Spectate on a pod that actually has a seated player — a sparse
-  // real-data fallback pod (all-null seats) would otherwise crash Spectate
-  // (rankPod filters out TBDs → empty → ranked[0] deref).
-  const watchWhileWaiting = () => {
-    setJoined(null);
-    const seat = aLivePod?.seats?.find((s) => s);
-    if (seat) openSpectate(aLivePod, seat.id);
-  };
-  // Switching tabs dismisses any open tournament overlay so a ranked modal can't
-  // linger over the (purple) training surface.
+  // Switching tabs dismisses any open tournament overlay so a ranked overlay
+  // can't linger over the (purple) training surface.
   const switchTab = (next) => {
     if (next === tab) return;
     signal('tab-switch', { from: tab, to: next });
-    setAction(false); setJoined(null); setSpec(null);
+    setSpec(null);
     setTab(next);
   };
 
@@ -185,7 +181,6 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
           {TRAINING_ON && <DeskTabBar tab={tab} onSwitchTab={switchTab} accent={ACCENT} />}
-          {!onTraining && <DeskEnter accent={ACCENT} onEnter={enter} />}
         </div>
       </div>
 
@@ -194,7 +189,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
         <div className="ld-grid ld-grid-training">
           {/* MAIN — the training surface (active-game re-entry card or cold-start) */}
           <div className="lg-scroll ld-train-main">
-            {onOpenMyGame && <MyGameBar onOpen={onOpenMyGame} />}
+            {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
             <DeskTrainingPanel
               onOpenTrainingPod={onOpenTrainingPod}
               activeTrainingPod={activeTrainingPod}
@@ -217,7 +212,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
         <div className="ld-grid">
           {/* LEFT — your group + live follows */}
           <div className="lg-scroll ld-rail-left">
-            {onOpenMyGame && <MyGameBar onOpen={onOpenMyGame} />}
+            {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
             <DeskYourGroup st={st} accent={ACCENT} onOpen={pickPod} />
             <DeskFollowRail items={st.followLive} accent={ACCENT} onSpectate={openSpectate} />
             <div style={{ marginTop: 'auto', paddingTop: 8 }}>
@@ -227,9 +222,15 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
             </div>
           </div>
 
-          {/* CENTER — THE BRACKET, the hero (or the forthcoming state pre-season) */}
+          {/* CENTER — no game → the slot picker IS the entry (one entry story;
+              a claim routes straight into the seated surface via onOpenMyGame);
+              in a game → the bracket funnel / forthcoming panel as today.
+              SlotCenter owns the LEAGUE_LIVE_DRAFT gate internally (P2c) so
+              flag-off still keeps the Auto-draft entry affordance. */}
           <div className="lg-scroll ld-center">
-            {st.bracketPending ? (
+            {!activeGroup ? (
+              <SlotCenter currentUserId={uid} displayName={user?.displayName} onEntered={onOpenMyGame} />
+            ) : st.bracketPending ? (
               <DeskBracketPending />
             ) : (
               <>
@@ -259,13 +260,13 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
         </div>
       )}
 
-      {/* overlays */}
-      {action && <LDActionModal accent={ACCENT} onClose={() => setAction(false)} onPick={pickMode} />}
-      {joined && <LDJoinModal mode={joined} onClose={() => setJoined(null)} onWatch={watchWhileWaiting} />}
+      {/* overlays — Spectate's claim CTA re-points at the entry (P3): closing
+          the overlay lands on the center, which IS the slot picker for a
+          no-game viewer (the retired Pick-your-mode modal is gone). */}
       {spec && (
         <LDFocus width={760} onClose={() => setSpec(null)}>
           <div style={{ height: '86vh', maxHeight: 880, borderRadius: 24, overflow: 'hidden', border: `1px solid ${LTOKENS.hair2}`, boxShadow: '0 30px 90px rgba(0,0,0,0.6)', position: 'relative' }}>
-            <Spectate pod={spec.pod} focusId={spec.focusId} accent={ACCENT} onBack={() => setSpec(null)} onEnter={() => { setSpec(null); setAction(true); }} />
+            <Spectate pod={spec.pod} focusId={spec.focusId} accent={ACCENT} onBack={() => setSpec(null)} onEnter={() => setSpec(null)} />
           </div>
         </LDFocus>
       )}

@@ -1,8 +1,9 @@
 // src/services/leagueSignals.js
 //
 // Front-end signal-capture seam for the redesigned League surface — the events
-// that ORIGINATE here: spectate-open, pod-tap, enter-tournament, enter-mode,
-// tab-switch (the follow-rail tap is itself a spectate-open). These are front-end
+// that ORIGINATE here: spectate-open, pod-tap, tab-switch (the follow-rail tap
+// is itself a spectate-open; enter-tournament/enter-mode retired with the
+// Pick-your-mode stub, Entry-Flow Consolidation P3). These are front-end
 // NAVIGATION telemetry — reconciled against the catalog in
 // docs/VISION_PROGRAM_POST_LAUNCH_PLACEMENT_ADDENDUM_A_JUN10_2026.md §4 and found
 // to belong to NEITHER the §4 trading-signal catalog (board/flip/claim/…) nor any

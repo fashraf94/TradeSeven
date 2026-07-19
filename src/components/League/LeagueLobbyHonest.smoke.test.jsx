@@ -42,9 +42,17 @@ const coldStart = buildLeagueState({}).state;
 const hooked = vi.hoisted(() => ({ ret: null }));
 vi.mock('../../hooks/useLeagueState', () => ({ default: () => hooked.ret }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => ({ user: null }) }));
-vi.mock('../../services/tournamentGroupService', () => ({ subscribeMyTrainingPod: () => () => {} }));
+vi.mock('../../services/tournamentGroupService', () => ({ subscribeMyGroup: () => () => {}, subscribeMyTrainingPod: () => () => {} }));
 vi.mock('../../services/leagueSignals', () => ({ logLeagueSignal: () => {} }));
-vi.mock('../../services/tournamentLobbyActions', () => ({ quickPlayTraining: () => {}, mapLobbyError: () => 'error' }));
+vi.mock('../../services/tournamentLobbyActions', () => ({ quickPlay: () => Promise.resolve({}), quickPlayTraining: () => {}, mapLobbyError: () => 'error' }));
+// SlotCenter (the no-game center) transitively imports the slot actions, whose
+// fetchWithAuth pulls the env-gated Firebase client — stub like liveDraft.smoke.
+vi.mock('../../services/liveDraftActions', () => ({
+  fetchSlotSchedule: () => Promise.resolve({ slots: [] }),
+  claimSlot: () => Promise.resolve({}),
+  releaseSlot: () => Promise.resolve({}),
+  mapSlotActionError: () => 'error',
+}));
 vi.mock('./LoadoutChooserSheet', () => ({ default: () => null }));
 
 const LeagueLobbyDesktop = (await import('./LeagueLobbyDesktop')).default;
@@ -58,7 +66,8 @@ describe('League lobby — honest display under the real adapter (fixture-leak f
     hooked.ret = { state: baseLayerOnly, loading: false, isFixtures: false };
     const html = render(<LeagueLobbyDesktop onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} />);
     // the honest forthcoming bracket replaces the funnel
-    expect(html).toContain('opens when the season locks');
+    expect(html).toContain('opens when the season locks'); // the demoted footnote (copy preserved)
+    expect(html).toContain('Pick a draft slot');            // the no-game center is the slot picker
     expect(html).not.toContain('YOUR PATH TO THE TROPHY'); // funnel (and its hero eyebrow) is gone
     // the leaderboard shows REAL members, not the 16 demo players
     expect(html).toContain('Alice');
@@ -69,7 +78,8 @@ describe('League lobby — honest display under the real adapter (fixture-leak f
   it('desktop cold-start: honest empty leaderboard + forthcoming bracket, no demo', () => {
     hooked.ret = { state: coldStart, loading: false, isFixtures: true };
     const html = render(<LeagueLobbyDesktop onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} />);
-    expect(html).toContain('opens when the season locks');
+    expect(html).toContain('opens when the season locks'); // the demoted footnote (copy preserved)
+    expect(html).toContain('Pick a draft slot');            // the no-game center is the slot picker
     expect(html).toContain('Standings appear once'); // the honest empty leaderboard
     FIXTURE_NAMES.forEach((n) => expect(html).not.toContain(n));
   });
@@ -77,7 +87,8 @@ describe('League lobby — honest display under the real adapter (fixture-leak f
   it('mobile base-layer-only: forthcoming bracket + real field, no demo players', () => {
     hooked.ret = { state: baseLayerOnly, loading: false, isFixtures: false };
     const html = render(<LeagueHome onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} />);
-    expect(html).toContain('opens when the season locks');
+    expect(html).toContain('opens when the season locks'); // the demoted footnote (copy preserved)
+    expect(html).toContain('Pick a draft slot');            // the no-game center is the slot picker
     expect(html).not.toContain('16 → 8 → 4'); // no fixture bracket-count copy
     FIXTURE_NAMES.forEach((n) => expect(html).not.toContain(n));
   });
@@ -85,7 +96,8 @@ describe('League lobby — honest display under the real adapter (fixture-leak f
   it('mobile cold-start: honest empty field, no demo groups', () => {
     hooked.ret = { state: coldStart, loading: false, isFixtures: true };
     const html = render(<LeagueHome onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} />);
-    expect(html).toContain('opens when the season locks');
+    expect(html).toContain('opens when the season locks'); // the demoted footnote (copy preserved)
+    expect(html).toContain('Pick a draft slot');            // the no-game center is the slot picker
     expect(html).toContain('Weekly groups appear here'); // the honest empty field state
     FIXTURE_NAMES.forEach((n) => expect(html).not.toContain(n));
   });

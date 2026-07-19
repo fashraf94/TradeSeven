@@ -139,4 +139,66 @@ From the read-only cron audit (30 LIVE · 2 DEAD, 38/40). This pass **removed** 
 
 ---
 
+## Entry-Flow Consolidation triage (2026-07-18, founder-ruled)
+
+From the consolidation build's `/code-review` (findings verbatim in the build
+report; fixed items — the training-block, release-navigation, guard-placement,
+kill-switch, and CTA-label findings — are in the branch and not ledgered here).
+
+### 🚩 E1 — PRE-BRACKET GATE: eliminated players lose the round-boundary route
+The `MyGameBar` gate (`onOpenMyGame && activeGroup`) is the redesign's only
+non-claim door into `LeagueParticipantView`, whose `RoundBoundaryView` branch
+exists precisely for `group === null` (localStorage `bracketGameId` recovery).
+`selectMyGroup` excludes COMPLETE, so an ELIMINATED (or champion-terminal)
+bracket player has no route to their "you're eliminated / champion"
+acknowledgment; advancers self-heal (their next FORMING group re-shows the bar).
+- **Launch-safe today:** nothing triggers it — no bracket is live and base-layer
+  groups carry no `bracketGameId`.
+- **Trigger (a GATE, not a watch):** **before the first bracket season locks**,
+  this must be resolved — the regression arms now and bites when a bracket round
+  completes.
+- **Fix shapes (founder to pick at the pre-bracket pass):** widen the bar gate
+  with the remembered `bracketGameId` (`activeGroup || getRememberedBracketGameId()`),
+  or add a dedicated result-pending affordance in the lobby.
+
+### E2 — Regular-side battle-week model (closes the guard's regular-vs-regular hole)
+`formGroupFromLobby` stamps `baseLayerWeek = isoWeekString(now)` (formation
+week) while the guards key on the battle week — so regular-vs-regular
+same-battle-week double entry passes both guards (pre-existing; the consolidation's
+mirror guard reliably catches slot pods, its specced target), the freshly formed
+regular group files itself under the formation-week cohort (the pre-registered
+"Quick Play cohort-week quirk"), and Monday 09:30–12:00 ET formations sit in a
+residual mis-key window (the guard's 9:30 Monday cutoff vs the pipeline's
+ET-noon resolution deadline).
+- **Trigger:** before slot + regular entries coexist at real scale, or with the
+  first user-visible cohort/leaderboard mis-filing.
+- **Fix (its own task, per the build-spec ledger):** migrate the regular write
+  site to a battle-week `baseLayerWeek` (aligning the cohort key with the
+  pipeline's actual resolution Monday), then the guard hole and the residual
+  window close together. Touches the regular formation path; needs its own tests.
+
+### E3 — Entry-flow hygiene set (behavior-neutral, one small follow-up task)
+Verified-real, behavior-neutral cleanups deferred from the consolidation:
+one shared `useMyGroup(uid)` hook for the byte-duplicated `activeGroup`
+subscription (which also doubles the same member query `subscribeMyTrainingPod`
+already streams); `AutoDraftFallback` onto the tested `tournamentActionMachine`
+lifecycle; Spectate's `onEnter` (now dead-equal to `onBack`) collapsed; the
+four-site `MyGameBar` gate and the `BracketFunnelSection` pass-through each
+into one place; SlotCenter's footnote onto the `Eyebrow` atom; the guard's
+per-human queries under `Promise.all`; a drift note on the hand-maintained
+`PICKER_TOKENS` map. Also accepted as-is (founder ruling): the in-game user's
+brief picker flash + one uncached slot-schedule read per lobby visit
+(at-precedent with the training-pod subscription; "fixing" it would trade away
+the SSR smoke coverage of the no-game center).
+
+### E4 — Two stale-flag test failures on main (separate small task)
+`liveDraftFormation.test.js` ("first claim… stamped self-sufficiently", asserts
+`baselinePolicy` absent) and the `liveDraftLifecycle.e2e` capstone fail on clean
+main: `LEAGUE_CANONICAL_OPEN_CAPTURE` was flipped `true` without updating their
+flag-off expectations. Verified pre-existing by stash-run at the consolidation
+base. Fix: update the two assertions to the flag-on expectation (accounts for
+the known-baseline drift: 47 files/6 tests → 49/8).
+
+---
+
 *Maintained as current state (like `BUILD_RULES.md`). When an item's trigger fires and it is resolved, strike it here in the same PR with the founder decision cited.*

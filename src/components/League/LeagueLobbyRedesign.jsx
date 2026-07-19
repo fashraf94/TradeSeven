@@ -1,9 +1,11 @@
 // src/components/League/LeagueLobbyRedesign.jsx
 //
-// Community landing, built around the bracket FUNNEL. The spectacle is the
-// welcome mat; "Enter tournament" is one layer in. One layout, three fill
-// levels (no separate empty state). No skill tiers — divisions are rounds ×
-// groups. Transcribed from the Claude Design prototype (league-lobby.jsx).
+// Community landing. For a player with an active game the bracket FUNNEL is
+// the spectacle; for a no-game player the slot picker IS the center (Entry-Flow
+// Consolidation P3 — the "Enter tournament" CTA and its Pick-your-mode stub are
+// retired). One layout, three fill levels (no separate empty state). No skill
+// tiers — divisions are rounds × groups. Transcribed from the Claude Design
+// prototype (league-lobby.jsx).
 
 import React, { useState, useRef } from 'react';
 import { rankPod } from './leagueFixtures';
@@ -12,6 +14,7 @@ import { Eyebrow, Mono, Icon, LIcon, AgentAvatar, Score, StatusBadge } from './L
 import { Funnel, PodCard } from './LeaguePod';
 import { quickPlayTraining, mapLobbyError } from '../../services/tournamentLobbyActions';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
+import SlotCenter from './liveDraft/SlotCenter';
 import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
 import TrainingClimbPreview from './TrainingClimbPreview';
 import LoadoutChooserSheet from './LoadoutChooserSheet';
@@ -20,30 +23,6 @@ import LoadoutChooserSheet from './LoadoutChooserSheet';
 // resolved once via the shared climbPreviewEnabled(); the pure shouldPreviewClimb
 // predicate then decides per-pod (BATTLE + seated only).
 const CLIMB_PREVIEW_ON = climbPreviewEnabled();
-
-function EnterButton({ accent, onEnter }) {
-  return (
-    <button
-      className="lg-tap"
-      onClick={onEnter}
-      style={{
-        all: 'unset', boxSizing: 'border-box', width: '100%', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', gap: 12, padding: '15px 16px', borderRadius: 16,
-        background: `linear-gradient(120deg, ${alpha(accent, 0.22)}, ${alpha(accent, 0.08)})`,
-        border: `1px solid ${alpha(accent, 0.45)}`, boxShadow: `0 8px 28px ${alpha(accent, 0.18)}, inset 0 1px 0 ${alpha('#ffffff', 0.06)}`,
-      }}
-    >
-      <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, background: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 14px ${alpha(accent, 0.4)}` }}>
-        <LIcon name="play" size={17} color={LTOKENS.bg} />
-      </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>Enter tournament</div>
-        <Mono style={{ fontSize: 11, color: alpha(accent, 0.95) }}>Claim a seat · top 2 of your group advance</Mono>
-      </div>
-      <Icon name="arrowR" size={20} color={accent} />
-    </button>
-  );
-}
 
 function Stat({ n, label, dot, muted }) {
   return (
@@ -189,8 +168,19 @@ function BracketPendingSection() {
   );
 }
 
-// THE FUNNEL — the hero. resting state of the whole bracket.
-function BracketFunnelSection({ st, onPickPod }) {
+// THE FUNNEL — the hero. resting state of the whole bracket. No game → the
+// slot picker takes the center instead (one entry story; a claim routes into
+// the seated surface via onEnterGame); the forthcoming-bracket panel demotes
+// to SlotCenter's footnote line. SlotCenter owns the LEAGUE_LIVE_DRAFT gate
+// internally (P2c) so flag-off still keeps the Auto-draft entry affordance.
+function BracketFunnelSection({ st, onPickPod, activeGroup = null, currentUserId = null, displayName = null, onEnterGame = null }) {
+  if (!activeGroup) {
+    return (
+      <div style={{ marginBottom: 18 }}>
+        <SlotCenter currentUserId={currentUserId} displayName={displayName} onEntered={onEnterGame} />
+      </div>
+    );
+  }
   if (st.bracketPending) return <BracketPendingSection />;
   return (
     <div style={{ borderRadius: 20, padding: '16px 12px 14px', marginBottom: 18, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
@@ -246,15 +236,13 @@ function LobbyFooter() {
 // FLAG-OFF PATH (LEAGUE_NEXT_ARC_ENABLED off + no ?leagueTabs=1): today's
 // single-column lobby, byte-identical — the extracted sections compose to the
 // same output, FollowRail included.
-export default function Lobby({ st, accent, onEnter, onPickPod, onSpectate, onOpenMyGame }) {
+export default function Lobby({ st, accent, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, uid = null, displayName = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
-      {onOpenMyGame && <MyGameBar onOpenMyGame={onOpenMyGame} />}
-      <EnterButton accent={accent} onEnter={onEnter} />
-      <div style={{ height: 22 }} />
+      {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
       <LobbyHero st={st} accent={accent} />
       <FollowRail items={st.followLive} onSpectate={onSpectate} />
-      <BracketFunnelSection st={st} onPickPod={onPickPod} />
+      <BracketFunnelSection st={st} onPickPod={onPickPod} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame} />
       <YourGroup st={st} accent={accent} onPick={onPickPod} />
       <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
       <LobbyFooter />
@@ -491,10 +479,10 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
 // / group / field flow with the reserved pulse slot in FollowRail's place;
 // Training = the inert cold-start shell. The keyed wrapper replays a calm CSS
 // fade on switch (reduced-motion-neutralized globally).
-export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, onSpectate, onOpenMyGame, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null }) {
+export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null, displayName = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
-      {onOpenMyGame && <MyGameBar onOpenMyGame={onOpenMyGame} />}
+      {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
       <LobbyHero st={st} accent={accent} />
       <TabBar tab={tab} onSwitchTab={onSwitchTab} accent={accent} />
       <div key={tab} className="lg-tabpanel">
@@ -502,10 +490,8 @@ export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, 
           <TrainingShell accent={accent} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} uid={uid} />
         ) : (
           <>
-            <EnterButton accent={accent} onEnter={onEnter} />
-            <div style={{ height: 18 }} />
             <PulseSlot />
-            <BracketFunnelSection st={st} onPickPod={onPickPod} />
+            <BracketFunnelSection st={st} onPickPod={onPickPod} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame} />
             <YourGroup st={st} accent={accent} onPick={onPickPod} />
             <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
             <LobbyFooter />

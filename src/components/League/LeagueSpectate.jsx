@@ -234,8 +234,12 @@ export default function Spectate({ pod, focusId, accent, onBack, onEnter }) {
           <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 6 }}>
             Your 3 picks, your agent&apos;s 6-stock book, one combined score in a group of four. Top two advance — empty seats run as CPU.
           </div>
+          {/* Re-pointed at the entry (P3): onEnter closes Spectate back onto the
+              League center — the slot picker for a no-game viewer. Label names
+              the DESTINATION, not a claim the button doesn't perform (P3b,
+              /code-review triage #9 — an in-game viewer lands on their funnel). */}
           <button className="lg-tap" onClick={onEnter} style={{ all: 'unset', cursor: 'pointer', marginTop: 14, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, width: '100%', padding: 14, borderRadius: 13, background: accent, color: LTOKENS.bg, fontWeight: 700, fontSize: 14.5, boxShadow: `0 8px 24px ${alpha(accent, 0.3)}` }}>
-            <LIcon name="play" size={15} color={LTOKENS.bg} /> Enter tournament
+            <LIcon name="play" size={15} color={LTOKENS.bg} /> Go to the draft slots
           </button>
         </div>
       </div>
