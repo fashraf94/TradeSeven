@@ -58,8 +58,23 @@ vi.mock('../../src/config/featureFlags.js', () => ({
 const { default: changeArchetypeHandler } = await import('./change-archetype.js');
 
 // Fake Firestore: agents collection + per-agent rules/bundles subcollections.
+// A mutable store backs both in-tx writes (the seed's tx.set) and post-tx reads
+// (the cleanup + rescan). failSubreads gates only READS (the seed writes docs
+// even when reads are down — only the best-effort cleanup/rescan degrade).
 function makeFakeFirestore({ agentDocs = {}, subcollections = {}, failSubreads = false } = {}) {
-  const state = { agentDocs };
+  const state = { agentDocs, subcollections };
+  let autoSeq = 0;
+  const store = (id, sub) => {
+    state.subcollections[id] = state.subcollections[id] || {};
+    state.subcollections[id][sub] = state.subcollections[id][sub] || [];
+    return state.subcollections[id][sub];
+  };
+  const buildDocRef = (id, sub, docId) => ({
+    id: docId,
+    get: async () => { const d = store(id, sub).find((x) => x.id === docId); return { exists: !!d, id: docId, data: () => d }; },
+    set: async (data) => { const arr = store(id, sub); const i = arr.findIndex((x) => x.id === docId); const doc = { id: docId, ...data }; if (i >= 0) arr[i] = doc; else arr.push(doc); },
+    update: async (updates) => { const arr = store(id, sub); const i = arr.findIndex((x) => x.id === docId); if (i >= 0) arr[i] = { ...arr[i], ...updates }; },
+  });
   const buildAgentRef = (id) => ({
     id,
     get: async () => ({ exists: !!state.agentDocs[id], data: () => state.agentDocs[id] }),
@@ -67,9 +82,9 @@ function makeFakeFirestore({ agentDocs = {}, subcollections = {}, failSubreads =
     collection: (sub) => ({
       get: async () => {
         if (failSubreads) throw new Error('subcollection read down');
-        const docs = (subcollections[id]?.[sub] || []).map((d) => ({ id: d.id, data: () => d }));
-        return { docs };
+        return { docs: store(id, sub).map((d) => ({ id: d.id, data: () => d })) };
       },
+      doc: (docId) => buildDocRef(id, sub, docId ?? `seed-${++autoSeq}`),
     }),
   });
   return {
@@ -78,7 +93,11 @@ function makeFakeFirestore({ agentDocs = {}, subcollections = {}, failSubreads =
       throw new Error(`Unmocked collection: ${name}`);
     },
     runTransaction: async (fn) =>
-      fn({ get: async (ref) => ref.get(), update: async (ref, updates) => ref.update(updates) }),
+      fn({
+        get: async (ref) => ref.get(),
+        set: async (ref, data) => ref.set(data),
+        update: async (ref, updates) => ref.update(updates),
+      }),
     _state: state,
   };
 }

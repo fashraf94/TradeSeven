@@ -1,9 +1,15 @@
 // api/agent/change-archetype.js
 //
 // POST /api/agent/change-archetype. Changes an agent's archetype (its trading
-// personality / identity). The archetype drives decide.js scoring + prompt
-// context downstream; this endpoint writes ONLY agent.archetype (+ updatedAt) —
-// the field those configs READ. It never touches the archetype config files.
+// personality / identity) AND atomically loads that archetype's born-with trait
+// set — the invariant: an agent's archetype always carries that archetype's
+// starter traits, with no persisted state where they disagree. On a real change
+// it writes agent.archetype + agent.equippedTraits (the born-with set) in one
+// tx.update and replaces the trait rule docs (create new / soft-delete old) in
+// the SAME transaction, so a partial failure can never strand the agent in the
+// archetype=new / traits=old bad state, and a caller Cancel (never invoking this
+// endpoint) commits nothing. The archetype drives decide.js scoring + prompt
+// context downstream; it never touches the fenced archetype config files.
 //
 // Battle-locked (mirrors equip-watchlist E3 / the equipBundle activeBattleId
 // guard): a change is blocked while the agent has an active battle, so a live
@@ -42,6 +48,12 @@ import { collectProjectedConflicts } from '../_utils/ruleCompatCleanup.js';
 // revalidation uses (leanRevalidation.js), so the rider and the snapshot
 // omission can never disagree.
 import { revalidateStandingLeans } from '../_utils/leanRevalidation.js';
+// Born-with seeding — the ONE seeding call archetype change converges on. Runs
+// INSIDE the change transaction so archetype + equippedTraits + trait rule docs
+// commit atomically (the invariant: archetype X always carries X's born-with
+// traits; the bad state is unreachable, and Cancel commits nothing). Shares the
+// pure planner with the client clean-replace, so the two can't drift.
+import { seedArchetypeTraitsInTx, hasBornWithSet, softDeleteReplacedTraitRuleDocs } from '../_utils/archetypeSeeding.js';
 
 export const config = { maxDuration: 10 };
 
@@ -50,6 +62,7 @@ const SENTINEL_TO_HTTP = Object.freeze({
   agent_not_found: [404, 'agent_not_found', 'Agent not found.'],
   forbidden:       [403, 'forbidden',       'Not authorized for this resource.'],
   battle_active:   [409, 'battle_active',   'Cannot change archetype while the agent has an active battle.'],
+  seed_failed:     [500, 'seed_failed',     'Could not load the default traits for this archetype.'],
 });
 
 export default async function handler(req, res) {
@@ -99,24 +112,55 @@ export default async function handler(req, res) {
       // docs/audits/20260625_ARCHETYPE_INTEGRITY_BUILD_PLAN_V2.md (CF-1).
       if (agent.activeBattleId) throw new Error(SENTINEL_PREFIX + 'battle_active');
 
-      // Idempotent: archetype already set → 200 no-op, no write.
+      // Idempotent: archetype already set → 200 no-op, no write, NO re-seed.
       if (agent.archetype === archetype) {
         return { idempotent: true, archetype, previousArchetype: archetype };
       }
 
       const previousArchetype = agent.archetype ?? null;
-      // settingsRev rides structurally (Release 2 changelog #7) — an
-      // archetype change is a snapshot-feeding config write.
-      txUpdateAgentSettings(tx, agentRef, { archetype, updatedAt: nowIso });
-      // equippedTraits rides along for the WS1 rescan (projection input) — no
-      // extra read, it is already on the agent snapshot. standingLeans rides
-      // for the Release-2 lean-invalidation rider (same zero-read rationale).
+
+      // ⚠️ THE INVARIANT: archetype change ALWAYS loads that archetype's
+      // born-with trait set — atomically, in THIS transaction. Create the new
+      // trait rule docs and write archetype + equippedTraits together (tx.set +
+      // one tx.update). A partial failure commits nothing — never archetype=new
+      // with the old traits (the bad state) — and a Cancel writes nothing because
+      // the endpoint is simply never called. The seed reads/deletes NOTHING in
+      // the tx: the outgoing trait docs stop projecting the instant equippedTraits
+      // changes (projectActiveRules gates on traitId ∈ equippedTraits + dedups
+      // newest-wins), so they are inert immediately; their soft-delete is the
+      // best-effort post-commit hygiene below. Defensive: an archetype with no
+      // born-with set (never happens — pinned non-empty by
+      // traitLibrary.bornWith.test) skips the seed rather than wiping the layer.
+      let seeded = null;
+      if (hasBornWithSet(archetype)) {
+        seeded = seedArchetypeTraitsInTx(tx, agentRef, archetype);
+        // Fail-safe: a born-with archetype that resolved to ZERO traits/rules
+        // (a data bug the bornWith.test pins as unreachable) must NOT commit —
+        // aborting the whole tx here keeps the invariant (never archetype=new
+        // with an empty/mismatched trait layer) rather than wiping the layer.
+        if (!seeded.equippedTraits || seeded.equippedTraits.length === 0 || seeded.rulesAdded === 0) {
+          throw new Error(SENTINEL_PREFIX + 'seed_failed');
+        }
+      }
+
+      // settingsRev rides structurally (Release 2 changelog #7). archetype +
+      // the seeded born-with equippedTraits layer commit together (one write).
+      txUpdateAgentSettings(tx, agentRef, {
+        archetype,
+        updatedAt: nowIso,
+        ...(seeded && seeded.equippedTraits ? { equippedTraits: seeded.equippedTraits } : {}),
+      });
+
+      // equippedTraits rides along for the WS1 rescan (projection input) — now
+      // the NEWLY seeded set, so the rescan classifies the post-change reality.
+      // standingLeans rides for the Release-2 lean-invalidation rider.
       return {
         idempotent: false,
         archetype,
         previousArchetype,
-        equippedTraits: agent.equippedTraits || [],
+        equippedTraits: (seeded && seeded.equippedTraits) || agent.equippedTraits || [],
         standingLeans: Array.isArray(agent.standingLeans) ? agent.standingLeans : [],
+        seeded: seeded ? { traitCount: seeded.equippedTraits.length, rulesAdded: seeded.rulesAdded } : null,
       };
     });
   } catch (txErr) {
@@ -130,6 +174,20 @@ export default async function handler(req, res) {
     }
     console.error('[change-archetype] error:', txErr);
     return res.status(500).json({ error: 'server_error', message: 'Could not change archetype.' });
+  }
+
+  // Best-effort post-commit hygiene: soft-delete the trait rule docs the new
+  // born-with set replaced (any doc whose traitId left equippedTraits). NON-FATAL
+  // — the atomic change already committed and those docs are already inert (they
+  // no longer project), so a failure here only leaves dead docs for a later
+  // census, never the bad state. Skipped on the idempotent no-op.
+  let traitRuleDocsRemoved = null;
+  if (!txResult.idempotent && txResult.seeded) {
+    try {
+      traitRuleDocsRemoved = await softDeleteReplacedTraitRuleDocs(agentRef, txResult.equippedTraits);
+    } catch (cleanupErr) {
+      console.error('[change-archetype] replaced trait-rule cleanup failed (change committed; orphans are inert):', cleanupErr?.message || cleanupErr);
+    }
   }
 
   // Shadow log only on a real change (no log on idempotent no-op), fire-and-forget.
@@ -258,6 +316,12 @@ export default async function handler(req, res) {
     agentId,
     archetype: txResult.archetype,
     idempotent: txResult.idempotent,
+    // Additive seed summary on a real change (absent on the idempotent no-op).
+    // rulesRemoved reflects the best-effort post-commit cleanup (null if it was
+    // skipped or the read failed — the committed change is unaffected either way).
+    ...(txResult.seeded
+      ? { seeded: { ...txResult.seeded, ...(traitRuleDocsRemoved != null ? { rulesRemoved: traitRuleDocsRemoved } : {}) } }
+      : {}),
     // Additive, mode-gated field — absent while RULE_COMPAT_MODE='off' so the
     // off response stays byte-identical.
     ...(compatActive ? { rescanLogged } : {}),

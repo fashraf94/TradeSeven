@@ -11,11 +11,14 @@
 // WS1: this file's REAL (un-mocked) import of the handler — whose graph pulls
 // src/config/featureFlags + api/_utils/ruleCompatCleanup (→ the compat map)
 // + api/_utils/leanRevalidation (→ src/data/archetypeAdjustments, the
-// Release-2 lean rider) — IS the BUILD_RULES §4 dependency-surface guard for
-// those api → src edges. NEVER mock featureFlags here (the .compat.test.js /
-// .leanrider.test.js siblings mock it by design; THIS file is the guard).
+// Release-2 lean rider) + api/_utils/archetypeSeeding (→ src/data/traitLibrary
+// + src/data/traitEquip, the born-with seed planner) — IS the BUILD_RULES §4
+// dependency-surface guard for those api → src edges. NEVER mock featureFlags
+// here (the .compat.test.js / .leanrider.test.js siblings mock it by design;
+// THIS file is the guard).
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { ARCHETYPE_DEFAULT_TRAITS } from '../../src/data/traitLibrary.js';
 
 // ==================== HOISTED MOCK STATE ====================
 
@@ -60,8 +63,42 @@ const { default: changeArchetypeHandler } = await import('./change-archetype.js'
 
 // ==================== FIRESTORE MOCK ====================
 
-function makeFakeFirestore({ agentDocs = {} } = {}) {
-  const state = { agentDocs };
+// Fake Firestore: agents collection + per-agent rules/bundles subcollections
+// (the seed creates rule docs via tx.set; the post-commit cleanup + rescan read
+// them back). A shared mutable store backs both in-tx writes and post-tx reads.
+function makeFakeFirestore({ agentDocs = {}, subcollections = {} } = {}) {
+  const state = { agentDocs, subcollections };
+  let autoSeq = 0;
+
+  const store = (agentId, sub) => {
+    state.subcollections[agentId] = state.subcollections[agentId] || {};
+    state.subcollections[agentId][sub] = state.subcollections[agentId][sub] || [];
+    return state.subcollections[agentId][sub];
+  };
+
+  const buildDocRef = (agentId, sub, docId) => ({
+    id: docId,
+    get: async () => {
+      const d = store(agentId, sub).find((x) => x.id === docId);
+      return { exists: !!d, id: docId, data: () => d };
+    },
+    set: async (data) => {
+      const arr = store(agentId, sub);
+      const i = arr.findIndex((x) => x.id === docId);
+      const doc = { id: docId, ...data };
+      if (i >= 0) arr[i] = doc; else arr.push(doc);
+    },
+    update: async (updates) => {
+      const arr = store(agentId, sub);
+      const i = arr.findIndex((x) => x.id === docId);
+      if (i >= 0) arr[i] = { ...arr[i], ...updates };
+    },
+  });
+
+  const buildCollectionRef = (agentId, sub) => ({
+    get: async () => ({ docs: store(agentId, sub).map((d) => ({ id: d.id, data: () => d })) }),
+    doc: (docId) => buildDocRef(agentId, sub, docId ?? `seed-${++autoSeq}`),
+  });
 
   const buildAgentRef = (id) => ({
     id,
@@ -72,6 +109,7 @@ function makeFakeFirestore({ agentDocs = {} } = {}) {
     update: async (updates) => {
       state.agentDocs[id] = { ...state.agentDocs[id], ...updates };
     },
+    collection: (sub) => buildCollectionRef(id, sub),
   });
 
   const collection = (name) => {
@@ -82,6 +120,7 @@ function makeFakeFirestore({ agentDocs = {} } = {}) {
   const runTransaction = async (fn) => {
     const tx = {
       get: async (ref) => ref.get(),
+      set: async (ref, data) => ref.set(data),
       update: async (ref, updates) => ref.update(updates),
     };
     return fn(tx);
@@ -120,7 +159,7 @@ beforeEach(() => {
 // ============================================================
 
 describe('POST /api/agent/change-archetype', () => {
-  it('happy path: 200, archetype + updatedAt written, shadow log emitted', async () => {
+  it('happy path: 200, archetype + born-with traits written atomically, shadow log emitted', async () => {
     const fx = makeFakeFirestore({ agentDocs: { 'agent-1': { ...CHANGEABLE_AGENT } } });
     activeFirestore = fx.db;
 
@@ -131,15 +170,24 @@ describe('POST /api/agent/change-archetype', () => {
     expect(res.body.agentId).toBe('agent-1');
     expect(res.body.archetype).toBe('guardian');
     expect(res.body.idempotent).toBe(false);
-    // Under the REAL live flag (RULE_COMPAT_MODE='observe') this fake has no
-    // rule/bundle subcollections, so the rescan takes its swallowed-error
-    // branch — asserted explicitly so the branch is never silent
-    // (/code-review Phase-5; the archetype change itself still committed).
+    // The mocked logSignalDrops resolves undefined (never true), so the honest
+    // rescanLogged stays false — the archetype change itself still committed.
     expect(res.body.rescanLogged).toBe(false);
 
     const agent = fx.state.agentDocs['agent-1'];
     expect(agent.archetype).toBe('guardian');
     expect(typeof agent.updatedAt).toBe('string');
+
+    // THE INVARIANT: archetype change loaded guardian's born-with set atomically.
+    expect(agent.equippedTraits.map((t) => t.traitId)).toEqual(ARCHETYPE_DEFAULT_TRAITS.guardian);
+    expect(res.body.seeded).toMatchObject({ traitCount: ARCHETYPE_DEFAULT_TRAITS.guardian.length });
+    expect(res.body.seeded.rulesAdded).toBeGreaterThan(0);
+    // Rule docs created under agents/{id}/rules — all born-with (traitId set,
+    // provenance archetype_default → reconciler tier 2), none pre-deleted.
+    const rules = fx.state.subcollections['agent-1'].rules;
+    expect(rules.length).toBeGreaterThan(0);
+    expect(rules.every((r) => r.traitId && r.provenance === 'archetype_default' && r.isDeleted === false)).toBe(true);
+    expect(new Set(rules.map((r) => r.traitId))).toEqual(new Set(ARCHETYPE_DEFAULT_TRAITS.guardian));
 
     const log = shadowLogCalls.current.find((r) => r.stage === 'archetype_change');
     expect(log).toBeDefined();
@@ -147,6 +195,46 @@ describe('POST /api/agent/change-archetype', () => {
     expect(log.agentId).toBe('agent-1');
     expect(log.fromArchetype).toBe('analyst');
     expect(log.toArchetype).toBe('guardian');
+  });
+
+  it('atomic replace: the trait layer swaps to the new born-with set; old trait docs soft-deleted, manual rules survive', async () => {
+    const fx = makeFakeFirestore({
+      agentDocs: {
+        'agent-1': {
+          ...CHANGEABLE_AGENT,
+          archetype: 'momentum_chaser',
+          equippedTraits: [{ traitId: 'trait-trend-rider', strength: 'moderate', isCustom: false, equippedAt: 1 }],
+        },
+      },
+      subcollections: {
+        'agent-1': {
+          rules: [
+            // outgoing trait doc — its traitId leaves equippedTraits, so it must
+            // be soft-deleted by the post-commit cleanup.
+            { id: 'old-1', traitId: 'trait-trend-rider', sourceRef: 'tech-moving-average-trend', isDeleted: false, provenance: 'archetype_default' },
+            // a manual rule (no traitId) — MUST survive the replace untouched.
+            { id: 'manual-1', traitId: null, sourceRef: 'custom', isDeleted: false },
+          ],
+        },
+      },
+    });
+    activeFirestore = fx.db;
+
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', archetype: 'guardian' } });
+    await changeArchetypeHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const agent = fx.state.agentDocs['agent-1'];
+    expect(agent.equippedTraits.map((t) => t.traitId)).toEqual(ARCHETYPE_DEFAULT_TRAITS.guardian);
+
+    const rules = fx.state.subcollections['agent-1'].rules;
+    // Outgoing trait doc soft-deleted (traitId ∉ guardian's born-with set).
+    expect(rules.find((r) => r.id === 'old-1').isDeleted).toBe(true);
+    // Manual rule (no traitId) untouched.
+    expect(rules.find((r) => r.id === 'manual-1').isDeleted).toBe(false);
+    // The only ACTIVE trait docs are guardian's born-with set.
+    const activeTraitIds = new Set(rules.filter((r) => r.traitId && !r.isDeleted).map((r) => r.traitId));
+    expect(activeTraitIds).toEqual(new Set(ARCHETYPE_DEFAULT_TRAITS.guardian));
   });
 
   it('idempotent: same archetype → 200 idempotent, no write, no shadow log', async () => {
@@ -159,8 +247,11 @@ describe('POST /api/agent/change-archetype', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.idempotent).toBe(true);
     expect(res.body.archetype).toBe('degen');
-    // No write occurred → updatedAt was never stamped.
+    // No write occurred → updatedAt never stamped, NO re-seed (equippedTraits
+    // untouched, no seed summary in the response).
     expect(fx.state.agentDocs['agent-1'].updatedAt).toBeUndefined();
+    expect(fx.state.agentDocs['agent-1'].equippedTraits).toBeUndefined();
+    expect(res.body.seeded).toBeUndefined();
     expect(shadowLogCalls.current.find((r) => r.stage === 'archetype_change')).toBeUndefined();
   });
 

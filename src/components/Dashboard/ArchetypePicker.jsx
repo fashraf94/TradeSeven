@@ -9,13 +9,14 @@
 // Cards render in the locked Identity Contract presentation order. The agent's
 // current archetype is marked selected; tapping another card calls handleSelect.
 //
-// Selecting a card calls agentService.changeArchetype (battle-locked; 409 mid-
-// battle). On success the archetype write has landed (the dashboard identity
-// re-renders via the agent-doc subscription) and the sheet switches to the
-// offer-to-re-seed: "Load <name>'s default traits?" → reseedDefaultTraits (a
-// clean replace) or "Keep my traits" (dismiss; the agent may keep mismatched
-// traits — the user is the directional authority). Tokens: CMD / alpha (matches
-// the Equip station siblings); red is reserved for downside, so errors use copper.
+// Tapping a card stages a one-way CONFIRM — no write happens yet, so backing out
+// ("Cancel") commits nothing. "Change archetype" calls agentService.changeArchetype
+// (battle-locked; 409 mid-battle), which atomically changes the archetype AND loads
+// that archetype's born-with trait set server-side, in one transaction — an agent's
+// traits always match its archetype, so there is no "keep my traits" path. On
+// success the sheet closes; the dashboard identity re-renders via the agent-doc
+// subscription. Tokens: CMD / alpha (matches the Equip station siblings); red is
+// reserved for downside, so errors use copper.
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Check } from 'lucide-react';
@@ -24,7 +25,6 @@ import { CMD, alpha, Mono, readableOn, ErrorBanner } from './commandUI';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
 import { changeArchetype } from '../../services/agentService';
-import { reseedDefaultTraits } from '../../services/seedDefaultTraits';
 
 // Locked Identity Contract presentation order (ARCHETYPE_IDENTITY_CONTRACT_V1.md
 // §1): Trend Follower → Contrarian → Diversifier → Speculator → Fundamental
@@ -71,9 +71,12 @@ export function ArchetypeCard({ codeId, selected, busy, disabled, accent, onClic
   );
 }
 
-// Shown after a successful archetype change: offer the new archetype's default
-// traits as a clean replace, or let the user keep their tuned loadout.
-function OfferPanel({ codeId, accent, reseeding, error, onLoad, onKeep }) {
+// Shown after a card is tapped: a one-way confirm that changing archetype
+// REPLACES the current trait set with the new archetype's born-with defaults.
+// No "keep my traits" — the archetype and its starter traits are one unit. Cancel
+// commits nothing (no write has happened yet); "Change archetype" fires the single
+// atomic server call that changes the archetype AND seeds its defaults together.
+function ConfirmPanel({ codeId, accent, working, error, onConfirm, onCancel }) {
   const name = getArchetypeDisplayName(codeId);
   const btnBase = {
     all: 'unset', boxSizing: 'border-box', flex: 1, textAlign: 'center',
@@ -82,27 +85,26 @@ function OfferPanel({ codeId, accent, reseeding, error, onLoad, onKeep }) {
   return (
     <div style={{ padding: '2px 2px 4px' }}>
       <div style={{ fontSize: 12.5, color: CMD.ink3, lineHeight: 1.55, marginBottom: 16 }}>
-        Your agent is now a <span style={{ color: CMD.ink, fontWeight: 600 }}>{name}</span>. Loading defaults swaps your
-        current traits for its starter set. Keep yours if you've tuned them — an agent can run traits that don't match
-        its archetype.
+        Changing to <span style={{ color: CMD.ink, fontWeight: 600 }}>{name}</span> replaces your current traits with
+        its starter set — an agent's traits always match its archetype. This applies on your next deploy.
       </div>
       {error && <ErrorBanner style={{ marginBottom: 14 }}>{error}</ErrorBanner>}
       <div style={{ display: 'flex', gap: 10 }}>
         <button
           type="button"
-          onClick={reseeding ? undefined : onKeep}
-          disabled={reseeding}
-          style={{ ...btnBase, color: CMD.ink2, border: `1px solid ${CMD.hair2}`, background: 'transparent', cursor: reseeding ? 'default' : 'pointer', opacity: reseeding ? 0.5 : 1 }}
+          onClick={working ? undefined : onCancel}
+          disabled={working}
+          style={{ ...btnBase, color: CMD.ink2, border: `1px solid ${CMD.hair2}`, background: 'transparent', cursor: working ? 'default' : 'pointer', opacity: working ? 0.5 : 1 }}
         >
-          Keep my traits
+          Cancel
         </button>
         <button
           type="button"
-          onClick={reseeding ? undefined : onLoad}
-          disabled={reseeding}
-          style={{ ...btnBase, color: readableOn(accent), background: accent, cursor: reseeding ? 'default' : 'pointer', opacity: reseeding ? 0.7 : 1 }}
+          onClick={working ? undefined : onConfirm}
+          disabled={working}
+          style={{ ...btnBase, color: readableOn(accent), background: accent, cursor: working ? 'default' : 'pointer', opacity: working ? 0.7 : 1 }}
         >
-          {reseeding ? 'Loading…' : 'Load defaults'}
+          {working ? 'Changing…' : 'Change archetype'}
         </button>
       </div>
     </div>
@@ -111,91 +113,74 @@ function OfferPanel({ codeId, accent, reseeding, error, onLoad, onKeep }) {
 
 export default function ArchetypePicker({ open, onClose, agent, accent, dock = 'bottom' }) {
   const current = agent?.archetype;
-  const [working, setWorking] = useState(null);   // codeId mid change-archetype write, or null
-  const [offer, setOffer] = useState(null);       // codeId just changed to, awaiting the re-seed decision
-  const [reseeding, setReseeding] = useState(false);
+  const [pending, setPending] = useState(null);   // codeId awaiting confirm — NO write yet, or null
+  const [working, setWorking] = useState(false);   // the change+seed request is in flight
   const [error, setError] = useState(null);
   // Monotonic session token, bumped on close, so an async write that resolves
   // after the sheet was closed (and maybe reopened) can't setState on it.
   const sessionRef = useRef(0);
 
-  // Clear transient state whenever the sheet closes, so a stale error, offer, or
-  // in-flight flag never leaks into the next open; bumping the session cancels
-  // any in-flight handler's pending setState.
+  // Clear transient state whenever the sheet closes, so a stale error, pending
+  // confirm, or in-flight flag never leaks into the next open; bumping the
+  // session cancels any in-flight handler's pending setState.
   useEffect(() => {
     if (!open) {
       sessionRef.current += 1;
-      setWorking(null); setOffer(null); setReseeding(false); setError(null);
+      setPending(null); setWorking(false); setError(null);
     }
   }, [open]);
 
-  // Change the archetype (battle-locked server-side). On success, surface the
-  // offer-to-re-seed instead of closing — the archetype write already landed and
-  // the dashboard identity re-renders via the agent-doc subscription. Tapping the
-  // current archetype, or any card while a write is in flight, is a no-op.
-  const handleSelect = async (codeId) => {
+  // Tapping a card STAGES a confirm — no write happens yet, so backing out
+  // ("Cancel") leaves the agent untouched. Tapping the current archetype, or any
+  // card while a change is in flight, is a no-op.
+  const handleSelect = (codeId) => {
     if (!agent?.id || codeId === current || working) return;
+    setError(null);
+    setPending(codeId);
+  };
+
+  // "Change archetype" → the single atomic server call that changes the archetype
+  // AND loads its born-with traits in one transaction (change-archetype.js). On
+  // success the sheet closes; on failure the confirm stays open with the error so
+  // nothing partial is left behind (the server transaction is all-or-nothing).
+  const handleConfirm = async () => {
+    if (!agent?.id || !pending || working) return;
     const session = sessionRef.current;
-    setWorking(codeId);
+    setWorking(true);
     setError(null);
     try {
-      await changeArchetype(agent.id, codeId);
+      await changeArchetype(agent.id, pending);
       if (sessionRef.current !== session) return; // sheet closed mid-flight — drop the result
-      setOffer(codeId);
+      onClose?.();
     } catch (err) {
       if (sessionRef.current !== session) return;
       setError(err?.message || 'Could not change archetype. Please try again.');
     } finally {
-      if (sessionRef.current === session) setWorking(null);
+      if (sessionRef.current === session) setWorking(false);
     }
   };
 
-  // "Load defaults" → clean-replace re-seed of the new archetype's defaults, then
-  // close. "Keep my traits" just closes (the archetype change already landed).
-  // reseedDefaultTraits NEVER throws — it reports failure via { seeded:false } —
-  // so we inspect the result rather than relying on a rejection.
-  const handleLoadDefaults = async () => {
-    if (!agent?.id || !offer || reseeding) return;
-    const session = sessionRef.current;
-    setReseeding(true);
-    setError(null);
-    try {
-      const result = await reseedDefaultTraits(agent.id, offer);
-      if (sessionRef.current !== session) return; // sheet closed mid-flight
-      if (!result?.seeded) {
-        setError('Could not load default traits. Please try again.');
-        return; // keep the offer open so the user can retry or keep their traits
-      }
-      onClose?.();
-    } catch (err) {
-      if (sessionRef.current !== session) return;
-      setError(err?.message || 'Could not load default traits. Please try again.');
-    } finally {
-      if (sessionRef.current === session) setReseeding(false);
-    }
-  };
-
-  const offering = Boolean(offer);
+  const confirming = Boolean(pending);
 
   return (
     <EquipSheet
       open={open}
       onClose={onClose}
       dock={dock}
-      title={offering ? `Load ${getArchetypeDisplayName(offer)}'s default traits?` : 'Choose archetype'}
-      subtitle={offering
-        ? 'This replaces your current traits.'
+      title={confirming ? `Change to ${getArchetypeDisplayName(pending)}?` : 'Choose archetype'}
+      subtitle={confirming
+        ? "This replaces your current trait set with the new archetype’s defaults."
         : 'Your archetype sets how your agent reads the market and picks trades. A change applies on your next deploy.'}
       accent={accent}
     >
-      {offering ? (
-        <OfferPanel
-          codeId={offer}
+      {confirming ? (
+        <ConfirmPanel
+          codeId={pending}
           accent={accent}
-          reseeding={reseeding}
+          working={working}
           error={error}
-          onLoad={handleLoadDefaults}
-          onKeep={() => onClose?.()}
+          onConfirm={handleConfirm}
+          onCancel={() => { setPending(null); setError(null); }}
         />
       ) : (
         <>
@@ -205,8 +190,8 @@ export default function ArchetypePicker({ open, onClose, agent, accent, dock = '
               key={codeId}
               codeId={codeId}
               selected={codeId === current}
-              busy={working === codeId}
-              disabled={Boolean(working) && working !== codeId}
+              busy={false}
+              disabled={false}
               accent={accent}
               onClick={() => handleSelect(codeId)}
             />
