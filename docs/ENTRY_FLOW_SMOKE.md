@@ -103,8 +103,8 @@ With the no-game account, click **Auto-draft**:
 
 Open any pod's spectate view (from the field/leaderboard surfaces):
 
-- [ ] The card reads "This is what you'd play." with a **"Claim your seat"**
-      button (no "Enter tournament").
+- [ ] The card reads "This is what you'd play." with a **"Go to the draft
+      slots"** button (no "Enter tournament").
 - [ ] Clicking it closes Spectate onto the League center — the slot picker for
       a no-game viewer.
 
