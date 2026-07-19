@@ -267,19 +267,35 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
   // rank ratchet (appliedGroups), leaderboard final upserts, next-round
   // composition, the champion write, and the active-bracket sweep — by
   // returning before any of them run. Banking is a different cron and keeps
-  // recording. Log loudly per group (id, day index, composites) so the frozen
-  // state is legible in the duty summary; count into `frozen` so the duty is
-  // never marked satisfied (isDutySatisfied) and re-ticks harmlessly until the
-  // flag is lifted. Flag-off, this block is skipped and behavior is identical.
+  // recording. Flag-off, this block is skipped and behavior is identical.
+  //
+  // PRECISION: only groups that would ACTUALLY finalize this pass are counted
+  // `frozen`. TRAINING pods take the no-ladder plain finish and are completed
+  // by the nightly completeBankedTrainingPods regardless (Friday is only its
+  // backstop) — they reach no irreversible consumer, so we exempt them exactly
+  // as the leaderboard guard does (`isTraining`). Not-yet-day-5 groups are
+  // banking-pending, not advancing. Counting either as `frozen` would wrongly
+  // hold the duty marker down (isDutySatisfied) and mislabel the summary. Only
+  // banked non-training groups are logged (id, day, composites) — the real
+  // withheld set. Per-group try/catch mirrors the base-layer loop's error
+  // isolation (the Monday catch-up calls this without its own guard).
   if (TOURNAMENT_ADVANCEMENT_FROZEN) {
     for (const group of groups) {
-      const dayN = getLatestDayEntry(group)?.dayN || 0;
-      const composites = {};
-      for (const odUserId of group.groupMembers || []) {
-        composites[odUserId] = getWeeklyComposite(group, odUserId);
+      if (group.isTraining === true) continue;
+      if (!isWeekBanked(group)) { summary.bankingPending++; continue; }
+      try {
+        const dayN = getLatestDayEntry(group)?.dayN || 0;
+        const composites = {};
+        for (const odUserId of group.groupMembers || []) {
+          composites[odUserId] = getWeeklyComposite(group, odUserId);
+        }
+        summary.frozen++;
+        console.error(`${LOG_PREFIX} FROZEN (TOURNAMENT_ADVANCEMENT_FROZEN): group ${group.id} day ${dayN}/${WEEK_DAYS_REQUIRED} — advancement + rank + leaderboard-final WITHHELD (composites ${JSON.stringify(composites)})`);
+      } catch (err) {
+        summary.frozen++;
+        summary.errors++;
+        console.error(`${LOG_PREFIX} FROZEN: group ${group.id} withheld but composite-log failed:`, err.message);
       }
-      summary.frozen++;
-      console.error(`${LOG_PREFIX} FROZEN (TOURNAMENT_ADVANCEMENT_FROZEN): group ${group.id} day ${dayN}/${WEEK_DAYS_REQUIRED} — advancement + rank + leaderboard-final WITHHELD (composites ${JSON.stringify(composites)})`);
     }
     return summary;
   }

@@ -114,9 +114,9 @@ const MEMBERS = [
   { odUserId: 'cpu-2', isCpu: true },
   { odUserId: 'cpu-3', isCpu: true },
 ];
-function bankedFiveDays() {
+function bankedDays(n = 5) {
   const ds = {};
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < n; i++) {
     ds[`day${i + 1}`] = {
       recordedDate: `2026-06-${15 + i}`,
       closeScores: Object.fromEntries(MEMBERS.map((m, k) => [m.odUserId, {
@@ -127,7 +127,7 @@ function bankedFiveDays() {
   }
   return ds;
 }
-function group({ id, status = GROUP_STATUS.BATTLE, bracket = false, isTraining = false }) {
+function group({ id, status = GROUP_STATUS.BATTLE, bracket = false, isTraining = false, days = 5 }) {
   return {
     status, roundNumber: 1,
     ...(bracket ? { bracketGameId: id } : { baseLayerWeek: '2026-W25' }),
@@ -135,7 +135,7 @@ function group({ id, status = GROUP_STATUS.BATTLE, bracket = false, isTraining =
     groupMembers: MEMBERS.map(m => m.odUserId),
     players: MEMBERS.map(m => ({ odUserId: m.odUserId, picks: [], ...(m.isCpu ? { isCpu: true } : {}) })),
     userPool: [], claimSystem: { enabled: true, currentWaiverPriority: [], processingLog: [] },
-    dailyScores: bankedFiveDays(),
+    dailyScores: bankedDays(days),
   };
 }
 function seededDb() {
@@ -175,6 +175,29 @@ describe('freeze — runFridayAdvancement (primary guard) writes NOTHING', () =>
     // Groups stay in battle (never transitioned) so they re-tick when unfrozen.
     expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.BATTLE);
     expect(store.get('tournamentGroups/base-1').status).toBe(GROUP_STATUS.BATTLE);
+  });
+
+  it('withholds PRECISELY: training pods are exempt (nightly completer owns them), not-yet-day-5 groups are banking-pending, only banked non-training groups count `frozen`', async () => {
+    const { db, store, writeLog } = makeDb({
+      'tournamentGroups/ranked-d5': group({ id: 'ranked-d5' }),                       // banked non-training → frozen
+      'tournamentGroups/train-d5': group({ id: 'train-d5', isTraining: true }),        // training → exempt (no count, no completion here)
+      'tournamentGroups/ranked-d3': group({ id: 'ranked-d3', days: 3 }),               // not day-5 → banking-pending, not frozen
+      'indexIntelligence/stockRankings': { stocks: [] },
+    });
+    const summary = await runFridayAdvancement(db, { now: NOW });
+
+    expect(summary.frozen).toBe(1);          // ONLY ranked-d5
+    expect(summary.bankingPending).toBe(1);  // ranked-d3
+    expect(writeLog).toEqual([]);            // still zero writes
+
+    // The training pod is NOT completed by the frozen Friday path — the nightly
+    // completeBankedTrainingPods owns it (Friday is only its backstop), so no
+    // regression and no stuck pod.
+    expect(store.get('tournamentGroups/train-d5').status).toBe(GROUP_STATUS.BATTLE);
+    // A training-only or pre-day-5 Friday can therefore mark the duty complete
+    // (nothing ranked to protect); a ranked banked group keeps it unsatisfied.
+    expect(isDutySatisfied(DUTY.FRIDAY_ADVANCEMENT, summary)).toBe(false); // ranked-d5 present
+    expect(isDutySatisfied(DUTY.FRIDAY_ADVANCEMENT, { bankingPending: 0, errors: 0, deferredToNextTick: 0, frozen: 0 })).toBe(true);
   });
 
   it('a frozen Friday is never marked satisfied — the orchestrator gate that writes duty markers is isDutySatisfied', async () => {

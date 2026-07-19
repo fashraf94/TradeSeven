@@ -434,7 +434,7 @@ export async function runMondayPipeline(db, {
   // pending/error counts are logged, not folded into the Monday marker.
   const catchUp = await runFridayAdvancement(db, { now, includeDevGroups });
   if (catchUp.groups > 0 || catchUp.activeBrackets > 0) {
-    console.log(`${LOG_PREFIX} Monday advancement catch-up: ${catchUp.gamesLocked} game(s) locked, ${catchUp.composedGroups.length} group(s) composed, ${catchUp.bankingPending} banking-pending, ${catchUp.errors} error(s)`);
+    console.log(`${LOG_PREFIX} Monday advancement catch-up: ${catchUp.gamesLocked} game(s) locked, ${catchUp.composedGroups.length} group(s) composed, ${catchUp.bankingPending} banking-pending, ${catchUp.frozen ?? 0} frozen, ${catchUp.errors} error(s)`);
   }
 
   // Slice 3: training pods are excluded from the ranked duties — their agent
