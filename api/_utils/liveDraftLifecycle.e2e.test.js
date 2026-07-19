@@ -208,7 +208,7 @@ describe('Competitive Live Draft — full-lifecycle capstone (the byte-identity 
     const forming = readGroup(store, WED_ID);
     expect(forming).toMatchObject({ status: GROUP_STATUS.FORMING, isLiveDraft: true });
     expect(forming.isTraining).toBeUndefined();
-    expect('baselinePolicy' in forming).toBe(false); // capture flag off → byte-identical omission
+    expect(forming.baselinePolicy).toBe(BASELINE_POLICY.CANONICAL_OPEN); // capture flag on (founder-intentional) → round stamped canonical_open at formation
 
     // ── 2) FIRE the due slot → DRAFTING, CPU-filled from the shared counter ──
     const FIRE = new Date('2026-07-08T23:00:00.000Z'); // Wed 7pm EDT

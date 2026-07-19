@@ -31,7 +31,7 @@ import {
   SLOT_SENTINEL_PREFIX,
 } from './liveDraftFormation.js';
 import { LIVE_DRAFT_SLOTS, slotById } from '../../src/config/liveDraftSlots.js';
-import { GROUP_STATUS, GROUP_SIZE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
+import { GROUP_STATUS, GROUP_SIZE, TOURNAMENT_GROUPS_COLLECTION, BASELINE_POLICY } from '../../src/constants/leagueTournament.js';
 
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -287,7 +287,7 @@ describe('claimSlotSeat / releaseSlotSeat — transactional seat lifecycle', () 
     expect(g.seatNames).toEqual({ userA: 'Ada' });
     expect(g.scheduledDraftAt).toBe('2026-07-08T23:00:00.000Z');
     expect(g.userPool).toEqual([]); // deferred to fire (Phase 2)
-    expect('baselinePolicy' in g).toBe(false); // LEAGUE_CANONICAL_OPEN_CAPTURE off → byte-identical omission
+    expect(g.baselinePolicy).toBe(BASELINE_POLICY.CANONICAL_OPEN); // LEAGUE_CANONICAL_OPEN_CAPTURE on (founder-intentional) → round stamped canonical_open at formation
   });
 
   it('subsequent claims JOIN the same group up to four seats', async () => {
