@@ -24,6 +24,15 @@ vi.mock('firebase-admin/app', () => ({
 }));
 vi.mock('firebase-admin/firestore', () => ({ getFirestore: () => h.db }));
 
+// TOURNAMENT_ADVANCEMENT_FROZEN defaults TRUE (emergency freeze). This suite
+// exercises the NORMAL, flag-OFF nightly leaderboard-aggregation branch; the
+// freeze's skip is covered by tournamentAdvancementFreeze.test.js. Override only
+// that flag (importOriginal spread keeps every other flag real).
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  TOURNAMENT_ADVANCEMENT_FROZEN: false,
+}));
+
 import handler from './snake-draft-daily-scores.js';
 
 const TRADING_DAY = new Date('2026-06-10T21:15:00Z'); // Wed 17:15 ET

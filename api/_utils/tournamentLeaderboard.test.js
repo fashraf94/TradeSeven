@@ -14,6 +14,16 @@
 // getArchetypeLabel) stays Node-clean. Never mock that import.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// TOURNAMENT_ADVANCEMENT_FROZEN defaults TRUE (the emergency freeze's safe
+// default). This battery exercises NORMAL, flag-OFF leaderboard writes — the
+// freeze's own skip behavior is covered by tournamentAdvancementFreeze.test.js.
+// Override only that flag; all others keep their real value (importOriginal spread).
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  TOURNAMENT_ADVANCEMENT_FROZEN: false,
+}));
+
 import {
   monthKeyForGroup,
   cpuDisplayName,

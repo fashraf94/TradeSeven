@@ -838,7 +838,10 @@ export function isDutySatisfied(duty, summary) {
     return summary.deploys.cooled === 0 && summary.deploys.deferred === 0 && summary.deploys.failed === 0;
   }
   if (duty === DUTY.FRIDAY_ADVANCEMENT) {
-    return summary.bankingPending === 0;
+    // Emergency freeze (TOURNAMENT_ADVANCEMENT_FROZEN): a frozen pass withheld
+    // finalization, so it is NOT done — never mark it satisfied (re-ticks
+    // harmlessly until the flag lifts). Flag-off, summary.frozen is 0 → no change.
+    return summary.bankingPending === 0 && (summary.frozen || 0) === 0;
   }
   return false;
 }
@@ -851,6 +854,9 @@ function markerSummary(duty, summary) {
       gamesLocked: summary.gamesLocked,
       composed: summary.composedGroups.length,
       champion: summary.champion?.odUserId ?? null,
+      // Surfaced so the "incomplete (resumes next tick)" log line shows the
+      // freeze explicitly (duty summaries must say what actually happened).
+      frozen: summary.frozen ?? 0,
     };
   }
   return {

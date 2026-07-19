@@ -57,6 +57,7 @@ import {
 import { fetchEligibleGroupsByStatus } from './tournamentGroupService.js';
 import { cpuAgentName } from './tournamentCpu.js';
 import { toIso } from './tournamentTime.js';
+import { TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
 
 const LOG_PREFIX = '[TournamentLeaderboard]';
 
@@ -225,14 +226,37 @@ export function buildLeaderboardFeeds(groups, { heldByGroup = {}, displayNames =
  */
 export async function upsertLeaderboardForGroups(db, groups, { now = new Date(), dev, heldByGroup = {}, writeFeeds = false } = {}) {
   const nowIso = toIso(now);
-  const summary = { groups: groups.length, skippedNoBanking: 0, docsWritten: 0, errors: 0 };
+  const summary = { groups: groups.length, skippedNoBanking: 0, docsWritten: 0, errors: 0, frozenSkipped: 0 };
+
+  // EMERGENCY ADVANCEMENT FREEZE (TOURNAMENT_ADVANCEMENT_FROZEN) — the ONE
+  // knowledge point covering BOTH leaderboard call sites (nightly
+  // aggregateTournamentLeaderboards and the manual bank-daily-scores endpoint).
+  // While frozen, do NOT publish in-flight non-training (battle) composites:
+  // buildGroupWeekRows would otherwise stamp the poisoned week `final: true` on
+  // day-5 banking, outside the advancement guard. Skip those groups loudly and
+  // leave existing rows untouched (they self-heal on the post-remediation
+  // re-aggregation — SET + recomputed month total). Training pods are already
+  // excluded upstream; COMPLETED groups (a finalized, non-frozen week) still
+  // upsert. Flag-off, this block is a no-op and behavior is identical.
+  let eligibleGroups = groups;
+  if (TOURNAMENT_ADVANCEMENT_FROZEN) {
+    eligibleGroups = [];
+    for (const group of groups) {
+      if (group.status === GROUP_STATUS.BATTLE && group.isTraining !== true) {
+        summary.frozenSkipped++;
+        console.error(`${LOG_PREFIX} FROZEN (TOURNAMENT_ADVANCEMENT_FROZEN): leaderboard week-row upsert WITHHELD for battle group ${group.id} — poisoned composite not published (existing rows left to self-heal on re-aggregation)`);
+      } else {
+        eligibleGroups.push(group);
+      }
+    }
+  }
 
   // Cohort groups by target doc id. `dev` (when the caller resolved the
   // namespace — the advancement's unified derivation) overrides the
   // per-group flag so BOTH side-effect halves route from ONE decision
   // (code review: rank and leaderboard could otherwise split namespaces).
   const cohorts = new Map(); // docId -> { monthKey, groups: [] }
-  for (const group of groups) {
+  for (const group of eligibleGroups) {
     const monthKey = monthKeyForGroup(group);
     if (!monthKey) {
       summary.skippedNoBanking++;

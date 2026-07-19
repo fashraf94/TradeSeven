@@ -84,7 +84,7 @@ import {
 import { ensureCpuAgents, commitCpuUserBoards, padGamesWithCpus } from './tournamentCpu.js';
 import { applyGroupWeekToRanks, applyLockedGameToRanks } from './tournamentRank.js';
 import { upsertLeaderboardForGroups } from './tournamentLeaderboard.js';
-import { LEAGUE_CANONICAL_OPEN_CAPTURE } from '../../src/config/featureFlags.js';
+import { LEAGUE_CANONICAL_OPEN_CAPTURE, TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
 
 const LOG_PREFIX = '[TournamentAdvancement]';
 
@@ -255,8 +255,34 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
     rankSkipped: 0,
     leaderboardDocs: 0,
     degradedLocks: 0,
+    // Emergency freeze (TOURNAMENT_ADVANCEMENT_FROZEN): count of battle groups
+    // whose advancement/rank/leaderboard finalization was withheld this pass.
+    frozen: 0,
     errors: 0,
   };
+
+  // EMERGENCY ADVANCEMENT FREEZE (TOURNAMENT_ADVANCEMENT_FROZEN — the primary
+  // guard). While frozen, withhold EVERY irreversible consumer of the
+  // (possibly poisoned) weekly composites — bracket locks/finalScores, the
+  // rank ratchet (appliedGroups), leaderboard final upserts, next-round
+  // composition, the champion write, and the active-bracket sweep — by
+  // returning before any of them run. Banking is a different cron and keeps
+  // recording. Log loudly per group (id, day index, composites) so the frozen
+  // state is legible in the duty summary; count into `frozen` so the duty is
+  // never marked satisfied (isDutySatisfied) and re-ticks harmlessly until the
+  // flag is lifted. Flag-off, this block is skipped and behavior is identical.
+  if (TOURNAMENT_ADVANCEMENT_FROZEN) {
+    for (const group of groups) {
+      const dayN = getLatestDayEntry(group)?.dayN || 0;
+      const composites = {};
+      for (const odUserId of group.groupMembers || []) {
+        composites[odUserId] = getWeeklyComposite(group, odUserId);
+      }
+      summary.frozen++;
+      console.error(`${LOG_PREFIX} FROZEN (TOURNAMENT_ADVANCEMENT_FROZEN): group ${group.id} day ${dayN}/${WEEK_DAYS_REQUIRED} — advancement + rank + leaderboard-final WITHHELD (composites ${JSON.stringify(composites)})`);
+    }
+    return summary;
+  }
 
   // One rankings read per run, fetched lazily (composition may never need it).
   let poolMemo = null;
@@ -409,6 +435,16 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
  * so it logs loudly for founder attention but does NOT re-count the refusal.
  */
 async function runWeekSideEffects(db, { group, entry, dev, nowIso, summary }) {
+  // SECOND BELT (TOURNAMENT_ADVANCEMENT_FROZEN — defense-in-depth). The primary
+  // guard in runFridayAdvancement makes this unreachable while frozen; if we
+  // arrive here anyway, SOME caller bypassed it. Log DISTINCTLY (a tripped belt
+  // is an anomaly, not routine) and refuse every rank/leaderboard write —
+  // returning false so the caller defers completion/stamp instead of finalizing.
+  if (TOURNAMENT_ADVANCEMENT_FROZEN) {
+    console.error(`${LOG_PREFIX} FROZEN[belt]: runWeekSideEffects reached for group ${group?.id ?? entry?.groupId} despite the freeze — PRIMARY GUARD BYPASSED (founder attention); rank + leaderboard writes refused`);
+    return false;
+  }
+
   let clean = true;
 
   if (group && isFinalSnapshotDegraded(group)) {
