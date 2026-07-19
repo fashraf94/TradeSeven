@@ -141,3 +141,43 @@ export async function softDeleteReplacedTraitRuleDocs(agentRef, equippedTraits) 
   }
   return removed;
 }
+
+// Deterministic rule-doc id for a seeded born-with rule. (traitId, sourceRef) is
+// unique per born-with spec (a trait's ruleIds are distinct; the set's traitIds
+// are distinct), so this is a stable key — a re-run overwrites rather than
+// duplicating. Both parts are KB template / trait ids (kebab-case, slash-free),
+// so the id is a valid Firestore doc id.
+function bornWithRuleDocId(spec) {
+  return `bornwith__${spec.traitId}__${spec.sourceRef}`;
+}
+
+/**
+ * NON-transactional born-with seed for a FRESHLY-PROVISIONED agent (the League
+ * training clone, whose provisioning is a sentinel-ordered get-or-create, not a
+ * transaction). Creates `archetype`'s born-with rule docs with DETERMINISTIC ids
+ * (so an interrupted-and-re-run provision overwrites rather than duplicating —
+ * idempotency preserved) and returns the equippedTraits the caller writes onto
+ * the agent doc. Deletes NOTHING: the caller sets the doc's equippedTraits to the
+ * returned set, so any inherited/copied trait docs whose traitId isn't in it are
+ * inert by the projectActiveRules gate (harmless on an ephemeral per-pod clone).
+ *
+ * @param {FirebaseFirestore.DocumentReference} agentRef - agents/{id} (the clone)
+ * @param {string} archetype - archetype CODE-ID
+ * @param {Object} [options]
+ * @param {string} [options.strength='moderate']
+ * @returns {Promise<{ equippedTraits: Array<Object>|null, rulesAdded: number }>}
+ */
+export async function seedArchetypeTraitsDeterministic(agentRef, archetype, { strength = 'moderate' } = {}) {
+  const traitIds = ARCHETYPE_DEFAULT_TRAITS[archetype];
+  if (!Array.isArray(traitIds) || traitIds.length === 0) {
+    return { equippedTraits: null, rulesAdded: 0 };
+  }
+  const { ruleSpecs, equippedTraits } = buildSeedPlan(traitIds, strength);
+  const rulesRef = agentRef.collection('rules');
+  let rulesAdded = 0;
+  for (const spec of ruleSpecs) {
+    await rulesRef.doc(bornWithRuleDocId(spec)).set(buildSeedRuleDoc(spec));
+    rulesAdded += 1;
+  }
+  return { equippedTraits, rulesAdded };
+}

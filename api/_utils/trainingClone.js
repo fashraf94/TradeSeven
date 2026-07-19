@@ -20,7 +20,11 @@
 //     excludes on.
 //   - loadout is inherited from the ranked agent at provision time (decision #3:
 //     "defaults to the player's current ranked loadout"); a per-user loadoutSpec
-//     override is accepted but unused in Slice 3 (the Slice-5 chooser hook).
+//     override (the Slice-5 chooser) may replace the archetype/watchlist. When it
+//     picks an archetype that DIFFERS from the ranked agent's, the clone is
+//     seeded with THAT archetype's born-with traits (archetypeSeeding.js) instead
+//     of the inherited ranked traits — the same archetype↔traits invariant the
+//     Command Center change enforces, so a practice clone is never archetype≠traits.
 //
 // Imports the zero-import schema module from src/ under the revised June 2026
 // import rule (BUILD_RULES §4); the co-located test's real import of THIS module
@@ -30,6 +34,11 @@ import {
   trainingCloneDocId,
   isCpuUserId,
 } from '../../src/constants/leagueTournament.js';
+// Born-with seeding — the SAME planner + source of truth the Command Center
+// atomic change uses (via change-archetype.js). Converges the clone path onto it:
+// a loadout override that picks a DIFFERENT archetype seeds THAT archetype's
+// born-with traits, so a clone never carries archetype≠traits (the invariant).
+import { seedArchetypeTraitsDeterministic, hasBornWithSet } from './archetypeSeeding.js';
 
 const LOG_PREFIX = '[TrainingClone]';
 
@@ -165,7 +174,20 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
     // empty) can never be marked 'existing' and stranded with a blank Trading
     // Brain that decide.js would deploy as an inert agent.
     await copyAgentSubcollections(db, ranked.id, cloneId);
-    await cloneRef.set(buildTrainingCloneDoc(ranked, { groupId: group.id, odUserId, loadoutSpec, nowIso }));
+
+    const cloneDoc = buildTrainingCloneDoc(ranked, { groupId: group.id, odUserId, loadoutSpec, nowIso });
+    // Invariant convergence (same rule as the Command Center change): if the
+    // loadout override picked an archetype that DIFFERS from the ranked agent's,
+    // the clone carries the OVERRIDE archetype's born-with traits, not the
+    // inherited ranked traits — no clone with archetype≠traits. Seed BEFORE the
+    // sentinel doc write with deterministic rule-doc ids, so an interrupted
+    // re-provision overwrites (stays idempotent); the copied ranked trait docs go
+    // inert (their traitId is no longer in equippedTraits, projectActiveRules gate).
+    if (cloneDoc.archetype && cloneDoc.archetype !== ranked.archetype && hasBornWithSet(cloneDoc.archetype)) {
+      const { equippedTraits } = await seedArchetypeTraitsDeterministic(cloneRef, cloneDoc.archetype);
+      if (equippedTraits) cloneDoc.equippedTraits = equippedTraits;
+    }
+    await cloneRef.set(cloneDoc);
     created.push(odUserId);
     console.log(`${LOG_PREFIX} group ${group.id}: provisioned training clone ${cloneId} from ranked agent ${ranked.id} (${ranked.archetype})`);
   }

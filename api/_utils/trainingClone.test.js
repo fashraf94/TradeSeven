@@ -7,8 +7,10 @@
 // copy, idempotent get-or-create, no-ranked-agent skip).
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): this file's real import of
-// trainingClone.js IS the runtime guard that its api/ -> src/ import surface
-// stays Node-clean. Never mock that import.
+// trainingClone.js — whose graph now also pulls api/_utils/archetypeSeeding
+// (→ src/data/traitLibrary + src/data/traitEquip, the born-with seed planner) —
+// IS the runtime guard that its api/ -> src/ import surface stays Node-clean.
+// Never mock that import.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
@@ -17,6 +19,7 @@ import {
   ensureTrainingClones,
 } from './trainingClone.js';
 import { trainingCloneDocId, TRAINING_CLONE_ID_PREFIX } from '../../src/constants/leagueTournament.js';
+import { ARCHETYPE_DEFAULT_TRAITS } from '../../src/data/traitLibrary.js';
 
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -233,5 +236,51 @@ describe('ensureTrainingClones', () => {
       loadoutSpecByUser: { u1: { archetype: 'guardian' } },
     });
     expect(store.get(`agents/${trainingCloneDocId('pod1', 'u1')}`).archetype).toBe('guardian');
+  });
+
+  it('override to a DIFFERENT archetype seeds THAT archetype\'s born-with traits (invariant), not the inherited ones', async () => {
+    const { db, store } = seededDb(); // ranked archetype = degen, inherited equippedTraits = ['t1']
+    await ensureTrainingClones(db, trainingGroup, {
+      now: new Date(),
+      loadoutSpecByUser: { u1: { archetype: 'guardian' } }, // diverges from degen
+    });
+    const cloneId = trainingCloneDocId('pod1', 'u1');
+    const clone = store.get(`agents/${cloneId}`);
+    expect(clone.archetype).toBe('guardian');
+    // equippedTraits are guardian's born-with set — NOT the inherited ['t1'].
+    expect(clone.equippedTraits.map((t) => t.traitId)).toEqual(ARCHETYPE_DEFAULT_TRAITS.guardian);
+    // born-with rule docs created under the clone with deterministic ids.
+    const bornWithRuleKeys = [...store.keys()].filter((k) => k.startsWith(`agents/${cloneId}/rules/bornwith__`));
+    expect(bornWithRuleKeys.length).toBeGreaterThan(0);
+  });
+
+  it('override to the SAME archetype does not reseed — pure inherit-forward', async () => {
+    const { db, store } = seededDb(); // ranked archetype = degen
+    await ensureTrainingClones(db, trainingGroup, {
+      now: new Date(),
+      loadoutSpecByUser: { u1: { archetype: 'degen' } }, // matches ranked
+    });
+    const cloneId = trainingCloneDocId('pod1', 'u1');
+    const clone = store.get(`agents/${cloneId}`);
+    // Inherited equippedTraits kept (the fixture's ['t1']); no born-with reseed.
+    expect(clone.equippedTraits).toEqual(['t1']);
+    const bornWithRuleKeys = [...store.keys()].filter((k) => k.startsWith(`agents/${cloneId}/rules/bornwith__`));
+    expect(bornWithRuleKeys.length).toBe(0);
+  });
+
+  it('re-provision after an interrupted seed is idempotent (deterministic ids overwrite, no duplicates)', async () => {
+    const { db, store } = seededDb();
+    const opts = { now: new Date(), loadoutSpecByUser: { u1: { archetype: 'guardian' } } };
+    await ensureTrainingClones(db, trainingGroup, opts);
+    const cloneId = trainingCloneDocId('pod1', 'u1');
+    const afterFirst = [...store.keys()].filter((k) => k.startsWith(`agents/${cloneId}/rules/bornwith__`)).length;
+    expect(afterFirst).toBeGreaterThan(0);
+    // Simulate an interruption: the completion-sentinel clone doc never landed,
+    // but its seeded subcollection docs did. The next run re-provisions.
+    store.delete(`agents/${cloneId}`);
+    await ensureTrainingClones(db, trainingGroup, opts);
+    const afterSecond = [...store.keys()].filter((k) => k.startsWith(`agents/${cloneId}/rules/bornwith__`)).length;
+    // Deterministic ids overwrote in place — no duplicate born-with docs.
+    expect(afterSecond).toBe(afterFirst);
   });
 });
