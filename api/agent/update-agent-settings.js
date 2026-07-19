@@ -7,7 +7,7 @@
 // no settingsRev bump:
 //
 //   - equippedTraits   (useTraits.persistTraits incl. the orphan
-//                       auto-unequip; seedDefaultTraits / reseedDefaultTraits)
+//                       auto-unequip; seedDefaultTraits)
 //   - deployedStrategy (deployStrategyService.deployExperimentToAgent /
 //                       clearDeployedStrategy; null clears)
 //

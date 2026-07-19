@@ -36,12 +36,28 @@ vi.mock('../../src/config/featureFlags.js', () => ({
 
 const { default: changeArchetypeHandler } = await import('./change-archetype.js');
 
-function makeFakeFirestore({ agentDocs = {} } = {}) {
-  const state = { agentDocs };
+function makeFakeFirestore({ agentDocs = {}, subcollections = {} } = {}) {
+  const state = { agentDocs, subcollections };
+  let autoSeq = 0;
+  const store = (id, sub) => {
+    state.subcollections[id] = state.subcollections[id] || {};
+    state.subcollections[id][sub] = state.subcollections[id][sub] || [];
+    return state.subcollections[id][sub];
+  };
+  const buildDocRef = (id, sub, docId) => ({
+    id: docId,
+    get: async () => { const d = store(id, sub).find((x) => x.id === docId); return { exists: !!d, id: docId, data: () => d }; },
+    set: async (data) => { const arr = store(id, sub); const i = arr.findIndex((x) => x.id === docId); const doc = { id: docId, ...data }; if (i >= 0) arr[i] = doc; else arr.push(doc); },
+    update: async (updates) => { const arr = store(id, sub); const i = arr.findIndex((x) => x.id === docId); if (i >= 0) arr[i] = { ...arr[i], ...updates }; },
+  });
   const buildAgentRef = (id) => ({
+    id,
     get: async () => ({ exists: !!state.agentDocs[id], data: () => state.agentDocs[id] }),
     update: async (updates) => { state.agentDocs[id] = { ...state.agentDocs[id], ...updates }; },
-    collection: () => ({ get: async () => ({ docs: [] }) }),
+    collection: (sub) => ({
+      get: async () => ({ docs: store(id, sub).map((d) => ({ id: d.id, data: () => d })) }),
+      doc: (docId) => buildDocRef(id, sub, docId ?? `seed-${++autoSeq}`),
+    }),
   });
   return {
     collection: (name) => {
@@ -49,7 +65,7 @@ function makeFakeFirestore({ agentDocs = {} } = {}) {
       throw new Error(`Unmocked collection: ${name}`);
     },
     runTransaction: async (fn) =>
-      fn({ get: async (ref) => ref.get(), update: async (ref, updates) => ref.update(updates) }),
+      fn({ get: async (ref) => ref.get(), set: async (ref, data) => ref.set(data), update: async (ref, updates) => ref.update(updates) }),
     _state: state,
   };
 }
