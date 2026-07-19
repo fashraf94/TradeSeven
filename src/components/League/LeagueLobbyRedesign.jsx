@@ -11,10 +11,11 @@ import React, { useState, useRef } from 'react';
 import { rankPod } from './leagueFixtures';
 import { LTOKENS, LX, alpha } from './leagueTokens';
 import { Eyebrow, Mono, Icon, LIcon, AgentAvatar, Score, StatusBadge } from './LeagueParts';
-import { Funnel, PodCard } from './LeaguePod';
+import { PodCard } from './LeaguePod';
 import { quickPlayTraining, mapLobbyError } from '../../services/tournamentLobbyActions';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
 import SlotCenter from './liveDraft/SlotCenter';
+import WhileYouWait from './WhileYouWait';
 import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
 import TrainingClimbPreview from './TrainingClimbPreview';
 import LoadoutChooserSheet from './LoadoutChooserSheet';
@@ -150,30 +151,14 @@ function MyGameBar({ onOpenMyGame }) {
 //    Training|Ranked tabs (LobbyTabbed). Extracted verbatim from the original
 //    single-column lobby so the flag-off composition stays byte-identical. ─────
 
-// The forthcoming-bracket state (real adapter, no bracket doc yet). An explicit,
-// intentional "opens when the season locks" panel — NOT a TBD skeleton that reads
-// as broken, and never demo boxes.
-function BracketPendingSection() {
-  return (
-    <div style={{ borderRadius: 20, padding: '22px 18px', marginBottom: 18, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}`, textAlign: 'center' }}>
-      <Eyebrow color={LTOKENS.ink3} style={{ marginBottom: 14 }}>The bracket · forthcoming</Eyebrow>
-      <div style={{ width: 52, height: 52, borderRadius: 15, margin: '0 auto 14px', background: alpha(LX.energy, 0.14), border: `1px solid ${alpha(LX.energy, 0.34)}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <LIcon name="ranked" size={24} color={LX.energy} stroke={1.9} />
-      </div>
-      <div style={{ fontSize: 17, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>The bracket opens when the season locks</div>
-      <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.5, margin: '9px auto 0', maxWidth: 340 }}>
-        The tournament funnel — four-player groups narrowing to a single champion — seeds when the season locks. Until then, play the weekly base-layer groups below; they feed the leaderboard.
-      </div>
-    </div>
-  );
-}
-
-// THE FUNNEL — the hero. resting state of the whole bracket. No game → the
-// slot picker takes the center instead (one entry story; a claim routes into
-// the seated surface via onEnterGame); the forthcoming-bracket panel demotes
-// to SlotCenter's footnote line. SlotCenter owns the LEAGUE_LIVE_DRAFT gate
-// internally (P2c) so flag-off still keeps the Auto-draft entry affordance.
-function BracketFunnelSection({ st, onPickPod, activeGroup = null, currentUserId = null, displayName = null, onEnterGame = null }) {
+// THE CENTER — no game → the slot picker IS the center (one entry story; a claim
+// routes into the seated surface via onEnterGame). In a game → the Seated Waiting
+// Room ("While you wait", src/components/League/WhileYouWait.jsx) replaces the old
+// bracket-funnel / forthcoming panel (BOTH seated sub-states) as the primary
+// content, keeping the honest one-line bracket footnote. SlotCenter owns the
+// LEAGUE_LIVE_DRAFT gate internally (P2c) so flag-off still keeps the Auto-draft
+// entry affordance.
+function BracketFunnelSection({ st, activeGroup = null, currentUserId = null, displayName = null, onEnterGame = null, activeTrainingPod = null, onOpenTrainingPod = null, hasAgent, onOpenBaggerBomb = null, onSpectate = null }) {
   if (!activeGroup) {
     return (
       <div style={{ marginBottom: 18 }}>
@@ -181,21 +166,17 @@ function BracketFunnelSection({ st, onPickPod, activeGroup = null, currentUserId
       </div>
     );
   }
-  if (st.bracketPending) return <BracketPendingSection />;
   return (
-    <div style={{ borderRadius: 20, padding: '16px 12px 14px', marginBottom: 18, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px', marginBottom: 14 }}>
-        <Eyebrow color={LTOKENS.ink3}>The bracket · 16 → 8 → 4 → 1</Eyebrow>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: LX.energy, boxShadow: `0 0 6px ${LX.energy}` }} />
-          <Mono style={{ fontSize: 9.5, color: LX.energy, letterSpacing: '0.06em' }}>YOUR PATH</Mono>
-        </div>
-      </div>
-      <Funnel st={st} onPick={onPickPod} />
-      <div style={{ textAlign: 'center', marginTop: 12 }}>
-        <Mono style={{ fontSize: 10, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>Tap any pod to open its live four-player standing</Mono>
-      </div>
-    </div>
+    <WhileYouWait
+      viewport="mobile"
+      status={activeGroup.status}
+      st={st}
+      activeTrainingPod={activeTrainingPod}
+      onOpenTrainingPod={onOpenTrainingPod}
+      hasAgent={hasAgent}
+      onOpenBaggerBomb={onOpenBaggerBomb}
+      onSpectate={onSpectate}
+    />
   );
 }
 
@@ -236,13 +217,14 @@ function LobbyFooter() {
 // FLAG-OFF PATH (LEAGUE_NEXT_ARC_ENABLED off + no ?leagueTabs=1): today's
 // single-column lobby, byte-identical — the extracted sections compose to the
 // same output, FollowRail included.
-export default function Lobby({ st, accent, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, uid = null, displayName = null }) {
+export default function Lobby({ st, accent, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, uid = null, displayName = null, onOpenTrainingPod = null, activeTrainingPod = null, hasAgent, onOpenBaggerBomb = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
       {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
       <LobbyHero st={st} accent={accent} />
       <FollowRail items={st.followLive} onSpectate={onSpectate} />
-      <BracketFunnelSection st={st} onPickPod={onPickPod} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame} />
+      <BracketFunnelSection st={st} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame}
+        activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onOpenBaggerBomb={onOpenBaggerBomb} onSpectate={onSpectate} />
       <YourGroup st={st} accent={accent} onPick={onPickPod} />
       <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
       <LobbyFooter />
@@ -479,7 +461,7 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
 // / group / field flow with the reserved pulse slot in FollowRail's place;
 // Training = the inert cold-start shell. The keyed wrapper replays a calm CSS
 // fade on switch (reduced-motion-neutralized globally).
-export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null, displayName = null }) {
+export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null, displayName = null, onOpenBaggerBomb = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
       {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
@@ -491,7 +473,8 @@ export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectat
         ) : (
           <>
             <PulseSlot />
-            <BracketFunnelSection st={st} onPickPod={onPickPod} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame} />
+            <BracketFunnelSection st={st} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame}
+              activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onOpenBaggerBomb={onOpenBaggerBomb} onSpectate={onSpectate} />
             <YourGroup st={st} accent={accent} onPick={onPickPod} />
             <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
             <LobbyFooter />

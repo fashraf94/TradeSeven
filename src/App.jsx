@@ -9685,6 +9685,7 @@ export default function PortfolioDuel() {
           hasAgent={agentLoading ? undefined : hasAgent}
           agentLoadout={primaryAgent ? { archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName } : null}
           isDesktop={isDesktop}
+          onOpenBaggerBomb={() => setScreen('baggerBombLobby')}
         />
       </ErrorBoundary>
       </div>
