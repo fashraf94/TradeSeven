@@ -108,11 +108,14 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
   const validIds = cs.leans.valid.map((l) => l.adjustmentId);
   const staleIds = new Set(cs.leans.invalidated.filter((l) => l.reason === LEAN_INVALIDATION_REASONS.DEPRECATED_VERSION).map((l) => l.adjustmentId));
 
-  // Slot occupancy tracks the RAW standing-leans count — the server's cap authority
-  // counts every pin (valid, stale, or didn't-carry), so the client must too, or it
-  // would offer an Equip the server rejects with lean_limit. Each raw pin renders in
-  // a slot with a Clear action, so a stranded pin can always be freed.
-  const slotsFull = standingLeans.length >= STANDING_LEANS_CAP;
+  // Slot occupancy mirrors the server's cap authority (equip-lean.js, ruling
+  // M5): capacity counts only KERNEL-ACCEPTED current-archetype pins —
+  // other-archetype / stale / dropped pins are preserved desired state that
+  // never consumes a slot. cs.leans.valid IS that accepted set (same shared
+  // kernel), so client and server reach the same full/not-full decision.
+  // Each raw pin still renders in a slot with a Clear action, so a stranded
+  // pin can always be freed.
+  const slotsFull = cs.leans.valid.length >= STANDING_LEANS_CAP;
   const slotPins = standingLeans.map((raw) => {
     const v = validById.get(raw.adjustmentId);
     if (v) return { ...v, slotState: 'valid' };
@@ -141,7 +144,9 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
     if (err?.code === 'not_found') toast('This control isn\'t live yet.');
     else if (err?.code === 'battle_active') toast('Locked while a battle is live.');
     else if (err?.code === 'conflicting_lean') toast('That lean conflicts with one you already have.');
-    else if (err?.code === 'lean_limit') toast('Both slots are full — clear one first.');
+    // §9: the copy never bakes a slot number — the cap is level-derived
+    // server-side under mastery enforcement.
+    else if (err?.code === 'lean_limit') toast('Lean slots are full — clear one first.');
     else if (err?.code === 'deprecated_version') toast('That lean was revised — re-confirm the current wording.');
     else toast(err?.message || 'Could not update the loadout.');
   };

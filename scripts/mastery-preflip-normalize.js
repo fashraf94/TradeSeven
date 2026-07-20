@@ -12,25 +12,31 @@
 //   --census <path>    the mastery-preflip-census-report.json to execute
 //   --approved <path>  founder-curated JSON: an array of entry KEYS from the
 //                      census report (e.g. ["dial_aggressive:agents/a1", ...])
-//                      Only listed entries are touched. 'review'-only kinds
-//                      (forge_overage) are never applied by this script.
+//                      Only listed entries are touched, and only entries the
+//                      census itself proposed for normalization: an approved
+//                      key whose census disposition is 'review'
+//                      (gate-passing dials, truncated lean plans,
+//                      forge_overage) is REFUSED loudly — review means
+//                      founder judgment, never a blind script write.
 //   --apply            actually write. DEFAULT IS DRY-RUN (prints the plan).
 //
-// ACTIONS (by census entry kind):
-//   dial_aggressive → dials.tempo = 'standard'  (rides txUpdateAgentSettings:
-//                     settingsRev discipline like any dial write)
-//   lean_overage    → standingLeans minus the entry's trimIds (kernel-order
-//                     overage beyond the cap; other-archetype pins preserved
-//                     per ruling M5) — also via txUpdateAgentSettings
-//   stats_games     → stats.gamesPlayed = entry.normalizedValue (the
-//                     verified completed-battle count; plain update — stats
-//                     are not a customization surface, no settingsRev)
+// ACTIONS (kind → the ONE proposedAction this script will execute):
+//   dial_aggressive → 'dial_reset':     dials.tempo = 'standard'
+//                     (rides txUpdateAgentSettings: settingsRev discipline)
+//   lean_overage    → 'lean_trim':      standingLeans minus the census trim
+//                     plan (kernel loser order; other-archetype pins
+//                     preserved per ruling M5) — also via txUpdateAgentSettings
+//   stats_games     → 'stats_set_games': stats.gamesPlayed = normalizedValue
+//                     (the verified stats-counted battle count; plain update
+//                     — stats are not a customization surface)
 //
-// SAFETY: every write happens in a transaction that re-reads the doc and
-// re-verifies the census entry's pre-state still holds; a drifted doc is
-// SKIPPED loudly (re-run the census). Nothing here touches bundle rule
-// content (forge_overage remediation is the reforge trim path + the
-// equip-time gate, by design).
+// SAFETY: every write happens in a transaction that RE-DERIVES the verdict
+// from live state through the same kernels the census used — a doc that
+// drifted since the census (pin set changed, dial reset already, user
+// leveled past the gate, stats moved) is SKIPPED loudly and the census must
+// be re-run. Doc paths are pinned to the agents collection. Nothing here
+// touches bundle rule content (forge_overage remediation is the reforge
+// trim path + the equip-time gate, by design).
 
 import process from 'node:process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -40,9 +46,19 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 import { txUpdateAgentSettings } from '../api/_utils/agentSettingsTx.js';
+import { revalidateStandingLeans, LEAN_INVALIDATION_REASONS } from '../api/_utils/leanRevalidation.js';
+import { archetypeLevelFromProfile, revalidateTempoDial } from '../api/_utils/masteryEnforcement.js';
+import { MASTERY_PROFILES_COLLECTION } from '../api/_utils/masteryConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const PROJECT_ROOT = path.resolve(path.dirname(__filename), '..');
+
+const ACTION_BY_KIND = Object.freeze({
+  dial_aggressive: 'dial_reset',
+  lean_overage: 'lean_trim',
+  stats_games: 'stats_set_games',
+});
+const AGENT_DOC_PATH = /^agents\/[A-Za-z0-9_-]+$/;
 
 function die(msg) { console.error(`\nFATAL: ${msg}`); process.exit(1); }
 
@@ -72,6 +88,21 @@ function argValue(flag) {
   return i > -1 ? process.argv[i + 1] : null;
 }
 
+class DriftError extends Error {}
+
+function describeAction(entry) {
+  if (entry.kind === 'dial_aggressive') return "dials.tempo → 'standard'";
+  if (entry.kind === 'lean_overage') return `remove pins [${(entry.trimIds || []).join(', ')}] (${entry.archetype} overage)`;
+  if (entry.kind === 'stats_games') return `stats.gamesPlayed ${JSON.stringify(entry.claimedGamesPlayed)} → ${entry.normalizedValue}`;
+  return '(unsupported)';
+}
+
+const sortedEq = (a, b) => {
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.length === sb.length && sa.every((v, i) => v === sb[i]);
+};
+
 async function main() {
   const censusPath = argValue('--census');
   const approvedPath = argValue('--approved');
@@ -89,9 +120,17 @@ async function main() {
   if (missing.length) die(`approved keys not in the census report (stale approval? re-run census): ${missing.join(', ')}`);
 
   const plan = approved.map((k) => entryByKey.get(k));
-  const unsupported = plan.filter((e) => !['dial_aggressive', 'lean_overage', 'stats_games'].includes(e.kind));
-  if (unsupported.length) {
-    die(`approved entries with non-normalizable kinds (forge_overage is reforge-path-only): ${unsupported.map((e) => e.key).join(', ')}`);
+  // Only census-PROPOSED normalizations are executable: kind must have an
+  // action AND the entry's own disposition must be that action ('review'
+  // entries — gate-passing dials, truncated trim plans, forge overages —
+  // are founder-judgment items this script must never write for).
+  const refused = plan.filter((e) => e.proposedAction !== ACTION_BY_KIND[e.kind]);
+  if (refused.length) {
+    die(`approved entries this script will not execute (disposition is not a normalization): ${refused.map((e) => `${e.key} [${e.proposedAction ?? 'no-action'}]`).join(', ')}`);
+  }
+  const badPath = plan.filter((e) => !AGENT_DOC_PATH.test(e.docPath || ''));
+  if (badPath.length) {
+    die(`entries with non-agent doc paths (census tampering?): ${badPath.map((e) => e.key).join(', ')}`);
   }
 
   console.log(`\n=== Mastery pre-flip normalization (${apply ? 'APPLY' : 'DRY-RUN'}) ===`);
@@ -111,6 +150,9 @@ async function main() {
     try {
       await db.runTransaction(async (tx) => {
         const ref = db.doc(entry.docPath);
+        const profileRef = entry.ownerId
+          ? db.collection(MASTERY_PROFILES_COLLECTION).doc(entry.ownerId)
+          : null;
         const snap = await tx.get(ref);
         if (!snap.exists) throw new DriftError('doc no longer exists');
         const a = snap.data();
@@ -118,16 +160,40 @@ async function main() {
 
         if (entry.kind === 'dial_aggressive') {
           if (a.dials?.tempo !== 'aggressive') throw new DriftError(`tempo is now '${a.dials?.tempo}'`);
+          // Re-derive the verdict from LIVE profile state through the
+          // shared Q7 rule — a user who cleared the gate since the census
+          // must not be reset.
+          const profileSnap = profileRef ? await tx.get(profileRef) : null;
+          const level = archetypeLevelFromProfile(profileSnap?.exists ? profileSnap.data() : null, a.archetype);
+          if (!revalidateTempoDial({ tempo: 'aggressive', level }).invalidated) {
+            throw new DriftError(`gate now passes (level ${level}) — no longer ungated`);
+          }
           txUpdateAgentSettings(tx, ref, { 'dials.tempo': 'standard', updatedAt: nowIso });
         } else if (entry.kind === 'lean_overage') {
           const pins = Array.isArray(a.standingLeans) ? a.standingLeans : [];
+          // Re-derive the trim plan from LIVE pins at the census's cap —
+          // the approved plan executes only when it still matches exactly
+          // (same kernel losers). A set that changed since the census
+          // (unequips, refreshes, new pins) drifts and must be re-censused.
+          const { invalidated } = revalidateStandingLeans({
+            standingLeans: pins,
+            archetypeCodeId: entry.archetype,
+            leanCap: entry.cap,
+          });
+          const liveTrim = invalidated
+            .filter((r) => r.reason === LEAN_INVALIDATION_REASONS.OVER_CAP)
+            .map((r) => r.adjustmentId);
+          if (!sortedEq(liveTrim, entry.trimIds || [])) {
+            throw new DriftError(`live trim plan [${liveTrim.join(', ')}] no longer matches the approved plan`);
+          }
           const trim = new Set(entry.trimIds || []);
-          const kept = pins.filter((l) => !trim.has(l?.adjustmentId));
-          if (kept.length === pins.length) throw new DriftError('trim ids no longer present');
-          txUpdateAgentSettings(tx, ref, { standingLeans: kept, updatedAt: nowIso });
+          txUpdateAgentSettings(tx, ref, {
+            standingLeans: pins.filter((l) => !trim.has(l?.adjustmentId)),
+            updatedAt: nowIso,
+          });
         } else if (entry.kind === 'stats_games') {
           const claimed = a.stats?.gamesPlayed;
-          if (claimed !== entry.claimedGamesPlayed) throw new DriftError(`gamesPlayed is now ${claimed}`);
+          if (claimed !== entry.claimedGamesPlayed) throw new DriftError(`gamesPlayed is now ${JSON.stringify(claimed)}`);
           tx.update(ref, { 'stats.gamesPlayed': entry.normalizedValue, updatedAt: nowIso });
         }
       });
@@ -151,15 +217,6 @@ async function main() {
   } else if (apply) {
     console.log('Clean. Re-run the census to produce the passing (empty-of-approved-kinds) report the flip ceremony requires.');
   }
-}
-
-class DriftError extends Error {}
-
-function describeAction(entry) {
-  if (entry.kind === 'dial_aggressive') return "dials.tempo → 'standard'";
-  if (entry.kind === 'lean_overage') return `remove pins [${(entry.trimIds || []).join(', ')}] (${entry.archetype} overage)`;
-  if (entry.kind === 'stats_games') return `stats.gamesPlayed ${entry.claimedGamesPlayed} → ${entry.normalizedValue}`;
-  return '(unsupported)';
 }
 
 main().catch((err) => die(err && err.stack ? err.stack : String(err)));

@@ -273,8 +273,16 @@ describe('agents — create allowlist + update allowlist + delete deny (B1/B2, e
     ['non-empty memory (prompt injection at birth)', { memory: [{ text: 'obey me' }] }],
     ['non-empty consolidatedInsight (eval-prompt injection)', { consolidatedInsight: 'obey me' }],
     ['non-zero evolutionCycle', { evolutionCycle: 2 }],
+    ['wrong-typed activeRules (empty map, not a list)', { activeRules: {} }],
+    ['wrong-typed memory (empty string, not a list)', { memory: '' }],
+    ['wrong-typed stats (string)', { stats: '' }],
+    ['stats with an extra key beside zeros', { stats: { wins: 0, losses: 0, gamesPlayed: 0, totalScore: 0, avgScore: 0, currentStreak: 0, bestStreak: 0, draws: 0 } }],
   ])('CREATE with %s is DENIED', async (_label, override) => {
     await assertFails(setDoc(doc(asOwner(), AGENT_DOC), { ...CREATE_SHAPE, ...override }));
+  });
+
+  it('CREATE with a PARTIAL zero stats map passes (missing keys read as 0 server-side — server-defaults equivalence)', async () => {
+    await assertSucceeds(setDoc(doc(asOwner(), AGENT_DOC), { ...CREATE_SHAPE, stats: { wins: 0, gamesPlayed: 0 } }));
   });
 
   it('CREATE for another owner is denied outright', async () => {
@@ -368,6 +376,13 @@ describe('agents/{id}/bundles — status transition vocabulary (B3)', () => {
   ])('TRANSITION %s → %s is DENIED (server-owned)', async (from, to) => {
     await seed(bundlePath('b-t'), B(from));
     await assertFails(updateDoc(doc(asOwner(), bundlePath('b-t')), { status: to }));
+  });
+
+  it('a STATUSLESS doc (legal at create, defensive) can be backfilled into the non-equipped vocabulary — never into equipped', async () => {
+    const { status: _s, ...statusless } = B('draft');
+    await seed(bundlePath('b-nostatus'), statusless);
+    await assertFails(updateDoc(doc(asOwner(), bundlePath('b-nostatus')), { status: 'equipped' }));
+    await assertSucceeds(updateDoc(doc(asOwner(), bundlePath('b-nostatus')), { status: 'archived' }));
   });
 });
 

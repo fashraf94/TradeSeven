@@ -173,7 +173,25 @@ describe('at-rest SET checks (post-adjudication group changes; cap tightening)',
 
 // ─── Ruling M6: the leanCap injection channel's closed vocabulary ───
 
-import { isLegalLeanCap, MASTERY_LEAN_CAP_MAX } from './leanRevalidation.js';
+import { isLegalLeanCap, acceptedStandingLeans, MASTERY_LEAN_CAP_MAX } from './leanRevalidation.js';
+
+describe('acceptedStandingLeans — the M5 counting export (structural clamp, no entitlement)', () => {
+  it('returns the kernel-accepted current-archetype set: cross-menu/stale/duplicate pins excluded, up to the structural max', () => {
+    const accepted = acceptedStandingLeans({
+      standingLeans: [
+        { adjustmentId: 'SP-01', version: 1, equippedAt: 't1' }, // cross-menu — excluded
+        { adjustmentId: 'CP-01', version: 1, equippedAt: 't2' },
+        { adjustmentId: 'CP-02', version: 0, equippedAt: 't3' }, // stale — excluded
+        { adjustmentId: 'CP-03', version: 1, equippedAt: 't4' },
+        { adjustmentId: 'CP-06', version: 1, equippedAt: 't5' },
+      ],
+      archetypeCodeId: 'guardian',
+    });
+    // 3 accepted (< structural max 4) — no entitlement clamp applied here;
+    // entitlement is the caller's check (equip-lean's leanCap).
+    expect(accepted.map((l) => l.adjustmentId)).toEqual(['CP-01', 'CP-03', 'CP-06']);
+  });
+});
 
 describe('leanCap injection vocabulary (ruling M6: [2..4] integers only; reject + log outside)', () => {
   const THREE = [

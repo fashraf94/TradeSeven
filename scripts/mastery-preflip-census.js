@@ -20,14 +20,22 @@
 // (`${kind}:${docPath}[:${qualifier}]`) so re-runs converge and the approved
 // file survives a re-census.
 //
-// stats cross-check: stats.gamesPlayed is compared against the agent's
-// actual completed agentBattles count (the server-side writer's ground
-// truth) — a claimed count ABOVE the verified count never passed a gate
-// (the pre-hardening client write hole; closed by the agents allowlist).
+// stats cross-check ground truth: stats.gamesPlayed is compared against the
+// agent's completed NON-TOURNAMENT agentBattles count — the exact
+// resolveCompletionDisposition predicate (tournament completions never
+// increment career stats), so tournament battles can neither mask a forged
+// claim nor be minted into a correction. Known slack, documented: the two
+// fenced decide.js expiry-completions historically completed battles
+// WITHOUT incrementing stats, so verified may exceed the honest claim —
+// only claimed > verified is flagged (never the reverse), and the
+// normalized value is an upper bound of server-written games.
 //
 // USAGE (from project root):
 //   node scripts/mastery-preflip-census.js            # census + JSON report
 //   node scripts/mastery-preflip-census.js --out <p>  # report path
+//
+// The report lands OUTSIDE version control (.gitignore'd default name) —
+// it carries per-user entitlement data and must never be committed.
 //
 // ENV: FIREBASE_ADMIN_CREDENTIALS in .env.local (a JSON service account) —
 // the archetype-bornwith-census.js / rule-compat-cleanup.js convention.
@@ -39,16 +47,17 @@ import path from 'node:path';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
-import { revalidateStandingLeans, STANDING_LEANS_CAP, MASTERY_LEAN_CAP_MAX } from '../api/_utils/leanRevalidation.js';
+import { revalidateStandingLeans, STANDING_LEANS_CAP, LEAN_INVALIDATION_REASONS } from '../api/_utils/leanRevalidation.js';
 import {
   archetypeLevelFromProfile,
   leanCapForLevel,
-  dialAggressiveAllowed,
+  revalidateTempoDial,
   effectiveForgeLimits,
 } from '../api/_utils/masteryEnforcement.js';
 import { MASTERY_PROFILES_COLLECTION } from '../api/_utils/masteryConfig.js';
 import { ARCHETYPE_KEYS } from '../src/data/archetypeAdjustments.js';
 import { getAgentLevel, FORGE_LIMITS } from '../src/constants/agentProgression.js';
+import { TOURNAMENT_GAME_MODE } from '../src/constants/leagueTournament.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const PROJECT_ROOT = path.resolve(path.dirname(__filename), '..');
@@ -76,6 +85,27 @@ function initAdmin() {
   return getFirestore();
 }
 
+/**
+ * The per-archetype lean overage plan, straight from the kernel run at the
+ * ENTITLEMENT cap: `valid` is the kept set, and the OVER_CAP-invalidated
+ * ids are the trim plan — in the kernel's own deterministic loser order
+ * (later equippedAt loses), never an array-order slice, and complete even
+ * past the structural max. Conflict/menu/version omissions are
+ * adjudication, not entitlement — they are never trimmed.
+ */
+function leanOveragePlan(pins, archetype, cap) {
+  const { valid, invalidated } = revalidateStandingLeans({
+    standingLeans: pins,
+    archetypeCodeId: archetype,
+    leanCap: cap,
+  });
+  const truncated = invalidated.some((r) => typeof r.truncatedCount === 'number');
+  const trimIds = invalidated
+    .filter((r) => r.reason === LEAN_INVALIDATION_REASONS.OVER_CAP)
+    .map((r) => r.adjustmentId);
+  return { keptIds: valid.map((l) => l.adjustmentId), trimIds, truncated };
+}
+
 async function main() {
   const outArgIdx = process.argv.indexOf('--out');
   const outPath = outArgIdx > -1 ? process.argv[outArgIdx + 1]
@@ -83,22 +113,25 @@ async function main() {
 
   const db = initAdmin();
 
-  // ── One read per collection (READ-ONLY throughout) ──
+  // ── One read per collection (READ-ONLY throughout). Battles are
+  // pre-filtered server-side to completed docs; the tournament exclusion
+  // (the resolveCompletionDisposition stats predicate) runs in memory. ──
   const [agentsSnap, profilesSnap, battlesSnap] = await Promise.all([
     db.collection('agents').get(),
     db.collection(MASTERY_PROFILES_COLLECTION).get(),
-    db.collection('agentBattles').select('agentId', 'status').get(),
+    db.collection('agentBattles').where('status', '==', 'completed').select('agentId', 'gameMode').get(),
   ]);
 
   const profileByUser = new Map();
   for (const doc of profilesSnap.docs) profileByUser.set(doc.id, doc.data());
 
-  // Verified games: completed agentBattles per agentId (the server writer's
-  // ground truth for stats.gamesPlayed).
+  // Verified games: completed, stats-counted (non-tournament) battles per
+  // agentId — the server stats writer's exact increment predicate.
   const completedByAgent = new Map();
   for (const doc of battlesSnap.docs) {
     const b = doc.data();
-    if (b.status === 'completed' && typeof b.agentId === 'string') {
+    if (b.gameMode === TOURNAMENT_GAME_MODE) continue; // never increments stats
+    if (typeof b.agentId === 'string') {
       completedByAgent.set(b.agentId, (completedByAgent.get(b.agentId) || 0) + 1);
     }
   }
@@ -106,13 +139,21 @@ async function main() {
   const entries = [];
   const stats = {
     agentsScanned: 0,
-    bundlesScanned: 0,
+    bundlesSeen: 0,
+    bundlesEvaluated: 0,
+    bundlesArchivedSkipped: 0,
+    bundlesOrphaned: 0,
     leanOverage: 0,
     dialAggressiveTotal: 0,
     dialAggressiveUngated: 0,
-    statsOverage: 0,
+    statsFindings: 0,
     forgeBundleOverage: 0,
   };
+
+  // Per-agent meta for the bundle loop: O(1) lookup + a tier derived from
+  // TRUSTWORTHY games (a malformed claimed value falls back to the verified
+  // count, so a forged string can't mint a legacy band that hides overage).
+  const agentMeta = new Map();
 
   for (const doc of agentsSnap.docs) {
     const a = doc.data();
@@ -121,21 +162,28 @@ async function main() {
     const profile = profileByUser.get(a.ownerId) || null;
     const pins = Array.isArray(a.standingLeans) ? a.standingLeans : [];
 
-    // ── Leans: per-archetype kernel-accepted count vs the profile-derived
-    // cap (missing profile ⇒ level 1 ⇒ baseline 2). Counting runs at the
-    // structural max so entitlement is compared, not pre-clamped away. ──
-    if (pins.length > 0) {
+    const claimed = a.stats?.gamesPlayed;
+    const claimedDefined = claimed !== undefined && claimed !== null;
+    const claimedClean = Number.isInteger(claimed) && claimed >= 0;
+    const verified = completedByAgent.get(doc.id) || 0;
+    const gamesForTier = claimedClean ? claimed : verified;
+    agentMeta.set(doc.id, {
+      ownerId: a.ownerId ?? null,
+      profile,
+      legacyLimits: FORGE_LIMITS[getAgentLevel(gamesForTier)],
+    });
+
+    // ── Leans: per-archetype kernel plan at the profile-derived cap
+    // (missing profile ⇒ level 1 ⇒ baseline 2). Every possible cap is ≥
+    // baseline, and overage requires more pins than the cap, so sets at or
+    // under the baseline can never produce a finding — skip them. ──
+    if (pins.length > STANDING_LEANS_CAP) {
       for (const archetype of ARCHETYPE_KEYS) {
-        const { valid } = revalidateStandingLeans({
-          standingLeans: pins,
-          archetypeCodeId: archetype,
-          leanCap: MASTERY_LEAN_CAP_MAX,
-        });
         const level = archetypeLevelFromProfile(profile, archetype);
         const cap = leanCapForLevel(level);
-        if (valid.length > cap) {
+        const { keptIds, trimIds, truncated } = leanOveragePlan(pins, archetype, cap);
+        if (trimIds.length > 0 || truncated) {
           stats.leanOverage++;
-          const acceptedIds = valid.map((l) => l.adjustmentId);
           entries.push({
             key: `lean_overage:${agentPath}:${archetype}`,
             kind: 'lean_overage',
@@ -144,28 +192,27 @@ async function main() {
             archetype,
             level,
             cap,
-            acceptedCount: valid.length,
-            acceptedIds,
+            keptIds,
+            trimIds,
             totalPins: pins.length,
-            // The trim plan the normalizer applies if approved: drop the
-            // accepted overage BEYOND the cap (kernel order — earlier
-            // equippedAt wins), keep every other pin (other-archetype
-            // desired state is preserved per ruling M5).
-            trimIds: acceptedIds.slice(cap),
-            proposedAction: 'lean_trim',
+            truncated,
+            // A truncated invalidation record means the trim plan may be
+            // incomplete (garbage-flooded set) — founder review + manual
+            // remediation, never a blind script trim.
+            proposedAction: truncated ? 'review' : 'lean_trim',
           });
         }
       }
     }
 
     // ── Dial: every stored 'aggressive' is enumerated (the would-be
-    // grandfather population); below L2 for the CURRENT archetype it never
-    // passed the §6 gate. ──
+    // grandfather population), judged through the SAME shared rule the
+    // switch rider and the §8 clamp pass use (ruling Q7). ──
     if (a.dials?.tempo === 'aggressive') {
       stats.dialAggressiveTotal++;
       const level = archetypeLevelFromProfile(profile, a.archetype);
-      const gated = dialAggressiveAllowed(level);
-      if (!gated) stats.dialAggressiveUngated++;
+      const { invalidated } = revalidateTempoDial({ tempo: 'aggressive', level });
+      if (invalidated) stats.dialAggressiveUngated++;
       entries.push({
         key: `dial_aggressive:${agentPath}`,
         kind: 'dial_aggressive',
@@ -173,27 +220,27 @@ async function main() {
         ownerId: a.ownerId ?? null,
         archetype: a.archetype ?? null,
         level,
-        passesGate: gated,
-        proposedAction: gated ? 'review' : 'dial_reset',
+        passesGate: !invalidated,
+        proposedAction: invalidated ? 'dial_reset' : 'review',
       });
     }
 
-    // ── Stats: claimed gamesPlayed vs verified completed-battle count.
-    // Claimed above verified never passed a gate (the server writer only
-    // increments on real completions). ──
-    const claimed = a.stats?.gamesPlayed;
-    const verified = completedByAgent.get(doc.id) || 0;
-    const claimedNum = Number.isFinite(claimed) ? claimed : 0;
-    if (claimedNum > verified || claimedNum < 0 || !Number.isInteger(claimedNum)) {
-      stats.statsOverage++;
+    // ── Stats: claimed gamesPlayed vs the verified stats-counted battle
+    // count. Flagged when the claim exceeds the verified upper bound OR is
+    // malformed (non-integer / negative / non-number — the pre-hardening
+    // client hole; a malformed value ALSO coerces inside getAgentLevel at
+    // the live Forge gate, so it must never be laundered to 0 here). ──
+    if ((claimedDefined && !claimedClean) || (claimedClean && claimed > verified)) {
+      stats.statsFindings++;
       entries.push({
         key: `stats_games:${agentPath}`,
         kind: 'stats_games',
         docPath: agentPath,
         ownerId: a.ownerId ?? null,
         claimedGamesPlayed: claimed ?? null,
+        claimedMalformed: claimedDefined && !claimedClean,
         verifiedCompletedBattles: verified,
-        claimedTier: getAgentLevel(claimedNum),
+        claimedTier: getAgentLevel(claimedClean ? claimed : 0),
         verifiedTier: getAgentLevel(verified),
         normalizedValue: verified,
         proposedAction: 'stats_set_games',
@@ -207,17 +254,25 @@ async function main() {
   // equip-time gate, never a script mutation of rule content. ──
   const bundlesSnap = await db.collectionGroup('bundles').get();
   for (const doc of bundlesSnap.docs) {
+    stats.bundlesSeen++;
     const agentRef = doc.ref.parent.parent;
-    if (!agentRef) continue; // not an agents/{id}/bundles doc
-    const agentDoc = agentsSnap.docs.find((d) => d.id === agentRef.id);
-    if (!agentDoc) continue; // orphaned subtree — report separately if seen
-    stats.bundlesScanned++;
+    const underAgents = agentRef && agentRef.parent && agentRef.parent.id === 'agents';
+    const meta = underAgents ? agentMeta.get(agentRef.id) : undefined;
+    if (!meta) {
+      // A bundles doc outside agents/, or under an agent doc that no longer
+      // exists (or was created after the agents read): the census cannot
+      // attribute it — surface it loudly, never a silent gap.
+      stats.bundlesOrphaned++;
+      console.error(`[census] ORPHANED bundle (no owning agent doc): ${doc.ref.path}`);
+      continue;
+    }
     const b = doc.data();
-    if (b.status === 'archived') continue;
-    const a = agentDoc.data();
-    const profile = profileByUser.get(a.ownerId) || null;
-    const legacyLimits = FORGE_LIMITS[getAgentLevel(a.stats?.gamesPlayed || 0)];
-    const limits = effectiveForgeLimits({ legacyLimits, profileData: profile });
+    if (b.status === 'archived') {
+      stats.bundlesArchivedSkipped++;
+      continue;
+    }
+    stats.bundlesEvaluated++;
+    const limits = effectiveForgeLimits({ legacyLimits: meta.legacyLimits, profileData: meta.profile });
     const ruleCount = Array.isArray(b.ruleSnapshots) ? b.ruleSnapshots.length : 0;
     if (ruleCount > limits.maxRulesPerBundle) {
       stats.forgeBundleOverage++;
@@ -225,7 +280,7 @@ async function main() {
         key: `forge_overage:${doc.ref.path}`,
         kind: 'forge_overage',
         docPath: doc.ref.path,
-        ownerId: a.ownerId ?? null,
+        ownerId: meta.ownerId,
         status: b.status ?? null,
         ruleCount,
         effectiveMaxRulesPerBundle: limits.maxRulesPerBundle,
@@ -244,11 +299,11 @@ async function main() {
 
   console.log('\n=== Mastery ENFORCEMENT pre-flip census (READ-ONLY) ===');
   console.log(`agents scanned            : ${stats.agentsScanned}`);
-  console.log(`bundles scanned           : ${stats.bundlesScanned}`);
+  console.log(`bundles seen/evaluated    : ${stats.bundlesSeen}/${stats.bundlesEvaluated} (archived ${stats.bundlesArchivedSkipped}, ORPHANED ${stats.bundlesOrphaned})`);
   console.log(`lean overage entries      : ${stats.leanOverage}`);
   console.log(`aggressive dials (total)  : ${stats.dialAggressiveTotal}`);
   console.log(`  of which below the gate : ${stats.dialAggressiveUngated}`);
-  console.log(`stats mismatches          : ${stats.statsOverage}`);
+  console.log(`stats findings            : ${stats.statsFindings}`);
   console.log(`forge bundle overages     : ${stats.forgeBundleOverage}`);
   console.log(`report written to         : ${outPath}`);
   console.log('\nNext (flip ceremony, B4): founder reviews the report, writes the');

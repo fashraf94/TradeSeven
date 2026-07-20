@@ -154,6 +154,28 @@ describe('lean caps — the chokepoint half of the D1 dual anchor', () => {
     expect(pins).toEqual(['SP-01', 'SP-06', 'CP-01', 'CP-02']); // degen desired state intact
   });
 
+  it('M5: a kernel-OMITTED (deprecated-version) pin never vetoes its conflict-group opposite — both set checks read the ACCEPTED set', async () => {
+    flagState.enf = false;
+    // CP-04 rests at a stale version: it consumes no slot, projects nowhere,
+    // and the client marks its opposite CP-05 available (validIds-based) —
+    // the server must agree, not 409 off invisible state.
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT({
+        standingLeans: [{ adjustmentId: 'CP-04', version: 0, equippedAt: '2026-07-01T00:00:00.000Z' }],
+      }),
+    });
+    const res = await equipLean('CP-05');
+    expect(res.statusCode).toBe(200);
+    // The stale pin is preserved (durable desired state) beside the new one.
+    expect(activeDb.__dump('agents/agent-1').standingLeans.map((l) => l.adjustmentId)).toEqual(['CP-04', 'CP-05']);
+    // And once CP-05 is ACCEPTED, re-confirming CP-04 at the current version
+    // hits the conflict gate — coherent in both directions.
+    const reconfirm = await equipLean('CP-04');
+    expect(reconfirm.statusCode).toBe(409);
+    expect(reconfirm.body.error).toBe('conflicting_lean');
+    expect(reconfirm.body.conflictsWith).toEqual(['CP-05']);
+  });
+
   it('M5 edge: re-confirming a DEPRECATED-version pin at full cap consumes a slot (the accepted set may never outgrow the entitlement)', async () => {
     flagState.enf = false;
     // CP-04 pinned at a stale version (kernel omits it — not counted), the

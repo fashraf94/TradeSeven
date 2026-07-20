@@ -44,7 +44,7 @@ import { findEquipConflicts } from '../../src/data/archetypeAdjustments.js';
 // equip can never accept a pin the snapshot path would omit (or vice versa).
 // STANDING_LEANS_CAP lives there too (the domain kernel), re-exported here
 // for API-surface convenience.
-import { validateLeanPin, revalidateStandingLeans, STANDING_LEANS_CAP, MASTERY_LEAN_CAP_MAX, LEAN_INVALIDATION_REASONS } from '../_utils/leanRevalidation.js';
+import { validateLeanPin, acceptedStandingLeans, STANDING_LEANS_CAP, LEAN_INVALIDATION_REASONS } from '../_utils/leanRevalidation.js';
 // Mastery P2 (spec §6 D1 dual anchor — the WRITE/chokepoint half): the cap
 // is level-derived from the live masteryProfile at write time. This
 // chokepoint is the ONLY per-user entitlement gate; the kernel half clamps
@@ -159,12 +159,24 @@ export default async function handler(req, res) {
         return { idempotent: true, standingLeans: current };
       }
 
-      // Conflict-group rejection against the OTHER equipped leans (an
-      // existing pin of this same id is a refresh, not a conflict). The
-      // filter drops malformed/null entries too — they must never crash the
-      // equip (they are surfaced by revalidation, not here).
-      const otherIds = current
-        .filter((l) => l && typeof l.adjustmentId === 'string' && l.adjustmentId !== adjustmentId)
+      // Ruling M5: BOTH at-rest set checks below run against the kernel-
+      // ACCEPTED current-archetype set (the shared acceptedStandingLeans
+      // export), not raw pins. Leans are durable desired state across
+      // archetype switches, so at-rest pins from OTHER archetypes' menus —
+      // plus malformed/duplicate/deprecated entries the kernel would omit
+      // from any snapshot — are preserved but never consume slots and
+      // never veto an equip (a pin the rest of the system says is not
+      // equipped must not block one that is; the client computes both
+      // states from the same accepted set).
+      const acceptedPins = acceptedStandingLeans({
+        standingLeans: current,
+        archetypeCodeId: agent.archetype,
+      });
+
+      // Conflict-group rejection against the OTHER accepted leans (an
+      // accepted pin of this same id is a refresh, not a conflict).
+      const otherIds = acceptedPins
+        .filter((l) => l.adjustmentId !== adjustmentId)
         .map((l) => l.adjustmentId);
       const conflicts = findEquipConflicts(agent.archetype, adjustmentId, otherIds);
       if (conflicts.length > 0) {
@@ -177,25 +189,11 @@ export default async function handler(req, res) {
       // does not add a slot). The rejection carries the RESOLVED cap so the
       // client renders the number the decision used — §9: never the static
       // baseline copy beside a level-derived decision.
-      //
-      // Ruling M5: capacity counts ONLY current-archetype, kernel-accepted
-      // pins. Leans are durable desired state across archetype switches, so
-      // at-rest pins from OTHER archetypes' menus (plus malformed/duplicate/
-      // conflicting entries the kernel would omit from any snapshot) are
-      // preserved but never consume slots — without this, a switched-away
-      // archetype's pins would silently eat the new archetype's capacity.
-      // The counting pass runs at the STRUCTURAL max: slot membership is a
-      // validity question; entitlement is decided by the leanCap check here.
       // The slot decision keys on ACCEPTED membership, not raw same-id
       // presence: refreshing an accepted pin never adds a slot, but
       // re-confirming a NON-accepted at-rest pin (a deprecated-version
       // stale entry — not counted above) CONSUMES one, else the re-confirm
       // gesture could grow the accepted set past the entitlement.
-      const { valid: acceptedPins } = revalidateStandingLeans({
-        standingLeans: current,
-        archetypeCodeId: agent.archetype,
-        leanCap: MASTERY_LEAN_CAP_MAX,
-      });
       const existingAccepted = acceptedPins.some((l) => l.adjustmentId === adjustmentId);
       if (!existingAccepted && acceptedPins.length >= leanCap) {
         const err = new Error(SENTINEL_PREFIX + 'lean_limit');

@@ -28,6 +28,7 @@
 
 import {
   doc,
+  getDoc,
   collection,
   writeBatch,
   serverTimestamp,
@@ -979,6 +980,28 @@ export async function materializeDimensionBundle({
   const bundleId = computeDeterministicBundleId(seasonId, dimensionValues);
   const rulesCol = collection(db, 'agents', agentId, 'rules');
   const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+
+  // Idempotent short-circuit for a bundle that has moved past 'forged'
+  // (Mastery end-of-branch ruling B3: bundle status transitions out of
+  // 'equipped' are server-owned — the firestore.rules vocabulary denies
+  // the overwrite below on an equipped doc). The deterministic id means an
+  // existing doc carries IDENTICAL content for these dimensions, and
+  // create-entry accepts 'forged' or 'equipped' bundles alike, so reusing
+  // the equipped doc as-is is the same launch. An 'archived' copy cannot
+  // be relaunched (create-entry rejects it and the rules deny reviving it
+  // client-side) — fail loudly instead of surfacing a permission error.
+  const existingSnap = await getDoc(bundleRef);
+  if (existingSnap.exists()) {
+    const existingStatus = existingSnap.data()?.status;
+    if (existingStatus === 'equipped') {
+      return bundleId;
+    }
+    if (existingStatus === 'archived') {
+      throw new Error(
+        'This exact strategy was archived earlier — adjust a dimension to forge a fresh bundle.'
+      );
+    }
+  }
 
   const batch = writeBatch(db);
 

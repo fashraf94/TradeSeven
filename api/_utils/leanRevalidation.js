@@ -72,12 +72,34 @@ export function isLegalLeanCap(leanCap) {
  * §8 stays open by design: the explicit `leanCap` param on
  * revalidateStandingLeans is the corrections-phase injection channel — the
  * future correction applier passes the reduced entitlement explicitly
- * (with user notice, per §8) rather than this default.
+ * (with user notice, per §8) rather than this default. ⚠ The §8 clamp
+ * pass is TWO-CHANNEL by ruling Q7: whoever injects a reduced leanCap here
+ * MUST run masteryEnforcement.revalidateTempoDial in the SAME pass —
+ * dials and leans re-validate together, never leans alone.
  *
  * Dark (enforcement off): baseline — byte-identical to today.
  */
 export function resolveLeanCap(enforcementEnabled = MASTERY_ENFORCEMENT_ENABLED) {
   return enforcementEnabled === true ? MASTERY_LEAN_CAP_MAX : STANDING_LEANS_CAP;
+}
+
+/**
+ * The kernel-ACCEPTED at-rest set for one archetype (end-of-branch ruling
+ * M5's counting rule, exported so its consumers never encode "no
+ * entitlement clamp" as a leanCap injection — the M6 vocabulary polices
+ * that channel for the §8 corrections applier, and a counting call must be
+ * distinguishable from an entitlement injection). Runs the full shared
+ * pass (per-pin validity + dedupe + conflict groups) clamped only at the
+ * STRUCTURAL max: membership is a validity question; entitlement is the
+ * caller's check. Consumers: equip-lean's capacity/conflict accounting,
+ * the pre-flip census.
+ */
+export function acceptedStandingLeans({ standingLeans, archetypeCodeId } = {}) {
+  return revalidateStandingLeans({
+    standingLeans,
+    archetypeCodeId,
+    leanCap: MASTERY_LEAN_CAP_MAX,
+  }).valid;
 }
 
 export const LEAN_INVALIDATION_REASONS = Object.freeze({
@@ -172,7 +194,7 @@ export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId, l
       injected: typeof leanCap === 'number' || typeof leanCap === 'boolean' ? leanCap : String(leanCap).slice(0, MAX_INVALIDATED_ID_CHARS),
       injectedType: typeof leanCap,
       fallback: STANDING_LEANS_CAP,
-      archetypeCodeId: typeof archetypeCodeId === 'string' ? archetypeCodeId.slice(0, MAX_INVALIDATED_ID_CHARS) : null,
+      archetypeCodeId: boundId(archetypeCodeId),
     }));
     effectiveCap = STANDING_LEANS_CAP;
   }
