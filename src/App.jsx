@@ -9683,7 +9683,8 @@ export default function PortfolioDuel() {
         <LeagueScreen
           onOpenTrainingPod={onOpenTrainingPod}
           hasAgent={agentLoading ? undefined : hasAgent}
-          agentLoadout={primaryAgent ? { archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName } : null}
+          agentLoadout={primaryAgent ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName } : null}
+          onOpenForge={() => setShowForge(true)}
           isDesktop={isDesktop}
         />
       </ErrorBoundary>

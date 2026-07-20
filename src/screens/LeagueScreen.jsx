@@ -54,7 +54,7 @@ const ARENA_MODE = ['training', 'ranked'].includes(SP.get('c')) ? SP.get('c') : 
 const DESKTOP_FORCE = SP.get('leagueLobbyDesktop') === '1';
 const DESKTOP_OFF = SP.get('leagueLobbyDesktop') === '0';
 
-export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout, isDesktop } = {}) {
+export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout, onOpenForge, isDesktop } = {}) {
   const { tokens } = useTheme();
   const [view, setView] = React.useState('home');
   const [climb, setClimb] = React.useState(CLIMB_PREVIEW);
@@ -68,8 +68,10 @@ export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout
   // Reachable only via ?leagueClimb=1; "League" (onBack) returns to the normal surface.
   if (climb) return <LeagueClimb mode={CLIMB_MODE} ctx={CLIMB_CTX} onBack={() => setClimb(false)} />;
 
-  // Flag/param OFF → today's behavior, byte-identical.
-  if (!REDESIGN_ON) return <LeagueParticipantView />;
+  // Flag/param OFF → today's behavior. The seated live-draft states (gated on
+  // group.isLiveDraft) still render inside the participant view, so the loadout
+  // + Edit-in-Forge props are threaded here too.
+  if (!REDESIGN_ON) return <LeagueParticipantView agentLoadout={agentLoadout} onOpenForge={onOpenForge} />;
 
   // Front door: redesigned lobby is the landing; "Open my game" pushes the real
   // participant flow full-screen with a back affordance.
@@ -88,7 +90,7 @@ export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout
             <ArrowLeft size={16} /> League
           </button>
         </div>
-        <LeagueParticipantView />
+        <LeagueParticipantView agentLoadout={agentLoadout} onOpenForge={onOpenForge} />
       </div>
     );
   }
