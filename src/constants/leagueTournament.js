@@ -549,6 +549,36 @@ export function selectMyGroup(docs) {
 }
 
 /**
+ * G2 honest-warning predicate (docs/audits/20260720_G2_ACTIVEBATTLEID_CONFLICT_DISCOVERY.md).
+ * A casual (vs-CPU) Command-Center deploy creates a 'fullday' battle that expires at the
+ * next market close (`expiryEtDate`). Because a competitive pod deploys the user's REAL
+ * agent and `/api/agent/decide` allows only one active battle, a casual battle still live
+ * at the pod's next session silently locks the agent out of it. This predicate is the
+ * window test: the deploy conflicts when the pod's next session opens ON OR BEFORE the
+ * casual battle's expiry date (a 09:30 ET open precedes a 16:00 ET close, so a same-DATE
+ * session still conflicts). The session is the anchor for a pre-battle pod
+ * (`battleStartWeek.anchorEtDate`); for a pod already in BATTLE it is the next trading day
+ * (`nextTradingEtDate`) that the pod's agent redeploys into. ET dates are 'YYYY-MM-DD'
+ * strings, lexicographically comparable; the caller derives them from the market helpers,
+ * so this stays pure + unit-testable. Returns false when there is no conflict (or no group).
+ */
+export function casualDeployMissesPodSession(group, { expiryEtDate, nextTradingEtDate } = {}) {
+  if (!group || group.isTraining === true || !expiryEtDate) return false;
+  let sessionEtDate = null;
+  if (
+    group.status === GROUP_STATUS.FORMING ||
+    group.status === GROUP_STATUS.DRAFTING ||
+    group.status === GROUP_STATUS.AWAITING_OPEN
+  ) {
+    sessionEtDate = group.battleStartWeek?.anchorEtDate ?? null;
+  } else if (group.status === GROUP_STATUS.BATTLE) {
+    sessionEtDate = nextTradingEtDate ?? null;
+  }
+  if (!sessionEtDate) return false;
+  return sessionEtDate <= expiryEtDate;
+}
+
+/**
  * Pick the caller's ACTIVE TRAINING pod from a set of their group docs. ONE home
  * for the selection rule, used by BOTH the client re-entry read
  * (`subscribeMyTrainingPod`) AND the server `already_active` formation guard
