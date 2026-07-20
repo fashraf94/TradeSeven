@@ -3,28 +3,34 @@
 // of record: docs/ARCHETYPE_MASTERY_SPEC_V2_1_STOP_RULINGS_JUL21_2026.md).
 //
 // Hosts (the P1 write-host census, pinned for the follow-up fence check):
-//   • eligibility stamp builder    — consumed inside completeBattle's
-//     completion transaction (api/cron/agent-evaluate.js — NON-fence)
-//   • first-eval-tick slot stamp   — stampMasterySlotFirstTick (called from
+//   • eligibility stamp gate+fields  — maybeBuildEligibilityStampFields,
+//     consumed inside completeBattle's completion transaction
+//     (api/cron/agent-evaluate.js — NON-fence) AND by the §12 test mimic,
+//     so the production gate and the acceptance battery share ONE predicate.
+//   • first-eval-tick slot stamp     — stampMasterySlotFirstTick (called from
 //     processAgentBattle, api/cron/agent-evaluate.js — NON-fence)
-//   • award transaction (§5.2)     — runAwardTransaction (below)
-//   • repair sweep (§5.3)          — runRepairSweep (below; hosted on the
+//   • award transaction (§5.2)       — runAwardTransaction (below)
+//   • repair sweep (§5.3)            — runRepairSweep (below; hosted on the
 //     EXISTING agent-evaluate cron cadence — no new cron entry, BUILD_RULES §6)
-//   • quarantine ledger writer     — inside runAwardTransaction (fail-closed
-//     zero receipts) and the duplicate-rank audit in the slot stamp
+//   • quarantine-ledger writer       — inside the award transaction
+//     (fail-closed zero receipts; server-only diagnostics)
+//   • duplicate-rank audit writer    — IN-TRANSACTION with the stamp that
+//     detects it (both stamp paths), to the dedicated masteryAudits
+//     collection — never masteryQuarantine, whose counts gate the §9
+//     backfill go/no-go and must mean "failed to award", nothing else.
 // None of these files is a fence file; fence exports are read-only-consumed.
 //
 // CONCURRENCY (Phase 0 S11.10 load-bearing constraint, V2.1 memo §10): the
 // eval lock (120s) is shorter than the run budget (290s), so a second
 // invocation can steal an expired lock and race the first. EVERY write here
-// is therefore an in-transaction re-read + write-once guard (the
-// regimeAtStart pattern, agent-evaluate.js:991): first committer wins,
-// losers no-op. The §12 concurrent-retry tests are the proof.
+// is an in-transaction re-read + write-once guard (the regimeAtStart
+// pattern, agent-evaluate.js): first committer wins, losers no-op. The §12
+// concurrent-retry tests are the proof.
 //
 // V2.1 §5.1 invariant: "Every battle completed via the settlement path
 // carries an eligibility stamp atomic with its completion. Fence-path expiry
 // completions (decide.js) are structurally outside the mastery system and
-// never earn." CPU system agents (battle.isCpu === true) are likewise
+// never earn." CPU system agents (isMasterySubject === false) are likewise
 // structurally outside: no stamp, no award, no receipt — mastery attaches to
 // user × archetype and a CPU seat has neither.
 
@@ -34,15 +40,15 @@ import { FieldValue } from 'firebase-admin/firestore';
 // battle service already consumes. The co-located test's import of THIS
 // module is the dependency-surface guard (it explodes in the Node test env
 // if a browser dep ever enters the graph) — never mock it.
-import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
+import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 import { TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
+import { getGroup } from './tournamentGroupService.js';
 import {
   deriveSlotDate,
   deriveSlotRank,
   buildSlotStamp,
   widenedQueryBounds,
   findDuplicateRank,
-  rateBandForRank,
 } from './masterySlot.js';
 import {
   validateFormulaInputs,
@@ -55,23 +61,30 @@ import {
 import {
   MASTERY_PROFILES_COLLECTION,
   MASTERY_QUARANTINE_COLLECTION,
+  MASTERY_AUDITS_COLLECTION,
 } from './masteryConfig.js';
 
 const LOG_PREFIX = '[Mastery]';
 
-// ==================== ELIGIBILITY STAMP (§5.1) ====================
+// ==================== SUBJECT PREDICATE ====================
 
 /**
- * The fields the completion transaction merges into its update payload —
- * ONLY when flagView.everEnabled (pre-epoch-1 settlement writes nothing
- * mastery-related; dark byte-identity). eligible is the worker's own flag
- * view at settlement time (§3 cross-boundary rule: eligibility is a
- * settlement-time fact). masteryAwardPending makes the §5.3 repair sweep's
- * "stamped eligible, award missing" predicate queryable; the award
- * transaction clears it. Both fields are absent from the agentBattles client
- * update allowlist — client writes are denied by construction (S11.7).
+ * The ONE "structurally outside mastery" predicate (V2.1 STOP-A.2 wording):
+ * CPU system agents are not mastery subjects — no stamp, no slot, no award,
+ * no receipt. Used by the completion-stamp gate, the first-tick slot-stamp
+ * gate, and the award pre-check, so the exclusion can never drift between
+ * sites. NOTE: computePlacementInputs' per-sibling `isCpu !== true` is a
+ * DIFFERENT semantic (counting human opponents) and deliberately does not
+ * share this helper.
  */
-export function buildEligibilityStampFields(flagView, nowIso) {
+export function isMasterySubject(battle) {
+  return battle?.isCpu !== true;
+}
+
+// ==================== ELIGIBILITY STAMP (§5.1) ====================
+
+/** The §5.1 stamp fields (shape only — gate applied by the maybe- variant). */
+function buildEligibilityStampFields(flagView, nowIso) {
   return {
     masteryEligibility: {
       eligible: flagView.enabled === true,
@@ -80,6 +93,26 @@ export function buildEligibilityStampFields(flagView, nowIso) {
     },
     masteryAwardPending: true,
   };
+}
+
+/**
+ * Gate + fields in one place — the SINGLE executable statement of "what the
+ * §5.1 stamp writes and when", consumed by BOTH the production completion
+ * transaction and the §12 acceptance battery's settle() mimic (so the
+ * battery can never certify a gate the production writer no longer has).
+ *
+ * Returns {} (write nothing) unless: epoch 1 has begun, the battle is a
+ * mastery subject, and no stamp exists on the transaction's own fresh read.
+ * `eligible` is the worker's own flag view at settlement time (§3
+ * cross-boundary rule). masteryAwardPending makes the §5.3 predicate
+ * ("stamped ∧ award absent") queryable — Firestore cannot query
+ * field-absence; the pendingReflection queue-flag precedent (BUILD_RULES §5).
+ */
+export function maybeBuildEligibilityStampFields(freshBattle, flagView, nowIso) {
+  if (flagView.everEnabled !== true) return {};
+  if (!isMasterySubject(freshBattle)) return {};
+  if (freshBattle.masteryEligibility !== undefined) return {};
+  return buildEligibilityStampFields(flagView, nowIso);
 }
 
 // ==================== MODE CLASSIFICATION ====================
@@ -101,17 +134,18 @@ export function classifyModeKind({ gameMode, group }) {
 }
 
 /**
- * Resolve the tournamentGroups doc for a tournament battle, memoized in
- * groupCache (Map: groupId → group data | null). isTraining is a
- * creation-time group fact, so the cache is settlement-order-safe.
+ * Resolve the tournamentGroups doc for a tournament battle via the shared
+ * getGroup helper (tournamentGroupService.js — one fetch idiom for the
+ * collection), memoized in groupCache (Map: groupId → {id,...data} | null).
+ * isTraining is a creation-time group fact, so the cache is
+ * settlement-order-safe.
  */
 export async function resolveModeGroup(db, battle, groupCache = new Map()) {
   if (battle.gameMode !== TOURNAMENT_GAME_MODE) return null;
   const groupId = battle.groupId;
   if (typeof groupId !== 'string' || groupId.length === 0) return null;
   if (groupCache.has(groupId)) return groupCache.get(groupId);
-  const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId).get();
-  const group = snap.exists ? snap.data() : null;
+  const group = await getGroup(db, groupId);
   groupCache.set(groupId, group);
   return group;
 }
@@ -121,16 +155,23 @@ export async function resolveModeGroup(db, battle, groupCache = new Map()) {
 /**
  * Placement inputs, pure. Competition shape reads the frozen per-battle
  * facts: tiered battles compare scoreState.currentScore vs
- * scoreState.opponentScore (both doc-local); tournament battles compare
- * against sibling battles' scoreState.currentScore — final by construction
- * at settlement (scores are written by evaluation ticks, which stop at
- * market close; completion never recomputes them — Discovery A2), so the
- * result is independent of sibling SETTLEMENT order (§12 property).
+ * scoreState.opponentScore (both doc-local).
+ *
+ * Tournament battles compare against SAME-DAY sibling battles only: groups
+ * keep ONE groupId across daily redeploys (tournamentOrchestrator.js —
+ * "deploys a FRESH daily battle" per agent), so the group's battle set
+ * accumulates across days and the day cohort — keyed by the server-authored
+ * `timing.tradingDays[0]` creation fact — IS the frozen competition shape.
+ * Same-owner battles are never opponents. Day-scoping also preserves the
+ * §12 order-independence property for sweep-delayed settlements: a day-N
+ * battle's day-N siblings have final scores (their evaluation stopped at
+ * day-N close), whereas cross-day siblings' scores may still be moving.
  *
  * Ties pay strictly-outplaced only; first place must be STRICT (an
- * engineered N-way tie pays zero placement to all N). A sibling with a
- * non-finite score is conservatively neither outplaced nor conceded to —
- * it blocks wonAgainstField (fail toward less XP, never more).
+ * engineered N-way tie pays zero placement to all N). A same-day sibling
+ * with a non-finite score is conservatively neither outplaced nor conceded
+ * to — it blocks wonAgainstField (fails toward less XP). A battle whose own
+ * day key is missing concedes placement entirely (empty cohort).
  */
 export function computePlacementInputs({ battle, siblings }) {
   const myScore = battle.scoreState?.currentScore;
@@ -141,45 +182,64 @@ export function computePlacementInputs({ battle, siblings }) {
       wonAgainstField: Number.isFinite(myScore) && Number.isFinite(opponentScore) && myScore > opponentScore,
     };
   }
+  const myDay = battle.timing?.tradingDays?.[0];
   let humansOutplaced = 0;
+  let sameDayOpponents = 0;
   let strictlyAboveAll = Number.isFinite(myScore);
   for (const sib of Array.isArray(siblings) ? siblings : []) {
     if (!sib || sib.id === battle.id) continue;
+    if (myDay === undefined || sib.timing?.tradingDays?.[0] !== myDay) continue;
+    sameDayOpponents += 1;
     const sibScore = sib.scoreState?.currentScore;
     const finite = Number.isFinite(sibScore);
-    if (finite && sib.isCpu !== true && Number.isFinite(myScore) && sibScore < myScore) {
+    if (
+      finite &&
+      sib.isCpu !== true &&
+      sib.ownerId !== battle.ownerId &&
+      Number.isFinite(myScore) &&
+      sibScore < myScore
+    ) {
       humansOutplaced += 1;
     }
     if (!finite || !(myScore > sibScore)) strictlyAboveAll = false;
   }
-  return { humansOutplaced, wonAgainstField: strictlyAboveAll && (Array.isArray(siblings) ? siblings.filter(s => s && s.id !== battle.id).length : 0) > 0 };
+  return { humansOutplaced, wonAgainstField: strictlyAboveAll && sameDayOpponents > 0 };
 }
 
-/** Sibling battles of a tournament battle (same groupId, tournament mode), by group. */
-export async function fetchGroupSiblings(db, battle) {
+/**
+ * Sibling battles of a tournament battle (same groupId), memoized per
+ * groupId for the run (sibling creation facts and post-close scores are
+ * settlement-order-invariant) and field-masked to what placement reads —
+ * the latestTournamentBattlesByAgent query posture (single equality filter,
+ * `.select` mask, gameMode re-checked in memory).
+ */
+export async function fetchGroupSiblings(db, battle, siblingsCache = new Map()) {
   if (battle.gameMode !== TOURNAMENT_GAME_MODE || typeof battle.groupId !== 'string') return [];
+  if (siblingsCache.has(battle.groupId)) return siblingsCache.get(battle.groupId);
   const snap = await db
     .collection('agentBattles')
     .where('groupId', '==', battle.groupId)
+    .select('gameMode', 'isCpu', 'ownerId', 'scoreState', 'timing')
     .get();
-  return snap.docs
+  const siblings = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((b) => b.gameMode === TOURNAMENT_GAME_MODE);
+  siblingsCache.set(battle.groupId, siblings);
+  return siblings;
 }
 
 // ==================== SLOT COHORT + STAMP (§3) ====================
 
 /**
  * Fetch the same-owner, same-archetype creation cohort around the battle's
- * slot date (widened createdAt range; deriveSlotRank applies the exact NY
- * filter). Consumes the (ownerId, agentContext.archetype, createdAt)
- * composite index added in this P1 (firestore.indexes.json).
+ * NY slot date (widened createdAt range; deriveSlotRank applies the exact NY
+ * filter with the same deriveSlotDate — one derivation source, BUILD_RULES
+ * §9). Consumes the (ownerId, agentContext.archetype, createdAt) composite
+ * index added in this P1. Fails closed to an empty cohort on unusable
+ * ownerId/createdAt (the admin SDK throws on undefined filter values).
  */
 export async function fetchSlotCohort(db, battle) {
-  // Widen around the battle's NY slot date — NOT the UTC date prefix, which
-  // is one day ahead for late-evening NY creations. deriveSlotRank then
-  // applies the exact NY filter with the same deriveSlotDate — one
-  // derivation source by construction (BUILD_RULES §9).
+  if (typeof battle.ownerId !== 'string' || battle.ownerId.length === 0) return [];
   // widenedQueryBounds(D) = [D 00:00Z, D+2 00:00Z), a strict superset of NY
   // day D's UTC span ([D 04:00Z, D+1 05:00Z] at the EST/EDT extremes).
   const nySlotDate = deriveSlotDate(battle.createdAt);
@@ -191,6 +251,7 @@ export async function fetchSlotCohort(db, battle) {
     .where('agentContext.archetype', '==', battle.agentContext?.archetype ?? null)
     .where('createdAt', '>=', slotDateBounds.startIso)
     .where('createdAt', '<', slotDateBounds.endIso)
+    .select('createdAt', 'masterySlot')
     .get();
   return snap.docs.map((d) => ({
     battleId: d.id,
@@ -200,16 +261,24 @@ export async function fetchSlotCohort(db, battle) {
 }
 
 /**
- * Derive this battle's slot fields from its cohort, pure. Returns
- * { stamp, duplicateOf } or null (unusable creation data → caller
- * quarantines at award time).
+ * Derive this battle's slot fields from its cohort, pure. When the creation
+ * data is unusable, returns a write-once SENTINEL stamp (null date/rank/
+ * rateBand): it terminates per-tick retries, and the null rateBand fails
+ * validateFormulaInputs at award time → quarantined receipt — the designed
+ * fail-closed chain, reached exactly once.
  */
 export function deriveSlotFields(battle, cohortDocs, nowIso) {
   const derived = deriveSlotRank(
     { battleId: battle.id, createdAt: battle.createdAt },
     cohortDocs
   );
-  if (!derived) return null;
+  if (!derived) {
+    return {
+      stamp: { date: null, rank: null, rateBand: null, assignedAt: nowIso },
+      duplicateOf: null,
+      sentinel: true,
+    };
+  }
   const stamp = buildSlotStamp({ slotDate: derived.slotDate, rank: derived.rank, assignedAt: nowIso });
   const duplicateOf = findDuplicateRank({
     slotDate: derived.slotDate,
@@ -217,44 +286,55 @@ export function deriveSlotFields(battle, cohortDocs, nowIso) {
     cohortDocs,
     selfBattleId: battle.id,
   });
-  return { stamp, duplicateOf };
+  return { stamp, duplicateOf, sentinel: false };
+}
+
+/** Audit-doc shape shared by both stamp paths (spec §3: duplicate-rank pairs route to the corrections intake). */
+function buildDuplicateRankAuditDoc({ battleId, duplicateOf, stamp, nowIso }) {
+  return {
+    kind: 'duplicate_rank_audit',
+    battleId,
+    collidesWith: duplicateOf.battleId,
+    slot: stamp,
+    at: nowIso,
+  };
 }
 
 /**
  * First-evaluation-tick slot stamp (§3): write-once, authoritative once
  * written. In-transaction re-read guard (regimeAtStart pattern) — under a
  * stolen eval lock only the first committer's stamp stands. A detected
- * duplicate-rank pair is an audit event routed to the corrections ledger
- * (spec §3) via the server-only quarantine/audit ledger — awaited, never
- * fire-and-forget (Signal Capture Rider).
+ * duplicate-rank pair commits its audit doc IN THE SAME TRANSACTION as the
+ * stamp that detected it (masteryAudits — awaited by construction; a crash
+ * can never separate the stamp from its only detection event).
  *
  * Returns { stamped: boolean, stamp?: object }.
  */
 export async function stampMasterySlotFirstTick(db, battle, { nowIso }) {
   if (battle.masterySlot !== undefined) return { stamped: false, stamp: battle.masterySlot };
+  if (typeof battle.ownerId !== 'string' || battle.ownerId.length === 0) {
+    return { stamped: false }; // unqueryable owner — settles as quarantined via the lazy sentinel
+  }
   const cohort = await fetchSlotCohort(db, battle);
   const fields = deriveSlotFields(battle, cohort, nowIso);
-  if (!fields) {
-    console.error(`${LOG_PREFIX} slot derivation failed for battle ${battle.id} (unusable createdAt) — left unstamped; settlement will quarantine`);
-    return { stamped: false };
+  if (fields.sentinel) {
+    console.error(`${LOG_PREFIX} slot derivation failed for battle ${battle.id} (unusable createdAt) — stamping terminal sentinel; award will quarantine`);
   }
   const battleRef = db.collection('agentBattles').doc(battle.id);
   const won = await db.runTransaction(async (t) => {
     const d = await t.get(battleRef);
     if (!d.exists || d.data()?.masterySlot !== undefined) return false;
     t.update(battleRef, { masterySlot: fields.stamp });
+    if (fields.duplicateOf) {
+      t.set(
+        db.collection(MASTERY_AUDITS_COLLECTION).doc(),
+        buildDuplicateRankAuditDoc({ battleId: battle.id, duplicateOf: fields.duplicateOf, stamp: fields.stamp, nowIso })
+      );
+    }
     return true;
   });
   if (won && fields.duplicateOf) {
-    // Audit event, awaited in-request (Signal Capture Rider — no .catch(()=>{}) discard).
-    await db.collection(MASTERY_QUARANTINE_COLLECTION).add({
-      kind: 'duplicate_rank_audit',
-      battleId: battle.id,
-      collidesWith: fields.duplicateOf.battleId,
-      slot: fields.stamp,
-      at: nowIso,
-    });
-    console.error(`${LOG_PREFIX} duplicate-rank audit: battle ${battle.id} and ${fields.duplicateOf.battleId} both derive ${fields.stamp.date}#${fields.stamp.rank} — routed to corrections ledger input`);
+    console.error(`${LOG_PREFIX} duplicate-rank audit: battle ${battle.id} and ${fields.duplicateOf.battleId} both derive ${fields.stamp.date}#${fields.stamp.rank} — routed to corrections intake (masteryAudits)`);
   }
   return won ? { stamped: true, stamp: fields.stamp } : { stamped: false };
 }
@@ -271,108 +351,147 @@ export async function stampMasterySlotFirstTick(db, battle, { nowIso }) {
  * transaction. rank 7+ (rateBand 0) produces a real award with xpFinal 0 and
  * reasonCode 'daily_ceiling'.
  *
- * I/O discipline: sibling/group/cohort reads happen OUTSIDE the transaction
- * (their inputs are creation-frozen or final-by-close, so they are
- * settlement-order-invariant); the transaction re-reads ONLY the battle doc
- * and the profile doc, recomputes the pure math from fresh values, and
- * writes both docs — retry-safe by construction.
+ * ONE transaction body serves every receipt path (award, flag_disabled,
+ * quarantine, pending-anomaly) so the write-once guard, receipt payload and
+ * marker clearing can never diverge between paths.
+ *
+ * PENDING-POISON hardening: a doc carrying masteryAwardPending that reaches
+ * a defensive state (not completed / not a subject / unstamped) is an
+ * invariant breach — it is resolved fail-closed with a quarantined receipt
+ * (clearing the marker) instead of returning silently, so the §5.3 sweep can
+ * never be starved by immortal tenants. The same defensive states WITHOUT
+ * the marker (e.g. fence-path expiry completions, V2.1 STOP-A.2) stay pure
+ * no-ops.
  *
  * Deliberately reads NO live flag view: eligibility and epochId come from
  * the persisted masteryEligibility stamp — a settlement-time fact of record
  * (§3 cross-boundary rule) — and the epoch registry is NOT an eligibility
- * oracle (§5.4). Callers may pass extra option keys; they are ignored.
+ * oracle (§5.4). The persisted stamp is likewise the ONE source of the rate
+ * band (`slotStamp.rateBand`, never re-derived from rank — BUILD_RULES §9),
+ * and the award's score input is read from the transaction's OWN fresh doc.
  *
- * @returns {{outcome: string, xpFinal?: number, reasonCode?: string}}
+ * I/O discipline: sibling/group/cohort reads happen OUTSIDE the transaction
+ * (their inputs are creation-frozen or final-by-close, so they are
+ * settlement-order-invariant); `preloadedBattle` lets callers that already
+ * hold the doc (completeBattle's completion transaction, the sweep's query)
+ * skip the pre-read. The transaction re-reads ONLY the battle doc and the
+ * profile doc, recomputes the pure math from fresh values, and writes —
+ * retry-safe by construction.
+ *
+ * @returns {{outcome: 'awarded'|'zero_receipt'|'quarantined'|'already_awarded'|'missing'|'cpu_outside_mastery'|'not_completed'|'unstamped', xpFinal?: number, reasonCode?: string}}
  */
-export async function runAwardTransaction(db, battleId, { nowIso, groupCache = new Map() }) {
+export async function runAwardTransaction(db, battleId, { nowIso, groupCache = new Map(), siblingsCache = new Map(), preloadedBattle = null }) {
   const battleRef = db.collection('agentBattles').doc(battleId);
-  const preSnap = await battleRef.get();
-  if (!preSnap.exists) return { outcome: 'missing' };
-  const pre = { id: battleId, ...preSnap.data() };
+  let pre = preloadedBattle;
+  if (!pre) {
+    const preSnap = await battleRef.get();
+    if (!preSnap.exists) return { outcome: 'missing' };
+    pre = { id: battleId, ...preSnap.data() };
+  }
 
-  if (pre.isCpu === true) return { outcome: 'cpu_outside_mastery' };
-  if (pre.status !== 'completed') return { outcome: 'not_completed' };
-  if (pre.masteryEligibility === undefined) return { outcome: 'unstamped' };
   if (pre.masteryAward !== undefined) return { outcome: 'already_awarded' };
+
+  // Defensive states: pure no-op WITHOUT the pending marker (structurally
+  // outside / not ready); fail-closed quarantined receipt WITH it.
+  const pendingSet = pre.masteryAwardPending === true;
+  const defensiveState = !isMasterySubject(pre)
+    ? 'cpu_outside_mastery'
+    : pre.status !== 'completed'
+      ? 'not_completed'
+      : pre.masteryEligibility === undefined
+        ? 'unstamped'
+        : null;
+  if (defensiveState && !pendingSet) return { outcome: defensiveState };
 
   const archetype = pre.agentContext?.archetype;
   const ownerId = pre.ownerId;
-  if (typeof ownerId !== 'string' || ownerId.length === 0) {
-    // No profile to attach to — ledger the anomaly, receipt as quarantined.
-    return await commitReceipt(db, battleRef, pre, {
-      reasonCode: REASON_CODES.QUARANTINED,
-      diagnostic: 'missing_ownerId',
-      nowIso,
-      flagViewEpochId: pre.masteryEligibility.epochId,
-    });
-  }
+  const ownerValid = typeof ownerId === 'string' && ownerId.length > 0;
+  const epochId = pre.masteryEligibility?.epochId ?? 0;
+  const eligible = !defensiveState && pre.masteryEligibility.eligible === true;
 
-  // ---- Stamped ineligible → zero receipt, profile untouched (§4/§5.2) ----
-  if (pre.masteryEligibility.eligible !== true) {
-    return await commitReceipt(db, battleRef, pre, {
-      reasonCode: REASON_CODES.FLAG_DISABLED,
-      diagnostic: null,
-      nowIso,
-      flagViewEpochId: pre.masteryEligibility.epochId,
-    });
+  // ---- Gather settlement-order-invariant inputs outside the txn (only
+  // when a real award is possible) ----
+  let modeKind = null;
+  let placement = { humansOutplaced: 0, wonAgainstField: false };
+  let lazySlot = null;
+  if (eligible && ownerValid) {
+    const group = await resolveModeGroup(db, pre, groupCache);
+    modeKind = classifyModeKind({ gameMode: pre.gameMode, group });
+    const siblings = modeKind === 'league' || modeKind === 'training'
+      ? await fetchGroupSiblings(db, pre, siblingsCache)
+      : [];
+    placement = computePlacementInputs({ battle: pre, siblings });
+    if (pre.masterySlot === undefined) {
+      const cohort = await fetchSlotCohort(db, pre);
+      lazySlot = deriveSlotFields(pre, cohort, nowIso);
+    }
   }
-
-  // ---- Gather settlement-order-invariant inputs outside the txn ----
-  const group = await resolveModeGroup(db, pre, groupCache);
-  const modeKind = classifyModeKind({ gameMode: pre.gameMode, group });
-  const siblings = modeKind === 'league' || modeKind === 'training'
-    ? await fetchGroupSiblings(db, pre)
-    : [];
-  const placement = computePlacementInputs({ battle: pre, siblings });
   const isMultiDay = Array.isArray(pre.timing?.tradingDays) && pre.timing.tradingDays.length > 1;
-  // Slot: stamp is authoritative if present; otherwise derive lazily at
-  // settlement from the cohort (§3 pre-tick terminal battles) and stamp in
-  // the same award transaction.
-  const cohort = pre.masterySlot === undefined ? await fetchSlotCohort(db, pre) : null;
-  const lazySlot = pre.masterySlot === undefined ? deriveSlotFields(pre, cohort, nowIso) : null;
+  const profileRef = ownerValid ? db.collection(MASTERY_PROFILES_COLLECTION).doc(ownerId) : null;
 
-  const profileRef = db.collection(MASTERY_PROFILES_COLLECTION).doc(ownerId);
-  const currentScore = pre.scoreState?.currentScore ?? 0;
-  const epochId = pre.masteryEligibility.epochId;
-
-  const result = await db.runTransaction(async (t) => {
+  return db.runTransaction(async (t) => {
     const freshSnap = await t.get(battleRef);
     if (!freshSnap.exists) return { outcome: 'missing' };
     const fresh = freshSnap.data();
     if (fresh.masteryAward !== undefined) return { outcome: 'already_awarded' };
-    if (fresh.status !== 'completed' || fresh.masteryEligibility === undefined) {
-      return { outcome: 'state_regressed' }; // cannot happen forward; fail closed
-    }
-    const profileSnap = await t.get(profileRef);
-    const profile = profileSnap.exists ? profileSnap.data() : {};
-    const arch = profile.archetypes?.[archetype] ?? { xp: 0, battlesCounted: 0 };
+    const profileSnap = profileRef ? await t.get(profileRef) : null;
+    const profile = profileSnap?.exists ? profileSnap.data() : {};
+    const archKey = typeof archetype === 'string' ? archetype : 'unknown';
+    const arch = profile.archetypes?.[archKey] ?? { xp: 0, battlesCounted: 0 };
     const xpBefore = Number.isFinite(arch.xp) ? arch.xp : 0;
     const levelBefore = levelForXp(xpBefore);
 
-    // Slot authority: a stamp that appeared since the pre-read wins over our
-    // lazily derived one (first verified stamp is authoritative — §3).
-    const slotStamp = fresh.masterySlot !== undefined
-      ? fresh.masterySlot
-      : (lazySlot ? lazySlot.stamp : null);
-    const rateBand = slotStamp ? rateBandForRank(slotStamp.rank) : NaN;
-
-    const invalid = validateFormulaInputs({ modeKind, archetype, currentScore, rateBand });
-    if (invalid) {
+    /** One receipt writer for every zero/quarantine path — marker always clears. */
+    const commitZeroReceipt = (reasonCode, diagnostic) => {
       const receipt = buildZeroReceipt({
-        archetype: typeof archetype === 'string' ? archetype : 'unknown',
-        reasonCode: REASON_CODES.QUARANTINED,
+        archetype: archKey,
+        reasonCode,
         epochId,
         settledAt: nowIso,
         level: levelBefore,
       });
       t.update(battleRef, { masteryAward: receipt, masteryAwardPending: FieldValue.delete() });
-      t.set(db.collection(MASTERY_QUARANTINE_COLLECTION).doc(), {
-        kind: 'quarantined_award',
-        battleId,
-        diagnostic: invalid,
-        at: nowIso,
-      });
-      return { outcome: 'quarantined', reasonCode: REASON_CODES.QUARANTINED };
+      if (diagnostic) {
+        t.set(db.collection(MASTERY_QUARANTINE_COLLECTION).doc(), {
+          kind: 'quarantined_award',
+          battleId,
+          diagnostic,
+          at: nowIso,
+        });
+      }
+      return { outcome: reasonCode === REASON_CODES.QUARANTINED ? 'quarantined' : 'zero_receipt', reasonCode };
+    };
+
+    if (defensiveState) {
+      // pendingSet must be true here (gated above): invariant breach —
+      // resolve fail-closed so the sweep never grinds on it forever.
+      return commitZeroReceipt(REASON_CODES.QUARANTINED, `pending_state_anomaly:${defensiveState}`);
+    }
+    if (fresh.status !== 'completed' || fresh.masteryEligibility === undefined) {
+      return { outcome: 'not_completed' }; // regressed between reads — cannot happen forward; fail closed, no write
+    }
+    if (!eligible) {
+      return commitZeroReceipt(REASON_CODES.FLAG_DISABLED, null);
+    }
+    if (!ownerValid) {
+      return commitZeroReceipt(REASON_CODES.QUARANTINED, 'missing_ownerId');
+    }
+
+    // Slot authority: a stamp that appeared since the pre-read wins over our
+    // lazily derived one (first verified stamp is authoritative — §3), and
+    // the stamp's OWN rateBand field is the one source of the band (§9).
+    const applyingLazyStamp = fresh.masterySlot === undefined && lazySlot !== null;
+    const slotStamp = fresh.masterySlot !== undefined
+      ? fresh.masterySlot
+      : (lazySlot ? lazySlot.stamp : null);
+    const rateBand = slotStamp ? slotStamp.rateBand : NaN;
+    // §9 one-source: the award's score input is the transaction's own fresh
+    // read — the same doc state the commit is conditioned on.
+    const currentScore = fresh.scoreState?.currentScore ?? 0;
+
+    const invalid = validateFormulaInputs({ modeKind, archetype, currentScore, rateBand });
+    if (invalid) {
+      return commitZeroReceipt(REASON_CODES.QUARANTINED, invalid);
     }
 
     const xp = computeXp({
@@ -398,12 +517,19 @@ export async function runAwardTransaction(db, battleId, { nowIso, groupCache = n
       ...(rateBand === 0 ? { reasonCode: REASON_CODES.DAILY_CEILING } : {}),
     });
 
-    const battleWrite = {
+    t.update(battleRef, {
       masteryAward: award,
       masteryAwardPending: FieldValue.delete(),
-      ...(fresh.masterySlot === undefined && lazySlot ? { masterySlot: lazySlot.stamp } : {}),
-    };
-    t.update(battleRef, battleWrite);
+      ...(applyingLazyStamp ? { masterySlot: lazySlot.stamp } : {}),
+    });
+    // Lazy-path duplicate-rank audit rides the SAME transaction as the stamp
+    // that detected it, and only when OUR stamp is the one landing.
+    if (applyingLazyStamp && lazySlot.duplicateOf) {
+      t.set(
+        db.collection(MASTERY_AUDITS_COLLECTION).doc(),
+        buildDuplicateRankAuditDoc({ battleId, duplicateOf: lazySlot.duplicateOf, stamp: lazySlot.stamp, nowIso })
+      );
+    }
     t.set(
       profileRef,
       {
@@ -421,59 +547,6 @@ export async function runAwardTransaction(db, battleId, { nowIso, groupCache = n
     );
     return { outcome: 'awarded', xpFinal: xp.xpFinal, reasonCode: award.reasonCode };
   });
-
-  // Duplicate-rank audit for the lazy-stamp path (same rule as first tick),
-  // only when OUR lazy stamp actually landed.
-  if (result.outcome === 'awarded' && lazySlot?.duplicateOf) {
-    await db.collection(MASTERY_QUARANTINE_COLLECTION).add({
-      kind: 'duplicate_rank_audit',
-      battleId,
-      collidesWith: lazySlot.duplicateOf.battleId,
-      slot: lazySlot.stamp,
-      at: nowIso,
-    });
-  }
-  return result;
-}
-
-/** Zero-receipt commit path shared by flag_disabled / anomaly quarantine (profile untouched). */
-async function commitReceipt(db, battleRef, pre, { reasonCode, diagnostic, nowIso, flagViewEpochId }) {
-  const archetype = typeof pre.agentContext?.archetype === 'string' ? pre.agentContext.archetype : 'unknown';
-  const profileRef = typeof pre.ownerId === 'string' && pre.ownerId.length > 0
-    ? db.collection(MASTERY_PROFILES_COLLECTION).doc(pre.ownerId)
-    : null;
-  const outcome = await db.runTransaction(async (t) => {
-    const freshSnap = await t.get(battleRef);
-    if (!freshSnap.exists) return { outcome: 'missing' };
-    const fresh = freshSnap.data();
-    if (fresh.masteryAward !== undefined) return { outcome: 'already_awarded' };
-    // Truthful levelBefore/After on the receipt (levels never move on zero
-    // receipts, but the receipt records the REAL level, not a floor).
-    let level = 1;
-    if (profileRef) {
-      const profSnap = await t.get(profileRef);
-      const archXp = profSnap.exists ? profSnap.data()?.archetypes?.[archetype]?.xp : 0;
-      level = levelForXp(Number.isFinite(archXp) ? archXp : 0);
-    }
-    const receipt = buildZeroReceipt({
-      archetype,
-      reasonCode,
-      epochId: flagViewEpochId,
-      settledAt: nowIso,
-      level,
-    });
-    t.update(battleRef, { masteryAward: receipt, masteryAwardPending: FieldValue.delete() });
-    if (diagnostic) {
-      t.set(db.collection(MASTERY_QUARANTINE_COLLECTION).doc(), {
-        kind: 'quarantined_award',
-        battleId: pre.id,
-        diagnostic,
-        at: nowIso,
-      });
-    }
-    return { outcome: 'zero_receipt', reasonCode };
-  });
-  return outcome;
 }
 
 // ==================== REPAIR SWEEP (§5.3) ====================
@@ -483,10 +556,13 @@ async function commitReceipt(db, battleRef, pre, { reasonCode, diagnostic, nowIs
  * queryable companion) whose award is still missing → award late. Reads
  * stamps ONLY — never flags, never timestamp-interval inference. Hosted on
  * the EXISTING agent-evaluate cron cadence (no new cron entry). Converts any
- * crash between completion and award into bounded delay, never loss.
- * Runs regardless of market hours; skips entirely pre-epoch-1.
+ * crash between completion and award into bounded delay, never loss (the
+ * pending-anomaly receipt path above guarantees every fetched doc RESOLVES —
+ * no immortal sweep tenants). Each query doc is passed as the award's
+ * pre-read (no double fetch). Runs regardless of market hours; skips
+ * entirely pre-epoch-1.
  */
-export async function runRepairSweep(db, { flagView, nowIso, limit = 25, groupCache = new Map() }) {
+export async function runRepairSweep(db, { flagView, nowIso, limit = 25, groupCache = new Map(), siblingsCache = new Map() }) {
   if (!flagView.everEnabled) return { attempted: 0, awarded: 0, receipts: 0, errors: 0 };
   const snap = await db
     .collection('agentBattles')
@@ -497,7 +573,12 @@ export async function runRepairSweep(db, { flagView, nowIso, limit = 25, groupCa
   for (const doc of snap.docs) {
     counts.attempted += 1;
     try {
-      const r = await runAwardTransaction(db, doc.id, { flagView, nowIso, groupCache });
+      const r = await runAwardTransaction(db, doc.id, {
+        nowIso,
+        groupCache,
+        siblingsCache,
+        preloadedBattle: { id: doc.id, ...doc.data() },
+      });
       if (r.outcome === 'awarded') counts.awarded += 1;
       else if (r.outcome === 'zero_receipt' || r.outcome === 'quarantined') counts.receipts += 1;
     } catch (err) {

@@ -735,10 +735,20 @@ service cloud.firestore {
       allow write: if false;  // Admin SDK only
     }
 
-    // Quarantine/audit ledger — server-only diagnostics (spec §4: the public
-    // surface is the receipt's reasonCode enum ONLY; the Film Room never
-    // renders internals).
+    // Quarantine ledger — server-only diagnostics behind zero receipts
+    // (spec §4: the public surface is the receipt's reasonCode enum ONLY;
+    // the Film Room never renders internals). Its counts gate the §9
+    // backfill go/no-go, so ONLY failed-to-award diagnostics live here.
     match /masteryQuarantine/{entryId} {
+      allow read: if false;   // Admin SDK only
+      allow write: if false;  // Admin SDK only
+    }
+
+    // Audit ledger — server-only capture of award-adjacent audit events
+    // (duplicate-rank pairs, spec §3) that route to the §8 corrections
+    // intake. Separate from quarantine by design: audits accompany
+    // SUCCESSFUL awards and must never inflate quarantine counts.
+    match /masteryAudits/{entryId} {
       allow read: if false;   // Admin SDK only
       allow write: if false;  // Admin SDK only
     }

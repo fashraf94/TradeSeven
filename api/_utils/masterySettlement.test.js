@@ -19,7 +19,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  buildEligibilityStampFields,
+  isMasterySubject,
+  maybeBuildEligibilityStampFields,
   classifyModeKind,
   computePlacementInputs,
   stampMasterySlotFirstTick,
@@ -51,10 +52,13 @@ const battle = (id, over = {}) => ({
 /**
  * The two settlement halves the cron performs, driven directly so this suite
  * stays a unit surface (the full completeBattle integration — payload
- * byte-identity, stats, vision — lives in
+ * byte-identity, stats, vision, GC repair — lives in
  * api/cron/agent-evaluate.masteryCompletion.test.js).
- * §5.1: one transaction commits status:'completed' + the eligibility stamp,
- * guarded on the still-active state. §5.2: the award transaction.
+ * §5.1: one transaction commits status:'completed' + the eligibility stamp —
+ * the gate + fields come from the SAME maybeBuildEligibilityStampFields the
+ * production completeBattle consumes, so this mimic can never certify a gate
+ * the production writer no longer has. §5.2: the award transaction (which by
+ * design takes no flag view — eligibility rides the persisted stamp).
  */
 async function settle(db, battleId, { flagView = FLAG_ON, nowIso = T_NOW, award = true, groupCache } = {}) {
   const ref = db.collection('agentBattles').doc(battleId);
@@ -63,14 +67,15 @@ async function settle(db, battleId, { flagView = FLAG_ON, nowIso = T_NOW, award 
     if (!snap.exists) return;
     const fresh = snap.data();
     if (fresh.status !== 'active') return;
-    const payload = { status: 'completed', completedAt: nowIso };
-    if (flagView.everEnabled && fresh.isCpu !== true && fresh.masteryEligibility === undefined) {
-      Object.assign(payload, buildEligibilityStampFields(flagView, nowIso));
-    }
+    const payload = {
+      status: 'completed',
+      completedAt: nowIso,
+      ...maybeBuildEligibilityStampFields(fresh, flagView, nowIso),
+    };
     t.update(ref, payload);
   });
   if (award) {
-    return runAwardTransaction(db, battleId, { flagView, nowIso, groupCache: groupCache ?? new Map() });
+    return runAwardTransaction(db, battleId, { nowIso, groupCache: groupCache ?? new Map() });
   }
 }
 
@@ -207,8 +212,8 @@ describe('write-once guards under deterministic interleavings (S11.10 stolen-loc
   it('award transaction: the losing racer retries, sees the winner, and no-ops (profile counted ONCE)', async () => {
     const db = makeMockDb(buildFixture());
     await settle(db, 'b1', { award: false }); // stamped, pending, unawarded
-    db.__beforeCommit = () => runAwardTransaction(db, 'b1', { flagView: FLAG_ON, nowIso: T_NOW });
-    const outcome = await runAwardTransaction(db, 'b1', { flagView: FLAG_ON, nowIso: T_NOW });
+    db.__beforeCommit = () => runAwardTransaction(db, 'b1', { nowIso: T_NOW });
+    const outcome = await runAwardTransaction(db, 'b1', { nowIso: T_NOW });
     expect(outcome.outcome).toBe('already_awarded');
     expect(db.__dump('masteryProfiles/u1').archetypes.degen.xp).toBe(53);
     expect(db.__dump('masteryProfiles/u1').archetypes.degen.battlesCounted).toBe(1);
@@ -317,11 +322,53 @@ describe('fail-closed receipts + structural outsiders', () => {
     const db = makeMockDb({
       'agentBattles/fx': battle('fx', { status: 'completed', completedAt: T_NOW, completionReason: 'expired' }),
     });
-    const outcome = await runAwardTransaction(db, 'fx', { flagView: FLAG_ON, nowIso: T_NOW });
+    const outcome = await runAwardTransaction(db, 'fx', { nowIso: T_NOW });
     expect(outcome.outcome).toBe('unstamped');
     const sweep = await runRepairSweep(db, { flagView: FLAG_ON, nowIso: T_NOW });
     expect(sweep.attempted).toBe(0);
     expect(db.__dump('agentBattles/fx').masteryAward).toBeUndefined();
+  });
+
+  it('PENDING-POISON hardening: a pending-marked doc in a defensive state resolves to a quarantined receipt — the sweep can never be starved by immortal tenants', async () => {
+    // Invariant-breach doc: pending marker set but NO stamp (e.g. a rogue
+    // backfill write). Without hardening this would be re-fetched by every
+    // sweep run forever, occupying one of its 25 slots.
+    const db = makeMockDb({
+      'agentBattles/poison': battle('poison', {
+        status: 'completed',
+        completedAt: T_NOW,
+        masteryAwardPending: true, // marker without stamp — the anomaly
+      }),
+    });
+    const sweep = await runRepairSweep(db, { flagView: FLAG_ON, nowIso: T_NOW });
+    expect(sweep.attempted).toBe(1);
+    expect(sweep.receipts).toBe(1);
+    const doc = db.__dump('agentBattles/poison');
+    expect(doc.masteryAward.reasonCode).toBe('quarantined');
+    expect(doc.masteryAwardPending).toBeUndefined();
+    const ledger = db.__paths('masteryQuarantine/');
+    expect(ledger.length).toBe(1);
+    expect(db.__dump(ledger[0]).diagnostic).toBe('pending_state_anomaly:unstamped');
+    // Second sweep: fully drained.
+    const second = await runRepairSweep(db, { flagView: FLAG_ON, nowIso: T_NOW });
+    expect(second.attempted).toBe(0);
+  });
+
+  it('unusable creation data: a write-once SENTINEL slot stamp ends per-tick retries and quarantines at award', async () => {
+    const db = makeMockDb({
+      'agentBattles/badc': battle('badc', { createdAt: 'not-a-date' }),
+    });
+    const first = await stampMasterySlotFirstTick(db, { id: 'badc', ...db.__dump('agentBattles/badc') }, { nowIso: T_NOW });
+    expect(first.stamped).toBe(true);
+    expect(first.stamp).toEqual({ date: null, rank: null, rateBand: null, assignedAt: T_NOW });
+    // Next tick: stamp exists — no re-derivation, no query, no log spam.
+    const second = await stampMasterySlotFirstTick(db, { id: 'badc', ...db.__dump('agentBattles/badc') }, { nowIso: T_NOW });
+    expect(second.stamped).toBe(false);
+    expect(second.stamp).toEqual(first.stamp);
+    // Award: the sentinel's null rateBand fails validation → quarantined.
+    const outcome = await settle(db, 'badc');
+    expect(outcome.outcome).toBe('quarantined');
+    expect(db.__dump('agentBattles/badc').masteryAward.reasonCode).toBe('quarantined');
   });
 });
 
@@ -364,16 +411,51 @@ describe('unit surfaces', () => {
     expect(tiered(40, 40).wonAgainstField).toBe(false); // strict — ties pay nothing
   });
 
-  it('computePlacementInputs: tournament counts humans strictly below; non-finite sibling blocks the field win', () => {
-    const me = battle('me', { gameMode: 'baggerbomb_tournament', groupId: 'g', scoreState: { currentScore: 50 } });
+  it('computePlacementInputs: tournament counts SAME-DAY humans strictly below; non-finite sibling blocks the field win', () => {
+    const DAY = { tradingDays: ['2026-07-20'] };
+    const me = battle('me', { gameMode: 'baggerbomb_tournament', groupId: 'g', scoreState: { currentScore: 50 }, timing: DAY });
     const sibs = [
-      { id: 'h1', isCpu: undefined, scoreState: { currentScore: 30 } },
-      { id: 'h2', scoreState: { currentScore: 50 } },  // tie — not outplaced
-      { id: 'c1', isCpu: true, scoreState: { currentScore: 10 } }, // CPU below — not a human
+      { id: 'h1', ownerId: 'u9', isCpu: undefined, timing: DAY, scoreState: { currentScore: 30 } },
+      { id: 'h2', ownerId: 'u8', timing: DAY, scoreState: { currentScore: 50 } },  // tie — not outplaced
+      { id: 'c1', ownerId: 'cpu-owner', isCpu: true, timing: DAY, scoreState: { currentScore: 10 } }, // CPU below — not a human
     ];
     expect(computePlacementInputs({ battle: me, siblings: sibs })).toEqual({ humansOutplaced: 1, wonAgainstField: false });
-    const sibsBroken = [{ id: 'h1', scoreState: { currentScore: NaN } }];
+    const sibsBroken = [{ id: 'h1', ownerId: 'u9', timing: DAY, scoreState: { currentScore: NaN } }];
     expect(computePlacementInputs({ battle: me, siblings: sibsBroken }).wonAgainstField).toBe(false);
+  });
+
+  it('computePlacementInputs: DAY-SCOPING — groups keep one groupId across daily redeploys, so prior-day battles (including your OWN) are never opponents', () => {
+    // /code-review high, angle-A finding: without day-scoping a training-pod
+    // user "outplaces" their own day-1 battle and placement over-pays.
+    const me = battle('me-d2', {
+      gameMode: 'baggerbomb_tournament', groupId: 'g',
+      scoreState: { currentScore: 10 },
+      timing: { tradingDays: ['2026-07-21'] }, // day 2
+    });
+    const sibs = [
+      // my OWN day-1 battle — same owner, lower score: NOT an opponent
+      { id: 'me-d1', ownerId: 'u1', timing: { tradingDays: ['2026-07-20'] }, scoreState: { currentScore: 5 } },
+      // another human's day-1 battle: wrong day — excluded entirely
+      { id: 'h-d1', ownerId: 'u9', timing: { tradingDays: ['2026-07-20'] }, scoreState: { currentScore: 1 } },
+      // day-2 CPU seat below me — the only same-day opponent
+      { id: 'c-d2', ownerId: 'cpu-owner', isCpu: true, timing: { tradingDays: ['2026-07-21'] }, scoreState: { currentScore: 3 } },
+    ];
+    // 0 humans outplaced (own battle excluded by owner, h-d1 by day);
+    // strict first among the DAY-2 field → CPU_PLACEMENT path.
+    expect(computePlacementInputs({ battle: me, siblings: sibs })).toEqual({ humansOutplaced: 0, wonAgainstField: true });
+    // Same-owner same-day exclusion is belt-and-braces: a same-day own doc
+    // still never counts as a human outplaced.
+    const ownSameDay = [{ id: 'me-dup', ownerId: 'u1', timing: { tradingDays: ['2026-07-21'] }, scoreState: { currentScore: 4 } }];
+    expect(computePlacementInputs({ battle: me, siblings: ownSameDay }).humansOutplaced).toBe(0);
+    // A battle with NO day key concedes placement entirely (empty cohort).
+    const noDay = battle('noday', { gameMode: 'baggerbomb_tournament', groupId: 'g', scoreState: { currentScore: 99 }, timing: {} });
+    expect(computePlacementInputs({ battle: noDay, siblings: sibs })).toEqual({ humansOutplaced: 0, wonAgainstField: false });
+  });
+
+  it('isMasterySubject: the one structurally-outside predicate', () => {
+    expect(isMasterySubject(battle('x'))).toBe(true);
+    expect(isMasterySubject(battle('x', { isCpu: true }))).toBe(false);
+    expect(isMasterySubject(undefined)).toBe(true); // absent doc ≠ CPU; downstream guards handle absence
   });
 
   it('lazy settlement slot: an unstamped battle gets its masterySlot written in the award transaction', async () => {

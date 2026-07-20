@@ -43,7 +43,9 @@ export const MODE_MULTS = Object.freeze({
   league: 1.0,
   training: 0.6,
 });
-export const MODE_KINDS = Object.freeze(Object.keys(MODE_MULTS));
+// Module-local: consumed only by validateFormulaInputs (MODE_MULTS is the
+// public mode contract).
+const MODE_KINDS = Object.freeze(Object.keys(MODE_MULTS));
 
 // Valid rate bands (spec §3) — used only for fail-closed input validation.
 const VALID_RATE_BANDS = Object.freeze([1.0, 0.5, 0]);

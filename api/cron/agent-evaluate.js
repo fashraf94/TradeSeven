@@ -92,9 +92,10 @@ import { Timestamp } from 'firebase-admin/firestore';
 // docs/ARCHETYPE_MASTERY_SPEC_V2_1_STOP_RULINGS_JUL21_2026.md). Dark by
 // default: with the epoch registry empty (pre-first-enablement) every one of
 // these paths writes NOTHING mastery-related — flags-off byte-identity.
-import { readMasteryFlagView, DARK_FLAG_VIEW } from '../_utils/masteryConfig.js';
+import { readMasteryFlagView, DARK_FLAG_VIEW, MASTERY_XP_ENABLED } from '../_utils/masteryConfig.js';
 import {
-  buildEligibilityStampFields,
+  isMasterySubject,
+  maybeBuildEligibilityStampFields,
   stampMasterySlotFirstTick,
   runAwardTransaction,
   runRepairSweep,
@@ -157,23 +158,38 @@ export default async function handler(req, res) {
 
   try {
     // ---- 1b. Mastery flag view (Spec V2 §5.1) — one registry read per run.
-    // On transport failure, expiry COMPLETIONS are deferred to the next run
-    // (delay-not-loss: a settlement-path completion without a stamp would be
-    // invisible to the stamps-only §5.3 sweep forever); evaluations proceed
-    // unaffected. Pre-epoch-1 the clean read yields the dark view and
-    // settlement writes nothing mastery-related (byte-identity).
+    // Transport-failure posture is COMPILE-TIME split on the code constant
+    // (/code-review high, B2/C1/altitude findings — a mastery config doc
+    // must never become a single point of failure for core completion):
+    //  • MASTERY_XP_ENABLED === false (dark, the standing state): proceed
+    //    with the dark view and complete everything — no live XP is possible
+    //    with the constant off, so the only loss window is ineligible-stamp
+    //    zero receipts during a 0·1·0 incident outage (cosmetic, corrections-
+    //    recoverable), which never justifies freezing completions all weekend.
+    //  • MASTERY_XP_ENABLED === true (live): defer completions of MASTERY
+    //    SUBJECTS only (delay-not-loss — an unstamped settlement completion
+    //    is invisible to the stamps-only §5.3 sweep forever). CPU seats can
+    //    never be stamped under ANY flag view, so they always complete.
+    // Either way: loud error + a DEDICATED counter, never the benign
+    // `skipped` bucket (monitoring must distinguish this from lock churn).
     let masteryFlagView = DARK_FLAG_VIEW;
-    let masteryFlagReadFailed = false;
+    let masteryDeferSubjects = false;
     try {
       masteryFlagView = await readMasteryFlagView(db);
     } catch (flagErr) {
-      masteryFlagReadFailed = true;
-      console.error(`${LOG_PREFIX} mastery flag-view read FAILED — expiry completions deferred this run (delay-not-loss): ${flagErr.message}`);
+      if (MASTERY_XP_ENABLED) {
+        masteryDeferSubjects = true;
+        console.error(`${LOG_PREFIX} mastery flag-view read FAILED with XP live — deferring mastery-subject completions this run (delay-not-loss): ${flagErr.message}`);
+      } else {
+        console.error(`${LOG_PREFIX} mastery flag-view read FAILED with XP constant off — proceeding dark (completions unaffected; no live XP possible): ${flagErr.message}`);
+      }
     }
-    // Per-run memo for tournamentGroups docs on the mastery mode/award path
-    // (distinct from the eval loop's tournamentGroupCache, which is created
-    // after the market-hours gate).
+    // Per-run memos for the mastery mode/award path (distinct from the eval
+    // loop's tournamentGroupCache, which is created after the market gate).
     const masteryGroupCache = new Map();
+    const masterySiblingsCache = new Map();
+    summary.completionSkipped = 0;
+    summary.masteryDeferredCompletions = 0;
 
     // ---- 2. Complete expired battles (runs regardless of market hours) ----
     const allBattles = await findActiveAgentBattles(db);
@@ -181,19 +197,29 @@ export default async function handler(req, res) {
 
     for (const battle of allBattles) {
       if (battle.expiresAt && new Date(battle.expiresAt) < new Date()) {
-        if (masteryFlagReadFailed) {
-          summary.skipped++;
+        if (masteryDeferSubjects && isMasterySubject(battle)) {
+          summary.masteryDeferredCompletions++;
           continue; // deferred whole: neither completed nor evaluated this run
         }
         try {
-          await completeBattle(db, battle, summary, masteryFlagView, masteryGroupCache);
-          // Log battle pattern for earned trait detection (Phase 2 pre-warm, non-blocking)
-          logBattlePattern(battle.agentId, battle.id, battle).catch(err => {
-            console.error(`${LOG_PREFIX} Pattern logging failed for battle ${battle.id}:`, err.message);
-          });
-          // Reflection is handled by the dedicated process-pending-reflections cron,
-          // gated by the pendingReflection flag set inside completeBattle().
-          summary.expired++;
+          const completion = await completeBattle(db, battle, summary, masteryFlagView, masteryGroupCache, masterySiblingsCache);
+          if (completion.committed) {
+            // Log battle pattern for earned trait detection (Phase 2 pre-warm, non-blocking)
+            logBattlePattern(battle.agentId, battle.id, battle).catch(err => {
+              console.error(`${LOG_PREFIX} Pattern logging failed for battle ${battle.id}:`, err.message);
+            });
+            // Reflection is handled by the dedicated process-pending-reflections cron,
+            // gated by the pendingReflection flag set inside completeBattle().
+            summary.expired++;
+          } else if (completion.reason === 'missing') {
+            // The doc vanished mid-run (admin delete): loud error, never a
+            // phantom "expired and completed" + pattern-log for a nonexistent
+            // battle (/code-review high, angle-B finding).
+            console.error(`${LOG_PREFIX} Expired battle ${battle.id} no longer exists — counted as error, not completed.`);
+            summary.errors++;
+          } else {
+            summary.completionSkipped++; // another writer fully completed it first
+          }
         } catch (err) {
           console.error(`${LOG_PREFIX} Error completing expired battle ${battle.id}:`, err.message);
           summary.errors++;
@@ -207,13 +233,14 @@ export default async function handler(req, res) {
     // this EXISTING cron cadence (no new schedule entry, BUILD_RULES §6).
     // Isolated like the canonical-open sweep: failures never propagate.
     // No-ops in one query when nothing is pending; skips entirely pre-epoch-1.
-    if (!masteryFlagReadFailed && masteryFlagView.everEnabled) {
+    if (!masteryDeferSubjects && masteryFlagView.everEnabled) {
       try {
         summary.masterySweep = await runRepairSweep(db, {
           flagView: masteryFlagView,
           nowIso: new Date().toISOString(),
           limit: 25,
           groupCache: masteryGroupCache,
+          siblingsCache: masterySiblingsCache,
         });
       } catch (sweepErr) {
         console.error(`${LOG_PREFIX} [masterySweep] FAILED (isolated — agent-evaluate unaffected): ${sweepErr.message}`);
@@ -574,7 +601,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // are structurally outside mastery (V2.1 memo). Errors are swallowed —
     // the slot derives lazily at settlement (§3) so evaluation is never
     // blocked and nothing is lost.
-    if (masteryFlagView.everEnabled && battle.isCpu !== true && battle.masterySlot === undefined) {
+    if (masteryFlagView.everEnabled && isMasterySubject(battle) && battle.masterySlot === undefined) {
       try {
         const slotResult = await stampMasterySlotFirstTick(db, battle, { nowIso: new Date().toISOString() });
         if (slotResult.stamp) battle.masterySlot = slotResult.stamp;
@@ -3562,27 +3589,46 @@ export function resolveCompletionDisposition(battle) {
  * Complete an expired battle: set status, update agent stats.
  *
  * STOP-A.1 (V2.1 memo, founder-approved): the terminal write is a GUARDED
- * TRANSACTION — an in-transaction re-read confirms the battle is still
- * 'active' before committing (the regimeAtStart write-once pattern at the
- * regime stamp above), so racing workers (stolen 120s eval lock, decide.js
- * GC) can never double-complete or split-brain the eligibility stamp; the
- * first committer wins and losers no-op, skipping stats too. The committed
+ * TRANSACTION — an in-transaction re-read confirms the battle's state before
+ * committing (the regimeAtStart write-once pattern at the regime stamp
+ * above), so racing workers (stolen 120s eval lock, decide.js GC) can never
+ * double-complete or split-brain the eligibility stamp; against a FULLY
+ * completed battle this writer no-ops, skipping stats too. The committed
  * payload is built from the transaction's OWN fresh read and is
  * byte-identical to the legacy plain-update payload (flags-off scope —
- * photographed by masteryDarkIdentity.test.js).
+ * photographed by agent-evaluate.masteryCompletion.test.js, including the
+ * vision-retirement branch).
  *
- * §5.1 (Spec V2 + V2.1 restated invariant): when epoch 1 has begun
- * (flagView.everEnabled), the SAME transaction that first commits
- * status:'completed' also writes masteryEligibility {eligible: worker's own
- * flag view, epochId} + the masteryAwardPending sweep marker — atomic with
- * the transition, write-once by the same 'active'-state guard. Pre-epoch-1
- * it writes nothing mastery-related (dark byte-identity). CPU system agents
- * are structurally outside mastery and are never stamped.
+ * GC REPAIR (/code-review high, angle-B/C finding — legacy behavior
+ * restored): the fenced decide.js expiry GC (:588/:1115) writes ONLY
+ * {status:'completed', completedAt, completionReason:'expired'} — no stats,
+ * no reflection queue, no vision retirement. The legacy unconditional update
+ * repaired such battles by overwriting them with the full payload; this
+ * transaction preserves that repair deliberately: a bare GC completion
+ * (pendingReflection undefined ∧ completionReason 'expired') is finished
+ * in place — full payload minus status/completedAt (the GC's earlier
+ * completion instant is kept) — and stats still run. Repair writes NO
+ * mastery stamp: fence-path completions are structurally outside mastery
+ * (V2.1 STOP-A.2); the eligibility stamp rides ONLY the active→completed
+ * transition this function itself commits. The discriminator is sound
+ * because every cron completion writes pendingReflection (true or false).
  *
+ * §5.1 (Spec V2 + V2.1 restated invariant): when epoch 1 has begun, the
+ * SAME transaction that first commits status:'completed' also writes
+ * masteryEligibility {eligible: worker's own flag view, epochId} + the
+ * masteryAwardPending sweep marker — atomic with the transition, write-once
+ * by the state guard, gate + fields from the ONE shared
+ * maybeBuildEligibilityStampFields (also consumed by the §12 battery's
+ * settle() mimic, so the battery can never certify a stale gate).
+ * Pre-epoch-1 it writes nothing mastery-related (dark byte-identity). CPU
+ * system agents are structurally outside mastery and are never stamped.
+ *
+ * Returns the transaction outcome ({committed, repaired?, reason?}) so the
+ * expiry loop can count completions, races and vanished docs distinctly.
  * Exported for the P1 acceptance tests (mock-db precedent:
  * resolveCompletionDisposition / p4Flips.test.js).
  */
-export async function completeBattle(db, battle, summary, masteryFlagView = DARK_FLAG_VIEW, masteryGroupCache = new Map()) {
+export async function completeBattle(db, battle, summary, masteryFlagView = DARK_FLAG_VIEW, masteryGroupCache = new Map(), masterySiblingsCache = new Map()) {
   const battleRef = db.collection('agentBattles').doc(battle.id);
   const now = new Date().toISOString();
   // Pre-computed ONCE so transaction retries reuse the same instant (a
@@ -3593,7 +3639,13 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     const snap = await t.get(battleRef);
     if (!snap.exists) return { committed: false, reason: 'missing' };
     const fresh = { id: battle.id, ...snap.data() };
-    if (fresh.status !== 'active') return { committed: false, reason: 'already_terminal' };
+    const isBareGcCompletion =
+      fresh.status === 'completed' &&
+      fresh.pendingReflection === undefined &&
+      fresh.completionReason === 'expired';
+    if (fresh.status !== 'active' && !isBareGcCompletion) {
+      return { committed: false, reason: 'already_terminal' };
+    }
 
     const scoreState = fresh.scoreState || {};
     const currentScore = scoreState.currentScore || 0;
@@ -3678,23 +3730,38 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
       updatePayload.vision = retiredVisionForWrite;
     }
 
-    // ---- Mastery eligibility stamp (§5.1) — same transaction as the
-    // status flip; nothing pre-epoch-1; CPU seats structurally outside.
     let masteryStamped = false;
-    if (masteryFlagView.everEnabled && fresh.isCpu !== true && fresh.masteryEligibility === undefined) {
-      Object.assign(updatePayload, buildEligibilityStampFields(masteryFlagView, now));
-      masteryStamped = true;
+    let freshForAward = null;
+    if (isBareGcCompletion) {
+      // Repair in place: keep the GC's status flip and its earlier (honest)
+      // completedAt; supply everything the bare fence-path write missed.
+      // NO mastery stamp here — structurally outside (V2.1 STOP-A.2).
+      delete updatePayload.status;
+      delete updatePayload.completedAt;
+    } else {
+      // ---- Mastery eligibility stamp (§5.1) — same transaction as the
+      // status flip; the shared gate decides (epoch begun ∧ mastery subject
+      // ∧ unstamped on THIS transaction's fresh read).
+      const stampFields = maybeBuildEligibilityStampFields(fresh, masteryFlagView, now);
+      if (Object.keys(stampFields).length > 0) {
+        Object.assign(updatePayload, stampFields);
+        masteryStamped = true;
+        // The award's pre-read: this transaction's own fresh doc plus the
+        // exact fields it is committing (no post-commit re-fetch needed).
+        freshForAward = { ...fresh, status: 'completed', completedAt: now, ...stampFields };
+      }
     }
 
     t.update(battleRef, updatePayload);
-    return { committed: true, disposition, currentScore, visionTransitionLogPayload, masteryStamped };
+    return { committed: true, repaired: isBareGcCompletion, disposition, currentScore, visionTransitionLogPayload, masteryStamped, freshForAward };
   });
 
   if (!txOutcome.committed) {
-    // Another writer finished this battle first (stolen-lock overlap or the
-    // decide.js GC race) — the winner owns stats/logs; this path no-ops.
+    // Another writer FULLY completed this battle first (stolen-lock cron
+    // overlap) — the winner owns stats/logs; this path no-ops. Bare GC
+    // completions never land here (they take the repair branch above).
     console.log(`${LOG_PREFIX} Battle ${battle.id} completion skipped (${txOutcome.reason}).`);
-    return;
+    return txOutcome;
   }
   const { disposition, currentScore, visionTransitionLogPayload } = txOutcome;
   const result = disposition.result;
@@ -3749,19 +3816,24 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
   // masteryAward absence + masteryProfiles increment together). XP computes
   // at completeBattle (spec §2.3); a crash between the completion stamp
   // above and this award is exactly what the §5.3 repair sweep repairs, so
-  // failures here log and defer — never throw into the expiry loop.
+  // failures here log and defer — never throw into the expiry loop. The
+  // completion transaction's own fresh doc (+ the stamp it committed) is
+  // the award's pre-read — no re-fetch. Eligibility rides the persisted
+  // stamp, so no flag view is passed (§5.4: registry is not an oracle).
   if (txOutcome.masteryStamped) {
     try {
       await runAwardTransaction(db, battle.id, {
-        flagView: masteryFlagView,
         nowIso: now,
         groupCache: masteryGroupCache,
+        siblingsCache: masterySiblingsCache,
+        preloadedBattle: txOutcome.freshForAward,
       });
     } catch (awardErr) {
       console.error(`${LOG_PREFIX} mastery award failed for battle ${battle.id} (repair sweep will retry): ${awardErr.message}`);
     }
   }
 
-  console.log(`${LOG_PREFIX} Battle ${battle.id} completed. ${disposition.logLine}`);
+  console.log(`${LOG_PREFIX} Battle ${battle.id} ${txOutcome.repaired ? 'repaired (bare GC completion finished in place)' : 'completed'}. ${disposition.logLine}`);
   summary.evaluated++;
+  return txOutcome;
 }

@@ -138,6 +138,88 @@ describe('§5.1 stamp atomicity + the §2.3 award chain (epoch 1 begun)', () => 
   });
 });
 
+describe('vision retirement rides the completion transaction (dark photograph of the relocated branch)', () => {
+  // Minimal vision satisfying validateTransition's post-creation checks:
+  // duck-typed immutable createdAt, an array history (only the NEW entry is
+  // entry-validated), and a state with a legal battle_end→retired edge.
+  const VISION = Object.freeze({
+    state: 'active',
+    thesis: 'test thesis',
+    createdAt: { seconds: 1752000000, nanoseconds: 0 },
+    transitionHistory: [{ fromState: 'forming', toState: 'active', actor: 'sonnet', cause: 'initial', timestamp: { seconds: 1752000000, nanoseconds: 0 } }],
+  });
+
+  it('retires an active vision atomically with status, appending the transition entry with ONE reused instant', async () => {
+    const withVision = { ...TIERED_BATTLE, vision: VISION };
+    const db = makeMockDb({ 'agentBattles/b1': withVision, 'agents/agent-1': AGENT_DOC });
+    await completeBattle(db, { id: 'b1', ...withVision }, { evaluated: 0 });
+    const doc = db.__dump('agentBattles/b1');
+    expect(doc.status).toBe('completed');
+    expect(doc.vision.state).toBe('retired');
+    expect(doc.vision.transitionHistory).toHaveLength(2);
+    const entry = doc.vision.transitionHistory[1];
+    expect(entry).toMatchObject({ fromState: 'active', toState: 'retired', actor: 'cron', cause: 'battle_end' });
+    // The per-call pre-computed instant is reused for both fields.
+    expect(doc.vision.lastTransitionAt).toBe(entry.timestamp);
+    // Still zero mastery keys in the dark state.
+    expect(doc.masteryEligibility).toBeUndefined();
+  });
+
+  it('an already-retired vision is left byte-untouched while status still completes (the no-transition path)', async () => {
+    const retiredVision = { ...VISION, state: 'retired' }; // no transition attempted
+    const withVision = { ...TIERED_BATTLE, vision: retiredVision };
+    const db = makeMockDb({ 'agentBattles/b1': withVision, 'agents/agent-1': AGENT_DOC });
+    await completeBattle(db, { id: 'b1', ...withVision }, { evaluated: 0 });
+    const doc = db.__dump('agentBattles/b1');
+    expect(doc.status).toBe('completed');
+    expect(doc.vision).toEqual(retiredVision);
+  });
+});
+
+describe('GC repair (angle-B legacy behavior, V2.1 STOP-A.2 boundary): bare decide.js completions are finished in place', () => {
+  const GC_BARE = Object.freeze({
+    ...TIERED_BATTLE,
+    status: 'completed',
+    completedAt: '2026-07-20T20:02:00.000Z', // decide.js GC'd it at 20:02
+    completionReason: 'expired',
+    // pendingReflection ABSENT — the bare-write discriminator
+  });
+
+  it('supplies stats, reflection queue and feed entry; preserves the GC completedAt; stamps NOTHING even with the flag on', async () => {
+    const db = makeMockDb({ 'agentBattles/b1': GC_BARE, 'agents/agent-1': AGENT_DOC });
+    const summary = { evaluated: 0 };
+    const outcome = await completeBattle(db, { id: 'b1', ...GC_BARE }, summary, FLAG_ON, new Map(), new Map());
+    expect(outcome).toMatchObject({ committed: true, repaired: true });
+
+    const doc = db.__dump('agentBattles/b1');
+    expect(doc.status).toBe('completed');
+    expect(doc.completedAt).toBe('2026-07-20T20:02:00.000Z'); // GC's earlier instant KEPT
+    expect(doc.completionReason).toBe('expired');
+    expect(doc.pendingReflection).toBe(true); // reflection queue restored
+    expect(doc.statusFeed).toHaveLength(2); // battle_complete feed entry appended
+    expect(doc.cronState.evaluatingAt).toBeNull();
+    // Structurally outside mastery: NO stamp, NO award, even with epoch live.
+    expect(doc.masteryEligibility).toBeUndefined();
+    expect(doc.masteryAwardPending).toBeUndefined();
+    expect(doc.masteryAward).toBeUndefined();
+    // Stats ran (legacy behavior restored): win math applied once.
+    const agent = db.__dump('agents/agent-1');
+    expect(agent.stats.gamesPlayed).toBe(4);
+    expect(agent.activeBattleId).toBeNull();
+    expect(summary.evaluated).toBe(1);
+  });
+
+  it('repair is idempotent: a second worker sees pendingReflection set and no-ops', async () => {
+    const db = makeMockDb({ 'agentBattles/b1': GC_BARE, 'agents/agent-1': AGENT_DOC });
+    await completeBattle(db, { id: 'b1', ...GC_BARE }, { evaluated: 0 });
+    const afterFirst = db.__dump('agentBattles/b1');
+    const second = await completeBattle(db, { id: 'b1', ...GC_BARE }, { evaluated: 0 });
+    expect(second).toMatchObject({ committed: false, reason: 'already_terminal' });
+    expect(db.__dump('agentBattles/b1')).toEqual(afterFirst);
+    expect(db.__dump('agents/agent-1').stats.gamesPlayed).toBe(4); // stats once
+  });
+});
+
 describe('the guarded transaction (STOP-A.1): racing writers cannot double-complete', () => {
   it('a competitor completing first makes this writer no-op — stats move ONCE, feed appends ONCE', async () => {
     const db = fixture();
@@ -154,12 +236,13 @@ describe('the guarded transaction (STOP-A.1): racing writers cannot double-compl
     expect(summaryLoser.evaluated).toBe(0); // the loser reported nothing
   });
 
-  it('an already-terminal battle is left byte-untouched', async () => {
-    const done = { ...TIERED_BATTLE, status: 'completed', completedAt: '2026-07-20T20:01:00.000Z' };
+  it('an already-terminal FULLY-completed battle is left byte-untouched (not a bare GC write — no repair)', async () => {
+    const done = { ...TIERED_BATTLE, status: 'completed', completedAt: '2026-07-20T20:01:00.000Z', pendingReflection: false };
     const db = makeMockDb({ 'agentBattles/b1': done, 'agents/agent-1': AGENT_DOC });
     const before = db.__dump('agentBattles/b1');
     const summary = { evaluated: 0 };
-    await completeBattle(db, { id: 'b1', ...done }, summary, FLAG_ON, new Map());
+    const outcome = await completeBattle(db, { id: 'b1', ...done }, summary, FLAG_ON, new Map(), new Map());
+    expect(outcome).toMatchObject({ committed: false, reason: 'already_terminal' });
     expect(db.__dump('agentBattles/b1')).toEqual(before);
     expect(db.__dump('agents/agent-1')).toEqual(AGENT_DOC);
     expect(summary.evaluated).toBe(0);

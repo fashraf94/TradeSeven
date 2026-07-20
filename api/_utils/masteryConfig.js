@@ -27,6 +27,11 @@ export const MASTERY_CONFIG_COLLECTION = 'masteryConfig';
 export const MASTERY_EPOCH_REGISTRY_DOC = 'epochRegistry';
 export const MASTERY_PROFILES_COLLECTION = 'masteryProfiles';
 export const MASTERY_QUARANTINE_COLLECTION = 'masteryQuarantine';
+// Audits (e.g. duplicate-rank pairs, spec §3) are SEPARATE from quarantine:
+// masteryQuarantine counts gate the §9 backfill go/no-go and must mean
+// "failed to award" only; audits accompany successful awards and route to
+// the §8 corrections intake.
+export const MASTERY_AUDITS_COLLECTION = 'masteryAudits';
 
 /**
  * Registry doc + code constant → the worker's flag view, pure.

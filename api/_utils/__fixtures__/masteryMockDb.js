@@ -92,6 +92,8 @@ function deepMerge(target, patch) {
   }
 }
 
+// Only the ops the code under test uses; anything else throws loudly so a
+// future test can never trust silently-wrong semantics.
 function matchesFilters(data, filters) {
   for (const f of filters) {
     const val = getPath(data, f.field);
@@ -101,10 +103,6 @@ function matchesFilters(data, filters) {
       if (!(val >= f.value)) return false;
     } else if (f.op === '<') {
       if (!(val < f.value)) return false;
-    } else if (f.op === '>') {
-      if (!(val > f.value)) return false;
-    } else if (f.op === '<=') {
-      if (!(val <= f.value)) return false;
     } else {
       throw new Error(`mock query: unsupported op '${f.op}'`);
     }
@@ -171,9 +169,6 @@ export function makeMockDb(initialDocs = {}) {
       async set(data, opts) {
         commitWrite({ type: 'set', path, data, opts });
       },
-      collection(sub) {
-        return makeCollection(`${path}/${sub}`);
-      },
     };
   };
 
@@ -183,6 +178,11 @@ export function makeMockDb(initialDocs = {}) {
     },
     limit(n) {
       return makeQuery(collectionName, filters, n);
+    },
+    // Projection is not modeled: production narrows the payload only, never
+    // the semantics, so the mock returns full docs (chain no-op).
+    select() {
+      return makeQuery(collectionName, filters, limitN);
     },
     async get() {
       const prefix = `${collectionName}/`;
@@ -198,7 +198,7 @@ export function makeMockDb(initialDocs = {}) {
           if (limitN !== null && docs.length >= limitN) break;
         }
       }
-      return { docs, empty: docs.length === 0 };
+      return { docs };
     },
   });
 
@@ -213,9 +213,6 @@ export function makeMockDb(initialDocs = {}) {
     },
     where(field, op, value) {
       return makeQuery(collectionName, [{ field, op, value }], null);
-    },
-    limit(n) {
-      return makeQuery(collectionName, [], n);
     },
   });
 

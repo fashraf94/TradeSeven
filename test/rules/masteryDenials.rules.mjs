@@ -138,6 +138,16 @@ describe('masteryConfig + masteryQuarantine', () => {
     await assertFails(setDoc(doc(asOwner(), QUARANTINE_PATH), { kind: 'forged' }));
     await assertFails(deleteDoc(doc(asOwner(), QUARANTINE_PATH)));
   });
+
+  it('no client read or write on the audit ledger (duplicate-rank pairs stay server-only)', async () => {
+    const AUDIT_PATH = 'masteryAudits/audit-1';
+    await seed(AUDIT_PATH, { kind: 'duplicate_rank_audit', battleId: 'b1', collidesWith: 'b2' });
+    await assertFails(getDoc(doc(asOwner(), AUDIT_PATH)));
+    await assertFails(getDoc(doc(asAnon(), AUDIT_PATH)));
+    await assertFails(setDoc(doc(asOwner(), AUDIT_PATH), { kind: 'forged' }));
+    await assertFails(updateDoc(doc(asOwner(), AUDIT_PATH), { collidesWith: 'b9' }));
+    await assertFails(deleteDoc(doc(asOwner(), AUDIT_PATH)));
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────

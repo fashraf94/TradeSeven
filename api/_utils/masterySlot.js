@@ -28,10 +28,12 @@ const NY_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
-/** Rate bands by slot rank (spec §3): 1–3 → 1.0 · 4–6 → 0.5 · 7+ → 0. */
-export const RATE_BAND_FULL = 1.0;
-export const RATE_BAND_HALF = 0.5;
-export const RATE_BAND_ZERO = 0;
+// Rate bands by slot rank (spec §3): 1–3 → 1.0 · 4–6 → 0.5 · 7+ → 0.
+// Module-local: rateBandForRank IS the public contract (dead exports read
+// as API surface the recalibration work can't see via the suite).
+const RATE_BAND_FULL = 1.0;
+const RATE_BAND_HALF = 0.5;
+const RATE_BAND_ZERO = 0;
 
 /**
  * America/New_York calendar date ('YYYY-MM-DD') of an ISO instant.
