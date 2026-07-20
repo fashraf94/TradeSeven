@@ -3668,9 +3668,15 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     // agent-evaluate.js:3581→3592-3627); a crash between the battle commit
     // and the stats write could strand stats/activeBattleId forever.
     // Reads-before-writes: this get precedes every t.update below.
+    // Delta review: a missing/corrupt agentId must NOT abort the completion
+    // (legacy semantics: battle completes, stats skipped) — the exists:false
+    // stub routes both stats branches to a clean no-op.
     // PR footnote: strictly-safer live-path change (patch flag-#4 precedent).
-    const agentRef = db.collection('agents').doc(fresh.agentId ?? battle.agentId);
-    const agentSnap = await t.get(agentRef);
+    const completionAgentId = fresh.agentId ?? battle.agentId;
+    const agentRef = typeof completionAgentId === 'string' && completionAgentId.length > 0
+      ? db.collection('agents').doc(completionAgentId)
+      : null;
+    const agentSnap = agentRef ? await t.get(agentRef) : { exists: false };
 
     const scoreState = fresh.scoreState || {};
     const currentScore = scoreState.currentScore || 0;
@@ -3763,6 +3769,14 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
       // NO mastery stamp here — structurally outside (V2.1 STOP-A.2).
       delete updatePayload.status;
       delete updatePayload.completedAt;
+      // Delta review (occlusion fix): re-tag the reason so the repaired doc
+      // drops OUT of repairBareGcCompletions' bounded query SERVER-SIDE —
+      // limit() applies before any in-memory filter, so repaired docs must
+      // not keep matching or they occlude newer bare ones. completionReason
+      // has exactly three consumers (the fenced decide.js writers, the
+      // discriminator above, the Q11 query) — verified; provenance stays
+      // legible and the discriminator gains a second independent half.
+      updatePayload.completionReason = 'expired_repaired';
     } else {
       // ---- Mastery eligibility stamp (§5.1) — same transaction as the
       // status flip; the shared gate decides (epoch begun ∧ mastery subject
@@ -3786,8 +3800,17 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     // prescribed deploy proceeds. Math is byte-identical to the legacy
     // block; only the write mechanism changed.
     const result = disposition.result;
+    // Pointer guard (delta review, Q11 exposure): clear activeBattleId ONLY
+    // while it still references THIS battle. The GC-repair sweep now reaches
+    // old bare completions systematically, and decide.js re-points the agent
+    // at its fresh deploy the moment it GCs — nulling unconditionally would
+    // drop the battle lock (equip-bundle/change-archetype/equip-lean/dial
+    // guards all key on the pointer) out from under a LIVE battle.
+    const pointerCurrent = agentSnap.exists && agentSnap.data()?.activeBattleId === battle.id;
     if (agentSnap.exists && !disposition.updateAgentStats) {
-      t.update(agentRef, { activeBattleId: null });
+      if (pointerCurrent) {
+        t.update(agentRef, { activeBattleId: null });
+      }
     } else if (agentSnap.exists) {
       const stats = agentSnap.data().stats || {};
       const newGamesPlayed = (stats.gamesPlayed || 0) + 1;
@@ -3817,12 +3840,26 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
           currentStreak: newStreak,
           bestStreak: newBestStreak,
         },
-        activeBattleId: null,
+        ...(pointerCurrent ? { activeBattleId: null } : {}),
       });
     }
 
     return { committed: true, repaired: isBareGcCompletion, disposition, currentScore, visionTransitionLogPayload, masteryStamped, freshForAward };
   });
+
+  // Sibling-cache coherence (ruling B4 + delta review): this battle is now
+  // terminal — whether THIS writer committed it or a racer already had
+  // ('already_terminal') — so drop the group's memoized sibling set; later
+  // same-run awards (the rest of the expiry loop, the sweep) then observe
+  // the terminal status and the cohort-terminality gate can clear within
+  // one run even when a stolen-lock racer did the completing.
+  if (
+    (txOutcome.committed || txOutcome.reason === 'already_terminal') &&
+    battle.gameMode === TOURNAMENT_GAME_MODE &&
+    typeof battle.groupId === 'string'
+  ) {
+    masterySiblingsCache.delete(battle.groupId);
+  }
 
   if (!txOutcome.committed) {
     // Another writer FULLY completed this battle first (stolen-lock cron
@@ -3839,14 +3876,6 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
   }
 
   // Agent stats now commit INSIDE the completion transaction above (B3).
-
-  // Sibling-cache coherence (ruling B4): this completion just turned a
-  // tournament battle terminal — drop the group's memoized sibling set so
-  // later same-run awards (the rest of the expiry loop, the sweep) observe
-  // it and the cohort-terminality gate can clear within one run.
-  if (battle.gameMode === TOURNAMENT_GAME_MODE && typeof battle.groupId === 'string') {
-    masterySiblingsCache.delete(battle.groupId);
-  }
 
   // ---- Mastery award (§5.2) — its own transaction (write-once on
   // masteryAward absence + masteryProfiles increment together). XP computes
@@ -3884,9 +3913,12 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
  *
  *   status=='completed' ∧ completionReason=='expired' ∧ completedAt within
  *   the trailing window (96h — covers the weekend gap in the Mon–Fri cron
- *   schedule), limit 25; repaired docs drop out via the in-memory
- *   pendingReflection filter (every full completion writes it; absence is
- *   unqueryable in Firestore, hence the in-memory half).
+ *   schedule), limit 25. Repaired docs drop out of the query SERVER-SIDE:
+ *   the repair re-tags completionReason to 'expired_repaired' (delta-review
+ *   occlusion fix — limit() applies before any in-memory filter, so
+ *   still-matching repaired docs would occlude newer bare ones). The
+ *   in-memory pendingReflection filter below is belt-and-braces for any
+ *   pre-retag stragglers.
  *
  * Uses the (status, completionReason, completedAt) composite index added in
  * this pass. Repairs route through completeBattle itself (one §5.1 writer),
@@ -3911,8 +3943,11 @@ export async function repairBareGcCompletions(db, summary, masteryFlagView = DAR
       const outcome = await completeBattle(db, gcBattle, summary, masteryFlagView, masteryGroupCache, masterySiblingsCache);
       if (outcome.committed) {
         counts.repaired += 1;
-        // Same post-completion hook the expiry loop fires (non-blocking).
-        logBattlePattern(gcBattle.agentId, gcBattle.id, gcBattle).catch(err => {
+        // Same post-completion hook the expiry loop fires — AWAITED here
+        // (delta review): a repair sweep has no latency budget to protect,
+        // and unlike the expiry path no later event would regenerate a
+        // pattern record dropped by a frozen serverless runtime.
+        await logBattlePattern(gcBattle.agentId, gcBattle.id, gcBattle).catch(err => {
           console.error(`${LOG_PREFIX} Pattern logging failed for repaired battle ${gcBattle.id}:`, err.message);
         });
       }

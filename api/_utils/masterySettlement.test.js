@@ -22,6 +22,7 @@ import {
   isMasterySubject,
   maybeBuildEligibilityStampFields,
   classifyModeKind,
+  sameDayCohort,
   computePlacementInputs,
   stampMasterySlotFirstTick,
   runAwardTransaction,
@@ -43,6 +44,7 @@ const battle = (id, over = {}) => ({
   status: 'active',
   gameMode: 'baggerbomb_agent',
   createdAt: '2026-07-20T13:00:00.000Z',
+  expiresAt: '2026-07-20T20:00:00.000Z', // the ADV-2 membership-freeze boundary
   timing: { tradingDays: ['2026-07-20'] },
   scoreState: { currentScore: 0, opponentScore: 0 },
   agentContext: { archetype: 'degen' },
@@ -98,6 +100,7 @@ function buildFixture() {
     // day, rank 5 → half band; training pod → 0.6 mode mult.
     'agentBattles/tr1': battle('tr1', {
       createdAt: '2026-07-21T01:00:00.000Z',
+      expiresAt: '2026-07-21T02:00:00.000Z', // late-evening battle closes after its own creation
       gameMode: 'baggerbomb_tournament',
       groupId: 'g-train',
       scoreState: { currentScore: 60 },
@@ -105,6 +108,7 @@ function buildFixture() {
     'agentBattles/tr-cpu': battle('tr-cpu', {
       ownerId: 'cpu-owner', agentId: 'cpu-a', isCpu: true,
       createdAt: '2026-07-21T01:00:30.000Z',
+      expiresAt: '2026-07-21T02:00:00.000Z',
       gameMode: 'baggerbomb_tournament', groupId: 'g-train',
       scoreState: { currentScore: 20 },
     }),
@@ -485,15 +489,36 @@ describe('unit surfaces', () => {
 
   it('computePlacementInputs: tournament counts SAME-DAY humans strictly below; non-finite sibling blocks the field win', () => {
     const DAY = { tradingDays: ['2026-07-20'] };
+    const BORN = '2026-07-20T13:30:00.000Z'; // before me.expiresAt — in the cohort
     const me = battle('me', { gameMode: 'baggerbomb_tournament', groupId: 'g', scoreState: { currentScore: 50 }, timing: DAY });
     const sibs = [
-      { id: 'h1', ownerId: 'u9', isCpu: undefined, timing: DAY, scoreState: { currentScore: 30 } },
-      { id: 'h2', ownerId: 'u8', timing: DAY, scoreState: { currentScore: 50 } },  // tie — not outplaced
-      { id: 'c1', ownerId: 'cpu-owner', isCpu: true, timing: DAY, scoreState: { currentScore: 10 } }, // CPU below — not a human
+      { id: 'h1', ownerId: 'u9', isCpu: undefined, createdAt: BORN, timing: DAY, scoreState: { currentScore: 30 } },
+      { id: 'h2', ownerId: 'u8', createdAt: BORN, timing: DAY, scoreState: { currentScore: 50 } },  // tie — not outplaced
+      { id: 'c1', ownerId: 'cpu-owner', isCpu: true, createdAt: BORN, timing: DAY, scoreState: { currentScore: 10 } }, // CPU below — not a human
     ];
     expect(computePlacementInputs({ battle: me, siblings: sibs })).toEqual({ humansOutplaced: 1, wonAgainstField: false });
-    const sibsBroken = [{ id: 'h1', ownerId: 'u9', timing: DAY, scoreState: { currentScore: NaN } }];
+    const sibsBroken = [{ id: 'h1', ownerId: 'u9', createdAt: BORN, timing: DAY, scoreState: { currentScore: NaN } }];
     expect(computePlacementInputs({ battle: me, siblings: sibsBroken }).wonAgainstField).toBe(false);
+  });
+
+  it('ADV-2 membership freeze: a same-day sibling born AFTER my close never joins my cohort — deterministically, whatever the settlement timing', () => {
+    const DAY = { tradingDays: ['2026-07-20'] };
+    const me = battle('me', { gameMode: 'baggerbomb_tournament', groupId: 'g', scoreState: { currentScore: 10 }, timing: DAY });
+    // Late deploy retry: created 16:40 ET (20:40Z), after my 20:00Z close.
+    const late = { id: 'late', ownerId: 'u9', createdAt: '2026-07-20T20:40:00.000Z', timing: DAY, status: 'active', scoreState: { currentScore: 99 } };
+    // Not in MY cohort: no placement effect AND the terminality gate never waits on it.
+    expect(sameDayCohort(me, [late])).toEqual([]);
+    expect(computePlacementInputs({ battle: me, siblings: [late] })).toEqual({ humansOutplaced: 0, wonAgainstField: false });
+    // Asymmetric and honest: MY battle (born 13:00Z, before the late battle's
+    // close) IS in the late battle's cohort — it competed against my frozen score.
+    const lateAsBattle = battle('late', {
+      ownerId: 'u9', gameMode: 'baggerbomb_tournament', groupId: 'g',
+      createdAt: '2026-07-20T20:40:00.000Z', expiresAt: '2026-07-21T00:00:00.000Z',
+      scoreState: { currentScore: 99 }, timing: DAY,
+    });
+    const meAsSibling = { id: 'me', ownerId: 'u1', createdAt: '2026-07-20T13:00:00.000Z', timing: DAY, status: 'completed', scoreState: { currentScore: 10 } };
+    expect(sameDayCohort(lateAsBattle, [meAsSibling])).toHaveLength(1);
+    expect(computePlacementInputs({ battle: lateAsBattle, siblings: [meAsSibling] })).toEqual({ humansOutplaced: 1, wonAgainstField: true });
   });
 
   it('computePlacementInputs: DAY-SCOPING — groups keep one groupId across daily redeploys, so prior-day battles (including your OWN) are never opponents', () => {
@@ -503,14 +528,15 @@ describe('unit surfaces', () => {
       gameMode: 'baggerbomb_tournament', groupId: 'g',
       scoreState: { currentScore: 10 },
       timing: { tradingDays: ['2026-07-21'] }, // day 2
+      expiresAt: '2026-07-21T20:00:00.000Z', // day-2 close (membership-freeze boundary)
     });
     const sibs = [
       // my OWN day-1 battle — same owner, lower score: NOT an opponent
-      { id: 'me-d1', ownerId: 'u1', timing: { tradingDays: ['2026-07-20'] }, scoreState: { currentScore: 5 } },
+      { id: 'me-d1', ownerId: 'u1', createdAt: '2026-07-20T13:00:00.000Z', timing: { tradingDays: ['2026-07-20'] }, scoreState: { currentScore: 5 } },
       // another human's day-1 battle: wrong day — excluded entirely
-      { id: 'h-d1', ownerId: 'u9', timing: { tradingDays: ['2026-07-20'] }, scoreState: { currentScore: 1 } },
+      { id: 'h-d1', ownerId: 'u9', createdAt: '2026-07-20T13:00:00.000Z', timing: { tradingDays: ['2026-07-20'] }, scoreState: { currentScore: 1 } },
       // day-2 CPU seat below me — the only same-day opponent
-      { id: 'c-d2', ownerId: 'cpu-owner', isCpu: true, timing: { tradingDays: ['2026-07-21'] }, scoreState: { currentScore: 3 } },
+      { id: 'c-d2', ownerId: 'cpu-owner', isCpu: true, createdAt: '2026-07-21T13:00:00.000Z', timing: { tradingDays: ['2026-07-21'] }, scoreState: { currentScore: 3 } },
     ];
     // 0 humans outplaced (own battle excluded by owner, h-d1 by day);
     // strict first among the DAY-2 field → CPU_PLACEMENT path.

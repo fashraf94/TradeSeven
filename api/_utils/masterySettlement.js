@@ -180,25 +180,46 @@ export async function resolveModeGroup(db, battle, groupCache = new Map()) {
  * same-day siblings, self excluded, SAME-OWNER excluded before ALL placement
  * inputs (own battles are never opponents in any respect — they neither
  * count as humans, nor as field members, nor block a field win). A battle
- * with no day key concedes to an empty cohort. Used by both placement math
- * and the award's cohort-terminality gate so the two can never disagree.
+ * with no day key (or no expiresAt) concedes to an empty cohort.
+ *
+ * MEMBERSHIP FREEZE (delta-review ADV-2): membership additionally requires
+ * `sib.createdAt < battle.expiresAt` — both server-authored creation facts —
+ * so a same-day sibling born AFTER my battle's close (a late deploy retry:
+ * the orchestrator retries all day, and a post-16:00 crypto deploy still
+ * lands on today) can never join my cohort no matter when settlement or the
+ * sweep runs. Deterministically asymmetric and honest: my day ended before
+ * that battle existed, while ITS cohort rightly counts my frozen final
+ * score. This is what keeps cohort membership order-independent — the
+ * terminality gate can only wait on battles that can ever be in the cohort.
+ *
+ * Used by both placement math and the award's cohort-terminality gate so
+ * the two can never disagree.
  */
 export function sameDayCohort(battle, siblings) {
   const myDay = battle.timing?.tradingDays?.[0];
-  if (myDay === undefined) return [];
+  const myClose = battle.expiresAt;
+  if (myDay === undefined || typeof myClose !== 'string' || myClose.length === 0) return [];
   return (Array.isArray(siblings) ? siblings : []).filter(
     (sib) =>
       sib &&
       sib.id !== battle.id &&
       sib.ownerId !== battle.ownerId &&
-      sib.timing?.tradingDays?.[0] === myDay
+      sib.timing?.tradingDays?.[0] === myDay &&
+      typeof sib.createdAt === 'string' &&
+      sib.createdAt < myClose
   );
 }
 
 export function computePlacementInputs({ battle, siblings }) {
   const myScore = battle.scoreState?.currentScore;
   if (battle.gameMode !== TOURNAMENT_GAME_MODE) {
-    const opponentScore = battle.scoreState?.opponentScore ?? 0;
+    // RAW opponent score, no zero fallback (B5's rule extended per the
+    // delta review): a missing/corrupt opponentScore blocks the field win
+    // (fails toward less XP) instead of fabricating a beatable 0 — the same
+    // conservative posture the tournament branch takes for non-finite
+    // sibling scores. (The completion feed's display math keeps its legacy
+    // `|| 0` — that is §9 display behavior, photographed, untouched.)
+    const opponentScore = battle.scoreState?.opponentScore;
     return {
       humansOutplaced: 0,
       wonAgainstField: Number.isFinite(myScore) && Number.isFinite(opponentScore) && myScore > opponentScore,
@@ -231,7 +252,7 @@ export async function fetchGroupSiblings(db, battle, siblingsCache = new Map()) 
   const snap = await db
     .collection('agentBattles')
     .where('groupId', '==', battle.groupId)
-    .select('gameMode', 'isCpu', 'ownerId', 'scoreState', 'timing', 'status')
+    .select('gameMode', 'isCpu', 'ownerId', 'scoreState', 'timing', 'status', 'createdAt')
     .get();
   const siblings = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))

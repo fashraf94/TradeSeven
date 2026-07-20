@@ -205,7 +205,7 @@ describe('GC repair (angle-B legacy behavior, V2.1 STOP-A.2 boundary): bare deci
     const doc = db.__dump('agentBattles/b1');
     expect(doc.status).toBe('completed');
     expect(doc.completedAt).toBe('2026-07-20T20:02:00.000Z'); // GC's earlier instant KEPT
-    expect(doc.completionReason).toBe('expired');
+    expect(doc.completionReason).toBe('expired_repaired'); // retag: drops out of the Q11 query server-side
     expect(doc.pendingReflection).toBe(true); // reflection queue restored
     expect(doc.statusFeed).toHaveLength(2); // battle_complete feed entry appended
     expect(doc.cronState.evaluatingAt).toBeNull();
@@ -262,6 +262,81 @@ describe('the guarded transaction (STOP-A.1): racing writers cannot double-compl
     expect(db.__readCounts()).toEqual({ 'agentBattles/b1': 1 });
   });
 
+  it('pointer guard: a completion never nulls activeBattleId that references a DIFFERENT (newer) battle', async () => {
+    const GC_OLD = {
+      ...TIERED_BATTLE,
+      status: 'completed',
+      completedAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+      completionReason: 'expired',
+    };
+    // decide.js already GC'd this battle and re-pointed the agent at battle-B.
+    const agent = { ...AGENT_DOC, activeBattleId: 'battle-B' };
+    const db = makeMockDb({ 'agentBattles/b1': GC_OLD, 'agents/agent-1': agent });
+    const outcome = await completeBattle(db, { id: 'b1', ...GC_OLD }, { evaluated: 0 });
+    expect(outcome).toMatchObject({ committed: true, repaired: true });
+    const after = db.__dump('agents/agent-1');
+    expect(after.activeBattleId).toBe('battle-B'); // the LIVE battle keeps its lock
+    expect(after.stats.gamesPlayed).toBe(4); // stats still fold
+  });
+
+  it('a missing agentId never aborts the completion (legacy semantics: battle completes, stats skipped)', async () => {
+    const noAgent = { ...TIERED_BATTLE };
+    delete noAgent.agentId;
+    const db = makeMockDb({ 'agentBattles/b1': noAgent, 'agents/agent-1': AGENT_DOC });
+    const summary = { evaluated: 0 };
+    const outcome = await completeBattle(db, { id: 'b1', ...noAgent }, summary);
+    expect(outcome.committed).toBe(true);
+    expect(db.__dump('agentBattles/b1').status).toBe('completed');
+    expect(db.__dump('agents/agent-1')).toEqual(AGENT_DOC); // untouched, no throw
+    expect(summary.evaluated).toBe(1);
+  });
+
+  it('B2 pin: the registry read sits INSIDE the compile-time branch — the dark handler performs no mastery I/O at the flag step', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('./agent-evaluate.js', import.meta.url), 'utf8');
+    expect(source).toMatch(/if \(MASTERY_XP_ENABLED\) \{\s*\n\s*try \{\s*\n\s*masteryFlagView = await readMasteryFlagView\(db\);/);
+    // Exactly one call site, and it is the guarded one.
+    expect(source.match(/readMasteryFlagView\(db\)/g)).toHaveLength(1);
+  });
+
+  it('ADV-3: shared caches converge within ONE run — a cohort_pending award resolves via the sweep after its siblings complete (real completeBattle + invalidation)', async () => {
+    const { runRepairSweep } = await import('../_utils/masterySettlement.js');
+    const DAY = { tradingDays: ['2026-07-20'] };
+    const tb = (id, over) => ({
+      ...TIERED_BATTLE,
+      gameMode: 'baggerbomb_tournament',
+      groupId: 'g1',
+      timing: DAY,
+      ...over,
+    });
+    const A = tb('A', { ownerId: 'u1', agentId: 'agent-1', scoreState: { currentScore: 50 } });
+    const B = tb('B', { ownerId: 'u2', agentId: 'agent-2', createdAt: '2026-07-20T13:01:00.000Z', scoreState: { currentScore: 30 } });
+    const C = tb('C', { ownerId: 'cpu-owner', agentId: 'cpu-a', isCpu: true, createdAt: '2026-07-20T13:02:00.000Z', scoreState: { currentScore: 10 } });
+    const db = makeMockDb({
+      'agentBattles/A': A, 'agentBattles/B': B, 'agentBattles/C': C,
+      'agents/agent-1': AGENT_DOC, 'agents/agent-2': { ...AGENT_DOC, ownerId: 'u2' }, 'agents/cpu-a': { ownerId: 'cpu-owner', stats: {} },
+      'tournamentGroups/g1': { status: 'battle' },
+    });
+    // ONE set of run-level caches, exactly like the handler.
+    const groupCache = new Map();
+    const siblingsCache = new Map();
+    const summary = { evaluated: 0 };
+    await completeBattle(db, { id: 'A', ...A }, summary, FLAG_ON, groupCache, siblingsCache);
+    // A's award deferred: B and C still live — and the sibling set is now cached.
+    expect(db.__dump('agentBattles/A').masteryAward).toBeUndefined();
+    expect(db.__dump('agentBattles/A').masteryAwardPending).toBe(true);
+    await completeBattle(db, { id: 'B', ...B }, summary, FLAG_ON, groupCache, siblingsCache);
+    await completeBattle(db, { id: 'C', ...C }, summary, FLAG_ON, groupCache, siblingsCache);
+    // Same-run sweep with the SAME caches: the per-completion invalidation
+    // must have dropped the stale 'active' snapshots, or this defers again.
+    const sweep = await runRepairSweep(db, { nowIso: new Date().toISOString(), limit: 25, groupCache, siblingsCache });
+    expect(sweep.awarded).toBeGreaterThanOrEqual(1);
+    const award = db.__dump('agentBattles/A').masteryAward;
+    expect(award).toBeDefined();
+    expect(award.components.placement).toBe(30); // outplaced u2@30, CPU top blocks nothing here (C@10): strict first → but humans paid first
+    expect(db.__dump('agentBattles/A').masteryAwardPending).toBeUndefined();
+  });
+
   it('Q11: repairBareGcCompletions finds bare GC completions via the bounded query and repairs them; full docs pass through', async () => {
     const GC_BARE = {
       ...TIERED_BATTLE,
@@ -288,12 +363,15 @@ describe('the guarded transaction (STOP-A.1): racing writers cannot double-compl
     const repaired = db.__dump('agentBattles/gc1');
     expect(repaired.pendingReflection).toBe(true);
     expect(repaired.completedAt).toBe(GC_BARE.completedAt); // GC instant kept
+    expect(repaired.completionReason).toBe('expired_repaired');
     expect(repaired.masteryEligibility).toBeUndefined(); // never stamps (STOP-A.2)
     expect(db.__dump('agentBattles/full1')).toEqual(FULL); // untouched
     expect(db.__dump('agents/agent-1').stats.gamesPlayed).toBe(4); // stats ran, once
-    // Second run: the repaired doc now carries pendingReflection → pass-through.
+    // Second run: the retag dropped gc1 out of the QUERY itself (occlusion
+    // fix — repaired docs can never pin the limit-25 page); only the
+    // synthetic still-'expired' full doc is scanned, and passes through.
     const again = await repairBareGcCompletions(db, { evaluated: 0 });
-    expect(again).toMatchObject({ scanned: 2, repaired: 0 });
+    expect(again).toMatchObject({ scanned: 1, repaired: 0 });
   });
 
   it('Q11: the window bounds the query — stale GC completions outside it are not scanned', async () => {
