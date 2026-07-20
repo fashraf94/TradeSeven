@@ -151,6 +151,54 @@ describe('masteryConfig + masteryQuarantine', () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+// P2 §6.1 rider — equipped-bundle rule content is client-immutable (the
+// equip-time capacity check must be the capacity every reprojection carries).
+// Dimension/telemetry updates on equipped docs stay writable (the
+// persist-on-launch case); un-equipped forged docs keep full content access.
+// ───────────────────────────────────────────────────────────────────────────
+describe('agents/{id}/bundles — equipped rule content immutability', () => {
+  const AGENT_PATH = `agents/mastery-agent-1`;
+  const EQUIPPED_PATH = `agents/mastery-agent-1/bundles/b-equipped`;
+  const FORGED_PATH = `agents/mastery-agent-1/bundles/b-forged`;
+  const BUNDLE = (status) => ({
+    name: 'test',
+    version: 1,
+    status,
+    ruleIds: ['r1'],
+    ruleSnapshots: [{ ruleId: 'r1', text: 'rule 1' }],
+    performanceData: { battlesEquipped: 0 },
+  });
+
+  beforeEach(async () => {
+    await seed(AGENT_PATH, { ownerId: OWNER_UID });
+    await seed(EQUIPPED_PATH, BUNDLE('equipped'));
+    await seed(FORGED_PATH, BUNDLE('forged'));
+  });
+
+  it.each([
+    ['ruleSnapshots inflation', { ruleSnapshots: Array.from({ length: 100 }, (_, i) => ({ ruleId: `x${i}` })) }],
+    ['ruleIds inflation', { ruleIds: Array.from({ length: 100 }, (_, i) => `x${i}`) }],
+    ['ruleHardness mint', { ruleHardness: { r1: 'hard' } }],
+  ])('owner update touching %s on an EQUIPPED bundle is DENIED', async (_label, update) => {
+    await assertFails(updateDoc(doc(asOwner(), EQUIPPED_PATH), update));
+  });
+
+  it('dimension/telemetry updates on an EQUIPPED bundle still pass (persist-on-launch)', async () => {
+    await assertSucceeds(updateDoc(doc(asOwner(), EQUIPPED_PATH), {
+      performanceData: { battlesEquipped: 1 },
+      updatedAt: '2026-07-21T00:00:00.000Z',
+    }));
+  });
+
+  it('rule content on a NON-equipped forged bundle stays owner-writable (the draft/reforge editing surface)', async () => {
+    await assertSucceeds(updateDoc(doc(asOwner(), FORGED_PATH), {
+      ruleSnapshots: [{ ruleId: 'r1', text: 'edited' }],
+      updatedAt: '2026-07-21T00:00:00.000Z',
+    }));
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 // agentBattles — the mastery fields and slot-key fields are client-write-
 // denied by the hasOnly allowlist (S11.7); the allowlist still admits the
 // legitimate execution-control update (surgical, not broken).

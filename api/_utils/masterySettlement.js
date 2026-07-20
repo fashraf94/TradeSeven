@@ -596,8 +596,12 @@ export async function runAwardTransaction(db, battleId, { nowIso, groupCache = n
       levelAfter,
       epochId,
       settledAt: nowIso,
-      placementInputs: placement.snapshot,
-      ...(rateBand === 0 ? { reasonCode: REASON_CODES.DAILY_CEILING } : {}),
+      // §4: zero receipts carry the public reasonCode ONLY — the audit
+      // snapshot rides paying awards; a daily_ceiling receipt (xpFinal 0)
+      // exposes no cohort internals (P2 review finding).
+      ...(rateBand === 0
+        ? { reasonCode: REASON_CODES.DAILY_CEILING }
+        : { placementInputs: placement.snapshot }),
     });
 
     t.update(battleRef, {

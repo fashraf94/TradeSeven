@@ -137,8 +137,12 @@ export default async function handler(req, res) {
       }
 
       // §6.1 rider (server rule-capacity check; A8 exemption — see the
-      // import note): an over-capacity bundle can be authored client-side
-      // but can never be EQUIPPED past the server.
+      // import note): an over-capacity bundle cannot be EQUIPPED past the
+      // server, and once equipped its rule content is client-immutable
+      // (firestore.rules bundles update guard, same review pass) — so the
+      // capacity checked here is the capacity every later reprojection
+      // carries. Reforge deliberately carries NO capacity check (it is the
+      // trim path; see reforge-bundle.js header).
       const bundleRuleCount = Array.isArray(bundle.ruleSnapshots) ? bundle.ruleSnapshots.length : 0;
       if (bundleRuleCount > limits.maxRulesPerBundle) {
         const err = new Error(SENTINEL_PREFIX + 'rule_limit');

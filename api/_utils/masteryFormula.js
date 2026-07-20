@@ -132,12 +132,17 @@ export function computeXp({ modeKind, currentScore, humansOutplaced, wonAgainstF
 }
 
 /**
- * masteryAward doc shape (spec §5):
+ * masteryAward doc shape (spec §5, as amended by the P2 greenlight ruling —
+ * the placementInputs? addition is founder-directed; flagged in the P2
+ * report for a V2.x shape-delta record so backfill/rules authors never work
+ * from a stale enumeration):
  * { archetype, components, multipliers: {mode, rateBand}, xpFinal,
  *   levelBefore, levelAfter, levelProvisional?, formulaVersion, epochId,
- *   reasonCode?, settledAt, backfilled? }
- * Optional keys are included only when set — absent, not null (the write-once
- * absence guard keys on the masteryAward field itself).
+ *   reasonCode?, settledAt, backfilled?, placementInputs? }
+ * placementInputs rides PAYING awards only — never zero receipts (§4:
+ * public reasonCode only). Optional keys are included only when set —
+ * absent, not null (the write-once absence guard keys on the masteryAward
+ * field itself).
  */
 export function buildAwardDoc({
   archetype,

@@ -107,7 +107,7 @@ describe('lean caps — the chokepoint half of the D1 dual anchor', () => {
     }
     const agent = activeDb.__dump('agents/agent-1');
     expect(agent.standingLeans).toHaveLength(3);
-    expect(agent.masteryLeanCap).toBe(3); // the kernel half reads this same number
+    expect(agent.masteryLeanCap).toBeUndefined(); // review redesign: no stamp — nothing doc-trusted
   });
 
   it('1·1·0 (ENF on, XP on): identical enforcement — the caps are flag-view-independent', async () => {
@@ -119,16 +119,18 @@ describe('lean caps — the chokepoint half of the D1 dual anchor', () => {
     for (const id of ['CP-01', 'CP-02', 'CP-03']) {
       expect((await equipLean(id)).statusCode).toBe(200);
     }
-    expect(activeDb.__dump('agents/agent-1').masteryLeanCap).toBe(3);
+    expect(activeDb.__dump('agents/agent-1').standingLeans).toHaveLength(3);
   });
 
-  it('ENF on + missing profile: baseline 2 (spec §7) — the third pin is lean_limit', async () => {
+  it('ENF on + missing profile: baseline 2 (spec §7) — the third pin is lean_limit, with the RESOLVED cap in the payload (§9)', async () => {
     activeDb = makeMockDb({ 'agents/agent-1': AGENT() });
     expect((await equipLean('CP-01')).statusCode).toBe(200);
     expect((await equipLean('CP-02')).statusCode).toBe(200);
     const third = await equipLean('CP-03');
     expect(third.statusCode).toBe(409);
     expect(third.body.error).toBe('lean_limit');
+    expect(third.body.leanCap).toBe(2); // the number the decision used
+    expect(third.body.message).not.toMatch(/at most 2/); // copy never bakes a number
   });
 
   it('DARK (ENF off): baseline cap even with an L3 profile; ZERO profile reads; no stamp', async () => {
@@ -192,40 +194,75 @@ describe('dial gate — SETTING aggressive only; equipped state grandfathers', (
   });
 });
 
-describe('kernel half of the dual anchor — resolveLeanCap through buildCustomizationSnapshot', () => {
+describe('kernel half of the dual anchor — the shared per-call cap default (review redesign: structural max, ONE source for every caller)', () => {
   const THREE_LEANS = [
     { adjustmentId: 'CP-01', version: 1, equippedAt: '2026-07-20T13:00:00.000Z' },
     { adjustmentId: 'CP-02', version: 1, equippedAt: '2026-07-20T13:01:00.000Z' },
     { adjustmentId: 'CP-03', version: 1, equippedAt: '2026-07-20T13:02:00.000Z' },
   ];
+  const AGENT_DATA = { id: 'agent-1', archetype: 'guardian', standingLeans: THREE_LEANS };
 
-  it('ENF on + stamped cap 3: all three survive the snapshot revalidation', () => {
-    const snap = buildCustomizationSnapshot(
-      { id: 'agent-1', archetype: 'guardian', standingLeans: THREE_LEANS, masteryLeanCap: 3 },
-      '2026-07-21T00:00:00.000Z'
-    );
+  it('ENF on: a chokepoint-granted 3-lean set survives EVERY kernel path — snapshot AND legacy two-field callers (the fenced prompt / client display shape)', async () => {
+    const { revalidateStandingLeans } = await import('../_utils/leanRevalidation.js');
+    const snap = buildCustomizationSnapshot(AGENT_DATA, '2026-07-21T00:00:00.000Z');
     expect(snap.standingLeans).toHaveLength(3);
     expect(snap.standingLeansInvalidated).toHaveLength(0);
+    // The legacy call shape (no cap channel) resolves the SAME cap — the §9
+    // one-source property that the stamped-field design broke.
+    const legacy = revalidateStandingLeans({ standingLeans: THREE_LEANS, archetypeCodeId: 'guardian' });
+    expect(legacy.valid).toHaveLength(3);
   });
 
-  it('ENF off: the SAME stamp is ignored — baseline clamps the third (OVER_CAP), byte-identical to today', () => {
+  it('ENF on: the structural max still clamps degenerate sets (5 pins → 4)', async () => {
+    const { revalidateStandingLeans } = await import('../_utils/leanRevalidation.js');
+    const five = ['CP-01', 'CP-02', 'CP-03', 'CP-06', 'CP-07'].map((id, i) => ({
+      adjustmentId: id, version: 1, equippedAt: `2026-07-20T13:0${i}:00.000Z`,
+    }));
+    const r = revalidateStandingLeans({ standingLeans: five, archetypeCodeId: 'guardian' });
+    expect(r.valid).toHaveLength(4);
+    expect(r.invalidated).toEqual([expect.objectContaining({ reason: 'over_cap' })]);
+  });
+
+  it('ENF off: baseline clamps the third (OVER_CAP) — byte-identical to today', () => {
     flagState.enf = false;
-    const snap = buildCustomizationSnapshot(
-      { id: 'agent-1', archetype: 'guardian', standingLeans: THREE_LEANS, masteryLeanCap: 3 },
-      '2026-07-21T00:00:00.000Z'
-    );
+    const snap = buildCustomizationSnapshot(AGENT_DATA, '2026-07-21T00:00:00.000Z');
     expect(snap.standingLeans).toHaveLength(2);
     expect(snap.standingLeansInvalidated).toEqual([
       expect.objectContaining({ adjustmentId: 'CP-03', reason: 'over_cap' }),
     ]);
   });
 
-  it('ENF on + garbage/absent stamp fails toward baseline (never widens on bad data)', () => {
-    const snap = buildCustomizationSnapshot(
-      { id: 'agent-1', archetype: 'guardian', standingLeans: THREE_LEANS, masteryLeanCap: 99 },
-      '2026-07-21T00:00:00.000Z'
-    );
-    expect(snap.standingLeans).toHaveLength(2);
+  it('an explicit leanCap param (the §8 corrections channel) overrides the default', async () => {
+    const { revalidateStandingLeans } = await import('../_utils/leanRevalidation.js');
+    const r = revalidateStandingLeans({ standingLeans: THREE_LEANS, archetypeCodeId: 'guardian', leanCap: 2 });
+    expect(r.valid).toHaveLength(2); // a correction-injected reduced entitlement clamps
+  });
+});
+
+describe('dial invalidation on archetype switch (V2.1 STOP-B: customization switches/invalidates)', () => {
+  it('ENF on: an aggressive dial re-validates against the NEW archetype level — below L2 it resets to standard in the same commit', async () => {
+    const { default: changeArchetypeHandler } = await import('./change-archetype.js');
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT({ dials: { tempo: 'aggressive' } }), // earned on guardian
+      // No degen stream on the profile → level 1 on the target archetype.
+      'masteryProfiles/test-user': GUARDIAN_PROFILE(3),
+    });
+    const res = await call(changeArchetypeHandler, { agentId: 'agent-1', archetype: 'degen' });
+    expect(res.statusCode).toBe(200);
+    const agent = activeDb.__dump('agents/agent-1');
+    expect(agent.archetype).toBe('degen');
+    expect(agent.dials.tempo).toBe('standard'); // invalidated with the switch
+  });
+
+  it('ENF off: the dial carries untouched (byte-identical)', async () => {
+    flagState.enf = false;
+    const { default: changeArchetypeHandler } = await import('./change-archetype.js');
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT({ dials: { tempo: 'aggressive' } }),
+    });
+    const res = await call(changeArchetypeHandler, { agentId: 'agent-1', archetype: 'degen' });
+    expect(res.statusCode).toBe(200);
+    expect(activeDb.__dump('agents/agent-1').dials.tempo).toBe('aggressive');
   });
 });
 
@@ -237,15 +274,15 @@ describe('Forge — §6.1 lazy legacy floor + the A8-exempt dark hardening', () 
     ruleSnapshots: Array.from({ length: 11 }, (_, i) => ({ ruleId: `r${i}`, text: `rule ${i}` })),
   };
 
-  it('DARK (ENF off): the server now enforces TODAY’S legacy limits at reforge — 11 rules > rookie 10 → rule_limit (A8 exemption)', async () => {
+  it('reforge carries NO capacity check (review decision): the over-cap bundle reforges into a draft — the trim path stays open', async () => {
     flagState.enf = false;
     activeDb = makeMockDb({
       'agents/agent-1': AGENT(),
       'agents/agent-1/bundles/b-big': BIG_BUNDLE,
     });
     const res = await call(reforgeBundleHandler, { agentId: 'agent-1', bundleId: 'b-big' });
-    expect(res.statusCode).toBe(409);
-    expect(res.body.error).toBe('rule_limit');
+    expect(res.body?.error).not.toBe('rule_limit');
+    expect(res.statusCode).toBe(200);
   });
 
   it('DARK: equip-bundle likewise rejects an over-capacity bundle server-side', async () => {

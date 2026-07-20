@@ -346,6 +346,8 @@ describe('fail-closed receipts + structural outsiders', () => {
     expect(seventh.xpFinal).toBe(0);
     expect(seventh.reasonCode).toBe('daily_ceiling');
     expect(seventh.multipliers.rateBand).toBe(0);
+    // §4: a zero receipt carries the public reasonCode ONLY — no audit internals.
+    expect(seventh.placementInputs).toBeUndefined();
     const prof = db.__dump('masteryProfiles/u5').archetypes.degen;
     expect(prof.battlesCounted).toBe(7);
     // ranks 1-3 full (43 each: 25+10+8), 4-6 half (round(21.5)=22 each... wait 43×0.5=21.5→22)

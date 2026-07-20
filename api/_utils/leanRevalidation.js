@@ -30,30 +30,37 @@ import { MASTERY_ENFORCEMENT_ENABLED } from './masteryConfig.js';
 // resolveLeanCap below.
 export const STANDING_LEANS_CAP = 2;
 
-// Mastery caps are grants in [baseline .. 4] (§6: L3 → 3, L6 → 4).
-const MASTERY_LEAN_CAP_MAX = 4;
+// The structural maximum any chokepoint can ever grant (§6: L6 → 4 slots).
+export const MASTERY_LEAN_CAP_MAX = 4;
 
 /**
- * Mastery P2 (spec §6 D1 dual anchor — the SNAPSHOT/kernel half): the lean
- * cap the revalidation applies for this agent. With enforcement off this is
- * the baseline constant (byte-identical behavior). With enforcement on it
- * reads the server-stamped `agent.masteryLeanCap` — written by the
- * equip-lean chokepoint's transaction from the live masteryProfile (the
- * WRITE half of the dual anchor), client-write-denied by the agents
- * allowlist — failing toward baseline on anything malformed. Grants-only by
- * construction: the resolved cap is never below baseline, so enforcement
- * can only widen what the kernel accepts (unlocks never revoke).
+ * Mastery P2 (spec §6 D1 dual anchor — the SNAPSHOT/kernel half), P2-review
+ * redesign: under enforcement the kernel clamps at the STRUCTURAL max (4)
+ * on EVERY path; per-user ENTITLEMENT enforcement lives exclusively at the
+ * equip-lean chokepoint (live-profile read at write time), so at-rest lean
+ * sets are already entitlement-bounded when they reach the kernel.
  *
- * All mastery logic stays HERE (non-fence): the fenced createAgentBattle
- * call site passes the same agentData it always has.
+ * Why the structural max and not a per-user number here: the kernel is
+ * consumed by call sites that cannot pass per-user data — the FENCED
+ * deploy-prompt path (agentPromptAssembly.js), the client display authority
+ * (src/data/characterState.js), and the change-archetype rider all call
+ * with the legacy two-field shape. Any per-user cap channel (a stamped
+ * field was tried and reviewed out: unstampable at those sites, forgeable
+ * via the un-allowlisted agents CREATE rule, stale across archetype
+ * switches, and a §8 foreclosure) would make those paths disagree with the
+ * battle snapshot — the exact §9/Release-2 single-authority drift this
+ * kernel exists to prevent. With the default below, EVERY caller resolves
+ * the same cap with zero call-site changes.
+ *
+ * §8 stays open by design: the explicit `leanCap` param on
+ * revalidateStandingLeans is the corrections-phase injection channel — the
+ * future correction applier passes the reduced entitlement explicitly
+ * (with user notice, per §8) rather than this default.
+ *
+ * Dark (enforcement off): baseline — byte-identical to today.
  */
-export function resolveLeanCap(agentData, enforcementEnabled = MASTERY_ENFORCEMENT_ENABLED) {
-  if (enforcementEnabled !== true) return STANDING_LEANS_CAP;
-  const stamped = agentData?.masteryLeanCap;
-  if (Number.isInteger(stamped) && stamped >= STANDING_LEANS_CAP && stamped <= MASTERY_LEAN_CAP_MAX) {
-    return stamped;
-  }
-  return STANDING_LEANS_CAP;
+export function resolveLeanCap(enforcementEnabled = MASTERY_ENFORCEMENT_ENABLED) {
+  return enforcementEnabled === true ? MASTERY_LEAN_CAP_MAX : STANDING_LEANS_CAP;
 }
 
 export const LEAN_INVALIDATION_REASONS = Object.freeze({
@@ -132,7 +139,11 @@ export function validateLeanPin(archetypeCodeId, adjustmentId, version) {
  *   invalidated: Array<{adjustmentId: string|null, version: number|null, reason: string}>,
  * }}
  */
-export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId, leanCap = STANDING_LEANS_CAP } = {}) {
+export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId, leanCap } = {}) {
+  // Default resolves per call (never at module load): the ONE cap source for
+  // every legacy two-field caller — fenced prompt path, client display,
+  // change-archetype rider — and the snapshot path alike (§9).
+  const effectiveCap = Number.isInteger(leanCap) ? leanCap : resolveLeanCap();
   const invalidated = [];
 
   // Pass 1 — per-pin validity through the shared rule, plus same-id dedupe
@@ -187,7 +198,7 @@ export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId, l
       });
       continue;
     }
-    if (accepted.length >= leanCap) {
+    if (accepted.length >= effectiveCap) {
       invalidated.push({
         adjustmentId: lean.adjustmentId,
         version: lean.version,
@@ -225,9 +236,9 @@ export function buildCustomizationSnapshot(agentData, now) {
   const { valid, invalidated } = revalidateStandingLeans({
     standingLeans: agentData.standingLeans,
     archetypeCodeId: agentData.archetype,
-    // Mastery P2 dual anchor (kernel half): level-derived cap via the
-    // stamped field; baseline (byte-identical) while enforcement is off.
-    leanCap: resolveLeanCap(agentData),
+    // Mastery P2 dual anchor (kernel half): the shared per-call default —
+    // structural max under enforcement, baseline (byte-identical) while
+    // off — the same cap every other kernel caller resolves (§9).
   });
   if (invalidated.length > 0) {
     console.log('[LeanRevalidation]', JSON.stringify({

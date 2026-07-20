@@ -24,6 +24,15 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
+// Mastery P2 (V2.1 STOP-B: customization bundles are per-archetype —
+// "switching archetypes switches/invalidates them"): an equipped
+// 'aggressive' dial re-validates against the NEW archetype's mastery level
+// at switch time; below L2 it invalidates to 'standard' in the same commit
+// (the standing-lean invalidation rider precedent in this same file).
+// Without this, the per-archetype L2 gate degrades to earn-once-on-any-
+// archetype (P2 review finding). Dark (enforcement off): untouched.
+import { MASTERY_ENFORCEMENT_ENABLED } from '../_utils/masteryConfig.js';
+import { masteryProfileRef, archetypeLevelFromProfile, dialAggressiveAllowed } from '../_utils/masteryEnforcement.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
@@ -119,6 +128,18 @@ export default async function handler(req, res) {
 
       const previousArchetype = agent.archetype ?? null;
 
+      // Mastery P2 dial re-validation (see the import note). The profile
+      // read sits HERE because the seed block below performs tx.set writes
+      // and Firestore requires every read to precede the first write.
+      let dialInvalidated = false;
+      if (MASTERY_ENFORCEMENT_ENABLED && agent.dials?.tempo === 'aggressive') {
+        const profileSnap = await tx.get(masteryProfileRef(db, user.uid));
+        const newLevel = archetypeLevelFromProfile(profileSnap.exists ? profileSnap.data() : null, archetype);
+        if (!dialAggressiveAllowed(newLevel)) {
+          dialInvalidated = true;
+        }
+      }
+
       // ⚠️ THE INVARIANT: archetype change ALWAYS loads that archetype's
       // born-with trait set — atomically, in THIS transaction. Create the new
       // trait rule docs and write archetype + equippedTraits together (tx.set +
@@ -149,6 +170,8 @@ export default async function handler(req, res) {
         archetype,
         updatedAt: nowIso,
         ...(seeded && seeded.equippedTraits ? { equippedTraits: seeded.equippedTraits } : {}),
+        // Dial invalidation rides the same atomic commit (V2.1 STOP-B).
+        ...(dialInvalidated ? { 'dials.tempo': 'standard' } : {}),
       });
 
       // equippedTraits rides along for the WS1 rescan (projection input) — now

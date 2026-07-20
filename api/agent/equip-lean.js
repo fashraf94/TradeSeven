@@ -46,11 +46,11 @@ import { findEquipConflicts } from '../../src/data/archetypeAdjustments.js';
 // for API-surface convenience.
 import { validateLeanPin, STANDING_LEANS_CAP, LEAN_INVALIDATION_REASONS } from '../_utils/leanRevalidation.js';
 // Mastery P2 (spec §6 D1 dual anchor — the WRITE/chokepoint half): the cap
-// becomes level-derived from the live masteryProfile, and the resolved cap
-// is stamped onto the agent doc (masteryLeanCap — client-write-denied by
-// the agents allowlist) so the snapshot kernel's clamp half reads the same
-// number. Dark (enforcement off): no profile read, baseline cap, no stamp —
-// byte-identical.
+// is level-derived from the live masteryProfile at write time. This
+// chokepoint is the ONLY per-user entitlement gate; the kernel half clamps
+// at the structural max (see leanRevalidation.resolveLeanCap — P2-review
+// redesign: no stamped field, nothing doc-trusted). Dark (enforcement
+// off): no profile read, baseline cap — byte-identical.
 import { MASTERY_ENFORCEMENT_ENABLED } from '../_utils/masteryConfig.js';
 import { masteryProfileRef, archetypeLevelFromProfile, leanCapForLevel } from '../_utils/masteryEnforcement.js';
 import { waitUntil } from '@vercel/functions';
@@ -69,7 +69,9 @@ const SENTINEL_TO_HTTP = Object.freeze({
   not_in_menu:        [400, 'not_in_menu',        'That adjustment is not in this agent\'s archetype menu.'],
   deprecated_version: [409, 'deprecated_version', 'That adjustment\'s text has changed since this was loaded — review the current wording and re-equip.'],
   conflicting_lean:   [409, 'conflicting_lean',   'That lean opposes an already-equipped lean — unequip the other one first.'],
-  lean_limit:         [409, 'lean_limit',         `An agent can hold at most ${STANDING_LEANS_CAP} standing leans — unequip one first.`],
+  // §9: the copy never bakes in a number — the response's `leanCap` detail
+  // carries the exact cap the rejection used (level-derived under mastery).
+  lean_limit:         [409, 'lean_limit',         'Standing-lean capacity reached — unequip one first.'],
 });
 
 export default async function handler(req, res) {
@@ -172,9 +174,13 @@ export default async function handler(req, res) {
       }
 
       // Level-derived cap (baseline 2; a version refresh of an existing pin
-      // does not add a slot).
+      // does not add a slot). The rejection carries the RESOLVED cap so the
+      // client renders the number the decision used — §9: never the static
+      // baseline copy beside a level-derived decision.
       if (!existing && current.length >= leanCap) {
-        throw new Error(SENTINEL_PREFIX + 'lean_limit');
+        const err = new Error(SENTINEL_PREFIX + 'lean_limit');
+        err.details = { leanCap, equippedCount: current.length };
+        throw err;
       }
 
       const entry = { adjustmentId, version, equippedAt: nowIso };
@@ -182,13 +188,10 @@ export default async function handler(req, res) {
         ? current.map((l) => (l?.adjustmentId === adjustmentId ? entry : l))
         : [...current, entry];
 
-      // settingsRev rides structurally (Release 2 changelog #7). Under
-      // enforcement the resolved cap is stamped for the snapshot kernel
-      // (the dual anchor's shared number — §9 one source).
+      // settingsRev rides structurally (Release 2 changelog #7).
       txUpdateAgentSettings(tx, agentRef, {
         standingLeans,
         updatedAt: nowIso,
-        ...(MASTERY_ENFORCEMENT_ENABLED ? { masteryLeanCap: leanCap } : {}),
       });
       return { idempotent: false, refreshed: !!existing, standingLeans };
     });

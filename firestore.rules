@@ -195,7 +195,17 @@ service cloud.firestore {
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency'])
                     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['status'])
-                        || request.resource.data.status != 'equipped');
+                        || request.resource.data.status != 'equipped')
+                    // Mastery P2 (§6.1 rider, review finding): an EQUIPPED
+                    // bundle's rule CONTENT is immutable to clients — else a
+                    // compliant bundle could pass the equip-time capacity
+                    // check and be inflated afterwards, and every
+                    // reprojection (gatherBundleSnapshots) would carry the
+                    // inflated set into activeRules. Dimension/telemetry
+                    // fields on equipped docs stay writable (the
+                    // persist-on-launch case). Server (Admin SDK) unaffected.
+                    && (resource.data.status != 'equipped'
+                        || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ruleIds', 'ruleSnapshots', 'ruleHardness']));
         allow delete: if false;
       }
 
