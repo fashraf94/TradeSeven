@@ -152,6 +152,7 @@ export function buildAwardDoc({
   reasonCode,
   levelProvisional,
   backfilled,
+  placementInputs,
 }) {
   return {
     archetype,
@@ -166,6 +167,9 @@ export function buildAwardDoc({
     ...(reasonCode ? { reasonCode } : {}),
     ...(levelProvisional === true ? { levelProvisional: true } : {}),
     ...(backfilled === true ? { backfilled: true } : {}),
+    // P2 auditability (founder-directed): the exact sibling ids + scores
+    // placement consumed — see computePlacementInputs. Real awards only.
+    ...(placementInputs ? { placementInputs } : {}),
   };
 }
 

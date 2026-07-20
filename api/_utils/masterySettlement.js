@@ -223,20 +223,44 @@ export function computePlacementInputs({ battle, siblings }) {
     return {
       humansOutplaced: 0,
       wonAgainstField: Number.isFinite(myScore) && Number.isFinite(opponentScore) && myScore > opponentScore,
+      snapshot: {
+        basis: 'tiered_opponent',
+        opponentScore: Number.isFinite(opponentScore) ? opponentScore : null,
+      },
     };
   }
   const cohort = sameDayCohort(battle, siblings);
   let humansOutplaced = 0;
   let strictlyAboveAll = Number.isFinite(myScore);
+  const snapshotEntries = [];
   for (const sib of cohort) {
     const sibScore = sib.scoreState?.currentScore;
     const finite = Number.isFinite(sibScore);
-    if (finite && sib.isCpu !== true && Number.isFinite(myScore) && sibScore < myScore) {
-      humansOutplaced += 1;
-    }
+    const outplaced = finite && sib.isCpu !== true && Number.isFinite(myScore) && sibScore < myScore;
+    if (outplaced) humansOutplaced += 1;
     if (!finite || !(myScore > sibScore)) strictlyAboveAll = false;
+    snapshotEntries.push({
+      battleId: sib.id,
+      score: finite ? sibScore : null, // NaN/absent is not Firestore-storable; null records "unusable"
+      isCpu: sib.isCpu === true,
+      outplaced,
+    });
   }
-  return { humansOutplaced, wonAgainstField: strictlyAboveAll && cohort.length > 0 };
+  // Deterministic order (§12: the snapshot itself must be order-independent).
+  snapshotEntries.sort((a, b) => (a.battleId < b.battleId ? -1 : 1));
+  return {
+    humansOutplaced,
+    wonAgainstField: strictlyAboveAll && cohort.length > 0,
+    // P2 auditability commit (founder-directed): the EXACT inputs placement
+    // was computed from, recorded onto the award receipt. Converts the
+    // ADV-1 residual (a stale stolen-lock worker mutating a completed
+    // sibling's scoreState AFTER awards) from silent divergence into an
+    // auditable one — diffing a receipt's snapshot against the live docs
+    // exposes any post-award score mutation. §9 one-source by construction:
+    // the snapshot rows are emitted by the same loop that computed the
+    // components.
+    snapshot: { basis: 'same_day_terminal_cohort', cohort: snapshotEntries },
+  };
 }
 
 /**
@@ -572,6 +596,7 @@ export async function runAwardTransaction(db, battleId, { nowIso, groupCache = n
       levelAfter,
       epochId,
       settledAt: nowIso,
+      placementInputs: placement.snapshot,
       ...(rateBand === 0 ? { reasonCode: REASON_CODES.DAILY_CEILING } : {}),
     });
 

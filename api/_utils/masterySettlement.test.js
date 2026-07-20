@@ -226,6 +226,17 @@ describe('§12 ORDER-INDEPENDENCE property — permute settlement AND evaluation
     expect(s.awards.tr1.multipliers).toEqual({ mode: 0.6, rateBand: 0.5 });
     // tb-u2 (league): 25 + 25 + 30(outplaced u3; CPU top blocks field win) = 80
     expect(s.awards['tb-u2'].xpFinal).toBe(80);
+    // ADV-1 auditability: the receipt records the EXACT cohort inputs used,
+    // deterministically ordered — a post-award sibling-score mutation is
+    // detectable by diffing this against the live docs.
+    expect(s.awards['tb-u2'].placementInputs).toEqual({
+      basis: 'same_day_terminal_cohort',
+      cohort: [
+        { battleId: 'tb-cpu', score: 70, isCpu: true, outplaced: false },
+        { battleId: 'tb-u3', score: 30, isCpu: false, outplaced: true },
+      ],
+    });
+    expect(s.awards.b1.placementInputs).toEqual({ basis: 'tiered_opponent', opponentScore: 30 });
     // tb-u3: 25 + 15 + 0 = 40
     expect(s.awards['tb-u3'].xpFinal).toBe(40);
     // profiles
@@ -482,7 +493,8 @@ describe('unit surfaces', () => {
 
   it('computePlacementInputs: tiered win/loss/tie against the embedded CPU', () => {
     const tiered = (mine, opp) => computePlacementInputs({ battle: battle('x', { scoreState: { currentScore: mine, opponentScore: opp } }) });
-    expect(tiered(40, 30)).toEqual({ humansOutplaced: 0, wonAgainstField: true });
+    expect(tiered(40, 30)).toMatchObject({ humansOutplaced: 0, wonAgainstField: true });
+    expect(tiered(40, 30).snapshot).toEqual({ basis: 'tiered_opponent', opponentScore: 30 }); // ADV-1 audit record
     expect(tiered(30, 40).wonAgainstField).toBe(false);
     expect(tiered(40, 40).wonAgainstField).toBe(false); // strict — ties pay nothing
   });
@@ -496,7 +508,7 @@ describe('unit surfaces', () => {
       { id: 'h2', ownerId: 'u8', createdAt: BORN, timing: DAY, scoreState: { currentScore: 50 } },  // tie — not outplaced
       { id: 'c1', ownerId: 'cpu-owner', isCpu: true, createdAt: BORN, timing: DAY, scoreState: { currentScore: 10 } }, // CPU below — not a human
     ];
-    expect(computePlacementInputs({ battle: me, siblings: sibs })).toEqual({ humansOutplaced: 1, wonAgainstField: false });
+    expect(computePlacementInputs({ battle: me, siblings: sibs })).toMatchObject({ humansOutplaced: 1, wonAgainstField: false });
     const sibsBroken = [{ id: 'h1', ownerId: 'u9', createdAt: BORN, timing: DAY, scoreState: { currentScore: NaN } }];
     expect(computePlacementInputs({ battle: me, siblings: sibsBroken }).wonAgainstField).toBe(false);
   });
@@ -508,7 +520,7 @@ describe('unit surfaces', () => {
     const late = { id: 'late', ownerId: 'u9', createdAt: '2026-07-20T20:40:00.000Z', timing: DAY, status: 'active', scoreState: { currentScore: 99 } };
     // Not in MY cohort: no placement effect AND the terminality gate never waits on it.
     expect(sameDayCohort(me, [late])).toEqual([]);
-    expect(computePlacementInputs({ battle: me, siblings: [late] })).toEqual({ humansOutplaced: 0, wonAgainstField: false });
+    expect(computePlacementInputs({ battle: me, siblings: [late] })).toMatchObject({ humansOutplaced: 0, wonAgainstField: false });
     // Asymmetric and honest: MY battle (born 13:00Z, before the late battle's
     // close) IS in the late battle's cohort — it competed against my frozen score.
     const lateAsBattle = battle('late', {
@@ -518,7 +530,7 @@ describe('unit surfaces', () => {
     });
     const meAsSibling = { id: 'me', ownerId: 'u1', createdAt: '2026-07-20T13:00:00.000Z', timing: DAY, status: 'completed', scoreState: { currentScore: 10 } };
     expect(sameDayCohort(lateAsBattle, [meAsSibling])).toHaveLength(1);
-    expect(computePlacementInputs({ battle: lateAsBattle, siblings: [meAsSibling] })).toEqual({ humansOutplaced: 1, wonAgainstField: true });
+    expect(computePlacementInputs({ battle: lateAsBattle, siblings: [meAsSibling] })).toMatchObject({ humansOutplaced: 1, wonAgainstField: true });
   });
 
   it('computePlacementInputs: DAY-SCOPING — groups keep one groupId across daily redeploys, so prior-day battles (including your OWN) are never opponents', () => {
@@ -540,14 +552,14 @@ describe('unit surfaces', () => {
     ];
     // 0 humans outplaced (own battle excluded by owner, h-d1 by day);
     // strict first among the DAY-2 field → CPU_PLACEMENT path.
-    expect(computePlacementInputs({ battle: me, siblings: sibs })).toEqual({ humansOutplaced: 0, wonAgainstField: true });
+    expect(computePlacementInputs({ battle: me, siblings: sibs })).toMatchObject({ humansOutplaced: 0, wonAgainstField: true });
     // Same-owner same-day exclusion is belt-and-braces: a same-day own doc
     // still never counts as a human outplaced.
     const ownSameDay = [{ id: 'me-dup', ownerId: 'u1', timing: { tradingDays: ['2026-07-21'] }, scoreState: { currentScore: 4 } }];
     expect(computePlacementInputs({ battle: me, siblings: ownSameDay }).humansOutplaced).toBe(0);
     // A battle with NO day key concedes placement entirely (empty cohort).
     const noDay = battle('noday', { gameMode: 'baggerbomb_tournament', groupId: 'g', scoreState: { currentScore: 99 }, timing: {} });
-    expect(computePlacementInputs({ battle: noDay, siblings: sibs })).toEqual({ humansOutplaced: 0, wonAgainstField: false });
+    expect(computePlacementInputs({ battle: noDay, siblings: sibs })).toMatchObject({ humansOutplaced: 0, wonAgainstField: false });
   });
 
   it('isMasterySubject: the one structurally-outside predicate', () => {
