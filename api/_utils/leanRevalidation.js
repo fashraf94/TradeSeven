@@ -21,11 +21,40 @@
 //     NEW archetype rides the existing rescan event.
 
 import { isValidAdjustmentId, getCanonicalText, getCanonicalTextVersion, findEquipConflicts } from '../../src/data/archetypeAdjustments.js';
+import { MASTERY_ENFORCEMENT_ENABLED } from './masteryConfig.js';
 
 // Master spec §3.1 — the domain cap lives here (the validity kernel), and the
 // equip endpoint imports it, so the write path and the snapshot path can
-// never disagree on the limit.
+// never disagree on the limit. Mastery P2: this is the BASELINE (= mastery
+// L1's two slots); level-derived caps are grants above it, resolved by
+// resolveLeanCap below.
 export const STANDING_LEANS_CAP = 2;
+
+// Mastery caps are grants in [baseline .. 4] (§6: L3 → 3, L6 → 4).
+const MASTERY_LEAN_CAP_MAX = 4;
+
+/**
+ * Mastery P2 (spec §6 D1 dual anchor — the SNAPSHOT/kernel half): the lean
+ * cap the revalidation applies for this agent. With enforcement off this is
+ * the baseline constant (byte-identical behavior). With enforcement on it
+ * reads the server-stamped `agent.masteryLeanCap` — written by the
+ * equip-lean chokepoint's transaction from the live masteryProfile (the
+ * WRITE half of the dual anchor), client-write-denied by the agents
+ * allowlist — failing toward baseline on anything malformed. Grants-only by
+ * construction: the resolved cap is never below baseline, so enforcement
+ * can only widen what the kernel accepts (unlocks never revoke).
+ *
+ * All mastery logic stays HERE (non-fence): the fenced createAgentBattle
+ * call site passes the same agentData it always has.
+ */
+export function resolveLeanCap(agentData, enforcementEnabled = MASTERY_ENFORCEMENT_ENABLED) {
+  if (enforcementEnabled !== true) return STANDING_LEANS_CAP;
+  const stamped = agentData?.masteryLeanCap;
+  if (Number.isInteger(stamped) && stamped >= STANDING_LEANS_CAP && stamped <= MASTERY_LEAN_CAP_MAX) {
+    return stamped;
+  }
+  return STANDING_LEANS_CAP;
+}
 
 export const LEAN_INVALIDATION_REASONS = Object.freeze({
   MALFORMED: 'malformed',
@@ -103,7 +132,7 @@ export function validateLeanPin(archetypeCodeId, adjustmentId, version) {
  *   invalidated: Array<{adjustmentId: string|null, version: number|null, reason: string}>,
  * }}
  */
-export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId } = {}) {
+export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId, leanCap = STANDING_LEANS_CAP } = {}) {
   const invalidated = [];
 
   // Pass 1 — per-pin validity through the shared rule, plus same-id dedupe
@@ -158,7 +187,7 @@ export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId } 
       });
       continue;
     }
-    if (accepted.length >= STANDING_LEANS_CAP) {
+    if (accepted.length >= leanCap) {
       invalidated.push({
         adjustmentId: lean.adjustmentId,
         version: lean.version,
@@ -196,6 +225,9 @@ export function buildCustomizationSnapshot(agentData, now) {
   const { valid, invalidated } = revalidateStandingLeans({
     standingLeans: agentData.standingLeans,
     archetypeCodeId: agentData.archetype,
+    // Mastery P2 dual anchor (kernel half): level-derived cap via the
+    // stamped field; baseline (byte-identical) while enforcement is off.
+    leanCap: resolveLeanCap(agentData),
   });
   if (invalidated.length > 0) {
     console.log('[LeanRevalidation]', JSON.stringify({

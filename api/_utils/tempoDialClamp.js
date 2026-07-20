@@ -5,6 +5,14 @@
 // eval cron's mode-resolution seam (api/cron/agent-evaluate.js:1009-1012 @
 // 4a0f43e, immediately after resolveHftConfig) — NOT fenced code.
 //
+// MASTERY P2 GRANDFATHERING PIN (spec §6 L2, deliberate): this clamp NEVER
+// consults mastery levels or profiles — equipped state never clamps. The
+// dial-position gate lives exclusively at set-tempo-dial's SETTING
+// validation; a battle whose snapshot carries a grandfathered 'aggressive'
+// runs it regardless of the owner's current level. Adding a level check
+// here would revoke equipped state, which §6 forbids ("Positions are
+// lateral style, not power; equipped state grandfathers").
+//
 // DESIRED → EFFECTIVE (spec changelog #2, fail closed, never silent):
 //   effective = 'standard' UNLESS
 //     TEMPO_DIAL_ENABLED (caller-passed)                        AND

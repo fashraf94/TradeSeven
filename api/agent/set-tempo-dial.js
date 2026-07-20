@@ -26,6 +26,15 @@ import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
 import { TEMPO_DIAL_ENABLED } from '../../src/config/featureFlags.js';
 import { VALID_TEMPO_VALUES } from '../_utils/tempoDialBands.js';
+// Mastery P2 (spec §6 L2): the dial-position gate — SETTING 'aggressive'
+// requires per-archetype mastery level ≥ 2 under enforcement. Equipped
+// state grandfathers by construction: the idempotent same-value branch
+// returns BEFORE this gate, and the tick-time clamp (tempoDialClamp.js)
+// never consults levels. Leaving aggressive below L2 is one-way until L2
+// (documented spec §6 behavior). Dark (enforcement off): no profile read —
+// byte-identical.
+import { MASTERY_ENFORCEMENT_ENABLED } from '../_utils/masteryConfig.js';
+import { masteryProfileRef, archetypeLevelFromProfile, dialAggressiveAllowed } from '../_utils/masteryEnforcement.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
@@ -35,6 +44,7 @@ const SENTINEL_TO_HTTP = Object.freeze({
   agent_not_found: [404, 'agent_not_found', 'Agent not found.'],
   forbidden:       [403, 'forbidden',       'Not authorized for this resource.'],
   battle_active:   [409, 'battle_active',   'Cannot change the tempo dial while the agent has an active battle.'],
+  dial_locked:     [403, 'dial_locked',     'The aggressive position unlocks at mastery level 2 for this archetype.'],
 });
 
 export default async function handler(req, res) {
@@ -79,9 +89,22 @@ export default async function handler(req, res) {
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
       if (agent.activeBattleId) throw new Error(SENTINEL_PREFIX + 'battle_active');
 
-      // Idempotent: already at this tempo → 200 no-op, no write.
+      // Idempotent: already at this tempo → 200 no-op, no write. Ordering is
+      // load-bearing (grandfathering): a grandfathered aggressive dial
+      // re-asserting itself no-ops here and never reaches the gate below.
       if (agent.dials?.tempo === tempo) {
         return { idempotent: true, previousTempo: tempo };
+      }
+
+      // Mastery P2 dial gate (§6 L2) — gates SETTING aggressive only; the
+      // profile read (spec §7: regardless of XP state; missing ⇒ level 1)
+      // precedes the write below.
+      if (MASTERY_ENFORCEMENT_ENABLED && tempo === 'aggressive') {
+        const profileSnap = await tx.get(masteryProfileRef(db, user.uid));
+        const level = archetypeLevelFromProfile(profileSnap.exists ? profileSnap.data() : null, agent.archetype);
+        if (!dialAggressiveAllowed(level)) {
+          throw new Error(SENTINEL_PREFIX + 'dial_locked');
+        }
       }
 
       const previousTempo = agent.dials?.tempo ?? null;

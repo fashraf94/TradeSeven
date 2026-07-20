@@ -34,6 +34,13 @@
 
 export const MASTERY_XP_ENABLED = false; // P4 cutover flips this (§7). Keep false through P1–P3.
 
+// P2 (spec §7): server cap checks — lean caps, dial gate, Forge effective
+// limits. Operative rules: ENFORCEMENT reads profiles + floors REGARDLESS
+// of XP state (0·1·0 = entitlements frozen at the last profile); missing
+// profile ⇒ baseline entitlements. Flip order: XP → backfill → ENFORCEMENT
+// (with floor audit) → SURFACE.
+export const MASTERY_ENFORCEMENT_ENABLED = false;
+
 // ---- Storage homes (net-new collections; firestore.rules default-deny +
 // explicit blocks; all writes Admin SDK only) ----
 export const MASTERY_CONFIG_COLLECTION = 'masteryConfig';

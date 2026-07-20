@@ -45,6 +45,14 @@ import { findEquipConflicts } from '../../src/data/archetypeAdjustments.js';
 // STANDING_LEANS_CAP lives there too (the domain kernel), re-exported here
 // for API-surface convenience.
 import { validateLeanPin, STANDING_LEANS_CAP, LEAN_INVALIDATION_REASONS } from '../_utils/leanRevalidation.js';
+// Mastery P2 (spec §6 D1 dual anchor — the WRITE/chokepoint half): the cap
+// becomes level-derived from the live masteryProfile, and the resolved cap
+// is stamped onto the agent doc (masteryLeanCap — client-write-denied by
+// the agents allowlist) so the snapshot kernel's clamp half reads the same
+// number. Dark (enforcement off): no profile read, baseline cap, no stamp —
+// byte-identical.
+import { MASTERY_ENFORCEMENT_ENABLED } from '../_utils/masteryConfig.js';
+import { masteryProfileRef, archetypeLevelFromProfile, leanCapForLevel } from '../_utils/masteryEnforcement.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
@@ -114,6 +122,16 @@ export default async function handler(req, res) {
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
       if (agent.activeBattleId) throw new Error(SENTINEL_PREFIX + 'battle_active');
 
+      // Mastery P2: level-derived lean cap (per-archetype level from the
+      // live profile — read REGARDLESS of the XP flag state, spec §7;
+      // missing profile ⇒ level 1 ⇒ baseline). Read precedes every write.
+      let leanCap = STANDING_LEANS_CAP;
+      if (MASTERY_ENFORCEMENT_ENABLED) {
+        const profileSnap = await tx.get(masteryProfileRef(db, user.uid));
+        const level = archetypeLevelFromProfile(profileSnap.exists ? profileSnap.data() : null, agent.archetype);
+        leanCap = leanCapForLevel(level);
+      }
+
       // Menu membership + version currency through the SHARED kernel
       // (leanRevalidation.validateLeanPin) — its reason vocabulary maps 1:1
       // onto this endpoint's sentinels, so the write path and the snapshot
@@ -153,8 +171,9 @@ export default async function handler(req, res) {
         throw err;
       }
 
-      // Cap 2 (a version refresh of an existing pin does not add a slot).
-      if (!existing && current.length >= STANDING_LEANS_CAP) {
+      // Level-derived cap (baseline 2; a version refresh of an existing pin
+      // does not add a slot).
+      if (!existing && current.length >= leanCap) {
         throw new Error(SENTINEL_PREFIX + 'lean_limit');
       }
 
@@ -163,10 +182,13 @@ export default async function handler(req, res) {
         ? current.map((l) => (l?.adjustmentId === adjustmentId ? entry : l))
         : [...current, entry];
 
-      // settingsRev rides structurally (Release 2 changelog #7).
+      // settingsRev rides structurally (Release 2 changelog #7). Under
+      // enforcement the resolved cap is stamped for the snapshot kernel
+      // (the dual anchor's shared number — §9 one source).
       txUpdateAgentSettings(tx, agentRef, {
         standingLeans,
         updatedAt: nowIso,
+        ...(MASTERY_ENFORCEMENT_ENABLED ? { masteryLeanCap: leanCap } : {}),
       });
       return { idempotent: false, refreshed: !!existing, standingLeans };
     });

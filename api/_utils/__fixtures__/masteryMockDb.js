@@ -175,6 +175,12 @@ export function makeMockDb(initialDocs = {}) {
       async set(data, opts) {
         commitWrite({ type: 'set', path, data, opts });
       },
+      // Reinstated for the P2 enforcement behavior tests (Forge endpoints
+      // read agents/{id}/bundles). Sub-collection docs are NOT visible to
+      // top-level collection queries (matching Firestore).
+      collection(sub) {
+        return makeCollection(`${path}/${sub}`);
+      },
     };
   };
 
@@ -254,6 +260,9 @@ export function makeMockDb(initialDocs = {}) {
             countRead(ref.path);
             readVersions.set(ref.path, versionOf(ref.path));
             return snapOf(ref.path);
+          },
+          async getAll(...refs) {
+            return Promise.all(refs.map((r) => t.get(r)));
           },
           update(ref, data) {
             writes.push({ type: 'update', path: ref.path, data });

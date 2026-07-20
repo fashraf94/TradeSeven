@@ -44,6 +44,15 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
+// Mastery P2 (spec §6.1 rider): the bundle-save path gains the server
+// rule-capacity check with the LAZY legacy floor. A8 BYTE-IDENTITY
+// EXEMPTION FOOTNOTE: with enforcement off this still enforces TODAY'S
+// legacy FORGE_LIMITS server-side (flags-off hardening of client-enforced
+// limits; spec §6.1 "standalone security hardening exempt from flags-off
+// byte-identity", patch flag-#4 precedent).
+import { getAgentLevel, FORGE_LIMITS } from '../../src/constants/agentProgression.js';
+import { MASTERY_ENFORCEMENT_ENABLED } from '../_utils/masteryConfig.js';
+import { masteryProfileRef, effectiveForgeLimits } from '../_utils/masteryEnforcement.js';
 import { snapshotsToActiveRules, gatherBundleSnapshots } from '../_utils/bundleRuleProjection.js';
 import { classifyByCategory } from '../_utils/ruleHardness.js';
 import { RULE_COMPAT_MODE } from '../../src/config/featureFlags.js';
@@ -62,6 +71,7 @@ const SENTINEL_TO_HTTP = Object.freeze({
   forbidden:        [403, 'forbidden',        'Not authorized for this resource.'],
   bundle_not_found: [404, 'bundle_not_found', 'Bundle not found.'],
   is_draft:         [400, 'is_draft',         'Cannot reforge a draft bundle — edit it directly'],
+  rule_limit:       [409, 'rule_limit',       'This bundle exceeds your rule capacity. Trim it before reforging.'],
 });
 
 export default async function handler(req, res) {
@@ -100,7 +110,12 @@ export default async function handler(req, res) {
   try {
     txResult = await db.runTransaction(async (tx) => {
       const bundleRef = bundlesCol.doc(bundleId);
-      const [agentSnap, bundleSnap] = await tx.getAll(agentRef, bundleRef);
+      // Mastery P2: the profile joins the batched read when enforcement is
+      // on (reads before writes; zero added I/O while dark).
+      const refs = MASTERY_ENFORCEMENT_ENABLED
+        ? [agentRef, bundleRef, masteryProfileRef(db, user.uid)]
+        : [agentRef, bundleRef];
+      const [agentSnap, bundleSnap, profileSnap] = await tx.getAll(...refs);
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
@@ -109,6 +124,21 @@ export default async function handler(req, res) {
       if (!bundleSnap.exists) throw new Error(SENTINEL_PREFIX + 'bundle_not_found');
       const bundle = bundleSnap.data();
       if (bundle.status === 'draft') throw new Error(SENTINEL_PREFIX + 'is_draft');
+
+      // §6.1 rider — server rule-capacity check at the bundle-save path
+      // (see the import note for the A8 exemption): the carried rule set
+      // must fit the effective capacity (lazy legacy floor under
+      // enforcement; live legacy limits while dark).
+      const legacyLimits = FORGE_LIMITS[getAgentLevel(agent.stats?.gamesPlayed || 0)];
+      const saveLimits = MASTERY_ENFORCEMENT_ENABLED
+        ? effectiveForgeLimits({ legacyLimits, profileData: profileSnap?.exists ? profileSnap.data() : null })
+        : legacyLimits;
+      const carriedRuleCount = Array.isArray(bundle.ruleSnapshots) ? bundle.ruleSnapshots.length : 0;
+      if (carriedRuleCount > saveLimits.maxRulesPerBundle) {
+        const err = new Error(SENTINEL_PREFIX + 'rule_limit');
+        err.details = { maxRulesPerBundle: saveLimits.maxRulesPerBundle, bundleRuleCount: carriedRuleCount };
+        throw err;
+      }
 
       // ── WS1 B3 — evaluate the hard overrides being carried forward ──
       // (reads the override rule docs; pure decisions; strips under enforce)
