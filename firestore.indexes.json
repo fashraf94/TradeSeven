@@ -250,6 +250,24 @@
       ]
     },
     {
+      "collectionGroup": "agentBattles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "agentContext.archetype",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "gameDesignFeedback",
       "queryScope": "COLLECTION",
       "fields": [

@@ -88,6 +88,17 @@ import { filterActiveConstraints } from '../_utils/visionRuntime.js';
 import { confidenceToFloat } from '../../src/constants/visionEnums.js';
 import { validateTransition } from '../../src/types/vision/visionValidators.js';
 import { Timestamp } from 'firebase-admin/firestore';
+// Archetype Mastery P1 (Spec V2 §3/§5; V2.1 memo of record:
+// docs/ARCHETYPE_MASTERY_SPEC_V2_1_STOP_RULINGS_JUL21_2026.md). Dark by
+// default: with the epoch registry empty (pre-first-enablement) every one of
+// these paths writes NOTHING mastery-related — flags-off byte-identity.
+import { readMasteryFlagView, DARK_FLAG_VIEW } from '../_utils/masteryConfig.js';
+import {
+  buildEligibilityStampFields,
+  stampMasterySlotFirstTick,
+  runAwardTransaction,
+  runRepairSweep,
+} from '../_utils/masterySettlement.js';
 
 // maxDuration raised 60→300 (agent-eval budget-starvation fix, July 2026). The
 // Pro-plan ceiling supports it — tournament-orchestrator.js already runs at 300.
@@ -145,14 +156,37 @@ export default async function handler(req, res) {
   const summary = { evaluated: 0, triggered: 0, swapped: 0, held: 0, errors: 0, skipped: 0, expired: 0 };
 
   try {
+    // ---- 1b. Mastery flag view (Spec V2 §5.1) — one registry read per run.
+    // On transport failure, expiry COMPLETIONS are deferred to the next run
+    // (delay-not-loss: a settlement-path completion without a stamp would be
+    // invisible to the stamps-only §5.3 sweep forever); evaluations proceed
+    // unaffected. Pre-epoch-1 the clean read yields the dark view and
+    // settlement writes nothing mastery-related (byte-identity).
+    let masteryFlagView = DARK_FLAG_VIEW;
+    let masteryFlagReadFailed = false;
+    try {
+      masteryFlagView = await readMasteryFlagView(db);
+    } catch (flagErr) {
+      masteryFlagReadFailed = true;
+      console.error(`${LOG_PREFIX} mastery flag-view read FAILED — expiry completions deferred this run (delay-not-loss): ${flagErr.message}`);
+    }
+    // Per-run memo for tournamentGroups docs on the mastery mode/award path
+    // (distinct from the eval loop's tournamentGroupCache, which is created
+    // after the market-hours gate).
+    const masteryGroupCache = new Map();
+
     // ---- 2. Complete expired battles (runs regardless of market hours) ----
     const allBattles = await findActiveAgentBattles(db);
     const activeBattles = [];
 
     for (const battle of allBattles) {
       if (battle.expiresAt && new Date(battle.expiresAt) < new Date()) {
+        if (masteryFlagReadFailed) {
+          summary.skipped++;
+          continue; // deferred whole: neither completed nor evaluated this run
+        }
         try {
-          await completeBattle(db, battle, summary);
+          await completeBattle(db, battle, summary, masteryFlagView, masteryGroupCache);
           // Log battle pattern for earned trait detection (Phase 2 pre-warm, non-blocking)
           logBattlePattern(battle.agentId, battle.id, battle).catch(err => {
             console.error(`${LOG_PREFIX} Pattern logging failed for battle ${battle.id}:`, err.message);
@@ -166,6 +200,24 @@ export default async function handler(req, res) {
         }
       } else {
         activeBattles.push(battle);
+      }
+    }
+
+    // ---- 2b. Mastery repair sweep (Spec V2 §5.3) — stamps-only, hosted on
+    // this EXISTING cron cadence (no new schedule entry, BUILD_RULES §6).
+    // Isolated like the canonical-open sweep: failures never propagate.
+    // No-ops in one query when nothing is pending; skips entirely pre-epoch-1.
+    if (!masteryFlagReadFailed && masteryFlagView.everEnabled) {
+      try {
+        summary.masterySweep = await runRepairSweep(db, {
+          flagView: masteryFlagView,
+          nowIso: new Date().toISOString(),
+          limit: 25,
+          groupCache: masteryGroupCache,
+        });
+      } catch (sweepErr) {
+        console.error(`${LOG_PREFIX} [masterySweep] FAILED (isolated — agent-evaluate unaffected): ${sweepErr.message}`);
+        summary.masterySweep = { error: sweepErr.message };
       }
     }
 
@@ -227,7 +279,7 @@ export default async function handler(req, res) {
         // Pass startTime so processAgentBattle can budget-gate the Phase 3
         // anticipation dispatch in its finally block (anticipations skip
         // gracefully if <12s of cron budget remain; narrations always fire).
-        await processAgentBattle(db, battle, summary, startTime, tournamentGroupCache);
+        await processAgentBattle(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView);
       } catch (err) {
         console.error(`${LOG_PREFIX} Error processing battle ${battle.id}:`, err.message);
         summary.errors++;
@@ -430,7 +482,7 @@ function buildPoolEmptyFeedEntry({ message, symbolOut, symbolIn = null, regime =
   };
 }
 
-async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map()) {
+async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map(), masteryFlagView = DARK_FLAG_VIEW) {
   const battleRef = db.collection('agentBattles').doc(battle.id);
 
   // ---- Idempotency: atomically check and acquire evaluatingAt lock ----
@@ -512,6 +564,23 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       console.log(`${LOG_PREFIX} Migrating battle ${battle.id}: adding ${Object.keys(migrationFields).join(', ')}`);
       await battleRef.update(migrationFields);
       Object.assign(battle, migrationFields);
+    }
+
+    // ---- Mastery slot stamp (Spec V2 §3) — FIRST evaluation tick, write-once.
+    // The stamp is authoritative once written (authority inversion); the
+    // in-transaction re-read guard inside stampMasterySlotFirstTick is the
+    // regimeAtStart pattern, so a stolen eval lock cannot double-stamp.
+    // Dark pre-epoch-1 (everEnabled false → zero writes); CPU system agents
+    // are structurally outside mastery (V2.1 memo). Errors are swallowed —
+    // the slot derives lazily at settlement (§3) so evaluation is never
+    // blocked and nothing is lost.
+    if (masteryFlagView.everEnabled && battle.isCpu !== true && battle.masterySlot === undefined) {
+      try {
+        const slotResult = await stampMasterySlotFirstTick(db, battle, { nowIso: new Date().toISOString() });
+        if (slotResult.stamp) battle.masterySlot = slotResult.stamp;
+      } catch (slotErr) {
+        console.error(`${LOG_PREFIX} mastery slot stamp failed for battle ${battle.id} (ignored — settles lazily): ${slotErr.message}`);
+      }
     }
 
     // ---- P2: tournament context (null for every regular battle) ----
@@ -3491,94 +3560,144 @@ export function resolveCompletionDisposition(battle) {
 
 /**
  * Complete an expired battle: set status, update agent stats.
+ *
+ * STOP-A.1 (V2.1 memo, founder-approved): the terminal write is a GUARDED
+ * TRANSACTION — an in-transaction re-read confirms the battle is still
+ * 'active' before committing (the regimeAtStart write-once pattern at the
+ * regime stamp above), so racing workers (stolen 120s eval lock, decide.js
+ * GC) can never double-complete or split-brain the eligibility stamp; the
+ * first committer wins and losers no-op, skipping stats too. The committed
+ * payload is built from the transaction's OWN fresh read and is
+ * byte-identical to the legacy plain-update payload (flags-off scope —
+ * photographed by masteryDarkIdentity.test.js).
+ *
+ * §5.1 (Spec V2 + V2.1 restated invariant): when epoch 1 has begun
+ * (flagView.everEnabled), the SAME transaction that first commits
+ * status:'completed' also writes masteryEligibility {eligible: worker's own
+ * flag view, epochId} + the masteryAwardPending sweep marker — atomic with
+ * the transition, write-once by the same 'active'-state guard. Pre-epoch-1
+ * it writes nothing mastery-related (dark byte-identity). CPU system agents
+ * are structurally outside mastery and are never stamped.
+ *
+ * Exported for the P1 acceptance tests (mock-db precedent:
+ * resolveCompletionDisposition / p4Flips.test.js).
  */
-async function completeBattle(db, battle, summary) {
+export async function completeBattle(db, battle, summary, masteryFlagView = DARK_FLAG_VIEW, masteryGroupCache = new Map()) {
   const battleRef = db.collection('agentBattles').doc(battle.id);
   const now = new Date().toISOString();
-  const scoreState = battle.scoreState || {};
-  const currentScore = scoreState.currentScore || 0;
-  const disposition = resolveCompletionDisposition(battle);
-  const result = disposition.result;
+  // Pre-computed ONCE so transaction retries reuse the same instant (a
+  // retry must not shift vision timestamps).
+  const visionTransitionTs = Timestamp.now();
 
-  // ---- Vision retired transition (Spec A Phase 2a + fix-up) ----
-  // Build the retired Vision (if applicable) so it can be written atomically
-  // with status='completed'. The cron is the proximate writer; the schema
-  // (visionTransitions.js) admits actor='cron' on battle_end -> retired
-  // alongside 'sonnet' (reserved for future Sonnet-authored retirement
-  // paths). Using 'cron' here distinguishes infrastructure-driven retirement
-  // from AI-reasoning-driven retirement in the shadow log.
-  let retiredVisionForWrite = null;
-  let visionTransitionLogPayload = null;
-  const prevVision = battle?.vision ?? null;
-  if (prevVision && prevVision.state !== 'retired') {
-    const transitionTs = Timestamp.now();
-    const newEntry = {
-      fromState: prevVision.state,
-      toState: 'retired',
-      timestamp: transitionTs,
-      actor: 'cron',
-      cause: 'battle_end',
-    };
-    const nextVision = {
-      ...prevVision,
-      state: 'retired',
-      transitionHistory: [...(prevVision.transitionHistory || []), newEntry],
-      lastTransitionAt: transitionTs,
-    };
-    const validation = validateTransition(prevVision, nextVision, 'cron', 'battle_end');
-    if (validation.valid) {
-      retiredVisionForWrite = nextVision;
-      visionTransitionLogPayload = {
-        battleId: battle.id,
-        visionSnapshot: nextVision,
-        transition: {
-          fromState: prevVision.state,
-          toState: 'retired',
-          actor: 'cron',
-          cause: 'battle_end',
-          timestamp: transitionTs,
-        },
-        triggerContext: null,
-        userInput: null,
+  const txOutcome = await db.runTransaction(async (t) => {
+    const snap = await t.get(battleRef);
+    if (!snap.exists) return { committed: false, reason: 'missing' };
+    const fresh = { id: battle.id, ...snap.data() };
+    if (fresh.status !== 'active') return { committed: false, reason: 'already_terminal' };
+
+    const scoreState = fresh.scoreState || {};
+    const currentScore = scoreState.currentScore || 0;
+    const disposition = resolveCompletionDisposition(fresh);
+
+    // ---- Vision retired transition (Spec A Phase 2a + fix-up) ----
+    // Build the retired Vision (if applicable) so it can be written atomically
+    // with status='completed'. The cron is the proximate writer; the schema
+    // (visionTransitions.js) admits actor='cron' on battle_end -> retired
+    // alongside 'sonnet' (reserved for future Sonnet-authored retirement
+    // paths). Using 'cron' here distinguishes infrastructure-driven retirement
+    // from AI-reasoning-driven retirement in the shadow log.
+    let retiredVisionForWrite = null;
+    let visionTransitionLogPayload = null;
+    const prevVision = fresh?.vision ?? null;
+    if (prevVision && prevVision.state !== 'retired') {
+      const transitionTs = visionTransitionTs;
+      const newEntry = {
+        fromState: prevVision.state,
+        toState: 'retired',
+        timestamp: transitionTs,
+        actor: 'cron',
+        cause: 'battle_end',
       };
-    } else {
-      console.error(
-        `${LOG_PREFIX} Vision retire validation failed for battle ${battle.id}:`,
-        validation.errors.join('; ')
-      );
-      // Fall through: status='completed' still writes; Vision stays as-is.
+      const nextVision = {
+        ...prevVision,
+        state: 'retired',
+        transitionHistory: [...(prevVision.transitionHistory || []), newEntry],
+        lastTransitionAt: transitionTs,
+      };
+      const validation = validateTransition(prevVision, nextVision, 'cron', 'battle_end');
+      if (validation.valid) {
+        retiredVisionForWrite = nextVision;
+        visionTransitionLogPayload = {
+          battleId: battle.id,
+          visionSnapshot: nextVision,
+          transition: {
+            fromState: prevVision.state,
+            toState: 'retired',
+            actor: 'cron',
+            cause: 'battle_end',
+            timestamp: transitionTs,
+          },
+          triggerContext: null,
+          userInput: null,
+        };
+      } else {
+        console.error(
+          `${LOG_PREFIX} Vision retire validation failed for battle ${battle.id}:`,
+          validation.errors.join('; ')
+        );
+        // Fall through: status='completed' still writes; Vision stays as-is.
+      }
     }
-  }
 
-  // Update battle status
-  const existingFeed = battle.statusFeed || [];
-  const updatePayload = {
-    status: 'completed',
-    completedAt: now,
-    // Sprint 1 fix: gate reflection on a queue flag so the dedicated
-    // process-pending-reflections cron can pick it up on its own
-    // maxDuration budget. Lands in the same atomic update as status.
-    // P4: tournament CPU battles skip reflection (contract #5 passivity).
-    pendingReflection: disposition.pendingReflection,
-    reflectedAt: null,
-    'cronState.evaluatingAt': null,
-    statusFeed: [...existingFeed, {
-      timestamp: now,
-      message: disposition.statusMessage,
-      action: 'battle_complete',
-      source: 'system',
-      score: Math.round(currentScore * 100) / 100,
-    }].slice(-50),
-  };
-  // P4: the tournament terminal state is explicit — completed, context
-  // stamped, no result semantics (founder scope addition, June 12).
-  if (disposition.completionContext) {
-    updatePayload.completionContext = disposition.completionContext;
+    // Update battle status
+    const existingFeed = fresh.statusFeed || [];
+    const updatePayload = {
+      status: 'completed',
+      completedAt: now,
+      // Sprint 1 fix: gate reflection on a queue flag so the dedicated
+      // process-pending-reflections cron can pick it up on its own
+      // maxDuration budget. Lands in the same atomic update as status.
+      // P4: tournament CPU battles skip reflection (contract #5 passivity).
+      pendingReflection: disposition.pendingReflection,
+      reflectedAt: null,
+      'cronState.evaluatingAt': null,
+      statusFeed: [...existingFeed, {
+        timestamp: now,
+        message: disposition.statusMessage,
+        action: 'battle_complete',
+        source: 'system',
+        score: Math.round(currentScore * 100) / 100,
+      }].slice(-50),
+    };
+    // P4: the tournament terminal state is explicit — completed, context
+    // stamped, no result semantics (founder scope addition, June 12).
+    if (disposition.completionContext) {
+      updatePayload.completionContext = disposition.completionContext;
+    }
+    if (retiredVisionForWrite) {
+      updatePayload.vision = retiredVisionForWrite;
+    }
+
+    // ---- Mastery eligibility stamp (§5.1) — same transaction as the
+    // status flip; nothing pre-epoch-1; CPU seats structurally outside.
+    let masteryStamped = false;
+    if (masteryFlagView.everEnabled && fresh.isCpu !== true && fresh.masteryEligibility === undefined) {
+      Object.assign(updatePayload, buildEligibilityStampFields(masteryFlagView, now));
+      masteryStamped = true;
+    }
+
+    t.update(battleRef, updatePayload);
+    return { committed: true, disposition, currentScore, visionTransitionLogPayload, masteryStamped };
+  });
+
+  if (!txOutcome.committed) {
+    // Another writer finished this battle first (stolen-lock overlap or the
+    // decide.js GC race) — the winner owns stats/logs; this path no-ops.
+    console.log(`${LOG_PREFIX} Battle ${battle.id} completion skipped (${txOutcome.reason}).`);
+    return;
   }
-  if (retiredVisionForWrite) {
-    updatePayload.vision = retiredVisionForWrite;
-  }
-  await battleRef.update(updatePayload);
+  const { disposition, currentScore, visionTransitionLogPayload } = txOutcome;
+  const result = disposition.result;
 
   // Fire-and-forget shadow log of the retired transition (after Firestore write succeeds).
   if (visionTransitionLogPayload) {
@@ -3624,6 +3743,23 @@ async function completeBattle(db, battle, summary) {
       },
       activeBattleId: null,
     });
+  }
+
+  // ---- Mastery award (§5.2) — its own transaction (write-once on
+  // masteryAward absence + masteryProfiles increment together). XP computes
+  // at completeBattle (spec §2.3); a crash between the completion stamp
+  // above and this award is exactly what the §5.3 repair sweep repairs, so
+  // failures here log and defer — never throw into the expiry loop.
+  if (txOutcome.masteryStamped) {
+    try {
+      await runAwardTransaction(db, battle.id, {
+        flagView: masteryFlagView,
+        nowIso: now,
+        groupCache: masteryGroupCache,
+      });
+    } catch (awardErr) {
+      console.error(`${LOG_PREFIX} mastery award failed for battle ${battle.id} (repair sweep will retry): ${awardErr.message}`);
+    }
   }
 
   console.log(`${LOG_PREFIX} Battle ${battle.id} completed. ${disposition.logLine}`);

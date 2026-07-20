@@ -711,6 +711,43 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════
+    // ARCHETYPE MASTERY (Spec V2 §5/§6; V2.1 memo
+    // docs/ARCHETYPE_MASTERY_SPEC_V2_1_STOP_RULINGS_JUL21_2026.md)
+    // Server-only collection pattern (career-rank precedent — user-doc XP is
+    // forgeable, spec ruling B4/n17). All writes are Admin SDK settlement
+    // transactions; NOTE: rules deploy is manual (npm run deploy:rules /
+    // Firebase Console) — these blocks are inert until deployed.
+    // ═══════════════════════════════════════════
+
+    // Mastery profiles — owner-read, server-write (spec §6). The doc id IS
+    // the userId; per-archetype {xp, level, battlesCounted, lastAwardAt}
+    // live under archetypes.{archetypeId}.
+    match /masteryProfiles/{userId} {
+      allow read: if request.auth != null
+                  && request.auth.uid == userId;
+      allow write: if false;  // Admin SDK only (award transaction)
+    }
+
+    // Epoch registry (append-only config doc) + any future mastery config.
+    // No client reads (internals; the SURFACE flag reads profiles, not this).
+    match /masteryConfig/{docId} {
+      allow read: if false;   // Admin SDK only
+      allow write: if false;  // Admin SDK only
+    }
+
+    // Quarantine/audit ledger — server-only diagnostics (spec §4: the public
+    // surface is the receipt's reasonCode enum ONLY; the Film Room never
+    // renders internals).
+    match /masteryQuarantine/{entryId} {
+      allow read: if false;   // Admin SDK only
+      allow write: if false;  // Admin SDK only
+    }
+
+    // masteryCorrections (spec §8) is deliberately ABSENT here: the
+    // collection ships in a later phase and the catch-all below already
+    // denies it; adding an explicit block rides that PR.
+
+    // ═══════════════════════════════════════════
     // Default deny everything else
     // ═══════════════════════════════════════════
     match /{document=**} {
