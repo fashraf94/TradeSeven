@@ -421,6 +421,63 @@ describe('deploy plumbing — the live branch (deployEnabled injection)', () => 
     expect(JSON.parse(opts.body).ownerOdUserId).toBe('u1');
   });
 
+  // G2 (docs/audits/20260720_G2_ACTIVEBATTLEID_CONFLICT_DISCOVERY.md): /api/agent/decide
+  // returns HTTP 200 { battleCreated:false } when a casual battle already blocks the
+  // agent. Previously fanOutDeploys counted any 200 as a deploy, hiding the skip.
+  it('a 200 with battleCreated:false counts as a skip (not a deploy) and warns loudly', async () => {
+    const { db } = makeDb();
+    const warnSpy = vi.spyOn(console, 'warn');
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ success: true, battleCreated: false, reason: 'Agent already has an active battle' }),
+    }));
+    const out = await fanOutDeploys(db, {
+      groupId: 'g1', seats: seats2().slice(0, 1), now: MON_MORNING_EDT,
+      state: { duties: {}, deployCooldowns: {} },
+      fetchImpl, deployEnabled: true, pacingMs: 0,
+    });
+    expect(out.deployed).toBe(0); // NOT counted as a deploy
+    expect(out.skipped).toBe(1);
+    expect(out.failed).toBe(0);   // a skip is not a failure — no cooldown
+    const warnLine = warnSpy.mock.calls.map(c => c.join(' ')).find(l => l.includes('deploy SKIPPED'));
+    expect(warnLine).toBeTruthy();
+    expect(warnLine).toContain('owner u1');
+    expect(warnLine).toContain('Agent already has an active battle');
+  });
+
+  it('a 200 with battleCreated:true still counts as a deploy', async () => {
+    const { db } = makeDb();
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ success: true, battleCreated: true }) }));
+    const out = await fanOutDeploys(db, {
+      groupId: 'g1', seats: seats2().slice(0, 1), now: MON_MORNING_EDT,
+      state: { duties: {}, deployCooldowns: {} },
+      fetchImpl, deployEnabled: true, pacingMs: 0,
+    });
+    expect(out.deployed).toBe(1);
+    expect(out.skipped).toBe(0);
+  });
+
+  it('a mixed fan-out (one created, one skipped) reports deployed=1 AND skipped=1', async () => {
+    const { db } = makeDb();
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      const created = call === 1; // first seat creates, second is blocked
+      return {
+        ok: true,
+        json: async () => ({ success: true, battleCreated: created, ...(created ? {} : { reason: 'Agent already has an active battle' }) }),
+      };
+    });
+    const out = await fanOutDeploys(db, {
+      groupId: 'g1', seats: seats2(), now: MON_MORNING_EDT,
+      state: { duties: {}, deployCooldowns: {} },
+      fetchImpl, deployEnabled: true, pacingMs: 0,
+    });
+    expect(out.deployed).toBe(1);
+    expect(out.skipped).toBe(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it('a failed deploy writes the ≥10-min cooldown (transactionally) and the next pass defers that agent', async () => {
     const { db, store } = makeDb();
     const state = { duties: {}, deployCooldowns: {} };
