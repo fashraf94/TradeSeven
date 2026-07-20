@@ -92,7 +92,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 // docs/ARCHETYPE_MASTERY_SPEC_V2_1_STOP_RULINGS_JUL21_2026.md). Dark by
 // default: with the epoch registry empty (pre-first-enablement) every one of
 // these paths writes NOTHING mastery-related — flags-off byte-identity.
-import { readMasteryFlagView, DARK_FLAG_VIEW, MASTERY_XP_ENABLED } from '../_utils/masteryConfig.js';
+import { readMasteryFlagView, requiresDeferral, DARK_FLAG_VIEW, MASTERY_XP_ENABLED } from '../_utils/masteryConfig.js';
 import {
   isMasterySubject,
   maybeBuildEligibilityStampFields,
@@ -157,31 +157,30 @@ export default async function handler(req, res) {
   const summary = { evaluated: 0, triggered: 0, swapped: 0, held: 0, errors: 0, skipped: 0, expired: 0 };
 
   try {
-    // ---- 1b. Mastery flag view (Spec V2 §5.1) — one registry read per run.
-    // Transport-failure posture is COMPILE-TIME split on the code constant
-    // (/code-review high, B2/C1/altitude findings — a mastery config doc
-    // must never become a single point of failure for core completion):
-    //  • MASTERY_XP_ENABLED === false (dark, the standing state): proceed
-    //    with the dark view and complete everything — no live XP is possible
-    //    with the constant off, so the only loss window is ineligible-stamp
-    //    zero receipts during a 0·1·0 incident outage (cosmetic, corrections-
-    //    recoverable), which never justifies freezing completions all weekend.
-    //  • MASTERY_XP_ENABLED === true (live): defer completions of MASTERY
-    //    SUBJECTS only (delay-not-loss — an unstamped settlement completion
-    //    is invisible to the stamps-only §5.3 sweep forever). CPU seats can
-    //    never be stamped under ANY flag view, so they always complete.
-    // Either way: loud error + a DEDICATED counter, never the benign
+    // ---- 1b. Mastery flag view (Spec V2 §5.1; adversarial rulings B1/B2).
+    // COMPILE-TIME BRANCH FIRST (B2): with the constant off — the standing
+    // dark state — NO mastery I/O happens here at all (no registry read;
+    // read-count photographed by the completion tests). With the constant
+    // live: one registry read per run, and BOTH a transport failure AND a
+    // half-flipped registry (absent/empty/malformed while live — see the
+    // append-epoch-then-flip-constant protocol in masteryConfig.js) defer
+    // MASTERY SUBJECT completions only (B1, delay-not-loss: an unstamped
+    // settlement completion is invisible to the stamps-only §5.3 sweep
+    // forever). CPU seats can never be stamped under any flag view, so they
+    // always complete. Loud error + a DEDICATED counter, never the benign
     // `skipped` bucket (monitoring must distinguish this from lock churn).
     let masteryFlagView = DARK_FLAG_VIEW;
     let masteryDeferSubjects = false;
-    try {
-      masteryFlagView = await readMasteryFlagView(db);
-    } catch (flagErr) {
-      if (MASTERY_XP_ENABLED) {
+    if (MASTERY_XP_ENABLED) {
+      try {
+        masteryFlagView = await readMasteryFlagView(db);
+        if (requiresDeferral(masteryFlagView)) {
+          masteryDeferSubjects = true;
+          console.error(`${LOG_PREFIX} mastery registry half-flip anomaly (absent/empty/malformed with XP live) — deferring mastery-subject completions this run (delay-not-loss). Ceremony order of record: append-epoch-then-flip-constant.`);
+        }
+      } catch (flagErr) {
         masteryDeferSubjects = true;
         console.error(`${LOG_PREFIX} mastery flag-view read FAILED with XP live — deferring mastery-subject completions this run (delay-not-loss): ${flagErr.message}`);
-      } else {
-        console.error(`${LOG_PREFIX} mastery flag-view read FAILED with XP constant off — proceeding dark (completions unaffected; no live XP possible): ${flagErr.message}`);
       }
     }
     // Per-run memos for the mastery mode/award path (distinct from the eval
@@ -232,20 +231,36 @@ export default async function handler(req, res) {
     // ---- 2b. Mastery repair sweep (Spec V2 §5.3) — stamps-only, hosted on
     // this EXISTING cron cadence (no new schedule entry, BUILD_RULES §6).
     // Isolated like the canonical-open sweep: failures never propagate.
-    // No-ops in one query when nothing is pending; skips entirely pre-epoch-1.
-    if (!masteryDeferSubjects && masteryFlagView.everEnabled) {
-      try {
-        summary.masterySweep = await runRepairSweep(db, {
-          flagView: masteryFlagView,
-          nowIso: new Date().toISOString(),
-          limit: 25,
-          groupCache: masteryGroupCache,
-          siblingsCache: masterySiblingsCache,
-        });
-      } catch (sweepErr) {
-        console.error(`${LOG_PREFIX} [masterySweep] FAILED (isolated — agent-evaluate unaffected): ${sweepErr.message}`);
-        summary.masterySweep = { error: sweepErr.message };
-      }
+    // ALWAYS runs (ruling M8): no registry dependency — pre-epoch-1 the
+    // pending-stamp query returning nothing is its own epoch proof, and the
+    // sweep stays the recovery path for stranded pendings even in a full
+    // rollback. Cursor-paged (ruling M7) so no doc monopolizes the window.
+    try {
+      summary.masterySweep = await runRepairSweep(db, {
+        nowIso: new Date().toISOString(),
+        limit: 25,
+        groupCache: masteryGroupCache,
+        siblingsCache: masterySiblingsCache,
+      });
+    } catch (sweepErr) {
+      console.error(`${LOG_PREFIX} [masterySweep] FAILED (isolated — agent-evaluate unaffected): ${sweepErr.message}`);
+      summary.masterySweep = { error: sweepErr.message };
+    }
+
+    // ---- 2c. Bare GC-completion repair (adversarial ruling Q11): the
+    // expiry loop reads only status=='active' battles, so a decide.js GC'd
+    // battle (already 'completed') can never reach completeBattle's repair
+    // branch through it — only the mid-run race window could. This bounded
+    // query (completed + completionReason 'expired' + recent completedAt;
+    // repaired docs drop out via the pendingReflection in-memory filter)
+    // makes the repair reachable on the normal cadence. Registry-independent
+    // core bookkeeping: repairs never stamp (V2.1 STOP-A.2), so it runs
+    // even while mastery-subject completions are deferred.
+    try {
+      summary.gcRepairs = await repairBareGcCompletions(db, summary, masteryFlagView, masteryGroupCache, masterySiblingsCache);
+    } catch (gcErr) {
+      console.error(`${LOG_PREFIX} [gcRepair] FAILED (isolated — agent-evaluate unaffected): ${gcErr.message}`);
+      summary.gcRepairs = { error: gcErr.message };
     }
 
     // ---- 3. Market hours guard (only for evaluations, not expiry completion) ----
@@ -3647,6 +3662,16 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
       return { committed: false, reason: 'already_terminal' };
     }
 
+    // B3 (adversarial ruling): the agent mutation is folded INTO this
+    // transaction — the legacy sequential agentRef.get/update was
+    // non-atomic since before P1 (pre-existing at base 39efa665,
+    // agent-evaluate.js:3581→3592-3627); a crash between the battle commit
+    // and the stats write could strand stats/activeBattleId forever.
+    // Reads-before-writes: this get precedes every t.update below.
+    // PR footnote: strictly-safer live-path change (patch flag-#4 precedent).
+    const agentRef = db.collection('agents').doc(fresh.agentId ?? battle.agentId);
+    const agentSnap = await t.get(agentRef);
+
     const scoreState = fresh.scoreState || {};
     const currentScore = scoreState.currentScore || 0;
     const disposition = resolveCompletionDisposition(fresh);
@@ -3753,6 +3778,49 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     }
 
     t.update(battleRef, updatePayload);
+
+    // ---- Agent stats (server-side equivalent of client updateAgentStats),
+    // atomic with the completion (B3). P4: tournament battles never mutate
+    // career W/L/streak stats (group placement is the outcome; rank/RP is
+    // P6's) — only the active-battle pointer clears so tomorrow's
+    // prescribed deploy proceeds. Math is byte-identical to the legacy
+    // block; only the write mechanism changed.
+    const result = disposition.result;
+    if (agentSnap.exists && !disposition.updateAgentStats) {
+      t.update(agentRef, { activeBattleId: null });
+    } else if (agentSnap.exists) {
+      const stats = agentSnap.data().stats || {};
+      const newGamesPlayed = (stats.gamesPlayed || 0) + 1;
+      const newWins = (stats.wins || 0) + (result === 'win' ? 1 : 0);
+      const newLosses = (stats.losses || 0) + (result === 'loss' ? 1 : 0);
+      const newDraws = (stats.draws || 0) + (result === 'draw' ? 1 : 0);
+      const newTotalScore = (stats.totalScore || 0) + currentScore;
+      const newAvgScore = Math.round(newTotalScore / newGamesPlayed);
+      let newStreak = stats.currentStreak || 0;
+      if (result === 'win') {
+        newStreak = newStreak >= 0 ? newStreak + 1 : 1;
+      } else if (result === 'loss') {
+        newStreak = newStreak <= 0 ? newStreak - 1 : -1;
+      } else {
+        newStreak = 0; // draws reset streak
+      }
+      const newBestStreak = Math.max(stats.bestStreak || 0, Math.abs(newStreak));
+
+      t.update(agentRef, {
+        stats: {
+          wins: newWins,
+          losses: newLosses,
+          draws: newDraws,
+          gamesPlayed: newGamesPlayed,
+          totalScore: Math.round(newTotalScore * 100) / 100,
+          avgScore: newAvgScore,
+          currentStreak: newStreak,
+          bestStreak: newBestStreak,
+        },
+        activeBattleId: null,
+      });
+    }
+
     return { committed: true, repaired: isBareGcCompletion, disposition, currentScore, visionTransitionLogPayload, masteryStamped, freshForAward };
   });
 
@@ -3763,53 +3831,21 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     console.log(`${LOG_PREFIX} Battle ${battle.id} completion skipped (${txOutcome.reason}).`);
     return txOutcome;
   }
-  const { disposition, currentScore, visionTransitionLogPayload } = txOutcome;
-  const result = disposition.result;
+  const { disposition, visionTransitionLogPayload } = txOutcome;
 
   // Fire-and-forget shadow log of the retired transition (after Firestore write succeeds).
   if (visionTransitionLogPayload) {
     logVisionTransition(visionTransitionLogPayload).catch(() => {});
   }
 
-  // Update agent stats (server-side equivalent of client updateAgentStats).
-  // P4: tournament battles never mutate career W/L/streak stats (group
-  // placement is the outcome; rank/RP is P6's) — only the active-battle
-  // pointer clears so tomorrow's prescribed deploy proceeds.
-  const agentRef = db.collection('agents').doc(battle.agentId);
-  const agentDoc = await agentRef.get();
-  if (agentDoc.exists && !disposition.updateAgentStats) {
-    await agentRef.update({ activeBattleId: null });
-  } else if (agentDoc.exists) {
-    const stats = agentDoc.data().stats || {};
-    const newGamesPlayed = (stats.gamesPlayed || 0) + 1;
-    const newWins = (stats.wins || 0) + (result === 'win' ? 1 : 0);
-    const newLosses = (stats.losses || 0) + (result === 'loss' ? 1 : 0);
-    const newDraws = (stats.draws || 0) + (result === 'draw' ? 1 : 0);
-    const newTotalScore = (stats.totalScore || 0) + currentScore;
-    const newAvgScore = Math.round(newTotalScore / newGamesPlayed);
-    let newStreak = stats.currentStreak || 0;
-    if (result === 'win') {
-      newStreak = newStreak >= 0 ? newStreak + 1 : 1;
-    } else if (result === 'loss') {
-      newStreak = newStreak <= 0 ? newStreak - 1 : -1;
-    } else {
-      newStreak = 0; // draws reset streak
-    }
-    const newBestStreak = Math.max(stats.bestStreak || 0, Math.abs(newStreak));
+  // Agent stats now commit INSIDE the completion transaction above (B3).
 
-    await agentRef.update({
-      stats: {
-        wins: newWins,
-        losses: newLosses,
-        draws: newDraws,
-        gamesPlayed: newGamesPlayed,
-        totalScore: Math.round(newTotalScore * 100) / 100,
-        avgScore: newAvgScore,
-        currentStreak: newStreak,
-        bestStreak: newBestStreak,
-      },
-      activeBattleId: null,
-    });
+  // Sibling-cache coherence (ruling B4): this completion just turned a
+  // tournament battle terminal — drop the group's memoized sibling set so
+  // later same-run awards (the rest of the expiry loop, the sweep) observe
+  // it and the cohort-terminality gate can clear within one run.
+  if (battle.gameMode === TOURNAMENT_GAME_MODE && typeof battle.groupId === 'string') {
+    masterySiblingsCache.delete(battle.groupId);
   }
 
   // ---- Mastery award (§5.2) — its own transaction (write-once on
@@ -3836,4 +3872,54 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
   console.log(`${LOG_PREFIX} Battle ${battle.id} ${txOutcome.repaired ? 'repaired (bare GC completion finished in place)' : 'completed'}. ${disposition.logLine}`);
   summary.evaluated++;
   return txOutcome;
+}
+
+/**
+ * Bare GC-completion repair sweep (adversarial ruling Q11). The expiry loop
+ * consumes findActiveAgentBattles (status=='active' — agentBattleService.js),
+ * so a battle GC'd by the fenced decide.js expiry path (already 'completed',
+ * bare 3-field write) can only reach completeBattle's repair branch through
+ * the mid-run race window. This bounded query makes the repair reachable on
+ * the normal cadence:
+ *
+ *   status=='completed' ∧ completionReason=='expired' ∧ completedAt within
+ *   the trailing window (96h — covers the weekend gap in the Mon–Fri cron
+ *   schedule), limit 25; repaired docs drop out via the in-memory
+ *   pendingReflection filter (every full completion writes it; absence is
+ *   unqueryable in Firestore, hence the in-memory half).
+ *
+ * Uses the (status, completionReason, completedAt) composite index added in
+ * this pass. Repairs route through completeBattle itself (one §5.1 writer),
+ * whose repair branch never stamps — V2.1 STOP-A.2. Exported for tests.
+ */
+export async function repairBareGcCompletions(db, summary, masteryFlagView = DARK_FLAG_VIEW, masteryGroupCache = new Map(), masterySiblingsCache = new Map(), { windowMs = 96 * 3600 * 1000, limit = 25 } = {}) {
+  const sinceIso = new Date(Date.now() - windowMs).toISOString();
+  const snap = await db
+    .collection('agentBattles')
+    .where('status', '==', 'completed')
+    .where('completionReason', '==', 'expired')
+    .where('completedAt', '>=', sinceIso)
+    .limit(limit)
+    .get();
+  const counts = { scanned: 0, repaired: 0, errors: 0 };
+  for (const doc of snap.docs) {
+    counts.scanned += 1;
+    const data = doc.data();
+    if (data.pendingReflection !== undefined) continue; // already full or already repaired
+    const gcBattle = { id: doc.id, ...data };
+    try {
+      const outcome = await completeBattle(db, gcBattle, summary, masteryFlagView, masteryGroupCache, masterySiblingsCache);
+      if (outcome.committed) {
+        counts.repaired += 1;
+        // Same post-completion hook the expiry loop fires (non-blocking).
+        logBattlePattern(gcBattle.agentId, gcBattle.id, gcBattle).catch(err => {
+          console.error(`${LOG_PREFIX} Pattern logging failed for repaired battle ${gcBattle.id}:`, err.message);
+        });
+      }
+    } catch (err) {
+      counts.errors += 1;
+      console.error(`${LOG_PREFIX} GC repair failed for battle ${gcBattle.id} (retried next run): ${err.message}`);
+    }
+  }
+  return counts;
 }

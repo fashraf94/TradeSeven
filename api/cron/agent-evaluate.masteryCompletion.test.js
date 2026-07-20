@@ -14,7 +14,7 @@
 // Cron-module import precedent: p4Flips.test.js / resolveCompletionDisposition.
 
 import { describe, it, expect } from 'vitest';
-import { completeBattle } from './agent-evaluate.js';
+import { completeBattle, repairBareGcCompletions } from './agent-evaluate.js';
 import { deriveFlagView } from '../_utils/masteryConfig.js';
 import { makeMockDb } from '../_utils/__fixtures__/masteryMockDb.js';
 
@@ -51,7 +51,18 @@ describe('flags-off byte-identity (the STOP-A.1 conversion changes the MECHANISM
   it('commits the legacy payload photograph and legacy stats math; zero mastery keys', async () => {
     const db = fixture();
     const summary = { evaluated: 0 };
+    db.__resetReads();
     await completeBattle(db, { id: 'b1', ...TIERED_BATTLE }, summary); // default DARK view
+
+    // READ-COUNT photograph (adversarial ruling B2): the dark completion
+    // performs exactly two doc reads — the battle and the agent, both inside
+    // the one transaction (B3) — and touches NO mastery collection and NO
+    // query. The battle read is the approved STOP-A.1 guard cost; the agent
+    // read replaces the legacy out-of-transaction get.
+    expect(db.__readCounts()).toEqual({
+      'agentBattles/b1': 1,
+      'agents/agent-1': 1,
+    });
 
     const doc = db.__dump('agentBattles/b1');
     // The photograph: every field the legacy plain update wrote, and nothing else.
@@ -241,10 +252,60 @@ describe('the guarded transaction (STOP-A.1): racing writers cannot double-compl
     const db = makeMockDb({ 'agentBattles/b1': done, 'agents/agent-1': AGENT_DOC });
     const before = db.__dump('agentBattles/b1');
     const summary = { evaluated: 0 };
+    db.__resetReads();
     const outcome = await completeBattle(db, { id: 'b1', ...done }, summary, FLAG_ON, new Map(), new Map());
     expect(outcome).toMatchObject({ committed: false, reason: 'already_terminal' });
     expect(db.__dump('agentBattles/b1')).toEqual(before);
     expect(db.__dump('agents/agent-1')).toEqual(AGENT_DOC);
     expect(summary.evaluated).toBe(0);
+    // Skip path reads ONLY the battle guard — the agent read never happens.
+    expect(db.__readCounts()).toEqual({ 'agentBattles/b1': 1 });
+  });
+
+  it('Q11: repairBareGcCompletions finds bare GC completions via the bounded query and repairs them; full docs pass through', async () => {
+    const GC_BARE = {
+      ...TIERED_BATTLE,
+      status: 'completed',
+      completedAt: new Date(Date.now() - 3600 * 1000).toISOString(), // 1h ago — inside the window
+      completionReason: 'expired',
+    };
+    const FULL = {
+      ...TIERED_BATTLE,
+      agentId: 'agent-2',
+      status: 'completed',
+      completedAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+      completionReason: 'expired',
+      pendingReflection: false, // already fully completed — must pass through
+    };
+    const db = makeMockDb({
+      'agentBattles/gc1': GC_BARE,
+      'agentBattles/full1': FULL,
+      'agents/agent-1': AGENT_DOC,
+    });
+    const summary = { evaluated: 0 };
+    const counts = await repairBareGcCompletions(db, summary);
+    expect(counts).toMatchObject({ scanned: 2, repaired: 1, errors: 0 });
+    const repaired = db.__dump('agentBattles/gc1');
+    expect(repaired.pendingReflection).toBe(true);
+    expect(repaired.completedAt).toBe(GC_BARE.completedAt); // GC instant kept
+    expect(repaired.masteryEligibility).toBeUndefined(); // never stamps (STOP-A.2)
+    expect(db.__dump('agentBattles/full1')).toEqual(FULL); // untouched
+    expect(db.__dump('agents/agent-1').stats.gamesPlayed).toBe(4); // stats ran, once
+    // Second run: the repaired doc now carries pendingReflection → pass-through.
+    const again = await repairBareGcCompletions(db, { evaluated: 0 });
+    expect(again).toMatchObject({ scanned: 2, repaired: 0 });
+  });
+
+  it('Q11: the window bounds the query — stale GC completions outside it are not scanned', async () => {
+    const OLD_GC = {
+      ...TIERED_BATTLE,
+      status: 'completed',
+      completedAt: new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString(), // 10 days ago
+      completionReason: 'expired',
+    };
+    const db = makeMockDb({ 'agentBattles/old1': OLD_GC, 'agents/agent-1': AGENT_DOC });
+    const counts = await repairBareGcCompletions(db, { evaluated: 0 }); // default 96h window
+    expect(counts).toMatchObject({ scanned: 0, repaired: 0 });
+    expect(db.__dump('agentBattles/old1')).toEqual(OLD_GC);
   });
 });

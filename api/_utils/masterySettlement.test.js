@@ -130,13 +130,18 @@ function buildFixture() {
   };
 }
 
-const SETTLE_IDS = ['b1', 'b2', 'b3', 'b4', 'g1', 'tr1', 'tb-u2', 'tb-u3'];
+// Mastery subjects (stampable) vs the full settle set: CPU seats complete
+// too (the cron completes every expired battle) — they just never stamp —
+// and the B4 cohort-terminality gate WAITS on them, so scenarios must
+// settle them for tournament awards to resolve.
+const SUBJECT_IDS = ['b1', 'b2', 'b3', 'b4', 'g1', 'tr1', 'tb-u2', 'tb-u3'];
+const ALL_IDS = [...SUBJECT_IDS, 'tb-cpu', 'tr-cpu'];
 
 /** Full end-state snapshot the property compares. */
 function snapshotMastery(db) {
   const out = { profiles: {}, awards: {}, slots: {} };
   for (const uid of ['u1', 'u2', 'u3']) out.profiles[uid] = db.__dump(`masteryProfiles/${uid}`);
-  for (const id of [...SETTLE_IDS, 'tb-cpu', 'tr-cpu']) {
+  for (const id of ALL_IDS) {
     const doc = db.__dump(`agentBattles/${id}`);
     out.awards[id] = doc?.masteryAward;
     out.slots[id] = doc?.masterySlot;
@@ -144,7 +149,7 @@ function snapshotMastery(db) {
   return out;
 }
 
-async function runScenario({ stampOrder = [], settleOrder = SETTLE_IDS }) {
+async function runScenario({ stampOrder = [], settleOrder = ALL_IDS }) {
   const db = makeMockDb(buildFixture());
   // "evaluation order": first-tick slot stamps for a subset, in the given order
   for (const id of stampOrder) {
@@ -152,25 +157,48 @@ async function runScenario({ stampOrder = [], settleOrder = SETTLE_IDS }) {
     await stampMasterySlotFirstTick(db, doc, { nowIso: T_NOW });
   }
   for (const id of settleOrder) await settle(db, id);
+  // Drain: tournament awards deferred by the B4 cohort-terminality gate
+  // (cohort_pending while any same-day sibling was still live) resolve via
+  // the repair sweep once the whole cohort is terminal — the production
+  // convergence path, on the existing cadence.
+  await runRepairSweep(db, { nowIso: T_NOW, limit: 50 });
   return snapshotMastery(db);
 }
 
 describe('§12 ORDER-INDEPENDENCE property — permute settlement AND evaluation order ⇒ identical totals', () => {
   it('holds across settlement permutations × stamp-subset permutations', async () => {
-    const baseline = await runScenario({ stampOrder: [], settleOrder: SETTLE_IDS });
+    const baseline = await runScenario({ stampOrder: [], settleOrder: ALL_IDS });
 
     const scenarios = [
-      { stampOrder: [], settleOrder: [...SETTLE_IDS].reverse() },
-      { stampOrder: [], settleOrder: ['tr1', 'tb-u3', 'b4', 'b1', 'g1', 'tb-u2', 'b3', 'b2'] },
-      // every battle first-tick-stamped, natural then reversed stamp order
-      { stampOrder: SETTLE_IDS, settleOrder: SETTLE_IDS },
-      { stampOrder: [...SETTLE_IDS].reverse(), settleOrder: [...SETTLE_IDS].reverse() },
+      { stampOrder: [], settleOrder: [...ALL_IDS].reverse() },
+      { stampOrder: [], settleOrder: ['tb-cpu', 'tr1', 'tb-u3', 'b4', 'b1', 'g1', 'tr-cpu', 'tb-u2', 'b3', 'b2'] },
+      // every SUBJECT first-tick-stamped, natural then reversed stamp order
+      { stampOrder: SUBJECT_IDS, settleOrder: ALL_IDS },
+      { stampOrder: [...SUBJECT_IDS].reverse(), settleOrder: [...ALL_IDS].reverse() },
       // half stamped (ticks reached some battles), settlement interleaved
-      { stampOrder: ['b2', 'tr1', 'tb-u2'], settleOrder: ['tb-u2', 'b1', 'tr1', 'b3', 'tb-u3', 'b2', 'g1', 'b4'] },
+      { stampOrder: ['b2', 'tr1', 'tb-u2'], settleOrder: ['tb-u2', 'b1', 'tr-cpu', 'tr1', 'b3', 'tb-u3', 'b2', 'g1', 'tb-cpu', 'b4'] },
     ];
     for (const s of scenarios) {
       expect(await runScenario(s)).toEqual(baseline);
     }
+  });
+
+  it('B4 mixed-close deferral: an award against a live same-day sibling waits as cohort_pending, then resolves identically', async () => {
+    const db = makeMockDb(buildFixture());
+    // tb-u2 settles while tb-u3 and the CPU seat are still live (the
+    // crypto-extended-close shape): placement inputs are not immutable yet.
+    const first = await settle(db, 'tb-u2');
+    expect(first.outcome).toBe('cohort_pending');
+    const mid = db.__dump('agentBattles/tb-u2');
+    expect(mid.masteryAward).toBeUndefined();
+    expect(mid.masteryAwardPending).toBe(true); // marker deliberately kept
+    // Cohort turns terminal; the sweep resolves the deferred award.
+    await settle(db, 'tb-u3');
+    await settle(db, 'tb-cpu');
+    await runRepairSweep(db, { nowIso: T_NOW, limit: 50 });
+    const award = db.__dump('agentBattles/tb-u2').masteryAward;
+    expect(award.xpFinal).toBe(80); // identical to the all-terminal-first order
+    expect(db.__dump('agentBattles/tb-u2').masteryAwardPending).toBeUndefined();
   });
 
   it('baseline awards are the hand-computed formulaVersion-1 values', async () => {
@@ -324,7 +352,7 @@ describe('fail-closed receipts + structural outsiders', () => {
     });
     const outcome = await runAwardTransaction(db, 'fx', { nowIso: T_NOW });
     expect(outcome.outcome).toBe('unstamped');
-    const sweep = await runRepairSweep(db, { flagView: FLAG_ON, nowIso: T_NOW });
+    const sweep = await runRepairSweep(db, { nowIso: T_NOW });
     expect(sweep.attempted).toBe(0);
     expect(db.__dump('agentBattles/fx').masteryAward).toBeUndefined();
   });
@@ -340,7 +368,7 @@ describe('fail-closed receipts + structural outsiders', () => {
         masteryAwardPending: true, // marker without stamp — the anomaly
       }),
     });
-    const sweep = await runRepairSweep(db, { flagView: FLAG_ON, nowIso: T_NOW });
+    const sweep = await runRepairSweep(db, { nowIso: T_NOW });
     expect(sweep.attempted).toBe(1);
     expect(sweep.receipts).toBe(1);
     const doc = db.__dump('agentBattles/poison');
@@ -350,8 +378,22 @@ describe('fail-closed receipts + structural outsiders', () => {
     expect(ledger.length).toBe(1);
     expect(db.__dump(ledger[0]).diagnostic).toBe('pending_state_anomaly:unstamped');
     // Second sweep: fully drained.
-    const second = await runRepairSweep(db, { flagView: FLAG_ON, nowIso: T_NOW });
+    const second = await runRepairSweep(db, { nowIso: T_NOW });
     expect(second.attempted).toBe(0);
+  });
+
+  it('B5: a missing/corrupt score quarantines — never masquerades as zero', async () => {
+    const db = makeMockDb({
+      'agentBattles/noscore': battle('noscore', { scoreState: {} }), // currentScore absent
+    });
+    const outcome = await settle(db, 'noscore');
+    expect(outcome.outcome).toBe('quarantined');
+    const doc = db.__dump('agentBattles/noscore');
+    expect(doc.masteryAward.xpFinal).toBe(0);
+    expect(doc.masteryAward.reasonCode).toBe('quarantined');
+    expect(doc.masteryAward.components.participation).toBe(0); // no PARTICIPATION smuggled through
+    const ledger = db.__paths('masteryQuarantine/');
+    expect(db.__dump(ledger[0]).diagnostic).toMatch(/^non_finite_score:/);
   });
 
   it('unusable creation data: a write-once SENTINEL slot stamp ends per-tick retries and quarantines at award', async () => {
@@ -372,25 +414,55 @@ describe('fail-closed receipts + structural outsiders', () => {
   });
 });
 
-describe('repair sweep (§5.3) — stamps-only, bounded delay never loss', () => {
+describe('repair sweep (§5.3) — stamps-only, registry-free, cursor-paged, bounded delay never loss', () => {
   it('a crash between stamp and award is repaired to an end state IDENTICAL to the direct path', async () => {
     const direct = await runScenario({});
     // Crash path: stamp+complete everything, never award, then sweep.
     const db = makeMockDb(buildFixture());
-    for (const id of SETTLE_IDS) await settle(db, id, { award: false });
-    const first = await runRepairSweep(db, { flagView: FLAG_ON, nowIso: T_NOW, limit: 25 });
-    expect(first.attempted).toBe(SETTLE_IDS.length);
-    expect(first.awarded + first.receipts).toBe(SETTLE_IDS.length);
+    for (const id of ALL_IDS) await settle(db, id, { award: false });
+    const first = await runRepairSweep(db, { nowIso: T_NOW, limit: 25 });
+    expect(first.attempted).toBe(SUBJECT_IDS.length); // CPU seats never stamp → never pending
+    expect(first.awarded + first.receipts).toBe(SUBJECT_IDS.length);
     expect(snapshotMastery(db)).toEqual(direct);
     // Second sweep: nothing pending — inert.
-    const second = await runRepairSweep(db, { flagView: FLAG_ON, nowIso: T_NOW, limit: 25 });
+    const second = await runRepairSweep(db, { nowIso: T_NOW, limit: 25 });
     expect(second.attempted).toBe(0);
   });
 
-  it('pre-epoch-1 the sweep does not even query', async () => {
+  it('M8: the sweep needs NO registry — pre-epoch-1 the empty pending query is its own epoch proof (and no registry read happens)', async () => {
     const db = makeMockDb(buildFixture());
-    const res = await runRepairSweep(db, { flagView: deriveFlagView(null, false), nowIso: T_NOW });
-    expect(res).toEqual({ attempted: 0, awarded: 0, receipts: 0, errors: 0 });
+    db.__resetReads();
+    const res = await runRepairSweep(db, { nowIso: T_NOW });
+    expect(res).toEqual({ attempted: 0, awarded: 0, receipts: 0, deferred: 0, errors: 0 });
+    const reads = db.__readCounts();
+    expect(reads['masteryConfig/epochRegistry']).toBeUndefined();
+    // Steady empty state writes nothing (no cursor doc materialized).
+    expect(db.__dump('masteryConfig/sweepCursor')).toBeUndefined();
+  });
+
+  it('M7: stable __name__ cursor pages the pending set so no doc monopolizes the window', async () => {
+    const docs = {};
+    for (let i = 0; i < 30; i++) {
+      const id = `sw${String(i).padStart(2, '0')}`;
+      docs[`agentBattles/${id}`] = battle(id, {
+        ownerId: 'u7',
+        createdAt: `2026-07-20T13:${String(10 + i).padStart(2, '0')}:00.000Z`,
+        status: 'completed',
+        completedAt: T_NOW,
+        scoreState: { currentScore: 5, opponentScore: 0 },
+        masteryEligibility: { eligible: true, epochId: 1, stampedAt: T_NOW },
+        masteryAwardPending: true,
+      });
+    }
+    const db = makeMockDb(docs);
+    const first = await runRepairSweep(db, { nowIso: T_NOW, limit: 25 });
+    expect(first.attempted).toBe(25);
+    expect(db.__dump('masteryConfig/sweepCursor').lastDocId).toBe('sw24'); // full page → cursor advanced
+    const second = await runRepairSweep(db, { nowIso: T_NOW, limit: 25 });
+    expect(second.attempted).toBe(5); // resumes AFTER the cursor
+    expect(db.__dump('masteryConfig/sweepCursor').lastDocId).toBeNull(); // short page → reset for wrap-around
+    const third = await runRepairSweep(db, { nowIso: T_NOW, limit: 25 });
+    expect(third.attempted).toBe(0); // all resolved
   });
 });
 

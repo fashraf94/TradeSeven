@@ -116,6 +116,11 @@ function matchesFilters(data, filters) {
 export function makeMockDb(initialDocs = {}) {
   const store = new Map(); // path → { data, version }
   let autoId = 0;
+  // Read accounting (adversarial ruling B2: byte-identity photographs count
+  // READS too, not just writes). Doc reads count per path; query executions
+  // count per collection as `query:<collection>`.
+  const reads = new Map();
+  const countRead = (key) => reads.set(key, (reads.get(key) ?? 0) + 1);
 
   for (const [path, data] of Object.entries(initialDocs)) {
     store.set(path, { data: deepClone(data), version: 1 });
@@ -161,6 +166,7 @@ export function makeMockDb(initialDocs = {}) {
       id,
       path,
       async get() {
+        countRead(path);
         return snapOf(path);
       },
       async update(data) {
@@ -172,19 +178,30 @@ export function makeMockDb(initialDocs = {}) {
     };
   };
 
-  const makeQuery = (collectionName, filters, limitN) => ({
+  const makeQuery = (collectionName, filters, limitN, afterId = null) => ({
     where(field, op, value) {
-      return makeQuery(collectionName, [...filters, { field, op, value }], limitN);
+      return makeQuery(collectionName, [...filters, { field, op, value }], limitN, afterId);
     },
     limit(n) {
-      return makeQuery(collectionName, filters, n);
+      return makeQuery(collectionName, filters, n, afterId);
     },
     // Projection is not modeled: production narrows the payload only, never
     // the semantics, so the mock returns full docs (chain no-op).
     select() {
-      return makeQuery(collectionName, filters, limitN);
+      return makeQuery(collectionName, filters, limitN, afterId);
+    },
+    // Only documentId ordering is modeled (the M7 sweep cursor). The base
+    // path scan is already id-sorted, so this is a validated no-op marker.
+    orderBy(field) {
+      const isDocId = field === '__name__' || (field && typeof field.isEqual === 'function');
+      if (!isDocId) throw new Error(`mock query: unsupported orderBy '${String(field)}'`);
+      return makeQuery(collectionName, filters, limitN, afterId);
+    },
+    startAfter(id) {
+      return makeQuery(collectionName, filters, limitN, id);
     },
     async get() {
+      countRead(`query:${collectionName}`);
       const prefix = `${collectionName}/`;
       const docs = [];
       // Deterministic path order — production code must not depend on it,
@@ -193,6 +210,8 @@ export function makeMockDb(initialDocs = {}) {
         (p) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/')
       ).sort();
       for (const p of paths) {
+        const id = p.slice(prefix.length);
+        if (afterId !== null && id <= afterId) continue;
         if (matchesFilters(store.get(p).data, filters)) {
           docs.push(snapOf(p));
           if (limitN !== null && docs.length >= limitN) break;
@@ -232,6 +251,7 @@ export function makeMockDb(initialDocs = {}) {
         const writes = [];
         const t = {
           async get(ref) {
+            countRead(ref.path);
             readVersions.set(ref.path, versionOf(ref.path));
             return snapOf(ref.path);
           },
@@ -273,6 +293,12 @@ export function makeMockDb(initialDocs = {}) {
     },
     __paths(prefix = '') {
       return [...store.keys()].filter((p) => p.startsWith(prefix)).sort();
+    },
+    __readCounts() {
+      return Object.fromEntries([...reads.entries()].sort());
+    },
+    __resetReads() {
+      reads.clear();
     },
   };
 

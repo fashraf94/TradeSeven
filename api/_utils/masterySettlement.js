@@ -34,7 +34,7 @@
 // structurally outside: no stamp, no award, no receipt — mastery attaches to
 // user × archetype and a CPU seat has neither.
 
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, FieldPath } from 'firebase-admin/firestore';
 // Node-clean src imports under the revised June 2026 import rule
 // (BUILD_RULES §4) — zero-import schema modules, the same surface the fenced
 // battle service already consumes. The co-located test's import of THIS
@@ -62,6 +62,8 @@ import {
   MASTERY_PROFILES_COLLECTION,
   MASTERY_QUARANTINE_COLLECTION,
   MASTERY_AUDITS_COLLECTION,
+  MASTERY_CONFIG_COLLECTION,
+  MASTERY_SWEEP_CURSOR_DOC,
 } from './masteryConfig.js';
 
 const LOG_PREFIX = '[Mastery]';
@@ -173,6 +175,26 @@ export async function resolveModeGroup(db, battle, groupCache = new Map()) {
  * to — it blocks wonAgainstField (fails toward less XP). A battle whose own
  * day key is missing concedes placement entirely (empty cohort).
  */
+/**
+ * The ONE competition-cohort filter (§9 one-source; adversarial ruling M6):
+ * same-day siblings, self excluded, SAME-OWNER excluded before ALL placement
+ * inputs (own battles are never opponents in any respect — they neither
+ * count as humans, nor as field members, nor block a field win). A battle
+ * with no day key concedes to an empty cohort. Used by both placement math
+ * and the award's cohort-terminality gate so the two can never disagree.
+ */
+export function sameDayCohort(battle, siblings) {
+  const myDay = battle.timing?.tradingDays?.[0];
+  if (myDay === undefined) return [];
+  return (Array.isArray(siblings) ? siblings : []).filter(
+    (sib) =>
+      sib &&
+      sib.id !== battle.id &&
+      sib.ownerId !== battle.ownerId &&
+      sib.timing?.tradingDays?.[0] === myDay
+  );
+}
+
 export function computePlacementInputs({ battle, siblings }) {
   const myScore = battle.scoreState?.currentScore;
   if (battle.gameMode !== TOURNAMENT_GAME_MODE) {
@@ -182,28 +204,18 @@ export function computePlacementInputs({ battle, siblings }) {
       wonAgainstField: Number.isFinite(myScore) && Number.isFinite(opponentScore) && myScore > opponentScore,
     };
   }
-  const myDay = battle.timing?.tradingDays?.[0];
+  const cohort = sameDayCohort(battle, siblings);
   let humansOutplaced = 0;
-  let sameDayOpponents = 0;
   let strictlyAboveAll = Number.isFinite(myScore);
-  for (const sib of Array.isArray(siblings) ? siblings : []) {
-    if (!sib || sib.id === battle.id) continue;
-    if (myDay === undefined || sib.timing?.tradingDays?.[0] !== myDay) continue;
-    sameDayOpponents += 1;
+  for (const sib of cohort) {
     const sibScore = sib.scoreState?.currentScore;
     const finite = Number.isFinite(sibScore);
-    if (
-      finite &&
-      sib.isCpu !== true &&
-      sib.ownerId !== battle.ownerId &&
-      Number.isFinite(myScore) &&
-      sibScore < myScore
-    ) {
+    if (finite && sib.isCpu !== true && Number.isFinite(myScore) && sibScore < myScore) {
       humansOutplaced += 1;
     }
     if (!finite || !(myScore > sibScore)) strictlyAboveAll = false;
   }
-  return { humansOutplaced, wonAgainstField: strictlyAboveAll && sameDayOpponents > 0 };
+  return { humansOutplaced, wonAgainstField: strictlyAboveAll && cohort.length > 0 };
 }
 
 /**
@@ -219,7 +231,7 @@ export async function fetchGroupSiblings(db, battle, siblingsCache = new Map()) 
   const snap = await db
     .collection('agentBattles')
     .where('groupId', '==', battle.groupId)
-    .select('gameMode', 'isCpu', 'ownerId', 'scoreState', 'timing')
+    .select('gameMode', 'isCpu', 'ownerId', 'scoreState', 'timing', 'status')
     .get();
   const siblings = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
@@ -289,14 +301,23 @@ export function deriveSlotFields(battle, cohortDocs, nowIso) {
   return { stamp, duplicateOf, sentinel: false };
 }
 
-/** Audit-doc shape shared by both stamp paths (spec §3: duplicate-rank pairs route to the corrections intake). */
+/**
+ * Duplicate-rank audit — shape + DETERMINISTIC doc id (adversarial ruling
+ * M9): the id is a pure function of (date, rank, sorted pair), so retried
+ * transactions and repeated diagnostic emits are IDEMPOTENT set()s on the
+ * same doc — no duplicate audit rows, no contention/counter doc.
+ */
 function buildDuplicateRankAuditDoc({ battleId, duplicateOf, stamp, nowIso }) {
+  const pair = [battleId, duplicateOf.battleId].sort();
   return {
-    kind: 'duplicate_rank_audit',
-    battleId,
-    collidesWith: duplicateOf.battleId,
-    slot: stamp,
-    at: nowIso,
+    id: `dup_${stamp.date}_r${stamp.rank}_${pair[0]}_${pair[1]}`,
+    doc: {
+      kind: 'duplicate_rank_audit',
+      battleId,
+      collidesWith: duplicateOf.battleId,
+      slot: stamp,
+      at: nowIso,
+    },
   };
 }
 
@@ -326,10 +347,8 @@ export async function stampMasterySlotFirstTick(db, battle, { nowIso }) {
     if (!d.exists || d.data()?.masterySlot !== undefined) return false;
     t.update(battleRef, { masterySlot: fields.stamp });
     if (fields.duplicateOf) {
-      t.set(
-        db.collection(MASTERY_AUDITS_COLLECTION).doc(),
-        buildDuplicateRankAuditDoc({ battleId: battle.id, duplicateOf: fields.duplicateOf, stamp: fields.stamp, nowIso })
-      );
+      const audit = buildDuplicateRankAuditDoc({ battleId: battle.id, duplicateOf: fields.duplicateOf, stamp: fields.stamp, nowIso });
+      t.set(db.collection(MASTERY_AUDITS_COLLECTION).doc(audit.id), audit.doc);
     }
     return true;
   });
@@ -378,7 +397,10 @@ export async function stampMasterySlotFirstTick(db, battle, { nowIso }) {
  * profile doc, recomputes the pure math from fresh values, and writes —
  * retry-safe by construction.
  *
- * @returns {{outcome: 'awarded'|'zero_receipt'|'quarantined'|'already_awarded'|'missing'|'cpu_outside_mastery'|'not_completed'|'unstamped', xpFinal?: number, reasonCode?: string}}
+ * @returns {{outcome: 'awarded'|'zero_receipt'|'quarantined'|'cohort_pending'|'already_awarded'|'missing'|'cpu_outside_mastery'|'not_completed'|'unstamped', xpFinal?: number, reasonCode?: string}}
+ *   'cohort_pending' deliberately leaves masteryAwardPending SET (ruling B4):
+ *   a live same-day sibling means placement inputs aren't immutable yet; the
+ *   sweep retries on its own cadence until the cohort is terminal.
  */
 export async function runAwardTransaction(db, battleId, { nowIso, groupCache = new Map(), siblingsCache = new Map(), preloadedBattle = null }) {
   const battleRef = db.collection('agentBattles').doc(battleId);
@@ -417,9 +439,22 @@ export async function runAwardTransaction(db, battleId, { nowIso, groupCache = n
   if (eligible && ownerValid) {
     const group = await resolveModeGroup(db, pre, groupCache);
     modeKind = classifyModeKind({ gameMode: pre.gameMode, group });
-    const siblings = modeKind === 'league' || modeKind === 'training'
-      ? await fetchGroupSiblings(db, pre, siblingsCache)
-      : [];
+    let siblings = [];
+    if (modeKind === 'league' || modeKind === 'training') {
+      siblings = await fetchGroupSiblings(db, pre, siblingsCache);
+      // ---- Cohort-terminality gate (adversarial ruling B4): placement is
+      // computed ONLY from terminal, immutable scores. Mixed close times
+      // (e.g. a crypto-extended 20:00 sibling beside a 16:00 stock battle)
+      // mean a same-day sibling can still be live at my settlement — its
+      // score is still moving, so awarding now would make placement depend
+      // on settlement timing. Defer: leave masteryAwardPending set and let
+      // the §5.3 sweep retry once the cohort is terminal (bounded delay).
+      const cohort = sameDayCohort(pre, siblings);
+      if (cohort.some((s) => s.status !== 'completed')) {
+        return { outcome: 'cohort_pending' };
+      }
+    }
+    // Tiered battles compare doc-local scores (siblings stays empty).
     placement = computePlacementInputs({ battle: pre, siblings });
     if (pre.masterySlot === undefined) {
       const cohort = await fetchSlotCohort(db, pre);
@@ -486,8 +521,10 @@ export async function runAwardTransaction(db, battleId, { nowIso, groupCache = n
       : (lazySlot ? lazySlot.stamp : null);
     const rateBand = slotStamp ? slotStamp.rateBand : NaN;
     // §9 one-source: the award's score input is the transaction's own fresh
-    // read — the same doc state the commit is conditioned on.
-    const currentScore = fresh.scoreState?.currentScore ?? 0;
+    // read — the same doc state the commit is conditioned on. RAW value, no
+    // zero fallback (adversarial ruling B5): a missing/corrupt score must
+    // fail validateFormulaInputs into quarantine, never masquerade as 0.
+    const currentScore = fresh.scoreState?.currentScore;
 
     const invalid = validateFormulaInputs({ modeKind, archetype, currentScore, rateBand });
     if (invalid) {
@@ -523,12 +560,11 @@ export async function runAwardTransaction(db, battleId, { nowIso, groupCache = n
       ...(applyingLazyStamp ? { masterySlot: lazySlot.stamp } : {}),
     });
     // Lazy-path duplicate-rank audit rides the SAME transaction as the stamp
-    // that detected it, and only when OUR stamp is the one landing.
+    // that detected it, and only when OUR stamp is the one landing. The
+    // deterministic id makes retries/re-emits idempotent (M9).
     if (applyingLazyStamp && lazySlot.duplicateOf) {
-      t.set(
-        db.collection(MASTERY_AUDITS_COLLECTION).doc(),
-        buildDuplicateRankAuditDoc({ battleId, duplicateOf: lazySlot.duplicateOf, stamp: lazySlot.stamp, nowIso })
-      );
+      const audit = buildDuplicateRankAuditDoc({ battleId, duplicateOf: lazySlot.duplicateOf, stamp: lazySlot.stamp, nowIso });
+      t.set(db.collection(MASTERY_AUDITS_COLLECTION).doc(audit.id), audit.doc);
     }
     t.set(
       profileRef,
@@ -554,24 +590,42 @@ export async function runAwardTransaction(db, battleId, { nowIso, groupCache = n
 /**
  * The repair sweep: battles stamped (masteryAwardPending true — the stamp's
  * queryable companion) whose award is still missing → award late. Reads
- * stamps ONLY — never flags, never timestamp-interval inference. Hosted on
- * the EXISTING agent-evaluate cron cadence (no new cron entry). Converts any
- * crash between completion and award into bounded delay, never loss (the
- * pending-anomaly receipt path above guarantees every fetched doc RESOLVES —
- * no immortal sweep tenants). Each query doc is passed as the award's
- * pre-read (no double fetch). Runs regardless of market hours; skips
- * entirely pre-epoch-1.
+ * stamps ONLY — never flags, never timestamp-interval inference, and (ruling
+ * M8) NO registry dependency at all: pre-epoch-1 there are simply no pending
+ * stamps, so the query returning nothing IS its own epoch proof. That also
+ * makes the sweep the recovery path for stranded pendings even in a full
+ * rollback (0·0·0). Hosted on the EXISTING agent-evaluate cron cadence.
+ *
+ * PAGING (ruling M7): stable `__name__` ordering with a persisted cursor
+ * (masteryConfig/sweepCursor) — a doc that throws, or sits in
+ * 'cohort_pending', is passed over as the cursor advances and is retried on
+ * the next wrap-around, so no doc can monopolize the page. The cursor
+ * resets whenever a page comes up short (end of the pending set). Converts
+ * any crash between completion and award into bounded delay, never loss
+ * (the pending-anomaly receipt path guarantees every anomalous doc
+ * RESOLVES; cohort_pending docs resolve when their cohort turns terminal).
+ * Each query doc is passed as the award's pre-read (no double fetch).
+ * Runs regardless of market hours.
  */
-export async function runRepairSweep(db, { flagView, nowIso, limit = 25, groupCache = new Map(), siblingsCache = new Map() }) {
-  if (!flagView.everEnabled) return { attempted: 0, awarded: 0, receipts: 0, errors: 0 };
-  const snap = await db
+export async function runRepairSweep(db, { nowIso, limit = 25, groupCache = new Map(), siblingsCache = new Map() }) {
+  const cursorRef = db.collection(MASTERY_CONFIG_COLLECTION).doc(MASTERY_SWEEP_CURSOR_DOC);
+  const cursorSnap = await cursorRef.get();
+  const cursorId = cursorSnap.exists ? cursorSnap.data()?.lastDocId ?? null : null;
+
+  let query = db
     .collection('agentBattles')
     .where('masteryAwardPending', '==', true)
-    .limit(limit)
-    .get();
-  const counts = { attempted: 0, awarded: 0, receipts: 0, errors: 0 };
+    .orderBy(FieldPath.documentId());
+  if (typeof cursorId === 'string' && cursorId.length > 0) {
+    query = query.startAfter(cursorId);
+  }
+  const snap = await query.limit(limit).get();
+
+  const counts = { attempted: 0, awarded: 0, receipts: 0, deferred: 0, errors: 0 };
+  let lastProcessedId = null;
   for (const doc of snap.docs) {
     counts.attempted += 1;
+    lastProcessedId = doc.id;
     try {
       const r = await runAwardTransaction(db, doc.id, {
         nowIso,
@@ -581,10 +635,20 @@ export async function runRepairSweep(db, { flagView, nowIso, limit = 25, groupCa
       });
       if (r.outcome === 'awarded') counts.awarded += 1;
       else if (r.outcome === 'zero_receipt' || r.outcome === 'quarantined') counts.receipts += 1;
+      else if (r.outcome === 'cohort_pending') counts.deferred += 1;
     } catch (err) {
       counts.errors += 1;
-      console.error(`${LOG_PREFIX} repair sweep failed for battle ${doc.id} (will retry next run): ${err.message}`);
+      console.error(`${LOG_PREFIX} repair sweep failed for battle ${doc.id} (cursor advances; retried after wrap-around): ${err.message}`);
     }
+  }
+
+  // Cursor bookkeeping: advance past a FULL page; reset on a short/empty
+  // page (end of the pending set — next run starts from the top). No write
+  // at all in the steady dark/empty state with no cursor set.
+  if (snap.docs.length === limit && lastProcessedId) {
+    await cursorRef.set({ lastDocId: lastProcessedId, updatedAt: nowIso });
+  } else if (cursorId !== null) {
+    await cursorRef.set({ lastDocId: null, updatedAt: nowIso });
   }
   return counts;
 }
