@@ -105,7 +105,7 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
   // byte-identical (same <Lobby> invocation, untouched).
   const lobby = TABS_ENABLED
     ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} uid={uid} displayName={user?.displayName} />
-    : <Lobby st={st} accent={ACCENT} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} uid={uid} displayName={user?.displayName} />;
+    : <Lobby st={st} accent={ACCENT} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} uid={uid} displayName={user?.displayName} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} />;
 
   // Spectate's claim CTA re-points at the entry (P3): it returns to the lobby,
   // whose center IS the slot picker for a no-game viewer (the retired

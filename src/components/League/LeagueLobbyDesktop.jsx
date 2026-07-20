@@ -27,12 +27,13 @@ import { subscribeMyGroup, subscribeMyTrainingPod } from '../../services/tournam
 import { logLeagueSignal } from '../../services/leagueSignals';
 import { LEAGUE_TRAINING_POD_ENABLED } from '../../config/featureFlags';
 import SlotCenter from './liveDraft/SlotCenter';
+import WhileYouWait from './WhileYouWait';
 import { LTOKENS, LX, alpha } from './leagueTokens';
 import { Eyebrow, Mono } from './LeagueParts';
 import Spectate from './LeagueSpectate';
 import {
   DeskStat, DeskYourGroup, DeskFollowRail, DeskLeaderboard, DeskPodPanel,
-  DeskFunnel, DeskBracketPending, LDFocus, DeskTabBar, DeskTrainingPanel, TRAIN,
+  LDFocus, DeskTabBar, DeskTrainingPanel, TRAIN,
 } from './LeagueDeskParts';
 
 const ACCENT = LX.energy; // teal — the league energy accent (tournament surface)
@@ -65,9 +66,6 @@ const LD_STYLE = `
   .ld-grid-training { grid-template-columns: minmax(0, 1fr) 384px; }
   .ld-rail-left { min-height: 0; height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
   .ld-center { min-height: 0; height: 100%; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
-  /* The bracket fit-to-width-scales (DeskFunnel) so it never overflows; clip x
-     so no horizontal scrollbar can appear, allow y for short viewports. */
-  .ld-funnel-wrap { overflow-x: hidden; overflow-y: auto; flex: 1; min-height: 0; }
   .ld-rail-right { min-height: 0; height: 100%; overflow: hidden; border-radius: 18px; padding: 16px; background: ${LTOKENS.surface}; transition: border-color .2s ease; }
   .ld-train-main { min-height: 0; height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
   /* mid-size desktop — once the left rail reflows under the center, the locked
@@ -224,30 +222,24 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
 
           {/* CENTER — no game → the slot picker IS the entry (one entry story;
               a claim routes straight into the seated surface via onOpenMyGame);
-              in a game → the bracket funnel / forthcoming panel as today.
+              in a game → the Seated Waiting Room ("While you wait") replaces the
+              old bracket-funnel / forthcoming panel (both sub-states) as the
+              primary content, keeping the honest one-line bracket footnote.
               SlotCenter owns the LEAGUE_LIVE_DRAFT gate internally (P2c) so
               flag-off still keeps the Auto-draft entry affordance. */}
           <div className="lg-scroll ld-center">
             {!activeGroup ? (
               <SlotCenter currentUserId={uid} displayName={user?.displayName} onEntered={onOpenMyGame} />
-            ) : st.bracketPending ? (
-              <DeskBracketPending />
             ) : (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, padding: '0 2px' }}>
-                  <Eyebrow color={LTOKENS.ink3}>The bracket · 16 → 8 → 4 → champion</Eyebrow>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: '50%', background: LX.energy, boxShadow: `0 0 7px ${LX.energy}` }} />
-                    <Mono style={{ fontSize: 10, color: LX.energy, letterSpacing: '0.08em' }}>YOUR PATH TO THE TROPHY</Mono>
-                  </div>
-                </div>
-                <div className="ld-funnel-wrap">
-                  <DeskFunnel st={st} accent={ACCENT} onPick={pickPod} selectedId={selectedPod ? selectedPod.id : null} />
-                </div>
-                <div style={{ textAlign: 'center', marginTop: 6 }}>
-                  <Mono style={{ fontSize: 10, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>Click any pod to open its live four-player standing</Mono>
-                </div>
-              </>
+              <WhileYouWait
+                viewport="desktop"
+                status={activeGroup.status}
+                st={st}
+                activeTrainingPod={activeTrainingPod}
+                onOpenTrainingPod={onOpenTrainingPod}
+                hasAgent={hasAgent}
+                onSpectate={openSpectate}
+              />
             )}
           </div>
 
