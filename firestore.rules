@@ -144,14 +144,53 @@ service cloud.firestore {
     // AGENT DASHBOARD — User-owned AI trading agents
     match /agents/{agentId} {
       allow read: if request.auth != null;
+      // Create-side allowlist (Mastery end-of-branch ruling B1/B2, 2026-07-21
+      // — the §7.2 hardening the 2026-07-15 discovery deferred): sensitive
+      // fields are born at server defaults or not at all, so a crafted
+      // client cannot mint entitlement/progression/cognition state at
+      // creation, and recreate-laundering around the update allowlist below
+      // is dead by construction. stats is the LEGACY FLOOR INPUT
+      // (stats.gamesPlayed → FORGE_LIMITS tier → the §6.1 lazy legacy
+      // floor) — forced to the exact createAgent zero shape, it is
+      // server-only going forward (agent-evaluate increments it). The
+      // absent-list fields are server-accreted only (equip/settings
+      // endpoints, chat, cron); activeRules/equippedBundleIds/memory are
+      // seeded empty by the live createAgent; consolidatedInsight ''; the
+      // dev-only seedTestAgent (dead code, zero callers) seeded demo values
+      // and is intentionally broken by this rule — flagged for separate
+      // cleanup. Verified against every live client create path
+      // (writer census 2026-07-21; docs/audits/2026-07-15_FIRESTORE_RULES_AGENTS_DISCOVERY.md).
       allow create: if request.auth != null
-                    && request.resource.data.ownerId == request.auth.uid;
+                    && request.resource.data.ownerId == request.auth.uid
+                    && !request.resource.data.keys().hasAny(['standingLeans', 'dials', 'settingsRev',
+                                 'equippedTraits', 'deployedStrategy', 'activeBattleId',
+                                 'lessons', 'forgeSuggestions', 'isTrainingClone'])
+                    && (!('stats' in request.resource.data)
+                        || request.resource.data.stats == {'wins': 0, 'losses': 0, 'gamesPlayed': 0,
+                                 'totalScore': 0, 'avgScore': 0, 'currentStreak': 0, 'bestStreak': 0})
+                    && (!('activeRules' in request.resource.data)
+                        || request.resource.data.activeRules.size() == 0)
+                    && (!('equippedBundleIds' in request.resource.data)
+                        || request.resource.data.equippedBundleIds.size() == 0)
+                    && (!('memory' in request.resource.data)
+                        || request.resource.data.memory.size() == 0)
+                    && (!('consolidatedInsight' in request.resource.data)
+                        || request.resource.data.consolidatedInsight == '')
+                    && (!('evolutionCycle' in request.resource.data)
+                        || request.resource.data.evolutionCycle == 0);
       allow update: if request.auth != null
               && resource.data.ownerId == request.auth.uid
               && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['directives', 'lastViewedEvolutionCycle', 'starterKitCompleted', 'updatedAt']);
-      allow delete: if request.auth != null
-                    && resource.data.ownerId == request.auth.uid;
+      // Delete disposition (ruling B1/B2 left it to the build session, with
+      // rationale): DENIED. The 2026-07-21 writer census found ZERO delete
+      // paths — no client-SDK deleteDoc and no Admin-SDK delete targets an
+      // agent doc anywhere — so this breaks nothing; an owner delete would
+      // orphan the rules/bundles subtrees and any activeBattleId pointer;
+      // and with create forced to server defaults, delete+recreate gains an
+      // attacker nothing anyway. A real agent-deletion feature must ship as
+      // a server endpoint that also settles subcollections and battles.
+      allow delete: if false;
 
       // FORGE: Rules subcollection — soft-delete only, no hard deletes
       // Field-level validation for paramValues and textTemplate (Phase C security hardening)
@@ -187,25 +226,50 @@ service cloud.firestore {
       match /bundles/{bundleId} {
         allow read: if request.auth != null
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid;
+        // Birth status vocabulary (Mastery end-of-branch ruling B3): a
+        // client-created bundle is born 'draft' (forgeService.createBundle)
+        // or 'forged' (the dimension materializer) — never 'equipped' or
+        // 'archived'. Absent stays legal (defensive; no live path omits it).
         allow create: if request.auth != null
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
                     && request.resource.data.keys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency'])
-                    && (!('status' in request.resource.data) || request.resource.data.status != 'equipped');
+                    && (!('status' in request.resource.data) || request.resource.data.status in ['draft', 'forged']);
         allow update: if request.auth != null
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency'])
+                    // Status transition vocabulary (ruling B3): the ONLY
+                    // status changes a client may perform are the live forge
+                    // and archive gestures — draft→forged, draft→archived,
+                    // forged→archived. Everything else is server-owned
+                    // (equip/unequip/reforge endpoints, Admin SDK): never
+                    // INTO 'equipped', never OUT of 'equipped' (the
+                    // laundering hole: equipped→forged would unlock the
+                    // content freeze below with the bundle still projected),
+                    // never archived→anything, never →draft (reforge is the
+                    // server path back to draft). [Deviation from the
+                    // ruling's full "status server-write-only", documented:
+                    // the LIVE client forge (draft→forged) and the
+                    // born-'forged' dimension flow have no server
+                    // equivalents; this closed vocabulary preserves them
+                    // while making every equipped-adjacent transition
+                    // server-only — the enforcement-consequential surface.]
                     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['status'])
-                        || request.resource.data.status != 'equipped')
+                        || (resource.data.status == 'draft' && request.resource.data.status in ['forged', 'archived'])
+                        || (resource.data.status == 'forged' && request.resource.data.status == 'archived'))
                     // Mastery P2 (§6.1 rider, review finding): an EQUIPPED
                     // bundle's rule CONTENT is immutable to clients — else a
                     // compliant bundle could pass the equip-time capacity
                     // check and be inflated afterwards, and every
                     // reprojection (gatherBundleSnapshots) would carry the
-                    // inflated set into activeRules. Dimension/telemetry
+                    // inflated set into activeRules. 'name' joins the freeze
+                    // per the Q8 consumer census (2026-07-21): it is read by
+                    // the effective projection kernels (bundleName tag into
+                    // activeRules) — display-consumed today, frozen because
+                    // an effective path reads it. Dimension/telemetry
                     // fields on equipped docs stay writable (the
                     // persist-on-launch case). Server (Admin SDK) unaffected.
                     && (resource.data.status != 'equipped'
-                        || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ruleIds', 'ruleSnapshots', 'ruleHardness']));
+                        || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ruleIds', 'ruleSnapshots', 'ruleHardness', 'name']));
         allow delete: if false;
       }
 

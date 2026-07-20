@@ -32,7 +32,7 @@ import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 // Without this, the per-archetype L2 gate degrades to earn-once-on-any-
 // archetype (P2 review finding). Dark (enforcement off): untouched.
 import { MASTERY_ENFORCEMENT_ENABLED } from '../_utils/masteryConfig.js';
-import { masteryProfileRef, archetypeLevelFromProfile, dialAggressiveAllowed } from '../_utils/masteryEnforcement.js';
+import { masteryProfileRef, archetypeLevelFromProfile, revalidateTempoDial } from '../_utils/masteryEnforcement.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
@@ -128,16 +128,17 @@ export default async function handler(req, res) {
 
       const previousArchetype = agent.archetype ?? null;
 
-      // Mastery P2 dial re-validation (see the import note). The profile
-      // read sits HERE because the seed block below performs tx.set writes
-      // and Firestore requires every read to precede the first write.
+      // Mastery P2 dial re-validation (see the import note), through the
+      // SHARED revalidateTempoDial rule (ruling Q7) — the same kernel the §8
+      // corrections clamp pass uses, so switch-invalidation and corrections
+      // can never disagree on when aggressive resets. The profile read sits
+      // HERE because the seed block below performs tx.set writes and
+      // Firestore requires every read to precede the first write.
       let dialInvalidated = false;
       if (MASTERY_ENFORCEMENT_ENABLED && agent.dials?.tempo === 'aggressive') {
         const profileSnap = await tx.get(masteryProfileRef(db, user.uid));
         const newLevel = archetypeLevelFromProfile(profileSnap.exists ? profileSnap.data() : null, archetype);
-        if (!dialAggressiveAllowed(newLevel)) {
-          dialInvalidated = true;
-        }
+        dialInvalidated = revalidateTempoDial({ tempo: 'aggressive', level: newLevel }).invalidated;
       }
 
       // ⚠️ THE INVARIANT: archetype change ALWAYS loads that archetype's

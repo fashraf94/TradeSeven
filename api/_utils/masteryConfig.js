@@ -39,6 +39,22 @@ export const MASTERY_XP_ENABLED = false; // P4 cutover flips this (§7). Keep fa
 // of XP state (0·1·0 = entitlements frozen at the last profile); missing
 // profile ⇒ baseline entitlements. Flip order: XP → backfill → ENFORCEMENT
 // (with floor audit) → SURFACE.
+//
+// ENFORCEMENT FLIP CEREMONY (end-of-branch ruling B4 — the C6 Forge floor
+// audit EXTENDED to leans/dials/stats; this flip is BLOCKED until it
+// passes):
+//   1. run scripts/mastery-preflip-census.js (READ-ONLY) — enumerates every
+//      stored pin/dial/stat exceeding the owner's profile-derived baseline
+//      entitlement + every Forge bundle above the effective (lazy-legacy-
+//      floor) band, with a deterministic key per finding;
+//   2. the FOUNDER reviews the report and writes the approved-keys file
+//      (what never passed a gate);
+//   3. scripts/mastery-preflip-normalize.js --apply zeroes exactly the
+//      approved entries (dial resets + lean trims ride txUpdateAgentSettings;
+//      stats corrections are plain updates; Forge overages are never script-
+//      mutated — the reforge trim path + equip gate are the remediation);
+//   4. re-run the census; only a founder-accepted report clears this
+//      constant to flip (then deploy).
 export const MASTERY_ENFORCEMENT_ENABLED = false;
 
 // ---- Storage homes (net-new collections; firestore.rules default-deny +

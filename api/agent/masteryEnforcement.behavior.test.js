@@ -133,6 +133,70 @@ describe('lean caps — the chokepoint half of the D1 dual anchor', () => {
     expect(third.body.message).not.toMatch(/at most 2/); // copy never bakes a number
   });
 
+  it('M5: other-archetype pins at rest are PRESERVED but never consume slots (dark row — the counting rule is flag-independent)', async () => {
+    flagState.enf = false;
+    // Two degen pins survive from a switched-away archetype (durable desired
+    // state). Pre-M5 they filled the whole baseline cap; now the guardian
+    // count starts at zero.
+    const degenPins = [
+      { adjustmentId: 'SP-01', version: 1, equippedAt: '2026-07-01T00:00:00.000Z' },
+      { adjustmentId: 'SP-06', version: 1, equippedAt: '2026-07-02T00:00:00.000Z' },
+    ];
+    activeDb = makeMockDb({ 'agents/agent-1': AGENT({ standingLeans: degenPins }) });
+    expect((await equipLean('CP-01')).statusCode).toBe(200);
+    expect((await equipLean('CP-02')).statusCode).toBe(200);
+    const third = await equipLean('CP-03');
+    expect(third.statusCode).toBe(409);
+    expect(third.body.error).toBe('lean_limit');
+    // equippedCount is the KERNEL-ACCEPTED current-archetype count — 2, not 4.
+    expect(third.body.equippedCount).toBe(2);
+    const pins = activeDb.__dump('agents/agent-1').standingLeans.map((l) => l.adjustmentId);
+    expect(pins).toEqual(['SP-01', 'SP-06', 'CP-01', 'CP-02']); // degen desired state intact
+  });
+
+  it('M5 edge: re-confirming a DEPRECATED-version pin at full cap consumes a slot (the accepted set may never outgrow the entitlement)', async () => {
+    flagState.enf = false;
+    // CP-04 pinned at a stale version (kernel omits it — not counted), the
+    // two baseline slots filled by accepted pins.
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT({
+        standingLeans: [
+          { adjustmentId: 'CP-04', version: 0, equippedAt: '2026-07-01T00:00:00.000Z' },
+          { adjustmentId: 'CP-01', version: 1, equippedAt: '2026-07-02T00:00:00.000Z' },
+          { adjustmentId: 'CP-02', version: 1, equippedAt: '2026-07-03T00:00:00.000Z' },
+        ],
+      }),
+    });
+    // The re-confirm gesture (same id at the CURRENT version) is a refresh
+    // write-wise, but slot-wise it would ADD an accepted pin — denied at cap.
+    const reconfirm = await equipLean('CP-04');
+    expect(reconfirm.statusCode).toBe(409);
+    expect(reconfirm.body.error).toBe('lean_limit');
+    expect(reconfirm.body.equippedCount).toBe(2);
+    // Unequip one accepted pin, and the re-confirm goes through.
+    await activeDb.collection('agents').doc('agent-1').update({
+      standingLeans: activeDb.__dump('agents/agent-1').standingLeans.filter((l) => l.adjustmentId !== 'CP-02'),
+    });
+    expect((await equipLean('CP-04')).statusCode).toBe(200);
+  });
+
+  it('M5 × ENF: an L3 grant applies to the current-archetype count (cross-archetype pins riding along)', async () => {
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT({
+        standingLeans: [{ adjustmentId: 'SP-01', version: 1, equippedAt: '2026-07-01T00:00:00.000Z' }],
+      }),
+      'masteryProfiles/test-user': GUARDIAN_PROFILE(3),
+    });
+    for (const id of ['CP-01', 'CP-02', 'CP-03']) {
+      expect((await equipLean(id)).statusCode).toBe(200); // 3 guardian slots at L3
+    }
+    const fourth = await equipLean('CP-06');
+    expect(fourth.statusCode).toBe(409);
+    expect(fourth.body.leanCap).toBe(3);
+    expect(fourth.body.equippedCount).toBe(3);
+    expect(activeDb.__dump('agents/agent-1').standingLeans).toHaveLength(4); // 1 degen + 3 guardian
+  });
+
   it('DARK (ENF off): baseline cap even with an L3 profile; ZERO profile reads; no stamp', async () => {
     flagState.enf = false;
     activeDb = makeMockDb({
@@ -191,6 +255,38 @@ describe('dial gate — SETTING aggressive only; equipped state grandfathers', (
     activeDb.__resetReads();
     expect((await setTempo('aggressive')).statusCode).toBe(200);
     expect(activeDb.__readCounts()['masteryProfiles/test-user']).toBeUndefined();
+  });
+
+  it('Q7 SEQUENCE: a §8 correct-down clamps the dial through the SHARED rule, and the set-tempo-dial idempotent branch cannot resurrect it', async () => {
+    const { revalidateTempoDial, archetypeLevelFromProfile } = await import('../_utils/masteryEnforcement.js');
+    // Legally aggressive at L2.
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT({ dials: { tempo: 'aggressive' } }),
+      'masteryProfiles/test-user': GUARDIAN_PROFILE(2),
+    });
+    // CONTRAST (grandfathering, pre-correction): the idempotent branch keeps
+    // an equipped aggressive alive without consulting the gate.
+    expect((await setTempo('aggressive')).statusCode).toBe(200);
+
+    // The correction lands: guardian drops below L2…
+    await activeDb.collection('masteryProfiles').doc('test-user').set(GUARDIAN_PROFILE(1));
+    // …and the §8 clamp pass re-validates the dial with the SAME kernel the
+    // switch rider uses (ruling Q7: dials and leans re-validate together —
+    // this is the pass the corrections applier must run, dial half).
+    const corrected = activeDb.__dump('masteryProfiles/test-user');
+    const verdict = revalidateTempoDial({
+      tempo: activeDb.__dump('agents/agent-1').dials.tempo,
+      level: archetypeLevelFromProfile(corrected, 'guardian'),
+    });
+    expect(verdict).toEqual({ tempo: 'standard', invalidated: true }); // → notice rider fires in P3
+    await activeDb.collection('agents').doc('agent-1').update({ 'dials.tempo': verdict.tempo });
+
+    // Resurrection attempt: no longer idempotent, so the L2 gate fires —
+    // the corrected-down user cannot ride the grandfather branch back in.
+    const back = await setTempo('aggressive');
+    expect(back.statusCode).toBe(403);
+    expect(back.body.error).toBe('dial_locked');
+    expect(activeDb.__dump('agents/agent-1').dials.tempo).toBe('standard');
   });
 });
 

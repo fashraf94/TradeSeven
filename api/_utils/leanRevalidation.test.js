@@ -170,3 +170,65 @@ describe('at-rest SET checks (post-adjudication group changes; cap tightening)',
     ]);
   });
 });
+
+// ─── Ruling M6: the leanCap injection channel's closed vocabulary ───
+
+import { isLegalLeanCap, MASTERY_LEAN_CAP_MAX } from './leanRevalidation.js';
+
+describe('leanCap injection vocabulary (ruling M6: [2..4] integers only; reject + log outside)', () => {
+  const THREE = [
+    { adjustmentId: 'CP-01', version: 1, equippedAt: '2026-07-01T00:00:00Z' },
+    { adjustmentId: 'CP-04', version: 1, equippedAt: '2026-07-02T00:00:00Z' },
+    { adjustmentId: 'CP-02', version: 1, equippedAt: '2026-07-03T00:00:00Z' },
+  ];
+
+  it('isLegalLeanCap pins the vocabulary to exactly [2..4] integers', () => {
+    expect([0, 1, 5, 100, -1, 2.5, NaN, Infinity, '3', null, true].filter(isLegalLeanCap)).toEqual([]);
+    expect([2, 3, 4].every(isLegalLeanCap)).toBe(true);
+    expect(STANDING_LEANS_CAP).toBe(2);
+    expect(MASTERY_LEAN_CAP_MAX).toBe(4);
+  });
+
+  it('an in-vocabulary injection (the §8 corrections channel) is honored', () => {
+    const { valid } = revalidateStandingLeans({ standingLeans: THREE, archetypeCodeId: 'guardian', leanCap: 3 });
+    expect(valid).toHaveLength(3);
+  });
+
+  it.each([
+    ['a WIDER-than-structural cap', 100],
+    ['a below-baseline cap', 1],
+    ['zero', 0],
+    ['a negative cap', -2],
+    ['a non-integer', 2.5],
+    ['a numeric string', '3'],
+    ['null', null],
+    ['NaN', NaN],
+  ])('REJECTS %s: falls back to the BASELINE cap (never wider) and logs the attempt', (_label, injected) => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { valid, invalidated } = revalidateStandingLeans({
+      standingLeans: THREE,
+      archetypeCodeId: 'guardian',
+      leanCap: injected,
+    });
+    // Fail-closed: baseline (2), NOT the structural max — a malformed
+    // injection must never grant above baseline (omission is recoverable,
+    // an over-grant is not).
+    expect(valid).toHaveLength(STANDING_LEANS_CAP);
+    expect(invalidated).toEqual([
+      expect.objectContaining({ adjustmentId: 'CP-02', reason: LEAN_INVALIDATION_REASONS.OVER_CAP }),
+    ]);
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining('out-of-vocabulary leanCap injection'),
+      expect.any(String),
+    );
+    errSpy.mockRestore();
+  });
+
+  it('undefined is NOT an injection: the shared per-call default resolves (no log)', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { valid } = revalidateStandingLeans({ standingLeans: THREE, archetypeCodeId: 'guardian' });
+    expect(valid).toHaveLength(STANDING_LEANS_CAP); // dark default = baseline
+    expect(errSpy).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+});

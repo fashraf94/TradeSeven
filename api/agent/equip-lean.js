@@ -44,7 +44,7 @@ import { findEquipConflicts } from '../../src/data/archetypeAdjustments.js';
 // equip can never accept a pin the snapshot path would omit (or vice versa).
 // STANDING_LEANS_CAP lives there too (the domain kernel), re-exported here
 // for API-surface convenience.
-import { validateLeanPin, STANDING_LEANS_CAP, LEAN_INVALIDATION_REASONS } from '../_utils/leanRevalidation.js';
+import { validateLeanPin, revalidateStandingLeans, STANDING_LEANS_CAP, MASTERY_LEAN_CAP_MAX, LEAN_INVALIDATION_REASONS } from '../_utils/leanRevalidation.js';
 // Mastery P2 (spec §6 D1 dual anchor — the WRITE/chokepoint half): the cap
 // is level-derived from the live masteryProfile at write time. This
 // chokepoint is the ONLY per-user entitlement gate; the kernel half clamps
@@ -177,9 +177,29 @@ export default async function handler(req, res) {
       // does not add a slot). The rejection carries the RESOLVED cap so the
       // client renders the number the decision used — §9: never the static
       // baseline copy beside a level-derived decision.
-      if (!existing && current.length >= leanCap) {
+      //
+      // Ruling M5: capacity counts ONLY current-archetype, kernel-accepted
+      // pins. Leans are durable desired state across archetype switches, so
+      // at-rest pins from OTHER archetypes' menus (plus malformed/duplicate/
+      // conflicting entries the kernel would omit from any snapshot) are
+      // preserved but never consume slots — without this, a switched-away
+      // archetype's pins would silently eat the new archetype's capacity.
+      // The counting pass runs at the STRUCTURAL max: slot membership is a
+      // validity question; entitlement is decided by the leanCap check here.
+      // The slot decision keys on ACCEPTED membership, not raw same-id
+      // presence: refreshing an accepted pin never adds a slot, but
+      // re-confirming a NON-accepted at-rest pin (a deprecated-version
+      // stale entry — not counted above) CONSUMES one, else the re-confirm
+      // gesture could grow the accepted set past the entitlement.
+      const { valid: acceptedPins } = revalidateStandingLeans({
+        standingLeans: current,
+        archetypeCodeId: agent.archetype,
+        leanCap: MASTERY_LEAN_CAP_MAX,
+      });
+      const existingAccepted = acceptedPins.some((l) => l.adjustmentId === adjustmentId);
+      if (!existingAccepted && acceptedPins.length >= leanCap) {
         const err = new Error(SENTINEL_PREFIX + 'lean_limit');
-        err.details = { leanCap, equippedCount: current.length };
+        err.details = { leanCap, equippedCount: acceptedPins.length };
         throw err;
       }
 

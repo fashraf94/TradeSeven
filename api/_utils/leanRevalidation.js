@@ -34,6 +34,23 @@ export const STANDING_LEANS_CAP = 2;
 export const MASTERY_LEAN_CAP_MAX = 4;
 
 /**
+ * The closed injection vocabulary for the explicit `leanCap` param (end-of-
+ * branch ruling M6): every legal cap is an integer in
+ * [STANDING_LEANS_CAP .. MASTERY_LEAN_CAP_MAX] — exactly the §6 unlock
+ * table's range. An injected value outside it is a caller bug (the §8
+ * corrections applier can only ever inject reduced-but-legal entitlements),
+ * so it is REJECTED: the pass falls back to the BASELINE cap (fail-closed —
+ * a malformed injection must never grant above baseline; omission + record
+ * semantics make an over-tight clamp recoverable, an over-wide one isn't)
+ * and the attempt is logged loudly.
+ */
+export function isLegalLeanCap(leanCap) {
+  return Number.isInteger(leanCap)
+    && leanCap >= STANDING_LEANS_CAP
+    && leanCap <= MASTERY_LEAN_CAP_MAX;
+}
+
+/**
  * Mastery P2 (spec §6 D1 dual anchor — the SNAPSHOT/kernel half), P2-review
  * redesign: under enforcement the kernel clamps at the STRUCTURAL max (4)
  * on EVERY path; per-user ENTITLEMENT enforcement lives exclusively at the
@@ -142,8 +159,23 @@ export function validateLeanPin(archetypeCodeId, adjustmentId, version) {
 export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId, leanCap } = {}) {
   // Default resolves per call (never at module load): the ONE cap source for
   // every legacy two-field caller — fenced prompt path, client display,
-  // change-archetype rider — and the snapshot path alike (§9).
-  const effectiveCap = Number.isInteger(leanCap) ? leanCap : resolveLeanCap();
+  // change-archetype rider — and the snapshot path alike (§9). An EXPLICIT
+  // injection is validated against the closed vocabulary (ruling M6):
+  // out-of-vocabulary → baseline + loud log, never a wider cap.
+  let effectiveCap;
+  if (leanCap === undefined) {
+    effectiveCap = resolveLeanCap();
+  } else if (isLegalLeanCap(leanCap)) {
+    effectiveCap = leanCap;
+  } else {
+    console.error('[leanRevalidation] REJECTED out-of-vocabulary leanCap injection', JSON.stringify({
+      injected: typeof leanCap === 'number' || typeof leanCap === 'boolean' ? leanCap : String(leanCap).slice(0, MAX_INVALIDATED_ID_CHARS),
+      injectedType: typeof leanCap,
+      fallback: STANDING_LEANS_CAP,
+      archetypeCodeId: typeof archetypeCodeId === 'string' ? archetypeCodeId.slice(0, MAX_INVALIDATED_ID_CHARS) : null,
+    }));
+    effectiveCap = STANDING_LEANS_CAP;
+  }
   const invalidated = [];
 
   // Pass 1 — per-pin validity through the shared rule, plus same-id dedupe

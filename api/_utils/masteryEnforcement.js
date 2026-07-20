@@ -68,6 +68,31 @@ export function dialAggressiveAllowed(level) {
   return Number.isInteger(level) && level >= 2;
 }
 
+/**
+ * THE dial re-validation rule (end-of-branch ruling Q7) — one source for
+ * every pass that re-checks an EQUIPPED dial against a level that may have
+ * moved under it:
+ *   • the archetype-switch rider (change-archetype.js: the NEW archetype's
+ *     level, V2.1 STOP-B), and
+ *   • the §8 corrections clamp pass (the future correction applier passes
+ *     the CORRECTED level here in the same pass that injects the reduced
+ *     `leanCap` into revalidateStandingLeans — dials and leans re-validate
+ *     together, never leans alone).
+ * 'aggressive' below L2 resets to 'standard' (the §6 vocabulary's safe
+ * default); every other position — and aggressive at ≥L2 — carries
+ * untouched. Pure; the caller owns the write (and, per the ratified P3
+ * notice rider, the user-facing notice when `invalidated` is true).
+ * Grandfathering is NOT violated by construction: this runs only inside
+ * passes that are themselves re-validation events (switch / correction) —
+ * the tick-time clamp still never consults levels.
+ */
+export function revalidateTempoDial({ tempo, level }) {
+  if (tempo === 'aggressive' && !dialAggressiveAllowed(level)) {
+    return { tempo: 'standard', invalidated: true };
+  }
+  return { tempo: tempo ?? null, invalidated: false };
+}
+
 /** Forge rule band by HIGHEST archetype level (§6.1: 10 · L4 15 · L7 20). */
 export function forgeRuleBandForLevel(highestLevel) {
   if (!Number.isInteger(highestLevel) || highestLevel < 1) return 10; // fail toward band 1

@@ -12,6 +12,7 @@ import {
   highestLevelFromProfile,
   leanCapForLevel,
   dialAggressiveAllowed,
+  revalidateTempoDial,
   forgeRuleBandForLevel,
   effectiveForgeLimits,
 } from './masteryEnforcement.js';
@@ -58,6 +59,24 @@ describe('dial gate (§6 L2): aggressive requires per-archetype level ≥ 2', ()
   it('fails closed on garbage levels', () => {
     expect(dialAggressiveAllowed(NaN)).toBe(false);
     expect(dialAggressiveAllowed(undefined)).toBe(false);
+  });
+});
+
+describe('revalidateTempoDial — THE shared dial re-validation rule (ruling Q7: switch rider + §8 corrections clamp pass)', () => {
+  it('aggressive below L2 resets to standard, flagged invalidated (the notice-rider signal)', () => {
+    expect(revalidateTempoDial({ tempo: 'aggressive', level: 1 })).toEqual({ tempo: 'standard', invalidated: true });
+    expect(revalidateTempoDial({ tempo: 'aggressive', level: 0 })).toEqual({ tempo: 'standard', invalidated: true });
+    expect(revalidateTempoDial({ tempo: 'aggressive', level: NaN })).toEqual({ tempo: 'standard', invalidated: true });
+  });
+
+  it('aggressive at ≥L2 carries; every non-aggressive position carries at ANY level (only the gated position re-validates)', () => {
+    expect(revalidateTempoDial({ tempo: 'aggressive', level: 2 })).toEqual({ tempo: 'aggressive', invalidated: false });
+    expect(revalidateTempoDial({ tempo: 'standard', level: 1 })).toEqual({ tempo: 'standard', invalidated: false });
+    expect(revalidateTempoDial({ tempo: 'measured', level: 1 })).toEqual({ tempo: 'measured', invalidated: false });
+    // Unknown desired values stay visible (desired-vs-effective: the clamp
+    // suppresses them at tick time; a correction pass must not rewrite them).
+    expect(revalidateTempoDial({ tempo: 'warp', level: 1 })).toEqual({ tempo: 'warp', invalidated: false });
+    expect(revalidateTempoDial({ tempo: undefined, level: 1 })).toEqual({ tempo: null, invalidated: false });
   });
 });
 
