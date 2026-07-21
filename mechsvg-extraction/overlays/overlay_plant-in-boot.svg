@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" width="280" height="392" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <title>MechSVG group - plant-in-boot</title>
+  <defs>
+    <filter id="teal-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="core-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="200" height="280" fill="#0B0D11"/>
+  <g id="plant-in-boot">
+    <path d="M148 260 L163 260 L163 253 L158 253 L158 245 L148 245 Z" stroke="#E6EDF3" fill="#0D0E12" stroke-width="2"/>
+    <path d="M153 245 Q153 238 158 235" stroke="#5EEAD4" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M153 241 Q148 239 150 237 Q153 237 153 241" fill="#5EEAD4" stroke="none"/>
+    <path d="M156 238 Q161 236 160 233 Q156 234 156 238" fill="#5EEAD4" stroke="none"/>
+  </g>
+</svg>

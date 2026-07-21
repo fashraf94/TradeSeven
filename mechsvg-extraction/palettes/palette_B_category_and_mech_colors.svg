@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 468" width="820" height="468" fill="none">
+  <title>Palette B - CATEGORY_COLORS and mech color engine</title>
+  <rect x="0" y="0" width="820" height="468" fill="#0B0D11"/>
+  <text x="28" y="40" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#E6EDF3">CATEGORY_COLORS  &amp;  mech color engine</text>
+  <text x="28" y="63" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#8B95A5">MECH_BAY_TOKENS: not found in repo (0 matches). Mech color is derived, not tokenized.</text>
+  <text x="28" y="88" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" letter-spacing="0.08em" fill="#8B95A5">CATEGORY_COLORS &#183; RuleDetailSheet.jsx:8 / ForgeRuleCard.jsx:7 (rule categories)</text>
+  <rect x="28" y="100" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="38" y="110" width="32" height="32" rx="6" fill="#5eead4"/>
+  <text x="78" y="124" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">technical</text>
+  <text x="78" y="140" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#5eead4</text>
+  <rect x="168" y="100" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="178" y="110" width="32" height="32" rx="6" fill="#f59e0b"/>
+  <text x="218" y="124" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">fundamental</text>
+  <text x="218" y="140" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#f59e0b</text>
+  <rect x="308" y="100" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="318" y="110" width="32" height="32" rx="6" fill="#ef4444"/>
+  <text x="358" y="124" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">risk</text>
+  <text x="358" y="140" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#ef4444</text>
+  <rect x="448" y="100" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="458" y="110" width="32" height="32" rx="6" fill="#8b5cf6"/>
+  <text x="498" y="124" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">allocation</text>
+  <text x="498" y="140" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#8b5cf6</text>
+  <rect x="588" y="100" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="598" y="110" width="32" height="32" rx="6" fill="#6366F1"/>
+  <text x="638" y="124" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">mid_battle</text>
+  <text x="638" y="140" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#6366F1</text>
+  <rect x="28" y="162" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="38" y="172" width="32" height="32" rx="6" fill="#94A3B8"/>
+  <text x="78" y="186" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">game_state</text>
+  <text x="78" y="202" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#94A3B8</text>
+  <rect x="168" y="162" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="178" y="172" width="32" height="32" rx="6" fill="#e879f9"/>
+  <text x="218" y="186" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">threshold</text>
+  <text x="218" y="202" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#e879f9</text>
+  <rect x="308" y="162" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="318" y="172" width="32" height="32" rx="6" fill="#fbbf24"/>
+  <text x="358" y="186" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">tier_strategy</text>
+  <text x="358" y="202" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#fbbf24</text>
+  <line x1="28" y1="246" x2="792" y2="246" stroke="#232833"/>
+  <text x="28" y="270" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" letter-spacing="0.08em" fill="#8B95A5">DNA_COLORS &#183; getMechColors.js:8 (drives primaryGlow / visorColor of the ONE mech)</text>
+  <rect x="28" y="282" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="38" y="292" width="32" height="32" rx="6" fill="#5EEAD4"/>
+  <text x="78" y="306" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">instincts</text>
+  <text x="78" y="322" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#5EEAD4</text>
+  <rect x="168" y="282" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="178" y="292" width="32" height="32" rx="6" fill="#F59E0B"/>
+  <text x="218" y="306" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">strategy</text>
+  <text x="218" y="322" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#F59E0B</text>
+  <rect x="308" y="282" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="318" y="292" width="32" height="32" rx="6" fill="#EF4444"/>
+  <text x="358" y="306" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">discipline</text>
+  <text x="358" y="322" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#EF4444</text>
+  <text x="28" y="366" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" letter-spacing="0.08em" fill="#8B95A5">STANDBY &#183; getMechColors.js:14 (no DNA equipped &#8594; grey mech)</text>
+  <rect x="28" y="378" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="38" y="388" width="32" height="32" rx="6" fill="#718096"/>
+  <text x="78" y="402" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">primaryGlow</text>
+  <text x="78" y="418" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#718096</text>
+  <rect x="168" y="378" width="128" height="52" rx="8" fill="#15171E" stroke="#232833"/>
+  <rect x="178" y="388" width="32" height="32" rx="6" fill="#4A5568"/>
+  <text x="218" y="402" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="600" fill="#E6EDF3">visorColor</text>
+  <text x="218" y="418" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8B95A5">#4A5568</text>
+</svg>

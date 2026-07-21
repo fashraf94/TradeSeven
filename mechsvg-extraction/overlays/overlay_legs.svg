@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" width="280" height="392" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <title>MechSVG group - legs</title>
+  <defs>
+    <filter id="teal-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="core-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="200" height="280" fill="#0B0D11"/>
+  <g id="legs">
+    <rect x="73" y="170" width="10" height="35" rx="4" stroke="#E6EDF3" fill="#0D0E12" stroke-width="2.5"/>
+    <circle cx="78" cy="209" r="6" stroke="#E6EDF3" fill="#0D0E12" stroke-width="2.5"/>
+    <rect x="73" y="215" width="10" height="35" rx="4" stroke="#E6EDF3" fill="#0D0E12" stroke-width="2.5"/>
+    <path d="M65 260 L91 260 L85 248 L71 248 Z" stroke="#E6EDF3" fill="#0D0E12" stroke-width="2.5"/>
+    <rect x="117" y="170" width="10" height="35" rx="4" stroke="#E6EDF3" fill="#0D0E12" stroke-width="2.5"/>
+    <circle cx="122" cy="209" r="6" stroke="#E6EDF3" fill="#0D0E12" stroke-width="2.5"/>
+    <rect x="117" y="215" width="10" height="35" rx="4" stroke="#E6EDF3" fill="#0D0E12" stroke-width="2.5"/>
+    <path d="M109 260 L135 260 L129 248 L115 248 Z" stroke="#E6EDF3" fill="#0D0E12" stroke-width="2.5"/>
+  </g>
+</svg>

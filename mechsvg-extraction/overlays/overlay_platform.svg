@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" width="280" height="392" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <title>MechSVG group - platform</title>
+  <defs>
+    <filter id="teal-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="core-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="200" height="280" fill="#0B0D11"/>
+  <g id="platform">
+    <ellipse cx="100" cy="260" rx="65" ry="8" stroke="#5EEAD4" stroke-width="1.5" stroke-dasharray="6 6" fill="none" opacity="0.5"/>
+  </g>
+</svg>
