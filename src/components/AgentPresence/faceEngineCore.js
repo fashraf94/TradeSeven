@@ -183,10 +183,16 @@ export class FaceCtl {
     else if (r < 0.8) { const g = (Math.random() * 2 - 1) * (this.standing < -0.35 ? 0.5 : 0.34); this.pOff('gx', g, 900, 'io', 0, true); this.pOff('gx', 0, 1400, 'io', 1400 + Math.random() * 1200, true); }
     else this.play('anttwitch', { tiny: true });
   }
-  // Paint ONE still frame for a static head: compose displayed = base+off (base holds the
-  // instant pose; no tweens pending) and apply once. The caller never registers a static
-  // ctl in FACE_REG, so this is the ONLY paint — no rAF, no idle, no breath.
+  // Paint ONE still frame for a static head. A static head carries NO transients, so drop
+  // any queued/leftover offset tweens and zero the transient layer first — the frame is
+  // then the pure mood (base) pose. This is a no-op on a fresh static mount (off already 0
+  // / offTw empty); it's the belt for a future reactivityLevel flip (reactive→static
+  // mid-move) so a transient — e.g. a half-closed blink — can't freeze into the frame. The
+  // caller never registers a static ctl in FACE_REG, so this is the ONLY paint (no rAF, no
+  // idle, no breath).
   renderStatic(now) {
+    this.offTw.length = 0;
+    for (const k in this.off) this.off[k] = 0;
     for (const k in this.d) this.d[k] = clampK(k, this.base[k] + this.off[k]);
     this.apply(now);
   }

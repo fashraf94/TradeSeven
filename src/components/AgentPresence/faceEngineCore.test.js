@@ -49,6 +49,24 @@ describe('FaceCtl — static (still) paint (finding 13)', () => {
     expect(Math.abs(bobOf(refs.face.attrs.transform))).toBeGreaterThan(0);
   });
 
+  it('renderStatic ignores a leftover transient offset — paints the pure mood (base) pose', () => {
+    // Simulates a future reactivityLevel flip (reactive→static) mid-move: a stale `off`
+    // value + queued tween must NOT freeze into the static frame.
+    const ctl = new FaceCtl(DISPO.neutral);
+    ctl.still = true;
+    const refs = mockRefs();
+    ctl.attach(refs);
+    ctl.setStanding(0, { instant: true }); // base.mouth = REST.mouth = 0.34
+    ctl.off.mouth = 0.9;
+    ctl.offTw.push({ key: 'mouth', from: 0, to: 0.9, start: 0, dur: 100, ease: 'out' });
+    ctl.renderStatic(NOW);
+    // mouth d uses base.mouth (0.34), NOT base+off (which would clamp to 1.1) →
+    // Q control y = 128 + 0.34*12 = 132.08, and the tween queue is emptied.
+    expect(refs.mouth.attrs.d).toBe(`M80 128 Q100 ${(128 + 0.34 * 12).toFixed(2)} 120 128`);
+    expect(ctl.offTw.length).toBe(0);
+    expect(ctl.off.mouth).toBe(0);
+  });
+
   it('still also silences the antenna-life + glow-breath (reduced parity)', () => {
     const ctl = new FaceCtl(DISPO.speculator); // speculator has the liveliest antenna
     ctl.still = true;
