@@ -145,6 +145,16 @@ From the read-only cron audit (30 LIVE · 2 DEAD, 38/40). This pass **removed** 
 - **`compute-briefs`** — parked pre-provisioning for the `/api/stocks/analysis` route (Phase 2C), which has **no live caller** (`api/_utils/stockBriefService.js:5` self-annotates "Phase 2C, future"). **Kept deliberately** — one-slot gain not worth the blast radius; the manual admin twin `api/admin/generate-briefs.js:142` can regenerate `stockBriefs` on demand. Revisit if the Phase-2C analysis feature is confirmed dead.
 - **`pre-market-warmup` dead price-warm half** — **stripped in this pass (intentional).** It wrote a per-serverless-instance in-memory cache invisible to `api/stocks/prices`, keyed per-symbol vs that route's composite key, so it never served a live read. The load-bearing half (FantasyTimes consensus seeding via `seedConsensus`/`flushExpiredCatalysts`) was preserved by folding it into `process-draft-claims` under an `isPreMarketWindow()` guard.
 
+### X4 — 🎫 [HIGH] `snake-draft-autopick` 500 Fatal — candidate root cause for creation-side pod starvation (2026-07-22)
+Observed in production during the **Training-Pod P0 R1 verification** (~09:40–09:45 UTC window, 2026-07-22, founder dashboard): `/api/cron/snake-draft-autopick` (`vercel.json:30`, `*/10 * * * *`) threw a **500 Fatal error during autopick**. **Flagged as a candidate root cause for the creation-side pod starvation** the Training-Pod P0 surfaced: that P0 established the training **advancement** machinery + orchestrator are registered, firing, and healthy — yet ~zero pods enter the pipeline (the starvation is creation-side, not advancement-side). An autopick handler that fatals is a plausible upstream suppressor of draft/pod creation, so this is **worth a look sooner than later** (founder). NOT a Training-Pod P0 branch item (that branch is the status-transition + stale-pod-cleanup scope).
+- **Next step (separate ticket):** pull the Vercel function logs for the failing invocation, locate the throw site in `api/cron/snake-draft-autopick.js`, and confirm/deny the creation-suppression link before deciding severity of the fix.
+- **Disposition:** separate ticket, founder-flagged; not actioned on the P0 branch.
+
+### X5 — [MED] `fantasytimes/ingest-econ` 500 (2026-07-22)
+Observed in the same verification window (~09:40–09:45 UTC, 2026-07-22): `/api/fantasytimes/ingest-econ` (`vercel.json:119`) returned a **500**. Unrelated to the Training-Pod P0 branch and with no known tournament-surface impact; recorded here so it is not lost.
+- **Next step (separate ticket):** inspect the failing invocation's logs / the ingest source; triage independently.
+- **Disposition:** separate ticket, founder-flagged; not actioned on the P0 branch.
+
 ---
 
 ## Entry-Flow Consolidation triage (2026-07-18, founder-ruled)
