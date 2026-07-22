@@ -668,7 +668,8 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     expect(calls.length).toBe(1);
     // The cache is created in the handler loop scope and threaded through.
     expect(source).toMatch(/const tournamentGroupCache = new Map\(\);/);
-    expect(source).toMatch(/processAgentBattle\(db, battle, summary, startTime, tournamentGroupCache\)/);
+    // Mastery P1: the call threads the run-level mastery flag view too.
+    expect(source).toMatch(/processAgentBattle\(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView\)/);
   });
 
   it('THE RESOLVER DISCRIMINATES BEFORE ANY AWAIT — a regular battle costs zero Firestore I/O (P4 contract: gameMode AND groupId stamped together)', () => {

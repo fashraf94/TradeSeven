@@ -33,6 +33,17 @@ import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
 import { getAgentLevel, FORGE_LIMITS } from '../../src/constants/agentProgression.js';
+// Mastery P2 (spec §6.1): Forge limits gain the LAZY legacy floor —
+// effective = field-wise max(mastery band by HIGHEST archetype level, live
+// legacy entitlement) — plus the server-side rule-capacity check the §6.1
+// rider mandates at the consequential paths. A8 BYTE-IDENTITY EXEMPTION
+// FOOTNOTE: with enforcement off, the rule-capacity check still enforces
+// TODAY'S legacy FORGE_LIMITS server-side — the flags-off hardening of
+// limits the client already enforces (spec §6.1: "standalone security
+// hardening exempt from flags-off byte-identity"; patch flag-#4 precedent).
+// Byte-identity acceptance is thereby narrowed to valid-client behavior.
+import { MASTERY_ENFORCEMENT_ENABLED } from '../_utils/masteryConfig.js';
+import { masteryProfileRef, effectiveForgeLimits } from '../_utils/masteryEnforcement.js';
 import { reconcile, RECONCILER_VERSION } from '../../src/utils/ruleConflictReconciler.js';
 import { CONFLICT_RECONCILER_DETECT_ENABLED, RULE_COMPAT_MODE } from '../../src/config/featureFlags.js';
 import { classifyBundleSnapshots } from '../../src/services/ruleCompatClassify.js';
@@ -49,6 +60,7 @@ const SENTINEL_TO_HTTP = Object.freeze({
   bundle_not_found: [404, 'bundle_not_found', 'Bundle not found.'],
   not_forged:       [400, 'not_forged',       'Bundle must be forged before equipping.'],
   bundle_limit:     [409, 'bundle_limit',     'Bundle limit reached for your agent\'s level. Unequip a bundle first or level up by playing more games.'],
+  rule_limit:       [409, 'rule_limit',       'This bundle exceeds your rule capacity. Reforge it smaller or grow your capacity.'],
 });
 
 export default async function handler(req, res) {
@@ -91,7 +103,12 @@ export default async function handler(req, res) {
       // bundle refs derive purely from request params → one batched round
       // trip; validation order is unchanged.
       const bundleRef = bundlesCol.doc(bundleId);
-      const [agentSnap, bundleSnap] = await tx.getAll(agentRef, bundleRef);
+      // Mastery P2: the profile joins the SAME batched read when enforcement
+      // is on (reads before writes; zero added I/O while dark).
+      const refs = MASTERY_ENFORCEMENT_ENABLED
+        ? [agentRef, bundleRef, masteryProfileRef(db, user.uid)]
+        : [agentRef, bundleRef];
+      const [agentSnap, bundleSnap, profileSnap] = await tx.getAll(...refs);
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
@@ -103,14 +120,33 @@ export default async function handler(req, res) {
 
       const currentEquipped = agent.equippedBundleIds || [];
 
-      // Amendment 4: equipped-bundle limit against progression level.
+      // Amendment 4: equipped-bundle limit against progression level —
+      // effective limits under enforcement carry the §6.1 lazy legacy floor
+      // (maxBundles has no mastery dimension and passes through unchanged).
       const level = getAgentLevel(agent.stats?.gamesPlayed || 0);
-      const limits = FORGE_LIMITS[level];
+      const legacyLimits = FORGE_LIMITS[level];
+      const limits = MASTERY_ENFORCEMENT_ENABLED
+        ? effectiveForgeLimits({ legacyLimits, profileData: profileSnap?.exists ? profileSnap.data() : null })
+        : legacyLimits;
       if (currentEquipped.length >= limits.maxBundles) {
         const err = new Error(SENTINEL_PREFIX + 'bundle_limit');
         // Dynamic copy detail (level + max) for the client message — the
         // static sentinel map carries the generic fallback.
         err.details = { level, maxBundles: limits.maxBundles };
+        throw err;
+      }
+
+      // §6.1 rider (server rule-capacity check; A8 exemption — see the
+      // import note): an over-capacity bundle cannot be EQUIPPED past the
+      // server, and once equipped its rule content is client-immutable
+      // (firestore.rules bundles update guard, same review pass) — so the
+      // capacity checked here is the capacity every later reprojection
+      // carries. Reforge deliberately carries NO capacity check (it is the
+      // trim path; see reforge-bundle.js header).
+      const bundleRuleCount = Array.isArray(bundle.ruleSnapshots) ? bundle.ruleSnapshots.length : 0;
+      if (bundleRuleCount > limits.maxRulesPerBundle) {
+        const err = new Error(SENTINEL_PREFIX + 'rule_limit');
+        err.details = { level, maxRulesPerBundle: limits.maxRulesPerBundle, bundleRuleCount };
         throw err;
       }
 

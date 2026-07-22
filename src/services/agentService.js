@@ -329,6 +329,10 @@ export async function toEquipError(response) {
   const err = new Error(data.message || `Request failed (${response.status})`);
   err.status = response.status;
   err.code = data.error || 'request_failed';
+  // The full parsed body rides along (additive) — endpoints attach
+  // decision details (leanCap, equippedCount, reconfirmOfStale, ...) the
+  // surface uses for §9-honest copy.
+  err.payload = data;
   return err;
 }
 

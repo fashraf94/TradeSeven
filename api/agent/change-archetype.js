@@ -24,6 +24,20 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
+// Mastery P2 (V2.1 STOP-B: customization bundles are per-archetype —
+// "switching archetypes switches/invalidates them"): an equipped
+// 'aggressive' dial re-validates against the NEW archetype's mastery level
+// at switch time; below L2 it invalidates to 'standard' in the same commit
+// (the standing-lean invalidation rider precedent in this same file).
+// Without this, the per-archetype L2 gate degrades to earn-once-on-any-
+// archetype (P2 review finding). Dark (enforcement off): untouched.
+import {
+  MASTERY_ENFORCEMENT_ENABLED,
+  MASTERY_CUTOVER_GUARD_ENABLED,
+  MASTERY_CONFIG_COLLECTION,
+  MASTERY_CUTOVER_MARKER_DOC,
+} from '../_utils/masteryConfig.js';
+import { masteryProfileRef, archetypeLevelFromProfile, revalidateTempoDial } from '../_utils/masteryEnforcement.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
@@ -119,6 +133,39 @@ export default async function handler(req, res) {
 
       const previousArchetype = agent.archetype ?? null;
 
+      // Mastery P2 dial re-validation (see the import note), through the
+      // SHARED revalidateTempoDial rule (ruling Q7) — the same kernel the §8
+      // corrections clamp pass uses, so switch-invalidation and corrections
+      // can never disagree on when aggressive resets. The profile read sits
+      // HERE because the seed block below performs tx.set writes and
+      // Firestore requires every read to precede the first write.
+      //
+      // CUTOVER WINDOW (B3 delta-review closure): the dial gate is
+      // PER-ARCHETYPE, so carrying an equipped aggressive onto a new
+      // archetype IS an acquisition in the per-archetype sense — left open,
+      // a dark switch during the flip ceremony would rebind aggressive to
+      // an archetype whose gate it never passed and go stale under the
+      // final census. While the guard constant is on and the marker exists,
+      // this rider therefore runs the SAME revalidation enforcement will
+      // run — a ≥L2 switch keeps aggressive (legit), below L2 resets, and
+      // the census's per-archetype verdicts stay live. Ordinary dark (guard
+      // off): zero mastery I/O, byte-identical.
+      let dialInvalidated = false;
+      if (agent.dials?.tempo === 'aggressive') {
+        let revalidate = MASTERY_ENFORCEMENT_ENABLED;
+        if (!revalidate && MASTERY_CUTOVER_GUARD_ENABLED) {
+          const markerSnap = await tx.get(
+            db.collection(MASTERY_CONFIG_COLLECTION).doc(MASTERY_CUTOVER_MARKER_DOC),
+          );
+          revalidate = markerSnap.exists;
+        }
+        if (revalidate) {
+          const profileSnap = await tx.get(masteryProfileRef(db, user.uid));
+          const newLevel = archetypeLevelFromProfile(profileSnap.exists ? profileSnap.data() : null, archetype);
+          dialInvalidated = revalidateTempoDial({ tempo: 'aggressive', level: newLevel }).invalidated;
+        }
+      }
+
       // ⚠️ THE INVARIANT: archetype change ALWAYS loads that archetype's
       // born-with trait set — atomically, in THIS transaction. Create the new
       // trait rule docs and write archetype + equippedTraits together (tx.set +
@@ -149,6 +196,8 @@ export default async function handler(req, res) {
         archetype,
         updatedAt: nowIso,
         ...(seeded && seeded.equippedTraits ? { equippedTraits: seeded.equippedTraits } : {}),
+        // Dial invalidation rides the same atomic commit (V2.1 STOP-B).
+        ...(dialInvalidated ? { 'dials.tempo': 'standard' } : {}),
       });
 
       // equippedTraits rides along for the WS1 rescan (projection input) — now
@@ -161,6 +210,7 @@ export default async function handler(req, res) {
         equippedTraits: (seeded && seeded.equippedTraits) || agent.equippedTraits || [],
         standingLeans: Array.isArray(agent.standingLeans) ? agent.standingLeans : [],
         seeded: seeded ? { traitCount: seeded.equippedTraits.length, rulesAdded: seeded.rulesAdded } : null,
+        dialInvalidated,
       };
     });
   } catch (txErr) {
@@ -325,5 +375,11 @@ export default async function handler(req, res) {
     // Additive, mode-gated field — absent while RULE_COMPAT_MODE='off' so the
     // off response stays byte-identical.
     ...(compatActive ? { rescanLogged } : {}),
+    // P3 notice rider (ratified, V2.2 §3.2; extended to cutover-window
+    // resets): present ONLY when the dial invalidation actually fired —
+    // which requires enforcement or the ceremony marker, so the ordinary
+    // dark response stays byte-identical. The client surfaces this as the
+    // user notice (never a silent reset).
+    ...(txResult.dialInvalidated ? { dialInvalidated: true } : {}),
   });
 }

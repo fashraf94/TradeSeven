@@ -44,6 +44,15 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
+// Mastery P2 review DECISION (all three review angles concurred — flagged
+// to the founder in the P2 report as a deviation from the reforge-anchor
+// ruling): reforge carries NO rule-capacity check. The check would gate the
+// wrong dimension (reforge resets ruleSnapshots and carries ruleIds into a
+// DRAFT) and, decisively, reforge→edit-draft is the ONLY valid-client trim
+// path for an over-capacity forged bundle — blocking it deadlocks exactly
+// the remediation flow that equip-bundle's rule_limit copy directs users
+// to, with no security gain (a draft is unequippable until it passes the
+// equip-time check, which is the consequential gate).
 import { snapshotsToActiveRules, gatherBundleSnapshots } from '../_utils/bundleRuleProjection.js';
 import { classifyByCategory } from '../_utils/ruleHardness.js';
 import { RULE_COMPAT_MODE } from '../../src/config/featureFlags.js';
@@ -109,6 +118,8 @@ export default async function handler(req, res) {
       if (!bundleSnap.exists) throw new Error(SENTINEL_PREFIX + 'bundle_not_found');
       const bundle = bundleSnap.data();
       if (bundle.status === 'draft') throw new Error(SENTINEL_PREFIX + 'is_draft');
+      // Deliberately no rule-capacity check — see the header note: reforge
+      // IS the trim path; equip-bundle is the enforcement gate.
 
       // ── WS1 B3 — evaluate the hard overrides being carried forward ──
       // (reads the override rule docs; pure decisions; strips under enforce)

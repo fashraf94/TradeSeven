@@ -87,3 +87,10 @@ research/level-study/reports/
 research/**/.env*
 research/**/*.secret
 research/**/*.key
+
+# Mastery ENFORCEMENT flip-ceremony artifacts (B4): the pre-flip census
+# report carries per-user entitlement data and the approved-keys file is a
+# founder-local decision record — never committed.
+mastery-preflip-census-report.json
+mastery-preflip-approved*.json
+mastery-backfill-report.json

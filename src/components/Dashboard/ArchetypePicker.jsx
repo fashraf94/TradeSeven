@@ -23,6 +23,10 @@ import { Check } from 'lucide-react';
 import EquipSheet from './EquipSheet';
 import { CMD, alpha, Mono, readableOn, ErrorBanner } from './commandUI';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
+// Notice copy only (review F8): the reset notice always shows (never a
+// silent reset), but mastery VOCABULARY appears only once the surface is
+// lit — before that the copy is neutral.
+import { MASTERY_SURFACE_ENABLED } from '../../../api/_utils/masteryConfig.js';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
 import { changeArchetype } from '../../services/agentService';
 
@@ -116,6 +120,9 @@ export default function ArchetypePicker({ open, onClose, agent, accent, dock = '
   const [pending, setPending] = useState(null);   // codeId awaiting confirm — NO write yet, or null
   const [working, setWorking] = useState(false);   // the change+seed request is in flight
   const [error, setError] = useState(null);
+  // The dial-invalidation notice (Mastery P3 rider): holds the NEW
+  // archetype's display name while the notice shows, then the sheet closes.
+  const [dialNotice, setDialNotice] = useState(null);
   // Monotonic session token, bumped on close, so an async write that resolves
   // after the sheet was closed (and maybe reopened) can't setState on it.
   const sessionRef = useRef(0);
@@ -126,7 +133,7 @@ export default function ArchetypePicker({ open, onClose, agent, accent, dock = '
   useEffect(() => {
     if (!open) {
       sessionRef.current += 1;
-      setPending(null); setWorking(false); setError(null);
+      setPending(null); setWorking(false); setError(null); setDialNotice(null);
     }
   }, [open]);
 
@@ -149,8 +156,19 @@ export default function ArchetypePicker({ open, onClose, agent, accent, dock = '
     setWorking(true);
     setError(null);
     try {
-      await changeArchetype(agent.id, pending);
+      const result = await changeArchetype(agent.id, pending);
       if (sessionRef.current !== session) return; // sheet closed mid-flight — drop the result
+      // Mastery P3 notice rider (ratified, V2.2 §3.2 + cutover-window
+      // extension): the server resets an equipped 'aggressive' tempo when
+      // the NEW archetype's mastery level is below the gate — never a
+      // silent reset. The response field exists ONLY when the reset fired
+      // (enforcement or flip-ceremony states), so this branch is
+      // unreachable dark and the ordinary close is byte-identical.
+      if (result?.dialInvalidated) {
+        setDialNotice(getArchetypeDisplayName(pending));
+        setTimeout(() => { if (sessionRef.current === session) onClose?.(); }, 2600);
+        return;
+      }
       onClose?.();
     } catch (err) {
       if (sessionRef.current !== session) return;
@@ -173,6 +191,17 @@ export default function ArchetypePicker({ open, onClose, agent, accent, dock = '
         : 'Your archetype sets how your agent reads the market and picks trades. A change applies on your next deploy.'}
       accent={accent}
     >
+      {dialNotice && (
+        <div style={{
+          margin: '2px 0 12px', padding: '10px 12px', borderRadius: 10,
+          background: alpha(accent, 0.1), border: `1px solid ${alpha(accent, 0.35)}`,
+          fontSize: 12.5, color: CMD.ink, lineHeight: 1.5,
+        }}>
+          {MASTERY_SURFACE_ENABLED
+            ? `Tempo dial reset to Standard — the Aggressive position unlocks at mastery level 2 for ${dialNotice}.`
+            : `Tempo dial reset to Standard — the Aggressive position isn't available for ${dialNotice} yet.`}
+        </div>
+      )}
       {confirming ? (
         <ConfirmPanel
           codeId={pending}

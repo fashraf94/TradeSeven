@@ -144,14 +144,94 @@ service cloud.firestore {
     // AGENT DASHBOARD — User-owned AI trading agents
     match /agents/{agentId} {
       allow read: if request.auth != null;
+      // Create-side allowlist (Mastery end-of-branch ruling B1/B2, 2026-07-21
+      // — the §7.2 hardening the 2026-07-15 discovery deferred): sensitive
+      // fields are born at server defaults or not at all, so a crafted
+      // client cannot mint entitlement/progression/cognition state at
+      // creation, and recreate-laundering around the update allowlist below
+      // is dead by construction. stats is the LEGACY FLOOR INPUT
+      // (stats.gamesPlayed → FORGE_LIMITS tier → the §6.1 lazy legacy
+      // floor) — forced to the exact createAgent zero shape, it is
+      // server-only going forward (agent-evaluate increments it). The
+      // absent-list fields are server-accreted only (equip/settings
+      // endpoints, chat, cron); activeRules/equippedBundleIds/memory are
+      // seeded empty by the live createAgent; consolidatedInsight ''; the
+      // dev-only seedTestAgent (dead code, zero callers) seeded demo values
+      // and is intentionally broken by this rule — flagged for separate
+      // cleanup. Verified against every live client create path
+      // (writer census 2026-07-21; docs/audits/2026-07-15_FIRESTORE_RULES_AGENTS_DISCOVERY.md).
+      // ⚠ LOCKSTEP INVARIANT: the stats key set + zero values below mirror
+      // the createAgent seed (agentService.js) exactly — any change to that
+      // seed's stats shape MUST update this clause and the rules test in
+      // the SAME change, or agent creation breaks in production. Per-key
+      // numeric comparison (not map equality) so an SDK serializing zeros
+      // as doubles still passes; hasOnly pins the key set.
       allow create: if request.auth != null
-                    && request.resource.data.ownerId == request.auth.uid;
+                    && request.resource.data.ownerId == request.auth.uid
+                    && !request.resource.data.keys().hasAny(['standingLeans', 'dials', 'settingsRev',
+                                 'equippedTraits', 'deployedStrategy', 'activeBattleId',
+                                 'lessons', 'forgeSuggestions', 'isTrainingClone'])
+                    && (!('stats' in request.resource.data)
+                        || (request.resource.data.stats is map
+                            && request.resource.data.stats.keys().hasOnly(['wins', 'losses', 'gamesPlayed',
+                                 'totalScore', 'avgScore', 'currentStreak', 'bestStreak'])
+                            && request.resource.data.stats.get('wins', 0) == 0
+                            && request.resource.data.stats.get('losses', 0) == 0
+                            && request.resource.data.stats.get('gamesPlayed', 0) == 0
+                            && request.resource.data.stats.get('totalScore', 0) == 0
+                            && request.resource.data.stats.get('avgScore', 0) == 0
+                            && request.resource.data.stats.get('currentStreak', 0) == 0
+                            && request.resource.data.stats.get('bestStreak', 0) == 0))
+                    && (!('activeRules' in request.resource.data)
+                        || (request.resource.data.activeRules is list
+                            && request.resource.data.activeRules.size() == 0))
+                    && (!('equippedBundleIds' in request.resource.data)
+                        || (request.resource.data.equippedBundleIds is list
+                            && request.resource.data.equippedBundleIds.size() == 0))
+                    && (!('memory' in request.resource.data)
+                        || (request.resource.data.memory is list
+                            && request.resource.data.memory.size() == 0))
+                    && (!('consolidatedInsight' in request.resource.data)
+                        || request.resource.data.consolidatedInsight == '')
+                    && (!('evolutionCycle' in request.resource.data)
+                        || request.resource.data.evolutionCycle == 0)
+                    // Q6 (hardening ruling): the equipped-watchlist trio is
+                    // pinned at create. NOT force-null — the live onboarding
+                    // (AgentCreationFlow) deliberately builds the starter
+                    // watchlist first and seeds it in the SAME create write.
+                    // The pin is ownership + type: a non-null id must name a
+                    // watchlist doc the creator owns (watchlists are
+                    // server-created with a userId owner field), so a
+                    // crafted client cannot birth an agent pointed at
+                    // another user's watchlist; name/timestamp are
+                    // type-and-size-bounded.
+                    && (!('equippedWatchlistId' in request.resource.data)
+                        || request.resource.data.equippedWatchlistId == null
+                        || (request.resource.data.equippedWatchlistId is string
+                            && get(/databases/$(database)/documents/watchlists/$(request.resource.data.equippedWatchlistId)).data.userId == request.auth.uid))
+                    && (!('equippedWatchlistName' in request.resource.data)
+                        || request.resource.data.equippedWatchlistName == null
+                        || (request.resource.data.equippedWatchlistName is string
+                            && request.resource.data.equippedWatchlistName.size() <= 120))
+                    && (!('equippedAt' in request.resource.data)
+                        || request.resource.data.equippedAt == null
+                        || request.resource.data.equippedAt is string);
       allow update: if request.auth != null
               && resource.data.ownerId == request.auth.uid
               && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['directives', 'lastViewedEvolutionCycle', 'starterKitCompleted', 'updatedAt']);
-      allow delete: if request.auth != null
-                    && resource.data.ownerId == request.auth.uid;
+      // Delete disposition (ruling B1/B2 left it to the build session, with
+      // rationale): DENIED. The 2026-07-21 writer census found ZERO delete
+      // paths — no client-SDK deleteDoc and no Admin-SDK delete targets an
+      // agent doc anywhere — so this breaks nothing; an owner delete would
+      // orphan the rules/bundles subtrees and any activeBattleId pointer;
+      // and with create forced to server defaults, delete+recreate gains an
+      // attacker nothing anyway. A real agent-deletion feature must ship as
+      // a server endpoint that also settles subcollections and battles.
+      // SECURITY POSTURE (Q8, founder-resolved): user-data erasure is
+      // server-side by requirement — the Admin SDK bypasses this deny, so
+      // the deny costs erasure nothing.
+      allow delete: if false;
 
       // FORGE: Rules subcollection — soft-delete only, no hard deletes
       // Field-level validation for paramValues and textTemplate (Phase C security hardening)
@@ -187,15 +267,58 @@ service cloud.firestore {
       match /bundles/{bundleId} {
         allow read: if request.auth != null
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid;
+        // Birth status vocabulary (Mastery end-of-branch ruling B3): a
+        // client-created bundle is born 'draft' (forgeService.createBundle)
+        // or 'forged' (the dimension materializer) — never 'equipped' or
+        // 'archived'. Absent stays legal (defensive; no live path omits it).
         allow create: if request.auth != null
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
                     && request.resource.data.keys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency'])
-                    && (!('status' in request.resource.data) || request.resource.data.status != 'equipped');
+                    && (!('status' in request.resource.data) || request.resource.data.status in ['draft', 'forged']);
         allow update: if request.auth != null
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency'])
+                    // Status transition vocabulary (ruling B3): the ONLY
+                    // status changes a client may perform are the live forge
+                    // and archive gestures — draft→forged, draft→archived,
+                    // forged→archived. Everything else is server-owned
+                    // (equip/unequip/reforge endpoints, Admin SDK): never
+                    // INTO 'equipped', never OUT of 'equipped' (the
+                    // laundering hole: equipped→forged would unlock the
+                    // content freeze below with the bundle still projected),
+                    // never archived→anything, never →draft (reforge is the
+                    // server path back to draft). [Deviation from the
+                    // ruling's full "status server-write-only", documented:
+                    // the LIVE client forge (draft→forged) and the
+                    // born-'forged' dimension flow have no server
+                    // equivalents; this closed vocabulary preserves them
+                    // while making every equipped-adjacent transition
+                    // server-only — the enforcement-consequential surface.]
                     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['status'])
-                        || request.resource.data.status != 'equipped');
+                        || (resource.data.status == 'draft' && request.resource.data.status in ['forged', 'archived'])
+                        || (resource.data.status == 'forged' && request.resource.data.status == 'archived')
+                        // Statusless backfill (extended to status:null by
+                        // hardening ruling Q7): a doc born without status —
+                        // or carrying an explicit null (legacy data; the
+                        // census reports the null-status count) — may
+                        // receive any non-equipped vocabulary value, else
+                        // it is permanently stuck client-side.
+                        || ((!('status' in resource.data) || resource.data.status == null)
+                            && request.resource.data.status in ['draft', 'forged', 'archived']))
+                    // Mastery P2 (§6.1 rider, review finding): an EQUIPPED
+                    // bundle's rule CONTENT is immutable to clients — else a
+                    // compliant bundle could pass the equip-time capacity
+                    // check and be inflated afterwards, and every
+                    // reprojection (gatherBundleSnapshots) would carry the
+                    // inflated set into activeRules. 'name' joins the freeze
+                    // per the Q8 consumer census (2026-07-21): it is read by
+                    // the effective projection kernels (bundleName tag into
+                    // activeRules) — display-consumed today, frozen because
+                    // an effective path reads it. Dimension/telemetry
+                    // fields on equipped docs stay writable (the
+                    // persist-on-launch case). Server (Admin SDK) unaffected.
+                    && (resource.data.status != 'equipped'
+                        || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ruleIds', 'ruleSnapshots', 'ruleHardness', 'name']));
         allow delete: if false;
       }
 
@@ -709,6 +832,53 @@ service cloud.firestore {
       allow read: if false;   // Admin SDK only
       allow write: if false;  // Admin SDK only
     }
+
+    // ═══════════════════════════════════════════
+    // ARCHETYPE MASTERY (Spec V2 §5/§6; V2.1 memo
+    // docs/ARCHETYPE_MASTERY_SPEC_V2_1_STOP_RULINGS_JUL21_2026.md)
+    // Server-only collection pattern (career-rank precedent — user-doc XP is
+    // forgeable, spec ruling B4/n17). All writes are Admin SDK settlement
+    // transactions; NOTE: rules deploy is manual (npm run deploy:rules /
+    // Firebase Console) — these blocks are inert until deployed.
+    // ═══════════════════════════════════════════
+
+    // Mastery profiles — owner-read, server-write (spec §6). The doc id IS
+    // the userId; per-archetype {xp, level, battlesCounted, lastAwardAt}
+    // live under archetypes.{archetypeId}.
+    match /masteryProfiles/{userId} {
+      allow read: if request.auth != null
+                  && request.auth.uid == userId;
+      allow write: if false;  // Admin SDK only (award transaction)
+    }
+
+    // Epoch registry (append-only config doc) + any future mastery config.
+    // No client reads (internals; the SURFACE flag reads profiles, not this).
+    match /masteryConfig/{docId} {
+      allow read: if false;   // Admin SDK only
+      allow write: if false;  // Admin SDK only
+    }
+
+    // Quarantine ledger — server-only diagnostics behind zero receipts
+    // (spec §4: the public surface is the receipt's reasonCode enum ONLY;
+    // the Film Room never renders internals). Its counts gate the §9
+    // backfill go/no-go, so ONLY failed-to-award diagnostics live here.
+    match /masteryQuarantine/{entryId} {
+      allow read: if false;   // Admin SDK only
+      allow write: if false;  // Admin SDK only
+    }
+
+    // Audit ledger — server-only capture of award-adjacent audit events
+    // (duplicate-rank pairs, spec §3) that route to the §8 corrections
+    // intake. Separate from quarantine by design: audits accompany
+    // SUCCESSFUL awards and must never inflate quarantine counts.
+    match /masteryAudits/{entryId} {
+      allow read: if false;   // Admin SDK only
+      allow write: if false;  // Admin SDK only
+    }
+
+    // masteryCorrections (spec §8) is deliberately ABSENT here: the
+    // collection ships in a later phase and the catch-all below already
+    // denies it; adding an explicit block rides that PR.
 
     // ═══════════════════════════════════════════
     // Default deny everything else

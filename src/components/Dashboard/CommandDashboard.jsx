@@ -27,6 +27,9 @@ import ManageStation from './ManageStation';
 import ReviewStation from './ReviewStation';
 import { CMD, alpha, readableOn, Eyebrow, Mono, SectionLabel } from './commandUI';
 import useAgent from '../../hooks/useAgent';
+// Mastery P3: the owner profile behind the RecordSheet's mastery cards —
+// zero reads and null while MASTERY_SURFACE_ENABLED is false (dark).
+import useMasteryProfile from '../../hooks/useMasteryProfile';
 import useDailyRegimeBrief from '../../hooks/useDailyRegimeBrief';
 import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentBattles';
 import { deployAgent } from '../../services/agentDeploy';
@@ -113,6 +116,7 @@ export default function CommandDashboard({
   onOpenAgentBattle,
 }) {
   const { agent, loading: agentLoading, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
+  const masteryProfile = useMasteryProfile(agent?.ownerId || null);
   const drb = useDailyRegimeBrief();
 
   // The user-picked primaryColor supersedes the Haiku avatarColors.
@@ -450,6 +454,7 @@ export default function CommandDashboard({
         accent={accent}
         levelConfig={levelConfig}
         nextLevelInfo={nextLevelInfo}
+        masteryProfile={masteryProfile}
       />
 
       {SCOUTING_BOARD_ENABLED && (

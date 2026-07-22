@@ -718,7 +718,14 @@ export default function SeasonEntryModal({
       });
     } catch (err) {
       console.error('[SeasonEntryModal] Materialize failed:', err);
-      setError("Couldn't save strategy — please try again");
+      // dim_bundle_* errors are deterministic state (equipped-content
+      // mismatch / archived copy) with actionable copy — retrying the
+      // generic way can never resolve them, so show them verbatim.
+      setError(
+        typeof err?.code === 'string' && err.code.startsWith('dim_bundle_') && err.message
+          ? err.message
+          : "Couldn't save strategy — please try again"
+      );
       setSubmitting(false);
       return;
     }

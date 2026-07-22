@@ -26,6 +26,15 @@ import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
 import { getLevelProgressPct } from '../../constants/agentProgression';
 import { buildEvolutionTimeline, formatRelativeDate, EMERALD } from '../../utils/evolutionTimeline';
+// Mastery P3 (spec §10): cumulative per-archetype cards. The masteryProfile
+// prop is threaded from the shell (this sheet stays props-only); it is null
+// while MASTERY_SURFACE_ENABLED is false (the shell's hook performs zero
+// reads dark), so the section is absent and the sheet renders byte-identical
+// to pre-P3 (photographed). The progression numbers come from the SAME
+// module the server enforcement re-exports (§9 one-source).
+import { MASTERY_SURFACE_ENABLED } from '../../../api/_utils/masteryConfig.js';
+import { levelProgress, bandForLevel } from '../../data/masteryProgression.js';
+import { ARCHETYPE_ORDER } from './ArchetypePicker';
 
 const INSIGHTS_THRESHOLD = 5;
 
@@ -170,7 +179,7 @@ function RecordTimeline({ events }) {
 
 // ── Sheet ────────────────────────────────────────────────────────────────────
 
-export default function AgentRecordSheet({ open, onClose, agent, loading, accent, levelConfig, nextLevelInfo, dock = 'bottom' }) {
+export default function AgentRecordSheet({ open, onClose, agent, loading, accent, levelConfig, nextLevelInfo, masteryProfile = null, dock = 'bottom' }) {
   const games = agent?.stats?.gamesPlayed ?? 0;
   const levelLabel = levelConfig?.label || 'Rookie';
   const levelColor = levelConfig?.color || CMD.ink3;
@@ -274,6 +283,60 @@ export default function AgentRecordSheet({ open, onClose, agent, loading, accent
               </div>
             )}
           </div>
+
+          {/* Archetype mastery — cumulative per-archetype cards (Mastery P3,
+              spec §10). Renders ONLY under MASTERY_SURFACE_ENABLED; with the
+              flag off (or no profile yet) the section is absent and the
+              sheet is byte-identical to pre-P3. Streams with no recorded
+              battles render nothing (cards are earned, not scaffolded);
+              a lit flag with an empty profile shows the honest empty state. */}
+          {MASTERY_SURFACE_ENABLED && (
+            <div>
+              <Eyebrow style={{ marginBottom: 10 }}>Archetype mastery</Eyebrow>
+              {(() => {
+                const streams = ARCHETYPE_ORDER
+                  .map((id) => ({ id, stream: masteryProfile?.archetypes?.[id] }))
+                  .filter(({ stream }) => Number.isFinite(stream?.xp) && (stream.xp > 0 || stream.battlesCounted > 0));
+                if (streams.length === 0) {
+                  return (
+                    <div style={{ padding: '4px 2px', color: CMD.ink2, fontSize: 13, lineHeight: 1.5 }}>
+                      No training records yet — complete battles to build archetype mastery.
+                    </div>
+                  );
+                }
+                return streams.map(({ id, stream }) => {
+                  const p = levelProgress(stream.xp);
+                  const band = bandForLevel(p.level);
+                  return (
+                    <div key={id} style={{ ...card, marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: CMD.ink }}>
+                          {getArchetypeDisplayName(id)}
+                        </span>
+                        <span style={{
+                          padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 700,
+                          background: alpha(accent, 0.13), color: accent, letterSpacing: '0.3px',
+                        }}>
+                          L{p.level} · {band?.label}
+                        </span>
+                      </div>
+                      <div style={{ height: 4, borderRadius: 4, background: CMD.hair, overflow: 'hidden', marginTop: 8 }}>
+                        <div style={{ width: `${p.pct}%`, height: '100%', borderRadius: 4, background: accent, transition: 'width 0.5s ease' }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+                        <Mono style={{ fontSize: 9.5, letterSpacing: '0.08em', color: CMD.ink2 }}>
+                          {stream.battlesCounted || 0} battle{(stream.battlesCounted || 0) !== 1 ? 's' : ''} counted
+                        </Mono>
+                        <Mono style={{ fontSize: 9.5, letterSpacing: '0.08em', color: CMD.ink2 }}>
+                          {p.xpForNext === null ? 'Max level' : `${p.xpForNext} XP to L${p.level + 1}`}
+                        </Mono>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
 
           {/* rule conflict resolution (Phase 3, Surface 2). Section appears only
               when a deploy populated agent.lastConflictReport (INJECT on); with

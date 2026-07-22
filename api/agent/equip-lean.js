@@ -44,7 +44,15 @@ import { findEquipConflicts } from '../../src/data/archetypeAdjustments.js';
 // equip can never accept a pin the snapshot path would omit (or vice versa).
 // STANDING_LEANS_CAP lives there too (the domain kernel), re-exported here
 // for API-surface convenience.
-import { validateLeanPin, STANDING_LEANS_CAP, LEAN_INVALIDATION_REASONS } from '../_utils/leanRevalidation.js';
+import { validateLeanPin, acceptedStandingLeans, STANDING_LEANS_CAP, LEAN_INVALIDATION_REASONS } from '../_utils/leanRevalidation.js';
+// Mastery P2 (spec §6 D1 dual anchor — the WRITE/chokepoint half): the cap
+// is level-derived from the live masteryProfile at write time. This
+// chokepoint is the ONLY per-user entitlement gate; the kernel half clamps
+// at the structural max (see leanRevalidation.resolveLeanCap — P2-review
+// redesign: no stamped field, nothing doc-trusted). Dark (enforcement
+// off): no profile read, baseline cap — byte-identical.
+import { MASTERY_ENFORCEMENT_ENABLED } from '../_utils/masteryConfig.js';
+import { masteryProfileRef, archetypeLevelFromProfile, leanCapForLevel } from '../_utils/masteryEnforcement.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
@@ -61,7 +69,9 @@ const SENTINEL_TO_HTTP = Object.freeze({
   not_in_menu:        [400, 'not_in_menu',        'That adjustment is not in this agent\'s archetype menu.'],
   deprecated_version: [409, 'deprecated_version', 'That adjustment\'s text has changed since this was loaded — review the current wording and re-equip.'],
   conflicting_lean:   [409, 'conflicting_lean',   'That lean opposes an already-equipped lean — unequip the other one first.'],
-  lean_limit:         [409, 'lean_limit',         `An agent can hold at most ${STANDING_LEANS_CAP} standing leans — unequip one first.`],
+  // §9: the copy never bakes in a number — the response's `leanCap` detail
+  // carries the exact cap the rejection used (level-derived under mastery).
+  lean_limit:         [409, 'lean_limit',         'Standing-lean capacity reached — unequip one first.'],
 });
 
 export default async function handler(req, res) {
@@ -114,6 +124,16 @@ export default async function handler(req, res) {
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
       if (agent.activeBattleId) throw new Error(SENTINEL_PREFIX + 'battle_active');
 
+      // Mastery P2: level-derived lean cap (per-archetype level from the
+      // live profile — read REGARDLESS of the XP flag state, spec §7;
+      // missing profile ⇒ level 1 ⇒ baseline). Read precedes every write.
+      let leanCap = STANDING_LEANS_CAP;
+      if (MASTERY_ENFORCEMENT_ENABLED) {
+        const profileSnap = await tx.get(masteryProfileRef(db, user.uid));
+        const level = archetypeLevelFromProfile(profileSnap.exists ? profileSnap.data() : null, agent.archetype);
+        leanCap = leanCapForLevel(level);
+      }
+
       // Menu membership + version currency through the SHARED kernel
       // (leanRevalidation.validateLeanPin) — its reason vocabulary maps 1:1
       // onto this endpoint's sentinels, so the write path and the snapshot
@@ -139,12 +159,24 @@ export default async function handler(req, res) {
         return { idempotent: true, standingLeans: current };
       }
 
-      // Conflict-group rejection against the OTHER equipped leans (an
-      // existing pin of this same id is a refresh, not a conflict). The
-      // filter drops malformed/null entries too — they must never crash the
-      // equip (they are surfaced by revalidation, not here).
-      const otherIds = current
-        .filter((l) => l && typeof l.adjustmentId === 'string' && l.adjustmentId !== adjustmentId)
+      // Ruling M5: BOTH at-rest set checks below run against the kernel-
+      // ACCEPTED current-archetype set (the shared acceptedStandingLeans
+      // export), not raw pins. Leans are durable desired state across
+      // archetype switches, so at-rest pins from OTHER archetypes' menus —
+      // plus malformed/duplicate/deprecated entries the kernel would omit
+      // from any snapshot — are preserved but never consume slots and
+      // never veto an equip (a pin the rest of the system says is not
+      // equipped must not block one that is; the client computes both
+      // states from the same accepted set).
+      const acceptedPins = acceptedStandingLeans({
+        standingLeans: current,
+        archetypeCodeId: agent.archetype,
+      });
+
+      // Conflict-group rejection against the OTHER accepted leans (an
+      // accepted pin of this same id is a refresh, not a conflict).
+      const otherIds = acceptedPins
+        .filter((l) => l.adjustmentId !== adjustmentId)
         .map((l) => l.adjustmentId);
       const conflicts = findEquipConflicts(agent.archetype, adjustmentId, otherIds);
       if (conflicts.length > 0) {
@@ -153,9 +185,24 @@ export default async function handler(req, res) {
         throw err;
       }
 
-      // Cap 2 (a version refresh of an existing pin does not add a slot).
-      if (!existing && current.length >= STANDING_LEANS_CAP) {
-        throw new Error(SENTINEL_PREFIX + 'lean_limit');
+      // Level-derived cap (baseline 2; a version refresh of an existing pin
+      // does not add a slot). The rejection carries the RESOLVED cap so the
+      // client renders the number the decision used — §9: never the static
+      // baseline copy beside a level-derived decision.
+      // The slot decision keys on ACCEPTED membership, not raw same-id
+      // presence: refreshing an accepted pin never adds a slot, but
+      // re-confirming a NON-accepted at-rest pin (a deprecated-version
+      // stale entry — not counted above) CONSUMES one, else the re-confirm
+      // gesture could grow the accepted set past the entitlement.
+      const existingAccepted = acceptedPins.some((l) => l.adjustmentId === adjustmentId);
+      if (!existingAccepted && acceptedPins.length >= leanCap) {
+        const err = new Error(SENTINEL_PREFIX + 'lean_limit');
+        // reconfirmOfStale (P3 copy obligation): this rejection is a
+        // RE-CONFIRM of an at-rest stale pin, not a fresh equip — the
+        // client renders copy that explains the revision needs a free slot
+        // (clearing the stale pin itself frees nothing; it isn't counted).
+        err.details = { leanCap, equippedCount: acceptedPins.length, ...(existing ? { reconfirmOfStale: true } : {}) };
+        throw err;
       }
 
       const entry = { adjustmentId, version, equippedAt: nowIso };

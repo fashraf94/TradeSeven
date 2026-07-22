@@ -19,7 +19,16 @@ import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
 import { RELEASE3_CHARACTER_TAB_ENABLED } from '../../../config/featureFlags';
 import { tempoLabel } from '../../../data/characterLeanPresentation';
-import { STANDING_LEANS_CAP } from '../../../../api/_utils/leanRevalidation.js';
+import { STANDING_LEANS_CAP, acceptedStandingLeans } from '../../../../api/_utils/leanRevalidation.js';
+// Mastery P3 obligations: preview counts mirror the M5 kernel (accepted
+// pins consume slots, other-archetype/stale pins never do) and the cap
+// display mirrors the SERVER's effective cap — level-derived only when
+// enforcement is live, baseline otherwise (§9 display-agreement). The
+// profile hook is dark (null, zero reads) while MASTERY_SURFACE_ENABLED
+// is false, so dark renders are byte-identical.
+import { MASTERY_ENFORCEMENT_ENABLED } from '../../../../api/_utils/masteryConfig.js';
+import { archetypeLevelFromProfile, leanCapForLevel } from '../../../data/masteryProgression.js';
+import useMasteryProfile from '../../../hooks/useMasteryProfile';
 
 function Tally({ ready, draft }) {
   const T = useFK();
@@ -178,9 +187,11 @@ function TraitsColumn({ archName, archLine, primary, equippedTraits, onNav }) {
 // Release 3 — the Character column (leans + tempo), replacing the Traits column
 // when RELEASE3_CHARACTER_TAB_ENABLED is on. Same shell grammar; the CTA tunes
 // the character in the `03` area.
-function CharacterColumn({ archName, archLine, standingLeans, tempo, onNav }) {
+function CharacterColumn({ archName, archLine, standingLeans, acceptedLeanCount, leanCap, tempo, onNav }) {
   const T = useFK();
-  const equipped = standingLeans.length;
+  // Slots consumed = kernel-accepted pins (M5 mirror); chips still render
+  // the raw desired state below.
+  const equipped = acceptedLeanCount;
   return (
     <div className="fw-tap" onClick={() => onNav('traits')} style={{ display: 'flex', flexDirection: 'column', minWidth: 0, padding: '18px 16px 14px', borderRadius: 18, position: 'relative', overflow: 'hidden', background: `linear-gradient(165deg, ${alpha(T.allocation, 0.06)}, ${T.surface})`, border: `1px solid ${T.hair}` }}>
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: T.allocation, opacity: 0.85 }} />
@@ -196,7 +207,7 @@ function CharacterColumn({ archName, archLine, standingLeans, tempo, onNav }) {
         <div style={{ fontSize: 11, color: T.ink2, marginTop: 3, lineHeight: 1.4 }}>{archLine}</div>
       </div>
       <div style={{ marginTop: 12, minHeight: 64 }}>
-        <Mono style={{ fontSize: 9, letterSpacing: '0.1em', color: T.ink3, textTransform: 'uppercase' }}><b style={{ color: T.ink2 }}>{equipped}</b> of {STANDING_LEANS_CAP} standing leans · tempo <b style={{ color: T.ink2 }}>{tempoLabel(tempo)}</b></Mono>
+        <Mono style={{ fontSize: 9, letterSpacing: '0.1em', color: T.ink3, textTransform: 'uppercase' }}><b style={{ color: T.ink2 }}>{equipped}</b> of {leanCap} standing leans · tempo <b style={{ color: T.ink2 }}>{tempoLabel(tempo)}</b></Mono>
         {equipped > 0 ? (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
             {standingLeans.slice(0, 3).map((l) => (
@@ -237,13 +248,20 @@ export default function ForgeOverview({ agentName, primary, watchlists = [], bun
       new URLSearchParams(window.location.search).get('release3Character') === '1');
   const standingLeans = agent?.standingLeans || [];
   const desiredTempo = agent?.dials?.tempo || 'standard';
+  const masteryProfile = useMasteryProfile(agent?.ownerId || null);
+  const acceptedLeanCount = characterOn
+    ? acceptedStandingLeans({ standingLeans, archetypeCodeId: agent?.archetype }).length
+    : 0;
+  const effectiveLeanCap = MASTERY_ENFORCEMENT_ENABLED && masteryProfile
+    ? leanCapForLevel(archetypeLevelFromProfile(masteryProfile, agent?.archetype))
+    : STANDING_LEANS_CAP;
 
   const wlPreview = watchlists.slice(0, 2).map((w) => ({ id: w.watchlistId, name: w.name?.trim() || 'Untitled', state: watchlistShelfStatus(w) === 'ready' ? 'ready' : 'draft' }));
   const bPreview = bundles.slice(0, 2).map((b) => ({ id: b.id, name: b.name || 'Bundle', state: bundleShelfStatus(b) === 'ready' ? 'ready' : 'draft' }));
   const trPreview = equippedTraits.slice(0, 2).map((t) => ({ id: t.traitId || t.id, name: t.name || 'Trait', state: 'equipped' }));
   const leanPreview = standingLeans.slice(0, 2).map((l) => ({ id: l.adjustmentId, name: l.adjustmentId, state: 'equipped' }));
 
-  const characterArea = { id: 'traits', n: '03', label: 'Character', icon: 'dna', color: T.allocation, equipped: standingLeans.length, slots: STANDING_LEANS_CAP, total: standingLeans.length, preview: leanPreview, desc: `Standing leans + tempo · ${tempoLabel(desiredTempo)}` };
+  const characterArea = { id: 'traits', n: '03', label: 'Character', icon: 'dna', color: T.allocation, equipped: acceptedLeanCount, slots: effectiveLeanCap, total: standingLeans.length, preview: leanPreview, desc: `Standing leans + tempo · ${tempoLabel(desiredTempo)}` };
   const traitsArea = { id: 'traits', n: '03', label: 'Traits', icon: 'dna', color: T.allocation, equipped: equippedCount, slots: TOTAL_TRAIT_SLOTS, total: equippedTraits.length, preview: trPreview, desc: 'The disposition that shapes its identity' };
 
   const areas = [
@@ -306,7 +324,7 @@ export default function ForgeOverview({ agentName, primary, watchlists = [], bun
             onBuild={onBuild}
           />
           {characterOn
-            ? <CharacterColumn archName={archName} archLine={archLine} standingLeans={standingLeans} tempo={desiredTempo} onNav={onNav} />
+            ? <CharacterColumn archName={archName} archLine={archLine} standingLeans={standingLeans} acceptedLeanCount={acceptedLeanCount} leanCap={effectiveLeanCap} tempo={desiredTempo} onNav={onNav} />
             : <TraitsColumn archName={archName} archLine={archLine} primary={primary} equippedTraits={equippedTraits} onNav={onNav} />}
         </div>
 

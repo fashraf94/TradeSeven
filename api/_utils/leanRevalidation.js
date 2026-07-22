@@ -21,11 +21,86 @@
 //     NEW archetype rides the existing rescan event.
 
 import { isValidAdjustmentId, getCanonicalText, getCanonicalTextVersion, findEquipConflicts } from '../../src/data/archetypeAdjustments.js';
+import { MASTERY_ENFORCEMENT_ENABLED } from './masteryConfig.js';
 
 // Master spec §3.1 — the domain cap lives here (the validity kernel), and the
 // equip endpoint imports it, so the write path and the snapshot path can
-// never disagree on the limit.
+// never disagree on the limit. Mastery P2: this is the BASELINE (= mastery
+// L1's two slots); level-derived caps are grants above it, resolved by
+// resolveLeanCap below.
 export const STANDING_LEANS_CAP = 2;
+
+// The structural maximum any chokepoint can ever grant (§6: L6 → 4 slots).
+export const MASTERY_LEAN_CAP_MAX = 4;
+
+/**
+ * The closed injection vocabulary for the explicit `leanCap` param (end-of-
+ * branch ruling M6): every legal cap is an integer in
+ * [STANDING_LEANS_CAP .. MASTERY_LEAN_CAP_MAX] — exactly the §6 unlock
+ * table's range. An injected value outside it is a caller bug (the §8
+ * corrections applier can only ever inject reduced-but-legal entitlements),
+ * so it is REJECTED: the pass falls back to the BASELINE cap (fail-closed —
+ * a malformed injection must never grant above baseline; omission + record
+ * semantics make an over-tight clamp recoverable, an over-wide one isn't)
+ * and the attempt is logged loudly.
+ */
+export function isLegalLeanCap(leanCap) {
+  return Number.isInteger(leanCap)
+    && leanCap >= STANDING_LEANS_CAP
+    && leanCap <= MASTERY_LEAN_CAP_MAX;
+}
+
+/**
+ * Mastery P2 (spec §6 D1 dual anchor — the SNAPSHOT/kernel half), P2-review
+ * redesign: under enforcement the kernel clamps at the STRUCTURAL max (4)
+ * on EVERY path; per-user ENTITLEMENT enforcement lives exclusively at the
+ * equip-lean chokepoint (live-profile read at write time), so at-rest lean
+ * sets are already entitlement-bounded when they reach the kernel.
+ *
+ * Why the structural max and not a per-user number here: the kernel is
+ * consumed by call sites that cannot pass per-user data — the FENCED
+ * deploy-prompt path (agentPromptAssembly.js), the client display authority
+ * (src/data/characterState.js), and the change-archetype rider all call
+ * with the legacy two-field shape. Any per-user cap channel (a stamped
+ * field was tried and reviewed out: unstampable at those sites, forgeable
+ * via the un-allowlisted agents CREATE rule, stale across archetype
+ * switches, and a §8 foreclosure) would make those paths disagree with the
+ * battle snapshot — the exact §9/Release-2 single-authority drift this
+ * kernel exists to prevent. With the default below, EVERY caller resolves
+ * the same cap with zero call-site changes.
+ *
+ * §8 stays open by design: the explicit `leanCap` param on
+ * revalidateStandingLeans is the corrections-phase injection channel — the
+ * future correction applier passes the reduced entitlement explicitly
+ * (with user notice, per §8) rather than this default. ⚠ The §8 clamp
+ * pass is TWO-CHANNEL by ruling Q7: whoever injects a reduced leanCap here
+ * MUST run masteryEnforcement.revalidateTempoDial in the SAME pass —
+ * dials and leans re-validate together, never leans alone.
+ *
+ * Dark (enforcement off): baseline — byte-identical to today.
+ */
+export function resolveLeanCap(enforcementEnabled = MASTERY_ENFORCEMENT_ENABLED) {
+  return enforcementEnabled === true ? MASTERY_LEAN_CAP_MAX : STANDING_LEANS_CAP;
+}
+
+/**
+ * The kernel-ACCEPTED at-rest set for one archetype (end-of-branch ruling
+ * M5's counting rule, exported so its consumers never encode "no
+ * entitlement clamp" as a leanCap injection — the M6 vocabulary polices
+ * that channel for the §8 corrections applier, and a counting call must be
+ * distinguishable from an entitlement injection). Runs the full shared
+ * pass (per-pin validity + dedupe + conflict groups) clamped only at the
+ * STRUCTURAL max: membership is a validity question; entitlement is the
+ * caller's check. Consumers: equip-lean's capacity/conflict accounting,
+ * the pre-flip census.
+ */
+export function acceptedStandingLeans({ standingLeans, archetypeCodeId } = {}) {
+  return revalidateStandingLeans({
+    standingLeans,
+    archetypeCodeId,
+    leanCap: MASTERY_LEAN_CAP_MAX,
+  }).valid;
+}
 
 export const LEAN_INVALIDATION_REASONS = Object.freeze({
   MALFORMED: 'malformed',
@@ -103,7 +178,26 @@ export function validateLeanPin(archetypeCodeId, adjustmentId, version) {
  *   invalidated: Array<{adjustmentId: string|null, version: number|null, reason: string}>,
  * }}
  */
-export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId } = {}) {
+export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId, leanCap } = {}) {
+  // Default resolves per call (never at module load): the ONE cap source for
+  // every legacy two-field caller — fenced prompt path, client display,
+  // change-archetype rider — and the snapshot path alike (§9). An EXPLICIT
+  // injection is validated against the closed vocabulary (ruling M6):
+  // out-of-vocabulary → baseline + loud log, never a wider cap.
+  let effectiveCap;
+  if (leanCap === undefined) {
+    effectiveCap = resolveLeanCap();
+  } else if (isLegalLeanCap(leanCap)) {
+    effectiveCap = leanCap;
+  } else {
+    console.error('[leanRevalidation] REJECTED out-of-vocabulary leanCap injection', JSON.stringify({
+      injected: typeof leanCap === 'number' || typeof leanCap === 'boolean' ? leanCap : String(leanCap).slice(0, MAX_INVALIDATED_ID_CHARS),
+      injectedType: typeof leanCap,
+      fallback: STANDING_LEANS_CAP,
+      archetypeCodeId: boundId(archetypeCodeId),
+    }));
+    effectiveCap = STANDING_LEANS_CAP;
+  }
   const invalidated = [];
 
   // Pass 1 — per-pin validity through the shared rule, plus same-id dedupe
@@ -158,7 +252,7 @@ export function revalidateStandingLeans({ standingLeans = [], archetypeCodeId } 
       });
       continue;
     }
-    if (accepted.length >= STANDING_LEANS_CAP) {
+    if (accepted.length >= effectiveCap) {
       invalidated.push({
         adjustmentId: lean.adjustmentId,
         version: lean.version,
@@ -196,6 +290,9 @@ export function buildCustomizationSnapshot(agentData, now) {
   const { valid, invalidated } = revalidateStandingLeans({
     standingLeans: agentData.standingLeans,
     archetypeCodeId: agentData.archetype,
+    // Mastery P2 dual anchor (kernel half): the shared per-call default —
+    // structural max under enforcement, baseline (byte-identical) while
+    // off — the same cap every other kernel caller resolves (§9).
   });
   if (invalidated.length > 0) {
     console.log('[LeanRevalidation]', JSON.stringify({

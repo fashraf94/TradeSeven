@@ -209,11 +209,15 @@ describe('P4 — CPU passive-battle skip (contract #5 consumer), static source g
   });
 
   it('completeBattle consumes the disposition (message, reflection flag, stats gate, context stamp)', () => {
-    expect(source).toContain('const disposition = resolveCompletionDisposition(battle);');
+    // Mastery P1 (STOP-A.1): completion is a guarded transaction; the
+    // disposition now derives from the transaction's own fresh read.
+    expect(source).toContain('const disposition = resolveCompletionDisposition(fresh);');
     expect(source).toContain('pendingReflection: disposition.pendingReflection,');
     expect(source).toContain('message: disposition.statusMessage,');
-    expect(source).toContain('if (agentDoc.exists && !disposition.updateAgentStats) {');
-    expect(source).toContain("await agentRef.update({ activeBattleId: null });");
+    // Adversarial fix B3: the agent mutation is folded into the completion
+    // transaction — the disposition gate now reads the in-txn agent snapshot.
+    expect(source).toContain('if (agentSnap.exists && !disposition.updateAgentStats) {');
+    expect(source).toContain("t.update(agentRef, { activeBattleId: null });");
     expect(source).toContain('updatePayload.completionContext = disposition.completionContext;');
   });
 });

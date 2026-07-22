@@ -11,6 +11,11 @@ import DaySummaryCard from '../components/FilmRoom/DaySummaryCard';
 import TradeHistorySection from '../components/FilmRoom/TradeHistorySection';
 import AnticipationLogSection from '../components/FilmRoom/AnticipationLogSection';
 import FilmRoomChat from '../components/FilmRoom/FilmRoomChat';
+// Mastery P3 (spec §10): the per-battle Training Report + the owner profile
+// read behind it. Both are DARK while MASTERY_SURFACE_ENABLED is false —
+// the card returns null and the hook performs zero reads (photographed).
+import TrainingReportCard from '../components/FilmRoom/TrainingReportCard';
+import useMasteryProfile from '../hooks/useMasteryProfile';
 
 function pickDefaultDay(agentBattle) {
   const reviews = Array.isArray(agentBattle?.dailyReviews) ? agentBattle.dailyReviews : [];
@@ -29,6 +34,9 @@ export default function FilmRoomScreen({ battle, onBack }) {
   const { tokens } = useTheme();
   const agentBattleId = battle?.agentBattleId || battle?.id || null;
   const { battle: agentBattle, chatExchanges, loading } = useAgentBattle(agentBattleId);
+  // Own battles only (rules: owner-read) — the battle doc's ownerId IS the
+  // viewer's uid on this screen. Null while the surface flag is dark.
+  const masteryProfile = useMasteryProfile(agentBattle?.ownerId || null);
 
   const [selectedDay, setSelectedDay] = useState(null);
   const [researchAsset, setResearchAsset] = useState(null);
@@ -137,6 +145,8 @@ export default function FilmRoomScreen({ battle, onBack }) {
         />
 
         <DaySummaryCard review={reviewForSelectedDay} tokens={tokens} />
+
+        <TrainingReportCard battle={agentBattle} masteryProfile={masteryProfile} tokens={tokens} />
 
         <TradeHistorySection
           battle={agentBattle}

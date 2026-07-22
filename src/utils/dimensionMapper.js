@@ -28,6 +28,7 @@
 
 import {
   doc,
+  getDoc,
   collection,
   writeBatch,
   serverTimestamp,
@@ -980,6 +981,63 @@ export async function materializeDimensionBundle({
   const rulesCol = collection(db, 'agents', agentId, 'rules');
   const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
 
+  // Build the frozen ruleSnapshots array the server will read. Strip the
+  // sourceRef helper field — the server looks that up off the live rule doc.
+  // (Built BEFORE the reuse short-circuit below: the equipped-reuse path
+  // must compare against exactly what this generator would write today.)
+  const frozenSnapshots = snapshots.map((s) => ({
+    id: s.id,
+    text: s.text,
+    textTemplate: s.textTemplate,
+    params: s.params,
+    paramValues: s.paramValues,
+    category: s.category,
+    visibility: s.visibility,
+  }));
+
+  // Idempotent short-circuit for a bundle that has moved past 'forged'
+  // (Mastery end-of-branch ruling B3: bundle status transitions out of
+  // 'equipped' are server-owned — the firestore.rules vocabulary denies
+  // the overwrite below on an equipped doc). create-entry accepts 'forged'
+  // or 'equipped' bundles alike, so reusing the equipped doc is the same
+  // launch — but ONLY under proven content equality (hardening ruling M5):
+  // the deterministic id promises identical content, and the comparison
+  // verifies it (a generator-version drift or hash collision must fail
+  // CLOSED, never silently launch stale rules). An 'archived' copy cannot
+  // be relaunched (create-entry rejects it and the rules deny reviving it
+  // client-side) — fail loudly instead of surfacing a permission error.
+  const existingSnap = await getDoc(bundleRef);
+  if (existingSnap.exists()) {
+    const existing = existingSnap.data() || {};
+    if (existing.status === 'equipped') {
+      // canonicalize (the hashDimensions helper): keys sorted at every
+      // level — Firestore returns map keys alphabetized, so a plain
+      // JSON.stringify of the read-back doc never matches the freshly
+      // generated insertion order even for identical content.
+      const sameContent =
+        canonicalize(existing.ruleIds ?? null) === canonicalize(snapshots.map((s) => s.id)) &&
+        canonicalize(existing.ruleSnapshots ?? null) === canonicalize(frozenSnapshots);
+      if (!sameContent) {
+        const err = new Error(
+          "This strategy's equipped bundle no longer matches these dimensions — unequip it in the Forge, then relaunch."
+        );
+        // Marks the message as user-renderable (deterministic state, not a
+        // transient fault) — the launch modal shows it verbatim instead of
+        // its generic retry copy, which can never resolve these.
+        err.code = 'dim_bundle_mismatch';
+        throw err;
+      }
+      return bundleId;
+    }
+    if (existing.status === 'archived') {
+      const err = new Error(
+        'This exact strategy was archived earlier — adjust a dimension to forge a fresh bundle.'
+      );
+      err.code = 'dim_bundle_archived';
+      throw err;
+    }
+  }
+
   const batch = writeBatch(db);
 
   // Upsert one rule doc per template, keyed `dim-{templateId}`. Using
@@ -1008,18 +1066,6 @@ export async function materializeDimensionBundle({
       { merge: true }
     );
   }
-
-  // Build the frozen ruleSnapshots array the server will read. Strip the
-  // sourceRef helper field — the server looks that up off the live rule doc.
-  const frozenSnapshots = snapshots.map((s) => ({
-    id: s.id,
-    text: s.text,
-    textTemplate: s.textTemplate,
-    params: s.params,
-    paramValues: s.paramValues,
-    category: s.category,
-    visibility: s.visibility,
-  }));
 
   batch.set(bundleRef, {
     name: bundleName || 'Strategy Dimensions',
