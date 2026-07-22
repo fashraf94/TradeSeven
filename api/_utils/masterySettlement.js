@@ -64,6 +64,7 @@ import {
   MASTERY_AUDITS_COLLECTION,
   MASTERY_CONFIG_COLLECTION,
   MASTERY_SWEEP_CURSOR_DOC,
+  MASTERY_BACKFILL_PENDING_DOC,
 } from './masteryConfig.js';
 
 const LOG_PREFIX = '[Mastery]';
@@ -515,6 +516,15 @@ export async function runAwardTransaction(db, battleId, { nowIso, groupCache = n
     const fresh = freshSnap.data();
     if (fresh.masteryAward !== undefined) return { outcome: 'already_awarded' };
     const profileSnap = profileRef ? await t.get(profileRef) : null;
+    // §9 seam: while the backfill-pending marker exists, live receipts
+    // stamp levelProvisional (the Training Report suppresses their level
+    // ceremony permanently). Read in-transaction — one doc read per award,
+    // and awards only run post-epoch-1 (dark stays zero-I/O). Covers BOTH
+    // award hosts (completion path and repair sweep) with one mechanism.
+    const pendingSnap = await t.get(
+      db.collection(MASTERY_CONFIG_COLLECTION).doc(MASTERY_BACKFILL_PENDING_DOC),
+    );
+    const seamProvisional = pendingSnap.exists;
     const profile = profileSnap?.exists ? profileSnap.data() : {};
     const archKey = typeof archetype === 'string' ? archetype : 'unknown';
     const arch = profile.archetypes?.[archKey] ?? { xp: 0, battlesCounted: 0 };
@@ -594,6 +604,9 @@ export async function runAwardTransaction(db, battleId, { nowIso, groupCache = n
       xpFinal: xp.xpFinal,
       levelBefore,
       levelAfter,
+      // Zero receipts carry no ceremony to suppress (levelBefore ===
+      // levelAfter), so the seam flag rides paying awards only.
+      levelProvisional: seamProvisional,
       epochId,
       settledAt: nowIso,
       // §4: zero receipts carry the public reasonCode ONLY — the audit

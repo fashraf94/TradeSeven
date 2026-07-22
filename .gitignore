@@ -93,3 +93,4 @@ research/**/*.key
 # founder-local decision record — never committed.
 mastery-preflip-census-report.json
 mastery-preflip-approved*.json
+mastery-backfill-report.json

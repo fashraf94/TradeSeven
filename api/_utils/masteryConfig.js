@@ -9,9 +9,15 @@
 // the cutoverT identity (epoch 1 start) and the epochId vocabulary — NOT an
 // eligibility oracle (spec §5.4).
 //
-// FLIP PROTOCOL (adversarial ruling B1 — the ceremony's order of record):
-//   enable:  (1) APPEND {state:'enabled'} to the registry, (2) then flip the
+// FLIP PROTOCOL (adversarial ruling B1 — the ceremony's order of record;
+// §9 seam steps added at P4):
+//   enable:  (0) WRITE masteryConfig/backfillPending (the §9 seam marker —
+//            live receipts stamp levelProvisional while it exists),
+//            (1) APPEND {state:'enabled'} to the registry, (2) then flip the
 //            constant true and deploy.  — append-epoch-then-flip-constant.
+//            (3) run scripts/mastery-backfill.js (DRY-RUN → founder review
+//            → --live), (4) verify, then DELETE backfillPending to close
+//            the seam.
 //   disable: (1) APPEND {state:'disabled'}, (2) then flip the constant false.
 // Under this order a correctly-executed ceremony can never present the
 // live constant with an absent/empty registry. If the cron nevertheless
@@ -114,6 +120,14 @@ export const MASTERY_SURFACE_ENABLED = false;
 // explicit blocks; all writes Admin SDK only) ----
 export const MASTERY_CONFIG_COLLECTION = 'masteryConfig';
 export const MASTERY_EPOCH_REGISTRY_DOC = 'epochRegistry';
+// §9 SEAM MARKER: exists from the XP-flip ceremony (written BEFORE the
+// epoch append) until the backfill has run + been verified (deleted
+// manually then). While it exists, every live receipt stamps
+// levelProvisional: true — the Training Report suppresses those receipts'
+// level ceremony PERMANENTLY (interim levels are honest history, never
+// rewritten). runAwardTransaction reads it in-transaction (award txns only
+// run post-epoch-1, so the dark state still performs zero mastery I/O).
+export const MASTERY_BACKFILL_PENDING_DOC = 'backfillPending';
 export const MASTERY_SWEEP_CURSOR_DOC = 'sweepCursor';
 export const MASTERY_PROFILES_COLLECTION = 'masteryProfiles';
 export const MASTERY_QUARANTINE_COLLECTION = 'masteryQuarantine';
