@@ -18,6 +18,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Menu, Trophy, Zap, Eye, MessageCircle, ChevronRight } from 'lucide-react';
 import AgentOrb from '../shared/AgentOrb';
+import { AgentPresenceMount } from '../AgentPresence';
+import { isAgentPresenceOn } from '../../config/featureFlags';
 import EquipStation from './EquipStation';
 import AgentRecordSheet from './AgentRecordSheet';
 import ScoutingBoardSheet from './ScoutingBoardSheet';
@@ -270,7 +272,23 @@ export default function CommandDashboard({
               aria-label="Open agent record"
               style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: 'pointer' }}
             >
-              <AgentOrb state={orbState} size={32} color={accent} />
+              {/* Agent Presence (gated) — the identity face in the READ section. Honest
+                  binding: disposition ← agent.archetype, colour ← the SAME accent the orb
+                  uses; standing is neutral (no live battle score at this identity mount),
+                  and the brief-fetch (drb.loading, the SAME signal that drives orbState
+                  'reading') fires a one-shot 'reading' reaction. Flag-off renders the orb
+                  byte-identically. */}
+              {isAgentPresenceOn() ? (
+                <AgentPresenceMount
+                  surface="command"
+                  agent={agent}
+                  command={{ reading: drb.loading }}
+                  size={32}
+                  enableEnvironment={false}
+                />
+              ) : (
+                <AgentOrb state={orbState} size={32} color={accent} />
+              )}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <Mono style={{ fontSize: 9.5, letterSpacing: '0.17em', color: accent, textTransform: 'uppercase', fontWeight: 600, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agentName} is reading the market</Mono>
                 <Mono style={{ fontSize: 9.5, letterSpacing: '0.04em', color: CMD.ink3, marginTop: 2, display: 'block' }}>Today’s desk brief{dateLabel ? ` · ${dateLabel}` : ''}</Mono>

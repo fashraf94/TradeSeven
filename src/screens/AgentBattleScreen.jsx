@@ -13,6 +13,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore from '../components/shared/AnimatedScore';
+import { AgentPresenceMount } from '../components/AgentPresence';
+import { isAgentPresenceOn } from '../config/featureFlags';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
 // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Uncomment to revive.
 // import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
@@ -844,6 +846,20 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Agent Presence (gated) — the reactive agent face in the battle chrome.
+                READ-ONLY: mood binds to the SAME displayPlayerScore/displayOpponentScore
+                the ScoreHeader renders (standingFromDuel); swap reactions come off the
+                statusFeed. Consumes the already-resolved agentBattle — no new subscription
+                and it never touches useAgentBattleId. Flag-off omits it entirely. */}
+            {isAgentPresenceOn() && agentBattle && (
+              <AgentPresenceMount
+                surface="duel"
+                agent={agentBattle}
+                duel={{ playerScore: displayPlayerScore, opponentScore: displayOpponentScore, statusFeed }}
+                size={34}
+                enableEnvironment={false}
+              />
+            )}
             {/* Phase 5B2 — read-only equipped-watchlist indicator (Q7c).
                 Sourced from the frozen agentContext.equippedWatchlist snapshot. */}
             {getEquippedWatchlistLabel(agentBattle?.agentContext?.equippedWatchlist) && (
