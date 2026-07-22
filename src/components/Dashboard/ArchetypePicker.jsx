@@ -23,6 +23,10 @@ import { Check } from 'lucide-react';
 import EquipSheet from './EquipSheet';
 import { CMD, alpha, Mono, readableOn, ErrorBanner } from './commandUI';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
+// Notice copy only (review F8): the reset notice always shows (never a
+// silent reset), but mastery VOCABULARY appears only once the surface is
+// lit — before that the copy is neutral.
+import { MASTERY_SURFACE_ENABLED } from '../../../api/_utils/masteryConfig.js';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
 import { changeArchetype } from '../../services/agentService';
 
@@ -193,8 +197,9 @@ export default function ArchetypePicker({ open, onClose, agent, accent, dock = '
           background: alpha(accent, 0.1), border: `1px solid ${alpha(accent, 0.35)}`,
           fontSize: 12.5, color: CMD.ink, lineHeight: 1.5,
         }}>
-          Tempo dial reset to Standard — the Aggressive position unlocks at
-          mastery level 2 for {dialNotice}.
+          {MASTERY_SURFACE_ENABLED
+            ? `Tempo dial reset to Standard — the Aggressive position unlocks at mastery level 2 for ${dialNotice}.`
+            : `Tempo dial reset to Standard — the Aggressive position isn't available for ${dialNotice} yet.`}
         </div>
       )}
       {confirming ? (

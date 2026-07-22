@@ -34,6 +34,14 @@
 //   node scripts/mastery-backfill.js --out <p> --backfill-id <id>
 //
 // The report (per-user award data) is .gitignore'd — never committed.
+//
+// DEPLOY-PROPAGATION RESIDUAL (review F5, documented): completions settled
+// by a stale worker during the constant-flip deploy (registry enabled,
+// constant still false on that host) stamp eligible:false → write-once
+// flag_disabled zero receipts with completedAt > cutoverT — outside this
+// script's §9 scope. Perform the XP constant flip in a no-completions
+// window (between evaluation crons); any propagation-window completions
+// repair via §8 corrections, never by editing receipts.
 
 import process from 'node:process';
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
@@ -107,8 +115,12 @@ async function main() {
   const epochId = flagView.epochId;
 
   // ── Full reads: battles + groups (offline replay inputs) ──
+  // STATUS-BLIND universe (review F4): slot ranks and cohorts must see
+  // every same-day battle regardless of status — the live derivation's
+  // fetchSlotCohort is status-blind, and a still-live sibling must defer a
+  // cohort, not silently shrink it.
   const [battlesSnap, groupsSnap] = await Promise.all([
-    db.collection('agentBattles').where('status', '==', 'completed').get(),
+    db.collection('agentBattles').get(),
     db.collection('tournamentGroups').get(),
   ]);
   const groupById = new Map(groupsSnap.docs.map((d) => [d.id, d.data()]));
@@ -118,9 +130,16 @@ async function main() {
   // (live writer or a prior backfill run) are skipped — receipts are
   // create-only. Everything else in the historical set still participates
   // in slot/cohort derivation (the universe is creation data, not receipts).
+  // Crash-retry accounting (review F1): battles receipted by a PRIOR run of
+  // THIS backfill (receipt.backfilled) stay IN the replay — the replay is
+  // deterministic, their receipt write skips create-only below, and the
+  // guarded merge still needs their XP. Live-written receipts stay out
+  // (their XP already merged live).
   const scope = all.filter((b) =>
-    typeof b.completedAt === 'string' && b.completedAt <= cutoverT
-    && isMasterySubject(b) && b.masteryAward === undefined);
+    b.status === 'completed'
+    && typeof b.completedAt === 'string' && b.completedAt <= cutoverT
+    && isMasterySubject(b)
+    && (b.masteryAward === undefined || b.masteryAward?.backfilled === true));
 
   // ── Slot reconstruction: rank within (owner, archetype, NY slotDate) by
   // creation key across ALL battles (identical to live derivation); an
@@ -148,7 +167,7 @@ async function main() {
   scope.sort((a, b2) => (a.completedAt < b2.completedAt ? -1 : a.completedAt > b2.completedAt ? 1 : a.id < b2.id ? -1 : 1));
   const streams = new Map(); // ownerId|archetype → {xp, count, receipts:[], lastAwardAt}
   const quarantine = [];
-  const dist = { awarded: 0, zeroReceipts: 0, quarantined: 0, byMode: {}, byArchetype: {}, xpTotal: 0, levelUps: 0 };
+  const dist = { awarded: 0, zeroReceipts: 0, quarantined: 0, deferredCohortPending: 0, byMode: {}, byArchetype: {}, xpTotal: 0, levelUps: 0 };
 
   for (const b of scope) {
     const archetype = b.agentContext?.archetype ?? 'unknown';
@@ -158,9 +177,15 @@ async function main() {
     const siblings = b.gameMode === TOURNAMENT_GAME_MODE
       ? sameDayCohort(b, all.filter((s) => s.groupId === b.groupId && s.id !== b.id))
       : [];
-    // §9: placement only from terminal immutable scores — pre-cutover
-    // cohorts are all-terminal by construction (everything ≤ cutoverT is
-    // history), so non-terminal siblings cannot occur here.
+    // Cohort terminality (review F3 — the live B4 gate): placement only
+    // from terminal immutable scores. On cutover day a same-day sibling may
+    // still be live — DEFER this battle (no receipt, no XP); a re-run after
+    // the cohort settles picks it up.
+    if (b.gameMode === TOURNAMENT_GAME_MODE
+        && siblings.some((s) => s.status !== 'completed' && s.status !== 'expired')) {
+      dist.deferredCohortPending += 1;
+      continue;
+    }
     const placement = computePlacementInputs({ battle: b, siblings });
     const currentScore = b.scoreState?.currentScore;
     const streamK = `${b.ownerId}|${archetype}`;
@@ -214,7 +239,8 @@ async function main() {
   };
   writeFileSync(outPath, JSON.stringify(report, null, 2));
   console.log(`\n=== Mastery backfill (${report.mode}) — cutoverT ${cutoverT}, scope ${scope.length}, streams ${streams.size} ===`);
-  console.log(`awarded=${dist.awarded} (zero ${dist.zeroReceipts}) quarantined=${dist.quarantined} xpTotal=${dist.xpTotal} levelUps=${dist.levelUps}`);
+  console.log(`awarded=${dist.awarded} (zero ${dist.zeroReceipts}) quarantined=${dist.quarantined} deferred=${dist.deferredCohortPending} xpTotal=${dist.xpTotal} levelUps=${dist.levelUps}`);
+  if (dist.deferredCohortPending > 0) console.log('Deferred cohort-pending battles remain — re-run after their cohorts settle.');
   console.log(`report → ${outPath}`);
   if (!live) {
     console.log('\nDRY-RUN complete (zero writes). Founder reviews the distribution AND');
@@ -228,11 +254,25 @@ async function main() {
   for (const [streamK, stream] of streams) {
     const [ownerId, archetype] = streamK.split('|');
     try {
+      // Receipts first; a receipt already present that is NOT ours
+      // (live-written mid-run — review F2) drops that battle's replayed
+      // XP/count from the merge; a backfilled one (prior crashed run — F1)
+      // keeps it, since its merge never applied (marker guard).
+      let mergeXp = stream.xp;
+      let mergeCount = stream.count;
       for (const r of stream.receipts) {
         await db.runTransaction(async (t) => {
           const ref = db.collection('agentBattles').doc(r.battleId);
           const snap = await t.get(ref);
-          if (!snap.exists || snap.data().masteryAward !== undefined) { results.receiptsSkipped += 1; return; }
+          const existingAward = snap.exists ? snap.data().masteryAward : undefined;
+          if (!snap.exists || existingAward !== undefined) {
+            results.receiptsSkipped += 1;
+            if (existingAward !== undefined && existingAward.backfilled !== true) {
+              mergeXp -= Number.isFinite(r.receipt.xpFinal) ? r.receipt.xpFinal : 0;
+              mergeCount -= 1;
+            }
+            return;
+          }
           t.update(ref, {
             masteryAward: r.receipt,
             ...(snap.data().masterySlot === undefined && r.slot?.rank != null
@@ -247,13 +287,21 @@ async function main() {
         const pSnap = await t.get(pRef);
         const p = pSnap.exists ? pSnap.data() : {};
         if (p.backfillApplied?.[backfillId]?.[archetype]) { results.streamsSkipped += 1; return; }
+        // A DIFFERENT backfillId already applied to this stream would
+        // double-merge XP its receipts carry — refuse loudly (re-runs must
+        // reuse the same --backfill-id).
+        const otherApplied = Object.keys(p.backfillApplied || {}).find(
+          (id) => id !== backfillId && p.backfillApplied[id]?.[archetype]);
+        if (otherApplied) {
+          throw new Error(`stream already backfilled under '${otherApplied}' — reuse that --backfill-id`);
+        }
         const existing = p.archetypes?.[archetype] ?? {};
-        const xpAfter = (Number.isFinite(existing.xp) ? existing.xp : 0) + stream.xp;
+        const xpAfter = (Number.isFinite(existing.xp) ? existing.xp : 0) + mergeXp;
         t.set(pRef, {
           archetypes: { [archetype]: {
             xp: xpAfter,
             level: levelForXp(xpAfter),
-            battlesCounted: (Number.isFinite(existing.battlesCounted) ? existing.battlesCounted : 0) + stream.count,
+            battlesCounted: (Number.isFinite(existing.battlesCounted) ? existing.battlesCounted : 0) + mergeCount,
             lastAwardAt: existing.lastAwardAt && existing.lastAwardAt > stream.lastAwardAt ? existing.lastAwardAt : stream.lastAwardAt,
           } },
           backfillApplied: { [backfillId]: { [archetype]: nowIso } },

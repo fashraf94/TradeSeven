@@ -20,7 +20,7 @@ import {
 import { getArchetypeCharacter, getArchetypeRoster } from '../../../../data/archetypeCharacter.js';
 import { ARCHETYPE_ADJUSTMENTS, getAdjustment, getCanonicalText, getCanonicalTextVersion, findEquipConflicts } from '../../../../data/archetypeAdjustments.js';
 import { resolveCharacterState, CHARACTER_STATES } from '../../../../data/characterState.js';
-import { STANDING_LEANS_CAP, LEAN_INVALIDATION_REASONS } from '../../../../../api/_utils/leanRevalidation.js';
+import { STANDING_LEANS_CAP, acceptedStandingLeans, LEAN_INVALIDATION_REASONS } from '../../../../../api/_utils/leanRevalidation.js';
 // Mastery P3 (level-derived cap displays, §9): the cap shown/gated here
 // mirrors the SERVER's effective cap — leanCapForLevel(profile level) only
 // while enforcement is live, baseline otherwise. The profile hook is dark
@@ -126,7 +126,11 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
   const effectiveLeanCap = MASTERY_ENFORCEMENT_ENABLED && masteryProfile
     ? leanCapForLevel(archetypeLevelFromProfile(masteryProfile, archId))
     : STANDING_LEANS_CAP;
-  const slotsFull = cs.leans.valid.length >= effectiveLeanCap;
+  // Structural accepted count (review F7): the SAME kernel + clamp the
+  // server's capacity decision and ForgeOverview use — never the
+  // entitlement-clamped cs.leans.valid, which disagrees in rollback states.
+  const acceptedCount = acceptedStandingLeans({ standingLeans, archetypeCodeId: archId }).length;
+  const slotsFull = acceptedCount >= effectiveLeanCap;
   const slotPins = standingLeans.map((raw) => {
     const v = validById.get(raw.adjustmentId);
     if (v) return { ...v, slotState: 'valid' };
@@ -229,7 +233,7 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
     <>
       {locked && <div style={{ marginBottom: 18 }}><BattleSnapshot leans={cs.leans.valid} tempo={cs.tempo.effective} compact={compact} /></div>}
       <div ref={menuRef}>
-        <LoadoutSubHead icon="sliders" title="Standing leans" meta={`${cs.leans.valid.length} / ${effectiveLeanCap} slots`} compact={compact} />
+        <LoadoutSubHead icon="sliders" title="Standing leans" meta={`${acceptedCount} / ${effectiveLeanCap} slots`} compact={compact} />
         <LeanSlots pins={slotPins} archName={ownArch.name} locked={locked} onRemove={remove} onFocusMenu={focusMenu} compact={compact} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, margin: '18px 0 12px' }}>
           <Mono style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: T.ink2, fontWeight: 600 }}>{ownArch.name} menu</Mono>
