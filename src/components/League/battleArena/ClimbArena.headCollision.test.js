@@ -7,17 +7,16 @@
 // the only possible collision is HORIZONTAL, a label reaching into the neighbour lane.
 // The guard is therefore: laneW > labelHalfWidth + neighbourHeadHalfWidth.
 //
-// `headSizeFor` is IMPORTED from the component (no size drift). The lane geometry + label
-// model are mirrored from ClimbArena's compact path and must track it:
-//   axisW(compact)=40; laneW=(w-axisW)/n; halo width = headSz+14 (the widest DRAWN element,
-//   for you/leader); label centred under the head; ArenaCount is monospace JetBrains Mono
-//   (~0.6*fontSize per char), fontSize = compact you?15:12.
+// `headSizeFor` + `COMPACT_AXIS_W` are IMPORTED from the layout module (no drift). The
+// remaining lane/label model is mirrored from ClimbArena's compact path and must track it:
+//   laneW=(w-axisW)/n; halo width = headSz+14 (the widest DRAWN element, for you/leader);
+//   label centred under the head; ArenaCount is monospace JetBrains Mono (~0.6*fontSize per
+//   char), fontSize = compact you?15:12.
 
 import { describe, it, expect } from 'vitest';
-import { headSizeFor } from './climbHeadLayout';
+import { headSizeFor, COMPACT_AXIS_W } from './climbHeadLayout';
 
-const AXIS_W = 40;                                   // compact axis gutter
-const laneW = (w, n) => (w - AXIS_W) / n;
+const laneW = (w, n) => (w - COMPACT_AXIS_W) / n;
 const halfHead = (you, lead) => (headSizeFor(you, lead, true) + 14) / 2; // halo = the widest drawn element
 const halfLabel = (you, chars) => (chars * 0.6 * (you ? 15 : 12)) / 2;
 
@@ -51,13 +50,4 @@ describe('ClimbArena — label-below clears the neighbour head when bunched', ()
       }
     });
   }
-
-  it('the head is never the widest element — the halo bounds it (label clears the halo ⇒ clears the head)', () => {
-    // sanity: halo (headSz+14) ≥ head footprint ≥ the rendered SVG width (headSz*140/156).
-    for (const s of WORST) {
-      const hs = headSizeFor(s.you, s.lead, true);
-      expect(hs + 14).toBeGreaterThanOrEqual(hs);           // halo ≥ footprint
-      expect(hs).toBeGreaterThanOrEqual(hs * 140 / 156);    // footprint ≥ svg width
-    }
-  });
 });
