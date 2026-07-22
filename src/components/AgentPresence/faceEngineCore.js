@@ -112,7 +112,7 @@ export class FaceCtl {
     t.mouth   = REST.mouth + se * 0.5 - guard * 0.12;              // behind → downturn, ahead → real smile
     t.eyeOpen = 1 - neg * 0.28 - guard * 0.14;                     // narrows when behind / guarded
     t.gy      = REST.gy + neg * 0.34 - pos * 0.06;                 // behind looks down; ahead level
-    t.lean    = pos * 0.16 - neg * 0.14;                           // ahead leans in, behind pulls back
+    t.lean    = pos * 0.16 - neg * 0.14 + (m.leanBias || 0);       // ahead leans in, behind pulls back; leanBias = persistent posture tell (Contrarian rests against the room). Dispositions without it are unchanged (|| 0).
     t.shutter = neg * 0.22 * (m.shutterProne || 0) + guard * 0.16; // partial visor when behind & prone
     t.escale  = 1 + pos * 0.04 - neg * 0.03;
     Object.keys(t).forEach((k) => { t[k] = clampK(k, t[k]); });

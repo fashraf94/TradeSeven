@@ -29,6 +29,13 @@ import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { MASTERY_SURFACE_ENABLED } from '../../../api/_utils/masteryConfig.js';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
 import { changeArchetype } from '../../services/agentService';
+// Hero cards (Agent Presence): the per-archetype gradient (reuse the Forge roster's
+// source — getArchetypeCharacter().colors — never a duplicated palette) + the shared head
+// at the archetype's resting disposition. All gated behind isAgentPresenceOn() so flag-off
+// stays byte-identical to the plain text cards.
+import { getArchetypeCharacter } from '../../data/archetypeCharacter';
+import AgentPresence, { archetypeToDisposition } from '../AgentPresence';
+import { isAgentPresenceOn } from '../../config/featureFlags';
 
 // Locked Identity Contract presentation order (ARCHETYPE_IDENTITY_CONTRACT_V1.md
 // §1): Trend Follower → Contrarian → Diversifier → Speculator → Fundamental
@@ -38,9 +45,76 @@ import { changeArchetype } from '../../services/agentService';
 // a CONTROLLED selector; the live dashboard picker below keeps its commit flow).
 export const ARCHETYPE_ORDER = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
 
-export function ArchetypeCard({ codeId, selected, busy, disabled, accent, onClick }) {
+// Hero variant (Agent Presence, gated by the caller behind isAgentPresenceOn()). The card
+// takes the archetype's OWN gradient — reused from getArchetypeCharacter().colors, the same
+// [a,b] pair the Forge roster paints (no duplicated palette) — and mounts the shared head at
+// that archetype's resting disposition (archetypeToDisposition), lightly-idle: no events, no
+// standing, no binding. It is a pure preview of "archetype X at rest". Selecting still does
+// exactly what it did before — this is display only.
+function HeroArchetypeCard({ codeId, name, disposition, reveal, selected, busy, disabled, onClick }) {
+  const { colors } = getArchetypeCharacter(codeId);
+  const [a, b] = colors;
+  const inert = selected || busy || disabled;
+  return (
+    <button
+      type="button"
+      onClick={inert ? undefined : onClick}
+      disabled={inert}
+      aria-pressed={selected}
+      style={{
+        all: 'unset', boxSizing: 'border-box', width: '100%', display: 'block', position: 'relative',
+        marginBottom: 9, borderRadius: 16, overflow: 'hidden',
+        cursor: selected || busy ? 'default' : disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1, transition: 'opacity .15s ease',
+        background: `linear-gradient(125deg, ${alpha(a, 0.92)} 0%, ${alpha(b, 0.8)} 100%)`,
+        border: `1px solid ${selected ? alpha('#fff', 0.55) : alpha('#fff', 0.14)}`,
+        boxShadow: selected
+          ? `inset 0 0 0 1px ${alpha('#fff', 0.35)}, 0 8px 22px ${alpha(b, 0.38)}`
+          : `0 6px 16px ${alpha('#05060A', 0.3)}`,
+      }}
+    >
+      {/* legibility overlays (mirror the Forge ArchBand): darken toward the bottom, glint top-right */}
+      <span aria-hidden style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: `linear-gradient(180deg, ${alpha('#05060A', 0.06)} 0%, ${alpha('#05060A', 0.46)} 100%)` }} />
+      <span aria-hidden style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: `radial-gradient(circle at 86% 14%, ${alpha('#fff', 0.2)}, transparent 46%)` }} />
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px' }}>
+        <div style={{ width: 54, height: 54, flexShrink: 0, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha('#05060A', 0.22), border: `1px solid ${alpha('#fff', 0.12)}` }}>
+          <AgentPresence disposition={archetypeToDisposition(codeId)} accent={a} size={46} enableEnvironment={false} />
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <div style={{ fontSize: 15.5, fontWeight: 700, color: '#fff', textShadow: `0 1px 10px ${alpha('#05060A', 0.5)}` }}>{name}</div>
+            {selected && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                <Mono style={{ fontSize: 9.5, letterSpacing: '0.12em', color: '#fff', textTransform: 'uppercase' }}>Current</Mono>
+                <Check size={16} color="#fff" />
+              </span>
+            )}
+            {busy && (
+              <Mono style={{ fontSize: 9.5, letterSpacing: '0.12em', color: '#fff', textTransform: 'uppercase', flexShrink: 0 }}>Switching…</Mono>
+            )}
+          </div>
+          <div style={{ fontSize: 12.5, color: alpha('#fff', 0.9), marginTop: 3, fontWeight: 500, textShadow: `0 1px 8px ${alpha('#05060A', 0.45)}` }}>{disposition}</div>
+          <div style={{ fontSize: 12, color: alpha('#fff', 0.82), lineHeight: 1.5, marginTop: 7, textShadow: `0 1px 8px ${alpha('#05060A', 0.4)}` }}>{reveal}</div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+export function ArchetypeCard({ codeId, selected, busy, disabled, accent, hero = false, onClick }) {
   const name = getArchetypeDisplayName(codeId);
   const { disposition, reveal } = getArchetypeIdentity(codeId);
+  // Hero cards are opt-in and gated by the caller behind isAgentPresenceOn(). Flag-off,
+  // `hero` is false and the plain text card below renders BYTE-IDENTICAL to before (the
+  // League LoadoutChooserSheet never passes `hero`, so it is unaffected).
+  if (hero) {
+    return (
+      <HeroArchetypeCard
+        codeId={codeId} name={name} disposition={disposition} reveal={reveal}
+        selected={selected} busy={busy} disabled={disabled} onClick={onClick}
+      />
+    );
+  }
   const inert = selected || busy || disabled;
   return (
     <button
@@ -117,6 +191,9 @@ function ConfirmPanel({ codeId, accent, working, error, onConfirm, onCancel }) {
 
 export default function ArchetypePicker({ open, onClose, agent, accent, dock = 'bottom' }) {
   const current = agent?.archetype;
+  // Hero cards behind the Agent Presence gate; flag-off this is false → plain text cards
+  // (byte-identical). The `?agentPresence=1` dev-preview param also lights them up.
+  const heroesOn = isAgentPresenceOn();
   const [pending, setPending] = useState(null);   // codeId awaiting confirm — NO write yet, or null
   const [working, setWorking] = useState(false);   // the change+seed request is in flight
   const [error, setError] = useState(null);
@@ -222,6 +299,7 @@ export default function ArchetypePicker({ open, onClose, agent, accent, dock = '
               busy={false}
               disabled={false}
               accent={accent}
+              hero={heroesOn}
               onClick={() => handleSelect(codeId)}
             />
           ))}
