@@ -16,6 +16,8 @@
 import React from 'react';
 import { Trophy } from 'lucide-react';
 import AgentOrb from '../../shared/AgentOrb';
+import { AgentPresenceMount } from '../../AgentPresence';
+import { isAgentPresenceOn } from '../../../config/featureFlags';
 import EvolutionPreviewCard from '../EvolutionPreviewCard';
 import { CMD, alpha, Eyebrow, Mono } from '../commandUI';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
@@ -64,7 +66,23 @@ export default function IdentityPanel({ agent, accent, live, record, winRate, le
         background: `linear-gradient(180deg, ${alpha(accent, 0.08)}, ${CMD.surface} 70%)`,
         border: `1px solid ${CMD.hair}`,
       }}>
-        <AgentOrb state={live ? 'live' : 'ready'} size={104} color={accent} />
+        {/* Agent Presence — the identity portrait head. Flag-off renders the orb
+            byte-identically. surface="command" gives the head the agent's archetype
+            disposition + DNA accent at an HONEST NEUTRAL standing (finding 10: this is a
+            resting/identity view — no live battle score, no beat/statusFeed here, so no
+            score transients are wired; score reactions would be dead code). Mood baseline
+            + idle micro-behaviour only. Independent of the Forge Character hero (MechSVG). */}
+        {isAgentPresenceOn() ? (
+          // 140px (up from the orb's 104) — a prominent portrait in the 300px identity
+          // column that still clears the name below (the face ends ~12px above the SVG
+          // bottom; marginTop:18 on the name). Boxed to the head's own footprint so the
+          // width:100% EnvStage root is bounded, not the full card width.
+          <div style={{ width: 140, height: 140 }}>
+            <AgentPresenceMount surface="command" agent={agent} size={140} enableEnvironment={false} />
+          </div>
+        ) : (
+          <AgentOrb state={live ? 'live' : 'ready'} size={104} color={accent} />
+        )}
         <div style={{ fontSize: 27, fontWeight: 700, letterSpacing: '-0.02em', marginTop: 18, color: CMD.ink }}>{agentName}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7 }}>
           <Tag color={accent}>{archetypeName}</Tag>

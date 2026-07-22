@@ -8,6 +8,10 @@
 //                   surface's orb/scoreboard renders (Gate 1: no parallel recompute)
 //   • events      — [{ id, ev, tier?, tone? }] transient reactions; only ids not seen
 //                   before fire, so a mount never replays the backlog.
+//   • reactivityLevel — 'reactive' (default; joins the shared rAF loop — breath, idle,
+//                   mood glide) or 'static' (paints ONE frame, never joins the loop:
+//                   no rAF, no idle, no breath). Static is the CPU-slot path and the
+//                   seam to light a slot up later by flipping the level (finding 13).
 //
 // It writes NOTHING, gates NOTHING, and is removable without touching any scoring or
 // decision path. Reduced-motion uses the house framer useReducedMotion() (the sibling
@@ -28,6 +32,7 @@ export default function AgentPresence({
   size = 56,
   enableEnvironment = true,
   radial = false,
+  reactivityLevel = 'reactive',
   onDim,
   style,
 }) {
@@ -72,6 +77,7 @@ export default function AgentPresence({
       enabled={enableEnvironment}
       radial={radial}
       reduced={reduced}
+      reactivityLevel={reactivityLevel}
       onDim={onDim}
       style={style}
     />

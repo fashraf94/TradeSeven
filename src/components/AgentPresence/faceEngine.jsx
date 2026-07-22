@@ -27,31 +27,52 @@ import { DISPO } from './faceMoves';
 import { FaceCtl, FACE_REG, ensureLoop } from './faceEngineCore';
 
 // ── the SVG (built once; refs captured for imperative updates) ──────────────
-export const ReactiveFace = React.forwardRef(function ReactiveFace({ disposition = 'neutral', size = 200, accent = '#5EEAD4', standing = 0, reduced, style }, ref) {
+export const ReactiveFace = React.forwardRef(function ReactiveFace({ disposition = 'neutral', size = 200, accent = '#5EEAD4', standing = 0, reduced, reactivityLevel = 'reactive', style }, ref) {
   const uid = React.useId().replace(/[:]/g, '');
   const refs = React.useRef({});
+  // STATIC vs REACTIVE (finding 13 seam). A reactive head joins the shared rAF loop
+  // (breath + idle + mood glide); a static head paints ONE frame and never registers —
+  // truly loop-free, the CPU-slot path and the future mech-customization seam (flip the
+  // level to light a CPU up, no rebuild).
+  const isStatic = reactivityLevel === 'static';
   // Created ONCE (the controller is a stable imperative object); the effect below
   // syncs ctl.disp when `disposition` changes, so the memo intentionally omits it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ctl = React.useMemo(() => new FaceCtl(DISPO[disposition] || DISPO.neutral), []);
   React.useEffect(() => { ctl.disp = DISPO[disposition] || DISPO.neutral; }, [disposition, ctl]);
   // reactive reduced-motion (house framer useReducedMotion is read at the AgentPresence
-  // boundary and threaded here). When it changes, re-apply the pose instantly.
+  // boundary and threaded here). When it changes, re-apply the pose instantly. Skipped
+  // for a static head — it never joins the loop, so reduced-motion is already a no-op.
   React.useEffect(() => {
-    if (reduced == null) return;
+    if (isStatic || reduced == null) return;
     ctl.setReduced(reduced);
     if (reduced) ctl.setStanding(ctl.standing, { instant: true });
-  }, [reduced, ctl]);
+  }, [isStatic, reduced, ctl]);
   // mount-once initial pose (deliberately not re-run on `standing` — the effect below
   // owns standing changes; this only seeds the correct pose synchronously on mount).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => { ctl.setStanding(standing, { instant: true }); }, []);
-  React.useEffect(() => { ctl.setStanding(standing); }, [standing, ctl]);
+  // standing → pose. Reactive glides via the loop; static writes instantly and repaints
+  // its single frame (it has no loop to apply a tween). The mount paint is owned by the
+  // lifecycle effect below (refs are attached there first).
   React.useEffect(() => {
-    ctl.attach(refs.current); ctl.tick(performance.now());   // paint the initial pose once, synchronously
+    // `ctl.still` is set here too (not only in the lifecycle effect below) so this repaint
+    // is self-consistent regardless of effect order.
+    if (isStatic) { ctl.still = true; ctl.setStanding(standing, { instant: true }); ctl.renderStatic(performance.now()); }
+    else ctl.setStanding(standing);
+  }, [standing, isStatic, ctl]);
+  React.useEffect(() => {
+    ctl.attach(refs.current);
+    ctl.still = isStatic;
+    // Static: paint one still frame and RETURN — never join FACE_REG (no rAF, no idle,
+    // no breath). The dispose() cleanup still runs so any (future) queued react-latency
+    // timeout can't fire on a detached ctl. Reactive: paint the initial pose once, then
+    // join the shared loop.
+    if (isStatic) { ctl.renderStatic(performance.now()); return () => ctl.dispose(); }
+    ctl.tick(performance.now());   // paint the initial pose once, synchronously
     FACE_REG.add(ctl); ensureLoop();
     return () => { FACE_REG.delete(ctl); ctl.dispose(); };
-  }, [ctl]);
+  }, [ctl, isStatic]);
   React.useImperativeHandle(ref, () => ({
     play: (m, o) => ctl.play(m, o), react: (e, o) => ctl.react(e, o), rest: () => ctl.rest(),
     setStanding: (s, o) => ctl.setStanding(s, o), neutralize: () => ctl.neutralize(), shake: (a, d) => ctl.shake(a, d), ctl,

@@ -19,6 +19,12 @@ import { ArenaCount } from './ArenaPrimitives';
 import { ST_GOOD } from './arenaTheme';
 import { frameDayIdx } from './arenaStateMap';
 import { prefersReducedMotion } from './arenaEngineCore';
+import AgentPresence, { archetypeToDisposition, standingFromRank } from '../../AgentPresence';
+import { isAgentPresenceOn } from '../../../config/featureFlags';
+// Head layout (sizes + the face-centre lift + the label gap) lives in a non-component
+// module so this view file exports only a component, and the collision test reads the
+// SAME sizes the component renders. Flag-off renders the orb byte-identically.
+import { HEAD_FACE_LIFT, LABEL_BELOW_GAP, headSizeFor } from './climbHeadLayout';
 
 // the living atmosphere — deep sky, drifting aurora, a deterministic star field.
 function ClimbAtmosphere({ tone }) {
@@ -100,6 +106,12 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
   for (let g = Math.ceil(DOM[0] / gstep) * gstep; g <= DOM[1] - 0.4; g += gstep) gridVals.push(g);
 
   const reduce = prefersReducedMotion();
+  // Agent Presence heads replace the orbs when the flag is on. Player seat (s.id===youId)
+  // = REACTIVE (mood glides with standingFromRank of the SAME rankOf/altitude the orb
+  // shows — §9 by construction). The three rivals = STATIC (paint-once, no rAF/breath;
+  // accent from the seat colour). Rival disposition comes from s.arch — omitted in LIVE
+  // owner-only data (→ neutral), though the fixtures preview does supply rival archetypes.
+  const showHead = isAgentPresenceOn();
 
   return (
     <div style={{ position: 'relative', width: w, height: h, overflow: 'hidden', borderRadius: 18, background: LTOKENS.bg, border: `1px solid ${LTOKENS.hair}` }}>
@@ -151,6 +163,12 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
         const you = s.id === youId; const lead = s.id === leaderId;
         const x = laneX(i); const y = atRest ? plotB - 16 : Y(at(s));
         const sz = compact ? (you ? 44 : lead ? 40 : 36) : (you ? 52 : lead ? 46 : 40);
+        // Heads render LARGER than the orb for a legible mood read. `sz` stays the orb
+        // size (flag-off byte-identical); `headSz` is the head size; `dz` is whichever is
+        // actually shown, so the halo / crown / beside-label chrome tracks it.
+        const headSz = headSizeFor(you, lead, compact);
+        const dz = showHead ? headSz : sz;
+        const crownSize = showHead ? Math.round(dz * 0.34) : (compact ? 15 : 17);
         const rk = rankOf(s.id);
         const bob = !calm && !reduce ? (you ? 'bv2-bob-you' : 'bv2-bob') : '';
         return (
@@ -177,26 +195,74 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                 -50%,-50% centering — the design prototype's latent shift bug). */}
             <div onClick={onPlayer && !you && !calm ? () => onPlayer(s.id) : undefined}
               style={{ position: 'absolute', left: x, top: y, transform: 'translate(-50%,-50%)', cursor: onPlayer && !you && !calm ? 'pointer' : 'default' }}>
-              <div className={bob} style={{ position: 'relative' }}>
-                <div className={you && surge && surge.key && !reduce ? 'bv2-surge' : ''} key={you && surge ? surge.key : undefined} style={{ position: 'relative' }}>
+              {/* A static CPU head drops its own bob float — the head itself is motionless
+                  (finding 13; the leader halo is arena chrome and is kept). The player head
+                  and the flag-off orb keep the float. */}
+              <div className={showHead && !you ? '' : bob} style={{ position: 'relative' }}>
+                {/* The surge `key` REMOUNTS this subtree to retrigger the CSS scale-pulse —
+                    fine for the flag-off orb, but it would tear down + rebuild the player
+                    HEAD on every beat (new FaceCtl, glide discarded). So the key + pulse
+                    class apply to the ORB path only; the head keeps its identity and its
+                    mood glide across surges (the fly-up token + beat caption still fire). */}
+                <div className={!showHead && you && surge && surge.key && !reduce ? 'bv2-surge' : ''} key={!showHead && you && surge ? surge.key : undefined} style={{ position: 'relative' }}>
                   {!calm && (you || lead) && !reduce && (
-                    <div className="bv2-halo" style={{ position: 'absolute', left: '50%', top: '50%', width: sz + 14, height: sz + 14, borderRadius: '50%', border: `1.5px solid ${s.color}`, pointerEvents: 'none' }} />
+                    <div className="bv2-halo" style={{ position: 'absolute', left: '50%', top: '50%', width: dz + 14, height: dz + 14, borderRadius: '50%', border: `1.5px solid ${s.color}`, pointerEvents: 'none' }} />
                   )}
-                  <div style={{ width: sz, height: sz, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: `radial-gradient(circle at 35% 30%, ${alpha(s.color, 0.95)}, ${alpha(s.color, 0.55)})`,
-                    border: `2px solid ${alpha(s.color, you ? 1 : 0.7)}`, boxShadow: `0 0 ${you ? 22 : 14}px ${alpha(s.color, you ? 0.7 : 0.45)}` }}>
-                    <Mono style={{ fontSize: compact ? (you ? 15 : 13) : (you ? 17 : 14), fontWeight: 700, color: '#0A0B0E' }}>{calm ? '·' : rk}</Mono>
-                  </div>
+                  {showHead ? (
+                    /* HEAD — replaces the orb+digit, rendered at headSz (larger than the
+                       orb for legibility). Footprint is headSz×headSz so the crown, halo
+                       and label anchors track the head; the FACE is centred on (x,y) — the
+                       P&L anchor — via the HEAD_FACE_LIFT up-shift (the score label below is
+                       decoration offset from this, never the anchor). pointer-events:none so
+                       the rival tap (onPlayer) and the training-preview <button> still get
+                       the click. The rank digit is intentionally dropped — altitude + crown
+                       + the score label carry rank; the head carries mood-at-a-glance. */
+                    <div style={{ width: headSz, height: headSz, position: 'relative', pointerEvents: 'none' }}>
+                      <div style={{ position: 'absolute', left: '50%', top: '50%',
+                        transform: `translate(-50%, calc(-50% - ${(HEAD_FACE_LIFT * headSz).toFixed(1)}px))`,
+                        width: headSz * 140 / 156, height: headSz }}>
+                        <AgentPresence
+                          disposition={archetypeToDisposition(s.arch)}
+                          accent={s.color}
+                          standing={you && !atRest ? standingFromRank(rk, rows.length) : 0}
+                          size={headSz}
+                          enableEnvironment={false}
+                          radial={false}
+                          reactivityLevel={you ? 'reactive' : 'static'}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ width: sz, height: sz, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: `radial-gradient(circle at 35% 30%, ${alpha(s.color, 0.95)}, ${alpha(s.color, 0.55)})`,
+                      border: `2px solid ${alpha(s.color, you ? 1 : 0.7)}`, boxShadow: `0 0 ${you ? 22 : 14}px ${alpha(s.color, you ? 0.7 : 0.45)}` }}>
+                      <Mono style={{ fontSize: compact ? (you ? 15 : 13) : (you ? 17 : 14), fontWeight: 700, color: '#0A0B0E' }}>{calm ? '·' : rk}</Mono>
+                    </div>
+                  )}
                   {lead && !calm && (
                     <div style={{ position: 'absolute', top: -17, left: '50%', transform: 'translateX(-50%)' }}>
-                      <LIcon name="crown" size={compact ? 15 : 17} color={LTOKENS.gold} stroke={2} />
+                      <LIcon name="crown" size={crownSize} color={LTOKENS.gold} stroke={2} />
                     </div>
                   )}
                 </div>
                 {!calm && (
-                  <div style={{ position: 'absolute', left: sz / 2 + 11, top: '50%', transform: 'translateY(-50%)', whiteSpace: 'nowrap' }}>
-                    <ArenaCount value={at(s)} size={compact ? (you ? 15 : 12) : (you ? 18 : 14)} weight={700} showSign={false} />
-                  </div>
+                  showHead && compact ? (
+                    /* COMPACT head: the score label sits at a FIXED offset directly BELOW
+                       the head, centred, clearing the headSz footprint (top:100% = footprint
+                       bottom). This keeps it inside the head's OWN lane, so a bigger head's
+                       label can't reach into the neighbour lane (the beside-label overlap).
+                       It is DECORATION offset from the head — never the anchor; the face
+                       centre stays the P&L anchor. Desktop keeps the beside label: its 316px
+                       lanes never overlap even at headSz, and a below-label would collide
+                       with the desktop-only under-head name row at low altitudes. */
+                    <div style={{ position: 'absolute', left: '50%', top: `calc(100% + ${LABEL_BELOW_GAP}px)`, transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
+                      <ArenaCount value={at(s)} size={compact ? (you ? 15 : 12) : (you ? 18 : 14)} weight={700} showSign={false} />
+                    </div>
+                  ) : (
+                    <div style={{ position: 'absolute', left: dz / 2 + 11, top: '50%', transform: 'translateY(-50%)', whiteSpace: 'nowrap' }}>
+                      <ArenaCount value={at(s)} size={compact ? (you ? 15 : 12) : (you ? 18 : 14)} weight={700} showSign={false} />
+                    </div>
+                  )
                 )}
               </div>
             </div>

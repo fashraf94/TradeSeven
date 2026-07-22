@@ -21,15 +21,10 @@ import { ArenaMobile } from './ArenaMobile';
 import { AD_W, AD_H } from './arenaLayout';
 import { deriveArenaState, normalizeArenaMode } from './arenaStateMap';
 import { useArenaModel } from './useArenaModel';
-import { AgentPresenceMount } from '../../AgentPresence';
-import { isAgentPresenceOn } from '../../../config/featureFlags';
 
-// Agent Presence overlay — a gated, absolutely-positioned corner mount (flag-off omits
-// it entirely → the arena is byte-identical). It sits OVER the locked scale-to-fit
-// canvas (no layout reflow, pointer-events:none) and binds to the SAME model the arena
-// renders: standing ← model.youRank, transients ← model.beats. Disposition/colour come
-// from the already-in-scope flat6 `battle` doc (battle.archetype); nothing new is read.
-const PRESENCE_OVERLAY = { position: 'absolute', top: 10, right: 10, zIndex: 30, pointerEvents: 'none' };
+// Agent Presence now lives on the battle axis itself (the per-seat heads inside
+// ClimbArena), not as a corner overlay. The provisional overlay this file used to mount
+// was removed when Placement 1 landed — the arena renders the presence in-place.
 
 export default function LeagueBattleArenaLive({ group, battle, mode, uid, compositeContext, onBack = null, viewport = 'desktop' }) {
   const { model, handlers, ready } = useArenaModel({ group, battle, mode, uid, compositeContext });
@@ -37,7 +32,6 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
   const md = normalizeArenaMode(mode);
   const mobile = viewport === 'mobile';
   const primary = md === 'ranked' ? LTOKENS.gold : LTOKENS.teal;
-  const showPresence = ready && !!model && isAgentPresenceOn();
 
   // All hooks run UNCONDITIONALLY (rules of hooks) — `viewport` can flip on a
   // resize across the 768px line, so the desktop scale-to-fit measuring stays
@@ -66,18 +60,12 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
   if (mobile) {
     return (
       <div style={{ width: '100%', minHeight: '100%', background: '#050609',
-        backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(primary, 0.06)}, transparent 55%)`,
-        ...(showPresence ? { position: 'relative' } : null) }}>
+        backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(primary, 0.06)}, transparent 55%)` }}>
         {ready && model ? (
           <ArenaMobile key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} />
         ) : (
           <div style={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: LTOKENS.ink3, fontFamily: 'monospace', fontSize: 12 }}>
             Loading the arena…
-          </div>
-        )}
-        {showPresence && (
-          <div style={PRESENCE_OVERLAY}>
-            <AgentPresenceMount surface="league" model={model} agent={battle} size={40} />
           </div>
         )}
       </div>
@@ -96,11 +84,6 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
       ) : (
         <div style={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: LTOKENS.ink3, fontFamily: 'monospace', fontSize: 12 }}>
           Loading the arena…
-        </div>
-      )}
-      {showPresence && (
-        <div style={PRESENCE_OVERLAY}>
-          <AgentPresenceMount surface="league" model={model} agent={battle} size={40} />
         </div>
       )}
     </div>
