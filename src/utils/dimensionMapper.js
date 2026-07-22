@@ -1018,16 +1018,23 @@ export async function materializeDimensionBundle({
         canonicalize(existing.ruleIds ?? null) === canonicalize(snapshots.map((s) => s.id)) &&
         canonicalize(existing.ruleSnapshots ?? null) === canonicalize(frozenSnapshots);
       if (!sameContent) {
-        throw new Error(
+        const err = new Error(
           "This strategy's equipped bundle no longer matches these dimensions — unequip it in the Forge, then relaunch."
         );
+        // Marks the message as user-renderable (deterministic state, not a
+        // transient fault) — the launch modal shows it verbatim instead of
+        // its generic retry copy, which can never resolve these.
+        err.code = 'dim_bundle_mismatch';
+        throw err;
       }
       return bundleId;
     }
     if (existing.status === 'archived') {
-      throw new Error(
+      const err = new Error(
         'This exact strategy was archived earlier — adjust a dimension to forge a fresh bundle.'
       );
+      err.code = 'dim_bundle_archived';
+      throw err;
     }
   }
 

@@ -45,17 +45,22 @@ export const MASTERY_XP_ENABLED = false; // P4 cutover flips this (§7). Keep fa
 // CUTOVER MARKER closing the acquisition window; this flip is BLOCKED until
 // the census passes):
 //   1. flip MASTERY_CUTOVER_GUARD_ENABLED true + deploy. Dark no-op: the
-//      guard only makes set-tempo-dial consult the cutover marker doc on
-//      an aggressive SET, and the marker does not exist yet. (Both
-//      constants false = zero mastery I/O, byte-identical — photographed.)
+//      guard only makes the two aggressive-dial hosts (set-tempo-dial's
+//      SET path; change-archetype's carry-over rider) consult the cutover
+//      marker doc, and the marker does not exist yet. (Both constants
+//      false = zero mastery I/O, byte-identical — photographed.)
 //   2. WRITE the cutover marker (Admin SDK, masteryConfig/cutover — any
 //      content; existence is the signal). Instant, no deploy: every host
-//      now denies NEW aggressive acquisitions (the one dark acquisition
-//      that enforcement would grandfather). Leans/Forge need no closing:
-//      the dark lean cap IS baseline, dark Forge equips enforce today's
-//      legacy limits server-side, and the lazy legacy floor is live-
-//      computed, never grandfathered. Existing aggressive dials re-assert
-//      via the idempotent branch — re-asserting is not acquiring.
+//      now closes BOTH dark aggressive acquisitions that enforcement would
+//      grandfather — set-tempo-dial denies NEW aggressive sets
+//      (dial_cutover), and change-archetype re-validates a carried
+//      aggressive against the NEW archetype's level exactly as enforcement
+//      will (the gate is per-archetype, so a dark carry-over is an
+//      acquisition too). Leans/Forge need no closing: the dark lean cap IS
+//      baseline, dark Forge equips enforce today's legacy limits
+//      server-side, and the lazy legacy floor is live-computed, never
+//      grandfathered. Existing aggressive dials re-assert in place via the
+//      idempotent branch — re-asserting is not acquiring.
 //   3. run scripts/mastery-preflip-census.js (READ-ONLY) — enumerates every
 //      stored pin/dial/stat exceeding the owner's profile-derived baseline
 //      entitlement + every Forge bundle above the effective (lazy-legacy-

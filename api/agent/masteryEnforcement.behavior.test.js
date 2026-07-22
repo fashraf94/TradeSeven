@@ -374,6 +374,51 @@ describe('B3 cutover marker — the flip ceremony closes dark aggressive acquisi
     expect(activeDb.__readCounts()[MARKER]).toBeUndefined();
     expect(activeDb.__readCounts()['masteryProfiles/test-user']).toBe(1);
   });
+
+  it('closed window: an archetype SWITCH re-validates a carried aggressive per-archetype (the carry-over IS an acquisition) — below L2 resets, ≥L2 keeps', async () => {
+    const { default: changeArchetypeHandler } = await import('./change-archetype.js');
+    flagState.enf = false;
+    flagState.cutoverGuard = true;
+    // Guardian L2 (aggressive legit there), degen stream absent → L1.
+    const seedDocs = () => ({
+      'agents/agent-1': AGENT({ dials: { tempo: 'aggressive' } }),
+      'masteryProfiles/test-user': GUARDIAN_PROFILE(2),
+      [MARKER]: { acquisitionsClosedAt: '2026-07-21T00:00:00.000Z' },
+    });
+    // Below the NEW archetype's gate: the carry resets — the census's
+    // per-archetype verdicts cannot go stale during the ceremony.
+    activeDb = makeMockDb(seedDocs());
+    const down = await call(changeArchetypeHandler, { agentId: 'agent-1', archetype: 'degen' });
+    expect(down.statusCode).toBe(200);
+    expect(activeDb.__dump('agents/agent-1').dials.tempo).toBe('standard');
+    // A switch the new archetype's gate allows keeps it (contrarian absent
+    // too → also L1; use guardian→guardian idempotent vs a real ≥L2 target:
+    // give the profile an analyst stream at L3).
+    activeDb = makeMockDb({
+      ...seedDocs(),
+      'masteryProfiles/test-user': {
+        archetypes: { guardian: { xp: xpFor(2) }, analyst: { xp: xpFor(3) } },
+      },
+    });
+    const up = await call(changeArchetypeHandler, { agentId: 'agent-1', archetype: 'analyst' });
+    expect(up.statusCode).toBe(200);
+    expect(activeDb.__dump('agents/agent-1').dials.tempo).toBe('aggressive');
+  });
+
+  it('ordinary dark (guard off): a switch carries aggressive untouched with ZERO marker/profile reads (byte-identity preserved)', async () => {
+    const { default: changeArchetypeHandler } = await import('./change-archetype.js');
+    flagState.enf = false;
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT({ dials: { tempo: 'aggressive' } }),
+      [MARKER]: { acquisitionsClosedAt: '2026-07-21T00:00:00.000Z' }, // present but unread
+    });
+    activeDb.__resetReads();
+    const res = await call(changeArchetypeHandler, { agentId: 'agent-1', archetype: 'degen' });
+    expect(res.statusCode).toBe(200);
+    expect(activeDb.__dump('agents/agent-1').dials.tempo).toBe('aggressive');
+    expect(activeDb.__readCounts()[MARKER]).toBeUndefined();
+    expect(activeDb.__readCounts()['masteryProfiles/test-user']).toBeUndefined();
+  });
 });
 
 describe('kernel half of the dual anchor — the shared per-call cap default (review redesign: structural max, ONE source for every caller)', () => {

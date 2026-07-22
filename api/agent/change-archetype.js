@@ -31,7 +31,12 @@ import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 // (the standing-lean invalidation rider precedent in this same file).
 // Without this, the per-archetype L2 gate degrades to earn-once-on-any-
 // archetype (P2 review finding). Dark (enforcement off): untouched.
-import { MASTERY_ENFORCEMENT_ENABLED } from '../_utils/masteryConfig.js';
+import {
+  MASTERY_ENFORCEMENT_ENABLED,
+  MASTERY_CUTOVER_GUARD_ENABLED,
+  MASTERY_CONFIG_COLLECTION,
+  MASTERY_CUTOVER_MARKER_DOC,
+} from '../_utils/masteryConfig.js';
 import { masteryProfileRef, archetypeLevelFromProfile, revalidateTempoDial } from '../_utils/masteryEnforcement.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
@@ -134,11 +139,31 @@ export default async function handler(req, res) {
       // can never disagree on when aggressive resets. The profile read sits
       // HERE because the seed block below performs tx.set writes and
       // Firestore requires every read to precede the first write.
+      //
+      // CUTOVER WINDOW (B3 delta-review closure): the dial gate is
+      // PER-ARCHETYPE, so carrying an equipped aggressive onto a new
+      // archetype IS an acquisition in the per-archetype sense — left open,
+      // a dark switch during the flip ceremony would rebind aggressive to
+      // an archetype whose gate it never passed and go stale under the
+      // final census. While the guard constant is on and the marker exists,
+      // this rider therefore runs the SAME revalidation enforcement will
+      // run — a ≥L2 switch keeps aggressive (legit), below L2 resets, and
+      // the census's per-archetype verdicts stay live. Ordinary dark (guard
+      // off): zero mastery I/O, byte-identical.
       let dialInvalidated = false;
-      if (MASTERY_ENFORCEMENT_ENABLED && agent.dials?.tempo === 'aggressive') {
-        const profileSnap = await tx.get(masteryProfileRef(db, user.uid));
-        const newLevel = archetypeLevelFromProfile(profileSnap.exists ? profileSnap.data() : null, archetype);
-        dialInvalidated = revalidateTempoDial({ tempo: 'aggressive', level: newLevel }).invalidated;
+      if (agent.dials?.tempo === 'aggressive') {
+        let revalidate = MASTERY_ENFORCEMENT_ENABLED;
+        if (!revalidate && MASTERY_CUTOVER_GUARD_ENABLED) {
+          const markerSnap = await tx.get(
+            db.collection(MASTERY_CONFIG_COLLECTION).doc(MASTERY_CUTOVER_MARKER_DOC),
+          );
+          revalidate = markerSnap.exists;
+        }
+        if (revalidate) {
+          const profileSnap = await tx.get(masteryProfileRef(db, user.uid));
+          const newLevel = archetypeLevelFromProfile(profileSnap.exists ? profileSnap.data() : null, archetype);
+          dialInvalidated = revalidateTempoDial({ tempo: 'aggressive', level: newLevel }).invalidated;
+        }
       }
 
       // ⚠️ THE INVARIANT: archetype change ALWAYS loads that archetype's
