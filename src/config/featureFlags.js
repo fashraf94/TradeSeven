@@ -866,3 +866,37 @@ export const OPENER_LAZY_FALLBACK_ENABLED = true;
  * at its unfreeze-day standing, not day-5).
  */
 export const TOURNAMENT_ADVANCEMENT_FROZEN = true;
+
+/**
+ * Agent Presence — the reactive agent FACE (expression rig + mood baseline + event
+ * reactions + environment layer). A READ-ONLY display surface: it writes nothing,
+ * gates nothing, and is removable without touching any scoring or decision path.
+ *
+ * When FALSE (default), NOTHING renders it — every mount site is gated on
+ * isAgentPresenceOn(), so flag-off is byte-identical to today (the orb/Bot glyph render
+ * exactly as before, and the binding hook never runs because the mount wrapper is never
+ * mounted). When TRUE — or via the `?agentPresence=1` dev-preview param (the
+ * `?trainingPodV2=1` idiom) — the face mounts on the League arena, the 1v1/training
+ * battle screen, and the Command Center, each bound to the EXACT standing that surface
+ * already renders (league youRank, 1v1 displayPlayerScore vs opponent, Command identity)
+ * — never a parallel recompute (§9 display-agreement).
+ *
+ * Built/merged DARK behind this flag; flip in a one-line follow-up PR after a Vercel
+ * preview smoke (the SCOUTING_BOARD_ENABLED precedent) — never in the build PR.
+ */
+export const AGENT_PRESENCE_ENABLED = false;
+
+/**
+ * The ONE home for the Agent Presence gate — the flag OR the `?agentPresence=1`
+ * dev-preview override. SSR/Node-safe (guards `window`); a malformed URL degrades to
+ * the flag alone.
+ */
+export function isAgentPresenceOn() {
+  if (AGENT_PRESENCE_ENABLED) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('agentPresence') === '1';
+  } catch {
+    return false;
+  }
+}
