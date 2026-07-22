@@ -1141,8 +1141,12 @@ describe('EXPIRED is inert across the active-status selectors + predicates (R2, 
     expect(selectMyTrainingPod([expiredTraining])).toBeNull();
   });
 
-  it('casualDeployMissesPodSession → false (no conflict) for a terminal EXPIRED pod', () => {
-    expect(casualDeployMissesPodSession({ id: 'x', status: GROUP_STATUS.EXPIRED }, { expiryEtDate: '2026-07-30', nextTradingEtDate: '2026-07-23' })).toBe(false);
+  it('casualDeployMissesPodSession → false (no conflict) for a terminal EXPIRED pod, even with a would-conflict anchor', () => {
+    // The pod carries a battleStartWeek.anchorEtDate that WOULD conflict (expiry
+    // reaches it) IF EXPIRED were mistakenly treated as a pre-battle session — so
+    // this asserts the EXPIRED-status exclusion, not a missing-anchor accident.
+    const expired = { id: 'x', status: GROUP_STATUS.EXPIRED, battleStartWeek: { anchorEtDate: '2026-07-23', mondayEtDate: '2026-07-23', anchorIso: '2026-07-23T13:30:00.000Z' } };
+    expect(casualDeployMissesPodSession(expired, { expiryEtDate: '2026-07-30', nextTradingEtDate: '2026-07-23' })).toBe(false);
   });
 });
 

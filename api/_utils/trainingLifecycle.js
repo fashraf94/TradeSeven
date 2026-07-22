@@ -697,6 +697,25 @@ export async function completeBankedTrainingPods(db, { now = new Date() } = {}) 
 
 // ==================== (g) STALE-POD EXPIRY (Training-Pod P0 R3) ====================
 
+// A real anchor open instant is never more than a few days out (the next market
+// open, at most across a long holiday close). A far-future value is corruption,
+// not a legitimate wait — cap the "pending" horizon so a corrupt anchor cannot
+// shield a pod from cleanup forever (review Q4).
+const SANE_ANCHOR_HORIZON_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/**
+ * Is `anchorEtDate` a GENUINE, in-range calendar date ('YYYY-MM-DD')? Format-only
+ * checks pass corruption like '2026-13-01' (month 13) or '9999-01-01'; this
+ * round-trips through Date.UTC so an out-of-range month/day is rejected. The
+ * far-future / absurd-year case is handled separately by the horizon cap.
+ */
+function anchorEtDateValid(anchorEtDate) {
+  if (typeof anchorEtDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(anchorEtDate)) return false;
+  const [y, m, d] = anchorEtDate.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
 /**
  * Per-state staleness ruling for a pre-BATTLE training pod. Returns
  * `{ stale, reason }`. The AWAITING_OPEN branch is the delicate one: a pod whose
@@ -712,28 +731,31 @@ async function evaluatePodStaleness(db, pod, { nowMs, nowEtDate, thresholdMs, cu
   }
   if (pod.status === GROUP_STATUS.AWAITING_OPEN) {
     const anchorEtDate = pod.startAnchor?.anchorEtDate;
-    const anchorValid = typeof anchorEtDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(anchorEtDate);
-    // A VALID anchor still in the future → legitimately waiting for its open. Never
-    // expire. But a MISSING/MALFORMED anchor (Q4) is NOT protected: a corrupt pod
-    // cannot permanently shield itself from the cleanup by its own corruption, so a
-    // pod with no usable anchor is treated as arrived/unknown and falls through to
-    // the age test (reason `awaiting_open_malformed_anchor`).
-    if (anchorValid && nowEtDate < anchorEtDate) return { stale: false, reason: 'pending_future_anchor' };
-    // Anchor arrived (or malformed): the flip has been failing past the threshold.
+    const anchorOpenMs = Date.parse(pod.startAnchor?.anchorIso || '');
+    // A USABLE anchor is a genuine calendar date whose open instant is within a
+    // sane horizon of now. A missing / malformed / out-of-range / absurdly-far-
+    // future anchor (Q4) is NOT protected — corruption cannot shield a pod from
+    // cleanup forever, so an unusable anchor falls through to the age test with
+    // reason `awaiting_open_malformed_anchor`.
+    const anchorUsable = anchorEtDateValid(anchorEtDate)
+      && Number.isFinite(anchorOpenMs)
+      && (anchorOpenMs - nowMs) <= SANE_ANCHOR_HORIZON_MS;
+    // A usable anchor still in the future → legitimately waiting for its open.
+    if (anchorUsable && nowEtDate < anchorEtDate) return { stale: false, reason: 'pending_future_anchor' };
+    // Anchor arrived (or unusable): the flip has been failing past the threshold.
     // Expire (a days-late flip would capture a corrupt baseline — D1: a stuck pod
     // beats a garbage one). Grace runs from when the pod SHOULD have flipped — the
-    // LATER of its AWAITING_OPEN entry and the anchor's own open instant (a valid
+    // LATER of its AWAITING_OPEN entry and the anchor's own open instant (a usable
     // anchor) — NOT merely from entry, so a weekend/holiday-spanning pod (drafted
     // Fri, anchor Mon) gets its full threshold of flip chances AFTER the anchor
     // arrives ("a legitimately slow multi-day pod must never qualify").
     const entryMs = Date.parse(pod.updatedAt || pod.createdAt || '');
-    const anchorOpenMs = anchorValid ? Date.parse(pod.startAnchor?.anchorIso || '') : NaN;
     const baselineMs = Math.max(
       Number.isFinite(entryMs) ? entryMs : -Infinity,
-      Number.isFinite(anchorOpenMs) ? anchorOpenMs : -Infinity,
+      anchorUsable ? anchorOpenMs : -Infinity,
     );
     if (Number.isFinite(baselineMs) && (nowMs - baselineMs) >= thresholdMs) {
-      return { stale: true, reason: anchorValid ? 'awaiting_open_flip_failed' : 'awaiting_open_malformed_anchor' };
+      return { stale: true, reason: anchorUsable ? 'awaiting_open_flip_failed' : 'awaiting_open_malformed_anchor' };
     }
     return { stale: false, reason: 'within_threshold' };
   }

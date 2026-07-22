@@ -1,5 +1,7 @@
 # GROUP_STATUS consumer census (reproducible — scripts/status-consumer-census.sh)
-# HEAD: f24774ec
+# Re-run `bash scripts/status-consumer-census.sh` from the repo root to refresh this
+# snapshot against the working tree. (No commit SHA is stamped: a committed generated
+# file cannot name its own commit, and a stamped parent SHA reads as misleadingly stale.)
 
 ===================== Non-test files referencing GROUP_STATUS =====================
 api/_utils/agentCapabilitiesManifest.js
@@ -145,7 +147,7 @@ src/screens/TournamentDevScreen.jsx:197:  [GROUP_STATUS.EXPIRED]: '#6b7280', // 
 api/_utils/trainingLifecycle.js:575:  const pods = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.AWAITING_OPEN, { includeDev });
 api/_utils/trainingLifecycle.js:608:  const pods = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.DRAFTING, { includeDev });
 api/_utils/trainingLifecycle.js:676:  const battleGroups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: true });
-api/_utils/trainingLifecycle.js:788:    const pods = await fetchEligibleGroupsByStatus(db, status, { includeDev });
+api/_utils/trainingLifecycle.js:810:    const pods = await fetchEligibleGroupsByStatus(db, status, { includeDev });
 api/_utils/tournamentGroupService.js:228:export async function fetchEligibleGroupsByStatus(db, status, { includeDev = false, excludeTraining = false } = {}) {
 api/_utils/tournamentCpuClaims.js:179:  const battle = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev });
 api/_utils/tournamentAdvancement.js:241:  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups });

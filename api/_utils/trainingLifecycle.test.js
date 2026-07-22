@@ -505,6 +505,20 @@ describe('expireStaleTrainingPods — R3 stale-pod backstop', () => {
     expect(store.get('tournamentGroups/fresh-bad').status).toBe(GROUP_STATUS.AWAITING_OPEN);
   });
 
+  it('AWAITING_OPEN with a FORMAT-valid but CORRUPT anchor (absurd far-future / out-of-range month) is still expirable once stale (Q4 hardening)', async () => {
+    const { db, store } = makeDb({
+      // '9999-01-01' passes /^\\d{4}-\\d{2}-\\d{2}$/ and sorts after today, but is
+      // absurdly far out (beyond the sane horizon) → not a legit future wait.
+      'tournamentGroups/farfuture': { status: GROUP_STATUS.AWAITING_OPEN, isTraining: true, players: FOUR_PLAYERS, startAnchor: { anchorEtDate: '9999-01-01', anchorIso: '9999-01-01T13:30:00.000Z' }, updatedAt: OLD, createdAt: OLD },
+      // '2026-13-01' is format-valid but not a real calendar date (month 13).
+      'tournamentGroups/badmonth': { status: GROUP_STATUS.AWAITING_OPEN, isTraining: true, players: FOUR_PLAYERS, startAnchor: { anchorEtDate: '2026-13-01', anchorIso: '2026-13-01T13:30:00.000Z' }, updatedAt: OLD, createdAt: OLD },
+    });
+    const r = await expireStaleTrainingPods(db, { now: NOW });
+    expect(r.expired).toBe(2);
+    expect(store.get('tournamentGroups/farfuture').expiredReason).toBe('awaiting_open_malformed_anchor');
+    expect(store.get('tournamentGroups/badmonth').expiredReason).toBe('awaiting_open_malformed_anchor');
+  });
+
   it('TRAINING-ONLY: never touches a ranked pod (no isTraining) or a competitive slot pod (isLiveDraft)', async () => {
     const { db, store } = makeDb({
       'tournamentGroups/ranked': { status: GROUP_STATUS.FORMING, players: FOUR_PLAYERS, createdAt: OLD, updatedAt: OLD }, // no isTraining
