@@ -420,7 +420,11 @@ export async function formTrainingDraft(db, { odUserId, displayName = null, load
     // (odUserId → spec) that ensureTrainingClones reads at activation. Written ONLY
     // on a fresh form (this FORMING→DRAFTING tx); omitted when there's no override,
     // so a fast-start pod's doc stays clean and the clone pure-inherits (Slice 3).
-    const groupUpdate = { status: GROUP_STATUS.DRAFTING, updatedAt: nowIso };
+    // B2: every draft mutation bumps the parent progressVersion so the expiry
+    // sweep's expireGroup precondition fails if any draft activity lands after
+    // classification — an active draft can never be expired. This is the FIRST
+    // mutation (FORMING → DRAFTING), so it seeds the counter.
+    const groupUpdate = { status: GROUP_STATUS.DRAFTING, updatedAt: nowIso, progressVersion: (g.progressVersion || 0) + 1 };
     if (loadoutSpec) groupUpdate.loadoutSpecByUser = { [odUserId]: loadoutSpec };
     tx.update(groupRef, groupUpdate);
     return finalState;
@@ -495,7 +499,7 @@ export async function applyTrainingPick(db, groupId, { odUserId, symbol = null, 
       const completeState = { ...baseState, status: 'complete' };
       const { target, groupUpdate, streamDoc } = computeHandoffWrites(group, completeState, now);
       assertTransition(group.status, target); // DRAFTING → BATTLE | AWAITING_OPEN
-      tx.update(groupRef, groupUpdate);
+      tx.update(groupRef, { ...groupUpdate, progressVersion: (group.progressVersion || 0) + 1 }); // B2
       tx.set(groupRef.collection('streams').doc('userDraft'), streamDoc);
       tx.set(stateRef, completeState);
       console.log(`${LOG_PREFIX} training pod ${groupId} draft complete → ${target} (anchor ${groupUpdate.startAnchor.anchorEtDate})`);
@@ -503,6 +507,10 @@ export async function applyTrainingPick(db, groupId, { odUserId, symbol = null, 
     }
 
     tx.set(stateRef, baseState);
+    // B2: a mid-draft pick writes only the draft/state sibling, so without this
+    // the parent's version never moves during a live draft and the expiry
+    // precondition could not see a resume. Bump it on every pick.
+    tx.update(groupRef, { progressVersion: (group.progressVersion || 0) + 1 });
     return { groupId, status: GROUP_STATUS.DRAFTING, currentPickIndex: newIndex, complete: false };
   });
 }
@@ -542,7 +550,7 @@ export async function completeTrainingDraft(db, groupId, { now = new Date() } = 
       }
       throw err;
     }
-    tx.update(groupRef, groupUpdate);
+    tx.update(groupRef, { ...groupUpdate, progressVersion: (group.progressVersion || 0) + 1 }); // B2
     tx.set(groupRef.collection('streams').doc('userDraft'), streamDoc);
     tx.set(stateRef, completeState);
     return { groupId, status: target, skipped: false };
@@ -703,24 +711,30 @@ async function evaluatePodStaleness(db, pod, { nowMs, nowEtDate, thresholdMs, cu
     return { stale: false, reason: 'after_cutoff' };
   }
   if (pod.status === GROUP_STATUS.AWAITING_OPEN) {
-    // Future anchor → legitimately waiting for its open. Never expire.
-    if (!anchorDateReached(pod.startAnchor, nowEtDate)) return { stale: false, reason: 'pending_future_anchor' };
-    // Anchor already arrived but the pod never flipped: the morning flip has been
-    // failing past the threshold. Expire (a days-late flip would capture a corrupt
-    // baseline — D1: a stuck pod beats a garbage one). Measure the grace from when
-    // the pod SHOULD have flipped — the LATER of its AWAITING_OPEN entry and the
-    // anchor's own open instant — NOT merely from entry. So a weekend/holiday-
-    // spanning pod (drafted Fri, anchor Mon) gets its full threshold of flip
-    // chances AFTER the anchor arrives, and is never expired on the first flip
-    // failure just because it waited the weekend out (the founder's "a legitimately
-    // slow multi-day pod must never qualify" invariant).
+    const anchorEtDate = pod.startAnchor?.anchorEtDate;
+    const anchorValid = typeof anchorEtDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(anchorEtDate);
+    // A VALID anchor still in the future → legitimately waiting for its open. Never
+    // expire. But a MISSING/MALFORMED anchor (Q4) is NOT protected: a corrupt pod
+    // cannot permanently shield itself from the cleanup by its own corruption, so a
+    // pod with no usable anchor is treated as arrived/unknown and falls through to
+    // the age test (reason `awaiting_open_malformed_anchor`).
+    if (anchorValid && nowEtDate < anchorEtDate) return { stale: false, reason: 'pending_future_anchor' };
+    // Anchor arrived (or malformed): the flip has been failing past the threshold.
+    // Expire (a days-late flip would capture a corrupt baseline — D1: a stuck pod
+    // beats a garbage one). Grace runs from when the pod SHOULD have flipped — the
+    // LATER of its AWAITING_OPEN entry and the anchor's own open instant (a valid
+    // anchor) — NOT merely from entry, so a weekend/holiday-spanning pod (drafted
+    // Fri, anchor Mon) gets its full threshold of flip chances AFTER the anchor
+    // arrives ("a legitimately slow multi-day pod must never qualify").
     const entryMs = Date.parse(pod.updatedAt || pod.createdAt || '');
-    const anchorOpenMs = Date.parse(pod.startAnchor?.anchorIso || '');
+    const anchorOpenMs = anchorValid ? Date.parse(pod.startAnchor?.anchorIso || '') : NaN;
     const baselineMs = Math.max(
       Number.isFinite(entryMs) ? entryMs : -Infinity,
       Number.isFinite(anchorOpenMs) ? anchorOpenMs : -Infinity,
     );
-    if (Number.isFinite(baselineMs) && (nowMs - baselineMs) >= thresholdMs) return { stale: true, reason: 'awaiting_open_flip_failed' };
+    if (Number.isFinite(baselineMs) && (nowMs - baselineMs) >= thresholdMs) {
+      return { stale: true, reason: anchorValid ? 'awaiting_open_flip_failed' : 'awaiting_open_malformed_anchor' };
+    }
     return { stale: false, reason: 'within_threshold' };
   }
   if (pod.status === GROUP_STATUS.DRAFTING) {
@@ -749,22 +763,25 @@ async function evaluatePodStaleness(db, pod, { nowMs, nowEtDate, thresholdMs, cu
  * state+version precondition), NEVER retro-advances (D1 ruling) and NEVER hard-
  * deletes. `dryRun` returns the would-expire census without any write (the
  * mandatory cleanup pre-count). `cutoffIso` bounds the cleanup to pods created
- * before a founder-chosen instant. Idempotent: an already-EXPIRED pod is out of
- * the pre-BATTLE queries entirely, and a pod that advanced since the read is held
- * by expireGroup's precondition (counted as a skip, never an error). Returns
- * `{ dryRun, scanned, matched, expired, skipped, errors, byStatus }`.
+ * before a founder-chosen instant. `onlyIds` (a Set), when provided, restricts the
+ * run to that exact allowlist — the apply path passes the preview token's ids so a
+ * live apply can only ever touch the population its dry-run previewed (review B1).
+ * Idempotent: an already-EXPIRED pod is out of the pre-BATTLE queries entirely, and
+ * a pod that advanced since the read is held by expireGroup's precondition (counted
+ * as a skip, never an error). Returns `{ dryRun, scanned, matched, expired, skipped,
+ * errors, byStatus, matchedIds }`.
  */
 export async function expireStaleTrainingPods(db, {
   now = new Date(), includeDev = false,
   thresholdMs = TRAINING_TUNING.POD_EXPIRY_STALE_MS,
-  cutoffIso = null, dryRun = false, by = 'rolling_sweep',
+  cutoffIso = null, dryRun = false, by = 'rolling_sweep', onlyIds = null,
 } = {}) {
   const nowMs = now.getTime();
   const nowIso = toIso(now);
   const nowEtDate = getEtParts(now).date;
   const summary = {
     dryRun, scanned: 0, matched: 0, expired: 0, skipped: 0, errors: 0,
-    byStatus: { forming: 0, drafting: 0, awaiting_open: 0 },
+    byStatus: { forming: 0, drafting: 0, awaiting_open: 0 }, matchedIds: [],
   };
   const PRE_BATTLE = [GROUP_STATUS.FORMING, GROUP_STATUS.DRAFTING, GROUP_STATUS.AWAITING_OPEN];
   for (const status of PRE_BATTLE) {
@@ -775,6 +792,8 @@ export async function expireStaleTrainingPods(db, {
       // explicit isLiveDraft exclusion is defense-in-depth against a future doc
       // that violates the invariant.
       if (pod.isTraining !== true || pod.isLiveDraft === true) continue;
+      // Apply-with-token allowlist (B1): only the previewed pods are eligible.
+      if (onlyIds && !onlyIds.has(pod.id)) continue;
       summary.scanned++;
       let ruling;
       try {
@@ -787,11 +806,14 @@ export async function expireStaleTrainingPods(db, {
       if (!ruling.stale) { summary.skipped++; continue; }
       summary.matched++;
       summary.byStatus[status]++;
+      summary.matchedIds.push(pod.id);
       if (dryRun) continue;
       try {
         const res = await expireGroup(db, pod.id, {
           reason: ruling.reason, by, now: nowIso,
-          expectedStatus: pod.status, expectedUpdatedAt: pod.updatedAt ?? null,
+          expectedStatus: pod.status,
+          expectedUpdatedAt: pod.updatedAt ?? null,
+          expectedProgressVersion: pod.progressVersion ?? 0, // B2: a pick after classification fails this → active draft never expires
         });
         if (res.expired) {
           summary.expired++;

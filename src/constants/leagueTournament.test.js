@@ -1128,6 +1128,24 @@ describe('selectMyGroup — the subscribeMyGroup ranked read EXCLUDES training p
   });
 });
 
+describe('EXPIRED is inert across the active-status selectors + predicates (R2, review Q5)', () => {
+  it('selectMyGroup never selects an EXPIRED-status pod (not in the active set)', () => {
+    const expiredRanked = { id: 'x', status: GROUP_STATUS.EXPIRED, updatedAt: '2026-07-22T00:00:00.000Z' };
+    expect(selectMyGroup([expiredRanked])).toBeNull();
+    // a live BATTLE pod still wins; the newer EXPIRED pod is ignored, not preferred
+    expect(selectMyGroup([expiredRanked, { id: 'b', status: GROUP_STATUS.BATTLE, updatedAt: '2026-07-21T00:00:00.000Z' }])?.id).toBe('b');
+  });
+
+  it('selectMyTrainingPod never selects an EXPIRED training pod (so the start CTA returns + a new pod can form)', () => {
+    const expiredTraining = { id: 'x', status: GROUP_STATUS.EXPIRED, isTraining: true, updatedAt: '2026-07-22T00:00:00.000Z' };
+    expect(selectMyTrainingPod([expiredTraining])).toBeNull();
+  });
+
+  it('casualDeployMissesPodSession → false (no conflict) for a terminal EXPIRED pod', () => {
+    expect(casualDeployMissesPodSession({ id: 'x', status: GROUP_STATUS.EXPIRED }, { expiryEtDate: '2026-07-30', nextTradingEtDate: '2026-07-23' })).toBe(false);
+  });
+});
+
 describe('casualDeployMissesPodSession — the G2 honest-warning window test', () => {
   const anchoredPod = (status, anchorEtDate) => ({
     id: 'p1', status,

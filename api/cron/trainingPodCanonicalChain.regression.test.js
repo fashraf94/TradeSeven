@@ -1,100 +1,105 @@
 // api/cron/trainingPodCanonicalChain.regression.test.js
 //
-// Training-Pod Status-Transition P0 — R4 REGRESSION LOCK (rulings memo R4;
-// carries forward Fix Spec V1 §4.3 through the supersession).
+// Training-Pod Status-Transition P0 — R4 REGRESSION LOCK (rulings memo R4; review
+// B3). Phase 0 established the premise reversal: the training-pod canonical chain
+// is already BUILT, wired, flag-on, and test-locked at HEAD — training pods DO
+// advance to BATTLE and settle; the "never advances / stuck at Day 0" diagnosis
+// was stale. This test PINS that now-working behavior so it can never silently
+// regress.
 //
-// Phase 0 established the premise reversal: the training-pod canonical chain is
-// already BUILT, wired into the orchestrator tick, flag-on, and test-locked at
-// HEAD — training pods DO advance to BATTLE and settle. The "never advances /
-// stuck at Day 0" diagnosis was stale. This test PINS that now-working behavior
-// end-to-end so it can never silently regress to the state the stale diagnosis
-// described. It drives a training pod through the canonical status chain and its
-// battle through the SAME completeBattle the Mastery arc converted (PR #640),
-// asserting:
-//   • the canonical transitions fire (FORMING→DRAFTING→{BATTLE,AWAITING_OPEN}→BATTLE),
-//   • the settlement eligibility STAMP lands for the training HUMAN battle and
-//     NEVER for a CPU seat (structurally outside mastery — V2.1 STOP-A.2),
-//   • the resolved training award carries MODE_MULT 0.6 (the XP formula reads
-//     training mode correctly), with a zero-gate-modification posture.
+// B3: it drives the REAL writer functions against a store (not computeHandoffWrites
+// return values), so the test FAILS if any real status-transition wiring is
+// removed — a full emulator cron run (draft → flip → canonical-open capture → eval
+// → banking) is not feasible as a unit test, so we exercise the real writers that
+// perform each hop and the real completeBattle for settlement:
+//   • completeTrainingDraft   — DRAFTING → BATTLE (today anchor) / AWAITING_OPEN
+//   • flipAwaitingOpenPods     — AWAITING_OPEN → BATTLE (the morning flip)
+//   • completeBankedTrainingPods — BATTLE → COMPLETE
+//   • completeBattle           — the settlement stamp + MODE_MULT 0.6
 //
 // Cron-module import precedent: agent-evaluate.masteryCompletion.test.js.
 
 import { describe, it, expect } from 'vitest';
 import { completeBattle } from './agent-evaluate.js';
-import { computeHandoffWrites } from '../_utils/trainingLifecycle.js';
-import { assertTransition } from '../_utils/tournamentGroupService.js';
+import { completeTrainingDraft, flipAwaitingOpenPods, completeBankedTrainingPods } from '../_utils/trainingLifecycle.js';
 import { classifyModeKind, runRepairSweep } from '../_utils/masterySettlement.js';
 import { MODE_MULTS } from '../_utils/masteryFormula.js';
 import { deriveFlagView } from '../_utils/masteryConfig.js';
 import { makeMockDb } from '../_utils/__fixtures__/masteryMockDb.js';
+import { makeInMemoryDb } from '../_utils/__fixtures__/inMemoryFirestore.js';
 import { GROUP_STATUS, TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 
 const FLAG_ON = deriveFlagView({ entries: [{ state: 'enabled', at: '2026-07-19T00:00:00.000Z' }] }, true);
 
-// ── 1. CANONICAL STATUS CHAIN ──────────────────────────────────────────────
-// The transitions the stale diagnosis claimed "never fire" for training pods.
-describe('R4 — the training pod advances through the canonical chain (not stuck at Day 0)', () => {
-  const trainingGroup = {
-    id: 'g-train', isTraining: true,
-    groupMembers: ['u1', 'cpu-1', 'cpu-2', 'cpu-3'],
-    players: [
-      { odUserId: 'u1', isCpu: false, picks: [] },
-      { odUserId: 'cpu-1', isCpu: true, picks: [] },
-      { odUserId: 'cpu-2', isCpu: true, picks: [] },
-      { odUserId: 'cpu-3', isCpu: true, picks: [] },
-    ],
-    roundNumber: 1,
-    userPool: ['NVDA', 'AMD', 'TSLA', 'AAPL', 'MSFT', 'META', 'AMZN', 'GOOG'],
-  };
-  const completeState = {
-    status: 'complete',
-    picksByUser: {
-      u1: ['NVDA', 'AMD', 'TSLA'], 'cpu-1': ['AAPL', 'MSFT', 'META'],
-      'cpu-2': ['AMZN', 'GOOG'], 'cpu-3': ['AMD', 'TSLA'],
-    },
-    taken: ['NVDA', 'AMD', 'TSLA', 'AAPL', 'MSFT', 'META', 'AMZN', 'GOOG'],
-    pool: trainingGroup.userPool,
-    events: [],
-  };
-  const NOW = new Date('2026-07-20T13:00:00.000Z'); // 09:00 ET, a pre-open weekday
+// ── 1. CANONICAL STATUS CHAIN — driven through the REAL writers (B3) ─────────
+describe('R4 — the training pod advances through the canonical chain (real writers, not helper returns)', () => {
+  const MEMBERS = ['u1', 'cpu-1', 'cpu-2', 'cpu-3'];
+  const POOL = Array.from({ length: 20 }, (_, i) => `S${i}`);
+  const PICKS = { u1: ['S0', 'S1', 'S2'], 'cpu-1': ['S3', 'S4', 'S5'], 'cpu-2': ['S6', 'S7', 'S8'], 'cpu-3': ['S9', 'S10', 'S11'] };
+  const TAKEN = Object.values(PICKS).flat();
 
-  it('every canonical edge is legal: FORMING→DRAFTING→{BATTLE,AWAITING_OPEN}→BATTLE→COMPLETE', () => {
-    expect(() => assertTransition(GROUP_STATUS.FORMING, GROUP_STATUS.DRAFTING)).not.toThrow();
-    expect(() => assertTransition(GROUP_STATUS.DRAFTING, GROUP_STATUS.BATTLE)).not.toThrow();
-    expect(() => assertTransition(GROUP_STATUS.DRAFTING, GROUP_STATUS.AWAITING_OPEN)).not.toThrow();
-    expect(() => assertTransition(GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.BATTLE)).not.toThrow();
-    expect(() => assertTransition(GROUP_STATUS.BATTLE, GROUP_STATUS.COMPLETE)).not.toThrow();
+  // A DRAFTING training pod whose live draft is COMPLETE (all 12 picks) — the
+  // exact precondition completeTrainingDraft's real handoff consumes.
+  function seedCompletedDraft(groupId) {
+    return makeInMemoryDb({
+      [`tournamentGroups/${groupId}`]: {
+        status: GROUP_STATUS.DRAFTING, isTraining: true, groupMembers: MEMBERS,
+        players: MEMBERS.map((odUserId, i) => ({ odUserId, isCpu: i !== 0, picks: [] })),
+        userPool: POOL, roundNumber: 1, progressVersion: 12,
+      },
+      [`tournamentGroups/${groupId}/draft/state`]: {
+        status: 'drafting', currentPickIndex: 12, pool: POOL, taken: TAKEN, picksByUser: PICKS,
+        events: TAKEN.map((symbol, i) => ({ pickNumber: i + 1, symbol, odUserId: MEMBERS[i % 4] })),
+        humanArchetype: 'analyst', humanId: 'u1',
+        startedAt: '2026-06-17T12:00:00.000Z', lastActivityAt: '2026-06-17T12:00:00.000Z',
+      },
+    });
+  }
+
+  it('completeTrainingDraft (REAL) lands a completed draft straight in BATTLE on a today anchor — DRAFTING→BATTLE actually fires', async () => {
+    const { db, store } = seedCompletedDraft('d1');
+    const res = await completeTrainingDraft(db, 'd1', { now: new Date('2026-06-17T13:00:00.000Z') }); // Wed 09:00 ET, pre-open
+    expect(res.status).toBe(GROUP_STATUS.BATTLE);
+    // the assertion is on the STORE (the real write), not a helper's return value
+    expect(store.get('tournamentGroups/d1').status).toBe(GROUP_STATUS.BATTLE);
+    const human = store.get('tournamentGroups/d1').players.find(p => p.odUserId === 'u1');
+    expect(human.picks.map(pk => pk.symbol)).toEqual(['S0', 'S1', 'S2']); // picks materialized onto players[]
   });
 
-  it('a completed draft with a TODAY anchor lands the pod straight in BATTLE (the R1 inline flip)', () => {
-    const { target, groupUpdate } = computeHandoffWrites(trainingGroup, completeState, NOW, {
-      startAnchor: { anchorEtDate: '2026-07-20', anchorIso: '2026-07-20T13:30:00.000Z' },
-    });
-    expect(target).toBe(GROUP_STATUS.BATTLE);
-    expect(groupUpdate.status).toBe(GROUP_STATUS.BATTLE);
-    // the human's picks are materialized onto players[] — the pod is battle-ready
-    const human = groupUpdate.players.find((p) => p.odUserId === 'u1');
-    expect(human.picks.map((pk) => pk.symbol)).toEqual(['NVDA', 'AMD', 'TSLA']);
+  it('completeTrainingDraft parks a future-anchor draft in AWAITING_OPEN, then flipAwaitingOpenPods (REAL) flips it to BATTLE', async () => {
+    const { db, store } = seedCompletedDraft('d2');
+    const res = await completeTrainingDraft(db, 'd2', { now: new Date('2026-06-17T14:00:00.000Z') }); // 10:00 ET → next trading day
+    expect(res.status).toBe(GROUP_STATUS.AWAITING_OPEN);
+    expect(store.get('tournamentGroups/d2').status).toBe(GROUP_STATUS.AWAITING_OPEN);
+
+    const flip = await flipAwaitingOpenPods(db, { now: new Date('2026-06-18T13:00:00.000Z') }); // Thu, the anchor date
+    expect(flip.flipped).toBe(1);
+    expect(store.get('tournamentGroups/d2').status).toBe(GROUP_STATUS.BATTLE); // the real morning flip
   });
 
-  it('a completed draft with a FUTURE anchor parks in AWAITING_OPEN, then AWAITING_OPEN→BATTLE is legal (the morning flip)', () => {
-    const { target } = computeHandoffWrites(trainingGroup, completeState, NOW, {
-      startAnchor: { anchorEtDate: '2026-07-21', anchorIso: '2026-07-21T13:30:00.000Z' },
+  it('completeBankedTrainingPods (REAL) completes a week-banked BATTLE training pod → COMPLETE', async () => {
+    const dailyScores = {};
+    for (let d = 1; d <= 5; d++) dailyScores[`day${d}`] = { recordedDate: `2026-06-${11 + d}`, closeScores: {} };
+    const { db, store } = makeInMemoryDb({
+      'tournamentGroups/b1': {
+        status: GROUP_STATUS.BATTLE, isTraining: true,
+        players: MEMBERS.map((odUserId, i) => ({ odUserId, isCpu: i !== 0, picks: [] })),
+        dailyScores,
+      },
     });
-    expect(target).toBe(GROUP_STATUS.AWAITING_OPEN);
-    expect(() => assertTransition(target, GROUP_STATUS.BATTLE)).not.toThrow();
+    const res = await completeBankedTrainingPods(db, { now: new Date('2026-06-19T22:00:00.000Z') });
+    expect(res.completed).toBe(1);
+    expect(store.get('tournamentGroups/b1').status).toBe(GROUP_STATUS.COMPLETE);
   });
 });
 
-// ── 2 + 3. SETTLEMENT CONTINUITY: same completeBattle, stamp, MODE_MULT 0.6 ──
+// ── 2. SETTLEMENT CONTINUITY: the SAME completeBattle, stamp, MODE_MULT 0.6 ───
 describe('R4 — a training pod battle settles through the SAME completeBattle: stamp + MODE_MULT 0.6', () => {
   const tournamentBattle = (over = {}) => ({
     ownerId: 'u1', agentId: 'a1', status: 'active',
     gameMode: TOURNAMENT_GAME_MODE, groupId: 'g-train',
-    createdAt: '2026-07-20T13:00:00.000Z',
-    expiresAt: '2026-07-20T20:00:00.000Z',
-    timing: { tradingDays: ['2026-07-20'] },
-    scoreState: { currentScore: 60 },
+    createdAt: '2026-07-20T13:00:00.000Z', expiresAt: '2026-07-20T20:00:00.000Z',
+    timing: { tradingDays: ['2026-07-20'] }, scoreState: { currentScore: 60 },
     agentContext: { archetype: 'degen' },
     statusFeed: [{ timestamp: '2026-07-20T13:05:00.000Z', message: 'seed', action: 'x', source: 'system', score: 0 }],
     cronState: { evaluatingAt: '2026-07-20T19:59:00.000Z' },
@@ -139,9 +144,6 @@ describe('R4 — a training pod battle settles through the SAME completeBattle: 
     const groupCache = new Map();
     const siblingsCache = new Map();
     const nowIso = '2026-07-21T00:30:00.000Z';
-    // Complete the human (defers pending — cohort not yet terminal) and the CPU
-    // seat (terminal, never awards), then the shared-cache repair sweep resolves
-    // the human's award — the proven ADV-3 interleave.
     await completeBattle(db, { id: 'tr1', ...tournamentBattle() }, { evaluated: 0 }, FLAG_ON, groupCache, siblingsCache);
     await completeBattle(db, { id: 'tr-cpu', ...tournamentBattle(CPU_OVER) }, { evaluated: 0 }, FLAG_ON, groupCache, siblingsCache);
     await runRepairSweep(db, { nowIso, limit: 25, groupCache, siblingsCache });

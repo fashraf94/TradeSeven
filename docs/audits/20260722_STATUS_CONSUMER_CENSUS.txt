@@ -1,0 +1,157 @@
+# GROUP_STATUS consumer census (reproducible — scripts/status-consumer-census.sh)
+# HEAD: f24774ec
+
+===================== Non-test files referencing GROUP_STATUS =====================
+api/_utils/agentCapabilitiesManifest.js
+api/_utils/canonicalOpenSweep.js
+api/_utils/liveDraftFormation.js
+api/_utils/liveDraftLifecycle.js
+api/_utils/ruleCompatCleanup.js
+api/_utils/tournamentAdvancement.js
+api/_utils/tournamentAgentBoards.js
+api/_utils/tournamentAgentDraft.js
+api/_utils/tournamentAgentLedger.js
+api/_utils/tournamentBanking.js
+api/_utils/tournamentBoards.js
+api/_utils/tournamentClaims.js
+api/_utils/tournamentCpuClaims.js
+api/_utils/tournamentGroupService.js
+api/_utils/tournamentLeaderboard.js
+api/_utils/tournamentLobbyService.js
+api/_utils/tournamentOrchestrator.js
+api/_utils/trainingLifecycle.js
+api/admin/seed-tournament-bracket.js
+api/tournament/activate-training-pod.js
+api/tournament/bank-daily-scores.js
+api/tournament/flip.js
+api/tournament/place-claim.js
+api/tournament/place-cpu-claims.js
+api/tournament/process-claims.js
+api/tournament/reconcile-ledger.js
+api/tournament/resolve-user-draft.js
+api/tournament/training-pick.js
+src/App.jsx
+src/components/League/LeagueDeskParts.jsx
+src/components/League/LeagueLobbyRedesign.jsx
+src/components/League/TrainingClimbPreview.jsx
+src/components/League/WhileYouWait.jsx
+src/components/League/battleArena/arenaStateMap.js
+src/components/League/battleArena/buildArenaModel.js
+src/components/League/draft/DraftBoardRoom.jsx
+src/components/League/leagueAdapter.js
+src/components/League/leagueClimbAdapter.js
+src/components/League/trainingClimbPreviewGate.js
+src/components/Tournament/BoardCommitFlow.jsx
+src/components/Tournament/BoardEditor.jsx
+src/config/featureFlags.js
+src/constants/leagueTournament.js
+src/hooks/useTrainingDraft.js
+src/screens/LeagueParticipantView.jsx
+src/screens/LeagueTrainingBattleView.jsx
+src/screens/TournamentDevScreen.jsx
+src/screens/TrainingDraftRoomScreen.jsx
+src/screens/leagueTrainingBattleFraming.js
+
+===================== switch statements over a status (exhaustive-consumer risk) =====================
+src/components/BaggerBomb/AccordionSection.jsx:38:    switch (status) {
+src/components/League/battleArena/arenaStateMap.js:30:  switch (group?.status) {
+src/screens/leagueTrainingBattleFraming.js:18:  switch (status) {
+
+===================== Firestore where('status', ...) queries under api/ =====================
+api/_utils/liveDraftLifecycle.js:106:  const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).where('status', '==', GROUP_STATUS.FORMING).get();
+api/_utils/liveDraftLifecycle.js:119:  const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).where('status', '==', GROUP_STATUS.DRAFTING).get();
+api/_utils/tournamentClaimPlacement.js:111:      claimsRef.where('odUserId', '==', odUserId).where('status', '==', 'pending')
+api/_utils/agentBattleService.js:34:    .where('status', '==', 'active')
+api/_utils/tournamentGroupService.js:230:    .where('status', '==', status)
+api/_utils/tournamentAdvancement.js:390:    .where('status', '==', BRACKET_STATUS.ACTIVE)
+api/_utils/tournamentLobbyService.js:155:    .where('status', '==', LOBBY_STATUS.OPEN)
+api/_utils/tournamentAgentLedger.js:735:    .where('status', '==', GROUP_STATUS.BATTLE)
+api/_utils/tournamentBanking.js:390:    .where('status', '==', GROUP_STATUS.BATTLE)
+api/_utils/tournamentClaims.js:83:    .where('status', '==', GROUP_STATUS.BATTLE)
+api/_utils/tournamentClaims.js:110:  const pendingQuery = claimsRef.where('status', '==', 'pending');
+api/options/transition-status.js:73:      .where('status', '==', 'open')
+api/options/resolve-tournament.js:230:      .where('status', 'in', ['in_progress', 'locked']);
+api/bug-report.js:249:      query = query.where('status', '==', status);
+api/fantasytimes/test-art-director.js:28:      .where('status', '==', 'published')
+api/fantasytimes/submit-earnings-batch.js:150:      .where('status', '==', 'published')
+api/fantasytimes/poll-batch.js:61:      .where('status', '==', 'processing')
+api/fantasytimes/cleanup.js:37:      .where('status', '==', 'published')
+api/fantasytimes/cleanup.js:55:      .where('status', '==', 'expired')
+api/fantasytimes/feed.js:24:      .where('status', '==', 'published')
+api/fantasytimes/backfill-visuals.js:26:      .where('status', '==', 'published')
+api/fantasytimes/generate-column.js:92:      .where('status', '==', 'published')
+api/cron/agent-evaluate.js:3931:    .where('status', '==', 'completed')
+api/cron/snake-draft-daily-scores.js:553:      .where('status', '==', 'battle')
+api/cron/promote-discover-themes.js:68:      .where('status', '==', 'active')
+api/cron/process-pending-reflections.js:46:      .where('status', '==', 'completed')
+api/cron/process-draft-claims.js:320:  const pendingSnap = await claimsRef.where('status', '==', 'pending').get();
+api/cron/process-draft-claims.js:627:      .where('status', '==', 'battle')
+api/cron/season-daily-evaluate.js:117:      .where('status', '==', SEASON_STATUS.ACTIVE)
+api/cron/season-daily-evaluate.js:204:          .where('status', '==', ENTRY_STATUS.ACTIVE)
+api/cron/season-pit-stop-manage.js:97:    .where('status', '==', SEASON_STATUS.ACTIVE)
+api/cron/season-pit-stop-manage.js:131:        .where('status', '==', ENTRY_STATUS.ACTIVE)
+api/cron/season-pit-stop-manage.js:223:    .where('status', '==', SEASON_STATUS.ACTIVE)
+api/cron/season-pit-stop-manage.js:242:        .where('status', '==', ENTRY_STATUS.ACTIVE)
+api/cron/snake-draft-autopick.js:387:      .where('status', '==', 'active')
+api/cron/snake-draft-autopick.js:396:      .where('status', '==', 'active')
+api/agent/decide.js:537:      .where('status', '==', 'active')
+api/agent/decide.js:1093:    .where('status', '==', 'active')
+api/agent/chat.js:307:              .where('status', '==', 'pending')
+api/earnings/verify-batch.js:69:      .where('status', 'in', ['partial', 'in_progress'])
+api/earnings/verify-batch.js:82:        .where('status', '==', 'pending')
+api/earnings/verify-batch.js:236:      .where('status', '==', 'pending')
+api/earnings/verify-batch.js:241:      .where('status', 'in', ['partial', 'in_progress'])
+api/earnings/debug-tournaments.js:118:      .where('status', 'in', ['open', 'locked', 'in_progress'])
+api/earnings/sync-queue.js:268:      .where('status', '==', 'pending')
+api/earnings/sync-queue.js:273:      .where('status', '==', 'in_progress')
+api/earnings/sync-queue.js:278:      .where('status', '==', 'partial')
+api/earnings/migrate-dates.js:150:        .where('status', 'in', ['open', 'locked', 'in_progress', 'completed'])
+api/earnings/manual-resolve.js:178:        .where('status', 'in', ['open', 'locked', 'in_progress'])
+api/earnings/verification-status.js:204:      .where('status', 'in', ['pending', 'partial'])
+api/earnings/verification-status.js:223:      .where('status', '==', 'failed')
+api/earnings/queue-verification.js:138:      .where('status', 'in', ['pending', 'partial'])
+api/earnings/queue-verification.js:212:      .where('status', 'in', ['pending', 'partial'])
+api/earnings/resolve-tournament.js:255:        .where('status', 'in', ['open', 'locked', 'in_progress'])
+api/scripts/migrate-existing-battles-to-autopilot.js:75:  const snap = await db.collection('agentBattles').where('status', '==', 'active').get();
+api/scripts/test-autopilot-cleanup.js:92:      .where('status', '==', 'active')
+api/scripts/test-autopilot-cleanup.js:140:      .where('status', '==', 'active')
+api/season/create-entry.js:542:        .where('status', 'in', [ENTRY_STATUS.ACTIVE, ENTRY_STATUS.PENDING])
+api/lobbies/cleanup-expired.js:135:    .where('status', '==', 'waiting')
+api/lobbies/cleanup-expired.js:174:    .where('status', '==', 'disbanded')
+
+===================== Active-status selectors + status predicates (leagueTournament.js) =====================
+552:export function selectMyGroup(docs) {
+577:export function casualDeployMissesPodSession(group, { expiryEtDate, nextTradingEtDate } = {}) {
+606:export function selectMyTrainingPod(docs) {
+
+===================== GROUP_STATUS.EXPIRED references (the new value + its handlers) =====================
+api/_utils/tournamentGroupService.js:52:  [GROUP_STATUS.FORMING]: Object.freeze([GROUP_STATUS.DRAFTING, GROUP_STATUS.BATTLE, GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.EXPIRED]),
+api/_utils/tournamentGroupService.js:53:  [GROUP_STATUS.DRAFTING]: Object.freeze([GROUP_STATUS.BATTLE, GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.EXPIRED]),
+api/_utils/tournamentGroupService.js:54:  [GROUP_STATUS.AWAITING_OPEN]: Object.freeze([GROUP_STATUS.BATTLE, GROUP_STATUS.EXPIRED]),
+api/_utils/tournamentGroupService.js:57:  [GROUP_STATUS.EXPIRED]: Object.freeze([]),
+api/_utils/tournamentGroupService.js:175:      assertTransition(data.status, GROUP_STATUS.EXPIRED);
+api/_utils/tournamentGroupService.js:185:      status: GROUP_STATUS.EXPIRED,
+api/_utils/tournamentGroupService.js:191:    return { groupId, expired: true, status: GROUP_STATUS.EXPIRED };
+src/components/League/leagueAdapter.js:201:  if (status === GROUP_STATUS.COMPLETE || status === GROUP_STATUS.EXPIRED) return 'final';
+src/components/League/leagueClimbAdapter.js:112:  if (group?.status === GROUP_STATUS.EXPIRED) return 'complete';
+src/components/League/battleArena/arenaStateMap.js:34:    case GROUP_STATUS.EXPIRED: // Training-Pod P0 R2: a pod retired pre-BATTLE reads terminal, never 'awaiting'
+src/components/League/draft/DraftBoardRoom.jsx:282:    const expired = finalStatus === GROUP_STATUS.EXPIRED;
+src/screens/LeagueTrainingBattleView.jsx:138:  if (pod.status === GROUP_STATUS.EXPIRED) {
+src/screens/leagueTrainingBattleFraming.js:34:    case GROUP_STATUS.EXPIRED: // Training-Pod P0 R2: retired pre-BATTLE, honest terminal copy
+src/screens/TrainingDraftRoomScreen.jsx:93:    const expired = finalStatus === GROUP_STATUS.EXPIRED;
+src/screens/TournamentDevScreen.jsx:197:  [GROUP_STATUS.EXPIRED]: '#6b7280', // Training-Pod P0 R2: terminal (muted gray). AWAITING_OPEN remains absent (pre-existing; falls back to textMuted).
+
+===================== Callers of fetchEligibleGroupsByStatus (must NEVER pass EXPIRED) =====================
+api/_utils/trainingLifecycle.js:575:  const pods = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.AWAITING_OPEN, { includeDev });
+api/_utils/trainingLifecycle.js:608:  const pods = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.DRAFTING, { includeDev });
+api/_utils/trainingLifecycle.js:676:  const battleGroups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: true });
+api/_utils/trainingLifecycle.js:788:    const pods = await fetchEligibleGroupsByStatus(db, status, { includeDev });
+api/_utils/tournamentGroupService.js:228:export async function fetchEligibleGroupsByStatus(db, status, { includeDev = false, excludeTraining = false } = {}) {
+api/_utils/tournamentCpuClaims.js:179:  const battle = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev });
+api/_utils/tournamentAdvancement.js:241:  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups });
+api/_utils/tournamentOrchestrator.js:467:    fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING, { includeDev: includeDevGroups, excludeTraining: true }),
+api/_utils/tournamentOrchestrator.js:468:    fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups, excludeTraining: true }),
+api/_utils/tournamentOrchestrator.js:601:  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups, excludeTraining: true });
+api/_utils/tournamentOrchestrator.js:828:  const battle = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev });
+api/_utils/canonicalOpenSweep.js:221:  const battleGroups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE);
+api/_utils/tournamentLeaderboard.js:345:  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: true, excludeTraining: true });

@@ -146,7 +146,7 @@ export async function transitionStatus(db, groupId, to, now) {
  * releaseSlotSeat delete precedent is not adopted for pods). Returns
  * `{ groupId, expired, status, reason? }`.
  */
-export async function expireGroup(db, groupId, { reason = null, by = null, now, expectedStatus = null, expectedUpdatedAt = null } = {}) {
+export async function expireGroup(db, groupId, { reason = null, by = null, now, expectedStatus = null, expectedUpdatedAt = null, expectedProgressVersion = null } = {}) {
   if (now == null) {
     throw new Error('tournamentGroupService.expireGroup: now is required');
   }
@@ -163,6 +163,13 @@ export async function expireGroup(db, groupId, { reason = null, by = null, now, 
     }
     if (expectedUpdatedAt != null && data.updatedAt !== expectedUpdatedAt) {
       return { groupId, expired: false, status: data.status, reason: 'version_changed' };
+    }
+    // B2: the parent progressVersion moves on EVERY draft mutation (a mid-draft
+    // pick writes only the draft/state sibling, so updatedAt alone cannot see it).
+    // Pinning it here means any draft activity between the caller's classification
+    // and this transaction fails the precondition — an ACTIVE draft never expires.
+    if (expectedProgressVersion != null && (data.progressVersion || 0) !== expectedProgressVersion) {
+      return { groupId, expired: false, status: data.status, reason: 'progress_changed' };
     }
     try {
       assertTransition(data.status, GROUP_STATUS.EXPIRED);

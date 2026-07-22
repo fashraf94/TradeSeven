@@ -21,6 +21,7 @@ import {
 } from './trainingLifecycle.js';
 import { GROUP_STATUS, PICKS_PER_PLAYER } from '../../src/constants/leagueTournament.js';
 import { generateSnakeOrder } from '../../src/services/draftAssets.js';
+import { makeInMemoryDb as makeDb } from './__fixtures__/inMemoryFirestore.js';
 
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -29,86 +30,10 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-// ==================== IN-MEMORY FIRESTORE (shared makeDb idiom) ====================
-
-function applyDotPathUpdate(target, updates) {
-  for (const [key, value] of Object.entries(updates)) {
-    const parts = key.split('.');
-    let node = target;
-    for (let i = 0; i < parts.length - 1; i++) {
-      if (typeof node[parts[i]] !== 'object' || node[parts[i]] == null) node[parts[i]] = {};
-      node = node[parts[i]];
-    }
-    node[parts[parts.length - 1]] = value;
-  }
-}
-
-function makeDb(initial = {}) {
-  const store = new Map(Object.entries(initial).map(([k, v]) => [k, structuredClone(v)]));
-  const writeLog = [];
-
-  function makeDocRef(path) {
-    return {
-      path,
-      get: async () => {
-        const data = store.get(path);
-        return { exists: data !== undefined, id: path.split('/').pop(), data: () => structuredClone(data) };
-      },
-      set: async (data) => { store.set(path, structuredClone(data)); writeLog.push(['set', path]); },
-      update: async (updates) => {
-        const data = store.get(path);
-        if (data === undefined) throw new Error(`update on missing doc ${path}`);
-        applyDotPathUpdate(data, updates);
-        writeLog.push(['update', path]);
-      },
-      collection: (sub) => makeCollection(`${path}/${sub}`),
-    };
-  }
-
-  function topLevelDocs(prefix) {
-    const docs = [];
-    for (const [path, data] of store.entries()) {
-      if (!path.startsWith(`${prefix}/`)) continue;
-      const rel = path.slice(prefix.length + 1);
-      if (rel.includes('/')) continue;
-      docs.push({ id: rel, data: () => structuredClone(data) });
-    }
-    return docs;
-  }
-
-  function makeCollection(prefix) {
-    return {
-      doc: (id) => makeDocRef(`${prefix}/${id}`),
-      where: (field, op, value) => ({
-        select: () => ({ get: async () => snapshotOf(filterDocs(field, value)) }),
-        get: async () => snapshotOf(filterDocs(field, value)),
-      }),
-      get: async () => snapshotOf(topLevelDocs(prefix)),
-    };
-    function filterDocs(field, value) {
-      return topLevelDocs(prefix).filter(d => d.data()[field] === value);
-    }
-    function snapshotOf(docs) {
-      return { docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) };
-    }
-  }
-
-  const db = {
-    collection: (name) => makeCollection(name),
-    runTransaction: async (fn) => fn({
-      get: async (ref) => ref.get(),
-      update: (ref, updates) => {
-        const data = store.get(ref.path);
-        if (data === undefined) throw new Error(`tx.update on missing doc ${ref.path}`);
-        applyDotPathUpdate(data, updates);
-        writeLog.push(['tx.update', ref.path]);
-      },
-      set: (ref, data) => { store.set(ref.path, structuredClone(data)); writeLog.push(['tx.set', ref.path]); },
-    }),
-  };
-
-  return { db, store, writeLog };
-}
+// ==================== IN-MEMORY FIRESTORE ====================
+// The mock now lives in ./__fixtures__/inMemoryFirestore.js (imported as makeDb
+// above) so the R4 canonical-chain regression lock drives the REAL training
+// writers against the SAME store this suite uses.
 
 // ==================== FIXTURES ====================
 
@@ -359,9 +284,13 @@ describe('applyTrainingPick — live snake', () => {
     expect(state.events).toHaveLength(7);
     expect(state.events[0]).toMatchObject({ odUserId: 'u1', symbol: 'S0', liveSource: 'human' });
     expect(state.events[1].liveSource).toBe('cpu');
-    // The group doc is untouched mid-draft (churn rides the sibling state doc).
-    expect(store.get('tournamentGroups/d1').status).toBe(GROUP_STATUS.DRAFTING);
-    expect(store.get('tournamentGroups/d1').players.every(p => p.picks.length === 0)).toBe(true);
+    // Mid-draft the group doc's status + players stay untouched (the pick churn
+    // rides the sibling state doc) — but B2 bumps progressVersion on EVERY pick so
+    // the expiry precondition can detect a resumed draft and never expire it.
+    const g = store.get('tournamentGroups/d1');
+    expect(g.status).toBe(GROUP_STATUS.DRAFTING);
+    expect(g.players.every(p => p.picks.length === 0)).toBe(true);
+    expect(g.progressVersion).toBeGreaterThanOrEqual(1); // B2: draft mutation bumped it
   });
 
   it('the 12th pick hands off transition-only → BATTLE inline on a today-anchor (R1)', async () => {
@@ -553,6 +482,27 @@ describe('expireStaleTrainingPods — R3 stale-pod backstop', () => {
     const r = await expireStaleTrainingPods(db, { now: NOW });
     expect(r).toMatchObject({ matched: 0, expired: 0 });
     expect(store.get('tournamentGroups/weekend').status).toBe(GROUP_STATUS.AWAITING_OPEN);
+  });
+
+  it('AWAITING_OPEN with a MISSING/MALFORMED anchor IS expirable once stale — corruption cannot self-protect (Q4)', async () => {
+    const { db, store } = makeDb({
+      'tournamentGroups/nostart': { status: GROUP_STATUS.AWAITING_OPEN, isTraining: true, players: FOUR_PLAYERS, updatedAt: OLD, createdAt: OLD }, // no startAnchor
+      'tournamentGroups/badanchor': { status: GROUP_STATUS.AWAITING_OPEN, isTraining: true, players: FOUR_PLAYERS, startAnchor: { anchorEtDate: 'not-a-date' }, updatedAt: OLD, createdAt: OLD },
+    });
+    const r = await expireStaleTrainingPods(db, { now: NOW });
+    expect(r.expired).toBe(2);
+    expect(store.get('tournamentGroups/nostart').status).toBe('expired');
+    expect(store.get('tournamentGroups/nostart').expiredReason).toBe('awaiting_open_malformed_anchor');
+    expect(store.get('tournamentGroups/badanchor').status).toBe('expired');
+  });
+
+  it('AWAITING_OPEN with a malformed anchor but RECENT is NOT expired (only stale corruption is retired)', async () => {
+    const { db, store } = makeDb({
+      'tournamentGroups/fresh-bad': { status: GROUP_STATUS.AWAITING_OPEN, isTraining: true, players: FOUR_PLAYERS, startAnchor: {}, updatedAt: FRESH, createdAt: FRESH },
+    });
+    const r = await expireStaleTrainingPods(db, { now: NOW });
+    expect(r).toMatchObject({ matched: 0, expired: 0 });
+    expect(store.get('tournamentGroups/fresh-bad').status).toBe(GROUP_STATUS.AWAITING_OPEN);
   });
 
   it('TRAINING-ONLY: never touches a ranked pod (no isTraining) or a competitive slot pod (isLiveDraft)', async () => {

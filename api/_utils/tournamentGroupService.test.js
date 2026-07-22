@@ -16,9 +16,11 @@ import {
   getGroup,
   transitionStatus,
   expireGroup,
+  fetchEligibleGroupsByStatus,
   getPlayer,
 } from './tournamentGroupService.js';
 import { GROUP_STATUS } from '../../src/constants/leagueTournament.js';
+import { makeInMemoryDb } from './__fixtures__/inMemoryFirestore.js';
 
 const NOW = '2026-06-15T13:30:00.000Z';
 
@@ -222,6 +224,20 @@ describe('expireGroup', () => {
     expect(captured.updates).toHaveLength(0);
   });
 
+  it('B2 progressVersion precondition: skips a DRAFTING pod whose version moved since classification (a pick landed) — an active draft never expires', async () => {
+    const { db, captured } = makeDb({ storedDoc: { status: 'drafting', progressVersion: 6 } });
+    const res = await expireGroup(db, 'group-1', { reason: 'stale', by: 'sweep', now: NOW, expectedStatus: 'drafting', expectedProgressVersion: 5 });
+    expect(res).toEqual({ groupId: 'group-1', expired: false, status: 'drafting', reason: 'progress_changed' });
+    expect(captured.updates).toHaveLength(0);
+  });
+
+  it('B2 progressVersion precondition: expires when the version is unchanged (no draft activity since classification)', async () => {
+    const { db, captured } = makeDb({ storedDoc: { status: 'drafting', progressVersion: 5 } });
+    const res = await expireGroup(db, 'group-1', { reason: 'stale', by: 'sweep', now: NOW, expectedStatus: 'drafting', expectedProgressVersion: 5 });
+    expect(res.expired).toBe(true);
+    expect(captured.updates[0].status).toBe('expired');
+  });
+
   it('missing group → {expired:false, reason:not_found}, no write; missing now → throws', async () => {
     const missing = makeDb();
     await expect(expireGroup(missing.db, 'group-1', { now: NOW })).resolves.toEqual(
@@ -229,6 +245,24 @@ describe('expireGroup', () => {
     expect(missing.captured.updates).toHaveLength(0);
     await expect(expireGroup(makeDb({ storedDoc: { status: 'forming' } }).db, 'group-1', {}))
       .rejects.toThrow(/now is required/);
+  });
+});
+
+// ==================== EXPIRED INERTNESS (review Q5) ====================
+
+describe('EXPIRED is inert across the server status queries', () => {
+  it('fetchEligibleGroupsByStatus never surfaces an EXPIRED pod to a BATTLE / FORMING / AWAITING_OPEN duty', async () => {
+    const four = [{ isCpu: false }, { isCpu: true }, { isCpu: true }, { isCpu: true }];
+    const { db } = makeInMemoryDb({
+      'tournamentGroups/x': { status: 'expired', isTraining: true, players: four },
+      'tournamentGroups/b': { status: 'battle', isTraining: true, players: four },
+    });
+    // The one shared duty query is exact-equality — every caller passes a live
+    // status, never EXPIRED, so a retired pod is invisible to every duty surface.
+    expect((await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE)).map(g => g.id)).toEqual(['b']);
+    expect(await fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING)).toEqual([]);
+    expect(await fetchEligibleGroupsByStatus(db, GROUP_STATUS.AWAITING_OPEN)).toEqual([]);
+    expect(await fetchEligibleGroupsByStatus(db, GROUP_STATUS.DRAFTING)).toEqual([]);
   });
 });
 
