@@ -11,9 +11,11 @@ import {
 } from './arenaStateMap';
 
 describe('deriveArenaState', () => {
-  it('maps battle → live, complete → complete', () => {
+  it('maps battle → live, complete → complete, expired → complete (terminal)', () => {
     expect(deriveArenaState({ status: GROUP_STATUS.BATTLE })).toBe('live');
     expect(deriveArenaState({ status: GROUP_STATUS.COMPLETE })).toBe('complete');
+    // Training-Pod P0 R2: a pod retired pre-BATTLE reads terminal, not 'awaiting'.
+    expect(deriveArenaState({ status: GROUP_STATUS.EXPIRED })).toBe('complete');
   });
   it('maps every pre-bell status (forming / drafting / awaiting_open) → awaiting', () => {
     expect(deriveArenaState({ status: GROUP_STATUS.FORMING })).toBe('awaiting');

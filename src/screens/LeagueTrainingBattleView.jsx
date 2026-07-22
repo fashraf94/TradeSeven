@@ -132,6 +132,21 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
     );
   }
 
+  // Training-Pod P0 R2: a pod retired pre-BATTLE (EXPIRED) is terminal — never
+  // render the live battle body (which would show an empty arena + inert claims).
+  // Short-circuit to an honest 'closed' card, mirroring the not-available guard.
+  if (pod.status === GROUP_STATUS.EXPIRED) {
+    return (
+      <div style={{ ...page, alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 16 }}>
+        <GraduationCap size={28} color={tokens.textMuted} />
+        <p style={{ fontSize: 14, color: tokens.textMuted, maxWidth: 320, margin: 0 }}>
+          This practice pod was closed before its battle began. Start a fresh one any time.
+        </p>
+        {backBtn}
+      </div>
+    );
+  }
+
   // Battle View V2 — the battle takeover (once the agent battle has deployed). The
   // viewport picks the arena: desktop → scale-to-fit ArenaDesktop (back-to-classic);
   // mobile → pinned-hero ArenaMobile (flag is the rollback). Pre-deploy

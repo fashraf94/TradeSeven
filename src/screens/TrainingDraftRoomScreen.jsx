@@ -88,17 +88,22 @@ function LegacyTrainingDraftRoom({ user, groupId, onComplete = null, onExit = nu
 
   if (isComplete) {
     const flipped = finalStatus === GROUP_STATUS.BATTLE;
+    // Training-Pod P0 R2: EXPIRED is terminal — honest 'closed' copy, not the
+    // "waiting for the next market open" line meant for a still-live pod.
+    const expired = finalStatus === GROUP_STATUS.EXPIRED;
     return (
       <div style={wrap}>
         <div style={{ maxWidth: 560, margin: '60px auto', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: 28, textAlign: 'center' }}>
-          <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Draft complete</div>
+          <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{expired ? 'Pod closed' : 'Draft complete'}</div>
           <div style={{ color: C.dim, marginBottom: 20 }}>
-            {flipped
-              ? 'Your pod is live — the five-day battle has begun.'
-              : 'Your pod is locked in and waiting for the next market open.'}
+            {expired
+              ? 'This practice pod was closed before its battle began — start a fresh one any time.'
+              : flipped
+                ? 'Your pod is live — the five-day battle has begun.'
+                : 'Your pod is locked in and waiting for the next market open.'}
           </div>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 22 }}>
-            {(draft?.picksByUser?.[user?.odUserId || user?.uid] || myPicks).map((s) => (
+            {(expired ? [] : (draft?.picksByUser?.[user?.odUserId || user?.uid] || myPicks)).map((s) => (
               <span key={s} style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 12px', fontWeight: 600 }}>{s}</span>
             ))}
           </div>

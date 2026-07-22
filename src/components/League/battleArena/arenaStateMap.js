@@ -31,6 +31,7 @@ export function deriveArenaState(group) {
     case GROUP_STATUS.BATTLE:
       return 'live';
     case GROUP_STATUS.COMPLETE:
+    case GROUP_STATUS.EXPIRED: // Training-Pod P0 R2: a pod retired pre-BATTLE reads terminal, never 'awaiting'
       return 'complete';
     case GROUP_STATUS.FORMING:
     case GROUP_STATUS.DRAFTING:

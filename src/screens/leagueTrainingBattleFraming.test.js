@@ -26,6 +26,10 @@ describe('trainingStatusFraming', () => {
     expect(f.sub).toMatch(/leaderboard or the bracket/i);
   });
 
+  it('frames EXPIRED as a retired-pre-battle practice pod (Training-Pod P0 R2)', () => {
+    expect(trainingStatusFraming(GROUP_STATUS.EXPIRED).label).toBe('Practice pod · expired');
+  });
+
   it('falls back to a generic practice label for an unknown/forming status', () => {
     expect(trainingStatusFraming('forming').label).toBe('Practice pod');
     expect(trainingStatusFraming(undefined).label).toBe('Practice pod');

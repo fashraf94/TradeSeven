@@ -31,6 +31,11 @@ export function trainingStatusFraming(status) {
         label: 'Practice pod · complete',
         sub: 'Practice run banked — nothing fed to the leaderboard or the bracket.',
       };
+    case GROUP_STATUS.EXPIRED: // Training-Pod P0 R2: retired pre-BATTLE, honest terminal copy
+      return {
+        label: 'Practice pod · expired',
+        sub: 'This practice pod was retired before its battle started — start a new one any time.',
+      };
     default:
       return {
         label: 'Practice pod',

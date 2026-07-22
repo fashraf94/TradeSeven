@@ -92,6 +92,18 @@ export const GROUP_STATUS = Object.freeze({
   AWAITING_OPEN: 'awaiting_open',
   BATTLE: 'battle',
   COMPLETE: 'complete',
+  // Training-Pod P0 (R2, July 2026): terminal disposition for a training pod
+  // that never reached BATTLE — a stale/abandoned pre-BATTLE pod (FORMING /
+  // DRAFTING / AWAITING_OPEN) that the one-time cleanup or the rolling backstop
+  // retires WITHOUT retro-advancing it (D1 ruling: expire, never manufacture a
+  // battle). Reachable ONLY from the three pre-BATTLE states; a BATTLE pod is
+  // live and completes normally, never expires. Terminal, forward-only, and —
+  // like COMPLETE — carries no active semantics, so every status===BATTLE
+  // (and the FORMING/DRAFTING/AWAITING_OPEN positive-gate) consumer stays inert
+  // for it, and the client "active pod" selectors (selectMyGroup /
+  // selectMyTrainingPod) exclude it by construction. Carries marker fields
+  // { expiredAt, expiredReason, expiredBy } written at the expiry transition.
+  EXPIRED: 'expired',
 });
 
 export const LEG_DIRECTION = Object.freeze({
