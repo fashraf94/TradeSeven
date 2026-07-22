@@ -33,7 +33,12 @@ import { VALID_TEMPO_VALUES } from '../_utils/tempoDialBands.js';
 // never consults levels. Leaving aggressive below L2 is one-way until L2
 // (documented spec §6 behavior). Dark (enforcement off): no profile read —
 // byte-identical.
-import { MASTERY_ENFORCEMENT_ENABLED } from '../_utils/masteryConfig.js';
+import {
+  MASTERY_ENFORCEMENT_ENABLED,
+  MASTERY_CUTOVER_GUARD_ENABLED,
+  MASTERY_CONFIG_COLLECTION,
+  MASTERY_CUTOVER_MARKER_DOC,
+} from '../_utils/masteryConfig.js';
 import { masteryProfileRef, archetypeLevelFromProfile, dialAggressiveAllowed } from '../_utils/masteryEnforcement.js';
 import { waitUntil } from '@vercel/functions';
 
@@ -45,6 +50,7 @@ const SENTINEL_TO_HTTP = Object.freeze({
   forbidden:       [403, 'forbidden',       'Not authorized for this resource.'],
   battle_active:   [409, 'battle_active',   'Cannot change the tempo dial while the agent has an active battle.'],
   dial_locked:     [403, 'dial_locked',     'The aggressive position unlocks at mastery level 2 for this archetype.'],
+  dial_cutover:    [409, 'dial_cutover',    'The aggressive position is briefly locked during a scheduled upgrade — try again shortly.'],
 });
 
 export default async function handler(req, res) {
@@ -98,12 +104,26 @@ export default async function handler(req, res) {
 
       // Mastery P2 dial gate (§6 L2) — gates SETTING aggressive only; the
       // profile read (spec §7: regardless of XP state; missing ⇒ level 1)
-      // precedes the write below.
-      if (MASTERY_ENFORCEMENT_ENABLED && tempo === 'aggressive') {
-        const profileSnap = await tx.get(masteryProfileRef(db, user.uid));
-        const level = archetypeLevelFromProfile(profileSnap.exists ? profileSnap.data() : null, agent.archetype);
-        if (!dialAggressiveAllowed(level)) {
-          throw new Error(SENTINEL_PREFIX + 'dial_locked');
+      // precedes the write below. During the ENFORCEMENT flip ceremony the
+      // dark path is marker-aware instead (hardening ruling B3): once the
+      // cutover marker exists, NEW aggressive acquisitions are closed so no
+      // acquisition window exists between the final census and enforcement
+      // (see masteryConfig.js FLIP CEREMONY). Ordinary dark state (both
+      // constants false): zero mastery I/O, byte-identical.
+      if (tempo === 'aggressive') {
+        if (MASTERY_ENFORCEMENT_ENABLED) {
+          const profileSnap = await tx.get(masteryProfileRef(db, user.uid));
+          const level = archetypeLevelFromProfile(profileSnap.exists ? profileSnap.data() : null, agent.archetype);
+          if (!dialAggressiveAllowed(level)) {
+            throw new Error(SENTINEL_PREFIX + 'dial_locked');
+          }
+        } else if (MASTERY_CUTOVER_GUARD_ENABLED) {
+          const markerSnap = await tx.get(
+            db.collection(MASTERY_CONFIG_COLLECTION).doc(MASTERY_CUTOVER_MARKER_DOC),
+          );
+          if (markerSnap.exists) {
+            throw new Error(SENTINEL_PREFIX + 'dial_cutover');
+          }
         }
       }
 

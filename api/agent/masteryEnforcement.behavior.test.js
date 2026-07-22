@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const { flagState, authReturnValue } = vi.hoisted(() => ({
-  flagState: { enf: true, xp: false, leansEnabled: true, tempoEnabled: true },
+  flagState: { enf: true, xp: false, cutoverGuard: false, leansEnabled: true, tempoEnabled: true },
   authReturnValue: { current: { uid: 'test-user' } },
 }));
 
@@ -50,6 +50,7 @@ vi.mock('../_utils/masteryConfig.js', async (importOriginal) => {
     ...actual,
     get MASTERY_ENFORCEMENT_ENABLED() { return flagState.enf; },
     get MASTERY_XP_ENABLED() { return flagState.xp; },
+    get MASTERY_CUTOVER_GUARD_ENABLED() { return flagState.cutoverGuard; },
   };
 });
 
@@ -92,6 +93,7 @@ const setTempo = (tempo) => call(setTempoDialHandler, { agentId: 'agent-1', temp
 beforeEach(() => {
   flagState.enf = true;
   flagState.xp = false;
+  flagState.cutoverGuard = false;
   activeDb = null;
 });
 
@@ -309,6 +311,68 @@ describe('dial gate — SETTING aggressive only; equipped state grandfathers', (
     expect(back.statusCode).toBe(403);
     expect(back.body.error).toBe('dial_locked');
     expect(activeDb.__dump('agents/agent-1').dials.tempo).toBe('standard');
+  });
+});
+
+describe('B3 cutover marker — the flip ceremony closes dark aggressive acquisition (no window between final census and enforcement)', () => {
+  const MARKER = 'masteryConfig/cutover';
+
+  it('ordinary dark (guard off): aggressive sets never touch the marker doc — byte-identical zero mastery I/O', async () => {
+    flagState.enf = false;
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT(),
+      [MARKER]: { acquisitionsClosedAt: '2026-07-21T00:00:00.000Z' }, // even present, unread
+    });
+    activeDb.__resetReads();
+    expect((await setTempo('aggressive')).statusCode).toBe(200);
+    expect(activeDb.__readCounts()[MARKER]).toBeUndefined();
+  });
+
+  it('guard on, marker absent (ceremony step 1, pre-close): aggressive still opens — the deploy itself changes nothing', async () => {
+    flagState.enf = false;
+    flagState.cutoverGuard = true;
+    activeDb = makeMockDb({ 'agents/agent-1': AGENT() });
+    const res = await setTempo('aggressive');
+    expect(res.statusCode).toBe(200);
+    expect(activeDb.__dump('agents/agent-1').dials.tempo).toBe('aggressive');
+  });
+
+  it('guard on + marker written (acquisitions closed): a NEW aggressive set is dial_cutover-denied; other positions stay open', async () => {
+    flagState.enf = false;
+    flagState.cutoverGuard = true;
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT(),
+      [MARKER]: { acquisitionsClosedAt: '2026-07-21T00:00:00.000Z' },
+    });
+    const blocked = await setTempo('aggressive');
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.body.error).toBe('dial_cutover');
+    expect((await setTempo('measured')).statusCode).toBe(200);
+  });
+
+  it('during the closed window, an EXISTING aggressive re-asserts via the idempotent branch — re-asserting is not acquiring', async () => {
+    flagState.enf = false;
+    flagState.cutoverGuard = true;
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT({ dials: { tempo: 'aggressive' } }),
+      [MARKER]: { acquisitionsClosedAt: '2026-07-21T00:00:00.000Z' },
+    });
+    const res = await setTempo('aggressive');
+    expect(res.statusCode).toBe(200);
+    expect(res.body.idempotent).toBe(true);
+  });
+
+  it('post-flip (ENF on): the profile gate governs and the marker is never consulted — L2 opens aggressive with the marker still present', async () => {
+    flagState.cutoverGuard = true; // stale guard, pre-hygiene
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT(),
+      'masteryProfiles/test-user': GUARDIAN_PROFILE(2),
+      [MARKER]: { acquisitionsClosedAt: '2026-07-21T00:00:00.000Z' },
+    });
+    activeDb.__resetReads();
+    expect((await setTempo('aggressive')).statusCode).toBe(200);
+    expect(activeDb.__readCounts()[MARKER]).toBeUndefined();
+    expect(activeDb.__readCounts()['masteryProfiles/test-user']).toBe(1);
   });
 });
 

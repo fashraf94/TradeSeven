@@ -24,11 +24,17 @@
 // agent's completed NON-TOURNAMENT agentBattles count — the exact
 // resolveCompletionDisposition predicate (tournament completions never
 // increment career stats), so tournament battles can neither mask a forged
-// claim nor be minted into a correction. Known slack, documented: the two
-// fenced decide.js expiry-completions historically completed battles
-// WITHOUT incrementing stats, so verified may exceed the honest claim —
-// only claimed > verified is flagged (never the reverse), and the
-// normalized value is an upper bound of server-written games.
+// claim nor be minted into a correction. Hardening ruling B4: the count is
+// BOUND to the agent doc's CURRENT ownerId (battles carry ownerId — a
+// battle whose ownerId differs from the agent doc's never verifies a
+// claim; battles missing ownerId are counted + reported), and every agent
+// doc YOUNGER than its earliest counted battle is flagged for lineage
+// review (a recreated doc claiming an older identity's history). Known
+// slack, documented: the two fenced decide.js expiry-completions
+// historically completed battles WITHOUT incrementing stats, so verified
+// may exceed the honest claim — only claimed > verified is flagged (never
+// the reverse), and the normalized value is an upper bound of
+// server-written games.
 //
 // USAGE (from project root):
 //   node scripts/mastery-preflip-census.js            # census + JSON report
@@ -119,21 +125,50 @@ async function main() {
   const [agentsSnap, profilesSnap, battlesSnap] = await Promise.all([
     db.collection('agents').get(),
     db.collection(MASTERY_PROFILES_COLLECTION).get(),
-    db.collection('agentBattles').where('status', '==', 'completed').select('agentId', 'gameMode').get(),
+    db.collection('agentBattles').where('status', '==', 'completed').select('agentId', 'gameMode', 'ownerId', 'createdAt').get(),
   ]);
 
   const profileByUser = new Map();
   for (const doc of profilesSnap.docs) profileByUser.set(doc.id, doc.data());
 
+  // Tolerant creation-time reader: battle createdAt is an ISO string in the
+  // current era; duck-typed Timestamps are accepted for older docs (the
+  // masterySlot compareCreationKey tolerance).
+  const toMillis = (v) => {
+    if (typeof v === 'string') {
+      const ms = Date.parse(v);
+      return Number.isFinite(ms) ? ms : null;
+    }
+    if (v && typeof v.toMillis === 'function') return v.toMillis();
+    if (v && Number.isFinite(v.seconds)) return v.seconds * 1000;
+    return null;
+  };
+
   // Verified games: completed, stats-counted (non-tournament) battles per
-  // agentId — the server stats writer's exact increment predicate.
-  const completedByAgent = new Map();
+  // agentId, sub-keyed by the battle's OWN ownerId (ruling B4 — a claim
+  // verifies only against battles bound to the agent doc's current owner).
+  // Each owner bucket also tracks its earliest battle creation for the
+  // lineage check. Battles missing ownerId are counted + reported.
+  const completedByAgent = new Map(); // agentId → Map(ownerId → {count, earliestMs})
+  let battlesMissingOwnerId = 0;
   for (const doc of battlesSnap.docs) {
     const b = doc.data();
     if (b.gameMode === TOURNAMENT_GAME_MODE) continue; // never increments stats
-    if (typeof b.agentId === 'string') {
-      completedByAgent.set(b.agentId, (completedByAgent.get(b.agentId) || 0) + 1);
+    if (typeof b.agentId !== 'string') continue;
+    if (typeof b.ownerId !== 'string' || !b.ownerId) {
+      battlesMissingOwnerId += 1;
+      continue;
     }
+    let byOwner = completedByAgent.get(b.agentId);
+    if (!byOwner) {
+      byOwner = new Map();
+      completedByAgent.set(b.agentId, byOwner);
+    }
+    const bucket = byOwner.get(b.ownerId) || { count: 0, earliestMs: null };
+    bucket.count += 1;
+    const ms = toMillis(b.createdAt);
+    if (ms !== null && (bucket.earliestMs === null || ms < bucket.earliestMs)) bucket.earliestMs = ms;
+    byOwner.set(b.ownerId, bucket);
   }
 
   const entries = [];
@@ -143,10 +178,13 @@ async function main() {
     bundlesEvaluated: 0,
     bundlesArchivedSkipped: 0,
     bundlesOrphaned: 0,
+    bundlesNullStatus: 0,
     leanOverage: 0,
     dialAggressiveTotal: 0,
     dialAggressiveUngated: 0,
     statsFindings: 0,
+    lineageFlags: 0,
+    battlesMissingOwnerId,
     forgeBundleOverage: 0,
   };
 
@@ -165,7 +203,12 @@ async function main() {
     const claimed = a.stats?.gamesPlayed;
     const claimedDefined = claimed !== undefined && claimed !== null;
     const claimedClean = Number.isInteger(claimed) && claimed >= 0;
-    const verified = completedByAgent.get(doc.id) || 0;
+    // B4: verified games bind to the doc's CURRENT ownerId — battles under
+    // a different owner never verify this doc's claim.
+    const ownerBucket = typeof a.ownerId === 'string'
+      ? completedByAgent.get(doc.id)?.get(a.ownerId)
+      : undefined;
+    const verified = ownerBucket?.count || 0;
     const gamesForTier = claimedClean ? claimed : verified;
     agentMeta.set(doc.id, {
       ownerId: a.ownerId ?? null,
@@ -246,6 +289,25 @@ async function main() {
         proposedAction: 'stats_set_games',
       });
     }
+
+    // ── Lineage (B4): an agent doc CREATED AFTER its earliest counted
+    // battle is claiming history older than itself — the recreate shape the
+    // delete-deny closes going forward. Report-only (founder judgment). ──
+    const createTimeMs = doc.createTime ? doc.createTime.toMillis() : null;
+    if (createTimeMs !== null && ownerBucket && ownerBucket.earliestMs !== null
+        && createTimeMs > ownerBucket.earliestMs) {
+      stats.lineageFlags++;
+      entries.push({
+        key: `agent_lineage:${agentPath}`,
+        kind: 'agent_lineage',
+        docPath: agentPath,
+        ownerId: a.ownerId ?? null,
+        agentDocCreatedAt: new Date(createTimeMs).toISOString(),
+        earliestCountedBattleAt: new Date(ownerBucket.earliestMs).toISOString(),
+        verifiedCompletedBattles: verified,
+        proposedAction: 'review',
+      });
+    }
   }
 
   // ── Forge: every non-archived bundle above the owner's EFFECTIVE band
@@ -267,6 +329,9 @@ async function main() {
       continue;
     }
     const b = doc.data();
+    // Q7: null/absent-status docs are counted (the rules backfill disjunct
+    // exists for exactly this population) and still evaluated for overage.
+    if (b.status === null || b.status === undefined) stats.bundlesNullStatus++;
     if (b.status === 'archived') {
       stats.bundlesArchivedSkipped++;
       continue;
@@ -299,11 +364,13 @@ async function main() {
 
   console.log('\n=== Mastery ENFORCEMENT pre-flip census (READ-ONLY) ===');
   console.log(`agents scanned            : ${stats.agentsScanned}`);
-  console.log(`bundles seen/evaluated    : ${stats.bundlesSeen}/${stats.bundlesEvaluated} (archived ${stats.bundlesArchivedSkipped}, ORPHANED ${stats.bundlesOrphaned})`);
+  console.log(`bundles seen/evaluated    : ${stats.bundlesSeen}/${stats.bundlesEvaluated} (archived ${stats.bundlesArchivedSkipped}, ORPHANED ${stats.bundlesOrphaned}, null-status ${stats.bundlesNullStatus})`);
   console.log(`lean overage entries      : ${stats.leanOverage}`);
   console.log(`aggressive dials (total)  : ${stats.dialAggressiveTotal}`);
   console.log(`  of which below the gate : ${stats.dialAggressiveUngated}`);
   console.log(`stats findings            : ${stats.statsFindings}`);
+  console.log(`lineage flags             : ${stats.lineageFlags}`);
+  console.log(`battles missing ownerId   : ${stats.battlesMissingOwnerId}`);
   console.log(`forge bundle overages     : ${stats.forgeBundleOverage}`);
   console.log(`report written to         : ${outPath}`);
   console.log('\nNext (flip ceremony, B4): founder reviews the report, writes the');

@@ -30,13 +30,19 @@
 //                     (the verified stats-counted battle count; plain update
 //                     — stats are not a customization surface)
 //
-// SAFETY: every write happens in a transaction that RE-DERIVES the verdict
-// from live state through the same kernels the census used — a doc that
-// drifted since the census (pin set changed, dial reset already, user
-// leveled past the gate, stats moved) is SKIPPED loudly and the census must
-// be re-run. Doc paths are pinned to the agents collection. Nothing here
-// touches bundle rule content (forge_overage remediation is the reforge
-// trim path + the equip-time gate, by design).
+// SAFETY (governing principle, hardening rulings B1/B2: census proposes,
+// LIVE STATE DISPOSES): every write happens in a transaction that
+// RE-DERIVES its inputs from live state through the same kernels the
+// census used, at write time — the dial branch re-reads the live profile
+// and re-runs the gate; the lean branch re-reads the live profile (cap)
+// AND re-runs the trim kernel; the stats branch re-counts the verified
+// battles (completed, non-tournament, current-ownerId-bound) and writes
+// the LIVE value. Any drift (pin set changed, dial reset already, user
+// leveled past the gate or into a wider cap, overstatement no longer
+// proven) is SKIPPED loudly and the census must be re-run. Doc paths are
+// pinned to the agents collection. Nothing here touches bundle rule
+// content (forge_overage remediation is the reforge trim path + the
+// equip-time gate, by design).
 
 import process from 'node:process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -47,8 +53,9 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 import { txUpdateAgentSettings } from '../api/_utils/agentSettingsTx.js';
 import { revalidateStandingLeans, LEAN_INVALIDATION_REASONS } from '../api/_utils/leanRevalidation.js';
-import { archetypeLevelFromProfile, revalidateTempoDial } from '../api/_utils/masteryEnforcement.js';
+import { archetypeLevelFromProfile, leanCapForLevel, revalidateTempoDial } from '../api/_utils/masteryEnforcement.js';
 import { MASTERY_PROFILES_COLLECTION } from '../api/_utils/masteryConfig.js';
+import { TOURNAMENT_GAME_MODE } from '../src/constants/leagueTournament.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const PROJECT_ROOT = path.resolve(path.dirname(__filename), '..');
@@ -93,7 +100,7 @@ class DriftError extends Error {}
 function describeAction(entry) {
   if (entry.kind === 'dial_aggressive') return "dials.tempo → 'standard'";
   if (entry.kind === 'lean_overage') return `remove pins [${(entry.trimIds || []).join(', ')}] (${entry.archetype} overage)`;
-  if (entry.kind === 'stats_games') return `stats.gamesPlayed ${JSON.stringify(entry.claimedGamesPlayed)} → ${entry.normalizedValue}`;
+  if (entry.kind === 'stats_games') return `stats.gamesPlayed ${JSON.stringify(entry.claimedGamesPlayed)} → live-verified count (census estimate ${entry.normalizedValue})`;
   return '(unsupported)';
 }
 
@@ -171,18 +178,28 @@ async function main() {
           txUpdateAgentSettings(tx, ref, { 'dials.tempo': 'standard', updatedAt: nowIso });
         } else if (entry.kind === 'lean_overage') {
           const pins = Array.isArray(a.standingLeans) ? a.standingLeans : [];
-          // Re-derive the trim plan from LIVE pins at the census's cap —
-          // the approved plan executes only when it still matches exactly
-          // (same kernel losers). A set that changed since the census
-          // (unequips, refreshes, new pins) drifts and must be re-censused.
+          // B2 (census proposes, live state disposes): the LIVE profile
+          // decides the cap — parity with the dial branch. A user who
+          // leveled since the census gets the wider cap, not the stale plan.
+          const profileSnap = profileRef ? await tx.get(profileRef) : null;
+          const liveLevel = archetypeLevelFromProfile(profileSnap?.exists ? profileSnap.data() : null, entry.archetype);
+          const liveCap = leanCapForLevel(liveLevel);
+          if (liveCap !== entry.cap) {
+            throw new DriftError(`live cap ${liveCap} (level ${liveLevel}) differs from the approved plan's cap ${entry.cap}`);
+          }
+          // Re-derive the trim plan from LIVE pins at the LIVE cap — the
+          // approved plan executes only when it still matches exactly (same
+          // kernel losers). A set that changed since the census (unequips,
+          // refreshes, new pins) or lost its overage drifts → re-census.
           const { invalidated } = revalidateStandingLeans({
             standingLeans: pins,
             archetypeCodeId: entry.archetype,
-            leanCap: entry.cap,
+            leanCap: liveCap,
           });
           const liveTrim = invalidated
             .filter((r) => r.reason === LEAN_INVALIDATION_REASONS.OVER_CAP)
             .map((r) => r.adjustmentId);
+          if (liveTrim.length === 0) throw new DriftError('no live overage remains');
           if (!sortedEq(liveTrim, entry.trimIds || [])) {
             throw new DriftError(`live trim plan [${liveTrim.join(', ')}] no longer matches the approved plan`);
           }
@@ -194,7 +211,31 @@ async function main() {
         } else if (entry.kind === 'stats_games') {
           const claimed = a.stats?.gamesPlayed;
           if (claimed !== entry.claimedGamesPlayed) throw new DriftError(`gamesPlayed is now ${JSON.stringify(claimed)}`);
-          tx.update(ref, { 'stats.gamesPlayed': entry.normalizedValue, updatedAt: nowIso });
+          // B1 (census proposes, live state disposes): re-derive the
+          // verified count IMMEDIATELY before the write — same predicate as
+          // the census (completed, non-tournament, bound to the doc's
+          // CURRENT ownerId) — and abort unless the overstatement is still
+          // proven against live state. The write is the live-derived value,
+          // never the census snapshot.
+          const battlesSnap = await tx.get(
+            db.collection('agentBattles')
+              .where('agentId', '==', ref.id)
+              .select('status', 'gameMode', 'ownerId'),
+          );
+          let verifiedLive = 0;
+          for (const bDoc of battlesSnap.docs) {
+            const b = bDoc.data();
+            if (b.status === 'completed' && b.gameMode !== TOURNAMENT_GAME_MODE && b.ownerId === a.ownerId) {
+              verifiedLive += 1;
+            }
+          }
+          const claimedClean = Number.isInteger(claimed) && claimed >= 0;
+          const overstated = (claimed !== undefined && claimed !== null && !claimedClean)
+            || (claimedClean && claimed > verifiedLive);
+          if (!overstated) {
+            throw new DriftError(`overstatement no longer proven live (claimed ${JSON.stringify(claimed)}, live-verified ${verifiedLive})`);
+          }
+          tx.update(ref, { 'stats.gamesPlayed': verifiedLive, updatedAt: nowIso });
         }
       });
       console.log(`[applied] ${label} → ${describeAction(entry)}`);

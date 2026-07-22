@@ -285,6 +285,39 @@ describe('agents — create allowlist + update allowlist + delete deny (B1/B2, e
     await assertSucceeds(setDoc(doc(asOwner(), AGENT_DOC), { ...CREATE_SHAPE, stats: { wins: 0, gamesPlayed: 0 } }));
   });
 
+  // Q6 (hardening ruling): the equipped-watchlist trio is pinned at create —
+  // ownership-validated id (the live onboarding seeds its own freshly built
+  // starter watchlist in the same write; force-null would break it), typed
+  // and bounded name/timestamp.
+  describe('Q6 — equipped-watchlist pins at create', () => {
+    const WL_OWN = 'watchlists/wl-own-1';
+    const WL_OTHER = 'watchlists/wl-other-1';
+    beforeEach(async () => {
+      await seed(WL_OWN, { userId: OWNER_UID, name: 'Starter' });
+      await seed(WL_OTHER, { userId: OTHER_UID, name: 'Theirs' });
+    });
+    const withWl = (id) => ({
+      ...CREATE_SHAPE,
+      equippedWatchlistId: id,
+      equippedWatchlistName: 'Starter',
+      equippedAt: '2026-07-21T00:00:00.000Z',
+    });
+
+    it('the live onboarding shape — creator-owned watchlist seeded at create — passes', async () => {
+      await assertSucceeds(setDoc(doc(asOwner(), AGENT_DOC), withWl('wl-own-1')));
+    });
+
+    it.each([
+      ["another user's watchlist", () => withWl('wl-other-1')],
+      ['a nonexistent watchlist', () => withWl('wl-ghost')],
+      ['an oversized name', () => ({ ...withWl('wl-own-1'), equippedWatchlistName: 'x'.repeat(121) })],
+      ['a non-string equippedAt', () => ({ ...withWl('wl-own-1'), equippedAt: 12345 })],
+      ['a non-string id', () => ({ ...withWl('wl-own-1'), equippedWatchlistId: 42 })],
+    ])('CREATE pointing at %s is DENIED', async (_label, shape) => {
+      await assertFails(setDoc(doc(asOwner(), AGENT_DOC), shape()));
+    });
+  });
+
   it('CREATE for another owner is denied outright', async () => {
     await assertFails(setDoc(doc(asOther(), AGENT_DOC), CREATE_SHAPE));
   });
@@ -383,6 +416,12 @@ describe('agents/{id}/bundles — status transition vocabulary (B3)', () => {
     await seed(bundlePath('b-nostatus'), statusless);
     await assertFails(updateDoc(doc(asOwner(), bundlePath('b-nostatus')), { status: 'equipped' }));
     await assertSucceeds(updateDoc(doc(asOwner(), bundlePath('b-nostatus')), { status: 'archived' }));
+  });
+
+  it('Q7: a status:null doc (explicit null, legacy data) backfills the same way — never into equipped', async () => {
+    await seed(bundlePath('b-nullstatus'), B(null));
+    await assertFails(updateDoc(doc(asOwner(), bundlePath('b-nullstatus')), { status: 'equipped' }));
+    await assertSucceeds(updateDoc(doc(asOwner(), bundlePath('b-nullstatus')), { status: 'forged' }));
   });
 });
 

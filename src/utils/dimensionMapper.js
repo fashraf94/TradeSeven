@@ -981,22 +981,46 @@ export async function materializeDimensionBundle({
   const rulesCol = collection(db, 'agents', agentId, 'rules');
   const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
 
+  // Build the frozen ruleSnapshots array the server will read. Strip the
+  // sourceRef helper field — the server looks that up off the live rule doc.
+  // (Built BEFORE the reuse short-circuit below: the equipped-reuse path
+  // must compare against exactly what this generator would write today.)
+  const frozenSnapshots = snapshots.map((s) => ({
+    id: s.id,
+    text: s.text,
+    textTemplate: s.textTemplate,
+    params: s.params,
+    paramValues: s.paramValues,
+    category: s.category,
+    visibility: s.visibility,
+  }));
+
   // Idempotent short-circuit for a bundle that has moved past 'forged'
   // (Mastery end-of-branch ruling B3: bundle status transitions out of
   // 'equipped' are server-owned — the firestore.rules vocabulary denies
-  // the overwrite below on an equipped doc). The deterministic id means an
-  // existing doc carries IDENTICAL content for these dimensions, and
-  // create-entry accepts 'forged' or 'equipped' bundles alike, so reusing
-  // the equipped doc as-is is the same launch. An 'archived' copy cannot
+  // the overwrite below on an equipped doc). create-entry accepts 'forged'
+  // or 'equipped' bundles alike, so reusing the equipped doc is the same
+  // launch — but ONLY under proven content equality (hardening ruling M5):
+  // the deterministic id promises identical content, and the comparison
+  // verifies it (a generator-version drift or hash collision must fail
+  // CLOSED, never silently launch stale rules). An 'archived' copy cannot
   // be relaunched (create-entry rejects it and the rules deny reviving it
   // client-side) — fail loudly instead of surfacing a permission error.
   const existingSnap = await getDoc(bundleRef);
   if (existingSnap.exists()) {
-    const existingStatus = existingSnap.data()?.status;
-    if (existingStatus === 'equipped') {
+    const existing = existingSnap.data() || {};
+    if (existing.status === 'equipped') {
+      const sameContent =
+        JSON.stringify(existing.ruleIds ?? null) === JSON.stringify(snapshots.map((s) => s.id)) &&
+        JSON.stringify(existing.ruleSnapshots ?? null) === JSON.stringify(frozenSnapshots);
+      if (!sameContent) {
+        throw new Error(
+          "This strategy's equipped bundle no longer matches these dimensions — unequip it in the Forge, then relaunch."
+        );
+      }
       return bundleId;
     }
-    if (existingStatus === 'archived') {
+    if (existing.status === 'archived') {
       throw new Error(
         'This exact strategy was archived earlier — adjust a dimension to forge a fresh bundle.'
       );
@@ -1031,18 +1055,6 @@ export async function materializeDimensionBundle({
       { merge: true }
     );
   }
-
-  // Build the frozen ruleSnapshots array the server will read. Strip the
-  // sourceRef helper field — the server looks that up off the live rule doc.
-  const frozenSnapshots = snapshots.map((s) => ({
-    id: s.id,
-    text: s.text,
-    textTemplate: s.textTemplate,
-    params: s.params,
-    paramValues: s.paramValues,
-    category: s.category,
-    visibility: s.visibility,
-  }));
 
   batch.set(bundleRef, {
     name: bundleName || 'Strategy Dimensions',

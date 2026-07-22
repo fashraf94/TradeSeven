@@ -194,7 +194,28 @@ service cloud.firestore {
                     && (!('consolidatedInsight' in request.resource.data)
                         || request.resource.data.consolidatedInsight == '')
                     && (!('evolutionCycle' in request.resource.data)
-                        || request.resource.data.evolutionCycle == 0);
+                        || request.resource.data.evolutionCycle == 0)
+                    // Q6 (hardening ruling): the equipped-watchlist trio is
+                    // pinned at create. NOT force-null — the live onboarding
+                    // (AgentCreationFlow) deliberately builds the starter
+                    // watchlist first and seeds it in the SAME create write.
+                    // The pin is ownership + type: a non-null id must name a
+                    // watchlist doc the creator owns (watchlists are
+                    // server-created with a userId owner field), so a
+                    // crafted client cannot birth an agent pointed at
+                    // another user's watchlist; name/timestamp are
+                    // type-and-size-bounded.
+                    && (!('equippedWatchlistId' in request.resource.data)
+                        || request.resource.data.equippedWatchlistId == null
+                        || (request.resource.data.equippedWatchlistId is string
+                            && get(/databases/$(database)/documents/watchlists/$(request.resource.data.equippedWatchlistId)).data.userId == request.auth.uid))
+                    && (!('equippedWatchlistName' in request.resource.data)
+                        || request.resource.data.equippedWatchlistName == null
+                        || (request.resource.data.equippedWatchlistName is string
+                            && request.resource.data.equippedWatchlistName.size() <= 120))
+                    && (!('equippedAt' in request.resource.data)
+                        || request.resource.data.equippedAt == null
+                        || request.resource.data.equippedAt is string);
       allow update: if request.auth != null
               && resource.data.ownerId == request.auth.uid
               && request.resource.data.diff(resource.data).affectedKeys()
@@ -207,6 +228,9 @@ service cloud.firestore {
       // and with create forced to server defaults, delete+recreate gains an
       // attacker nothing anyway. A real agent-deletion feature must ship as
       // a server endpoint that also settles subcollections and battles.
+      // SECURITY POSTURE (Q8, founder-resolved): user-data erasure is
+      // server-side by requirement — the Admin SDK bypasses this deny, so
+      // the deny costs erasure nothing.
       allow delete: if false;
 
       // FORGE: Rules subcollection — soft-delete only, no hard deletes
@@ -273,11 +297,14 @@ service cloud.firestore {
                     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['status'])
                         || (resource.data.status == 'draft' && request.resource.data.status in ['forged', 'archived'])
                         || (resource.data.status == 'forged' && request.resource.data.status == 'archived')
-                        // Statusless backfill: a doc born without status
-                        // (legal at create, defensive) may receive any
-                        // non-equipped vocabulary value — else it is
-                        // permanently stuck client-side.
-                        || (!('status' in resource.data) && request.resource.data.status in ['draft', 'forged', 'archived']))
+                        // Statusless backfill (extended to status:null by
+                        // hardening ruling Q7): a doc born without status —
+                        // or carrying an explicit null (legacy data; the
+                        // census reports the null-status count) — may
+                        // receive any non-equipped vocabulary value, else
+                        // it is permanently stuck client-side.
+                        || ((!('status' in resource.data) || resource.data.status == null)
+                            && request.resource.data.status in ['draft', 'forged', 'archived']))
                     // Mastery P2 (§6.1 rider, review finding): an EQUIPPED
                     // bundle's rule CONTENT is immutable to clients — else a
                     // compliant bundle could pass the equip-time capacity

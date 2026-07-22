@@ -40,22 +40,53 @@ export const MASTERY_XP_ENABLED = false; // P4 cutover flips this (§7). Keep fa
 // profile ⇒ baseline entitlements. Flip order: XP → backfill → ENFORCEMENT
 // (with floor audit) → SURFACE.
 //
-// ENFORCEMENT FLIP CEREMONY (end-of-branch ruling B4 — the C6 Forge floor
-// audit EXTENDED to leans/dials/stats; this flip is BLOCKED until it
-// passes):
-//   1. run scripts/mastery-preflip-census.js (READ-ONLY) — enumerates every
+// ENFORCEMENT FLIP CEREMONY (end-of-branch rulings B4 + hardening ruling B3
+// — the C6 Forge floor audit EXTENDED to leans/dials/stats, with the
+// CUTOVER MARKER closing the acquisition window; this flip is BLOCKED until
+// the census passes):
+//   1. flip MASTERY_CUTOVER_GUARD_ENABLED true + deploy. Dark no-op: the
+//      guard only makes set-tempo-dial consult the cutover marker doc on
+//      an aggressive SET, and the marker does not exist yet. (Both
+//      constants false = zero mastery I/O, byte-identical — photographed.)
+//   2. WRITE the cutover marker (Admin SDK, masteryConfig/cutover — any
+//      content; existence is the signal). Instant, no deploy: every host
+//      now denies NEW aggressive acquisitions (the one dark acquisition
+//      that enforcement would grandfather). Leans/Forge need no closing:
+//      the dark lean cap IS baseline, dark Forge equips enforce today's
+//      legacy limits server-side, and the lazy legacy floor is live-
+//      computed, never grandfathered. Existing aggressive dials re-assert
+//      via the idempotent branch — re-asserting is not acquiring.
+//   3. run scripts/mastery-preflip-census.js (READ-ONLY) — enumerates every
 //      stored pin/dial/stat exceeding the owner's profile-derived baseline
 //      entitlement + every Forge bundle above the effective (lazy-legacy-
-//      floor) band, with a deterministic key per finding;
-//   2. the FOUNDER reviews the report and writes the approved-keys file
+//      floor) band, with a deterministic key per finding. Acquisitions are
+//      closed, so the enumeration cannot go stale.
+//   4. the FOUNDER reviews the report and writes the approved-keys file
 //      (what never passed a gate);
-//   3. scripts/mastery-preflip-normalize.js --apply zeroes exactly the
-//      approved entries (dial resets + lean trims ride txUpdateAgentSettings;
+//   5. scripts/mastery-preflip-normalize.js --apply zeroes exactly the
+//      approved entries (census proposes, live state disposes: every branch
+//      re-derives its inputs in-transaction and skips unless the violation
+//      still holds; dial resets + lean trims ride txUpdateAgentSettings;
 //      stats corrections are plain updates; Forge overages are never script-
 //      mutated — the reforge trim path + equip gate are the remediation);
-//   4. re-run the census; only a founder-accepted report clears this
-//      constant to flip (then deploy).
+//   6. re-run the census; only a founder-accepted report clears this
+//      constant to flip;
+//   7. flip MASTERY_ENFORCEMENT_ENABLED true + deploy. NO ACQUISITION
+//      WINDOW exists between the final census and enforcement: during
+//      deploy propagation, not-yet-updated hosts still deny via
+//      guard+marker, updated hosts gate via the live profile.
+//   8. after verification, delete the marker and flip the guard constant
+//      back false (hygiene — under ENFORCEMENT the marker is never
+//      consulted).
 export const MASTERY_ENFORCEMENT_ENABLED = false;
+
+// B3 cutover-marker mechanism (hardening ruling): the guard constant makes
+// set-tempo-dial's DARK path marker-aware (aggressive only). Default false —
+// flipped only for the ceremony above, so the ordinary dark state performs
+// zero mastery I/O. The marker doc's EXISTENCE is the whole signal
+// (fail-closed: any readable content closes acquisitions).
+export const MASTERY_CUTOVER_GUARD_ENABLED = false;
+export const MASTERY_CUTOVER_MARKER_DOC = 'cutover';
 
 // ---- Storage homes (net-new collections; firestore.rules default-deny +
 // explicit blocks; all writes Admin SDK only) ----
