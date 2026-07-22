@@ -481,7 +481,7 @@ describe('dial invalidation on archetype switch (V2.1 STOP-B: customization swit
     expect(agent.dials.tempo).toBe('standard'); // invalidated with the switch
   });
 
-  it('ENF off: the dial carries untouched (byte-identical)', async () => {
+  it('ENF off: the dial carries untouched (byte-identical) — and the response carries NO dialInvalidated key', async () => {
     flagState.enf = false;
     const { default: changeArchetypeHandler } = await import('./change-archetype.js');
     activeDb = makeMockDb({
@@ -490,6 +490,21 @@ describe('dial invalidation on archetype switch (V2.1 STOP-B: customization swit
     const res = await call(changeArchetypeHandler, { agentId: 'agent-1', archetype: 'degen' });
     expect(res.statusCode).toBe(200);
     expect(activeDb.__dump('agents/agent-1').dials.tempo).toBe('aggressive');
+    // P3 notice-rider photograph: the additive field exists ONLY when the
+    // reset fired — the dark response shape is byte-identical.
+    expect('dialInvalidated' in res.body).toBe(false);
+  });
+
+  it('P3 notice rider: the response says dialInvalidated when the reset fired (the client renders the notice — never silent)', async () => {
+    const { default: changeArchetypeHandler } = await import('./change-archetype.js');
+    activeDb = makeMockDb({
+      'agents/agent-1': AGENT({ dials: { tempo: 'aggressive' } }),
+      'masteryProfiles/test-user': GUARDIAN_PROFILE(3), // degen stream absent → L1
+    });
+    const res = await call(changeArchetypeHandler, { agentId: 'agent-1', archetype: 'degen' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.dialInvalidated).toBe(true);
+    expect(activeDb.__dump('agents/agent-1').dials.tempo).toBe('standard');
   });
 });
 

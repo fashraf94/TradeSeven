@@ -44,6 +44,15 @@ export const MASTERY_XP_ENABLED = false; // P4 cutover flips this (§7). Keep fa
 // — the C6 Forge floor audit EXTENDED to leans/dials/stats, with the
 // CUTOVER MARKER closing the acquisition window; this flip is BLOCKED until
 // the census passes):
+//   ⓪ HARD PREREQUISITES (P3 ruling — before the guard flip in step 1):
+//      (a) deploy firestore.rules (npm run deploy:rules / Console) — the
+//      mastery collection blocks and the agents/bundles hardening are
+//      INERT until deployed; (b) confirm BOTH agentBattles composite
+//      indexes report READY in the Console: (ownerId,
+//      agentContext.archetype, createdAt ASC) — the slot-cohort query —
+//      and (status, completionReason, completedAt ASC) — the GC-repair
+//      query. The ceremony must not begin while rules or indexes lag the
+//      deployed code.
 //   1. flip MASTERY_CUTOVER_GUARD_ENABLED true + deploy. Dark no-op: the
 //      guard only makes the two aggressive-dial hosts (set-tempo-dial's
 //      SET path; change-archetype's carry-over rider) consult the cutover
@@ -92,6 +101,14 @@ export const MASTERY_ENFORCEMENT_ENABLED = false;
 // (fail-closed: any readable content closes acquisitions).
 export const MASTERY_CUTOVER_GUARD_ENABLED = false;
 export const MASTERY_CUTOVER_MARKER_DOC = 'cutover';
+
+// P3 (spec §7/§10): the UI flag — Training Report, RecordSheet mastery
+// cards, level-derived cap displays. SURFACE never alters entitlements
+// (operative rule); missing profile ⇒ baseline + honest empty state. Flip
+// LAST (XP → backfill → ENFORCEMENT → SURFACE). Client components import
+// this constant directly (the characterState.js src→api/_utils precedent —
+// this module is a pure-constants leaf, browser-clean).
+export const MASTERY_SURFACE_ENABLED = false;
 
 // ---- Storage homes (net-new collections; firestore.rules default-deny +
 // explicit blocks; all writes Admin SDK only) ----

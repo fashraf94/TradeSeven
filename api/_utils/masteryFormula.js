@@ -52,21 +52,15 @@ const VALID_RATE_BANDS = Object.freeze([1.0, 0.5, 0]);
 
 // ---- Level curve (spec §6, founder-ratified D1): 10 levels, cumulative XP
 // to REACH level (index+1). Bands: Novice 1–3 / Adept 4–7 / Master 8–10 (D5).
-export const LEVEL_XP_THRESHOLDS = Object.freeze([
-  0, 200, 500, 900, 1400, 2000, 2700, 3500, 4400, 5400,
-]);
-export const MAX_LEVEL = LEVEL_XP_THRESHOLDS.length; // 10
-
-/** Cumulative XP → level (1..10). Non-finite/negative XP → level 1. */
-export function levelForXp(xp) {
-  if (!Number.isFinite(xp) || xp < 0) return 1;
-  let level = 1;
-  for (let i = 0; i < LEVEL_XP_THRESHOLDS.length; i++) {
-    if (xp >= LEVEL_XP_THRESHOLDS[i]) level = i + 1;
-    else break;
-  }
-  return level;
-}
+// P3 §9 one-source collapse (the P4 #7 scoring-constants precedent): the
+// curve LIVES in src/data/masteryProgression.js — the browser-clean leaf
+// the client surfaces read — and is re-exported here so every existing
+// server consumer keeps its import path while display and enforcement
+// resolve the same numbers by construction. api → src import is Node-clean
+// (pure data, zero imports); this module's test file's REAL import is the
+// BUILD_RULES §4 dependency-surface guard.
+export { LEVEL_XP_THRESHOLDS, MAX_LEVEL, levelForXp } from '../../src/data/masteryProgression.js';
+import { levelForXp } from '../../src/data/masteryProgression.js';
 
 // ---- Public reasonCode enum (spec §4): the ONLY vocabulary a receipt may
 // carry publicly. Diagnostics live in the server-only quarantine ledger; the

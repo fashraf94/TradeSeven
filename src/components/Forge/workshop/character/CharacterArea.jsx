@@ -21,6 +21,13 @@ import { getArchetypeCharacter, getArchetypeRoster } from '../../../../data/arch
 import { ARCHETYPE_ADJUSTMENTS, getAdjustment, getCanonicalText, getCanonicalTextVersion, findEquipConflicts } from '../../../../data/archetypeAdjustments.js';
 import { resolveCharacterState, CHARACTER_STATES } from '../../../../data/characterState.js';
 import { STANDING_LEANS_CAP, LEAN_INVALIDATION_REASONS } from '../../../../../api/_utils/leanRevalidation.js';
+// Mastery P3 (level-derived cap displays, §9): the cap shown/gated here
+// mirrors the SERVER's effective cap — leanCapForLevel(profile level) only
+// while enforcement is live, baseline otherwise. The profile hook is dark
+// (null, zero reads) while MASTERY_SURFACE_ENABLED is false.
+import { MASTERY_ENFORCEMENT_ENABLED } from '../../../../../api/_utils/masteryConfig.js';
+import { archetypeLevelFromProfile, leanCapForLevel } from '../../../../data/masteryProgression.js';
+import useMasteryProfile from '../../../../hooks/useMasteryProfile';
 import { STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED } from '../../../../config/featureFlags.js';
 import { equipLean, unequipLean, setTempoDial } from '../../../../services/agentService.js';
 import { TRAIT_BY_ID } from '../../../../data/traitLibrary.js';
@@ -115,7 +122,11 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
   // kernel), so client and server reach the same full/not-full decision.
   // Each raw pin still renders in a slot with a Clear action, so a stranded
   // pin can always be freed.
-  const slotsFull = cs.leans.valid.length >= STANDING_LEANS_CAP;
+  const masteryProfile = useMasteryProfile(agent?.ownerId || null);
+  const effectiveLeanCap = MASTERY_ENFORCEMENT_ENABLED && masteryProfile
+    ? leanCapForLevel(archetypeLevelFromProfile(masteryProfile, archId))
+    : STANDING_LEANS_CAP;
+  const slotsFull = cs.leans.valid.length >= effectiveLeanCap;
   const slotPins = standingLeans.map((raw) => {
     const v = validById.get(raw.adjustmentId);
     if (v) return { ...v, slotState: 'valid' };
@@ -145,8 +156,15 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
     else if (err?.code === 'battle_active') toast('Locked while a battle is live.');
     else if (err?.code === 'conflicting_lean') toast('That lean conflicts with one you already have.');
     // §9: the copy never bakes a slot number — the cap is level-derived
-    // server-side under mastery enforcement.
-    else if (err?.code === 'lean_limit') toast('Lean slots are full — clear one first.');
+    // server-side under mastery enforcement. The stale-re-confirm shape
+    // (P3 copy obligation) explains that the REVISED lean needs a free
+    // slot: clearing the outdated pin itself frees nothing (it was never
+    // counted), so the honest direction is clearing an equipped lean.
+    else if (err?.code === 'lean_limit') {
+      toast(err?.payload?.reconfirmOfStale
+        ? 'Re-confirming this revised lean takes a slot — clear one of your equipped leans first.'
+        : 'Lean slots are full — clear one first.');
+    }
     else if (err?.code === 'deprecated_version') toast('That lean was revised — re-confirm the current wording.');
     else toast(err?.message || 'Could not update the loadout.');
   };
@@ -211,7 +229,7 @@ function YourCharacter({ agent, agentName, ownArch, traits, compact, showToast }
     <>
       {locked && <div style={{ marginBottom: 18 }}><BattleSnapshot leans={cs.leans.valid} tempo={cs.tempo.effective} compact={compact} /></div>}
       <div ref={menuRef}>
-        <LoadoutSubHead icon="sliders" title="Standing leans" meta={`${standingLeans.length} / ${STANDING_LEANS_CAP} slots`} compact={compact} />
+        <LoadoutSubHead icon="sliders" title="Standing leans" meta={`${cs.leans.valid.length} / ${effectiveLeanCap} slots`} compact={compact} />
         <LeanSlots pins={slotPins} archName={ownArch.name} locked={locked} onRemove={remove} onFocusMenu={focusMenu} compact={compact} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, margin: '18px 0 12px' }}>
           <Mono style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: T.ink2, fontWeight: 600 }}>{ownArch.name} menu</Mono>

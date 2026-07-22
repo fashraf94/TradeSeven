@@ -28,7 +28,6 @@
 // Enforcement reads profiles REGARDLESS of the XP flag state (0·1·0 =
 // frozen entitlements): nothing here consults a flag view.
 
-import { levelForXp } from './masteryFormula.js';
 import { MASTERY_PROFILES_COLLECTION } from './masteryConfig.js';
 
 /** masteryProfiles/{userId} ref — the enforcement read surface. */
@@ -36,37 +35,19 @@ export function masteryProfileRef(db, userId) {
   return db.collection(MASTERY_PROFILES_COLLECTION).doc(userId);
 }
 
-/** Per-archetype level from a profile doc (missing anything ⇒ 1). */
-export function archetypeLevelFromProfile(profileData, archetype) {
-  const xp = profileData?.archetypes?.[archetype]?.xp;
-  return levelForXp(Number.isFinite(xp) ? xp : 0);
-}
+// P3 §9 one-source collapse: the profile accessors moved to
+// src/data/masteryProgression.js beside the curve — the client cap/level
+// displays read the SAME functions the gates run (re-export identity).
+export { archetypeLevelFromProfile, highestLevelFromProfile } from '../../src/data/masteryProgression.js';
+import { highestLevelFromProfile } from '../../src/data/masteryProgression.js';
 
-/** Highest archetype level on the account (§6.1 Forge keying; missing ⇒ 1). */
-export function highestLevelFromProfile(profileData) {
-  const archetypes = profileData?.archetypes;
-  let highest = 1;
-  if (archetypes && typeof archetypes === 'object') {
-    for (const stream of Object.values(archetypes)) {
-      const lvl = levelForXp(Number.isFinite(stream?.xp) ? stream.xp : 0);
-      if (lvl > highest) highest = lvl;
-    }
-  }
-  return highest;
-}
-
-/** Lean-slot capacity by per-archetype level (§6: L1 2 · L3 +1 · L6 +1). */
-export function leanCapForLevel(level) {
-  if (!Number.isInteger(level) || level < 1) return 2; // fail toward baseline
-  if (level >= 6) return 4;
-  if (level >= 3) return 3;
-  return 2;
-}
-
-/** Dial-position gate (§6 L2): 'aggressive' requires per-archetype level ≥ 2. */
-export function dialAggressiveAllowed(level) {
-  return Number.isInteger(level) && level >= 2;
-}
+// P3 §9 one-source collapse: the entitlement table (lean caps, dial gate,
+// Forge bands) LIVES in src/data/masteryProgression.js — the same module
+// the client cap/teaser displays read — re-exported here so enforcement
+// call sites keep their import path and display can never disagree with
+// the gate (the masteryFormula re-export note applies).
+export { leanCapForLevel, dialAggressiveAllowed, forgeRuleBandForLevel } from '../../src/data/masteryProgression.js';
+import { dialAggressiveAllowed, forgeRuleBandForLevel } from '../../src/data/masteryProgression.js';
 
 /**
  * THE dial re-validation rule (end-of-branch ruling Q7) — one source for
@@ -91,14 +72,6 @@ export function revalidateTempoDial({ tempo, level }) {
     return { tempo: 'standard', invalidated: true };
   }
   return { tempo: tempo ?? null, invalidated: false };
-}
-
-/** Forge rule band by HIGHEST archetype level (§6.1: 10 · L4 15 · L7 20). */
-export function forgeRuleBandForLevel(highestLevel) {
-  if (!Number.isInteger(highestLevel) || highestLevel < 1) return 10; // fail toward band 1
-  if (highestLevel >= 7) return 20;
-  if (highestLevel >= 4) return 15;
-  return 10;
 }
 
 /**

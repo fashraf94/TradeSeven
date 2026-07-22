@@ -19,6 +19,9 @@ import React, { useState } from 'react';
 import { Trophy, Activity, Award } from 'lucide-react';
 import { CMD, Eyebrow, Mono, SectionLabel } from './commandUI';
 import useAgent from '../../hooks/useAgent';
+// Mastery P3: the owner profile behind the RecordSheet's mastery cards —
+// zero reads and null while MASTERY_SURFACE_ENABLED is false (dark).
+import useMasteryProfile from '../../hooks/useMasteryProfile';
 import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentBattles';
 import { deployAgent } from '../../services/agentDeploy';
 import ManageStation from './ManageStation';
@@ -69,6 +72,7 @@ export default function CommandDashboardDesktop({
   // Resolve the agent by ownerId === odUserId — the same key the mobile
   // CommandDashboard uses.
   const { agent, loading: agentLoading, record, winRate, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
+  const masteryProfile = useMasteryProfile(agent?.ownerId || null);
 
   // The user-picked primaryColor supersedes the Haiku avatarColors.
   const accent = agent?.primaryColor || agent?.avatarColors?.[0] || CMD.teal;
@@ -241,6 +245,7 @@ export default function CommandDashboardDesktop({
         accent={accent}
         levelConfig={levelConfig}
         nextLevelInfo={nextLevelInfo}
+        masteryProfile={masteryProfile}
         dock="center"
       />
 

@@ -197,7 +197,11 @@ export default async function handler(req, res) {
       const existingAccepted = acceptedPins.some((l) => l.adjustmentId === adjustmentId);
       if (!existingAccepted && acceptedPins.length >= leanCap) {
         const err = new Error(SENTINEL_PREFIX + 'lean_limit');
-        err.details = { leanCap, equippedCount: acceptedPins.length };
+        // reconfirmOfStale (P3 copy obligation): this rejection is a
+        // RE-CONFIRM of an at-rest stale pin, not a fresh equip — the
+        // client renders copy that explains the revision needs a free slot
+        // (clearing the stale pin itself frees nothing; it isn't counted).
+        err.details = { leanCap, equippedCount: acceptedPins.length, ...(existing ? { reconfirmOfStale: true } : {}) };
         throw err;
       }
 

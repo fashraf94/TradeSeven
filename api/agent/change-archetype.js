@@ -210,6 +210,7 @@ export default async function handler(req, res) {
         equippedTraits: (seeded && seeded.equippedTraits) || agent.equippedTraits || [],
         standingLeans: Array.isArray(agent.standingLeans) ? agent.standingLeans : [],
         seeded: seeded ? { traitCount: seeded.equippedTraits.length, rulesAdded: seeded.rulesAdded } : null,
+        dialInvalidated,
       };
     });
   } catch (txErr) {
@@ -374,5 +375,11 @@ export default async function handler(req, res) {
     // Additive, mode-gated field — absent while RULE_COMPAT_MODE='off' so the
     // off response stays byte-identical.
     ...(compatActive ? { rescanLogged } : {}),
+    // P3 notice rider (ratified, V2.2 §3.2; extended to cutover-window
+    // resets): present ONLY when the dial invalidation actually fired —
+    // which requires enforcement or the ceremony marker, so the ordinary
+    // dark response stays byte-identical. The client surfaces this as the
+    // user notice (never a silent reset).
+    ...(txResult.dialInvalidated ? { dialInvalidated: true } : {}),
   });
 }
