@@ -73,10 +73,12 @@ export default function IdentityPanel({ agent, accent, live, record, winRate, le
             score transients are wired; score reactions would be dead code). Mood baseline
             + idle micro-behaviour only. Independent of the Forge Character hero (MechSVG). */}
         {isAgentPresenceOn() ? (
-          // 104px box so the head is a footprint-exact drop-in for the orb (the EnvStage
-          // root is width/height:100% — bound it to the same box the AgentOrb occupied).
-          <div style={{ width: 104, height: 104 }}>
-            <AgentPresenceMount surface="command" agent={agent} size={104} enableEnvironment={false} />
+          // 140px (up from the orb's 104) — a prominent portrait in the 300px identity
+          // column that still clears the name below (the face ends ~12px above the SVG
+          // bottom; marginTop:18 on the name). Boxed to the head's own footprint so the
+          // width:100% EnvStage root is bounded, not the full card width.
+          <div style={{ width: 140, height: 140 }}>
+            <AgentPresenceMount surface="command" agent={agent} size={140} enableEnvironment={false} />
           </div>
         ) : (
           <AgentOrb state={live ? 'live' : 'ready'} size={104} color={accent} />
