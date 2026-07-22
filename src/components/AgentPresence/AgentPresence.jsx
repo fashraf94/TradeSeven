@@ -43,12 +43,12 @@ export default function AgentPresence({
     if (!stage) return;
     const list = Array.isArray(events) ? events : [];
     if (seenRef.current === null) {
-      // Seed the backlog the FIRST time we actually have events — the existing beats
-      // are history (a mid-battle mount), not fresh reactions. Staying unseeded until
-      // then means an empty-first-render (mount-before-data) can't later fire the whole
-      // backlog as a reaction storm. Cost: if the presence mounts before ANY event, the
-      // first batch is treated as backlog (at most one missed reaction — a safe under-react).
-      if (list.length === 0) return;
+      // First effect run: seed WHATEVER is already present as backlog (no reactions).
+      // A mid-battle mount thus starts with its history seeded (the beats/statusFeed the
+      // surface already holds — mounts are gated on that data), while a fresh mount starts
+      // with an empty seed and fires each event as it genuinely first appears. `events` is
+      // always an array (beatsToEvents/statusFeedToEvents never return null), and these
+      // streams accumulate incrementally, so there is no empty→large-backlog step to storm.
       seenRef.current = new Set(list.map((e) => e && e.id).filter((id) => id != null));
       return;
     }

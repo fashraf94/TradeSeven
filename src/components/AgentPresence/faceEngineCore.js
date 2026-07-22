@@ -48,6 +48,7 @@ export const TIER = {
 export const FACE_REG = new Set();
 let RAF = 0;
 function faceLoop(now) {
+  if (FACE_REG.size === 0) { RAF = 0; return; } // stop when idle — ensureLoop() restarts on the next mount
   if (typeof document === 'undefined' || !document.hidden) {
     FACE_REG.forEach((c) => { try { c.tick(now); } catch { /* keep the loop alive */ } });
   }
@@ -67,19 +68,25 @@ export class FaceCtl {
     this.refs = null; this.idleAt = 0; this.standing = 0; this.curK = 1;
     this.shakeUntil = 0; this.shakeAmp = 0; this.shakeDur = 1;
     this.onEvent = null; this.onImpact = null;
+    this.timers = new Set();   // pending react()-latency timeouts, cleared on dispose()
   }
 
   setReduced(v) { this.reduced = !!v; }
 
   // ── transient offset tween. Energy moves scale by amp·tier(k); lit moves stay literal
-  //    (blink must fully close regardless of disposition or stakes).
+  //    (blink must fully close regardless of disposition or stakes). Under reduced-motion
+  //    the tween SNAPS (dur → instant, mirroring pMood): the reaction pose still shows and
+  //    holds, but the animated sweep — the vestibular trigger — is gone. (The old
+  //    `Math.max(reduced?1:34, …)` floor never bound: every move dur exceeds 34, so it
+  //    neither shortened nor suppressed transients — the reduced-motion gap the port fixes.)
   pOff(key, delta, dur, ease = 'out', delay = 0, lit = false) {
     const m = this.disp;
-    const scale = lit ? 1 : m.amp * this.curK * (key === 'glow' || key === 'shutter' ? Math.min(1.2, 1) : 1);
-    this.offTw.push({ key, from: null, to: delta * scale, start: performance.now() + delay * (lit ? 1 : m.dur), dur: Math.max(this.reduced ? 1 : 34, dur * (lit ? 1 : m.dur)), ease });
+    const scale = lit ? 1 : m.amp * this.curK;
+    const d = this.reduced ? 1 : Math.max(34, dur * (lit ? 1 : m.dur));
+    this.offTw.push({ key, from: null, to: delta * scale, start: performance.now() + delay * (lit ? 1 : m.dur), dur: d, ease });
   }
-  // return one offset to 0 after `hold` ms, at recovery speed
-  pRelax(key, hold, dur = 520) { this.offTw.push({ key, from: null, to: 0, start: performance.now() + hold * this.disp.dur, dur: Math.max(this.reduced ? 1 : 34, dur * this.disp.recover), ease: 'io' }); }
+  // return one offset to 0 after `hold` ms, at recovery speed (instant under reduced)
+  pRelax(key, hold, dur = 520) { this.offTw.push({ key, from: null, to: 0, start: performance.now() + hold * this.disp.dur, dur: this.reduced ? 1 : Math.max(34, dur * this.disp.recover), ease: 'io' }); }
   // slow MOOD tween on the baseline (absolute target, not amp-scaled — mood has its own swing)
   pMood(key, target, dur, ease = 'io') { this.baseTw.push({ key, from: null, to: target, start: performance.now(), dur: this.reduced ? 1 : dur, ease }); }
 
@@ -119,13 +126,25 @@ export class FaceCtl {
       this.curK = 1;
       if (tier >= 3 && this.onImpact && !opt.noEnv) this.onImpact(tier, ev, opt.tone);
     };
-    if (this.disp.lat && !this.reduced && !opt.now) setTimeout(go, this.disp.lat); else go();
+    if (this.disp.lat && !this.reduced && !opt.now) {
+      const id = setTimeout(() => { this.timers.delete(id); go(); }, this.disp.lat);
+      this.timers.add(id);
+    } else go();
   }
 
   // sustained low-amplitude vibration for held tension (decays over dur)
   shake(amp = 1.4, dur = 900) { if (this.reduced) return; this.shakeAmp = amp * this.disp.amp; this.shakeDur = dur; this.shakeUntil = performance.now() + dur; }
-  rest() { Object.keys(this.off).forEach((k) => this.pRelax(k, 0, 560)); }              // clear transients, keep mood
+  // clear transients, keep mood. Also DROPS not-yet-started (delayed) tweens so a reset
+  // actually quiets the transient layer — else queued move keyframes resume after relax.
+  rest() {
+    const now = performance.now();
+    this.offTw = this.offTw.filter((t) => t.start <= now);
+    Object.keys(this.off).forEach((k) => this.pRelax(k, 0, 560));
+  }
   neutralize() { this.rest(); this.shakeUntil = 0; this.setStanding(0, { instant: true }); }
+  // Cancel pending latency timeouts so a queued reaction can't fire on a detached ctl
+  // after unmount. Called from ReactiveFace's cleanup.
+  dispose() { this.timers.forEach((id) => clearTimeout(id)); this.timers.clear(); }
   attach(refs) { this.refs = refs; }
 
   tick(now) {

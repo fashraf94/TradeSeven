@@ -50,7 +50,7 @@ export const ReactiveFace = React.forwardRef(function ReactiveFace({ disposition
   React.useEffect(() => {
     ctl.attach(refs.current); ctl.tick(performance.now());   // paint the initial pose once, synchronously
     FACE_REG.add(ctl); ensureLoop();
-    return () => { FACE_REG.delete(ctl); };
+    return () => { FACE_REG.delete(ctl); ctl.dispose(); };
   }, [ctl]);
   React.useImperativeHandle(ref, () => ({
     play: (m, o) => ctl.play(m, o), react: (e, o) => ctl.react(e, o), rest: () => ctl.rest(),

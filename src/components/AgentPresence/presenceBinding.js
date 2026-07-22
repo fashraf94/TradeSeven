@@ -95,8 +95,12 @@ export function standingFromDuel(playerScore, opponentScore) {
 }
 
 // ── events: map real client-derived signals → presence reactions ─────────────
-// Only signals with a REAL source (Phase 0) are mapped. Agent-speaking, structured
-// "reading", and structured win/loss are intentionally absent (dropped, not faked).
+// Only signals with a REAL source (Phase 0) are mapped. DROPPED (no real source, never
+// faked): agent-speaking; a structured *server-side* "agent is reading the desk" state;
+// and structured win/loss (battle status is only active/completed). NOTE the command
+// surface's one-shot 'reading' reaction is NOT this dropped signal — it fires off the
+// client's own brief-fetch loading flag (useDailyRegimeBrief().loading), the SAME signal
+// that already drives the orb's 'reading' state, so it is honest, not invented.
 
 const TONE = { good: 'good', bad: 'bad', neutral: 'neu' };
 const toneOf = (t) => TONE[t] || 'neu';
@@ -114,7 +118,13 @@ const BEAT_EVENT = {
   lead: 'standingflip',    // leader change on the climb
 };
 
-/** Stable content-key for a beat (beats carry no id/timestamp once returned). */
+// Stable content-key for a beat. Beats carry no id/timestamp once returned (leagueBeats
+// strips _ts), so identity is content — which means two genuinely distinct beats with an
+// identical (kind, star, pts, text) collapse to one key and the second does not fire a
+// second reaction. This is a deliberate SAFE UNDER-REACT (it also makes the re-derived
+// lead/swap beats de-dup so they never re-fire): it can only ever miss a reaction, never
+// invent one, and the collision is rare (e.g. the same symbol swapped twice for the exact
+// same locked points). We do NOT modify the shared leagueBeats to add an id (out of scope).
 export function beatKey(beat) {
   if (!beat) return null;
   return `${beat.kind}|${beat.star ?? ''}|${beat.pts ?? ''}|${beat.text ?? ''}`;

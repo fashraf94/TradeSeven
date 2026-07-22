@@ -61,11 +61,18 @@ export const EnvStage = React.forwardRef(function EnvStage({ disposition = 'neut
   const wrapRef = React.useRef(), glowRef = React.useRef(), floodRef = React.useRef();
   const last = React.useRef(0), enRef = React.useRef(enabled);
   const redRef = React.useRef(reduced != null ? reduced : REDUCED_MOTION);
+  const timers = React.useRef(new Set());   // pending impact timeouts, cleared on unmount
   React.useEffect(() => { enRef.current = enabled; }, [enabled]);
   React.useEffect(() => { redRef.current = reduced != null ? reduced : REDUCED_MOTION; }, [reduced]);
   React.useEffect(() => { injectEnvCSS(); }, []);
+  // Clear any in-flight impact timeouts on unmount so a class-removal / onDim(false) can't
+  // fire after the stage is gone (short-lived <0.6s callbacks; harmless but hygienic).
+  React.useEffect(() => () => { timers.current.forEach((id) => clearTimeout(id)); timers.current.clear(); }, []);
 
-  const run = (node, cls, ms) => { if (!node) return; node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls); setTimeout(() => node.classList.remove(cls), ms); };
+  // Stable (they only touch the `timers` ref) so `impact` — and thus the onImpact wiring
+  // effect keyed on it — doesn't churn every render.
+  const defer = React.useCallback((fn, ms) => { const id = setTimeout(() => { timers.current.delete(id); fn(); }, ms); timers.current.add(id); return id; }, []);
+  const run = React.useCallback((node, cls, ms) => { if (!node) return; node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls); defer(() => node.classList.remove(cls), ms); }, [defer]);
 
   const impact = React.useCallback((tier, ev, tone) => {
     if (tier < 3) return;
@@ -75,18 +82,18 @@ export const EnvStage = React.forwardRef(function EnvStage({ disposition = 'neut
     const col = ENV_TONE[tone] || accent;
     const g = glowRef.current;
     if (g) g.style.boxShadow = `0 0 60px 12px ${col}, inset 0 0 40px ${col}`;
-    if (redRef.current) { if (g) { g.style.transition = 'opacity .16s'; g.style.opacity = '0.5'; setTimeout(() => { g.style.opacity = '0'; }, 170); } return; }
+    if (redRef.current) { if (g) { g.style.transition = 'opacity .16s'; g.style.opacity = '0.5'; defer(() => { g.style.opacity = '0'; }, 170); } return; }
     if (floodRef.current) floodRef.current.style.background = `radial-gradient(circle at 50% 52%, ${col}, transparent 68%)`;
     if (tier >= 4) {
       run(glowRef.current, 'env-play-glow-big', 560);
       run(wrapRef.current, 'env-play-quake', 460);
       run(floodRef.current, 'env-play-flood', 500);
-      if (onDim) { onDim(true); setTimeout(() => onDim(false), 470); }
+      if (onDim) { onDim(true); defer(() => onDim(false), 470); }
     } else {
       run(glowRef.current, 'env-play-glow', 500);
       run(wrapRef.current, 'env-play-nudge', 300);
     }
-  }, [accent, onDim]);
+  }, [accent, onDim, run, defer]);
 
   React.useEffect(() => {
     const id = setInterval(() => {
