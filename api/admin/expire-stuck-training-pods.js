@@ -27,7 +27,12 @@ export default async function handler(req, res) {
   }
   if (!requireAdminSecret(req, res)) return;
 
-  const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+  let body;
+  try {
+    body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+  } catch {
+    return res.status(400).json({ error: 'invalid_json', message: 'Request body is not valid JSON.' });
+  }
   const { apply = false, cutoffIso = null, thresholdHours = null, includeDev = false } = body;
 
   // The apply gate is an EXPLICIT true — anything else (including a bare call) is
@@ -40,6 +45,12 @@ export default async function handler(req, res) {
   if (thresholdHours != null && (!Number.isFinite(thresholdHours) || thresholdHours <= 0)) {
     return res.status(400).json({ error: 'invalid_threshold', message: 'thresholdHours must be a positive number of hours.' });
   }
+  // Canonicalize the cutoff to UTC-Z so the core's `createdAt < cutoffIso` string
+  // compare is a valid CHRONOLOGICAL (not merely lexical) test — pod createdAt is
+  // always canonical Z, but the input may carry an offset / date-only form that
+  // would sort wrong lexically and over-expire (F1). new Date() already validated
+  // above.
+  const cutoffCanonical = cutoffIso != null ? new Date(cutoffIso).toISOString() : null;
   const thresholdMs = thresholdHours != null
     ? thresholdHours * 60 * 60 * 1000
     : TRAINING_TUNING.POD_EXPIRY_STALE_MS;
@@ -50,14 +61,14 @@ export default async function handler(req, res) {
       now: new Date(),
       includeDev: includeDev === true,
       thresholdMs,
-      cutoffIso,
+      cutoffIso: cutoffCanonical,
       dryRun,
       by: 'one_time_cleanup',
     });
     return res.status(200).json({
       ok: true,
       apply: !dryRun,
-      cutoffIso: cutoffIso ?? null,
+      cutoffIso: cutoffCanonical,
       thresholdHours: thresholdMs / (60 * 60 * 1000),
       ...summary,
     });

@@ -534,13 +534,25 @@ describe('expireStaleTrainingPods — R3 stale-pod backstop', () => {
 
   it('AWAITING_OPEN with an ARRIVED anchor past the threshold (the flip failed) IS expired', async () => {
     const { db, store } = makeDb({
-      // anchor 06-15 (2 days ago, arrived); updatedAt 3 days old → the flip has failed.
-      'tournamentGroups/flipfail': awaitingPod('2026-06-15', { updatedAt: OLD, createdAt: OLD }),
+      // anchor 06-14 (open ~71h before NOW, arrived); the flip has failed for > 48h.
+      'tournamentGroups/flipfail': awaitingPod('2026-06-14', { updatedAt: OLD, createdAt: OLD }),
     });
     const r = await expireStaleTrainingPods(db, { now: NOW });
     expect(r).toMatchObject({ matched: 1, expired: 1, byStatus: { awaiting_open: 1 } });
     expect(store.get('tournamentGroups/flipfail').status).toBe('expired');
     expect(store.get('tournamentGroups/flipfail').expiredReason).toBe('awaiting_open_flip_failed');
+  });
+
+  it('AWAITING_OPEN grace runs from ANCHOR ARRIVAL, not entry: a weekend-spanning pod whose anchor arrives today is NOT expired (F2)', async () => {
+    const { db, store } = makeDb({
+      // Entry 3 days ago; anchor arrives TODAY (its open instant is ~30m after NOW),
+      // so the flip fires this morning — the pod must not be expired for having
+      // waited out the weekend. Baseline = max(entry, anchor-open) = anchor-open.
+      'tournamentGroups/weekend': awaitingPod('2026-06-17', { updatedAt: '2026-06-14T00:00:00.000Z', createdAt: '2026-06-14T00:00:00.000Z' }),
+    });
+    const r = await expireStaleTrainingPods(db, { now: NOW });
+    expect(r).toMatchObject({ matched: 0, expired: 0 });
+    expect(store.get('tournamentGroups/weekend').status).toBe(GROUP_STATUS.AWAITING_OPEN);
   });
 
   it('TRAINING-ONLY: never touches a ranked pod (no isTraining) or a competitive slot pod (isLiveDraft)', async () => {

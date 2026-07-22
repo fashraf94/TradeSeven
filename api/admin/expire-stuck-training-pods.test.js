@@ -87,4 +87,21 @@ describe('POST /api/admin/expire-stuck-training-pods — the cleanup safety cont
       cutoffIso: '2026-07-22T00:00:00.000Z', thresholdMs: 24 * 60 * 60 * 1000,
     }));
   });
+
+  it('canonicalizes an offset-bearing cutoffIso to UTC-Z before the chronological compare (F1)', async () => {
+    const res = mockRes();
+    await handler({ method: 'POST', body: { cutoffIso: '2026-07-21T00:00:00+05:00' } }, res);
+    expect(res.statusCode).toBe(200);
+    expect(expireSpy).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      cutoffIso: '2026-07-20T19:00:00.000Z', // +05:00 folded into UTC-Z
+    }));
+    expect(res.body.cutoffIso).toBe('2026-07-20T19:00:00.000Z');
+  });
+
+  it('a malformed JSON string body → 400 (never a 500) and never runs (F4)', async () => {
+    const res = mockRes();
+    await handler({ method: 'POST', body: '{ not json' }, res);
+    expect(res.statusCode).toBe(400);
+    expect(expireSpy).not.toHaveBeenCalled();
+  });
 });

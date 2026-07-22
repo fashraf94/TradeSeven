@@ -707,9 +707,20 @@ async function evaluatePodStaleness(db, pod, { nowMs, nowEtDate, thresholdMs, cu
     if (!anchorDateReached(pod.startAnchor, nowEtDate)) return { stale: false, reason: 'pending_future_anchor' };
     // Anchor already arrived but the pod never flipped: the morning flip has been
     // failing past the threshold. Expire (a days-late flip would capture a corrupt
-    // baseline — D1: a stuck pod beats a garbage one).
-    const lastMs = Date.parse(pod.updatedAt || pod.createdAt || '');
-    if (Number.isFinite(lastMs) && (nowMs - lastMs) >= thresholdMs) return { stale: true, reason: 'awaiting_open_flip_failed' };
+    // baseline — D1: a stuck pod beats a garbage one). Measure the grace from when
+    // the pod SHOULD have flipped — the LATER of its AWAITING_OPEN entry and the
+    // anchor's own open instant — NOT merely from entry. So a weekend/holiday-
+    // spanning pod (drafted Fri, anchor Mon) gets its full threshold of flip
+    // chances AFTER the anchor arrives, and is never expired on the first flip
+    // failure just because it waited the weekend out (the founder's "a legitimately
+    // slow multi-day pod must never qualify" invariant).
+    const entryMs = Date.parse(pod.updatedAt || pod.createdAt || '');
+    const anchorOpenMs = Date.parse(pod.startAnchor?.anchorIso || '');
+    const baselineMs = Math.max(
+      Number.isFinite(entryMs) ? entryMs : -Infinity,
+      Number.isFinite(anchorOpenMs) ? anchorOpenMs : -Infinity,
+    );
+    if (Number.isFinite(baselineMs) && (nowMs - baselineMs) >= thresholdMs) return { stale: true, reason: 'awaiting_open_flip_failed' };
     return { stale: false, reason: 'within_threshold' };
   }
   if (pod.status === GROUP_STATUS.DRAFTING) {
