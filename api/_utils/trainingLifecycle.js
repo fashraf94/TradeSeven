@@ -65,6 +65,7 @@ import {
   fetchEligibleGroupsByStatus,
   getGroup,
   assertTransition,
+  expireGroup,
 } from './tournamentGroupService.js';
 import { computeArchetypeRankings } from './archetypeScoring.js';
 import { getEtParts, toIso } from './tournamentTime.js';
@@ -680,6 +681,118 @@ export async function completeBankedTrainingPods(db, { now = new Date() } = {}) 
       } else {
         summary.errors++;
         console.error(`${LOG_PREFIX} completion failed for ${pod.id}: ${err.message}`);
+      }
+    }
+  }
+  return summary;
+}
+
+// ==================== (g) STALE-POD EXPIRY (Training-Pod P0 R3) ====================
+
+/**
+ * Per-state staleness ruling for a pre-BATTLE training pod. Returns
+ * `{ stale, reason }`. The AWAITING_OPEN branch is the delicate one: a pod whose
+ * anchor DATE has NOT arrived is legitimately pending (a Friday draft waiting for
+ * Monday's open) and is NEVER stale, regardless of age — the anchor-arrived guard,
+ * not the age threshold, is what protects a legitimately slow multi-day pod.
+ */
+async function evaluatePodStaleness(db, pod, { nowMs, nowEtDate, thresholdMs, cutoffIso }) {
+  // One-time-cleanup cutoff: only touch pods created strictly before the cutoff
+  // (ISO strings sort chronologically). Omitted → no cutoff (the rolling sweep).
+  if (cutoffIso && !(typeof pod.createdAt === 'string' && pod.createdAt < cutoffIso)) {
+    return { stale: false, reason: 'after_cutoff' };
+  }
+  if (pod.status === GROUP_STATUS.AWAITING_OPEN) {
+    // Future anchor → legitimately waiting for its open. Never expire.
+    if (!anchorDateReached(pod.startAnchor, nowEtDate)) return { stale: false, reason: 'pending_future_anchor' };
+    // Anchor already arrived but the pod never flipped: the morning flip has been
+    // failing past the threshold. Expire (a days-late flip would capture a corrupt
+    // baseline — D1: a stuck pod beats a garbage one).
+    const lastMs = Date.parse(pod.updatedAt || pod.createdAt || '');
+    if (Number.isFinite(lastMs) && (nowMs - lastMs) >= thresholdMs) return { stale: true, reason: 'awaiting_open_flip_failed' };
+    return { stale: false, reason: 'within_threshold' };
+  }
+  if (pod.status === GROUP_STATUS.DRAFTING) {
+    // The finer progress signal is the live draft's own activity; a pod the idle
+    // sweep keeps failing to complete (wedged / pool-exhausted) strands here.
+    const state = await readDraftState(db, pod.id);
+    if (state && state.status !== 'drafting') return { stale: false, reason: 'draft_not_active' };
+    const lastMs = Date.parse((state && (state.lastActivityAt || state.startedAt)) || pod.updatedAt || pod.createdAt || '');
+    if (Number.isFinite(lastMs) && (nowMs - lastMs) >= thresholdMs) return { stale: true, reason: 'drafting_wedged' };
+    return { stale: false, reason: 'active_draft' };
+  }
+  // FORMING — the one strandable state with no other driver (form tx interrupted,
+  // or the user abandoned at the lobby before opening the draft).
+  const lastMs = Date.parse(pod.updatedAt || pod.createdAt || '');
+  if (Number.isFinite(lastMs) && (nowMs - lastMs) >= thresholdMs) return { stale: true, reason: 'forming_orphan' };
+  return { stale: false, reason: 'within_threshold' };
+}
+
+/**
+ * Expire training pods stranded pre-BATTLE past the staleness threshold — the
+ * unified core BOTH R3 callers use (the rolling orchestrator backstop and the
+ * founder-gated one-time cleanup), so their training-only predicate + staleness
+ * rules can never drift. TRAINING-ONLY BY CONSTRUCTION: `isTraining === true`
+ * AND `isLiveDraft !== true`, so it can never touch a ranked group (no isTraining)
+ * or a competitive slot pod (isLiveDraft). Retires via expireGroup (transactional,
+ * state+version precondition), NEVER retro-advances (D1 ruling) and NEVER hard-
+ * deletes. `dryRun` returns the would-expire census without any write (the
+ * mandatory cleanup pre-count). `cutoffIso` bounds the cleanup to pods created
+ * before a founder-chosen instant. Idempotent: an already-EXPIRED pod is out of
+ * the pre-BATTLE queries entirely, and a pod that advanced since the read is held
+ * by expireGroup's precondition (counted as a skip, never an error). Returns
+ * `{ dryRun, scanned, matched, expired, skipped, errors, byStatus }`.
+ */
+export async function expireStaleTrainingPods(db, {
+  now = new Date(), includeDev = false,
+  thresholdMs = TRAINING_TUNING.POD_EXPIRY_STALE_MS,
+  cutoffIso = null, dryRun = false, by = 'rolling_sweep',
+} = {}) {
+  const nowMs = now.getTime();
+  const nowIso = toIso(now);
+  const nowEtDate = getEtParts(now).date;
+  const summary = {
+    dryRun, scanned: 0, matched: 0, expired: 0, skipped: 0, errors: 0,
+    byStatus: { forming: 0, drafting: 0, awaiting_open: 0 },
+  };
+  const PRE_BATTLE = [GROUP_STATUS.FORMING, GROUP_STATUS.DRAFTING, GROUP_STATUS.AWAITING_OPEN];
+  for (const status of PRE_BATTLE) {
+    const pods = await fetchEligibleGroupsByStatus(db, status, { includeDev });
+    for (const pod of pods) {
+      // Training-only guard — the D1 predicate. isTraining is necessary AND
+      // sufficient (training and competitive-slot are mutually exclusive), but the
+      // explicit isLiveDraft exclusion is defense-in-depth against a future doc
+      // that violates the invariant.
+      if (pod.isTraining !== true || pod.isLiveDraft === true) continue;
+      summary.scanned++;
+      let ruling;
+      try {
+        ruling = await evaluatePodStaleness(db, pod, { nowMs, nowEtDate, thresholdMs, cutoffIso });
+      } catch (err) {
+        summary.errors++;
+        console.error(`${LOG_PREFIX} staleness eval failed for ${pod.id}: ${err.message}`);
+        continue;
+      }
+      if (!ruling.stale) { summary.skipped++; continue; }
+      summary.matched++;
+      summary.byStatus[status]++;
+      if (dryRun) continue;
+      try {
+        const res = await expireGroup(db, pod.id, {
+          reason: ruling.reason, by, now: nowIso,
+          expectedStatus: pod.status, expectedUpdatedAt: pod.updatedAt ?? null,
+        });
+        if (res.expired) {
+          summary.expired++;
+          console.log(`${LOG_PREFIX} expired stale training pod ${pod.id} (${status} → expired, ${ruling.reason}, by ${by})`);
+        } else {
+          // Raced: the pod advanced or was already expired since the read — the
+          // precondition held the line. A skip, never an error.
+          summary.skipped++;
+        }
+      } catch (err) {
+        summary.errors++;
+        console.error(`${LOG_PREFIX} expire failed for ${pod.id}: ${err.message}`);
       }
     }
   }

@@ -17,6 +17,7 @@ import {
   applyTrainingPick,
   completeTrainingDraft,
   sweepIdleDraftingPods,
+  expireStaleTrainingPods,
 } from './trainingLifecycle.js';
 import { GROUP_STATUS, PICKS_PER_PLAYER } from '../../src/constants/leagueTournament.js';
 import { generateSnakeOrder } from '../../src/services/draftAssets.js';
@@ -474,5 +475,112 @@ describe('sweepIdleDraftingPods — abandonment', () => {
     const r = await sweepIdleDraftingPods(db, { now: BEFORE_OPEN });
     expect(r).toMatchObject({ swept: 0, completed: 0 });
     expect(store.get('tournamentGroups/slot').status).toBe(GROUP_STATUS.DRAFTING);
+  });
+});
+
+describe('expireStaleTrainingPods — R3 stale-pod backstop', () => {
+  const NOW = new Date('2026-06-17T13:00:00.000Z'); // Wed 09:00 ET
+  const OLD = '2026-06-14T00:00:00.000Z';   // > 48h before NOW → stale by age
+  const FRESH = '2026-06-17T12:00:00.000Z'; // ~1h before NOW → within threshold
+
+  const formingPod = (updatedAt, extra = {}) => ({
+    status: GROUP_STATUS.FORMING, isTraining: true, players: FOUR_PLAYERS,
+    createdAt: updatedAt, updatedAt, ...extra,
+  });
+  const draftingPod = (extra = {}) => ({
+    status: GROUP_STATUS.DRAFTING, isTraining: true, players: FOUR_PLAYERS,
+    createdAt: OLD, updatedAt: OLD, ...extra,
+  });
+  const draftStateDoc = (lastActivityAt) => ({ status: 'drafting', startedAt: OLD, lastActivityAt });
+
+  it('expires a FORMING orphan past the threshold; a fresh FORMING pod is left alone', async () => {
+    const { db, store } = makeDb({
+      'tournamentGroups/stale': formingPod(OLD),
+      'tournamentGroups/fresh': formingPod(FRESH),
+    });
+    const r = await expireStaleTrainingPods(db, { now: NOW });
+    expect(r).toMatchObject({ scanned: 2, matched: 1, expired: 1, errors: 0, byStatus: { forming: 1 } });
+    const done = store.get('tournamentGroups/stale');
+    expect(done.status).toBe('expired');
+    expect(done.expiredReason).toBe('forming_orphan');
+    expect(done.expiredBy).toBe('rolling_sweep');
+    expect(typeof done.expiredAt).toBe('string');
+    expect(store.get('tournamentGroups/fresh').status).toBe(GROUP_STATUS.FORMING);
+  });
+
+  it('expires a WEDGED DRAFTING pod (old draft activity); an active draft is never interrupted', async () => {
+    const { db, store } = makeDb({
+      'tournamentGroups/wedged': draftingPod(),
+      'tournamentGroups/wedged/draft/state': draftStateDoc(OLD),
+      'tournamentGroups/active': draftingPod(),
+      'tournamentGroups/active/draft/state': draftStateDoc(FRESH),
+    });
+    const r = await expireStaleTrainingPods(db, { now: NOW });
+    expect(r).toMatchObject({ matched: 1, expired: 1, byStatus: { drafting: 1 } });
+    expect(store.get('tournamentGroups/wedged').status).toBe('expired');
+    expect(store.get('tournamentGroups/wedged').expiredReason).toBe('drafting_wedged');
+    expect(store.get('tournamentGroups/active').status).toBe(GROUP_STATUS.DRAFTING);
+  });
+
+  it('AWAITING_OPEN with a FUTURE anchor is NEVER expired (legitimately pending), even when old', async () => {
+    const { db, store } = makeDb({
+      // anchor tomorrow (Thu 06-18); updatedAt 3 days old — still pending, not stale.
+      'tournamentGroups/pending': awaitingPod('2026-06-18', { updatedAt: OLD, createdAt: OLD }),
+    });
+    const r = await expireStaleTrainingPods(db, { now: NOW });
+    expect(r).toMatchObject({ scanned: 1, matched: 0, expired: 0 });
+    expect(store.get('tournamentGroups/pending').status).toBe(GROUP_STATUS.AWAITING_OPEN);
+  });
+
+  it('AWAITING_OPEN with an ARRIVED anchor past the threshold (the flip failed) IS expired', async () => {
+    const { db, store } = makeDb({
+      // anchor 06-15 (2 days ago, arrived); updatedAt 3 days old → the flip has failed.
+      'tournamentGroups/flipfail': awaitingPod('2026-06-15', { updatedAt: OLD, createdAt: OLD }),
+    });
+    const r = await expireStaleTrainingPods(db, { now: NOW });
+    expect(r).toMatchObject({ matched: 1, expired: 1, byStatus: { awaiting_open: 1 } });
+    expect(store.get('tournamentGroups/flipfail').status).toBe('expired');
+    expect(store.get('tournamentGroups/flipfail').expiredReason).toBe('awaiting_open_flip_failed');
+  });
+
+  it('TRAINING-ONLY: never touches a ranked pod (no isTraining) or a competitive slot pod (isLiveDraft)', async () => {
+    const { db, store } = makeDb({
+      'tournamentGroups/ranked': { status: GROUP_STATUS.FORMING, players: FOUR_PLAYERS, createdAt: OLD, updatedAt: OLD }, // no isTraining
+      'tournamentGroups/slot': { status: GROUP_STATUS.AWAITING_OPEN, isTraining: false, isLiveDraft: true, players: FOUR_PLAYERS, startAnchor: { anchorEtDate: '2026-06-15' }, createdAt: OLD, updatedAt: OLD },
+      'tournamentGroups/training': formingPod(OLD),
+    });
+    const r = await expireStaleTrainingPods(db, { now: NOW });
+    expect(r.expired).toBe(1); // only the training pod
+    expect(store.get('tournamentGroups/ranked').status).toBe(GROUP_STATUS.FORMING);
+    expect(store.get('tournamentGroups/slot').status).toBe(GROUP_STATUS.AWAITING_OPEN);
+    expect(store.get('tournamentGroups/training').status).toBe('expired');
+  });
+
+  it('dryRun reports the would-expire census with ZERO writes', async () => {
+    const { db, store, writeLog } = makeDb({ 'tournamentGroups/stale': formingPod(OLD) });
+    const r = await expireStaleTrainingPods(db, { now: NOW, dryRun: true });
+    expect(r).toMatchObject({ dryRun: true, matched: 1, expired: 0, byStatus: { forming: 1 } });
+    expect(store.get('tournamentGroups/stale').status).toBe(GROUP_STATUS.FORMING); // untouched
+    expect(writeLog.some(([op]) => op === 'tx.update' || op === 'update')).toBe(false);
+  });
+
+  it('cutoffIso leaves a stale pod created AFTER the cutoff alone (the one-time-cleanup bound)', async () => {
+    const { db, store } = makeDb({
+      'tournamentGroups/old': formingPod(OLD, { createdAt: '2026-06-10T00:00:00.000Z' }), // before cutoff → eligible
+      'tournamentGroups/new': formingPod(OLD, { createdAt: '2026-06-16T00:00:00.000Z' }), // after cutoff → skipped despite age
+    });
+    const r = await expireStaleTrainingPods(db, { now: NOW, cutoffIso: '2026-06-13T00:00:00.000Z' });
+    expect(r).toMatchObject({ matched: 1, expired: 1 });
+    expect(store.get('tournamentGroups/old').status).toBe('expired');
+    expect(store.get('tournamentGroups/new').status).toBe(GROUP_STATUS.FORMING);
+  });
+
+  it('idempotent: an already-EXPIRED or a BATTLE pod is outside the pre-BATTLE queries — a re-run is a clean no-op', async () => {
+    const { db } = makeDb({
+      'tournamentGroups/done': { status: 'expired', isTraining: true, players: FOUR_PLAYERS, updatedAt: OLD },
+      'tournamentGroups/live': { status: GROUP_STATUS.BATTLE, isTraining: true, players: FOUR_PLAYERS, updatedAt: OLD },
+    });
+    const r = await expireStaleTrainingPods(db, { now: NOW });
+    expect(r).toMatchObject({ scanned: 0, matched: 0, expired: 0, errors: 0 });
   });
 });

@@ -806,6 +806,14 @@ export const RANK_TUNING = Object.freeze({
 export const TRAINING_TUNING = Object.freeze({
   PICK_CLOCK_MS: 20000,
   DRAFT_IDLE_STALE_MS: 3 * 60 * 60 * 1000, // 3h
+  // Training-Pod P0 R3 — the rolling stale-pod backstop threshold: a training pod
+  // stranded pre-BATTLE (FORMING orphan, wedged DRAFTING the idle sweep couldn't
+  // complete, or an AWAITING_OPEN pod whose flip failed past its arrived anchor)
+  // is EXPIRED once it has made no state progress for this long. Deliberately far
+  // above DRAFT_IDLE_STALE_MS (3h) so a legitimately slow multi-day pod never
+  // qualifies — the idle sweep + morning flip get many chances first. Raw-and-
+  // watch; the founder tunes it. Consumed only behind POD_EXPIRY_SWEEP_ENABLED.
+  POD_EXPIRY_STALE_MS: 48 * 60 * 60 * 1000, // 48h
   // Slice 4 (claims): per-CPU, per-cycle probability of contesting the overnight
   // waiver wire (the legacy snake-draft heuristic's 0.40, ported to the flat
   // tournament pool). Raw-and-watch — dial it by feel, never test-locked here.
