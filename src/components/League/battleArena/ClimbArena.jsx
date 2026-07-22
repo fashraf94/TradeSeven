@@ -19,6 +19,16 @@ import { ArenaCount } from './ArenaPrimitives';
 import { ST_GOOD } from './arenaTheme';
 import { frameDayIdx } from './arenaStateMap';
 import { prefersReducedMotion } from './arenaEngineCore';
+import AgentPresence, { archetypeToDisposition, standingFromRank } from '../../AgentPresence';
+import { isAgentPresenceOn } from '../../../config/featureFlags';
+
+// Agent Presence — the head that replaces each competitor orb (flag-gated; flag-off
+// renders the orb byte-identically). The ReactiveFace SVG's face optical centre sits
+// ~10.3% of `size` BELOW its bounding-box centre (viewBox 30 6 140 156: face-body centre
+// y=100 vs box centre y=84 → 16/156). So a head dropped at the orb's translate(-50%,-50%)
+// anchor renders its face that far too low and misreads on the altitude axis — we lift it
+// back up by this fraction of size so the FACE centre inherits the orb's exact centre.
+const HEAD_FACE_LIFT = 16 / 156; // ≈ 0.1026
 
 // the living atmosphere — deep sky, drifting aurora, a deterministic star field.
 function ClimbAtmosphere({ tone }) {
@@ -100,6 +110,11 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
   for (let g = Math.ceil(DOM[0] / gstep) * gstep; g <= DOM[1] - 0.4; g += gstep) gridVals.push(g);
 
   const reduce = prefersReducedMotion();
+  // Agent Presence heads replace the orbs when the flag is on. Player seat (s.id===youId)
+  // = REACTIVE (mood glides with standingFromRank of the SAME rankOf/altitude the orb
+  // shows — §9 by construction). The three rivals = STATIC (paint-once, no rAF/breath;
+  // accent from the seat colour, neutral disposition — rivals carry no archetype).
+  const showHead = isAgentPresenceOn();
 
   return (
     <div style={{ position: 'relative', width: w, height: h, overflow: 'hidden', borderRadius: 18, background: LTOKENS.bg, border: `1px solid ${LTOKENS.hair}` }}>
@@ -177,16 +192,42 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                 -50%,-50% centering — the design prototype's latent shift bug). */}
             <div onClick={onPlayer && !you && !calm ? () => onPlayer(s.id) : undefined}
               style={{ position: 'absolute', left: x, top: y, transform: 'translate(-50%,-50%)', cursor: onPlayer && !you && !calm ? 'pointer' : 'default' }}>
-              <div className={bob} style={{ position: 'relative' }}>
+              {/* A static CPU head drops the bob float too — it must be TRULY still
+                  (finding 13). The player head and the flag-off orb keep the float. */}
+              <div className={showHead && !you ? '' : bob} style={{ position: 'relative' }}>
                 <div className={you && surge && surge.key && !reduce ? 'bv2-surge' : ''} key={you && surge ? surge.key : undefined} style={{ position: 'relative' }}>
                   {!calm && (you || lead) && !reduce && (
                     <div className="bv2-halo" style={{ position: 'absolute', left: '50%', top: '50%', width: sz + 14, height: sz + 14, borderRadius: '50%', border: `1.5px solid ${s.color}`, pointerEvents: 'none' }} />
                   )}
-                  <div style={{ width: sz, height: sz, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: `radial-gradient(circle at 35% 30%, ${alpha(s.color, 0.95)}, ${alpha(s.color, 0.55)})`,
-                    border: `2px solid ${alpha(s.color, you ? 1 : 0.7)}`, boxShadow: `0 0 ${you ? 22 : 14}px ${alpha(s.color, you ? 0.7 : 0.45)}` }}>
-                    <Mono style={{ fontSize: compact ? (you ? 15 : 13) : (you ? 17 : 14), fontWeight: 700, color: '#0A0B0E' }}>{calm ? '·' : rk}</Mono>
-                  </div>
+                  {showHead ? (
+                    /* HEAD — replaces the orb+digit. Footprint stays sz×sz so the crown,
+                       halo and score-label anchors are unchanged; the face is centred on
+                       (x,y) via the HEAD_FACE_LIFT up-shift. pointer-events:none so the
+                       rival tap (onPlayer) and the training-preview <button> still get the
+                       click. The rank digit is intentionally dropped — altitude + crown +
+                       the score label carry rank; the head carries mood-at-a-glance. */
+                    <div style={{ width: sz, height: sz, position: 'relative', pointerEvents: 'none' }}>
+                      <div style={{ position: 'absolute', left: '50%', top: '50%',
+                        transform: `translate(-50%, calc(-50% - ${(HEAD_FACE_LIFT * sz).toFixed(1)}px))`,
+                        width: sz * 140 / 156, height: sz }}>
+                        <AgentPresence
+                          disposition={archetypeToDisposition(s.arch)}
+                          accent={s.color}
+                          standing={you && !atRest ? standingFromRank(rk, rows.length) : 0}
+                          size={sz}
+                          enableEnvironment={false}
+                          radial={false}
+                          reactivityLevel={you ? 'reactive' : 'static'}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ width: sz, height: sz, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: `radial-gradient(circle at 35% 30%, ${alpha(s.color, 0.95)}, ${alpha(s.color, 0.55)})`,
+                      border: `2px solid ${alpha(s.color, you ? 1 : 0.7)}`, boxShadow: `0 0 ${you ? 22 : 14}px ${alpha(s.color, you ? 0.7 : 0.45)}` }}>
+                      <Mono style={{ fontSize: compact ? (you ? 15 : 13) : (you ? 17 : 14), fontWeight: 700, color: '#0A0B0E' }}>{calm ? '·' : rk}</Mono>
+                    </div>
+                  )}
                   {lead && !calm && (
                     <div style={{ position: 'absolute', top: -17, left: '50%', transform: 'translateX(-50%)' }}>
                       <LIcon name="crown" size={compact ? 15 : 17} color={LTOKENS.gold} stroke={2} />

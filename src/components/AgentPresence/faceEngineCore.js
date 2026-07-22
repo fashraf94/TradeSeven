@@ -61,6 +61,12 @@ export class FaceCtl {
   constructor(disp) {
     this.disp = disp || DISPO.neutral;
     this.reduced = REDUCED_MOTION;                             // reactive per instance
+    // STATIC mode (reactivityLevel='static'): the head paints ONE frame and never joins
+    // FACE_REG (no rAF, no idle). `still` additionally suppresses the ambient breath/
+    // antenna-life/glow-breath so that single frame is motionless for EVERY user — not
+    // only reduced-motion users. Distinct from `reduced` (a reactive head under
+    // reduced-motion still joins the loop; a static head never does). The CPU-slot path.
+    this.still = false;
     this.base = { ...REST };                                   // mood layer
     this.off = Object.fromEntries(Object.keys(REST).map((k) => [k, 0]));   // transient layer
     this.d = { ...REST };                                      // displayed
@@ -162,8 +168,9 @@ export class FaceCtl {
     this.offTw = adv(this.offTw, this.off);
     // compose displayed = base + off
     for (const k in this.d) this.d[k] = clampK(k, this.base[k] + this.off[k]);
-    // idle micro-behaviour — only when transients are quiet
-    if (!this.reduced && this.offTw.length === 0) {
+    // idle micro-behaviour — only when transients are quiet (never for a static head,
+    // though a static ctl is never ticked — this is a defensive belt).
+    if (!this.reduced && !this.still && this.offTw.length === 0) {
       const beh = this.standing < -0.35 ? 1.4 : this.standing > 0.35 ? 1.12 : 1;   // behind fidgets more
       if (!this.idleAt) this.idleAt = now + 1700 + Math.random() * 2400;
       else if (now > this.idleAt) { this.idle(); this.idleAt = now + (2600 + Math.random() * 3800) / (this.disp.idle * beh); }
@@ -176,18 +183,28 @@ export class FaceCtl {
     else if (r < 0.8) { const g = (Math.random() * 2 - 1) * (this.standing < -0.35 ? 0.5 : 0.34); this.pOff('gx', g, 900, 'io', 0, true); this.pOff('gx', 0, 1400, 'io', 1400 + Math.random() * 1200, true); }
     else this.play('anttwitch', { tiny: true });
   }
+  // Paint ONE still frame for a static head: compose displayed = base+off (base holds the
+  // instant pose; no tweens pending) and apply once. The caller never registers a static
+  // ctl in FACE_REG, so this is the ONLY paint — no rAF, no idle, no breath.
+  renderStatic(now) {
+    for (const k in this.d) this.d[k] = clampK(k, this.base[k] + this.off[k]);
+    this.apply(now);
+  }
+
   apply(now) {
     const R = this.refs; if (!R) return;
-    const d = this.d, ph = now * 0.00126, breath = this.reduced ? 0 : Math.sin(ph);
+    // `quiet` = no ambient motion this frame: a reduced-motion viewer OR a static head.
+    const quiet = this.reduced || this.still;
+    const d = this.d, ph = now * 0.00126, breath = quiet ? 0 : Math.sin(ph);
     const bob = breath * 1.5;
     // sustained shake (decays)
     let shk = 0;
     if (this.shakeUntil && now < this.shakeUntil) { const rem = (this.shakeUntil - now) / this.shakeDur; shk = Math.sin(now * 0.055) * this.shakeAmp * rem; }
     // whole face: lean + breathe + tilt + shake (pivot at chin)
     R.face.setAttribute('transform', `translate(${(d.lean * 7 + shk * 0.5).toFixed(2)} ${bob.toFixed(2)}) rotate(${(d.tilt + d.lean * 2.6 + shk).toFixed(2)} 100 150)`);
-    const antA = d.ant + (this.reduced ? 0 : Math.sin(ph * 0.8 + 0.5) * 1.4 * this.disp.antennaLife);
+    const antA = d.ant + (quiet ? 0 : Math.sin(ph * 0.8 + 0.5) * 1.4 * this.disp.antennaLife);
     R.ant.setAttribute('transform', `rotate(${antA.toFixed(2)} 100 54)`);
-    const g = clampK('glow', d.glow + (this.reduced ? 0 : breath * 0.04));
+    const g = clampK('glow', d.glow + (quiet ? 0 : breath * 0.04));
     R.bulbGlow.setAttribute('opacity', (0.22 + g * 0.78).toFixed(3));
     R.bulb.setAttribute('r', (4.3 + g * 1.1).toFixed(2));
     const eScale = d.escale;

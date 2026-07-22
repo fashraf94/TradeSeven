@@ -56,7 +56,7 @@ function injectEnvCSS() {
 // EnvStage component (react-refresh/only-export-components).
 const ENV_TONE = { good: '#5EEAD4', bad: '#E08154', warn: '#F0C75E', neu: '#8B93A7' };
 
-export const EnvStage = React.forwardRef(function EnvStage({ disposition = 'neutral', size = 200, accent = '#5EEAD4', standing = 0, enabled = true, radial = true, stageAccent, reduced, onDim, style }, ref) {
+export const EnvStage = React.forwardRef(function EnvStage({ disposition = 'neutral', size = 200, accent = '#5EEAD4', standing = 0, enabled = true, radial = true, stageAccent, reduced, reactivityLevel = 'reactive', onDim, style }, ref) {
   const faceRef = React.useRef();
   const wrapRef = React.useRef(), glowRef = React.useRef(), floodRef = React.useRef();
   const last = React.useRef(0), enRef = React.useRef(enabled);
@@ -96,11 +96,12 @@ export const EnvStage = React.forwardRef(function EnvStage({ disposition = 'neut
   }, [accent, onDim, run, defer]);
 
   React.useEffect(() => {
+    if (reactivityLevel === 'static') return undefined;   // a static head never reacts → no onImpact wiring/poll
     const id = setInterval(() => {
       if (faceRef.current && faceRef.current.ctl) { faceRef.current.ctl.onImpact = (t, e, to) => { if (enRef.current) impact(t, e, to); }; clearInterval(id); }
     }, 30);
     return () => clearInterval(id);
-  }, [impact]);
+  }, [impact, reactivityLevel]);
 
   React.useImperativeHandle(ref, () => ({
     react: (e, o) => faceRef.current && faceRef.current.react(e, o),
@@ -117,7 +118,7 @@ export const EnvStage = React.forwardRef(function EnvStage({ disposition = 'neut
       {radial && <div className="env-layer" style={{ background: `radial-gradient(56% 48% at 50% 48%, ${alpha(stageAccent || accent, 0.13)}, transparent 72%)` }} />}
       <div ref={floodRef} className="env-layer env-flood" />
       <div ref={glowRef} className="env-layer env-glow" style={{ borderRadius: 24 }} />
-      <ReactiveFace ref={faceRef} disposition={disposition} size={size} accent={accent} standing={standing} reduced={reduced} />
+      <ReactiveFace ref={faceRef} disposition={disposition} size={size} accent={accent} standing={standing} reduced={reduced} reactivityLevel={reactivityLevel} />
     </div>
   );
 });
