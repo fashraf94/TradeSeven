@@ -1010,9 +1010,13 @@ export async function materializeDimensionBundle({
   if (existingSnap.exists()) {
     const existing = existingSnap.data() || {};
     if (existing.status === 'equipped') {
+      // canonicalize (the hashDimensions helper): keys sorted at every
+      // level — Firestore returns map keys alphabetized, so a plain
+      // JSON.stringify of the read-back doc never matches the freshly
+      // generated insertion order even for identical content.
       const sameContent =
-        JSON.stringify(existing.ruleIds ?? null) === JSON.stringify(snapshots.map((s) => s.id)) &&
-        JSON.stringify(existing.ruleSnapshots ?? null) === JSON.stringify(frozenSnapshots);
+        canonicalize(existing.ruleIds ?? null) === canonicalize(snapshots.map((s) => s.id)) &&
+        canonicalize(existing.ruleSnapshots ?? null) === canonicalize(frozenSnapshots);
       if (!sameContent) {
         throw new Error(
           "This strategy's equipped bundle no longer matches these dimensions — unequip it in the Forge, then relaunch."

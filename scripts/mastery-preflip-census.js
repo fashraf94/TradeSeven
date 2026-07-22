@@ -184,6 +184,7 @@ async function main() {
     dialAggressiveUngated: 0,
     statsFindings: 0,
     lineageFlags: 0,
+    lineageUnverifiable: 0,
     battlesMissingOwnerId,
     forgeBundleOverage: 0,
   };
@@ -294,6 +295,12 @@ async function main() {
     // battle is claiming history older than itself — the recreate shape the
     // delete-deny closes going forward. Report-only (founder judgment). ──
     const createTimeMs = doc.createTime ? doc.createTime.toMillis() : null;
+    // Coverage honesty: counted battles with no parseable createdAt make
+    // the lineage check unverifiable for this agent — recorded, never a
+    // silent false negative.
+    if (ownerBucket && ownerBucket.count > 0 && ownerBucket.earliestMs === null) {
+      stats.lineageUnverifiable++;
+    }
     if (createTimeMs !== null && ownerBucket && ownerBucket.earliestMs !== null
         && createTimeMs > ownerBucket.earliestMs) {
       stats.lineageFlags++;
@@ -369,7 +376,7 @@ async function main() {
   console.log(`aggressive dials (total)  : ${stats.dialAggressiveTotal}`);
   console.log(`  of which below the gate : ${stats.dialAggressiveUngated}`);
   console.log(`stats findings            : ${stats.statsFindings}`);
-  console.log(`lineage flags             : ${stats.lineageFlags}`);
+  console.log(`lineage flags             : ${stats.lineageFlags} (unverifiable ${stats.lineageUnverifiable})`);
   console.log(`battles missing ownerId   : ${stats.battlesMissingOwnerId}`);
   console.log(`forge bundle overages     : ${stats.forgeBundleOverage}`);
   console.log(`report written to         : ${outPath}`);

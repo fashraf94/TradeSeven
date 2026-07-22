@@ -163,6 +163,13 @@ async function main() {
         const snap = await tx.get(ref);
         if (!snap.exists) throw new DriftError('doc no longer exists');
         const a = snap.data();
+        // Owner drift: every branch's live re-derivation (profile reads,
+        // battle binding) keys on the owner — a doc whose owner changed
+        // since the census must be re-censused, never normalized against
+        // the old owner's entitlements.
+        if ((a.ownerId ?? null) !== (entry.ownerId ?? null)) {
+          throw new DriftError(`ownerId changed since census (now ${JSON.stringify(a.ownerId ?? null)})`);
+        }
         const nowIso = new Date().toISOString();
 
         if (entry.kind === 'dial_aggressive') {
@@ -222,10 +229,20 @@ async function main() {
               .where('agentId', '==', ref.id)
               .select('status', 'gameMode', 'ownerId'),
           );
+          // The CENSUS predicate exactly: a battle verifies only when BOTH
+          // sides carry a non-empty string ownerId and they match — an
+          // ownerless battle never verifies an ownerless doc (B4; a plain
+          // === would let undefined===undefined count exactly the battles
+          // the ruling excludes).
+          const ownerClean = typeof a.ownerId === 'string' && a.ownerId;
           let verifiedLive = 0;
           for (const bDoc of battlesSnap.docs) {
             const b = bDoc.data();
-            if (b.status === 'completed' && b.gameMode !== TOURNAMENT_GAME_MODE && b.ownerId === a.ownerId) {
+            if (ownerClean
+                && b.status === 'completed'
+                && b.gameMode !== TOURNAMENT_GAME_MODE
+                && typeof b.ownerId === 'string'
+                && b.ownerId === a.ownerId) {
               verifiedLive += 1;
             }
           }
