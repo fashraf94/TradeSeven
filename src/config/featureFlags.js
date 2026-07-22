@@ -884,7 +884,7 @@ export const TOURNAMENT_ADVANCEMENT_FROZEN = true;
  * Built/merged DARK behind this flag; flip in a one-line follow-up PR after a Vercel
  * preview smoke (the SCOUTING_BOARD_ENABLED precedent) — never in the build PR.
  */
-export const AGENT_PRESENCE_ENABLED = true;
+export const AGENT_PRESENCE_ENABLED = false;
 
 /**
  * The ONE home for the Agent Presence gate — the flag OR the `?agentPresence=1`
