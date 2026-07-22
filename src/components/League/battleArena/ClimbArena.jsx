@@ -113,7 +113,8 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
   // Agent Presence heads replace the orbs when the flag is on. Player seat (s.id===youId)
   // = REACTIVE (mood glides with standingFromRank of the SAME rankOf/altitude the orb
   // shows — §9 by construction). The three rivals = STATIC (paint-once, no rAF/breath;
-  // accent from the seat colour, neutral disposition — rivals carry no archetype).
+  // accent from the seat colour). Rival disposition comes from s.arch — omitted in LIVE
+  // owner-only data (→ neutral), though the fixtures preview does supply rival archetypes.
   const showHead = isAgentPresenceOn();
 
   return (
@@ -192,10 +193,16 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                 -50%,-50% centering — the design prototype's latent shift bug). */}
             <div onClick={onPlayer && !you && !calm ? () => onPlayer(s.id) : undefined}
               style={{ position: 'absolute', left: x, top: y, transform: 'translate(-50%,-50%)', cursor: onPlayer && !you && !calm ? 'pointer' : 'default' }}>
-              {/* A static CPU head drops the bob float too — it must be TRULY still
-                  (finding 13). The player head and the flag-off orb keep the float. */}
+              {/* A static CPU head drops its own bob float — the head itself is motionless
+                  (finding 13; the leader halo is arena chrome and is kept). The player head
+                  and the flag-off orb keep the float. */}
               <div className={showHead && !you ? '' : bob} style={{ position: 'relative' }}>
-                <div className={you && surge && surge.key && !reduce ? 'bv2-surge' : ''} key={you && surge ? surge.key : undefined} style={{ position: 'relative' }}>
+                {/* The surge `key` REMOUNTS this subtree to retrigger the CSS scale-pulse —
+                    fine for the flag-off orb, but it would tear down + rebuild the player
+                    HEAD on every beat (new FaceCtl, glide discarded). So the key + pulse
+                    class apply to the ORB path only; the head keeps its identity and its
+                    mood glide across surges (the fly-up token + beat caption still fire). */}
+                <div className={!showHead && you && surge && surge.key && !reduce ? 'bv2-surge' : ''} key={!showHead && you && surge ? surge.key : undefined} style={{ position: 'relative' }}>
                   {!calm && (you || lead) && !reduce && (
                     <div className="bv2-halo" style={{ position: 'absolute', left: '50%', top: '50%', width: sz + 14, height: sz + 14, borderRadius: '50%', border: `1.5px solid ${s.color}`, pointerEvents: 'none' }} />
                   )}

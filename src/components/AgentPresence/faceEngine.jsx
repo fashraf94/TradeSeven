@@ -56,15 +56,19 @@ export const ReactiveFace = React.forwardRef(function ReactiveFace({ disposition
   // its single frame (it has no loop to apply a tween). The mount paint is owned by the
   // lifecycle effect below (refs are attached there first).
   React.useEffect(() => {
-    if (isStatic) { ctl.setStanding(standing, { instant: true }); ctl.renderStatic(performance.now()); }
+    // `ctl.still` is set here too (not only in the lifecycle effect below) so this repaint
+    // is self-consistent regardless of effect order.
+    if (isStatic) { ctl.still = true; ctl.setStanding(standing, { instant: true }); ctl.renderStatic(performance.now()); }
     else ctl.setStanding(standing);
   }, [standing, isStatic, ctl]);
   React.useEffect(() => {
     ctl.attach(refs.current);
     ctl.still = isStatic;
     // Static: paint one still frame and RETURN — never join FACE_REG (no rAF, no idle,
-    // no breath). Reactive: paint the initial pose once, then join the shared loop.
-    if (isStatic) { ctl.renderStatic(performance.now()); return undefined; }
+    // no breath). The dispose() cleanup still runs so any (future) queued react-latency
+    // timeout can't fire on a detached ctl. Reactive: paint the initial pose once, then
+    // join the shared loop.
+    if (isStatic) { ctl.renderStatic(performance.now()); return () => ctl.dispose(); }
     ctl.tick(performance.now());   // paint the initial pose once, synchronously
     FACE_REG.add(ctl); ensureLoop();
     return () => { FACE_REG.delete(ctl); ctl.dispose(); };
