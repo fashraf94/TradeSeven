@@ -100,6 +100,7 @@ import {
   selectActiveLobby,
   // League Next-Arc Slice 5b-i — the ranked/training split predicates.
   selectMyGroup,
+  casualDeployMissesPodSession,
   selectMyTrainingPod,
   // League field-leak fix — THE FIELD read excludes training pods.
   selectBaseLayerField,
@@ -1124,6 +1125,47 @@ describe('selectMyGroup — the subscribeMyGroup ranked read EXCLUDES training p
     expect(selectMyGroup([trainingDrafting])).toBeNull();
     // even when the training pod is newer, the competitive in-flight pod is the ranked match
     expect(selectMyGroup([compDrafting, trainingDrafting])?.id).toBe('c1');
+  });
+});
+
+describe('casualDeployMissesPodSession — the G2 honest-warning window test', () => {
+  const anchoredPod = (status, anchorEtDate) => ({
+    id: 'p1', status,
+    battleStartWeek: { anchorEtDate, mondayEtDate: anchorEtDate, anchorIso: `${anchorEtDate}T13:30:00.000Z` },
+    updatedAt: '2026-06-13T22:00:00Z',
+  });
+
+  it('pre-battle pod: a casual deploy whose fullday expiry reaches the Monday anchor CONFLICTS', () => {
+    const pod = anchoredPod(GROUP_STATUS.AWAITING_OPEN, '2026-06-15'); // Monday anchor
+    // Fri-after-close / weekend deploy → 'fullday' expiry rolls to Monday 2026-06-15 (same date as the anchor).
+    expect(casualDeployMissesPodSession(pod, { expiryEtDate: '2026-06-15', nextTradingEtDate: '2026-06-15' })).toBe(true);
+  });
+
+  it('pre-battle pod: a mid-week casual deploy that expires before the anchor is SAFE', () => {
+    const pod = anchoredPod(GROUP_STATUS.AWAITING_OPEN, '2026-06-15');
+    // Wednesday deploy → expires Wed 2026-06-10, days before the Monday anchor.
+    expect(casualDeployMissesPodSession(pod, { expiryEtDate: '2026-06-10', nextTradingEtDate: '2026-06-11' })).toBe(false);
+  });
+
+  it('pre-battle FORMING/DRAFTING use the anchor exactly like AWAITING_OPEN', () => {
+    expect(casualDeployMissesPodSession(anchoredPod(GROUP_STATUS.FORMING, '2026-06-15'), { expiryEtDate: '2026-06-15' })).toBe(true);
+    expect(casualDeployMissesPodSession(anchoredPod(GROUP_STATUS.DRAFTING, '2026-06-15'), { expiryEtDate: '2026-06-12' })).toBe(false);
+  });
+
+  it('BATTLE pod: uses the next trading day — a casual deploy that survives to it CONFLICTS', () => {
+    const pod = { id: 'b1', status: GROUP_STATUS.BATTLE, updatedAt: '2026-06-15T22:00:00Z' };
+    // After-close deploy: expiry rolls to Tue 06-16 == the next session → conflict.
+    expect(casualDeployMissesPodSession(pod, { expiryEtDate: '2026-06-16', nextTradingEtDate: '2026-06-16' })).toBe(true);
+    // Mid-session (market open): casual expires today 06-16, next session is 06-17 → no conflict.
+    expect(casualDeployMissesPodSession(pod, { expiryEtDate: '2026-06-16', nextTradingEtDate: '2026-06-17' })).toBe(false);
+  });
+
+  it('never warns: no group, a training pod, a completed pod, or missing dates', () => {
+    expect(casualDeployMissesPodSession(null, { expiryEtDate: '2026-06-15' })).toBe(false);
+    expect(casualDeployMissesPodSession({ status: GROUP_STATUS.BATTLE, isTraining: true }, { expiryEtDate: '2026-06-16', nextTradingEtDate: '2026-06-16' })).toBe(false);
+    expect(casualDeployMissesPodSession({ id: 'c', status: GROUP_STATUS.COMPLETE }, { expiryEtDate: '2026-06-15', nextTradingEtDate: '2026-06-15' })).toBe(false);
+    expect(casualDeployMissesPodSession(anchoredPod(GROUP_STATUS.AWAITING_OPEN, '2026-06-15'), {})).toBe(false); // no expiry date
+    expect(casualDeployMissesPodSession({ id: 'p', status: GROUP_STATUS.FORMING }, { expiryEtDate: '2026-06-15' })).toBe(false); // no anchor
   });
 });
 

@@ -26,6 +26,8 @@ export function Icon({ name, size = 18, color = 'currentColor', stroke = 1.7, st
     plus: <path {...p} d="M12 6v12M6 12h12" />,
     eye: <g {...p}><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.6" /></g>,
     chat: <g {...p}><path d="M5 5h14a2 2 0 012 2v7a2 2 0 01-2 2h-7l-4 3v-3H5a2 2 0 01-2-2V7a2 2 0 012-2z" /><path d="M8 10h.01M12 10h.01M16 10h.01" /></g>,
+    // Seated Status enrichment — the loadout "Edit in Forge" affordance.
+    pencil: <g {...p}><path d="M4 20l4-1 10-10-3-3L5 16l-1 4z" /><path d="M14 6l3 3" /></g>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0, ...style }}>{paths[name]}</svg>;
 }

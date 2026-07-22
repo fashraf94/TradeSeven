@@ -307,7 +307,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  *
  * `seats` = [{agentId, odUserId, isCpu, symbols}] in groupMembers order.
  * `latestBattles` lets the weekday caller pass its already-fetched map.
- * Returns {deployed, gated, skippedExisting, cooled, failed, deferred}.
+ * Returns {deployed, skipped, gated, skippedExisting, cooled, failed, deferred}.
+ * `skipped` = a 200 whose body reported battleCreated:false (no battle created —
+ * e.g. a casual battle already blocks the agent, G2); it is NOT a `deployed`.
  */
 export async function fanOutDeploys(db, {
   groupId, seats, now, state, budget,
@@ -319,7 +321,7 @@ export async function fanOutDeploys(db, {
 }) {
   const nowIso = now.toISOString();
   const etDate = formatEtDate(now);
-  const out = { deployed: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 };
+  const out = { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 };
 
   const latest = latestBattles
     ?? await latestTournamentBattlesByAgent(db, groupId, ['agentId', 'createdAt', 'gameMode']);
@@ -371,8 +373,27 @@ export async function fanOutDeploys(db, {
         const text = await response.text().catch(() => '');
         throw new Error(`HTTP ${response.status} ${text.slice(0, 200)}`);
       }
-      console.log(`${LOG_PREFIX} group ${groupId} agent ${agentId}: deployed [${symbols.join(', ')}]`);
-      out.deployed++;
+      // A 200 does NOT prove a battle was created. /api/agent/decide early-returns
+      // { battleCreated: false } when the agent already has an active battle — e.g. a
+      // casual vs-CPU battle blocking a tournament deploy (G2; see
+      // docs/audits/20260720_G2_ACTIVEBATTLEID_CONFLICT_DISCOVERY.md). Counting that
+      // 200 as a deploy hid the skip in the cron summary, so read the body: only score
+      // an actual creation as `deployed`, and surface any battleCreated:false LOUDLY as
+      // a separate `skipped` so a silent no-op can never masquerade as a success.
+      let resultBody = null;
+      try {
+        resultBody = await response.json();
+      } catch {
+        // Body unreadable (non-JSON, or a mock without .json()) — cannot introspect,
+        // so fall through to the deployed branch (the pre-G2 behavior for any 200).
+      }
+      if (resultBody && resultBody.battleCreated === false) {
+        console.warn(`${LOG_PREFIX} group ${groupId} agent ${agentId} (owner ${odUserId}): deploy SKIPPED — no battle created (reason: ${resultBody.reason || 'unspecified'})`);
+        out.skipped++;
+      } else {
+        console.log(`${LOG_PREFIX} group ${groupId} agent ${agentId}: deployed [${symbols.join(', ')}]`);
+        out.deployed++;
+      }
     } catch (err) {
       const untilIso = new Date(now.getTime() + DEPLOY_FAILURE_COOLDOWN_MS).toISOString();
       console.error(`${LOG_PREFIX} group ${groupId} agent ${agentId}: deploy FAILED (${err.message}) — cooldown until ${untilIso}`);
@@ -463,7 +484,7 @@ export async function runMondayPipeline(db, {
     deferredBoards: 0,   // finding #5 fallback: auto-commit couldn't heal
     refusedSynthetic: 0, // P3a contract: synthetic > 0 on a real group
     drafted: 0,
-    deploys: { deployed: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
+    deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
     deferredToNextTick: 0,
     errors: 0,
   };
@@ -581,7 +602,7 @@ export async function runWeekdayFanout(db, {
     groups: groups.length,
     noBattles: 0,
     mondayCatchupSeats: 0,
-    deploys: { deployed: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
+    deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
     deferredToNextTick: 0,
     errors: 0,
   };
@@ -710,7 +731,7 @@ export async function activateTrainingPod(db, group, {
     groupId: group.id,
     clones: { created: 0, existing: 0, skipped: 0 },
     drafted: false,
-    deploys: { deployed: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
+    deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
     errors: 0,
   };
   if (group.isTraining !== true || group.status !== GROUP_STATUS.BATTLE) {
@@ -862,6 +883,7 @@ function markerSummary(duty, summary) {
   return {
     groups: summary.groups,
     deployed: summary.deploys?.deployed ?? 0,
+    skipped: summary.deploys?.skipped ?? 0,
     gated: summary.deploys?.gated ?? 0,
   };
 }

@@ -33,6 +33,9 @@ import useMasteryProfile from '../../hooks/useMasteryProfile';
 import useDailyRegimeBrief from '../../hooks/useDailyRegimeBrief';
 import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentBattles';
 import { deployAgent } from '../../services/agentDeploy';
+import { subscribeMyGroup } from '../../services/tournamentGroupService';
+import { casualDeployMissesPodSession } from '../../constants/leagueTournament';
+import { getMarketState } from '../../utils/marketSchedule';
 import { getEquipSlotCounts } from '../../utils/equipSlots';
 import { SCOUTING_BOARD_ENABLED } from '../../config/featureFlags';
 
@@ -135,6 +138,33 @@ export default function CommandDashboard({
   const [recordOpen, setRecordOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
+
+  // G2 (docs/audits/20260720_G2_ACTIVEBATTLEID_CONFLICT_DISCOVERY.md): a competitive pod
+  // deploys the user's REAL agent, and /api/agent/decide allows only ONE active battle.
+  // If the user starts a casual (vs-CPU) deploy while committed to a pod, that 'fullday'
+  // battle can still be live at the pod's next session and silently lock the agent out.
+  // Subscribe to the user's competitive group (non-training; FORMING/DRAFTING/AWAITING_OPEN
+  // /BATTLE) and, when a deploy now would still be live at that session (the window test),
+  // show an honest, NON-blocking heads-up at the CTA — the deploy still proceeds if chosen.
+  const [myCompetitiveGroup, setMyCompetitiveGroup] = useState(null);
+  useEffect(() => {
+    const uid = user?.odUserId;
+    if (!uid) return undefined;
+    return subscribeMyGroup(uid, setMyCompetitiveGroup);
+  }, [user?.odUserId]);
+  const podSessionConflict = (() => {
+    if (!myCompetitiveGroup) return false;
+    const mkt = getMarketState();
+    // nextCloseTime / nextOpenTime are ET-wall-clock Dates — read their local fields for
+    // the ET calendar date (do NOT re-convert via a timeZone formatter, which double-shifts).
+    const etYmd = (d) =>
+      (d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : null);
+    return casualDeployMissesPodSession(myCompetitiveGroup, {
+      expiryEtDate: etYmd(mkt.nextCloseTime),     // a casual 'fullday' battle expires at the next market close
+      nextTradingEtDate: etYmd(mkt.nextOpenTime), // a BATTLE pod's next session is the next trading day
+    });
+  })();
+
   const handleDeploy = async () => {
     if (deployDisabled) return { success: false };
     setDeploying(true);
@@ -374,6 +404,20 @@ export default function CommandDashboard({
         {!isLive ? (
           <motion.div variants={sectionVariants}>
             <SectionLabel n="03" label="Deploy" color={accent} />
+            {podSessionConflict && (
+              <div
+                role="status"
+                style={{
+                  margin: '0 0 12px', padding: '11px 13px', borderRadius: 12,
+                  background: alpha(CMD.gold, 0.1), border: `1px solid ${alpha(CMD.gold, 0.32)}`,
+                  color: CMD.ink2, fontSize: 12.5, lineHeight: 1.5,
+                }}
+              >
+                <span style={{ color: CMD.gold, fontWeight: 700 }}>Heads up — </span>
+                your agent is committed to a competitive pod. Deploying a casual battle now would keep it
+                out of your pod’s next session; it rejoins the next trading day. You can still deploy.
+              </div>
+            )}
             <DeployStation agent={agent} accent={accent} deploying={deploying} onDeploy={handleDeploy} deployText={deployText} />
           </motion.div>
         ) : (

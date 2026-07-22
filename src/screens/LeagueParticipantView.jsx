@@ -48,13 +48,16 @@ import {
   round2,
 } from '../constants/leagueTournament';
 
-export default function LeagueParticipantView() {
+export default function LeagueParticipantView({ agentLoadout = null, onOpenForge = null } = {}) {
   const { tokens } = useTheme();
   const { user } = useUser();
   const uid = user?.uid;
 
   const [group, setGroup] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  // Leave-slot feedback for the FORMING glimpse; the subscribeMyGroup snapshot
+  // drives the UI away once the seat is released (reset on error).
+  const [leaving, setLeaving] = useState(false);
 
   // Battle View V2 (desktop-only): when on, an active battle takes over full-width
   // as the new arena; `classic` lets a desktop user drop back to today's view.
@@ -226,28 +229,28 @@ export default function LeagueParticipantView() {
       );
     }
     if (group.status === GROUP_STATUS.FORMING) {
+      // The seated-status glimpse owns its full obsidian page (dark-only,
+      // LTOKENS/LX) — mounted full-screen, not inside the light useTheme column.
       return (
-        <div style={page}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Trophy size={20} color={tokens.medalGold} />
-            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', flex: 1 }}>League</div>
-          </div>
-          <LiveDraftGlimpse
-            group={group} tokens={tokens} currentUserId={uid}
-            onLeave={() => releaseSlot({ groupId: group.id }).catch(() => {})}
-          />
-        </div>
+        <LiveDraftGlimpse
+          group={group} currentUserId={uid}
+          agentLoadout={agentLoadout} onOpenForge={onOpenForge}
+          onLeave={() => {
+            setLeaving(true);
+            releaseSlot({ groupId: group.id }).catch(() => setLeaving(false));
+          }}
+          leaving={leaving}
+          compact={!isDesktop}
+        />
       );
     }
     if (group.status === GROUP_STATUS.AWAITING_OPEN) {
       return (
-        <div style={page}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Trophy size={20} color={tokens.medalGold} />
-            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', flex: 1 }}>League</div>
-          </div>
-          <LiveDraftAwaiting group={group} tokens={tokens} currentUserId={uid} />
-        </div>
+        <LiveDraftAwaiting
+          group={group} currentUserId={uid}
+          agentLoadout={agentLoadout} onOpenForge={onOpenForge}
+          compact={!isDesktop}
+        />
       );
     }
   }
