@@ -284,7 +284,7 @@ export default function DraftBoardRoom({ user, groupId, mode = 'training', onCom
     return (
       <div className="ld-scope" style={{ ...scopeStyle, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ maxWidth: 520, width: '100%', background: TOKENS.surface, border: `1px solid ${alpha(DX.you, 0.26)}`, borderRadius: 16, padding: 28, textAlign: 'center' }}>
-          <Icon name={expired ? 'lock' : 'check'} size={26} color={expired ? TOKENS.ink2 : DX.you} stroke={2.4} style={{ margin: '0 auto 10px' }} />
+          <Icon name={expired ? 'x' : 'check'} size={26} color={expired ? TOKENS.ink2 : DX.you} stroke={2.4} style={{ margin: '0 auto 10px' }} />
           <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>{expired ? 'Pod closed' : 'Lineup locked'}</div>
           <div style={{ color: TOKENS.ink2, marginBottom: 20, lineHeight: 1.5 }}>
             {expired
