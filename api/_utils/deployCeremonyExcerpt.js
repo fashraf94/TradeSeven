@@ -28,9 +28,16 @@
 const MAX_EXCERPT_CHARS = 400;
 
 /**
- * Drop a single trailing UNPAIRED UTF-16 surrogate so a code-unit slice can
- * never emit a replacement char (�) that appears nowhere in the brief (A.2 §5.4).
+ * Drop a single trailing UNPAIRED UTF-16 surrogate so a code-unit SLICE can never
+ * INTRODUCE a replacement char (�) that appears nowhere in the brief (A.2 §5.4).
  * A properly paired surrogate (emoji, etc.) is left intact. Exported for tests.
+ *
+ * Invariant scope (A.3 §4a): this guards only the SLICE path. selectBriefExcerpt
+ * returns a whole brief that fits the cap VERBATIM (bypassing this), so a
+ * malformed input that itself ends in a lone surrogate is returned as faithfully
+ * as any other input — display agreement, not a defect (the excerpt equals the
+ * stored artifact). Slicing never introduces a lone surrogate; it is not a
+ * universal "the result never ends in a lone surrogate" guarantee.
  *
  * @param {string} s
  * @returns {string}
@@ -55,15 +62,22 @@ export function stripLoneSurrogate(s) {
  * @param {number} [maxChars] Soft length cap; defaults to ~400.
  * @returns {string|null} A prefix of `brief` ending at a sentence boundary (or
  *   the whole brief when it fits), or null when the input is not a non-empty
- *   string OR no sentence boundary falls within the cap.
+ *   string, `maxChars` is non-finite/non-positive, OR no sentence boundary falls
+ *   within the cap.
  */
 export function selectBriefExcerpt(brief, maxChars = MAX_EXCERPT_CHARS) {
   if (typeof brief !== 'string') return null;
+  // A.3 §4b: a non-finite or non-positive cap makes slice(0, maxChars) act as a
+  // negative index and could return MORE than requested — fail closed. (Not
+  // reachable from the production caller, which passes no argument.)
+  if (!Number.isFinite(maxChars) || maxChars <= 0) return null;
   if (brief.trim().length === 0) return null;
 
   // Whole brief already within the cap — return it verbatim (a prefix of itself;
   // nothing is omitted, so no truncation can mislead). No leading trim: the
   // result must satisfy brief.startsWith(result); the client trims for display.
+  // A.3 §4a: this is the one path that bypasses stripLoneSurrogate — a malformed
+  // brief ending in a lone surrogate is returned faithfully (display agreement).
   if (brief.length <= maxChars) return brief;
 
   // Otherwise the excerpt must terminate at a sentence boundary within the cap.

@@ -104,8 +104,8 @@ export default async function handler(req, res) {
   const db = getFirebaseAdmin();
   const anthropic = getAnthropicClient();
 
-  // [Deploy Ceremony A.2] deployProgress write-ordering + gating state, declared
-  // OUTSIDE the try so the catch (which uses a re-derived agent ref) can read it.
+  // [Deploy Ceremony A.2/A.3] deployProgress gating state, declared OUTSIDE the
+  // try so the catch (which uses a re-derived agent ref) can read it.
   //   progressInitialized (A.2 §4) — the whole-map lock write resolved AND this is
   //     the self-select path, so a deployProgress map exists to dot-path-merge
   //     into. EVERY deployProgress write is gated on it: if init never succeeded
@@ -113,13 +113,10 @@ export default async function handler(req, res) {
   //     deployId-less map.
   //   decisionPersisted (A.2 §3c) — the terminal lastDecision write resolved;
   //     drives the error write's pre_decision/post_decision discriminator.
-  //   strategy/portfolioProgressWrite (A.2 §2) — retained promises of the two
-  //     unawaited intermediate writes, joined by an ordering barrier before the
-  //     terminal write so a late lander can't overwrite stage:'complete'.
+  // (A.3 §2 withdrew the A.2 §2 ordering barrier — the retained progress-write
+  //  promises are gone; the intermediate writes are fire-and-forget again.)
   let progressInitialized = false;
   let decisionPersisted = false;
-  let strategyProgressWrite = null;
-  let portfolioProgressWrite = null;
 
   try {
     // P4 contract #3 — deploy auth (Spec §0.3), enforced before any read or
@@ -293,19 +290,21 @@ export default async function handler(req, res) {
       await agentRef.update({ deployingAt: null });
       // [Deploy Ceremony] A.1 §5 / A.2 §3d — the server recognized this failure
       // immediately, so stamp 'error' now instead of leaving the client to wait
-      // out its 90s watchdog. AWAITED (A.2 §3d): the deploy has already failed so
-      // latency is moot, and an unawaited write can be lost to serverless freeze
-      // on return; the try/await/catch keeps it durable yet non-throwing. Gated on
-      // progressInitialized (A.2 §4) — always true here (post-fork, self-select).
-      // errorPhase 'pre_decision': no lastDecision was written on this exit.
+      // out its 90s watchdog. BOUNDED-AWAIT (A.2 §3d as narrowed by A.3 §3): give
+      // the write a chance to land (an unawaited write can be lost to serverless
+      // freeze on return) but never let it delay the 503 beyond ~1s — a stalled
+      // telemetry write must not convert a clean error into a platform timeout.
+      // The .catch() makes the raced update non-throwing; the timer always
+      // resolves. Gated on progressInitialized (A.2 §4). errorPhase 'pre_decision'.
       if (progressInitialized) {
-        try {
-          await agentRef.update({
+        await Promise.race([
+          agentRef.update({
             'deployProgress.stage': 'error',
             'deployProgress.errorPhase': 'pre_decision',
             'deployProgress.updatedAt': new Date().toISOString(),
-          });
-        } catch (_e) { /* telemetry must never throw the request */ }
+          }).catch(() => {}),
+          new Promise((resolve) => { const t = setTimeout(resolve, 1000); t?.unref?.(); }),
+        ]);
       }
       return res.status(503).json({ error: 'Stock rankings not available. Cron may not have run yet.' });
     }
@@ -441,11 +440,12 @@ export default async function handler(req, res) {
     // DOT-PATH REQUIRED (A.1 §2): these are field-path MERGES onto the map created
     // at lock-acquire. A whole-map { deployProgress: {...} } write here would wipe
     // deployId (the client's staleness guard) — never collapse this to whole-map.
-    // [A.2 §2/§4] Gated on progressInitialized; retain the (always-resolving,
-    // .catch-guarded) promise so the ordering barrier before the terminal write
-    // can join it — a late lander must not commit after stage:'complete'.
+    // [A.2 §4 / A.3 §2] Gated on progressInitialized; fire-and-forget (the A.2 §2
+    // ordering barrier was withdrawn — telemetry latency must never gate the
+    // deploy, and a late lander corrupts only the persisted stage, which nothing
+    // reads back). Non-throwing via .catch().
     if (progressInitialized) {
-      strategyProgressWrite = agentRef.update({
+      agentRef.update({
         'deployProgress.stage': 'strategy_complete',
         'deployProgress.fallbackKind': stratToolUse ? null : 'strategy',
         'deployProgress.briefExcerpt': stratToolUse ? selectBriefExcerpt(strategy.brief) : null,
@@ -479,10 +479,10 @@ export default async function handler(req, res) {
     );
 
     // [Deploy Ceremony] Non-fatal telemetry — portfolio construction starting.
-    // Dot-path merge (A.1 §2); ISO updatedAt (A.1 §4). Gated + promise retained
-    // for the ordering barrier (A.2 §2/§4).
+    // Dot-path merge (A.1 §2); ISO updatedAt (A.1 §4). Gated (A.2 §4);
+    // fire-and-forget (A.3 §2 — no ordering barrier).
     if (progressInitialized) {
-      portfolioProgressWrite = agentRef.update({
+      agentRef.update({
         'deployProgress.stage': 'portfolio_running',
         'deployProgress.updatedAt': new Date().toISOString(),
       }).catch(() => {});
@@ -623,13 +623,16 @@ export default async function handler(req, res) {
 
     // 10. Write to Firestore + clear lock
     //
-    // [A.2 §2] Ordering barrier: join the two intermediate progress writes (each
-    // already .catch()-guarded, so allSettled never rejects) BEFORE the terminal
-    // write, so a late-landing strategy_complete/portfolio_running can never
-    // commit AFTER stage:'complete' and leave a persisted lastDecision beside a
-    // non-terminal stage. Both writes were issued 10–25s earlier and have long
-    // since settled; this adds no real latency and no throw surface.
-    await Promise.allSettled([strategyProgressWrite, portfolioProgressWrite].filter(Boolean));
+    // [A.3 §2] NO ordering barrier here (the A.2 §2 barrier was withdrawn: a
+    // pending intermediate write under Firestore backoff must never block decision
+    // persistence — liveness beats stage ordering, I1). ACCEPTED RESIDUAL: a
+    // successful deploy MAY persist with stage reading 'strategy_complete' or
+    // 'portfolio_running' if one of those fire-and-forget writes lands after this
+    // one. Harmless — nothing reads deployProgress.stage back to judge success
+    // (live client already saw 'complete'; the monotonic rule discards a
+    // regression; a fresh subscriber never renders; the server never reads it).
+    // The authoritative success signals are `lastDecision` present + `deployingAt:
+    // null` (below), NEVER deployProgress.stage. Do NOT "fix" this with a barrier.
     await agentRef.update({
       lastDecision: {
         portfolio: enrichedPortfolio.portfolio,
@@ -905,22 +908,22 @@ export default async function handler(req, res) {
     // removed). 'error' is the honest terminal stage either way: the HTTP response
     // is 500 and the user can enter nothing.
     //
-    // AWAITED (A.2 §3d): the deploy has already failed, so latency is moot and an
-    // unawaited write can be lost to serverless freeze; try/await/catch keeps it
-    // durable yet non-throwing. Gated on progressInitialized (A.2 §4), which also
+    // BOUNDED-AWAIT (A.2 §3d as narrowed by A.3 §3): give the error write a chance
+    // to land but never delay the 500 beyond ~1s (a stalled write must not become
+    // a platform timeout). The .catch() makes the raced update non-throwing; the
+    // timer always resolves. Gated on progressInitialized (A.2 §4), which also
     // subsumes the A.1 §3 FLAT6 gate — a prescribed deploy never initialises the
-    // map, so progressInitialized is false and no stray 'error' lands on a
-    // tournament agent. Barrier first (A.2 §2) so a late intermediate write can't
-    // overwrite this terminal 'error'.
+    // map, so no stray 'error' lands on a tournament agent. No ordering barrier
+    // (A.3 §2 withdrew it).
     if (progressInitialized) {
-      await Promise.allSettled([strategyProgressWrite, portfolioProgressWrite].filter(Boolean));
-      try {
-        await db.collection('agents').doc(agentId).update({
+      await Promise.race([
+        db.collection('agents').doc(agentId).update({
           'deployProgress.stage': 'error',
           'deployProgress.errorPhase': decisionPersisted ? 'post_decision' : 'pre_decision',
           'deployProgress.updatedAt': new Date().toISOString(),
-        });
-      } catch (_e) { /* telemetry must never throw the request */ }
+        }).catch(() => {}),
+        new Promise((resolve) => { const t = setTimeout(resolve, 1000); t?.unref?.(); }),
+      ]);
     }
 
     return res.status(500).json({

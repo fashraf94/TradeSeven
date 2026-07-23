@@ -4,7 +4,9 @@
 //   • every non-null return is a verbatim PREFIX of the brief (startsWith),
 //   • a cut return TERMINATES AT A SENTENCE BOUNDARY,
 //   • no sentence boundary within the cap → null (no misleading word-cut),
-//   • no lone UTF-16 surrogate at the tail.
+//   • slicing never INTRODUCES a lone trailing surrogate (a whole brief that fits
+//     is returned verbatim, malformed or not — display agreement, A.3 §4a),
+//   • a non-finite / non-positive maxChars fails closed to null (A.3 §4b).
 
 import { describe, it, expect } from 'vitest';
 import { selectBriefExcerpt, stripLoneSurrogate } from './deployCeremonyExcerpt.js';
@@ -118,7 +120,7 @@ describe('selectBriefExcerpt', () => {
     }
   });
 
-  it('never returns a lone trailing surrogate; keeps valid pairs intact', () => {
+  it('slicing never introduces a lone surrogate; keeps valid pairs intact', () => {
     // stripLoneSurrogate direct behavior
     const rocket = '\u{1F680}'; // 🚀 = high+low pair
     expect(stripLoneSurrogate('done ' + rocket)).toBe('done ' + rocket); // pair kept
@@ -130,5 +132,19 @@ describe('selectBriefExcerpt', () => {
     const out = selectBriefExcerpt(brief);
     expect(out).toBe('We ride the breakout ' + rocket + ' into strength.');
     expect(out.includes('�')).toBe(false); // no replacement char
+  });
+
+  it('returns a malformed short brief faithfully (whole-brief path bypasses the surrogate guard) (A.3 §4a)', () => {
+    // brief fits the cap → returned VERBATIM, lone surrogate and all — the excerpt
+    // equals the stored artifact (display agreement), not a scrubbed version.
+    expect(selectBriefExcerpt('bad\uD83D')).toBe('bad\uD83D');
+  });
+
+  it('fails closed to null for a non-finite or non-positive maxChars (A.3 §4b)', () => {
+    const brief = 'A complete sentence here. And another one that follows it.';
+    expect(selectBriefExcerpt(brief, 0)).toBe(null);
+    expect(selectBriefExcerpt(brief, -50)).toBe(null);
+    expect(selectBriefExcerpt(brief, NaN)).toBe(null);
+    expect(selectBriefExcerpt(brief, Infinity)).toBe(null);
   });
 });
