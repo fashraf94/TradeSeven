@@ -15,6 +15,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Sparkles, Target, Dna, Plus, ChevronRight, Lock } from 'lucide-react';
 import AgentOrb from '../shared/AgentOrb';
+import { AgentPresenceMount } from '../AgentPresence';
+import { isAgentPresenceOn } from '../../config/featureFlags';
 import EquipSheet from './EquipSheet';
 import RuleBundlePicker from './RuleBundlePicker';
 import ArchetypePicker from './ArchetypePicker';
@@ -208,7 +210,20 @@ export default function EquipStation({ agent, accent, onOpenAgentRecord, setShow
             cursor: onOpenAgentRecord ? 'pointer' : 'default',
           }}
         >
-          <AgentOrb state={benchLocked ? 'live' : 'ready'} size={56} color={accent} />
+          {/* Agent Presence — the MOBILE identity portrait head. This is the mobile
+              equivalent of desktop's IdentityPanel portrait; Placement 2 wired that desktop
+              path, not this one, so mobile kept the orb. surface="command" = resting identity
+              view (archetype disposition + DNA accent, neutral standing — no live score or
+              reading reaction here). BOXED to the head's own 56px footprint so the width:100%
+              EnvStage root is bounded to the head, not the card (the IdentityPanel pattern).
+              Flag-off renders the orb byte-identically. */}
+          {isAgentPresenceOn() ? (
+            <div style={{ width: 56, height: 56 }}>
+              <AgentPresenceMount surface="command" agent={agent} size={56} enableEnvironment={false} />
+            </div>
+          ) : (
+            <AgentOrb state={benchLocked ? 'live' : 'ready'} size={56} color={accent} />
+          )}
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 13, color: CMD.ink, fontWeight: 700, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 80 }}>{agentName}</div>
             <Mono style={{ fontSize: 8.5, letterSpacing: '0.12em', color: CMD.ink3, textTransform: 'uppercase', display: 'block', marginTop: 2 }}>{tier}</Mono>
