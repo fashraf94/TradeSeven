@@ -19,6 +19,7 @@
 // reserved for downside, so errors use copper.
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useReducedMotion } from 'framer-motion';
 import { Check } from 'lucide-react';
 import EquipSheet from './EquipSheet';
 import { CMD, alpha, Mono, readableOn, ErrorBanner } from './commandUI';
@@ -51,7 +52,7 @@ export const ARCHETYPE_ORDER = ['momentum_chaser', 'contrarian', 'diversifier', 
 // that archetype's resting disposition (archetypeToDisposition), lightly-idle: no events, no
 // standing, no binding. It is a pure preview of "archetype X at rest". Selecting still does
 // exactly what it did before — this is display only.
-function HeroArchetypeCard({ codeId, name, disposition, reveal, selected, busy, disabled, onClick }) {
+function HeroArchetypeCard({ codeId, name, disposition, reveal, selected, busy, disabled, carousel = false, onClick }) {
   const { colors } = getArchetypeCharacter(codeId);
   const [a, b] = colors;
   const inert = selected || busy || disabled;
@@ -63,7 +64,9 @@ function HeroArchetypeCard({ codeId, name, disposition, reveal, selected, busy, 
       aria-pressed={selected}
       style={{
         all: 'unset', boxSizing: 'border-box', width: '100%', display: 'block', position: 'relative',
-        marginBottom: 9, borderRadius: 16, overflow: 'hidden',
+        // In the carousel the container owns spacing and equal heights (fill the slide);
+        // in the vertical list keep the original stacked margin.
+        marginBottom: carousel ? 0 : 9, height: carousel ? '100%' : undefined, borderRadius: 16, overflow: 'hidden',
         cursor: selected || busy ? 'default' : disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1, transition: 'opacity .15s ease',
         background: `linear-gradient(125deg, ${alpha(a, 0.92)} 0%, ${alpha(b, 0.8)} 100%)`,
@@ -76,10 +79,19 @@ function HeroArchetypeCard({ codeId, name, disposition, reveal, selected, busy, 
       {/* legibility overlays (mirror the Forge ArchBand): darken toward the bottom, glint top-right */}
       <span aria-hidden style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: `linear-gradient(180deg, ${alpha('#05060A', 0.06)} 0%, ${alpha('#05060A', 0.46)} 100%)` }} />
       <span aria-hidden style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: `radial-gradient(circle at 86% 14%, ${alpha('#fff', 0.2)}, transparent 46%)` }} />
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px' }}>
-        <div style={{ width: 54, height: 54, flexShrink: 0, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha('#05060A', 0.22), border: `1px solid ${alpha('#fff', 0.12)}` }}>
-          <AgentPresence disposition={archetypeToDisposition(codeId)} accent={a} size={46} enableEnvironment={false} />
-        </div>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, padding: carousel ? '16px 16px' : '13px 14px' }}>
+        {carousel ? (
+          // Carousel hero: drop the icon-tile chrome and size the head up. Still BOXED to a
+          // fixed footprint (72px) so the head's width:100% EnvStage root stays bounded to the
+          // head, never the card — the Placement-2 mobile-mount lesson.
+          <div style={{ width: 72, height: 72, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <AgentPresence disposition={archetypeToDisposition(codeId)} accent={a} size={72} enableEnvironment={false} />
+          </div>
+        ) : (
+          <div style={{ width: 54, height: 54, flexShrink: 0, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha('#05060A', 0.22), border: `1px solid ${alpha('#fff', 0.12)}` }}>
+            <AgentPresence disposition={archetypeToDisposition(codeId)} accent={a} size={46} enableEnvironment={false} />
+          </div>
+        )}
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             <div style={{ fontSize: 15.5, fontWeight: 700, color: '#fff', textShadow: `0 1px 10px ${alpha('#05060A', 0.5)}` }}>{name}</div>
@@ -101,17 +113,19 @@ function HeroArchetypeCard({ codeId, name, disposition, reveal, selected, busy, 
   );
 }
 
-export function ArchetypeCard({ codeId, selected, busy, disabled, accent, hero = false, onClick }) {
+export function ArchetypeCard({ codeId, selected, busy, disabled, accent, hero = false, carousel = false, onClick }) {
   const name = getArchetypeDisplayName(codeId);
   const { disposition, reveal } = getArchetypeIdentity(codeId);
   // Hero cards are opt-in and gated by the caller behind isAgentPresenceOn(). Flag-off,
   // `hero` is false and the plain text card below renders BYTE-IDENTICAL to before (the
-  // League LoadoutChooserSheet never passes `hero`, so it is unaffected).
+  // League LoadoutChooserSheet never passes `hero`, so it is unaffected). `carousel` is a
+  // presentation variant of the SAME hero card (bigger bare head, fills the slide) used only
+  // by the mobile carousel container — never a forked card.
   if (hero) {
     return (
       <HeroArchetypeCard
         codeId={codeId} name={name} disposition={disposition} reveal={reveal}
-        selected={selected} busy={busy} disabled={disabled} onClick={onClick}
+        selected={selected} busy={busy} disabled={disabled} carousel={carousel} onClick={onClick}
       />
     );
   }
@@ -189,11 +203,119 @@ function ConfirmPanel({ codeId, accent, working, error, onConfirm, onCancel }) {
   );
 }
 
+// Mobile-only hero carousel (behind the presence flag): the SAME ArchetypeCard, a DIFFERENT
+// container — a native horizontal scroll-snap track (no library, no dependency). Swiping only
+// browses; selection stays an explicit tap that raises the existing one-way confirm, so a
+// browse gesture can never change the archetype. Opens centered on the CURRENT archetype; a
+// dot indicator restores the "there are six" cue lost when one card fills the view.
+//
+// GESTURE: the EquipSheet has no drag-to-dismiss (dismiss = backdrop tap / X; the pill is
+// decorative) — the only competing gesture is the sheet's vertical content scroll. So the
+// track is a plain scroller with `touch-action: pan-x` + `overscroll-behavior-x: contain`:
+// a horizontal swipe drives the carousel, a vertical swipe bubbles to the sheet's scroll, and
+// there is no JS drag handler to fight. No auto-advance. Reduced motion: native snap still
+// works; the open-centering is instant and the dot transition is disabled.
+function MobileArchetypeCarousel({ current, accent, heroesOn, onSelect }) {
+  const trackRef = useRef(null);
+  const reduced = useReducedMotion();
+  const currentIdx = Math.max(0, ARCHETYPE_ORDER.indexOf(current));
+  const [active, setActive] = useState(currentIdx);
+
+  // Open centered on the current archetype (not the first) — instant, so it's correct under
+  // reduced motion and never animates a scroll on mount.
+  useEffect(() => {
+    const track = trackRef.current;
+    const slide = track && track.children[currentIdx];
+    if (track && slide) {
+      track.scrollLeft = slide.offsetLeft - (track.clientWidth - slide.clientWidth) / 2;
+      setActive(currentIdx);
+    }
+    // Runs once per open (the sheet remounts this on each open); `current` is stable while open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Track which card is centered → the active dot.
+  const syncActive = () => {
+    const track = trackRef.current;
+    if (!track) return;
+    const mid = track.scrollLeft + track.clientWidth / 2;
+    let best = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < track.children.length; i += 1) {
+      const c = track.children[i];
+      const dist = Math.abs(c.offsetLeft + c.clientWidth / 2 - mid);
+      if (dist < bestDist) { bestDist = dist; best = i; }
+    }
+    setActive((prev) => (prev === best ? prev : best));
+  };
+
+  const goTo = (i) => {
+    const slide = trackRef.current && trackRef.current.children[i];
+    if (slide) slide.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', inline: 'center', block: 'nearest' });
+  };
+
+  return (
+    <div>
+      <div
+        ref={trackRef}
+        onScroll={syncActive}
+        style={{
+          position: 'relative', display: 'flex', alignItems: 'stretch', gap: 12,
+          overflowX: 'auto', overflowY: 'hidden',
+          scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-x', overscrollBehaviorX: 'contain',
+          scrollbarWidth: 'none', msOverflowStyle: 'none',
+          // Symmetric % side-padding = (100 − slide%) / 2 so EVERY card centers, including the
+          // first/last (the current archetype can be an edge) — the snap centers into this room.
+          padding: '2px 8%',
+        }}
+      >
+        {ARCHETYPE_ORDER.map((codeId) => (
+          <div key={codeId} style={{ flex: '0 0 84%', scrollSnapAlign: 'center', display: 'flex' }}>
+            <ArchetypeCard
+              codeId={codeId}
+              selected={codeId === current}
+              busy={false}
+              disabled={false}
+              accent={accent}
+              hero={heroesOn}
+              carousel
+              onClick={() => onSelect(codeId)}
+            />
+          </div>
+        ))}
+      </div>
+      {/* position indicator — n-of-six via dots (one card fills the view, so this is the only
+          cue that five more exist). Tapping a dot jumps to that card. */}
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 12 }}>
+        {ARCHETYPE_ORDER.map((codeId, i) => (
+          <button
+            key={codeId}
+            type="button"
+            aria-label={`Show ${getArchetypeDisplayName(codeId)}`}
+            aria-current={i === active}
+            onClick={() => goTo(i)}
+            style={{
+              all: 'unset', height: 7, width: i === active ? 20 : 7, borderRadius: 99, cursor: 'pointer',
+              background: i === active ? accent : alpha(accent, 0.28),
+              transition: reduced ? 'none' : 'width .2s ease, background .2s ease',
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ArchetypePicker({ open, onClose, agent, accent, dock = 'bottom' }) {
   const current = agent?.archetype;
   // Hero cards behind the Agent Presence gate; flag-off this is false → plain text cards
   // (byte-identical). The `?agentPresence=1` dev-preview param also lights them up.
   const heroesOn = isAgentPresenceOn();
+  // Mobile = the bottom-sheet dock (desktop passes dock="center"). The hero CAROUSEL is
+  // mobile-only; desktop keeps the vertical list. Flag-off, neither branch is hero, so the
+  // vertical text list renders on both — byte-identical to today.
+  const mobile = dock !== 'center';
   const [pending, setPending] = useState(null);   // codeId awaiting confirm — NO write yet, or null
   const [working, setWorking] = useState(false);   // the change+seed request is in flight
   const [error, setError] = useState(null);
@@ -288,6 +410,11 @@ export default function ArchetypePicker({ open, onClose, agent, accent, dock = '
           onConfirm={handleConfirm}
           onCancel={() => { setPending(null); setError(null); }}
         />
+      ) : heroesOn && mobile ? (
+        <>
+          {error && <ErrorBanner style={{ margin: '2px 0 11px' }}>{error}</ErrorBanner>}
+          <MobileArchetypeCarousel current={current} accent={accent} heroesOn={heroesOn} onSelect={handleSelect} />
+        </>
       ) : (
         <>
           {error && <ErrorBanner style={{ margin: '2px 0 11px' }}>{error}</ErrorBanner>}
