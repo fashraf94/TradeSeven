@@ -24,25 +24,27 @@ import { EVENT_TIER } from './faceMoves';
 
 // ── archetype → disposition (reflex temperament, NOT strategy) ───────────────
 // The six canonical agent-doc archetype code-ids (api/_utils/agentArchetypeConfig.js —
-// momentum_chaser, analyst, diversifier, contrarian, degen, guardian) mapped onto the
-// three design dispositions. This is a REFLEX mapping (how the face twitches), not a
-// trading claim; it reads only the display `archetype` field and has zero scoring
-// effect, so it is freely tunable. Accepts either the code-id or a display label
-// ("Capital Preserver", "Trend Follower") by normalizing case/whitespace/punctuation.
+// momentum_chaser, analyst, diversifier, contrarian, degen, guardian) each map 1:1 onto
+// their OWN reflex disposition (faceMoves.js DISPO) — SIX DISTINCT, no two archetypes
+// share one, so the picker + battle + Command heads all differentiate at rest. This is a
+// REFLEX mapping (how the face twitches), not a trading claim; it reads only the display
+// `archetype` field and has zero scoring effect, so it is freely tunable. Accepts either
+// the code-id or a display label ("Capital Preserver", "Trend Follower") by normalizing
+// case/whitespace/punctuation. Unknown/empty archetypes fall back to `neutral` (the
+// baseline reflex) — but every KNOWN archetype now resolves to a distinct disposition
+// (Fundamental Investor in particular now has its own real "slow/level" baseline, where it
+// previously fell through to flat neutral).
 const DISPOSITION_BY_ARCHETYPE = {
-  // risk-on / high-activity → speculator reflexes (fast, jittery, high amplitude)
   degen: 'speculator',
   speculator: 'speculator',
-  momentumchaser: 'speculator',   // Trend Follower — chases strength, rotates actively
-  trendfollower: 'speculator',
-  // risk-off / low-activity → capital-preserver reflexes (calm, guarded, slow)
+  momentumchaser: 'trend-follower',   // Trend Follower — decisive and clean (quick, no jitter)
+  trendfollower: 'trend-follower',
   guardian: 'capital-preserver',
   capitalpreserver: 'capital-preserver',
-  diversifier: 'capital-preserver', // stays broad, lets the spread sit — placid
-  // deliberate / measured → neutral baseline
-  analyst: 'neutral',
-  fundamentalinvestor: 'neutral',
-  contrarian: 'neutral',
+  diversifier: 'diversifier',         // distributed attention — frequent small glances
+  analyst: 'fundamental-investor',    // deliberate — the real slow/level baseline
+  fundamentalinvestor: 'fundamental-investor',
+  contrarian: 'contrarian',           // rests against the room — posture tell (leanBias)
 };
 
 /** Normalize an archetype code-id or display label to a disposition key. */

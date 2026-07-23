@@ -25,11 +25,36 @@
 //  amp: energy of moves · dur: time-stretch · recover: return speed · idle: micro freq ·
 //  thresh: min intensity to react · lat: latency ms · antennaLife: idle antenna ·
 //  moodSwing: how far standing moves the baseline · guardBias: guarded even when ahead ·
-//  moodDur: mood timescale stretch · shutterProne: guards under pressure
+//  moodDur: mood timescale stretch · shutterProne: guards under pressure ·
+//  leanBias: persistent resting lean — a posture tell visible even at rest/standing 0 (default 0)
+//
+// SIX DISTINCT dispositions, one per archetype (archetypeToDisposition in presenceBinding.js
+// maps each of the six 1:1 — no two share one). neutral remains the fallback for unknown
+// archetypes. The three below the divider were added July 2026 to complete the set so the
+// archetype-picker hero cards (and the live heads) differentiate at rest; before that,
+// Trend Follower fell to speculator and Contrarian / Diversifier / Fundamental Investor
+// fell to shared reflexes (Fundamental Investor had no real baseline — it landed on flat
+// neutral). Values founder-approved; freely tunable (reflex only, zero scoring effect).
 export const DISPO = {
   neutral:             { id: 'neutral',            name: 'Baseline',          amp: 1.0,  dur: 1.0, recover: 1.0, idle: 1.0,  thresh: 0.16, lat: 110, antennaLife: 1.0,  calm: false, shutterProne: 0.3,  moodSwing: 1.0, guardBias: 0.0,  moodDur: 1.0 },
   speculator:          { id: 'speculator',         name: 'Speculator',        amp: 1.5,  dur: 0.6, recover: 0.7, idle: 2.1,  thresh: 0.06, lat: 25,  antennaLife: 2.4,  calm: false, shutterProne: 0.05, moodSwing: 1.4, guardBias: 0.0,  moodDur: 0.7, jitter: true },
   'capital-preserver': { id: 'capital-preserver',  name: 'Capital Preserver', amp: 0.55, dur: 1.6, recover: 2.0, idle: 0.45, thresh: 0.34, lat: 300, antennaLife: 0.35, calm: true,  shutterProne: 1.0,  moodSwing: 0.7, guardBias: 0.45, moodDur: 1.5 },
+  // ── the four completing the six-distinct set (July 2026, founder-approved) ──
+  // Trend Follower — decisive and clean: quicker than neutral, low bar to act, snappy
+  // recovery, NO jitter (that's the tell vs Speculator — crisp, not twitchy).
+  'trend-follower':       { id: 'trend-follower',       name: 'Trend Follower',       amp: 1.15, dur: 0.85, recover: 0.8, idle: 1.3, thresh: 0.11, lat: 70,  antennaLife: 1.4,  calm: false, shutterProne: 0.1,  moodSwing: 1.15, guardBias: 0.0, moodDur: 0.9 },
+  // Contrarian — rests against the room: the tell is POSTURE (leanBias), not intensity;
+  // calm and unbothered when others react (higher thresh, normal-cadence blink).
+  'contrarian':           { id: 'contrarian',           name: 'Contrarian',           amp: 0.9,  dur: 1.1,  recover: 1.2, idle: 0.8, thresh: 0.22, lat: 150, antennaLife: 0.8,  calm: false, shutterProne: 0.2,  moodSwing: 0.9,  guardBias: 0.0, moodDur: 1.1, leanBias: -0.28 },
+  // Diversifier — distributed attention: highest idle (frequent glances) at the LOWEST
+  // amplitude (small moves) — watches everything a little. idle bumped to 1.8 to widen
+  // the gap against Speculator (the closest neighbor).
+  'diversifier':          { id: 'diversifier',          name: 'Diversifier',          amp: 0.75, dur: 1.0,  recover: 1.1, idle: 1.8, thresh: 0.18, lat: 100, antennaLife: 1.1,  calm: false, shutterProne: 0.2,  moodSwing: 0.85, guardBias: 0.0, moodDur: 1.0 },
+  // Fundamental Investor — deliberate: slowest NON-guarded reflex, high bar to act, slow
+  // blink, steady. Near Capital Preserver's tempo but guardBias 0 — patient, not defensive
+  // (that guardBias gap is the tell vs Capital Preserver at rest). The real "slow/level"
+  // baseline that replaces the old fall-through to flat neutral.
+  'fundamental-investor': { id: 'fundamental-investor', name: 'Fundamental Investor', amp: 0.7,  dur: 1.5,  recover: 1.7, idle: 0.5, thresh: 0.3,  lat: 260, antennaLife: 0.45, calm: true,  shutterProne: 0.15, moodSwing: 0.8,  guardBias: 0.0, moodDur: 1.4 },
 };
 
 // ── the vocabulary — deltas from baseline. lit=true ⇒ literal (no amp/tier scale).

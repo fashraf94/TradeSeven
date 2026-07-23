@@ -16,21 +16,38 @@ import {
   beatsToEvents,
   statusFeedToEvents,
 } from './presenceBinding';
+import { DISPO } from './faceMoves';
+
+// The six canonical archetype code-ids, in Identity Contract order.
+const SIX_CODE_IDS = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
 
 describe('archetypeToDisposition', () => {
-  it('maps the six canonical code-ids to reflex dispositions', () => {
+  it('maps each of the six canonical code-ids to its OWN distinct disposition', () => {
+    // Positive, per-archetype assertions (the canonical six-distinct mapping) — not a
+    // flipped-and-deleted delta. Each archetype has exactly one reflex disposition.
     expect(archetypeToDisposition('degen')).toBe('speculator');
-    expect(archetypeToDisposition('momentum_chaser')).toBe('speculator');
+    expect(archetypeToDisposition('momentum_chaser')).toBe('trend-follower');
+    expect(archetypeToDisposition('contrarian')).toBe('contrarian');
+    expect(archetypeToDisposition('diversifier')).toBe('diversifier');
+    expect(archetypeToDisposition('analyst')).toBe('fundamental-investor');
     expect(archetypeToDisposition('guardian')).toBe('capital-preserver');
-    expect(archetypeToDisposition('diversifier')).toBe('capital-preserver');
-    expect(archetypeToDisposition('analyst')).toBe('neutral');
-    expect(archetypeToDisposition('contrarian')).toBe('neutral');
+  });
+  it('gives all six archetypes DISTINCT dispositions (guard against silent re-collapse)', () => {
+    const dispositions = SIX_CODE_IDS.map(archetypeToDisposition);
+    expect(new Set(dispositions).size).toBe(6);
+  });
+  it('resolves every archetype to a REAL DISPO entry (no typo silently falling to neutral)', () => {
+    for (const id of SIX_CODE_IDS) {
+      expect(DISPO[archetypeToDisposition(id)]).toBeDefined();
+    }
   });
   it('accepts display labels (normalizes case/space/punct)', () => {
     expect(archetypeToDisposition('Capital Preserver')).toBe('capital-preserver');
-    expect(archetypeToDisposition('Trend Follower')).toBe('speculator');
-    expect(archetypeToDisposition('Fundamental Investor')).toBe('neutral');
+    expect(archetypeToDisposition('Trend Follower')).toBe('trend-follower');
+    expect(archetypeToDisposition('Fundamental Investor')).toBe('fundamental-investor');
     expect(archetypeToDisposition('Speculator')).toBe('speculator');
+    expect(archetypeToDisposition('Diversifier')).toBe('diversifier');
+    expect(archetypeToDisposition('Contrarian')).toBe('contrarian');
   });
   it('falls back to neutral for unknown/empty', () => {
     expect(archetypeToDisposition('unknown')).toBe('neutral');
