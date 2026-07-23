@@ -29,6 +29,9 @@ import { logDecision, logFirstMessage } from '../_utils/shadowLogger.js';
 import { buildFirstMessagePrompt, getAgentPhase } from '../_utils/voiceLayerPrompt.js';
 import { TERM_TOKENS } from '../_utils/termUniverse.js';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
+// Deploy Ceremony (Amendment A §4.6) — pure, dependency-free brief-excerpt
+// selector for the deployProgress telemetry. Node-clean, imports nothing fenced.
+import { selectBriefExcerpt } from '../_utils/deployCeremonyExcerpt.js';
 import {
   resolveEquippedWatchlist,
   extractTickerSymbols,
@@ -109,6 +112,20 @@ export default async function handler(req, res) {
   const db = getFirebaseAdmin();
   const anthropic = getAnthropicClient();
 
+  // [Deploy Ceremony A.2/A.3] deployProgress gating state, declared OUTSIDE the
+  // try so the catch (which uses a re-derived agent ref) can read it.
+  //   progressInitialized (A.2 §4) — the whole-map lock write resolved AND this is
+  //     the self-select path, so a deployProgress map exists to dot-path-merge
+  //     into. EVERY deployProgress write is gated on it: if init never succeeded
+  //     (e.g. the lock write threw), we write no telemetry rather than a partial,
+  //     deployId-less map.
+  //   decisionPersisted (A.2 §3c) — the terminal lastDecision write resolved;
+  //     drives the error write's pre_decision/post_decision discriminator.
+  // (A.3 §2 withdrew the A.2 §2 ordering barrier — the retained progress-write
+  //  promises are gone; the intermediate writes are fire-and-forget again.)
+  let progressInitialized = false;
+  let decisionPersisted = false;
+
   try {
     // P4 contract #3 — deploy auth (Spec §0.3), enforced before any read or
     // state change. Client callers: Firebase ID token + ownership; tournament
@@ -169,8 +186,45 @@ export default async function handler(req, res) {
       }
     }
 
-    // Set deploy lock
-    await agentRef.update({ deployingAt: new Date().toISOString() });
+    // Set deploy lock. deployId === this deploy's deployingAt ISO string (Deploy
+    // Ceremony Amendment §4 / A.1): the client binds its ceremony to the first
+    // deployingAt/deployId change it observes after initiating the deploy, and
+    // the 120s in-progress lock above prevents a concurrent deploy from racing it.
+    //
+    // FRESHNESS RULE (Amendment A §3 / A.1 §2): this is the ONLY deployProgress
+    // write that replaces the WHOLE map — all nullable fields explicit null — so
+    // no field bleeds from a prior deploy. deployProgress writes 2–5 MUST use
+    // dot-path merges; a "consistency" refactor must NOT collapse this whole-map
+    // write into a dot-path (that would stop resetting the map) or collapse a
+    // later dot-path into a whole-map (that would wipe deployId/briefExcerpt).
+    //
+    // A.1 §3: the map is gated behind the gameMode fork below — a prescribed
+    // tournament deploy (FLAT6) writes NO deployProgress (D-5), so it never
+    // strands a stale 'strategy_running' onto a tournament agent. The conditional
+    // spread keeps this a SINGLE awaited write; when gameMode is FLAT6 the spread
+    // is a no-op and the write is byte-identical to the pre-ceremony lock write.
+    const deployId = new Date().toISOString();
+    await agentRef.update({
+      deployingAt: deployId,
+      ...(req.body.gameMode !== FLAT6_GAME_MODE && {
+        deployProgress: {
+          deployId,
+          stage: 'strategy_running',
+          fallbackKind: null,
+          errorPhase: null, // A.2 §9
+          briefExcerpt: null,
+          shortlistCount: null,
+          scanCount: null,
+          updatedAt: deployId, // A.1 §4: plain ISO string (the lock-acquire instant), not a sentinel
+        },
+      }),
+    });
+    // [Deploy Ceremony A.2 §4] The whole-map lock write resolved. On the
+    // self-select path a deployProgress map now exists; on a FLAT6 deploy it does
+    // not (and the fork below returns before any further telemetry). Had the write
+    // above thrown, control would be in the catch with this still false, so no
+    // partial (deployId-less) map is ever created there.
+    progressInitialized = req.body.gameMode !== FLAT6_GAME_MODE;
 
     // 2b. Commit the live loadout into activeRules (edit→activate fix).
     // activeRules is re-projected from the CURRENT equipped state at deploy:
@@ -242,6 +296,24 @@ export default async function handler(req, res) {
     const rankingsDoc = await db.collection('indexIntelligence').doc('stockRankings').get();
     if (!rankingsDoc.exists) {
       await agentRef.update({ deployingAt: null });
+      // [Deploy Ceremony] A.1 §5 / A.2 §3d — the server recognized this failure
+      // immediately, so stamp 'error' now instead of leaving the client to wait
+      // out its 90s watchdog. BOUNDED-AWAIT (A.2 §3d as narrowed by A.3 §3): give
+      // the write a chance to land (an unawaited write can be lost to serverless
+      // freeze on return) but never let it delay the 503 beyond ~1s — a stalled
+      // telemetry write must not convert a clean error into a platform timeout.
+      // The .catch() makes the raced update non-throwing; the timer always
+      // resolves. Gated on progressInitialized (A.2 §4). errorPhase 'pre_decision'.
+      if (progressInitialized) {
+        await Promise.race([
+          agentRef.update({
+            'deployProgress.stage': 'error',
+            'deployProgress.errorPhase': 'pre_decision',
+            'deployProgress.updatedAt': new Date().toISOString(),
+          }).catch(() => {}),
+          new Promise((resolve) => { const t = setTimeout(resolve, 1000); t?.unref?.(); }),
+        ]);
+      }
       return res.status(503).json({ error: 'Stock rankings not available. Cron may not have run yet.' });
     }
     const stockUniverse = rankingsDoc.data().stocks || [];
@@ -367,6 +439,30 @@ export default async function handler(req, res) {
       strategy.shortlist.push(...padding);
     }
 
+    // [Deploy Ceremony] Non-fatal telemetry — strategy stage validated. All
+    // fields are read from already-computed values (zero new work). A strategy
+    // fallback (Sonnet did not use submit_strategy → stratToolUse is undefined)
+    // carries fallbackKind:'strategy' + briefExcerpt:null so the client skips the
+    // brief typewriter and never quotes the synthetic template (§1 honesty rule).
+    //
+    // DOT-PATH REQUIRED (A.1 §2): these are field-path MERGES onto the map created
+    // at lock-acquire. A whole-map { deployProgress: {...} } write here would wipe
+    // deployId (the client's staleness guard) — never collapse this to whole-map.
+    // [A.2 §4 / A.3 §2] Gated on progressInitialized; fire-and-forget (the A.2 §2
+    // ordering barrier was withdrawn — telemetry latency must never gate the
+    // deploy, and a late lander corrupts only the persisted stage, which nothing
+    // reads back). Non-throwing via .catch().
+    if (progressInitialized) {
+      agentRef.update({
+        'deployProgress.stage': 'strategy_complete',
+        'deployProgress.fallbackKind': stratToolUse ? null : 'strategy',
+        'deployProgress.briefExcerpt': stratToolUse ? selectBriefExcerpt(strategy.brief) : null,
+        'deployProgress.shortlistCount': strategy.shortlist.length,
+        'deployProgress.scanCount': stockUniverse.length,
+        'deployProgress.updatedAt': new Date().toISOString(), // A.1 §4: plain ISO string
+      }).catch(() => {});
+    }
+
     // Get detailed data for shortlisted stocks only (from rankedStocks to preserve archetypeScore)
     const shortlistSet = new Set(strategy.shortlist);
     const shortlistData = rankedStocks.filter((s) => shortlistSet.has(s.symbol));
@@ -389,6 +485,16 @@ export default async function handler(req, res) {
       strategy.brief, shortlistCSV, cryptoListStr, instBlock,
       equippedWatchlistData ? { tickers: equippedSymbols } : null
     );
+
+    // [Deploy Ceremony] Non-fatal telemetry — portfolio construction starting.
+    // Dot-path merge (A.1 §2); ISO updatedAt (A.1 §4). Gated (A.2 §4);
+    // fire-and-forget (A.3 §2 — no ordering barrier).
+    if (progressInitialized) {
+      agentRef.update({
+        'deployProgress.stage': 'portfolio_running',
+        'deployProgress.updatedAt': new Date().toISOString(),
+      }).catch(() => {});
+    }
 
     const portfolioResponse = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -414,6 +520,11 @@ export default async function handler(req, res) {
     if (Array.isArray(portfolioResult.bench_crypto)) {
       portfolioResult.bench_crypto = portfolioResult.bench_crypto[0];
     }
+
+    // [Deploy Ceremony] Records whether the algorithmic (no-model) portfolio
+    // fallback ran, so the terminal write can stamp fallbackKind:'construction'.
+    // Telemetry-only breadcrumb: the fallback selection logic is unchanged.
+    let constructionFallback = false;
 
     // 8. Validate portfolio
     const validation = validatePortfolio(portfolioResult, augmentedValidSymbols);
@@ -464,9 +575,11 @@ export default async function handler(req, res) {
         } else {
           console.error('[agent/decide] Retry also failed. Using fallback portfolio.');
           portfolioResult = buildFallbackPortfolio(shortlistData);
+          constructionFallback = true; // [Deploy Ceremony] telemetry breadcrumb
         }
       } else {
         portfolioResult = buildFallbackPortfolio(shortlistData);
+        constructionFallback = true; // [Deploy Ceremony] telemetry breadcrumb
       }
     }
 
@@ -517,6 +630,17 @@ export default async function handler(req, res) {
     };
 
     // 10. Write to Firestore + clear lock
+    //
+    // [A.3 §2] NO ordering barrier here (the A.2 §2 barrier was withdrawn: a
+    // pending intermediate write under Firestore backoff must never block decision
+    // persistence — liveness beats stage ordering, I1). ACCEPTED RESIDUAL: a
+    // successful deploy MAY persist with stage reading 'strategy_complete' or
+    // 'portfolio_running' if one of those fire-and-forget writes lands after this
+    // one. Harmless — nothing reads deployProgress.stage back to judge success
+    // (live client already saw 'complete'; the monotonic rule discards a
+    // regression; a fresh subscriber never renders; the server never reads it).
+    // The authoritative success signals are `lastDecision` present + `deployingAt:
+    // null` (below), NEVER deployProgress.stage. Do NOT "fix" this with a barrier.
     await agentRef.update({
       lastDecision: {
         portfolio: enrichedPortfolio.portfolio,
@@ -531,11 +655,33 @@ export default async function handler(req, res) {
       lastDeployedAt: new Date().toISOString(),
       deployingAt: null,
       updatedAt: new Date().toISOString(),
+      // [Deploy Ceremony] stage:'complete' rides the SAME awaited write as
+      // lastDecision + deployingAt:null — no window where the picks exist but the
+      // stage lies (Amendment §4.4 / Spec §15.3). Dot-path merge (A.1 §2) so it
+      // cannot clobber the sibling lastDecision key or the earlier deployProgress
+      // fields (deployId/briefExcerpt survive). fallbackKind gives 'strategy'
+      // precedence over 'construction'. Every added value is a literal or plain
+      // ISO string — NO sentinel on this awaited write (A.1 §4), so telemetry can
+      // never throw the deploy after picks exist. The deployProgress.* fields are
+      // conditional-spread on progressInitialized (A.2 §4): lastDecision and the
+      // lock clear write UNCONDITIONALLY — decision persistence never depends on
+      // telemetry state (I1).
+      ...(progressInitialized && {
+        'deployProgress.stage': 'complete',
+        'deployProgress.fallbackKind': stratToolUse
+          ? (constructionFallback ? 'construction' : null)
+          : 'strategy',
+        'deployProgress.updatedAt': new Date().toISOString(),
+      }),
       // Phase 2: server-side capture of the conflict reconciliation (awaited,
       // in-request — Signal Capture Rider). Only present when INJECT is on;
       // undefined-spread is a no-op, so the flag-off write is byte-identical.
       ...(agent.lastConflictReport && { lastConflictReport: agent.lastConflictReport }),
     });
+    // [A.2 §3c] The decision is now durably persisted. A subsequent throw (battle
+    // creation, opener generation, etc.) unwinds into the catch as a POST-decision
+    // failure — errorPhase there reads 'post_decision'.
+    decisionPersisted = true;
 
     // === PHASE 2: Create Agent Battle ===
 
@@ -775,6 +921,33 @@ export default async function handler(req, res) {
       await db.collection('agents').doc(agentId).update({ deployingAt: null });
     } catch (_e) {
       /* ignore cleanup error */
+    }
+
+    // [Deploy Ceremony] Telemetry — failure. The catch is reachable BOTH before
+    // decision persistence (model/universe failures) AND after it (battle
+    // creation, opener generation, etc. run downstream of the terminal
+    // lastDecision write), so errorPhase records which: 'post_decision' means the
+    // stored decision DID change even though no battle was created (A.2 §3a/§3c —
+    // the old "nothing was committed" comment was FALSE on that path and is
+    // removed). 'error' is the honest terminal stage either way: the HTTP response
+    // is 500 and the user can enter nothing.
+    //
+    // BOUNDED-AWAIT (A.2 §3d as narrowed by A.3 §3): give the error write a chance
+    // to land but never delay the 500 beyond ~1s (a stalled write must not become
+    // a platform timeout). The .catch() makes the raced update non-throwing; the
+    // timer always resolves. Gated on progressInitialized (A.2 §4), which also
+    // subsumes the A.1 §3 FLAT6 gate — a prescribed deploy never initialises the
+    // map, so no stray 'error' lands on a tournament agent. No ordering barrier
+    // (A.3 §2 withdrew it).
+    if (progressInitialized) {
+      await Promise.race([
+        db.collection('agents').doc(agentId).update({
+          'deployProgress.stage': 'error',
+          'deployProgress.errorPhase': decisionPersisted ? 'post_decision' : 'pre_decision',
+          'deployProgress.updatedAt': new Date().toISOString(),
+        }).catch(() => {}),
+        new Promise((resolve) => { const t = setTimeout(resolve, 1000); t?.unref?.(); }),
+      ]);
     }
 
     return res.status(500).json({
