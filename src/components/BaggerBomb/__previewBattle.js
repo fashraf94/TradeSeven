@@ -116,4 +116,9 @@ export const PREVIEW_BATTLE = {
   isTraining: false,
   isTrainingBattle: false,
   createdAt: CREATED_AT,
+
+  // THROWAWAY: opts this mock into the preview-only dev celebration dock in
+  // BaggerBombBattleViewRedesign (fires the overlay on demand, since static
+  // mock prices never cross a threshold). Real battles never set this.
+  __previewCelebrate: true,
 };

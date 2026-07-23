@@ -1407,6 +1407,39 @@ export default function BaggerBombBattleViewRedesign({
         {renderPortfolios()}
       </div>
 
+      {/* THROWAWAY (preview): dev celebration trigger. Only rendered when the mock
+          battle sets __previewCelebrate (see __previewBattle.js) — real battles never
+          do, so production is byte-identical. Static mock prices never cross a
+          threshold, so these fire the overlay on demand, one button per
+          BREAKOUT_CONFIG tier. Remove with the ?preview=baggerbomb gate. */}
+      {battle?.__previewCelebrate === true && (
+        <div style={{
+          position: 'fixed', bottom: '16px', left: '50%', transform: 'translateX(-50%)',
+          display: 'flex', alignItems: 'center', gap: '8px', zIndex: 1001,
+          padding: '8px 10px', background: 'rgba(13,17,23,0.92)',
+          border: '1px solid #21262d', borderRadius: '12px'
+        }}>
+          <span style={{ fontSize: '11px', color: '#8b949e', marginRight: '2px' }}>DEV · fire overlay:</span>
+          {['BREAKOUT', 'BUST', 'CRASH', 'MELTDOWN'].map((type) => {
+            const cfg = BREAKOUT_CONFIG[type];
+            return (
+              <button
+                key={type}
+                onClick={() => triggerCelebration({ type, symbol: 'NVDA', points: cfg.points })}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                  padding: '6px 10px', borderRadius: '8px', cursor: 'pointer',
+                  border: `1px solid ${cfg.color}`, background: 'transparent',
+                  color: cfg.color, fontSize: '12px', fontWeight: 600
+                }}
+              >
+                {cfg.emoji} {cfg.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Celebration Overlay */}
       {renderCelebration()}
     </div>
