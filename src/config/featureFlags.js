@@ -963,3 +963,24 @@ export const COMPILER_ENABLED = false;
  * founder flag-flip PR — never in a build PR.
  */
 export const MANIFEST_WRITE_ENABLED = false;
+
+/**
+ * Archetype Architecture Phase 2 (P2.6) — tick-side shadow assembly +
+ * behavior-record envelope plumbing (api/_utils/shadowAssemblyCapture.js,
+ * riding the non-fenced agent-evaluate tick; Spec DR-10 stage 1 + A-1 +
+ * §6.3/§6.4).
+ *
+ * When FALSE (DEFAULT, merge-dark), the tick never calls into the capture
+ * module — no shadow prompts, no shadowDiffs writes, no gate aggregates, no
+ * settlement records, no receiptCoverage stamp: byte-identical ticks and
+ * settlements. When TRUE (preview smoke only in Phase 2), each battle-tick
+ * with a manifest builds the A-1 envelope once, writes the awaited
+ * create-only shadow diff to agentBattles/{id}/shadowDiffs/{tickId}
+ * (assembly-only — NO second LLM call; near-free vs the eval budget), rides
+ * the §6.3 aggregates on the existing finalUpdate, and completeBattle
+ * attaches the §6.4 battleSettlements record post-commit with the
+ * receiptCoverage retry marker. Pre-manifest battles are skipped entirely
+ * (the envelope is manifest-anchored; no envelope-less record ever exists).
+ * Flip only via a deliberate founder flag-flip PR — never in a build PR.
+ */
+export const SHADOW_ASSEMBLY_ENABLED = false;
