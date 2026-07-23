@@ -112,7 +112,7 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
-import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED } from './config/featureFlags';
+import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn } from './config/featureFlags';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { OnboardingExperience } from './components/Agent';
 import LeagueScreen from './screens/LeagueScreen';
@@ -6487,6 +6487,25 @@ export default function PortfolioDuel() {
   // AGENT DEPLOY: CREATE V3 TRAINING BATTLE FROM AI-GENERATED PORTFOLIO
   // ============================================
 
+  // [Deploy Ceremony §10] enterBattle() extraction. The three nav setters live in
+  // their own handler so the ceremony's "Enter the battle" CTA can fire them AFTER
+  // the reveal, instead of the fused auto-navigation. The battle is built (and its
+  // agentBattles doc persisted server-side, before this ever runs) at deploy time,
+  // so "Back to hub" can never orphan a live deploy. pendingCeremonyBattleRef holds
+  // the built battle between the deploy and the CTA (flag-on only).
+  const pendingCeremonyBattleRef = useRef(null);
+  const enterAgentBattle = (battleObj) => {
+    if (!battleObj) return;
+    setActiveBattleId(battleObj.id);
+    setCurrentBattle(battleObj);
+    setScreen('battle');
+  };
+  const handleEnterCeremonyBattle = () => {
+    const b = pendingCeremonyBattleRef.current;
+    pendingCeremonyBattleRef.current = null;
+    if (b) enterAgentBattle(b);
+  };
+
   const handleCreateAgentTrainingBattle = async (portfolioData, benchData, agentMeta) => {
     // portfolioData: { star: [...], core: [...], support: [...] } — from api/agent/decide
     // benchData: { stocks: [...], crypto: {...} } — from api/agent/decide
@@ -6576,11 +6595,16 @@ export default function PortfolioDuel() {
       });
     }
 
-    // Navigate to battle screen (no Firestore write — dashboard reads agentBattles directly)
-    setActiveBattleId(currentBattleObj.id);
-    setCurrentBattle(currentBattleObj);
-    setScreen('battle');
-    showToast(`Agent deployed to BaggerBomb! 🤖💣`);
+    // Navigate to battle screen (no Firestore write — dashboard reads agentBattles directly).
+    // [Deploy Ceremony §10] Flag-off: fused nav + toast, byte-identical to today.
+    // Flag-on: defer navigation to the reveal's "Enter the battle" CTA and suppress
+    // the toast (the reveal is the confirmation).
+    if (isDeployCeremonyOn()) {
+      pendingCeremonyBattleRef.current = currentBattleObj;
+    } else {
+      enterAgentBattle(currentBattleObj);
+      showToast(`Agent deployed to BaggerBomb! 🤖💣`);
+    }
 
     return agentBattleId;
   };
@@ -8532,6 +8556,7 @@ export default function PortfolioDuel() {
               user={user}
               setShowForge={setShowForge}
               onCreateAgentBattle={handleCreateAgentTrainingBattle}
+              onEnterBattle={handleEnterCeremonyBattle}
               onOpenAgentBattle={handleOpenAgentBattle}
               activeBattles={activeBattles}
               activeDraftBattles={activeDraftBattles}
@@ -8582,6 +8607,7 @@ export default function PortfolioDuel() {
                 setCurrentBattle={setCurrentBattle}
                 activeAgentBattles={activeAgentBattles}
                 onCreateAgentBattle={handleCreateAgentTrainingBattle}
+                onEnterBattle={handleEnterCeremonyBattle}
                 onOpenAgentBattle={handleOpenAgentBattle}
               />
             </div>

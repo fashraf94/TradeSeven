@@ -37,7 +37,9 @@ import { subscribeMyGroup } from '../../services/tournamentGroupService';
 import { casualDeployMissesPodSession } from '../../constants/leagueTournament';
 import { getMarketState } from '../../utils/marketSchedule';
 import { getEquipSlotCounts } from '../../utils/equipSlots';
-import { SCOUTING_BOARD_ENABLED } from '../../config/featureFlags';
+import { SCOUTING_BOARD_ENABLED, isDeployCeremonyOn } from '../../config/featureFlags';
+import HoldToDeployButton from './deployCeremony/HoldToDeployButton';
+import DeployCeremony from './deployCeremony/DeployCeremony';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -114,8 +116,9 @@ export default function CommandDashboard({
   activeAgentBattles = [],
   onCreateAgentBattle,
   onOpenAgentBattle,
+  onEnterBattle,
 }) {
-  const { agent, loading: agentLoading, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
+  const { agent, loading: agentLoading, levelConfig, nextLevelInfo, deployText, activeDirectives } = useAgent(user?.odUserId);
   const masteryProfile = useMasteryProfile(agent?.ownerId || null);
   const drb = useDailyRegimeBrief();
 
@@ -138,6 +141,17 @@ export default function CommandDashboard({
   const [recordOpen, setRecordOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
+
+  // ── Deploy Ceremony (flag-gated) ──────────────────────────────────────────
+  // Founder ruling #2: the ceremony mounts HERE at the shell on hold-completion,
+  // before deployAgent is called, so an open ScoutingBoardSheet's auto-close
+  // fires harmlessly beneath it (the sheet is left untouched). deployResult
+  // carries the client's own deployAgent outcome for the dual-signal reveal /
+  // error surface (spec §5.3).
+  const ceremonyOn = isDeployCeremonyOn();
+  const [ceremonyOpen, setCeremonyOpen] = useState(false);
+  const [deployResult, setDeployResult] = useState(null);
+  const [ceremonyRun, setCeremonyRun] = useState(0); // bump remounts the ceremony (retry)
 
   // G2 (docs/audits/20260720_G2_ACTIVEBATTLEID_CONFLICT_DISCOVERY.md): a competitive pod
   // deploys the user's REAL agent, and /api/agent/decide allows only ONE active battle.
@@ -167,16 +181,28 @@ export default function CommandDashboard({
 
   const handleDeploy = async () => {
     if (deployDisabled) return { success: false };
+    // Flag-on: open the ceremony overlay BEFORE the deploy call (ruling #2), and
+    // record our own deploy outcome for the dual-signal reveal (spec §5.3).
+    if (ceremonyOn) { setCeremonyOpen(true); setDeployResult({ status: 'pending' }); }
     setDeploying(true);
     let result = { success: false };
     try {
       result = await deployAgent(agent.id, onCreateAgentBattle);
     } catch (err) {
       console.error('[Deploy] Error:', err);
+      if (ceremonyOn) result = { success: false, error: err?.message };
     }
     setDeploying(false);
+    if (ceremonyOn) {
+      setDeployResult(result?.success
+        ? { status: 'success', agentBattleId: result.agentBattleId }
+        : { status: 'error', error: result?.error, details: result?.details });
+    }
     return result;
   };
+  // Retry from the error surface — remount the ceremony (fresh stage machine) and
+  // re-run the deploy; the server's 120s lock still governs (may 429 → error).
+  const handleCeremonyRetry = () => { setCeremonyRun((r) => r + 1); handleDeploy(); };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
 
   // ── Compact / expandable brief ────────────────────────────────────────────
@@ -342,6 +368,18 @@ export default function CommandDashboard({
                   <Eye size={16} color={readableOn(accent)} />
                   <span>{isLive ? 'Battle in progress' : 'See what it’s eyeing'}</span>
                 </motion.button>
+              ) : ceremonyOn ? (
+                <HoldToDeployButton
+                  variant="filled"
+                  accent={accent}
+                  label={isLive ? 'Battle in progress' : 'Deploy on this read'}
+                  Icon={Zap}
+                  iconSize={16}
+                  iconFill
+                  onComplete={handleDeploy}
+                  disabled={deployDisabled}
+                  style={{ flex: 1, padding: 12, borderRadius: 12, fontSize: 13.5, gap: 8 }}
+                />
               ) : (
                 <motion.button
                   type="button"
@@ -377,18 +415,28 @@ export default function CommandDashboard({
               </button>
             </div>
             {SCOUTING_BOARD_ENABLED && (
-              <button
-                type="button"
-                onClick={handleDeploy}
-                disabled={deployDisabled}
-                style={{
-                  display: 'block', margin: '9px auto 0', padding: '4px 8px', background: 'transparent', border: 'none',
-                  cursor: deployDisabled ? 'default' : 'pointer', fontFamily: 'inherit', color: CMD.ink3,
-                  fontSize: 12, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3, opacity: deployDisabled ? 0.5 : 1,
-                }}
-              >
-                {deploying ? 'Deploying…' : 'Deploy without previewing'}
-              </button>
+              ceremonyOn ? (
+                <HoldToDeployButton
+                  variant="muted"
+                  accent={accent}
+                  label="Deploy without previewing"
+                  onComplete={handleDeploy}
+                  disabled={deployDisabled}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleDeploy}
+                  disabled={deployDisabled}
+                  style={{
+                    display: 'block', margin: '9px auto 0', padding: '4px 8px', background: 'transparent', border: 'none',
+                    cursor: deployDisabled ? 'default' : 'pointer', fontFamily: 'inherit', color: CMD.ink3,
+                    fontSize: 12, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3, opacity: deployDisabled ? 0.5 : 1,
+                  }}
+                >
+                  {deploying ? 'Deploying…' : 'Deploy without previewing'}
+                </button>
+              )
             )}
           </div>
         </motion.div>
@@ -472,6 +520,20 @@ export default function CommandDashboard({
           deployDisabled={deployDisabled}
           isLive={isLive}
           onDeploy={handleDeploy}
+        />
+      )}
+
+      {ceremonyOn && ceremonyOpen && (
+        <DeployCeremony
+          key={ceremonyRun}
+          agent={agent}
+          accent={accent}
+          agentName={agentName}
+          directiveCount={activeDirectives?.length || 0}
+          deployResult={deployResult}
+          onEnterBattle={() => { onEnterBattle?.(); setCeremonyOpen(false); }}
+          onDismiss={() => setCeremonyOpen(false)}
+          onRetry={handleCeremonyRetry}
         />
       )}
     </div>

@@ -40,6 +40,7 @@
     "src/components/Dashboard/DeployStation.jsx",
     "src/components/Dashboard/EquipStation.jsx",
     "src/components/Dashboard/TraitsSheet.jsx",
+    "src/components/Dashboard/deployCeremony/DeployCeremony.jsx",
     "src/components/Dashboard/desktop/DeployCard.jsx",
     "src/components/Dashboard/desktop/EquipBench.jsx",
     "src/components/Dashboard/desktop/IdentityPanel.jsx",

@@ -13,6 +13,8 @@ import { Zap, Eye, MessageCircle, ChevronRight } from 'lucide-react';
 import AgentOrb from '../../shared/AgentOrb';
 import { CMD, alpha, readableOn, Mono, SectionLabel } from '../commandUI';
 import useDailyRegimeBrief from '../../../hooks/useDailyRegimeBrief';
+import { isDeployCeremonyOn } from '../../../config/featureFlags';
+import HoldToDeployButton from '../deployCeremony/HoldToDeployButton';
 
 function prettyDate(forDate) {
   if (!forDate) return null;
@@ -41,6 +43,7 @@ export default function ReadColumn({ accent, agentName, onOpenAgentRecord, onDep
   const orbState = drb.loading ? 'reading' : 'ready';
   const dateLabel = prettyDate(drb.forDate);
   const ink = readableOn(accent);
+  const ceremonyOn = isDeployCeremonyOn();
 
   const briefBase = { margin: 0, fontSize: 15.5, lineHeight: 1.6, letterSpacing: '-0.005em', color: CMD.ink };
   const briefStyle = expanded
@@ -129,6 +132,18 @@ export default function ReadColumn({ accent, agentName, onOpenAgentRecord, onDep
               <Eye size={16} color={ink} />
               <span>{isLive ? 'Battle in progress' : 'See what it’s eyeing'}</span>
             </motion.button>
+          ) : ceremonyOn ? (
+            <HoldToDeployButton
+              variant="filled"
+              accent={accent}
+              label={isLive ? 'Battle in progress' : 'Deploy on this read'}
+              Icon={Zap}
+              iconSize={16}
+              iconFill
+              onComplete={onDeploy}
+              disabled={deployDisabled}
+              style={{ flex: 1, padding: 12, borderRadius: 12, fontSize: 13.5, gap: 8 }}
+            />
           ) : (
             <motion.button
               type="button"
@@ -164,18 +179,28 @@ export default function ReadColumn({ accent, agentName, onOpenAgentRecord, onDep
           </button>
         </div>
         {boardEnabled && (
-          <button
-            type="button"
-            onClick={onDeploy}
-            disabled={deployDisabled}
-            style={{
-              display: 'block', margin: '9px auto 0', padding: '4px 8px', background: 'transparent', border: 'none',
-              cursor: deployDisabled ? 'default' : 'pointer', fontFamily: 'inherit', color: CMD.ink3,
-              fontSize: 12, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3, opacity: deployDisabled ? 0.5 : 1,
-            }}
-          >
-            {deploying ? 'Deploying…' : 'Deploy without previewing'}
-          </button>
+          ceremonyOn ? (
+            <HoldToDeployButton
+              variant="muted"
+              accent={accent}
+              label="Deploy without previewing"
+              onComplete={onDeploy}
+              disabled={deployDisabled}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={onDeploy}
+              disabled={deployDisabled}
+              style={{
+                display: 'block', margin: '9px auto 0', padding: '4px 8px', background: 'transparent', border: 'none',
+                cursor: deployDisabled ? 'default' : 'pointer', fontFamily: 'inherit', color: CMD.ink3,
+                fontSize: 12, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3, opacity: deployDisabled ? 0.5 : 1,
+              }}
+            >
+              {deploying ? 'Deploying…' : 'Deploy without previewing'}
+            </button>
+          )
         )}
       </div>
     </div>

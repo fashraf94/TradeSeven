@@ -23,9 +23,9 @@
 //     authored here.
 //   • The combo is a real TRAIT_COMBOS label, not a fabricated one.
 
-import { getArchetypeIdentity } from './archetypeIdentity';
-import { getArchetypeDisplayName } from './archetypeDisplay';
-import { ARCHETYPE_DEFAULT_TRAITS } from './traitLibrary';
+import { getArchetypeIdentity } from './archetypeIdentity.js';
+import { getArchetypeDisplayName } from './archetypeDisplay.js';
+import { ARCHETYPE_DEFAULT_TRAITS } from './traitLibrary.js';
 
 // ── the four decision-factor axes — identical for all six so they compare cleanly ──
 export const FACTOR_AXES = [
