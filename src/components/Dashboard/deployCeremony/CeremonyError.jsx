@@ -6,9 +6,14 @@
 // path, where the stored decision DID change). data.details is shown when
 // present; retry respects the server's 120s deploy lock.
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowLeft, RotateCcw } from 'lucide-react';
 import { CMD, alpha, Mono, Eyebrow } from '../commandUI';
+
+function safeDetails(details) {
+  if (typeof details === 'string') return details;
+  try { return JSON.stringify(details); } catch { return String(details); }
+}
 
 const HEADLINE = {
   deploy: () => 'Deployment failed — no battle was created.',
@@ -20,11 +25,21 @@ const HEADLINE = {
 
 export default function CeremonyError({
   accent = CMD.copper, agentName = 'Your agent', errorKind = 'deploy',
-  details, cooldownRemainingMs = 0, onRetry, onDismiss,
+  details, cooldownUntil = 0, onRetry, onDismiss,
 }) {
   const headline = (HEADLINE[errorKind] || HEADLINE.deploy)(agentName);
-  const retrySecs = cooldownRemainingMs > 0 ? Math.ceil(cooldownRemainingMs / 1000) : 0;
-  const canRetry = Boolean(onRetry) && retrySecs === 0;
+  // Tick a local clock so the retry countdown actually decrements and re-enables
+  // when the server's 120s lock expires (the stage machine stops re-rendering
+  // once in 'error').
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!cooldownUntil) return undefined;
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, [cooldownUntil]);
+  const remaining = cooldownUntil ? Math.max(0, cooldownUntil - now) : 0;
+  const retrySecs = Math.ceil(remaining / 1000);
+  const canRetry = Boolean(onRetry) && remaining === 0;
 
   return (
     <div style={{ width: '100%', maxWidth: 420, margin: '0 auto', padding: '0 22px', textAlign: 'center' }}>
@@ -45,7 +60,7 @@ export default function CeremonyError({
           border: `1px solid ${CMD.hair}`, borderRadius: 12, padding: '10px 12px', marginBottom: 14,
           textAlign: 'left', wordBreak: 'break-word',
         }}>
-          {typeof details === 'string' ? details : JSON.stringify(details)}
+          {safeDetails(details)}
         </div>
       )}
 

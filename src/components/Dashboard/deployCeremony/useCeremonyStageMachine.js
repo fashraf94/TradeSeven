@@ -40,6 +40,13 @@ const MIN_FLOOR_MS = [2000, 2500, 2500, 2500];
 const REQUIRED_RANK = [0, 1, 2, 3, 4];
 const SLOW_MS = 45000;
 const WATCHDOG_MS = 90000;
+// A returned client success authoritatively means the battle exists AND the
+// server wrote stage:'complete' in the same awaited update (decide.js). If that
+// checkpoint is never observed for our deployId (lost write, snapshot lag, or a
+// mis-pinned deployId), don't strand the user on the theater — treat success as
+// complete after this grace. The dual-signal's post-persistence guard is
+// unaffected: a client ERROR still routes to the error surface first.
+const SUCCESS_GRACE_MS = 4000;
 const STAGE_KEYS = ['loadout', 'scanning', 'brief', 'portfolio'];
 
 export default function useCeremonyStageMachine({
@@ -64,6 +71,7 @@ export default function useCeremonyStageMachine({
   const maxRankRef = useRef(0);
   const lastProgressAtRef = useRef(0);
   const lastUpdatedAtRef = useRef(null);
+  const successAtRef = useRef(0); // when the client deploy first returned success
   const stageEnteredAtRef = useRef(0);
   const skipRef = useRef(false);
   const stageIndexRef = useRef(0);
@@ -122,6 +130,7 @@ export default function useCeremonyStageMachine({
 
       // ── Watchdog + slow state — only while the deploy is genuinely pending
       // (a resolved success is imminent-complete; never false-timeout it).
+      if (ds === 'success' && successAtRef.current === 0) successAtRef.current = t;
       if (ds !== 'success') {
         const sinceProgress = t - lastProgressAtRef.current;
         if (sinceProgress >= WATCHDOG_MS) {
@@ -139,9 +148,14 @@ export default function useCeremonyStageMachine({
       // the gate). Reveal additionally requires the client success signal.
       const i = stageIndexRef.current;
       if (i >= 4) return;
+      // H1 safety net: once success has been in for the grace, treat the server as
+      // 'complete' so a lost/ignored checkpoint can't strand a real, successful
+      // deploy on the theater forever.
+      const successGrace = ds === 'success' && successAtRef.current > 0 && (t - successAtRef.current) >= SUCCESS_GRACE_MS;
+      const effRank = successGrace ? Math.max(maxRankRef.current, 4) : maxRankRef.current;
       const floor = skipRef.current ? 0 : MIN_FLOOR_MS[i];
       const floorElapsed = (t - stageEnteredAtRef.current) >= floor;
-      const nextRankOk = maxRankRef.current >= REQUIRED_RANK[i + 1];
+      const nextRankOk = effRank >= REQUIRED_RANK[i + 1];
       const revealSignal = (i + 1 < 4) || ds === 'success';
       if (floorElapsed && nextRankOk && revealSignal) {
         const next = i + 1;

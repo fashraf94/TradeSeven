@@ -62,12 +62,12 @@ export default function DeployCeremony({
   const monologue = getMonologueQuote(lastDecision, dp.fallbackKind);
   const fullBrief = lastDecision?.strategyBrief || null;
 
-  // Retry cooldown (spec §8): respect the server's 120s lock.
-  const cooldownRemainingMs = useMemo(() => {
-    if (!agent?.lastDeployedAt) return 0;
-    const since = Date.now() - new Date(agent.lastDeployedAt).getTime();
-    return Math.max(0, DEPLOY_LOCK_MS - since);
-  }, [agent?.lastDeployedAt]);
+  // Retry cooldown (spec §8): respect the server's 120s lock. Pass the ABSOLUTE
+  // unlock instant; the error surface ticks its own countdown off it (a memo'd
+  // remaining would freeze — the machine stops setState-ing once in 'error').
+  const cooldownUntil = useMemo(() => (
+    agent?.lastDeployedAt ? new Date(agent.lastDeployedAt).getTime() + DEPLOY_LOCK_MS : 0
+  ), [agent?.lastDeployedAt]);
 
   // Polite live-region announcement (§9).
   const liveText = machine.phase === 'error'
@@ -91,7 +91,7 @@ export default function DeployCeremony({
         agentName={agentName}
         errorKind={machine.errorKind}
         details={deployResult?.details}
-        cooldownRemainingMs={cooldownRemainingMs}
+        cooldownUntil={cooldownUntil}
         onRetry={onRetry}
         onDismiss={onDismiss}
       />
