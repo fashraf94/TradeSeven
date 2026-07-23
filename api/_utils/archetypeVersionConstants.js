@@ -52,3 +52,10 @@ export const ARCHETYPE_IDENTITY_VERSION = 1;
 // §4.4 — stamped into every CompiledBuild as compilerVersion. Bumped when
 // compileBuild's derivation/merge/legality semantics change.
 export const COMPILER_VERSION = 1;
+
+// §8 + R1 finding 2 — stamped into every ResolvedAgentManifest at creation.
+// Battles keep their BIRTH policy: mutation endpoints consult the battle's
+// stamp, never the global constant, so a freeze-policy change can never
+// retro-apply to in-flight battles. Bumped when the §8 freeze policy
+// (which layers freeze at lock vs resolve live) changes.
+export const FREEZE_POLICY_VERSION = 1;

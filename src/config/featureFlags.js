@@ -942,3 +942,24 @@ export const POD_EXPIRY_SWEEP_ENABLED = false;
  * a green activation gate — NEVER in a build PR (Phase 2 exit criteria).
  */
 export const COMPILER_ENABLED = false;
+
+/**
+ * Archetype Architecture Phase 2 (P2.5, §7-signed fence contact) — the
+ * ResolvedAgentManifest block written by createAgentBattle adjacent to the
+ * agentContext snapshot (Spec DR-6; built by the non-fenced
+ * api/_utils/resolvedAgentManifest.js kernel, the buildCustomizationSnapshot
+ * precedent).
+ *
+ * When FALSE (DEFAULT, merge-dark), createAgentBattle's battle doc is
+ * byte-identical to today (the P4 equivalence battery is the lock) — no
+ * manifest field exists anywhere. When TRUE (preview smoke only in Phase 2),
+ * every new battle doc carries `resolvedAgentManifest` frozen at creation:
+ * create-only-after-start holds by construction (the block is born in the
+ * single creation write and no updater exists — R1-4).
+ *
+ * ZERO READERS MIGRATE IN PHASE 2: agentContext remains the runtime
+ * authority throughout (brief P2.5); manifest-read migration is a later
+ * phase behind the DR-10 two-stage validation. Flip only via a deliberate
+ * founder flag-flip PR — never in a build PR.
+ */
+export const MANIFEST_WRITE_ENABLED = false;

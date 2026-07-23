@@ -714,6 +714,9 @@ export default async function handler(req, res) {
         opponent,
         // [Phase5B1] Frozen snapshot of the equipped watchlist (null when none).
         equippedWatchlist: equippedWatchlistSnapshot,
+        // P2.5 (§7-signed): the P2.4b-validated build feeds the manifest
+        // block. Dark: the gate returns no build and nothing is passed.
+        compiledBuild: buildGate.compiledBuild ?? null,
       }
     );
 
@@ -1192,6 +1195,9 @@ async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, ag
         doubleDownSymbols: Array.isArray(doubleDownSymbols) ? doubleDownSymbols : [],
         userPicksAtDeploy: Array.isArray(userPicks) ? userPicks : [],
       },
+      // P2.5 (§7-signed): the P2.4b-validated build feeds the manifest
+      // block. Dark: the gate returns no build and nothing is passed.
+      compiledBuild: buildGate.compiledBuild ?? null,
     }
   );
 
