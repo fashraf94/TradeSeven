@@ -24,7 +24,7 @@ import { isAgentPresenceOn } from '../../../config/featureFlags';
 // Head layout (sizes + the face-centre lift + the label gap) lives in a non-component
 // module so this view file exports only a component, and the collision test reads the
 // SAME sizes the component renders. Flag-off renders the orb byte-identically.
-import { HEAD_FACE_LIFT, LABEL_BELOW_GAP, headSizeFor } from './climbHeadLayout';
+import { HEAD_FACE_LIFT, LABEL_BELOW_GAP, COMPACT_AXIS_W, headSizeFor } from './climbHeadLayout';
 
 // the living atmosphere — deep sky, drifting aurora, a deterministic star field.
 function ClimbAtmosphere({ tone }) {
@@ -75,7 +75,7 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
 
   // geometry — `compact` tightens the axis + vertical padding for the ~374-wide
   // mobile hero. Default off → the desktop hero geometry is byte-identical.
-  const axisW = compact ? 40 : 52; const padT = compact ? 32 : 40; const padB = compact ? 54 : 62;
+  const axisW = compact ? COMPACT_AXIS_W : 52; const padT = compact ? 32 : 40; const padB = compact ? 54 : 62;
   const plotT = padT; const plotB = h - padB;
   const laneW = (w - axisW) / rows.length;
   const laneX = (i) => axisW + laneW * (i + 0.5);
@@ -255,8 +255,11 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                        centre stays the P&L anchor. Desktop keeps the beside label: its 316px
                        lanes never overlap even at headSz, and a below-label would collide
                        with the desktop-only under-head name row at low altitudes. */
-                    <div style={{ position: 'absolute', left: '50%', top: `calc(100% + ${LABEL_BELOW_GAP}px)`, transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
-                      <ArenaCount value={at(s)} size={compact ? (you ? 15 : 12) : (you ? 18 : 14)} weight={700} showSign={false} />
+                    <div style={{ position: 'absolute', left: '50%', top: `calc(100% + ${LABEL_BELOW_GAP}px)`, transform: 'translateX(-50%)', whiteSpace: 'nowrap',
+                      // the below-label sits over its own lane's climb trail line — a bg-toned
+                      // shadow keeps the digits legible over the coloured stroke.
+                      textShadow: `0 1px 4px ${LTOKENS.bg}` }}>
+                      <ArenaCount value={at(s)} size={you ? 15 : 12} weight={700} showSign={false} />
                     </div>
                   ) : (
                     <div style={{ position: 'absolute', left: dz / 2 + 11, top: '50%', transform: 'translateY(-50%)', whiteSpace: 'nowrap' }}>
@@ -291,10 +294,16 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
         const youRank = rankOf(youId);
         const gap = ranked && youRank > 2 ? +(cutAlt - at(youRow)).toFixed(1) : null;
         const flyLabel = surge ? (typeof surge.pts === 'number' ? fmtPoints(surge.pts) : surge.pts) : null;
+        // The head stands ~0.54*size taller than the orb (the antenna), so the "to the cut"
+        // pill is raised to clear the taller you-head's bulb when a head renders. You trail
+        // here (youRank>2) → never the leader, so the you head is the non-leader headSz.
+        // Flag-off keeps the original yy-42 (byte-identical).
+        const youHeadSz = headSizeFor(true, false, compact);
+        const cutPillTop = showHead ? yy - Math.round(0.542 * youHeadSz) - 24 : yy - 42;
         return (
           <>
             {gap != null && gap > 0 && (
-              <div className={reduce ? '' : 'bv2-rise'} style={{ position: 'absolute', left: yx, top: yy - 42, transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
+              <div className={reduce ? '' : 'bv2-rise'} style={{ position: 'absolute', left: yx, top: cutPillTop, transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 999, background: alpha(LX.cut, 0.12), border: `1px solid ${alpha(LX.cut, 0.4)}` }}>
                   <LIcon name="long" size={9} color={LX.cut} stroke={2.4} />
                   <Mono style={{ fontSize: 9, fontWeight: 700, color: LX.cut }}>{gap} to the cut</Mono>

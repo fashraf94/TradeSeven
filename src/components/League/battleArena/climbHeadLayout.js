@@ -14,6 +14,7 @@
 
 export const HEAD_FACE_LIFT = 16 / 156; // ≈ 0.1026 — up-shift so the face centre = the anchor
 export const LABEL_BELOW_GAP = 4;       // score-label gap below the head footprint (compact)
+export const COMPACT_AXIS_W = 40;       // compact axis gutter (desktop is 52) — the lane origin
 
 // Head render sizes (larger than the orb: orb was you 52/46/40 desktop, 44/40/36 compact).
 export function headSizeFor(you, lead, compact) {
