@@ -1,71 +1,87 @@
 // api/_utils/deployCeremonyExcerpt.js
 //
 // Pure, dependency-free excerpt selector for the Deploy Ceremony deployProgress
-// telemetry (DEPLOY_CEREMONY_SPEC_V1 §5 / Amendment A §4.6).
+// telemetry (DEPLOY_CEREMONY_SPEC_V1 §5 / Amendment A §4.6 / A.2 §5).
 //
-// Returns a VERBATIM substring of the strategy brief — the first sentence(s) up
-// to ~220 characters, cut at a sentence boundary where possible. It never
-// rewrites, paraphrases, or appends characters (no trailing "…"): the result is
-// always an exact contiguous substring of the input, or null. This is what lets
-// the client typewriter it while honouring the §1/§9 honesty rule — what is
-// shown is provably a slice of the stored strategyBrief.
+// HONESTY RULE (A.2 §5, revised): "verbatim substring" is necessary but NOT
+// sufficient — a word-boundary cut can invert meaning while every character is
+// authentic ("avoiding semis unless breadth confirms" → "avoiding semis"). So
+// the excerpt must be a verbatim contiguous PREFIX that TERMINATES AT A SENTENCE
+// BOUNDARY (. ! ?). When no sentence boundary falls within the cap we return
+// null — truthful degradation beats a misleading prefix. The return is always an
+// exact prefix of the input (brief.startsWith(result) holds for every non-null
+// result), never rewritten, never with an appended ellipsis: the client renders
+// a truncation indicator when briefExcerpt.length < strategyBrief.length (A.2
+// §5.3), so continuation is signalled without altering the stored artifact.
 //
-// Imports nothing (never a fenced module), so it is unit-testable in isolation
-// and safe to import from the fenced decide.js as the §11.2-blessed helper.
+// Residual limit stated plainly (A.2 §5): even a sentence-complete prefix can
+// mislead if a LATER sentence qualifies it. Perfect fidelity is not available in
+// an excerpt; sentence-completeness + a raised cap + a client truncation
+// indicator is the honest available maximum.
+//
+// Imports nothing (never a fenced module); unit-testable in isolation.
 
-// ~220 chars per the excerpt rule; the brief tool contract is ~200 words, so a
-// well-formed brief usually yields 2–3 whole sentences here.
-const MAX_EXCERPT_CHARS = 220;
-// Don't cut to a trivially short fragment on an early period (e.g. "U.S. ...").
-const MIN_EXCERPT_CHARS = 40;
+// ~400 chars so 2–3 complete sentences of the ~200-word brief typically fit
+// (A.2 §5.2 — the old 220 cap forced the mid-sentence cuts the removed
+// word-boundary fallback was papering over). Re-calibrate against D-7's live
+// sample when it arrives.
+const MAX_EXCERPT_CHARS = 400;
 
 /**
- * Select a verbatim, sentence-bounded excerpt of a strategy brief.
+ * Drop a single trailing UNPAIRED UTF-16 surrogate so a code-unit slice can
+ * never emit a replacement char (�) that appears nowhere in the brief (A.2 §5.4).
+ * A properly paired surrogate (emoji, etc.) is left intact. Exported for tests.
+ *
+ * @param {string} s
+ * @returns {string}
+ */
+export function stripLoneSurrogate(s) {
+  if (typeof s !== 'string' || s.length === 0) return s;
+  const last = s.charCodeAt(s.length - 1);
+  // Trailing HIGH surrogate can never be paired (nothing follows it).
+  if (last >= 0xd800 && last <= 0xdbff) return s.slice(0, -1);
+  // Trailing LOW surrogate is paired only if the preceding unit is a high one.
+  if (last >= 0xdc00 && last <= 0xdfff) {
+    const prev = s.length >= 2 ? s.charCodeAt(s.length - 2) : -1;
+    if (prev < 0xd800 || prev > 0xdbff) return s.slice(0, -1);
+  }
+  return s;
+}
+
+/**
+ * Select a verbatim, sentence-terminated PREFIX of a strategy brief.
  *
  * @param {unknown} brief    The full strategyBrief string (any type tolerated).
- * @param {number} [maxChars] Soft length cap; defaults to ~220.
- * @returns {string|null} A contiguous substring of `brief`, or null when the
- *   input is not a non-empty string.
+ * @param {number} [maxChars] Soft length cap; defaults to ~400.
+ * @returns {string|null} A prefix of `brief` ending at a sentence boundary (or
+ *   the whole brief when it fits), or null when the input is not a non-empty
+ *   string OR no sentence boundary falls within the cap.
  */
 export function selectBriefExcerpt(brief, maxChars = MAX_EXCERPT_CHARS) {
   if (typeof brief !== 'string') return null;
-  const trimmed = brief.trim();
-  if (trimmed.length === 0) return null;
-  if (trimmed.length <= maxChars) return trimmed;
+  if (brief.trim().length === 0) return null;
 
-  const window = trimmed.slice(0, maxChars);
-  // The shortest acceptable excerpt. Fixed at ~40 for the real ~220 cap, but
-  // scaled down for small custom caps so a legitimate first sentence is never
-  // rejected as "too short".
-  const minChars = Math.min(MIN_EXCERPT_CHARS, Math.floor(maxChars / 2));
+  // Whole brief already within the cap — return it verbatim (a prefix of itself;
+  // nothing is omitted, so no truncation can mislead). No leading trim: the
+  // result must satisfy brief.startsWith(result); the client trims for display.
+  if (brief.length <= maxChars) return brief;
 
-  // Prefer the LAST sentence boundary (. ! ?) followed by whitespace or the
-  // window end, so long as it is not a trivially short fragment. A period inside
-  // a number ("3.5%") or abbreviation mid-token is skipped because its next char
-  // is not whitespace.
+  // Otherwise the excerpt must terminate at a sentence boundary within the cap.
+  // A.2 §5.1: NO word-boundary fallback — when no boundary fits, return null.
+  const window = brief.slice(0, maxChars);
   let boundary = -1;
   for (let i = 0; i < window.length; i++) {
     const ch = window[i];
     if (ch === '.' || ch === '!' || ch === '?') {
-      const next = window[i + 1];
-      if (next === undefined || /\s/.test(next)) {
-        boundary = i; // index of the sentence-ending punctuation
-      }
+      // Look at the next char in the FULL brief (not the window) so a boundary
+      // at the window edge is judged correctly, and a decimal ("3.5") or a
+      // mid-token dot is skipped because its next char is not whitespace.
+      const next = brief[i + 1];
+      if (next === undefined || /\s/.test(next)) boundary = i;
     }
   }
-  if (boundary >= minChars - 1) {
-    return trimmed.slice(0, boundary + 1).trim();
-  }
-
-  // No usable sentence boundary in range — fall back to the last word boundary
-  // so we never cut mid-word. Still a verbatim substring.
-  const lastSpace = window.lastIndexOf(' ');
-  if (lastSpace >= minChars - 1) {
-    return trimmed.slice(0, lastSpace).trim();
-  }
-
-  // Degenerate input (one very long token) — hard verbatim cut at the cap.
-  return window.trim();
+  if (boundary < 0) return null;
+  return stripLoneSurrogate(brief.slice(0, boundary + 1));
 }
 
 export default selectBriefExcerpt;
