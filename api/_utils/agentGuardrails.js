@@ -19,6 +19,7 @@
 
 import { pickSwapReplacementCandidate } from './agentRiskManager.js';
 import { flattenBenchServer } from './agentScoring.js';
+import { ARCHETYPE_CONFIGS } from './agentArchetypeConfig.js';
 import { SECTOR_CAP_MODE } from '../../src/config/featureFlags.js';
 import { getEffectiveArchetype } from './directiveIdentity.js';
 import { TOURNAMENT_GAME_MODE, AGENT_PICKS_PER_AGENT } from '../../src/constants/leagueTournament.js';
@@ -37,8 +38,8 @@ import { TOURNAMENT_GAME_MODE, AGENT_PICKS_PER_AGENT } from '../../src/constants
 //
 // SCOPE (founder ruling — Option A): TOURNAMENT (flat6) battles only. There the
 // agent book is exactly AGENT_PICKS_PER_AGENT = 6 non-crypto slots, so
-// 2/6 = 33.3% (allowed) .. 3/6 = 50% (blocked): the 35% cap encodes "max 2 per
-// sector." The denominator is the MODE's slot count, never the momentary held
+// 2/6 = 33.3% (allowed) .. 3/6 = 50% (blocked): the derived cap (2/6) encodes
+// "max 2 per sector." The denominator is the MODE's slot count, never the momentary held
 // count — a partially-filled book must not inflate sector shares (spec §6:
 // "partial-fill construction never trapped"). Standard/tiered Diversifier books
 // (7 slots incl. a mandatory crypto) are intentionally OUT of scope here.
@@ -57,7 +58,40 @@ import { TOURNAMENT_GAME_MODE, AGENT_PICKS_PER_AGENT } from '../../src/constants
 // the array at the call site instead; the synthetic guardrail makes it non-empty,
 // so the existing `length > 0` skip self-resolves. (The observe path has the same
 // trap: the cron's gate also opens when resolveSectorSlotObserveCap returns a cap.)
-export const DIVERSIFIER_SECTOR_CAP_PCT = 35; // max ~2 of 6 flat6 picks per sector
+// SINGLE SOURCE OF TRUTH (Sector Cap Activation arc, founder-ruled 2026-07-23):
+// the cap is DERIVED from the Diversifier archetype's declared per-sector SLOT
+// COUNT — `sectorConcentrationCap` (= 2, "max 2 positions per sector") — read
+// from the FENCED agentArchetypeConfig.js. Reading a fenced export is permitted
+// (BUILD_RULES §1); this is the behaviorFingerprint.js:152 precedent, which reads
+// the SAME field for the Character-tab Concentration axis — so the DISPLAY and
+// the ENFORCED cap now derive from ONE value and can no longer drift (§9
+// display-agreement). The percentage is the flat6-book re-encoding of that count:
+//   capPct = sectorConcentrationCap / bookSize,  bookSize = AGENT_PICKS_PER_AGENT
+// (6, the MODE's slot count — the SAME denominator checkSectorCap uses, never
+// held.length). Diversifier: 2/6 = 33.3% (admits 2 of 6) .. 3/6 = 50% (blocks 3).
+//
+// The `+ 1e-6` is a DEFENSIVE belt-and-braces float guard, NOT load-bearing:
+// checkSectorCap compares `postWeight <= cap` with the SAME `(n / bookSize) * 100`
+// arithmetic on both sides, so at n = sectorConcentrationCap the two are already
+// bit-identical (2/6 <= 2/6 passes). The nudge only protects a FUTURE refactor
+// that computed the two sides differently (a share of 0.33333334 must not
+// spuriously block the 2nd position). It lives on the CONSTANT side ON PURPOSE —
+// never inside checkSectorCap, which must not loosen a user-set maxSectorWeight
+// (founder ruling 2026-07-23). 1e-6 pp is a millionth of a slot, far below the
+// 16.67 pp gap between slot counts, so it can never admit the 3rd position.
+// (The admits-2/blocks-3 boundary is regression-locked in agentGuardrails.test.js,
+// which fails loudly if the fenced config value ever drifts.)
+//
+// FENCE POSTURE (founder ruling 2026-07-23): this edit lands while
+// agentGuardrails.js is NON-fenced (absent from BUILD_RULES §1) — the Diversifier
+// cap was scoped non-fenced by design, so no §7 sign-off gates it. This is
+// DELIBERATELY GRANDFATHERED: the separate, pending §1 fence-list reconciliation
+// WILL add this file to the fence (it owns deterministic risk enforcement —
+// applyGuardrails / checkSectorCap / stop + trailing firing — and is the DR-4
+// guardrail-binding compilation target). After that reconciliation merges, edits
+// here are §7-gated fence contact.
+export const DIVERSIFIER_SECTOR_CAP_PCT =
+  (ARCHETYPE_CONFIGS.diversifier.sectorConcentrationCap / AGENT_PICKS_PER_AGENT) * 100 + 1e-6;
 
 /**
  * The shared gate + merge for BOTH firing modes (enforce injection and observe
@@ -70,8 +104,8 @@ function resolveSectorSlotContext(guardrails, battle) {
   // Resolve via the Phase-C resolver (frozen battle snapshot), not a raw agent read.
   if (getEffectiveArchetype(battle, null) !== 'diversifier') return null;
 
-  // The user can only TIGHTEN: effectiveCap = min(ALL user maxSectorWeight caps, core
-  // 35%). Take the min over every existing numeric cap so a user's stricter value
+  // The user can only TIGHTEN: effectiveCap = min(ALL user maxSectorWeight caps, the
+  // derived core cap). Take the min over every existing numeric cap so a user's stricter value
   // still wins even if the snapshot somehow carried more than one.
   const existingCaps = base.filter(g => g?.type === 'maxSectorWeight' && typeof g.value === 'number');
   const userCap = existingCaps.length ? Math.min(...existingCaps.map(g => g.value)) : Infinity;
@@ -82,7 +116,7 @@ function resolveSectorSlotContext(guardrails, battle) {
 /**
  * Augment a battle's deployedGuardrails with the Diversifier sector-slot cap.
  * ENFORCE-only and tournament-only; the user can only make the cap TIGHTER
- * (effectiveCap = min(userCap, core 35%)), never looser. Returns the original
+ * (effectiveCap = min(userCap, the derived core cap)), never looser. Returns the original
  * array unchanged when SECTOR_CAP_MODE is not 'enforce', the battle is not a
  * tournament, or the effective archetype is not Diversifier — so OFF is
  * byte-identical and OBSERVE never alters the array (its measurement rides
