@@ -165,24 +165,36 @@ export default async function handler(req, res) {
     }
 
     // Set deploy lock. deployId === this deploy's deployingAt ISO string (Deploy
-    // Ceremony Amendment §4): the client binds its ceremony to the first
+    // Ceremony Amendment §4 / A.1): the client binds its ceremony to the first
     // deployingAt/deployId change it observes after initiating the deploy, and
-    // the 120s in-progress lock above prevents a concurrent deploy from racing
-    // it. The fresh deployProgress map (all nullable fields explicitly null)
-    // rides this EXISTING awaited write, so no stale field bleeds from a prior
-    // deploy — telemetry only; the lock's value/timing are unchanged.
+    // the 120s in-progress lock above prevents a concurrent deploy from racing it.
+    //
+    // FRESHNESS RULE (Amendment A §3 / A.1 §2): this is the ONLY deployProgress
+    // write that replaces the WHOLE map — all nullable fields explicit null — so
+    // no field bleeds from a prior deploy. deployProgress writes 2–5 MUST use
+    // dot-path merges; a "consistency" refactor must NOT collapse this whole-map
+    // write into a dot-path (that would stop resetting the map) or collapse a
+    // later dot-path into a whole-map (that would wipe deployId/briefExcerpt).
+    //
+    // A.1 §3: the map is gated behind the gameMode fork below — a prescribed
+    // tournament deploy (FLAT6) writes NO deployProgress (D-5), so it never
+    // strands a stale 'strategy_running' onto a tournament agent. The conditional
+    // spread keeps this a SINGLE awaited write; when gameMode is FLAT6 the spread
+    // is a no-op and the write is byte-identical to the pre-ceremony lock write.
     const deployId = new Date().toISOString();
     await agentRef.update({
       deployingAt: deployId,
-      deployProgress: {
-        deployId,
-        stage: 'strategy_running',
-        fallbackKind: null,
-        briefExcerpt: null,
-        shortlistCount: null,
-        scanCount: null,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
+      ...(req.body.gameMode !== FLAT6_GAME_MODE && {
+        deployProgress: {
+          deployId,
+          stage: 'strategy_running',
+          fallbackKind: null,
+          briefExcerpt: null,
+          shortlistCount: null,
+          scanCount: null,
+          updatedAt: deployId, // A.1 §4: plain ISO string (the lock-acquire instant), not a sentinel
+        },
+      }),
     });
 
     // 2b. Commit the live loadout into activeRules (edit→activate fix).
@@ -255,6 +267,15 @@ export default async function handler(req, res) {
     const rankingsDoc = await db.collection('indexIntelligence').doc('stockRankings').get();
     if (!rankingsDoc.exists) {
       await agentRef.update({ deployingAt: null });
+      // [Deploy Ceremony] A.1 §5 — the server recognized this failure immediately,
+      // so stamp 'error' now (dot-path merge, fire-and-forget, plain ISO string)
+      // instead of leaving the client to wait out its 90s watchdog. This exit is
+      // AFTER the gameMode fork, so it is self-select only and the deployProgress
+      // map created at lock-acquire always exists here.
+      agentRef.update({
+        'deployProgress.stage': 'error',
+        'deployProgress.updatedAt': new Date().toISOString(),
+      }).catch(() => {});
       return res.status(503).json({ error: 'Stock rankings not available. Cron may not have run yet.' });
     }
     const stockUniverse = rankingsDoc.data().stocks || [];
@@ -385,13 +406,17 @@ export default async function handler(req, res) {
     // fallback (Sonnet did not use submit_strategy → stratToolUse is undefined)
     // carries fallbackKind:'strategy' + briefExcerpt:null so the client skips the
     // brief typewriter and never quotes the synthetic template (§1 honesty rule).
+    //
+    // DOT-PATH REQUIRED (A.1 §2): these are field-path MERGES onto the map created
+    // at lock-acquire. A whole-map { deployProgress: {...} } write here would wipe
+    // deployId (the client's staleness guard) — never collapse this to whole-map.
     agentRef.update({
       'deployProgress.stage': 'strategy_complete',
       'deployProgress.fallbackKind': stratToolUse ? null : 'strategy',
       'deployProgress.briefExcerpt': stratToolUse ? selectBriefExcerpt(strategy.brief) : null,
       'deployProgress.shortlistCount': strategy.shortlist.length,
       'deployProgress.scanCount': stockUniverse.length,
-      'deployProgress.updatedAt': FieldValue.serverTimestamp(),
+      'deployProgress.updatedAt': new Date().toISOString(), // A.1 §4: plain ISO string
     }).catch(() => {});
 
     // Get detailed data for shortlisted stocks only (from rankedStocks to preserve archetypeScore)
@@ -418,9 +443,10 @@ export default async function handler(req, res) {
     );
 
     // [Deploy Ceremony] Non-fatal telemetry — portfolio construction starting.
+    // Dot-path merge (A.1 §2); updatedAt is a plain ISO string (A.1 §4).
     agentRef.update({
       'deployProgress.stage': 'portfolio_running',
-      'deployProgress.updatedAt': FieldValue.serverTimestamp(),
+      'deployProgress.updatedAt': new Date().toISOString(),
     }).catch(() => {});
 
     const portfolioResponse = await anthropic.messages.create({
@@ -573,14 +599,18 @@ export default async function handler(req, res) {
       updatedAt: new Date().toISOString(),
       // [Deploy Ceremony] stage:'complete' rides the SAME awaited write as
       // lastDecision + deployingAt:null — no window where the picks exist but the
-      // stage lies (Amendment §4.4 / Spec §15.3). fallbackKind gives 'strategy'
+      // stage lies (Amendment §4.4 / Spec §15.3). Dot-path merge (A.1 §2) so it
+      // cannot clobber the sibling lastDecision key or the earlier deployProgress
+      // fields (deployId/briefExcerpt survive). fallbackKind gives 'strategy'
       // precedence over 'construction' so a missing-brief deploy still reads as
-      // instincts-mode on the client even if Haiku also fell back.
+      // instincts-mode even if Haiku also fell back. Every added value here is a
+      // literal or plain ISO string — NO server sentinel on this awaited write
+      // (A.1 §4), so telemetry can never throw the deploy after picks exist.
       'deployProgress.stage': 'complete',
       'deployProgress.fallbackKind': stratToolUse
         ? (constructionFallback ? 'construction' : null)
         : 'strategy',
-      'deployProgress.updatedAt': FieldValue.serverTimestamp(),
+      'deployProgress.updatedAt': new Date().toISOString(),
       // Phase 2: server-side capture of the conflict reconciliation (awaited,
       // in-request — Signal Capture Rider). Only present when INJECT is on;
       // undefined-spread is a no-op, so the flag-off write is byte-identical.
@@ -814,12 +844,19 @@ export default async function handler(req, res) {
     // [Deploy Ceremony] Non-fatal telemetry — hard failure (no lastDecision was
     // written). Fire-and-forget and SEPARATE from the awaited lock clear above,
     // so a telemetry write can never delay or mask the real error being returned.
-    db.collection('agents').doc(agentId)
-      .update({
-        'deployProgress.stage': 'error',
-        'deployProgress.updatedAt': FieldValue.serverTimestamp(),
-      })
-      .catch(() => {});
+    // Dot-path merge (A.1 §2); updatedAt is a plain ISO string (A.1 §4). Gated to
+    // the self-select path (A.1 §3): a FLAT6 deploy that throws unwinds into this
+    // SHARED catch too (runPrescribedTournamentDeploy has no local try/catch), and
+    // the prescribed path must write NO deployProgress — the gate keeps a stray
+    // 'error' field off tournament agents.
+    if (req.body.gameMode !== FLAT6_GAME_MODE) {
+      db.collection('agents').doc(agentId)
+        .update({
+          'deployProgress.stage': 'error',
+          'deployProgress.updatedAt': new Date().toISOString(),
+        })
+        .catch(() => {});
+    }
 
     return res.status(500).json({
       error: 'Failed to generate portfolio',
