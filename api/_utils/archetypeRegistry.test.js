@@ -28,7 +28,7 @@
 // suite at import time. NEVER mock these imports.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -176,6 +176,94 @@ describe('import-boundary ratchet (§2.3 / R1-25)', () => {
     expect(
       removed,
       'importer(s) left the direct-import set — shrink archetypeImportBoundaryBaseline.json in this same commit (the ratchet only tightens)'
+    ).toEqual([]);
+  });
+});
+
+describe('extensionless relative import guard — whole api/ graph (BUILD_RULES §4)', () => {
+  // Generalizes the dependency-surface guard from "no browser deps" to "no
+  // extensionless relative imports anywhere reachable from api/". Vite/vitest
+  // resolve extensionless relative imports (`./foo`), but Vercel's Node-ESM
+  // serverless runtime does NOT — so an extensionless import in the api/ graph
+  // crashes the function at module-link time (ERR_MODULE_NOT_FOUND) while every
+  // unit test still passes. This walks the real transitive graph on disk and
+  // fails on any relative specifier lacking a module extension.
+  //
+  // Motivating regression: a fenced decide.js import (P2.4b) pulled the archetype
+  // registry graph — with archetypeCharacter.js's extensionless imports — into the
+  // /api/agent/decide serverless function, crashing every cold start. Unit tests
+  // stayed green because vitest resolved the extensionless imports.
+  const KNOWN_EXT = /\.(js|mjs|cjs|json|node)$/;
+
+  // Blank comments (preserving newlines) so a `from '...'` inside a JSDoc example
+  // is never mistaken for a real import.
+  const stripComments = (src) =>
+    src
+      .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+      .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+
+  // Relative specifiers from static import/export-from, side-effect import, and
+  // dynamic import() — scanned over the full (comment-blanked) source so
+  // multi-line imports are handled.
+  const relSpecs = (raw) => {
+    const src = stripComments(raw);
+    const out = [];
+    const lineOf = (idx) => src.slice(0, idx).split('\n').length;
+    for (const re of [
+      /\bfrom\s*['"]([^'"]+)['"]/g,
+      /\bimport\s+['"]([^'"]+)['"]/g,
+      /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+    ]) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(src))) {
+        if (m[1].startsWith('.')) out.push({ spec: m[1], line: lineOf(m.index) });
+      }
+    }
+    return out;
+  };
+
+  const resolveSpec = (fromFile, spec) => {
+    const base = path.resolve(path.dirname(fromFile), spec);
+    for (const t of [base, `${base}.js`, `${base}.mjs`, `${base}.cjs`, path.join(base, 'index.js'), path.join(base, 'index.mjs')]) {
+      if (existsSync(t) && statSync(t).isFile()) return t;
+    }
+    return null;
+  };
+
+  const listJs = (dir) => {
+    const out = [];
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) out.push(...listJs(p));
+      else if (/\.(js|mjs|cjs)$/.test(e.name)) out.push(p);
+    }
+    return out;
+  };
+
+  it('has no extensionless relative imports reachable from api/', () => {
+    const apiDir = path.join(REPO_ROOT, 'api');
+    const entries = listJs(apiDir).filter((f) => !/\.test\.js$/.test(f));
+    const visited = new Set();
+    const offenders = [];
+    const walk = (file) => {
+      if (visited.has(file)) return;
+      visited.add(file);
+      let src;
+      try { src = readFileSync(file, 'utf8'); } catch { return; }
+      for (const { spec, line } of relSpecs(src)) {
+        if (!KNOWN_EXT.test(spec)) {
+          offenders.push(`${path.relative(REPO_ROOT, file)}:${line}  '${spec}'`);
+        }
+        const resolved = resolveSpec(file, spec);
+        if (resolved) walk(resolved);
+      }
+    };
+    for (const e of entries) walk(e);
+
+    expect(
+      offenders,
+      `Extensionless relative import(s) in the api/ graph — add the .js extension (Node ESM requires it; Vite/vitest hide this):\n  ${offenders.join('\n  ')}`
     ).toEqual([]);
   });
 });

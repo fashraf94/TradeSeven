@@ -28,13 +28,32 @@ export async function deployAgent(agentId, onCreateAgentBattle) {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ agentId }),
   });
-  const data = await response.json();
+  // Guard the body parse: /api/agent/decide can return a NON-JSON error page — a
+  // 500 HTML page, a module-link crash (ERR_MODULE_NOT_FOUND), a gateway timeout.
+  // Calling response.json() on that throws a SyntaxError that masks the real HTTP
+  // status. Read the body once as text, parse defensively, and surface the status.
+  const raw = await response.text().catch(() => '');
+  let data = null;
+  if (raw) {
+    try { data = JSON.parse(raw); } catch { data = null; }
+  }
 
-  if (!data.success) {
-    // [Deploy Ceremony §10] Forward `details` (and `errorPhase` when present) so
-    // the ceremony error surface can show something useful — previously dropped.
-    console.error('[Deploy] Failed:', data.error, data.details || '');
-    return { success: false, error: data.error, details: data.details, errorPhase: data.errorPhase };
+  if (!response.ok || !data || data.success !== true) {
+    const status = response.status;
+    if (!data) {
+      const snippet = raw.slice(0, 300).trim();
+      console.error(`[Deploy] Failed: HTTP ${status} — non-JSON response`, snippet || '(empty body)');
+      return {
+        success: false,
+        status,
+        error: `deploy_http_${status}`,
+        details: snippet || response.statusText || `Request failed (${status})`,
+      };
+    }
+    // [Deploy Ceremony §10] Forward `details`/`errorPhase` (previously dropped)
+    // plus the HTTP status so the ceremony error surface can show something useful.
+    console.error('[Deploy] Failed:', status, data.error, data.details || '');
+    return { success: false, status, error: data.error, details: data.details, errorPhase: data.errorPhase };
   }
 
   // Step 2: hand off to the app's battle-creation callback (it navigates).

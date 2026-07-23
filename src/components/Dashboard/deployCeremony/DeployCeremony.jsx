@@ -156,6 +156,7 @@ export default function DeployCeremony({
   return createPortal(
     <motion.div
       ref={containerRef}
+      className="deploy-ceremony-overlay"
       tabIndex={-1}
       role="dialog"
       aria-modal="true"
@@ -164,12 +165,21 @@ export default function DeployCeremony({
       animate={{ opacity: 1 }}
       transition={{ duration: reduce ? 0 : 0.28 }}
       style={{
-        position: 'fixed', inset: 0, zIndex: Z_INDEX, outline: 'none',
+        // Explicit offsets (not `inset`) + box-sizing so the full-viewport scrim
+        // and its padded, width:100% children never overflow — the app has no
+        // global border-box reset, which otherwise shifts the centered content
+        // right on mobile.
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: Z_INDEX, outline: 'none',
+        boxSizing: 'border-box', overflowX: 'hidden', overflowY: 'auto',
         background: 'rgba(8,9,12,0.94)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         padding: 'calc(env(safe-area-inset-top, 0px) + 20px) 0 calc(env(safe-area-inset-bottom, 0px) + 24px)',
       }}
     >
+      {/* Scope a border-box reset to the whole overlay subtree (no global reset
+          exists — see EquipSheet's per-element boxSizing). */}
+      <style>{`.deploy-ceremony-overlay, .deploy-ceremony-overlay * { box-sizing: border-box; }`}</style>
+
       {/* Polite live region — announces stage transitions (§9). */}
       <div aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
         {liveText}
