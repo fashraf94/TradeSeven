@@ -22,7 +22,12 @@ import { spawnSync } from 'node:child_process';
 const EXPECTED_FLAGS = {
   STANDING_LEANS_ENABLED: false,
   TEMPO_DIAL_ENABLED: false,
-  SECTOR_CAP_MODE: 'off',
+  // Sector Cap Activation (founder-ruled 2026-07-23): advanced to 'observe' — the
+  // cap's walk is a separate Release-4 activation, so it is intentionally no longer
+  // 'off'/dark (measurement only; nothing is blocked). The other Release-2 flags
+  // stay dark. (Corrects a pre-existing stale 'off' expectation — the live value had
+  // drifted to the malformed 'true'.)
+  SECTOR_CAP_MODE: 'observe',
   // Not a Release-2 flag — Release 2 must NOT have moved it (its walk is
   // separate; 'observe' has been the live value since the integrity build).
   ARCHETYPE_INTEGRITY_MODE: 'observe',

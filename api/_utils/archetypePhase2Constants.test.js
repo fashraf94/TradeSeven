@@ -54,11 +54,12 @@ import { TIERED_GAME_MODE, FLAT6_GAME_MODE } from '../../src/constants/agentGame
 // re-record the hash here in the SAME commit (founder-visible diff). If you
 // did not change a table, you have an accidental calibration edit — stop.
 const RECORDED_CALIBRATION_HASH = '4f701ffa100212863f2e0a6db3628241a5ca57720cbd2983cbe87aaa1a051658';
-// NOTE: SECTOR_CAP_MODE is part of the §1.2 contract (sectorCapPolicy.mode),
-// so fixing the census-flagged 'true' value WILL trip this lock — that is
-// correct per §1.2 ("bumped on any change below"): bump GUARDRAIL_SET_VERSION
-// and re-record alongside the flag fix.
-const RECORDED_PLATFORM_HASH = '1ce1e68b2f434725af7066bc5973789072a8762aa4a6ba3d22bb43662927f606';
+// NOTE: SECTOR_CAP_MODE is part of the §1.2 contract (sectorCapPolicy.mode).
+// Sector Cap Activation (2026-07-23) advanced it 'true' → 'observe' and made the
+// capSource config-derived — both tripped this lock, so GUARDRAIL_SET_VERSION was
+// bumped (1 → 2, archetypeVersionConstants.js) and this hash re-recorded in the
+// same commit, per §1.2 ("bumped on any change below").
+const RECORDED_PLATFORM_HASH = '7dc23a709fead99c7183795feffbda3c15788c19ce1367cfd8cac7a68005172a';
 const RECORDED_POLICY_HASHES = {
   [TIERED_GAME_MODE]: 'c5ad06be25564ce95adb58c8f8068fa8817efca9162f773879f6e5ee77c8eedc',
   [FLAT6_GAME_MODE]: '39da0fc4ba8ebe2f55a044617a96d7712d2d8fd513c6820d2ec9d4b931d23063',
