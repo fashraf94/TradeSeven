@@ -25,6 +25,10 @@ import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
 import { snapshotsToActiveRules, gatherBundleSnapshots } from '../_utils/bundleRuleProjection.js';
 import { waitUntil } from '@vercel/functions';
+// Archetype Phase 2 (P2.4a): DARK equip-time compiler — both calls return
+// null before any read/write while COMPILER_ENABLED=false (byte-identical).
+import { COMPILER_ENABLED } from '../../src/config/featureFlags.js';
+import { prepareCompileInputs, writeCompiledBuildsInTx } from '../_utils/compileOnSettingsChange.js';
 
 export const config = { maxDuration: 10 };
 
@@ -106,6 +110,13 @@ export default async function handler(req, res) {
         await gatherBundleSnapshots(tx, bundlesCol, remainingIds),
       );
 
+      // P2.4a compile reads (dark no-op): must precede the first tx write.
+      const compileInputs = await prepareCompileInputs(tx, {
+        agentRef,
+        nextEquippedBundleIds: remainingIds,
+        enabled: COMPILER_ENABLED,
+      });
+
       tx.update(bundleRef, {
         status: 'forged',
         equippedAt: null,
@@ -118,7 +129,17 @@ export default async function handler(req, res) {
         activeRules,
         updatedAt: nowIso,
       });
-      return { idempotent: false, equippedBundleIds: remainingIds };
+      // P2.4a (dark no-op): compile rides the settingsRev increment above.
+      const compilePreviews = writeCompiledBuildsInTx(tx, {
+        agentRef,
+        agentId,
+        agent,
+        nextState: { equippedBundleIds: remainingIds },
+        bundles: compileInputs?.bundles,
+        enabled: COMPILER_ENABLED,
+        nowIso,
+      });
+      return { idempotent: false, equippedBundleIds: remainingIds, compilePreviews };
     });
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
@@ -149,10 +170,12 @@ export default async function handler(req, res) {
 
   console.log(`[unequip-bundle] agent ${agentId} ✕ bundle ${bundleId} (idempotent=${txResult.idempotent}, remaining=${txResult.equippedBundleIds.length})`);
 
+  // compilePreviews is ADDITIVE and appears only under COMPILER_ENABLED (P2.4a).
   return res.status(200).json({
     agentId,
     bundleId,
     equippedBundleIds: txResult.equippedBundleIds,
     idempotent: txResult.idempotent,
+    ...(txResult.compilePreviews ? { compilePreviews: txResult.compilePreviews } : {}),
   });
 }

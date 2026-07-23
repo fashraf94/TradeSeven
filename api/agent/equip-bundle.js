@@ -45,7 +45,11 @@ import { getAgentLevel, FORGE_LIMITS } from '../../src/constants/agentProgressio
 import { MASTERY_ENFORCEMENT_ENABLED } from '../_utils/masteryConfig.js';
 import { masteryProfileRef, effectiveForgeLimits } from '../_utils/masteryEnforcement.js';
 import { reconcile, RECONCILER_VERSION } from '../../src/utils/ruleConflictReconciler.js';
-import { CONFLICT_RECONCILER_DETECT_ENABLED, RULE_COMPAT_MODE } from '../../src/config/featureFlags.js';
+import { CONFLICT_RECONCILER_DETECT_ENABLED, RULE_COMPAT_MODE, COMPILER_ENABLED } from '../../src/config/featureFlags.js';
+// Archetype Phase 2 (P2.4a): the DARK equip-time compiler. Both helper calls
+// return null before any read/write while COMPILER_ENABLED=false — this
+// endpoint stays byte-identical until the founder flag-flip PR.
+import { prepareCompileInputs, writeCompiledBuildsInTx } from '../_utils/compileOnSettingsChange.js';
 import { classifyBundleSnapshots } from '../../src/services/ruleCompatClassify.js';
 import { snapshotsToActiveRules, gatherBundleSnapshots } from '../_utils/bundleRuleProjection.js';
 import { waitUntil } from '@vercel/functions';
@@ -173,6 +177,13 @@ export default async function handler(req, res) {
         };
       }
 
+      // P2.4a compile reads (dark no-op): must precede the first tx write.
+      const compileInputs = await prepareCompileInputs(tx, {
+        agentRef,
+        nextEquippedBundleIds: [...currentEquipped, bundleId],
+        enabled: COMPILER_ENABLED,
+      });
+
       tx.update(bundleRef, {
         status: 'equipped',
         equippedAt: nowIso,
@@ -190,6 +201,17 @@ export default async function handler(req, res) {
         updatedAt: nowIso,
       });
 
+      // P2.4a (dark no-op): compile rides the settingsRev increment above.
+      const compilePreviews = writeCompiledBuildsInTx(tx, {
+        agentRef,
+        agentId,
+        agent,
+        nextState: { equippedBundleIds: [...currentEquipped, bundleId] },
+        bundles: compileInputs?.bundles,
+        enabled: COMPILER_ENABLED,
+        nowIso,
+      });
+
       return {
         conflictCheckResult,
         archetype: agent.archetype || null,
@@ -197,6 +219,7 @@ export default async function handler(req, res) {
         // The bundle doc crosses the tx boundary ONCE for the post-commit
         // WS1 classification (pure fn; its location is unobservable).
         bundle,
+        compilePreviews,
       };
     });
   } catch (txErr) {
@@ -285,6 +308,8 @@ export default async function handler(req, res) {
   console.log(`[equip-bundle] agent ${agentId} → bundle ${bundleId} (rules=${txResult.equippedBundleIds.length} bundles)`);
 
   // Response contract preserved from the client function's return value.
+  // compilePreviews is ADDITIVE and appears only under COMPILER_ENABLED
+  // (P2.4a) — flag off, the JSON is byte-identical to today.
   return res.status(200).json({
     agentId,
     bundleId,
@@ -292,5 +317,6 @@ export default async function handler(req, res) {
     compatConflicts,
     archetype: txResult.archetype,
     equippedBundleIds: txResult.equippedBundleIds,
+    ...(txResult.compilePreviews ? { compilePreviews: txResult.compilePreviews } : {}),
   });
 }

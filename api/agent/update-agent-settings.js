@@ -34,6 +34,10 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
+// Archetype Phase 2 (P2.4a): DARK equip-time compiler — both calls return
+// null before any read/write while COMPILER_ENABLED=false (byte-identical).
+import { COMPILER_ENABLED } from '../../src/config/featureFlags.js';
+import { prepareCompileInputs, writeCompiledBuildsInTx } from '../_utils/compileOnSettingsChange.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
@@ -176,6 +180,13 @@ export default async function handler(req, res) {
         return { idempotent: true };
       }
 
+      // P2.4a compile reads (dark no-op): must precede the first tx write.
+      const compileInputs = await prepareCompileInputs(tx, {
+        agentRef,
+        nextEquippedBundleIds: agent.equippedBundleIds || [],
+        enabled: COMPILER_ENABLED,
+      });
+
       // settingsRev rides structurally (Release 2 changelog #7). A non-null
       // deployedStrategy also stamps strategyLastDeployedAt (ISO, additive;
       // NOT lastDeployedAt — see header for the decide.js cooldown parity).
@@ -185,7 +196,18 @@ export default async function handler(req, res) {
         ...(stampDeployed ? { strategyLastDeployedAt: nowIso } : {}),
         updatedAt: nowIso,
       });
-      return { idempotent: false };
+      // P2.4a (dark no-op): compile rides the settingsRev increment above.
+      // The post-write deployedStrategy feeds the guardrail merge preview.
+      const compilePreviews = writeCompiledBuildsInTx(tx, {
+        agentRef,
+        agentId,
+        agent,
+        nextState: 'deployedStrategy' in set ? { deployedStrategy: set.deployedStrategy } : {},
+        bundles: compileInputs?.bundles,
+        enabled: COMPILER_ENABLED,
+        nowIso,
+      });
+      return { idempotent: false, compilePreviews };
     });
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
@@ -202,9 +224,11 @@ export default async function handler(req, res) {
 
   console.log(`[update-agent-settings] agent ${agentId} fields=[${Object.keys(set).join(',')}] (idempotent=${txResult.idempotent})`);
 
+  // compilePreviews is ADDITIVE and appears only under COMPILER_ENABLED (P2.4a).
   return res.status(200).json({
     agentId,
     fields: Object.keys(set),
     idempotent: txResult.idempotent,
+    ...(txResult.compilePreviews ? { compilePreviews: txResult.compilePreviews } : {}),
   });
 }

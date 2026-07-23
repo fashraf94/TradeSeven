@@ -123,12 +123,15 @@ describe('import-boundary ratchet (§2.3 / R1-25)', () => {
     'characterLeanPresentation',
     'forgeKnowledgeBase',
   ];
-  // The sanctioned composition layer — the registry family itself may (must)
-  // import the tables directly.
+  // The sanctioned composition layer — the registry family and the Phase-2
+  // compiler layer may (must) import the tables directly; everything else
+  // goes through the registry from here on.
   const COMPOSITION_LAYER = new Set([
     'api/_utils/archetypeRegistry.js',
     'api/_utils/calibrationBundle.js',
     'api/_utils/platformGuardrails.js',
+    'api/_utils/activationGate.js',
+    'api/_utils/compileOnSettingsChange.js',
   ]);
   const IMPORT_RE = new RegExp(
     `from\\s+['"][^'"]*(?:${LEGACY_TABLE_BASENAMES.join('|')})(?:\\.js)?['"]`

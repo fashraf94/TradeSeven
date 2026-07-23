@@ -37,7 +37,10 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
-import { STANDING_LEANS_ENABLED } from '../../src/config/featureFlags.js';
+import { STANDING_LEANS_ENABLED, COMPILER_ENABLED } from '../../src/config/featureFlags.js';
+// Archetype Phase 2 (P2.4a): DARK equip-time compiler — both calls return
+// null before any read/write while COMPILER_ENABLED=false (byte-identical).
+import { prepareCompileInputs, writeCompiledBuildsInTx } from '../_utils/compileOnSettingsChange.js';
 import { findEquipConflicts } from '../../src/data/archetypeAdjustments.js';
 // validateLeanPin is THE per-pin validity authority (menu membership +
 // version currency) shared with battle-creation revalidation — one rule, so
@@ -210,12 +213,28 @@ export default async function handler(req, res) {
         ? current.map((l) => (l?.adjustmentId === adjustmentId ? entry : l))
         : [...current, entry];
 
+      // P2.4a compile reads (dark no-op): must precede the first tx write.
+      const compileInputs = await prepareCompileInputs(tx, {
+        agentRef,
+        nextEquippedBundleIds: agent.equippedBundleIds || [],
+        enabled: COMPILER_ENABLED,
+      });
       // settingsRev rides structurally (Release 2 changelog #7).
       txUpdateAgentSettings(tx, agentRef, {
         standingLeans,
         updatedAt: nowIso,
       });
-      return { idempotent: false, refreshed: !!existing, standingLeans };
+      // P2.4a (dark no-op): compile rides the settingsRev increment above.
+      const compilePreviews = writeCompiledBuildsInTx(tx, {
+        agentRef,
+        agentId,
+        agent,
+        nextState: {},
+        bundles: compileInputs?.bundles,
+        enabled: COMPILER_ENABLED,
+        nowIso,
+      });
+      return { idempotent: false, refreshed: !!existing, standingLeans, compilePreviews };
     });
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
@@ -246,11 +265,13 @@ export default async function handler(req, res) {
 
   console.log(`[equip-lean] agent ${agentId} + ${adjustmentId}@v${version} (idempotent=${txResult.idempotent})`);
 
+  // compilePreviews is ADDITIVE and appears only under COMPILER_ENABLED (P2.4a).
   return res.status(200).json({
     agentId,
     adjustmentId,
     version,
     standingLeans: txResult.standingLeans,
     idempotent: txResult.idempotent,
+    ...(txResult.compilePreviews ? { compilePreviews: txResult.compilePreviews } : {}),
   });
 }

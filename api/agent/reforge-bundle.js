@@ -55,7 +55,13 @@ import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idVa
 // equip-time check, which is the consequential gate).
 import { snapshotsToActiveRules, gatherBundleSnapshots } from '../_utils/bundleRuleProjection.js';
 import { classifyByCategory } from '../_utils/ruleHardness.js';
-import { RULE_COMPAT_MODE } from '../../src/config/featureFlags.js';
+import { RULE_COMPAT_MODE, COMPILER_ENABLED } from '../../src/config/featureFlags.js';
+// Archetype Phase 2 (P2.4a): DARK equip-time compiler — both calls return
+// null before any read/write while COMPILER_ENABLED=false (byte-identical).
+// Reforge compiles ONLY on the equipped-unequip sub-step (the one path that
+// bumps settingsRev here); a non-equipped reforge mints no revision and
+// therefore no build.
+import { prepareCompileInputs, writeCompiledBuildsInTx } from '../_utils/compileOnSettingsChange.js';
 import {
   isRuleCompatActive,
   evaluateRuleCompatWrite,
@@ -175,6 +181,14 @@ export default async function handler(req, res) {
         // below heals the bundle doc; no agent write, no phantom settingsRev.
       }
 
+      // P2.4a compile reads (dark no-op; gated on the settingsRev-bumping
+      // path): must precede the first tx write.
+      const compileInputs = await prepareCompileInputs(tx, {
+        agentRef,
+        nextEquippedBundleIds: agentUpdate ? agentUpdate.equippedBundleIds : [],
+        enabled: COMPILER_ENABLED && !!agentUpdate,
+      });
+
       // ── ALL READS DONE — writes ──
       const newRef = bundlesCol.doc();
 
@@ -189,6 +203,18 @@ export default async function handler(req, res) {
         // settingsRev rides structurally (Release 2 changelog #7).
         txUpdateAgentSettings(tx, agentRef, agentUpdate);
       }
+      // P2.4a (dark no-op): compile rides the settingsRev increment above.
+      const compilePreviews = agentUpdate
+        ? writeCompiledBuildsInTx(tx, {
+            agentRef,
+            agentId,
+            agent,
+            nextState: { equippedBundleIds: agentUpdate.equippedBundleIds },
+            bundles: compileInputs?.bundles,
+            enabled: COMPILER_ENABLED,
+            nowIso,
+          })
+        : null;
 
       tx.set(newRef, {
         name: bundle.name,
@@ -213,6 +239,7 @@ export default async function handler(req, res) {
       });
 
       return {
+        compilePreviews,
         newBundleId: newRef.id,
         strippedConflicts,
         events,
@@ -279,10 +306,12 @@ export default async function handler(req, res) {
     `(unequipped=${txResult.unequipped}, stripped=${txResult.strippedConflicts.length})`,
   );
 
+  // compilePreviews is ADDITIVE and appears only under COMPILER_ENABLED (P2.4a).
   return res.status(200).json({
     agentId,
     bundleId: txResult.newBundleId,
     strippedConflicts: txResult.strippedConflicts,
     compatLogged,
+    ...(txResult.compilePreviews ? { compilePreviews: txResult.compilePreviews } : {}),
   });
 }

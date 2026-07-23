@@ -918,3 +918,27 @@ export function isAgentPresenceOn() {
  * LEAGUE_NEXT_ARC_ENABLED / PR #510 precedent).
  */
 export const POD_EXPIRY_SWEEP_ENABLED = false;
+
+/**
+ * Archetype Architecture Phase 2 (P2.4a) — the equip-time build compiler
+ * (PHASE2_BUILD_BRIEF_V1; Spec §4.4 + A-2/A-3). Gates the settings
+ * endpoints' in-transaction compile + CompiledBuild write
+ * (api/_utils/compileOnSettingsChange.js) to
+ * agents/{agentId}/compiledBuilds/{gameMode}.
+ *
+ * When FALSE (DEFAULT, merge-dark), every settings endpoint is byte-identical
+ * to today: the compile helper returns null before any read or write — zero
+ * added Firestore I/O, no response-shape change. When TRUE (preview smoke
+ * only in Phase 2), each real settings write also compiles the build for the
+ * live deploy modes inside the SAME transaction (riding the structural
+ * settingsRev increment — A-3: the compile mints the revision) and the
+ * response gains a compilePreviews payload.
+ *
+ * PRODUCTION ACTIVATION IS DOUBLE-GATED: this flag AND the §5.6/A-4 metadata
+ * completeness gate (api/_utils/activationGate.js), which FAILS by design
+ * until Phases 3-4 author the corpus. Until then enabled compiles record
+ * validation.pass=false (truthful pre-authoring state) and the deploy path
+ * (P2.4b) refuses them. Flip only via a deliberate founder flag-flip PR with
+ * a green activation gate — NEVER in a build PR (Phase 2 exit criteria).
+ */
+export const COMPILER_ENABLED = false;
