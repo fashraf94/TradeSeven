@@ -38,6 +38,7 @@ import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 // null before any read/write while COMPILER_ENABLED=false (byte-identical).
 import { COMPILER_ENABLED } from '../../src/config/featureFlags.js';
 import { prepareCompileInputs, writeCompiledBuildsInTx } from '../_utils/compileOnSettingsChange.js';
+import { stableStringify } from '../_utils/canonicalHash.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
@@ -88,30 +89,16 @@ const FIELD_VALIDATORS = Object.freeze({
   },
 });
 
-// JSON.stringify with recursively SORTED object keys, mirroring its other
-// semantics (undefined properties dropped, undefined array slots → null).
 // The idempotence check compares a client payload against Firestore data,
 // and Firestore map keys come back sorted — insertion order carries no
 // meaning, so it must not read as a change and mint a phantom settingsRev.
 // Array order IS preserved (it is meaningful for equippedTraits). Both sides
 // are JSON-shaped: the request by the validators, the at-rest value because
 // this endpoint (or the JSON-payload client writers it replaced) wrote it.
-function stableStringify(value) {
-  if (value === undefined) return undefined;
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) {
-    return `[${value.map((v) => stableStringify(v) ?? 'null').join(',')}]`;
-  }
-  const body = Object.keys(value)
-    .sort()
-    .map((k) => {
-      const v = stableStringify(value[k]);
-      return v === undefined ? undefined : `${JSON.stringify(k)}:${v}`;
-    })
-    .filter((s) => s !== undefined)
-    .join(',');
-  return `{${body}}`;
-}
+// Canonicalization is the SHARED stableStringify (canonicalHash.js) — the
+// same function the build/manifest hashes use, so "what counts as the same
+// content" can never drift between the idempotence check and the hashes
+// (P2 code-review finding: this endpoint previously carried a local copy).
 
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 30, windowMs: 60_000 } })) {

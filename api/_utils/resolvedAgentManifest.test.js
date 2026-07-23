@@ -139,6 +139,23 @@ describe('P2.5 manifest builder', () => {
     expect(m.frozenLayers.equippedWatchlist).toEqual({ watchlistId: 'w1', name: 'Focus', tickers: ['NVDA'], snapshotAt: NOW });
   });
 
+  it('a rev-mismatched CompiledBuild is treated as absent, with the skip recorded (review finding: deploy-window race)', () => {
+    const staleGateBuild = { ...compiledBuild(), sourceRevisionVector: { settingsRev: 9 } }; // agentData is at rev 6
+    const m = build({ compiledBuild: staleGateBuild });
+    expect(m.versionStamps.compiledBuildIdAtLock).toBeUndefined();
+    expect(m.guardrails.mergeSource).toBe('user_only_no_compiled_build');
+    expect(m.renderedTensionPairs).toEqual([]);
+    expect(m.compiledBuildProvenanceSkipped).toEqual({
+      reason: 'settings_rev_mismatch',
+      buildSettingsRev: 9,
+      manifestSettingsRev: 6,
+    });
+    expect(validateResolvedAgentManifest(m).valid).toBe(true);
+    // A rev-MATCHED build keeps its provenance (the guard only fires on drift).
+    const matched = { ...compiledBuild(), sourceRevisionVector: { settingsRev: 6 } };
+    expect(build({ compiledBuild: matched }).versionStamps.compiledBuildIdAtLock).toBe('a1_baggerbomb_agent_rev6');
+  });
+
   it('manifestHash is deterministic and covers content (same inputs → same hash; changed input → new hash)', () => {
     expect(build().manifestHash).toBe(build().manifestHash);
     const changed = build({ gameMode: TIERED_GAME_MODE, now: NOW, compiledBuild: null });

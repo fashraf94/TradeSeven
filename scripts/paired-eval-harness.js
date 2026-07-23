@@ -125,7 +125,9 @@ async function main() {
   const rows = [];
 
   for (const diff of divergent) {
-    const renderedRuleIds = [];
+    // Per-side rendered rule ids recorded on the diff doc by the P2.6
+    // assembly (review finding: this drives the citation measure — a cited
+    // rule outside the rendered set is the non-compliance signal).
     const base = {
       battleId: diff.battleId,
       tickId: diff.envelope?.tickId ?? diff.id,
@@ -152,8 +154,8 @@ async function main() {
 
     const row = {
       ...base,
-      live: { ...live, citation: summarizeCitation(live, renderedRuleIds) },
-      candidate: { ...candidate, citation: summarizeCitation(candidate, renderedRuleIds) },
+      live: { ...live, citation: summarizeCitation(live, diff.renderedRuleIds?.live ?? []) },
+      candidate: { ...candidate, citation: summarizeCitation(candidate, diff.renderedRuleIds?.shadow ?? []) },
       actionDivergence: {
         decision: live.decision !== candidate.decision,
         symbols: live.symbolOut !== candidate.symbolOut || live.symbolIn !== candidate.symbolIn,

@@ -48,8 +48,23 @@ import {
   GAME_MODE_POLICY_VERSION,
 } from './archetypeVersionConstants.js';
 import { KNOB_CONFIG_VERSION } from './agentArchetypeConfig.js';
+import { EMERGENCY_BYPASS_REASONS } from './agentRiskManager.js';
 import { TEMPO_DIAL_BANDS } from './tempoDialBands.js';
 import { canonicalContentHash } from './canonicalHash.js';
+
+// §6.3 gate vocabulary (review finding): statusFeed.citedRules carries BOTH
+// deterministic gate tags (the engine's own reason arrays — census Map 6)
+// AND the model's self-reported cited_rules on proposal/swap entries. The
+// aggregate must count ONLY deterministic gates, so the tally filters to the
+// closed engine vocabulary: the fenced EMERGENCY_BYPASS_REASONS set (by
+// reference — single source) + the non-bypass gate tags the eval cron
+// writes deterministically.
+export const DETERMINISTIC_GATE_TAGS = new Set([
+  ...EMERGENCY_BYPASS_REASONS,
+  'stagnation',
+  'swap_window_cap',
+  'vwap_cascade_guard',
+]);
 
 const LOG_PREFIX = '[shadowAssembly]';
 
@@ -168,9 +183,19 @@ export async function buildShadowDiffRecord({ battle, envelope, market }) {
   const contextDiff = diffPromptTexts(liveContext, shadowContext);
   const identical = systemDiff.identical && identityDiff.identical && contextDiff.identical;
 
+  // Rendered rule ids per side (review finding): the DR-10 stage-2 citation
+  // measure needs to know which rules each prompt variant actually rendered;
+  // small and steady-state-safe, so recorded on every diff doc.
+  const ruleIdOf = (r) => r?.ruleId ?? r?.id ?? null;
+  const renderedRuleIds = {
+    live: (liveView.agentContext?.activeRules ?? []).map(ruleIdOf).filter(Boolean),
+    shadow: (shadowView.agentContext.activeRules ?? []).map(ruleIdOf).filter(Boolean),
+  };
+
   return {
     envelope,
     identical,
+    renderedRuleIds,
     hashes: {
       liveSystem: canonicalContentHash(liveSystem),
       shadowSystem: canonicalContentHash(shadowSystem),
@@ -225,12 +250,19 @@ export async function writeShadowDiff(db, battleId, tickId, record) {
   }
 }
 
-/** §6.3 gate-tag counts derived from THIS tick's own statusFeed entries. */
+/**
+ * §6.3 gate-tag counts derived from THIS tick's own statusFeed entries,
+ * filtered to the DETERMINISTIC_GATE_TAGS vocabulary — LLM self-reported
+ * citations never count as gate activity (model_self_report is excluded
+ * from proof metrics by class, R1 finding 18).
+ */
 export function countBlockedGates(statusFeedEntries) {
   const counts = {};
   for (const entry of statusFeedEntries ?? []) {
     for (const tag of entry?.citedRules ?? []) {
-      if (typeof tag === 'string' && tag) counts[tag] = (counts[tag] || 0) + 1;
+      if (typeof tag === 'string' && DETERMINISTIC_GATE_TAGS.has(tag)) {
+        counts[tag] = (counts[tag] || 0) + 1;
+      }
     }
   }
   return counts;
@@ -358,7 +390,13 @@ export async function writeBattleSettlementRecord(db, { freshBattle, completedAt
       },
       coverageStats: {
         statusFeedEntries: (freshBattle.statusFeed ?? []).length,
-        statusFeedCapped: (freshBattle.statusFeed ?? []).length >= 50,
+        // Mirrors the live cap rule (agent-evaluate.js STATUS_FEED_CAP:
+        // agent battles 100, else 50 — review finding: a flat 50 falsely
+        // reported truncation for agent battles with 50-99 entries). The
+        // assumed cap is recorded so the consumer can audit the claim.
+        statusFeedCapAssumed: freshBattle.agentId ? 100 : 50,
+        statusFeedCapped:
+          (freshBattle.statusFeed ?? []).length >= (freshBattle.agentId ? 100 : 50),
       },
       settledAt: completedAtIso,
       retryMarker: { attempt: 1, lastAttemptAt: completedAtIso },

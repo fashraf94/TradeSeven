@@ -132,6 +132,13 @@ describe('P2.4b enabled — validate-or-recompile + lock-time re-verify', () => 
       expect(w.data.buildVersion).toBe(6); // CURRENT rev — not 7
       expect(w.data.sourceRevisionVector.settingsRev).toBe(6);
     }
+    // Review finding: the recompile path must return the FULL CompiledBuild
+    // document (same shape as the fresh path's stored doc), never the
+    // client preview — the manifest builder consumes this object.
+    expect(result.compiledBuild.sourceRevisionVector.settingsRev).toBe(6);
+    expect(result.compiledBuild.compilerVersion).toBeTypeOf('number');
+    expect(result.compiledBuild.validation).toBeTruthy();
+    expect(result.compiledBuild.renderedTensionCandidates).toBeDefined();
   });
 
   it('FRESH stored build → pure verify: proceeds with the stored artifact, zero writes', async () => {

@@ -137,6 +137,11 @@ export function writeCompiledBuildsInTx(tx, {
   enabled = false,
   nowIso,
   revision = 'mint',
+  // Optional collector: when a caller needs the FULL CompiledBuild documents
+  // (the deploy gate feeds one to the manifest builder), pass an object and
+  // each mode's full build is set on it — the return value stays the client
+  // PREVIEW payload (two shapes, two names, never conflated).
+  collectBuilds = null,
 } = {}) {
   if (!enabled) return null;
 
@@ -203,6 +208,7 @@ export function writeCompiledBuildsInTx(tx, {
     // latest compile per (agent, mode) is the contract object; history is
     // the manifest's job at lock. Do NOT "fix" this to .create().
     tx.set(agentRef.collection('compiledBuilds').doc(gameMode), build);
+    if (collectBuilds) collectBuilds[gameMode] = build;
 
     previews[gameMode] = {
       compiledBuildId: build.compiledBuildId,

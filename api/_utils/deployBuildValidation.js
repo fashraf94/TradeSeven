@@ -157,7 +157,11 @@ export async function ensureDeployableCompiledBuild({
           console.warn(`${LOG_PREFIX} stale CompiledBuild for agent ${agentId} mode ${gameMode}: ${mismatches.join(', ')} — recompiling at current revision`);
         }
 
-        const previews = writeCompiledBuildsInTx(tx, {
+        // Collect the FULL builds — the gate's contract is the CompiledBuild
+        // document (same shape as the fresh path's stored doc), never the
+        // client preview (review finding: two shapes under one name).
+        const fullBuilds = {};
+        writeCompiledBuildsInTx(tx, {
           agentRef,
           agentId,
           agent,
@@ -166,10 +170,11 @@ export async function ensureDeployableCompiledBuild({
           enabled: true,
           nowIso: new Date().toISOString(),
           revision: 'current',
+          collectBuilds: fullBuilds,
         });
         return {
           proceed: true,
-          compiledBuild: previews[gameMode] ?? null,
+          compiledBuild: fullBuilds[gameMode] ?? null,
           recompiled: true,
         };
       });

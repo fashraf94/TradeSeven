@@ -86,7 +86,7 @@ import { finalizeCronState } from '../_utils/agentCronState.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
 // string literal). Zero-import schema module, BUILD_RULES §4.
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
-import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS } from '../_utils/agentEvalTransport.js';
+import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, EVAL_MODEL_ID } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { runCanonicalOpenSweep } from '../_utils/canonicalOpenSweep.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
@@ -1917,7 +1917,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       const hardAbort = setTimeout(() => abortCtrl.abort(), HAIKU_CALL_CEILING_MS);
       try {
         const response = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
+          model: EVAL_MODEL_ID,
           max_tokens: 1024,
           temperature: 0.4,
           system: buildEvalSystemPrompt(agentName, archetype, battle.gameMode),
@@ -2685,9 +2685,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         tick: {
           cronStartIso: new Date(cronStartTime).toISOString(),
           nowIso: now,
-          // The tick's live model constant (the :1914 literal — kept adjacent
-          // in this same file so they move together).
-          modelId: 'claude-haiku-4-5-20251001',
+          modelId: EVAL_MODEL_ID,
           market: { prices, macroPrices, assetScores, triggers, news, momentumData, presetConfig },
           candidatesTested:
             (battle.portfolio?.bench?.stocks?.length || 0)
@@ -3945,7 +3943,7 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     await writeBattleSettlementRecord(db, {
       freshBattle: { ...(txOutcome.freshForAward ?? battle), id: battle.id },
       completedAtIso: now,
-      modelId: 'claude-haiku-4-5-20251001',
+      modelId: EVAL_MODEL_ID,
     });
   }
 

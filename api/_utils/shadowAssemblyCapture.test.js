@@ -133,6 +133,9 @@ describe('DR-10 stage 1 — assembly shadow through the REAL fenced builders', (
     expect(record.systemHunks).toBeUndefined();
     expect(record.hashes.liveSystem).toBe(record.hashes.shadowSystem);
     expect(record.hashes.liveContext).toBe(record.hashes.shadowContext);
+    // Per-side rendered rule ids ride every diff doc (the DR-10 stage-2
+    // citation measure's ground truth).
+    expect(record.renderedRuleIds).toEqual({ live: [], shadow: [] });
   });
 
   it('a manifest divergence (different frozen rules) → full texts + hunks', async () => {
@@ -186,12 +189,16 @@ describe('shadowDiffs writer — create-only, loud, never throws', () => {
 });
 
 describe('§6.3 records', () => {
-  it('countBlockedGates tallies this tick’s deterministic gate tags', () => {
+  it('countBlockedGates tallies ONLY deterministic gate tags — LLM self-reported citations never count (R1-18)', () => {
     expect(countBlockedGates([
       { citedRules: ['swap_window_cap'] },
       { citedRules: ['swap_window_cap', 'vwap_cascade_guard'] },
+      // A successful-SWAP entry stuffing Haiku's cited_rules into citedRules
+      // (the review-found conflation source) — must be filtered out.
+      { citedRules: ['momentum_surge', 'tech-rsi-oversold'] },
+      { citedRules: ['guardrail_stopLoss'] }, // EMERGENCY_BYPASS member — counts
       { citedRules: null },
-    ])).toEqual({ swap_window_cap: 2, vwap_cascade_guard: 1 });
+    ])).toEqual({ swap_window_cap: 2, vwap_cascade_guard: 1, guardrail_stopLoss: 1 });
   });
 
   it('terminal-gate matrix: transport, downgrade, deliberate HOLD, action tick', () => {
@@ -271,6 +278,10 @@ describe('§6.4 settlement record', () => {
       exitReasonCounts: { guardrail_stopLoss: 2, unknown: 1 },
     });
     expect(record.retryMarker.attempt).toBe(1);
+    // Agent battles cap statusFeed at 100 (review finding: a flat 50 falsely
+    // reported truncation) — the assumed cap is recorded with the claim.
+    expect(record.coverageStats.statusFeedCapAssumed).toBe(100);
+    expect(record.coverageStats.statusFeedCapped).toBe(false);
     expect(db.updated[0]).toEqual({ path: 'agentBattles/battle-1', data: { receiptCoverage: 'complete' } });
   });
 

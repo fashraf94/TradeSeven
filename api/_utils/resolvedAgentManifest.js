@@ -94,6 +94,26 @@ function buildGuardrailsLayer(agentData, compiledBuild) {
 export function buildResolvedAgentManifest({ agentData, compiledBuild = null, equippedWatchlist = null, gameMode, now }) {
   const customization = buildCustomizationSnapshot(agentData, now);
 
+  // Consistency guard (review finding): the deploy request's agentData is
+  // read at request start, while the P2.4b gate validates/recompiles
+  // against a fresh transactional read. If a settings mutation landed in
+  // between, the gate's build carries a NEWER settingsRev than the state
+  // this manifest freezes — recording its provenance would make the lock
+  // record internally inconsistent. The manifest must agree with
+  // agentContext (same agentData, §9 one-source), so a rev-mismatched
+  // build is treated as absent and the skip is recorded truth.
+  let buildForManifest = compiledBuild;
+  let compiledBuildProvenanceSkipped = null;
+  const buildRev = compiledBuild?.sourceRevisionVector?.settingsRev;
+  if (compiledBuild && buildRev !== undefined && buildRev !== customization.settingsRev) {
+    buildForManifest = null;
+    compiledBuildProvenanceSkipped = {
+      reason: 'settings_rev_mismatch',
+      buildSettingsRev: buildRev,
+      manifestSettingsRev: customization.settingsRev,
+    };
+  }
+
   const frozenLayers = {
     activeRules: agentData.activeRules || [],
     equippedBundleIds: agentData.equippedBundleIds || [],
@@ -109,8 +129,13 @@ export function buildResolvedAgentManifest({ agentData, compiledBuild = null, eq
   const valuesAtLock = {
     archetype: agentData.archetype || 'unknown',
     agentName: agentData.name || 'Agent',
-    // The battle default at creation (agentBattleService.js:216) — recorded
-    // as the value AT lock; mid-battle preset flips are execution-state.
+    // The battle-creation default — recorded as the value AT lock;
+    // mid-battle preset flips are execution-state. DELIBERATE second copy
+    // of the fenced literal (agentBattleService.js battleDoc
+    // `strategyPreset: 'balanced'`): binding both to one exported constant
+    // requires a fenced edit outside the P2.5 §7 sign-off — logged for
+    // Amendment Sheet B with valueParamKey. If the fenced default ever
+    // changes without this, the manifest lies about lock state (§9).
     strategyPreset: 'balanced',
     riskTolerance: agentData.config?.risk ?? 50,
     settingsRev: customization.settingsRev,
@@ -131,10 +156,10 @@ export function buildResolvedAgentManifest({ agentData, compiledBuild = null, eq
     gameModeAtLock: gameMode,
     gameModePolicyVersionAtLock: GAME_MODE_POLICY_VERSION,
     gameModePolicyHashAtLock: computeGameModePolicyHash(gameMode),
-    ...(compiledBuild ? {
-      compiledBuildIdAtLock: compiledBuild.compiledBuildId ?? null,
-      compiledBuildContentHashAtLock: compiledBuild.contentHash ?? null,
-      compilerVersionAtLock: compiledBuild.compilerVersion ?? null,
+    ...(buildForManifest ? {
+      compiledBuildIdAtLock: buildForManifest.compiledBuildId ?? null,
+      compiledBuildContentHashAtLock: buildForManifest.contentHash ?? null,
+      compilerVersionAtLock: buildForManifest.compilerVersion ?? null,
     } : {}),
   };
 
@@ -146,11 +171,12 @@ export function buildResolvedAgentManifest({ agentData, compiledBuild = null, eq
     frozenLayers,
     valuesAtLock,
     versionStamps,
-    guardrails: buildGuardrailsLayer(agentData, compiledBuild),
+    guardrails: buildGuardrailsLayer(agentData, buildForManifest),
     // DR-13 recording feed: compat-tension rules that would render alongside
     // the identity block (from the compile's tension candidates; empty until
     // Phase 3 authors tension cells).
-    renderedTensionPairs: compiledBuild?.renderedTensionCandidates ?? [],
+    renderedTensionPairs: buildForManifest?.renderedTensionCandidates ?? [],
+    ...(compiledBuildProvenanceSkipped ? { compiledBuildProvenanceSkipped } : {}),
   };
 
   // manifestHash covers everything except the hash field itself.
