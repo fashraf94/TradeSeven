@@ -61,4 +61,18 @@ describe('DraftBoardRoom genericization — render smoke', () => {
     expect(html).toContain('Training Draft');
     expect(html).not.toContain('Live Draft');
   });
+
+  it('EXPIRED (Training-Pod P0 R2) renders honest terminal copy — "Pod closed", never the "waiting for the next market open" line', () => {
+    const saved = { isComplete: STATE.isComplete, finalStatus: STATE.finalStatus };
+    STATE.isComplete = true;
+    STATE.finalStatus = 'expired'; // GROUP_STATUS.EXPIRED
+    try {
+      const html = renderToString(<DraftBoardRoom user={{ uid: 'u1' }} groupId="g1" mode="training" />);
+      expect(html).toContain('Pod closed');
+      expect(html).not.toContain('waiting for the next market open');
+    } finally {
+      STATE.isComplete = saved.isComplete;
+      STATE.finalStatus = saved.finalStatus;
+    }
+  });
 });

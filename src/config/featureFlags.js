@@ -900,3 +900,21 @@ export function isAgentPresenceOn() {
     return false;
   }
 }
+
+/**
+ * Training-Pod P0 R3 — the rolling stale-pod expiry backstop. Server-only; gates
+ * the orchestrator's per-tick `expireStaleTrainingPods` sweep, which retires
+ * training pods stranded pre-BATTLE (FORMING orphans, wedged DRAFTING drafts the
+ * idle sweep could not complete, AWAITING_OPEN pods whose flip failed past an
+ * arrived anchor) to the terminal EXPIRED status — never retro-advancing them
+ * (D1 ruling). Founder-gated one-time cleanup runs the SAME core off-tick.
+ *
+ * When FALSE (DEFAULT, merge-dark), the orchestrator NEVER calls the sweep — the
+ * tick is byte-identical to today, no pod is ever expired, and the EXPIRED
+ * machinery (R2) stays inert. When TRUE, the sweep runs each weekday-morning tick
+ * AFTER the awaiting-open flip (so a pod that legitimately advances this tick is
+ * never expired; the expire's state+version precondition closes the residual
+ * race). Flip only after a founder smoke — never in a build PR (the
+ * LEAGUE_NEXT_ARC_ENABLED / PR #510 precedent).
+ */
+export const POD_EXPIRY_SWEEP_ENABLED = false;

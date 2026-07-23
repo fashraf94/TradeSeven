@@ -79,7 +79,8 @@ import { resolveAgentDraftForGroup } from './tournamentAgentDraft.js';
 import { resolveUserDraftForGroup, USER_DRAFT_SENTINEL_PREFIX } from '../tournament/resolve-user-draft.js';
 import { autoCommitMissingBoards } from './tournamentBoardAutoCommit.js';
 import { runFridayAdvancement } from './tournamentAdvancement.js';
-import { flipAwaitingOpenPods, sweepIdleDraftingPods } from './trainingLifecycle.js';
+import { flipAwaitingOpenPods, sweepIdleDraftingPods, expireStaleTrainingPods } from './trainingLifecycle.js';
+import { POD_EXPIRY_SWEEP_ENABLED } from '../../src/config/featureFlags.js';
 import { ensureTrainingClones } from './trainingClone.js';
 // Fenced module EXPORT, called read-only — never edited (BUILD_RULES §1).
 import { flattenPortfolioServer } from './agentScoring.js';
@@ -941,6 +942,24 @@ export async function runOrchestratorTick(db, {
       }
     } catch (err) {
       console.error(`${tag} awaiting-open flip sweep failed: ${err.message}`);
+    }
+    // Training-Pod P0 R3 — rolling stale-pod backstop. Retires training pods
+    // stranded pre-BATTLE past TRAINING_TUNING.POD_EXPIRY_STALE_MS (the FORMING-
+    // orphan gap + idle-sweep/flip failures) to the terminal EXPIRED status —
+    // never retro-advancing them. Runs AFTER the flip above so a pod that
+    // legitimately advances this tick is gone before the sweep sees it; expireGroup's
+    // state+version precondition closes the residual race by construction. Behind
+    // POD_EXPIRY_SWEEP_ENABLED (default false → this block never runs, the tick is
+    // byte-identical). Own catch so it never blocks the duty. Zero new cron.
+    if (POD_EXPIRY_SWEEP_ENABLED) {
+      try {
+        const exp = await expireStaleTrainingPods(db, { now, includeDev: includeDevGroups });
+        if (exp.expired > 0 || exp.errors > 0) {
+          console.log(`${tag} pod-expiry sweep: expired ${exp.expired}, matched ${exp.matched}, skipped ${exp.skipped}, errors ${exp.errors}`);
+        }
+      } catch (err) {
+        console.error(`${tag} pod-expiry sweep failed: ${err.message}`);
+      }
     }
     // League Training Slice 3 — agent-layer activation + DAILY REDEPLOY. Once the
     // idle sweep + awaiting-open flip have landed training pods in BATTLE, this

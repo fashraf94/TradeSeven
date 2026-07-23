@@ -16,6 +16,13 @@
  * in request logs (the secret falls back to CRON_SECRET, the key to every
  * cron and admin operation).
  */
+/** The resolved admin secret (ADMIN_SECRET, falling back to CRON_SECRET), or null
+ *  if neither is configured. The single source of truth for anything that needs to
+ *  sign/verify with it (e.g. the expiry preview token) rather than re-reading env. */
+export function getAdminSecret() {
+  return process.env.ADMIN_SECRET || process.env.CRON_SECRET || null;
+}
+
 export function isAdminSecretValid(req) {
   const adminSecret = process.env.ADMIN_SECRET || process.env.CRON_SECRET;
   if (!adminSecret) return false;

@@ -194,6 +194,7 @@ const STATUS_COLORS = {
   [GROUP_STATUS.DRAFTING]: '#38bdf8',
   [GROUP_STATUS.BATTLE]: '#10b981',
   [GROUP_STATUS.COMPLETE]: '#a78bfa',
+  [GROUP_STATUS.EXPIRED]: '#6b7280', // Training-Pod P0 R2: terminal (muted gray). AWAITING_OPEN remains absent (pre-existing; falls back to textMuted).
 };
 
 function DirectionBadge({ direction }) {

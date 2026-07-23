@@ -38,12 +38,23 @@ import {
 // (or flips straight to battle inline when the anchor date is already today —
 // awaiting_open→battle below). DRAFTING is reached ONLY by the training path, so
 // the new edge never affects ranked groups.
+// Training-Pod P0 (R2, July 2026): EXPIRED is a SECOND terminal, reachable ONLY
+// from the three pre-BATTLE states (FORMING / DRAFTING / AWAITING_OPEN). It is
+// the disposition for a stale/abandoned training pod that never reached BATTLE
+// (D1 ruling: expire, never retro-advance). BATTLE has NO edge to EXPIRED — a
+// live pod completes normally — so a pod that advanced to BATTLE between a
+// sweep's read and its expire write is protected BY CONSTRUCTION (assertTransition
+// throws 'illegal transition', which expireGroup treats as an idempotent skip).
+// The new edges never affect ranked groups: ranked never enters DRAFTING/
+// AWAITING_OPEN, and a ranked FORMING pod is resolved single-shot to BATTLE, not
+// expired (only the training cleanup/backstop call expireGroup).
 export const LEGAL_TRANSITIONS = Object.freeze({
-  [GROUP_STATUS.FORMING]: Object.freeze([GROUP_STATUS.DRAFTING, GROUP_STATUS.BATTLE, GROUP_STATUS.AWAITING_OPEN]),
-  [GROUP_STATUS.DRAFTING]: Object.freeze([GROUP_STATUS.BATTLE, GROUP_STATUS.AWAITING_OPEN]),
-  [GROUP_STATUS.AWAITING_OPEN]: Object.freeze([GROUP_STATUS.BATTLE]),
+  [GROUP_STATUS.FORMING]: Object.freeze([GROUP_STATUS.DRAFTING, GROUP_STATUS.BATTLE, GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.EXPIRED]),
+  [GROUP_STATUS.DRAFTING]: Object.freeze([GROUP_STATUS.BATTLE, GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.EXPIRED]),
+  [GROUP_STATUS.AWAITING_OPEN]: Object.freeze([GROUP_STATUS.BATTLE, GROUP_STATUS.EXPIRED]),
   [GROUP_STATUS.BATTLE]: Object.freeze([GROUP_STATUS.COMPLETE]),
   [GROUP_STATUS.COMPLETE]: Object.freeze([]),
+  [GROUP_STATUS.EXPIRED]: Object.freeze([]),
 });
 
 export function assertTransition(from, to) {
@@ -112,6 +123,73 @@ export async function transitionStatus(db, groupId, to, now) {
     tx.update(ref, { status: to, updatedAt: now });
   });
   return to;
+}
+
+/**
+ * Expire a stale/abandoned PRE-BATTLE training pod to the terminal EXPIRED
+ * status (Training-Pod P0 R2 — the unified terminal-disposition mechanism).
+ * Transactional read-check-write with a state (and optional version)
+ * precondition, so the expire-vs-advance race is closed BY CONSTRUCTION, not by
+ * timing:
+ *   - `assertTransition(status, EXPIRED)` is legal ONLY from FORMING / DRAFTING /
+ *     AWAITING_OPEN — a pod that advanced to BATTLE (or is already terminal)
+ *     throws `illegal transition`, reported here as an idempotent skip. Re-
+ *     expiring an already-EXPIRED pod is therefore a no-op, so the one-time
+ *     cleanup and the rolling backstop are safe under crash-retry.
+ *   - `expectedStatus` / `expectedUpdatedAt`, when the caller supplies them, pin
+ *     the exact doc the caller classified as stale: if the in-transaction read no
+ *     longer matches (the pod progressed since the caller read it), we skip
+ *     rather than expire a pod that is no longer the one we judged.
+ * Writes the marker fields `{ expiredAt, expiredReason, expiredBy }` atomically
+ * with the status flip. `now` is caller-supplied (opaque-timestamp rule).
+ * NEVER hard-deletes — the audit trail survives (founder ruling: the
+ * releaseSlotSeat delete precedent is not adopted for pods). Returns
+ * `{ groupId, expired, status, reason? }`.
+ */
+export async function expireGroup(db, groupId, { reason = null, by = null, now, expectedStatus = null, expectedUpdatedAt = null, expectedProgressVersion = null } = {}) {
+  if (now == null) {
+    throw new Error('tournamentGroupService.expireGroup: now is required');
+  }
+  const ref = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      return { groupId, expired: false, status: null, reason: 'not_found' };
+    }
+    const data = snap.data();
+    // Version precondition — only expire the exact doc the caller judged stale.
+    if (expectedStatus != null && data.status !== expectedStatus) {
+      return { groupId, expired: false, status: data.status, reason: 'status_changed' };
+    }
+    if (expectedUpdatedAt != null && data.updatedAt !== expectedUpdatedAt) {
+      return { groupId, expired: false, status: data.status, reason: 'version_changed' };
+    }
+    // B2: the parent progressVersion moves on EVERY draft mutation (a mid-draft
+    // pick writes only the draft/state sibling, so updatedAt alone cannot see it).
+    // Pinning it here means any draft activity between the caller's classification
+    // and this transaction fails the precondition — an ACTIVE draft never expires.
+    if (expectedProgressVersion != null && (data.progressVersion || 0) !== expectedProgressVersion) {
+      return { groupId, expired: false, status: data.status, reason: 'progress_changed' };
+    }
+    try {
+      assertTransition(data.status, GROUP_STATUS.EXPIRED);
+    } catch (err) {
+      // Not expirable (BATTLE / COMPLETE / already-EXPIRED) — idempotent skip,
+      // never an error, so cleanup + the rolling sweep stay crash-retry safe.
+      if (typeof err?.message === 'string' && err.message.includes('illegal transition')) {
+        return { groupId, expired: false, status: data.status, reason: `not_expirable_from_${data.status}` };
+      }
+      throw err;
+    }
+    tx.update(ref, {
+      status: GROUP_STATUS.EXPIRED,
+      expiredAt: now,
+      expiredReason: reason,
+      expiredBy: by,
+      updatedAt: now,
+    });
+    return { groupId, expired: true, status: GROUP_STATUS.EXPIRED };
+  });
 }
 
 /** Membership helper: the player entry for odUserId, or null. */

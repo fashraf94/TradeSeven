@@ -196,7 +196,9 @@ export function buildSeat({ odUserId, isCpu, score, picks = null, battle = null,
 
 /** group.status → the surface's pod status. */
 export function groupStatusToPodStatus(status) {
-  if (status === GROUP_STATUS.COMPLETE) return 'final';
+  // EXPIRED (Training-Pod P0 R2) is terminal like COMPLETE — read it 'final', not
+  // the 'upcoming' fallthrough, so a retired pod never shows as pending.
+  if (status === GROUP_STATUS.COMPLETE || status === GROUP_STATUS.EXPIRED) return 'final';
   if (status === GROUP_STATUS.BATTLE) return 'live';
   return 'upcoming'; // forming / drafting / unknown
 }

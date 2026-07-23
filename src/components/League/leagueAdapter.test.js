@@ -164,6 +164,7 @@ describe('groupToPod + the scoring invariant', () => {
   it('groupStatusToPodStatus maps the lifecycle', () => {
     expect(groupStatusToPodStatus('battle')).toBe('live');
     expect(groupStatusToPodStatus('complete')).toBe('final');
+    expect(groupStatusToPodStatus('expired')).toBe('final'); // Training-Pod P0 R2: terminal, not 'upcoming'
     expect(groupStatusToPodStatus('forming')).toBe('upcoming');
     expect(groupStatusToPodStatus('drafting')).toBe('upcoming');
   });
