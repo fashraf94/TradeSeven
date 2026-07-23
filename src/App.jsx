@@ -38,6 +38,9 @@ import {
   SlotBasedBuilder,
 } from './components/BaggerBomb';
 
+// THROWAWAY: inline fixture for the ?preview=baggerbomb dev gate (see below).
+import { PREVIEW_BATTLE as BB_PREVIEW_BATTLE, PREVIEW_USER as BB_PREVIEW_USER } from './components/BaggerBomb/__previewBattle';
+
 // Lazy-loaded heavy components (make API calls on mount)
 const PortfolioBuilderBaggerBomb = lazy(() => import('./components/BaggerBomb/PortfolioBuilderBaggerBomb'));
 const BaggerBombBattleViewRedesign = lazy(() => import('./components/BaggerBomb/BaggerBombBattleViewRedesign'));
@@ -2200,6 +2203,16 @@ export default function PortfolioDuel() {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('tournamentDev') === '1') {
       setScreen('tournamentDev');
+    }
+  }, []);
+
+  // BaggerBomb Redesign preview — reachable ONLY via ?preview=baggerbomb (the
+  // dev/preview gate, mirroring ?tournamentDev above) so the legacy V2 battle
+  // view (BaggerBombBattleViewRedesign) can be smoked on a Vercel preview against
+  // an inline mock battle. Throwaway: no flag, no nav setter, not a product surface.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('preview') === 'baggerbomb') {
+      setScreen('baggerBombPreview');
     }
   }, []);
 
@@ -9727,6 +9740,22 @@ export default function PortfolioDuel() {
       <ErrorBoundary name="CorrelationLab" onNavigateDashboard={() => setScreen('dashboard')}>
       <Suspense fallback={<LoadingFallback />}>
         <CorrelationLab isDesktop={isDesktop} />
+      </Suspense>
+      </ErrorBoundary>
+      </div>
+    );
+  }
+
+  // BAGGERBOMB PREVIEW (dev smoke surface) — no nav setter exists for this id;
+  // the ?preview=baggerbomb mount effect is its only entry. Renders the legacy
+  // BaggerBombBattleViewRedesign against an inline mock battle. Throwaway: delete
+  // this block, the mount effect above, and __previewBattle.js to remove.
+  if (screen === 'baggerBombPreview') {
+    return (
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
+      <ErrorBoundary name="BaggerBombPreview" onNavigateDashboard={() => setScreen('dashboard')}>
+      <Suspense fallback={<LoadingFallback />}>
+        <BaggerBombBattleViewRedesign battle={BB_PREVIEW_BATTLE} user={BB_PREVIEW_USER} onBack={() => setScreen('dashboard')} />
       </Suspense>
       </ErrorBoundary>
       </div>
