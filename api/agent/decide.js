@@ -39,7 +39,15 @@ import {
 // P4 mode config (founder ruling D1) — Node-clean src import under the revised
 // June 2026 import rule (BUILD_RULES §4); the P4 battery's import of this
 // module is the dependency-surface guard.
-import { FLAT6_GAME_MODE, resolveModeConfig } from '../../src/constants/agentGameModes.js';
+import { TIERED_GAME_MODE, FLAT6_GAME_MODE, resolveModeConfig } from '../../src/constants/agentGameModes.js';
+// Archetype Phase 2 P2.4b (§7-signed fence contact): the deploy-path
+// validate-or-recompile + lock-time sourceRevisionVector re-verify. ALL
+// logic lives in the non-fenced deployBuildValidation.js; the two call
+// sites below are thin gates. DARK while COMPILER_ENABLED=false — the gate
+// returns proceed immediately with zero I/O and this file behaves
+// byte-identically to before.
+import { COMPILER_ENABLED } from '../../src/config/featureFlags.js';
+import { ensureDeployableCompiledBuild } from '../_utils/deployBuildValidation.js';
 
 // Vercel Pro timeout — two-call AI chain needs breathing room
 export const config = { maxDuration: 60 };
@@ -685,6 +693,19 @@ export default async function handler(req, res) {
       odUserId: 'cpu',
     };
 
+    // P2.4b (§7-signed): validate-or-recompile + lock-time vector re-verify
+    // (incl. the A-2 mode triple) immediately before the lock write. Dark
+    // no-op while COMPILER_ENABLED=false. A persistent verification failure
+    // refuses the deploy (A-3: stale/version-less builds are undeployable)
+    // — loud 409, lock cleared, never an improvised deploy.
+    const buildGate = await ensureDeployableCompiledBuild({
+      db, agentRef, agentId: agentDoc.id, gameMode: TIERED_GAME_MODE, enabled: COMPILER_ENABLED,
+    });
+    if (!buildGate.proceed) {
+      await agentRef.update({ deployingAt: null });
+      return res.status(409).json({ error: 'compiled_build_unverifiable', message: buildGate.reason });
+    }
+
     const battleResult = await createAgentBattle(
       db, agentData, thresholds, startingPrices,
       {
@@ -1142,6 +1163,19 @@ async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, ag
     ...agent,
     lastDecision,
   };
+
+  // P2.4b (§7-signed): the tournament-path twin of the tiered gate above —
+  // validate-or-recompile + lock-time vector re-verify for the flat6 build.
+  // Dark no-op while COMPILER_ENABLED=false. Refusal follows the
+  // bad-prescription contract: LOUD 4xx, lock cleared, orchestrator retries
+  // on its failure cooldown — never an improvised deploy.
+  const buildGate = await ensureDeployableCompiledBuild({
+    db, agentRef, agentId, gameMode: FLAT6_GAME_MODE, enabled: COMPILER_ENABLED,
+  });
+  if (!buildGate.proceed) {
+    await clearLock();
+    return res.status(409).json({ error: 'compiled_build_unverifiable', message: buildGate.reason });
+  }
 
   const battleResult = await createAgentBattle(
     db, agentData, thresholds, startingPrices,

@@ -69,9 +69,11 @@ function metadataForRule(ruleId) {
 
 // The registry identityHash is content-static per deploy; memoized so the
 // (flag-on) first compile pays the one canonicalization, and dark endpoints
-// never pay it at all.
+// never pay it at all. Exported: the P2.4b deploy gate
+// (deployBuildValidation.js) verifies stored vectors against the SAME
+// memoized value the compiler stamps — one source, no drift.
 let cachedIdentityHash = null;
-function registryIdentityHash() {
+export function registryIdentityHash() {
   if (cachedIdentityHash === null) cachedIdentityHash = computeIdentityHash();
   return cachedIdentityHash;
 }
@@ -114,6 +116,17 @@ export async function prepareCompileInputs(tx, {
  * nextState carries the POST-write values the endpoint is committing —
  * the compile describes the build the user just saved, not the one that
  * existed before this transaction.
+ *
+ * revision (A-3 discipline):
+ *   'mint'    (default) — the settings-endpoint case: the caller's
+ *             txUpdateAgentSettings bumps rev N→N+1 in this same
+ *             transaction and the builds carry N+1.
+ *   'current' — the deploy-path validate-or-recompile case (P2.4b): no
+ *             source mutation happened, so NO revision is minted and no
+ *             agent-doc write occurs — the artifact is re-derived for the
+ *             CURRENT rev (a stale artifact re-derived at rev N is the
+ *             same buildVersion N; phantom revisions would break the
+ *             update-agent-settings no-phantom-revs discipline).
  */
 export function writeCompiledBuildsInTx(tx, {
   agentRef,
@@ -123,10 +136,11 @@ export function writeCompiledBuildsInTx(tx, {
   bundles,
   enabled = false,
   nowIso,
+  revision = 'mint',
 } = {}) {
   if (!enabled) return null;
 
-  const settingsRevAfter = (agent?.settingsRev || 0) + 1;
+  const settingsRevAfter = (agent?.settingsRev || 0) + (revision === 'current' ? 0 : 1);
   const archetype = nextState.archetype ?? agent?.archetype ?? null;
   const deployedStrategy = 'deployedStrategy' in nextState
     ? nextState.deployedStrategy
