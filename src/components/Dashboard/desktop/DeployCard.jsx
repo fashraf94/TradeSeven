@@ -11,6 +11,8 @@ import { motion } from 'framer-motion';
 import { Zap } from 'lucide-react';
 import { CMD, alpha, readableOn, Mono } from '../commandUI';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
+import { isDeployCeremonyOn } from '../../../config/featureFlags';
+import HoldToDeployButton from '../deployCeremony/HoldToDeployButton';
 
 export default function DeployCard({ agent, accent, deploying, onDeploy, agentName, deployText }) {
   const archetype = getArchetypeDisplayName(agent?.archetype);
@@ -18,6 +20,7 @@ export default function DeployCard({ agent, accent, deploying, onDeploy, agentNa
   const disabled = deploying || !agent;
   const ink = readableOn(accent);
   const name = agentName || agent?.name || 'your agent';
+  const ceremonyOn = isDeployCeremonyOn();
 
   return (
     <div style={{
@@ -31,21 +34,35 @@ export default function DeployCard({ agent, accent, deploying, onDeploy, agentNa
           Binds today’s read + {archetype}{watchlist ? ` · ${watchlist}` : ''}
         </Mono>
       </div>
-      <motion.button
-        type="button"
-        onClick={onDeploy}
-        disabled={disabled}
-        whileTap={disabled ? undefined : { scale: 0.985 }}
-        style={{
-          flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-          padding: '16px 30px', borderRadius: 14, border: 'none', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit',
-          background: accent, color: ink, fontWeight: 700, fontSize: 16,
-          boxShadow: `0 8px 28px ${alpha(accent, 0.34)}`, opacity: disabled ? 0.6 : 1,
-        }}
-      >
-        <Zap size={19} color={ink} fill={ink} />
-        <span style={{ letterSpacing: '-0.01em' }}>{deploying ? 'Deploying…' : deployText}</span>
-      </motion.button>
+      {ceremonyOn ? (
+        <HoldToDeployButton
+          variant="filled"
+          accent={accent}
+          label={deployText}
+          Icon={Zap}
+          iconSize={19}
+          iconFill
+          onComplete={onDeploy}
+          disabled={disabled}
+          style={{ flexShrink: 0, padding: '16px 30px', borderRadius: 14, fontSize: 16, gap: 10 }}
+        />
+      ) : (
+        <motion.button
+          type="button"
+          onClick={onDeploy}
+          disabled={disabled}
+          whileTap={disabled ? undefined : { scale: 0.985 }}
+          style={{
+            flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            padding: '16px 30px', borderRadius: 14, border: 'none', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit',
+            background: accent, color: ink, fontWeight: 700, fontSize: 16,
+            boxShadow: `0 8px 28px ${alpha(accent, 0.34)}`, opacity: disabled ? 0.6 : 1,
+          }}
+        >
+          <Zap size={19} color={ink} fill={ink} />
+          <span style={{ letterSpacing: '-0.01em' }}>{deploying ? 'Deploying…' : deployText}</span>
+        </motion.button>
+      )}
     </div>
   );
 }

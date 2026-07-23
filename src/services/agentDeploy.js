@@ -31,8 +31,10 @@ export async function deployAgent(agentId, onCreateAgentBattle) {
   const data = await response.json();
 
   if (!data.success) {
-    console.error('[Deploy] Failed:', data.error);
-    return { success: false, error: data.error };
+    // [Deploy Ceremony §10] Forward `details` (and `errorPhase` when present) so
+    // the ceremony error surface can show something useful — previously dropped.
+    console.error('[Deploy] Failed:', data.error, data.details || '');
+    return { success: false, error: data.error, details: data.details, errorPhase: data.errorPhase };
   }
 
   // Step 2: hand off to the app's battle-creation callback (it navigates).

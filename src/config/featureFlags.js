@@ -984,3 +984,41 @@ export const MANIFEST_WRITE_ENABLED = false;
  * Flip only via a deliberate founder flag-flip PR — never in a build PR.
  */
 export const SHADOW_ASSEMBLY_ENABLED = false;
+
+/**
+ * Deploy Ceremony Phase 2 (client) — the three-act deploy experience:
+ * hold-to-deploy (Act 1), the checkpoint-driven thinking theater (Act 2), and
+ * the "ready for battle" reveal (Act 3). Consumes the inert deployProgress
+ * telemetry shipped in Phase 1 (api/agent/decide.js).
+ *
+ * When FALSE (DEFAULT, merge-dark), the deploy flow is byte-identical to today:
+ * tap-to-deploy, the "Deploying…" label, the fused auto-navigation to the battle
+ * view, and the existing success toast — instant rollback. When TRUE — or via
+ * the `?deployCeremony=1` dev-preview override (the isAgentPresenceOn idiom) —
+ * every deploy entry point becomes hold-to-arm, the ceremony overlay mounts at
+ * the Command Dashboard shell and plays the real pipeline, and navigation defers
+ * to an explicit "Enter the battle" CTA (the toast is suppressed — the reveal is
+ * the confirmation).
+ *
+ * Built/merged DARK behind this flag; flip in a one-line follow-up PR after a
+ * Vercel preview smoke (the AGENT_PRESENCE_ENABLED / SCOUTING_BOARD_ENABLED
+ * precedent) — never in the build PR.
+ */
+export const DEPLOY_CEREMONY_ENABLED = false;
+
+/**
+ * The ONE home for the Deploy Ceremony gate — the flag OR the `?deployCeremony=1`
+ * dev-preview override. SSR/Node-safe (guards `window`); a malformed URL degrades
+ * to the flag alone. Every ceremony mount/branch site gates on this helper, never
+ * on the raw const and never on a locally re-read URL (the isAgentPresenceOn /
+ * isTrainingPodDraftV2On precedent).
+ */
+export function isDeployCeremonyOn() {
+  if (DEPLOY_CEREMONY_ENABLED) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('deployCeremony') === '1';
+  } catch {
+    return false;
+  }
+}

@@ -33,7 +33,8 @@ import ReadColumn from './desktop/ReadColumn';
 import EquipBench from './desktop/EquipBench';
 import DeployCard from './desktop/DeployCard';
 import ScoutingBoardSheet from './ScoutingBoardSheet';
-import { SCOUTING_BOARD_ENABLED } from '../../config/featureFlags';
+import DeployCeremony from './deployCeremony/DeployCeremony';
+import { SCOUTING_BOARD_ENABLED, isDeployCeremonyOn } from '../../config/featureFlags';
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -68,10 +69,11 @@ export default function CommandDashboardDesktop({
   activeAgentBattles = [],
   onCreateAgentBattle,
   onOpenAgentBattle,
+  onEnterBattle,
 }) {
   // Resolve the agent by ownerId === odUserId — the same key the mobile
   // CommandDashboard uses.
-  const { agent, loading: agentLoading, record, winRate, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
+  const { agent, loading: agentLoading, record, winRate, levelConfig, nextLevelInfo, deployText, activeDirectives } = useAgent(user?.odUserId);
   const masteryProfile = useMasteryProfile(agent?.ownerId || null);
 
   // The user-picked primaryColor supersedes the Haiku avatarColors.
@@ -90,18 +92,33 @@ export default function CommandDashboardDesktop({
   const [recordOpen, setRecordOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
+
+  // ── Deploy Ceremony (flag-gated) — mirrors the mobile shell (ruling #2). ────
+  const ceremonyOn = isDeployCeremonyOn();
+  const [ceremonyOpen, setCeremonyOpen] = useState(false);
+  const [deployResult, setDeployResult] = useState(null);
+  const [ceremonyRun, setCeremonyRun] = useState(0); // bump remounts the ceremony (retry)
+
   const handleDeploy = async () => {
     if (deployDisabled) return { success: false };
+    if (ceremonyOn) { setCeremonyOpen(true); setDeployResult({ status: 'pending' }); }
     setDeploying(true);
     let result = { success: false };
     try {
       result = await deployAgent(agent.id, onCreateAgentBattle);
     } catch (err) {
       console.error('[Deploy] Error:', err);
+      if (ceremonyOn) result = { success: false, error: err?.message };
     }
     setDeploying(false);
+    if (ceremonyOn) {
+      setDeployResult(result?.success
+        ? { status: 'success', agentBattleId: result.agentBattleId }
+        : { status: 'error', error: result?.error, details: result?.details });
+    }
     return result;
   };
+  const handleCeremonyRetry = () => { setCeremonyRun((r) => r + 1); handleDeploy(); };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
   const openAgentRecord = () => setRecordOpen(true);
 
@@ -260,6 +277,20 @@ export default function CommandDashboardDesktop({
           deployDisabled={deployDisabled}
           isLive={isLive}
           onDeploy={handleDeploy}
+        />
+      )}
+
+      {ceremonyOn && ceremonyOpen && (
+        <DeployCeremony
+          key={ceremonyRun}
+          agent={agent}
+          accent={accent}
+          agentName={agentName}
+          directiveCount={activeDirectives?.length || 0}
+          deployResult={deployResult}
+          onEnterBattle={() => { onEnterBattle?.(); setCeremonyOpen(false); }}
+          onDismiss={() => setCeremonyOpen(false)}
+          onRetry={handleCeremonyRetry}
         />
       )}
     </div>
