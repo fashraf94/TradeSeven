@@ -1004,7 +1004,7 @@ export const SHADOW_ASSEMBLY_ENABLED = false;
  * Vercel preview smoke (the AGENT_PRESENCE_ENABLED / SCOUTING_BOARD_ENABLED
  * precedent) — never in the build PR.
  */
-export const DEPLOY_CEREMONY_ENABLED = true;
+export const DEPLOY_CEREMONY_ENABLED = false;
 
 /**
  * The ONE home for the Deploy Ceremony gate — the flag OR the `?deployCeremony=1`
