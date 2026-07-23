@@ -1,0 +1,181 @@
+// api/_utils/archetypeRegistry.test.js
+//
+// Archetype Architecture Phase 2 (P2.2) — registry tests:
+//
+//   1. Completeness (§2.3): all six archetypes present in every composed home
+//   2. identityHash CI LOCK (§2.3 / R1-23): composed-content change without
+//      an ARCHETYPE_IDENTITY_VERSION bump FAILS the build (hash compared
+//      against the committed snapshot artifact)
+//   3. Import-boundary RATCHET (§2.3 / R1-25, api/-import-policy precedent):
+//      the set of production modules importing the legacy archetype tables
+//      directly is frozen at the committed baseline — new direct importers
+//      fail (go through archetypeRegistry), removed ones must shrink the
+//      baseline in the same commit. Phase 3 migrates the baseline to zero.
+//
+// SNAPSHOT REGENERATION (deliberately vitest-hosted: archetypeCharacter.js
+// uses extensionless relative imports that resolve under Vite/vitest but not
+// plain `node`, so a standalone node script cannot load the registry graph):
+//
+//   GENERATE_REGISTRY_SNAPSHOT=1 npx vitest run api/_utils/archetypeRegistry.test.js
+//
+// writes docs/registry-snapshots/archetype-registry-identity-v{N}.json for
+// the CURRENT version; commit it in the same PR as the content change + the
+// version bump. Published snapshots are immutable — git provides retrieval.
+//
+// DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): this file's REAL import of
+// archetypeRegistry.js pulls all ten data homes (api→src) through the Node
+// test environment — a browser-only dep entering that graph explodes this
+// suite at import time. NEVER mock these imports.
+
+import { describe, it, expect } from 'vitest';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+import {
+  ARCHETYPE_IDENTITY_VERSION,
+  listArchetypeIds,
+  getArchetypeDefinition,
+  getRegistryCorpus,
+  computeIdentityHash,
+  validateRegistryCompleteness,
+  buildRegistrySnapshot,
+} from './archetypeRegistry.js';
+import { VALID_ARCHETYPES } from './agentArchetypeConfig.js';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const SNAPSHOT_DIR = path.join(REPO_ROOT, 'docs', 'registry-snapshots');
+const SNAPSHOT_PATH = path.join(SNAPSHOT_DIR, `archetype-registry-identity-v${ARCHETYPE_IDENTITY_VERSION}.json`);
+const BASELINE_PATH = path.join(REPO_ROOT, 'api', '_utils', 'archetypeImportBoundaryBaseline.json');
+
+// Regen mode — see header. Runs before the lock test so a regen run passes.
+if (process.env.GENERATE_REGISTRY_SNAPSHOT === '1') {
+  mkdirSync(SNAPSHOT_DIR, { recursive: true });
+  writeFileSync(SNAPSHOT_PATH, `${JSON.stringify(buildRegistrySnapshot(), null, 2)}\n`);
+}
+
+describe('archetype registry — read surface + completeness (§2.3)', () => {
+  it('exposes exactly the six launch archetypes', () => {
+    expect(listArchetypeIds()).toEqual(VALID_ARCHETYPES);
+    expect(listArchetypeIds()).toHaveLength(6);
+  });
+
+  it('returns null for unknown ids — no analyst fallback on the contract surface', () => {
+    expect(getArchetypeDefinition('archetype_7')).toBeNull();
+  });
+
+  it('passes the completeness validator against the live data homes', () => {
+    const { complete, problems } = validateRegistryCompleteness();
+    expect(problems).toEqual([]);
+    expect(complete).toBe(true);
+  });
+
+  it('composes by reference, never by copy (BUILD_RULES §4 local-copy bug class)', async () => {
+    const { ARCHETYPE_WEIGHTS } = await import('./archetypeScoring.js');
+    const { ARCHETYPE_CONFIGS } = await import('./agentArchetypeConfig.js');
+    const def = getArchetypeDefinition('momentum_chaser');
+    expect(def.scoring.weights).toBe(ARCHETYPE_WEIGHTS.momentum_chaser);
+    expect(def.physics.hftConfig).toBe(ARCHETYPE_CONFIGS.momentum_chaser.hftConfig);
+  });
+
+  it('stamps the physics ref with calibrationBundleVersion (§2 amendment)', () => {
+    for (const id of listArchetypeIds()) {
+      expect(getArchetypeDefinition(id).physics.calibrationBundleVersion).toBe(1);
+    }
+  });
+
+  it('carries the baseline rulebook in the corpus surface', () => {
+    const corpus = getRegistryCorpus();
+    expect(corpus.forgeRuleTemplates.length).toBeGreaterThan(100);
+    expect(corpus.compatStates).toEqual(['native', 'neutral', 'core_conflict']);
+  });
+});
+
+describe('identityHash CI lock (§2.3 / R1-23)', () => {
+  it('has a committed snapshot artifact for the current identity version', () => {
+    expect(
+      existsSync(SNAPSHOT_PATH),
+      `missing ${path.relative(REPO_ROOT, SNAPSHOT_PATH)} — run GENERATE_REGISTRY_SNAPSHOT=1 npx vitest run api/_utils/archetypeRegistry.test.js and commit the artifact`
+    ).toBe(true);
+  });
+
+  it('FAILS when composed registry content changes without an ARCHETYPE_IDENTITY_VERSION bump', () => {
+    const snapshot = JSON.parse(readFileSync(SNAPSHOT_PATH, 'utf8'));
+    expect(snapshot.identityVersion).toBe(ARCHETYPE_IDENTITY_VERSION);
+    // REMEDY on failure: if the content change is deliberate, bump
+    // ARCHETYPE_IDENTITY_VERSION (archetypeVersionConstants.js) and
+    // regenerate + commit the NEW snapshot file in the same commit. The old
+    // snapshot stays — published versions are immutable.
+    expect(computeIdentityHash()).toBe(snapshot.identityHash);
+  });
+});
+
+describe('import-boundary ratchet (§2.3 / R1-25)', () => {
+  const LEGACY_TABLE_BASENAMES = [
+    'agentArchetypeConfig',
+    'archetypeScoring',
+    'archetypeAdjustments',
+    'traitLibrary',
+    'archetypeRuleCompatibility',
+    'archetypeDisplay',
+    'archetypeIdentity',
+    'archetypeCharacter',
+    'characterLeanPresentation',
+    'forgeKnowledgeBase',
+  ];
+  // The sanctioned composition layer — the registry family and the Phase-2
+  // compiler layer may (must) import the tables directly; everything else
+  // goes through the registry from here on.
+  const COMPOSITION_LAYER = new Set([
+    'api/_utils/archetypeRegistry.js',
+    'api/_utils/calibrationBundle.js',
+    'api/_utils/platformGuardrails.js',
+    'api/_utils/activationGate.js',
+    'api/_utils/compileOnSettingsChange.js',
+    'api/_utils/resolvedAgentManifest.js',
+    'api/_utils/shadowAssemblyCapture.js',
+  ]);
+  const IMPORT_RE = new RegExp(
+    `from\\s+['"][^'"]*(?:${LEGACY_TABLE_BASENAMES.join('|')})(?:\\.js)?['"]`
+  );
+
+  function scanDirectImporters() {
+    const hits = [];
+    const walk = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === 'node_modules') continue;
+          walk(full);
+          continue;
+        }
+        if (!/\.(js|jsx)$/.test(entry.name) || /\.test\.(js|jsx)$/.test(entry.name)) continue;
+        const rel = path.relative(REPO_ROOT, full);
+        if (COMPOSITION_LAYER.has(rel)) continue;
+        if (IMPORT_RE.test(readFileSync(full, 'utf8'))) hits.push(rel);
+      }
+    };
+    walk(path.join(REPO_ROOT, 'api'));
+    walk(path.join(REPO_ROOT, 'src'));
+    return hits.sort();
+  }
+
+  it('no NEW production module imports a legacy archetype table directly; removed importers shrink the baseline', () => {
+    const { importers: baseline } = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
+    const current = scanDirectImporters();
+    const baselineSet = new Set(baseline);
+    const currentSet = new Set(current);
+
+    const added = current.filter((f) => !baselineSet.has(f));
+    const removed = baseline.filter((f) => !currentSet.has(f));
+
+    expect(
+      added,
+      'new direct importer(s) of legacy archetype tables — import through api/_utils/archetypeRegistry.js instead (Spec §2.3)'
+    ).toEqual([]);
+    expect(
+      removed,
+      'importer(s) left the direct-import set — shrink archetypeImportBoundaryBaseline.json in this same commit (the ratchet only tightens)'
+    ).toEqual([]);
+  });
+});

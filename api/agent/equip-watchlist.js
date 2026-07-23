@@ -24,6 +24,10 @@ import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
 import { waitUntil } from '@vercel/functions';
+// Archetype Phase 2 (P2.4a): DARK equip-time compiler — both calls return
+// null before any read/write while COMPILER_ENABLED=false (byte-identical).
+import { COMPILER_ENABLED } from '../../src/config/featureFlags.js';
+import { prepareCompileInputs, writeCompiledBuildsInTx } from '../_utils/compileOnSettingsChange.js';
 
 export const config = { maxDuration: 10 };
 
@@ -98,6 +102,12 @@ export default async function handler(req, res) {
       }
 
       const equippedWatchlistName = watchlist.name || '';
+      // P2.4a compile reads (dark no-op): must precede the first tx write.
+      const compileInputs = await prepareCompileInputs(tx, {
+        agentRef,
+        nextEquippedBundleIds: agent.equippedBundleIds || [],
+        enabled: COMPILER_ENABLED,
+      });
       // settingsRev rides structurally (Release 2 changelog #7).
       txUpdateAgentSettings(tx, agentRef, {
         equippedWatchlistId: watchlistId,
@@ -105,11 +115,22 @@ export default async function handler(req, res) {
         equippedAt: nowIso,
         updatedAt: nowIso,
       });
+      // P2.4a (dark no-op): compile rides the settingsRev increment above.
+      const compilePreviews = writeCompiledBuildsInTx(tx, {
+        agentRef,
+        agentId,
+        agent,
+        nextState: {},
+        bundles: compileInputs?.bundles,
+        enabled: COMPILER_ENABLED,
+        nowIso,
+      });
       return {
         idempotent: false,
         equippedWatchlistId: watchlistId,
         equippedWatchlistName,
         equippedAt: nowIso,
+        compilePreviews,
       };
     });
   } catch (txErr) {
@@ -145,11 +166,13 @@ export default async function handler(req, res) {
     `(idempotent=${txResult.idempotent})`,
   );
 
+  // compilePreviews is ADDITIVE and appears only under COMPILER_ENABLED (P2.4a).
   return res.status(200).json({
     agentId,
     equippedWatchlistId: txResult.equippedWatchlistId,
     equippedWatchlistName: txResult.equippedWatchlistName,
     equippedAt: txResult.equippedAt,
     idempotent: txResult.idempotent,
+    ...(txResult.compilePreviews ? { compilePreviews: txResult.compilePreviews } : {}),
   });
 }

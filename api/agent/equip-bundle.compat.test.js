@@ -44,6 +44,7 @@ vi.mock('@vercel/functions', () => ({
   waitUntil: (p) => p,
 }));
 vi.mock('../../src/config/featureFlags.js', () => ({
+  COMPILER_ENABLED: false, // P2.4a: keep the dark compiler dark under this suite's flag mock
   get RULE_COMPAT_MODE() { return flagState.mode; },
   CONFLICT_RECONCILER_DETECT_ENABLED: false,
 }));

@@ -52,6 +52,7 @@ vi.mock('@vercel/functions', () => ({
 }));
 // The rider under test: flag pinned to observe for this file only.
 vi.mock('../../src/config/featureFlags.js', () => ({
+  COMPILER_ENABLED: false, // P2.4a: keep the dark compiler dark under this suite's flag mock
   RULE_COMPAT_MODE: 'observe',
 }));
 

@@ -18,6 +18,14 @@ import { resolveModeConfig, TIERED_GAME_MODE } from '../../src/constants/agentGa
 // The logic lives in the non-fenced module so future tweaks are ordinary
 // changes, never fence re-authorizations (its graph is Node-clean).
 import { buildCustomizationSnapshot } from './leanRevalidation.js';
+// Archetype Phase 2 P2.5 (§7-signed fence contact): the ResolvedAgentManifest
+// block, born in this single creation write adjacent to agentContext (DR-6;
+// create-only-after-start by construction — no updater exists). The builder
+// is the NON-FENCED kernel (the buildCustomizationSnapshot precedent). DARK
+// while MANIFEST_WRITE_ENABLED=false — the battle doc is byte-identical to
+// before (the P4 equivalence battery is the lock).
+import { MANIFEST_WRITE_ENABLED } from '../../src/config/featureFlags.js';
+import { buildResolvedAgentManifest } from './resolvedAgentManifest.js';
 
 // Duration mode: 'fullday' = single trading day (until market close), 'legacy' = multi-day (1d/3d/5d)
 const AGENT_BATTLE_DURATION_MODE = 'fullday';
@@ -203,6 +211,20 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
         support: stampMode(deepCopyArrayWithSector(portfolio.support, sectorMap)),
       },
     },
+
+    // P2.5 (§7-signed): the manifest block, adjacent to agentContext (DR-6).
+    // Frozen at creation like every sibling snapshot; zero readers in
+    // Phase 2 (agentContext remains the runtime authority). Absent entirely
+    // while the flag is false — byte-identity holds.
+    ...(MANIFEST_WRITE_ENABLED ? {
+      resolvedAgentManifest: buildResolvedAgentManifest({
+        agentData,
+        compiledBuild: options.compiledBuild ?? null,
+        equippedWatchlist: options.equippedWatchlist ?? null,
+        gameMode,
+        now,
+      }),
+    } : {}),
 
     trades: [],
     evaluations: [],

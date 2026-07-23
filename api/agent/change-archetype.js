@@ -56,8 +56,11 @@ import { waitUntil } from '@vercel/functions';
 // Classification runs through the SAME kernel the cleanup script uses
 // (collectProjectedConflicts → projectActiveRules + the compat map) so rescan
 // telemetry and the cleanup census can never disagree.
-import { RULE_COMPAT_MODE } from '../../src/config/featureFlags.js';
+import { RULE_COMPAT_MODE, COMPILER_ENABLED } from '../../src/config/featureFlags.js';
 import { collectProjectedConflicts } from '../_utils/ruleCompatCleanup.js';
+// Archetype Phase 2 (P2.4a): DARK equip-time compiler — both calls return
+// null before any read/write while COMPILER_ENABLED=false (byte-identical).
+import { prepareCompileInputs, writeCompiledBuildsInTx } from '../_utils/compileOnSettingsChange.js';
 // Release 2 lean-invalidation rider — same kernel the battle-creation
 // revalidation uses (leanRevalidation.js), so the rider and the snapshot
 // omission can never disagree.
@@ -166,6 +169,15 @@ export default async function handler(req, res) {
         }
       }
 
+      // P2.4a compile reads (dark no-op): placed HERE because the seed block
+      // below performs tx.set writes and Firestore requires every read to
+      // precede the first write. Compat cells key on the NEW archetype.
+      const compileInputs = await prepareCompileInputs(tx, {
+        agentRef,
+        nextEquippedBundleIds: agent.equippedBundleIds || [],
+        enabled: COMPILER_ENABLED,
+      });
+
       // ⚠️ THE INVARIANT: archetype change ALWAYS loads that archetype's
       // born-with trait set — atomically, in THIS transaction. Create the new
       // trait rule docs and write archetype + equippedTraits together (tx.set +
@@ -200,6 +212,18 @@ export default async function handler(req, res) {
         ...(dialInvalidated ? { 'dials.tempo': 'standard' } : {}),
       });
 
+      // P2.4a (dark no-op): compile rides the settingsRev increment above,
+      // against the NEW archetype identity.
+      const compilePreviews = writeCompiledBuildsInTx(tx, {
+        agentRef,
+        agentId,
+        agent,
+        nextState: { archetype },
+        bundles: compileInputs?.bundles,
+        enabled: COMPILER_ENABLED,
+        nowIso,
+      });
+
       // equippedTraits rides along for the WS1 rescan (projection input) — now
       // the NEWLY seeded set, so the rescan classifies the post-change reality.
       // standingLeans rides for the Release-2 lean-invalidation rider.
@@ -207,6 +231,7 @@ export default async function handler(req, res) {
         idempotent: false,
         archetype,
         previousArchetype,
+        compilePreviews,
         equippedTraits: (seeded && seeded.equippedTraits) || agent.equippedTraits || [],
         standingLeans: Array.isArray(agent.standingLeans) ? agent.standingLeans : [],
         seeded: seeded ? { traitCount: seeded.equippedTraits.length, rulesAdded: seeded.rulesAdded } : null,
@@ -381,5 +406,7 @@ export default async function handler(req, res) {
     // dark response stays byte-identical. The client surfaces this as the
     // user notice (never a silent reset).
     ...(txResult.dialInvalidated ? { dialInvalidated: true } : {}),
+    // compilePreviews is ADDITIVE and appears only under COMPILER_ENABLED (P2.4a).
+    ...(txResult.compilePreviews ? { compilePreviews: txResult.compilePreviews } : {}),
   });
 }

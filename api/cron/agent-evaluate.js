@@ -7,6 +7,12 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+// Archetype Phase 2 P2.6 (non-fenced): shadow assembly + behavior-record
+// envelope plumbing, DARK behind SHADOW_ASSEMBLY_ENABLED=false — the two
+// flag-gated call sites below are never entered while dark and the tick is
+// byte-identical. Assembly-only (no second LLM call — Spec DR-10 stage 1).
+import { SHADOW_ASSEMBLY_ENABLED } from '../../src/config/featureFlags.js';
+import { runShadowTickCapture, writeBattleSettlementRecord } from '../_utils/shadowAssemblyCapture.js';
 import { isMarketOpen, getETDate, formatDateString } from '../_utils/marketSchedule.js';
 import { getStockAnalysisData, fetchIntradayBatch, fetchIntradayCandles, filterToLatestSession } from '../_utils/marketDataCache.js';
 import { resolveBadgeBaseline } from '../_utils/baselineValidation.js';
@@ -80,7 +86,7 @@ import { finalizeCronState } from '../_utils/agentCronState.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
 // string literal). Zero-import schema module, BUILD_RULES §4.
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
-import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS } from '../_utils/agentEvalTransport.js';
+import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, EVAL_MODEL_ID } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { runCanonicalOpenSweep } from '../_utils/canonicalOpenSweep.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
@@ -1911,7 +1917,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       const hardAbort = setTimeout(() => abortCtrl.abort(), HAIKU_CALL_CEILING_MS);
       try {
         const response = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
+          model: EVAL_MODEL_ID,
           max_tokens: 1024,
           temperature: 0.4,
           system: buildEvalSystemPrompt(agentName, archetype, battle.gameMode),
@@ -2666,6 +2672,28 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // Write pending proposal if mode branching created one
     if (pendingProposalUpdate) {
       finalUpdate.pendingProposal = pendingProposalUpdate;
+    }
+
+    // P2.6 (dark): once-per-battle-per-tick capture — A-1 envelope, awaited
+    // shadowDiffs write, §6.3 gate aggregate (+ terminal-gate on a final
+    // non-action) riding THIS finalUpdate (the cronErrors precedent — no new
+    // write op for the aggregates). Never throws into the tick; pre-manifest
+    // battles are skipped inside the module.
+    if (SHADOW_ASSEMBLY_ENABLED) {
+      await runShadowTickCapture({
+        db, battle, finalUpdate,
+        tick: {
+          cronStartIso: new Date(cronStartTime).toISOString(),
+          nowIso: now,
+          modelId: EVAL_MODEL_ID,
+          market: { prices, macroPrices, assetScores, triggers, news, momentumData, presetConfig },
+          candidatesTested:
+            (battle.portfolio?.bench?.stocks?.length || 0)
+            + (battle.watchlist?.hotBench?.length || 0),
+          statusFeedEntries,
+          decision, evaluation, haikuFailure, downgraded,
+        },
+      });
     }
 
     await battleRef.update(finalUpdate);
@@ -3757,6 +3785,14 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     if (disposition.completionContext) {
       updatePayload.completionContext = disposition.completionContext;
     }
+    // P2.6 (dark; §6.4): the terminal transaction stamps
+    // receiptCoverage:'pending' for manifest battles — the post-commit
+    // settlement writer flips it to 'complete'; a crash in between leaves
+    // 'pending' as the retry marker, so absence-of-record is always
+    // distinguishable from zero events. Flag off / pre-manifest: no field.
+    if (SHADOW_ASSEMBLY_ENABLED && fresh.resolvedAgentManifest) {
+      updatePayload.receiptCoverage = 'pending';
+    }
     if (retiredVisionForWrite) {
       updatePayload.vision = retiredVisionForWrite;
     }
@@ -3896,6 +3932,19 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     } catch (awardErr) {
       console.error(`${LOG_PREFIX} mastery award failed for battle ${battle.id} (repair sweep will retry): ${awardErr.message}`);
     }
+  }
+
+  // P2.6 (dark; §6.4): the battleSettlements/{battleId} record — attempted
+  // post-commit on the runAwardTransaction precedent (awaited, failures
+  // logged never thrown into the expiry loop; the module skips pre-manifest
+  // battles and leaves receiptCoverage:'pending' on failure as the retry
+  // marker). Uses the transaction's own fresh doc — no re-fetch.
+  if (SHADOW_ASSEMBLY_ENABLED && txOutcome.disposition) {
+    await writeBattleSettlementRecord(db, {
+      freshBattle: { ...(txOutcome.freshForAward ?? battle), id: battle.id },
+      completedAtIso: now,
+      modelId: EVAL_MODEL_ID,
+    });
   }
 
   console.log(`${LOG_PREFIX} Battle ${battle.id} ${txOutcome.repaired ? 'repaired (bare GC completion finished in place)' : 'completed'}. ${disposition.logLine}`);

@@ -14,6 +14,14 @@
 export const HAIKU_CALL_CEILING_MS = 22_000;
 export const HAIKU_POST_CALL_ALLOWANCE_MS = 12_000;
 
+// The mid-battle eval model — ONE exported source (P2 code-review finding:
+// the literal had grown three copies — the live messages.create call plus
+// the two behavior-record envelope capture sites — and the envelope exists
+// precisely to record the model faithfully; a bump that missed a copy would
+// corrupt effectiveRuntimeResolution.modelId, the provenance field A-1
+// guarantees). Bump HERE and every call + capture site follows.
+export const EVAL_MODEL_ID = 'claude-haiku-4-5-20251001';
+
 /**
  * Classify a Haiku transport failure for instrumentation (Phase 2).
  *

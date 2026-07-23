@@ -918,3 +918,69 @@ export function isAgentPresenceOn() {
  * LEAGUE_NEXT_ARC_ENABLED / PR #510 precedent).
  */
 export const POD_EXPIRY_SWEEP_ENABLED = false;
+
+/**
+ * Archetype Architecture Phase 2 (P2.4a) — the equip-time build compiler
+ * (PHASE2_BUILD_BRIEF_V1; Spec §4.4 + A-2/A-3). Gates the settings
+ * endpoints' in-transaction compile + CompiledBuild write
+ * (api/_utils/compileOnSettingsChange.js) to
+ * agents/{agentId}/compiledBuilds/{gameMode}.
+ *
+ * When FALSE (DEFAULT, merge-dark), every settings endpoint is byte-identical
+ * to today: the compile helper returns null before any read or write — zero
+ * added Firestore I/O, no response-shape change. When TRUE (preview smoke
+ * only in Phase 2), each real settings write also compiles the build for the
+ * live deploy modes inside the SAME transaction (riding the structural
+ * settingsRev increment — A-3: the compile mints the revision) and the
+ * response gains a compilePreviews payload.
+ *
+ * PRODUCTION ACTIVATION IS DOUBLE-GATED: this flag AND the §5.6/A-4 metadata
+ * completeness gate (api/_utils/activationGate.js), which FAILS by design
+ * until Phases 3-4 author the corpus. Until then enabled compiles record
+ * validation.pass=false (truthful pre-authoring state) and the deploy path
+ * (P2.4b) refuses them. Flip only via a deliberate founder flag-flip PR with
+ * a green activation gate — NEVER in a build PR (Phase 2 exit criteria).
+ */
+export const COMPILER_ENABLED = false;
+
+/**
+ * Archetype Architecture Phase 2 (P2.5, §7-signed fence contact) — the
+ * ResolvedAgentManifest block written by createAgentBattle adjacent to the
+ * agentContext snapshot (Spec DR-6; built by the non-fenced
+ * api/_utils/resolvedAgentManifest.js kernel, the buildCustomizationSnapshot
+ * precedent).
+ *
+ * When FALSE (DEFAULT, merge-dark), createAgentBattle's battle doc is
+ * byte-identical to today (the P4 equivalence battery is the lock) — no
+ * manifest field exists anywhere. When TRUE (preview smoke only in Phase 2),
+ * every new battle doc carries `resolvedAgentManifest` frozen at creation:
+ * create-only-after-start holds by construction (the block is born in the
+ * single creation write and no updater exists — R1-4).
+ *
+ * ZERO READERS MIGRATE IN PHASE 2: agentContext remains the runtime
+ * authority throughout (brief P2.5); manifest-read migration is a later
+ * phase behind the DR-10 two-stage validation. Flip only via a deliberate
+ * founder flag-flip PR — never in a build PR.
+ */
+export const MANIFEST_WRITE_ENABLED = false;
+
+/**
+ * Archetype Architecture Phase 2 (P2.6) — tick-side shadow assembly +
+ * behavior-record envelope plumbing (api/_utils/shadowAssemblyCapture.js,
+ * riding the non-fenced agent-evaluate tick; Spec DR-10 stage 1 + A-1 +
+ * §6.3/§6.4).
+ *
+ * When FALSE (DEFAULT, merge-dark), the tick never calls into the capture
+ * module — no shadow prompts, no shadowDiffs writes, no gate aggregates, no
+ * settlement records, no receiptCoverage stamp: byte-identical ticks and
+ * settlements. When TRUE (preview smoke only in Phase 2), each battle-tick
+ * with a manifest builds the A-1 envelope once, writes the awaited
+ * create-only shadow diff to agentBattles/{id}/shadowDiffs/{tickId}
+ * (assembly-only — NO second LLM call; near-free vs the eval budget), rides
+ * the §6.3 aggregates on the existing finalUpdate, and completeBattle
+ * attaches the §6.4 battleSettlements record post-commit with the
+ * receiptCoverage retry marker. Pre-manifest battles are skipped entirely
+ * (the envelope is manifest-anchored; no envelope-less record ever exists).
+ * Flip only via a deliberate founder flag-flip PR — never in a build PR.
+ */
+export const SHADOW_ASSEMBLY_ENABLED = false;
