@@ -132,6 +132,8 @@ describe('import-boundary ratchet (§2.3 / R1-25)', () => {
     'api/_utils/platformGuardrails.js',
     'api/_utils/activationGate.js',
     'api/_utils/compileOnSettingsChange.js',
+    'api/_utils/resolvedAgentManifest.js',
+    'api/_utils/shadowAssemblyCapture.js',
   ]);
   const IMPORT_RE = new RegExp(
     `from\\s+['"][^'"]*(?:${LEGACY_TABLE_BASENAMES.join('|')})(?:\\.js)?['"]`
