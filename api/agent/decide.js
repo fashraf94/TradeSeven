@@ -29,6 +29,9 @@ import { logDecision, logFirstMessage } from '../_utils/shadowLogger.js';
 import { buildFirstMessagePrompt, getAgentPhase } from '../_utils/voiceLayerPrompt.js';
 import { TERM_TOKENS } from '../_utils/termUniverse.js';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
+// Deploy Ceremony (Amendment A §4.6) — pure, dependency-free brief-excerpt
+// selector for the deployProgress telemetry. Node-clean, imports nothing fenced.
+import { selectBriefExcerpt } from '../_utils/deployCeremonyExcerpt.js';
 import {
   resolveEquippedWatchlist,
   extractTickerSymbols,
@@ -161,8 +164,26 @@ export default async function handler(req, res) {
       }
     }
 
-    // Set deploy lock
-    await agentRef.update({ deployingAt: new Date().toISOString() });
+    // Set deploy lock. deployId === this deploy's deployingAt ISO string (Deploy
+    // Ceremony Amendment §4): the client binds its ceremony to the first
+    // deployingAt/deployId change it observes after initiating the deploy, and
+    // the 120s in-progress lock above prevents a concurrent deploy from racing
+    // it. The fresh deployProgress map (all nullable fields explicitly null)
+    // rides this EXISTING awaited write, so no stale field bleeds from a prior
+    // deploy — telemetry only; the lock's value/timing are unchanged.
+    const deployId = new Date().toISOString();
+    await agentRef.update({
+      deployingAt: deployId,
+      deployProgress: {
+        deployId,
+        stage: 'strategy_running',
+        fallbackKind: null,
+        briefExcerpt: null,
+        shortlistCount: null,
+        scanCount: null,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+    });
 
     // 2b. Commit the live loadout into activeRules (edit→activate fix).
     // activeRules is re-projected from the CURRENT equipped state at deploy:
@@ -359,6 +380,20 @@ export default async function handler(req, res) {
       strategy.shortlist.push(...padding);
     }
 
+    // [Deploy Ceremony] Non-fatal telemetry — strategy stage validated. All
+    // fields are read from already-computed values (zero new work). A strategy
+    // fallback (Sonnet did not use submit_strategy → stratToolUse is undefined)
+    // carries fallbackKind:'strategy' + briefExcerpt:null so the client skips the
+    // brief typewriter and never quotes the synthetic template (§1 honesty rule).
+    agentRef.update({
+      'deployProgress.stage': 'strategy_complete',
+      'deployProgress.fallbackKind': stratToolUse ? null : 'strategy',
+      'deployProgress.briefExcerpt': stratToolUse ? selectBriefExcerpt(strategy.brief) : null,
+      'deployProgress.shortlistCount': strategy.shortlist.length,
+      'deployProgress.scanCount': stockUniverse.length,
+      'deployProgress.updatedAt': FieldValue.serverTimestamp(),
+    }).catch(() => {});
+
     // Get detailed data for shortlisted stocks only (from rankedStocks to preserve archetypeScore)
     const shortlistSet = new Set(strategy.shortlist);
     const shortlistData = rankedStocks.filter((s) => shortlistSet.has(s.symbol));
@@ -381,6 +416,12 @@ export default async function handler(req, res) {
       strategy.brief, shortlistCSV, cryptoListStr, instBlock,
       equippedWatchlistData ? { tickers: equippedSymbols } : null
     );
+
+    // [Deploy Ceremony] Non-fatal telemetry — portfolio construction starting.
+    agentRef.update({
+      'deployProgress.stage': 'portfolio_running',
+      'deployProgress.updatedAt': FieldValue.serverTimestamp(),
+    }).catch(() => {});
 
     const portfolioResponse = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -406,6 +447,11 @@ export default async function handler(req, res) {
     if (Array.isArray(portfolioResult.bench_crypto)) {
       portfolioResult.bench_crypto = portfolioResult.bench_crypto[0];
     }
+
+    // [Deploy Ceremony] Records whether the algorithmic (no-model) portfolio
+    // fallback ran, so the terminal write can stamp fallbackKind:'construction'.
+    // Telemetry-only breadcrumb: the fallback selection logic is unchanged.
+    let constructionFallback = false;
 
     // 8. Validate portfolio
     const validation = validatePortfolio(portfolioResult, augmentedValidSymbols);
@@ -456,9 +502,11 @@ export default async function handler(req, res) {
         } else {
           console.error('[agent/decide] Retry also failed. Using fallback portfolio.');
           portfolioResult = buildFallbackPortfolio(shortlistData);
+          constructionFallback = true; // [Deploy Ceremony] telemetry breadcrumb
         }
       } else {
         portfolioResult = buildFallbackPortfolio(shortlistData);
+        constructionFallback = true; // [Deploy Ceremony] telemetry breadcrumb
       }
     }
 
@@ -523,6 +571,16 @@ export default async function handler(req, res) {
       lastDeployedAt: new Date().toISOString(),
       deployingAt: null,
       updatedAt: new Date().toISOString(),
+      // [Deploy Ceremony] stage:'complete' rides the SAME awaited write as
+      // lastDecision + deployingAt:null — no window where the picks exist but the
+      // stage lies (Amendment §4.4 / Spec §15.3). fallbackKind gives 'strategy'
+      // precedence over 'construction' so a missing-brief deploy still reads as
+      // instincts-mode on the client even if Haiku also fell back.
+      'deployProgress.stage': 'complete',
+      'deployProgress.fallbackKind': stratToolUse
+        ? (constructionFallback ? 'construction' : null)
+        : 'strategy',
+      'deployProgress.updatedAt': FieldValue.serverTimestamp(),
       // Phase 2: server-side capture of the conflict reconciliation (awaited,
       // in-request — Signal Capture Rider). Only present when INJECT is on;
       // undefined-spread is a no-op, so the flag-off write is byte-identical.
@@ -752,6 +810,16 @@ export default async function handler(req, res) {
     } catch (_e) {
       /* ignore cleanup error */
     }
+
+    // [Deploy Ceremony] Non-fatal telemetry — hard failure (no lastDecision was
+    // written). Fire-and-forget and SEPARATE from the awaited lock clear above,
+    // so a telemetry write can never delay or mask the real error being returned.
+    db.collection('agents').doc(agentId)
+      .update({
+        'deployProgress.stage': 'error',
+        'deployProgress.updatedAt': FieldValue.serverTimestamp(),
+      })
+      .catch(() => {});
 
     return res.status(500).json({
       error: 'Failed to generate portfolio',
