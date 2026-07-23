@@ -66,13 +66,13 @@ export function buildPlatformGuardrails() {
     // agentRiskManager.js:28-34). Composed by reference — never copied.
     emergencyBypassReasonsRef: EMERGENCY_BYPASS_REASONS,
     sectorCapPolicy: {
-      // Live tri-state flag value, read at build time. CENSUS CONTRADICTION
-      // (pending founder ruling, census Founder-Verify #1): the live value
-      // 'true' matches neither 'observe' nor 'enforce', so the Diversifier
-      // cap is inert at HEAD. Recorded, not corrected — §1.2 documents, it
-      // does not fix.
+      // Live tri-state flag value, read at build time. Sector Cap Activation
+      // (founder-ruled 2026-07-23) resolved the census-flagged contradiction:
+      // advanced from the malformed 'true' (which behaved as 'off') to
+      // 'observe' — the cap now MEASURES would-blocks (durable eval-record
+      // telemetry) without touching a decision. 'enforce' is a later flip.
       mode: SECTOR_CAP_MODE,
-      capSource: 'agentGuardrails.DIVERSIFIER_SECTOR_CAP_PCT (hardcoded 35, flat6 Diversifier only)',
+      capSource: 'agentGuardrails.DIVERSIFIER_SECTOR_CAP_PCT (derived from agentArchetypeConfig diversifier.sectorConcentrationCap = 2 over the flat6 6-slot book; flat6 Diversifier only)',
     },
     precedencePosition: 1,
   };

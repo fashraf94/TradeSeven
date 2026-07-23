@@ -551,8 +551,21 @@ export const ARCHETYPE_INTEGRITY_MODE = 'enforce';
  * 'off' → 'observe' → 'enforce' as a Release-4 staged-activation step,
  * founder-executed — never in a build PR (the PR #510 lesson). See
  * api/_utils/agentGuardrails.js (the sector-SLOT rule block).
+ *
+ * LIVE-STATE PROVENANCE (Sector Cap Activation arc, founder-ruled 2026-07-23):
+ * advanced from the malformed 'true' (out-of-vocabulary — it matched neither
+ * 'enforce' nor 'observe', so both gates early-returned and the cap behaved as
+ * 'off') to 'observe', the first real step of the walk. This activates
+ * MEASUREMENT only: every swap the enforce cap would block is recorded as a
+ * would_block_swap override in the eval record (durable) plus a [SectorSlot]
+ * would_block log line, through the SAME math as enforce — nothing is blocked
+ * and no decision changes. Executed as its own deliberate founder-ruled
+ * activation step (the PR #600 flip precedent), not bundled with unrelated
+ * feature work. 'enforce' remains a LATER, separate founder flip, gated on
+ * reading this observe telemetry (runbook Rule 3: the observe read is the
+ * go/no-go input).
  */
-export const SECTOR_CAP_MODE = 'true';
+export const SECTOR_CAP_MODE = 'observe';
 
 /**
  * WS1 — Rule-library archetype scoping: tri-state rollout mode.

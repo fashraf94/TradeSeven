@@ -424,7 +424,8 @@ describe('applyGuardrails — VWAP Floor B2 forced-exit held/self exclusion', ()
 });
 
 // ==================== Phase F — Diversifier sector-position cap (Option A) ====================
-// Tournament-only (flat6) injection of a synthetic maxSectorWeight=35 guardrail,
+// Tournament-only (flat6) injection of a synthetic, config-DERIVED maxSectorWeight
+// guardrail (DIVERSIFIER_SECTOR_CAP_PCT, from sectorConcentrationCap = 2 on a 6-book),
 // min-capped against any user cap (user can only tighten), injected at the call
 // site so a zero-guardrail Diversifier is still capped (the C2 trap).
 
@@ -438,8 +439,15 @@ describe('injectDiversifierSectorCap — flag/scope gating', () => {
     agentContext: { archetype: 'diversifier' },
   });
 
-  it('the locked cap constant is 35', () => {
-    expect(DIVERSIFIER_SECTOR_CAP_PCT).toBe(35);
+  it('the cap is DERIVED from the Diversifier sectorConcentrationCap — exact value, admits 2 of 6 / blocks 3 of 6', () => {
+    // Single source: agentArchetypeConfig diversifier.sectorConcentrationCap (2) on the flat6 book (6).
+    // EXACT regression lock (restores the strength of the old `toBe(35)` lock): the derived value
+    // must equal (2 / 6) * 100 plus the 1e-6 float guard. Drift in the fenced config value, the
+    // denominator, or the derivation formula fails this loudly — a range check could not.
+    expect(DIVERSIFIER_SECTOR_CAP_PCT).toBe((2 / 6) * 100 + 1e-6);
+    // …which is also the semantic contract on the flat6 book:
+    expect(DIVERSIFIER_SECTOR_CAP_PCT).toBeGreaterThanOrEqual((2 / 6) * 100); // 2 of 6 (33.3%) allowed
+    expect(DIVERSIFIER_SECTOR_CAP_PCT).toBeLessThan((3 / 6) * 100);           // 3 of 6 (50%) blocked
   });
 
   it('flag-OFF → array returned untouched (same reference, byte-identical)', () => {
@@ -463,14 +471,14 @@ describe('injectDiversifierSectorCap — flag/scope gating', () => {
     expect(injectDiversifierSectorCap(input, battle)).toBe(input);
   });
 
-  it('zero-guardrail tournament Diversifier → synthetic 35% cap injected (the C2 trap)', () => {
+  it('zero-guardrail tournament Diversifier → synthetic derived cap injected (the C2 trap)', () => {
     flagState.sectorCap = 'enforce';
     const out = injectDiversifierSectorCap([], divTournament());
     expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ type: 'maxSectorWeight', value: 35, enforcement: 'hard' });
+    expect(out[0]).toMatchObject({ type: 'maxSectorWeight', value: DIVERSIFIER_SECTOR_CAP_PCT, enforcement: 'hard' });
   });
 
-  it('user LOOSER cap (60%) → min wins (35%), replaced in place not duplicated', () => {
+  it('user LOOSER cap (60%) → min wins (core), replaced in place not duplicated', () => {
     flagState.sectorCap = 'enforce';
     const out = injectDiversifierSectorCap(
       [{ type: 'maxSectorWeight', value: 60, unit: '%', enforcement: 'hard' }],
@@ -478,7 +486,7 @@ describe('injectDiversifierSectorCap — flag/scope gating', () => {
     );
     const caps = out.filter(g => g.type === 'maxSectorWeight');
     expect(caps).toHaveLength(1);     // dedup — never two maxSectorWeight entries
-    expect(caps[0].value).toBe(35);   // core wins when user is looser
+    expect(caps[0].value).toBe(DIVERSIFIER_SECTOR_CAP_PCT); // core wins when user is looser
     expect(caps[0].unit).toBe('%');   // preserves the user guardrail's other fields
   });
 
@@ -497,7 +505,7 @@ describe('injectDiversifierSectorCap — flag/scope gating', () => {
     flagState.sectorCap = 'enforce';
     const out = injectDiversifierSectorCap([{ type: 'stopLoss', value: 8 }], divTournament());
     expect(out.find(g => g.type === 'stopLoss')).toEqual({ type: 'stopLoss', value: 8 });
-    expect(out.find(g => g.type === 'maxSectorWeight')?.value).toBe(35);
+    expect(out.find(g => g.type === 'maxSectorWeight')?.value).toBe(DIVERSIFIER_SECTOR_CAP_PCT);
   });
 
   it('UN-SHADOWABLE: two existing maxSectorWeight entries → exactly one survives, LAST, = min(all, core)', () => {
@@ -514,7 +522,7 @@ describe('injectDiversifierSectorCap — flag/scope gating', () => {
     );
     const caps = out.filter(g => g.type === 'maxSectorWeight');
     expect(caps).toHaveLength(1);                         // both user entries collapsed
-    expect(caps[0].value).toBe(35);                       // min(60, 80, core 35) = 35
+    expect(caps[0].value).toBe(DIVERSIFIER_SECTOR_CAP_PCT); // min(60, 80, core) = core
     expect(out[out.length - 1].type).toBe('maxSectorWeight'); // ours is LAST → keep-last lands on it
     expect(out.find(g => g.type === 'stopLoss')).toBeTruthy(); // unrelated guardrail preserved
   });
@@ -530,7 +538,7 @@ describe('injectDiversifierSectorCap — flag/scope gating', () => {
     );
     const caps = out.filter(g => g.type === 'maxSectorWeight');
     expect(caps).toHaveLength(1);
-    expect(caps[0].value).toBe(25); // min(25, 70, 35) = 25 — user's tighter cap wins
+    expect(caps[0].value).toBe(25); // min(25, 70, core) = 25 — user's tighter cap wins
   });
 
   it('OBSERVE mode does NOT inject — firing is ENFORCE-only (observe measures via the resolver, never the array)', () => {
@@ -549,7 +557,7 @@ describe('injectDiversifierSectorCap — flag/scope gating', () => {
     flagState.integrity = 'off';
     flagState.sectorCap = 'enforce';
     const out = injectDiversifierSectorCap([], divTournament());
-    expect(out[0]).toMatchObject({ type: 'maxSectorWeight', value: 35, enforcement: 'hard' });
+    expect(out[0]).toMatchObject({ type: 'maxSectorWeight', value: DIVERSIFIER_SECTOR_CAP_PCT, enforcement: 'hard' });
   });
 });
 
@@ -562,9 +570,9 @@ describe('resolveSectorSlotObserveCap — the observe half (would-block measurem
     agentContext: { archetype: 'diversifier' },
   });
 
-  it('observe + in-scope → the effective cap (core 35 when no user cap)', () => {
+  it('observe + in-scope → the effective cap (core when no user cap)', () => {
     flagState.sectorCap = 'observe';
-    expect(resolveSectorSlotObserveCap([], divTournament())).toBe(35);
+    expect(resolveSectorSlotObserveCap([], divTournament())).toBe(DIVERSIFIER_SECTOR_CAP_PCT);
   });
 
   it('the min(user, core) merge is the SAME rule as enforce (shared context): stricter user cap wins', () => {
@@ -574,7 +582,7 @@ describe('resolveSectorSlotObserveCap — the observe half (would-block measurem
     )).toBe(25);
     expect(resolveSectorSlotObserveCap(
       [{ type: 'maxSectorWeight', value: 60, enforcement: 'hard' }], divTournament(),
-    )).toBe(35);
+    )).toBe(DIVERSIFIER_SECTOR_CAP_PCT);
   });
 
   it('null under off AND under enforce (enforce measures nothing — the real block is the record)', () => {
@@ -616,7 +624,7 @@ describe('Diversifier sector cap — end-to-end (inject → applyGuardrails) on 
     });
   };
 
-  it('blocks the 3rd-in-sector swap (3/6 = 50% > 35) on a zero-guardrail Diversifier', () => {
+  it('blocks the 3rd-in-sector swap (3/6 = 50% > cap) on a zero-guardrail Diversifier', () => {
     const result = runSwap({
       star: [sectored('NVDA', 'Technology'), sectored('MSFT', 'Technology')],
       core: [sectored('JPM', 'Financials'), sectored('JNJ', 'Healthcare')],
@@ -627,10 +635,10 @@ describe('Diversifier sector cap — end-to-end (inject → applyGuardrails) on 
     expect(result.decision).toBe('HOLD');
     const blocked = result.overrides.find(o => o.action === 'blocked_swap');
     expect(blocked?.type).toBe('maxSectorWeight');
-    expect(blocked?.threshold).toBe(35);
+    expect(blocked?.threshold).toBe(DIVERSIFIER_SECTOR_CAP_PCT);
   });
 
-  it('allows the 2nd-in-sector swap (2/6 = 33% <= 35) on a zero-guardrail Diversifier', () => {
+  it('allows the 2nd-in-sector swap (2/6 = 33% <= cap) on a zero-guardrail Diversifier', () => {
     const result = runSwap({
       star: [sectored('NVDA', 'Technology'), sectored('JPM', 'Financials')],
       core: [sectored('JNJ', 'Healthcare'), sectored('XOM', 'Energy')],
@@ -718,7 +726,7 @@ describe('sector-SLOT rule — mode-slot-count denominator (tournament)', () => 
   });
 
   it('partial-fill construction never trapped: 2nd-in-sector on a 3-held book is 2/6=33%, NOT 2/3=67% (the Phase-0 defect)', () => {
-    // Pre-PR-e, held.length=3 made this 67% > 35 → a spurious block that could
+    // Pre-PR-e, held.length=3 made this 67% > the cap → a spurious block that could
     // trap a partial book (a no-replacement forced exit) out of rebuilding.
     const result = runTechSwap({ heldCount: 3, techHeld: 1 });
     expect(result.decision).toBe('SWAP');
@@ -791,7 +799,7 @@ describe('sector-SLOT rule — OBSERVE logs would-blocks without touching the de
     expect(result.symbolIn).toBe('AMD');
     expect(result.sourceNote).toBeNull(); // nothing fired — no bypass note
     const wb = result.overrides.find(o => o.action === 'would_block_swap');
-    expect(wb).toMatchObject({ type: 'maxSectorWeight', threshold: 35, actual: 50 }); // 3/6 — same math as enforce
+    expect(wb).toMatchObject({ type: 'maxSectorWeight', threshold: DIVERSIFIER_SECTOR_CAP_PCT, actual: 50 }); // 3/6 — same math as enforce
   });
 
   it('parity: what observe records is exactly what enforce blocks (same battle, same swap)', () => {
@@ -827,8 +835,8 @@ describe('sector-SLOT rule — OBSERVE logs would-blocks without touching the de
     );
     expect(result.decision).toBe('HOLD'); // the USER cap fired, as it does today
     expect(result.overrides.find(o => o.action === 'blocked_swap')?.threshold).toBe(40);
-    // …and the core-rule measurement still landed (min(40,35)=35 would also block).
-    expect(result.overrides.find(o => o.action === 'would_block_swap')?.threshold).toBe(35);
+    // …and the core-rule measurement still landed (min(40, core)=core would also block).
+    expect(result.overrides.find(o => o.action === 'would_block_swap')?.threshold).toBe(DIVERSIFIER_SECTOR_CAP_PCT);
   });
 
   it('forced-exit precedence parity: a stop-loss breach suppresses the shadow check exactly as it suppresses enforce', () => {

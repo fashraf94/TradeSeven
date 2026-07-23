@@ -35,7 +35,11 @@ export const PROMPT_SPEC_VERSION = 1;
 // §1.2 — versions the PlatformGuardrails contract (platformGuardrails.js).
 // Bumped on any change to the platform floors / universal filters /
 // sector-cap policy the contract documents.
-export const GUARDRAIL_SET_VERSION = 1;
+// v2 (2026-07-23, Sector Cap Activation): SECTOR_CAP_MODE 'true' → 'observe' and
+// the sectorCapPolicy capSource (now config-derived, no longer "hardcoded 35")
+// both changed the §1.2 contract content — bumped here and RECORDED_PLATFORM_HASH
+// re-recorded in the same commit (archetypePhase2Constants.test.js).
+export const GUARDRAIL_SET_VERSION = 2;
 
 // §1.3 / A-2 — versions the GameModePolicy table (gameModePolicy.js). A-2
 // additionally gives each mode's policy a content hash; both enter
