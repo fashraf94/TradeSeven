@@ -19,6 +19,9 @@ These files govern calibrated agent trading behavior. **Reading and calling thei
 - `api/_utils/agentBattleService.js` (incl. the `createAgentBattle` doc shape)
 - `api/_utils/agentPromptAssembly.js`
 - `api/_utils/agentEvalPromptAssembly.js` *(added June 10, 2026 — founder decision)*
+- `api/_utils/agentGuardrails.js` *(added July 24, 2026 — founder fence-list reconciliation; the DR-4 guardrail-binding compilation target: deterministic risk enforcement — `applyGuardrails` / `checkSectorCap` / stop + trailing firing. The Sector Cap Activation arc, which added the fenced-config read + the derived `DIVERSIFIER_SECTOR_CAP_PCT` here while this file was still non-fenced, is a DELIBERATE GRANDFATHERED EXCEPTION, not a precedent — edits here are now §7-gated fence contact.)*
+- `api/_utils/archetypeScoring.js` *(added July 24, 2026 — founder fence-list reconciliation; the "scoring engine" concept named explicitly — `ARCHETYPE_WEIGHTS` / `ARCHETYPE_TEMPERATURES` / `ARCHETYPE_CONSTRAINTS`.)*
+- `api/_utils/tournamentUserScoring.js` *(fenced as a scoring-engine concept — it verbatim-ports the fenced `decide.js` threshold math under a source-text tripwire — but OUT OF SCOPE for the archetype-program activation flags; listed for scoring integrity only.)*
 
 The scoring engine and `createAgentBattle` document shape are fenced as concepts, not just files: changes that alter their behavior from non-fenced call sites are fence contact too. If your task seems to require fence contact that isn't in its prompt, **STOP and report** — never improvise it.
 
