@@ -149,8 +149,22 @@ export const EVAL_IDENTITY_BLOCKS = Object.freeze({
 export function renderEvalIdentityBlock(archetypeKey) {
   // Flag read at call time, never module scope, so the on-state tests can
   // force it via the vi.mock getter pattern (release2ControlsMatrix.test.js
-  // precedent) and per-call resolution stays honest in production.
+  // precedent) and per-call resolution stays honest in production. The flag
+  // check comes FIRST: while dark, unknown keys return '' without warn
+  // noise (the Commit-1 lock).
   if (!EVAL_IDENTITY_BLOCK_ENABLED) return '';
+  return renderEvalIdentityBlockForced(archetypeKey);
+}
+
+/**
+ * The flag-BLIND render — the single membership check + block builder
+ * behind renderEvalIdentityBlock. Exported ONLY for offline tooling that
+ * must construct candidate flag-on prompts while the production flag stays
+ * dark (the DR-10 stage-2 paired-eval harness) and for its tests. Every
+ * production path goes through renderEvalIdentityBlock; never call this
+ * from tick-side code.
+ */
+export function renderEvalIdentityBlockForced(archetypeKey) {
   if (!Object.hasOwn(EVAL_IDENTITY_BLOCKS, archetypeKey)) {
     console.warn(
       `[AgentEval] identity block omitted — archetype key outside the constitution set: ${JSON.stringify(archetypeKey)}`
@@ -159,4 +173,24 @@ export function renderEvalIdentityBlock(archetypeKey) {
   }
   const { render } = EVAL_IDENTITY_BLOCKS[archetypeKey];
   return `\n━━━ ARCHETYPE IDENTITY ━━━\n\n${render}\n\n${EVAL_IDENTITY_SUBORDINATION_CLAUSE}\n`;
+}
+
+/**
+ * Offline-harness helper: reproduce the Commit-2 fenced splice on a
+ * flag-off eval system prompt — insert the (forced) identity block between
+ * the preamble and the first ━━━ SCORING RULES ━━━ banner, exactly where
+ * buildEvalSystemPrompt renders it when the flag is on. Locked to the real
+ * fenced output by the injection test (spliceEvalIdentityBlock(off, key)
+ * === flag-on output, all six keys × both variants), so harness candidate
+ * prompts cannot drift from production assembly.
+ *
+ * Unknown key or a prompt without the banner → returned unchanged (the
+ * omit rule; never guess an insertion point).
+ */
+export function spliceEvalIdentityBlock(systemPrompt, archetypeKey) {
+  const block = renderEvalIdentityBlockForced(archetypeKey);
+  if (!block) return systemPrompt;
+  const anchor = '\n\n━━━ SCORING RULES ━━━';
+  if (!systemPrompt.includes(anchor)) return systemPrompt;
+  return systemPrompt.replace(anchor, `\n${block}\n━━━ SCORING RULES ━━━`);
 }
