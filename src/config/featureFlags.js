@@ -1021,7 +1021,7 @@ export const MANIFEST_WRITE_ENABLED = true;
  * (the envelope is manifest-anchored; no envelope-less record ever exists).
  * Flip only via a deliberate founder flag-flip PR — never in a build PR.
  */
-export const SHADOW_ASSEMBLY_ENABLED = false;
+export const SHADOW_ASSEMBLY_ENABLED = true;
 
 /**
  * Deploy Ceremony Phase 2 (client) — the three-act deploy experience:

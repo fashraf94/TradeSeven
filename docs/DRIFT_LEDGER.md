@@ -38,3 +38,6 @@ returns `'Deploy'` (veteran) / `'Deploy — I know the playbook'` (maturing) —
 **Why not fixed in the ceremony PR:** same flag-OFF byte-identical constraint as D-1 (spec §11).
 **Fix seam (separate task):** align the toast copy with `deployText` (or a maturity-aware string)
 at `App.jsx:6583`. As with D-1, the flag-ON ceremony suppresses this toast.
+
+
+S5 "News-Catalyst Momentum" — decided dissolved, still live. Regime Revamp dissolved news-as-entry-signal; at HEAD dd28eedf, S5 ships in both game-mode variants of the eval system prompt (agentEvalPromptAssembly.js:154-159, 376-380), directing entries on positive-sentiment FantasyTimes stories and exits on negative. Retirement is scoped into FantasyTimes Wire Phase 3. Until then, live behavior contradicts locked design. Owner: Wire arc. Recorded Jul 24, 2026.

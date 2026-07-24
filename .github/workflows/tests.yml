@@ -1,0 +1,62 @@
+# .github/workflows/tests.yml
+#
+# Runs the vitest unit suite on every PR into main. This is the gate the repo
+# currently lacks: today the only workflow (main.yml) is a Vercel function
+# warmer, and the Vercel build runs `vite build` with no test step — so the
+# archetype import-boundary ratchet, the identityHash CI lock, and the
+# extensionless-import guard are all local-only and can (and did) sit red on
+# main unnoticed.
+#
+# Scope note: `npm run test:rules` (firestore emulator) and the eval configs
+# are deliberately NOT run here — they need an emulator / long-running
+# fixtures. This workflow is the fast unit gate only.
+
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to the same PR cancels the previous run.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: vitest (unit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # No .nvmrc / engines field in the repo — 20 LTS matches Vercel's
+          # current default runtime. Bump deliberately, not incidentally.
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Worker count is pinned so CI wall-clock is deterministic: on a 2-vCPU
+      # runner vitest's default worker count can resolve to either 2 or 1
+      # (availableParallelism() - 1), which is the difference between a ~4 min
+      # and a ~9 min run. Drop the flag if you'd rather take the default.
+      # NOTE: `--maxWorkers` only. There is no `--minWorkers` in vitest 4 —
+      # passing it aborts the run with "CACError: Unknown option `--minWorkers`"
+      # (verified against the pinned vitest 4.0.17).
+      - name: Run unit tests
+        run: npm run test:run -- --maxWorkers=2
+        env:
+          # Vitest reports non-TTY progress more usefully in CI.
+          CI: 'true'
+          # NOTE: no product secrets are required. The two suites that touch
+          # EODHD_API_KEY (api/_utils/marketDataCache.test.js:15-25,
+          # api/_utils/fetchEarningsCalendarEODHD.test.js:14-54) set the var
+          # themselves and stub global.fetch — no real network, no secret.
