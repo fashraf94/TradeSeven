@@ -922,7 +922,7 @@ export function isAgentPresenceOn() {
  * AGENT_PRESENCE_ENABLED precedent). One shared flag gates BOTH the backdrop
  * and the header/band restyle so flag-off is byte-identical to today.
  */
-export const MATCHUPS_BACKDROP_ENABLED = false;
+export const MATCHUPS_BACKDROP_ENABLED = true;
 
 /**
  * The ONE home for the Matchups Backdrop gate — the flag OR the
