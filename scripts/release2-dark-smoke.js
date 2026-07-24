@@ -1,36 +1,51 @@
 // scripts/release2-dark-smoke.js
 //
-// Release 2 (Fenced Customization Bundle) — the DARK-INERT founder smoke
-// (spec §8: "founder smoke (dark-inert: nothing visible changes; verify via
-// scripts)"). Run from the project root, on the branch you are about to
-// merge (or after merging each stacked PR):
+// Release 2 (Fenced Customization Bundle) — founder ACTIVATION-POSTURE smoke.
+// Originally the dark-inert smoke (spec §8: "founder smoke (dark-inert:
+// nothing visible changes; verify via scripts)"). Repurposed 2026-07-24
+// (founder ruling) once the staged-activation walk landed: leans, dial, and
+// the integrity directives are now LIVE by design, so a "must be dark"
+// assertion only produced false RED on every sanctioned flip. It now checks
+// that Release 2 holds its INTENDED ACTIVATED posture, not that it is dark.
+// Run from the project root, on the branch you are about to merge:
 //
 //   node scripts/release2-dark-smoke.js
 //
-// It answers ONE question — "is Release 2 actually dark?" — two ways:
-//   1. FLAG CHECK: the three Release-2 flags hold their dark values and
-//      ARCHETYPE_INTEGRITY_MODE still holds its live pre-Release-2 value.
-//   2. OFF-STATE PROOF: the test files that prove byte-identical off-state
-//      behavior (real un-mocked flags, snapshot deep-equal, dark endpoints,
+// It answers ONE question — "does Release 2 hold its intended activated
+// posture?" — two ways:
+//   1. FLAG CHECK: each governed Release-2 flag holds its intended CURRENT
+//      value (leans/dial ON, integrity 'enforce', sector-cap 'observe'). A
+//      mismatch is flag DRIFT — an accidental flip of a governed flag.
+//   2. POSTURE PROOF: the test files that prove the flag-gated behavior (real
+//      un-mocked flags, snapshot equal + additive keys, live endpoints,
 //      renderer goldens, the PR-f matrix) all pass.
 //
-// Exit code 0 + the green summary = dark confirmed. ANY red line = STOP,
-// do not merge/flip — report it.
+// Exit code 0 + the green summary = posture confirmed. ANY red line = STOP,
+// do not merge/flip — report it. SCOPE: the Release-2 walk flags only
+// (RELEASE2_ACTIVATION_RUNBOOK.md). Phase-2 flags (e.g. MANIFEST_WRITE_ENABLED)
+// are a separate program and are intentionally NOT checked here.
 
 import { spawnSync } from 'node:child_process';
 
 const EXPECTED_FLAGS = {
-  STANDING_LEANS_ENABLED: false,
-  TEMPO_DIAL_ENABLED: false,
-  // Sector Cap Activation (founder-ruled 2026-07-23): advanced to 'observe' — the
-  // cap's walk is a separate Release-4 activation, so it is intentionally no longer
-  // 'off'/dark (measurement only; nothing is blocked). The other Release-2 flags
-  // stay dark. (Corrects a pre-existing stale 'off' expectation — the live value had
-  // drifted to the malformed 'true'.)
+  // The INTENDED activated posture (founder ruling 2026-07-24). These are the
+  // values the staged-activation walk landed on; a mismatch means a governed
+  // Release-2 flag drifted (an accidental flip), not that anything is "dark".
+  // Update this block deliberately, in lockstep with each walk step.
+
+  // Walk step 2 — standing leans ACTIVATED (equip/unequip-lean live; persisted
+  // leans render into prompts).
+  STANDING_LEANS_ENABLED: true,
+  // Walk step 3 — tempo dial ACTIVATED (set-tempo-dial live; the clamp applies
+  // the desired tempo).
+  TEMPO_DIAL_ENABLED: true,
+  // Walk step 1 — sector cap at 'observe' (measurement only; nothing blocked).
+  // 'enforce' is a later, separate founder flip (runbook Rule 3).
   SECTOR_CAP_MODE: 'observe',
-  // Not a Release-2 flag — Release 2 must NOT have moved it (its walk is
-  // separate; 'observe' has been the live value since the integrity build).
-  ARCHETYPE_INTEGRITY_MODE: 'observe',
+  // Archetype-integrity directives ACTIVATED to 'enforce' (the gate mints only
+  // core-safe allowlist directives). Rollback target is 'observe', never 'off'
+  // (runbook Rule 2).
+  ARCHETYPE_INTEGRITY_MODE: 'enforce',
 };
 
 const OFF_STATE_TEST_FILES = [
@@ -40,15 +55,15 @@ const OFF_STATE_TEST_FILES = [
   'api/_utils/agentGuardrails.test.js',                // sector-slot off byte-identity + gating
   'api/_utils/agentGuardrails.bypassContract.test.js', // sourceNote ↔ fenced bypass-set contract
   'api/_utils/release2ControlsMatrix.test.js',         // PR-f: rollback floor, prefixes, versions, receipts
-  'api/agent/equip-lean.test.js',                      // 404-dark while STANDING_LEANS_ENABLED=false
-  'api/agent/set-tempo-dial.test.js',                  // 404-dark while TEMPO_DIAL_ENABLED=false
+  'api/agent/equip-lean.test.js',                      // LIVE while STANDING_LEANS_ENABLED=true (past the flag gate; no dark 404)
+  'api/agent/set-tempo-dial.test.js',                  // LIVE while TEMPO_DIAL_ENABLED=true (past the flag gate; no dark 404)
 ];
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 let failed = false;
 
-console.log('\n=== Release 2 dark-inert smoke ===\n');
+console.log('\n=== Release 2 activation-posture smoke ===\n');
 
 // ---- 1. Flag check ----
 const flags = await import('../src/config/featureFlags.js');
@@ -60,8 +75,8 @@ for (const [name, expected] of Object.entries(EXPECTED_FLAGS)) {
   console.log(`   ${ok ? green('OK  ') : red('FAIL')} ${name} = ${JSON.stringify(actual)}${ok ? '' : ` (expected ${JSON.stringify(expected)})`}`);
 }
 
-// ---- 2. Off-state proof ----
-console.log('\n2) Off-state proof (this takes ~30s):');
+// ---- 2. Posture proof ----
+console.log('\n2) Posture proof (this takes ~30s):');
 // On Windows the npx launcher is `npx.cmd`; a bare `npx` fails to resolve
 // (ENOENT) and a `.cmd` can't be spawned without a shell (EINVAL, Node's
 // post-CVE-2024-27980 hardening). `shell: true` routes through the platform
@@ -77,18 +92,18 @@ const tail = `${result.stdout || ''}\n${result.stderr || ''}`.split('\n').filter
 for (const line of tail) console.log(`   ${line.trim()}`);
 if (result.status !== 0) {
   failed = true;
-  console.log(red('   FAIL — one or more off-state proofs did not pass.'));
+  console.log(red('   FAIL — one or more posture proofs did not pass.'));
 } else {
-  console.log(green('   OK — every off-state proof passed.'));
+  console.log(green('   OK — every posture proof passed.'));
 }
 
 // ---- Verdict ----
 console.log('\n=== VERDICT ===');
 if (failed) {
-  console.log(red('RED — Release 2 is NOT provably dark. STOP: do not merge or flip; report the red lines above.'));
+  console.log(red('RED — Release 2 posture does NOT match intent. STOP: do not merge or flip; report the red lines above.'));
   process.exit(1);
 } else {
-  console.log(green('GREEN — Release 2 is dark: flags hold their off values and every off-state proof passes.'));
+  console.log(green('GREEN — Release 2 holds its intended activated posture: flags match intent and every posture proof passes.'));
   console.log('Reminder: crons do not run on Vercel preview (BUILD_RULES §6) — the epoch/dial cron wiring is proven by these tests + first production observation, not by preview.');
   process.exit(0);
 }
