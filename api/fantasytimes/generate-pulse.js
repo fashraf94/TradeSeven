@@ -18,6 +18,12 @@ import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_uti
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 import { isIndex, INDEX_SYMBOLS as INDEX_SYMBOL_SET } from '../_utils/indexRegistry.js';
 import { buildConsensusBlock, checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
+import { getWireFlags } from '../_utils/wireFlags.js';
+import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
+import { deriveMarketDate } from '../_utils/wireCalendar.js';
+import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
+import { buildContinuityContext } from '../_utils/wireContinuity.js';
+import { recordWireSample } from '../_utils/wireMetrics.js';
 
 export const config = { maxDuration: 60 };
 
@@ -271,16 +277,36 @@ export default async function handler(req, res) {
       userMessage += `\n\nMARKET-MOVING CONTEXT:\n${claimsContext}`;
     }
 
+    // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ──────────────────────────
+    // Flags OFF appends '' and passes the pristine tool singleton by
+    // identity — the outbound request payload is byte-identical to the
+    // pre-Wire build (M8). marketDate is stamped from ONE instant, pre-call.
+    const wireFlags = getWireFlags();
+    const wireInstant = new Date();
+    const marketDate = deriveMarketDate(wireInstant);
+    const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('kai') : '';
+    let continuityBlock = '';
+    if (wireFlags.continuityEnabled) {
+      try {
+        continuityBlock = (await buildContinuityContext(db, { reporter: 'kai', marketDate })) || '';
+      } catch (err) {
+        logError('Continuity block failed (non-blocking)', { error: err.message });
+      }
+    }
+
     // ── Call Claude Haiku with Tool Use ──────────────────────────────────
     logInfo('Calling Claude API...', { model: REPORTER_PROFILES.kai.model, messageLength: userMessage.length });
     const anthropic = getAnthropicClient();
+    const wireT0 = Date.now();
 
     const response = await anthropic.messages.create({
       model: REPORTER_PROFILES.kai.model,
-      max_tokens: 800,
+      // Raised under the writes flag only — headroom for the agentFacts
+      // block so R5 truncation stays rare (§4.2).
+      max_tokens: wireFlags.writesEnabled ? 1200 : 800,
       temperature: 0.8,
-      system: KAI_SYSTEM_PROMPT + (marketContextBlock || '') + (consensusBlock || ''),
-      tools: [PUBLISH_MARKET_PULSE_TOOL],
+      system: KAI_SYSTEM_PROMPT + (marketContextBlock || '') + (consensusBlock || '') + wireInstruction + continuityBlock,
+      tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_MARKET_PULSE_TOOL, 'kai') : PUBLISH_MARKET_PULSE_TOOL],
       tool_choice: { type: 'tool', name: 'publish_market_pulse' },
       messages: [{ role: 'user', content: userMessage }],
     });
@@ -403,7 +429,18 @@ export default async function handler(req, res) {
     storyDoc.visualConfig = visualConfig;
 
     logInfo('Writing to Firestore...', { headline: storyDoc.headline });
-    const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
+    // agentFacts stays in a PRIVATE local — never on storyDoc (§4.5 step 1).
+    const { storyRef: docRef } = await publishStoryWithWire(db, {
+      storyDoc,
+      rawAgentFacts: wireFlags.writesEnabled ? toolBlock.input.agentFacts : null,
+      stopReason: response.stop_reason,
+      reporter: 'kai',
+      seam: 'kai_pulse',
+      primaryTicker: storyDoc.primaryTicker,
+      triggerRef: period,
+      marketDate,
+      now: wireInstant,
+    });
 
     logInfo(`Published ${period} pulse ${docRef.id}`, {
       headline: storyDoc.headline,
@@ -414,6 +451,10 @@ export default async function handler(req, res) {
     // Art Director override for edge-case story types
     if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
       await callArtDirector(storyDoc, docRef.id, db);
+    }
+
+    if (wireFlags.metricsEnabled) {
+      await recordWireSample(db, { seam: 'kai_pulse', metric: 'generate_publish', ms: Date.now() - wireT0, marketDate });
     }
 
     return res.status(200).json({

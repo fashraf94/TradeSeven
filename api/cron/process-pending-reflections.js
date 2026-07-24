@@ -20,6 +20,8 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { generateReflection } from '../agent/reflect.js';
+import { getWireFlags } from '../_utils/wireFlags.js';
+import { runWireReplaySweep } from '../_utils/wireReplaySweep.js';
 
 export const config = { maxDuration: 60 };
 
@@ -94,9 +96,31 @@ export default async function handler(req, res) {
       }
     }
 
+    // ---- 4. FantasyTimes Wire reconciliation sweep (rider) ----
+    // Hosted here per Wire Spec V1.5 §4.7/P6: this is the only cron whose
+    // window covers every hour a story can publish, incl. weekends — worst
+    // gap 12h15m. Isolating try/catch: a Wire failure can NEVER break this
+    // cron's primary job (the runRepairSweep/agent-evaluate precedent).
+    // Gated on WIRE_WRITES_ENABLED (the sweep is part of the writes
+    // machinery; pre-flip its composite index may not exist yet).
+    let wireSweep = null;
+    try {
+      if (getWireFlags().writesEnabled) {
+        const remaining = TIME_BUDGET_MS - (Date.now() - startTime);
+        if (remaining > 5_000) {
+          wireSweep = await runWireReplaySweep(db, { timeBudgetMs: remaining });
+          console.log(`${LOG_PREFIX} Wire sweep:`, wireSweep);
+        } else {
+          console.log(`${LOG_PREFIX} Wire sweep skipped (budget exhausted); next tick covers it`);
+        }
+      }
+    } catch (wireErr) {
+      console.error(`${LOG_PREFIX} Wire sweep failed (isolated):`, wireErr?.message || wireErr);
+    }
+
     const duration = Date.now() - startTime;
     console.log(`${LOG_PREFIX} Complete in ${duration}ms:`, summary);
-    return res.status(200).json({ ...summary, duration });
+    return res.status(200).json({ ...summary, wireSweep, duration });
   } catch (err) {
     console.error(`${LOG_PREFIX} Fatal error:`, err);
     return res.status(500).json({ error: err.message });

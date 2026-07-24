@@ -12,6 +12,11 @@ import {
   PUBLISH_EARNINGS_PREVIEW_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
+import { getWireFlags } from '../_utils/wireFlags.js';
+import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
+import { deriveMarketDate } from '../_utils/wireCalendar.js';
+import { buildContinuityContext } from '../_utils/wireContinuity.js';
+import { recordWireSample } from '../_utils/wireMetrics.js';
 
 export const config = { maxDuration: 60 };
 
@@ -169,6 +174,24 @@ export default async function handler(req, res) {
       });
     }
 
+    // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ────────────────────────
+    // marketDate is stamped HERE, at key-creation/submit time, and carried
+    // to poll-batch on the fantasyTimesBatches doc — the poll invocation
+    // has no submit-time context of its own (the async-boundary carry).
+    const wireFlags = getWireFlags();
+    const wireInstant = new Date();
+    const wireMarketDate = deriveMarketDate(wireInstant);
+    const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('doug') : '';
+    let continuityBlock = '';
+    if (wireFlags.continuityEnabled) {
+      try {
+        continuityBlock = (await buildContinuityContext(db, { reporter: 'doug', marketDate: wireMarketDate })) || '';
+      } catch (err) {
+        logError('Continuity block failed (non-blocking)', { error: err.message });
+      }
+    }
+    const wireT0 = Date.now();
+
     // Build batch requests
     const requests = [];
     for (const earning of qualifyingEarnings) {
@@ -211,14 +234,14 @@ export default async function handler(req, res) {
         custom_id: `earnings_preview_${earning.symbol}_${earning.reportDate}`,
         params: {
           model: 'claude-sonnet-4-6',
-          max_tokens: 800,
+          max_tokens: wireFlags.writesEnabled ? 1200 : 800,
           // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
           // preserve the prior Sonnet-4 (no-thinking) latency profile.
           thinking: { type: 'disabled' },
           output_config: { effort: 'low' },
-          system: DOUG_PREVIEW_SYSTEM_PROMPT,
+          system: DOUG_PREVIEW_SYSTEM_PROMPT + wireInstruction + continuityBlock,
           messages: [{ role: 'user', content: contextMessage }],
-          tools: [PUBLISH_EARNINGS_PREVIEW_TOOL],
+          tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_EARNINGS_PREVIEW_TOOL, 'doug') : PUBLISH_EARNINGS_PREVIEW_TOOL],
           tool_choice: { type: 'tool', name: 'publish_earnings_preview' },
         },
       });
@@ -242,9 +265,16 @@ export default async function handler(req, res) {
       submittedAt: new Date(),
       completedAt: null,
       errors: null,
+      // Wire: the immutable market-date bucket for every story this batch
+      // produces — stamped at submit (key creation), read by poll-batch.
+      wireMarketDate,
     });
 
     logInfo('Batch info saved to Firestore');
+
+    if (wireFlags.metricsEnabled) {
+      await recordWireSample(db, { seam: 'doug_earnings_preview_submit', metric: 'generate_publish', ms: Date.now() - wireT0, marketDate: wireMarketDate });
+    }
 
     return res.status(200).json({
       success: true,

@@ -560,6 +560,24 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════
+    // FantasyTimes Wire — SERVER-ONLY (Wire Spec V1.5 §4.3)
+    // Typed machine facts for agents. NEVER client-readable: the deny-all
+    // catch-all already covers these (the masteryCorrections precedent),
+    // but the blocks ship explicitly with the collections' own PR so the
+    // posture is visible and the rules suite (test/rules/wireDenials)
+    // asserts it against the emulator. Admin SDK bypasses rules.
+    // ═══════════════════════════════════════════
+    match /fantasyTimesWire/{marketDate} {
+      allow read, write: if false;
+    }
+    match /fantasyTimesWireEnvelopes/{storyId} {
+      allow read, write: if false;
+    }
+    match /wireMetrics/{marketDate} {
+      allow read, write: if false;
+    }
+
+    // ═══════════════════════════════════════════
     // Index Intelligence & Stock Technical Scores
     // Public read, server-only writes (Admin SDK)
     // ═══════════════════════════════════════════

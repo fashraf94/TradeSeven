@@ -17,6 +17,12 @@ import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedC
 import { appendCatalyst, checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
 import { fetchTickerCatalysts } from '../_utils/sonarCatalystFetch.js';
 import { getValidatedCatalyst, validateAndCacheCatalyst } from '../_utils/validatedCatalystCache.js';
+import { getWireFlags } from '../_utils/wireFlags.js';
+import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
+import { deriveMarketDate } from '../_utils/wireCalendar.js';
+import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
+import { buildContinuityContext } from '../_utils/wireContinuity.js';
+import { recordWireSample } from '../_utils/wireMetrics.js';
 
 export const config = { maxDuration: 30 };
 
@@ -212,17 +218,35 @@ export async function generateAlexMoverStory({
 ${baggerTier !== 'none' ? `- Points: ${getBaggerPoints(baggerTier)}` : '- No threshold crossed yet'}
 Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool call.`;
 
+  // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ────────────────────────
+  // Flags OFF appends '' and passes the pristine tool singleton by
+  // identity — byte-identical outbound payload (M8). marketDate stamped
+  // from one instant, pre-call.
+  const wireFlags = getWireFlags();
+  const wireInstant = new Date();
+  const marketDate = deriveMarketDate(wireInstant);
+  const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('alex') : '';
+  let continuityBlock = '';
+  if (wireFlags.continuityEnabled) {
+    try {
+      continuityBlock = (await buildContinuityContext(db, { reporter: 'alex', marketDate })) || '';
+    } catch (err) {
+      logError('Continuity block failed (non-blocking)', { error: err.message });
+    }
+  }
+
   // ── Call Claude Haiku with Tool Use ──────────────────────────────
   logInfo(`Generating story for ${upperSymbol} (${percentChange}%, ${atrMultiple}x ATR)`);
   logInfo('Step 5: Calling Claude API...', { model: REPORTER_PROFILES.alex.model, messageLength: userMessage.length });
   const anthropic = getAnthropicClient();
+  const wireT0 = Date.now();
 
   const response = await anthropic.messages.create({
     model: REPORTER_PROFILES.alex.model,
-    max_tokens: 500,
+    max_tokens: wireFlags.writesEnabled ? 900 : 500,
     temperature: 0.8,
-    system: ALEX_SYSTEM_PROMPT,
-    tools: [PUBLISH_STORY_TOOL],
+    system: ALEX_SYSTEM_PROMPT + wireInstruction + continuityBlock,
+    tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_STORY_TOOL, 'alex') : PUBLISH_STORY_TOOL],
     tool_choice: { type: 'tool', name: 'publish_story' },
     messages: [{ role: 'user', content: userMessage }],
   });
@@ -315,12 +339,27 @@ Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool ca
   storyDoc.visualConfig = visualConfig;
 
   logInfo('Step 7: Writing to Firestore...', { headline: storyDoc.headline });
-  const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
+  // agentFacts stays in a PRIVATE local — never on storyDoc (§4.5 step 1).
+  const { storyRef: docRef } = await publishStoryWithWire(db, {
+    storyDoc,
+    rawAgentFacts: wireFlags.writesEnabled ? toolBlock.input.agentFacts : null,
+    stopReason: response.stop_reason,
+    reporter: 'alex',
+    seam: 'alex_mover',
+    primaryTicker: upperSymbol,
+    triggerRef: upperSymbol,
+    marketDate,
+    now: wireInstant,
+  });
 
   logInfo(`Published story ${docRef.id} for ${upperSymbol}`, {
     headline: storyDoc.headline,
     sentiment: storyDoc.sentiment,
   });
+
+  if (wireFlags.metricsEnabled) {
+    await recordWireSample(db, { seam: 'alex_mover', metric: 'generate_publish', ms: Date.now() - wireT0, marketDate });
+  }
 
   // Write catalyst to consensus
   try {

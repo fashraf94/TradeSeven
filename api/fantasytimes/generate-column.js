@@ -15,6 +15,12 @@ import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_uti
 import { STOCK_DATA, TICKERS } from '../_utils/stockIntelligenceData.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 import { buildConsensusBlock, checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
+import { getWireFlags } from '../_utils/wireFlags.js';
+import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
+import { deriveMarketDate } from '../_utils/wireCalendar.js';
+import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
+import { buildContinuityContext } from '../_utils/wireContinuity.js';
+import { recordWireSample } from '../_utils/wireMetrics.js';
 
 export const config = { maxDuration: 60 };
 
@@ -282,19 +288,34 @@ export default async function handler(req, res) {
       console.error('[CONSENSUS] Failed to build Kim consensus:', err.message);
     }
 
+    // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ────────────────────────
+    const wireFlags = getWireFlags();
+    const wireInstant = new Date();
+    const marketDate = deriveMarketDate(wireInstant);
+    const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('kim') : '';
+    let continuityBlock = '';
+    if (wireFlags.continuityEnabled) {
+      try {
+        continuityBlock = (await buildContinuityContext(db, { reporter: 'kim', marketDate })) || '';
+      } catch (err) {
+        logError('Continuity block failed (non-blocking)', { error: err.message });
+      }
+    }
+
     const anthropic = getAnthropicClient();
     logInfo('Calling Claude Sonnet for column...', { model: REPORTER_PROFILES.kim.model });
+    const wireT0 = Date.now();
 
     const response = await anthropic.messages.create({
       model: REPORTER_PROFILES.kim.model,
-      max_tokens: 1200,
+      max_tokens: wireFlags.writesEnabled ? 1600 : 1200,
       temperature: 0.85,
       // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
       // preserve the prior Sonnet-4 (no-thinking) latency profile.
       thinking: { type: 'disabled' },
       output_config: { effort: 'low' },
-      system: KIM_SYSTEM_PROMPT + (consensusContext || ''),
-      tools: [PUBLISH_SECTOR_COLUMN_TOOL],
+      system: KIM_SYSTEM_PROMPT + (consensusContext || '') + wireInstruction + continuityBlock,
+      tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_SECTOR_COLUMN_TOOL, 'kim') : PUBLISH_SECTOR_COLUMN_TOOL],
       tool_choice: { type: 'tool', name: 'publish_sector_column' },
       messages: [{ role: 'user', content: userMessage }],
     });
@@ -388,8 +409,23 @@ export default async function handler(req, res) {
     storyDoc.visualType = visualType;
     storyDoc.visualConfig = visualConfig;
 
-    const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
+    // agentFacts stays in a PRIVATE local — never on storyDoc (§4.5 step 1).
+    const { storyRef: docRef } = await publishStoryWithWire(db, {
+      storyDoc,
+      rawAgentFacts: wireFlags.writesEnabled ? toolBlock.input.agentFacts : null,
+      stopReason: response.stop_reason,
+      reporter: 'kim',
+      seam: 'kim_column',
+      primaryTicker: null,
+      triggerRef: columnType,
+      marketDate,
+      now: wireInstant,
+    });
     logInfo(`Published ${columnType} column ${docRef.id}`, { headline: storyDoc.headline });
+
+    if (wireFlags.metricsEnabled) {
+      await recordWireSample(db, { seam: 'kim_column', metric: 'generate_publish', ms: Date.now() - wireT0, marketDate });
+    }
 
     // Art Director override for edge-case story types
     if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {

@@ -8,6 +8,9 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { REPORTER_PROFILES } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
+import { getWireFlags } from '../_utils/wireFlags.js';
+import { deriveMarketDate } from '../_utils/wireCalendar.js';
+import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
 
 export const config = { maxDuration: 10 };
 
@@ -159,7 +162,28 @@ export default async function handler(req, res) {
               storyDoc.visualType = visualType;
               storyDoc.visualConfig = visualConfig;
 
-              const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
+              // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.7) ──────────────
+              // Doug's DEFERRED path: this 10-second lambda stamps
+              // story + envelope + wirePending via one batch and NEVER
+              // transacts inline — the replay sweep lands the Wire
+              // artifacts (≤15 min typical). marketDate comes from the
+              // batch doc, stamped at submit (immutable across the async
+              // boundary); fallbacks derive from submittedAt, then now.
+              const wireFlags = getWireFlags();
+              const wireMarketDate =
+                batchData.wireMarketDate ||
+                deriveMarketDate(batchData.submittedAt?.toDate?.() || batchData.submittedAt || new Date());
+              const { storyRef: docRef } = await publishStoryWithWire(db, {
+                storyDoc,
+                rawAgentFacts: wireFlags.writesEnabled ? storyData.agentFacts : null,
+                stopReason: result.result.message.stop_reason || null,
+                reporter: 'doug',
+                seam: 'doug_earnings_preview',
+                primaryTicker: symbol,
+                triggerRef: `${symbol}:${reportDate}`,
+                marketDate: wireMarketDate,
+                deferTransaction: true,
+              });
               storiesCreated++;
               logInfo(`Created preview for ${symbol}`, { headline: storyDoc.headline });
 

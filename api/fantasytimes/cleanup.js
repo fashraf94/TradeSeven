@@ -67,12 +67,40 @@ export default async function handler(req, res) {
       await batch.commit();
     }
 
-    console.log(`${LOG_PREFIX} Cleaned up ${expiredCount} expired stories, deleted ${deletedCount} old stories`);
+    // Step 3: FantasyTimes Wire 30-day retention ride (Wire Spec V1.5 §4.3/
+    // §4.8, D1). All three Wire surfaces are FLAT documents — receipts live
+    // as a map INSIDE the daily doc, not a subcollection — so plain deletes
+    // orphan nothing. Envelopes are transient (minutes); anything older than
+    // 30 days is leaked residue from a rollback window and is drained here.
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
+    let wireDeleted = 0;
+    for (const [collection, field, cutoff] of [
+      ['fantasyTimesWire', 'date', thirtyDaysAgoStr],
+      ['wireMetrics', 'date', thirtyDaysAgoStr],
+      ['fantasyTimesWireEnvelopes', 'createdAt', thirtyDaysAgo],
+    ]) {
+      const oldDocs = await db
+        .collection(collection)
+        .where(field, '<', cutoff)
+        .limit(200)
+        .get();
+      if (!oldDocs.empty) {
+        const wireBatch = db.batch();
+        oldDocs.docs.forEach((doc) => {
+          wireBatch.delete(doc.ref);
+          wireDeleted++;
+        });
+        await wireBatch.commit();
+      }
+    }
+
+    console.log(`${LOG_PREFIX} Cleaned up ${expiredCount} expired stories, deleted ${deletedCount} old stories, ${wireDeleted} old wire docs`);
 
     return res.status(200).json({
       success: true,
       expiredCount,
       deletedCount,
+      wireDeleted,
     });
   } catch (error) {
     console.error(`${LOG_PREFIX} Error:`, error.message);
