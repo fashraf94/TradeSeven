@@ -547,9 +547,19 @@ describe('P4 battery — createAgentBattle battle-doc photograph (fake clock, ca
     expect(doc.executionMode).toBe('autopilot');
   });
 
-  it('full-doc photograph (file snapshot)', async () => {
+  it('full-doc photograph (file snapshot) — the fence byte-identity record, sans the flag-gated manifest', async () => {
     const { captured } = await photograph();
-    await expect(JSON.stringify(captured.doc, null, 1)).toMatchFileSnapshot(
+    // MANIFEST_WRITE_ENABLED is now ON in production, so the live doc carries an
+    // additive `resolvedAgentManifest` block (its shape is locked by
+    // resolvedAgentManifest.test.js + agentBattleService.test.js). The committed
+    // snapshot is the FENCE byte-identity record — it proves the fence entry
+    // introduced no drift into the doc's non-manifest body, a property that must
+    // survive a flag rollback. Strip the additive block before photographing so
+    // the record stays flag-independent; assert the block itself is present.
+    const { resolvedAgentManifest, ...fenceDoc } = captured.doc;
+    expect(resolvedAgentManifest).toBeDefined();
+    expect(resolvedAgentManifest.manifestHash).toEqual(expect.any(String));
+    await expect(JSON.stringify(fenceDoc, null, 1)).toMatchFileSnapshot(
       './__p4_snapshots__/createAgentBattle.tieredDoc.snap.json'
     );
   });

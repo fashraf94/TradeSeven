@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { createAgentBattle } from './agentBattleService.js';
+import { MANIFEST_WRITE_ENABLED } from '../../src/config/featureFlags.js';
 
 function makeFakeDb() {
   const added = [];
@@ -127,6 +128,7 @@ describe('createAgentBattle — Release 2 customization snapshot (additive keys)
       delete clone.createdAt; delete clone.startTime; delete clone.endTime; delete clone.activatedAt; delete clone.updatedAt; // wall-clock
       delete clone.timing;
       delete clone.agentContext.equippedWatchlist; // carries snapshotAt wall-clock
+      delete clone.resolvedAgentManifest; // flag-gated additive block (MANIFEST_WRITE_ENABLED); carries createdAt/manifestId/manifestHash wall-clock — asserted separately below
       return clone;
     };
     expect(strip(db.added[0])).toEqual(strip(db2.added[0]));
@@ -161,5 +163,50 @@ describe('createAgentBattle — Release 2 customization snapshot (additive keys)
     const db2 = makeFakeDb();
     await createAgentBattle(db2, makeAgentData({ dials: {} }), ...CREATE_ARGS);
     expect(db2.added[0].agentContext.dials).toBeNull();
+  });
+});
+
+// ============================================================
+// Phase 2 manifest-write flip (MANIFEST_WRITE_ENABLED false→true) — the P2.5
+// resolvedAgentManifest block now lands in the battle doc at creation, adjacent
+// to agentContext (Spec DR-6; agentBattleService.js conditional spread). The
+// builder contract is exhaustively covered in resolvedAgentManifest.test.js;
+// this locks the INTEGRATION — the fenced createAgentBattle spread actually
+// emits the block under the live flag, and only under it.
+// ============================================================
+
+describe('createAgentBattle — resolvedAgentManifest at creation (MANIFEST_WRITE_ENABLED flip)', () => {
+  const CREATE_ARGS = [{}, {}, { duration: '1d' }];
+
+  it('stamps resolvedAgentManifest adjacent to agentContext, frozen at creation (create-only-after-start)', async () => {
+    expect(MANIFEST_WRITE_ENABLED).toBe(true); // the deliberate flip this suite guards
+    const db = makeFakeDb();
+    await createAgentBattle(
+      db,
+      makeAgentData({ archetype: 'momentum_chaser', config: { risk: 72 }, settingsRev: 4 }),
+      ...CREATE_ARGS
+    );
+    const doc = db.added[0];
+    const m = doc.resolvedAgentManifest;
+
+    expect(m).toBeDefined();
+    // Born in the single creation write, next to agentContext — no updater exists (R1-4).
+    expect(doc.agentContext).toBeDefined();
+    expect(m.manifestId).toBe(`agent-1_${doc.gameMode}_${m.createdAt}`);
+    expect(typeof m.manifestHash).toBe('string');
+    expect(m.manifestHash.length).toBeGreaterThan(0);
+    expect(m.freezePolicyVersion).toBeTypeOf('number');
+    expect(m.valuesAtLock).toMatchObject({
+      archetype: 'momentum_chaser',
+      strategyPreset: 'balanced',
+      riskTolerance: 72,
+      settingsRev: 4,
+    });
+    expect(m.versionStamps.settingsRevAtLock).toBe(4);
+    expect(m.versionStamps.gameModeAtLock).toBe(doc.gameMode);
+    // COMPILER_ENABLED stays false in this PR → no CompiledBuild → honest user-only merge.
+    expect(m.guardrails.mergeSource).toBe('user_only_no_compiled_build');
+    expect(m.versionStamps.compiledBuildIdAtLock).toBeUndefined();
+    expect(m.renderedTensionPairs).toEqual([]);
   });
 });
