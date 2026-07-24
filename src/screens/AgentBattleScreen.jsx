@@ -153,7 +153,7 @@ function TierHeader({ tier }) {
 
 // ─── Score Header ─────────────────────────────────────────────────────────────
 
-function ScoreHeader({ agentBattle, tokens, isDesktop, playerScore, opponentScore }) {
+function ScoreHeader({ agentBattle, tokens, isDesktop, playerScore, opponentScore, statusFeed }) {
   const myScore = playerScore ?? (agentBattle?.scoreState?.currentScore || 0);
   const oppScore = opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0);
   const dayLabel = computeDayLabel(agentBattle?.timing);
@@ -181,26 +181,33 @@ function ScoreHeader({ agentBattle, tokens, isDesktop, playerScore, opponentScor
         justifyContent: 'space-between',
         alignItems: 'center',
       }}>
-        {/* Left: Agent */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 5,
-            marginBottom: 2,
-          }}>
-            <Bot size={12} color="#5eead4" />
+        {/* Left: Agent — face → name → score (mirrors the CPU side on the right).
+            The reactive presence face lives HERE now, immediately left of the name
+            and score it reflects (mood = standingFromDuel(myScore, oppScore)); it
+            replaces the old lucide Bot glyph. Flag-off omits the face entirely. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: isDesktop ? 12 : 8 }}>
+          {isAgentPresenceOn() && agentBattle && (
+            <AgentPresenceMount
+              surface="duel"
+              agent={agentBattle}
+              duel={{ playerScore: myScore, opponentScore: oppScore, statusFeed }}
+              size={isDesktop ? 60 : 44}
+              enableEnvironment={false}
+            />
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
             <span style={{
               fontSize: 11,
               fontWeight: 600,
               color: tokens.textMuted,
               textTransform: 'uppercase',
               letterSpacing: '0.04em',
+              marginBottom: 2,
             }}>
               {agentName}
             </span>
+            <AnimatedScore value={myScore} defaultColor="#5eead4" size={28} />
           </div>
-          <AnimatedScore value={myScore} defaultColor="#5eead4" size={28} />
         </div>
 
         {/* Center: Day label + trade count */}
@@ -846,20 +853,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Agent Presence (gated) — the reactive agent face in the battle chrome.
-                READ-ONLY: mood binds to the SAME displayPlayerScore/displayOpponentScore
-                the ScoreHeader renders (standingFromDuel); swap reactions come off the
-                statusFeed. Consumes the already-resolved agentBattle — no new subscription
-                and it never touches useAgentBattleId. Flag-off omits it entirely. */}
-            {isAgentPresenceOn() && agentBattle && (
-              <AgentPresenceMount
-                surface="duel"
-                agent={agentBattle}
-                duel={{ playerScore: displayPlayerScore, opponentScore: displayOpponentScore, statusFeed }}
-                size={34}
-                enableEnvironment={false}
-              />
-            )}
+            {/* Agent Presence face was moved into ScoreHeader (next to the name/score
+                it reflects). This chrome cluster keeps the watchlist chip + status dot. */}
             {/* Phase 5B2 — read-only equipped-watchlist indicator (Q7c).
                 Sourced from the frozen agentContext.equippedWatchlist snapshot. */}
             {getEquippedWatchlistLabel(agentBattle?.agentContext?.equippedWatchlist) && (
@@ -912,6 +907,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           isDesktop={isDesktop}
           playerScore={displayPlayerScore}
           opponentScore={displayOpponentScore}
+          statusFeed={statusFeed}
         />
 
         {/* Film Room banner — appears once the first daily review has been filed */}
