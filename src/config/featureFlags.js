@@ -975,7 +975,7 @@ export const COMPILER_ENABLED = false;
  * phase behind the DR-10 two-stage validation. Flip only via a deliberate
  * founder flag-flip PR — never in a build PR.
  */
-export const MANIFEST_WRITE_ENABLED = false;
+export const MANIFEST_WRITE_ENABLED = true;
 
 /**
  * Archetype Architecture Phase 2 (P2.6) — tick-side shadow assembly +

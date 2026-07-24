@@ -13,7 +13,8 @@
 //      without one
 //   4. §4.3 version stamps incl. the A-2 mode fields; R1-2
 //      freezePolicyVersion; DR-13 renderedTensionPairs pass-through
-//   5. manifestHash determinism; MANIFEST_WRITE_ENABLED defaults false
+//   5. manifestHash determinism; MANIFEST_WRITE_ENABLED is ON in production
+//      (the deliberate Phase 2 flag-flip — manifest-write first)
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): real imports of the
 // leanRevalidation kernel + registry graph — NEVER mock.
@@ -73,8 +74,13 @@ function build(overrides = {}) {
 }
 
 describe('P2.5 manifest builder', () => {
-  it('flag defaults false at merge (exit criterion 1)', () => {
-    expect(MANIFEST_WRITE_ENABLED).toBe(false);
+  it('flag is ON in production — the deliberate Phase 2 manifest-write flip (manifest-write first, shadow-assembly second)', () => {
+    // Was false through Phase 2 (exit criterion 1: merge-dark). This is the
+    // dedicated founder flag-flip PR that turns manifest-write on. The
+    // flag-FALSE rollback stays byte-identical — locked by the P4 fence
+    // battery (manifest stripped from its photograph) and the agentBattleService
+    // off-state determinism test.
+    expect(MANIFEST_WRITE_ENABLED).toBe(true);
   });
 
   it('output passes the §4.1 validator', () => {
