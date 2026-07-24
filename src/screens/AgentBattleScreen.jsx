@@ -14,7 +14,7 @@ import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
-import { isAgentPresenceOn } from '../config/featureFlags';
+import { isAgentPresenceOn, isMatchupsBackdropOn } from '../config/featureFlags';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
 // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Uncomment to revive.
 // import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
@@ -29,6 +29,7 @@ import ForgeCitationCard from '../components/Agent/ForgeCitationCard';
 import DebateModal from '../components/Agent/DebateModal';
 import TacticalRow from '../components/BaggerBomb/TacticalRow';
 import ClosedTradesSection from '../components/BaggerBomb/ClosedTradesSection';
+import BaggerBombBackground from '../components/BaggerBomb/BaggerBombBackground';
 import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
 import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import { calculateAssetScoreV3 } from '../utils/baggerBombUtils';
@@ -64,6 +65,14 @@ const TIER_HEADER_COLORS = {
   core:    { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
   support: { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
 };
+
+// Matchups backdrop palette — teal/mint accent (NOT the PvP view's cyan).
+const BACKDROP_COLORS = [{ r: 94, g: 234, b: 212 }, { r: 45, g: 212, b: 191 }]; // #5eead4, #2dd4bf
+const BACKDROP_LINE = { r: 94, g: 234, b: 212 };
+const BACKDROP_GLOW = [
+  'radial-gradient(ellipse 800px 800px at 25% 20%, rgba(94, 234, 212, 0.16), transparent 70%)',
+  'radial-gradient(ellipse 700px 700px at 75% 15%, rgba(45, 212, 191, 0.12), transparent 70%)',
+];
 
 const TAB_KEYS = ['matchups', 'command', 'gametape'];
 const TAB_LABELS = { matchups: 'Matchups', command: 'Command Center', gametape: 'Game Tape' };
@@ -110,6 +119,10 @@ const staggerSpring = { type: 'spring', stiffness: 200, damping: 20 };
 
 function TierHeader({ tier }) {
   const colors = TIER_HEADER_COLORS[tier.key] || TIER_HEADER_COLORS.support;
+  // Flag-on: adopt the PvP view's bolder gradient-header treatment (uppercase,
+  // 15px/800/1.5px) in the teal/mint accent, plus a subtle teal band wash.
+  // Flag-off: the current flat-dark band + subtler teal→purple label (unchanged).
+  const backdropOn = isMatchupsBackdropOn();
   return (
     <div style={{
       display: 'flex',
@@ -119,18 +132,23 @@ function TierHeader({ tier }) {
       position: 'sticky',
       top: 0,
       zIndex: 5,
-      background: 'rgba(13, 14, 18, 0.95)',
+      background: backdropOn
+        ? 'linear-gradient(90deg, rgba(94, 234, 212, 0.10), rgba(13, 14, 18, 0.95) 55%)'
+        : 'rgba(13, 14, 18, 0.95)',
       backdropFilter: 'blur(8px)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 14 }}>{tier.emoji}</span>
+        <span style={{ fontSize: backdropOn ? 15 : 14 }}>{tier.emoji}</span>
         <span style={{
-          fontSize: 13,
-          fontWeight: 700,
-          background: 'linear-gradient(90deg, #5eead4, #a78bfa)',
+          fontSize: backdropOn ? 15 : 13,
+          fontWeight: backdropOn ? 800 : 700,
+          background: backdropOn
+            ? 'linear-gradient(90deg, #5eead4, #2dd4bf)'
+            : 'linear-gradient(90deg, #5eead4, #a78bfa)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
-          letterSpacing: '0.02em',
+          letterSpacing: backdropOn ? '1.5px' : '0.02em',
+          textTransform: backdropOn ? 'uppercase' : undefined,
         }}>
           {tier.label}
         </span>
@@ -819,10 +837,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       display: 'flex',
       flexDirection: 'column',
     }}>
+      {/* Matchups animated backdrop (flag-gated) — canvas particle/constellation
+          network, teal/mint, pointer-events:none. Fixed full-viewport but below
+          all interactive layers (canvas z1 < tab content z2 < chrome z3) and only
+          mounted on the Matchups tab, so it never runs on Command/Game Tape. */}
+      {isMatchupsBackdropOn() && activeTab === 'matchups' && (
+        <BaggerBombBackground
+          colors={BACKDROP_COLORS}
+          lineColor={BACKDROP_LINE}
+          glowColors={BACKDROP_GLOW}
+          honorReducedMotion
+        />
+      )}
+
       {/* ═══ PERSISTENT TOP SECTION ═══ */}
       <div style={{
         flexShrink: 0,
         background: tokens.bgAgent || '#1C1A27',
+        position: 'relative',
+        zIndex: 3,
       }}>
         {/* Back button bar */}
         <div style={{

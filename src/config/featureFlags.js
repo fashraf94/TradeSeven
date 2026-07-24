@@ -915,6 +915,31 @@ export function isAgentPresenceOn() {
 }
 
 /**
+ * Matchups Backdrop — ports the PvP view's animated particle/constellation
+ * canvas (BaggerBombBackground) plus the bolder gradient tier headers into the
+ * AgentBattleScreen Matchups tab, recolored to the teal/mint accent. Merged
+ * DARK; flip in a one-line follow-up after a Vercel preview smoke (the
+ * AGENT_PRESENCE_ENABLED precedent). One shared flag gates BOTH the backdrop
+ * and the header/band restyle so flag-off is byte-identical to today.
+ */
+export const MATCHUPS_BACKDROP_ENABLED = false;
+
+/**
+ * The ONE home for the Matchups Backdrop gate — the flag OR the
+ * `?matchupsBackdrop=1` dev-preview override. SSR/Node-safe (guards `window`);
+ * a malformed URL degrades to the flag alone (the isAgentPresenceOn idiom).
+ */
+export function isMatchupsBackdropOn() {
+  if (MATCHUPS_BACKDROP_ENABLED) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('matchupsBackdrop') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Training-Pod P0 R3 — the rolling stale-pod expiry backstop. Server-only; gates
  * the orchestrator's per-tick `expireStaleTrainingPods` sweep, which retires
  * training pods stranded pre-BATTLE (FORMING orphans, wedged DRAFTING drafts the
