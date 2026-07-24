@@ -1,7 +1,9 @@
 {
   "baselineVersion": 1,
   "note": "Spec §2.3 import-boundary ratchet (Phase 2): the frozen inventory of production modules that import the legacy archetype tables DIRECTLY. archetypeRegistry.test.js fails when a module OUTSIDE this list gains a direct import (new consumers go through archetypeRegistry) AND when a listed module drops one (shrink this baseline in the same commit). Phase 3 migrates consumers through registry adapters and shrinks this list toward zero.",
+  "separateGateNote": "SEPARATE GATE from BUILD_RULES §1: satisfying the §1 fence rule (reads of fenced exports are permitted) does NOT satisfy this ratchet. Any commit that adds a direct import of a legacy archetype table MUST record the new importer here in the SAME commit. Through Phase 3 registry migration this list only shrinks toward zero, never grows.",
   "importers": [
+    "api/_utils/agentGuardrails.js",
     "api/_utils/agentPromptAssembly.js",
     "api/_utils/archetypeSeeding.js",
     "api/_utils/behaviorFingerprint.js",

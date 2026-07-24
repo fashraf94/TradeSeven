@@ -22,6 +22,8 @@ These files govern calibrated agent trading behavior. **Reading and calling thei
 
 The scoring engine and `createAgentBattle` document shape are fenced as concepts, not just files: changes that alter their behavior from non-fenced call sites are fence contact too. If your task seems to require fence contact that isn't in its prompt, **STOP and report** — never improvise it.
 
+**Separate gate — the §2.3 import-boundary ratchet:** reading the fenced `agentArchetypeConfig.js` / `archetypeScoring.js` is §1-permitted, but a *new direct importer* of any legacy archetype table also trips the Spec §2.3 import-boundary ratchet — record the importer in `api/_utils/archetypeImportBoundaryBaseline.json` in the SAME commit. Satisfying this fence does not satisfy that ratchet.
+
 ## 2. Branch & merge discipline
 
 - **One task = one branch, cut fresh from current `main`.** Never create branches mid-task; never continue a prior task's session branch (the long-running shared-session-branch pattern is retired — it nearly produced a 76-commit accidental PR).
