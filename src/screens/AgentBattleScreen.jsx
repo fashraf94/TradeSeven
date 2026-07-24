@@ -119,6 +119,10 @@ const staggerSpring = { type: 'spring', stiffness: 200, damping: 20 };
 
 function TierHeader({ tier }) {
   const colors = TIER_HEADER_COLORS[tier.key] || TIER_HEADER_COLORS.support;
+  // Flag-on: adopt the PvP view's bolder gradient-header treatment (uppercase,
+  // 15px/800/1.5px) in the teal/mint accent, plus a subtle teal band wash.
+  // Flag-off: the current flat-dark band + subtler teal→purple label (unchanged).
+  const backdropOn = isMatchupsBackdropOn();
   return (
     <div style={{
       display: 'flex',
@@ -128,18 +132,23 @@ function TierHeader({ tier }) {
       position: 'sticky',
       top: 0,
       zIndex: 5,
-      background: 'rgba(13, 14, 18, 0.95)',
+      background: backdropOn
+        ? 'linear-gradient(90deg, rgba(94, 234, 212, 0.10), rgba(13, 14, 18, 0.95) 55%)'
+        : 'rgba(13, 14, 18, 0.95)',
       backdropFilter: 'blur(8px)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 14 }}>{tier.emoji}</span>
+        <span style={{ fontSize: backdropOn ? 15 : 14 }}>{tier.emoji}</span>
         <span style={{
-          fontSize: 13,
-          fontWeight: 700,
-          background: 'linear-gradient(90deg, #5eead4, #a78bfa)',
+          fontSize: backdropOn ? 15 : 13,
+          fontWeight: backdropOn ? 800 : 700,
+          background: backdropOn
+            ? 'linear-gradient(90deg, #5eead4, #2dd4bf)'
+            : 'linear-gradient(90deg, #5eead4, #a78bfa)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
-          letterSpacing: '0.02em',
+          letterSpacing: backdropOn ? '1.5px' : '0.02em',
+          textTransform: backdropOn ? 'uppercase' : undefined,
         }}>
           {tier.label}
         </span>
