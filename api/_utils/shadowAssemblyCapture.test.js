@@ -3,8 +3,9 @@
 // Archetype Architecture Phase 2 (P2.6) — shadow assembly + envelope
 // plumbing. Locks:
 //
-//   1. SHADOW_ASSEMBLY_ENABLED defaults false (exit criterion 1; the wiring
-//      never calls the module while dark — tick byte-identity)
+//   1. SHADOW_ASSEMBLY_ENABLED is ON (the deliberate Phase 2 flag-flip,
+//      second in the flip sequence after manifest-write `335e38de`; the
+//      P2.6 merge-dark exit criterion held until that flip)
 //   2. A-1 envelope: manifest-anchored (null without a manifest — no
 //      envelope-less record can exist), validator-green with one, tickId =
 //      cronStart + battleId
@@ -102,9 +103,14 @@ function makeFakeDb({ failCreateWith = null } = {}) {
   return { created, updated, collection(name) { return { doc: (id) => ref(`${name}/${id}`) }; } };
 }
 
-describe('P2.6 darkness', () => {
-  it('SHADOW_ASSEMBLY_ENABLED defaults false at merge', () => {
-    expect(SHADOW_ASSEMBLY_ENABLED).toBe(false);
+describe('P2.6 activation', () => {
+  it('SHADOW_ASSEMBLY_ENABLED is ON — the deliberate flag-flip this suite guards', () => {
+    // Flipped false→true in the founder flag-flip PR (Phase 2 flip sequence:
+    // manifest-write first `335e38de`, shadow-assembly second — capture is
+    // manifest-anchored and skips pre-manifest battles). Reverting the flag
+    // is likewise a deliberate act: it must edit this assertion in the same
+    // commit, exactly as the flip did.
+    expect(SHADOW_ASSEMBLY_ENABLED).toBe(true);
   });
 });
 
