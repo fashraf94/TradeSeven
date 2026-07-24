@@ -28,6 +28,11 @@ import {
 } from './agentNewsContext.js';
 import { PATTERN_DISPLAY_NAMES } from './analyticalPrimitives.js';
 import { isHardRule } from './ruleHardness.js';
+// DR-13 Commit 2 (§7-signed fence contact, founder-ruled 2026-07-24): the
+// archetype identity block — non-fenced pure module, dark behind
+// EVAL_IDENTITY_BLOCK_ENABLED. '' while dark / on unknown keys, so both
+// templates below stay byte-identical to the battery snapshots.
+import { renderEvalIdentityBlock } from './evalIdentityBlocks.js';
 
 // ==================== SYSTEM PROMPT ====================
 
@@ -39,13 +44,22 @@ import { isHardRule } from './ruleHardness.js';
  * the text of record below BYTE-UNTOUCHED (battery snapshot); flat6 callers
  * get the tournament variant — flat 1x scoring framing, no tier impact
  * language. The non-fenced cron threads battle.gameMode.
+ *
+ * DR-13 (Commit 2, §7-signed): archetypeKey is the RAW archetype code-id
+ * (battle.agentContext.archetype — STOP-A ruling A1), NOT the display-cased
+ * label already flowing through `archetype`. It selects the identity block
+ * spliced between the preamble sentence and the first banner in BOTH
+ * variants. Dark flag or unknown key → '' and the output is byte-identical
+ * to the pre-DR-13 text of record (battery snapshots); omitted callers
+ * (battery, legacy) get the same '' via the undefined key.
  */
-export function buildEvalSystemPrompt(agentName, archetype, gameMode = TIERED_GAME_MODE) {
+export function buildEvalSystemPrompt(agentName, archetype, gameMode = TIERED_GAME_MODE, archetypeKey) {
+  const identityBlock = renderEvalIdentityBlock(archetypeKey);
   if (resolveModeConfig(gameMode).promptVariant === 'flat6') {
-    return buildFlat6EvalSystemPrompt(agentName, archetype);
+    return buildFlat6EvalSystemPrompt(agentName, archetype, identityBlock);
   }
   return `You are ${agentName}, a competitive AI trading agent in FantasyTrades. Your archetype is ${archetype}. You are mid-battle in a BaggerBomb game, actively managing a tiered stock portfolio to maximize your score.
-
+${identityBlock}
 ━━━ SCORING RULES ━━━
 
 Base points = (currentPrice - entryPrice) / entryPrice × 100 × 10 × tierMultiplier
@@ -265,10 +279,15 @@ Example SURVIVAL MODE monologue:
  * impact, S5's tier assignment, example monologues) are replaced with the
  * tournament truth — six stocks, flat 1x, threshold bonuses unchanged.
  * Snapshot-locked by the battery like its tiered sibling.
+ *
+ * DR-13 (Commit 2, §7-signed): identityBlock is REQUIRED — the caller
+ * (buildEvalSystemPrompt, this builder's only call site) always resolves it,
+ * so the tournament path can never silently ship without the block the
+ * tiered path carries (STOP-D ruling). '' while dark → byte-identical.
  */
-function buildFlat6EvalSystemPrompt(agentName, archetype) {
+function buildFlat6EvalSystemPrompt(agentName, archetype, identityBlock) {
   return `You are ${agentName}, a competitive AI trading agent in FantasyTrades. Your archetype is ${archetype}. You are mid-battle in a League Tournament game, actively managing a six-stock tournament portfolio to maximize your score.
-
+${identityBlock}
 ━━━ SCORING RULES ━━━
 
 Base points = (currentPrice - entryPrice) / entryPrice × 100 × 10

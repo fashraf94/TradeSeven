@@ -1920,7 +1920,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           model: EVAL_MODEL_ID,
           max_tokens: 1024,
           temperature: 0.4,
-          system: buildEvalSystemPrompt(agentName, archetype, battle.gameMode),
+          // DR-13 (STOP-A ruling A1): the RAW archetype code-id rides as the
+          // 4th arg — `archetype` above is the display-cased label (:1881)
+          // and must never be the identity-block key.
+          system: buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype),
           messages: [
             { role: 'user', content: buildAgentIdentityBlock(battle) },
             { role: 'assistant', content: 'I understand my identity and strategic context. Show me the live battle state.' },

@@ -54,6 +54,44 @@ node scripts/paired-eval-harness.js \
   [--out report.jsonl]    # report path (default: timestamped in CWD)
 ```
 
+## DR-13 mode (`--dr13`) — identity-block pre-flip validation
+
+Added for the DR-13 arc (founder Flag F ruling, 2026-07-24). Pairs the SAME
+eval input under two system prompts — flag-off (production today) and
+flag-on (the archetype identity block spliced in via
+`spliceEvalIdentityBlock`, which the injection test locks byte-equal to the
+real fenced flag-on output, all six archetypes × both variants). Emits per
+pair: prompt-part sizes, the char/token delta, a byte-level proof the diff
+is **exactly** the identity block, and — when an API key is present — paired
+Haiku decisions at `temperature: 0` for decision-drift review.
+
+Input sources (real corpus preferred, synthetic floor):
+
+```bash
+# Synthetic floor — six archetypes × both variants, no Firestore, no key:
+node scripts/paired-eval-harness.js --dr13 --synthetic --dry-run
+
+# Synthetic with paired decisions (needs ANTHROPIC_API_KEY):
+node scripts/paired-eval-harness.js --dr13 --synthetic
+
+# Real corpus (preferred once the SHADOW_ASSEMBLY_ENABLED flip, PR #671,
+# has accumulated divergent shadowDiffs) — up to --n inputs per archetype;
+# the archetype code-id is read from the parent battle doc:
+node scripts/paired-eval-harness.js --dr13 [--battle <battleId>] [--n 10]
+```
+
+DR-13-mode caveats:
+
+- Only **divergent** shadowDiffs docs carry replayable texts (identical
+  ticks are hash-only — the payload discipline), so the corpus mode's usable
+  sample is the divergent subset; `--synthetic` is always available.
+- The synthetic mode replays each of its 12 pairs **once** — repeating one
+  fixture at `temperature: 0` adds nothing. The "N≥10 identical inputs per
+  archetype" leg of the DR-13 validation needs the real corpus.
+- A post-flip run is handled honestly: if the checked-out flag already
+  renders the block, the ON form is taken as-built and the OFF form is
+  recovered by excising the block's exact bytes.
+
 Notes:
 
 - Replays run at `temperature: 0` (the live tick uses 0.4) — divergence must

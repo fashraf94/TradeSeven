@@ -157,15 +157,21 @@ export async function buildShadowDiffRecord({ battle, envelope, market }) {
   // prompt, the IDENTITY block (where FORGE RULES / leans render — the
   // frozen-content section), and the live-context block. All three are
   // assembled per view and diffed.
+  // DR-13: each side threads its own RAW archetype code-id as the 4th arg,
+  // mirroring the live call (agent-evaluate.js) — once
+  // EVAL_IDENTITY_BLOCK_ENABLED lights, captured prompts must carry the
+  // identity block exactly as production does, per view.
   const liveSystem = buildEvalSystemPrompt(
     liveView.agentContext?.agentName || 'Agent',
     liveView.agentContext?.archetype || 'unknown',
-    battle.gameMode
+    battle.gameMode,
+    liveView.agentContext?.archetype
   );
   const shadowSystem = buildEvalSystemPrompt(
     shadowView.agentContext.agentName || 'Agent',
     shadowView.agentContext.archetype || 'unknown',
-    battle.gameMode
+    battle.gameMode,
+    shadowView.agentContext.archetype
   );
   const liveIdentity = buildAgentIdentityBlock(liveView);
   const shadowIdentity = buildAgentIdentityBlock(shadowView);
