@@ -1060,3 +1060,35 @@ export function isDeployCeremonyOn() {
     return false;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FANTASYTIMES WIRE — AGENT-FIRST NEWS ARC, Phase 1 (Spec V1.5 §4.8)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Wire timing instrumentation ONLY — per-seam duration samples into the
+ * server-only wireMetrics/{date} doc (bounded, cap 500/seam/day). Never
+ * touches the model request object or persisted story content; §9 asserts
+ * payload equality with metrics on, writes off. Flipped FIRST (≥3 trading
+ * days) to capture the p95 baseline the §6.1 gate needs.
+ */
+export const WIRE_METRICS_ENABLED = false;
+
+/**
+ * The Wire writes machinery: cloned extended tool schema + agentFacts prompt
+ * instructions + extraction + validation + digest rendering + the story/
+ * envelope batch, Wire transaction, receipts, chainId resolution, replay
+ * sweep + raised max_tokens. FALSE = byte-identical outbound model request
+ * payload vs the pre-Wire build (M8 — dark means dark at the model-request
+ * boundary). Flip only after the metrics baseline; ≥2 trading days solo
+ * before continuity. Each flip is its own one-line PR (Pushed ≠ deployed).
+ */
+export const WIRE_WRITES_ENABLED = false;
+
+/**
+ * Continuity prompt block ONLY (reporter's recent Wire digests + eventTypes
+ * + dates — never headlines; P7/M3). Requires WIRE_WRITES_ENABLED — the
+ * resolution point (api/_utils/wireFlags.js getWireFlags) enforces the
+ * dependency; this raw const is never read directly by call sites.
+ */
+export const CONTINUITY_MEMORY_ENABLED = false;
