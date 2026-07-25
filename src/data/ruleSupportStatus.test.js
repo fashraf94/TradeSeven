@@ -56,16 +56,16 @@ describe('completeness — every template resolves to a legal status', () => {
     }
   });
 
-  it('holds the ruled tally: 88 supported / 14 absent / 14 unwired / 26 scrapped / 1 deprecated', () => {
+  it('holds the ruled tally: 95 supported / 20 absent / 1 unwired / 26 scrapped / 1 deprecated (Fundamental Wire D1/D5)', () => {
     const tally = {};
     for (const t of FORGE_RULE_TEMPLATES) {
       const s = getSupportStatus(t.id);
       tally[s] = (tally[s] || 0) + 1;
     }
     expect(tally).toEqual({
-      supported: 88,
-      hidden_absent_substrate: 14,
-      hidden_unwired: 14,
+      supported: 95,
+      hidden_absent_substrate: 20,
+      hidden_unwired: 1,
       mode_scrapped: 26,
       deprecated: 1,
     });
@@ -88,19 +88,31 @@ describe('completeness — every template resolves to a legal status', () => {
   });
 });
 
-describe('the specific Phase-0 rulings are encoded', () => {
+describe('the specific Phase-0 + Fundamental Wire rulings are encoded', () => {
   // DEFECT GUARDED: a future edit quietly reverting a founder ruling.
-  it('r-07 is hidden_unwired, not hidden_absent_substrate (industry taxonomy is 100% covered)', () => {
-    expect(getSupportStatus('r-07')).toBe('hidden_unwired');
+  it('the Fundamental Wire un-hides EXACTLY the six servable rules + r-07 (D1/D5, Jul 25 2026)', () => {
+    for (const id of [
+      'fund-value-pe', 'f-07', 'fund-revenue-growth',
+      'fund-bank-pb', 'fund-market-cap', 'f-12', 'r-07',
+    ]) {
+      expect(getSupportStatus(id), id).toBe('supported');
+    }
   });
 
-  it('the whole Class B fundamental family is hidden_unwired', () => {
+  it('the six UNSERVABLE fundamental rules re-triaged to hidden_absent_substrate (D1 — missing producer work)', () => {
     for (const id of [
-      'fund-earnings-surprise', 'fund-revenue-growth', 'fund-value-pe', 'fund-bank-pb',
-      'fund-financial-health', 'fund-market-cap', 'f-07', 'f-08', 'f-09', 'f-10', 'f-11', 'f-12',
+      'fund-earnings-surprise', 'fund-financial-health', 'f-08', 'f-09', 'f-10', 'f-11',
     ]) {
-      expect(getSupportStatus(id), id).toBe('hidden_unwired');
+      expect(getSupportStatus(id), id).toBe('hidden_absent_substrate');
     }
+  });
+
+  it('i-04 is the sole remaining hidden_unwired (derivable, not derived)', () => {
+    expect(getSupportStatus('i-04')).toBe('hidden_unwired');
+    const unwired = Object.entries(RULE_SUPPORT_STATUS)
+      .filter(([, s]) => s === 'hidden_unwired')
+      .map(([id]) => id);
+    expect(unwired).toEqual(['i-04']);
   });
 
   it('the re-predicable rules are hidden_absent_substrate pending the copy pass', () => {
