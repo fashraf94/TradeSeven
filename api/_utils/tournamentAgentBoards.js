@@ -46,6 +46,11 @@ import {
   trainingCloneDocId,
 } from '../../src/constants/leagueTournament.js';
 import { formatMarketCSV } from './agentPromptAssembly.js';
+// Fundamental Wire Commit 2: the board label enumerates the same columns the
+// fenced CSV renders — driven by the SAME suffix source, so the two sites
+// cannot drift (BUILD_RULES §9; Phase 0 flagged this label as the highest-risk
+// drift site). '' while FUNDAMENTAL_MIRROR_ENABLED is dark.
+import { draftFundamentalsHeaderSuffix } from './fundamentalsRender.js';
 import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES, ARCHETYPE_CONSTRAINTS } from './archetypeScoring.js';
 import { resolveEquippedWatchlist, extractTickerSymbols } from './watchlistEquip.js';
 import { getOwnUserPicks } from './tournamentAgentLedger.js';
@@ -131,7 +136,7 @@ TOURNAMENT RULES (these differ from the casual game):
 - THE DOUBLE-DOWN: your player has committed three user-layer picks of their own (listed in the user message). You MAY rank and draft those same names — alignment doubles the player's exposure and is the game's only leverage play. Rival agents can never take your player's picks, and you can never take a rival player's picks.
 ${constraint}
 
-STOCK UNIVERSE (TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH):
+STOCK UNIVERSE (TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH${draftFundamentalsHeaderSuffix()}):
 ${marketCSV}`;
 }
 

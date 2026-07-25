@@ -1111,3 +1111,27 @@ export const CONTINUITY_MEMORY_ENABLED = false;
  * build PR.
  */
 export const EVAL_IDENTITY_BLOCK_ENABLED = false;
+
+/**
+ * Fundamental Wire arc (Jul 25 2026 founder rulings D1–D7) — the peerRankings→
+ * stockRankings fundamentals mirror (Commit 1) + the two prompt render blocks
+ * that read it (Commit 2, §7-gated fence contact).
+ *
+ * When FALSE (DEFAULT, merge-dark):
+ *   - compute-index-intelligence writes a byte-identical stockRankings doc
+ *     (no `fundamentals` key on any stock entry), and
+ *   - both prompt assemblers render byte-identically to today (every
+ *     fundamentalsRender.js helper returns ''/null while dark) — the P4
+ *     battery file snapshots stay the off-state lock.
+ * When TRUE: each stock entry carries the D3 minimal fundamentals sub-object
+ * (trailingPE {value, sectorMedian}, priceBookMRQ, revenueGrowthPct,
+ * marketCapClass, earningsRevisions30d, real-only beatRate,
+ * surpriseMagPercentile, per-entry peerRankings computedAt provenance), the
+ * eval live-context gains the FUNDAMENTALS block (holdings + bench), and the
+ * draft/board CSV gains the 3-column fundamentals group — all null-honest
+ * (an absent metric renders absent, never a neutral default).
+ *
+ * Flip only after a founder smoke on a production-shaped render — never in a
+ * build PR (POD_EXPIRY_SWEEP_ENABLED / LEAGUE_NEXT_ARC_ENABLED precedent).
+ */
+export const FUNDAMENTAL_MIRROR_ENABLED = false;

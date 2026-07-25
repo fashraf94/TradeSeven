@@ -44,7 +44,12 @@
 //
 // Basis: Signal Inventory V2 (SIG-001…043 @ a04a291d) + the five accepted
 // Phase 3 metadata batches + the Rule Support Triage V1.0 worklist, as amended
-// by the Phase 0 discovery rulings of Jul 25 2026.
+// by the Phase 0 discovery rulings of Jul 25 2026 and the Fundamental Wire
+// founder rulings D1–D7 (Jul 25 2026): the mirror + render arc un-hid the six
+// servable fundamental rules and r-07, and re-triaged the six unservable ones
+// to hidden_absent_substrate with their missing producer work named. The
+// SIG-021…028 + SIG-042 rows refresh when the founder's
+// docs/SIGNAL_INVENTORY_V2.md upload lands (D7 — in flight at this commit).
 
 export const SUPPORT_STATUS_VALUES = Object.freeze([
   'supported',
@@ -65,7 +70,7 @@ export const NOT_OFFERED_STATUSES = Object.freeze([
   'deprecated',
 ]);
 
-// ── hidden_absent_substrate (14) ─────────────────────────────────────────────
+// ── hidden_absent_substrate (20) ─────────────────────────────────────────────
 // Primary mechanism cites a signal absent from every running path.
 // Verified rule-by-rule in the Phase 0 discovery against Signal Inventory V2,
 // applying the C-13 primary/secondary/exception tiering: a rule is hidden only
@@ -107,43 +112,55 @@ const HIDDEN_ABSENT_SUBSTRATE = [
             // running path. Beat-rate override is the secondary tier.
   'a-10',   // doubly absent: macro calendar is agent-blind (SIG-043) AND no
             // sector-sensitivity table exists. Already predicateDefined:false.
+
+  // Fundamental family — RE-TRIAGED from hidden_unwired by founder ruling D1
+  // (Jul 25 2026, Fundamental Wire Phase 0). The mirror wire landed, but each
+  // of these predicates asks for a statistic NO producer computes — a
+  // COMPUTATION gap on the C-13 primary tier, not an unread document. Each
+  // note names the missing producer work (deferred as a named menu, not
+  // funded — D1):
+  'fund-earnings-surprise', // needs a PER-QUARTER surprise-sign series; only
+                            // aggregates persist (beatRate over ≤12q,
+                            // positive-only avgSurpriseMag), so its
+                            // {quarters} ∈ {1,2,3} param is decorative today.
+  'fund-financial-health',  // needs a strong/moderate HEALTH RATING BAND over
+                            // the 4-dimension financialHealth pillar — no
+                            // banding exists anywhere in the repo.
+  'f-08',   // needs a UNIVERSE-scoped fcfYield percentile — every fundamental
+            // percentile is sector-scoped (rankSectorStocks); the rule's
+            // "top {pct}% of universe" is uncomputed.
+  'f-09',   // needs the sector MEAN D/E its text names — only a MEDIAN is
+            // computed, and median ≠ mean on right-skewed D/E (§9 display-
+            // agreement); the bearish-sentiment tighten clause also has no
+            // substrate. predicateDefined:false in the Batch-4 metadata.
+  'f-10',   // needs a sector→preferred-valuation-metric ROUTING TABLE, plus
+            // P/S + dividendYield in the mirror with inversion-aware sense
+            // ("cheapest" flips across the four metrics it names).
+  'f-11',   // needs PRIOR-PERIOD revenue growth — the source persists a
+            // single snapshot (QuarterlyRevenueGrowthYOY passthrough); no
+            // mirror can carry a second derivative.
 ];
 
-// ── hidden_unwired (14) ──────────────────────────────────────────────────────
+// ── hidden_unwired (1) ───────────────────────────────────────────────────────
 // The signal is REAL, computed and persisted — but no agent decision path reads
 // it, so the agent cannot detect it. Fails C-20's "detected" test today.
-// Founder ruling Jul 25: all Class B goes dark until the mirror wire lands.
+//
+// THE FUNDAMENTAL WIRE LANDED (Jul 25 2026, founder rulings D1–D7): the
+// peerRankings→stockRankings mirror (compute-index-intelligence.js
+// buildFundamentalsMirror, dark behind FUNDAMENTAL_MIRROR_ENABLED) + the two
+// prompt render blocks (api/_utils/fundamentalsRender.js) un-hid the six
+// SERVABLE fundamental rules — fund-value-pe, f-07 (real-only beatRate per
+// D2), fund-revenue-growth (×100 unit fix), fund-bank-pb (industryName
+// render), fund-market-cap (marketCapClass derivation), f-12 (30d default) —
+// and r-07, whose sub-industry substrate rides the same render line (D5).
+// The six UNSERVABLE fundamental rules moved UP to hidden_absent_substrate
+// with their missing producer work named (D1) — their gap was never the
+// unread document, it is a statistic no producer computes.
 const HIDDEN_UNWIRED = [
-  // The fundamental family. Every metric below is persisted on
-  // peerRankings/{ticker} (compute-rankings.js:1343-1378) — a document NO agent
-  // path reads. agent-evaluate.js reads only stockTechnicalScores (:885) and
-  // indexIntelligence/stockRankings (:889). One mirror wire unlocks all 12.
-  'fund-earnings-surprise',  // beatRate :1368 / avgSurpriseMag :1369
-  'fund-revenue-growth',     // revenueGrowthYOY :1344
-  'fund-value-pe',           // trailingPE :1352
-  'fund-bank-pb',            // priceBookMRQ :1354 (+ industry, now available)
-  'fund-financial-health',   // debtToEquity :1363 + solvency siblings
-  'fund-market-cap',         // marketCap :1377 (raw value; no class buckets)
-  'f-07',                    // beatRate + surprise magnitude
-  'f-08',                    // fcfYield :1355
-  'f-09',                    // debtToEquity vs sectorMedian :1320
-  'f-10',                    // per-sector valuation selection
-  'f-11',                    // revenue-growth acceleration
-  'f-12',                    // earningsRevisions :1372
-
   // Institutional — derivable, not derived.
   'i-04',   // ownership concentration: no computed field, but totalSharesPct
             // (institutionalIntelligence.js:205) + topHolderShares (:188-189)
             // make it a few lines of derivation.
-
-  // Industry taxonomy — the cheapest unlock in the corpus.
-  'r-07',   // sub-industry cap. TICKER_TO_INDUSTRY (rankingConfig.js:439-449)
-            // has 100% coverage (239/239 tickers, 54 industries) and is
-            // PERSISTED per stock as industryName
-            // (compute-index-intelligence.js:998) on the doc BOTH agent paths
-            // already load — but it is rendered in no prompt (the code comment
-            // at :997 says "inert to decide.js"). Needs ONE render line, no new
-            // read. Un-hides immediately once rendered.
 ];
 
 // ── deprecated (1) ───────────────────────────────────────────────────────────

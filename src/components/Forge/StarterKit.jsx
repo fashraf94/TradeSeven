@@ -22,17 +22,19 @@ const STYLE_RULES = {
     { id: 'tech-moving-average-trend', params: {} },
     { id: 'tech-bollinger-squeeze', params: {} },
   ],
-  // C-20 (Jul 25 2026): fund-value-pe and fund-earnings-surprise are
-  // hidden_unwired — their metrics are persisted on peerRankings/{ticker} but
-  // no agent path reads that collection, so the agent cannot detect them.
-  // tv-10 is the ONLY supported fundamental rule in the corpus; it uses the
-  // composite fundamentalScore (SIG-003, real and agent-visible). It honestly
-  // carries "strong earnings potential"; the "undervalued" half cannot be
-  // carried at all until the fundamental mirror wire lands — which is the #1
-  // follow-on arc precisely because this path, the value-investor collection
-  // and 12 hidden rules all return on it.
+  // Fundamental Wire (Jul 25 2026, founder rulings D1/D6): fund-value-pe
+  // RETURNED — trailingPE {value, sectorMedian} is mirrored onto the
+  // stockRankings doc both agent paths read and rendered in the draft CSV
+  // (PE_VS_SECT) and the eval FUNDAMENTALS block, so the step-1 answer's
+  // "undervalued" half is carried again. tv-10 stays first (composite
+  // fundamentalScore, SIG-003 — the "strong earnings potential" half).
+  // fund-earnings-surprise did NOT return: its {quarters} predicate needs a
+  // per-quarter surprise-sign series no producer persists — it is
+  // hidden_absent_substrate until that series exists (the D1 producer-work
+  // menu), so this path stays at two rules deliberately.
   value: [
     { id: 'tv-10', params: {} },
+    { id: 'fund-value-pe', params: {} },
   ],
   contrarian: [
     { id: 'tech-rsi-oversold', params: {} },

@@ -501,14 +501,23 @@ function extractBalanceSheetMetrics(balanceSheetY, incomeY, sectorId) {
  * Uses up to 12 quarters of data. Falls back to sector default beat rate
  * for stocks with <4 quarters.
  *
- * @returns {{ beatRate: number|null, avgSurpriseMag: number|null, surpriseConsistency: number|null }}
+ * beatRateSource (Fundamental Wire, founder ruling D2 Jul 25 2026): marks
+ * whether beatRate came from real per-company history ('computed') or the
+ * SECTOR_BEAT_RATES constant ('sector_default'). The fabricated value keeps
+ * flowing into the pillar system exactly as before — the marker exists so
+ * downstream mirrors/renders can SUPPRESS it instead of presenting a sector
+ * constant as a per-company fact (a C-20 "detected/verified" violation).
+ * Exported for unit tests (buildIndustriesRollup precedent).
+ *
+ * @returns {{ beatRate: number|null, avgSurpriseMag: number|null, surpriseConsistency: number|null, beatRateSource: 'computed'|'sector_default'|null }}
  */
-function computeEarningsConsistency(earnings, sectorId) {
-  const result = { beatRate: null, avgSurpriseMag: null, surpriseConsistency: null };
+export function computeEarningsConsistency(earnings, sectorId) {
+  const result = { beatRate: null, avgSurpriseMag: null, surpriseConsistency: null, beatRateSource: null };
   if (!earnings?.History) {
     // Fall back to sector default beat rate
     const defaultRate = SECTOR_BEAT_RATES[sectorId] ?? 0.68;
     result.beatRate = defaultRate * 100; // Convert to percentage
+    result.beatRateSource = 'sector_default';
     return result;
   }
 
@@ -524,6 +533,7 @@ function computeEarningsConsistency(earnings, sectorId) {
     // Insufficient data — use sector default
     const defaultRate = SECTOR_BEAT_RATES[sectorId] ?? 0.68;
     result.beatRate = defaultRate * 100;
+    result.beatRateSource = 'sector_default';
     if (entries.length >= 2) {
       // Can still compute partial surprise stats
       const surprises = entries.map(e =>
@@ -543,6 +553,7 @@ function computeEarningsConsistency(earnings, sectorId) {
   // Beat Rate: % of quarters where actual > estimate
   const beats = entries.filter(e => parseFloat(e.epsActual) > parseFloat(e.epsEstimate)).length;
   result.beatRate = (beats / entries.length) * 100;
+  result.beatRateSource = 'computed';
 
   // Avg Surprise Magnitude (absolute value — measures consistency of beating, not direction)
   const posSurprises = surprises.filter(s => s > 0);
@@ -707,6 +718,10 @@ function extractMetrics(ticker, fundamentals) {
     netDebtEbitda: balanceSheetMetrics.netDebtEbitda,
     // Earnings Consistency (NEW)
     beatRate: earningsConsistencyMetrics.beatRate,
+    // D2 provenance marker: 'computed' | 'sector_default' — lets the
+    // fundamentals mirror suppress fabricated beat rates (never rendered
+    // as a per-company fact). Additive named field; pillar math unchanged.
+    beatRateSource: earningsConsistencyMetrics.beatRateSource,
     avgSurpriseMag: earningsConsistencyMetrics.avgSurpriseMag,
     surpriseConsistency: earningsConsistencyMetrics.surpriseConsistency,
     // Sentiment (expanded with short interest)
@@ -1366,6 +1381,8 @@ async function persistResults(db, allRanked, sectorAggregates, scannerResults, s
         netDebtEbitda: stock.metrics?.netDebtEbitda ?? null,
         // Earnings Consistency (NEW)
         beatRate: stock.metrics?.beatRate ?? null,
+        // D2: fabrication marker persisted beside the value it describes.
+        beatRateSource: stock.metrics?.beatRateSource ?? null,
         avgSurpriseMag: stock.metrics?.avgSurpriseMag ?? null,
         surpriseConsistency: stock.metrics?.surpriseConsistency ?? null,
         // Sentiment (expanded)

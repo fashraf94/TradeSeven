@@ -1059,18 +1059,25 @@ export const FORGE_COLLECTIONS = [
     icon: 'Gem',
     accentColor: '#f59e0b',
 
-    // ── RETIRED (C-20, Jul 25 2026) ──────────────────────────────────────────
+    // ── RETIRED (C-20 Jul 25 2026; retention re-ruled D6, Fundamental Wire) ──
+    // The mirror wire LANDED and un-hid fund-value-pe + fund-revenue-growth,
+    // but this collection stays retired: a four-rule value preset cannot ship
+    // half-lit, and its other two rules need producer work no mirror can do.
     retired: true,
     retiredReason:
-      'All 4 rules are hidden_unwired, and only ONE supported fundamental rule '
-      + 'exists corpus-wide (tv-10) — a four-rule value preset cannot be rebuilt '
-      + 'from it. The metrics are real and persisted; they simply reach no agent.',
+      'Two of its four rules remain unservable after the mirror wire: '
+      + 'fund-earnings-surprise needs a per-quarter surprise-sign series (only '
+      + 'aggregates persist), and fund-financial-health needs a strong/moderate '
+      + 'health rating band that exists nowhere. Both are now '
+      + 'hidden_absent_substrate — a computation gap, not an unread document.',
     returnsWith:
-      'THE FUNDAMENTAL MIRROR WIRE — the #1 follow-on arc. Every metric already '
-      + 'exists on peerRankings/{ticker} (P/E compute-rankings.js:1352, P/B :1354, '
-      + 'D/E :1363, FCF-yield :1355, revisions :1372) but no agent path reads that '
-      + 'collection. One mirror into the doc agents already load un-hides 12 rules, '
-      + 'restores this collection intact, and repairs the StarterKit value path.',
+      'THE PRODUCER-WORK MENU (founder rulings D1/D6, Jul 25 2026 — deferred, '
+      + 'named, not funded): (a) a per-quarter surprise-sign series on '
+      + 'peerRankings un-hides fund-earnings-surprise; (b) a strong/moderate '
+      + 'band over the financialHealth pillar un-hides fund-financial-health. '
+      + 'fund-value-pe and fund-revenue-growth are already supported again via '
+      + 'the fundamental mirror (the StarterKit value path carries '
+      + 'fund-value-pe today).',
     ruleIds: [
       'fund-value-pe',
       'fund-earnings-surprise',
