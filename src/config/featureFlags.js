@@ -1092,3 +1092,22 @@ export const WIRE_WRITES_ENABLED = false;
  * dependency; this raw const is never read directly by call sites.
  */
 export const CONTINUITY_MEMORY_ENABLED = false;
+/**
+ * Archetype Architecture Phase 3 — the DR-13 eval-time archetype identity
+ * block (api/_utils/evalIdentityBlocks.js): the six constitution golden
+ * renders + the shared subordination clause, injected into the Haiku
+ * eval/swap system prompt ahead of the first ━━━ banner (both prompt
+ * variants) once the Commit-2 fenced splice lands.
+ *
+ * When FALSE (DEFAULT, merge-dark), renderEvalIdentityBlock returns '' for
+ * every key and both eval system prompts stay byte-identical to today —
+ * asserted by the P4 battery file snapshots. When TRUE, each eval tick's
+ * system prompt carries the deciding archetype's identity block; unknown
+ * keys omit the block and log (never substitute a default identity).
+ *
+ * Flip prerequisite (Spec DR-13/DR-10 + constitutions' render contract):
+ * dark flag, shadow-diffed, offline paired-eval harness pass, founder
+ * review. Flip only via a deliberate founder flag-flip PR — never in a
+ * build PR.
+ */
+export const EVAL_IDENTITY_BLOCK_ENABLED = false;
