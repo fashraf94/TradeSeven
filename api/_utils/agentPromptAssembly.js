@@ -13,6 +13,18 @@ import { isHardRule } from './ruleHardness.js';
 import { resolveControls, renderLeansBlock } from './controlPromptRenderer.js';
 import { revalidateStandingLeans } from './leanRevalidation.js';
 import { STANDING_LEANS_ENABLED } from '../../src/config/featureFlags.js';
+// Fundamental Wire Commit 2 (§7-signed fence contact, founder-ruled
+// 2026-07-25, rulings D1–D7): the D4 3-column fundamentals group — non-fenced
+// pure module, dark behind FUNDAMENTAL_MIRROR_ENABLED. All three helpers
+// return '' while dark, so header, rows, and both prose label sites stay
+// byte-identical to the battery snapshots. One suffix source drives all five
+// column-vocabulary sites (incl. tournamentAgentBoards.js) — BUILD_RULES §9
+// label/list agreement by construction.
+import {
+  draftFundamentalsHeaderSuffix,
+  draftFundamentalsNamesSuffix,
+  renderDraftFundamentalsCells,
+} from './fundamentalsRender.js';
 
 /**
  * Cacheable system prompt for the Sonnet strategy call.
@@ -34,7 +46,7 @@ GAME RULES:
 - Bust penalties: -10 (1x ATR), -20 (1.5x ATR), -35 (2x ATR)
 ${constraint}
 
-STOCK UNIVERSE (TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH):
+STOCK UNIVERSE (TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH${draftFundamentalsHeaderSuffix()}):
 ${marketCSV}
 
 RECENT FANTASYTIMES INTELLIGENCE:
@@ -135,7 +147,7 @@ export function buildStrategyUserPrompt(agent, equippedWatchlist = null) {
         '- You may still omit a user-equipped ticker with a clearly poor setup; the user',
         '  trusts your judgment and does not want forced picks.',
         '- Some user-equipped tickers may not appear in the STOCK UNIVERSE table and will',
-        '  show no FUND/TECH/BB_FIT/ATR/ARCH scores. Evaluate those on sector, thesis, and',
+        `  show no FUND/TECH/BB_FIT/ATR/ARCH${draftFundamentalsNamesSuffix()} scores. Evaluate those on sector, thesis, and`,
         '  market knowledge — absence from the table is not a negative signal.'
       );
       parts.push(lines.join('\n'));
@@ -185,7 +197,7 @@ export function buildPortfolioSystemPrompt(strategyBrief, shortlistCSV, cryptoLi
     ? `\nUSER-EQUIPPED TICKERS:
 These tickers in AVAILABLE STOCKS were equipped by the user from a personal
 watchlist: ${equippedTickers.join(', ')}.
-Rows showing "-" for FUND/TECH/BB_FIT/ATR are user-equipped tickers outside the
+Rows showing "-" for FUND/TECH/BB_FIT/ATR${draftFundamentalsNamesSuffix()} are user-equipped tickers outside the
 scored universe — expected, not a data error. Evaluate them on price action,
 sector, and the analyst's guidance. Give them fair consideration; do not exclude
 a ticker solely because its scores are unavailable.\n`
@@ -219,7 +231,7 @@ Use the submit_portfolio tool to submit your selections with rationale for each 
 export function formatMarketCSV(stocks) {
   if (!stocks?.length) return 'No stock data available.';
 
-  const header = 'TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH';
+  const header = 'TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH' + draftFundamentalsHeaderSuffix();
   const rows = stocks.map((s) => {
     const sector = s.sectorName || 'Unknown';
     const fund = s.fundamentalScore != null ? Math.round(s.fundamentalScore) : '-';
@@ -227,7 +239,8 @@ export function formatMarketCSV(stocks) {
     const bbFit = s.baggerBombFit != null ? Math.round(s.baggerBombFit) : '-';
     const atr = s.atrPercentile != null ? s.atrPercentile.toFixed(2) : '-';
     const arch = s.archetypeScore != null ? s.archetypeScore.toFixed(1) : '-';
-    return `${s.symbol}|${sector}|${fund}|${tech}|${bbFit}|${atr}|${arch}`;
+    // Fundamental Wire: '' while dark; '-' null token per cell when lit.
+    return `${s.symbol}|${sector}|${fund}|${tech}|${bbFit}|${atr}|${arch}${renderDraftFundamentalsCells(s)}`;
   });
 
   return [header, ...rows].join('\n');

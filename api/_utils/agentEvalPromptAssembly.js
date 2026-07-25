@@ -33,6 +33,13 @@ import { isHardRule } from './ruleHardness.js';
 // EVAL_IDENTITY_BLOCK_ENABLED. '' while dark / on unknown keys, so both
 // templates below stay byte-identical to the battery snapshots.
 import { renderEvalIdentityBlock } from './evalIdentityBlocks.js';
+// Fundamental Wire Commit 2 (§7-signed fence contact, founder-ruled
+// 2026-07-25, rulings D1–D7): the FUNDAMENTALS live-context block —
+// non-fenced pure module, dark behind FUNDAMENTAL_MIRROR_ENABLED. null while
+// dark / when no mirrored data is present, so the live context stays
+// byte-identical (the DR-13 flag-split pattern: fenced diff = this import +
+// one call site below).
+import { buildFundamentalsBlock } from './fundamentalsRender.js';
 
 // ==================== SYSTEM PROMPT ====================
 
@@ -924,6 +931,12 @@ ${portfolioCSV}`);
     momentumData?.techScoresMap || {}
   );
   if (benchTechBlock) parts.push(benchTechBlock);
+
+  // 3c2. Fundamentals (Fundamental Wire Commit 2 — held + bench, industry
+  // header for r-07, staleness basis note, per-entry vintage markers).
+  // Dark ⇒ null ⇒ nothing pushed.
+  const fundamentalsBlock = buildFundamentalsBlock(assetScores, battle.portfolio?.bench, momentumData?.rankingsMap || {});
+  if (fundamentalsBlock) parts.push(fundamentalsBlock);
 
   // 3d. Closed Trades with Ghost Prices
   const closedCSV = buildClosedTradesCSV(battle.trades, prices, battle);
