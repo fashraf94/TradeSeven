@@ -44,6 +44,10 @@ import { computeGameModeFits, assignGameModeRanks } from '../_utils/gameModeScor
 import { computeMomentumRankings } from '../_utils/momentumScoring.js';
 import { computeArchetypeRankings } from '../_utils/archetypeScoring.js';
 import { computeReturns } from '../_utils/returnCalculations.js';
+// Fundamental Wire (Commit 1, dark) — Node-clean api→src edge, ratified by the
+// three existing cron importers of featureFlags.js (BUILD_RULES §4; the runtime
+// guard is the real import in compute-index-intelligence.fundamentalsMirror.test.js).
+import { FUNDAMENTAL_MIRROR_ENABLED } from '../../src/config/featureFlags.js';
 
 const ARCHETYPES = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
 
@@ -423,6 +427,102 @@ export function buildIndustriesRollup(rankingStocks, minSize = MIN_INDUSTRY_SIZE
     industries[name] = entry;
   }
   return industries;
+}
+
+// ───────────────────────────────────────────────
+// Fundamentals mirror (Fundamental Wire arc — founder rulings D1–D3, Jul 25 2026)
+// ───────────────────────────────────────────────
+
+// Doc-size guard threshold: ~60% of Firestore's 1 MiB document ceiling — warn
+// with room to act (api/_utils/wireWriteThrough.js:50 convention). The
+// stockRankings write rides the same atomic batch as all 239
+// stockTechnicalScores docs, so a size breach would be a universe-wide silent
+// staleness event — this warn is the early detector.
+export const STOCK_RANKINGS_DOC_WARN_BYTES = Math.floor(1048576 * 0.6);
+
+/**
+ * Build the per-stock `fundamentals` sub-object mirrored off the FULL
+ * peerRankings/{ticker} doc (`fund`) — which this cron already fetches into
+ * memory for fundamentalScore/fundamentalRank, so the mirror costs ZERO added
+ * I/O. Pure + exported for unit testing (buildIndustriesRollup precedent).
+ *
+ * Field set is the founder-ruled D3 minimum serving the six un-hidden
+ * fundamental rules, with targeted enrichment only where a rule needs the
+ * comparison basis:
+ *   trailingPE            {value, sectorMedian}  fund-value-pe ("vs sector median")
+ *   priceBookMRQ          number                 fund-bank-pb (absolute threshold)
+ *   revenueGrowthPct      number, PERCENT        fund-revenue-growth — the source
+ *                         field is a FRACTION (compute-rankings.js extractMetrics
+ *                         passthrough of Highlights.QuarterlyRevenueGrowthYOY);
+ *                         ×100 here or the rule's "{pct}%" threshold silently
+ *                         inverts against 0.xx values.
+ *   marketCapClass        'large'|'mid'|'small'  fund-market-cap — buckets per the
+ *                         rule's own param labels (>$10B / $2–10B / <$2B).
+ *   earningsRevisions30d  number                 f-12 at its 30-day default (the
+ *                         only window the source computes).
+ *   beatRate              number, REAL-ONLY      f-07 — included ONLY when
+ *                         beatRateSource === 'computed' (D2): a sector-default
+ *                         fill is a fabricated per-company fact and never mirrors.
+ *                         An absent marker (pre-D2 doc) also suppresses.
+ *   surpriseMagPercentile integer, sector-scoped f-07's percentile leg — gated on
+ *                         metrics.avgSurpriseMag presence so a ranking artifact
+ *                         cannot render for an unmeasured stock.
+ *   computedAt            epoch ms               the peerRankings doc's own
+ *                         vintage (Phase 0 STOP-2 provenance): per-ticker
+ *                         drop-outs, dead producer runs, and Monday reads all
+ *                         leave stale docs behind with no other marker.
+ *
+ * NULL HONESTY (C-20): a missing metric is OMITTED — no key, never null, never
+ * a neutral-looking default (the `?? 50` / `|| 0` pattern is banned here).
+ * Values are rounded AT WRITE so renderers print the stored number verbatim
+ * (BUILD_RULES §9 single-source). Returns null when no metric is available, so
+ * the caller omits the whole `fundamentals` key.
+ */
+export function buildFundamentalsMirror(fund) {
+  if (!fund || typeof fund !== 'object') return null;
+  const m = fund.metrics || {};
+  const out = {};
+
+  const round1 = (v) => Math.round(v * 10) / 10;
+  const round2 = (v) => Math.round(v * 100) / 100;
+
+  if (m.trailingPE != null && Number.isFinite(m.trailingPE)) {
+    const pe = { value: round1(m.trailingPE) };
+    const med = fund.pillars?.valuation?.dimensions?.trailingPE?.sectorMedian;
+    if (med != null && Number.isFinite(med)) pe.sectorMedian = round1(med);
+    out.trailingPE = pe;
+  }
+  if (m.priceBookMRQ != null && Number.isFinite(m.priceBookMRQ)) {
+    out.priceBookMRQ = round2(m.priceBookMRQ);
+  }
+  if (m.revenueGrowthYOY != null && Number.isFinite(m.revenueGrowthYOY)) {
+    out.revenueGrowthPct = round1(m.revenueGrowthYOY * 100);
+  }
+  if (m.marketCap != null && Number.isFinite(m.marketCap) && m.marketCap > 0) {
+    out.marketCapClass = m.marketCap > 10e9 ? 'large' : m.marketCap >= 2e9 ? 'mid' : 'small';
+  }
+  if (m.earningsRevisions != null && Number.isFinite(m.earningsRevisions)) {
+    out.earningsRevisions30d = round1(m.earningsRevisions);
+  }
+  if (m.beatRate != null && Number.isFinite(m.beatRate) && m.beatRateSource === 'computed') {
+    out.beatRate = Math.round(m.beatRate);
+  }
+  if (m.avgSurpriseMag != null && Number.isFinite(m.avgSurpriseMag)) {
+    const pctl = fund.pillars?.earningsConsistency?.dimensions?.avgSurpriseMag?.percentile;
+    if (pctl != null && Number.isFinite(pctl)) out.surpriseMagPercentile = Math.round(pctl);
+  }
+
+  // No metric ⇒ no object (computedAt alone would render nothing useful).
+  if (Object.keys(out).length === 0) return null;
+
+  const ts = fund.computedAt;
+  const ms = typeof ts?.toMillis === 'function' ? ts.toMillis()
+    : ts instanceof Date ? ts.getTime()
+      : typeof ts === 'number' ? ts
+        : null;
+  if (ms != null && Number.isFinite(ms)) out.computedAt = ms;
+
+  return out;
 }
 
 // ───────────────────────────────────────────────
@@ -939,6 +1039,12 @@ export default async function handler(req, res) {
       const rankingStocks = [];
       for (const tech of stockScores) {
         const fund = fundMap.get(tech.symbol);
+        // Fundamental Wire mirror (dark behind FUNDAMENTAL_MIRROR_ENABLED).
+        // Flag OFF ⇒ null ⇒ the spread below adds NO key and the persisted doc
+        // stays byte-identical. Strictly additive: the three existing
+        // fundamental* fields below keep their `|| null` shape untouched
+        // (changing them to ?? would move fenced archetype scores — §7).
+        const fundamentalsMirror = FUNDAMENTAL_MIRROR_ENABLED ? buildFundamentalsMirror(fund) : null;
         const fundRank = fund?.compositeRank;
         const fundScore = fund?.compositeScore;
         const fundTotalPeers = fund?.totalPeers;
@@ -999,6 +1105,10 @@ export default async function handler(req, res) {
           fundamentalRank: fundRank || null,
           fundamentalScore: fundScore || null,
           fundamentalTotalPeers: fundTotalPeers || null,
+          // Fundamental Wire (D3): named sub-object mirrored off the same
+          // in-memory peerRankings doc — omitted entirely while dark or when
+          // no metric is available (omit-not-null contract).
+          ...(fundamentalsMirror ? { fundamentals: fundamentalsMirror } : {}),
           technicalRank: tech.technicalRank,
           technicalScore: tech.technicalScore,
           sectorTechnicalRank: tech.sectorTechnicalRank || null,
@@ -1088,7 +1198,7 @@ export default async function handler(req, res) {
       const industries = buildIndustriesRollup(rankingStocks);
 
       const rankingsRef = db.collection('indexIntelligence').doc('stockRankings');
-      batch.set(rankingsRef, {
+      const rankingsPayload = {
         stocks: rankingStocks,
         totalTechStocks,
         sectors,
@@ -1099,7 +1209,16 @@ export default async function handler(req, res) {
         // (hourly cadence + slack); the pre-market baseline holds for the day.
         expiresAt: Timestamp.fromMillis(Date.now() + (intraday ? 75 : 24 * 60) * 60 * 1000),
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      };
+      // Doc-size guard (wireWriteThrough.js:50 convention): JSON length is a
+      // close-enough heuristic for Firestore's byte accounting, and a breach
+      // here fails the WHOLE 246-op batch (all stockTechnicalScores included)
+      // while readers keep consuming the stale previous doc — warn early.
+      const rankingsApproxBytes = JSON.stringify(rankingsPayload).length;
+      if (rankingsApproxBytes > STOCK_RANKINGS_DOC_WARN_BYTES) {
+        log(`  ⚠ stockRankings payload ≈${rankingsApproxBytes} bytes — past the ${STOCK_RANKINGS_DOC_WARN_BYTES}-byte warn line (60% of Firestore's 1 MiB doc limit)`);
+      }
+      batch.set(rankingsRef, rankingsPayload);
       writeCount++;
       log(`  ✓ stockRankings summary: ${rankingStocks.length} stocks, ${rankingStocks.filter(s => s.compositeScore != null).length} with composite`);
     }
