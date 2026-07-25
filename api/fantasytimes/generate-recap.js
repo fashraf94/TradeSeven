@@ -16,6 +16,12 @@ import {
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 import { appendEarningsResult } from '../_utils/fantasyTimesConsensus.js';
+import { getWireFlags } from '../_utils/wireFlags.js';
+import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
+import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
+import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
+import { buildContinuityContext } from '../_utils/wireContinuity.js';
+import { recordWireSample } from '../_utils/wireMetrics.js';
 
 export const config = { maxDuration: 60 };
 
@@ -241,15 +247,34 @@ export default async function handler(req, res) {
       userMessage += `\n\nEARNINGS CALL INSIGHTS (from transcript analysis):\n${claimsContext}`;
     }
 
+    // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ────────────────────────
+    const wireFlags = getWireFlags();
+    const wireInstant = new Date();
+    const marketDate = resolveWireMarketDate(wireInstant);
+    const wireInstruction = wireFlags.writesEnabled
+      ? buildAgentFactsInstruction('doug', { pinEventType: 'earnings_recap' })
+      : '';
+    let continuityBlock = '';
+    if (wireFlags.continuityEnabled) {
+      try {
+        continuityBlock = (await buildContinuityContext(db, { reporter: 'doug', marketDate })) || '';
+      } catch (err) {
+        logError('Continuity block failed (non-blocking)', { error: err.message });
+      }
+    }
+
     const anthropic = getAnthropicClient();
     logInfo('Calling Claude API for recap...', { model: REPORTER_PROFILES.doug.model });
+    const wireT0 = Date.now();
 
     const response = await anthropic.messages.create({
       model: REPORTER_PROFILES.doug.model,
-      max_tokens: 500,
+      max_tokens: wireFlags.writesEnabled ? 900 : 500,
       temperature: 0.8,
-      system: DOUG_RECAP_SYSTEM_PROMPT,
-      tools: [PUBLISH_EARNINGS_RECAP_TOOL],
+      system: DOUG_RECAP_SYSTEM_PROMPT + wireInstruction + continuityBlock,
+      tools: [wireFlags.writesEnabled
+        ? extendToolWithAgentFacts(PUBLISH_EARNINGS_RECAP_TOOL, 'doug', { pinEventType: 'earnings_recap' })
+        : PUBLISH_EARNINGS_RECAP_TOOL],
       tool_choice: { type: 'tool', name: 'publish_earnings_recap' },
       messages: [{ role: 'user', content: userMessage }],
     });
@@ -303,12 +328,35 @@ export default async function handler(req, res) {
     storyDoc.visualType = visualType;
     storyDoc.visualConfig = visualConfig;
 
-    const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
+    // agentFacts stays in a PRIVATE local — never on storyDoc (§4.5 step 1).
+    const { storyRef: docRef, wire: wireResult } = await publishStoryWithWire(db, {
+      storyDoc,
+      rawAgentFacts: wireFlags.writesEnabled ? toolBlock.input.agentFacts : null,
+      stopReason: response.stop_reason,
+      reporter: 'doug',
+      seam: 'doug_earnings_recap',
+      primaryTicker: earning.symbol,
+      triggerRef: `${earning.symbol}:${earning.reportDate}`,
+      marketDate,
+      now: wireInstant,
+    });
+    // Close the measured window immediately: nothing between the
+    // publish and this line may be metrics I/O.
+    const genPublishMs = Date.now() - wireT0;
     logInfo(`Published earnings recap ${docRef.id}`, {
       symbol: earning.symbol,
       outcome,
       headline: storyDoc.headline,
     });
+
+    if (wireFlags.metricsEnabled) {
+      // generate_publish is captured BEFORE any metrics I/O so the
+      // instrument never appears inside the window it measures (§6.1 p95).
+      await recordWireSample(db, { seam: 'doug_earnings_recap', metric: 'generate_publish', ms: genPublishMs, marketDate });
+      if (Number.isFinite(wireResult?.wireMs)) {
+        await recordWireSample(db, { seam: 'doug_earnings_recap', metric: 'wire_path', ms: wireResult.wireMs, marketDate });
+      }
+    }
 
     // Write earnings result to consensus
     try {

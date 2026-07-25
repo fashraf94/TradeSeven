@@ -4,6 +4,7 @@
 
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { stripWireState } from '../_utils/wireContracts.js';
 
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 30, windowMs: 60000 } })) {
@@ -30,7 +31,8 @@ export default async function handler(req, res) {
 
     const stories = snapshot.docs
       .map((doc) => {
-        const data = doc.data();
+        // Wire pipeline state is server-internal (see stripWireState).
+        const data = stripWireState(doc.data());
         return {
           id: doc.id,
           ...data,

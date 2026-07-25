@@ -98,6 +98,20 @@
       ]
     },
     {
+      "collectionGroup": "fantasyTimesStories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "wirePending",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "publishedAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "drafts",
       "queryScope": "COLLECTION",
       "fields": [

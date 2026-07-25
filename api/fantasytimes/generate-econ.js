@@ -17,6 +17,14 @@ import {
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 import { appendEconomics } from '../_utils/fantasyTimesConsensus.js';
+import { getWireFlags } from '../_utils/wireFlags.js';
+import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
+import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
+import { canonicalizeEconEvent } from '../_utils/wireIdentity.js';
+import { econSubjectRefForSlug } from '../_utils/wireContracts.js';
+import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
+import { buildContinuityContext } from '../_utils/wireContinuity.js';
+import { recordWireSample } from '../_utils/wireMetrics.js';
 
 export const config = { maxDuration: 60 };
 
@@ -270,15 +278,38 @@ async function handleRecap(req, res, db) {
     userMessage += `\n\nFED/MACRO EVENT INSIGHTS (from press conference analysis):\n${recapClaimsContext}`;
   }
 
+  // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8; V1.6 A2/A4) ──────────────
+  // Single-eventType seam: pinned to econ_print (A4). The subjectRef is
+  // SERVER-STAMPED from the trigger's event name pre-call (A2) — the pinned
+  // schema never offers the field to the model.
+  const wireFlags = getWireFlags();
+  const wireInstant = new Date();
+  const marketDate = resolveWireMarketDate(wireInstant);
+  const wireEconSlug = canonicalizeEconEvent(event.event);
+  const wireInstruction = wireFlags.writesEnabled
+    ? buildAgentFactsInstruction('neta', { pinEventType: 'econ_print' })
+    : '';
+  let continuityBlock = '';
+  if (wireFlags.continuityEnabled) {
+    try {
+      continuityBlock = (await buildContinuityContext(db, { reporter: 'neta', marketDate })) || '';
+    } catch (err) {
+      logError('Continuity block failed (non-blocking)', { error: err.message });
+    }
+  }
+
   const anthropic = getAnthropicClient();
   logInfo('Calling Claude API for recap...', { model: REPORTER_PROFILES.neta.model });
+  const wireT0 = Date.now();
 
   const response = await anthropic.messages.create({
     model: REPORTER_PROFILES.neta.model,
-    max_tokens: 600,
+    max_tokens: wireFlags.writesEnabled ? 1000 : 600,
     temperature: 0.7,
-    system: NETA_RECAP_SYSTEM_PROMPT,
-    tools: [PUBLISH_ECON_RECAP_TOOL],
+    system: NETA_RECAP_SYSTEM_PROMPT + wireInstruction + continuityBlock,
+    tools: [wireFlags.writesEnabled
+      ? extendToolWithAgentFacts(PUBLISH_ECON_RECAP_TOOL, 'neta', { pinEventType: 'econ_print' })
+      : PUBLISH_ECON_RECAP_TOOL],
     tool_choice: { type: 'tool', name: 'publish_econ_recap' },
     messages: [{ role: 'user', content: userMessage }],
   });
@@ -333,8 +364,37 @@ async function handleRecap(req, res, db) {
   storyDoc.visualType = visualType;
   storyDoc.visualConfig = visualConfig;
 
-  const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
+  // agentFacts stays in a PRIVATE local — never on storyDoc (§4.5 step 1).
+  // triggerRef canonicalizes the Sonar event name so retries of the same
+  // release converge on one idempotency key (§4.5; degraded slug for
+  // unknown names — the accepted Neta alias limitation). serverSubjectRef
+  // is the A2 server stamp: a known slug maps to its closed subject
+  // (CPI, NFP, …); unknown aliases stamp null and render the generic form.
+  const { storyRef: docRef, wire: wireResult } = await publishStoryWithWire(db, {
+    storyDoc,
+    rawAgentFacts: wireFlags.writesEnabled ? toolBlock.input.agentFacts : null,
+    stopReason: response.stop_reason,
+    reporter: 'neta',
+    seam: 'neta_econ_recap',
+    primaryTicker: null,
+    triggerRef: wireEconSlug,
+    marketDate,
+    serverSubjectRef: econSubjectRefForSlug(wireEconSlug),
+    now: wireInstant,
+  });
+  // Close the measured window immediately: nothing between the
+  // publish and this line may be metrics I/O.
+  const genPublishMs = Date.now() - wireT0;
   logInfo(`Published econ recap ${docRef.id}`, { event: event.event, headline: storyDoc.headline });
+
+  if (wireFlags.metricsEnabled) {
+    // generate_publish is captured BEFORE any metrics I/O so the
+    // instrument never appears inside the window it measures (§6.1 p95).
+    await recordWireSample(db, { seam: 'neta_econ_recap', metric: 'generate_publish', ms: genPublishMs, marketDate });
+    if (Number.isFinite(wireResult?.wireMs)) {
+      await recordWireSample(db, { seam: 'neta_econ_recap', metric: 'wire_path', ms: wireResult.wireMs, marketDate });
+    }
+  }
 
   // Write economic event to consensus
   try {
@@ -438,20 +498,43 @@ async function handlePreview(req, res, db) {
     userMessage += `\n\nRECENT MACRO CONTEXT:\n${previewClaimsContext}`;
   }
 
+  // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8; V1.6 A2/A4) ──────────────
+  // Single-eventType seam: pinned to econ_preview (A4) — the pinned schema
+  // excludes direction (forbidden on previews) and subjectRef (server-
+  // owned). The weekly preview's trigger is the whole calendar, not a
+  // single release, so the server stamp is null (generic digest form).
+  const wireFlags = getWireFlags();
+  const wireInstant = new Date();
+  const marketDate = resolveWireMarketDate(wireInstant);
+  const wireInstruction = wireFlags.writesEnabled
+    ? buildAgentFactsInstruction('neta', { pinEventType: 'econ_preview' })
+    : '';
+  let continuityBlock = '';
+  if (wireFlags.continuityEnabled) {
+    try {
+      continuityBlock = (await buildContinuityContext(db, { reporter: 'neta', marketDate })) || '';
+    } catch (err) {
+      logError('Continuity block failed (non-blocking)', { error: err.message });
+    }
+  }
+
   const anthropic = getAnthropicClient();
   logInfo('Calling Claude Sonnet for weekly preview...');
+  const wireT0 = Date.now();
 
   // Weekly preview uses Sonnet for deeper analysis
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 1000,
+    max_tokens: wireFlags.writesEnabled ? 1400 : 1000,
     temperature: 0.8,
     // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
     // preserve the prior Sonnet-4 (no-thinking) latency profile.
     thinking: { type: 'disabled' },
     output_config: { effort: 'low' },
-    system: NETA_PREVIEW_SYSTEM_PROMPT,
-    tools: [PUBLISH_ECON_PREVIEW_TOOL],
+    system: NETA_PREVIEW_SYSTEM_PROMPT + wireInstruction + continuityBlock,
+    tools: [wireFlags.writesEnabled
+      ? extendToolWithAgentFacts(PUBLISH_ECON_PREVIEW_TOOL, 'neta', { pinEventType: 'econ_preview' })
+      : PUBLISH_ECON_PREVIEW_TOOL],
     tool_choice: { type: 'tool', name: 'publish_econ_preview' },
     messages: [{ role: 'user', content: userMessage }],
   });
@@ -501,8 +584,31 @@ async function handlePreview(req, res, db) {
   storyDoc.visualType = previewVisualType;
   storyDoc.visualConfig = previewVisualConfig;
 
-  const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
+  // agentFacts stays in a PRIVATE local — never on storyDoc (§4.5 step 1).
+  const { storyRef: docRef, wire: wireResult } = await publishStoryWithWire(db, {
+    storyDoc,
+    rawAgentFacts: wireFlags.writesEnabled ? toolBlock.input.agentFacts : null,
+    stopReason: response.stop_reason,
+    reporter: 'neta',
+    seam: 'neta_econ_preview',
+    primaryTicker: null,
+    triggerRef: 'week',
+    marketDate,
+    now: wireInstant,
+  });
+  // Close the measured window immediately: nothing between the
+  // publish and this line may be metrics I/O.
+  const genPublishMs = Date.now() - wireT0;
   logInfo(`Published weekly preview ${docRef.id}`, { headline: storyDoc.headline });
+
+  if (wireFlags.metricsEnabled) {
+    // generate_publish is captured BEFORE any metrics I/O so the
+    // instrument never appears inside the window it measures (§6.1 p95).
+    await recordWireSample(db, { seam: 'neta_econ_preview', metric: 'generate_publish', ms: genPublishMs, marketDate });
+    if (Number.isFinite(wireResult?.wireMs)) {
+      await recordWireSample(db, { seam: 'neta_econ_preview', metric: 'wire_path', ms: wireResult.wireMs, marketDate });
+    }
+  }
 
   // Art Director override for edge-case story types
   if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {

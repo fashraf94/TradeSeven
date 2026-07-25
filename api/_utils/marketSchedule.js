@@ -7,7 +7,13 @@
  * All times are in ET (Eastern Time) since NYSE/NASDAQ operate on ET.
  * IMPORTANT: Vercel servers run in various regions — always convert to ET explicitly.
  *
- * TODO: Update NYSE holidays and early close days for 2027 by December 2026
+ * TODO: Update NYSE holidays and early close days for 2028 by December 2027
+ *
+ * NOTE (Wire arc, Jul 2026 — F2-9): 2027 was added HERE ONLY. Eight sibling
+ * copies of the 2026 holiday list exist across the repo and are now further
+ * divergent; consolidation is on the platform-hygiene backlog (Wire spec §14).
+ * This file is the SINGLE holiday source for the Wire session walker
+ * (wireCalendar.js) — new holiday years land here first.
  */
 
 // ============================================
@@ -42,6 +48,34 @@ const NYSE_EARLY_CLOSE_2026 = [
   '2026-12-24', // Christmas Eve
 ];
 
+// 2027 NYSE Holidays (market fully closed) — published NYSE calendar
+const NYSE_HOLIDAYS_2027 = [
+  '2027-01-01', // New Year's Day
+  '2027-01-18', // MLK Day
+  '2027-02-15', // Presidents' Day
+  '2027-03-26', // Good Friday
+  '2027-05-31', // Memorial Day
+  '2027-06-18', // Juneteenth (observed — Jun 19 is a Saturday)
+  '2027-07-05', // Independence Day (observed — Jul 4 is a Sunday)
+  '2027-09-06', // Labor Day
+  '2027-11-25', // Thanksgiving
+  '2027-12-24', // Christmas (observed — Dec 25 is a Saturday)
+];
+
+// 2027 early close days (1:00 PM ET close). Jul 3 2027 is a Saturday and
+// Dec 24 2027 is the observed Christmas holiday, so the day after
+// Thanksgiving is 2027's only early close.
+const NYSE_EARLY_CLOSE_2027 = [
+  '2027-11-26', // Day after Thanksgiving
+];
+
+// Combined lookups + the maintained-horizon record (Wire walker coverage
+// guard reads MAINTAINED_HOLIDAY_YEARS to refuse walking into an
+// unmaintained year instead of silently treating its holidays as sessions).
+const NYSE_HOLIDAYS_ALL = [...NYSE_HOLIDAYS_2026, ...NYSE_HOLIDAYS_2027];
+const NYSE_EARLY_CLOSE_ALL = [...NYSE_EARLY_CLOSE_2026, ...NYSE_EARLY_CLOSE_2027];
+export const MAINTAINED_HOLIDAY_YEARS = [2026, 2027];
+
 // Pre-market warm-up window (minutes before market open)
 const PRE_MARKET_WINDOW_MINUTES = 10;
 
@@ -75,7 +109,7 @@ export function formatDateString(date) {
 // ============================================
 
 export function isMarketHoliday(dateStr) {
-  return NYSE_HOLIDAYS_2026.includes(dateStr);
+  return NYSE_HOLIDAYS_ALL.includes(dateStr);
 }
 
 /**
@@ -93,7 +127,7 @@ export function isTradingDay(date = null) {
 
 export function isEarlyCloseDay(dateStr) {
   const ds = dateStr || formatDateString(getETDate());
-  return NYSE_EARLY_CLOSE_2026.includes(ds);
+  return NYSE_EARLY_CLOSE_ALL.includes(ds);
 }
 
 export function isTodayHoliday() {

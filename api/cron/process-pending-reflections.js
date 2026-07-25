@@ -20,6 +20,8 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { generateReflection } from '../agent/reflect.js';
+import { getWireFlags } from '../_utils/wireFlags.js';
+import { runWireReplaySweep } from '../_utils/wireReplaySweep.js';
 
 export const config = { maxDuration: 60 };
 
@@ -49,12 +51,15 @@ export default async function handler(req, res) {
       .limit(BATCH_LIMIT)
       .get();
 
+    // NOTE: no early return on an empty queue — step 4 (the Wire sweep) MUST
+    // still run. An empty reflection queue is the steady state (this cron
+    // clears the flag in the same tick it processes it), so returning here
+    // would make the sweep dead code on almost every tick.
     if (snapshot.empty) {
       console.log(`${LOG_PREFIX} No pending reflections`);
-      return res.status(200).json({ ...summary, message: 'No pending reflections' });
+    } else {
+      console.log(`${LOG_PREFIX} Found ${snapshot.size} pending reflection(s)`);
     }
-
-    console.log(`${LOG_PREFIX} Found ${snapshot.size} pending reflection(s)`);
 
     // ---- 3. Process each battle (synchronous-await loop) ----
     for (const doc of snapshot.docs) {
@@ -94,9 +99,36 @@ export default async function handler(req, res) {
       }
     }
 
+    // ---- 4. FantasyTimes Wire reconciliation sweep (rider) ----
+    // Hosted here per Wire Spec V1.5 §4.7/P6: this is the only cron whose
+    // window covers every hour a story can publish, incl. weekends — worst
+    // gap 12h15m. Isolating try/catch: a Wire failure can NEVER break this
+    // cron's primary job (the runRepairSweep/agent-evaluate precedent).
+    // Gated on WIRE_WRITES_ENABLED (the sweep is part of the writes
+    // machinery; pre-flip its composite index may not exist yet).
+    let wireSweep = null;
+    try {
+      if (getWireFlags().writesEnabled) {
+        const remaining = TIME_BUDGET_MS - (Date.now() - startTime);
+        if (remaining > 5_000) {
+          wireSweep = await runWireReplaySweep(db, { timeBudgetMs: remaining });
+          console.log(`${LOG_PREFIX} Wire sweep:`, wireSweep);
+        } else {
+          console.log(`${LOG_PREFIX} Wire sweep skipped (budget exhausted); next tick covers it`);
+        }
+      }
+    } catch (wireErr) {
+      console.error(`${LOG_PREFIX} Wire sweep failed (isolated):`, wireErr?.message || wireErr);
+    }
+
     const duration = Date.now() - startTime;
     console.log(`${LOG_PREFIX} Complete in ${duration}ms:`, summary);
-    return res.status(200).json({ ...summary, duration });
+    return res.status(200).json({
+      ...summary,
+      ...(snapshot.empty ? { message: 'No pending reflections' } : {}),
+      wireSweep,
+      duration,
+    });
   } catch (err) {
     console.error(`${LOG_PREFIX} Fatal error:`, err);
     return res.status(500).json({ error: err.message });

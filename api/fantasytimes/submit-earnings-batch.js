@@ -12,6 +12,11 @@ import {
   PUBLISH_EARNINGS_PREVIEW_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
+import { getWireFlags } from '../_utils/wireFlags.js';
+import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
+import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
+import { buildContinuityContext } from '../_utils/wireContinuity.js';
+import { recordWireSample } from '../_utils/wireMetrics.js';
 
 export const config = { maxDuration: 60 };
 
@@ -169,6 +174,26 @@ export default async function handler(req, res) {
       });
     }
 
+    // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ────────────────────────
+    // marketDate is stamped HERE, at key-creation/submit time, and carried
+    // to poll-batch on the fantasyTimesBatches doc — the poll invocation
+    // has no submit-time context of its own (the async-boundary carry).
+    const wireFlags = getWireFlags();
+    const wireInstant = new Date();
+    const wireMarketDate = resolveWireMarketDate(wireInstant);
+    const wireInstruction = wireFlags.writesEnabled
+      ? buildAgentFactsInstruction('doug', { pinEventType: 'earnings_preview' })
+      : '';
+    let continuityBlock = '';
+    if (wireFlags.continuityEnabled) {
+      try {
+        continuityBlock = (await buildContinuityContext(db, { reporter: 'doug', marketDate: wireMarketDate })) || '';
+      } catch (err) {
+        logError('Continuity block failed (non-blocking)', { error: err.message });
+      }
+    }
+    const wireT0 = Date.now();
+
     // Build batch requests
     const requests = [];
     for (const earning of qualifyingEarnings) {
@@ -211,14 +236,16 @@ export default async function handler(req, res) {
         custom_id: `earnings_preview_${earning.symbol}_${earning.reportDate}`,
         params: {
           model: 'claude-sonnet-4-6',
-          max_tokens: 800,
+          max_tokens: wireFlags.writesEnabled ? 1200 : 800,
           // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
           // preserve the prior Sonnet-4 (no-thinking) latency profile.
           thinking: { type: 'disabled' },
           output_config: { effort: 'low' },
-          system: DOUG_PREVIEW_SYSTEM_PROMPT,
+          system: DOUG_PREVIEW_SYSTEM_PROMPT + wireInstruction + continuityBlock,
           messages: [{ role: 'user', content: contextMessage }],
-          tools: [PUBLISH_EARNINGS_PREVIEW_TOOL],
+          tools: [wireFlags.writesEnabled
+            ? extendToolWithAgentFacts(PUBLISH_EARNINGS_PREVIEW_TOOL, 'doug', { pinEventType: 'earnings_preview' })
+            : PUBLISH_EARNINGS_PREVIEW_TOOL],
           tool_choice: { type: 'tool', name: 'publish_earnings_preview' },
         },
       });
@@ -242,9 +269,24 @@ export default async function handler(req, res) {
       submittedAt: new Date(),
       completedAt: null,
       errors: null,
+      // Wire: the immutable market-date bucket for every story this batch
+      // produces — stamped at submit (key creation), read by poll-batch.
+      // GATED: with writes off this field must not appear, or the merged-dark
+      // build changes persistence on a production collection (M8). poll-batch
+      // falls back to resolveWireMarketDate(submittedAt) when it is absent,
+      // which covers a flag flip between submit and poll.
+      ...(wireFlags.writesEnabled ? { wireMarketDate } : {}),
     });
 
     logInfo('Batch info saved to Firestore');
+
+    if (wireFlags.metricsEnabled) {
+      // 'batch_submit', NOT 'generate_publish': this window contains only the
+      // Batch API enqueue — no generation, no story write. The stories are
+      // generated and published later in poll-batch.js, which emits the
+      // generate_publish sample for this seam.
+      await recordWireSample(db, { seam: 'doug_earnings_preview', metric: 'batch_submit', ms: Date.now() - wireT0, marketDate: wireMarketDate });
+    }
 
     return res.status(200).json({
       success: true,
