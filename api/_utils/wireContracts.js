@@ -11,8 +11,8 @@
 // Extensible by spec version only: adding an eventType, basis, or qualifier
 // is a Wire spec amendment, not a drive-by edit.
 
-export const WIRE_SCHEMA_VERSION = 'wire-1.5';
-export const WIRE_VALIDATOR_VERSION = '1.5.0';
+export const WIRE_SCHEMA_VERSION = 'wire-1.6';
+export const WIRE_VALIDATOR_VERSION = '1.6.0';
 
 // Firestore collection names (server-only; deny-all in firestore.rules).
 export const WIRE_COLLECTION = 'fantasyTimesWire';
@@ -56,17 +56,22 @@ export const WIRE_CODES = Object.freeze({
   SALVAGE_QUALIFIER: 'SALVAGE_QUALIFIER',
   SALVAGE_FIGURE: 'SALVAGE_FIGURE',
   SALVAGE_DIRECTION: 'SALVAGE_DIRECTION',
+  SALVAGE_SUBJECTREF: 'SALVAGE_SUBJECTREF',
+  S1_SUBJECT_REMAPPED: 'S1_SUBJECT_REMAPPED',
   R4_TICKER_EMPTY: 'R4_TICKER_EMPTY',
   F1_OFFUNIVERSE: 'F1_OFFUNIVERSE',
   F1_PRIMARY_DROPPED: 'F1_PRIMARY_DROPPED',
   F2_QUARANTINE: 'F2_QUARANTINE',
 });
 
-// wireConflict class codes (story-doc pipeline state; F2-1/§4.7).
+// wireConflict class codes — the genuinely ANOMALOUS terminal states only
+// (story-doc pipeline state). V1.6 A1/D9: the same-key mismatch classes
+// (hash_mismatch / story_mismatch) RETIRED — a same-key surplus attempt is
+// unclassifiable (retries regenerate; the hash cannot carry classification)
+// and is handled as a SUPERSEDED attempt (`wireSuperseded: true`, its own
+// benign field), never as a conflict.
 export const WIRE_CONFLICTS = Object.freeze({
   ENVELOPE_MISSING: 'envelope_missing',
-  HASH_MISMATCH: 'hash_mismatch',
-  STORY_MISMATCH: 'story_mismatch',
   REPLAY_EXHAUSTED: 'replay_exhausted',
 });
 
@@ -79,6 +84,7 @@ export const WIRE_CONFLICTS = Object.freeze({
 // unauthenticated, CDN-cached response.
 export const WIRE_STORY_STATE_FIELDS = Object.freeze([
   'wireValidation', 'wirePending', 'wireConflict', 'wireReplayAttempts',
+  'wireSuperseded',
 ]);
 
 /** Return a copy of a story document without any Wire pipeline state. */
@@ -104,6 +110,35 @@ export const SHARED_FIGURE_BASES = Object.freeze([
   'gap_vs_prior_close', 'price_vs_prior_close', 'volume_vs_avg',
 ]);
 
+// ── subjectRef vocabularies (V1.6 A2) ────────────────────────────────────
+// index_move: MODEL-EMITTED, required — Kai's idempotency key is a time-slot
+// trigger carrying no symbol; the model selects which index to headline.
+export const INDEX_SUBJECTS = Object.freeze(['SPX', 'NDX', 'DJI', 'RUT', 'VIX']);
+
+// Internal-consistency map (A2/M2): when the model's primaryTicker is one of
+// these ETFs and disagrees with its subjectRef, the subjectRef is REMAPPED to
+// the mapped index (S1_SUBJECT_REMAPPED). Catches internal inconsistency,
+// not truth (m7 — enum-valid-but-wrong with no mappable cross-check is
+// structurally uncatchable here; index_move joins the Phase 2 editorial
+// stratified sampling explicitly for subject correctness).
+export const ETF_TO_INDEX = Object.freeze({
+  SPY: 'SPX', QQQ: 'NDX', DIA: 'DJI', IWM: 'RUT',
+});
+
+// Neta's seams: SERVER-STAMPED pre-call from the trigger's event name. The
+// closed slug→subject set (A2); unknown aliases degrade to null exactly as
+// the idempotency-key canonicalization degrades.
+export const ECON_SUBJECT_REFS = Object.freeze({
+  cpi: 'CPI', ppi: 'PPI', nfp: 'NFP', fomc: 'FOMC', pce: 'PCE', gdp: 'GDP',
+  retail_sales: 'RETAIL_SALES', claims: 'JOBLESS_CLAIMS',
+  ism_mfg: 'ISM_MFG', ism_svc: 'ISM_SVC',
+});
+
+/** Server subjectRef for a canonicalized econ slug; null on unknown alias. */
+export function econSubjectRefForSlug(slug) {
+  return ECON_SUBJECT_REFS[slug] || null;
+}
+
 export const FIGURES_CAP = 4;
 export const QUALIFIERS_CAP = 3;
 export const TICKER_MAX_LENGTH = 12;
@@ -122,49 +157,61 @@ export const EVENT_CONTRACTS = Object.freeze({
   technical_break: Object.freeze({
     family: 'technical', tickers: Object.freeze([1, 1]), direction: 'optional',
     magnitudeBases: Object.freeze(['price_vs_level']),
+    directionBases: Object.freeze(['price_vs_level', 'price_vs_prior_close']),
     qualifiers: Object.freeze([]), macroEligible: false, label: 'technical break',
   }),
   volume_surge: Object.freeze({
     family: 'technical', tickers: Object.freeze([1, 1]), direction: 'optional',
     magnitudeBases: Object.freeze(['volume_vs_avg']),
+    directionBases: Object.freeze(['volume_vs_avg']),
     qualifiers: Object.freeze([]), macroEligible: false, label: 'volume surge',
   }),
   volatility_event: Object.freeze({
     family: 'technical', tickers: Object.freeze([0, 1]), direction: 'optional',
     magnitudeBases: Object.freeze(['range_vs_atr']),
+    directionBases: Object.freeze(['range_vs_atr']),
     qualifiers: Object.freeze([]), macroEligible: false, label: 'volatility',
   }),
   index_move: Object.freeze({
     family: 'macro', tickers: Object.freeze([0, 0]), direction: 'optional',
     magnitudeBases: Object.freeze(['index_vs_prior_close']),
+    directionBases: Object.freeze(['index_vs_prior_close']),
+    subjectRef: 'model_required',
     qualifiers: Object.freeze([]), macroEligible: true, label: 'move',
     zeroTickerSubject: 'Index',
   }),
   market_mover: Object.freeze({
     family: 'technical', tickers: Object.freeze([1, 1]), direction: 'optional',
     magnitudeBases: Object.freeze(['price_vs_prior_close']),
+    directionBases: Object.freeze(['price_vs_prior_close']),
     qualifiers: Object.freeze([]), macroEligible: false, label: 'move',
   }),
   gap_event: Object.freeze({
     family: 'technical', tickers: Object.freeze([1, 1]), direction: 'optional',
     magnitudeBases: Object.freeze(['gap_vs_prior_close']),
+    directionBases: Object.freeze(['gap_vs_prior_close', 'price_vs_prior_close']),
     qualifiers: Object.freeze([]), macroEligible: false, label: 'gap',
   }),
   econ_print: Object.freeze({
     family: 'econ', tickers: Object.freeze([0, 0]), direction: 'optional',
     magnitudeBases: Object.freeze(['print_vs_expected']),
+    directionBases: Object.freeze(['print_vs_expected']),
+    subjectRef: 'server',
     qualifiers: Object.freeze(['prior_revised_up', 'prior_revised_down']),
     macroEligible: true, label: 'print', zeroTickerSubject: 'Econ',
   }),
   econ_preview: Object.freeze({
     family: 'econ', tickers: Object.freeze([0, 0]), direction: 'forbidden',
     magnitudeBases: Object.freeze(['consensus_estimate', 'prior_print']),
+    directionBases: Object.freeze([]),
+    subjectRef: 'server',
     qualifiers: Object.freeze([]), macroEligible: true, label: 'preview',
     zeroTickerSubject: 'Econ',
   }),
   earnings_recap: Object.freeze({
     family: 'earnings', tickers: Object.freeze([1, 10]), direction: 'optional',
     magnitudeBases: Object.freeze(['eps_vs_consensus', 'revenue_vs_consensus', 'price_vs_prior_close']),
+    directionBases: Object.freeze(['price_vs_prior_close']),
     qualifiers: Object.freeze([
       'guidance_raised', 'guidance_lowered', 'guidance_reaffirmed',
       'guidance_withdrawn', 'dividend_raised', 'buyback_announced',
@@ -174,17 +221,20 @@ export const EVENT_CONTRACTS = Object.freeze({
   earnings_preview: Object.freeze({
     family: 'earnings', tickers: Object.freeze([1, 10]), direction: 'forbidden',
     magnitudeBases: Object.freeze(['consensus_estimate', 'prior_print']),
+    directionBases: Object.freeze([]),
     qualifiers: Object.freeze([]), macroEligible: false, label: 'earnings preview',
   }),
   sector_rotation: Object.freeze({
     family: 'sector', tickers: Object.freeze([0, 5]), direction: 'optional',
     magnitudeBases: Object.freeze(['sector_vs_spy']),
+    directionBases: Object.freeze(['sector_vs_spy']),
     qualifiers: Object.freeze([]), macroEligible: false, label: 'rotation',
     zeroTickerSubject: 'Sector',
   }),
   leadership_shift: Object.freeze({
     family: 'sector', tickers: Object.freeze([1, 5]), direction: 'optional',
     magnitudeBases: Object.freeze(['rs_vs_peers']),
+    directionBases: Object.freeze(['rs_vs_peers']),
     qualifiers: Object.freeze([]), macroEligible: false, label: 'leadership shift',
   }),
 });

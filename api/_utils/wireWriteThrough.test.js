@@ -140,6 +140,7 @@ describe('primaryTicker validation (D8/F1 on the digest subject)', () => {
       rawAgentFacts: {
         eventType: 'index_move', tickers: [], direction: 'down',
         magnitude: { value: -1.4, unit: 'pct', basis: 'index_vs_prior_close' },
+        subjectRef: 'SPX', // required on index_move (V1.6 A2)
       },
       stopReason: 'tool_use',
       reporter: 'kai',
@@ -154,8 +155,8 @@ describe('primaryTicker validation (D8/F1 on the digest subject)', () => {
     const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
     const facts = day.entries[0].agentFacts;
     expect(facts.primaryTicker).toBeNull();
-    // Digest falls back to the contract's own subject noun — no model text.
-    expect(facts.digest).toBe('Index move: -1.4% vs prior close.');
+    // Digest heads with the CLOSED-ENUM subject — no model free text.
+    expect(facts.digest).toBe('SPX move: -1.4% vs prior close.');
     expect(facts.digest).not.toContain('Fed');
     expect(facts.chainId).toBe(storyRef.id);
     expect(JSON.stringify(day)).not.toContain('hawkish');
@@ -167,6 +168,7 @@ describe('primaryTicker validation (D8/F1 on the digest subject)', () => {
       rawAgentFacts: {
         eventType: 'index_move', tickers: [], direction: 'up',
         magnitude: { value: 0.8, unit: 'pct', basis: 'index_vs_prior_close' },
+        subjectRef: 'SPX',
       },
       stopReason: 'tool_use',
       reporter: 'kai', seam: 'kai_pulse', primaryTicker: 'SPY',
@@ -174,7 +176,7 @@ describe('primaryTicker validation (D8/F1 on the digest subject)', () => {
     });
     const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
     expect(day.entries[0].agentFacts.primaryTicker).toBeNull();
-    expect(day.entries[0].agentFacts.digest).toBe('Index move: +0.8% vs prior close.');
+    expect(day.entries[0].agentFacts.digest).toBe('SPX move: +0.8% vs prior close.');
   });
 
   it('an in-universe primaryTicker survives and drives the digest subject', async () => {
@@ -286,36 +288,68 @@ describe('per-outcome transaction artifacts', () => {
   });
 });
 
-describe('inline receipt no-op (F2-10) + stats non-reincrement (B5)', () => {
-  it('a DST double-fire arriving INLINE with the same key+payload no-ops', async () => {
+describe('D9 superseded-attempt semantics (V1.6 A1) — inline path', () => {
+  it('a DST double-fire arriving INLINE → superseded attempt: list append, own stamp, counted once', async () => {
     const first = await publish(db, { triggerRef: 'dupfire' });
     expect(first.wire.txStatus).toBe('committed');
-    const before = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
 
-    const second = await publish(db, { triggerRef: 'dupfire' });
-    expect(second.wire.txStatus).toBe('receipt_hit');
-    const after = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
-    expect(after.entries).toHaveLength(1);
-    expect(after.validationStats).toEqual(before.validationStats); // no re-increment
-    // the second story is cleaned up as success (receipt hit IS success)
-    expect((await second.storyRef.get()).data().wirePending).toBe(false);
-  });
-
-  it('same key with a DIFFERENT payload is STILL an inline no-op — a changed payload on retry is a no-op, not a repair (B5)', async () => {
-    await publish(db, { triggerRef: 'changedpayload' });
+    // Regeneration is non-deterministic; same payload or changed payload is
+    // the SAME unclassifiable event — assert the changed-payload variant.
     const facts = goodFacts();
     facts.magnitude.value = 9.9;
-    const second = await publish(db, { rawAgentFacts: facts, triggerRef: 'changedpayload' });
-    expect(second.wire.txStatus).toBe('receipt_hit'); // first receipt wins
+    const second = await publish(db, { rawAgentFacts: facts, triggerRef: 'dupfire' });
+    expect(second.wire.txStatus).toBe('superseded');
+
     const story = (await second.storyRef.get()).data();
-    expect(story.wireConflict).toBeUndefined(); // the inline path never marks conflicts
+    expect(story.wireSuperseded).toBe(true);        // own field (m4)
+    expect(story.wireConflict).toBeUndefined();     // never a conflict
     expect(story.wirePending).toBe(false);
+    expect((await db.collection('fantasyTimesWireEnvelopes').doc(second.storyRef.id).get()).exists).toBe(false);
+
     const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
-    expect(day.validationStats.idempotencyConflicts).toBe(0); // conflicts are sweep-side (§4.7)
+    expect(day.entries).toHaveLength(1);            // no second entry (B5)
+    expect(day.validationStats.superseded).toBe(1); // counted exactly once
+    const receipt = day.receipts['doug_earnings_recap:dupfire:2026-07-24'];
+    expect(receipt.storyId).toBe(first.storyRef.id); // no receipt overwrite (B5)
+    expect(receipt.supersededAttempts).toEqual([second.storyRef.id]);
+    // core receipt fields untouched by the append
+    expect(receipt.outcome).toBe('passed');
+  });
+
+  it('derived-count exactness: N distinct surplus attempts → N appends, N counts, one entry', async () => {
+    const first = await publish(db, { triggerRef: 'multi' });
+    const a = await publish(db, { triggerRef: 'multi' });
+    const b = await publish(db, { triggerRef: 'multi' });
+    expect(a.wire.txStatus).toBe('superseded');
+    expect(b.wire.txStatus).toBe('superseded');
+
+    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
     expect(day.entries).toHaveLength(1);
-    // the day doc still records the FIRST payload's receipt untouched
-    const receipt = day.receipts['doug_earnings_recap:changedpayload:2026-07-24'];
-    expect(receipt.storyId).not.toBe(second.storyRef.id);
+    expect(day.validationStats.superseded).toBe(2);
+    expect(day.receipts['doug_earnings_recap:multi:2026-07-24'].supersededAttempts)
+      .toEqual([a.storyRef.id, b.storyRef.id]);
+    expect(day.receipts['doug_earnings_recap:multi:2026-07-24'].storyId).toBe(first.storyRef.id);
+  });
+
+  it('post-commit race (same storyId) stays a completed no-op — nothing counted', async () => {
+    const first = await publish(db, { triggerRef: 'race-inline' });
+    const before = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    // Re-run the transaction with the SAME story's envelope (cleanup died).
+    const envelope = {
+      storyId: first.storyRef.id,
+      seam: 'doug_earnings_recap', reporter: 'doug', storyType: 'earnings_recap',
+      idempotencyKey: 'doug_earnings_recap:race-inline:2026-07-24',
+      payloadHash: 'regenerated-would-differ', // hash carries NO classification
+      marketDate: MARKET_DATE, outcome: 'passed',
+      modelAgentFacts: goodFacts(),
+      validatorResult: { outcome: 'passed', codes: [], reasons: [], offUniverseTickers: [], preStripTickerCount: 1, quarantined: false, validatorVersion: '1.6.0' },
+      primaryTicker: 'NVDA', serverSubjectRef: null, headline: 'h', publishedAt: NOW, createdAt: NOW,
+    };
+    const tx = await runWireTransactionFromEnvelope(db, envelope, { now: NOW });
+    expect(tx.status).toBe('completed');
+    const after = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    expect(after.validationStats).toEqual(before.validationStats);
+    expect(after.entries).toHaveLength(1);
   });
 });
 
@@ -396,6 +430,85 @@ describe('chains (B6/D2)', () => {
     const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
     expect(day.entries[0].agentFacts.chainId).toBe('k1');
     expect(day.entries[1].agentFacts.chainId).toBe('k2'); // self-rooted, no merge
+  });
+});
+
+describe('subjectRef end-to-end (V1.6 A2)', () => {
+  it('Neta server stamp: known slug reaches persisted facts + digest head', async () => {
+    await publishStoryWithWire(db, {
+      storyDoc: { ...baseStoryDoc(), reporter: 'neta', type: 'econ_recap', primaryTicker: null },
+      rawAgentFacts: {
+        eventType: 'econ_print', tickers: [], direction: 'up',
+        magnitude: { value: 0.2, unit: 'pp', basis: 'print_vs_expected' },
+      },
+      stopReason: 'tool_use',
+      reporter: 'neta', seam: 'neta_econ_recap', primaryTicker: null,
+      triggerRef: 'cpi', marketDate: MARKET_DATE,
+      serverSubjectRef: 'CPI',
+      now: NOW,
+    });
+    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    const facts = day.entries[0].agentFacts;
+    expect(facts.subjectRef).toBe('CPI');
+    expect(facts.digest).toBe('CPI print: +0.2pp vs expected.');
+  });
+
+  it('Neta unknown alias: null stamp renders the generic form', async () => {
+    await publishStoryWithWire(db, {
+      storyDoc: { ...baseStoryDoc(), reporter: 'neta', type: 'econ_recap', primaryTicker: null },
+      rawAgentFacts: {
+        eventType: 'econ_print', tickers: [], direction: 'down',
+        magnitude: { value: -0.1, unit: 'pp', basis: 'print_vs_expected' },
+      },
+      stopReason: 'tool_use',
+      reporter: 'neta', seam: 'neta_econ_recap', primaryTicker: null,
+      triggerRef: 'philly_fed_manufacturing_index', marketDate: MARKET_DATE,
+      serverSubjectRef: null,
+      now: NOW,
+    });
+    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    expect(day.entries[0].agentFacts.subjectRef).toBeNull();
+    expect(day.entries[0].agentFacts.digest).toBe('Econ print: -0.1pp vs expected.');
+  });
+
+  it('index_move: the validated model subjectRef heads the digest; server field never overrides it', async () => {
+    await publishStoryWithWire(db, {
+      storyDoc: { ...baseStoryDoc(), reporter: 'kai', type: 'market_pulse', primaryTicker: null },
+      rawAgentFacts: {
+        eventType: 'index_move', tickers: [], direction: 'down',
+        magnitude: { value: -1.2, unit: 'pct', basis: 'index_vs_prior_close' },
+        subjectRef: 'NDX',
+      },
+      stopReason: 'tool_use',
+      reporter: 'kai', seam: 'kai_pulse', primaryTicker: null,
+      triggerRef: 'midday-ndx', marketDate: MARKET_DATE,
+      now: NOW,
+    });
+    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    const facts = day.entries[0].agentFacts;
+    expect(facts.subjectRef).toBe('NDX');
+    expect(facts.digest).toBe('NDX move: -1.2% vs prior close.');
+  });
+
+  it('index_move remap flows through: primaryTicker SPY + subjectRef NDX persists SPX', async () => {
+    await publishStoryWithWire(db, {
+      storyDoc: { ...baseStoryDoc(), reporter: 'kai', type: 'market_pulse', primaryTicker: 'SPY' },
+      rawAgentFacts: {
+        eventType: 'index_move', tickers: [], direction: 'up',
+        magnitude: { value: 0.8, unit: 'pct', basis: 'index_vs_prior_close' },
+        subjectRef: 'NDX',
+      },
+      stopReason: 'tool_use',
+      reporter: 'kai', seam: 'kai_pulse', primaryTicker: 'SPY',
+      triggerRef: 'midday-remap', marketDate: MARKET_DATE,
+      now: NOW,
+    });
+    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    const facts = day.entries[0].agentFacts;
+    expect(facts.subjectRef).toBe('SPX');
+    expect(facts.digest).toBe('SPX move: +0.8% vs prior close.');
+    // SPY itself is off-universe → primary dropped; the subject survives.
+    expect(facts.primaryTicker).toBeNull();
   });
 });
 

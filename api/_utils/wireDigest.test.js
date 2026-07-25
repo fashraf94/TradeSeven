@@ -87,6 +87,43 @@ describe('wireDigest — per-eventType fixtures', () => {
   }
 });
 
+describe('wireDigest — subjectRef leads the digest (V1.6 A2)', () => {
+  it('server-stamped econ slug heads an econ_print', () => {
+    expect(renderWireDigest({
+      eventType: 'econ_print', subjectRef: 'CPI', tickers: [],
+      direction: 'up', magnitude: { value: 0.2, unit: 'pp', basis: 'print_vs_expected' },
+    })).toBe('CPI print: +0.2pp vs expected.');
+  });
+
+  it('server-stamped econ slug heads an econ_preview', () => {
+    expect(renderWireDigest({
+      eventType: 'econ_preview', subjectRef: 'NFP', tickers: [],
+      direction: null, magnitude: { value: 245, unit: 'count', basis: 'consensus_estimate' },
+    })).toBe('NFP preview: consensus 245.');
+  });
+
+  it('validated index enum heads an index_move', () => {
+    expect(renderWireDigest({
+      eventType: 'index_move', subjectRef: 'NDX', tickers: [],
+      direction: 'down', magnitude: { value: -1.2, unit: 'pct', basis: 'index_vs_prior_close' },
+    })).toBe('NDX move: -1.2% vs prior close.');
+  });
+
+  it('subjectRef outranks primaryTicker — the remapped SPY case', () => {
+    expect(renderWireDigest({
+      eventType: 'index_move', subjectRef: 'SPX', primaryTicker: 'SPY', tickers: ['SPY'],
+      direction: 'down', magnitude: { value: -1.4, unit: 'pct', basis: 'index_vs_prior_close' },
+    })).toBe('SPX move: -1.4% vs prior close.');
+  });
+
+  it('null subjectRef falls back to the pre-A2 generic form', () => {
+    expect(renderWireDigest({
+      eventType: 'econ_print', subjectRef: null, tickers: [],
+      direction: 'up', magnitude: { value: 0.2, unit: 'pp', basis: 'print_vs_expected' },
+    })).toBe('Econ print: +0.2pp vs expected.');
+  });
+});
+
 describe('wireDigest — SALVAGE and degenerate shapes', () => {
   it('a SALVAGE survivor set renders a valid shorter digest', () => {
     const digest = renderWireDigest({

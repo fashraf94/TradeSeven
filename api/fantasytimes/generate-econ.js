@@ -21,6 +21,7 @@ import { getWireFlags } from '../_utils/wireFlags.js';
 import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
 import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
 import { canonicalizeEconEvent } from '../_utils/wireIdentity.js';
+import { econSubjectRefForSlug } from '../_utils/wireContracts.js';
 import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
 import { buildContinuityContext } from '../_utils/wireContinuity.js';
 import { recordWireSample } from '../_utils/wireMetrics.js';
@@ -277,11 +278,17 @@ async function handleRecap(req, res, db) {
     userMessage += `\n\nFED/MACRO EVENT INSIGHTS (from press conference analysis):\n${recapClaimsContext}`;
   }
 
-  // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ──────────────────────────
+  // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8; V1.6 A2/A4) ──────────────
+  // Single-eventType seam: pinned to econ_print (A4). The subjectRef is
+  // SERVER-STAMPED from the trigger's event name pre-call (A2) — the pinned
+  // schema never offers the field to the model.
   const wireFlags = getWireFlags();
   const wireInstant = new Date();
   const marketDate = resolveWireMarketDate(wireInstant);
-  const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('neta') : '';
+  const wireEconSlug = canonicalizeEconEvent(event.event);
+  const wireInstruction = wireFlags.writesEnabled
+    ? buildAgentFactsInstruction('neta', { pinEventType: 'econ_print' })
+    : '';
   let continuityBlock = '';
   if (wireFlags.continuityEnabled) {
     try {
@@ -300,7 +307,9 @@ async function handleRecap(req, res, db) {
     max_tokens: wireFlags.writesEnabled ? 1000 : 600,
     temperature: 0.7,
     system: NETA_RECAP_SYSTEM_PROMPT + wireInstruction + continuityBlock,
-    tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_ECON_RECAP_TOOL, 'neta') : PUBLISH_ECON_RECAP_TOOL],
+    tools: [wireFlags.writesEnabled
+      ? extendToolWithAgentFacts(PUBLISH_ECON_RECAP_TOOL, 'neta', { pinEventType: 'econ_print' })
+      : PUBLISH_ECON_RECAP_TOOL],
     tool_choice: { type: 'tool', name: 'publish_econ_recap' },
     messages: [{ role: 'user', content: userMessage }],
   });
@@ -358,7 +367,9 @@ async function handleRecap(req, res, db) {
   // agentFacts stays in a PRIVATE local — never on storyDoc (§4.5 step 1).
   // triggerRef canonicalizes the Sonar event name so retries of the same
   // release converge on one idempotency key (§4.5; degraded slug for
-  // unknown names — the accepted Neta alias limitation).
+  // unknown names — the accepted Neta alias limitation). serverSubjectRef
+  // is the A2 server stamp: a known slug maps to its closed subject
+  // (CPI, NFP, …); unknown aliases stamp null and render the generic form.
   const { storyRef: docRef, wire: wireResult } = await publishStoryWithWire(db, {
     storyDoc,
     rawAgentFacts: wireFlags.writesEnabled ? toolBlock.input.agentFacts : null,
@@ -366,8 +377,9 @@ async function handleRecap(req, res, db) {
     reporter: 'neta',
     seam: 'neta_econ_recap',
     primaryTicker: null,
-    triggerRef: canonicalizeEconEvent(event.event),
+    triggerRef: wireEconSlug,
     marketDate,
+    serverSubjectRef: econSubjectRefForSlug(wireEconSlug),
     now: wireInstant,
   });
   // Close the measured window immediately: nothing between the
@@ -486,11 +498,17 @@ async function handlePreview(req, res, db) {
     userMessage += `\n\nRECENT MACRO CONTEXT:\n${previewClaimsContext}`;
   }
 
-  // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ──────────────────────────
+  // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8; V1.6 A2/A4) ──────────────
+  // Single-eventType seam: pinned to econ_preview (A4) — the pinned schema
+  // excludes direction (forbidden on previews) and subjectRef (server-
+  // owned). The weekly preview's trigger is the whole calendar, not a
+  // single release, so the server stamp is null (generic digest form).
   const wireFlags = getWireFlags();
   const wireInstant = new Date();
   const marketDate = resolveWireMarketDate(wireInstant);
-  const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('neta') : '';
+  const wireInstruction = wireFlags.writesEnabled
+    ? buildAgentFactsInstruction('neta', { pinEventType: 'econ_preview' })
+    : '';
   let continuityBlock = '';
   if (wireFlags.continuityEnabled) {
     try {
@@ -514,7 +532,9 @@ async function handlePreview(req, res, db) {
     thinking: { type: 'disabled' },
     output_config: { effort: 'low' },
     system: NETA_PREVIEW_SYSTEM_PROMPT + wireInstruction + continuityBlock,
-    tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_ECON_PREVIEW_TOOL, 'neta') : PUBLISH_ECON_PREVIEW_TOOL],
+    tools: [wireFlags.writesEnabled
+      ? extendToolWithAgentFacts(PUBLISH_ECON_PREVIEW_TOOL, 'neta', { pinEventType: 'econ_preview' })
+      : PUBLISH_ECON_PREVIEW_TOOL],
     tool_choice: { type: 'tool', name: 'publish_econ_preview' },
     messages: [{ role: 'user', content: userMessage }],
   });

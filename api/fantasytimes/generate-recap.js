@@ -251,7 +251,9 @@ export default async function handler(req, res) {
     const wireFlags = getWireFlags();
     const wireInstant = new Date();
     const marketDate = resolveWireMarketDate(wireInstant);
-    const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('doug') : '';
+    const wireInstruction = wireFlags.writesEnabled
+      ? buildAgentFactsInstruction('doug', { pinEventType: 'earnings_recap' })
+      : '';
     let continuityBlock = '';
     if (wireFlags.continuityEnabled) {
       try {
@@ -270,7 +272,9 @@ export default async function handler(req, res) {
       max_tokens: wireFlags.writesEnabled ? 900 : 500,
       temperature: 0.8,
       system: DOUG_RECAP_SYSTEM_PROMPT + wireInstruction + continuityBlock,
-      tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_EARNINGS_RECAP_TOOL, 'doug') : PUBLISH_EARNINGS_RECAP_TOOL],
+      tools: [wireFlags.writesEnabled
+        ? extendToolWithAgentFacts(PUBLISH_EARNINGS_RECAP_TOOL, 'doug', { pinEventType: 'earnings_recap' })
+        : PUBLISH_EARNINGS_RECAP_TOOL],
       tool_choice: { type: 'tool', name: 'publish_earnings_recap' },
       messages: [{ role: 'user', content: userMessage }],
     });

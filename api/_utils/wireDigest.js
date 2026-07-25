@@ -61,9 +61,13 @@ export function renderWireDigest(facts) {
   if (!facts || !facts.eventType || !EVENT_CONTRACTS[facts.eventType]) return null;
   const contract = EVENT_CONTRACTS[facts.eventType];
 
-  // Subject: the server-canonical primary ticker when present, else the
-  // first validated ticker, else the contract's zero-ticker subject noun.
+  // Subject resolution (V1.6 A2): a subjectRef leads when present — the
+  // server-stamped econ slug ("CPI print: …") or the validated index enum
+  // ("NDX move: …"). Null subjectRef renders the pre-A2 generic form. Both
+  // sources are closed vocabularies: ECON_SUBJECT_REFS values server-side,
+  // INDEX_SUBJECTS via the validator — never free text (P2).
   const subject =
+    facts.subjectRef ||
     facts.primaryTicker ||
     (Array.isArray(facts.tickers) && facts.tickers[0]) ||
     contract.zeroTickerSubject ||

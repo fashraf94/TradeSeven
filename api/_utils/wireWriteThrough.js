@@ -64,6 +64,9 @@ const DAY_DOC_WARN_BYTES = 600 * 1024;
  *        the endpoint wrote on the story record, never model array order
  * @param {string} o.triggerRef — deterministic pre-call trigger identity
  * @param {string} o.marketDate — deriveMarketDate(instant) from key creation
+ * @param {string|null} [o.serverSubjectRef] — Neta seams only (V1.6 A2):
+ *        the SERVER-STAMPED subject slug resolved pre-call from the trigger's
+ *        event name; the model never sees this field on those seams
  * @param {boolean} [o.deferTransaction=false] — poll-batch (10s budget):
  *        stamp story+envelope+wirePending only; the sweep transacts (§4.7)
  * @param {Date} [o.now]
@@ -78,6 +81,7 @@ export async function publishStoryWithWire(db, {
   primaryTicker = null,
   triggerRef,
   marketDate,
+  serverSubjectRef = null,
   deferTransaction = false,
   now = new Date(),
 }) {
@@ -92,7 +96,8 @@ export async function publishStoryWithWire(db, {
   const wireStart = Date.now();
 
   // ── 1. Validate + render in memory ─────────────────────────────────────
-  const v = validateAgentFacts({ rawAgentFacts, reporter, stopReason });
+  // primaryTickerRaw feeds ONLY the A2 index_move consistency remap.
+  const v = validateAgentFacts({ rawAgentFacts, reporter, stopReason, primaryTickerRaw: primaryTicker });
 
   // primaryTicker gets the SAME F1/D8 battery as tickers[]. It is only
   // "server-canonical" in the sense that it comes off the story record —
@@ -144,6 +149,9 @@ export async function publishStoryWithWire(db, {
       validatorVersion: v.validatorVersion,
     },
     primaryTicker: normalizedPrimary,
+    // A2: server-owned for Neta's rows; the model-emitted (validated/
+    // remapped) value for index_move rides inside modelAgentFacts.
+    serverSubjectRef,
     headline: storyDoc.headline || '',
     publishedAt: storyDoc.publishedAt || now,
     createdAt: now,
@@ -170,10 +178,16 @@ export async function publishStoryWithWire(db, {
   if (!deferTransaction) {
     try {
       const tx = await runWireTransactionFromEnvelope(db, envelope, { now });
-      // INLINE interpretation (F2-10): committed → success; any pre-existing
-      // receipt for the key → no-op success. First receipt wins (B5).
-      wire.txStatus = tx.status === 'receipt_exists' ? 'receipt_hit' : tx.status;
-      await finalizeWireSuccess(db, storyRef, envelopeRef);
+      // D9 (V1.6 A1) — identical handling on both paths: committed and
+      // completed finalize as success; a superseded attempt gets its OWN
+      // benign stamp (wireSuperseded — never wireConflict) and cleans up.
+      if (tx.status === 'superseded') {
+        wire.txStatus = 'superseded';
+        await finalizeWireSuperseded(db, storyRef, envelopeRef);
+      } else {
+        wire.txStatus = tx.status === 'completed' ? 'receipt_hit' : tx.status;
+        await finalizeWireSuccess(db, storyRef, envelopeRef);
+      }
     } catch (err) {
       // P3: Wire transaction failures never block the published story; the
       // sweep replays from the envelope. wirePending stays true.
@@ -239,21 +253,36 @@ export async function runWireTransactionFromEnvelope(db, envelope, { now = new D
     const receipts = { ...(data.receipts || {}) };
     const stats = normalizeStats(data.validationStats);
 
-    // Receipt check — first receipt wins (B5). The transaction only REPORTS
-    // what it found; interpretation differs by path (F2-10 vs §4.7):
-    //   INLINE: any pre-existing receipt for the key → no-op success — a
-    //     changed payload on retry is a no-op, not a repair (B5), and the
-    //     DST double-fire is a known benign case, never a counted conflict.
-    //   SWEEP: same storyId+hash → post-commit race (success); different
-    //     storyId or hash → idempotency conflict (class + counter), because
-    //     a REPLAYED envelope disagreeing with the receipt is an anomaly.
+    // Receipt check — D9 semantics, UNIFIED across inline and sweep (V1.6
+    // A1/M1). First receipt wins (B5: no second entry, no receipt
+    // overwrite). The hash carries NO classification: retries regenerate
+    // (the DST double-fire re-runs the model), so a legitimate retry hashes
+    // differently and a same-key mismatch is unclassifiable by content.
+    //   • same storyId → completed (the post-commit race; the hash
+    //     necessarily matches — one hash per story, computed once).
+    //   • different storyId → SUPERSEDED ATTEMPT: append the attempt's
+    //     storyId to receipt.supersededAttempts[] if absent, counting
+    //     validationStats.superseded ONLY on first append — exactly-once by
+    //     construction (the membership check IS the counter guard). The
+    //     straggler revisit (already in the list) is a pure no-op: no
+    //     write, no count. No event can be counted twice or labeled two
+    //     ways, on either path.
     const existing = receipts[envelope.idempotencyKey];
     if (existing) {
-      return {
-        status: 'receipt_exists',
-        sameStory: existing.storyId === envelope.storyId,
-        sameHash: existing.payloadHash === envelope.payloadHash,
+      if (existing.storyId === envelope.storyId) {
+        return { status: 'completed' };
+      }
+      const attempts = existing.supersededAttempts || [];
+      if (attempts.includes(envelope.storyId)) {
+        return { status: 'superseded', firstAppend: false };
+      }
+      stats.superseded += 1;
+      receipts[envelope.idempotencyKey] = {
+        ...existing,
+        supersededAttempts: [...attempts, envelope.storyId],
       };
+      t.set(dayRef, { ...data, receipts, validationStats: stats, updatedAt: now });
+      return { status: 'superseded', firstAppend: true };
     }
 
     // First processing of this key: count the attempt + outcome + codes.
@@ -276,15 +305,24 @@ export async function runWireTransactionFromEnvelope(db, envelope, { now = new D
           eventType: facts.eventType,
         }
       );
+      // subjectRef resolution by row ownership (V1.6 A2): 'server' rows
+      // carry the pre-call server stamp (the model never sees the field
+      // there); 'model_required' rows carry the validated/remapped model
+      // value already inside facts; every other row is null. Resolved ONCE
+      // so the digest head and the persisted field can never disagree.
+      const resolvedSubjectRef = contract.subjectRef === 'server'
+        ? (envelope.serverSubjectRef ?? null)
+        : (facts.subjectRef ?? null);
       const persistedFacts = {
         ...facts,
         schemaVersion: WIRE_SCHEMA_VERSION,
+        subjectRef: resolvedSubjectRef,
         primaryTicker: envelope.primaryTicker,
         offUniverseTickers: envelope.validatorResult.offUniverseTickers,
         macroEligible:
           contract.macroEligible === true &&
           envelope.validatorResult.preStripTickerCount === 0,
-        digest: renderWireDigest({ ...facts, primaryTicker: envelope.primaryTicker }),
+        digest: renderWireDigest({ ...facts, subjectRef: resolvedSubjectRef, primaryTicker: envelope.primaryTicker }),
         chainId,
         observedAt: now,
         validatorVersion: envelope.validatorResult.validatorVersion,
@@ -346,10 +384,20 @@ export async function runWireTransactionFromEnvelope(db, envelope, { now = new D
   });
 }
 
-/** §4.5 step 5 — success cleanup (also the receipt-hit path). */
+/** §4.5 step 5 — success cleanup (also the completed/post-commit-race path). */
 export async function finalizeWireSuccess(db, storyRef, envelopeRef) {
   const batch = db.batch();
   batch.update(storyRef, { wirePending: false });
+  batch.delete(envelopeRef);
+  await batch.commit();
+}
+
+/** D9 superseded-attempt cleanup (V1.6 A1): benign own-field stamp — never
+ *  wireConflict — plus the standard clear + envelope delete. Idempotent:
+ *  a straggler revisit restamps harmlessly. */
+export async function finalizeWireSuperseded(db, storyRef, envelopeRef) {
+  const batch = db.batch();
+  batch.update(storyRef, { wirePending: false, wireSuperseded: true });
   batch.delete(envelopeRef);
   await batch.commit();
 }
@@ -393,7 +441,10 @@ export function normalizeStats(stats) {
     quarantined: stats?.quarantined || 0,
     truncated: stats?.truncated || 0,
     byRule: { ...(stats?.byRule || {}) },
-    idempotencyConflicts: stats?.idempotencyConflicts || 0,
+    // V1.6 A1/D9: `superseded` replaces the retired `idempotencyConflicts`.
+    // §6.1 gate line: superseded reviewed; nonzero on DST transition days
+    // expected; nonzero otherwise requires explanation.
+    superseded: stats?.superseded || 0,
     envelopeMissing: stats?.envelopeMissing || 0,
     replayExhausted: stats?.replayExhausted || 0,
   };

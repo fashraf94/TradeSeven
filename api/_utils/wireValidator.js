@@ -28,6 +28,8 @@ import {
   FIGURES_CAP,
   QUALIFIERS_CAP,
   TICKER_MAX_LENGTH,
+  INDEX_SUBJECTS,
+  ETF_TO_INDEX,
   WIRE_CODES,
   WIRE_OUTCOMES,
   WIRE_VALIDATOR_VERSION,
@@ -35,8 +37,9 @@ import {
 } from './wireContracts.js';
 
 // The ONLY keys projection copies through. Anything else, at any depth of
-// the declared shape, is R1.
-const TOP_LEVEL_KEYS = ['eventType', 'tickers', 'direction', 'magnitude', 'keyLevel', 'figures', 'qualifiers'];
+// the declared shape, is R1. `subjectRef` is model-emittable ONLY for
+// index_move (V1.6 A2); the per-row rules below enforce that.
+const TOP_LEVEL_KEYS = ['eventType', 'tickers', 'direction', 'magnitude', 'keyLevel', 'figures', 'qualifiers', 'subjectRef'];
 const MAGNITUDE_KEYS = ['value', 'unit', 'basis'];
 const KEYLEVEL_KEYS = ['price', 'type'];
 const FIGURE_KEYS = ['value', 'unit', 'basis'];
@@ -63,6 +66,9 @@ export function isInWireUniverse(normalizedTicker) {
  * @param {string} opts.reporter — server-known reporter key ('kai'|'alex'|…)
  * @param {string|null} opts.stopReason — the response's stop_reason
  *                 (batch results pass the per-result message's stop_reason)
+ * @param {string|null} [opts.primaryTickerRaw] — the endpoint's story-record
+ *                 primaryTicker (pre-validation), used ONLY for the A2
+ *                 index_move internal-consistency remap (ETF_TO_INDEX)
  * @returns {{
  *   outcome: string, codes: string[], reasons: string[],
  *   facts: object|null,            // normalized survivors (ModelAgentFacts shape)
@@ -73,7 +79,7 @@ export function isInWireUniverse(normalizedTicker) {
  *   validatorVersion: string,
  * }}
  */
-export function validateAgentFacts({ rawAgentFacts, reporter, stopReason }) {
+export function validateAgentFacts({ rawAgentFacts, reporter, stopReason, primaryTickerRaw = null }) {
   const codes = [];
   const reasons = [];
   const base = {
@@ -187,6 +193,41 @@ export function validateAgentFacts({ rawAgentFacts, reporter, stopReason }) {
   }
   base.offUniverseTickers = offUniverse;
 
+  // ── subjectRef (V1.6 A2) ───────────────────────────────────────────────
+  // index_move: MODEL-EMITTED, REQUIRED — missing or out-of-enum → R4
+  // (subject-less index events are unusable). Any other row: an optional
+  // property present where it doesn't belong → SALVAGE-drop, consistent
+  // with the existing tiering. Neta's rows are server-stamped downstream;
+  // a model-emitted value there is dropped here regardless.
+  let subjectRef = rawAgentFacts.subjectRef ?? null;
+  if (contract.subjectRef === 'model_required') {
+    if (typeof subjectRef !== 'string' || subjectRef.length === 0) {
+      codes.push(WIRE_CODES.R4_MISSING);
+      reasons.push(`subjectRef missing on ${eventType} (required; enum ${INDEX_SUBJECTS.join('|')})`);
+      return reject();
+    }
+    if (!INDEX_SUBJECTS.includes(subjectRef)) {
+      codes.push(WIRE_CODES.R4_ENUM);
+      reasons.push(`subjectRef out of enum on ${eventType}`);
+      return reject();
+    }
+    // Internal-consistency remap (A2/M2): when the model's own primaryTicker
+    // maps through ETF_TO_INDEX and disagrees with its subjectRef, the
+    // mapped value wins (S1_SUBJECT_REMAPPED). Unmappable/absent primary →
+    // subjectRef stands as emitted. Catches inconsistency, not truth (m7).
+    const candidate = primaryTickerRaw ? normalizeWireTicker(primaryTickerRaw) : null;
+    const mapped = candidate ? ETF_TO_INDEX[candidate] : undefined;
+    if (mapped && mapped !== subjectRef) {
+      codes.push(WIRE_CODES.S1_SUBJECT_REMAPPED);
+      reasons.push(`subjectRef remapped to ${mapped} from primaryTicker consistency check`);
+      subjectRef = mapped;
+    }
+  } else if (subjectRef !== null) {
+    codes.push(WIRE_CODES.SALVAGE_SUBJECTREF);
+    reasons.push(`subjectRef is not a model field for ${eventType}; dropped`);
+    subjectRef = null;
+  }
+
   // ── direction: forbidden on previews; enum when present ────────────────
   let direction = rawAgentFacts.direction ?? null;
   if (contract.direction === 'forbidden' && direction !== null) {
@@ -292,15 +333,32 @@ export function validateAgentFacts({ rawAgentFacts, reporter, stopReason }) {
     qualifiers = seen;
   }
 
-  // ── R4 sign consistency (post-salvage survivors; REJECT-class) ─────────
-  if (direction !== null && magnitude !== null) {
-    const contradicts =
-      (direction === 'up' && magnitude.value < 0) ||
-      (direction === 'down' && magnitude.value > 0);
-    if (contradicts) {
+  // ── R4 sign consistency — the NARROW rule (V1.6 A3 / V1.2 "share a
+  // subject") ────────────────────────────────────────────────────────────
+  // Applies only to values whose basis carries the row's DIRECTION SUBJECT
+  // (contract.directionBases). Everything else is unconstrained by design:
+  // "up despite an EPS miss" (earnings_recap, direction subject = price) and
+  // reversal narratives (direction up with a negative gap figure) are
+  // legitimate stories. Scope (m5): only direction ∈ {up, down} — this
+  // schema has no 'mixed'/'flat' value; their representation is null, for
+  // which the check is vacuous.
+  if (direction !== null) {
+    const signContradicts = (value) =>
+      (direction === 'up' && value < 0) || (direction === 'down' && value > 0);
+
+    if (magnitude !== null &&
+        contract.directionBases.includes(magnitude.basis) &&
+        signContradicts(magnitude.value)) {
       codes.push(WIRE_CODES.R4_SIGN);
-      reasons.push(`direction=${direction} contradicts magnitude.value=${magnitude.value}`);
+      reasons.push(`direction=${direction} contradicts magnitude.value=${magnitude.value} on direction-subject basis ${magnitude.basis}`);
       return reject();
+    }
+    for (const f of figures) {
+      if (contract.directionBases.includes(f.basis) && signContradicts(f.value)) {
+        codes.push(WIRE_CODES.R4_SIGN);
+        reasons.push(`direction=${direction} contradicts figures[] value=${f.value} on direction-subject basis ${f.basis}`);
+        return reject();
+      }
     }
   }
 
@@ -326,9 +384,10 @@ export function validateAgentFacts({ rawAgentFacts, reporter, stopReason }) {
     keyLevel,
     figures,
     qualifiers,
+    subjectRef,
   };
 
-  const salvaged = codes.some((c) => c.startsWith('SALVAGE_'));
+  const salvaged = codes.some((c) => c.startsWith('SALVAGE_') || c.startsWith('S1_'));
   const outcome = base.quarantined
     ? WIRE_OUTCOMES.QUARANTINED
     : salvaged

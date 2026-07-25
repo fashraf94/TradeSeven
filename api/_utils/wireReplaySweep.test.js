@@ -1,8 +1,9 @@
 // api/_utils/wireReplaySweep.test.js
-// Reconciliation sweep acceptance (Spec V1.5 §9 / §4.7): kill-after-batch
-// replay for every outcome class, envelope_missing alarm (expectation ZERO
-// elsewhere), receipt-hit clearing, conflict termination, orphan drain,
-// and budget deferral.
+// Reconciliation sweep acceptance (Spec V1.5 §9 / §4.7 + V1.6 A1/D9):
+// kill-after-batch replay for every outcome class, envelope_missing alarm
+// (expectation ZERO elsewhere), receipt-hit clearing, superseded-attempt
+// handling (D9 — same semantics as inline; the M1 case), straggler
+// revisits, orphan drain, and budget deferral.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createFirestoreFake } from './__fixtures__/wireFirestoreFake.js';
@@ -28,6 +29,7 @@ const normalizedGoodFacts = () => ({
   keyLevel: null,
   figures: [],
   qualifiers: [],
+  subjectRef: null, // V1.6 A2: present (null) on every non-index row
 });
 
 const MARKET_DATE = '2026-07-24';
@@ -145,19 +147,23 @@ describe('receipt paths', () => {
       // a tautology.
       idempotencyKey: wire.idempotencyKey, payloadHash: computePayloadHash(normalizedGoodFacts()),
       marketDate: MARKET_DATE, outcome: WIRE_OUTCOMES.PASSED,
-      modelAgentFacts: goodFacts(), validatorResult: { codes: [], reasons: [], offUniverseTickers: [], preStripTickerCount: 1, quarantined: false, validatorVersion: '1.5.0' },
-      primaryTicker: 'NVDA', headline: 'h', publishedAt: NOW, createdAt: NOW,
+      modelAgentFacts: goodFacts(), validatorResult: { codes: [], reasons: [], offUniverseTickers: [], preStripTickerCount: 1, quarantined: false, validatorVersion: '1.6.0' },
+      primaryTicker: 'NVDA', serverSubjectRef: null, headline: 'h', publishedAt: NOW, createdAt: NOW,
     });
 
     const summary = await runWireReplaySweep(db, { now: LATER });
     expect(summary.receiptHits).toBe(1);
+    expect(summary.superseded).toBe(0); // same storyId is NEVER a superseded attempt
     expect((await storyRef.get()).data().wirePending).toBe(false);
     const day = await dayData();
     expect(day.entries).toHaveLength(1); // no duplicate entry
     expect(day.validationStats.attempted).toBe(1); // no re-increment
   });
 
-  it('receipt with a different hash → conflict class, terminated, no retry loop', async () => {
+  it('same storyId with a DIFFERENT hash is still a completed no-op — the hash carries no classification (D9)', async () => {
+    // Under V1.5 this was hash_mismatch → wireConflict. D9 retires that:
+    // retries regenerate, so hash inequality cannot distinguish corruption
+    // from a legitimate re-run. Same storyId → completed, nothing counted.
     const { storyRef, wire } = await publishStoryWithWire(db, {
       storyDoc: storyDoc(), rawAgentFacts: goodFacts(), stopReason: 'tool_use',
       reporter: 'doug', seam: 'doug_earnings_recap', primaryTicker: 'NVDA',
@@ -166,39 +172,93 @@ describe('receipt paths', () => {
     await storyRef.update({ wirePending: true });
     await db.collection('fantasyTimesWireEnvelopes').doc(storyRef.id).set({
       storyId: storyRef.id, seam: 'doug_earnings_recap', reporter: 'doug',
-      idempotencyKey: wire.idempotencyKey, payloadHash: 'deadbeef', // ≠ stored
+      idempotencyKey: wire.idempotencyKey, payloadHash: 'regenerated-would-differ', // ≠ stored
       marketDate: MARKET_DATE, outcome: WIRE_OUTCOMES.PASSED,
-      modelAgentFacts: goodFacts(), validatorResult: { codes: [], reasons: [], offUniverseTickers: [], preStripTickerCount: 1, quarantined: false, validatorVersion: '1.5.0' },
-      primaryTicker: 'NVDA', headline: 'h', publishedAt: NOW, createdAt: NOW,
+      modelAgentFacts: goodFacts(), validatorResult: { codes: [], reasons: [], offUniverseTickers: [], preStripTickerCount: 1, quarantined: false, validatorVersion: '1.6.0' },
+      primaryTicker: 'NVDA', serverSubjectRef: null, headline: 'h', publishedAt: NOW, createdAt: NOW,
     });
 
     const summary = await runWireReplaySweep(db, { now: LATER });
-    expect(summary.conflicts).toBe(1);
+    expect(summary.receiptHits).toBe(1);
+    expect(summary.superseded).toBe(0);
     const story = (await storyRef.get()).data();
     expect(story.wirePending).toBe(false);
-    expect(story.wireConflict).toBe(WIRE_CONFLICTS.HASH_MISMATCH);
-    expect((await dayData()).validationStats.idempotencyConflicts).toBe(1);
+    expect(story.wireConflict).toBeUndefined(); // no conflict class exists for this
+    expect(story.wireSuperseded).toBeUndefined();
+    const day = await dayData();
+    expect(day.validationStats.attempted).toBe(1); // unchanged
+    expect(day.validationStats.superseded).toBe(0);
 
-    // terminated: a second sweep finds nothing pending
+    // cleared: a second sweep finds nothing pending
     const again = await runWireReplaySweep(db, { now: LATER });
     expect(again.scanned).toBe(0);
   });
 
-  it('sweep-side DST double-fire variant (F2-10): second story with the same key → story_mismatch conflict', async () => {
-    // Both fires stamped (killed before their transactions); same key.
+  it('sweep replay of a regenerated same-key retry → SUPERSEDED attempt, never a conflict (the M1 case)', async () => {
+    // The DST double-fire, both fires killed before their transactions.
+    // The second fire RE-RAN the model (regenerated facts → different
+    // payload, different hash) — exactly the event M1 showed the old
+    // hash/story-mismatch classes mislabeled. Same key, both replayed by
+    // the sweep: first lands the entry, second becomes a superseded
+    // attempt with its own stamp.
     const first = await stampOnly(db, { triggerRef: 'dst' });
-    const second = await stampOnly(db, { triggerRef: 'dst' });
+    const second = await stampOnly(db, {
+      facts: { ...goodFacts(), magnitude: { value: 8.3, unit: 'pct', basis: 'eps_vs_consensus' } },
+      triggerRef: 'dst',
+    });
 
     const summary = await runWireReplaySweep(db, { now: LATER });
     expect(summary.replayed).toBe(1);
-    expect(summary.conflicts).toBe(1);
+    expect(summary.superseded).toBe(1);
+    expect(summary.supersededStragglers).toBe(0); // first append, not a revisit
 
-    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    const day = await dayData();
     expect(day.entries).toHaveLength(1); // no duplicate entry
-    expect(day.validationStats.attempted).toBe(1); // no stat re-increment
-    expect(day.validationStats.idempotencyConflicts).toBe(1);
-    expect(day.receipts['doug_earnings_recap:dst:2026-07-24'].storyId).toBe(first.storyRef.id);
-    expect((await second.storyRef.get()).data().wireConflict).toBe(WIRE_CONFLICTS.STORY_MISMATCH);
+    expect(day.entries[0].storyId).toBe(first.storyRef.id);
+    expect(day.validationStats.attempted).toBe(1); // surplus attempt not re-counted
+    expect(day.validationStats.superseded).toBe(1);
+    const receipt = day.receipts['doug_earnings_recap:dst:2026-07-24'];
+    expect(receipt.storyId).toBe(first.storyRef.id); // receipt core untouched (B5)
+    expect(receipt.supersededAttempts).toEqual([second.storyRef.id]);
+
+    // The superseded story carries its OWN stamp — never a conflict class.
+    const secondStory = (await second.storyRef.get()).data();
+    expect(secondStory.wireSuperseded).toBe(true);
+    expect(secondStory.wirePending).toBe(false);
+    expect(secondStory.wireConflict).toBeUndefined();
+    expect((await first.storyRef.get()).data().wireSuperseded).toBeUndefined();
+    // Both envelopes consumed.
+    expect((await db.collection('fantasyTimesWireEnvelopes').doc(first.storyRef.id).get()).exists).toBe(false);
+    expect((await db.collection('fantasyTimesWireEnvelopes').doc(second.storyRef.id).get()).exists).toBe(false);
+  });
+
+  it('straggler revisit of an already-superseded attempt → no-op: nothing recounted, list unchanged', async () => {
+    // Same double-fire; then the superseded story's pending state and
+    // envelope are RESTORED (crash between the transaction and cleanup) and
+    // the sweep runs again. The membership check IS the counter guard:
+    // firstAppend=false, no second list entry, stats.superseded unchanged.
+    const first = await stampOnly(db, { triggerRef: 'dst' });
+    const second = await stampOnly(db, { triggerRef: 'dst' });
+    const envRef = db.collection('fantasyTimesWireEnvelopes').doc(second.storyRef.id);
+    const envData = (await envRef.get()).data(); // capture before the sweep consumes it
+
+    await runWireReplaySweep(db, { now: LATER });
+    await second.storyRef.update({ wirePending: true });
+    await envRef.set(envData);
+
+    const again = await runWireReplaySweep(db, { now: LATER });
+    expect(again.superseded).toBe(1);
+    expect(again.supersededStragglers).toBe(1); // the revisit, flagged as such
+    expect(again.replayed).toBe(0);
+
+    const day = await dayData();
+    expect(day.validationStats.superseded).toBe(1); // counted ONCE, ever
+    expect(day.receipts['doug_earnings_recap:dst:2026-07-24'].supersededAttempts)
+      .toEqual([second.storyRef.id]); // no duplicate append
+    const secondStory = (await second.storyRef.get()).data();
+    expect(secondStory.wireSuperseded).toBe(true);
+    expect(secondStory.wirePending).toBe(false);
+    expect((await envRef.get()).exists).toBe(false); // consumed again
   });
 });
 

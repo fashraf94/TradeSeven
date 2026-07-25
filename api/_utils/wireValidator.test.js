@@ -123,13 +123,53 @@ describe('wireValidator — R4 contract battery', () => {
     expect(v.codes).toContain(WIRE_CODES.R4_DIRECTION_ON_PREVIEW);
   });
 
-  it('sign inconsistency (direction=down, magnitude positive) REJECTS', () => {
+  it('sign inconsistency on a DIRECTION-SUBJECT basis REJECTS (A3)', () => {
     const facts = goodEarningsFacts();
     facts.direction = 'down';
-    facts.magnitude.value = 8.2;
+    // price_vs_prior_close carries earnings_recap's direction subject (price)
+    facts.magnitude = { value: 8.2, unit: 'pct', basis: 'price_vs_prior_close' };
     const v = run(facts);
     expect(v.outcome).toBe(WIRE_OUTCOMES.REJECTED);
     expect(v.codes).toContain(WIRE_CODES.R4_SIGN);
+  });
+
+  it('A3 narrow rule: "up despite an EPS miss" is LEGAL (eps basis ≠ direction subject)', () => {
+    const facts = goodEarningsFacts();
+    facts.direction = 'up';
+    facts.magnitude = { value: -3.1, unit: 'pct', basis: 'eps_vs_consensus' };
+    const v = run(facts);
+    expect(v.codes).not.toContain(WIRE_CODES.R4_SIGN);
+    expect(v.facts.magnitude.value).toBe(-3.1);
+  });
+
+  it('A3 figures[]: same-basis contradiction REJECTS; differing-basis reversal passes; null direction exempt', () => {
+    // market_mover directionBases = [price_vs_prior_close]
+    const base = () => ({
+      eventType: 'market_mover', tickers: ['NVDA'], direction: 'up',
+      magnitude: { value: 4.2, unit: 'pct', basis: 'price_vs_prior_close' },
+    });
+
+    const contradicting = base();
+    contradicting.figures = [{ value: -2.0, unit: 'pct', basis: 'price_vs_prior_close' }];
+    const v1 = run(contradicting, { reporter: 'alex' });
+    expect(v1.outcome).toBe(WIRE_OUTCOMES.REJECTED);
+    expect(v1.codes).toContain(WIRE_CODES.R4_SIGN);
+
+    // Reversal narrative: direction up with a NEGATIVE gap figure — legal.
+    const reversal = base();
+    reversal.figures = [{ value: -6.0, unit: 'pct', basis: 'gap_vs_prior_close' }];
+    const v2 = run(reversal, { reporter: 'alex' });
+    expect(v2.codes).not.toContain(WIRE_CODES.R4_SIGN);
+    expect(v2.outcome).toBe(WIRE_OUTCOMES.PASSED);
+
+    // m5 exemption: no direction (this schema's flat/mixed representation
+    // is null) → the check is vacuous even on a same-basis figure.
+    const flat = base();
+    flat.direction = null;
+    flat.magnitude = null;
+    flat.figures = [{ value: -2.0, unit: 'pct', basis: 'price_vs_prior_close' }];
+    const v3 = run(flat, { reporter: 'alex' });
+    expect(v3.codes).not.toContain(WIRE_CODES.R4_SIGN);
   });
 
   it('oversize figures/qualifiers arrays REJECT; oversize ticker REJECTS', () => {
@@ -206,6 +246,71 @@ describe('wireValidator — F1 normalization + F2 quarantine', () => {
     expect(v.codes).toContain(WIRE_CODES.F2_QUARANTINE);
     expect(v.quarantined).toBe(true);
     expect(v.preStripTickerCount).toBe(1); // pre-strip cardinality satisfied
+  });
+});
+
+describe('wireValidator — subjectRef (V1.6 A2)', () => {
+  const indexFacts = (subjectRef) => ({
+    eventType: 'index_move',
+    tickers: [],
+    direction: 'down',
+    magnitude: { value: -1.2, unit: 'pct', basis: 'index_vs_prior_close' },
+    ...(subjectRef !== undefined ? { subjectRef } : {}),
+  });
+
+  it('index_move: missing subjectRef → R4 REJECT (required)', () => {
+    const v = run(indexFacts(undefined), { reporter: 'kai' });
+    expect(v.outcome).toBe(WIRE_OUTCOMES.REJECTED);
+    expect(v.codes).toContain(WIRE_CODES.R4_MISSING);
+  });
+
+  it('index_move: out-of-enum subjectRef → R4 REJECT', () => {
+    const v = run(indexFacts('SPY'), { reporter: 'kai' }); // ETF, not an index subject
+    expect(v.outcome).toBe(WIRE_OUTCOMES.REJECTED);
+    expect(v.codes).toContain(WIRE_CODES.R4_ENUM);
+  });
+
+  it('index_move: valid subjectRef passes and lands in facts', () => {
+    const v = run(indexFacts('NDX'), { reporter: 'kai' });
+    expect(v.outcome).toBe(WIRE_OUTCOMES.PASSED);
+    expect(v.facts.subjectRef).toBe('NDX');
+  });
+
+  it('S1_SUBJECT_REMAPPED: primaryTicker SPY + subjectRef NDX → SPX (the A2 fixture)', () => {
+    const v = validateAgentFacts({
+      rawAgentFacts: indexFacts('NDX'),
+      reporter: 'kai',
+      stopReason: 'tool_use',
+      primaryTickerRaw: 'SPY',
+    });
+    expect(v.outcome).toBe(WIRE_OUTCOMES.SALVAGED);
+    expect(v.codes).toContain(WIRE_CODES.S1_SUBJECT_REMAPPED);
+    expect(v.facts.subjectRef).toBe('SPX');
+  });
+
+  it('agreeing or unmappable primaryTicker leaves subjectRef as emitted', () => {
+    const agree = validateAgentFacts({
+      rawAgentFacts: indexFacts('SPX'), reporter: 'kai', stopReason: 'tool_use', primaryTickerRaw: 'SPY',
+    });
+    expect(agree.outcome).toBe(WIRE_OUTCOMES.PASSED);
+    expect(agree.facts.subjectRef).toBe('SPX');
+
+    const unmappable = validateAgentFacts({
+      rawAgentFacts: indexFacts('VIX'), reporter: 'kai', stopReason: 'tool_use', primaryTickerRaw: 'NVDA',
+    });
+    expect(unmappable.codes).not.toContain(WIRE_CODES.S1_SUBJECT_REMAPPED);
+    expect(unmappable.facts.subjectRef).toBe('VIX');
+  });
+
+  it('subjectRef on a non-index row → SALVAGE-drop (invalid optional field for that row)', () => {
+    const v = run({
+      eventType: 'technical_break', tickers: ['AAPL'], direction: 'up',
+      magnitude: { value: 2.1, unit: 'pct', basis: 'price_vs_level' },
+      subjectRef: 'SPX',
+    }, { reporter: 'kai' });
+    expect(v.outcome).toBe(WIRE_OUTCOMES.SALVAGED);
+    expect(v.codes).toContain(WIRE_CODES.SALVAGE_SUBJECTREF);
+    expect(v.facts.subjectRef).toBeNull();
   });
 });
 

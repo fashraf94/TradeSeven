@@ -181,7 +181,9 @@ export default async function handler(req, res) {
     const wireFlags = getWireFlags();
     const wireInstant = new Date();
     const wireMarketDate = resolveWireMarketDate(wireInstant);
-    const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('doug') : '';
+    const wireInstruction = wireFlags.writesEnabled
+      ? buildAgentFactsInstruction('doug', { pinEventType: 'earnings_preview' })
+      : '';
     let continuityBlock = '';
     if (wireFlags.continuityEnabled) {
       try {
@@ -241,7 +243,9 @@ export default async function handler(req, res) {
           output_config: { effort: 'low' },
           system: DOUG_PREVIEW_SYSTEM_PROMPT + wireInstruction + continuityBlock,
           messages: [{ role: 'user', content: contextMessage }],
-          tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_EARNINGS_PREVIEW_TOOL, 'doug') : PUBLISH_EARNINGS_PREVIEW_TOOL],
+          tools: [wireFlags.writesEnabled
+            ? extendToolWithAgentFacts(PUBLISH_EARNINGS_PREVIEW_TOOL, 'doug', { pinEventType: 'earnings_preview' })
+            : PUBLISH_EARNINGS_PREVIEW_TOOL],
           tool_choice: { type: 'tool', name: 'publish_earnings_preview' },
         },
       });

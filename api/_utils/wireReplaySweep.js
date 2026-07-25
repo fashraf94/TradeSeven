@@ -19,8 +19,11 @@
 //      'envelope_missing', flag cleared, envelopeMissing incremented, loud
 //      log. Acceptance expectation for the counter: zero.
 //   3. Envelope present → the SAME Wire transaction the inline path runs
-//      (uniform replay). Pre-existing receipt: same storyId+hash → success
-//      ("receipt hit IS success"); otherwise idempotency conflict.
+//      (uniform replay; D9 semantics identical on both paths): same
+//      storyId → completed ("receipt hit IS success"); a different storyId
+//      on the same key → SUPERSEDED attempt (V1.6 A1 — never a conflict;
+//      the hash cannot classify same-key mismatches because retries
+//      regenerate).
 //   4. Repeated failures are capped (wireReplayAttempts): a permanently
 //      failing story is terminated as 'replay_exhausted' rather than
 //      re-queued forever at the head of an orderBy publishedAt scan, where
@@ -36,6 +39,7 @@ import {
 import {
   runWireTransactionFromEnvelope,
   finalizeWireSuccess,
+  finalizeWireSuperseded,
   emptyWireDay,
   normalizeStats,
 } from './wireWriteThrough.js';
@@ -69,7 +73,8 @@ export async function runWireReplaySweep(db, opts = {}) {
   const now = opts.now ?? new Date();
   const started = Date.now();
   const summary = {
-    scanned: 0, replayed: 0, receiptHits: 0, conflicts: 0,
+    scanned: 0, replayed: 0, receiptHits: 0,
+    superseded: 0, supersededStragglers: 0,
     envelopeMissing: 0, exhausted: 0, alreadyTerminal: 0,
     orphansDeleted: 0, failed: 0, deferred: 0,
   };
@@ -140,31 +145,22 @@ export async function runWireReplaySweep(db, opts = {}) {
         continue;
       }
 
-      // 3. Uniform replay through the shared transaction. SWEEP
-      // interpretation of a pre-existing receipt (§4.7 tri-state): same
-      // storyId+hash → post-commit race, success; different storyId or
-      // hash → idempotency conflict — a replayed envelope disagreeing with
-      // the receipt is an anomaly, unlike the inline F2-10 no-op.
+      // 3. Uniform replay through the shared transaction — D9 semantics
+      // IDENTICAL to the inline path (V1.6 A1/M1). A sweep replay of a
+      // failed regenerated retry carries a regenerated payload in its
+      // envelope, so a same-key mismatch here is the SAME unclassifiable
+      // event as inline: a superseded attempt, never a conflict. The count
+      // happened inside the transaction on first append only; a straggler
+      // revisit returns firstAppend:false and counts nothing — exactly-once
+      // by construction, path-independent labeling.
       const tx = await runWireTransactionFromEnvelope(db, envelope, { now });
-      if (tx.status === 'receipt_exists' && !(tx.sameStory && tx.sameHash)) {
-        const conflictClass = !tx.sameStory
-          ? WIRE_CONFLICTS.STORY_MISMATCH
-          : WIRE_CONFLICTS.HASH_MISMATCH;
-        const applied = await terminate(db, {
-          storyRef, marketDate: envelope.marketDate, now,
-          conflictClass,
-          statField: 'idempotencyConflicts',
-          deleteEnvelopeRef: envelopeRef,
-        });
-        if (applied) {
-          summary.conflicts += 1;
-          console.warn(`${LOG_PREFIX} idempotency conflict (${conflictClass}) on story ${doc.id}`);
-        } else {
-          summary.alreadyTerminal += 1;
-        }
+      if (tx.status === 'superseded') {
+        await finalizeWireSuperseded(db, storyRef, envelopeRef);
+        summary.superseded += 1;
+        if (tx.firstAppend === false) summary.supersededStragglers += 1;
       } else {
         await finalizeWireSuccess(db, storyRef, envelopeRef);
-        if (tx.status === 'receipt_exists') summary.receiptHits += 1;
+        if (tx.status === 'completed') summary.receiptHits += 1;
         else summary.replayed += 1;
       }
     } catch (err) {
