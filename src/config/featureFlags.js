@@ -1134,4 +1134,4 @@ export const EVAL_IDENTITY_BLOCK_ENABLED = false;
  * Flip only after a founder smoke on a production-shaped render — never in a
  * build PR (POD_EXPIRY_SWEEP_ENABLED / LEAGUE_NEXT_ARC_ENABLED precedent).
  */
-export const FUNDAMENTAL_MIRROR_ENABLED = false;
+export const FUNDAMENTAL_MIRROR_ENABLED = true;
