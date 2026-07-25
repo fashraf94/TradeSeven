@@ -6,9 +6,30 @@
 // → Haiku tie-break → settlement → daily log → Firestore transaction), then
 // rebuilds the leaderboard and checks for season completion.
 //
-// Triggered by Vercel Cron twice (UTC 20:30 and 21:30) for DST coverage;
-// the ET time-window guard below rejects whichever invocation falls outside
-// 4:15–5:00 PM America/New_York.
+// ⚠ NOT SCHEDULED — THIS HANDLER DOES NOT RUN (as of Jul 25, 2026).
+//
+// This header previously claimed "Triggered by Vercel Cron twice (UTC 20:30 and
+// 21:30) for DST coverage". That was true when written and became false on
+// Jun 4, 2026: commit d80aee25 ("Forge redesign Phase 1") removed all three
+// season cron entries from vercel.json, taking the cron count 40 → 37. The
+// deleted entry for this file was "30 20,21 * * 1-5" — exactly the schedule the
+// old comment described. Nothing else invokes it: executePipeline, settleDay,
+// buildDailyLog and buildEvaluationContext have zero call sites outside this
+// file, no GitHub Actions workflow hits it, and firebase.json declares no
+// functions. Together with season-pit-stop-manage.js these are the ONLY two
+// unregistered handlers in api/cron/ (19 of 21 are registered).
+//
+// Season mode is scrapped permanently per founder ruling C-19, so the handler
+// is RETAINED UN-SCHEDULED rather than deleted — deleting it would discard the
+// evaluation pipeline that the season signals (beta, next-earnings proximity,
+// alphaVsSpy, the pit-stop shortlist) are wired into, and those are dormant,
+// not absent.
+//
+// If it is ever re-registered: the ET time-window guard below rejects whichever
+// invocation falls outside 4:15–5:00 PM America/New_York, and restoring all
+// three season entries costs 3 of the 3 remaining cron slots (37 → 40), which
+// would violate BUILD_RULES §6's "at most 2 for the tournament build". Folding
+// the two pit-stop actions into one handler brings that cost to 2.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { fetchSharedMarketData, buildEvaluationContext } from '../_utils/seasonEvalContext.js';
