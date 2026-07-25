@@ -27,6 +27,8 @@ The scoring engine and `createAgentBattle` document shape are fenced as concepts
 
 **Separate gate — the §2.3 import-boundary ratchet:** reading the fenced `agentArchetypeConfig.js` / `archetypeScoring.js` is §1-permitted, but a *new direct importer* of any legacy archetype table also trips the Spec §2.3 import-boundary ratchet — record the importer in `api/_utils/archetypeImportBoundaryBaseline.json` in the SAME commit. Satisfying this fence does not satisfy that ratchet.
 
+**The flag-split prose rule (founder-ruled Jul 25 2026 — Fundamental Wire PR-A review, finding F2):** the DR-13 flag-split pattern (dark non-fenced render module + a one-import/one-call fenced splice) is the sanctioned way to add prompt content with a minimal fence diff — and it *deliberately moves prompt prose OUT of the fenced assemblers*, and therefore out of the C-20 prose-honesty sweep's original two-file scope. Any module that renders prompt text via the split MUST be added to `PROMPT_CONTRIBUTING_MODULES` (`api/_utils/__fixtures__/promptHonestyRegistry.js`) **in the same commit as the fenced splice**. The sweep's import-classification tripwire (`agentEvalPromptAssembly.honesty.test.js`) fails CI on any fenced-assembler import classified in neither registry list, so the omission cannot be silent.
+
 ## 2. Branch & merge discipline
 
 - **One task = one branch, cut fresh from current `main`.** Never create branches mid-task; never continue a prior task's session branch (the long-running shared-session-branch pattern is retired — it nearly produced a 76-commit accidental PR).

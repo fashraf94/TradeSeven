@@ -1,8 +1,8 @@
 FUNDAMENTALS (held + bench; a missing metric is NOT REPORTED — never zero):
-Basis: growth and surprise figures are from the most recent reported quarter;
-beat rate spans up to 12 quarters of filings; EPS revisions cover the last 30
-days; valuation ratios move with price (book value = most recent quarterly
-filing). Fundamentals data as of 07-24 (UTC); older entries are marked.
+Basis: revenue growth is from the most recent reported quarter; beat rate and
+the surprise percentile aggregate 4-12 quarters of filings; EPS revisions
+cover the last 30 days; valuation ratios and market-cap class move with price
+(book value = most recent quarterly filing). Fundamentals data as of 07-24 (UTC); older entries are marked.
 
 HELD:
 NVDA (Technology / Semiconductors & Semiconductor Equipment): PE=42.1 (sect med 28) | P/B=8.3 | rev growth=+11.6% | mcap=large | EPS rev 30d=+2.1% | beat rate=75% | surprise pctl=82

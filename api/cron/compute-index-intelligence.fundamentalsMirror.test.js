@@ -136,21 +136,33 @@ describe('buildFundamentalsMirror — null honesty (C-20)', () => {
   });
 });
 
-describe('buildFundamentalsMirror — D2 beatRate suppression', () => {
+describe('buildFundamentalsMirror — D2/F1 suppression on the source marker', () => {
   it("includes beatRate only when beatRateSource === 'computed'", () => {
     expect(buildFundamentalsMirror(fullFund()).beatRate).toBe(75);
     const fabricated = buildFundamentalsMirror(fullFund({ metrics: { beatRateSource: 'sector_default' } }));
     expect('beatRate' in fabricated).toBe(false);
   });
 
-  it('an ABSENT marker (pre-D2 peerRankings doc) also suppresses — transition-safe', () => {
+  it('F1: surpriseMagPercentile suppresses on the SAME marker — both f-07 legs travel together', () => {
+    // <4 quarters flips avgSurpriseMag to the mean-of-ABSOLUTE formula, which
+    // is not comparable to its ≥4-quarter sector peers. The 'computed' state
+    // IS the ≥4-quarter condition, so one gate serves both legs.
+    expect(buildFundamentalsMirror(fullFund()).surpriseMagPercentile).toBe(82);
+    const fabricated = buildFundamentalsMirror(fullFund({ metrics: { beatRateSource: 'sector_default' } }));
+    expect('surpriseMagPercentile' in fabricated).toBe(false);
+  });
+
+  it('an ABSENT marker (pre-D2 peerRankings doc) suppresses BOTH — transition-safe', () => {
     const preD2 = buildFundamentalsMirror(fullFund({ metrics: { beatRateSource: undefined } }));
     expect('beatRate' in preD2).toBe(false);
+    expect('surpriseMagPercentile' in preD2).toBe(false);
   });
 });
 
 describe('buildFundamentalsMirror — derived/gated fields', () => {
-  it('surpriseMagPercentile is gated on metrics.avgSurpriseMag presence (no ranking artifact leaks)', () => {
+  it('surpriseMagPercentile is ALSO gated on metrics.avgSurpriseMag presence (no ranking artifact leaks)', () => {
+    // beatRateSource stays 'computed' in both fixtures — this test isolates
+    // the presence gate from the F1 formula gate.
     const gated = buildFundamentalsMirror(fullFund({ metrics: { avgSurpriseMag: null } }));
     expect('surpriseMagPercentile' in gated).toBe(false);
     // Value present but the pillar dimension missing → also omitted (never invented).
