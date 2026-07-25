@@ -152,23 +152,23 @@ MARKET POSTURE:
 STOCK REGIMES:
 - directional_expansion: Strong trend + volume. Strategies:
   S1 Volatility Squeeze Breakout (BB squeeze + volume surge + price above upper BB).
-  S2 52-Week High Breakout (within 5% of 52W high + volume > 1.2x + intraday range
-  position > 80% to confirm buyers driving breakout, not just tagging resistance).
+  S2 Breakout Confirmation (RVOL > 1.2x + BB %B >= 0.8, price pressing the upper
+  band rather than just tagging it + rsPercentile >= 80).
   Hold winners. Do not fight the trend.
 - directional_contraction: Quiet uptrend. Strategy:
-  S3 RS Momentum + VWAP Pullback (RS > 80th percentile + pullback to VWAP + 5min RSI
-  bouncing off 40). Hold, tighten expectations.
+  S3 RS Momentum Pullback (rsPercentile > 80 + RSI-14 recovering from <= 45 +
+  MACD histogram no longer contracting). Hold, tighten expectations.
 - choppy: No clear direction. Strategy:
-  S4 VWAP Mean Reversion only (deviation > 1 std below VWAP + 5min RSI < 25
-  recovering). Avoid swapping INTO choppy stocks.
+  S4 Mean Reversion only (BB %B <= 0.2 at the lower band + RSI-14 < 30 turning
+  up). Avoid swapping INTO choppy stocks.
 - distressed: High volatility + downtrend. STRICT EXCLUSION. Do NOT buy distressed
   stocks. If held, evaluate for swap-out immediately.
 
 CROSS-REGIME STRATEGY:
 - S5 News-Catalyst Momentum (Star/Core tier): When a FantasyTimes story with positive
-  sentiment tags a stock AND volume ratio > 1.2x AND 5-min price breaks above previous
-  day's high AND price is above VWAP → strong entry signal. Assign to Star if ATR
-  High/Extreme, Core if ATR Normal. Exit when 5-min RSI > 85 then drops below 80
+  sentiment tags a stock AND volume ratio > 1.2x AND the candidate's ATR-normalized
+  daily move is >= 0.5x (the bench trigger line) → strong entry signal. Assign to
+  Star if ATR High/Extreme, Core if ATR Normal. Exit when RSI-14 > 80 and turns down
   (hype exhaustion) OR a negative FantasyTimes story appears on the ticker.
   Applies across ALL regimes except Distressed.
 
@@ -192,7 +192,7 @@ TRADE REASONING:
   * strategy: name the driving strategy (Volatility Squeeze, Momentum Breakout,
     RS Rotation, Risk Management, etc.).
   * indicators: 2-4 key indicator readings that supported the call, with values
-    (e.g., ["RSI 28 (oversold)", "BB width 5th pctl", "VWAP +0.4%"]).
+    (e.g., ["RSI 28 (oversold)", "BB width 12th pctl [SQUEEZE]", "VWAP +0.4%"]).
   * citedRules: array of Forge rule IDs that influenced this trade. [] if none.
   * conviction: 0-100. Be honest — low-conviction trades should say so.
 - Set trade_reasoning to null on routine HOLDs with nothing to say.
@@ -379,24 +379,24 @@ MARKET POSTURE:
 STOCK REGIMES:
 - directional_expansion: Strong trend + volume. Strategies:
   S1 Volatility Squeeze Breakout (BB squeeze + volume surge + price above upper BB).
-  S2 52-Week High Breakout (within 5% of 52W high + volume > 1.2x + intraday range
-  position > 80% to confirm buyers driving breakout, not just tagging resistance).
+  S2 Breakout Confirmation (RVOL > 1.2x + BB %B >= 0.8, price pressing the upper
+  band rather than just tagging it + rsPercentile >= 80).
   Hold winners. Do not fight the trend.
 - directional_contraction: Quiet uptrend. Strategy:
-  S3 RS Momentum + VWAP Pullback (RS > 80th percentile + pullback to VWAP + 5min RSI
-  bouncing off 40). Hold, tighten expectations.
+  S3 RS Momentum Pullback (rsPercentile > 80 + RSI-14 recovering from <= 45 +
+  MACD histogram no longer contracting). Hold, tighten expectations.
 - choppy: No clear direction. Strategy:
-  S4 VWAP Mean Reversion only (deviation > 1 std below VWAP + 5min RSI < 25
-  recovering). Avoid swapping INTO choppy stocks.
+  S4 Mean Reversion only (BB %B <= 0.2 at the lower band + RSI-14 < 30 turning
+  up). Avoid swapping INTO choppy stocks.
 - distressed: High volatility + downtrend. STRICT EXCLUSION. Do NOT buy distressed
   stocks. If held, evaluate for swap-out immediately.
 
 CROSS-REGIME STRATEGY:
 - S5 News-Catalyst Momentum: When a FantasyTimes story with positive
-  sentiment tags a stock AND volume ratio > 1.2x AND 5-min price breaks above previous
-  day's high AND price is above VWAP → strong entry signal. Exit when 5-min RSI > 85
-  then drops below 80 (hype exhaustion) OR a negative FantasyTimes story appears on
-  the ticker. Applies across ALL regimes except Distressed.
+  sentiment tags a stock AND volume ratio > 1.2x AND the candidate's ATR-normalized
+  daily move is >= 0.5x (the bench trigger line) → strong entry signal. Exit when
+  RSI-14 > 80 and turns down (hype exhaustion) OR a negative FantasyTimes story
+  appears on the ticker. Applies across ALL regimes except Distressed.
 
 NR7-flagged stocks get priority consideration for Squeeze Breakout strategy (S1).
 
@@ -418,7 +418,7 @@ TRADE REASONING:
   * strategy: name the driving strategy (Volatility Squeeze, Momentum Breakout,
     RS Rotation, Risk Management, etc.).
   * indicators: 2-4 key indicator readings that supported the call, with values
-    (e.g., ["RSI 28 (oversold)", "BB width 5th pctl", "VWAP +0.4%"]).
+    (e.g., ["RSI 28 (oversold)", "BB width 12th pctl [SQUEEZE]", "VWAP +0.4%"]).
   * citedRules: array of Forge rule IDs that influenced this trade. [] if none.
   * conviction: 0-100. Be honest — low-conviction trades should say so.
 - Set trade_reasoning to null on routine HOLDs with nothing to say.
@@ -570,8 +570,8 @@ ${ctx.consolidatedInsight}`);
       ruleLines.push(
         'C_INST: INSTITUTIONAL DATA LAG — Institutional accumulation/distribution data from 13F\n' +
         'filings is lagged up to 135 days. NEVER hold a position based solely on strong\n' +
-        'institutional accumulation if VWAP or 5-min RSI shows a breakdown. Intraday technicals\n' +
-        'ALWAYS override stale institutional signals. Use institutional data for draft-time\n' +
+        'institutional accumulation if VWAP (held positions) or RSI-14 shows a breakdown.\n' +
+        'Live technicals ALWAYS override stale institutional signals. Use institutional data for draft-time\n' +
         'universe filtering, not intraday swap decisions.'
       );
     }
@@ -697,7 +697,7 @@ function formatInstitutionalBlock(instContext) {
   lines.push('=== INSTITUTIONAL INTELLIGENCE (13F Filings) ===');
   lines.push('NOTE: This data is from quarterly SEC filings. It is lagged by up to 135 days.');
   lines.push('Do NOT hold a position based solely on institutional accumulation if real-time');
-  lines.push('technicals (VWAP, 5-min RSI) show a breakdown. Institutional data provides the');
+  lines.push('technicals (VWAP on held positions, RSI-14) show a breakdown. Institutional data gives the');
   lines.push('historical "floor." Real-time technicals dictate the "action."');
   lines.push('');
 

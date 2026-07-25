@@ -6,7 +6,7 @@
  */
 
 import { TRAIT_LIBRARY } from './traitLibrary';
-import { FORGE_COLLECTIONS } from './forgeCollections';
+import { OFFERED_COLLECTIONS } from './forgeCollections';
 
 const relationshipMap = {};
 
@@ -25,9 +25,11 @@ TRAIT_LIBRARY.forEach(trait => {
 });
 
 // Build collection relationships
-// FORGE_COLLECTIONS includes both style collections (with .rules array)
-// and thematic collections (with .ruleIds array)
-FORGE_COLLECTIONS.forEach(col => {
+// OFFERED_COLLECTIONS includes both style collections (with .rules array)
+// and thematic collections (with .ruleIds array). Retired collections are
+// excluded (C-20): a "Found In" chip must never point at a collection the
+// user cannot reach.
+OFFERED_COLLECTIONS.forEach(col => {
   const ruleIds = col.isStyleCollection
     ? (col.rules || []).map(r => r.ruleId)
     : (col.ruleIds || []);

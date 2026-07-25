@@ -1,20 +1,32 @@
 // api/cron/season-pit-stop-manage.js
 //
 // Pit Stop Management Cron (Phase B-9b)
+//
+// ⚠ NOT SCHEDULED — THIS HANDLER DOES NOT RUN (as of Jul 25, 2026).
+// The two "Cron schedule:" lines below are HISTORICAL. Both entries were
+// removed from vercel.json on Jun 4, 2026 by commit d80aee25 ("Forge redesign
+// Phase 1"), which deleted all three season crons (count 40 → 37). Season mode
+// is scrapped permanently per founder ruling C-19; this handler is RETAINED
+// UN-SCHEDULED rather than deleted. Nothing else invokes it. See
+// season-daily-evaluate.js's header for the full record and the cron-budget
+// arithmetic on any future restoration.
+//
 // Manages the weekly pit-stop lifecycle for active season entries via
 // ?action= query-param routing:
 //
 //   ?action=open   — Saturday morning: create pitStop docs, open the
 //                    client-write gate (isPitStopOpen = true) for each
 //                    active entry. Runs 7:30–8:30 AM ET.
-//                    Cron schedule: "0 13,14 * * 6" (UTC, DST dual-hour)
+//                    Cron schedule (HISTORICAL, removed Jun 4 2026):
+//                    "0 13,14 * * 6" (UTC, DST dual-hour)
 //
 //   ?action=lockin — Sunday night: re-validate every client-submitted
 //                    change against the canonical rule schema, apply
 //                    validated changes to entry.algorithm.rules, copy
 //                    the validated shortlist into seasonState, and close
 //                    the gate. Runs 9:30–10:30 PM ET.
-//                    Cron schedule: "0 3,4 * * 1" (Monday UTC = Sunday
+//                    Cron schedule (HISTORICAL, removed Jun 4 2026):
+//                    "0 3,4 * * 1" (Monday UTC = Sunday
 //                    night ET, DST dual-hour)
 //
 // The rule schema registry is built once at module load from the

@@ -13,7 +13,7 @@ import {
   ChevronDown, ChevronUp, Plus, BookOpen,
 } from 'lucide-react';
 import { FORGE_CATEGORIES, FORGE_RULE_TEMPLATES } from '../../data/forgeKnowledgeBase';
-import { FORGE_COLLECTIONS } from '../../data/forgeCollections';
+import { OFFERED_COLLECTIONS } from '../../data/forgeCollections';
 import { FORGE_LIMITS } from '../../constants/agentProgression';
 import { getAgentLevel } from '../../constants/agentProgression';
 import ForgeRuleCard from './ForgeRuleCard';
@@ -426,7 +426,7 @@ export default function DiscoverTab({ isMobile, forge, tokens, agent }) {
       </motion.section>
 
       {/* 2.3 Collection Sections */}
-      {FORGE_COLLECTIONS.map((collection, index) => {
+      {OFFERED_COLLECTIONS.map((collection, index) => {
         const CollectionIcon = COLLECTION_ICONS[collection.icon];
         const rules = collection.ruleIds
           .map((id) => TEMPLATE_MAP[id])

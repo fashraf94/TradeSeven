@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Search, X } from 'lucide-react';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../../data/forgeKnowledgeBase';
+import { filterSupported } from '../../data/ruleSupportStatus';
 import { CATEGORY_ORDER } from '../../hooks/useForge';
 
 // Build a lookup from category id to { name, color }
@@ -140,16 +141,26 @@ export default function RuleDirectory({ selectedRuleId, onSelectRule, userRules,
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategories, setExpandedCategories] = useState(new Set());
 
-  // Group library rules by category
+  // Group library rules by category.
+  // C-20 honesty gate: only `supported` rules are OFFERED. Filtering HERE is
+  // load-bearing — this one structure feeds both the browse accordion and the
+  // search results below, so a rule hidden from browse cannot be reached via
+  // search. Lookup-by-id paths are deliberately NOT filtered, so an
+  // already-equipped rule still resolves and never strands.
+  const offerableTemplates = useMemo(
+    () => filterSupported(FORGE_RULE_TEMPLATES),
+    []
+  );
+
   const rulesByCategory = useMemo(() => {
     const grouped = {};
-    FORGE_RULE_TEMPLATES.forEach(rule => {
+    offerableTemplates.forEach(rule => {
       const cat = rule.forgeTemplates?.[0]?.category || rule.category;
       if (!grouped[cat]) grouped[cat] = [];
       grouped[cat].push(rule);
     });
     return grouped;
-  }, []);
+  }, [offerableTemplates]);
 
   // Filter library rules by search
   const filteredByCategory = useMemo(() => {
@@ -162,8 +173,9 @@ export default function RuleDirectory({ selectedRuleId, onSelectRule, userRules,
     return filtered;
   }, [rulesByCategory, searchQuery]);
 
-  // Total library count
-  const libraryCount = FORGE_RULE_TEMPLATES.length;
+  // Total library count — counts what is actually offerable, so the number the
+  // user sees agrees with the list they can browse (§9 display-agreement).
+  const libraryCount = offerableTemplates.length;
 
   // Agent-learned rule sources that belong in their own section (not My Rules)
   const LEARNED_SOURCES = new Set([

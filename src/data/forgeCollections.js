@@ -39,9 +39,9 @@ export const TRADING_STYLE_COLLECTIONS = [
         priorityLabel: 'Core Strategy',
       },
       {
-        ruleId: 't-09',
-        paramOverrides: { pct: 0.5 },
-        rationale: 'Swing traders give VWAP pullbacks more breathing room than day traders (who use 0.2%). A 0.5% tolerance absorbs the "liquidity traps" where institutional algorithms deliberately breach VWAP to trigger retail stop-losses before resuming the upward trend.',
+        ruleId: 'tv-01',
+        paramOverrides: {},
+        rationale: 'The swing entry is a pause inside an uptrend, not a breakdown. The RSI momentum zone targets stocks with building strength that have not yet overextended — the daily-chart equivalent of buying the dip without buying the reversal. It complements the deeper oversold screen above: that one catches the stock at daily support, this one catches it still riding the trend.',
         priority: 1,
         priorityLabel: 'Core Strategy',
       },
@@ -101,6 +101,20 @@ export const TRADING_STYLE_COLLECTIONS = [
     difficulty: 'intermediate',
     tags: ['VWAP', 'intraday', 'speed', 'mean-reversion', 'session-timing'],
     isStyleCollection: true,
+
+    // ── RETIRED (C-20, Jul 25 2026) ──────────────────────────────────────────
+    retired: true,
+    retiredReason:
+      'Its stated thesis is VWAP-centric intraday execution, and its entire VWAP '
+      + 'core (t-09 pullback, t-10 sigma-band fade, mb-05 VWAP+MACD swap gate) cites '
+      + 'signals that exist on no running path: VWAP is computed for HELD positions '
+      + 'only, there are no VWAP sigma-bands, and no 5-minute MACD. Substituting '
+      + 'would have left a preset labelled "VWAP-centric" containing no VWAP, which '
+      + 'is a mislabel rather than a fix.',
+    returnsWith:
+      'The intraday/VWAP build: candidate-side VWAP plus 5-min RSI/MACD. Signal '
+      + 'Inventory V2 notes this is a COMPUTATION gap, not a data gap — 5-minute bars '
+      + 'are already fetched and one 5-min indicator (sma20_5m) already ships.',
 
     philosophy: 'The day trader operates on intraday microstructure, not daily chart setups. VWAP is the institutional fair-value anchor \u2014 the line where professional desks execute large block orders. The day trader buys pullbacks to VWAP in uptrends, cuts positions fast when they break below fair value, avoids the midday liquidity trap, and rotates aggressively into momentum leaders during Power Hour. Speed and precision beat patience in a 6.5-hour session.',
 
@@ -395,9 +409,9 @@ export const TRADING_STYLE_COLLECTIONS = [
         priorityLabel: 'Foundation',
       },
       {
-        ruleId: 't-09',
-        paramOverrides: { pct: 0.4 },
-        rationale: 'VWAP pullback as the intraday entry signal. When a trending stock pulls back to VWAP, it\'s returning to institutional fair value.',
+        ruleId: 'tech-macd-bullish',
+        paramOverrides: {},
+        rationale: 'Entry timing inside an already-confirmed trend: act when momentum turns back up, not when price merely drifts. Distinct from the zero-line patience rule below — that one governs how long to HOLD through a pause, this one governs WHEN to enter. Different phases of the same trade.',
         priority: 2,
         priorityLabel: 'Foundation',
       },
@@ -443,6 +457,17 @@ export const TRADING_STYLE_COLLECTIONS = [
     difficulty: 'intermediate',
     tags: ['VWAP', 'institutional', 'smart-money', 'ICT', 'tradingview'],
     isStyleCollection: true,
+
+    // ── RETIRED (C-20, Jul 25 2026) ──────────────────────────────────────────
+    retired: true,
+    retiredReason:
+      '5 of its 7 rules (tv-04 reclaim, mb-05 VWAP+MACD gate, t-09 pullback, '
+      + 't-10 sigma fade, tv-09 sweep-with-VWAP-recovery) rest on VWAP as a '
+      + 'SELECTION signal, which does not exist: buildMomentumSnapshot iterates held '
+      + 'positions only and the bench block renders no VWAP line. The collection is '
+      + 'its thesis, so there is nothing to substitute toward.',
+    returnsWith:
+      'The intraday/VWAP build — the same arc that returns day-trader.',
 
     philosophy: 'VWAP (Volume-Weighted Average Price) is how institutions measure execution quality. If a stock is above VWAP, buyers are winning. Below VWAP, sellers dominate. This collection treats VWAP as the only indicator that matters, incorporating VWAP Trend Following, VWAP Mean Reversion, and Smart Money Concepts from TradingView.',
 
@@ -634,9 +659,9 @@ export const TRADING_STYLE_COLLECTIONS = [
         priorityLabel: 'Foundation',
       },
       {
-        ruleId: 'tv-07',
-        paramOverrides: { pct: 25, minutes: 90 },
-        rationale: 'IBS \u2014 stocks closing near their daily low are spring-loaded for a bounce.',
+        ruleId: 't-12',
+        paramOverrides: {},
+        rationale: 'Spring-loaded, measured by volatility compression rather than where the bar closed. Bollinger Band Width in the lowest percentile means the range has coiled and an expansion is overdue \u2014 the same "about to snap back" thesis, sourced from a signal the agent can actually see.',
         priority: 2,
         priorityLabel: 'Foundation',
       },
@@ -804,13 +829,11 @@ export const TRADING_STYLE_COLLECTIONS = [
         priority: 3,
         priorityLabel: 'Edge',
       },
-      {
-        ruleId: 'gs-06',
-        paramOverrides: {},
-        rationale: 'When behind, concentrate into highest-conviction positions. Leaders don\'t play safe from behind.',
-        priority: 4,
-        priorityLabel: 'Mastery',
-      },
+      // C-20 (Jul 25 2026): the gs-06 "press when trailing par" slot was dropped
+      // rather than substituted. Score-vs-par does not exist on any running
+      // path, and no supported rule expresses aggression triggered by standing.
+      // This is a selection collection — its thesis lives in the RS and sector
+      // rules above; the game-state leg was always its weakest.
     ],
 
     get ruleIds() { return this.rules.map(r => r.ruleId); },
@@ -866,9 +889,9 @@ export const TRADING_STYLE_COLLECTIONS = [
         priorityLabel: 'Foundation',
       },
       {
-        ruleId: 't-09',
-        paramOverrides: { pct: 0.3 },
-        rationale: 'Precision entry once all three screens pass.',
+        ruleId: 'tv-02',
+        paramOverrides: {},
+        rationale: 'The third independent confirmation. Trend alignment and the volume gate cover structure and participation; a growing MACD histogram adds acceleration — a signal neither of the others can produce. Three genuinely separate reads, which is the whole point of this build.',
         priority: 2,
         priorityLabel: 'Foundation',
       },
@@ -969,16 +992,16 @@ export const TRADING_STYLE_COLLECTIONS = [
         priorityLabel: 'Edge',
       },
       {
-        ruleId: 'gs-05',
+        ruleId: 'gs-08',
         paramOverrides: {},
-        rationale: 'When winning, protect the lead. Reduce swap frequency, tighten stops.',
+        rationale: 'When the scoring system says it is working, stop touching it. After a run of positive thresholds the swap hurdle rises, so a hot book is not over-managed into mediocrity. Keyed on the threshold events this game mode is built around.',
         priority: 4,
         priorityLabel: 'Mastery',
       },
       {
-        ruleId: 'gs-06',
+        ruleId: 'gs-03',
         paramOverrides: {},
-        rationale: 'When behind, increase risk. Concentrate into high-ATR threshold candidates.',
+        rationale: 'Hurdles fall with each phase transition, so late in the battle a marginal upgrade becomes worth taking. Reaching one more threshold before the close is worth more than protecting a hurdle that no longer has time to pay off — this is clock-aware scoring, triggered by the phase, not by standing.',
         priority: 4,
         priorityLabel: 'Mastery',
       },
@@ -1001,10 +1024,18 @@ export const FORGE_COLLECTIONS = [
     subtitle: 'Protect your portfolio with risk management and smart allocation',
     icon: 'Shield',
     accentColor: '#ef4444',
+    // C-20 (Jul 25 2026): risk-single-stock-limit → r-06 (the game has no
+    // position sizing, so a per-stock cap was structurally vacuous; r-06 caps
+    // per-sector holdings, a ceiling complementing the diversification floor
+    // above). risk-volatility-avoidance → r-09. NOTE the honest shift: the old
+    // rule was an always-on per-stock screen against sector-average volatility;
+    // r-09 is REACTIVE, engaging low-ATR-only after a drawdown threshold. A
+    // preventive per-stock volatility screen returns only if that substrate is
+    // built — sector-average volatility exists nowhere at HEAD.
     ruleIds: [
       'risk-sector-diversification',
-      'risk-single-stock-limit',
-      'risk-volatility-avoidance',
+      'r-06',
+      'r-09',
       'alloc-even-spread',
     ],
   },
@@ -1027,6 +1058,19 @@ export const FORGE_COLLECTIONS = [
     subtitle: 'Find undervalued companies with strong fundamentals',
     icon: 'Gem',
     accentColor: '#f59e0b',
+
+    // ── RETIRED (C-20, Jul 25 2026) ──────────────────────────────────────────
+    retired: true,
+    retiredReason:
+      'All 4 rules are hidden_unwired, and only ONE supported fundamental rule '
+      + 'exists corpus-wide (tv-10) — a four-rule value preset cannot be rebuilt '
+      + 'from it. The metrics are real and persisted; they simply reach no agent.',
+    returnsWith:
+      'THE FUNDAMENTAL MIRROR WIRE — the #1 follow-on arc. Every metric already '
+      + 'exists on peerRankings/{ticker} (P/E compute-rankings.js:1352, P/B :1354, '
+      + 'D/E :1363, FCF-yield :1355, revisions :1372) but no agent path reads that '
+      + 'collection. One mirror into the doc agents already load un-hides 12 rules, '
+      + 'restores this collection intact, and repairs the StarterKit value path.',
     ruleIds: [
       'fund-value-pe',
       'fund-earnings-surprise',
@@ -1080,12 +1124,18 @@ export const FORGE_COLLECTIONS = [
     subtitle: 'Phase-aware rules that shift strategy as the battle progresses',
     icon: 'Clock',
     accentColor: '#94A3B8',
+    // C-20 (Jul 25 2026): gs-04/05/06 were par-predicated — they triggered on
+    // STANDING, not phase, so they were always off this collection's stated
+    // thesis, and score-vs-par exists on no running path. Replaced with two
+    // genuinely phase-gated rules (gs-03 per-transition hurdle decay, gs-10
+    // FINAL_HOUR no-chase); the gs-06 "press when trailing" slot was dropped
+    // rather than filled, since nothing supported expresses it. Four rules, all
+    // actually phase-aware — a closer match to the subtitle than before.
     ruleIds: [
       'gs-01',
       'gs-02',
-      'gs-04',
-      'gs-05',
-      'gs-06',
+      'gs-03',
+      'gs-10',
     ],
   },
   {
@@ -1117,3 +1167,20 @@ export const FORGE_COLLECTIONS = [
     ],
   },
 ];
+
+// ══════════════════════════════════════
+// C-20 HONESTY GATE — offered vs. retired
+// ══════════════════════════════════════
+// A collection whose THESIS is dark is not sold, even if some of its rules
+// still resolve (founder ruling, Jul 25 2026). Retired collections keep their
+// full definition above so existing equips resolve normally and the retirement
+// record travels with the data — they are simply not OFFERED.
+//
+// Display surfaces must read OFFERED_COLLECTIONS. Lookup-by-id and
+// relationship-graph consumers keep reading FORGE_COLLECTIONS.
+
+/** Collections currently offered to users. */
+export const OFFERED_COLLECTIONS = FORGE_COLLECTIONS.filter((c) => !c.retired);
+
+/** Retired collections, retained for the record and for legacy resolution. */
+export const RETIRED_COLLECTIONS = FORGE_COLLECTIONS.filter((c) => c.retired);

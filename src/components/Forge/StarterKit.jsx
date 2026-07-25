@@ -5,6 +5,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../../data/forgeKnowledgeBase';
+import { isSupported } from '../../data/ruleSupportStatus';
 import { createRule, createBundle, addRuleToBundle, forgeBundle, softDeleteRule } from '../../services/forgeService';
 import { updateAgent } from '../../services/agentService';
 // WS1 — pre-check the whole kit BEFORE creating anything: without it, an
@@ -21,9 +22,17 @@ const STYLE_RULES = {
     { id: 'tech-moving-average-trend', params: {} },
     { id: 'tech-bollinger-squeeze', params: {} },
   ],
+  // C-20 (Jul 25 2026): fund-value-pe and fund-earnings-surprise are
+  // hidden_unwired — their metrics are persisted on peerRankings/{ticker} but
+  // no agent path reads that collection, so the agent cannot detect them.
+  // tv-10 is the ONLY supported fundamental rule in the corpus; it uses the
+  // composite fundamentalScore (SIG-003, real and agent-visible). It honestly
+  // carries "strong earnings potential"; the "undervalued" half cannot be
+  // carried at all until the fundamental mirror wire lands — which is the #1
+  // follow-on arc precisely because this path, the value-investor collection
+  // and 12 hidden rules all return on it.
   value: [
-    { id: 'fund-value-pe', params: {} },
-    { id: 'fund-earnings-surprise', params: {} },
+    { id: 'tv-10', params: {} },
   ],
   contrarian: [
     { id: 'tech-rsi-oversold', params: {} },
@@ -32,9 +41,15 @@ const STYLE_RULES = {
 };
 
 const RISK_RULES = {
+  // C-20 (Jul 25 2026): risk-single-stock-limit is deprecated-vacuous — the
+  // game has no position sizing, so a per-stock exposure cap could never fire.
+  // r-06 caps holdings per SECTOR, a real ceiling complementing the
+  // diversification floor above. The step-2 answer copy is corrected to match
+  // (see RISK_QUESTION): promising single-stock limiting on the first screen a
+  // user sees was itself a C-20 violation.
   safe: [
     { id: 'risk-sector-diversification', params: {} },
-    { id: 'risk-single-stock-limit', params: {} },
+    { id: 'r-06', params: {} },
   ],
   balanced: [
     { id: 'risk-sector-diversification', params: {} },
@@ -79,7 +94,7 @@ const QUESTIONS = [
     title: 'How much risk is okay?',
     subtitle: 'Step 2 of 3',
     options: [
-      { value: 'safe', emoji: '\u{1F6E1}\uFE0F', label: 'Keep it safe', desc: 'Diversify across sectors and limit exposure to any single stock', reason: 'want to keep it safe', summaryFragment: 'keep risk in check' },
+      { value: 'safe', emoji: '\u{1F6E1}\uFE0F', label: 'Keep it safe', desc: 'Diversify across sectors and cap how much of any one sector you hold', reason: 'want to keep it safe', summaryFragment: 'keep risk in check' },
       { value: 'balanced', emoji: '\u2696\uFE0F', label: 'Balanced', desc: "Spread picks across sectors but don't overthink it", reason: 'like a balanced approach', summaryFragment: 'stay balanced on risk' },
       { value: 'yolo', emoji: '\u{1F525}', label: 'Let it ride', desc: 'No guardrails \u2014 your agent trades with full conviction', reason: 'trade with full conviction', summaryFragment: 'trade without guardrails' },
     ],
@@ -163,8 +178,12 @@ function getAlternatives(rule, allSelected) {
   const template = getTemplate(rule.id);
   if (!template) return [];
   const selectedIds = new Set(allSelected.map(r => r.id));
+  // C-20 honesty gate: this is an OFFER surface — it hands rules to a brand-new
+  // user during onboarding, so it must never surface a non-supported rule.
+  // getTemplate() above stays unfiltered so an already-chosen rule still
+  // resolves for display.
   return FORGE_RULE_TEMPLATES
-    .filter(t => t.category === template.category && !selectedIds.has(t.id))
+    .filter(t => t.category === template.category && !selectedIds.has(t.id) && isSupported(t.id))
     .map(t => ({ id: t.id, params: {} }));
 }
 

@@ -102,8 +102,8 @@ export function buildStrategyUserPrompt(agent, equippedWatchlist = null) {
       rLines.push(
         'C_INST: INSTITUTIONAL DATA LAG — Institutional accumulation/distribution data from 13F\n' +
         'filings is lagged up to 135 days. NEVER hold a position based solely on strong\n' +
-        'institutional accumulation if VWAP or 5-min RSI shows a breakdown. Intraday technicals\n' +
-        'ALWAYS override stale institutional signals. Use institutional data for draft-time\n' +
+        'institutional accumulation if VWAP (held positions) or RSI-14 shows a breakdown.\n' +
+        'Live technicals ALWAYS override stale institutional signals. Use institutional data for draft-time\n' +
         'universe filtering, not intraday swap decisions.'
       );
     }
@@ -383,7 +383,7 @@ function formatInstitutionalBlock(instContext) {
   lines.push('=== INSTITUTIONAL INTELLIGENCE (13F Filings) ===');
   lines.push('NOTE: This data is from quarterly SEC filings. It is lagged by up to 135 days.');
   lines.push('Do NOT hold a position based solely on institutional accumulation if real-time');
-  lines.push('technicals (VWAP, 5-min RSI) show a breakdown. Institutional data provides the');
+  lines.push('technicals (VWAP on held positions, RSI-14) show a breakdown. Institutional data gives the');
   lines.push('historical "floor." Real-time technicals dictate the "action."');
   lines.push('');
 
