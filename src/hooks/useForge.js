@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { collection, query, getDocs, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../data/forgeKnowledgeBase';
-import { FORGE_COLLECTIONS } from '../data/forgeCollections';
+import { OFFERED_COLLECTIONS } from '../data/forgeCollections';
 import {
   createRule,
   createBundle,
@@ -243,7 +243,7 @@ export function useForge(agentId) {
 
   // Pre-compute collection data with resolved rules and category colors
   const collectionData = useMemo(() => {
-    return FORGE_COLLECTIONS.map(collection => {
+    return OFFERED_COLLECTIONS.map(collection => {
       const ids = collection.ruleIds || [];
       const resolvedRules = ids
         .map(id => FORGE_RULE_TEMPLATES.find(t => t.id === id))

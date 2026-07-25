@@ -12,7 +12,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { FORGE_RULE_TEMPLATES } from './forgeKnowledgeBase.js';
-import { FORGE_COLLECTIONS } from './forgeCollections.js';
+import { FORGE_COLLECTIONS, OFFERED_COLLECTIONS, RETIRED_COLLECTIONS } from './forgeCollections.js';
 import {
   RULE_SUPPORT_STATUS,
   SUPPORT_STATUS_VALUES,
@@ -220,14 +220,40 @@ describe('preset integrity — new users must not start stranded', () => {
   // C-20 gate says must not be offered.
   const notOffered = (id) => NOT_OFFERED_STATUSES.includes(getSupportStatus(id));
 
-  it('no FORGE_COLLECTIONS preset ships a non-offerable rule', () => {
+  it('no OFFERED collection ships a non-offerable rule', () => {
     const offenders = [];
-    for (const c of FORGE_COLLECTIONS) {
-      for (const id of c.ruleIds || []) {
+    for (const c of OFFERED_COLLECTIONS) {
+      const ids = c.isStyleCollection
+        ? (c.rules || []).map((r) => r.ruleId)
+        : (c.ruleIds || []);
+      for (const id of ids) {
         if (notOffered(id)) offenders.push(`${c.id} → ${id} (${getSupportStatus(id)})`);
       }
     }
-    expect(offenders, `presets shipping hidden rules:\n${offenders.join('\n')}`).toEqual([]);
+    expect(offenders, `offered collections shipping hidden rules:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  it('retired collections are excluded from the offered set but keep their record', () => {
+    const retiredIds = RETIRED_COLLECTIONS.map((c) => c.id).sort();
+    expect(retiredIds).toEqual(['day-trader', 'value-investor', 'vwap-warrior']);
+    // Excluded from display...
+    const offeredIds = new Set(OFFERED_COLLECTIONS.map((c) => c.id));
+    for (const id of retiredIds) expect(offeredIds.has(id)).toBe(false);
+    // ...but retained in full, with a record, so existing equips resolve and
+    // the reason travels with the data.
+    for (const c of RETIRED_COLLECTIONS) {
+      expect(c.retiredReason, `${c.id} must state why`).toBeTruthy();
+      expect(c.returnsWith, `${c.id} must state what un-retires it`).toBeTruthy();
+      const ids = c.isStyleCollection ? (c.rules || []).map((r) => r.ruleId) : (c.ruleIds || []);
+      expect(ids.length, `${c.id} must keep its rule list`).toBeGreaterThan(0);
+    }
+    expect(OFFERED_COLLECTIONS.length + RETIRED_COLLECTIONS.length).toBe(FORGE_COLLECTIONS.length);
+  });
+
+  it('"Found In" chips never point at a retired collection', () => {
+    const src = readFileSync(path.join(REPO_ROOT, 'src/data/ruleRelationships.js'), 'utf8');
+    expect(src).toContain('OFFERED_COLLECTIONS.forEach');
+    expect(src).not.toMatch(/^import \{ FORGE_COLLECTIONS \}/m);
   });
 
   it('the StarterKit cold-start preset ships no non-offerable rule', () => {

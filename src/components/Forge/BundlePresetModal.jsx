@@ -4,11 +4,11 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Zap, Plus } from 'lucide-react';
-import { FORGE_COLLECTIONS } from '../../data/forgeCollections';
+import { OFFERED_COLLECTIONS } from '../../data/forgeCollections';
 import { FORGE_RULE_TEMPLATES } from '../../data/forgeKnowledgeBase';
 
 // Pick 3 diverse presets from the 9 available collections
-const PRESET_COLLECTIONS = FORGE_COLLECTIONS.filter(c =>
+const PRESET_COLLECTIONS = OFFERED_COLLECTIONS.filter(c =>
   ['defensive-playbook', 'momentum-hunter', 'battle-tactics'].includes(c.id)
 );
 
