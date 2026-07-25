@@ -5,6 +5,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../../data/forgeKnowledgeBase';
+import { isSupported } from '../../data/ruleSupportStatus';
 import { createRule, createBundle, addRuleToBundle, forgeBundle, softDeleteRule } from '../../services/forgeService';
 import { updateAgent } from '../../services/agentService';
 // WS1 — pre-check the whole kit BEFORE creating anything: without it, an
@@ -163,8 +164,12 @@ function getAlternatives(rule, allSelected) {
   const template = getTemplate(rule.id);
   if (!template) return [];
   const selectedIds = new Set(allSelected.map(r => r.id));
+  // C-20 honesty gate: this is an OFFER surface — it hands rules to a brand-new
+  // user during onboarding, so it must never surface a non-supported rule.
+  // getTemplate() above stays unfiltered so an already-chosen rule still
+  // resolves for display.
   return FORGE_RULE_TEMPLATES
-    .filter(t => t.category === template.category && !selectedIds.has(t.id))
+    .filter(t => t.category === template.category && !selectedIds.has(t.id) && isSupported(t.id))
     .map(t => ({ id: t.id, params: {} }));
 }
 

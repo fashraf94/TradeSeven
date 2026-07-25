@@ -27,6 +27,7 @@ import {
 } from '../data/archetypeRuleCompatibility.js';
 import { getArchetypeDisplayName } from '../data/archetypeDisplay.js';
 import { FORGE_RULE_TEMPLATES } from '../data/forgeKnowledgeBase.js';
+import { isSupported } from '../data/ruleSupportStatus.js';
 
 // Paths where must-obey strength comes from the rule's CATEGORY (case 3)
 // rather than an authored override (case 2).
@@ -54,11 +55,16 @@ function paramSwingSuffix(templateId, archetype) {
 export function nativeAlternatives(templateId, archetype, limit = 2) {
   const blockedTemplate = FORGE_RULE_TEMPLATES.find((t) => t.id === templateId);
   if (!blockedTemplate) return [];
+  // C-20 honesty gate: this recommends replacements for a blocked rule, so it
+  // is an OFFER surface — recommending a hidden rule would be worse than
+  // failing to hide one. The find() above stays unfiltered so the blocked rule
+  // itself still resolves for its copy.
   return FORGE_RULE_TEMPLATES
     .filter(
       (t) =>
         t.id !== templateId &&
         t.category === blockedTemplate.category &&
+        isSupported(t.id) &&
         getRuleCompatInfo(t.id, archetype).state === 'native'
     )
     .slice(0, limit)
