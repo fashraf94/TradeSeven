@@ -37,8 +37,14 @@ const ECON_ALIAS_TABLE = [
   { slug: 'fomc', keywords: ['fomc', 'fed funds', 'rate decision', 'federal reserve decision', 'fed decision', 'interest rate decision'] },
   { slug: 'gdp', keywords: ['gdp', 'gross domestic'] },
   { slug: 'retail_sales', keywords: ['retail sales'] },
+  // ism_svc MUST precede ism_mfg: "ISM Non-Manufacturing PMI" (the services
+  // release's older official name) cleans to "ism non manufacturing pmi",
+  // which CONTAINS "manufacturing pmi". Checked in the other order it
+  // canonicalized to ism_mfg, so on a day carrying both ISM releases the
+  // second one collided with the first's idempotency key and its Wire entry
+  // was silently dropped as a receipt hit.
+  { slug: 'ism_svc', keywords: ['ism services', 'services pmi', 'non manufacturing', 'nonmanufacturing'] },
   { slug: 'ism_mfg', keywords: ['ism manufacturing', 'manufacturing pmi'] },
-  { slug: 'ism_svc', keywords: ['ism services', 'services pmi', 'non manufacturing'] },
   { slug: 'umich', keywords: ['michigan', 'consumer sentiment'] },
   { slug: 'consumer_conf', keywords: ['consumer confidence'] },
   { slug: 'jolts', keywords: ['jolts', 'job openings'] },

@@ -15,6 +15,20 @@ vi.mock('./wireFlags.js', () => ({
 const { publishStoryWithWire } = await import('./wireWriteThrough.js');
 const { runWireReplaySweep } = await import('./wireReplaySweep.js');
 const { WIRE_CONFLICTS, WIRE_OUTCOMES } = await import('./wireContracts.js');
+const { computePayloadHash } = await import('./wireIdentity.js');
+
+/** The NORMALIZED facts the validator produces for goodFacts() — the exact
+ *  value publishStoryWithWire hashes. Built here independently of the code
+ *  under test so the receipt-match assertion is not circular. */
+const normalizedGoodFacts = () => ({
+  eventType: 'earnings_recap',
+  tickers: ['NVDA'],
+  direction: 'up',
+  magnitude: { value: 8.2, unit: 'pct', basis: 'eps_vs_consensus' },
+  keyLevel: null,
+  figures: [],
+  qualifiers: [],
+});
 
 const MARKET_DATE = '2026-07-24';
 const NOW = new Date('2026-07-24T18:00:00Z');
@@ -126,7 +140,10 @@ describe('receipt paths', () => {
     await storyRef.update({ wirePending: true });
     await db.collection('fantasyTimesWireEnvelopes').doc(storyRef.id).set({
       storyId: storyRef.id, seam: 'doug_earnings_recap', reporter: 'doug',
-      idempotencyKey: wire.idempotencyKey, payloadHash: dayReceiptHash(await dayData(), wire.idempotencyKey),
+      // Hash computed INDEPENDENTLY from the facts (not read back out of the
+      // doc under test) so this asserts the real F2-2 contract rather than
+      // a tautology.
+      idempotencyKey: wire.idempotencyKey, payloadHash: computePayloadHash(normalizedGoodFacts()),
       marketDate: MARKET_DATE, outcome: WIRE_OUTCOMES.PASSED,
       modelAgentFacts: goodFacts(), validatorResult: { codes: [], reasons: [], offUniverseTickers: [], preStripTickerCount: 1, quarantined: false, validatorVersion: '1.5.0' },
       primaryTicker: 'NVDA', headline: 'h', publishedAt: NOW, createdAt: NOW,
@@ -185,6 +202,68 @@ describe('receipt paths', () => {
   });
 });
 
+describe('exactly-once terminal actions + poison-pill cap', () => {
+  it('a story that is no longer pending is skipped, not re-counted (TOCTOU)', async () => {
+    const { storyRef } = await stampOnly(db, { triggerRef: 'toctou' });
+    await db.collection('fantasyTimesWireEnvelopes').doc(storyRef.id).delete();
+    // The inline path completed between the sweep's query and the envelope
+    // read — wirePending is already false.
+    await storyRef.update({ wirePending: false });
+
+    const summary = await runWireReplaySweep(db, { now: LATER });
+    // The query itself no longer matches, so nothing is scanned at all;
+    // and critically no alarm is raised and no counter moves.
+    expect(summary.envelopeMissing).toBe(0);
+    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    expect(day?.validationStats?.envelopeMissing || 0).toBe(0);
+  });
+
+  it('envelopeMissing is counted exactly once even if the sweep runs repeatedly', async () => {
+    const { storyRef } = await stampOnly(db, { triggerRef: 'once' });
+    await db.collection('fantasyTimesWireEnvelopes').doc(storyRef.id).delete();
+
+    const first = await runWireReplaySweep(db, { now: LATER });
+    const second = await runWireReplaySweep(db, { now: LATER });
+    expect(first.envelopeMissing).toBe(1);
+    expect(second.envelopeMissing).toBe(0); // terminal — not re-scanned
+    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    expect(day.validationStats.envelopeMissing).toBe(1);
+  });
+
+  it('a permanently failing story is terminated as replay_exhausted, not retried forever', async () => {
+    const { storyRef } = await stampOnly(db, { triggerRef: 'poison' });
+    // Simulate prior failed attempts having accumulated.
+    await storyRef.update({ wireReplayAttempts: 5 });
+
+    const summary = await runWireReplaySweep(db, { now: LATER, maxAttempts: 5 });
+    expect(summary.exhausted).toBe(1);
+
+    const story = (await storyRef.get()).data();
+    expect(story.wirePending).toBe(false);
+    expect(story.wireConflict).toBe(WIRE_CONFLICTS.REPLAY_EXHAUSTED);
+    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    expect(day.validationStats.replayExhausted).toBe(1);
+
+    // and it no longer occupies the head of the queue
+    const again = await runWireReplaySweep(db, { now: LATER, maxAttempts: 5 });
+    expect(again.scanned).toBe(0);
+  });
+
+  it('a failing replay records an attempt so the cap can eventually bind', async () => {
+    const { storyRef } = await stampOnly(db, { triggerRef: 'failing' });
+    // Corrupt the envelope so the shared transaction throws on it.
+    await db.collection('fantasyTimesWireEnvelopes').doc(storyRef.id).set({
+      storyId: storyRef.id, outcome: 'passed', marketDate: 'not-a-date',
+      idempotencyKey: 'k', payloadHash: 'h', modelAgentFacts: null,
+      validatorResult: { codes: [], reasons: [] }, createdAt: NOW,
+    });
+    const summary = await runWireReplaySweep(db, { now: LATER });
+    expect(summary.failed).toBe(1);
+    expect((await storyRef.get()).data().wireReplayAttempts).toBe(1);
+    expect((await storyRef.get()).data().wirePending).toBe(true); // still queued
+  });
+});
+
 describe('orphan drain + budget', () => {
   it('deletes an aged envelope whose story is no longer pending; keeps a fresh one', async () => {
     const { storyRef } = await stampOnly(db, { triggerRef: 'orphan' });
@@ -212,7 +291,4 @@ describe('orphan drain + budget', () => {
 
 async function dayData() {
   return (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
-}
-function dayReceiptHash(day, key) {
-  return day.receipts[key].payloadHash;
 }

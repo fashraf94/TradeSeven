@@ -19,7 +19,7 @@ import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedC
 import { appendEconomics } from '../_utils/fantasyTimesConsensus.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
-import { deriveMarketDate } from '../_utils/wireCalendar.js';
+import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
 import { canonicalizeEconEvent } from '../_utils/wireIdentity.js';
 import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
 import { buildContinuityContext } from '../_utils/wireContinuity.js';
@@ -280,7 +280,7 @@ async function handleRecap(req, res, db) {
   // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ──────────────────────────
   const wireFlags = getWireFlags();
   const wireInstant = new Date();
-  const marketDate = deriveMarketDate(wireInstant);
+  const marketDate = resolveWireMarketDate(wireInstant);
   const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('neta') : '';
   let continuityBlock = '';
   if (wireFlags.continuityEnabled) {
@@ -359,7 +359,7 @@ async function handleRecap(req, res, db) {
   // triggerRef canonicalizes the Sonar event name so retries of the same
   // release converge on one idempotency key (§4.5; degraded slug for
   // unknown names — the accepted Neta alias limitation).
-  const { storyRef: docRef } = await publishStoryWithWire(db, {
+  const { storyRef: docRef, wire: wireResult } = await publishStoryWithWire(db, {
     storyDoc,
     rawAgentFacts: wireFlags.writesEnabled ? toolBlock.input.agentFacts : null,
     stopReason: response.stop_reason,
@@ -370,10 +370,18 @@ async function handleRecap(req, res, db) {
     marketDate,
     now: wireInstant,
   });
+  // Close the measured window immediately: nothing between the
+  // publish and this line may be metrics I/O.
+  const genPublishMs = Date.now() - wireT0;
   logInfo(`Published econ recap ${docRef.id}`, { event: event.event, headline: storyDoc.headline });
 
   if (wireFlags.metricsEnabled) {
-    await recordWireSample(db, { seam: 'neta_econ_recap', metric: 'generate_publish', ms: Date.now() - wireT0, marketDate });
+    // generate_publish is captured BEFORE any metrics I/O so the
+    // instrument never appears inside the window it measures (§6.1 p95).
+    await recordWireSample(db, { seam: 'neta_econ_recap', metric: 'generate_publish', ms: genPublishMs, marketDate });
+    if (Number.isFinite(wireResult?.wireMs)) {
+      await recordWireSample(db, { seam: 'neta_econ_recap', metric: 'wire_path', ms: wireResult.wireMs, marketDate });
+    }
   }
 
   // Write economic event to consensus
@@ -481,7 +489,7 @@ async function handlePreview(req, res, db) {
   // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ──────────────────────────
   const wireFlags = getWireFlags();
   const wireInstant = new Date();
-  const marketDate = deriveMarketDate(wireInstant);
+  const marketDate = resolveWireMarketDate(wireInstant);
   const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('neta') : '';
   let continuityBlock = '';
   if (wireFlags.continuityEnabled) {
@@ -557,7 +565,7 @@ async function handlePreview(req, res, db) {
   storyDoc.visualConfig = previewVisualConfig;
 
   // agentFacts stays in a PRIVATE local — never on storyDoc (§4.5 step 1).
-  const { storyRef: docRef } = await publishStoryWithWire(db, {
+  const { storyRef: docRef, wire: wireResult } = await publishStoryWithWire(db, {
     storyDoc,
     rawAgentFacts: wireFlags.writesEnabled ? toolBlock.input.agentFacts : null,
     stopReason: response.stop_reason,
@@ -568,10 +576,18 @@ async function handlePreview(req, res, db) {
     marketDate,
     now: wireInstant,
   });
+  // Close the measured window immediately: nothing between the
+  // publish and this line may be metrics I/O.
+  const genPublishMs = Date.now() - wireT0;
   logInfo(`Published weekly preview ${docRef.id}`, { headline: storyDoc.headline });
 
   if (wireFlags.metricsEnabled) {
-    await recordWireSample(db, { seam: 'neta_econ_preview', metric: 'generate_publish', ms: Date.now() - wireT0, marketDate });
+    // generate_publish is captured BEFORE any metrics I/O so the
+    // instrument never appears inside the window it measures (§6.1 p95).
+    await recordWireSample(db, { seam: 'neta_econ_preview', metric: 'generate_publish', ms: genPublishMs, marketDate });
+    if (Number.isFinite(wireResult?.wireMs)) {
+      await recordWireSample(db, { seam: 'neta_econ_preview', metric: 'wire_path', ms: wireResult.wireMs, marketDate });
+    }
   }
 
   // Art Director override for edge-case story types

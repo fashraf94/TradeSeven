@@ -28,8 +28,10 @@ import {
   WIRE_ENVELOPE_COLLECTION,
   WIRE_SCHEMA_VERSION,
   WIRE_OUTCOMES,
+  WIRE_CODES,
   ENTRY_OUTCOMES,
   EVENT_CONTRACTS,
+  TICKER_MAX_LENGTH,
 } from './wireContracts.js';
 import { validateAgentFacts, normalizeWireTicker, isInWireUniverse } from './wireValidator.js';
 import { renderWireDigest } from './wireDigest.js';
@@ -37,7 +39,6 @@ import { buildIdempotencyKey, computePayloadHash } from './wireIdentity.js';
 import { wireLookbackDates } from './wireCalendar.js';
 import { resolveChainId } from './wireChains.js';
 import { getWireFlags } from './wireFlags.js';
-import { recordWireSample } from './wireMetrics.js';
 
 const LOG_PREFIX = '[Wire]';
 
@@ -45,6 +46,9 @@ const LOG_PREFIX = '[Wire]';
 // bounded server-side record that survives envelope deletion (F2-3).
 const RECEIPT_REASON_CAP = 10;
 const RECEIPT_REASON_CHARS = 200;
+
+// ~60% of Firestore's 1 MiB document ceiling — warn with room to act.
+const DAY_DOC_WARN_BYTES = 600 * 1024;
 
 /**
  * Publish a story with the Wire write-through.
@@ -89,14 +93,36 @@ export async function publishStoryWithWire(db, {
 
   // ── 1. Validate + render in memory ─────────────────────────────────────
   const v = validateAgentFacts({ rawAgentFacts, reporter, stopReason });
-  const normalizedPrimary = primaryTicker ? normalizeWireTicker(primaryTicker) : null;
+
+  // primaryTicker gets the SAME F1/D8 battery as tickers[]. It is only
+  // "server-canonical" in the sense that it comes off the story record —
+  // and at the Kai seam that record's value is itself MODEL-emitted
+  // (generate-pulse takes storyData.primaryTicker verbatim). Unvalidated, it
+  // becomes the digest SUBJECT and a chain-key component, so a model string
+  // like "Fed's hawkish pivot" would render into an agent-facing digest and
+  // fork the chain — defeating P2's "the model does not write the digest".
+  // Off-universe or oversize → dropped to null; the digest then falls back
+  // to a validated ticker or the contract's own subject noun.
+  const codes = [...v.codes];
+  const candidatePrimary = primaryTicker ? normalizeWireTicker(primaryTicker) : null;
+  let normalizedPrimary = null;
+  if (candidatePrimary) {
+    if (candidatePrimary.length <= TICKER_MAX_LENGTH && isInWireUniverse(candidatePrimary)) {
+      normalizedPrimary = candidatePrimary;
+    } else {
+      codes.push(WIRE_CODES.F1_PRIMARY_DROPPED);
+      v.reasons.push('primaryTicker off-universe or oversize; dropped from facts, digest and chain key');
+    }
+  }
 
   // ── 2. Pre-allocate story ref; identity (key + hash, computed ONCE) ────
   const storyRef = db.collection('fantasyTimesStories').doc();
   const idempotencyKey = buildIdempotencyKey(seam, triggerRef, marketDate);
-  const payloadHash = computePayloadHash(
-    v.projectionSucceeded ? v.facts : (rawAgentFacts ?? null)
-  );
+  // F2-2: hash the NORMALIZED facts when they exist, else the raw projected
+  // input. `v.facts` is null on every REJECT — including post-projection
+  // rejects — so keying off projectionSucceeded alone collapsed every
+  // rejected payload onto sha256("null").
+  const payloadHash = computePayloadHash(v.facts ?? rawAgentFacts ?? null);
 
   const envelope = {
     storyId: storyRef.id,
@@ -110,7 +136,7 @@ export async function publishStoryWithWire(db, {
     modelAgentFacts: v.projectionSucceeded ? v.facts : null,
     validatorResult: {
       outcome: v.outcome,
-      codes: v.codes,
+      codes,
       reasons: v.reasons,
       offUniverseTickers: v.offUniverseTickers,
       preStripTickerCount: v.preStripTickerCount,
@@ -130,7 +156,7 @@ export async function publishStoryWithWire(db, {
     ...storyDoc,
     wireValidation: {
       outcome: v.outcome,
-      codes: v.codes, // class codes ONLY — never reason strings (F2-3)
+      codes, // class codes ONLY — never reason strings (F2-3)
       validatorVersion: v.validatorVersion,
     },
     wirePending: true,
@@ -138,7 +164,7 @@ export async function publishStoryWithWire(db, {
   batch.set(envelopeRef, envelope);
   await batch.commit();
 
-  const wire = { outcome: v.outcome, codes: v.codes, idempotencyKey, txStatus: 'deferred' };
+  const wire = { outcome: v.outcome, codes, idempotencyKey, txStatus: 'deferred' };
 
   // ── 4+5. Wire transaction + cleanup (inline unless deferred) ───────────
   if (!deferTransaction) {
@@ -156,9 +182,13 @@ export async function publishStoryWithWire(db, {
     }
   }
 
-  if (flags.metricsEnabled) {
-    await recordWireSample(db, { seam, metric: 'wire_path', ms: Date.now() - wireStart, marketDate });
-  }
+  // NO metrics I/O here: this function runs INSIDE the caller's
+  // generate_publish measurement window, so a metrics transaction here would
+  // charge the instrument's own Firestore round-trip to the thing it
+  // measures — and the §6.1 p95 gate reads exactly that number. The duration
+  // is returned instead; the caller emits both samples after its window
+  // closes.
+  wire.wireMs = Date.now() - wireStart;
 
   return { storyRef, wire };
 }
@@ -182,12 +212,24 @@ export async function runWireTransactionFromEnvelope(db, envelope, { now = new D
   // in-transaction reread below.
   const priorEntries = [];
   if (ENTRY_OUTCOMES.includes(envelope.outcome)) {
-    const priorDates = wireLookbackDates(envelope.marketDate).slice(0, -1);
-    const priorSnaps = await Promise.all(
-      priorDates.map((d) => db.collection(WIRE_COLLECTION).doc(d).get())
-    );
-    for (const snap of priorSnaps) {
-      if (snap.exists) priorEntries.push(...(snap.data().entries || []));
+    // DEGRADES, never throws: a failed lookback (walker horizon guard, a
+    // malformed bucket, a read error) must not kill the Wire write for a
+    // story that is already published. Losing the window costs chain
+    // CONTINUATION — the entry self-roots — which is strictly better than
+    // an entry that never lands and retries until the attempt cap burns.
+    try {
+      const priorDates = wireLookbackDates(envelope.marketDate).slice(0, -1);
+      const priorSnaps = await Promise.all(
+        priorDates.map((d) => db.collection(WIRE_COLLECTION).doc(d).get())
+      );
+      for (const snap of priorSnaps) {
+        if (snap.exists) priorEntries.push(...(snap.data().entries || []));
+      }
+    } catch (err) {
+      console.warn(
+        `${LOG_PREFIX} chain lookback unavailable for ${envelope.marketDate} ` +
+        `(story ${envelope.storyId} will self-root):`, err?.message || err
+      );
     }
   }
 
@@ -275,7 +317,7 @@ export async function runWireTransactionFromEnvelope(db, envelope, { now = new D
     // (M9): reconciliation inserts and repairs cannot corrupt them.
     const { bySymbol, macroEntries } = rebuildIndexes(entries);
 
-    t.set(dayRef, {
+    const dayDoc = {
       date: envelope.marketDate,
       entries,
       bySymbol,
@@ -283,7 +325,23 @@ export async function runWireTransactionFromEnvelope(db, envelope, { now = new D
       receipts,
       validationStats: stats,
       updatedAt: now,
-    });
+    };
+
+    // Soft size guard. The daily doc aggregates entries + receipts and is
+    // subject to Firestore's hard 1 MiB per-document limit; past it the
+    // transaction fails and EVERY remaining story that day defers to the
+    // sweep and then exhausts. Warn early and loudly so the §4.3 shard
+    // escape hatch can be taken before that happens, rather than after.
+    const approxBytes = JSON.stringify(dayDoc).length;
+    if (approxBytes > DAY_DOC_WARN_BYTES) {
+      console.warn(
+        `${LOG_PREFIX} day doc ${envelope.marketDate} is ~${Math.round(approxBytes / 1024)}KB ` +
+        `(${entries.length} entries, ${Object.keys(receipts).length} receipts) — ` +
+        'approaching the 1MiB document ceiling; consider the §4.3 shard escape hatch.'
+      );
+    }
+
+    t.set(dayRef, dayDoc);
     return { status: 'committed' };
   });
 }
@@ -292,14 +350,6 @@ export async function runWireTransactionFromEnvelope(db, envelope, { now = new D
 export async function finalizeWireSuccess(db, storyRef, envelopeRef) {
   const batch = db.batch();
   batch.update(storyRef, { wirePending: false });
-  batch.delete(envelopeRef);
-  await batch.commit();
-}
-
-/** Conflict termination: class code on the story, flag cleared, envelope gone. */
-export async function markWireConflict(db, storyRef, envelopeRef, conflictClass) {
-  const batch = db.batch();
-  batch.update(storyRef, { wirePending: false, wireConflict: conflictClass });
   batch.delete(envelopeRef);
   await batch.commit();
 }
@@ -345,5 +395,6 @@ export function normalizeStats(stats) {
     byRule: { ...(stats?.byRule || {}) },
     idempotencyConflicts: stats?.idempotencyConflicts || 0,
     envelopeMissing: stats?.envelopeMissing || 0,
+    replayExhausted: stats?.replayExhausted || 0,
   };
 }

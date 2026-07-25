@@ -51,12 +51,15 @@ export default async function handler(req, res) {
       .limit(BATCH_LIMIT)
       .get();
 
+    // NOTE: no early return on an empty queue — step 4 (the Wire sweep) MUST
+    // still run. An empty reflection queue is the steady state (this cron
+    // clears the flag in the same tick it processes it), so returning here
+    // would make the sweep dead code on almost every tick.
     if (snapshot.empty) {
       console.log(`${LOG_PREFIX} No pending reflections`);
-      return res.status(200).json({ ...summary, message: 'No pending reflections' });
+    } else {
+      console.log(`${LOG_PREFIX} Found ${snapshot.size} pending reflection(s)`);
     }
-
-    console.log(`${LOG_PREFIX} Found ${snapshot.size} pending reflection(s)`);
 
     // ---- 3. Process each battle (synchronous-await loop) ----
     for (const doc of snapshot.docs) {
@@ -120,7 +123,12 @@ export default async function handler(req, res) {
 
     const duration = Date.now() - startTime;
     console.log(`${LOG_PREFIX} Complete in ${duration}ms:`, summary);
-    return res.status(200).json({ ...summary, wireSweep, duration });
+    return res.status(200).json({
+      ...summary,
+      ...(snapshot.empty ? { message: 'No pending reflections' } : {}),
+      wireSweep,
+      duration,
+    });
   } catch (err) {
     console.error(`${LOG_PREFIX} Fatal error:`, err);
     return res.status(500).json({ error: err.message });

@@ -107,8 +107,10 @@ function basisClause({ value, unit, basis }) {
  * trimmed to at most 2 decimals ('8.20' → '8.2'; '148.00' → '148').
  */
 function formatValue(value, unit, isLevel) {
-  const sign = isLevel ? (value < 0 ? '-' : '') : value < 0 ? '-' : '+';
   const abs = trimDecimals(Math.abs(value));
+  // A magnitude that rounds to zero carries no direction — emitting "+0%" or
+  // "-0%" would assert one the data does not support.
+  const sign = abs === '0' ? '' : isLevel ? (value < 0 ? '-' : '') : value < 0 ? '-' : '+';
   switch (unit) {
     case 'pct': return `${sign}${abs}%`;
     case 'pp': return `${sign}${abs}pp`;

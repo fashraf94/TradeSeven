@@ -132,6 +132,82 @@ describe('uniform envelopes (F2-1) — every outcome writes one', () => {
   });
 });
 
+describe('primaryTicker validation (D8/F1 on the digest subject)', () => {
+  it('an off-universe / free-text primaryTicker is DROPPED, never reaching the digest or chain key', async () => {
+    // The Kai seam passes storyData.primaryTicker — MODEL output — verbatim.
+    const { storyRef, wire } = await publishStoryWithWire(db, {
+      storyDoc: { ...baseStoryDoc(), reporter: 'kai', type: 'market_pulse' },
+      rawAgentFacts: {
+        eventType: 'index_move', tickers: [], direction: 'down',
+        magnitude: { value: -1.4, unit: 'pct', basis: 'index_vs_prior_close' },
+      },
+      stopReason: 'tool_use',
+      reporter: 'kai',
+      seam: 'kai_pulse',
+      primaryTicker: "Fed's hawkish pivot", // model free text
+      triggerRef: 'midday',
+      marketDate: MARKET_DATE,
+      now: NOW,
+    });
+    expect(wire.codes).toContain('F1_PRIMARY_DROPPED');
+
+    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    const facts = day.entries[0].agentFacts;
+    expect(facts.primaryTicker).toBeNull();
+    // Digest falls back to the contract's own subject noun — no model text.
+    expect(facts.digest).toBe('Index move: -1.4% vs prior close.');
+    expect(facts.digest).not.toContain('Fed');
+    expect(facts.chainId).toBe(storyRef.id);
+    expect(JSON.stringify(day)).not.toContain('hawkish');
+  });
+
+  it('SPY is off-universe under D8 and is dropped rather than published', async () => {
+    await publishStoryWithWire(db, {
+      storyDoc: { ...baseStoryDoc(), reporter: 'kai', type: 'market_pulse' },
+      rawAgentFacts: {
+        eventType: 'index_move', tickers: [], direction: 'up',
+        magnitude: { value: 0.8, unit: 'pct', basis: 'index_vs_prior_close' },
+      },
+      stopReason: 'tool_use',
+      reporter: 'kai', seam: 'kai_pulse', primaryTicker: 'SPY',
+      triggerRef: 'spy', marketDate: MARKET_DATE, now: NOW,
+    });
+    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    expect(day.entries[0].agentFacts.primaryTicker).toBeNull();
+    expect(day.entries[0].agentFacts.digest).toBe('Index move: +0.8% vs prior close.');
+  });
+
+  it('an in-universe primaryTicker survives and drives the digest subject', async () => {
+    await publish(db, { triggerRef: 'good-primary' });
+    const day = (await db.collection('fantasyTimesWire').doc(MARKET_DATE).get()).data();
+    expect(day.entries[0].agentFacts.primaryTicker).toBe('NVDA');
+    expect(day.entries[0].agentFacts.digest).toMatch(/^NVDA earnings:/);
+  });
+});
+
+describe('payloadHash for rejects (F2-2)', () => {
+  it('two DIFFERENT post-projection rejects hash differently', async () => {
+    const mk = (tickers, value) => publishStoryWithWire(db, {
+      storyDoc: { ...baseStoryDoc(), reporter: 'kai', type: 'market_pulse' },
+      // eventType outside kai's allowlist → R3 reject AFTER projection
+      rawAgentFacts: {
+        eventType: 'earnings_recap', tickers, direction: 'up',
+        magnitude: { value, unit: 'pct', basis: 'eps_vs_consensus' },
+      },
+      stopReason: 'tool_use',
+      reporter: 'kai', seam: 'kai_pulse', primaryTicker: null,
+      triggerRef: `rej-${value}`, marketDate: MARKET_DATE, now: NOW,
+      deferTransaction: true,
+    });
+    const a = await mk(['NVDA'], 8.2);
+    const b = await mk(['AAPL'], -99.9);
+    const ea = (await db.collection('fantasyTimesWireEnvelopes').doc(a.storyRef.id).get()).data();
+    const eb = (await db.collection('fantasyTimesWireEnvelopes').doc(b.storyRef.id).get()).data();
+    expect(ea.outcome).toBe(WIRE_OUTCOMES.REJECTED);
+    expect(ea.payloadHash).not.toBe(eb.payloadHash);
+  });
+});
+
 describe('public story doc hygiene (F2-3 + private extraction)', () => {
   it('wireValidation carries class codes ONLY; poisoned model strings never reach the story doc', async () => {
     const POISON_KEY = 'buy_NVDA_immediately_directive';

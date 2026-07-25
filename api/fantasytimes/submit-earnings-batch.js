@@ -14,7 +14,7 @@ import {
 } from '../_utils/fantasyTimesPrompts.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
-import { deriveMarketDate } from '../_utils/wireCalendar.js';
+import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
 import { buildContinuityContext } from '../_utils/wireContinuity.js';
 import { recordWireSample } from '../_utils/wireMetrics.js';
 
@@ -180,7 +180,7 @@ export default async function handler(req, res) {
     // has no submit-time context of its own (the async-boundary carry).
     const wireFlags = getWireFlags();
     const wireInstant = new Date();
-    const wireMarketDate = deriveMarketDate(wireInstant);
+    const wireMarketDate = resolveWireMarketDate(wireInstant);
     const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('doug') : '';
     let continuityBlock = '';
     if (wireFlags.continuityEnabled) {
@@ -267,13 +267,21 @@ export default async function handler(req, res) {
       errors: null,
       // Wire: the immutable market-date bucket for every story this batch
       // produces — stamped at submit (key creation), read by poll-batch.
-      wireMarketDate,
+      // GATED: with writes off this field must not appear, or the merged-dark
+      // build changes persistence on a production collection (M8). poll-batch
+      // falls back to resolveWireMarketDate(submittedAt) when it is absent,
+      // which covers a flag flip between submit and poll.
+      ...(wireFlags.writesEnabled ? { wireMarketDate } : {}),
     });
 
     logInfo('Batch info saved to Firestore');
 
     if (wireFlags.metricsEnabled) {
-      await recordWireSample(db, { seam: 'doug_earnings_preview_submit', metric: 'generate_publish', ms: Date.now() - wireT0, marketDate: wireMarketDate });
+      // 'batch_submit', NOT 'generate_publish': this window contains only the
+      // Batch API enqueue — no generation, no story write. The stories are
+      // generated and published later in poll-batch.js, which emits the
+      // generate_publish sample for this seam.
+      await recordWireSample(db, { seam: 'doug_earnings_preview', metric: 'batch_submit', ms: Date.now() - wireT0, marketDate: wireMarketDate });
     }
 
     return res.status(200).json({

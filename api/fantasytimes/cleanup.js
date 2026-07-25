@@ -72,26 +72,51 @@ export default async function handler(req, res) {
     // as a map INSIDE the daily doc, not a subcollection — so plain deletes
     // orphan nothing. Envelopes are transient (minutes); anything older than
     // 30 days is leaked residue from a rollback window and is drained here.
+    // ISOLATED: a Wire retention failure must not discard the Steps 1-2
+    // result the way an unguarded throw would (the same isolating-rider
+    // pattern this arc uses in process-pending-reflections.js).
     const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
     let wireDeleted = 0;
-    for (const [collection, field, cutoff] of [
-      ['fantasyTimesWire', 'date', thirtyDaysAgoStr],
-      ['wireMetrics', 'date', thirtyDaysAgoStr],
-      ['fantasyTimesWireEnvelopes', 'createdAt', thirtyDaysAgo],
-    ]) {
-      const oldDocs = await db
-        .collection(collection)
-        .where(field, '<', cutoff)
-        .limit(200)
-        .get();
-      if (!oldDocs.empty) {
+    let wireCleanupError = null;
+    try {
+      for (const [collection, field, cutoff] of [
+        ['fantasyTimesWire', 'date', thirtyDaysAgoStr],
+        ['wireMetrics', 'date', thirtyDaysAgoStr],
+        ['fantasyTimesWireEnvelopes', 'createdAt', thirtyDaysAgo],
+      ]) {
+        const oldDocs = await db
+          .collection(collection)
+          .where(field, '<', cutoff)
+          .limit(200)
+          .get();
+        if (oldDocs.empty) continue;
+
         const wireBatch = db.batch();
-        oldDocs.docs.forEach((doc) => {
+        let queued = 0;
+        for (const doc of oldDocs.docs) {
+          // An envelope is the ONLY replayable copy of a pending story's
+          // Wire state. Deleting one whose story is still wirePending would
+          // convert a recoverable story into an envelope_missing alarm —
+          // manufacturing the very anomaly whose acceptance expectation is
+          // zero. Leave it; the sweep owns it.
+          if (collection === 'fantasyTimesWireEnvelopes') {
+            const storySnap = await db.collection('fantasyTimesStories').doc(doc.id).get();
+            if (storySnap.exists && storySnap.data().wirePending === true) {
+              console.warn(`${LOG_PREFIX} keeping envelope ${doc.id} — its story is still wirePending`);
+              continue;
+            }
+          }
           wireBatch.delete(doc.ref);
-          wireDeleted++;
-        });
-        await wireBatch.commit();
+          queued++;
+        }
+        if (queued > 0) {
+          await wireBatch.commit();
+          wireDeleted += queued;
+        }
       }
+    } catch (wireErr) {
+      wireCleanupError = wireErr?.message || String(wireErr);
+      console.error(`${LOG_PREFIX} Wire retention failed (isolated):`, wireCleanupError);
     }
 
     console.log(`${LOG_PREFIX} Cleaned up ${expiredCount} expired stories, deleted ${deletedCount} old stories, ${wireDeleted} old wire docs`);
@@ -101,6 +126,7 @@ export default async function handler(req, res) {
       expiredCount,
       deletedCount,
       wireDeleted,
+      ...(wireCleanupError ? { wireCleanupError } : {}),
     });
   } catch (error) {
     console.error(`${LOG_PREFIX} Error:`, error.message);

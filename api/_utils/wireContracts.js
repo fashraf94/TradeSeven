@@ -56,7 +56,9 @@ export const WIRE_CODES = Object.freeze({
   SALVAGE_QUALIFIER: 'SALVAGE_QUALIFIER',
   SALVAGE_FIGURE: 'SALVAGE_FIGURE',
   SALVAGE_DIRECTION: 'SALVAGE_DIRECTION',
+  R4_TICKER_EMPTY: 'R4_TICKER_EMPTY',
   F1_OFFUNIVERSE: 'F1_OFFUNIVERSE',
+  F1_PRIMARY_DROPPED: 'F1_PRIMARY_DROPPED',
   F2_QUARANTINE: 'F2_QUARANTINE',
 });
 
@@ -65,7 +67,26 @@ export const WIRE_CONFLICTS = Object.freeze({
   ENVELOPE_MISSING: 'envelope_missing',
   HASH_MISMATCH: 'hash_mismatch',
   STORY_MISMATCH: 'story_mismatch',
+  REPLAY_EXHAUSTED: 'replay_exhausted',
 });
+
+// ── Public-surface hygiene (§4.3, F2-3) ──────────────────────────────────
+// The Wire pipeline-state fields that live ON the story document. They are
+// server-internal: the replay sweep queries Firestore directly, never the
+// public API. fantasyTimesStories is `allow read: if true`, so the two
+// public readers strip these rather than publish the internal validation
+// taxonomy, per-story validator verdicts and reconciliation state to an
+// unauthenticated, CDN-cached response.
+export const WIRE_STORY_STATE_FIELDS = Object.freeze([
+  'wireValidation', 'wirePending', 'wireConflict', 'wireReplayAttempts',
+]);
+
+/** Return a copy of a story document without any Wire pipeline state. */
+export function stripWireState(data) {
+  const out = { ...data };
+  for (const field of WIRE_STORY_STATE_FIELDS) delete out[field];
+  return out;
+}
 
 // ── Closed field enums (§4.1) ────────────────────────────────────────────
 export const DIRECTIONS = Object.freeze(['up', 'down']);

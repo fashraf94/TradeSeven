@@ -38,6 +38,30 @@ export function deriveMarketDate(instant) {
   return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
 
+/**
+ * The market date a story BELONGS to: the ET calendar date, snapped FORWARD
+ * to the next trading session when the story was generated outside one.
+ *
+ * Why this exists: several seams legitimately run outside a session — Neta's
+ * weekly econ preview fires Monday 01:00 UTC (= Sunday evening ET), and
+ * poll-batch runs every 15 minutes around the clock, so Monday 00:00-04:00
+ * UTC is also Sunday ET. Bucketing those to the raw ET date parks the entry
+ * in a non-session doc that NO future lookback window can see —
+ * wireLookbackDates only walks trading sessions, so a Sunday entry is
+ * invisible to every subsequent chain resolution and continuity block.
+ * Snapping forward files the entry against the session it actually informs.
+ *
+ * Still deterministic from the injected instant, so the bucket stays
+ * immutable across retries (B5).
+ */
+export function resolveWireMarketDate(instant) {
+  let date = deriveMarketDate(instant);
+  for (let i = 0; i < 10 && !isTradingSession(date); i++) {
+    date = nextCalendarDay(date);
+  }
+  return date;
+}
+
 /** Is this ET calendar date a trading session (Mon–Fri, not a NYSE holiday)? */
 export function isTradingSession(dateStr) {
   assertMaintainedYear(dateStr);
@@ -124,5 +148,12 @@ function utcDayOfWeek(dateStr) {
 function previousCalendarDay(dateStr) {
   const d = new Date(`${dateStr}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Next calendar date string, DST-immune (UTC-noon anchor). */
+function nextCalendarDay(dateStr) {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
 }

@@ -4,6 +4,7 @@
 
 import { applySecurityMiddleware } from '../../_utils/security.js';
 import { getFirebaseAdmin } from '../../_utils/firebaseAdmin.js';
+import { stripWireState } from '../../_utils/wireContracts.js';
 
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 30, windowMs: 60000 } })) {
@@ -34,7 +35,8 @@ export default async function handler(req, res) {
       return res.status(404).json({ success: false, error: 'Story not found' });
     }
 
-    const data = doc.data();
+    // Wire pipeline state is server-internal (see stripWireState).
+    const data = stripWireState(doc.data());
     const story = {
       id: doc.id,
       ...data,

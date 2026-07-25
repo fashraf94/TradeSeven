@@ -17,7 +17,7 @@ import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedC
 import { buildConsensusBlock, checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
-import { deriveMarketDate } from '../_utils/wireCalendar.js';
+import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
 import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
 import { buildContinuityContext } from '../_utils/wireContinuity.js';
 import { recordWireSample } from '../_utils/wireMetrics.js';
@@ -291,7 +291,7 @@ export default async function handler(req, res) {
     // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ────────────────────────
     const wireFlags = getWireFlags();
     const wireInstant = new Date();
-    const marketDate = deriveMarketDate(wireInstant);
+    const marketDate = resolveWireMarketDate(wireInstant);
     const wireInstruction = wireFlags.writesEnabled ? buildAgentFactsInstruction('kim') : '';
     let continuityBlock = '';
     if (wireFlags.continuityEnabled) {
@@ -410,7 +410,7 @@ export default async function handler(req, res) {
     storyDoc.visualConfig = visualConfig;
 
     // agentFacts stays in a PRIVATE local — never on storyDoc (§4.5 step 1).
-    const { storyRef: docRef } = await publishStoryWithWire(db, {
+    const { storyRef: docRef, wire: wireResult } = await publishStoryWithWire(db, {
       storyDoc,
       rawAgentFacts: wireFlags.writesEnabled ? toolBlock.input.agentFacts : null,
       stopReason: response.stop_reason,
@@ -421,10 +421,18 @@ export default async function handler(req, res) {
       marketDate,
       now: wireInstant,
     });
+    // Close the measured window immediately: nothing between the
+    // publish and this line may be metrics I/O.
+    const genPublishMs = Date.now() - wireT0;
     logInfo(`Published ${columnType} column ${docRef.id}`, { headline: storyDoc.headline });
 
     if (wireFlags.metricsEnabled) {
-      await recordWireSample(db, { seam: 'kim_column', metric: 'generate_publish', ms: Date.now() - wireT0, marketDate });
+      // generate_publish is captured BEFORE any metrics I/O so the
+      // instrument never appears inside the window it measures (§6.1 p95).
+      await recordWireSample(db, { seam: 'kim_column', metric: 'generate_publish', ms: genPublishMs, marketDate });
+      if (Number.isFinite(wireResult?.wireMs)) {
+        await recordWireSample(db, { seam: 'kim_column', metric: 'wire_path', ms: wireResult.wireMs, marketDate });
+      }
     }
 
     // Art Director override for edge-case story types

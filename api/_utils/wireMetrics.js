@@ -33,10 +33,18 @@ export async function recordWireSample(db, { seam, metric, ms, marketDate }) {
       const data = snap.exists ? snap.data() : { date: marketDate, seams: {} };
       const seams = data.seams || {};
       const seamData = seams[seam] || {};
-      const m = seamData[metric] || { count: 0, totalMs: 0, samples: [] };
+      const m = seamData[metric] || { count: 0, totalMs: 0, sampledCount: 0, samples: [] };
       m.count += 1;
       m.totalMs += Math.round(ms);
-      if (m.samples.length < METRIC_SAMPLE_CAP) m.samples.push(Math.round(ms));
+      // sampledCount binds the percentile to the population it is actually
+      // drawn from (§9 display-agreement). Past the cap, count/totalMs keep
+      // growing while samples[] does not — without this field a reviewer
+      // would read a p95 over 500 samples next to a mean over 600 calls and
+      // have no way to tell they describe different populations.
+      if (m.samples.length < METRIC_SAMPLE_CAP) {
+        m.samples.push(Math.round(ms));
+        m.sampledCount = (m.sampledCount || 0) + 1;
+      }
       seamData[metric] = m;
       seams[seam] = seamData;
       t.set(ref, { date: marketDate, seams, updatedAt: new Date() });

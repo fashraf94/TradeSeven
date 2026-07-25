@@ -167,9 +167,14 @@ export function validateAgentFacts({ rawAgentFacts, reporter, stopReason }) {
       return reject();
     }
     const norm = normalizeWireTicker(t);
-    if (!norm || norm.length > TICKER_MAX_LENGTH) {
+    if (!norm) {
+      codes.push(WIRE_CODES.R4_TICKER_EMPTY);
+      reasons.push('tickers[] contains an empty/whitespace entry');
+      return reject();
+    }
+    if (norm.length > TICKER_MAX_LENGTH) {
       codes.push(WIRE_CODES.R4_OVERSIZE);
-      reasons.push(`ticker '${String(t).slice(0, 40)}' empty or exceeds ${TICKER_MAX_LENGTH} chars after normalization`);
+      reasons.push(`ticker exceeds ${TICKER_MAX_LENGTH} chars after normalization`);
       return reject();
     }
     if (!normalizedTickers.includes(norm)) normalizedTickers.push(norm);
@@ -263,21 +268,28 @@ export function validateAgentFacts({ rawAgentFacts, reporter, stopReason }) {
     codes.push(WIRE_CODES.SALVAGE_QUALIFIER);
     reasons.push('qualifiers not an array; dropped');
     qualifiers = [];
-  } else if (qualifiers.length > QUALIFIERS_CAP) {
-    codes.push(WIRE_CODES.R4_OVERSIZE);
-    reasons.push(`qualifiers length ${qualifiers.length} exceeds cap ${QUALIFIERS_CAP}`);
-    return reject();
   } else {
-    const kept = [];
+    // Dedupe BEFORE the cap: the cap bounds the distinct qualifier SET, so a
+    // model repeating one valid qualifier must not hard-REJECT the story.
+    const seen = [];
+    const dropped = [];
     for (const q of qualifiers) {
       if (contract.qualifiers.includes(q)) {
-        if (!kept.includes(q)) kept.push(q);
+        if (!seen.includes(q)) seen.push(q);
       } else {
-        codes.push(WIRE_CODES.SALVAGE_QUALIFIER);
-        reasons.push(`qualifier ${JSON.stringify(q)} not in ${eventType}'s enum; dropped`);
+        dropped.push(q);
       }
     }
-    qualifiers = kept;
+    for (const q of dropped) {
+      codes.push(WIRE_CODES.SALVAGE_QUALIFIER);
+      reasons.push(`qualifier ${JSON.stringify(q)} not in ${eventType}'s enum; dropped`);
+    }
+    if (seen.length > QUALIFIERS_CAP) {
+      codes.push(WIRE_CODES.R4_OVERSIZE);
+      reasons.push(`distinct qualifiers ${seen.length} exceeds cap ${QUALIFIERS_CAP}`);
+      return reject();
+    }
+    qualifiers = seen;
   }
 
   // ── R4 sign consistency (post-salvage survivors; REJECT-class) ─────────
@@ -292,8 +304,15 @@ export function validateAgentFacts({ rawAgentFacts, reporter, stopReason }) {
     }
   }
 
-  // ── F2 quarantine: ≥1-ticker contract, zero in-universe post-strip ─────
-  if (minT >= 1 && inUniverse.length === 0) {
+  // ── F2 quarantine (§4.2) ───────────────────────────────────────────────
+  // Keys on what the model ACTUALLY emitted, not on the contract minimum.
+  // eventTypes whose min is 0 but max > 0 (volatility_event 0-1,
+  // sector_rotation 0-5) can still be company/sector stories; if every
+  // emitted ticker was stripped as off-universe, that is exactly the case
+  // F2 exists for. Keying on `minT >= 1` let those through as PASSED with
+  // an empty tickers[] — an entry present in entries[] but absent from
+  // every index, which no consumer can reach.
+  if (normalizedTickers.length > 0 && inUniverse.length === 0) {
     codes.push(WIRE_CODES.F2_QUARANTINE);
     reasons.push('zero in-universe tickers after off-universe strip on a ticker-required eventType');
     base.quarantined = true;

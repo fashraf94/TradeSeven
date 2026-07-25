@@ -12,7 +12,16 @@ export function createFirestoreFake() {
   // path 'collection/docId' → plain-object data
   const store = new Map();
   let idCounter = 0;
-  let txVersion = 0; // bumped on every committed write; transactions verify
+  // Per-DOCUMENT versions. Conflict detection compares the versions of the
+  // documents a transaction actually READ THROUGH `t.get` — matching
+  // Firestore, where the read set is what the server re-checks at commit.
+  // A global counter would give a transaction that performs NO transactional
+  // read the same protection as one that reads properly, which would let a
+  // broken implementation (e.g. reading the day doc OUTSIDE the transaction)
+  // pass the B6 serialization test while losing updates in production.
+  const docVersions = new Map();
+  const versionOf = (path) => docVersions.get(path) || 0;
+  const bumpVersion = (path) => docVersions.set(path, versionOf(path) + 1);
 
   const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 
@@ -49,12 +58,12 @@ export function createFirestoreFake() {
 
   function commitWrite(path, data) {
     store.set(path, data);
-    txVersion += 1;
+    bumpVersion(path);
   }
 
   function commitDelete(path) {
     store.delete(path);
-    txVersion += 1;
+    bumpVersion(path);
   }
 
   function applyUpdate(path, patch) {
@@ -160,26 +169,42 @@ export function createFirestoreFake() {
       };
     },
     /**
-     * Optimistic-retry transaction: reads record the store version; if a
-     * concurrent commit (e.g. from `interleave`) bumped it before this
-     * transaction commits, the attempt is discarded and re-run — mirroring
-     * Firestore's serialization guarantee the chain tests rely on.
+     * Optimistic-retry transaction with a real READ SET.
+     *
+     * `t.get` records the document's version at read time; at commit the
+     * fake re-checks ONLY those documents. A transaction that read nothing
+     * transactionally therefore gets NO conflict protection and commits
+     * blind — exactly Firestore's behavior, and the property that makes the
+     * B6 serialization test capable of failing.
+     *
+     * Also enforces Firestore's all-reads-before-any-write rule: a `t.get`
+     * after a staged write throws, as the real SDK does.
      */
     async runTransaction(fn) {
       for (let attempt = 0; attempt < 5; attempt++) {
-        const readVersion = txVersion;
+        const readSet = new Map();
         const staged = [];
         const t = {
           async get(refOrQuery) {
-            if (typeof refOrQuery.get === 'function') return refOrQuery.get();
-            throw new Error('fake txn: unsupported get target');
+            if (typeof refOrQuery.get !== 'function') {
+              throw new Error('fake txn: unsupported get target');
+            }
+            if (staged.length > 0) {
+              throw new Error('fake txn: Firestore transactions require all reads before any write');
+            }
+            if (refOrQuery.path) readSet.set(refOrQuery.path, versionOf(refOrQuery.path));
+            return refOrQuery.get();
           },
           set(ref, data) { staged.push(() => commitWrite(ref.path, clone(data))); },
           update(ref, patch) { staged.push(() => applyUpdate(ref.path, patch)); },
           delete(ref) { staged.push(() => commitDelete(ref.path)); },
         };
         const result = await fn(t);
-        if (txVersion !== readVersion) continue; // contention → retry
+        let conflicted = false;
+        for (const [path, seenVersion] of readSet.entries()) {
+          if (versionOf(path) !== seenVersion) { conflicted = true; break; }
+        }
+        if (conflicted) continue; // re-run against fresh state
         for (const op of staged) op();
         return result;
       }

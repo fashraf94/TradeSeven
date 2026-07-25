@@ -14,7 +14,7 @@
 |---|---|
 | The typed channel (validator → digest renderer → Wire doc → receipts → envelopes → replay sweep) | **Built**, flag-gated, dark |
 | All three flags (`WIRE_METRICS_ENABLED`, `WIRE_WRITES_ENABLED`, `CONTINUITY_MEMORY_ENABLED`) | **Shipped FALSE** — merge is dark; each flip is its own one-line PR per §4.8 |
-| §9 acceptance matrix | **151 Wire tests green** across 10 suites; **full repo suite green: 322 files / 5,751 tests, 0 failures** |
+| §9 acceptance matrix | **124 Wire tests green** across 11 runnable suites (measured; a 12th, the emulator rules suite, is excluded from CI and unrun — see §6·2); **full repo suite green: 324 files / 5,772 tests, 0 failures**. *Corrected Jul 25 after code review: the original figure "151 across 10 suites" was wrong — the measured count at build time was 103, and the rules suite was counted as "green" while never having run. See `20260725_WIRE_PHASE1_CODE_REVIEW.md`.* |
 | M8 byte-identical flag-off payload | Enforced **by construction** (flag-off passes the pristine tool singleton **by identity**; system string gets `+ ''`) and asserted at the endpoint level incl. the warm-container case |
 | Firestore rules | Explicit deny-all blocks for the three new collections + emulator suite **with F2-4 positive controls** (needs founder-side `npm run test:rules` — see §6) |
 | Cron budget | **37/40 unchanged** — the sweep rides `process-pending-reflections.js` in an isolating try/catch (P6) |
@@ -22,6 +22,8 @@
 | NYSE 2027 | Added to `marketSchedule.js` only, per spec; F2-9 divergence note left in-file and in §14's backlog entry |
 
 **Nothing observable changes until a flag flips.** With all flags false: outbound model requests are byte-identical (pristine constants passed by identity), story persistence is the same `.add(storyDoc)` as before, no new collection is written, the sweep is gated off.
+
+> **Post-review correction (Jul 25).** As originally merged this claim had one exception: `submit-earnings-batch.js` persisted a `wireMarketDate` field to `fantasyTimesBatches` with all flags off. Fixed — the field is now conditional. The claim above is true as of the review-fix commit. See `20260725_WIRE_PHASE1_CODE_REVIEW.md` §3.
 
 ---
 
@@ -101,7 +103,7 @@
 | Walker 2026→2027 + 2028 guard; `deriveMarketDate` determinism/ET/DST | `wireCalendar.test.js` |
 | Warm-container M8 (byte-identical flag-off, endpoint level, by identity) | `wirePayloadEquality.test.js` (pulse handler + mover function); `wireSchemaExtension.test.js` (all 7 tools) |
 | Truncation R5 | `wireValidator.test.js`, envelope case in `wireWriteThrough.test.js` |
-| Sweep isolation + budget deferral | host try/catch (`process-pending-reflections.js`) + `wireReplaySweep.test.js` budget test |
+| Sweep isolation + budget deferral | host try/catch (`process-pending-reflections.js`) + `wireReplaySweep.test.js` budget test — **⚠ the host half is asserted by code inspection, not by a test. This is exactly how the critical sweep-unreachability defect shipped; a host-integration test is the top follow-up (code review §4).** |
 | Doug deferral (10s stamp-only) | `wireWriteThrough.test.js` deferTransaction; `poll-batch.js` integration |
 | Neta alias degradation | `wireIdentity.test.js` |
 | Chains: B6 serialization / 7-session stability / >5 gap / cross-family | `wireWriteThrough.test.js` chains block (optimistic-retry fake exercises real contention) |

@@ -9,8 +9,9 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { REPORTER_PROFILES } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
-import { deriveMarketDate } from '../_utils/wireCalendar.js';
+import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
 import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
+import { recordWireSample } from '../_utils/wireMetrics.js';
 
 export const config = { maxDuration: 10 };
 
@@ -169,23 +170,49 @@ export default async function handler(req, res) {
               // artifacts (≤15 min typical). marketDate comes from the
               // batch doc, stamped at submit (immutable across the async
               // boundary); fallbacks derive from submittedAt, then now.
+              const wirePublishT0 = Date.now();
               const wireFlags = getWireFlags();
+              // FLAG-STRADDLE GUARD: a batch submitted while writes were OFF
+              // carries no agentFacts in its tool schema, so running the Wire
+              // path over its results would reject every in-flight preview as
+              // R4_MISSING and pollute the §6.1 gate for up to 24h after the
+              // flip. `wireMarketDate` is written only when writes were on at
+              // SUBMIT time, so its absence is exactly that signal.
+              const submittedUnderWire = Boolean(batchData.wireMarketDate);
               const wireMarketDate =
                 batchData.wireMarketDate ||
-                deriveMarketDate(batchData.submittedAt?.toDate?.() || batchData.submittedAt || new Date());
-              const { storyRef: docRef } = await publishStoryWithWire(db, {
-                storyDoc,
-                rawAgentFacts: wireFlags.writesEnabled ? storyData.agentFacts : null,
-                stopReason: result.result.message.stop_reason || null,
-                reporter: 'doug',
-                seam: 'doug_earnings_preview',
-                primaryTicker: symbol,
-                triggerRef: `${symbol}:${reportDate}`,
-                marketDate: wireMarketDate,
-                deferTransaction: true,
-              });
+                resolveWireMarketDate(batchData.submittedAt?.toDate?.() || batchData.submittedAt || new Date());
+              if (wireFlags.writesEnabled && !submittedUnderWire) {
+                logInfo(`Batch ${batchId} predates the Wire flip — publishing without the Wire path`);
+              }
+              const { storyRef: docRef } = submittedUnderWire
+                ? await publishStoryWithWire(db, {
+                  storyDoc,
+                  rawAgentFacts: wireFlags.writesEnabled ? storyData.agentFacts : null,
+                  stopReason: result.result.message.stop_reason || null,
+                  reporter: 'doug',
+                  seam: 'doug_earnings_preview',
+                  primaryTicker: symbol,
+                  triggerRef: `${symbol}:${reportDate}`,
+                  marketDate: wireMarketDate,
+                  deferTransaction: true,
+                })
+                : { storyRef: await db.collection('fantasyTimesStories').add(storyDoc) };
               storiesCreated++;
               logInfo(`Created preview for ${symbol}`, { headline: storyDoc.headline });
+
+              // The deferred seam's generate_publish sample lives HERE — the
+              // submit endpoint only enqueues. Fire-and-forget is forbidden
+              // (BUILD_RULES §5), so it is awaited; recordWireSample contains
+              // its own failures and never throws into the 10s budget.
+              if (wireFlags.metricsEnabled) {
+                await recordWireSample(db, {
+                  seam: 'doug_earnings_preview',
+                  metric: 'generate_publish',
+                  ms: Date.now() - wirePublishT0,
+                  marketDate: wireMarketDate,
+                });
+              }
 
               // Art Director override for edge-case story types
               if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
