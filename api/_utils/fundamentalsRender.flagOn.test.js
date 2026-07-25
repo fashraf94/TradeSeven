@@ -32,6 +32,8 @@ const { formatMarketCSV, buildStrategySystemPrompt } = await import('./agentProm
 const { buildLiveContextBlock } = await import('./agentEvalPromptAssembly.js');
 const { buildBoardSystemPrompt } = await import('./tournamentAgentBoards.js');
 const { makeEvalBattle } = await import('./__fixtures__/controlsPromptFixtures.js');
+// F2: the shared C-20 signal lists — same fixture the honesty sweep reads.
+const { FORBIDDEN_SIGNALS } = await import('./__fixtures__/promptHonestyRegistry.js');
 
 const FRESH_MS = Date.parse('2026-07-24T11:01:00Z');
 const STALE_MS = Date.parse('2026-07-23T11:01:00Z');
@@ -196,6 +198,22 @@ describe('buildFundamentalsBlock — held + bench, honest staleness, r-07 indust
     expect(buildFundamentalsBlock([{ symbol: 'MISSING' }], { stocks: [], crypto: null }, RANKINGS)).toBeNull();
     flagState.mirror = false;
     expect(buildFundamentalsBlock(held, bench, RANKINGS)).toBeNull();
+  });
+
+  it('C-20 runtime sweep (F2): the RENDERED flag-on outputs name no forbidden signal', () => {
+    // The source-level sweep in agentEvalPromptAssembly.honesty.test.js
+    // guards the module text; this guards the assembled output — including
+    // anything interpolated from doc data — on every on-state surface.
+    const rendered = [
+      buildFundamentalsBlock(held, bench, RANKINGS),
+      formatMarketCSV([{ symbol: 'NVDA', sectorName: 'Technology', fundamentals: fullFundamentals() }]),
+      draftFundamentalsHeaderSuffix(),
+    ];
+    for (const text of rendered) {
+      for (const [label, re] of FORBIDDEN_SIGNALS) {
+        expect(re.test(text), `${label} leaked into a flag-on render`).toBe(false);
+      }
+    }
   });
 });
 

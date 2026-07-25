@@ -177,11 +177,16 @@ export function buildFundamentalsBlock(assetScores, bench, rankingsMap) {
   };
 
   const lines = ['FUNDAMENTALS (held + bench; a missing metric is NOT REPORTED — never zero):'];
+  // F3 (PR-A review, founder-ruled): each vintage claim below matches its
+  // metric's actual computation — growth is single-latest-quarter; beat rate
+  // AND the surprise percentile are multi-quarter aggregates (4–12 quarters;
+  // both suppress below 4 per D2/F1); EPS revisions are the trailing 30 days;
+  // P/E, P/B and the market-cap class all move with price.
   lines.push(
-    'Basis: growth and surprise figures are from the most recent reported quarter;',
-    'beat rate spans up to 12 quarters of filings; EPS revisions cover the last 30',
-    'days; valuation ratios move with price (book value = most recent quarterly',
-    `filing).${maxDay ? ` Fundamentals data as of ${maxDay} (UTC); older entries are marked.` : ''}`,
+    'Basis: revenue growth is from the most recent reported quarter; beat rate and',
+    'the surprise percentile aggregate 4-12 quarters of filings; EPS revisions',
+    'cover the last 30 days; valuation ratios and market-cap class move with price',
+    `(book value = most recent quarterly filing).${maxDay ? ` Fundamentals data as of ${maxDay} (UTC); older entries are marked.` : ''}`,
   );
   if (held.length > 0) {
     lines.push('', 'HELD:');

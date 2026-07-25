@@ -20,6 +20,15 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildEvalSystemPrompt } from './agentEvalPromptAssembly.js';
+// F2 (PR-A review, founder-ruled Jul 25 2026): the signal lists and the
+// module registry live in ONE fixture so this file and the flag-on render
+// tests cannot drift apart on what "honest" means.
+import {
+  FORBIDDEN_SIGNALS as FORBIDDEN,
+  REQUIRED_SIGNALS as REQUIRED,
+  PROMPT_CONTRIBUTING_MODULES,
+  CLASSIFIED_NON_REGISTRY_IMPORTS,
+} from './__fixtures__/promptHonestyRegistry.js';
 
 const ARCHETYPES = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
 // Both prompt variants: the tiered builder and the flat6 builder.
@@ -34,28 +43,6 @@ function allPrompts() {
   }
   return out;
 }
-
-// Signals that do not exist on any running path (Signal Inventory V2 §3B).
-const FORBIDDEN = [
-  ['5min RSI', /5-?min\s+RSI/i],
-  ['5-minute MACD', /5-?min(ute)?\s+MACD/i],
-  ['VWAP sigma-band', /std\s+below\s+VWAP|standard deviation.*VWAP/i],
-  ['BB width 5th pctl (of-history implication)', /BB width 5th pctl/i],
-  ['intraday range position', /intraday range\s*\n?\s*position|range position/i],
-  ['52-week-high proximity', /within \d+% of 52W high/i],
-  ['5-min price breakout', /5-?min price breaks/i],
-];
-
-// Signals that ARE supplied and must keep appearing — the guard against
-// "fixing" the prose by deleting it.
-const REQUIRED = [
-  ['cross-sectional BB width squeeze', /20th pctl/],
-  ['rsPercentile', /rsPercentile/],
-  ['NR7', /NR7/],
-  ['stock regime', /directional_expansion/],
-  ['RSI-14', /RSI-14/],
-  ['BB %B', /BB %B/],
-];
 
 describe('C-20 prose honesty — no prompt names an absent signal', () => {
   for (const [label, re] of FORBIDDEN) {
@@ -91,19 +78,48 @@ describe('C-20 prose honesty — real signals survive the fix', () => {
   });
 });
 
-describe('source-level sweep across BOTH fenced assemblers', () => {
-  // buildEvalSystemPrompt only covers the eval file. The draft/portfolio
-  // assembler carried the identical institutional caveat and is fixed too;
-  // assert at source level so neither file regresses.
-  it('neither assembler source contains a forbidden signal name', async () => {
+describe('source-level sweep across every PROMPT_CONTRIBUTING_MODULE (F2)', () => {
+  // buildEvalSystemPrompt only covers the eval file's system prompt. The
+  // sweep is source-level so the whole registry is guarded regardless of
+  // which builder or flag state renders it: both fenced assemblers PLUS the
+  // flag-split prose modules the DR-13 pattern moves out of them.
+  it('no registry module source contains a forbidden signal name', async () => {
     const { readFileSync } = await import('fs');
     const path = await import('path');
     const { fileURLToPath } = await import('url');
     const dir = path.dirname(fileURLToPath(import.meta.url));
-    for (const f of ['agentEvalPromptAssembly.js', 'agentPromptAssembly.js']) {
+    for (const f of PROMPT_CONTRIBUTING_MODULES) {
       const src = readFileSync(path.join(dir, f), 'utf8');
       for (const [label, re] of FORBIDDEN) {
         expect(re.test(src), `${label} present in ${f}`).toBe(false);
+      }
+    }
+  });
+
+  // THE TRIPWIRE (F2, founder-ruled; BUILD_RULES §1 flag-split prose rule):
+  // every same-directory module either fenced assembler imports must be
+  // classified — swept (PROMPT_CONTRIBUTING_MODULES) or explicitly known
+  // (CLASSIFIED_NON_REGISTRY_IMPORTS). A new flag-split render module added
+  // to a fenced file without registry membership fails HERE, not silently.
+  it('every fenced-assembler local import is classified — a new prose module cannot skip the sweep', async () => {
+    const { readFileSync } = await import('fs');
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const classified = new Set([...PROMPT_CONTRIBUTING_MODULES, ...CLASSIFIED_NON_REGISTRY_IMPORTS]);
+    for (const f of ['agentEvalPromptAssembly.js', 'agentPromptAssembly.js']) {
+      const src = readFileSync(path.join(dir, f), 'utf8');
+      const locals = [...src.matchAll(/from '\.\/([\w.-]+\.js)'/g)].map((m) => m[1]);
+      expect(locals.length).toBeGreaterThan(0);
+      for (const imp of locals) {
+        expect(
+          classified.has(imp),
+          `${f} imports ./${imp}, which is classified in NEITHER honesty-registry list. `
+          + 'If it renders prompt prose (any flag-split module does), add it to '
+          + 'PROMPT_CONTRIBUTING_MODULES; otherwise add it to '
+          + 'CLASSIFIED_NON_REGISTRY_IMPORTS — in the SAME commit '
+          + '(__fixtures__/promptHonestyRegistry.js; BUILD_RULES §1).'
+        ).toBe(true);
       }
     }
   });

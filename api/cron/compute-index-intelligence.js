@@ -465,8 +465,12 @@ export const STOCK_RANKINGS_DOC_WARN_BYTES = Math.floor(1048576 * 0.6);
  *                         fill is a fabricated per-company fact and never mirrors.
  *                         An absent marker (pre-D2 doc) also suppresses.
  *   surpriseMagPercentile integer, sector-scoped f-07's percentile leg — gated on
- *                         metrics.avgSurpriseMag presence so a ranking artifact
- *                         cannot render for an unmeasured stock.
+ *                         metrics.avgSurpriseMag presence (no ranking artifact
+ *                         for an unmeasured stock) AND on beatRateSource ===
+ *                         'computed' (F1): below 4 quarters the source formula
+ *                         switches to mean-of-ABSOLUTE, so the percentile is
+ *                         not comparable to its ≥4-quarter peers and both f-07
+ *                         legs suppress together.
  *   computedAt            epoch ms               the peerRankings doc's own
  *                         vintage (Phase 0 STOP-2 provenance): per-ticker
  *                         drop-outs, dead producer runs, and Monday reads all
@@ -507,7 +511,14 @@ export function buildFundamentalsMirror(fund) {
   if (m.beatRate != null && Number.isFinite(m.beatRate) && m.beatRateSource === 'computed') {
     out.beatRate = Math.round(m.beatRate);
   }
-  if (m.avgSurpriseMag != null && Number.isFinite(m.avgSurpriseMag)) {
+  // F1 (PR-A review, founder-ruled): gated on beatRateSource === 'computed'
+  // like beatRate — the same D2 principle. avgSurpriseMag switches FORMULA at
+  // the 4-quarter line (mean-of-ABSOLUTE below it, mean-of-POSITIVE at/above
+  // it — compute-rankings.js computeEarningsConsistency), and the marker's
+  // 'computed' state IS the ≥4-quarter condition. A number whose formula
+  // changed under it is not a comparable fact; both f-07 legs now travel
+  // together under one definition.
+  if (m.avgSurpriseMag != null && Number.isFinite(m.avgSurpriseMag) && m.beatRateSource === 'computed') {
     const pctl = fund.pillars?.earningsConsistency?.dimensions?.avgSurpriseMag?.percentile;
     if (pctl != null && Number.isFinite(pctl)) out.surpriseMagPercentile = Math.round(pctl);
   }
