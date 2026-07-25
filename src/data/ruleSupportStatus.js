@@ -42,14 +42,16 @@
 // Every status resolves normally by id, so an already-equipped rule NEVER
 // strands — see isSupported/filterSupported usage notes below.
 //
-// Basis: Signal Inventory V2 (SIG-001…043 @ a04a291d) + the five accepted
-// Phase 3 metadata batches + the Rule Support Triage V1.0 worklist, as amended
-// by the Phase 0 discovery rulings of Jul 25 2026 and the Fundamental Wire
-// founder rulings D1–D7 (Jul 25 2026): the mirror + render arc un-hid the six
-// servable fundamental rules and r-07, and re-triaged the six unservable ones
-// to hidden_absent_substrate with their missing producer work named. The
-// SIG-021…028 + SIG-042 rows refresh when the founder's
-// docs/SIGNAL_INVENTORY_V2.md upload lands (D7 — in flight at this commit).
+// Basis: `docs/SIGNAL_INVENTORY_V2.md` (SIG-001…043 — the in-repo record of
+// record, founder-uploaded Jul 25 2026) + the five accepted Phase 3 metadata
+// batches + the Rule Support Triage V1.0 worklist, as amended by the Phase 0
+// discovery rulings of Jul 25 2026 and the Fundamental Wire founder rulings
+// D1–D7 (Jul 25 2026): the mirror + render arc un-hid the six servable
+// fundamental rules and r-07, and re-triaged the six unservable ones to
+// hidden_absent_substrate with their missing producer work named. That
+// document's §2B rows carry the per-signal wired/unwired truth — note it is
+// PARTIAL by design (the D3 mirror is minimal): SIG-022, SIG-023 and SIG-042
+// remain unwired because their claimant rules were re-triaged.
 
 export const SUPPORT_STATUS_VALUES = Object.freeze([
   'supported',
