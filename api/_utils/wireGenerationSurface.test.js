@@ -27,6 +27,7 @@ import {
   stableStringify,
   surfaceHash,
   assessRegen,
+  assessTickerUniverseCaveat,
 } from './wireGenerationSurface.js';
 // The value-locked exports (founder ruling, P1 closeout): imported LIVE so
 // the lock hashes the real runtime values, not a snapshot of source text.
@@ -84,6 +85,12 @@ describe('P2-15: committed-baseline content lock', () => {
         if (!verdict.allowed) {
           throw new Error(`[${section}] regen REFUSED: ${verdict.reason}`);
         }
+      }
+      // FINAL-LOCK ratification caveat (Jul 29): a universe change needs a
+      // validator bump too — each stamp truthful about its own axis.
+      const caveat = assessTickerUniverseCaveat(prev, next);
+      if (!caveat.allowed) {
+        throw new Error(`[tickerUniverseCaveat] regen REFUSED: ${caveat.reason}`);
       }
       writeFileSync(
         resolve(REPO_ROOT, BASELINE_PATH),
@@ -180,6 +187,44 @@ describe('assessRegen — the bump is mechanically unavoidable', () => {
 
   it('no committed baseline → allowed (first generation)', () => {
     expect(assessRegen(undefined, { version: 1, hash: 'aaa' }).allowed).toBe(true);
+  });
+});
+
+describe('assessTickerUniverseCaveat — the FINAL-LOCK ratification caveat, mechanical', () => {
+  const KEY = 'value:api/_utils/rankingConfig.js#TICKER_TO_SECTOR';
+  const prev = {
+    generationSurface: { files: { [KEY]: 'aaa' } },
+    validator: { version: '1.6.0' },
+  };
+
+  it('universe changed + validator version unchanged → refused, citing the caveat', () => {
+    const verdict = assessTickerUniverseCaveat(prev, {
+      generationSurface: { files: { [KEY]: 'bbb' } },
+      validator: { version: '1.6.0' },
+    });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.reason).toMatch(/WIRE_VALIDATOR_VERSION alongside/);
+  });
+
+  it('universe changed + validator bumped → allowed', () => {
+    expect(assessTickerUniverseCaveat(prev, {
+      generationSurface: { files: { [KEY]: 'bbb' } },
+      validator: { version: '1.7.0' },
+    }).allowed).toBe(true);
+  });
+
+  it('universe unchanged → allowed regardless of validator version', () => {
+    expect(assessTickerUniverseCaveat(prev, {
+      generationSurface: { files: { [KEY]: 'aaa' } },
+      validator: { version: '1.6.0' },
+    }).allowed).toBe(true);
+  });
+
+  it('first generation → allowed', () => {
+    expect(assessTickerUniverseCaveat(null, {
+      generationSurface: { files: { [KEY]: 'aaa' } },
+      validator: { version: '1.6.0' },
+    }).allowed).toBe(true);
   });
 });
 

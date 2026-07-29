@@ -98,8 +98,13 @@ export const GENERATION_SURFACE = Object.freeze([
 //    version) rather than to WIRE_VALIDATOR_VERSION, which is semantically
 //    live on every stamped entry and must not bump for a lock-mechanism
 //    change; the joint-bump is epoch-consistent per the wireContracts note.
-//    Included beyond the ruling's consensus-block scope — flagged in the P2
-//    report for founder ratification.
+//    RATIFIED at FINAL LOCK (Jul 29) with a recorded caveat: the
+//    generation-version binding governs the LOCK MECHANISM, but a
+//    TICKER_TO_SECTOR content change is a VALIDATION-behavior change — when
+//    this lock fires, WIRE_VALIDATOR_VERSION bumps ALONGSIDE
+//    WIRE_GENERATION_VERSION so each stamp is truthful about its own axis.
+//    Enforced mechanically: assessTickerUniverseCaveat refuses a regen that
+//    carries a TICKER_TO_SECTOR value change without a validator bump.
 export const GENERATION_VALUE_EXPORTS = Object.freeze([
   Object.freeze({ key: 'value:api/_utils/rankingConfig.js#ALL_TICKERS', exportName: 'ALL_TICKERS' }),
   Object.freeze({ key: 'value:api/_utils/rankingConfig.js#TICKER_TO_SECTOR', exportName: 'TICKER_TO_SECTOR' }),
@@ -163,4 +168,34 @@ export function assessRegen(prevSection, nextSection) {
     };
   }
   return { allowed: true, reason: contentChanged ? 'content + version changed' : 'no content change' };
+}
+
+const TICKER_UNIVERSE_KEY = 'value:api/_utils/rankingConfig.js#TICKER_TO_SECTOR';
+
+/**
+ * The FINAL-LOCK ratification caveat (founder, Jul 29), made mechanical:
+ * a TICKER_TO_SECTOR content change is a VALIDATION-behavior change, so the
+ * regen that absorbs it must carry a WIRE_VALIDATOR_VERSION bump alongside
+ * the WIRE_GENERATION_VERSION bump — each stamp truthful about its own axis.
+ *
+ * @param {object|null} prevBaseline — the committed baseline (full doc)
+ * @param {object} next — the freshly computed sections
+ * @returns {{ allowed: boolean, reason: string }}
+ */
+export function assessTickerUniverseCaveat(prevBaseline, next) {
+  if (!prevBaseline) return { allowed: true, reason: 'first generation' };
+  const prevHash = prevBaseline.generationSurface?.files?.[TICKER_UNIVERSE_KEY];
+  const nextHash = next.generationSurface?.files?.[TICKER_UNIVERSE_KEY];
+  const universeChanged = prevHash !== undefined && prevHash !== nextHash;
+  const validatorBumped = prevBaseline.validator?.version !== next.validator?.version;
+  if (universeChanged && !validatorBumped) {
+    return {
+      allowed: false,
+      reason:
+        'TICKER_TO_SECTOR changed — a validation-behavior change. Bump ' +
+        'WIRE_VALIDATOR_VERSION alongside WIRE_GENERATION_VERSION (FINAL-LOCK ' +
+        'ratification caveat, Jul 29), then regenerate',
+    };
+  }
+  return { allowed: true, reason: universeChanged ? 'universe + validator version changed' : 'universe unchanged' };
 }

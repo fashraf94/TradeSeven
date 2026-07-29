@@ -50,7 +50,11 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // ALL_TICKERS + TICKER_TO_SECTOR hashed by VALUE into the baseline
 // (GENERATION_VALUE_EXPORTS), so universe changes force a bump while
 // unrelated rankingConfig edits touch nothing.
-export const WIRE_GENERATION_VERSION = 3;
+// v4 (FINAL LOCK, Jul 29): the §7.4 ratification caveat made mechanical —
+// assessTickerUniverseCaveat refuses a regen carrying a TICKER_TO_SECTOR
+// change without a WIRE_VALIDATOR_VERSION bump (each stamp truthful about
+// its own axis). Manifest-module change → mechanism-scope bump.
+export const WIRE_GENERATION_VERSION = 4;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // Firestore collection names (server-only; deny-all in firestore.rules).
