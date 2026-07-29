@@ -6,9 +6,13 @@
 // fundamentalsRender.test.js keeps the flags module REAL and is the
 // BUILD_RULES §4 dependency-surface guard, so this file may mock it.)
 //
-// Flag-off inertness is asserted here via call-time flips; the off-state
-// TEXTS of record stay owned by the P4 battery's real-flag file snapshots
-// (p4Equivalence.battery.test.js) — deliberately not re-snapshotted.
+// Flag-off inertness is asserted here via call-time flips — and since the
+// Jul 25 2026 flip (`c45f936c`) this file is the ONLY place that covers it:
+// the real-flag sibling can no longer reach the off state, and it may not
+// mock the flags module (it is the BUILD_RULES §4 dependency-surface guard).
+// The P4 battery's real-flag file snapshots are now the ON-state texts of
+// record, not the off-state lock; no off-state prompt text is snapshotted
+// anywhere, by design — inertness is asserted as equivalence, not as bytes.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 

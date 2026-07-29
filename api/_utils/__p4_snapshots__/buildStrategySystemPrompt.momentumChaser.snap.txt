@@ -13,9 +13,9 @@ Your shortlist MUST include at least 5 stocks from today's top 3 performing sect
 
 The ARCH column in the stock data below is pre-computed for your archetype. Higher scores = better fit for your strategy. Use it as your primary sorting signal.
 
-STOCK UNIVERSE (TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH):
-TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH
-NVDA|Technology|90|88|95|0.81|9.1
+STOCK UNIVERSE (TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH|PE_VS_SECT|REVG_PCT|MCAP_CLS):
+TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH|PE_VS_SECT|REVG_PCT|MCAP_CLS
+NVDA|Technology|90|88|95|0.81|9.1|1.50|11.6|L
 
 RECENT FANTASYTIMES INTELLIGENCE:
 1. [Reporter/beat] "Headline" (2h ago)
