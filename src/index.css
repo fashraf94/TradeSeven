@@ -17,50 +17,32 @@ input[type="number"] {
   font-size: 16px !important;
 }
 
-/* Dark Gaming Theme for FantasyTrades */
+/* The 21 unprefixed COLOR custom properties that used to live here were removed
+   by the Delight Layer arc, Task 1 Phase 2 (ruling R-S6). Colors now come from the
+   canonical --ft-* substrate in src/theme/tokens.css.
+
+   18 of them had zero var() consumers repo-wide; the 3 live ones were re-pointed
+   to value-identical --ft-* tokens in the rule block below:
+     --background     #0d1117              -> --ft-bg-app
+     --text-primary   #e6edf3              -> --ft-text-primary-holo  (NOT
+                      --ft-text-primary, which is the obsidian #e2e8f0)
+     --border-subtle  rgba(255,255,255,.1) -> rgba(var(--ft-scrim-rgb), 0.1)
+
+   --radius stays: it is not a color, and tailwind.config.js:11-13 consumes it. */
 @layer base {
   :root {
-    /* Dark Gaming Theme Colors */
-    --background: #0d1117;
-    --card: #161b22;
-    --card-hover: #1c2128;
-    --card-elevated: #21262d;
-
-    /* Text Colors */
-    --text-primary: #e6edf3;
-    --text-secondary: #8b949e;
-    --text-muted: #6e7681;
-
-    /* Accent Colors */
-    --cyan: #00d9ff;
-    --cyan-dim: #0099cc;
-    --green: #10b981;
-    --green-bright: #00ff88;
-    --red: #ef4444;
-    --red-bright: #ff4466;
-    --blue: #3b82f6;
-    --purple: #9333ea;
-    --gold: #ffc107;
-
-    /* Border & Effects */
-    --border: rgba(0, 217, 255, 0.2);
-    --border-subtle: rgba(255, 255, 255, 0.1);
-    --glow-cyan: 0 0 20px rgba(0, 217, 255, 0.3);
-    --glow-green: 0 0 20px rgba(16, 185, 129, 0.3);
-    --glow-red: 0 0 20px rgba(239, 68, 68, 0.3);
-
     --radius: 12px;
   }
 }
 
 @layer base {
   * {
-    border-color: var(--border-subtle);
+    border-color: rgba(var(--ft-scrim-rgb), 0.1);
   }
 
   body {
-    background: var(--background);
-    color: var(--text-primary);
+    background: var(--ft-bg-app);
+    color: var(--ft-text-primary-holo);
     margin: 0;
     min-height: 100vh;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
