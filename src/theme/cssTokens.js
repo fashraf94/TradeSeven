@@ -47,7 +47,7 @@
  * regression — do not add memoization here without changing A3.
  *
  * ---------------------------------------------------------------------------
- * ⚠ THREE STANDING HAZARDS
+ * ⚠ FOUR STANDING HAZARDS
  * ---------------------------------------------------------------------------
  * 1. FRAMER MOTION (hazard H2). Motion interpolates color channels numerically
  *    and CANNOT parse a var() string. Any color that flows into `animate`,
@@ -71,6 +71,18 @@
  * 3. PREFIX NEAR-MISS (ruling R-S8). Our prefix is `--ft-`. The repo already
  *    has `--fw-` (44 occurrences, src/components/Forge/workshop/ForgeWorkshop.jsx:182).
  *    One letter apart. Read carefully when debugging a var that will not resolve.
+ *
+ * 4. TRIPLET WHITESPACE — ALWAYS GO THROUGH THE BRIDGE (ruling R-A2w). A raw
+ *    getComputedStyle read of an RGB triplet token is NOT whitespace-stable
+ *    across environments: jsdom collapses the space after each comma
+ *    ('0,217,255') while real browsers preserve the authored spacing
+ *    ('0, 217, 255'). Both are valid CSS and render identically, so the
+ *    difference is invisible until something does string equality on it — a
+ *    snapshot, a cache key, a test assertion — and then it fails on one engine
+ *    only. readTokenRgb() canonicalizes to the no-space form everywhere, so
+ *    consumers MUST use it rather than reading the property directly. The same
+ *    ruling makes the A2 acceptance comparator whitespace-insensitive for the 8
+ *    triplet rows only; hex and var()-alias rows stay strict equality.
  */
 
 const PREFIX = '--ft-';
@@ -88,6 +100,19 @@ const MAX_VAR_DEPTH = 4;
  */
 function varPattern() {
   return /var\(\s*(--[\w-]+)\s*(?:,([^()]*))?\)/g;
+}
+
+/**
+ * Canonicalize an RGB triplet to the no-space form, e.g. '0, 217, 255' ->
+ * '0,217,255' (ruling R-A2w).
+ *
+ * Necessary because the two environments disagree: jsdom collapses the space
+ * after a comma inside a custom property value, real browsers preserve the
+ * authored spacing. Canonicalizing here means readTokenRgb() returns one stable
+ * string everywhere, so consumers never have to care which engine they are on.
+ */
+function canonicalizeTriplet(value) {
+  return value.replace(/\s*,\s*/g, ',').trim();
 }
 
 /**
@@ -168,16 +193,21 @@ export function readToken(name) {
 /**
  * The companion RGB triplet for a token, for rgba() composition at literal sites:
  *
- *     background: `rgba(${readTokenRgb('cyan')}, 0.1)`   // 'rgba(0, 217, 255, 0.1)'
+ *     background: `rgba(${readTokenRgb('cyan')}, 0.1)`   // 'rgba(0,217,255, 0.1)'
  *
  * Reads `--ft-<name>-rgb`. Only the colors the census showed are used
  * translucently have triplets (ruling R-S9) — see ./tokens.css.
+ *
+ * The return value is canonicalized to the no-space form in every environment
+ * (ruling R-A2w), so it is stable across browser and jsdom. See hazard 4 in the
+ * module header for why that matters and why a raw getComputedStyle read is not
+ * a substitute for this function.
  *
  * ⚠ Do NOT feed this to the existing alpha() / hexToRgba() helpers; they parse
  * hex, not triplets. See hazard 2 in the module header.
  *
  * @param {string} name Bare token name, e.g. 'cyan'.
- * @returns {string} e.g. '0, 217, 255'. Empty string if undeclared or no DOM.
+ * @returns {string} e.g. '0,217,255'. Empty string if undeclared or no DOM.
  */
 export function readTokenRgb(name) {
   const styles = rootStyles();
@@ -186,5 +216,5 @@ export function readTokenRgb(name) {
   const raw = styles.getPropertyValue(`${PREFIX}${name}-rgb`).trim();
   if (!raw) return '';
 
-  return resolveVarChain(styles, raw);
+  return canonicalizeTriplet(resolveVarChain(styles, raw));
 }
