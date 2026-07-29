@@ -262,7 +262,7 @@ export default async function handler(req, res) {
     logInfo('Calling Claude API for recap...', { model: executionConfig.model });
     const wireT0 = Date.now();
 
-    const { response } = await wireModelCall(executionConfig, {
+    const { response, generationConfig } = await wireModelCall(executionConfig, {
       system: DOUG_RECAP_SYSTEM_PROMPT + wireInstruction + continuityBlock,
       tools: [wireFlags.writesEnabled
         ? extendToolWithAgentFacts(PUBLISH_EARNINGS_RECAP_TOOL, 'doug', { pinEventType: 'earnings_recap' })
@@ -330,6 +330,7 @@ export default async function handler(req, res) {
       primaryTicker: earning.symbol,
       triggerRef: `${earning.symbol}:${earning.reportDate}`,
       marketDate,
+      generationConfig,
       now: wireInstant,
     });
     // Close the measured window immediately: nothing between the

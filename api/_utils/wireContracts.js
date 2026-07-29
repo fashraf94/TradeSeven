@@ -54,7 +54,11 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // assessTickerUniverseCaveat refuses a regen carrying a TICKER_TO_SECTOR
 // change without a WIRE_VALIDATOR_VERSION bump (each stamp truthful about
 // its own axis). Manifest-module change → mechanism-scope bump.
-export const WIRE_GENERATION_VERSION = 4;
+// v5 (P3/N0): generationConfig threaded through the six inline publish
+// calls + the batch-doc carry — request-constructor files changed (no
+// request byte changed; the file-level conservatism is the accepted cost,
+// and the lock catching its own arc's diff is the mechanism working).
+export const WIRE_GENERATION_VERSION = 5;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // Firestore collection names (server-only; deny-all in firestore.rules).

@@ -175,6 +175,12 @@ export default async function handler(req, res) {
               // flip. `wireMarketDate` is written only when writes were on at
               // SUBMIT time, so its absence is exactly that signal.
               const submittedUnderWire = Boolean(batchData.wireMarketDate);
+              // N0 (R4-B1): SUBMIT-time provenance read back off the batch
+              // doc — never re-derived at poll. Absent on pre-N0 batch docs
+              // (the straddle) -> nulls -> publishStoryWithWire falls back
+              // to current constants, mirroring the wireMarketDate fallback.
+              const wireGenerationConfig = batchData.wireGenerationConfig ?? null;
+              const wireSchemaVersion = batchData.wireSchemaVersion ?? null;
               const wireMarketDate =
                 batchData.wireMarketDate ||
                 resolveWireMarketDate(batchData.submittedAt?.toDate?.() || batchData.submittedAt || new Date());
@@ -191,6 +197,8 @@ export default async function handler(req, res) {
                   primaryTicker: symbol,
                   triggerRef: `${symbol}:${reportDate}`,
                   marketDate: wireMarketDate,
+                  generationConfig: wireGenerationConfig,
+                  generationSchemaVersion: wireSchemaVersion,
                   deferTransaction: true,
                 })
                 : { storyRef: await db.collection('fantasyTimesStories').add(storyDoc) };

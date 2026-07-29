@@ -15,6 +15,7 @@ import {
 } from '../_utils/fantasyTimesPrompts.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
+import { WIRE_SCHEMA_VERSION } from '../_utils/wireContracts.js';
 import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
 import { buildContinuityContext } from '../_utils/wireContinuity.js';
 import { recordWireSample } from '../_utils/wireMetrics.js';
@@ -246,10 +247,10 @@ export default async function handler(req, res) {
 
     // ONE execution object governs every request in the batch — captured at
     // SUBMIT time (R4-B1: generationConfig/schemaVersion govern the request
-    // and are clocked here, not at poll). N0 (P3) stamps the returned
-    // generationConfig onto the batch doc, flag-gated like wireMarketDate.
+    // and are clocked here, not at poll). The returned generationConfig is
+    // stamped onto the batch doc below, flag-gated like wireMarketDate.
     const executionConfig = getGenerationConfig('doug_earnings_preview', wireFlags);
-    const { batch } = await wireBatchSubmit(executionConfig, requests);
+    const { batch, generationConfig } = await wireBatchSubmit(executionConfig, requests);
 
     logInfo('Batch submitted', { batchId: batch.id, processingStatus: batch.processing_status });
 
@@ -270,7 +271,14 @@ export default async function handler(req, res) {
       // build changes persistence on a production collection (M8). poll-batch
       // falls back to resolveWireMarketDate(submittedAt) when it is absent,
       // which covers a flag flip between submit and poll.
-      ...(wireFlags.writesEnabled ? { wireMarketDate } : {}),
+      // N0 (R4-B1): SUBMIT-time provenance rides the batch doc exactly like
+      // wireMarketDate — generationConfig from the same frozen execution
+      // object the batch requests were built from, and the schema version in
+      // force NOW. poll-batch carries these into the envelope so a replayed
+      // preview never wears poll-time state. Identically flag-gated (M8).
+      ...(wireFlags.writesEnabled
+        ? { wireMarketDate, wireGenerationConfig: generationConfig, wireSchemaVersion: WIRE_SCHEMA_VERSION }
+        : {}),
     });
 
     logInfo('Batch info saved to Firestore');

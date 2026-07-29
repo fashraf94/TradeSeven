@@ -295,7 +295,7 @@ export default async function handler(req, res) {
     logInfo('Calling Claude API...', { model: executionConfig.model, messageLength: userMessage.length });
     const wireT0 = Date.now();
 
-    const { response } = await wireModelCall(executionConfig, {
+    const { response, generationConfig } = await wireModelCall(executionConfig, {
       system: KAI_SYSTEM_PROMPT + (marketContextBlock || '') + (consensusBlock || '') + wireInstruction + continuityBlock,
       tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_MARKET_PULSE_TOOL, 'kai') : PUBLISH_MARKET_PULSE_TOOL],
       tool_choice: { type: 'tool', name: 'publish_market_pulse' },
@@ -430,6 +430,7 @@ export default async function handler(req, res) {
       primaryTicker: storyDoc.primaryTicker,
       triggerRef: period,
       marketDate,
+      generationConfig,
       now: wireInstant,
     });
     // Close the measured window immediately: nothing between the

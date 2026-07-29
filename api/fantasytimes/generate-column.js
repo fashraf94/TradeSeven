@@ -301,7 +301,7 @@ export default async function handler(req, res) {
     logInfo('Calling Claude Sonnet for column...', { model: executionConfig.model });
     const wireT0 = Date.now();
 
-    const { response } = await wireModelCall(executionConfig, {
+    const { response, generationConfig } = await wireModelCall(executionConfig, {
       system: KIM_SYSTEM_PROMPT + (consensusContext || '') + wireInstruction + continuityBlock,
       tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_SECTOR_COLUMN_TOOL, 'kim') : PUBLISH_SECTOR_COLUMN_TOOL],
       tool_choice: { type: 'tool', name: 'publish_sector_column' },
@@ -407,6 +407,7 @@ export default async function handler(req, res) {
       primaryTicker: null,
       triggerRef: columnType,
       marketDate,
+      generationConfig,
       now: wireInstant,
     });
     // Close the measured window immediately: nothing between the

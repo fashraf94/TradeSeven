@@ -235,7 +235,7 @@ Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool ca
   logInfo('Step 5: Calling Claude API...', { model: executionConfig.model, messageLength: userMessage.length });
   const wireT0 = Date.now();
 
-  const { response } = await wireModelCall(executionConfig, {
+  const { response, generationConfig } = await wireModelCall(executionConfig, {
     system: ALEX_SYSTEM_PROMPT + wireInstruction + continuityBlock,
     tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_STORY_TOOL, 'alex') : PUBLISH_STORY_TOOL],
     tool_choice: { type: 'tool', name: 'publish_story' },
@@ -340,6 +340,7 @@ Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool ca
     primaryTicker: upperSymbol,
     triggerRef: upperSymbol,
     marketDate,
+    generationConfig,
     now: wireInstant,
   });
   // Close the measured window immediately: nothing between the

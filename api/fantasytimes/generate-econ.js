@@ -297,7 +297,7 @@ async function handleRecap(req, res, db) {
   logInfo('Calling Claude API for recap...', { model: executionConfig.model });
   const wireT0 = Date.now();
 
-  const { response } = await wireModelCall(executionConfig, {
+  const { response, generationConfig } = await wireModelCall(executionConfig, {
     system: NETA_RECAP_SYSTEM_PROMPT + wireInstruction + continuityBlock,
     tools: [wireFlags.writesEnabled
       ? extendToolWithAgentFacts(PUBLISH_ECON_RECAP_TOOL, 'neta', { pinEventType: 'econ_print' })
@@ -371,6 +371,7 @@ async function handleRecap(req, res, db) {
     primaryTicker: null,
     triggerRef: wireEconSlug,
     marketDate,
+    generationConfig,
     serverSubjectRef: econSubjectRefForSlug(wireEconSlug),
     now: wireInstant,
   });
@@ -516,7 +517,7 @@ async function handlePreview(req, res, db) {
   // Weekly preview uses Sonnet for deeper analysis (model + latency pins in
   // the seam table); wireModelCall is the sole transport (P11 / R4-B2).
   const executionConfig = getGenerationConfig('neta_econ_preview', wireFlags);
-  const { response } = await wireModelCall(executionConfig, {
+  const { response, generationConfig } = await wireModelCall(executionConfig, {
     system: NETA_PREVIEW_SYSTEM_PROMPT + wireInstruction + continuityBlock,
     tools: [wireFlags.writesEnabled
       ? extendToolWithAgentFacts(PUBLISH_ECON_PREVIEW_TOOL, 'neta', { pinEventType: 'econ_preview' })
@@ -580,6 +581,7 @@ async function handlePreview(req, res, db) {
     primaryTicker: null,
     triggerRef: 'week',
     marketDate,
+    generationConfig,
     now: wireInstant,
   });
   // Close the measured window immediately: nothing between the
