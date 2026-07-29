@@ -26,6 +26,10 @@ import DeployStation from './DeployStation';
 import ManageStation from './ManageStation';
 import ReviewStation from './ReviewStation';
 import { CMD, alpha, readableOn, Eyebrow, Mono, SectionLabel } from './commandUI';
+// Delight Layer Task 1 Phase 2 pilot: the --ft-* substrate (src/theme/tokens.css).
+// Only literals that exactly match a locked token migrate; alpha() call sites stay
+// hex (ruling R-S9) and CMD.* stays untouched (spec §2 forbids identifier keying).
+import { cssVar } from '../../theme/cssTokens';
 import useAgent from '../../hooks/useAgent';
 // Mastery P3: the owner profile behind the RecordSheet's mastery cards —
 // zero reads and null while MASTERY_SURFACE_ENABLED is false (dark).
@@ -246,7 +250,7 @@ export default function CommandDashboard({
             >
               <Menu size={22} />
               {unreadCount > 0 && (
-                <span style={{ position: 'absolute', top: 4, right: 4, minWidth: 16, height: 16, padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#EF4444', borderRadius: 8, color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>
+                <span style={{ position: 'absolute', top: 4, right: 4, minWidth: 16, height: 16, padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: cssVar('red'), borderRadius: 8, color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
@@ -316,7 +320,7 @@ export default function CommandDashboard({
             {drb.loading ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {[0.95, 0.85, 0.6].map((w, i) => (
-                  <div key={i} style={{ height: 13, width: `${w * 100}%`, borderRadius: 6, background: 'linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))' }} />
+                  <div key={i} style={{ height: 13, width: `${w * 100}%`, borderRadius: 6, background: 'linear-gradient(90deg, rgba(var(--ft-scrim-rgb), 0.06), rgba(var(--ft-scrim-rgb), 0.02))' }} />
                 ))}
               </div>
             ) : drb.dailyBrief ? (
