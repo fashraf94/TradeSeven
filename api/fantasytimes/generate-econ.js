@@ -2,7 +2,8 @@
 // Neta's Economics Desk — economic data recaps and weekly previews.
 // Two modes: recap (cron during market hours) and preview (Sunday evening).
 
-import Anthropic from '@anthropic-ai/sdk';
+import { getGenerationConfig } from '../_utils/wireGenerationConfig.js';
+import { wireModelCall } from '../_utils/wireModelCall.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
@@ -45,14 +46,6 @@ function logInfo(msg, data = null) {
 function logError(msg, data = null) {
   const ts = new Date().toISOString();
   console.error(`${ts} ${LOG_PREFIX} ${msg}`, data ? JSON.stringify(data) : '');
-}
-
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  }
-  return anthropicClient;
 }
 
 function getTodayET() {
@@ -298,14 +291,13 @@ async function handleRecap(req, res, db) {
     }
   }
 
-  const anthropic = getAnthropicClient();
-  logInfo('Calling Claude API for recap...', { model: REPORTER_PROFILES.neta.model });
+  // Params from the frozen execution object; wireModelCall is the sole
+  // transport (P11 / R4-B2).
+  const executionConfig = getGenerationConfig('neta_econ_recap', wireFlags);
+  logInfo('Calling Claude API for recap...', { model: executionConfig.model });
   const wireT0 = Date.now();
 
-  const response = await anthropic.messages.create({
-    model: REPORTER_PROFILES.neta.model,
-    max_tokens: wireFlags.writesEnabled ? 1000 : 600,
-    temperature: 0.7,
+  const { response } = await wireModelCall(executionConfig, {
     system: NETA_RECAP_SYSTEM_PROMPT + wireInstruction + continuityBlock,
     tools: [wireFlags.writesEnabled
       ? extendToolWithAgentFacts(PUBLISH_ECON_RECAP_TOOL, 'neta', { pinEventType: 'econ_print' })
@@ -518,19 +510,13 @@ async function handlePreview(req, res, db) {
     }
   }
 
-  const anthropic = getAnthropicClient();
   logInfo('Calling Claude Sonnet for weekly preview...');
   const wireT0 = Date.now();
 
-  // Weekly preview uses Sonnet for deeper analysis
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: wireFlags.writesEnabled ? 1400 : 1000,
-    temperature: 0.8,
-    // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
-    // preserve the prior Sonnet-4 (no-thinking) latency profile.
-    thinking: { type: 'disabled' },
-    output_config: { effort: 'low' },
+  // Weekly preview uses Sonnet for deeper analysis (model + latency pins in
+  // the seam table); wireModelCall is the sole transport (P11 / R4-B2).
+  const executionConfig = getGenerationConfig('neta_econ_preview', wireFlags);
+  const { response } = await wireModelCall(executionConfig, {
     system: NETA_PREVIEW_SYSTEM_PROMPT + wireInstruction + continuityBlock,
     tools: [wireFlags.writesEnabled
       ? extendToolWithAgentFacts(PUBLISH_ECON_PREVIEW_TOOL, 'neta', { pinEventType: 'econ_preview' })

@@ -3,7 +3,8 @@ console.log('generate-macro loaded');
 // Alex's Macro Alert — triggered when 5+ stocks fire within 2 minutes.
 // Single story covering a broad market event.
 
-import Anthropic from '@anthropic-ai/sdk';
+import { getGenerationConfig } from '../_utils/wireGenerationConfig.js';
+import { wireModelCall } from '../_utils/wireModelCall.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import {
@@ -27,14 +28,6 @@ function logInfo(msg, data = null) {
 function logError(msg, data = null) {
   const ts = new Date().toISOString();
   console.error(`${ts} ${LOG_PREFIX} ${msg}`, data ? JSON.stringify(data) : '');
-}
-
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  }
-  return anthropicClient;
 }
 
 export default async function handler(req, res) {
@@ -106,13 +99,12 @@ export default async function handler(req, res) {
       .join('\n');
 
     // ── Call Claude Haiku ────────────────────────────────────────────
+    // Producer-dead seam, routed anyway so the P2-48 sole-importer
+    // invariant holds without carve-outs. No wire flags in this handler —
+    // the seam's params are unconditional.
     logInfo(`Generating macro alert for ${triggers.length} stocks`);
-    const anthropic = getAnthropicClient();
 
-    const response = await anthropic.messages.create({
-      model: REPORTER_PROFILES.alex.model,
-      max_tokens: 700,
-      temperature: 0.8,
+    const { response } = await wireModelCall(getGenerationConfig('alex_macro'), {
       system: ALEX_MACRO_SYSTEM_PROMPT,
       tools: [PUBLISH_MACRO_TOOL],
       tool_choice: { type: 'tool', name: 'publish_macro' },

@@ -2,7 +2,8 @@
 // Art Director Haiku endpoint — AI fallback for edge-case visual assignment.
 // Called for stories where deterministic rules don't produce a good match.
 
-import Anthropic from '@anthropic-ai/sdk';
+import { getGenerationConfig } from '../_utils/wireGenerationConfig.js';
+import { wireModelCall } from '../_utils/wireModelCall.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { ART_DIRECTOR_PROMPT } from '../_utils/fantasyTimesVisuals.js';
@@ -14,14 +15,6 @@ const VALID_VISUAL_TYPES = [
   'stat_card', 'eps_gauge', 'sector_heatmap', 'none',
 ];
 
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  }
-  return anthropicClient;
-}
-
 /**
  * Core Art Director logic — call Haiku to assign a visual type.
  * Exported for direct import by generation endpoints and test endpoint.
@@ -30,8 +23,6 @@ function getAnthropicClient() {
  * @returns {{ visualType: string, visualConfig: object }}
  */
 export async function runArtDirector(storyData) {
-  const anthropic = getAnthropicClient();
-
   const userMessage = `Analyze this story and assign a visual type.
 
 Reporter: ${storyData.reporter}
@@ -46,10 +37,10 @@ ${storyData.body || ''}
 Available data snapshot:
 ${JSON.stringify(storyData.dataSnapshot || {}, null, 2)}`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 500,
-    temperature: 0,
+  // Params from the frozen execution object (temperature: 0 preserved);
+  // wireModelCall is the sole transport (P11 / R4-B2). No tools — the Art
+  // Director returns raw JSON text.
+  const { response } = await wireModelCall(getGenerationConfig('art_director'), {
     system: ART_DIRECTOR_PROMPT,
     messages: [{ role: 'user', content: userMessage }],
   });

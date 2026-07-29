@@ -3,7 +3,7 @@
 // retrieves results from Anthropic, writes stories to Firestore.
 // Must complete in <10 seconds. No loops, no waiting.
 
-import Anthropic from '@anthropic-ai/sdk';
+import { wireBatchRetrieve, wireBatchResults } from '../_utils/wireModelCall.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { REPORTER_PROFILES } from '../_utils/fantasyTimesPrompts.js';
@@ -25,14 +25,6 @@ function logInfo(msg, data = null) {
 function logError(msg, data = null) {
   const ts = new Date().toISOString();
   console.error(`${ts} ${LOG_PREFIX} ${msg}`, data ? JSON.stringify(data) : '');
-}
-
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  }
-  return anthropicClient;
 }
 
 export default async function handler(req, res) {
@@ -71,7 +63,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, message: 'No pending batches' });
     }
 
-    const anthropic = getAnthropicClient();
     const results = [];
 
     for (const batchDoc of pendingQuery.docs) {
@@ -80,8 +71,9 @@ export default async function handler(req, res) {
       logInfo(`Checking batch ${batchId}...`);
 
       try {
-        // Check batch status with Anthropic
-        const batchStatus = await anthropic.messages.batches.retrieve(batchId);
+        // Check batch status with Anthropic (retrieval rides the wireModelCall
+        // module so the P2-48 sole-importer invariant holds carve-out-free)
+        const batchStatus = await wireBatchRetrieve(batchId);
 
         if (batchStatus.processing_status !== 'ended') {
           logInfo(`Batch ${batchId} still ${batchStatus.processing_status}, skipping`);
@@ -96,7 +88,11 @@ export default async function handler(req, res) {
         let failures = 0;
         const errors = [];
 
-        const results = await anthropic.messages.batches.results(batchId);
+        // NOTE: `const results` here shadows the outer accumulator (:67) —
+        // the known TDZ defect, deliberately NOT fixed in this P1 routing
+        // commit. It is N6 build work with its own adjudicating test
+        // (founder-authorized, V1.3 §0); this commit changes transport only.
+        const results = await wireBatchResults(batchId);
         for await (const result of results) {
           if (result.result.type === 'succeeded') {
             try {
