@@ -1,6 +1,35 @@
 # FantasyTrades Design Tokens
 
-**Last Updated:** 2025-12-12
+> # ⛔ DEPRECATED — DO NOT USE AS MIGRATION INPUT
+>
+> **Deprecated July 29, 2026** by the Delight Layer arc, Task 1 (spec V2, ruling R-S6/R-S7).
+>
+> **The living source of colour truth is now:**
+> - `src/theme/tokens.css` — the canonical `--ft-*` tokens on `:root`
+> - `src/theme/tokenBaseline.json` — the published, machine-readable name→value list
+> - `src/theme/cssTokens.js` — the JS bridge (`cssVar` / `readToken` / `readTokenRgb`)
+> - `docs/BUILD_RULES.md` §9 — the binding rules for new colour usage
+>
+> **Why this file is not trustworthy.** Verified against the code at HEAD `db6f5ebc`
+> during Phase 0 discovery (`docs/audits/20260729_DELIGHT_THEMING_FOUNDATION_PHASE0_DISCOVERY.md`):
+> - It was 7 months 17 days stale.
+> - Both of its cited line ranges are wrong: it claims the `colors` object is at
+>   `App.jsx:809-832` (actually `1083-1108`) and `CHALLENGE_COLORS` at `897-905`
+>   (actually `1270-1277`) — drifts of 274 and 373 lines.
+> - It publishes a **wrong value**: `cardBg: '#161b22'`. `App.jsx:1085` has
+>   `cardBg: '#1a1f2e'`; `#161b22` was renamed to `cardInner` (`:1086`). This is a
+>   key rename, not a recolor — anyone reconciling the two must not "fix" the code
+>   to match the doc.
+> - Coverage was ~23%: it documents 3 of the live token sources and never mentions
+>   `HOLO_COLORS` (41 keys), `DARK_TOKENS` (30), `LIGHT_TOKENS` (29), `CMD` (15),
+>   the `index.css` `:root` tier, `leagueTokens`, or `draftTokens`.
+> - Point accuracy measured 58/66 = 87.9%.
+>
+> Kept as a historical record, not edited to match reality — per the `docs/README.md`
+> maintenance rule that records are superseded by new documents, never rewritten.
+> Regenerating it from `tokenBaseline.json` is a recorded follow-on (spec V2 §9).
+
+**Last Updated:** 2025-12-12 *(stale — see the deprecation notice above)*
 
 This document contains all design tokens used in the FantasyTrades app including colors, gradients, spacing, and styling patterns.
 

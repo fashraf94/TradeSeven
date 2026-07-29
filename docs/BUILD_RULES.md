@@ -83,3 +83,21 @@ Every catalog event (see `VISION_PROGRAM_POST_LAUNCH_PLACEMENT_ADDENDUM_A` §4 +
 ## 9. Display-agreement rule
 
 Every displayed decision or label must be derived from **exactly what the user sees**, never from a parallel source that can drift. A verdict, zone word, strength band, chip, or driver label is computed from the same rounded number, the same payload field, or the same rendered response value — never from a raw pre-rounding value, a live input, or a re-derived copy. This one rule underlies the whole display-disagreement bug family (scan tier, RSI zone words, `strengthBand`, the conditional verdict, and now the result-area driver labels and RSI-rounds-before-zoning): when a label and its number come from two sources they eventually disagree in production, so bind them to one source *by construction*. (Codified July 4, 2026 — Correlation-Lab display-integrity fast-follow; founder-cited.)
+
+## 10. Color tokens (added July 29, 2026 — Delight Layer arc Task 1, spec V2 rulings R-S1–R-S10 / R-A2w / R-H8 / R-#fff)
+
+**All new color usage consumes the `--ft-*` tokens** declared on `:root` in `src/theme/tokens.css` — the canonical color source (ruling R-S5) — via the bridge in `src/theme/cssTokens.js`: `cssVar(name)` for inline styles and CSS strings, `readToken(name)` for canvas / WebGL / Framer Motion, `readTokenRgb(name)` for rgba composition. `src/theme/tokenBaseline.json` is the published, auditable value list. **Raw core-palette hexes introduced in a guarded file fail `src/theme/tokens.guard.test.js`**; the guarded-file list expands as more files migrate.
+
+Five constraints, each paid for by a measured finding in `docs/audits/20260729_DELIGHT_THEMING_FOUNDATION_PHASE0_DISCOVERY.md`:
+
+- **Never author tokens inside a cascade layer.** jsdom parses `@layer` into a rule it never cascades, so every custom property inside one reads back as `""` — which is why the legacy `index.css` block was untestable, and why a layered token block would make its own acceptance tests pass vacuously. A layered block also cannot override the unlayered `:root` in `holographic.css`. Guarded by `tokens.guard.test.js` (A4b).
+- **No hex → `var()` inside the values of `holoTheme.js` or `theme/tokens.js`** until helper consolidation lands. Three helper families parse hex and fail *silently* on a `var()` string: `alpha()` returns teal (`commandUI.jsx:38-45`), `readableOn()` returns near-black (`:48-56`), and the 26 `hexToRgba()` copies have seven different fallbacks between them. No throw, no warning, no test failure. Helper call sites keep their hex (R-S9).
+- **Framer Motion values take a computed hex from `readToken`, never a `var()` string** (hazard H2) — Motion interpolates color channels numerically and cannot parse `var()`.
+- **SVG presentation attributes (`stroke=""`, `fill=""`) keep their hex literal** (hazard H8, ruling R-H8) — `var()` is not reliably substituted there, and a failure silently drops the shape. Converting them to `style`-based CSS is a deliberate change for the consolidation arc, not a migration.
+- **`tailwind.config.js`'s `colors` key stays empty** until the dedicated Tailwind-wiring task (R-S10). It ships `{}` today while 45 shadcn-style color utilities sit in live JSX emitting no CSS; populating the scale activates all 45 in one commit. Guarded by A4c.
+
+Migration operates on **raw hex literals only, never on identifiers** — 12 sites across 11 files declare a local `const colors` with conflicting values, so an identifier-keyed codemod on `colors.background` repaints every BaggerBomb screen. The four legacy JS token systems (`HOLO_COLORS`, `DARK_TOKENS`, `CMD`, the `App.jsx` `colors` object) are mutually disjoint — no file uses two — and are re-pointed opportunistically via the `LTOKENS = CMD` re-export pattern (`src/components/League/leagueTokens.js:22`), never by copying values.
+
+**`docs/DESIGN_TOKENS.md` is DEPRECATED** and must not be used as migration input: it is stale by 7½ months, both of its cited line ranges are wrong, and it publishes a wrong value for `cardBg`.
+
+*Numbering note: this section was appended as §10 deliberately. The display-agreement rule keeps §9 because ~20 in-code comments across `src/` and `docs/` cite it as "§9 display-agreement"; renumbering it would silently invalidate every one of those citations.*
