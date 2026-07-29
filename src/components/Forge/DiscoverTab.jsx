@@ -529,7 +529,10 @@ export default function DiscoverTab({ isMobile, forge, tokens, agent }) {
         >
           <Grid3X3 size={16} color="#8b949e" />
           <span style={{ fontSize: 14, color: '#e6edf3', fontWeight: 500 }}>
-            Browse All {FORGE_RULE_TEMPLATES.length} Rules
+            {/* §9: the count is bound to the SAME offerable list the Full
+                Library browse renders (forge.filteredTemplates derives from
+                offerableTemplates), so the label can never disagree with it. */}
+            Browse All {forge.offerableTemplates.length} Rules
           </span>
         </button>
       </div>

@@ -7,7 +7,7 @@
 // the defect it exists to catch.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -275,5 +275,170 @@ describe('preset integrity — new users must not start stranded', () => {
     const known = new Set(FORGE_RULE_TEMPLATES.map((t) => t.id));
     const offenders = ids.filter((id) => known.has(id) && notOffered(id));
     expect(offenders, `StarterKit ships hidden rules: ${offenders.join(', ')}`).toEqual([]);
+  });
+});
+
+describe('offer-gate completion — the three hook-fed surfaces (C-20)', () => {
+  // DEFECT GUARDED: the Discover-tab leak. Before this arc, useForge's two
+  // display projections (filteredTemplates, templatesByCategory) enumerated the
+  // RAW corpus, so all 48 non-offerable rules were browsable AND addable from
+  // three surfaces that draw from the hook: DiscoverTab FullLibraryView,
+  // ForgeScreen's Advanced-Firmware CategoryAccordion, and BundleBuildFlow's
+  // Browse stage. The fix filters ONCE, centrally, in useForge.
+  const read = (rel) => readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+
+  it('useForge filters the corpus ONCE (offerableTemplates) and both projections derive from it', () => {
+    const src = read('src/hooks/useForge.js');
+    expect(src).toContain("from '../data/ruleSupportStatus'");
+    // the single filtered base
+    expect(src).toMatch(/offerableTemplates\s*=\s*useMemo\(\s*\(\)\s*=>\s*filterSupported\(FORGE_RULE_TEMPLATES\)/);
+    // filteredTemplates derives from offerableTemplates, NOT the raw corpus
+    expect(src).toMatch(/filteredTemplates\s*=\s*useMemo\([\s\S]{0,220}offerableTemplates/);
+    expect(src).not.toMatch(/filteredTemplates\s*=\s*useMemo\([\s\S]{0,160}FORGE_RULE_TEMPLATES\.filter/);
+    // templatesByCategory derives from offerableTemplates too
+    expect(src).toMatch(/templatesByCategory\s*=\s*useMemo\([\s\S]{0,260}offerableTemplates\.forEach/);
+    expect(src).not.toMatch(/templatesByCategory\s*=\s*useMemo\([\s\S]{0,260}FORGE_RULE_TEMPLATES\.forEach/);
+    // and the filtered base is exposed for count labels
+    expect(src).toMatch(/return\s*\{[\s\S]*\bofferableTemplates\b[\s\S]*\}/);
+  });
+
+  it('DiscoverTab browses the filtered feed and its count agrees with it (§9)', () => {
+    const src = read('src/components/Forge/DiscoverTab.jsx');
+    // FullLibraryView renders forge.filteredTemplates (now filtered centrally)
+    expect(src).toMatch(/const\s*\{\s*filteredTemplates[\s\S]{0,200}\}\s*=\s*forge/);
+    expect(src).toMatch(/filteredTemplates\.map\(/);
+    // the "Browse All N Rules" count is bound to the SAME offerable source, not
+    // the raw corpus length — the exact count-agreement leak this arc closes.
+    expect(src).toMatch(/Browse All \{forge\.offerableTemplates\.length\} Rules/);
+    expect(src).not.toContain('Browse All {FORGE_RULE_TEMPLATES.length} Rules');
+  });
+
+  it('ForgeScreen accordion + BundleBuildFlow Browse both draw from forge.templatesByCategory', () => {
+    for (const rel of [
+      'src/components/Forge/ForgeScreen.jsx',
+      'src/components/Forge/workshop/BundleBuildFlow.jsx',
+    ]) {
+      const src = read(rel);
+      expect(src, `${rel} must consume the filtered hook projection`).toMatch(/forge\.templatesByCategory\[/);
+    }
+  });
+
+  it('the filtered feed the hook builds contains EVERY offerable rule and NO hidden rule (behavioral)', () => {
+    const feed = filterSupported(FORGE_RULE_TEMPLATES);
+    const supported = FORGE_RULE_TEMPLATES.filter((t) => isSupported(t.id));
+    // exact content: only supported, all supported, order preserved
+    expect(feed).toEqual(supported);
+    expect(feed.every((t) => isSupported(t.id))).toBe(true);
+    expect(feed.some((t) => NOT_OFFERED_STATUSES.includes(getSupportStatus(t.id)))).toBe(false);
+    // and grouping the feed by category (as templatesByCategory does) never
+    // reintroduces a hidden rule.
+    const grouped = feed.flatMap((t) => t);
+    expect(grouped.some((t) => !isSupported(t.id))).toBe(false);
+  });
+
+  it('legacy non-strand: an equipped hidden rule stays removable via the bundle rule list, not the filtered browse', () => {
+    // Filtering templatesByCategory correctly drops a hidden rule from the
+    // Browse accordion, but the bundle's OWN rule list (Assemble stage / My
+    // Bundles) resolves and removes from forge.rules — unfiltered — so an
+    // already-equipped hidden rule is never stranded or made unremovable.
+    const src = read('src/components/Forge/workshop/BundleBuildFlow.jsx');
+    // bundleRules + the template→doc map are built from forge.rules, not the feed
+    expect(src).toMatch(/bundleRules\s*=\s*useMemo\([\s\S]{0,200}forge\.rules\.find/);
+    expect(src).toMatch(/ruleDocByTemplate[\s\S]{0,200}forge\.rules\.forEach/);
+    // the Assemble-stage remove path resolves through that unfiltered doc map
+    expect(src).toMatch(/handleRemoveRule\s*=\s*async[\s\S]{0,200}ruleDocByTemplate\.get/);
+  });
+});
+
+describe('C-20 corpus-read TRIPWIRE — no new unfiltered browse/offer surface may read the raw corpus', () => {
+  // DEFECT GUARDED: the NEXT offer surface. A brand-new pickable list or
+  // browsable count built directly from FORGE_RULE_TEMPLATES (bypassing
+  // filterSupported / isSupported / the filtered hook) re-opens the exact leak
+  // this arc closed. STRATEGY: a per-occurrence SHAPE classifier over the
+  // frontend offer layer (src/, minus *.test.*). Only three shapes are
+  // generic-safe — a single lookup-by-id (.find), the honesty gate itself
+  // (filterSupported(FORGE_RULE_TEMPLATES)), and an inline honesty-gated
+  // .filter(... isSupported ...). Every BULK reduction (the id→object/id→category
+  // maps + the radar denominator) is PINNED to its specific file, because an
+  // id-map over the raw corpus is the whole corpus re-keyed — a new file could
+  // launder a browse list through `[...map.values()].map(<Card/>)`. Pinning
+  // means a new bulk read lands OUTSIDE the allowlist and fails HERE at birth,
+  // forcing a conscious classification. (Scope is src/; api/ registry-hash and
+  // the activation-gate denominator are guarded separately at :226-232.)
+  //
+  // RESIDUAL (documented, source-scan limits): a value laundered THROUGH an
+  // already-pinned file (e.g. adding `[...TEMPLATE_MAP.values()].map(<Card/>)`
+  // inside DiscoverTab), or a contrived OR-predicate `t.cat===c || isSupported`,
+  // cannot be caught by a text scan and is left to code review.
+  const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  // BULK reductions permitted ONLY in these exact files (id-maps + denominators):
+  const MAP_PAIR = /^FORGE_RULE_TEMPLATES\s*\.\s*map\(\s*(\(?\s*\w+\s*\)?|\(\s*\{[^}]*\}\s*\))\s*=>\s*\[/;
+  const PINNED = {
+    'src/hooks/useForge.js': /^FORGE_RULE_TEMPLATES\s*\.\s*forEach\(/,          // categoryTotals radar denominator
+    'src/components/Forge/TraitCard.jsx': /^FORGE_RULE_TEMPLATES\s*\.\s*forEach\(/, // id→object ruleMap
+    'src/hooks/useTraits.js': MAP_PAIR,                                          // id→object TEMPLATE_MAP
+    'src/data/traitEquip.js': MAP_PAIR,                                          // id→object TEMPLATE_MAP
+    'src/utils/traitEnforcement.js': MAP_PAIR,                                   // id→category map
+    'src/components/Forge/DiscoverTab.jsx': MAP_PAIR,                            // id→object TEMPLATE_MAP
+  };
+  // Generic-safe shapes: a single lookup-by-id, and an inline honesty-gated filter.
+  const SAFE_TAIL = [
+    /^FORGE_RULE_TEMPLATES\s*\.\s*find\(/,
+    /^FORGE_RULE_TEMPLATES\s*\.\s*filter\([\s\S]{0,240}?isSupported\(/,
+  ];
+  const FILTER_SUPPORTED_HEAD = /filterSupported\(\s*$/;
+
+  const walk = (dir, out = []) => {
+    for (const e of readdirSync(path.join(REPO_ROOT, dir), { withFileTypes: true })) {
+      const rel = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (e.name === 'node_modules') continue;
+        walk(rel, out);
+      } else if (/\.jsx?$/.test(e.name) && !/\.test\.jsx?$/.test(e.name)) {
+        out.push(rel);
+      }
+    }
+    return out;
+  };
+
+  it('no src/ file derives a rule COUNT from the raw corpus length (count labels bind to the filtered list)', () => {
+    const offenders = [];
+    for (const rel of walk('src')) {
+      const code = stripComments(readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
+      if (/FORGE_RULE_TEMPLATES\s*\.\s*length\b/.test(code)) offenders.push(rel);
+    }
+    expect(
+      offenders,
+      `raw-corpus count label(s) found — derive the count from the filtered/offerable list instead:\n${offenders.join('\n')}`
+    ).toEqual([]);
+  });
+
+  it('every raw FORGE_RULE_TEMPLATES read in src/ is a lookup / honesty-gated / pinned-reduction shape — never a new bulk list', () => {
+    const offenders = [];
+    for (const rel of walk('src')) {
+      const code = stripComments(readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
+      for (const m of code.matchAll(/FORGE_RULE_TEMPLATES/g)) {
+        const i = m.index;
+        const head = code.slice(0, i);
+        const tail = code.slice(i);
+        const lineStart = head.lastIndexOf('\n') + 1;
+        const nl = code.indexOf('\n', i);
+        const lineText = code.slice(lineStart, nl === -1 ? code.length : nl);
+        const isDecl = /^\s*import\b/.test(lineText)
+          || /^\s*export\s+const\s+FORGE_RULE_TEMPLATES\b/.test(lineText);
+        const ok = isDecl
+          || FILTER_SUPPORTED_HEAD.test(head)
+          || SAFE_TAIL.some((re) => re.test(tail))
+          || (PINNED[rel] && PINNED[rel].test(tail));
+        if (!ok) offenders.push(`${rel}:${head.split('\n').length} -> ${tail.slice(0, 60).replace(/\n/g, ' ')}`);
+      }
+    }
+    expect(
+      offenders,
+      'New unfiltered corpus read(s). Route the list through filterSupported()/isSupported(), draw it from '
+      + 'the useForge offerable projections, or — if this is a genuine non-offer read (lookup map, denominator) — '
+      + `pin the file in this test with justification:\n${offenders.join('\n')}`
+    ).toEqual([]);
   });
 });
