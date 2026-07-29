@@ -7,6 +7,7 @@ import { collection, query, getDocs, orderBy, doc, updateDoc } from 'firebase/fi
 import { db } from '../firebase/config';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../data/forgeKnowledgeBase';
 import { OFFERED_COLLECTIONS } from '../data/forgeCollections';
+import { filterSupported } from '../data/ruleSupportStatus';
 import {
   createRule,
   createBundle,
@@ -225,21 +226,33 @@ export function useForge(agentId) {
     }
   }, [activeTab, stats, statsLoading, loadStats]);
 
-  // Filter templates by selected category
-  const filteredTemplates = useMemo(() => {
-    if (selectedCategory === 'all') return FORGE_RULE_TEMPLATES;
-    return FORGE_RULE_TEMPLATES.filter(t => t.category === selectedCategory);
-  }, [selectedCategory]);
+  // The offerable library — the C-20 honesty gate applied ONCE, centrally.
+  // Every browse/add offer surface (DiscoverTab FullLibraryView, the
+  // ForgeScreen CategoryAccordion, and BundleBuildFlow's Browse stage) draws
+  // its list from the two projections below, so a non-offerable rule can be
+  // neither browsed nor added from any of them. Lookup-by-id paths
+  // (collectionData below, addRuleToBundle's passed template, and the .find
+  // sites in the surfaces) are deliberately NOT filtered, so an already-equipped
+  // rule always resolves and never strands.
+  const offerableTemplates = useMemo(() => filterSupported(FORGE_RULE_TEMPLATES), []);
 
-  // All 92 templates grouped by category for flat accordion display
+  // Filter the offerable templates by selected category
+  const filteredTemplates = useMemo(() => {
+    if (selectedCategory === 'all') return offerableTemplates;
+    return offerableTemplates.filter(t => t.category === selectedCategory);
+  }, [selectedCategory, offerableTemplates]);
+
+  // Offerable templates grouped by category for the flat accordion display.
+  // Derived from offerableTemplates so the accordion — and every per-category
+  // count rendered from it — shows only what the C-20 gate permits.
   const templatesByCategory = useMemo(() => {
     const map = {};
     CATEGORY_ORDER.forEach(catId => { map[catId] = []; });
-    FORGE_RULE_TEMPLATES.forEach(t => {
+    offerableTemplates.forEach(t => {
       if (map[t.category]) map[t.category].push(t);
     });
     return map;
-  }, []);
+  }, [offerableTemplates]);
 
   // Pre-compute collection data with resolved rules and category colors
   const collectionData = useMemo(() => {
@@ -673,6 +686,7 @@ export function useForge(agentId) {
     // Data
     rules,
     bundles,
+    offerableTemplates,
     filteredTemplates,
     templatesByCategory,
     collectionData,
