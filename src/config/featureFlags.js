@@ -1117,21 +1117,31 @@ export const EVAL_IDENTITY_BLOCK_ENABLED = false;
  * stockRankings fundamentals mirror (Commit 1) + the two prompt render blocks
  * that read it (Commit 2, §7-gated fence contact).
  *
- * When FALSE (DEFAULT, merge-dark):
- *   - compute-index-intelligence writes a byte-identical stockRankings doc
- *     (no `fundamentals` key on any stock entry), and
- *   - both prompt assemblers render byte-identically to today (every
- *     fundamentalsRender.js helper returns ''/null while dark) — the P4
- *     battery file snapshots stay the off-state lock.
- * When TRUE: each stock entry carries the D3 minimal fundamentals sub-object
- * (trailingPE {value, sectorMedian}, priceBookMRQ, revenueGrowthPct,
- * marketCapClass, earningsRevisions30d, real-only beatRate,
+ * FLIPPED false→true Jul 25 2026 (`c45f936c`, founder flag-flip commit after
+ * the production-shaped render smoke). The merge-dark era is over; the
+ * paragraphs below are the ON contract, and the off-state is now the
+ * deliberate-revert path, not the default.
+ *
+ * When TRUE (CURRENT): each stock entry carries the D3 minimal fundamentals
+ * sub-object (trailingPE {value, sectorMedian}, priceBookMRQ,
+ * revenueGrowthPct, marketCapClass, earningsRevisions30d, real-only beatRate,
  * surpriseMagPercentile, per-entry peerRankings computedAt provenance), the
  * eval live-context gains the FUNDAMENTALS block (holdings + bench), and the
  * draft/board CSV gains the 3-column fundamentals group — all null-honest
- * (an absent metric renders absent, never a neutral default).
+ * (an absent metric renders absent, never a neutral default). The P4 battery
+ * file snapshots are the ON-state texts of record (the two
+ * buildStrategySystemPrompt goldens + buildPortfolioSystemPrompt carry the
+ * PE_VS_SECT|REVG_PCT|MCAP_CLS vocabulary); the on-state FUNDAMENTALS block
+ * and market-CSV goldens live under `api/_utils/__fundwire_snapshots__/`.
  *
- * Flip only after a founder smoke on a production-shaped render — never in a
- * build PR (POD_EXPIRY_SWEEP_ENABLED / LEAGUE_NEXT_ARC_ENABLED precedent).
+ * When FALSE (revert path): compute-index-intelligence writes a stockRankings
+ * doc with no `fundamentals` key on any stock entry, and every
+ * fundamentalsRender.js helper returns ''/null so both prompt assemblers
+ * render byte-identically to the pre-Fundamental-Wire text. That inertness
+ * stays covered by the call-time flips in fundamentalsRender.flagOn.test.js.
+ *
+ * Reverting is as deliberate as the flip was: it must edit the ON-state
+ * assertions in fundamentalsRender.test.js and regenerate the P4 battery
+ * goldens in the SAME commit, exactly as the flip's reconciliation did.
  */
 export const FUNDAMENTAL_MIRROR_ENABLED = true;

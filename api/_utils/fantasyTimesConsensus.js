@@ -110,8 +110,26 @@ export async function seedConsensus(date) {
   reportedYesterdayAfterClose = [...new Set(reportedYesterdayAfterClose)];
   reportingThisWeek = [...new Set(reportingThisWeek)];
 
-  // Write consensus document (merge to avoid wiping existing data)
-  await db.collection('fantasyTimesConsensus').doc(date).set({
+  // Write consensus document.
+  //
+  // `{ merge: true }` deep-merges MAPS but REPLACES arrays wholesale. That is
+  // why `catalysts: {}`, `sectors: {}` and `earnings.results: {}` are safe (an
+  // empty map writes no leaf, so existing entries survive) while a bare
+  // `economics` array was NOT: every event `appendEconomics()` had arrayUnion'd
+  // since the previous tick was destroyed by the next seed.
+  //
+  // The seed's own source for this field is `economicCalendar`, which has NO
+  // producer anywhere in the repo — so the value here is always `[]` in
+  // practice, meaning the field could only ever destroy events and never
+  // contribute one. Omit it when empty; union it when present. A seed tick is
+  // now additive for `economics` by construction, whatever the source returns.
+  //
+  // Stakes: this document is an editorial adapter operand source under Phase 2
+  // Spec V1.3 D-P2-8 — `economics[].actual`/`.expected` is Phase 3 gate
+  // evidence, not just story context. (The orphaned `economicCalendar` reader
+  // above is removed separately by Phase 2 N4; left in place here to keep this
+  // fix minimal.)
+  const payload = {
     date,
     earnings: {
       reportingToday,
@@ -119,12 +137,15 @@ export async function seedConsensus(date) {
       reportingThisWeek,
       results: {},
     },
-    economics,
     catalysts: {},
     sectors: {},
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+  };
+  if (economics.length > 0) {
+    payload.economics = FieldValue.arrayUnion(...economics);
+  }
+  await db.collection('fantasyTimesConsensus').doc(date).set(payload, { merge: true });
 
   log(`Seeded consensus for ${date}: ${reportingToday.length} earnings today, ${reportedYesterdayAfterClose.length} yesterday after-close, ${economics.length} economic events`);
 }
