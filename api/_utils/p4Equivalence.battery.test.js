@@ -21,6 +21,14 @@
 //      client flatten (tier/allocation/slotIndex attach, null-slot handling).
 //   4. Prompt-text photographs: GAME RULES / TIER RULES / eval SCORING RULES
 //      verbatim inline + full-output file snapshots on fixed inputs.
+//      FLAG-STATE NOTE (Jul 25 2026): these file snapshots are REAL-flag
+//      photographs, so they track deliberate flag flips. With
+//      FUNDAMENTAL_MIRROR_ENABLED flipped ON (`c45f936c`), the two
+//      buildStrategySystemPrompt goldens and buildPortfolioSystemPrompt now
+//      carry the PE_VS_SECT|REVG_PCT|MCAP_CLS vocabulary — they are the
+//      ON-state texts of record. (EVAL_IDENTITY_BLOCK_ENABLED is still off,
+//      so the two buildEvalSystemPrompt goldens remain that flag's off-state
+//      lock, as evalIdentityBlock.injection.test.js §5 relies on.)
 //   5. createAgentBattle battle-doc photograph (fake clock + capture db):
 //      inline asserts on the load-bearing fields (gameMode literal, the
 //      written-never-read scoring snapshot, no groupId/isCpu keys) + full-doc
@@ -66,7 +74,7 @@ import {
   flattenPortfolio,
   flattenBench,
 } from '../../src/utils/baggerBombUtils.js';
-import { buildStrategySystemPrompt, buildPortfolioSystemPrompt } from './agentPromptAssembly.js';
+import { buildStrategySystemPrompt, buildPortfolioSystemPrompt, formatMarketCSV } from './agentPromptAssembly.js';
 import { buildEvalSystemPrompt } from './agentEvalPromptAssembly.js';
 import { createAgentBattle } from './agentBattleService.js';
 import { PORTFOLIO_TOOL, STRATEGY_TOOL } from './agentToolSchema.js';
@@ -304,7 +312,30 @@ describe('P4 battery — flatten parity, server vs canonical client', () => {
 
 // ==================== 4. Prompt-text photographs ====================
 
-const PROMPT_MARKET_CSV = 'TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH\nNVDA|Technology|90|88|95|0.81|9.1';
+// The market-CSV input is RENDERED through formatMarketCSV rather than
+// hand-written (Fundamental Wire activation, Jul 25 2026): with
+// FUNDAMENTAL_MIRROR_ENABLED on, the STOCK UNIVERSE label these prompts emit
+// carries the PE_VS_SECT|REVG_PCT|MCAP_CLS group, so a literal 7-column body
+// would leave the golden claiming ten columns over seven columns of data.
+// Binding body and label to one source keeps the photograph production-shaped
+// by construction (BUILD_RULES §9). The fixture stock is the same NVDA row as
+// before plus the D3 minimal fundamentals sub-object; under a flag-off revert
+// this renders byte-identically to the original literal.
+const PROMPT_MARKET_STOCK = Object.freeze({
+  symbol: 'NVDA', sectorName: 'Technology', fundamentalScore: 90,
+  technicalScore: 88, baggerBombFit: 95, atrPercentile: 0.81, archetypeScore: 9.1,
+  fundamentals: {
+    trailingPE: { value: 42.1, sectorMedian: 28 },
+    priceBookMRQ: 8.3,
+    revenueGrowthPct: 11.6,
+    marketCapClass: 'large',
+    earningsRevisions30d: 2.1,
+    beatRate: 75,
+    surpriseMagPercentile: 82,
+    computedAt: Date.parse('2026-07-24T11:01:00Z'),
+  },
+});
+const PROMPT_MARKET_CSV = formatMarketCSV([PROMPT_MARKET_STOCK]);
 const PROMPT_STORIES = '1. [Reporter/beat] "Headline" (2h ago)';
 const PROMPT_BRIEF = 'Lean into semis momentum; fade defensives.';
 const PROMPT_SHORTLIST_CSV = PROMPT_MARKET_CSV;
