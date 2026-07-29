@@ -72,16 +72,44 @@ function stripComments(text) {
     .join('\n');
 }
 
-/** Lowercase and expand #abc -> #aabbcc so shorthand cannot smuggle a core value past the guard. */
+/**
+ * Normalize a matched hex to its lowercase 6-digit RGB form so no notation can
+ * smuggle a core value past the guard:
+ *   #abc      -> #aabbcc   (3-digit shorthand expanded)
+ *   #rrggbbaa -> #rrggbb   (8-digit alpha form, alpha dropped — spec §6)
+ * The 8-digit case is the one the first code review caught: without it,
+ * `#ef444480` (core red with alpha) matched nothing and re-entered a guarded
+ * file with the guard staying green.
+ */
 function normalizeHex(hex) {
-  const body = hex.slice(1).toLowerCase();
-  const full = body.length === 3 ? body.split('').map((c) => c + c).join('') : body;
-  return `#${full}`;
+  let body = hex.slice(1).toLowerCase();
+  if (body.length === 3) body = body.split('').map((c) => c + c).join('');
+  if (body.length === 8) body = body.slice(0, 6); // drop the alpha pair
+  return `#${body}`;
 }
 
-/** Per-file map of normalized core-palette hex -> occurrence count. */
+/**
+ * Per-file map of normalized core-palette hex -> occurrence count.
+ *
+ * Matches the locked §6 counting rule: word-boundary-anchored 3/6/8-digit hex,
+ * case-insensitive. The 8-digit alternative is listed FIRST so `#ef444480`
+ * matches as one 8-digit token rather than failing the 6-digit `\b`.
+ *
+ * KNOWN LIMITATIONS, inherent to a raw-text diff guard and deliberately NOT
+ * papered over — the §7 parity acceptance tests and the founder screenshot gate
+ * cover what a text scan structurally cannot:
+ *   1. 4-digit `#rgba` shorthand-with-alpha is outside the locked §6 rule
+ *      (3/6/8 only) and is deliberately not counted here.
+ *   2. A core hex split across concatenation or interpolation (`'#ef' + '4444'`,
+ *      `` `#${r}4444` ``) is not reconstructed, so it is not caught.
+ *   3. The guard is COUNT-based, not site-based: swapping one exempt occurrence
+ *      of a hex for a non-exempt occurrence of the SAME hex keeps the count and
+ *      the recorded authority unchanged, so it stays green. Line-level tracking
+ *      is a larger design; today the exempt sites are few and named in the
+ *      baseline authority strings, and parity review catches a moved literal.
+ */
 function scanFile(rel) {
-  const matches = stripComments(read(rel)).match(/#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/g) || [];
+  const matches = stripComments(read(rel)).match(/#[0-9a-fA-F]{8}\b|#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/g) || [];
   const counts = {};
   for (const raw of matches) {
     const hex = normalizeHex(raw);
@@ -188,21 +216,30 @@ describe('token guard — no core-palette hex reintroduced in migrated files (A4
     expect(grandTotal, 'the ratified R-BL21 total').toBe(21);
   });
 
-  it('every exemption carries an authority tag — no silent absorption (R-BL21)', () => {
-    const untagged = [];
+  it('every exemption carries a REAL ruling tag — no silent, garbage, or malformed absorption (R-BL21)', () => {
+    // A ruling-shaped token: an R-<id> (R-H8, R-#fff, R-A2w, R-S9, R-BL21, and any
+    // future R-*) or UNSCOPED-<phase>. This rejects three failure modes the guard
+    // review surfaced: a missing/UNTAGGED tag, a non-string authority (which used
+    // to THROW on .startsWith rather than assert), and a plausible-looking but
+    // meaningless free-text string that cites no ruling.
+    const RULING_PATTERN = /R-[A-Za-z0-9#]|UNSCOPED-/;
+    const bad = [];
     for (const [rel, entries] of Object.entries(BASELINE)) {
       for (const [hex, entry] of Object.entries(entries)) {
-        const authority = typeof entry === 'object' ? entry.authority : undefined;
-        if (!authority || authority.startsWith(UNTAGGED)) untagged.push(`${rel} ${hex}`);
+        const authority = entry && typeof entry === 'object' ? entry.authority : undefined;
+        const ok = typeof authority === 'string'
+          && !authority.startsWith(UNTAGGED)
+          && RULING_PATTERN.test(authority);
+        if (!ok) bad.push(`${rel} ${hex} → ${JSON.stringify(authority)}`);
       }
     }
     expect(
-      untagged,
-      `these baseline exemptions have no ruling tag: ${untagged.join(', ')}.\n`
-        + 'Every exemption must cite why it is exempt (R-BL21), not just that it is. REMEDY: edit '
-        + 'src/theme/tokenGuardBaseline.json and set "authority" to the governing ruling — R-H8 (SVG presentation '
-        + 'attribute), R-#fff (3-digit shorthand), R-S9 (alpha/hexToRgba/readableOn call site), UNSCOPED-P2 '
-        + '(pre-existing, outside the Phase 2 migration scope), or a new ruling id for a new class.'
+      bad,
+      `these baseline exemptions carry no real ruling tag: ${bad.join(', ')}.\n`
+        + 'Every exemption must cite the ruling that exempts it (R-BL21) as a string containing an R-<id> or '
+        + 'UNSCOPED-<phase> token — R-H8 (SVG presentation attribute), R-#fff (3-digit shorthand), R-S9 '
+        + '(alpha/hexToRgba/readableOn call site), UNSCOPED-P2 (pre-existing, outside the Phase 2 scope), or a '
+        + 'new ruling id. REMEDY: edit the "authority" field in src/theme/tokenGuardBaseline.json.'
     ).toEqual([]);
   });
 

@@ -8,7 +8,7 @@
 > - `src/theme/tokens.css` — the canonical `--ft-*` tokens on `:root`
 > - `src/theme/tokenBaseline.json` — the published, machine-readable name→value list
 > - `src/theme/cssTokens.js` — the JS bridge (`cssVar` / `readToken` / `readTokenRgb`)
-> - `docs/BUILD_RULES.md` §9 — the binding rules for new colour usage
+> - `docs/BUILD_RULES.md` §10 — the binding rules for new colour usage
 >
 > **Why this file is not trustworthy.** Verified against the code at HEAD `db6f5ebc`
 > during Phase 0 discovery (`docs/audits/20260729_DELIGHT_THEMING_FOUNDATION_PHASE0_DISCOVERY.md`):
