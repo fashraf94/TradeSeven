@@ -15,7 +15,7 @@
 //
 // This file runs in the default 'node' environment — it reads files, no DOM.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -23,6 +23,14 @@ import { describe, expect, it } from 'vitest';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const BASELINE_PATH = path.join(HERE, 'tokenGuardBaseline.json');
+
+// Sentinel written for a NEW exemption during regen. The authority-integrity test
+// (R-BL21) rejects it, so a freshly-regenerated exemption fails CI until a human
+// cites the ruling that exempts it — the guard can never silently absorb a literal.
+const UNTAGGED = 'UNTAGGED';
+
+/** Count for a baseline entry, tolerant of the legacy bare-number shape. */
+const baselineCount = (entry) => (typeof entry === 'number' ? entry : entry?.count ?? 0);
 
 const read = (rel) => readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 
@@ -88,8 +96,20 @@ function scanAll() {
 }
 
 // Regen mode — runs before the lock test so a regen run passes (house pattern).
+// MERGES rather than overwrites: it keeps the authority tag already recorded for
+// each (file, hex), updates the count from the live scan, and stamps any NEW
+// exemption UNTAGGED so the authority test forces a human to cite its ruling.
 if (process.env.GENERATE_TOKEN_GUARD_BASELINE === '1') {
-  writeFileSync(BASELINE_PATH, `${JSON.stringify({ guarded: scanAll() }, null, 2)}\n`);
+  const parsed = existsSync(BASELINE_PATH) ? JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) : {};
+  const prev = parsed.guarded || {};
+  const merged = {};
+  for (const [rel, counts] of Object.entries(scanAll())) {
+    merged[rel] = {};
+    for (const [hex, count] of Object.entries(counts)) {
+      merged[rel][hex] = { count, authority: prev[rel]?.[hex]?.authority || UNTAGGED };
+    }
+  }
+  writeFileSync(BASELINE_PATH, `${JSON.stringify({ _schema: parsed._schema, guarded: merged }, null, 2)}\n`);
 }
 
 const BASELINE = JSON.parse(readFileSync(BASELINE_PATH, 'utf8')).guarded;
@@ -104,8 +124,8 @@ describe('token guard — no core-palette hex reintroduced in migrated files (A4
     const allowed = BASELINE[rel] || {};
 
     const added = Object.entries(actual)
-      .filter(([hex, n]) => n > (allowed[hex] || 0))
-      .map(([hex, n]) => `${hex} (${allowed[hex] || 0} allowed, ${n} found)`);
+      .filter(([hex, n]) => n > baselineCount(allowed[hex]))
+      .map(([hex, n]) => `${hex} (${baselineCount(allowed[hex])} allowed, ${n} found)`);
 
     expect(
       added,
@@ -123,8 +143,8 @@ describe('token guard — no core-palette hex reintroduced in migrated files (A4
     const allowed = BASELINE[rel] || {};
 
     const removed = Object.entries(allowed)
-      .filter(([hex, n]) => (actual[hex] || 0) < n)
-      .map(([hex, n]) => `${hex} (${n} allowed, ${actual[hex] || 0} found)`);
+      .filter(([hex, entry]) => (actual[hex] || 0) < baselineCount(entry))
+      .map(([hex, entry]) => `${hex} (${baselineCount(entry)} allowed, ${actual[hex] || 0} found)`);
 
     expect(
       removed,
@@ -134,19 +154,56 @@ describe('token guard — no core-palette hex reintroduced in migrated files (A4
     ).toEqual([]);
   });
 
-  it('records the four deliberately-left literals so the guard is born green', () => {
-    // Ratified exemptions. 3 x H8 (ruling R-H8): SVG presentation attributes in
-    // DesktopBackground, where var() is not reliably substituted. 1 x #fff
-    // (ruling R-#fff): 3-digit shorthand is not an exact match for --ft-white,
-    // and shorthand-equivalence is a consolidation-arc concern.
+  it('records the 21 exempt occurrences with their rulings so the guard is born green (R-BL21)', () => {
+    // R-BL21 corrected the arithmetic: the founder ratified 4 dispositions, but the
+    // guard counts OCCURRENCES in guarded files, and the exempt set is 21:
+    //   3 x R-H8 (SVG stroke presentation attributes, DesktopBackground)
+    // + 1 x R-#fff (color:'#fff' shorthand, CommandDashboard)
+    // + 2 x R-S9  (alpha('#FFFFFF') call sites, CommandDashboard)
+    // + 15 x UNSCOPED-P2 (index.css @layer utilities block, never scoped by Phase 2)
     const bg = BASELINE['src/components/DesktopBackground.jsx'];
-    expect(bg['#00d9ff'], 'H8: stroke="#00d9ff" at DesktopBackground.jsx:98 and :138').toBe(2);
-    expect(bg['#8b5cf6'], 'H8: stroke="#8b5cf6" at DesktopBackground.jsx:146').toBe(1);
+    expect(baselineCount(bg['#00d9ff'])).toBe(2);
+    expect(bg['#00d9ff'].authority, 'stroke="#00d9ff" at :98, :138').toContain('R-H8');
+    expect(baselineCount(bg['#8b5cf6'])).toBe(1);
+    expect(bg['#8b5cf6'].authority, 'stroke="#8b5cf6" at :146').toContain('R-H8');
 
     const dash = BASELINE['src/components/Dashboard/CommandDashboard.jsx'];
-    // #fff normalizes to #ffffff and joins the two alpha('#FFFFFF', a) call sites
-    // that R-S9 keeps on hex — 3 exempt occurrences of --ft-white in this file.
-    expect(dash['#ffffff'], 'R-#fff shorthand + 2 alpha() call sites (R-S9)').toBe(3);
+    expect(baselineCount(dash['#ffffff'])).toBe(3);
+    // The single #ffffff entry carries MIXED authority — one shorthand + two helper
+    // call sites — because #fff normalizes to #ffffff and joins them. Both cited.
+    expect(dash['#ffffff'].authority).toContain('R-#fff');
+    expect(dash['#ffffff'].authority).toContain('R-S9');
+
+    const index = BASELINE['src/index.css'];
+    const unscopedTotal = Object.values(index).reduce((n, e) => n + baselineCount(e), 0);
+    expect(unscopedTotal, '15 core-palette hexes in the untouched @layer utilities block').toBe(15);
+    for (const entry of Object.values(index)) {
+      expect(entry.authority).toContain('UNSCOPED-P2');
+    }
+
+    const grandTotal = GUARDED_FILES.reduce(
+      (sum, rel) => sum + Object.values(BASELINE[rel]).reduce((n, e) => n + baselineCount(e), 0),
+      0
+    );
+    expect(grandTotal, 'the ratified R-BL21 total').toBe(21);
+  });
+
+  it('every exemption carries an authority tag — no silent absorption (R-BL21)', () => {
+    const untagged = [];
+    for (const [rel, entries] of Object.entries(BASELINE)) {
+      for (const [hex, entry] of Object.entries(entries)) {
+        const authority = typeof entry === 'object' ? entry.authority : undefined;
+        if (!authority || authority.startsWith(UNTAGGED)) untagged.push(`${rel} ${hex}`);
+      }
+    }
+    expect(
+      untagged,
+      `these baseline exemptions have no ruling tag: ${untagged.join(', ')}.\n`
+        + 'Every exemption must cite why it is exempt (R-BL21), not just that it is. REMEDY: edit '
+        + 'src/theme/tokenGuardBaseline.json and set "authority" to the governing ruling — R-H8 (SVG presentation '
+        + 'attribute), R-#fff (3-digit shorthand), R-S9 (alpha/hexToRgba/readableOn call site), UNSCOPED-P2 '
+        + '(pre-existing, outside the Phase 2 migration scope), or a new ruling id for a new class.'
+    ).toEqual([]);
   });
 
   it('the migrated dashboard stays free of core-palette literals', () => {
