@@ -1,14 +1,3 @@
-> **TRANSCRIPTION NOTE (added at the P0 lock commit, July 25, 2026).** This document reached
-> the build session as a **verbatim founder paste**, not as an uploaded file. The body below is
-> a transcription of that paste, committed so the governing FINAL-LOCK candidate is in the
-> record alongside V1.2–V1.4 (which are byte-exact uploads). It is **not** byte-verified against
-> a founder original: a diff of a transcribed V1.2 against its later-uploaded original showed
-> content identical but **15 blank lines silently lost**, so treat this file's whitespace — not
-> its content — as unverified. If a byte-exact original exists in the founder's workspace,
-> upload it directly to replace this file and the transcription note goes with it.
-> Per `docs/README.md`, this is the sanctioned transcription-of-a-paste mechanism, not a
-> regeneration from model memory, which remains forbidden.
-
 # FANTASYTIMES WIRE — PHASE 2 SPEC V1.5
 
 **Date:** July 25, 2026
