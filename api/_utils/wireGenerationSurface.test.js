@@ -20,11 +20,17 @@ import { resolve } from 'node:path';
 
 import {
   GENERATION_SURFACE,
+  GENERATION_VALUE_EXPORTS,
   BASELINE_PATH,
   hashFile,
+  hashValueExport,
+  stableStringify,
   surfaceHash,
   assessRegen,
 } from './wireGenerationSurface.js';
+// The value-locked exports (founder ruling, P1 closeout): imported LIVE so
+// the lock hashes the real runtime values, not a snapshot of source text.
+import { ALL_TICKERS, TICKER_TO_SECTOR } from './rankingConfig.js';
 import {
   WIRE_GENERATION_VERSION,
   WIRE_DIGEST_RENDERER_VERSION,
@@ -34,10 +40,17 @@ import {
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
 const REGEN = process.env.WIRE_GENERATION_BASELINE_REGEN === '1';
 
+const VALUE_EXPORTS = { ALL_TICKERS, TICKER_TO_SECTOR };
+
 function computeCurrent() {
   const files = {};
   for (const rel of GENERATION_SURFACE) {
     files[rel] = hashFile(rel, readFileSync(resolve(REPO_ROOT, rel), 'utf-8'));
+  }
+  // Value-level locks ride the same map under `value:` keys — same
+  // mismatch handling, same regen gate, same version binding.
+  for (const { key, exportName } of GENERATION_VALUE_EXPORTS) {
+    files[key] = hashValueExport(key, VALUE_EXPORTS[exportName]);
   }
   return {
     generationSurface: {
@@ -111,10 +124,27 @@ describe('P2-15: committed-baseline content lock', () => {
         `${rel} changed without a WIRE_GENERATION_VERSION bump (F-M1) — bump + regen`,
       ).toBe(baseline.generationSurface.files[rel]);
     }
+    // Value-locked exports fail by name too (founder ruling: universe
+    // content changes force a bump; unrelated rankingConfig edits touch
+    // nothing because the FILE is not hashed — only these values are).
+    for (const { key } of GENERATION_VALUE_EXPORTS) {
+      expect(
+        current.generationSurface.files[key],
+        `${key} value changed without a WIRE_GENERATION_VERSION bump — universe/content change, bump + regen`,
+      ).toBe(baseline.generationSurface.files[key]);
+    }
     expect(current.generationSurface.hash).toBe(baseline.generationSurface.hash);
     // The manifest itself cannot gain or lose paths silently.
     expect(Object.keys(current.generationSurface.files).sort())
       .toEqual(Object.keys(baseline.generationSurface.files).sort());
+  });
+
+  it('the value lock is live: both locked exports are non-trivially hashed', () => {
+    expect(ALL_TICKERS.length).toBeGreaterThan(50);
+    expect(Object.keys(TICKER_TO_SECTOR).length).toBeGreaterThan(100);
+    for (const { key } of GENERATION_VALUE_EXPORTS) {
+      expect(baseline.generationSurface.files[key]).toMatch(/^[0-9a-f]{64}$/);
+    }
   });
 
   it('baseline versions equal the live constants — bump-without-regen also fails', () => {
@@ -150,5 +180,21 @@ describe('assessRegen — the bump is mechanically unavoidable', () => {
 
   it('no committed baseline → allowed (first generation)', () => {
     expect(assessRegen(undefined, { version: 1, hash: 'aaa' }).allowed).toBe(true);
+  });
+});
+
+describe('stableStringify — the value-lock canonical form', () => {
+  it('arrays keep order (a ticker reorder IS a lockable change)', () => {
+    expect(stableStringify(['A', 'B'])).not.toBe(stableStringify(['B', 'A']));
+  });
+
+  it('object keys sort (a cosmetic literal reorder is NOT a universe change)', () => {
+    expect(stableStringify({ b: 1, a: 2 })).toBe(stableStringify({ a: 2, b: 1 }));
+  });
+
+  it('a membership change hashes differently (the A6 direction)', () => {
+    const base = hashValueExport('k', ['AAPL', 'MSFT']);
+    expect(hashValueExport('k', ['AAPL', 'MSFT', 'FAKE'])).not.toBe(base);
+    expect(hashValueExport('k', ['AAPL'])).not.toBe(base);
   });
 });

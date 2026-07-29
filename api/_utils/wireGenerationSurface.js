@@ -30,9 +30,14 @@
 //   - wireWriteThrough.js / wireReplaySweep.js — persistence machinery;
 //     their generation-relevant inputs (schema, digest, validator) are
 //     version-bound separately.
-//   - rankingConfig.js — 800-line shared config; only ALL_TICKERS touches
-//     generation (via the consensus block). Hard-failing on every unrelated
-//     edit is the over-broad-manifest failure mode. Known residual hole.
+//   - rankingConfig.js — 800-line shared config, EXCLUDED at file level by
+//     founder ruling (P1 review closeout): file-level inclusion would let
+//     every ranking tweak reset gateEpoch and the Phase 3 gate window.
+//     Instead its generation-touching EXPORTS are value-locked below
+//     (GENERATION_VALUE_EXPORTS): the export's canonical VALUE is hashed
+//     into the same baseline, so universe content changes fail the lock and
+//     force a WIRE_GENERATION_VERSION bump while unrelated rankingConfig
+//     edits touch nothing. Not a residual hole anymore.
 //   - art-director.js / fantasyTimesVisuals.js — visual pipeline; cannot
 //     change one character of story prose (discovery D9).
 //   - poll-batch.js — result retrieval; constructs no request.
@@ -75,6 +80,46 @@ export const GENERATION_SURFACE = Object.freeze([
   'api/fantasytimes/scan-movers.js',
   'api/fantasytimes/submit-earnings-batch.js',
 ]);
+
+// ── Value-level locks (founder ruling, P1 review closeout) ────────────────
+// Exports whose VALUE is generation-bearing while their host file is too
+// broad for the path manifest. Each is hashed by canonical value into
+// generationSurface.files under a `value:` key, bound to
+// WIRE_GENERATION_VERSION exactly like a file entry.
+//
+//  - rankingConfig#ALL_TICKERS — the exact set the consensus block consumes
+//    (fantasyTimesConsensus.js:9): rankCatalysts significance weighting
+//    (:247, orders the catalysts buildConsensusBlock renders into reporter
+//    prompts) + checkEarningsAttribution (:441).
+//  - rankingConfig#TICKER_TO_SECTOR — the D8 Wire universe consumed by
+//    wireValidator.js:21 (isInWireUniverse): membership changes alter
+//    validation outcomes, primaryTicker survival, and the digest's subject
+//    fallback with no diff in any hashed file. Bound HERE (generation
+//    version) rather than to WIRE_VALIDATOR_VERSION, which is semantically
+//    live on every stamped entry and must not bump for a lock-mechanism
+//    change; the joint-bump is epoch-consistent per the wireContracts note.
+//    Included beyond the ruling's consensus-block scope — flagged in the P2
+//    report for founder ratification.
+export const GENERATION_VALUE_EXPORTS = Object.freeze([
+  Object.freeze({ key: 'value:api/_utils/rankingConfig.js#ALL_TICKERS', exportName: 'ALL_TICKERS' }),
+  Object.freeze({ key: 'value:api/_utils/rankingConfig.js#TICKER_TO_SECTOR', exportName: 'TICKER_TO_SECTOR' }),
+]);
+
+/** Canonical serialization for value hashing: arrays keep their order (a
+ *  ticker-list reorder can reorder prompt content — conservative, locked);
+ *  object keys sort (a cosmetic literal reorder is not a universe change). */
+export function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** sha256 of one export's canonical value, salted with its lock key. */
+export function hashValueExport(key, value) {
+  return createHash('sha256').update(`${key}\n`).update(stableStringify(value)).digest('hex');
+}
 
 export const BASELINE_PATH = 'api/_utils/wireGenerationBaseline.json';
 

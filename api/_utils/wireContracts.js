@@ -46,7 +46,11 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // manifest — formatClaimsForPrompt shapes five reporter prompts and was a
 // false-negative hole in v1. The bump is the mechanism working as designed:
 // a manifest membership change forces the version forward.
-export const WIRE_GENERATION_VERSION = 2;
+// v3 (P1 closeout, founder ruling): rankingConfig value locks added —
+// ALL_TICKERS + TICKER_TO_SECTOR hashed by VALUE into the baseline
+// (GENERATION_VALUE_EXPORTS), so universe changes force a bump while
+// unrelated rankingConfig edits touch nothing.
+export const WIRE_GENERATION_VERSION = 3;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // Firestore collection names (server-only; deny-all in firestore.rules).
