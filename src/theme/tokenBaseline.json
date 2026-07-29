@@ -1,0 +1,44 @@
+{
+  "--ft-bg-app": "#0d1117",
+  "--ft-bg-dashboard": "#0d0e12",
+  "--ft-bg-card": "#15171e",
+  "--ft-bg-card-holo": "#161b22",
+  "--ft-bg-elevated": "#21262d",
+  "--ft-bg-agent": "#1c1a27",
+
+  "--ft-border-strong": "#21262d",
+
+  "--ft-text-primary": "#e2e8f0",
+  "--ft-text-primary-holo": "#e6edf3",
+  "--ft-text-secondary": "#d1d5db",
+  "--ft-text-secondary-holo": "#8b949e",
+  "--ft-text-muted": "#6e7681",
+
+  "--ft-cyan": "#00d9ff",
+  "--ft-teal": "#5eead4",
+  "--ft-emerald": "#10b981",
+  "--ft-amber": "#f59e0b",
+  "--ft-red": "#ef4444",
+  "--ft-purple": "#8b5cf6",
+  "--ft-purple-deep": "#9333ea",
+  "--ft-blue": "#3b82f6",
+  "--ft-gold": "#f0c75e",
+  "--ft-white": "#ffffff",
+
+  "--ft-scrim-rgb": "255, 255, 255",
+  "--ft-shadow-rgb": "0, 0, 0",
+  "--ft-cyan-rgb": "0, 217, 255",
+  "--ft-red-rgb": "239, 68, 68",
+  "--ft-amber-rgb": "245, 158, 11",
+  "--ft-emerald-rgb": "16, 185, 129",
+  "--ft-teal-rgb": "94, 234, 212",
+  "--ft-purple-rgb": "139, 92, 246",
+
+  "--ft-accent": "var(--ft-cyan)",
+  "--ft-warp-tint": "var(--ft-accent)",
+  "--ft-success": "var(--ft-emerald)",
+  "--ft-danger": "var(--ft-red)",
+  "--ft-warning": "var(--ft-amber)",
+  "--ft-game-baggerbomb": "var(--ft-amber)",
+  "--ft-game-draft": "var(--ft-emerald)"
+}

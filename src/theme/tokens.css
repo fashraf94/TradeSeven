@@ -1,0 +1,204 @@
+/* =============================================================================
+   FantasyTrades color token substrate  —  Delight Layer arc, Task 1 (Phase 1)
+   Spec: DELIGHT LAYER ARC — Task 1: Theming Foundation, V2 (LOCKED)
+   Basis: docs/audits/20260729_DELIGHT_THEMING_FOUNDATION_PHASE0_DISCOVERY.md
+
+   THIS IS THE CANONICAL COLOR SOURCE (ruling R-S5).
+   The four legacy JS token systems — HOLO_COLORS (src/constants/holoTheme.js),
+   DARK_TOKENS (src/theme/tokens.js), CMD (src/components/Dashboard/commandUI.jsx)
+   and the App.jsx `colors` object (src/App.jsx:1083) — are legacy consumers.
+   They are re-pointed opportunistically AFTER Task 1, via the re-export house
+   pattern already used at src/components/League/leagueTokens.js:22
+   (`export const LTOKENS = CMD;`). Nothing is re-pointed in Task 1.
+
+   ZERO VISUAL CHANGE (ruling R-S4): every token below seeds from the exact
+   literal already present at its consumption site. No site changes value.
+   This file is inert on merge — nothing consumes these tokens in Phase 1.
+
+   CASCADE (ruling R-S6): this block is deliberately NOT wrapped in a cascade
+   layer. Two reasons, both load-bearing:
+     1. src/styles/holographic.css declares an unlayered :root; a layered block
+        here could not override it.
+     2. jsdom parses a cascade-layer wrapper into a rule it never cascades, so
+        every custom property inside one reads back as "" under test. That is
+        exactly why the legacy :root at src/index.css:22-53 is untestable.
+   Acceptance row A4b guards this file against acquiring such a wrapper.
+
+   NAMING (ruling R-S8): prefix is `--ft-` (FantasyTrades).
+   ⚠ Do not confuse with the pre-existing `--fw-` prefix (44 occurrences,
+   src/components/Forge/workshop/ForgeWorkshop.jsx:182). One letter apart.
+
+   Where two design generations collide on a name, the plain name carries the
+   DARK_TOKENS/CMD "obsidian" value (confirmed design direction) and the older
+   holo-generation value takes a `-holo` suffix (ruling R-S5). Both ship; no
+   consumer changes value.
+
+   Occurrence counts are from the Phase 0 census (src/, word-boundary-anchored,
+   case-insensitive; counting rule locked in spec V2 §6). Values are lowercase
+   by convention (ruling R-S7) — the legacy modules mix casing.
+   Published machine-readable list: src/theme/tokenBaseline.json
+   ============================================================================= */
+
+:root {
+  /* ---------------------------------------------------------------------------
+     BASE — backgrounds
+     ------------------------------------------------------------------------ */
+
+  /* body / signed-out base. src/index.css:24 (--background), src/App.jsx:1084
+     (colors.background), src/screens/HomeScreen.jsx:161, holoTheme.js:8
+     (HOLO_COLORS.bgCard). 202 occ. (R-S4) */
+  --ft-bg-app: #0d1117;
+
+  /* signed-in dashboard surface. src/theme/tokens.js:4 (DARK_TOKENS.bgApp),
+     commandUI.jsx:17 (CMD.bg). Painted by CommandDashboard.jsx:227 and
+     CommandDashboardDesktop.jsx:128. 55 occ. (R-S4)
+     NOTE: #111318 (DashboardLoop/DashboardDesktop/App.jsx:8431) deliberately
+     gets NO token — filed as drift for the consolidation arc. */
+  --ft-bg-dashboard: #0d0e12;
+
+  /* card surface, obsidian generation. tokens.js:5 (DARK_TOKENS.bgCard),
+     commandUI.jsx:18 (CMD.surface). 74 occ. (R-S5 plain name) */
+  --ft-bg-card: #15171e;
+
+  /* card surface, holo generation. holoTheme.js:9 (HOLO_COLORS.bgElevated),
+     src/App.jsx:1086 (colors.cardInner). 185 occ. */
+  --ft-bg-card-holo: #161b22;
+
+  /* elevated surface. src/App.jsx:1088-1089 (colors.cardElevated / .elevated),
+     src/index.css:27 (--card-elevated). 308 occ.
+     ⚠ ROLE COLLISION: this same value is ALSO a border in two modules — see
+     --ft-border-strong below. Migrate by the property's role, not by value. */
+  --ft-bg-elevated: #21262d;
+
+  /* agent surface. tokens.js:6 (DARK_TOKENS.bgAgent), commandUI.jsx:19
+     (CMD.raised). */
+  --ft-bg-agent: #1c1a27;
+
+  /* ---------------------------------------------------------------------------
+     BASE — borders
+     ------------------------------------------------------------------------ */
+
+  /* Same literal as --ft-bg-elevated, deliberately given a role-distinct name
+     so the consolidation arc can split the two without a rename.
+     holoTheme.js:12 (HOLO_COLORS.borderSubtle),
+     earningsGame/designConstants.js:10 (borderDefault). */
+  --ft-border-strong: #21262d;
+
+  /* ---------------------------------------------------------------------------
+     BASE — text
+     Two interleaved ramps whose rungs do not align. Both ship unchanged.
+     ------------------------------------------------------------------------ */
+
+  /* tokens.js:34 (DARK_TOKENS.textPrimary). (R-S5 plain name) */
+  --ft-text-primary: #e2e8f0;
+
+  /* holoTheme.js:59 (HOLO_COLORS.textPrimary), src/index.css:30
+     (--text-primary), src/App.jsx:1090. 199 occ. */
+  --ft-text-primary-holo: #e6edf3;
+
+  /* tokens.js:35 (DARK_TOKENS.textSecondary). (R-S5 plain name) */
+  --ft-text-secondary: #d1d5db;
+
+  /* holoTheme.js:60, src/index.css:31, src/App.jsx:1091. 561 occ — the
+     single most-used hex literal in the repo. Suffixed by the deliberate
+     R-S5 design-direction call, not by frequency. */
+  --ft-text-secondary-holo: #8b949e;
+
+  /* holoTheme.js:61, src/index.css:32, src/App.jsx:1092. 270 occ.
+     #6b7280 (157 occ) is drift and deliberately gets NO token. */
+  --ft-text-muted: #6e7681;
+
+  /* ---------------------------------------------------------------------------
+     BASE — accents
+     ------------------------------------------------------------------------ */
+
+  /* holoTheme.js:17 (HOLO_COLORS.primary), src/index.css:35, App.jsx:1093.
+     369 occ. Brand cyan. */
+  --ft-cyan: #00d9ff;
+
+  /* tokens.js:17 (DARK_TOKENS.teal), commandUI.jsx (CMD.teal). 286 occ. */
+  --ft-teal: #5eead4;
+
+  /* holoTheme.js:20 (greenMuted), src/index.css:37, App.jsx:1096. 394 occ. */
+  --ft-emerald: #10b981;
+
+  /* holoTheme.js:22, tokens.js:22 (DARK_TOKENS.amber). 413 occ. */
+  --ft-amber: #f59e0b;
+
+  /* holoTheme.js:24 (redMuted), src/index.css:39, tokens.js:21. 515 occ. */
+  --ft-red: #ef4444;
+
+  /* holoTheme.js:25 (HOLO_COLORS.purple). 152 occ — the de-facto purple.
+     Deliberate, documented exception to R-S5 (see R-S9): the obsidian
+     generation's DARK_TOKENS.purple names a DIFFERENT color (below), and
+     discovery proved the two are dE2000 8.58 apart — not a generation split. */
+  --ft-purple: #8b5cf6;
+
+  /* tokens.js:19 (DARK_TOKENS.purple), src/index.css:42 (--purple). 24 occ.
+     Misnamed at its source; carries the explicit name here. (R-S9) */
+  --ft-purple-deep: #9333ea;
+
+  /* holoTheme.js:39 (sectorTech), src/index.css:41, App.jsx:1102. 87 occ. */
+  --ft-blue: #3b82f6;
+
+  /* tokens.js:42 (DARK_TOKENS.medalGold) = the TROPHY_GOLD constant that is
+     redeclared identically in 18 files. 51 occ. Those redeclarations are a
+     consolidation-arc item, not a Task 1 item. */
+  --ft-gold: #f0c75e;
+
+  /* tokens.js:33 (DARK_TOKENS.textWhite). 380 occ as #ffffff (+153 as #fff).
+     OPAQUE USE ONLY — translucent white is a scrim, see --ft-scrim-rgb. */
+  --ft-white: #ffffff;
+
+  /* ---------------------------------------------------------------------------
+     RGB TRIPLETS (ruling R-S9)
+     For rgba() composition at LITERAL sites only, e.g.
+         background: rgba(var(--ft-cyan-rgb), 0.1);
+     ⚠ These do NOT serve the 842 runtime compositions in the codebase. The 31
+     alpha() / hexToRgba() implementations all take a HEX STRING, and passing a
+     var() reference into them fails SILENTLY (HoloCard.jsx:54 returns grey).
+     Helper consolidation (defect D-6) is its own follow-on task and MUST land
+     before any hex -> var() change inside holoTheme.js / theme/tokens.js values.
+     ------------------------------------------------------------------------ */
+
+  /* 838 occurrences / 25 distinct alphas / 189 files — 29% of all rgba in the
+     repo. Named semantically, NOT "white": it is a scrim/hairline, and naming
+     it white would bake in the dark-mode assumption this substrate exists to
+     remove. (R-S9) */
+  --ft-scrim-rgb: 255, 255, 255;
+
+  /* 202 occurrences / 23 distinct alphas / 105 files. Had no name anywhere in
+     any palette module before this file. (R-S9) */
+  --ft-shadow-rgb: 0, 0, 0;
+
+  --ft-cyan-rgb: 0, 217, 255;
+  --ft-red-rgb: 239, 68, 68;
+  --ft-amber-rgb: 245, 158, 11;
+  --ft-emerald-rgb: 16, 185, 129;
+  --ft-teal-rgb: 94, 234, 212;
+
+  /* Tracks --ft-purple (#8b5cf6), per the R-S9 exception. */
+  --ft-purple-rgb: 139, 92, 246;
+
+  /* ---------------------------------------------------------------------------
+     SEMANTIC TIER (ruling R-S3: these ARE var() aliases)
+     Components and future features consume THIS tier. The base tier exists so
+     unlockable themes can restyle wholesale by overriding a few base values.
+     readToken() in ./cssTokens.js resolves these chains itself (depth cap 4),
+     so they return final literals in browsers AND under jsdom.
+     ------------------------------------------------------------------------ */
+
+  /* THE variable future accent customization rebinds, via
+     document.documentElement.style.setProperty('--ft-accent', value). */
+  --ft-accent: var(--ft-cyan);
+
+  /* Task 2 (starfield) reads this through readToken('warp-tint'). */
+  --ft-warp-tint: var(--ft-accent);
+
+  --ft-success: var(--ft-emerald);
+  --ft-danger: var(--ft-red);
+  --ft-warning: var(--ft-amber);
+
+  --ft-game-baggerbomb: var(--ft-amber);
+  --ft-game-draft: var(--ft-emerald);
+}
