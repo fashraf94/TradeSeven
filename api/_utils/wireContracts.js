@@ -42,7 +42,11 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // epoch-consistent by design: gateEpoch resets on ANY of these changes
 // (Spec V1.2 N0), so the forced joint bump never creates a gate state the
 // spec doesn't already mandate.
-export const WIRE_GENERATION_VERSION = 1;
+// v2 (P1 code review): ingestedClaims.js added to the GENERATION_SURFACE
+// manifest — formatClaimsForPrompt shapes five reporter prompts and was a
+// false-negative hole in v1. The bump is the mechanism working as designed:
+// a manifest membership change forces the version forward.
+export const WIRE_GENERATION_VERSION = 2;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // Firestore collection names (server-only; deny-all in firestore.rules).

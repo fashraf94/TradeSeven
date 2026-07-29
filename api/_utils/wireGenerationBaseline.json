@@ -1,22 +1,23 @@
 {
   "note": "Committed baseline for the GENERATION_SURFACE lock (P2-15). Never hand-edit: regenerate via WIRE_GENERATION_BASELINE_REGEN=1 after bumping the bound version constant in wireContracts.js.",
   "generatedAgainst": {
-    "WIRE_GENERATION_VERSION": 1,
+    "WIRE_GENERATION_VERSION": 2,
     "WIRE_DIGEST_RENDERER_VERSION": "1.0.0",
     "WIRE_VALIDATOR_VERSION": "1.6.0"
   },
   "generationSurface": {
-    "version": 1,
-    "hash": "736289c86045e0e48c11880d66a66fbf5b5da838a7ced7d48e1a782eb49b7918",
+    "version": 2,
+    "hash": "f5cf4ff221e484efd1da5ab1e63732bbd80f7481ce47e05c4ebabed3e77a55ce",
     "files": {
       "api/_utils/fantasyTimesConsensus.js": "52d2e1bb69e6377d771efe4b6900049f1e1fe823899842fdf792727fa6851027",
       "api/_utils/fantasyTimesPrompts.js": "27377dc7e0692b6a12a302ba51827286ec88e7ec639347fcc0485ee76e695f09",
       "api/_utils/fantasyTimesTickers.js": "5fa5b520383fd46416ec650bbefb2292abfb7d2c29f0635478a6b1a5ec8adfa3",
+      "api/_utils/ingestedClaims.js": "59272efbbde0f9cec3b124d189b7842bd2196e34c42fe5925dede4e7d968a02c",
       "api/_utils/stockIntelligenceData.js": "1bcbe7e63137e1a9c50e2267b4226e786c68a8ff44b6b47c4b3764e7bccde946",
       "api/_utils/wireContinuity.js": "157a839fe729210745da11248cefa5cd9b4a66ffd8db046383363475fb1591a4",
-      "api/_utils/wireContracts.js": "7ee7c5b71a34811c25bedd3f2d5d350bc97d55b93f69cd9a314ff191f8b10368",
+      "api/_utils/wireContracts.js": "f03ddf5e06f7c74a458f2d91d4748d68a2a79f4b581b391cd0b06c3be3cdca84",
       "api/_utils/wireGenerationConfig.js": "7b3186109f79810db0d09169d49f20165acaa3af128ae812ac67c1d95158e13e",
-      "api/_utils/wireGenerationSurface.js": "f4e8cdb274ac64af2145621a192058835553d3d694186b2bdafe2540ffdd301d",
+      "api/_utils/wireGenerationSurface.js": "3b8d4dddc2d1561d19002153514d90a5cdc9a614aa21b69cbcaf8eb4995f584d",
       "api/_utils/wireModelCall.js": "2061b8a0e5121c1d57c9350e9a3ed66a9e3a9cb70a30422547699cbe38e4bb20",
       "api/_utils/wireSchemaExtension.js": "ebe0f3fbf2ad09f6fce76eea8dd2dd78f8a074dc00cf01af6ca301fef977b4e3",
       "api/fantasytimes/generate-column.js": "a05702303da13ba449803d5f5c64698926b61b0488bc8f4ca210964140b7a443",

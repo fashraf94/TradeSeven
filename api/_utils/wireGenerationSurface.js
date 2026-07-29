@@ -44,10 +44,20 @@ import { createHash } from 'node:crypto';
 
 // Repo-relative, sorted. Adding/removing a path changes the surface hash —
 // manifest edits themselves require a bump.
+//
+// Note on mixed-concern inclusions (fantasyTimesConsensus.js, ingestedClaims.js):
+// each pairs a Firestore-reading half (buildConsensusBlock / getClaimsForReporter
+// — the state channel a path manifest cannot see) with a static prompt-FORMATTER
+// half (buildConsensusBlock's template / formatClaimsForPrompt) whose output is
+// appended verbatim to the reporter userMessage at five seams. The formatter is
+// generation-bearing, so the file is included whole; editing the data-read half
+// forces a conservative-but-harmless bump. (P1 code-review finding, confirmed:
+// ingestedClaims.js was a false-negative hole in the v1 manifest.)
 export const GENERATION_SURFACE = Object.freeze([
   'api/_utils/fantasyTimesConsensus.js',
   'api/_utils/fantasyTimesPrompts.js',
   'api/_utils/fantasyTimesTickers.js',
+  'api/_utils/ingestedClaims.js',
   'api/_utils/stockIntelligenceData.js',
   'api/_utils/wireContinuity.js',
   'api/_utils/wireContracts.js',
