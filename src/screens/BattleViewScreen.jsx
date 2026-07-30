@@ -34,7 +34,7 @@ const BattleViewScreen = ({
   ) {
     return (
       <Suspense fallback={<LoadingFallback />}>
-        <LeagueBattleViewConnected user={user} onBack={onBack} />
+        <LeagueBattleViewConnected groupId={currentBattle.groupId} onBack={onBack} />
       </Suspense>
     );
   }

@@ -6673,10 +6673,11 @@ export default function PortfolioDuel() {
       },
       isTraining: true,
       isTrainingBattle: true,
-      // League routing discriminator (Spec V1.1 Phase A) — preserve gameMode so a
-      // league (flat-6) battle opened from the agent hub reaches the League Arena,
-      // not the BaggerBomb AgentBattleScreen.
+      // League routing (Spec V1.2 Phase A) — preserve gameMode + groupId so a league
+      // (flat-6) battle opened from the agent hub reaches the League Arena (gameMode
+      // = discriminator) and the wrapper can resolve the tapped game (groupId).
       gameMode: battle.gameMode || null,
+      groupId: battle.groupId || null,
     };
     setActiveBattleId(currentBattleObj.id);
     setCurrentBattle(currentBattleObj);
