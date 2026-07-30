@@ -88,12 +88,16 @@ export default async function handler(req, res) {
         let failures = 0;
         const errors = [];
 
-        // NOTE: `const results` here shadows the outer accumulator (:67) —
-        // the known TDZ defect, deliberately NOT fixed in this P1 routing
-        // commit. It is N6 build work with its own adjudicating test
-        // (founder-authorized, V1.3 §0); this commit changes transport only.
-        const results = await wireBatchResults(batchId);
-        for await (const result of results) {
+        // N6 TDZ fix (P2-43, founder-authorized V1.3 §0): this stream was
+        // `const results`, shadowing the accumulator at :66 — the status
+        // push above then sat in its temporal dead zone (ReferenceError)
+        // and the summary push below hit the stream instead (TypeError),
+        // so every poll response reported errors. The adjudicating test
+        // (pollBatch.handler.test.js) settled the review-vs-discovery
+        // contradiction by experiment: observability-only — stories and
+        // batch-doc updates always landed; only the response lied.
+        const batchResults = await wireBatchResults(batchId);
+        for await (const result of batchResults) {
           if (result.result.type === 'succeeded') {
             try {
               const toolBlock = result.result.message.content.find(
