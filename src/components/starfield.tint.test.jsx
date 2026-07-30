@@ -134,6 +134,19 @@ describe('A5 — the tint is sourced from readToken(\'warp-tint\')', () => {
     expect(styleWrites).toContain('#00d9ff');
   });
 
+  it('actually WALKS the var() chain — not just falls back to the same literal', async () => {
+    // The default resolved value (#00d9ff) happens to equal WARP_TINT_FALLBACK,
+    // so the row above cannot tell a real chain-walk from a total resolution
+    // failure that falls back to the identical literal. Rebind the mid-chain
+    // alias to a DISTINCT colour before mount: only a genuine walk of
+    // --ft-warp-tint -> var(--ft-accent) -> #ff00aa can land #ff00aa. A broken
+    // readToken would fall back to #00d9ff and fail here.
+    document.documentElement.style.setProperty('--ft-accent', '#ff00aa');
+    await mount();
+    expect(styleWrites).toContain('#ff00aa');
+    expect(styleWrites).not.toContain('#00d9ff');
+  });
+
   it('NEVER assigns a var() string to a canvas style property', async () => {
     await mount();
     for (const written of styleWrites) {

@@ -1,7 +1,8 @@
 // src/components/warpStateMachine.js
 //
 // Battle-Weather Starfield — the render-free pure core.
-// Delight Layer arc, Task 2 (Phase 1). Spec V2 §4 D2, rulings R-T2-S2/S3/S7/S8.
+// Delight Layer arc, Task 2 (Phases 1-3). Spec V2 §4 D2 + State Map Amendment B,
+// rulings R-T2-S2/S3/S7/S8/S9/S10/S14.
 // Basis: docs/audits/20260730_DELIGHT_STARFIELD_BACKGROUND_PHASE0_DISCOVERY.md
 //
 // Co-located with StarfieldBackground.jsx per the house render-free-core pattern
@@ -24,10 +25,12 @@
 // STATE MAP V2 (the contract this implements)
 // ---------------------------------------------------------------------------
 //   RESTING      no live games                      speed 0.12
-//   BATTLE LIVE  >=1 live game, none in endgame      speed 0.5
+//   BATTLE LIVE  the GOVERNING game is not in its window   speed 0.5
 //   ENDGAME      governing game inside its window    speed 0.8 -> 2.2, continuous
 //
-//   R-PREC   the SOONEST-ENDING live game governs.
+//   R-PREC   (as amended by State Map Amendment B / R-T2-S9): the game FURTHEST
+//            into its endgame window governs; if none is in a window, the
+//            soonest-ending game governs. See selectGoverningGame.
 //   R-WINDOW endgame window = min(30 min, 25% of that game's total duration).
 //   R-RAMP   transitions ease over seconds, never step.
 //   R-REST   resting is near-imperceptible drift.
@@ -150,7 +153,14 @@ export function toEpochMs(value) {
       const ms = value.toMillis();
       return Number.isFinite(ms) ? ms : null;
     }
-    if (typeof value.seconds === 'number') return value.seconds * 1000;
+    if (typeof value.seconds === 'number') {
+      // Same finiteness guard as every branch above — a {seconds: NaN} must
+      // resolve to null ("unprovable clock"), not leak NaN into the state
+      // machine. Unreachable via the adapter today (it converts before calling),
+      // but this function's contract is "null for anything unusable".
+      const ms = value.seconds * 1000;
+      return Number.isFinite(ms) ? ms : null;
+    }
   }
   return null;
 }
@@ -369,19 +379,6 @@ export function createWarpState(tuning = WARP_TUNING) {
 }
 
 /**
- * Advance one frame. Returns the NEXT state; never mutates the input.
- *
- * Easing model — one rule covers tier change, endgame ramp, handoff and decay:
- * an ease ANCHOR is dropped whenever the tier changes OR the governing game
- * changes (R-PREC handoff). Speed is then `lerp(anchorSpeed, target, t)` with
- * t = elapsed/easeMs. While t < 1 the sky glides; once t reaches 1 speed tracks
- * the target exactly, so the continuous endgame ramp stays continuous.
- *
- * Because t is 0 on the very frame the anchor drops, speed equals the previous
- * speed at that instant — a transition can never step (R-RAMP). Decay to rest
- * uses DECAY_MS (~30s) rather than TIER_EASE_MS.
- */
-/**
  * How long this transition should take (ruling R-T2-S10).
  *
  * Coming DOWN off an endgame peak is not a tier change like any other — it is a
@@ -401,6 +398,19 @@ function resolveEaseMs(prev, resolved, target, tuning) {
   return tuning.TIER_EASE_MS;
 }
 
+/**
+ * Advance one frame. Returns the NEXT state; never mutates the input.
+ *
+ * Easing model — one rule covers tier change, endgame ramp, handoff and decay:
+ * an ease ANCHOR is dropped whenever the tier changes OR the governing game
+ * changes (R-PREC handoff). Speed is then `lerp(anchorSpeed, target, t)` with
+ * t = elapsed/easeMs. While t < 1 the sky glides; once t reaches 1 speed tracks
+ * the target exactly, so the continuous endgame ramp stays continuous.
+ *
+ * Because t is 0 on the very frame the anchor drops, speed equals the previous
+ * speed at that instant — a transition can never step (R-RAMP). The ease
+ * DURATION per transition is chosen by resolveEaseMs (R-T2-S10/S14).
+ */
 export function advanceWarp(state, { liveGames, now, dtMs }, tuning = WARP_TUNING) {
   const prev = state || createWarpState(tuning);
   const resolved = resolveTier({ liveGames, now }, tuning);

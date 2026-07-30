@@ -13,8 +13,8 @@
 // the z0 background slot BEHIND the dashboard content, and is mounted at exactly
 // two flag-conditional sites (spec V2 D4 + Amendment A2):
 //
-//   src/App.jsx:8622  desktop dashboard  <- isStarfieldOn()
-//   src/App.jsx:8575  mobile dashboard   <- isStarfieldMobileOn()
+//   src/App.jsx:8631  desktop dashboard  <- isStarfieldOn()
+//   src/App.jsx:8584  mobile dashboard   <- isStarfieldMobileOn()
 //
 // Flag off at either site mounts DesktopBackground exactly as before, so the
 // off-state is byte-identical (acceptance row A1). DesktopBackground.jsx is NOT
@@ -213,11 +213,13 @@ const StarfieldBackground = ({
   const tintRef = useRef(tint);
   tintRef.current = tint;
 
-  // PHASE 1: the override is the ONLY driver. `false` means "not overridden",
-  // which is distinct from `[]` ("overridden to resting"). It is anchored once
-  // in the mount effect below — NOT during render, because a render that React
-  // throws away (concurrent mode, StrictMode) must not stamp the clock the
-  // endgame ramp counts down from.
+  // The dev override (?warpState=) WINS over the live liveGames prop when present
+  // (R-T2-S4); it is NOT the sole driver — currentGames() below falls back to the
+  // live prop whenever there is no override. `false` means "not overridden",
+  // distinct from `[]` ("overridden to resting"). Anchored once in the mount
+  // effect below — NOT during render, because a render that React throws away
+  // (concurrent mode, StrictMode) must not stamp the clock the endgame ramp
+  // counts down from.
   const overrideGamesRef = useRef(false);
 
   const liveGamesRef = useRef(liveGames);
@@ -336,7 +338,10 @@ const StarfieldBackground = ({
         ctx.beginPath();
         ctx.arc(now.x, now.y, lineWidth * 0.6, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = colour; // fillStyle/strokeStyle are separate; restore
+        // fillStyle and strokeStyle are independent, so setting fillStyle above
+        // did NOT disturb strokeStyle — it still holds `colour` from before the
+        // loop, and the next iteration's stroke reads it unchanged. No restore
+        // is needed.
       }
     }
 
@@ -461,6 +466,16 @@ const StarfieldBackground = ({
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [animate, applyCanvasSize, paint, reduce, profile.particleCount, profile.maxDpr, seed]);
+
+  // Under reduced motion the mount effect paints ONE static frame and runs no
+  // loop, so a mid-session tint change (a future accent-picker's
+  // ft-accent-changed) has nothing to repaint it — the static field would keep
+  // the old colour until an unrelated resize / tab-return. Repaint it here. Runs
+  // after the mount effect (declaration order), so stars/size are already set;
+  // a no-op when not reduced (the loop already reads tintRef every frame).
+  useEffect(() => {
+    if (reduce) paint(WARP_TUNING.STATIC_FRAME_ALPHA, false);
+  }, [tint, reduce, paint]);
 
   return (
     <canvas

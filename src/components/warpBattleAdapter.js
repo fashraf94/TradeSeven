@@ -3,7 +3,7 @@
 // Battle-Weather Starfield — the live-game adapter.
 // Delight Layer arc, Task 2 (Phase 2). Spec V2 §4 D5, rulings R-T2-S1/S2/S13.
 //
-// Maps the EXISTING `activeAgentBattles` poll result (src/App.jsx:2344, filled
+// Maps the EXISTING `activeAgentBattles` poll result (src/App.jsx:2345, filled
 // by the poll at :3887-3922) into the pure core's `liveGames` shape. Pure and
 // render-free — no React, no Firebase, no clock of its own.
 //
@@ -12,8 +12,14 @@
 // ---------------------------------------------------------------------------
 // This module starts no listener and no poll. It is a projection of state
 // App.jsx already holds for the "No battle live / Deploy to send your agent in"
-// card, which is the whole point: the sky and that card read the SAME source, so
-// they can never contradict each other (the §9 display-agreement rule).
+// card — same source, same status filter (the §9 display-agreement rule). They
+// share the SOURCE, but not the whole liveness rule: the sky additionally drops
+// a game once its local `expiresAt` has passed (warpStateMachine.normalizeLiveGames),
+// while the card keys on `status==='active'` alone. So in the brief window
+// between a battle's close and the evaluate-cron flipping status to 'completed',
+// the card can still read "live" while the sky has already calmed. That
+// divergence is intentional and covered (warpBattleAdapter.test.js "a battle that
+// expired between polls…"); the invariant is shared-source, not identical output.
 //
 // ---------------------------------------------------------------------------
 // THE FILTER IS THE CARD'S FILTER, DELIBERATELY

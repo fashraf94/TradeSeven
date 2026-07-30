@@ -28,8 +28,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
+// Wrap advanceWarp in a spy that calls THROUGH to the real implementation, so a
+// row can assert what liveGames the running loop actually fed it — i.e. that a
+// post-mount battle reached the loop via the ref, not just that no restart
+// happened. Every other export stays real (StarfieldBackground + the adapter
+// depend on them), so behaviour is identical.
+vi.mock('./warpStateMachine', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, advanceWarp: vi.fn(actual.advanceWarp) };
+});
+
 import StarfieldBackground from './StarfieldBackground';
 import { toLiveGames } from './warpBattleAdapter';
+import { advanceWarp } from './warpStateMachine';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -190,13 +201,24 @@ describe('R-T2-S12 — a poll refresh must not restart the field', () => {
 
     // A second battle appears on the next poll — the loop must see it without
     // the effect re-running (that is the ref's whole job).
+    advanceWarp.mockClear();
     await rerender({
       liveGames: toLiveGames([doc('b1', 5 * 60 * 60 * 1000), doc('b2', 60 * 1000)]),
     });
     flushFrames(2);
 
+    // No restart...
     expect(rafCancelled).toBe(before);
     expect(pendingFrames()).toBe(1);
+    // ...AND the loop actually CONSUMED the new battle. Without the ref refresh
+    // (StarfieldBackground: liveGamesRef.current = liveGames), the loop would
+    // keep feeding advanceWarp only the mount-time [b1] and 'b2' would never
+    // reach the sky — a stale field that silently ignores battles begun after
+    // mount. This is what the "no restart" assertions alone could not catch.
+    // advanceWarp(state, { liveGames, now, dtMs }) — the games are the 2nd arg.
+    const sawB2 = advanceWarp.mock.calls.some(([, input]) =>
+      input && Array.isArray(input.liveGames) && input.liveGames.some((g) => g.id === 'b2'));
+    expect(sawB2, 'the running loop must consume the newly-added battle via the ref').toBe(true);
   });
 
   it('cancels the loop and leaves nothing scheduled on unmount', async () => {

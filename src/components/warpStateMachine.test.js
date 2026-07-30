@@ -276,6 +276,31 @@ describe('R-T2-S10 — a resolved endgame eases down over the decay duration', (
     expect(up.easeMs).toBe(WARP_TUNING.TIER_EASE_MS);
   });
 
+  it('an UPWARD endgame -> endgame handoff keeps the FAST tier ease, not the decay', () => {
+    // Pins the `&& target < prev.speed` clause of resolveEaseMs, which decides
+    // decay-vs-fast by DIRECTION. Without it, a hotter fight taking over the sky
+    // would ease UP over 30s instead of 15s — sluggish exactly when it should
+    // sharpen. Every other handoff row is downward, so this is the row that fails
+    // if the direction guard is dropped.
+    const mild = { id: 'mild', endsAt: NOW + 29 * MIN, totalDuration: 6 * HOUR }; // barely in window
+    let state = advanceWarp(createWarpState(), { liveGames: [mild], now: NOW, dtMs: 16 });
+    state = advanceWarp(state, { liveGames: [mild], now: NOW + WARP_TUNING.TIER_EASE_MS });
+    expect(state.tier).toBe(WARP_TIER.ENDGAME);
+    expect(state.governingKey).toBe('mild');
+
+    // A far more urgent game appears — furthest into its own window, so per
+    // Amendment B it governs and the target jumps UP.
+    const hot = { id: 'hot', endsAt: NOW + 2 * MIN, totalDuration: 6 * HOUR };
+    const after = advanceWarp(state, {
+      liveGames: [mild, hot], now: NOW + WARP_TUNING.TIER_EASE_MS + 16, dtMs: 16,
+    });
+    expect(after.tier).toBe(WARP_TIER.ENDGAME);
+    expect(after.governingKey).toBe('hot');
+    expect(after.target).toBeGreaterThan(state.speed);   // genuinely upward
+    expect(after.easeMs, 'a hotter fight must sharpen fast, not wind down slowly')
+      .toBe(WARP_TUNING.TIER_EASE_MS);
+  });
+
   it('takes the full decay duration to arrive after a peak resolves', () => {
     const peak = { id: 'peak', endsAt: NOW + 30 * 1000, totalDuration: 6 * HOUR };
     const calm = { id: 'calm', endsAt: NOW + 5 * HOUR, totalDuration: 6 * HOUR };
@@ -885,6 +910,14 @@ describe('toEpochMs', () => {
     expect(toEpochMs('not a date')).toBeNull();
     expect(toEpochMs(NaN)).toBeNull();
     expect(toEpochMs({})).toBeNull();
+  });
+
+  it('rejects a non-finite {seconds} — the guard must match every other branch', () => {
+    // A {seconds: NaN} is an unprovable clock, not epoch NaN. Without the guard
+    // it leaked NaN into the state machine; the contract is "null for unusable".
+    expect(toEpochMs({ seconds: NaN })).toBeNull();
+    expect(toEpochMs({ seconds: Infinity })).toBeNull();
+    expect(toEpochMs({ toMillis: () => NaN })).toBeNull();
   });
 
   it('a null end time must never read as "ended at epoch 0" and drop the game', () => {

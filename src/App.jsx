@@ -2345,8 +2345,10 @@ export default function PortfolioDuel() {
   const [activeAgentBattles, setActiveAgentBattles] = useState([]); // agentBattles collection (agent deploys)
   // Delight Layer Task 2 Phase 2 (R-T2-S1): the starfield's live-game input, a
   // pure projection of the poll result above — ZERO new Firestore reads. It
-  // deliberately reuses the SAME source and the SAME status filter the
-  // "No battle live" card uses, so the sky and that card cannot disagree.
+  // deliberately reuses the SAME source and status filter the "No battle live"
+  // card uses, so they agree on which battles are live (they diverge only after
+  // a battle's local expiresAt passes — the sky calms, the card waits for the
+  // server status flip; see warpBattleAdapter.js).
   // A new array identity every 120s poll is expected and harmless: the
   // starfield holds this in a ref and never lists it as an effect dependency
   // (guarded by starfield.depstability.test.jsx).
