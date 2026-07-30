@@ -2,7 +2,8 @@
 // Doug's Earnings Batch Submitter — submits earnings previews to Anthropic Batch API.
 // Called by nightly cron at midnight ET. Previews companies reporting in next 2-7 days.
 
-import Anthropic from '@anthropic-ai/sdk';
+import { getGenerationConfig } from '../_utils/wireGenerationConfig.js';
+import { wireBatchSubmit } from '../_utils/wireModelCall.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
@@ -14,6 +15,7 @@ import {
 } from '../_utils/fantasyTimesPrompts.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
+import { WIRE_SCHEMA_VERSION } from '../_utils/wireContracts.js';
 import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
 import { buildContinuityContext } from '../_utils/wireContinuity.js';
 import { recordWireSample } from '../_utils/wireMetrics.js';
@@ -30,14 +32,6 @@ function logInfo(msg, data = null) {
 function logError(msg, data = null) {
   const ts = new Date().toISOString();
   console.error(`${ts} ${LOG_PREFIX} ${msg}`, data ? JSON.stringify(data) : '');
-}
-
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  }
-  return anthropicClient;
 }
 
 /**
@@ -232,15 +226,13 @@ export default async function handler(req, res) {
         .filter(Boolean)
         .join('\n');
 
+      // Content only — generation params (model, max_tokens incl. the
+      // writes-flag raise, latency pins) come from the frozen execution
+      // object below; wireBatchSubmit nests them into requests[].params
+      // (P11 / R4-B2, both call shapes).
       requests.push({
-        custom_id: `earnings_preview_${earning.symbol}_${earning.reportDate}`,
-        params: {
-          model: 'claude-sonnet-4-6',
-          max_tokens: wireFlags.writesEnabled ? 1200 : 800,
-          // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
-          // preserve the prior Sonnet-4 (no-thinking) latency profile.
-          thinking: { type: 'disabled' },
-          output_config: { effort: 'low' },
+        customId: `earnings_preview_${earning.symbol}_${earning.reportDate}`,
+        content: {
           system: DOUG_PREVIEW_SYSTEM_PROMPT + wireInstruction + continuityBlock,
           messages: [{ role: 'user', content: contextMessage }],
           tools: [wireFlags.writesEnabled
@@ -252,9 +244,13 @@ export default async function handler(req, res) {
     }
 
     logInfo('Submitting to Anthropic Batch API', { requestCount: requests.length });
-    const anthropic = getAnthropicClient();
 
-    const batch = await anthropic.messages.batches.create({ requests });
+    // ONE execution object governs every request in the batch — captured at
+    // SUBMIT time (R4-B1: generationConfig/schemaVersion govern the request
+    // and are clocked here, not at poll). The returned generationConfig is
+    // stamped onto the batch doc below, flag-gated like wireMarketDate.
+    const executionConfig = getGenerationConfig('doug_earnings_preview', wireFlags);
+    const { batch, generationConfig } = await wireBatchSubmit(executionConfig, requests);
 
     logInfo('Batch submitted', { batchId: batch.id, processingStatus: batch.processing_status });
 
@@ -275,7 +271,14 @@ export default async function handler(req, res) {
       // build changes persistence on a production collection (M8). poll-batch
       // falls back to resolveWireMarketDate(submittedAt) when it is absent,
       // which covers a flag flip between submit and poll.
-      ...(wireFlags.writesEnabled ? { wireMarketDate } : {}),
+      // N0 (R4-B1): SUBMIT-time provenance rides the batch doc exactly like
+      // wireMarketDate — generationConfig from the same frozen execution
+      // object the batch requests were built from, and the schema version in
+      // force NOW. poll-batch carries these into the envelope so a replayed
+      // preview never wears poll-time state. Identically flag-gated (M8).
+      ...(wireFlags.writesEnabled
+        ? { wireMarketDate, wireGenerationConfig: generationConfig, wireSchemaVersion: WIRE_SCHEMA_VERSION }
+        : {}),
     });
 
     logInfo('Batch info saved to Firestore');

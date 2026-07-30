@@ -2,7 +2,8 @@
 // Doug's Earnings Recap — generates quick recaps after earnings results drop.
 // Called by hourly cron during 4-8 PM ET (after-hours earnings window).
 
-import Anthropic from '@anthropic-ai/sdk';
+import { getGenerationConfig } from '../_utils/wireGenerationConfig.js';
+import { wireModelCall } from '../_utils/wireModelCall.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
@@ -35,14 +36,6 @@ function logInfo(msg, data = null) {
 function logError(msg, data = null) {
   const ts = new Date().toISOString();
   console.error(`${ts} ${LOG_PREFIX} ${msg}`, data ? JSON.stringify(data) : '');
-}
-
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  }
-  return anthropicClient;
 }
 
 function getTodayET() {
@@ -263,14 +256,13 @@ export default async function handler(req, res) {
       }
     }
 
-    const anthropic = getAnthropicClient();
-    logInfo('Calling Claude API for recap...', { model: REPORTER_PROFILES.doug.model });
+    // Params from the frozen execution object; wireModelCall is the sole
+    // transport (P11 / R4-B2).
+    const executionConfig = getGenerationConfig('doug_earnings_recap', wireFlags);
+    logInfo('Calling Claude API for recap...', { model: executionConfig.model });
     const wireT0 = Date.now();
 
-    const response = await anthropic.messages.create({
-      model: REPORTER_PROFILES.doug.model,
-      max_tokens: wireFlags.writesEnabled ? 900 : 500,
-      temperature: 0.8,
+    const { response, generationConfig } = await wireModelCall(executionConfig, {
       system: DOUG_RECAP_SYSTEM_PROMPT + wireInstruction + continuityBlock,
       tools: [wireFlags.writesEnabled
         ? extendToolWithAgentFacts(PUBLISH_EARNINGS_RECAP_TOOL, 'doug', { pinEventType: 'earnings_recap' })
@@ -338,6 +330,7 @@ export default async function handler(req, res) {
       primaryTicker: earning.symbol,
       triggerRef: `${earning.symbol}:${earning.reportDate}`,
       marketDate,
+      generationConfig,
       now: wireInstant,
     });
     // Close the measured window immediately: nothing between the

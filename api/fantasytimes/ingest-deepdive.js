@@ -26,7 +26,8 @@
 // deepdive card layout.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import Anthropic from '@anthropic-ai/sdk';
+import { getGenerationConfig } from '../_utils/wireGenerationConfig.js';
+import { wireModelCall } from '../_utils/wireModelCall.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import {
@@ -47,14 +48,6 @@ function logInfo(msg, data = null) {
 function logError(msg, data = null) {
   const ts = new Date().toISOString();
   console.error(`${ts} ${LOG_PREFIX} ${msg}`, data ? JSON.stringify(data) : '');
-}
-
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  }
-  return anthropicClient;
 }
 
 function countWords(text) {
@@ -161,20 +154,15 @@ export default async function handler(req, res) {
     const db = getFirebaseAdmin();
 
     // --- Generate Vera-voiced summary via Sonnet, forced tool use ---
-    const anthropic = getAnthropicClient();
+    // Params (incl. the Sonnet latency pins) from the frozen execution
+    // object; wireModelCall is the sole transport (P11 / R4-B2).
+    const executionConfig = getGenerationConfig('vera_deepdive');
     logInfo('Calling Sonnet for summary', {
-      model: REPORTER_PROFILES.vera.model,
+      model: executionConfig.model,
       topicSlug: slug,
     });
 
-    const response = await anthropic.messages.create({
-      model: REPORTER_PROFILES.vera.model,
-      max_tokens: 2000,
-      temperature: 0.7,
-      // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
-      // preserve the prior Sonnet-4 (no-thinking) latency profile.
-      thinking: { type: 'disabled' },
-      output_config: { effort: 'low' },
+    const { response } = await wireModelCall(executionConfig, {
       system: VERA_SUMMARY_SYSTEM_PROMPT,
       tools: [PUBLISH_DEEPDIVE_SUMMARY_TOOL],
       tool_choice: { type: 'tool', name: 'publish_deepdive_summary' },

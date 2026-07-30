@@ -14,6 +14,53 @@
 export const WIRE_SCHEMA_VERSION = 'wire-1.6';
 export const WIRE_VALIDATOR_VERSION = '1.6.0';
 
+// ── Phase 2 provenance versions (Spec V1.3 N0, D-P2-9 + companion) ────────
+//
+// WIRE_GENERATION_VERSION — the global generation-surface version (F-M1
+// semantics): bump on ANY change to reporter prompt files, tool schemas,
+// model ids, or sampling params (max_tokens included — the seams raise it
+// under WIRE_WRITES_ENABLED). Read exclusively through
+// getGenerationConfig(seam, flags) (wireGenerationConfig.js) so tests can
+// bump it with a mutable mock (P2-22). Enforced by the committed-baseline
+// content hash over the GENERATION_SURFACE manifest
+// (wireGenerationSurface.js + wireGenerationBaseline.json, P2-15): a diff
+// inside the manifest without a bump fails CI, and the baseline cannot be
+// regenerated without one.
+//
+// WIRE_DIGEST_RENDERER_VERSION — versions renderWireDigest's OUTPUT
+// semantics (wireDigest.js): templates, formatting, zero-suppression. Two
+// entries with identical typed facts can differ in digest text across
+// renderer versions; this constant is what a fail-closed consumer (N1.4)
+// checks. Entries written before the stamp exists carry `undefined` =
+// pre-stamp LEGACY, renderable (Amendment J) — never treated as unknown.
+// Bound to wireDigest.js content in the same committed baseline.
+//
+// Note (recorded, deliberate): all three sibling constants live in this
+// file, and this file is itself inside the GENERATION_SURFACE manifest — so
+// bumping the validator or renderer version also dirties the generation
+// surface and forces a WIRE_GENERATION_VERSION bump. That coupling is
+// epoch-consistent by design: gateEpoch resets on ANY of these changes
+// (Spec V1.2 N0), so the forced joint bump never creates a gate state the
+// spec doesn't already mandate.
+// v2 (P1 code review): ingestedClaims.js added to the GENERATION_SURFACE
+// manifest — formatClaimsForPrompt shapes five reporter prompts and was a
+// false-negative hole in v1. The bump is the mechanism working as designed:
+// a manifest membership change forces the version forward.
+// v3 (P1 closeout, founder ruling): rankingConfig value locks added —
+// ALL_TICKERS + TICKER_TO_SECTOR hashed by VALUE into the baseline
+// (GENERATION_VALUE_EXPORTS), so universe changes force a bump while
+// unrelated rankingConfig edits touch nothing.
+// v4 (FINAL LOCK, Jul 29): the §7.4 ratification caveat made mechanical —
+// assessTickerUniverseCaveat refuses a regen carrying a TICKER_TO_SECTOR
+// change without a WIRE_VALIDATOR_VERSION bump (each stamp truthful about
+// its own axis). Manifest-module change → mechanism-scope bump.
+// v5 (P3/N0): generationConfig threaded through the six inline publish
+// calls + the batch-doc carry — request-constructor files changed (no
+// request byte changed; the file-level conservatism is the accepted cost,
+// and the lock catching its own arc's diff is the mechanism working).
+export const WIRE_GENERATION_VERSION = 5;
+export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
+
 // Firestore collection names (server-only; deny-all in firestore.rules).
 export const WIRE_COLLECTION = 'fantasyTimesWire';
 export const WIRE_ENVELOPE_COLLECTION = 'fantasyTimesWireEnvelopes';

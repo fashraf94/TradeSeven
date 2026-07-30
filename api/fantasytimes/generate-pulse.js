@@ -3,7 +3,8 @@ console.log('generate-pulse loaded');
 // Kai's Market Pulse — broad market summary generation.
 // Called by Vercel cron 2-3x daily (pre_market, midday, post_close).
 
-import Anthropic from '@anthropic-ai/sdk';
+import { getGenerationConfig } from '../_utils/wireGenerationConfig.js';
+import { wireModelCall } from '../_utils/wireModelCall.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
@@ -39,15 +40,6 @@ function logInfo(msg, data = null) {
 function logError(msg, data = null) {
   const ts = new Date().toISOString();
   console.error(`${ts} ${LOG_PREFIX} ${msg}`, data ? JSON.stringify(data) : '');
-}
-
-// Lazy singleton Anthropic client
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  }
-  return anthropicClient;
 }
 
 /**
@@ -295,16 +287,15 @@ export default async function handler(req, res) {
     }
 
     // ── Call Claude Haiku with Tool Use ──────────────────────────────────
-    logInfo('Calling Claude API...', { model: REPORTER_PROFILES.kai.model, messageLength: userMessage.length });
-    const anthropic = getAnthropicClient();
+    // Params (model, max_tokens incl. the §4.2 writes-flag raise,
+    // temperature) come from the frozen execution object; wireModelCall is
+    // the sole transport (P11 / R4-B2). Same wireFlags object gates the
+    // instruction, the tool extension, and the token raise.
+    const executionConfig = getGenerationConfig('kai_pulse', wireFlags);
+    logInfo('Calling Claude API...', { model: executionConfig.model, messageLength: userMessage.length });
     const wireT0 = Date.now();
 
-    const response = await anthropic.messages.create({
-      model: REPORTER_PROFILES.kai.model,
-      // Raised under the writes flag only — headroom for the agentFacts
-      // block so R5 truncation stays rare (§4.2).
-      max_tokens: wireFlags.writesEnabled ? 1200 : 800,
-      temperature: 0.8,
+    const { response, generationConfig } = await wireModelCall(executionConfig, {
       system: KAI_SYSTEM_PROMPT + (marketContextBlock || '') + (consensusBlock || '') + wireInstruction + continuityBlock,
       tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_MARKET_PULSE_TOOL, 'kai') : PUBLISH_MARKET_PULSE_TOOL],
       tool_choice: { type: 'tool', name: 'publish_market_pulse' },
@@ -439,6 +430,7 @@ export default async function handler(req, res) {
       primaryTicker: storyDoc.primaryTicker,
       triggerRef: period,
       marketDate,
+      generationConfig,
       now: wireInstant,
     });
     // Close the measured window immediately: nothing between the

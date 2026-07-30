@@ -2,7 +2,8 @@
 // Kim's Sector Strategist — weekly columns (Monday preview, Friday wrap).
 // Uses Sonnet 4 synchronous for deep cross-sector analysis.
 
-import Anthropic from '@anthropic-ai/sdk';
+import { getGenerationConfig } from '../_utils/wireGenerationConfig.js';
+import { wireModelCall } from '../_utils/wireModelCall.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
@@ -38,14 +39,6 @@ function logInfo(msg, data = null) {
 function logError(msg, data = null) {
   const ts = new Date().toISOString();
   console.error(`${ts} ${LOG_PREFIX} ${msg}`, data ? JSON.stringify(data) : '');
-}
-
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  }
-  return anthropicClient;
 }
 
 function getTodayET() {
@@ -302,18 +295,13 @@ export default async function handler(req, res) {
       }
     }
 
-    const anthropic = getAnthropicClient();
-    logInfo('Calling Claude Sonnet for column...', { model: REPORTER_PROFILES.kim.model });
+    // Params (incl. the Sonnet latency pins) from the frozen execution
+    // object; wireModelCall is the sole transport (P11 / R4-B2).
+    const executionConfig = getGenerationConfig('kim_column', wireFlags);
+    logInfo('Calling Claude Sonnet for column...', { model: executionConfig.model });
     const wireT0 = Date.now();
 
-    const response = await anthropic.messages.create({
-      model: REPORTER_PROFILES.kim.model,
-      max_tokens: wireFlags.writesEnabled ? 1600 : 1200,
-      temperature: 0.85,
-      // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
-      // preserve the prior Sonnet-4 (no-thinking) latency profile.
-      thinking: { type: 'disabled' },
-      output_config: { effort: 'low' },
+    const { response, generationConfig } = await wireModelCall(executionConfig, {
       system: KIM_SYSTEM_PROMPT + (consensusContext || '') + wireInstruction + continuityBlock,
       tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_SECTOR_COLUMN_TOOL, 'kim') : PUBLISH_SECTOR_COLUMN_TOOL],
       tool_choice: { type: 'tool', name: 'publish_sector_column' },
@@ -419,6 +407,7 @@ export default async function handler(req, res) {
       primaryTicker: null,
       triggerRef: columnType,
       marketDate,
+      generationConfig,
       now: wireInstant,
     });
     // Close the measured window immediately: nothing between the

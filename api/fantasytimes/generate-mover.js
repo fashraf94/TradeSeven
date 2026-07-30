@@ -3,7 +3,8 @@ console.log('generate-mover loaded');
 // Alex's Stock Spotlight — individual stock mover story generation.
 // POST endpoint called when ATR threshold crossed.
 
-import Anthropic from '@anthropic-ai/sdk';
+import { getGenerationConfig } from '../_utils/wireGenerationConfig.js';
+import { wireModelCall } from '../_utils/wireModelCall.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { STOCK_DATA, TICKERS } from '../_utils/stockIntelligenceData.js';
@@ -36,15 +37,6 @@ function logInfo(msg, data = null) {
 function logError(msg, data = null) {
   const ts = new Date().toISOString();
   console.error(`${ts} ${LOG_PREFIX} ${msg}`, data ? JSON.stringify(data) : '');
-}
-
-// Lazy singleton Anthropic client
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  }
-  return anthropicClient;
 }
 
 /**
@@ -236,15 +228,14 @@ Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool ca
   }
 
   // ── Call Claude Haiku with Tool Use ──────────────────────────────
+  // Params from the frozen execution object; wireModelCall is the sole
+  // transport (P11 / R4-B2).
+  const executionConfig = getGenerationConfig('alex_mover', wireFlags);
   logInfo(`Generating story for ${upperSymbol} (${percentChange}%, ${atrMultiple}x ATR)`);
-  logInfo('Step 5: Calling Claude API...', { model: REPORTER_PROFILES.alex.model, messageLength: userMessage.length });
-  const anthropic = getAnthropicClient();
+  logInfo('Step 5: Calling Claude API...', { model: executionConfig.model, messageLength: userMessage.length });
   const wireT0 = Date.now();
 
-  const response = await anthropic.messages.create({
-    model: REPORTER_PROFILES.alex.model,
-    max_tokens: wireFlags.writesEnabled ? 900 : 500,
-    temperature: 0.8,
+  const { response, generationConfig } = await wireModelCall(executionConfig, {
     system: ALEX_SYSTEM_PROMPT + wireInstruction + continuityBlock,
     tools: [wireFlags.writesEnabled ? extendToolWithAgentFacts(PUBLISH_STORY_TOOL, 'alex') : PUBLISH_STORY_TOOL],
     tool_choice: { type: 'tool', name: 'publish_story' },
@@ -349,6 +340,7 @@ Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool ca
     primaryTicker: upperSymbol,
     triggerRef: upperSymbol,
     marketDate,
+    generationConfig,
     now: wireInstant,
   });
   // Close the measured window immediately: nothing between the

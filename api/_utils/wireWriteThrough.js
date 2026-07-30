@@ -27,6 +27,7 @@ import {
   WIRE_COLLECTION,
   WIRE_ENVELOPE_COLLECTION,
   WIRE_SCHEMA_VERSION,
+  WIRE_DIGEST_RENDERER_VERSION,
   WIRE_OUTCOMES,
   WIRE_CODES,
   ENTRY_OUTCOMES,
@@ -69,6 +70,16 @@ const DAY_DOC_WARN_BYTES = 600 * 1024;
  *        event name; the model never sees this field on those seams
  * @param {boolean} [o.deferTransaction=false] — poll-batch (10s budget):
  *        stamp story+envelope+wirePending only; the sweep transacts (§4.7)
+ * @param {object|null} [o.generationConfig] — N0 provenance (Phase 2 V1.3):
+ *        the D-P2-7 tuple `{ generationVersion, continuityEnabled }` returned
+ *        by wireModelCall/wireBatchSubmit — derived from the SAME frozen
+ *        execution object the request was built from (P11). On the batch
+ *        seam this is the SUBMIT-time value carried on the batch doc
+ *        (R4-B1), never poll-time state.
+ * @param {string|null} [o.generationSchemaVersion] — companion ruling: the
+ *        schema version in force at GENERATION time. Inline seams omit it
+ *        (generation time == publish time → current constant); poll-batch
+ *        passes the submit-time value from the batch doc when present.
  * @param {Date} [o.now]
  * @returns {Promise<{storyRef: object, wire: object|null}>}
  */
@@ -83,6 +94,8 @@ export async function publishStoryWithWire(db, {
   marketDate,
   serverSubjectRef = null,
   deferTransaction = false,
+  generationConfig = null,
+  generationSchemaVersion = null,
   now = new Date(),
 }) {
   const flags = getWireFlags();
@@ -136,6 +149,15 @@ export async function publishStoryWithWire(db, {
     storyType: storyDoc.type || null,
     idempotencyKey,
     payloadHash,
+    // ── N0 provenance (F-B1 + companion ruling) ──────────────────────────
+    // Captured at generation time, stored ONCE, read from the envelope by
+    // BOTH the inline transaction and the replay sweep — never re-derived
+    // at replay. Additive fields: provably hash-safe (payloadHash is
+    // computed above, over the facts) and schema-bump-free by the F-B1
+    // ruling. Null generationConfig = the caller had no wrapper stamp
+    // (legacy callers, tests) — persisted as explicit null, never omitted.
+    schemaVersion: generationSchemaVersion ?? WIRE_SCHEMA_VERSION,
+    generationConfig: generationConfig ?? null,
     marketDate,
     outcome: v.outcome,
     modelAgentFacts: v.projectionSucceeded ? v.facts : null,
@@ -315,7 +337,13 @@ export async function runWireTransactionFromEnvelope(db, envelope, { now = new D
         : (facts.subjectRef ?? null);
       const persistedFacts = {
         ...facts,
-        schemaVersion: WIRE_SCHEMA_VERSION,
+        // N0 (companion ruling): schemaVersion is ENVELOPE-BORNE — the
+        // version in force at generation time, like its sibling
+        // validatorVersion below. A replay straddling a deploy can no
+        // longer stamp an entry with a schema its facts were never
+        // validated against. Legacy envelopes (pre-N0, no field) fall back
+        // to the current constant (Amendment J: absent = legacy).
+        schemaVersion: envelope.schemaVersion ?? WIRE_SCHEMA_VERSION,
         subjectRef: resolvedSubjectRef,
         primaryTicker: envelope.primaryTicker,
         offUniverseTickers: envelope.validatorResult.offUniverseTickers,
@@ -323,6 +351,12 @@ export async function runWireTransactionFromEnvelope(db, envelope, { now = new D
           contract.macroEligible === true &&
           envelope.validatorResult.preStripTickerCount === 0,
         digest: renderWireDigest({ ...facts, subjectRef: resolvedSubjectRef, primaryTicker: envelope.primaryTicker }),
+        // R4-B1: digestRendererVersion governs RENDER EXECUTION and is
+        // stamped here — where renderWireDigest actually just ran —
+        // truthfully, never carried from submit. A renderer deploy landing
+        // mid-batch correctly places those entries in the new renderer
+        // epoch (the declared-migration path).
+        digestRendererVersion: WIRE_DIGEST_RENDERER_VERSION,
         chainId,
         observedAt: now,
         validatorVersion: envelope.validatorResult.validatorVersion,
@@ -334,6 +368,12 @@ export async function runWireTransactionFromEnvelope(db, envelope, { now = new D
         publishedAt: envelope.publishedAt,
         validatorVersion: envelope.validatorResult.validatorVersion,
         quarantined: envelope.outcome === WIRE_OUTCOMES.QUARANTINED,
+        // N0 (D-P2-7 tuple, entry wrapper per discovery D7: provenance is
+        // not a fact about the market, so it rides beside validatorVersion,
+        // never inside agentFacts). Guarded read: a pre-N0 envelope yields
+        // explicit null = LEGACY (renderable, Amendment J) — never a throw,
+        // never replay_exhausted with the facts deleted (P2-30).
+        generationConfig: envelope.generationConfig ?? null,
         agentFacts: persistedFacts,
       };
       entries = [...entries, entry]; // append-only (M9)
