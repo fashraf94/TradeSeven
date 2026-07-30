@@ -164,4 +164,42 @@ Also still open from the spec: A5 tint test and the final A6 guard land in Phase
 
 ---
 
+## 9. Code review (BUILD_RULES §2 — mandatory at ≥1500 lines; this diff was 1,859)
+
+`/code-review` is not available as a skill in this session, so the mandate was met with **three independent adversarial reviewers**, each given a different lens and instructed to refute rather than confirm. Two used empirical methods beyond reading: a mutation sweep against the 53 unit rows, and a 33-probe jsdom lifecycle rig.
+
+| Lens | Verdict |
+|---|---|
+| Flag-off byte-identity | **Guarantee HOLDS.** Proven mechanically — every ternary collapsed to its false branch and byte-compared against HEAD (all three files identical); import side effects probed in Node with trapped globals (**0 side effects, 0 pending handles**). 7/7 checks clean. |
+| Canvas lifecycle | **7/7 categories CLEAN** — no rAF/listener leak, no double-scheduling, no stale closure, no NaN, deps provably stable, `getContext` fully guarded, pure core clock-free. |
+| State machine vs State Map | **1 critical + 3 high found.** 7 of 18 spec-relevant mutants survived the original suite. |
+
+**Fixed (commits `b076ddb2`, `2ad49a5d`) — 1 critical, 3 high, 1 medium, ~10 low:**
+
+The critical one is worth stating plainly: the id-less fallback key was derived from **array position**, so a caller that reordered `liveGames` between frames re-anchored the ease every frame and — because `t` is 0 on an anchor frame by design — **pinned the speed forever**. Measured: 4,000 frames with alternating order held the sky at 0.12 against a target of 0.5, and stalled the endgame ramp mid-climb. Fixed at both levels: content-derived keys, and the ease re-anchors only when the target actually moves.
+
+The three highs: `dtMs` defaulted to 0 so the natural call shape froze the ease; the ease ran on caller deltas so "10–20s" became 75s at 500ms frames (both fixed by measuring **wall time** from the `now` already passed in); and the LIVE→ENDGAME boundary — the one place the tier flips while the key does not — had no assertion at all.
+
+Every one of the 10 new unit rows was a **surviving mutant**: the behaviour was wrong (or could silently become wrong) and all 53 original rows still passed.
+
+### The four items FLAGGED, not changed
+
+Per the kickoff instruction — *disagreement with a ruling means flag and stop, not build something better* — these are surfaced rather than fixed:
+
+**F1 — a genuine conflict between two State Map clauses.** The state table says BATTLE LIVE means *"≥1 live game, **none in endgame window**"*; R-PREC says *"the **soonest-ending** live game governs. If **it** is inside its endgame window…"*. These disagree when a *later*-ending game is inside its own window while the soonest-ending one is not. Verified case: game A ends in 20 min of a 40 min total (window 10 min → not in window, and it governs); game B ends in 25 min of a 100 min total (window 25 min → **is** in its window). The code follows R-PREC — the more specific rule — and shows BATTLE LIVE. Consequence: when A resolves, B hands off already at 80% ramp and the speed climbs 0.5 → 1.92 over 15s. **Ruling needed:** does R-PREC govern (current behaviour, defensible), or should any game inside its own window pull the sky into ENDGAME? I recommend R-PREC as-is — one clock governs, which is what keeps the ramp coherent — but this is yours.
+
+**F2 — ENDGAME→ENDGAME handoff currently ramps *down*.** When the governing game resolves and the next one is also in its window but earlier in its ramp, speed eases 2.19 → 0.82 over ~20s while never leaving ENDGAME. The spec's handoff bullet says "ease to the new target" (what it does); R-RAMP says the endgame ramp is "continuous (no steps inside it)" (no step occurs — it eases). So it satisfies the letter both ways, but it may feel like the fight deflating mid-peak. The alternative is a monotone envelope (floor the new target at the current speed). **This is a feel call — you will see it in the A7 two-game handoff.** No code change made.
+
+**F3 — the decay is not resumable, and defect #2 makes that reachable.** A single frame in which the live set flickers non-empty restarts the full 30s decay from the partially-decayed speed (measured: 0.2048 instead of 0.12 after a full window). The root cause is upstream — `App.jsx:3902` resets `activeAgentBattles` to `[]` on **any** fetch error — which is exactly the already-filed defect #2 your spec elevated to recommended-before-flip. I did not add a debounce, because that would be inventing behaviour the spec does not describe to paper over a known upstream bug. **Recommendation stands: land the defect-#2 micro-task before the flip.**
+
+**F4 — ruling R-T2-S8 rests on a premise my Phase 0 got wrong.** That ruling retired the jsdom+rAF rig partly because my discovery reported such a rig would be "a repo-first with no established location or precedent." **That was incorrect.** `src/components/Forge/workshop/character/CharacterArea.scrollreset.test.jsx` already does exactly this in-repo — `// @vitest-environment jsdom`, `createRoot` + `act`, per-file `vi.mock`, **no setupFiles** — and its own header says it exists because "the static render smoke could never catch" stateful bugs. The reviewer rebuilt the rig in minutes with zero new dependencies.
+
+This matters for **Phase 2 specifically**. The concrete hazard: adding `liveGames` to the effect's dependency array — which `exhaustive-deps` would happily accept — would make the effect re-run on every 120s poll (a fresh array identity each time), recreating the field and resetting the warp state to RESTING. Since the tier ease is 15s and the endgame ramp needs minutes, **the sky would never reach peak** — and nothing in CI would catch it, because `renderToString` schedules no frames. I have **not** built the rig (S8 says not to). **Ruling requested:** permit a jsdom lifecycle test in Phase 2/3, asserting one-loop-at-mount, one-after-hide/show, zero-after-unmount, zero-under-reduced-motion.
+
+### One Phase-2 landmine, recorded
+
+`agentBattles` docs carry **`expiresAt`** and have **no duration field**. The core's input contract is `{endsAt, totalDuration}`, and spec V2 D5 correctly assigns that mapping to the Phase-2 adapter. But if raw docs were ever passed straight through, `endsAt` would be `undefined` → the clock reads as unprovable → the sky caps at BATTLE LIVE and, worse, an **already-expired battle counts as live forever** (the ended-game filter keys on the same field). The `?warpState=` override cannot reveal this, because it synthesises both fields. The component's prop doc now carries this warning in bold; the adapter's unit rows must be built from a **real doc shape**, not the synthesized one.
+
+---
+
 *End of Phase 1 build report. SOFT STOP — awaiting the founder feel pass.*
