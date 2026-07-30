@@ -1170,7 +1170,7 @@ export const FUNDAMENTAL_MIRROR_ENABLED = true;
  * feel sign-off after a Vercel preview smoke (the MATCHUPS_BACKDROP_ENABLED
  * precedent) — never in the build PR.
  */
-export const STARFIELD_BACKGROUND_ENABLED = false;
+export const STARFIELD_BACKGROUND_ENABLED = true;
 
 /**
  * The ONE home for the desktop starfield gate — the flag OR the `?starfield=1`
@@ -1208,7 +1208,7 @@ export function isStarfieldOn() {
  *
  * Built/merged DARK; flipped separately from desktop after its own phone smoke.
  */
-export const STARFIELD_MOBILE_ENABLED = false;
+export const STARFIELD_MOBILE_ENABLED = true;
 
 /**
  * The ONE home for the mobile starfield gate — the flag OR `?starfieldMobile=1`.
