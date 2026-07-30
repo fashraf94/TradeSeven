@@ -1,6 +1,10 @@
 // api/fantasytimes/generate-recap.js
 // Doug's Earnings Recap — generates quick recaps after earnings results drop.
-// Called by hourly cron during 4-8 PM ET (after-hours earnings window).
+// Cron: four evening firings (20-23 UTC, the after-hours window) plus ONE
+// morning firing (~13:00 UTC, pre-market ET) that recaps the prior ET
+// session's AMC reports once their actuals post (Recap Restoration R-B2 —
+// the fifth firing was re-aimed from 0 UTC, whose UTC-date query hit the
+// wrong trading day).
 
 import { getGenerationConfig } from '../_utils/wireGenerationConfig.js';
 import { wireModelCall } from '../_utils/wireModelCall.js';
@@ -19,7 +23,15 @@ import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedC
 import { appendEarningsResult } from '../_utils/fantasyTimesConsensus.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
-import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
+import {
+  resolveWireMarketDate,
+  deriveMarketDate,
+  assertMaintainedYear,
+} from '../_utils/wireCalendar.js';
+import { getPreviousTradingDay } from '../_utils/marketSchedule.js';
+import { translateTiming } from '../_utils/fetchEarningsCalendarEODHD.js';
+import { etMinutesOfDay } from '../_utils/fetchEconomicEventsEODHD.js';
+import { assessEpsPlausibility } from '../_utils/econPrintVerifier.js';
 import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
 import { buildContinuityContext } from '../_utils/wireContinuity.js';
 import { recordWireSample } from '../_utils/wireMetrics.js';
@@ -36,10 +48,6 @@ function logInfo(msg, data = null) {
 function logError(msg, data = null) {
   const ts = new Date().toISOString();
   console.error(`${ts} ${LOG_PREFIX} ${msg}`, data ? JSON.stringify(data) : '');
-}
-
-function getTodayET() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
 
 /**
@@ -62,15 +70,37 @@ async function fetchRealTimePrice(symbol) {
 }
 
 /**
- * Fetch today's earnings from EODHD calendar.
+ * Fetch earnings rows for an ET-date window [fromET, toET], inclusive.
+ * ET-anchored per ruling R-B2(i) — the old UTC `todayStr` shortcut queried
+ * the wrong ET trading day on the late-UTC firing.
  */
-async function fetchTodaysEarnings() {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const url = `https://eodhd.com/api/calendar/earnings?api_token=${process.env.EODHD_API_KEY}&fmt=json&from=${todayStr}&to=${todayStr}`;
+async function fetchEarningsWindow(fromET, toET) {
+  const url = `https://eodhd.com/api/calendar/earnings?api_token=${process.env.EODHD_API_KEY}&fmt=json&from=${fromET}&to=${toET}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`EODHD responded ${res.status}`);
   const data = await res.json();
   return data.earnings || [];
+}
+
+/**
+ * F2 (ruling R-B5): the price-operand label is a deterministic function of
+ * (beforeAfterMarket, session-relation-to-reportDate). An AMC report drops
+ * AFTER the session close, so the same-day session move is the
+ * into-earnings (pre-reaction) move and must never be phrased as a reaction
+ * to the news; the morning-after fire may honestly call it an early reaction.
+ */
+function describeSessionMove(timing, isPriorSessionReport) {
+  if (timing === 'AMC') {
+    return isPriorSessionReport
+      ? 'Early reaction session move (first session after the report)'
+      : "Into-earnings session move (pre-reaction — the report drops after today's close)";
+  }
+  if (timing === 'BMO') {
+    return isPriorSessionReport
+      ? 'Post-report session move (session after the pre-open report)'
+      : 'Session move since the pre-open report (early reaction)';
+  }
+  return 'Session move (report timing unconfirmed — do not attribute it to the report)';
 }
 
 export default async function handler(req, res) {
@@ -103,13 +133,35 @@ export default async function handler(req, res) {
 
   try {
     const db = getFirebaseAdmin();
-    logInfo('Starting earnings recap check');
+    const wireInstant = new Date();
+    const todayET = deriveMarketDate(wireInstant);
 
-    // Fetch today's earnings calendar
-    const earningsRaw = await fetchTodaysEarnings();
-    logInfo('Raw earnings for today', { count: earningsRaw.length });
+    // Recap Restoration (rulings R-B2): the re-aimed ~13:00 UTC slot is the
+    // MORNING fire — its window is [prior ET session, today], so prior-day
+    // AMC reports (whose actual_eps posts overnight) and same-day BMO are
+    // both in view. Evening fires keep [today, today]. Mode derives from
+    // the ET clock, not the cron slot (DST-robust); assertMaintainedYear
+    // closes the walker's 2028 silent-mislabel gap on this path.
+    const isMorningFire = etMinutesOfDay(wireInstant) < 12 * 60;
+    assertMaintainedYear(todayET);
+    const fromET = isMorningFire ? getPreviousTradingDay(todayET) : todayET;
+    logInfo(`Starting earnings recap check window=${fromET}..${todayET} mode=${isMorningFire ? 'morning' : 'evening'}`);
 
-    // Filter to tracked symbols
+    // The one fetch_failed site (R-B6): an EODHD outage is distinguishable
+    // from a quiet window by construction.
+    let earningsRaw;
+    try {
+      earningsRaw = await fetchEarningsWindow(fromET, todayET);
+    } catch (err) {
+      logError(`outcome=fetch_failed fetched=0 tracked=0 error=${err.message}`);
+      return res.status(200).json({
+        success: false, skipped: true, code: 'fetch_failed',
+        reason: 'EODHD earnings calendar fetch failed',
+      });
+    }
+
+    // Filter to tracked symbols with released results; carry the report
+    // timing (R-B5) through the single translateTiming vocabulary.
     const tickerSet = new Set(TICKERS.map((t) => t.toUpperCase()));
     const trackedResults = earningsRaw
       .filter((e) => {
@@ -122,47 +174,71 @@ export default async function handler(req, res) {
         reportDate: e.report_date,
         epsActual: e.actual_eps,
         epsEstimate: e.eps_estimate,
+        timing: translateTiming(e.before_after_market),
       }));
 
-    logInfo('Tracked earnings with results', { count: trackedResults.length });
+    // The single per-firing outcome line (F1 dual count + taxonomy, R-B6).
+    const counts = { fetched: earningsRaw.length, tracked: trackedResults.length };
+    const skip = (code, reason) => {
+      logInfo(`outcome=${code} fetched=${counts.fetched} tracked=${counts.tracked}`);
+      return res.status(200).json({ success: true, skipped: true, code, reason });
+    };
 
     if (trackedResults.length === 0) {
-      return res.status(200).json({
-        success: true,
-        skipped: true,
-        reason: 'No tracked earnings results today',
-      });
+      return skip('empty_window', 'No tracked earnings results in window');
     }
 
-    // Dedup: check which symbols already have a recap today
-    const todayET = getTodayET();
-    const startOfDay = new Date(`${todayET}T00:00:00-05:00`);
-
-    const dedupQuery = await db
-      .collection('fantasyTimesStories')
-      .where('reporter', '==', 'doug')
-      .where('type', '==', 'earnings_recap')
-      .where('publishedAt', '>', startOfDay)
-      .limit(50)
-      .get();
-
-    const coveredSymbols = new Set(
-      dedupQuery.docs.map((doc) => doc.data().primaryTicker).filter(Boolean)
+    // C8(a)/(b) + R-B4: referent dedup BEFORE the model call. Identity =
+    // (symbol, reportDate); referentDate is a top-level story field (never
+    // inside dataSnapshot — C1 freeze). Non-superseded = published and not
+    // stamped wireSuperseded. Window overlap (morning re-sees yesterday's
+    // evening coverage; unknown-timing rows eligible in both windows)
+    // resolves to exactly one story here — zero model calls on a hit.
+    const referentDates = [...new Set(trackedResults.map((e) => e.reportDate))];
+    const existingDocs = [];
+    for (const d of referentDates) {
+      const snap = await db
+        .collection('fantasyTimesStories')
+        .where('type', '==', 'earnings_recap')
+        .where('referentDate', '==', d)
+        .limit(50)
+        .get();
+      existingDocs.push(...snap.docs);
+    }
+    const covered = new Set(
+      existingDocs
+        .map((doc) => doc.data())
+        .filter((s) => s.status === 'published' && !s.wireSuperseded)
+        .map((s) => `${s.primaryTicker}:${s.referentDate}`)
     );
 
-    const uncoveredResults = trackedResults.filter((e) => !coveredSymbols.has(e.symbol));
-
-    if (uncoveredResults.length === 0) {
-      logInfo('All tracked earnings already covered today');
-      return res.status(200).json({
-        success: true,
-        skipped: true,
-        reason: 'All earnings results already covered',
-      });
+    // First uncovered candidate passing the R-B1a surprise gate; held
+    // candidates log loud and are skipped (one per invocation to stay
+    // within timeout).
+    let heldCount = 0;
+    let earning = null;
+    for (const candidate of trackedResults) {
+      if (covered.has(`${candidate.symbol}:${candidate.reportDate}`)) continue;
+      const gate = assessEpsPlausibility(candidate.epsActual, candidate.epsEstimate);
+      if (gate.hold) {
+        heldCount += 1;
+        logError(
+          `operand_implausible symbol=${candidate.symbol} reportDate=${candidate.reportDate} ` +
+          `reason=${gate.reason} detail="${gate.detail}"`,
+        );
+        continue;
+      }
+      earning = candidate;
+      break;
     }
 
-    // Process the first uncovered result (one per cron invocation to stay within timeout)
-    const earning = uncoveredResults[0];
+    if (!earning) {
+      if (heldCount > 0) {
+        return skip('operand_implausible', `${heldCount} candidate(s) held by the plausibility gate`);
+      }
+      return skip('already_written', 'All earnings results already covered');
+    }
+
     logInfo(`Generating recap for ${earning.symbol}`);
 
     // Get detailed earnings result
@@ -173,8 +249,14 @@ export default async function handler(req, res) {
       logError(`getEarningsResult failed for ${earning.symbol}`, { error: e.message });
     }
 
-    // Fetch current price reaction
+    // Fetch the current-session price move. For an AMC name on report day
+    // this is the INTO-EARNINGS (pre-reaction) session — the report drops
+    // after the close — so it is NOT a reaction to the news (F2/R-B5; the
+    // previous "current price reaction" comment here was itself the
+    // mislabel the ruling ordered fixed).
     const priceData = await fetchRealTimePrice(earning.symbol);
+    const isPriorSessionReport = earning.reportDate < todayET;
+    const sessionMoveLabel = describeSessionMove(earning.timing, isPriorSessionReport);
 
     // Check if Doug published a preview for this symbol
     let previewReference = '';
@@ -219,8 +301,9 @@ export default async function handler(req, res) {
       `EPS Estimate: ${earning.epsEstimate || 'N/A'}`,
       `Outcome: ${outcome.toUpperCase()}`,
       `Surprise: ${surprise}`,
-      earningsDetail?.priceMove ? `After-hours price move: ${earningsDetail.priceMove >= 0 ? '+' : ''}${earningsDetail.priceMove.toFixed(1)}%` : '',
-      priceData ? `Current price: $${priceData.price.toFixed(2)} (${priceData.changePercent >= 0 ? '+' : ''}${priceData.changePercent.toFixed(2)}%)` : '',
+      `Report timing: ${earning.timing || 'unconfirmed'}${isPriorSessionReport ? ' (reported the prior session)' : ' (reports today)'}`,
+      earningsDetail?.priceMove ? `Post-earnings reaction move (close-to-next-close): ${earningsDetail.priceMove >= 0 ? '+' : ''}${earningsDetail.priceMove.toFixed(1)}%` : '',
+      priceData ? `${sessionMoveLabel}: $${priceData.price.toFixed(2)} (${priceData.changePercent >= 0 ? '+' : ''}${priceData.changePercent.toFixed(2)}%)` : '',
       previewReference,
       '',
       `Write an earnings recap for ${earning.symbol}. Use the publish_earnings_recap tool.`,
@@ -241,8 +324,9 @@ export default async function handler(req, res) {
     }
 
     // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ────────────────────────
+    // wireInstant was established at the top of the handler (B5:
+    // pre-model-call); the receipt bucket stays firing-scoped (C8).
     const wireFlags = getWireFlags();
-    const wireInstant = new Date();
     const marketDate = resolveWireMarketDate(wireInstant);
     const wireInstruction = wireFlags.writesEnabled
       ? buildAgentFactsInstruction('doug', { pinEventType: 'earnings_recap' })
@@ -296,6 +380,10 @@ export default async function handler(req, res) {
       sentiment: storyData.sentiment || 'neutral',
       urgency: 'timely',
       recommended_action: storyData.recommended_action || 'EARNINGSGAME',
+      // C8(a)/R-B4 identity component (top-level, never in dataSnapshot)
+      // + R-B5 timing metadata for downstream honest labeling.
+      referentDate: earning.reportDate,
+      beforeAfterMarket: earning.timing || null,
       dataSnapshot: {
         symbol: earning.symbol,
         epsActual: earning.epsActual,
@@ -336,7 +424,7 @@ export default async function handler(req, res) {
     // Close the measured window immediately: nothing between the
     // publish and this line may be metrics I/O.
     const genPublishMs = Date.now() - wireT0;
-    logInfo(`Published earnings recap ${docRef.id}`, {
+    logInfo(`outcome=wrote fetched=${counts.fetched} tracked=${counts.tracked} storyId=${docRef.id}`, {
       symbol: earning.symbol,
       outcome,
       headline: storyDoc.headline,
@@ -351,10 +439,14 @@ export default async function handler(req, res) {
       }
     }
 
-    // Write earnings result to consensus
+    // Write earnings result to consensus. R-B3: the FINAL-LOCK §3 join
+    // stands — the bucket key is the locked UTC expression, evaluated on
+    // the SAME instant as the story's publishedAt (`now`), so the adapter
+    // join off publishedAt lands on this doc by construction, including
+    // across UTC midnight. Never re-key to the event date (C8(c) superseded).
     try {
-      const today = new Date().toISOString().split('T')[0];
-      await appendEarningsResult(today, earning.symbol, {
+      const consensusDate = now.toISOString().split('T')[0];
+      await appendEarningsResult(consensusDate, earning.symbol, {
         result: outcome,
         epsActual: earning.epsActual,
         epsEstimate: earning.epsEstimate,

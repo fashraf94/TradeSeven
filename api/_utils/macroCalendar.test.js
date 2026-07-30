@@ -58,32 +58,44 @@ describe('getMacroEventsInWindow — window filtering (inclusive bounds)', () =>
   // These tests exercise the filter logic with stub data only. Drain every
   // hardcoded array first so the published 2026 calendar doesn't leak into
   // the window. afterEach (at file scope) re-populates from snapshots.
+  // Computed helpers cannot be drained — since the Recap Restoration arc
+  // (R-A1) the weekly Jobless Claims helper puts a row in every week, so
+  // the stub-focused assertions filter that category out (its own behavior
+  // is covered by macroCalendar.joblessClaims.test.js).
   beforeEach(() => {
     for (const arr of ALL_HARDCODED_ARRAYS) arr.length = 0;
   });
 
+  const withoutClaims = (events) => events.filter((e) => e.category !== 'Jobless Claims');
+
   it('excludes events strictly before fromDate', () => {
     FOMC_DECISIONS_2026.push(makeEvent({ date: '2026-05-10', event: 'Pre-window' }));
-    expect(getMacroEventsInWindow({ fromDate: '2026-05-11', toDate: '2026-05-22' })).toEqual([]);
+    expect(withoutClaims(getMacroEventsInWindow({ fromDate: '2026-05-11', toDate: '2026-05-22' }))).toEqual([]);
   });
 
   it('excludes events strictly after toDate', () => {
     FOMC_DECISIONS_2026.push(makeEvent({ date: '2026-05-23', event: 'Post-window' }));
-    expect(getMacroEventsInWindow({ fromDate: '2026-05-11', toDate: '2026-05-22' })).toEqual([]);
+    expect(withoutClaims(getMacroEventsInWindow({ fromDate: '2026-05-11', toDate: '2026-05-22' }))).toEqual([]);
   });
 
   it('includes the fromDate boundary', () => {
     FOMC_DECISIONS_2026.push(makeEvent({ date: '2026-05-11', event: 'Lower boundary' }));
-    const events = getMacroEventsInWindow({ fromDate: '2026-05-11', toDate: '2026-05-22' });
+    const events = withoutClaims(getMacroEventsInWindow({ fromDate: '2026-05-11', toDate: '2026-05-22' }));
     expect(events).toHaveLength(1);
     expect(events[0].event).toBe('Lower boundary');
   });
 
   it('includes the toDate boundary', () => {
     FOMC_DECISIONS_2026.push(makeEvent({ date: '2026-05-22', event: 'Upper boundary' }));
-    const events = getMacroEventsInWindow({ fromDate: '2026-05-11', toDate: '2026-05-22' });
+    const events = withoutClaims(getMacroEventsInWindow({ fromDate: '2026-05-11', toDate: '2026-05-22' }));
     expect(events).toHaveLength(1);
     expect(events[0].event).toBe('Upper boundary');
+  });
+
+  it('every in-window Jobless Claims row respects the same inclusive bounds', () => {
+    const claims = getMacroEventsInWindow({ fromDate: '2026-05-11', toDate: '2026-05-22' })
+      .filter((e) => e.category === 'Jobless Claims');
+    expect(claims.map((e) => e.date)).toEqual(['2026-05-14', '2026-05-21']);
   });
 });
 
@@ -393,9 +405,11 @@ describe('populated 2026 release arrays — spot checks', () => {
 });
 
 describe('populated 2026 release arrays — getMacroEventsInWindow over a real week', () => {
-  it('window 2026-05-13 → 2026-05-22 returns exactly PPI on 5/13 and Retail Sales on 5/14', () => {
+  it('window 2026-05-13 → 2026-05-22 returns PPI, Retail Sales, and the two weekly claims rows (R-A1)', () => {
     const events = getMacroEventsInWindow({ fromDate: '2026-05-13', toDate: '2026-05-22' });
-    expect(events).toHaveLength(2);
+    // Since the Recap Restoration arc added weekly Jobless Claims (R-A1),
+    // every real week carries its Thursday rows: 5/14 and 5/21 here.
+    expect(events).toHaveLength(4);
     expect(events[0]).toMatchObject({
       date: '2026-05-13',
       day: 'Wednesday',
@@ -411,6 +425,19 @@ describe('populated 2026 release arrays — getMacroEventsInWindow over a real w
       category: 'Retail Sales',
       impact: 'high',
       event: 'Retail Sales (March)',
+    });
+    expect(events[2]).toMatchObject({
+      date: '2026-05-14',
+      day: 'Thursday',
+      category: 'Jobless Claims',
+      impact: 'medium',
+      event: 'Initial Jobless Claims',
+    });
+    expect(events[3]).toMatchObject({
+      date: '2026-05-21',
+      day: 'Thursday',
+      category: 'Jobless Claims',
+      event: 'Initial Jobless Claims',
     });
   });
 });

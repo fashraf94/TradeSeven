@@ -20,7 +20,24 @@ import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedC
 import { appendEconomics } from '../_utils/fantasyTimesConsensus.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
-import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
+import {
+  resolveWireMarketDate,
+  deriveMarketDate,
+  startOfEtDay,
+  assertMaintainedYear,
+} from '../_utils/wireCalendar.js';
+import { getPreviousTradingDay } from '../_utils/marketSchedule.js';
+import { getMacroEventsInWindow } from '../_utils/macroCalendar.js';
+import {
+  fetchEconomicEventsEODHD,
+  joinOperandsToEvents,
+  isSettled,
+} from '../_utils/fetchEconomicEventsEODHD.js';
+import {
+  verifyEconPrint,
+  parseEconOperand,
+  assessEconPlausibility,
+} from '../_utils/econPrintVerifier.js';
 import { canonicalizeEconEvent } from '../_utils/wireIdentity.js';
 import { econSubjectRefForSlug } from '../_utils/wireContracts.js';
 import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
@@ -32,11 +49,10 @@ export const config = { maxDuration: 60 };
 const LOG_PREFIX = '[FantasyTimes:Neta:Econ]';
 const VALID_MODES = ['recap', 'preview'];
 
-// Tier 1 high-impact event categories and keywords
-const TIER_1_KEYWORDS = [
-  'cpi', 'nfp', 'non-farm', 'nonfarm', 'payrolls', 'gdp', 'ppi',
-  'fed', 'fomc', 'interest rate', 'federal reserve', 'pce',
-];
+// R-A1 (Recap Restoration rulings, Jul 30 2026): Tier-1 for the RECAP gate
+// is macroCalendar array membership — the feed-driven keyword/impact
+// classifier that lived here is retired for this path. (Its twin in
+// ingest-econ.js is a different consumer and stays as-is per the register.)
 
 function logInfo(msg, data = null) {
   const ts = new Date().toISOString();
@@ -50,15 +66,6 @@ function logError(msg, data = null) {
 
 function getTodayET() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-}
-
-/**
- * Check if an event is Tier 1 (high impact, market-moving).
- */
-function isTier1Event(event) {
-  if (event.impact === 'high') return true;
-  const name = (event.event || '').toLowerCase();
-  return TIER_1_KEYWORDS.some((kw) => name.includes(kw));
 }
 
 /**
@@ -181,59 +188,129 @@ export default async function handler(req, res) {
 }
 
 /**
- * MODE A: Recap — generates stories for Tier 1 economic data releases.
+ * MODE A: Recap — generates stories for Tier-1 economic data releases.
+ *
+ * Recap Restoration mini-arc (spec V1.1 + Jul 30 rulings): deterministic
+ * end-to-end. The Tier-1 set and release dates/times come from the
+ * macroCalendar arrays (R-A1); operands come from EODHD /economic-events
+ * (R-B1); the plausibility gate + settle delay guard ingestion (R-B1a);
+ * referent dedup runs pre-model-call (C8/R-B4); every firing emits ONE
+ * greppable outcome line carrying the F1 dual count (R-B6):
+ *   outcome=<fetch_failed|empty_window|already_written|operand_implausible|wrote>
+ *   fetched=<EODHD rows pre-filter> tier1=<released+settled Tier-1 count>
  */
 async function handleRecap(req, res, db) {
-  logInfo('Fetching economic events from Sonar...');
-  const calendar = await fetchEconomicEvents();
-  const events = calendar.thisWeek || [];
+  const wireInstant = new Date();
+  const todayET = deriveMarketDate(wireInstant);
+  // Two-session operand window: a release missed by every same-day firing
+  // (outage) is recoverable the next morning; referent dedup makes the
+  // overlap exactly-once (C8 "window overlap becomes resilience").
+  // assertMaintainedYear closes the walker's 2028 silent-mislabel gap
+  // before walking (R-B2, one-line port).
+  assertMaintainedYear(todayET);
+  const priorSessionET = getPreviousTradingDay(todayET);
 
-  // Filter to Tier 1 events with actual values (data has been released)
-  const releasedTier1 = events.filter(
-    (e) => e.actual !== null && e.actual !== undefined && isTier1Event(e)
-  );
+  // R-A1: array membership IS the Tier-1 classification.
+  const tier1Events = getMacroEventsInWindow({ fromDate: priorSessionET, toDate: todayET });
 
-  if (releasedTier1.length === 0) {
-    logInfo('No Tier 1 events with released data found');
+  // R-B1: operands from EODHD. A throw here is the one fetch_failed site
+  // (R-B6) — distinguishable from an empty window by construction.
+  let operandRows;
+  try {
+    operandRows = await fetchEconomicEventsEODHD({ fromDate: priorSessionET, toDate: todayET });
+  } catch (err) {
+    logError(`outcome=fetch_failed fetched=0 tier1=0 error=${err.message}`);
     return res.status(200).json({
-      success: true,
-      skipped: true,
-      reason: 'No Tier 1 events with released data',
+      success: false, skipped: true, code: 'fetch_failed',
+      reason: 'EODHD economic-events fetch failed',
     });
   }
 
-  logInfo('Tier 1 released events found', { count: releasedTier1.length });
+  const joined = joinOperandsToEvents(tier1Events, operandRows);
 
-  // Dedup: check which events Neta has already covered today
-  const todayET = getTodayET();
-  const startOfDay = new Date(`${todayET}T00:00:00-05:00`);
+  // Released = matched operand row with an actual present; settled per
+  // R-B1a(ii) (release time + one cron tick).
+  const released = joined.filter(({ event, operands }) =>
+    operands && operands.actual !== null && operands.actual !== undefined
+    && isSettled(event, wireInstant, todayET));
 
-  const dedupQuery = await db
-    .collection('fantasyTimesStories')
-    .where('reporter', '==', 'neta')
-    .where('type', '==', 'econ_recap')
-    .where('publishedAt', '>', startOfDay)
-    .limit(50)
-    .get();
+  // Priority when multiple uncovered: high-impact categories first (R-A1),
+  // then chronological.
+  released.sort((a, b) => {
+    const impA = a.event.impact === 'high' ? 0 : 1;
+    const impB = b.event.impact === 'high' ? 0 : 1;
+    if (impA !== impB) return impA - impB;
+    return a.event.date < b.event.date ? -1 : a.event.date > b.event.date ? 1 : 0;
+  });
 
-  const coveredEvents = new Set(
-    dedupQuery.docs.map((doc) => doc.data().dataSnapshot?.eventName).filter(Boolean)
-  );
+  // The single per-firing outcome line (F1 dual count + taxonomy code).
+  const counts = { fetched: operandRows.length, tier1: released.length };
+  const skip = (code, reason) => {
+    logInfo(`outcome=${code} fetched=${counts.fetched} tier1=${counts.tier1}`);
+    return res.status(200).json({ success: true, skipped: true, code, reason });
+  };
 
-  const uncoveredEvents = releasedTier1.filter((e) => !coveredEvents.has(e.event));
-
-  if (uncoveredEvents.length === 0) {
-    logInfo('All Tier 1 events already covered today');
-    return res.status(200).json({
-      success: true,
-      skipped: true,
-      reason: 'All Tier 1 events already covered',
-    });
+  if (released.length === 0) {
+    return skip('empty_window', 'No released Tier-1 events in window');
   }
 
-  // Generate a story for the first uncovered event
-  const event = uncoveredEvents[0];
-  logInfo('Generating recap for event', { event: event.event });
+  // C8(a)/(b) + R-B4: referent dedup BEFORE the model call. Identity =
+  // (canonical event slug, referentDate). referentDate is a top-level story
+  // field (never inside dataSnapshot — C1 freeze); the slug is recomputed
+  // from the stored eventName, so no second identity field is needed.
+  // Non-superseded = published and not stamped wireSuperseded.
+  const referentDates = [...new Set(released.map((r) => r.event.date))];
+  const existingDocs = [];
+  for (const d of referentDates) {
+    const snap = await db
+      .collection('fantasyTimesStories')
+      .where('type', '==', 'econ_recap')
+      .where('referentDate', '==', d)
+      .limit(50)
+      .get();
+    existingDocs.push(...snap.docs);
+  }
+  const covered = new Set(
+    existingDocs
+      .map((doc) => doc.data())
+      .filter((s) => s.status === 'published' && !s.wireSuperseded)
+      .map((s) => `${canonicalizeEconEvent(s.dataSnapshot?.eventName)}:${s.referentDate}`)
+  );
+
+  // First uncovered candidate that passes the R-B1a plausibility gate;
+  // held candidates log loud and are skipped (one bad operand must not
+  // starve the day's remaining events).
+  let heldCount = 0;
+  let chosen = null;
+  for (const candidate of released) {
+    const slug = canonicalizeEconEvent(candidate.event.event);
+    if (covered.has(`${slug}:${candidate.event.date}`)) continue;
+    const gate = assessEconPlausibility(candidate.event.category, candidate.operands);
+    if (gate.hold) {
+      heldCount += 1;
+      logError(
+        `operand_implausible category=${candidate.event.category} event="${candidate.event.event}" ` +
+        `matchedType="${candidate.matchedType}" reason=${gate.reason} detail="${gate.detail}"`,
+      );
+      continue;
+    }
+    chosen = { ...candidate, slug };
+    break;
+  }
+
+  if (!chosen) {
+    if (heldCount > 0) {
+      return skip('operand_implausible', `${heldCount} candidate(s) held by the plausibility gate`);
+    }
+    return skip('already_written', 'All released Tier-1 events already covered');
+  }
+
+  const event = chosen.event;
+  // Publication-side verification status (R2 vocabulary). The unparseable
+  // case never reaches here — the plausibility gate held it above.
+  const verification = verifyEconPrint(chosen.operands);
+  const previousParsed = parseEconOperand(chosen.operands.previous);
+  logInfo('Generating recap for event', { event: event.event, verification: verification.status });
 
   // Fetch SPY/QQQ reaction
   const [spyData, qqqData] = await Promise.all([
@@ -241,16 +318,27 @@ async function handleRecap(req, res, db) {
     fetchRealTimePrice('QQQ'),
   ]);
 
+  // Operand lines render from the PARSED values — the same numbers stored
+  // in dataSnapshot and appended to consensus, so prompt, snapshot and
+  // consensus can never disagree (§9 display-agreement by construction).
+  // A missing estimate degrades honestly (R2: never reject wholesale).
+  const estimateLine = verification.status === 'VERIFIED'
+    ? `Estimate: ${verification.estimateValue}`
+    : 'Estimate: not available (no consensus published — do NOT invent an expectation)';
+  const verificationLine = verification.status === 'VERIFIED'
+    ? 'Print verification: VERIFIED (actual compared against consensus estimate)'
+    : 'Print verification: NOT VERIFIABLE (missing consensus estimate)';
+
   let userMessage = [
     `ECONOMIC DATA RELEASE:`,
     `Event: ${event.event}`,
     `Date: ${event.date} at ${event.time}`,
     `Category: ${event.category}`,
     `Impact: ${event.impact}`,
-    `Previous: ${event.previous}`,
-    `Estimate: ${event.estimate}`,
-    `Actual: ${event.actual}`,
-    `Brief: ${event.brief || 'N/A'}`,
+    `Previous: ${previousParsed.ok ? previousParsed.value : 'N/A'}`,
+    estimateLine,
+    `Actual: ${verification.actualValue}`,
+    verificationLine,
     '',
     'MARKET REACTION:',
     spyData ? `SPY: $${spyData.price.toFixed(2)} (${spyData.changePercent >= 0 ? '+' : ''}${spyData.changePercent.toFixed(2)}%)` : 'SPY: unavailable',
@@ -274,11 +362,12 @@ async function handleRecap(req, res, db) {
   // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8; V1.6 A2/A4) ──────────────
   // Single-eventType seam: pinned to econ_print (A4). The subjectRef is
   // SERVER-STAMPED from the trigger's event name pre-call (A2) — the pinned
-  // schema never offers the field to the model.
+  // schema never offers the field to the model. wireInstant/the canonical
+  // slug were established at the top of handleRecap (B5: pre-model-call);
+  // the Wire receipt bucket stays firing-scoped — never re-keyed (C8).
   const wireFlags = getWireFlags();
-  const wireInstant = new Date();
   const marketDate = resolveWireMarketDate(wireInstant);
-  const wireEconSlug = canonicalizeEconEvent(event.event);
+  const wireEconSlug = chosen.slug;
   const wireInstruction = wireFlags.writesEnabled
     ? buildAgentFactsInstruction('neta', { pinEventType: 'econ_print' })
     : '';
@@ -331,17 +420,23 @@ async function handleRecap(req, res, db) {
     sentiment: storyData.sentiment || 'neutral',
     urgency: 'timely',
     recommended_action: storyData.recommended_action || 'RESEARCH',
+    // referentDate: the EVENT's release date — the C8(a) identity component
+    // the pre-call dedup queries. Top-level by ruling R-B4 (never inside
+    // dataSnapshot: C1 photographs snapshot key sets).
+    referentDate: event.date,
     dataSnapshot: {
+      // Same frozen key set as before (C1); values are now the PARSED
+      // numbers the prompt rendered — one source, no drift (§9).
       eventName: event.event,
       category: event.category,
-      actual: event.actual,
-      estimate: event.estimate,
-      previous: event.previous,
+      actual: verification.actualValue,
+      estimate: verification.status === 'VERIFIED' ? verification.estimateValue : null,
+      previous: previousParsed.ok ? previousParsed.value : null,
       impact: event.impact,
       spy: spyData ? { price: spyData.price, changePercent: spyData.changePercent } : null,
       qqq: qqqData ? { price: qqqData.price, changePercent: qqqData.changePercent } : null,
     },
-    newsContext: [event.brief].filter(Boolean),
+    newsContext: [],
     generatedBy: REPORTER_PROFILES.neta.model,
     batchId: null,
     publishedAt: now,
@@ -378,7 +473,8 @@ async function handleRecap(req, res, db) {
   // Close the measured window immediately: nothing between the
   // publish and this line may be metrics I/O.
   const genPublishMs = Date.now() - wireT0;
-  logInfo(`Published econ recap ${docRef.id}`, { event: event.event, headline: storyDoc.headline });
+  logInfo(`outcome=wrote fetched=${counts.fetched} tier1=${counts.tier1} storyId=${docRef.id}`,
+    { event: event.event, headline: storyDoc.headline });
 
   if (wireFlags.metricsEnabled) {
     // generate_publish is captured BEFORE any metrics I/O so the
@@ -389,15 +485,19 @@ async function handleRecap(req, res, db) {
     }
   }
 
-  // Write economic event to consensus
+  // Write economic event to consensus. R-B3: the FINAL-LOCK §3 join stands
+  // — the bucket key is the locked UTC expression, evaluated on the SAME
+  // instant as the story's publishedAt (`now`), so the adapter join off
+  // publishedAt lands on this doc by construction, including across the
+  // UTC midnight boundary. Never re-key to the event date (C8(c) superseded).
   try {
-    const today = new Date().toISOString().split('T')[0];
-    await appendEconomics(today, {
+    const consensusDate = now.toISOString().split('T')[0];
+    await appendEconomics(consensusDate, {
       event: event.event,
-      actual: event.actual,
-      expected: event.estimate,
+      actual: verification.actualValue,
+      expected: verification.status === 'VERIFIED' ? verification.estimateValue : null,
       impact: storyData.sentiment || event.impact || 'neutral',
-      time: new Date().toISOString(),
+      time: now.toISOString(),
     });
   } catch (err) {
     console.error('[CONSENSUS] Failed to append economics:', err.message);
@@ -421,9 +521,9 @@ async function handleRecap(req, res, db) {
  * MODE B: Preview — generates weekly economic calendar preview (Sunday evening).
  */
 async function handlePreview(req, res, db) {
-  // Dedup: one preview per week
-  const todayET = getTodayET();
-  const startOfDay = new Date(`${todayET}T00:00:00-05:00`);
+  // Dedup: one preview per week. ET day boundary via startOfEtDay — the
+  // hardcoded -05:00 idiom was an hour early all summer (R-B2 register).
+  const startOfDay = startOfEtDay(new Date());
 
   const dedupQuery = await db
     .collection('fantasyTimesStories')
@@ -442,8 +542,20 @@ async function handlePreview(req, res, db) {
     });
   }
 
+  // Sonar remains the PREVIEW source (R-B1: recap is deterministic; preview
+  // keeps the forward-looking narrative feed). A Sonar outage is the
+  // preview's fetch_failed site (R-B6) — distinguishable from a quiet week.
   logInfo('Fetching economic events from Sonar for preview...');
-  const calendar = await fetchEconomicEvents();
+  let calendar;
+  try {
+    calendar = await fetchEconomicEvents();
+  } catch (err) {
+    logError(`outcome=fetch_failed mode=preview error=${err.message}`);
+    return res.status(200).json({
+      success: false, skipped: true, code: 'fetch_failed',
+      reason: 'Sonar economic-events fetch failed',
+    });
+  }
   const nextWeekEvents = calendar.nextWeek || [];
   const thisWeekRemaining = (calendar.thisWeek || []).filter(
     (e) => e.actual === null || e.actual === undefined

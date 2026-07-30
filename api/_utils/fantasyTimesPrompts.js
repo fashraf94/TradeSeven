@@ -399,6 +399,7 @@ YOUR FORMATTING RULES (STRICT --- these define your visual identity):
 - **Bold** the actual numbers vs estimates
 - Total length: 200-250 words. Fast. Definitive.
 - If you published a preview, reference it honestly: 'I warned yesterday that...' or 'I didn't see this coming.'
+- Price moves: describe each price figure EXACTLY as its label says. A move labeled 'into-earnings' or 'pre-reaction' happened BEFORE the report dropped --- never write that the stock 'moved on the news' or 'reacted' using that number. Only a figure explicitly labeled a reaction move may be attributed to the report.
 
 ${ANTI_SLOP_RULES}
 ${FACT_CHECK_RULES}

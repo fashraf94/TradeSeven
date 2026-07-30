@@ -59,9 +59,18 @@ import { createHash } from 'node:crypto';
 // forces a conservative-but-harmless bump. (P1 code-review finding, confirmed:
 // ingestedClaims.js was a false-negative hole in the v1 manifest.)
 export const GENERATION_SURFACE = Object.freeze([
+  // econPrintVerifier + fetchEconomicEventsEODHD (Recap Restoration arc):
+  // the verifier's status/holds and the category matcher table both select
+  // and shape prompt content for the neta_econ_recap seam — generation-
+  // bearing, so surface-listed. macroCalendar.js (the Tier-1 set) is
+  // deliberately NOT listed — it is shared config also feeding the DRB
+  // (rankingConfig precedent: file-level inclusion would reset gateEpoch on
+  // every annual calendar refresh); flagged in the arc build report.
+  'api/_utils/econPrintVerifier.js',
   'api/_utils/fantasyTimesConsensus.js',
   'api/_utils/fantasyTimesPrompts.js',
   'api/_utils/fantasyTimesTickers.js',
+  'api/_utils/fetchEconomicEventsEODHD.js',
   'api/_utils/ingestedClaims.js',
   'api/_utils/stockIntelligenceData.js',
   'api/_utils/wireContinuity.js',

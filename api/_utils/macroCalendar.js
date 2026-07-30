@@ -11,11 +11,11 @@
 //      calendars. Each array holds 2026 entries in MacroEvent shape;
 //      refresh annually from the source URLs in the table below.
 //
-//   2. Computed helpers (5 categories: NFP, JOLTS, ISM Manufacturing,
-//      ISM Services, Consumer Confidence). Releases that follow
-//      deterministic monthly patterns (first Friday, Nth business day,
-//      last Tuesday). Compiled at call time for the year(s) the window
-//      touches, so they need no annual refresh.
+//   2. Computed helpers (6 categories: NFP, JOLTS, ISM Manufacturing,
+//      ISM Services, Consumer Confidence, Jobless Claims). Releases that
+//      follow deterministic patterns (first Friday, Nth business day,
+//      last Tuesday, every Thursday). Compiled at call time for the year(s)
+//      the window touches, so they need no annual refresh.
 //
 //   3. getMacroEventsInWindow({ fromDate, toDate }) — concatenates every
 //      source, filters inclusively by date, returns sorted ascending.
@@ -29,7 +29,7 @@
 //     time:     "8:30 AM ET" | "10:00 AM ET" | "2:00 PM ET",
 //     category: "FOMC" | "NFP" | "CPI" | "PPI" | "PCE" | "Retail Sales"
 //             | "GDP" | "Productivity" | "JOLTS" | "ISM Manufacturing"
-//             | "ISM Services" | "Consumer Confidence",
+//             | "ISM Services" | "Consumer Confidence" | "Jobless Claims",
 //     impact:   "high" | "medium",
 //     event:    string,
 //   }
@@ -86,6 +86,7 @@ const MONTH_NAMES = [
 const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 const TUESDAY = 2;
+const THURSDAY = 4;
 const FRIDAY = 5;
 
 // =============================================================================
@@ -298,6 +299,27 @@ export function getConsumerConfidenceDates(year) {
   });
 }
 
+// Initial Jobless Claims (DOL) — released every Thursday at 8:30 AM ET.
+// Added per the Recap Restoration ruling R-A1 (Jul 30, 2026): jobless claims
+// is Tier-1 by array membership; its weekly cadence is what gives the R9
+// liveness row its ≤1-week bound. When Thursday is a market holiday, DOL
+// releases EARLIER (the prior business day — Thanksgiving-week practice),
+// unlike NFP's forward shift.
+export function getJoblessClaimsDates(year) {
+  const events = [];
+  let date = firstWeekdayOfYear(year, THURSDAY);
+  while (date.getFullYear() === year) {
+    let releaseDate = date;
+    if (isMarketHoliday(formatDateString(releaseDate))) {
+      releaseDate = previousBusinessDay(releaseDate);
+    }
+    events.push(makeMacroEvent(releaseDate, '8:30 AM ET', 'Jobless Claims', 'medium',
+      'Initial Jobless Claims'));
+    date = addDays(date, 7);
+  }
+  return events;
+}
+
 // =============================================================================
 // Date primitives — local-TZ Date arithmetic + marketSchedule helpers for
 // holiday/format. Local-TZ getters are paired with local-TZ Date constructors
@@ -327,6 +349,18 @@ function nextBusinessDay(date) {
   let candidate = addDays(date, 1);
   while (!isBusinessDay(candidate)) candidate = addDays(candidate, 1);
   return candidate;
+}
+
+function previousBusinessDay(date) {
+  let candidate = addDays(date, -1);
+  while (!isBusinessDay(candidate)) candidate = addDays(candidate, -1);
+  return candidate;
+}
+
+function firstWeekdayOfYear(year, weekday) {
+  const jan1 = dateAt(year, 1, 1);
+  const offset = (weekday - jan1.getDay() + 7) % 7;
+  return dateAt(year, 1, 1 + offset);
 }
 
 function nthWeekdayOfMonth(year, month, n, weekday) {
@@ -397,6 +431,7 @@ export function getMacroEventsInWindow({ fromDate, toDate }) {
     ...getISMManufacturingDates(year),
     ...getISMServicesDates(year),
     ...getConsumerConfidenceDates(year),
+    ...getJoblessClaimsDates(year),
   ]);
 
   const hardcoded = [
