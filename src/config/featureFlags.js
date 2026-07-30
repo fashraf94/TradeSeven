@@ -1145,3 +1145,122 @@ export const EVAL_IDENTITY_BLOCK_ENABLED = false;
  * goldens in the SAME commit, exactly as the flip's reconciliation did.
  */
 export const FUNDAMENTAL_MIRROR_ENABLED = true;
+
+/**
+ * Delight Layer Task 2 — the BATTLE-WEATHER STARFIELD on the DESKTOP dashboard
+ * (spec V2, ruling R-T2-S5). A read-only ambient display layer: it writes
+ * nothing, gates nothing, and is removable without touching any scoring or
+ * decision path — the AGENT_PRESENCE_ENABLED / MATCHUPS_BACKDROP_ENABLED shape.
+ *
+ * When FALSE (DEFAULT, merge-dark), the desktop dashboard is byte-identical to
+ * today: `App.jsx:8631` mounts `DesktopBackground` (price lines and all) and the
+ * `CommandDashboardDesktop` root keeps its opaque `CMD.bg` paint. Nothing
+ * imports the canvas, no loop is ever scheduled (`resolveLoopPlan` returns
+ * flag-off), and `StarfieldBackground` is absent from the render tree — asserted
+ * by starfield.inert.test.jsx (acceptance row A1).
+ *
+ * When TRUE, that ONE mount swaps to `StarfieldBackground` and that ONE root
+ * paint becomes transparent so the field shows through. `DesktopBackground.jsx`
+ * itself is NOT edited by this task and keeps rendering on the other six
+ * screens — so post-flip the app deliberately runs two ambient systems until the
+ * everywhere-swap follow-on (spec V2 §7). The price lines are NOT deleted here,
+ * which is why this flip does not touch tokenGuardBaseline.json (R-T2-S6).
+ *
+ * Built/merged DARK; flip in a one-line follow-up PR carrying the A7 founder
+ * feel sign-off after a Vercel preview smoke (the MATCHUPS_BACKDROP_ENABLED
+ * precedent) — never in the build PR.
+ */
+export const STARFIELD_BACKGROUND_ENABLED = false;
+
+/**
+ * The ONE home for the desktop starfield gate — the flag OR the `?starfield=1`
+ * dev-preview override (the `?matchupsBackdrop=1` idiom). SSR/Node-safe (guards
+ * `window`); a malformed URL degrades to the flag alone.
+ */
+export function isStarfieldOn() {
+  if (STARFIELD_BACKGROUND_ENABLED) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('starfield') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Delight Layer Task 2, Amendment A — the starfield on the MOBILE dashboard.
+ *
+ * DELIBERATELY INDEPENDENT of STARFIELD_BACKGROUND_ENABLED, and that
+ * independence is the point: beta testers judge this on phones, so mobile must
+ * be able to go dark on its own if a tester's device struggles, without
+ * disturbing the desktop verdict. Never AND-gate the two.
+ *
+ * When FALSE (DEFAULT, merge-dark), the mobile dashboard is byte-identical to
+ * today: `App.jsx:8584` mounts `DesktopBackground` (which self-returns null on
+ * mobile — mobile has no background layer at all today) and the
+ * `CommandDashboard` root keeps its opaque `CMD.bg` paint.
+ *
+ * When TRUE, `StarfieldBackground` renders there in `mode="mobile"` — its own
+ * budget tier (fewer particles, DPR capped at 1.5), not a shrunken desktop
+ * field — and that root paint becomes transparent. Because this puts NEW surface
+ * under existing content rather than swapping an existing layer, card legibility
+ * at peak intensity is the hard constraint on the mobile feel gate (A7).
+ *
+ * Built/merged DARK; flipped separately from desktop after its own phone smoke.
+ */
+export const STARFIELD_MOBILE_ENABLED = false;
+
+/**
+ * The ONE home for the mobile starfield gate — the flag OR `?starfieldMobile=1`.
+ * SSR/Node-safe; malformed URL degrades to the flag alone.
+ */
+export function isStarfieldMobileOn() {
+  if (STARFIELD_MOBILE_ENABLED) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('starfieldMobile') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Delight Layer Task 2 — the DEV STATE OVERRIDE (ruling R-T2-S4).
+ *
+ * The feel-tuning instrument: `?warpState=resting|live|endgame` with an optional
+ * `?warpClock=<seconds>` for where inside the endgame ramp to sit. Phase 0 found
+ * ZERO house precedent for localStorage feature gating (the sole dev key,
+ * `mc_api_debug`, toggles a debug monitor), so the spec's original localStorage
+ * proposal was ruled dead in favour of this URL-param form — the same shape as
+ * the five `isXxxOn()` helpers above.
+ *
+ * Honored only when the relevant starfield flag already resolves on, and it WINS
+ * over live inputs. It does NOT drive a parallel display path: the override is
+ * converted into the same `liveGames` shape the live adapter produces
+ * (`synthesizeOverrideGames`), so it exercises the real state machine rather
+ * than a look-alike that could drift from it.
+ *
+ * SSR/Node-safe. Returns null when absent or unrecognised — distinct from the
+ * `resting` state, which is a real instruction to show the calm sky.
+ *
+ * @returns {{state: 'resting'|'live'|'endgame', clockSeconds: number|null}|null}
+ */
+export function getWarpDevOverride() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('warpState');
+    if (!raw) return null;
+
+    const state = String(raw).trim().toLowerCase();
+    if (state !== 'resting' && state !== 'live' && state !== 'endgame') return null;
+
+    const rawClock = params.get('warpClock');
+    const parsed = rawClock == null ? NaN : Number(rawClock);
+    const clockSeconds = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+
+    return { state, clockSeconds };
+  } catch {
+    return null;
+  }
+}

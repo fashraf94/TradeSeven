@@ -41,7 +41,11 @@ import { subscribeMyGroup } from '../../services/tournamentGroupService';
 import { casualDeployMissesPodSession } from '../../constants/leagueTournament';
 import { getMarketState } from '../../utils/marketSchedule';
 import { getEquipSlotCounts } from '../../utils/equipSlots';
-import { SCOUTING_BOARD_ENABLED, isDeployCeremonyOn } from '../../config/featureFlags';
+// isStarfieldMobileOn (Delight Layer Task 2, Amendment A2): this component's root
+// paints an OPAQUE CMD.bg over the z0 background slot, so it is what hides the
+// starfield. Flag on => transparent and the field shows through; off =>
+// byte-identical to today.
+import { SCOUTING_BOARD_ENABLED, isDeployCeremonyOn, isStarfieldMobileOn } from '../../config/featureFlags';
 import HoldToDeployButton from './deployCeremony/HoldToDeployButton';
 import DeployCeremony from './deployCeremony/DeployCeremony';
 
@@ -153,6 +157,7 @@ export default function CommandDashboard({
   // carries the client's own deployAgent outcome for the dual-signal reveal /
   // error surface (spec §5.3).
   const ceremonyOn = isDeployCeremonyOn();
+  const starfieldOn = isStarfieldMobileOn();
   const [ceremonyOpen, setCeremonyOpen] = useState(false);
   const [deployResult, setDeployResult] = useState(null);
   const [ceremonyRun, setCeremonyRun] = useState(0); // bump remounts the ceremony (retry)
@@ -228,7 +233,7 @@ export default function CommandDashboard({
   const dateLabel = prettyDate(drb.forDate);
 
   return (
-    <div style={{ minHeight: '100vh', background: CMD.bg, color: CMD.ink, position: 'relative', zIndex: 1 }}>
+    <div style={{ minHeight: '100vh', background: starfieldOn ? 'transparent' : CMD.bg, color: CMD.ink, position: 'relative', zIndex: 1 }}>
       <motion.div
         variants={containerVariants}
         initial="hidden"

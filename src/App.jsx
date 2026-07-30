@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { fetchWithAuth } from './utils/fetchWithAuth';
 import ClashBotWidget from './components/ClashBot/ClashBotWidget';
 import BugReportAdmin from './components/ClashBot/BugReportAdmin';
@@ -115,7 +115,12 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
-import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn } from './config/featureFlags';
+import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn } from './config/featureFlags';
+// Delight Layer Task 2: the battle-weather starfield. Mounted ONLY at the two
+// dashboard sites below, each behind its own flag; every other DesktopBackground
+// mount is untouched (spec V2 R-T2-S5 + Amendment A2).
+import StarfieldBackground from './components/StarfieldBackground';
+import { toLiveGames } from './components/warpBattleAdapter';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { OnboardingExperience } from './components/Agent';
 import LeagueScreen from './screens/LeagueScreen';
@@ -2338,6 +2343,16 @@ export default function PortfolioDuel() {
   const [completedDraftBattles, setCompletedDraftBattles] = useState([]);
   const [activeTrainingBattles, setActiveTrainingBattles] = useState([]); // Firebase-persisted training battles
   const [activeAgentBattles, setActiveAgentBattles] = useState([]); // agentBattles collection (agent deploys)
+  // Delight Layer Task 2 Phase 2 (R-T2-S1): the starfield's live-game input, a
+  // pure projection of the poll result above — ZERO new Firestore reads. It
+  // deliberately reuses the SAME source and status filter the "No battle live"
+  // card uses, so they agree on which battles are live (they diverge only after
+  // a battle's local expiresAt passes — the sky calms, the card waits for the
+  // server status flip; see warpBattleAdapter.js).
+  // A new array identity every 120s poll is expected and harmless: the
+  // starfield holds this in a ref and never lists it as an effect dependency
+  // (guarded by starfield.depstability.test.jsx).
+  const starfieldLiveGames = useMemo(() => toLiveGames(activeAgentBattles), [activeAgentBattles]);
   const [completedTrainingBattles, setCompletedTrainingBattles] = useState([]); // For Battle History training tab
   const [loadingTrainingBattles, setLoadingTrainingBattles] = useState(false);
   const [completedBaggerBombBattles, setCompletedBaggerBombBattles] = useState([]); // For Battle History BaggerBomb tab (Firestore)
@@ -8564,7 +8579,13 @@ export default function PortfolioDuel() {
       return (
         <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
           <div style={containerStyle}>
-            <DesktopBackground isDesktop={isDesktop} />
+            {/* Delight Layer Task 2 (Amendment A2): the mobile starfield, behind
+                its OWN flag so a struggling phone can go dark without touching
+                the desktop verdict. Flag off = DesktopBackground exactly as
+                before (which self-returns null here) — byte-identical. */}
+            {isStarfieldMobileOn()
+              ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} />
+              : <DesktopBackground isDesktop={isDesktop} />}
             <DashboardComponent
               user={user}
               setShowForge={setShowForge}
@@ -8605,7 +8626,13 @@ export default function PortfolioDuel() {
     return (
       <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
         <div style={containerStyle}>
-          <DesktopBackground isDesktop={isDesktop} />
+          {/* Delight Layer Task 2 (R-T2-S5): the desktop starfield replaces the
+              price-line background at THIS mount only. DesktopBackground.jsx is
+              not edited and still renders on the other six screens; flag off is
+              byte-identical to today. */}
+          {isStarfieldOn()
+            ? <StarfieldBackground mode="desktop" liveGames={starfieldLiveGames} />
+            : <DesktopBackground isDesktop={isDesktop} />}
 
           {COMMAND_DASHBOARD_DESKTOP_ENABLED ? (
             // Desktop Command surface (dark behind the flag). Offset for the
