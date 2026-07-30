@@ -23,7 +23,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
-import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
+import LeagueBattleViewRender from './leagueBattleViewRender';
 import { subscribeMyGroup } from '../services/tournamentGroupService';
 import { getWeeklyComposite, getWeeklyScore, round2 } from '../constants/leagueTournament';
 
@@ -88,17 +88,17 @@ export default function LeagueBattleViewConnected({ onBack = null }) {
     );
   }
 
+  // Delegate to the node-clean render split: Arena when ARENA_LIVE_ON, else the
+  // classic Flat6BattleView — mirroring the League hosts (Spec V1.2 Correction 1).
   return (
-    <div style={{ minHeight: '100vh', background: '#050609', padding: isDesktop ? 16 : 0, boxSizing: 'border-box' }}>
-      <LeagueBattleArenaLive
-        group={group}
-        battle={battle}
-        mode={mode}
-        uid={uid}
-        compositeContext={compositeContext}
-        onBack={onBack}
-        viewport={isDesktop ? 'desktop' : 'mobile'}
-      />
-    </div>
+    <LeagueBattleViewRender
+      group={group}
+      battle={battle}
+      mode={mode}
+      uid={uid}
+      compositeContext={compositeContext}
+      isDesktop={isDesktop}
+      onBack={onBack}
+    />
   );
 }
