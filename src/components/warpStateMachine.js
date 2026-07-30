@@ -215,15 +215,60 @@ export function normalizeLiveGames(liveGames, now) {
 }
 
 /**
- * R-PREC — the soonest-ending live game governs.
+ * Where a game sits inside its OWN endgame window, or null if it is not in one.
  *
- * Games with a provable end sort ahead of clockless ones: an unknown end cannot
- * claim to be "soonest". Ties break on key so precedence is deterministic and a
- * re-render can never thrash the governing choice (feel criterion 4).
+ * The unit of URGENCY under State Map Amendment B: `progress` is the fraction of
+ * that game's window already elapsed, so it is comparable across games with
+ * wildly different durations.
  */
-export function selectGoverningGame(normalized) {
+export function endgameProgress(game, now, tuning = WARP_TUNING) {
+  if (!game || game.endsAt == null) return null;
+  const windowMs = endgameWindowMs(game.totalDuration, tuning);
+  if (windowMs <= 0) return null;                 // unprovable clock — no endgame
+  const remainingMs = game.endsAt - now;
+  if (remainingMs > windowMs) return null;        // not in its window yet
+  return { windowMs, remainingMs, progress: clamp01(1 - remainingMs / windowMs) };
+}
+
+/**
+ * R-PREC, as amended by State Map Amendment B (ruling R-T2-S9).
+ *
+ * The governing game is the one FURTHEST INTO its endgame window, measured by
+ * fraction of window elapsed. Only if no game is inside its window does the
+ * soonest-ending game govern.
+ *
+ * WHY URGENCY RATHER THAN RAW END TIME: the original rule let a short battle
+ * that happens to end slightly sooner take the field while a longer battle was
+ * deep in its own final quarter — so the sky could sit calm through somebody's
+ * actual peak. Worked case that drove the amendment: A ends in 20 min of a
+ * 40-min run (window 10 min, so NOT in its window) while B ends in 25 min of a
+ * 100-min run (window 25 min, so exactly AT its window edge). Raw end time hands
+ * the field to A and shows BATTLE LIVE; urgency hands it to B and starts the
+ * ramp. One clock still governs at all times, so the ramp stays coherent.
+ *
+ * Ties break on key so precedence is deterministic and a re-render can never
+ * thrash the governing choice (feel criterion 4).
+ */
+export function selectGoverningGame(normalized, now, tuning = WARP_TUNING) {
   if (!normalized || normalized.length === 0) return null;
 
+  // PASS 1 — anybody inside their own window? Most-progressed wins.
+  let urgent = null;
+  let urgentProgress = -Infinity;
+  for (const game of normalized) {
+    const eg = endgameProgress(game, now, tuning);
+    if (eg === null) continue;
+    if (eg.progress > urgentProgress
+      || (eg.progress === urgentProgress && urgent !== null && game.key < urgent.key)) {
+      urgent = game;
+      urgentProgress = eg.progress;
+    }
+  }
+  if (urgent !== null) return urgent;
+
+  // PASS 2 — nobody is in a window, so the soonest-ending live game governs.
+  // Games with a provable end sort ahead of clockless ones: an unknown end
+  // cannot claim to be "soonest".
   let best = null;
   for (const game of normalized) {
     if (best === null) { best = game; continue; }
@@ -261,17 +306,20 @@ export function resolveTier({ liveGames, now }, tuning = WARP_TUNING) {
     };
   }
 
-  const governing = selectGoverningGame(normalized);
-  const windowMs = endgameWindowMs(governing.totalDuration, tuning);
-  const remainingMs = governing.endsAt == null ? null : governing.endsAt - now;
+  const governing = selectGoverningGame(normalized, now, tuning);
+  const eg = endgameProgress(governing, now, tuning);
 
-  if (remainingMs != null && windowMs > 0 && remainingMs <= windowMs) {
+  // Amendment B corrects the state table's clause to "BATTLE LIVE = the
+  // GOVERNING game is not in its endgame window". Because pass 1 of
+  // selectGoverningGame already prefers any in-window game, this single check
+  // now IS that clause — if anybody were in a window, they would be governing.
+  if (eg !== null) {
     return {
       tier: WARP_TIER.ENDGAME,
       governingKey: governing.key,
-      remainingMs,
-      windowMs,
-      rampProgress: clamp01(1 - remainingMs / windowMs),
+      remainingMs: eg.remainingMs,
+      windowMs: eg.windowMs,
+      rampProgress: eg.progress,
       liveCount: normalized.length,
     };
   }
@@ -279,8 +327,8 @@ export function resolveTier({ liveGames, now }, tuning = WARP_TUNING) {
   return {
     tier: WARP_TIER.LIVE,
     governingKey: governing.key,
-    remainingMs,
-    windowMs,
+    remainingMs: governing.endsAt == null ? null : governing.endsAt - now,
+    windowMs: endgameWindowMs(governing.totalDuration, tuning),
     rampProgress: 0,
     liveCount: normalized.length,
   };
@@ -333,6 +381,27 @@ export function createWarpState(tuning = WARP_TUNING) {
  * speed at that instant — a transition can never step (R-RAMP). Decay to rest
  * uses DECAY_MS (~30s) rather than TIER_EASE_MS.
  */
+/**
+ * How long this transition should take (ruling R-T2-S10).
+ *
+ * Coming DOWN off an endgame peak is not a tier change like any other — it is a
+ * fight ending. At the 15s tier ease a drop from 2.2 reads as a glitch, so it
+ * gets the same ~30s resolution decay the last-game-resolves case uses.
+ *
+ * ⚠ INTERPRETATION, FLAGGED FOR THE SECOND FEEL PASS: the ruling names the
+ * ENDGAME→ENDGAME handoff explicitly. This applies it to ANY downward move out
+ * of ENDGAME, which also covers ENDGAME→BATTLE LIVE (the next game is live but
+ * not yet in its own window). Treating only the first would leave the LARGER
+ * drop — 2.2 → 0.5 rather than 2.2 → 0.8 — snapping at the faster ease, which
+ * is the very glitch the ruling exists to remove. Both are tuning-exempt and
+ * provisional; say the word and this narrows to the literal reading.
+ */
+function resolveEaseMs(prev, resolved, target, tuning) {
+  if (resolved.tier === WARP_TIER.RESTING) return tuning.DECAY_MS;
+  if (prev.tier === WARP_TIER.ENDGAME && target < prev.speed) return tuning.DECAY_MS;
+  return tuning.TIER_EASE_MS;
+}
+
 export function advanceWarp(state, { liveGames, now, dtMs }, tuning = WARP_TUNING) {
   const prev = state || createWarpState(tuning);
   const resolved = resolveTier({ liveGames, now }, tuning);
@@ -369,7 +438,7 @@ export function advanceWarp(state, { liveGames, now, dtMs }, tuning = WARP_TUNIN
   if (changed) {
     anchorSpeed = prev.speed;
     easeElapsedMs = 0;
-    easeMs = resolved.tier === WARP_TIER.RESTING ? tuning.DECAY_MS : tuning.TIER_EASE_MS;
+    easeMs = resolveEaseMs(prev, resolved, target, tuning);
   } else {
     anchorSpeed = prev.anchorSpeed;
     // Capped at easeMs: past that the ease is settled, and letting it grow

@@ -133,17 +133,30 @@ describe('A1 — merged dark: both flags ship false', () => {
 });
 
 describe('A1 — the mount sites stay conditional, and DesktopBackground survives', () => {
+  // Phase 2 threaded `liveGames` into both mounts, so these now pin BOTH the
+  // off-state fallback AND the prop threading (R-T2-S1): the starfield must be
+  // fed from the existing poll projection, never from a source of its own.
   it('the desktop dashboard mount renders DesktopBackground when the flag is off', () => {
     expect(APP).toContain('isStarfieldOn()');
     expect(APP).toMatch(
-      /isStarfieldOn\(\)\s*\?\s*<StarfieldBackground mode="desktop" \/>\s*:\s*<DesktopBackground isDesktop=\{isDesktop\} \/>/
+      /isStarfieldOn\(\)\s*\?\s*<StarfieldBackground mode="desktop" liveGames=\{starfieldLiveGames\} \/>\s*:\s*<DesktopBackground isDesktop=\{isDesktop\} \/>/
     );
   });
 
   it('the mobile dashboard mount renders DesktopBackground when the mobile flag is off', () => {
     expect(APP).toMatch(
-      /isStarfieldMobileOn\(\)\s*\?\s*<StarfieldBackground mode="mobile" \/>\s*:\s*<DesktopBackground isDesktop=\{isDesktop\} \/>/
+      /isStarfieldMobileOn\(\)\s*\?\s*<StarfieldBackground mode="mobile" liveGames=\{starfieldLiveGames\} \/>\s*:\s*<DesktopBackground isDesktop=\{isDesktop\} \/>/
     );
+  });
+
+  it('feeds the starfield from the EXISTING poll, adding no new read (A6/R-T2-S1)', () => {
+    const code = stripComments(APP);
+    // One projection, memoized off the poll state the card already uses.
+    expect(code).toMatch(
+      /const starfieldLiveGames = useMemo\(\(\) => toLiveGames\(activeAgentBattles\), \[activeAgentBattles\]\);/
+    );
+    // ...and the adapter is the only thing standing between the two.
+    expect(code).toContain("import { toLiveGames } from './components/warpBattleAdapter'");
   });
 
   it('renders the starfield at EXACTLY the two dashboard mounts — no third site', () => {

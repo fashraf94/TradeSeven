@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { fetchWithAuth } from './utils/fetchWithAuth';
 import ClashBotWidget from './components/ClashBot/ClashBotWidget';
 import BugReportAdmin from './components/ClashBot/BugReportAdmin';
@@ -120,6 +120,7 @@ import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMEN
 // dashboard sites below, each behind its own flag; every other DesktopBackground
 // mount is untouched (spec V2 R-T2-S5 + Amendment A2).
 import StarfieldBackground from './components/StarfieldBackground';
+import { toLiveGames } from './components/warpBattleAdapter';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { OnboardingExperience } from './components/Agent';
 import LeagueScreen from './screens/LeagueScreen';
@@ -2342,6 +2343,14 @@ export default function PortfolioDuel() {
   const [completedDraftBattles, setCompletedDraftBattles] = useState([]);
   const [activeTrainingBattles, setActiveTrainingBattles] = useState([]); // Firebase-persisted training battles
   const [activeAgentBattles, setActiveAgentBattles] = useState([]); // agentBattles collection (agent deploys)
+  // Delight Layer Task 2 Phase 2 (R-T2-S1): the starfield's live-game input, a
+  // pure projection of the poll result above — ZERO new Firestore reads. It
+  // deliberately reuses the SAME source and the SAME status filter the
+  // "No battle live" card uses, so the sky and that card cannot disagree.
+  // A new array identity every 120s poll is expected and harmless: the
+  // starfield holds this in a ref and never lists it as an effect dependency
+  // (guarded by starfield.depstability.test.jsx).
+  const starfieldLiveGames = useMemo(() => toLiveGames(activeAgentBattles), [activeAgentBattles]);
   const [completedTrainingBattles, setCompletedTrainingBattles] = useState([]); // For Battle History training tab
   const [loadingTrainingBattles, setLoadingTrainingBattles] = useState(false);
   const [completedBaggerBombBattles, setCompletedBaggerBombBattles] = useState([]); // For Battle History BaggerBomb tab (Firestore)
@@ -8573,7 +8582,7 @@ export default function PortfolioDuel() {
                 the desktop verdict. Flag off = DesktopBackground exactly as
                 before (which self-returns null here) — byte-identical. */}
             {isStarfieldMobileOn()
-              ? <StarfieldBackground mode="mobile" />
+              ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} />
               : <DesktopBackground isDesktop={isDesktop} />}
             <DashboardComponent
               user={user}
@@ -8620,7 +8629,7 @@ export default function PortfolioDuel() {
               not edited and still renders on the other six screens; flag off is
               byte-identical to today. */}
           {isStarfieldOn()
-            ? <StarfieldBackground mode="desktop" />
+            ? <StarfieldBackground mode="desktop" liveGames={starfieldLiveGames} />
             : <DesktopBackground isDesktop={isDesktop} />}
 
           {COMMAND_DASHBOARD_DESKTOP_ENABLED ? (

@@ -20,6 +20,7 @@ import {
   WARP_DEVICE_PROFILES,
   toEpochMs,
   endgameWindowMs,
+  endgameProgress,
   normalizeLiveGames,
   selectGoverningGame,
   resolveTier,
@@ -144,6 +145,159 @@ describe('A2 R-PREC — the soonest-ending live game governs', () => {
 // ---------------------------------------------------------------------------
 // A2 — R-WINDOW
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// State Map Amendment B (ruling R-T2-S9) — precedence by URGENCY
+// ---------------------------------------------------------------------------
+
+describe('Amendment B — the game furthest into its window governs', () => {
+  it('THE CASE THAT DROVE THE AMENDMENT: a longer battle deep in its window wins', () => {
+    // A ends sooner in raw time but is NOT in its window (20 min left of a
+    // 40-min run => 10-min window). B ends later yet IS in its window (25 min
+    // left of a 100-min run => 25-min window). Under the old soonest-ending
+    // rule A governed and the sky sat calm through B's actual peak.
+    const a = { id: 'a-short', endsAt: NOW + 20 * MIN, totalDuration: 40 * MIN };
+    const b = { id: 'b-long', endsAt: NOW + 25 * MIN, totalDuration: 100 * MIN };
+
+    const resolved = resolveTier({ liveGames: [a, b], now: NOW });
+    expect(resolved.governingKey).toBe('b-long');
+    expect(resolved.tier).toBe(WARP_TIER.ENDGAME);
+    expect(resolved.rampProgress).toBeCloseTo(0, 6); // exactly at B's window edge
+  });
+
+  it('picks the MOST progressed when several are inside their windows', () => {
+    // Progress is fraction of window elapsed, so it compares across durations.
+    const early = { id: 'early', endsAt: NOW + 27 * MIN, totalDuration: 6 * HOUR }; // 30m window -> 10%
+    const deep = { id: 'deep', endsAt: NOW + 2 * MIN, totalDuration: 40 * MIN };    // 10m window -> 80%
+    const mid = { id: 'mid', endsAt: NOW + 10 * MIN, totalDuration: 80 * MIN };     // 20m window -> 50%
+
+    const resolved = resolveTier({ liveGames: [early, deep, mid], now: NOW });
+    expect(resolved.governingKey).toBe('deep');
+    expect(resolved.rampProgress).toBeCloseTo(0.8, 6);
+  });
+
+  it('still falls back to soonest-ending when NOBODY is in a window', () => {
+    const soon = { id: 'soon', endsAt: NOW + 2 * HOUR, totalDuration: 6 * HOUR };
+    const later = { id: 'later', endsAt: NOW + 5 * HOUR, totalDuration: 6 * HOUR };
+    const resolved = resolveTier({ liveGames: [later, soon], now: NOW });
+    expect(resolved.tier).toBe(WARP_TIER.LIVE);
+    expect(resolved.governingKey).toBe('soon');
+  });
+
+  it('an in-window game outranks a sooner-ending one with an unprovable clock', () => {
+    const clockless = { id: 'clockless', endsAt: NOW + 1 * MIN, totalDuration: null };
+    const inWindow = { id: 'in-window', endsAt: NOW + 10 * MIN, totalDuration: 60 * MIN };
+    const resolved = resolveTier({ liveGames: [clockless, inWindow], now: NOW });
+    expect(resolved.governingKey).toBe('in-window');
+    expect(resolved.tier).toBe(WARP_TIER.ENDGAME);
+  });
+
+  it('is order-independent and deterministic on a progress tie', () => {
+    const x = { id: 'x', endsAt: NOW + 5 * MIN, totalDuration: 40 * MIN };
+    const y = { id: 'y', endsAt: NOW + 5 * MIN, totalDuration: 40 * MIN };
+    expect(resolveTier({ liveGames: [x, y], now: NOW }).governingKey).toBe('x');
+    expect(resolveTier({ liveGames: [y, x], now: NOW }).governingKey).toBe('x');
+  });
+
+  it('corrects the state table clause: BATTLE LIVE = the GOVERNING game is not in its window', () => {
+    // With Amendment B this is automatic — if anyone were in a window they
+    // would be governing, so a LIVE verdict proves nobody is.
+    const games = [
+      { id: 'p', endsAt: NOW + 3 * HOUR, totalDuration: 6 * HOUR },
+      { id: 'q', endsAt: NOW + 4 * HOUR, totalDuration: 6 * HOUR },
+    ];
+    const resolved = resolveTier({ liveGames: games, now: NOW });
+    expect(resolved.tier).toBe(WARP_TIER.LIVE);
+    for (const game of games) {
+      expect(endgameProgress({ ...game, key: game.id }, NOW)).toBeNull();
+    }
+  });
+
+  it('endgameProgress reports null outside a window and a fraction inside it', () => {
+    const game = { key: 'g', endsAt: NOW + 30 * MIN, totalDuration: 6 * HOUR };
+    expect(endgameProgress(game, NOW - MIN)).toBeNull();          // not yet
+    expect(endgameProgress(game, NOW).progress).toBeCloseTo(0, 6); // at the edge
+    expect(endgameProgress({ ...game, endsAt: NOW + 15 * MIN }, NOW).progress)
+      .toBeCloseTo(0.5, 6);
+    expect(endgameProgress({ key: 'n', endsAt: null, totalDuration: HOUR }, NOW)).toBeNull();
+    expect(endgameProgress({ key: 'n', endsAt: NOW + MIN, totalDuration: null }, NOW)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R-T2-S10 — coming down off a peak reads as "that fight ended"
+// ---------------------------------------------------------------------------
+
+describe('R-T2-S10 — a resolved endgame eases down over the decay duration', () => {
+  it('uses DECAY_MS, not TIER_EASE_MS, on an ENDGAME -> ENDGAME handoff downward', () => {
+    const peak = { id: 'peak', endsAt: NOW + 30 * 1000, totalDuration: 6 * HOUR };
+    const fresh = { id: 'fresh', endsAt: NOW + 29 * MIN, totalDuration: 6 * HOUR };
+
+    // Settle deep into `peak`'s ramp.
+    let state = advanceWarp(createWarpState(), { liveGames: [peak, fresh], now: NOW, dtMs: 16 });
+    state = advanceWarp(state, { liveGames: [peak, fresh], now: NOW + WARP_TUNING.TIER_EASE_MS });
+    expect(state.tier).toBe(WARP_TIER.ENDGAME);
+    expect(state.governingKey).toBe('peak');
+    const peakSpeed = state.speed;
+    expect(peakSpeed).toBeGreaterThan(1.5);
+
+    // `peak` resolves; `fresh` is still in its own window but far less urgent.
+    const after = advanceWarp(state, { liveGames: [fresh], now: NOW + 31 * 1000, dtMs: 16 });
+    expect(after.tier).toBe(WARP_TIER.ENDGAME);
+    expect(after.governingKey).toBe('fresh');
+    expect(after.easeMs, 'the drop must use the ~30s decay, not the 15s tier ease')
+      .toBe(WARP_TUNING.DECAY_MS);
+    expect(after.speed).toBeCloseTo(peakSpeed, 6); // no step on the handoff frame
+  });
+
+  it('also eases down over DECAY_MS when the next game is not in its window', () => {
+    // Documented interpretation (flagged in the Phase 2 report): this drop is
+    // LARGER than the ENDGAME->ENDGAME one, so snapping it at the tier ease
+    // would be the very glitch R-T2-S10 exists to remove.
+    const peak = { id: 'peak', endsAt: NOW + 30 * 1000, totalDuration: 6 * HOUR };
+    const calm = { id: 'calm', endsAt: NOW + 5 * HOUR, totalDuration: 6 * HOUR };
+
+    let state = advanceWarp(createWarpState(), { liveGames: [peak, calm], now: NOW, dtMs: 16 });
+    state = advanceWarp(state, { liveGames: [peak, calm], now: NOW + WARP_TUNING.TIER_EASE_MS });
+    const peakSpeed = state.speed;
+
+    const after = advanceWarp(state, { liveGames: [calm], now: NOW + 31 * 1000, dtMs: 16 });
+    expect(after.tier).toBe(WARP_TIER.LIVE);
+    expect(after.easeMs).toBe(WARP_TUNING.DECAY_MS);
+    expect(after.speed).toBeCloseTo(peakSpeed, 6);
+  });
+
+  it('still uses the FAST tier ease when the sky is ramping UP into a fight', () => {
+    // The decay duration is for winding down only; entering a fight must stay
+    // responsive at the 10-20s tier ease.
+    const game = [liveGame()];
+    const up = advanceWarp(createWarpState(), { liveGames: game, now: NOW, dtMs: 16 });
+    expect(up.tier).toBe(WARP_TIER.LIVE);
+    expect(up.easeMs).toBe(WARP_TUNING.TIER_EASE_MS);
+  });
+
+  it('takes the full decay duration to arrive after a peak resolves', () => {
+    const peak = { id: 'peak', endsAt: NOW + 30 * 1000, totalDuration: 6 * HOUR };
+    const calm = { id: 'calm', endsAt: NOW + 5 * HOUR, totalDuration: 6 * HOUR };
+    let state = advanceWarp(createWarpState(), { liveGames: [peak, calm], now: NOW, dtMs: 16 });
+    state = advanceWarp(state, { liveGames: [peak, calm], now: NOW + WARP_TUNING.TIER_EASE_MS });
+
+    const handoffAt = NOW + 31 * 1000;
+    const after = advanceWarp(state, { liveGames: [calm], now: handoffAt, dtMs: 16 });
+
+    // Still coming down when the shorter tier ease would already be finished...
+    const midway = advanceWarp(after, {
+      liveGames: [calm], now: handoffAt + WARP_TUNING.TIER_EASE_MS,
+    });
+    expect(midway.speed).toBeGreaterThan(WARP_TUNING.SPEED_LIVE);
+
+    // ...and settled after the full decay.
+    const settled = advanceWarp(after, {
+      liveGames: [calm], now: handoffAt + WARP_TUNING.DECAY_MS,
+    });
+    expect(settled.speed).toBeCloseTo(WARP_TUNING.SPEED_LIVE, 6);
+  });
+});
 
 describe('A2 R-WINDOW — window = min(30 min, 25% of total duration)', () => {
   it('takes the 25% slice when the game is short', () => {
@@ -347,9 +501,16 @@ describe('A2 R-RAMP — transitions ease, never step', () => {
     expect(afterHandoff.speed).toBeCloseTo(speedBeforeHandoff, 6);
 
     // ...then eases down to the BATTLE LIVE target rather than snapping.
+    // Per ruling R-T2-S10 this descent takes the ~30s DECAY duration, not the
+    // 15s tier ease: coming down off a peak must read as "that fight ended".
+    const handoffAt = NOW + 10 * MIN + 1000;
+    const halfway = advanceWarp(afterHandoff, {
+      liveGames: [later], now: handoffAt + WARP_TUNING.TIER_EASE_MS,
+    });
+    expect(halfway.speed).toBeGreaterThan(WARP_TUNING.SPEED_LIVE);
+
     const eased = advanceWarp(afterHandoff, {
-      liveGames: [later], now: NOW + 10 * MIN + 1000 + WARP_TUNING.TIER_EASE_MS,
-      dtMs: WARP_TUNING.TIER_EASE_MS,
+      liveGames: [later], now: handoffAt + WARP_TUNING.DECAY_MS,
     });
     expect(eased.speed).toBeCloseTo(WARP_TUNING.SPEED_LIVE, 6);
   });
