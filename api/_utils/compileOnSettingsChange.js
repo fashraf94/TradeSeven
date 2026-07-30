@@ -67,6 +67,32 @@ function metadataForRule(ruleId) {
   return meta;
 }
 
+/**
+ * A-4 compat cell per unique equipped rule snapshot, for the target archetype.
+ *
+ * KEY-SPACE (the defect this shape prevents): each cell is keyed by the
+ * snapshot's DOC id (`snap.id`) — the id compileBuild rehydrates rules under
+ * (compileBuild.js:160) — but the compat LOOKUP uses the TEMPLATE id
+ * (`snap.sourceRef`). The compat map is keyed by forgeKnowledgeBase template id
+ * (archetypeRuleCompatibility.js:40-41); `snap.id` is the Firestore rule doc id
+ * (forgeService.js:482), NEVER a template id, so looking a cell up by it
+ * resolves every rule `via:'fallthrough'`. The correct pairing is the one
+ * ruleCompatClassify.js:45-46 already uses. A `via:'fallthrough'` result is
+ * ABSENCE (A-4) — compileBuild records it as a missing cell, never a verdict —
+ * so manual/free-text rules (sourceRef null, outside the map) correctly land
+ * there without leaking a spurious neutral.
+ */
+export function resolveEquippedCompatCells(bundles, archetype) {
+  const compatCells = {};
+  for (const bundle of bundles ?? []) {
+    for (const snap of bundle.ruleSnapshots ?? []) {
+      if (!snap?.id || compatCells[snap.id] !== undefined) continue;
+      compatCells[snap.id] = getRuleCompatInfo(snap.sourceRef, archetype);
+    }
+  }
+  return compatCells;
+}
+
 // The registry identityHash is content-static per deploy; memoized so the
 // (flag-on) first compile pays the one canonicalization, and dark endpoints
 // never pay it at all. Exported: the P2.4b deploy gate
@@ -162,18 +188,17 @@ export function writeCompiledBuildsInTx(tx, {
   };
 
   const ruleMetadata = {};
-  const compatCells = {};
   for (const bundle of bundles ?? []) {
     for (const snap of bundle.ruleSnapshots ?? []) {
       if (!snap?.id || ruleMetadata[snap.id] !== undefined) continue;
       const meta = metadataForRule(snap.id);
       if (meta !== undefined) ruleMetadata[snap.id] = meta;
-      // Live cells pass through verbatim — getRuleCompatInfo's
-      // via:'fallthrough' is ABSENCE and the compiler records it as a
-      // missing cell (A-4), never as a verdict.
-      compatCells[snap.id] = getRuleCompatInfo(snap.id, archetype);
     }
   }
+  // Compat cells resolve by TEMPLATE id (snap.sourceRef), keyed by doc id — see
+  // resolveEquippedCompatCells. via:'fallthrough' is ABSENCE (A-4): compileBuild
+  // records it as a missing cell, never as a verdict.
+  const compatCells = resolveEquippedCompatCells(bundles, archetype);
 
   const userBuildDelta = {
     agentId,
