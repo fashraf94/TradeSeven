@@ -30,6 +30,10 @@ import { CMD, alpha, readableOn, Eyebrow, Mono, SectionLabel } from './commandUI
 // Only literals that exactly match a locked token migrate; alpha() call sites stay
 // hex (ruling R-S9) and CMD.* stays untouched (spec §2 forbids identifier keying).
 import { cssVar } from '../../theme/cssTokens';
+// Delight Layer Task 2 (Amendment A2): this root paints an OPAQUE CMD.bg over
+// the z0 slot. With the mobile starfield flag on it goes transparent so the
+// field shows through; off, it is byte-identical to today.
+import { isStarfieldMobileOn } from '../../config/featureFlags';
 import useAgent from '../../hooks/useAgent';
 // Mastery P3: the owner profile behind the RecordSheet's mastery cards —
 // zero reads and null while MASTERY_SURFACE_ENABLED is false (dark).
@@ -228,7 +232,7 @@ export default function CommandDashboard({
   const dateLabel = prettyDate(drb.forDate);
 
   return (
-    <div style={{ minHeight: '100vh', background: CMD.bg, color: CMD.ink, position: 'relative', zIndex: 1 }}>
+    <div style={{ minHeight: '100vh', background: isStarfieldMobileOn() ? 'transparent' : CMD.bg, color: CMD.ink, position: 'relative', zIndex: 1 }}>
       <motion.div
         variants={containerVariants}
         initial="hidden"

@@ -18,6 +18,10 @@
 import React, { useState } from 'react';
 import { Trophy, Activity, Award } from 'lucide-react';
 import { CMD, Eyebrow, Mono, SectionLabel } from './commandUI';
+// Delight Layer Task 2 (spec V2 D4): this root paints an OPAQUE CMD.bg over the
+// z0 background slot, so it is what hides the starfield. When the flag is on the
+// paint goes transparent and the field shows through; off, it is byte-identical.
+import { isStarfieldOn } from '../../config/featureFlags';
 import useAgent from '../../hooks/useAgent';
 // Mastery P3: the owner profile behind the RecordSheet's mastery cards —
 // zero reads and null while MASTERY_SURFACE_ENABLED is false (dark).
@@ -125,7 +129,7 @@ export default function CommandDashboardDesktop({
   const colScroll = { minHeight: 0, overflowY: 'auto', overflowX: 'hidden' };
 
   return (
-    <div className="cmd-desk-root" style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: CMD.bg, color: CMD.ink, position: 'relative', zIndex: 1 }}>
+    <div className="cmd-desk-root" style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: isStarfieldOn() ? 'transparent' : CMD.bg, color: CMD.ink, position: 'relative', zIndex: 1 }}>
       {/* Responsive (spec D2): ≥1200 = 3-col, fixed viewport height, columns scroll
           independently. 769–1199 = 2-col reflow — left identity rail kept; the
           right lifecycle (Manage 04 / Review 05) folds beneath the center spine;

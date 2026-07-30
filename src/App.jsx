@@ -115,7 +115,11 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
-import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn } from './config/featureFlags';
+import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn } from './config/featureFlags';
+// Delight Layer Task 2: the battle-weather starfield. Mounted ONLY at the two
+// dashboard sites below, each behind its own flag; every other DesktopBackground
+// mount is untouched (spec V2 R-T2-S5 + Amendment A2).
+import StarfieldBackground from './components/StarfieldBackground';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { OnboardingExperience } from './components/Agent';
 import LeagueScreen from './screens/LeagueScreen';
@@ -8564,7 +8568,13 @@ export default function PortfolioDuel() {
       return (
         <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
           <div style={containerStyle}>
-            <DesktopBackground isDesktop={isDesktop} />
+            {/* Delight Layer Task 2 (Amendment A2): the mobile starfield, behind
+                its OWN flag so a struggling phone can go dark without touching
+                the desktop verdict. Flag off = DesktopBackground exactly as
+                before (which self-returns null here) — byte-identical. */}
+            {isStarfieldMobileOn()
+              ? <StarfieldBackground mode="mobile" />
+              : <DesktopBackground isDesktop={isDesktop} />}
             <DashboardComponent
               user={user}
               setShowForge={setShowForge}
@@ -8605,7 +8615,13 @@ export default function PortfolioDuel() {
     return (
       <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
         <div style={containerStyle}>
-          <DesktopBackground isDesktop={isDesktop} />
+          {/* Delight Layer Task 2 (R-T2-S5): the desktop starfield replaces the
+              price-line background at THIS mount only. DesktopBackground.jsx is
+              not edited and still renders on the other six screens; flag off is
+              byte-identical to today. */}
+          {isStarfieldOn()
+            ? <StarfieldBackground mode="desktop" />
+            : <DesktopBackground isDesktop={isDesktop} />}
 
           {COMMAND_DASHBOARD_DESKTOP_ENABLED ? (
             // Desktop Command surface (dark behind the flag). Offset for the
