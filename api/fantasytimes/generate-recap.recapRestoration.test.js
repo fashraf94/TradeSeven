@@ -159,6 +159,23 @@ describe('S5 windows (R-B2)', () => {
     expect(added[0].doc.referentDate).toBe('2026-07-24');
     const prompt = wireModelCall.mock.calls[0][1].messages[0].content;
     expect(prompt).toContain('Report timing: AMC (reported the prior session)');
+    // 07:00 ET is pre-open (review H1): the quote may still reflect the
+    // prior close, so the label forbids attribution instead of claiming an
+    // early reaction.
+    expect(prompt).toContain('Pre-open quote');
+    expect(prompt).not.toContain('Early reaction session move');
+  });
+
+  it('post-open morning firing labels prior-session AMC as early reaction (R-B5)', async () => {
+    vi.setSystemTime(new Date('2026-07-27T14:00:00Z')); // Monday 10:00 ET — market open
+    const fridayAmc = { ...MSFT_AMC_TODAY, code: 'NVDA.US', name: 'NVIDIA', report_date: '2026-07-24' };
+    stubFetch({ earnings: [fridayAmc] });
+    const { db } = makeFakeDb();
+    getFirebaseAdmin.mockReturnValue(db);
+
+    await handler({ ...cronReq }, makeRes());
+
+    const prompt = wireModelCall.mock.calls[0][1].messages[0].content;
     expect(prompt).toContain('Early reaction session move (first session after the report)');
   });
 

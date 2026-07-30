@@ -44,6 +44,16 @@ describe('selectOperandRow — matcher semantics', () => {
     const rows = [{ type: 'Core Inflation Rate MoM', comparison: 'mom', date: '2026-07-14 12:30:00', actual: 0.2 }];
     expect(selectOperandRow(cpiEvent, rows).row).toBeNull();
   });
+  it('review M3: Core Retail Sales never substitutes for the headline print', () => {
+    const rsEvent = { date: '2026-05-14', time: '8:30 AM ET', category: 'Retail Sales', impact: 'high', event: 'Retail Sales (March)' };
+    const rows = [{ type: 'Core Retail Sales MoM', comparison: 'mom', date: '2026-05-14 12:30:00', actual: 0.4 }];
+    expect(selectOperandRow(rsEvent, rows).row).toBeNull();
+  });
+  it('review L1: ISM sub-index rows (Business Activity) never substitute for the headline PMI', () => {
+    const ismSvc = { date: '2026-07-06', time: '10:00 AM ET', category: 'ISM Services', impact: 'medium', event: 'ISM Services PMI (June)' };
+    const rows = [{ type: 'ISM Services Business Activity', comparison: null, date: '2026-07-06 14:00:00', actual: 55.0 }];
+    expect(selectOperandRow(ismSvc, rows).row).toBeNull();
+  });
   it('ISM Manufacturing never matches the services release (non-manufacturing collision)', () => {
     const ismEvent = { date: '2026-07-01', time: '10:00 AM ET', category: 'ISM Manufacturing', impact: 'medium', event: 'ISM Manufacturing PMI (June)' };
     const rows = [{ type: 'ISM Non Manufacturing PMI', comparison: null, date: '2026-07-01 14:00:00', actual: 54.1 }];

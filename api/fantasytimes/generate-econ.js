@@ -32,6 +32,7 @@ import {
   fetchEconomicEventsEODHD,
   joinOperandsToEvents,
   isSettled,
+  etMinutesOfDay,
 } from '../_utils/fetchEconomicEventsEODHD.js';
 import {
   verifyEconPrint,
@@ -228,10 +229,15 @@ async function handleRecap(req, res, db) {
 
   const joined = joinOperandsToEvents(tier1Events, operandRows);
 
-  // Released = matched operand row with an actual present; settled per
-  // R-B1a(ii) (release time + one cron tick).
+  // Released = matched operand row with an actual PRESENT — parse-aware:
+  // aggregator placeholder strings ('', '-', 'N/A') classify as
+  // missing_operand and mean NOT RELEASED, so they stay in empty_window
+  // rather than polluting the operand_implausible code (review finding M4;
+  // a present-but-garbage actual still counts as released and is held
+  // loudly by the gate below). Settled per R-B1a(ii).
   const released = joined.filter(({ event, operands }) =>
-    operands && operands.actual !== null && operands.actual !== undefined
+    operands
+    && parseEconOperand(operands.actual).reason !== 'missing_operand'
     && isSettled(event, wireInstant, todayET));
 
   // Priority when multiple uncovered: high-impact categories first (R-A1),
@@ -329,6 +335,15 @@ async function handleRecap(req, res, db) {
     ? 'Print verification: VERIFIED (actual compared against consensus estimate)'
     : 'Print verification: NOT VERIFIABLE (missing consensus estimate)';
 
+  // H1 (review finding): before the 9:30 ET open the real-time quote may
+  // still reflect the PRIOR session, so the block is relabeled with an
+  // explicit do-not-attribute instruction — the F2 label-governs-attribution
+  // machinery, applied to the index quotes.
+  const isPreOpen = etMinutesOfDay(wireInstant) < 9 * 60 + 30;
+  const reactionHeader = isPreOpen
+    ? 'MARKET SNAPSHOT (pre-open — quotes may reflect the prior session; do NOT attribute them to this release):'
+    : 'MARKET REACTION:';
+
   let userMessage = [
     `ECONOMIC DATA RELEASE:`,
     `Event: ${event.event}`,
@@ -340,7 +355,7 @@ async function handleRecap(req, res, db) {
     `Actual: ${verification.actualValue}`,
     verificationLine,
     '',
-    'MARKET REACTION:',
+    reactionHeader,
     spyData ? `SPY: $${spyData.price.toFixed(2)} (${spyData.changePercent >= 0 ? '+' : ''}${spyData.changePercent.toFixed(2)}%)` : 'SPY: unavailable',
     qqqData ? `QQQ: $${qqqData.price.toFixed(2)} (${qqqData.changePercent >= 0 ? '+' : ''}${qqqData.changePercent.toFixed(2)}%)` : 'QQQ: unavailable',
     '',

@@ -62,7 +62,7 @@ export const ECON_CATEGORY_MATCHERS = Object.freeze({
   }),
   'Retail Sales': Object.freeze({
     match: Object.freeze(['retail sales']),
-    avoid: Object.freeze(['ex ', 'ex-']),
+    avoid: Object.freeze(['ex ', 'ex-', 'core']),
     preferComparison: 'mom',
   }),
   'GDP': Object.freeze({
@@ -90,12 +90,12 @@ export const ECON_CATEGORY_MATCHERS = Object.freeze({
     // it contains 'manufacturing', so it is avoid-listed here (the
     // wireIdentity ECON_ALIAS_TABLE ordering lesson, applied as data).
     match: Object.freeze(['ism manufacturing']),
-    avoid: Object.freeze(['non manufacturing', 'non-manufacturing', 'new orders', 'employment', 'prices']),
+    avoid: Object.freeze(['non manufacturing', 'non-manufacturing', 'new orders', 'employment', 'prices', 'business activity']),
     preferComparison: null,
   }),
   'ISM Services': Object.freeze({
     match: Object.freeze(['ism services', 'ism non manufacturing', 'ism non-manufacturing']),
-    avoid: Object.freeze(['new orders', 'employment', 'prices']),
+    avoid: Object.freeze(['new orders', 'employment', 'prices', 'business activity']),
     preferComparison: null,
   }),
   'Consumer Confidence': Object.freeze({

@@ -62,6 +62,14 @@ describe('parseEconOperand — strict parse with %, K/M/B, comma strip', () => {
       expect(parseEconOperand(garbage)).toEqual({ ok: false, reason: 'unparseable_operand' });
     }
   });
+  it('review H2: digitless comma strings never fabricate a 0.0 print', () => {
+    for (const commaJunk of [',', ',,,', '-,', '+,']) {
+      expect(parseEconOperand(commaJunk)).toEqual({ ok: false, reason: 'unparseable_operand' });
+    }
+  });
+  it('review L3: a scale suffix and % may not combine', () => {
+    expect(parseEconOperand('3.2K%')).toEqual({ ok: false, reason: 'unparseable_operand' });
+  });
 });
 
 describe('R2 battery — verifyEconPrint over the fixture', () => {
@@ -120,6 +128,12 @@ describe('R-B1a plausibility gate — loose two-arm bands', () => {
     // NFP as raw jobs instead of thousands: both operands share the unit.
     expect(assessEconPlausibility('NFP', { actual: 187000, estimate: 190000 })).toEqual({ hold: false });
   });
+  it('review M1: recession-class legitimate surprises are NOT held (bands in raw units)', () => {
+    // Claims spike 510K vs 225K expected; NFP −300K vs +150K expected —
+    // exactly the most newsworthy prints, which must publish.
+    expect(assessEconPlausibility('Jobless Claims', { actual: '510K', estimate: '225K' })).toEqual({ hold: false });
+    expect(assessEconPlausibility('NFP', { actual: -300000, estimate: 150000 })).toEqual({ hold: false });
+  });
   it('unit mis-mapping (100× spread) is held', () => {
     const verdict = assessEconPlausibility('CPI', { actual: 250, estimate: 2.5 });
     expect(verdict.hold).toBe(true);
@@ -150,6 +164,9 @@ describe('R-B1a earnings surprise gate', () => {
   });
   it('mega-EPS names pass via the relative arm (BRK.A class)', () => {
     expect(assessEpsPlausibility(12000, 11500)).toEqual({ hold: false });
+  });
+  it('review M2: GAAP mega-beats against operating estimates pass (band 20)', () => {
+    expect(assessEpsPlausibility(8.0, 1.5)).toEqual({ hold: false });
   });
   it('cents-for-dollars mis-scaling is held', () => {
     expect(assessEpsPlausibility(310, 3.1).hold).toBe(true);

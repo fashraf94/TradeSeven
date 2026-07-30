@@ -45,10 +45,14 @@ export function parseEconOperand(raw) {
   const trimmed = raw.trim();
   if (MISSING_MARKERS.has(trimmed.toLowerCase())) return { ok: false, reason: 'missing_operand' };
 
-  // Strict shape: sign, digits (comma-grouped ok), optional decimal,
-  // optional ONE scale suffix, optional trailing %.
-  const m = /^([+-]?)([\d,]+(?:\.\d+)?)\s*([kKmMbBtT]?)\s*(%?)$/.exec(trimmed);
+  // Strict shape: sign, digits (comma-grouped ok, at least one digit —
+  // review finding H2: '[\d,]+' matched a bare ',' and fabricated a 0.0
+  // print), optional decimal, optional ONE scale suffix, optional trailing
+  // %. Scale suffix and % may not combine (review finding L3: '3.2K%' is
+  // no known print format — reject rather than guess).
+  const m = /^([+-]?)(\d[\d,]*(?:\.\d+)?)\s*([kKmMbBtT]?)\s*(%?)$/.exec(trimmed);
   if (!m) return { ok: false, reason: 'unparseable_operand' };
+  if (m[3] && m[4]) return { ok: false, reason: 'unparseable_operand' };
   const digits = m[2].replace(/,/g, '');
   let value = Number(digits);
   if (!Number.isFinite(value)) return { ok: false, reason: 'unparseable_operand' };
@@ -113,6 +117,13 @@ export function verifyEconPrint({ actual, estimate }) {
 // the absolute arm catches the mismatch class where the two operands
 // DISAGREE about units (100× spreads fail both arms). Band table proposed
 // by CC in the build report per R-B1a; founder-adjustable constants.
+// Count-denominated bands are expressed in RAW units because
+// parseEconOperand normalizes 'K'/'M' suffixes to raw values (review
+// finding M1: thousands-denominated bands were dead against normalized
+// operands, so recession-class legitimate surprises — claims 510K vs 225K,
+// NFP −300K vs +150K — were held by the relative arm alone). The founder
+// capture run confirms EODHD's actual scale convention; these constants
+// are founder-adjustable if the feed turns out suffix-free.
 export const PLAUSIBILITY_BANDS = Object.freeze({
   'FOMC': 1.0,                 // percentage points (rate decision vs expected)
   'CPI': 2.0,                  // % MoM
@@ -121,18 +132,21 @@ export const PLAUSIBILITY_BANDS = Object.freeze({
   'Retail Sales': 5.0,         // % MoM
   'GDP': 5.0,                  // % annualized QoQ
   'Productivity': 8.0,         // % annualized QoQ
-  'NFP': 500,                  // thousands of jobs
-  'JOLTS': 4000,               // thousands of openings
+  'NFP': 500000,               // jobs (raw)
+  'JOLTS': 4000000,            // openings (raw)
   'ISM Manufacturing': 25,     // index points
   'ISM Services': 25,          // index points
   'Consumer Confidence': 25,   // index points
-  'Jobless Claims': 300,       // thousands of claims
+  'Jobless Claims': 300000,    // claims (raw)
 });
 
 // Earnings surprise, same gate class (R-B1a: "same band applied to earnings
-// surprise %"): absolute arm in EPS dollars, same 50% relative arm. Catches
-// cents-for-dollars EPS rows without holding legitimate mega-EPS names.
-export const EPS_SURPRISE_BAND_ABS = 5;
+// surprise %"): absolute arm in EPS dollars, same 50% relative arm. 20 (not
+// 5 — review finding M2): GAAP-actual-vs-operating-estimate names routinely
+// land $5-15 off consensus (one-time gains, insurers), and holding the
+// most newsworthy beat reproduces the silence this arc removes;
+// cents-for-dollars mis-scaling (~100×) still fails both arms.
+export const EPS_SURPRISE_BAND_ABS = 20;
 
 /** The shared two-arm rule: implausible when BOTH arms are exceeded. */
 export function isImplausibleDelta(actualValue, estimateValue, absBand) {

@@ -84,12 +84,18 @@ async function fetchEarningsWindow(fromET, toET) {
 
 /**
  * F2 (ruling R-B5): the price-operand label is a deterministic function of
- * (beforeAfterMarket, session-relation-to-reportDate). An AMC report drops
- * AFTER the session close, so the same-day session move is the
+ * (beforeAfterMarket, session-relation-to-reportDate, pre-open). An AMC
+ * report drops AFTER the session close, so the same-day session move is the
  * into-earnings (pre-reaction) move and must never be phrased as a reaction
- * to the news; the morning-after fire may honestly call it an early reaction.
+ * to the news; the morning-after fire may call it an early reaction ONLY
+ * once the new session has opened — before 9:30 ET the real-time quote may
+ * still reflect the prior close (review finding H1), so pre-open labels
+ * carry an explicit do-not-attribute instruction instead.
  */
-function describeSessionMove(timing, isPriorSessionReport) {
+function describeSessionMove(timing, isPriorSessionReport, isPreOpen) {
+  if (isPreOpen) {
+    return 'Pre-open quote (the new session has not opened — the figure may reflect the prior close; do NOT attribute it to the report)';
+  }
   if (timing === 'AMC') {
     return isPriorSessionReport
       ? 'Early reaction session move (first session after the report)'
@@ -166,7 +172,12 @@ export default async function handler(req, res) {
     const trackedResults = earningsRaw
       .filter((e) => {
         const code = (e.code || '').replace('.US', '').toUpperCase();
-        return tickerSet.has(code) && e.actual_eps !== null && e.actual_eps !== undefined;
+        // report_date must be a real date string: it is the C8 referent —
+        // an undefined value would make the dedup query throw in real
+        // Firestore and write an undefined referentDate (review finding L2).
+        return tickerSet.has(code)
+          && typeof e.report_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.report_date)
+          && e.actual_eps !== null && e.actual_eps !== undefined;
       })
       .map((e) => ({
         symbol: (e.code || '').replace('.US', '').toUpperCase(),
@@ -256,7 +267,8 @@ export default async function handler(req, res) {
     // mislabel the ruling ordered fixed).
     const priceData = await fetchRealTimePrice(earning.symbol);
     const isPriorSessionReport = earning.reportDate < todayET;
-    const sessionMoveLabel = describeSessionMove(earning.timing, isPriorSessionReport);
+    const isPreOpen = etMinutesOfDay(wireInstant) < 9 * 60 + 30;
+    const sessionMoveLabel = describeSessionMove(earning.timing, isPriorSessionReport, isPreOpen);
 
     // Check if Doug published a preview for this symbol
     let previewReference = '';

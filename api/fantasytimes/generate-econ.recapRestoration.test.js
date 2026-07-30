@@ -210,6 +210,11 @@ describe('R-B1a gates', () => {
     getFirebaseAdmin.mockReturnValue(db);
     await handler(recapReq(), makeRes());
     expect(added).toHaveLength(1);
+    // 09:05 ET is pre-open (review H1): the SPY/QQQ block is relabeled a
+    // snapshot with a do-not-attribute instruction, not a "reaction".
+    const prompt = wireModelCall.mock.calls[0][1].messages[0].content;
+    expect(prompt).toContain('MARKET SNAPSHOT (pre-open');
+    expect(prompt).not.toContain('MARKET REACTION:');
   });
 
   it('operand_implausible: a unit-mismatched print is held loudly with zero model calls', async () => {
