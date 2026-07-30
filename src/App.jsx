@@ -3913,8 +3913,14 @@ export default function PortfolioDuel() {
           .filter(b => !(typeof b.agentId === 'string' && b.agentId.startsWith(TRAINING_CLONE_ID_PREFIX)));
         setActiveAgentBattles(battles);
       } catch (error) {
-        console.error('Error fetching agent battles:', error);
-        setActiveAgentBattles([]);
+        // RETAIN the last-known-good battles instead of blanking the list. A
+        // transient Firestore error must not flip the "No battle live" card to
+        // calm for up to the 120s poll interval while a battle is genuinely
+        // live; the next successful poll corrects the state. Empty stays correct
+        // when no fetch has succeeded yet, because the initial state
+        // (useState([])) is already []. The battle-weather starfield reads this
+        // same state, which is why this lands ahead of that feature's flip.
+        console.error('Error fetching agent battles (retaining last-known-good):', error);
       }
     };
 
