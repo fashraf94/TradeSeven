@@ -170,6 +170,11 @@ export default function DashboardLoop({
         agentBattleId: battle.agentBattleId || null,
         agentInnerMonologue: battle.agentInnerMonologue || null,
         agentStrategyBrief: battle.agentStrategyBrief || null,
+        // League routing discriminator (Spec V1.1 Phase A) — flat-6 tournament
+        // battles carry gameMode:'baggerbomb_tournament'. The `...b` spread above
+        // carries it onto the card battle, but this whitelist would otherwise drop
+        // it; preserve it so BattleViewScreen can route league games to the Arena.
+        gameMode: battle.gameMode || null,
       };
       setCurrentBattle(convertedBattle);
       setActiveBattleId(battle.id);

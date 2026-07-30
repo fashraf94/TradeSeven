@@ -49,6 +49,9 @@ const BaggerBombTrainingBattleViewV3 = lazy(() => import('./screens/BaggerBombTr
 const BaggerBombBattleViewConnectedV4 = lazy(() => import('./screens/BaggerBombBattleViewConnectedV4'));
 const BaggerBombTrainingBattleViewV4 = lazy(() => import('./screens/BaggerBombTrainingBattleViewV4'));
 const AgentBattleScreen = lazy(() => import('./screens/AgentBattleScreen'));
+// League Battleview Routing (Spec V1.1 Phase A) — the Arena wrapper the flat-6
+// league card path dispatches to (gated dark by LEAGUE_BATTLEVIEW_ROUTING_ENABLED).
+const LeagueBattleViewConnected = lazy(() => import('./screens/LeagueBattleViewConnected'));
 const BaggerBombLobby = lazy(() => import('./screens/BaggerBombLobby'));
 const BaggerBombSetupScreen = lazy(() => import('./screens/BaggerBombSetupScreen'));
 const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOptionsArenaV2'));
@@ -6670,6 +6673,10 @@ export default function PortfolioDuel() {
       },
       isTraining: true,
       isTrainingBattle: true,
+      // League routing discriminator (Spec V1.1 Phase A) — preserve gameMode so a
+      // league (flat-6) battle opened from the agent hub reaches the League Arena,
+      // not the BaggerBomb AgentBattleScreen.
+      gameMode: battle.gameMode || null,
     };
     setActiveBattleId(currentBattleObj.id);
     setCurrentBattle(currentBattleObj);
@@ -9238,6 +9245,7 @@ export default function PortfolioDuel() {
         BaggerBombBattleViewConnectedV4={BaggerBombBattleViewConnectedV4}
         BaggerBombTrainingBattleViewV4={BaggerBombTrainingBattleViewV4}
         AgentBattleScreen={AgentBattleScreen}
+        LeagueBattleViewConnected={LeagueBattleViewConnected}
       />
       </ErrorBoundary>
     );

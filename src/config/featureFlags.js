@@ -209,6 +209,23 @@ export const LEAGUE_NEXT_ARC_ENABLED = true;
 export const LEAGUE_BATTLE_VIEW_V2_ENABLED = true;
 
 /**
+ * League Battleview Routing (Spec V1.1, Phase A) — the Command Center live-game
+ * card path. When a tapped game is a flat-6 LEAGUE battle
+ * (gameMode === 'baggerbomb_tournament'), route it to the League Arena
+ * (LeagueBattleArenaLive) instead of the BaggerBomb AgentBattleScreen.
+ *
+ * When false (default), BattleViewScreen ignores gameMode and league battles fall
+ * through to the existing agentDeployed→AgentBattleScreen branch — byte-identical
+ * to today (the mis-route stays, but dark). gameMode is still propagated through
+ * the card mappers when off (an inert extra field), so flipping this flag is the
+ * only behavior change.
+ *
+ * Merged DARK. Flip only via a separate one-line PR after a Vercel preview smoke
+ * (the LEAGUE_BATTLE_VIEW_V2_ENABLED / PR #510 precedent) — never in the build PR.
+ */
+export const LEAGUE_BATTLEVIEW_ROUTING_ENABLED = false;
+
+/**
  * League — Training-tab CLIMB PREVIEW (the second-arc re-entry surface).
  *
  * The active-training-battle state of the League Training tab shows the real
