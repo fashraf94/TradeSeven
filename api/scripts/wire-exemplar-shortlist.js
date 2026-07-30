@@ -1,10 +1,29 @@
 // api/scripts/wire-exemplar-shortlist.js
 // Phase 2 N2.2 — the exemplar SHORTLIST generator (Spec V1.2 N2, locked).
 //
-// READ-ONLY. Run with production Firebase env (FIREBASE_PROJECT_ID,
-// FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY):
+// READ-ONLY. Needs the three server-side Firebase Admin credentials
+// (firebaseAdmin.js:15-17), same ones the whole server uses:
+//   FIREBASE_PROJECT_ID       e.g. your-project-id
+//   FIREBASE_CLIENT_EMAIL     firebase-adminsdk-xxxxx@your-project-id.iam.gserviceaccount.com
+//   FIREBASE_PRIVATE_KEY      "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+//                             (double-quoted, literal \n escapes — format of
+//                             record in .env.example:40-42; firebaseAdmin.js
+//                             un-escapes the \n at load)
+// Your local .env.local is expected to already carry these — it is the same
+// file every other api/scripts/* uses; if you have ever run the server or a
+// sibling script locally, they are already there. This script does NOT need
+// VITE_* (those are the browser SDK; the Admin SDK uses the three above).
 //
-//   node api/scripts/wire-exemplar-shortlist.js [--days 60] [--per 8]
+// Plain `node` does not read .env — Vercel injects env, a shell does not.
+// This script SELF-LOADS .env.local (then .env) via Node's built-in loader
+// (>=20.6, no dotenv dependency) when the vars aren't already present, and
+// fails with an explicit message naming what's missing rather than the
+// cryptic FirebaseAppError thrown from deep inside ensureInitialized.
+//
+// Run from the REPO ROOT (that is where .env.local lives). PowerShell:
+//   node api/scripts/wire-exemplar-shortlist.js --days 60 --per 8
+//   # explicit-flag equivalent (matches the other api/scripts, also fine):
+//   node --env-file=.env.local api/scripts/wire-exemplar-shortlist.js --days 60 --per 8
 //
 // Prints a per-(reporter × storyType) candidate table (markdown) plus a
 // JSON block for the picks round-trip. The founder picks from this list —
@@ -26,7 +45,36 @@
 // picks, at embed time, in the build harness. A candidate that cannot
 // produce a clean dual output is not an exemplar, however good the prose.
 
-import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { existsSync } from 'node:fs';
+
+// ── Env self-load + pre-flight (see header) ──────────────────────────────
+// No-op when the vars are already set — running WITH --env-file, or on
+// Vercel, hits this branch and skips. process.loadEnvFile throws on a
+// missing path, so guard with existsSync; relative to the current working
+// directory, i.e. the repo root (where .env.local lives).
+if (!process.env.FIREBASE_PROJECT_ID) {
+  for (const envFile of ['.env.local', '.env']) {
+    if (existsSync(envFile)) {
+      process.loadEnvFile(envFile);
+      break;
+    }
+  }
+}
+
+const REQUIRED_ENV = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'];
+const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missingEnv.length > 0) {
+  console.error(
+    `[ExemplarShortlist] missing required Firebase Admin env: ${missingEnv.join(', ')}\n` +
+    'Add them to .env.local at the repo root (format in .env.example:40-42; ' +
+    'FIREBASE_PRIVATE_KEY must be double-quoted with literal \\n escapes), then run ' +
+    'from the repo root:\n' +
+    '  node api/scripts/wire-exemplar-shortlist.js --days 60 --per 8',
+  );
+  process.exit(1);
+}
+
+const { getFirebaseAdmin } = await import('../_utils/firebaseAdmin.js');
 
 const GROUPS = [
   { reporter: 'kai', types: ['market_pulse'] },
