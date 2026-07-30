@@ -1,4 +1,11 @@
 import React from 'react';
+// Delight Layer Task 1 Phase 2 pilot: the --ft-* substrate (src/theme/tokens.css).
+// NOTE the deliberate asymmetry below — the particle colors and the gradient-mesh
+// rgba() stops migrate, but the SVG stroke="" / fill="" presentation attributes do
+// NOT: var() is not reliably substituted in presentation attributes, and a failure
+// there would silently drop the price lines. Same reasoning as the Framer Motion
+// rule. See docs/audits/20260729_DELIGHT_THEMING_PHASE2_PREAMBLE_HAZARD_SCAN.md §2 H8.
+import { cssVar } from '../theme/cssTokens';
 
 const DesktopBackground = ({ isDesktop }) => {
   if (!isDesktop) return null;
@@ -9,7 +16,8 @@ const DesktopBackground = ({ isDesktop }) => {
       id: i,
       left: `${(i * 7 + 5) % 100}%`,
       top: `${(i * 11 + 10) % 100}%`,
-      color: i % 3 === 0 ? '#00d9ff' : i % 3 === 1 ? '#00ff88' : '#8b5cf6',
+      // #00ff88 matches no locked token, so it stays a literal (spec §5 Phase 2).
+      color: i % 3 === 0 ? cssVar('cyan') : i % 3 === 1 ? '#00ff88' : cssVar('purple'),
       duration: 12 + (i % 5) * 2,
       delay: (i % 4) * 1.5,
     }));
@@ -64,8 +72,8 @@ const DesktopBackground = ({ isDesktop }) => {
           right: 0,
           bottom: 0,
           background: `
-            radial-gradient(ellipse at 15% 20%, rgba(0, 217, 255, 0.07) 0%, transparent 45%),
-            radial-gradient(ellipse at 85% 80%, rgba(139, 92, 246, 0.07) 0%, transparent 45%),
+            radial-gradient(ellipse at 15% 20%, rgba(var(--ft-cyan-rgb), 0.07) 0%, transparent 45%),
+            radial-gradient(ellipse at 85% 80%, rgba(var(--ft-purple-rgb), 0.07) 0%, transparent 45%),
             radial-gradient(ellipse at 15% 80%, rgba(0, 255, 136, 0.04) 0%, transparent 40%),
             radial-gradient(ellipse at 85% 20%, rgba(255, 71, 87, 0.04) 0%, transparent 40%)
           `,

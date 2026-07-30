@@ -1,0 +1,52 @@
+{
+  "_schema": "Each entry is { count, authority }. `count` is diffed against a live scan; the guard fails on any INCREASE (A4a) and flags a DECREASE as a stale baseline. `authority` is the ruling that exempts the literal (R-BL21) — R-H8 / R-#fff / R-S9 / UNSCOPED-P2 — so a future reader knows WHY it is exempt, not just that it is. Regenerate with GENERATE_TOKEN_GUARD_BASELINE=1; new entries land as UNTAGGED and fail the authority test until a ruling is cited.",
+  "guarded": {
+    "src/index.css": {
+      "#0d1117": {
+        "count": 3,
+        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+      },
+      "#161b22": {
+        "count": 1,
+        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+      },
+      "#00d9ff": {
+        "count": 1,
+        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+      },
+      "#10b981": {
+        "count": 1,
+        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+      },
+      "#ef4444": {
+        "count": 1,
+        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+      },
+      "#21262d": {
+        "count": 4,
+        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+      },
+      "#8b5cf6": {
+        "count": 4,
+        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+      }
+    },
+    "src/components/Dashboard/CommandDashboard.jsx": {
+      "#ffffff": {
+        "count": 3,
+        "authority": "R-#fff x1 (color:'#fff' shorthand at :253) + R-S9 x2 (alpha('#FFFFFF') call sites at :350, :417)"
+      }
+    },
+    "src/components/Dashboard/CommandDashboardDesktop.jsx": {},
+    "src/components/DesktopBackground.jsx": {
+      "#00d9ff": {
+        "count": 2,
+        "authority": "R-H8 x2 — SVG stroke presentation attributes at :98, :138"
+      },
+      "#8b5cf6": {
+        "count": 1,
+        "authority": "R-H8 x1 — SVG stroke presentation attribute at :146"
+      }
+    }
+  }
+}
