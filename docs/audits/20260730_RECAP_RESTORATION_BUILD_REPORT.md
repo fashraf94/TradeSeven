@@ -162,4 +162,13 @@ The founder ran the capture script twice (7-day + full-July windows) and issued 
 
 *ADDENDUM — capture gate closed; PR ready for founder merge.*
 
+---
+
+## ADDENDUM 2 (Jul 30, final round) — closing rulings
+
+- **Spec V1 committed** (`docs/RECAP_RESTORATION_MINIARC_SPEC_V1.md`, founder upload, byte-exact — SHA-256 verified against the original). The "founder-to-add" gap is closed; both spec versions now sit in `docs/` per the discovery-rulings memo header.
+- **R-B2(i)↔R-B3 resolution CONFIRMED as built (founder ruling, this round):** the FINAL-LOCK wins — consensus keys stay on the locked UTC expression, evaluated on the story's publish instant. The founder records that the contradiction was in the rulings memo itself and that this build's resolution (build-report flag 1) **is the ruling of record**.
+- **PPI→yoy RATIFIED (founder ruling, this round):** the verifiable print wins — the capture's `mom` row carries no estimate, so `Producer Price Index`@yoy stands as the PPI mapping of record.
+- **No PR subscription:** per BUILD_RULES §2 ("Protected `main`; PRs only; the founder merges manually. Pushed ≠ deployed"), the session's role ends at the final push; the founder merges.
+
 *RECAP_RESTORATION_BUILD_REPORT — 2026-07-30*
