@@ -99,7 +99,7 @@ Reasoning: treating only the literal case leaves the **larger** drop snapping at
 **Setup constraint you need to know first.** The one-live-battle guard is **per agent**, not per user (`api/agent/decide.js:689-693` queries `agentId`). So:
 
 - **A real two-game handoff needs TWO DISTINCT RANKED AGENTS**, each with an active deploy.
-- **Training-pod battles will not work as the second game** — the poll deliberately filters training clones (`App.jsx:3900-3902`), so they never reach the sky. This is intentional and matches the card.
+- **Training-pod battles will not work as the second game** — the poll deliberately filters training clones (`App.jsx:3907-3911`), so they never reach the sky. This is intentional and matches the card.
 - If running two ranked agents at once is not practical on your account, tell me — the `?warpState=` override synthesizes a single game and *cannot* demo a handoff today. Extending it to synthesize a two-game handoff is a small, dev-only addition I can make on request; I have not built it, since your kickoff says this item wants real battle data.
 
 **Step 1 — flip on-branch** in `src/config/featureFlags.js` (`STARFIELD_BACKGROUND_ENABLED`, and `STARFIELD_MOBILE_ENABLED` for phone). Or skip the flip and use `?starfield=1` / `?starfieldMobile=1` on the preview URL — safer, and it exercises the same path.

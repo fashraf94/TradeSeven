@@ -4,7 +4,7 @@
 // Delight Layer arc, Task 2 (Phase 2). Spec V2 §4 D5, rulings R-T2-S1/S2/S13.
 //
 // Maps the EXISTING `activeAgentBattles` poll result (src/App.jsx:2344, filled
-// by the poll at :3877-3913) into the pure core's `liveGames` shape. Pure and
+// by the poll at :3887-3922) into the pure core's `liveGames` shape. Pure and
 // render-free — no React, no Firebase, no clock of its own.
 //
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@
 // and CommandDashboard.jsx do to decide `isLive`. Do not "improve" it here — a
 // filter that diverges is exactly how a sky that disagrees with the card gets
 // built. Training-clone battles are already excluded upstream by the poll
-// (App.jsx:3900-3902, TRAINING_CLONE_ID_PREFIX), so they never arrive.
+// (App.jsx:3907-3911, TRAINING_CLONE_ID_PREFIX), so they never arrive.
 //
 // ---------------------------------------------------------------------------
 // THE REAL DOC SHAPE (ruling R-T2-S13)

@@ -2,7 +2,8 @@
 //
 // The BATTLE-WEATHER STARFIELD — a canvas radial-projection field whose speed
 // reflects the user's live games.
-// Delight Layer arc, Task 2 (Phase 1). Spec V2 §4 D1/D3, rulings R-T2-S4/S5/S7.
+// Delight Layer arc, Task 2 (Phase 2 — live-wired). Spec V2 §4 D1/D3/D5,
+// rulings R-T2-S1/S2/S4/S5/S7/S12.
 // Basis: docs/audits/20260730_DELIGHT_STARFIELD_BACKGROUND_PHASE0_DISCOVERY.md
 //
 // ---------------------------------------------------------------------------
@@ -36,9 +37,16 @@
 // resize that never recreates particles, visibilitychange cancel/restart,
 // style-opts-in-refs so the once-mounted loop reads fresh values without
 // re-subscribing, and a cleanup that cancels the rAF, clears the timer and
-// removes both listeners. That inheritance IS the integration assurance for
-// acceptance rows A3/A4 — per R-T2-S8 there is no jsdom rAF-spy rig, because the
-// repo mocks getContext/rAF nowhere and has no setupFiles to home one.
+// removes both listeners. That inheritance is the integration assurance for
+// acceptance rows A3/A4.
+//
+// CORRECTION (ruling R-T2-S12): an earlier version of this header said the repo
+// "mocks getContext/rAF nowhere and has no setupFiles to home one," which was
+// the premise ruling S8 rested on. That premise was FALSE — see
+// Forge/workshop/character/CharacterArea.scrollreset.test.jsx (jsdom docblock,
+// createRoot + act, per-file mocks, no setupFiles). The narrow rig now lives at
+// starfield.depstability.test.jsx and guards the one hazard that matters here:
+// a new `liveGames` identity every poll must NOT restart the field.
 //
 // ONE MANDATORY INVERSION (R-T2-S7): BaggerBombBackground defaults
 // honorReducedMotion=false (it always animates, to preserve the PvP view).
@@ -49,12 +57,18 @@
 // ---------------------------------------------------------------------------
 // DATA PATH
 // ---------------------------------------------------------------------------
-// PHASE 1 (this commit): driven ONLY by the ?warpState= dev override. There is
-// no live wiring yet and no Firestore import — acceptance row A6.
-// PHASE 2 (next): `liveGames` arrives as a PROP, mapped from the EXISTING
-// `activeAgentBattles` poll (src/App.jsx:3877-3913) — zero new Firestore reads
-// (R-T2-S1). The override keeps winning when present (R-T2-S4). The seam is
-// marked below.
+// LIVE (Phase 2): `liveGames` arrives as a PROP, mapped by warpBattleAdapter.js
+// from the EXISTING `activeAgentBattles` poll (src/App.jsx:3887-3922) — zero new
+// Firestore reads (R-T2-S1, acceptance row A6). This component imports no
+// Firebase API and starts no timer of its own.
+//
+// The `?warpState=` dev override still WINS over live inputs when present
+// (R-T2-S4) — it is anchored once at mount so its endgame clock counts down.
+//
+// The ENDGAME ramp ticks off the governing game's `expiresAt` on the rAF loop
+// rather than on the 120s poll (R-T2-S2): the poll supplies set MEMBERSHIP, the
+// local clock supplies the ramp. A poll-driven ramp would miss short windows
+// entirely, since min(30min, 25%) can be smaller than the poll interval.
 //
 // v1 endgame scope is agentBattles only (R-T2-S3): the League 5-day arc caps at
 // BATTLE LIVE because its end date is server-only, and a Snake-Draft-only user

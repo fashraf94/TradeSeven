@@ -9,7 +9,7 @@
 //
 //     a NEW `liveGames` array identity must NOT restart the field.
 //
-// WHY THIS EXISTS. `App.jsx:3903` calls setActiveAgentBattles(battles) on every
+// WHY THIS EXISTS. `App.jsx:3912` calls setActiveAgentBattles(battles) on every
 // 120s poll, so `starfieldLiveGames` is a fresh array roughly every two minutes
 // even when the battles are unchanged. The component therefore holds it in a ref
 // and keeps it OUT of the mount effect's dependency array. Add it to those deps
