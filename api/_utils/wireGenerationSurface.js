@@ -153,21 +153,45 @@ export function surfaceHash(fileHashes) {
  *
  * @returns {{ allowed: boolean, reason: string }}
  */
+/**
+ * Strictly-forward version comparison, uniform over the integer
+ * generationVersion and the dotted-semver validator/renderer versions
+ * (coerced via String().split('.')). Returns true ONLY when `next` is
+ * greater than `prev` — equal is not a bump, and a DOWNGRADE is not a bump
+ * (P2+N0 review finding: a directionless `!==` accepted a validator
+ * downgrade as satisfying the required bump).
+ */
+export function versionIncreased(prev, next) {
+  if (prev === undefined || next === undefined) return false;
+  const a = String(prev).split('.').map(Number);
+  const b = String(next).split('.').map(Number);
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const x = a[i] || 0, y = b[i] || 0;
+    if (y > x) return true;
+    if (y < x) return false;
+  }
+  return false; // equal
+}
+
 export function assessRegen(prevSection, nextSection) {
   if (!prevSection) {
     return { allowed: true, reason: 'no committed baseline (first generation)' };
   }
   const contentChanged = prevSection.hash !== nextSection.hash;
-  const versionChanged = prevSection.version !== nextSection.version;
-  if (contentChanged && !versionChanged) {
+  // A bump must move the version FORWARD — an unchanged OR downgraded version
+  // does not license a content change (review finding: downgrade slipped past
+  // the old directionless `!==`).
+  const versionForward = versionIncreased(prevSection.version, nextSection.version);
+  if (contentChanged && !versionForward) {
     return {
       allowed: false,
       reason:
-        `content changed but version is still ${JSON.stringify(prevSection.version)} — ` +
-        'bump the constant (F-M1), then regenerate',
+        `content changed but version did not move forward (still/down from ${JSON.stringify(prevSection.version)}) — ` +
+        'bump the constant forward (F-M1), then regenerate',
     };
   }
-  return { allowed: true, reason: contentChanged ? 'content + version changed' : 'no content change' };
+  return { allowed: true, reason: contentChanged ? 'content + forward version bump' : 'no content change' };
 }
 
 const TICKER_UNIVERSE_KEY = 'value:api/_utils/rankingConfig.js#TICKER_TO_SECTOR';
@@ -187,7 +211,9 @@ export function assessTickerUniverseCaveat(prevBaseline, next) {
   const prevHash = prevBaseline.generationSurface?.files?.[TICKER_UNIVERSE_KEY];
   const nextHash = next.generationSurface?.files?.[TICKER_UNIVERSE_KEY];
   const universeChanged = prevHash !== undefined && prevHash !== nextHash;
-  const validatorBumped = prevBaseline.validator?.version !== next.validator?.version;
+  // Must be a FORWARD validator bump — a downgrade (or equal) does not
+  // satisfy the caveat (review finding: `!==` accepted 1.6.0 -> 1.5.0).
+  const validatorBumped = versionIncreased(prevBaseline.validator?.version, next.validator?.version);
   if (universeChanged && !validatorBumped) {
     return {
       allowed: false,

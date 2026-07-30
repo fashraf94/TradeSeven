@@ -62,8 +62,10 @@ export async function fetchWireDays(db, marketDates) {
  *     never a throw — corruption of a read-side index must not take down a
  *     consumer's tick (P3 analog).
  *
- * Order: days in the order given by `marketDates`; within a day, persisted
- * entries[] order (append-only, therefore chronological). Callers wanting
+ * Order: days in the order given by `marketDates`; within a day, the order
+ * of `bySymbol[symbol]` storyIds — which equals persisted entries[] append
+ * order (therefore chronological) because rebuildIndexes appends storyIds in
+ * entries[] iteration order (M9, wireWriteThrough.js). Callers wanting
  * newest-first (N1.2) pass dates newest-first and/or reverse — ordering
  * POLICY belongs to the consumer, not the reader.
  *

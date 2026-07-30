@@ -22,7 +22,7 @@ const {
   runWireTransactionFromEnvelope,
 } = await import('./wireWriteThrough.js');
 const { runWireReplaySweep } = await import('./wireReplaySweep.js');
-const { WIRE_SCHEMA_VERSION, WIRE_DIGEST_RENDERER_VERSION } = await import('./wireContracts.js');
+const { WIRE_SCHEMA_VERSION, WIRE_DIGEST_RENDERER_VERSION, WIRE_GENERATION_VERSION } = await import('./wireContracts.js');
 
 const MARKET_DATE = '2026-07-24';
 const NOW = new Date('2026-07-24T18:00:00Z');
@@ -78,17 +78,20 @@ describe('P2-25: entries carry generationConfig; envelope carries the stamp + sc
 
 describe('P2-22: replay stamp fidelity — the sweep replays the STORED tuple, never runtime state', () => {
   it('kill after batch → "bump" → sweep → replayed entry carries the OLD version', async () => {
-    // Generation happened under version 3 (the OLD epoch); the envelope
-    // stores it. The runtime constant is 4 — if the transaction re-derived,
-    // the entry would wear 4 and this assertion would fail.
+    // Generation happened under an OLD epoch (version 3); the envelope
+    // stores it. If the transaction re-derived from the runtime constant,
+    // the entry would wear WIRE_GENERATION_VERSION instead — so the guard
+    // tracks the LIVE constant, not a hardcoded number (review finding:
+    // a hardcoded `.not.toBe(4)` went dead when the constant bumped past 4).
     const oldTuple = { generationVersion: 3, continuityEnabled: true };
+    expect(oldTuple.generationVersion).not.toBe(WIRE_GENERATION_VERSION); // fixture must differ from live
     await publish(db, { deferTransaction: true, generationConfig: oldTuple });
 
     const summary = await runWireReplaySweep(db, { now: new Date(NOW.getTime() + 60_000) });
     expect(summary.replayed).toBe(1);
     const [entry] = dayEntries();
     expect(entry.generationConfig).toEqual(oldTuple);
-    expect(entry.generationConfig.generationVersion).not.toBe(4);
+    expect(entry.generationConfig.generationVersion).not.toBe(WIRE_GENERATION_VERSION);
   });
 });
 

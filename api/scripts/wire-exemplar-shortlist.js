@@ -25,6 +25,16 @@
 //   # explicit-flag equivalent (matches the other api/scripts, also fine):
 //   node --env-file=.env.local api/scripts/wire-exemplar-shortlist.js --days 60 --per 8
 //
+// SPREAD CAP (Kai/Alex re-run): --spread-per-day N keeps at most N candidates
+// per ET calendar day so high-volume groups span more days; --scan N raises
+// the per-group query ceiling so the cap has runway to reach --per:
+//   node api/scripts/wire-exemplar-shortlist.js --days 40 --per 8 --spread-per-day 2 --scan 150
+// (--days 40, not 60: the cleanup sweep hard-deletes stories ~30d after
+// expiry, so nothing older than ~31-44d per reporter exists to fetch.)
+// Read `considered` per group: 0 = the type is never written (production
+// defect); >0 with shortlisted=0 = a filter ate them; the table's ET-day
+// column shows the achieved spread.
+//
 // Prints a per-(reporter × storyType) candidate table (markdown) plus a
 // JSON block for the picks round-trip. The founder picks from this list —
 // selection is a taste call (N2.2); this script applies STRUCTURAL filters
@@ -96,6 +106,29 @@ const flag = (name, dflt) => {
 };
 const DAYS = flag('days', 60);
 const PER_GROUP = flag('per', 8);
+// --spread-per-day N (default 0 = off): keep at most N candidates per ET
+// calendar day, so a high-volume group (Kai fires 3x/day; Alex bursts on
+// volatile days) does not fill its whole shortlist from 1-3 recent days.
+// --scan N (default 60): the per-group query ceiling. The spread cap skips
+// same-day rows, so it needs more scanned docs to reach --per; raise this
+// when a capped group comes back short.
+const SPREAD_PER_DAY = flag('spread-per-day', 0);
+const SCAN = flag('scan', 60);
+
+// RETENTION CEILING (cleanup.js:30-58): a story is marked expired at
+// expiresAt<now and hard-DELETED ~30 days after that. Effective history is
+// therefore expiryHours + ~30d per reporter — kai/alex ~31d, neta ~32d,
+// doug ~37d, kim ~44d. --days beyond that ceiling returns nothing older;
+// it does not error, it just cannot reach further back than the sweep left.
+
+// ET calendar day (America/New_York) for the spread cap — matches the
+// newsroom's own dedup key (getTodayET, generate-pulse.js). en-CA yields
+// YYYY-MM-DD.
+function etDay(publishedAt) {
+  const d = publishedAt?.toDate?.() ?? (publishedAt instanceof Date ? publishedAt : new Date(publishedAt));
+  if (Number.isNaN(d?.getTime?.())) return 'unknown';
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
 
 function serverOperandFields(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return [];
@@ -122,37 +155,66 @@ async function main() {
         .where('type', '==', type)
         .where('publishedAt', '>', since)
         .orderBy('publishedAt', 'desc')
-        .limit(60)
+        .limit(SCAN)
         .get();
 
       const candidates = [];
+      const perDay = new Map(); // ET day -> kept count (spread cap)
+      let cappedSkips = 0;      // rows dropped ONLY by the spread cap
       for (const doc of snap.docs) {
         const s = doc.data();
         if (s.wireConflict || s.wireSuperseded === true) continue;
         const body = String(s.body || '');
         if (body.length < BODY_MIN || body.length > BODY_MAX) continue;
         if (!s.dataSnapshot) continue;
+        // Spread cap: once an ET day is full, SKIP (keep scanning older) —
+        // never break, so selection walks back into earlier days.
+        if (SPREAD_PER_DAY > 0) {
+          const day = etDay(s.publishedAt);
+          const n = perDay.get(day) || 0;
+          if (n >= SPREAD_PER_DAY) { cappedSkips++; continue; }
+          perDay.set(day, n + 1);
+        }
         candidates.push({
           storyId: doc.id,
           publishedAt: s.publishedAt?.toDate?.()?.toISOString?.() ?? String(s.publishedAt),
+          etDay: etDay(s.publishedAt),
           headline: String(s.headline || '').slice(0, 110),
           bodyChars: body.length,
           operandFields: serverOperandFields(s.dataSnapshot),
         });
         if (candidates.length >= PER_GROUP) break;
       }
-      out.groups.push({ reporter, type, considered: snap.size, shortlisted: candidates.length, candidates });
+      const group = { reporter, type, considered: snap.size, shortlisted: candidates.length, candidates };
+      // Honesty: if the cap left the group short of --per, say why — is it
+      // the spread cap biting (raise --scan) or a genuinely thin type?
+      if (SPREAD_PER_DAY > 0) {
+        group.spreadPerDay = SPREAD_PER_DAY;
+        group.daysCovered = perDay.size;
+        group.cappedSkips = cappedSkips;
+        if (candidates.length < PER_GROUP) {
+          group.note = snap.size >= SCAN
+            ? `short of --per and scan hit the ${SCAN}-doc ceiling; raise --scan`
+            : `short of --per: only ${snap.size} rows exist in-window (retention/sparsity), not a cap artifact`;
+        }
+      }
+      out.groups.push(group);
     }
   }
 
   // Markdown for the founder; JSON for the picks round-trip.
   console.log(`# Wire exemplar shortlist — last ${DAYS} days\n`);
   for (const g of out.groups) {
-    console.log(`## ${g.reporter} × ${g.type}  (${g.shortlisted} shortlisted of ${g.considered} scanned)\n`);
-    console.log('| # | storyId | published | chars | server operands | headline |');
+    const spread = g.spreadPerDay ? ` · ${g.daysCovered} ET days, cap ${g.spreadPerDay}/day` : '';
+    console.log(`## ${g.reporter} × ${g.type}  (${g.shortlisted} shortlisted of ${g.considered} scanned${spread})\n`);
+    if (g.note) console.log(`> ⚠️ ${g.note}\n`);
+    // considered=0 ⇒ the type is not being written (production defect);
+    // considered>0 with shortlisted=0 ⇒ a filter ate them (inspect below).
+    if (g.considered === 0) console.log('> ⚠️ considered=0 — no stories of this type in-window (never written, or retention-deleted)\n');
+    console.log('| # | storyId | ET day | chars | server operands | headline |');
     console.log('|---|---|---|---|---|---|');
     g.candidates.forEach((c, i) => {
-      console.log(`| ${i + 1} | \`${c.storyId}\` | ${c.publishedAt?.slice(0, 10)} | ${c.bodyChars} | ${c.operandFields.join(', ') || '—'} | ${c.headline.replace(/\|/g, '\\|')} |`);
+      console.log(`| ${i + 1} | \`${c.storyId}\` | ${c.etDay ?? c.publishedAt?.slice(0, 10)} | ${c.bodyChars} | ${c.operandFields.join(', ') || '—'} | ${c.headline.replace(/\|/g, '\\|')} |`);
     });
     console.log('');
   }
