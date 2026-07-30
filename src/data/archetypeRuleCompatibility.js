@@ -8,9 +8,20 @@
 //
 // INVARIANT R (runtime neutrality — WS1 design §4.3): this module must NEVER be
 // imported by the fenced files, api/_utils/projectActiveRules.js, or either
-// prompt assembly (agentPromptAssembly / agentEvalPromptAssembly). It informs
-// equip-path warnings/blocks and render-time badges ONLY — never projection or
-// prompts. archetypeRuleCompatibility.test.js asserts this from source.
+// prompt assembly (agentPromptAssembly / agentEvalPromptAssembly) — it steers no
+// live trading decision. That negative half is the actual invariant and it still
+// holds, asserted from source by archetypeRuleCompatibility.test.js and
+// ruleCompatInvariantR.test.js:133-150.
+//
+// The stale positive claim once here — that the map "informs equip-path
+// warnings/blocks and render-time badges ONLY" — was understated and is
+// corrected: beyond the client equip guard and render badges, getRuleCompatInfo
+// is read on server write-time paths (compileOnSettingsChange.js's
+// resolveEquippedCompatCells; the equip endpoint's classify via
+// ruleCompatClassify.js), and its resolved verdicts PERSIST into user
+// CompiledBuild documents. Load-bearing on write-time surfaces, absent from every
+// fenced / projection / prompt path. (Cite: REVERSE_DIRECTION_MAP_AUDIT_2026-07-29
+// §10.4 item 4 — four server read paths + build-doc persistence.)
 //
 // CLASSIFICATION AUTHORITY: each archetype's Zone 1 statements in the six
 // ARCHETYPE_DEF_*_2026-06-24.md docs (repo root), distilled in the WS1 build

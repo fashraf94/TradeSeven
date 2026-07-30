@@ -26,9 +26,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   prepareCompileInputs,
   writeCompiledBuildsInTx,
+  resolveEquippedCompatCells,
   __resetCompileMemos,
 } from './compileOnSettingsChange.js';
 import { validateCompiledBuild } from './archetypeBuildSchemas.js';
+import { getRuleCompatInfo } from '../../src/data/archetypeRuleCompatibility.js';
 import { COMPILER_ENABLED } from '../../src/config/featureFlags.js';
 import { LIVE_DEPLOY_MODES } from './gameModePolicy.js';
 import { TIERED_GAME_MODE, FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
@@ -218,5 +220,58 @@ describe('P2.4a enabled behavior (preview-smoke path)', () => {
       nowIso: NOW,
     });
     expect(previews[TIERED_GAME_MODE].effectiveGuardrailsPreview.perType).toEqual({});
+  });
+});
+
+// Regression for the settings-writer key-space defect (audit §10.4 item 3):
+// the writer resolved compat cells with getRuleCompatInfo(snap.id, ...), but
+// snap.id is the Firestore rule DOC id (forgeService.js:481-492) while the
+// compat map is keyed by TEMPLATE id (snap.sourceRef, ruleCompatClassify.js:45-46),
+// so EVERY live cell silently resolved via:'fallthrough'. These lock the
+// pairing: lookup by sourceRef, key by doc id. Each fails under the doc-id form.
+describe('resolveEquippedCompatCells — compat keys on the TEMPLATE id, not the doc id', () => {
+  const ARCHETYPE = 'contrarian';
+  const TEMPLATE_ID = 'sr-04';       // a contrarian core_conflict override (add-to-winners)
+  const DOC_ID = 'rule_9f3a17c2';    // a Firestore doc-id shape, deliberately ≠ the template id
+
+  it('anchor: the template id carries a real (non-fallthrough) verdict; the doc id does not', () => {
+    // If THIS fails, the sr-04/contrarian override was removed — repick a
+    // non-fallthrough anchor cell; it is not a writer regression.
+    expect(getRuleCompatInfo(TEMPLATE_ID, ARCHETYPE).via).not.toBe('fallthrough');
+    // A doc id is not a template id → fallthrough: exactly what the pre-fix
+    // getRuleCompatInfo(snap.id, ...) produced for every equipped rule.
+    expect(getRuleCompatInfo(DOC_ID, ARCHETYPE).via).toBe('fallthrough');
+  });
+
+  it('resolves by snap.sourceRef and keys by snap.id — the doc-id form would fall through', () => {
+    const cells = resolveEquippedCompatCells(
+      [{ bundleId: 'b1', ruleSnapshots: [{ id: DOC_ID, sourceRef: TEMPLATE_ID }] }],
+      ARCHETYPE,
+    );
+    // Keyed by the DOC id — the id compileBuild.js:160 rehydrates rules under.
+    expect(Object.keys(cells)).toEqual([DOC_ID]);
+    // Resolved by the TEMPLATE id: byte-for-byte the real verdict. Under the
+    // reverted doc-id form the cell would be getRuleCompatInfo(DOC_ID, ...)'s
+    // fallthrough neutral and BOTH assertions below flip.
+    expect(cells[DOC_ID]).toEqual(getRuleCompatInfo(TEMPLATE_ID, ARCHETYPE));
+    expect(cells[DOC_ID].via).not.toBe('fallthrough');
+    expect(cells[DOC_ID]).not.toEqual(getRuleCompatInfo(DOC_ID, ARCHETYPE));
+  });
+
+  it('manual rules (sourceRef null, outside the map) land on fallthrough absence, keyed by doc id', () => {
+    const cells = resolveEquippedCompatCells(
+      [{ ruleSnapshots: [{ id: 'manual_1', sourceRef: null }] }],
+      ARCHETYPE,
+    );
+    expect(cells.manual_1.via).toBe('fallthrough');
+  });
+
+  it('dedupes a snapshot repeated across bundles by doc id', () => {
+    const snap = { id: DOC_ID, sourceRef: TEMPLATE_ID };
+    const cells = resolveEquippedCompatCells(
+      [{ ruleSnapshots: [snap] }, { ruleSnapshots: [snap] }],
+      ARCHETYPE,
+    );
+    expect(Object.keys(cells)).toEqual([DOC_ID]);
   });
 });
