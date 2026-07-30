@@ -117,27 +117,30 @@ export function verifyEconPrint({ actual, estimate }) {
 // the absolute arm catches the mismatch class where the two operands
 // DISAGREE about units (100× spreads fail both arms). Band table proposed
 // by CC in the build report per R-B1a; founder-adjustable constants.
-// Count-denominated bands are expressed in RAW units because
-// parseEconOperand normalizes 'K'/'M' suffixes to raw values (review
-// finding M1: thousands-denominated bands were dead against normalized
-// operands, so recession-class legitimate surprises — claims 510K vs 225K,
-// NFP −300K vs +150K — were held by the relative arm alone). The founder
-// capture run confirms EODHD's actual scale convention; these constants
-// are founder-adjustable if the feed turns out suffix-free.
+// Bands are denominated in the FEED'S OBSERVED units, pinned by the Jul 30
+// 2026 capture provenance (docs/ECON_CAPTURE_FINDINGS_AND_MATCHER_RULINGS
+// _JUL30_2026.md §0): count categories arrive in THOUSANDS (Initial
+// Jobless Claims actual 187 = 187K; Non Farm Payrolls actual 57 = 57K) and
+// every observed operand is NUMERIC — the suffix-string world the parser
+// defends against does not exist on this path, so K-normalization never
+// fires on feed operands and the bands must speak the feed's own units.
+// (Review M1's raw-unit re-denomination was calibrated to the synthetic
+// pre-capture world and is reversed by this observation.) Recession-class
+// legitimate surprises stay publishable: claims 510 vs 225 → delta 285 ≤
+// band 300; NFP −300 vs +150 → delta 450 ≤ band 500.
 export const PLAUSIBILITY_BANDS = Object.freeze({
   'FOMC': 1.0,                 // percentage points (rate decision vs expected)
-  'CPI': 2.0,                  // % MoM
-  'PPI': 2.0,                  // % MoM
+  'CPI': 2.0,                  // % (YoY headline print — capture ruling §1)
+  'PPI': 2.0,                  // % (YoY print)
   'PCE': 2.0,                  // % MoM
   'Retail Sales': 5.0,         // % MoM
   'GDP': 5.0,                  // % annualized QoQ
-  'Productivity': 8.0,         // % annualized QoQ
-  'NFP': 500000,               // jobs (raw)
-  'JOLTS': 4000000,            // openings (raw)
+  'Productivity': 8.0,         // % annualized QoQ (unmapped pending August verification)
+  'NFP': 500,                  // thousands of jobs — the feed's observed unit
   'ISM Manufacturing': 25,     // index points
   'ISM Services': 25,          // index points
   'Consumer Confidence': 25,   // index points
-  'Jobless Claims': 300000,    // claims (raw)
+  'Jobless Claims': 300,       // thousands of claims — the feed's observed unit
 });
 
 // Earnings surprise, same gate class (R-B1a: "same band applied to earnings

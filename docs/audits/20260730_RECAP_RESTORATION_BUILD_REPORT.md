@@ -144,4 +144,22 @@ An independent adversarial review agent executed the staged diff's edge cases (n
 
 7. **Pre-arc stories are invisible to the referent dedup** — stories written before this build carry no `referentDate`, so the `where('referentDate','==',…)` query cannot match them. Review confirmed this matches real Firestore semantics and is bounded: both seams were structurally silent pre-arc, so the worst case is a one-time duplicate on cutover day. No backfill needed; noted for the R9 observation window.
 
+---
+
+## ADDENDUM (Jul 30, same day) — Capture-gate closure
+
+The founder ran the capture script twice (7-day + full-July windows) and issued `ECON_CAPTURE_FINDINGS_AND_MATCHER_RULINGS_JUL30_2026.md`. **The R-B1 HARD STOP does not fire** — `/economic-events` is live on the plan. All §5 build actions executed:
+
+- **Artifacts committed** at `api/_utils/__fixtures__/econCapture20260730.json` (106 rows) + `econCaptureJulyFull.json` (425 rows, 200 distinct types), unescaped from the founder's uploads and JSON-validated (row counts match the memo's provenance table exactly).
+- **R2 fixture swapped to CAPTURED rows** (`econPrintVerifier.test.js`): provenance names the artifact/window/capture instant; the FOMC row closes review M5 (**numeric 3.75, not a range string**); the estimate-null degrade is documented as ROUTINE (~57% of rows); string/K-M-B variants are kept but labeled DEFENSIVE — the feed is numeric-only.
+- **Matcher table rewritten to §1's exact-equality rules** (`ECON_CATEGORY_MATCHERS`): cleaned-`type` EXACT match + `comparison` keying (CPI→`Inflation Rate`@yoy per the founder ruling; PPI→`Producer Price Index`@**yoy** — the observed mom row carries no estimate, so yoy is the verifiable print, deviation noted in-code; PCE@mom, GDP@qoq, Retail@mom). The substring/avoid mechanism is retired — sibling prints are structurally excluded, and every §1 avoid-list string is tested by its LITERAL observed form (45-test matcher suite incl. a full-July sweep of every Tier-1 array event against all 425 rows). ISM dual-name resolves to exactly one row (§3.3).
+- **JOLTS: searched, then dropped** (§2) — zero hits across 425 rows under jolts / job openings / labor turnover / quits / hires. Removed from `getMacroEventsInWindow` with the in-code reason; `getJOLTSDates` stays exported for reference. **Productivity: array entry kept, deliberately UNMAPPED** pending an August-window capture — unmapped cannot mis-fire.
+- **Bands re-denominated to the feed's OBSERVED units** (thousands for claims/NFP — captured claims actual `187` = 187K). This reverses the review-M1 raw-unit calibration, which was built for the synthetic pre-capture world; the unit doctrine is now provenance-pinned in `PLAUSIBILITY_BANDS`' header, and an operand-pair unit-disagreement case (raw 187000 vs thousands 212) is tested as HELD.
+- **Parse-as-UTC asserted** on row timestamps (§5.4) — `rowDateOnly` takes the UTC date from the string itself, machine-TZ-independent, tested on the captured FOMC timestamp.
+- **Tier-1 value-lock FOLDED** (§5.6, trivial): `TIER1_CALENDAR_VALUE_LOCK` (the full event set over the maintained horizon) joins `GENERATION_VALUE_EXPORTS`, so a Tier-1 set change forces a `WIRE_GENERATION_VERSION` bump while `macroCalendar.js` stays outside the path manifest (DRB-shared). Baseline regenerated against main's v6 — still ONE 6→7 bump (R-B7).
+- **New capture-confirmed evidence for register item L4:** July 2026 NFP released **Thu Jul 2** while the computed rule (holiday forward-shift) dates the array event Mon Jul 6 — the BLS earlier-shift divergence is real, so July-class months miss their NFP recap until the date-window tolerance lands. Asserted as a documented non-match in the fixture sweep.
+- §4 incidental validation recorded: the feed carries ten `Fed [Name] Speech` rows the retired keyword matcher would have admitted as Tier-1 with null operands — R-A1 eliminated the class before it fired.
+
+*ADDENDUM — capture gate closed; PR ready for founder merge.*
+
 *RECAP_RESTORATION_BUILD_REPORT — 2026-07-30*

@@ -18,20 +18,24 @@ import {
 } from './econPrintVerifier.js';
 
 // ── R2 fixture ───────────────────────────────────────────────────────────
-// PROVENANCE: SYNTHETIC (shape-accurate placeholder). The R2 row requires
-// this fixture be built from a CAPTURED real EODHD /economic-events
-// response with a provenance comment (spec V1.1 §5 R2; ruling R-B1). The
-// capture is a FOUNDER deliverable: run
-//   node api/scripts/capture-econ-events-eodhd.js
-// and replace ROWS below with rows from the captured payload, updating this
-// comment to carry the capture's endpoint/params/capturedAt. Until then the
-// battery runs on this synthetic sample and the provenance requirement is
-// explicitly OPEN (named in the build report + PR checklist).
-const SYNTHETIC_EODHD_ECON_ROWS = [
-  { type: 'GDP Growth Rate QoQ Adv', comparison: 'qoq', country: 'US', date: '2026-07-30 12:30:00', actual: 3.0, previous: 2.4, estimate: 2.5 },
-  { type: 'Inflation Rate MoM', comparison: 'mom', country: 'US', date: '2026-07-14 12:30:00', actual: '0.3%', previous: '0.2%', estimate: '0.2%' },
-  { type: 'Non Farm Payrolls', comparison: null, country: 'US', date: '2026-07-06 12:30:00', actual: '187K', previous: '150K', estimate: '190K' },
-  { type: 'Initial Jobless Claims', comparison: null, country: 'US', date: '2026-07-30 12:30:00', actual: 218000, previous: 224000, estimate: null },
+// PROVENANCE: CAPTURED — econ-capture-20260730.json (EODHD /economic-events,
+// country=US, window 2026-07-23 → 2026-07-30, captured 2026-07-30T20:06:35Z
+// by the founder via api/scripts/capture-econ-events-eodhd.js; the full
+// artifact is committed at api/_utils/__fixtures__/econCapture20260730.json,
+// governed by docs/ECON_CAPTURE_FINDINGS_AND_MATCHER_RULINGS_JUL30_2026.md).
+// Feed facts of record (memo §0): every observed actual/estimate is
+// NUMERIC — never a string (the Sonar-era string/K-M-B world does not exist
+// on this path; do not reintroduce string assumptions from the defensive
+// parser variants further down); estimates are absent on ~57% of rows, so
+// the NOT_VERIFIABLE(missing_operand) degrade is ROUTINE, not an edge case;
+// timestamps are timezone-naive UTC; count categories arrive in THOUSANDS.
+const CAPTURED_EODHD_ECON_ROWS = [
+  // The FOMC row — review M5 closed: a plain numeric rate, not a range string.
+  { type: 'Fed Interest Rate Decision', comparison: null, period: null, country: 'US', date: '2026-07-29 18:00:00', actual: 3.75, previous: 3.75, estimate: 3.75, change: null, change_percentage: null },
+  { type: 'Initial Jobless Claims', comparison: null, period: 'Jul/18', country: 'US', date: '2026-07-23 12:30:00', actual: 187, previous: 209, estimate: 212, change: -22, change_percentage: -10.526 },
+  { type: 'CB Consumer Confidence', comparison: null, period: 'Jul', country: 'US', date: '2026-07-28 14:00:00', actual: 90.8, previous: 92.2, estimate: 92.4, change: -1.4, change_percentage: -1.518 },
+  // Estimate-null row: the routine consensus gap (R2's degrade variant).
+  { type: 'Baker Hughes Oil Rig Count', comparison: null, period: 'Jul/24', country: 'US', date: '2026-07-24 17:00:00', actual: 450, previous: 452, estimate: null, change: -2, change_percentage: -0.442 },
 ];
 
 describe('parseEconOperand — strict parse with %, K/M/B, comma strip', () => {
@@ -72,30 +76,36 @@ describe('parseEconOperand — strict parse with %, K/M/B, comma strip', () => {
   });
 });
 
-describe('R2 battery — verifyEconPrint over the fixture', () => {
-  it('number-typed operands → VERIFIED (GDP row)', () => {
-    const row = SYNTHETIC_EODHD_ECON_ROWS[0];
+describe('R2 battery — verifyEconPrint over the CAPTURED fixture', () => {
+  it('number-typed operands → VERIFIED (captured claims row: 187 vs 212, feed thousands)', () => {
+    const row = CAPTURED_EODHD_ECON_ROWS[1];
     const v = verifyEconPrint({ actual: row.actual, estimate: row.estimate });
     expect(v.status).toBe('VERIFIED');
-    expect(v.actualValue).toBe(3.0);
-    expect(v.estimateValue).toBe(2.5);
-    expect(v.surprise).toBeCloseTo(0.5);
+    expect(v.actualValue).toBe(187);
+    expect(v.estimateValue).toBe(212);
+    expect(v.surprise).toBeCloseTo(-25);
   });
-  it('string-typed operands → VERIFIED (CPI row)', () => {
-    const row = SYNTHETIC_EODHD_ECON_ROWS[1];
+  it('the captured FOMC row → VERIFIED, surprise 0 (M5 closed: numeric 3.75, not a range string)', () => {
+    const row = CAPTURED_EODHD_ECON_ROWS[0];
     const v = verifyEconPrint({ actual: row.actual, estimate: row.estimate });
+    expect(v.status).toBe('VERIFIED');
+    expect(v.actualValue).toBe(3.75);
+    expect(v.surprise).toBe(0);
+  });
+  it('string-typed operands → VERIFIED (DEFENSIVE variant — the captured feed is numeric-only per provenance)', () => {
+    const v = verifyEconPrint({ actual: '0.3%', estimate: '0.2%' });
     expect(v.status).toBe('VERIFIED');
     expect(v.actualValue).toBeCloseTo(0.3);
     expect(v.estimateValue).toBeCloseTo(0.2);
   });
-  it('estimate:null → NOT_VERIFIABLE(missing_operand), actual retained — never rejected wholesale', () => {
-    const row = SYNTHETIC_EODHD_ECON_ROWS[3];
+  it('estimate:null → NOT_VERIFIABLE(missing_operand), actual retained — the ROUTINE consensus gap (~57% of captured rows)', () => {
+    const row = CAPTURED_EODHD_ECON_ROWS[3];
     const v = verifyEconPrint({ actual: row.actual, estimate: row.estimate });
     expect(v.status).toBe('NOT_VERIFIABLE');
     expect(v.reason).toBe('missing_operand');
-    expect(v.actualValue).toBe(218000);
+    expect(v.actualValue).toBe(450);
   });
-  it("scaled representation — '187K' rendered vs 187000 stored → still VERIFIED via unit normalization", () => {
+  it("scaled representation — '187K' rendered vs 187000 stored → still VERIFIED via unit normalization (DEFENSIVE)", () => {
     expect(operandsEquivalent('187K', 187000)).toBe(true);
     expect(operandsEquivalent('3.2%', 3.2)).toBe(true);
     expect(operandsEquivalent('1,234', 1234)).toBe(true);
@@ -114,25 +124,31 @@ describe('R2 battery — verifyEconPrint over the fixture', () => {
 });
 
 describe('R-B1a plausibility gate — loose two-arm bands', () => {
-  it('every macroCalendar category carries a band', () => {
+  it('every live macroCalendar category carries a band (JOLTS dropped per the capture rulings §2)', () => {
     for (const category of ['FOMC', 'CPI', 'PPI', 'PCE', 'Retail Sales', 'GDP', 'Productivity',
-      'NFP', 'JOLTS', 'ISM Manufacturing', 'ISM Services', 'Consumer Confidence', 'Jobless Claims']) {
+      'NFP', 'ISM Manufacturing', 'ISM Services', 'Consumer Confidence', 'Jobless Claims']) {
       expect(PLAUSIBILITY_BANDS[category], category).toBeGreaterThan(0);
     }
+    expect(PLAUSIBILITY_BANDS.JOLTS).toBeUndefined();
   });
   it('normal surprises pass', () => {
     expect(assessEconPlausibility('GDP', { actual: 3.0, estimate: 2.5 })).toEqual({ hold: false });
     expect(assessEconPlausibility('CPI', { actual: '0.3%', estimate: '0.2%' })).toEqual({ hold: false });
   });
-  it('shared-unit surprises pass even in unexpected units (relative arm)', () => {
-    // NFP as raw jobs instead of thousands: both operands share the unit.
-    expect(assessEconPlausibility('NFP', { actual: 187000, estimate: 190000 })).toEqual({ hold: false });
+  it('feed-unit prints pass: the captured claims (187 vs 212) and NFP (57 vs 110) rows', () => {
+    expect(assessEconPlausibility('Jobless Claims', { actual: 187, estimate: 212 })).toEqual({ hold: false });
+    expect(assessEconPlausibility('NFP', { actual: 57, estimate: 110 })).toEqual({ hold: false });
   });
-  it('review M1: recession-class legitimate surprises are NOT held (bands in raw units)', () => {
-    // Claims spike 510K vs 225K expected; NFP −300K vs +150K expected —
-    // exactly the most newsworthy prints, which must publish.
-    expect(assessEconPlausibility('Jobless Claims', { actual: '510K', estimate: '225K' })).toEqual({ hold: false });
-    expect(assessEconPlausibility('NFP', { actual: -300000, estimate: 150000 })).toEqual({ hold: false });
+  it('review M1 (recalibrated to the captured feed units — thousands): recession-class legitimate surprises are NOT held', () => {
+    // Claims spike 510K vs 225K expected; NFP −300K vs +150K — the most
+    // newsworthy prints, which must publish. Feed speaks thousands.
+    expect(assessEconPlausibility('Jobless Claims', { actual: 510, estimate: 225 })).toEqual({ hold: false });
+    expect(assessEconPlausibility('NFP', { actual: -300, estimate: 150 })).toEqual({ hold: false });
+  });
+  it('a raw-unit row in a thousands feed (operand-pair unit disagreement) is held', () => {
+    // 187000 raw claims against a 212-thousands estimate: the mis-mapping
+    // class the bands exist for.
+    expect(assessEconPlausibility('Jobless Claims', { actual: 187000, estimate: 212 }).hold).toBe(true);
   });
   it('unit mis-mapping (100× spread) is held', () => {
     const verdict = assessEconPlausibility('CPI', { actual: 250, estimate: 2.5 });

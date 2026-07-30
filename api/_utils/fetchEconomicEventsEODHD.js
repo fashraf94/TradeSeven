@@ -33,100 +33,98 @@ const LOG_PREFIX = '[EconEventsEODHD]';
 // initial-posting revisions settle. The recap cron runs every 30 minutes.
 export const SETTLE_DELAY_MINUTES = 30;
 
-// Category → EODHD `type` matcher. `match`: at least one must appear in the
-// lowercased type string. `avoid`: none may appear (filters core/ex-autos
-// sibling prints); if EVERY date-matched row is avoid-listed, the match
-// fails closed (no operands) rather than silently substituting a sibling
-// series — that substitution is exactly the mis-mapping class the R-B1a
-// plausibility band exists to catch.
+// Category → feed `type` mapping — EXACT-equality positive rules, founder-
+// ruled against the Jul 30 2026 capture artifacts (docs/
+// ECON_CAPTURE_FINDINGS_AND_MATCHER_RULINGS_JUL30_2026.md §1; artifacts at
+// api/_utils/__fixtures__/econCapture*.json). The original substring/
+// avoid-list mechanism is retired: a row matches only when its cleaned
+// `type` EQUALS an accepted name AND (where the category's conventional
+// unit requires it, memo §3.1) its `comparison` equals the required axis —
+// so sibling prints (Core CPI, Retail Sales Ex Autos, ISM sub-indices,
+// index-level CPI/PPI rows, Fed speeches) are structurally excluded, not
+// filtered. The negative rules live as tests against the literal observed
+// strings (fetchEconomicEventsEODHD.test.js).
+//
+// Comparison keying (memo §3.1; duplicate `type` rows differ only by
+// `comparison` — e.g. Inflation Rate mom/yoy, CPI index-level cmp=null):
+//   CPI → 'Inflation Rate' @ yoy   (founder-ruled: the YoY headline % is
+//                                   the figure "CPI came in at X%" means)
+//   PPI → 'Producer Price Index' @ yoy — the observed mom row carries NO
+//         estimate (capture, Jul 15: mom a=-0.3 e=null; yoy a=5.5 e=6.2),
+//         so yoy is the verifiable print, consistent with CPI's ruling
+//   PCE → 'PCE Price Index' @ mom · GDP → 'GDP Growth Rate' @ qoq ·
+//   Retail Sales → 'Retail Sales' @ mom  (the conventional prints)
+//
+// Absent categories (memo §2): JOLTS is DROPPED from the Tier-1 arrays
+// (macroCalendar.js carries the reason) and has no entry here.
+// Productivity keeps its array entry but is deliberately UNMAPPED until an
+// August-window capture confirms its feed representation — unmapped means
+// operands never match, so the category cannot mis-fire while unverified.
 export const ECON_CATEGORY_MATCHERS = Object.freeze({
   'FOMC': Object.freeze({
-    match: Object.freeze(['interest rate decision', 'fed funds']),
-    avoid: Object.freeze([]),
-    preferComparison: null,
+    types: Object.freeze(['fed interest rate decision']), requiredComparison: null,
   }),
   'CPI': Object.freeze({
-    match: Object.freeze(['inflation rate', 'consumer price', 'cpi']),
-    avoid: Object.freeze(['core']),
-    preferComparison: 'mom',
+    types: Object.freeze(['inflation rate']), requiredComparison: 'yoy',
   }),
   'PPI': Object.freeze({
-    match: Object.freeze(['producer price', 'ppi']),
-    avoid: Object.freeze(['core']),
-    preferComparison: 'mom',
+    types: Object.freeze(['producer price index']), requiredComparison: 'yoy',
   }),
   'PCE': Object.freeze({
-    match: Object.freeze(['pce price', 'personal consumption']),
-    avoid: Object.freeze(['core']),
-    preferComparison: 'mom',
-  }),
-  'Retail Sales': Object.freeze({
-    match: Object.freeze(['retail sales']),
-    avoid: Object.freeze(['ex ', 'ex-', 'core']),
-    preferComparison: 'mom',
+    types: Object.freeze(['pce price index']), requiredComparison: 'mom',
   }),
   'GDP': Object.freeze({
-    match: Object.freeze(['gdp growth rate', 'gdp']),
-    avoid: Object.freeze(['price index', 'deflator']),
-    preferComparison: 'qoq',
+    types: Object.freeze(['gdp growth rate']), requiredComparison: 'qoq',
   }),
-  'Productivity': Object.freeze({
-    match: Object.freeze(['productivity']),
-    avoid: Object.freeze([]),
-    preferComparison: 'qoq',
+  'Retail Sales': Object.freeze({
+    types: Object.freeze(['retail sales']), requiredComparison: 'mom',
   }),
   'NFP': Object.freeze({
-    match: Object.freeze(['non farm payrolls', 'nonfarm payrolls', 'non-farm payrolls']),
-    avoid: Object.freeze(['private', 'manufacturing']),
-    preferComparison: null,
+    types: Object.freeze(['non farm payrolls']), requiredComparison: null,
   }),
-  'JOLTS': Object.freeze({
-    match: Object.freeze(['jolts', 'job openings']),
-    avoid: Object.freeze(['quits', 'layoffs']),
-    preferComparison: null,
-  }),
+  // ISM Services is ONE survey under TWO feed labels (memo §3.3) — accept
+  // either; types[] order is the preference when a day carries both, and
+  // selection returns exactly one row so the survey is never double-counted.
   'ISM Manufacturing': Object.freeze({
-    // 'non manufacturing' is the SERVICES release's older official name —
-    // it contains 'manufacturing', so it is avoid-listed here (the
-    // wireIdentity ECON_ALIAS_TABLE ordering lesson, applied as data).
-    match: Object.freeze(['ism manufacturing']),
-    avoid: Object.freeze(['non manufacturing', 'non-manufacturing', 'new orders', 'employment', 'prices', 'business activity']),
-    preferComparison: null,
+    types: Object.freeze(['ism manufacturing pmi']), requiredComparison: null,
   }),
   'ISM Services': Object.freeze({
-    match: Object.freeze(['ism services', 'ism non manufacturing', 'ism non-manufacturing']),
-    avoid: Object.freeze(['new orders', 'employment', 'prices', 'business activity']),
-    preferComparison: null,
+    types: Object.freeze(['ism services pmi', 'ism non manufacturing pmi']), requiredComparison: null,
   }),
   'Consumer Confidence': Object.freeze({
-    match: Object.freeze(['cb consumer confidence', 'consumer confidence']),
-    avoid: Object.freeze([]),
-    preferComparison: null,
+    types: Object.freeze(['cb consumer confidence']), requiredComparison: null,
   }),
   'Jobless Claims': Object.freeze({
-    match: Object.freeze(['initial jobless claims']),
-    avoid: Object.freeze(['continuing', '4-week', '4 week']),
-    preferComparison: null,
+    types: Object.freeze(['initial jobless claims']), requiredComparison: null,
   }),
 });
 
-/** Lowercase-and-collapse for matcher comparison. */
+/** Lowercase, hyphens→spaces, collapse whitespace — the equality basis
+ *  ('ISM Non-Manufacturing PMI' ≡ 'ism non manufacturing pmi'). */
 function cleanType(typeStr) {
-  return String(typeStr || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return String(typeStr || '').toLowerCase().replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-/** 'YYYY-MM-DD HH:MM:SS' | 'YYYY-MM-DD' → 'YYYY-MM-DD' (or null). */
-function rowDateOnly(row) {
-  const d = String(row?.date || '').slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+/**
+ * Feed timestamps are timezone-naive UTC strings ('2026-07-29 18:00:00' =
+ * 2:00 PM ET FOMC — capture memo §0). Parse AS UTC, never local: the UTC
+ * calendar date is taken from the string itself (position-fixed, machine-
+ * TZ-independent by construction), and every Tier-1 release hour
+ * (8:30 AM–4:30 PM ET) keeps the UTC and ET calendar dates equal, so the
+ * date-equality join against the ET-dated arrays is sound.
+ */
+export function rowDateOnly(row) {
+  const m = /^(\d{4}-\d{2}-\d{2})([T ]|$)/.exec(String(row?.date || ''));
+  return m ? m[1] : null;
 }
 
 /**
  * Select the operand row for ONE macroCalendar event from the fetched rows.
  * Date equality with the array event is mandatory (R-A1: arrays own dates);
- * the matcher then narrows by keywords / avoid-list / preferred comparison.
- * Deterministic: survivors sort by (preferred comparison first, then
- * shortest type string — headline before decorated variants), first wins.
+ * then cleaned-`type` EXACT equality against the accepted names, and
+ * `comparison` equality where the category keys on it. Deterministic:
+ * survivors order by types[] preference (the ISM dual-name rule), first
+ * wins — exactly one row per event, never a double count.
  *
  * @returns {{ row: object|null, matchedType: string|null }}
  */
@@ -134,25 +132,16 @@ export function selectOperandRow(macroEvent, rows) {
   const matcher = ECON_CATEGORY_MATCHERS[macroEvent.category];
   if (!matcher || !Array.isArray(rows)) return { row: null, matchedType: null };
 
-  const dated = rows.filter((r) => rowDateOnly(r) === macroEvent.date);
-  const matched = dated.filter((r) => {
-    const t = cleanType(r.type);
-    return t && matcher.match.some((kw) => t.includes(kw));
-  });
-  const clean = matched.filter((r) => {
-    const t = cleanType(r.type);
-    return !matcher.avoid.some((kw) => t.includes(kw));
-  });
-  // Fail closed when only avoid-listed siblings matched (see header).
-  if (clean.length === 0) return { row: null, matchedType: null };
+  const candidates = rows.filter((r) =>
+    rowDateOnly(r) === macroEvent.date
+    && matcher.types.includes(cleanType(r.type))
+    && (matcher.requiredComparison === null
+      || cleanType(r.comparison) === matcher.requiredComparison));
+  if (candidates.length === 0) return { row: null, matchedType: null };
 
-  clean.sort((a, b) => {
-    const prefA = matcher.preferComparison && cleanType(a.comparison) === matcher.preferComparison ? 0 : 1;
-    const prefB = matcher.preferComparison && cleanType(b.comparison) === matcher.preferComparison ? 0 : 1;
-    if (prefA !== prefB) return prefA - prefB;
-    return cleanType(a.type).length - cleanType(b.type).length;
-  });
-  const row = clean[0];
+  candidates.sort((a, b) =>
+    matcher.types.indexOf(cleanType(a.type)) - matcher.types.indexOf(cleanType(b.type)));
+  const row = candidates[0];
   return { row, matchedType: String(row.type || '') };
 }
 

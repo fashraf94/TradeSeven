@@ -114,9 +114,17 @@ export const GENERATION_SURFACE = Object.freeze([
 //    WIRE_GENERATION_VERSION so each stamp is truthful about its own axis.
 //    Enforced mechanically: assessTickerUniverseCaveat refuses a regen that
 //    carries a TICKER_TO_SECTOR value change without a validator bump.
+//  - macroCalendar#TIER1_CALENDAR_VALUE_LOCK — the Tier-1 recap event set
+//    over the maintained holiday horizon (Recap Restoration R-A1: array
+//    membership IS the classification for the neta_econ_recap seam; Econ
+//    Capture rulings §5.6 folded the lock). The file itself stays outside
+//    the path manifest — it also feeds the DRB, so file-level inclusion
+//    would reset gateEpoch on unrelated edits (the rankingConfig
+//    precedent); the VALUE lock catches Tier-1 set changes instead.
 export const GENERATION_VALUE_EXPORTS = Object.freeze([
   Object.freeze({ key: 'value:api/_utils/rankingConfig.js#ALL_TICKERS', exportName: 'ALL_TICKERS' }),
   Object.freeze({ key: 'value:api/_utils/rankingConfig.js#TICKER_TO_SECTOR', exportName: 'TICKER_TO_SECTOR' }),
+  Object.freeze({ key: 'value:api/_utils/macroCalendar.js#TIER1_CALENDAR_VALUE_LOCK', exportName: 'TIER1_CALENDAR_VALUE_LOCK' }),
 ]);
 
 /** Canonical serialization for value hashing: arrays keep their order (a

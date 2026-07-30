@@ -87,9 +87,11 @@ function stubQuoteFetch() {
 }
 
 // Thu 2026-07-30 window [2026-07-29, 2026-07-30]: PCE(high) + GDP(high) +
-// Jobless Claims(medium) release on 7-30 (8:30 AM ET).
-const GDP_ROW = { type: 'GDP Growth Rate QoQ Adv', comparison: 'qoq', country: 'US', date: '2026-07-30 12:30:00', actual: 3.0, previous: 2.4, estimate: 2.5 };
-const CLAIMS_ROW = { type: 'Initial Jobless Claims', comparison: null, country: 'US', date: '2026-07-30 12:30:00', actual: '218K', previous: '224K', estimate: '225K' };
+// Jobless Claims(medium) release on 7-30 (8:30 AM ET). Row types/units are
+// the LITERAL captured feed strings (Econ Capture rulings §1: exact-type
+// matching; counts in feed thousands; operands numeric).
+const GDP_ROW = { type: 'GDP Growth Rate', comparison: 'qoq', country: 'US', date: '2026-07-30 12:30:00', actual: 3.0, previous: 2.4, estimate: 2.5 };
+const CLAIMS_ROW = { type: 'Initial Jobless Claims', comparison: null, country: 'US', date: '2026-07-30 12:30:00', actual: 218, previous: 224, estimate: 225 };
 
 let logSpy;
 let errSpy;
@@ -171,7 +173,7 @@ describe('S3 deterministic recap path (R-A1 + R-B1)', () => {
 
     expect(added).toHaveLength(1);
     expect(added[0].doc.dataSnapshot.eventName).toBe('Initial Jobless Claims');
-    expect(added[0].doc.dataSnapshot.actual).toBe(218000); // '218K' normalized
+    expect(added[0].doc.dataSnapshot.actual).toBe(218); // feed thousands, numeric passthrough
   });
 
   it('R2 degrade row live: missing estimate publishes honestly, never rejects wholesale', async () => {

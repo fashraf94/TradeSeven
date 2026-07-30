@@ -11,11 +11,14 @@
 //      calendars. Each array holds 2026 entries in MacroEvent shape;
 //      refresh annually from the source URLs in the table below.
 //
-//   2. Computed helpers (6 categories: NFP, JOLTS, ISM Manufacturing,
-//      ISM Services, Consumer Confidence, Jobless Claims). Releases that
-//      follow deterministic patterns (first Friday, Nth business day,
-//      last Tuesday, every Thursday). Compiled at call time for the year(s)
-//      the window touches, so they need no annual refresh.
+//   2. Computed helpers (5 categories in the unified query: NFP,
+//      ISM Manufacturing, ISM Services, Consumer Confidence, Jobless
+//      Claims). Releases that follow deterministic patterns (first Friday,
+//      Nth business day, last Tuesday, every Thursday). Compiled at call
+//      time for the year(s) the window touches, so they need no annual
+//      refresh. getJOLTSDates still exists but is EXCLUDED from the query
+//      — dropped from the Tier-1 set by the Econ Capture rulings §2
+//      (Jul 30 2026); see the note at the concat site.
 //
 //   3. getMacroEventsInWindow({ fromDate, toDate }) — concatenates every
 //      source, filters inclusively by date, returns sorted ascending.
@@ -427,7 +430,13 @@ export function getMacroEventsInWindow({ fromDate, toDate }) {
 
   const computed = years.flatMap((year) => [
     ...getNFPDates(year),
-    ...getJOLTSDates(year),
+    // JOLTS: DROPPED from the Tier-1 set (Econ Capture rulings §2, Jul 30
+    // 2026) — absent from the EODHD /economic-events feed under EVERY name
+    // across a full-month capture (jolts / job openings / labor turnover /
+    // quits / hires all searched, 425 rows, 200 distinct types), so the
+    // category could structurally never produce a recap: the silent-zero
+    // pattern rebuilt inside its own fix. getJOLTSDates stays exported for
+    // reference; do NOT re-add it here without feed evidence.
     ...getISMManufacturingDates(year),
     ...getISMServicesDates(year),
     ...getConsumerConfidenceDates(year),
@@ -456,3 +465,21 @@ function yearsInWindow(fromDate, toDate) {
   for (let y = fromYear; y <= toYear; y += 1) years.push(y);
   return years;
 }
+
+// =============================================================================
+// Wire value-lock (Econ Capture rulings §5.6 — the standing flag-3 ruling)
+// =============================================================================
+
+// The Tier-1 recap set IS this calendar (Recap Restoration R-A1), but the
+// file stays OUTSIDE the Wire GENERATION_SURFACE path manifest because it
+// also feeds the DRB (the rankingConfig precedent: file-level inclusion
+// would reset gateEpoch on unrelated edits). This export closes the gap the
+// build report flagged: its VALUE — every event over the maintained holiday
+// horizon — is hashed into the generation baseline via
+// GENERATION_VALUE_EXPORTS, so a content change to the Tier-1 set forces a
+// WIRE_GENERATION_VERSION bump while non-value edits here touch nothing.
+// Evaluated at module load, after every array/helper above is initialized.
+export const TIER1_CALENDAR_VALUE_LOCK = getMacroEventsInWindow({
+  fromDate: '2026-01-01',
+  toDate: '2027-12-31',
+});
