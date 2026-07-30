@@ -84,27 +84,6 @@ export async function seedConsensus(date) {
     }
   }
 
-  // Read economic calendar from Firebase
-  let economics = [];
-  try {
-    const econDoc = await db.collection('economicCalendar').doc('latest').get();
-    if (econDoc.exists) {
-      const econData = econDoc.data();
-      const events = econData?.events || econData?.calendar || [];
-      if (Array.isArray(events)) {
-        economics = events.map(e => ({
-          event: e.event || e.name || '',
-          time: e.time || '',
-          expected: e.estimate ?? e.expected ?? null,
-          actual: e.actual ?? null,
-          impact: e.impact || 'medium',
-        }));
-      }
-    }
-  } catch (err) {
-    log(`Economic calendar read failed: ${err.message}`);
-  }
-
   // Deduplicate ticker arrays
   reportingToday = [...new Set(reportingToday)];
   reportedYesterdayAfterClose = [...new Set(reportedYesterdayAfterClose)];
@@ -116,19 +95,18 @@ export async function seedConsensus(date) {
   // why `catalysts: {}`, `sectors: {}` and `earnings.results: {}` are safe (an
   // empty map writes no leaf, so existing entries survive) while a bare
   // `economics` array was NOT: every event `appendEconomics()` had arrayUnion'd
-  // since the previous tick was destroyed by the next seed.
+  // since the previous tick was destroyed by the next seed (Step 0, PR #682).
   //
-  // The seed's own source for this field is `economicCalendar`, which has NO
-  // producer anywhere in the repo — so the value here is always `[]` in
-  // practice, meaning the field could only ever destroy events and never
-  // contribute one. Omit it when empty; union it when present. A seed tick is
-  // now additive for `economics` by construction, whatever the source returns.
+  // Phase 2 N4 removed the orphaned economic-calendar reader that used to
+  // sit above (its source collection has no producer anywhere in the repo —
+  // the populating cron is retired; P2-19's census names the token), so the
+  // seed now NEVER writes `economics` at all: `appendEconomics()` (Neta's
+  // post-publish writer) is the field's SOLE producer, and a seed tick is
+  // additive for it by construction.
   //
   // Stakes: this document is an editorial adapter operand source under Phase 2
   // Spec V1.3 D-P2-8 — `economics[].actual`/`.expected` is Phase 3 gate
-  // evidence, not just story context. (The orphaned `economicCalendar` reader
-  // above is removed separately by Phase 2 N4; left in place here to keep this
-  // fix minimal.)
+  // evidence, not just story context.
   const payload = {
     date,
     earnings: {
@@ -142,12 +120,9 @@ export async function seedConsensus(date) {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   };
-  if (economics.length > 0) {
-    payload.economics = FieldValue.arrayUnion(...economics);
-  }
   await db.collection('fantasyTimesConsensus').doc(date).set(payload, { merge: true });
 
-  log(`Seeded consensus for ${date}: ${reportingToday.length} earnings today, ${reportedYesterdayAfterClose.length} yesterday after-close, ${economics.length} economic events`);
+  log(`Seeded consensus for ${date}: ${reportingToday.length} earnings today, ${reportedYesterdayAfterClose.length} yesterday after-close, ${reportingThisWeek.length} this week`);
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -1,23 +1,23 @@
 {
   "note": "Committed baseline for the GENERATION_SURFACE lock (P2-15). Never hand-edit: regenerate via WIRE_GENERATION_BASELINE_REGEN=1 after bumping the bound version constant in wireContracts.js.",
   "generatedAgainst": {
-    "WIRE_GENERATION_VERSION": 9,
+    "WIRE_GENERATION_VERSION": 10,
     "WIRE_DIGEST_RENDERER_VERSION": "1.0.0",
     "WIRE_VALIDATOR_VERSION": "1.6.0"
   },
   "generationSurface": {
-    "version": 9,
-    "hash": "8af0f1eb62257615b68544f64984c7ab2dbe85ca190199ffc0309f96f15e3e6d",
+    "version": 10,
+    "hash": "c0a45bd20e821151795242e5d3600747eb68eb2c49de2add18de01a93ff9b919",
     "files": {
       "api/_utils/econPrintVerifier.js": "63575ec0c96f4edcf6dbc491887a5f47fc538cfd4b66245d54c2f67e5ff8075c",
-      "api/_utils/fantasyTimesConsensus.js": "52d2e1bb69e6377d771efe4b6900049f1e1fe823899842fdf792727fa6851027",
+      "api/_utils/fantasyTimesConsensus.js": "ecae1950ade8c26af48194d097828b556e22f2a06c40194a722c7afc86aa309a",
       "api/_utils/fantasyTimesPrompts.js": "ea45d1ff2134d9cb491b0a62ab143581e6a5344e25b387f884e9e10ac5776529",
       "api/_utils/fantasyTimesTickers.js": "5fa5b520383fd46416ec650bbefb2292abfb7d2c29f0635478a6b1a5ec8adfa3",
       "api/_utils/fetchEconomicEventsEODHD.js": "c2a4a392804519589e4008fd80d7625c76fc1a8c161e214a2d7b439f1278d35f",
       "api/_utils/ingestedClaims.js": "59272efbbde0f9cec3b124d189b7842bd2196e34c42fe5925dede4e7d968a02c",
       "api/_utils/stockIntelligenceData.js": "1bcbe7e63137e1a9c50e2267b4226e786c68a8ff44b6b47c4b3764e7bccde946",
       "api/_utils/wireContinuity.js": "c9b5002292934ce48bbc399fc977d4aef51220ff8775187383be1adc1b301619",
-      "api/_utils/wireContracts.js": "bdbe6730a4d3c5d4db9280229c70e0960b326c3295f8382cbc8cfc803199fd5f",
+      "api/_utils/wireContracts.js": "eca03de7fe4cd339ff466fc48ebb4122b83662921eb0795fe7cc684a4ec13aa6",
       "api/_utils/wireEntryGuard.js": "de523d9b3d236de0bf5cd207b412aa1449b50a58e8020851580db5d362ba3908",
       "api/_utils/wireGenerationConfig.js": "7b3186109f79810db0d09169d49f20165acaa3af128ae812ac67c1d95158e13e",
       "api/_utils/wireGenerationSurface.js": "396ec05f120ea47a3ccaed910395db0b06de39b6ccb9a8931437d7038aa0a74d",
