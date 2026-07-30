@@ -29,6 +29,7 @@ import {
   runEditorialReview,
   createEditorialRun,
   completeEditorialRun,
+  executeEditorialRun,
   computeEditorialAggregates,
   verifyEditorialAggregates,
   computeEditorialVerdict,
@@ -228,6 +229,30 @@ describe('P2-13 + P2-17 — judge failure → terminal failed run; retry is a NE
     // Canonical set → every later Sunday is a no-op.
     const third = await runEditorialReview(db, { now: SLOT_SUNDAY, deadline: FAR_DEADLINE(), callModel: okJudge });
     expect(third).toMatchObject({ action: 'done', canonicalRunId: 'run-002' });
+  });
+});
+
+// ── Review fix (LOW): honest return when a concurrent tick wins ───────────
+describe('concurrent-race honesty — a lost race reports superseded, not a false complete', () => {
+  it('re-executing an already-terminal run returns superseded_by_concurrent_run (immutability preserved, no double-write)', async () => {
+    await seedWeek(db);
+    const first = await runEditorialReview(db, { now: SLOT_SUNDAY, deadline: FAR_DEADLINE(), callModel: okJudge });
+    expect(first).toMatchObject({ action: 'ran', runId: 'run-001', status: 'complete' });
+    const canonicalBefore = (await weekDoc()).runs['run-001'];
+
+    // Simulate the second, slower concurrent tick: it ran its judge pass and
+    // now tries to complete the SAME run, which the winner already finalized.
+    const second = await executeEditorialRun(db, {
+      isoWeek: WEEK, runId: 'run-001', manifest: canonicalBefore.manifest,
+      now: SLOT_SUNDAY, deadline: FAR_DEADLINE(), callModel: okJudge,
+    });
+    expect(second).toMatchObject({ status: 'superseded_by_concurrent_run', runId: 'run-001', reason: 'immutable_run' });
+
+    // The winner's run is byte-intact — no double-write, canonical unchanged.
+    const doc = await weekDoc();
+    expect(doc.canonicalRunId).toBe('run-001');
+    expect(doc.runs['run-001'].completedAt).toBe(canonicalBefore.completedAt);
+    expect(doc.runs['run-001'].memo).toBe(canonicalBefore.memo);
   });
 });
 

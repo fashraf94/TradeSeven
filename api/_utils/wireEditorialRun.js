@@ -374,10 +374,20 @@ export async function executeEditorialRun(db, { isoWeek, runId, manifest, now = 
     }).then(() => ({ status: 'failed', reason: 'aggregate_mismatch' }));
   }
 
-  await completeEditorialRun(db, {
+  const done = await completeEditorialRun(db, {
     isoWeek, runId, now,
     patch: { status: 'complete', ...runShape, memo },
   });
+  // Honest return: if a CONCURRENT tick already terminated this run (its
+  // completeEditorialRun won; ours was rejected immutable_run), report the
+  // loss rather than a spurious 'complete'. The immutability guard means no
+  // double-write occurred and canonical is correct; the only cost was the
+  // duplicated judge pass — an accepted residual of the pending_judge-through-
+  // execution design that makes budget-exhaustion RESUME work (P2-9). A claim/
+  // lease would eliminate the duplicate but strand a crashed run un-resumable.
+  if (!done.completed) {
+    return { status: 'superseded_by_concurrent_run', runId, reason: done.reason };
+  }
   return { status: 'complete', runId, passed: verdict.passed, gateEligible: verdict.gateEligible };
 }
 

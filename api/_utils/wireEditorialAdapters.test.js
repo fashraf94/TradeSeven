@@ -220,6 +220,11 @@ describe('econPrint (S3) — strict parse + generating-day bucket (P2-40)', () =
     expect(consensusJoinDate('2026-07-28T00:30:00Z')).toBe('2026-07-28');
     expect(consensusJoinDate(new Date('2026-07-28T18:00:00Z'))).toBe('2026-07-28');
     expect(consensusJoinDate('garbage')).toBeNull();
+    // Review fix: a missing timestamp has no join key. new Date(null) is
+    // epoch 0 (1970-01-01), NOT NaN, so without the nullish guard these
+    // would silently return '1970-01-01' and persist it as audit provenance.
+    expect(consensusJoinDate(null)).toBeNull();
+    expect(consensusJoinDate(undefined)).toBeNull();
   });
 });
 
@@ -248,6 +253,21 @@ describe('earnings (S5) — eps/revenue/priceMove', () => {
     expect(ok.results[0].verdict).toBe(VERIFIED_CORRECT);
     const missing = adaptStory({ entry: dougEntry(mag(0.4e9, 'usd', 'revenue_vs_consensus')), storyDoc: S5_DOC(), bucket: { earnings: { results: { NVDA: { revenueActual: null, revenueEstimate: null } } } } });
     expect(missing.results[0]).toMatchObject({ verdict: NOT_VERIFIABLE, reason: 'missing_operand' });
+  });
+
+  it('§6 revenue band is 0.5% of the LEVEL, not the deviation (review fix) — a two-sig-fig-billions deviation within level tolerance is CORRECT', () => {
+    // level 35.4e9 → band = 0.5% × 35.4e9 = 0.177e9. Recomputed deviation
+    // 0.4e9; a reporter declares 0.42e9 (revenue rounded to 35.42B, well
+    // within two-sig-fig rounding of a 35B print). |0.42e9 − 0.4e9| = 0.02e9.
+    // Level-relative: 0.02e9 ≤ 0.177e9 → CORRECT. Deviation-relative (the
+    // BUG): band would be 0.5% × 0.4e9 = 0.002e9 → 0.02e9 ≫ 0.002e9 → WRONG.
+    const bucket = { earnings: { results: { NVDA: { revenueActual: 35.4e9, revenueEstimate: 35.0e9 } } } };
+    const near = adaptStory({ entry: dougEntry(mag(0.42e9, 'usd', 'revenue_vs_consensus')), storyDoc: S5_DOC(), bucket });
+    expect(near.results[0].verdict).toBe(VERIFIED_CORRECT);
+    expect(near.results[0].tolerance).toBeCloseTo(0.177e9, 0);
+    // A deviation error beyond the LEVEL band is still WRONG (band didn't go slack).
+    const far = adaptStory({ entry: dougEntry(mag(0.7e9, 'usd', 'revenue_vs_consensus')), storyDoc: S5_DOC(), bucket });
+    expect(far.results[0].verdict).toBe(VERIFIED_WRONG); // |0.7e9−0.4e9|=0.3e9 > 0.177e9
   });
 
   it('recorded exception: a declared value matching the revenue LEVEL is ambiguous_referent — refused, never WRONG', () => {

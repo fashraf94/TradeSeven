@@ -72,7 +72,11 @@ const TOLERANCES = Object.freeze({
   pct_priceMove: () => 0.10,                                 // S5 declared-referent rule
   eps_usd: () => 0.005,
   eps_surprise_pct: () => 0.5,
-  revenue_rel: (d, e) => 0.005 * Math.abs(e),
+  // §6: revenue tolerance is 0.5% of the revenue LEVEL ("0.5% covers
+  // two-sig-fig rounding of billions"), NOT 0.5% of the deviation being
+  // compared. The caller passes the level as `relBase`; the second arg here
+  // is that base, never the deviation (see compare()).
+  revenue_rel: (d, base) => 0.005 * Math.abs(base),
   print_native: (d, e) => bandFor(d, e, 0.05, 0.005),
 });
 
@@ -100,10 +104,15 @@ const nv = (target, basis, reason, extra = {}) => ({
  * tolerance. Emits the critical partition (status/sign inversion) per the
  * module-header interpretation.
  */
-function compare({ target, basis, declared, expected, operands, formula, toleranceKey, direction, directionChecked, caveats = [] }) {
+function compare({ target, basis, declared, expected, operands, formula, toleranceKey, relBase, direction, directionChecked, caveats = [] }) {
   const d = round4(declared);
   const e = round4(expected);
-  const tol = TOLERANCES[toleranceKey](d, e);
+  // Tolerances are relative to the recomputed comparison value (`e`) — EXCEPT
+  // revenue_vs_consensus, whose §6 band is relative to the revenue LEVEL, not
+  // the deviation `e` being compared. That one caller passes an explicit
+  // relBase (the level); everything else leaves it undefined and uses `e`.
+  const tolBase = relBase !== undefined ? round4(relBase) : e;
+  const tol = TOLERANCES[toleranceKey](d, tolBase);
   const result = {
     target, basis, declared: d, expected: e, tolerance: round4(tol),
     toleranceKey, operands, formula, caveats, reason: null, critical: null,
@@ -347,6 +356,7 @@ function verifyTuple(tuple, ctx) {
         target, basis, declared: value, expected: deviation,
         operands: { revenueActual: a, revenueEstimate: e },
         formula: 'revenueActual − revenueEstimate', toleranceKey: 'revenue_rel',
+        relBase: a, // §6: band is 0.5% of the revenue LEVEL, not the deviation
         direction, directionChecked,
       });
       if (result.verdict === VERIFIED_WRONG) {
@@ -441,6 +451,11 @@ export function adaptStory({ entry, storyDoc, bucket }) {
 /** The writers' own consensus join key (P2-40): UTC date of publishedAt via
  *  the SAME expression the writers use — never the Wire marketDate. */
 export function consensusJoinDate(publishedAt) {
+  // Nullish guard FIRST: new Date(null) is epoch 0 (1970-01-01), not an
+  // Invalid Date, so without this a missing publishedAt would silently join
+  // to a '1970-01-01' bucket and persist that as audit provenance. A missing
+  // timestamp has no join key — return null (the caller passes no bucket).
+  if (publishedAt === null || publishedAt === undefined) return null;
   const d = publishedAt?.toDate?.() ?? publishedAt;
   const date = d instanceof Date ? d : new Date(d);
   if (Number.isNaN(date.getTime())) return null;
