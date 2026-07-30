@@ -12,8 +12,8 @@
 // the z0 background slot BEHIND the dashboard content, and is mounted at exactly
 // two flag-conditional sites (spec V2 D4 + Amendment A2):
 //
-//   src/App.jsx:8608  desktop dashboard  <- isStarfieldOn()
-//   src/App.jsx:8567  mobile dashboard   <- isStarfieldMobileOn()
+//   src/App.jsx:8622  desktop dashboard  <- isStarfieldOn()
+//   src/App.jsx:8575  mobile dashboard   <- isStarfieldMobileOn()
 //
 // Flag off at either site mounts DesktopBackground exactly as before, so the
 // off-state is byte-identical (acceptance row A1). DesktopBackground.jsx is NOT
@@ -90,8 +90,6 @@ const StarfieldBackground = ({
   liveGames = null,
   /** Optional deterministic seed for the initial field (R-T2-S7). */
   seed = null,
-  /** Belt-and-braces: the mount site already gates on the flag. */
-  enabled = true,
   /** Inverted vs BaggerBombBackground — reduced motion is honoured by default. */
   honorReducedMotion = true,
 } = {}) => {
@@ -315,7 +313,11 @@ const StarfieldBackground = ({
     lastFrameRef.current = null;
 
     // The pure core owns the decision; this component only obeys it (R-T2-S8).
-    const plan = resolveLoopPlan({ flagOn: enabled, reducedMotion: reduce, hidden: isHidden() });
+    // flagOn is true by construction: BEING MOUNTED IS the flag being on — both
+    // mount sites are flag-conditional, so there is no in-component gate to
+    // duplicate. The core keeps the parameter because the off-state is part of
+    // its contract (row A2s covers it directly).
+    const plan = resolveLoopPlan({ flagOn: true, reducedMotion: reduce, hidden: isHidden() });
     if (plan.shouldDrawOnce) {
       // prefers-reduced-motion: ONE static dim frame, loop never starts.
       paint(WARP_TUNING.STATIC_FRAME_ALPHA, false);
@@ -336,7 +338,7 @@ const StarfieldBackground = ({
     // Pause while the tab is backgrounded (no-op under reduced motion / off).
     const handleVisibility = () => {
       const next = resolveLoopPlan({
-        flagOn: enabled,
+        flagOn: true,
         reducedMotion: reduce,
         hidden: isHidden(),
       });
@@ -354,7 +356,7 @@ const StarfieldBackground = ({
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [animate, applyCanvasSize, paint, reduce, enabled, profile.particleCount, profile.maxDpr, seed]);
+  }, [animate, applyCanvasSize, paint, reduce, profile.particleCount, profile.maxDpr, seed]);
 
   return (
     <canvas

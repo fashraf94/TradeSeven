@@ -77,21 +77,50 @@ describe('A1 — merged dark: both flags ship false', () => {
     expect(getWarpDevOverride()).toBeNull();
   });
 
-  it('the two flags are INDEPENDENT — neither helper reads the other flag', () => {
-    // Amendment A1: mobile must be able to go dark without disturbing desktop.
-    const flags = readSource('src/config/featureFlags.js');
-    const desktopHelper = flags.slice(
-      flags.indexOf('export function isStarfieldOn()'),
-      flags.indexOf('export const STARFIELD_MOBILE_ENABLED')
-    );
-    const mobileHelper = flags.slice(
-      flags.indexOf('export function isStarfieldMobileOn()'),
-      flags.indexOf('export function getWarpDevOverride()')
-    );
-    expect(desktopHelper).not.toContain('STARFIELD_MOBILE_ENABLED');
-    expect(mobileHelper).not.toContain('STARFIELD_BACKGROUND_ENABLED');
-    expect(desktopHelper).toContain('STARFIELD_BACKGROUND_ENABLED');
-    expect(mobileHelper).toContain('STARFIELD_MOBILE_ENABLED');
+  it('the two flags are INDEPENDENT — neither helper reads the other gate', () => {
+    // Amendment A1: mobile must be able to go dark without disturbing the
+    // desktop verdict, so the two gates may never couple.
+    //
+    // This asserts on the FUNCTION BODIES with comments stripped, and bans the
+    // other gate's IDENTIFIER as well as its const. Banning only the const name
+    // would let `isStarfieldOn() { if (isStarfieldMobileOn()) return true; ... }`
+    // pass while coupling the two — the exact thing A1 forbids. Reading bodies
+    // rather than raw slices also stops a neighbouring docblock that merely
+    // mentions the other flag from false-failing the row.
+    const flags = stripComments(readSource('src/config/featureFlags.js'));
+
+    /** The body between a function's opening `{` and its closing brace. */
+    const bodyOf = (name) => {
+      const start = flags.indexOf(`export function ${name}()`);
+      expect(start, `${name} must exist in featureFlags.js`).toBeGreaterThan(-1);
+      const open = flags.indexOf('{', start);
+      let depth = 0;
+      for (let i = open; i < flags.length; i += 1) {
+        if (flags[i] === '{') depth += 1;
+        else if (flags[i] === '}') {
+          depth -= 1;
+          if (depth === 0) return flags.slice(open, i + 1);
+        }
+      }
+      throw new Error(`unbalanced braces reading ${name}`);
+    };
+
+    const desktop = bodyOf('isStarfieldOn');
+    const mobile = bodyOf('isStarfieldMobileOn');
+
+    // Each reads its OWN flag...
+    expect(desktop).toContain('STARFIELD_BACKGROUND_ENABLED');
+    expect(mobile).toContain('STARFIELD_MOBILE_ENABLED');
+
+    // ...and neither the other's const NOR the other's helper.
+    expect(desktop, 'desktop gate must not read the mobile flag').not.toContain('STARFIELD_MOBILE_ENABLED');
+    expect(desktop, 'desktop gate must not call the mobile gate').not.toContain('isStarfieldMobileOn');
+    expect(mobile, 'mobile gate must not read the desktop flag').not.toContain('STARFIELD_BACKGROUND_ENABLED');
+    expect(mobile, 'mobile gate must not call the desktop gate').not.toContain('isStarfieldOn(');
+
+    // The URL params are distinct too, so one preview param cannot open both.
+    expect(desktop).toContain("get('starfield')");
+    expect(mobile).toContain("get('starfieldMobile')");
   });
 
   it('flag-off means the loop is never scheduled and nothing is drawn', () => {
@@ -154,12 +183,22 @@ describe('A1 — the mount sites stay conditional, and DesktopBackground survive
 });
 
 describe('A1 — the root paints stay opaque while the flags are off', () => {
-  it('the desktop root is transparent ONLY under the flag', () => {
-    expect(DESKTOP_ROOT).toContain("background: isStarfieldOn() ? 'transparent' : CMD.bg");
+  // Each root hoists its gate to a local const beside the existing `ceremonyOn`
+  // (the file's own idiom) rather than calling it inline in JSX, so both halves
+  // are asserted: the const comes from the RIGHT gate, and the paint falls back
+  // to CMD.bg when that const is false.
+  it('the desktop root is transparent ONLY under the desktop flag', () => {
+    const code = stripComments(DESKTOP_ROOT);
+    expect(code).toContain('const starfieldOn = isStarfieldOn();');
+    expect(code).toContain("background: starfieldOn ? 'transparent' : CMD.bg");
+    expect(code, 'desktop root must not key off the mobile gate').not.toContain('isStarfieldMobileOn');
   });
 
   it('the mobile root is transparent ONLY under the mobile flag', () => {
-    expect(MOBILE_ROOT).toContain("background: isStarfieldMobileOn() ? 'transparent' : CMD.bg");
+    const code = stripComments(MOBILE_ROOT);
+    expect(code).toContain('const starfieldOn = isStarfieldMobileOn();');
+    expect(code).toContain("background: starfieldOn ? 'transparent' : CMD.bg");
+    expect(code, 'mobile root must not key off the desktop gate').not.toContain('isStarfieldOn(');
   });
 
   it('neither root drops CMD.bg outright', () => {

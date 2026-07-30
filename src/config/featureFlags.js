@@ -1153,7 +1153,7 @@ export const FUNDAMENTAL_MIRROR_ENABLED = true;
  * decision path — the AGENT_PRESENCE_ENABLED / MATCHUPS_BACKDROP_ENABLED shape.
  *
  * When FALSE (DEFAULT, merge-dark), the desktop dashboard is byte-identical to
- * today: `App.jsx:8608` mounts `DesktopBackground` (price lines and all) and the
+ * today: `App.jsx:8622` mounts `DesktopBackground` (price lines and all) and the
  * `CommandDashboardDesktop` root keeps its opaque `CMD.bg` paint. Nothing
  * imports the canvas, no loop is ever scheduled (`resolveLoopPlan` returns
  * flag-off), and `StarfieldBackground` is absent from the render tree — asserted
@@ -1196,7 +1196,7 @@ export function isStarfieldOn() {
  * disturbing the desktop verdict. Never AND-gate the two.
  *
  * When FALSE (DEFAULT, merge-dark), the mobile dashboard is byte-identical to
- * today: `App.jsx:8567` mounts `DesktopBackground` (which self-returns null on
+ * today: `App.jsx:8575` mounts `DesktopBackground` (which self-returns null on
  * mobile — mobile has no background layer at all today) and the
  * `CommandDashboard` root keeps its opaque `CMD.bg` paint.
  *
