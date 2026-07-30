@@ -68,8 +68,42 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // labeling (R-B5). Two modules added to the manifest
 // (fetchEconomicEventsEODHD.js, econPrintVerifier.js); writer + prompt
 // content changed. The ONE pre-window epoch reset of ruling R-B7.
-export const WIRE_GENERATION_VERSION = 7;
+// v8 (P3/N1.4; renumbered from v7 at the rebase onto the Recap Restoration
+// merge — both lineages had claimed v7 for different content): the
+// recognized-versions registries below + wireEntryGuard.js (new manifest
+// member) + the guard landing in wireContinuity's entry loop — guard rules
+// decide which digests reach reporter prompts, so the mechanism forces
+// this bump.
+export const WIRE_GENERATION_VERSION = 8;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
+
+// ── N1.4 recognized-versions registries (Spec V1.5 R4-M2) ─────────────────
+//
+// The ordered consumer state machine gates on these: (1) all epoch fields
+// absent → LEGACY (renderable, Amendment J); (2) schemaVersion present AND
+// registered here → completeness checked against THAT version's required
+// set → STAMPED; (3) otherwise → fail closed (VERSION_SKIP for a version
+// this build doesn't know, MALFORMED for a shape no writer ever produced).
+// Checking completeness against the consumer's CURRENT set was the R4-M2
+// defect — it would make every valid vN entry "malformed" the day vN+1
+// ships. The registry keeps one required set PER recognized version so a
+// vN+1 consumer classifies a complete vN entry stamped-vN, never malformed
+// (P2-30 permutation).
+//
+// requiredFacts = the agentFacts fields a wire-1.6 writer unconditionally
+// stamps AND a consumer renders on trust. Deliberately NOT included:
+// tickers (legitimately empty on macro entries), chainId/observedAt
+// (advisory metadata), subjectRef/primaryTicker (null is a valid value).
+// Over-requiring here turns benign shape evolution into false MALFORMED.
+export const RECOGNIZED_WIRE_SCHEMA_VERSIONS = Object.freeze({
+  'wire-1.6': Object.freeze({
+    requiredFacts: Object.freeze(['eventType', 'digest', 'digestRendererVersion', 'validatorVersion']),
+  }),
+});
+
+// Renderer versions whose digest OUTPUT this build knows how to trust
+// (N1.4: an unknown digestRendererVersion is never rendered on trust).
+export const RECOGNIZED_WIRE_DIGEST_RENDERER_VERSIONS = Object.freeze(['1.0.0']);
 
 // Firestore collection names (server-only; deny-all in firestore.rules).
 export const WIRE_COLLECTION = 'fantasyTimesWire';
