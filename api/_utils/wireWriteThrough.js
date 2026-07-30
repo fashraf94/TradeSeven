@@ -41,6 +41,7 @@ import { wireLookbackDates } from './wireCalendar.js';
 import { resolveChainId } from './wireChains.js';
 import { getWireFlags } from './wireFlags.js';
 import { classifyWireEntry, isRenderableState, warnSkippedWireEntry } from './wireEntryGuard.js';
+import { applyKeyLevelLabel } from './fantasyTimesVisuals.js';
 
 const LOG_PREFIX = '[Wire]';
 
@@ -180,11 +181,29 @@ export async function publishStoryWithWire(db, {
     createdAt: now,
   };
 
+  // ── 2.5 N5: keyLevel label from VALIDATED in-request facts (D-P2-14) ───
+  // Stamped here — after validateAgentFacts, before the story write — the
+  // only in-request point where validated facts exist, so the badge NEVER
+  // depends on Wire settlement (P2-18: defer/fail the transaction and the
+  // chart still carries the level). Passed/salvaged outcomes only (a
+  // salvage-dropped keyLevel is already null; quarantined facts are
+  // suspect-class and never decorate the public doc). No keyLevel → the
+  // storyDoc passes through UNTOUCHED (identity), and the flags-off branch
+  // above returned long before this line — byte-identity holds on both
+  // axes. Label-only by ruling: no geometry, price_chart only.
+  let storyDocOut = storyDoc;
+  if ((v.outcome === WIRE_OUTCOMES.PASSED || v.outcome === WIRE_OUTCOMES.SALVAGED) && v.facts?.keyLevel) {
+    const labeled = applyKeyLevelLabel(storyDoc.visualType, storyDoc.visualConfig, v.facts.keyLevel);
+    if (labeled !== storyDoc.visualConfig) {
+      storyDocOut = { ...storyDoc, visualConfig: labeled };
+    }
+  }
+
   // ── 3. Atomic batch: story (+ class codes + pending) + envelope ────────
   const envelopeRef = db.collection(WIRE_ENVELOPE_COLLECTION).doc(storyRef.id);
   const batch = db.batch();
   batch.set(storyRef, {
-    ...storyDoc,
+    ...storyDocOut,
     wireValidation: {
       outcome: v.outcome,
       codes, // class codes ONLY — never reason strings (F2-3)

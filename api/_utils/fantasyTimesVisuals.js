@@ -117,6 +117,59 @@ export function getDefaultVisual(reporter, storyType, dataSnapshot, primaryTicke
   return { visualType: 'none', visualConfig: {} };
 }
 
+// ── N5: keyLevel LABEL (Phase 2 Spec V1.2 N5, D-P2-14 re-target) ──────────
+//
+// LABEL-ONLY by founder ruling: "Key level: 148.50 — prior high" as
+// text/badge on the price chart. The chart has no price axis — a real
+// price at a fabricated y-position would be the §9 display-disagreement
+// bug by construction, so positional rendering is deferred to visual-arc
+// work. Scope: price_chart only (the ruling's example surface — the one
+// visual whose subject is a single ticker's price).
+//
+// The INPUT is the VALIDATED keyLevel ({price, type} after the wire
+// validator's finite-price + type-enum battery) — never raw model output.
+// That constraint fixes the call site: publishStoryWithWire stamps the
+// label between in-request validation and the story write (the only
+// in-request point where validated facts exist), so the label NEVER
+// depends on Wire settlement — a deferred or failed Wire transaction
+// changes nothing (P2-18). This module owns the rendering rule; the
+// write-through owns the timing.
+
+const KEY_LEVEL_LABELS = {
+  prior_high: 'prior high',
+  prior_low: 'prior low',
+  resistance: 'resistance',
+  support: 'support',
+  sma50: '50-day SMA',
+  sma200: '200-day SMA',
+  open: 'session open',
+  prior_close: 'prior close',
+  vwap: 'VWAP',
+};
+
+/**
+ * Return visualConfig with a keyLevel badge applied, or the SAME object
+ * (by identity) when nothing applies — identity is the no-op contract the
+ * byte-identity tests lean on.
+ *
+ * @param {string} visualType
+ * @param {object} visualConfig
+ * @param {{price: number, type: string}|null|undefined} keyLevel — VALIDATED
+ * @returns {object}
+ */
+export function applyKeyLevelLabel(visualType, visualConfig, keyLevel) {
+  if (visualType !== 'price_chart') return visualConfig;
+  if (!keyLevel || !Number.isFinite(keyLevel.price) || typeof keyLevel.type !== 'string') {
+    return visualConfig;
+  }
+  const label = KEY_LEVEL_LABELS[keyLevel.type] ?? keyLevel.type.replace(/_/g, ' ');
+  return {
+    ...visualConfig,
+    keyLevel: { price: keyLevel.price, type: keyLevel.type },
+    keyLevelLabel: `Key level: ${keyLevel.price.toFixed(2)} — ${label}`,
+  };
+}
+
 /**
  * Check if a story's reporter + type combination is outside the expected
  * deterministic mapping, indicating the Art Director should be consulted.
