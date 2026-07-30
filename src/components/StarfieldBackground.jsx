@@ -52,7 +52,7 @@
 // PHASE 1 (this commit): driven ONLY by the ?warpState= dev override. There is
 // no live wiring yet and no Firestore import — acceptance row A6.
 // PHASE 2 (next): `liveGames` arrives as a PROP, mapped from the EXISTING
-// `activeAgentBattles` poll (src/App.jsx:3873-3909) — zero new Firestore reads
+// `activeAgentBattles` poll (src/App.jsx:3877-3913) — zero new Firestore reads
 // (R-T2-S1). The override keeps winning when present (R-T2-S4). The seam is
 // marked below.
 //
@@ -62,7 +62,6 @@
 // rule rather than needing a special case here.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useReducedMotion } from 'framer-motion';
 import { readToken } from '../theme/cssTokens';
 import { getWarpDevOverride } from '../config/featureFlags';
 import {
@@ -80,20 +79,75 @@ import {
 
 const RESIZE_DEBOUNCE_MS = 200;
 
+/**
+ * Reused projection targets (see `project`). Module-scoped rather than
+ * per-instance because paint/step are synchronous and never interleave — rAF
+ * callbacks run sequentially — so no two projections are ever in flight at once.
+ */
+const scratchA = { x: 0, y: 0 };
+const scratchB = { x: 0, y: 0 };
+
 /** Guard for the server-render smoke, where there is no document. */
 const isHidden = () => typeof document !== 'undefined' && document.hidden === true;
+
+/**
+ * Live `prefers-reduced-motion`, subscribed rather than latched.
+ *
+ * DELIBERATE DEVIATION from the verbatim lift (disclosed for ratification):
+ * BaggerBombBackground uses framer-motion's `useReducedMotion`, which is a
+ * `useState` snapshot with NO subscription — correct at mount, stale forever
+ * after. There it defaults OFF so nothing depended on it; here honouring reduced
+ * motion is the component's stated contract (the one mandatory inversion), and a
+ * latched value means a user who enables Reduce Motion mid-session keeps a
+ * 220-star loop running until they navigate away and back.
+ */
+function usePrefersReducedMotion() {
+  const query = '(prefers-reduced-motion: reduce)';
+  const [reduced, setReduced] = useState(
+    () => (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(query).matches
+      : false),
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mql = window.matchMedia(query);
+    const onChange = (event) => setReduced(event.matches);
+    setReduced(mql.matches);
+    // addListener is the Safari < 14 fallback; both are removed symmetrically.
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', onChange);
+      return () => mql.removeEventListener('change', onChange);
+    }
+    mql.addListener(onChange);
+    return () => mql.removeListener(onChange);
+  }, []);
+
+  return reduced;
+}
 
 const StarfieldBackground = ({
   /** 'desktop' | 'mobile' — set by the mount site, never self-detected. */
   mode = 'desktop',
-  /** Live games for the state machine. PHASE 2 seam; unused while overridden. */
+  /**
+   * Live games for the state machine. PHASE 2 seam; unused while overridden.
+   *
+   * ⚠ MUST already be ADAPTER-MAPPED to `[{ endsAt, totalDuration }]`. Raw
+   * `agentBattles` docs will NOT work: they carry `expiresAt` (ISO) and have no
+   * duration field at all, so an unmapped doc resolves to endsAt=undefined —
+   * which reads as "clock unprovable", caps the sky at BATTLE LIVE forever, and
+   * (worse) makes an already-expired battle count as live, because the
+   * ended-game filter keys on the same field. Spec V2 D5 assigns that mapping to
+   * the Phase-2 adapter: `{ endsAt: expiresAt, totalDuration: expiresAt −
+   * activatedAt }`. Deliberately NOT done here — one mapping site, not two.
+   */
   liveGames = null,
   /** Optional deterministic seed for the initial field (R-T2-S7). */
   seed = null,
   /** Inverted vs BaggerBombBackground — reduced motion is honoured by default. */
   honorReducedMotion = true,
 } = {}) => {
-  const prefersReduced = useReducedMotion();
+  const prefersReduced = usePrefersReducedMotion();
   const reduce = honorReducedMotion && Boolean(prefersReduced);
 
   const profile = useMemo(() => deviceProfile(mode), [mode]);
@@ -128,13 +182,12 @@ const StarfieldBackground = ({
   const tintRef = useRef(tint);
   tintRef.current = tint;
 
-  // PHASE 1: the override is the ONLY driver. Anchored once so the endgame
-  // clock genuinely counts DOWN — recomputing `endsAt` from `now` every frame
-  // would freeze the ramp at its start and the sky would never peak.
-  const overrideGamesRef = useRef(null);
-  if (overrideGamesRef.current === null) {
-    overrideGamesRef.current = synthesizeOverrideGames(getWarpDevOverride(), Date.now()) ?? false;
-  }
+  // PHASE 1: the override is the ONLY driver. `false` means "not overridden",
+  // which is distinct from `[]` ("overridden to resting"). It is anchored once
+  // in the mount effect below — NOT during render, because a render that React
+  // throws away (concurrent mode, StrictMode) must not stamp the clock the
+  // endgame ramp counts down from.
+  const overrideGamesRef = useRef(false);
 
   const liveGamesRef = useRef(liveGames);
   liveGamesRef.current = liveGames;
@@ -152,12 +205,17 @@ const StarfieldBackground = ({
 
     const width = window.innerWidth;
     const height = window.innerHeight;
-
-    // Skip if dimensions haven't actually changed (mobile scroll address bar).
-    if (width === sizeRef.current.w && height === sizeRef.current.h) return;
-    sizeRef.current = { w: width, h: height };
-
     const dpr = Math.min(window.devicePixelRatio || 1, profile.maxDpr);
+
+    // Skip if nothing that affects the backing store changed (the mobile scroll
+    // address bar fires resize constantly). DPR is part of that check: dragging
+    // a window between a 1x and a 2x display fires resize with IDENTICAL css
+    // dimensions, and skipping on size alone would leave the field rendering at
+    // half resolution against crisp dashboard text until an unrelated resize.
+    if (width === sizeRef.current.w
+      && height === sizeRef.current.h
+      && dpr === sizeRef.current.dpr) return;
+    sizeRef.current = { w: width, h: height, dpr };
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     canvas.style.width = `${width}px`;
@@ -173,11 +231,16 @@ const StarfieldBackground = ({
    * outward rush, which is what makes the field read as travel rather than
    * drift: the same delta-z moves a near star much further than a far one.
    */
-  const project = useCallback((star, width, height, depth) => {
-    const vpX = width * WARP_TUNING.VANISHING_X;
-    const vpY = height * WARP_TUNING.VANISHING_Y;
+  // Writes into a caller-owned scratch object instead of returning a fresh one.
+  // This runs 3x per star per frame (twice in paint, once in step); at 220 stars
+  // that was ~660 short-lived objects per frame / ~40k per second, and young-gen
+  // GC pauses read as scroll jank in the dashboard IN FRONT of this layer —
+  // exactly the cost the mobile budget tier does not otherwise address.
+  const project = useCallback((star, width, height, depth, out) => {
     const k = WARP_TUNING.PROJECTION / depth;
-    return { x: vpX + star.x * width * k, y: vpY + star.y * height * k };
+    out.x = width * WARP_TUNING.VANISHING_X + star.x * width * k;
+    out.y = height * WARP_TUNING.VANISHING_Y + star.y * height * k;
+    return out;
   }, []);
 
   /** Paint one frame of the current field. No stepping, no rescheduling. */
@@ -204,10 +267,17 @@ const StarfieldBackground = ({
       ctx.clearRect(0, 0, width, height);
     }
 
+    // Constant for the whole frame — hoisted out of the per-star loop.
+    ctx.strokeStyle = colour;
+    ctx.lineCap = 'round';
+
+    const now = scratchA;
+    const then = scratchB;
+
     for (let i = 0; i < stars.length; i += 1) {
       const star = stars[i];
-      const now = project(star, width, height, star.z);
-      const then = project(star, width, height, star.pz);
+      project(star, width, height, star.z, now);
+      project(star, width, height, star.pz, then);
 
       // Depth-driven presence: closer stars are brighter and fatter.
       const nearness = 1 - star.z;
@@ -220,9 +290,7 @@ const StarfieldBackground = ({
       const lineWidth = Math.max(0.7, nearness * 2.6);
 
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = colour;
       ctx.lineWidth = lineWidth;
-      ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(then.x, then.y);
       ctx.lineTo(now.x, now.y);
@@ -237,6 +305,7 @@ const StarfieldBackground = ({
         ctx.beginPath();
         ctx.arc(now.x, now.y, lineWidth * 0.6, 0, Math.PI * 2);
         ctx.fill();
+        ctx.strokeStyle = colour; // fillStyle/strokeStyle are separate; restore
       }
     }
 
@@ -264,7 +333,7 @@ const StarfieldBackground = ({
 
       // Recycle once the star has left the viewport, so off-screen stars do not
       // cost fill rate for the rest of their run.
-      const { x, y } = project(star, width, height, star.z);
+      const { x, y } = project(star, width, height, star.z, scratchA);
       if (x < -width || x > width * 2 || y < -height || y > height * 2) {
         respawnStar(star, rng);
       }
@@ -292,20 +361,17 @@ const StarfieldBackground = ({
   }, [currentGames, step]);
 
   useEffect(() => {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    sizeRef.current = { w: width, h: height };
+    // Anchor the dev override ONCE, here rather than during render, so the
+    // endgame clock counts DOWN from a fixed instant. Recomputing `endsAt` from
+    // `now` every frame would freeze the ramp at its start and never peak.
+    overrideGamesRef.current = synthesizeOverrideGames(getWarpDevOverride(), Date.now()) ?? false;
 
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const dpr = Math.min(window.devicePixelRatio || 1, profile.maxDpr);
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      const ctx = canvas.getContext('2d');
-      if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
+    // Zeroed first so applyCanvasSize's skip-if-unchanged check cannot short
+    // out on mount. Calling it here rather than re-implementing the DPR + size
+    // + transform block keeps ONE copy of that logic — the duplicate used to be
+    // the version the resize path never exercised.
+    sizeRef.current = { w: 0, h: 0, dpr: 0 };
+    applyCanvasSize();
 
     rngRef.current = makeRng(seed);
     starsRef.current = createStars(profile.particleCount, rngRef.current);
@@ -346,6 +412,13 @@ const StarfieldBackground = ({
       if (next.shouldSchedule) {
         lastFrameRef.current = null; // do not bill the hidden interval to dt
         rafRef.current = requestAnimationFrame(animate);
+      } else if (next.shouldDrawOnce) {
+        // Reduced motion: repaint the static frame on return. iOS Safari
+        // discards 2D backing stores for backgrounded tabs, so without this a
+        // reduced-motion user comes back to a permanently blank field — the
+        // only other repaint path needs an actual resize. The plan already
+        // carries this flag; the handler used to consume only shouldSchedule.
+        paint(WARP_TUNING.STATIC_FRAME_ALPHA, false);
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);

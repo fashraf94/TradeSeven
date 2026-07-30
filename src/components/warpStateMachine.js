@@ -162,10 +162,11 @@ export function toEpochMs(value) {
  * module header ("unprovable clocks do not get an endgame").
  */
 export function endgameWindowMs(totalDuration, tuning = WARP_TUNING) {
-  const duration = typeof totalDuration === 'number' && Number.isFinite(totalDuration)
-    ? totalDuration
-    : null;
-  if (duration == null || duration <= 0) return 0;
+  // Number() rather than a typeof check: a duration that arrives as a numeric
+  // STRING is a proven value, not an unprovable clock, and treating it as
+  // unknown would silently cost that game its endgame with no signal.
+  const duration = Number(totalDuration);
+  if (!Number.isFinite(duration) || duration <= 0) return 0;
   return Math.min(tuning.ENDGAME_WINDOW_MAX_MS, duration * tuning.ENDGAME_WINDOW_FRACTION);
 }
 
@@ -186,12 +187,26 @@ export function normalizeLiveGames(liveGames, now) {
     const endsAt = toEpochMs(game.endsAt);
     if (endsAt != null && endsAt <= now) continue; // resolved — no longer live
 
-    const totalDuration = typeof game.totalDuration === 'number' && Number.isFinite(game.totalDuration)
-      ? game.totalDuration
+    // Coerced, not typeof-gated: this must agree with endgameWindowMs, which
+    // also accepts a numeric string. Gating on `typeof === 'number'` here would
+    // strip a provable duration BEFORE the window is computed, silently costing
+    // that game its endgame — the two checks have to use the same rule.
+    const coercedDuration = Number(game.totalDuration);
+    const totalDuration = Number.isFinite(coercedDuration) && coercedDuration > 0
+      ? coercedDuration
       : null;
 
     out.push({
-      key: game.id != null ? String(game.id) : `idx:${i}:${endsAt ?? 'no-clock'}`,
+      // CONTENT-derived, never positional. An `idx:${i}:…` fallback made the key
+      // depend on ARRAY ORDER, so for id-less games a caller that reordered the
+      // array between frames churned the key, re-anchored the ease every frame
+      // and pinned the speed forever (t is 0 on an anchor frame by design). Two
+      // id-less games with identical content collide here, which is correct:
+      // they are indistinguishable, so they resolve the same target and a
+      // handoff between them is a no-op.
+      key: game.id != null
+        ? String(game.id)
+        : `anon:${endsAt ?? 'no-clock'}:${totalDuration ?? 'no-duration'}`,
       endsAt,
       totalDuration,
     });
@@ -281,7 +296,10 @@ export function targetSpeed(resolved, tuning = WARP_TUNING) {
   if (resolved.tier === WARP_TIER.RESTING) return tuning.SPEED_RESTING;
   if (resolved.tier === WARP_TIER.LIVE) return tuning.SPEED_LIVE;
   const span = tuning.SPEED_ENDGAME_PEAK - tuning.SPEED_ENDGAME_FLOOR;
-  return tuning.SPEED_ENDGAME_FLOOR + span * clamp01(resolved.rampProgress);
+  // `|| 0` because a malformed resolved object would otherwise yield NaN, and a
+  // NaN speed propagates into the star-depth integration and pins every star at
+  // z = NaN — a permanently blank field with no error anywhere.
+  return tuning.SPEED_ENDGAME_FLOOR + span * clamp01(Number(resolved.rampProgress) || 0);
 }
 
 /** Initial machine state: at rest, settled (no in-flight ease). */
@@ -295,6 +313,10 @@ export function createWarpState(tuning = WARP_TUNING) {
     easeMs: tuning.TIER_EASE_MS,
     rampProgress: 0,
     remainingMs: null,
+    /** Wall clock of the last advance, so easing measures real elapsed time. */
+    lastNow: null,
+    /** The target at the last advance, to detect a MEANINGFUL change. */
+    target: tuning.SPEED_RESTING,
   };
 }
 
@@ -311,12 +333,34 @@ export function createWarpState(tuning = WARP_TUNING) {
  * speed at that instant — a transition can never step (R-RAMP). Decay to rest
  * uses DECAY_MS (~30s) rather than TIER_EASE_MS.
  */
-export function advanceWarp(state, { liveGames, now, dtMs = 0 }, tuning = WARP_TUNING) {
+export function advanceWarp(state, { liveGames, now, dtMs }, tuning = WARP_TUNING) {
   const prev = state || createWarpState(tuning);
   const resolved = resolveTier({ liveGames, now }, tuning);
   const target = targetSpeed(resolved, tuning);
 
-  const changed = prev.tier !== resolved.tier || prev.governingKey !== resolved.governingKey;
+  // Elapsed comes from the WALL CLOCK the caller already passes, not from a
+  // caller-supplied delta. Two reasons, both measured:
+  //   1. `dtMs` used to default to 0, so the natural call
+  //      advanceWarp(s, {liveGames, now}) accumulated nothing and pinned the
+  //      speed at its anchor forever.
+  //   2. Easing on a render delta made the "10-20s" tier ease frame-rate
+  //      dependent — at 200ms frames it stretched to 30s of wall time.
+  // `dtMs` remains an accepted fallback for the first call / clockless callers.
+  // No upper clamp: if the tab was hidden for an hour the ease genuinely
+  // finished, and arriving settled is right (nobody watched it happen).
+  const measured = prev.lastNow != null && Number.isFinite(now) ? now - prev.lastNow : null;
+  const elapsedMs = measured != null
+    ? Math.max(0, measured)
+    : (Number.isFinite(dtMs) && dtMs > 0 ? dtMs : 0);
+
+  // Re-anchor on a tier or precedence change — but ONLY when it actually moves
+  // the target. Without this guard any churn in the governing key (a reordered
+  // array, an id-less game) re-anchored every frame, and since t is 0 on an
+  // anchor frame the speed could never advance at all.
+  const structuralChange = prev.tier !== resolved.tier
+    || prev.governingKey !== resolved.governingKey;
+  const targetMoved = Math.abs(target - (Number.isFinite(prev.target) ? prev.target : target)) > 1e-9;
+  const changed = structuralChange && targetMoved;
 
   let anchorSpeed;
   let easeElapsedMs;
@@ -328,8 +372,10 @@ export function advanceWarp(state, { liveGames, now, dtMs = 0 }, tuning = WARP_T
     easeMs = resolved.tier === WARP_TIER.RESTING ? tuning.DECAY_MS : tuning.TIER_EASE_MS;
   } else {
     anchorSpeed = prev.anchorSpeed;
-    easeElapsedMs = prev.easeElapsedMs + (Number.isFinite(dtMs) && dtMs > 0 ? dtMs : 0);
+    // Capped at easeMs: past that the ease is settled, and letting it grow
+    // unbounded is just a number climbing forever in a long-lived session.
     easeMs = prev.easeMs;
+    easeElapsedMs = Math.min(prev.easeElapsedMs + elapsedMs, Math.max(easeMs, 0));
   }
 
   const t = easeMs > 0 ? clamp01(easeElapsedMs / easeMs) : 1;
@@ -344,6 +390,8 @@ export function advanceWarp(state, { liveGames, now, dtMs = 0 }, tuning = WARP_T
     easeMs,
     rampProgress: resolved.rampProgress,
     remainingMs: resolved.remainingMs,
+    lastNow: Number.isFinite(now) ? now : prev.lastNow,
+    target,
   };
 }
 

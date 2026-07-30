@@ -316,9 +316,10 @@ describe('A2 R-RAMP — transitions ease, never step', () => {
     });
     expect(atTierEase.speed).toBeGreaterThan(WARP_TUNING.SPEED_RESTING);
 
-    // Arrived after the full decay.
+    // Arrived after the full decay. Measured from `first`'s own clock (+16),
+    // because the ease now advances on wall time rather than a supplied delta.
     const settled = advanceWarp(first, {
-      liveGames: [], now: resolvedAt + WARP_TUNING.DECAY_MS, dtMs: WARP_TUNING.DECAY_MS,
+      liveGames: [], now: resolvedAt + 16 + WARP_TUNING.DECAY_MS,
     });
     expect(settled.speed).toBeCloseTo(WARP_TUNING.SPEED_RESTING, 6);
   });
@@ -361,7 +362,178 @@ describe('A2 R-RAMP — transitions ease, never step', () => {
 
     const withB = advanceWarp(state, { liveGames: [a, b], now: NOW + 16, dtMs: 16 });
     expect(withB.governingKey).toBe('b');       // R-PREC re-evaluated
-    expect(withB.easeElapsedMs).toBe(0);        // ...and a fresh ease anchored
+    // Both games sit at BATTLE LIVE, so the handoff does NOT move the target and
+    // the in-flight ease is deliberately preserved rather than restarted. (A
+    // re-anchor on every key change is what used to freeze the speed when the
+    // key churned; the ease is re-anchored only when the target actually moves —
+    // see the ENDGAME handoff row above, which does step the target.)
+    // "No step" = a single frame moves the speed only by its normal ease
+    // increment, NOT bit-equality: the ease is still in flight and correctly
+    // keeps advancing across the handoff.
+    expect(Math.abs(withB.speed - state.speed)).toBeLessThan(0.01);
+    expect(withB.speed).toBeGreaterThanOrEqual(state.speed); // still climbing
+    expect(withB.target).toBeCloseTo(WARP_TUNING.SPEED_LIVE, 6);
+  });
+
+  // --- rows added after the mutation-tested code review -------------------
+  // Each of these was a SURVIVING MUTANT: the behaviour was (or became) wrong
+  // and all 53 original rows still passed. They are written to fail under their
+  // specific defect, not to restate the implementation.
+
+  it('does not step at the LIVE -> ENDGAME boundary for a SINGLE game', () => {
+    // The boundary R-RAMP cares most about, and the one case where the tier
+    // flips while the governing key does NOT — so a key-only change check would
+    // silently hard-step 0.5 -> 0.8 here.
+    const duration = 6 * HOUR;                    // window = 30 min
+    const endsAt = NOW + 31 * MIN;
+    const games = [{ id: 'solo', endsAt, totalDuration: duration }];
+
+    // Settle in BATTLE LIVE first.
+    let state = advanceWarp(createWarpState(), { liveGames: games, now: NOW, dtMs: 16 });
+    state = advanceWarp(state, { liveGames: games, now: NOW + WARP_TUNING.TIER_EASE_MS });
+    expect(state.tier).toBe(WARP_TIER.LIVE);
+    expect(state.speed).toBeCloseTo(WARP_TUNING.SPEED_LIVE, 6);
+
+    // Step across the window edge one frame at a time and catch any jump.
+    let previous = state;
+    let sawEndgame = false;
+    for (let ms = WARP_TUNING.TIER_EASE_MS + 16; ms <= 90 * 1000; ms += 16) {
+      const next = advanceWarp(previous, { liveGames: games, now: NOW + ms });
+      expect(
+        Math.abs(next.speed - previous.speed),
+        `single-frame jump of ${Math.abs(next.speed - previous.speed)} at ${ms}ms`
+      ).toBeLessThan(0.01);
+      if (next.tier === WARP_TIER.ENDGAME) sawEndgame = true;
+      previous = next;
+    }
+    expect(sawEndgame, 'the run must actually cross into ENDGAME').toBe(true);
+    expect(previous.speed).toBeGreaterThan(WARP_TUNING.SPEED_LIVE);
+  });
+
+  it('keeps easing when the governing key churns but the target does not move', () => {
+    // Two id-less games. A caller that reorders the array between frames used to
+    // churn a positional key, re-anchor every frame, and freeze the speed.
+    const a = { endsAt: NOW + 3 * HOUR, totalDuration: 6 * HOUR };
+    const b = { endsAt: NOW + 2 * HOUR, totalDuration: 6 * HOUR };
+
+    let state = createWarpState();
+    for (let i = 1; i <= 400; i += 1) {
+      const order = i % 2 === 0 ? [a, b] : [b, a];
+      state = advanceWarp(state, { liveGames: order, now: NOW + i * 100 });
+    }
+    expect(state.tier).toBe(WARP_TIER.LIVE);
+    expect(
+      state.speed,
+      'speed must reach the BATTLE LIVE target despite the reordering'
+    ).toBeCloseTo(WARP_TUNING.SPEED_LIVE, 6);
+  });
+
+  it('gives id-less games a CONTENT-derived key, stable under reordering', () => {
+    const a = { endsAt: NOW + 3 * HOUR, totalDuration: 6 * HOUR };
+    const b = { endsAt: NOW + 2 * HOUR, totalDuration: 6 * HOUR };
+    const forward = resolveTier({ liveGames: [a, b], now: NOW }).governingKey;
+    const reverse = resolveTier({ liveGames: [b, a], now: NOW }).governingKey;
+    expect(forward).toBe(reverse);
+    expect(forward).not.toMatch(/^idx:/); // positional keys are the defect
+    // ...and two DIFFERENT id-less games still get different keys.
+    expect(resolveTier({ liveGames: [a], now: NOW }).governingKey)
+      .not.toBe(resolveTier({ liveGames: [b], now: NOW }).governingKey);
+  });
+
+  it('eases on WALL TIME, so a frame-rate drop cannot stretch the transition', () => {
+    const games = [liveGame()];
+    const settleAt = NOW + WARP_TUNING.TIER_EASE_MS;
+
+    // 16ms frames, landing exactly on the ease duration.
+    let fast = advanceWarp(createWarpState(), { liveGames: games, now: NOW, dtMs: 16 });
+    for (let ms = 16; ms < WARP_TUNING.TIER_EASE_MS; ms += 16) {
+      fast = advanceWarp(fast, { liveGames: games, now: NOW + ms });
+    }
+    fast = advanceWarp(fast, { liveGames: games, now: settleAt });
+
+    // 500ms frames — same wall time, ~31x fewer calls.
+    let slow = advanceWarp(createWarpState(), { liveGames: games, now: NOW, dtMs: 16 });
+    for (let ms = 500; ms < WARP_TUNING.TIER_EASE_MS; ms += 500) {
+      slow = advanceWarp(slow, { liveGames: games, now: NOW + ms });
+    }
+    slow = advanceWarp(slow, { liveGames: games, now: settleAt });
+
+    expect(fast.speed).toBeCloseTo(WARP_TUNING.SPEED_LIVE, 6);
+    expect(
+      slow.speed,
+      'a slow frame rate must not stretch the ease past its wall-clock duration'
+    ).toBeCloseTo(WARP_TUNING.SPEED_LIVE, 6);
+    expect(settleAt).toBe(NOW + WARP_TUNING.TIER_EASE_MS);
+  });
+
+  it('advances the ease even when the caller omits dtMs entirely', () => {
+    // advanceWarp(state, {liveGames, now}) is the natural call shape; it used to
+    // accumulate nothing and pin the speed at its anchor forever.
+    const games = [liveGame()];
+    let state = advanceWarp(createWarpState(), { liveGames: games, now: NOW });
+    for (let i = 1; i <= 200; i += 1) {
+      state = advanceWarp(state, { liveGames: games, now: NOW + i * 100 });
+    }
+    expect(state.speed).toBeCloseTo(WARP_TUNING.SPEED_LIVE, 6);
+  });
+
+  it('R-PREC prefers the clocked game in BOTH array orders', () => {
+    const clocked = { id: 'clocked', endsAt: NOW + 5 * MIN, totalDuration: 6 * HOUR };
+    const clockless = { id: 'clockless', endsAt: null, totalDuration: 6 * HOUR };
+    for (const order of [[clockless, clocked], [clocked, clockless]]) {
+      const resolved = resolveTier({ liveGames: order, now: NOW });
+      expect(resolved.governingKey).toBe('clocked');
+      expect(resolved.tier).toBe(WARP_TIER.ENDGAME);
+    }
+  });
+
+  it('keeps the EASED speed inside [resting, peak] under adversarial churn', () => {
+    // The bound that actually ships, as opposed to a hand-built resolved object.
+    const pool = [
+      { id: 'x', endsAt: NOW + 2 * MIN, totalDuration: 6 * HOUR },
+      { id: 'y', endsAt: NOW + 45 * MIN, totalDuration: 6 * HOUR },
+      { id: 'z', endsAt: NOW + 6 * HOUR, totalDuration: 12 * HOUR },
+    ];
+    let state = createWarpState();
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 1; i <= 3000; i += 1) {
+      const games = pool.slice(0, (i % 4)); // 0..3 games, churning
+      state = advanceWarp(state, { liveGames: games, now: NOW + i * 250 });
+      min = Math.min(min, state.speed);
+      max = Math.max(max, state.speed);
+    }
+    expect(min).toBeGreaterThanOrEqual(WARP_TUNING.SPEED_RESTING - 1e-9);
+    expect(max).toBeLessThanOrEqual(WARP_TUNING.SPEED_ENDGAME_PEAK + 1e-9);
+    expect(Number.isFinite(state.speed)).toBe(true);
+  });
+
+  it('never yields NaN from a malformed resolved object', () => {
+    // NaN would propagate into the star-depth integration and blank the field
+    // permanently, with no throw and no failing test anywhere.
+    expect(targetSpeed({ tier: WARP_TIER.ENDGAME })).not.toBeNaN();
+    expect(targetSpeed({ tier: WARP_TIER.ENDGAME, rampProgress: undefined })).not.toBeNaN();
+    expect(targetSpeed({ tier: WARP_TIER.ENDGAME, rampProgress: 'x' })).not.toBeNaN();
+    expect(targetSpeed({ tier: WARP_TIER.ENDGAME })).toBe(WARP_TUNING.SPEED_ENDGAME_FLOOR);
+  });
+
+  it('treats a numeric-STRING duration as provable, not unknown', () => {
+    // A duration arriving as a string would otherwise look identical to a
+    // genuinely unknown clock and silently cost that game its endgame.
+    expect(endgameWindowMs('21600000')).toBe(30 * MIN);
+    expect(resolveTier({
+      liveGames: [{ id: 's', endsAt: NOW + 5 * MIN, totalDuration: '21600000' }],
+      now: NOW,
+    }).tier).toBe(WARP_TIER.ENDGAME);
+  });
+
+  it('does not let easeElapsedMs grow without bound once settled', () => {
+    const games = [liveGame()];
+    let state = advanceWarp(createWarpState(), { liveGames: games, now: NOW, dtMs: 16 });
+    for (let i = 1; i <= 5000; i += 1) {
+      state = advanceWarp(state, { liveGames: games, now: NOW + i * 1000 });
+    }
+    expect(state.easeElapsedMs).toBeLessThanOrEqual(state.easeMs);
   });
 
   it('never mutates the state it is given', () => {
