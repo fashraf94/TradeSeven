@@ -576,6 +576,9 @@ service cloud.firestore {
     match /wireMetrics/{marketDate} {
       allow read, write: if false;
     }
+    match /wireEditorial/{isoWeek} {
+      allow read, write: if false;
+    }
 
     // ═══════════════════════════════════════════
     // Index Intelligence & Stock Technical Scores

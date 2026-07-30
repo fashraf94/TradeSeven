@@ -1109,6 +1109,24 @@ export const CONTINUITY_MEMORY_ENABLED = false;
  * its own one-line PR (Pushed ≠ deployed).
  */
 export const WIRE_NEWSLINE_ENABLED = false;
+
+/**
+ * Phase 2 N3 — the weekly Wire editorial review (Spec V1.2 N3, D-P2-12).
+ * Rides process-pending-reflections.js as the LAST tenant (reflections →
+ * Wire sweep → editorial, R4-M5): Sunday-gated, isolated try/catch, hard
+ * remaining-budget floor — the sweep's budget is inviolable. One
+ * deterministic sample per ISO week; deterministic adapters carry the
+ * gate-bearing verdicts; one Sonnet advisory pass (chunked) rides
+ * wireModelCall; immutable runs land in wireEditorial/{isoWeek} with a
+ * 90-day retention (memos must outlive the Wire's 30-day window).
+ *
+ * No hard flag dependency (per the V1.2 flag table): with writes off the
+ * weekly frame is empty and runs record `insufficient` — harmless but
+ * noisy, which is why the §4 sequence flips this AFTER WIRE_WRITES_ENABLED
+ * (step 5: first Sunday after writes). Each flip is its own one-line PR
+ * (Pushed ≠ deployed).
+ */
+export const EDITORIAL_REVIEW_ENABLED = false;
 /**
  * Archetype Architecture Phase 3 — the DR-13 eval-time archetype identity
  * block (api/_utils/evalIdentityBlocks.js): the six constitution golden

@@ -22,6 +22,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { generateReflection } from '../agent/reflect.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { runWireReplaySweep } from '../_utils/wireReplaySweep.js';
+import { runEditorialReview, EDITORIAL_MIN_BUDGET_MS } from '../_utils/wireEditorialRun.js';
 
 export const config = { maxDuration: 60 };
 
@@ -121,12 +122,43 @@ export default async function handler(req, res) {
       console.error(`${LOG_PREFIX} Wire sweep failed (isolated):`, wireErr?.message || wireErr);
     }
 
+    // ---- 5. Weekly Wire editorial review (rider, LAST — R4-M5) ----
+    // Three-tenant budget hierarchy, pinned: reflections → Wire sweep →
+    // editorial. The editorial runs last at lowest priority under a HARD
+    // remaining-budget floor, so it can never consume the sweep's reserved
+    // budget (P2-47) — an editorial starving the sweep would delay the very
+    // settlements it samples. Isolating try/catch: an editorial failure can
+    // never break reflections or the sweep (P2-36). Sunday-gated: the slot
+    // is the UTC Sunday; Amendment F's captured {scheduledSlotDate, isoWeek}
+    // keeps a run that races past midnight filing under its original week.
+    let editorial = null;
+    try {
+      const isUtcSunday = new Date().getUTCDay() === 0;
+      if (getWireFlags().editorialEnabled && isUtcSunday) {
+        const remaining = TIME_BUDGET_MS - (Date.now() - startTime);
+        if (remaining > EDITORIAL_MIN_BUDGET_MS) {
+          editorial = await runEditorialReview(db, {
+            now: new Date(),
+            deadline: startTime + TIME_BUDGET_MS,
+          });
+          console.log(`${LOG_PREFIX} Editorial:`, editorial);
+        } else {
+          console.log(`${LOG_PREFIX} Editorial deferred (budget ${remaining}ms below floor); a later Sunday tick covers it`);
+          editorial = { action: 'deferred', remaining };
+        }
+      }
+    } catch (edErr) {
+      console.error(`${LOG_PREFIX} Editorial failed (isolated):`, edErr?.message || edErr);
+      editorial = { action: 'error', error: String(edErr?.message || edErr) };
+    }
+
     const duration = Date.now() - startTime;
     console.log(`${LOG_PREFIX} Complete in ${duration}ms:`, summary);
     return res.status(200).json({
       ...summary,
       ...(snapshot.empty ? { message: 'No pending reflections' } : {}),
       wireSweep,
+      ...(editorial ? { editorial } : {}),
       duration,
     });
   } catch (err) {

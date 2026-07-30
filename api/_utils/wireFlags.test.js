@@ -10,12 +10,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('shipped flag values — the merge must be dark', () => {
-  it('all four Wire flags ship FALSE', async () => {
+  it('all five Wire flags ship FALSE', async () => {
     const flags = await import('../../src/config/featureFlags.js');
     expect(flags.WIRE_METRICS_ENABLED).toBe(false);
     expect(flags.WIRE_WRITES_ENABLED).toBe(false);
     expect(flags.CONTINUITY_MEMORY_ENABLED).toBe(false);
     expect(flags.WIRE_NEWSLINE_ENABLED).toBe(false);
+    expect(flags.EDITORIAL_REVIEW_ENABLED).toBe(false);
   });
 
   it('getWireFlags reports everything off at HEAD', async () => {
@@ -25,6 +26,7 @@ describe('shipped flag values — the merge must be dark', () => {
       writesEnabled: false,
       continuityEnabled: false,
       newslineEnabled: false,
+      editorialEnabled: false,
     });
   });
 });
@@ -34,12 +36,13 @@ describe('the dependency rules (§4.8 flag table + Phase 2 N1)', () => {
     vi.resetModules();
   });
 
-  const withFlags = async (metrics, writes, continuity, newsline = false) => {
+  const withFlags = async (metrics, writes, continuity, newsline = false, editorial = false) => {
     vi.doMock('../../src/config/featureFlags.js', () => ({
       WIRE_METRICS_ENABLED: metrics,
       WIRE_WRITES_ENABLED: writes,
       CONTINUITY_MEMORY_ENABLED: continuity,
       WIRE_NEWSLINE_ENABLED: newsline,
+      EDITORIAL_REVIEW_ENABLED: editorial,
     }));
     const { getWireFlags } = await import('./wireFlags.js');
     return getWireFlags();
@@ -71,5 +74,11 @@ describe('the dependency rules (§4.8 flag table + Phase 2 N1)', () => {
     expect((await withFlags(true, false, false)).metricsEnabled).toBe(true);
     vi.resetModules();
     expect((await withFlags(false, true, false)).metricsEnabled).toBe(false);
+  });
+
+  it('editorial is deliberately independent of writes (V1.2 flag table — flip ORDER is founder-sequenced)', async () => {
+    const f = await withFlags(false, false, false, false, true);
+    expect(f.editorialEnabled).toBe(true);
+    expect(f.writesEnabled).toBe(false);
   });
 });
