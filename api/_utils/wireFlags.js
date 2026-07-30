@@ -14,17 +14,21 @@ import {
   WIRE_METRICS_ENABLED,
   WIRE_WRITES_ENABLED,
   CONTINUITY_MEMORY_ENABLED,
+  WIRE_NEWSLINE_ENABLED,
 } from '../../src/config/featureFlags.js';
 
 /**
  * Resolve the effective Wire flag state.
  * `continuityEnabled` is true only when BOTH its own flag and
- * WIRE_WRITES_ENABLED are true (§4.8 flag table).
+ * WIRE_WRITES_ENABLED are true (§4.8 flag table). `newslineEnabled`
+ * (Phase 2 N1) carries the same dependency — no Wire writes, nothing to
+ * read — so neither consumer can ever run dark-solo.
  */
 export function getWireFlags() {
   return {
     metricsEnabled: WIRE_METRICS_ENABLED === true,
     writesEnabled: WIRE_WRITES_ENABLED === true,
     continuityEnabled: CONTINUITY_MEMORY_ENABLED === true && WIRE_WRITES_ENABLED === true,
+    newslineEnabled: WIRE_NEWSLINE_ENABLED === true && WIRE_WRITES_ENABLED === true,
   };
 }

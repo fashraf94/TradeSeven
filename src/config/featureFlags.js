@@ -1092,6 +1092,23 @@ export const WIRE_WRITES_ENABLED = false;
  * dependency; this raw const is never read directly by call sites.
  */
 export const CONTINUITY_MEMORY_ENABLED = false;
+
+/**
+ * Phase 2 N1 — Gemma's voiceLayerCache newsLine (Spec V1.2 N1, V1.5 R4-M2).
+ * The first NEW Wire consumer: per portfolio/bench symbol, whole validated
+ * digests packed under the exact 240-code-unit ceiling into
+ * voiceLayerCache/{battleId}.newsLines, rendered by voiceLayerPrompt's
+ * battle fall-through as referenceable context (never instructions).
+ *
+ * Requires WIRE_WRITES_ENABLED — with writes off there are no Wire entries
+ * to read; the resolution point (getWireFlags) enforces the dependency, so
+ * no call site can run the newsLine dark-solo. FALSE = the cache doc is
+ * field-wise byte-identical (no newsLines field) and the cache tick makes
+ * ZERO fantasyTimesWire reads (P2-1). Flips LAST in the §4 sequence (step
+ * 7), at founder discretion once dark-solo health is clean. Each flip is
+ * its own one-line PR (Pushed ≠ deployed).
+ */
+export const WIRE_NEWSLINE_ENABLED = false;
 /**
  * Archetype Architecture Phase 3 — the DR-13 eval-time archetype identity
  * block (api/_utils/evalIdentityBlocks.js): the six constitution golden

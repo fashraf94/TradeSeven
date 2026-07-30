@@ -30,6 +30,24 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({
   getFirebaseAdmin: () => dbRef.db,
 }));
 
+// Phase 2 N1 — Wire flag resolution, mutable per test. Defaults mirror
+// production (all false), so every pre-N1 row runs the true flag-off path.
+const flagState = { metricsEnabled: false, writesEnabled: false, continuityEnabled: false, newslineEnabled: false };
+vi.mock('../_utils/wireFlags.js', () => ({
+  getWireFlags: () => ({ ...flagState }),
+}));
+
+// Deterministic Wire dates (the handler otherwise derives them from the
+// real clock via resolveWireMarketDate).
+vi.mock('../_utils/wireCalendar.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    resolveWireMarketDate: () => '2026-07-24',
+    priorTradingSessions: () => ['2026-07-23'],
+  };
+});
+
 const handler = (await import('./voice-layer-cache.js')).default;
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
@@ -126,6 +144,10 @@ beforeEach(() => {
   dbRef.db = makeMockDb();
   marketState.state = 'OPEN';
   fetchCalls.length = 0;
+  flagState.metricsEnabled = false;
+  flagState.writesEnabled = false;
+  flagState.continuityEnabled = false;
+  flagState.newslineEnabled = false;
   stubEodhd();
 });
 
@@ -241,6 +263,20 @@ describe('cache tick (one active battle)', () => {
     expect(benchBySymbol['BTC-USD'].price).toBeNull();
   });
 
+  it('P2-1 (flag-off byte-identity): the cache doc has EXACTLY the pre-N1 key set — no newsLines field', async () => {
+    await seedWorld(dbRef.db);
+    await handler(cronReq(), makeRes());
+    const doc = dbRef.db.__dump('voiceLayerCache/battle-1');
+    // Field-wise identity (timestamp sentinel included as a key, excluded
+    // from value comparison per V1.3): the exact photograph of the pre-N1
+    // doc shape. A newsLines key appearing flag-off fails HERE.
+    expect(Object.keys(doc).sort()).toEqual([
+      'agentId', 'battleId', 'benchBriefs', 'dataFreshness', 'forgeSeeds',
+      'marketContext', 'portfolioBriefs', 'scoutAlerts', 'updatedAt',
+    ]);
+    expect('newsLines' in doc).toBe(false);
+  });
+
   it('two active battles → two cache docs in one committed batch', async () => {
     await seedWorld(dbRef.db);
     const second = BATTLE();
@@ -261,5 +297,111 @@ describe('cache tick (one active battle)', () => {
     const doc2 = dbRef.db.__dump('voiceLayerCache/battle-2');
     expect(doc1.scoutAlerts.map((a) => a.type)).toContain('rs_breakout');
     expect(doc2.scoutAlerts.map((a) => a.type)).not.toContain('rs_breakout');
+  });
+});
+
+// ── Phase 2 N1: the newsLine rows (P2-1, P2-6, the N1.2 fetch budget) ──────
+const WIRE_TODAY = '2026-07-24';
+const WIRE_PRIOR = '2026-07-23';
+
+const wireEntry = (storyId, ticker, digest) => ({
+  storyId, reporter: 'doug', headline: 'POISON_HEADLINE_' + storyId,
+  publishedAt: `${WIRE_TODAY}T18:00:00Z`, validatorVersion: '1.6.0', quarantined: false,
+  generationConfig: { generationVersion: 7, continuityEnabled: false },
+  agentFacts: {
+    eventType: 'earnings_recap', tickers: [ticker], primaryTicker: ticker,
+    digest, schemaVersion: 'wire-1.6', digestRendererVersion: '1.0.0',
+    validatorVersion: '1.6.0', chainId: storyId,
+  },
+});
+
+async function seedWireDays(db) {
+  await db.collection('fantasyTimesWire').doc(WIRE_TODAY).set({
+    date: WIRE_TODAY,
+    entries: [wireEntry('w1', 'AMD', 'AMD rallies 5% on data-center demand.')],
+    bySymbol: { AMD: ['w1'] },
+  });
+  await db.collection('fantasyTimesWire').doc(WIRE_PRIOR).set({
+    date: WIRE_PRIOR,
+    entries: [wireEntry('w0', 'AMD', 'AMD guides Q3 above consensus.')],
+    bySymbol: { AMD: ['w0'] },
+  });
+}
+
+describe('N1 newsLine — flag semantics at the handler', () => {
+  it('P2-1: flag-off with Wire docs PRESENT → zero fantasyTimesWire reads AND no newsLines key', async () => {
+    await seedWorld(dbRef.db);
+    await seedWireDays(dbRef.db);
+    dbRef.db.__resetReads();
+
+    await handler(cronReq(), makeRes());
+
+    const counts = dbRef.db.__readCounts();
+    expect(Object.keys(counts).some((k) => k.includes('fantasyTimesWire'))).toBe(false);
+    expect('newsLines' in dbRef.db.__dump('voiceLayerCache/battle-1')).toBe(false);
+  });
+
+  it('flag-on: covered symbol gets its packed line (newest first, prefixed); uncovered symbols get no key', async () => {
+    await seedWorld(dbRef.db);
+    await seedWireDays(dbRef.db);
+    flagState.writesEnabled = true;
+    flagState.newslineEnabled = true;
+
+    await handler(cronReq(), makeRes());
+
+    const doc = dbRef.db.__dump('voiceLayerCache/battle-1');
+    expect(doc.newsLines).toEqual({
+      AMD: 'Today: AMD rallies 5% on data-center demand. | Prior: AMD guides Q3 above consensus.',
+    });
+    // P2-3 at the cache surface: no story prose crosses.
+    expect(JSON.stringify(doc)).not.toContain('POISON_HEADLINE');
+  });
+
+  it('N1.2 fetch budget: ONE Wire fetch per tick — two battles still read each day doc once', async () => {
+    await seedWorld(dbRef.db);
+    await seedWireDays(dbRef.db);
+    const second = BATTLE();
+    second.agentId = 'agent-2';
+    await dbRef.db.collection('agentBattles').doc('battle-2').set(second);
+    flagState.writesEnabled = true;
+    flagState.newslineEnabled = true;
+    dbRef.db.__resetReads();
+
+    await handler(cronReq(), makeRes());
+
+    const counts = dbRef.db.__readCounts();
+    expect(counts[`fantasyTimesWire/${WIRE_TODAY}`]).toBe(1);
+    expect(counts[`fantasyTimesWire/${WIRE_PRIOR}`]).toBe(1);
+    expect(dbRef.db.__dump('voiceLayerCache/battle-2').newsLines.AMD).toBeDefined();
+  });
+
+  it('flag-on with NO Wire coverage → newsLines present and empty (deterministic shape)', async () => {
+    await seedWorld(dbRef.db);
+    flagState.writesEnabled = true;
+    flagState.newslineEnabled = true;
+
+    await handler(cronReq(), makeRes());
+
+    expect(dbRef.db.__dump('voiceLayerCache/battle-1').newsLines).toEqual({});
+  });
+
+  it('P2-6: the Wire read throwing does not kill the tick — cache doc still written, briefs intact', async () => {
+    await seedWorld(dbRef.db);
+    flagState.writesEnabled = true;
+    flagState.newslineEnabled = true;
+    const orig = dbRef.db.collection.bind(dbRef.db);
+    dbRef.db.collection = (name) => {
+      if (name === 'fantasyTimesWire') throw new Error('wire backend down');
+      return orig(name);
+    };
+
+    const res = makeRes();
+    await handler(cronReq(), res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ success: true, battlesProcessed: 1 });
+    const doc = dbRef.db.__dump('voiceLayerCache/battle-1');
+    expect(doc.portfolioBriefs).toHaveLength(1); // the tick's real work survived
+    expect(doc.newsLines).toEqual({});           // degraded: no lines, never a dead tick
   });
 });
