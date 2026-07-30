@@ -28,6 +28,7 @@ import {
   surfaceHash,
   assessRegen,
   assessTickerUniverseCaveat,
+  versionIncreased,
 } from './wireGenerationSurface.js';
 // The value-locked exports (founder ruling, P1 closeout): imported LIVE so
 // the lock hashes the real runtime values, not a snapshot of source text.
@@ -206,11 +207,25 @@ describe('assessTickerUniverseCaveat — the FINAL-LOCK ratification caveat, mec
     expect(verdict.reason).toMatch(/WIRE_VALIDATOR_VERSION alongside/);
   });
 
-  it('universe changed + validator bumped → allowed', () => {
+  it('universe changed + validator bumped FORWARD → allowed', () => {
     expect(assessTickerUniverseCaveat(prev, {
       generationSurface: { files: { [KEY]: 'bbb' } },
       validator: { version: '1.7.0' },
     }).allowed).toBe(true);
+    // semver-aware: 1.9.0 -> 1.10.0 is forward (review finding — no lexical compare)
+    expect(assessTickerUniverseCaveat(
+      { generationSurface: { files: { [KEY]: 'aaa' } }, validator: { version: '1.9.0' } },
+      { generationSurface: { files: { [KEY]: 'bbb' } }, validator: { version: '1.10.0' } },
+    ).allowed).toBe(true);
+  });
+
+  it('universe changed + validator DOWNGRADE → refused (review finding: directionless !== accepted it)', () => {
+    const verdict = assessTickerUniverseCaveat(prev, {
+      generationSurface: { files: { [KEY]: 'bbb' } },
+      validator: { version: '1.5.0' }, // downgrade from prev 1.6.0
+    });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.reason).toMatch(/WIRE_VALIDATOR_VERSION alongside/);
   });
 
   it('universe unchanged → allowed regardless of validator version', () => {
@@ -225,6 +240,23 @@ describe('assessTickerUniverseCaveat — the FINAL-LOCK ratification caveat, mec
       generationSurface: { files: { [KEY]: 'aaa' } },
       validator: { version: '1.6.0' },
     }).allowed).toBe(true);
+  });
+});
+
+describe('versionIncreased — strictly-forward, semver + integer (review finding)', () => {
+  it('forward returns true; equal and downgrade return false', () => {
+    expect(versionIncreased('1.6.0', '1.7.0')).toBe(true);
+    expect(versionIncreased('1.9.0', '1.10.0')).toBe(true); // numeric, not lexical
+    expect(versionIncreased(5, 6)).toBe(true);              // integer generationVersion
+    expect(versionIncreased('1.6.0', '1.6.0')).toBe(false); // equal is not a bump
+    expect(versionIncreased('1.6.0', '1.5.0')).toBe(false); // downgrade
+    expect(versionIncreased(6, 5)).toBe(false);
+    expect(versionIncreased(undefined, '1.0.0')).toBe(false);
+  });
+
+  it('assessRegen refuses a content change with a DOWNGRADED version', () => {
+    expect(assessRegen({ version: '1.6.0', hash: 'a' }, { version: '1.5.0', hash: 'b' }).allowed).toBe(false);
+    expect(assessRegen({ version: 5, hash: 'a' }, { version: 6, hash: 'b' }).allowed).toBe(true);
   });
 });
 
