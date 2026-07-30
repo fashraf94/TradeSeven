@@ -388,13 +388,12 @@ export function createWarpState(tuning = WARP_TUNING) {
  * fight ending. At the 15s tier ease a drop from 2.2 reads as a glitch, so it
  * gets the same ~30s resolution decay the last-game-resolves case uses.
  *
- * ⚠ INTERPRETATION, FLAGGED FOR THE SECOND FEEL PASS: the ruling names the
- * ENDGAME→ENDGAME handoff explicitly. This applies it to ANY downward move out
- * of ENDGAME, which also covers ENDGAME→BATTLE LIVE (the next game is live but
- * not yet in its own window). Treating only the first would leave the LARGER
- * drop — 2.2 → 0.5 rather than 2.2 → 0.8 — snapping at the faster ease, which
- * is the very glitch the ruling exists to remove. Both are tuning-exempt and
- * provisional; say the word and this narrows to the literal reading.
+ * SCOPE, RATIFIED (ruling R-T2-S14): the decay ease applies to ANY downward
+ * transition out of ENDGAME, not only the ENDGAME→ENDGAME handoff R-T2-S10
+ * names. That covers ENDGAME→BATTLE LIVE too, where the drop is actually LARGER
+ * (2.2 → 0.5 rather than 2.2 → 0.8) and would otherwise snap at the faster ease.
+ * Upward transitions keep the fast tier ease so entering a fight stays
+ * responsive — pinned by its own test row. Still tuning-exempt.
  */
 function resolveEaseMs(prev, resolved, target, tuning) {
   if (resolved.tier === WARP_TIER.RESTING) return tuning.DECAY_MS;

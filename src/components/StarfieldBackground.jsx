@@ -74,6 +74,23 @@
 // BATTLE LIVE because its end date is server-only, and a Snake-Draft-only user
 // sees RESTING. Both fall out of the core's "unprovable clocks get no endgame"
 // rule rather than needing a special case here.
+//
+// ---------------------------------------------------------------------------
+// FOR WHOEVER RETIRES THE PRICE LINES (ruling R-T2-S6) — READ BEFORE DELETING
+// ---------------------------------------------------------------------------
+// This component REPLACES DesktopBackground at the two dashboard mounts only.
+// DesktopBackground.jsx is untouched and still renders on six other screens, so
+// after the v1 flag flip the app deliberately runs two ambient systems. The
+// everywhere-swap follow-on is the PR that finally deletes the price-line SVGs —
+// and when it does, it MUST also, in the same commit:
+//
+//   1. regenerate src/theme/tokenGuardBaseline.json (deleting those SVGs removes
+//      3 pinned R-H8 hexes: #00d9ff x2 and #8b5cf6 x1 in DesktopBackground), and
+//   2. update the hard-coded exempt count in src/theme/tokens.guard.test.js
+//      (the R-BL21 row asserts those exact counts and a total of 21 -> 18).
+//
+// Without both, that PR fails on a guard whose message will not obviously point
+// here. The v1 flip PR does NOT touch either file, because it deletes nothing.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readToken } from '../theme/cssTokens';

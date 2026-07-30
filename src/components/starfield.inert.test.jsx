@@ -222,21 +222,11 @@ describe('A1 — the root paints stay opaque while the flags are off', () => {
   });
 });
 
-describe('A6 — no Firestore reaches the starfield (checked early, finalised in Phase 3)', () => {
-  it('neither the component nor the core imports a Firestore API', () => {
-    for (const [name, source] of [
-      ['StarfieldBackground.jsx', stripComments(STARFIELD)],
-      ['warpStateMachine.js', stripComments(CORE)],
-    ]) {
-      expect(source, `${name} must not import firebase`).not.toMatch(/from\s+['"]firebase/);
-      expect(source, `${name} must not import the app's firebase config`).not.toMatch(/firebase\/config/);
-      for (const api of ['onSnapshot', 'getDocs', 'collection(', 'setInterval(']) {
-        expect(source, `${name} must not call ${api} — R-T2-S1 forbids new reads/polls`)
-          .not.toContain(api);
-      }
-    }
-  });
-});
+// NOTE: row A6 lives in starfield.importguard.test.js, not here. It was a flat
+// text check over two files during Phase 1; Phase 3 replaced it with a
+// TRANSITIVE walk of the real import graph, which also catches a read smuggled
+// one hop away. Keeping a weaker duplicate here would give two answers to one
+// question — see that file.
 
 describe('A1 — the component itself is inert on a server render', () => {
   it('renders a pointer-events-none canvas in the z0 slot without throwing', () => {
