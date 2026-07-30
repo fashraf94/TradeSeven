@@ -62,6 +62,22 @@ export function resolveWireMarketDate(instant) {
   return date;
 }
 
+/**
+ * The instant of ET midnight for the ET calendar day containing `instant`.
+ * DST-correct via round-trip: of the two candidate fixed offsets, the one
+ * whose midnight still lands inside the same ET calendar day is in effect.
+ * Replaces the hardcoded `T00:00:00-05:00` day-boundary idiom, which is an
+ * hour early all summer (Recap Restoration ruling R-B2 / register item).
+ */
+export function startOfEtDay(instant) {
+  const etDate = deriveMarketDate(instant);
+  for (const offset of ['-04:00', '-05:00']) {
+    const candidate = new Date(`${etDate}T00:00:00${offset}`);
+    if (deriveMarketDate(candidate) === etDate) return candidate;
+  }
+  return new Date(`${etDate}T00:00:00-05:00`);
+}
+
 /** Is this ET calendar date a trading session (Mon–Fri, not a NYSE holiday)? */
 export function isTradingSession(dateStr) {
   assertMaintainedYear(dateStr);
@@ -126,8 +142,13 @@ export function wireLookbackDates(marketDate) {
  * instead, in BOTH directions: anchors beyond the horizon (2028+) fire it
  * directly, and a backward walk that crosses below the floor (into 2025)
  * fires it too — both are refusals to answer wrong.
+ *
+ * Exported since the Recap Restoration arc (ruling R-B2): the recap
+ * writers' prior-session walk (marketSchedule.getPreviousTradingDay) has no
+ * horizon guard of its own, so callers assert their anchor date here before
+ * walking — closing the 2028 silent-mislabel gap on that path.
  */
-function assertMaintainedYear(dateStr) {
+export function assertMaintainedYear(dateStr) {
   const year = Number(String(dateStr).slice(0, 4));
   const min = Math.min(...MAINTAINED_HOLIDAY_YEARS);
   const max = Math.max(...MAINTAINED_HOLIDAY_YEARS);

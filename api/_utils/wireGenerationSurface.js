@@ -59,9 +59,18 @@ import { createHash } from 'node:crypto';
 // forces a conservative-but-harmless bump. (P1 code-review finding, confirmed:
 // ingestedClaims.js was a false-negative hole in the v1 manifest.)
 export const GENERATION_SURFACE = Object.freeze([
+  // econPrintVerifier + fetchEconomicEventsEODHD (Recap Restoration arc):
+  // the verifier's status/holds and the category matcher table both select
+  // and shape prompt content for the neta_econ_recap seam — generation-
+  // bearing, so surface-listed. macroCalendar.js (the Tier-1 set) is
+  // deliberately NOT listed — it is shared config also feeding the DRB
+  // (rankingConfig precedent: file-level inclusion would reset gateEpoch on
+  // every annual calendar refresh); flagged in the arc build report.
+  'api/_utils/econPrintVerifier.js',
   'api/_utils/fantasyTimesConsensus.js',
   'api/_utils/fantasyTimesPrompts.js',
   'api/_utils/fantasyTimesTickers.js',
+  'api/_utils/fetchEconomicEventsEODHD.js',
   'api/_utils/ingestedClaims.js',
   'api/_utils/stockIntelligenceData.js',
   'api/_utils/wireContinuity.js',
@@ -105,9 +114,17 @@ export const GENERATION_SURFACE = Object.freeze([
 //    WIRE_GENERATION_VERSION so each stamp is truthful about its own axis.
 //    Enforced mechanically: assessTickerUniverseCaveat refuses a regen that
 //    carries a TICKER_TO_SECTOR value change without a validator bump.
+//  - macroCalendar#TIER1_CALENDAR_VALUE_LOCK — the Tier-1 recap event set
+//    over the maintained holiday horizon (Recap Restoration R-A1: array
+//    membership IS the classification for the neta_econ_recap seam; Econ
+//    Capture rulings §5.6 folded the lock). The file itself stays outside
+//    the path manifest — it also feeds the DRB, so file-level inclusion
+//    would reset gateEpoch on unrelated edits (the rankingConfig
+//    precedent); the VALUE lock catches Tier-1 set changes instead.
 export const GENERATION_VALUE_EXPORTS = Object.freeze([
   Object.freeze({ key: 'value:api/_utils/rankingConfig.js#ALL_TICKERS', exportName: 'ALL_TICKERS' }),
   Object.freeze({ key: 'value:api/_utils/rankingConfig.js#TICKER_TO_SECTOR', exportName: 'TICKER_TO_SECTOR' }),
+  Object.freeze({ key: 'value:api/_utils/macroCalendar.js#TIER1_CALENDAR_VALUE_LOCK', exportName: 'TIER1_CALENDAR_VALUE_LOCK' }),
 ]);
 
 /** Canonical serialization for value hashing: arrays keep their order (a

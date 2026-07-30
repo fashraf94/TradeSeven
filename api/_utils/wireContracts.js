@@ -61,7 +61,14 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // v6 (P2+N0 fix-forward): assessRegen/assessTickerUniverseCaveat hardened to
 // require a strictly-FORWARD version bump (a downgrade no longer satisfies
 // the caveat) — a manifest-module edit, so the mechanism forces this bump.
-export const WIRE_GENERATION_VERSION = 6;
+// v7 (Recap Restoration mini-arc, Jul 30 rulings): S3/S5 recap seams
+// restored — deterministic array-driven Tier-1 + EODHD econ operands +
+// econPrint verifier/plausibility gates (R-B1/R-B1a/R-A1), referent dedup
+// (R-B4), ET-date + morning-window fixes (R-B2), F2 honest price-move
+// labeling (R-B5). Two modules added to the manifest
+// (fetchEconomicEventsEODHD.js, econPrintVerifier.js); writer + prompt
+// content changed. The ONE pre-window epoch reset of ruling R-B7.
+export const WIRE_GENERATION_VERSION = 7;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // Firestore collection names (server-only; deny-all in firestore.rules).

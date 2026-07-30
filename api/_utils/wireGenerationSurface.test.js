@@ -33,6 +33,7 @@ import {
 // The value-locked exports (founder ruling, P1 closeout): imported LIVE so
 // the lock hashes the real runtime values, not a snapshot of source text.
 import { ALL_TICKERS, TICKER_TO_SECTOR } from './rankingConfig.js';
+import { TIER1_CALENDAR_VALUE_LOCK } from './macroCalendar.js';
 import {
   WIRE_GENERATION_VERSION,
   WIRE_DIGEST_RENDERER_VERSION,
@@ -42,7 +43,7 @@ import {
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
 const REGEN = process.env.WIRE_GENERATION_BASELINE_REGEN === '1';
 
-const VALUE_EXPORTS = { ALL_TICKERS, TICKER_TO_SECTOR };
+const VALUE_EXPORTS = { ALL_TICKERS, TICKER_TO_SECTOR, TIER1_CALENDAR_VALUE_LOCK };
 
 function computeCurrent() {
   const files = {};

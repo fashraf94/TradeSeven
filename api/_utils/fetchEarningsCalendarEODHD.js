@@ -85,7 +85,10 @@ function addDays(anchor, days) {
 }
 
 // EODHD before_after_market → BMO / AMC / '' (empty for Unknown/missing).
-function translateTiming(bam) {
+// Exported since the Recap Restoration arc: generate-recap.js surfaces the
+// timing into Doug's prompt + story metadata (ruling R-B5) via this single
+// translation, so the two consumers can never disagree on the vocabulary.
+export function translateTiming(bam) {
   if (!bam || typeof bam !== 'string') return '';
   const lower = bam.toLowerCase();
   if (lower === 'bmo' || lower.includes('before')) return 'BMO';

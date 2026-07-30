@@ -11,11 +11,14 @@
 //      calendars. Each array holds 2026 entries in MacroEvent shape;
 //      refresh annually from the source URLs in the table below.
 //
-//   2. Computed helpers (5 categories: NFP, JOLTS, ISM Manufacturing,
-//      ISM Services, Consumer Confidence). Releases that follow
-//      deterministic monthly patterns (first Friday, Nth business day,
-//      last Tuesday). Compiled at call time for the year(s) the window
-//      touches, so they need no annual refresh.
+//   2. Computed helpers (5 categories in the unified query: NFP,
+//      ISM Manufacturing, ISM Services, Consumer Confidence, Jobless
+//      Claims). Releases that follow deterministic patterns (first Friday,
+//      Nth business day, last Tuesday, every Thursday). Compiled at call
+//      time for the year(s) the window touches, so they need no annual
+//      refresh. getJOLTSDates still exists but is EXCLUDED from the query
+//      — dropped from the Tier-1 set by the Econ Capture rulings §2
+//      (Jul 30 2026); see the note at the concat site.
 //
 //   3. getMacroEventsInWindow({ fromDate, toDate }) — concatenates every
 //      source, filters inclusively by date, returns sorted ascending.
@@ -29,7 +32,7 @@
 //     time:     "8:30 AM ET" | "10:00 AM ET" | "2:00 PM ET",
 //     category: "FOMC" | "NFP" | "CPI" | "PPI" | "PCE" | "Retail Sales"
 //             | "GDP" | "Productivity" | "JOLTS" | "ISM Manufacturing"
-//             | "ISM Services" | "Consumer Confidence",
+//             | "ISM Services" | "Consumer Confidence" | "Jobless Claims",
 //     impact:   "high" | "medium",
 //     event:    string,
 //   }
@@ -86,6 +89,7 @@ const MONTH_NAMES = [
 const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 const TUESDAY = 2;
+const THURSDAY = 4;
 const FRIDAY = 5;
 
 // =============================================================================
@@ -298,6 +302,27 @@ export function getConsumerConfidenceDates(year) {
   });
 }
 
+// Initial Jobless Claims (DOL) — released every Thursday at 8:30 AM ET.
+// Added per the Recap Restoration ruling R-A1 (Jul 30, 2026): jobless claims
+// is Tier-1 by array membership; its weekly cadence is what gives the R9
+// liveness row its ≤1-week bound. When Thursday is a market holiday, DOL
+// releases EARLIER (the prior business day — Thanksgiving-week practice),
+// unlike NFP's forward shift.
+export function getJoblessClaimsDates(year) {
+  const events = [];
+  let date = firstWeekdayOfYear(year, THURSDAY);
+  while (date.getFullYear() === year) {
+    let releaseDate = date;
+    if (isMarketHoliday(formatDateString(releaseDate))) {
+      releaseDate = previousBusinessDay(releaseDate);
+    }
+    events.push(makeMacroEvent(releaseDate, '8:30 AM ET', 'Jobless Claims', 'medium',
+      'Initial Jobless Claims'));
+    date = addDays(date, 7);
+  }
+  return events;
+}
+
 // =============================================================================
 // Date primitives — local-TZ Date arithmetic + marketSchedule helpers for
 // holiday/format. Local-TZ getters are paired with local-TZ Date constructors
@@ -327,6 +352,18 @@ function nextBusinessDay(date) {
   let candidate = addDays(date, 1);
   while (!isBusinessDay(candidate)) candidate = addDays(candidate, 1);
   return candidate;
+}
+
+function previousBusinessDay(date) {
+  let candidate = addDays(date, -1);
+  while (!isBusinessDay(candidate)) candidate = addDays(candidate, -1);
+  return candidate;
+}
+
+function firstWeekdayOfYear(year, weekday) {
+  const jan1 = dateAt(year, 1, 1);
+  const offset = (weekday - jan1.getDay() + 7) % 7;
+  return dateAt(year, 1, 1 + offset);
 }
 
 function nthWeekdayOfMonth(year, month, n, weekday) {
@@ -393,10 +430,17 @@ export function getMacroEventsInWindow({ fromDate, toDate }) {
 
   const computed = years.flatMap((year) => [
     ...getNFPDates(year),
-    ...getJOLTSDates(year),
+    // JOLTS: DROPPED from the Tier-1 set (Econ Capture rulings §2, Jul 30
+    // 2026) — absent from the EODHD /economic-events feed under EVERY name
+    // across a full-month capture (jolts / job openings / labor turnover /
+    // quits / hires all searched, 425 rows, 200 distinct types), so the
+    // category could structurally never produce a recap: the silent-zero
+    // pattern rebuilt inside its own fix. getJOLTSDates stays exported for
+    // reference; do NOT re-add it here without feed evidence.
     ...getISMManufacturingDates(year),
     ...getISMServicesDates(year),
     ...getConsumerConfidenceDates(year),
+    ...getJoblessClaimsDates(year),
   ]);
 
   const hardcoded = [
@@ -421,3 +465,21 @@ function yearsInWindow(fromDate, toDate) {
   for (let y = fromYear; y <= toYear; y += 1) years.push(y);
   return years;
 }
+
+// =============================================================================
+// Wire value-lock (Econ Capture rulings §5.6 — the standing flag-3 ruling)
+// =============================================================================
+
+// The Tier-1 recap set IS this calendar (Recap Restoration R-A1), but the
+// file stays OUTSIDE the Wire GENERATION_SURFACE path manifest because it
+// also feeds the DRB (the rankingConfig precedent: file-level inclusion
+// would reset gateEpoch on unrelated edits). This export closes the gap the
+// build report flagged: its VALUE — every event over the maintained holiday
+// horizon — is hashed into the generation baseline via
+// GENERATION_VALUE_EXPORTS, so a content change to the Tier-1 set forces a
+// WIRE_GENERATION_VERSION bump while non-value edits here touch nothing.
+// Evaluated at module load, after every array/helper above is initialized.
+export const TIER1_CALENDAR_VALUE_LOCK = getMacroEventsInWindow({
+  fromDate: '2026-01-01',
+  toDate: '2027-12-31',
+});

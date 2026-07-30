@@ -27,8 +27,7 @@
           "order": "DESCENDING"
         }
       ]
-    }
-    ,
+    },
     {
       "collectionGroup": "fantasyTimesStories",
       "queryScope": "COLLECTION",
@@ -412,6 +411,20 @@
         {
           "fieldPath": "updatedAt",
           "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "fantasyTimesStories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "referentDate",
+          "order": "ASCENDING"
         }
       ]
     }
