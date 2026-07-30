@@ -88,4 +88,17 @@ P2-7 · P2-8 · P2-9 · P2-10 · P2-11 · P2-12 · P2-13 · P2-14 (with recorded
 | **N2** exemplars | Awaiting your shortlist picks |
 | Pre-PR | Code-review-equivalent (high effort) over the full P3 diff → dark merge → you merge |
 
-*20260730_WIRE_P3_N3_CHECKPOINT.md — July 30, 2026*
+---
+
+## Ratification record (founder, July 30, 2026)
+
+Both N3 interpretation calls **RATIFIED as implemented**, verbatim in effect:
+
+1. **Call 1 — declared-value referent:** signed deviation for every `X_vs_Y` basis (the R4_SIGN structural forcing), with the revenue level-match refusal (`NOT_VERIFIABLE(ambiguous_referent)`, never adjudicated WRONG). CONFIRMED.
+2. **Call 2 — the B3/F-B2 partition:** categorical inversions are CRITICAL with zero tolerance (`status_inversion` · `direction_inversion` · `subject_mismatch` · `wrong_subject_index_move`); same-sign beyond-tolerance misses are derivation errors under the 5% budget. CONFIRMED.
+
+The interpretations of record in `wireEditorialAdapters.js`'s header are now founder-ratified semantics — changing either is a spec amendment plus an `adapterVersion` bump (F-M4), never a drive-by edit.
+
+**Step 0 deployment CONFIRMED** (founder, same ruling): the production deploy of #688 includes #682, so **N4's gate is clear** — N4 still builds LAST per D-P2-10.
+
+*20260730_WIRE_P3_N3_CHECKPOINT.md — V1.1 (ratification record appended) — July 30, 2026*
