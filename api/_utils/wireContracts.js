@@ -91,7 +91,14 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // reporter-request bytes ONLY under WIRE_WRITES (flag-off byte-identity
 // intact, M8); feeds gateEpoch as the "final exemplar deployment" input
 // (Spec V1.2 §3 / §4 step 2).
-export const WIRE_GENERATION_VERSION = 11;
+// v12 (D-3 pre-runway fix): the Kai pulse seam (generate-pulse.js, a manifest
+// member) now nulls the WIRE primaryTicker on cardinality-0 eventTypes
+// (index_move) so the A2 consistency remap no longer overwrites a correct
+// model-emitted subjectRef (e.g. NDX/DJI) with SPX from the "the market"
+// proxy. A conservative file-level bump — the outbound model request is
+// unchanged (M8 intact); only the post-call persisted primaryTicker differs.
+// The validator's A2 remap is untouched. Must land before WIRE_WRITES flips.
+export const WIRE_GENERATION_VERSION = 12;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────

@@ -21,6 +21,7 @@ import { isIndex, INDEX_SYMBOLS as INDEX_SYMBOL_SET } from '../_utils/indexRegis
 import { buildConsensusBlock, checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { extendToolWithAgentFacts, buildAgentFactsInstruction } from '../_utils/wireSchemaExtension.js';
+import { EVENT_CONTRACTS } from '../_utils/wireContracts.js';
 import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
 import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
 import { buildContinuityContext } from '../_utils/wireContinuity.js';
@@ -421,13 +422,29 @@ export default async function handler(req, res) {
 
     logInfo('Writing to Firestore...', { headline: storyDoc.headline });
     // agentFacts stays in a PRIVATE local — never on storyDoc (§4.5 step 1).
+    //
+    // D-3 (pre-runway fix): index_move is cardinality-0 — it has NO primary
+    // ticker; its subject is the index via subjectRef. But Kai's
+    // storyDoc.primaryTicker is a "the market" proxy (often SPY), NOT the
+    // event's subject. Feeding it as the wire primaryTicker triggers the A2
+    // consistency remap (wireValidator.js), which maps SPY->SPX and overwrites
+    // a correct model pick (e.g. NDX on a tech-led pulse) with SPX. Honor the
+    // contract's cardinality-0 rule: the WIRE primaryTicker is null on a
+    // zero-ticker eventType, so the remap has no operand and the model's
+    // subjectRef stands. storyDoc.primaryTicker (the story's own field, for
+    // display/ranking) is untouched. The validator's remap is left intact for
+    // any caller that passes a genuine single index-ETF primaryTicker.
+    const emittedEventType = wireFlags.writesEnabled ? toolBlock.input.agentFacts?.eventType : null;
+    const isCardinalityZeroEvent =
+      !!emittedEventType && EVENT_CONTRACTS[emittedEventType]?.tickers?.[1] === 0;
+    const wirePrimaryTicker = isCardinalityZeroEvent ? null : storyDoc.primaryTicker;
     const { storyRef: docRef, wire: wireResult } = await publishStoryWithWire(db, {
       storyDoc,
       rawAgentFacts: wireFlags.writesEnabled ? toolBlock.input.agentFacts : null,
       stopReason: response.stop_reason,
       reporter: 'kai',
       seam: 'kai_pulse',
-      primaryTicker: storyDoc.primaryTicker,
+      primaryTicker: wirePrimaryTicker,
       triggerRef: period,
       marketDate,
       generationConfig,
