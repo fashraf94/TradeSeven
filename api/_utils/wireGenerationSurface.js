@@ -76,6 +76,9 @@ export const GENERATION_SURFACE = Object.freeze([
   'api/_utils/wireContinuity.js',
   'api/_utils/wireContracts.js',
   'api/_utils/wireEntryGuard.js',
+  // N2 few-shot exemplars: embedded (writes-gated) into the agentFacts prompt
+  // addendum, so their content shapes what the reporter model is sent.
+  'api/_utils/wireExemplars.js',
   'api/_utils/wireGenerationConfig.js',
   'api/_utils/wireGenerationSurface.js',
   'api/_utils/wireModelCall.js',
