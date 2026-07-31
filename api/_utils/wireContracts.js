@@ -84,7 +84,14 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // manifest member — its formatter half shapes five reporter prompts, so
 // the conservative file-level bump fires even though only the dead
 // data-read half changed).
-export const WIRE_GENERATION_VERSION = 10;
+// v11 (N2 exemplars; coordinated against main after #695 merged): the first
+// few-shot exemplar set (wireExemplars.js, a new manifest member) embedded
+// writes-gated into the agentFacts addendum — alex×4, kai×3, doug
+// earnings_preview×4 (kim/neta/doug-recap deferred post-gate). Changes the
+// reporter-request bytes ONLY under WIRE_WRITES (flag-off byte-identity
+// intact, M8); feeds gateEpoch as the "final exemplar deployment" input
+// (Spec V1.2 §3 / §4 step 2).
+export const WIRE_GENERATION_VERSION = 11;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────

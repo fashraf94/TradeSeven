@@ -202,11 +202,44 @@ describe('prompt instruction', () => {
     const pinned = buildAgentFactsInstruction('doug', { pinEventType: 'earnings_preview' });
     expect(pinned).toContain("always 'earnings_preview'");
     expect(pinned).not.toContain('earnings_recap |');
+    // the preview instruction line + head-only exemplars must never mention
+    // subjectRef (A2: server-owned / not offered on this schema)
     expect(pinned).not.toContain('subjectRef');
 
     const kai = buildAgentFactsInstruction('kai');
     expect(kai).toContain('subjectRef: REQUIRED on index_move');
     const netaPinned = buildAgentFactsInstruction('neta', { pinEventType: 'econ_print' });
     expect(netaPinned).not.toContain('subjectRef');
+  });
+});
+
+describe('N2 exemplar embedding (writes-gated few-shot)', () => {
+  it('alex embeds its market_mover exemplars after the rules, preserving the leading newline', () => {
+    const alex = buildAgentFactsInstruction('alex');
+    expect(alex.startsWith('\n')).toBe(true);
+    expect(alex).toContain('EXAMPLES');
+    expect(alex).toContain('"basis":"price_vs_prior_close"');
+    // the block follows the rule lines, not before them
+    expect(alex.indexOf('AGENT FACTS')).toBeLessThan(alex.indexOf('EXAMPLES'));
+  });
+
+  it('kai embeds the subjectRef-diverse exemplars (teaches NDX, not a default SPX)', () => {
+    const kai = buildAgentFactsInstruction('kai');
+    expect(kai).toContain('EXAMPLES');
+    expect(kai).toContain('"subjectRef":"NDX"');
+  });
+
+  it('doug earnings_preview embeds head-only previews; earnings_recap embeds nothing (deferred)', () => {
+    const preview = buildAgentFactsInstruction('doug', { pinEventType: 'earnings_preview' });
+    expect(preview).toContain('EXAMPLES');
+    expect(preview).toContain('earnings_preview');
+    const recap = buildAgentFactsInstruction('doug', { pinEventType: 'earnings_recap' });
+    expect(recap).not.toContain('EXAMPLES');
+  });
+
+  it('kim and neta carry no exemplar block (deferred per the July 29 ruling)', () => {
+    expect(buildAgentFactsInstruction('kim')).not.toContain('EXAMPLES');
+    expect(buildAgentFactsInstruction('neta', { pinEventType: 'econ_print' })).not.toContain('EXAMPLES');
+    expect(buildAgentFactsInstruction('neta', { pinEventType: 'econ_preview' })).not.toContain('EXAMPLES');
   });
 });

@@ -34,6 +34,7 @@ import {
   SHARED_FIGURE_BASES,
   INDEX_SUBJECTS,
 } from './wireContracts.js';
+import { renderExemplarBlock } from './wireExemplars.js';
 
 /**
  * Return a deep-cloned copy of `baseTool` with the optional `agentFacts`
@@ -178,5 +179,8 @@ export function buildAgentFactsInstruction(reporter, { pinEventType } = {}) {
     lines.push('- subjectRef: REQUIRED on index_move — which index (SPX|NDX|DJI|RUT|VIX) the event is about. Omit on every other eventType.');
   }
   lines.push('- agentFacts is for machines: no prose, no recommendations, no sentiment.');
-  return lines.join('\n');
+  // N2 few-shot exemplars (qualified per N2.1). Appended after the rules so the
+  // examples demonstrate them; empty string for seams with no exemplars yet, so
+  // the concatenation is unconditional and byte-stable.
+  return lines.join('\n') + renderExemplarBlock(reporter, { pinEventType });
 }
