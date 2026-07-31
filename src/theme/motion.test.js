@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { MOTION, motionToken, snappy, quick, smooth, bouncy, gesture, instant } from './motion.js';
+import { MOTION, motionToken, snappy, fade, smooth, bouncy, gesture, instant } from './motion.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = readFileSync(path.join(HERE, 'motion.js'), 'utf8');
@@ -24,9 +24,9 @@ const SOURCE = readFileSync(path.join(HERE, 'motion.js'), 'utf8');
 const CODE = SOURCE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
 // The six token names, in lock order. New names are a spec change, not a value tune.
-const NAMES = ['snappy', 'quick', 'smooth', 'bouncy', 'gesture', 'instant'];
+const NAMES = ['snappy', 'fade', 'smooth', 'bouncy', 'gesture', 'instant'];
 const SPRINGS = ['snappy', 'bouncy', 'gesture'];
-const TWEENS = ['quick', 'smooth', 'instant'];
+const TWEENS = ['fade', 'smooth', 'instant'];
 
 /**
  * The STOP-locked value table (founder rulings, July 31 2026). Duplicated here
@@ -36,14 +36,14 @@ const TWEENS = ['quick', 'smooth', 'instant'];
  */
 const LOCKED = Object.freeze({
   snappy: { type: 'spring', stiffness: 300, damping: 25 },
-  quick: { duration: 0.2 },
+  fade: { duration: 0.2 },
   smooth: { duration: 0.3, ease: 'easeOut' },
   bouncy: { type: 'spring', stiffness: 300, damping: 20 },
   gesture: { type: 'spring', stiffness: 300, damping: 30 },
   instant: { duration: 0 },
 });
 
-const EXPORTS = { snappy, quick, smooth, bouncy, gesture, instant };
+const EXPORTS = { snappy, fade, smooth, bouncy, gesture, instant };
 
 // ---------------------------------------------------------------------------
 // A1 — defines-vocabulary: every name exists and is a valid Framer transition shape.

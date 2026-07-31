@@ -1,8 +1,7 @@
 /**
  * Motion vocabulary — the single source of truth for named spring/tween physics.
  *
- * Delight Layer arc, Task 3 (Phase 1 — DEFINE, inert). Spec V1 §4–§6 + the founder
- * STOP rulings of July 31, 2026.
+ * Delight Layer arc, Task 3. Spec V1 §4–§6 + the founder STOP rulings of July 31, 2026.
  * Basis: docs/audits/20260731_DELIGHT_MOTION_TOKENS_PHASE0_DISCOVERY.md
  *
  * ---------------------------------------------------------------------------
@@ -16,7 +15,7 @@
  * components/AgentPresence/faceEngineCore.js — with ZERO numerically-identical springs
  * and no superset among them, so re-pointing one cannot subsume the rest. This mirrors
  * the Task-1 R-S2 pattern: theme/cssTokens.js is a sibling to theme/tokens.js for the
- * same reason. This module is consumed by NOTHING in Phase 1; adoption is gated per D3.
+ * same reason.
  *
  * ---------------------------------------------------------------------------
  * THE VOCABULARY  (names LOCKED; VALUES tuning-exempt per D5)
@@ -28,10 +27,11 @@
  *
  *   | token   | shape  | value                       | intent
  *   |---------|--------|-----------------------------|------------------------------------------------
- *   | snappy  | spring | stiffness 300 / damping 25  | taps, toggles, small state — the app's de-facto
- *   |         |        |                             | plurality spring (28 sites; 300-family = 51%).
- *   | quick   | tween  | duration 0.2                | micro-interactions — the app's de-facto plurality
- *   |         |        |                             | tween (bare 0.2, 93 sites).
+ *   | snappy  | spring | stiffness 300 / damping 25  | taps, toggles, transform + interactive response —
+ *   |         |        |                             | the app's de-facto plurality spring (28 sites;
+ *   |         |        |                             | 300-family = 51%). Overshoot is the point here.
+ *   | fade    | tween  | duration 0.2                | opacity & color micro-interactions — the app's
+ *   |         |        |                             | de-facto plurality tween (bare 0.2, 93 sites).
  *   | smooth  | tween  | duration 0.3, ease easeOut  | layout & content — calm, ZERO bounce. A tween by
  *   |         |        |                             | design (a spring cannot be truly bounce-free).
  *   | bouncy  | spring | stiffness 300 / damping 20  | celebratory / emphasis — visible overshoot.
@@ -44,9 +44,26 @@
  * re-version (D5) — but the NAMES are not. Any value change MUST update the frozen LOCKED
  * table in motion.test.js in the SAME commit, or acceptance row A2 fails.
  *
- * Naming note (founder veto available, no reasoning required): `quick` (tween) and
- * `snappy` (spring) are near-synonyms for different shapes. If that reads badly in review
- * the founder may rename `quick` → `micro` or `fade` — a name change, not a value change.
+ * WHY `fade`, NOT `quick` (founder rename, July 31 2026):
+ *   `quick` and `snappy` were near-synonyms for the WRONG axis — both words mean "fast,"
+ *   but the two tokens are nearly the same SPEED and differ in PHYSICS, not duration.
+ *   `fade` names the JOB instead: the 0.2s tween is what you reach for on opacity and
+ *   color, where a spring's overshoot is meaningless or ugly. `snappy` (spring 300/25) is
+ *   for transform and interactive response, where overshoot is the point. This was a name
+ *   change only — the value is unchanged at { duration: 0.2 }.
+ *
+ * ---------------------------------------------------------------------------
+ * ADOPTION IS GATED — NEVER OPPORTUNISTIC (decision D3)
+ * ---------------------------------------------------------------------------
+ * Pointing an EXISTING surface at a token changes how it FEELS (unlike Task 1's colours,
+ * most motion here inherits library defaults — so a swap is a feel change, not parity).
+ * Therefore:
+ *   - NEW motion code consumes this vocabulary rather than inventing `transition={{ ... }}`
+ *     literals. The motion guard (motion.guard.test.js) enforces this on guarded files.
+ *   - RETROFITTING an existing surface onto a token is a per-surface FEEL decision requiring
+ *     founder sign-off on preview — never a sweep, never "while I'm here." Phase 1 adopted it
+ *     NOWHERE; Phase 2 piloted exactly ONE surface (ParamToggle, a proven parity swap).
+ *     Broad migration is a later, per-surface decision after Task 4 proves the vocabulary.
  *
  * ---------------------------------------------------------------------------
  * WHY `instant` IS { duration: 0 } AND MUST STAY THAT WAY  (STOP Observation 2)
@@ -80,11 +97,11 @@
  * the non-Framer rAF easing engine faceEngineCore.js (§8 non-goal).
  */
 
-/** taps, toggles, small state — the de-facto plurality spring (300-family = 51% of springs). */
+/** taps, toggles, transform + interactive response — the de-facto plurality spring (300-family = 51%). */
 export const snappy = Object.freeze({ type: 'spring', stiffness: 300, damping: 25 });
 
-/** micro-interactions — the de-facto plurality tween (bare duration 0.2). */
-export const quick = Object.freeze({ duration: 0.2 });
+/** opacity & color micro-interactions — the de-facto plurality tween (bare duration 0.2). */
+export const fade = Object.freeze({ duration: 0.2 });
 
 /** layout & content — calm, zero bounce. A tween by design. */
 export const smooth = Object.freeze({ duration: 0.3, ease: 'easeOut' });
@@ -104,7 +121,7 @@ export const instant = Object.freeze({ duration: 0 });
  */
 export const MOTION = Object.freeze({
   snappy,
-  quick,
+  fade,
   smooth,
   bouncy,
   gesture,
@@ -119,7 +136,7 @@ export const MOTION = Object.freeze({
  * The name is validated FIRST, before the reduced-motion swap, so a typo throws in BOTH
  * modes rather than silently "working" under reduced motion.
  *
- * @param {'snappy'|'quick'|'smooth'|'bouncy'|'gesture'|'instant'} name - a locked token name.
+ * @param {'snappy'|'fade'|'smooth'|'bouncy'|'gesture'|'instant'} name - a locked token name.
  * @param {{ reducedMotion?: boolean }} [opts] - reducedMotion is injected by the caller (default false).
  * @returns {Readonly<object>} a Framer Motion transition object.
  * @throws {Error} if `name` is not one of the six locked token names.
