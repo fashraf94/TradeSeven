@@ -76,6 +76,12 @@ export default async function handler(req, res) {
     // result the way an unguarded throw would (the same isolating-rider
     // pattern this arc uses in process-pending-reflections.js).
     const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
+    // N3.5: editorial evidence outlives its Wire sources by design — memos
+    // cite copies of 30-day-retention entries, so wireEditorial holds 90
+    // days. Flat docs (runs are a map INSIDE the week doc, D-P2-15), so the
+    // plain delete orphans nothing — the same invariant as the other three.
+    const ninetyDaysAgoStr = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10);
     let wireDeleted = 0;
     let wireCleanupError = null;
     try {
@@ -83,6 +89,7 @@ export default async function handler(req, res) {
         ['fantasyTimesWire', 'date', thirtyDaysAgoStr],
         ['wireMetrics', 'date', thirtyDaysAgoStr],
         ['fantasyTimesWireEnvelopes', 'createdAt', thirtyDaysAgo],
+        ['wireEditorial', 'scheduledSlotDate', ninetyDaysAgoStr],
       ]) {
         const oldDocs = await db
           .collection(collection)

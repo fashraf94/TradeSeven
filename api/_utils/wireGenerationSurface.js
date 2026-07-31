@@ -75,6 +75,7 @@ export const GENERATION_SURFACE = Object.freeze([
   'api/_utils/stockIntelligenceData.js',
   'api/_utils/wireContinuity.js',
   'api/_utils/wireContracts.js',
+  'api/_utils/wireEntryGuard.js',
   'api/_utils/wireGenerationConfig.js',
   'api/_utils/wireGenerationSurface.js',
   'api/_utils/wireModelCall.js',

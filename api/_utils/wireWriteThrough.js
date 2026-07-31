@@ -40,6 +40,8 @@ import { buildIdempotencyKey, computePayloadHash } from './wireIdentity.js';
 import { wireLookbackDates } from './wireCalendar.js';
 import { resolveChainId } from './wireChains.js';
 import { getWireFlags } from './wireFlags.js';
+import { classifyWireEntry, isRenderableState, warnSkippedWireEntry } from './wireEntryGuard.js';
+import { applyKeyLevelLabel } from './fantasyTimesVisuals.js';
 
 const LOG_PREFIX = '[Wire]';
 
@@ -179,11 +181,29 @@ export async function publishStoryWithWire(db, {
     createdAt: now,
   };
 
+  // ── 2.5 N5: keyLevel label from VALIDATED in-request facts (D-P2-14) ───
+  // Stamped here — after validateAgentFacts, before the story write — the
+  // only in-request point where validated facts exist, so the badge NEVER
+  // depends on Wire settlement (P2-18: defer/fail the transaction and the
+  // chart still carries the level). Passed/salvaged outcomes only (a
+  // salvage-dropped keyLevel is already null; quarantined facts are
+  // suspect-class and never decorate the public doc). No keyLevel → the
+  // storyDoc passes through UNTOUCHED (identity), and the flags-off branch
+  // above returned long before this line — byte-identity holds on both
+  // axes. Label-only by ruling: no geometry, price_chart only.
+  let storyDocOut = storyDoc;
+  if ((v.outcome === WIRE_OUTCOMES.PASSED || v.outcome === WIRE_OUTCOMES.SALVAGED) && v.facts?.keyLevel) {
+    const labeled = applyKeyLevelLabel(storyDoc.visualType, storyDoc.visualConfig, v.facts.keyLevel);
+    if (labeled !== storyDoc.visualConfig) {
+      storyDocOut = { ...storyDoc, visualConfig: labeled };
+    }
+  }
+
   // ── 3. Atomic batch: story (+ class codes + pending) + envelope ────────
   const envelopeRef = db.collection(WIRE_ENVELOPE_COLLECTION).doc(storyRef.id);
   const batch = db.batch();
   batch.set(storyRef, {
-    ...storyDoc,
+    ...storyDocOut,
     wireValidation: {
       outcome: v.outcome,
       codes, // class codes ONLY — never reason strings (F2-3)
@@ -318,8 +338,20 @@ export async function runWireTransactionFromEnvelope(db, envelope, { now = new D
     if (ENTRY_OUTCOMES.includes(envelope.outcome)) {
       const facts = envelope.modelAgentFacts;
       const contract = EVENT_CONTRACTS[facts.eventType] || {};
+      // N1.4 (P2-29): chain candidates pass the fail-closed version guard —
+      // a day doc legitimately spans deploys (morning entries under old
+      // code, afternoon under new), so BOTH prior-day and today's entries
+      // are classified. An entry this build can't trust cannot anchor a
+      // chain; losing a candidate costs chain CONTINUATION only (the new
+      // entry self-roots), same degrade contract as the lookback above.
+      const chainCandidates = [...priorEntries, ...entries].filter((e) => {
+        const cls = classifyWireEntry(e);
+        if (isRenderableState(cls.state)) return true;
+        warnSkippedWireEntry('WireChains', e, cls);
+        return false;
+      });
       const chainId = resolveChainId(
-        [...priorEntries, ...entries],
+        chainCandidates,
         {
           storyId: envelope.storyId,
           reporter: envelope.reporter,
@@ -442,12 +474,22 @@ export async function finalizeWireSuperseded(db, storyRef, envelopeRef) {
   await batch.commit();
 }
 
-/** Rebuild bySymbol + macroEntries from the full entries array (M9, B7). */
+/** Rebuild bySymbol + macroEntries from the full entries array (M9, B7).
+ *  N1.4 (P2-29): entries the guard fails are excluded from BOTH indexes —
+ *  read-side consumers resolve through bySymbol/macroEntries, so an
+ *  untrusted entry must not be reachable through them. The entry itself
+ *  stays in entries[] untouched (append-only M9; the guard is a serving
+ *  filter, never a destroyer). */
 export function rebuildIndexes(entries) {
   const bySymbol = {};
   const macroEntries = [];
   for (const entry of entries) {
     if (entry.quarantined) continue; // quarantined: never in any index
+    const cls = classifyWireEntry(entry);
+    if (!isRenderableState(cls.state)) {
+      warnSkippedWireEntry('WireIndexes', entry, cls);
+      continue;
+    }
     const facts = entry.agentFacts || {};
     for (const ticker of facts.tickers || []) {
       // facts.tickers are validated in-universe survivors (F1 already ran)

@@ -39,7 +39,12 @@ const PRIVILEGED_CLAIMS = { admin: true, role: 'service' };
 const WIRE_DOC = 'fantasyTimesWire/2026-07-24';
 const ENVELOPE_DOC = 'fantasyTimesWireEnvelopes/story-1';
 const METRICS_DOC = 'wireMetrics/2026-07-24';
-const WIRE_PATHS = [WIRE_DOC, ENVELOPE_DOC, METRICS_DOC];
+// Phase 2 N3 (P2-21 extension): the editorial evidence store is server-only
+// like its three Phase 1 siblings — immutable runs + canonicalRunId are
+// gate evidence and must never be client-writable (or client-readable:
+// audit rows carry bounded prose excerpts and operand copies).
+const EDITORIAL_DOC = 'wireEditorial/2026-W31';
+const WIRE_PATHS = [WIRE_DOC, ENVELOPE_DOC, METRICS_DOC, EDITORIAL_DOC];
 
 // Positive-control paths (F2-4)
 const PUBLIC_STORY_DOC = 'fantasyTimesStories/story-pub-1';
@@ -79,6 +84,7 @@ beforeEach(async () => {
   await seed(WIRE_DOC, { date: '2026-07-24', entries: [], receipts: {} });
   await seed(ENVELOPE_DOC, { storyId: 'story-1', outcome: 'passed' });
   await seed(METRICS_DOC, { date: '2026-07-24', seams: {} });
+  await seed(EDITORIAL_DOC, { isoWeek: '2026-W31', canonicalRunId: null, runs: {} });
   await seed(PUBLIC_STORY_DOC, { headline: 'h', status: 'published' });
   await seed(AUTHED_OK_DOC, { battleId: 'battle-1', scoutAlerts: [] });
 });

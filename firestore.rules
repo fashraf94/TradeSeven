@@ -8,7 +8,9 @@ service cloud.firestore {
     // Managed by Vercel cron jobs and API endpoints
     // ═══════════════════════════════════════════
 
-    // Economic calendar — populated by Claude-powered cron
+    // Economic calendar — LEGACY: the populating cron is retired and the
+    // last content reader was removed (Phase 2 N4); api/health.js retains a
+    // connectivity-probe read only. Rules kept while the collection exists.
     match /economicCalendar/{doc} {
       allow read: if request.auth != null;
       allow write: if false;
@@ -574,6 +576,9 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /wireMetrics/{marketDate} {
+      allow read, write: if false;
+    }
+    match /wireEditorial/{isoWeek} {
       allow read, write: if false;
     }
 

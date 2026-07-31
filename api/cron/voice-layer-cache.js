@@ -14,6 +14,13 @@ import {
   isSwapLocked,
   getBadgesFromHistoryServer,
 } from '../_utils/agentScoring.js';
+// FantasyTimes Wire newsLine (Phase 2 N1.2). The Wire is reached ONLY through
+// the AgentSafeWireEntry boundary — never wireReader directly (N1.1; the
+// import-graph test enforces it). Flag resolution goes through getWireFlags
+// so the writes-dependency rule holds (newsline requires writes).
+import { getWireFlags } from '../_utils/wireFlags.js';
+import { resolveWireMarketDate, priorTradingSessions } from '../_utils/wireCalendar.js';
+import { fetchAgentSafeWireDays, resolveAgentSafeEntries } from '../_utils/agentSafeWireEntry.js';
 
 export const config = { maxDuration: 60 };
 
@@ -512,6 +519,82 @@ export function buildScoutAlerts(watchlist, rankingsMap, techScoresMap, archetyp
 }
 
 // ============================================
+// WIRE NEWSLINE PACKER (Phase 2 N1.2)
+// ============================================
+
+// The exact ceiling: 240 UTF-16 code units (JS string length) over the FULLY
+// assembled line including per-item recency prefixes (V1.2 N1.2, Amendment A).
+export const NEWSLINE_MAX_LENGTH = 240;
+
+/**
+ * Pack one symbol's guard-passing DTOs into a newsLine string. Pure.
+ *
+ * Rules (V1.2 N1.2, F-M9, Amendment A — all locked):
+ *   • whole digests only, never slice a unit;
+ *   • newest first — callers pass dates newest-first ([today, prior]) and
+ *     persisted within-day order is chronological (M9 append order), so
+ *     newest-first = reverse within each date group;
+ *   • per-item recency prefix ('Today: ' / 'Prior: '), bounded by
+ *     construction;
+ *   • two units if both fit whole under the ceiling, else one;
+ *   • the over-ceiling branch FAILS CLOSED — emit nothing and log (the
+ *     "bounded by construction" claim is dead: measured renderer max is
+ *     363 chars). Never emit over ceiling, never fall back to an older
+ *     unit when the newest alone exceeds the ceiling — a line that hides
+ *     the newest story while rendering an older one misrepresents recency.
+ *
+ * @param {Array<{ marketDate: string, dto: object }>} resolved — from
+ *   resolveAgentSafeEntries, dates scanned newest-first
+ * @param {string} todayDate — the current Wire market date
+ * @returns {string|null}
+ */
+export function packNewsLine(resolved, todayDate) {
+  if (!Array.isArray(resolved) || resolved.length === 0) return null; // no coverage → no line
+
+  // Newest first: keep date groups in scan order (newest date first),
+  // reverse within each group (append order is chronological).
+  const byDate = new Map();
+  for (const item of resolved) {
+    if (!byDate.has(item.marketDate)) byDate.set(item.marketDate, []);
+    byDate.get(item.marketDate).push(item);
+  }
+  const newestFirst = [];
+  for (const group of byDate.values()) newestFirst.push(...group.reverse());
+
+  const units = newestFirst
+    .filter((item) => typeof item.dto?.digest === 'string' && item.dto.digest.length > 0)
+    .map((item) => `${item.marketDate === todayDate ? 'Today: ' : 'Prior: '}${item.dto.digest}`);
+  if (units.length === 0) return null;
+
+  if (units.length >= 2) {
+    const two = `${units[0]} | ${units[1]}`;
+    if (two.length <= NEWSLINE_MAX_LENGTH) return two;
+  }
+  if (units[0].length <= NEWSLINE_MAX_LENGTH) return units[0];
+
+  // Over-ceiling single unit: fail closed (Amendment A; P2-42).
+  log(`newsLine over ceiling (${units[0].length} > ${NEWSLINE_MAX_LENGTH} code units) — no line emitted`);
+  return null;
+}
+
+/**
+ * Build the per-symbol newsLines map for one battle. Pure over fetched days.
+ * Symbols = portfolio (star/core/support) + bench stocks + bench crypto
+ * (N1.2 "per portfolio + bench symbol" — watchlist is NOT included). A
+ * symbol with no guard-passing coverage gets NO key (no coverage → no line).
+ */
+export function buildNewsLinesForSymbols(wireDays, wireDates, symbols, todayDate) {
+  const newsLines = {};
+  if (!wireDays) return newsLines;
+  for (const symbol of symbols) {
+    const resolved = resolveAgentSafeEntries(wireDays, wireDates, symbol);
+    const line = packNewsLine(resolved, todayDate);
+    if (line) newsLines[symbol] = line;
+  }
+  return newsLines;
+}
+
+// ============================================
 // MARKET CONTEXT BUILDER
 // ============================================
 
@@ -627,6 +710,27 @@ export default async function handler(req, res) {
 
     log(`Collected ${allSymbols.size} unique symbols (${benchStockSymbols.size} from bench)`);
 
+    // ── FantasyTimes Wire newsLine window (Phase 2 N1.2) ─────────────────
+    // ONE fetch per tick (today + prior session), flag-gated. Flag-off:
+    // this block never runs — zero Wire reads and a byte-identical cache
+    // doc (P2-1). A Wire failure degrades to no lines, never a dead tick
+    // (P2-6): Gemma losing coverage context must not cost the briefs.
+    const wireFlags = getWireFlags();
+    let wireDays = null;
+    let wireDates = null;
+    let wireToday = null;
+    if (wireFlags.newslineEnabled) {
+      try {
+        wireToday = resolveWireMarketDate(new Date());
+        const [priorSession] = priorTradingSessions(wireToday, 1);
+        wireDates = [wireToday, priorSession]; // newest first — packer order contract
+        wireDays = await fetchAgentSafeWireDays(db, wireDates);
+      } catch (err) {
+        log(`Wire newsLine fetch failed — tick continues without lines: ${err.message}`);
+        wireDays = null;
+      }
+    }
+
     // 5. Parallel data fetching: EODHD prices + Firestore reads
     const symbolArray = [...allSymbols];
     const techScoreRefs = symbolArray.map(s => db.collection('stockTechnicalScores').doc(s));
@@ -678,6 +782,21 @@ export default async function handler(req, res) {
       const scoutAlerts = buildScoutAlerts(battle.watchlist, rankingsMap, techScoresMap, archetype, portfolioSyms);
       const mcBlock = buildMarketContextBlock(marketContext);
 
+      // newsLines (N1.2): portfolio + bench symbols for THIS battle. The
+      // field is entirely ABSENT flag-off — spreading nothing keeps the
+      // cache doc field-wise byte-identical (P2-1's photograph).
+      let newsLines = null;
+      if (wireFlags.newslineEnabled) {
+        const battleSymbols = new Set(portfolioSyms);
+        (battle.portfolio?.bench?.stocks || []).forEach((s) => {
+          if (s?.symbol) battleSymbols.add(s.symbol);
+        });
+        if (battle.portfolio?.bench?.crypto?.symbol) {
+          battleSymbols.add(battle.portfolio.bench.crypto.symbol);
+        }
+        newsLines = buildNewsLinesForSymbols(wireDays, wireDates, battleSymbols, wireToday);
+      }
+
       const cacheRef = db.collection('voiceLayerCache').doc(battle.id);
       writeBatch.set(cacheRef, {
         battleId: battle.id,
@@ -693,6 +812,7 @@ export default async function handler(req, res) {
           marketContext: 'daily',
         },
         forgeSeeds: null,
+        ...(wireFlags.newslineEnabled ? { newsLines } : {}),
         updatedAt: FieldValue.serverTimestamp(),
       });
       written++;

@@ -48,6 +48,7 @@ export const PROMPT_CONTRIBUTING_MODULES = [
   'agentPromptAssembly.js',
   'evalIdentityBlocks.js',   // DR-13 identity blocks (pre-existing split)
   'fundamentalsRender.js',   // Fundamental Wire Commit 2
+  'voiceLayerPrompt.js',     // Phase 2 N1.3 newsLine block (R-A3: registered in the same commit that added the flag-conditional rendering)
 ];
 
 // Every OTHER same-directory module the two fenced assemblers import,

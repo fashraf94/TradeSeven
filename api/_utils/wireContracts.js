@@ -68,8 +68,67 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // labeling (R-B5). Two modules added to the manifest
 // (fetchEconomicEventsEODHD.js, econPrintVerifier.js); writer + prompt
 // content changed. The ONE pre-window epoch reset of ruling R-B7.
-export const WIRE_GENERATION_VERSION = 7;
+// v8 (P3/N1.4; renumbered from v7 at the rebase onto the Recap Restoration
+// merge — both lineages had claimed v7 for different content): the
+// recognized-versions registries below + wireEntryGuard.js (new manifest
+// member) + the guard landing in wireContinuity's entry loop — guard rules
+// decide which digests reach reporter prompts, so the mechanism forces
+// this bump.
+// v9 (P3/N3; renumbered from v8 at the same rebase): BASIS_SCOPE + the
+// editorial version constants land in this manifest module (the addendum
+// §3 recorded that the static scope classification lives here) — a
+// contracts-file edit, so the mechanism forces this bump. No
+// reporter-request byte changes.
+// v10 (P3/N4; renumbered from v9 at the same rebase): the orphaned
+// economic-calendar reader removed from fantasyTimesConsensus.js (a
+// manifest member — its formatter half shapes five reporter prompts, so
+// the conservative file-level bump fires even though only the dead
+// data-read half changed).
+export const WIRE_GENERATION_VERSION = 10;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
+
+// ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────
+//
+// WIRE_EDITORIAL_REVIEW_VERSION — versions the review MACHINERY semantics:
+// sampling rules (strata, ceiling, seed derivation), verdict pass rule,
+// memo rendering. Part of the sampling seed (N3.2: seed = isoWeek +
+// reviewVersion) and fixed across the two qualifying periods (F-M3).
+//
+// WIRE_EDITORIAL_ADAPTER_VERSION — versions the deterministic verdict
+// adapters (shape detection, recomputation formulas, tolerances §6).
+// Changing ANY tolerance bumps this and resets the two-period window
+// (F-M4, recorded at FINAL LOCK).
+export const WIRE_EDITORIAL_REVIEW_VERSION = '1.0.0';
+export const WIRE_EDITORIAL_ADAPTER_VERSION = '1.0.0';
+export const WIRE_EDITORIAL_COLLECTION = 'wireEditorial';
+
+// ── N1.4 recognized-versions registries (Spec V1.5 R4-M2) ─────────────────
+//
+// The ordered consumer state machine gates on these: (1) all epoch fields
+// absent → LEGACY (renderable, Amendment J); (2) schemaVersion present AND
+// registered here → completeness checked against THAT version's required
+// set → STAMPED; (3) otherwise → fail closed (VERSION_SKIP for a version
+// this build doesn't know, MALFORMED for a shape no writer ever produced).
+// Checking completeness against the consumer's CURRENT set was the R4-M2
+// defect — it would make every valid vN entry "malformed" the day vN+1
+// ships. The registry keeps one required set PER recognized version so a
+// vN+1 consumer classifies a complete vN entry stamped-vN, never malformed
+// (P2-30 permutation).
+//
+// requiredFacts = the agentFacts fields a wire-1.6 writer unconditionally
+// stamps AND a consumer renders on trust. Deliberately NOT included:
+// tickers (legitimately empty on macro entries), chainId/observedAt
+// (advisory metadata), subjectRef/primaryTicker (null is a valid value).
+// Over-requiring here turns benign shape evolution into false MALFORMED.
+export const RECOGNIZED_WIRE_SCHEMA_VERSIONS = Object.freeze({
+  'wire-1.6': Object.freeze({
+    requiredFacts: Object.freeze(['eventType', 'digest', 'digestRendererVersion', 'validatorVersion']),
+  }),
+});
+
+// Renderer versions whose digest OUTPUT this build knows how to trust
+// (N1.4: an unknown digestRendererVersion is never rendered on trust).
+export const RECOGNIZED_WIRE_DIGEST_RENDERER_VERSIONS = Object.freeze(['1.0.0']);
 
 // Firestore collection names (server-only; deny-all in firestore.rules).
 export const WIRE_COLLECTION = 'fantasyTimesWire';
@@ -306,6 +365,40 @@ export const REPORTER_EVENT_ALLOWLIST = Object.freeze({
   neta: Object.freeze(['econ_print', 'econ_preview']),
   doug: Object.freeze(['earnings_recap', 'earnings_preview']),
   kim: Object.freeze(['sector_rotation', 'leadership_shift']),
+});
+
+// N3 Amendment C: `activeReporters` is DERIVED from the allowlist keys —
+// never a hand-count (seam-count readings of 7 or 8 would brick the
+// editorial gate forever). The P2-35 CI assertion pins the count at 5 so a
+// sixth reporter fails CI instead of silently making every week
+// `insufficient` (minimumSize 3×6=18 still fits the ceiling, but the
+// assertion forces the growth to be a REVIEWED editorial-sizing decision).
+export const WIRE_ACTIVE_REPORTERS = Object.freeze(Object.keys(REPORTER_EVENT_ALLOWLIST));
+
+// ── Static basis scope classification (N3, Calibration Addendum §3) ──────
+// The R4-M1 binding precondition consults this: a figure BINDS to
+// `primaryTicker` only when its basis is statically `ticker_scoped`;
+// `market_scoped` bases verify through their subject legs (index proxy,
+// econ subjectRef, sector ETF), never through ticker binding. Recorded at
+// FINAL LOCK verbatim: index_vs_prior_close, print_vs_expected,
+// consensus_estimate, prior_print, sector_vs_spy classify market_scoped;
+// the rest ticker_scoped. (consensus_estimate / prior_print appear only on
+// the two preview rows — both CIRCULAR, never adapted — so their scope is
+// recorded but structurally unconsulted in Phase 2.)
+export const BASIS_SCOPE = Object.freeze({
+  price_vs_level: 'ticker_scoped',
+  volume_vs_avg: 'ticker_scoped',
+  range_vs_atr: 'ticker_scoped',
+  price_vs_prior_close: 'ticker_scoped',
+  gap_vs_prior_close: 'ticker_scoped',
+  eps_vs_consensus: 'ticker_scoped',
+  revenue_vs_consensus: 'ticker_scoped',
+  rs_vs_peers: 'ticker_scoped',
+  index_vs_prior_close: 'market_scoped',
+  print_vs_expected: 'market_scoped',
+  consensus_estimate: 'market_scoped',
+  prior_print: 'market_scoped',
+  sector_vs_spy: 'market_scoped',
 });
 
 /** Every basis a given eventType accepts in figures[] (row bases + shared set). */

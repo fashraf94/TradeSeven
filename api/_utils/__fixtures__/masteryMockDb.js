@@ -135,6 +135,11 @@ export function makeMockDb(initialDocs = {}) {
       exists: !!entry,
       id,
       data: () => (entry ? deepClone(entry.data) : undefined),
+      // Real DocumentSnapshot carries .ref (Phase 2 N6: the poll-batch
+      // handler harness updates batch docs via `queryDoc.ref.update`).
+      get ref() {
+        return makeDocRef(path.slice(0, path.lastIndexOf('/')), id);
+      },
     };
   };
 
@@ -223,7 +228,8 @@ export function makeMockDb(initialDocs = {}) {
           if (limitN !== null && docs.length >= limitN) break;
         }
       }
-      return { docs };
+      // Real QuerySnapshot exposes .empty (poll-batch's no-pending guard).
+      return { docs, empty: docs.length === 0 };
     },
   });
 
@@ -244,6 +250,37 @@ export function makeMockDb(initialDocs = {}) {
   const db = {
     collection(name) {
       return makeCollection(name);
+    },
+
+    // Top-level getAll (Phase 2 N6: voice-layer-cache fetches techScores via
+    // db.getAll). Same read accounting as doc get — byte-identity photographs
+    // count these reads too.
+    async getAll(...refs) {
+      return refs.map((r) => {
+        countRead(r.path);
+        return snapOf(r.path);
+      });
+    },
+
+    // WriteBatch with real buffering semantics: nothing lands until commit()
+    // (voice-layer-cache stages every cache doc, then commits once). Only the
+    // ops the code under test uses — anything else throws loudly (absent).
+    batch() {
+      const writes = [];
+      return {
+        set(ref, data, opts) {
+          writes.push({ type: 'set', path: ref.path, data, opts });
+          return this;
+        },
+        update(ref, data) {
+          writes.push({ type: 'update', path: ref.path, data });
+          return this;
+        },
+        async commit() {
+          for (const w of writes) commitWrite(w);
+          writes.length = 0;
+        },
+      };
     },
 
     // One-shot interleaving hook: runs between a transaction callback's

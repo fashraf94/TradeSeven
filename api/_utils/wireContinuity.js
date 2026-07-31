@@ -13,6 +13,7 @@
 
 import { WIRE_COLLECTION } from './wireContracts.js';
 import { wireLookbackDates } from './wireCalendar.js';
+import { classifyWireEntry, isRenderableState, warnSkippedWireEntry } from './wireEntryGuard.js';
 
 const MAX_CONTINUITY_LINES = 8;
 
@@ -47,6 +48,16 @@ export async function buildContinuityContext(db, { reporter, marketDate }) {
     for (const entry of snap.data().entries || []) {
       if (entry.reporter !== reporter) continue;
       if (entry.quarantined) continue;
+      // N1.4 fail-closed version guard (P2-29), landed BEFORE the continuity
+      // flip: only LEGACY (pre-stamp, Amendment J) and STAMPED (recognized
+      // version, complete set) entries may reach a generation prompt.
+      // Unknown or malformed versions are skipped + logged, never rendered
+      // on trust.
+      const cls = classifyWireEntry(entry);
+      if (!isRenderableState(cls.state)) {
+        warnSkippedWireEntry('WireContinuity', entry, cls);
+        continue;
+      }
       const facts = entry.agentFacts;
       if (!facts || !facts.digest) continue;
       // Digest + eventType + date ONLY — never entry.headline (M3/P7).
