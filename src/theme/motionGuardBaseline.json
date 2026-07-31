@@ -1,0 +1,9 @@
+{
+  "_schema": "Motion guard baseline (spec V1 acceptance row A5, Delight Task 3 Phase 3). Per migrated file: `count` is the number of raw `transition={{ ... }}` opener literals ALLOWED in that file (the ratchet floor), and `authority` says why. New motion consumes src/theme/motion.js; a raw transition literal added to a guarded file trips the guard. The guarded-file list EXPANDS as surfaces migrate (adoption is per-surface and D3-gated). Regen after a deliberate change: GENERATE_MOTION_GUARD_BASELINE=1 npx vitest run src/theme/motion.guard.test.js, then commit this file in the same commit.",
+  "guarded": {
+    "src/components/Forge/ParamControls/ParamToggle.jsx": {
+      "count": 0,
+      "authority": "Phase 2 pilot — migrated to the `snappy` token (transition={snappy}); zero raw transition literals remain."
+    }
+  }
+}

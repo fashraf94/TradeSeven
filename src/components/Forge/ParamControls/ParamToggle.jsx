@@ -3,8 +3,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-
-const SPRING = { stiffness: 300, damping: 25 };
+import { snappy } from '../../../theme/motion';
 
 export default function ParamToggle({ param, value, onChange, categoryColor }) {
   return (
@@ -45,7 +44,7 @@ export default function ParamToggle({ param, value, onChange, categoryColor }) {
           {/* Knob */}
           <motion.div
             animate={{ x: value ? 20 : 0 }}
-            transition={SPRING}
+            transition={snappy}
             style={{
               width: 20,
               height: 20,
