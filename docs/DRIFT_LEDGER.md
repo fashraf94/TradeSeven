@@ -40,7 +40,19 @@ returns `'Deploy'` (veteran) / `'Deploy — I know the playbook'` (maturing) —
 at `App.jsx:6583`. As with D-1, the flag-ON ceremony suppresses this toast.
 
 
-## D-3 — Wire A2 remap overwrites correct `subjectRef`s at Kai's `index_move` seam — 🚩 PRE-RUNWAY (must merge before `WIRE_WRITES_ENABLED`)
+## D-3 — Wire A2 remap overwrites correct `subjectRef`s at Kai's `index_move` seam — ✅ RESOLVED (branch `claude/wire-d3-subjectref-remap`, pre-`WIRE_WRITES`)
+
+**Resolution (Jul 31, 2026):** fixed at the **seam** (chosen over the validator — reasoning below).
+`api/fantasytimes/generate-pulse.js` now nulls the WIRE `primaryTicker` for cardinality-0 eventTypes
+(`EVENT_CONTRACTS[type].tickers[1] === 0`, i.e. `index_move`) before calling `publishStoryWithWire`, so
+the A2 remap has no operand and the model's `subjectRef` stands. The validator's A2 remap is **left
+intact** — it is correct for any caller passing a genuine single index-ETF `primaryTicker`; the defect
+was that the pulse seam fed it a "the market" proxy for a subject-less event, which only the seam has the
+context to know. `WIRE_GENERATION_VERSION` 11 → 12 (generate-pulse.js is a manifest member; conservative
+file-level bump — the outbound model request is unchanged, M8 intact). A6 regression
+(`api/fantasytimes/generatePulse.d3.test.js`): Dow-led→DJI survives, Nasdaq-led→NDX survives, faithful
+SPX still passes, genuine QQQ primaryTicker still remaps (validator), seam does not over-null — proven red
+under the pre-fix line. Original disposition retained below.
 
 **Found:** FantasyTimes Wire N2 exemplar qualification (N2.1), 2026-07-31. Full disposition:
 `docs/audits/20260731_WIRE_N2_EXEMPLAR_QUALIFICATION_AND_EMBED.md` (Defect D-3).
