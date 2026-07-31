@@ -98,7 +98,18 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // proxy. A conservative file-level bump — the outbound model request is
 // unchanged (M8 intact); only the post-call persisted primaryTicker differs.
 // The validator's A2 remap is untouched. Must land before WIRE_WRITES flips.
-export const WIRE_GENERATION_VERSION = 12;
+// v13 (Doug tracked-intersection fix): the doug_earnings_recap seam
+// (generate-recap.js, a manifest member) read the reported EPS/estimate
+// under the phantom field names `actual_eps`/`eps_estimate`, so the
+// tracked-universe intersection zeroed on every firing (fetched=N tracked=0)
+// and S5 stayed silent even after the R-B2 morning window. Now reads the
+// real EODHD /calendar/earnings fields `actual`/`estimate` (capture-
+// confirmed 2026-07-31), with a defensive `?? actual_eps`/`?? eps_estimate`
+// fallback, and falls back companyName to the symbol (no `name` field). A
+// pre-existing defect unmasked by the morning window; changes the reporter
+// userMessage bytes (real operands now reach the prompt), so the mechanism
+// forces this bump. Gates R9 S5 liveness; must land before WIRE_WRITES flips.
+export const WIRE_GENERATION_VERSION = 13;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────

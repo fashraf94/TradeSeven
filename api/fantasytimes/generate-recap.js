@@ -144,7 +144,7 @@ export default async function handler(req, res) {
 
     // Recap Restoration (rulings R-B2): the re-aimed ~13:00 UTC slot is the
     // MORNING fire — its window is [prior ET session, today], so prior-day
-    // AMC reports (whose actual_eps posts overnight) and same-day BMO are
+    // AMC reports (whose actual EPS posts overnight) and same-day BMO are
     // both in view. Evening fires keep [today, today]. Mode derives from
     // the ET clock, not the cron slot (DST-robust); assertMaintainedYear
     // closes the walker's 2028 silent-mislabel gap on this path.
@@ -172,21 +172,36 @@ export default async function handler(req, res) {
     const trackedResults = earningsRaw
       .filter((e) => {
         const code = (e.code || '').replace('.US', '').toUpperCase();
+        // EODHD /calendar/earnings names the reported EPS `actual` and the
+        // consensus `estimate` — the field names this reader ORIGINALLY got
+        // wrong (`actual_eps`/`eps_estimate`), which zeroed the intersection
+        // on every firing (fetched=N tracked=0) and kept S5 structurally
+        // silent even after the R-B2 morning window landed. Confirmed by
+        // capture (2026-07-31: 9-key schema — actual/estimate present, zero
+        // actual_eps/eps_estimate). `?? e.actual_eps` is a defensive fallback
+        // matching the ingest-earnings.js:127 house pattern; `??` (not `||`)
+        // preserves a legitimate 0.00 EPS.
+        const epsActual = e.actual ?? e.actual_eps;
         // report_date must be a real date string: it is the C8 referent —
         // an undefined value would make the dedup query throw in real
         // Firestore and write an undefined referentDate (review finding L2).
         return tickerSet.has(code)
           && typeof e.report_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.report_date)
-          && e.actual_eps !== null && e.actual_eps !== undefined;
+          && epsActual !== null && epsActual !== undefined;
       })
-      .map((e) => ({
-        symbol: (e.code || '').replace('.US', '').toUpperCase(),
-        companyName: e.name || '',
-        reportDate: e.report_date,
-        epsActual: e.actual_eps,
-        epsEstimate: e.eps_estimate,
-        timing: translateTiming(e.before_after_market),
-      }));
+      .map((e) => {
+        const symbol = (e.code || '').replace('.US', '').toUpperCase();
+        return {
+          symbol,
+          // /calendar/earnings carries no `name` field either — fall back to
+          // the symbol so the prompt never renders an empty "Company:".
+          companyName: e.name || symbol,
+          reportDate: e.report_date,
+          epsActual: e.actual ?? e.actual_eps,
+          epsEstimate: e.estimate ?? e.eps_estimate,
+          timing: translateTiming(e.before_after_market),
+        };
+      });
 
     // The single per-firing outcome line (F1 dual count + taxonomy, R-B6).
     const counts = { fetched: earningsRaw.length, tracked: trackedResults.length };
