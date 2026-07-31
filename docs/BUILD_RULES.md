@@ -36,6 +36,7 @@ The scoring engine and `createAgentBattle` document shape are fenced as concepts
 - Protected `main`; PRs only; the founder merges manually. **Pushed ≠ deployed:** Vercel preview is the smoke-test surface; production exists only after the founder confirms merge + deploy.
 - PR descriptions cite changes by `file:line`, name any fenced functions *called*, and confirm none were *edited*.
 - `/code-review` is mandatory at **≥10 files OR ≥1500 lines** changed.
+- **A flag-flip PR reconciles its own pins in the SAME commit.** When a PR flips a feature flag's default (true↔false), it MUST, in that same commit, update every test assertion and docstring that pins the pre-flip state — the value pins that assert the constant, and any docstring that calls the old value the "DEFAULT". A flip that leaves those behind reddens CI on every *other* open PR into `main` until someone else reconciles them. Precedent: `FUNDAMENTAL_MIRROR_ENABLED`'s flip reconciled its ON-state assertions and P4 goldens in-commit (featureFlags.js:1165–1167); the starfield flip PR #694 did not, which reddened the inert test on every downstream PR — the second occurrence in a week that prompted this rule (codified Jul 31 2026).
 
 ## 3. Discovery protocol
 

@@ -1174,23 +1174,26 @@ export const FUNDAMENTAL_MIRROR_ENABLED = true;
  * nothing, gates nothing, and is removable without touching any scoring or
  * decision path — the AGENT_PRESENCE_ENABLED / MATCHUPS_BACKDROP_ENABLED shape.
  *
- * When FALSE (DEFAULT, merge-dark), the desktop dashboard is byte-identical to
- * today: `App.jsx:8631` mounts `DesktopBackground` (price lines and all) and the
- * `CommandDashboardDesktop` root keeps its opaque `CMD.bg` paint. Nothing
- * imports the canvas, no loop is ever scheduled (`resolveLoopPlan` returns
- * flag-off), and `StarfieldBackground` is absent from the render tree — asserted
- * by starfield.inert.test.jsx (acceptance row A1).
+ * FLIPPED false→true in the founder flag-flip PR #694 (after the A7 feel
+ * sign-off). The merge-dark era is over: TRUE is now the default, and FALSE is
+ * the deliberate-revert path.
  *
- * When TRUE, that ONE mount swaps to `StarfieldBackground` and that ONE root
- * paint becomes transparent so the field shows through. `DesktopBackground.jsx`
- * itself is NOT edited by this task and keeps rendering on the other six
- * screens — so post-flip the app deliberately runs two ambient systems until the
- * everywhere-swap follow-on (spec V2 §7). The price lines are NOT deleted here,
- * which is why this flip does not touch tokenGuardBaseline.json (R-T2-S6).
+ * When TRUE (CURRENT): that ONE dashboard mount renders `StarfieldBackground`
+ * instead of `DesktopBackground` (`App.jsx:8631`) and that ONE root paint
+ * (`CommandDashboardDesktop`) becomes transparent so the field shows through.
+ * `DesktopBackground.jsx` is NOT edited and keeps rendering on the other six
+ * screens — so the app deliberately runs two ambient systems until the
+ * everywhere-swap follow-on (spec V2 §7). The price lines are NOT deleted, which
+ * is why the flip did not touch tokenGuardBaseline.json (R-T2-S6).
  *
- * Built/merged DARK; flip in a one-line follow-up PR carrying the A7 founder
- * feel sign-off after a Vercel preview smoke (the MATCHUPS_BACKDROP_ENABLED
- * precedent) — never in the build PR.
+ * When FALSE (revert path): the desktop dashboard is byte-identical to pre-flip —
+ * `App.jsx:8631` mounts `DesktopBackground`, the root keeps its `CMD.bg` paint,
+ * no loop is ever scheduled (`resolveLoopPlan` returns flag-off), and
+ * `StarfieldBackground` is absent from the render tree.
+ *
+ * Reverting is as deliberate as the flip was: per BUILD_RULES §2 it MUST, in the
+ * SAME commit, update the assertions that now pin the LIVE state — the value
+ * pins in starfield.inert.test.jsx and this docstring.
  */
 export const STARFIELD_BACKGROUND_ENABLED = true;
 
@@ -1217,18 +1220,26 @@ export function isStarfieldOn() {
  * be able to go dark on its own if a tester's device struggles, without
  * disturbing the desktop verdict. Never AND-gate the two.
  *
- * When FALSE (DEFAULT, merge-dark), the mobile dashboard is byte-identical to
- * today: `App.jsx:8584` mounts `DesktopBackground` (which self-returns null on
- * mobile — mobile has no background layer at all today) and the
- * `CommandDashboard` root keeps its opaque `CMD.bg` paint.
+ * FLIPPED false→true in the founder flag-flip PR #694, on its own phone smoke
+ * and separately from desktop (that independence is why it got its own flip).
+ * The merge-dark era is over here too: TRUE is now the default, and FALSE is the
+ * deliberate-revert path.
  *
- * When TRUE, `StarfieldBackground` renders there in `mode="mobile"` — its own
- * budget tier (fewer particles, DPR capped at 1.5), not a shrunken desktop
- * field — and that root paint becomes transparent. Because this puts NEW surface
- * under existing content rather than swapping an existing layer, card legibility
- * at peak intensity is the hard constraint on the mobile feel gate (A7).
+ * When TRUE (CURRENT): `StarfieldBackground` renders on the mobile dashboard in
+ * `mode="mobile"` — its own budget tier (fewer particles, DPR capped at 1.5),
+ * not a shrunken desktop field — and the `CommandDashboard` root paint becomes
+ * transparent so the field shows through. Because this puts NEW surface under
+ * existing content rather than swapping an existing layer, card legibility at
+ * peak intensity is the hard constraint that gated the mobile feel sign-off (A7).
  *
- * Built/merged DARK; flipped separately from desktop after its own phone smoke.
+ * When FALSE (revert path): the mobile dashboard is byte-identical to pre-flip —
+ * `App.jsx:8584` mounts `DesktopBackground` (which self-returns null on mobile —
+ * mobile has no background layer at all in that state) and the `CommandDashboard`
+ * root keeps its opaque `CMD.bg` paint.
+ *
+ * Reverting is as deliberate as the flip was: per BUILD_RULES §2 it MUST, in the
+ * SAME commit, update the assertions that now pin the LIVE state — the mobile
+ * value pin in starfield.inert.test.jsx and this docstring.
  */
 export const STARFIELD_MOBILE_ENABLED = true;
 
