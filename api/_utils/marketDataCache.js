@@ -758,6 +758,49 @@ export async function fetchIntradayBatch(symbols, options = {}) {
 }
 
 // ============================================
+// EXPORT: getCachedBatchQuotes
+// ============================================
+
+/**
+ * Cached batch real-time quotes — the League arena live-composite endpoint's
+ * price source (Phase B, Option X). Wraps tournamentPrices.fetchBatchQuotes with
+ * a short in-memory window (default 45s) keyed by the sorted symbol set, so
+ * multiple viewers polling ONE pod every ~60s SHARE a single EODHD batch call
+ * instead of each hitting the raw feed. Same return shape as fetchBatchQuotes
+ * ({ [symbol]: { open, close, current, previousClose, timestamp } }); {} on empty
+ * input or transport failure (the house degrade-not-throw convention — the caller
+ * scores banked-only on price loss, never throws).
+ *
+ * The dynamic import of tournamentPrices avoids an eval-time cycle: that module
+ * imports the symbol formatters (isCryptoSymbol / getCleanSymbol / formatEODHDSymbol)
+ * from THIS module.
+ *
+ * @param {string[]} symbols
+ * @param {{ ttlSeconds?: number }} [opts]
+ * @returns {Promise<Object<string, {open:number|null, close:number|null,
+ *   current:number|null, previousClose:number|null, timestamp:number|null}>>}
+ */
+export async function getCachedBatchQuotes(symbols, { ttlSeconds = 45 } = {}) {
+  const unique = [...new Set((symbols || []).map(s => String(s || '').trim().toUpperCase()).filter(Boolean))];
+  if (unique.length === 0) return {};
+
+  const cacheKey = `arenaQuotes_${[...unique].sort().join(',')}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) {
+    logCacheAccess('HIT', cacheKey, '(L1 arena quotes)');
+    return cached;
+  }
+
+  const { fetchBatchQuotes } = await import('./tournamentPrices.js');
+  const quotes = await fetchBatchQuotes(unique);
+  if (quotes && Object.keys(quotes).length > 0) {
+    setInCache(cacheKey, quotes, ttlSeconds);
+    logCacheAccess('MISS', cacheKey, `(fetched ${Object.keys(quotes).length}, cached ${ttlSeconds}s)`);
+  }
+  return quotes || {};
+}
+
+// ============================================
 // EXPORT: filterToLatestSession
 // ============================================
 

@@ -130,7 +130,7 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
         <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} compact />
         <div ref={heroRef} style={{ position: 'relative', marginTop: 10 }}>
           <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
-            w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} />
+            w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} />
           {live && eng.beat && (
             <div style={{ position: 'absolute', top: 8, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
               <BeatCaption beat={eng.beat} compact />

@@ -7,6 +7,7 @@
 
 import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { cleanSymbols, composeBoardPrefill } from '../utils/boardPrefillCore';
 import {
   TOURNAMENT_GROUPS_COLLECTION,
@@ -37,6 +38,28 @@ export async function getGroup(groupId) {
   const snap = await getDoc(doc(db, TOURNAMENT_GROUPS_COLLECTION, groupId));
   if (!snap.exists()) return null;
   return { id: snap.id, ...snap.data() };
+}
+
+/**
+ * Server-computed per-seat LIVE composites for a group's arena climb (Phase B,
+ * Option X). GET /api/tournament/live-composites → { [odUserId]: liveComposite }
+ * — scalars only (never rival holdings/positions/reasoning; the B1 hard-stop path
+ * for a rival's owner-scoped agent six). A READ (no Firestore write), authenticated
+ * via the Bearer ID token. Degrade-not-throw: returns {} on any failure so the
+ * arena falls back to the banked series and a render is never blocked.
+ * @param {string} groupId
+ * @returns {Promise<Object<string, number>>}
+ */
+export async function fetchLiveComposites(groupId) {
+  if (!groupId) return {};
+  try {
+    const res = await fetchWithAuth(`/api/tournament/live-composites?groupId=${encodeURIComponent(groupId)}`);
+    if (!res.ok) return {};
+    const data = await res.json();
+    return data && typeof data.composites === 'object' && data.composites ? data.composites : {};
+  } catch {
+    return {};
+  }
 }
 
 /**

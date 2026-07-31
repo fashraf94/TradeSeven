@@ -29,7 +29,8 @@ import {
   GROUP_STATUS, computeComposite,
 } from '../../../constants/leagueTournament';
 import { statusFeedToVoice } from './statusFeedToVoice';
-import { LEAGUE_AGENT_CHAT_ENABLED } from '../../../config/featureFlags';
+import { seatAltitude } from './seatAltitude';
+import { LEAGUE_AGENT_CHAT_ENABLED, LEAGUE_LIVE_ORB_ENABLED } from '../../../config/featureFlags';
 
 // The strategy chips (founder starter set) for the two-way ask. Each chip's text
 // IS the message sent to the agent (cost 1, same budget + honesty path as free-text)
@@ -98,11 +99,23 @@ function quotesFromPrices(effectivePrices, myPlayer) {
 export function buildArenaModel({
   group, battle = null, priceCtx = {}, claims = [], displayNames = {},
   uid = null, mode = 'ranked', prevStarStates = {}, compositeContext = null,
+  liveComposites = null,
 } = {}) {
   const players = group?.players || [];
   const youId = uid;
   const myPlayer = players.find((p) => p?.odUserId === uid) || null;
   const now = Number.isFinite(priceCtx?.now) ? priceCtx.now : null;
+
+  // ── Live all-seats orb (Phase B, Option X) — gated as ONE unit by the flag.
+  // OFF → rivalLive null (rivals stay on the banked series, byte-identical to
+  // today) and the your-seat live gate below stays training-only. ON → rivals'
+  // per-seat endpoint composites feed the climb AND your seat may go live in
+  // ranked too. YOUR seat is never sourced from `liveComposites` (Option X — the
+  // seatAltitude resolver ignores the map for youId); it rides youLiveScore. ──
+  const liveOrbOn = LEAGUE_LIVE_ORB_ENABLED;
+  const rivalLive = liveOrbOn && liveComposites && typeof liveComposites === 'object'
+    ? liveComposites
+    : null;
 
   // ── canonical-open policy (Spec §1.1) — read the STAMP, not a flag. Drives the
   // user-layer settlement states (pending/estimated/official/void). Legacy /
@@ -132,10 +145,19 @@ export function buildArenaModel({
     return c;
   };
   const seats = players.map((p) => {
+    const banked = getWeeklyComposite(group, p.odUserId);
+    // Rival seat score SOURCE swap (Option X): when the live orb is on, a rival's
+    // seat.score comes from the endpoint live composite (rivalLive), so its
+    // leaderboard-style number agrees with its live altitude on the climb. YOUR
+    // seat is untouched — it keeps the banked getWeeklyComposite here; your live
+    // number is youLiveScore (the orb), never the endpoint. Off-gate → banked.
+    const rivalScore = p.odUserId !== uid && rivalLive && Number.isFinite(rivalLive[p.odUserId])
+      ? rivalLive[p.odUserId]
+      : banked;
     const s = buildSeat({
       odUserId: p.odUserId,
       isCpu: p.isCpu === true,
-      score: getWeeklyComposite(group, p.odUserId),
+      score: rivalScore,
       picks: p.picks,
       battle: p.odUserId === uid ? battle : null, // archetype only from YOUR battle
       names: displayNames,
@@ -160,6 +182,11 @@ export function buildArenaModel({
       // hue from rivalHue (above).
       color: s.you ? YOU_COLOR : rivalHue(s.id),
       arch: s.archName, // the label (rivals → undefined; never fabricated — owner-only)
+      // The seat's CURRENT composite (Option X rival-source swap): a rival's is the
+      // endpoint live composite when the orb is on (rivalScore, above), else banked;
+      // YOUR seat is the banked getWeeklyComposite (untouched — your live number is
+      // youLiveScore). Coherent with the climb altitude (both go live together).
+      score: s.score,
     };
   });
   const youSeat = seats.find((s) => s.you) || null;
@@ -220,15 +247,19 @@ export function buildArenaModel({
   //     the true cumulative week (held + dropped), matching what banking counts.
   // Gated tightly so it can only ever ADD today's layer once, and only where the
   // founder scoped it (Branch 1):
-  //   • mode==='training' — training only. Ranked stays banked (its sealed-rival
-  //     cut line + stakes make a live-vs-banked mixed climb a separate call).
+  //   • mode: training ALWAYS (today), plus RANKED when the live-orb flag is on
+  //     (Phase B relax). Ranked previously stayed banked because a live-you vs
+  //     banked-rivals climb was a §9 half-measure; the flag now brings rivals live
+  //     too (rivalLive), so ranked can go live coherently — as ONE unit with the
+  //     rival source. Flag off → training-only, byte-identical to today.
   //   • status BATTLE, not-yet-banked today, a real (owner-only) battle present.
   //   • now present AND the battle was ACTIVATED today — so a stale prior-day doc
   //     (the pre-deploy morning window, before today's fullday doc lands) can't
   //     add its already-banked agent layer a second time. Anything failing these
   //     falls through to the banked series (the live→final settle; CPU/lobby stay
   //     banked). k lives in computeComposite (never re-derived).
-  const youOrbLive = mode === 'training'
+  const modeAllowsLive = mode === 'training' || (liveOrbOn && mode === 'ranked');
+  const youOrbLive = modeAllowsLive
     && group?.status === GROUP_STATUS.BATTLE
     && !dayBanked
     && !!battle
@@ -378,18 +409,21 @@ export function buildArenaModel({
     reason: win.reason ?? null,
   };
 
-  // ── youRank at the last banked index (REUSE rankByScores; never 0). When the
-  // orb runs live for your seat, your RANK must move with it — the same live
-  // score ClimbArena's `at` ranks you by — so the crown/altitude and the voice/
-  // ask standing ("protect the lead" vs "catch up") agree by construction (§9);
-  // rivals stay on their banked series exactly as the orbs do. ──
+  // ── youRank at the last banked index (REUSE rankByScores; never 0). Every seat
+  // resolves its CURRENT altitude through the SAME seatAltitude ruler ClimbArena's
+  // `at` uses (B3 lockstep): YOU → youLiveScore (per-tick client path), a RIVAL →
+  // its endpoint live composite (rivalLive) when the orb is live, else the banked
+  // series. So the crown/altitude and the voice/ask standing ("protect the lead"
+  // vs "catch up") agree with the climb by construction (§9). Off-gate → rivalLive
+  // null → rivals stay banked exactly as the orbs do. The co-located B3 test fails
+  // if this and `at` ever resolve a seat differently. ──
   const lastIdx = liveDayIdx(climb);
   const ids = seats.map((s) => s.id);
   const scoresAtLast = {};
   for (const id of ids) {
-    scoresAtLast[id] = (id === uid && youLiveScore != null)
-      ? youLiveScore
-      : (climb[id]?.[lastIdx] ?? 0);
+    scoresAtLast[id] = seatAltitude(id, {
+      youId: uid, youLiveScore, liveComposites: rivalLive, banked: climb[id]?.[lastIdx] ?? 0,
+    });
   }
   const ranked = rankByScores(scoresAtLast, ids);
   const yIdx = ranked.indexOf(uid);
@@ -405,6 +439,7 @@ export function buildArenaModel({
     climb,
     youId,
     youLiveScore, // Branch 1: your live intraday composite for the orb (null = banked)
+    liveComposites: rivalLive, // Phase B (Option X): rivals' per-seat endpoint composites — null off-gate; ClimbArena's `at` reads it (seatAltitude)
     agentDeparted, // Phase 1: subbed-out agent points (Σ trades lockedPoints) — null off-gate
     userDeparted, // Phase 1: dropped-pick banked points + pending same-day drops — null off-gate
     agentStars,

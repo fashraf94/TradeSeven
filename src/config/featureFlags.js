@@ -231,6 +231,31 @@ export const LEAGUE_BATTLEVIEW_ROUTING_ENABLED = true;
   new URLSearchParams(window.location.search).get('leagueRouting') === '1';
 
 /**
+ * League Battleview LIVE ORB (Phase B, Option X) — the whole live all-seats orb as
+ * ONE unit. When ON, the arena climb goes live for EVERY seat this tick:
+ *   • YOUR seat — the per-tick client path (youLiveScore) is allowed in RANKED too
+ *     (not only training), keeping every other #572 guard (BATTLE, activation-day,
+ *     not-yet-banked, real battle);
+ *   • RIVALS — their live composite is sourced from the read-only endpoint
+ *     (GET /api/tournament/live-composites), the only place a rival's owner-scoped
+ *     agent six can be summed (B1 hard-stop). YOUR seat is NEVER routed through the
+ *     endpoint (Option X): it stays on youLiveScore.
+ * The two halves flip together so the climb is never your-live-vs-rivals-banked.
+ *
+ * Default OFF (dark): no URL param → false → the orb is exactly today (training
+ * keeps its existing your-seat live orb; ranked stays banked; rivals banked; no
+ * endpoint poll). Enabling is the only behavior change — byte-identical when off.
+ *
+ * PREVIEW SMOKE OVERRIDE: `?leagueLiveOrb=1` force-enables it in a Vercel preview
+ * WITHOUT flipping the shipped default (the arenaLiveGate.js `?battleArenaLive=1`
+ * idiom). Smoke alongside routing: `?leagueRouting=1&leagueLiveOrb=1`. The
+ * production flip stays a separate one-line PR after smoke (the PR #510 precedent).
+ */
+export const LEAGUE_LIVE_ORB_ENABLED =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('leagueLiveOrb') === '1';
+
+/**
  * League — Training-tab CLIMB PREVIEW (the second-arc re-entry surface).
  *
  * The active-training-battle state of the League Training tab shows the real

@@ -29,7 +29,7 @@ import { requireAuth } from '../_utils/authMiddleware.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
 import { TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
 import { fetchGroupAgentScores } from '../_utils/tournamentBanking.js';
-import { fetchBatchQuotes } from '../_utils/tournamentPrices.js';
+import { getCachedBatchQuotes } from '../_utils/marketDataCache.js';
 import { loadAtrPercentiles } from '../_utils/tournamentUserScoring.js';
 import { computeGroupLiveComposites, collectGroupUserSymbols } from '../_utils/tournamentLiveComposite.js';
 
@@ -57,15 +57,17 @@ export default async function handler(req, res) {
     const group = groupSnap.data();
 
     // Agent half (all seats incl. CPU): Σ scoreState.currentScore per owner — a
-    // single field-masked equality query (no new index). User half: one batch
-    // quote over the pod's held ∪ dropped symbols + the shared ATR basis banking
-    // uses. Pre-transaction / read-only, degrade-not-throw on price loss.
+    // single field-masked equality query (no new index). User half: one CACHED
+    // batch quote over the pod's held ∪ dropped symbols (getCachedBatchQuotes — a
+    // ~45s window keyed by the symbol set, so many viewers of one pod polling
+    // ~60s share a single EODHD call) + the shared ATR basis banking uses.
+    // Pre-transaction / read-only, degrade-not-throw on price loss.
     const [agentScores, atrPercentiles] = await Promise.all([
       fetchGroupAgentScores(db, groupId),
       loadAtrPercentiles(db),
     ]);
     const symbols = collectGroupUserSymbols(group);
-    const quotes = symbols.length > 0 ? await fetchBatchQuotes(symbols) : {};
+    const quotes = symbols.length > 0 ? await getCachedBatchQuotes(symbols) : {};
 
     const composites = computeGroupLiveComposites(group, agentScores, quotes, atrPercentiles);
 

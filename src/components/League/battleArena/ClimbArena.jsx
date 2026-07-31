@@ -25,6 +25,10 @@ import { isAgentPresenceOn } from '../../../config/featureFlags';
 // module so this view file exports only a component, and the collision test reads the
 // SAME sizes the component renders. Flag-off renders the orb byte-identically.
 import { HEAD_FACE_LIFT, LABEL_BELOW_GAP, COMPACT_AXIS_W, headSizeFor } from './climbHeadLayout';
+// The ONE altitude resolver — buildArenaModel's youRank reads the SAME function,
+// so the orb altitude/rank/cut here can never disagree with the model's standing
+// (B3 lockstep). `liveComposites` arrives already flag-gated (null off-gate).
+import { seatAltitude } from './seatAltitude';
 
 // the living atmosphere — deep sky, drifting aurora, a deterministic star field.
 function ClimbAtmosphere({ tone }) {
@@ -52,7 +56,7 @@ function ClimbAtmosphere({ tone }) {
   );
 }
 
-export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPlayer, dayIdx: dayIdxProp = null, compact = false, youLiveScore = null }) {
+export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPlayer, dayIdx: dayIdxProp = null, compact = false, youLiveScore = null, liveComposites = null }) {
   const live = state === 'live'; const calm = state === 'awaiting';
   const ranked = mode === 'ranked';
   // Real data supplies the true last-banked index; the fixture preview falls back
@@ -62,12 +66,18 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
 
   const rows = seats.map((s) => ({ ...s, scores: climb[s.id] || [] }));
   const lastIdx = calm ? 0 : dayIdx;
-  // Your OWN seat's CURRENT altitude reads the live composite when the host
-  // supplies one (Branch 1 — the intraday number the banked series can't move);
-  // every rival seat, and every prior banked day, stays on the banked series, so
-  // only your live/current point moves. Feeds the orb number, altitude, rank, and
-  // cut uniformly (all read through `at`), so they never disagree.
-  const at = (s) => (s.id === youId && youLiveScore != null ? youLiveScore : (s.scores[lastIdx] ?? 0));
+  // Every seat's CURRENT altitude resolves through the ONE seatAltitude ruler
+  // (Option X / B3 lockstep — the SAME function buildArenaModel's youRank uses):
+  // YOUR seat reads youLiveScore (the per-tick client path); a RIVAL reads its
+  // endpoint live composite from `liveComposites` when the orb is live; otherwise
+  // the banked series. `liveComposites` arrives already flag-gated (null off-gate →
+  // rivals banked, byte-identical to today). Feeds the orb number, altitude, rank
+  // and cut uniformly (all through `at`), so they never disagree.
+  const at = (s) => seatAltitude(s.id, { youId, youLiveScore, liveComposites, banked: s.scores[lastIdx] ?? 0 });
+  // A seat lifts OFF its banked series this tick when a live source drives it —
+  // your youLiveScore, or a rival's live composite. Its banked close at lastIdx
+  // would otherwise vanish from the trail, so include it as a dot (below).
+  const liftsOff = (s) => (s.id === youId ? youLiveScore != null : Number.isFinite(liveComposites?.[s.id]));
   const ranking = [...rows].sort((a, b) => at(b) - at(a));
   const leaderId = ranking[0]?.id;
   const rankOf = (id) => ranking.findIndex((s) => s.id === id) + 1;
@@ -146,11 +156,12 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                 </linearGradient>
               </defs>
               <line x1={x} y1={yTop} x2={x} y2={plotB} stroke={`url(#bv2cl${s.id})`} strokeWidth={s.id === youId ? 4 : 2.5} strokeLinecap="round" />
-              {/* Trail dots = the seat's prior banked closes. A rival's orb sits AT
-                  its scores[lastIdx], so its dots stop before lastIdx; but when your
-                  live orb lifts OFF scores[lastIdx] (youLiveScore), that banked close
-                  would otherwise vanish — include it as a dot so your trail stays whole. */}
-              {live && s.scores.slice(0, (s.id === youId && youLiveScore != null) ? lastIdx + 1 : lastIdx).map((v, k) => (
+              {/* Trail dots = the seat's prior banked closes. A banked seat's orb
+                  sits AT its scores[lastIdx], so its dots stop before lastIdx; but any
+                  seat that lifts OFF scores[lastIdx] this tick (your youLiveScore, or a
+                  rival's live composite) would drop that banked close from the trail —
+                  include it as a dot so the trail stays whole. */}
+              {live && s.scores.slice(0, liftsOff(s) ? lastIdx + 1 : lastIdx).map((v, k) => (
                 <circle key={k} cx={x} cy={Y(v)} r={2.2} fill={LTOKENS.bg} stroke={s.color} strokeWidth={1.3} strokeOpacity={0.5} />
               ))}
             </g>
