@@ -170,6 +170,14 @@ export default function DashboardLoop({
         agentBattleId: battle.agentBattleId || null,
         agentInnerMonologue: battle.agentInnerMonologue || null,
         agentStrategyBrief: battle.agentStrategyBrief || null,
+        // League routing (Spec V1.2 Phase A) — a flat-6 tournament battle carries
+        // gameMode:'baggerbomb_tournament' + groupId. Both are on the card's battle
+        // object (built with `...b` in the active-battles mapper above), but this
+        // convertedBattle rebuilds the object field-by-field and would drop them;
+        // preserve so BattleViewScreen can route league games to the Arena (gameMode
+        // = discriminator) and the wrapper can resolve the tapped game (groupId).
+        gameMode: battle.gameMode || null,
+        groupId: battle.groupId || null,
       };
       setCurrentBattle(convertedBattle);
       setActiveBattleId(battle.id);

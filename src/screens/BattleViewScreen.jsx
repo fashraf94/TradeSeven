@@ -1,5 +1,7 @@
 import React, { Suspense } from 'react';
 import DesktopBackground from '../components/DesktopBackground';
+import { LEAGUE_BATTLEVIEW_ROUTING_ENABLED } from '../config/featureFlags';
+import { isLeagueBattle } from './battleViewRouting';
 
 const BattleViewScreen = ({
   containerStyle,
@@ -18,7 +20,25 @@ const BattleViewScreen = ({
   BaggerBombBattleViewConnectedV4,
   BaggerBombTrainingBattleViewV4,
   AgentBattleScreen,
+  LeagueBattleViewConnected,
 }) => {
+  // League / flat-6 tournament battles → the League Arena (never BaggerBomb
+  // chrome). Gated DARK by LEAGUE_BATTLEVIEW_ROUTING_ENABLED; when the flag is off
+  // this branch is skipped and league battles fall through to the agentDeployed
+  // branch below — byte-identical to today. Checked BEFORE agentDeployed because a
+  // league battle also carries agentDeployed:true and would otherwise be caught there.
+  if (
+    LEAGUE_BATTLEVIEW_ROUTING_ENABLED &&
+    isLeagueBattle(currentBattle) &&
+    LeagueBattleViewConnected
+  ) {
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <LeagueBattleViewConnected groupId={currentBattle.groupId} onBack={onBack} />
+      </Suspense>
+    );
+  }
+
   // Agent battles → dedicated AgentBattleScreen
   if (currentBattle.agentDeployed === true && AgentBattleScreen) {
     return (
