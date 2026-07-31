@@ -1,11 +1,17 @@
 // src/components/starfield.inert.test.jsx
 //
-// Acceptance row A1 — FLAG OFF ⇒ THE STARFIELD DOES NOT EXIST.
-// Delight Layer arc, Task 2 (Phase 1). Spec V2 §6.
+// Acceptance row A1 — the flag-conditional wiring stays intact, and the flags
+// pin their current state.
+// Delight Layer arc, Task 2. Spec V2 §6.
 //
-// The whole task merges dark, so this file's job is to make "dark" mechanically
-// checkable rather than asserted in a PR description. It fails if the swap, the
-// root transparency, or either flag leaks into the off-state.
+// Originally this file proved the merge-dark state (both flags false). The flags
+// are now FLIPPED LIVE (founder flip PR #694). Its enduring job is twofold:
+//   1. PIN the current flag values, so a future flip (or revert) MUST reconcile
+//      this file in the SAME commit — BUILD_RULES §2; and
+//   2. mechanically check the flag-OFF contract is still intact — the mount and
+//      root-paint ternaries, `DesktopBackground` left untouched, and the flag-off
+//      scheduling path (resolveLoopPlan with an explicit flagOn:false) — so a
+//      revert or a regression that breaks the off-branch is caught.
 //
 // House idiom (Phase 0 §2.6): react-dom/server smoke + source-text tripwires.
 // The repo ships no jsdom/RTL setup and mocks getContext/rAF nowhere, and the
@@ -54,27 +60,39 @@ const MOBILE_ROOT = readSource('src/components/Dashboard/CommandDashboard.jsx');
 const STARFIELD = readSource('src/components/StarfieldBackground.jsx');
 const CORE = readSource('src/components/warpStateMachine.js');
 
-describe('A1 — merged dark: both flags ship false', () => {
-  it('STARFIELD_BACKGROUND_ENABLED is false at HEAD', () => {
-    expect(
-      STARFIELD_BACKGROUND_ENABLED,
-      'The desktop starfield must merge dark. Flipping is a separate one-line PR '
-        + 'carrying the A7 founder feel sign-off — never a build PR (the PR #510 lesson).'
-    ).toBe(false);
+describe('A1 — flag state + the flag-off contract (flags now flipped LIVE)', () => {
+  it('STARFIELD_BACKGROUND_ENABLED pins its live (flipped) state', () => {
+    // Flipped false→true in the founder flip PR (#694) after the A7 sign-off.
+    // This PINS the live state. Any future flip that turns it back off MUST
+    // update this pin in the same commit — BUILD_RULES §2: a flip PR reconciles
+    // its own assertions (this pin exists because the flip that did NOT reddened
+    // CI on every PR into main).
+    expect(STARFIELD_BACKGROUND_ENABLED).toBe(true);
   });
 
-  it('STARFIELD_MOBILE_ENABLED is false at HEAD', () => {
-    expect(
-      STARFIELD_MOBILE_ENABLED,
-      'The mobile starfield must merge dark and flip independently of desktop.'
-    ).toBe(false);
+  it('STARFIELD_MOBILE_ENABLED pins its live (flipped) state', () => {
+    // Independent of desktop (Amendment A1). Same reconciliation rule: a flip
+    // back to false updates this pin in the same commit.
+    expect(STARFIELD_MOBILE_ENABLED).toBe(true);
   });
 
-  it('resolves off in a Node/SSR context, with no window to read', () => {
+  it('the dev-override reader is SSR-safe in a Node context (flag-independent)', () => {
+    // getWarpDevOverride() has no flag short-circuit, so it is the genuine,
+    // constant-independent SSR canary: in Node (no window) it returns null and
+    // never throws, whatever the flags above are set to.
     expect(typeof window).toBe('undefined'); // default vitest env is node
-    expect(isStarfieldOn()).toBe(false);
-    expect(isStarfieldMobileOn()).toBe(false);
     expect(getWarpDevOverride()).toBeNull();
+
+    // The gate helpers must also never throw when there is no window. NOTE
+    // (reported, not deleted): with the flags flipped TRUE they now short-circuit
+    // to `true` BEFORE the `typeof window` guard, so their flag-OFF Node return
+    // value (false) is no longer observable here without module-mocking the
+    // constants. The flag-off SCHEDULING consequence — the load-bearing part —
+    // is pinned by the next row via an explicit flagOn:false.
+    expect(() => isStarfieldOn()).not.toThrow();
+    expect(() => isStarfieldMobileOn()).not.toThrow();
+    expect(typeof isStarfieldOn()).toBe('boolean');
+    expect(typeof isStarfieldMobileOn()).toBe('boolean');
   });
 
   it('the two flags are INDEPENDENT — neither helper reads the other gate', () => {
@@ -123,8 +141,12 @@ describe('A1 — merged dark: both flags ship false', () => {
     expect(mobile).toContain("get('starfieldMobile')");
   });
 
-  it('flag-off means the loop is never scheduled and nothing is drawn', () => {
-    expect(resolveLoopPlan({ flagOn: isStarfieldOn() })).toMatchObject({
+  it('the flag-OFF path never schedules and draws nothing (explicit input)', () => {
+    // Re-expressed to pass flagOn EXPLICITLY rather than reading the live
+    // constant (which now returns true), so it keeps asserting the flag-off
+    // contract regardless of what the flags are flipped to. The live-on
+    // scheduling path is exercised in warpStateMachine.test.js (A2s).
+    expect(resolveLoopPlan({ flagOn: false })).toMatchObject({
       shouldSchedule: false,
       shouldDrawOnce: false,
       reason: 'flag-off',
