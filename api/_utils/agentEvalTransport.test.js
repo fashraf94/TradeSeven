@@ -12,7 +12,21 @@ import {
   nextConsecutiveEvalFailures,
   HAIKU_CALL_CEILING_MS,
   HAIKU_POST_CALL_ALLOWANCE_MS,
+  EVAL_MAX_OUTPUT_TOKENS,
 } from './agentEvalTransport.js';
+
+describe('EVAL_MAX_OUTPUT_TOKENS — the eval output ceiling', () => {
+  // Raised 1024 → 2048 (DR-13 truncation baseline): ~21% of production evals
+  // were silently truncating their rationale/cited-rules tail at 1024; true
+  // uncapped output tops out ~1421 (p99 ~1240), so 2048 clears it with headroom.
+  it('is 2048 (the post-baseline ceiling)', () => {
+    expect(EVAL_MAX_OUTPUT_TOKENS).toBe(2048);
+  });
+
+  it('leaves headroom above the observed p99 (~1240) and max (~1421) eval output', () => {
+    expect(EVAL_MAX_OUTPUT_TOKENS).toBeGreaterThan(1421);
+  });
+});
 
 // Minimal stand-ins with the same constructor.name / message / status shape
 // as the real SDK classes (verified empirically against 0.71.2).

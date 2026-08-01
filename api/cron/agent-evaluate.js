@@ -86,7 +86,7 @@ import { finalizeCronState } from '../_utils/agentCronState.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
 // string literal). Zero-import schema module, BUILD_RULES §4.
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
-import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, EVAL_MODEL_ID } from '../_utils/agentEvalTransport.js';
+import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, EVAL_MODEL_ID, EVAL_MAX_OUTPUT_TOKENS } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { runCanonicalOpenSweep } from '../_utils/canonicalOpenSweep.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
@@ -1918,7 +1918,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       try {
         const response = await anthropic.messages.create({
           model: EVAL_MODEL_ID,
-          max_tokens: 1024,
+          max_tokens: EVAL_MAX_OUTPUT_TOKENS,
           temperature: 0.4,
           // DR-13 (STOP-A ruling A1): the RAW archetype code-id rides as the
           // 4th arg — `archetype` above is the display-cased label (:1881)
