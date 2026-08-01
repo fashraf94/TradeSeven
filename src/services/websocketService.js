@@ -31,6 +31,7 @@ class WebSocketManager {
     this._cryptoWs = null;
     this._wsUrls = null; // { stocksUrl, cryptoUrl } from proxy
     this._urlPromise = null; // dedup fetch
+    this._transportDisabled = false; // B1: server disabled browser→vendor WS transport
 
     // Reference counting: { symbol: count }
     this._stockSubscriptions = {};
@@ -113,6 +114,7 @@ class WebSocketManager {
   // ==================== URL FETCHING ====================
 
   async _fetchWsUrls() {
+    if (this._transportDisabled) return null;
     if (this._wsUrls) return this._wsUrls;
 
     // Dedup concurrent fetches
@@ -123,6 +125,17 @@ class WebSocketManager {
         const res = await fetch('/api/ws-config');
         if (!res.ok) throw new Error(`ws-config responded ${res.status}`);
         const data = await res.json();
+        // Containment B1: the server no longer provides a browser WebSocket
+        // transport (it never sends the EODHD token to the client). Treat
+        // `available:false` — or any response missing the vendor URLs — as a
+        // TERMINAL, non-retried disabled state and fall back to REST polling.
+        // This is distinct from a transient fetch/network error (caught below),
+        // which may still retry on the next subscribe.
+        if (!data || data.available === false || !data.stocksUrl || !data.cryptoUrl) {
+          this._transportDisabled = true;
+          this._wsUrls = null;
+          return null;
+        }
         this._wsUrls = data;
         return data;
       } catch (err) {
@@ -133,6 +146,23 @@ class WebSocketManager {
     })();
 
     return this._urlPromise;
+  }
+
+  /**
+   * Probe whether a browser WebSocket transport is available this session.
+   * Returns false when the server has disabled direct browser→vendor streaming
+   * (containment B1) or when the config cannot be fetched — callers then use
+   * the REST/EOD fallback immediately instead of waiting on a dead socket.
+   * Never throws; never fabricates a price.
+   */
+  async probeTransport() {
+    if (this._transportDisabled) return false;
+    try {
+      const urls = await this._fetchWsUrls();
+      return !!urls && !this._transportDisabled;
+    } catch {
+      return false;
+    }
   }
 
   // ==================== SUBSCRIBE / UNSUBSCRIBE ====================
@@ -214,6 +244,15 @@ class WebSocketManager {
   // ==================== CONNECTION MANAGEMENT ====================
 
   async _ensureStockConnection(newSymbols) {
+    // Containment B1: no browser WebSocket transport — stay disconnected and
+    // let consumers use the REST fallback. Never open a socket or schedule a
+    // reconnect.
+    if (this._transportDisabled) {
+      this._stockStatus = 'disconnected';
+      this._emitStatus();
+      return;
+    }
+
     // Cancel any pending close
     if (this._stockCloseTimer) {
       clearTimeout(this._stockCloseTimer);
@@ -238,6 +277,14 @@ class WebSocketManager {
       this._emitStatus();
 
       const urls = await this._fetchWsUrls();
+      if (!urls) {
+        // Transport disabled (server returned available:false) — stay
+        // disconnected; do not open a socket or reconnect.
+        this._transportDisabled = true;
+        this._stockStatus = 'disconnected';
+        this._emitStatus();
+        return;
+      }
       this._stockWs = new WebSocket(urls.stocksUrl);
 
       this._stockWs.onopen = () => {
@@ -293,13 +340,20 @@ class WebSocketManager {
       console.error('[WebSocket] Failed to open stock connection:', err);
       this._stockStatus = 'disconnected';
       this._emitStatus();
-      if (Object.keys(this._stockSubscriptions).length > 0) {
+      if (!this._transportDisabled && Object.keys(this._stockSubscriptions).length > 0) {
         this._scheduleReconnect('stock');
       }
     }
   }
 
   async _ensureCryptoConnection(newSymbols) {
+    // Containment B1: no browser WebSocket transport — stay disconnected.
+    if (this._transportDisabled) {
+      this._cryptoStatus = 'disconnected';
+      this._emitStatus();
+      return;
+    }
+
     if (this._cryptoCloseTimer) {
       clearTimeout(this._cryptoCloseTimer);
       this._cryptoCloseTimer = null;
@@ -321,6 +375,14 @@ class WebSocketManager {
       this._emitStatus();
 
       const urls = await this._fetchWsUrls();
+      if (!urls) {
+        // Transport disabled (server returned available:false) — stay
+        // disconnected; do not open a socket or reconnect.
+        this._transportDisabled = true;
+        this._cryptoStatus = 'disconnected';
+        this._emitStatus();
+        return;
+      }
       this._cryptoWs = new WebSocket(urls.cryptoUrl);
 
       this._cryptoWs.onopen = () => {
@@ -373,7 +435,7 @@ class WebSocketManager {
       console.error('[WebSocket] Failed to open crypto connection:', err);
       this._cryptoStatus = 'disconnected';
       this._emitStatus();
-      if (Object.keys(this._cryptoSubscriptions).length > 0) {
+      if (!this._transportDisabled && Object.keys(this._cryptoSubscriptions).length > 0) {
         this._scheduleReconnect('crypto');
       }
     }
@@ -513,6 +575,8 @@ class WebSocketManager {
   // ==================== RECONNECT ====================
 
   _scheduleReconnect(type) {
+    // Containment B1: never reconnect when the browser WS transport is disabled.
+    if (this._transportDisabled) return;
     if (type === 'stock') {
       if (this._stockReconnectTimer) return;
       console.log(`[WebSocket] Reconnecting stocks in ${this._stockReconnectDelay}ms`);
@@ -664,6 +728,17 @@ export async function captureRealtimePrices(symbols, timeoutMs = 5000) {
 
   // Subscribe to get ticks for uncached symbols
   const uncachedSymbols = [...symbolSet].filter(s => !(s in prices));
+
+  // Containment B1: if the browser WebSocket transport is disabled (server no
+  // longer hands out a token-bearing vendor URL) or unreachable, skip the
+  // socket wait entirely and report the remaining symbols as missing so the
+  // caller's same-origin REST/EOD fallback runs immediately. No fabrication.
+  const wsAvailable = await wsManager.probeTransport();
+  if (!wsAvailable) {
+    for (const sym of uncachedSymbols) source[sym] = 'ws-unavailable';
+    return { prices, missing: uncachedSymbols, source };
+  }
+
   wsManager.subscribe(uncachedSymbols);
 
   return new Promise((resolve) => {
