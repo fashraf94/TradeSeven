@@ -531,7 +531,7 @@ function buildPoolEmptyFeedEntry({ message, symbolOut, symbolIn = null, regime =
   };
 }
 
-async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map(), masteryFlagView = DARK_FLAG_VIEW) {
+export async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map(), masteryFlagView = DARK_FLAG_VIEW) {
   const battleRef = db.collection('agentBattles').doc(battle.id);
 
   // ---- Idempotency: atomically check and acquire evaluatingAt lock ----
