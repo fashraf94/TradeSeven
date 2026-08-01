@@ -22,6 +22,17 @@ export const HAIKU_POST_CALL_ALLOWANCE_MS = 12_000;
 // guarantees). Bump HERE and every call + capture site follows.
 export const EVAL_MODEL_ID = 'claude-haiku-4-5-20251001';
 
+// The mid-battle eval OUTPUT ceiling, ONE exported source (same discipline as
+// EVAL_MODEL_ID). Raised 1024 → 2048 per the DR-13 truncation baseline (Jul
+// 2026): recent production evals averaged ~907/1024 output tokens with ~21%
+// exceeding 1024 — silently truncating the tail (the rationale /
+// cited_forge_rules the receipts + Film Room render) while the early-emitted
+// `decision` survived, so `truncated_response` never fired. True uncapped
+// output reaches ~1421 (p99 ~1240); 2048 clears the observed distribution with
+// headroom at a negligible realistic cost delta (output is content-bound, not
+// cap-bound — the ceiling only un-truncates the ~21% tail).
+export const EVAL_MAX_OUTPUT_TOKENS = 2048;
+
 /**
  * Classify a Haiku transport failure for instrumentation (Phase 2).
  *
