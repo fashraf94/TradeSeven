@@ -21,14 +21,16 @@
 //      client flatten (tier/allocation/slotIndex attach, null-slot handling).
 //   4. Prompt-text photographs: GAME RULES / TIER RULES / eval SCORING RULES
 //      verbatim inline + full-output file snapshots on fixed inputs.
-//      FLAG-STATE NOTE (Jul 25 2026): these file snapshots are REAL-flag
-//      photographs, so they track deliberate flag flips. With
-//      FUNDAMENTAL_MIRROR_ENABLED flipped ON (`c45f936c`), the two
-//      buildStrategySystemPrompt goldens and buildPortfolioSystemPrompt now
-//      carry the PE_VS_SECT|REVG_PCT|MCAP_CLS vocabulary — they are the
-//      ON-state texts of record. (EVAL_IDENTITY_BLOCK_ENABLED is still off,
-//      so the two buildEvalSystemPrompt goldens remain that flag's off-state
-//      lock, as evalIdentityBlock.injection.test.js §5 relies on.)
+//      FLAG-STATE NOTE: these file snapshots are REAL-flag photographs, so
+//      they track deliberate flag flips. With FUNDAMENTAL_MIRROR_ENABLED
+//      flipped ON (`c45f936c`), the two buildStrategySystemPrompt goldens and
+//      buildPortfolioSystemPrompt carry the PE_VS_SECT|REVG_PCT|MCAP_CLS
+//      vocabulary. With EVAL_IDENTITY_BLOCK_ENABLED now flipped ON (DR-13
+//      endgame flag-flip), the two buildEvalSystemPrompt goldens below thread
+//      the raw archetype key ('analyst') exactly as the cron does and carry
+//      the spliced ━━━ ARCHETYPE IDENTITY ━━━ block — they are now that flag's
+//      ON-state texts of record. Flag-OFF (revert) inertness is held by
+//      evalIdentityBlock.injection.test.js's flag-off arm (§5).
 //   5. createAgentBattle battle-doc photograph (fake clock + capture db):
 //      inline asserts on the load-bearing fields (gameMode literal, the
 //      written-never-read scoring snapshot, no groupId/isCpu keys) + full-doc
@@ -396,8 +398,12 @@ describe('P4 battery — tiered prompt text photographed verbatim', () => {
     await expect(out).toMatchFileSnapshot('./__p4_snapshots__/buildPortfolioSystemPrompt.snap.txt');
   });
 
-  it('buildEvalSystemPrompt carries the SCORING RULES and TIER IMPACT blocks byte-for-byte', async () => {
-    const out = buildEvalSystemPrompt('TestAgent', 'analyst');
+  it('buildEvalSystemPrompt carries the SCORING RULES and TIER IMPACT blocks byte-for-byte (ON-state)', async () => {
+    // Threads the raw archetype key exactly as the cron does (agent-evaluate.js
+    // passes ctx.archetype as the 4th arg); with EVAL_IDENTITY_BLOCK_ENABLED
+    // now live this golden is the ON-state text of record — it leads with the
+    // spliced identity block, then the mode-of-record scoring/tier text below.
+    const out = buildEvalSystemPrompt('TestAgent', 'analyst', TIERED_GAME_MODE, 'analyst');
     expect(out).toContain(EVAL_SCORING_RULES_VERBATIM);
     expect(out).toContain(EVAL_TIER_IMPACT_VERBATIM);
     await expect(out).toMatchFileSnapshot('./__p4_snapshots__/buildEvalSystemPrompt.analyst.snap.txt');
@@ -411,7 +417,9 @@ describe('P4 battery — tiered prompt text photographed verbatim', () => {
   });
 
   it('FLAT6 eval prompt: flat scoring framing, no tier multipliers anywhere, threshold bonuses unchanged', async () => {
-    const out = buildEvalSystemPrompt('TestAgent', 'analyst', FLAT6_GAME_MODE);
+    // ON-state (key threaded like the cron): the identity block leads, the
+    // flat6 scoring framing follows — the tier-bound text still must not leak.
+    const out = buildEvalSystemPrompt('TestAgent', 'analyst', FLAT6_GAME_MODE, 'analyst');
     expect(out).toContain('Base points = (currentPrice - entryPrice) / entryPrice × 100 × 10\n'
       + 'All positions score FLAT — tournament mode has NO tier multipliers.');
     expect(out).toContain('5. POSITION IMPACT: All six positions carry the same flat weight');

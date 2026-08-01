@@ -4,8 +4,9 @@
 // Phase 3). The six founder-approved golden renders from the archetype
 // constitutions, shipped as frozen constants keyed by archetype code-id,
 // plus the shared DR-13 subordination clause. Consumed (Commit 2, fenced,
-// §7-gated) by buildEvalSystemPrompt; until that lands and the flag flips,
-// this module is fully dark.
+// §7-gated) by buildEvalSystemPrompt. As of the DR-13 endgame flag-flip the
+// flag is LIVE (EVAL_IDENTITY_BLOCK_ENABLED = true): the block renders on every
+// eval tick; flag-off is now the deliberate-revert path.
 //
 // THE MECHANICAL LOCK (what makes constants acceptable under DR-13's
 // "mechanically rendered, never hand-authored" ruling): the co-located

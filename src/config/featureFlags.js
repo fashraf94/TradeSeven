@@ -1156,18 +1156,21 @@ export const EDITORIAL_REVIEW_ENABLED = false;
  * eval/swap system prompt ahead of the first ━━━ banner (both prompt
  * variants) once the Commit-2 fenced splice lands.
  *
- * When FALSE (DEFAULT, merge-dark), renderEvalIdentityBlock returns '' for
- * every key and both eval system prompts stay byte-identical to today —
- * asserted by the P4 battery file snapshots. When TRUE, each eval tick's
- * system prompt carries the deciding archetype's identity block; unknown
- * keys omit the block and log (never substitute a default identity).
+ * FLIPPED false→true in the founder flag-flip PR (DR-13 endgame) — after the
+ * dark-flag shadow diff and the offline paired-eval harness pass: 840 paired
+ * decisions across temperature 0 and 0.4 showed zero decision drift, so the
+ * block ships identity-consistent reasoning (conviction + rationale framing),
+ * not measurable decision change at current gate settings. The merge-dark era
+ * is over; TRUE is now the default and FALSE is the deliberate-revert path.
  *
- * Flip prerequisite (Spec DR-13/DR-10 + constitutions' render contract):
- * dark flag, shadow-diffed, offline paired-eval harness pass, founder
- * review. Flip only via a deliberate founder flag-flip PR — never in a
- * build PR.
+ * When TRUE (CURRENT), each eval tick's system prompt carries the deciding
+ * archetype's identity block — the P4 battery's real-flag eval snapshots are
+ * now the ON-state texts of record; unknown keys omit the block and log (never
+ * substitute a default identity). When FALSE (revert), renderEvalIdentityBlock
+ * returns '' for every key and both eval prompts fall back byte-identical to
+ * the pre-DR-13 text — the inert path the injection test's flag-off arm locks.
  */
-export const EVAL_IDENTITY_BLOCK_ENABLED = false;
+export const EVAL_IDENTITY_BLOCK_ENABLED = true;
 
 /**
  * Fundamental Wire arc (Jul 25 2026 founder rulings D1–D7) — the peerRankings→
