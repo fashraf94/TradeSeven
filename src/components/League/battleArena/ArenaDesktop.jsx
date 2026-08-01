@@ -13,6 +13,7 @@
 import React from 'react';
 import { ArenaTopStrip, BeatCaption } from './ArenaPrimitives';
 import { ClimbArena } from './ClimbArena';
+import { DecompositionStrip } from './DecompositionStrip';
 import { DockAgentSix, DockYourThree, DockStatePanel } from './CommandDock';
 import { FreeAgencyDoorway, OpponentSnapshot, FilmRoomOverlay, DepartedLedger } from './ArenaOverlays';
 import { useArenaEngine } from './useArenaEngine';
@@ -53,6 +54,13 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
 
   const lastIdx = data ? liveDayIdx(D.climb) : frameDayIdx(state);
   const youRank = D.youRank;
+  // Points-led cards flip WITH the decomposition (model-driven); the `headline` prop
+  // is the fixtures-preview fallback. Off-gate → 'mult' (byte-identical to today).
+  const dockHeadline = D.headline ?? headline;
+  // The reconciliation strip nests INSIDE the fixed HERO_H band (the climb shrinks by
+  // the strip reserve) so the dock and AD_H geometry are untouched. Null off-gate.
+  const hasDecomp = !!D.decomposition;
+  const climbH = hasDecomp ? HERO_H - 46 : HERO_H;
   const oppSeat = opp ? D.seats.find((s) => s.id === opp) : null;
   // With real data the bell countdown is deferred (pod.nextClose null) — show the
   // live badge as "LIVE", not a frozen 00:00 (StatusBadge prints the label when
@@ -63,13 +71,18 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
     <div style={{ width: AD_W, height: AD_H, position: 'relative', display: 'flex', flexDirection: 'column', padding: '14px 22px 16px' }}>
       <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} />
 
-      {/* THE HERO — the competition climb */}
-      <div style={{ position: 'relative', marginTop: 11 }}>
+      {/* THE HERO — the competition climb (+ the decomposition strip nested in-band) */}
+      <div style={{ position: 'relative', marginTop: 11, height: HERO_H }}>
         <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
-          w={HERO_W} h={HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} />
+          w={HERO_W} h={climbH} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} />
         {live && eng.beat && (
           <div style={{ position: 'absolute', top: 12, left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 25, pointerEvents: 'none' }}>
             <BeatCaption beat={eng.beat} />
+          </div>
+        )}
+        {hasDecomp && (
+          <div style={{ marginTop: 8 }}>
+            <DecompositionStrip decomposition={D.decomposition} />
           </div>
         )}
       </div>
@@ -77,10 +90,10 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
       {/* THE COMMAND DOCK — your stars, always in reach */}
       <div style={{ height: DOCK_H, marginTop: 11, display: 'flex', gap: 12, minHeight: 0 }}>
         <DockAgentSix stars={D.agentStars} dormant={calm} complete={done} beatStar={live ? eng.beatStar : null}
-          flareKey={live ? eng.flareKey : 0} headline={headline} move={D.agentMove} departed={D.agentDeparted}
+          flareKey={live ? eng.flareKey : 0} headline={dockHeadline} move={D.agentMove} departed={D.agentDeparted}
           onOpenDeparted={() => setDepartedView('swap')} style={{ flex: 1.35 }} />
         <DockYourThree stars={D.userStars} dormant={calm} complete={done} state={state} wire={D.wire} wireClock={eng.wireClock}
-          beatStar={live ? eng.beatStar : null} onFlip={handlers?.onFlip} onFlipDrama={eng.flip} onClaim={() => setFaOpen(true)} headline={headline}
+          beatStar={live ? eng.beatStar : null} onFlip={handlers?.onFlip} onFlipDrama={eng.flip} onClaim={() => setFaOpen(true)} headline={dockHeadline}
           departed={D.userDeparted} onOpenDeparted={() => setDepartedView('drop')} style={{ flex: 1.3 }} />
         <DockStatePanel state={state} mode={mode} eng={eng} archName={D.voice.arch} voice={D.voice} pod={D.pod}
           ask={D.ask} youRank={youRank} onFilm={() => setFilmOpen(true)} style={{ flex: 1.02 }} />

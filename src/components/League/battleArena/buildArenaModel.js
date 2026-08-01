@@ -357,11 +357,38 @@ export function buildArenaModel({
   // dropped = stored leg.bankedScore).
   const swapBanked = agentDeparted?.total ?? 0;
   const droppedBanked = userDeparted?.total ?? 0;
+  // Compute the two live sums ONCE so youLiveScore and the decomposition below are
+  // byte-identical (agentSide + userLayer === youLiveScore, exactly — Ruling A).
+  const agentLiveSum = sumPoints(agentStars);
+  const userLiveSum = sumPoints(userStars);
   const youLiveScore = youOrbLive
     ? computeComposite(
-      priorBankedAgent + sumPoints(agentStars) + swapBanked,
-      sumPoints(userStars) + droppedBanked,
+      priorBankedAgent + agentLiveSum + swapBanked,
+      userLiveSum + droppedBanked,
     )
+    : null;
+
+  // ── decomposition (Phase B Decomposition, Ruling A) — the LAYER-grouped
+  // reconciliation of the live orb, gated as ONE unit with the live-orb flag.
+  // Grouped by LAYER, not six loose addends: the ×1.5 lands on the COMBINED user
+  // half and youLiveScore is an unrounded float, so a flat term sum would miss by
+  // 0.5× the user terms. agentSide (×1) + userLayer (×1.5 applied) === orb exactly
+  // (the same ops computeComposite runs). Null off-gate → no strip, cards stay
+  // 'mult' (byte-identical to today). Your seat only — rivals sealed. ──
+  const decompLive = liveOrbOn && youOrbLive && youLiveScore != null;
+  const decomposition = decompLive
+    ? {
+      k: TOURNAMENT_TUNING.USER_LAYER_K, // 1.5 — the user-layer weighting, shown on the strip
+      bankedPrior: priorBankedAgent,     // term 1 — banked-prior agent (aggregate, ×1)
+      six: agentLiveSum,                 // term 2 — Σ your six today live (×1)
+      swaps: swapBanked,                 // term 3 — swaps today (aggregate, ×1)
+      three: userLiveSum,                // term 4 — Σ your three today live (pre-×1.5)
+      dropped: droppedBanked,            // term 5 — dropped-pick banked (aggregate, pre-×1.5)
+      agentSide: priorBankedAgent + agentLiveSum + swapBanked,                    // ×1 layer subtotal
+      userLayerRaw: userLiveSum + droppedBanked,                                   // user half, pre-weight
+      userLayer: TOURNAMENT_TUNING.USER_LAYER_K * (userLiveSum + droppedBanked),   // ×1.5 layer subtotal
+      orb: youLiveScore,                 // agentSide + userLayer === orb, exactly
+    }
     : null;
 
   // ── beats (REUSE deriveBeats; only YOUR stars are knowable — rivals sealed) ──
@@ -440,6 +467,7 @@ export function buildArenaModel({
     youId,
     youLiveScore, // Branch 1: your live intraday composite for the orb (null = banked)
     liveComposites: rivalLive, // Phase B (Option X): rivals' per-seat endpoint composites — null off-gate; ClimbArena's `at` reads it (seatAltitude)
+    decomposition, // Phase B Decomposition: the layer-grouped orb reconciliation — null off-gate (flag/live)
     agentDeparted, // Phase 1: subbed-out agent points (Σ trades lockedPoints) — null off-gate
     userDeparted, // Phase 1: dropped-pick banked points + pending same-day drops — null off-gate
     agentStars,
@@ -450,7 +478,9 @@ export function buildArenaModel({
     pod,
     wire,
     youRank,
-    headline: 'mult',
+    // Points-led cards (Rulings B/C) flip on WITH the decomposition — the six and
+    // three lead with star.points. Off-gate → 'mult' (today, byte-identical).
+    headline: decompLive ? 'pts' : 'mult',
     compositeContext,
     mode,
     claim: { picks: myPicks, poolNames, claimsUsed: myPending, claimsTotal: TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE, open: !!win.isOpen },

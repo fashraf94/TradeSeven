@@ -583,4 +583,14 @@ describe('buildArenaModel — live orb flag gating (Option X, flag off = today)'
     const rivWithout = without.seats.find((s) => s.id === 'u-riv');
     expect(rivWith.score).toBe(rivWithout.score);              // rival seat.score stays banked (no swap off-gate)
   });
+
+  it('the decomposition is null and cards stay "mult" off-gate — even when the orb is LIVE (training)', () => {
+    // training + today's battle → youLiveScore is LIVE (as today), but the NEW
+    // decomposition strip + points-led cards are flag-gated → dark here.
+    const TODAY_BATTLE = { ...flat6Battle(), activatedAt: '2026-06-16T14:00:00.000Z', createdAt: '2026-06-16T14:00:00.000Z' };
+    const m = buildArenaModel({ ...BASE, mode: 'training', battle: TODAY_BATTLE });
+    expect(m.youLiveScore).not.toBeNull(); // the orb is live (training path, unchanged)
+    expect(m.decomposition).toBeNull();    // …but the decomposition is dark (flag off)
+    expect(m.headline).toBe('mult');       // …and the cards lead with the multiplier (byte-identical to today)
+  });
 });
