@@ -1272,7 +1272,9 @@ export function enrichPrescribedPortfolio(symbols, stockUniverse) {
 // prescription is a LOUD 4xx, never an improvised portfolio — the orchestrator
 // retries on its failure cooldown. The deploy lock is already held by the
 // caller; every early return clears it.
-async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId }) {
+// Exported for behavioral testing of the deploy path (test-only surface; no
+// runtime behavior change). The internal FLAT6 dispatch calls it directly.
+export async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId }) {
   const clearLock = () => agentRef.update({ deployingAt: null }).catch(() => {});
   const modeConfig = resolveModeConfig(FLAT6_GAME_MODE);
   const { groupId, prescribedPortfolio, isCpu, userPicksStance, doubleDownSymbols, userPicks } = req.body;
