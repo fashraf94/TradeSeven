@@ -23,6 +23,7 @@ import { resolveForDeploy } from '../../src/utils/ruleConflictReconciler.js';
 import { CONFLICT_RECONCILER_INJECT_ENABLED } from '../../src/config/featureFlags.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 import { validateActivationPrice } from '../_utils/baselineValidation.js';
+import { assessRequiredBaselines } from '../_utils/agentBaselineCompleteness.js';
 import { generateCPUOpponent } from '../_utils/cpuOpponentGenerator.js';
 import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES } from '../_utils/archetypeScoring.js';
 import { logDecision, logFirstMessage } from '../_utils/shadowLogger.js';
@@ -795,7 +796,42 @@ export default async function handler(req, res) {
       }
     }
 
-    const startingPrices = await fetchValidatedStartingPrices(allSymbols, baseATRBySymbol);
+    const { startingPrices, fallbackSymbols } = await fetchValidatedStartingPrices(allSymbols, baseATRBySymbol);
+
+    // 14b. Baseline completeness gate (EODHD pre-rotation containment). Never
+    // create a battle ACTIVE unless every REQUIRED held-position symbol — the
+    // scored star/core/support picks on BOTH sides, the same set the
+    // agent-evaluate M1 quote guard protects — has a complete, usable,
+    // non-fallback validated baseline. Bench symbols are excluded (not scored
+    // until swapped, and swaps re-fetch). This reuses the Guard-1 result above;
+    // it never issues a second market-data fetch. On an incomplete/degraded set
+    // we abort BEFORE createAgentBattle, release the deploy lock, AND roll back
+    // the per-agent deploy cooldown (lastDeployedAt was stamped upstream in the
+    // decision-persist write), so this battle-less abort consumes no single-use
+    // state — the deploy is genuinely retriable the moment pricing recovers,
+    // not throttled behind the 2-minute cooldown at the top of the handler.
+    const requiredHeldSymbols = [
+      ...(enrichedPortfolio.portfolio.star || []),
+      ...(enrichedPortfolio.portfolio.core || []),
+      ...(enrichedPortfolio.portfolio.support || []),
+      ...(cpuOpponent.portfolio.star || []),
+      ...(cpuOpponent.portfolio.core || []),
+      ...(cpuOpponent.portfolio.support || []),
+    ].filter(Boolean).map(a => a.symbol).filter(Boolean);
+    const baseline = assessRequiredBaselines(requiredHeldSymbols, startingPrices, fallbackSymbols);
+    if (!baseline.complete) {
+      console.warn(`[agent/decide] [baseline-gate] agent=${agentDoc.id} required=${baseline.requiredCount} usable=${baseline.usableCount} missing=${baseline.missing.join(',') || '(none)'} — incomplete validated baseline, blocking deploy (no battle created)`);
+      await agentRef.update({ deployingAt: null, lastDeployedAt: agent.lastDeployedAt ?? null });
+      return res.status(503).json({
+        error: 'pricing_unavailable',
+        reason: 'pricing_unavailable',
+        retriable: true,
+        missingSymbols: baseline.missing,
+        requiredCount: baseline.requiredCount,
+        usableCount: baseline.usableCount,
+        deployId,
+      });
+    }
 
     // Update CPU portfolio assets with fetched prices
     ['star', 'core', 'support'].forEach(tier => {
@@ -964,9 +1000,17 @@ export default async function handler(req, res) {
  * Verbatim move of the handler's step-14 loop (P4 — shared with the
  * prescribed tournament path); rate-limited 5 concurrent / 200ms between
  * batches.
+ *
+ * @returns {Promise<{ startingPrices: Object<string, number>, fallbackSymbols: Set<string> }>}
+ *   startingPrices: Guard-1-validated finite baselines keyed by symbol (a symbol
+ *   is absent when it had no usable baseline). fallbackSymbols: symbols whose
+ *   price object was a real-time fallback (fallback:true) — the value is a daily
+ *   close, not a live quote, so the deploy baseline gate rejects it. This second
+ *   channel never changes the startingPrices payload passed to createAgentBattle.
  */
 async function fetchValidatedStartingPrices(allSymbols, baseATRBySymbol) {
   const startingPrices = {};
+  const fallbackSymbols = new Set();
   const PRICE_CONCURRENCY = 5;
   for (let i = 0; i < allSymbols.length; i += PRICE_CONCURRENCY) {
     const batch = allSymbols.slice(i, i + PRICE_CONCURRENCY);
@@ -997,6 +1041,11 @@ async function fetchValidatedStartingPrices(allSymbols, baseATRBySymbol) {
             console.warn(`[guard1] ${symbol} rejected activation current=${p.current} (${reason}); ${value == null ? 'skipped' : `substituted ${value}`}`);
           }
           if (value != null) startingPrices[symbol] = value;
+          // Record real-time-fallback baselines: the value came from a daily
+          // close (fallback:true), not a live quote. A stale cached close can
+          // pass Guard-1 (current === recentClose → 0 ATR error), so the deploy
+          // gate treats a fallback baseline as unusable for the rotation window.
+          if (p.fallback === true) fallbackSymbols.add(symbol);
         }
       } catch (err) {
         console.warn(`[agent/decide] Price fetch failed for ${symbol}:`, err.message);
@@ -1006,7 +1055,7 @@ async function fetchValidatedStartingPrices(allSymbols, baseATRBySymbol) {
       await new Promise(r => setTimeout(r, 200));
     }
   }
-  return startingPrices;
+  return { startingPrices, fallbackSymbols };
 }
 
 /**
@@ -1223,7 +1272,9 @@ export function enrichPrescribedPortfolio(symbols, stockUniverse) {
 // prescription is a LOUD 4xx, never an improvised portfolio — the orchestrator
 // retries on its failure cooldown. The deploy lock is already held by the
 // caller; every early return clears it.
-async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId }) {
+// Exported for behavioral testing of the deploy path (test-only surface; no
+// runtime behavior change). The internal FLAT6 dispatch calls it directly.
+export async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId }) {
   const clearLock = () => agentRef.update({ deployingAt: null }).catch(() => {});
   const modeConfig = resolveModeConfig(FLAT6_GAME_MODE);
   const { groupId, prescribedPortfolio, isCpu, userPicksStance, doubleDownSymbols, userPicks } = req.body;
@@ -1331,7 +1382,33 @@ async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, ag
       baseATRBySymbol[asset.symbol] = asset.baseATR || 2.5;
     }
   }
-  const startingPrices = await fetchValidatedStartingPrices(allAssets.map(a => a.symbol), baseATRBySymbol);
+  const { startingPrices, fallbackSymbols } = await fetchValidatedStartingPrices(allAssets.map(a => a.symbol), baseATRBySymbol);
+
+  // Baseline completeness gate (EODHD pre-rotation containment) — the tournament
+  // twin of the tiered gate above. The required held set is exactly the six flat
+  // picks (star/core/support; tournament battles carry no CPU opponent). Reuses
+  // the Guard-1 result — no second fetch. On an incomplete/degraded set we abort
+  // BEFORE createAgentBattle, release the lock, AND roll back the per-agent
+  // deploy cooldown (lastDeployedAt was stamped upstream), so this battle-less
+  // abort consumes no single-use state and the deploy is genuinely retriable the
+  // moment pricing recovers. (Distinct from the buildGate refusal above, which
+  // deliberately keeps the cooldown to pace prescription retries.)
+  const requiredHeldSymbols = allAssets.map(a => a.symbol).filter(Boolean);
+  const baseline = assessRequiredBaselines(requiredHeldSymbols, startingPrices, fallbackSymbols);
+  if (!baseline.complete) {
+    console.warn(`[agent/decide] [baseline-gate] tournament agent=${agentId} group=${groupId} required=${baseline.requiredCount} usable=${baseline.usableCount} missing=${baseline.missing.join(',') || '(none)'} — incomplete validated baseline, blocking deploy (no battle created)`);
+    await agentRef.update({ deployingAt: null, lastDeployedAt: agent.lastDeployedAt ?? null });
+    return res.status(503).json({
+      error: 'pricing_unavailable',
+      reason: 'pricing_unavailable',
+      retriable: true,
+      missingSymbols: baseline.missing,
+      requiredCount: baseline.requiredCount,
+      usableCount: baseline.usableCount,
+      groupId,
+    });
+  }
+
   const thresholds = buildThresholds(allAssets);
 
   const agentData = {

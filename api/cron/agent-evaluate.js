@@ -15,6 +15,7 @@ import { SHADOW_ASSEMBLY_ENABLED } from '../../src/config/featureFlags.js';
 import { runShadowTickCapture, writeBattleSettlementRecord } from '../_utils/shadowAssemblyCapture.js';
 import { isMarketOpen, getETDate, formatDateString } from '../_utils/marketSchedule.js';
 import { getStockAnalysisData, fetchIntradayBatch, fetchIntradayCandles, filterToLatestSession } from '../_utils/marketDataCache.js';
+import { assessRequiredQuotes } from '../_utils/agentQuoteHealth.js';
 import { resolveBadgeBaseline } from '../_utils/baselineValidation.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import { unionEquippedIntoHotBench } from '../_utils/watchlistEquip.js';
@@ -530,7 +531,7 @@ function buildPoolEmptyFeedEntry({ message, symbolOut, symbolIn = null, regime =
   };
 }
 
-async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map(), masteryFlagView = DARK_FLAG_VIEW) {
+export async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map(), masteryFlagView = DARK_FLAG_VIEW) {
   const battleRef = db.collection('agentBattles').doc(battle.id);
 
   // ---- Idempotency: atomically check and acquire evaluatingAt lock ----
@@ -690,6 +691,26 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         }
       })
     );
+
+    // ---- M1: settlement-safety quote guard ----
+    // If the required held-position quote set is unusable (provider/auth
+    // failure -> missing, or non-finite / non-positive / synthetic-fallback
+    // prices), do NOT convert it into flat 0% scores. Skip this battle's tick,
+    // preserve prior scoreState, release the eval lock, and emit sanitized
+    // degraded telemetry (battle id, counts, symbol names only — no URLs,
+    // payloads, or credentials). Banked/realized points live on the durable
+    // trades[] / scoreState and are untouched. Mirrors the empty-prices abort
+    // guards in the daily-score crons (snake-draft-daily-scores.js:595, etc.).
+    const requiredQuoteSymbols = [...new Set([...portfolioSymbols, ...cpuSymbols])];
+    const quoteHealth = assessRequiredQuotes(requiredQuoteSymbols, prices);
+    if (!quoteHealth.usable) {
+      console.warn(`${LOG_PREFIX} [degraded-quotes] battle=${battle.id} required=${quoteHealth.requiredCount} usable=${quoteHealth.usableCount} missing=${quoteHealth.missing.join(',') || '(none)'} — preserving prior scoreState, skipping tick`);
+      summary.degradedQuotes = (summary.degradedQuotes || 0) + 1;
+      // Release the eval lock we acquired above; a plain early-return would
+      // otherwise leave cronState.evaluatingAt set until the lock ages out.
+      await battleRef.update({ 'cronState.evaluatingAt': null }).catch(() => {});
+      return;
+    }
 
     // ---- Compute macro benchmarks (Amendment 4) ----
     const macroPrices = {
