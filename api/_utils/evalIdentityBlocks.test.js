@@ -14,7 +14,8 @@
 //      dependency, no network in CI.
 //   4. SUBORDINATION CLAUSE: byte-locked against the founder-ruled DR-13
 //      wording (Master Spec V1.1 §2.3, R1 finding 27).
-//   5. Version stamps and dark-by-default behavior.
+//   5. Version stamps and the flag-on render contract (valid key → the fenced
+//      block; unknown/undefined → '', the flag-independent omit rule).
 //
 // Parse rule (founder-ruled, Flag H): the key is the FIRST backticked token
 // on a line starting '**Golden render' — never the exact marker shape
@@ -144,13 +145,22 @@ describe('version stamps (Flag G ruling)', () => {
   });
 });
 
-describe('dark by default — EVAL_IDENTITY_BLOCK_ENABLED=false at merge', () => {
-  it('renderEvalIdentityBlock returns the empty string for every key while dark', () => {
+describe('flag-on render contract — EVAL_IDENTITY_BLOCK_ENABLED=true (live)', () => {
+  // This file keeps the flags module REAL (the BUILD_RULES §4 dependency-surface
+  // guard), so it reads the production flag. After the DR-13 endgame flip that
+  // flag is true, so a valid key renders the fenced block here.
+  it('renderEvalIdentityBlock returns the fenced identity block for every canonical key', () => {
     for (const key of CANONICAL_KEYS) {
-      expect(renderEvalIdentityBlock(key)).toBe('');
+      const block = renderEvalIdentityBlock(key);
+      expect(block).toContain('━━━ ARCHETYPE IDENTITY ━━━');
+      expect(block).toContain(EVAL_IDENTITY_BLOCKS[key].render);
+      expect(block).toContain(EVAL_IDENTITY_SUBORDINATION_CLAUSE);
     }
-    // Unknown keys are also '' while dark, and the flag check comes first —
-    // no per-tick warn noise before the feature exists.
+  });
+
+  it('unknown / undefined keys still omit the block — the omit rule is flag-independent', () => {
+    // A wrong identity is worse than none: membership (never falsiness) gates
+    // the render, so these hold identically flag-off and flag-on.
     expect(renderEvalIdentityBlock('unknown')).toBe('');
     expect(renderEvalIdentityBlock(undefined)).toBe('');
   });

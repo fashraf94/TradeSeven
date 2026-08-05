@@ -31,6 +31,8 @@
 
 **Offline paired-eval harness** (script, not production): for a sample of recent real eval inputs (reuse shadow/fixture data where available; otherwise synthetic fixtures for all six archetypes), render the system prompt flag-off and flag-on, and emit: the diff (should be exactly the identity block), token deltas, and — if cheap to run — paired Haiku decisions on N≥10 identical inputs per archetype for founder review of decision drift. Deliver the harness output as a file with the Commit-2 handback. **No flip in this arc**; the flip PR follows founder review of the harness output, same pattern as #660.
 
+> **UPDATE (DR-13 endgame — flip landed):** validation delivered via the `--dr13` battery in `scripts/paired-eval-harness.js` — 60 real-data swap-eligible fixtures × both variants across temperature 0 and 0.4 (k=3), **840 paired decisions, zero decision drift**; the block's effect is conviction + rationale framing, not measurable decision change at current gate settings. The flip (`EVAL_IDENTITY_BLOCK_ENABLED = true`) shipped in the founder flag-flip PR, sequenced **after** the separate `max_tokens 1024→2048` truncation-headroom PR (recent evals averaged 907/1024 output tokens with ~21% silently truncating the rationale tail).
+
 ## Out of scope
 Registry field-level renderer · compat-cell content · any change to equipped-rule text or `ARCHETYPE_CONSTRAINTS` · prompt restructuring beyond the single inserted block · the flip itself.
 
