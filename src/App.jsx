@@ -3893,16 +3893,26 @@ export default function PortfolioDuel() {
 
     const fetchAgentBattles = async () => {
       try {
-        const { collection, query, where, getDocs, limit } = await import('firebase/firestore');
+        const { collection, query, where, getDocs } = await import('firebase/firestore');
         const { db, auth } = await import('./firebase/config');
         const { TRAINING_CLONE_ID_PREFIX } = await import('./constants/leagueTournament');
         if (!auth.currentUser?.uid) return;
 
+        // No limit() here — deliberately. The training-clone filter below runs
+        // CLIENT-side: a battle doc's only clone marker is its agentId prefix
+        // (the createAgentBattle doc shape carries no isTrainingClone key), so
+        // Firestore cannot drop clones server-side without a range query + a new
+        // composite index. A server-side limit applied BEFORE that filter can
+        // return only clone docs and hide a genuinely live ranked battle —
+        // blanking the "No battle live" card and calming the battle-weather sky
+        // mid-battle (defect D-6). The query is already scoped to one owner's
+        // active battles, so the unbounded read stays small by game mechanics
+        // (≤1 ranked + a handful of training pods). Do NOT re-add a limit as a
+        // read-cost cap unless the clone filter first moves server-side.
         const q = query(
           collection(db, 'agentBattles'),
           where('ownerId', '==', auth.currentUser.uid),
-          where('status', '==', 'active'),
-          limit(5)
+          where('status', '==', 'active')
         );
 
         const snapshot = await getDocs(q);
