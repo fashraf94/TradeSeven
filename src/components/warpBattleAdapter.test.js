@@ -207,3 +207,84 @@ describe('adapter robustness', () => {
     expect(WARP_TUNING.SPEED_RESTING).toBeGreaterThan(0); // guard against a 0 tuning typo
   });
 });
+
+// ===========================================================================
+// Acceptance row A5 — the post-deploy settle (Task 4 Phase 2, ruling R-T4-S1).
+//
+// The settle appends the just-created battle to `activeAgentBattles` optimistically
+// (src/App.jsx, handleCreateAgentTrainingBattle) so the sky lands on BATTLE LIVE at
+// commit instead of decaying to RESTING and waiting up to 120s for the poll to
+// notice. These rows pin the CONTRACT that injection depends on: that the shape it
+// writes really does project to BATTLE LIVE through this adapter. The injection
+// site itself is guarded in src/App.deploySettle.test.js.
+// ===========================================================================
+
+/**
+ * Exactly the object the §2 settle appends — no more fields than App.jsx
+ * actually writes, so this fails if the injection starts relying on something
+ * the deploy response does not carry. Reuses the same deploy/close instants as
+ * the real-doc fixture above.
+ */
+const injectedDoc = (overrides = {}) => ({
+  id: 'battle-just-deployed',
+  agentId: 'agent-1',
+  status: 'active',
+  expiresAt: new Date(CLOSES_AT).toISOString(),
+  activatedAt: new Date(DEPLOYED_AT).toISOString(),
+  createdAt: new Date(DEPLOYED_AT).toISOString(),
+  ...overrides,
+});
+
+describe('A5 — the optimistically injected battle lands the sky on BATTLE LIVE', () => {
+  it('projects to a live game the instant it is injected', () => {
+    const games = toLiveGames([injectedDoc()]);
+    expect(games).toHaveLength(1);
+    expect(isLiveBattle(injectedDoc())).toBe(true);
+  });
+
+  it('resolves to BATTLE LIVE, never an intermediate RESTING dip', () => {
+    // THE ROW THE WHOLE §2 MECHANISM EXISTS FOR. Without the injection the sky
+    // sees an empty live set at commit and resolves RESTING until a poll lands.
+    const games = toLiveGames([injectedDoc()]);
+    const resolved = resolveTier({ liveGames: games, now: DEPLOYED_AT + 1000 });
+    expect(resolved.tier).toBe(WARP_TIER.LIVE);
+    expect(resolved.tier).not.toBe(WARP_TIER.RESTING);
+
+    // ...and with NO injection, the same instant is RESTING — this is the
+    // contradiction the settle removes.
+    expect(resolveTier({ liveGames: [], now: DEPLOYED_AT + 1000 }).tier).toBe(WARP_TIER.RESTING);
+  });
+
+  it('does NOT claim an endgame at the moment of deploy', () => {
+    // A fresh battle is a whole session away from its close; the sky must ramp
+    // for a real endgame, not for having just been deployed.
+    const resolved = resolveTier({ liveGames: toLiveGames([injectedDoc()]), now: DEPLOYED_AT + 1000 });
+    expect(resolved.rampProgress).toBe(0);
+  });
+
+  it('a missing expiresAt still counts as live, capped at BATTLE LIVE', () => {
+    // The deploy response may not carry expiresAt. That is an unprovable clock:
+    // the battle is real and must show as live, but it can never claim a ramp.
+    const games = toLiveGames([injectedDoc({ expiresAt: null })]);
+    expect(games).toHaveLength(1);
+    const resolved = resolveTier({ liveGames: games, now: DEPLOYED_AT + 1000 });
+    expect(resolved.tier).toBe(WARP_TIER.LIVE);
+    expect(resolved.windowMs).toBe(0); // no endgame is reachable
+  });
+
+  it('self-heals: a later poll carrying the real doc replaces it wholesale', () => {
+    // The poll does setActiveAgentBattles(battles) over the whole array, so the
+    // optimistic entry needs no dedup bookkeeping — the server doc simply wins.
+    const serverDoc = { ...injectedDoc(), activatedAt: new Date(DEPLOYED_AT - 500).toISOString() };
+    const games = toLiveGames([serverDoc]);
+    expect(games).toHaveLength(1);
+    expect(resolveTier({ liveGames: games, now: DEPLOYED_AT + 1000 }).tier).toBe(WARP_TIER.LIVE);
+  });
+
+  it('a FAILED deploy injects nothing, so the sky returns to what state warrants', () => {
+    // Deploy failure never reaches the injection site (it lives past the success
+    // gate), so the live set stays empty and the surge simply exhales out.
+    expect(resolveTier({ liveGames: toLiveGames([]), now: DEPLOYED_AT }).tier)
+      .toBe(WARP_TIER.RESTING);
+  });
+});

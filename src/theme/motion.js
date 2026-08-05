@@ -35,7 +35,9 @@
  *   | smooth  | tween  | duration 0.3, ease easeOut  | layout & content — calm, ZERO bounce. A tween by
  *   |         |        |                             | design (a spring cannot be truly bounce-free).
  *   | bouncy  | spring | stiffness 300 / damping 20  | celebratory / emphasis — visible overshoot.
- *   | gesture | spring | stiffness 300 / damping 30  | drag-release physics (Task 4's foundation).
+ *   | gesture | spring | stiffness 300 / damping 30  | drag-release physics. NOT consumed by Task 4:
+ *   |         |        |                             | that arc pivoted from drag to hold-to-deploy and its
+ *   |         |        |                             | easings are canvas rAF, not Framer. Token retained.
  *   |         |        |                             | ζ ≈ 0.87 — the calm settle a released drag wants;
  *   |         |        |                             | Framer springs preserve pointer velocity on interrupt.
  *   | instant | tween  | duration 0                  | the reduced-motion / no-animation case.
@@ -109,7 +111,16 @@ export const smooth = Object.freeze({ duration: 0.3, ease: 'easeOut' });
 /** celebratory / emphasis — visible overshoot. */
 export const bouncy = Object.freeze({ type: 'spring', stiffness: 300, damping: 20 });
 
-/** drag-release physics (Task 4's foundation) — ζ ≈ 0.87 calm settle, velocity preserved on interrupt. */
+/**
+ * drag-release physics — ζ ≈ 0.87 calm settle, velocity preserved on interrupt.
+ *
+ * Originally annotated "Task 4's foundation", which was true while Task 4 was a
+ * drag/flick concept. That concept was RETIRED: the shipped signature deploy is
+ * the hold-to-deploy sky coupling, whose curve, exhale and surge are numeric
+ * easings inside the canvas rAF core (warpStateMachine.js), not Framer
+ * transitions — so Task 4 does not consume this token. It is kept for the six
+ * true-drag sites the Task 3 discovery catalogued; the vocabulary is unchanged.
+ */
 export const gesture = Object.freeze({ type: 'spring', stiffness: 300, damping: 30 });
 
 /** the reduced-motion / no-animation case. Stays { duration: 0 } — never a spring. */

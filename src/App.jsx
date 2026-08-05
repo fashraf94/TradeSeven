@@ -118,7 +118,7 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
-import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn } from './config/featureFlags';
+import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn } from './config/featureFlags';
 // Delight Layer Task 2: the battle-weather starfield. Mounted ONLY at the two
 // dashboard sites below, each behind its own flag; every other DesktopBackground
 // mount is untouched (spec V2 R-T2-S5 + Amendment A2).
@@ -6566,6 +6566,47 @@ export default function PortfolioDuel() {
 
     const odUserId = user.odUserId || user.username;
     const now = new Date();
+
+    // ── Delight Layer Task 4 §2 — the post-deploy settle (ruling R-T4-S1) ────
+    // The sky's live-state input is the 120s `activeAgentBattles` poll, so
+    // without this the commit sequence would read: surge → decay to RESTING →
+    // (up to two minutes later) ease to BATTLE LIVE. A felt contradiction at the
+    // exact moment the coupling exists to honour. So the battle the server just
+    // created is appended optimistically, and the sky lands on BATTLE LIVE.
+    //
+    // This is NOT a new read path (A6/D6): it is a setState on state the app
+    // already holds. The next successful poll replaces the whole array
+    // wholesale (App.jsx:3917), so the optimistic entry self-heals with no
+    // dedup bookkeeping — the real doc already exists server-side by the time
+    // /api/agent/decide returns an id.
+    //
+    // Placed BEFORE the battle-object construction below on purpose: if
+    // anything downstream throws, the battle still genuinely exists server-side
+    // and the sky should still say so.
+    //
+    // Shape is the adapter's contract (warpBattleAdapter.toLiveGame): `status`
+    // must be 'active' to count as live, and expiresAt/activatedAt give the
+    // endgame clock. A missing expiresAt is safe — it reads as an unprovable
+    // clock, which caps the sky at BATTLE LIVE and never invents an endgame.
+    //
+    // FLAG-GATED: `activeAgentBattles` also drives the "No battle live" card and
+    // the deploy CTA's own live/disabled state, so flag-off must not see this at
+    // all (acceptance A1). Flipping the flag deliberately makes that card flip
+    // immediately rather than up to 120s late — named in the flip PR.
+    if (isDeploySkyCouplingOn() && agentBattleId) {
+      setActiveAgentBattles((prev) => {
+        const existing = Array.isArray(prev) ? prev : [];
+        if (existing.some((b) => b?.id === agentBattleId)) return existing;
+        return [...existing, {
+          id: agentBattleId,
+          agentId: agentMeta?.agentId,
+          status: 'active',
+          expiresAt: agentMeta?.expiresAt || null,
+          activatedAt: now.toISOString(),
+          createdAt: now.toISOString(),
+        }];
+      });
+    }
 
     const currentBattleObj = {
       id: agentBattleId || `agent_${Date.now()}`,

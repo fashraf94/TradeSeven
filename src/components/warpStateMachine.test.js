@@ -40,7 +40,29 @@ import {
   reduceIntentEvent,
   intentSpeed,
   applyIntent,
+  isSurging,
 } from './warpStateMachine';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/**
+ * The hold hook's lock beat, read from source.
+ *
+ * INTENT_SURGE_MS mirrors LOCK_BEAT_MS across a deliberate module boundary (the
+ * pure core must not import a React hook), so the mirror is the one thing that
+ * can silently drift. Reading it here turns "they still agree" into a test
+ * rather than a comment — the App.agentBattlesPoll.test.js source-guard idiom.
+ */
+const LOCK_BEAT_MS_FROM_HOOK = (() => {
+  const hook = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../hooks/useHoldToDeploy.js'),
+    'utf8',
+  );
+  const match = hook.match(/const\s+LOCK_BEAT_MS\s*=\s*(\d+)/);
+  if (!match) throw new Error('LOCK_BEAT_MS not found in useHoldToDeploy.js');
+  return Number(match[1]);
+})();
 
 const NOW = 1_800_000_000_000; // fixed epoch — this module never reads a clock
 const MIN = 60 * 1000;
@@ -1127,12 +1149,25 @@ describe('A2 deploy intent — the abort exhale (spec V1 D3)', () => {
     expect(WARP_TUNING.INTENT_EXHALE_MS).toBeLessThan(WARP_TUNING.DECAY_MS);
   });
 
-  it('treats commit and abort identically in Phase 1 (the surge is Phase 2)', () => {
+  it('a commit is LOUDER than an abort while its surge runs, then they converge', () => {
+    // Phase 1 treated the two terminals identically; Phase 2's surge is exactly
+    // what makes them differ, and the difference is the signature. Backing out
+    // and seeing it through must not feel the same.
     let aborted = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
     aborted = reduceIntentEvent(aborted, { progress: null, reason: 'abort' }, NOW);
     let committed = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
     committed = reduceIntentEvent(committed, { progress: null, reason: 'commit' }, NOW);
-    expect(intentSpeed(committed, NOW + 300)).toBe(intentSpeed(aborted, NOW + 300));
+
+    // Inside the surge window the commit is strictly louder...
+    for (const t of [0, 70, 140, 250, 300]) {
+      expect(intentSpeed(committed, NOW + t)).toBeGreaterThanOrEqual(intentSpeed(aborted, NOW + t));
+    }
+    expect(intentSpeed(committed, NOW + WARP_TUNING.INTENT_SURGE_RISE_MS))
+      .toBeGreaterThan(intentSpeed(aborted, NOW + WARP_TUNING.INTENT_SURGE_RISE_MS));
+
+    // ...and once the punch is spent, both ride the SAME exhale out.
+    const after = NOW + WARP_TUNING.INTENT_SURGE_MS + 50;
+    expect(intentSpeed(committed, after)).toBeCloseTo(intentSpeed(aborted, after), 10);
   });
 
   it('resumes from the exhale when a NEW hold starts mid-decay, never snapping to zero', () => {
@@ -1210,5 +1245,151 @@ describe('A3 deploy intent — the payload contract (pure half)', () => {
     reduceIntentEvent(state, { progress: 0.9 }, NOW);
     reduceIntentEvent(state, { progress: null, reason: 'commit' }, NOW);
     expect(state).toEqual(snapshot);
+  });
+});
+
+// ===========================================================================
+// Acceptance rows for the COMMIT SURGE — Task 4 Phase 2.
+// Spec V1 D4, ruling R-T4-S3 option (ii).
+// ===========================================================================
+
+/** Run a hold to `from`, then commit it. Returns the post-commit state. */
+const commitAfterHold = (from = 1, at = NOW) => {
+  const held = reduceIntentEvent(createIntentState(), { progress: from }, at);
+  return reduceIntentEvent(held, { progress: null, reason: 'commit' }, at);
+};
+
+describe('A2 deploy intent — the commit surge (spec V1 D4 / R-T4-S3)', () => {
+  it('punches to the sky ceiling inside the surge window', () => {
+    const state = commitAfterHold();
+    const atPeak = intentSpeed(state, NOW + WARP_TUNING.INTENT_SURGE_RISE_MS);
+    expect(atPeak).toBeCloseTo(WARP_TUNING.INTENT_SURGE_PEAK, 6);
+    // ...and that really is a punch: strictly louder than the hold's own peak.
+    expect(atPeak).toBeGreaterThan(WARP_TUNING.INTENT_PEAK);
+  });
+
+  it('never exceeds the endgame peak — D2 survives the surge', () => {
+    // The commit may REACH the sky's maximum intensity; it may not outrank it.
+    expect(WARP_TUNING.INTENT_SURGE_PEAK).toBeLessThanOrEqual(WARP_TUNING.SPEED_ENDGAME_PEAK);
+    const state = commitAfterHold();
+    for (let t = 0; t <= WARP_TUNING.INTENT_SURGE_MS; t += 10) {
+      expect(intentSpeed(state, NOW + t)).toBeLessThanOrEqual(WARP_TUNING.SPEED_ENDGAME_PEAK + 1e-9);
+    }
+  });
+
+  it('starts exactly where the hold left the sky — no step at the commit', () => {
+    // The defect: launching the surge from 0 (or from the ceiling) puts a
+    // discontinuity at the single most important frame of the interaction.
+    const held = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    const before = intentSpeed(held, NOW);
+    const committed = reduceIntentEvent(held, { progress: null, reason: 'commit' }, NOW);
+    expect(intentSpeed(committed, NOW)).toBeCloseTo(before, 10);
+  });
+
+  it('rises monotonically to the peak, then falls — a punch, not a plateau', () => {
+    const state = commitAfterHold();
+    const rise = WARP_TUNING.INTENT_SURGE_RISE_MS;
+    let previous = -Infinity;
+    for (let t = 0; t <= rise; t += 10) {
+      const value = intentSpeed(state, NOW + t);
+      expect(value).toBeGreaterThanOrEqual(previous - 1e-12);
+      previous = value;
+    }
+    // ...and it is coming back down well before the window closes.
+    expect(intentSpeed(state, NOW + WARP_TUNING.INTENT_SURGE_MS - 10))
+      .toBeLessThan(WARP_TUNING.INTENT_SURGE_PEAK);
+  });
+
+  it('hands off to the exhale rather than dropping to nothing', () => {
+    // At the end of the surge window the sky must still be gliding down on the
+    // exhale — a surge that fell to 0 on its own would be a hard stop.
+    const state = commitAfterHold();
+    const atWindowEnd = intentSpeed(state, NOW + WARP_TUNING.INTENT_SURGE_MS);
+    expect(atWindowEnd).toBeGreaterThan(0);
+    // ...and the whole thing is still bounded by the exhale, as before.
+    expect(intentSpeed(state, NOW + WARP_TUNING.INTENT_EXHALE_MS)).toBe(0);
+  });
+
+  it('is monotone-decreasing after the peak, all the way out', () => {
+    const state = commitAfterHold();
+    let previous = Infinity;
+    for (let t = WARP_TUNING.INTENT_SURGE_RISE_MS; t <= WARP_TUNING.INTENT_EXHALE_MS; t += 10) {
+      const value = intentSpeed(state, NOW + t);
+      expect(value).toBeLessThanOrEqual(previous + 1e-9);
+      previous = value;
+    }
+  });
+
+  it('an ABORT never launches a surge', () => {
+    const held = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    const aborted = reduceIntentEvent(held, { progress: null, reason: 'abort' }, NOW);
+    expect(isSurging(aborted, NOW)).toBe(false);
+    // The abort exhales from the hold's peak and never rises above it.
+    for (let t = 0; t <= WARP_TUNING.INTENT_EXHALE_MS; t += 10) {
+      expect(intentSpeed(aborted, NOW + t)).toBeLessThanOrEqual(WARP_TUNING.INTENT_PEAK + 1e-9);
+    }
+  });
+
+  it('a keyboard commit — no preceding ramp — still punches (R-T4-S4)', () => {
+    // "reads as a very fast hold": the surge launches from a standing start.
+    const state = reduceIntentEvent(createIntentState(), { progress: null, reason: 'commit' }, NOW);
+    expect(intentSpeed(state, NOW)).toBe(0);
+    expect(intentSpeed(state, NOW + WARP_TUNING.INTENT_SURGE_RISE_MS))
+      .toBeCloseTo(WARP_TUNING.INTENT_SURGE_PEAK, 6);
+  });
+
+  it('the surge window fits inside the lock beat it was timed to', () => {
+    // R-T4-S3 option (ii) places the punch in the ~450ms beat between hold
+    // completion and the ceremony scrim mounting. Any longer and part of the
+    // signature beat plays behind the curtain, where nobody sees it.
+    expect(WARP_TUNING.INTENT_SURGE_MS).toBeLessThanOrEqual(LOCK_BEAT_MS_FROM_HOOK);
+    expect(WARP_TUNING.INTENT_SURGE_RISE_MS).toBeLessThan(WARP_TUNING.INTENT_SURGE_MS);
+  });
+});
+
+describe('A2 deploy intent — the commit terminal is AUTHORITATIVE (Phase 2 item 3)', () => {
+  // Phase 2's own settle makes this reachable: injecting the new battle flips
+  // `isLive`, which unmounts the deploy button, and the hook closes its stream
+  // on unmount with an ABORT. An abort landing on an in-flight commit would
+  // replace the signature beat with its exact opposite.
+
+  it('IGNORES an abort that lands while a commit surge is in flight', () => {
+    const committed = commitAfterHold();
+    const midSurge = NOW + 100;
+    expect(isSurging(committed, midSurge)).toBe(true);
+    const after = reduceIntentEvent(committed, { progress: null, reason: 'abort' }, midSurge);
+    expect(after).toBe(committed); // identity — nothing was disturbed
+  });
+
+  it('...and the surge still reaches its full peak afterwards', () => {
+    let state = commitAfterHold();
+    // An abort lands on every frame of the attack; the punch must survive.
+    for (let t = 0; t < WARP_TUNING.INTENT_SURGE_RISE_MS; t += 16) {
+      state = reduceIntentEvent(state, { progress: null, reason: 'abort' }, NOW + t);
+    }
+    expect(intentSpeed(state, NOW + WARP_TUNING.INTENT_SURGE_RISE_MS))
+      .toBeCloseTo(WARP_TUNING.INTENT_SURGE_PEAK, 6);
+  });
+
+  it('an unmount abort with NO reason is also blocked mid-surge', () => {
+    const committed = commitAfterHold();
+    const after = reduceIntentEvent(committed, { progress: null }, NOW + 100);
+    expect(after).toBe(committed);
+  });
+
+  it('accepts an abort again once the surge window has passed', () => {
+    const committed = commitAfterHold();
+    const past = NOW + WARP_TUNING.INTENT_SURGE_MS + 1;
+    expect(isSurging(committed, past)).toBe(false);
+    const after = reduceIntentEvent(committed, { progress: null, reason: 'abort' }, past);
+    expect(after).not.toBe(committed);
+  });
+
+  it('lets a genuine second commit re-anchor the surge', () => {
+    const committed = commitAfterHold();
+    const later = NOW + 200;
+    const again = reduceIntentEvent(committed, { progress: null, reason: 'commit' }, later);
+    expect(again).not.toBe(committed);
+    expect(again.surgeAt).toBe(later);
   });
 });

@@ -160,6 +160,28 @@ export const WARP_TUNING = {
    * or DECAY_MS (30s). Spec says ~1-2s.
    */
   INTENT_EXHALE_MS: 1200,
+
+  // --- the commit surge (Task 4 Phase 2, spec V1 D4 / ruling R-T4-S3) -------
+  /**
+   * Ceiling of the commit punch. Set to SPEED_ENDGAME_PEAK deliberately: the
+   * commit is the ONE moment intent is allowed to reach the sky's maximum
+   * intensity, and it still never EXCEEDS what a real endgame reaches — so D2's
+   * principle ("a hold never outranks a real endgame's drama") survives the
+   * surge intact. Pinned by a test row.
+   */
+  INTENT_SURGE_PEAK: 2.2,
+  /**
+   * Total length of the surge. Mirrors LOCK_BEAT_MS in
+   * src/hooks/useHoldToDeploy.js (450ms) on purpose — ruling R-T4-S3 option
+   * (ii) places the punch inside the lock beat, the last window in which the
+   * sky is still visible before the ceremony scrim mounts. The two constants
+   * live in different modules (the pure core must not import the hook), so
+   * each names the other: changing one without the other pushes part of the
+   * surge behind the curtain.
+   */
+  INTENT_SURGE_MS: 450,
+  /** The attack. Fast rise = the punch; the rest of the window is the release. */
+  INTENT_SURGE_RISE_MS: 140,
 };
 
 /** Fallback tint if --ft-warp-tint is unreadable (matches its resolved value). */
@@ -677,8 +699,28 @@ export function respawnStar(star, rng = Math.random) {
 // ===========================================================================
 //
 // The signature deploy: while the user holds a deploy button the sky leans in,
-// and if they let go early it exhales back. "The room responds to your intent
-// before you commit."
+// if they let go early it exhales back, and if they see it through it punches.
+// "The room responds to your intent before you commit."
+//
+// ---------------------------------------------------------------------------
+// THE THREE BEATS
+// ---------------------------------------------------------------------------
+//   RAMP    intentCurve(progress) rises with the finger, upward-only.
+//   EXHALE  an early release decays back to battle state over ~1.2s (D3). The
+//           abort is half the signature: commitment only has weight if backing
+//           out feels like something.
+//   SURGE   completing the hold punches to the sky's ceiling inside the ~450ms
+//           lock beat (D4 / R-T4-S3), the last window before the ceremony scrim
+//           mounts. Then the existing agent-thinking animation takes the stage
+//           (untouched), and the sky settles at BATTLE LIVE — see the §2 settle
+//           in App.jsx handleCreateAgentTrainingBattle.
+//
+// The surge is OPTIMISTIC by design: it fires at hold completion, before the
+// deploy call resolves. A deploy that then FAILS never reaches BATTLE LIVE —
+// no battle is injected, so the surge simply falls into the exhale and the sky
+// returns to what battle state warrants. That is the abort beat doing double
+// duty, and it is why the settle is gated on confirmed success rather than on
+// the commit.
 //
 // ---------------------------------------------------------------------------
 // THIS IS AN OUTPUT DECORATOR. IT NEVER FEEDS BACK INTO THE TIER MACHINE.
@@ -759,7 +801,7 @@ export function intentCurve(progress, tuning = WARP_TUNING) {
   return tuning.INTENT_PEAK * Math.pow(clamp01(p), tuning.INTENT_CURVE_EXPONENT);
 }
 
-/** Initial overlay state: no hold in flight, nothing exhaling. */
+/** Initial overlay state: no hold in flight, nothing exhaling, no surge. */
 export function createIntentState() {
   return {
     /** Live hold progress 0..1, or null when no hold is charging. */
@@ -768,7 +810,53 @@ export function createIntentState() {
     exhaleFrom: 0,
     /** Wall clock the exhale began, or null when nothing is exhaling. */
     exhaleAt: null,
+    /** Intent speed the commit surge launched from. */
+    surgeFrom: 0,
+    /** Wall clock the commit surge began, or null when none. */
+    surgeAt: null,
   };
+}
+
+/** Is a commit surge still inside its window? */
+export function isSurging(state, now, tuning = WARP_TUNING) {
+  if (!state || state.surgeAt == null) return false;
+  if (!Number.isFinite(now) || !Number.isFinite(state.surgeAt)) return false;
+  return (now - state.surgeAt) < tuning.INTENT_SURGE_MS;
+}
+
+/**
+ * The commit punch (spec V1 D4, ruling R-T4-S3 option ii).
+ *
+ * Shape: a fast attack from wherever the hold left the sky up to the ceiling,
+ * then a release back down. It is deliberately NOT a decay to the resting
+ * speed — the exhale runs underneath it simultaneously, and because the two are
+ * combined with max(), the exhale simply takes over the moment the release
+ * falls below it. That hand-off is what keeps the whole commit beat continuous:
+ * punch, fall, then the long exhale, with no step anywhere (R-RAMP).
+ */
+function surgeSpeed(state, now, tuning = WARP_TUNING) {
+  if (!state || state.surgeAt == null) return 0;
+  // A single unusable read holds the punch rather than dropping it (the same
+  // rule the exhale follows); `surgeAt` is always finite when set.
+  if (!Number.isFinite(now)) return state.surgeFrom;
+  const total = tuning.INTENT_SURGE_MS;
+  if (!(total > 0)) return 0;
+
+  const elapsed = now - state.surgeAt;
+  if (elapsed <= 0) return state.surgeFrom;
+  if (elapsed >= total) return 0;
+
+  // Never let the attack descend: a surge that started from an intent speed
+  // ABOVE the configured ceiling holds that speed instead of dipping.
+  const peak = Math.max(tuning.INTENT_SURGE_PEAK, state.surgeFrom);
+  const rise = Math.min(Math.max(tuning.INTENT_SURGE_RISE_MS, 0), total);
+  const fall = total - rise;
+
+  if (elapsed < rise) {
+    return state.surgeFrom + (peak - state.surgeFrom) * (elapsed / rise);
+  }
+  if (fall <= 0) return peak; // all attack, no release — degenerate but defined
+  return peak * (1 - (elapsed - rise) / fall);
 }
 
 /**
@@ -800,7 +888,11 @@ function exhaleSpeed(state, now, tuning = WARP_TUNING) {
 export function intentSpeed(state, now, tuning = WARP_TUNING) {
   if (!state) return 0;
   const live = state.progress == null ? 0 : intentCurve(state.progress, tuning);
-  return Math.max(live, exhaleSpeed(state, now, tuning));
+  return Math.max(
+    live,
+    exhaleSpeed(state, now, tuning),
+    surgeSpeed(state, now, tuning),
+  );
 }
 
 /**
@@ -816,7 +908,7 @@ export function reduceIntentEvent(state, detail, now, tuning = WARP_TUNING) {
   if (!detail || typeof detail !== 'object') return prev;
 
   // Terminal — abort or commit. Hand the exhale the speed we are AT (which may
-  // itself still include an older exhale), so the release is continuous.
+  // itself still include an older exhale or surge), so the release is continuous.
   if (detail.progress === null) {
     // A terminal with an unusable clock cannot time a decay. Intent CLEARS at
     // once rather than guessing a duration or leaving the sky leaning in on an
@@ -824,14 +916,37 @@ export function reduceIntentEvent(state, detail, now, tuning = WARP_TUNING) {
     // rule the tier machine applies to a game whose clock it cannot prove. In
     // practice `now` is Date.now() from the listener and is always finite.
     if (!Number.isFinite(now)) return createIntentState();
+
+    const committing = detail.reason === 'commit';
+
+    // THE TERMINAL-COLLISION GUARD — a commit surge is AUTHORITATIVE.
+    //
+    // Phase 2's own settle makes this reachable: injecting the new battle flips
+    // `isLive`, which swaps the Deploy section out for Manage
+    // (CommandDashboard.jsx:465 / CommandDashboardDesktop.jsx:221), unmounting
+    // the very button that was just held. The hook closes its stream on unmount
+    // with an ABORT, and an abort landing on an in-flight commit would replace
+    // the signature beat with its exact opposite — a punch turned into a sigh.
+    //
+    // Today the ordering makes that unreachable (the unmount arrives seconds
+    // after fireComplete has set phase 'locked', long past the 450ms window),
+    // but that is a timing margin, not a guarantee, and a future change to the
+    // ceremony could close the gap. So the precedence is structural: while a
+    // commit surge is in flight, nothing but another commit may disturb it.
+    if (!committing && isSurging(prev, now, tuning)) return prev;
+
+    const from = intentSpeed(prev, now, tuning);
     return {
       progress: null,
-      exhaleFrom: intentSpeed(prev, now, tuning),
+      exhaleFrom: from,
       exhaleAt: now,
+      surgeFrom: committing ? from : prev.surgeFrom,
+      surgeAt: committing ? now : prev.surgeAt,
     };
   }
 
-  // Live progress. The exhale is deliberately left running underneath.
+  // Live progress. The exhale (and any surge) is deliberately left running
+  // underneath — see "WHY THE EXHALE IS NEVER CANCELLED".
   if (typeof detail.progress === 'number' && Number.isFinite(detail.progress)) {
     return { ...prev, progress: clamp01(detail.progress) };
   }

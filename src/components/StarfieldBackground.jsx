@@ -13,8 +13,8 @@
 // the z0 background slot BEHIND the dashboard content, and is mounted at exactly
 // two flag-conditional sites (spec V2 D4 + Amendment A2):
 //
-//   src/App.jsx:8631  desktop dashboard  <- isStarfieldOn()
-//   src/App.jsx:8584  mobile dashboard   <- isStarfieldMobileOn()
+//   src/App.jsx:8689  desktop dashboard  <- isStarfieldOn()
+//   src/App.jsx:8642  mobile dashboard   <- isStarfieldMobileOn()
 //
 // Flag off at either site mounts DesktopBackground exactly as before, so the
 // off-state is byte-identical (acceptance row A1). DesktopBackground.jsx is NOT

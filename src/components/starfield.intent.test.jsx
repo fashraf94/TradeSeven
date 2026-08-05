@@ -42,7 +42,7 @@ vi.mock('./warpStateMachine', async (importOriginal) => {
 
 import { isDeploySkyCouplingOn } from '../config/featureFlags';
 import StarfieldBackground from './StarfieldBackground';
-import { DEPLOY_INTENT_EVENT, WARP_TUNING, applyIntent } from './warpStateMachine';
+import { DEPLOY_INTENT_EVENT, WARP_TUNING, applyIntent, createIntentState } from './warpStateMachine';
 import HoldToDeployButton from './Dashboard/deployCeremony/HoldToDeployButton';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -204,8 +204,10 @@ describe('A1 flag OFF — the coupling is inert', () => {
 
     expect(applyIntent).toHaveBeenCalled();
     for (const call of applyIntent.mock.calls) {
-      // applyIntent(coreSpeed, state, now) — the state was never written to.
-      expect(call[1]).toEqual({ progress: null, exhaleFrom: 0, exhaleAt: null });
+      // applyIntent(coreSpeed, state, now) — the state is still pristine, i.e.
+      // the reducer never ran. Compared against createIntentState() rather than
+      // a literal so the row keeps meaning what it says as the state grows.
+      expect(call[1]).toEqual(createIntentState());
     }
     for (const result of applyIntent.mock.results) {
       expect(result.value).toBe(WARP_TUNING.SPEED_RESTING);
@@ -287,6 +289,109 @@ describe('A3 the dispatched contract (flag ON)', () => {
     await fire('pointerdown');
     await advanceTo(600);
     expect(seen).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// Phase 2 — the commit surge and the button polish
+// ===========================================================================
+
+describe('the commit surge reaches the drawn sky (Phase 2, D4 / R-T4-S3)', () => {
+  const mountSky = () => mount(<StarfieldBackground mode="desktop" seed={7} liveGames={[]} />);
+
+  it('punches the DRAWN speed to the ceiling inside the surge window', async () => {
+    await mountSky();
+    flushFrames(1);
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(DEPLOY_INTENT_EVENT, { detail: { progress: 1 } }));
+      window.dispatchEvent(new CustomEvent(DEPLOY_INTENT_EVENT, {
+        detail: { progress: null, reason: 'commit' },
+      }));
+    });
+
+    applyIntent.mockClear();
+    await advanceTo(WARP_TUNING.INTENT_SURGE_RISE_MS);
+    const drawn = applyIntent.mock.results.at(-1).value;
+    expect(drawn).toBeCloseTo(WARP_TUNING.INTENT_SURGE_PEAK, 6);
+    // ...which is strictly louder than the hold that preceded it.
+    expect(drawn).toBeGreaterThan(WARP_TUNING.INTENT_PEAK);
+  });
+
+  it('an unmount abort cannot replace an in-flight commit surge', async () => {
+    // Phase 2's settle flips isLive, which unmounts the deploy button and makes
+    // the hook close its stream with an abort. That abort must not turn the
+    // signature beat into its opposite.
+    await mountSky();
+    flushFrames(1);
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(DEPLOY_INTENT_EVENT, { detail: { progress: 1 } }));
+      window.dispatchEvent(new CustomEvent(DEPLOY_INTENT_EVENT, {
+        detail: { progress: null, reason: 'commit' },
+      }));
+    });
+    nowMs += 60;
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(DEPLOY_INTENT_EVENT, {
+        detail: { progress: null, reason: 'abort' },
+      }));
+    });
+
+    applyIntent.mockClear();
+    await advanceTo(WARP_TUNING.INTENT_SURGE_RISE_MS);
+    expect(applyIntent.mock.results.at(-1).value).toBeCloseTo(WARP_TUNING.INTENT_SURGE_PEAK, 6);
+  });
+});
+
+describe('the button charge glow (Phase 2 cosmetic pass)', () => {
+  const filledButton = () => container.querySelector('button');
+
+  it('is absent when the coupling flag is OFF — the hold looks exactly as today (A1)', () => {
+    // The deploy ceremony is ALREADY live in production, so an ungated cosmetic
+    // change here would ship to users ahead of the flip.
+    isDeploySkyCouplingOn.mockReturnValue(false);
+    return (async () => {
+      await mount(holdButton());
+      expect(filledButton().style.boxShadow).toBe('');
+      await fire('pointerdown');
+      await advanceTo(900);
+      expect(filledButton().style.boxShadow).toBe('');
+    })();
+  });
+
+  it('grows with hold progress when the flag is ON', async () => {
+    await mount(holdButton());
+    const radius = () => {
+      const match = filledButton().style.boxShadow.match(/0 0 ([\d.]+)px/);
+      return match ? Number(match[1]) : 0;
+    };
+    const atRest = radius();
+
+    await fire('pointerdown');
+    await advanceTo(400);
+    const early = radius();
+    await advanceTo(1100);
+    const late = radius();
+
+    expect(early).toBeGreaterThan(atRest);
+    expect(late).toBeGreaterThan(early);
+  });
+
+  it('changes nothing about layout or copy', async () => {
+    // "Contained polish, not a redesign" — the glow is box-shadow and border
+    // colour only, neither of which participates in layout.
+    await mount(holdButton({ label: 'Deploy to BaggerBomb' }));
+    const before = filledButton().style.cssText;
+    await fire('pointerdown');
+    await advanceTo(900);
+    const after = filledButton().style.cssText;
+
+    expect(filledButton().textContent).toContain('Deploy to BaggerBomb');
+    for (const prop of ['padding', 'width', 'height', 'margin', 'font-size', 'gap']) {
+      const read = (css) => (css.match(new RegExp(`(?:^|;)\\s*${prop}:\\s*([^;]*)`)) || [])[1];
+      expect(read(after)).toBe(read(before));
+    }
   });
 });
 

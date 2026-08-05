@@ -1214,7 +1214,7 @@ export const FUNDAMENTAL_MIRROR_ENABLED = true;
  * the deliberate-revert path.
  *
  * When TRUE (CURRENT): that ONE dashboard mount renders `StarfieldBackground`
- * instead of `DesktopBackground` (`App.jsx:8631`) and that ONE root paint
+ * instead of `DesktopBackground` (`App.jsx:8689`) and that ONE root paint
  * (`CommandDashboardDesktop`) becomes transparent so the field shows through.
  * `DesktopBackground.jsx` is NOT edited and keeps rendering on the other six
  * screens — so the app deliberately runs two ambient systems until the
@@ -1222,7 +1222,7 @@ export const FUNDAMENTAL_MIRROR_ENABLED = true;
  * is why the flip did not touch tokenGuardBaseline.json (R-T2-S6).
  *
  * When FALSE (revert path): the desktop dashboard is byte-identical to pre-flip —
- * `App.jsx:8631` mounts `DesktopBackground`, the root keeps its `CMD.bg` paint,
+ * `App.jsx:8689` mounts `DesktopBackground`, the root keeps its `CMD.bg` paint,
  * no loop is ever scheduled (`resolveLoopPlan` returns flag-off), and
  * `StarfieldBackground` is absent from the render tree.
  *
@@ -1268,7 +1268,7 @@ export function isStarfieldOn() {
  * peak intensity is the hard constraint that gated the mobile feel sign-off (A7).
  *
  * When FALSE (revert path): the mobile dashboard is byte-identical to pre-flip —
- * `App.jsx:8584` mounts `DesktopBackground` (which self-returns null on mobile —
+ * `App.jsx:8642` mounts `DesktopBackground` (which self-returns null on mobile —
  * mobile has no background layer at all in that state) and the `CommandDashboard`
  * root keeps its opaque `CMD.bg` paint.
  *
