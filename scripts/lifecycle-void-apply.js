@@ -13,9 +13,13 @@
 //     the pre-check, voidGroup SKIPS (no stale mutation).
 //   - expectedStatus defaults to 'battle' (override with --expectedStatus=).
 //
-// Run with the serverless creds (FIREBASE_PROJECT_ID / _CLIENT_EMAIL / _PRIVATE_KEY):
+// Needs the serverless creds (FIREBASE_PROJECT_ID / _CLIENT_EMAIL / _PRIVATE_KEY).
+// Locally those come from .env.local in the repo root, loaded by
+// ./loadLocalEnv.js. From the repo root:
 //   node scripts/lifecycle-void-apply.js <groupId> --expectedUpdatedAt='<iso>' --confirm
 
+// MUST be imported before firebaseAdmin.js — loads .env.local as a side effect.
+import { requireFirebaseCreds } from './loadLocalEnv.js';
 import { getFirebaseAdmin } from '../api/_utils/firebaseAdmin.js';
 import { voidGroup } from '../api/_utils/tournamentGroupService.js';
 
@@ -39,6 +43,11 @@ if (!groupId || !expectedUpdatedAt) {
   console.error("Usage: node scripts/lifecycle-void-apply.js <groupId> --expectedUpdatedAt='<iso from pre-check>' [--expectedStatus=battle] [--reason=...] [--by=...] --confirm");
   process.exit(1);
 }
+
+// Fail with a one-line instruction rather than firebase-admin's opaque
+// `app/invalid-credential` stack trace. Checked before any Firestore contact,
+// so a credential problem can never leave a half-applied void.
+requireFirebaseCreds();
 
 async function main() {
   const db = getFirebaseAdmin();

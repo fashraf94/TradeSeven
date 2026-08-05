@@ -9,10 +9,14 @@
 //
 // STRICTLY READ-ONLY: performs no writes; does not import voidGroup.
 //
-// Run in an environment with the same creds as the serverless functions
-// (FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY):
+// Needs the same creds as the serverless functions — FIREBASE_PROJECT_ID /
+// FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY. Locally those come from
+// .env.local in the repo root, loaded by ./loadLocalEnv.js (see that file for
+// the exact .env.local format). From the repo root:
 //   node scripts/lifecycle-void-precheck.js <groupId>
 
+// MUST be imported before firebaseAdmin.js — loads .env.local as a side effect.
+import { requireFirebaseCreds } from './loadLocalEnv.js';
 import { getFirebaseAdmin } from '../api/_utils/firebaseAdmin.js';
 import { WEEK_DAYS_REQUIRED } from '../src/constants/leagueTournament.js';
 
@@ -21,6 +25,10 @@ if (!groupId) {
   console.error('Usage: node scripts/lifecycle-void-precheck.js <groupId>');
   process.exit(1);
 }
+
+// Fail with a one-line instruction rather than firebase-admin's opaque
+// `app/invalid-credential` stack trace.
+requireFirebaseCreds();
 
 function dayNumbersOf(dailyScores) {
   return Object.keys(dailyScores || {})
