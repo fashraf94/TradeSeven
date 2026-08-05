@@ -76,6 +76,32 @@
 // rule rather than needing a special case here.
 //
 // ---------------------------------------------------------------------------
+// SECOND INPUT: DEPLOY INTENT (Task 4, Phase 1 — State Map Amendment C)
+// ---------------------------------------------------------------------------
+// This component also LISTENS for `ft-deploy-intent`, dispatched by the shipped
+// hold-to-deploy gesture (src/hooks/useHoldToDeploy.js — the dispatcher header
+// carries the same contract). While a deploy button is held, the sky leans in;
+// on an early release it exhales back.
+//
+//   { progress: 0..1 }          per frame while a pointer hold charges
+//   { progress: null, reason }  terminal — 'abort' or 'commit'
+//   anything else               malformed, ignored by reduceIntentEvent
+//
+// A window event rather than a prop, following the ft-accent-changed shape
+// below: the deploy CTA is a deep descendant of a SIBLING subtree (the dashboard
+// content), not an ancestor of this layer, so a prop would have to be drilled
+// through App for a signal that changes 60 times a second and is transient.
+//
+// Intent is a DECORATION of this component's output and is deliberately absent
+// from the state machine's own integration — see applyIntent's placement in
+// `step` and the R-T4-ARCH block in warpStateMachine.js. It can only ever raise
+// speed, never lower it, and it never changes tier: battle state remains the
+// sole authority for that.
+//
+// Behind DEPLOY_SKY_COUPLING_ENABLED (merged dark). Flag-off registers no
+// listener, so the sky is driven by battle state alone exactly as today.
+//
+// ---------------------------------------------------------------------------
 // FOR WHOEVER RETIRES THE PRICE LINES (ruling R-T2-S6) — READ BEFORE DELETING
 // ---------------------------------------------------------------------------
 // This component REPLACES DesktopBackground at the two dashboard mounts only.
@@ -94,14 +120,18 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readToken } from '../theme/cssTokens';
-import { getWarpDevOverride } from '../config/featureFlags';
+import { getWarpDevOverride, isDeploySkyCouplingOn } from '../config/featureFlags';
 import {
+  DEPLOY_INTENT_EVENT,
   WARP_TUNING,
   advanceWarp,
+  applyIntent,
+  createIntentState,
   createStars,
   createWarpState,
   deviceProfile,
   makeRng,
+  reduceIntentEvent,
   resolveLoopPlan,
   resolveTint,
   respawnStar,
@@ -207,6 +237,36 @@ const StarfieldBackground = ({
     if (typeof window === 'undefined') return undefined;
     window.addEventListener('ft-accent-changed', syncTint);
     return () => window.removeEventListener('ft-accent-changed', syncTint);
+  }, []);
+
+  // --- deploy intent (Task 4, R-T4-ARCH) ------------------------------------
+  // The hold-to-deploy gesture's lean-in. Held in a REF and mutated only by the
+  // listener below, for three separate reasons:
+  //   1. It must not restart the field. The mount effect regenerates the stars
+  //      and resets the warp state, so anything in its dependency array that
+  //      changes at hold-frequency would be catastrophic — this is exactly the
+  //      hazard starfield.depstability.test.jsx exists to guard.
+  //   2. It must not re-render. A setState per animation frame during a 1300ms
+  //      hold is ~78 renders of a component that sits behind the whole
+  //      dashboard.
+  //   3. It must be genuinely INERT under reduced motion (row A4). With no
+  //      setState and no paint() in the listener, a ref that nothing reads is
+  //      the whole cost — because under reduced motion no loop is ever
+  //      scheduled, so nothing reads it. The event is received and dropped.
+  const intentRef = useRef(createIntentState());
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    // Flag-off registers NO listener at all (row A1). With nothing writing the
+    // ref, applyIntent below is provably the identity function.
+    if (!isDeploySkyCouplingOn()) return undefined;
+    const onIntent = (event) => {
+      // Ref write ONLY — never setState, never paint (R-T4-ARCH). The pure core
+      // owns the payload contract, including ignoring malformed detail.
+      intentRef.current = reduceIntentEvent(intentRef.current, event?.detail, Date.now());
+    };
+    window.addEventListener(DEPLOY_INTENT_EVENT, onIntent);
+    return () => window.removeEventListener(DEPLOY_INTENT_EVENT, onIntent);
   }, []);
 
   // --- fresh values without restarting the loop (BaggerBombBackground:83-88) --
@@ -349,12 +409,18 @@ const StarfieldBackground = ({
   }, [project]);
 
   /** Advance depth by the state machine's current speed, then paint. */
-  const step = useCallback((dtMs) => {
+  const step = useCallback((dtMs, now) => {
     const stars = starsRef.current;
     const rng = rngRef.current;
     const { w: width, h: height } = sizeRef.current;
     const dtSeconds = dtMs / 1000;
-    const speed = warpRef.current.speed;
+    // THE CONSUMPTION READ — the one place deploy intent enters the picture
+    // (R-T4-ARCH). `warpRef.current.speed` stays the honest battle-state speed
+    // and is never written back to, so the tier machine's ease anchors and its
+    // decay choice keep integrating as if no hold were happening; the hold only
+    // decorates what gets DRAWN. Intent is upward-only, so with no hold in
+    // flight this is exactly `warpRef.current.speed`.
+    const speed = applyIntent(warpRef.current.speed, intentRef.current, now);
     const dz = speed * WARP_TUNING.Z_RATE * dtSeconds;
 
     for (let i = 0; i < stars.length; i += 1) {
@@ -392,7 +458,7 @@ const StarfieldBackground = ({
       dtMs,
     });
 
-    step(dtMs);
+    step(dtMs, now);
     rafRef.current = requestAnimationFrame(animate);
   }, [currentGames, step]);
 

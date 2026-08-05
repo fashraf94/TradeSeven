@@ -114,6 +114,29 @@ export const WARP_TUNING = {
   ALPHA_GAIN: 1.5,
   /** Opacity of the single static frame drawn under prefers-reduced-motion. */
   STATIC_FRAME_ALPHA: 0.35,
+
+  // --- deploy intent (Task 4, spec V1 D2/D3 — see the overlay block below) --
+  /**
+   * Peak of the hold-intent curve. DELIBERATELY below SPEED_ENDGAME_PEAK (2.2)
+   * so a hold can never outrank a real endgame's drama (D2). It sits above
+   * SPEED_LIVE (0.5), so a completed hold reads as faster than a live battle.
+   */
+  INTENT_PEAK: 1.4,
+  /**
+   * Shape of that curve: `peak * progress^n`. n > 1 is what makes the hold
+   * "gentle through the first two-thirds, steepening in the final third" (§1).
+   * At 2.5: the two-thirds mark has delivered ~36% of the rise, so the final
+   * third delivers ~64% — completing the hold feels like crossing a threshold.
+   * From a RESTING sky (0.12) the curve becomes visible ~37% in (~490ms of the
+   * shipped 1300ms hold), which leaves most of the hold as felt ramp.
+   */
+  INTENT_CURVE_EXPONENT: 2.5,
+  /**
+   * The abort exhale (D3). Its own duration, deliberately NOT a tier ease: an
+   * abort must be felt promptly, so this is far shorter than TIER_EASE_MS (15s)
+   * or DECAY_MS (30s). Spec says ~1-2s.
+   */
+  INTENT_EXHALE_MS: 1200,
 };
 
 /** Fallback tint if --ft-warp-tint is unreadable (matches its resolved value). */
@@ -622,4 +645,192 @@ export function respawnStar(star, rng = Math.random) {
   star.z = 1;
   star.pz = 1;
   return star;
+}
+
+// ===========================================================================
+// THE DEPLOY-INTENT OVERLAY
+// Delight Layer arc, Task 4 (Phase 1). State Map Amendment C, ruling R-T4-ARCH.
+// Basis: docs/audits/20260801_DELIGHT_DEPLOY_SKY_COUPLING_PHASE0_DISCOVERY.md
+// ===========================================================================
+//
+// The signature deploy: while the user holds a deploy button the sky leans in,
+// and if they let go early it exhales back. "The room responds to your intent
+// before you commit."
+//
+// ---------------------------------------------------------------------------
+// THIS IS AN OUTPUT DECORATOR. IT NEVER FEEDS BACK INTO THE TIER MACHINE.
+// ---------------------------------------------------------------------------
+// Amendment C admits user deploy intent as a SECOND input class — transient,
+// upward-only, non-authoritative. Battle state remains the sole authority for
+// tier. Ruling R-T4-ARCH fixes exactly where that lands in code:
+//
+//   applyIntent() is called at the CONSUMPTION READ (StarfieldBackground.step,
+//   where the loop reads warpRef.current.speed), NEVER inside advanceWarp's
+//   returned state.speed and NEVER inside targetSpeed.
+//
+// That is not a style preference — the other two placements are BROKEN. Both
+// `advanceWarp`'s ease anchor (`anchorSpeed = prev.speed`) and its transition
+// choice (`resolveEaseMs` reads `prev.speed`/`prev.tier`) are computed from the
+// PREVIOUS frame's speed. Writing an intent-inflated speed back into the state
+// would make the sky, on the frame a hold ends, believe it is easing down from
+// 1.4 — re-anchoring the 15s tier ease (or the 30s decay) against a speed no
+// battle ever justified, and corrupting the `targetMoved` guard along with it.
+// The tier machine must keep integrating as if no hold were happening; the
+// hold only decorates what gets DRAWN.
+//
+// So: `state.speed` stays the honest battle-state speed. The overlay carries
+// its own transient easing state, held in a ref by the component and advanced
+// only by the events it receives plus the wall clock.
+//
+// ---------------------------------------------------------------------------
+// UPWARD-ONLY, ALWAYS (spec §3)
+// ---------------------------------------------------------------------------
+// `speed = max(stateSpeed, intent)`. Intent can never slow the sky below what
+// battle state warrants. A corollary the founder ratified (R-T4-S3b): during a
+// real ENDGAME (up to 2.2) a hold adds nothing visible, because INTENT_PEAK is
+// deliberately lower. The sky is already telling a more important truth, and
+// the button's own fill still communicates hold progress.
+//
+// ---------------------------------------------------------------------------
+// WHY THE EXHALE IS NEVER CANCELLED
+// ---------------------------------------------------------------------------
+// The live curve and the exhale are combined with max() rather than the exhale
+// being cleared when a new hold starts. That is what makes a re-hold DURING an
+// exhale continuous: the curve starts at 0 and would otherwise drop the sky
+// from mid-exhale to nothing in a single frame — a visible snap, precisely the
+// kind of step R-RAMP exists to forbid. Letting the exhale keep decaying
+// underneath while the new curve climbs means the louder of the two always
+// wins, so the sky only ever glides.
+
+/**
+ * The intent channel's event name — the ONE definition, imported by BOTH ends
+ * (the dispatcher in src/hooks/useHoldToDeploy.js and the listener in
+ * StarfieldBackground.jsx) so the two can never drift to different strings.
+ *
+ * Payload contract (acceptance row A3):
+ *   detail: { progress: number }  0..1, dispatched per animation frame while a
+ *                                 POINTER hold charges.
+ *   detail: { progress: null }    terminal — the hold ended, by abort OR by
+ *                                 commit. Starts the exhale.
+ * Anything else is malformed and is IGNORED by reduceIntentEvent.
+ *
+ * `reason: 'abort' | 'commit'` rides along on the terminal event. Phase 1 does
+ * not read it (both terminals exhale identically); it exists from the start so
+ * Phase 2's commit surge does not have to change a shipped contract.
+ */
+export const DEPLOY_INTENT_EVENT = 'ft-deploy-intent';
+
+/**
+ * The hold curve (D2). Eased, gentle → steep, peaking below the endgame.
+ *
+ * Monotone non-decreasing in `progress`, which acceptance row A2 pins: a hold
+ * that is further along must never ask the sky for LESS speed.
+ *
+ * Returns 0 for an unusable progress rather than NaN — a NaN speed propagates
+ * into the star-depth integration and pins every star at z = NaN, a permanently
+ * blank field with no error anywhere (the same hazard targetSpeed guards).
+ */
+export function intentCurve(progress, tuning = WARP_TUNING) {
+  const p = Number(progress);
+  if (!Number.isFinite(p)) return 0;
+  return tuning.INTENT_PEAK * Math.pow(clamp01(p), tuning.INTENT_CURVE_EXPONENT);
+}
+
+/** Initial overlay state: no hold in flight, nothing exhaling. */
+export function createIntentState() {
+  return {
+    /** Live hold progress 0..1, or null when no hold is charging. */
+    progress: null,
+    /** Intent speed at the instant the terminal event arrived. */
+    exhaleFrom: 0,
+    /** Wall clock the exhale began, or null when nothing is exhaling. */
+    exhaleAt: null,
+  };
+}
+
+/**
+ * How much speed the fading exhale still contributes.
+ *
+ * Quadratic ease-out: a quick initial release that settles gently — an exhale,
+ * not a linear fade. Reaches EXACTLY 0 at INTENT_EXHALE_MS, which is what lets
+ * A2 assert "the abort exhale reaches state speed within bound" as equality
+ * rather than an epsilon.
+ */
+function exhaleSpeed(state, now, tuning = WARP_TUNING) {
+  if (!state || state.exhaleAt == null || !(state.exhaleFrom > 0)) return 0;
+  // A single unusable READ holds the exhale at its current start value rather
+  // than snapping it to zero; `exhaleAt` is always finite when set (see the
+  // terminal branch of reduceIntentEvent), so the next frame with a good clock
+  // resumes the decay from the right place and this can never strand.
+  if (!Number.isFinite(now)) return state.exhaleFrom;
+  const span = tuning.INTENT_EXHALE_MS;
+  if (!(span > 0)) return 0;
+  const t = clamp01((now - state.exhaleAt) / span);
+  const remaining = 1 - t;
+  return state.exhaleFrom * remaining * remaining;
+}
+
+/**
+ * Total speed the overlay is asking for right now — the louder of the live
+ * hold and the still-fading exhale (see "WHY THE EXHALE IS NEVER CANCELLED").
+ */
+export function intentSpeed(state, now, tuning = WARP_TUNING) {
+  if (!state) return 0;
+  const live = state.progress == null ? 0 : intentCurve(state.progress, tuning);
+  return Math.max(live, exhaleSpeed(state, now, tuning));
+}
+
+/**
+ * Fold one `ft-deploy-intent` payload into the overlay state. Pure: returns the
+ * NEXT state and never mutates the input.
+ *
+ * A malformed payload returns the SAME state object by identity, so "the
+ * listener ignores malformed payloads" (row A3) is assertable with toBe() and a
+ * stray event can never churn the field.
+ */
+export function reduceIntentEvent(state, detail, now, tuning = WARP_TUNING) {
+  const prev = state || createIntentState();
+  if (!detail || typeof detail !== 'object') return prev;
+
+  // Terminal — abort or commit. Hand the exhale the speed we are AT (which may
+  // itself still include an older exhale), so the release is continuous.
+  if (detail.progress === null) {
+    // A terminal with an unusable clock cannot time a decay. Intent CLEARS at
+    // once rather than guessing a duration or leaving the sky leaning in on an
+    // exhale that can never be measured — the conservative answer, the same
+    // rule the tier machine applies to a game whose clock it cannot prove. In
+    // practice `now` is Date.now() from the listener and is always finite.
+    if (!Number.isFinite(now)) return createIntentState();
+    return {
+      progress: null,
+      exhaleFrom: intentSpeed(prev, now, tuning),
+      exhaleAt: now,
+    };
+  }
+
+  // Live progress. The exhale is deliberately left running underneath.
+  if (typeof detail.progress === 'number' && Number.isFinite(detail.progress)) {
+    return { ...prev, progress: clamp01(detail.progress) };
+  }
+
+  return prev; // undefined, NaN, string, boolean — malformed.
+}
+
+/**
+ * R-T4-ARCH — the whole coupling, as one pure function.
+ *
+ * Called at the consumption read to decorate what gets DRAWN. The tier
+ * machine's own `speed` is untouched and keeps integrating honestly.
+ *
+ * @param {number} coreSpeed  advanceWarp's battle-state speed for this frame.
+ * @param {object|null} state The overlay state (a component ref).
+ * @param {number} now        Wall clock, epoch ms — this module never reads one.
+ * @returns {number} the speed to draw with: never below `coreSpeed`.
+ */
+export function applyIntent(coreSpeed, state, now, tuning = WARP_TUNING) {
+  const intent = intentSpeed(state, now, tuning);
+  // A non-finite core speed would poison max() and blank the field; fall back
+  // to the intent alone rather than propagating NaN into the star depths.
+  if (!Number.isFinite(coreSpeed)) return intent;
+  return Math.max(coreSpeed, intent);
 }

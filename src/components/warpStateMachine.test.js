@@ -34,6 +34,12 @@ import {
   makeRng,
   createStars,
   respawnStar,
+  DEPLOY_INTENT_EVENT,
+  intentCurve,
+  createIntentState,
+  reduceIntentEvent,
+  intentSpeed,
+  applyIntent,
 } from './warpStateMachine';
 
 const NOW = 1_800_000_000_000; // fixed epoch — this module never reads a clock
@@ -981,5 +987,213 @@ describe('seeded init (R-T2-S7)', () => {
   it('createStars tolerates a zero or negative count', () => {
     expect(createStars(0)).toEqual([]);
     expect(createStars(-5)).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// Acceptance row A2 — the deploy-intent overlay.
+// Delight Layer arc, Task 4 (Phase 1). State Map Amendment C, ruling R-T4-ARCH.
+//
+// Every row here is written to fail under its OWN specific defect, per the same
+// standard the Task-2 rows above hold to.
+// ===========================================================================
+
+describe('A2 deploy intent — the curve (spec V1 D2)', () => {
+  it('is monotone non-decreasing in progress', () => {
+    // The defect this catches: any curve that dips means holding LONGER could
+    // ask the sky for LESS speed.
+    let previous = -Infinity;
+    for (let i = 0; i <= 100; i += 1) {
+      const value = intentCurve(i / 100);
+      expect(value).toBeGreaterThanOrEqual(previous);
+      previous = value;
+    }
+  });
+
+  it('peaks below the ENDGAME peak, so a hold never outranks a real endgame', () => {
+    expect(intentCurve(1)).toBe(WARP_TUNING.INTENT_PEAK);
+    expect(WARP_TUNING.INTENT_PEAK).toBeLessThan(WARP_TUNING.SPEED_ENDGAME_PEAK);
+    // ...and above BATTLE LIVE, else a completed hold would read as calmer than
+    // simply having a battle running.
+    expect(WARP_TUNING.INTENT_PEAK).toBeGreaterThan(WARP_TUNING.SPEED_LIVE);
+  });
+
+  it('starts at zero, so an idle sky is untouched', () => {
+    expect(intentCurve(0)).toBe(0);
+  });
+
+  it('is gentle through the first two-thirds and steep in the final third', () => {
+    // The threshold feeling (§1). A LINEAR curve fails this row.
+    const atTwoThirds = intentCurve(2 / 3) / WARP_TUNING.INTENT_PEAK;
+    expect(atTwoThirds).toBeLessThan(0.45);
+    expect(1 - atTwoThirds).toBeGreaterThan(0.55); // the final third does the work
+  });
+
+  it('returns 0 rather than NaN for an unusable progress', () => {
+    // A NaN speed pins every star at z = NaN — a blank field with no error.
+    expect(intentCurve(NaN)).toBe(0);
+    expect(intentCurve(undefined)).toBe(0);
+    expect(intentCurve('nope')).toBe(0);
+  });
+
+  it('clamps out-of-range progress instead of extrapolating past the peak', () => {
+    expect(intentCurve(5)).toBe(WARP_TUNING.INTENT_PEAK);
+    expect(intentCurve(-2)).toBe(0);
+  });
+});
+
+describe('A2 deploy intent — applyIntent is upward-only (Amendment C)', () => {
+  it('never lowers the sky below its battle-state speed', () => {
+    const state = reduceIntentEvent(createIntentState(), { progress: 0.2 }, NOW);
+    // A hold barely begun asks for less than an ENDGAME sky is already doing.
+    expect(intentSpeed(state, NOW)).toBeLessThan(WARP_TUNING.SPEED_ENDGAME_PEAK);
+    expect(applyIntent(WARP_TUNING.SPEED_ENDGAME_PEAK, state, NOW))
+      .toBe(WARP_TUNING.SPEED_ENDGAME_PEAK);
+  });
+
+  it('raises a RESTING sky once the hold is far enough along', () => {
+    const state = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    expect(applyIntent(WARP_TUNING.SPEED_RESTING, state, NOW))
+      .toBe(WARP_TUNING.INTENT_PEAK);
+  });
+
+  it('is the identity when no hold has ever happened', () => {
+    const idle = createIntentState();
+    for (const speed of [WARP_TUNING.SPEED_RESTING, WARP_TUNING.SPEED_LIVE, 2.2]) {
+      expect(applyIntent(speed, idle, NOW)).toBe(speed);
+    }
+  });
+
+  it('is the identity for a null state (flag-off / never-initialised)', () => {
+    expect(applyIntent(WARP_TUNING.SPEED_LIVE, null, NOW)).toBe(WARP_TUNING.SPEED_LIVE);
+  });
+
+  it('never propagates a NaN core speed into the star depths', () => {
+    const state = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    expect(applyIntent(NaN, state, NOW)).toBe(WARP_TUNING.INTENT_PEAK);
+    expect(Number.isFinite(applyIntent(NaN, createIntentState(), NOW))).toBe(true);
+  });
+});
+
+describe('A2 deploy intent — the abort exhale (spec V1 D3)', () => {
+  it('exhales from the speed the hold actually reached, not from the peak', () => {
+    let state = reduceIntentEvent(createIntentState(), { progress: 0.5 }, NOW);
+    const reached = intentSpeed(state, NOW);
+    state = reduceIntentEvent(state, { progress: null, reason: 'abort' }, NOW);
+    expect(intentSpeed(state, NOW)).toBeCloseTo(reached, 10);
+  });
+
+  it('decays monotonically to EXACTLY the state speed within INTENT_EXHALE_MS', () => {
+    let state = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    state = reduceIntentEvent(state, { progress: null, reason: 'abort' }, NOW);
+
+    let previous = Infinity;
+    for (let t = 0; t <= WARP_TUNING.INTENT_EXHALE_MS; t += 50) {
+      const value = intentSpeed(state, NOW + t);
+      expect(value).toBeLessThanOrEqual(previous + 1e-12);
+      previous = value;
+    }
+    // Bound reached, and the sky is back to exactly what battle state warrants.
+    expect(intentSpeed(state, NOW + WARP_TUNING.INTENT_EXHALE_MS)).toBe(0);
+    expect(applyIntent(WARP_TUNING.SPEED_RESTING, state, NOW + WARP_TUNING.INTENT_EXHALE_MS))
+      .toBe(WARP_TUNING.SPEED_RESTING);
+  });
+
+  it('stays cleared forever after the exhale completes', () => {
+    let state = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    state = reduceIntentEvent(state, { progress: null, reason: 'commit' }, NOW);
+    const wayLater = NOW + 60 * 60 * 1000;
+    expect(intentSpeed(state, wayLater)).toBe(0);
+    expect(applyIntent(WARP_TUNING.SPEED_LIVE, state, wayLater)).toBe(WARP_TUNING.SPEED_LIVE);
+  });
+
+  it('is far shorter than the tier eases — an abort must be felt promptly', () => {
+    expect(WARP_TUNING.INTENT_EXHALE_MS).toBeLessThan(WARP_TUNING.TIER_EASE_MS);
+    expect(WARP_TUNING.INTENT_EXHALE_MS).toBeLessThan(WARP_TUNING.DECAY_MS);
+  });
+
+  it('treats commit and abort identically in Phase 1 (the surge is Phase 2)', () => {
+    let aborted = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    aborted = reduceIntentEvent(aborted, { progress: null, reason: 'abort' }, NOW);
+    let committed = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    committed = reduceIntentEvent(committed, { progress: null, reason: 'commit' }, NOW);
+    expect(intentSpeed(committed, NOW + 300)).toBe(intentSpeed(aborted, NOW + 300));
+  });
+
+  it('resumes from the exhale when a NEW hold starts mid-decay, never snapping to zero', () => {
+    // The defect: clearing the exhale on a live event drops the sky from
+    // mid-exhale to nothing in one frame — the step R-RAMP forbids.
+    let state = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    state = reduceIntentEvent(state, { progress: null, reason: 'abort' }, NOW);
+
+    const midExhale = NOW + 300;
+    const stillFading = intentSpeed(state, midExhale);
+    expect(stillFading).toBeGreaterThan(0);
+
+    state = reduceIntentEvent(state, { progress: 0 }, midExhale);
+    expect(intentSpeed(state, midExhale)).toBeCloseTo(stillFading, 10);
+  });
+
+  it('lets a new hold overtake the fading exhale once its curve is louder', () => {
+    let state = reduceIntentEvent(createIntentState(), { progress: 0.5 }, NOW);
+    state = reduceIntentEvent(state, { progress: null, reason: 'abort' }, NOW);
+    state = reduceIntentEvent(state, { progress: 1 }, NOW + 100);
+    expect(intentSpeed(state, NOW + 100)).toBe(WARP_TUNING.INTENT_PEAK);
+  });
+});
+
+describe('A3 deploy intent — the payload contract (pure half)', () => {
+  it('names the event once, for both ends of the channel', () => {
+    expect(DEPLOY_INTENT_EVENT).toBe('ft-deploy-intent');
+  });
+
+  it('accepts a live progress and clamps it into 0..1', () => {
+    expect(reduceIntentEvent(createIntentState(), { progress: 0.4 }, NOW).progress).toBe(0.4);
+    expect(reduceIntentEvent(createIntentState(), { progress: 1.2 }, NOW).progress).toBe(1);
+    expect(reduceIntentEvent(createIntentState(), { progress: -3 }, NOW).progress).toBe(0);
+  });
+
+  it('treats a null progress as terminal', () => {
+    const state = reduceIntentEvent(createIntentState(), { progress: null }, NOW);
+    expect(state.progress).toBe(null);
+    expect(state.exhaleAt).toBe(NOW);
+  });
+
+  it('IGNORES malformed payloads, returning the same state by identity', () => {
+    const state = reduceIntentEvent(createIntentState(), { progress: 0.6 }, NOW);
+    for (const bad of [
+      undefined, null, 'ft-deploy-intent', 42, true,
+      {}, { progress: undefined }, { progress: NaN }, { progress: 'half' },
+      { progress: true }, { progress: {} }, { proggress: 0.5 },
+    ]) {
+      expect(reduceIntentEvent(state, bad, NOW)).toBe(state);
+    }
+  });
+
+  it('CLEARS intent when a terminal arrives with an unusable clock, never stranding the sky', () => {
+    // The defect: keeping exhaleFrom while failing to stamp exhaleAt leaves the
+    // sky leaning in on an exhale that can never be measured — pinned fast
+    // forever by a hold that already ended.
+    let state = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    state = reduceIntentEvent(state, { progress: null, reason: 'abort' }, NaN);
+    expect(intentSpeed(state, NOW)).toBe(0);
+    expect(applyIntent(WARP_TUNING.SPEED_RESTING, state, NOW)).toBe(WARP_TUNING.SPEED_RESTING);
+  });
+
+  it('holds the exhale through a single unusable READ, then resumes on the next good frame', () => {
+    let state = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    state = reduceIntentEvent(state, { progress: null, reason: 'abort' }, NOW);
+    // One bad frame must not resolve to NaN (a blank field) nor snap to zero.
+    expect(intentSpeed(state, NaN)).toBe(WARP_TUNING.INTENT_PEAK);
+    // ...and the decay still lands on time, measured from the real stamp.
+    expect(intentSpeed(state, NOW + WARP_TUNING.INTENT_EXHALE_MS)).toBe(0);
+  });
+
+  it('never mutates the state handed to it', () => {
+    const state = createIntentState();
+    const snapshot = { ...state };
+    reduceIntentEvent(state, { progress: 0.9 }, NOW);
+    reduceIntentEvent(state, { progress: null, reason: 'commit' }, NOW);
+    expect(state).toEqual(snapshot);
   });
 });

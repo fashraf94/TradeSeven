@@ -1332,3 +1332,62 @@ export function getWarpDevOverride() {
     return null;
   }
 }
+
+/**
+ * Delight Layer Task 4 — the SIGNATURE DEPLOY (hold-to-deploy sky coupling).
+ * Spec V1 decision D1. Basis:
+ * docs/audits/20260801_DELIGHT_DEPLOY_SKY_COUPLING_PHASE0_DISCOVERY.md
+ *
+ * The room responds to your intent before you commit: while the user holds a
+ * deploy button, the shipped hold gesture (`useHoldToDeploy`) dispatches
+ * `ft-deploy-intent` and the starfield leans in — speed rises with hold
+ * progress, exhales back on an early release, and (Phase 2) surges at commit.
+ *
+ * MERGED DARK at false. This is the Task-2 starfield's own merge-dark posture,
+ * for the same reason: the whole feature is a FEEL change that only a founder
+ * pass on the Vercel preview can judge (acceptance row A7).
+ *
+ * When FALSE (CURRENT): `useHoldToDeploy` dispatches NOTHING (the guard sits at
+ * the dispatch helper, so every one of the six hold sites is covered at once)
+ * and `StarfieldBackground` registers NO intent listener. The hold behaves
+ * exactly as it shipped this week and the sky is driven by battle state alone —
+ * byte-identical to today (acceptance row A1, pinned by
+ * starfield.intent.test.jsx).
+ *
+ * When TRUE (flip path): the coupling is live wherever the hold already exists.
+ * NOTE FOR THE FLIP PR (founder ruling R-T4-S1): flipping this ALSO makes the
+ * "No battle live" card flip immediately on a successful deploy rather than up
+ * to 120s late, because the Phase-2 settle appends the new battle to the shared
+ * `activeAgentBattles` state. That is a truthfulness improvement, not a
+ * regression — but it is a behaviour change OUTSIDE the sky and must be named
+ * in the flip PR so it does not surprise a reviewer reading the diff.
+ *
+ * Flipping is as deliberate as the merge was: per BUILD_RULES §2/§11 the flip
+ * PR MUST, in the SAME commit, update every assertion and docstring that pins
+ * the pre-flip state — the value pins in starfield.intent.test.jsx and this
+ * docstring.
+ */
+export const DEPLOY_SKY_COUPLING_ENABLED = false;
+
+/**
+ * The ONE home for the deploy-sky-coupling gate — the flag OR the
+ * `?deploySkyCoupling=1` dev-preview override (the `?starfield=1` idiom).
+ * SSR/Node-safe (guards `window`); a malformed URL degrades to the flag alone.
+ *
+ * This is the URL param the Phase-1 SOFT-STOP feel pass runs behind.
+ *
+ * Called per dispatch rather than latched at mount, deliberately: it is the
+ * most direct guarantee that flag-off dispatches nothing (A1), with no window
+ * where a cached value could disagree with the flag. Once the constant is true
+ * the function returns on its first line, so the URL parse only ever runs in
+ * the dark/preview state.
+ */
+export function isDeploySkyCouplingOn() {
+  if (DEPLOY_SKY_COUPLING_ENABLED) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('deploySkyCoupling') === '1';
+  } catch {
+    return false;
+  }
+}
