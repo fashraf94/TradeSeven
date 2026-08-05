@@ -107,4 +107,7 @@ describe('climbSeriesPhase', () => {
   it('complete (terminal) when EXPIRED, even with no banked day — never reads awaiting (Training-Pod P0 R2)', () => {
     expect(climbSeriesPhase(group({}, { status: 'expired' }))).toBe('complete');
   });
+  it('complete (terminal) when VOIDED, even with banked days present — never reads live (L-A)', () => {
+    expect(climbSeriesPhase(group({ day1: { closeScores: {} }, day2: { closeScores: {} } }, { status: 'voided' }))).toBe('complete');
+  });
 });

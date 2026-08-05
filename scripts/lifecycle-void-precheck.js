@@ -73,10 +73,18 @@ async function main() {
     }
   }
   console.log('');
-  console.log('-- If you approve the void, these are the MANDATORY pins for voidGroup / the apply script --');
-  console.log(`  expectedStatus    : ${JSON.stringify(g.status)}`);
-  console.log(`  expectedUpdatedAt : ${JSON.stringify(g.updatedAt ?? null)}`);
-  console.log('  (a doc that moves after this read fails the pin and SKIPS - no stale mutation)');
+  const updatedAtRaw = g.updatedAt ?? '';
+  console.log('-- MANDATORY pins for the apply step (values are RAW - do not add quotes) --');
+  console.log(`  expectedStatus    : ${g.status}`);
+  console.log(`  expectedUpdatedAt : ${updatedAtRaw || '(none)'}`);
+  console.log('');
+  console.log('  Apply command (run ONLY after founder approval; omit --confirm for a dry-run preview):');
+  console.log(`    node scripts/lifecycle-void-apply.js ${groupId} --expectedStatus='${g.status}' --expectedUpdatedAt='${updatedAtRaw}' --confirm`);
+  console.log('');
+  console.log('  NOTE: nightly banking bumps this group\'s updatedAt every night (~21:15 UTC) while it');
+  console.log('  is still in BATTLE. Run the apply the SAME UTC day as this pre-check. If a bank lands');
+  console.log('  in between, the void SAFELY SKIPS (version_changed) - just re-run this pre-check for a');
+  console.log('  fresh expectedUpdatedAt and re-apply. It never stale-mutates.');
   console.log('');
   console.log('READ-ONLY pre-check complete. No document was modified.');
 }

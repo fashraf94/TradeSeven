@@ -231,6 +231,12 @@ export async function voidGroup(db, groupId, { reason = null, by = null, now, ex
       return { groupId, voided: false, status: null, reason: 'not_found' };
     }
     const data = snap.data();
+    // L-A scope guard: VOIDED is the RANKED-cohort disposition — never void a
+    // training pod (it runs its own EXPIRED/COMPLETE lifecycle). Refuse defensively
+    // even if a training id is passed by mistake (skip, no write).
+    if (data.isTraining === true) {
+      return { groupId, voided: false, status: data.status, reason: 'training_not_voidable' };
+    }
     // Precondition — only void the exact doc the caller judged poisoned.
     if (data.status !== expectedStatus) {
       return { groupId, voided: false, status: data.status, reason: 'status_changed' };

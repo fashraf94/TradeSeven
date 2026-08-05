@@ -22,7 +22,11 @@ import { voidGroup } from '../api/_utils/tournamentGroupService.js';
 function argVal(name) {
   const prefix = `--${name}=`;
   const hit = process.argv.find((a) => a.startsWith(prefix));
-  return hit ? hit.slice(prefix.length) : null;
+  if (!hit) return null;
+  // Strip one layer of MATCHED surrounding quotes, defensively — a value pasted
+  // verbatim from the pre-check must pin cleanly whether or not it carried quotes
+  // (guards the "quoted value -> always version_changed" foot-gun).
+  return hit.slice(prefix.length).replace(/^(['"])([\s\S]*)\1$/, '$2');
 }
 const groupId = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : null;
 const confirm = process.argv.includes('--confirm');

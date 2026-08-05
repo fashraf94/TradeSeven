@@ -272,6 +272,13 @@ describe('voidGroup', () => {
     }
   });
 
+  it('REFUSES a training pod even from BATTLE — VOIDED is the ranked-cohort disposition (skip, no write)', async () => {
+    const { db, captured } = makeDb({ storedDoc: { status: 'battle', isTraining: true, updatedAt: NOW } });
+    const res = await voidGroup(db, 'group-1', { reason: 'x', by: 'admin', now: NOW, expectedStatus: 'battle', expectedUpdatedAt: NOW });
+    expect(res).toEqual({ groupId: 'group-1', voided: false, status: 'battle', reason: 'training_not_voidable' });
+    expect(captured.updates).toHaveLength(0);
+  });
+
   it('is idempotent: re-voiding an already-VOIDED group is a no-op skip, not an error', async () => {
     const { db, captured } = makeDb({ storedDoc: { status: 'voided', updatedAt: NOW } });
     const res = await voidGroup(db, 'group-1', { reason: 'retry', by: 'admin', now: NOW, expectedStatus: 'voided', expectedUpdatedAt: NOW });
