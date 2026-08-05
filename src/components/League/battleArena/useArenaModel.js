@@ -14,10 +14,11 @@ import React from 'react';
 import { flat6BattleSymbols } from '../../../utils/flat6BattleEnrichment';
 import { subscribeClaims, fetchDisplayNames } from '../../../services/tournamentGroupService';
 import { flipPick, placeClaim, mapTournamentActionError } from '../../../services/tournamentActions';
-import { isCpuUserId } from '../../../constants/leagueTournament';
+import { isCpuUserId, GROUP_STATUS } from '../../../constants/leagueTournament';
 import { buildArenaModel } from './buildArenaModel';
 import { useArenaPriceContext } from './useArenaPriceContext';
 import { useAtrPercentiles } from './useAtrPercentiles';
+import { useLiveComposites } from './useLiveComposites';
 
 export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   // ── the symbol union (agent six ∪ your three), content-keyed so the price hook
@@ -37,6 +38,12 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   //    port-contract preview default. Short-cache fresh (10 min) so it tracks the
   //    intraday recompute and converges to banking's close version. ──
   const atrPercentiles = useAtrPercentiles();
+
+  // ── rivals' live composites (Phase B, Option X) — the read-only endpoint map,
+  //    polled ~60s while the live orb is ON and the round is a live BATTLE. Null
+  //    off-gate (flag off → no poll → rivals stay on the banked series). Feeds
+  //    ONLY rival seats; YOUR seat rides youLiveScore (never the endpoint). ──
+  const liveComposites = useLiveComposites(group?.id, group?.status === GROUP_STATUS.BATTLE);
 
   // ── claims subcollection (live) ──
   const [claims, setClaims] = React.useState([]);
@@ -75,8 +82,9 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
       mode,
       prevStarStates: prevRef.current,
       compositeContext,
+      liveComposites, // Option X: rivals' endpoint composites (null off-gate → banked)
     }) : null),
-    [group, battle, priceCtx, atrPercentiles, claims, names, uid, mode, compositeContext],
+    [group, battle, priceCtx, atrPercentiles, claims, names, uid, mode, compositeContext, liveComposites],
   );
 
   // adopt the just-built star-states as the next tick's "prev" (after render)

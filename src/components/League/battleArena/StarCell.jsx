@@ -252,11 +252,16 @@ export function StarCell({ star, dormant = false, complete = false, headline = '
         <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 7.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: star.tier === 'star' ? owner : LTOKENS.ink3 }}>{tm.label}</span>
       </div>
 
-      {/* headline — multiplier (drama) or points (currency) */}
+      {/* headline — multiplier (drama) or POINTS (the currency that sums to the orb).
+          Points-led (Rulings B/C) leads with star.points = this holding's contribution
+          to the composite: for the six, today's agent points (base + today's badges);
+          for the three, the pick's total (banked closed legs + the live leg). It is
+          NOT star.banked (closed-legs-only — would undercount the live leg). The ×
+          meter + "to BaggerBomb" caption below stay as secondary texture. */}
       {headline === 'pts' ? (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5, position: 'relative' }}>
-          <Mono style={{ fontSize: dense ? 16 : 18, fontWeight: 700, lineHeight: 1, color: star.banked > 0 ? ST_GOOD : star.banked < 0 ? ST_BAD : LTOKENS.ink2,
-            textShadow: star.banked !== 0 ? `0 0 16px ${alpha(star.banked > 0 ? ST_GOOD : ST_BAD, 0.45)}` : 'none' }}>{fmtPoints(star.banked)}</Mono>
+          <Mono style={{ fontSize: dense ? 16 : 18, fontWeight: 700, lineHeight: 1, color: star.points > 0 ? ST_GOOD : star.points < 0 ? ST_BAD : LTOKENS.ink2,
+            textShadow: star.points !== 0 ? `0 0 16px ${alpha(star.points > 0 ? ST_GOOD : ST_BAD, 0.45)}` : 'none' }}>{fmtPoints(star.points)}</Mono>
           <Mono style={{ fontSize: 9, fontWeight: 700, color: LTOKENS.ink3, letterSpacing: '0.06em' }}>PTS</Mono>
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
             <Mono style={{ fontSize: 11, fontWeight: 700, color: climbing ? ST_GOOD : ST_BAD }}>{star.mult >= 0 ? '+' : ''}{star.mult.toFixed(1)}×</Mono>

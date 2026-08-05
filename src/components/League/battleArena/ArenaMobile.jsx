@@ -20,6 +20,7 @@ import { Mono, Eyebrow, LIcon, Icon } from '../LeagueParts';
 import { LTOKENS, alpha } from '../leagueTokens';
 import { ArenaTopStrip, BeatCaption, ArenaOrb, MeterKey } from './ArenaPrimitives';
 import { ClimbArena } from './ClimbArena';
+import { DecompositionStrip } from './DecompositionStrip';
 import { StarCell } from './StarCell';
 import { FlipControl, AgentDock, AgentMoveChip, DepartedChip } from './CommandDock';
 import { VoiceLane } from './VoiceLane';
@@ -54,6 +55,9 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
   // so the preview beat-loop doesn't restart each render).
   const fixtureModel = React.useMemo(() => buildFixtureModel(state), [state]);
   const D = data ?? fixtureModel;
+  // Points-led cards flip WITH the decomposition (model-driven); `headline` prop is
+  // the fixtures fallback. Off-gate → 'mult' (byte-identical to today).
+  const dockHeadline = D.headline ?? headline;
 
   // Identical engine wiring to ArenaDesktop (object signature; live vs preview).
   const eng = useArenaEngine({
@@ -130,13 +134,20 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
         <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} compact />
         <div ref={heroRef} style={{ position: 'relative', marginTop: 10 }}>
           <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
-            w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} />
+            w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} />
           {live && eng.beat && (
             <div style={{ position: 'absolute', top: 8, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
               <BeatCaption beat={eng.beat} compact />
             </div>
           )}
         </div>
+        {/* the decomposition strip — spans both layers, so it sits ABOVE the per-layer
+            tabs (six / three), always visible with the orb. Null off-gate. */}
+        {D.decomposition && (
+          <div style={{ marginTop: 8 }}>
+            <DecompositionStrip decomposition={D.decomposition} compact />
+          </div>
+        )}
         {!done && (
           <div style={{ display: 'flex', gap: 7, padding: '12px 0 10px' }}>
             <MTab id="you" label="Your Portfolio" color={OWN_YOU} active={tab} pulse={pulse.you} onClick={goTab} />
@@ -152,10 +163,10 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
           <MComplete mode={mode} youRank={D.youRank} onFilm={() => setFilmOpen(true)} />
         ) : tab === 'you' ? (
           <MYourPanel stars={D.userStars} wire={D.wire} live={live} calm={calm} done={done}
-            headline={headline} cellBump={cellBump} flips={flips} onClaim={() => setFaOpen(true)}
+            headline={dockHeadline} cellBump={cellBump} flips={flips} onClaim={() => setFaOpen(true)}
             departed={D.userDeparted} onOpenDeparted={() => setDepartedView('drop')} />
         ) : tab === 'agent' ? (
-          <MAgentPanel stars={D.agentStars} move={D.agentMove} calm={calm} done={done} headline={headline}
+          <MAgentPanel stars={D.agentStars} move={D.agentMove} calm={calm} done={done} headline={dockHeadline}
             cellBump={cellBump} flareKey={live ? eng.flareKey : 0}
             departed={D.agentDeparted} onOpenDeparted={() => setDepartedView('swap')} />
         ) : calm ? (

@@ -118,7 +118,12 @@ export function DockAgentSix({ stars, dormant, complete, beatStar, flareKey = 0,
           <Eyebrow color={OWN_AGENT}>Your agent&rsquo;s six</Eyebrow>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
             <Icon name="eye" size={10} color={LTOKENS.ink3} />
-            <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>watch-only · it manages these</Mono>
+            {/* Honest points framing (Ruling B): the per-card number is TODAY's points
+                (base + today's badges), NOT cumulative per-card base — cumulative-prior
+                rides in the banked-prior term on the reconciliation strip. */}
+            <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>
+              {headline === 'pts' ? "watch-only · today's points (base + today's badges)" : 'watch-only · it manages these'}
+            </Mono>
           </span>
         </div>
         {!dormant && <AgentMoveChip move={move} color={OWN_AGENT} />}

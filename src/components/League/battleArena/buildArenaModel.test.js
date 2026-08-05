@@ -566,3 +566,31 @@ describe('buildArenaModel — user-layer settlement states (Deliverables 1,3,4)'
     expect(m.wire.reason).toBe('market_hours'); // → "CLAIMS OPEN AFTER CLOSE" on the disabled control
   });
 });
+
+// ── Phase B (Option X) — the live orb flag gates the RIVAL endpoint map as ONE
+// unit. This suite runs with the flag OFF (its default in Node — featureFlags reads
+// no window → false), so it proves the dark posture: a supplied liveComposites map
+// is IGNORED and every rival stays on the banked series, byte-identical to today.
+// The flag-ON behavior (rivals live) is proven in b3Lockstep.test.js. ──
+describe('buildArenaModel — live orb flag gating (Option X, flag off = today)', () => {
+  it('a supplied liveComposites map is IGNORED off-gate: rivals banked, model.liveComposites null', () => {
+    const map = { 'u-riv': 999, 'cpu-1': 888 }; // a rival overtake that MUST be ignored while dark
+    const withMap = buildArenaModel({ ...BASE, mode: 'ranked', liveComposites: map });
+    const without = buildArenaModel({ ...BASE, mode: 'ranked' });
+    expect(withMap.liveComposites).toBeNull();                 // never surfaced when off
+    expect(withMap.youRank).toBe(without.youRank);             // the 999 rival overtake is ignored
+    const rivWith = withMap.seats.find((s) => s.id === 'u-riv');
+    const rivWithout = without.seats.find((s) => s.id === 'u-riv');
+    expect(rivWith.score).toBe(rivWithout.score);              // rival seat.score stays banked (no swap off-gate)
+  });
+
+  it('the decomposition is null and cards stay "mult" off-gate — even when the orb is LIVE (training)', () => {
+    // training + today's battle → youLiveScore is LIVE (as today), but the NEW
+    // decomposition strip + points-led cards are flag-gated → dark here.
+    const TODAY_BATTLE = { ...flat6Battle(), activatedAt: '2026-06-16T14:00:00.000Z', createdAt: '2026-06-16T14:00:00.000Z' };
+    const m = buildArenaModel({ ...BASE, mode: 'training', battle: TODAY_BATTLE });
+    expect(m.youLiveScore).not.toBeNull(); // the orb is live (training path, unchanged)
+    expect(m.decomposition).toBeNull();    // …but the decomposition is dark (flag off)
+    expect(m.headline).toBe('mult');       // …and the cards lead with the multiplier (byte-identical to today)
+  });
+});
