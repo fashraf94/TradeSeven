@@ -104,6 +104,15 @@ export const GROUP_STATUS = Object.freeze({
   // selectMyTrainingPod) exclude it by construction. Carries marker fields
   // { expiredAt, expiredReason, expiredBy } written at the expiry transition.
   EXPIRED: 'expired',
+  // League Lifecycle Remediation (L-A, Aug 2026): terminal disposition for a
+  // RANKED battle group quarantined with NO result — the poisoned-cohort void.
+  // Distinct from COMPLETE (a legitimately finished week carrying a real
+  // standing) and from EXPIRED (a pre-BATTLE pod that never started). Reached
+  // ONLY from BATTLE, via voidGroup (tournamentGroupService). Terminal,
+  // forward-only; carries { voidedAt, voidedReason, voidedBy }. Reads as a
+  // terminal 'complete' arena state (no LIVE badge, no ticking, no "Day N"), but
+  // the client surfaces a DISTINCT "voided" pill so it never reads as a result.
+  VOIDED: 'voided',
 });
 
 export const LEG_DIRECTION = Object.freeze({
@@ -645,7 +654,10 @@ export const BASE_LAYER_FIELD_OVERFETCH = 2.5;
  */
 export function selectBaseLayerField(docs, max = 12) {
   return (docs ?? [])
-    .filter(g => g?.isTraining !== true)
+    // L-A: a VOIDED group carries no valid standing — exclude it from THE FIELD
+    // (defense-in-depth: the current-week query already drops off-week groups,
+    // but a current-week void must never surface in standings).
+    .filter(g => g?.isTraining !== true && g?.status !== GROUP_STATUS.VOIDED)
     .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))
     .slice(0, max);
 }

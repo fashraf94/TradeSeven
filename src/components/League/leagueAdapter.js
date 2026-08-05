@@ -199,6 +199,11 @@ export function groupStatusToPodStatus(status) {
   // EXPIRED (Training-Pod P0 R2) is terminal like COMPLETE — read it 'final', not
   // the 'upcoming' fallthrough, so a retired pod never shows as pending.
   if (status === GROUP_STATUS.COMPLETE || status === GROUP_STATUS.EXPIRED) return 'final';
+  // L-A: a VOIDED group is TERMINAL (never pending/live). Mapped to 'final' here as
+  // a safe terminal placeholder so it can never read 'upcoming'/'live'; no card path
+  // surfaces a voided group in L-A (FIELD + active-group selectors exclude it). The
+  // DISTINCT voided card (its own pod status + consumer audit) is the (B) follow-up.
+  if (status === GROUP_STATUS.VOIDED) return 'final';
   if (status === GROUP_STATUS.BATTLE) return 'live';
   return 'upcoming'; // forming / drafting / unknown
 }
@@ -396,12 +401,13 @@ export function buildLeagueState({
 
   // The base-layer field → real pods, or an HONEST empty list (never the fixture
   // demo groups). Defense-in-depth: the read (selectBaseLayerField) already
-  // excludes training pods, but gate here too with the same `!== true` idiom so a
-  // training pod can never reach THE FIELD even if this adapter is fed an
-  // unfiltered list. CPUs are NOT training pods (no isTraining flag) → they stay.
+  // excludes training pods AND VOIDED groups, but gate here too so neither a
+  // training pod nor a VOIDED group (whose contaminated composite seats must never
+  // reach the leaderboard `field`) can slip into THE FIELD even if this adapter is
+  // fed an unfiltered list. CPUs are NOT training pods (no isTraining flag) → stay.
   const baseGames = (fieldGroups && fieldGroups.length)
     ? fieldGroups
-      .filter((g) => g?.isTraining !== true)
+      .filter((g) => g?.isTraining !== true && g?.status !== GROUP_STATUS.VOIDED)
       .map((g) => groupToPod(g, {
         names,
         uid,

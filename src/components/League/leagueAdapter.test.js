@@ -165,6 +165,7 @@ describe('groupToPod + the scoring invariant', () => {
     expect(groupStatusToPodStatus('battle')).toBe('live');
     expect(groupStatusToPodStatus('complete')).toBe('final');
     expect(groupStatusToPodStatus('expired')).toBe('final'); // Training-Pod P0 R2: terminal, not 'upcoming'
+    expect(groupStatusToPodStatus('voided')).toBe('final'); // L-A: terminal placeholder, never pending/live (distinct card is the B follow-up)
     expect(groupStatusToPodStatus('forming')).toBe('upcoming');
     expect(groupStatusToPodStatus('drafting')).toBe('upcoming');
   });
@@ -308,6 +309,33 @@ describe('buildLeagueState', () => {
     // the training seats never appear in the leaderboard field; the real ones do
     expect(Object.keys(out.state.field)).not.toContain('tu1');
     expect(Object.keys(out.state.field)).not.toContain('tcpu-1');
+    expect(Object.keys(out.state.field).sort()).toEqual(['cpu-1', 'cpu-2', 'u1', 'u2']);
+  });
+
+  it('defense-in-depth: a VOIDED group fed to the adapter never reaches THE FIELD (L-A contamination guard)', () => {
+    // selectBaseLayerField already excludes VOIDED, but if an unfiltered list ever
+    // reaches the adapter, a void's contaminated composite seats must not leak into
+    // the leaderboard field. Distinct members so leakage would be visible.
+    const voidedGroup = {
+      ...group,
+      id: 'void-1',
+      status: 'voided',
+      groupMembers: ['vu1', 'vcpu-1', 'vu2', 'vcpu-2'],
+      players: [
+        { odUserId: 'vu1', picks: [] },
+        { odUserId: 'vcpu-1', isCpu: true, picks: [] },
+        { odUserId: 'vu2', picks: [] },
+        { odUserId: 'vcpu-2', isCpu: true, picks: [] },
+      ],
+    };
+    const out = buildLeagueState({
+      fieldGroups: [group, voidedGroup],
+      names: { u1: 'Alice', u2: 'Bob' },
+      uid: 'u1',
+    });
+    expect(out.state.baseGames).toHaveLength(1);
+    expect(out.state.baseGames[0].id).toBe('g1');
+    expect(Object.keys(out.state.field)).not.toContain('vu1');
     expect(Object.keys(out.state.field).sort()).toEqual(['cpu-1', 'cpu-2', 'u1', 'u2']);
   });
 

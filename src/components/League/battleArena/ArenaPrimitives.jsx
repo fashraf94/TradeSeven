@@ -117,7 +117,7 @@ export function BeatCaption({ beat, compact = false }) {
 // `compact` (mobile pinned hero): tighter gaps/type for a ~374-wide strip. Still
 // reads `pod` and still gates the back button on `onBack`. Default off → desktop
 // byte-identical.
-export function ArenaTopStrip({ mode, state, pod, closeClock, onBack, compact = false }) {
+export function ArenaTopStrip({ mode, state, pod, closeClock, onBack, compact = false, voided = false }) {
   const live = state === 'live'; const calm = state === 'awaiting'; const done = state === 'complete';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 9 : 14, padding: '0 4px' }}>
@@ -134,7 +134,7 @@ export function ArenaTopStrip({ mode, state, pod, closeClock, onBack, compact = 
       )}
       <ModeChip mode={mode} />
       <Mono style={{ fontSize: compact ? 10.5 : 11.5, color: LTOKENS.ink2, letterSpacing: '0.03em' }}>
-        {done ? 'Battle complete' : calm ? 'Awaiting open' : `Day ${pod.day} of ${pod.days}`}
+        {done ? (voided ? 'Battle voided — no result recorded' : 'Battle complete') : calm ? 'Awaiting open' : `Day ${pod.day} of ${pod.days}`}
       </Mono>
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: compact ? 11 : 16 }}>
         {pod.watchers != null && (
@@ -150,7 +150,7 @@ export function ArenaTopStrip({ mode, state, pod, closeClock, onBack, compact = 
             <Mono style={{ fontSize: 10, color: LTOKENS.ink2, fontWeight: 600, letterSpacing: '0.06em' }}>OPENS SOON</Mono>
           </span>
         )}
-        {done && <StatusBadge status="final" />}
+        {done && <StatusBadge status={voided ? 'voided' : 'final'} />}
       </div>
     </div>
   );

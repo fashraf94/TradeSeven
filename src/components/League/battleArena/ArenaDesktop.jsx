@@ -26,7 +26,7 @@ import { AD_W, AD_H, HERO_W, HERO_H, DOCK_H } from './arenaLayout';
 // `data` (buildArenaModel's output) + `handlers`; the dev preview passes neither,
 // so `D` falls back to the fixtures packed into the SAME shape — keeping the
 // ?battleViewV2=1 path (and its render smoke) byte-identical to Phase 2.
-export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = null, handlers = null }) {
+export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = null, handlers = null, voided = false }) {
   const live = state === 'live';
   const done = state === 'complete';
   const calm = state === 'awaiting';
@@ -69,7 +69,7 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
 
   return (
     <div style={{ width: AD_W, height: AD_H, position: 'relative', display: 'flex', flexDirection: 'column', padding: '14px 22px 16px' }}>
-      <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} />
+      <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} voided={voided} />
 
       {/* THE HERO — the competition climb (+ the decomposition strip nested in-band) */}
       <div style={{ position: 'relative', marginTop: 11, height: HERO_H }}>

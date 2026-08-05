@@ -46,7 +46,7 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, data = null, handlers = null }) {
+export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, data = null, handlers = null, voided = false }) {
   const live = state === 'live';
   const done = state === 'complete';
   const calm = state === 'awaiting';
@@ -131,7 +131,7 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
     <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', background: LTOKENS.bg, position: 'relative' }}>
       {/* PINNED TOP — sticky so the hero + tab bar stay put while the body scrolls */}
       <div style={{ position: 'sticky', top: 0, zIndex: 20, background: LTOKENS.bg, padding: '14px 14px 0' }}>
-        <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} compact />
+        <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} compact voided={voided} />
         <div ref={heroRef} style={{ position: 'relative', marginTop: 10 }}>
           <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
             w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} />

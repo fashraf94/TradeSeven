@@ -109,7 +109,9 @@ export function buildClimbSeries(group, { metric = 'composite' } = {}) {
 export function climbSeriesPhase(group) {
   // EXPIRED (Training-Pod P0 R2) is terminal — a pod retired pre-BATTLE never
   // climbed, so it reads 'complete' (done), never 'awaiting' (about to start).
-  if (group?.status === GROUP_STATUS.EXPIRED) return 'complete';
+  // EXPIRED (pre-BATTLE) and VOIDED (L-A poisoned-cohort disposition) are both
+  // terminal — read 'complete' regardless of banked day count, never 'live'.
+  if (group?.status === GROUP_STATUS.EXPIRED || group?.status === GROUP_STATUS.VOIDED) return 'complete';
   const dayN = getLatestDayEntry(group)?.dayN || 0;
   if (dayN <= 0) return 'awaiting';
   if (group?.status === GROUP_STATUS.COMPLETE || dayN >= WEEK_DAYS_REQUIRED) return 'complete';
