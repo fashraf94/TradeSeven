@@ -46,7 +46,8 @@
 //
 // DEPLOY STEP — BUILT COMPLETE, P4-GATED: the call plumbing targets
 // `https://${VERCEL_PROJECT_PRODUCTION_URL}` (TOURNAMENT_DEPLOY_BASE_URL
-// overrides) and sends `Authorization: Bearer CRON_SECRET` + the ownership
+// overrides; either path is apex-normalized — see `deployBaseUrl` below) and
+// sends `Authorization: Bearer CRON_SECRET` + the ownership
 // assertion on every call from day one. Until P4 lands the prescribed-
 // portfolio entry path in the fenced deploy, TOURNAMENT_DEPLOY_ENABLED stays
 // false and every would-be call logs a loud "P4 pending" line instead —
@@ -204,9 +205,55 @@ async function setDeployCooldown(db, state, agentId, untilIso, nowIso) {
 
 // ==================== DEPLOY PLUMBING (built complete, P4-gated) ====================
 
+// The apex `fantasytrades.io` answers 307 → `https://www.fantasytrades.io`, and
+// per the fetch spec the `Authorization` header is STRIPPED across that origin
+// change — so an internal caller that targets the apex arrives unauthenticated
+// and takes a 401 it can only report as a generic deploy failure. Measured in
+// production: docs/audits/20260805_PR2_POST_FLIP_LIVE_VERIFICATION.md:148.
+//
+// Both resolution paths below are normalized, because both can carry the apex:
+// a dashboard typo in TOURNAMENT_DEPLOY_BASE_URL, or — silently, with no human
+// in the loop — VERCEL_PROJECT_PRODUCTION_URL when the apex is the project's
+// assigned production domain. The rewrite is exact-host only: `fantasytrades.io`
+// and nothing else, so previews, `*.vercel.app`, and any subdomain pass through
+// untouched. Precedence between the two paths is unchanged.
+const PRODUCTION_APEX_HOST = 'fantasytrades.io';
+const PRODUCTION_CANONICAL_HOST = 'www.fantasytrades.io';
+
+/**
+ * Trailing-slash strip + apex→www rewrite. A rewrite is always logged: a silent
+ * correction would mask the misconfiguration that caused it, leaving the env
+ * indefinitely one code-change away from the 401 this function exists to
+ * prevent. Unparseable input is returned trimmed rather than thrown on — this
+ * sits in a fire path whose callers already treat a falsy base as "skip".
+ */
+function normalizeDeployBase(raw, source) {
+  const trimmed = String(raw).trim().replace(/\/+$/, '');
+  let normalized = trimmed;
+
+  let parsed = null;
+  try { parsed = new URL(trimmed); } catch { parsed = null; }
+  if (parsed && parsed.hostname === PRODUCTION_APEX_HOST) {
+    parsed.hostname = PRODUCTION_CANONICAL_HOST;
+    normalized = parsed.toString().replace(/\/+$/, '');
+  }
+
+  if (normalized !== raw) {
+    console.warn(
+      `[tournament-deploy] deploy base URL normalized from ${source}: "${raw}" → "${normalized}". ` +
+      `Fix the value at its source — the apex strips Authorization across its 307 to www.`,
+    );
+  }
+  return normalized;
+}
+
 export function deployBaseUrl() {
-  if (process.env.TOURNAMENT_DEPLOY_BASE_URL) return process.env.TOURNAMENT_DEPLOY_BASE_URL;
-  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  if (process.env.TOURNAMENT_DEPLOY_BASE_URL) {
+    return normalizeDeployBase(process.env.TOURNAMENT_DEPLOY_BASE_URL, 'TOURNAMENT_DEPLOY_BASE_URL');
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return normalizeDeployBase(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`, 'VERCEL_PROJECT_PRODUCTION_URL');
+  }
   return null;
 }
 

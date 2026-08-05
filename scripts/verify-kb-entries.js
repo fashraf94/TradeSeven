@@ -4,7 +4,9 @@
 //
 // Usage:
 //   node --env-file=.env.local scripts/verify-kb-entries.js --dir ./kb-v2 --api-url http://localhost:3000
-//   node --env-file=.env.local scripts/verify-kb-entries.js --dir ./kb-v2 --api-url https://fantasytrades.io
+//   node --env-file=.env.local scripts/verify-kb-entries.js --dir ./kb-v2 --api-url https://www.fantasytrades.io
+//   (the www host is required, not cosmetic: the apex 307s to www and the
+//    Authorization header at :158 is stripped across that redirect → silent 401)
 //
 // KB JSON expected shape:
 //   {
