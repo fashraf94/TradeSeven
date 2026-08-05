@@ -1,10 +1,21 @@
 // src/App.agentBattlesPoll.test.js
 //
-// Regression guard for defect #2 (ruling R-T2-S11): the `activeAgentBattles`
-// liveness poll must RETAIN its last-known-good state on a fetch error, not
-// reset to []. A transient Firestore blip must not flip the "No battle live"
-// card — and the battle-weather starfield that reads the same state — to calm
-// for up to the 120s poll interval while a battle is genuinely live.
+// Regression guards for the `activeAgentBattles` liveness poll — the source the
+// "No battle live" card reads and the battle-weather starfield reads. Two
+// invariants, each paid for by a filed defect:
+//
+//   * defect #2 (ruling R-T2-S11): the poll must RETAIN its last-known-good
+//     state on a fetch error, not reset to []. A transient Firestore blip must
+//     not flip the card — and the sky that reads the same state — to calm for
+//     up to the 120s poll interval while a battle is genuinely live.
+//   * defect D-6 (Task 4 Phase 0 §11): the poll must NOT apply a server-side
+//     limit() before its client-side training-clone filter. A user with ≥5
+//     active training clones could have the limit return only clone docs, all
+//     dropped by the filter → activeAgentBattles=[] while a ranked battle is
+//     live (card lies; sky reads calm). A battle doc's only clone marker is its
+//     agentId prefix, so the clones cannot be dropped server-side without a
+//     range query + new composite index — hence the unbounded owner+status
+//     query feeds the filter.
 //
 // WHY A SOURCE GUARD, NOT A BEHAVIOURAL TEST. The poll's error path is an inline
 // `catch` inside an async closure inside a useEffect inside PortfolioDuel (the
@@ -64,5 +75,36 @@ describe('defect #2 — agentBattles poll retains last-known-good on error', () 
     const setters = body.match(/setActiveAgentBattles\(/g) || [];
     expect(setters.length).toBe(1);
     expect(body).toMatch(/setActiveAgentBattles\(\s*battles\s*\)/);
+  });
+});
+
+describe('defect D-6 — no server-side limit precedes the client-side clone filter', () => {
+  const body = agentBattlesPollBody();
+
+  it('does NOT apply a limit() to the agentBattles query', () => {
+    // The regression: limit(5) (or any limit) runs on the SERVER, before the
+    // training-clone filter runs on the CLIENT. A user with ≥5 active training
+    // clones can have the limit return only clone docs, all dropped by the
+    // filter → activeAgentBattles=[] while a ranked battle is live. The comment
+    // block is comment-stripped before this assertion, so the word "limit" in
+    // the explanatory prose cannot mask a re-added limit() CALL.
+    expect(
+      /\blimit\s*\(/.test(body),
+      'the agentBattles poll must not limit before the client-side clone filter (D-6)'
+    ).toBe(false);
+  });
+
+  it('still drops training-clone battles client-side (filter intact)', () => {
+    // The fix must not "solve" the crowding by dropping the filter — that would
+    // surface off-ladder training pods on the ranked dashboard.
+    expect(body).toMatch(/\.filter\(/);
+    expect(body).toMatch(/startsWith\(\s*TRAINING_CLONE_ID_PREFIX\s*\)/);
+  });
+
+  it('keeps the query scoped to the owner and active status', () => {
+    // Removing the limit must not widen the read: the owner + status equality
+    // filters are what keep the unbounded query small (and index-free).
+    expect(body).toMatch(/where\(\s*['"]ownerId['"]\s*,\s*['"]==['"]/);
+    expect(body).toMatch(/where\(\s*['"]status['"]\s*,\s*['"]==['"]\s*,\s*['"]active['"]/);
   });
 });
