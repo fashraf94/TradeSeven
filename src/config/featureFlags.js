@@ -1395,7 +1395,7 @@ export function getWarpDevOverride() {
  * the pre-flip state — the value pins in starfield.intent.test.jsx and this
  * docstring.
  */
-export const DEPLOY_SKY_COUPLING_ENABLED = false;
+export const DEPLOY_SKY_COUPLING_ENABLED = true;
 
 /**
  * The ONE home for the deploy-sky-coupling gate — the flag OR the
