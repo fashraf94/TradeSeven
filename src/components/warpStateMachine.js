@@ -24,8 +24,8 @@
 // ---------------------------------------------------------------------------
 // STATE MAP V2 (the contract this implements)
 // ---------------------------------------------------------------------------
-//   RESTING      no live games                      speed 0.12
-//   BATTLE LIVE  the GOVERNING game is not in its window   speed 0.5
+//   RESTING      no live games                      speed 0.08
+//   BATTLE LIVE  the GOVERNING game is not in its window   speed 0.7
 //   ENDGAME      governing game inside its window    speed 0.8 -> 2.2, continuous
 //
 //   R-PREC   (as amended by State Map Amendment B / R-T2-S9): the game FURTHEST
@@ -62,8 +62,16 @@ export const WARP_TIER = {
  */
 export const WARP_TUNING = {
   // --- speeds (x demo baseline) -------------------------------------------
-  SPEED_RESTING: 0.12,
-  SPEED_LIVE: 0.5,
+  /**
+   * RESTING / BATTLE LIVE widened at the founder's feel pass (round 1, T3;
+   * Aug 1, 2026) from 0.12 / 0.5. BATTLE LIVE registered, but read only
+   * slightly different from RESTING: perceived motion compresses at low
+   * speeds, so a 4.2x ratio did not read as 4.2x. The gap is now 8.75x, and
+   * the lower resting drift honours R-REST ("near-imperceptible") more
+   * faithfully than 0.12 did. Tuning-exempt, per spec V2 §4 D2.
+   */
+  SPEED_RESTING: 0.08,
+  SPEED_LIVE: 0.7,
   SPEED_ENDGAME_FLOOR: 0.8,
   SPEED_ENDGAME_PEAK: 2.2,
 
@@ -83,7 +91,7 @@ export const WARP_TUNING = {
   PARTICLES_MOBILE_LITE: 70,
 
   // --- projection / motion feel -------------------------------------------
-  /** Depth consumed per second at speed 1.0. Resting (0.12) ~= 92s per star. */
+  /** Depth consumed per second at speed 1.0. Resting (0.08) ~= 136s per star. */
   Z_RATE: 0.09,
   /**
    * Field-of-view scalar for the radial projection.
@@ -119,18 +127,33 @@ export const WARP_TUNING = {
   /**
    * Peak of the hold-intent curve. DELIBERATELY below SPEED_ENDGAME_PEAK (2.2)
    * so a hold can never outrank a real endgame's drama (D2). It sits above
-   * SPEED_LIVE (0.5), so a completed hold reads as faster than a live battle.
+   * SPEED_LIVE (0.7), so a completed hold reads as faster than a live battle.
+   * Both bounds are pinned by a test row.
+   *
+   * Raised from 1.4 at the founder's feel pass (round 1, T2): the top of the
+   * ramp needed more authority.
    */
-  INTENT_PEAK: 1.4,
+  INTENT_PEAK: 1.8,
   /**
-   * Shape of that curve: `peak * progress^n`. n > 1 is what makes the hold
-   * "gentle through the first two-thirds, steepening in the final third" (§1).
-   * At 2.5: the two-thirds mark has delivered ~36% of the rise, so the final
-   * third delivers ~64% — completing the hold feels like crossing a threshold.
-   * From a RESTING sky (0.12) the curve becomes visible ~37% in (~490ms of the
-   * shipped 1300ms hold), which leaves most of the hold as felt ramp.
+   * Shape of that curve: `peak * progress^n`. n > 1 keeps the curve convex, so
+   * the back half still steepens — but the SIZE of n decides how long the
+   * start feels dead, and that is the whole feel of the gesture.
+   *
+   * Lowered 2.5 -> 1.2 at the founder's feel pass (round 1, T1): "the ramp must
+   * begin responding the instant the press starts." At 2.5 the first half of
+   * the hold was effectively dead — only 18% of peak by the halfway point, and
+   * a RESTING sky was not visibly lifted until ~37% in (~490ms of the shipped
+   * 1300ms hold). At 1.2 the sky lifts off RESTING at ~7.5% (~100ms), while
+   * the curve still sits below the linear line at every interior point, so the
+   * late steepening the threshold feeling depends on survives.
+   *
+   * NOTE the tier interaction: because intent is max(coreSpeed, curve), the
+   * higher the sky's current tier the later a hold becomes visible. From
+   * RESTING (0.08) that is ~100ms; during a BATTLE LIVE sky (0.7) the hold does
+   * not clear the floor until ~45% of the press (~590ms). See the round-1
+   * tuning record for the measured table.
    */
-  INTENT_CURVE_EXPONENT: 2.5,
+  INTENT_CURVE_EXPONENT: 1.2,
   /**
    * The abort exhale (D3). Its own duration, deliberately NOT a tier ease: an
    * abort must be felt promptly, so this is far shorter than TIER_EASE_MS (15s)

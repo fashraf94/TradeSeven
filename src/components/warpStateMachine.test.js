@@ -1022,11 +1022,26 @@ describe('A2 deploy intent — the curve (spec V1 D2)', () => {
     expect(intentCurve(0)).toBe(0);
   });
 
-  it('is gentle through the first two-thirds and steep in the final third', () => {
-    // The threshold feeling (§1). A LINEAR curve fails this row.
-    const atTwoThirds = intentCurve(2 / 3) / WARP_TUNING.INTENT_PEAK;
-    expect(atTwoThirds).toBeLessThan(0.45);
-    expect(1 - atTwoThirds).toBeGreaterThan(0.55); // the final third does the work
+  it('still steepens toward the end — every interior point sits below the linear line', () => {
+    // The threshold feeling (§1) survives the round-1 flattening: the curve
+    // stays CONVEX, so the back of the hold always delivers more than its
+    // linear share. A linear curve (n = 1) or a concave one (n < 1) fails here.
+    for (const p of [0.1, 0.25, 0.5, 2 / 3, 0.75, 0.9]) {
+      expect(intentCurve(p) / WARP_TUNING.INTENT_PEAK).toBeLessThan(p);
+    }
+  });
+
+  it('lifts a RESTING sky within the first 15% of the press (feel pass round 1, T1)', () => {
+    // "The ramp must begin responding the instant the press starts." This is
+    // that requirement in perceptual terms: how much of the hold elapses before
+    // the sky is doing anything a user can see. Under the original exponent 2.5
+    // / peak 1.4 it took 37% of the press (~490ms of the shipped 1300ms hold),
+    // which is exactly the dead first half the feel pass rejected.
+    let crossing = 1;
+    for (let i = 0; i <= 1000; i += 1) {
+      if (intentCurve(i / 1000) > WARP_TUNING.SPEED_RESTING) { crossing = i / 1000; break; }
+    }
+    expect(crossing).toBeLessThan(0.15);
   });
 
   it('returns 0 rather than NaN for an unusable progress', () => {
