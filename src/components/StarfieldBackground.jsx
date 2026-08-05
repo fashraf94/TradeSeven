@@ -58,7 +58,7 @@
 // DATA PATH
 // ---------------------------------------------------------------------------
 // LIVE (Phase 2): `liveGames` arrives as a PROP, mapped by warpBattleAdapter.js
-// from the EXISTING `activeAgentBattles` poll (src/App.jsx:3887-3922) — zero new
+// from the EXISTING `activeAgentBattles` poll (src/App.jsx:3891-3933) — zero new
 // Firestore reads (R-T2-S1, acceptance row A6). This component imports no
 // Firebase API and starts no timer of its own.
 //

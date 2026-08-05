@@ -95,6 +95,11 @@ describe('MECHANISM A — the Deploy section unmounts while a battle is live', (
     const card = DESKTOP.indexOf('<DeployCard');
     expect(gate, 'the !isLive gate must exist').toBeGreaterThan(-1);
     expect(card).toBeGreaterThan(gate);
+    // ...and is still INSIDE it. Ordering alone is not enough: a DeployCard
+    // moved BELOW a closed gate would satisfy `card > gate` while rendering
+    // unconditionally. The gate is `&&`, so there is no `) : (` arm to bound
+    // against — assert instead that it has not closed before the card appears.
+    expect(DESKTOP.slice(gate, card)).not.toContain(')}');
   });
 
   it('DeployStation and DeployCard rely on that gate — their own disabled omits isLive', () => {

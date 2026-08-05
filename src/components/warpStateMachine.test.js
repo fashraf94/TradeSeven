@@ -1393,3 +1393,89 @@ describe('A2 deploy intent — the commit terminal is AUTHORITATIVE (Phase 2 ite
     expect(again.surgeAt).toBe(later);
   });
 });
+
+// ===========================================================================
+// Regression rows from the BUILD_RULES §2 cumulative review (Aug 1, 2026).
+// Each covers a CONFIRMED defect this branch introduced.
+// ===========================================================================
+
+describe('regression — a terminal must never strand a live hold value', () => {
+  it('clears progress even when the abort is blocked by an in-flight surge', () => {
+    // CONFIRMED DEFECT: the collision guard returned prev by identity, which
+    // discarded the abort's OTHER job — nulling `progress`. The terminal branch
+    // is the only writer that ever nulls it, so a live frame arriving between
+    // the commit and a blocked abort stranded a hold value FOREVER: the sky
+    // pinned above battle state with no gesture in flight and no event able to
+    // bring it down. Reachable because two hold buttons are mounted at once, so
+    // two pointers can drive two independent streams into one window channel.
+    let state = reduceIntentEvent(createIntentState(), { progress: null, reason: 'commit' }, NOW);
+    state = reduceIntentEvent(state, { progress: 0.98 }, NOW + 100);   // second stream
+    state = reduceIntentEvent(state, { progress: null, reason: 'abort' }, NOW + 300);
+
+    // The punch is still authoritative for its window...
+    expect(intentSpeed(state, NOW + WARP_TUNING.INTENT_SURGE_RISE_MS))
+      .toBeCloseTo(WARP_TUNING.INTENT_SURGE_PEAK, 6);
+    // ...but nothing survives it. Long after everything has run out, zero.
+    const forever = NOW + 60 * 60 * 1000;
+    expect(intentSpeed(state, forever)).toBe(0);
+    expect(applyIntent(WARP_TUNING.SPEED_RESTING, state, forever)).toBe(WARP_TUNING.SPEED_RESTING);
+  });
+
+  it('still returns by identity when there is no live value to clear', () => {
+    // The identity return is what makes the AUTHORITATIVE rows assertable with
+    // toBe(); the fix must not cost that.
+    const committed = commitAfterHold();
+    expect(reduceIntentEvent(committed, { progress: null, reason: 'abort' }, NOW + 100))
+      .toBe(committed);
+  });
+
+  it('no event sequence ending in a terminal can leave the sky raised', () => {
+    // The property the two rows above are instances of, swept over the shapes a
+    // real session produces.
+    const shapes = [
+      { progress: 0.3 }, { progress: 0.9 }, { progress: 1 },
+      { progress: null, reason: 'abort' }, { progress: null, reason: 'commit' },
+      { progress: null },
+    ];
+    for (let i = 0; i < shapes.length; i += 1) {
+      for (let j = 0; j < shapes.length; j += 1) {
+        for (let k = 0; k < shapes.length; k += 1) {
+          let s = createIntentState();
+          s = reduceIntentEvent(s, shapes[i], NOW);
+          s = reduceIntentEvent(s, shapes[j], NOW + 100);
+          s = reduceIntentEvent(s, shapes[k], NOW + 300);
+          // ...and the hook always closes its stream with a terminal.
+          s = reduceIntentEvent(s, { progress: null, reason: 'abort' }, NOW + 5000);
+          expect(intentSpeed(s, NOW + 60 * 60 * 1000)).toBe(0);
+        }
+      }
+    }
+  });
+});
+
+describe('regression — a wall clock that steps backwards must not resurrect anything', () => {
+  it('a finished surge stays finished', () => {
+    // CONFIRMED DEFECT: `elapsed <= 0` treated a backwards clock (an NTP
+    // correction mid-session) as "not started yet" and replayed the punch at
+    // full strength.
+    const state = commitAfterHold();
+    expect(intentSpeed(state, NOW - 5000)).toBe(0);
+  });
+
+  it('a finished exhale stays finished', () => {
+    // Same defect on the other reader: clamp01 floored a negative elapsed at
+    // t = 0, which is the exhale's FULL value.
+    let state = reduceIntentEvent(createIntentState(), { progress: 1 }, NOW);
+    state = reduceIntentEvent(state, { progress: null, reason: 'abort' }, NOW);
+    expect(intentSpeed(state, NOW - 5000)).toBe(0);
+  });
+
+  it('a stale surge cannot swallow a real abort terminal', () => {
+    // isSurging treated negative elapsed as in-window, so a backwards clock let
+    // a long-dead surge keep blocking terminals.
+    const state = commitAfterHold();
+    expect(isSurging(state, NOW - 5000)).toBe(false);
+    expect(reduceIntentEvent(state, { progress: null, reason: 'abort' }, NOW - 5000))
+      .not.toBe(state);
+  });
+});

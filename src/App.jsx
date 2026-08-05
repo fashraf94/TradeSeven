@@ -6593,6 +6593,13 @@ export default function PortfolioDuel() {
     // the deploy CTA's own live/disabled state, so flag-off must not see this at
     // all (acceptance A1). Flipping the flag deliberately makes that card flip
     // immediately rather than up to 120s late — named in the flip PR.
+    // NOT a sky-only stub, deliberately. Injecting flips `isLive`, which swaps
+    // the Deploy section for Manage — and ManageStation hands this very object
+    // to handleOpenAgentBattle, which hydrates the Battle View from
+    // battle.portfolio / battle.opponent / battle.gameMode / battle.groupId. An
+    // adapter-minimal entry would open an EMPTY battle for the up-to-120s window
+    // before the poll replaces it. So the entry carries the same fields the real
+    // agentBattles doc does, from data already in scope here.
     if (isDeploySkyCouplingOn() && agentBattleId) {
       setActiveAgentBattles((prev) => {
         const existing = Array.isArray(prev) ? prev : [];
@@ -6604,6 +6611,14 @@ export default function PortfolioDuel() {
           expiresAt: agentMeta?.expiresAt || null,
           activatedAt: now.toISOString(),
           createdAt: now.toISOString(),
+          portfolio: {
+            ...(portfolioData || {}),
+            bench: benchData || null,
+            startingPrices: allStartingPrices,
+          },
+          opponent: cpuPortfolio ? { portfolio: cpuPortfolio, bench: cpuBench } : null,
+          gameMode: null,
+          groupId: null,
         }];
       });
     }

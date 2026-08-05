@@ -840,7 +840,12 @@ export function createIntentState() {
 export function isSurging(state, now, tuning = WARP_TUNING) {
   if (!state || state.surgeAt == null) return false;
   if (!Number.isFinite(now) || !Number.isFinite(state.surgeAt)) return false;
-  return (now - state.surgeAt) < tuning.INTENT_SURGE_MS;
+  const elapsed = now - state.surgeAt;
+  // A clock that has stepped BACKWARDS (NTP correction) is not a surge that
+  // has yet to start — the anchor is only ever stamped as `now` at the
+  // terminal, so `elapsed < 0` can only mean the clock moved. Treat it as
+  // stale, else a long-dead surge could swallow a real abort terminal.
+  return elapsed >= 0 && elapsed < tuning.INTENT_SURGE_MS;
 }
 
 /**
@@ -862,7 +867,11 @@ function surgeSpeed(state, now, tuning = WARP_TUNING) {
   if (!(total > 0)) return 0;
 
   const elapsed = now - state.surgeAt;
-  if (elapsed <= 0) return state.surgeFrom;
+  // elapsed === 0 is the launch frame (hold the speed the punch starts from);
+  // elapsed < 0 means the wall clock stepped backwards, which must not
+  // resurrect a finished punch at full strength.
+  if (elapsed < 0) return 0;
+  if (elapsed === 0) return state.surgeFrom;
   if (elapsed >= total) return 0;
 
   // Never let the attack descend: a surge that started from an intent speed
@@ -895,6 +904,9 @@ function exhaleSpeed(state, now, tuning = WARP_TUNING) {
   if (!Number.isFinite(now)) return state.exhaleFrom;
   const span = tuning.INTENT_EXHALE_MS;
   if (!(span > 0)) return 0;
+  // Same backwards-clock rule as the surge: clamp01 would otherwise floor a
+  // negative elapsed at t=0 and replay the exhale from full strength.
+  if (now < state.exhaleAt) return 0;
   const t = clamp01((now - state.exhaleAt) / span);
   const remaining = 1 - t;
   return state.exhaleFrom * remaining * remaining;
@@ -952,7 +964,18 @@ export function reduceIntentEvent(state, detail, now, tuning = WARP_TUNING) {
     // but that is a timing margin, not a guarantee, and a future change to the
     // ceremony could close the gap. So the precedence is structural: while a
     // commit surge is in flight, nothing but another commit may disturb it.
-    if (!committing && isSurging(prev, now, tuning)) return prev;
+    // ...but the abort still has a SECOND job, and discarding the whole event
+    // discarded that too: clearing `progress`. The terminal branch below is the
+    // only writer that ever nulls it, so a live-progress frame arriving between
+    // the commit and the blocked abort would strand a hold value forever — the
+    // sky pinned above battle state with no gesture in flight and no event able
+    // to bring it down. Reachable because two hold buttons are mounted at once
+    // (the muted CTA and DeployStation on mobile; ReadColumn and DeployCard on
+    // desktop), so two pointers can drive two independent streams into the one
+    // window channel. Close the stream, keep the punch.
+    if (!committing && isSurging(prev, now, tuning)) {
+      return prev.progress == null ? prev : { ...prev, progress: null };
+    }
 
     const from = intentSpeed(prev, now, tuning);
     return {
