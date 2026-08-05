@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { GROUP_STATUS } from '../../../constants/leagueTournament';
 import {
-  ARENA_STATES, ARENA_MODES, deriveArenaState, normalizeArenaMode, deriveArenaFrame, frameDayIdx,
+  ARENA_STATES, ARENA_MODES, deriveArenaState, deriveArenaTerminalKind, normalizeArenaMode, deriveArenaFrame, frameDayIdx,
 } from './arenaStateMap';
 
 describe('deriveArenaState', () => {
@@ -16,6 +16,9 @@ describe('deriveArenaState', () => {
     expect(deriveArenaState({ status: GROUP_STATUS.COMPLETE })).toBe('complete');
     // Training-Pod P0 R2: a pod retired pre-BATTLE reads terminal, not 'awaiting'.
     expect(deriveArenaState({ status: GROUP_STATUS.EXPIRED })).toBe('complete');
+    // L-A: a voided cohort reads terminal (no LIVE badge / ticking), same state
+    // as complete — the DISTINCT "voided" surfacing is deriveArenaTerminalKind's job.
+    expect(deriveArenaState({ status: GROUP_STATUS.VOIDED })).toBe('complete');
   });
   it('maps every pre-bell status (forming / drafting / awaiting_open) → awaiting', () => {
     expect(deriveArenaState({ status: GROUP_STATUS.FORMING })).toBe('awaiting');
@@ -30,6 +33,30 @@ describe('deriveArenaState', () => {
   it('only ever returns a known arena state', () => {
     for (const s of Object.values(GROUP_STATUS)) {
       expect(ARENA_STATES).toContain(deriveArenaState({ status: s }));
+    }
+  });
+});
+
+describe('deriveArenaTerminalKind', () => {
+  it('distinguishes a VOIDED cohort (no result) from a legitimately finished battle', () => {
+    expect(deriveArenaTerminalKind({ status: GROUP_STATUS.VOIDED })).toBe('voided');
+    expect(deriveArenaTerminalKind({ status: GROUP_STATUS.COMPLETE })).toBe('final');
+    expect(deriveArenaTerminalKind({ status: GROUP_STATUS.EXPIRED })).toBe('final');
+  });
+  it('returns null for every non-terminal state (and missing input)', () => {
+    expect(deriveArenaTerminalKind({ status: GROUP_STATUS.BATTLE })).toBeNull();
+    expect(deriveArenaTerminalKind({ status: GROUP_STATUS.FORMING })).toBeNull();
+    expect(deriveArenaTerminalKind({ status: GROUP_STATUS.DRAFTING })).toBeNull();
+    expect(deriveArenaTerminalKind({ status: GROUP_STATUS.AWAITING_OPEN })).toBeNull();
+    expect(deriveArenaTerminalKind({ status: 'wat' })).toBeNull();
+    expect(deriveArenaTerminalKind(null)).toBeNull();
+    expect(deriveArenaTerminalKind(undefined)).toBeNull();
+  });
+  it('only ever surfaces "voided" when the arena state is terminal (complete)', () => {
+    // The client only consults terminal-kind in the done branch; guard the invariant.
+    for (const s of Object.values(GROUP_STATUS)) {
+      const kind = deriveArenaTerminalKind({ status: s });
+      if (kind !== null) expect(deriveArenaState({ status: s })).toBe('complete');
     }
   });
 });

@@ -52,9 +52,12 @@ export const LEGAL_TRANSITIONS = Object.freeze({
   [GROUP_STATUS.FORMING]: Object.freeze([GROUP_STATUS.DRAFTING, GROUP_STATUS.BATTLE, GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.EXPIRED]),
   [GROUP_STATUS.DRAFTING]: Object.freeze([GROUP_STATUS.BATTLE, GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.EXPIRED]),
   [GROUP_STATUS.AWAITING_OPEN]: Object.freeze([GROUP_STATUS.BATTLE, GROUP_STATUS.EXPIRED]),
-  [GROUP_STATUS.BATTLE]: Object.freeze([GROUP_STATUS.COMPLETE]),
+  // L-A: BATTLE may also VOID (poisoned-cohort disposition) — the only legal
+  // BATTLE exit besides COMPLETE. VOIDED is terminal, forward-only.
+  [GROUP_STATUS.BATTLE]: Object.freeze([GROUP_STATUS.COMPLETE, GROUP_STATUS.VOIDED]),
   [GROUP_STATUS.COMPLETE]: Object.freeze([]),
   [GROUP_STATUS.EXPIRED]: Object.freeze([]),
+  [GROUP_STATUS.VOIDED]: Object.freeze([]),
 });
 
 export function assertTransition(from, to) {
@@ -189,6 +192,70 @@ export async function expireGroup(db, groupId, { reason = null, by = null, now, 
       updatedAt: now,
     });
     return { groupId, expired: true, status: GROUP_STATUS.EXPIRED };
+  });
+}
+
+/**
+ * VOID a live BATTLE group to the terminal VOIDED status — the League Lifecycle
+ * Remediation (L-A) disposition for a poisoned/zombie cohort that must NOT
+ * finalize. (A frozen advancement + banking's missing day-clamp let the group
+ * bank past day 5; sealing it via the default latest-snapshot read would lock a
+ * CONTAMINATED standing.) Unlike expireGroup (which retires PRE-BATTLE pods),
+ * this is the only legal exit for a BATTLE group other than COMPLETE, and it is
+ * NON-destructive: the per-day dailyScores (incl. the true Day-5 snapshot) are
+ * left untouched — only the status flips + markers are written.
+ *
+ * The optimistic-lock preconditions are MANDATORY (founder ruling): the caller
+ * MUST pin the exact { expectedStatus, expectedUpdatedAt } it read in the
+ * pre-check, so a group that MOVED between approval and execution SKIPS rather
+ * than suffering a stale-state mutation. Transactional read-check-write; NEVER
+ * hard-deletes (the audit trail + intact Day-5 record survive). Writes markers
+ * { voidedAt, voidedReason, voidedBy } atomically with the status flip. `now` is
+ * caller-supplied (opaque-timestamp rule). Returns
+ * { groupId, voided, status, reason? }.
+ */
+export async function voidGroup(db, groupId, { reason = null, by = null, now, expectedStatus, expectedUpdatedAt } = {}) {
+  if (now == null) {
+    throw new Error('tournamentGroupService.voidGroup: now is required');
+  }
+  // MANDATORY optimistic-lock pins (L-A, founder ruling): never void without the
+  // EXACT doc the caller approved in the pre-check — a moved doc must skip, not
+  // mutate. Absence is a programming error, not a runtime skip.
+  if (expectedStatus == null || expectedUpdatedAt == null) {
+    throw new Error('tournamentGroupService.voidGroup: expectedStatus and expectedUpdatedAt are REQUIRED (pin the pre-check read)');
+  }
+  const ref = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      return { groupId, voided: false, status: null, reason: 'not_found' };
+    }
+    const data = snap.data();
+    // Precondition — only void the exact doc the caller judged poisoned.
+    if (data.status !== expectedStatus) {
+      return { groupId, voided: false, status: data.status, reason: 'status_changed' };
+    }
+    if (data.updatedAt !== expectedUpdatedAt) {
+      return { groupId, voided: false, status: data.status, reason: 'version_changed' };
+    }
+    try {
+      assertTransition(data.status, GROUP_STATUS.VOIDED);
+    } catch (err) {
+      // Not voidable (only BATTLE -> VOIDED is legal) — idempotent skip, never an
+      // error, so a crash-retry (or an already-VOIDED re-run) is safe.
+      if (typeof err?.message === 'string' && err.message.includes('illegal transition')) {
+        return { groupId, voided: false, status: data.status, reason: `not_voidable_from_${data.status}` };
+      }
+      throw err;
+    }
+    tx.update(ref, {
+      status: GROUP_STATUS.VOIDED,
+      voidedAt: now,
+      voidedReason: reason,
+      voidedBy: by,
+      updatedAt: now,
+    });
+    return { groupId, voided: true, status: GROUP_STATUS.VOIDED };
   });
 }
 

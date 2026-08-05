@@ -140,6 +140,18 @@ export function StatusBadge({ status, clock, compact = false }) {
       </span>
     );
   }
+  if (status === 'voided') {
+    // L-A: a deliberately MUTED pill (no crown, no energy) so a voided battle
+    // never reads as a real result — it concluded with no standing.
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 999,
+        background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}`,
+      }}>
+        <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3, fontWeight: 600, letterSpacing: '0.1em' }}>VOIDED</Mono>
+      </span>
+    );
+  }
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 999,

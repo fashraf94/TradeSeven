@@ -19,7 +19,7 @@ import { LTOKENS, alpha } from '../leagueTokens';
 import { ArenaDesktop } from './ArenaDesktop';
 import { ArenaMobile } from './ArenaMobile';
 import { AD_W, AD_H } from './arenaLayout';
-import { deriveArenaState, normalizeArenaMode } from './arenaStateMap';
+import { deriveArenaState, deriveArenaTerminalKind, normalizeArenaMode } from './arenaStateMap';
 import { useArenaModel } from './useArenaModel';
 
 // Agent Presence now lives on the battle axis itself (the per-seat heads inside
@@ -29,6 +29,9 @@ import { useArenaModel } from './useArenaModel';
 export default function LeagueBattleArenaLive({ group, battle, mode, uid, compositeContext, onBack = null, viewport = 'desktop' }) {
   const { model, handlers, ready } = useArenaModel({ group, battle, mode, uid, compositeContext });
   const state = deriveArenaState(group);
+  // L-A: a voided cohort reads terminal ('complete'); the distinct kind drives the
+  // client's "voided — no result" pill so it never reads as a real finish.
+  const voided = deriveArenaTerminalKind(group) === 'voided';
   const md = normalizeArenaMode(mode);
   const mobile = viewport === 'mobile';
   const primary = md === 'ranked' ? LTOKENS.gold : LTOKENS.teal;
@@ -62,7 +65,7 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
       <div style={{ width: '100%', minHeight: '100%', background: '#050609',
         backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(primary, 0.06)}, transparent 55%)` }}>
         {ready && model ? (
-          <ArenaMobile key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} />
+          <ArenaMobile key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} />
         ) : (
           <div style={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: LTOKENS.ink3, fontFamily: 'monospace', fontSize: 12 }}>
             Loading the arena…
@@ -78,7 +81,7 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
       {ready && model ? (
         <div style={{ height: Math.ceil(fit.scale * AD_H), overflow: 'hidden' }}>
           <div style={{ width: AD_W, height: AD_H, transform: `scale(${fit.scale})`, transformOrigin: 'top left', marginLeft: fit.offset }}>
-            <ArenaDesktop key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} />
+            <ArenaDesktop key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} />
           </div>
         </div>
       ) : (

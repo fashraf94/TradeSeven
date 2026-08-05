@@ -1150,6 +1150,31 @@ describe('EXPIRED is inert across the active-status selectors + predicates (R2, 
   });
 });
 
+describe('VOIDED is inert across the active-status selectors + FIELD (L-A census regression lock)', () => {
+  it('selectMyGroup never selects a VOIDED ranked group (positive gate excludes it, like COMPLETE/EXPIRED)', () => {
+    const voidedRanked = { id: 'v', status: GROUP_STATUS.VOIDED, updatedAt: '2026-08-05T00:00:00.000Z' };
+    expect(selectMyGroup([voidedRanked])).toBeNull();
+    // a live BATTLE group still wins; the newer VOIDED group is ignored, never preferred
+    expect(selectMyGroup([voidedRanked, { id: 'b', status: GROUP_STATUS.BATTLE, updatedAt: '2026-08-04T00:00:00.000Z' }])?.id).toBe('b');
+  });
+
+  it('selectMyTrainingPod never selects a VOIDED pod', () => {
+    const voidedTraining = { id: 'v', status: GROUP_STATUS.VOIDED, isTraining: true, updatedAt: '2026-08-05T00:00:00.000Z' };
+    expect(selectMyTrainingPod([voidedTraining])).toBeNull();
+  });
+
+  it('selectBaseLayerField excludes a VOIDED group from THE FIELD (a void carries no valid standing)', () => {
+    const voided = { id: 'v', status: GROUP_STATUS.VOIDED, updatedAt: '2026-08-05T00:00:00.000Z' };
+    const live = { id: 'g', status: GROUP_STATUS.BATTLE, updatedAt: '2026-08-04T00:00:00.000Z' };
+    expect(selectBaseLayerField([voided, live]).map(g => g.id)).toEqual(['g']);
+  });
+
+  it('casualDeployMissesPodSession → false (no conflict) for a terminal VOIDED group', () => {
+    const voided = { id: 'v', status: GROUP_STATUS.VOIDED, battleStartWeek: { anchorEtDate: '2026-08-05', mondayEtDate: '2026-08-05', anchorIso: '2026-08-05T13:30:00.000Z' } };
+    expect(casualDeployMissesPodSession(voided, { expiryEtDate: '2026-08-12', nextTradingEtDate: '2026-08-05' })).toBe(false);
+  });
+});
+
 describe('casualDeployMissesPodSession — the G2 honest-warning window test', () => {
   const anchoredPod = (status, anchorEtDate) => ({
     id: 'p1', status,

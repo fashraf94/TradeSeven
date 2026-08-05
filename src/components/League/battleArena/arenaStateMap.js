@@ -32,6 +32,7 @@ export function deriveArenaState(group) {
       return 'live';
     case GROUP_STATUS.COMPLETE:
     case GROUP_STATUS.EXPIRED: // Training-Pod P0 R2: a pod retired pre-BATTLE reads terminal, never 'awaiting'
+    case GROUP_STATUS.VOIDED: // L-A: a voided cohort reads terminal — no LIVE badge, no ticking, no "Day N"
       return 'complete';
     case GROUP_STATUS.FORMING:
     case GROUP_STATUS.DRAFTING:
@@ -39,6 +40,27 @@ export function deriveArenaState(group) {
       return 'awaiting';
     default:
       return 'awaiting'; // unknown / pre-seed → the rest state
+  }
+}
+
+/**
+ * When a group is terminal (arena state 'complete'), WHICH terminal kind — so the
+ * client can tell a legitimately FINISHED battle (a real result) apart from a
+ * VOIDED one (quarantined, no result). Returns 'voided' | 'final' | null (null for
+ * any non-terminal state). ONE tested place — components must NOT hand-roll
+ * `group.status === VOIDED` (the drift this module exists to prevent). L-A.
+ * @param {{status?: string}} group
+ * @returns {'voided'|'final'|null}
+ */
+export function deriveArenaTerminalKind(group) {
+  switch (group?.status) {
+    case GROUP_STATUS.VOIDED:
+      return 'voided';
+    case GROUP_STATUS.COMPLETE:
+    case GROUP_STATUS.EXPIRED:
+      return 'final';
+    default:
+      return null;
   }
 }
 

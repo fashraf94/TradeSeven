@@ -16,6 +16,7 @@ import {
   getGroup,
   transitionStatus,
   expireGroup,
+  voidGroup,
   fetchEligibleGroupsByStatus,
   getPlayer,
 } from './tournamentGroupService.js';
@@ -86,6 +87,7 @@ describe('status lifecycle (P1 table + League Training Slice 1/2 additive edges)
     ['forming', 'expired'], // Training-Pod P0 R2: expire a stale/abandoned pre-BATTLE pod
     ['drafting', 'expired'], // Training-Pod P0 R2
     ['awaiting_open', 'expired'], // Training-Pod P0 R2
+    ['battle', 'voided'], // L-A: poisoned-cohort void — the only BATTLE exit besides complete
   ];
 
   it('exactly these pairs are legal — every other pair throws (forward-only)', () => {
@@ -244,6 +246,66 @@ describe('expireGroup', () => {
       { groupId: 'group-1', expired: false, status: null, reason: 'not_found' });
     expect(missing.captured.updates).toHaveLength(0);
     await expect(expireGroup(makeDb({ storedDoc: { status: 'forming' } }).db, 'group-1', {}))
+      .rejects.toThrow(/now is required/);
+  });
+});
+
+// ==================== VOID (L-A poisoned-cohort disposition) ====================
+
+describe('voidGroup', () => {
+  it('voids a BATTLE group: writes VOIDED + marker fields atomically to tournamentGroups', async () => {
+    const { db, captured } = makeDb({ storedDoc: { status: 'battle', updatedAt: NOW } });
+    const res = await voidGroup(db, 'group-1', { reason: 'poisoned_cohort', by: 'admin', now: NOW, expectedStatus: 'battle', expectedUpdatedAt: NOW });
+    expect(res).toEqual({ groupId: 'group-1', voided: true, status: 'voided' });
+    expect(captured.collection).toBe('tournamentGroups');
+    expect(captured.updates).toEqual([{
+      status: 'voided', voidedAt: NOW, voidedReason: 'poisoned_cohort', voidedBy: 'admin', updatedAt: NOW,
+    }]);
+  });
+
+  it('REFUSES every non-BATTLE status — VOIDED is reachable ONLY from BATTLE (skip, no write)', async () => {
+    for (const status of ['forming', 'drafting', 'awaiting_open', 'complete', 'expired']) {
+      const { db, captured } = makeDb({ storedDoc: { status, updatedAt: NOW } });
+      const res = await voidGroup(db, 'group-1', { reason: 'x', by: 'admin', now: NOW, expectedStatus: status, expectedUpdatedAt: NOW });
+      expect(res).toEqual({ groupId: 'group-1', voided: false, status, reason: `not_voidable_from_${status}` });
+      expect(captured.updates).toHaveLength(0);
+    }
+  });
+
+  it('is idempotent: re-voiding an already-VOIDED group is a no-op skip, not an error', async () => {
+    const { db, captured } = makeDb({ storedDoc: { status: 'voided', updatedAt: NOW } });
+    const res = await voidGroup(db, 'group-1', { reason: 'retry', by: 'admin', now: NOW, expectedStatus: 'voided', expectedUpdatedAt: NOW });
+    expect(res).toEqual({ groupId: 'group-1', voided: false, status: 'voided', reason: 'not_voidable_from_voided' });
+    expect(captured.updates).toHaveLength(0);
+  });
+
+  it('precondition: skips (status_changed) when the doc moved status since the pre-check — no stale mutation', async () => {
+    const { db, captured } = makeDb({ storedDoc: { status: 'complete', updatedAt: NOW } });
+    const res = await voidGroup(db, 'group-1', { now: NOW, expectedStatus: 'battle', expectedUpdatedAt: NOW });
+    expect(res).toEqual({ groupId: 'group-1', voided: false, status: 'complete', reason: 'status_changed' });
+    expect(captured.updates).toHaveLength(0);
+  });
+
+  it('precondition: skips (version_changed) when updatedAt moved since the pre-check — no stale mutation', async () => {
+    const { db, captured } = makeDb({ storedDoc: { status: 'battle', updatedAt: '2026-08-05T00:00:00.000Z' } });
+    const res = await voidGroup(db, 'group-1', { now: NOW, expectedStatus: 'battle', expectedUpdatedAt: '2026-06-01T00:00:00.000Z' });
+    expect(res).toEqual({ groupId: 'group-1', voided: false, status: 'battle', reason: 'version_changed' });
+    expect(captured.updates).toHaveLength(0);
+  });
+
+  it('MANDATORY pins (founder ruling): throws when expectedStatus OR expectedUpdatedAt is absent — never a silent skip', async () => {
+    await expect(voidGroup(makeDb({ storedDoc: { status: 'battle', updatedAt: NOW } }).db, 'group-1', { now: NOW, expectedUpdatedAt: NOW }))
+      .rejects.toThrow(/expectedStatus and expectedUpdatedAt are REQUIRED/);
+    await expect(voidGroup(makeDb({ storedDoc: { status: 'battle', updatedAt: NOW } }).db, 'group-1', { now: NOW, expectedStatus: 'battle' }))
+      .rejects.toThrow(/expectedStatus and expectedUpdatedAt are REQUIRED/);
+  });
+
+  it('missing group → {voided:false, reason:not_found}, no write; missing now → throws', async () => {
+    const missing = makeDb();
+    await expect(voidGroup(missing.db, 'group-1', { now: NOW, expectedStatus: 'battle', expectedUpdatedAt: NOW }))
+      .resolves.toEqual({ groupId: 'group-1', voided: false, status: null, reason: 'not_found' });
+    expect(missing.captured.updates).toHaveLength(0);
+    await expect(voidGroup(makeDb({ storedDoc: { status: 'battle' } }).db, 'group-1', { expectedStatus: 'battle', expectedUpdatedAt: NOW }))
       .rejects.toThrow(/now is required/);
   });
 });
