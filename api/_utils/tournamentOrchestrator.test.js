@@ -310,6 +310,92 @@ describe('deploy plumbing — credentials + ownership assertion from day one', (
     expect(deployBaseUrl()).toBe('https://override.example');
   });
 
+  // ---- apex-domain Authorization strip (2026-08-05 production hygiene) ----
+  //
+  // `https://fantasytrades.io` answers 307 → `https://www.fantasytrades.io`, and
+  // the fetch spec strips `Authorization` across that origin change — so an
+  // internal caller pointed at the apex arrives unauthenticated and takes a 401.
+  // Measured in production: docs/audits/20260805_PR2_POST_FLIP_LIVE_VERIFICATION.md:148.
+  //
+  // MUTATION NOTE (BUILD_RULES §2): every row below fails if the normalization
+  // in `deployBaseUrl` is reverted — checked by reverting it, not by assuming.
+  // The originally-specified guard (stub the env var to www, assert output is
+  // not the apex) is deliberately NOT here: it passes on unfixed code, because
+  // the defect it names lives in the dashboard value rather than in this module.
+  describe('apex host is never the deploy target', () => {
+    it('row 1 — apex in TOURNAMENT_DEPLOY_BASE_URL is rewritten to www', () => {
+      vi.stubEnv('TOURNAMENT_DEPLOY_BASE_URL', 'https://fantasytrades.io');
+      expect(deployBaseUrl()).toBe('https://www.fantasytrades.io');
+    });
+
+    it('row 2 — apex in the VERCEL_PROJECT_PRODUCTION_URL fallback is rewritten to www', () => {
+      // The silent arm: no human types this value, so nothing else would catch it.
+      vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', 'fantasytrades.io');
+      expect(deployBaseUrl()).toBe('https://www.fantasytrades.io');
+    });
+
+    it('row 3 — a trailing slash is stripped, so consumers never build a double slash', () => {
+      vi.stubEnv('TOURNAMENT_DEPLOY_BASE_URL', 'https://www.fantasytrades.io/');
+      expect(deployBaseUrl()).toBe('https://www.fantasytrades.io');
+      expect(buildDeployRequest({ agentId: 'a', odUserId: 'u', groupId: 'g', symbols: [] }).url)
+        .toBe('https://www.fantasytrades.io/api/agent/decide');
+    });
+
+    it('row 4 — precedence is unchanged: the override still beats the fallback', () => {
+      vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', 'fantasytrades.io');
+      vi.stubEnv('TOURNAMENT_DEPLOY_BASE_URL', 'https://override.example');
+      expect(deployBaseUrl()).toBe('https://override.example');
+    });
+
+    it('row 5 — no env combination yields an apex-origin deploy URL', () => {
+      const hazards = [
+        ['TOURNAMENT_DEPLOY_BASE_URL', 'https://fantasytrades.io'],
+        ['TOURNAMENT_DEPLOY_BASE_URL', 'https://fantasytrades.io/'],
+        ['VERCEL_PROJECT_PRODUCTION_URL', 'fantasytrades.io'],
+      ];
+      for (const [name, value] of hazards) {
+        vi.unstubAllEnvs();
+        vi.stubEnv('CRON_SECRET', 's3cret');
+        vi.stubEnv(name, value);
+        const { url } = buildDeployRequest({ agentId: 'a', odUserId: 'u', groupId: 'g', symbols: [] });
+        expect(url, `${name}=${value}`).not.toMatch(/^https:\/\/fantasytrades\.io[/:]/);
+        expect(url, `${name}=${value}`).toBe('https://www.fantasytrades.io/api/agent/decide');
+      }
+    });
+
+    it('row 6 — the rewrite is exact-host only and never generalizes', () => {
+      // Previews and non-production origins must pass through byte-identical;
+      // a substring or suffix match here would silently repoint preview fan-out
+      // at production, which is the failure this row exists to prevent.
+      const untouched = [
+        'https://override.example',
+        'https://tradeseven.vercel.app',
+        'https://preview.fantasytrades.io',
+        'https://fantasytrades.io.example.com',
+        'http://localhost:3000',
+      ];
+      for (const value of untouched) {
+        vi.stubEnv('TOURNAMENT_DEPLOY_BASE_URL', value);
+        expect(deployBaseUrl(), value).toBe(value);
+      }
+    });
+
+    it('warns when it rewrites, and stays silent when the value is already canonical', () => {
+      // A silent correction would hide the misconfigured dashboard entry.
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      vi.stubEnv('TOURNAMENT_DEPLOY_BASE_URL', 'https://www.fantasytrades.io');
+      expect(deployBaseUrl()).toBe('https://www.fantasytrades.io');
+      expect(warn).not.toHaveBeenCalled();
+
+      vi.stubEnv('TOURNAMENT_DEPLOY_BASE_URL', 'https://fantasytrades.io');
+      expect(deployBaseUrl()).toBe('https://www.fantasytrades.io');
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain('TOURNAMENT_DEPLOY_BASE_URL');
+      expect(warn.mock.calls[0][0]).toContain('https://www.fantasytrades.io');
+    });
+  });
+
   it('every call carries Bearer CRON_SECRET, the ownership assertion, gameMode, the prescribed six, the rider-#6 fields, and the CPU marker', () => {
     vi.stubEnv('CRON_SECRET', 's3cret');
     vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', 'tradeseven.vercel.app');
