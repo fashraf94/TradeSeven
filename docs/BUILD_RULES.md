@@ -35,7 +35,16 @@ The scoring engine and `createAgentBattle` document shape are fenced as concepts
 - The founder checks out the branch before invoking you. **Open every session by reporting: branch name, HEAD SHA, clean-tree status.** If you're not on the expected branch, STOP.
 - Protected `main`; PRs only; the founder merges manually. **Pushed ≠ deployed:** Vercel preview is the smoke-test surface; production exists only after the founder confirms merge + deploy.
 - PR descriptions cite changes by `file:line`, name any fenced functions *called*, and confirm none were *edited*.
-- `/code-review` is mandatory at **≥10 files OR ≥1500 lines** changed.
+- **Review is mandatory at ≥10 files OR ≥1500 lines changed** (measured on the cumulative branch diff, not the latest commit). *(Amended Aug 1, 2026 — founder ruling at the Task 4 Phase 3 kickoff. The rule previously named the `/code-review` command, which does not exist in the Claude Code environment these sessions run in; it had been silently unmeetable twice — the Task 2 cumulative review and the Task 4 Phase 2 diff — and a rule that cannot be followed literally erodes the ones that can. The requirement is now stated operationally, so it can be met and audited.)*
+
+  At the threshold, the review MUST be:
+  - **Multi-lens and adversarial.** Cover the diff along several independent dimensions (e.g. domain correctness, wiring/lifecycle, the dark-merge or flag-off guarantee, test integrity, cross-phase consistency) rather than one linear read.
+  - **Independently verified.** Every finding is handed to a reviewer instructed to **refute** it with a concrete repro. Findings that survive are CONFIRMED; the rest are recorded as REFUTED, with the reasoning — a review that never refutes itself has not been run adversarially. Precedent: `docs/audits/20260730_DELIGHT_STARFIELD_CUMULATIVE_CODE_REVIEW.md` (6 dimensions, 22 agents, 13 CONFIRMED / 3 REFUTED).
+  - **Accompanied by an explicit `vite build`.** No test in the repo imports `App.jsx`, so a syntax error there passes the entire suite. The build is the only check that catches it.
+  - **Mutation-checked where it adds tests.** A row that cannot fail under the defect it names is not a guard.
+  - **Written down** — findings, dispositions, and the CONFIRMED/REFUTED split go in a `docs/audits/` record, cited from the PR.
+
+  If the environment offers a review tool, use it *and* meet the above; the tool is a means, not the requirement. If the reviewing session cannot run the adversarial pass (e.g. subagents unavailable), say so explicitly in the PR rather than reporting the review as done — the Task 4 Phase 2 report is the precedent for that disclosure.
 - **A flag-flip PR reconciles its own pins in the SAME commit.** When a PR flips a feature flag's default (true↔false), it MUST, in that same commit, update every test assertion and docstring that pins the pre-flip state — the value pins that assert the constant, and any docstring that calls the old value the "DEFAULT". A flip that leaves those behind reddens CI on every *other* open PR into `main` until someone else reconciles them. Precedent: `FUNDAMENTAL_MIRROR_ENABLED`'s flip reconciled its ON-state assertions and P4 goldens in-commit (featureFlags.js:1165–1167); the starfield flip PR #694 did not, which reddened the inert test on every downstream PR — the second occurrence in a week that prompted this rule (codified Jul 31 2026).
 
 ## 3. Discovery protocol

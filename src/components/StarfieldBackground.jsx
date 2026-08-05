@@ -76,27 +76,43 @@
 // rule rather than needing a special case here.
 //
 // ---------------------------------------------------------------------------
-// SECOND INPUT: DEPLOY INTENT (Task 4, Phase 1 — State Map Amendment C)
+// SECOND INPUT: DEPLOY INTENT (Task 4 — State Map Amendment C)
 // ---------------------------------------------------------------------------
-// This component also LISTENS for `ft-deploy-intent`, dispatched by the shipped
-// hold-to-deploy gesture (src/hooks/useHoldToDeploy.js — the dispatcher header
-// carries the same contract). While a deploy button is held, the sky leans in;
-// on an early release it exhales back.
+// This component LISTENS for `ft-deploy-intent`, dispatched by the shipped
+// hold-to-deploy gesture. While a deploy button is held the sky leans in; on an
+// early release it exhales; on completion it punches, then the settle lands it
+// at BATTLE LIVE.
 //
-//   { progress: 0..1 }          per frame while a pointer hold charges
-//   { progress: null, reason }  terminal — 'abort' or 'commit'
-//   anything else               malformed, ignored by reduceIntentEvent
+// THE EVENT CONTRACT (the dispatcher header in src/hooks/useHoldToDeploy.js is
+// the record; this is the listening end of the same contract, and it also
+// carries the house pattern for adding the NEXT custom event, since
+// ft-deploy-intent was the app's first production CustomEvent dispatch):
 //
-// A window event rather than a prop, following the ft-accent-changed shape
-// below: the deploy CTA is a deep descendant of a SIBLING subtree (the dashboard
-// content), not an ancestor of this layer, so a prop would have to be drilled
-// through App for a signal that changes 60 times a second and is transient.
+//   name     DEPLOY_INTENT_EVENT from ./warpStateMachine — imported, never
+//            re-typed, so the two ends cannot drift to different strings.
+//   target   `window`. The deploy CTA is a deep descendant of a SIBLING subtree
+//            (the dashboard content), not an ancestor of this layer, so a prop
+//            would have to be drilled through App for a signal that changes
+//            ~60x a second and is transient. Same shape as ft-accent-changed
+//            below.
+//   payload  on `event.detail`:
+//              { progress: 0..1 }              per frame, pointer hold charging
+//              { progress: null, reason:'abort'  }  released early
+//              { progress: null, reason:'commit' }  hold completed
+//            anything else is MALFORMED. Validation is the LISTENER's job and
+//            lives in the pure reducer (reduceIntentEvent), which returns its
+//            previous state by identity — a stray event cannot churn the field.
+//
+// THE LISTENER WRITES A REF AND NOTHING ELSE — never setState, never paint().
+// That is what makes it (a) unable to restart the field, (b) free of ~78
+// re-renders per hold, and (c) genuinely inert under reduced motion, where no
+// loop is ever scheduled to read the ref: the event is received and dropped.
 //
 // Intent is a DECORATION of this component's output and is deliberately absent
 // from the state machine's own integration — see applyIntent's placement in
-// `step` and the R-T4-ARCH block in warpStateMachine.js. It can only ever raise
-// speed, never lower it, and it never changes tier: battle state remains the
-// sole authority for that.
+// `step` and the Amendment C / R-T4-ARCH blocks in warpStateMachine.js. It can
+// only ever raise speed, never lower it, and it never changes tier: battle
+// state remains the sole authority for that.
 //
 // Behind DEPLOY_SKY_COUPLING_ENABLED (merged dark). Flag-off registers no
 // listener, so the sky is driven by battle state alone exactly as today.

@@ -35,6 +35,25 @@
 //   R-RAMP   transitions ease over seconds, never step.
 //   R-REST   resting is near-imperceptible drift.
 //   R-PARAM  speed is the ONLY state-driven parameter; density is fixed.
+//   R-INPUT  battle state is the SOLE authority for tier.
+//
+// ---------------------------------------------------------------------------
+// STATE MAP AMENDMENT C (Task 4, ruling R-T4-ARCH — Aug 1, 2026)
+// ---------------------------------------------------------------------------
+// R-INPUT is amended to admit a SECOND input class: **user deploy intent**.
+// It is transient, upward-only, and non-authoritative.
+//
+//   - TRANSIENT      it lives in a ref for the length of a hold plus its
+//                    release, and leaves no trace in the tier machine.
+//   - UPWARD-ONLY    speed = max(stateSpeed, intent). Intent can never slow the
+//                    sky below what battle state warrants.
+//   - NON-AUTHORITATIVE  it decorates the machine's OUTPUT at the consumption
+//                    read. It never changes tier, and battle state remains the
+//                    sole authority for tier.
+//
+// The full contract, the surge/exhale shapes, and — most importantly — WHY the
+// max() must not be written back into state.speed live in "THE DEPLOY-INTENT
+// OVERLAY" at the foot of this file. Read that block before changing any of it.
 //
 // ---------------------------------------------------------------------------
 // UNPROVABLE CLOCKS DO NOT GET AN ENDGAME
