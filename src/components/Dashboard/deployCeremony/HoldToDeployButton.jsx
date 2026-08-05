@@ -17,10 +17,11 @@
 // the copy (spec §4). On completion the label becomes "Locked in" for the ~450ms
 // beat before the overlay mounts.
 
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { CMD, alpha, readableOn } from '../commandUI';
 import useHoldToDeploy from '../../../hooks/useHoldToDeploy';
+import { isDeploySkyCouplingOn } from '../../../config/featureFlags';
 
 export default function HoldToDeployButton({
   variant = 'filled',
@@ -43,6 +44,26 @@ export default function HoldToDeployButton({
   // Fill snaps per-frame while charging; drains/settles with a transition otherwise
   // (early-release drain ~250ms per spec §4; settle-to-full on lock).
   const fillTransition = charging ? 'none' : 'width 250ms ease';
+
+  // ── Charge glow — Delight Layer Task 4 Phase 2, the contained cosmetic pass.
+  //
+  // The button gathers the same energy the sky does, so the two read as ONE
+  // build rather than two things happening at once. Deliberately limited to
+  // box-shadow and border colour: no layout, no copy, no new colour (the accent
+  // it already carries, at varying alpha), and nothing that could reflow.
+  //
+  // Latched once per mount rather than read per render: this component
+  // re-renders every animation frame of a hold, and the flag cannot change
+  // without a reload.
+  //
+  // GATED on the coupling flag because the ceremony itself is already LIVE in
+  // production — an ungated change here would ship to users ahead of the flip
+  // and break A1's "flag OFF ⇒ the hold behaves byte-identically to today".
+  const [couplingOn] = useState(isDeploySkyCouplingOn);
+  const glowRadius = 8 + progress * 26;
+  const chargeGlow = couplingOn ? `0 0 ${glowRadius.toFixed(1)}px ${alpha(accent, 0.16 + progress * 0.4)}` : undefined;
+  // Drains with the fill on an early release; snaps per-frame while charging.
+  const chargeTransition = couplingOn && !charging ? 'box-shadow 250ms ease, border-color 250ms ease' : undefined;
 
   const holdAria = ariaLabel || `Hold to deploy${label ? ` — ${label}` : ''}. Press and hold, or press Enter to deploy immediately.`;
 
@@ -75,6 +96,11 @@ export default function HoldToDeployButton({
             style={{
               position: 'absolute', left: 0, top: 0, bottom: 0, width: `${progress * 100}%`,
               background: accent, transition: fillTransition,
+              // The muted variant keeps its restraint: the rule glows, the
+              // element does not. A quarter of the filled variant's radius.
+              boxShadow: couplingOn && progress > 0
+                ? `0 0 ${(progress * 7).toFixed(1)}px ${alpha(accent, progress * 0.55)}`
+                : undefined,
             }}
           />
         </span>
@@ -92,9 +118,12 @@ export default function HoldToDeployButton({
       style={{
         position: 'relative', overflow: 'hidden',
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-        border: `1px solid ${alpha(accent, 0.5)}`, cursor: disabled ? 'default' : 'pointer',
+        border: `1px solid ${alpha(accent, couplingOn ? 0.5 + progress * 0.45 : 0.5)}`,
+        cursor: disabled ? 'default' : 'pointer',
         fontFamily: 'inherit', background: alpha(accent, 0.16), color: flipped ? ink : accent,
         fontWeight: 700, opacity: disabled ? 0.6 : 1,
+        boxShadow: chargeGlow,
+        transition: chargeTransition,
         touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none',
         ...style,
       }}

@@ -24,8 +24,8 @@
 // ---------------------------------------------------------------------------
 // STATE MAP V2 (the contract this implements)
 // ---------------------------------------------------------------------------
-//   RESTING      no live games                      speed 0.12
-//   BATTLE LIVE  the GOVERNING game is not in its window   speed 0.5
+//   RESTING      no live games                      speed 0.08
+//   BATTLE LIVE  the GOVERNING game is not in its window   speed 0.7
 //   ENDGAME      governing game inside its window    speed 0.8 -> 2.2, continuous
 //
 //   R-PREC   (as amended by State Map Amendment B / R-T2-S9): the game FURTHEST
@@ -35,6 +35,25 @@
 //   R-RAMP   transitions ease over seconds, never step.
 //   R-REST   resting is near-imperceptible drift.
 //   R-PARAM  speed is the ONLY state-driven parameter; density is fixed.
+//   R-INPUT  battle state is the SOLE authority for tier.
+//
+// ---------------------------------------------------------------------------
+// STATE MAP AMENDMENT C (Task 4, ruling R-T4-ARCH — Aug 1, 2026)
+// ---------------------------------------------------------------------------
+// R-INPUT is amended to admit a SECOND input class: **user deploy intent**.
+// It is transient, upward-only, and non-authoritative.
+//
+//   - TRANSIENT      it lives in a ref for the length of a hold plus its
+//                    release, and leaves no trace in the tier machine.
+//   - UPWARD-ONLY    speed = max(stateSpeed, intent). Intent can never slow the
+//                    sky below what battle state warrants.
+//   - NON-AUTHORITATIVE  it decorates the machine's OUTPUT at the consumption
+//                    read. It never changes tier, and battle state remains the
+//                    sole authority for tier.
+//
+// The full contract, the surge/exhale shapes, and — most importantly — WHY the
+// max() must not be written back into state.speed live in "THE DEPLOY-INTENT
+// OVERLAY" at the foot of this file. Read that block before changing any of it.
 //
 // ---------------------------------------------------------------------------
 // UNPROVABLE CLOCKS DO NOT GET AN ENDGAME
@@ -62,8 +81,16 @@ export const WARP_TIER = {
  */
 export const WARP_TUNING = {
   // --- speeds (x demo baseline) -------------------------------------------
-  SPEED_RESTING: 0.12,
-  SPEED_LIVE: 0.5,
+  /**
+   * RESTING / BATTLE LIVE widened at the founder's feel pass (round 1, T3;
+   * Aug 1, 2026) from 0.12 / 0.5. BATTLE LIVE registered, but read only
+   * slightly different from RESTING: perceived motion compresses at low
+   * speeds, so a 4.2x ratio did not read as 4.2x. The gap is now 8.75x, and
+   * the lower resting drift honours R-REST ("near-imperceptible") more
+   * faithfully than 0.12 did. Tuning-exempt, per spec V2 §4 D2.
+   */
+  SPEED_RESTING: 0.08,
+  SPEED_LIVE: 0.7,
   SPEED_ENDGAME_FLOOR: 0.8,
   SPEED_ENDGAME_PEAK: 2.2,
 
@@ -83,7 +110,7 @@ export const WARP_TUNING = {
   PARTICLES_MOBILE_LITE: 70,
 
   // --- projection / motion feel -------------------------------------------
-  /** Depth consumed per second at speed 1.0. Resting (0.12) ~= 92s per star. */
+  /** Depth consumed per second at speed 1.0. Resting (0.08) ~= 136s per star. */
   Z_RATE: 0.09,
   /**
    * Field-of-view scalar for the radial projection.
@@ -114,6 +141,66 @@ export const WARP_TUNING = {
   ALPHA_GAIN: 1.5,
   /** Opacity of the single static frame drawn under prefers-reduced-motion. */
   STATIC_FRAME_ALPHA: 0.35,
+
+  // --- deploy intent (Task 4, spec V1 D2/D3 — see the overlay block below) --
+  /**
+   * Peak of the hold-intent curve. DELIBERATELY below SPEED_ENDGAME_PEAK (2.2)
+   * so a hold can never outrank a real endgame's drama (D2). It sits above
+   * SPEED_LIVE (0.7), so a completed hold reads as faster than a live battle.
+   * Both bounds are pinned by a test row.
+   *
+   * Raised from 1.4 at the founder's feel pass (round 1, T2): the top of the
+   * ramp needed more authority.
+   */
+  INTENT_PEAK: 1.8,
+  /**
+   * Shape of that curve: `peak * progress^n`. n > 1 keeps the curve convex, so
+   * the back half still steepens — but the SIZE of n decides how long the
+   * start feels dead, and that is the whole feel of the gesture.
+   *
+   * Lowered 2.5 -> 1.2 at the founder's feel pass (round 1, T1): "the ramp must
+   * begin responding the instant the press starts." At 2.5 the first half of
+   * the hold was effectively dead — only 18% of peak by the halfway point, and
+   * a RESTING sky was not visibly lifted until ~37% in (~490ms of the shipped
+   * 1300ms hold). At 1.2 the sky lifts off RESTING at ~7.5% (~100ms), while
+   * the curve still sits below the linear line at every interior point, so the
+   * late steepening the threshold feeling depends on survives.
+   *
+   * NOTE the tier interaction: because intent is max(coreSpeed, curve), the
+   * higher the sky's current tier the later a hold becomes visible. From
+   * RESTING (0.08) that is ~100ms; during a BATTLE LIVE sky (0.7) the hold does
+   * not clear the floor until ~45% of the press (~590ms). See the round-1
+   * tuning record for the measured table.
+   */
+  INTENT_CURVE_EXPONENT: 1.2,
+  /**
+   * The abort exhale (D3). Its own duration, deliberately NOT a tier ease: an
+   * abort must be felt promptly, so this is far shorter than TIER_EASE_MS (15s)
+   * or DECAY_MS (30s). Spec says ~1-2s.
+   */
+  INTENT_EXHALE_MS: 1200,
+
+  // --- the commit surge (Task 4 Phase 2, spec V1 D4 / ruling R-T4-S3) -------
+  /**
+   * Ceiling of the commit punch. Set to SPEED_ENDGAME_PEAK deliberately: the
+   * commit is the ONE moment intent is allowed to reach the sky's maximum
+   * intensity, and it still never EXCEEDS what a real endgame reaches — so D2's
+   * principle ("a hold never outranks a real endgame's drama") survives the
+   * surge intact. Pinned by a test row.
+   */
+  INTENT_SURGE_PEAK: 2.2,
+  /**
+   * Total length of the surge. Mirrors LOCK_BEAT_MS in
+   * src/hooks/useHoldToDeploy.js (450ms) on purpose — ruling R-T4-S3 option
+   * (ii) places the punch inside the lock beat, the last window in which the
+   * sky is still visible before the ceremony scrim mounts. The two constants
+   * live in different modules (the pure core must not import the hook), so
+   * each names the other: changing one without the other pushes part of the
+   * surge behind the curtain.
+   */
+  INTENT_SURGE_MS: 450,
+  /** The attack. Fast rise = the punch; the rest of the window is the release. */
+  INTENT_SURGE_RISE_MS: 140,
 };
 
 /** Fallback tint if --ft-warp-tint is unreadable (matches its resolved value). */
@@ -622,4 +709,308 @@ export function respawnStar(star, rng = Math.random) {
   star.z = 1;
   star.pz = 1;
   return star;
+}
+
+// ===========================================================================
+// THE DEPLOY-INTENT OVERLAY
+// Delight Layer arc, Task 4 (Phase 1). State Map Amendment C, ruling R-T4-ARCH.
+// Basis: docs/audits/20260801_DELIGHT_DEPLOY_SKY_COUPLING_PHASE0_DISCOVERY.md
+// ===========================================================================
+//
+// The signature deploy: while the user holds a deploy button the sky leans in,
+// if they let go early it exhales back, and if they see it through it punches.
+// "The room responds to your intent before you commit."
+//
+// ---------------------------------------------------------------------------
+// THE THREE BEATS
+// ---------------------------------------------------------------------------
+//   RAMP    intentCurve(progress) rises with the finger, upward-only.
+//   EXHALE  an early release decays back to battle state over ~1.2s (D3). The
+//           abort is half the signature: commitment only has weight if backing
+//           out feels like something.
+//   SURGE   completing the hold punches to the sky's ceiling inside the ~450ms
+//           lock beat (D4 / R-T4-S3), the last window before the ceremony scrim
+//           mounts. Then the existing agent-thinking animation takes the stage
+//           (untouched), and the sky settles at BATTLE LIVE — see the §2 settle
+//           in App.jsx handleCreateAgentTrainingBattle.
+//
+// The surge is OPTIMISTIC by design: it fires at hold completion, before the
+// deploy call resolves. A deploy that then FAILS never reaches BATTLE LIVE —
+// no battle is injected, so the surge simply falls into the exhale and the sky
+// returns to what battle state warrants. That is the abort beat doing double
+// duty, and it is why the settle is gated on confirmed success rather than on
+// the commit.
+//
+// ---------------------------------------------------------------------------
+// THIS IS AN OUTPUT DECORATOR. IT NEVER FEEDS BACK INTO THE TIER MACHINE.
+// ---------------------------------------------------------------------------
+// Amendment C admits user deploy intent as a SECOND input class — transient,
+// upward-only, non-authoritative. Battle state remains the sole authority for
+// tier. Ruling R-T4-ARCH fixes exactly where that lands in code:
+//
+//   applyIntent() is called at the CONSUMPTION READ (StarfieldBackground.step,
+//   where the loop reads warpRef.current.speed), NEVER inside advanceWarp's
+//   returned state.speed and NEVER inside targetSpeed.
+//
+// That is not a style preference — the other two placements are BROKEN. Both
+// `advanceWarp`'s ease anchor (`anchorSpeed = prev.speed`) and its transition
+// choice (`resolveEaseMs` reads `prev.speed`/`prev.tier`) are computed from the
+// PREVIOUS frame's speed. Writing an intent-inflated speed back into the state
+// would make the sky, on the frame a hold ends, believe it is easing down from
+// 1.4 — re-anchoring the 15s tier ease (or the 30s decay) against a speed no
+// battle ever justified, and corrupting the `targetMoved` guard along with it.
+// The tier machine must keep integrating as if no hold were happening; the
+// hold only decorates what gets DRAWN.
+//
+// So: `state.speed` stays the honest battle-state speed. The overlay carries
+// its own transient easing state, held in a ref by the component and advanced
+// only by the events it receives plus the wall clock.
+//
+// ---------------------------------------------------------------------------
+// UPWARD-ONLY, ALWAYS (spec §3)
+// ---------------------------------------------------------------------------
+// `speed = max(stateSpeed, intent)`. Intent can never slow the sky below what
+// battle state warrants. A corollary the founder ratified (R-T4-S3b): during a
+// real ENDGAME (up to 2.2) a hold adds nothing visible, because INTENT_PEAK is
+// deliberately lower. The sky is already telling a more important truth, and
+// the button's own fill still communicates hold progress.
+//
+// ---------------------------------------------------------------------------
+// WHY THE EXHALE IS NEVER CANCELLED
+// ---------------------------------------------------------------------------
+// The live curve and the exhale are combined with max() rather than the exhale
+// being cleared when a new hold starts. That is what makes a re-hold DURING an
+// exhale continuous: the curve starts at 0 and would otherwise drop the sky
+// from mid-exhale to nothing in a single frame — a visible snap, precisely the
+// kind of step R-RAMP exists to forbid. Letting the exhale keep decaying
+// underneath while the new curve climbs means the louder of the two always
+// wins, so the sky only ever glides.
+
+/**
+ * The intent channel's event name — the ONE definition, imported by BOTH ends
+ * (the dispatcher in src/hooks/useHoldToDeploy.js and the listener in
+ * StarfieldBackground.jsx) so the two can never drift to different strings.
+ *
+ * Payload contract (acceptance row A3):
+ *   detail: { progress: number }  0..1, dispatched per animation frame while a
+ *                                 POINTER hold charges.
+ *   detail: { progress: null }    terminal — the hold ended, by abort OR by
+ *                                 commit. Starts the exhale.
+ * Anything else is malformed and is IGNORED by reduceIntentEvent.
+ *
+ * `reason: 'abort' | 'commit'` rides along on the terminal event. Phase 1 does
+ * not read it (both terminals exhale identically); it exists from the start so
+ * Phase 2's commit surge does not have to change a shipped contract.
+ */
+export const DEPLOY_INTENT_EVENT = 'ft-deploy-intent';
+
+/**
+ * The hold curve (D2). Eased, gentle → steep, peaking below the endgame.
+ *
+ * Monotone non-decreasing in `progress`, which acceptance row A2 pins: a hold
+ * that is further along must never ask the sky for LESS speed.
+ *
+ * Returns 0 for an unusable progress rather than NaN — a NaN speed propagates
+ * into the star-depth integration and pins every star at z = NaN, a permanently
+ * blank field with no error anywhere (the same hazard targetSpeed guards).
+ */
+export function intentCurve(progress, tuning = WARP_TUNING) {
+  const p = Number(progress);
+  if (!Number.isFinite(p)) return 0;
+  return tuning.INTENT_PEAK * Math.pow(clamp01(p), tuning.INTENT_CURVE_EXPONENT);
+}
+
+/** Initial overlay state: no hold in flight, nothing exhaling, no surge. */
+export function createIntentState() {
+  return {
+    /** Live hold progress 0..1, or null when no hold is charging. */
+    progress: null,
+    /** Intent speed at the instant the terminal event arrived. */
+    exhaleFrom: 0,
+    /** Wall clock the exhale began, or null when nothing is exhaling. */
+    exhaleAt: null,
+    /** Intent speed the commit surge launched from. */
+    surgeFrom: 0,
+    /** Wall clock the commit surge began, or null when none. */
+    surgeAt: null,
+  };
+}
+
+/** Is a commit surge still inside its window? */
+export function isSurging(state, now, tuning = WARP_TUNING) {
+  if (!state || state.surgeAt == null) return false;
+  if (!Number.isFinite(now) || !Number.isFinite(state.surgeAt)) return false;
+  const elapsed = now - state.surgeAt;
+  // A clock that has stepped BACKWARDS (NTP correction) is not a surge that
+  // has yet to start — the anchor is only ever stamped as `now` at the
+  // terminal, so `elapsed < 0` can only mean the clock moved. Treat it as
+  // stale, else a long-dead surge could swallow a real abort terminal.
+  return elapsed >= 0 && elapsed < tuning.INTENT_SURGE_MS;
+}
+
+/**
+ * The commit punch (spec V1 D4, ruling R-T4-S3 option ii).
+ *
+ * Shape: a fast attack from wherever the hold left the sky up to the ceiling,
+ * then a release back down. It is deliberately NOT a decay to the resting
+ * speed — the exhale runs underneath it simultaneously, and because the two are
+ * combined with max(), the exhale simply takes over the moment the release
+ * falls below it. That hand-off is what keeps the whole commit beat continuous:
+ * punch, fall, then the long exhale, with no step anywhere (R-RAMP).
+ */
+function surgeSpeed(state, now, tuning = WARP_TUNING) {
+  if (!state || state.surgeAt == null) return 0;
+  // A single unusable read holds the punch rather than dropping it (the same
+  // rule the exhale follows); `surgeAt` is always finite when set.
+  if (!Number.isFinite(now)) return state.surgeFrom;
+  const total = tuning.INTENT_SURGE_MS;
+  if (!(total > 0)) return 0;
+
+  const elapsed = now - state.surgeAt;
+  // elapsed === 0 is the launch frame (hold the speed the punch starts from);
+  // elapsed < 0 means the wall clock stepped backwards, which must not
+  // resurrect a finished punch at full strength.
+  if (elapsed < 0) return 0;
+  if (elapsed === 0) return state.surgeFrom;
+  if (elapsed >= total) return 0;
+
+  // Never let the attack descend: a surge that started from an intent speed
+  // ABOVE the configured ceiling holds that speed instead of dipping.
+  const peak = Math.max(tuning.INTENT_SURGE_PEAK, state.surgeFrom);
+  const rise = Math.min(Math.max(tuning.INTENT_SURGE_RISE_MS, 0), total);
+  const fall = total - rise;
+
+  if (elapsed < rise) {
+    return state.surgeFrom + (peak - state.surgeFrom) * (elapsed / rise);
+  }
+  if (fall <= 0) return peak; // all attack, no release — degenerate but defined
+  return peak * (1 - (elapsed - rise) / fall);
+}
+
+/**
+ * How much speed the fading exhale still contributes.
+ *
+ * Quadratic ease-out: a quick initial release that settles gently — an exhale,
+ * not a linear fade. Reaches EXACTLY 0 at INTENT_EXHALE_MS, which is what lets
+ * A2 assert "the abort exhale reaches state speed within bound" as equality
+ * rather than an epsilon.
+ */
+function exhaleSpeed(state, now, tuning = WARP_TUNING) {
+  if (!state || state.exhaleAt == null || !(state.exhaleFrom > 0)) return 0;
+  // A single unusable READ holds the exhale at its current start value rather
+  // than snapping it to zero; `exhaleAt` is always finite when set (see the
+  // terminal branch of reduceIntentEvent), so the next frame with a good clock
+  // resumes the decay from the right place and this can never strand.
+  if (!Number.isFinite(now)) return state.exhaleFrom;
+  const span = tuning.INTENT_EXHALE_MS;
+  if (!(span > 0)) return 0;
+  // Same backwards-clock rule as the surge: clamp01 would otherwise floor a
+  // negative elapsed at t=0 and replay the exhale from full strength.
+  if (now < state.exhaleAt) return 0;
+  const t = clamp01((now - state.exhaleAt) / span);
+  const remaining = 1 - t;
+  return state.exhaleFrom * remaining * remaining;
+}
+
+/**
+ * Total speed the overlay is asking for right now — the louder of the live
+ * hold and the still-fading exhale (see "WHY THE EXHALE IS NEVER CANCELLED").
+ */
+export function intentSpeed(state, now, tuning = WARP_TUNING) {
+  if (!state) return 0;
+  const live = state.progress == null ? 0 : intentCurve(state.progress, tuning);
+  return Math.max(
+    live,
+    exhaleSpeed(state, now, tuning),
+    surgeSpeed(state, now, tuning),
+  );
+}
+
+/**
+ * Fold one `ft-deploy-intent` payload into the overlay state. Pure: returns the
+ * NEXT state and never mutates the input.
+ *
+ * A malformed payload returns the SAME state object by identity, so "the
+ * listener ignores malformed payloads" (row A3) is assertable with toBe() and a
+ * stray event can never churn the field.
+ */
+export function reduceIntentEvent(state, detail, now, tuning = WARP_TUNING) {
+  const prev = state || createIntentState();
+  if (!detail || typeof detail !== 'object') return prev;
+
+  // Terminal — abort or commit. Hand the exhale the speed we are AT (which may
+  // itself still include an older exhale or surge), so the release is continuous.
+  if (detail.progress === null) {
+    // A terminal with an unusable clock cannot time a decay. Intent CLEARS at
+    // once rather than guessing a duration or leaving the sky leaning in on an
+    // exhale that can never be measured — the conservative answer, the same
+    // rule the tier machine applies to a game whose clock it cannot prove. In
+    // practice `now` is Date.now() from the listener and is always finite.
+    if (!Number.isFinite(now)) return createIntentState();
+
+    const committing = detail.reason === 'commit';
+
+    // THE TERMINAL-COLLISION GUARD — a commit surge is AUTHORITATIVE.
+    //
+    // Phase 2's own settle makes this reachable: injecting the new battle flips
+    // `isLive`, which swaps the Deploy section out for Manage
+    // (CommandDashboard.jsx:465 / CommandDashboardDesktop.jsx:221), unmounting
+    // the very button that was just held. The hook closes its stream on unmount
+    // with an ABORT, and an abort landing on an in-flight commit would replace
+    // the signature beat with its exact opposite — a punch turned into a sigh.
+    //
+    // Today the ordering makes that unreachable (the unmount arrives seconds
+    // after fireComplete has set phase 'locked', long past the 450ms window),
+    // but that is a timing margin, not a guarantee, and a future change to the
+    // ceremony could close the gap. So the precedence is structural: while a
+    // commit surge is in flight, nothing but another commit may disturb it.
+    // ...but the abort still has a SECOND job, and discarding the whole event
+    // discarded that too: clearing `progress`. The terminal branch below is the
+    // only writer that ever nulls it, so a live-progress frame arriving between
+    // the commit and the blocked abort would strand a hold value forever — the
+    // sky pinned above battle state with no gesture in flight and no event able
+    // to bring it down. Reachable because two hold buttons are mounted at once
+    // (the muted CTA and DeployStation on mobile; ReadColumn and DeployCard on
+    // desktop), so two pointers can drive two independent streams into the one
+    // window channel. Close the stream, keep the punch.
+    if (!committing && isSurging(prev, now, tuning)) {
+      return prev.progress == null ? prev : { ...prev, progress: null };
+    }
+
+    const from = intentSpeed(prev, now, tuning);
+    return {
+      progress: null,
+      exhaleFrom: from,
+      exhaleAt: now,
+      surgeFrom: committing ? from : prev.surgeFrom,
+      surgeAt: committing ? now : prev.surgeAt,
+    };
+  }
+
+  // Live progress. The exhale (and any surge) is deliberately left running
+  // underneath — see "WHY THE EXHALE IS NEVER CANCELLED".
+  if (typeof detail.progress === 'number' && Number.isFinite(detail.progress)) {
+    return { ...prev, progress: clamp01(detail.progress) };
+  }
+
+  return prev; // undefined, NaN, string, boolean — malformed.
+}
+
+/**
+ * R-T4-ARCH — the whole coupling, as one pure function.
+ *
+ * Called at the consumption read to decorate what gets DRAWN. The tier
+ * machine's own `speed` is untouched and keeps integrating honestly.
+ *
+ * @param {number} coreSpeed  advanceWarp's battle-state speed for this frame.
+ * @param {object|null} state The overlay state (a component ref).
+ * @param {number} now        Wall clock, epoch ms — this module never reads one.
+ * @returns {number} the speed to draw with: never below `coreSpeed`.
+ */
+export function applyIntent(coreSpeed, state, now, tuning = WARP_TUNING) {
+  const intent = intentSpeed(state, now, tuning);
+  // A non-finite core speed would poison max() and blank the field; fall back
+  // to the intent alone rather than propagating NaN into the star depths.
+  if (!Number.isFinite(coreSpeed)) return intent;
+  return Math.max(coreSpeed, intent);
 }

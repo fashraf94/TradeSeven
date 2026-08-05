@@ -4,7 +4,7 @@
 // Delight Layer arc, Task 2 (Phase 2). Spec V2 §4 D5, rulings R-T2-S1/S2/S13.
 //
 // Maps the EXISTING `activeAgentBattles` poll result (src/App.jsx:2345, filled
-// by the poll at :3887-3922) into the pure core's `liveGames` shape. Pure and
+// by the poll at :3891-3933) into the pure core's `liveGames` shape. Pure and
 // render-free — no React, no Firebase, no clock of its own.
 //
 // ---------------------------------------------------------------------------

@@ -13,8 +13,8 @@
 // the z0 background slot BEHIND the dashboard content, and is mounted at exactly
 // two flag-conditional sites (spec V2 D4 + Amendment A2):
 //
-//   src/App.jsx:8631  desktop dashboard  <- isStarfieldOn()
-//   src/App.jsx:8584  mobile dashboard   <- isStarfieldMobileOn()
+//   src/App.jsx:8689  desktop dashboard  <- isStarfieldOn()
+//   src/App.jsx:8642  mobile dashboard   <- isStarfieldMobileOn()
 //
 // Flag off at either site mounts DesktopBackground exactly as before, so the
 // off-state is byte-identical (acceptance row A1). DesktopBackground.jsx is NOT
@@ -58,7 +58,7 @@
 // DATA PATH
 // ---------------------------------------------------------------------------
 // LIVE (Phase 2): `liveGames` arrives as a PROP, mapped by warpBattleAdapter.js
-// from the EXISTING `activeAgentBattles` poll (src/App.jsx:3887-3922) — zero new
+// from the EXISTING `activeAgentBattles` poll (src/App.jsx:3891-3933) — zero new
 // Firestore reads (R-T2-S1, acceptance row A6). This component imports no
 // Firebase API and starts no timer of its own.
 //
@@ -74,6 +74,48 @@
 // BATTLE LIVE because its end date is server-only, and a Snake-Draft-only user
 // sees RESTING. Both fall out of the core's "unprovable clocks get no endgame"
 // rule rather than needing a special case here.
+//
+// ---------------------------------------------------------------------------
+// SECOND INPUT: DEPLOY INTENT (Task 4 — State Map Amendment C)
+// ---------------------------------------------------------------------------
+// This component LISTENS for `ft-deploy-intent`, dispatched by the shipped
+// hold-to-deploy gesture. While a deploy button is held the sky leans in; on an
+// early release it exhales; on completion it punches, then the settle lands it
+// at BATTLE LIVE.
+//
+// THE EVENT CONTRACT (the dispatcher header in src/hooks/useHoldToDeploy.js is
+// the record; this is the listening end of the same contract, and it also
+// carries the house pattern for adding the NEXT custom event, since
+// ft-deploy-intent was the app's first production CustomEvent dispatch):
+//
+//   name     DEPLOY_INTENT_EVENT from ./warpStateMachine — imported, never
+//            re-typed, so the two ends cannot drift to different strings.
+//   target   `window`. The deploy CTA is a deep descendant of a SIBLING subtree
+//            (the dashboard content), not an ancestor of this layer, so a prop
+//            would have to be drilled through App for a signal that changes
+//            ~60x a second and is transient. Same shape as ft-accent-changed
+//            below.
+//   payload  on `event.detail`:
+//              { progress: 0..1 }              per frame, pointer hold charging
+//              { progress: null, reason:'abort'  }  released early
+//              { progress: null, reason:'commit' }  hold completed
+//            anything else is MALFORMED. Validation is the LISTENER's job and
+//            lives in the pure reducer (reduceIntentEvent), which returns its
+//            previous state by identity — a stray event cannot churn the field.
+//
+// THE LISTENER WRITES A REF AND NOTHING ELSE — never setState, never paint().
+// That is what makes it (a) unable to restart the field, (b) free of ~78
+// re-renders per hold, and (c) genuinely inert under reduced motion, where no
+// loop is ever scheduled to read the ref: the event is received and dropped.
+//
+// Intent is a DECORATION of this component's output and is deliberately absent
+// from the state machine's own integration — see applyIntent's placement in
+// `step` and the Amendment C / R-T4-ARCH blocks in warpStateMachine.js. It can
+// only ever raise speed, never lower it, and it never changes tier: battle
+// state remains the sole authority for that.
+//
+// Behind DEPLOY_SKY_COUPLING_ENABLED (merged dark). Flag-off registers no
+// listener, so the sky is driven by battle state alone exactly as today.
 //
 // ---------------------------------------------------------------------------
 // FOR WHOEVER RETIRES THE PRICE LINES (ruling R-T2-S6) — READ BEFORE DELETING
@@ -94,14 +136,18 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readToken } from '../theme/cssTokens';
-import { getWarpDevOverride } from '../config/featureFlags';
+import { getWarpDevOverride, isDeploySkyCouplingOn } from '../config/featureFlags';
 import {
+  DEPLOY_INTENT_EVENT,
   WARP_TUNING,
   advanceWarp,
+  applyIntent,
+  createIntentState,
   createStars,
   createWarpState,
   deviceProfile,
   makeRng,
+  reduceIntentEvent,
   resolveLoopPlan,
   resolveTint,
   respawnStar,
@@ -207,6 +253,36 @@ const StarfieldBackground = ({
     if (typeof window === 'undefined') return undefined;
     window.addEventListener('ft-accent-changed', syncTint);
     return () => window.removeEventListener('ft-accent-changed', syncTint);
+  }, []);
+
+  // --- deploy intent (Task 4, R-T4-ARCH) ------------------------------------
+  // The hold-to-deploy gesture's lean-in. Held in a REF and mutated only by the
+  // listener below, for three separate reasons:
+  //   1. It must not restart the field. The mount effect regenerates the stars
+  //      and resets the warp state, so anything in its dependency array that
+  //      changes at hold-frequency would be catastrophic — this is exactly the
+  //      hazard starfield.depstability.test.jsx exists to guard.
+  //   2. It must not re-render. A setState per animation frame during a 1300ms
+  //      hold is ~78 renders of a component that sits behind the whole
+  //      dashboard.
+  //   3. It must be genuinely INERT under reduced motion (row A4). With no
+  //      setState and no paint() in the listener, a ref that nothing reads is
+  //      the whole cost — because under reduced motion no loop is ever
+  //      scheduled, so nothing reads it. The event is received and dropped.
+  const intentRef = useRef(createIntentState());
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    // Flag-off registers NO listener at all (row A1). With nothing writing the
+    // ref, applyIntent below is provably the identity function.
+    if (!isDeploySkyCouplingOn()) return undefined;
+    const onIntent = (event) => {
+      // Ref write ONLY — never setState, never paint (R-T4-ARCH). The pure core
+      // owns the payload contract, including ignoring malformed detail.
+      intentRef.current = reduceIntentEvent(intentRef.current, event?.detail, Date.now());
+    };
+    window.addEventListener(DEPLOY_INTENT_EVENT, onIntent);
+    return () => window.removeEventListener(DEPLOY_INTENT_EVENT, onIntent);
   }, []);
 
   // --- fresh values without restarting the loop (BaggerBombBackground:83-88) --
@@ -349,12 +425,18 @@ const StarfieldBackground = ({
   }, [project]);
 
   /** Advance depth by the state machine's current speed, then paint. */
-  const step = useCallback((dtMs) => {
+  const step = useCallback((dtMs, now) => {
     const stars = starsRef.current;
     const rng = rngRef.current;
     const { w: width, h: height } = sizeRef.current;
     const dtSeconds = dtMs / 1000;
-    const speed = warpRef.current.speed;
+    // THE CONSUMPTION READ — the one place deploy intent enters the picture
+    // (R-T4-ARCH). `warpRef.current.speed` stays the honest battle-state speed
+    // and is never written back to, so the tier machine's ease anchors and its
+    // decay choice keep integrating as if no hold were happening; the hold only
+    // decorates what gets DRAWN. Intent is upward-only, so with no hold in
+    // flight this is exactly `warpRef.current.speed`.
+    const speed = applyIntent(warpRef.current.speed, intentRef.current, now);
     const dz = speed * WARP_TUNING.Z_RATE * dtSeconds;
 
     for (let i = 0; i < stars.length; i += 1) {
@@ -392,7 +474,7 @@ const StarfieldBackground = ({
       dtMs,
     });
 
-    step(dtMs);
+    step(dtMs, now);
     rafRef.current = requestAnimationFrame(animate);
   }, [currentGames, step]);
 
