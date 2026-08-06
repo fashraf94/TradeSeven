@@ -331,6 +331,7 @@ POINTS/UNITS RULE: game relevance is QUALITATIVE only. Never state a numeric poi
     headline: storyData.headline,
     subheadline: storyData.subheadline,
     body: storyData.body,
+    pullquote: storyData.pullquote,
   });
   if (unitsCheck.held) {
     console.warn(`[UNITS] HELD Alex mover ${upperSymbol}: units_collision`, JSON.stringify(unitsCheck.violations));

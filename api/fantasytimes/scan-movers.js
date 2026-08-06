@@ -115,6 +115,11 @@ export async function runMoverScan(db, {
   hasRecentStory,
   sectorOf = () => 'Unknown',
   expiryTicks = DEFAULT_EXPIRY_TICKS,
+  // A candidate must be at least this old to confirm — it must have been armed
+  // on an EARLIER pass, so the move genuinely persisted (two-tick). 5 min sits
+  // well below the 15-min cadence (tolerating cron jitter) and well above any
+  // seconds-scale overlapping double-invocation (review finding).
+  minConfirmAgeMs = 5 * 60 * 1000,
   now = new Date(),
   info = () => {},
   error = () => {},
@@ -140,43 +145,58 @@ export async function runMoverScan(db, {
   };
   for (const [, f] of freshBySymbol) if (Math.abs(f.changeP) >= threshold) results.moversDetected++;
 
+  const nowMs = (now && typeof now.getTime === 'function') ? now.getTime() : Date.now();
+
   // ── T+1 consumption pass: resolve last tick's pending candidates ──────────
+  // Each iteration is fault-isolated: a transient error on one symbol must not
+  // abort the whole tick (the origin/main handler isolated per-symbol; review
+  // finding restores that).
   const pending = await listPendingCandidates(db, marketDate);
   for (const cand of pending) {
     const symbol = cand.symbol;
-    const fresh = freshBySymbol.get(symbol);
-
-    // Could not evaluate this pass (quote error / symbol not scanned) → tick
-    // toward expiry (F1a: `expired` fires only on a skipped pass).
-    if (!fresh) {
-      const t = await tickPendingCandidate(db, { marketDate, symbol, maxTicks: expiryTicks, now });
-      if (t.expired) { results.expired++; info(`candidate_expired: ${symbol}`); }
-      continue;
-    }
-
-    // Whipsaw / partial revert that no longer independently clears the trigger
-    // (F1c) → terminate as reverted, no story (R1c/R2).
-    if (!reSatisfiesTrigger(fresh.changeP, cand.triggerSnapshot, threshold)) {
-      const r = await consumeCandidate(db, { marketDate, symbol, outcome: CANDIDATE_STATUS.REVERTED, reason: 'whipsaw_reverted', now });
-      if (r.won) { results.reverted++; info(`whipsaw_reverted: ${symbol} ${fresh.changeP.toFixed(2)}%`); }
-      continue;
-    }
-
-    // Confirmed. Dedup BEFORE retrieval (F1b) — a hit costs zero API calls.
-    if (await hasRecentStory(symbol)) {
-      const c = await consumeCandidate(db, { marketDate, symbol, outcome: CANDIDATE_STATUS.CONFIRMED, reason: 'dedup_skip', now });
-      if (c.won) { results.dedupSkipped++; info(`dedup_skip (zero retrieval): ${symbol}`); }
-      continue;
-    }
-
-    // Atomic claim — only the winner writes (idempotent under overlap, A1/R1a).
-    const c = await consumeCandidate(db, { marketDate, symbol, outcome: CANDIDATE_STATUS.CONFIRMED, reason: 'confirmed', now });
-    if (!c.won) { info(`consume lost race, skipping: ${symbol}`); continue; }
-    results.confirmed++;
-
-    const close = parseFloat(fresh.data.close) || 0;
-    const previousClose = parseFloat(fresh.data.previousClose) || 0;
     try {
+      const fresh = freshBySymbol.get(symbol);
+
+      // Could not evaluate this pass (quote error / symbol not scanned) → tick
+      // toward expiry (F1a: `expired` fires only on a skipped pass).
+      if (!fresh) {
+        const t = await tickPendingCandidate(db, { marketDate, symbol, maxTicks: expiryTicks, now });
+        if (t.expired) { results.expired++; info(`candidate_expired: ${symbol}`); }
+        continue;
+      }
+
+      // Whipsaw / partial revert that no longer independently clears the trigger
+      // (F1c) → terminate as reverted, no story (R1c/R2). Reverting a young
+      // candidate is fine — it genuinely reverted; only CONFIRMATION is age-gated.
+      if (!reSatisfiesTrigger(fresh.changeP, cand.triggerSnapshot, threshold)) {
+        const r = await consumeCandidate(db, { marketDate, symbol, outcome: CANDIDATE_STATUS.REVERTED, reason: 'whipsaw_reverted', now });
+        if (r.won) { results.reverted++; info(`whipsaw_reverted: ${symbol} ${fresh.changeP.toFixed(2)}%`); }
+        continue;
+      }
+
+      // Two-tick persistence guard: confirm only a candidate armed on an EARLIER
+      // pass. Blocks a seconds-later overlapping invocation from confirming a
+      // candidate its sibling just armed — the move must survive to a real next
+      // scan, which is the whole point of two-tick.
+      if (nowMs - (cand.armedAtMs || 0) < minConfirmAgeMs) {
+        info(`candidate too young to confirm, left pending: ${symbol}`);
+        continue;
+      }
+
+      // Confirmed. Dedup BEFORE retrieval (F1b) — a hit costs zero API calls.
+      if (await hasRecentStory(symbol)) {
+        const c = await consumeCandidate(db, { marketDate, symbol, outcome: CANDIDATE_STATUS.CONFIRMED, reason: 'dedup_skip', now });
+        if (c.won) { results.dedupSkipped++; info(`dedup_skip (zero retrieval): ${symbol}`); }
+        continue;
+      }
+
+      // Atomic claim — only the winner writes (idempotent under overlap, A1/R1a).
+      const c = await consumeCandidate(db, { marketDate, symbol, outcome: CANDIDATE_STATUS.CONFIRMED, reason: 'confirmed', now });
+      if (!c.won) { info(`consume lost race, skipping: ${symbol}`); continue; }
+      results.confirmed++;
+
+      const close = parseFloat(fresh.data.close) || 0;
+      const previousClose = parseFloat(fresh.data.previousClose) || 0;
       const sr = await generateStory({
         symbol,
         currentPrice: close,
@@ -190,29 +210,34 @@ export async function runMoverScan(db, {
       else { results.skipped++; info(`story skipped: ${symbol} (${sr?.reason || sr?.message || 'unknown'})`); }
     } catch (err) {
       results.errors.push(`${symbol}: ${err.message}`);
-      error(`generate failed for ${symbol}`, { error: err.message });
+      error(`scan pass error for ${symbol}`, { error: err.message });
     }
   }
 
   // ── T detection pass: arm fresh movers (birth-suppressed) ─────────────────
   for (const [symbol, fresh] of freshBySymbol) {
     if (!isMover(symbol)) continue;
-    // Birth-suppression, story half (F1b): a symbol already covered in the
-    // dedup window arms no candidate (and a symbol just confirmed above now
-    // has a story, so the sustained mover pays retrieval exactly once, R1a).
-    if (await hasRecentStory(symbol)) continue;
-    const rec = await recordCandidate(db, {
-      marketDate,
-      symbol,
-      triggerSnapshot: {
-        changePct: fresh.changeP,
-        price: parseFloat(fresh.data.close) || 0,
-        previousClose: parseFloat(fresh.data.previousClose) || 0,
-        detectedAt: (now.toISOString && now.toISOString()) || String(now),
-      },
-      now,
-    });
-    if (rec.created) { results.candidatesRecorded++; info(`candidate armed: ${symbol} ${fresh.changeP.toFixed(2)}%`); }
+    try {
+      // Birth-suppression, story half (F1b): a symbol already covered in the
+      // dedup window arms no candidate (and a symbol just confirmed above now
+      // has a story, so the sustained mover pays retrieval exactly once, R1a).
+      if (await hasRecentStory(symbol)) continue;
+      const rec = await recordCandidate(db, {
+        marketDate,
+        symbol,
+        triggerSnapshot: {
+          changePct: fresh.changeP,
+          price: parseFloat(fresh.data.close) || 0,
+          previousClose: parseFloat(fresh.data.previousClose) || 0,
+          detectedAt: (now.toISOString && now.toISOString()) || String(now),
+        },
+        now,
+      });
+      if (rec.created) { results.candidatesRecorded++; info(`candidate armed: ${symbol} ${fresh.changeP.toFixed(2)}%`); }
+    } catch (err) {
+      results.errors.push(`${symbol}: ${err.message}`);
+      error(`arm error for ${symbol}`, { error: err.message });
+    }
   }
 
   return results;

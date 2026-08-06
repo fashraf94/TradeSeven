@@ -2,33 +2,30 @@
 // Alex Catalyst Confirmation mini-arc (spec V1.1) — F3 deterministic units belt.
 //
 // TWO HELD PATTERNS at publish. A match HOLDS the story (it does not publish)
-// and logs `units_collision`, the same posture as operand_implausible. The
-// narrowness is EARNED by R5's negative rows, not asserted — currency and
-// points legitimately co-occur in mover prose ("shares fell $4 after gross
-// margin dropped 2 percentage points"; "GOOGL shed $18 while the Dow lost 300
-// points"), and a hold is expensive (the story silently doesn't publish), so a
-// false positive must be designed out.
+// and logs `units_collision`, the same posture as operand_implausible.
+//
+// DESIGN NOTE (build review, Aug 6 — deviation from the spec's loose pattern):
+// the spec sketched a wide "$…points within 40 chars" pattern guarded by
+// percentage/basis lookbehinds + an index-family exclusion. Adversarial review
+// proved that shape FALSE-POSITIVES on ordinary financial prose — "$50 price
+// point", "shares hit $12 at one point", "$2B chased the 25 basis-points move"
+// (a hyphen defeats a whitespace lookbehind) — and a hold is expensive (the
+// story silently doesn't publish). So the collision is detected by ADJACENCY
+// instead: a currency figure directly LABELED as points. Adjacency is airtight
+// here — dollars are never points — and needs no idiom denylist (every "point"
+// idiom carries other words between the "$" and "point"). Filed as a register
+// note; R5's boundary rows defend the adjacency.
 
-// Index-move prose legitimately says "the Dow lost 300 points". A sentence
-// carrying an index-family reference is exempt from pattern 1.
-const INDEX_FAMILY = /\b(?:dow|s ?& ?p|nasdaq|russell|vix|nyse|ftse|nikkei|dax|hang seng|index|indices)\b/i;
+// Pattern 1 — a currency figure DIRECTLY labeled as points ("$20 points",
+// "$20 BaggerBomb Points"). Case-insensitive. An optional single "BaggerBomb"
+// qualifier is the only thing allowed between the amount and "points".
+const CURRENCY_ATTACHED_POINTS = /\$\s?\d[\d.,]*\s+(?:BaggerBomb\s+)?points?\b/i;
 
-// Pattern 1 — a CURRENCY amount fused with a POINTS figure in the same clause
-// (dollars ≠ points). The fixed-width lookbehind spares "percentage points" /
-// "basis points"; the sentence-level index-family guard spares index moves.
-// BOTH exclusions are load-bearing (R5 negatives go red without them).
-const CURRENCY_ATTACHED_POINTS = /\$\s?\d[\d.,]*[^.!?\n]{0,40}?(?<!percentage\s)(?<!basis\s)\bpoints?\b/i;
-
-// Pattern 2 — any NUMERAL bound to "BaggerBomb points". Airtight by
-// construction: no numeric point value is ever a legitimate operand, so a
-// number on "BaggerBomb points" is invented. Closes the no-dollar-sign half of
-// the original defect ("Wiping 20 BaggerBomb Points") that sails past pattern 1.
-// Name-anchored on purpose — a generic `\d+ points` would re-flag the Dow case.
-const NUMERAL_BAGGERBOMB_POINTS = /\b\d[\d,.]*\s+BaggerBomb\s+[Pp]oints?\b/;
-
-function splitSentences(text) {
-  return String(text || '').split(/(?<=[.!?\n])\s+/);
-}
+// Pattern 2 — any NUMERAL bound to "BaggerBomb points" ("Wiping 20 BaggerBomb
+// Points", incl. the no-"$" half of the original defect). Case-insensitive so
+// "20 BAGGERBOMB POINTS" / "20 baggerbomb points" cannot slip. Airtight: no
+// numeric point value is ever a legitimate operand.
+const NUMERAL_BAGGERBOMB_POINTS = /\b\d[\d,.]*\s+BaggerBomb\s+points?\b/i;
 
 /**
  * Run the units belt over a block of prose.
@@ -39,20 +36,22 @@ export function lintUnits(text) {
   const src = String(text || '');
   const violations = [];
 
+  const p1 = src.match(CURRENCY_ATTACHED_POINTS);
+  if (p1) violations.push({ pattern: 'currency_attached_points', match: p1[0].trim() });
+
   const p2 = src.match(NUMERAL_BAGGERBOMB_POINTS);
   if (p2) violations.push({ pattern: 'numeral_baggerbomb_points', match: p2[0].trim() });
-
-  for (const sentence of splitSentences(src)) {
-    if (INDEX_FAMILY.test(sentence)) continue;
-    const m = sentence.match(CURRENCY_ATTACHED_POINTS);
-    if (m) violations.push({ pattern: 'currency_attached_points', match: m[0].trim() });
-  }
 
   return { held: violations.length > 0, code: 'units_collision', violations };
 }
 
-/** Convenience over the prose fields a mover story publishes. */
-export function lintStoryUnits({ headline, subheadline, body } = {}) {
-  const combined = [headline, subheadline, body].filter(Boolean).join('\n');
+/**
+ * Convenience over EVERY model-authored prose field a mover story publishes —
+ * headline, subheadline, body, AND pullquote (a free-text field the prompt
+ * asks the model to make dramatic, exactly where an invented "$20 BaggerBomb
+ * Points" would land; review finding).
+ */
+export function lintStoryUnits({ headline, subheadline, body, pullquote } = {}) {
+  const combined = [headline, subheadline, body, pullquote].filter(Boolean).join('\n');
   return lintUnits(combined);
 }

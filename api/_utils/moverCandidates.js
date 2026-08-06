@@ -103,6 +103,10 @@ export async function recordCandidate(db, { marketDate, symbol, triggerSnapshot,
       triggerSnapshot: triggerSnapshot || null,
       ticksSeen: 0,
       createdAt: now,
+      // Epoch-ms arm time — read by the T+1 min-age guard (two-tick persistence
+      // must hold even when an out-of-band invocation races the arming pass).
+      // A plain number so the comparison never depends on Date/Timestamp shape.
+      armedAtMs: (now && typeof now.getTime === 'function') ? now.getTime() : Date.now(),
       updatedAt: now,
       terminalAt: null,
       terminalReason: null,
