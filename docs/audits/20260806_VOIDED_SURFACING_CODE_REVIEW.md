@@ -48,7 +48,19 @@ The card was only **masked** (not cleared) by an active group: both render gates
 
 ---
 
-## Verification posture
-- **Preview smoke (founder):** verify against the real voided group `tournamentGroups/lds_wed-1900_2026-07-22` on the Vercel preview — the emulator/unit layer cannot reach live Firestore, and per BUILD_RULES §2 "pushed ≠ deployed." The card's reason maps the `voidedReason` code (`poisoned_cohort_l_a` → "The cohort was quarantined — its scores were compromised, so no result stands.") with a safe fallback for a null/unknown code.
+## Addendum (2026-08-06) — Command Center live-card void propagation
 
-*`vite build` green; full suite 7008 passing; 0 new lint. No fenced file edited. Both CONFIRMED findings fixed on-branch.*
+A post-smoke follow-up: the Command Center "04 · Manage" card showed a battle as LIVE after the ranked group was voided.
+
+**Diagnosis (founder-confirmed):** the *currently displayed* card ("2h 20m left") was NOT the voided group's battle — a battle from the voided group `lds_wed-1900_2026-07-22` has a past `expiresAt`, which `timeLeft()` renders as "ending," never "2h 20m left" (`ManageStation.jsx:17-26`). "vs CPU" is a hardcoded literal (`ManageStation.jsx:65`), not an opponent signal, and `expiresAt` is full-day for all agent battles (`agentBattleService.js:31`), so neither distinguishes ranked from casual. The card was a different, currently-live full-day battle (the `liveBattles[0]` ambiguity — left for Phase 1.5 as scoped).
+
+**But the LATENT propagation gap was real and founder-ruled to close now:** the poll (`App.jsx:3890-3943`) filtered `agentBattles` on `status=='active'` + the training-clone prefix only — never the group status. A group voided *mid-day* (future `expiresAt`) would therefore read as LIVE on the card. That is the same propagation class the L-A void exists to fix, and independent of 1.5 (which is *which* live battle to show, not *whether* a battle is eligible).
+
+**Fix (read-time group lookup; no fenced-shape contact):** the void lives only on the group doc (`voidGroup` never writes the battle doc — the `createAgentBattle` shape is fenced), so the poll now does a **read-time** `getDoc(tournamentGroups/{groupId})` for each battle's group and drops battles whose group is voided, via a pure helper `excludeVoidedGroupBattles(battles, groupsById)` (`src/utils/commandCenterLiveBattles.js`). The voided decision reuses the arena's single-source `deriveArenaTerminalKind` predicate — literally matching the arena's treatment. Only tournament battles carry a `groupId`; casual vs-CPU battles have none and are untouched. Fail-open per group (a transient group-read miss keeps the battle rather than blanking a live card — consistent with the poll's retain-last-known-good posture). Read cost is ≤1 group read per 120 s poll. The exclusion sits upstream of `liveBattles[0]` AND `starfieldLiveGames`, so the card and the battle-weather sky both honor the void.
+
+**Test:** `commandCenterLiveBattles.test.js` — a VOIDED group's battle is excluded **even with a future `expiresAt`** (the mid-day operator case that fails today), the same battle is kept when its group is still BATTLE (mutation check), casual/no-group battles are kept, and an unresolved group fails open. Poll source guards added to `App.agentBattlesPoll.test.js` (read-time `tournamentGroups` lookup; helper applied; no battle-doc write). `liveBattles[0]` disambiguation remains scoped for Phase 1.5.
+
+## Verification posture
+- **Preview smoke (founder):** verify against the real voided group `tournamentGroups/lds_wed-1900_2026-07-22` on the Vercel preview — the emulator/unit layer cannot reach live Firestore, and per BUILD_RULES §2 "pushed ≠ deployed." The card's reason maps the `voidedReason` code (`poisoned_cohort_l_a` → "The cohort was quarantined — its scores were compromised, so no result stands.") with a safe fallback for a null/unknown code. For the Command Center: the definitive check is a group voided **mid-day** (future `expiresAt`) — its card must not read LIVE.
+
+*`vite build` green; full suite 7018 passing; 0 new lint (App.jsx's pre-existing dead-import baseline unchanged). No fenced file edited. Both original CONFIRMED findings + the Command Center void-propagation gap fixed on-branch.*

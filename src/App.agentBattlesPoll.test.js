@@ -71,10 +71,34 @@ describe('defect #2 — agentBattles poll retains last-known-good on error', () 
 
   it('sets state only on the SUCCESS path, never in the catch', () => {
     // Exactly one setActiveAgentBattles call remains, and it is the success
-    // assignment (setActiveAgentBattles(battles)), not a reset.
+    // assignment (setActiveAgentBattles(liveBattles) — the voided-group-excluded
+    // list, L-A follow-up B), not a reset.
     const setters = body.match(/setActiveAgentBattles\(/g) || [];
     expect(setters.length).toBe(1);
-    expect(body).toMatch(/setActiveAgentBattles\(\s*battles\s*\)/);
+    expect(body).toMatch(/setActiveAgentBattles\(\s*liveBattles\s*\)/);
+  });
+});
+
+describe('L-A follow-up B — the poll excludes VOIDED-group battles (read-time group lookup)', () => {
+  const body = agentBattlesPollBody();
+
+  it('performs a READ-TIME group-status lookup (getDoc on tournamentGroups)', () => {
+    // The void lives ONLY on the group doc — voidGroup never writes the battle doc
+    // (the createAgentBattle shape is fenced), so the poll must look the group up
+    // at read time to propagate the void to the live card.
+    expect(body).toMatch(/getDoc\(/);
+    expect(body).toMatch(/tournamentGroups/);
+  });
+
+  it('excludes via the shared pure helper and feeds the setter the EXCLUDED list', () => {
+    expect(body).toMatch(/excludeVoidedGroupBattles\(/);
+    expect(body).toMatch(/setActiveAgentBattles\(\s*liveBattles\s*\)/);
+  });
+
+  it('does NOT write the battle doc (fence: createAgentBattle shape) — the exclusion is read-only', () => {
+    // The whole poll is a read (getDocs / getDoc). Any client write here would be
+    // fence contact; assert there is none.
+    expect(/\b(setDoc|updateDoc|addDoc)\s*\(/.test(body)).toBe(false);
   });
 });
 
