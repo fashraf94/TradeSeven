@@ -20,6 +20,11 @@ import { consolidateAgentEvolution } from '../_utils/agentConsolidationApply.js'
 // resolveRecordTargetId is pure (the clone doc is already read as agentDoc); the
 // forward writes merge transactionally so a concurrent parent write is not lost.
 import { resolveRecordTargetId } from '../_utils/casualClone.js';
+// Ruling 1 (consolidation milestone-claim): gated so it is INERT when no casual
+// clone can exist (flag off) — flag-off behavioral equivalence, not literal
+// byte-identity (the agent doc gains lastConsolidatedGamesPlayed only on the
+// guarded path). featureFlags.js is Node-clean (BUILD_RULES §4).
+import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../../src/config/featureFlags.js';
 
 const LOG_PREFIX = '[REFLECT]';
 
@@ -162,6 +167,18 @@ export async function generateReflection(db, battleId) {
     const stats = learningDoc.stats || {};
     const gamesPlayed = stats.gamesPlayed || 0;
     if (gamesPlayed > 0 && gamesPlayed % 5 === 0) {
+      // Ruling 1 — milestone-claim: when the feature is ON, only the reflection
+      // that first stamps lastConsolidatedGamesPlayed=gamesPlayed consolidates, so
+      // two reflections at the same %5 milestone (a casual settlement + a ranked
+      // reflection, both targeting the parent) cannot both fire (evolutionCycle
+      // double-increment). INERT when off — no claim, and no casual clone exists,
+      // so the parent's counter has a single writer exactly as before.
+      const wonMilestone = CASUAL_CLONE_CONCURRENCY_ENABLED
+        ? await claimConsolidationMilestone(db, learningRef, gamesPlayed)
+        : true;
+      if (!wonMilestone) {
+        console.log(`${LOG_PREFIX} consolidation milestone ${gamesPlayed} already claimed for agent ${learningDoc.id} — skipping duplicate`);
+      } else {
       await learningRef.update({ pendingConsolidation: true });
       console.log(`${LOG_PREFIX} Flagged agent ${learningDoc.id} for consolidation (game ${gamesPlayed})`);
 
@@ -176,6 +193,7 @@ export async function generateReflection(db, battleId) {
           `${LOG_PREFIX} Consolidation failed for agent ${battleDoc.agentId}:`,
           consolidationErr?.message || consolidationErr,
         );
+      }
       }
     }
   } catch (err) {
@@ -274,6 +292,23 @@ async function appendMemoryReflectionForwardTx(db, targetRef, memoryEntry) {
     const currentMemory = (snap.exists ? snap.data().memory : []) || [];
     const updatedMemory = [...currentMemory.slice(-4), memoryEntry];
     tx.update(targetRef, { memory: updatedMemory });
+  });
+}
+
+// Ruling 1: transactionally CLAIM a consolidation milestone so the (now SHARED)
+// parent gamesPlayed counter is consolidated at most ONCE per %5 value. Only the
+// caller that first stamps lastConsolidatedGamesPlayed=gamesPlayed wins (returns
+// true); a duplicate reflection at the same milestone sees it and returns false,
+// preventing the evolutionCycle double-increment the RECORD redirect makes
+// reachable (a casual settlement + a ranked reflection both landing on the same
+// %5). Exported for the unit battery.
+export async function claimConsolidationMilestone(db, agentRef, gamesPlayed) {
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(agentRef);
+    const data = snap.exists ? snap.data() : {};
+    if (data.lastConsolidatedGamesPlayed === gamesPlayed) return false;
+    tx.update(agentRef, { lastConsolidatedGamesPlayed: gamesPlayed });
+    return true;
   });
 }
 

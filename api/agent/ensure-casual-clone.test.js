@@ -116,15 +116,18 @@ describe('POST /api/agent/ensure-casual-clone', () => {
     expect(res.body.cloneId).toBe('casual-agent-user-42'); // from user.uid, not the body
   });
 
-  it('never overwrites an existing clone (returns it as-is, created:false)', async () => {
-    const existing = { ownerId: 'user-42', isCasualClone: true, rankedAgentId: 'ranked-1', memory: [{ gameId: 'prior' }] };
+  it('does not re-create an existing clone (created:false); re-syncs its brain but preserves identity (ruling 3)', async () => {
+    const existing = { ownerId: 'user-42', isCasualClone: true, rankedAgentId: 'ranked-1', memory: [{ gameId: 'prior' }], activeBattleId: null };
     const { db, store } = makeDb({ 'agents/ranked-1': RANKED, 'agents/casual-agent-user-42': existing });
     activeFirestore = db;
     const { req, res } = makeReqRes({});
     await handler(req, res);
     expect(res.statusCode).toBe(200);
     expect(res.body.created).toBe(false);
-    expect(store.get('agents/casual-agent-user-42')).toEqual(existing); // learning intact
+    const clone = store.get('agents/casual-agent-user-42');
+    expect(clone.isCasualClone).toBe(true);        // identity preserved (never-overwrite for identity)
+    expect(clone.rankedAgentId).toBe('ranked-1');
+    expect(clone.memory).toEqual([]);              // brain re-synced from the parent (which has no memory)
   });
 
   it('409 no_ranked_agent when the caller has no ranked agent', async () => {

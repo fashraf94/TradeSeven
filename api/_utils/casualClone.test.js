@@ -200,23 +200,56 @@ describe('ensureCasualClone', () => {
     expect(store.get('agents/casual-agent-user-42/bundles/bun-a')).toEqual({ id: 'bun-a', status: 'equipped' });
   });
 
-  it('NEVER OVERWRITES an existing clone — returns it untouched (learning survives)', async () => {
+  it('RE-SYNCS an existing clone to the CURRENT parent brain at deploy (ruling 3); preserves identity/markers/stats', async () => {
     const existingClone = {
       ...buildCasualCloneDoc(RANKED, { odUserId: 'user-42', nowIso: '2026-08-01T00:00:00.000Z' }),
-      // accumulated learning from prior BaggerBomb battles:
-      memory: [{ gameId: 'casual-1', lesson: 'cut losers faster' }],
-      lessons: [{ text: 'a hard-won lesson' }],
-      consolidatedInsight: 'evolved insight',
+      // stale day-zero brain + artificial stats + NOT mid-battle:
+      memory: [{ gameId: 'stale' }],
+      consolidatedInsight: 'stale insight',
+      archetype: 'analyst',
       stats: { wins: 2, losses: 1, gamesPlayed: 3, totalScore: 30, avgScore: 10, currentStreak: 1, bestStreak: 2 },
+      activeBattleId: null,
     };
-    const { db, store } = makeDb({
-      'agents/ranked-1': RANKED,
-      'agents/casual-agent-user-42': existingClone,
-    });
+    // The parent has since EVOLVED (new memory/insight/archetype):
+    const parent = { ...RANKED, memory: [{ gameId: 'p1' }, { gameId: 'p2' }], consolidatedInsight: 'current insight', archetype: 'contrarian' };
+    const { db, store } = makeDb({ 'agents/ranked-1': parent, 'agents/casual-agent-user-42': existingClone });
     const r = await ensureCasualClone(db, { odUserId: 'user-42' });
-    expect(r).toEqual({ cloneId: 'casual-agent-user-42', rankedAgentId: 'ranked-1', created: false });
-    // untouched — accumulated learning intact:
-    expect(store.get('agents/casual-agent-user-42')).toEqual(existingClone);
+    expect(r.created).toBe(false); // still an existing clone, not a fresh create
+    const clone = store.get('agents/casual-agent-user-42');
+    // BRAIN re-synced from the current parent:
+    expect(clone.memory).toEqual([{ gameId: 'p1' }, { gameId: 'p2' }]);
+    expect(clone.consolidatedInsight).toBe('current insight');
+    expect(clone.archetype).toBe('contrarian');
+    // IDENTITY / markers / pointers / stats preserved (never-overwrite for identity):
+    expect(clone.isCasualClone).toBe(true);
+    expect(clone.rankedAgentId).toBe('ranked-1');
+    expect(clone.ownerId).toBe('user-42');
+    expect(clone.activeBattleId).toBeNull();
+    expect(clone.stats).toEqual({ wins: 2, losses: 1, gamesPlayed: 3, totalScore: 30, avgScore: 10, currentStreak: 1, bestStreak: 2 });
+  });
+
+  it('SKIPS re-sync while the clone is MID-BATTLE (guard 1 — brain never re-pointed under a live battle)', async () => {
+    const existingClone = {
+      ...buildCasualCloneDoc(RANKED, { odUserId: 'user-42', nowIso: '2026-08-01T00:00:00.000Z' }),
+      memory: [{ gameId: 'live-battle-memory' }],
+      activeBattleId: 'b-live', // mid-battle → re-sync SKIPPED
+    };
+    const parent = { ...RANKED, memory: [{ gameId: 'p-new' }] };
+    const { db, store } = makeDb({ 'agents/ranked-1': parent, 'agents/casual-agent-user-42': existingClone });
+    const r = await ensureCasualClone(db, { odUserId: 'user-42' });
+    expect(r.created).toBe(false);
+    // brain untouched — the live clone is not re-pointed under it:
+    expect(store.get('agents/casual-agent-user-42').memory).toEqual([{ gameId: 'live-battle-memory' }]);
+    expect(store.get('agents/casual-agent-user-42').activeBattleId).toBe('b-live');
+  });
+
+  it('re-sync REFUSES a cross-user parent (poisoned rankedAgentId on an otherwise-authentic clone)', async () => {
+    // authentic-looking (own owner + isCasualClone) but rankedAgentId points at a victim
+    const existingClone = { ownerId: 'user-42', isCasualClone: true, rankedAgentId: 'victim-agent', memory: [{ gameId: 'keep' }], activeBattleId: null };
+    const { db, store } = makeDb({ 'agents/victim-agent': { ownerId: 'victim', memory: [{ gameId: 'secret' }] }, 'agents/casual-agent-user-42': existingClone });
+    await ensureCasualClone(db, { odUserId: 'user-42' });
+    // NOT mirrored from the victim — same-owner guard refused:
+    expect(store.get('agents/casual-agent-user-42').memory).toEqual([{ gameId: 'keep' }]);
   });
 
   it('throws no_ranked_agent when the caller has no ranked agent', async () => {

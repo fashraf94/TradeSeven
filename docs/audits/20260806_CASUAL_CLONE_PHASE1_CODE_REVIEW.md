@@ -2,7 +2,9 @@
 
 **Date:** 2026-08-06 · **Scope:** the Phase-1 build (20 files: 15 modified + 5 new impl/test, plus review-response fixes) · **Design lock:** `20260805_PER_BATTLE_LOADOUT_CONCURRENCY_DESIGN_LOCK_V1`.
 
-**Method (BUILD_RULES §2, mandatory ≥10 files):** five independent adversarial reviewers along disjoint dimensions — (1) redirect correctness, (2) flag-off byte-identity, (3) security/fence, (4) wiring/lifecycle/leaks, (5) test integrity — each instructed to **find and self-refute** (report only findings surviving a concrete repro). **Accompanied by an explicit `vite build`** (green) and the **full vitest suite** (6964 passing after fixes). Mutation-checked: the parity gate was demonstrated **RED** under naive resolvers, GREEN with the redirects.
+**Method (BUILD_RULES §2, mandatory ≥10 files):** five independent adversarial reviewers along disjoint dimensions — (1) redirect correctness, (2) flag-off equivalence, (3) security/fence, (4) wiring/lifecycle/leaks, (5) test integrity — each instructed to **find and self-refute** (report only findings surviving a concrete repro). **Accompanied by an explicit `vite build`** (green) and the **full vitest suite** (6970 passing after the ruling-1/3 pass). The `firestore.rules` change is **emulator-validated**: `npm run test:rules` **121 passing** (the reserved-clone-id namespace + `isCasualClone`/`rankedAgentId` create-deny rows are exercised against a live Firestore emulator). Mutation-checked: the parity gate was demonstrated **RED** under naive resolvers, GREEN with the redirects.
+
+> **Flag-off equivalence — the exact requirement (founder-ruled 2026-08-06).** The dark guarantee is **provable flag-off _behavioral_ equivalence, not literal byte-identity**. A guard that is *inert when no casual clone can exist* satisfies it even if it would add a field on the guarded path. Concretely: with `CASUAL_CLONE_CONCURRENCY_ENABLED` off, the ruling-1 milestone-claim is never called (`wonMilestone = true` unconditionally), so the agent doc never gains `lastConsolidatedGamesPlayed` and the consolidation path is exactly the pre-ruling code. Byte-identity is the *sufficient* form we still hold on every non-casual path; behavioral equivalence is the *necessary* bar the guards are measured against.
 
 ---
 
@@ -10,14 +12,14 @@
 
 | Area | Result |
 |---|---|
-| **Fence** | **Intact** — no fenced file edited; the clone's battle never carries the parent's `agentId` (attribution redirected at the write layer only). |
-| **Flag-off dark guarantee** | **Holds** — every changed non-casual path folds back byte-identical; exclusion clauses inert with no casual doc. |
-| **Security** | **2 CONFIRMED cross-user vulns → FIXED** (code-layer, unit-tested) + `firestore.rules` defense-in-depth (emulator-validate before flip). |
-| **Correctness** | RECORD / DRB / reflection-merge / tx-extraction **verified correct**; **1 regression FIXED** (out-of-scope var), **1 CONFIRMED latent → founder decision** (consolidation double-fire). |
-| **Tests** | Settlement now has a real-`completeBattle` integration parity test; `applyConsolidationTx` directly covered; security guards tested. |
-| **Wiring** | Backend sound (exclusion complete, no leak/mis-selection); **3 UX/design findings → founder decision** (Command-Center multi-battle; clone staleness). |
+| **Fence** | **Intact** — no fenced file edited; the clone's battle never carries the parent's `agentId` (attribution redirected at the write layer only). The 3 dark copilot/gameplan capture sites correctly stay on `battle.agentId` (founder-confirmed). |
+| **Flag-off dark guarantee** | **Holds** — behavioral equivalence proven; every changed non-casual path folds back byte-identical, and the ruling-1 guard is inert when the flag is off (no `lastConsolidatedGamesPlayed` field, pre-ruling path). |
+| **Security** | **2 CONFIRMED cross-user vulns → FIXED** (code-layer, unit-tested) + `firestore.rules` defense-in-depth, **now emulator-validated** (`npm run test:rules` 121 passing). |
+| **Correctness** | RECORD / DRB / reflection-merge / tx-extraction **verified correct**; **1 regression FIXED** (out-of-scope var); consolidation double-fire **FIXED (ruling 1 — milestone-claim)**. |
+| **Tests** | Settlement has a real-`completeBattle` integration parity test; `applyConsolidationTx` directly covered; security guards tested; **milestone-claim idempotency tested** (`reflect.claimConsolidation.test.js`, 4 rows); reserved-id namespace tested in the rules emulator. |
+| **Wiring** | Backend sound (exclusion complete, no leak/mis-selection); clone staleness **FIXED (ruling 3 — re-sync at deploy)**; **Command-Center multi-battle → Phase 1.5** (separate task; acceptance #2 **not delivered**, flag does **not** flip, until 1.5 ships). |
 
-**13 CONFIRMED findings · 8 REFUTED-as-sound.** 6 fixed in this pass; 4 referred to the founder (design/scope); 3 filed for separate tasking.
+**13 CONFIRMED findings · 8 REFUTED-as-sound.** 8 fixed (6 in the review pass + D1/D3 per rulings 1/3); D2 scoped to Phase 1.5; 2 filed for separate tasking. **The dark flag stays off until Phase 1.5 lands.**
 
 ---
 
@@ -43,17 +45,23 @@ The parity gate tested the resolvers, not the sites. **Fix:** added `agent-evalu
 
 ---
 
-## CONFIRMED → referred to the founder (design / scope — NOT decided unilaterally)
+## CONFIRMED → founder-ruled 2026-08-06 (dispositions below)
 
-### D1 · Consolidation double-fire (MED latent, correctness CONFIRMED #2)
+### D1 · Consolidation double-fire → **RULED: fix now (ruling 1) · IMPLEMENTED**
 The RECORD redirect makes the parent's `gamesPlayed` a shared counter (casual settlements increment it; ranked reflections read it). With **no idempotency guard**, a casual settlement pushing `gamesPlayed` to a `%5` milestone plus a concurrently-pending ranked reflection can **both** consolidate the parent → `evolutionCycle` double-increment, duplicate timeline event, redundant Sonnet call. No W-L/record corruption; corrupts the user-visible "evolution" history. Reachable specifically under the concurrency this feature enables.
-**Why not fixed here:** the clean fix (a `lastConsolidatedGamesPlayed` milestone-claim) touches the *shared* consolidation gate and cannot be cleanly gated to preserve strict flag-off byte-identity without flag-gating the guard itself. **Recommend:** a flag-gated milestone-idempotency guard **before the flag flips** (a blocker, like S1/S2). Founder to rule on approach.
+**Ruling (founder):** this is a defect **this build introduces**, not a pre-existing one — **fix before the flip, do not defer.** The milestone-claim is approved. On the byte-identity concern: the real bar is **provable flag-off _behavioral_ equivalence, not literal byte-identity** — a guard inert when no casual clone exists satisfies it. Prove it with a test; state the distinction.
+**Implementation:** `reflect.js` `claimConsolidationMilestone(db, agentRef, gamesPlayed)` — a transactional check-and-set on `lastConsolidatedGamesPlayed`: the first reflection to stamp `=gamesPlayed` wins (returns `true`), a duplicate at the same `%5` loses (`false`) → exactly one consolidation per milestone. The trigger is **flag-gated**: `wonMilestone = CASUAL_CLONE_CONCURRENCY_ENABLED ? await claim(...) : true`, so **flag-off the claim is never called** and the doc never gains `lastConsolidatedGamesPlayed` (the pre-ruling path, byte-identical). The casual-forward consolidation applies transactionally (`applyConsolidationTx`, `transactionalApply: isCasualForward`) so a concurrent parent lesson is not clobbered.
+**Tests:** `reflect.claimConsolidation.test.js` (4 rows — first-claim-wins, duplicate-loses, the two-reflections-one-consolidates double-fire scenario, and a new milestone re-claims) + the `applyConsolidationTx` fresh-read-merge test. **Flag-off equivalence stated explicitly** in the test header and the Method note above.
 
-### D2 · Command-Center is single-battle (MED×2 + LOW — wiring Findings 1/3/4)
-The feature enables ranked + BaggerBomb concurrently, but the Command Center assumes one battle: the deploy CTA's `isLive` gate (which conflates casual-live and ranked-live) **disables a user-initiated BaggerBomb while a ranked battle is live** — so acceptance-criterion #2's *user-path* concurrency isn't delivered; `liveBattles[0]` becomes ambiguous with two same-named battles (Manage/Enter opens an arbitrary one); the G2 `podSessionConflict` heads-up is a false positive under the flag. **These need a Command-Center multi-battle pass that was not in the locked Phase-1 scope** (clone + attribution + R5). Founder to rule on scope.
+### D2 · Command-Center is single-battle → **RULED: Phase 1.5 (separate task) · NOT delivered here**
+The feature enables ranked + BaggerBomb concurrently, but the Command Center assumes one battle: the deploy CTA's `isLive` gate (which conflates casual-live and ranked-live) **disables a user-initiated BaggerBomb while a ranked battle is live** — so acceptance-criterion #2's *user-path* concurrency isn't delivered; `liveBattles[0]` becomes ambiguous with two same-named battles (Manage/Enter opens an arbitrary one); the G2 `podSessionConflict` heads-up is a false positive under the flag. **This needs a Command-Center multi-battle pass that was not in the locked Phase-1 scope** (clone + attribution + R5).
+**Ruling (founder):** Command-Center multi-battle → **Phase 1.5, a separate task.** Phase 1 merges **dark, complete-as-scoped**, but **acceptance-criterion #2 is NOT delivered until 1.5 lands**, and **the dark flag does NOT flip until 1.5 ships**. The `liveBattles[0]` ambiguity and the CTA `isLive` gate belong to 1.5. Tracked honestly here: **#2 is open; the flag stays off.**
 
-### D3 · Clone staleness (MED — wiring Finding 2)
-The clone deploys with **empty `memory`** day one (BaggerBomb loses its "recent game memory" block vs today) and **never re-syncs** the parent's evolving loadout/insight (never-overwrite). So BaggerBomb's decisions diverge from today's, and the learning redirected back to the parent is generated by a **stale/blank brain** — tensioning the "preserving exactly what BaggerBomb contributes today" premise. This surfaces a design gap in R1's never-overwrite framing: the clone now accumulates *nothing* of its own (all redirected), so "never-overwrite to protect learning" protects nothing, and re-syncing from the parent on each deploy may be what's actually wanted. Founder to rule.
+### D3 · Clone staleness → **RULED: re-sync at deploy (ruling 3) · IMPLEMENTED**
+The clone deploys with **empty `memory`** day one (BaggerBomb loses its "recent game memory" block vs today) and **never re-syncs** the parent's evolving loadout/insight (never-overwrite). So BaggerBomb's decisions diverge from today's, and the learning redirected back to the parent is generated by a **stale/blank brain** — tensioning the "preserving exactly what BaggerBomb contributes today" premise. R1's never-overwrite protected learning the clone (being a *carrier*, not an *owner* — all its learning redirects forward) never accumulates, so it protected nothing.
+**Ruling (founder):** the clone is a **carrier, not an owner**; R1's never-overwrite is an **idempotency guarantee, not a private-brain mandate.** **Re-sync `INHERITED_LOADOUT_FIELDS` + `memory`/`consolidatedInsight` from the parent on each deploy.** Two guards: (a) re-sync **only at deploy, never mid-battle**; (b) **never clobber state not yet redirected forward** — sequence copy-forward *before* re-sync, or make re-sync additive.
+**Implementation:** `casualClone.js` `buildCasualCloneResync(parent)` (pure — the inherited-loadout fields + parent `memory`, and nothing else: never the markers/pointers/stats) applied in `ensureCasualClone`'s existing-authentic branch. **Guard (a):** gated on `!existing.activeBattleId` (never mid-battle). **Guard (b):** re-sync copies **FROM the parent**, which is exactly where the clone's own past learning was already redirected — so it is **additive-in-effect** and clobbers no un-redirected clone state (the clone accumulates none). Same-owner is re-checked (defense-in-depth vs a poisoned `rankedAgentId` on an otherwise-authentic clone), and `copyAgentSubcollections` refreshes the rules/bundles Trading Brain.
+**Tests:** the `casualClone.test.js` / `ensure-casual-clone.test.js` never-overwrite rows were **updated** to assert the ruling-3 shape — **identity preserved** (`isCasualClone`/`rankedAgentId` untouched) while the **brain re-syncs** from the parent (memory mirrors the parent's).
 
 ---
 
@@ -67,11 +75,15 @@ The clone deploys with **empty `memory`** day one (BaggerBomb loses its "recent 
 - **Flag-off** — every changed non-casual path byte-identical; exclusion clauses inert; R5 drops only training clones (a deliberate always-on bugfix, casual battles stay visible).
 - **No identity leak / mis-selection** — all 7 owner-lookups exclude both clone markers; no other agent-list query exists; the clone renders under the parent's inherited name, never its raw id.
 
+## Forward work (tracked)
+- **Phase 1.5 — Command-Center multi-battle (D2):** the blocker for acceptance-criterion #2 and the **precondition for flipping the dark flag.** Separate task; the flag stays off until it lands.
+- **Redirect the 3 dark copilot/gameplan capture sites (C1 residual)** when copilot/expansion go live (they correctly stay on `battle.agentId` today).
+
 ## Filed for separate tasking (BUILD_RULES §3 — reported, not fixed here)
 1. Redirect the 3 dark copilot/gameplan capture sites (C1 residual) when copilot/expansion go live.
-2. `firestore.rules` change requires `npm run test:rules` (emulator) validation before deploy — not in the default vitest run; manual Console deploy per repo convention.
-3. Pre-existing consolidation-gate idempotency weakness (independent of casual; D1 is the casual-reachable instance).
+2. ~~`firestore.rules` change requires `npm run test:rules` (emulator) validation before deploy.~~ **DONE** — validated this pass (`npm run test:rules`, 121 passing incl. the new reserved-id namespace + `isCasualClone`/`rankedAgentId` create-deny rows). Manual Console deploy of the rules still follows repo convention.
+3. ~~Pre-existing consolidation-gate idempotency weakness (D1 casual-reachable instance).~~ **The casual-reachable instance is FIXED (ruling 1).** The broader (non-casual) consolidation-gate idempotency question remains a pre-existing item outside this build's scope.
 
 ---
 
-*Read/review-only except the enumerated fixes. `vite build` green; full suite 6964 passing. No fenced file edited.*
+*Read/review-only except the enumerated fixes. `vite build` green; full suite **6970 passing**; `npm run test:rules` **121 passing** (emulator). No fenced file edited. Rulings 1 & 3 implemented; D2 → Phase 1.5; **the dark flag does not flip until Phase 1.5 ships.***
