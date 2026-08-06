@@ -82,6 +82,37 @@ for (const label of BATCHES) {
   perBatch[label] = `${Object.keys(obj).length} rules, ${n} cells`;
 }
 
+// ── advisory fill from the committed C7 V1.0 governed extract ───────────────
+// V1.2's table is already in the ledger cells (the closure-round advisories);
+// the extract supplies the "unchanged"/freshly-authored cells' governed text.
+// Supersession: V1.2 wins on overlap, so fill ONLY cells whose advisory is still
+// null, and expand the table's elided header ("The agent is instructed that…")
+// into a full sentence so all cells read consistently.
+{
+  const extractPath = `${__REPO}/docs/archetype-program/C7_V1_0_ADVISORY_SENTENCES_OF_RECORD.md`;
+  const extract = readFileSync(extractPath, 'utf8');
+  const normalize = (s) => `the agent is instructed that ${s.trim().replace(/^(?:…|\.\.\.)\s*/, '').replace(/^that\s+/i, '')}`;
+  const fillMap = {};
+  for (const line of extract.split('\n')) {
+    const m = line.match(/^\|\s*([a-z0-9-]+)\/(\w+)\s*\([^)]*\)\s*\|\s*(.+?)\s*\|\s*$/);
+    if (m) fillMap[`${m[1]}/${m[2]}`] = m[3];
+  }
+  let filled = 0, supersededByV12 = 0; const notInRegistry = [];
+  for (const [key, sentence] of Object.entries(fillMap)) {
+    const [ruleId, arch] = key.split('/');
+    const cell = merged[ruleId] && merged[ruleId][arch];
+    if (!cell) { notInRegistry.push(key); continue; }
+    if (cell.advisory === null || cell.advisory === '') { cell.advisory = normalize(sentence); filled++; }
+    else supersededByV12++;
+  }
+  let normalized = 0; // the V1.2 cells the transcription captured with the elided "…" form
+  for (const row of Object.values(merged)) for (const cell of Object.values(row)) {
+    if (typeof cell.advisory === 'string' && /^(?:…|\.\.\.)/.test(cell.advisory)) { cell.advisory = normalize(cell.advisory); normalized++; }
+  }
+  console.log(`advisory fill: filled ${filled}, superseded-by-V1.2 ${supersededByV12}, normalized-ellipsis ${normalized}`
+    + (notInRegistry.length ? `, extract-cells-not-in-registry ${notInRegistry.length} (${notInRegistry.join(',')})` : ''));
+}
+
 // validate + tally
 const counts = { native: 0, neutral: 0, tension: 0, core_conflict: 0, deferred: 0 };
 const errors = [];

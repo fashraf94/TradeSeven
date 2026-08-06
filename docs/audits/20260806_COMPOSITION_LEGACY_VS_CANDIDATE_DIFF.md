@@ -11,6 +11,8 @@
 
 `REVERSE_DIRECTION_MAP_AUDIT_2026-07-29` §5.1 predicted **17** `→ core_conflict` flags on the **6-archetype** grid. Authored on the **5-archetype launch scope** (Diversifier reserved) with event-time re-adjudication (several predicted-cc cells landed `tension`, not `core_conflict`), the actual legacy→candidate CC-correction set is **11**. This is the same class of overcount the Phase 0 discovery corrected for the family re-filings ("four" → three). The locked correction set of record is the 11 below; A30 asserts the diff stays equal to it.
 
+**Founder-confirmed (Aug 6, 2026):** the locked correction set is **11** — *"the audit's 17 was a 6-archetype prediction; the 5-archetype adjudication governs (11 + 24 re-adjudicated to tension) — same class as the 4→3 re-filings."* The §7b lock stands on 11.
+
 ## The 11 core_conflict corrections (legacy → core_conflict)
 
 | Rule | Archetype | Legacy state | Ruling |

@@ -25,14 +25,13 @@
 // ZERO-IMPORT (Invariant-R pattern): declares no archetype content by reference;
 // it is a pure data + helper module.
 //
-// KNOWN ADVISORY GAP (tracked, not fabricated — BUILD_RULES §3): a set of tension
-// cells carry advisory:null because their verbatim guidance lives in a source not
-// committed to the repo (the 35 "unchanged" C7 cells whose advisory of record is
-// in the uncommitted C7 V1.0 — CELL_BATCH_C7_FINAL_V1.md:7 defers them to V1.0 —
-// plus 2 C2 cells the C2 ledger left without an authored sentence). These are
-// enumerated in the manifest's knownAdvisoryGap and asserted by the completeness
-// check; the registry is NOT activation-ready until they are supplied. See the
-// PR body / docs backlog.
+// ADVISORY COMPLETENESS: every tension cell carries a verbatim governed advisory
+// (manifest.knownAdvisoryGap is empty; asserted by the completeness check). The 35
+// "unchanged" C7 cells were filled from the committed governed extract
+// docs/archetype-program/C7_V1_0_ADVISORY_SENTENCES_OF_RECORD.md (V1.2's closure-
+// round table takes precedence, then the extract per its supersession rule); the 2
+// C2 cells + th-05/degen were founder-authored in that extract (Aug 6, 2026).
+// Nothing was reconstructed from memory (BUILD_RULES §3).
 
 export const CELL_SCHEMA_VERSION = 1;
 
@@ -155,81 +154,81 @@ export const CANDIDATE_COMPAT_CELLS = {
     analyst: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
   },
   "gs-01": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-155"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    contrarian: { state: "tension", rulingIds: ["R-195"], advisory: "…the early freeze suppresses ordinary churn, and a thesis completed by the crowd's return is exited the moment the phase ends.", narrowedParams: null, displayReason: null, notes: ["c21_discretionary"] },
-    degen: { state: "tension", rulingIds: ["R-156"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-155"], advisory: "the agent is instructed that the freeze suppresses early churn, and that stalled or broken names rotate as soon as the phase ends.", narrowedParams: null, displayReason: null, notes: [] },
+    contrarian: { state: "tension", rulingIds: ["R-195"], advisory: "the agent is instructed that the early freeze suppresses ordinary churn, and a thesis completed by the crowd's return is exited the moment the phase ends.", narrowedParams: null, displayReason: null, notes: ["c21_discretionary"] },
+    degen: { state: "tension", rulingIds: ["R-156"], advisory: "the agent is instructed that the freeze defers rotation without changing its volatility ranking, which resumes intact.", narrowedParams: null, displayReason: null, notes: [] },
     guardian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["c21_discretionary"] },
-    analyst: { state: "tension", rulingIds: ["R-196"], advisory: "…the freeze defers rotation, and a clear quality upgrade is acted on when the phase ends.", narrowedParams: null, displayReason: null, notes: [] },
+    analyst: { state: "tension", rulingIds: ["R-196"], advisory: "the agent is instructed that the freeze defers rotation, and a clear quality upgrade is acted on when the phase ends.", narrowedParams: null, displayReason: null, notes: [] },
   },
   "gs-02": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-157"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    contrarian: { state: "tension", rulingIds: ["R-158"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-157"], advisory: "the agent is instructed that phase scaling adjusts tolerance modestly, and that its exit discipline is not suspended by the clock.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    contrarian: { state: "tension", rulingIds: ["R-158"], advisory: "the agent is instructed that its stop is declared before entry and that phase scaling never becomes a reason to sit past it.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
     degen: { state: "core_conflict", rulingIds: ["R-193"], advisory: null, narrowedParams: null, displayReason: "The unconditional EARLY clock-multiplier (1.5–3×) widens the stop on losers by the clock — the core refusal (never widen the stop to stay in a loser) fires on the first conflicting arm; the later tightening does not cure it.", notes: ["prose_only"] },
-    guardian: { state: "tension", rulingIds: ["R-159"], advisory: null, narrowedParams: {"minOnly":1}, displayReason: null, notes: ["prose_only"] },
-    analyst: { state: "tension", rulingIds: ["R-194"], advisory: "…a clock-scaled stop changes tolerance only, and the business case remains the sole basis for a thesis exit.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    guardian: { state: "tension", rulingIds: ["R-159"], advisory: "the agent is instructed that its risk line responds to damage rather than to the hour, and that phase scaling never tightens it into ordinary noise.", narrowedParams: {"minOnly":1}, displayReason: null, notes: ["prose_only"] },
+    analyst: { state: "tension", rulingIds: ["R-194"], advisory: "the agent is instructed that a clock-scaled stop changes tolerance only, and the business case remains the sole basis for a thesis exit.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
   },
   "gs-03": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-197"], advisory: "…its confirmation requirement does not fall at phase transitions; a reduced hurdle changes urgency, not evidence.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    contrarian: { state: "tension", rulingIds: ["R-198"], advisory: "…a decaying hurdle never substitutes for a recovery thesis.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-197"], advisory: "the agent is instructed that its confirmation requirement does not fall at phase transitions; a reduced hurdle changes urgency, not evidence.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    contrarian: { state: "tension", rulingIds: ["R-198"], advisory: "the agent is instructed that a decaying hurdle never substitutes for a recovery thesis.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
     degen: { state: "native", rulingIds: ["R-199"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    guardian: { state: "tension", rulingIds: ["R-160"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    analyst: { state: "tension", rulingIds: ["R-161"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    guardian: { state: "tension", rulingIds: ["R-160"], advisory: "the agent is instructed that its entry standard does not fall with the phase, and a reduced hurdle never admits a name its screens would reject.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    analyst: { state: "tension", rulingIds: ["R-161"], advisory: "the agent is instructed that the quality standard is fixed regardless of phase.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
   },
   "gs-07": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-162"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    contrarian: { state: "tension", rulingIds: ["R-200"], advisory: "…the lead lock defers activity, and a thesis completed by the crowd's return is exited when it lifts.", narrowedParams: null, displayReason: null, notes: [] },
-    degen: { state: "tension", rulingIds: ["R-163"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-162"], advisory: "the agent is instructed that the lock protects a lead, and that names whose trend evidence has broken still rotate when it lifts.", narrowedParams: null, displayReason: null, notes: [] },
+    contrarian: { state: "tension", rulingIds: ["R-200"], advisory: "the agent is instructed that the lead lock defers activity, and a thesis completed by the crowd's return is exited when it lifts.", narrowedParams: null, displayReason: null, notes: [] },
+    degen: { state: "tension", rulingIds: ["R-163"], advisory: "the agent is instructed that the lock suspends new rotation while ahead, and that its volatility ranking resumes unchanged.", narrowedParams: null, displayReason: null, notes: [] },
     guardian: { state: "native", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    analyst: { state: "tension", rulingIds: ["R-164"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    analyst: { state: "tension", rulingIds: ["R-164"], advisory: "the agent is instructed that the lock defers rotation while ahead, and that a clear quality upgrade is acted on once it lifts.", narrowedParams: null, displayReason: null, notes: [] },
   },
   "gs-08": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-165"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    contrarian: { state: "tension", rulingIds: ["R-201"], advisory: "…a scoring streak is not a reason to hold past the crowd's return.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    degen: { state: "tension", rulingIds: ["R-202"], advisory: "…a hot book does not slow its rotation; a decayed move is rotated regardless of the streak.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-165"], advisory: "the agent is instructed that a hot book does not make a stalled name worth holding, and its trend evidence still governs each position.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    contrarian: { state: "tension", rulingIds: ["R-201"], advisory: "the agent is instructed that a scoring streak is not a reason to hold past the crowd's return.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    degen: { state: "tension", rulingIds: ["R-202"], advisory: "the agent is instructed that a hot book does not slow its rotation; a decayed move is rotated regardless of the streak.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
     guardian: { state: "native", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    analyst: { state: "tension", rulingIds: ["R-166"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    analyst: { state: "tension", rulingIds: ["R-166"], advisory: "the agent is instructed that a scoring streak is not evidence about any holding's quality, and a clear upgrade remains actionable.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
   },
   "gs-09": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-203"], advisory: "…a portfolio losing streak is not the two-leg test; a position with chart and sector intact is not ejected on the streak.", narrowedParams: null, displayReason: null, notes: [] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-203"], advisory: "the agent is instructed that a portfolio losing streak is not the two-leg test; a position with chart and sector intact is not ejected on the streak.", narrowedParams: null, displayReason: null, notes: [] },
     contrarian: { state: "core_conflict", rulingIds: ["R-167"], advisory: null, narrowedParams: null, displayReason: "A portfolio-streak trigger overrides the name-level stop and ejects the freshest dislocation before its pre-declared line — a mandated pre-stop exit.", notes: ["c21_discretionary"] },
-    degen: { state: "tension", rulingIds: ["R-204"], advisory: "…its survival floor and movement-death discipline alone govern exits; a portfolio streak prompts review, not ejection.", narrowedParams: null, displayReason: null, notes: [] },
-    guardian: { state: "tension", rulingIds: ["R-168"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    analyst: { state: "tension", rulingIds: ["R-169"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    degen: { state: "tension", rulingIds: ["R-204"], advisory: "the agent is instructed that its survival floor and movement-death discipline alone govern exits; a portfolio streak prompts review, not ejection.", narrowedParams: null, displayReason: null, notes: [] },
+    guardian: { state: "tension", rulingIds: ["R-168"], advisory: "the agent is instructed that its risk lines decide exits, and that a losing streak prompts review rather than mandatory ejection.", narrowedParams: null, displayReason: null, notes: [] },
+    analyst: { state: "tension", rulingIds: ["R-169"], advisory: "the agent is instructed that the business case decides whether a holding is warranted, and that a cold streak is not a thesis verdict.", narrowedParams: null, displayReason: null, notes: [] },
   },
   "gs-10": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-170"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-170"], advisory: "the agent is instructed that the gate limits chasing extended intraday moves, and that confirmed strength remains its entry basis within the admitted range.", narrowedParams: null, displayReason: null, notes: [] },
     contrarian: { state: "native", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    degen: { state: "tension", rulingIds: ["R-171"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    degen: { state: "tension", rulingIds: ["R-171"], advisory: "the agent is instructed that the gate avoids entering after a move has run, and that realized volatility still ranks the admitted candidates.", narrowedParams: null, displayReason: null, notes: [] },
     guardian: { state: "native", rulingIds: ["R-205"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
     analyst: { state: "native", rulingIds: ["R-206"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
   },
   "gs-12": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-172"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    contrarian: { state: "tension", rulingIds: ["R-207"], advisory: "…the endgame hold pursues a threshold, and the crowd's return remains its exit signal.", narrowedParams: null, displayReason: null, notes: [] },
-    degen: { state: "tension", rulingIds: ["R-208"], advisory: "…a decayed move is rotated even inside the endgame window.", narrowedParams: null, displayReason: null, notes: [] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-172"], advisory: "the agent is instructed that the endgame hold pursues a nearly-banked threshold, and that its protective exits are unaffected.", narrowedParams: null, displayReason: null, notes: [] },
+    contrarian: { state: "tension", rulingIds: ["R-207"], advisory: "the agent is instructed that the endgame hold pursues a threshold, and the crowd's return remains its exit signal.", narrowedParams: null, displayReason: null, notes: [] },
+    degen: { state: "tension", rulingIds: ["R-208"], advisory: "the agent is instructed that a decayed move is rotated even inside the endgame window.", narrowedParams: null, displayReason: null, notes: [] },
     guardian: { state: "core_conflict", rulingIds: [], advisory: null, narrowedParams: null, displayReason: "Instructs disregarding all discretionary protect-first evidence in favor of score — the additional refusal the identity forbids.", notes: [] },
-    analyst: { state: "tension", rulingIds: ["R-173"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    analyst: { state: "tension", rulingIds: ["R-173"], advisory: "the agent is instructed that the endgame hold pursues a nearly-banked threshold, and that a broken quality thesis is still a reason to act.", narrowedParams: null, displayReason: null, notes: [] },
   },
   "i-01": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-218"], advisory: "…trend evidence governs selection; institutional accumulation orders only names that evidence already supports.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
-    contrarian: { state: "tension", rulingIds: ["R-219"], advisory: "…dislocation and recovery evidence govern selection; absent accumulation never disqualifies a washout.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
-    degen: { state: "tension", rulingIds: ["R-220"], advisory: "…realized volatility ranks candidates; accumulation is secondary context.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-218"], advisory: "the agent is instructed that trend evidence governs selection; institutional accumulation orders only names that evidence already supports.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    contrarian: { state: "tension", rulingIds: ["R-219"], advisory: "the agent is instructed that dislocation and recovery evidence govern selection; absent accumulation never disqualifies a washout.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    degen: { state: "tension", rulingIds: ["R-220"], advisory: "the agent is instructed that realized volatility ranks candidates; accumulation is secondary context.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
     guardian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
-    analyst: { state: "tension", rulingIds: ["R-228"], advisory: "…quality admission determines candidates; accumulation corroborates and never substitutes.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    analyst: { state: "tension", rulingIds: ["R-228"], advisory: "the agent is instructed that quality admission determines candidates; accumulation corroborates and never substitutes.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
   },
   "i-02": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-221"], advisory: "…trend evidence governs; where the exclusion would remove a trend-qualified candidate, it surfaces the conflict rather than silently re-ranking.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-221"], advisory: "the agent is instructed that trend evidence governs; where the exclusion would remove a trend-qualified candidate, it surfaces the conflict rather than silently re-ranking.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
     contrarian: { state: "core_conflict", rulingIds: [], advisory: null, narrowedParams: null, displayReason: "A hard exclusion of distributed (crowd-leaving) names removes the identity's entry condition at name level — an identity collision under the post-shortlist exclusion contract.", notes: ["board_blind","c21_discretionary","weight_only_construction"] },
-    degen: { state: "tension", rulingIds: ["R-222"], advisory: "…realized volatility ranks candidates; where the exclusion would remove the highest-volatility candidate, it surfaces the conflict.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    degen: { state: "tension", rulingIds: ["R-222"], advisory: "the agent is instructed that realized volatility ranks candidates; where the exclusion would remove the highest-volatility candidate, it surfaces the conflict.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
     guardian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
-    analyst: { state: "tension", rulingIds: ["R-229"], advisory: "…distribution is negative context; the business case decides admission.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    analyst: { state: "tension", rulingIds: ["R-229"], advisory: "the agent is instructed that distribution is negative context; the business case decides admission.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
   },
   "i-03": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-232"], advisory: "…trend evidence governs; fresh institutional positions order only names that evidence supports.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
-    contrarian: { state: "tension", rulingIds: ["R-233"], advisory: "…dislocation and recovery evidence govern; absent fresh positions never disqualify a washout.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
-    degen: { state: "tension", rulingIds: ["R-234"], advisory: "…realized volatility ranks candidates; fresh-position counts are secondary context.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-232"], advisory: "the agent is instructed that trend evidence governs; fresh institutional positions order only names that evidence supports.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    contrarian: { state: "tension", rulingIds: ["R-233"], advisory: "the agent is instructed that dislocation and recovery evidence govern; absent fresh positions never disqualify a washout.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    degen: { state: "tension", rulingIds: ["R-234"], advisory: "the agent is instructed that realized volatility ranks candidates; fresh-position counts are secondary context.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
     guardian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
-    analyst: { state: "tension", rulingIds: ["R-235"], advisory: "…quality admission determines candidates; consensus discovery corroborates and never substitutes.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    analyst: { state: "tension", rulingIds: ["R-235"], advisory: "the agent is instructed that quality admission determines candidates; consensus discovery corroborates and never substitutes.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
   },
   "i-05": {
     momentum_chaser: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
@@ -239,18 +238,18 @@ export const CANDIDATE_COMPAT_CELLS = {
     analyst: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
   },
   "i-06": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-223"], advisory: "…crowding is context; price and technical evidence decide selection.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-223"], advisory: "the agent is instructed that crowding is context; price and technical evidence decide selection.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
     contrarian: { state: "core_conflict", rulingIds: [], advisory: null, narrowedParams: null, displayReason: "Targeting hedge-fund-crowded names buys into the crowd — the direct inverse of the identity's crowd-left entry condition.", notes: ["board_blind","weight_only_construction"] },
-    degen: { state: "tension", rulingIds: ["R-231"], advisory: "…realized name-level volatility remains its primary ranking basis, and hedge-fund crowding may influence ordering only among otherwise volatility-qualified candidates.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    degen: { state: "tension", rulingIds: ["R-231"], advisory: "the agent is instructed that realized name-level volatility remains its primary ranking basis, and hedge-fund crowding may influence ordering only among otherwise volatility-qualified candidates.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
     guardian: { state: "core_conflict", rulingIds: [], advisory: null, narrowedParams: null, displayReason: "Selecting hedge-fund-crowded names concentrates into correlated, crowd-exposed positions — against the identity's spread-for-safety diversification.", notes: ["board_blind","weight_only_construction"] },
-    analyst: { state: "tension", rulingIds: ["R-191"], advisory: null, narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    analyst: { state: "tension", rulingIds: ["R-191"], advisory: "the agent is instructed that quality admission determines candidates, and that institutional crowding may inform timing among them.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
   },
   "i-07": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-224"], advisory: "…actual sector and name trend evidence governs; institutional sector flow tilts only among sectors that evidence supports.", narrowedParams: null, displayReason: null, notes: ["board_blind","c21_discretionary","weight_only_construction"] },
-    contrarian: { state: "tension", rulingIds: ["R-11"], advisory: null, narrowedParams: {"allow":["neutral"]}, displayReason: null, notes: ["board_blind","c21_discretionary","weight_only_construction"] },
-    degen: { state: "tension", rulingIds: ["R-225"], advisory: "…realized volatility ranks candidates within the rule's admitted sector set, and it surfaces the identity conflict whenever the sector exclusion removes the global volatility leader.", narrowedParams: null, displayReason: null, notes: ["board_blind","c21_discretionary","weight_only_construction"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-224"], advisory: "the agent is instructed that actual sector and name trend evidence governs; institutional sector flow tilts only among sectors that evidence supports.", narrowedParams: null, displayReason: null, notes: ["board_blind","c21_discretionary","weight_only_construction"] },
+    contrarian: { state: "tension", rulingIds: ["R-11"], advisory: "the agent is instructed that the sector preference narrows where it hunts, and that within the admitted universe selection remains dislocation-led.", narrowedParams: {"allow":["neutral"]}, displayReason: null, notes: ["board_blind","c21_discretionary","weight_only_construction"] },
+    degen: { state: "tension", rulingIds: ["R-225"], advisory: "the agent is instructed that realized volatility ranks candidates within the rule's admitted sector set, and it surfaces the identity conflict whenever the sector exclusion removes the global volatility leader.", narrowedParams: null, displayReason: null, notes: ["board_blind","c21_discretionary","weight_only_construction"] },
     guardian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
-    analyst: { state: "tension", rulingIds: ["R-226"], advisory: "…quality admission precedes the sector tilt; no name is excluded before its quality case is read.", narrowedParams: null, displayReason: null, notes: ["board_blind","c21_discretionary","weight_only_construction"] },
+    analyst: { state: "tension", rulingIds: ["R-226"], advisory: "the agent is instructed that quality admission precedes the sector tilt; no name is excluded before its quality case is read.", narrowedParams: null, displayReason: null, notes: ["board_blind","c21_discretionary","weight_only_construction"] },
   },
   "i-08": {
     momentum_chaser: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["board_blind","prose_only","weight_only_construction"] },
@@ -262,9 +261,9 @@ export const CANDIDATE_COMPAT_CELLS = {
   "i-09": {
     momentum_chaser: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
     contrarian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
-    degen: { state: "tension", rulingIds: ["R-227"], advisory: "…realized volatility — its own measured axis — ranks candidates; holder-type skew is corroboration only.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    degen: { state: "tension", rulingIds: ["R-227"], advisory: "the agent is instructed that realized volatility — its own measured axis — ranks candidates; holder-type skew is corroboration only.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
     guardian: { state: "core_conflict", rulingIds: [], advisory: null, narrowedParams: null, displayReason: "Preferring fast-money (transient) holder skew tilts toward the least-stable, highest-turnover ownership — against the identity's stability-first posture.", notes: ["board_blind","weight_only_construction"] },
-    analyst: { state: "tension", rulingIds: ["R-10"], advisory: null, narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
+    analyst: { state: "tension", rulingIds: ["R-10"], advisory: "the agent is instructed that quality admission determines candidates, and that holder-type skew may order them.", narrowedParams: null, displayReason: null, notes: ["board_blind","weight_only_construction"] },
   },
   "i-10": {
     momentum_chaser: { state: "deferred", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
@@ -464,7 +463,7 @@ export const CANDIDATE_COMPAT_CELLS = {
   },
   "tech-avoid-declining": {
     momentum_chaser: { state: "native", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    contrarian: { state: "tension", rulingIds: ["R-24"], advisory: null, narrowedParams: {"period":{"allow":[50]}}, displayReason: null, notes: [] },
+    contrarian: { state: "tension", rulingIds: ["R-24"], advisory: "the agent is instructed that the rule admits only dislocated names that have reclaimed the 50-day line, and that dislocation and recovery evidence still govern selection among those reclaim-confirmed candidates — a washout below the line remains watchable, not buyable, until the reclaim confirms.", narrowedParams: {"period":{"allow":[50]}}, displayReason: null, notes: [] },
     degen: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
     guardian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
     analyst: { state: "tension", rulingIds: [], advisory: "the agent is instructed quality admission remains the primary standard; the technical condition is timing discipline applied to qualified names", narrowedParams: null, displayReason: null, notes: [] },
@@ -519,53 +518,53 @@ export const CANDIDATE_COMPAT_CELLS = {
     analyst: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
   },
   "th-01": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-209"], advisory: "…the trail protects a banked gain and must not exit a position whose chart and sector evidence both hold.", narrowedParams: null, displayReason: null, notes: [] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-209"], advisory: "the agent is instructed that the trail protects a banked gain and must not exit a position whose chart and sector evidence both hold.", narrowedParams: null, displayReason: null, notes: [] },
     contrarian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    degen: { state: "tension", rulingIds: ["R-210"], advisory: "…the trail sits outside the ride's ordinary swing; a banked threshold does not end a live move.", narrowedParams: null, displayReason: null, notes: [] },
-    guardian: { state: "tension", rulingIds: ["R-174"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    analyst: { state: "tension", rulingIds: ["R-211"], advisory: "…the trail protects gains and never substitutes for the business case.", narrowedParams: null, displayReason: null, notes: [] },
+    degen: { state: "tension", rulingIds: ["R-210"], advisory: "the agent is instructed that the trail sits outside the ride's ordinary swing; a banked threshold does not end a live move.", narrowedParams: null, displayReason: null, notes: [] },
+    guardian: { state: "tension", rulingIds: ["R-174"], advisory: "the agent is instructed that post-threshold protection is a ratchet set outside ordinary noise, never a scalp.", narrowedParams: null, displayReason: null, notes: [] },
+    analyst: { state: "tension", rulingIds: ["R-211"], advisory: "the agent is instructed that the trail protects gains and never substitutes for the business case.", narrowedParams: null, displayReason: null, notes: [] },
   },
   "th-04": {
     momentum_chaser: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    contrarian: { state: "tension", rulingIds: ["R-177"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    contrarian: { state: "tension", rulingIds: ["R-177"], advisory: "the agent is instructed that its stop is declared before entry, and that a banked threshold is not a reason to move it.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
     degen: { state: "native", rulingIds: ["R-175"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    guardian: { state: "tension", rulingIds: ["R-6"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    guardian: { state: "tension", rulingIds: ["R-6"], advisory: "the agent is instructed that the widened trail still protects banked gains, and that its risk line governs if the move reverses.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
     analyst: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
   },
   "th-05": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-178"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-178"], advisory: "the agent is instructed that the tightened trail protects a banked gain, and that it should not exit a position whose chart and sector evidence both remain intact.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
     contrarian: { state: "native", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    degen: { state: "tension", rulingIds: ["R-7"], advisory: null, narrowedParams: {"min":0.25,"max":0.4}, displayReason: null, notes: ["prose_only"] },
-    guardian: { state: "tension", rulingIds: ["R-8"], advisory: null, narrowedParams: {"min":0.2,"max":0.4}, displayReason: null, notes: ["prose_only"] },
-    analyst: { state: "tension", rulingIds: ["R-181"], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
+    degen: { state: "tension", rulingIds: ["R-7"], advisory: "the agent is instructed that the tightened trail after a banked threshold is its own profit-side discipline within the admitted range, and that a live move's remaining thresholds and its survival stop — not the trail — decide whether the ride continues.", narrowedParams: {"min":0.25,"max":0.4}, displayReason: null, notes: ["prose_only"] },
+    guardian: { state: "tension", rulingIds: ["R-8"], advisory: "the agent is instructed that post-threshold protection is set outside ordinary noise, and that its risk line rather than the trail decides exits.", narrowedParams: {"min":0.2,"max":0.4}, displayReason: null, notes: ["prose_only"] },
+    analyst: { state: "tension", rulingIds: ["R-181"], advisory: "the agent is instructed that the trail protects banked gains and never substitutes for the business case, which decides whether the holding is warranted.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
   },
   "th-07": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-212"], advisory: "…threshold proximity informs urgency and never overrides the two-leg holding judgment.", narrowedParams: null, displayReason: null, notes: [] },
-    contrarian: { state: "tension", rulingIds: ["R-213"], advisory: "…its pre-declared stop remains the only line that ends the thesis; threshold weighting never advances an exit ahead of it.", narrowedParams: null, displayReason: null, notes: [] },
-    degen: { state: "tension", rulingIds: ["R-214"], advisory: "…its stop discipline alone governs risk; scoring proximity is not a volatility judgment.", narrowedParams: null, displayReason: null, notes: [] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-212"], advisory: "the agent is instructed that threshold proximity informs urgency and never overrides the two-leg holding judgment.", narrowedParams: null, displayReason: null, notes: [] },
+    contrarian: { state: "tension", rulingIds: ["R-213"], advisory: "the agent is instructed that its pre-declared stop remains the only line that ends the thesis; threshold weighting never advances an exit ahead of it.", narrowedParams: null, displayReason: null, notes: [] },
+    degen: { state: "tension", rulingIds: ["R-214"], advisory: "the agent is instructed that its stop discipline alone governs risk; scoring proximity is not a volatility judgment.", narrowedParams: null, displayReason: null, notes: [] },
     guardian: { state: "native", rulingIds: ["R-182"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    analyst: { state: "tension", rulingIds: ["R-215"], advisory: "…the business case decides exits; scoring proximity adjusts timing only.", narrowedParams: null, displayReason: null, notes: [] },
+    analyst: { state: "tension", rulingIds: ["R-215"], advisory: "the agent is instructed that the business case decides exits; scoring proximity adjusts timing only.", narrowedParams: null, displayReason: null, notes: [] },
   },
   "th-08": {
     momentum_chaser: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
     contrarian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
     degen: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    guardian: { state: "tension", rulingIds: ["R-183"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    guardian: { state: "tension", rulingIds: ["R-183"], advisory: "the agent is instructed that a short stall is not evidence, and that its patience window governs before any release applies.", narrowedParams: null, displayReason: null, notes: [] },
     analyst: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
   },
   "th-09": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-184"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-184"], advisory: "the agent is instructed that tier exemptions defer a discretionary ejection, and that a name whose trend evidence has broken is still rotated.", narrowedParams: null, displayReason: null, notes: [] },
     contrarian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    degen: { state: "tension", rulingIds: ["R-216"], advisory: "…a tier exemption defers a discretionary ejection, and a decayed move is still rotated.", narrowedParams: null, displayReason: null, notes: [] },
+    degen: { state: "tension", rulingIds: ["R-216"], advisory: "the agent is instructed that a tier exemption defers a discretionary ejection, and a decayed move is still rotated.", narrowedParams: null, displayReason: null, notes: [] },
     guardian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["c21_discretionary"] },
     analyst: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
   },
   "th-10": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-185"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    contrarian: { state: "tension", rulingIds: ["R-217"], advisory: "…the Hunt posture sets ambition; the crowd's return remains the exit signal regardless of milestones.", narrowedParams: null, displayReason: null, notes: [] },
-    degen: { state: "tension", rulingIds: ["R-186"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    guardian: { state: "tension", rulingIds: ["R-187"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    analyst: { state: "tension", rulingIds: ["R-188"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-185"], advisory: "the agent is instructed that posture sets its banking cadence, and that a working position with both legs intact is not sold merely because it banked.", narrowedParams: null, displayReason: null, notes: [] },
+    contrarian: { state: "tension", rulingIds: ["R-217"], advisory: "the agent is instructed that the Hunt posture sets ambition; the crowd's return remains the exit signal regardless of milestones.", narrowedParams: null, displayReason: null, notes: [] },
+    degen: { state: "tension", rulingIds: ["R-186"], advisory: "the agent is instructed that posture sets its milestone ambition, and that a decayed move is rotated regardless of the milestone it has not reached.", narrowedParams: null, displayReason: null, notes: [] },
+    guardian: { state: "tension", rulingIds: ["R-187"], advisory: "the agent is instructed that posture sets banking cadence, and that its protective exits rather than the posture decide when a position closes.", narrowedParams: null, displayReason: null, notes: [] },
+    analyst: { state: "tension", rulingIds: ["R-188"], advisory: "the agent is instructed that the business case decides whether a holding is warranted, and that a banked threshold is not a thesis verdict.", narrowedParams: null, displayReason: null, notes: [] },
   },
   "ts-01": {
     momentum_chaser: { state: "tension", rulingIds: ["R-68"], advisory: "the agent is instructed the cap limits multiplier exposure on unusually volatile names and never removes them from selection or ranking", narrowedParams: null, displayReason: null, notes: [] },
@@ -655,7 +654,7 @@ export const CANDIDATE_COMPAT_CELLS = {
     momentum_chaser: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
     contrarian: { state: "tension", rulingIds: ["R-20"], advisory: "the agent is instructed to treat \"turning positive\" as the kernel's own stabilization evidence", narrowedParams: {"direction":{"allow":["turning positive"]}}, displayReason: null, notes: [] },
     degen: { state: "tension", rulingIds: ["R-32"], advisory: "the agent is instructed to require realized expansion or volume evidence before entry weight; direction confirmation alone is not movement", narrowedParams: null, displayReason: null, notes: [] },
-    guardian: { state: "tension", rulingIds: ["R-29"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    guardian: { state: "tension", rulingIds: ["R-29"], advisory: "the agent is instructed that the squeeze-direction filter is a timing flag and never a mandate, and that its volatility and downside screens govern whether a flagged name may be selected at all.", narrowedParams: null, displayReason: null, notes: [] },
     analyst: { state: "tension", rulingIds: [], advisory: "the agent is instructed quality admission precedes the squeeze preference; compression status never substitutes for the standard", narrowedParams: null, displayReason: null, notes: [] },
   },
   "tv-06": {
@@ -708,7 +707,7 @@ export const CANDIDATE_COMPAT_CELLS = {
     analyst: { state: "tension", rulingIds: ["R-60"], advisory: "the agent is instructed that quality admission precedes name selection within a favored sector, and relative strength orders only admitted names.", narrowedParams: null, displayReason: null, notes: [] },
   },
   "tv-15": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-189"], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-189"], advisory: "the agent is instructed that the harvest cadence recycles banked names, and that a position with both legs intact is not sold on the scoring event alone.", narrowedParams: null, displayReason: null, notes: [] },
     contrarian: { state: "core_conflict", rulingIds: ["R-190"], advisory: null, narrowedParams: null, displayReason: "Compound — a forced post-threshold harvest plus a re-entry gate (highest-ATR, RSI > threshold, above VWAP) that a washed-out dislocated name fails by construction.", notes: [] },
     degen: { state: "native", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
     guardian: { state: "core_conflict", rulingIds: [], advisory: null, narrowedParams: null, displayReason: "A forced milestone harvest plus mandated rotation into the highest-ATR mover forces both a non-defensive exit and maximum-volatility re-entry — against capital protection.", notes: [] },

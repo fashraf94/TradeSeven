@@ -776,7 +776,7 @@
    "rulingIds": [
     "R-24"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the rule admits only dislocated names that have reclaimed the 50-day line, and that dislocation and recovery evidence still govern selection among those reclaim-confirmed candidates — a washout below the line remains watchable, not buyable, until the reclaim confirms.",
    "narrowedParams": {
     "period": {
      "allow": [
@@ -1272,7 +1272,7 @@
    "rulingIds": [
     "R-29"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the squeeze-direction filter is a timing flag and never a mandate, and that its volatility and downside screens govern whether a flagged name may be selected at all.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3493,7 +3493,7 @@
    "rulingIds": [
     "R-155"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the freeze suppresses early churn, and that stalled or broken names rotate as soon as the phase ends.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3503,7 +3503,7 @@
    "rulingIds": [
     "R-195"
    ],
-   "advisory": "…the early freeze suppresses ordinary churn, and a thesis completed by the crowd's return is exited the moment the phase ends.",
+   "advisory": "the agent is instructed that the early freeze suppresses ordinary churn, and a thesis completed by the crowd's return is exited the moment the phase ends.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3515,7 +3515,7 @@
    "rulingIds": [
     "R-156"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the freeze defers rotation without changing its volatility ranking, which resumes intact.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3535,7 +3535,7 @@
    "rulingIds": [
     "R-196"
    ],
-   "advisory": "…the freeze defers rotation, and a clear quality upgrade is acted on when the phase ends.",
+   "advisory": "the agent is instructed that the freeze defers rotation, and a clear quality upgrade is acted on when the phase ends.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3547,7 +3547,7 @@
    "rulingIds": [
     "R-157"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that phase scaling adjusts tolerance modestly, and that its exit discipline is not suspended by the clock.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3559,7 +3559,7 @@
    "rulingIds": [
     "R-158"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that its stop is declared before entry and that phase scaling never becomes a reason to sit past it.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3583,7 +3583,7 @@
    "rulingIds": [
     "R-159"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that its risk line responds to damage rather than to the hour, and that phase scaling never tightens it into ordinary noise.",
    "narrowedParams": {
     "minOnly": 1
    },
@@ -3597,7 +3597,7 @@
    "rulingIds": [
     "R-194"
    ],
-   "advisory": "…a clock-scaled stop changes tolerance only, and the business case remains the sole basis for a thesis exit.",
+   "advisory": "the agent is instructed that a clock-scaled stop changes tolerance only, and the business case remains the sole basis for a thesis exit.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3611,7 +3611,7 @@
    "rulingIds": [
     "R-197"
    ],
-   "advisory": "…its confirmation requirement does not fall at phase transitions; a reduced hurdle changes urgency, not evidence.",
+   "advisory": "the agent is instructed that its confirmation requirement does not fall at phase transitions; a reduced hurdle changes urgency, not evidence.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3623,7 +3623,7 @@
    "rulingIds": [
     "R-198"
    ],
-   "advisory": "…a decaying hurdle never substitutes for a recovery thesis.",
+   "advisory": "the agent is instructed that a decaying hurdle never substitutes for a recovery thesis.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3647,7 +3647,7 @@
    "rulingIds": [
     "R-160"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that its entry standard does not fall with the phase, and a reduced hurdle never admits a name its screens would reject.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3659,7 +3659,7 @@
    "rulingIds": [
     "R-161"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the quality standard is fixed regardless of phase.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3673,7 +3673,7 @@
    "rulingIds": [
     "R-162"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the lock protects a lead, and that names whose trend evidence has broken still rotate when it lifts.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3683,7 +3683,7 @@
    "rulingIds": [
     "R-200"
    ],
-   "advisory": "…the lead lock defers activity, and a thesis completed by the crowd's return is exited when it lifts.",
+   "advisory": "the agent is instructed that the lead lock defers activity, and a thesis completed by the crowd's return is exited when it lifts.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3693,7 +3693,7 @@
    "rulingIds": [
     "R-163"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the lock suspends new rotation while ahead, and that its volatility ranking resumes unchanged.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3711,7 +3711,7 @@
    "rulingIds": [
     "R-164"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the lock defers rotation while ahead, and that a clear quality upgrade is acted on once it lifts.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3723,7 +3723,7 @@
    "rulingIds": [
     "R-165"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that a hot book does not make a stalled name worth holding, and its trend evidence still governs each position.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3735,7 +3735,7 @@
    "rulingIds": [
     "R-201"
    ],
-   "advisory": "…a scoring streak is not a reason to hold past the crowd's return.",
+   "advisory": "the agent is instructed that a scoring streak is not a reason to hold past the crowd's return.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3747,7 +3747,7 @@
    "rulingIds": [
     "R-202"
    ],
-   "advisory": "…a hot book does not slow its rotation; a decayed move is rotated regardless of the streak.",
+   "advisory": "the agent is instructed that a hot book does not slow its rotation; a decayed move is rotated regardless of the streak.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3769,7 +3769,7 @@
    "rulingIds": [
     "R-166"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that a scoring streak is not evidence about any holding's quality, and a clear upgrade remains actionable.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -3783,7 +3783,7 @@
    "rulingIds": [
     "R-203"
    ],
-   "advisory": "…a portfolio losing streak is not the two-leg test; a position with chart and sector intact is not ejected on the streak.",
+   "advisory": "the agent is instructed that a portfolio losing streak is not the two-leg test; a position with chart and sector intact is not ejected on the streak.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3805,7 +3805,7 @@
    "rulingIds": [
     "R-204"
    ],
-   "advisory": "…its survival floor and movement-death discipline alone govern exits; a portfolio streak prompts review, not ejection.",
+   "advisory": "the agent is instructed that its survival floor and movement-death discipline alone govern exits; a portfolio streak prompts review, not ejection.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3815,7 +3815,7 @@
    "rulingIds": [
     "R-168"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that its risk lines decide exits, and that a losing streak prompts review rather than mandatory ejection.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3825,7 +3825,7 @@
    "rulingIds": [
     "R-169"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the business case decides whether a holding is warranted, and that a cold streak is not a thesis verdict.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3837,7 +3837,7 @@
    "rulingIds": [
     "R-170"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the gate limits chasing extended intraday moves, and that confirmed strength remains its entry basis within the admitted range.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3855,7 +3855,7 @@
    "rulingIds": [
     "R-171"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the gate avoids entering after a move has run, and that realized volatility still ranks the admitted candidates.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3887,7 +3887,7 @@
    "rulingIds": [
     "R-172"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the endgame hold pursues a nearly-banked threshold, and that its protective exits are unaffected.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3897,7 +3897,7 @@
    "rulingIds": [
     "R-207"
    ],
-   "advisory": "…the endgame hold pursues a threshold, and the crowd's return remains its exit signal.",
+   "advisory": "the agent is instructed that the endgame hold pursues a threshold, and the crowd's return remains its exit signal.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3907,7 +3907,7 @@
    "rulingIds": [
     "R-208"
    ],
-   "advisory": "…a decayed move is rotated even inside the endgame window.",
+   "advisory": "the agent is instructed that a decayed move is rotated even inside the endgame window.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3925,7 +3925,7 @@
    "rulingIds": [
     "R-173"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the endgame hold pursues a nearly-banked threshold, and that a broken quality thesis is still a reason to act.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3937,7 +3937,7 @@
    "rulingIds": [
     "R-209"
    ],
-   "advisory": "…the trail protects a banked gain and must not exit a position whose chart and sector evidence both hold.",
+   "advisory": "the agent is instructed that the trail protects a banked gain and must not exit a position whose chart and sector evidence both hold.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3955,7 +3955,7 @@
    "rulingIds": [
     "R-210"
    ],
-   "advisory": "…the trail sits outside the ride's ordinary swing; a banked threshold does not end a live move.",
+   "advisory": "the agent is instructed that the trail sits outside the ride's ordinary swing; a banked threshold does not end a live move.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3965,7 +3965,7 @@
    "rulingIds": [
     "R-174"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that post-threshold protection is a ratchet set outside ordinary noise, never a scalp.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3975,7 +3975,7 @@
    "rulingIds": [
     "R-211"
    ],
-   "advisory": "…the trail protects gains and never substitutes for the business case.",
+   "advisory": "the agent is instructed that the trail protects gains and never substitutes for the business case.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -3997,7 +3997,7 @@
    "rulingIds": [
     "R-177"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that its stop is declared before entry, and that a banked threshold is not a reason to move it.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4021,7 +4021,7 @@
    "rulingIds": [
     "R-6"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the widened trail still protects banked gains, and that its risk line governs if the move reverses.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4045,7 +4045,7 @@
    "rulingIds": [
     "R-178"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the tightened trail protects a banked gain, and that it should not exit a position whose chart and sector evidence both remain intact.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4067,7 +4067,7 @@
    "rulingIds": [
     "R-7"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the tightened trail after a banked threshold is its own profit-side discipline within the admitted range, and that a live move's remaining thresholds and its survival stop — not the trail — decide whether the ride continues.",
    "narrowedParams": {
     "min": 0.25,
     "max": 0.4
@@ -4082,7 +4082,7 @@
    "rulingIds": [
     "R-8"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that post-threshold protection is set outside ordinary noise, and that its risk line rather than the trail decides exits.",
    "narrowedParams": {
     "min": 0.2,
     "max": 0.4
@@ -4097,7 +4097,7 @@
    "rulingIds": [
     "R-181"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the trail protects banked gains and never substitutes for the business case, which decides whether the holding is warranted.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4111,7 +4111,7 @@
    "rulingIds": [
     "R-212"
    ],
-   "advisory": "…threshold proximity informs urgency and never overrides the two-leg holding judgment.",
+   "advisory": "the agent is instructed that threshold proximity informs urgency and never overrides the two-leg holding judgment.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4121,7 +4121,7 @@
    "rulingIds": [
     "R-213"
    ],
-   "advisory": "…its pre-declared stop remains the only line that ends the thesis; threshold weighting never advances an exit ahead of it.",
+   "advisory": "the agent is instructed that its pre-declared stop remains the only line that ends the thesis; threshold weighting never advances an exit ahead of it.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4131,7 +4131,7 @@
    "rulingIds": [
     "R-214"
    ],
-   "advisory": "…its stop discipline alone governs risk; scoring proximity is not a volatility judgment.",
+   "advisory": "the agent is instructed that its stop discipline alone governs risk; scoring proximity is not a volatility judgment.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4151,7 +4151,7 @@
    "rulingIds": [
     "R-215"
    ],
-   "advisory": "…the business case decides exits; scoring proximity adjusts timing only.",
+   "advisory": "the agent is instructed that the business case decides exits; scoring proximity adjusts timing only.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4187,7 +4187,7 @@
    "rulingIds": [
     "R-183"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that a short stall is not evidence, and that its patience window governs before any release applies.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4207,7 +4207,7 @@
    "rulingIds": [
     "R-184"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that tier exemptions defer a discretionary ejection, and that a name whose trend evidence has broken is still rotated.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4225,7 +4225,7 @@
    "rulingIds": [
     "R-216"
    ],
-   "advisory": "…a tier exemption defers a discretionary ejection, and a decayed move is still rotated.",
+   "advisory": "the agent is instructed that a tier exemption defers a discretionary ejection, and a decayed move is still rotated.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4255,7 +4255,7 @@
    "rulingIds": [
     "R-185"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that posture sets its banking cadence, and that a working position with both legs intact is not sold merely because it banked.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4265,7 +4265,7 @@
    "rulingIds": [
     "R-217"
    ],
-   "advisory": "…the Hunt posture sets ambition; the crowd's return remains the exit signal regardless of milestones.",
+   "advisory": "the agent is instructed that the Hunt posture sets ambition; the crowd's return remains the exit signal regardless of milestones.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4275,7 +4275,7 @@
    "rulingIds": [
     "R-186"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that posture sets its milestone ambition, and that a decayed move is rotated regardless of the milestone it has not reached.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4285,7 +4285,7 @@
    "rulingIds": [
     "R-187"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that posture sets banking cadence, and that its protective exits rather than the posture decide when a position closes.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4295,7 +4295,7 @@
    "rulingIds": [
     "R-188"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the business case decides whether a holding is warranted, and that a banked threshold is not a thesis verdict.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4307,7 +4307,7 @@
    "rulingIds": [
     "R-189"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the harvest cadence recycles banked names, and that a position with both legs intact is not sold on the scoring event alone.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": []
@@ -4353,7 +4353,7 @@
    "rulingIds": [
     "R-218"
    ],
-   "advisory": "…trend evidence governs selection; institutional accumulation orders only names that evidence already supports.",
+   "advisory": "the agent is instructed that trend evidence governs selection; institutional accumulation orders only names that evidence already supports.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4366,7 +4366,7 @@
    "rulingIds": [
     "R-219"
    ],
-   "advisory": "…dislocation and recovery evidence govern selection; absent accumulation never disqualifies a washout.",
+   "advisory": "the agent is instructed that dislocation and recovery evidence govern selection; absent accumulation never disqualifies a washout.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4379,7 +4379,7 @@
    "rulingIds": [
     "R-220"
    ],
-   "advisory": "…realized volatility ranks candidates; accumulation is secondary context.",
+   "advisory": "the agent is instructed that realized volatility ranks candidates; accumulation is secondary context.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4403,7 +4403,7 @@
    "rulingIds": [
     "R-228"
    ],
-   "advisory": "…quality admission determines candidates; accumulation corroborates and never substitutes.",
+   "advisory": "the agent is instructed that quality admission determines candidates; accumulation corroborates and never substitutes.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4418,7 +4418,7 @@
    "rulingIds": [
     "R-221"
    ],
-   "advisory": "…trend evidence governs; where the exclusion would remove a trend-qualified candidate, it surfaces the conflict rather than silently re-ranking.",
+   "advisory": "the agent is instructed that trend evidence governs; where the exclusion would remove a trend-qualified candidate, it surfaces the conflict rather than silently re-ranking.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4443,7 +4443,7 @@
    "rulingIds": [
     "R-222"
    ],
-   "advisory": "…realized volatility ranks candidates; where the exclusion would remove the highest-volatility candidate, it surfaces the conflict.",
+   "advisory": "the agent is instructed that realized volatility ranks candidates; where the exclusion would remove the highest-volatility candidate, it surfaces the conflict.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4467,7 +4467,7 @@
    "rulingIds": [
     "R-229"
    ],
-   "advisory": "…distribution is negative context; the business case decides admission.",
+   "advisory": "the agent is instructed that distribution is negative context; the business case decides admission.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4482,7 +4482,7 @@
    "rulingIds": [
     "R-232"
    ],
-   "advisory": "…trend evidence governs; fresh institutional positions order only names that evidence supports.",
+   "advisory": "the agent is instructed that trend evidence governs; fresh institutional positions order only names that evidence supports.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4495,7 +4495,7 @@
    "rulingIds": [
     "R-233"
    ],
-   "advisory": "…dislocation and recovery evidence govern; absent fresh positions never disqualify a washout.",
+   "advisory": "the agent is instructed that dislocation and recovery evidence govern; absent fresh positions never disqualify a washout.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4508,7 +4508,7 @@
    "rulingIds": [
     "R-234"
    ],
-   "advisory": "…realized volatility ranks candidates; fresh-position counts are secondary context.",
+   "advisory": "the agent is instructed that realized volatility ranks candidates; fresh-position counts are secondary context.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4532,7 +4532,7 @@
    "rulingIds": [
     "R-235"
    ],
-   "advisory": "…quality admission determines candidates; consensus discovery corroborates and never substitutes.",
+   "advisory": "the agent is instructed that quality admission determines candidates; consensus discovery corroborates and never substitutes.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4604,7 +4604,7 @@
    "rulingIds": [
     "R-223"
    ],
-   "advisory": "…crowding is context; price and technical evidence decide selection.",
+   "advisory": "the agent is instructed that crowding is context; price and technical evidence decide selection.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4628,7 +4628,7 @@
    "rulingIds": [
     "R-231"
    ],
-   "advisory": "…realized name-level volatility remains its primary ranking basis, and hedge-fund crowding may influence ordering only among otherwise volatility-qualified candidates.",
+   "advisory": "the agent is instructed that realized name-level volatility remains its primary ranking basis, and hedge-fund crowding may influence ordering only among otherwise volatility-qualified candidates.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4652,7 +4652,7 @@
    "rulingIds": [
     "R-191"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that quality admission determines candidates, and that institutional crowding may inform timing among them.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4667,7 +4667,7 @@
    "rulingIds": [
     "R-224"
    ],
-   "advisory": "…actual sector and name trend evidence governs; institutional sector flow tilts only among sectors that evidence supports.",
+   "advisory": "the agent is instructed that actual sector and name trend evidence governs; institutional sector flow tilts only among sectors that evidence supports.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4681,7 +4681,7 @@
    "rulingIds": [
     "R-11"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that the sector preference narrows where it hunts, and that within the admitted universe selection remains dislocation-led.",
    "narrowedParams": {
     "allow": [
      "neutral"
@@ -4699,7 +4699,7 @@
    "rulingIds": [
     "R-225"
    ],
-   "advisory": "…realized volatility ranks candidates within the rule's admitted sector set, and it surfaces the identity conflict whenever the sector exclusion removes the global volatility leader.",
+   "advisory": "the agent is instructed that realized volatility ranks candidates within the rule's admitted sector set, and it surfaces the identity conflict whenever the sector exclusion removes the global volatility leader.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4724,7 +4724,7 @@
    "rulingIds": [
     "R-226"
    ],
-   "advisory": "…quality admission precedes the sector tilt; no name is excluded before its quality case is read.",
+   "advisory": "the agent is instructed that quality admission precedes the sector tilt; no name is excluded before its quality case is read.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4824,7 +4824,7 @@
    "rulingIds": [
     "R-227"
    ],
-   "advisory": "…realized volatility — its own measured axis — ranks candidates; holder-type skew is corroboration only.",
+   "advisory": "the agent is instructed that realized volatility — its own measured axis — ranks candidates; holder-type skew is corroboration only.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [
@@ -4848,7 +4848,7 @@
    "rulingIds": [
     "R-10"
    ],
-   "advisory": null,
+   "advisory": "the agent is instructed that quality admission determines candidates, and that holder-type skew may order them.",
    "narrowedParams": null,
    "displayReason": null,
    "notes": [

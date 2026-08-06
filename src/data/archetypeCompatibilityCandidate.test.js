@@ -124,12 +124,13 @@ describe('candidate registry — §9 manifest (anti-circularity M9) + drift lock
     expect(sum).toEqual(byState);
   });
 
-  it('the advisory-gap sources are correctly attributed (2 C2 unauthored, 35 C7 V1.0)', () => {
-    const c2 = MANIFEST.knownAdvisoryGap.filter((g) => g.source === 'C2_ledger_unauthored');
-    const c7 = MANIFEST.knownAdvisoryGap.filter((g) => g.source === 'C7_V1_0_uncommitted');
-    expect(c2.map((g) => `${g.ruleId}/${g.archetype}`).sort())
-      .toEqual(['tech-avoid-declining/contrarian', 'tv-05/guardian']);
-    expect(c7.length).toBe(35);
+  it('the advisory gap is CLOSED — every tension cell carries a verbatim advisory', () => {
+    // The 35 C7 + 2 C2 gap cells were filled from the committed C7 V1.0 extract
+    // (docs/archetype-program/…); manifest.knownAdvisoryGap is now empty. A
+    // regrown gap (e.g. a new tension cell without guidance) fails here.
+    expect(MANIFEST.knownAdvisoryGap).toEqual([]);
+    const tensionNulls = allCells().filter(([, , c]) => c.state === 'tension' && (c.advisory === null || c.advisory === ''));
+    expect(tensionNulls.map(([r, a]) => `${r}/${a}`)).toEqual([]);
   });
 
   it('the manifest content hash is stable (recompute == stored)', () => {

@@ -59,14 +59,13 @@ const header = `// src/data/archetypeCompatibilityCandidate.js
 // ZERO-IMPORT (Invariant-R pattern): declares no archetype content by reference;
 // it is a pure data + helper module.
 //
-// KNOWN ADVISORY GAP (tracked, not fabricated — BUILD_RULES §3): a set of tension
-// cells carry advisory:null because their verbatim guidance lives in a source not
-// committed to the repo (the 35 "unchanged" C7 cells whose advisory of record is
-// in the uncommitted C7 V1.0 — CELL_BATCH_C7_FINAL_V1.md:7 defers them to V1.0 —
-// plus 2 C2 cells the C2 ledger left without an authored sentence). These are
-// enumerated in the manifest's knownAdvisoryGap and asserted by the completeness
-// check; the registry is NOT activation-ready until they are supplied. See the
-// PR body / docs backlog.
+// ADVISORY COMPLETENESS: every tension cell carries a verbatim governed advisory
+// (manifest.knownAdvisoryGap is empty; asserted by the completeness check). The 35
+// "unchanged" C7 cells were filled from the committed governed extract
+// docs/archetype-program/C7_V1_0_ADVISORY_SENTENCES_OF_RECORD.md (V1.2's closure-
+// round table takes precedence, then the extract per its supersession rule); the 2
+// C2 cells + th-05/degen were founder-authored in that extract (Aug 6, 2026).
+// Nothing was reconstructed from memory (BUILD_RULES §3).
 
 export const CELL_SCHEMA_VERSION = 1;
 
