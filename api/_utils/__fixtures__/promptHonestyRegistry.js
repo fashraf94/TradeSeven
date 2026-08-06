@@ -49,6 +49,7 @@ export const PROMPT_CONTRIBUTING_MODULES = [
   'evalIdentityBlocks.js',   // DR-13 identity blocks (pre-existing split)
   'fundamentalsRender.js',   // Fundamental Wire Commit 2
   'voiceLayerPrompt.js',     // Phase 2 N1.3 newsLine block (R-A3: registered in the same commit that added the flag-conditional rendering)
+  'compositionAdvisoryRender.js', // Composition PR 3: D3 advisory append (registered in the same commit as the fenced splices)
 ];
 
 // Every OTHER same-directory module the two fenced assemblers import,
