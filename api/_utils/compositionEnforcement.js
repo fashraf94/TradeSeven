@@ -29,6 +29,7 @@ import {
   getCandidateCompatCell,
   INCLUDED_ARCHETYPES,
 } from '../../src/data/archetypeCompatibilityCandidate.js';
+import { TRAIT_BY_ID } from '../../src/data/traitLibrary.js';
 
 /** Domain shape test: {allow:[...]} | {minOnly:n} | {min?,max? numbers}. */
 export function isDomain(v) {
@@ -141,4 +142,29 @@ export function checkCandidateEquipLegality({ ruleSnapshots = [], archetype }) {
 /** Blocking predicate (observe mode computes, enforce mode rejects on these). */
 export function isBlockingViolation(v) {
   return v.kind === 'core_conflict' || v.kind === 'deferred' || v.kind === 'param_out_of_domain';
+}
+
+/**
+ * Whole-config-save boundary (A27): a saved equippedTraits set whose traits
+ * bundle a banned rule for the agent's REAL archetype is a banned pairing.
+ * Trait entries: 'trait-id' strings or { traitId|id, strength } objects
+ * (both persisted shapes); paramValues resolve from the trait's strength
+ * profile so narrowed domains are judged against what would actually equip.
+ */
+export function checkCandidateTraitLegality({ equippedTraits = [], archetype }) {
+  const violations = [];
+  for (const entry of equippedTraits) {
+    const traitId = typeof entry === 'string' ? entry : entry?.traitId ?? entry?.id;
+    const strength = (typeof entry === 'object' && entry?.strength) || 'moderate';
+    const trait = traitId ? TRAIT_BY_ID[traitId] : null;
+    if (!trait) continue; // unknown ids are the schema validator's problem, not legality's
+    for (const ruleId of trait.ruleIds || []) {
+      const paramValues = trait.strengthProfiles?.[strength]?.[ruleId] ?? null;
+      violations.push(...checkCandidatePairing({
+        ruleId, archetype, paramValues,
+        paramKeys: paramValues ? Object.keys(paramValues) : null,
+      }).map((v) => ({ ...v, traitId })));
+    }
+  }
+  return violations;
 }

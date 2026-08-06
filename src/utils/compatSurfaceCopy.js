@@ -28,6 +28,7 @@ import {
 import { getArchetypeDisplayName } from '../data/archetypeDisplay.js';
 import { FORGE_RULE_TEMPLATES } from '../data/forgeKnowledgeBase.js';
 import { isSupported } from '../data/ruleSupportStatus.js';
+import { getCandidateDisplayState } from './compositionDisplay.js';
 
 // Paths where must-obey strength comes from the rule's CATEGORY (case 3)
 // rather than an authored override (case 2).
@@ -120,7 +121,17 @@ export function buildPromoteBlockedMessage({ archetype, templateId, path, zone1R
  * Render-time badge copy for an already-equipped core_conflict rule
  * (derivation only — no data writes). Short: it sits inside rule rows.
  */
-export function buildConflictBadge({ archetype }) {
+export function buildConflictBadge({ archetype, templateId = null }) {
+  // Composition D2 (dark behind COMPOSITION_DISPLAY_ENABLED): a candidate
+  // core_conflict cell carries the one-line reason of record (B7) — the badge
+  // surfaces it verbatim. Flag off or no candidate verdict: the legacy string,
+  // byte-identical (the A23 display row; test in compositionDisplay.test.js).
+  if (templateId) {
+    const candidate = getCandidateDisplayState(templateId, archetype);
+    if (candidate?.greyed && candidate.displayReason) {
+      return `Off-style for ${getArchetypeDisplayName(archetype)}: ${candidate.displayReason}`;
+    }
+  }
   return `Off-style for ${getArchetypeDisplayName(archetype)}`;
 }
 

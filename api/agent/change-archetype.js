@@ -72,11 +72,14 @@ import { revalidateStandingLeans } from '../_utils/leanRevalidation.js';
 // pure planner with the client clean-replace, so the two can't drift.
 import { seedArchetypeTraitsInTx, hasBornWithSet, softDeleteReplacedTraitRuleDocs } from '../_utils/archetypeSeeding.js';
 import { validateWriteEpochInTx } from '../_utils/compositionWriteEpoch.js';
+import { COMPOSITION_ENFORCEMENT_MODE } from '../_utils/compositionConfig.js';
+import { checkCandidateEquipLegality, isBlockingViolation } from '../_utils/compositionEnforcement.js';
 
 export const config = { maxDuration: 10 };
 
 const SENTINEL_PREFIX = '__change_archetype:';
 const SENTINEL_TO_HTTP = Object.freeze({
+  composition_blocked: [409, 'composition_blocked', 'An equipped bundle carries a rule that is off-identity for the target archetype under the new compatibility ruling. Unequip it first.'],
   epoch_closed:     [409, 'epoch_closed',     'Configuration writes are briefly paused for a system identity update. Try again in a few minutes.'],
   agent_not_found: [404, 'agent_not_found', 'Agent not found.'],
   forbidden:       [403, 'forbidden',       'Not authorized for this resource.'],
@@ -137,6 +140,31 @@ export default async function handler(req, res) {
       // Idempotent: archetype already set → 200 no-op, no write, NO re-seed.
       if (agent.archetype === archetype) {
         return { idempotent: true, archetype, previousArchetype: archetype };
+      }
+
+      // Composition offer/equip boundary (spec §2): switching INTO an
+      // archetype for which an equipped bundle carries a core_conflict/
+      // deferred rule is a banned pairing — enforce rejects with the stored
+      // config byte-unchanged; the read joins the read phase (reads precede
+      // the seed block's writes). 'off' = zero compute AND zero added I/O.
+      if (COMPOSITION_ENFORCEMENT_MODE === 'enforce') {
+        const equippedIds = agent.equippedBundleIds || [];
+        if (equippedIds.length > 0) {
+          const bundleSnaps = await tx.getAll(...equippedIds.map((id) => agentRef.collection('bundles').doc(id)));
+          const compositionViolations = [];
+          for (const bs of bundleSnaps) {
+            if (!bs.exists) continue;
+            compositionViolations.push(...checkCandidateEquipLegality({
+              ruleSnapshots: bs.data().ruleSnapshots || [],
+              archetype, // the TARGET archetype
+            }).filter(isBlockingViolation));
+          }
+          if (compositionViolations.length > 0) {
+            const err = new Error(SENTINEL_PREFIX + 'composition_blocked');
+            err.details = { compositionViolations };
+            throw err;
+          }
+        }
       }
 
       const previousArchetype = agent.archetype ?? null;

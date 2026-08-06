@@ -35,6 +35,7 @@ import { analyzeAgentCompat, buildCleanupReport, SEEDED_TRAIT_FIX } from '../api
 import { projectActiveRules } from '../api/_utils/projectActiveRules.js';
 import { buildSeedPlan } from '../src/data/traitEquip.js';
 import { GROUP_STATUS, TOURNAMENT_GROUPS_COLLECTION } from '../src/constants/leagueTournament.js';
+import { assertWriteEpochOpen } from '../api/_utils/compositionWriteEpoch.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const PROJECT_ROOT = path.resolve(path.dirname(__filename), '..');
@@ -92,6 +93,9 @@ async function main() {
   const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
   if (getApps().length === 0) initializeApp({ credential: cert(serviceAccount) });
   const db = getFirestore();
+  // Composition write-epoch fence (admin-CLI class): entry guard + §8 runbook
+  // pause list; zero I/O while the fence flag is dark (A46 census row).
+  await assertWriteEpochOpen(db);
   console.log(`firebase-admin initialized for project: ${serviceAccount.project_id}`);
 
   // ── fetch agents (clones included) + their subcollections ──

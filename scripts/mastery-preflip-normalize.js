@@ -56,6 +56,7 @@ import { revalidateStandingLeans, LEAN_INVALIDATION_REASONS } from '../api/_util
 import { archetypeLevelFromProfile, leanCapForLevel, revalidateTempoDial } from '../api/_utils/masteryEnforcement.js';
 import { MASTERY_PROFILES_COLLECTION } from '../api/_utils/masteryConfig.js';
 import { TOURNAMENT_GAME_MODE } from '../src/constants/leagueTournament.js';
+import { assertWriteEpochOpen } from '../api/_utils/compositionWriteEpoch.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const PROJECT_ROOT = path.resolve(path.dirname(__filename), '..');
@@ -145,6 +146,9 @@ async function main() {
   console.log(`approved entries: ${plan.length}\n`);
 
   const db = apply ? initAdmin() : null;
+  // Composition write-epoch fence (admin-CLI class): entry guard on the APPLY
+  // path only (dry-run reads nothing live); zero I/O while dark (A46 census row).
+  if (db) await assertWriteEpochOpen(db);
   const results = { applied: 0, skippedDrift: 0, dryRun: 0, errors: 0 };
 
   for (const entry of plan) {

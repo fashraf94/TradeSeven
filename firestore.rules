@@ -1,6 +1,19 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ── Composition write-epoch fence (client-SDK writer class; design note
+    // docs/composition/PR2_RESOLVER_AND_EPOCH_DESIGN.md §3). The §8 runbook
+    // writes composition/writeEpoch {state:'closed'} to close the epoch;
+    // ABSENT ⇒ open (fail-open: byte-identical behavior until the runbook
+    // acts). Server-evaluated at commit ⇒ genuine commit-time rejection for
+    // client-SDK identity writers (rules/bundles authoring + agent births).
+    // INERT UNTIL CONSOLE DEPLOY (G1 precedent). Cost: one rules get() per
+    // gated write once deployed — the :213/:242 get() precedent class.
+    function epochWriteOpen() {
+      return !exists(/databases/$(database)/documents/composition/writeEpoch)
+             || get(/databases/$(database)/documents/composition/writeEpoch).data.state == 'open';
+    }
+
 
     // ═══════════════════════════════════════════
     // TIER 1 — System Collections
@@ -169,6 +182,7 @@ service cloud.firestore {
       // numeric comparison (not map equality) so an SDK serializing zeros
       // as doubles still passes; hasOnly pins the key set.
       allow create: if request.auth != null
+                    && epochWriteOpen()
                     && request.resource.data.ownerId == request.auth.uid
                     && !request.resource.data.keys().hasAny(['standingLeans', 'dials', 'settingsRev',
                                  'equippedTraits', 'deployedStrategy', 'activeBattleId',
@@ -241,6 +255,7 @@ service cloud.firestore {
         allow read: if request.auth != null
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid;
         allow create, update: if request.auth != null
+                    && epochWriteOpen()
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
                     && (!('textTemplate' in request.resource.data)
                         || request.resource.data.textTemplate == null
@@ -274,10 +289,12 @@ service cloud.firestore {
         // or 'forged' (the dimension materializer) — never 'equipped' or
         // 'archived'. Absent stays legal (defensive; no live path omits it).
         allow create: if request.auth != null
+                    && epochWriteOpen()
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
                     && request.resource.data.keys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency'])
                     && (!('status' in request.resource.data) || request.resource.data.status in ['draft', 'forged']);
         allow update: if request.auth != null
+                    && epochWriteOpen()
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency'])
                     // Status transition vocabulary (ruling B3): the ONLY

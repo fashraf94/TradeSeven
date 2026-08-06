@@ -54,11 +54,14 @@ import { classifyBundleSnapshots } from '../../src/services/ruleCompatClassify.j
 import { snapshotsToActiveRules, gatherBundleSnapshots } from '../_utils/bundleRuleProjection.js';
 import { waitUntil } from '@vercel/functions';
 import { validateWriteEpochInTx } from '../_utils/compositionWriteEpoch.js';
+import { COMPOSITION_ENFORCEMENT_MODE } from '../_utils/compositionConfig.js';
+import { checkCandidateEquipLegality, isBlockingViolation } from '../_utils/compositionEnforcement.js';
 
 export const config = { maxDuration: 10 };
 
 const SENTINEL_PREFIX = '__equip_bundle:';
 const SENTINEL_TO_HTTP = Object.freeze({
+  composition_blocked: [409, 'composition_blocked', 'This bundle carries a rule that is off-identity for your agent\'s archetype under the new compatibility ruling.'],
   epoch_closed:     [409, 'epoch_closed',     'Configuration writes are briefly paused for a system identity update. Try again in a few minutes.'],
   agent_not_found:  [404, 'agent_not_found',  'Agent not found.'],
   forbidden:        [403, 'forbidden',        'Not authorized for this resource.'],
@@ -126,6 +129,24 @@ export default async function handler(req, res) {
       if (!bundleSnap.exists) throw new Error(SENTINEL_PREFIX + 'bundle_not_found');
       const bundle = bundleSnap.data();
       if (bundle.status !== 'forged') throw new Error(SENTINEL_PREFIX + 'not_forged');
+
+      // Composition candidate legality (offer/equip boundary, spec §2 rows 1-4):
+      // 'off' = zero compute (A23); 'observe' = compute + attach, never blocks;
+      // 'enforce' = core_conflict/deferred pairings and out-of-domain persisted
+      // params REJECT with the stored config byte-unchanged (A4/A5/A6 — the
+      // throw aborts the transaction before any write is buffered).
+      let compositionViolations = [];
+      if (COMPOSITION_ENFORCEMENT_MODE !== 'off') {
+        compositionViolations = checkCandidateEquipLegality({
+          ruleSnapshots: bundle.ruleSnapshots || [],
+          archetype: agent.archetype,
+        }).filter(isBlockingViolation);
+        if (COMPOSITION_ENFORCEMENT_MODE === 'enforce' && compositionViolations.length > 0) {
+          const err = new Error(SENTINEL_PREFIX + 'composition_blocked');
+          err.details = { compositionViolations };
+          throw err;
+        }
+      }
 
       const currentEquipped = agent.equippedBundleIds || [];
 
@@ -219,6 +240,7 @@ export default async function handler(req, res) {
 
       return {
         conflictCheckResult,
+        compositionViolations,
         archetype: agent.archetype || null,
         equippedBundleIds: [...currentEquipped, bundleId],
         // The bundle doc crosses the tx boundary ONCE for the post-commit
@@ -319,6 +341,9 @@ export default async function handler(req, res) {
     agentId,
     bundleId,
     conflictCheckResult: txResult.conflictCheckResult,
+    // Composition observe-mode instrumentation: [] while 'off' stays absent-
+    // equivalent for existing clients; populated under 'observe' (never blocks).
+    ...(txResult.compositionViolations?.length ? { compositionViolations: txResult.compositionViolations } : {}),
     compatConflicts,
     archetype: txResult.archetype,
     equippedBundleIds: txResult.equippedBundleIds,

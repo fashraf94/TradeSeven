@@ -53,6 +53,7 @@ import {
   GAME_MODE_POLICY_VERSION,
 } from './archetypeVersionConstants.js';
 import { computeGameModePolicyHash } from './gameModePolicy.js';
+import { validateWriteEpochInTx, EpochClosedError } from './compositionWriteEpoch.js';
 
 const LOG_PREFIX = '[deployBuildValidation]';
 
@@ -111,6 +112,11 @@ export async function ensureDeployableCompiledBuild({
       // write makes the transaction retry/fail — exactly the §4.4 abort.
       const outcome = await db.runTransaction(async (tx) => {
         const agentSnap = await tx.get(agentRef);
+        // Composition write-epoch fence (design note §3): the deploy recompile is
+        // epoch-fenced HERE (non-fenced file) — the fenced decide.js needs no edit;
+        // a closed epoch refuses the deploy ({proceed:false}, 409 upstream).
+        try { await validateWriteEpochInTx(tx, db); }
+        catch (e) { if (e instanceof EpochClosedError) return { proceed: false, reason: 'epoch_closed' }; throw e; }
         if (!agentSnap.exists) return { proceed: false, reason: 'agent_not_found' };
         const agent = agentSnap.data();
 

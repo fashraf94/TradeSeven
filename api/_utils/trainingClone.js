@@ -39,6 +39,7 @@ import {
 // a loadout override that picks a DIFFERENT archetype seeds THAT archetype's
 // born-with traits, so a clone never carries archetype≠traits (the invariant).
 import { seedArchetypeTraitsDeterministic, hasBornWithSet, softDeleteReplacedTraitRuleDocs } from './archetypeSeeding.js';
+import { assertWriteEpochOpen } from './compositionWriteEpoch.js';
 
 const LOG_PREFIX = '[TrainingClone]';
 
@@ -153,6 +154,11 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
   for (const player of group.players || []) {
     const odUserId = player.odUserId;
     if (player.isCpu === true || isCpuUserId(odUserId)) continue; // CPU seats: system agents already exist
+
+    // Composition write-epoch fence (design note §3, background-loop class):
+    // clone provisioning BIRTHS identity state, so it validates per iteration —
+    // bounded conformance; zero I/O while the fence flag is dark (A46 census row).
+    await assertWriteEpochOpen(db);
 
     const cloneId = trainingCloneDocId(group.id, odUserId);
     const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);
