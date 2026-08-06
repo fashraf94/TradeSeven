@@ -42,6 +42,9 @@ import { stableStringify } from '../_utils/canonicalHash.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
+import { validateWriteEpochInTx } from '../_utils/compositionWriteEpoch.js';
+import { COMPOSITION_ENFORCEMENT_MODE } from '../_utils/compositionConfig.js';
+import { checkCandidateTraitLegality, isBlockingViolation } from '../_utils/compositionEnforcement.js';
 
 export const config = { maxDuration: 10 };
 
@@ -52,6 +55,8 @@ const MAX_DEPLOYED_STRATEGY_BYTES = 64 * 1024;
 
 const SENTINEL_PREFIX = '__update_agent_settings:';
 const SENTINEL_TO_HTTP = Object.freeze({
+  composition_blocked: [409, 'composition_blocked', 'This configuration pairs a rule that is off-identity for your agent\'s archetype under the new compatibility ruling.'],
+  epoch_closed:     [409, 'epoch_closed',     'Configuration writes are briefly paused for a system identity update. Try again in a few minutes.'],
   agent_not_found: [404, 'agent_not_found', 'Agent not found.'],
   forbidden:       [403, 'forbidden',       'Not authorized for this resource.'],
 });
@@ -151,6 +156,9 @@ export default async function handler(req, res) {
   try {
     txResult = await db.runTransaction(async (tx) => {
       const agentSnap = await tx.get(agentRef);
+      // Composition write-epoch fence (design note §3): read-phase validation —
+      // zero I/O while dark; a closed epoch 409s with nothing written (A41).
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX });
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
@@ -165,6 +173,21 @@ export default async function handler(req, res) {
       );
       if (!changed) {
         return { idempotent: true };
+      }
+
+      // Composition whole-config-save boundary (A27): a save whose
+      // equippedTraits bundle a banned rule for the agent's REAL archetype
+      // rejects with the stored config byte-unchanged. 'off' = zero compute.
+      if (COMPOSITION_ENFORCEMENT_MODE === 'enforce' && 'equippedTraits' in set) {
+        const compositionViolations = checkCandidateTraitLegality({
+          equippedTraits: set.equippedTraits || [],
+          archetype: agent.archetype,
+        }).filter(isBlockingViolation);
+        if (compositionViolations.length > 0) {
+          const err = new Error(SENTINEL_PREFIX + 'composition_blocked');
+          err.details = { compositionViolations };
+          throw err;
+        }
       }
 
       // P2.4a compile reads (dark no-op): must precede the first tx write.

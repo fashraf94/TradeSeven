@@ -45,6 +45,7 @@ import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
 import { resolveRuleHardness } from '../_utils/ruleHardness.js';
+import { validateWriteEpochInTx } from '../_utils/compositionWriteEpoch.js';
 import {
   FORGE_HARDSOFT_AUTHORING_ENABLED,
   RULE_COMPAT_MODE,
@@ -59,6 +60,7 @@ export const config = { maxDuration: 10 };
 
 const SENTINEL_PREFIX = '__set_rule_hardness:';
 const SENTINEL_TO_HTTP = Object.freeze({
+  epoch_closed:     [409, 'epoch_closed',     'Configuration writes are briefly paused for a system identity update. Try again in a few minutes.'],
   agent_not_found:    [404, 'agent_not_found',    'Agent not found.'],
   forbidden:          [403, 'forbidden',          'Not authorized for this resource.'],
   bundle_not_found:   [404, 'bundle_not_found',   'Bundle not found.'],
@@ -126,6 +128,9 @@ export default async function handler(req, res) {
         ? await tx.getAll(agentRef, bundleRef, ruleRef)
         : await tx.getAll(agentRef, bundleRef);
       const [agentSnap, bundleSnap, ruleSnap] = snaps;
+      // Composition write-epoch fence (design note §3): read-phase validation —
+      // zero I/O while dark; a closed epoch 409s with nothing written (A41).
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX });
 
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();

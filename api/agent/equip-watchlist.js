@@ -28,11 +28,13 @@ import { waitUntil } from '@vercel/functions';
 // null before any read/write while COMPILER_ENABLED=false (byte-identical).
 import { COMPILER_ENABLED } from '../../src/config/featureFlags.js';
 import { prepareCompileInputs, writeCompiledBuildsInTx } from '../_utils/compileOnSettingsChange.js';
+import { validateWriteEpochInTx } from '../_utils/compositionWriteEpoch.js';
 
 export const config = { maxDuration: 10 };
 
 const SENTINEL_PREFIX = '__equip_watchlist:';
 const SENTINEL_TO_HTTP = Object.freeze({
+  epoch_closed:     [409, 'epoch_closed',     'Configuration writes are briefly paused for a system identity update. Try again in a few minutes.'],
   agent_not_found:     [404, 'agent_not_found',     'Agent not found.'],
   forbidden:           [403, 'forbidden',           'Not authorized for this resource.'],
   battle_active:       [409, 'battle_active',       'Cannot equip a watchlist while the agent has an active battle.'],
@@ -75,6 +77,9 @@ export default async function handler(req, res) {
     txResult = await db.runTransaction(async (tx) => {
       // All reads before the write (Firestore transaction rule).
       const agentSnap = await tx.get(agentRef);
+      // Composition write-epoch fence (design note §3): read-phase validation —
+      // zero I/O while dark; a closed epoch 409s with nothing written (A41).
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX });
       const watchlistSnap = await tx.get(watchlistRef);
 
       // Agent must exist, belong to the caller, and be battle-free.

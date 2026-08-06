@@ -35,6 +35,7 @@ import {
   FRESH_STATS,
   copyAgentSubcollections,
 } from './trainingClone.js';
+import { assertWriteEpochOpen } from './compositionWriteEpoch.js';
 
 const LOG_PREFIX = '[CasualClone]';
 const AGENTS_COLLECTION = 'agents';
@@ -110,6 +111,11 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
   if (typeof odUserId !== 'string' || odUserId.length === 0) {
     throw new Error('ensureCasualClone: odUserId required');
   }
+  // Composition write-epoch fence (design note §3, provisioner class): the clone
+  // BIRTHS + RE-SYNCS identity state (loadout fields + rules/bundles
+  // subcollections via copyAgentSubcollections), so it validates at entry —
+  // bounded conformance; zero I/O while the fence flag is dark (A46 census row).
+  await assertWriteEpochOpen(db);
   const nowIso = now.toISOString();
   const cloneId = casualCloneDocId(odUserId);
   const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);

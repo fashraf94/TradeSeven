@@ -58,6 +58,7 @@
 
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { assertWriteEpochOpen } from '../api/_utils/compositionWriteEpoch.js';
 import path from 'node:path';
 import { getRuleCompatInfo } from '../src/data/archetypeRuleCompatibility.js';
 
@@ -495,6 +496,8 @@ async function main() {
   const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
   if (getApps().length === 0) initializeApp({ credential: cert(JSON.parse(creds)) });
   const db = getFirestore();
+  // Composition write-epoch fence (admin-CLI class): entry guard (A46 census row).
+  await assertWriteEpochOpen(db);
 
   const uid = f.uid || (f.create || f.mintOnly ? `ws1_walk_uid_${Date.now()}` : die('--agent runs need --uid (the agent ownerId).'));
   const agentId = f.agent || (f.create || f.mintOnly ? `ws1walk${Date.now()}` : die('pass --agent <id> or --create.'));
