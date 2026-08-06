@@ -1,0 +1,384 @@
+{
+  "schemaVersion": 1,
+  "cellSchemaVersion": 1,
+  "generatedFrom": [
+    "CELL_BATCH_C1..C7"
+  ],
+  "includedArchetypes": [
+    "momentum_chaser",
+    "contrarian",
+    "degen",
+    "guardian",
+    "analyst"
+  ],
+  "reservedArchetypes": [
+    "diversifier"
+  ],
+  "universe": {
+    "rules": 95,
+    "archetypes": 5,
+    "coordinates": 475
+  },
+  "ledgerBatchTallies": {
+    "C1": {
+      "native": 6,
+      "core_conflict": 1,
+      "tension": 10,
+      "neutral": 28,
+      "deferred": 0
+    },
+    "C2": {
+      "native": 16,
+      "core_conflict": 11,
+      "tension": 32,
+      "neutral": 46,
+      "deferred": 0
+    },
+    "C3": {
+      "native": 4,
+      "core_conflict": 1,
+      "tension": 8,
+      "neutral": 16,
+      "deferred": 6
+    },
+    "C4": {
+      "native": 6,
+      "core_conflict": 5,
+      "tension": 26,
+      "neutral": 13,
+      "deferred": 0
+    },
+    "C5": {
+      "native": 8,
+      "core_conflict": 0,
+      "tension": 37,
+      "neutral": 5,
+      "deferred": 0
+    },
+    "C6": {
+      "native": 6,
+      "core_conflict": 4,
+      "tension": 47,
+      "neutral": 8,
+      "deferred": 0
+    },
+    "C7": {
+      "native": 11,
+      "core_conflict": 10,
+      "tension": 73,
+      "neutral": 26,
+      "deferred": 5
+    }
+  },
+  "ledgerTotals": {
+    "native": 57,
+    "core_conflict": 32,
+    "tension": 233,
+    "neutral": 142,
+    "deferred": 11,
+    "authored": 464,
+    "coordinates": 475
+  },
+  "registryByState": {
+    "native": 57,
+    "neutral": 142,
+    "tension": 233,
+    "core_conflict": 32,
+    "deferred": 11
+  },
+  "includedRules": [
+    "a-05",
+    "a-06",
+    "a-07",
+    "a-08",
+    "a-09",
+    "alloc-even-spread",
+    "alloc-sector-cap",
+    "alloc-sector-minimum",
+    "alloc-tier-preference",
+    "f-07",
+    "f-12",
+    "fund-bank-pb",
+    "fund-market-cap",
+    "fund-revenue-growth",
+    "fund-value-pe",
+    "gs-01",
+    "gs-02",
+    "gs-03",
+    "gs-07",
+    "gs-08",
+    "gs-09",
+    "gs-10",
+    "gs-12",
+    "i-01",
+    "i-02",
+    "i-03",
+    "i-05",
+    "i-06",
+    "i-07",
+    "i-08",
+    "i-09",
+    "i-10",
+    "mb-01",
+    "mb-03",
+    "mb-04",
+    "mb-06",
+    "mb-07",
+    "mb-08",
+    "mb-09",
+    "mb-10",
+    "mb-11",
+    "mb-12",
+    "mb-13",
+    "mb-15",
+    "r-06",
+    "r-07",
+    "r-08",
+    "r-09",
+    "r-11",
+    "r-12",
+    "risk-avoid-declining-trend",
+    "risk-exit-atr-stop",
+    "risk-sector-diversification",
+    "t-11",
+    "t-12",
+    "t-13",
+    "t-14",
+    "t-15",
+    "t-16",
+    "tech-avoid-declining",
+    "tech-bollinger-squeeze",
+    "tech-macd-bullish",
+    "tech-moving-average-trend",
+    "tech-relative-strength",
+    "tech-rsi-overbought",
+    "tech-rsi-oversold",
+    "tech-volume-surge",
+    "th-01",
+    "th-04",
+    "th-05",
+    "th-07",
+    "th-08",
+    "th-09",
+    "th-10",
+    "ts-01",
+    "ts-02",
+    "ts-03",
+    "ts-04",
+    "ts-05",
+    "ts-06",
+    "ts-07",
+    "ts-08",
+    "ts-09",
+    "tv-01",
+    "tv-02",
+    "tv-03",
+    "tv-05",
+    "tv-06",
+    "tv-08",
+    "tv-10",
+    "tv-11",
+    "tv-12",
+    "tv-13",
+    "tv-14",
+    "tv-15"
+  ],
+  "knownAdvisoryGap": [],
+  "diff": {
+    "auditPredictedCoreConflictCorrections": 17,
+    "ccCorrections": [
+      {
+        "ruleId": "a-05",
+        "archetype": "degen",
+        "legacy": "neutral"
+      },
+      {
+        "ruleId": "gs-02",
+        "archetype": "degen",
+        "legacy": "neutral"
+      },
+      {
+        "ruleId": "gs-09",
+        "archetype": "contrarian",
+        "legacy": "neutral"
+      },
+      {
+        "ruleId": "mb-03",
+        "archetype": "contrarian",
+        "legacy": "neutral"
+      },
+      {
+        "ruleId": "mb-15",
+        "archetype": "contrarian",
+        "legacy": "neutral"
+      },
+      {
+        "ruleId": "mb-15",
+        "archetype": "momentum_chaser",
+        "legacy": "neutral"
+      },
+      {
+        "ruleId": "r-09",
+        "archetype": "degen",
+        "legacy": "neutral"
+      },
+      {
+        "ruleId": "tv-03",
+        "archetype": "contrarian",
+        "legacy": "neutral"
+      },
+      {
+        "ruleId": "tv-13",
+        "archetype": "analyst",
+        "legacy": "neutral"
+      },
+      {
+        "ruleId": "tv-13",
+        "archetype": "guardian",
+        "legacy": "neutral"
+      },
+      {
+        "ruleId": "tv-15",
+        "archetype": "contrarian",
+        "legacy": "neutral"
+      }
+    ],
+    "ccRelaxations": [
+      {
+        "ruleId": "a-08",
+        "archetype": "contrarian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "alloc-tier-preference",
+        "archetype": "contrarian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "f-07",
+        "archetype": "degen",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "f-12",
+        "archetype": "degen",
+        "candidate": "deferred"
+      },
+      {
+        "ruleId": "fund-bank-pb",
+        "archetype": "degen",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "fund-revenue-growth",
+        "archetype": "degen",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "fund-value-pe",
+        "archetype": "degen",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "fund-value-pe",
+        "archetype": "momentum_chaser",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "i-07",
+        "archetype": "contrarian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "i-09",
+        "archetype": "analyst",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "i-10",
+        "archetype": "contrarian",
+        "candidate": "deferred"
+      },
+      {
+        "ruleId": "r-12",
+        "archetype": "contrarian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "risk-avoid-declining-trend",
+        "archetype": "contrarian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "t-12",
+        "archetype": "guardian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "t-14",
+        "archetype": "contrarian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "t-15",
+        "archetype": "guardian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "tech-avoid-declining",
+        "archetype": "contrarian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "tech-bollinger-squeeze",
+        "archetype": "guardian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "tech-moving-average-trend",
+        "archetype": "contrarian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "th-04",
+        "archetype": "guardian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "th-05",
+        "archetype": "degen",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "ts-01",
+        "archetype": "degen",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "ts-04",
+        "archetype": "guardian",
+        "candidate": "tension"
+      },
+      {
+        "ruleId": "tv-05",
+        "archetype": "guardian",
+        "candidate": "tension"
+      }
+    ],
+    "transitions": {
+      "neutral->tension": 196,
+      "neutral->neutral": 141,
+      "neutral->core_conflict": 11,
+      "core_conflict->core_conflict": 21,
+      "native->native": 42,
+      "native->tension": 15,
+      "core_conflict->tension": 22,
+      "neutral->deferred": 7,
+      "core_conflict->deferred": 2,
+      "native->deferred": 2,
+      "neutral->native": 15,
+      "native->neutral": 1
+    }
+  },
+  "manifestHash": "bb8b02bbf0d5ba14dfbcb391bd3815d3b2025dafa3d4786eeef97e77e75a4ecc"
+}
