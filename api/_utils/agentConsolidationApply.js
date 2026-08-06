@@ -226,12 +226,10 @@ function countWords(s) {
  * @param {object} consolidation - validated tool output
  * @returns {Promise<{ newCycle: number, evolutionEvent: object, nowIso: string }>}
  */
-export async function applyConsolidation(agentRef, agent, consolidation) {
-  const newCycle = (agent?.evolutionCycle || 0) + 1;
-  const now = Timestamp.now();
-  const nowIso = new Date(now.toMillis()).toISOString();
-
-  const evolutionEvent = {
+// Pure: the evolution timeline event for a consolidation cycle. Shared by the
+// plain apply and the transactional variant so the two can never drift.
+function buildEvolutionEvent(consolidation, newCycle, now) {
+  return {
     id: `evo_${randomUUID()}`,
     type: 'consolidation',
     cycle: newCycle,
@@ -250,17 +248,25 @@ export async function applyConsolidation(agentRef, agent, consolidation) {
       },
     },
   };
+}
 
-  // Mark absorbed lessons as consumed; preserve all other fields.
+// Pure: mark absorbed lessons consumed; preserve all other fields (incl. any
+// concurrently-added lesson when called against a fresh read).
+function markAbsorbedLessons(lessons, consolidation, nowIso) {
   const absorbedSet = new Set(consolidation.lessonsAbsorbed || []);
-  const updatedLessons = (agent?.lessons || []).map(lesson => {
+  return (lessons || []).map(lesson => {
     if (!lesson || !lesson.id || !absorbedSet.has(lesson.id)) return lesson;
-    return {
-      ...lesson,
-      consumed: true,
-      consumedInConsolidation: nowIso,
-    };
+    return { ...lesson, consumed: true, consumedInConsolidation: nowIso };
   });
+}
+
+export async function applyConsolidation(agentRef, agent, consolidation) {
+  const newCycle = (agent?.evolutionCycle || 0) + 1;
+  const now = Timestamp.now();
+  const nowIso = new Date(now.toMillis()).toISOString();
+  const evolutionEvent = buildEvolutionEvent(consolidation, newCycle, now);
+  // Mark absorbed lessons as consumed; preserve all other fields.
+  const updatedLessons = markAbsorbedLessons(agent?.lessons, consolidation, nowIso);
 
   await agentRef.update({
     disciplines: consolidation.disciplines,
@@ -275,6 +281,37 @@ export async function applyConsolidation(agentRef, agent, consolidation) {
   return { newCycle, evolutionEvent, nowIso };
 }
 
+// TRANSACTIONAL variant of applyConsolidation. Re-reads evolutionCycle + lessons
+// INSIDE the transaction and applies against that fresh state, so a
+// concurrently-arrayUnion'd lesson — e.g. the casual-clone DRB redirect writing
+// to the SAME parent ranked agent — is never clobbered by the stale-read
+// overwrite plain applyConsolidation would do. Design lock: "wrap the
+// consolidation copy-forward in a transaction; don't inherit the existing
+// non-transactional get→update race." Used ONLY for the casual copy-forward
+// (transactionalApply option); the non-casual path keeps the plain apply, so
+// flag-off is byte-identical. Returns the same shape as applyConsolidation.
+export async function applyConsolidationTx(db, agentRef, consolidation) {
+  const now = Timestamp.now();
+  const nowIso = new Date(now.toMillis()).toISOString();
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(agentRef);
+    const fresh = snap.exists ? snap.data() : {};
+    const newCycle = (fresh.evolutionCycle || 0) + 1;
+    const evolutionEvent = buildEvolutionEvent(consolidation, newCycle, now);
+    const updatedLessons = markAbsorbedLessons(fresh.lessons, consolidation, nowIso);
+    tx.update(agentRef, {
+      disciplines: consolidation.disciplines,
+      consolidatedInsight: consolidation.consolidatedInsightText,
+      evolutionCycle: newCycle,
+      lessons: updatedLessons,
+      pendingConsolidation: false,
+      evolutionTimeline: FieldValue.arrayUnion(evolutionEvent),
+      updatedAt: now,
+    });
+    return { newCycle, evolutionEvent, nowIso };
+  });
+}
+
 // ==================== DRIVER ====================
 
 /**
@@ -285,7 +322,7 @@ export async function applyConsolidation(agentRef, agent, consolidation) {
  * @param {FirebaseFirestore.DocumentReference} agentRef
  * @returns {Promise<{ success: boolean, reason?: string, errors?: string[] }>}
  */
-export async function consolidateAgentEvolution(db, agentRef) {
+export async function consolidateAgentEvolution(db, agentRef, { transactionalApply = false } = {}) {
   const startTime = Date.now();
 
   const agentSnap = await agentRef.get();
@@ -358,7 +395,12 @@ export async function consolidateAgentEvolution(db, agentRef) {
 
   let applyResult;
   try {
-    applyResult = await applyConsolidation(agentRef, agent, consolidation);
+    // Casual copy-forward uses the transactional apply (fresh-read merge) so a
+    // concurrent lesson write to the parent is not clobbered; the non-casual path
+    // keeps the plain apply (byte-identical).
+    applyResult = transactionalApply
+      ? await applyConsolidationTx(db, agentRef, consolidation)
+      : await applyConsolidation(agentRef, agent, consolidation);
   } catch (err) {
     console.error(`${LOG_PREFIX} Firestore apply failed for agent ${agent.id}:`, err.message);
     logConsolidation({

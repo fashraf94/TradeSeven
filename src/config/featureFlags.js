@@ -209,6 +209,32 @@ export const LEAGUE_NEXT_ARC_ENABLED = true;
 export const LEAGUE_BATTLE_VIEW_V2_ENABLED = true;
 
 /**
+ * Per-Battle Loadout + Per-Type Concurrency — Phase 1 (the casual clone).
+ * Design lock: docs/../20260805_PER_BATTLE_LOADOUT_CONCURRENCY_DESIGN_LOCK_V1.
+ *
+ * When TRUE, a Command-Center BaggerBomb deploy runs on a PERSISTENT per-user
+ * "casual clone" agent (agents/casual-agent-{odUserId}) — a behavioral clone of
+ * the player's ranked agent with its OWN agentId — instead of the real ranked
+ * agent. Because the one-active-battle lock in decide.js is agentId-scoped, the
+ * clone delivers "one BaggerBomb at a time" for free AND lets BaggerBomb run
+ * CONCURRENTLY with a ranked league game, with ZERO fenced edits (the
+ * training-clone precedent). UNLIKE training (which isolates), a casual battle is
+ * the player's REAL game, so its record + learning are REDIRECTED forward to the
+ * parent ranked agent at the settlement/learning layer (attribution redirects),
+ * preserving exactly what BaggerBomb contributes today.
+ *
+ * When FALSE (default), NOTHING creates a casual clone: agentDeploy deploys the
+ * real ranked agent exactly as today, no battle ever carries a `casual-agent-`
+ * agentId, and every attribution-redirect + ranked-lookup-exclusion branch (all
+ * keyed on that prefix) is inert — so flag-off is byte-identical.
+ *
+ * The flag gates CREATION only (agentDeploy); the redirects key on the id prefix
+ * so a mid-pilot rollback still attributes existing casual battles correctly. Do
+ * NOT flip it in a build PR (the PR #510 lesson) — only after a Vercel preview.
+ */
+export const CASUAL_CLONE_CONCURRENCY_ENABLED = false;
+
+/**
  * League Battleview Routing (Spec V1.2, Phase A) — the Command Center live-game
  * card path. When a tapped game is a flat-6 LEAGUE battle
  * (gameMode === 'baggerbomb_tournament'), route it to the League Arena instead of

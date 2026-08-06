@@ -195,7 +195,7 @@ export async function resolveHumanArchetype(db, odUserId) {
     // player's RANKED archetype. (Runs at draft time, before any clone exists,
     // but the filter keeps it deterministic for a returning player.)
     const snap = await db.collection('agents').where('ownerId', '==', odUserId).get();
-    const arch = snap.docs.find(d => d.data().isTrainingClone !== true)?.data()?.archetype;
+    const arch = snap.docs.find(d => d.data().isTrainingClone !== true && d.data().isCasualClone !== true)?.data()?.archetype;
     return (typeof arch === 'string' && arch.length > 0) ? arch : 'analyst';
   } catch (err) {
     console.warn(`${LOG_PREFIX} archetype read failed for ${odUserId}, default analyst:`, err?.message);

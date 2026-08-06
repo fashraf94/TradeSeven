@@ -48,7 +48,10 @@ const AGENTS_COLLECTION = 'agents';
 // that shapes decisions: archetype + config + equip + the consolidated insight).
 // History/identity/pointer fields are NOT in this list — they are reset fresh
 // (a per-pod clone carries no ranked history and its own pointers).
-const INHERITED_LOADOUT_FIELDS = Object.freeze([
+// EXPORTED so the casual-clone builder (casualClone.js) reuses the SAME inherited
+// field list — one source of truth for "the behavioral clone shape", no drift
+// between the training and casual clone paths (BUILD_RULES §4).
+export const INHERITED_LOADOUT_FIELDS = Object.freeze([
   'archetype',
   'archetypeDrift',
   'config',
@@ -69,7 +72,7 @@ const INHERITED_LOADOUT_FIELDS = Object.freeze([
   'name',
 ]);
 
-const FRESH_STATS = Object.freeze({
+export const FRESH_STATS = Object.freeze({
   wins: 0, losses: 0, gamesPlayed: 0, totalScore: 0, avgScore: 0, currentStreak: 0, bestStreak: 0,
 });
 
@@ -81,7 +84,7 @@ const FRESH_STATS = Object.freeze({
  */
 export async function resolveRankedAgent(db, odUserId) {
   const snap = await db.collection(AGENTS_COLLECTION).where('ownerId', '==', odUserId).get();
-  const doc = snap.docs.find(d => d.data().isTrainingClone !== true);
+  const doc = snap.docs.find(d => d.data().isTrainingClone !== true && d.data().isCasualClone !== true);
   return doc ? { id: doc.id, ...doc.data() } : null;
 }
 
@@ -124,7 +127,7 @@ export function buildTrainingCloneDoc(rankedAgent, { groupId, odUserId, loadoutS
  * (agentRef.collection('rules')/('bundles')), so a clone that must behave
  * identically needs them. Preserves doc ids. Idempotent set per doc.
  */
-async function copyAgentSubcollections(db, rankedAgentId, cloneId) {
+export async function copyAgentSubcollections(db, rankedAgentId, cloneId) {
   const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);
   for (const sub of ['rules', 'bundles']) {
     const srcSnap = await db.collection(AGENTS_COLLECTION).doc(rankedAgentId).collection(sub).get();

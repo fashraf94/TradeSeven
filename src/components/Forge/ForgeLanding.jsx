@@ -1703,7 +1703,7 @@ export default function ForgeLanding({
         );
         const snap = await getDocs(agentsQ);
         if (cancelled) return;
-        if (snap.docs.some(d => d.data().isTrainingClone !== true)) {
+        if (snap.docs.some(d => d.data().isTrainingClone !== true && d.data().isCasualClone !== true)) {
           setView((prev) => (prev === 'discover' ? 'laboratory' : prev));
         }
       } catch (err) {

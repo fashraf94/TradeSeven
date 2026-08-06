@@ -12,6 +12,7 @@
 import { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
+import { TRAINING_CLONE_ID_PREFIX } from '../constants/leagueTournament';
 
 export default function useRecentCompletedAgentBattles(max = 3) {
   const [battles, setBattles] = useState([]);
@@ -33,7 +34,22 @@ export default function useRecentCompletedAgentBattles(max = 3) {
           limit(max),
         );
         const snap = await getDocs(q);
-        if (!cancelled) setBattles(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        // R5 (design lock): drop TRAINING-clone battles from the ranked Review card,
+        // matching the sibling queries (App.jsx active poll + Film Room) — a battle's
+        // only clone marker is its agentId prefix (the createAgentBattle doc shape,
+        // fenced, carries no clone field). Filter `training-agent-` ONLY, NOT
+        // `casual-agent-`: a BaggerBomb battle runs on the casual clone but is the
+        // user's REAL game — its record + learning are attributed to the ranked agent
+        // and it displays under the parent's inherited name — so it SHOULD appear in
+        // Review. Hiding it would regress from today's real-agent behavior. The two
+        // prefixes are treated differently ON PURPOSE; do not "fix" the asymmetry.
+        if (!cancelled) {
+          setBattles(
+            snap.docs
+              .map((d) => ({ id: d.id, ...d.data() }))
+              .filter((b) => !(typeof b.agentId === 'string' && b.agentId.startsWith(TRAINING_CLONE_ID_PREFIX))),
+          );
+        }
       } catch (err) {
         // Same composite index as the battleHistory query (already deployed);
         // on any failure, degrade to an empty Review section.
