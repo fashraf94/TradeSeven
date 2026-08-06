@@ -26,7 +26,9 @@ describe('D2 — getCandidateDisplayState', () => {
     expect(s.visible).toBe(true);
     expect(s.greyed).toBe(false);
     expect(s.fitNote).toBe(getCandidateCompatCell('alloc-sector-cap', 'momentum_chaser').advisory);
-    expect(s.narrowedParams).toEqual({ min: 40, max: 80 });
+    // PR-3 binding restoration (A11): the domain is param-keyed to pct per the
+    // ledger notation of record (R-61: {pct ∈ [40,80]}).
+    expect(s.narrowedParams).toEqual({ pct: { min: 40, max: 80 } });
   });
   it('A23: flag dark ⇒ null (callers fall through to legacy untouched)', () => {
     expect(getCandidateDisplayState('r-09', 'degen', { enabled: false })).toBeNull();
