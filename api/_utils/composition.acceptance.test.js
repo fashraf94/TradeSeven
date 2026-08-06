@@ -39,9 +39,14 @@ function mcAgentFixture() {
   };
 }
 function degenAgentFixture() {
+  // realistic shape: rule DOCS exist (forge authors docs; bundles reference
+  // them by id and freeze snapshots) — the projection kernel judges the docs.
   return {
     agent: { id: 'agent-dg', docPath: 'agents/agent-dg', archetype: 'degen', equippedBundleIds: ['b1', 'b2'] },
-    ruleDocs: [],
+    ruleDocs: [
+      { id: 'r1', docPath: 'agents/agent-dg/rules/r1', sourceRef: 'r-09', paramValues: { pct: 10 }, params: { pct: {} } },
+      { id: 'r2', docPath: 'agents/agent-dg/rules/r2', sourceRef: 'tech-volume-surge', paramValues: {}, params: {} },
+    ],
     bundles: [
       { id: 'b1', docPath: 'agents/agent-dg/bundles/b1', status: 'equipped', ruleIds: ['r1'], ruleSnapshots: [
         snap('r1', 'r-09', { pct: 10 }, { pct: {} }), // core_conflict for degen (R-14)
@@ -49,6 +54,32 @@ function degenAgentFixture() {
       { id: 'b2', docPath: 'agents/agent-dg/bundles/b2', status: 'equipped', ruleIds: ['r2'], ruleSnapshots: [
         snap('r2', 'tech-volume-surge', {}, {}),      // neutral for degen — must survive
       ] },
+    ],
+  };
+}
+// C1 fix channels (adversarial review): what PROJECTS is what migrates.
+function traitChannelFixture() {
+  return {
+    agent: { id: 'agent-tc', docPath: 'agents/agent-tc', archetype: 'contrarian', equippedTraits: [{ traitId: 'trait-breakout-chaser' }], equippedBundleIds: [] },
+    ruleDocs: [
+      // trait-hosted, NO bundle — projects via the trait channel; tv-11 is
+      // core_conflict for contrarian.
+      { id: 'td1', docPath: 'agents/agent-tc/rules/td1', traitId: 'trait-breakout-chaser', sourceRef: 'tv-11', paramValues: {}, params: {}, createdAt: 1 },
+    ],
+    bundles: [],
+  };
+}
+function draftChannelFixture() {
+  return {
+    agent: { id: 'agent-dc', docPath: 'agents/agent-dc', archetype: 'degen', equippedBundleIds: [] },
+    ruleDocs: [
+      { id: 'r1', docPath: 'agents/agent-dc/rules/r1', sourceRef: 'r-09', paramValues: {}, params: {} },  // banned for degen
+      { id: 'r2', docPath: 'agents/agent-dc/rules/r2', sourceRef: 'a-05', paramValues: {}, params: {} },  // ALSO banned for degen (R-43)
+      { id: 'r3', docPath: 'agents/agent-dc/rules/r3', sourceRef: 'tech-volume-surge', paramValues: {}, params: {} },
+    ],
+    bundles: [
+      // a DRAFT bundle projects its members (projectActiveRules:76-79)
+      { id: 'bd', docPath: 'agents/agent-dc/bundles/bd', status: 'draft', ruleIds: ['r1', 'r2', 'r3'], ruleSnapshots: [] },
     ],
   };
 }
@@ -103,11 +134,15 @@ describe('A8 — dry-run selection == apply selection (one planner, deterministi
     expect(resolveEnumReplacement({ allow: ['light', 'moderate'] }, 'heavy', { heavy: 'moderate' }))
       .toEqual({ kind: 'replace', afterValue: 'moderate' });
   });
-  it('a banned pairing plans an unequip (bundle status + agent equippedBundleIds echo) and spares legal bundles', () => {
+  it('a banned pairing plans the COMPLETE unequip: bundle status + membership cut + agent echo — and spares legal bundles', () => {
     const { entries } = planAgentMigration({ ...degenAgentFixture(), migrationRunId: 'run-1' });
     const unequips = entries.filter((e) => e.action === 'unequip');
-    expect(unequips.map((e) => `${e.host}:${e.field}`).sort()).toEqual(['agentDoc:equippedBundleIds', 'bundleSnapshot:status']);
+    // status flip alone is NOT an unequip under projection semantics — a
+    // forged bundle still projects; the membership cut is what stops behavior.
+    expect(unequips.map((e) => `${e.host}:${e.field}`).sort())
+      .toEqual(['agentDoc:equippedBundleIds', 'bundleSnapshot:ruleIds', 'bundleSnapshot:status']);
     expect(unequips.find((e) => e.host === 'agentDoc').afterValue).toEqual(['b2']); // b2 (neutral) survives
+    expect(unequips.find((e) => e.field === 'ruleIds').afterValue).toEqual([]);     // r1 cut from b1
   });
 });
 
@@ -168,6 +203,39 @@ describe('A10 — post-apply residual scan is zero (planner and scanner share on
       bundles: fx.bundles.map((b) => effectiveDocs[b.docPath]),
     });
     expect(residuals).toEqual([]);
+  });
+});
+
+describe('C1 — the projection channels the v1 planner missed (trait + draft-bundle) migrate and scan clean', () => {
+  it('a banned TRAIT-hosted rule (no bundle) plans an equippedTraits unequip; the scanner sees it pre-apply and clean post-resolve', () => {
+    const fx = traitChannelFixture();
+    const pre = scanAgentForResiduals(fx);
+    expect(pre.some((r) => r.kind === 'core_conflict' && r.ruleId === 'tv-11')).toBe(true); // the v1 scanner returned [] here
+    const { entries } = planAgentMigration({ ...fx, migrationRunId: 'run-1' });
+    const traitCut = entries.find((e) => e.host === 'agentDoc' && e.field === 'equippedTraits');
+    expect(traitCut).toBeTruthy();
+    expect(traitCut.afterValue).toEqual([]); // trait-breakout-chaser removed — its rules stop projecting
+    const baseDocs = { [fx.agent.docPath]: fx.agent };
+    for (const r of fx.ruleDocs) baseDocs[r.docPath] = r;
+    const { effectiveDocs } = resolveEffectiveConfig({ baseDocs, overlayEntries: entries });
+    expect(scanAgentForResiduals({ agent: effectiveDocs[fx.agent.docPath], ruleDocs: fx.ruleDocs, bundles: [] })).toEqual([]);
+  });
+
+  it('banned rules in a DRAFT bundle plan a membership cut — BOTH cuts land in one ruleIds entry — and scan clean post-resolve', () => {
+    const fx = draftChannelFixture();
+    expect(scanAgentForResiduals(fx).filter((r) => r.kind === 'core_conflict')).toHaveLength(2);
+    const { entries } = planAgentMigration({ ...fx, migrationRunId: 'run-1' });
+    const cuts = entries.filter((e) => e.field === 'ruleIds');
+    expect(cuts).toHaveLength(1); // accumulated — a per-violation emit would lose the second cut
+    expect(cuts[0].afterValue).toEqual(['r3']); // both banned docs cut, the legal one survives
+    const baseDocs = { [fx.agent.docPath]: fx.agent, [fx.bundles[0].docPath]: fx.bundles[0] };
+    for (const r of fx.ruleDocs) baseDocs[r.docPath] = r;
+    const { effectiveDocs } = resolveEffectiveConfig({ baseDocs, overlayEntries: entries });
+    expect(scanAgentForResiduals({
+      agent: effectiveDocs[fx.agent.docPath],
+      ruleDocs: fx.ruleDocs,
+      bundles: [effectiveDocs[fx.bundles[0].docPath]],
+    })).toEqual([]);
   });
 });
 

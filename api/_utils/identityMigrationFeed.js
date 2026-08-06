@@ -32,9 +32,16 @@ const ACTION_COPY = {
  */
 export function buildIdentityMigrationFeedEntries(overlayEntries, { nowIso, migrationRunId }) {
   const out = [];
+  const seen = new Set(); // review C5: ONE feed entry per user-meaningful
+  // mutation — the host B (rule doc) + host C (snapshot) lockstep pair for one
+  // (agent, rule, param, action) folds into a single sentence.
   for (const e of overlayEntries) {
-    if (e.host === 'agentDoc') continue; // the equippedBundleIds echo of a bundle unequip
+    if (e.host === 'agentDoc') continue; // the equippedBundleIds/equippedTraits echo of an unequip
     const param = e.field.includes('paramValues.') ? e.field.split('paramValues.').pop() : null;
+    const agentPath = e.docPath.split('/').slice(0, 2).join('/');
+    const dedupeKey = `${agentPath}|${e.action}|${e.ruleId}|${param}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     const build = ACTION_COPY[e.action];
     if (!build) continue;
     out.push({

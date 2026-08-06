@@ -29,7 +29,9 @@ import {
   getCandidateCompatCell,
   INCLUDED_ARCHETYPES,
 } from '../../src/data/archetypeCompatibilityCandidate.js';
-import { TRAIT_BY_ID } from '../../src/data/traitLibrary.js';
+// Trait lookup goes through the registry surface — the §2.3 import-boundary
+// ratchet forbids a new direct importer of traitLibrary.js.
+import { getTraitById } from './archetypeRegistry.js';
 
 /** Domain shape test: {allow:[...]} | {minOnly:n} | {min?,max? numbers}. */
 export function isDomain(v) {
@@ -156,7 +158,7 @@ export function checkCandidateTraitLegality({ equippedTraits = [], archetype }) 
   for (const entry of equippedTraits) {
     const traitId = typeof entry === 'string' ? entry : entry?.traitId ?? entry?.id;
     const strength = (typeof entry === 'object' && entry?.strength) || 'moderate';
-    const trait = traitId ? TRAIT_BY_ID[traitId] : null;
+    const trait = traitId ? getTraitById(traitId) : null;
     if (!trait) continue; // unknown ids are the schema validator's problem, not legality's
     for (const ruleId of trait.ruleIds || []) {
       const paramValues = trait.strengthProfiles?.[strength]?.[ruleId] ?? null;

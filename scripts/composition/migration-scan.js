@@ -67,7 +67,7 @@ async function main() {
 
   for (const agentDoc of agentsSnap) {
     // bounded conformance: the epoch guard runs per agent iteration (design §3)
-    await assertWriteEpochOpen(db);
+    await assertWriteEpochOpen(db, { enabled: true }); // review P5: the migration ALWAYS checks, flag-independent
     const records = await fetchAgentRecords(db, agentDoc);
     if (!records.agent.archetype) continue;
     scanned += 1;
@@ -115,18 +115,14 @@ async function main() {
   if (!YES) { console.error('\n--apply requires --yes (founder-gated).'); process.exit(2); }
 
   // ── APPLY: candidate namespace ONLY (Method B) ───────────────────────────
-  await assertWriteEpochOpen(db); // final pre-write check
+  await assertWriteEpochOpen(db, { enabled: true }); // review P5: the migration ALWAYS checks, flag-independent // final pre-write check
   const runRef = db.collection('compositionCandidateState').doc(runId);
   const feedEntries = buildIdentityMigrationFeedEntries(allEntries, {
     nowIso: new Date().toISOString(), migrationRunId: runId,
   });
-  await runRef.set({
-    migrationRunId: runId, candidateStateId: runId,
-    identityVersionTarget: summary.identityVersionTarget,
-    overlayContentHash, entryCount: allEntries.length,
-    createdAt: new Date().toISOString(), feedEntries,
-  });
-  // entries in batched writes of 400
+  // entries FIRST, run doc LAST — the run doc is the completion sentinel
+  // (review P6, the trainingClone sentinel-order precedent): an interrupted
+  // apply leaves entries without a run doc, never a run doc overstating them.
   for (let i = 0; i < allEntries.length; i += 400) {
     const batch = db.batch();
     for (const e of allEntries.slice(i, i + 400)) {
@@ -134,6 +130,12 @@ async function main() {
     }
     await batch.commit();
   }
+  await runRef.set({
+    migrationRunId: runId, candidateStateId: runId,
+    identityVersionTarget: summary.identityVersionTarget,
+    overlayContentHash, entryCount: allEntries.length,
+    createdAt: new Date().toISOString(), feedEntries,
+  });
   console.log(`\nAPPLIED: ${allEntries.length} overlay entries → compositionCandidateState/${runId} (base records untouched).`);
 }
 

@@ -42,6 +42,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { ARCHETYPE_DEFAULT_TRAITS } from '../../src/data/traitLibrary.js';
 import { buildSeedPlan } from '../../src/data/traitEquip.js';
 import { buildRuleDocFields } from '../../src/data/ruleDocFields.js';
+import { assertWriteEpochOpen } from './compositionWriteEpoch.js';
 
 /**
  * Map one buildSeedPlan ruleSpec → the Firestore rule-doc body. Uses the ONE
@@ -116,6 +117,13 @@ export function seedArchetypeTraitsInTx(tx, agentRef, archetype, { strength = 'm
  * @returns {Promise<number>} count soft-deleted
  */
 export async function softDeleteReplacedTraitRuleDocs(agentRef, equippedTraits) {
+  // Composition write-epoch fence (adversarial-review C3): the ONE post-commit
+  // writer of the fenced rules store. On a closed epoch it SKIPS — replaced-
+  // trait orphans are inert by this function's own contract ("orphans are
+  // inert"), so skipping is safe and no write lands after the watermark.
+  // Zero I/O while the fence flag is dark (A46 census row).
+  try { await assertWriteEpochOpen(agentRef.firestore); }
+  catch (e) { if (e?.code === 'epoch_closed') return 0; throw e; }
   const keep = new Set((equippedTraits || []).map((t) => t && t.traitId).filter(Boolean));
   const rulesRef = agentRef.collection('rules');
   const snap = await rulesRef.get();

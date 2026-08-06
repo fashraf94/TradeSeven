@@ -70,6 +70,16 @@ export function listArchetypeIds() {
 }
 
 /**
+ * Trait lookup through the registry surface (§2.3 — the import-boundary
+ * ratchet forbids new direct importers of traitLibrary.js; consumers that
+ * need a trait's rule bundle + strength profiles go through here). Returns
+ * the library object for a trait id, or null for an unknown id.
+ */
+export function getTraitById(traitId) {
+  return TRAIT_BY_ID[traitId] ?? null;
+}
+
+/**
  * The one read surface (§2.3). Returns the full composed definition for a
  * code-id, or null for an unknown id — callers fail loudly, no analyst
  * fallback here (the registry is a contract surface, not a display helper).

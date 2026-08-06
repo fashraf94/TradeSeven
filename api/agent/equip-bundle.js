@@ -137,13 +137,16 @@ export default async function handler(req, res) {
       // throw aborts the transaction before any write is buffered).
       let compositionViolations = [];
       if (COMPOSITION_ENFORCEMENT_MODE !== 'off') {
+        // observe attaches EVERYTHING (incl. ambiguous_domain_binding — the
+        // founder-worklist signal, review P7); enforce blocks on blocking only.
         compositionViolations = checkCandidateEquipLegality({
           ruleSnapshots: bundle.ruleSnapshots || [],
           archetype: agent.archetype,
-        }).filter(isBlockingViolation);
-        if (COMPOSITION_ENFORCEMENT_MODE === 'enforce' && compositionViolations.length > 0) {
+        });
+        const blocking = compositionViolations.filter(isBlockingViolation);
+        if (COMPOSITION_ENFORCEMENT_MODE === 'enforce' && blocking.length > 0) {
           const err = new Error(SENTINEL_PREFIX + 'composition_blocked');
-          err.details = { compositionViolations };
+          err.details = { compositionViolations: blocking };
           throw err;
         }
       }
