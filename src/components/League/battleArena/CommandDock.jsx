@@ -382,7 +382,7 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
 }
 
 // ── the dock's right panel — voice (live) / countdown (awaiting) / verdict ──
-export function DockStatePanel({ state, mode, eng, archName, voice, pod, ask, youRank, onFilm, style }) {
+export function DockStatePanel({ state, mode, eng, archName, voice, pod, ask, youRank, onFilm, style, voided = false }) {
   if (state === 'live') {
     return <AgentDock lines={eng.lines} archName={archName} live ask={ask} onAsk={eng.askAgent}
       askLive={eng.askLive} remaining={eng.remaining} asking={eng.asking} chatReady={eng.chatReady} style={style} />;
@@ -405,6 +405,34 @@ export function DockStatePanel({ state, mode, eng, archName, voice, pod, ask, yo
     );
   }
   // complete
+  // L-A follow-up (B): a VOIDED cohort carries NO standing — suppress the placement
+  // interstitial entirely (no ordinal / "of four", no advanced/eliminated framing,
+  // which would contradict "no result recorded" and is computed from the
+  // contaminated numbers besides). State the void; keep the Film Room for review
+  // only (its overlay needs no result — reviewing the tape stays legitimate).
+  if (voided) {
+    return (
+      <div style={{ borderRadius: 16, padding: '14px 15px', display: 'flex', flexDirection: 'column',
+        background: `linear-gradient(160deg, ${alpha(LTOKENS.ink3, 0.1)}, ${alpha(LTOKENS.bg, 0.7)} 60%)`, border: `1px solid ${LTOKENS.hair2}`, ...style }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <LIcon name="flag" size={15} color={LTOKENS.ink3} stroke={2} />
+          <Eyebrow color={LTOKENS.ink3}>Run voided</Eyebrow>
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink, marginTop: 8 }}>
+          No result recorded.
+        </div>
+        <Mono style={{ fontSize: 10.5, color: LTOKENS.ink2, lineHeight: 1.55, marginTop: 8 }}>
+          This run was voided — no standing stands. The Film Room is open for review only.
+        </Mono>
+        <button className="bv2-tap" onClick={onFilm} style={{ all: 'unset', cursor: 'pointer', marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+          padding: '12px 16px', borderRadius: 12, background: alpha(LTOKENS.gold, 0.16), border: `1px solid ${alpha(LTOKENS.gold, 0.45)}` }}>
+          <ArenaOrb state="review" size={22} color={LTOKENS.gold} />
+          <Mono style={{ fontSize: 12.5, fontWeight: 700, color: LTOKENS.ink }}>Open the Film Room</Mono>
+          <Icon name="chevR" size={14} color={LTOKENS.gold} />
+        </button>
+      </div>
+    );
+  }
   const advanced = youRank <= 2;
   const tone = mode === 'ranked' ? (advanced ? LTOKENS.teal : '#F2766B') : OWN_AGENT;
   return (

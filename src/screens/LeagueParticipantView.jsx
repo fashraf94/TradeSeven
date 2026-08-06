@@ -31,7 +31,13 @@ import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
 import { useIsMobile } from '../hooks/useIsMobile';
 import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
 import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
-import { subscribeMyGroup, subscribeBracket, subscribeRank } from '../services/tournamentGroupService';
+import LeagueVoidedNotice from '../components/League/LeagueVoidedNotice';
+import {
+  subscribeMyGroup,
+  subscribeMyMostRecentVoidedGroup,
+  subscribeBracket,
+  subscribeRank,
+} from '../services/tournamentGroupService';
 import { resolveRoundBoundary } from '../utils/roundBoundary';
 import {
   isRoundBoundaryAcknowledged,
@@ -79,6 +85,16 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
       setGroup(g);
       setLoaded(true);
     });
+  }, [uid]);
+
+  // L-A follow-up (B) — the member voided-card. A DEDICATED most-recent-voided
+  // read, kept separate from subscribeMyGroup so the active allowlist stays inert
+  // to VOIDED. Only surfaced in the no-active-group region below (auto-expiry: it
+  // clears when the member's next group forms and `group` goes non-null).
+  const [voidedGroup, setVoidedGroup] = useState(null);
+  useEffect(() => {
+    if (!uid) { setVoidedGroup(null); return undefined; }
+    return subscribeMyMostRecentVoidedGroup(uid, setVoidedGroup);
   }, [uid]);
 
   // Participant mode reads the player's OWN battle live (owner-scoped rule
@@ -148,6 +164,11 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
   }
 
   if (!uid || !loaded || !group) {
+    // L-A follow-up (B): the member voided-card. Only when signed-in + loaded +
+    // there IS a most-recent voided group (never for the signed-out / still-loading
+    // states). Renders in whichever no-active-group surface follows, so the member
+    // whose battle was voided gets the explanation instead of a bare poster.
+    const voidedNotice = uid && loaded && voidedGroup ? <LeagueVoidedNotice group={voidedGroup} /> : null;
     // P10b — the lobby front door replaces the dead "no active group" poster
     // for a signed-in, loaded player with no group, ONLY when the flag is on.
     // Flag-off renders the poster below byte-unchanged (regression-safe); the
@@ -158,6 +179,7 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
       // the existing LeagueLobby path (byte-identical).
       return (
         <div style={page}>
+          {voidedNotice}
           {LEAGUE_LIVE_DRAFT && (
             <LiveDraftPicker tokens={tokens} currentUserId={uid} displayName={user?.displayName} />
           )}
@@ -167,6 +189,7 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
     }
     return (
       <div style={{ ...page, alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+        {voidedNotice}
         <div style={{
           width: 64, height: 64, borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: tokens.bgCard, border: `1px solid ${tokens.borderDivider}`,

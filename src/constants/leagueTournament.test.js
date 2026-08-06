@@ -106,6 +106,11 @@ import {
   selectBaseLayerField,
   BASE_LAYER_FIELD_OVERFETCH,
   isoWeekString,
+  // L-A follow-up (B) — the member voided-card's dedicated read + reason projection.
+  selectMyMostRecentVoidedGroup,
+  voidReasonLabel,
+  VOID_REASON_LABELS,
+  VOIDED_NO_RESULT_COPY,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
 // This is the behavioral half of the claimSystem parity guard.
@@ -1172,6 +1177,91 @@ describe('VOIDED is inert across the active-status selectors + FIELD (L-A census
   it('casualDeployMissesPodSession → false (no conflict) for a terminal VOIDED group', () => {
     const voided = { id: 'v', status: GROUP_STATUS.VOIDED, battleStartWeek: { anchorEtDate: '2026-08-05', mondayEtDate: '2026-08-05', anchorIso: '2026-08-05T13:30:00.000Z' } };
     expect(casualDeployMissesPodSession(voided, { expiryEtDate: '2026-08-12', nextTradingEtDate: '2026-08-05' })).toBe(false);
+  });
+});
+
+// L-A follow-up (B) — the member voided-card's DEDICATED read + reason projection.
+// The card surfaces a member's most-recent voided group WITHOUT loosening the
+// active allowlist above (that inertness lock must stay green — asserted here in
+// the same battery so the two can never drift).
+describe('selectMyMostRecentVoidedGroup — the member voided-card read (separate from the active allowlist)', () => {
+  const voidedA = { id: 'va', status: GROUP_STATUS.VOIDED, updatedAt: '2026-07-22T19:00:00.000Z' };
+  const voidedB = { id: 'vb', status: GROUP_STATUS.VOIDED, updatedAt: '2026-08-05T00:00:00.000Z' };
+  const battle = { id: 'b', status: GROUP_STATUS.BATTLE, updatedAt: '2026-08-04T00:00:00.000Z' };
+  const complete = { id: 'c', status: GROUP_STATUS.COMPLETE, updatedAt: '2026-08-06T00:00:00.000Z' };
+  const voidedTraining = { id: 'vt', status: GROUP_STATUS.VOIDED, isTraining: true, updatedAt: '2026-08-07T00:00:00.000Z' };
+
+  it('returns the MOST-RECENT voided ranked group (most-recently-updated wins)', () => {
+    expect(selectMyMostRecentVoidedGroup([voidedA, voidedB])?.id).toBe('vb');
+    expect(selectMyMostRecentVoidedGroup([voidedB, voidedA])?.id).toBe('vb');
+  });
+
+  it('surfaces the void ONLY when it is the most-recent ranked group (a newer non-void group shadows it)', () => {
+    expect(selectMyMostRecentVoidedGroup([battle, complete])).toBeNull();
+    // a COMPLETE newer than the void SHADOWS it — the void is no longer the member's
+    // latest situation, so the card must NOT resurface (durable auto-expiry).
+    expect(selectMyMostRecentVoidedGroup([voidedA, complete])).toBeNull();
+    // but when the void IS the most-recent ranked group (older finishes behind it), it surfaces.
+    const oldComplete = { id: 'oc', status: GROUP_STATUS.COMPLETE, updatedAt: '2026-08-01T00:00:00.000Z' };
+    expect(selectMyMostRecentVoidedGroup([voidedB, oldComplete])?.id).toBe('vb');
+  });
+
+  it('DURABLE auto-expiry: a stale void does NOT resurface after a LATER group completes (§2 review finding fix)', () => {
+    // void1 voided (T1); a later group forms and then COMPLETEs (T2 > T1). selectMyGroup
+    // drops back to null (COMPLETE is not in the active allowlist), but the card must NOT
+    // show the old void — the member's most-recent battle recorded a real result.
+    const void1 = { id: 'v1', status: GROUP_STATUS.VOIDED, updatedAt: '2026-07-22T19:00:00.000Z' };
+    const complete2 = { id: 'c2', status: GROUP_STATUS.COMPLETE, updatedAt: '2026-08-06T00:00:00.000Z' };
+    expect(selectMyGroup([void1, complete2])).toBeNull();                 // no ACTIVE group
+    expect(selectMyMostRecentVoidedGroup([void1, complete2])).toBeNull();  // …and no stale void card
+  });
+
+  it('excludes a training voided pod (the ranked-cohort void is the only surfaced kind)', () => {
+    expect(selectMyMostRecentVoidedGroup([voidedTraining])).toBeNull();
+    // a training void does not shadow a real ranked void either (training is out of this read entirely)
+    expect(selectMyMostRecentVoidedGroup([voidedB, voidedTraining])?.id).toBe('vb');
+  });
+
+  it('returns null for no voids / empty / null input', () => {
+    expect(selectMyMostRecentVoidedGroup([battle])).toBeNull();
+    expect(selectMyMostRecentVoidedGroup([])).toBeNull();
+    expect(selectMyMostRecentVoidedGroup(null)).toBeNull();
+  });
+
+  it('is COMPLEMENTARY to selectMyGroup and never leaks a void into the active read (inertness intact)', () => {
+    // ONLY a void present: the active read is null (empty state) but the card read has content.
+    expect(selectMyGroup([voidedB])).toBeNull();
+    expect(selectMyMostRecentVoidedGroup([voidedB])?.id).toBe('vb');
+    // an active BATTLE newer than the void: the active read picks the battle, and the
+    // void is shadowed (a newer group exists) so the card read is null — the void never
+    // reaches an active consumer, and the card won't compete with a live game.
+    const newerBattle = { id: 'nb', status: GROUP_STATUS.BATTLE, updatedAt: '2026-08-09T00:00:00.000Z' };
+    expect(selectMyGroup([voidedB, newerBattle])?.id).toBe('nb');
+    expect(selectMyMostRecentVoidedGroup([voidedB, newerBattle])).toBeNull();
+  });
+});
+
+describe('voidReasonLabel + VOIDED_NO_RESULT_COPY — the §9 single-source reason projection', () => {
+  it('projects a KNOWN void code to its human one-line reason', () => {
+    const label = voidReasonLabel({ voidedReason: 'poisoned_cohort_l_a' });
+    expect(label).toBe(VOID_REASON_LABELS.poisoned_cohort_l_a);
+    expect(label).toContain('quarantined');
+  });
+
+  it('accepts either the group doc or the raw code (reads the SAME voidedReason datum)', () => {
+    expect(voidReasonLabel('poisoned_cohort_l_a')).toBe(voidReasonLabel({ voidedReason: 'poisoned_cohort_l_a' }));
+  });
+
+  it('falls back safely for a null / missing / unknown reason (datum stays voidedReason; only the copy defaults)', () => {
+    const fallback = 'This battle was voided by the League.';
+    expect(voidReasonLabel({ voidedReason: null })).toBe(fallback);
+    expect(voidReasonLabel({})).toBe(fallback);
+    expect(voidReasonLabel(null)).toBe(fallback);
+    expect(voidReasonLabel({ voidedReason: 'some_future_code_not_yet_mapped' })).toBe(fallback);
+  });
+
+  it('the shared no-result headline is the one used by the arena top-strip (§9 one source)', () => {
+    expect(VOIDED_NO_RESULT_COPY).toBe('Battle voided — no result recorded');
   });
 });
 

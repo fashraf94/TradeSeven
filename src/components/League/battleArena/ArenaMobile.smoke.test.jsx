@@ -63,6 +63,27 @@ describe('ArenaMobile render smoke', () => {
     expect(html.length).toBeGreaterThan(2000);
   });
 
+  // L-A follow-up (B) — the mobile twin of the desktop suppression: a VOIDED cohort
+  // shows no placement (MComplete) and no cut/standings on the hero board, stating
+  // the void; Film Room stays (review only). Mutation-checked against the same
+  // spread-score DATA rendered WITHOUT voided.
+  it('a VOIDED complete run shows no placement/standings and states the void', () => {
+    const html = renderToString(<ArenaMobile state="complete" mode="ranked" data={DATA} voided />);
+    expect(html).not.toContain('of four');
+    expect(html).not.toContain('You advanced');
+    expect(html).not.toContain('Run ended');
+    expect(html).not.toContain('TOP 2 ADVANCE');
+    expect(html).toContain('No result recorded');
+    expect(html).toContain('Film Room');
+    expect(html.length).toBeGreaterThan(2000);
+  });
+
+  it('the SAME complete run WITHOUT voided DOES show placement + cut (suppression is real)', () => {
+    const html = renderToString(<ArenaMobile state="complete" mode="ranked" data={DATA} />);
+    expect(html).toContain('of four');
+    expect(html).toContain('TOP 2 ADVANCE');
+  });
+
   // The Agent-Portfolio tab is behind tab state renderToString can't switch to, so
   // mount MAgentPanel directly — covers the agent-six + swap-flare wiring.
   it('MAgentPanel composes (agent six + move chip + flare) without throwing', () => {

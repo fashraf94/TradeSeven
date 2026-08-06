@@ -74,7 +74,7 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
       {/* THE HERO — the competition climb (+ the decomposition strip nested in-band) */}
       <div style={{ position: 'relative', marginTop: 11, height: HERO_H }}>
         <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
-          w={HERO_W} h={climbH} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} />
+          w={HERO_W} h={climbH} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} />
         {live && eng.beat && (
           <div style={{ position: 'absolute', top: 12, left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 25, pointerEvents: 'none' }}>
             <BeatCaption beat={eng.beat} />
@@ -96,7 +96,7 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
           beatStar={live ? eng.beatStar : null} onFlip={handlers?.onFlip} onFlipDrama={eng.flip} onClaim={() => setFaOpen(true)} headline={dockHeadline}
           departed={D.userDeparted} onOpenDeparted={() => setDepartedView('drop')} style={{ flex: 1.3 }} />
         <DockStatePanel state={state} mode={mode} eng={eng} archName={D.voice.arch} voice={D.voice} pod={D.pod}
-          ask={D.ask} youRank={youRank} onFilm={() => setFilmOpen(true)} style={{ flex: 1.02 }} />
+          ask={D.ask} youRank={youRank} onFilm={() => setFilmOpen(true)} style={{ flex: 1.02 }} voided={voided} />
       </div>
 
       {done && filmOpen && <FilmRoomOverlay onClose={() => setFilmOpen(false)} />}

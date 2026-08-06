@@ -28,6 +28,7 @@ import {
   DRAFT_STATE_DOC_ID,
   selectActiveLobby,
   selectMyGroup,
+  selectMyMostRecentVoidedGroup,
   selectMyTrainingPod,
   selectBaseLayerField,
   BASE_LAYER_FIELD_OVERFETCH,
@@ -207,6 +208,31 @@ export function subscribeMyGroup(uid, callback) {
     callback(selectMyGroup(docs));
   }, (error) => {
     console.error('[TournamentGroupService] My-group subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live "my most-recent VOIDED group" subscription (L-A follow-up B — the member
+ * voided-card). The DEDICATED terminal read: the SAME member-scoped
+ * `array-contains` query as subscribeMyGroup (no new index), but selected by the
+ * pure `selectMyMostRecentVoidedGroup` predicate so a quarantined cohort can be
+ * SURFACED to its own member WITHOUT ever entering selectMyGroup's active
+ * allowlist. Deliberately separate from subscribeMyGroup (rather than widening it)
+ * so the active-consumer inertness lock stays green — voided must remain excluded
+ * from every "active" path. Callback receives { id, ...group } or null. Returns
+ * the unsubscribe fn.
+ */
+export function subscribeMyMostRecentVoidedGroup(uid, callback) {
+  const groupsQuery = query(
+    collection(db, TOURNAMENT_GROUPS_COLLECTION),
+    where('groupMembers', 'array-contains', uid)
+  );
+  return onSnapshot(groupsQuery, (snapshot) => {
+    const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(selectMyMostRecentVoidedGroup(docs));
+  }, (error) => {
+    console.error('[TournamentGroupService] My-voided-group subscription error:', error);
     callback(null);
   });
 }

@@ -16,6 +16,7 @@ import { Mono, Eyebrow, StatusBadge } from '../LeagueParts';
 import { Icon, LIcon } from '../LeagueIcons';
 import { LTOKENS, LX, alpha, MONO } from '../leagueTokens';
 import { BAGGER_TIERS, BUST_TIERS } from '../../../constants/baggerBombScoring';
+import { VOIDED_NO_RESULT_COPY } from '../../../constants/leagueTournament';
 import { fmtScore } from '../../../utils/leagueFormat';
 import { prefersReducedMotion } from './arenaEngineCore';
 import { ST_GOOD, ST_BAD, beatToneColor, BEAT_GLYPH } from './arenaTheme';
@@ -134,7 +135,7 @@ export function ArenaTopStrip({ mode, state, pod, closeClock, onBack, compact = 
       )}
       <ModeChip mode={mode} />
       <Mono style={{ fontSize: compact ? 10.5 : 11.5, color: LTOKENS.ink2, letterSpacing: '0.03em' }}>
-        {done ? (voided ? 'Battle voided — no result recorded' : 'Battle complete') : calm ? 'Awaiting open' : `Day ${pod.day} of ${pod.days}`}
+        {done ? (voided ? VOIDED_NO_RESULT_COPY : 'Battle complete') : calm ? 'Awaiting open' : `Day ${pod.day} of ${pod.days}`}
       </Mono>
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: compact ? 11 : 16 }}>
         {pod.watchers != null && (

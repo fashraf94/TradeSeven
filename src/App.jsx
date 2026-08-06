@@ -118,6 +118,7 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
+import { excludeVoidedGroupBattles } from './utils/commandCenterLiveBattles';
 import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn } from './config/featureFlags';
 // Delight Layer Task 2: the battle-weather starfield. Mounted ONLY at the two
 // dashboard sites below, each behind its own flag; every other DesktopBackground
@@ -3893,7 +3894,7 @@ export default function PortfolioDuel() {
 
     const fetchAgentBattles = async () => {
       try {
-        const { collection, query, where, getDocs } = await import('firebase/firestore');
+        const { collection, query, where, getDocs, doc, getDoc } = await import('firebase/firestore');
         const { db, auth } = await import('./firebase/config');
         const { TRAINING_CLONE_ID_PREFIX } = await import('./constants/leagueTournament');
         if (!auth.currentUser?.uid) return;
@@ -3924,7 +3925,30 @@ export default function PortfolioDuel() {
         const battles = snapshot.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(b => !(typeof b.agentId === 'string' && b.agentId.startsWith(TRAINING_CLONE_ID_PREFIX)));
-        setActiveAgentBattles(battles);
+
+        // L-A follow-up (B): drop battles whose GROUP is VOIDED — a READ-TIME
+        // group-status lookup, so the void (which lives only on the group doc;
+        // voidGroup never writes the fenced battle-doc shape) propagates to this
+        // card exactly as it does to the arena. Only tournament battles carry a
+        // groupId; casual vs-CPU deploys have none and are kept untouched. The
+        // read stays tiny — ≤1 ranked active battle per owner by game mechanics —
+        // and is fail-open per group (a transient miss keeps the battle rather
+        // than blanking a genuinely live card). This is expiry-independent: a
+        // group voided mid-day (future expiresAt) is excluded here even though its
+        // countdown would otherwise still read live.
+        const groupIds = [...new Set(battles.map(b => b.groupId).filter(Boolean))];
+        const resolved = await Promise.all(groupIds.map(async (gid) => {
+          try {
+            const gsnap = await getDoc(doc(db, 'tournamentGroups', gid));
+            return gsnap.exists() ? [gid, gsnap.data()] : null;
+          } catch (groupErr) {
+            console.error('Error resolving group status for live-battle exclusion (keeping battle):', groupErr);
+            return null;
+          }
+        }));
+        const groupsById = Object.fromEntries(resolved.filter(Boolean));
+        const liveBattles = excludeVoidedGroupBattles(battles, groupsById);
+        setActiveAgentBattles(liveBattles);
       } catch (error) {
         // RETAIN the last-known-good battles instead of blanking the list. A
         // transient Firestore error must not flip the "No battle live" card to

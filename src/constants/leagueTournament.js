@@ -115,6 +115,34 @@ export const GROUP_STATUS = Object.freeze({
   VOIDED: 'voided',
 });
 
+// L-A follow-up (B, member-facing surfacing): the ONE headline copy for a voided
+// battle, shared by every surface that names it (the arena top-strip caption AND
+// the member voided-card) so the two can never drift (§9 display-agreement — one
+// source for the string, not a re-typed copy per surface).
+export const VOIDED_NO_RESULT_COPY = 'Battle voided — no result recorded';
+
+// Code → human one-line reason for a voided group. The datum is the group's
+// `voidedReason` field (stamped once by voidGroup, tournamentGroupService.js) —
+// this map is a DISPLAY projection of that single source (§9), never a second
+// stored reason. Codes are the caller-supplied strings the void writer records
+// (today: the poisoned-cohort quarantine from the L-A one-off apply script).
+export const VOID_REASON_LABELS = Object.freeze({
+  poisoned_cohort_l_a: 'The cohort was quarantined — its scores were compromised, so no result stands.',
+});
+
+/**
+ * The one-line, member-facing reason a group was voided. Reads the group's
+ * `voidedReason` code (the exact field voidGroup wrote) and projects it to a
+ * sentence. Unknown or missing codes fall back to a safe generic line — the datum
+ * is still `voidedReason`; only the display copy is defaulted (§9-clean). Pure.
+ * @param {{voidedReason?: string}|string|null} groupOrReason - the group doc, or the raw code.
+ * @returns {string}
+ */
+export function voidReasonLabel(groupOrReason) {
+  const code = typeof groupOrReason === 'string' ? groupOrReason : groupOrReason?.voidedReason;
+  return VOID_REASON_LABELS[code] ?? 'This battle was voided by the League.';
+}
+
 export const LEG_DIRECTION = Object.freeze({
   LONG: 'long',
   SHORT: 'short',
@@ -601,6 +629,30 @@ export function selectMyGroup(docs) {
       g?.status === GROUP_STATUS.BATTLE
     ))
     .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))[0] ?? null;
+}
+
+/**
+ * L-A follow-up (B): the dedicated terminal read behind the member voided-card,
+ * kept SEPARATE from selectMyGroup so the active allowlist above stays inert to
+ * VOIDED (loosening it would leak a quarantined cohort into every "active"
+ * consumer — THE FIELD, the arena, the composite).
+ *
+ * Returns the member's most-recent ranked (`isTraining !== true`) group ONLY WHEN
+ * that most-recent group is VOIDED — i.e. when the void is the LAST thing that
+ * happened to them, not shadowed by a newer non-void group. This is the card's
+ * DURABLE auto-expiry: a naive "newest VOIDED doc" read would resurface a stale
+ * void in every no-active-group interlude forever, because a later group reaching
+ * terminal COMPLETE drops selectMyGroup back to null while the old VOIDED doc still
+ * matches the member-scoped query. Anchoring on the most-recent group overall means
+ * the card clears the moment ANY newer group appears (forming, or later completing).
+ * Returns the group doc or null. Pure — unit-tested without Firestore, beside the
+ * inertness lock it must never break. `docs` are { id, ...group }.
+ */
+export function selectMyMostRecentVoidedGroup(docs) {
+  const mostRecentRanked = (docs ?? [])
+    .filter(g => g?.isTraining !== true)
+    .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))[0];
+  return mostRecentRanked?.status === GROUP_STATUS.VOIDED ? mostRecentRanked : null;
 }
 
 /**
