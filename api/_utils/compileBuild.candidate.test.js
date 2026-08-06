@@ -137,6 +137,11 @@ describe('the CompiledBuild carries verdict state, advisory sentences, and narro
       expect('advisory' in v).toBe(false);
       expect('narrowedParams' in v).toBe(false);
     }
+    // Review F6: byte-identity pinned as a GOLDEN, not just key absence —
+    // this hash was captured from the dark path at the PR-3 base; any change
+    // to a dark build's bytes (key order, new fields, changed errors) fails
+    // here and demands a reviewed bump.
+    expect(build.contentHash).toBe('aa9f1e1a30ae2a48a1f9b0bfe06820e7f60af8cecacc9a1e0c22739064493420');
   });
 });
 
@@ -172,5 +177,47 @@ describe('the manifest carries the compat slice the eval assembler consumes (the
 
     const legacy = buildResolvedAgentManifest({ agentData, compiledBuild: null, equippedWatchlist: null, gameMode: 'clash', now: FIXTURE_NOW });
     expect('compositionCompat' in legacy).toBe(false);
+  });
+});
+
+describe('A7 agrees with the equip/save kernel on legitimately-persisted sparse shapes (design review F2)', () => {
+  it.each([
+    ['paramValues: null (forgeService first-class shape)', null],
+    ['paramValues: {} (empty object)', {}],
+    ['paramValues: { pct: null } (explicit null — unset at render)', { pct: null }],
+  ])('%s on a narrowed-domain cell compiles CLEAN — no quarantine, no ambiguity error', (_n, paramValues) => {
+    const s = { id: 'rd3', sourceRef: 'alloc-sector-cap', params: { sector: {}, pct: {} } };
+    if (paramValues !== null) s.paramValues = paramValues; else s.paramValues = null;
+    const build = candidateCompile({ archetype: 'momentum_chaser', snaps: [s] });
+    expect(build.quarantined).toBeUndefined();
+    expect(build.validation.errors.some((e) => e.code === 'param_out_of_domain' || e.code === 'ambiguous_domain_binding')).toBe(false);
+    expect(isCompiledBuildAdmissible(build)).toBe(true);
+  });
+
+  it('paramKeys derive from snapshot.params when present (the kernel derivation) — a bare-domain cell + multi-param doc still fails closed IDENTICALLY in both', async () => {
+    // gs-02/guardian is param-keyed post-A11; simulate the drift case with the
+    // kernel side-by-side to pin the agreement itself.
+    const { checkCandidatePairing } = await import('./compositionEnforcement.js');
+    const kernelVerdict = checkCandidatePairing({
+      ruleId: 'alloc-sector-cap', archetype: 'momentum_chaser',
+      paramValues: { sector: 'Technology', pct: 90 }, paramKeys: ['sector', 'pct'],
+    });
+    const build = candidateCompile({
+      archetype: 'momentum_chaser',
+      snaps: [{ id: 'rd3', sourceRef: 'alloc-sector-cap', params: { sector: {}, pct: {} }, paramValues: { sector: 'Technology', pct: 90 } }],
+    });
+    // both sides: pct out of the narrowed [40,80]; sector untouched
+    expect(kernelVerdict.some((v) => v.kind === 'param_out_of_domain' && v.param === 'pct')).toBe(true);
+    expect(build.validation.errors.some((e) => e.code === 'param_out_of_domain' && e.detail === 'paramValues.pct')).toBe(true);
+    expect(build.validation.errors.some((e) => e.detail === 'paramValues.sector')).toBe(false);
+  });
+});
+
+describe('a BLOCKED tension rule never rides renderedTensionCandidates (design review F5)', () => {
+  it('an out-of-domain (quarantined+blocked) tension rule is absent from the tension feed; a clean one is present', () => {
+    const blocked = candidateCompile({ archetype: 'momentum_chaser', snaps: [snap('rd3', 'alloc-sector-cap', { pct: 90 })] });
+    expect(blocked.renderedTensionCandidates.some((t) => t.ruleId === 'rd3')).toBe(false);
+    const clean = candidateCompile({ archetype: 'momentum_chaser', snaps: [snap('rd3', 'alloc-sector-cap', { pct: 60 })] });
+    expect(clean.renderedTensionCandidates.some((t) => t.ruleId === 'rd3')).toBe(true);
   });
 });

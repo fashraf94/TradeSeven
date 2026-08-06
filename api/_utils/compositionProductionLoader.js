@@ -30,6 +30,14 @@ export const ACTIVATION_DOC_ID = 'activation';
 
 const MAX_SEQLOCK_RETRIES = 5;
 
+export class MalformedActivationDescriptorError extends Error {
+  constructor(detail) {
+    super(`activation descriptor malformed: ${detail}`);
+    this.name = 'MalformedActivationDescriptorError';
+    this.code = 'activation_descriptor_malformed';
+  }
+}
+
 export class TornCompositionReadError extends Error {
   constructor(before, after) {
     super(`composition load torn across generations (${before} → ${after}) after ${MAX_SEQLOCK_RETRIES} retries`);
@@ -45,13 +53,34 @@ function activationRef(db) {
 function descriptorOf(snap) {
   if (!snap.exists) return null;
   const d = snap.data();
+  // Review F4: a PRESENT descriptor without a well-formed generation fails
+  // CLOSED — coercing it to 0 would collide with the pre-activation sentinel
+  // and apply overlays under the dark-world stamp.
+  if (typeof d.activationGeneration !== 'number' || Number.isNaN(d.activationGeneration) || d.activationGeneration < 1) {
+    throw new MalformedActivationDescriptorError(`activationGeneration=${String(d.activationGeneration)}`);
+  }
   return {
-    activationGeneration: typeof d.activationGeneration === 'number' ? d.activationGeneration : 0,
+    activationGeneration: d.activationGeneration,
     activeEpochId: d.activeEpochId ?? null,
     candidateStateId: d.candidateStateId ?? null,
     semanticHash: d.semanticHash ?? null,
     identityVersionTarget: d.identityVersionTarget ?? null,
   };
+}
+
+// Review F3 (seqlock ABA): generation alone is ABA-vulnerable — a rollback
+// followed by a re-activation can land on the SAME generation number with a
+// DIFFERENT candidate tuple, and a generation-only compare would admit the
+// mixed view (the Sol counterexample re-enabled). The seqlock compares the
+// FULL tuple. (The B4 activation writer should additionally keep generations
+// monotonic — recorded in the preconditions ledger — but the loader does not
+// depend on it.)
+function sameDescriptor(a, b) {
+  return !!a && !!b
+    && a.activationGeneration === b.activationGeneration
+    && a.activeEpochId === b.activeEpochId
+    && a.candidateStateId === b.candidateStateId
+    && a.semanticHash === b.semanticHash;
 }
 
 /**
@@ -81,7 +110,7 @@ export async function loadActivatedComposition(db, fetchLayers) {
       // otherwise an activation/rollback landed mid-load and the view may mix
       // generations. Retry from the top.
       const after = descriptorOf(await tx.get(activationRef(db)));
-      if (!after || after.activationGeneration !== before.activationGeneration) {
+      if (!sameDescriptor(before, after)) {
         return { __retry: true, before: before.activationGeneration, after: after?.activationGeneration ?? null };
       }
       return {

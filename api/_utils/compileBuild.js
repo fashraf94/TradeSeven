@@ -251,20 +251,32 @@ export function compileBuild({
       // §5.4 legal-combination matrix: tension+advisoryDowngrade forces
       // prompt_advisory regardless of intendedMode or binding.
       if (cell.treatment === 'advisoryDowngrade') forcedAdvisory = true;
-      tensionPairs.push({ ruleId, treatment: cell.treatment, tensionReason: cell.tensionReason ?? null });
+      // (recorded AFTER the A7/mode-gate blocks below — review F5: a blocked
+      // or quarantined tension rule must not ride renderedTensionCandidates
+      // into the manifest's DR-13 feed.)
     }
 
     // ── PR 3 (A7): candidate narrowed-domain legality over the PERSISTED
     // frozen params. An out-of-domain value REJECTS the rule and QUARANTINES
     // the build — the compiler NEVER clamps (clamping exists in exactly one
     // place, the §6 migration planner). '' / non-numeric never false-admits:
-    // domainAdmits is the same predicate the equip/save kernel uses.
-    if ('narrowedParams' in cell && cell.narrowedParams) {
-      const paramKeys = snapshot?.paramValues ? Object.keys(snapshot.paramValues) : [];
+    // domainAdmits is the same predicate the equip/save kernel uses — and the
+    // GUARDS mirror the kernel exactly (review F2: absent/null paramValues is
+    // a first-class persisted shape and is LEGAL — checkCandidatePairing
+    // judges only truthy paramValues objects, keys from snap.params when
+    // present, and skips null/unset values; disagreeing here false-quarantined
+    // legitimately-persisted rules).
+    if ('narrowedParams' in cell && cell.narrowedParams
+        && snapshot?.paramValues && typeof snapshot.paramValues === 'object') {
+      const paramKeys = snapshot.params && typeof snapshot.params === 'object'
+        ? Object.keys(snapshot.params)
+        : Object.keys(snapshot.paramValues);
       const { domains, ambiguous } = resolveNarrowedDomains(cell.narrowedParams, paramKeys);
       if (ambiguous) {
-        // Post-A11 this is unreachable for registry cells (no bare domain on
-        // a multi-param rule) — kept as a fail-closed tripwire, never a guess.
+        // The kernel classifies the SAME shape ambiguous (identical key
+        // derivation), so this arm never disagrees with equip/save — it is
+        // the fail-closed tripwire for a bare domain meeting a multi-param
+        // doc, never a guess.
         err(errors, 'ambiguous_domain_binding', ruleId);
         quarantined = true;
         compatVerdicts.push({ ruleId, bundleId, verdict, intendedMode: meta.intendedMode, blocked: true, ...candidateCarriage });
@@ -272,7 +284,8 @@ export function compileBuild({
         continue;
       }
       const violations = Object.entries(domains)
-        .filter(([param, domain]) => snapshot?.paramValues?.[param] !== undefined
+        .filter(([param, domain]) => param in snapshot.paramValues
+          && snapshot.paramValues[param] !== null && snapshot.paramValues[param] !== undefined
           && !domainAdmits(domain, snapshot.paramValues[param]))
         .map(([param]) => param);
       if (violations.length > 0) {
@@ -336,6 +349,9 @@ export function compileBuild({
       err(errors, 'unknown_fallback', ruleId, String(fallback));
     }
 
+    if (verdict === 'tension') {
+      tensionPairs.push({ ruleId, treatment: cell.treatment, tensionReason: cell.tensionReason ?? null });
+    }
     const compiledToGuardrail = effectiveEnforcement === 'deterministic' && compiledValue !== null;
     compatVerdicts.push({
       ruleId, bundleId, verdict, ...candidateCarriage,

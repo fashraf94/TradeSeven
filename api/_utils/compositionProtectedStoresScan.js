@@ -22,9 +22,23 @@
 //   - A write whose collection resolves to a PROTECTED name, OR cannot be
 //     resolved statically ('unresolved'), must be allowlisted. Writes that
 //     resolve to a NON-protected literal pass without listing.
-//   - Firestore-shaped = the chain contains .collection()/.doc(), or the base
-//     identifier looks like a transaction/batch handle. Map#set etc. never
-//     qualify.
+//   - Firestore-shaped = the chain contains .collection()/.doc()/.batch()/
+//     .runTransaction(), or the base identifier looks like a transaction/
+//     batch handle. Map#set etc. never qualify.
+//
+// DOCUMENTED LIMITS (adversarial review, PR 3 — the scan is one belt among
+// four; the B8 behavioral suite, the A46 census chokepoints, and the
+// firestore.rules layer are the others):
+//   - A write through a ref received as a FUNCTION PARAMETER
+//     (`function f(ref){ ref.set(d) }`) is invisible to the static chain —
+//     the helper's CALLERS are visible instead, and the census chokepoint
+//     scans cover the known helper surfaces (txUpdateAgentSettings,
+//     writeCompiledBuildsInTx, copyAgentSubcollections).
+//   - A DESTRUCTURED write method (`const {set} = ref; set(d)`) is invisible;
+//     no repo code writes Firestore this way.
+//   - Allowlist keys count SITES per (file, fn, method, collection) — a new
+//     write added inside an already-listed tuple changes the pinned COUNT and
+//     fails CI (review F3a).
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -49,8 +63,11 @@ const KNOWN_NON_MODULE_FRAGMENTS = new Set([
 function walkFiles(repoRoot, rel, out) {
   for (const entry of readdirSync(resolve(repoRoot, rel), { withFileTypes: true })) {
     const p = `${rel}/${entry.name}`;
-    if (entry.isDirectory()) { if (entry.name !== 'node_modules' && entry.name !== 'out') walkFiles(repoRoot, p, out); }
-    else if (entry.name.endsWith('.js') && !entry.name.includes('.test.') && !KNOWN_NON_MODULE_FRAGMENTS.has(p)) out.push(p);
+    if (entry.isDirectory()) {
+      // 'scripts/composition/out' is the gitignored report dir; nothing else named 'out' is excluded.
+      if (entry.name !== 'node_modules' && p !== 'scripts/composition/out') walkFiles(repoRoot, p, out);
+    }
+    else if (/\.(js|mjs)$/.test(entry.name) && !entry.name.includes('.test.') && !KNOWN_NON_MODULE_FRAGMENTS.has(p)) out.push(p);
   }
   return out;
 }
@@ -73,7 +90,7 @@ function chainInfo(node, consts, depth = 0) {
       const cal = cur.callee;
       if (cal?.type === 'MemberExpression' && !cal.computed && cal.property?.type === 'Identifier') {
         const n = cal.property.name;
-        if (n === 'collection' || n === 'doc') shaped = true;
+        if (n === 'collection' || n === 'doc' || n === 'batch' || n === 'runTransaction') shaped = true;
         if (n === 'collection' && cur.arguments[0]?.type === 'Literal' && typeof cur.arguments[0].value === 'string' && collection === null) {
           collection = cur.arguments[0].value;
         }
@@ -132,9 +149,13 @@ function scanSource(relPath, src) {
   for (const n of astWalk(ast)) {
     if (n.type !== 'CallExpression') continue;
     const cal = n.callee;
-    if (cal?.type !== 'MemberExpression' || cal.computed || cal.property?.type !== 'Identifier') continue;
-    const method = cal.property.name;
-    if (!WRITE_METHODS.has(method)) continue;
+    if (cal?.type !== 'MemberExpression') continue;
+    // review F3(c)/design-F1: ref['set'](...) — a computed member whose
+    // property is a string literal counts exactly like ref.set(...).
+    const method = !cal.computed && cal.property?.type === 'Identifier' ? cal.property.name
+      : cal.computed && cal.property?.type === 'Literal' && typeof cal.property.value === 'string' ? cal.property.value
+      : null;
+    if (!method || !WRITE_METHODS.has(method)) continue;
     const target = chainInfo(cal.object, consts);
     const viaArg = !target.firestoreShaped && n.arguments[0] ? chainInfo(n.arguments[0], consts) : null;
     const shaped = target.firestoreShaped || viaArg?.firestoreShaped;

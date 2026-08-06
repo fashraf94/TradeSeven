@@ -230,20 +230,19 @@ describe('candidate registry — A11: the valueParamKey binding table (PR 3)', (
     }
   });
 
-  it('needsBinding is ZERO by construction: no cell carries a bare domain on a multi-param rule', () => {
+  it('needsBinding is ZERO by construction: no cell carries a bare domain on a multi-param rule', async () => {
     // A bare domain (a domain object not keyed by param) binds deterministically
     // only when the rule has exactly one template param. On a multi-param rule it
     // classifies ambiguous_domain_binding — the migration's needsBinding class.
     // After the A11 restoration this set is empty, and this row keeps it empty:
     // a future transcription that drops a param key fails CI here, not in a
     // founder dry-run.
-    const isBareDomain = (v) => {
-      if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
-      const keys = Object.keys(v);
-      if ('allow' in v) return keys.length === 1 && Array.isArray(v.allow);
-      if ('minOnly' in v) return keys.length === 1 && typeof v.minOnly === 'number';
-      return keys.length > 0 && keys.every((k) => k === 'min' || k === 'max') && keys.every((k) => typeof v[k] === 'number');
-    };
+    //
+    // Review F5 (test-integrity lens): the bare-domain predicate is the
+    // KERNEL's OWN isDomain — imported, not hand-copied — so a future domain
+    // shape added to the kernel cannot drift this invariant into a false
+    // pass on exactly the class it exists to keep empty.
+    const { isDomain: isBareDomain } = await import('../../api/_utils/compositionEnforcement.js');
     const offenders = [];
     for (const [r, a, c] of allCells()) {
       if (!c.narrowedParams || !isBareDomain(c.narrowedParams)) continue;

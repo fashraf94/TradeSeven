@@ -18,8 +18,14 @@ const ALLOWLIST = JSON.parse(readFileSync(resolve(HERE, 'compositionProtectedSto
 
 describe('B3 — deny-by-default protected-store write scan (AST, api/ + scripts/)', () => {
   const { all, needsListing } = scanProtectedStoreWrites(REPO);
-  const allowed = new Set(ALLOWLIST.allowedWriteSites);
-  const foundKeys = new Set(needsListing.map(siteKey));
+  // review F3a: the allowlist pins a SITE COUNT per key — a second write
+  // added inside an already-listed (file, fn, method, collection) tuple
+  // changes the count and fails CI, not just brand-new tuples.
+  const foundCounts = {};
+  for (const s of needsListing) foundCounts[siteKey(s)] = (foundCounts[siteKey(s)] ?? 0) + 1;
+  const allowedCounts = ALLOWLIST.allowedWriteSites;
+  const allowed = new Set(Object.keys(allowedCounts));
+  const foundKeys = new Set(Object.keys(foundCounts));
 
   it('the scan is alive: it sees the known writer surface', () => {
     // Guards against a silent scanner regression scanning nothing — the
@@ -30,9 +36,12 @@ describe('B3 — deny-by-default protected-store write scan (AST, api/ + scripts
     expect([...PROTECTED_COLLECTIONS]).toContain('agents');
   });
 
-  it('DENY-BY-DEFAULT: every protected-or-unresolved write site is on the explicit allowlist', () => {
+  it('DENY-BY-DEFAULT: every protected-or-unresolved write site is on the explicit allowlist AT ITS PINNED COUNT', () => {
     const unlisted = [...foundKeys].filter((k) => !allowed.has(k)).sort();
     expect(unlisted, 'new protected-store write site(s) — a human must review the writer and add its key to compositionProtectedStoresAllowlist.json in the same PR').toEqual([]);
+    const drifted = [...foundKeys].filter((k) => allowed.has(k) && foundCounts[k] !== allowedCounts[k])
+      .map((k) => `${k}: found ${foundCounts[k]}, pinned ${allowedCounts[k]}`).sort();
+    expect(drifted, 'write-site COUNT drifted inside an allowlisted tuple — a human must re-review the function and update the pinned count').toEqual([]);
   });
 
   it('no parse failures anywhere in the scanned tree (a file the scan cannot read is a hole, not a pass)', () => {
