@@ -58,13 +58,34 @@ The `feedEntries[]` on the run doc are the **candidate-namespaced identityMigrat
 | **CPU/house seeds** (`tournamentCpu`) | no rules subcollection, `activeRules:[]` — no identity content to fence (census F); enumerated as no-op class | — |
 | **Compiled-build writes** (`writeCompiledBuildsInTx`) | covered **atomically** by the endpoint/deploy-gate transaction that already validated the epoch (same tx ⇒ same commit) | dark under `COMPILER_ENABLED=false` regardless |
 
-**STOP-check on the hard case (per founder instruction):** the client-SDK class has a sound mechanism (rules-layer `get()` on the epoch doc — server-evaluated at commit, precedented at `firestore.rules:213,242`), so no STOP fires. The one writer that cannot take an in-file check without fence contact (`decide.js` activeRules) is **classified out of the authority set with the transitive argument above rather than left silently uncovered** — recorded in the census (A46) with its classification and the optional PR-4 splice. If the founder rejects the classification, that is a fence-entry decision for PR 4, not a PR 2 improvisation.
+**STOP-check on the hard case (per founder instruction):** the client-SDK class has a sound mechanism (rules-layer `get()` on the epoch doc — server-evaluated at commit, precedented at `firestore.rules:213,242`), so no STOP fires. The one writer that cannot take an in-file check without fence contact (`decide.js` activeRules) is **classified out of the authority set with the transitive argument above rather than left silently uncovered** — recorded in the census (A46) with its classification and the optional PR-4 splice.
+
+> **FOUNDER RULING (Aug 6, 2026, D1 ratification message):** the DERIVED classification is **ACCEPTED**. The census `founderReviewFlag` is resolved with this ruling recorded; the optional PR-4 splice remains available but is not required.
 
 ## §4 · Migration (Method B, plan/apply split)
 
 - **Planner is pure** (`compositionMigration.js`): `planMigration({ agentRecords, registry })` → overlay entries. Per-shape semantics (M4): range `{min,max}` → clamp to nearest bound; `{minOnly}` → floor; enum `{allow}` → replacementMap **or reject-and-unequip**, auto-select only when exactly one admitted value exists; `core_conflict` cell → `unequip` entry; `deferred` → no action (non-offerable is an offer-surface fact, not a migration mutation). Same planner runs dry and live — **A8 (dry-run selection == apply selection) holds by construction and is still asserted**, idempotent (A9: planning over an already-overlaid view yields zero new entries).
 - **`--apply` writes ONLY the candidate namespace** (§2) — no base record, no live agent doc, no battle doc (A12/A36: base byte-untouched; asserted).
-- **Scan script** (`scripts/composition/migration-scan.js`): dry-run default, `--apply --yes` gated, report file to `docs/audits/` at apply time (B4: the apply output is a post-deployment audit artifact). **Live run requires Firestore Admin credentials** (`FIREBASE_PROJECT_ID` + service account env) — absent in the build sandbox; the count is produced by a founder-run `node scripts/composition/migration-scan.js` (one command, read-only by default).
+- **Scan script** (`scripts/composition/migration-scan.js`): dry-run default, `--apply --yes` gated, report file to `docs/audits/` at apply time (B4: the apply output is a post-deployment audit artifact). **Live run requires Firestore Admin credentials** (`FIREBASE_PROJECT_ID` + service account env) — absent in the build sandbox; the count is produced by a founder-run `node scripts/composition/migration-scan.js` (one command, read-only by default; `scripts/loadLocalEnv.js` turns missing creds into a one-line instruction).
+
+### §4a · D1 ratification + migration rulings of record (founder, Aug 6, 2026)
+
+**Dry-run of record:** 52 agents scanned, **6 affected (all house/training agents), 15 overlay entries**. **D1 RATIFIED — the population is benign; migration proceeds as planned.** (The run's 9 reported residuals were **phantoms** — the runner's inline reporter fed raw pre-overlay `ruleDocs` to the scanner; fixed by routing runner and battery through the one shared `scanResidualsAfterPlan` helper, with the regression rows in the A10 battery.)
+
+**Ruling (a) — `REPLACEMENT_MAPS` stays empty.** The 4 enum narrowings in the ratified population unequip per M4's reject-and-unequip arm; authoring replacement maps for 6 dev agents is not worth the adjudication.
+
+**Ruling (b) — the 6 `needsBinding` rows are NOT migration work.** They are the §2-item-3 **`valueParamKey` binding table** — **PR 3 scope at the CompiledBuild boundary**. The migration plans no entry for them (B: ambiguous bare-domain is surfaced, never guessed). PR 3 input — the full static ambiguous-cell set (bare-domain cell × multi-param rule, derived from the registry × the corpus template params):
+
+| Rule | Params needing a `valueParamKey` binding | Ambiguous cells (archetype → bare domain) |
+|---|---|---|
+| `alloc-sector-cap` | `sector`, `pct` | momentum_chaser → `{min:40,max:80}` |
+| `alloc-sector-minimum` | `sector`, `pct` | momentum_chaser → `{allow:[10]}` · guardian → `{min:10,max:30}` |
+| `gs-02` | `early`, `mid`, `late`, `final` | guardian → `{minOnly:1}` |
+| `mb-11` | `time`, `pct` | momentum_chaser / guardian / analyst → `{min:25,max:50}` |
+| `th-05` | `tier`, `atr` | degen → `{min:0.25,max:0.4}` · guardian → `{min:0.2,max:0.4}` |
+| `tv-12` | `tech`, `rsi_low`, `rsi_high`, `vol` | contrarian → `{min:30,max:40}` |
+
+(The other 15 bare-domain cells sit on single-param rules and bind cleanly; no table row needed.)
 
 ## §5 · Flags (dedicated event flags — R2-B3, no reuse)
 

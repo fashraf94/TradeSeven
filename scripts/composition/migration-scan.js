@@ -19,12 +19,17 @@
 // belongs in docs/audits/ per B4 (the apply output is a post-deployment audit
 // artifact, never pre-committed).
 
+// MUST be imported before firebaseAdmin.js — loads .env.local as a side effect
+// and turns a missing credential into a one-line instruction instead of
+// firebase-admin's opaque app/invalid-credential stack (its stated purpose;
+// the lifecycle-void-precheck precedent).
+import { requireFirebaseCreds } from '../loadLocalEnv.js';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getFirebaseAdmin } from '../../api/_utils/firebaseAdmin.js';
-import { planAgentMigration, scanAgentForResiduals } from '../../api/_utils/compositionMigration.js';
-import { resolveEffectiveConfig, computeOverlayContentHash } from '../../api/_utils/compositionStateResolver.js';
+import { planAgentMigration, scanResidualsAfterPlan } from '../../api/_utils/compositionMigration.js';
+import { computeOverlayContentHash } from '../../api/_utils/compositionStateResolver.js';
 import { buildIdentityMigrationFeedEntries } from '../../api/_utils/identityMigrationFeed.js';
 import { assertWriteEpochOpen } from '../../api/_utils/compositionWriteEpoch.js';
 import { ARCHETYPE_IDENTITY_VERSION } from '../../api/_utils/archetypeVersionConstants.js';
@@ -35,8 +40,10 @@ const YES = args.includes('--yes');
 const ONE_AGENT = args.includes('--agent') ? args[args.indexOf('--agent') + 1] : null;
 
 // Explicit replacementMaps for enum narrowings (M4): founder-authored per
-// param; empty today — enums with >1 admitted value therefore classify
-// reject-and-unequip, and the dry-run report shows exactly which.
+// param. FOUNDER RULING (Aug 6, 2026, D1 ratification): stays EMPTY — the 4
+// enum narrowings in the ratified dry-run population (6 house/training agents)
+// unequip per M4's reject-and-unequip arm; authoring replacement maps for dev
+// agents is not worth the adjudication.
 const REPLACEMENT_MAPS = {};
 
 async function fetchAgentRecords(db, agentDoc) {
@@ -53,6 +60,9 @@ async function fetchAgentRecords(db, agentDoc) {
 }
 
 async function main() {
+  // Fail with a one-line instruction rather than firebase-admin's opaque
+  // `app/invalid-credential` stack trace (founder fold-in item 2).
+  requireFirebaseCreds();
   const db = getFirebaseAdmin();
   const runId = `composition-migration-${new Date().toISOString().replace(/[:.]/g, '-')}`;
 
@@ -77,14 +87,11 @@ async function main() {
       allEntries.push(...entries);
       allReports.push(...reports);
 
-      // A10 pre-verification: the resolved view must scan clean.
-      const baseDocs = { [records.agent.docPath]: records.agent };
-      for (const b of records.bundles) baseDocs[b.docPath] = b;
-      for (const r of records.ruleDocs) baseDocs[r.docPath] = r;
-      const { effectiveDocs } = resolveEffectiveConfig({ baseDocs, overlayEntries: entries });
-      const resolvedAgent = effectiveDocs[records.agent.docPath];
-      const resolvedBundles = records.bundles.map((b) => effectiveDocs[b.docPath]);
-      const residuals = scanAgentForResiduals({ agent: resolvedAgent, ruleDocs: records.ruleDocs, bundles: resolvedBundles });
+      // A10 pre-verification: the resolved view must scan clean — through the
+      // SHARED helper (founder fold-in item 1: the first dry-run rebuilt this
+      // inline with raw pre-overlay ruleDocs, so its 9 residuals were phantoms
+      // mapping 1:1 to planner entries; the battery now guards the helper).
+      const residuals = scanResidualsAfterPlan({ ...records, entries });
       if (residuals.length) perAgent[perAgent.length - 1].RESIDUALS_AFTER_PLAN = residuals;
     }
   }

@@ -71,24 +71,35 @@ Auto-merged files (`trainingClone.js`, `firestore.rules`, `featureFlags.js`) han
 | M10 † | Planner: **trait-channel cut deleted** | trait-channel row (equippedTraits unequip + scan-clean) | ✅ 1 failed |
 | M11 † | casualClone: **epoch entry guard deleted** | provisioner behavior row (endpoints suite) | ✅ 1 failed — and the census string check alone did NOT fire (import line satisfies it): the behavior row is load-bearing, recorded under lens-1 C5 residue |
 | M12 † | Uncensused `copyAgentSubcollections` caller scaffolded | the new A46 provisioner ratchet | ✅ 1 failed |
+| M13 ‡ | `scanResidualsAfterPlan`: the dry-run reporter's raw-`ruleDocs` bug re-introduced into the shared helper | A10 helper row + the named reporter-regression row | ✅ 2 failed |
 
 † = post-rewrite spot-checks added after the C1 planner rewrite and the #716 reconciliation, since M1–M8 predate both.
+‡ = added with the founder fold-in (Aug 6 addendum) guarding the dry-run reporter fix.
 
 ## Verification evidence (merged tree, final)
 
-- Composition battery: **59 tests green** across 5 suites (acceptance 30 · endpoints 13 · census 6 · forbidden-reads 5 · display 5)
+- Composition battery: **61 tests green** across 5 suites (acceptance 32 · endpoints 13 · census 6 · forbidden-reads 5 · display 5)
 - Full vitest suite: **7050 passed** (409 files; 53 skipped, pre-existing)
 - Rules emulator: **128/128** (incl. 7 `compositionEpochDenials` + #716's new masteryDenials rows)
 - `vite build`: ✅ clean (chunk-size warning pre-existing)
 - Import-boundary ratchet (§2.3): green — the PR routes its trait lookup through `archetypeRegistry.getTraitById` (new export on the sanctioned surface) instead of a new direct `traitLibrary.js` importer
 
+## Addendum — founder rulings + dry-run ratification (Aug 6, 2026, post-review)
+
+- **Dry-run of record: 52 scanned · 6 affected (all house/training agents) · 15 entries. D1 RATIFIED** — population benign, migration proceeds as planned.
+- **Reporter defect found by the dry-run (fixed):** the runner's inline pre-verification fed **raw pre-overlay `ruleDocs`** to `scanAgentForResiduals` while agent + bundles were resolved — all 9 reported residuals were phantoms mapping 1:1 to planner ruleDoc entries. The resolve-then-scan composition is now the shared `scanResidualsAfterPlan` helper (`compositionMigration.js`), called by both the runner and the A10 battery; regression rows added (ruleDoc-clamped agent scans clean through the helper AND the raw-docs phantom shape provably reports; an unplanned violation still fails). This closes the lens-2 concern class "script re-implements a tested composition inline."
+- **decide.js DERIVED classification ACCEPTED** — census `founderReviewFlag` resolved with the ruling recorded (disclosure 8 closed); the PR-4 splice remains available but is not required.
+- **`REPLACEMENT_MAPS` stays empty (ruling a):** the 4 enum narrowings unequip per M4's reject-and-unequip arm.
+- **The 6 `needsBinding` rows are PR 3 input (ruling b):** the §2-item-3 `valueParamKey` binding table at the CompiledBuild boundary — rule×param list recorded in the design note §4a (`alloc-sector-cap`, `alloc-sector-minimum`, `gs-02`, `mb-11`, `th-05`, `tv-12` with their param keys and ambiguous cells).
+- Operational fold-ins: `scripts/loadLocalEnv.js` wired into `migration-scan.js` (missing creds now self-explain); `scripts/composition/out/` gitignored.
+
 ## Standing disclosures (carried to the STOP report)
 
-1. **Live dry-run count is founder-run** — no Firestore Admin credentials in the build sandbox. `node scripts/composition/migration-scan.js` (read-only default). Expected population: ~4 narrowed-bound clamps + ~10 C7 bans per the closure sheet, **plus the trait-channel population the C1 fix newly covers** (~20 shipped trait-hosted banned pairings across the fleet).
+1. **Live dry-run count** — ~~founder-run pending~~ **resolved: see addendum above** (52/6/15, ratified).
 2. **Rules suite off-CI** (lens-1 C6) — pre-existing repo-wide; the client fence's behavioral proof is local-only; `firestore.rules` changes are **inert until the founder's Console deploy** (`npm run deploy:rules`).
 3. **A48** (activation-record property) is **PR 4** — not in this battery.
 4. **A11** is **PR 3** (recorded at PR 1).
 5. **C2 projection-channel authoring bypasses** close at the PR-3 CompiledBuild legality boundary.
 6. **Observe mode is equip-bundle-only instrumentation** in PR 2 (lens-1 P5).
 7. **Feed `ACTION_COPY` is product copy** — needs founder review before the feed flag ever lights.
-8. **decide.js DERIVED classification** carries `founderReviewFlag: true` — founder may order the PR-4 fenced splice instead.
+8. **decide.js DERIVED classification** — ~~carries `founderReviewFlag: true`~~ **resolved: ACCEPTED by founder ruling (see addendum)**.

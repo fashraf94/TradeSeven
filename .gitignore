@@ -98,3 +98,7 @@ research/**/*.key
 mastery-preflip-census-report.json
 mastery-preflip-approved*.json
 mastery-backfill-report.json
+
+# Composition migration-scan output (B4): dry-run reports are operator-local;
+# the APPLY report is copied into docs/audits/ deliberately, never auto-committed.
+scripts/composition/out/

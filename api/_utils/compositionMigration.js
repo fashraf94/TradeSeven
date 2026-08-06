@@ -38,7 +38,7 @@
 
 import { checkCandidatePairing, resolveNarrowedDomains, isDomain } from './compositionEnforcement.js';
 import { getCandidateCompatCell } from '../../src/data/archetypeCompatibilityCandidate.js';
-import { buildEntryKey } from './compositionStateResolver.js';
+import { buildEntryKey, resolveEffectiveConfig } from './compositionStateResolver.js';
 import { projectActiveRules } from './projectActiveRules.js';
 
 /** Nearest-bound clamp for range/floor domains over a numeric(-string) value. */
@@ -264,6 +264,27 @@ export function scanAgentForResiduals({ agent, ruleDocs = [], bundles = [] }) {
   return projectedViolations({ agent, ruleDocs, bundles })
     .filter((v) => v.kind === 'core_conflict' || v.kind === 'param_out_of_domain')
     .map(({ doc, hosting, ...v }) => v);
+}
+
+/**
+ * THE resolve-then-scan composition (founder dry-run fix, Aug 6 2026): apply
+ * the planned overlay to EVERY record class — agent doc, rule docs, AND bundle
+ * snapshots — then scan the resolved view. The first dry-run's runner rebuilt
+ * this composition inline and passed RAW pre-overlay ruleDocs, so all 9
+ * reported residuals were phantoms mapping 1:1 to planner ruleDoc entries.
+ * One shared helper, two callers (the A10 battery rows and migration-scan.js),
+ * so the reporter can never again drift from the tested path.
+ */
+export function scanResidualsAfterPlan({ agent, ruleDocs = [], bundles = [], entries = [] }) {
+  const baseDocs = { [agent.docPath]: agent };
+  for (const b of bundles) baseDocs[b.docPath] = b;
+  for (const r of ruleDocs) baseDocs[r.docPath] = r;
+  const { effectiveDocs } = resolveEffectiveConfig({ baseDocs, overlayEntries: entries });
+  return scanAgentForResiduals({
+    agent: effectiveDocs[agent.docPath],
+    ruleDocs: ruleDocs.map((r) => effectiveDocs[r.docPath]),
+    bundles: bundles.map((b) => effectiveDocs[b.docPath]),
+  });
 }
 
 export { resolveNarrowedDomains, isDomain };

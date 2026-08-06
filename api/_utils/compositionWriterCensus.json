@@ -44,7 +44,7 @@
       "file": "api/agent/decide.js",
       "site": "activeRules projection write (~:280, skipped when activeBattleId set)",
       "classification": "DERIVED, transitively fenced — projectActiveRules is a pure function of rules docs + non-archived bundles (status/ruleIds/ruleHardness/name) + agent.equippedTraits — ALL epoch-fenced stores — and the written value additionally passes through resolveForDeploy, which is pure and REMOVAL-ONLY (it can never add content); a window write can only re-derive values the frozen inputs imply. The residual scan reads authority stores through the resolver, never activeRules (census host A: derived). FENCED FILE — a literal in-file check is the optional PR-4 sanctioned-entry splice, not a PR-2 edit.",
-      "founderReviewFlag": true
+      "founderRuling": "ACCEPTED — founder ruling Aug 6, 2026 (D1 ratification message): the DERIVED classification stands; no PR-4 splice required (remains available). Review flag resolved."
     }
   ],
   "noopClasses": [

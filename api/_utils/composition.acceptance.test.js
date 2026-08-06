@@ -15,7 +15,7 @@ import {
   resolveEffectiveConfig, applyFieldValue, buildEntryKey, computeOverlayContentHash,
 } from './compositionStateResolver.js';
 import {
-  planAgentMigration, scanAgentForResiduals, clampToDomain, resolveEnumReplacement,
+  planAgentMigration, scanAgentForResiduals, scanResidualsAfterPlan, clampToDomain, resolveEnumReplacement,
 } from './compositionMigration.js';
 import { validateWriteEpochInTx, assertWriteEpochOpen, EpochClosedError } from './compositionWriteEpoch.js';
 import { buildIdentityMigrationFeedEntries, projectIdentityMigrationFeed } from './identityMigrationFeed.js';
@@ -190,19 +190,40 @@ describe('A9 — migration is idempotent and logs once', () => {
 });
 
 describe('A10 — post-apply residual scan is zero (planner and scanner share one kernel)', () => {
-  it.each([['momentum_chaser fleet', mcAgentFixture], ['degen fleet', degenAgentFixture]])('%s scans clean after resolve', (_n, fixture) => {
+  it.each([['momentum_chaser fleet', mcAgentFixture], ['degen fleet', degenAgentFixture]])('%s scans clean after resolve — through the SHARED helper the runner calls', (_n, fixture) => {
     const fx = fixture();
     const { entries } = planAgentMigration({ ...fx, migrationRunId: 'run-1' });
+    expect(scanResidualsAfterPlan({ ...fx, entries })).toEqual([]);
+  });
+
+  it('reporter regression (founder dry-run, Aug 6): a ruleDoc-clamped agent scans clean through the helper — and the phantom shape (raw pre-overlay ruleDocs) provably does NOT', () => {
+    // The first dry-run's runner rebuilt the resolve-then-scan composition
+    // inline and fed RAW ruleDocs: all 9 reported residuals were phantoms
+    // mapping 1:1 to planner ruleDoc entries. The helper is now the one path.
+    const fx = mcAgentFixture(); // alloc-sector-cap pct:90 vs domain {40..80} → ruleDoc clamp entry
+    const { entries } = planAgentMigration({ ...fx, migrationRunId: 'run-1' });
+    expect(entries.some((e) => e.host === 'ruleDoc')).toBe(true); // the defect's trigger class is present
+    expect(scanResidualsAfterPlan({ ...fx, entries })).toEqual([]);
+
+    // The defect, reproduced: same resolved agent+bundles, raw ruleDocs —
+    // the planned clamp re-reports as a phantom. This row is what makes the
+    // helper's ruleDocs mapping mutation-sensitive.
     const baseDocs = { [fx.agent.docPath]: fx.agent };
     for (const b of fx.bundles) baseDocs[b.docPath] = b;
     for (const r of fx.ruleDocs) baseDocs[r.docPath] = r;
     const { effectiveDocs } = resolveEffectiveConfig({ baseDocs, overlayEntries: entries });
-    const residuals = scanAgentForResiduals({
+    const phantoms = scanAgentForResiduals({
       agent: effectiveDocs[fx.agent.docPath],
-      ruleDocs: fx.ruleDocs.map((r) => effectiveDocs[r.docPath]),
+      ruleDocs: fx.ruleDocs, // RAW — the dry-run reporter's bug
       bundles: fx.bundles.map((b) => effectiveDocs[b.docPath]),
     });
-    expect(residuals).toEqual([]);
+    expect(phantoms.some((v) => v.kind === 'param_out_of_domain' && v.ruleId === 'alloc-sector-cap')).toBe(true);
+  });
+
+  it('an actually-UNPLANNED violation still fails the resolved-view scan (the helper cannot blanket-suppress)', () => {
+    const fx = degenAgentFixture(); // r-09 core_conflict for degen
+    const residuals = scanResidualsAfterPlan({ ...fx, entries: [] }); // no plan applied
+    expect(residuals.some((v) => v.kind === 'core_conflict' && v.ruleId === 'r-09')).toBe(true);
   });
 });
 
