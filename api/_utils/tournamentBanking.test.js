@@ -721,17 +721,46 @@ describe('computeBankingUpdate — L-B Guard 1: never banks past WEEK_DAYS_REQUI
       // reaches bankGroup, which clamps. The signal must NAME the group and say
       // the finalizer appears stalled — a silent skipped++ is what bought three
       // days of blindness (founder ruling R-1).
+      //
+      // Review B-F1 (de-vacuation): the fixture id must NOT contain the asserted
+      // words, and the assertions run on the CLAMP LINE ONLY — the makeDb fake
+      // makes fetchGroupAgentScores throw, whose (pre-existing, unrelated)
+      // console.error names the group too and was pre-satisfying the id check.
       const stalled = bankedThroughDay(5, {
         players: battleGroup().players.map(p => ({ ...p, picks: [] })),
       });
-      const { db, captured } = makeDb({ groupDoc: stalled, queryDocs: [{ id: 'g-stalled', data: stalled }] });
+      const { db, captured } = makeDb({ groupDoc: stalled, queryDocs: [{ id: 'g-full-week', data: stalled }] });
       const summary = await bankAllTournamentGroups(db, { now: NOW });
       expect(summary.skipped).toBe(1);
       expect(captured.updates).toHaveLength(0);
+      const clampLines = errSpy.mock.calls
+        .map(args => args.join(' '))
+        .filter(line => line.includes('week_complete_clamp'));
+      expect(clampLines).toHaveLength(1);         // exactly one signal per clamped group
+      expect(clampLines[0]).toContain('g-full-week');       // names the group (R-1: actionable)
+      expect(clampLines[0]).toContain('appears STALLED');   // states the condition, verbatim
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it('R-1 negative lock (review B-F2): a routine already_recorded skip stays SILENT — no stalled-finalizer line', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // Same-day re-run: day5 banked TODAY → bankGroup skips already_recorded.
+      // The stalled signal must fire on week_complete_clamp ONLY — paging
+      // "finalizer STALLED" on every nightly re-run would bury the real signal
+      // (the mutant `result.skipped → log` survived without this row).
+      const rerun = bankedThroughDay(5, {
+        players: battleGroup().players.map(p => ({ ...p, picks: [] })),
+      });
+      rerun.dailyScores.day5.recordedDate = ET_DATE; // banked today
+      const { db } = makeDb({ groupDoc: rerun, queryDocs: [{ id: 'g-rerun', data: rerun }] });
+      const summary = await bankAllTournamentGroups(db, { now: NOW });
+      expect(summary.skipped).toBe(1);
       const logged = errSpy.mock.calls.map(args => args.join(' ')).join('\n');
-      expect(logged).toContain('g-stalled');
-      expect(logged).toContain('week_complete_clamp');
-      expect(logged.toLowerCase()).toContain('stalled');
+      expect(logged).not.toContain('week_complete_clamp');
+      expect(logged).not.toContain('STALLED');
     } finally {
       errSpy.mockRestore();
     }

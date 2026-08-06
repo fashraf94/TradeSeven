@@ -1423,11 +1423,15 @@ describe('isoWeekString (relocated from the dev seeder — one home, BUILD_RULES
 
 const ZOMBIE_SEAT = '7ML6i7WyfuaAtJjl16Smh2kETPw1';
 
-/** The real zombie doc shape: day1–day8 present, day5 = the week's result. */
+/** The real zombie doc shape: day1–day8 present, day5 = the week's result.
+ * recordedDates follow the real cohort's trading calendar (fired Wed 2026-07-22:
+ * days 1–5 = Wed–Tue 22,23,24,27,28; zombie days 6–8 = 29,30,31 — review B's
+ * chronology note). */
 function zombieGroup({ day5Carried = false, day8Carried = false } = {}) {
+  const ZOMBIE_DATES = { 1: '2026-07-22', 2: '2026-07-23', 3: '2026-07-24', 4: '2026-07-27', 6: '2026-07-29', 7: '2026-07-30' };
   const filler = (n) => ({
     closeScores: { [ZOMBIE_SEAT]: { totalPoints: -10 * n, agentPoints: -5 * n, compositePoints: -20 * n } },
-    recordedDate: `2026-07-2${n}`,
+    recordedDate: ZOMBIE_DATES[n],
   });
   return {
     status: 'voided',
@@ -1531,8 +1535,20 @@ describe('L-B Guard 2 — live derivation is UNCLAMPED (the crux non-regression)
     expect(deriveCurrentTradingDay(day3, '2026-08-06')).toBe(4);
   });
 
-  it('isWeekBanked stays clamp-neutral: true at day 5 and on the zombie, false mid-week', () => {
+  it('isWeekBanked reads the clamped entry (review A-F1): true on the zombie (day5 exists), false mid-week', () => {
     expect(isWeekBanked(zombieGroup())).toBe(true);
     expect(isWeekBanked({ dailyScores: { day3: { closeScores: {}, recordedDate: 'x' } } })).toBe(false);
+  });
+
+  it('A-F1: the only-day6+ shape reads banking-PENDING, so the §7.2 pipeline can never lock its zeros', () => {
+    // Review finding A-F1 (executed repro): unclamped, isWeekBanked said true
+    // (7 ≥ 5) while the clamped readers said "no in-week result" — the two
+    // halves of the advancement gate disagreed, and lockTopTwo would have
+    // permanently locked an all-zero result. Clamped, gate and readers share
+    // ONE definition of the week's final snapshot: no in-week day → not banked
+    // → a loud, recoverable banking-pending pause (over-blocking is
+    // recoverable; permitting is not — the F-1 rationale, completed).
+    const only7 = { dailyScores: { day7: { closeScores: {}, recordedDate: 'x', agentScoresCarried: true } } };
+    expect(isWeekBanked(only7)).toBe(false);
   });
 });
