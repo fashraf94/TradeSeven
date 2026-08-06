@@ -49,3 +49,42 @@ Category prefixes reserved: `rsk_ xst_ alc_ tec_ fun_ mid_ gst_ thr_ tir_ ins_ e
 **C-12 (RATIFIED):** BATTLE_STATE signal class — `sourceClass: BATTLE_STATE · scope: battle|season · availabilityStatus: VERIFIED|FIELD_UNVERIFIED · verificationRef: file:line|null`. Bare [B]/[B-season] notation means FIELD_UNVERIFIED unless a verificationRef is supplied; [B-season] is a scope, never a separate class. Compat cells may not cite FIELD_UNVERIFIED battle-state fields (the C-10 mirror).
 
 **C-13 (PROMOTED from C-11 — schema amendment, binding BEFORE compat-cell authoring):** clause-level signal dependencies. `requiredSignals` splits into **primary / secondary / exception** dependency tiers with per-tier missing-data behavior: missing secondary or exception data disables *that clause only*, never the primary mechanism (the mb-10/mb-11/gs-06/ss-02 pattern; f-13 was the first sighting). Recurrence condition met per Batch 5 R1; full-corpus retrofit happens per-rule at cell authoring, with the four Batch-5 exemplars retrofitted in the batch itself as first clients.
+
+
+---
+
+## V1.2.4 Addendum (Jul 25 — Signal Inventory V2 ratifications-pending; binding on cell authoring, line-itemed in the first cell-batch review)
+
+**C-14 (status enum extension):** `VERIFIED (unwired)` — real, computed, persisted; no agent decision path reads it. Cells may NOT cite an unwired row as available evidence; metadata may reference it with status disclosed. Neither VERIFIED nor ABSENT expresses this truthfully. First clients: SIG-021…028, SIG-042 siblings (the `peerRankings` family).
+
+**C-15 (dormant-path marking):** signals and predicates on the de-registered season evaluation path (SIG-029/036/037, the `seasonRuleRegistry` deterministic predicates, pit-stop state) are **DORMANT, not absent** — code-complete, unreachable at HEAD (Finding E, commit `d80aee25`). Cells citing them carry `pathStatus: dormant` and become live only on re-registration (a founder-gated scheduling decision, ~2 cron slots after the §6 pit-stop consolidation).
+
+**C-16 (path-naming rule):** there is no single eval context — four assembly paths carry different fields (battle eval · BaggerBomb portfolio construction · tournament draft board · season daily eval). **Every compat cell citing signal availability names its path.** Notable asymmetries now verified: the draft board is institutionally and FantasyTimes-blind; the Sonnet shortlist call never receives the institutional block (weight-not-admit); VWAP is held-positions/exit-side only.
+
+**C-17 (emergency-path statement):** `pickEmergencyReplacement` is signal-free (cooldown + asset-type filter, sorted by daily change alone) and emergency reasons bypass the hurdle and the swap-window cap. **Every cell asserting swap-in quality states its emergency-path behavior explicitly** — silence would re-create the exact promise-vs-machinery gap this program exists to close.
+
+**C-18 (evidence-hygiene rules, from the author traps):** prompt prose, Forge rule text, and configuration sliders are never evidence of a signal (Finding B) · `technicalScore` is not sector-neutral (sectorRS is 15/100 of it — citing both double-counts) · null-laundering: `?? 50` composites make missing data look neutral — never treat a mid-range composite as proof its inputs existed · the rounding seam: bind boundary-valued predicates to ONE rendering (draft rounds, eval doesn't) · `arch_scores` is persisted but agent-invisible (rank-time recompute is what agents see) · the DR-13 identity block carries nothing until its flag flips — cells resting on that carrier are resting on a deliberately-dark wire and say so.
+
+
+---
+
+## V1.2.5 Addendum (Jul 25 — founder rulings)
+
+**C-19 (FOUNDER RULING — SEASON MODE SCRAPPED):** season mode was deliberately scrapped in favor of league/flagship games and is not planned. The Jun-4 cron de-registration stands as the permanent state; the dormancy finding resolves as *intended, now formalized*. Consequences: (a) the **26 season-only templates** (`sx-*`, `se-*`, `sr-*`, `ss-*`) are `status: mode_scrapped` — metadata retained as record, excluded from every equip surface, **their compat cells are permanently out of scope** (they were already outside the 702 gate); (b) the `seasonRuleRegistry` deterministic predicates, SIG-029/036/037, and the pit-stop machinery are formally dead, not dormant-pending; (c) formal-shelving hygiene rides a docs PR: correct the falsified schedule comment (`season-daily-evaluate.js:9-11`), note the ruling in BUILD_RULES, leave handler deletion as optional cleanup. **Nuance preserved:** the three verified deterministic mechanisms (stop %, trailing %, sector cap) are **dimension-bridge features live in battles** — user strategy-lab dimensions, not corpus-rule equips — and are wholly unaffected by season's death.
+
+**C-20 (FOUNDER RULING — THE RULE HONESTY GATE):** *"Only support and display rules that can actually be detected, verified, and enforced."* Elevated from authoring convention to product policy. Operationalized by the Rule Support Triage (companion document): every template classified by real substrate; ABSENT-signal rules are hidden or their substrate is built; prompt prose claiming nonexistent indicators is corrected; expansion arcs (institutional depth, added indicators/timeframes) proceed where build cost is low.
+
+
+---
+
+## V1.2.6 Addendum (Jul 31 — C-21, promoted to guide level at the C6 closure)
+
+**C-21 · THE ACTION-PRECEDENCE CONTRACT (binding on all cell authoring; carried in every batch authority line as `conventions C-13…C-18, C-21`).**
+
+> **Deterministic risk lines preempt advisory rules, always.** The engine's guardrail pass and `pickEmergencyReplacement` run *after* the model's decision and read no equipped-rule text. No advisory instruction — however absolute its wording, and regardless of whether it carries a carve-out — can suppress a stop-loss, a trailing-stop breach, a sector-cap block, or a bust-avoidance exit.
+
+**What this means for authoring:**
+1. **Compatibility evaluates advisory behavior only**, after deterministic platform and guardrail precedence has been applied. A rule cannot be graded as though it overrides a mechanism the runtime never lets it reach.
+2. **A rule-level swap-block still binds the model's discretionary behavior** — profit-side exits, thesis-completion exits, opportunity-cost rotations, and discretionary swaps. That is where the kernels' exit doctrines mostly live, so swap-blocks are graded on *that* surface rather than dismissed as harmless.
+3. **The absence of a carve-out proves nothing about protection.** (Origin: C6 V1.0 graded `mb-08` as a Guardian core_conflict for lacking an exception while grading `mb-10` neutral for having a narrow one — two readings of one unstated contract.)
+4. **Receipts and tests:** a receipt may claim an advisory instruction was *rendered*; it may never claim a guardrail value changed. Acceptance tests verify prompt rendering and behavioral interpretation, never deterministic guardrail mutation.
