@@ -67,6 +67,15 @@ export const GENERATION_SURFACE = Object.freeze([
   // (rankingConfig precedent: file-level inclusion would reset gateEpoch on
   // every annual calendar refresh); flagged in the arc build report.
   'api/_utils/econPrintVerifier.js',
+  // exaCatalystFetch (Alex Catalyst Confirmation F2): buildRetrievalChannels /
+  // renderRetrievalChannelsBlock render the [ATTRIBUTION]/[CONTEXT] block that
+  // is spliced into Alex's userMessage UNCONDITIONALLY (even EXA flag-off), so
+  // its static template is generation-bearing prompt text — a reword must force
+  // a WIRE_GENERATION_VERSION bump (the ingestedClaims false-negative class).
+  // The EXA transport (helpers/exaClient.js) and the runtime query/results are
+  // deliberately NOT listed: retrieval output is runtime data (the sonar.js
+  // precedent), the manifest blind spot.
+  'api/_utils/exaCatalystFetch.js',
   'api/_utils/fantasyTimesConsensus.js',
   'api/_utils/fantasyTimesPrompts.js',
   'api/_utils/fantasyTimesTickers.js',

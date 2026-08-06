@@ -1200,6 +1200,20 @@ export const WIRE_NEWSLINE_ENABLED = false;
  * (Pushed ≠ deployed).
  */
 export const EDITORIAL_REVIEW_ENABLED = false;
+
+/**
+ * Alex Catalyst Confirmation mini-arc (spec V1.1) — F2 EXA supplementary
+ * retrieval. When TRUE, the confirmed-mover path fetches EXA /search evidence
+ * alongside the existing Sonar/validated-catalyst context and presents both as
+ * tagged [ATTRIBUTION]/[CONTEXT] channels. FALSE = the EXA client is never
+ * called and the mover prompt is byte-identical to the Sonar-only path — F1+F3
+ * ship with ZERO EXA dependency (C9). DOWNGRADED per the C9 ruling: EXA is
+ * supplementary context, never a catalyst oracle; the honesty floor is the
+ * expected outcome on fast movers. Flip only after the founder's cost/quality
+ * review; its own one-line PR (Pushed ≠ deployed).
+ */
+export const EXA_RETRIEVAL_ENABLED = false;
+
 /**
  * Archetype Architecture Phase 3 — the DR-13 eval-time archetype identity
  * block (api/_utils/evalIdentityBlocks.js): the six constitution golden

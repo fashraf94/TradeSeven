@@ -24,6 +24,10 @@ import { resolveWireMarketDate } from '../_utils/wireCalendar.js';
 import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
 import { buildContinuityContext } from '../_utils/wireContinuity.js';
 import { recordWireSample } from '../_utils/wireMetrics.js';
+import { lintStoryUnits } from '../_utils/unitsLint.js';
+import { buildMoverDataSnapshot } from '../_utils/moverTypedFacts.js';
+import { fetchExaCatalystChannels, buildRetrievalChannels, renderRetrievalChannelsBlock } from '../_utils/exaCatalystFetch.js';
+import { EXA_RETRIEVAL_ENABLED } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 30 };
 
@@ -55,11 +59,11 @@ function classifyBaggerTier(atrMultiple, direction) {
   return 'none';
 }
 
-function getBaggerPoints(tier) {
-  const pts = { bagger: '+15', double_bagger: '+30', ten_bagger: '+50',
-                bust: '-10', crash: '-20', meltdown: '-35' };
-  return pts[tier] || '0';
-}
+// NOTE (F3): the former getBaggerPoints() injected a numeric point value
+// (crash: '-20', …) into the prompt — the exact operand that produced the
+// "Wiping $20 BaggerBomb Points" defect. Point impact is battle-relative and
+// per-player, unknowable at generation time, so NO point value is ever handed
+// to the model. Removed on purpose; game relevance is qualitative-only.
 
 /**
  * Core mover story generation logic. Used by the HTTP handler and scan-movers.js.
@@ -117,22 +121,27 @@ export async function generateAlexMoverStory({
   const shortCompanyName = STOCK_DATA[upperSymbol]?.shortName || companyName || upperSymbol;
   let catalystData;
   let validatedSource;
+  let validatedConfidence = null;
   try {
     const cached = await getValidatedCatalyst(upperSymbol);
     if (cached && cached.confidence !== 'low') {
       catalystData = { catalysts: cached.catalyst, headlines: [], raw: cached.catalyst, citations: [], fallback: false };
       validatedSource = `validated_${cached.source}`;
+      validatedConfidence = cached.confidence;
       logInfo('Step 3: Using validated cache', { source: cached.source, confidence: cached.confidence });
     } else {
       const validated = await validateAndCacheCatalyst(upperSymbol, companyName, resolvedDir, percentChange);
       catalystData = { catalysts: validated.catalyst, headlines: [], raw: validated.catalyst, citations: [], fallback: false };
       validatedSource = `validated_${validated.source}`;
+      validatedConfidence = validated.confidence;
       logInfo('Step 3: Validated catalyst', { source: validated.source, confidence: validated.confidence, agreement: validated.agreementScore });
     }
   } catch (err) {
     logError('Validated cache failed, falling back to direct fetch', { error: err.message });
     catalystData = await fetchTickerCatalysts(upperSymbol, companyName, percentChange, resolvedDir);
     validatedSource = catalystData.fallback ? 'eodhd' : 'sonar';
+    // Direct Sonar success is not corroborated → context-grade, never headline.
+    validatedConfidence = null;
   }
 
   // ── Load knowledge context (Tier 1 stocks) ─────────────────────
@@ -157,6 +166,40 @@ export async function generateAlexMoverStory({
     logError('Consensus read failed (non-blocking)', { error: err.message });
   }
 
+  // ── Retrieval channels (F2, downgraded per C9): tag evidence as
+  //    [ATTRIBUTION] (concrete, trigger-day-dated) vs [CONTEXT] (color only).
+  //    The tag is the structural signal the headline rule keys off. EXA is
+  //    flag-gated + supplementary; the honest floor holds when attribution is
+  //    empty (the expected outcome on a fast mover). Never blocks the write.
+  const catalystMarketDate = new Date().toISOString().split('T')[0];
+  let exaChannels = null;
+  if (EXA_RETRIEVAL_ENABLED) {
+    try {
+      exaChannels = await fetchExaCatalystChannels({
+        symbol: upperSymbol,
+        companyName: shortCompanyName,
+        direction: resolvedDir,
+        marketDate: catalystMarketDate,
+      });
+      logInfo('Step 3b: EXA channels', {
+        attribution: exaChannels.attribution.length,
+        context: exaChannels.context.length,
+        degraded: exaChannels.degraded,
+      });
+    } catch (err) {
+      logError('EXA channel fetch failed (non-blocking)', { error: err.message });
+    }
+  }
+  const channels = buildRetrievalChannels({
+    validatedCatalyst: catalystData.catalysts,
+    validatedConfidence,
+    exaChannels,
+  });
+  if (!catalystData.catalysts && Array.isArray(catalystData.headlines)) {
+    for (const h of catalystData.headlines) channels.context.push({ source: 'eodhd', snippet: String(h) });
+  }
+  const retrievalBlock = renderRetrievalChannelsBlock(channels);
+
   // ── Build user message ──────────────────────────────────────────
   let userMessage = [
     `STOCK MOVE ALERT:`,
@@ -169,14 +212,9 @@ export async function generateAlexMoverStory({
     `- [INTERNAL - do not mention in story] Volatility Multiple: ${Number(atrMultiple).toFixed(1)}x`,
     `- Sector: ${sector}`,
     '',
-    `NEWS & CATALYST CONTEXT FOR ${upperSymbol}:`,
-    catalystData.catalysts
-      ? catalystData.catalysts
-      : catalystData.headlines.length > 0
-        ? catalystData.headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')
-        : 'No recent catalyst context available. Focus on technicals.',
+    retrievalBlock,
     '',
-    'Use this context to explain WHY the stock moved. Be specific about the actual catalysts — name court cases, executive actions, policy changes, analyst upgrades/downgrades, or company announcements. Do not default to generic macro narratives if specific catalysts are available.',
+    'Attribute the move in your HEADLINE only to an [ATTRIBUTION]-tagged item above. If [ATTRIBUTION] is empty, keep the honest "no clear catalyst identified" framing and lead with the technicals — that is the correct call on a fast move, not a gap to fill. A [CONTEXT] item is color only; it never drives the headline.',
     '',
     knowledgeExcerpt ? `COMPANY CONTEXT:\n${knowledgeExcerpt}\n` : '',
     `Write a Market Pulse story about this move. Use the publish_story tool.`,
@@ -207,8 +245,8 @@ export async function generateAlexMoverStory({
 - Tier: ${baggerTier}
 - [INTERNAL] Volatility Multiple: ${Number(atrMultiple).toFixed(1)}x
 - Direction: ${resolvedDirection}
-${baggerTier !== 'none' ? `- Points: ${getBaggerPoints(baggerTier)}` : '- No threshold crossed yet'}
-Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool call.`;
+${baggerTier !== 'none' ? '- This move clears the tier above.' : '- No threshold crossed yet'}
+POINTS/UNITS RULE: game relevance is QUALITATIVE only. Never state a numeric point value (point impact is battle-relative and per-player, unknowable here) and never attach a currency symbol to points. Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool call.`;
 
   // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ────────────────────────
   // Flags OFF appends '' and passes the pristine tool singleton by
@@ -284,9 +322,46 @@ Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool ca
     console.error('[CONSENSUS] Interceptor error (non-blocking):', err.message);
   }
 
+  // ── Publish interceptor — deterministic units/points belt (F3) ──
+  // Two held patterns; a match holds + logs `units_collision`, same posture as
+  // the earnings interceptor / operand_implausible. Catches what no prompt
+  // rule can guarantee: a currency symbol fused to points, or any numeral bound
+  // to "BaggerBomb points" (the original defect, both halves).
+  const unitsCheck = lintStoryUnits({
+    headline: storyData.headline,
+    subheadline: storyData.subheadline,
+    body: storyData.body,
+    pullquote: storyData.pullquote,
+  });
+  if (unitsCheck.held) {
+    console.warn(`[UNITS] HELD Alex mover ${upperSymbol}: units_collision`, JSON.stringify(unitsCheck.violations));
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await db.collection('fantasyTimesSuppressions').doc(today).set({
+        [String(Date.now())]: {
+          reporter: 'alex',
+          ticker: upperSymbol,
+          code: 'units_collision',
+          violations: unitsCheck.violations,
+          headline: storyData.headline,
+          body: storyData.body,
+          suppressedAt: new Date().toISOString(),
+        },
+      }, { merge: true });
+    } catch (suppErr) {
+      console.error('[UNITS] Failed to log suppression:', suppErr.message);
+    }
+    return { success: false, reason: 'units_collision', violations: unitsCheck.violations };
+  }
+
   // ── Write to Firestore ──────────────────────────────────────────
   const now = new Date();
   const expiresAt = new Date(now.getTime() + REPORTER_PROFILES.alex.expiryHours * 60 * 60 * 1000);
+
+  // C1(i): the typed price snapshot is built by a constructor whose signature
+  // CANNOT receive the retrieval payload — retrieval (catalystData) is merged
+  // only into the prompt/newsContext, strictly downstream of this call.
+  const dataSnapshot = buildMoverDataSnapshot({ currentPrice, priceChange, percentChange, atrMultiple, direction });
 
   const storyDoc = {
     reporter: 'alex',
@@ -306,13 +381,7 @@ Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool ca
     pullquote: typeof storyData.pullquote === 'string' && storyData.pullquote.length > 5
       ? storyData.pullquote.slice(0, 80) : null,
     baggerTier: baggerTier,
-    dataSnapshot: {
-      price: Number(currentPrice),
-      change: Number(priceChange),
-      percentChange: Number(percentChange),
-      atrMultiple: Number(atrMultiple),
-      direction: direction || (percentChange >= 0 ? 'up' : 'down'),
-    },
+    dataSnapshot,
     newsContext: catalystData.raw || catalystData.headlines,
     catalystSource: validatedSource || (catalystData.fallback ? 'eodhd' : 'sonar'),
     generatedBy: REPORTER_PROFILES.alex.model,

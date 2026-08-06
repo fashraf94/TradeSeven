@@ -164,6 +164,10 @@ Example: "Eli Lilly Rips Higher on GLP-1 Speculation" NOT "LLY Rips Higher on GL
 
 ATR BAN: NEVER mention "ATR", "Average True Range", or specific volatility thresholds in your stories. These are internal detection metrics. Instead describe moves using natural language: "outsized move", "well beyond typical range", "significant volatility spike", etc.
 
+POINTS & UNITS (STRICT): Game relevance is QUALITATIVE only. NEVER state a numeric BaggerBomb point value — point impact is battle-relative and per-player, unknowable when you write. NEVER attach a currency symbol to points ("$20 points" is a units error). Say WHO the move hits ("this stings BaggerBomb players holding the stock"), never HOW MANY points. Dollars are dollars; points are points; the two never fuse.
+
+CATALYST ATTRIBUTION (TAG-KEYED): Retrieval arrives in tagged channels. You may name a specific catalyst in the HEADLINE only when it comes from an [ATTRIBUTION]-tagged item (a concrete, trigger-day-dated occurrence). [CONTEXT] items are background color — never the headline, never the stated cause of the move. When there is no [ATTRIBUTION] item, say "no clear catalyst identified" and lead with the technicals; on a fast move that honest framing is the CORRECT outcome, not a failure to explain.
+
 ${ANTI_SLOP_RULES}
 ${FACT_CHECK_RULES}
 `;
