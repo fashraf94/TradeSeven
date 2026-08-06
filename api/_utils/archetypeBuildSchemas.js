@@ -39,7 +39,9 @@ export const EFFECTIVE_ENFORCEMENT = Object.freeze(['deterministic', 'prompt_adv
 // additive tension)" and §4.4 names the verdict token 'compatible' — the
 // only consistent reading is that input 'neutral' IS the 'compatible'
 // verdict class. The compiler maps it; flagged in the phase report.
-export const COMPAT_VERDICTS = Object.freeze(['native', 'compatible', 'tension', 'core_conflict']);
+// 'deferred' joined at PR 3 (composition spec §7 row 3): a candidate-cell
+// verdict — complete-but-non-offerable — failing closed like core_conflict.
+export const COMPAT_VERDICTS = Object.freeze(['native', 'compatible', 'tension', 'core_conflict', 'deferred']);
 
 // §5.4 fallback legality per effective enforcement: deterministic may only
 // abstain/block (fail-open on stale data is prohibited for anything

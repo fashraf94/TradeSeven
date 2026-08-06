@@ -39,3 +39,13 @@ export const COMPOSITION_EPOCH_FENCE_ENABLED = false;
  * projector returns [] regardless of stored candidate feed entries.
  */
 export const COMPOSITION_MIGRATION_FEED_ENABLED = false;
+
+/**
+ * PR 3 — the CompiledBuild candidate-identity boundary (spec §7 row 3; ledger
+ * A7/A15). false — DEFAULT: the compiler resolves compat cells from the
+ * LEGACY map exactly as before (byte-identical builds); the candidate
+ * registry, deferred vocabulary, advisory/narrowedParams carriage, and the
+ * quarantine disposition all activate only when this flips (PR-4 runbook,
+ * after the A48 activation record exists).
+ */
+export const COMPOSITION_COMPILED_IDENTITY_ENABLED = false;

@@ -32,6 +32,8 @@ import {
   FORGE_RULE_TEMPLATES,
 } from '../../src/data/forgeKnowledgeBase.js';
 import { getRuleCompatInfo } from '../../src/data/archetypeRuleCompatibility.js';
+import { getCandidateCompatCell, toCompilerCompatCell } from '../../src/data/archetypeCompatibilityCandidate.js';
+import { COMPOSITION_COMPILED_IDENTITY_ENABLED } from './compositionConfig.js';
 import { compileBuild } from './compileBuild.js';
 import { buildPlatformGuardrails } from './platformGuardrails.js';
 import {
@@ -82,12 +84,21 @@ function metadataForRule(ruleId) {
  * so manual/free-text rules (sourceRef null, outside the map) correctly land
  * there without leaking a spurious neutral.
  */
-export function resolveEquippedCompatCells(bundles, archetype) {
+export function resolveEquippedCompatCells(bundles, archetype, {
+  // PR 3 (spec §7 row 3): the CANDIDATE registry becomes the compat source
+  // when the compiled-identity flag lights. toCompilerCompatCell(null) is
+  // null, and compileBuild treats a null cell as ABSENCE (A-4) — so a rule
+  // outside the candidate universe (manual free-text) lands compat_cell_missing
+  // under either source. Dark (default): the legacy map, byte-identical.
+  candidateMode = COMPOSITION_COMPILED_IDENTITY_ENABLED,
+} = {}) {
   const compatCells = {};
   for (const bundle of bundles ?? []) {
     for (const snap of bundle.ruleSnapshots ?? []) {
       if (!snap?.id || compatCells[snap.id] !== undefined) continue;
-      compatCells[snap.id] = getRuleCompatInfo(snap.sourceRef, archetype);
+      compatCells[snap.id] = candidateMode
+        ? toCompilerCompatCell(getCandidateCompatCell(snap.sourceRef, archetype))
+        : getRuleCompatInfo(snap.sourceRef, archetype);
     }
   }
   return compatCells;
