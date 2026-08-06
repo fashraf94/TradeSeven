@@ -9,12 +9,23 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { STOCK_DATA } from '../_utils/stockIntelligenceData.js';
 import { FANTASYTIMES_TICKERS, SECTOR_MAP } from '../_utils/fantasyTimesTickers.js';
 import { generateAlexMoverStory } from './generate-mover.js';
-import { appendCatalyst } from '../_utils/fantasyTimesConsensus.js';
+import {
+  recordCandidate,
+  consumeCandidate,
+  tickPendingCandidate,
+  listPendingCandidates,
+  reSatisfiesTrigger,
+  CANDIDATE_STATUS,
+  DEFAULT_EXPIRY_TICKS,
+} from '../_utils/moverCandidates.js';
 
 export const config = { maxDuration: 60 };
 
 const LOG_PREFIX = '[FantasyTimes:ScanMovers]';
-const MOVE_THRESHOLD_PCT = 3; // 3% intraday move triggers a story
+// 3% intraday move arms an Alex candidate. Two-tick confirmation (F1): tick T
+// records the candidate; the NEXT scan pass (T+1, 15 min later) re-checks the
+// move against this same threshold and only then retrieves + writes.
+export const MOVE_THRESHOLD_PCT = 3;
 const QUOTE_FETCH_TIMEOUT_MS = 5000;
 const QUOTE_FETCH_CONCURRENCY = 8;
 
@@ -74,6 +85,139 @@ function getStartOfTodayET() {
   return new Date(etNow + diff);
 }
 
+/**
+ * The two-tick mover scan core (F1). Pure of HTTP + real I/O — every external
+ * effect is injected — so the acceptance rows (R1/R1a/R2/R3) drive it directly.
+ *
+ * One invocation plays BOTH roles: it consumes last tick's pending candidates
+ * (the T+1 pass) and arms this tick's fresh movers (the T pass). Consumption is
+ * an atomic compare-and-set on candidate state (moverCandidates), so overlapping
+ * invocations confirm a candidate exactly once (A1). The dedup check precedes
+ * retrieval (F1b), so a dedup hit costs ZERO story/model/retrieval calls.
+ *
+ * @param {object} db
+ * @param {object} deps
+ * @param {Array}  deps.quotes — fetchAllQuotes() output ({symbol, ok, data|error})
+ * @param {string} deps.marketDate — 'YYYY-MM-DD' candidate partition key
+ * @param {number} [deps.threshold=MOVE_THRESHOLD_PCT]
+ * @param {(args:object)=>Promise<{success:boolean}>} deps.generateStory — the writer
+ * @param {(symbol:string)=>Promise<boolean>} deps.hasRecentStory — dedup probe
+ * @param {(symbol:string)=>string} [deps.sectorOf]
+ * @param {number} [deps.expiryTicks=DEFAULT_EXPIRY_TICKS]
+ * @param {Date}   [deps.now]
+ * @param {Function} [deps.info] / [deps.error] — loggers
+ */
+export async function runMoverScan(db, {
+  quotes,
+  marketDate,
+  threshold = MOVE_THRESHOLD_PCT,
+  generateStory,
+  hasRecentStory,
+  sectorOf = () => 'Unknown',
+  expiryTicks = DEFAULT_EXPIRY_TICKS,
+  now = new Date(),
+  info = () => {},
+  error = () => {},
+}) {
+  const results = {
+    scanned: 0, moversDetected: 0, candidatesRecorded: 0,
+    confirmed: 0, reverted: 0, expired: 0,
+    storiesGenerated: 0, dedupSkipped: 0, skipped: 0, errors: [],
+  };
+
+  // Fresh T+1 snapshots, keyed by symbol — the ONLY operand source for a write
+  // (C3/R3: the story never describes T's stale tape).
+  const freshBySymbol = new Map();
+  for (const q of quotes) {
+    if (!q.ok) { results.errors.push(`${q.symbol}: ${q.error}`); continue; }
+    results.scanned++;
+    const changeP = parseFloat(q.data.change_p);
+    if (Number.isFinite(changeP)) freshBySymbol.set(q.symbol, { changeP, data: q.data });
+  }
+  const isMover = (symbol) => {
+    const f = freshBySymbol.get(symbol);
+    return !!f && Math.abs(f.changeP) >= threshold;
+  };
+  for (const [, f] of freshBySymbol) if (Math.abs(f.changeP) >= threshold) results.moversDetected++;
+
+  // ── T+1 consumption pass: resolve last tick's pending candidates ──────────
+  const pending = await listPendingCandidates(db, marketDate);
+  for (const cand of pending) {
+    const symbol = cand.symbol;
+    const fresh = freshBySymbol.get(symbol);
+
+    // Could not evaluate this pass (quote error / symbol not scanned) → tick
+    // toward expiry (F1a: `expired` fires only on a skipped pass).
+    if (!fresh) {
+      const t = await tickPendingCandidate(db, { marketDate, symbol, maxTicks: expiryTicks, now });
+      if (t.expired) { results.expired++; info(`candidate_expired: ${symbol}`); }
+      continue;
+    }
+
+    // Whipsaw / partial revert that no longer independently clears the trigger
+    // (F1c) → terminate as reverted, no story (R1c/R2).
+    if (!reSatisfiesTrigger(fresh.changeP, cand.triggerSnapshot, threshold)) {
+      const r = await consumeCandidate(db, { marketDate, symbol, outcome: CANDIDATE_STATUS.REVERTED, reason: 'whipsaw_reverted', now });
+      if (r.won) { results.reverted++; info(`whipsaw_reverted: ${symbol} ${fresh.changeP.toFixed(2)}%`); }
+      continue;
+    }
+
+    // Confirmed. Dedup BEFORE retrieval (F1b) — a hit costs zero API calls.
+    if (await hasRecentStory(symbol)) {
+      const c = await consumeCandidate(db, { marketDate, symbol, outcome: CANDIDATE_STATUS.CONFIRMED, reason: 'dedup_skip', now });
+      if (c.won) { results.dedupSkipped++; info(`dedup_skip (zero retrieval): ${symbol}`); }
+      continue;
+    }
+
+    // Atomic claim — only the winner writes (idempotent under overlap, A1/R1a).
+    const c = await consumeCandidate(db, { marketDate, symbol, outcome: CANDIDATE_STATUS.CONFIRMED, reason: 'confirmed', now });
+    if (!c.won) { info(`consume lost race, skipping: ${symbol}`); continue; }
+    results.confirmed++;
+
+    const close = parseFloat(fresh.data.close) || 0;
+    const previousClose = parseFloat(fresh.data.previousClose) || 0;
+    try {
+      const sr = await generateStory({
+        symbol,
+        currentPrice: close,
+        priceChange: close - previousClose,
+        percentChange: fresh.changeP,           // FRESH T+1 operand (R3)
+        atrMultiple: 1.5,                        // server fallback; no ATR cached
+        direction: fresh.changeP >= 0 ? 'up' : 'down',
+        sector: sectorOf(symbol),
+      });
+      if (sr?.success) { results.storiesGenerated++; info(`wrote story: ${symbol} (${sr.headline || ''})`); }
+      else { results.skipped++; info(`story skipped: ${symbol} (${sr?.reason || sr?.message || 'unknown'})`); }
+    } catch (err) {
+      results.errors.push(`${symbol}: ${err.message}`);
+      error(`generate failed for ${symbol}`, { error: err.message });
+    }
+  }
+
+  // ── T detection pass: arm fresh movers (birth-suppressed) ─────────────────
+  for (const [symbol, fresh] of freshBySymbol) {
+    if (!isMover(symbol)) continue;
+    // Birth-suppression, story half (F1b): a symbol already covered in the
+    // dedup window arms no candidate (and a symbol just confirmed above now
+    // has a story, so the sustained mover pays retrieval exactly once, R1a).
+    if (await hasRecentStory(symbol)) continue;
+    const rec = await recordCandidate(db, {
+      marketDate,
+      symbol,
+      triggerSnapshot: {
+        changePct: fresh.changeP,
+        price: parseFloat(fresh.data.close) || 0,
+        previousClose: parseFloat(fresh.data.previousClose) || 0,
+        detectedAt: (now.toISOString && now.toISOString()) || String(now),
+      },
+      now,
+    });
+    if (rec.created) { results.candidatesRecorded++; info(`candidate armed: ${symbol} ${fresh.changeP.toFixed(2)}%`); }
+  }
+
+  return results;
+}
+
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
     return;
@@ -101,109 +245,51 @@ export default async function handler(req, res) {
   try {
     const db = getFirebaseAdmin();
     const startOfToday = getStartOfTodayET();
-    const results = { scanned: 0, movers: [], storiesGenerated: 0, skipped: 0, errors: [] };
+    const marketDate = new Date().toISOString().split('T')[0];
 
-    // Fetch real-time quotes for all tracked symbols
     logInfo(`Scanning ${FANTASYTIMES_TICKERS.length} symbols for big movers (>=${MOVE_THRESHOLD_PCT}%)`);
-
     const quoteFetchStart = Date.now();
     const quotes = await fetchAllQuotes(FANTASYTIMES_TICKERS);
     console.log(`[SCAN:TIMING] Quote fetch took ${Date.now() - quoteFetchStart}ms (${FANTASYTIMES_TICKERS.length} symbols)`);
 
-    const detectedMovers = [];
-    for (const q of quotes) {
-      if (!q.ok) {
-        logError(`Failed to fetch ${q.symbol}: ${q.error}`);
-        results.errors.push(`${q.symbol}: ${q.error}`);
-        continue;
-      }
-      results.scanned++;
-      const changeP = parseFloat(q.data.change_p);
-      if (isNaN(changeP) || Math.abs(changeP) < MOVE_THRESHOLD_PCT) {
-        continue;
-      }
-      logInfo(`Big mover detected: ${q.symbol} ${changeP >= 0 ? '+' : ''}${changeP.toFixed(2)}%`);
-      results.movers.push({ symbol: q.symbol, changeP });
-      detectedMovers.push({ symbol: q.symbol, changeP, data: q.data });
-    }
+    // Dedup probe — the same per-symbol Alex/today query as before, now shared
+    // by birth-suppression (T) and the pre-retrieval dedup (T+1).
+    const hasRecentStory = async (symbol) => {
+      const q = await db
+        .collection('fantasyTimesStories')
+        .where('primaryTicker', '==', symbol)
+        .where('reporter', '==', 'alex')
+        .where('publishedAt', '>', startOfToday)
+        .limit(1)
+        .get();
+      return !q.empty;
+    };
 
-    const moverProcessingStart = Date.now();
-    for (const { symbol, changeP, data } of detectedMovers) {
-      try {
-        // Write early catalyst to consensus (before Alex's full story)
-        try {
-          const today = new Date().toISOString().split('T')[0];
-          await appendCatalyst(today, symbol, {
-            direction: changeP >= 0 ? 'up' : 'down',
-            percentChange: Math.abs(changeP),
-            atrMultiple: 1.5,
-            catalyst: `${symbol} moved ${changeP >= 0 ? '+' : ''}${changeP.toFixed(1)}% (1.5x ATR) — awaiting Alex's analysis`,
-            source: 'scan_movers',
-            confidence: 'low',
-            reporter: 'system',
-          });
-        } catch (err) {
-          console.error('[CONSENSUS] Failed to append scan-mover catalyst:', err.message);
-        }
-
-        // Dedup: check if Alex already has a story for this symbol today
-        const dedupQuery = await db
-          .collection('fantasyTimesStories')
-          .where('primaryTicker', '==', symbol)
-          .where('reporter', '==', 'alex')
-          .where('publishedAt', '>', startOfToday)
-          .limit(1)
-          .get();
-
-        if (!dedupQuery.empty) {
-          logInfo(`${symbol} already has a story today, skipping`);
-          results.skipped++;
-          continue;
-        }
-
-        // Generate story
-        const close = parseFloat(data.close) || 0;
-        const previousClose = parseFloat(data.previousClose) || 0;
-        const priceChange = close - previousClose;
-        const sector = STOCK_DATA[symbol]?.sector || SECTOR_MAP[symbol] || 'Unknown';
-
-        const storyResult = await generateAlexMoverStory({
-          symbol,
-          currentPrice: close,
-          priceChange,
-          percentChange: changeP,
-          atrMultiple: 1.5, // Server-side fallback; no ATR cached
-          direction: changeP >= 0 ? 'up' : 'down',
-          sector,
-        });
-
-        if (storyResult.success) {
-          logInfo(`Generated story for ${symbol}: ${storyResult.headline}`);
-          results.storiesGenerated++;
-        } else {
-          logInfo(`Story generation skipped for ${symbol}: ${storyResult.reason || storyResult.message}`);
-          results.skipped++;
-        }
-      } catch (err) {
-        logError(`Error processing ${symbol}`, { error: err.message });
-        results.errors.push(`${symbol}: ${err.message}`);
-      }
-    }
-    if (detectedMovers.length > 0) {
-      console.log(`[SCAN:TIMING] Mover processing took ${Date.now() - moverProcessingStart}ms (${detectedMovers.length} movers)`);
-    }
+    const processingStart = Date.now();
+    const results = await runMoverScan(db, {
+      quotes,
+      marketDate,
+      generateStory: generateAlexMoverStory,
+      hasRecentStory,
+      sectorOf: (symbol) => STOCK_DATA[symbol]?.sector || SECTOR_MAP[symbol] || 'Unknown',
+      now: new Date(),
+      info: (msg, data) => logInfo(msg, data),
+      error: (msg, data) => logError(msg, data),
+    });
+    console.log(`[SCAN:TIMING] Two-tick processing took ${Date.now() - processingStart}ms`);
 
     logInfo('Scan complete', {
       scanned: results.scanned,
-      moversFound: results.movers.length,
+      moversDetected: results.moversDetected,
+      candidatesRecorded: results.candidatesRecorded,
+      confirmed: results.confirmed,
+      reverted: results.reverted,
+      expired: results.expired,
       storiesGenerated: results.storiesGenerated,
-      skipped: results.skipped,
+      dedupSkipped: results.dedupSkipped,
     });
 
-    return res.status(200).json({
-      success: true,
-      ...results,
-    });
+    return res.status(200).json({ success: true, ...results });
   } catch (error) {
     logError('Scan failed', { error: error.message });
     return res.status(500).json({ success: false, error: 'Mover scan failed' });
