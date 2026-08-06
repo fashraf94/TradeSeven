@@ -21,7 +21,7 @@ export const subscribeToUserAgent = (ownerId, callback) => {
   );
 
   return onSnapshot(q, (snapshot) => {
-    const docSnap = snapshot.docs.find(d => d.data().isTrainingClone !== true);
+    const docSnap = snapshot.docs.find(d => d.data().isTrainingClone !== true && d.data().isCasualClone !== true);
     if (!docSnap) {
       callback(null);
       return;

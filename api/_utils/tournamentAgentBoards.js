@@ -328,7 +328,7 @@ export async function resolveGroupAgents(db, group) {
       console.warn(`${LOG_PREFIX} training pod ${group.id}: human seat ${odUserId} has no provisioned clone — SYNTHETIC identity (activateTrainingPod provisions clones before board production)`);
       return { odUserId, agentId: `dev-agent-${odUserId}`, agent: null, synthetic: true };
     }
-    const doc = r.qs.docs.find(d => d.data().isTrainingClone !== true);
+    const doc = r.qs.docs.find(d => d.data().isTrainingClone !== true && d.data().isCasualClone !== true);
     if (doc) {
       return { odUserId, agentId: doc.id, agent: { id: doc.id, ...doc.data() }, synthetic: false };
     }

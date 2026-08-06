@@ -63,7 +63,7 @@ export async function deriveServerBoardPrefill(db, { odUserId, userPool }) {
     // EXCLUDE training clones (Slice 3): ranked board prefill keys on the
     // player's RANKED agent (a clone shares the player's ownerId).
     const agentSnap = await db.collection('agents').where('ownerId', '==', odUserId).get();
-    const agentDoc = agentSnap.docs.find(d => d.data().isTrainingClone !== true);
+    const agentDoc = agentSnap.docs.find(d => d.data().isTrainingClone !== true && d.data().isCasualClone !== true);
     if (agentDoc) agent = agentDoc.data();
   } catch (error) {
     console.warn(`${LOG_PREFIX} prefill: agent read failed for ${odUserId}, degrading:`, error?.message);
