@@ -17,12 +17,13 @@ import './league.css';
 import useLeagueState from '../../hooks/useLeagueState';
 import { logLeagueSignal } from '../../services/leagueSignals';
 import { useUser } from '../../contexts/UserContext';
-import { subscribeMyGroup, subscribeMyTrainingPod } from '../../services/tournamentGroupService';
+import { subscribeMyGroup, subscribeMyMostRecentVoidedGroup, subscribeMyTrainingPod } from '../../services/tournamentGroupService';
 import { LEAGUE_NEXT_ARC_ENABLED } from '../../config/featureFlags';
 import { LTOKENS, LX } from './leagueTokens';
 import Lobby, { LobbyTabbed } from './LeagueLobbyRedesign';
 import Spectate from './LeagueSpectate';
 import { PodSheet } from './LeaguePod';
+import LeagueVoidedNotice from './LeagueVoidedNotice';
 
 const ACCENT = LX.energy; // teal — the league energy accent
 
@@ -80,6 +81,18 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
     return subscribeMyGroup(uid, setActiveGroup);
   }, [uid]);
 
+  // L-A follow-up (B) — the member voided-card on the DEFAULT League landing (this
+  // redesigned lobby is where a member lands, LEAGUE_REDESIGN_ENABLED being on).
+  // A dedicated most-recent-voided read, SEPARATE from subscribeMyGroup so the
+  // active allowlist stays inert to VOIDED. Surfaced only when there is no active
+  // group (auto-expiry: clears when the member's next group forms) and we're on
+  // the member's own lobby (not while spectating a rival pod).
+  const [voidedGroup, setVoidedGroup] = React.useState(null);
+  React.useEffect(() => {
+    if (!uid) { setVoidedGroup(null); return undefined; }
+    return subscribeMyMostRecentVoidedGroup(uid, setVoidedGroup);
+  }, [uid]);
+
   // seed a dev spectate target once (smoke testing only)
   React.useEffect(() => {
     if (DEV_S === 'spectate-live') {
@@ -116,6 +129,11 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', maxWidth: 448, margin: '0 auto', background: LTOKENS.bg, color: LTOKENS.ink }}>
+      {!activeGroup && voidedGroup && screen === 'lobby' && (
+        <div style={{ padding: '14px 16px 0' }}>
+          <LeagueVoidedNotice group={voidedGroup} />
+        </div>
+      )}
       {body}
       {podSheet && screen === 'lobby' && (
         <PodSheet pod={podSheet} accent={ACCENT} onClose={() => setPodSheet(null)} onSpectate={(seat) => openSpectate(podSheet, seat.id)} />

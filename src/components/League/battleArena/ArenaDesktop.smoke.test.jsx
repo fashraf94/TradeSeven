@@ -50,4 +50,26 @@ describe('ArenaDesktop render smoke', () => {
     expect(html).toContain('NVDA'); // a real agent star rendered
     expect(html.length).toBeGreaterThan(2000);
   });
+
+  // L-A follow-up (B) — a VOIDED cohort suppresses BOTH the placement interstitial
+  // (DockStatePanel) AND the hero board's standings signifiers (crown/rank/cut/
+  // scores), stating the void instead. Film Room stays (review only). Uses the
+  // spread-score DATA so the NON-voided render actually carries the cut, making the
+  // suppression a real mutation check, not a vacuous absence.
+  it('a VOIDED complete run shows no placement/standings and states the void', () => {
+    const html = renderToString(<ArenaDesktop state="complete" mode="ranked" data={DATA} voided onBack={() => {}} />);
+    expect(html).not.toContain('of four');        // no placement ordinal
+    expect(html).not.toContain('You advanced');    // no advanced framing
+    expect(html).not.toContain('Run ended');       // no eliminated framing
+    expect(html).not.toContain('TOP 2 ADVANCE');   // no cut/standings on the board
+    expect(html).toContain('No result recorded');   // the verdict states the void
+    expect(html).toContain('Film Room');            // kept for review only
+    expect(html.length).toBeGreaterThan(2000);
+  });
+
+  it('the SAME complete run WITHOUT voided DOES show placement + cut (suppression is real)', () => {
+    const html = renderToString(<ArenaDesktop state="complete" mode="ranked" data={DATA} onBack={() => {}} />);
+    expect(html).toContain('of four');        // placement present when not voided
+    expect(html).toContain('TOP 2 ADVANCE');  // the cut/standings present when not voided
+  });
 });

@@ -56,7 +56,7 @@ function ClimbAtmosphere({ tone }) {
   );
 }
 
-export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPlayer, dayIdx: dayIdxProp = null, compact = false, youLiveScore = null, liveComposites = null }) {
+export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPlayer, dayIdx: dayIdxProp = null, compact = false, youLiveScore = null, liveComposites = null, voided = false }) {
   const live = state === 'live'; const calm = state === 'awaiting';
   const ranked = mode === 'ranked';
   // Real data supplies the true last-banked index; the fixture preview falls back
@@ -100,7 +100,13 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
   // rest we seat the orbs in a base-camp row below the zero line and draw NO cut or
   // trails, so the orbs never pile onto the zero/cut altitude and nothing crosses
   // the cut label. Once any score moves, the live layout takes over.
-  const atRest = calm || (dMax === 0 && dMin === 0);
+  // L-A follow-up (B): a VOIDED cohort reads AT REST too — its banked scores are
+  // the contaminated numbers the void quarantines, so we must NOT plot altitude
+  // BY them (that would re-assert the very standing the void denies, "computed
+  // from the contaminated Day-8 numbers"). Base-camp seating + no trails/cut, with
+  // the signifier suppressions above (crown/rank/score) and the caption below, so
+  // the board asserts no result. Gated on `voided` → non-voided is byte-identical.
+  const atRest = calm || voided || (dMax === 0 && dMin === 0);
   const DOM = atRest ? [-3, 11] : [dMin - 1.5, dMax + 0.8];
   const Y = (a) => plotB - ((a - DOM[0]) / (DOM[1] - DOM[0])) * (plotB - plotT);
 
@@ -108,7 +114,9 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
   // so a sparse/partial pod (live data) neither computes nor draws one. Suppressed
   // at rest too: with no spread, a cut at everyone's altitude is meaningless and
   // would land in the orb band.
-  const hasCut = ranked && !atRest && ranking.length >= 3;
+  // L-A follow-up (B): a VOIDED cohort asserts NO standing — drop the ranked cut
+  // (the "TOP 2 ADVANCE" line is a placement claim the voided panel denies).
+  const hasCut = ranked && !atRest && !voided && ranking.length >= 3;
   const cutAlt = ranking.length >= 3 ? (at(ranking[1]) + at(ranking[2])) / 2 : 0;
   const span = DOM[1] - DOM[0];
   const gstep = span > 9 ? 3 : span > 5 ? 2 : 1;
@@ -235,7 +243,7 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                         <AgentPresence
                           disposition={archetypeToDisposition(s.arch)}
                           accent={s.color}
-                          standing={you && !atRest ? standingFromRank(rk, rows.length) : 0}
+                          standing={you && !atRest && !voided ? standingFromRank(rk, rows.length) : 0}
                           size={headSz}
                           enableEnvironment={false}
                           radial={false}
@@ -247,16 +255,16 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                     <div style={{ width: sz, height: sz, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                       background: `radial-gradient(circle at 35% 30%, ${alpha(s.color, 0.95)}, ${alpha(s.color, 0.55)})`,
                       border: `2px solid ${alpha(s.color, you ? 1 : 0.7)}`, boxShadow: `0 0 ${you ? 22 : 14}px ${alpha(s.color, you ? 0.7 : 0.45)}` }}>
-                      <Mono style={{ fontSize: compact ? (you ? 15 : 13) : (you ? 17 : 14), fontWeight: 700, color: '#0A0B0E' }}>{calm ? '·' : rk}</Mono>
+                      <Mono style={{ fontSize: compact ? (you ? 15 : 13) : (you ? 17 : 14), fontWeight: 700, color: '#0A0B0E' }}>{calm || voided ? '·' : rk}</Mono>
                     </div>
                   )}
-                  {lead && !calm && (
+                  {lead && !calm && !voided && (
                     <div style={{ position: 'absolute', top: -17, left: '50%', transform: 'translateX(-50%)' }}>
                       <LIcon name="crown" size={crownSize} color={LTOKENS.gold} stroke={2} />
                     </div>
                   )}
                 </div>
-                {!calm && (
+                {!calm && !voided && (
                   showHead && compact ? (
                     /* COMPACT head: the score label sits at a FIXED offset directly BELOW
                        the head, centred, clearing the headSz footprint (top:100% = footprint
@@ -336,6 +344,11 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
       {calm && (
         <div style={{ position: 'absolute', top: padT - 6, left: 0, right: 0, textAlign: 'center' }}>
           <Mono style={{ fontSize: 11, letterSpacing: '0.16em', color: LTOKENS.ink3, textTransform: 'uppercase' }}>The climb begins at the bell</Mono>
+        </div>
+      )}
+      {voided && !calm && (
+        <div style={{ position: 'absolute', top: padT - 6, left: 0, right: 0, textAlign: 'center' }}>
+          <Mono style={{ fontSize: 11, letterSpacing: '0.16em', color: LTOKENS.ink3, textTransform: 'uppercase' }}>Voided — no result recorded</Mono>
         </div>
       )}
     </div>

@@ -106,6 +106,11 @@ import {
   selectBaseLayerField,
   BASE_LAYER_FIELD_OVERFETCH,
   isoWeekString,
+  // L-A follow-up (B) — the member voided-card's dedicated read + reason projection.
+  selectMyMostRecentVoidedGroup,
+  voidReasonLabel,
+  VOID_REASON_LABELS,
+  VOIDED_NO_RESULT_COPY,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
 // This is the behavioral half of the claimSystem parity guard.
@@ -1172,6 +1177,74 @@ describe('VOIDED is inert across the active-status selectors + FIELD (L-A census
   it('casualDeployMissesPodSession → false (no conflict) for a terminal VOIDED group', () => {
     const voided = { id: 'v', status: GROUP_STATUS.VOIDED, battleStartWeek: { anchorEtDate: '2026-08-05', mondayEtDate: '2026-08-05', anchorIso: '2026-08-05T13:30:00.000Z' } };
     expect(casualDeployMissesPodSession(voided, { expiryEtDate: '2026-08-12', nextTradingEtDate: '2026-08-05' })).toBe(false);
+  });
+});
+
+// L-A follow-up (B) — the member voided-card's DEDICATED read + reason projection.
+// The card surfaces a member's most-recent voided group WITHOUT loosening the
+// active allowlist above (that inertness lock must stay green — asserted here in
+// the same battery so the two can never drift).
+describe('selectMyMostRecentVoidedGroup — the member voided-card read (separate from the active allowlist)', () => {
+  const voidedA = { id: 'va', status: GROUP_STATUS.VOIDED, updatedAt: '2026-07-22T19:00:00.000Z' };
+  const voidedB = { id: 'vb', status: GROUP_STATUS.VOIDED, updatedAt: '2026-08-05T00:00:00.000Z' };
+  const battle = { id: 'b', status: GROUP_STATUS.BATTLE, updatedAt: '2026-08-04T00:00:00.000Z' };
+  const complete = { id: 'c', status: GROUP_STATUS.COMPLETE, updatedAt: '2026-08-06T00:00:00.000Z' };
+  const voidedTraining = { id: 'vt', status: GROUP_STATUS.VOIDED, isTraining: true, updatedAt: '2026-08-07T00:00:00.000Z' };
+
+  it('returns the MOST-RECENT voided ranked group (most-recently-updated wins)', () => {
+    expect(selectMyMostRecentVoidedGroup([voidedA, voidedB])?.id).toBe('vb');
+    expect(selectMyMostRecentVoidedGroup([voidedB, voidedA])?.id).toBe('vb');
+  });
+
+  it('returns only VOIDED groups — never a live/complete/expired one (card is for voids only)', () => {
+    expect(selectMyMostRecentVoidedGroup([battle, complete])).toBeNull();
+    // even when COMPLETE is newer than the void, the card reads the VOID, not the finish
+    expect(selectMyMostRecentVoidedGroup([voidedA, complete])?.id).toBe('va');
+  });
+
+  it('excludes a training voided pod (the ranked-cohort void is the only surfaced kind)', () => {
+    expect(selectMyMostRecentVoidedGroup([voidedTraining])).toBeNull();
+  });
+
+  it('returns null for no voids / empty / null input', () => {
+    expect(selectMyMostRecentVoidedGroup([battle])).toBeNull();
+    expect(selectMyMostRecentVoidedGroup([])).toBeNull();
+    expect(selectMyMostRecentVoidedGroup(null)).toBeNull();
+  });
+
+  it('is COMPLEMENTARY to selectMyGroup — the void the card surfaces is the one the active read drops (inertness intact)', () => {
+    const docs = [voidedB, battle];
+    // the active read picks the live BATTLE and never the void…
+    expect(selectMyGroup(docs)?.id).toBe('b');
+    // …while the card read picks the void and never the active group.
+    expect(selectMyMostRecentVoidedGroup(docs)?.id).toBe('vb');
+    // and with ONLY a void present, the active read is null (empty state) but the card has content.
+    expect(selectMyGroup([voidedB])).toBeNull();
+    expect(selectMyMostRecentVoidedGroup([voidedB])?.id).toBe('vb');
+  });
+});
+
+describe('voidReasonLabel + VOIDED_NO_RESULT_COPY — the §9 single-source reason projection', () => {
+  it('projects a KNOWN void code to its human one-line reason', () => {
+    const label = voidReasonLabel({ voidedReason: 'poisoned_cohort_l_a' });
+    expect(label).toBe(VOID_REASON_LABELS.poisoned_cohort_l_a);
+    expect(label).toContain('quarantined');
+  });
+
+  it('accepts either the group doc or the raw code (reads the SAME voidedReason datum)', () => {
+    expect(voidReasonLabel('poisoned_cohort_l_a')).toBe(voidReasonLabel({ voidedReason: 'poisoned_cohort_l_a' }));
+  });
+
+  it('falls back safely for a null / missing / unknown reason (datum stays voidedReason; only the copy defaults)', () => {
+    const fallback = 'This battle was voided by the League.';
+    expect(voidReasonLabel({ voidedReason: null })).toBe(fallback);
+    expect(voidReasonLabel({})).toBe(fallback);
+    expect(voidReasonLabel(null)).toBe(fallback);
+    expect(voidReasonLabel({ voidedReason: 'some_future_code_not_yet_mapped' })).toBe(fallback);
+  });
+
+  it('the shared no-result headline is the one used by the arena top-strip (§9 one source)', () => {
+    expect(VOIDED_NO_RESULT_COPY).toBe('Battle voided — no result recorded');
   });
 });
 

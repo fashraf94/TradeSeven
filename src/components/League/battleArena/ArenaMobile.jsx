@@ -134,7 +134,7 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
         <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} compact voided={voided} />
         <div ref={heroRef} style={{ position: 'relative', marginTop: 10 }}>
           <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
-            w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} />
+            w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} />
           {live && eng.beat && (
             <div style={{ position: 'absolute', top: 8, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
               <BeatCaption beat={eng.beat} compact />
@@ -160,7 +160,7 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
       {/* THE BODY — flows in page scroll under the sticky hero; clears the bottom nav */}
       <div style={{ padding: '4px 14px calc(env(safe-area-inset-bottom, 0px) + 140px)' }}>
         {done ? (
-          <MComplete mode={mode} youRank={D.youRank} onFilm={() => setFilmOpen(true)} />
+          <MComplete mode={mode} youRank={D.youRank} onFilm={() => setFilmOpen(true)} voided={voided} />
         ) : tab === 'you' ? (
           <MYourPanel stars={D.userStars} wire={D.wire} live={live} calm={calm} done={done}
             headline={dockHeadline} cellBump={cellBump} flips={flips} onClaim={() => setFaOpen(true)}
@@ -311,9 +311,36 @@ function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, 
 
 // the COMPLETE verdict — derived from the real rank/mode (NOT canned copy); the
 // Film Room button opens the existing placeholder overlay (dossiers are deferred).
-function MComplete({ mode, youRank, onFilm }) {
+function MComplete({ mode, youRank, onFilm, voided = false }) {
   const advanced = youRank <= 2;
   const tone = mode === 'ranked' ? (advanced ? LTOKENS.teal : '#F2766B') : OWN_AGENT;
+  // L-A follow-up (B): mobile twin of the desktop suppression — a VOIDED cohort
+  // shows NO placement/standing (which would contradict "no result recorded" and
+  // is computed from contaminated numbers); the Film Room stays for review only.
+  if (voided) {
+    return (
+      <div style={{ marginTop: 14, borderRadius: 16, padding: '15px 16px',
+        background: `linear-gradient(150deg, ${alpha(LTOKENS.ink3, 0.11)}, ${alpha(LTOKENS.bg, 0.7)} 70%)`, border: `1px solid ${LTOKENS.hair2}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
+          <LIcon name="flag" size={15} color={LTOKENS.ink3} stroke={2} />
+          <Eyebrow color={LTOKENS.ink3}>Run voided</Eyebrow>
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink }}>
+          No result recorded.
+        </div>
+        <Mono style={{ display: 'block', fontSize: 10.5, color: LTOKENS.ink2, lineHeight: 1.6, marginTop: 8 }}>
+          This run was voided — no standing stands. The Film Room is open for review only.
+        </Mono>
+        <button className="bv2-tap" onClick={onFilm} style={{ all: 'unset', boxSizing: 'border-box', width: '100%', marginTop: 13, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, padding: '12px', borderRadius: 12,
+          background: alpha(LTOKENS.gold, 0.16), border: `1px solid ${alpha(LTOKENS.gold, 0.45)}` }}>
+          <ArenaOrb state="review" size={22} color={LTOKENS.gold} />
+          <Mono style={{ fontSize: 12.5, fontWeight: 700, color: LTOKENS.ink }}>Open the Film Room</Mono>
+          <Icon name="chevR" size={14} color={LTOKENS.gold} />
+        </button>
+      </div>
+    );
+  }
   return (
     <div style={{ marginTop: 14, borderRadius: 16, padding: '15px 16px',
       background: `linear-gradient(150deg, ${alpha(tone, 0.13)}, ${alpha(LTOKENS.bg, 0.7)} 70%)`, border: `1px solid ${alpha(tone, 0.34)}` }}>
