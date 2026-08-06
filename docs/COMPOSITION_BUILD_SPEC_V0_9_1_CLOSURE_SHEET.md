@@ -94,14 +94,13 @@
 
 ---
 
-## §VI · New decision surfaced this session — **needs your direction**
+## §VI · Base-metadata apply arc — **RULING (B): SEQUENCE SEPARATELY** *(founder, Aug 6)*
 
-**The base-metadata apply arc is itself an identity event (see §0).** Applying Batches 1–5 into `FORGE_RULE_TEMPLATES` changes `computeIdentityHash()` (templates are hashed). Two options, your call:
+**The base-metadata apply arc is itself an identity event (see §0)** — applying Batches 1–5 into `FORGE_RULE_TEMPLATES` changes `computeIdentityHash()` (templates are hashed).
 
-- **(A) Fold into this event's cargo.** One bump carries the compat-matrix replacement **and** the 143-rule base-metadata application. Honors the ledger's "one bump, no piecemeal hashed-input edits" (D2) and is the shortest path to gate-green, but materially enlarges this event's diff and adversarial-review surface (143 rules × 6+ fields, plus the two verification-gated binding candidates in Batch 1).
-- **(B) Sequence as its own adjudicated bump.** Keep this event scoped to the compat matrix; run the base-metadata apply as a separate prior-or-subsequent identity event. Smaller review boundaries (the one-purpose-per-event principle), but two bumps and a longer road to gate-green.
+**FOUNDER RULING (B): sequence it as its own adjudicated identity event, AFTER this one.** Reasons for the record: (1) one-purpose-per-event; (2) folding it doubles the review surface on the highest-blast-radius event; (3) Batch 1's two unresolved binding candidates (risk-exit-atr-stop stopLoss/ATR-unit; r-06 maxSectorWeight count→pct) are **adjudication, not build**. It gets its own bump, closure sheet, and adversarial round.
 
-Either way, gate-green requires the base-metadata arc to ship; it is not delivered by the compat matrix or the §II narrowing. **Recommendation: (B)** — the composition event is already the program's largest-scale adversarial review; folding 143 rules' metadata (including two unresolved binding candidates) in violates V0.9's own one-purpose-review-boundary preference (§5 N1). But this is your ruling to make.
+**Consequence recorded per founder direction: gate-green requires BOTH events (this compat-matrix event AND the base-metadata apply event) — and THIS event does not claim gate-green.** The §II narrowing operationalizes the compat axis only; the `missingBaseMetadata` axis is cleared solely by the separately-sequenced apply arc, filed as a backlog item (`docs/LAUNCH_READINESS_WATCH_LEDGER.md` X6). **Lesson line (recorded):** *an accepted authoring program is not applied until the code that consumes it reads it — verify against the consumer, not the document.*
 
 ---
 
@@ -129,14 +128,14 @@ Each row corrects a V0.9 assumption the shipped code contradicts. These govern t
 
 ---
 
-## §VIII · Founder sign-off (test A39 — no PR 1 until this is signed)
+## §VIII · Founder sign-off — **COMPLETE (Aug 6)** (test A39 cleared)
 
-- [ ] **Coexistence = CATALOG** (§I) — approved
-- [ ] **Gate scope = NARROW to 95×5, deferred/reserved counted** (§II) — approved
-- [ ] **Migration = Method B, dry-run early in PR 2, STOP-and-amend if nonzero+prohibitive** (§III) — approved
-- [ ] **Epoch fence boundary + B5 read-edge as PR 3 work** (§IV) — approved
-- [ ] **PR 4 / rollback sequence** (§V) — approved
-- [ ] **Base-metadata apply: fold (A) vs sequence (B)** (§VI) — **ruling: ______**
-- [ ] **V0.9.1 amendment addendum** (§VII table) — approved
+- [x] **Coexistence = CATALOG** (§I) — approved
+- [x] **Gate scope = NARROW to 95×5, deferred/reserved counted** (§II) — approved
+- [x] **Migration = Method B, dry-run early in PR 2, STOP-and-amend if nonzero+prohibitive** (§III) — approved
+- [x] **Epoch fence boundary + B5 read-edge as PR 3 work** (§IV) — approved
+- [x] **PR 4 / rollback sequence** (§V) — approved
+- [x] **Base-metadata apply — ruling: (B) SEQUENCE SEPARATELY** (§VI) — filed as watch-ledger X6
+- [x] **V0.9.1 amendment addendum** (§VII table) — approved
 
-**On sign-off, PR 1 may be cut** (candidate registry + `rulingIndex` + adapter + candidate-registry completeness CI + §9 manifest + determinism tests), touching no production identity chain (A22). Until then: **hard STOP — no build code.**
+**Test A39 CLEARED — PR 1 is authorized:** candidate registry + `rulingIndex` (minimal per N2) + adapter + candidate-registry completeness CI + independently-hashed §9 manifest + determinism tests — touching **no** production identity chain, snapshot, or lock (A22). Standing build rules (founder, Aug 6): push at STOP, **no auto-merge** (founder merges), and `/code-review` at high effort before handback given PR 1 touches registry surfaces.

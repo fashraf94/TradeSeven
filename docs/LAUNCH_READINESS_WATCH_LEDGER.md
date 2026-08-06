@@ -160,6 +160,14 @@ Observed in the same verification window (~09:40–09:45 UTC, 2026-07-22): `/api
 - **Next step (separate ticket):** inspect the failing invocation's logs / the ingest source; triage independently.
 - **Disposition:** separate ticket, founder-flagged; not actioned on the P0 branch.
 
+### X6 — 🎫 BASE-METADATA APPLY ARC (its own identity event; founder-ruled 2026-08-06)
+**Transcribe Phase 3 Batches 1–5 (143 templates × `intendedMode`/`copyClass`/`receiptTag`) into `src/data/forgeKnowledgeBase.js` FORGE_RULE_TEMPLATES.** It is a **hashed registry input** (`getRegistryCorpus().forgeRuleTemplates` → `computeIdentityHash()`, `api/_utils/archetypeRegistry.js:132,157`; stated at `src/data/ruleSupportStatus.js:9-24`), so applying it **is an identity event with its own bump, closure sheet, and adversarial round.**
+- **Why it exists (the finding):** the 143/143 base-metadata program *completed authoring* (docs `PHASE3_METADATA_BATCH1..5_*.md`, accepted Jul 23; Batch 1 even self-marked "IN THE GATE COUNT (12/143)" `PHASE3_METADATA_BATCH1_RISK_V1.md:4`) but the output was **never written into the corpus** — `git log -S "intendedMode" -- src/data/forgeKnowledgeBase.js` returns empty; current count 0. The field names match the gate exactly (`api/_utils/activationGate.js:33,52-53`), so it is **not** a shape mismatch — a missing *apply* step. (Discovered during the Composition Build Spec V0.9 Phase 0, `docs/audits/20260806_COMPOSITION_BUILD_V09_PHASE0_DISCOVERY.md`; ruled §VI of `docs/COMPOSITION_BUILD_SPEC_V0_9_1_CLOSURE_SHEET.md`.)
+- **Blast radius:** `missingBaseMetadata` is 143/143 at HEAD — this is one of the two independent reasons the activation gate is red. **Gate-green requires BOTH** this arc **and** the Composition compat-matrix event; neither claims gate-green alone.
+- **Blocked on:** Batch 1's two unresolved binding candidates — risk-exit-atr-stop (stopLoss/ATR-unit question) and r-06 (maxSectorWeight count→pct + the existing se-07 second-writer) — which are **adjudication, not build**, and gate the deterministic-tier fields (`detectorSource`/`guardrailBinding`/`missingDataFallback`) for those rows.
+- **Sequencing:** runs **after** the Composition Build event (founder ruling B, one-purpose-per-event); do not fold into it.
+- **Lesson line (repeatable):** *an accepted authoring program is not applied until the code that consumes it reads it — verify against the consumer, not the document.*
+
 ---
 
 ## Entry-Flow Consolidation triage (2026-07-18, founder-ruled)
