@@ -32,12 +32,26 @@ const ARCH = INCLUDED_ARCHETYPES;
 const RULE_IDS = Object.keys(CANDIDATE_COMPAT_CELLS).sort();
 const allCells = () => RULE_IDS.flatMap((r) => ARCH.map((a) => [r, a, CANDIDATE_COMPAT_CELLS[r][a]]));
 
+// Strict Domain validator (§1): {allow:[...]} | {minOnly:number} | {min?,max? numbers}.
+// Guards numeric bounds and exact key shape so a corrupted domain actually fails
+// (BUILD_RULES §2 — a guard that cannot fail is not a guard).
 function isDomain(v) {
-  if (!v || typeof v !== 'object') return false;
-  if ('allow' in v) return Array.isArray(v.allow);
-  if ('minOnly' in v) return typeof v.minOnly === 'number';
-  if ('min' in v || 'max' in v) return Object.keys(v).every((k) => k === 'min' || k === 'max');
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+  const keys = Object.keys(v);
+  if ('allow' in v) return keys.length === 1 && Array.isArray(v.allow);
+  if ('minOnly' in v) return keys.length === 1 && typeof v.minOnly === 'number';
+  if (keys.length > 0 && keys.every((k) => k === 'min' || k === 'max')) {
+    return (!('min' in v) || typeof v.min === 'number') && (!('max' in v) || typeof v.max === 'number');
+  }
   return false;
+}
+// narrowedParams: null | a bare Domain | a NON-EMPTY param-keyed map of Domains.
+function validNarrowed(np) {
+  if (np === null) return true;
+  if (!np || typeof np !== 'object' || Array.isArray(np)) return false;
+  if (isDomain(np)) return true;
+  const keys = Object.keys(np);
+  return keys.length > 0 && keys.every((k) => isDomain(np[k]));
 }
 const isSorted = (a) => a.every((v, i) => i === 0 || String(a[i - 1]) <= String(v));
 
@@ -64,11 +78,7 @@ describe('candidate registry — §1 cell schema', () => {
       expect(CANDIDATE_COMPAT_STATES, `${r}/${a}`).toContain(c.state);
       expect(Array.isArray(c.rulingIds)).toBe(true);
       expect(isSorted(c.rulingIds), `${r}/${a} rulingIds sorted`).toBe(true);
-      expect(c.narrowedParams === null || typeof c.narrowedParams === 'object').toBe(true);
-      if (c.narrowedParams !== null) {
-        const ok = isDomain(c.narrowedParams) || Object.values(c.narrowedParams).every(isDomain);
-        expect(ok, `${r}/${a} narrowedParams`).toBe(true);
-      }
+      expect(validNarrowed(c.narrowedParams), `${r}/${a} narrowedParams ${JSON.stringify(c.narrowedParams)}`).toBe(true);
       expect(Array.isArray(c.notes)).toBe(true);
       expect(isSorted(c.notes), `${r}/${a} notes sorted`).toBe(true);
       for (const n of c.notes) expect(CANDIDATE_CELL_NOTE_TOKENS, `${r}/${a} note`).toContain(n);
@@ -104,6 +114,24 @@ describe('candidate registry — §9 manifest (anti-circularity M9) + drift lock
     for (const k of ['native', 'neutral', 'tension', 'core_conflict', 'deferred']) expect(byState[k]).toBe(t[k]);
   });
 
+  it('the INDEPENDENT per-batch ledger tallies sum to the registry distribution (M9)', () => {
+    // ledgerBatchTallies are hand-transcribed from each ledger's own tally line —
+    // the genuinely independent side. Asserting their sum against the
+    // registry-derived byState is what makes anti-circularity real for the state
+    // claim (a generator miscount corrupts byState but NOT these constants).
+    const sum = { native: 0, neutral: 0, tension: 0, core_conflict: 0, deferred: 0 };
+    for (const t of Object.values(MANIFEST.ledgerBatchTallies)) for (const k of Object.keys(sum)) sum[k] += t[k];
+    expect(sum).toEqual(byState);
+  });
+
+  it('the advisory-gap sources are correctly attributed (2 C2 unauthored, 35 C7 V1.0)', () => {
+    const c2 = MANIFEST.knownAdvisoryGap.filter((g) => g.source === 'C2_ledger_unauthored');
+    const c7 = MANIFEST.knownAdvisoryGap.filter((g) => g.source === 'C7_V1_0_uncommitted');
+    expect(c2.map((g) => `${g.ruleId}/${g.archetype}`).sort())
+      .toEqual(['tech-avoid-declining/contrarian', 'tv-05/guardian']);
+    expect(c7.length).toBe(35);
+  });
+
   it('the manifest content hash is stable (recompute == stored)', () => {
     const { manifestHash, ...body } = MANIFEST;
     expect(canonicalContentHash(body)).toBe(manifestHash);
@@ -128,14 +156,24 @@ describe('candidate registry — §7b legacy-vs-candidate diff (A30)', () => {
 });
 
 describe('candidate registry — adapter + rulingIndex', () => {
-  it('toCompilerCompatCell yields the compiler contract; via is never fallthrough', () => {
+  it('toCompilerCompatCell maps each authored cell to the candidate→compiler cell shape', () => {
     for (const [, , c] of allCells()) {
       const out = toCompilerCompatCell(c);
-      expect(out.via).toBe('authored');
-      expect(out.via).not.toBe('fallthrough'); // explicit — never absence (A-4)
+      expect(out.via).toBe('authored'); // explicit — never 'fallthrough'/absence (A-4)
       if (c.state === 'tension') expect(out.treatment).toBe('advisoryDowngrade');
       if (c.state === 'core_conflict') expect(out.tensionReason).toBe(c.displayReason);
+      expect(out.advisory).toBe(c.advisory ?? null); // forward field for PR-3 compiled-field work
     }
+  });
+
+  it("'deferred' passes through as a NET-NEW compiler state (not yet in the compiler vocabulary — PR 3)", () => {
+    // The shipped compiler (compileBuild.js:196-204) maps only
+    // neutral/native/tension/core_conflict; a 'deferred' cell would raise
+    // unknown_compat_state. The adapter faithfully carries 'deferred'; wiring it
+    // into the compiler is PR-3 work per the closure sheet.
+    const deferred = allCells().filter(([, , c]) => c.state === 'deferred');
+    expect(deferred.length).toBe(11);
+    for (const [, , c] of deferred) expect(toCompilerCompatCell(c).state).toBe('deferred');
   });
 
   it('getCandidateCompatCell resolves authored coordinates and null otherwise', () => {

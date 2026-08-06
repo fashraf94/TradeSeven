@@ -1,0 +1,4902 @@
+{
+ "risk-sector-diversification": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed the spread floor never outranks leading-sector selection within it.",
+   "narrowedParams": {
+    "n": {
+     "allow": [
+      2,
+      3
+     ]
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "risk-exit-atr-stop": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed the stop is capital protection, not a thesis verdict — an exited name whose quality case is intact remains a re-entry candidate.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "risk-avoid-declining-trend": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed the rule narrows entries to reclaim-confirmed turns; dislocation and recovery evidence still govern selection among them, and the kernel's broader turn evidence (divergence, basing) remains valid analysis even where this rule withholds entry.",
+   "narrowedParams": {
+    "period": {
+     "allow": [
+      50
+     ]
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed quality admission remains the primary standard; the trend condition is timing discipline applied to qualified names.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "r-06": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed the spread floor never outranks leading-sector selection within it.",
+   "narrowedParams": {
+    "max": {
+     "allow": [
+      2,
+      3
+     ]
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "r-07": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "r-08": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed volatility selection governs within the barbell's shape.",
+   "narrowedParams": {
+    "anchors": {
+     "allow": [
+      1,
+      2
+     ]
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "r-09": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed the defensive window is temporary and strength-ranking resumes on recovery.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed the defensive window is temporary and strength-ranking resumes on recovery.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "core_conflict",
+   "rulingIds": [
+    "R-14"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "\"new swaps low-ATR only\" is an eligibility gate requiring low-volatility candidates, and the SP rubric expressly makes low-volatility-as-selection-criterion a core conflict; temporary activation does not change the mechanism and no trigger depth reconciles it.",
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "quality admission remains primary within the restricted set; the window is temporary.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "r-11": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "r-12": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-13"
+   ],
+   "advisory": "recently-washed sectors whose sentiment recovered to neutral are prime hunting grounds this rule still admits; the excluded freshest-washout zone is the honest cost, stated.",
+   "narrowedParams": {
+    "sentiment": {
+     "allow": [
+      "bearish"
+     ]
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tech-rsi-oversold": {
+  "momentum_chaser": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "prioritizing sub-threshold RSI is weakness-buying, the kernel's core refusal; full domain (even 45 targets the weak half)",
+   "notes": []
+  },
+  "contrarian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed quality admission precedes the reversal preference; oversold status never substitutes for the standard",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tech-rsi-overbought": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-17"
+   ],
+   "advisory": "the agent is instructed that chart extension is assessed through band-fit ranking, never excluded by an RSI ceiling",
+   "narrowedParams": {
+    "strictMode": {
+     "allow": [
+      false
+     ]
+    },
+    "threshold": {
+     "min": 70,
+     "max": 85
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-18"
+   ],
+   "advisory": "the agent is instructed the deprioritization is a late-extension caution, never an exclusion of live movers",
+   "narrowedParams": {
+    "strictMode": {
+     "allow": [
+      false
+     ]
+    },
+    "threshold": {
+     "min": 70,
+     "max": 85
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tech-bollinger-squeeze": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-30"
+   ],
+   "advisory": "the agent is instructed to pair the flag with realized expansion or volume evidence before entry weight",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-26"
+   ],
+   "advisory": "the agent is instructed the flag never outranks the volatility and downside screens",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed that quality admission precedes the squeeze preference; compression status never substitutes for the standard",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tech-moving-average-trend": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-23"
+   ],
+   "advisory": "the agent is instructed the reclaim is turn confirmation, never a substitute for dislocation and the recovery thesis",
+   "narrowedParams": {
+    "period": {
+     "allow": [
+      20,
+      50
+     ]
+    },
+    "requireAlignment": {
+     "allow": [
+      false
+     ]
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed quality admission remains the primary standard; the technical condition is timing discipline applied to qualified names",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tech-macd-bullish": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-19"
+   ],
+   "advisory": "the agent is instructed to treat the crossover as the kernel's own turn confirmation, subordinate to dislocation and recovery",
+   "narrowedParams": {
+    "macdDirection": {
+     "allow": [
+      "bullish crossover"
+     ]
+    },
+    "rsiFloor": {
+     "min": 40,
+     "max": 50
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tech-volume-surge": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tech-relative-strength": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "a name-level RS requirement with an avoid-laggards clause inverts counter-indicative selection; laggards ARE the universe. Both domain values fire it",
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tech-avoid-declining": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-24"
+   ],
+   "advisory": null,
+   "narrowedParams": {
+    "period": {
+     "allow": [
+      50
+     ]
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed quality admission remains the primary standard; the technical condition is timing discipline applied to qualified names",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "t-11": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "the floor clause excludes the weak-RS class wholesale; at floor=0 the gate vanishes but the preference still inverts selection — and R1-8 narrowing to {floor: 0} would leave a pure strength preference that remains the chase; conflict across the meaningful domain",
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the floor is instructed as a timing caution, never an admission verdict; paramBounds lean (non-binding): floor ≤ 8 keeps the veto shallow",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "t-12": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-16"
+   ],
+   "advisory": "the agent is instructed the setup is a volatility-expansion bet whose holding period inside compression contradicts live-vol selection — pair with expansion confirmation",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-27"
+   ],
+   "advisory": "the agent is instructed the prioritization never outranks the volatility and downside screens",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed quality admission precedes the compression preference; band width never substitutes for the standard",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "t-13": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "t-14": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-15"
+   ],
+   "advisory": "the rule constrains if the agent ever acts on a breakout; it creates no pressure to seek them",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "t-15": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-31"
+   ],
+   "advisory": "the agent is instructed the flag is an expansion bet — pair with realized movement before entry weight",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-28"
+   ],
+   "advisory": "the agent is instructed the NR7 flag never outranks the volatility and downside screens",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed quality admission precedes the compression preference; a technical score never substitutes for the standard",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "t-16": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-25"
+   ],
+   "advisory": "the agent is instructed the confluence confirms an early turn and never substitutes for dislocation or the recovery thesis",
+   "narrowedParams": {
+    "count": {
+     "allow": [
+      "2of3"
+     ]
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed quality admission remains the primary standard; the technical condition is timing discipline applied to qualified names",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-01": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-33"
+   ],
+   "advisory": "the agent is instructed the band is a late-extension caution inside a strength preference",
+   "narrowedParams": {
+    "stretched": {
+     "min": 75,
+     "max": 85
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "the weak-leg deprioritization inverts washout selection at every setting",
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed quality admission precedes the momentum-zone preference; an RSI band never substitutes for the standard",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-02": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "favor-growing-histogram is name-level momentum preference; the deceleration response then exits on fading strength — chase in, chase out",
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-22"
+   ],
+   "advisory": "the agent is instructed that histogram deceleration informs observation; the protective exits alone decide action",
+   "narrowedParams": {
+    "action": {
+     "allow": [
+      "hold but monitor"
+     ]
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-21"
+   ],
+   "advisory": "the agent is instructed chart deceleration is never a thesis verdict",
+   "narrowedParams": {
+    "action": {
+     "allow": [
+      "hold but monitor",
+      "reduce tier"
+     ]
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-03": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "\"the pullback in a confirmed uptrend is a buying opportunity\" is chase doctrine stated outright; stronger than C2-4's gate, which at least only filters",
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "patience is instructed to yield to the vol-decay exit discipline; paramBounds lean (non-binding): minutes ≤ 120",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-05": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-20"
+   ],
+   "advisory": "the agent is instructed to treat \"turning positive\" as the kernel's own stabilization evidence",
+   "narrowedParams": {
+    "direction": {
+     "allow": [
+      "turning positive"
+     ]
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-32"
+   ],
+   "advisory": "the agent is instructed to require realized expansion or volume evidence before entry weight; direction confirmation alone is not movement",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-29"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed quality admission precedes the squeeze preference; compression status never substitutes for the standard",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-06": {
+  "momentum_chaser": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "bottom-fishing at the lower band is weakness-buying across the domain",
+   "notes": []
+  },
+  "contrarian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed quality admission precedes the reversion preference; band position never substitutes for the standard",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-11": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "preferring names at their highs is the inverse of the universe",
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed quality admission precedes the proximity preference; price-level momentum never substitutes for the standard",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-13": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "spike-chasing the leading movers",
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "the template's \"overrides other technical signals\" plus a Star-minimum lets tape outrank the quality and volatility layers and set the book's core; override language is the CP conflict rule's named trigger. Full domain (the Core arm still installs the override)",
+   "notes": []
+  },
+  "analyst": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "same override mechanism against the FI ordering: tape sets the core with zero quality input",
+   "notes": []
+  }
+ },
+ "fund-revenue-growth": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [
+    "R-4"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-34"
+   ],
+   "advisory": "the agent is instructed to preserve volatility as the ranking basis; the growth preference may be considered only after volatility-qualified candidates are otherwise indistinguishable.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "fund-value-pe": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-4"
+   ],
+   "advisory": "the agent is instructed to apply the discount preference only among names already satisfying its trend criteria, and not to use the discount preference to admit a below-trend name.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "native",
+   "rulingIds": [
+    "R-2"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-34"
+   ],
+   "advisory": "the agent is instructed to preserve volatility as the ranking basis; the valuation preference may be considered only after volatility-qualified candidates are otherwise indistinguishable.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "fund-bank-pb": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-34"
+   ],
+   "advisory": "the agent is instructed to preserve volatility as the ranking basis; the bank-valuation preference may be considered only after volatility-qualified financials are otherwise indistinguishable.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "fund-market-cap": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-39"
+   ],
+   "advisory": "the agent is instructed to preserve volatility as the ranking basis; the size preference may be considered only after volatility-qualified candidates are otherwise indistinguishable.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "f-07": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-35"
+   ],
+   "advisory": "the agent is instructed to preserve volatility as the ranking basis; the earnings-surprise preference may be considered only after volatility-qualified candidates are otherwise indistinguishable.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "f-12": {
+  "momentum_chaser": {
+   "state": "deferred",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "deferred",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "deferred",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "deferred",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "deferred",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-10": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-37"
+   ],
+   "advisory": "the agent is instructed that trend and momentum evidence governs tier placement and the fundamental floor operates only as a minimum sanity check, never as the ranking basis.",
+   "narrowedParams": {
+    "fund_score": {
+     "min": 40,
+     "max": 55
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "deferred",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "core_conflict",
+   "rulingIds": [
+    "R-41"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "a fundamental-score floor conditions tier eligibility, so company quality determines exposure — the SP kernel's named conflict (quality as a requirement), which R-34's preference doctrine does not reach.",
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-38"
+   ],
+   "advisory": "the agent is instructed the fundamental floor is the admission standard and the technical leg times entry within it — never the reverse.",
+   "narrowedParams": {
+    "fund_score": {
+     "min": 71,
+     "max": 85
+    }
+   },
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "alloc-sector-cap": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-61"
+   ],
+   "advisory": "the agent is instructed that the cap limits how much a leading sector may hold, not whether leading sectors are preferred.",
+   "narrowedParams": {
+    "min": 40,
+    "max": 80
+   },
+   "displayReason": null,
+   "notes": [
+    "equal_weight_scope"
+   ]
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "alloc-sector-minimum": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-50"
+   ],
+   "advisory": "the agent is instructed that the sector floor is a minimum obligation, and that within and beyond it, selection follows sector and name strength.",
+   "narrowedParams": {
+    "allow": [
+     10
+    ]
+   },
+   "displayReason": null,
+   "notes": [
+    "equal_weight_scope"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-62"
+   ],
+   "advisory": "the agent is instructed that the sector floor never lowers its dislocation and recovery requirements; if no name in the sector qualifies, the floor goes unmet.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-51"
+   ],
+   "advisory": "the agent is instructed that the sector obligation is a minimum, and realized volatility ranking governs which names fill it and everything beyond it.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-52"
+   ],
+   "advisory": "the agent is instructed that the sector floor never overrides its spread and concentration protections; where they conflict, the protective limit governs.",
+   "narrowedParams": {
+    "min": 10,
+    "max": 30
+   },
+   "displayReason": null,
+   "notes": [
+    "equal_weight_scope"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-53"
+   ],
+   "advisory": "the agent is instructed that the quality admission standard is never lowered to satisfy a sector floor; if no name in the sector qualifies, the floor goes unmet.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "alloc-tier-preference": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-54"
+   ],
+   "advisory": "the agent is instructed that the Star slot expresses its highest-conviction trend evidence.",
+   "narrowedParams": {
+    "allow": [
+     "high RS",
+     "high momentum",
+     "high volume"
+    ]
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-2"
+   ],
+   "advisory": "the agent is instructed that valuation identifies the candidate pool, and that dislocation and recovery evidence still decide the Star pick within it.",
+   "narrowedParams": {
+    "allow": [
+     "undervalued"
+    ]
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-55"
+   ],
+   "advisory": "the agent is instructed that volatility governs the Star pick within the admitted attributes.",
+   "narrowedParams": {
+    "allow": [
+     "high RS",
+     "high momentum",
+     "high volume"
+    ]
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-56"
+   ],
+   "advisory": "the agent is instructed that Star placement never widens its protective limits, and that a name failing its volatility or quality screens is not eligible for the slot regardless of attribute rank.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-57"
+   ],
+   "advisory": "the agent is instructed that quality admission precedes Star selection and the attribute orders only qualified names.",
+   "narrowedParams": {
+    "allow": [
+     "positive earnings surprise",
+     "undervalued"
+    ]
+   },
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "alloc-even-spread": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-48"
+   ],
+   "advisory": "the agent is instructed that even distribution is a preference applied among sectors it has already ranked by strength.",
+   "narrowedParams": {
+    "allow": [
+     "light",
+     "moderate"
+    ]
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-63"
+   ],
+   "advisory": "the agent is instructed to apply the distribution preference only after its dislocation and recovery criteria have ranked the candidates.",
+   "narrowedParams": {
+    "allow": [
+     "light",
+     "moderate"
+    ]
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-64"
+   ],
+   "advisory": "the agent is instructed to apply the distribution preference only after volatility ranking has ordered the candidates.",
+   "narrowedParams": {
+    "allow": [
+     "light",
+     "moderate"
+    ]
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-65"
+   ],
+   "advisory": "the agent is instructed that quality admission precedes distribution, and an unfilled sector is preferable to a below-standard name.",
+   "narrowedParams": {
+    "allow": [
+     "light",
+     "moderate"
+    ]
+   },
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "a-05": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-42"
+   ],
+   "advisory": "the agent is instructed to fill the anchor slots with the strongest names available within the low-volatility band rather than treating the band as the selection reason.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "core_conflict",
+   "rulingIds": [
+    "R-43"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "anchors min=1 is un-zeroable, so every in-domain setting requires low-volatility holdings as a selection criterion — the SP kernel's named conflict, not a preference; no narrowing exists.",
+   "notes": []
+  },
+  "guardian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "rockets min=1 mandates at least one high-ATR holding at every setting; the volatility refusal admits no narrowing.",
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-44"
+   ],
+   "advisory": "the agent is instructed that quality admission applies to every slot including the barbell legs, and that a volatility bucket is a shape target, never an admission basis.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "a-06": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "an absolute RS floor excludes the laggard universe wholesale at every setting; the tier gate compounds it.",
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-45"
+   ],
+   "advisory": "the agent is instructed that its protective screens govern tier eligibility, and relative strength orders only names that already pass them.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-46"
+   ],
+   "advisory": "the agent is instructed that quality admission determines which names may hold Star or Core, and relative strength orders only within that admitted set.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "a-07": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-47"
+   ],
+   "advisory": "the agent is instructed to fill the quality-floor slots with the strongest trending names that clear the floor, and that the cap on growth names limits count, never the trend basis of selection.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "a mandated minimum cohort clearing a fundamental floor (up to 90/100) is quality as a requirement determining book composition — the R-41 gate line; the growth ceiling independently caps the volatility cohort; no narrowing.",
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "a-08": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-66"
+   ],
+   "advisory": "the agent is instructed that actual sector and name trend evidence governs, and sentiment may tilt only among sectors that evidence already supports.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-3"
+   ],
+   "advisory": "the agent is instructed that within favored sectors, name selection remains dislocation-led.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "a-09": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-58"
+   ],
+   "advisory": "the agent is instructed that bench candidates face its volatility and quality screens before promotion, and that a bench slot is not a commitment to swap.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-14": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [
+    "R-3"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "'select the leading stock' is name-level chase; unlike a-08's sector-only tilt, this rule reaches into name selection, which is the kernel's core refusal.",
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-67"
+   ],
+   "advisory": "the agent is instructed that relative strength may order only names its volatility ranking has already qualified.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-59"
+   ],
+   "advisory": "the agent is instructed that sector rotation adjusts new allocation rather than forcing exits, and that existing positions leave only through its protective exits.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-60"
+   ],
+   "advisory": "the agent is instructed that quality admission precedes name selection within a favored sector, and relative strength orders only admitted names.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "ts-01": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-68"
+   ],
+   "advisory": "the agent is instructed the cap limits multiplier exposure on unusually volatile names and never removes them from selection or ranking",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-103"
+   ],
+   "advisory": "the agent is instructed that dislocation and recovery determine what it owns, and the volatility cap limits only the multiplier carried by an unusually expanded name",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-69"
+   ],
+   "advisory": "the agent is instructed volatility remains its selection and ranking basis, and the cap governs only how much multiplier one expanded name carries",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-85"
+   ],
+   "advisory": "the agent is instructed quality determines conviction, and the volatility cap adjusts exposure only within that quality-led ordering",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "ts-02": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [
+    "R-70"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-71"
+   ],
+   "advisory": "the agent is instructed the gate governs Star placement only, dislocated names remain fully selectable at lower tiers, and a name reclaiming VWAP on a confirmed turn becomes Star-eligible on its own merits",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-86"
+   ],
+   "advisory": "the agent is instructed realized volatility remains the primary tier-ranking axis, and the technical gate constrains placement without re-ranking its candidates",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-87"
+   ],
+   "advisory": "the agent is instructed its volatility and quality screens govern how much exposure a name may carry, and the technical gate orders only names those screens have cleared",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-72"
+   ],
+   "advisory": "the agent is instructed quality admission determines which names may hold Star, and the technical conditions time that placement among admitted names",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "ts-03": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-88"
+   ],
+   "advisory": "the agent is instructed realized volatility remains the primary tier-ranking axis, and the near-threshold restriction is a transient pause in placement rather than a re-ranking",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-89"
+   ],
+   "advisory": "the agent is instructed quality determines conviction, and the near-threshold restriction adjusts exposure only within that ordering",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "ts-04": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-73"
+   ],
+   "advisory": "the agent is instructed dislocation and recovery evidence govern which names it holds, and velocity-driven tier swaps never change what it buys",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-90"
+   ],
+   "advisory": "the agent is instructed that tier reassignment on short-horizon performance changes exposure only, that no position leaves the book through this rule, and that its protective exits alone decide closures",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-74"
+   ],
+   "advisory": "the agent is instructed its highest-conviction slot reflects its strongest quality thesis, and short-horizon performance never re-ranks that judgment",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "ts-05": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-75"
+   ],
+   "advisory": "the agent is instructed extension in a confirmed trend is evidence of strength, and the demotion applies only at the stretched end of the range",
+   "narrowedParams": {
+    "min": 75,
+    "max": 85
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-104"
+   ],
+   "advisory": "the agent is instructed that overbought demotion is consistent with its posture, and that the replacement Star remains governed by dislocation and recovery evidence rather than current name strength",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-91"
+   ],
+   "advisory": "the agent is instructed a banked bonus does not end a live move, and realized volatility remains the primary tier-ranking axis",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-76"
+   ],
+   "advisory": "the agent is instructed multiplier reduction after a banked gain is a protective posture applied only at genuinely stretched readings, never a substitute for its risk-line exits",
+   "narrowedParams": {
+    "min": 75,
+    "max": 85
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-92"
+   ],
+   "advisory": "the agent is instructed quality determines conviction, and the RSI trigger adjusts exposure only within that quality-led ordering",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "ts-06": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [
+    "R-105"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-93"
+   ],
+   "advisory": "the agent is instructed dislocation and recovery evidence govern which names it holds, and activity-driven tier promotion never changes what it buys",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-77"
+   ],
+   "advisory": "the agent is instructed a quiet holding is not a failing one, and any promoted replacement still faces its volatility and quality screens",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-94"
+   ],
+   "advisory": "the agent is instructed quality determines conviction, and activity adjusts exposure only within that quality-led ordering",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "ts-07": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-106"
+   ],
+   "advisory": "the agent is instructed that the defined stop remains its thesis-failure line, and that threshold-based demotion is a temporary exposure adjustment that does not alter the recovery thesis",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-78"
+   ],
+   "advisory": "the agent is instructed its stop discipline alone governs risk, and reducing the multiplier on an adverse move is a defensive layer it does not otherwise apply",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-95"
+   ],
+   "advisory": "the agent is instructed quality determines conviction, and threshold proximity adjusts exposure only within that quality-led ordering",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "ts-08": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [
+    "R-107"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-80"
+   ],
+   "advisory": "the agent is instructed a divergence print adjusts multiplier exposure only, and the dislocation and recovery thesis continues to govern whether the name is held",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-96"
+   ],
+   "advisory": "the agent is instructed realized volatility remains the primary tier-ranking axis, and a divergence print does not re-rank its conviction",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-79"
+   ],
+   "advisory": "the agent is instructed a divergence print informs a single step of multiplier reduction, and its protective exits alone decide whether the position closes",
+   "narrowedParams": {
+    "allow": [
+     "Core"
+    ]
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-97"
+   ],
+   "advisory": "the agent is instructed quality determines conviction, and a divergence print adjusts exposure only within that quality-led ordering",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "ts-09": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-81"
+   ],
+   "advisory": "the agent is instructed the early restriction defers multiplier placement rather than changing selection, and trend evidence governs the promotion when the window ends",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-98"
+   ],
+   "advisory": "the agent is instructed dislocation and recovery evidence govern which names it holds, and early performance never changes what it buys",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-99"
+   ],
+   "advisory": "the agent is instructed realized volatility remains the primary tier-ranking axis, and the early cap defers rather than re-ranks",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-100"
+   ],
+   "advisory": "the agent is instructed early restraint is consistent with its posture, and the post-window promotion remains subordinate to its quality, volatility and protection screens",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-101"
+   ],
+   "advisory": "the agent is instructed quality determines conviction, and early performance adjusts exposure only within that quality-led ordering",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-12": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-84"
+   ],
+   "advisory": "the agent is instructed the factor count governs multiplier placement only, and dislocation and recovery evidence continue to govern what it holds",
+   "narrowedParams": {
+    "min": 30,
+    "max": 40
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-102"
+   ],
+   "advisory": "the agent is instructed realized volatility remains the primary tier-ranking axis, and the factor count orders only names that ranking has qualified",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-82"
+   ],
+   "advisory": "the agent is instructed its volatility and quality screens govern how much exposure a name may carry, and the factor count orders only names those screens have cleared",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-83"
+   ],
+   "advisory": "the agent is instructed quality admission determines which names may hold Star or Core, and the factor count orders only within that admitted set",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "mb-01": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-108"
+   ],
+   "advisory": "the agent is instructed the hold floor prevents same-tick churn, and that stalled positions rotate as soon as it lifts.",
+   "narrowedParams": {
+    "min": 15,
+    "max": 60
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-109"
+   ],
+   "advisory": "the agent is instructed the floor prevents same-tick churn, and that a thesis completed by the crowd's return is still a reason to exit when it lifts.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-110"
+   ],
+   "advisory": "the agent is instructed the floor delays rotation without changing what it rotates toward, and that volatility ranking resumes the moment it lifts.",
+   "narrowedParams": {
+    "min": 15,
+    "max": 60
+   },
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-111"
+   ],
+   "advisory": "the agent is instructed the hold floor governs timing only, and its quality judgment continues to determine what it holds.",
+   "narrowedParams": {
+    "min": 15,
+    "max": 60
+   },
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "mb-03": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [
+    "R-112"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [
+    "R-113"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "A forced exit on a movement clock reverses a doctrine whose evidence horizon is weeks and which explicitly accepts quiet while a thesis develops; the kernel denies this mechanism by name, and no carve-out or setting softens it.",
+   "notes": []
+  },
+  "degen": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "Mandatory clock-driven exits on price inactivity are the churn refusal in its purest form; the kernel's exits are event-driven, never scheduled.",
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-114"
+   ],
+   "advisory": "the agent is instructed that quiet price action is not thesis failure, and that its quality assessment decides whether a holding is still warranted.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "mb-04": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [
+    "R-115"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-116"
+   ],
+   "advisory": "the agent is instructed the hurdle asks for evidence the incoming name has begun to turn, not that it is already outperforming.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-117"
+   ],
+   "advisory": "the agent is instructed realized volatility remains its selection basis, and the hurdle sets a timing bar rather than re-ranking candidates.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-138"
+   ],
+   "advisory": "the agent is instructed its quality and volatility screens determine which bench names are admissible, and the performance hurdle only times action among them.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-118"
+   ],
+   "advisory": "the agent is instructed quality admission decides which bench names are candidates, and the performance hurdle only times the swap among them.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "mb-06": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-139"
+   ],
+   "advisory": "the agent is instructed a stalled Star is still a stalled name, and tier resistance delays rotation without justifying a hold.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-140"
+   ],
+   "advisory": "the agent is instructed the crowd's return remains its exit signal, and a high tier is not a reason to stay past it.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary",
+    "prose_only"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-119"
+   ],
+   "advisory": "the agent is instructed that a stalled Star is still a stalled name, and that tier resistance delays rotation rather than justifying a hold.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-141"
+   ],
+   "advisory": "the agent is instructed the quality case and its opportunity cost decide whether a holding is warranted, regardless of the tier it once earned.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  }
+ },
+ "mb-07": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-120"
+   ],
+   "advisory": "the agent is instructed the breaker limits repeated churn within a window, not ordinary stall rotation.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-142"
+   ],
+   "advisory": "the agent is instructed the freeze limits repeated churn, and that a completed thesis is still exited when it lifts.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-121"
+   ],
+   "advisory": "the agent is instructed the breaker caps repeated swapping in a window, and that volatility ranking resumes unchanged when it lifts.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-143"
+   ],
+   "advisory": "the agent is instructed the freeze limits churn frequency and never overrides a clear quality upgrade once it lifts.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "mb-08": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-122"
+   ],
+   "advisory": "the agent is instructed the hold applies to profit-taking impatience, never to a position whose trend evidence has broken.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-123"
+   ],
+   "advisory": "the agent is instructed the crowd's return remains its exit signal, and a scoring threshold is not a reason to hold a completed thesis.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-124"
+   ],
+   "advisory": "the agent is instructed the hold serves a live ride, and that a decayed move is still rotated regardless of the scoring threshold.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary"
+   ]
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-125"
+   ],
+   "advisory": "the agent is instructed its protective exits always govern regardless of this rule, and that the hold applies only to discretionary profit-taking.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-126"
+   ],
+   "advisory": "the agent is instructed that deterioration in the business case remains grounds to exit regardless of the position's score.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary"
+   ]
+  }
+ },
+ "mb-09": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-152"
+   ],
+   "advisory": "the agent is instructed the hard floor is capital protection rather than a replacement for its two-leg holding judgment, and that the floor must sit outside ordinary trend volatility.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-150"
+   ],
+   "advisory": "the agent is instructed the floor is the pre-declared thesis-failure line that licenses its patience above it, set wide enough that ordinary decline does not reach it.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-127"
+   ],
+   "advisory": "the agent is instructed the floor is its survival line, set wide enough that ordinary volatility does not reach it.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-128"
+   ],
+   "advisory": "the agent is instructed the floor is a last-resort line set outside ordinary noise, and that its patience layers govern everything above it.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-129"
+   ],
+   "advisory": "the agent is instructed the floor is capital protection rather than a thesis verdict, and an exited name whose quality case is intact remains a re-entry candidate.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "mb-10": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-130"
+   ],
+   "advisory": "the agent is instructed the window suppresses low-conviction midday churn, and that positions whose evidence has broken are rotated when it lifts.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-153"
+   ],
+   "advisory": "the agent is instructed the window suppresses ordinary midday activity, and that a completed thesis is exited as soon as it lifts.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-131"
+   ],
+   "advisory": "the agent is instructed the pause defers rotation without changing its volatility ranking, which resumes when the window lifts.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-154"
+   ],
+   "advisory": "the agent is instructed quality admission is unchanged by the window, and that a clear quality upgrade is acted on once it lifts.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "mb-11": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-132"
+   ],
+   "advisory": "the agent is instructed a late-session hurdle reduction never lowers its confirmation requirement, and that divergence alone is not the strength evidence it acts on.",
+   "narrowedParams": {
+    "min": 25,
+    "max": 50
+   },
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-144"
+   ],
+   "advisory": "the agent is instructed a lower late hurdle never substitutes for a recovery thesis, and divergence alone is not sufficient entry evidence.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-145"
+   ],
+   "advisory": "the agent is instructed realized volatility governs its candidate ranking, and the divergence focus narrows timing rather than selection.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-133"
+   ],
+   "advisory": "the agent is instructed its entry standard does not fall with the clock, and that a reduced hurdle never admits a name its screens would reject.",
+   "narrowedParams": {
+    "min": 25,
+    "max": 50
+   },
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-134"
+   ],
+   "advisory": "the agent is instructed the quality standard is fixed regardless of the hour, and a lower hurdle changes timing rather than admission.",
+   "narrowedParams": {
+    "min": 25,
+    "max": 50
+   },
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  }
+ },
+ "mb-12": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-146"
+   ],
+   "advisory": "the agent is instructed its confirmation requirement does not decay with the session, and a lower hurdle changes urgency rather than evidence.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-147"
+   ],
+   "advisory": "the agent is instructed a decaying hurdle never substitutes for a recovery thesis.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "degen": {
+   "state": "native",
+   "rulingIds": [
+    "R-148"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-135"
+   ],
+   "advisory": "the agent is instructed its entry standard does not decay with the session, and that its screens govern regardless of the hurdle's level.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-136"
+   ],
+   "advisory": "the agent is instructed the quality standard is fixed regardless of the hour.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  }
+ },
+ "mb-13": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-149"
+   ],
+   "advisory": "the agent is instructed the delay guards against reacting to unconfirmed headlines, and that a catalyst bearing on the business case is acted on once confirmed.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "mb-15": {
+  "momentum_chaser": {
+   "state": "core_conflict",
+   "rulingIds": [
+    "R-151"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "The locked two-leg holding rule requires hold-and-surface when only one leg breaks; mb-15 forces an exit on one indicator regardless of whether the sector leg is intact, replacing the two-leg test with a one-condition exit, and no intervals setting supplies the missing leg.",
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "The rule names a below-VWAP position \"the thesis is broken\" and forces an exit regardless of tier and before the pre-declared stop, on the washed-out below-VWAP names the kernel buys, overriding the stop that licenses the archetype's patience.",
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed its stop discipline alone governs exits, and that a VWAP position is not a volatility judgment.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed its risk line decides exits, and that VWAP persistence informs rather than triggers.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed that chart position is never a thesis verdict, and that the business case decides whether the holding is still warranted.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-08": {
+  "momentum_chaser": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed the patience clause applies to names it holds, and that dislocation and recovery evidence continue to govern what it buys.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed patience yields to its volatility-decay discipline, and that a low-volume pullback is still stalled movement.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [],
+   "advisory": "the agent is instructed the quality case decides whether a holding is warranted, and the technical clause times rather than justifies the hold.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "gs-01": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-155"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-195"
+   ],
+   "advisory": "…the early freeze suppresses ordinary churn, and a thesis completed by the crowd's return is exited the moment the phase ends.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-156"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-196"
+   ],
+   "advisory": "…the freeze defers rotation, and a clear quality upgrade is acted on when the phase ends.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "gs-02": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-157"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-158"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "degen": {
+   "state": "core_conflict",
+   "rulingIds": [
+    "R-193"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "The unconditional EARLY clock-multiplier (1.5–3×) widens the stop on losers by the clock — the core refusal (never widen the stop to stay in a loser) fires on the first conflicting arm; the later tightening does not cure it.",
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-159"
+   ],
+   "advisory": null,
+   "narrowedParams": {
+    "minOnly": 1
+   },
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-194"
+   ],
+   "advisory": "…a clock-scaled stop changes tolerance only, and the business case remains the sole basis for a thesis exit.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  }
+ },
+ "gs-03": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-197"
+   ],
+   "advisory": "…its confirmation requirement does not fall at phase transitions; a reduced hurdle changes urgency, not evidence.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-198"
+   ],
+   "advisory": "…a decaying hurdle never substitutes for a recovery thesis.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "degen": {
+   "state": "native",
+   "rulingIds": [
+    "R-199"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-160"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-161"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  }
+ },
+ "gs-07": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-162"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-200"
+   ],
+   "advisory": "…the lead lock defers activity, and a thesis completed by the crowd's return is exited when it lifts.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-163"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-164"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "gs-08": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-165"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-201"
+   ],
+   "advisory": "…a scoring streak is not a reason to hold past the crowd's return.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-202"
+   ],
+   "advisory": "…a hot book does not slow its rotation; a decayed move is rotated regardless of the streak.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-166"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  }
+ },
+ "gs-09": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-203"
+   ],
+   "advisory": "…a portfolio losing streak is not the two-leg test; a position with chart and sector intact is not ejected on the streak.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [
+    "R-167"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "A portfolio-streak trigger overrides the name-level stop and ejects the freshest dislocation before its pre-declared line — a mandated pre-stop exit.",
+   "notes": [
+    "c21_discretionary"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-204"
+   ],
+   "advisory": "…its survival floor and movement-death discipline alone govern exits; a portfolio streak prompts review, not ejection.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-168"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-169"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "gs-10": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-170"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-171"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [
+    "R-205"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "native",
+   "rulingIds": [
+    "R-206"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "gs-12": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-172"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-207"
+   ],
+   "advisory": "…the endgame hold pursues a threshold, and the crowd's return remains its exit signal.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-208"
+   ],
+   "advisory": "…a decayed move is rotated even inside the endgame window.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "Instructs disregarding all discretionary protect-first evidence in favor of score — the additional refusal the identity forbids.",
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-173"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "th-01": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-209"
+   ],
+   "advisory": "…the trail protects a banked gain and must not exit a position whose chart and sector evidence both hold.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-210"
+   ],
+   "advisory": "…the trail sits outside the ride's ordinary swing; a banked threshold does not end a live move.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-174"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-211"
+   ],
+   "advisory": "…the trail protects gains and never substitutes for the business case.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "th-04": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-177"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "degen": {
+   "state": "native",
+   "rulingIds": [
+    "R-175"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-6"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  }
+ },
+ "th-05": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-178"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "contrarian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-7"
+   ],
+   "advisory": null,
+   "narrowedParams": {
+    "min": 0.25,
+    "max": 0.4
+   },
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-8"
+   ],
+   "advisory": null,
+   "narrowedParams": {
+    "min": 0.2,
+    "max": 0.4
+   },
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-181"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "prose_only"
+   ]
+  }
+ },
+ "th-07": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-212"
+   ],
+   "advisory": "…threshold proximity informs urgency and never overrides the two-leg holding judgment.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-213"
+   ],
+   "advisory": "…its pre-declared stop remains the only line that ends the thesis; threshold weighting never advances an exit ahead of it.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-214"
+   ],
+   "advisory": "…its stop discipline alone governs risk; scoring proximity is not a volatility judgment.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [
+    "R-182"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-215"
+   ],
+   "advisory": "…the business case decides exits; scoring proximity adjusts timing only.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "th-08": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-183"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "th-09": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-184"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-216"
+   ],
+   "advisory": "…a tier exemption defers a discretionary ejection, and a decayed move is still rotated.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "c21_discretionary"
+   ]
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "th-10": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-185"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-217"
+   ],
+   "advisory": "…the Hunt posture sets ambition; the crowd's return remains the exit signal regardless of milestones.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-186"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-187"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-188"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ },
+ "tv-15": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-189"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [
+    "R-190"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "Compound — a forced post-threshold harvest plus a re-entry gate (highest-ATR, RSI > threshold, above VWAP) that a washed-out dislocated name fails by construction.",
+   "notes": []
+  },
+  "degen": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "A forced milestone harvest plus mandated rotation into the highest-ATR mover forces both a non-defensive exit and maximum-volatility re-entry — against capital protection.",
+   "notes": []
+  },
+  "analyst": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "A scoring-milestone harvest recycles the book on ATR and momentum, overriding the intact business thesis that governs the identity's exits.",
+   "notes": []
+  }
+ },
+ "i-01": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-218"
+   ],
+   "advisory": "…trend evidence governs selection; institutional accumulation orders only names that evidence already supports.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-219"
+   ],
+   "advisory": "…dislocation and recovery evidence govern selection; absent accumulation never disqualifies a washout.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-220"
+   ],
+   "advisory": "…realized volatility ranks candidates; accumulation is secondary context.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-228"
+   ],
+   "advisory": "…quality admission determines candidates; accumulation corroborates and never substitutes.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  }
+ },
+ "i-02": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-221"
+   ],
+   "advisory": "…trend evidence governs; where the exclusion would remove a trend-qualified candidate, it surfaces the conflict rather than silently re-ranking.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "A hard exclusion of distributed (crowd-leaving) names removes the identity's entry condition at name level — an identity collision under the post-shortlist exclusion contract.",
+   "notes": [
+    "board_blind",
+    "c21_discretionary",
+    "weight_only_construction"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-222"
+   ],
+   "advisory": "…realized volatility ranks candidates; where the exclusion would remove the highest-volatility candidate, it surfaces the conflict.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-229"
+   ],
+   "advisory": "…distribution is negative context; the business case decides admission.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  }
+ },
+ "i-03": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-232"
+   ],
+   "advisory": "…trend evidence governs; fresh institutional positions order only names that evidence supports.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-233"
+   ],
+   "advisory": "…dislocation and recovery evidence govern; absent fresh positions never disqualify a washout.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-234"
+   ],
+   "advisory": "…realized volatility ranks candidates; fresh-position counts are secondary context.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-235"
+   ],
+   "advisory": "…quality admission determines candidates; consensus discovery corroborates and never substitutes.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  }
+ },
+ "i-05": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "guardian": {
+   "state": "native",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  }
+ },
+ "i-06": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-223"
+   ],
+   "advisory": "…crowding is context; price and technical evidence decide selection.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "contrarian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "Targeting hedge-fund-crowded names buys into the crowd — the direct inverse of the identity's crowd-left entry condition.",
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-231"
+   ],
+   "advisory": "…realized name-level volatility remains its primary ranking basis, and hedge-fund crowding may influence ordering only among otherwise volatility-qualified candidates.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "guardian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "Selecting hedge-fund-crowded names concentrates into correlated, crowd-exposed positions — against the identity's spread-for-safety diversification.",
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-191"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  }
+ },
+ "i-07": {
+  "momentum_chaser": {
+   "state": "tension",
+   "rulingIds": [
+    "R-224"
+   ],
+   "advisory": "…actual sector and name trend evidence governs; institutional sector flow tilts only among sectors that evidence supports.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "c21_discretionary",
+    "weight_only_construction"
+   ]
+  },
+  "contrarian": {
+   "state": "tension",
+   "rulingIds": [
+    "R-11"
+   ],
+   "advisory": null,
+   "narrowedParams": {
+    "allow": [
+     "neutral"
+    ]
+   },
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "c21_discretionary",
+    "weight_only_construction"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-225"
+   ],
+   "advisory": "…realized volatility ranks candidates within the rule's admitted sector set, and it surfaces the identity conflict whenever the sector exclusion removes the global volatility leader.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "c21_discretionary",
+    "weight_only_construction"
+   ]
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-226"
+   ],
+   "advisory": "…quality admission precedes the sector tilt; no name is excluded before its quality case is read.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "c21_discretionary",
+    "weight_only_construction"
+   ]
+  }
+ },
+ "i-08": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "prose_only",
+    "weight_only_construction"
+   ]
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "prose_only",
+    "weight_only_construction"
+   ]
+  },
+  "degen": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "prose_only",
+    "weight_only_construction"
+   ]
+  },
+  "guardian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "prose_only",
+    "weight_only_construction"
+   ]
+  },
+  "analyst": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "prose_only",
+    "weight_only_construction"
+   ]
+  }
+ },
+ "i-09": {
+  "momentum_chaser": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "contrarian": {
+   "state": "neutral",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "degen": {
+   "state": "tension",
+   "rulingIds": [
+    "R-227"
+   ],
+   "advisory": "…realized volatility — its own measured axis — ranks candidates; holder-type skew is corroboration only.",
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "guardian": {
+   "state": "core_conflict",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": "Preferring fast-money (transient) holder skew tilts toward the least-stable, highest-turnover ownership — against the identity's stability-first posture.",
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  },
+  "analyst": {
+   "state": "tension",
+   "rulingIds": [
+    "R-10"
+   ],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": [
+    "board_blind",
+    "weight_only_construction"
+   ]
+  }
+ },
+ "i-10": {
+  "momentum_chaser": {
+   "state": "deferred",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "contrarian": {
+   "state": "deferred",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "degen": {
+   "state": "deferred",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "guardian": {
+   "state": "deferred",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  },
+  "analyst": {
+   "state": "deferred",
+   "rulingIds": [],
+   "advisory": null,
+   "narrowedParams": null,
+   "displayReason": null,
+   "notes": []
+  }
+ }
+}
