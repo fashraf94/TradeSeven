@@ -157,3 +157,20 @@ describe('A15 — the read predicate fails closed on an unblocked illegal pair',
     expect(checkCompiledBuildAdmissible(undefined).reasons).toEqual(['build_missing']);
   });
 });
+
+describe('the manifest carries the compat slice the eval assembler consumes (the end-to-end thread)', () => {
+  it('buildResolvedAgentManifest: a candidate-mode build → compositionCompat slice, verbatim entries; a legacy build → NO slice key', async () => {
+    const { buildResolvedAgentManifest } = await import('./resolvedAgentManifest.js');
+    const agentData = { id: 'fx-agent', archetype: 'momentum_chaser', settingsRev: 7, config: {}, equippedBundleIds: [] };
+    const candidateBuild = candidateCompile({ archetype: 'momentum_chaser', snaps: [snap('rd3', 'alloc-sector-cap', { pct: 60 })] });
+    const withSlice = buildResolvedAgentManifest({ agentData, compiledBuild: { ...candidateBuild, sourceRevisionVector: { ...candidateBuild.sourceRevisionVector, settingsRev: 7 } }, equippedWatchlist: null, gameMode: 'clash', now: FIXTURE_NOW });
+    expect(withSlice.compositionCompat).toBeTruthy();
+    const entry = withSlice.compositionCompat.entries.find((e) => e.ruleId === 'rd3');
+    expect(entry.verdict).toBe('tension');
+    expect(entry.advisory).toMatch(/cap limits how much a leading sector may hold/);
+    expect(entry.narrowedParams).toEqual({ pct: { min: 40, max: 80 } });
+
+    const legacy = buildResolvedAgentManifest({ agentData, compiledBuild: null, equippedWatchlist: null, gameMode: 'clash', now: FIXTURE_NOW });
+    expect('compositionCompat' in legacy).toBe(false);
+  });
+});
