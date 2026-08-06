@@ -179,7 +179,13 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
 
       {/* the presences */}
       {rows.map((s, i) => {
-        const you = s.id === youId; const lead = s.id === leaderId;
+        // L-A follow-up (B): a VOIDED board asserts NO standing, so the LEADER
+        // emphasis collapses at its single source — gating `lead` on !voided drops
+        // the crown, the leader halo ring, and the enlarged leader orb/head all at
+        // once (leaderId is sorted by the contaminated banked altitude, so any
+        // leader tell would re-assert 'who is winning'). The `you` marker stays: it
+        // is identity ("which orb is me"), not a placement. Non-voided → byte-identical.
+        const you = s.id === youId; const lead = s.id === leaderId && !voided;
         const x = laneX(i); const y = atRest ? plotB - 16 : Y(at(s));
         const sz = compact ? (you ? 44 : lead ? 40 : 36) : (you ? 52 : lead ? 46 : 40);
         // Heads render LARGER than the orb for a legible mood read. `sz` stays the orb

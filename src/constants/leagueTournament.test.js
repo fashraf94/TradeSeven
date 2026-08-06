@@ -1196,14 +1196,30 @@ describe('selectMyMostRecentVoidedGroup — the member voided-card read (separat
     expect(selectMyMostRecentVoidedGroup([voidedB, voidedA])?.id).toBe('vb');
   });
 
-  it('returns only VOIDED groups — never a live/complete/expired one (card is for voids only)', () => {
+  it('surfaces the void ONLY when it is the most-recent ranked group (a newer non-void group shadows it)', () => {
     expect(selectMyMostRecentVoidedGroup([battle, complete])).toBeNull();
-    // even when COMPLETE is newer than the void, the card reads the VOID, not the finish
-    expect(selectMyMostRecentVoidedGroup([voidedA, complete])?.id).toBe('va');
+    // a COMPLETE newer than the void SHADOWS it — the void is no longer the member's
+    // latest situation, so the card must NOT resurface (durable auto-expiry).
+    expect(selectMyMostRecentVoidedGroup([voidedA, complete])).toBeNull();
+    // but when the void IS the most-recent ranked group (older finishes behind it), it surfaces.
+    const oldComplete = { id: 'oc', status: GROUP_STATUS.COMPLETE, updatedAt: '2026-08-01T00:00:00.000Z' };
+    expect(selectMyMostRecentVoidedGroup([voidedB, oldComplete])?.id).toBe('vb');
+  });
+
+  it('DURABLE auto-expiry: a stale void does NOT resurface after a LATER group completes (§2 review finding fix)', () => {
+    // void1 voided (T1); a later group forms and then COMPLETEs (T2 > T1). selectMyGroup
+    // drops back to null (COMPLETE is not in the active allowlist), but the card must NOT
+    // show the old void — the member's most-recent battle recorded a real result.
+    const void1 = { id: 'v1', status: GROUP_STATUS.VOIDED, updatedAt: '2026-07-22T19:00:00.000Z' };
+    const complete2 = { id: 'c2', status: GROUP_STATUS.COMPLETE, updatedAt: '2026-08-06T00:00:00.000Z' };
+    expect(selectMyGroup([void1, complete2])).toBeNull();                 // no ACTIVE group
+    expect(selectMyMostRecentVoidedGroup([void1, complete2])).toBeNull();  // …and no stale void card
   });
 
   it('excludes a training voided pod (the ranked-cohort void is the only surfaced kind)', () => {
     expect(selectMyMostRecentVoidedGroup([voidedTraining])).toBeNull();
+    // a training void does not shadow a real ranked void either (training is out of this read entirely)
+    expect(selectMyMostRecentVoidedGroup([voidedB, voidedTraining])?.id).toBe('vb');
   });
 
   it('returns null for no voids / empty / null input', () => {
@@ -1212,15 +1228,16 @@ describe('selectMyMostRecentVoidedGroup — the member voided-card read (separat
     expect(selectMyMostRecentVoidedGroup(null)).toBeNull();
   });
 
-  it('is COMPLEMENTARY to selectMyGroup — the void the card surfaces is the one the active read drops (inertness intact)', () => {
-    const docs = [voidedB, battle];
-    // the active read picks the live BATTLE and never the void…
-    expect(selectMyGroup(docs)?.id).toBe('b');
-    // …while the card read picks the void and never the active group.
-    expect(selectMyMostRecentVoidedGroup(docs)?.id).toBe('vb');
-    // and with ONLY a void present, the active read is null (empty state) but the card has content.
+  it('is COMPLEMENTARY to selectMyGroup and never leaks a void into the active read (inertness intact)', () => {
+    // ONLY a void present: the active read is null (empty state) but the card read has content.
     expect(selectMyGroup([voidedB])).toBeNull();
     expect(selectMyMostRecentVoidedGroup([voidedB])?.id).toBe('vb');
+    // an active BATTLE newer than the void: the active read picks the battle, and the
+    // void is shadowed (a newer group exists) so the card read is null — the void never
+    // reaches an active consumer, and the card won't compete with a live game.
+    const newerBattle = { id: 'nb', status: GROUP_STATUS.BATTLE, updatedAt: '2026-08-09T00:00:00.000Z' };
+    expect(selectMyGroup([voidedB, newerBattle])?.id).toBe('nb');
+    expect(selectMyMostRecentVoidedGroup([voidedB, newerBattle])).toBeNull();
   });
 });
 

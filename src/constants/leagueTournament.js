@@ -632,19 +632,27 @@ export function selectMyGroup(docs) {
 }
 
 /**
- * L-A follow-up (B): pick the member's MOST-RECENT VOIDED ranked group from their
- * set of group docs — the dedicated terminal read behind the member voided-card,
+ * L-A follow-up (B): the dedicated terminal read behind the member voided-card,
  * kept SEPARATE from selectMyGroup so the active allowlist above stays inert to
  * VOIDED (loosening it would leak a quarantined cohort into every "active"
- * consumer — THE FIELD, the arena, the composite). A group counts only when it is
- * a ranked (`isTraining !== true`) VOIDED group; most-recently-updated wins.
+ * consumer — THE FIELD, the arena, the composite).
+ *
+ * Returns the member's most-recent ranked (`isTraining !== true`) group ONLY WHEN
+ * that most-recent group is VOIDED — i.e. when the void is the LAST thing that
+ * happened to them, not shadowed by a newer non-void group. This is the card's
+ * DURABLE auto-expiry: a naive "newest VOIDED doc" read would resurface a stale
+ * void in every no-active-group interlude forever, because a later group reaching
+ * terminal COMPLETE drops selectMyGroup back to null while the old VOIDED doc still
+ * matches the member-scoped query. Anchoring on the most-recent group overall means
+ * the card clears the moment ANY newer group appears (forming, or later completing).
  * Returns the group doc or null. Pure — unit-tested without Firestore, beside the
  * inertness lock it must never break. `docs` are { id, ...group }.
  */
 export function selectMyMostRecentVoidedGroup(docs) {
-  return (docs ?? [])
-    .filter(g => g?.isTraining !== true && g?.status === GROUP_STATUS.VOIDED)
-    .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))[0] ?? null;
+  const mostRecentRanked = (docs ?? [])
+    .filter(g => g?.isTraining !== true)
+    .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))[0];
+  return mostRecentRanked?.status === GROUP_STATUS.VOIDED ? mostRecentRanked : null;
 }
 
 /**

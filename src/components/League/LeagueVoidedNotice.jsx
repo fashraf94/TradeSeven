@@ -14,11 +14,14 @@
 // both derive from the ONE group doc (VOIDED_NO_RESULT_COPY + the group's
 // voidedReason via voidReasonLabel), so label and datum cannot drift (§9).
 //
-// Dismissal/expiry (founder-decidable, stated): AUTO-EXPIRY — the card renders
-// only in the League tab's no-active-group region, so it shows until the member's
-// NEXT group forms (selectMyGroup then returns it and the group view takes over,
-// unmounting this). No dismiss control / no persisted state: the card is purely
-// informational, low-frequency, and self-clears when the next group arrives.
+// Dismissal/expiry (founder-decidable, stated): DURABLE AUTO-EXPIRY — the card
+// surfaces only while the void is the member's MOST-RECENT ranked group (the
+// selectMyMostRecentVoidedGroup read anchors on the newest group overall, not the
+// newest VOIDED doc). So it shows the moment their battle is voided and clears the
+// moment ANY newer group appears — forming (the group view takes over) OR that
+// next group later completing (a real result now stands, so the stale void must
+// not resurface). No dismiss control / no persisted state: purely informational,
+// low-frequency, and self-clearing.
 
 import React from 'react';
 import { StatusBadge, Mono } from './LeagueParts';
