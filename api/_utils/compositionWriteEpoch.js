@@ -27,11 +27,12 @@ export const WRITE_EPOCH_COLLECTION = 'composition';
 export const WRITE_EPOCH_DOC_ID = 'writeEpoch';
 
 export class EpochClosedError extends Error {
-  constructor(epochId = null) {
+  constructor(epochId = null, state = 'closed') {
     super('epoch_closed');
     this.name = 'EpochClosedError';
     this.code = 'epoch_closed';
     this.epochId = epochId;
+    this.state = state;
   }
 }
 
@@ -56,11 +57,16 @@ export async function validateWriteEpochInTx(tx, db, { enabled = COMPOSITION_EPO
   const snap = await tx.get(writeEpochRef(db));
   if (!snap.exists) return { state: 'open', epochId: null };
   const data = snap.data();
-  if (data.state === 'closed') {
+  // B8 (PR 3): a PRESENT doc admits ONLY state === 'open' — 'closed' and any
+  // unrecognized/mid-transition state reject. The rules layer was already
+  // fail-closed on a present doc (`data.state == 'open'`, firestore.rules:14);
+  // this aligns the server helpers with it. Absent stays fail-open until the
+  // PR-4 B1 post-activation flip.
+  if (data.state !== 'open') {
     if (sentinel) throw new Error(sentinel + 'epoch_closed');
-    throw new EpochClosedError(data.epochId ?? null);
+    throw new EpochClosedError(data.epochId ?? null, data.state ?? 'unrecognized');
   }
-  return { state: data.state ?? 'open', epochId: data.epochId ?? null };
+  return { state: 'open', epochId: data.epochId ?? null };
 }
 
 /**
@@ -71,6 +77,10 @@ export async function validateWriteEpochInTx(tx, db, { enabled = COMPOSITION_EPO
 export async function assertWriteEpochOpen(db, { enabled = COMPOSITION_EPOCH_FENCE_ENABLED } = {}) {
   if (!enabled) return null;
   const snap = await writeEpochRef(db).get();
-  if (snap.exists && snap.data().state === 'closed') throw new EpochClosedError(snap.data().epochId ?? null);
+  // B8 (PR 3): present-but-not-open rejects (aligned with the rules layer and
+  // validateWriteEpochInTx above); absent stays fail-open pre-activation.
+  if (snap.exists && snap.data().state !== 'open') {
+    throw new EpochClosedError(snap.data().epochId ?? null, snap.data().state ?? 'unrecognized');
+  }
   return null;
 }
