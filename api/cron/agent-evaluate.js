@@ -2977,8 +2977,14 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           // instrumented now so the class enters the corpus the day co-pilot
           // mode returns. Autopilot-site posture: post-commit, triple-gated,
           // try/catch log-and-swallow. `ctx` is not in scope in this fn.
+          // NOTE (Phase 1 casual redirect): attributionAgentId is local to
+          // processAgentBattle and out of scope here; the founder-scoped corpus
+          // redirect covers only the two autopilot-swap sites. These dark
+          // copilot/gameplan captures keep battle.agentId — a casual-clone
+          // receipt here would book under the clone. Filed for a follow-up to
+          // redirect them if copilot mode + the expansion flag ever go live.
           if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
-              && classifyEvidence({ isCpu: battle.isCpu, agentId: attributionAgentId }) === 'live_agent') {
+              && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
             try {
               // #3 (adversarial review): persist the pending-proposal clear
               // BEFORE the capture await so a hard timeout during capture cannot
@@ -3176,8 +3182,10 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         // (EXPIRED-AUTO-EXEC path). Same class as 'approved' above — a
         // proposal is a decision-outcome only when it RUNS, so both execution
         // points capture. Dormant today under the autopilot launch guard.
+        // (Phase 1: out-of-scope of the founder's 2-site corpus redirect — keeps
+        // battle.agentId; see the note at the approved-branch capture above.)
         if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
-            && classifyEvidence({ isCpu: battle.isCpu, agentId: attributionAgentId }) === 'live_agent') {
+            && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
           try {
             // #3 (adversarial review): clear pendingProposal BEFORE the capture
             // await (same rationale as the 'approved' branch). Inside the flag
@@ -3387,8 +3395,11 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         // clear before the loop would instead DROP not-yet-executed swaps. A
         // strict "capture after cleanup" restructure (defer captures past the
         // post-loop clear) is deferred pending founder sign-off.
+        // (Phase 1: out-of-scope of the founder's 2-site corpus redirect — keeps
+        // battle.agentId; gameplan-meeting rotation capture, dark under the
+        // expansion flag. Same follow-up note as the proposal captures above.)
         if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
-            && classifyEvidence({ isCpu: battle.isCpu, agentId: attributionAgentId }) === 'live_agent') {
+            && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
           try {
             // #8: entryATR provenance via the shared classifier (benchAsset in scope).
             const gameplanEntryATR = gameplanSwapResult.incomingAsset?.baseATR ?? null;
@@ -3768,11 +3779,14 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
       if (recordTargetId !== completionAgentId) {
         const parentRef = db.collection('agents').doc(recordTargetId);
         const parentSnap = await t.get(parentRef); // read BEFORE the first t.update
-        if (parentSnap.exists) {
+        // Security guard (review CONFIRMED-1): only redirect to a target owned by
+        // the CLONE's owner — a squat with a poisoned rankedAgentId must never
+        // credit/corrupt a victim's record. Same-owner is a legit-clone invariant.
+        if (parentSnap.exists && parentSnap.data().ownerId === agentSnap.data().ownerId) {
           statsTargetRef = parentRef;
           statsBaseData = parentSnap.data();
         } else {
-          console.warn(`${LOG_PREFIX} casual record redirect: parent ${recordTargetId} missing for battle ${battle.id} — W-L stays on the clone`);
+          console.warn(`${LOG_PREFIX} casual record redirect refused for battle ${battle.id} — parent ${recordTargetId} missing or not same-owner; W-L stays on the clone`);
         }
       }
     }

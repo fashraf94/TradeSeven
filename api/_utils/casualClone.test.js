@@ -224,6 +224,27 @@ describe('ensureCasualClone', () => {
     await expect(ensureCasualClone(db, { odUserId: 'user-42' })).rejects.toThrow('no_ranked_agent');
   });
 
+  it('HEALS an inauthentic SQUAT (wrong owner) — overwrites with a fresh legit clone (security CONFIRMED-2)', async () => {
+    // Attacker pre-planted casual-agent-user-42 owned by themselves w/ a poisoned parent.
+    const squat = { ownerId: 'attacker', isCasualClone: true, rankedAgentId: 'someone-elses-agent', memory: [{ gameId: 'evil' }] };
+    const { db, store } = makeDb({ 'agents/ranked-1': RANKED, 'agents/casual-agent-user-42': squat });
+    const r = await ensureCasualClone(db, { odUserId: 'user-42' });
+    expect(r.created).toBe(true); // healed = re-provisioned, deploy proceeds (no DoS)
+    const healed = store.get('agents/casual-agent-user-42');
+    expect(healed.ownerId).toBe('user-42');        // now owned by the victim
+    expect(healed.rankedAgentId).toBe('ranked-1');  // correct parent, not the poisoned one
+    expect(healed.isCasualClone).toBe(true);
+    expect(healed.memory).toEqual([]);              // attacker's payload gone
+  });
+
+  it('HEALS a bare doc missing isCasualClone (even if same owner) rather than adopting it', async () => {
+    const { db, store } = makeDb({ 'agents/ranked-1': RANKED, 'agents/casual-agent-user-42': { ownerId: 'user-42', archetype: 'junk' } });
+    const r = await ensureCasualClone(db, { odUserId: 'user-42' });
+    expect(r.created).toBe(true);
+    expect(store.get('agents/casual-agent-user-42').isCasualClone).toBe(true);
+    expect(store.get('agents/casual-agent-user-42').rankedAgentId).toBe('ranked-1');
+  });
+
   it('resolves the ranked agent EXCLUDING clones (a stale clone never becomes the parent)', async () => {
     const { db, store } = makeDb({
       'agents/casual-agent-user-42': { ownerId: 'user-42', isCasualClone: true, rankedAgentId: 'ranked-1' },
@@ -273,31 +294,36 @@ describe('ensureCasualClone', () => {
 // ==================== resolveAttributionAgentId ====================
 
 describe('resolveAttributionAgentId', () => {
-  it('a CASUAL clone battle attributes to the PARENT ranked agent', async () => {
+  it('a CASUAL clone battle attributes to the PARENT ranked agent (same-owner)', async () => {
     const { db } = makeDb({
       'agents/casual-agent-user-42': { ownerId: 'user-42', isCasualClone: true, rankedAgentId: 'ranked-1' },
+      'agents/ranked-1': { ownerId: 'user-42' }, // same owner → guard passes
     });
     const target = await resolveAttributionAgentId(db, { agentId: 'casual-agent-user-42' });
     expect(target).toBe('ranked-1');
   });
 
-  it('a NON-casual battle attributes to its own agentId, unchanged (byte-identical)', async () => {
-    const { db } = makeDb({ 'agents/ranked-1': RANKED });
-    expect(await resolveAttributionAgentId(db, { agentId: 'ranked-1' })).toBe('ranked-1');
-    expect(await resolveAttributionAgentId(db, { agentId: 'training-agent-g-user-42' })).toBe('training-agent-g-user-42');
-    expect(await resolveAttributionAgentId(db, { agentId: 'cpu-agent-1' })).toBe('cpu-agent-1');
+  it('a NON-casual battle attributes to its own agentId, unchanged (byte-identical, no read)', async () => {
+    const throwingDb = { collection: () => ({ doc: () => ({ get: async () => { throw new Error('must not read'); } }) }) };
+    expect(await resolveAttributionAgentId(throwingDb, { agentId: 'ranked-1' })).toBe('ranked-1');
+    expect(await resolveAttributionAgentId(throwingDb, { agentId: 'training-agent-g-user-42' })).toBe('training-agent-g-user-42');
+    expect(await resolveAttributionAgentId(throwingDb, { agentId: 'cpu-agent-1' })).toBe('cpu-agent-1');
   });
 
-  it('uses a preresolved rankedAgentId without a read (settlement fast-path)', async () => {
-    // db.get would throw here — proving we did NOT read it.
-    const throwingDb = { collection: () => ({ doc: () => ({ get: async () => { throw new Error('should not read'); } }) }) };
-    const target = await resolveAttributionAgentId(throwingDb, { agentId: 'casual-agent-user-42' }, { preresolvedRankedAgentId: 'ranked-9' });
-    expect(target).toBe('ranked-9');
+  it('REFUSES a cross-user target (squat w/ poisoned rankedAgentId) — attributes to the clone, never the victim', async () => {
+    const { db } = makeDb({
+      'agents/casual-agent-attacker': { ownerId: 'attacker', isCasualClone: true, rankedAgentId: 'victim-agent' },
+      'agents/victim-agent': { ownerId: 'victim' }, // DIFFERENT owner
+    });
+    const target = await resolveAttributionAgentId(db, { agentId: 'casual-agent-attacker' });
+    expect(target).toBe('casual-agent-attacker'); // guard refuses cross-user → stays on the clone
   });
 
-  it('degrades SAFELY to the clone id when the clone doc/rankedAgentId is missing (no throw)', async () => {
+  it('degrades SAFELY to the clone id when the clone doc/rankedAgentId/parent is missing (no throw)', async () => {
     const { db } = makeDb({}); // no clone doc
-    const target = await resolveAttributionAgentId(db, { agentId: 'casual-agent-ghost' });
-    expect(target).toBe('casual-agent-ghost'); // attribution stays on the clone, detectable, never throws
+    expect(await resolveAttributionAgentId(db, { agentId: 'casual-agent-ghost' })).toBe('casual-agent-ghost');
+    // clone present but parent doc missing → also degrades to the clone
+    const { db: db2 } = makeDb({ 'agents/casual-agent-x': { ownerId: 'u', isCasualClone: true, rankedAgentId: 'gone' } });
+    expect(await resolveAttributionAgentId(db2, { agentId: 'casual-agent-x' })).toBe('casual-agent-x');
   });
 });

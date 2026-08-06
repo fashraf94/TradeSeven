@@ -87,6 +87,22 @@ describe('completeBattle — Phase 1 casual-clone RECORD redirect (real settleme
     expect(db.__dump('agents/casual-agent-u1').activeBattleId).toBeNull();
   });
 
+  it('SECURITY: refuses a cross-user record redirect — a poisoned rankedAgentId cannot corrupt a victim (CONFIRMED-1)', async () => {
+    // Attacker owns their own clone but points rankedAgentId at a VICTIM's agent.
+    const db = makeMockDb({
+      'agentBattles/b1': { ...BATTLE, ownerId: 'attacker', agentId: 'casual-agent-attacker' },
+      'agents/casual-agent-attacker': { ownerId: 'attacker', isCasualClone: true, rankedAgentId: 'victim-1', activeBattleId: 'b1', stats: { ...ZERO_STATS } },
+      'agents/victim-1': { ownerId: 'victim', stats: { ...BASE_STATS }, activeBattleId: 'victim-live' },
+    });
+    await completeBattle(db, { id: 'b1', ...BATTLE, ownerId: 'attacker', agentId: 'casual-agent-attacker' }, { evaluated: 0 });
+    // The victim's record + pointer are UNTOUCHED — the same-owner guard refused the redirect.
+    expect(db.__dump('agents/victim-1').stats).toEqual(BASE_STATS);
+    expect(db.__dump('agents/victim-1').activeBattleId).toBe('victim-live');
+    // The result stays on the attacker's own throwaway clone.
+    expect(db.__dump('agents/casual-agent-attacker').stats.wins).toBe(1);
+    expect(db.__dump('agents/casual-agent-attacker').activeBattleId).toBeNull();
+  });
+
   it('a TOURNAMENT casual-clone battle writes no career stats (updateAgentStats:false) — redirect inert', async () => {
     // gameMode TOURNAMENT → no W-L on anyone; only the clone pointer clears.
     const tournamentBattle = { ...BATTLE, gameMode: 'baggerbomb_tournament', groupId: 'g1', scoreState: { currentScore: 12 } };

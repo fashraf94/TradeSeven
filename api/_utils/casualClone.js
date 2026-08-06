@@ -94,32 +94,50 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
   const cloneId = casualCloneDocId(odUserId);
   const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);
 
-  // NEVER OVERWRITE: an existing clone is returned untouched so its accumulated
-  // memory/lessons/insight survive across deploys.
+  // Existing doc: return a LEGIT clone AS-IS (never-overwrite, R1), but HEAL an
+  // inauthentic one. The agents create rule (firestore.rules) lets any authed user
+  // create a doc at an ARBITRARY id with their OWN ownerId, so a client can SQUAT
+  // the reserved casual-agent-{uid} namespace (security review CONFIRMED-2 DoS,
+  // and CONFIRMED-1 poisoned rankedAgentId). A legit clone is
+  // `ownerId===caller && isCasualClone`; anything else is a squat with no
+  // legitimate accumulated learning → overwrite it. (The firestore.rules namespace
+  // reservation is the primary defense; this heals any squat planted before the
+  // rules are deployed — rules deploy is manual in this repo.)
   const existingSnap = await cloneRef.get();
-  if (existingSnap.exists) {
-    return { cloneId, rankedAgentId: existingSnap.data().rankedAgentId ?? null, created: false };
+  const existing = existingSnap.exists ? existingSnap.data() : null;
+  if (existing && existing.ownerId === odUserId && existing.isCasualClone === true) {
+    return { cloneId, rankedAgentId: existing.rankedAgentId ?? null, created: false };
+  }
+  if (existing) {
+    console.warn(`${LOG_PREFIX} healing inauthentic doc at ${cloneId} (ownerId=${existing.ownerId ?? 'none'}, isCasualClone=${existing.isCasualClone === true}) — overwriting with a fresh clone`);
   }
 
   const ranked = await resolveRankedAgent(db, odUserId);
   if (!ranked) throw new Error('no_ranked_agent');
 
-  // Subcollections FIRST (idempotent set-by-id), clone doc LAST as the sentinel —
-  // the trainingClone provisioning order, so an interrupted create re-provisions.
+  // Subcollections FIRST (idempotent set-by-id), clone doc LAST — the trainingClone
+  // provisioning order, so an interrupted create re-provisions.
   await copyAgentSubcollections(db, ranked.id, cloneId);
   const cloneDoc = buildCasualCloneDoc(ranked, { odUserId, nowIso });
+
+  if (existing) {
+    // Heal a squat: overwrite (create() would fail on the existing doc). Admin SDK
+    // bypasses the rules; the squat carries no legit state to preserve.
+    await cloneRef.set(cloneDoc);
+    console.log(`${LOG_PREFIX} healed casual clone ${cloneId} from ranked agent ${ranked.id}`);
+    return { cloneId, rankedAgentId: ranked.id, created: true };
+  }
+
   try {
-    // create() (not set()) so a concurrent double-tap cannot overwrite: the loser
-    // gets ALREADY_EXISTS and returns the winner's clone as-is.
+    // create() (not set()) so a concurrent double-tap cannot overwrite a legit
+    // clone: the loser gets ALREADY_EXISTS and returns the winner AS-IS.
     await cloneRef.create(cloneDoc);
   } catch (err) {
     if (err?.code === 6 || /ALREADY_EXISTS/i.test(String(err?.message || ''))) {
       const raced = await cloneRef.get();
-      return {
-        cloneId,
-        rankedAgentId: raced.exists ? (raced.data().rankedAgentId ?? ranked.id) : ranked.id,
-        created: false,
-      };
+      const rd = raced.exists ? raced.data() : null;
+      const rdAuthentic = !!rd && rd.ownerId === odUserId && rd.isCasualClone === true;
+      return { cloneId, rankedAgentId: rdAuthentic ? (rd.rankedAgentId ?? ranked.id) : ranked.id, created: false };
     }
     throw err;
   }
@@ -138,26 +156,37 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
  *                            non-casual path is byte-identical.
  *
  * The parent id is read from the clone AGENT doc's rankedAgentId (the fenced
- * battle doc carries no such field). `preresolvedRankedAgentId` lets a caller that
- * already holds it (e.g. the settlement transaction, which reads the clone doc
- * anyway) skip the extra read. Fail-SAFE: on a missing clone doc / rankedAgentId /
- * read error it returns the clone's own agentId (attribution stays on the clone,
- * a detectable degradation) rather than throwing inside a cron. Prefer callers to
- * pass a real `db`; a null db with no preresolved id also degrades safely.
+ * battle doc carries no such field), and the target is VERIFIED to be owned by the
+ * clone's owner (see the security guard below). Fail-SAFE: on a missing clone doc /
+ * rankedAgentId / owner mismatch / read error it returns the clone's own agentId
+ * (attribution stays on the clone, a detectable degradation) rather than throwing
+ * inside a cron. A null db also degrades safely.
  */
-export async function resolveAttributionAgentId(db, battle, { preresolvedRankedAgentId } = {}) {
+export async function resolveAttributionAgentId(db, battle) {
   const agentId = battle?.agentId ?? null;
   if (!isCasualCloneId(agentId)) return agentId;
-  if (typeof preresolvedRankedAgentId === 'string' && preresolvedRankedAgentId.length > 0) {
-    return preresolvedRankedAgentId;
-  }
   if (!db) return agentId;
   try {
-    const snap = await db.collection(AGENTS_COLLECTION).doc(agentId).get();
-    const parent = snap.exists ? snap.data().rankedAgentId : null;
-    if (typeof parent === 'string' && parent.length > 0) return parent;
-    console.warn(`${LOG_PREFIX} casual clone ${agentId} missing rankedAgentId — attribution degraded to the clone`);
-    return agentId;
+    const cloneSnap = await db.collection(AGENTS_COLLECTION).doc(agentId).get();
+    if (!cloneSnap.exists) return agentId;
+    const clone = cloneSnap.data();
+    const parentId = clone.rankedAgentId;
+    if (typeof parentId !== 'string' || parentId.length === 0) {
+      console.warn(`${LOG_PREFIX} casual clone ${agentId} missing rankedAgentId — attribution degraded to the clone`);
+      return agentId;
+    }
+    // SECURITY GUARD (review CONFIRMED-1): the attribution target MUST be owned by
+    // the clone's owner. Same-owner is an invariant of a legit clone
+    // (buildCasualCloneDoc sets rankedAgentId from resolveRankedAgent(odUserId)),
+    // so this only ever rejects a squat carrying a poisoned cross-user
+    // rankedAgentId — which would otherwise redirect a battle's record/learning
+    // onto a VICTIM. On mismatch, attribute to the clone (never cross-user).
+    const parentSnap = await db.collection(AGENTS_COLLECTION).doc(parentId).get();
+    if (!parentSnap.exists || parentSnap.data().ownerId !== clone.ownerId) {
+      console.warn(`${LOG_PREFIX} attribution target ${parentId} not owned by clone ${agentId}'s owner — refusing cross-user redirect`);
+      return agentId;
+    }
+    return parentId;
   } catch (err) {
     console.warn(`${LOG_PREFIX} attribution resolve failed for ${agentId} (degraded to the clone):`, err?.message || err);
     return agentId;

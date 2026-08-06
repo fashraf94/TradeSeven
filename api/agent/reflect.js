@@ -76,11 +76,14 @@ export async function generateReflection(db, battleId) {
   const recordTargetId = resolveRecordTargetId(battleDoc.agentId, agentDoc);
   if (recordTargetId !== battleDoc.agentId) {
     const parentSnap = await db.collection('agents').doc(recordTargetId).get();
-    if (parentSnap.exists) {
+    // Security guard (review CONFIRMED-1): only forward learning to a target owned
+    // by the CLONE's owner — a squat with a poisoned rankedAgentId must never write
+    // memory/lessons onto a victim. Same-owner is a legit-clone invariant.
+    if (parentSnap.exists && parentSnap.data().ownerId === agentDoc.ownerId) {
       learningRef = db.collection('agents').doc(recordTargetId);
       learningDoc = { id: parentSnap.id, ...parentSnap.data() };
     } else {
-      console.warn(`${LOG_PREFIX} casual learning redirect: parent ${recordTargetId} missing for battle ${battleId} — memory/consolidation stay on the clone`);
+      console.warn(`${LOG_PREFIX} casual learning redirect refused for battle ${battleId} — parent ${recordTargetId} missing or not same-owner; memory/consolidation stay on the clone`);
     }
   }
   const isCasualForward = learningRef !== agentRef;
