@@ -60,6 +60,12 @@ export default async function handler(req, res) {
     if (err?.message === 'no_ranked_agent') {
       return res.status(409).json({ error: 'no_ranked_agent', message: 'Create your agent before deploying.' });
     }
+    // Composition write-epoch fence (design note §3): a closed epoch rejects the
+    // provisioning write before anything is written — same 409 contract as the
+    // fenced settings endpoints. Unreachable while the fence flag is dark.
+    if (err?.code === 'epoch_closed') {
+      return res.status(409).json({ error: 'epoch_closed', message: 'Agent identity is briefly locked for a migration. Try again shortly.' });
+    }
     console.error('[ensure-casual-clone] error:', err);
     return res.status(500).json({ error: 'server_error', message: 'Could not prepare the casual agent.' });
   }

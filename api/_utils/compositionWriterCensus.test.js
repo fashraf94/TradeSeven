@@ -83,6 +83,23 @@ describe('A46 — the writer census is complete and mechanically derived', () =>
     }
   });
 
+  it('every copyAgentSubcollections caller — any directory — is a censused provisioner (the raw-write clone class cannot slip the census)', () => {
+    // The txUpdateAgentSettings/writeCompiledBuildsInTx scans above miss
+    // provisioners that clone identity state with RAW writes — the exact class
+    // casualClone.js (PR #716, merged mid-PR-2) landed in. copyAgentSubcollections
+    // copies the rules + bundles subcollections (identity stores), so every
+    // caller must be a censused, guarded writer.
+    const provisioners = new Set([
+      ...CENSUS.backgroundLoops.map((l) => l.file),
+      'api/_utils/trainingClone.js', // the defining module
+    ]);
+    for (const f of ALL_SERVER_FILES) {
+      if (read(f).includes('copyAgentSubcollections(')) {
+        expect(provisioners.has(f), `${f} clones identity subcollections but is not a censused provisioner`).toBe(true);
+      }
+    }
+  });
+
   it('the rules layer gates every censused client-SDK clause with epochWriteOpen()', () => {
     const rules = read('firestore.rules');
     expect(rules).toContain('function epochWriteOpen()');

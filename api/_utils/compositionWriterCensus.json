@@ -18,6 +18,7 @@
   ],
   "backgroundLoops": [
     { "file": "api/_utils/trainingClone.js", "guard": "per-iteration", "note": "clone provisioning births identity state; assertWriteEpochOpen per human seat" },
+    { "file": "api/_utils/casualClone.js", "guard": "entry (ensureCasualClone)", "note": "endpoint-invoked provisioner (ensure-casual-clone, PR #716 merge reconciliation) — births AND re-syncs identity state incl. rules/bundles subcollections via copyAgentSubcollections; closed epoch → 409 epoch_closed at the endpoint, nothing written" },
     { "file": "api/_utils/archetypeSeeding.js", "guard": "entry (softDeleteReplacedTraitRuleDocs)", "note": "the one POST-COMMIT writer of the fenced rules store (change-archetype + trainingClone call sites); closed epoch → skip, orphans inert (review C3)" }
   ],
   "adminCliScripts": [

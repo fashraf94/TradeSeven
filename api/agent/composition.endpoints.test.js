@@ -46,6 +46,7 @@ vi.mock('@vercel/functions', () => ({ waitUntil: (p) => p }));
 const { default: equipBundleHandler } = await import('./equip-bundle.js');
 const { default: updateSettingsHandler } = await import('./update-agent-settings.js');
 const { default: changeArchetypeHandler } = await import('./change-archetype.js');
+const { ensureCasualClone } = await import('../_utils/casualClone.js');
 
 // ── fake Firestore: agents + bundles + the composition epoch doc, with
 // write- and epoch-read counters for the byte-identity assertions ──────────
@@ -290,5 +291,18 @@ describe('A41 (endpoint) — the write-epoch fence at the boundary', () => {
     await equipBundleHandler(req, res);
     expect(res.statusCode).toBe(200);
     expect(state.epochReads).toBe(1); // it DID validate — and admitted
+  });
+
+  it('the provisioner class (casualClone, PR #716 merge reconciliation): closed epoch rejects ensureCasualClone at entry, NOTHING written', async () => {
+    // The raw-write clone provisioner births + re-syncs identity state (incl.
+    // the rules/bundles subcollections) outside any transaction — its declared
+    // guard is assertWriteEpochOpen at entry (census row). Under the defect
+    // (guard deleted), this test fails: the helper would proceed into the
+    // fake's unmocked query surface instead of rejecting cleanly.
+    flagState.fence = true;
+    const { db, state } = fleet({ epochDoc: { state: 'closed', epochId: 'e-2' } });
+    await expect(ensureCasualClone(db, { odUserId: 'owner-1' })).rejects.toMatchObject({ code: 'epoch_closed' });
+    expect(state.epochReads).toBe(1);
+    expect(state.writes).toBe(0);
   });
 });
