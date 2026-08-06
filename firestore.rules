@@ -170,9 +170,19 @@ service cloud.firestore {
       // as doubles still passes; hasOnly pins the key set.
       allow create: if request.auth != null
                     && request.resource.data.ownerId == request.auth.uid
+                    // Per-Battle Loadout Phase 1 (security review CONFIRMED-1/2):
+                    // reserve the clone/system agent-id namespaces from CLIENT
+                    // creates. Training + casual clones and CPU agents are all
+                    // Admin-SDK-minted (bypass rules), so a client must NEVER create
+                    // a doc at these ids — else it could squat a victim's
+                    // casual-agent-{uid} (persistent DoS) or mint a casual clone with
+                    // a poisoned cross-user rankedAgentId (learning poisoning). Real
+                    // agents use random ids, so this denies only the attack.
+                    && !agentId.matches('(casual-agent-|training-agent-|cpu-agent-).*')
                     && !request.resource.data.keys().hasAny(['standingLeans', 'dials', 'settingsRev',
                                  'equippedTraits', 'deployedStrategy', 'activeBattleId',
-                                 'lessons', 'forgeSuggestions', 'isTrainingClone'])
+                                 'lessons', 'forgeSuggestions', 'isTrainingClone',
+                                 'isCasualClone', 'rankedAgentId'])
                     && (!('stats' in request.resource.data)
                         || (request.resource.data.stats is map
                             && request.resource.data.stats.keys().hasOnly(['wins', 'losses', 'gamesPlayed',

@@ -17,6 +17,11 @@ import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
 import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
 import { renderLegacyDirectives } from '../_utils/legacyDirectiveSanitize.js';
+// Per-Battle Loadout + Concurrency Phase 1 — DRB lessons attribution redirect:
+// a casual-clone battle's lessons/forgeSuggestions belong to the PARENT ranked
+// agent. arrayUnion is merge-safe, so a simple target re-key suffices; non-casual
+// resolves to battle.agentId with no read (byte-identical).
+import { resolveAttributionAgentId } from '../_utils/casualClone.js';
 
 export const config = { maxDuration: 60 };
 
@@ -341,7 +346,9 @@ ${directiveLines}`;
           const agentUpdate = {};
           if (lesson) agentUpdate.lessons = FieldValue.arrayUnion(lesson);
           if (forgeSuggestion) agentUpdate.forgeSuggestions = FieldValue.arrayUnion(forgeSuggestion);
-          await db.collection('agents').doc(battle.agentId).update(agentUpdate);
+          // Phase 1 attribution redirect: casual-clone → parent, else self.
+          const lessonTargetId = await resolveAttributionAgentId(db, battle);
+          await db.collection('agents').doc(lessonTargetId).update(agentUpdate);
         }
 
         console.log(`${LOG_PREFIX} Battle ${battle.id}: auto-debrief written to chatExchanges`);

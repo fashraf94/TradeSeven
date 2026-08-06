@@ -418,7 +418,7 @@ export async function assembleBoardPrefill(uid, { userPool = null } = {}) {
       collection(db, 'agents'),
       where('ownerId', '==', uid)
     ));
-    const agentDoc = agentSnap.docs.find(d => d.data().isTrainingClone !== true);
+    const agentDoc = agentSnap.docs.find(d => d.data().isTrainingClone !== true && d.data().isCasualClone !== true);
     if (agentDoc) {
       agent = agentDoc.data();
     }

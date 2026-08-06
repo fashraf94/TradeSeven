@@ -369,6 +369,40 @@ export function trainingCloneDocId(groupId, odUserId) {
   return `${TRAINING_CLONE_ID_PREFIX}${groupId}-${odUserId}`;
 }
 
+/**
+ * The agents-collection doc-id prefix for the PERSISTENT per-user CASUAL clone
+ * (`casual-agent-{odUserId}`) — the Command-Center BaggerBomb identity
+ * (Per-Battle Loadout + Concurrency Phase 1). ONE per user, reused across every
+ * casual deploy. Deliberately DISTINCT from `training-agent-` (per-pod) and
+ * `cpu-agent-`: classifyEvidence therefore reads a `casual-agent-` id as
+ * `live_agent` (BaggerBomb is a REAL game), never `training` — the corpus
+ * admission the attribution redirect relies on.
+ */
+export const CASUAL_CLONE_ID_PREFIX = 'casual-agent-';
+
+export function casualCloneDocId(odUserId) {
+  if (typeof odUserId !== 'string' || odUserId.length === 0) throw new Error('casualCloneDocId: odUserId required');
+  return `${CASUAL_CLONE_ID_PREFIX}${odUserId}`;
+}
+
+/** True when an agentId is the persistent casual clone identity. */
+export function isCasualCloneId(id) {
+  return typeof id === 'string' && id.startsWith(CASUAL_CLONE_ID_PREFIX);
+}
+
+/**
+ * True when an agentId is ANY clone identity (training pod OR casual) — the
+ * canonical "this is NOT the player's real ranked agent" test for ranked
+ * owner-lookups. Prefix-based because a battle doc's only clone marker is its
+ * agentId prefix (the fenced createAgentBattle doc shape carries no clone field);
+ * the agent DOC additionally carries isTrainingClone / isCasualClone, but the id
+ * prefix is the one signal available on every surface (client + server).
+ */
+export function isCloneAgentId(id) {
+  return typeof id === 'string'
+    && (id.startsWith(TRAINING_CLONE_ID_PREFIX) || id.startsWith(CASUAL_CLONE_ID_PREFIX));
+}
+
 // Fixed assignment order (founder-ratified): any group of ≤4 consecutive
 // CPUs fields four distinct archetypes, reproducible from the id alone.
 // Values mirror api/_utils/archetypeScoring.js ARCHETYPE_WEIGHTS keys —

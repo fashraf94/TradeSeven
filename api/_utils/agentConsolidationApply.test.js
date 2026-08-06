@@ -21,7 +21,7 @@ vi.mock('firebase-admin/firestore', () => {
   };
 });
 
-const { validateConsolidationOutput, applyConsolidation } = await import('./agentConsolidationApply.js');
+const { validateConsolidationOutput, applyConsolidation, applyConsolidationTx } = await import('./agentConsolidationApply.js');
 const { FieldValue } = await import('firebase-admin/firestore');
 
 // ==================== FIXTURES ====================
@@ -250,5 +250,54 @@ describe('applyConsolidation', () => {
     const out = makeValidOutput({ lessonsAbsorbed: [], lessonsCarriedForward: [] });
     await applyConsolidation(agentRef, agent, out);
     expect(updateMock.mock.calls[0][0].lessons).toEqual([]);
+  });
+});
+
+// ==================== applyConsolidationTx (Phase 1 casual copy-forward) ====================
+
+describe('applyConsolidationTx (transactional — casual forward)', () => {
+  // A db whose transaction exposes a FRESH agent read (which may differ from the
+  // driver's earlier pre-read — e.g. a concurrent DRB arrayUnion added a lesson).
+  function makeTxDb(freshAgent) {
+    const store = { written: null };
+    const agentRef = { path: 'agents/parent-1' };
+    const db = {
+      runTransaction: async (fn) => fn({
+        get: async () => ({ exists: true, data: () => freshAgent }),
+        update: (_ref, data) => { store.written = data; },
+      }),
+    };
+    return { db, agentRef, store };
+  }
+
+  it('re-reads evolutionCycle + lessons FRESH in-tx and preserves a concurrently-added lesson (no clobber)', async () => {
+    const fresh = {
+      evolutionCycle: 3,
+      lessons: [
+        { id: 'lesson_1', text: 'absorbed target', consumed: false, consumedInConsolidation: null },
+        { id: 'lesson_2', text: 'carried', consumed: false, consumedInConsolidation: null },
+        // arrived AFTER the driver's pre-read (a concurrent DRB write to the parent):
+        { id: 'lesson_concurrent', text: 'must not be clobbered', consumed: false, consumedInConsolidation: null },
+      ],
+    };
+    const { db, agentRef, store } = makeTxDb(fresh);
+    const { newCycle } = await applyConsolidationTx(db, agentRef, makeValidOutput({ lessonsAbsorbed: ['lesson_1'] }));
+
+    expect(newCycle).toBe(4); // 3 + 1, from the FRESH read (not a stale pre-read)
+    const byId = Object.fromEntries(store.written.lessons.map((l) => [l.id, l]));
+    expect(byId.lesson_1.consumed).toBe(true);              // absorbed → consumed
+    expect(byId.lesson_concurrent).toBeTruthy();            // the concurrent lesson SURVIVED
+    expect(byId.lesson_concurrent.consumed).toBe(false);    // untouched
+    expect(store.written.evolutionCycle).toBe(4);
+    expect(store.written.consolidatedInsight).toBe(makeValidOutput().consolidatedInsightText);
+    expect(store.written.pendingConsolidation).toBe(false);
+    expect(store.written.evolutionTimeline).toEqual(FieldValue.arrayUnion(expect.objectContaining({ type: 'consolidation', cycle: 4 })));
+  });
+
+  it('handles an empty/absent agent gracefully (cycle starts at 1, no lessons)', async () => {
+    const { db, agentRef, store } = makeTxDb({}); // no evolutionCycle, no lessons
+    const { newCycle } = await applyConsolidationTx(db, agentRef, makeValidOutput({ lessonsAbsorbed: [] }));
+    expect(newCycle).toBe(1);
+    expect(store.written.lessons).toEqual([]);
   });
 });

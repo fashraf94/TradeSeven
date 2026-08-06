@@ -87,6 +87,12 @@ import { finalizeCronState } from '../_utils/agentCronState.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
 // string literal). Zero-import schema module, BUILD_RULES §4.
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
+// Per-Battle Loadout + Concurrency Phase 1 — attribution redirects. A BaggerBomb
+// battle runs on the persistent casual clone, but its record + corpus belong to
+// the PARENT ranked agent. resolveAttributionAgentId (async — the corpus sites)
+// and resolveRecordTargetId (pure, given the in-tx clone doc — the settlement)
+// share one rule: casual clone → parent, everything else → self (byte-identical).
+import { resolveAttributionAgentId, resolveRecordTargetId } from '../_utils/casualClone.js';
 import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, EVAL_MODEL_ID, EVAL_MAX_OUTPUT_TOKENS } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { runCanonicalOpenSweep } from '../_utils/canonicalOpenSweep.js';
@@ -648,6 +654,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
     const ctx = battle.agentContext || {};
     const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
+
+    // Phase 1 attribution redirect (corpus): for a casual-clone battle, learning
+    // receipts are booked under the PARENT ranked agent (design-lock corpus
+    // matrix) so BaggerBomb keeps feeding the player's real learning corpus.
+    // Resolved ONCE per tick; a non-casual battle resolves to battle.agentId with
+    // NO read, so every non-casual / flag-off path is byte-identical. Used at both
+    // captureSwapReceipt sites (the live one + the dark expansion one) for the
+    // classifyEvidence gate AND the stamped receipt agentId.
+    const attributionAgentId = await resolveAttributionAgentId(db, battle);
 
     // StatusFeed cap: 100 for agent battles, 50 for PvP
     const STATUS_FEED_CAP = battle.agentId ? 100 : 50;
@@ -1640,7 +1655,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // BEFORE refreshBattleFromDoc so battle.* still holds decision-time
         // state (tradeCount, trades.length, thresholdHistory).
         if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
-            && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
+            && classifyEvidence({ isCpu: battle.isCpu, agentId: attributionAgentId }) === 'live_agent') {
           try {
             // /code-review fix (Fix-1 parity): a risk replacement can be a
             // hotBench swap-in — the in-memory bench is hotBench-AUGMENTED
@@ -1682,7 +1697,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             await captureSwapReceipt({
               enabled: true,
               db,
-              agentId: battle.agentId,
+              // Phase 1 attribution redirect: casual-clone → parent, else self.
+              agentId: attributionAgentId,
               // W1 — archetype identity from the battle-creation-frozen
               // agentContext. Absent ⇒ null, never 'unknown'.
               archetype: ctx.archetype ?? null,
@@ -2276,7 +2292,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             // no real entry decision. isCpu is the authoritative CPU contract; the
             // reserved agentId prefixes are the secondary/training signal. The `&&`
             // short-circuits when the flag is off, so the no-op path is unchanged.
-            if (LEARNING_L1_CAPTURE_ENABLED && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
+            if (LEARNING_L1_CAPTURE_ENABLED && classifyEvidence({ isCpu: battle.isCpu, agentId: attributionAgentId }) === 'live_agent') {
               try {
                 // Fix 1 (DARK, post-trade, capture-only): the entry symbol's tech
                 // doc is null when it is a hotBench swap-in — allTechSymbols does
@@ -2320,7 +2336,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
                 await captureSwapReceipt({
                   enabled: true,
                   db,
-                  agentId: battle.agentId,
+                  // Phase 1 attribution redirect: casual-clone → parent, else self.
+                  agentId: attributionAgentId,
                   // W1 (Corpus Capture Patch) — archetype identity from the
                   // battle-creation-frozen agentContext (never the mutable
                   // agent scalar). Absent ⇒ null, never a synthesized
@@ -2960,6 +2977,12 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           // instrumented now so the class enters the corpus the day co-pilot
           // mode returns. Autopilot-site posture: post-commit, triple-gated,
           // try/catch log-and-swallow. `ctx` is not in scope in this fn.
+          // NOTE (Phase 1 casual redirect): attributionAgentId is local to
+          // processAgentBattle and out of scope here; the founder-scoped corpus
+          // redirect covers only the two autopilot-swap sites. These dark
+          // copilot/gameplan captures keep battle.agentId — a casual-clone
+          // receipt here would book under the clone. Filed for a follow-up to
+          // redirect them if copilot mode + the expansion flag ever go live.
           if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
               && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
             try {
@@ -3159,6 +3182,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         // (EXPIRED-AUTO-EXEC path). Same class as 'approved' above — a
         // proposal is a decision-outcome only when it RUNS, so both execution
         // points capture. Dormant today under the autopilot launch guard.
+        // (Phase 1: out-of-scope of the founder's 2-site corpus redirect — keeps
+        // battle.agentId; see the note at the approved-branch capture above.)
         if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
             && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
           try {
@@ -3370,6 +3395,9 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         // clear before the loop would instead DROP not-yet-executed swaps. A
         // strict "capture after cleanup" restructure (defer captures past the
         // post-loop clear) is deferred pending founder sign-off.
+        // (Phase 1: out-of-scope of the founder's 2-site corpus redirect — keeps
+        // battle.agentId; gameplan-meeting rotation capture, dark under the
+        // expansion flag. Same follow-up note as the proposal captures above.)
         if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
             && classifyEvidence({ isCpu: battle.isCpu, agentId: battle.agentId }) === 'live_agent') {
           try {
@@ -3734,6 +3762,35 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     const currentScore = scoreState.currentScore || 0;
     const disposition = resolveCompletionDisposition(fresh);
 
+    // ---- Phase 1 record attribution redirect ----
+    // A BaggerBomb battle runs on the persistent casual clone, but its career W-L
+    // belongs to the PARENT ranked agent (design-lock record matrix) — so
+    // BaggerBomb keeps contributing to the player's real record exactly as it does
+    // today. Resolve the record target from the clone doc (already read as
+    // agentSnap) and read the parent ref HERE — before any t.update below, so
+    // reads precede writes. The stats increment builds on the PARENT's current
+    // stats (statsBaseData); the activeBattleId pointer clear still targets the
+    // CLONE (agentRef). For a non-casual / real-agent battle recordTargetId ===
+    // completionAgentId, statsTargetRef stays agentRef, and this is byte-identical.
+    let statsTargetRef = agentRef;
+    let statsBaseData = agentSnap.exists ? agentSnap.data() : null;
+    if (agentSnap.exists && disposition.updateAgentStats) {
+      const recordTargetId = resolveRecordTargetId(completionAgentId, agentSnap.data());
+      if (recordTargetId !== completionAgentId) {
+        const parentRef = db.collection('agents').doc(recordTargetId);
+        const parentSnap = await t.get(parentRef); // read BEFORE the first t.update
+        // Security guard (review CONFIRMED-1): only redirect to a target owned by
+        // the CLONE's owner — a squat with a poisoned rankedAgentId must never
+        // credit/corrupt a victim's record. Same-owner is a legit-clone invariant.
+        if (parentSnap.exists && parentSnap.data().ownerId === agentSnap.data().ownerId) {
+          statsTargetRef = parentRef;
+          statsBaseData = parentSnap.data();
+        } else {
+          console.warn(`${LOG_PREFIX} casual record redirect refused for battle ${battle.id} — parent ${recordTargetId} missing or not same-owner; W-L stays on the clone`);
+        }
+      }
+    }
+
     // ---- Vision retired transition (Spec A Phase 2a + fix-up) ----
     // Build the retired Vision (if applicable) so it can be written atomically
     // with status='completed'. The cron is the proximate writer; the schema
@@ -3872,7 +3929,7 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
         t.update(agentRef, { activeBattleId: null });
       }
     } else if (agentSnap.exists) {
-      const stats = agentSnap.data().stats || {};
+      const stats = (statsBaseData && statsBaseData.stats) || {};
       const newGamesPlayed = (stats.gamesPlayed || 0) + 1;
       const newWins = (stats.wins || 0) + (result === 'win' ? 1 : 0);
       const newLosses = (stats.losses || 0) + (result === 'loss' ? 1 : 0);
@@ -3889,7 +3946,11 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
       }
       const newBestStreak = Math.max(stats.bestStreak || 0, Math.abs(newStreak));
 
-      t.update(agentRef, {
+      // Stats land on the RECORD target (the PARENT for a casual clone, else the
+      // clone / real agent itself); the activeBattleId pointer clear ALWAYS stays
+      // on the CLONE (agentRef). For a non-casual battle statsTargetRef ===
+      // agentRef, so these fold into the single original update — byte-identical.
+      t.update(statsTargetRef, {
         stats: {
           wins: newWins,
           losses: newLosses,
@@ -3900,8 +3961,11 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
           currentStreak: newStreak,
           bestStreak: newBestStreak,
         },
-        ...(pointerCurrent ? { activeBattleId: null } : {}),
+        ...(statsTargetRef === agentRef && pointerCurrent ? { activeBattleId: null } : {}),
       });
+      if (statsTargetRef !== agentRef && pointerCurrent) {
+        t.update(agentRef, { activeBattleId: null }); // clear the CLONE's pointer
+      }
     }
 
     return { committed: true, repaired: isBareGcCompletion, disposition, currentScore, visionTransitionLogPayload, masteryStamped, freshForAward };

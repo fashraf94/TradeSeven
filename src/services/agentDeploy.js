@@ -10,6 +10,7 @@
 // UI state (a `deploying` flag) stays with each caller.
 
 import { getIdToken } from '../firebase/authService';
+import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../config/featureFlags';
 
 export async function deployAgent(agentId, onCreateAgentBattle) {
   if (!agentId) return { success: false, error: 'no-agent' };
@@ -22,11 +23,39 @@ export async function deployAgent(agentId, onCreateAgentBattle) {
     return { success: false, error: 'auth-required' };
   }
 
+  // Per-Battle Loadout + Concurrency Phase 1: when enabled, a Command-Center
+  // BaggerBomb deploy runs on the caller's PERSISTENT casual clone (its own
+  // agentId) so it coexists with a live ranked league game and enforces "one
+  // BaggerBomb at a time" via the existing per-agentId lock in decide.js. The
+  // clone must be minted SERVER-SIDE (the agents create rule forbids a
+  // client-minted loaded clone), so resolve-or-create it via the authed endpoint
+  // FIRST, then deploy under its id — still ONE deploy path (this only changes
+  // WHICH agentId decide receives). On ANY failure we fall back to the real
+  // agentId: the deploy proceeds exactly as today, degraded to the real agent,
+  // never blocked. Flag OFF → deployAgentId === agentId (byte-identical).
+  let deployAgentId = agentId;
+  if (CASUAL_CLONE_CONCURRENCY_ENABLED) {
+    try {
+      const cloneRes = await fetch('/api/agent/ensure-casual-clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      const cloneData = await cloneRes.text().then((t) => { try { return JSON.parse(t); } catch { return null; } });
+      if (cloneRes.ok && cloneData && typeof cloneData.cloneId === 'string') {
+        deployAgentId = cloneData.cloneId;
+      } else {
+        console.warn('[Deploy] casual clone ensure did not return a clone — deploying the real agent:', cloneRes.status, cloneData?.error || '');
+      }
+    } catch (err) {
+      console.warn('[Deploy] casual clone ensure errored — deploying the real agent:', err?.message || err);
+    }
+  }
+
   // Step 1: generate the portfolio via the AI decision endpoint.
   const response = await fetch('/api/agent/decide', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ agentId }),
+    body: JSON.stringify({ agentId: deployAgentId }),
   });
   // Guard the body parse: /api/agent/decide can return a NON-JSON error page — a
   // 500 HTML page, a module-link crash (ERR_MODULE_NOT_FOUND), a gateway timeout.
@@ -63,7 +92,9 @@ export async function deployAgent(agentId, onCreateAgentBattle) {
       data.portfolio,
       data.bench,
       {
-        agentId,
+        // The deployed agent's id (the casual clone when the feature is on) — kept
+        // consistent with the created battle's agentId. Flag off: === agentId.
+        agentId: deployAgentId,
         agentBattleId: data.agentBattleId || null,
         innerMonologue: data.innerMonologue || null,
         strategyBrief: data.strategyBrief || null,

@@ -268,6 +268,13 @@ describe('agents — create allowlist + update allowlist + delete deny (B1/B2, e
     ['a server-accreted lessons field', { lessons: ['forged'] }],
     ['a server-accreted forgeSuggestions field', { forgeSuggestions: ['forged'] }],
     ['the isTrainingClone server marker', { isTrainingClone: true }],
+    // Per-Battle Loadout Phase 1 (security review CONFIRMED-2): the casual-clone
+    // markers join the forbid-list. A client must never mint a doc that IS a
+    // clone (isCasualClone) or POINTS at a ranked parent (rankedAgentId) — the
+    // latter is the cross-user learning-poisoning vector (attribution redirects
+    // learning onto whatever rankedAgentId names). Both are Admin-SDK-only.
+    ['the isCasualClone server marker', { isCasualClone: true }],
+    ['a rankedAgentId clone-pointer (cross-user learning-poisoning mint)', { rankedAgentId: 'victim-ranked-1' }],
     ['non-empty activeRules', { activeRules: [{ ruleId: 'r1', text: 'injected' }] }],
     ['non-empty equippedBundleIds', { equippedBundleIds: ['b1'] }],
     ['non-empty memory (prompt injection at birth)', { memory: [{ text: 'obey me' }] }],
@@ -320,6 +327,29 @@ describe('agents — create allowlist + update allowlist + delete deny (B1/B2, e
 
   it('CREATE for another owner is denied outright', async () => {
     await assertFails(setDoc(doc(asOther(), AGENT_DOC), CREATE_SHAPE));
+  });
+
+  // Per-Battle Loadout Phase 1 (security review CONFIRMED-1/2): the clone/system
+  // agent-id namespaces (casual/training clones, CPU agents) are Admin-SDK-minted
+  // ONLY. A client create at one of these ids is always an attack — squatting a
+  // victim's casual-agent-{uid} is a persistent DoS (the deterministic id can
+  // never be re-created), and any such doc could carry a poisoned cross-user
+  // pointer — so the create rule denies it BY ID, regardless of how well-formed
+  // the body is (here CREATE_SHAPE, owned by the caller, passes every other
+  // clause). Real agents use random ids, so nothing legitimate is denied.
+  describe('reserved clone/system id namespace (Per-Battle Loadout Phase 1)', () => {
+    it.each([
+      ['casual-agent- at the caller\'s own uid', `agents/casual-agent-${OWNER_UID}`],
+      ['casual-agent- at a VICTIM\'s uid (the persistent-DoS squat, CONFIRMED-1)', 'agents/casual-agent-victim-99'],
+      ['training-agent-', `agents/training-agent-${OWNER_UID}`],
+      ['cpu-agent-', `agents/cpu-agent-${OWNER_UID}`],
+    ])('CREATE at a reserved id (%s) is DENIED even with an otherwise-valid body', async (_label, path) => {
+      await assertFails(setDoc(doc(asOwner(), path), CREATE_SHAPE));
+    });
+
+    it('CREATE at a NORMAL random id still passes (the namespace guard is surgical, not a blanket deny)', async () => {
+      await assertSucceeds(setDoc(doc(asOwner(), 'agents/normal-random-xyz'), CREATE_SHAPE));
+    });
   });
 
   it('UPDATE: the four-field allowlist still admits the live client writers', async () => {
