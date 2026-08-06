@@ -18,35 +18,55 @@ const REPO = resolve(HERE, '../..');
 const CENSUS = JSON.parse(readFileSync(resolve(HERE, 'compositionWriterCensus.json'), 'utf8'));
 const read = (p) => readFileSync(resolve(REPO, p), 'utf8');
 
+// Recursive scan over ALL of api/ + scripts/ (review P2: an api/forge or cron
+// writer scaffolded tomorrow must not escape the ratchet by directory).
+function walkJs(rel) {
+  const out = [];
+  for (const entry of readdirSync(resolve(REPO, rel), { withFileTypes: true })) {
+    const p = `${rel}/${entry.name}`;
+    if (entry.isDirectory()) { if (entry.name !== 'node_modules') out.push(...walkJs(p)); }
+    else if (entry.name.endsWith('.js') && !entry.name.includes('.test.')) out.push(p);
+  }
+  return out;
+}
+const ALL_SERVER_FILES = [...walkJs('api'), ...walkJs('scripts')];
+
 describe('A46 — the writer census is complete and mechanically derived', () => {
-  it('every api/agent module that writes agent settings (txUpdateAgentSettings) is a censused fenced endpoint', () => {
-    const agentFiles = readdirSync(resolve(REPO, 'api/agent'))
-      .filter((f) => f.endsWith('.js') && !f.includes('.test.'))
-      .map((f) => `api/agent/${f}`);
-    const settingsWriters = agentFiles.filter((f) => read(f).includes('txUpdateAgentSettings('));
-    for (const f of settingsWriters) {
-      expect(CENSUS.fencedEndpoints, `${f} writes agent settings but is not in the census`).toContain(f);
+  it('every server module that writes agent settings (txUpdateAgentSettings) is censused — any directory', () => {
+    const censusedWriters = new Set([
+      ...CENSUS.fencedEndpoints,
+      ...CENSUS.adminCliScripts.map((s) => s.file),
+      'api/_utils/agentSettingsTx.js', // the helper itself
+    ]);
+    for (const f of ALL_SERVER_FILES) {
+      if (read(f).includes('txUpdateAgentSettings(')) {
+        expect(censusedWriters.has(f), `${f} writes agent settings but is not in the census`).toBe(true);
+      }
     }
     // decide.js is fenced-file-classified, never silently missing:
     expect(CENSUS.derivedClassified.some((d) => d.file === 'api/agent/decide.js')).toBe(true);
   });
 
-  it('every censused fenced endpoint actually validates the epoch in its transaction (wiring proof)', () => {
+  it('every censused fenced endpoint validates the epoch INSIDE its transaction, before its writes (wiring proof, order-checked — review C5)', () => {
     for (const f of CENSUS.fencedEndpoints) {
       const src = read(f);
       expect(src, `${f} missing compositionWriteEpoch import`).toContain("from '../_utils/compositionWriteEpoch.js'");
-      expect(src, `${f} missing validateWriteEpochInTx call`).toContain('await validateWriteEpochInTx(tx, db');
-      expect(src, `${f} missing epoch_closed sentinel row`).toContain('epoch_closed');
+      const txIdx = src.indexOf('runTransaction(');
+      const callIdx = src.indexOf('await validateWriteEpochInTx(tx, db');
+      expect(txIdx, `${f} has no transaction`).toBeGreaterThan(-1);
+      expect(callIdx, `${f} missing validateWriteEpochInTx call`).toBeGreaterThan(txIdx); // inside the tx callback
+      const firstWrite = ['tx.update(', 'tx.set(', 'txUpdateAgentSettings(']
+        .map((tok) => src.indexOf(tok))
+        .filter((i) => i > -1)
+        .reduce((a, b) => Math.min(a, b), Infinity);
+      expect(callIdx, `${f} epoch validation must precede the first tx write`).toBeLessThan(firstWrite);
+      expect(/epoch_closed:\s*\[409/.test(src), `${f} missing the epoch_closed → 409 sentinel row`).toBe(true);
     }
   });
 
-  it('every writeCompiledBuildsInTx caller is either a censused endpoint or a censused transactional util', () => {
+  it('every writeCompiledBuildsInTx caller — any directory — is a censused endpoint or transactional util', () => {
     const covered = new Set([...CENSUS.fencedEndpoints, ...CENSUS.fencedTransactionalUtils, 'api/_utils/compileOnSettingsChange.js']);
-    const candidates = [
-      ...readdirSync(resolve(REPO, 'api/agent')).filter((f) => f.endsWith('.js') && !f.includes('.test.')).map((f) => `api/agent/${f}`),
-      ...readdirSync(resolve(REPO, 'api/_utils')).filter((f) => f.endsWith('.js') && !f.includes('.test.')).map((f) => `api/_utils/${f}`),
-    ];
-    for (const f of candidates) {
+    for (const f of ALL_SERVER_FILES) {
       if (read(f).includes('writeCompiledBuildsInTx(')) {
         expect(covered.has(f), `${f} writes compiled builds outside the censused set`).toBe(true);
       }

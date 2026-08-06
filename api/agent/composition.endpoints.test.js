@@ -45,6 +45,7 @@ vi.mock('@vercel/functions', () => ({ waitUntil: (p) => p }));
 
 const { default: equipBundleHandler } = await import('./equip-bundle.js');
 const { default: updateSettingsHandler } = await import('./update-agent-settings.js');
+const { default: changeArchetypeHandler } = await import('./change-archetype.js');
 
 // ── fake Firestore: agents + bundles + the composition epoch doc, with
 // write- and epoch-read counters for the byte-identity assertions ──────────
@@ -72,8 +73,19 @@ function makeFakeFirestore({ agentDocs = {}, bundleDocs = {}, epochDoc = null } 
       state.agentDocs[id] = { ...state.agentDocs[id], ...updates };
     },
     collection: (name) => {
-      if (name !== 'bundles') throw new Error(`Unmocked subcollection: ${name}`);
-      return { doc: (bundleId) => buildBundleRef(id, bundleId) };
+      if (name === 'bundles') return { doc: (bundleId) => buildBundleRef(id, bundleId) };
+      // generic subcollection (rules docs for the change-archetype seed path):
+      // set/update count as writes; queries return empty (fresh agent).
+      const store = {};
+      return {
+        doc: (docId) => ({
+          id: docId,
+          get: async () => ({ exists: !!store[docId], data: () => store[docId] }),
+          set: async (data) => { state.writes += 1; store[docId] = data; },
+          update: async (u) => { state.writes += 1; store[docId] = { ...store[docId], ...u }; },
+        }),
+        where: () => ({ get: async () => ({ docs: [], empty: true }) }),
+      };
     },
   });
 
@@ -86,7 +98,14 @@ function makeFakeFirestore({ agentDocs = {}, bundleDocs = {}, epochDoc = null } 
 
   const collection = (name) => {
     if (name === 'agents') return { doc: (id) => buildAgentRef(id) };
-    if (name === 'composition') return { doc: () => buildEpochRef() };
+    if (name === 'composition') {
+      return { doc: (docId) => {
+        // Review C2: pin the doc ADDRESS — a helper reading any other id is a
+        // permanently fail-open fence in production and must fail here.
+        if (docId !== 'writeEpoch') throw new Error(`wrong epoch doc id: ${docId}`);
+        return buildEpochRef();
+      } };
+    }
     throw new Error(`Unmocked collection: ${name}`);
   };
 
@@ -210,6 +229,44 @@ describe('A27 — whole-config save with a banned trait pairing rejects, stored 
     await updateSettingsHandler(req, res);
     expect(res.statusCode).toBe(200);
     expect(state.agentDocs['agent-1'].equippedTraits).toEqual([{ traitId: 'trait-bargain-hunter' }]);
+  });
+});
+
+describe('C3 — the change-archetype target-archetype gate (offer/equip boundary)', () => {
+  it('switching INTO an archetype banned by an equipped bundle → 409, byte-identical (review C3)', async () => {
+    flagState.mode = 'enforce';
+    // contrarian agent holds an r-09 bundle (legal for contrarian: tension);
+    // switching to DEGEN would pair it core_conflict (R-14) → blocked.
+    const { db, state } = makeFakeFirestore({
+      agentDocs: { 'agent-1': { ownerId: 'owner-1', archetype: 'contrarian', equippedBundleIds: ['bundle-1'], settingsRev: 3 } },
+      bundleDocs: { 'agent-1/bundle-1': { status: 'equipped', ruleIds: ['rd1'], ruleSnapshots: [BANNED_SNAP] } },
+    });
+    activeFirestore = db;
+    const before = JSON.parse(JSON.stringify({ a: state.agentDocs, b: state.bundleDocs }));
+
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', archetype: 'degen' } });
+    await changeArchetypeHandler(req, res);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('composition_blocked');
+    expect(state.writes).toBe(0);
+    expect({ a: state.agentDocs, b: state.bundleDocs }).toEqual(before);
+  });
+
+  it('a switch whose equipped bundles are legal for the TARGET proceeds under enforce (the gate reads the target, not the current archetype)', async () => {
+    flagState.mode = 'enforce';
+    // degen agent holds an r-09 bundle... banned for degen but LEGAL for
+    // contrarian (tension) — switching degen → contrarian must NOT block.
+    // (A gate mistakenly checking the CURRENT archetype fails this row.)
+    const { db, state } = makeFakeFirestore({
+      agentDocs: { 'agent-1': { ownerId: 'owner-1', archetype: 'degen', equippedBundleIds: ['bundle-1'], settingsRev: 3 } },
+      bundleDocs: { 'agent-1/bundle-1': { status: 'equipped', ruleIds: ['rd1'], ruleSnapshots: [BANNED_SNAP] } },
+    });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', archetype: 'contrarian' } });
+    await changeArchetypeHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(state.agentDocs['agent-1'].archetype).toBe('contrarian');
   });
 });
 

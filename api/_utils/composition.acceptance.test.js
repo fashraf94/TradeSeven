@@ -128,13 +128,29 @@ describe('A9 — migration is idempotent and logs once', () => {
     });
     expect(second.entries).toEqual([]);
   });
-  it('duplicate targets dedupe on entryKey (logs once)', () => {
+  it('duplicate targets dedupe on entryKey (logs once) — proven on a bundle carrying the SAME snapshot twice', () => {
+    // Review C1: the plain fixtures structurally cannot collide, so this row
+    // must manufacture a genuine duplicate — a corrupted bundle listing one
+    // snapshot id twice. Without the entryKey dedupe guard this yields TWO
+    // entries for one target and the assertion fails.
     const fx = mcAgentFixture();
-    // the same out-of-domain value reachable via rule doc AND snapshot yields
-    // one entry per distinct docPath+field — never two for one target
+    const dupSnap = fx.bundles[0].ruleSnapshots[0];
+    fx.bundles[0].ruleSnapshots = [dupSnap, { ...dupSnap }];
     const { entries } = planAgentMigration({ ...fx, migrationRunId: 'run-1' });
     const keys = entries.map((e) => e.entryKey);
     expect(new Set(keys).size).toBe(keys.length);
+    expect(entries.filter((e) => e.docPath === fx.bundles[0].docPath && e.field.includes('paramValues.pct'))).toHaveLength(1);
+  });
+
+  it('C2/C4 pins — the epoch doc address of record and the shipped dark defaults', async () => {
+    const epoch = await import('./compositionWriteEpoch.js');
+    expect(`${epoch.WRITE_EPOCH_COLLECTION}/${epoch.WRITE_EPOCH_DOC_ID}`).toBe('composition/writeEpoch'); // the §8 runbook + rules layer address
+    const cfg = await import('./compositionConfig.js');
+    expect(cfg.COMPOSITION_ENFORCEMENT_MODE).toBe('off');
+    expect(cfg.COMPOSITION_EPOCH_FENCE_ENABLED).toBe(false);
+    expect(cfg.COMPOSITION_MIGRATION_FEED_ENABLED).toBe(false);
+    const ff = await import('../../src/config/featureFlags.js');
+    expect(ff.COMPOSITION_DISPLAY_ENABLED).toBe(false);
   });
 });
 
