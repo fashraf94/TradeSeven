@@ -1419,3 +1419,18 @@ export function isDeploySkyCouplingOn() {
     return false;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COMPOSITION EVENT — PR 2: the one CLIENT-consumed flag. The three
+// server-side composition flags live in api/_utils/compositionConfig.js (the
+// masteryConfig.js precedent — endpoint test suites mock this file with
+// explicit export lists). Table of record: docs/composition/PR2_FLAG_OWNERSHIP.md.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * D2 display: candidate greyed-with-reason on the compat copy surfaces
+ * (compositionDisplay.js through compatSurfaceCopy). false — DEFAULT:
+ * copy builders return their legacy output byte-identically (A23 test).
+ */
+export const COMPOSITION_DISPLAY_ENABLED = false;
+

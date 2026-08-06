@@ -71,11 +71,13 @@ import { revalidateStandingLeans } from '../_utils/leanRevalidation.js';
 // traits; the bad state is unreachable, and Cancel commits nothing). Shares the
 // pure planner with the client clean-replace, so the two can't drift.
 import { seedArchetypeTraitsInTx, hasBornWithSet, softDeleteReplacedTraitRuleDocs } from '../_utils/archetypeSeeding.js';
+import { validateWriteEpochInTx } from '../_utils/compositionWriteEpoch.js';
 
 export const config = { maxDuration: 10 };
 
 const SENTINEL_PREFIX = '__change_archetype:';
 const SENTINEL_TO_HTTP = Object.freeze({
+  epoch_closed:     [409, 'epoch_closed',     'Configuration writes are briefly paused for a system identity update. Try again in a few minutes.'],
   agent_not_found: [404, 'agent_not_found', 'Agent not found.'],
   forbidden:       [403, 'forbidden',       'Not authorized for this resource.'],
   battle_active:   [409, 'battle_active',   'Cannot change archetype while the agent has an active battle.'],
@@ -115,6 +117,9 @@ export default async function handler(req, res) {
   try {
     txResult = await db.runTransaction(async (tx) => {
       const agentSnap = await tx.get(agentRef);
+      // Composition write-epoch fence (design note §3): read-phase validation —
+      // zero I/O while dark; a closed epoch 409s with nothing written (A41).
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX });
 
       // Agent must exist, belong to the caller, and be battle-free.
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');

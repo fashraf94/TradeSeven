@@ -53,11 +53,13 @@ import { prepareCompileInputs, writeCompiledBuildsInTx } from '../_utils/compile
 import { classifyBundleSnapshots } from '../../src/services/ruleCompatClassify.js';
 import { snapshotsToActiveRules, gatherBundleSnapshots } from '../_utils/bundleRuleProjection.js';
 import { waitUntil } from '@vercel/functions';
+import { validateWriteEpochInTx } from '../_utils/compositionWriteEpoch.js';
 
 export const config = { maxDuration: 10 };
 
 const SENTINEL_PREFIX = '__equip_bundle:';
 const SENTINEL_TO_HTTP = Object.freeze({
+  epoch_closed:     [409, 'epoch_closed',     'Configuration writes are briefly paused for a system identity update. Try again in a few minutes.'],
   agent_not_found:  [404, 'agent_not_found',  'Agent not found.'],
   forbidden:        [403, 'forbidden',        'Not authorized for this resource.'],
   battle_active:    [409, 'battle_active',    'Cannot equip bundle while agent has an active battle. Wait for the battle to complete.'],
@@ -113,6 +115,9 @@ export default async function handler(req, res) {
         ? [agentRef, bundleRef, masteryProfileRef(db, user.uid)]
         : [agentRef, bundleRef];
       const [agentSnap, bundleSnap, profileSnap] = await tx.getAll(...refs);
+      // Composition write-epoch fence (design note §3): read-phase validation —
+      // zero I/O while dark; a closed epoch 409s with nothing written (A41).
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX });
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');

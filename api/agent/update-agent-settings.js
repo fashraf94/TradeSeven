@@ -42,6 +42,7 @@ import { stableStringify } from '../_utils/canonicalHash.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
+import { validateWriteEpochInTx } from '../_utils/compositionWriteEpoch.js';
 
 export const config = { maxDuration: 10 };
 
@@ -52,6 +53,7 @@ const MAX_DEPLOYED_STRATEGY_BYTES = 64 * 1024;
 
 const SENTINEL_PREFIX = '__update_agent_settings:';
 const SENTINEL_TO_HTTP = Object.freeze({
+  epoch_closed:     [409, 'epoch_closed',     'Configuration writes are briefly paused for a system identity update. Try again in a few minutes.'],
   agent_not_found: [404, 'agent_not_found', 'Agent not found.'],
   forbidden:       [403, 'forbidden',       'Not authorized for this resource.'],
 });
@@ -151,6 +153,9 @@ export default async function handler(req, res) {
   try {
     txResult = await db.runTransaction(async (tx) => {
       const agentSnap = await tx.get(agentRef);
+      // Composition write-epoch fence (design note §3): read-phase validation —
+      // zero I/O while dark; a closed epoch 409s with nothing written (A41).
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX });
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
