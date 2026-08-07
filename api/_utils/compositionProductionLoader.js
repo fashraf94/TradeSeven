@@ -65,7 +65,9 @@ export const ACTIVATION_DESCRIPTOR_FIELDS = Object.freeze([
   'candidateStateId', 'semanticHash', 'activationGeneration', 'overrideRevision',
 ]);
 
-function descriptorOf(snap) {
+// Exported at PR 4 for the generation-fence splices (decide.js projection
+// guard, FC-1 battle commit) — ONE descriptor parser, one tuple compare.
+export function readActivationDescriptor(snap) {
   if (!snap.exists) return null;
   const d = snap.data();
   // Review F4, extended to the full tuple: a PRESENT descriptor missing ANY
@@ -96,7 +98,7 @@ function descriptorOf(snap) {
 // generation alone cannot see an override edit). (The B4 activation writer
 // additionally keeps generations strictly monotonic — enforced in
 // compositionActivationService.js — but the loader does not depend on it.)
-function sameDescriptor(a, b) {
+export function sameActivationDescriptor(a, b) {
   return !!a && !!b && ACTIVATION_DESCRIPTOR_FIELDS.every((f) => a[f] === b[f]);
 }
 
@@ -116,7 +118,7 @@ export async function loadActivatedComposition(db, fetchLayers) {
   let lastBefore = null; let lastAfter = null;
   for (let attempt = 0; attempt < MAX_SEQLOCK_RETRIES; attempt += 1) {
     const out = await db.runTransaction(async (tx) => {
-      const before = descriptorOf(await tx.get(activationRef(db)));
+      const before = readActivationDescriptor(await tx.get(activationRef(db)));
       if (before === null) {
         // Pre-activation dark world: generation 0, no layers, resolver passes
         // base through untouched. Byte-identical semantics for any consumer.
@@ -126,8 +128,8 @@ export async function loadActivatedComposition(db, fetchLayers) {
       // SEQLOCK: the descriptor must be unchanged after the layer reads —
       // otherwise an activation/rollback landed mid-load and the view may mix
       // generations. Retry from the top.
-      const after = descriptorOf(await tx.get(activationRef(db)));
-      if (!sameDescriptor(before, after)) {
+      const after = readActivationDescriptor(await tx.get(activationRef(db)));
+      if (!sameActivationDescriptor(before, after)) {
         return { __retry: true, before: before.activationGeneration, after: after?.activationGeneration ?? null };
       }
       return {

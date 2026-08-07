@@ -91,7 +91,14 @@ function buildGuardrailsLayer(agentData, compiledBuild) {
  * @param {string} p.gameMode         the battle's resolved mode (A-2)
  * @param {string} p.now              ISO creation instant
  */
-export function buildResolvedAgentManifest({ agentData, compiledBuild = null, equippedWatchlist = null, gameMode, now }) {
+// PR 4 (FC-1-CLOSE, §7-signed concept-fence contact): `generationStamp`
+// ({sourceGeneration, semanticHash} | null) stamps the manifest AND its
+// compositionCompat slice with the activation generation + semantic identity
+// the battle flow PINNED before manifest resolution — the reader-side
+// internal-consistency pair (compositionAdvisoryRender's admissibility gate
+// rejects a mismatched pair, fail closed). Null (dark / pre-activation) adds
+// NO keys — the manifest stays byte-identical, hash included.
+export function buildResolvedAgentManifest({ agentData, compiledBuild = null, equippedWatchlist = null, gameMode, now, generationStamp = null }) {
   const customization = buildCustomizationSnapshot(agentData, now);
 
   // Consistency guard (review finding): the deploy request's agentData is
@@ -183,12 +190,20 @@ export function buildResolvedAgentManifest({ agentData, compiledBuild = null, eq
     ...(buildForManifest?.compatVerdicts?.some((v) => 'advisory' in v) ? {
       compositionCompat: {
         ...(buildForManifest.quarantined === true ? { quarantined: true } : {}),
+        // FC-1: the slice half of the generation-stamp pair.
+        ...(generationStamp ? { sourceGeneration: generationStamp.sourceGeneration } : {}),
         entries: buildForManifest.compatVerdicts.map((v) => ({
           ruleId: v.ruleId, verdict: v.verdict,
           advisory: v.advisory ?? null, narrowedParams: v.narrowedParams ?? null,
           ...(v.blocked === true ? { blocked: true } : {}),
         })),
       },
+    } : {}),
+    // FC-1: the manifest half of the generation-stamp pair (+ the semantic
+    // identity the ratified candidate carries). Absent when unstamped.
+    ...(generationStamp ? {
+      compositionSourceGeneration: generationStamp.sourceGeneration,
+      compositionSemanticHash: generationStamp.semanticHash,
     } : {}),
     ...(compiledBuildProvenanceSkipped ? { compiledBuildProvenanceSkipped } : {}),
   };

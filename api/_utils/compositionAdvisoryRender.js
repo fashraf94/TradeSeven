@@ -43,8 +43,19 @@ import { checkCompiledBuildAdmissible } from './compiledBuildPredicate.js';
  */
 export function buildCompositionAdvisoryIndex(compatSurface, {
   enabled = COMPOSITION_COMPILED_IDENTITY_ENABLED,
+  expectedSourceGeneration = null,
 } = {}) {
   if (!enabled || !compatSurface) return null;
+  // PR 4 (FC-1 reader side): the manifest-level and slice-level generation
+  // stamps must AGREE — a slice from one generation riding a manifest from
+  // another (a stale or tampered mix) renders NOTHING, fail closed. Legacy
+  // docs carry neither stamp (both null → no check); a HALF-stamped pair is
+  // malformed and equally inadmissible.
+  const sliceGeneration = compatSurface.sourceGeneration ?? null;
+  if ((sliceGeneration !== null || expectedSourceGeneration !== null)
+    && sliceGeneration !== expectedSourceGeneration) {
+    return { inadmissible: true };
+  }
   const entries = Array.isArray(compatSurface.compatVerdicts)
     ? compatSurface.compatVerdicts
     : Array.isArray(compatSurface.entries) ? compatSurface.entries : [];

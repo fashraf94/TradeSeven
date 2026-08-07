@@ -26,6 +26,10 @@ import { buildCustomizationSnapshot } from './leanRevalidation.js';
 // before (the P4 equivalence battery is the lock).
 import { MANIFEST_WRITE_ENABLED } from '../../src/config/featureFlags.js';
 import { buildResolvedAgentManifest } from './resolvedAgentManifest.js';
+import {
+  pinActivationDescriptor, assertProjectionCurrent,
+  manifestGenerationStamp, commitBattleDocWithPin,
+} from './compositionGenerationFence.js';
 
 // Duration mode: 'fullday' = single trading day (until market close), 'legacy' = multi-day (1d/3d/5d)
 const AGENT_BATTLE_DURATION_MODE = 'fullday';
@@ -64,6 +68,15 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
   const sectorMap = options.sectorMap || {};
   const now = new Date().toISOString();
   const duration = options.duration || '1d';
+
+  // Composition PR 4 — FC-1-CLOSE (§7-signed splice; logic lives in the dark
+  // module): pin the FULL activation descriptor BEFORE manifest resolution,
+  // reject a stale-stamped persisted projection (the decide.js splice's
+  // reader direction), stamp the manifest below, re-validate the pin at the
+  // commit — an interleaved activation aborts with nothing created (wholly-A
+  // or wholly-B). Dark: zero reads, and the commit is the same single add.
+  const activationPin = await pinActivationDescriptor(db);
+  if (!activationPin.dark) assertProjectionCurrent(agentData, activationPin.descriptor);
 
   // P4: mode resolution. Unknown modes fail LOUD — a battle doc must never
   // record a gameMode the engine can't resolve.
@@ -223,6 +236,7 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
         equippedWatchlist: options.equippedWatchlist ?? null,
         gameMode,
         now,
+        generationStamp: manifestGenerationStamp(activationPin), // FC-1 (PR 4)
       }),
     } : {}),
 
@@ -281,7 +295,7 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
     },
   };
 
-  const docRef = await db.collection('agentBattles').add(battleDoc);
+  const docRef = await commitBattleDocWithPin(db, battleDoc, activationPin); // FC-1: dark = the same add
   return { id: docRef.id, expiresAt };
 }
 

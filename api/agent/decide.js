@@ -52,6 +52,7 @@ import { TIERED_GAME_MODE, FLAT6_GAME_MODE, resolveModeConfig } from '../../src/
 // byte-identically to before.
 import { COMPILER_ENABLED } from '../../src/config/featureFlags.js';
 import { ensureDeployableCompiledBuild } from '../_utils/deployBuildValidation.js';
+import { pinActivationDescriptor, commitActiveRulesProjection } from '../_utils/compositionGenerationFence.js';
 
 // Vercel Pro timeout — two-call AI chain needs breathing room
 export const config = { maxDuration: 60 };
@@ -235,6 +236,12 @@ export default async function handler(req, res) {
     // (resolveRuleText) re-interpolates textTemplate+paramValues, so current
     // strengths take effect. See api/_utils/projectActiveRules.js.
     // Never blocks deploy — on failure we fall back to the stored activeRules.
+    // Composition PR 4 — the §7-signed projection splice (ruling of record,
+    // REVERSED Aug 6; logic lives in compositionGenerationFence.js): pin the
+    // activation descriptor BEFORE the projection's inputs are read; the
+    // guarded write below validates epoch + generation and stamps the value.
+    // Dark: zero reads here, the same single update there — byte-identical.
+    const projectionPin = await pinActivationDescriptor(db);
     try {
       const [rulesSnap, bundlesSnap] = await Promise.all([
         agentRef.collection('rules').get(),
@@ -277,7 +284,7 @@ export default async function handler(req, res) {
       // creating a battle, and edits are locked mid-battle, so the write is a
       // redundant no-op. The in-memory value above still feeds the prompt.
       if (!agent.activeBattleId) {
-        await agentRef.update({ activeRules: activeRulesForDeploy });
+        await commitActiveRulesProjection(db, agentRef, activeRulesForDeploy, projectionPin); // PR 4 splice
       }
     } catch (projErr) {
       console.error('[agent/decide] activeRules projection FAILED for agent', agentId,
