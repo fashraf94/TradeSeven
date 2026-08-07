@@ -111,6 +111,8 @@ import {
   voidReasonLabel,
   VOID_REASON_LABELS,
   VOIDED_NO_RESULT_COPY,
+  // L-B Guard 2 — the clamped result read.
+  getLatestBankedDayEntry,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
 // This is the behavioral half of the claimSystem parity guard.
@@ -1401,5 +1403,152 @@ describe('isoWeekString (relocated from the dev seeder — one home, BUILD_RULES
     expect(() => isoWeekString()).toThrow(/valid Date/);
     expect(() => isoWeekString('2026-06-15')).toThrow(/valid Date/);
     expect(() => isoWeekString(new Date('nope'))).toThrow(/valid Date/);
+  });
+});
+
+// ==================== L-B Guard 2 — the scoped result-read clamp ====================
+//
+// THE INVARIANT (L-B spec): a week's result must be the WEEK's result regardless
+// of what extra days exist in the doc. The REAL zombie shape: the voided cohort
+// lds_wed-1900_2026-07-22 banked day1–day8 (three days past its end), so every
+// latest-day result read silently returned the contaminated day8. These are the
+// red-first tests: getWeeklyComposite/getWeeklyScore/isFinalSnapshotDegraded
+// returned day8 values before the clamp.
+//
+// Fixture provenance: the SEAT and the day5/day8 compositePoints (−344 / −469.5)
+// are the REAL values from the voided group (L-B spec). The user/agent layer
+// split was not captured in discovery, so those are SYNTHETIC — chosen to
+// satisfy the one-k identity (composite = agentPoints + 1.5 × totalPoints):
+// day5 −164 + 1.5×(−120) = −344; day8 −207 + 1.5×(−175) = −469.5.
+
+const ZOMBIE_SEAT = '7ML6i7WyfuaAtJjl16Smh2kETPw1';
+
+/** The real zombie doc shape: day1–day8 present, day5 = the week's result.
+ * recordedDates follow the real cohort's trading calendar (fired Wed 2026-07-22:
+ * days 1–5 = Wed–Tue 22,23,24,27,28; zombie days 6–8 = 29,30,31 — review B's
+ * chronology note). */
+function zombieGroup({ day5Carried = false, day8Carried = false } = {}) {
+  const ZOMBIE_DATES = { 1: '2026-07-22', 2: '2026-07-23', 3: '2026-07-24', 4: '2026-07-27', 6: '2026-07-29', 7: '2026-07-30' };
+  const filler = (n) => ({
+    closeScores: { [ZOMBIE_SEAT]: { totalPoints: -10 * n, agentPoints: -5 * n, compositePoints: -20 * n } },
+    recordedDate: ZOMBIE_DATES[n],
+  });
+  return {
+    status: 'voided',
+    dailyScores: {
+      day1: filler(1), day2: filler(2), day3: filler(3), day4: filler(4),
+      day5: {
+        closeScores: { [ZOMBIE_SEAT]: { totalPoints: -120, agentPoints: -164, compositePoints: -344 } },
+        recordedDate: '2026-07-28',
+        ...(day5Carried ? { agentScoresCarried: true } : {}),
+      },
+      day6: filler(6), day7: filler(7),
+      day8: {
+        closeScores: { [ZOMBIE_SEAT]: { totalPoints: -175, agentPoints: -207, compositePoints: -469.5 } },
+        recordedDate: '2026-07-31',
+        ...(day8Carried ? { agentScoresCarried: true } : {}),
+      },
+    },
+  };
+}
+
+describe('L-B Guard 2 — result reads return the WEEK, not the contaminated latest day', () => {
+  it('getWeeklyComposite on the real zombie shape returns the day5 record (−344), never day8 (−469.5)', () => {
+    expect(getWeeklyComposite(zombieGroup(), ZOMBIE_SEAT)).toBe(-344);
+  });
+
+  it('getWeeklyScore returns the day5 user layer, never day8 (synthetic split, one-k-consistent)', () => {
+    expect(getWeeklyScore(zombieGroup(), ZOMBIE_SEAT)).toBe(-120);
+  });
+
+  it('F-1 danger direction: day5 CARRIED + day8 clean → isFinalSnapshotDegraded TRUE (the §7.2 gate must consult the week\'s final snapshot — a permanent lock over a degraded score of record is unrecoverable)', () => {
+    expect(isFinalSnapshotDegraded(zombieGroup({ day5Carried: true }))).toBe(true);
+  });
+
+  it('F-1 reverse: day5 clean + day8 carried → FALSE (day8 is not the week\'s snapshot)', () => {
+    expect(isFinalSnapshotDegraded(zombieGroup({ day8Carried: true }))).toBe(false);
+  });
+
+  it('doubly-pathological edge: a doc with ONLY day6+ has NO in-week result → 0 (intended semantics)', () => {
+    // INTENDED SEMANTICS (founder-ruled): no day ≤ WEEK_DAYS_REQUIRED exists, so
+    // "the week's result" does not exist — the 0 is the honest "no in-week result
+    // recorded", NOT a swallowed bug. A doc like this can only arise from a
+    // pathological write path (the real flow banks day1 first); returning day7's
+    // value would re-assert exactly the contamination this clamp exists to stop.
+    const only7 = { dailyScores: { day7: { closeScores: { [ZOMBIE_SEAT]: { totalPoints: -9, agentPoints: -9, compositePoints: -22.5 } }, recordedDate: '2026-07-30' } } };
+    expect(getWeeklyComposite(only7, ZOMBIE_SEAT)).toBe(0);
+    expect(getWeeklyScore(only7, ZOMBIE_SEAT)).toBe(0);
+    expect(isFinalSnapshotDegraded(only7)).toBe(false);
+  });
+
+  it('clamp no-op on well-formed docs: a mid-week day-3 doc reads day3 exactly as before', () => {
+    const day3 = {
+      dailyScores: {
+        day1: { closeScores: { u1: { totalPoints: 4, agentPoints: 2, compositePoints: 8 } }, recordedDate: '2026-08-03' },
+        day2: { closeScores: { u1: { totalPoints: 6, agentPoints: 3, compositePoints: 12 } }, recordedDate: '2026-08-04' },
+        day3: { closeScores: { u1: { totalPoints: 10, agentPoints: 5, compositePoints: 20 } }, recordedDate: '2026-08-05' },
+      },
+    };
+    expect(getWeeklyComposite(day3, 'u1')).toBe(20);
+    expect(getWeeklyScore(day3, 'u1')).toBe(10);
+  });
+});
+
+describe('getLatestBankedDayEntry — the clamped helper contract', () => {
+  it('selects day5 on the zombie (the week), day8 on the primitive (the doc) — the deliberate contrast', () => {
+    const z = zombieGroup();
+    expect(getLatestBankedDayEntry(z)).toEqual({ dayN: 5, entry: z.dailyScores.day5 });
+    expect(getLatestDayEntry(z)).toEqual({ dayN: 8, entry: z.dailyScores.day8 });
+  });
+
+  it('agrees with getLatestDayEntry on every well-formed doc (the clamp-safety identity)', () => {
+    const day3 = { dailyScores: {
+      day1: { closeScores: {}, recordedDate: 'a' },
+      day3: { closeScores: {}, recordedDate: 'b' }, // gap allowed, like the primitive
+    } };
+    expect(getLatestBankedDayEntry(day3)).toEqual(getLatestDayEntry(day3));
+    expect(getLatestBankedDayEntry({ dailyScores: {} })).toBeNull();
+    expect(getLatestBankedDayEntry(null)).toBeNull();
+  });
+
+  it('a doc with ONLY day6+ has no in-week entry → null (the callers surface 0 / not-degraded)', () => {
+    expect(getLatestBankedDayEntry({ dailyScores: { day7: { closeScores: {}, recordedDate: 'x' } } })).toBeNull();
+  });
+
+  it('maxDay is overridable (the spec-shaped option bag), defaulting to WEEK_DAYS_REQUIRED', () => {
+    const z = zombieGroup();
+    expect(getLatestBankedDayEntry(z, { maxDay: 7 })?.dayN).toBe(7);
+    expect(getLatestBankedDayEntry(z, {})?.dayN).toBe(5);
+  });
+});
+
+describe('L-B Guard 2 — live derivation is UNCLAMPED (the crux non-regression)', () => {
+  it('getLatestDayEntry still reads the doc truth on the zombie (day 8) — the primitive is deliberately unclamped', () => {
+    expect(getLatestDayEntry(zombieGroup())?.dayN).toBe(8);
+  });
+
+  it('deriveCurrentTradingDay keeps live claims-window semantics on the doc truth (day 9 next)', () => {
+    expect(deriveCurrentTradingDay(zombieGroup(), '2026-08-06')).toBe(9);
+    // and the banked-today arm on a well-formed doc is untouched
+    const day3 = { dailyScores: { day3: { closeScores: {}, recordedDate: '2026-08-05' } } };
+    expect(deriveCurrentTradingDay(day3, '2026-08-05')).toBe(3);
+    expect(deriveCurrentTradingDay(day3, '2026-08-06')).toBe(4);
+  });
+
+  it('isWeekBanked reads the clamped entry (review A-F1): true on the zombie (day5 exists), false mid-week', () => {
+    expect(isWeekBanked(zombieGroup())).toBe(true);
+    expect(isWeekBanked({ dailyScores: { day3: { closeScores: {}, recordedDate: 'x' } } })).toBe(false);
+  });
+
+  it('A-F1: the only-day6+ shape reads banking-PENDING, so the §7.2 pipeline can never lock its zeros', () => {
+    // Review finding A-F1 (executed repro): unclamped, isWeekBanked said true
+    // (7 ≥ 5) while the clamped readers said "no in-week result" — the two
+    // halves of the advancement gate disagreed, and lockTopTwo would have
+    // permanently locked an all-zero result. Clamped, gate and readers share
+    // ONE definition of the week's final snapshot: no in-week day → not banked
+    // → a loud, recoverable banking-pending pause (over-blocking is
+    // recoverable; permitting is not — the F-1 rationale, completed).
+    const only7 = { dailyScores: { day7: { closeScores: {}, recordedDate: 'x', agentScoresCarried: true } } };
+    expect(isWeekBanked(only7)).toBe(false);
   });
 });

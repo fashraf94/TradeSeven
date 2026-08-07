@@ -37,6 +37,7 @@ import {
   BASELINE_SOURCE,
   CAPTURE_STATE,
   getLatestDayEntry,
+  WEEK_DAYS_REQUIRED,
   computeComposite,
   round2,
 } from '../../src/constants/leagueTournament.js';
@@ -123,6 +124,19 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
   }
 
   const latest = getLatestDayEntry(group);
+
+  // L-B Guard 1 — the banking day clamp: a week is WEEK_DAYS_REQUIRED days;
+  // once the final day is banked, banking's job for this group is DONE and only
+  // the finalizer may move it. Without this bound, a stalled finalizer (the
+  // deliberate advancement freeze) let the zombie cohort bank to Day 8 of 5 —
+  // the clamp makes a stalled finalizer produce a PAUSED week, never a longer
+  // one. Sits in the pure function so every caller inherits it; the skip
+  // returns before any settlement work, and bankGroup's skip path commits zero
+  // writes. dayKey names the latest banked day (the already_recorded idiom).
+  if ((latest?.dayN || 0) >= WEEK_DAYS_REQUIRED) {
+    return { skipped: true, reason: 'week_complete_clamp', dayKey: `day${latest.dayN}` };
+  }
+
   const dayN = (latest?.dayN || 0) + 1;
   const dayKey = `day${dayN}`;
   const warnings = [];
@@ -439,6 +453,20 @@ export async function bankAllTournamentGroups(db, { now = new Date() } = {}) {
       const result = await bankGroup(db, group.id, quotes, { now, atrPercentiles, recordedBy: 'cron', agentScores });
       if (result.skipped) summary.skipped++;
       else summary.processed++;
+      // L-B R-1 (founder-ruled): a clamped bank is not a routine skip — it means
+      // a fully banked week is still sitting in BATTLE, i.e. the FINALIZER
+      // APPEARS STALLED. Say so loudly, naming the group, so tonight's run log
+      // is actionable (the FROZEN-advancement log precedent). A silent
+      // skipped++ is exactly what bought three days of blindness on the zombie
+      // cohort. No new cron/persistence/alert surface — this rides the run log.
+      if (result.reason === 'week_complete_clamp') {
+        console.error(
+          `[TournamentBanking] group ${group.id} clamped (week_complete_clamp): week fully banked at ` +
+          `${result.dayKey}/${WEEK_DAYS_REQUIRED} but status is still BATTLE — the finalizer appears STALLED; ` +
+          `investigate the advancement freeze for this group. (Distinct condition: a "final snapshot ` +
+          `degraded — needs MANUAL REVIEW" line from advancement means §7.2, not a stall.)`,
+        );
+      }
       // Warnings die with the invocation unless said here (code review:
       // the dayEntry carries the durable agentScoresCarried flag; the log
       // line is for the operator reading tonight's run).

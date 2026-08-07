@@ -1208,24 +1208,60 @@ export function getLatestDayEntry(group) {
 }
 
 /**
+ * L-B Guard 2 — THE WEEK'S final banked day entry: the highest day key with
+ * dayN ≤ maxDay (default WEEK_DAYS_REQUIRED). This is the RESULT/settlement
+ * read: the zombie cohort proved that once extra days exist in a doc (banked
+ * past a stalled finalizer), "latest day" and "the week's day" diverge — and a
+ * week's result must be the WEEK's result regardless of what extra days exist.
+ *
+ * SCOPING (the L-B crux — a wrong boundary here is a live-battle regression):
+ * getLatestDayEntry above stays UNCLAMPED for live mid-week derivation
+ * (dayBanked, pod.day, claims windows, climb phase — the doc truth); ONLY the
+ * result readers below (getWeeklyScore / getWeeklyComposite /
+ * isFinalSnapshotDegraded — one definition of "the week's final snapshot",
+ * founder ruling F-1) read through this clamp. On every well-formed doc
+ * (weeks are ≤ WEEK_DAYS_REQUIRED trading days by construction) the two
+ * agree, so the clamp is a no-op outside the pathology it exists to contain.
+ * A doc with ONLY day6+ (doubly pathological) has no in-week result → null.
+ * @returns {{dayN: number, entry: Object}|null}
+ */
+export function getLatestBankedDayEntry(group, { maxDay = WEEK_DAYS_REQUIRED } = {}) {
+  const dailyScores = group?.dailyScores || {};
+  let dayN = 0;
+  let entry = null;
+  for (const key of Object.keys(dailyScores)) {
+    const match = /^day(\d+)$/.exec(key);
+    if (!match) continue;
+    const n = Number(match[1]);
+    if (n > dayN && n <= maxDay) {
+      dayN = n;
+      entry = dailyScores[key];
+    }
+  }
+  return entry ? { dayN, entry } : null;
+}
+
+/**
  * Weekly score = the FINAL day's snapshot (founder ruling, June 11, 2026 —
  * P1a PR decisions register): totalPoints is the CUMULATIVE standing at each
  * close, so the week's result IS the last snapshot — NEVER a sum over days.
- * The co-located test proves this against the sum.
+ * The co-located test proves this against the sum. L-B Guard 2: "final" means
+ * the WEEK's final day (clamped ≤ WEEK_DAYS_REQUIRED), never a contaminated
+ * extra day banked past a stalled finalizer.
  */
 export function getWeeklyScore(group, odUserId) {
-  return getLatestDayEntry(group)?.entry?.closeScores?.[odUserId]?.totalPoints ?? 0;
+  return getLatestBankedDayEntry(group)?.entry?.closeScores?.[odUserId]?.totalPoints ?? 0;
 }
 
 /**
  * Weekly COMPOSITE = the final day's compositePoints snapshot (ruling A-1 —
  * the score of record; same final-snapshot-never-a-sum identity as
- * getWeeklyScore). Snapshots banked before P6 (dev data only) carry no
- * compositePoints — degrade by deriving from whatever the entry holds
- * (absent agentPoints → k × user layer), never by guessing.
+ * getWeeklyScore, same L-B week-clamp). Snapshots banked before P6 (dev data
+ * only) carry no compositePoints — degrade by deriving from whatever the
+ * entry holds (absent agentPoints → k × user layer), never by guessing.
  */
 export function getWeeklyComposite(group, odUserId) {
-  const entry = getLatestDayEntry(group)?.entry?.closeScores?.[odUserId];
+  const entry = getLatestBankedDayEntry(group)?.entry?.closeScores?.[odUserId];
   if (!entry) return 0;
   if (Number.isFinite(entry.compositePoints)) return entry.compositePoints;
   return computeComposite(entry.agentPoints ?? 0, entry.totalPoints ?? 0);
@@ -1238,20 +1274,37 @@ export function getWeeklyComposite(group, odUserId) {
 export const WEEK_DAYS_REQUIRED = 5;
 
 export function isWeekBanked(group) {
-  return (getLatestDayEntry(group)?.dayN || 0) >= WEEK_DAYS_REQUIRED;
+  // L-B review A-F1: read the CLAMPED entry, like every other consumer of "the
+  // week's final snapshot" (one definition — the F-1 principle). Identical on
+  // every doc that has any day ≤ WEEK_DAYS_REQUIRED (clamped dayN is 5 exactly
+  // when day5 exists, incl. the real zombie); on the doubly-pathological
+  // only-day6+ shape the unclamped read said "banked" while the clamped result
+  // readers said "no in-week result" — letting a post-unfreeze advancement
+  // permanently lock an all-zero week. Clamped, that shape reads banking-pending:
+  // a loud, recoverable pause instead of an unrecoverable lock.
+  return (getLatestBankedDayEntry(group)?.dayN || 0) >= WEEK_DAYS_REQUIRED;
 }
 
 /**
  * §7.2 (founder ruling, June 12, 2026): a week whose FINAL banked snapshot
  * carries the banking degrade marker (`agentScoresCarried` — the agent layer
  * was carried/zeroed, not freshly read) must NOT lock. The composite of
- * record may be missing agent-layer points, and the bracket lock is permanent
- * — so the irreversible decision waits for a clean (non-carried) agent-layer
- * read, which the next banking pass self-heals. Pure; the advancement gates
+ * record may be missing agent-layer points, and the bracket lock is permanent.
+ * A MID-WEEK carry is transient (the next in-week bank supersedes it), but a
+ * DAY-5 carry PAUSES the week pending MANUAL REVIEW (B-F3 founder ruling,
+ * Aug 2026): the old "self-heal" — banking day 6 fresh — made day 6 the
+ * week's result, i.e. it WAS the contamination mechanism the L-B clamp
+ * retires; a degraded final is a human-judgment condition, deliberately
+ * without an automated heal path. Pure; the advancement gates
  * every `lockTopTwo`/finalization site on the negation of this.
  */
 export function isFinalSnapshotDegraded(group) {
-  return getLatestDayEntry(group)?.entry?.agentScoresCarried === true;
+  // L-B F-1 (founder-ruled): "final snapshot" = the WEEK's final day, one
+  // definition shared with getWeeklyScore/getWeeklyComposite. Unclamped, a
+  // day5-carried/day8-clean zombie would wrongly ALLOW a permanent lock over
+  // a degraded score of record — permitting is unrecoverable where
+  // over-blocking isn't.
+  return getLatestBankedDayEntry(group)?.entry?.agentScoresCarried === true;
 }
 
 /**
