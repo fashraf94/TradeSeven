@@ -87,3 +87,43 @@ The founder's re-scan showing `needsBinding = 6` is a **pre-PR-3 checkout**, not
 - **At PR-3 HEAD:** **0** — the A11 binding restoration param-keyed all 10 coordinates (the remaining 15 bare-domain cells are all on single-param rules, which bind cleanly and never go ambiguous). Confirmed 1:1: the 10 base coordinates are exactly the 10 HEAD now binds.
 - The migration planner maps a bare domain on a multi-param rule → `ambiguous_domain_binding` → `needsBinding`; a param-keyed domain does not. So the class is genuinely closed at HEAD.
 - **Consequence (already a hard gate — FINAL-DRYRUN):** those 6 rules now resolve to `param_out_of_domain` **clamp** entries wherever a hosting agent's persisted value is out of the now-bound domain — so D1's ratified 15-entry count is stale and `--apply` must re-ratify a fresh dry-run at the candidate SHA.
+
+---
+
+# PR 4 — DELIVERY RECORD (branch `claude/composition-pr4-identity-event`, Aug 7 2026)
+
+**Founder rulings of record (Aug 7 2026 — the answers to the PR-4 discovery STOP; verbatim in the session log):**
+
+- **Q1 — `boundaryStateVersion` (V0.9 §3 authorial intent, now written):** the integer version of the per-boundary enforcement-state SET. 1 at first activation; ANY change to the active-boundary set or its semantics mints a NEW `activationGeneration` (the descriptor never mutates in place; B1-EXT no-tuple-reuse applies); rollback carries the PRIOR value (it travels with its descriptor); A34's check = each boundary's compile-time `SUPPORTED_BOUNDARY_STATE_VERSIONS` declaration vs the record's value, unsupported ⇒ that boundary rejects the request (`compositionWriteEpoch.js`).
+- **Q2 — A24 (text of record; A24 IS B10's test):** after the candidate defaults object lands, new births are byte-identical to pre-PR births (the object unreachable from every birth path — the traitLibrary chokepoint); births change ONLY once the activation record selects the candidate; proven both sides; existing agents untouched in both worlds (A12 restated at this boundary).
+- **Q3 — substitution policy for non-offerable seeds:** supported + offerable + NATIVE for the host (candidate-registry-native where cells exist; the STORED map for the reserved diversifier column); criterion = the trait's stated identity function (RULE_FAMILIES a tie-breaker only); no native fit ⇒ DROP the seed and reshape with honest copy (WS1 precedent) — never seed hidden/deprecated, never stretch semantics; ladders satisfy invariant (b) wherever cells exist; exact proposals tabled, founder ratifies before they land.
+- **Confirmations:** the descriptor is the **7-field union incl. `activeEpochId`** (the ledger governs where the item-2 list was incomplete); `identityVersionTarget` → `activeIdentityVersion` is a **clean rename** (B4 alignment clause — shipped loader, run docs, design note; nothing validates the old field, FINAL-DRYRUN re-stamps).
+
+**B4 tuple, ALIGNED (supersedes the tuple text in the B4 row above per its own alignment clause):** `{activeIdentityVersion, boundaryStateVersion, activeEpochId, candidateStateId, semanticHash, activationGeneration, overrideRevision}` — `compositionProductionLoader.ACTIVATION_DESCRIPTOR_FIELDS` is the list of record.
+
+**SCOPE FINDING (cargo item 6):** the RED-control predicate proves the live DEFAULT_TRAITS seed **SEVEN** non-offerable rules — item 6's five PLUS `momentum_chaser/t-09` and `contrarian/tv-07` (hidden_absent_substrate). Both ride the same policy under the 3.5 "premise disproven" precedent; **all seven substitutions await founder ratification at merge** (the proposal table: `traitLibraryCandidate.js` header + the STOP report).
+
+## Per-row delivery (reading rule: each row CLOSES when its acceptance test exists, fails under the defect — mutation-checked at the §2 review — and is green at the merged HEAD)
+
+| Row | Delivered by | Acceptance artifact |
+|---|---|---|
+| **B1** | `validateWriteEpochInTx` epochPin + absent-doc-fails-closed-post-activation | `compositionActivationService.test.js` B1 rows |
+| **B2** | `compositionProvisionerLease.js` + casualClone/trainingClone wiring | `compositionProvisionerLease.test.js` (9 rows) |
+| **B4** | `compositionActivationService.js` (7-field writer, monotonicity, atomic-tuple rollback via history) | service suite B4 rows (A48 lands there) |
+| **M6** | in-tx candidate verification (count/hash/id/extras) | service suite M6 rows — one per defect class |
+| **B9** | RULES_DEPLOY_RECORD.json (unfilled) + check-rules-deploy-gate.js + COMPOSITION_RULES_TEXT_PATH | `compositionRunbookGates.test.js` |
+| **M10** | runbook per-boundary evidence checklist | ACTIVATION_RUNBOOK.md §M10 |
+| **B1-EXT** | monotonicity + overrideRevision in the seqlock token + `bumpOverrideRevisionInTx` + the derived-write census | loader contract suite + service suite + `compositionDerivedWrites.census.test.js` |
+| **FC-1-CLOSE** | pin → stamp → commit-revalidate in `agentBattleService.js` via `compositionGenerationFence.js`; manifest/slice stamp pair; reader tolerance + fail-closed mismatch | `compositionGenerationFence.test.js` |
+| **decide.js ruling (REVERSED)** | the §7-signed projection splice, both directions | same suite, write + reader rows |
+| **B3-EXT** | one-level helper-param data-flow in the scanner (per-callsite counts) | `compositionProtectedStores.scan.test.js` B3-EXT rows |
+| **B8-FINAL** | `preflight-at-sha.js` (SHA-pinned harness) + `EXTERNAL_ADMIN_WRITE_PATHS.md` | gates suite + runbook step 0 (the census re-run itself is runbook-time) |
+| **A7-LOCK** | `ACTIVATION_EVIDENCE.json` freeze + corpus-wide compile-vs-kernel differential | `composition.a7lock.test.js` (mutation-checked in-session) |
+| **M7-E2E** | per-assembler worst-case full-request fixtures (eval 8,576 / draft 3,526 est.) | `composition.m7e2eBudget.test.js` |
+| **FINAL-DRYRUN** | the `--apply` ratification gate is a RUNBOOK step (step 2) — **not closeable at merge by design** | ACTIVATION_RUNBOOK.md step 2 |
+| **BARE-CELL-INVARIANT** | positive-form invariant + synthetic controls | `archetypeCompatibilityCandidate.test.js` |
+| **Cargo item 6 (+scope finding)** | `traitLibraryCandidate.js` (candidate object; 7 substitutions ACROSS 5 hosts, ratification pending) + A24 wiring (registry catalog, server seeding, client resolver, rules read clause) | `traitLibraryCandidate.composition.test.js` + `compositionBirthSwitch.test.js` |
+| **D14/D15 (flip obligations)** | ON-state suite promoted (record-gated framing); endpoint fakes reconciled (activation doc, persistent subcollections, tx.get(collection), delegating tx.set); F7 candidate round-trip rows | `compositionAdvisoryRender.activation.test.js` + `composition.endpoints.test.js` F7 rows |
+| **Runbook (§8/§10)** | steps 0–9 + §10 positive/negative checks + ACTION_COPY + M7 live + M10 checklist + run log | `docs/composition/ACTIVATION_RUNBOOK.md` |
+
+**Still open at merge, BY DESIGN (runbook-time):** FINAL-DRYRUN ratification; the B8-FINAL census re-run at the deployed SHA; the B9 record fill; every §10 observation; the X6 base-metadata arc (separately sequenced — no gate-green claimed).
