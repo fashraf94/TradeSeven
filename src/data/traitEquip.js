@@ -102,13 +102,17 @@ export function buildEquippedTraitEntry(traitId, strength, isCustom = false) {
  * @param {string} strength
  * @returns {{ ruleSpecs: Array<Object>, equippedTraits: Array<Object> }}
  */
-export function buildSeedPlan(traitIds, strength) {
+// PR 4 (A24 authority switch): `traitOf` injects the trait RESOLVER — the
+// live library by default (byte-identical), the candidate view when the
+// activation record selects the candidate identity. Callers never mix
+// resolvers within one plan.
+export function buildSeedPlan(traitIds, strength, { traitOf = (id) => TRAIT_BY_ID[id] } = {}) {
   const existingRuleIds = new Set();
   const equippedTraits = [];
   const ruleSpecs = [];
 
   for (const traitId of traitIds || []) {
-    const def = TRAIT_BY_ID[traitId];
+    const def = traitOf(traitId);
     if (!def) continue; // unknown trait — skip
     if (!def.strengthProfiles?.[strength]) continue; // invalid strength — skip (like equipTrait)
 
@@ -124,7 +128,7 @@ export function buildSeedPlan(traitIds, strength) {
     // "Last Equipped Wins": mark earlier traits sharing a conflicting ruleId as custom.
     if (conflicts.length > 0) {
       for (const entry of equippedTraits) {
-        const eDef = TRAIT_BY_ID[entry.traitId];
+        const eDef = traitOf(entry.traitId);
         if (eDef && eDef.ruleIds.some((rid) => conflicts.includes(rid))) {
           entry.isCustom = true;
         }

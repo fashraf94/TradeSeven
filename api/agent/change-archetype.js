@@ -24,6 +24,8 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
+import { pinActivationDescriptor } from '../_utils/compositionGenerationFence.js';
+import { selectIdentityVersion } from '../_utils/compositionActivationService.js';
 // Mastery P2 (V2.1 STOP-B: customization bundles are per-archetype —
 // "switching archetypes switches/invalidates them"): an equipped
 // 'aggressive' dial re-validates against the NEW archetype's mastery level
@@ -115,6 +117,11 @@ export default async function handler(req, res) {
   const db = getFirebaseAdmin();
   const agentRef = db.collection('agents').doc(agentId);
   const nowIso = new Date().toISOString();
+
+  // Composition PR 4 (A24): pin the activation descriptor once per request —
+  // dark: zero reads; the seed below derives from the version the record
+  // selects (absent record → the live identity, byte-identical).
+  const seedPin = await pinActivationDescriptor(db);
 
   let txResult;
   try {
@@ -224,8 +231,13 @@ export default async function handler(req, res) {
       // born-with set (never happens — pinned non-empty by
       // traitLibrary.bornWith.test) skips the seed rather than wiping the layer.
       let seeded = null;
-      if (hasBornWithSet(archetype)) {
-        seeded = seedArchetypeTraitsInTx(tx, agentRef, archetype);
+      // Composition PR 4 (A24 authority switch): the seed derives from the
+      // identity version the ACTIVATION RECORD selects — dark/absent record
+      // resolves null → the live exports, byte-identical (the record is the
+      // only selector, A48).
+      const seedVersion = seedPin.dark ? null : (seedPin.descriptor ? selectIdentityVersion(seedPin.descriptor) : null);
+      if (hasBornWithSet(archetype, { identityVersion: seedVersion })) {
+        seeded = seedArchetypeTraitsInTx(tx, agentRef, archetype, { identityVersion: seedVersion });
         // Fail-safe: a born-with archetype that resolved to ZERO traits/rules
         // (a data bug the bornWith.test pins as unreachable) must NOT commit —
         // aborting the whole tx here keeps the invariant (never archetype=new

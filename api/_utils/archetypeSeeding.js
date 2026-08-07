@@ -40,6 +40,23 @@
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { ARCHETYPE_DEFAULT_TRAITS } from '../../src/data/traitLibrary.js';
+import { getArchetypeDefinition, ARCHETYPE_IDENTITY_VERSION } from './archetypeRegistry.js';
+
+// PR 4 (A24 authority switch): which default-trait source does a seed use?
+// null / the live version → the LIVE exports, byte-identical to every seed
+// before this PR. Any other version resolves through the registry CATALOG
+// (the candidate composition at v(live+1), a prior snapshot on rollback) —
+// and an UNRESOLVABLE version FAILS CLOSED: an activated world must never
+// silently seed the wrong identity.
+function resolveSeedSource(archetype, identityVersion) {
+  if (identityVersion == null || identityVersion === ARCHETYPE_IDENTITY_VERSION) {
+    return { traitIds: ARCHETYPE_DEFAULT_TRAITS[archetype], traitOf: undefined };
+  }
+  const def = getArchetypeDefinition(archetype, { identityVersion });
+  if (!def) throw new Error(`archetypeSeeding: unresolvable identityVersion ${identityVersion} for ${archetype} (fail closed)`);
+  const byId = new Map((def.defaultTraits || []).filter(Boolean).map((t) => [t.id, t]));
+  return { traitIds: def.defaultTraitIds, traitOf: (id) => byId.get(id) ?? null };
+}
 import { buildSeedPlan } from '../../src/data/traitEquip.js';
 import { buildRuleDocFields } from '../../src/data/ruleDocFields.js';
 import { assertWriteEpochOpen } from './compositionWriteEpoch.js';
@@ -64,9 +81,9 @@ function buildSeedRuleDoc(spec) {
  * @param {string} archetype - archetype CODE-ID
  * @returns {boolean}
  */
-export function hasBornWithSet(archetype) {
-  const ids = ARCHETYPE_DEFAULT_TRAITS[archetype];
-  return Array.isArray(ids) && ids.length > 0;
+export function hasBornWithSet(archetype, { identityVersion = null } = {}) {
+  const { traitIds } = resolveSeedSource(archetype, identityVersion);
+  return Array.isArray(traitIds) && traitIds.length > 0;
 }
 
 /**
@@ -82,15 +99,15 @@ export function hasBornWithSet(archetype) {
  * @param {string} [options.strength='moderate']
  * @returns {{ equippedTraits: Array<Object>|null, rulesAdded: number }}
  */
-export function seedArchetypeTraitsInTx(tx, agentRef, archetype, { strength = 'moderate' } = {}) {
-  const traitIds = ARCHETYPE_DEFAULT_TRAITS[archetype];
+export function seedArchetypeTraitsInTx(tx, agentRef, archetype, { strength = 'moderate', identityVersion = null } = {}) {
+  const { traitIds, traitOf } = resolveSeedSource(archetype, identityVersion);
   if (!Array.isArray(traitIds) || traitIds.length === 0) {
     // No defaults → do NOT touch the trait layer (defensive; every
     // VALID_ARCHETYPES has a born-with set, pinned by traitLibrary.bornWith.test).
     return { equippedTraits: null, rulesAdded: 0 };
   }
 
-  const { ruleSpecs, equippedTraits } = buildSeedPlan(traitIds, strength);
+  const { ruleSpecs, equippedTraits } = buildSeedPlan(traitIds, strength, { ...(traitOf ? { traitOf } : {}) });
   const rulesRef = agentRef.collection('rules');
 
   let rulesAdded = 0;
@@ -163,12 +180,12 @@ function bornWithRuleDocId(spec) {
  * @param {string} [options.strength='moderate']
  * @returns {Promise<{ equippedTraits: Array<Object>|null, rulesAdded: number }>}
  */
-export async function seedArchetypeTraitsDeterministic(agentRef, archetype, { strength = 'moderate' } = {}) {
-  const traitIds = ARCHETYPE_DEFAULT_TRAITS[archetype];
+export async function seedArchetypeTraitsDeterministic(agentRef, archetype, { strength = 'moderate', identityVersion = null } = {}) {
+  const { traitIds, traitOf } = resolveSeedSource(archetype, identityVersion);
   if (!Array.isArray(traitIds) || traitIds.length === 0) {
     return { equippedTraits: null, rulesAdded: 0 };
   }
-  const { ruleSpecs, equippedTraits } = buildSeedPlan(traitIds, strength);
+  const { ruleSpecs, equippedTraits } = buildSeedPlan(traitIds, strength, { ...(traitOf ? { traitOf } : {}) });
   const rulesRef = agentRef.collection('rules');
   let rulesAdded = 0;
   for (const spec of ruleSpecs) {

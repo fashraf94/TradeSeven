@@ -42,6 +42,8 @@ import { seedArchetypeTraitsDeterministic, hasBornWithSet, softDeleteReplacedTra
 import {
   acquireProvisionerLease, assertLeaseCurrent, releaseProvisionerLease,
 } from './compositionProvisionerLease.js';
+import { pinActivationDescriptor } from './compositionGenerationFence.js';
+import { selectIdentityVersion } from './compositionActivationService.js';
 
 const LOG_PREFIX = '[TrainingClone]';
 
@@ -164,6 +166,10 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
   // hard TTL deadline), and the §8 close drains leases before its watermark.
   // Zero I/O while the fence flag is dark (A23/A46 census row).
   const lease = await acquireProvisionerLease(db, { holder: `trainingClone:${group.id}`, now });
+  // Composition PR 4 (A24): clone seeding derives from the version the
+  // activation record selects (dark: zero reads → live, byte-identical).
+  const seedPin = await pinActivationDescriptor(db);
+  const seedVersion = seedPin.dark ? null : (seedPin.descriptor ? selectIdentityVersion(seedPin.descriptor) : null);
   try {
 
     for (const player of group.players || []) {
@@ -203,8 +209,8 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
       // sentinel doc write with deterministic rule-doc ids, so an interrupted
       // re-provision overwrites (stays idempotent); the copied ranked trait docs go
       // inert (their traitId is no longer in equippedTraits, projectActiveRules gate).
-      if (cloneDoc.archetype && cloneDoc.archetype !== ranked.archetype && hasBornWithSet(cloneDoc.archetype)) {
-        const { equippedTraits } = await seedArchetypeTraitsDeterministic(cloneRef, cloneDoc.archetype);
+      if (cloneDoc.archetype && cloneDoc.archetype !== ranked.archetype && hasBornWithSet(cloneDoc.archetype, { identityVersion: seedVersion })) {
+        const { equippedTraits } = await seedArchetypeTraitsDeterministic(cloneRef, cloneDoc.archetype, { identityVersion: seedVersion });
         if (equippedTraits) {
           cloneDoc.equippedTraits = equippedTraits;
           // Soft-delete the copied ranked trait docs the override replaced (traitId

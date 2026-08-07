@@ -1,13 +1,18 @@
 // api/_utils/compositionAdvisoryRender.activation.test.js
 //
-// Composition PR 3 — the ACTIVATION-STATE golden set (spec §7 row 3, dual
-// goldens). These rows run under the epoch-simulating harness: the
-// compiled-identity flag is FORCED ON via the config mock and the compat
-// surface is a fixture of the activated CompiledBuild slice. They are the
-// goldens PR 4 PROMOTES when the flag genuinely flips — until then the DARK
-// goldens (p4Equivalence battery, ruleCompatInvariantR, hardSoftOverride
-// parity — all asserted in this PR's CI unchanged) remain the production
-// contract.
+// Composition PR 4 (D14) — the PRIMARY ON-state contract suite (PROMOTED
+// from the PR-3 dual-golden set per the founder's flip amendment: the code
+// supports BOTH states and the RUNBOOK flips — these rows are gated on the
+// ACTIVATION-RECORD-DERIVED surface, never a build-time constant). The
+// epoch-simulating harness forces the compiled-identity flag ON via the
+// config mock; the compat surface is the activated CompiledBuild slice —
+// which in production EXISTS only on battles created after the record is
+// written (FC-1 stamps it; dark-by-absence is the record gating). The
+// record-driven end-to-end rows live in compositionGenerationFence.test.js
+// (FC-1: pin → stamp → assembler consistency); the DARK goldens
+// (p4Equivalence battery, ruleCompatInvariantR, hardSoftOverride parity)
+// remain the PRE-FLIP regression lock until the runbook runs — both suites
+// ride every CI run, which is exactly the dual-state contract.
 //
 //   A13 — the advisory lands on the equipped rule's OWN line, EXACTLY once,
 //         in BOTH assemblers

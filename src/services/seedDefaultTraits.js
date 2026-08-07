@@ -23,8 +23,11 @@
 
 import { updateAgentSettings } from './agentService';
 import { createRule } from './forgeService';
-import { ARCHETYPE_DEFAULT_TRAITS } from '../data/traitLibrary';
 import { buildSeedPlan } from '../data/traitEquip';
+// Composition PR 4 (A24): the seed source resolves through the ACTIVATION
+// RECORD (the one selector, A48) — every failure path resolves LIVE, so
+// births are byte-identical until the record selects the candidate.
+import { fetchActiveIdentityVersion, resolveClientSeedSource } from './compositionIdentityClient';
 
 /**
  * @param {string} agentId
@@ -36,13 +39,14 @@ import { buildSeedPlan } from '../data/traitEquip';
 export async function seedDefaultTraits(agentId, archetype, { strength = 'moderate' } = {}) {
   if (!agentId) return { seeded: false, reason: 'no_agent' };
 
-  const traitIds = ARCHETYPE_DEFAULT_TRAITS[archetype];
+  const identityVersion = await fetchActiveIdentityVersion(); // null = live (pre-activation / any failure)
+  const { traitIds, traitOf } = resolveClientSeedSource(archetype, identityVersion);
   if (!traitIds || traitIds.length === 0) {
     // Unknown/absent archetype → nothing to seed. Not an error.
     return { seeded: false, reason: 'no_defaults', archetype };
   }
 
-  const { ruleSpecs, equippedTraits } = buildSeedPlan(traitIds, strength);
+  const { ruleSpecs, equippedTraits } = buildSeedPlan(traitIds, strength, { traitOf });
   if (ruleSpecs.length === 0) {
     return { seeded: false, reason: 'no_rules', archetype };
   }

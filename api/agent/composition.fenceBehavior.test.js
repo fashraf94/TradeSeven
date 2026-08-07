@@ -87,7 +87,13 @@ function makeFake({ agentDocs = {}, subDocs = {}, topDocs = {}, epochDoc = null 
   const db = {
     collection: (name) => {
       if (name === 'agents') return { doc: (id) => agentRef(id), where: () => ({ get: async () => ({ docs: [], empty: true }) }) };
-      if (name === 'composition') return { doc: (docId) => { if (docId !== 'writeEpoch') throw new Error(`wrong epoch doc id: ${docId}`); return epochRef; } };
+      if (name === 'composition') return { doc: (docId) => {
+        // PR 4 (D15): the activation record joins the fence surface — absent
+        // by default (pre-activation, the fail-open world the suite pins).
+        if (docId === 'activation') return { get: async () => ({ exists: false, data: () => undefined }) };
+        if (docId !== 'writeEpoch') throw new Error(`wrong epoch doc id: ${docId}`);
+        return epochRef;
+      } };
       return { doc: (docId) => ({
         get: async () => {
           const d = state.topDocs[`${name}/${docId}`];

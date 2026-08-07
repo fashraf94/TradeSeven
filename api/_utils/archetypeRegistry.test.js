@@ -203,6 +203,11 @@ describe('import-boundary ratchet (§2.3 / R1-25)', () => {
     // member, consumed only through the registry's version-parameterized
     // candidate path (A24: unreachable from every birth path).
     'src/data/traitLibraryCandidate.js',
+    // Composition PR 4 (A24 authority switch, client half): the browser birth
+    // path cannot import the node registry (fs), so its seed-source resolver
+    // composes live-vs-candidate BY REFERENCE itself — record-gated, every
+    // failure path resolving LIVE. A sanctioned composition-layer member.
+    'src/services/compositionIdentityClient.js',
   ]);
   const IMPORT_RE = new RegExp(
     `from\\s+['"][^'"]*(?:${LEGACY_TABLE_BASENAMES.join('|')})(?:\\.js)?['"]`

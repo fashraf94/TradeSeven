@@ -1,0 +1,101 @@
+{
+  "_comment": "B1-EXT part 3 (Composition PR 4, ACTIVATION_PRECONDITIONS.md) — the DERIVED-WRITE census: every writer that persists composition-DERIVED state (state computed FROM the composed identity/descriptor, not primary user input) must either (a) commit-validate the descriptor transactionally or (b) carry the full source tuple with reader-side rejection. compositionDerivedWrites.census.test.js proves each row's mechanism token is live in the source AND that every censused composition writer class is classified here (derived or excluded) — a new writer doing neither fails CI.",
+  "derivedWriters": [
+    {
+      "file": "api/agent/decide.js",
+      "writer": "activeRules projection (deploy)",
+      "mechanism": "(a)+(b): in-tx epoch+descriptor validation AND projectionGeneration stamp with reader rejection",
+      "tokens": [
+        "commitActiveRulesProjection",
+        "pinActivationDescriptor"
+      ],
+      "readerRejection": "assertProjectionCurrent at battle creation (agentBattleService.js); compositionGenerationFence.test.js both directions"
+    },
+    {
+      "file": "api/_utils/agentBattleService.js",
+      "writer": "battle doc + resolvedAgentManifest (FC-1)",
+      "mechanism": "(a)+(b): pin-before-resolve + commit-time descriptor re-validation AND manifest/slice generation-stamp pair with assembler-side rejection",
+      "tokens": [
+        "commitBattleDocWithPin",
+        "manifestGenerationStamp"
+      ],
+      "readerRejection": "compositionAdvisoryRender admissibility gate rejects mismatched/half stamps"
+    },
+    {
+      "file": "api/_utils/compileOnSettingsChange.js",
+      "writer": "compiledBuilds/{mode} (writeCompiledBuildsInTx)",
+      "mechanism": "(b): full sourceRevisionVector (identityHash, projectedRulesHash, settingsRev, bundle hashes) with reader-side rejection/recompile in deployBuildValidation.diffSourceRevisionVector; epoch-fenced in the same tx by every censused endpoint caller",
+      "tokens": [
+        "sourceRevisionVector"
+      ],
+      "readerRejection": "diffSourceRevisionVector (deployBuildValidation.js) — presence-aware component compare (3.5 F1)",
+      "note": "the activationGeneration join for compiled builds rides the runbook's candidate-scoped pipeline step (the record does not exist before it); the vector's identityHash component moves on any identity flip, which is the stale-rejection axis of record (A12)"
+    },
+    {
+      "file": "api/_utils/archetypeSeeding.js",
+      "writer": "born-with seed rule docs (change-archetype tx + training-clone provisioning)",
+      "mechanism": "(a): the seed derives from the record-selected identity version (resolveSeedSource; unresolvable version FAILS CLOSED); callers pin the descriptor (change-archetype, trainingClone) and the change-archetype tx validates the epoch",
+      "tokens": [
+        "resolveSeedSource",
+        "identityVersion"
+      ],
+      "readerRejection": "seeded docs project through projectActiveRules into builds whose vector rejects staleness"
+    },
+    {
+      "file": "src/services/seedDefaultTraits.js",
+      "writer": "client birth seed (createAgent flow)",
+      "mechanism": "(a)-analog: the seed source resolves through a record READ (fetchActiveIdentityVersion — every failure path resolves LIVE, fail-safe A24); the record is the only selector (A48)",
+      "tokens": [
+        "fetchActiveIdentityVersion",
+        "resolveClientSeedSource"
+      ],
+      "readerRejection": "same downstream vector axis as archetypeSeeding"
+    }
+  ],
+  "excluded": [
+    {
+      "file": "api/_utils/trainingClone.js",
+      "reason": "copyAgentSubcollections COPIES primary identity docs (not derived output); fenced by the B2 provisioner lease; its SEED path is censused via archetypeSeeding.js above"
+    },
+    {
+      "file": "api/_utils/casualClone.js",
+      "reason": "clone doc + subcollection copies are primary-state copies under the B2 lease; no composition-derived output"
+    },
+    {
+      "file": "api/_utils/agentSettingsTx.js",
+      "reason": "persists USER INPUT (settings), not composition-derived state; epoch-fenced in-tx"
+    },
+    {
+      "file": "api/_utils/shadowAssemblyCapture.js",
+      "reason": "append-only non-authority capture (census noopClasses)"
+    },
+    {
+      "file": "api/_utils/identityMigrationFeed.js",
+      "reason": "feed entries are written into the candidate namespace by the migration apply (epoch-fenced, founder-gated CLI); projection is read-only and A44-gated"
+    },
+    {
+      "file": "api/_utils/archetypeSeeding.js#softDeleteReplacedTraitRuleDocs",
+      "reason": "post-commit hygiene over already-inert docs; epoch-guarded at entry; deletes nothing derived"
+    },
+    {
+      "file": "scripts/composition/migration-scan.js",
+      "reason": "writes ONLY the candidate namespace (Method B), epoch-checked, founder-gated --apply --yes; the activation transaction (M6) verifies its output before ratifying"
+    },
+    {
+      "file": "api/_utils/deployBuildValidation.js",
+      "reason": "the deploy gate RE-DERIVES a compiled build through writeCompiledBuildsInTx (censused above, revision 'current') — its own writes are that path; its READ side is the (b)-mechanism reader (diffSourceRevisionVector)"
+    },
+    {
+      "file": "scripts/mastery-preflip-normalize.js",
+      "reason": "admin CLI over MASTERY state (not composition-derived); epoch-guarded per batch (assertWriteEpochOpen, A46 adminCliScripts row); paused out-of-band during the §8 window"
+    },
+    {
+      "file": "scripts/rule-compat-cleanup.js",
+      "reason": "admin CLI mutating rule docs (primary state) under the LEGACY map's cleanup semantics; epoch-guarded per batch; paused out-of-band during the window and superseded by the migration at the flip"
+    },
+    {
+      "file": "scripts/ws1-observe-walk.js",
+      "reason": "observe-only walker (append-only observation output, non-authority); epoch-guarded; paused out-of-band during the window"
+    }
+  ]
+}

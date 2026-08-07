@@ -208,7 +208,16 @@ describe('B4-TRAIT invariants over the CANDIDATE composition', () => {
 describe('A24 — structural + candidate arms (the record-gated both-sides birth test lands with the activation service)', () => {
   it('STRUCTURAL: no production module outside the registry composition layer imports the candidate object', () => {
     const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-    const ALLOWED = new Set(['api/_utils/archetypeRegistry.js', 'src/data/traitLibraryCandidate.js']);
+    // The sanctioned SWITCH surface (batch 6 wiring): the registry's
+    // version-parameterized composition (server) and the client seed-source
+    // resolver — both record-gated with every failure path resolving LIVE
+    // (the behavioral both-sides proof: compositionBirthSwitch.test.js).
+    // Anything else importing the candidate object fails here.
+    const ALLOWED = new Set([
+      'api/_utils/archetypeRegistry.js',
+      'src/data/traitLibraryCandidate.js',
+      'src/services/compositionIdentityClient.js',
+    ]);
     const hits = [];
     const walk = (dir) => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
