@@ -1,7 +1,16 @@
 # Pre-launch finding — CPU inaction is a dominant strategy (competitive balance)
 
-**Date:** 2026-08-07 · **Status:** FILED — do NOT fix now (pre-launch backlog item).
+**Date:** 2026-08-07 · **Status:** FILED — **PRE-LAUNCH PRIORITY** (raised from deferred backlog by the founder after the L-C decomposition sharpened it, `20260807_LC_UNFREEZE_ADJUDICATION_CLOSEOUT_V1.md`). Still not fixed in-place — the remedy is a design decision — but it is a launch-gating item, not backlog.
 **Provenance:** surfaced by the L-C fork-adjudication read-only pass (`scripts/lc-fork-adjudication.js`, the `[FINDING · competitive balance]` detector) on the voided cohort `lds_wed-1900_2026-07-22`. Independent of the scoring-anomaly FORK — this is a game-design imbalance, not a scoring defect.
+
+## Why it was raised to pre-launch priority (the decomposition sharpened it)
+
+The L-C base/bonus decomposition turned "CPUs pay no swap penalties" into a demonstrated **dominant strategy**, not just a safety asymmetry:
+- **cpu-40:** 0 trades, Σlocked = 0 — **won the week** on pure `activeScore` (**+1079**). Ordinary price movement, zero churn cost.
+- **cpu-41:** 0 trades, Σlocked = 0 — and its **standing mass is `bonus` (150) exceeding its base (−147)**: it accumulated badge points **passively** while never swapping.
+- **The two human seats** carried **−1319** and **−1080** of realized swap churn (`[B.2] mass = locked`), with badge activity of only 15 and 45 points — badges were noise for them.
+
+A seat that never trades, never pays swap penalties, and still accrues badges is not merely *safe* — it is **competitively strong**. Against humans bleeding four-figure churn, **inaction reads as the dominant strategy.** That is a launch-gating competitive-integrity problem, which is why it moved off the deferred backlog.
 
 ## Observation (from the run)
 
