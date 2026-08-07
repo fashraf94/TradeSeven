@@ -6634,6 +6634,16 @@ export default function PortfolioDuel() {
     // adapter-minimal entry would open an EMPTY battle for the up-to-120s window
     // before the poll replaces it. So the entry carries the same fields the real
     // agentBattles doc does, from data already in scope here.
+    //
+    // (B) voided-exclusion note (Phase 1.5): this optimistic append deliberately
+    // BYPASSES excludeVoidedGroupBattles. That is safe ONLY because a Command-Center
+    // deploy is always a casual/BaggerBomb battle — it carries NO groupId and thus can
+    // never be voided (voiding lives on the tournament group doc). The entry below
+    // hard-codes groupId:null, so the Command Center's groupId-absence type classifier
+    // (commandCenterLiveBattles.classifyBattleType) reads it as BaggerBomb, never
+    // ranked. If a future optimistic append here ever adds a groupId (ranked) battle,
+    // it MUST run through the poll's voided exclusion first — it must not silently
+    // inherit this bypass.
     if (isDeploySkyCouplingOn() && agentBattleId) {
       setActiveAgentBattles((prev) => {
         const existing = Array.isArray(prev) ? prev : [];

@@ -28,7 +28,7 @@ function prettyDate(forDate) {
   }
 }
 
-export default function ReadColumn({ accent, agentName, onOpenAgentRecord, onDeploy, deployDisabled, deploying, isLive, boardEnabled, onSeeEyeing }) {
+export default function ReadColumn({ accent, agentName, onOpenAgentRecord, onDeploy, deployDisabled, deploying, isLive, boardEnabled, onSeeEyeing, blockReason }) {
   const drb = useDailyRegimeBrief();
 
   const [expanded, setExpanded] = useState(false);
@@ -113,6 +113,12 @@ export default function ReadColumn({ accent, agentName, onOpenAgentRecord, onDep
               <span key={`e-${i}`} style={{ fontSize: 11, fontWeight: 600, color: CMD.ink3, padding: '4px 10px', borderRadius: 20, background: alpha('#FFFFFF', 0.04), border: `1px solid ${CMD.hair}` }}>{e?.label || ''}</span>
             ))}
           </div>
+        )}
+
+        {/* Per-type block reason (Phase 1.5, flag-on only): names the conflict so the
+            disabled CTA is never a bare disabled state (acceptance #2). */}
+        {blockReason && (
+          <div role="status" style={{ marginTop: 14, fontSize: 12, color: CMD.ink3, lineHeight: 1.5 }}>{blockReason}</div>
         )}
 
         {/* the read flows into the decision */}
