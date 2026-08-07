@@ -129,6 +129,14 @@ async function readGroupAgentBattles(db, groupId) {
     if (b.gameMode !== TOURNAMENT_GAME_MODE) { rejected.push({ id: doc.id, why: `gameMode=${b.gameMode}` }); return; }
     if (typeof b.ownerId !== 'string' || b.ownerId.length === 0) { rejected.push({ id: doc.id, why: 'empty ownerId' }); return; }
     const ss = b.scoreState || {};
+    // Mirror fetchGroupAgentScores' non-finite guard (tournamentBanking.js:78-83): a
+    // defined-but-non-finite currentScore is a poisoned doc the authoritative agent
+    // layer skips — reject it here too so #docs and the sub-columns stay reconciled
+    // with agentPoints. (undefined currentScore is a real 0, kept — same as the source.)
+    if (ss.currentScore !== undefined && !Number.isFinite(ss.currentScore)) {
+      rejected.push({ id: doc.id, why: `non-finite currentScore (${typeof ss.currentScore})` });
+      return;
+    }
     const trades = Array.isArray(b.trades) ? b.trades : [];
     const lockedSum = trades.reduce((a, t) => a + (Number.isFinite(t?.lockedPoints) ? t.lockedPoints : 0), 0);
     const th = b.thresholdHistory || {};
@@ -167,9 +175,18 @@ async function readGroupAgentBattles(db, groupId) {
 
     // Date axis = timing.tradingDays[0] — the scored session (agentBattleService.js:102,
     // = computeFullDayExpiry.targetDateStr), DST/holiday/weekend-safe. createdAt is a UTC
-    // write-stamp that can land on a different calendar day for evening-ET creations.
+    // write-stamp that can land on a different calendar day for evening-ET creations, so
+    // the createdAt FALLBACK (only when tradingDays is absent — a malformed doc) is flagged.
     const td = b.timing?.tradingDays?.[0];
-    const tradingDate = (typeof td === 'string' && td.length >= 10) ? td.slice(0, 10) : dateOf(b.createdAt);
+    const hasTradingDay = typeof td === 'string' && td.length >= 10;
+    const tradingDate = hasTradingDay ? td.slice(0, 10) : dateOf(b.createdAt);
+
+    // A doc's base/bonus split is trustworthy only if activeScore is finite AND the
+    // banking reset never touched it (GUARD 1). Non-decomposable docs are kept for the
+    // directly-persisted columns (agentPts/active/locked) but EXCLUDED from Σbase/Σbonus
+    // and the [B.4] discriminator, and flagged — so a reset or a null-active doc can never
+    // silently dump its whole activeScore into base or manufacture phantom bonus mass.
+    const decomposable = activeScore != null && !bankedReset;
 
     (bySeat[b.ownerId] ||= []).push({
       id: doc.id,
@@ -177,12 +194,14 @@ async function readGroupAgentBattles(db, groupId) {
       createdAt: b.createdAt,
       date: tradingDate,               // bucket axis: the scored trading session
       createdDate: dateOf(b.createdAt), // shown only when it diverges from the trading date
+      dateFromCreatedAt: !hasTradingDay, // true ⇒ bucket date is the UTC createdAt fallback (approx)
       isCpu: b.isCpu === true || /^cpu[-_]/i.test(b.ownerId),
       activeScore,
       currentScore: ss.currentScore,
       bankedScore: ss.bankedScore, // = Σ trades[].lockedPoints (agent-evaluate.js:853)
       badgeTotal: ss.bankedBadgePoints?.total, // 0 by design on fullday (the v1 zero)
       bankedReset, // GUARD 1 tripwire — true ⇒ base/bonus split NOT trustworthy for this doc
+      decomposable,
       heldSymbols: held,
       perSymbolBonus,
       bonusHeld,
@@ -276,22 +295,28 @@ async function decomposeGroup(db, id, g) {
   console.log('  [B.2] A1 DECOMPOSITION  (agentBattles where groupId==id; agentPts = Σ currentScore over the seat\'s day-docs)');
   console.log('        currentScore = activeScore + bankedScore(Σlocked) + bankedBadge(0 fullday);  activeScore = Σheld(base+bonus)');
   console.log('        bonus RE-DERIVED from thresholdHistory (no prices);  base = activeScore − Σbonus (aggregate; per-symbol base unrecoverable)');
+  console.log('        Σbase/Σbonus are over DECOMPOSABLE docs only (finite activeScore, GUARD-1 clean); agentPts/Σactive/Σlocked are over all.');
   console.log(`        ${pad('seat', 30)}${padL('#docs', 6)}${padL('agentPts', 10)}${padL('Σactive', 10)}${padL('Σbase', 10)}${padL('Σbonus', 10)}${padL('Σlocked', 10)}${padL('badge', 7)}  |${padL('1.5·user', 10)}${padL('composite', 11)}  mass`);
   const finalCs = dailyScores[`day${finalDayN}`]?.closeScores || {};
   for (const seat of seats) {
     const docs = bySeat[seat] || [];
+    const decomp = docs.filter((d) => d.decomposable);
+    const nonDecomp = docs.length - decomp.length;
     const agentPts = docs.reduce((a, d) => a + (Number.isFinite(d.currentScore) ? d.currentScore : 0), 0);
     const sActive = docs.reduce((a, d) => a + (Number.isFinite(d.activeScore) ? d.activeScore : 0), 0);
-    const sBonus = docs.reduce((a, d) => a + d.bonusHeld, 0);
-    const sBase = docs.reduce((a, d) => a + (Number.isFinite(d.baseHeld) ? d.baseHeld : 0), 0);
     const sLocked = docs.reduce((a, d) => a + d.lockedSum, 0);
     const sBadge = docs.reduce((a, d) => a + (Number.isFinite(d.badgeTotal) ? d.badgeTotal : 0), 0);
+    const sBonus = decomp.reduce((a, d) => a + d.bonusHeld, 0);   // decomposable only
+    const sBase = decomp.reduce((a, d) => a + (Number.isFinite(d.baseHeld) ? d.baseHeld : 0), 0); // decomposable only
     const fe = finalCs[seat] || {};
     const userTerm = Number.isFinite(fe.totalPoints) ? computeComposite(0, fe.totalPoints) : NaN; // 1.5·user
     const composite = fe.compositePoints;
+    // "mass" ranks the STANDING contribution (the signed sum genuinely moves the standing;
+    // gross badge ACTIVITY is [B.4]'s job). Ranked only when the split is trustworthy.
     const mags = [['base', Math.abs(sBase)], ['bonus', Math.abs(sBonus)], ['locked', Math.abs(sLocked)]].sort((a, b) => b[1] - a[1]);
-    const mass = docs.length ? mags[0][0] : '(no battles)';
-    console.log(`        ${pad(seat, 30)}${padL(docs.length, 6)}${padL(n2(agentPts), 10)}${padL(n2(sActive), 10)}${padL(n2(sBase), 10)}${padL(n2(sBonus), 10)}${padL(n2(sLocked), 10)}${padL(n2(sBadge), 7)}  |${padL(n2(userTerm), 10)}${padL(n2(composite), 11)}  ${mass}`);
+    const mass = !docs.length ? '(no battles)' : (decomp.length ? mags[0][0] : '(no decomposable docs)');
+    const flag = nonDecomp ? ` ⚠${nonDecomp} doc(s) EXCLUDED from Σbase/Σbonus (reset/null-active)` : '';
+    console.log(`        ${pad(seat, 30)}${padL(docs.length, 6)}${padL(n2(agentPts), 10)}${padL(n2(sActive), 10)}${padL(n2(sBase), 10)}${padL(n2(sBonus), 10)}${padL(n2(sLocked), 10)}${padL(n2(sBadge), 7)}  |${padL(n2(userTerm), 10)}${padL(n2(composite), 11)}  ${mass}${flag}`);
   }
 
   // ---- [B.3] per-doc (per-day) census ----
@@ -302,30 +327,45 @@ async function decomposeGroup(db, id, g) {
     console.log(`        ${seat}${docs[0]?.isCpu ? '  [CPU]' : ''}  — ${docs.length} doc(s)`);
     for (const d of docs) {
       const createdNote = d.createdDate !== d.date ? ` (created ${d.createdDate})` : '';
-      const resetNote = d.bankedReset ? ' ⚠RESET(split-untrustworthy)' : '';
-      console.log(`          ${pad(d.date, 11)} ${pad(d.id, 22)} active=${padL(n2(d.activeScore), 9)} base=${padL(n2(d.baseHeld), 9)} bonus=${padL(n2(d.bonusHeld), 8)} locked=${padL(n2(d.lockedSum), 9)} current=${padL(n2(d.currentScore), 9)} trades=${padL(d.tradeCount, 3)}${createdNote}${resetNote}`);
+      const flags = `${d.bankedReset ? ' ⚠RESET(split-untrustworthy)' : ''}${d.activeScore == null && !d.bankedReset ? ' ⚠null-active' : ''}${d.dateFromCreatedAt ? ' ⚠date≈createdAt' : ''}`;
+      console.log(`          ${pad(d.date, 11)} ${pad(d.id, 22)} active=${padL(n2(d.activeScore), 9)} base=${padL(n2(d.baseHeld), 9)} bonus=${padL(n2(d.bonusHeld), 8)} locked=${padL(n2(d.lockedSum), 9)} current=${padL(n2(d.currentScore), 9)} trades=${padL(d.tradeCount, 3)}${createdNote}${flags}`);
     }
   }
 
   // ---- [B.4] THE DISCRIMINATOR: bonus by DATE, in-envelope vs beyond ----
   console.log('');
-  console.log('  [B.4] BONUS-BY-DATE  (re-derived bonus per held symbol, summed per day; split at the intended window)');
-  console.log('        bonus mass confined to BEYOND dates ⇒ FORK-1 (broken window); bonus already large IN-ENVELOPE ⇒ FORK-2 (real defect).');
+  console.log('  [B.4] BONUS-BY-DATE  (re-derived bonus, DECOMPOSABLE docs only; split at the intended window)');
+  console.log('        Badge points are SIGNED (bagger +15/+30/+50, bust/crash/meltdown −10/−20/−35), so a signed net');
+  console.log('        can cancel and hide activity. Per bucket we report net, reward(+), PENALTY(−), and GROSS=Σ|per-symbol|.');
+  console.log('        GROSS/penalty confined to BEYOND ⇒ FORK-1 (broken window); large IN-ENVELOPE ⇒ FORK-2 (real defect).');
   for (const seat of seats) {
     const docs = bySeat[seat] || [];
     if (!docs.length) continue;
-    let inEnv = 0;
-    let beyond = 0;
+    const bucket = { 'in-env': { net: 0, pos: 0, neg: 0, gross: 0 }, beyond: { net: 0, pos: 0, neg: 0, gross: 0 } };
     console.log(`        ${seat}${docs[0]?.isCpu ? '  [CPU]' : ''}`);
     for (const d of docs) {
       const where = inEnvelopeDates.has(d.date) ? 'in-env' : 'beyond';
-      if (where === 'in-env') inEnv += d.bonusHeld; else beyond += d.bonusHeld;
+      if (d.decomposable) {
+        const bk = bucket[where];
+        for (const s of d.perSymbolBonus) {
+          bk.net += s.bonus;
+          if (s.bonus > 0) bk.pos += s.bonus; else if (s.bonus < 0) bk.neg += s.bonus;
+          bk.gross += Math.abs(s.bonus);
+        }
+      }
       const syms = d.perSymbolBonus.filter((s) => s.bonus !== 0).map((s) => `${s.sym}:${n2(s.bonus)}(${s.badges.join('/') || '-'})`).join(' ');
-      console.log(`          ${pad(d.date, 11)} ${pad(where, 7)} bonus=${padL(n2(d.bonusHeld), 8)}${d.bankedReset ? ' ⚠RESET' : ''}   ${syms || '(no badges)'}`);
+      const flags = `${d.bankedReset ? ' ⚠RESET(excluded)' : ''}${!d.decomposable && !d.bankedReset ? ' ⚠null-active(excluded)' : ''}${d.dateFromCreatedAt ? ' ⚠date≈createdAt' : ''}`;
+      console.log(`          ${pad(d.date, 11)} ${pad(where, 7)} netbonus=${padL(n2(d.bonusHeld), 8)}${flags}   ${syms || '(no badges)'}`);
     }
-    const denom = Math.abs(inEnv) + Math.abs(beyond);
-    const beyondShare = denom > 0 ? `${Math.round((Math.abs(beyond) / denom) * 100)}%` : 'n/a';
-    console.log(`          Σ in-envelope bonus = ${n2(inEnv)}   |   Σ beyond bonus = ${n2(beyond)}   ⇒  beyond share of |bonus| = ${beyondShare}`);
+    const ie = bucket['in-env'];
+    const by = bucket.beyond;
+    const grossDenom = ie.gross + by.gross;
+    const negDenom = Math.abs(ie.neg) + Math.abs(by.neg);
+    const grossShare = grossDenom > 0 ? `${Math.round((by.gross / grossDenom) * 100)}%` : 'n/a';
+    const penaltyShare = negDenom > 0 ? `${Math.round((Math.abs(by.neg) / negDenom) * 100)}%` : 'n/a';
+    console.log(`          in-envelope: net=${n2(ie.net)}  reward=${n2(ie.pos)}  penalty=${n2(ie.neg)}  gross=${n2(ie.gross)}`);
+    console.log(`          beyond     : net=${n2(by.net)}  reward=${n2(by.pos)}  penalty=${n2(by.neg)}  gross=${n2(by.gross)}`);
+    console.log(`          ⇒ beyond share of GROSS badge activity = ${grossShare}   |   beyond share of PENALTY (bust/crash/meltdown) = ${penaltyShare}`);
   }
 
   // ---- CPU-inaction detector (filed pre-launch finding; surfaced from data) ----
@@ -416,16 +456,18 @@ async function main() {
 
   console.log('');
   console.log('==============================================================');
-  console.log('FORK RULE (pre-registered — the founder adjudicates from above):');
-  console.log('  FORK-1 (broken window): the bonus (badge) mass is concentrated in the BEYOND-envelope date docs;');
-  console.log('          in-envelope per-day bonus stays within a normal one-day badge envelope. Agent mass is base/');
-  console.log('          churn accumulating over a longer-than-5-day window. ⇒ closed by the L-A void + L-B Guard-1');
+  console.log('FORK RULE (pre-registered — the founder adjudicates from above; read [B.4] GROSS + PENALTY, not net):');
+  console.log('  FORK-1 (broken window): [B.4] GROSS badge activity and PENALTY (bust/crash/meltdown) are concentrated');
+  console.log('          in the BEYOND-envelope dates; in-envelope per-day gross stays within a normal one-day envelope.');
+  console.log('          Agent mass is base/churn over a longer-than-5-day window. ⇒ closed by the L-A void + L-B Guard-1');
   console.log('          clamp (extra days can no longer be banked); §7 reduces to "confirm no model change."');
-  console.log('  FORK-2 (real defect): bonus (badge) mass is ALREADY large inside the in-envelope dates (days 1–5),');
+  console.log('  FORK-2 (real defect): [B.4] GROSS/PENALTY is ALREADY large inside the in-envelope dates (days 1–5),');
   console.log('          i.e. the badge model over-credits within a legitimate 5-day week. ⇒ a scoring-model fix must');
   console.log('          land BEFORE any unfreeze.');
-  console.log('  Also watch: if the mass is in BASE (linear price move) or LOCKED (swap churn) rather than BONUS, the');
-  console.log('          anomaly is not a badge defect at all — report which term carries it ([B.2] "mass" column).');
+  console.log('  Read GROSS/PENALTY, NOT net: signed badge points cancel (a +50 and a −35 on one day net +15 but are');
+  console.log('          two real events). The per-bucket net/reward/penalty/gross split above is cancellation-free.');
+  console.log('  Also watch: if the STANDING mass is in BASE (linear price move) or LOCKED (swap churn) rather than');
+  console.log('          bonus, the anomaly is not a badge defect at all — [B.2] "mass" ranks the standing contribution.');
   console.log('  Recoverability: per-symbol BASE is not reconstructable from persisted data (needs prices — a');
   console.log('          forbidden OHLCV refetch); only per-doc aggregate base (activeScore − Σbonus) is shown.');
   console.log('  Validity: the split holds as of scoreState.lastScoredAt (thresholdHistory + activeScore co-written)');
