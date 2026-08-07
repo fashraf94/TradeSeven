@@ -29,7 +29,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getFirebaseAdmin } from '../../api/_utils/firebaseAdmin.js';
 import { planAgentMigration, scanResidualsAfterPlan } from '../../api/_utils/compositionMigration.js';
-import { computeOverlayContentHash } from '../../api/_utils/compositionStateResolver.js';
+import { computeOverlayRunHash, computeOverlaySemanticHash, entryDocId } from '../../api/_utils/compositionStateResolver.js';
 import { buildIdentityMigrationFeedEntries } from '../../api/_utils/identityMigrationFeed.js';
 import { assertWriteEpochOpen } from '../../api/_utils/compositionWriteEpoch.js';
 import { ARCHETYPE_IDENTITY_VERSION } from '../../api/_utils/archetypeVersionConstants.js';
@@ -96,7 +96,11 @@ async function main() {
     }
   }
 
-  const overlayContentHash = computeOverlayContentHash(allEntries);
+  // M12 hash split: semanticHash is runId-independent (two dry-runs over the
+  // same fleet agree; the founder's pre-apply check), runHash pins this run.
+  const semanticHash = computeOverlaySemanticHash(allEntries);
+  const runHash = computeOverlayRunHash(allEntries);
+  const overlayContentHash = runHash; // the §2 field name of record (= runHash)
   const affectedAgents = perAgent.filter((a) => a.entries > 0);
   const summary = {
     runId, mode: APPLY ? 'apply' : 'dry-run',
@@ -105,7 +109,7 @@ async function main() {
     overlayEntries: allEntries.length,
     byAction: allEntries.reduce((m, e) => ((m[e.action] = (m[e.action] || 0) + 1), m), {}),
     reportClasses: allReports.reduce((m, r) => ((m[r.class] = (m[r.class] || 0) + 1), m), {}),
-    overlayContentHash,
+    overlayContentHash, semanticHash, runHash,
     identityVersionTarget: ARCHETYPE_IDENTITY_VERSION + 1,
   };
 
@@ -133,14 +137,14 @@ async function main() {
   for (let i = 0; i < allEntries.length; i += 400) {
     const batch = db.batch();
     for (const e of allEntries.slice(i, i + 400)) {
-      batch.set(runRef.collection('entries').doc(e.entryKey.replace(/\//g, '~')), e);
+      batch.set(runRef.collection('entries').doc(entryDocId(e.entryKey)), e); // M12: injective base64url id
     }
     await batch.commit();
   }
   await runRef.set({
     migrationRunId: runId, candidateStateId: runId,
     identityVersionTarget: summary.identityVersionTarget,
-    overlayContentHash, entryCount: allEntries.length,
+    overlayContentHash, semanticHash, runHash, entryCount: allEntries.length,
     createdAt: new Date().toISOString(), feedEntries,
   });
   console.log(`\nAPPLIED: ${allEntries.length} overlay entries → compositionCandidateState/${runId} (base records untouched).`);

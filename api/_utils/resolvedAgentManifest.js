@@ -176,6 +176,20 @@ export function buildResolvedAgentManifest({ agentData, compiledBuild = null, eq
     // the identity block (from the compile's tension candidates; empty until
     // Phase 3 authors tension cells).
     renderedTensionPairs: buildForManifest?.renderedTensionCandidates ?? [],
+    // Composition PR 3 (A25): the frozen compat slice the eval assembler's
+    // advisory renderer consumes — present ONLY when the build was compiled
+    // in candidate mode (legacy builds carry no advisory keys, so this field
+    // is absent and the manifest stays byte-identical, hash included).
+    ...(buildForManifest?.compatVerdicts?.some((v) => 'advisory' in v) ? {
+      compositionCompat: {
+        ...(buildForManifest.quarantined === true ? { quarantined: true } : {}),
+        entries: buildForManifest.compatVerdicts.map((v) => ({
+          ruleId: v.ruleId, verdict: v.verdict,
+          advisory: v.advisory ?? null, narrowedParams: v.narrowedParams ?? null,
+          ...(v.blocked === true ? { blocked: true } : {}),
+        })),
+      },
+    } : {}),
     ...(compiledBuildProvenanceSkipped ? { compiledBuildProvenanceSkipped } : {}),
   };
 

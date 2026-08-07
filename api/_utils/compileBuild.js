@@ -39,6 +39,9 @@ import {
 } from './archetypeBuildSchemas.js';
 import { COMPILER_VERSION } from './archetypeVersionConstants.js';
 import { canonicalContentHash } from './canonicalHash.js';
+// PR 3 (A7): the ONE domain-admit predicate — shared with the equip/save
+// legality kernel so the compile boundary can never disagree with it.
+import { resolveNarrowedDomains, domainAdmits } from './compositionEnforcement.js';
 
 // ── §5.5 supported guardrail engine shapes ───────────────────────────────
 // Compilation requires an EXACT semantic match on all eight descriptor
@@ -129,6 +132,7 @@ export function compileBuild({
   now,
 }) {
   const errors = [];
+  let quarantined = false; // PR 3 (A7): out-of-domain persisted values quarantine the BUILD
   const delta = userBuildDelta ?? {};
   const def = archetypeDefinition ?? {};
 
@@ -198,11 +202,23 @@ export function compileBuild({
       : cell.state === 'native' ? 'native'
       : cell.state === 'tension' ? 'tension'
       : cell.state === 'core_conflict' ? 'core_conflict'
+      // PR 3 (spec §7 row 3): 'deferred' joins the vocabulary — a candidate
+      // cell state (complete-but-non-offerable, B1). Only the candidate
+      // source produces it; it fails closed below exactly like core_conflict.
+      : cell.state === 'deferred' ? 'deferred'
       : null;
     if (verdict === null) {
       err(errors, 'unknown_compat_state', ruleId, String(cell.state));
       continue;
     }
+
+    // PR 3: candidate cells carry the advisory sentence + narrowed domains
+    // onto the build (the assemblers' ONLY advisory source — A25). Legacy
+    // cells have neither key, so dark builds stay byte-identical.
+    const candidateCarriage = {
+      ...('advisory' in cell ? { advisory: cell.advisory ?? null } : {}),
+      ...('narrowedParams' in cell ? { narrowedParams: cell.narrowedParams ?? null } : {}),
+    };
 
     // §5.4: tie_breaker intendedMode is legal only for lean-class content.
     if (meta.intendedMode === 'tie_breaker' && meta.contentClass !== 'lean') {
@@ -211,10 +227,14 @@ export function compileBuild({
 
     // core_conflict never compiles (§5.2/§5.4) — blocked, excluded from
     // rendering and guardrail compilation. A legal outcome, not an error.
-    if (verdict === 'core_conflict') {
-      compatVerdicts.push({ ruleId, bundleId, verdict, intendedMode: meta.intendedMode, blocked: true });
+    // PR 3 (A15): 'deferred' is an illegal pair at this boundary too — it
+    // fails closed identically (founder instruction; the B1 no-strand ruling
+    // governs the MIGRATION, which reports deferredEquipped rather than
+    // migrating — at compile time the pair never behaves).
+    if (verdict === 'core_conflict' || verdict === 'deferred') {
+      compatVerdicts.push({ ruleId, bundleId, verdict, intendedMode: meta.intendedMode, blocked: true, ...candidateCarriage });
       blockedControls.push({
-        ruleId, bundleId, blockedBy: 'core_conflict',
+        ruleId, bundleId, blockedBy: verdict,
         zone1Ref: cell.zone1Ref ?? null, reason: cell.tensionReason ?? null,
       });
       continue;
@@ -231,14 +251,57 @@ export function compileBuild({
       // §5.4 legal-combination matrix: tension+advisoryDowngrade forces
       // prompt_advisory regardless of intendedMode or binding.
       if (cell.treatment === 'advisoryDowngrade') forcedAdvisory = true;
-      tensionPairs.push({ ruleId, treatment: cell.treatment, tensionReason: cell.tensionReason ?? null });
+      // (recorded AFTER the A7/mode-gate blocks below — review F5: a blocked
+      // or quarantined tension rule must not ride renderedTensionCandidates
+      // into the manifest's DR-13 feed.)
+    }
+
+    // ── PR 3 (A7): candidate narrowed-domain legality over the PERSISTED
+    // frozen params. An out-of-domain value REJECTS the rule and QUARANTINES
+    // the build — the compiler NEVER clamps (clamping exists in exactly one
+    // place, the §6 migration planner). '' / non-numeric never false-admits:
+    // domainAdmits is the same predicate the equip/save kernel uses — and the
+    // GUARDS mirror the kernel exactly (review F2: absent/null paramValues is
+    // a first-class persisted shape and is LEGAL — checkCandidatePairing
+    // judges only truthy paramValues objects, keys from snap.params when
+    // present, and skips null/unset values; disagreeing here false-quarantined
+    // legitimately-persisted rules).
+    if ('narrowedParams' in cell && cell.narrowedParams
+        && snapshot?.paramValues && typeof snapshot.paramValues === 'object') {
+      const paramKeys = snapshot.params && typeof snapshot.params === 'object'
+        ? Object.keys(snapshot.params)
+        : Object.keys(snapshot.paramValues);
+      const { domains, ambiguous } = resolveNarrowedDomains(cell.narrowedParams, paramKeys);
+      if (ambiguous) {
+        // The kernel classifies the SAME shape ambiguous (identical key
+        // derivation), so this arm never disagrees with equip/save — it is
+        // the fail-closed tripwire for a bare domain meeting a multi-param
+        // doc, never a guess.
+        err(errors, 'ambiguous_domain_binding', ruleId);
+        quarantined = true;
+        compatVerdicts.push({ ruleId, bundleId, verdict, intendedMode: meta.intendedMode, blocked: true, ...candidateCarriage });
+        blockedControls.push({ ruleId, bundleId, blockedBy: 'param_out_of_domain', detail: 'ambiguous_domain_binding' });
+        continue;
+      }
+      const violations = Object.entries(domains)
+        .filter(([param, domain]) => param in snapshot.paramValues
+          && snapshot.paramValues[param] !== null && snapshot.paramValues[param] !== undefined
+          && !domainAdmits(domain, snapshot.paramValues[param]))
+        .map(([param]) => param);
+      if (violations.length > 0) {
+        for (const param of violations) err(errors, 'param_out_of_domain', ruleId, `paramValues.${param}`);
+        quarantined = true;
+        compatVerdicts.push({ ruleId, bundleId, verdict, intendedMode: meta.intendedMode, blocked: true, ...candidateCarriage });
+        blockedControls.push({ ruleId, bundleId, blockedBy: 'param_out_of_domain', detail: violations.map((p) => `paramValues.${p}`).join(',') });
+        continue;
+      }
     }
 
     // Mode admission for the rule itself (§1.3 ruleModeGate over the
     // template's existing modes field, when known).
     if (meta.modes && Array.isArray(gameModePolicy?.ruleModeGate)
         && !gameModePolicy.ruleModeGate.includes(meta.modes)) {
-      compatVerdicts.push({ ruleId, bundleId, verdict, intendedMode: meta.intendedMode, blocked: true });
+      compatVerdicts.push({ ruleId, bundleId, verdict, intendedMode: meta.intendedMode, blocked: true, ...candidateCarriage });
       blockedControls.push({ ruleId, bundleId, blockedBy: 'ruleModeGate', detail: meta.modes });
       continue;
     }
@@ -286,9 +349,12 @@ export function compileBuild({
       err(errors, 'unknown_fallback', ruleId, String(fallback));
     }
 
+    if (verdict === 'tension') {
+      tensionPairs.push({ ruleId, treatment: cell.treatment, tensionReason: cell.tensionReason ?? null });
+    }
     const compiledToGuardrail = effectiveEnforcement === 'deterministic' && compiledValue !== null;
     compatVerdicts.push({
-      ruleId, bundleId, verdict,
+      ruleId, bundleId, verdict, ...candidateCarriage,
       ...(verdict === 'tension' ? { treatment: cell.treatment } : {}),
       intendedMode: meta.intendedMode,
       effectiveEnforcement,
@@ -390,6 +456,10 @@ export function compileBuild({
     gameModePolicyHash: gameModePolicyHash ?? null,
     sourceRevisionVector,
     validation: { pass: errors.length === 0, errors },
+    // PR 3 (A7): key present ONLY when an out-of-domain persisted value was
+    // found under the candidate boundary — legacy/dark builds carry no new
+    // key, so their contentHash and doc bytes are unchanged.
+    ...(quarantined ? { quarantined: true } : {}),
     compatVerdicts,
     blockedControls,
     effectiveGuardrailsPreview: { perType },

@@ -69,8 +69,10 @@ export function resolveNarrowedDomains(narrowedParams, paramKeys = []) {
  * Numeric-aware membership: stored select values are STRINGS ("50") while
  * authored domains carry numbers (allow:[50]) — compare numerically when both
  * sides are numeric, strictly otherwise. Never mutates the stored value.
+ * Exported for the PR-3 compile boundary (A7) — ONE admit predicate, so the
+ * compiler and the equip/save kernel can never disagree about a domain.
  */
-function domainAdmits(domain, value) {
+export function domainAdmits(domain, value) {
   const num = typeof value === 'number' ? value
     : (typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value)) ? Number(value) : null);
   if ('allow' in domain) {

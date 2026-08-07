@@ -124,10 +124,45 @@ export function resolveEffectiveConfig({
  * the entries sorted by entryKey. Set-like ordering is the CALLER's job (the
  * serializer preserves array order — spec §1 correction A7); sorting here
  * makes the hash insertion-order-independent by construction.
+ *
+ * M12 (PR 3, ledger): this is the RUN hash — it covers migrationRunId, so it
+ * pins the specific apply the activation ratifies and can never match across
+ * invocations. Cross-run reproducibility lives in computeOverlaySemanticHash.
  */
 export function computeOverlayContentHash(entries) {
   const sorted = [...entries]
     .map((e) => ({ ...e, entryKey: e.entryKey ?? buildEntryKey(e) }))
     .sort((a, b) => (a.entryKey < b.entryKey ? -1 : a.entryKey > b.entryKey ? 1 : 0));
   return canonicalContentHash(sorted);
+}
+
+/** Alias with the M12 name of record: the run-pinning hash. */
+export const computeOverlayRunHash = computeOverlayContentHash;
+
+/**
+ * M12 — the SEMANTIC hash: identical planner output over identical data yields
+ * the same hash regardless of when or under which runId it was produced
+ * (migrationRunId is the one clock-derived field; review P10). Two dry-runs
+ * over the same fleet MUST agree here, and an apply MUST agree with the
+ * dry-run that previewed it — that agreement is the founder's pre-apply check.
+ */
+export function computeOverlaySemanticHash(entries) {
+  const sorted = [...entries]
+    .map((e) => {
+      const { migrationRunId, ...semantic } = e;
+      return { ...semantic, entryKey: e.entryKey ?? buildEntryKey(e) };
+    })
+    .sort((a, b) => (a.entryKey < b.entryKey ? -1 : a.entryKey > b.entryKey ? 1 : 0));
+  return canonicalContentHash(sorted);
+}
+
+/**
+ * M12 — the Firestore doc id for an overlay entry: base64url(entryKey).
+ * INJECTIVE (the PR-2 `'/'→'~'` substitution was not: a docPath containing
+ * '~' or a '|' inside a path segment could collide two keys — review P2), and
+ * always a legal Firestore id (no '/', never '.' or '..', bounded well under
+ * the 1500-byte limit for real keys).
+ */
+export function entryDocId(entryKey) {
+  return Buffer.from(entryKey, 'utf8').toString('base64url');
 }

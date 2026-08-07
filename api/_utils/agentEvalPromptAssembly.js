@@ -28,6 +28,10 @@ import {
 } from './agentNewsContext.js';
 import { PATTERN_DISPLAY_NAMES } from './analyticalPrimitives.js';
 import { isHardRule } from './ruleHardness.js';
+// Composition PR 3 (§7-signed fenced splice): D3 advisory append — dark
+// module, flag-split pattern; registered in PROMPT_CONTRIBUTING_MODULES in
+// this same commit. Dark ⇒ null index ⇒ every rule line byte-identical.
+import { buildCompositionAdvisoryIndex, appendCompositionAdvisory } from './compositionAdvisoryRender.js';
 // DR-13 Commit 2 (§7-signed fence contact, founder-ruled 2026-07-24): the
 // archetype identity block — non-fenced pure module, dark behind
 // EVAL_IDENTITY_BLOCK_ENABLED. '' while dark / on unknown keys, so both
@@ -556,17 +560,21 @@ ${ctx.consolidatedInsight}`);
     // override this is the category-derived split — byte-identical to pre-Phase-3.
     const constraints = activeRules.filter(isHardRule);
     const strategies = activeRules.filter(r => !isHardRule(r));
+    // Composition PR 3: advisory index from the ACTIVATED compiled artifact
+    // only (A25) — the battle's frozen manifest slice, attached at creation
+    // from the deploy gate's build. Absent on every battle today (dark).
+    const compositionAdvisories = buildCompositionAdvisoryIndex(battle.resolvedAgentManifest?.compositionCompat ?? null);
 
     const ruleLines = [];
     if (constraints.length > 0) {
       const cLines = constraints.map((r, i) =>
-        `C${i + 1}. ${resolveRuleText(r)} [${capitalize(r.category)}]`
+        `C${i + 1}. ${appendCompositionAdvisory(resolveRuleText(r), r, compositionAdvisories)} [${capitalize(r.category)}]`
       );
       ruleLines.push(`== CONSTRAINTS (must obey) ==\n${cLines.join('\n')}`);
     }
     if (strategies.length > 0) {
       const sLines = strategies.map((r, i) =>
-        `S${i + 1}. ${resolveRuleText(r)} [${capitalize(r.category || 'general')}]`
+        `S${i + 1}. ${appendCompositionAdvisory(resolveRuleText(r), r, compositionAdvisories)} [${capitalize(r.category || 'general')}]`
       );
       ruleLines.push(`== STRATEGY PREFERENCES (should follow) ==\n${sLines.join('\n')}`);
     }

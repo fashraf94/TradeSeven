@@ -189,3 +189,68 @@ describe('candidate registry — adapter + rulingIndex', () => {
     expect(idx['R-13']).toEqual([{ ruleId: 'r-12', archetype: 'contrarian' }]);
   });
 });
+
+describe('candidate registry — A11: the valueParamKey binding table (PR 3)', () => {
+  // The PR-1 transcription flattened param-KEYED ledger notation into bare
+  // domains, which classified ambiguous on multi-param rules (the six dry-run
+  // needsBinding rows). PR 3 RESTORES the ledger keys — these are transcribed
+  // values of record, not authored bindings. Sources: ADJUDICATION_RULINGS_V1.md
+  // (R-61 {pct∈[40,80]}, R-50 {pct∈{10}}, R-52 {pct∈[10,30]}, R-84
+  // {rsi_low∈[30,40]}, R-132/133/134 {pct∈[25,50]}) and CELL_BATCH_C7_FINAL_V1.md
+  // (R-159 "{final ≥ 1.0} survives as sign-based", R-7 {atr∈[0.25,0.4]},
+  // R-8 {atr∈[0.2,0.4]}).
+  const LEDGER_BINDINGS = [
+    ['alloc-sector-cap', 'momentum_chaser', { pct: { min: 40, max: 80 } }],       // R-61
+    ['alloc-sector-minimum', 'momentum_chaser', { pct: { allow: [10] } }],        // R-50
+    ['alloc-sector-minimum', 'guardian', { pct: { min: 10, max: 30 } }],          // R-52
+    ['gs-02', 'guardian', { final: { minOnly: 1 } }],                             // R-159
+    ['mb-11', 'momentum_chaser', { pct: { min: 25, max: 50 } }],                  // R-132
+    ['mb-11', 'guardian', { pct: { min: 25, max: 50 } }],                         // R-133
+    ['mb-11', 'analyst', { pct: { min: 25, max: 50 } }],                          // R-134
+    ['th-05', 'degen', { atr: { min: 0.25, max: 0.4 } }],                         // R-7
+    ['th-05', 'guardian', { atr: { min: 0.2, max: 0.4 } }],                       // R-8
+    ['tv-12', 'contrarian', { rsi_low: { min: 30, max: 40 } }],                   // R-84
+  ];
+
+  it('each of the ten formerly-ambiguous cells carries its ledger-exact param-keyed binding', () => {
+    for (const [ruleId, archetype, expected] of LEDGER_BINDINGS) {
+      expect(getCandidateCompatCell(ruleId, archetype).narrowedParams, `${ruleId}/${archetype}`).toEqual(expected);
+    }
+    // ...and every bound key names a REAL param of the rule's corpus template.
+    const paramKeysOf = (ruleId) => {
+      const t = FORGE_RULE_TEMPLATES.find((x) => x.id === ruleId);
+      const keys = new Set();
+      for (const ft of t?.forgeTemplates || []) for (const k of Object.keys(ft?.params || {})) keys.add(k);
+      return keys;
+    };
+    for (const [ruleId, , expected] of LEDGER_BINDINGS) {
+      for (const key of Object.keys(expected)) {
+        expect(paramKeysOf(ruleId).has(key), `${ruleId} binds unknown param ${key}`).toBe(true);
+      }
+    }
+  });
+
+  it('needsBinding is ZERO by construction: no cell carries a bare domain on a multi-param rule', async () => {
+    // A bare domain (a domain object not keyed by param) binds deterministically
+    // only when the rule has exactly one template param. On a multi-param rule it
+    // classifies ambiguous_domain_binding — the migration's needsBinding class.
+    // After the A11 restoration this set is empty, and this row keeps it empty:
+    // a future transcription that drops a param key fails CI here, not in a
+    // founder dry-run.
+    //
+    // Review F5 (test-integrity lens): the bare-domain predicate is the
+    // KERNEL's OWN isDomain — imported, not hand-copied — so a future domain
+    // shape added to the kernel cannot drift this invariant into a false
+    // pass on exactly the class it exists to keep empty.
+    const { isDomain: isBareDomain } = await import('../../api/_utils/compositionEnforcement.js');
+    const offenders = [];
+    for (const [r, a, c] of allCells()) {
+      if (!c.narrowedParams || !isBareDomain(c.narrowedParams)) continue;
+      const t = FORGE_RULE_TEMPLATES.find((x) => x.id === r);
+      const keys = new Set();
+      for (const ft of t?.forgeTemplates || []) for (const k of Object.keys(ft?.params || {})) keys.add(k);
+      if (keys.size > 1) offenders.push(`${r}/${a} params=[${[...keys].join(',')}]`);
+    }
+    expect(offenders).toEqual([]);
+  });
+});

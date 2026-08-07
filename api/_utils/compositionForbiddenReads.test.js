@@ -44,13 +44,45 @@ describe('forbidden-read CI rule — prompt/projection surface never touches ANY
         `${file} references ${name}`).toBe(false);
     }
   });
+
+  // M11 (PR 3, ledger): ONE-HOP resolution — a shim module between an
+  // assembler and the compat surface (prompt surface → util → compat) slips
+  // the direct sweep above. Resolve each prompt-surface file's relative
+  // imports and apply the same ban to THOSE modules' sources.
+  function relativeImportsOf(file) {
+    const src = read(file);
+    const dir = dirname(resolve(REPO, file));
+    const out = [];
+    for (const m of src.matchAll(/from\s+'(\.{1,2}\/[^']+)'/g)) {
+      const abs = resolve(dir, m[1]);
+      const rel = abs.slice(resolve(REPO).length + 1);
+      if (rel.endsWith('.js')) out.push(rel);
+    }
+    return out;
+  }
+
+  it.each(PROMPT_SURFACE)('%s — its ONE-HOP imports also touch no compat surface (M11: no shim re-exports)', (file) => {
+    const hops = relativeImportsOf(file);
+    expect(hops.length).toBeGreaterThan(0); // the extraction genuinely resolves imports
+    for (const hop of hops) {
+      let src;
+      try { src = read(hop); } catch { continue; } // non-file specifier (should not happen for .js)
+      for (const name of COMPAT_SURFACE) {
+        expect(src.includes(`/${name}.js'`) || src.includes(`/${name}'`),
+          `${file} → ${hop} references ${name} (one-hop shim, M11)`).toBe(false);
+      }
+    }
+  });
 });
 
 describe('A36 (structural) — no production module reads the resolver/overlay pre-activation', () => {
   const ALLOWED_RESOLVER_CONSUMERS = new Set([
     'api/_utils/compositionStateResolver.js',      // itself
     'api/_utils/compositionMigration.js',          // the planner
+    'api/_utils/compositionProductionLoader.js',   // B5: THE one sanctioned production read path (PR-4 flips against it)
     'api/_utils/composition.acceptance.test.js',   // tests
+    'api/_utils/composition.pr3.acceptance.test.js',
+    'api/_utils/compositionProductionLoader.contract.test.js',
     'api/_utils/compositionForbiddenReads.test.js',
   ]);
 

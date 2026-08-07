@@ -4,6 +4,10 @@
 import { getFirebaseAdmin } from './firebaseAdmin.js';
 import { ARCHETYPE_CONSTRAINTS } from './archetypeScoring.js';
 import { isHardRule } from './ruleHardness.js';
+// Composition PR 3 (§7-signed fenced splice): D3 advisory append — dark
+// module, flag-split pattern; registered in PROMPT_CONTRIBUTING_MODULES in
+// this same commit. Dark ⇒ null index ⇒ every rule line byte-identical.
+import { buildCompositionAdvisoryIndex, appendCompositionAdvisory } from './compositionAdvisoryRender.js';
 // Release 2 PR-c (fenced site 3, SHA-bound authorization @ 4a0f43e): the
 // strategy prompt renders STANDING LEANS through the same shared renderer +
 // revalidation kernel the eval assembly and the battle snapshot use — one
@@ -100,12 +104,16 @@ export function buildStrategyUserPrompt(agent, equippedWatchlist = null) {
     // override this is the category-derived split — byte-identical to pre-Phase-3.
     const constraints = activeRules.filter(isHardRule);
     const strategies = activeRules.filter(r => !isHardRule(r));
+    // Composition PR 3: advisory index from the ACTIVATED compiled artifact
+    // only (A25). `agent.compositionCompat` is populated by the PR-4 loader
+    // splice; in PR 3 it is absent in production — dark by absence AND flag.
+    const compositionAdvisories = buildCompositionAdvisoryIndex(agent.compositionCompat ?? null);
     const rLines = [];
     if (constraints.length > 0) {
-      rLines.push(`CONSTRAINTS:\n${constraints.map((r, i) => `C${i + 1}. ${resolveRuleText(r)}`).join('\n')}`);
+      rLines.push(`CONSTRAINTS:\n${constraints.map((r, i) => `C${i + 1}. ${appendCompositionAdvisory(resolveRuleText(r), r, compositionAdvisories)}`).join('\n')}`);
     }
     if (strategies.length > 0) {
-      rLines.push(`STRATEGY PREFERENCES:\n${strategies.map((r, i) => `S${i + 1}. ${resolveRuleText(r)}`).join('\n')}`);
+      rLines.push(`STRATEGY PREFERENCES:\n${strategies.map((r, i) => `S${i + 1}. ${appendCompositionAdvisory(resolveRuleText(r), r, compositionAdvisories)}`).join('\n')}`);
     }
 
     // Institutional data lag warning (only when institutional rules are active)

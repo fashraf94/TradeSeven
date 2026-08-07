@@ -91,17 +91,17 @@ export const CANDIDATE_COMPAT_CELLS = {
     analyst: { state: "tension", rulingIds: ["R-65"], advisory: "the agent is instructed that quality admission precedes distribution, and an unfilled sector is preferable to a below-standard name.", narrowedParams: {"allow":["light","moderate"]}, displayReason: null, notes: [] },
   },
   "alloc-sector-cap": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-61"], advisory: "the agent is instructed that the cap limits how much a leading sector may hold, not whether leading sectors are preferred.", narrowedParams: {"min":40,"max":80}, displayReason: null, notes: ["equal_weight_scope"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-61"], advisory: "the agent is instructed that the cap limits how much a leading sector may hold, not whether leading sectors are preferred.", narrowedParams: {"pct":{"min":40,"max":80}}, displayReason: null, notes: ["equal_weight_scope"] },
     contrarian: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
     degen: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
     guardian: { state: "native", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
     analyst: { state: "neutral", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
   },
   "alloc-sector-minimum": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-50"], advisory: "the agent is instructed that the sector floor is a minimum obligation, and that within and beyond it, selection follows sector and name strength.", narrowedParams: {"allow":[10]}, displayReason: null, notes: ["equal_weight_scope"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-50"], advisory: "the agent is instructed that the sector floor is a minimum obligation, and that within and beyond it, selection follows sector and name strength.", narrowedParams: {"pct":{"allow":[10]}}, displayReason: null, notes: ["equal_weight_scope"] },
     contrarian: { state: "tension", rulingIds: ["R-62"], advisory: "the agent is instructed that the sector floor never lowers its dislocation and recovery requirements; if no name in the sector qualifies, the floor goes unmet.", narrowedParams: null, displayReason: null, notes: [] },
     degen: { state: "tension", rulingIds: ["R-51"], advisory: "the agent is instructed that the sector obligation is a minimum, and realized volatility ranking governs which names fill it and everything beyond it.", narrowedParams: null, displayReason: null, notes: [] },
-    guardian: { state: "tension", rulingIds: ["R-52"], advisory: "the agent is instructed that the sector floor never overrides its spread and concentration protections; where they conflict, the protective limit governs.", narrowedParams: {"min":10,"max":30}, displayReason: null, notes: ["equal_weight_scope"] },
+    guardian: { state: "tension", rulingIds: ["R-52"], advisory: "the agent is instructed that the sector floor never overrides its spread and concentration protections; where they conflict, the protective limit governs.", narrowedParams: {"pct":{"min":10,"max":30}}, displayReason: null, notes: ["equal_weight_scope"] },
     analyst: { state: "tension", rulingIds: ["R-53"], advisory: "the agent is instructed that the quality admission standard is never lowered to satisfy a sector floor; if no name in the sector qualifies, the floor goes unmet.", narrowedParams: null, displayReason: null, notes: [] },
   },
   "alloc-tier-preference": {
@@ -164,7 +164,7 @@ export const CANDIDATE_COMPAT_CELLS = {
     momentum_chaser: { state: "tension", rulingIds: ["R-157"], advisory: "the agent is instructed that phase scaling adjusts tolerance modestly, and that its exit discipline is not suspended by the clock.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
     contrarian: { state: "tension", rulingIds: ["R-158"], advisory: "the agent is instructed that its stop is declared before entry and that phase scaling never becomes a reason to sit past it.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
     degen: { state: "core_conflict", rulingIds: ["R-193"], advisory: null, narrowedParams: null, displayReason: "The unconditional EARLY clock-multiplier (1.5–3×) widens the stop on losers by the clock — the core refusal (never widen the stop to stay in a loser) fires on the first conflicting arm; the later tightening does not cure it.", notes: ["prose_only"] },
-    guardian: { state: "tension", rulingIds: ["R-159"], advisory: "the agent is instructed that its risk line responds to damage rather than to the hour, and that phase scaling never tightens it into ordinary noise.", narrowedParams: {"minOnly":1}, displayReason: null, notes: ["prose_only"] },
+    guardian: { state: "tension", rulingIds: ["R-159"], advisory: "the agent is instructed that its risk line responds to damage rather than to the hour, and that phase scaling never tightens it into ordinary noise.", narrowedParams: {"final":{"minOnly":1}}, displayReason: null, notes: ["prose_only"] },
     analyst: { state: "tension", rulingIds: ["R-194"], advisory: "the agent is instructed that a clock-scaled stop changes tolerance only, and the business case remains the sole basis for a thesis exit.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
   },
   "gs-03": {
@@ -329,11 +329,11 @@ export const CANDIDATE_COMPAT_CELLS = {
     analyst: { state: "tension", rulingIds: ["R-154"], advisory: "the agent is instructed quality admission is unchanged by the window, and that a clear quality upgrade is acted on once it lifts.", narrowedParams: null, displayReason: null, notes: [] },
   },
   "mb-11": {
-    momentum_chaser: { state: "tension", rulingIds: ["R-132"], advisory: "the agent is instructed a late-session hurdle reduction never lowers its confirmation requirement, and that divergence alone is not the strength evidence it acts on.", narrowedParams: {"min":25,"max":50}, displayReason: null, notes: ["prose_only"] },
+    momentum_chaser: { state: "tension", rulingIds: ["R-132"], advisory: "the agent is instructed a late-session hurdle reduction never lowers its confirmation requirement, and that divergence alone is not the strength evidence it acts on.", narrowedParams: {"pct":{"min":25,"max":50}}, displayReason: null, notes: ["prose_only"] },
     contrarian: { state: "tension", rulingIds: ["R-144"], advisory: "the agent is instructed a lower late hurdle never substitutes for a recovery thesis, and divergence alone is not sufficient entry evidence.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
     degen: { state: "tension", rulingIds: ["R-145"], advisory: "the agent is instructed realized volatility governs its candidate ranking, and the divergence focus narrows timing rather than selection.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    guardian: { state: "tension", rulingIds: ["R-133"], advisory: "the agent is instructed its entry standard does not fall with the clock, and that a reduced hurdle never admits a name its screens would reject.", narrowedParams: {"min":25,"max":50}, displayReason: null, notes: ["prose_only"] },
-    analyst: { state: "tension", rulingIds: ["R-134"], advisory: "the agent is instructed the quality standard is fixed regardless of the hour, and a lower hurdle changes timing rather than admission.", narrowedParams: {"min":25,"max":50}, displayReason: null, notes: ["prose_only"] },
+    guardian: { state: "tension", rulingIds: ["R-133"], advisory: "the agent is instructed its entry standard does not fall with the clock, and that a reduced hurdle never admits a name its screens would reject.", narrowedParams: {"pct":{"min":25,"max":50}}, displayReason: null, notes: ["prose_only"] },
+    analyst: { state: "tension", rulingIds: ["R-134"], advisory: "the agent is instructed the quality standard is fixed regardless of the hour, and a lower hurdle changes timing rather than admission.", narrowedParams: {"pct":{"min":25,"max":50}}, displayReason: null, notes: ["prose_only"] },
   },
   "mb-12": {
     momentum_chaser: { state: "tension", rulingIds: ["R-146"], advisory: "the agent is instructed its confirmation requirement does not decay with the session, and a lower hurdle changes urgency rather than evidence.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
@@ -534,8 +534,8 @@ export const CANDIDATE_COMPAT_CELLS = {
   "th-05": {
     momentum_chaser: { state: "tension", rulingIds: ["R-178"], advisory: "the agent is instructed that the tightened trail protects a banked gain, and that it should not exit a position whose chart and sector evidence both remain intact.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
     contrarian: { state: "native", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: ["prose_only"] },
-    degen: { state: "tension", rulingIds: ["R-7"], advisory: "the agent is instructed that the tightened trail after a banked threshold is its own profit-side discipline within the admitted range, and that a live move's remaining thresholds and its survival stop — not the trail — decide whether the ride continues.", narrowedParams: {"min":0.25,"max":0.4}, displayReason: null, notes: ["prose_only"] },
-    guardian: { state: "tension", rulingIds: ["R-8"], advisory: "the agent is instructed that post-threshold protection is set outside ordinary noise, and that its risk line rather than the trail decides exits.", narrowedParams: {"min":0.2,"max":0.4}, displayReason: null, notes: ["prose_only"] },
+    degen: { state: "tension", rulingIds: ["R-7"], advisory: "the agent is instructed that the tightened trail after a banked threshold is its own profit-side discipline within the admitted range, and that a live move's remaining thresholds and its survival stop — not the trail — decide whether the ride continues.", narrowedParams: {"atr":{"min":0.25,"max":0.4}}, displayReason: null, notes: ["prose_only"] },
+    guardian: { state: "tension", rulingIds: ["R-8"], advisory: "the agent is instructed that post-threshold protection is set outside ordinary noise, and that its risk line rather than the trail decides exits.", narrowedParams: {"atr":{"min":0.2,"max":0.4}}, displayReason: null, notes: ["prose_only"] },
     analyst: { state: "tension", rulingIds: ["R-181"], advisory: "the agent is instructed that the trail protects banked gains and never substitutes for the business case, which decides whether the holding is warranted.", narrowedParams: null, displayReason: null, notes: ["prose_only"] },
   },
   "th-07": {
@@ -687,7 +687,7 @@ export const CANDIDATE_COMPAT_CELLS = {
   },
   "tv-12": {
     momentum_chaser: { state: "native", rulingIds: [], advisory: null, narrowedParams: null, displayReason: null, notes: [] },
-    contrarian: { state: "tension", rulingIds: ["R-84"], advisory: "the agent is instructed the factor count governs multiplier placement only, and dislocation and recovery evidence continue to govern what it holds", narrowedParams: {"min":30,"max":40}, displayReason: null, notes: [] },
+    contrarian: { state: "tension", rulingIds: ["R-84"], advisory: "the agent is instructed the factor count governs multiplier placement only, and dislocation and recovery evidence continue to govern what it holds", narrowedParams: {"rsi_low":{"min":30,"max":40}}, displayReason: null, notes: [] },
     degen: { state: "tension", rulingIds: ["R-102"], advisory: "the agent is instructed realized volatility remains the primary tier-ranking axis, and the factor count orders only names that ranking has qualified", narrowedParams: null, displayReason: null, notes: [] },
     guardian: { state: "tension", rulingIds: ["R-82"], advisory: "the agent is instructed its volatility and quality screens govern how much exposure a name may carry, and the factor count orders only names those screens have cleared", narrowedParams: null, displayReason: null, notes: [] },
     analyst: { state: "tension", rulingIds: ["R-83"], advisory: "the agent is instructed quality admission determines which names may hold Star or Core, and the factor count orders only within that admitted set", narrowedParams: null, displayReason: null, notes: [] },
