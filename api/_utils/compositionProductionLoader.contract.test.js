@@ -22,6 +22,17 @@ import {
 // harness snapshots EAGERLY at read time and serves entries from LIVE state
 // — a loader without the seqlock now genuinely returns a torn view (old
 // descriptor + new entries) and fails the consistency assertion.
+// PR 4: descriptors are the FULL 7-field tuple (B4 as ruled; malformed fails
+// closed on any missing field) — fixtures build complete tuples and override
+// what a row exercises.
+function fullDescriptor(overrides = {}) {
+  return {
+    activeIdentityVersion: 3, boundaryStateVersion: 1, activeEpochId: 'e-1',
+    candidateStateId: 'run-1', semanticHash: 'h-1', activationGeneration: 1,
+    overrideRevision: 0, ...overrides,
+  };
+}
+
 function makeActivationFake({ descriptor = null, entriesByGeneration = {} } = {}) {
   const state = { descriptor, reads: 0, txAttempts: 0, hooks: { afterDescriptorRead: null } };
   const db = {
@@ -65,7 +76,7 @@ describe('B5 contract — generation consistency (seqlock)', () => {
 
   it('steady state: returns the pinned generation and ITS entries', async () => {
     const { db, fetchLayers } = makeActivationFake({
-      descriptor: { activationGeneration: 1, activeEpochId: 'e-1', candidateStateId: 'run-1' },
+      descriptor: fullDescriptor(),
       entriesByGeneration: { 1: GEN1_ENTRIES },
     });
     const loaded = await loadActivatedComposition(db, fetchLayers);
@@ -76,7 +87,7 @@ describe('B5 contract — generation consistency (seqlock)', () => {
 
   it('a generation bump interleaved MID-READ never yields a torn view — the load RETRIES and returns a CONSISTENT descriptor+entries pair', async () => {
     const { db, state, fetchLayers } = makeActivationFake({
-      descriptor: { activationGeneration: 1, activeEpochId: 'e-1', candidateStateId: 'run-1' },
+      descriptor: fullDescriptor(),
       entriesByGeneration: { 1: GEN1_ENTRIES, 2: GEN2_ENTRIES },
     });
     // The bump lands AFTER the loader's first (eagerly-snapshotted) descriptor
@@ -84,7 +95,7 @@ describe('B5 contract — generation consistency (seqlock)', () => {
     // layer read serves gen-2 entries — the torn combination a seqlock-less
     // loader would return.
     state.hooks.afterDescriptorRead = async () => {
-      state.descriptor = { activationGeneration: 2, activeEpochId: 'e-2', candidateStateId: 'run-2' };
+      state.descriptor = fullDescriptor({ activationGeneration: 2, activeEpochId: 'e-2', candidateStateId: 'run-2', semanticHash: 'h-2' });
     };
     const loaded = await loadActivatedComposition(db, fetchLayers);
     // The seqlock genuinely fired: more than one transaction attempt ran.
@@ -101,11 +112,11 @@ describe('B5 contract — generation consistency (seqlock)', () => {
 
   it('a bump on EVERY read exhausts the seqlock into TornCompositionReadError (never a silent torn view)', async () => {
     const { db, state, fetchLayers } = makeActivationFake({
-      descriptor: { activationGeneration: 1 },
+      descriptor: fullDescriptor(),
       entriesByGeneration: { },
     });
     let g = 1;
-    const bumpForever = async () => { g += 1; state.descriptor = { activationGeneration: g }; state.hooks.afterDescriptorRead = bumpForever; };
+    const bumpForever = async () => { g += 1; state.descriptor = fullDescriptor({ activationGeneration: g }); state.hooks.afterDescriptorRead = bumpForever; };
     state.hooks.afterDescriptorRead = bumpForever;
     await expect(loadActivatedComposition(db, fetchLayers)).rejects.toBeInstanceOf(TornCompositionReadError);
   });
@@ -128,23 +139,48 @@ describe('B5 contract — every derived write carries its generation', () => {
 describe('B5 contract — review hardenings (design lens F3/F4)', () => {
   it('F3 (ABA): a rollback+re-activation landing on the SAME generation with a DIFFERENT candidate tuple still retries — generation-only compare would admit the mixed view', async () => {
     const { db, state, fetchLayers } = makeActivationFake({
-      descriptor: { activationGeneration: 2, activeEpochId: 'e-2', candidateStateId: 'run-X', semanticHash: 'h-X' },
+      descriptor: fullDescriptor({ activationGeneration: 2, activeEpochId: 'e-2', candidateStateId: 'run-X', semanticHash: 'h-X' }),
       entriesByGeneration: { 2: GEN2_ENTRIES },
     });
     // Between the loader's two descriptor reads: rollback to gen 1, then a
     // re-activation minting gen 2 AGAIN with a different candidate (run-Y).
     state.hooks.afterDescriptorRead = async () => {
-      state.descriptor = { activationGeneration: 2, activeEpochId: 'e-3', candidateStateId: 'run-Y', semanticHash: 'h-Y' };
+      state.descriptor = fullDescriptor({ activationGeneration: 2, activeEpochId: 'e-3', candidateStateId: 'run-Y', semanticHash: 'h-Y' });
     };
     const loaded = await loadActivatedComposition(db, fetchLayers);
     expect(state.txAttempts).toBeGreaterThan(1); // the tuple compare fired
     expect(loaded.descriptor.candidateStateId).toBe('run-Y'); // the settled world, never the mix
   });
 
-  it('F4: a PRESENT descriptor without a well-formed generation fails CLOSED (never the generation-0 dark sentinel)', async () => {
-    for (const bad of [{ activeEpochId: 'e-1' }, { activationGeneration: 'two' }, { activationGeneration: NaN }, { activationGeneration: 0 }]) {
+  it('F4, extended to the 7-field union: a PRESENT descriptor missing ANY field fails CLOSED (never the generation-0 dark sentinel)', async () => {
+    const cases = [
+      { activeEpochId: 'e-1' },
+      { ...fullDescriptor(), activationGeneration: 'two' },
+      { ...fullDescriptor(), activationGeneration: NaN },
+      { ...fullDescriptor(), activationGeneration: 0 },
+    ];
+    // Each of the seven fields, individually absent, is malformed:
+    for (const f of ['activeIdentityVersion', 'boundaryStateVersion', 'activeEpochId', 'candidateStateId', 'semanticHash', 'activationGeneration', 'overrideRevision']) {
+      const d = fullDescriptor();
+      delete d[f];
+      cases.push(d);
+    }
+    for (const bad of cases) {
       const { db, fetchLayers } = makeActivationFake({ descriptor: bad });
       await expect(loadActivatedComposition(db, fetchLayers)).rejects.toMatchObject({ code: 'activation_descriptor_malformed' });
     }
+  });
+
+  it('B1-EXT part 2: an overrideRevision bump mid-read AT THE SAME GENERATION forces a seqlock retry (generation alone cannot see an override edit)', async () => {
+    const { db, state, fetchLayers } = makeActivationFake({
+      descriptor: fullDescriptor({ overrideRevision: 4 }),
+      entriesByGeneration: { 1: GEN1_ENTRIES },
+    });
+    state.hooks.afterDescriptorRead = async () => {
+      state.descriptor = fullDescriptor({ overrideRevision: 5 }); // same generation, override layer moved
+    };
+    const loaded = await loadActivatedComposition(db, fetchLayers);
+    expect(state.txAttempts).toBeGreaterThan(1); // the token compare fired on overrideRevision alone
+    expect(loaded.descriptor.overrideRevision).toBe(5);
   });
 });

@@ -110,7 +110,7 @@ async function main() {
     byAction: allEntries.reduce((m, e) => ((m[e.action] = (m[e.action] || 0) + 1), m), {}),
     reportClasses: allReports.reduce((m, r) => ((m[r.class] = (m[r.class] || 0) + 1), m), {}),
     overlayContentHash, semanticHash, runHash,
-    identityVersionTarget: ARCHETYPE_IDENTITY_VERSION + 1,
+    activeIdentityVersion: ARCHETYPE_IDENTITY_VERSION + 1, // renamed from identityVersionTarget (B4 alignment, founder-confirmed clean rename)
   };
 
   const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out');
@@ -143,7 +143,7 @@ async function main() {
   }
   await runRef.set({
     migrationRunId: runId, candidateStateId: runId,
-    identityVersionTarget: summary.identityVersionTarget,
+    activeIdentityVersion: summary.activeIdentityVersion,
     overlayContentHash, semanticHash, runHash, entryCount: allEntries.length,
     createdAt: new Date().toISOString(), feedEntries,
   });

@@ -80,6 +80,10 @@ export function makeInMemoryDb(initial = {}) {
         writeLog.push(['tx.update', ref.path]);
       },
       set: (ref, data) => { store.set(ref.path, structuredClone(data)); writeLog.push(['tx.set', ref.path]); },
+      create: (ref, data) => {
+        if (store.has(ref.path)) { const e = new Error(`ALREADY_EXISTS: ${ref.path}`); e.code = 6; throw e; }
+        store.set(ref.path, structuredClone(data)); writeLog.push(['tx.create', ref.path]);
+      },
     }),
   };
 

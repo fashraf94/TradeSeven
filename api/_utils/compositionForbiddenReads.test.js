@@ -80,10 +80,17 @@ describe('A36 (structural) — no production module reads the resolver/overlay p
     'api/_utils/compositionStateResolver.js',      // itself
     'api/_utils/compositionMigration.js',          // the planner
     'api/_utils/compositionProductionLoader.js',   // B5: THE one sanctioned production read path (PR-4 flips against it)
+    // PR 4: the ACTIVATION WRITER — imports computeOverlaySemanticHash +
+    // entryDocId for the M6 in-transaction candidate verification (recomputed
+    // hash vs stored, create-only id consistency). It reads candidate entries
+    // ONLY inside the activation transaction itself — the activation, not a
+    // pre-activation production read; nothing calls it until the runbook does.
+    'api/_utils/compositionActivationService.js',
     'api/_utils/composition.acceptance.test.js',   // tests
     'api/_utils/composition.pr3.acceptance.test.js',
     'api/_utils/compositionProductionLoader.contract.test.js',
     'api/_utils/compositionForbiddenReads.test.js',
+    'api/_utils/compositionActivationService.test.js',
   ]);
 
   it('the only api/ importers of compositionStateResolver are the migration planner and tests', () => {

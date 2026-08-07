@@ -21,10 +21,38 @@
 // and compositionWriterCensus.json (test A46).
 
 import { COMPOSITION_EPOCH_FENCE_ENABLED } from './compositionConfig.js';
+import { ACTIVATION_COLLECTION, ACTIVATION_DOC_ID } from './compositionProductionLoader.js';
 
-/** The epoch control doc (design note §2). Absent ⇒ open. */
+/** The epoch control doc (design note §2). Absent ⇒ open — PRE-ACTIVATION ONLY (B1). */
 export const WRITE_EPOCH_COLLECTION = 'composition';
 export const WRITE_EPOCH_DOC_ID = 'writeEpoch';
+
+// A34 (PR 4, founder Q1 ruling): the per-boundary compile-time declaration of
+// which boundary-state versions THIS code supports. Every enforcement
+// boundary compares the activation record's boundaryStateVersion against this
+// set per request and FAILS CLOSED when unsupported — a warm instance whose
+// code predates the current boundary configuration cannot serve old
+// enforcement. Version 1 = the first activation's boundary-state set (the
+// closure sheet §IV boundary census as deployed by this PR).
+export const SUPPORTED_BOUNDARY_STATE_VERSIONS = Object.freeze([1]);
+
+export class UnsupportedBoundaryStateError extends Error {
+  constructor(boundaryStateVersion) {
+    super('boundary_state_unsupported');
+    this.name = 'UnsupportedBoundaryStateError';
+    this.code = 'boundary_state_unsupported';
+    this.boundaryStateVersion = boundaryStateVersion;
+  }
+}
+
+/** A34: throws unless this code supports the record's boundaryStateVersion. */
+export function assertBoundaryStateSupported(boundaryStateVersion, { sentinel = null } = {}) {
+  if (!SUPPORTED_BOUNDARY_STATE_VERSIONS.includes(boundaryStateVersion)) {
+    if (sentinel) throw new Error(sentinel + 'boundary_state_unsupported');
+    throw new UnsupportedBoundaryStateError(boundaryStateVersion);
+  }
+  return null;
+}
 
 export class EpochClosedError extends Error {
   constructor(epochId = null, state = 'closed') {
@@ -50,22 +78,44 @@ export function writeEpochRef(db) {
  * closed epoch throws `Error(sentinel + 'epoch_closed')` so the endpoint's
  * existing catch maps it through SENTINEL_TO_HTTP (409, nothing written).
  *
+ * B1 (PR 4) — two completions:
+ *   ABSENT-DOC POSTURE: an absent epoch doc is fail-OPEN only while NO
+ *     activation record exists (the pre-activation dark world, byte-identical
+ *     today). Once the record exists, an absent epoch doc FAILS CLOSED — the
+ *     activated world never runs unfenced.
+ *   EPOCH PINNING: pass `epochPin` (a caller-scoped object created OUTSIDE
+ *     runTransaction, one per logical write) and the FIRST-OBSERVED epoch id
+ *     is pinned across transaction retries — a retry that observes a
+ *     DIFFERENT epoch REJECTS instead of silently revalidating against the
+ *     new epoch.
+ *
  * @returns {null | {state:string, epochId:string|null}} null while dark.
  */
-export async function validateWriteEpochInTx(tx, db, { enabled = COMPOSITION_EPOCH_FENCE_ENABLED, sentinel = null } = {}) {
+export async function validateWriteEpochInTx(tx, db, { enabled = COMPOSITION_EPOCH_FENCE_ENABLED, sentinel = null, epochPin = null } = {}) {
   if (!enabled) return null; // dark: zero reads, zero behavior change (A23)
+  const reject = (code, epochId = null, state = 'closed') => {
+    if (sentinel) throw new Error(sentinel + code);
+    throw new EpochClosedError(epochId, state);
+  };
+  const pinOrReject = (observedEpochId) => {
+    if (!epochPin) return;
+    if (!('epochId' in epochPin)) { epochPin.epochId = observedEpochId; return; }
+    if (epochPin.epochId !== observedEpochId) reject('epoch_closed', observedEpochId, 'epoch_changed_across_retry');
+  };
   const snap = await tx.get(writeEpochRef(db));
-  if (!snap.exists) return { state: 'open', epochId: null };
+  if (!snap.exists) {
+    const act = await tx.get(db.collection(ACTIVATION_COLLECTION).doc(ACTIVATION_DOC_ID));
+    if (act.exists) reject('epoch_closed', null, 'absent_epoch_doc_post_activation'); // B1: fail closed once activated
+    pinOrReject(null);
+    return { state: 'open', epochId: null };
+  }
   const data = snap.data();
   // B8 (PR 3): a PRESENT doc admits ONLY state === 'open' — 'closed' and any
   // unrecognized/mid-transition state reject. The rules layer was already
   // fail-closed on a present doc (`data.state == 'open'`, firestore.rules:14);
-  // this aligns the server helpers with it. Absent stays fail-open until the
-  // PR-4 B1 post-activation flip.
-  if (data.state !== 'open') {
-    if (sentinel) throw new Error(sentinel + 'epoch_closed');
-    throw new EpochClosedError(data.epochId ?? null, data.state ?? 'unrecognized');
-  }
+  // this aligns the server helpers with it.
+  if (data.state !== 'open') reject('epoch_closed', data.epochId ?? null, data.state ?? 'unrecognized');
+  pinOrReject(data.epochId ?? null);
   return { state: 'open', epochId: data.epochId ?? null };
 }
 
