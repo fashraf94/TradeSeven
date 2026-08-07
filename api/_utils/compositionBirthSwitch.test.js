@@ -133,3 +133,26 @@ describe('A24 — the CLIENT resolver mirrors the contract', () => {
     expect(resolveClientSeedSource('guardian', 9).traitOf('trait-steady-anchor').ruleIds).toContain('risk-single-stock-limit');
   });
 });
+
+describe('F2 ruling — GENESIS births are pre-activation births (rollback-to-genesis parity)', () => {
+  it('a birth at the genesis-selected version (the LIVE version) is BYTE-IDENTICAL to a no-record birth — server and client sides', async () => {
+    // Server: the genesis descriptor selects ARCHETYPE_IDENTITY_VERSION;
+    // seeding at that version must equal seeding with no record at all.
+    const { ARCHETYPE_IDENTITY_VERSION } = await import('./archetypeRegistry.js');
+    const refNull = makeAgentRefFake();
+    const refGenesis = makeAgentRefFake();
+    const outNull = await seedArchetypeTraitsDeterministic(refNull, 'guardian');
+    const outGenesis = await seedArchetypeTraitsDeterministic(refGenesis, 'guardian', { identityVersion: ARCHETYPE_IDENTITY_VERSION });
+    expect(refGenesis.docs).toEqual(refNull.docs); // every doc, every field, every id
+    // equippedAt is the wall clock at seed time — identical semantics, not
+    // identical milliseconds; compare the trait entries modulo that stamp.
+    const stripClock = (list) => list.map(({ equippedAt, ...t }) => t);
+    expect(stripClock(outGenesis.equippedTraits)).toEqual(stripClock(outNull.equippedTraits));
+    expect(outGenesis.rulesAdded).toBe(outNull.rulesAdded);
+    // Client: the genesis-selected version resolves the LIVE lists.
+    const genesisClient = resolveClientSeedSource('guardian', ARCHETYPE_IDENTITY_VERSION);
+    const nullClient = resolveClientSeedSource('guardian', null);
+    expect(genesisClient.traitIds).toEqual(nullClient.traitIds);
+    expect(genesisClient.traitOf('trait-steady-anchor')).toEqual(nullClient.traitOf('trait-steady-anchor'));
+  });
+});

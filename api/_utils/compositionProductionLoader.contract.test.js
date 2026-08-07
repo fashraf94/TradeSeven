@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   loadActivatedComposition, stampDerivedWrite, assertGenerationStamped, TornCompositionReadError,
+  GENESIS_CANDIDATE_STATE_ID, GENESIS_SEMANTIC_HASH,
 } from './compositionProductionLoader.js';
 
 // A fake whose activation descriptor can be bumped between the loader's reads
@@ -182,5 +183,51 @@ describe('B5 contract — review hardenings (design lens F3/F4)', () => {
     const loaded = await loadActivatedComposition(db, fetchLayers);
     expect(state.txAttempts).toBeGreaterThan(1); // the token compare fired on overrideRevision alone
     expect(loaded.descriptor.overrideRevision).toBe(5);
+  });
+});
+
+describe('F2 ruling — GENESIS loads base-only (the record exists, the overlay does not participate)', () => {
+  const genesisDescriptor = (overrides = {}) => fullDescriptor({
+    activeIdentityVersion: 2, candidateStateId: GENESIS_CANDIDATE_STATE_ID,
+    semanticHash: GENESIS_SEMANTIC_HASH, ...overrides,
+  });
+
+  it('under genesis: activated=true at the pinned generation, fetchLayers is NEVER called, resolveWith === the pre-activation base pass-through', async () => {
+    const { db, fetchLayers } = makeActivationFake({
+      descriptor: genesisDescriptor(),
+      entriesByGeneration: { 1: GEN1_ENTRIES }, // present in the store — must NOT participate
+    });
+    let layerCalls = 0;
+    const countingLayers = async (args) => { layerCalls += 1; return fetchLayers(args); };
+    const loaded = await loadActivatedComposition(db, countingLayers);
+    expect(loaded).toMatchObject({ activated: true, genesis: true, generation: 1, overlayEntries: [], epochOverrideEntries: [] });
+    expect(loaded.descriptor.candidateStateId).toBe(GENESIS_CANDIDATE_STATE_ID);
+    expect(layerCalls).toBe(0); // base only — no layer reads at all (the ruling's no-participation clause)
+    const base = { 'agents/a/rules/r1': { paramValues: { pct: 90 } } };
+    const { effectiveDocs } = loaded.resolveWith(base);
+    expect(effectiveDocs['agents/a/rules/r1']).toEqual({ paramValues: { pct: 90 } }); // identical to pre-activation
+  });
+
+  it('rollback-to-genesis view: a LATER generation carrying the genesis tuple loads base-only too (total rollback restores pre-activation reads)', async () => {
+    const { db } = makeActivationFake({
+      descriptor: genesisDescriptor({ activationGeneration: 3 }),
+      entriesByGeneration: { 3: GEN2_ENTRIES },
+    });
+    let layerCalls = 0;
+    const loaded = await loadActivatedComposition(db, async () => { layerCalls += 1; return { overlayEntries: GEN2_ENTRIES, epochOverrideEntries: [] }; });
+    expect(loaded).toMatchObject({ activated: true, genesis: true, generation: 3, overlayEntries: [] });
+    expect(layerCalls).toBe(0);
+    const base = { 'agents/a/rules/r1': { paramValues: { pct: 90 } } };
+    expect(loaded.resolveWith(base).effectiveDocs['agents/a/rules/r1']).toEqual({ paramValues: { pct: 90 } });
+  });
+
+  it('HALF-genesis descriptors are malformed and fail closed (the pair check): genesis id with a real hash, and the sentinel hash with a real id', async () => {
+    for (const bad of [
+      fullDescriptor({ candidateStateId: GENESIS_CANDIDATE_STATE_ID }), // real semanticHash h-1
+      fullDescriptor({ semanticHash: GENESIS_SEMANTIC_HASH }),          // real candidateStateId run-1
+    ]) {
+      const { db, fetchLayers } = makeActivationFake({ descriptor: bad });
+      await expect(loadActivatedComposition(db, fetchLayers)).rejects.toMatchObject({ code: 'activation_descriptor_malformed' });
+    }
   });
 });

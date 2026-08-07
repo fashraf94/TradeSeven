@@ -44,7 +44,9 @@
 
 import {
   ACTIVATION_COLLECTION, ACTIVATION_DOC_ID, ACTIVATION_DESCRIPTOR_FIELDS,
+  GENESIS_CANDIDATE_STATE_ID, GENESIS_SEMANTIC_HASH,
 } from './compositionProductionLoader.js';
+import { writeEpochRef } from './compositionWriteEpoch.js';
 import { computeOverlaySemanticHash, entryDocId } from './compositionStateResolver.js';
 import { ARCHETYPE_IDENTITY_VERSION } from './archetypeVersionConstants.js';
 
@@ -141,6 +143,12 @@ export async function writeActivationRecord(db, {
   candidateStateId, semanticHash, recordedAt = null,
 }) {
   validateTupleContent({ activeIdentityVersion, boundaryStateVersion, activeEpochId, candidateStateId, semanticHash });
+  // F2 ruling: the genesis ids are RESERVED — only writeGenesisDescriptor may
+  // mint them (a real candidate run doc named 'genesis' must never be able to
+  // masquerade past M6, and a half-genesis tuple is malformed at the loader).
+  if (candidateStateId === GENESIS_CANDIDATE_STATE_ID || semanticHash === GENESIS_SEMANTIC_HASH) {
+    throw new ActivationAbortError('activation_reserved_genesis', 'the genesis candidateStateId/semanticHash are reserved for writeGenesisDescriptor');
+  }
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(activationRef(db));
     const current = snap.exists ? snap.data() : null;
@@ -167,12 +175,62 @@ export async function writeActivationRecord(db, {
 }
 
 /**
+ * THE GENESIS WRITE (F2 ruling of record, founder Aug 7 2026 — runbook step
+ * 1, BEFORE the epoch close): generation 1 = the GENESIS descriptor —
+ * activeIdentityVersion = the LIVE version, boundaryStateVersion 1, the
+ * reserved genesis candidate/hash pair, overrideRevision 0 — no overlay
+ * participation (the loader short-circuits to base-only; today's semantics
+ * made explicit). The first REAL activation is generation 2, so rollback is
+ * TOTAL: an atomic repoint to the prior descriptor exists at EVERY
+ * generation — no special case, no tuple reuse.
+ *
+ * PAIRED WITH THE EPOCH DOC (the ruling's arming clause): this write is what
+ * arms B1's absent-epoch-doc-fails-closed posture, so the SAME transaction
+ * requires the epoch doc to EXIST, be OPEN, and carry the SAME epoch id
+ * being recorded — the armed world is born with the doc it fails closed
+ * without. Genesis is FIRST-WRITE-ONLY: an existing record aborts (the
+ * genesis generation is minted exactly once; returning to genesis later is
+ * rollbackActivationRecord's ordinary job).
+ */
+export async function writeGenesisDescriptor(db, { activeEpochId, recordedAt = null }) {
+  if (typeof activeEpochId !== 'string' || !activeEpochId) {
+    throw new ActivationAbortError('activation_invalid_input', 'activeEpochId required');
+  }
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(activationRef(db));
+    if (snap.exists) {
+      throw new ActivationAbortError('genesis_record_exists', 'genesis is generation 1 — a record already exists (rollback, not re-genesis)');
+    }
+    const epochSnap = await tx.get(writeEpochRef(db));
+    const epoch = epochSnap.exists ? epochSnap.data() : null;
+    if (!epoch || epoch.state !== 'open' || epoch.epochId !== activeEpochId) {
+      throw new ActivationAbortError(
+        'genesis_epoch_unpaired',
+        `genesis requires the OPEN epoch doc carrying epochId=${activeEpochId} in the same transaction (found ${epoch ? `state=${epoch.state} epochId=${epoch.epochId}` : 'no epoch doc'})`,
+      );
+    }
+    return writeDescriptorInTx(tx, db, null, {
+      activeIdentityVersion: ARCHETYPE_IDENTITY_VERSION, // the LIVE version — genesis selects today's identity
+      boundaryStateVersion: 1,
+      activeEpochId,
+      candidateStateId: GENESIS_CANDIDATE_STATE_ID,
+      semanticHash: GENESIS_SEMANTIC_HASH,
+      overrideRevision: 0,
+      recordedAt,
+    });
+  });
+}
+
+/**
  * ROLLBACK (runbook §10 / A29/A45/A49): atomically repoint the COMPLETE
  * prior tuple — read from the append-only history, never hand-assembled —
  * under a NEW strictly-greater generation. boundaryStateVersion travels with
- * its descriptor (the Q1 ruling: the PRIOR value, always). The abandoned
- * epoch's overrides stop resolving because activeEpochId repoints; they are
- * retained, never deleted.
+ * its descriptor (the Q1 ruling: the PRIOR value, always). Rollback is TOTAL
+ * (F2 ruling): generation 1 is the genesis descriptor, so a prior tuple
+ * exists at every generation — rolling back to generation 1 restores the
+ * live-identity, base-only world (births/reads identical to pre-activation).
+ * The abandoned epoch's overrides stop resolving because activeEpochId
+ * repoints; they are retained, never deleted.
  *
  * @param toGeneration the history generation whose tuple is being restored.
  */

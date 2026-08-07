@@ -23,10 +23,11 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  writeActivationRecord, rollbackActivationRecord, bumpOverrideRevisionInTx,
+  writeActivationRecord, writeGenesisDescriptor, rollbackActivationRecord, bumpOverrideRevisionInTx,
   selectIdentityVersion, activationRef,
   ACTIVATION_HISTORY_SUBCOLLECTION, CANDIDATE_STATE_COLLECTION, ActivationAbortError,
 } from './compositionActivationService.js';
+import { GENESIS_CANDIDATE_STATE_ID, GENESIS_SEMANTIC_HASH } from './compositionProductionLoader.js';
 import { validateWriteEpochInTx, assertBoundaryStateSupported, SUPPORTED_BOUNDARY_STATE_VERSIONS, UnsupportedBoundaryStateError } from './compositionWriteEpoch.js';
 import { computeOverlaySemanticHash, entryDocId } from './compositionStateResolver.js';
 import { getArchetypeDefinition, ARCHETYPE_IDENTITY_VERSION, CANDIDATE_IDENTITY_VERSION } from './archetypeRegistry.js';
@@ -284,5 +285,88 @@ describe('A24 — both sides at the identity-selection seam; the service touches
     const agentWrites = writeLog.filter(([, p]) => p.startsWith('agents/'));
     expect(agentWrites).toEqual([]);
     expect(store.get('agents/a1/rules/r1').paramValues.pct).toBe(30);
+  });
+});
+
+describe('F2 ruling — the GENESIS descriptor (generation 1 = live identity, base only, rollback TOTAL)', () => {
+  const OPEN_E0 = { 'composition/writeEpoch': { state: 'open', epochId: 'e-0' } };
+
+  it('genesis mints generation 1 with the exact ruled tuple + its history row, PAIRED with the open epoch doc', async () => {
+    const { db, store } = makeInMemoryDb({ ...OPEN_E0 });
+    const d = await writeGenesisDescriptor(db, { activeEpochId: 'e-0' });
+    expect(d).toEqual({
+      activeIdentityVersion: ARCHETYPE_IDENTITY_VERSION, // LIVE — genesis selects today's identity
+      boundaryStateVersion: 1,
+      activeEpochId: 'e-0',
+      candidateStateId: GENESIS_CANDIDATE_STATE_ID,
+      semanticHash: GENESIS_SEMANTIC_HASH,
+      activationGeneration: 1,
+      overrideRevision: 0,
+      recordedAt: null,
+    });
+    expect(store.get(`composition/activation/${ACTIVATION_HISTORY_SUBCOLLECTION}/1`)).toBeTruthy();
+    // The armed world is coherent: the record exists AND the epoch doc exists,
+    // so B1's absent-doc-fails-closed never sees record-without-doc at birth.
+    expect(store.get('composition/writeEpoch')).toEqual({ state: 'open', epochId: 'e-0' });
+  });
+
+  it('genesis REFUSES unpaired: absent epoch doc, non-open state, or a different epoch id — zero writes each', async () => {
+    for (const initial of [
+      {},
+      { 'composition/writeEpoch': { state: 'closing', epochId: 'e-0' } },
+      { 'composition/writeEpoch': { state: 'open', epochId: 'e-other' } },
+    ]) {
+      const { db, writeLog } = makeInMemoryDb(initial);
+      await expect(writeGenesisDescriptor(db, { activeEpochId: 'e-0' }))
+        .rejects.toMatchObject({ code: 'genesis_epoch_unpaired' });
+      expect(writeLog).toEqual([]);
+    }
+  });
+
+  it('genesis is FIRST-WRITE-ONLY: an existing record aborts (returning to genesis is rollback, never re-genesis)', async () => {
+    const { db, writeLog } = makeInMemoryDb({ ...OPEN_E0 });
+    await writeGenesisDescriptor(db, { activeEpochId: 'e-0' });
+    const before = writeLog.length;
+    await expect(writeGenesisDescriptor(db, { activeEpochId: 'e-0' }))
+      .rejects.toMatchObject({ code: 'genesis_record_exists' });
+    expect(writeLog.length).toBe(before);
+  });
+
+  it('the genesis ids are RESERVED at the activation writer (no candidate run can masquerade as genesis)', async () => {
+    const { db } = makeInMemoryDb(candidateFixture());
+    await expect(writeActivationRecord(db, ACTIVATE({ candidateStateId: GENESIS_CANDIDATE_STATE_ID })))
+      .rejects.toMatchObject({ code: 'activation_reserved_genesis' });
+    await expect(writeActivationRecord(db, ACTIVATE({ semanticHash: GENESIS_SEMANTIC_HASH })))
+      .rejects.toMatchObject({ code: 'activation_reserved_genesis' });
+  });
+
+  it('the FIRST REAL activation on top of genesis is generation 2 — and reusing the genesis epoch id rejects (A49 over the genesis history row)', async () => {
+    const { db } = makeInMemoryDb({ ...OPEN_E0, ...candidateFixture() });
+    await writeGenesisDescriptor(db, { activeEpochId: 'e-0' });
+    await expect(writeActivationRecord(db, ACTIVATE({ activeEpochId: 'e-0' })))
+      .rejects.toMatchObject({ code: 'activation_epoch_reuse' }); // genesis burned e-0
+    const d = await writeActivationRecord(db, ACTIVATE({ activeEpochId: 'e-1' }));
+    expect(d.activationGeneration).toBe(2);
+  });
+
+  it('ROLLBACK-TO-GENESIS (the ruled row): total rollback restores the COMPLETE genesis tuple under a fresh generation — births/reads identical to pre-activation', async () => {
+    const { db } = makeInMemoryDb({ ...OPEN_E0, ...candidateFixture() });
+    await writeGenesisDescriptor(db, { activeEpochId: 'e-0' });           // gen 1
+    await writeActivationRecord(db, ACTIVATE({ activeEpochId: 'e-1' }));  // gen 2 — the candidate world
+    const rolled = await rollbackActivationRecord(db, { toGeneration: 1 });
+    expect(rolled.activationGeneration).toBe(3); // fresh generation, no tuple reuse
+    expect(rolled.activeIdentityVersion).toBe(ARCHETYPE_IDENTITY_VERSION);
+    expect(rolled.candidateStateId).toBe(GENESIS_CANDIDATE_STATE_ID);
+    expect(rolled.semanticHash).toBe(GENESIS_SEMANTIC_HASH);
+    expect(rolled.activeEpochId).toBe('e-0'); // the whole tuple travels (deliberate prior-epoch restore)
+    expect(rolled.boundaryStateVersion).toBe(1);
+    expect(rolled.overrideRevision).toBe(0);
+    // Births under the rolled descriptor ARE pre-activation births: the
+    // selected version is the LIVE one and resolves the LIVE defaults —
+    // the A24 both-worlds guarantee restated at the rollback boundary.
+    const version = selectIdentityVersion(rolled);
+    expect(version).toBe(ARCHETYPE_IDENTITY_VERSION);
+    const def = getArchetypeDefinition('guardian', { identityVersion: version });
+    expect(def.defaultTraits.find((t) => t.id === 'trait-steady-anchor').ruleIds).toContain('risk-single-stock-limit');
   });
 });

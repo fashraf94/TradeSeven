@@ -28,6 +28,22 @@ import { resolveEffectiveConfig } from './compositionStateResolver.js';
 export const ACTIVATION_COLLECTION = 'composition';
 export const ACTIVATION_DOC_ID = 'activation';
 
+// F2 ruling (founder, Aug 7 2026 — GENESIS, not fix-forward): BEFORE the
+// first activation, a runbook step writes generation 1 = the GENESIS
+// descriptor — activeIdentityVersion = the LIVE version, candidateStateId =
+// the reserved id below, semanticHash = the reserved null-sentinel, paired
+// with the OPEN epoch doc. Genesis has NO overlay participation: the loader
+// short-circuits to base-only (today's semantics made explicit). The first
+// REAL activation is generation 2, so rollback is TOTAL — an atomic repoint
+// to the prior descriptor exists at EVERY generation, no special case, no
+// tuple reuse. The null-sentinel is a reserved STRING (not literal null):
+// under the per-field fail-closed contract below a null hash would be
+// indistinguishable from a malformed record, so the sentinel keeps F4's
+// strictness intact and the genesis PAIR check makes half-genesis
+// descriptors malformed.
+export const GENESIS_CANDIDATE_STATE_ID = 'genesis';
+export const GENESIS_SEMANTIC_HASH = 'genesis:null';
+
 const MAX_SEQLOCK_RETRIES = 5;
 
 export class MalformedActivationDescriptorError extends Error {
@@ -84,6 +100,12 @@ export function readActivationDescriptor(snap) {
   bad('candidateStateId', typeof d.candidateStateId !== 'string' || d.candidateStateId.length === 0);
   bad('semanticHash', typeof d.semanticHash !== 'string' || d.semanticHash.length === 0);
   bad('overrideRevision', !Number.isInteger(d.overrideRevision) || d.overrideRevision < 0);
+  // Genesis fields travel as a PAIR (F2 ruling): a descriptor claiming the
+  // genesis candidate id with a real hash — or the sentinel hash with a real
+  // candidate id — is malformed and fails closed like any partial write.
+  if ((d.candidateStateId === GENESIS_CANDIDATE_STATE_ID) !== (d.semanticHash === GENESIS_SEMANTIC_HASH)) {
+    throw new MalformedActivationDescriptorError('genesis fields must pair (candidateStateId + semanticHash together or neither)');
+  }
   const out = {};
   for (const f of ACTIVATION_DESCRIPTOR_FIELDS) out[f] = d[f];
   return out;
@@ -122,7 +144,14 @@ export async function loadActivatedComposition(db, fetchLayers) {
       if (before === null) {
         // Pre-activation dark world: generation 0, no layers, resolver passes
         // base through untouched. Byte-identical semantics for any consumer.
-        return { activated: false, generation: 0, descriptor: null, overlayEntries: [], epochOverrideEntries: [] };
+        return { activated: false, genesis: false, generation: 0, descriptor: null, overlayEntries: [], epochOverrideEntries: [] };
+      }
+      if (before.candidateStateId === GENESIS_CANDIDATE_STATE_ID) {
+        // GENESIS (F2 ruling): the record exists — generation pinned, rollback
+        // total, B1 armed — but the composed state is BASE ONLY: no overlay
+        // participation, no layer reads. One descriptor read cannot tear, so
+        // no seqlock pass is needed on this branch.
+        return { activated: true, genesis: true, generation: before.activationGeneration, descriptor: before, overlayEntries: [], epochOverrideEntries: [] };
       }
       const layers = await fetchLayers({ tx, descriptor: before });
       // SEQLOCK: the descriptor must be unchanged after the layer reads —
@@ -134,6 +163,7 @@ export async function loadActivatedComposition(db, fetchLayers) {
       }
       return {
         activated: true,
+        genesis: false,
         generation: before.activationGeneration,
         descriptor: before,
         overlayEntries: layers.overlayEntries ?? [],
@@ -148,7 +178,8 @@ export async function loadActivatedComposition(db, fetchLayers) {
           overlayEntries: out.overlayEntries,
           epochOverrideEntries: out.epochOverrideEntries,
           activeEpochId: out.descriptor?.activeEpochId ?? null,
-          includeOverlay: out.activated,
+          // Genesis reads base only (F2 ruling) — identical to pre-activation.
+          includeOverlay: out.activated && !out.genesis,
         }),
       };
     }
