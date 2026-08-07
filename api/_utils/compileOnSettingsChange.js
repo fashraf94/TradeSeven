@@ -34,6 +34,10 @@ import {
 import { getRuleCompatInfo } from '../../src/data/archetypeRuleCompatibility.js';
 import { getCandidateCompatCell, toCompilerCompatCell } from '../../src/data/archetypeCompatibilityCandidate.js';
 import { COMPOSITION_COMPILED_IDENTITY_ENABLED } from './compositionConfig.js';
+// PR 3.5 (B4-TRAIT): THE shared effective-host projection — the same
+// selection kernel the migration planner/scanner uses (no second semantics).
+import { projectHostedRuleDocs } from './compositionMigration.js';
+import { canonicalContentHash } from './canonicalHash.js';
 import { compileBuild } from './compileBuild.js';
 import { buildPlatformGuardrails } from './platformGuardrails.js';
 import {
@@ -104,6 +108,47 @@ export function resolveEquippedCompatCells(bundles, archetype, {
   return compatCells;
 }
 
+/**
+ * PR 3.5 (B4-TRAIT) — normalize the unified host projection into the
+ * compiler's input rows. ONE selection source (projectHostedRuleDocs — the
+ * planner/scanner kernel); this function only reshapes: doc-authority
+ * payload + host provenance. Compat cells resolve by TEMPLATE id
+ * (doc.sourceRef) and key by DOC id — the same key-space convention as
+ * resolveEquippedCompatCells; a manual rule (sourceRef null) resolves to a
+ * null cell and lands compat_cell_missing (A-4: coverage never silently
+ * shrinks).
+ */
+export function buildProjectedCompileInputs({ agent, ruleDocs, allBundles, archetype }) {
+  const hosted = projectHostedRuleDocs({
+    agent: { archetype, equippedTraits: agent?.equippedTraits ?? [] },
+    ruleDocs: ruleDocs ?? [],
+    bundles: allBundles ?? [],
+  });
+  const projectedRules = [];
+  const compatCells = {};
+  const ruleMetadata = {};
+  for (const { doc, hosting } of hosted) {
+    projectedRules.push({
+      id: doc.id,
+      sourceRef: doc.sourceRef ?? null,
+      paramValues: doc.paramValues ?? null,
+      params: doc.params ?? null,
+      ...(hosting.channel === 'trait'
+        ? { hostTraitId: hosting.traitId }
+        : { hostBundleId: hosting.bundles[0]?.bundleId ?? hosting.bundles[0]?.id ?? null }),
+    });
+    compatCells[doc.id] = toCompilerCompatCell(getCandidateCompatCell(doc.sourceRef, archetype));
+    const meta = metadataForRule(doc.sourceRef ?? doc.id);
+    if (meta !== undefined) ruleMetadata[doc.id] = meta;
+  }
+  // Deterministic content hash over the projected payloads — the freshness
+  // vector component that makes a trait-doc or draft-bundle edit STALE a
+  // candidate build (the equipped-bundle hashes alone cannot see them).
+  const sorted = [...projectedRules].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const projectedRulesHash = canonicalContentHash(sorted);
+  return { projectedRules, compatCells, ruleMetadata, projectedRulesHash };
+}
+
 // The registry identityHash is content-static per deploy; memoized so the
 // (flag-on) first compile pays the one canonicalization, and dark endpoints
 // never pay it at all. Exported: the P2.4b deploy gate
@@ -130,18 +175,31 @@ export async function prepareCompileInputs(tx, {
   agentRef,
   nextEquippedBundleIds,
   enabled = false,
+  // PR 3.5 (B4-TRAIT): the unified host projection needs the FULL behaving
+  // surface — every rule doc + every bundle (projectActiveRules' universe),
+  // not just the equipped bundles. Reads are DOUBLY dark: they run only when
+  // the compiler is enabled AND the candidate flag is lit.
+  candidateMode = COMPOSITION_COMPILED_IDENTITY_ENABLED,
 } = {}) {
   if (!enabled) return null;
   const ids = (nextEquippedBundleIds ?? []).filter(Boolean);
-  if (ids.length === 0) return { bundles: [] };
-  const bundlesCol = agentRef.collection('bundles');
-  const snaps = await tx.getAll(...ids.map((id) => bundlesCol.doc(id)));
-  const bundles = [];
-  for (const snap of snaps) {
-    if (!snap.exists) continue; // a dangling id compiles as an absent bundle
-    bundles.push({ bundleId: snap.id, ...snap.data() });
+  const bundlesCol = ids.length > 0 || candidateMode ? agentRef.collection('bundles') : null;
+  let bundles = [];
+  if (ids.length > 0) {
+    const snaps = await tx.getAll(...ids.map((id) => bundlesCol.doc(id)));
+    for (const snap of snaps) {
+      if (!snap.exists) continue; // a dangling id compiles as an absent bundle
+      bundles.push({ bundleId: snap.id, ...snap.data() });
+    }
   }
-  return { bundles };
+  if (!candidateMode) return { bundles };
+  const [rulesSnap, allBundlesSnap] = await Promise.all([
+    tx.get(agentRef.collection('rules')),
+    tx.get(bundlesCol),
+  ]);
+  const ruleDocs = rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const allBundles = allBundlesSnap.docs.map((d) => ({ id: d.id, bundleId: d.id, ...d.data() }));
+  return { bundles, ruleDocs, allBundles };
 }
 
 /**
@@ -171,6 +229,11 @@ export function writeCompiledBuildsInTx(tx, {
   agent,
   nextState = {},
   bundles,
+  // PR 3.5 (B4-TRAIT): the unified-projection inputs from prepareCompileInputs'
+  // candidate reads. Absent while dark — the legacy snapshot path runs
+  // byte-identically.
+  ruleDocs = null,
+  allBundles = null,
   enabled = false,
   nowIso,
   revision = 'mint',
@@ -211,14 +274,29 @@ export function writeCompiledBuildsInTx(tx, {
   // records it as a missing cell, never as a verdict.
   const compatCells = resolveEquippedCompatCells(bundles, archetype);
 
+  // PR 3.5: with the candidate inputs present, the compile universe is the
+  // UNIFIED HOST PROJECTION (trait + bundle channels, doc-authority) — the
+  // set of rules that actually behaves at deploy. equippedTraits comes from
+  // nextState when the save changes it (update-agent-settings), else the doc.
+  const projected = ruleDocs !== null && allBundles !== null
+    ? buildProjectedCompileInputs({
+        agent: { equippedTraits: nextState.equippedTraits ?? agent?.equippedTraits ?? [] },
+        ruleDocs, allBundles, archetype,
+      })
+    : null;
+
   const userBuildDelta = {
     agentId,
     settingsRev: settingsRevAfter,
     parentArchetypeId: archetype,
     parentIdentityVersion: ARCHETYPE_IDENTITY_VERSION,
     equippedBundles: bundles ?? [],
-    ruleMetadata,
-    compatCells,
+    ruleMetadata: projected ? projected.ruleMetadata : ruleMetadata,
+    compatCells: projected ? projected.compatCells : compatCells,
+    ...(projected ? {
+      projectedRules: projected.projectedRules,
+      projectedRulesHash: projected.projectedRulesHash,
+    } : {}),
     userGuardrails: Array.isArray(deployedStrategy?.guardrails) ? deployedStrategy.guardrails : [],
   };
 

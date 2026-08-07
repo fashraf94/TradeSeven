@@ -70,27 +70,48 @@ export function resolveEnumReplacement(domain, value, replacementMap = {}) {
 }
 
 /**
- * The PROJECTED violation set for one agent — the shared selection kernel of
- * the planner AND the residual scanner (they cannot disagree). Each violation
- * is annotated with its hosting channel: {host:'trait',traitId} |
- * {host:'bundle',bundleId,equipped} — derived from the projecting doc.
+ * THE effective-host projection (PR 3.5, founder trait ruling / B4-TRAIT):
+ * the ONE selection of "which rule DOCS behave, hosted where" — driven by
+ * projectActiveRules (bundle + trait channels, deduped by its own semantics)
+ * with host provenance retained. Consumed by the migration planner, the
+ * residual scanner, AND the candidate compiler's input assembly — no second
+ * projection semantics exist anywhere ("reuse, no new semantics").
+ *
+ * Returns [{doc, hosting}] for EVERY projected doc, including manual rules
+ * (sourceRef null) — consumers apply their own universe filter (the planner
+ * skips no-sourceRef docs; the compiler keeps them so A-4 records
+ * compat_cell_missing rather than silently shrinking coverage).
  */
-function projectedViolations({ agent, ruleDocs = [], bundles = [] }) {
+export function projectHostedRuleDocs({ agent, ruleDocs = [], bundles = [] }) {
   const docsById = new Map(ruleDocs.map((r) => [r.id, r]));
   const projected = projectActiveRules(agent.equippedTraits || [], ruleDocs, bundles);
   const out = [];
   for (const item of projected) {
     const doc = docsById.get(item.ruleId);
-    if (!doc || !doc.sourceRef) continue; // manual rules: outside the candidate universe
+    if (!doc) continue; // a projected item always has a doc; guard for fakes
+    const hosting = doc.traitId
+      ? { channel: 'trait', traitId: doc.traitId }
+      : { channel: 'bundle', bundles: bundles.filter((b) => b && b.status !== 'archived' && (b.ruleIds || []).includes(doc.id)) };
+    out.push({ doc, hosting });
+  }
+  return out;
+}
+
+/**
+ * The PROJECTED violation set for one agent — the shared selection kernel of
+ * the planner AND the residual scanner (they cannot disagree). Each violation
+ * is annotated with its hosting channel — derived via projectHostedRuleDocs
+ * (refactor-neutral: same selection, same annotations as before PR 3.5).
+ */
+function projectedViolations({ agent, ruleDocs = [], bundles = [] }) {
+  const out = [];
+  for (const { doc, hosting } of projectHostedRuleDocs({ agent, ruleDocs, bundles })) {
+    if (!doc.sourceRef) continue; // manual rules: outside the candidate universe
     const violations = checkCandidatePairing({
       ruleId: doc.sourceRef, archetype: agent.archetype,
       paramValues: doc.paramValues ?? null,
       paramKeys: doc.params ? Object.keys(doc.params) : null,
     });
-    if (violations.length === 0) continue;
-    const hosting = doc.traitId
-      ? { channel: 'trait', traitId: doc.traitId }
-      : { channel: 'bundle', bundles: bundles.filter((b) => b && b.status !== 'archived' && (b.ruleIds || []).includes(doc.id)) };
     for (const v of violations) out.push({ ...v, doc, hosting });
   }
   return out;

@@ -51,7 +51,11 @@ export const GAME_MODE_POLICY_VERSION = 1;
 // (docs/registry-snapshots/), and the registry CI lock fails on
 // content-change-without-bump. Builds compile against their EXACT
 // parentIdentityVersion (§3.3 — missing/retired versions fail explicitly).
-export const ARCHETYPE_IDENTITY_VERSION = 1;
+// v2 (Aug 6 2026, composition PR 3.5 — founder trait ruling): the three
+// default-trait ladders re-authored inside their adjudicated domains
+// (patient-holder/mb-01 minutes 30/45/60; dual-conviction/tv-10 fund_score
+// 71/75/80; trend-rider/tv-01 stretched 80/77/75). v1 snapshot immutable.
+export const ARCHETYPE_IDENTITY_VERSION = 2;
 
 // §4.4 — stamped into every CompiledBuild as compilerVersion. Bumped when
 // compileBuild's derivation/merge/legality semantics change.

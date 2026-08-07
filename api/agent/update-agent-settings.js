@@ -212,8 +212,17 @@ export default async function handler(req, res) {
         agentRef,
         agentId,
         agent,
-        nextState: 'deployedStrategy' in set ? { deployedStrategy: set.deployedStrategy } : {},
+        // PR 3.5 review F2: thread EVERY projection-relevant field the save
+        // changes — a trait equip/unequip must compile the NEW selection, not
+        // the pre-write agent doc's.
+        nextState: {
+          ...('deployedStrategy' in set ? { deployedStrategy: set.deployedStrategy } : {}),
+          ...('equippedTraits' in set ? { equippedTraits: set.equippedTraits } : {}),
+        },
         bundles: compileInputs?.bundles,
+        // PR 3.5: candidate-mode projection inputs (absent while dark)
+        ruleDocs: compileInputs?.ruleDocs ?? null,
+        allBundles: compileInputs?.allBundles ?? null,
         enabled: COMPILER_ENABLED,
         nowIso,
       });

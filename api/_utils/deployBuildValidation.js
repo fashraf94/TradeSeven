@@ -45,6 +45,7 @@ import {
   prepareCompileInputs,
   writeCompiledBuildsInTx,
   registryIdentityHash,
+  buildProjectedCompileInputs,
 } from './compileOnSettingsChange.js';
 import {
   RULE_LIBRARY_VERSION,
@@ -84,6 +85,13 @@ export function diffSourceRevisionVector(vector, expected) {
   const ids = new Set([...Object.keys(stored), ...Object.keys(live)]);
   for (const id of ids) {
     if (stored[id] !== live[id]) mismatches.push(`bundleContentHashes.${id}`);
+  }
+  // PR 3.5 review F1: the projection hash compares PRESENCE-AWARE — absent
+  // from BOTH (legacy/dark world) is fresh; present on either side compares
+  // strictly, so a stored dark build reads STALE the moment candidate mode
+  // expects the component, and a trait-doc/draft-bundle edit moves it.
+  if ('projectedRulesHash' in vector || 'projectedRulesHash' in expected) {
+    if (vector.projectedRulesHash !== expected.projectedRulesHash) mismatches.push('projectedRulesHash');
   }
   return mismatches;
 }
@@ -152,6 +160,17 @@ export async function ensureDeployableCompiledBuild({
             gameModePolicyVersion: GAME_MODE_POLICY_VERSION,
             gameModePolicyHash: computeGameModePolicyHash(gameMode),
             bundleContentHashes: liveBundleHashes,
+            // PR 3.5 (unified projection): with the candidate reads present,
+            // expected carries the LIVE projection hash — a stored build
+            // missing it (or carrying a stale one) reads as staleness and
+            // recompiles. Absent while dark, so legacy comparison unchanged.
+            ...(inputs.ruleDocs !== undefined && inputs.allBundles !== undefined ? {
+              projectedRulesHash: buildProjectedCompileInputs({
+                agent: { equippedTraits: agent.equippedTraits ?? [] },
+                ruleDocs: inputs.ruleDocs, allBundles: inputs.allBundles,
+                archetype: agent.archetype ?? null,
+              }).projectedRulesHash,
+            } : {}),
           };
           const mismatches = diffSourceRevisionVector(stored.sourceRevisionVector, expected);
           if (mismatches.length === 0) {
@@ -173,6 +192,9 @@ export async function ensureDeployableCompiledBuild({
           agent,
           nextState: {},
           bundles: inputs.bundles,
+          // PR 3.5: the candidate-mode projection inputs (absent while dark)
+          ruleDocs: inputs.ruleDocs ?? null,
+          allBundles: inputs.allBundles ?? null,
           enabled: true,
           nowIso: new Date().toISOString(),
           revision: 'current',

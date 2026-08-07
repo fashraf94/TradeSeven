@@ -125,3 +125,57 @@ describe('activation-state goldens — eval assembler (buildAgentIdentityBlock)'
     expect(countOf(out, 'Advisory:')).toBe(0);
   });
 });
+
+describe('B4-TRAIT invariant (c) — trait-hosted tensions RENDER their advisories, end to end', () => {
+  it('trait doc → unified-projection compile → manifest slice → eval assembler line carries the advisory EXACTLY once', async () => {
+    flagState.compiledIdentity = true;
+    const { buildProjectedCompileInputs } = await import('./compileOnSettingsChange.js');
+    const { compileBuild } = await import('./compileBuild.js');
+    const { buildResolvedAgentManifest } = await import('./resolvedAgentManifest.js');
+    const { getGameModePolicy, computeGameModePolicyHash } = await import('./gameModePolicy.js');
+    const { FIXTURE_NOW, fixtureVersions, fixturePlatformGuardrails } = await import('./compilerFixtures.js');
+    const { ARCHETYPE_IDENTITY_VERSION } = await import('./archetypeVersionConstants.js');
+
+    const traitDoc = {
+      id: 'td-e2e', sourceRef: 'tv-01', traitId: 'trait-trend-rider',
+      paramValues: { low: 50, high: 70, weak: 40, stretched: 77 },
+      params: { low: {}, high: {}, weak: {}, stretched: {} },
+    };
+    const projected = buildProjectedCompileInputs({
+      agent: { equippedTraits: [{ traitId: 'trait-trend-rider' }] },
+      ruleDocs: [traitDoc], allBundles: [], archetype: 'momentum_chaser',
+    });
+    const build = compileBuild({
+      archetypeDefinition: { codeId: 'momentum_chaser', identityVersion: ARCHETYPE_IDENTITY_VERSION, identityHash: 'x' },
+      userBuildDelta: {
+        agentId: 'fx', settingsRev: 7, parentArchetypeId: 'momentum_chaser', parentIdentityVersion: ARCHETYPE_IDENTITY_VERSION,
+        equippedBundles: [], ruleMetadata: { 'td-e2e': { intendedMode: 'behavioral_guidance', copyClass: 'advisory', receiptTag: 't', modes: 'clash' } },
+        compatCells: projected.compatCells, projectedRules: projected.projectedRules, projectedRulesHash: projected.projectedRulesHash,
+        userGuardrails: [],
+      },
+      platformGuardrails: fixturePlatformGuardrails,
+      gameModePolicy: getGameModePolicy('clash'), gameModePolicyHash: computeGameModePolicyHash('clash'),
+      versions: fixtureVersions, now: FIXTURE_NOW,
+    });
+    const manifest = buildResolvedAgentManifest({
+      agentData: { id: 'fx', archetype: 'momentum_chaser', settingsRev: 7, config: {}, equippedBundleIds: [] },
+      compiledBuild: build, // rev 7 == agentData.settingsRev — the manifest's rev-match gate runs for real
+      equippedWatchlist: null, gameMode: 'clash', now: FIXTURE_NOW,
+    });
+    expect(manifest.compositionCompat.entries.some((e) => e.ruleId === 'td-e2e' && e.advisory)).toBe(true);
+
+    const battle = {
+      agentContext: {
+        name: 'Fixture', archetype: 'momentum_chaser',
+        activeRules: [{ ruleId: 'td-e2e', text: 'Buy the pullback within the RSI band', category: 'strategy', hardness: 'soft' }],
+      },
+      resolvedAgentManifest: manifest,
+    };
+    const out = buildAgentIdentityBlock(battle);
+    const advisory = manifest.compositionCompat.entries.find((e) => e.ruleId === 'td-e2e').advisory;
+    expect(out.split(`— Advisory: ${advisory}`).length - 1).toBe(1); // exactly once (A13, trait channel)
+    // mutation row (audit): severing the trait channel in projectHostedRuleDocs
+    // empties projected.compatVerdicts of td-e2e → the slice loses the entry →
+    // this row fails at the manifest assertion above.
+  });
+});
