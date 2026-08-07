@@ -666,6 +666,107 @@ describe('bankAllTournamentGroups', () => {
   });
 });
 
+// ==================== L-B Guard 1 — the banking day clamp ====================
+//
+// THE INVARIANT (L-B spec): a stalled finalizer must produce a PAUSED week,
+// never a longer one. The zombie cohort ran to Day 8 of 5 because
+// runFridayAdvancement froze while this cron kept banking with no upper bound.
+// The clamp lives in the PURE computeBankingUpdate so it is testable without
+// Firestore and protects EVERY caller. Red-first: these failed before the clamp.
+
+/** A group with day1..dayN already banked on distinct past ET dates. */
+function bankedThroughDay(n, overrides = {}) {
+  const dailyScores = {};
+  for (let d = 1; d <= n; d += 1) {
+    dailyScores[`day${d}`] = { closeScores: {}, recordedDate: `2026-06-0${d}` };
+  }
+  return battleGroup({ dailyScores, ...overrides });
+}
+
+describe('computeBankingUpdate — L-B Guard 1: never banks past WEEK_DAYS_REQUIRED', () => {
+  it('a fully banked week (day 5) skips with week_complete_clamp — a stalled finalizer pauses the week', () => {
+    expect(computeBankingUpdate(bankedThroughDay(5), QUOTES, OPTS))
+      .toEqual({ skipped: true, reason: 'week_complete_clamp', dayKey: 'day5' });
+  });
+
+  it('the REAL zombie shape (day 8 already on disk) still clamps — never banks day9', () => {
+    expect(computeBankingUpdate(bankedThroughDay(8), QUOTES, OPTS))
+      .toEqual({ skipped: true, reason: 'week_complete_clamp', dayKey: 'day8' });
+  });
+
+  it('boundary: day 4 still banks day5 — the clamp never under-banks the legitimate final day', () => {
+    const update = computeBankingUpdate(bankedThroughDay(4), QUOTES, OPTS);
+    expect(update.skipped).toBe(false);
+    expect(update.dayKey).toBe('day5');
+  });
+
+  it('the ET-date idempotency skip still wins first (same-day re-run reads already_recorded, not the clamp)', () => {
+    const group = bankedThroughDay(5);
+    group.dailyScores.day5.recordedDate = ET_DATE; // banked TODAY
+    expect(computeBankingUpdate(group, QUOTES, OPTS))
+      .toEqual({ skipped: true, reason: 'already_recorded', dayKey: 'day5' });
+  });
+
+  it('bankGroup: the clamp skip commits ZERO writes (inert by construction)', async () => {
+    const { db, captured } = makeDb({ groupDoc: bankedThroughDay(5) });
+    const result = await bankGroup(db, 'g-full', QUOTES, { now: NOW });
+    expect(result).toMatchObject({ skipped: true, reason: 'week_complete_clamp' });
+    expect(captured.updates).toHaveLength(0);
+  });
+
+  it('R-1: the cron loop logs the stalled-finalizer signal, naming the group (FROZEN-log precedent)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // No picks → no symbols → the quote-abort guard does not fire; the loop
+      // reaches bankGroup, which clamps. The signal must NAME the group and say
+      // the finalizer appears stalled — a silent skipped++ is what bought three
+      // days of blindness (founder ruling R-1).
+      //
+      // Review B-F1 (de-vacuation): the fixture id must NOT contain the asserted
+      // words, and the assertions run on the CLAMP LINE ONLY — the makeDb fake
+      // makes fetchGroupAgentScores throw, whose (pre-existing, unrelated)
+      // console.error names the group too and was pre-satisfying the id check.
+      const stalled = bankedThroughDay(5, {
+        players: battleGroup().players.map(p => ({ ...p, picks: [] })),
+      });
+      const { db, captured } = makeDb({ groupDoc: stalled, queryDocs: [{ id: 'g-full-week', data: stalled }] });
+      const summary = await bankAllTournamentGroups(db, { now: NOW });
+      expect(summary.skipped).toBe(1);
+      expect(captured.updates).toHaveLength(0);
+      const clampLines = errSpy.mock.calls
+        .map(args => args.join(' '))
+        .filter(line => line.includes('week_complete_clamp'));
+      expect(clampLines).toHaveLength(1);         // exactly one signal per clamped group
+      expect(clampLines[0]).toContain('g-full-week');       // names the group (R-1: actionable)
+      expect(clampLines[0]).toContain('appears STALLED');   // states the condition, verbatim
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it('R-1 negative lock (review B-F2): a routine already_recorded skip stays SILENT — no stalled-finalizer line', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // Same-day re-run: day5 banked TODAY → bankGroup skips already_recorded.
+      // The stalled signal must fire on week_complete_clamp ONLY — paging
+      // "finalizer STALLED" on every nightly re-run would bury the real signal
+      // (the mutant `result.skipped → log` survived without this row).
+      const rerun = bankedThroughDay(5, {
+        players: battleGroup().players.map(p => ({ ...p, picks: [] })),
+      });
+      rerun.dailyScores.day5.recordedDate = ET_DATE; // banked today
+      const { db } = makeDb({ groupDoc: rerun, queryDocs: [{ id: 'g-rerun', data: rerun }] });
+      const summary = await bankAllTournamentGroups(db, { now: NOW });
+      expect(summary.skipped).toBe(1);
+      const logged = errSpy.mock.calls.map(args => args.join(' ')).join('\n');
+      expect(logged).not.toContain('week_complete_clamp');
+      expect(logged).not.toContain('STALLED');
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+});
+
 // ==================== P6a — COMPOSITE SNAPSHOTS (ruling A-1) ====================
 
 describe('computeBankingUpdate — agentPoints + compositePoints (P6a)', () => {
