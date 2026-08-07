@@ -254,3 +254,56 @@ describe('candidate registry — A11: the valueParamKey binding table (PR 3)', (
     expect(offenders).toEqual([]);
   });
 });
+
+describe('candidate registry — BARE-CELL-INVARIANT (PR 4 ledger row): bare domain ⇒ EXACTLY ONE bindable param', () => {
+  // The POSITIVE form of the A11 row above. That row forbade bare-on-MULTI-param
+  // (the ambiguous_domain_binding class); this one also forbids bare-on-ZERO-param:
+  // resolveNarrowedDomains binds a bare domain via paramKeys[0], so on a
+  // zero-param rule the authored narrowing silently binds to NOTHING — a cell
+  // that claims to narrow and never does. Both directions fail here.
+  //
+  // The domain predicate is the KERNEL's OWN isDomain (imported, per review F5)
+  // and the offense predicate is shared between the corpus sweep and the
+  // synthetic controls, so the controls cannot green against a drifted copy.
+  const templateParamKeys = (ruleId) => {
+    const t = FORGE_RULE_TEMPLATES.find((x) => x.id === ruleId);
+    const keys = new Set();
+    for (const ft of t?.forgeTemplates || []) for (const k of Object.keys(ft?.params || {})) keys.add(k);
+    return keys;
+  };
+  const makeOffense = (kernelIsDomain) => (ruleId, cell, keysOf = templateParamKeys) => {
+    if (!cell?.narrowedParams || !kernelIsDomain(cell.narrowedParams)) return null;
+    const n = keysOf(ruleId).size;
+    return n === 1 ? null : `${ruleId}: bare domain on ${n}-param rule`;
+  };
+
+  it('corpus-wide: every bare-domain cell sits on an exactly-one-param rule — and bare cells EXIST (non-vacuous)', async () => {
+    const { isDomain: kernelIsDomain } = await import('../../api/_utils/compositionEnforcement.js');
+    const offense = makeOffense(kernelIsDomain);
+    const offenders = [];
+    let bareCount = 0;
+    for (const [r, a, c] of allCells()) {
+      if (c.narrowedParams && kernelIsDomain(c.narrowedParams)) bareCount += 1;
+      const o = offense(r, c);
+      if (o) offenders.push(`${a} ${o}`);
+    }
+    expect(offenders).toEqual([]);
+    // Non-vacuity pin: 15 bare cells at authoring (alloc-even-spread ×4,
+    // alloc-tier-preference ×4, i-07, mb-01 ×3, ts-05 ×2, ts-08). If authoring
+    // later keys every domain, update this consciously — the sweep must never
+    // go vacuous in silence.
+    expect(bareCount).toBeGreaterThan(0);
+  });
+
+  it('controls: the shared predicate detects a bare domain on a ZERO-param and a MULTI-param rule, admits exactly-one', async () => {
+    const { isDomain: kernelIsDomain } = await import('../../api/_utils/compositionEnforcement.js');
+    const offense = makeOffense(kernelIsDomain);
+    const bareCell = { narrowedParams: { min: 1, max: 5 } };
+    const keysOf = (sizes) => (ruleId) => new Set(Array.from({ length: sizes[ruleId] }, (_, i) => `p${i}`));
+    expect(offense('zero-param-rule', bareCell, keysOf({ 'zero-param-rule': 0 }))).toMatch(/bare domain on 0-param/);
+    expect(offense('multi-param-rule', bareCell, keysOf({ 'multi-param-rule': 3 }))).toMatch(/bare domain on 3-param/);
+    expect(offense('one-param-rule', bareCell, keysOf({ 'one-param-rule': 1 }))).toBeNull();
+    // A param-KEYED map is not a bare domain — outside this invariant's scope.
+    expect(offense('one-param-rule', { narrowedParams: { pct: { min: 1, max: 5 } } }, keysOf({ 'one-param-rule': 1 }))).toBeNull();
+  });
+});
