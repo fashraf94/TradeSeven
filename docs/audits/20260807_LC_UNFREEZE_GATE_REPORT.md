@@ -72,3 +72,30 @@ For each BATTLE group from #2, evaluate **`isFinalSnapshotDegraded(group)`** (`s
 4. **Then** flip in the separate one-line PR — safe on an empty board (precondition 4), and re-checking #2/#3 immediately before, since a cohort could form in the interim.
 
 **HARD STOP.** No flip, no code, no fence contact, `TOURNAMENT_ADVANCEMENT_FROZEN` untouched. Awaiting founder direction.
+
+---
+
+## Credentialed read-only pass — handoff (`scripts/lc-fork-adjudication.js`)
+
+The live read-only pass called for in Recommendation §2–§3 is now written and committed on this branch as **`scripts/lc-fork-adjudication.js`** — the founder runs it where the Admin-SDK creds live (no creds in the sandbox, same as the void pre-check). **STRICTLY READ-ONLY:** only `.get()` reads; self-audit `grep -nE '\.(set|update|delete|add|create)\(|runTransaction|FieldValue' scripts/lc-fork-adjudication.js` matches only its own header line.
+
+**In-tree, superseding the Phase 0.5 off-tree lean.** Phase 0.5 kept `phase0_5_live_queries.mjs` off-tree "per the phase rule"; this script is committed in `scripts/`, mirroring the shipped credentialed read-only `scripts/lifecycle-void-precheck.js` (the founder's stated model for this task). Findability is the point — an audit/tool nobody can find is why we are here.
+
+**Env vars (identical to the void pre-check; loaded from `.env.local` by `./loadLocalEnv.js`):** `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`. **No `EODHD_API_KEY`** — this pass reads Firestore only; it deliberately omits the Phase 0.5 R1.6 EODHD hand-recompute, which is not the fork discriminator. Missing creds → the `requireFirebaseCreds()` gate prints a one-line fix and exits 4 (nothing read, nothing written).
+
+**Run:** `node scripts/lc-fork-adjudication.js` (optional env: `VOIDED_GROUP_ID=`, `COMPLETE_LIMIT=`, `INCLUDE_DEV=1`).
+
+**What it prints, mapped to the open preconditions:**
+- **Part A → preconditions #2/#3.** `fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { excludeTraining:true })`; per BATTLE group `{ id, createdAt, min/max recordedDate, isFinalSnapshotDegraded(group) }`. **Expected empty** (L-A voided the only known cohort; VOIDED ≠ BATTLE). Any row is #2's "inspect/disposition"; any `degraded=YES` is #3's day-5-carried pause.
+- **Part B → the FORK.** For the voided cohort `lds_wed-1900_2026-07-22` (read by id) **plus every COMPLETE non-training group**, the anomaly audit's A1 decomposition (DISCOVERY_PHASE0 §A1; PHASE0_5_LIVE §R1.2–R1.4): **[B.1]** group-side per-day per-seat `agentPoints/totalPoints/compositePoints`; **[B.2]** the A1 table (`agentPoints = Σ currentScore`, split into Σ`bankedBadgePoints` / Σ`lockedPoints` / Σ`activeScore`, with a `resid` column that flags any break of the `currentScore = activeScore + Σlocked + badgeTotal` identity); **[B.3]** the per-seat doc census (`#docs/seat` vs banked-day count); **[B.4]** the discriminator — per-seat `bankedBadgePoints.breakdown.day{N}.points` summed across docs, split **days 1–5 vs days ≥6**. Badge mass confined to days ≥6 ⇒ **FORK-1** (broken window, closed by the void + L-B Guard-1 clamp); inflation already inside days 1–5 (or a non-zero `resid`, or `#docs/seat` ≈ banked-day count with out-of-envelope magnitudes) ⇒ **FORK-2** (real defect — fix before unfreeze). The script asserts **no verdict** — it prints the evidence and the pre-registered rule; the founder adjudicates.
+
+**One honest caveat printed in-band:** the agent-battle day index (`bankedBadgePoints.breakdown.day{N}`, from the battle's own `getCurrentTradingDayServer`) and the group `dailyScores.day{N}` index (banking `max+1`) are derived independently and are **not assumed to align**; [B.4]'s ≤5/≥6 split is on the agent index (where the badge re-bank happens — the correct axis for "exceeds the 5-day envelope"), and [B.1] is on the group index, each labeled as such.
+
+### Merge the docs-only anomaly branch to main — recommendation: **YES**
+
+`origin/claude/league-scoring-anomaly-v6b19j` (the three `LEAGUE_SCORING_ANOMALY_*` / `LEAGUE_ADVANCEMENT_FREEZE_*` discovery audits) should be merged to `main` for the record **regardless of the fork outcome**:
+1. **It is the load-bearing citation for this gate.** This report, the freeze rationale (`featureFlags.js:931-954`, "a separate §7 pass"), and the L-B B-F3 L-C gate note all reference those audits by filename — citations that dangle until the branch merges. An audit nobody can find is the exact failure mode the founder named.
+2. **Zero risk.** Docs-only — no code, no fence contact, no flag change; it cannot affect the build or the freeze.
+3. **It closes the paper trail before the fork is decided**, so whichever way Part B lands (FORK-1 "confirm no model change" or FORK-2 "fix first"), the §7 pass starts from a findable, merged diagnosis rather than an unmerged branch. Agreeing with the founder's lean.
+
+*(Recommend a plain docs-only merge — no squash-loss of the phase history — after which this L-C report's `LEAGUE_SCORING_ANOMALY_*` references resolve on `main`.)*
