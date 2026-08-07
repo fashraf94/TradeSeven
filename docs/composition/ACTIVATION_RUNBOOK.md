@@ -4,7 +4,7 @@
 
 **The one rollback mechanism (A29/A45/A49):** atomic repoint of the **prior descriptor** — `rollbackActivationRecord(db, { toGeneration })` repoints the COMPLETE prior tuple from the append-only history under a strictly-greater generation. The catalog holds every version immutably; **nothing is ever "restored"**; the abandoned epoch's overrides silently leave resolution and never resurrect. Before the record exists (steps 0–6), "rollback" = stop; nothing has changed.
 
-**Standing rules for the window:** the §6/§8 freeze holds (no new builds/births/enforced saves); every row of `EXTERNAL_ADMIN_WRITE_PATHS.md` is confirmed paused at the close and resumed at the unfreeze; the A7-LOCK freeze (ACTIVATION_EVIDENCE.json) is in force from step 3 — any movement in a frozen value re-opens the gate chain.
+**Standing rules for the window:** **once step 7 has run, `COMPOSITION_EPOCH_FENCE_ENABLED` NEVER lowers** — post-activation it is load-bearing for the server-side descriptor pins (birth-path version selection, projection guard, FC-1 stamping); lowering it splits identity selection instead of deactivating (§2 review F5); deactivation is `rollbackActivationRecord`, nothing else. Also: the §6/§8 freeze holds (no new builds/births/enforced saves); every row of `EXTERNAL_ADMIN_WRITE_PATHS.md` is confirmed paused at the close and resumed at the unfreeze; the A7-LOCK freeze (ACTIVATION_EVIDENCE.json) is in force from step 3 — any movement in a frozen value re-opens the gate chain.
 
 ---
 
@@ -65,6 +65,8 @@ One transaction: R6-B1 (descriptor vs candidate manifest) + M6 (exact entryCount
 
 **VERIFY:** the loader returns `{activated:true, generation:1}` with the full 7-field descriptor; the B1 posture flips (absent epoch doc would now fail closed). **ROLLBACK POINT (from here on):** `rollbackActivationRecord(db, { toGeneration: <prior> })` — the atomic repoint of the prior descriptor.
 
+> **⚠ OPEN DESIGN POINT (§2 review F2 — UNWRITTEN, founder ruling needed BEFORE the live run):** the FIRST activation has no prior descriptor generation to repoint to — `rollbackActivationRecord` correctly refuses (`toGeneration` must be a strictly prior history row). Rolling the first activation back to the PRE-ACTIVATION world (record absent) is not representable within the written no-tuple-reuse + sole-authority constraints without a ruling: deleting the record would re-mint generation 1 on a later activation (tuple reuse, the ABA class B1-EXT forbids); a live-version-pointing descriptor would need written semantics for overlay non-participation. Until ruled, step 7 of the FIRST run is the point of no return — the §10 defect path is fix-forward (or a ruled mechanism lands first).
+
 ## Step 8 — §10 post-flip checks, then unfreeze
 
 **Positive checks:** a new battle's manifest carries the FC-1 stamps (`compositionSourceGeneration` = the record's generation, slice stamp equal); a trait-hosted tension renders its advisory exactly once in a live prompt; a birth seeds the SUBSTITUTED defaults (guardian: `alloc-sector-cap`; the record is what selected them — A24).
@@ -80,7 +82,7 @@ One transaction: R6-B1 (descriptor vs candidate manifest) + M6 (exact entryCount
 
 **M7 live measurement:** capture one real eval request's `usage.input_tokens` + one draft request's and record them against the M7-E2E budgets (the chars/4 estimates must over-state the real counts).
 
-**Unfreeze:** resume the EXTERNAL_ADMIN_WRITE_PATHS rows; lift the §6/§8 freeze; `COMPOSITION_MIGRATION_FEED_ENABLED` flips only after the record is verified (A44, flag-ownership table).
+**Unfreeze:** resume the EXTERNAL_ADMIN_WRITE_PATHS rows; lift the §6/§8 freeze; `COMPOSITION_MIGRATION_FEED_ENABLED` flips only after the record is verified (A44, flag-ownership table); purge the lease registry (`purgeReleasedProvisionerLeases` — §2 review F9).
 
 **VERIFY:** every check above recorded in the log with its observation. **ROLLBACK:** the step-7 rollback, any time.
 

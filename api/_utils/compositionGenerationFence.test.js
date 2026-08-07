@@ -113,11 +113,16 @@ describe('the decide.js projection splice — WRITE direction', () => {
 
   it('DARK: the exact single update, no stamp, no activation/epoch reads', async () => {
     flagState.fence = false;
-    const { db, store, writeLog } = makeInMemoryDb({ 'agents/agent-1': { activeRules: [] } });
+    const { db, store, writeLog, readLog } = makeInMemoryDb({ 'agents/agent-1': { activeRules: [] } });
     const pin = await pinActivationDescriptor(db);
     expect(pin.dark).toBe(true);
     await commitActiveRulesProjection(db, db.collection('agents').doc('agent-1'), RULES, pin);
     expect(writeLog).toEqual([['update', 'agents/agent-1']]);
+    // §2 pass-2 L2-1: the "zero reads" half of A23, now FALSIFIABLE — the
+    // fixture logs reads, so a dark path that gains one Firestore read
+    // (e.g. the enabled check reordered after the descriptor read) fails
+    // HERE, not silently in production.
+    expect(readLog).toEqual([]);
     expect('activeRulesProjection' in store.get('agents/agent-1')).toBe(false);
   });
 
@@ -189,6 +194,29 @@ describe('FC-1-CLOSE — cutover atomicity', () => {
     expect(manifestGenerationStamp({ dark: true, descriptor: null })).toBe(null);
     expect(manifestGenerationStamp({ dark: false, descriptor: null })).toBe(null);
   });
+
+  it('DARK createAgentBattle does ZERO activation/epoch reads (A23 falsifiable at the battle seam too)', async () => {
+    flagState.fence = false;
+    const { db, readLog } = makeInMemoryDb({});
+    await createAgentBattle(db, makeAgentData(), {}, {}, { compiledBuild: candidateBuild() });
+    expect(readLog.filter(([, p]) => p.startsWith('composition'))).toEqual([]);
+  });
+
+  it('the THREADED flow pin (§2 pass-2 L2-3): an activation landing between the caller\'s pin and the battle commit ABORTS the whole createAgentBattle — the compiled-build window is inside the fence', async () => {
+    flagState.fence = true;
+    const { db, store, writeLog } = makeInMemoryDb({ 'composition/activation': { ...DESC_A } });
+    // decide.js takes this pin BEFORE the projection and BEFORE
+    // ensureDeployableCompiledBuild, then threads it via options — so a flip
+    // that lands during build verification (after the caller derived
+    // compiledBuild, before createAgentBattle was even entered) is caught by
+    // the commit-time re-validation, unstamped legacy agent or not.
+    const flowPin = { dark: false, descriptor: { ...DESC_A } };
+    store.set('composition/activation', { ...DESC_B }); // the cutover lands in the caller's window
+    await expect(createAgentBattle(db, makeAgentData(), {}, {}, { compiledBuild: candidateBuild(), activationPin: flowPin }))
+      .rejects.toBeInstanceOf(CutoverInterleavedError);
+    expect(writeLog.filter(([, p]) => p.startsWith('agentBattles/'))).toEqual([]);
+    expect([...store.keys()].filter((k) => k.startsWith('agentBattles/'))).toEqual([]);
+  });
 });
 
 describe('FC-1 — readers tolerate both compositionCompat shapes; mismatched stamps render NOTHING', () => {
@@ -229,5 +257,41 @@ describe('FC-1 — readers tolerate both compositionCompat shapes; mismatched st
     const manifestOnly = buildAgentIdentityBlock(battleWith({ compositionSourceGeneration: 1, compositionCompat: slice(null) }));
     expect(sliceOnly.split('Advisory:').length - 1).toBe(0);
     expect(manifestOnly.split('Advisory:').length - 1).toBe(0);
+  });
+});
+
+describe('the decide.js catch fix (§2 review F1) — static source guard (the decide.auth.test.js pattern)', () => {
+  // No test drives the decide handler end-to-end (its fixture surface is the
+  // whole deploy), so the F1 fix — fence rejections must 409, never ride the
+  // projection fail-open — is locked as a source guard: the two fence codes
+  // must map to status(409) BEFORE the fail-open console.error. Reverting the
+  // catch fix fails here, not in production.
+  it('the projection catch maps projection_stale_generation + epoch_closed to a 409 ahead of the fail-open arm', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../agent/decide.js', import.meta.url), 'utf8');
+    const catchIdx = src.indexOf("catch (projErr)");
+    expect(catchIdx).toBeGreaterThan(-1);
+    const fenceGate = src.indexOf("projErr?.code === 'projection_stale_generation' || projErr?.code === 'epoch_closed'", catchIdx);
+    const the409 = src.indexOf('status(409).json({ error: projErr.code })', catchIdx);
+    const failOpen = src.indexOf('activeRules projection FAILED', catchIdx);
+    expect(fenceGate).toBeGreaterThan(-1);
+    expect(the409).toBeGreaterThan(-1);
+    expect(failOpen).toBeGreaterThan(-1);
+    expect(fenceGate).toBeLessThan(failOpen); // the fence gate runs FIRST
+    expect(the409).toBeLessThan(failOpen);
+  });
+
+  it('the flow pin precedes the compiled-build gate and is threaded into BOTH createAgentBattle call sites (§2 pass-2 L2-3 source guard)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../agent/decide.js', import.meta.url), 'utf8');
+    const pinIdx = src.indexOf('const projectionPin = await pinActivationDescriptor(db)');
+    const firstGate = src.indexOf('await ensureDeployableCompiledBuild(');
+    expect(pinIdx).toBeGreaterThan(-1);
+    expect(firstGate).toBeGreaterThan(-1);
+    expect(pinIdx, 'the pin must be taken BEFORE compiled-build verification — otherwise an activation landing in the build-gate window stamps N+1 over N-derived content with AGREEING stamp halves').toBeLessThan(firstGate);
+    // Both battle call sites (tiered + tournament) thread the pin:
+    expect(src.split('activationPin: projectionPin').length - 1).toBe(2);
+    // The tournament fork hands the SAME flow pin down:
+    expect(src.includes('runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId: agentDoc.id, projectionPin })')).toBe(true);
   });
 });

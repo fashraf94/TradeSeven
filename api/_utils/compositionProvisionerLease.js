@@ -39,8 +39,10 @@
 // rather than deleting, so the drain query never races a delete and the
 // close's runbook log can archive the lease trail.
 
+import { randomUUID } from 'node:crypto';
 import { COMPOSITION_EPOCH_FENCE_ENABLED } from './compositionConfig.js';
 import { writeEpochRef, EpochClosedError } from './compositionWriteEpoch.js';
+import { ACTIVATION_COLLECTION, ACTIVATION_DOC_ID } from './compositionProductionLoader.js';
 
 export const PROVISIONER_LEASE_COLLECTION = 'compositionProvisionerLeases';
 export const PROVISIONER_LEASE_TTL_MS = 120_000;
@@ -60,8 +62,10 @@ export function provisionerLeaseRef(db, leaseId) {
 
 /**
  * Acquire a provisioner lease. Transactionally validates the write epoch is
- * OPEN (absent = open, the pre-activation posture; present-but-not-open —
- * incl. 'closing' — rejects) and registers the lease in the same transaction.
+ * OPEN (absent = open ONLY pre-activation — once an activation record exists
+ * an absent epoch doc FAILS CLOSED, B1 parity with validateWriteEpochInTx;
+ * present-but-not-open — incl. 'closing' — rejects) and registers the lease
+ * in the same transaction.
  *
  * @returns {Promise<{dark:boolean, leaseId:string|null, epochId:string|null, expiresAtMs:number|null}>}
  * @throws {EpochClosedError} when the epoch is not open.
@@ -69,11 +73,21 @@ export function provisionerLeaseRef(db, leaseId) {
 export async function acquireProvisionerLease(db, { holder, now = new Date(), ttlMs = PROVISIONER_LEASE_TTL_MS, enabled = COMPOSITION_EPOCH_FENCE_ENABLED } = {}) {
   if (!enabled) return { dark: true, leaseId: null, epochId: null, expiresAtMs: null }; // zero reads (A23)
   if (typeof holder !== 'string' || holder.length === 0) throw new Error('acquireProvisionerLease: holder required');
-  const leaseId = `${holder}-${now.getTime()}`;
+  // §2 review F8: a random suffix — two same-holder acquisitions in the same
+  // millisecond (the contemplated double-tap) must never share a lease doc.
+  const leaseId = `${holder}-${now.getTime()}-${randomUUID().slice(0, 8)}`;
   const expiresAtMs = now.getTime() + ttlMs;
   const epochId = await db.runTransaction(async (tx) => {
     const snap = await tx.get(writeEpochRef(db));
     const data = snap.exists ? snap.data() : null;
+    if (!snap.exists) {
+      // §2 pass-2 L2-7 (B1 parity): an absent epoch doc admits ONLY while no
+      // activation record exists. Post-activation it fails CLOSED — the
+      // highest-risk nontransactional identity-birthing writers must never be
+      // the one boundary the activated world runs unfenced through.
+      const act = await tx.get(db.collection(ACTIVATION_COLLECTION).doc(ACTIVATION_DOC_ID));
+      if (act.exists) throw new EpochClosedError(null, 'absent_epoch_doc_post_activation');
+    }
     if (data && data.state !== 'open') {
       throw new EpochClosedError(data.epochId ?? null, data.state ?? 'unrecognized');
     }
@@ -139,6 +153,31 @@ export async function listActiveProvisionerLeases(db, { now = new Date() } = {})
  *
  * @returns {Promise<{drained:true, waitedMs:number, polls:number}>}
  */
+/**
+ * §2 review F9: bound the registry. Released and long-expired leases are
+ * PURGED at the runbook's unfreeze step (and may be purged any time) — the
+ * keep-on-release semantics exist so the DRAIN never races a delete; once
+ * the close is over, the trail has been archived in the runbook log and the
+ * docs are dead weight.
+ *
+ * @returns {Promise<number>} purged count
+ */
+export async function purgeReleasedProvisionerLeases(db, { now = new Date(), expiredGraceMs = PROVISIONER_LEASE_TTL_MS } = {}) {
+  const graceMs = Math.max(0, expiredGraceMs); // a negative grace could reach ACTIVE leases — clamp
+  const snap = await db.collection(PROVISIONER_LEASE_COLLECTION).get();
+  let purged = 0;
+  for (const doc of snap.docs || []) {
+    const d = doc.data();
+    const released = !!d.releasedAt;
+    const longExpired = typeof d.expiresAtMs === 'number' && now.getTime() >= d.expiresAtMs + graceMs;
+    if (released || longExpired) {
+      await db.collection(PROVISIONER_LEASE_COLLECTION).doc(doc.id).delete();
+      purged += 1;
+    }
+  }
+  return purged;
+}
+
 export async function drainProvisionerLeases(db, {
   nowFn = () => new Date(),
   pollMs = 1_000,

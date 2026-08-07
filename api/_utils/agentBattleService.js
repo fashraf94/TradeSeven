@@ -70,12 +70,16 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
   const duration = options.duration || '1d';
 
   // Composition PR 4 — FC-1-CLOSE (§7-signed splice; logic lives in the dark
-  // module): pin the FULL activation descriptor BEFORE manifest resolution,
-  // reject a stale-stamped persisted projection (the decide.js splice's
+  // module): the FULL activation descriptor is pinned BEFORE the flow's
+  // derivations — decide.js threads its flow pin (taken ahead of the
+  // projection AND the compiled-build verification, §2 pass-2 L2-3: the
+  // build-gate window is inside the fence, not upstream of it); a caller
+  // without a pin gets one here (manifest resolution is still covered).
+  // Reject a stale-stamped persisted projection (the decide.js splice's
   // reader direction), stamp the manifest below, re-validate the pin at the
   // commit — an interleaved activation aborts with nothing created (wholly-A
   // or wholly-B). Dark: zero reads, and the commit is the same single add.
-  const activationPin = await pinActivationDescriptor(db);
+  const activationPin = options.activationPin ?? await pinActivationDescriptor(db);
   if (!activationPin.dark) assertProjectionCurrent(agentData, activationPin.descriptor);
 
   // P4: mode resolution. Unknown modes fail LOUD — a battle doc must never

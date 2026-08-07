@@ -5,7 +5,10 @@
 // lock can drive the REAL training writers against the SAME store the unit tests
 // use). Supports: doc get/set/update (dot-path), sub-collections, top-level
 // where('==') queries, and runTransaction with tx.get/update/set. Captures writes
-// in `writeLog` and exposes the raw `store` Map.
+// in `writeLog`, reads in `readLog` (channel-tagged: 'get' for direct reads,
+// 'tx.get' for transactional reads — so a suite can assert a dark path does
+// ZERO reads, and that in-transaction verification reads actually ride the
+// transaction; §2 pass-2 L2-1/L2-6), and exposes the raw `store` Map.
 
 function applyDotPathUpdate(target, updates) {
   for (const [key, value] of Object.entries(updates)) {
@@ -22,14 +25,18 @@ function applyDotPathUpdate(target, updates) {
 export function makeInMemoryDb(initial = {}) {
   const store = new Map(Object.entries(initial).map(([k, v]) => [k, structuredClone(v)]));
   const writeLog = [];
+  const readLog = [];
+  let autoId = 0;
 
   function makeDocRef(path) {
+    const readSnap = () => {
+      const data = store.get(path);
+      return { exists: data !== undefined, id: path.split('/').pop(), data: () => structuredClone(data) };
+    };
     return {
       path,
-      get: async () => {
-        const data = store.get(path);
-        return { exists: data !== undefined, id: path.split('/').pop(), data: () => structuredClone(data) };
-      },
+      _read: readSnap, // channel-neutral: tx.get logs its own channel
+      get: async () => { readLog.push(['get', path]); return readSnap(); },
       set: async (data) => { store.set(path, structuredClone(data)); writeLog.push(['set', path]); },
       update: async (updates) => {
         const data = store.get(path);
@@ -54,12 +61,20 @@ export function makeInMemoryDb(initial = {}) {
 
   function makeCollection(prefix) {
     return {
-      doc: (id) => makeDocRef(`${prefix}/${id}`),
+      path: prefix,
+      doc: (id) => (id === undefined ? makeDocRef(`${prefix}/auto-${autoId += 1}`) : makeDocRef(`${prefix}/${id}`)),
+      add: async (data) => {
+        const ref = makeDocRef(`${prefix}/auto-${autoId += 1}`);
+        store.set(ref.path, structuredClone(data));
+        writeLog.push(['add', ref.path]);
+        return { id: ref.path.split('/').pop(), path: ref.path };
+      },
+      _read: () => snapshotOf(topLevelDocs(prefix)), // channel-neutral: tx.get logs its own channel
       where: (field, op, value) => ({
-        select: () => ({ get: async () => snapshotOf(filterDocs(field, value)) }),
-        get: async () => snapshotOf(filterDocs(field, value)),
+        select: () => ({ get: async () => { readLog.push(['get', prefix]); return snapshotOf(filterDocs(field, value)); } }),
+        get: async () => { readLog.push(['get', prefix]); return snapshotOf(filterDocs(field, value)); },
       }),
-      get: async () => snapshotOf(topLevelDocs(prefix)),
+      get: async () => { readLog.push(['get', prefix]); return snapshotOf(topLevelDocs(prefix)); },
     };
     function filterDocs(field, value) {
       return topLevelDocs(prefix).filter(d => d.data()[field] === value);
@@ -72,7 +87,7 @@ export function makeInMemoryDb(initial = {}) {
   const db = {
     collection: (name) => makeCollection(name),
     runTransaction: async (fn) => fn({
-      get: async (ref) => ref.get(),
+      get: async (ref) => { readLog.push(['tx.get', ref.path]); return ref._read ? ref._read() : ref.get(); },
       update: (ref, updates) => {
         const data = store.get(ref.path);
         if (data === undefined) throw new Error(`tx.update on missing doc ${ref.path}`);
@@ -87,5 +102,5 @@ export function makeInMemoryDb(initial = {}) {
     }),
   };
 
-  return { db, store, writeLog };
+  return { db, store, writeLog, readLog };
 }

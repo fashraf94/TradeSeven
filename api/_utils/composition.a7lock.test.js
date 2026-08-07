@@ -159,6 +159,10 @@ function classifyKernel(violations) {
   return 'admitted';
 }
 
+// Exact per-leg probe counts at the FROZEN corpus (see the L2-8 note in the
+// sweep) — recomputed by hand whenever the corpus deliberately changes.
+const A7LOCK_PROBE_PINS = { boundary: 130, seeded: 111 };
+
 describe('A7-LOCK — corpus-wide compile-vs-kernel legality parity (95 offerable rules × 5 archetypes)', () => {
   const offerable = FORGE_RULE_TEMPLATES.filter((t) => isSupported(t.id));
 
@@ -170,6 +174,18 @@ describe('A7-LOCK — corpus-wide compile-vs-kernel legality parity (95 offerabl
   it('ZERO compile-vs-kernel disagreements across every cell × every probe (defaults, domain edges, seeded ladders)', () => {
     const disagreements = [];
     let probeCount = 0;
+    // §2 pass-2 L2-8: PER-LEG tallies. The aggregate probeCount floor was
+    // satisfiable with the entire boundary leg silently generating zero
+    // probes (475 defaults alone clear 475) — each leg now carries its own
+    // pinned count, so a generator leg going dark (or a narrowedParams
+    // schema drift that resolveNarrowedDomains maps to {}) is LOUD. The pins
+    // are exact against the FROZEN corpus (the A7-LOCK evidence above): a
+    // deliberate corpus change regenerates the evidence AND re-pins these in
+    // the same commit.
+    let defaultProbes = 0;
+    let boundaryProbes = 0;
+    let seededProbes = 0;
+    let excludedProbes = 0;
     for (const archetype of INCLUDED_ARCHETYPES) {
       // Per-rule probe lists, then batched: build slot i compiles every rule
       // that has an i-th probe in ONE compileBuild call (the boundary is
@@ -203,6 +219,9 @@ describe('A7-LOCK — corpus-wide compile-vs-kernel legality parity (95 offerabl
         for (const r of inSlot) {
           probeCount += 1;
           const probe = r.probes[slot];
+          if (probe.label === 'template-defaults') defaultProbes += 1;
+          else if (probe.label.startsWith('seeded:')) seededProbes += 1;
+          else boundaryProbes += 1;
           const compileOutcome = classifyCompile(build, r.t.id);
           const kernelOutcome = classifyKernel(checkCandidatePairing({
             ruleId: r.t.id, archetype,
@@ -211,8 +230,9 @@ describe('A7-LOCK — corpus-wide compile-vs-kernel legality parity (95 offerabl
           }));
           // ruleModeGate blocks are a compile-only admission axis (game-mode
           // policy), outside the kernel's pairing jurisdiction — excluded
-          // from the parity claim, counted so exclusions stay visible.
-          if (compileOutcome.startsWith('blocked:ruleModeGate')) continue;
+          // from the parity claim, TALLIED and asserted zero below so a
+          // live exclusion can never erode the floor invisibly (L2-8).
+          if (compileOutcome.startsWith('blocked:ruleModeGate')) { excludedProbes += 1; continue; }
           if (compileOutcome !== kernelOutcome) {
             disagreements.push(`${r.t.id}/${archetype} [${probe.label}]: compile=${compileOutcome} kernel=${kernelOutcome}`);
           }
@@ -220,8 +240,15 @@ describe('A7-LOCK — corpus-wide compile-vs-kernel legality parity (95 offerabl
       }
     }
     expect(disagreements).toEqual([]);
-    // Non-vacuity: the sweep genuinely covered the corpus (475 cells get at
-    // least the defaults probe; domain + seeded probes add hundreds more).
-    expect(probeCount).toBeGreaterThan(475);
+    // Per-leg non-vacuity at the frozen corpus (L2-8):
+    expect(defaultProbes, 'every cell gets exactly one defaults probe').toBe(475);
+    expect(boundaryProbes, 'the narrowed-domain BOUNDARY leg went dark — headline leg (b) covered zero boundaries').toBe(A7LOCK_PROBE_PINS.boundary);
+    expect(seededProbes, 'the seeded-ladder leg went dark').toBe(A7LOCK_PROBE_PINS.seeded);
+    // The ruleModeGate exclusion is structurally dead today (this suite
+    // authors its own metadata with modes:'clash', which the clash gate
+    // always admits) — if it EVER fires, this fails and the exclusion count
+    // must be consciously re-pinned, keeping the floor honest:
+    expect(excludedProbes).toBe(0);
+    expect(probeCount).toBe(475 + A7LOCK_PROBE_PINS.boundary + A7LOCK_PROBE_PINS.seeded);
   });
 });

@@ -70,6 +70,12 @@ mkdirSync(resolve(REPO, 'scripts/composition/out'), { recursive: true });
 const outPath = resolve(REPO, `scripts/composition/out/preflight-${headSha.slice(0, 12)}.json`);
 writeFileSync(outPath, `${JSON.stringify(report, null, 2)}\n`);
 
+// §2 review F5 supplement: the fence flag is LOAD-BEARING once the activation
+// record exists (see compositionConfig.js) — the preflight cannot read
+// Firestore, so the check is a NAMED manual gate the operator signs in the
+// runbook log, printed here so it is never skipped in silence.
+console.log('\n⚠ MANUAL GATE (F5): if composition/activation EXISTS in production, confirm the deployed build has COMPOSITION_EPOCH_FENCE_ENABLED=true — the flag must NEVER be false while a record exists (split-brain identity selection).');
+
 const allGreen = suites.every((s) => s.result === 'green');
 console.log(`\nB8-FINAL preflight: ${allGreen ? 'PASS' : 'FAIL'} — report written to ${outPath}`);
 process.exit(allGreen ? 0 : 1);

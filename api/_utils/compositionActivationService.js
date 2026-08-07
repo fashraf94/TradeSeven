@@ -76,13 +76,20 @@ function validateTupleContent({ activeIdentityVersion, boundaryStateVersion, act
  * transaction. Reads the run doc and EVERY entry through the transaction so
  * the ratified state is exactly the committed state.
  */
-async function verifyCandidateInTx(tx, db, { candidateStateId, semanticHash }) {
+async function verifyCandidateInTx(tx, db, { candidateStateId, semanticHash, expectedIdentityVersion }) {
   const runSnap = await tx.get(db.collection(CANDIDATE_STATE_COLLECTION).doc(candidateStateId));
   if (!runSnap.exists) throw new ActivationAbortError('activation_candidate_missing', `no candidate run doc ${candidateStateId}`);
   const run = runSnap.data();
   // R6-B1: the descriptor's semantic identity must equal the candidate manifest's.
   if (run.semanticHash !== semanticHash) {
     throw new ActivationAbortError('activation_semantic_hash_mismatch', `descriptor ${semanticHash} ≠ candidate ${run.semanticHash}`);
+  }
+  // §2 review F3: the descriptor's TARGET VERSION must equal the version the
+  // candidate manifest was applied FOR — a typo'd activeIdentityVersion would
+  // otherwise ratify an incoherent record (live-version + candidate overlay,
+  // or an unresolvable version that fails every birth closed).
+  if (Number.isInteger(run.activeIdentityVersion) && run.activeIdentityVersion !== expectedIdentityVersion) {
+    throw new ActivationAbortError('activation_identity_version_mismatch', `descriptor ${expectedIdentityVersion} ≠ candidate ${run.activeIdentityVersion}`);
   }
   const entriesSnap = await tx.get(db.collection(CANDIDATE_STATE_COLLECTION).doc(candidateStateId).collection('entries'));
   const entries = (entriesSnap.docs || []).map((d) => ({ id: d.id, ...d.data() }));
@@ -137,12 +144,21 @@ export async function writeActivationRecord(db, {
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(activationRef(db));
     const current = snap.exists ? snap.data() : null;
+    // A49 (§2 review F4 hardening): any (RE)ACTIVATION mints a FRESH epoch —
+    // an epoch id that appears ANYWHERE in the history (not just the current
+    // tuple) is a resurrection vector for its abandoned overrides and rejects.
+    // (Rollback's deliberate prior-epoch restore is rollbackActivationRecord's
+    // job — whole-tuple, from history — never this writer's.)
+    const historySnap = await tx.get(activationRef(db).collection(ACTIVATION_HISTORY_SUBCOLLECTION));
+    for (const doc of historySnap.docs || []) {
+      if (doc.data().activeEpochId === activeEpochId) {
+        throw new ActivationAbortError('activation_epoch_reuse', `epoch ${activeEpochId} was already used at generation ${doc.id}`);
+      }
+    }
     if (current && current.activeEpochId === activeEpochId) {
-      // A49: any (re)activation mints a FRESH epoch so abandoned overrides
-      // can never resurrect — reusing the live epoch id is a defect.
       throw new ActivationAbortError('activation_epoch_reuse', `epoch ${activeEpochId} is already the active epoch`);
     }
-    await verifyCandidateInTx(tx, db, { candidateStateId, semanticHash });
+    await verifyCandidateInTx(tx, db, { candidateStateId, semanticHash, expectedIdentityVersion: activeIdentityVersion });
     return writeDescriptorInTx(tx, db, current, {
       activeIdentityVersion, boundaryStateVersion, activeEpochId,
       candidateStateId, semanticHash, overrideRevision: 0, recordedAt,

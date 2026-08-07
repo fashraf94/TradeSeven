@@ -9,15 +9,36 @@
         "commitActiveRulesProjection",
         "pinActivationDescriptor"
       ],
+      "callTokens": [
+        "await pinActivationDescriptor(db)",
+        "await commitActiveRulesProjection(db, agentRef, activeRulesForDeploy, projectionPin)"
+      ],
+      "order": [
+        ["await pinActivationDescriptor(", "await commitActiveRulesProjection("]
+      ],
+      "forbidden": [
+        "update({ activeRules"
+      ],
       "readerRejection": "assertProjectionCurrent at battle creation (agentBattleService.js); compositionGenerationFence.test.js both directions"
     },
     {
       "file": "api/_utils/agentBattleService.js",
       "writer": "battle doc + resolvedAgentManifest (FC-1)",
-      "mechanism": "(a)+(b): pin-before-resolve + commit-time descriptor re-validation AND manifest/slice generation-stamp pair with assembler-side rejection",
+      "mechanism": "(a)+(b): flow pin threaded from decide.js (taken before the projection AND the compiled-build verification; self-pin fallback for other callers) + commit-time descriptor re-validation AND manifest/slice generation-stamp pair with assembler-side rejection",
       "tokens": [
         "commitBattleDocWithPin",
         "manifestGenerationStamp"
+      ],
+      "callTokens": [
+        "options.activationPin ?? await pinActivationDescriptor(db)",
+        "commitBattleDocWithPin(db,",
+        "manifestGenerationStamp(activationPin)"
+      ],
+      "order": [
+        ["options.activationPin ?? await pinActivationDescriptor(", "commitBattleDocWithPin("]
+      ],
+      "forbidden": [
+        "collection('agentBattles').add("
       ],
       "readerRejection": "compositionAdvisoryRender admissibility gate rejects mismatched/half stamps"
     },
@@ -39,6 +60,9 @@
         "resolveSeedSource",
         "identityVersion"
       ],
+      "callTokens": [
+        "resolveSeedSource(archetype, identityVersion)"
+      ],
       "readerRejection": "seeded docs project through projectActiveRules into builds whose vector rejects staleness"
     },
     {
@@ -48,6 +72,13 @@
       "tokens": [
         "fetchActiveIdentityVersion",
         "resolveClientSeedSource"
+      ],
+      "callTokens": [
+        "await fetchActiveIdentityVersion()",
+        "resolveClientSeedSource(archetype, identityVersion)"
+      ],
+      "order": [
+        ["fetchActiveIdentityVersion(", "buildSeedPlan("]
       ],
       "readerRejection": "same downstream vector axis as archetypeSeeding"
     }

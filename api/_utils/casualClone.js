@@ -153,7 +153,9 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
         const parentSnap = await db.collection(AGENTS_COLLECTION).doc(existing.rankedAgentId).get();
         if (parentSnap.exists && parentSnap.data().ownerId === odUserId) {
           const parent = { id: parentSnap.id, ...parentSnap.data() };
+          assertLeaseCurrent(lease); // B2 (F6): the RE-SYNC copy is a write phase — currency-check BEFORE it, parity with the create path
           await copyAgentSubcollections(db, parent.id, cloneId); // refresh the Trading Brain
+          assertLeaseCurrent(lease); // B2 (F6): the copy may have straddled the TTL — re-check before the doc write
           await cloneRef.update({ ...buildCasualCloneResync(parent), updatedAt: nowIso });
           console.log(`${LOG_PREFIX} re-synced casual clone ${cloneId} to parent ${parent.id} at deploy`);
         } else {

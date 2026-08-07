@@ -117,6 +117,20 @@ describe('B4 — descriptor writes, rollback, monotonicity, zero tuple reuse', (
     await expect(rollbackActivationRecord(db, { toGeneration: 1 })).rejects.toMatchObject({ code: 'activation_rollback_not_prior' });
     await expect(rollbackActivationRecord(db, { toGeneration: 0 })).rejects.toMatchObject({ code: 'activation_invalid_input' });
   });
+
+  it('M6 verification reads run INSIDE the transaction — every read of the write is tx-channel (§2 pass-2 L2-6: hoisting the candidate reads to plain gets fails here)', async () => {
+    const { db, readLog } = makeInMemoryDb(candidateFixture());
+    await writeActivationRecord(db, ACTIVATE());
+    // The candidate run doc + its entries were read (the verification is not
+    // vacuous) and EVERY one of those reads rode the transaction:
+    const candidateReads = readLog.filter(([, p]) => p.startsWith(CANDIDATE_STATE_COLLECTION));
+    expect(candidateReads.length).toBeGreaterThan(0);
+    expect(candidateReads.filter(([ch]) => ch !== 'tx.get')).toEqual([]);
+    // The whole activation write is ONE transaction — no non-tx read at all
+    // (record, history, candidate: a concurrent mutation between a hoisted
+    // read and the commit would ratify unverified state, exactly M6's class):
+    expect(readLog.filter(([ch]) => ch !== 'tx.get')).toEqual([]);
+  });
 });
 
 describe('M6 + R6-B1 — activation-time candidate verification, one row per defect class, each ABORTS with nothing repointed', () => {
@@ -152,6 +166,28 @@ describe('M6 + R6-B1 — activation-time candidate verification, one row per def
       s.delete(p);
       s.set(`${CANDIDATE_STATE_COLLECTION}/run-t/entries/${entryDocId(ENTRIES[1].entryKey)}-x`, e);
     }, 'activation_entry_id_mismatch'));
+
+  it('§2-F3: descriptor activeIdentityVersion ≠ the candidate manifest\'s → abort (a typo\'d version cannot ratify an incoherent record)', async () => {
+    const { db, store } = makeInMemoryDb(candidateFixture());
+    await expect(writeActivationRecord(db, ACTIVATE({ activeIdentityVersion: 2 })))
+      .rejects.toMatchObject({ code: 'activation_identity_version_mismatch' });
+    await expect(writeActivationRecord(db, ACTIVATE({ activeIdentityVersion: 30 })))
+      .rejects.toMatchObject({ code: 'activation_identity_version_mismatch' });
+    expect(store.get('composition/activation')).toBeUndefined();
+  });
+
+  it('§2-F4: an epoch id used at ANY prior generation rejects a (re)activation — abandoned overrides can never resurrect through the writer', async () => {
+    const { db, store } = makeInMemoryDb(candidateFixture());
+    await writeActivationRecord(db, ACTIVATE());                       // gen 1, epoch-1
+    for (const [k, v] of Object.entries(candidateFixture('run-u'))) store.set(k, v);
+    await writeActivationRecord(db, ACTIVATE({ activeEpochId: 'epoch-2', candidateStateId: 'run-u' })); // gen 2
+    // epoch-1 is no longer CURRENT — but it lives in history: reject.
+    await expect(writeActivationRecord(db, ACTIVATE({ activeEpochId: 'epoch-1', candidateStateId: 'run-u' })))
+      .rejects.toMatchObject({ code: 'activation_epoch_reuse' });
+    // rollback's deliberate whole-tuple prior-epoch restore still works:
+    const rolled = await rollbackActivationRecord(db, { toGeneration: 1 });
+    expect(rolled.activeEpochId).toBe('epoch-1');
+  });
 
   it('R6-B1: descriptor semanticHash ≠ candidate manifest → abort; missing run doc → abort', async () => {
     await expectAbort((s) => {

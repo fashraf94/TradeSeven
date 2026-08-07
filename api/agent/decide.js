@@ -287,6 +287,16 @@ export default async function handler(req, res) {
         await commitActiveRulesProjection(db, agentRef, activeRulesForDeploy, projectionPin); // PR 4 splice
       }
     } catch (projErr) {
+      // PR 4 (§2 review F1): the GENERATION-FENCE rejections must NOT ride the
+      // projection fail-open — a stale-generation or closed-epoch rejection
+      // aborting the write is the splice DOING ITS JOB (the reversed ruling's
+      // whole point); swallowing it would deploy N−1 inputs past N's watermark,
+      // exactly Sol's counterexample. Fail-open remains ONLY for projection
+      // computation failures (the pre-PR-4 contract).
+      if (projErr?.code === 'projection_stale_generation' || projErr?.code === 'epoch_closed') {
+        await agentRef.update({ deployingAt: null });
+        return res.status(409).json({ error: projErr.code });
+      }
       console.error('[agent/decide] activeRules projection FAILED for agent', agentId,
         '— deploying with stored activeRules (which is empty for a freshly-seeded agent, i.e. an inert loadout):', projErr);
     }
@@ -297,7 +307,9 @@ export default async function handler(req, res) {
     // Any request without the tournament gameMode flows through the legacy
     // path below untouched.
     if (req.body.gameMode === FLAT6_GAME_MODE) {
-      return await runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId: agentDoc.id });
+      // The flow pin travels: the tournament battle commit re-validates
+      // against the SAME pin taken before this flow's derivations (FC-1).
+      return await runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId: agentDoc.id, projectionPin });
     }
 
     // 3. Fetch stock universe — ONE Firestore read
@@ -906,6 +918,10 @@ export default async function handler(req, res) {
         // P2.5 (§7-signed): the P2.4b-validated build feeds the manifest
         // block. Dark: the gate returns no build and nothing is passed.
         compiledBuild: buildGate.compiledBuild ?? null,
+        // FC-1 (§2 pass-2 L2-3): the flow pin — taken above, BEFORE the
+        // projection and the compiled-build verification — so the battle
+        // commit's re-validation covers the build-gate window too.
+        activationPin: projectionPin,
       }
     );
 
@@ -1281,7 +1297,7 @@ export function enrichPrescribedPortfolio(symbols, stockUniverse) {
 // caller; every early return clears it.
 // Exported for behavioral testing of the deploy path (test-only surface; no
 // runtime behavior change). The internal FLAT6 dispatch calls it directly.
-export async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId }) {
+export async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId, projectionPin = null }) {
   const clearLock = () => agentRef.update({ deployingAt: null }).catch(() => {});
   const modeConfig = resolveModeConfig(FLAT6_GAME_MODE);
   const { groupId, prescribedPortfolio, isCpu, userPicksStance, doubleDownSymbols, userPicks } = req.body;
@@ -1455,6 +1471,9 @@ export async function runPrescribedTournamentDeploy({ db, req, res, agentRef, ag
       // P2.5 (§7-signed): the P2.4b-validated build feeds the manifest
       // block. Dark: the gate returns no build and nothing is passed.
       compiledBuild: buildGate.compiledBuild ?? null,
+      // FC-1 (§2 pass-2 L2-3): the caller's flow pin (null → self-pin at
+      // entry) — the battle commit re-validates across the build-gate window.
+      activationPin: projectionPin,
     }
   );
 

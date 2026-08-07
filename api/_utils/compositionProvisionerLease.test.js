@@ -58,22 +58,38 @@ describe('B2 — acquisition validates the epoch transactionally', () => {
     }
   });
 
-  it('ABSENT epoch doc → open (the pre-activation posture — dark-compat, same as validateWriteEpochInTx)', async () => {
+  it('ABSENT epoch doc + NO activation record → open (the pre-activation posture, same as validateWriteEpochInTx)', async () => {
     const { db } = makeInMemoryDb({});
     const lease = await acquireProvisionerLease(db, { holder: 'test:absent', now: T0 });
     expect(lease.dark).toBe(false);
     expect(lease.epochId).toBe(null);
   });
 
+  it('ABSENT epoch doc + activation record PRESENT → FAILS CLOSED with zero writes (§2 pass-2 L2-7: B1 parity — the activated world never provisions unfenced)', async () => {
+    const { db, writeLog } = makeInMemoryDb({
+      'composition/activation': {
+        activeIdentityVersion: 3, boundaryStateVersion: 1, activeEpochId: 'ep-1',
+        candidateStateId: 'run-1', semanticHash: 'sem-1', activationGeneration: 1, overrideRevision: 0,
+      },
+    });
+    await expect(acquireProvisionerLease(db, { holder: 'test:post-act', now: T0 }))
+      .rejects.toMatchObject({ code: 'epoch_closed' });
+    expect(writeLog.length).toBe(0);
+  });
+
   it('DARK (flag off): no-op lease, zero reads, zero writes; assertLeaseCurrent and release are no-ops', async () => {
     flagState.fence = false;
-    const { db, writeLog } = makeInMemoryDb({ ...openEpoch });
+    const { db, writeLog, readLog } = makeInMemoryDb({ ...openEpoch });
     const lease = await acquireProvisionerLease(db, { holder: 'test:dark', now: T0 });
     expect(lease.dark).toBe(true);
     expect(writeLog.length).toBe(0);
+    // §2 pass-2 L2-1: "zero reads" asserted against the fixture's read log —
+    // a dark path that gains a Firestore read fails HERE.
+    expect(readLog.length).toBe(0);
     expect(assertLeaseCurrent(lease, { now: at(10 * PROVISIONER_LEASE_TTL_MS) })).toBe(null);
     await releaseProvisionerLease(db, lease);
     expect(writeLog.length).toBe(0);
+    expect(readLog.length).toBe(0);
   });
 });
 
