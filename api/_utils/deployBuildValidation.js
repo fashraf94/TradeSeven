@@ -86,6 +86,13 @@ export function diffSourceRevisionVector(vector, expected) {
   for (const id of ids) {
     if (stored[id] !== live[id]) mismatches.push(`bundleContentHashes.${id}`);
   }
+  // PR 3.5 review F1: the projection hash compares PRESENCE-AWARE — absent
+  // from BOTH (legacy/dark world) is fresh; present on either side compares
+  // strictly, so a stored dark build reads STALE the moment candidate mode
+  // expects the component, and a trait-doc/draft-bundle edit moves it.
+  if ('projectedRulesHash' in vector || 'projectedRulesHash' in expected) {
+    if (vector.projectedRulesHash !== expected.projectedRulesHash) mismatches.push('projectedRulesHash');
+  }
   return mismatches;
 }
 

@@ -159,7 +159,7 @@ describe('B4-TRAIT invariant (c) — trait-hosted tensions RENDER their advisori
     });
     const manifest = buildResolvedAgentManifest({
       agentData: { id: 'fx', archetype: 'momentum_chaser', settingsRev: 7, config: {}, equippedBundleIds: [] },
-      compiledBuild: { ...build, sourceRevisionVector: { ...build.sourceRevisionVector, settingsRev: 7 } },
+      compiledBuild: build, // rev 7 == agentData.settingsRev — the manifest's rev-match gate runs for real
       equippedWatchlist: null, gameMode: 'clash', now: FIXTURE_NOW,
     });
     expect(manifest.compositionCompat.entries.some((e) => e.ruleId === 'td-e2e' && e.advisory)).toBe(true);

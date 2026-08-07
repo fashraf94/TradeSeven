@@ -334,3 +334,64 @@ describe('B4-TRAIT — the unified host projection (trait + bundle channels, one
     expect(ruleMetadata['td-oob'].modes).toBe('clash'); // mb-01's real corpus modes field
   });
 });
+
+describe('PR 3.5 review fixes — the freshness seam (F1) and the trait-save seam (F2)', () => {
+  it('F1: diffSourceRevisionVector compares projectedRulesHash PRESENCE-AWARE — stale/missing reads STALE, absent-in-both stays fresh', async () => {
+    const { diffSourceRevisionVector } = await import('./deployBuildValidation.js');
+    const base = { settingsRev: 7, ruleLibraryVersion: 1, identityHash: 'h', calibrationBundleVersion: 1, guardrailSetVersion: 1, gameMode: 'clash', gameModePolicyVersion: 1, gameModePolicyHash: 'g', bundleContentHashes: {} };
+    // legacy world: neither side carries the key → fresh (dark unchanged)
+    expect(diffSourceRevisionVector({ ...base }, { ...base })).toEqual([]);
+    // candidate world: stored dark build vs candidate expectation → STALE
+    expect(diffSourceRevisionVector({ ...base }, { ...base, projectedRulesHash: 'NEW' })).toContain('projectedRulesHash');
+    // candidate world: stale stored hash → STALE
+    expect(diffSourceRevisionVector({ ...base, projectedRulesHash: 'OLD' }, { ...base, projectedRulesHash: 'NEW' })).toContain('projectedRulesHash');
+    // candidate world: matching → fresh
+    expect(diffSourceRevisionVector({ ...base, projectedRulesHash: 'SAME' }, { ...base, projectedRulesHash: 'SAME' })).toEqual([]);
+  });
+
+  it('F2: writeCompiledBuildsInTx compiles the NEXT-STATE trait selection, not the pre-write agent doc (the update-agent-settings seam)', async () => {
+    const { writeCompiledBuildsInTx } = await import('./compileOnSettingsChange.js');
+    const writes = [];
+    const tx = { set: (ref, doc) => writes.push(doc) };
+    const agentRef = { collection: () => ({ doc: (id) => ({ id }) }) };
+    const collect = {};
+    writeCompiledBuildsInTx(tx, {
+      agentRef, agentId: 'fx-agent',
+      agent: { archetype: 'momentum_chaser', settingsRev: 6, equippedTraits: [] }, // PRE-save: no traits
+      nextState: { equippedTraits: [{ traitId: 'trait-trend-rider' }] },           // the SAVE equips one
+      bundles: [],
+      ruleDocs: [TRAIT_TENSION_DOC], allBundles: [],
+      enabled: true, nowIso: FIXTURE_NOW, collectBuilds: collect,
+    });
+    expect(writes.length).toBeGreaterThan(0);
+    const build = Object.values(collect)[0];
+    const v = build.compatVerdicts.find((x) => x.ruleId === 'td-tension');
+    // under the DEFECT (agent-doc fallback) the trait doc never projects and
+    // this entry is absent — the row fails here.
+    expect(v).toBeTruthy();
+    expect(v.hostTraitId).toBe('trait-trend-rider');
+  });
+
+  it('prepareCompileInputs candidate reads: full rules + bundles subcollections in-tx; dark path never touches the collections', async () => {
+    const { prepareCompileInputs } = await import('./compileOnSettingsChange.js');
+    const touched = [];
+    const mkCol = (name, docs) => ({ __name: name, __docs: docs, doc: (id) => ({ __col: name, id }) });
+    const rulesCol = mkCol('rules', [{ id: 'r1', data: () => ({ sourceRef: 'tv-01', traitId: 'trait-trend-rider' }) }]);
+    const bundlesCol = mkCol('bundles', [{ id: 'b1', data: () => ({ status: 'draft', ruleIds: ['r1'] }) }]);
+    const agentRef = { collection: (n) => { touched.push(n); return n === 'rules' ? rulesCol : bundlesCol; } };
+    const tx = {
+      get: async (col) => ({ docs: col.__docs }),
+      getAll: async (...refs) => refs.map((r) => ({ exists: false })),
+    };
+    // dark: ids empty + candidateMode off → the collections are NEVER touched
+    const dark = await prepareCompileInputs(tx, { agentRef, nextEquippedBundleIds: [], enabled: true, candidateMode: false });
+    expect(dark).toEqual({ bundles: [] });
+    expect(touched).toEqual([]);
+    // candidate: both subcollections read in-tx, shapes normalized
+    const lit = await prepareCompileInputs(tx, { agentRef, nextEquippedBundleIds: [], enabled: true, candidateMode: true });
+    expect(lit.ruleDocs).toEqual([{ id: 'r1', sourceRef: 'tv-01', traitId: 'trait-trend-rider' }]);
+    expect(lit.allBundles[0]).toMatchObject({ id: 'b1', bundleId: 'b1', status: 'draft' });
+    expect(touched).toContain('rules');
+    expect(touched).toContain('bundles');
+  });
+});

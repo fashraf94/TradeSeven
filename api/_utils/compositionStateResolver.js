@@ -20,8 +20,14 @@
 // abandoned epoch's overrides silently stop resolving; they are never deleted
 // and never resurrect (A49).
 //
-// NOT imported by any production read path in PR 2 (A36's structural half —
-// asserted by compositionForbiddenReads.test.js).
+// A36 structural posture (updated PR 3.5): no production path READS resolved
+// candidate state pre-activation. Since PR 3.5 the compiler layer imports
+// compositionMigration (for the projectHostedRuleDocs selection kernel), which
+// imports THIS module — a transitive import EDGE exists from the endpoint/
+// deploy path, but no resolver function is called outside migration/scan/
+// loader/tests (the one-hop A36 sweep records compositionMigration as the
+// sanctioned importer; the two-hop edge is inert and named in the PR-3.5
+// audit).
 
 import { canonicalContentHash } from './canonicalHash.js';
 

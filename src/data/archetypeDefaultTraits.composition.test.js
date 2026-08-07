@@ -21,7 +21,21 @@
 import { describe, it, expect } from 'vitest';
 import { ARCHETYPE_DEFAULT_TRAITS, TRAIT_BY_ID } from './traitLibrary.js';
 import { getCandidateCompatCell, RESERVED_ARCHETYPES } from './archetypeCompatibilityCandidate.js';
+import { FORGE_RULE_TEMPLATES } from './forgeKnowledgeBase.js';
 import { resolveNarrowedDomains, domainAdmits } from '../../api/_utils/compositionEnforcement.js';
+
+// Review F3: an omitted param renders the TEMPLATE DEFAULT, so the invariant
+// judges the value that will actually render — seeded if present, else the
+// default. Without this, deleting a constrained param from a ladder dodges
+// the domain check while shipping the (possibly out-of-domain) default.
+function templateDefault(ruleId, param) {
+  const t = FORGE_RULE_TEMPLATES.find((x) => x.id === ruleId);
+  for (const ft of t?.forgeTemplates || []) {
+    const p = ft?.params?.[param];
+    if (p && 'default' in p) return p.default;
+  }
+  return undefined;
+}
 
 const STRENGTHS = ['subtle', 'moderate', 'dominant'];
 
@@ -62,9 +76,13 @@ describe('default-trait composition invariants (B4-TRAIT)', () => {
           continue;
         }
         for (const [param, domain] of Object.entries(domains)) {
-          if (!(param in seeds) || seeds[param] === null || seeds[param] === undefined) continue;
-          if (!domainAdmits(domain, seeds[param])) {
-            offenders.push(`${archetype}/${traitId}/${ruleId}@${strength}: ${param}=${JSON.stringify(seeds[param])} outside ${JSON.stringify(domain)}`);
+          // judge what RENDERS: the seeded value, else the template default
+          // (review F3 — the omission dodge fails here, not at activation)
+          const rendered = seeds[param] ?? templateDefault(ruleId, param);
+          if (rendered === null || rendered === undefined) continue; // nothing renders
+          if (!domainAdmits(domain, rendered)) {
+            const via = param in seeds ? 'seeded' : 'template-default (param omitted from ladder)';
+            offenders.push(`${archetype}/${traitId}/${ruleId}@${strength}: ${param}=${JSON.stringify(rendered)} [${via}] outside ${JSON.stringify(domain)}`);
           }
         }
       }
