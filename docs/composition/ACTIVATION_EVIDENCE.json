@@ -1,0 +1,9 @@
+{
+  "_what": "A7-LOCK (Composition PR 4, ACTIVATION_PRECONDITIONS.md) — the VERSION FREEZE DECLARATION of record for the ARCHETYPE_IDENTITY_VERSION composition event. The four values below are FROZEN for the activation: composition.a7lock.test.js recomputes each from HEAD and fails on any drift, so the SHA the founder ratifies at FINAL-DRYRUN is provably the SHA that activates. A deliberate change regenerates this file (GENERATE_ACTIVATION_EVIDENCE=1) in the same commit — and INVALIDATES any prior FINAL-DRYRUN ratification: the runbook must re-run the dry-run at the new SHA.",
+  "freezeDeclaration": "FROZEN between FINAL-DRYRUN ratification and the activation record write: ARCHETYPE_IDENTITY_VERSION, RULE_LIBRARY_VERSION, the candidate registry manifestHash, and the compositionEnforcement kernel content hash. Any movement in any value re-opens the freeze and re-runs the gate chain (FINAL-DRYRUN -> zero-residual -> activation).",
+  "frozenAt": "2026-08-07",
+  "archetypeIdentityVersion": 2,
+  "ruleLibraryVersion": 1,
+  "candidateManifestHash": "bb8b02bbf0d5ba14dfbcb391bd3815d3b2025dafa3d4786eeef97e77e75a4ecc",
+  "enforcementKernelContentHash": "d4f89e0e2f6ff8ad2e6982bcabebb504fd45661173d4aff18085561626ba10d9"
+}

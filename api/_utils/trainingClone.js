@@ -39,7 +39,9 @@ import {
 // a loadout override that picks a DIFFERENT archetype seeds THAT archetype's
 // born-with traits, so a clone never carries archetype≠traits (the invariant).
 import { seedArchetypeTraitsDeterministic, hasBornWithSet, softDeleteReplacedTraitRuleDocs } from './archetypeSeeding.js';
-import { assertWriteEpochOpen } from './compositionWriteEpoch.js';
+import {
+  acquireProvisionerLease, assertLeaseCurrent, releaseProvisionerLease,
+} from './compositionProvisionerLease.js';
 
 const LOG_PREFIX = '[TrainingClone]';
 
@@ -154,61 +156,74 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
   const existing = [];
   const skipped = [];
 
-  for (const player of group.players || []) {
-    const odUserId = player.odUserId;
-    if (player.isCpu === true || isCpuUserId(odUserId)) continue; // CPU seats: system agents already exist
+  // Composition write-epoch fence — B2 (PR 4): clone provisioning BIRTHS
+  // identity state through a NONTRANSACTIONAL multi-write flow, so the PR-2
+  // per-iteration entry guard is upgraded to a REGISTERED LEASE: acquisition
+  // transactionally validates the epoch is open, every seat's write phase
+  // re-checks lease currency (the bounded-conformance boundary, now with a
+  // hard TTL deadline), and the §8 close drains leases before its watermark.
+  // Zero I/O while the fence flag is dark (A23/A46 census row).
+  const lease = await acquireProvisionerLease(db, { holder: `trainingClone:${group.id}`, now });
+  try {
 
-    // Composition write-epoch fence (design note §3, background-loop class):
-    // clone provisioning BIRTHS identity state, so it validates per iteration —
-    // bounded conformance; zero I/O while the fence flag is dark (A46 census row).
-    await assertWriteEpochOpen(db);
+    for (const player of group.players || []) {
+      const odUserId = player.odUserId;
+      if (player.isCpu === true || isCpuUserId(odUserId)) continue; // CPU seats: system agents already exist
 
-    const cloneId = trainingCloneDocId(group.id, odUserId);
-    const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);
-    const cloneSnap = await cloneRef.get();
-    if (cloneSnap.exists) { existing.push(odUserId); continue; }
+      // B2: per-seat lease currency check — a loop stalled past the TTL stops
+      // at the next seat boundary instead of writing past a possible watermark.
+      assertLeaseCurrent(lease);
 
-    const ranked = await resolveRankedAgent(db, odUserId);
-    if (!ranked) {
-      console.error(`${LOG_PREFIX} group ${group.id}: human seat ${odUserId} has no ranked agent — training clone NOT provisioned (board production will use a synthetic identity)`);
-      skipped.push(odUserId);
-      continue;
-    }
+      const cloneId = trainingCloneDocId(group.id, odUserId);
+      const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);
+      const cloneSnap = await cloneRef.get();
+      if (cloneSnap.exists) { existing.push(odUserId); continue; }
 
-    const loadoutSpec = loadoutSpecByUser ? loadoutSpecByUser[odUserId] : null;
-    // Copy the rules/bundles subcollections FIRST, then write the clone doc LAST
-    // as the completion sentinel. If provisioning is interrupted (timeout/crash)
-    // between the two, the clone doc won't exist, so the next run re-provisions
-    // (idempotent set-by-id) — a partial clone (doc present, subcollections
-    // empty) can never be marked 'existing' and stranded with a blank Trading
-    // Brain that decide.js would deploy as an inert agent.
-    await copyAgentSubcollections(db, ranked.id, cloneId);
-
-    const cloneDoc = buildTrainingCloneDoc(ranked, { groupId: group.id, odUserId, loadoutSpec, nowIso });
-    // Invariant convergence (same rule as the Command Center change): if the
-    // loadout override picked an archetype that DIFFERS from the ranked agent's,
-    // the clone carries the OVERRIDE archetype's born-with traits, not the
-    // inherited ranked traits — no clone with archetype≠traits. Seed BEFORE the
-    // sentinel doc write with deterministic rule-doc ids, so an interrupted
-    // re-provision overwrites (stays idempotent); the copied ranked trait docs go
-    // inert (their traitId is no longer in equippedTraits, projectActiveRules gate).
-    if (cloneDoc.archetype && cloneDoc.archetype !== ranked.archetype && hasBornWithSet(cloneDoc.archetype)) {
-      const { equippedTraits } = await seedArchetypeTraitsDeterministic(cloneRef, cloneDoc.archetype);
-      if (equippedTraits) {
-        cloneDoc.equippedTraits = equippedTraits;
-        // Soft-delete the copied ranked trait docs the override replaced (traitId
-        // ∉ the new born-with set). They are already inert via the equippedTraits
-        // projection gate, but soft-delete closes the resurrection path: if that
-        // traitId ever re-enters equippedTraits, projectActiveRules still filters
-        // isDeleted, so a stale copied doc can never project. Before the sentinel
-        // write so an interrupted re-provision re-copies then re-marks (idempotent).
-        await softDeleteReplacedTraitRuleDocs(cloneRef, equippedTraits);
+      const ranked = await resolveRankedAgent(db, odUserId);
+      if (!ranked) {
+        console.error(`${LOG_PREFIX} group ${group.id}: human seat ${odUserId} has no ranked agent — training clone NOT provisioned (board production will use a synthetic identity)`);
+        skipped.push(odUserId);
+        continue;
       }
-    }
-    await cloneRef.set(cloneDoc);
-    created.push(odUserId);
-    console.log(`${LOG_PREFIX} group ${group.id}: provisioned training clone ${cloneId} from ranked agent ${ranked.id} (${ranked.archetype})`);
-  }
 
-  return { created, existing, skipped };
+      const loadoutSpec = loadoutSpecByUser ? loadoutSpecByUser[odUserId] : null;
+      // Copy the rules/bundles subcollections FIRST, then write the clone doc LAST
+      // as the completion sentinel. If provisioning is interrupted (timeout/crash)
+      // between the two, the clone doc won't exist, so the next run re-provisions
+      // (idempotent set-by-id) — a partial clone (doc present, subcollections
+      // empty) can never be marked 'existing' and stranded with a blank Trading
+      // Brain that decide.js would deploy as an inert agent.
+      await copyAgentSubcollections(db, ranked.id, cloneId);
+
+      const cloneDoc = buildTrainingCloneDoc(ranked, { groupId: group.id, odUserId, loadoutSpec, nowIso });
+      // Invariant convergence (same rule as the Command Center change): if the
+      // loadout override picked an archetype that DIFFERS from the ranked agent's,
+      // the clone carries the OVERRIDE archetype's born-with traits, not the
+      // inherited ranked traits — no clone with archetype≠traits. Seed BEFORE the
+      // sentinel doc write with deterministic rule-doc ids, so an interrupted
+      // re-provision overwrites (stays idempotent); the copied ranked trait docs go
+      // inert (their traitId is no longer in equippedTraits, projectActiveRules gate).
+      if (cloneDoc.archetype && cloneDoc.archetype !== ranked.archetype && hasBornWithSet(cloneDoc.archetype)) {
+        const { equippedTraits } = await seedArchetypeTraitsDeterministic(cloneRef, cloneDoc.archetype);
+        if (equippedTraits) {
+          cloneDoc.equippedTraits = equippedTraits;
+          // Soft-delete the copied ranked trait docs the override replaced (traitId
+          // ∉ the new born-with set). They are already inert via the equippedTraits
+          // projection gate, but soft-delete closes the resurrection path: if that
+          // traitId ever re-enters equippedTraits, projectActiveRules still filters
+          // isDeleted, so a stale copied doc can never project. Before the sentinel
+          // write so an interrupted re-provision re-copies then re-marks (idempotent).
+          await softDeleteReplacedTraitRuleDocs(cloneRef, equippedTraits);
+        }
+      }
+      await cloneRef.set(cloneDoc);
+      created.push(odUserId);
+      console.log(`${LOG_PREFIX} group ${group.id}: provisioned training clone ${cloneId} from ranked agent ${ranked.id} (${ranked.archetype})`);
+    }
+
+    return { created, existing, skipped };
+
+  } finally {
+    await releaseProvisionerLease(db, lease);
+  }
 }

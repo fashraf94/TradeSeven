@@ -70,6 +70,7 @@ import { parse } from 'acorn';
 export const PROTECTED_COLLECTIONS = new Set([
   'agents', 'rules', 'bundles', 'compiledBuilds',
   'composition', 'compositionCandidateState', 'compositionEpochOverrides',
+  'compositionProvisionerLeases', // B2 (PR 4): the provisioner-lease registry — part of the fence surface
 ]);
 export const WRITE_METHODS = new Set(['set', 'update', 'create', 'delete', 'add']);
 const HANDLE_RE = /^(tx|txn|transaction|batch|writeBatch)$/;

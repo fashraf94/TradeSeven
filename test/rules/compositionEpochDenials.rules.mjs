@@ -28,7 +28,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const RULES_PATH = resolve(__dirname, '../../firestore.rules');
+// B9 (PR 4): the runbook's deploy-record-smoke gate runs this suite against
+// the DEPLOYED rules text, not the repo text — export the fetched text to a
+// file and point COMPOSITION_RULES_TEXT_PATH at it (the gate records that
+// file's sha256 as smoke.rulesTextSha256). Default: the repo text (CI).
+const RULES_PATH = process.env.COMPOSITION_RULES_TEXT_PATH
+  ? resolve(process.env.COMPOSITION_RULES_TEXT_PATH)
+  : resolve(__dirname, '../../firestore.rules');
 
 const OWNER_UID = 'composition-owner-1';
 const AGENT_PATH = `agents/comp-agent-1`;

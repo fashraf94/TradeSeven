@@ -76,7 +76,10 @@ describe('A46 — the writer census is complete and mechanically derived', () =>
   it('the deploy gate and background/CLI writers carry their declared guards', () => {
     expect(read('api/_utils/deployBuildValidation.js')).toContain('validateWriteEpochInTx');
     for (const loop of CENSUS.backgroundLoops) {
-      expect(read(loop.file), `${loop.file} missing loop guard`).toContain('assertWriteEpochOpen');
+      // B2 (PR 4): each row DECLARES its guard mechanism — the PR-2 epoch
+      // re-read (assertWriteEpochOpen) or the B2 registered lease
+      // (acquireProvisionerLease). The declared token must be present.
+      expect(read(loop.file), `${loop.file} missing loop guard (${loop.guardToken})`).toContain(loop.guardToken ?? 'assertWriteEpochOpen');
     }
     for (const cli of CENSUS.adminCliScripts) {
       expect(read(cli.file), `${cli.file} missing CLI guard`).toContain('assertWriteEpochOpen');
