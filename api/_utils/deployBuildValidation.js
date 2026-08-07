@@ -45,6 +45,7 @@ import {
   prepareCompileInputs,
   writeCompiledBuildsInTx,
   registryIdentityHash,
+  buildProjectedCompileInputs,
 } from './compileOnSettingsChange.js';
 import {
   RULE_LIBRARY_VERSION,
@@ -152,6 +153,17 @@ export async function ensureDeployableCompiledBuild({
             gameModePolicyVersion: GAME_MODE_POLICY_VERSION,
             gameModePolicyHash: computeGameModePolicyHash(gameMode),
             bundleContentHashes: liveBundleHashes,
+            // PR 3.5 (unified projection): with the candidate reads present,
+            // expected carries the LIVE projection hash — a stored build
+            // missing it (or carrying a stale one) reads as staleness and
+            // recompiles. Absent while dark, so legacy comparison unchanged.
+            ...(inputs.ruleDocs !== undefined && inputs.allBundles !== undefined ? {
+              projectedRulesHash: buildProjectedCompileInputs({
+                agent: { equippedTraits: agent.equippedTraits ?? [] },
+                ruleDocs: inputs.ruleDocs, allBundles: inputs.allBundles,
+                archetype: agent.archetype ?? null,
+              }).projectedRulesHash,
+            } : {}),
           };
           const mismatches = diffSourceRevisionVector(stored.sourceRevisionVector, expected);
           if (mismatches.length === 0) {
@@ -173,6 +185,9 @@ export async function ensureDeployableCompiledBuild({
           agent,
           nextState: {},
           bundles: inputs.bundles,
+          // PR 3.5: the candidate-mode projection inputs (absent while dark)
+          ruleDocs: inputs.ruleDocs ?? null,
+          allBundles: inputs.allBundles ?? null,
           enabled: true,
           nowIso: new Date().toISOString(),
           revision: 'current',

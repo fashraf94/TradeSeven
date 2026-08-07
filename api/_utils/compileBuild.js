@@ -153,16 +153,31 @@ export function compileBuild({
       `delta parentIdentityVersion ${delta.parentIdentityVersion} vs definition identityVersion ${def.identityVersion}`);
   }
 
-  // ── Assemble the equipped rule set from the frozen bundle snapshots (the
-  // authority — census: rules are double-frozen via ruleSnapshots).
+  // ── Assemble the rule set. LEGACY (and dark): the frozen equipped-bundle
+  // snapshots (the double-freeze authority). PR 3.5 CANDIDATE MODE: the
+  // UNIFIED HOST PROJECTION (delta.projectedRules — trait + bundle channels,
+  // doc-authority, deduped by projectActiveRules' own semantics, host
+  // provenance retained). The projection is what actually BEHAVES at deploy;
+  // absent while dark, so legacy builds assemble byte-identically.
   const bundles = delta.equippedBundles ?? [];
   const ruleMetadata = delta.ruleMetadata ?? {};
   const compatCells = delta.compatCells ?? {};
   const rulesById = new Map();
-  for (const bundle of bundles) {
-    for (const snap of bundle.ruleSnapshots ?? []) {
-      if (!snap?.id || rulesById.has(snap.id)) continue;
-      rulesById.set(snap.id, { snapshot: snap, bundleId: bundle.bundleId });
+  if (Array.isArray(delta.projectedRules)) {
+    for (const pr of delta.projectedRules) {
+      if (!pr?.id || rulesById.has(pr.id)) continue;
+      rulesById.set(pr.id, {
+        snapshot: pr,
+        bundleId: pr.hostBundleId ?? null,
+        ...(pr.hostTraitId ? { traitId: pr.hostTraitId } : {}),
+      });
+    }
+  } else {
+    for (const bundle of bundles) {
+      for (const snap of bundle.ruleSnapshots ?? []) {
+        if (!snap?.id || rulesById.has(snap.id)) continue;
+        rulesById.set(snap.id, { snapshot: snap, bundleId: bundle.bundleId });
+      }
     }
   }
 
@@ -171,7 +186,7 @@ export function compileBuild({
   const tensionPairs = [];
   const compiledGuardrails = [];
 
-  for (const [ruleId, { snapshot, bundleId }] of rulesById) {
+  for (const [ruleId, { snapshot, bundleId, traitId }] of rulesById) {
     const meta = ruleMetadata[ruleId];
 
     // §5.6 required base metadata — never defaulted.
@@ -218,6 +233,9 @@ export function compileBuild({
     const candidateCarriage = {
       ...('advisory' in cell ? { advisory: cell.advisory ?? null } : {}),
       ...('narrowedParams' in cell ? { narrowedParams: cell.narrowedParams ?? null } : {}),
+      // PR 3.5: trait-host provenance (unified projection only — absent on
+      // every legacy entry, so dark builds gain no key).
+      ...(traitId ? { hostTraitId: traitId } : {}),
     };
 
     // §5.4: tie_breaker intendedMode is legal only for lean-class content.
@@ -439,6 +457,10 @@ export function compileBuild({
     gameMode,
     gameModePolicyVersion: gameModePolicy?.gameModePolicyVersion ?? null,
     gameModePolicyHash: gameModePolicyHash ?? null,
+    // PR 3.5 (unified projection): the projected-payload hash — a trait-doc
+    // or draft-bundle edit stales a candidate build (the equipped-bundle
+    // hashes alone cannot see them). Key absent while dark.
+    ...(delta.projectedRulesHash ? { projectedRulesHash: delta.projectedRulesHash } : {}),
   };
 
   const build = {

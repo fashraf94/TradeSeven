@@ -17,6 +17,7 @@ vi.mock('../_utils/compositionConfig.js', () => ({
   get COMPOSITION_ENFORCEMENT_MODE() { return flagState.mode; },
   get COMPOSITION_EPOCH_FENCE_ENABLED() { return flagState.fence; },
   get COMPOSITION_MIGRATION_FEED_ENABLED() { return false; },
+  get COMPOSITION_COMPILED_IDENTITY_ENABLED() { return false; },
 }));
 
 let activeFirestore = null;

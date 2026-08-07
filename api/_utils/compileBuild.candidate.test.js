@@ -24,6 +24,7 @@ import {
   FIXTURE_NOW, fixtureVersions, fixturePlatformGuardrails,
 } from './compilerFixtures.js';
 import { getGameModePolicy, computeGameModePolicyHash } from './gameModePolicy.js';
+import * as compileOnSettingsChange from './compileOnSettingsChange.js';
 
 const COMPLETE_META = Object.freeze({
   intendedMode: 'behavioral_guidance', copyClass: 'advisory', receiptTag: 'fixture_tag', modes: 'clash',
@@ -219,5 +220,117 @@ describe('a BLOCKED tension rule never rides renderedTensionCandidates (design r
     expect(blocked.renderedTensionCandidates.some((t) => t.ruleId === 'rd3')).toBe(false);
     const clean = candidateCompile({ archetype: 'momentum_chaser', snaps: [snap('rd3', 'alloc-sector-cap', { pct: 60 })] });
     expect(clean.renderedTensionCandidates.some((t) => t.ruleId === 'rd3')).toBe(true);
+  });
+});
+
+// ── PR 3.5: THE UNIFIED HOST PROJECTION (B4-TRAIT) ─────────────────────────
+
+const TRAIT_TENSION_DOC = {
+  id: 'td-tension', sourceRef: 'tv-01', traitId: 'trait-trend-rider',
+  paramValues: { low: 50, high: 70, weak: 40, stretched: 77 },
+  params: { low: {}, high: {}, weak: {}, stretched: {} },
+};
+const TRAIT_VIOLATING_DOC = {
+  // the PRE-repair analyst born-with value — the exact defect class the
+  // founder's profile ruling repaired; the compile boundary must catch it
+  id: 'td-oob', sourceRef: 'mb-01', traitId: 'trait-patient-holder',
+  paramValues: { minutes: 90 }, params: { minutes: {} },
+};
+
+function projectedCompile({ archetype, equippedTraits, ruleDocs, allBundles = [] }) {
+  const { buildProjectedCompileInputs } = compileOnSettingsChange;
+  const projected = buildProjectedCompileInputs({ agent: { equippedTraits }, ruleDocs, allBundles, archetype });
+  const ruleMetadata = {};
+  for (const pr of projected.projectedRules) ruleMetadata[pr.id] = { ...COMPLETE_META };
+  return compileBuild({
+    archetypeDefinition: { codeId: archetype, identityVersion: 2, identityHash: 'fixture-hash' },
+    userBuildDelta: {
+      agentId: 'fx-agent', settingsRev: 7,
+      parentArchetypeId: archetype, parentIdentityVersion: 2,
+      equippedBundles: allBundles.filter((b) => b.status === 'equipped'),
+      ruleMetadata, compatCells: projected.compatCells,
+      projectedRules: projected.projectedRules, projectedRulesHash: projected.projectedRulesHash,
+      userGuardrails: [],
+    },
+    platformGuardrails: fixturePlatformGuardrails,
+    gameModePolicy: getGameModePolicy('clash'),
+    gameModePolicyHash: computeGameModePolicyHash('clash'),
+    versions: fixtureVersions,
+    now: FIXTURE_NOW,
+  });
+}
+
+describe('B4-TRAIT — the unified host projection (trait + bundle channels, one selection kernel)', () => {
+  it('a TRAIT-hosted tension rule compiles with its advisory + hostTraitId provenance (no bundleId)', () => {
+    const build = projectedCompile({
+      archetype: 'momentum_chaser',
+      equippedTraits: [{ traitId: 'trait-trend-rider' }],
+      ruleDocs: [TRAIT_TENSION_DOC],
+    });
+    const v = build.compatVerdicts.find((x) => x.ruleId === 'td-tension');
+    expect(v.verdict).toBe('tension');
+    expect(v.hostTraitId).toBe('trait-trend-rider');
+    expect(v.bundleId).toBeNull();
+    expect(v.advisory).toMatch(/late-extension caution/);
+    expect(v.narrowedParams).toEqual({ stretched: { min: 75, max: 85 } });
+    expect(build.quarantined).toBeUndefined();
+  });
+
+  it('A7 rides the trait channel: an out-of-domain TRAIT-hosted persisted value quarantines the build (the pre-repair analyst born-with class)', () => {
+    const build = projectedCompile({
+      archetype: 'analyst',
+      equippedTraits: [{ traitId: 'trait-patient-holder' }],
+      ruleDocs: [TRAIT_VIOLATING_DOC],
+    });
+    expect(build.validation.errors.some((e) => e.code === 'param_out_of_domain' && e.ruleId === 'td-oob' && e.detail === 'paramValues.minutes')).toBe(true);
+    expect(build.quarantined).toBe(true);
+    const v = build.compatVerdicts.find((x) => x.ruleId === 'td-oob');
+    expect(v.blocked).toBe(true);
+    expect(v.hostTraitId).toBe('trait-patient-holder');
+    expect(isCompiledBuildAdmissible(build)).toBe(false); // A15 extends over the trait channel
+  });
+
+  it('the unified UNIVERSE: a DRAFT bundle rule doc compiles too (what projects, behaves — no channel is invisible)', () => {
+    const draftDoc = { id: 'dd1', sourceRef: 'alloc-sector-cap', paramValues: { pct: 60 }, params: { sector: {}, pct: {} } };
+    const build = projectedCompile({
+      archetype: 'momentum_chaser',
+      equippedTraits: [],
+      ruleDocs: [draftDoc],
+      allBundles: [{ id: 'b-draft', bundleId: 'b-draft', status: 'draft', ruleIds: ['dd1'], ruleSnapshots: [] }],
+    });
+    const v = build.compatVerdicts.find((x) => x.ruleId === 'dd1');
+    expect(v.verdict).toBe('tension');
+    expect(v.bundleId).toBe('b-draft');
+    expect(v.hostTraitId).toBeUndefined();
+  });
+
+  it('DEDUPE / A13 at the compile layer: a trait doc ALSO in a bundle appears EXACTLY once (trait channel — projectActiveRules semantics, no second kernel)', () => {
+    const build = projectedCompile({
+      archetype: 'momentum_chaser',
+      equippedTraits: [{ traitId: 'trait-trend-rider' }],
+      ruleDocs: [TRAIT_TENSION_DOC],
+      allBundles: [{ id: 'b1', bundleId: 'b1', status: 'forged', ruleIds: ['td-tension'], ruleSnapshots: [] }],
+    });
+    const entries = build.compatVerdicts.filter((x) => x.ruleId === 'td-tension');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].hostTraitId).toBe('trait-trend-rider'); // trait channel wins by construction
+  });
+
+  it('the freshness vector carries projectedRulesHash — and it MOVES when a trait doc param changes', () => {
+    const b1 = projectedCompile({ archetype: 'momentum_chaser', equippedTraits: [{ traitId: 'trait-trend-rider' }], ruleDocs: [TRAIT_TENSION_DOC] });
+    const b2 = projectedCompile({ archetype: 'momentum_chaser', equippedTraits: [{ traitId: 'trait-trend-rider' }], ruleDocs: [{ ...TRAIT_TENSION_DOC, paramValues: { ...TRAIT_TENSION_DOC.paramValues, stretched: 80 } }] });
+    expect(typeof b1.sourceRevisionVector.projectedRulesHash).toBe('string');
+    expect(b1.sourceRevisionVector.projectedRulesHash).not.toBe(b2.sourceRevisionVector.projectedRulesHash);
+    expect(b1.contentHash).not.toBe(b2.contentHash);
+  });
+
+  it('metadata for a trait doc resolves by SOURCEREF (real template metadata reaches trait rules)', async () => {
+    const { buildProjectedCompileInputs } = compileOnSettingsChange;
+    const { ruleMetadata } = buildProjectedCompileInputs({
+      agent: { equippedTraits: [{ traitId: 'trait-patient-holder' }] },
+      ruleDocs: [TRAIT_VIOLATING_DOC], allBundles: [], archetype: 'analyst',
+    });
+    expect(ruleMetadata['td-oob']).toBeTruthy();
+    expect(ruleMetadata['td-oob'].modes).toBe('clash'); // mb-01's real corpus modes field
   });
 });

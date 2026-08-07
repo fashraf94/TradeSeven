@@ -214,6 +214,9 @@ export default async function handler(req, res) {
         agent,
         nextState: 'deployedStrategy' in set ? { deployedStrategy: set.deployedStrategy } : {},
         bundles: compileInputs?.bundles,
+        // PR 3.5: candidate-mode projection inputs (absent while dark)
+        ruleDocs: compileInputs?.ruleDocs ?? null,
+        allBundles: compileInputs?.allBundles ?? null,
         enabled: COMPILER_ENABLED,
         nowIso,
       });
