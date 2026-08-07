@@ -330,10 +330,13 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
       // §7.2 (founder ruling, June 12, 2026): refuse to finalize a week whose
       // final snapshot is degraded (agentScoresCarried) — the composite may be
       // missing agent-layer points and completion is irreversible. Defer
-      // loudly; the next banking pass self-heals the snapshot and the
-      // idempotent finalization lands clean.
+      // loudly. L-B B-F3 (founder ruling, Aug 2026): a DAY-5 carry does NOT
+      // self-heal — the old heal (banking day 6 fresh) made day 6 the week's
+      // result and was the contamination mechanism the banking clamp retires.
+      // A degraded final PAUSES the week pending MANUAL review; the log below
+      // must stay distinguishable from banking's stalled-finalizer clamp line.
       if (isFinalSnapshotDegraded(group)) {
-        console.error(`${LOG_PREFIX} base-layer group ${group.id}: DEGRADED FINAL SNAPSHOT (agentScoresCarried) — finalization REFUSED this tick; banking self-heals next pass (§7.2)`);
+        console.error(`${LOG_PREFIX} base-layer group ${group.id}: final snapshot degraded (agentScoresCarried) — needs MANUAL REVIEW; finalization REFUSED, no self-heal past day 5 (§7.2 / L-B B-F3)`);
         summary.degradedLocks++;
         continue;
       }
@@ -637,9 +640,11 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
         // so refuse to lock a degraded final snapshot (agentScoresCarried) —
         // the composite of record may be missing agent-layer points. Defer
         // loudly and leave the game unlocked (the group stays in the battle
-        // query); the next banking pass self-heals and the lock lands clean.
+        // query). L-B B-F3 (founder ruling, Aug 2026): a DAY-5 carry does NOT
+        // self-heal (that heal was the day-6 contamination, retired by the
+        // banking clamp) — it pauses the week pending MANUAL review.
         if (isFinalSnapshotDegraded(group)) {
-          console.error(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: DEGRADED FINAL SNAPSHOT (agentScoresCarried) — lock REFUSED this tick; banking self-heals next pass (§7.2)`);
+          console.error(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: final snapshot degraded (agentScoresCarried) — needs MANUAL REVIEW; lock REFUSED, no self-heal past day 5 (§7.2 / L-B B-F3)`);
           summary.degradedLocks++;
           continue;
         }

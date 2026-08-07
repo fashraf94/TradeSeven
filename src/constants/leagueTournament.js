@@ -1289,9 +1289,13 @@ export function isWeekBanked(group) {
  * §7.2 (founder ruling, June 12, 2026): a week whose FINAL banked snapshot
  * carries the banking degrade marker (`agentScoresCarried` — the agent layer
  * was carried/zeroed, not freshly read) must NOT lock. The composite of
- * record may be missing agent-layer points, and the bracket lock is permanent
- * — so the irreversible decision waits for a clean (non-carried) agent-layer
- * read, which the next banking pass self-heals. Pure; the advancement gates
+ * record may be missing agent-layer points, and the bracket lock is permanent.
+ * A MID-WEEK carry is transient (the next in-week bank supersedes it), but a
+ * DAY-5 carry PAUSES the week pending MANUAL REVIEW (B-F3 founder ruling,
+ * Aug 2026): the old "self-heal" — banking day 6 fresh — made day 6 the
+ * week's result, i.e. it WAS the contamination mechanism the L-B clamp
+ * retires; a degraded final is a human-judgment condition, deliberately
+ * without an automated heal path. Pure; the advancement gates
  * every `lockTopTwo`/finalization site on the negation of this.
  */
 export function isFinalSnapshotDegraded(group) {

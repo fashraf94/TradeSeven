@@ -463,7 +463,8 @@ export async function bankAllTournamentGroups(db, { now = new Date() } = {}) {
         console.error(
           `[TournamentBanking] group ${group.id} clamped (week_complete_clamp): week fully banked at ` +
           `${result.dayKey}/${WEEK_DAYS_REQUIRED} but status is still BATTLE — the finalizer appears STALLED; ` +
-          `investigate advancement for this group.`,
+          `investigate the advancement freeze for this group. (Distinct condition: a "final snapshot ` +
+          `degraded — needs MANUAL REVIEW" line from advancement means §7.2, not a stall.)`,
         );
       }
       // Warnings die with the invocation unless said here (code review:

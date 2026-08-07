@@ -774,7 +774,7 @@ describe('P6a side-effects — rank apply + leaderboard final upsert ride the Fr
     expect(store.get('tournamentLeaderboards/2026-06')).toBeUndefined();
   });
 
-  it('DEGRADED LOCK REFUSAL (§7.2): a degraded final snapshot (agentScoresCarried) does NOT lock — defers, counts, self-heals next pass', async () => {
+  it('DEGRADED LOCK REFUSAL (§7.2): a degraded final snapshot (agentScoresCarried) does NOT lock — defers, counts, pauses for manual review (L-B B-F3: no self-heal past day 5)', async () => {
     const { db, store } = seededBracketDb();
     store.get('tournamentGroups/b-r1-g1').dailyScores.day5.agentScoresCarried = true;
 
@@ -789,7 +789,10 @@ describe('P6a side-effects — rank apply + leaderboard final upsert ride the Fr
     // No rank/leaderboard side-effects from a refused lock.
     expect(store.get('tournamentRanks/founder')).toBeUndefined();
 
-    // Banking self-heals the snapshot overnight; the next pass locks clean.
+    // The MANUAL-REVIEW resolution (L-B B-F3: banking no longer heals a day-5
+    // carry — that day-6 heal was the contamination): an operator clears the
+    // marker after review; the next pass locks clean. This models the human
+    // step, not an automated pass.
     delete store.get('tournamentGroups/b-r1-g1').dailyScores.day5.agentScoresCarried;
     const second = await runFridayAdvancement(db, { now: NOW });
     expect(second.degradedLocks).toBe(0);
