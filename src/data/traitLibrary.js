@@ -33,12 +33,12 @@ const INSTINCT_TRAITS = [
       moderate: {
         'tech-moving-average-trend': { period: '50', requireAlignment: true },
         't-09': { pct: 0.4 },
-        'tv-01': { low: 50, high: 70, weak: 40, stretched: 75 },
+        'tv-01': { low: 50, high: 70, weak: 40, stretched: 77 },
       },
       dominant: {
         'tech-moving-average-trend': { period: '200', requireAlignment: true },
         't-09': { pct: 0.3 },
-        'tv-01': { low: 55, high: 65, weak: 45, stretched: 70 },
+        'tv-01': { low: 55, high: 65, weak: 45, stretched: 75 },
       },
     },
   },
@@ -225,15 +225,15 @@ const STRATEGY_TRAITS = [
     ruleIds: ['tv-10', 'tv-12'],
     strengthProfiles: {
       subtle: {
-        'tv-10': { fund_score: 55, tech_score: 50 },
+        'tv-10': { fund_score: 71, tech_score: 50 },
         'tv-12': { tech: 50, rsi_low: 40, rsi_high: 75, vol: 1.1 },
       },
       moderate: {
-        'tv-10': { fund_score: 65, tech_score: 60 },
+        'tv-10': { fund_score: 75, tech_score: 60 },
         'tv-12': { tech: 60, rsi_low: 45, rsi_high: 70, vol: 1.2 },
       },
       dominant: {
-        'tv-10': { fund_score: 75, tech_score: 70 },
+        'tv-10': { fund_score: 80, tech_score: 70 },
         'tv-12': { tech: 70, rsi_low: 50, rsi_high: 65, vol: 1.5 },
       },
     },
@@ -359,17 +359,17 @@ const DISCIPLINE_TRAITS = [
     ruleIds: ['mb-01', 'mb-08', 'tv-03'],
     strengthProfiles: {
       subtle: {
-        'mb-01': { minutes: 45 },
+        'mb-01': { minutes: 30 },
         'mb-08': { threshold: 'Double Bagger (+1.5x)' },
         'tv-03': { score: 50, minutes: 90 },
       },
       moderate: {
-        'mb-01': { minutes: 90 },
+        'mb-01': { minutes: 45 },
         'mb-08': { threshold: 'BaggerBomb (+1.0x)' },
         'tv-03': { score: 60, minutes: 120 },
       },
       dominant: {
-        'mb-01': { minutes: 150 },
+        'mb-01': { minutes: 60 },
         'mb-08': { threshold: 'BaggerBomb (+1.0x)' },
         'tv-03': { score: 55, minutes: 180 },
       },
