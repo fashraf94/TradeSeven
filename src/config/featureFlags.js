@@ -929,29 +929,30 @@ export const REGIME_STAMP_ENABLED = false;
 export const OPENER_LAZY_FALLBACK_ENABLED = true;
 
 /**
- * League Tournament — EMERGENCY ADVANCEMENT FREEZE (tourniquet, not a cure).
+ * League Tournament — advancement freeze, UNFROZEN 2026-08-07 (was an emergency
+ * tourniquet; lifted after adjudication). The functional change here is the single
+ * flag value; the rest is truthful history for future readers.
  *
- * The scoring-model anomaly (docs/audits/LEAGUE_SCORING_ANOMALY_* ) lets
- * poisoned composites accumulate on in-flight groups. This flag freezes the
- * irreversible consumers of those composites BEFORE the day-5 ingestion:
- * bracket advancement + finalScores, the career-rank ratchet (appliedGroups),
- * and the seasonal-leaderboard week-row upsert for non-training battle groups.
- * Banking is NOT touched — daily scores keep recording. The actual scoring
- * fix is a separate §7 pass, sequenced after this deploys and the poisoned
- * pods are voided.
+ * HISTORY. The scoring-model anomaly (docs/audits/LEAGUE_SCORING_ANOMALY_* ) let
+ * poisoned composites accumulate on in-flight groups, so this flag froze the
+ * irreversible consumers of those composites BEFORE the day-5 ingestion: bracket
+ * advancement + finalScores, the career-rank ratchet (appliedGroups), and the
+ * seasonal-leaderboard week-row upsert for non-training battle groups. Banking was
+ * never touched — daily scores kept recording. Guarded call sites: runFridayAdvancement
+ * (primary), runWeekSideEffects (defense-in-depth belt), and upsertLeaderboardForGroups
+ * (both leaderboard call sites at one knowledge point). When frozen, each logged
+ * loudly and returned without writes.
  *
- * DEFAULT = TRUE, and that inversion of the usual dark-launch default is
- * INTENTIONAL: the safe state is "do not advance". Guarded call sites:
- * runFridayAdvancement (primary), runWeekSideEffects (defense-in-depth belt),
- * and upsertLeaderboardForGroups (both leaderboard call sites at one knowledge
- * point). When frozen, each logs loudly and returns without writes.
- *
- * UNFREEZE (a later PR, founder-gated): flip to false ONLY after re-verifying
- * no group in status=='battle' predates the scoring fix — the poisoned cohort
- * must be voided first (latest-snapshot locking makes an un-voided group lock
- * at its unfreeze-day standing, not day-5).
+ * UNFREEZE (this change, founder-gated). Adjudicated in
+ * docs/audits/20260807_LC_UNFREEZE_ADJUDICATION_CLOSEOUT_V1.md: no scoring-model
+ * defect was identified (the §7 pass reduces to "confirm no model change needed"),
+ * the poisoned cohort was voided (L-A) and recurrence bounded (L-B Guards 1/2), and
+ * the status=='battle' enumeration was empty — re-verified immediately before merge
+ * (scripts/lc-fork-adjudication.js Part A), the one time-sensitive precondition. On a
+ * zero-BATTLE board the flip is a write no-op (tournamentAdvancement.test.js:281);
+ * its first real effect is the next cohort's day-5 Friday close.
  */
-export const TOURNAMENT_ADVANCEMENT_FROZEN = true;
+export const TOURNAMENT_ADVANCEMENT_FROZEN = false;
 
 /**
  * Agent Presence — the reactive agent FACE (expression rig + mood baseline + event
