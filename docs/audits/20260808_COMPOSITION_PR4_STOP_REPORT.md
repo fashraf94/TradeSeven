@@ -1,18 +1,19 @@
 # Composition PR 4 — STOP Report (the identity event, deployed INACTIVE)
 
-**Date:** Aug 8, 2026 · **Branch:** `claude/composition-pr4-identity-event` @ **`d6c292ed`** (13 commits; base `origin/main` @ `3c396b14`) · **Pushed at STOP — NO PR opened.** · **Supersedes** every earlier revision of this report: this one reflects the tree AFTER Sol's CONFIRMATION PASS fold (batch 12).
+**Date:** Aug 8, 2026 · **Branch:** `claude/composition-pr4-identity-event` @ **`e27d2ce5`** (15 commits; base `origin/main` @ `3c396b14`) · **Pushed at STOP — NO PR opened.** · **Supersedes** every earlier revision of this report: this one reflects the tree AFTER Sol's CLEARANCE PASS fold (batch 13) — **Sol's verdict pre-commits CLEARED FOR ACTIVATION on this fold's landing.**
 
 **Review record:** `docs/audits/20260807_COMPOSITION_PR4_CODE_REVIEW.md` (the §2 two‑pass adversarial review + the Sol‑12 fold table + the Sol‑re‑review‑9 fold table). **Runbook:** `docs/composition/ACTIVATION_RUNBOOK.md`. **Ledger:** `docs/composition/ACTIVATION_PRECONDITIONS.md`.
 
 ## Status — nothing pending a ruling
 
-| Review round | Outcome | State at `d6c292ed` |
+| Review round | Outcome | State at `e27d2ce5` |
 |---|---|---|
 | Founder rulings (Aug 7) | Substitutions RATIFIED · §7 sign‑off GRANTED · F2 ruled GENESIS · L1‑1 ruled no‑gate | All folded (batches 3–9) |
 | §2 two‑pass adversarial review | 18 findings | All fixed/disclosed; 13 mutations killed |
 | Sol pre‑activation review (Aug 8) | 12 findings, all valid | All folded (batch 10); Sol confirms **10 of 12 fully closed**, residual = rollback execution + temporary write windows |
 | Sol second re‑review (Aug 8) | 9 findings accepted (5 code + 4 runbook) | All folded (batch 11) |
-| Sol confirmation pass (Aug 8) | **2 blockers (defects in the round‑11 fixes) + 1 major + 1 note + 1 minor; everything else CLEARED** (probe state survived attack; malformed fail‑closed accepted; `--during-close` closed) | **All folded (batch 12)** — this report's delta |
+| Sol confirmation pass (Aug 8) | 2 blockers (defects in the round‑11 fixes) + 1 major + 1 note + 1 minor; everything else CLEARED (probe state survived attack; malformed fail‑closed accepted; `--during-close` closed) | All folded (batch 12) |
+| Sol clearance pass (Aug 8) | **2 runbook text fixes + the standing guard; CLEARED FOR ACTIVATION pre‑committed on their landing.** All six pre‑activation blockers and every batch‑12 mechanism accepted — client token race, probe admission, malformed fail‑closed, genesis, FC‑1, the fence incarnation | **All folded (batch 13)** — this report's delta |
 
 ## Executive verdict
 
@@ -24,6 +25,14 @@
 | D. Flip obligations | ✅ ON‑state goldens promoted; endpoint tx fakes reconciled; F7 candidate round‑trip + record‑state + malformed‑reject rows |
 | E. Runbook | ✅ steps −1 → 9 + THE ROLLBACK PROTOCOL (Rollback‑A/B) + the 8A/8B split on the mechanical probe gate; strict run log |
 | Dark guarantee | ✅ flags dark, no record, no epoch doc: byte‑identical (zero added keys, zero added reads on server paths — falsifiable via the read‑logging fixture); full suite **7,386 passed / 53 skipped**; rules emulator **133/133**; `vite build` clean |
+
+## The batch‑13 delta — Sol's clearance pass, all folded
+
+**Blocker (text): the raw reopen.** Step 1's ROLLBACK POINT still instructed `{state:'open', epochId:E0}` by hand — literal execution would have skipped the incarnation mint and resurrected the ABA batch 12 removed. The line now routes through **`transitionWriteEpoch`** and the step explicitly **verifies + logs the returned `fenceGeneration: 2`**. The whole‑runbook sweep (per Sol's instruction, thorough) found NO other raw epoch‑state mutation: every one of the nine transitions already routed through the helper, and step 2's rollback reference was made explicit.
+
+**Sol's guard (standing CI, both halves).** `compositionRunbookGates.test.js` now forbids raw `composition/writeEpoch` state mutations outside `transitionWriteEpoch`: the EXECUTABLE‑CODE half sweeps api/ + scripts/ for every write shape against `writeEpochRef`/`doc('writeEpoch')` and requires the single legal site to sit inside the helper's body; the RUNBOOK half fails any `{state:...}` line lacking `transitionWriteEpoch`, with a helper‑presence non‑vacuity floor. **Both halves mutation‑killed** — a planted raw `tx.set(writeEpochRef(db), …)` in another module and a planted raw instruction line in the runbook each failed the guard; originals restored and residue‑checked.
+
+**Major (text):** the rollback protocol's scope statement replaced the stale "clone paths inherit the source's stamps" with the batch‑12 BL2 semantics — every fresh identity, including a newly created clone, stamps its OWN current birth descriptor; loadout lineage lives in `loadoutSourceIdentityVersion`/`loadoutSourceActivationGeneration`; a re‑sync preserves the existing clone's birth stamp.
 
 ## The batch‑12 delta — Sol's confirmation pass, all folded
 
@@ -64,6 +73,6 @@
 2. **X6** — endpoint candidate compiles carry `metadata_missing` until the separately‑sequenced base‑metadata arc.
 3. **Arbitrary‑generation rollback (#12)** stays FILED behind immutable per‑revision override snapshots / a frozen final epoch revision; this event claims rollback‑to‑genesis (2 → 1) only.
 
-## Verification (HEAD `d6c292ed`)
+## Verification (HEAD `e27d2ce5`)
 
-Full vitest **7,386 passed / 53 skipped** (439 files) · rules emulator **133/133** (incl. the BL1 incarnation‑ABA row, the BL2 forged‑provenance + update‑immutability rows, the straddle + probe rows) · `vite build` clean · registry catalog lock green · the B3 ratchet caught batch 12's one new write site (`transitionWriteEpoch` — reviewed + listed), continuing its every‑round record · cumulative diff ~77 files / ~20k insertions.
+Full vitest **7,388 passed / 53 skipped** (439 files; +2 guard rows) · rules emulator **133/133** (incl. the BL1 incarnation‑ABA row, the BL2 forged‑provenance + update‑immutability rows, the straddle + probe rows) · `vite build` clean · registry catalog lock green · the B3 ratchet caught batch 12's one new write site (`transitionWriteEpoch` — reviewed + listed), continuing its every‑round record · cumulative diff ~77 files / ~20k insertions. **With this fold, every finding from every round is closed — the branch stands at Sol's pre‑committed CLEARED FOR ACTIVATION, awaiting the founder's merge.**
