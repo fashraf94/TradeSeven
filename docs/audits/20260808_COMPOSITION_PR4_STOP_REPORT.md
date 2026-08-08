@@ -1,92 +1,56 @@
 # Composition PR 4 — STOP Report (the identity event, deployed INACTIVE)
 
-**Date:** Aug 8, 2026 · **Branch:** `claude/composition-pr4-identity-event` @ **`dd907699`** (10 commits; base `origin/main` @ `3c396b14`) · **Pushed at STOP — NO PR opened.** · **Supersedes** the Aug‑7 chat‑only STOP report (that version predated the F2 genesis fold and Sol's pre‑activation review; this one is the record of the tree as it actually stands and is committed to `docs/audits/`).
+**Date:** Aug 8, 2026 · **Branch:** `claude/composition-pr4-identity-event` @ **`55943b6d`** (11 commits; base `origin/main` @ `3c396b14`) · **Pushed at STOP — NO PR opened.** · **Supersedes** the earlier revisions of this report (the Aug‑7 chat‑only version and the `dd907699` revision): this one reflects the tree AFTER Sol's second re‑review fold.
 
-**Review record:** `docs/audits/20260807_COMPOSITION_PR4_CODE_REVIEW.md` (the §2 two‑pass adversarial review + the Sol‑12 fold table). **Runbook:** `docs/composition/ACTIVATION_RUNBOOK.md`. **Ledger:** `docs/composition/ACTIVATION_PRECONDITIONS.md`.
+**Review record:** `docs/audits/20260807_COMPOSITION_PR4_CODE_REVIEW.md` (the §2 two‑pass adversarial review + the Sol‑12 fold table + the Sol‑re‑review‑9 fold table). **Runbook:** `docs/composition/ACTIVATION_RUNBOOK.md`. **Ledger:** `docs/composition/ACTIVATION_PRECONDITIONS.md`.
 
-## Status — nothing is pending a ruling
+## Status — nothing pending a ruling
 
-Every open item from the Aug‑7 report has since been ruled or granted by the founder and folded into the tree; Sol's Aug‑8 pre‑activation review returned 12 findings, all folded. This report records the delivered state, not a request.
-
-| Was pending (Aug 7) | Ruling / grant | State at `dd907699` |
+| Review round | Outcome | State at `55943b6d` |
 |---|---|---|
-| 7 substitutions (incl. the 2 beyond item 6) | **RATIFIED** as tabled; reshaped card copy approved | Landed in the candidate defaults object; complete‑set birth equality proven both sides |
-| The one §7 fenced sign‑off | **GRANTED** over all three contacts incl. the pass‑2 flow‑pin widening | decide.js splice + FC‑1 + manifest stamp; logic in the dark module |
-| F2 — first‑activation rollback (unwritten) | **RULED: GENESIS DESCRIPTOR**, not fix‑forward | `writeGenesisDescriptor` + loader base‑only + rollback‑to‑genesis rows |
-| L1‑1 — the client birth read | **RULED: no client gate** (A48 stands); window closes operationally | Time‑boxed read + runbook step −1 (rules deploy minutes after merge) |
-| Sol pre‑activation review (Aug 8) | 12 findings, all valid | All 12 folded (batch 10) |
+| Founder rulings (Aug 7) | Substitutions RATIFIED · §7 sign‑off GRANTED · F2 ruled GENESIS · L1‑1 ruled no‑gate | All folded (batches 3–9) |
+| §2 two‑pass adversarial review | 18 findings | All fixed/disclosed; 13 mutations killed |
+| Sol pre‑activation review (Aug 8) | 12 findings, all valid | All folded (batch 10); Sol confirms **10 of 12 fully closed**, residual = rollback execution + temporary write windows |
+| Sol second re‑review (Aug 8) | **9 findings accepted (5 code + 4 runbook)** | **All folded (batch 11)** — this report's delta |
 
 ## Executive verdict
 
 | Area | Status |
 |---|---|
-| A. Identity artifacts (inactive) | ✅ v3 minted alongside v1+v2; catalog CI lock; version‑parameterized resolver (A48 posture); activation record service (7‑field descriptor); candidate defaults object (A24); **genesis descriptor** (F2) |
-| B. Fenced work (ONE §7 sign‑off) | ✅ decide.js splice (both directions) + the FC‑1 flow‑pin threading; FC‑1‑CLOSE; manifest shape — minimal fenced diffs, logic in `compositionGenerationFence.js` |
-| C. Ledger PR‑4 rows | ✅ B1, B2, B4, M6, B9, M10, B1‑EXT, B3‑EXT, B8‑FINAL, A7‑LOCK, M7‑E2E, BARE‑CELL‑INVARIANT — with acceptance suites; FINAL‑DRYRUN is runbook‑time by design |
-| D. Flip obligations | ✅ ON‑state goldens promoted (record‑gated framing); endpoint tx fakes reconciled; F7 candidate round‑trip + record‑state rows |
-| E. Runbook | ✅ steps −1 → 9 + the ROLLBACK PROTOCOL + §10 8A/8B split; per‑step VERIFY + ROLLBACK; M10 checklist; run log |
-| Dark guarantee | ✅ flags dark, no record; full suite **7,374 passed / 53 skipped**; rules emulator 128/128; `vite build` clean; p4 goldens + honesty sweep byte‑green; "zero reads" now FALSIFIABLE (read‑logging fixture) |
+| A. Identity artifacts (inactive) | ✅ v3 minted alongside v1+v2; catalog CI lock; version‑parameterized resolver; activation record service (7‑field descriptor); candidate defaults object (A24); genesis descriptor (F2) |
+| B. Fenced work (ONE §7 sign‑off) | ✅ decide.js splice (both directions) + FC‑1 flow‑pin threading + the probe‑actor threading; FC‑1‑CLOSE; manifest shape — logic in `compositionGenerationFence.js` |
+| C. Ledger PR‑4 rows | ✅ B1, B2, B4, M6, B9, M10, B1‑EXT, B3‑EXT, B8‑FINAL, A7‑LOCK, M7‑E2E, BARE‑CELL‑INVARIANT — with acceptance suites |
+| D. Flip obligations | ✅ ON‑state goldens promoted; endpoint tx fakes reconciled; F7 candidate round‑trip + record‑state + malformed‑reject rows |
+| E. Runbook | ✅ steps −1 → 9 + THE ROLLBACK PROTOCOL (Rollback‑A/B) + the 8A/8B split on the mechanical probe gate; strict run log |
+| Dark guarantee | ✅ flags dark, no record, no epoch doc: byte‑identical (zero added keys, zero added reads on server paths — falsifiable via the read‑logging fixture); full suite **7,383 passed / 53 skipped**; rules emulator **130/130**; `vite build` clean |
 
-## The F2 GENESIS fold (founder ruling of record)
+## The batch‑11 delta — Sol's second re‑review, all 9 folded
 
-Before the first activation the runbook writes **generation 1 = the genesis descriptor** `{activeIdentityVersion: 2 (live), boundaryStateVersion: 1, candidateStateId: 'genesis', semanticHash: <reserved null‑sentinel>, activeEpochId: E0, overrideRevision: 0}`, paired in its own transaction with the OPEN epoch doc.
+**#1 CLIENT‑SDK EPOCH BINDING — verified, then built.** The verification answer: NO — the rules' `epochWriteOpen()` checked only `state == 'open'`; no client write carried an epoch token. Built: `captureWriteEpochToken()` captures `composition/writeEpoch.epochId` **when the mutation is formed** (time‑boxed; a failed capture yields a tokenless write, which post‑genesis is DENIED — fail closed, retryable); all **eleven** client‑SDK identity‑write sites stamp `writeEpochId` (`forgeService` ×8, `agentService.createAgent`, the `useTraits` param save, the `useForge` rename); the renamed **`epochWriteAdmitted()`** requires token EQUALITY whenever the epoch doc exists (absent = pre‑genesis fail‑open, byte‑identical today). **Emulator‑proven: an E0‑formed mutation submitted after E1 opens is DENIED at commit** — B1's "every identity write" closed on the one path no server pin can see.
 
-- **`writeGenesisDescriptor`** — first‑write‑only (an existing record aborts), open‑epoch‑paired in‑tx, so the write that arms B1's absent‑doc‑fails‑closed is born with the doc it fails closed without. The genesis ids are RESERVED at `writeActivationRecord` (no candidate run can masquerade).
-- **Loader** — genesis short‑circuits to BASE ONLY (zero layer reads; `genesis: true`; `resolveWith` identical to pre‑activation). The null‑sentinel is a reserved *string* (a null hash would be indistinguishable from a malformed record under the per‑field fail‑closed contract); half‑genesis descriptors are malformed and fail closed.
-- **Rollback is now representable at every generation.** First real activation = generation 2; `rollbackActivationRecord({toGeneration: 1})` restores the genesis world under a fresh generation — no special case, no tuple reuse. Proven rows: rollback‑to‑genesis (activation battery), base‑only (loader contract at gen 1 and a later generation), birth parity (server + client), genesis‑present pipeline (endpoints).
+**#4 PROBE‑ONLY GATE — mechanically enforced.** A new epoch state **`'probe'`** carrying `probeIdentities`: the server chokepoints (`validateWriteEpochInTx`, the provisioner‑lease acquisition) admit only a threaded, LISTED actor — `actor` is threaded through all 11 settings endpoints, decide's projection commit, both deploy gates, and casualClone; any unthreaded or unlisted writer rejects `probe_only` **fail‑closed by construction** ('probe' is present‑but‑not‑open to code that predates the arm). The rules layer requires `request.auth.uid ∈ probeIdentities` plus the current token. Negative controls on both halves (server: probe + non‑probe identity ⇒ 409, zero writes; emulator: unlisted uid denied, stale token denied). **Rollback‑B reuses this gate verbatim.**
 
-## The one §7 fenced sign‑off (granted)
+**#5 MALFORMED FAILS CLOSED at the compile boundary.** The four‑state contract, aligned with the production loader: no record → LIVE; valid genesis/v2 → LIVE; valid v3 → CANDIDATE; **present‑but‑malformed or unrecognized version → REJECT** (the catch‑to‑LIVE swallow is gone; a well‑formed record naming v5 throws too — never a silent cell‑source guess). Endpoint mutation rows: a malformed record and a v5 record each ⇒ non‑200 with zero agent/build writes.
 
-`api/agent/decide.js` (projection splice + the review‑F1 catch fix + the pass‑2 pin threading into both battle call sites), `api/_utils/agentBattleService.js` (FC‑1 pin/stamp/commit, 4 points), `api/_utils/agentEvalPromptAssembly.js` (1 call‑site edit), concept‑fence via `resolvedAgentManifest.js`. All logic lives in the dark module `compositionGenerationFence.js`; p4 goldens byte‑green; the diffs are in the audit's fence sweep.
+**#6 BIRTH PROVENANCE — stamped, not narrowed.** Every fresh born‑with seed stamps `identityVersionAtBirth` + `activationGenerationAtBirth`: server paths from their pinned descriptor (`birthProvenanceStamp`; dark ⇒ zero new keys, A23), the client birth from the record read (absent ⇒ zero keys), and clone paths INHERIT the source's stamps (`INHERITED_LOADOUT_FIELDS`; a reseeded training clone restamps at its own pin). The rollback protocol's reconciliation now **queries** these fields (`activationGenerationAtBirth >= <rolled‑from generation>`) — never trait‑id inference. The honest‑divergence regression row stays.
 
-## The seven substitutions (ratified — landed)
+**#8 THE NAMESPACE‑BELT MUTATION ROW.** The apply writer is extracted to `compositionCandidateApply.js` (entries‑first / sentinel‑last preserved); its mutation row redirects the write set toward `agents/*` and proves the run aborts **before any Firestore write lands** — zero writes. Cited next to #5 in runbook step 3.
 
-RED‑control scope finding: the live DEFAULT_TRAITS seed SEVEN non‑offerable rules — item 6's five plus `momentum_chaser/t‑09` and `contrarian/tv‑07`. All seven ratified under the 3.5 "premise disproven" precedent.
+**Runbook (#2/#3/#7/#9).** The rollback protocol now pauses + positively acknowledges ALL external admin **before** `state:'closing'` — in the numbered order, not by reference. Verification splits **Rollback‑A** (target epoch closed; read‑only loader/descriptor checks + the seed‑plan RESOLUTION) and **Rollback‑B** (the #4 probe gate on the restored epoch; provenance‑queried reconciliation; real birth/compile probes), mirroring 8A/8B on the same mechanism. Step 1's post‑close VERIFY uses the **non‑writing** seed‑plan resolution instead of a probe birth. The run log is strict‑ordered (−1 → 0 → … → 8A → 8B → 9) with R1–R8 rollback rows appended at invocation.
 
-| # | Host (archetype/trait) | OUT | IN | Ladder (subtle/moderate/dominant) |
-|---|---|---|---|---|
-| 1 | guardian / Steady Anchor | `risk-single-stock-limit` (deprecated) | **`alloc-sector-cap`** | pct **45 / 35 / 25** |
-| 2 | diversifier / Smart Money Tracker → **"Crowding Sentinel"** | `tv-04`, `mb-05` | **`i-05` + `r-07`** | i‑05 **3/2/1**; r‑07 **2/1/1** |
-| 3 | diversifier / Score Adaptor → **"Balanced Optionality"** | `gs-05`, `gs-06` | **`alloc-even-spread` + `a-09`** | conviction **light/moderate/strong**; a‑09 **1/2/3** + high_upside **0/1/2** |
-| 4 | momentum_chaser / Trend Rider **(beyond item 6)** | `t-09` | **`tv-08`** | score **55/60/65**; vol **1/0.8/0.6**; minutes **60/90/120** |
-| 5 | contrarian / Bargain Hunter **(beyond item 6)** | `tv-07` | **`fund-value-pe`** | level **sector median / '20' / '15'** |
+## Prior rounds (already folded; summarized)
 
-Reshaped card copy approved as written. Sibling rungs carried verbatim (incl. the 3.5‑repaired tv‑01). Invariant (b) green over the candidate composition wherever cells exist; the birth suite asserts the COMPLETE seeded set per host, so a silent partial seed is impossible.
+- **Genesis (F2 ruling):** generation 1 = the genesis descriptor (live identity, reserved id + null‑sentinel pair, open‑epoch‑paired, first‑write‑only); the loader short‑circuits to base‑only; first real activation = generation 2; rollback‑to‑genesis proven (activation battery + loader contract + birth parity).
+- **The seven ratified substitutions** landed in the candidate defaults object with complete‑set birth equality both sides.
+- **§2 review (two passes):** 18 findings fixed/disclosed; 13 mutations killed, originals md5‑restored; falsifiability repairs (read‑logging fixture, census call‑shape legs, per‑leg probe floors).
+- **Sol's 12:** the rollback protocol + interleaving row; stuck‑lease refusal + attributed resolution; the destructured‑write detector (zero occurrences pinned); record‑scoped `candidateMode` (the F5 split‑brain closed); the `--during-close` window; runbook ordering (pause‑before‑closing, 8A/8B, post‑watermark battle hard gate, SHA pinning + old‑invocation drain, pre‑genesis snapshot smoke); claim narrowing (#1/#12) with the honest‑divergence row.
 
-## The §2 adversarial review (two passes) — what it found and what happened
+## Open (by design, not blocking)
 
-**Pass 1 (refutation agent):** 9 findings, 7 fixed in‑branch (the decide.js catch swallowing the splice's rejections; activeIdentityVersion↔candidate binding; history‑wide epoch‑reuse rejection; casual‑clone re‑sync lease checks; lease‑id collision; lease‑registry purge; Vercel snapshot bundling config), 2 disclosed as founder decision points (F2 → since ruled genesis; F5 → the fence flag is load‑bearing once activated). F6 was half‑present and completed in response.
+1. **F7 (snapshot bundling)** verifies at runbook step 1's deployed‑lambda smoke against a real deployment.
+2. **X6** — endpoint candidate compiles carry `metadata_missing` until the separately‑sequenced base‑metadata arc.
+3. **Arbitrary‑generation rollback (#12)** stays FILED behind immutable per‑revision override snapshots / a frozen final epoch revision; this event claims rollback‑to‑genesis (2 → 1) only.
 
-**Pass 2 (fresh‑lens agent, dark‑guarantee + test‑integrity):** 9 more, all fixed — the one real dark gap (L1‑1, since ruled + time‑boxed), falsifiability repairs (read‑logging fixture makes "zero reads" and M6's in‑tx property genuinely fail under their defects), the census call‑shape legs (an import alone no longer passes), the FC‑1 build‑gate window (flow pin threaded), complete‑set birth assertions + admin‑SDK‑strict fake, the lease absent‑doc parity hole, and the a7lock per‑leg probe floors. All surviving mutations re‑run and killed, originals md5‑restored.
+## Verification (HEAD `55943b6d`)
 
-## Sol's pre‑activation review (Aug 8) — 12 findings, all folded
-
-Sol's verdict: NOT CLEARED, all 12 valid, all concentrated in the runbook/activation state machine; core mechanisms explicitly accepted.
-
-**Machinery.**
-- **#2 ROLLBACK PROTOCOL** — a symmetric explicit sequence (close → pause+ack admin → drain to watermark → fresh‑generation repoint → verify load → epoch doc to the target epoch still closed → reopen only after verification). Interleaving row proven; the battle rule answered on the locked‑manifest independence branch (battles are not drained).
-- **#3 lease TTL straddle** — the drain REFUSES expired‑but‑unreleased leases (`StuckProvisionerLeaseError`, holders named); explicit attributed `resolveStuckProvisionerLease` (dead‑holder‑only); purge narrowed to released‑only.
-- **#10 destructured writes** — `detectWriteMethodExtractions` flags `const {set}=ref` / method‑value / bind extraction as unresolved `extract:*` sites (deny‑by‑default); typeof feature‑detects excluded as unwritable; repo pinned at zero occurrences + 8 detector unit rows.
-- **#11 genesis‑present contract** — the one real inference (compile `candidateMode` defaulted to the flag) fixed record‑scoped (`resolveCandidateModeInTx`: flag = dark switch only; candidate cells ONLY under a v3 record), threaded through all ten settings endpoints + the deploy gate; pipeline scoped explicitly to `{candidateStateId, activeIdentityVersion: 3}`.
-- **#5 closed‑epoch `--apply`** — verified ABSENT, then built: `--during-close` with the dedicated inverse guard `assertClosedEpochCandidateWindow` (closed‑only; open/closing/absent refuse) + runtime candidate‑namespace path assertion. PR 2's general guard untouched.
-
-**Runbook ordering (#4/#6/#7/#8/#9)** — pause + positive per‑row ack BEFORE `state:'closing'`; step 1 split (deploy → full preflight at the final deployed SHA recorded as THE activation SHA → old‑invocation drain); deployed‑lambda snapshot smoke (v2 bundled + v3 catalog hashes) BEFORE genesis; post‑watermark A26/A35 battle‑drain HARD gate; step 8 split into 8A closed/read‑only and 8B controlled verification‑open (named operator probe identities only; 8B failure ⇒ the rollback protocol).
-
-**Claim narrowing (#1/#12)** — rollback restated: TOTAL while the fleet is frozen (through 8A); during 8B the only v3 base state is the enumerated probe identities, reversed by the named hand reconciliation; after general unfreeze, selector‑total plus that reconciliation. Sol's honest‑divergence regression row records that a v3‑born agent's base docs persist across rollback and diverge from a v2‑born agent's (asserted divergence, not equality). "Total at every generation" removed; arbitrary‑generation rollback FILED post‑event behind immutable per‑revision override snapshots / a frozen final epoch revision.
-
-## Everything else, delivered
-
-- **Descriptor:** the 7‑field union; malformed fails closed per‑field; overrideRevision in the seqlock token; strict generation monotonicity; append‑only history; M6 + R6‑B1 provably inside the activation transaction; A34's `SUPPORTED_BOUNDARY_STATE_VERSIONS` per Q1.
-- **A24 wired inactive:** server birth paths (change‑archetype, trainingClone) + the CLIENT birth path (a time‑boxed record read where every failure resolves LIVE) select the version the record names; the ratchet SHRANK (81 importers); births byte‑identical today, proven both sides with complete‑set equality.
-- **The runbook** with the §10 checks (negative checks each OBSERVED at 8B, the validator‑path out‑of‑domain rejection, ACTION_COPY checkpoint, M7 live measurement, unfreeze order + released‑only lease purge).
-- **X6 honesty:** endpoint candidate compiles record `metadata_missing` until the base‑metadata arc; no gate‑green claimed anywhere.
-
-## Open (by design, not blocking Sol's review)
-
-1. **F7 (Vercel snapshot bundling)** verifies only at runbook step 1's deployed‑lambda snapshot smoke against a real deployment.
-2. **X6** — the base‑metadata apply arc is separately sequenced; endpoint candidate compiles carry `metadata_missing` until then.
-3. **Arbitrary‑generation rollback (#12)** is FILED post‑event behind its prerequisite; this event claims rollback‑to‑genesis (2 → 1) only.
-
-## Verification (HEAD `dd907699`)
-
-Full vitest **7,374 passed / 53 skipped** (438 files) · rules emulator **128/128** · `vite build` clean · registry catalog lock green (v1+v2 self‑consistent as stored, v3 recomputed from the candidate composition) · both review passes' mutations killed + Sol's fold verified · B3 deny‑by‑default allowlist regenerated at every step (the ratchet caught each new write site, including the fold's `resolveStuckProvisionerLease`, and the #10 detector caught the repo's one extraction‑shaped pattern) · cumulative diff 72 files / ~19.6k insertions.
+Full vitest **7,383 passed / 53 skipped** (439 files) · rules emulator **130/130** (incl. the straddle + probe rows) · `vite build` clean · registry catalog lock green · every ratchet that fired during the fold did so as designed and was reconciled by hand (B3 deny‑by‑default on the apply module, the stale‑key pruner on migration‑scan's moved writes, the writer‑census rules‑text pin on the gate rename, the derived‑write census call‑shape leg on the actor‑threaded commit, the A36 importer sweep on the apply writer's id‑function import) · cumulative diff ~75 files / ~20k insertions.
