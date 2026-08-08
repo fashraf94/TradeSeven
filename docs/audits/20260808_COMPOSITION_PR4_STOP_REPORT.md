@@ -1,6 +1,6 @@
 # Composition PR 4 — STOP Report (the identity event, deployed INACTIVE)
 
-**Date:** Aug 8, 2026 · **Branch:** `claude/composition-pr4-identity-event` @ **`55943b6d`** (11 commits; base `origin/main` @ `3c396b14`) · **Pushed at STOP — NO PR opened.** · **Supersedes** the earlier revisions of this report (the Aug‑7 chat‑only version and the `dd907699` revision): this one reflects the tree AFTER Sol's second re‑review fold.
+**Date:** Aug 8, 2026 · **Branch:** `claude/composition-pr4-identity-event` @ **`d6c292ed`** (13 commits; base `origin/main` @ `3c396b14`) · **Pushed at STOP — NO PR opened.** · **Supersedes** every earlier revision of this report: this one reflects the tree AFTER Sol's CONFIRMATION PASS fold (batch 12).
 
 **Review record:** `docs/audits/20260807_COMPOSITION_PR4_CODE_REVIEW.md` (the §2 two‑pass adversarial review + the Sol‑12 fold table + the Sol‑re‑review‑9 fold table). **Runbook:** `docs/composition/ACTIVATION_RUNBOOK.md`. **Ledger:** `docs/composition/ACTIVATION_PRECONDITIONS.md`.
 
@@ -11,7 +11,8 @@
 | Founder rulings (Aug 7) | Substitutions RATIFIED · §7 sign‑off GRANTED · F2 ruled GENESIS · L1‑1 ruled no‑gate | All folded (batches 3–9) |
 | §2 two‑pass adversarial review | 18 findings | All fixed/disclosed; 13 mutations killed |
 | Sol pre‑activation review (Aug 8) | 12 findings, all valid | All folded (batch 10); Sol confirms **10 of 12 fully closed**, residual = rollback execution + temporary write windows |
-| Sol second re‑review (Aug 8) | **9 findings accepted (5 code + 4 runbook)** | **All folded (batch 11)** — this report's delta |
+| Sol second re‑review (Aug 8) | 9 findings accepted (5 code + 4 runbook) | All folded (batch 11) |
+| Sol confirmation pass (Aug 8) | **2 blockers (defects in the round‑11 fixes) + 1 major + 1 note + 1 minor; everything else CLEARED** (probe state survived attack; malformed fail‑closed accepted; `--during-close` closed) | **All folded (batch 12)** — this report's delta |
 
 ## Executive verdict
 
@@ -23,6 +24,18 @@
 | D. Flip obligations | ✅ ON‑state goldens promoted; endpoint tx fakes reconciled; F7 candidate round‑trip + record‑state + malformed‑reject rows |
 | E. Runbook | ✅ steps −1 → 9 + THE ROLLBACK PROTOCOL (Rollback‑A/B) + the 8A/8B split on the mechanical probe gate; strict run log |
 | Dark guarantee | ✅ flags dark, no record, no epoch doc: byte‑identical (zero added keys, zero added reads on server paths — falsifiable via the read‑logging fixture); full suite **7,383 passed / 53 skipped**; rules emulator **130/130**; `vite build` clean |
+
+## The batch‑12 delta — Sol's confirmation pass, all folded
+
+**BLOCKER 1 — the write‑fence INCARNATION (the ABA's third appearance, inside the round‑11 token).** `epochId` carried both "which epoch" and "which incarnation" — a rollback reopening the RESTORED epoch id would have re‑admitted client tokens and server pins formed under its earlier life. `composition/writeEpoch` gains **`fenceGeneration`**: increments every time a quiesced/closed world becomes writable again (initial open = 1; close→reopen same epoch = 2; a rollback reopen = next; probe→open RETAINS — no intervening close/watermark), computed **mechanically** by the new `transitionWriteEpoch` helper — all nine runbook epoch writes route through it, so the operator never hand‑tracks the counter. Clients capture and stamp the TUPLE (`writeEpochId` + `writeFenceGeneration`) at mutation formation; the rules' `epochTokenCurrent()` requires both equal; server transactions pin the tuple across retries. **Both regression rows exactly as specified:** (a) emulator — a token at E0/inc1 is DENIED after a rollback reopens E0 as a later incarnation, epoch id matching; (b) server — a tx pinned at E0/inc1 whose retry observes E0/inc2 rejects `epoch_changed_across_retry`. Resolver semantics, genesis, and historical descriptors untouched.
+
+**BLOCKER 2 — birth provenance means BIRTH.** The round‑11 inheritance made a clone's "birth" stamp the SOURCE's — reconciliation would misdate clones, and nothing stopped a forged client stamp. Split: a NEW clone object stamps its **own** creation descriptor (both casual‑clone create sites + the training‑clone build; the client birth already did); lineage moves to **`loadoutSourceIdentityVersion`/`loadoutSourceActivationGeneration`** (from the source's birth stamp, refreshed on re‑sync); a RE‑SYNC preserves the original birth stamp (the birth fields left the copy set entirely). **Immutability (Sol's trust point, taken):** the agents create rule validates the stamp against the LIVE activation descriptor (`birthProvenanceValid()` — a forged v2/gen1 stamp under a v3 record is DENIED; a stampless post‑genesis create is DENIED; pre‑genesis the fields must be absent), and updates cannot alter it (the update allowlist — emulator‑proven). The v3‑clone‑of‑a‑v2‑source row stamps generation 2 with v2/gen‑1 lineage, and the rollback reconciliation query finds it.
+
+**Major (taken):** the runbook names the provenance‑queried reconciliation as **the ONLY intentional admin‑write exception while Rollback‑B is active**, its target count recorded in the log before it runs — any other admin write in the window is a defect.
+
+**Note (taken; fail‑closed unweakened):** the compile boundary's malformed/unrecognized‑descriptor rejection is operationally LOUD and distinguishable from an ordinary validation 409 — its own error class/code (`compile_boundary_descriptor_rejected`) plus the dedicated `COMPILE BOUNDARY FAIL‑CLOSED` log line, asserted in the endpoint row.
+
+**Minor #9:** the stale duplicate run‑log block is deleted; the artifact matches the strict‑order claim.
 
 ## The batch‑11 delta — Sol's second re‑review, all 9 folded
 
@@ -51,6 +64,6 @@
 2. **X6** — endpoint candidate compiles carry `metadata_missing` until the separately‑sequenced base‑metadata arc.
 3. **Arbitrary‑generation rollback (#12)** stays FILED behind immutable per‑revision override snapshots / a frozen final epoch revision; this event claims rollback‑to‑genesis (2 → 1) only.
 
-## Verification (HEAD `55943b6d`)
+## Verification (HEAD `d6c292ed`)
 
-Full vitest **7,383 passed / 53 skipped** (439 files) · rules emulator **130/130** (incl. the straddle + probe rows) · `vite build` clean · registry catalog lock green · every ratchet that fired during the fold did so as designed and was reconciled by hand (B3 deny‑by‑default on the apply module, the stale‑key pruner on migration‑scan's moved writes, the writer‑census rules‑text pin on the gate rename, the derived‑write census call‑shape leg on the actor‑threaded commit, the A36 importer sweep on the apply writer's id‑function import) · cumulative diff ~75 files / ~20k insertions.
+Full vitest **7,386 passed / 53 skipped** (439 files) · rules emulator **133/133** (incl. the BL1 incarnation‑ABA row, the BL2 forged‑provenance + update‑immutability rows, the straddle + probe rows) · `vite build` clean · registry catalog lock green · the B3 ratchet caught batch 12's one new write site (`transitionWriteEpoch` — reviewed + listed), continuing its every‑round record · cumulative diff ~77 files / ~20k insertions.
