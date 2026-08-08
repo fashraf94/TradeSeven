@@ -144,3 +144,13 @@ Sol's verdict: everything else CLEARED (the probe state survived attack; malform
 | Minor #9 | The stale duplicate run-log block contradicted the strict-order claim | Deleted |
 
 Fold verification: recorded in the batch-12 commit (full suite + rules emulator + build).
+
+## Sol's clearance pass (Aug 8) — the final fold before merge (batch 13; CLEARED FOR ACTIVATION pre-committed on its landing)
+
+| Item | Finding | Disposition |
+|---|---|---|
+| Blocker | Step 1's rollback point still instructed a RAW `{state:'open', epochId:E0}` reopen — literal execution skips the incarnation mint and resurrects the batch-12 ABA | The line routes through `transitionWriteEpoch` with an explicit VERIFY + LOG of the returned `fenceGeneration: 2`. The whole-runbook sweep found no other raw epoch-state mutation (the step-2 rollback reference made explicit; all nine transitions already routed through the helper) |
+| Sol's guard | The ABA's four appearances earn a standing CI rule | Added to `compositionRunbookGates.test.js`, both halves: EXECUTABLE CODE (api/ + scripts/ swept for every write shape against `writeEpochRef`/`doc('writeEpoch')`; the single legal site must sit inside `transitionWriteEpoch`'s body) and RUNBOOK CODE BLOCKS (any `{state:...}` line lacking `transitionWriteEpoch` fails; helper-presence non-vacuity ≥ 9). **Both halves mutation-killed** — a planted raw `tx.set(writeEpochRef(db), …)` in another module and a planted raw-write instruction line in the runbook each fail the guard; originals restored, residue-checked |
+| Major | The protocol scope statement still described the round-11 "clones inherit the source's stamps" | Replaced with the batch-12 BL2 semantics: every fresh identity — including a newly created clone — stamps its OWN current birth descriptor; lineage lives in `loadoutSourceIdentityVersion`/`loadoutSourceActivationGeneration`; a re-sync preserves the existing birth stamp |
+
+Fold verification: recorded in the batch-13 commit.

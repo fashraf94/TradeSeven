@@ -87,3 +87,52 @@ describe('B8-FINAL — the SHA-pinned preflight report gate', () => {
     }, {}).ok).toBe(false);
   });
 });
+
+describe("Sol's guard (final pre-activation fold) — NO raw composition/writeEpoch state mutation outside transitionWriteEpoch", () => {
+  // The ABA has now appeared four times in this build; the incarnation
+  // counter only holds if EVERY state transition routes through the helper
+  // that computes it. Two halves: executable code and runbook code blocks.
+  const { readdirSync } = require('node:fs');
+  const REPO = resolve(HERE, '../..');
+  const walk = (rel, out = []) => {
+    for (const e of readdirSync(resolve(REPO, rel), { withFileTypes: true })) {
+      const p = `${rel}/${e.name}`;
+      if (e.isDirectory()) { if (e.name !== 'node_modules' && e.name !== '__fixtures__' && p !== 'scripts/composition/out') walk(p, out); }
+      else if (/\.(js|mjs)$/.test(e.name) && !e.name.includes('.test.')) out.push(p);
+    }
+    return out;
+  };
+  const WRITE_ON_EPOCH_REF = [
+    /(?:tx|txn|transaction|batch)\s*\.\s*(?:set|update|create|delete)\s*\(\s*writeEpochRef\s*\(/,
+    /writeEpochRef\s*\([^)]*\)\s*\.\s*(?:set|update|create|delete)\s*\(/,
+    /doc\(\s*['"]writeEpoch['"]\s*\)\s*\.\s*(?:set|update|create|delete)\s*\(/,
+    /doc\(\s*WRITE_EPOCH_DOC_ID\s*\)\s*\.\s*(?:set|update|create|delete)\s*\(/,
+  ];
+
+  it('EXECUTABLE CODE: the only epoch-doc write site in api/ + scripts/ lives INSIDE transitionWriteEpoch', () => {
+    const offenders = [];
+    for (const f of [...walk('api'), ...walk('scripts')]) {
+      const src = readFileSync(resolve(REPO, f), 'utf8');
+      if (!WRITE_ON_EPOCH_REF.some((re) => re.test(src))) continue;
+      if (f !== 'api/_utils/compositionWriteEpoch.js') { offenders.push(f); continue; }
+      // Inside the module, the write must sit within transitionWriteEpoch's body.
+      const fnStart = src.indexOf('export async function transitionWriteEpoch');
+      const fnEnd = src.indexOf('\nexport ', fnStart + 1);
+      const body = src.slice(fnStart, fnEnd === -1 ? undefined : fnEnd);
+      const outside = src.slice(0, fnStart) + src.slice(fnEnd === -1 ? src.length : fnEnd);
+      expect(fnStart, 'transitionWriteEpoch missing from compositionWriteEpoch.js').toBeGreaterThan(-1);
+      expect(WRITE_ON_EPOCH_REF.some((re) => re.test(body)), 'the helper itself must contain the one write').toBe(true);
+      if (WRITE_ON_EPOCH_REF.some((re) => re.test(outside))) offenders.push(`${f} (outside transitionWriteEpoch)`);
+    }
+    expect(offenders, 'raw composition/writeEpoch state mutation outside transitionWriteEpoch — the incarnation counter only holds through the helper').toEqual([]);
+  });
+
+  it('RUNBOOK CODE BLOCKS: every epoch-state mutation instruction routes through transitionWriteEpoch (no raw {state:...} write survives)', () => {
+    const runbook = readFileSync(resolve(REPO, 'docs/composition/ACTIVATION_RUNBOOK.md'), 'utf8');
+    const offending = runbook.split('\n').filter((line) =>
+      /\{\s*state\s*:/.test(line) && !line.includes('transitionWriteEpoch'));
+    expect(offending, 'runbook line instructs a raw epoch-state mutation (or displays a state shape) without transitionWriteEpoch on the line').toEqual([]);
+    // The helper is genuinely present throughout (non-vacuity):
+    expect((runbook.match(/transitionWriteEpoch\(/g) || []).length).toBeGreaterThanOrEqual(9);
+  });
+});
