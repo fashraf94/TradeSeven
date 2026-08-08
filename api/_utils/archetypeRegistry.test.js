@@ -34,24 +34,32 @@ import path from 'node:path';
 
 import {
   ARCHETYPE_IDENTITY_VERSION,
+  CANDIDATE_IDENTITY_VERSION,
   listArchetypeIds,
   getArchetypeDefinition,
   getRegistryCorpus,
   computeIdentityHash,
+  computeCandidateIdentityHash,
   validateRegistryCompleteness,
   buildRegistrySnapshot,
+  buildCandidateRegistrySnapshot,
 } from './archetypeRegistry.js';
+import { canonicalContentHash } from './canonicalHash.js';
 import { VALID_ARCHETYPES } from './agentArchetypeConfig.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SNAPSHOT_DIR = path.join(REPO_ROOT, 'docs', 'registry-snapshots');
 const SNAPSHOT_PATH = path.join(SNAPSHOT_DIR, `archetype-registry-identity-v${ARCHETYPE_IDENTITY_VERSION}.json`);
+const CANDIDATE_SNAPSHOT_PATH = path.join(SNAPSHOT_DIR, `archetype-registry-identity-v${CANDIDATE_IDENTITY_VERSION}.json`);
 const BASELINE_PATH = path.join(REPO_ROOT, 'api', '_utils', 'archetypeImportBoundaryBaseline.json');
 
 // Regen mode — see header. Runs before the lock test so a regen run passes.
+// PR 4 (catalog model): the same regen also mints the CANDIDATE snapshot
+// alongside the current one — v{N} and v{N+1} coexist in the catalog.
 if (process.env.GENERATE_REGISTRY_SNAPSHOT === '1') {
   mkdirSync(SNAPSHOT_DIR, { recursive: true });
   writeFileSync(SNAPSHOT_PATH, `${JSON.stringify(buildRegistrySnapshot(), null, 2)}\n`);
+  writeFileSync(CANDIDATE_SNAPSHOT_PATH, `${JSON.stringify(buildCandidateRegistrySnapshot(), null, 2)}\n`);
 }
 
 describe('archetype registry — read surface + completeness (§2.3)', () => {
@@ -110,6 +118,61 @@ describe('identityHash CI lock (§2.3 / R1-23)', () => {
   });
 });
 
+describe('the snapshot CATALOG lock (Composition PR 4, closure sheet §I amendment)', () => {
+  // The catalog model: current = recomputed from live modules (the lock
+  // above); the CANDIDATE = recomputed from the candidate composition; every
+  // PRIOR version = validated AS STORED (self-consistent + immutable git
+  // content — live modules can no longer reproduce it).
+  const stripStored = (snap) => {
+    const definitions = {};
+    for (const [id, def] of Object.entries(snap.definitions)) {
+      const { identityVersion, physics, ...rest } = def;
+      const { calibrationBundleVersion, ...physicsContent } = physics;
+      definitions[id] = { ...rest, physics: physicsContent };
+    }
+    const { ruleLibraryVersion, ...corpusContent } = snap.corpus;
+    return { definitions, corpus: corpusContent };
+  };
+
+  it(`the CANDIDATE snapshot (v${CANDIDATE_IDENTITY_VERSION}) exists ALONGSIDE the current one and tracks the candidate composition exactly`, () => {
+    expect(
+      existsSync(CANDIDATE_SNAPSHOT_PATH),
+      `missing ${path.relative(REPO_ROOT, CANDIDATE_SNAPSHOT_PATH)} — run GENERATE_REGISTRY_SNAPSHOT=1 npx vitest run api/_utils/archetypeRegistry.test.js and commit BOTH artifacts`
+    ).toBe(true);
+    const snap = JSON.parse(readFileSync(CANDIDATE_SNAPSHOT_PATH, 'utf8'));
+    expect(snap.identityVersion).toBe(CANDIDATE_IDENTITY_VERSION);
+    // The candidate lock: a change to ANY candidate input (cell matrix,
+    // candidate default traits) without regenerating the v3 snapshot fails —
+    // and after the A7-LOCK freeze, regenerating without re-running
+    // FINAL-DRYRUN violates the freeze declaration.
+    expect(computeCandidateIdentityHash()).toBe(snap.identityHash);
+  });
+
+  it('every PRIOR version in the catalog is SELF-CONSISTENT as stored (its embedded hash matches its own content)', () => {
+    for (let n = 1; n < ARCHETYPE_IDENTITY_VERSION; n += 1) {
+      const p = path.join(SNAPSHOT_DIR, `archetype-registry-identity-v${n}.json`);
+      expect(existsSync(p), `prior snapshot v${n} missing — published versions are immutable and never deleted`).toBe(true);
+      const snap = JSON.parse(readFileSync(p, 'utf8'));
+      expect(snap.identityVersion).toBe(n);
+      expect(canonicalContentHash(stripStored(snap)), `v${n} snapshot content does not match its own embedded identityHash — a prior version was EDITED (forbidden: priors are immutable)`).toBe(snap.identityHash);
+    }
+  });
+
+  it('the version-parameterized read surface resolves every catalog member and fails loudly outside it (A48 posture: no caller passes a version until the activation record exists)', () => {
+    // live (no arg) — byte-identical to the pre-PR-4 call:
+    expect(getArchetypeDefinition('guardian').identityVersion).toBe(ARCHETYPE_IDENTITY_VERSION);
+    // candidate — the substituted defaults:
+    const g3 = getArchetypeDefinition('guardian', { identityVersion: CANDIDATE_IDENTITY_VERSION });
+    expect(g3.identityVersion).toBe(CANDIDATE_IDENTITY_VERSION);
+    expect(g3.defaultTraits.find((t) => t.id === 'trait-steady-anchor').ruleIds).toContain('alloc-sector-cap');
+    // prior — resolved AS STORED from the catalog:
+    expect(getArchetypeDefinition('guardian', { identityVersion: 1 })?.identityVersion).toBe(1);
+    // outside the catalog — null, never a guess:
+    expect(getArchetypeDefinition('guardian', { identityVersion: CANDIDATE_IDENTITY_VERSION + 1 })).toBeNull();
+    expect(getArchetypeDefinition('guardian', { identityVersion: 0 })).toBeNull();
+  });
+});
+
 describe('import-boundary ratchet (§2.3 / R1-25)', () => {
   const LEGACY_TABLE_BASENAMES = [
     'agentArchetypeConfig',
@@ -134,6 +197,17 @@ describe('import-boundary ratchet (§2.3 / R1-25)', () => {
     'api/_utils/compileOnSettingsChange.js',
     'api/_utils/resolvedAgentManifest.js',
     'api/_utils/shadowAssemblyCapture.js',
+    // Composition PR 4: the candidate default-traits object composes BY
+    // REFERENCE from traitLibrary (unchanged content is never copied — the
+    // §4 local-copy bug class), so it is a sanctioned composition-layer
+    // member, consumed only through the registry's version-parameterized
+    // candidate path (A24: unreachable from every birth path).
+    'src/data/traitLibraryCandidate.js',
+    // Composition PR 4 (A24 authority switch, client half): the browser birth
+    // path cannot import the node registry (fs), so its seed-source resolver
+    // composes live-vs-candidate BY REFERENCE itself — record-gated, every
+    // failure path resolving LIVE. A sanctioned composition-layer member.
+    'src/services/compositionIdentityClient.js',
   ]);
   const IMPORT_RE = new RegExp(
     `from\\s+['"][^'"]*(?:${LEGACY_TABLE_BASENAMES.join('|')})(?:\\.js)?['"]`

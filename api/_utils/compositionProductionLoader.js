@@ -28,6 +28,22 @@ import { resolveEffectiveConfig } from './compositionStateResolver.js';
 export const ACTIVATION_COLLECTION = 'composition';
 export const ACTIVATION_DOC_ID = 'activation';
 
+// F2 ruling (founder, Aug 7 2026 — GENESIS, not fix-forward): BEFORE the
+// first activation, a runbook step writes generation 1 = the GENESIS
+// descriptor — activeIdentityVersion = the LIVE version, candidateStateId =
+// the reserved id below, semanticHash = the reserved null-sentinel, paired
+// with the OPEN epoch doc. Genesis has NO overlay participation: the loader
+// short-circuits to base-only (today's semantics made explicit). The first
+// REAL activation is generation 2, so rollback is TOTAL — an atomic repoint
+// to the prior descriptor exists at EVERY generation, no special case, no
+// tuple reuse. The null-sentinel is a reserved STRING (not literal null):
+// under the per-field fail-closed contract below a null hash would be
+// indistinguishable from a malformed record, so the sentinel keeps F4's
+// strictness intact and the genesis PAIR check makes half-genesis
+// descriptors malformed.
+export const GENESIS_CANDIDATE_STATE_ID = 'genesis';
+export const GENESIS_SEMANTIC_HASH = 'genesis:null';
+
 const MAX_SEQLOCK_RETRIES = 5;
 
 export class MalformedActivationDescriptorError extends Error {
@@ -50,37 +66,62 @@ function activationRef(db) {
   return db.collection(ACTIVATION_COLLECTION).doc(ACTIVATION_DOC_ID);
 }
 
-function descriptorOf(snap) {
+// PR 4 (B4 as ruled Aug 7, 2026): the FULL descriptor is the 7-field union —
+// the four V0.9 §3 fields {activeIdentityVersion, boundaryStateVersion,
+// candidateStateId, overlayContentHash(semantic) → semanticHash} + the ledger
+// B4/B1-EXT fields {activeEpochId, activationGeneration, overrideRevision}.
+// identityVersionTarget was RENAMED activeIdentityVersion per B4's
+// alignment-to-spec clause (founder confirmation: clean rename, no dual-name
+// carry). boundaryStateVersion (Q1 definition of record): the integer version
+// of the per-boundary enforcement-state SET — 1 at first activation, a new
+// activationGeneration on every mutation, the PRIOR value on rollback; A34's
+// per-boundary SUPPORTED_BOUNDARY_STATE_VERSIONS check compares against it.
+export const ACTIVATION_DESCRIPTOR_FIELDS = Object.freeze([
+  'activeIdentityVersion', 'boundaryStateVersion', 'activeEpochId',
+  'candidateStateId', 'semanticHash', 'activationGeneration', 'overrideRevision',
+]);
+
+// Exported at PR 4 for the generation-fence splices (decide.js projection
+// guard, FC-1 battle commit) — ONE descriptor parser, one tuple compare.
+export function readActivationDescriptor(snap) {
   if (!snap.exists) return null;
   const d = snap.data();
-  // Review F4: a PRESENT descriptor without a well-formed generation fails
-  // CLOSED — coercing it to 0 would collide with the pre-activation sentinel
-  // and apply overlays under the dark-world stamp.
-  if (typeof d.activationGeneration !== 'number' || Number.isNaN(d.activationGeneration) || d.activationGeneration < 1) {
-    throw new MalformedActivationDescriptorError(`activationGeneration=${String(d.activationGeneration)}`);
-  }
-  return {
-    activationGeneration: d.activationGeneration,
-    activeEpochId: d.activeEpochId ?? null,
-    candidateStateId: d.candidateStateId ?? null,
-    semanticHash: d.semanticHash ?? null,
-    identityVersionTarget: d.identityVersionTarget ?? null,
+  // Review F4, extended to the full tuple: a PRESENT descriptor missing ANY
+  // field of the 7-field union fails CLOSED — the record is net-new, so
+  // strict validation costs nothing and a partial write can never be read as
+  // a weaker authority.
+  const bad = (field, cond) => {
+    if (cond) throw new MalformedActivationDescriptorError(`${field}=${String(d[field])}`);
   };
+  bad('activationGeneration', typeof d.activationGeneration !== 'number' || Number.isNaN(d.activationGeneration) || d.activationGeneration < 1);
+  bad('activeIdentityVersion', !Number.isInteger(d.activeIdentityVersion) || d.activeIdentityVersion < 1);
+  bad('boundaryStateVersion', !Number.isInteger(d.boundaryStateVersion) || d.boundaryStateVersion < 1);
+  bad('activeEpochId', typeof d.activeEpochId !== 'string' || d.activeEpochId.length === 0);
+  bad('candidateStateId', typeof d.candidateStateId !== 'string' || d.candidateStateId.length === 0);
+  bad('semanticHash', typeof d.semanticHash !== 'string' || d.semanticHash.length === 0);
+  bad('overrideRevision', !Number.isInteger(d.overrideRevision) || d.overrideRevision < 0);
+  // Genesis fields travel as a PAIR (F2 ruling): a descriptor claiming the
+  // genesis candidate id with a real hash — or the sentinel hash with a real
+  // candidate id — is malformed and fails closed like any partial write.
+  if ((d.candidateStateId === GENESIS_CANDIDATE_STATE_ID) !== (d.semanticHash === GENESIS_SEMANTIC_HASH)) {
+    throw new MalformedActivationDescriptorError('genesis fields must pair (candidateStateId + semanticHash together or neither)');
+  }
+  const out = {};
+  for (const f of ACTIVATION_DESCRIPTOR_FIELDS) out[f] = d[f];
+  return out;
 }
 
 // Review F3 (seqlock ABA): generation alone is ABA-vulnerable — a rollback
 // followed by a re-activation can land on the SAME generation number with a
 // DIFFERENT candidate tuple, and a generation-only compare would admit the
 // mixed view (the Sol counterexample re-enabled). The seqlock compares the
-// FULL tuple. (The B4 activation writer should additionally keep generations
-// monotonic — recorded in the preconditions ledger — but the loader does not
-// depend on it.)
-function sameDescriptor(a, b) {
-  return !!a && !!b
-    && a.activationGeneration === b.activationGeneration
-    && a.activeEpochId === b.activeEpochId
-    && a.candidateStateId === b.candidateStateId
-    && a.semanticHash === b.semanticHash;
+// FULL tuple — including overrideRevision (B1-EXT part 2: a mid-read
+// override-layer mutation at the SAME generation must force a retry, because
+// generation alone cannot see an override edit). (The B4 activation writer
+// additionally keeps generations strictly monotonic — enforced in
+// compositionActivationService.js — but the loader does not depend on it.)
+export function sameActivationDescriptor(a, b) {
+  return !!a && !!b && ACTIVATION_DESCRIPTOR_FIELDS.every((f) => a[f] === b[f]);
 }
 
 /**
@@ -99,22 +140,30 @@ export async function loadActivatedComposition(db, fetchLayers) {
   let lastBefore = null; let lastAfter = null;
   for (let attempt = 0; attempt < MAX_SEQLOCK_RETRIES; attempt += 1) {
     const out = await db.runTransaction(async (tx) => {
-      const before = descriptorOf(await tx.get(activationRef(db)));
+      const before = readActivationDescriptor(await tx.get(activationRef(db)));
       if (before === null) {
         // Pre-activation dark world: generation 0, no layers, resolver passes
         // base through untouched. Byte-identical semantics for any consumer.
-        return { activated: false, generation: 0, descriptor: null, overlayEntries: [], epochOverrideEntries: [] };
+        return { activated: false, genesis: false, generation: 0, descriptor: null, overlayEntries: [], epochOverrideEntries: [] };
+      }
+      if (before.candidateStateId === GENESIS_CANDIDATE_STATE_ID) {
+        // GENESIS (F2 ruling): the record exists — generation pinned, rollback
+        // total, B1 armed — but the composed state is BASE ONLY: no overlay
+        // participation, no layer reads. One descriptor read cannot tear, so
+        // no seqlock pass is needed on this branch.
+        return { activated: true, genesis: true, generation: before.activationGeneration, descriptor: before, overlayEntries: [], epochOverrideEntries: [] };
       }
       const layers = await fetchLayers({ tx, descriptor: before });
       // SEQLOCK: the descriptor must be unchanged after the layer reads —
       // otherwise an activation/rollback landed mid-load and the view may mix
       // generations. Retry from the top.
-      const after = descriptorOf(await tx.get(activationRef(db)));
-      if (!sameDescriptor(before, after)) {
+      const after = readActivationDescriptor(await tx.get(activationRef(db)));
+      if (!sameActivationDescriptor(before, after)) {
         return { __retry: true, before: before.activationGeneration, after: after?.activationGeneration ?? null };
       }
       return {
         activated: true,
+        genesis: false,
         generation: before.activationGeneration,
         descriptor: before,
         overlayEntries: layers.overlayEntries ?? [],
@@ -129,7 +178,8 @@ export async function loadActivatedComposition(db, fetchLayers) {
           overlayEntries: out.overlayEntries,
           epochOverrideEntries: out.epochOverrideEntries,
           activeEpochId: out.descriptor?.activeEpochId ?? null,
-          includeOverlay: out.activated,
+          // Genesis reads base only (F2 ruling) — identical to pre-activation.
+          includeOverlay: out.activated && !out.genesis,
         }),
       };
     }

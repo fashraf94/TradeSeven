@@ -2,6 +2,7 @@
 // Forge data layer — Rules and Bundles CRUD for the agent rule system.
 // Rules live in agents/{agentId}/rules/, Bundles in agents/{agentId}/bundles/.
 
+import { withEpochToken } from './compositionIdentityClient';
 import {
   collection, doc, addDoc, updateDoc, getDoc, getDocs,
   query, orderBy, serverTimestamp
@@ -190,7 +191,7 @@ export const createRule = async (agentId, ruleData, opts = {}) => {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
-  const docRef = await addDoc(rulesRef, ruleDoc);
+  const docRef = await addDoc(rulesRef, await withEpochToken(ruleDoc)); // #1: epoch-bound identity write
   return docRef.id;
 };
 
@@ -305,7 +306,7 @@ export const updateRule = async (agentId, ruleId, updates, opts = {}) => {
     }
   }
 
-  await updateDoc(ruleRef, filtered);
+  await updateDoc(ruleRef, await withEpochToken(filtered)); // #1: epoch-bound identity write
 };
 
 /**
@@ -314,10 +315,10 @@ export const updateRule = async (agentId, ruleId, updates, opts = {}) => {
  */
 export const softDeleteRule = async (agentId, ruleId) => {
   const ruleRef = doc(db, 'agents', agentId, 'rules', ruleId);
-  await updateDoc(ruleRef, {
+  await updateDoc(ruleRef, await withEpochToken({
     isDeleted: true,
     updatedAt: serverTimestamp(),
-  });
+  })); // #1: epoch-bound identity write
 };
 
 // ============================================
@@ -356,7 +357,7 @@ export const createBundle = async (agentId, bundleData) => {
       successfulCitations: 0,
     },
   };
-  const docRef = await addDoc(bundlesRef, bundleDoc);
+  const docRef = await addDoc(bundlesRef, await withEpochToken(bundleDoc)); // #1: epoch-bound identity write
   return docRef.id;
 };
 
@@ -391,10 +392,10 @@ export const addRuleToBundle = async (agentId, bundleId, ruleId) => {
   if (!ruleSnap.exists()) throw new Error('Rule not found');
   if (ruleSnap.data().isDeleted) throw new Error('Cannot add a deleted rule to a bundle');
 
-  await updateDoc(bundleRef, {
+  await updateDoc(bundleRef, await withEpochToken({
     ruleIds: [...bundle.ruleIds, ruleId],
     updatedAt: serverTimestamp(),
-  });
+  })); // #1: epoch-bound identity write
 };
 
 /**
@@ -407,7 +408,7 @@ export const removeRuleFromBundle = async (agentId, bundleId, ruleId) => {
   const bundle = bundleSnap.data();
   if (bundle.status !== 'draft') throw new Error('Can only remove rules from draft bundles');
 
-  await updateDoc(bundleRef, {
+  await updateDoc(bundleRef, await withEpochToken({
     ruleIds: bundle.ruleIds.filter(id => id !== ruleId),
     // NOTE (WS1 enforce Phase 2): the old client-side prune of the removed
     // rule's ruleHardness entry is GONE — ruleHardness is server-mintable only
@@ -417,7 +418,7 @@ export const removeRuleFromBundle = async (agentId, bundleId, ruleId) => {
     // the prior authored override rather than the category default; any
     // future tidy-up belongs to the server writers.
     updatedAt: serverTimestamp(),
-  });
+  })); // #1: epoch-bound identity write
 };
 
 /**
@@ -498,12 +499,12 @@ export const forgeBundle = async (agentId, bundleId) => {
     throw new Error('No valid (non-deleted) rules to forge');
   }
 
-  await updateDoc(bundleRef, {
+  await updateDoc(bundleRef, await withEpochToken({
     ruleSnapshots,
     status: 'forged',
     forgedAt: new Date().toISOString(),
     updatedAt: serverTimestamp(),
-  });
+  })); // #1: epoch-bound identity write
 };
 
 /**
@@ -597,9 +598,9 @@ export const archiveBundle = async (agentId, bundleId) => {
     await unequipBundle(agentId, bundleId);
   }
 
-  await updateDoc(bundleRef, {
+  await updateDoc(bundleRef, await withEpochToken({
     status: 'archived',
     archivedAt: new Date().toISOString(),
     updatedAt: serverTimestamp(),
-  });
+  })); // #1: epoch-bound identity write
 };

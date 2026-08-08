@@ -50,7 +50,64 @@ import {
   RULE_LIBRARY_VERSION,
   CALIBRATION_BUNDLE_VERSION,
 } from './archetypeVersionConstants.js';
-import { computeIdentityHash } from './archetypeRegistry.js';
+import { computeIdentityHash, CANDIDATE_IDENTITY_VERSION } from './archetypeRegistry.js';
+import {
+  ACTIVATION_COLLECTION, ACTIVATION_DOC_ID, readActivationDescriptor,
+} from './compositionProductionLoader.js';
+
+/**
+ * Sol pre-activation review #11 + re-review #5 (the compile boundary's
+ * four-state contract, aligned with the production loader):
+ *
+ *   no record (pre-genesis)                → LIVE cells
+ *   valid record, live version (genesis/v2)→ LIVE cells
+ *   valid record, candidate version (v3)   → CANDIDATE cells
+ *   PRESENT but malformed / unrecognized   → REJECT (fail closed — the tx
+ *                                            aborts before any write; a
+ *                                            corrupt selector must never
+ *                                            silently pick a cell source)
+ *
+ * The flag stays the DARK switch (off ⇒ zero reads, zero behavior change —
+ * A23); when lit, THE RECORD decides (A48). Post-genesis the record always
+ * exists — genesis resolves the LIVE map exactly like pre-genesis, so a
+ * rollback-to-genesis restores live-cell compiles even though the flag
+ * never lowers (the F5 split-brain closed at this boundary).
+ */
+/**
+ * Sol confirmation-pass note: the compile boundary's fail-closed rejection is
+ * OPERATIONALLY LOUD and distinguishable from an ordinary validation 409 —
+ * its own error code + a distinct log line. A malformed/unrecognized record
+ * means the ONE identity selector is corrupt; that page-worthy state must
+ * never blend into routine save-validation noise. (Fail-closed unweakened.)
+ */
+export class CompileBoundaryDescriptorError extends Error {
+  constructor(detail) {
+    super(`compile_boundary_descriptor_rejected: ${detail}`);
+    this.name = 'CompileBoundaryDescriptorError';
+    this.code = 'compile_boundary_descriptor_rejected';
+  }
+}
+
+export async function resolveCandidateModeInTx(tx, db, { enabled = COMPOSITION_COMPILED_IDENTITY_ENABLED } = {}) {
+  if (!enabled) return false; // dark: zero reads (A23)
+  const snap = await tx.get(db.collection(ACTIVATION_COLLECTION).doc(ACTIVATION_DOC_ID));
+  let descriptor;
+  try {
+    descriptor = readActivationDescriptor(snap); // malformed THROWS here — fails closed (#5)
+  } catch (err) {
+    console.error('[composition] COMPILE BOUNDARY FAIL-CLOSED: activation descriptor MALFORMED — REFUSING the save (this is the identity selector, not a validation error):', err?.message);
+    throw new CompileBoundaryDescriptorError(`malformed activation descriptor: ${err?.message}`);
+  }
+  if (descriptor === null) return false; // pre-genesis
+  if (descriptor.activeIdentityVersion === CANDIDATE_IDENTITY_VERSION) return true;
+  if (descriptor.activeIdentityVersion === ARCHETYPE_IDENTITY_VERSION) return false; // genesis / live
+  // A well-formed record naming a version this deploy cannot compile for
+  // (neither live nor its shipped candidate) — reject, never guess (#5).
+  console.error(`[composition] COMPILE BOUNDARY FAIL-CLOSED: activation descriptor names UNRECOGNIZED activeIdentityVersion ${descriptor.activeIdentityVersion} — REFUSING the save (this deploy compiles v${ARCHETYPE_IDENTITY_VERSION}/v${CANDIDATE_IDENTITY_VERSION} only)`);
+  throw new CompileBoundaryDescriptorError(
+    `unrecognized activeIdentityVersion ${descriptor.activeIdentityVersion} at the compile boundary (fail closed)`,
+  );
+}
 
 // §5.1 metadata fields lifted from a corpus template when (Phase 3+) they
 // exist. `modes` is pre-existing corpus data and present today.
@@ -173,17 +230,29 @@ export function registryIdentityHash() {
  */
 export async function prepareCompileInputs(tx, {
   agentRef,
+  // Sol review #11: the db handle for the RECORD-SCOPED candidate selection
+  // (resolveCandidateModeInTx). Endpoints pass it; when absent AND no
+  // explicit candidateMode is given, the legacy flag default applies (unit
+  // fixtures that drive the compiler directly) — production call shapes are
+  // pinned by the endpoint suites' genesis-present rows.
+  db = null,
   nextEquippedBundleIds,
   enabled = false,
   // PR 3.5 (B4-TRAIT): the unified host projection needs the FULL behaving
   // surface — every rule doc + every bundle (projectActiveRules' universe),
   // not just the equipped bundles. Reads are DOUBLY dark: they run only when
-  // the compiler is enabled AND the candidate flag is lit.
-  candidateMode = COMPOSITION_COMPILED_IDENTITY_ENABLED,
+  // the compiler is enabled AND the candidate selection is on. #11: the
+  // selection is the RECORD's (candidate version active), never bare flag —
+  // pass candidateMode explicitly ONLY for candidate-scoped pipeline tooling
+  // (the runbook step-5 {candidateStateId, activeIdentityVersion: 3} scope).
+  candidateMode = undefined,
 } = {}) {
   if (!enabled) return null;
+  const mode = candidateMode !== undefined
+    ? candidateMode
+    : (db ? await resolveCandidateModeInTx(tx, db) : COMPOSITION_COMPILED_IDENTITY_ENABLED);
   const ids = (nextEquippedBundleIds ?? []).filter(Boolean);
-  const bundlesCol = ids.length > 0 || candidateMode ? agentRef.collection('bundles') : null;
+  const bundlesCol = ids.length > 0 || mode ? agentRef.collection('bundles') : null;
   let bundles = [];
   if (ids.length > 0) {
     const snaps = await tx.getAll(...ids.map((id) => bundlesCol.doc(id)));
@@ -192,14 +261,14 @@ export async function prepareCompileInputs(tx, {
       bundles.push({ bundleId: snap.id, ...snap.data() });
     }
   }
-  if (!candidateMode) return { bundles };
+  if (!mode) return { bundles, candidateMode: false };
   const [rulesSnap, allBundlesSnap] = await Promise.all([
     tx.get(agentRef.collection('rules')),
     tx.get(bundlesCol),
   ]);
   const ruleDocs = rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
   const allBundles = allBundlesSnap.docs.map((d) => ({ id: d.id, bundleId: d.id, ...d.data() }));
-  return { bundles, ruleDocs, allBundles };
+  return { bundles, ruleDocs, allBundles, candidateMode: true };
 }
 
 /**
@@ -237,6 +306,10 @@ export function writeCompiledBuildsInTx(tx, {
   enabled = false,
   nowIso,
   revision = 'mint',
+  // Sol review #11: the cell-source selection resolved by prepareCompileInputs
+  // (record-scoped) — thread `compileInputs?.candidateMode`. The flag default
+  // survives only for direct unit-fixture calls that pass neither.
+  candidateMode = COMPOSITION_COMPILED_IDENTITY_ENABLED,
   // Optional collector: when a caller needs the FULL CompiledBuild documents
   // (the deploy gate feeds one to the manifest builder), pass an object and
   // each mode's full build is set on it — the return value stays the client
@@ -271,8 +344,9 @@ export function writeCompiledBuildsInTx(tx, {
   }
   // Compat cells resolve by TEMPLATE id (snap.sourceRef), keyed by doc id — see
   // resolveEquippedCompatCells. via:'fallthrough' is ABSENCE (A-4): compileBuild
-  // records it as a missing cell, never as a verdict.
-  const compatCells = resolveEquippedCompatCells(bundles, archetype);
+  // records it as a missing cell, never as a verdict. #11: the source is the
+  // RESOLVED selection (record-scoped), not the bare flag.
+  const compatCells = resolveEquippedCompatCells(bundles, archetype, { candidateMode });
 
   // PR 3.5: with the candidate inputs present, the compile universe is the
   // UNIFIED HOST PROJECTION (trait + bundle channels, doc-authority) — the

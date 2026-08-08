@@ -12,12 +12,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── mutable flag holder: the compositionConfig mock reads through getters ──
-const flagState = { mode: 'off', fence: false };
+const flagState = { mode: 'off', fence: false, candidate: false, compiler: false };
 vi.mock('../_utils/compositionConfig.js', () => ({
   get COMPOSITION_ENFORCEMENT_MODE() { return flagState.mode; },
   get COMPOSITION_EPOCH_FENCE_ENABLED() { return flagState.fence; },
   get COMPOSITION_MIGRATION_FEED_ENABLED() { return false; },
-  get COMPOSITION_COMPILED_IDENTITY_ENABLED() { return false; },
+  get COMPOSITION_COMPILED_IDENTITY_ENABLED() { return flagState.candidate; },
 }));
 
 let activeFirestore = null;
@@ -43,6 +43,12 @@ vi.mock('../_utils/shadowLogger.js', () => ({
   logSignalDrops: async (record) => { shadowLogCalls.current.push(record); },
 }));
 vi.mock('@vercel/functions', () => ({ waitUntil: (p) => p }));
+// D15/F7: COMPILER_ENABLED drivable so the candidate-mode COMPILE round-trip
+// runs at the endpoint (importOriginal spread — every other flag stays real).
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  get COMPILER_ENABLED() { return flagState.compiler; },
+}));
 
 const { default: equipBundleHandler } = await import('./equip-bundle.js');
 const { default: updateSettingsHandler } = await import('./update-agent-settings.js');
@@ -51,8 +57,8 @@ const { ensureCasualClone } = await import('../_utils/casualClone.js');
 
 // ── fake Firestore: agents + bundles + the composition epoch doc, with
 // write- and epoch-read counters for the byte-identity assertions ──────────
-function makeFakeFirestore({ agentDocs = {}, bundleDocs = {}, epochDoc = null } = {}) {
-  const state = { agentDocs, bundleDocs, epochDoc, writes: 0, epochReads: 0 };
+function makeFakeFirestore({ agentDocs = {}, bundleDocs = {}, epochDoc = null, activationDoc = null, subDocs = {} } = {}) {
+  const state = { agentDocs, bundleDocs, epochDoc, activationDoc, subDocs, writes: 0, epochReads: 0 };
 
   const buildBundleRef = (agentId, bundleId) => ({
     id: bundleId,
@@ -75,17 +81,38 @@ function makeFakeFirestore({ agentDocs = {}, bundleDocs = {}, epochDoc = null } 
       state.agentDocs[id] = { ...state.agentDocs[id], ...updates };
     },
     collection: (name) => {
-      if (name === 'bundles') return { doc: (bundleId) => buildBundleRef(id, bundleId) };
-      // generic subcollection (rules docs for the change-archetype seed path):
-      // set/update count as writes; queries return empty (fresh agent).
-      const store = {};
+      if (name === 'bundles') {
+        return {
+          doc: (bundleId) => buildBundleRef(id, bundleId),
+          // D15: tx.get(collection) support — prepareCompileInputs lists the
+          // bundles collection transactionally in candidate mode.
+          get: async () => {
+            const docs = Object.entries(state.bundleDocs)
+              .filter(([k]) => k.startsWith(`${id}/`))
+              .map(([k, v]) => ({ id: k.slice(id.length + 1), data: () => v }));
+            return { docs, empty: docs.length === 0, forEach: (cb) => docs.forEach(cb) };
+          },
+        };
+      }
+      // generic subcollection (rules docs for the change-archetype seed path;
+      // compiledBuilds for the F7 round-trip): PERSISTENT per (agent, name)
+      // in state.subDocs so a write in one call is visible to later asserts,
+      // with tx.get(collection) list support (D15).
+      const key = (docId) => `${id}/${name}/${docId}`;
       return {
         doc: (docId) => ({
           id: docId,
-          get: async () => ({ exists: !!store[docId], data: () => store[docId] }),
-          set: async (data) => { state.writes += 1; store[docId] = data; },
-          update: async (u) => { state.writes += 1; store[docId] = { ...store[docId], ...u }; },
+          get: async () => ({ exists: state.subDocs[key(docId)] !== undefined, data: () => state.subDocs[key(docId)] }),
+          set: async (data) => { state.writes += 1; state.subDocs[key(docId)] = data; },
+          update: async (u) => { state.writes += 1; state.subDocs[key(docId)] = { ...state.subDocs[key(docId)], ...u }; },
         }),
+        get: async () => {
+          const prefix = `${id}/${name}/`;
+          const docs = Object.entries(state.subDocs)
+            .filter(([k]) => k.startsWith(prefix))
+            .map(([k, v]) => ({ id: k.slice(prefix.length), data: () => v }));
+          return { docs, empty: docs.length === 0, forEach: (cb) => docs.forEach(cb) };
+        },
         where: () => ({ get: async () => ({ docs: [], empty: true }) }),
       };
     },
@@ -102,8 +129,13 @@ function makeFakeFirestore({ agentDocs = {}, bundleDocs = {}, epochDoc = null } 
     if (name === 'agents') return { doc: (id) => buildAgentRef(id) };
     if (name === 'composition') {
       return { doc: (docId) => {
-        // Review C2: pin the doc ADDRESS — a helper reading any other id is a
-        // permanently fail-open fence in production and must fail here.
+        // Review C2: pin the doc ADDRESSES — a helper reading any other id is
+        // a permanently fail-open fence in production and must fail here.
+        // PR 4 (D15): the ACTIVATION record joins the fence surface — absent
+        // by default (the pre-activation world; A24's fail-safe path).
+        if (docId === 'activation') {
+          return { get: async () => ({ exists: !!state.activationDoc, data: () => state.activationDoc }) };
+        }
         if (docId !== 'writeEpoch') throw new Error(`wrong epoch doc id: ${docId}`);
         return buildEpochRef();
       } };
@@ -115,7 +147,10 @@ function makeFakeFirestore({ agentDocs = {}, bundleDocs = {}, epochDoc = null } 
     get: async (ref) => ref.get(),
     getAll: async (...refs) => Promise.all(refs.map((r) => r.get())),
     update: async (ref, updates) => ref.update(updates),
-    set: async (ref, data) => { state.writes += 1; ref._set = data; },
+    // D15: tx.set DELEGATES to the ref (persisted in state) — the old
+    // ref._set stash made every transactional set invisible to asserts,
+    // which is exactly the F7 fake gap the flip obligation names.
+    set: async (ref, data) => ref.set(data),
   });
 
   return { db: { collection, runTransaction }, state };
@@ -136,17 +171,38 @@ const DEFERRED_SNAP = { id: 'rd2', sourceRef: 'f-12', paramValues: {}, params: {
 const OUT_OF_DOMAIN_SNAP = { id: 'rd3', sourceRef: 'alloc-sector-cap', paramValues: { pct: 90 }, params: { pct: {} } }; // mc domain {40..80}
 const LEGAL_SNAP = { id: 'rd4', sourceRef: 'tech-volume-surge', paramValues: {}, params: {} };
 
-function fleet({ archetype = 'degen', snaps = [BANNED_SNAP], epochDoc = null } = {}) {
+function fleet({ archetype = 'degen', snaps = [BANNED_SNAP], epochDoc = null, withRuleDocs = false, activationDoc = null } = {}) {
   return makeFakeFirestore({
     agentDocs: { 'agent-1': { ownerId: 'owner-1', archetype, equippedBundleIds: [], activeRules: [], settingsRev: 3 } },
     bundleDocs: { 'agent-1/bundle-1': { status: 'forged', ruleIds: snaps.map((s) => s.id), ruleSnapshots: snaps, ruleHardness: {} } },
+    // F7: the candidate compile universe is the UNIFIED PROJECTION over the
+    // agent's RULE DOCS (bundle + trait channels) — production bundles
+    // reference rule docs, so the candidate rows seed them.
+    ...(withRuleDocs ? {
+      subDocs: Object.fromEntries(snaps.map((s2) => [`agent-1/rules/${s2.id}`, { sourceRef: s2.sourceRef, paramValues: s2.paramValues, params: s2.params, text: 'r' }])),
+    } : {}),
     epochDoc,
+    activationDoc,
   });
 }
+
+// Sol review #11 (record-scoped candidate selection): the candidate cell
+// source follows THE RECORD, never the bare flag — these are the three
+// record states the compile chokepoint distinguishes.
+const V3_RECORD = Object.freeze({
+  activeIdentityVersion: 3, boundaryStateVersion: 1, activeEpochId: 'e-1',
+  candidateStateId: 'run-1', semanticHash: 'h-1', activationGeneration: 2, overrideRevision: 0,
+});
+const GENESIS_RECORD = Object.freeze({
+  activeIdentityVersion: 2, boundaryStateVersion: 1, activeEpochId: 'e-0',
+  candidateStateId: 'genesis', semanticHash: 'genesis:null', activationGeneration: 1, overrideRevision: 0,
+});
 
 beforeEach(() => {
   flagState.mode = 'off';
   flagState.fence = false;
+  flagState.candidate = false;
+  flagState.compiler = false;
   shadowLogCalls.current = [];
 });
 
@@ -305,5 +361,141 @@ describe('A41 (endpoint) — the write-epoch fence at the boundary', () => {
     await expect(ensureCasualClone(db, { odUserId: 'owner-1' })).rejects.toMatchObject({ code: 'epoch_closed' });
     expect(state.epochReads).toBe(1);
     expect(state.writes).toBe(0);
+  });
+});
+
+describe('F7 (D15) — candidate-mode endpoint ROUND-TRIP: the compile path lit at the boundary', () => {
+  // The PR-3.5 F7 flip obligation: candidate-mode endpoint coverage was
+  // unit-only, and the tx fakes lacked tx.get(collection). Both close here:
+  // the fake persists subcollections + lists them transactionally, and these
+  // rows drive equip-bundle with the COMPILER and the candidate boundary LIT
+  // (flag-state-driven, so the rows hold under both build-time defaults —
+  // the §2 flip-pin rule satisfied ahead of the runbook's flip).
+  const TENSION_SNAP = { id: 'rd5', sourceRef: 'alloc-sector-cap', paramValues: { pct: 60 }, params: { pct: {} } }; // mc tension, in-domain [40,80]
+
+  // HONEST BOUNDARY (§0/X6): the corpus carries no §5.6 base metadata until
+  // the separately-sequenced apply arc, so an ENDPOINT compile cannot mint
+  // verdict entries yet — every rule reports metadata_missing (asserted below
+  // as recorded truth, not worked around). The candidate fingerprint that IS
+  // endpoint-observable today is the unified-projection vector component
+  // (projectedRulesHash, the 3.5 freshness key): present in candidate mode,
+  // absent in legacy — the dual-state contract at the persisted boundary.
+  it('equip-bundle with COMPILER + candidate flag ON + the RECORD selecting v3 → 200; the persisted build carries the CANDIDATE vector fingerprint (projectedRulesHash) and reports the X6 metadata gap honestly', async () => {
+    flagState.compiler = true;
+    flagState.candidate = true;
+    // #11: the record — not the flag — selects the candidate cell source.
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP], withRuleDocs: true, activationDoc: { ...V3_RECORD } });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(state.agentDocs['agent-1'].equippedBundleIds).toEqual(['bundle-1']);
+    const buildKeys = Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'));
+    expect(buildKeys.length).toBeGreaterThan(0); // the round trip genuinely compiled AND persisted
+    const build = state.subDocs[buildKeys[0]];
+    expect(typeof build.sourceRevisionVector.projectedRulesHash).toBe('string'); // candidate fingerprint
+    expect(build.sourceRevisionVector.projectedRulesHash.length).toBeGreaterThan(0);
+    expect(build.validation.errors.some((e) => e.code === 'metadata_missing')).toBe(true); // X6, recorded
+  });
+
+  it('GENESIS-PRESENT (Sol review #11): flags lit + the genesis record → the persisted build is LEGACY — genesis never lights the candidate pipeline, so a rollback-to-genesis restores live-cell compiles even with the fence flag standing', async () => {
+    flagState.compiler = true;
+    flagState.candidate = true;
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP], withRuleDocs: true, activationDoc: { ...GENESIS_RECORD } });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    const buildKeys = Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'));
+    expect(buildKeys.length).toBeGreaterThan(0);
+    expect('projectedRulesHash' in state.subDocs[buildKeys[0]].sourceRevisionVector).toBe(false);
+  });
+
+  it('RECORD ABSENT (the pre-genesis lit window) → LEGACY build — absence never selects the candidate (A48: only a record naming v3 does)', async () => {
+    flagState.compiler = true;
+    flagState.candidate = true;
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP], withRuleDocs: true });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    const buildKeys = Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'));
+    expect(buildKeys.length).toBeGreaterThan(0);
+    expect('projectedRulesHash' in state.subDocs[buildKeys[0]].sourceRevisionVector).toBe(false);
+  });
+
+  it('same drive with the candidate boundary OFF (dark) → LEGACY build even under a v3 record — the flag stays the dark switch (A23), zero record reads', async () => {
+    flagState.compiler = true;
+    flagState.candidate = false;
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP], activationDoc: { ...V3_RECORD } });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    const buildKeys = Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'));
+    expect(buildKeys.length).toBeGreaterThan(0);
+    expect('projectedRulesHash' in state.subDocs[buildKeys[0]].sourceRevisionVector).toBe(false);
+  });
+});
+
+describe('#5 (Sol re-review) — the compile boundary FAILS CLOSED on a malformed/unrecognized record', () => {
+  const TENSION_SNAP_5 = { id: 'rd5', sourceRef: 'alloc-sector-cap', paramValues: { pct: 60 }, params: { pct: {} } };
+  it('a PRESENT-but-malformed record (missing semanticHash) REJECTS the save — zero agent writes, zero builds persisted, and the rejection is LOUD + distinguishable (its own code + log line, Sol note)', async () => {
+    flagState.compiler = true;
+    flagState.candidate = true;
+    const malformed = { ...V3_RECORD };
+    delete malformed.semanticHash; // fails the loader's per-field contract
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP_5], withRuleDocs: true, activationDoc: malformed });
+    activeFirestore = db;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+      await equipBundleHandler(req, res);
+      expect(res.statusCode).toBeGreaterThanOrEqual(400); // rejected, never 200
+      expect(state.agentDocs['agent-1'].equippedBundleIds).toEqual([]); // the save never landed
+      expect(Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'))).toEqual([]);
+      // The Sol note: page-worthy, never blended into validation noise —
+      // the dedicated log line fired with the dedicated framing.
+      expect(errSpy.mock.calls.some((c) => String(c[0]).includes('COMPILE BOUNDARY FAIL-CLOSED'))).toBe(true);
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it('a VALID record naming an UNRECOGNIZED version (v5) REJECTS the same way — never a silent cell-source guess', async () => {
+    flagState.compiler = true;
+    flagState.candidate = true;
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP_5], withRuleDocs: true, activationDoc: { ...V3_RECORD, activeIdentityVersion: 5 } });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(state.agentDocs['agent-1'].equippedBundleIds).toEqual([]);
+    expect(Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'))).toEqual([]);
+  });
+});
+
+describe('#4 (Sol re-review) — the PROBE-ONLY gate at the server chokepoint (the 8B / Rollback-B window)', () => {
+  const PROBE_EPOCH = { state: 'probe', epochId: 'e-1', probeIdentities: ['owner-1'] };
+
+  it('NEGATIVE CONTROL: epoch state probe + a NON-probe identity ⇒ 409, zero writes', async () => {
+    flagState.fence = true;
+    const { db, state } = fleet({ archetype: 'degen', snaps: [LEGAL_SNAP], epochDoc: { ...PROBE_EPOCH, probeIdentities: ['some-other-operator'] } });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBe(409);
+    expect(state.agentDocs['agent-1'].equippedBundleIds).toEqual([]);
+    expect(state.writes).toBe(0);
+  });
+
+  it('a LISTED probe identity passes through the same real writer path (200, the save lands)', async () => {
+    flagState.fence = true;
+    const { db, state } = fleet({ archetype: 'degen', snaps: [LEGAL_SNAP], epochDoc: { ...PROBE_EPOCH } });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(state.agentDocs['agent-1'].equippedBundleIds).toEqual(['bundle-1']);
   });
 });

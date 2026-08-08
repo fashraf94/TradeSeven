@@ -24,6 +24,8 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
+import { pinActivationDescriptor } from '../_utils/compositionGenerationFence.js';
+import { selectIdentityVersion, birthProvenanceStamp } from '../_utils/compositionActivationService.js';
 // Mastery P2 (V2.1 STOP-B: customization bundles are per-archetype —
 // "switching archetypes switches/invalidates them"): an equipped
 // 'aggressive' dial re-validates against the NEW archetype's mastery level
@@ -116,13 +118,18 @@ export default async function handler(req, res) {
   const agentRef = db.collection('agents').doc(agentId);
   const nowIso = new Date().toISOString();
 
+  // Composition PR 4 (A24): pin the activation descriptor once per request —
+  // dark: zero reads; the seed below derives from the version the record
+  // selects (absent record → the live identity, byte-identical).
+  const seedPin = await pinActivationDescriptor(db);
+
   let txResult;
   try {
     txResult = await db.runTransaction(async (tx) => {
       const agentSnap = await tx.get(agentRef);
       // Composition write-epoch fence (design note §3): read-phase validation —
       // zero I/O while dark; a closed epoch 409s with nothing written (A41).
-      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX });
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX, actor: user.uid }); // #4: probe-window admission
 
       // Agent must exist, belong to the caller, and be battle-free.
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
@@ -207,6 +214,7 @@ export default async function handler(req, res) {
       // precede the first write. Compat cells key on the NEW archetype.
       const compileInputs = await prepareCompileInputs(tx, {
         agentRef,
+        db, // Sol review #11: record-scoped candidate selection
         nextEquippedBundleIds: agent.equippedBundleIds || [],
         enabled: COMPILER_ENABLED,
       });
@@ -224,8 +232,13 @@ export default async function handler(req, res) {
       // born-with set (never happens — pinned non-empty by
       // traitLibrary.bornWith.test) skips the seed rather than wiping the layer.
       let seeded = null;
-      if (hasBornWithSet(archetype)) {
-        seeded = seedArchetypeTraitsInTx(tx, agentRef, archetype);
+      // Composition PR 4 (A24 authority switch): the seed derives from the
+      // identity version the ACTIVATION RECORD selects — dark/absent record
+      // resolves null → the live exports, byte-identical (the record is the
+      // only selector, A48).
+      const seedVersion = seedPin.dark ? null : (seedPin.descriptor ? selectIdentityVersion(seedPin.descriptor) : null);
+      if (hasBornWithSet(archetype, { identityVersion: seedVersion })) {
+        seeded = seedArchetypeTraitsInTx(tx, agentRef, archetype, { identityVersion: seedVersion });
         // Fail-safe: a born-with archetype that resolved to ZERO traits/rules
         // (a data bug the bornWith.test pins as unreachable) must NOT commit —
         // aborting the whole tx here keeps the invariant (never archetype=new
@@ -241,6 +254,9 @@ export default async function handler(req, res) {
         archetype,
         updatedAt: nowIso,
         ...(seeded && seeded.equippedTraits ? { equippedTraits: seeded.equippedTraits } : {}),
+        // Sol re-review #6: a re-birth stamps the version + generation its
+        // born-with content was seeded under (dark pin: no keys — A23).
+        ...(seeded ? birthProvenanceStamp(seedPin) : {}),
         // Dial invalidation rides the same atomic commit (V2.1 STOP-B).
         ...(dialInvalidated ? { 'dials.tempo': 'standard' } : {}),
       });
@@ -256,6 +272,7 @@ export default async function handler(req, res) {
         // PR 3.5: candidate-mode projection inputs (absent while dark)
         ruleDocs: compileInputs?.ruleDocs ?? null,
         allBundles: compileInputs?.allBundles ?? null,
+        candidateMode: compileInputs?.candidateMode, // #11: the record's selection, never bare flag
         enabled: COMPILER_ENABLED,
         nowIso,
       });

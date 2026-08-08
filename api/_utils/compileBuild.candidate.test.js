@@ -385,7 +385,7 @@ describe('PR 3.5 review fixes — the freshness seam (F1) and the trait-save sea
     };
     // dark: ids empty + candidateMode off → the collections are NEVER touched
     const dark = await prepareCompileInputs(tx, { agentRef, nextEquippedBundleIds: [], enabled: true, candidateMode: false });
-    expect(dark).toEqual({ bundles: [] });
+    expect(dark).toEqual({ bundles: [], candidateMode: false }); // #11: the resolved selection rides the prepared inputs
     expect(touched).toEqual([]);
     // candidate: both subcollections read in-tx, shapes normalized
     const lit = await prepareCompileInputs(tx, { agentRef, nextEquippedBundleIds: [], enabled: true, candidateMode: true });

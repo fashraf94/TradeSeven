@@ -320,7 +320,10 @@ describe('matrix — B2 updateRule (category-flip promote)', () => {
     seedAgent('momentum_chaser');
     seedRule('r1', { sourceRef: 'tech-rsi-oversold', category: 'technical' });
     await updateRule(AGENT, 'r1', { text: 'new text' }, { archetype: 'momentum_chaser' });
-    expect(store.reads).toEqual([]); // no rule pre-read, no agent read
+    // Sol re-review #1: every identity write now captures the epoch token at
+    // formation (one composition/writeEpoch read) — the ZERO-GUARD-READS
+    // claim is about the COMPAT guard, so the token read is filtered out.
+    expect(store.reads.filter((p) => p !== 'composition/writeEpoch')).toEqual([]); // no rule pre-read, no agent read
     expect(store.docs.get(rulePath('r1')).text).toBe('new text');
   });
 
@@ -338,7 +341,7 @@ describe('matrix — B2 updateRule (category-flip promote)', () => {
     seedRule('r3', { sourceRef: 'tech-rsi-oversold', category: 'technical' });
     await updateRule(AGENT, 'r3', { category: 'risk' });
     expect(store.docs.get(rulePath('r3')).category).toBe('risk');
-    expect(store.reads).toEqual([]);
+    expect(store.reads.filter((p) => p !== 'composition/writeEpoch')).toEqual([]); // #1: the epoch-token read is not a guard read
     expect(transportCalls.current).toHaveLength(0);
   });
 });

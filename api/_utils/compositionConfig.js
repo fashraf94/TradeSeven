@@ -33,6 +33,14 @@ export const COMPOSITION_ENFORCEMENT_MODE = 'off';
  * and 409 'epoch_closed' when the §8 runbook has closed the epoch.
  */
 export const COMPOSITION_EPOCH_FENCE_ENABLED = false;
+// ⚠ LOAD-BEARING ONCE ACTIVATED (§2 review F5): after the activation record
+// exists, this flag gates the server-side descriptor pins (birth-path version
+// selection, the decide.js projection guard, FC-1 battle stamping). Lowering
+// it post-activation does NOT deactivate anything — it silently splits
+// identity selection (server births fall back to LIVE while the record-driven
+// client path keeps the candidate) and turns off stale-projection rejection.
+// The runbook's standing rule: once step 7 has run, this flag NEVER lowers;
+// deactivation is rollbackActivationRecord, nothing else (A48).
 
 /**
  * identityMigration feed publication gate (M12; A44). false — DEFAULT: the

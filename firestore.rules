@@ -2,16 +2,62 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // ── Composition write-epoch fence (client-SDK writer class; design note
-    // docs/composition/PR2_RESOLVER_AND_EPOCH_DESIGN.md §3). The §8 runbook
-    // writes composition/writeEpoch {state:'closed'} to close the epoch;
-    // ABSENT ⇒ open (fail-open: byte-identical behavior until the runbook
-    // acts). Server-evaluated at commit ⇒ genuine commit-time rejection for
+    // docs/composition/PR2_RESOLVER_AND_EPOCH_DESIGN.md §3; Sol re-review
+    // #1/#4). The §8 runbook drives composition/writeEpoch through its
+    // states; ABSENT ⇒ open (fail-open: byte-identical behavior until the
+    // runbook acts — pre-genesis, no token required). Once the doc EXISTS:
+    //
+    //   • state 'open'  → the write must carry `writeEpochId` EQUAL to the
+    //     doc's epochId (#1 — the token is captured when the mutation is
+    //     FORMED, so an E0-formed mutation submitted after E1 opens is
+    //     DENIED at commit; a tokenless write denies too: the field access
+    //     errors → false → deny, fail closed).
+    //   • state 'probe' → additionally, request.auth.uid must be in the
+    //     doc's probeIdentities (#4 — the 8B / Rollback-B verification
+    //     windows admit ONLY the named operator probe identities; this is
+    //     the client half of the server chokepoint's probe arm).
+    //   • any other state ('closing'/'closed'/…) → DENIED.
+    //
+    // Server-evaluated at commit ⇒ genuine commit-time rejection for
     // client-SDK identity writers (rules/bundles authoring + agent births).
-    // INERT UNTIL CONSOLE DEPLOY (G1 precedent). Cost: one rules get() per
-    // gated write once deployed — the :213/:242 get() precedent class.
-    function epochWriteOpen() {
+    // INERT UNTIL CONSOLE DEPLOY (G1 precedent). Cost: get() calls are
+    // memoized per-evaluation — one epoch read per gated write.
+    function epochDoc() {
+      return get(/databases/$(database)/documents/composition/writeEpoch).data;
+    }
+    // Sol confirmation pass BL1: the token is the TUPLE {writeEpochId,
+    // writeFenceGeneration} — fenceGeneration is the fence INCARNATION
+    // (increments every time a quiesced/closed world becomes writable again),
+    // so a mutation formed under an EARLIER incarnation of the SAME epoch id
+    // (the rollback-reopens-E0 ABA) is DENIED even though the epoch id
+    // matches. A missing field errors → false → deny (fail closed).
+    function epochTokenCurrent() {
+      return request.resource.data.writeEpochId == epochDoc().epochId
+             && request.resource.data.writeFenceGeneration == epochDoc().fenceGeneration;
+    }
+    function epochWriteAdmitted() {
       return !exists(/databases/$(database)/documents/composition/writeEpoch)
-             || get(/databases/$(database)/documents/composition/writeEpoch).data.state == 'open';
+             || (epochDoc().state == 'open' && epochTokenCurrent())
+             || (epochDoc().state == 'probe'
+                 && request.auth.uid in epochDoc().probeIdentities
+                 && epochTokenCurrent());
+    }
+
+    // Sol confirmation pass BL2 (immutability — the trust point): a client
+    // birth's provenance stamp must EQUAL the live activation descriptor at
+    // create — a forged stamp (any other version/generation pair) is DENIED.
+    // Pre-genesis (no record): the fields must be ABSENT (today's shape,
+    // byte-identical). Post-genesis a stampless create denies too (the field
+    // access errors → false). Updates cannot alter the stamp: the agents
+    // update allowlist (hasOnly) has never admitted these fields.
+    function birthProvenanceValid() {
+      return !exists(/databases/$(database)/documents/composition/activation)
+             ? (!('identityVersionAtBirth' in request.resource.data)
+                && !('activationGenerationAtBirth' in request.resource.data))
+             : (request.resource.data.identityVersionAtBirth
+                  == get(/databases/$(database)/documents/composition/activation).data.activeIdentityVersion
+                && request.resource.data.activationGenerationAtBirth
+                  == get(/databases/$(database)/documents/composition/activation).data.activationGeneration);
     }
 
 
@@ -20,6 +66,24 @@ service cloud.firestore {
     // Read: Authenticated users | Write: Server only (Admin SDK)
     // Managed by Vercel cron jobs and API endpoints
     // ═══════════════════════════════════════════
+
+    // Composition activation record (PR 4, A24/A48): the ONE identity
+    // selector. The client birth path reads it to seed the version the
+    // record selects; every failure path (incl. this clause not yet
+    // deployed) resolves to the LIVE identity — fail-safe. Server-only
+    // writes (the activation service); the doc holds no secrets.
+    match /composition/activation {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // The write-epoch doc (PR 2 fence + Sol re-review #1): clients READ it to
+    // capture the writeEpochId token when forming an identity mutation (and
+    // the probe gate's identity list is not a secret). Never client-writable.
+    match /composition/writeEpoch {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
 
     // Economic calendar — LEGACY: the populating cron is retired and the
     // last content reader was removed (Phase 2 N4); api/health.js retains a
@@ -182,7 +246,8 @@ service cloud.firestore {
       // numeric comparison (not map equality) so an SDK serializing zeros
       // as doubles still passes; hasOnly pins the key set.
       allow create: if request.auth != null
-                    && epochWriteOpen()
+                    && epochWriteAdmitted()
+                    && birthProvenanceValid()
                     && request.resource.data.ownerId == request.auth.uid
                     // Per-Battle Loadout Phase 1 (security review CONFIRMED-1/2):
                     // reserve the clone/system agent-id namespaces from CLIENT
@@ -265,7 +330,7 @@ service cloud.firestore {
         allow read: if request.auth != null
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid;
         allow create, update: if request.auth != null
-                    && epochWriteOpen()
+                    && epochWriteAdmitted()
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
                     && (!('textTemplate' in request.resource.data)
                         || request.resource.data.textTemplate == null
@@ -299,14 +364,14 @@ service cloud.firestore {
         // or 'forged' (the dimension materializer) — never 'equipped' or
         // 'archived'. Absent stays legal (defensive; no live path omits it).
         allow create: if request.auth != null
-                    && epochWriteOpen()
+                    && epochWriteAdmitted()
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
-                    && request.resource.data.keys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency'])
+                    && request.resource.data.keys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency', 'writeEpochId', 'writeFenceGeneration'])
                     && (!('status' in request.resource.data) || request.resource.data.status in ['draft', 'forged']);
         allow update: if request.auth != null
-                    && epochWriteOpen()
+                    && epochWriteAdmitted()
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency'])
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency', 'writeEpochId', 'writeFenceGeneration'])
                     // Status transition vocabulary (ruling B3): the ONLY
                     // status changes a client may perform are the live forge
                     // and archive gestures — draft→forged, draft→archived,

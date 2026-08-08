@@ -54,3 +54,102 @@ describe('B3 — deny-by-default protected-store write scan (AST, api/ + scripts
     expect(stale, 'allowlisted write site(s) no longer exist — prune the key(s) in the same PR that removed the write').toEqual([]);
   });
 });
+
+describe('B3-EXT — one-level helper-parameter data-flow (PR 4 ledger row)', () => {
+  const { needsListing } = scanProtectedStoreWrites(REPO);
+  const keys = new Set(needsListing.map(siteKey));
+
+  it('a helper taking a ref param that writes IS detected (definition site + census-chokepoint call sites)', () => {
+    // Callee-base form: applyConsolidation(agentRef){ agentRef.update(…) }.
+    expect(keys.has('api/_utils/agentConsolidationApply.js::applyConsolidation::update::param:agentRef')).toBe(true);
+    // Handle ref-argument form: txUpdateAgentSettings(tx, ref){ tx.update(ref,…) } —
+    // the endpoint call sites now resolve the CALLER's agents ref, per-callsite.
+    expect(keys.has('api/agent/equip-bundle.js::handler::call:txUpdateAgentSettings#1::agents')).toBe(true);
+    expect(keys.has('api/agent/update-agent-settings.js::handler::call:txUpdateAgentSettings#1::agents')).toBe(true);
+  });
+
+  it('a NEW call site passing a protected ref into a registered helper fails deny-by-default (synthetic repo)', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = mkdtempSync(join(tmpdir(), 'b3ext-'));
+    try {
+      mkdirSync(join(root, 'api'), { recursive: true });
+      mkdirSync(join(root, 'scripts'), { recursive: true });
+      writeFileSync(join(root, 'api', 'helper.js'),
+        'export function writeThrough(ref, data) { return ref.set(data); }\n');
+      writeFileSync(join(root, 'api', 'caller.js'),
+        "import { writeThrough } from './helper.js';\n"
+        + "export async function save(db, d) { await writeThrough(db.collection('agents').doc('x'), d); }\n"
+        + "export async function savePlain(db, d) { await writeThrough(db.collection('shadowLogs').doc('x'), d); }\n");
+      const res = scanProtectedStoreWrites(root);
+      const found = new Set(res.needsListing.map(siteKey));
+      // The helper definition is a listed site (invisible to the direct pass).
+      expect(found.has('api/helper.js::writeThrough::set::param:ref')).toBe(true);
+      // The call site passing an AGENTS ref needs listing at its count…
+      expect(found.has('api/caller.js::save::call:writeThrough#0::agents')).toBe(true);
+      // …while the call passing a NON-protected literal ref passes unlisted.
+      expect(found.has('api/caller.js::savePlain::call:writeThrough#0::shadowLogs')).toBe(false);
+      expect(res.all.some((s) => siteKey(s) === 'api/caller.js::savePlain::call:writeThrough#0::shadowLogs')).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('documented limit, kept executable: a TWO-HOP chain is visible only at the first hop (unresolved), never followed', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = mkdtempSync(join(tmpdir(), 'b3ext2-'));
+    try {
+      mkdirSync(join(root, 'api'), { recursive: true });
+      mkdirSync(join(root, 'scripts'), { recursive: true });
+      writeFileSync(join(root, 'api', 'twohop.js'),
+        'export function inner(ref, d) { return ref.set(d); }\n'
+        + 'export function outer(agentRef, d) { return inner(agentRef, d); }\n'
+        + "export function top(db, d) { return outer(db.collection('agents').doc('x'), d); }\n");
+      const res = scanProtectedStoreWrites(root);
+      const found = new Set(res.needsListing.map(siteKey));
+      // First hop: outer's call into inner resolves outer's PARAM — unresolved, listed.
+      expect(found.has('api/twohop.js::outer::call:inner#0::unresolved')).toBe(true);
+      // The outer helper itself is NOT registered (its param never reaches a
+      // write method directly) — so top's agents ref is invisible: the two-hop
+      // limit of record. If this expectation ever flips, the limit prose in
+      // compositionProtectedStoresScan.js must be rewritten in the same PR.
+      expect(found.has('api/twohop.js::top::call:outer#0::agents')).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('#10 (Sol pre-activation review) — destructured/extracted write methods fail loud', () => {
+  it('the repo carries ZERO write-method extractions (the conservative rule: any occurrence must resolve through the allowlist or fail unresolved)', () => {
+    const { all } = scanProtectedStoreWrites(REPO);
+    const extractions = all.filter((s) => s.method.startsWith('extract:'));
+    expect(extractions).toEqual([]);
+  });
+
+  it('the detector catches destructuring, aliases, method-value extraction, and bind — and ignores non-Firestore shapes and ordinary calls', async () => {
+    const { detectExtractionsInSource } = await import('./compositionProtectedStoresScan.js');
+    const flagged = (src) => detectExtractionsInSource('unit.js', src).map((s) => s.method);
+    // Destructured off a tx handle:
+    expect(flagged('export function f(tx) { const { set } = tx; set(a, b); }')).toEqual(['extract:set']);
+    // Aliased destructure off a ref:
+    expect(flagged('export function f(agentRef) { const { update: u } = agentRef; u({}); }')).toEqual(['extract:update']);
+    // Destructure off a const-hopped handle:
+    expect(flagged('export function f(tx) { const t = tx; const { create } = t; }')).toEqual(['extract:create']);
+    // Method-value extraction from a chain:
+    expect(flagged("export function f(db) { const del = db.collection('agents').doc('a').delete; del(); }")).toEqual(['extract:delete']);
+    // Passed as a value / bound:
+    expect(flagged('export function f(docRef, run) { run(docRef.set); }')).toEqual(['extract:set']);
+    expect(flagged('export function f(docRef) { return docRef.delete.bind(docRef); }')).toEqual(['extract:delete']);
+    // NOT flagged: a Map/store delete (non-Firestore shape), an ordinary called write:
+    expect(flagged('export function f(store, k) { store.delete(k); const { add } = someSet; }')).toEqual([]);
+    expect(flagged("export function f(tx, ref) { tx.set(ref, {}); ref.update({}); }")).toEqual([]);
+    // NOT flagged: a typeof feature-detect — the member value is consumed by
+    // typeof and can never write (the moverCandidates precedent); the
+    // adjacent actual call stays visible to the direct pass:
+    expect(flagged("export function f(ref) { if (typeof ref.delete === 'function') ref.delete(); }")).toEqual([]);
+  });
+});

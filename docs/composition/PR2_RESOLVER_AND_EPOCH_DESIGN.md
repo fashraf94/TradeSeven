@@ -38,7 +38,7 @@ resolveEffectiveConfig({ base, overlayEntries = [], epochOverrideEntries = [], a
 | Doc | Purpose | Writer | Reader |
 |---|---|---|---|
 | `composition/writeEpoch` | THE epoch control doc: `{ state: 'open'\|'closed', epochId, closedAt, reason }`. **Absent ⇒ open** (fail-open = byte-identical today; the fence only bites when the §8 runbook writes it). | §8 runbook (founder-gated script, PR 4) | every fenced writer (in-tx), firestore.rules `epochWriteOpen()` |
-| `compositionCandidateState/{candidateStateId}` | Overlay run metadata: `{ migrationRunId, identityVersionTarget, overlayContentHash, entryCount, createdAt, feedEntries[] }` — the candidate namespace §4 requires; the activation record (PR 4) points at this id | `migration-scan.js --apply` | scan verify, PR-4 activation transaction |
+| `compositionCandidateState/{candidateStateId}` | Overlay run metadata: `{ migrationRunId, activeIdentityVersion, overlayContentHash, semanticHash, runHash, entryCount, createdAt, feedEntries[] }` *(identityVersionTarget → activeIdentityVersion at PR 4 — B4 alignment clause, founder-confirmed clean rename)* — the candidate namespace §4 requires; the activation record (PR 4) points at this id | `migration-scan.js --apply` | scan verify, PR-4 activation transaction |
 | `compositionCandidateState/{id}/entries/{entryKey}` | The overlay entries (schema above), before-images included (M10) | `--apply` (once) | resolver adapters |
 | `compositionEpochOverrides/{epochId}/entries/{entryKey}` | Post-activation mutable layer (A47) | post-activation save paths (PR 4) | resolver adapters |
 

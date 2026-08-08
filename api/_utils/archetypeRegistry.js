@@ -61,8 +61,28 @@ import {
   CALIBRATION_BUNDLE_VERSION,
 } from './archetypeVersionConstants.js';
 import { canonicalContentHash } from './canonicalHash.js';
+// Composition PR 4 (catalog model, closure sheet §I): the CANDIDATE identity
+// inputs — the authored cell matrix (replaces the stored compat map as
+// registry content at v3) and the candidate default-traits object (cargo
+// item 6). Consumed ONLY by the version-parameterized resolution below;
+// nothing reads the candidate until the activation record selects it (A48).
+import {
+  CANDIDATE_COMPAT_CELLS,
+  CELL_SCHEMA_VERSION,
+  RESERVED_ARCHETYPES,
+} from '../../src/data/archetypeCompatibilityCandidate.js';
+import {
+  CANDIDATE_ARCHETYPE_DEFAULT_TRAITS,
+  getCandidateTraitById,
+} from '../../src/data/traitLibraryCandidate.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve as resolvePath } from 'node:path';
 
 export { ARCHETYPE_IDENTITY_VERSION };
+
+/** The candidate identity version this deploy carries INACTIVE (v = live+1). */
+export const CANDIDATE_IDENTITY_VERSION = ARCHETYPE_IDENTITY_VERSION + 1;
 
 /** The six launch archetype code-ids, from the fenced table's derived list. */
 export function listArchetypeIds() {
@@ -80,11 +100,26 @@ export function getTraitById(traitId) {
 }
 
 /**
- * The one read surface (§2.3). Returns the full composed definition for a
- * code-id, or null for an unknown id — callers fail loudly, no analyst
- * fallback here (the registry is a contract surface, not a display helper).
+ * The one read surface (§2.3), VERSION-PARAMETERIZED at PR 4 (catalog model,
+ * closure sheet §I; A48 — the version comes from the ACTIVATION RECORD, never
+ * a config value; no caller passes one until the record exists):
+ *
+ *   (no version / the live version) → the LIVE composition — byte-identical
+ *     to the pre-PR-4 behavior, the only path production exercises today;
+ *   CANDIDATE_IDENTITY_VERSION → the CANDIDATE composition (authored cell
+ *     matrix as the compat surface + candidate default traits);
+ *   a PRIOR version → resolved AS STORED from its immutable catalog snapshot
+ *     (docs/registry-snapshots/) — rollback's read surface;
+ *   anything else → null (callers fail loudly/closed — never a guess).
  */
-export function getArchetypeDefinition(codeId) {
+export function getArchetypeDefinition(codeId, { identityVersion } = {}) {
+  if (identityVersion !== undefined && identityVersion !== ARCHETYPE_IDENTITY_VERSION) {
+    if (identityVersion === CANDIDATE_IDENTITY_VERSION) return buildCandidateArchetypeDefinition(codeId);
+    if (Number.isInteger(identityVersion) && identityVersion >= 1 && identityVersion < ARCHETYPE_IDENTITY_VERSION) {
+      return loadSnapshotVersion(identityVersion)?.definitions?.[codeId] ?? null;
+    }
+    return null;
+  }
   if (!VALID_ARCHETYPES.includes(codeId)) return null;
   const config = ARCHETYPE_CONFIGS[codeId];
   const adjustments = ARCHETYPE_ADJUSTMENTS[codeId] || null;
@@ -247,4 +282,85 @@ export function buildRegistrySnapshot() {
     definitions,
     corpus: getRegistryCorpus(),
   };
+}
+
+// ── Composition PR 4: the CANDIDATE composition + the snapshot catalog ──────
+
+/**
+ * The candidate per-archetype compat block: the authored cell COLUMN for this
+ * archetype (cargo item 1 — the cell matrix replaces the stored map as
+ * registry content at the candidate version). The reserved diversifier column
+ * carries an explicit reserved marker, never invented cells (closure sheet
+ * §II — reserved is counted, not missing).
+ */
+function buildCandidateCompatBlock(codeId) {
+  if (RESERVED_ARCHETYPES.includes(codeId)) {
+    return { cellSchemaVersion: CELL_SCHEMA_VERSION, reserved: true, cells: {} };
+  }
+  const cells = {};
+  for (const [ruleId, row] of Object.entries(CANDIDATE_COMPAT_CELLS)) {
+    if (row[codeId]) cells[ruleId] = row[codeId];
+  }
+  return { cellSchemaVersion: CELL_SCHEMA_VERSION, reserved: false, cells };
+}
+
+/**
+ * The CANDIDATE definition — the live composition with the two candidate
+ * deltas swapped in: the compat surface (cell matrix column) and the default
+ * traits (cargo item 6 substitutions via traitLibraryCandidate.js). Every
+ * other input is the live module by reference — this event changes no other
+ * hashed content (the base-metadata apply arc is X6, sequenced separately).
+ */
+export function buildCandidateArchetypeDefinition(codeId) {
+  if (!VALID_ARCHETYPES.includes(codeId)) return null;
+  const live = getArchetypeDefinition(codeId);
+  const defaultTraitIds = CANDIDATE_ARCHETYPE_DEFAULT_TRAITS[codeId] || [];
+  return {
+    ...live,
+    identityVersion: CANDIDATE_IDENTITY_VERSION,
+    defaultTraitIds,
+    defaultTraits: defaultTraitIds.map((id) => getCandidateTraitById(id)),
+    compat: buildCandidateCompatBlock(codeId),
+  };
+}
+
+/** The candidate identityHash — the same strip discipline as computeIdentityHash. */
+export function computeCandidateIdentityHash() {
+  const definitions = {};
+  for (const id of VALID_ARCHETYPES) {
+    const { identityVersion, physics, ...rest } = buildCandidateArchetypeDefinition(id);
+    const { calibrationBundleVersion, ...physicsContent } = physics;
+    definitions[id] = { ...rest, physics: physicsContent };
+  }
+  const { ruleLibraryVersion, ...corpusContent } = getRegistryCorpus();
+  return canonicalContentHash({ definitions, corpus: corpusContent });
+}
+
+/** The v{candidate} snapshot body — minted ALONGSIDE the current version (catalog). */
+export function buildCandidateRegistrySnapshot() {
+  const definitions = {};
+  for (const id of VALID_ARCHETYPES) definitions[id] = buildCandidateArchetypeDefinition(id);
+  return {
+    identityVersion: CANDIDATE_IDENTITY_VERSION,
+    identityHash: computeCandidateIdentityHash(),
+    generatedFor: `archetype-registry-identity-v${CANDIDATE_IDENTITY_VERSION}`,
+    definitions,
+    corpus: getRegistryCorpus(),
+  };
+}
+
+// Prior versions resolve AS STORED from the committed catalog (closure sheet
+// §I: during the inactive window every version is resolvable; prior versions
+// are immutable git content — the CI lock validates self-consistency).
+const SNAPSHOT_DIR = resolvePath(dirname(fileURLToPath(import.meta.url)), '../../docs/registry-snapshots');
+const snapshotCache = new Map();
+function loadSnapshotVersion(n) {
+  if (!snapshotCache.has(n)) {
+    try {
+      snapshotCache.set(n, JSON.parse(readFileSync(resolvePath(SNAPSHOT_DIR, `archetype-registry-identity-v${n}.json`), 'utf8')));
+    } catch {
+      snapshotCache.set(n, null); // unknown version → callers fail loudly (null)
+    }
+  }
+  return snapshotCache.get(n);
 }

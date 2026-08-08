@@ -103,6 +103,7 @@ export function diffSourceRevisionVector(vector, expected) {
  * Dark (enabled=false): { proceed: true, dark: true } with zero I/O.
  */
 export async function ensureDeployableCompiledBuild({
+  actor = null, // Sol re-review #4: probe-window admission for the deploy path
   db,
   agentRef,
   agentId,
@@ -123,7 +124,7 @@ export async function ensureDeployableCompiledBuild({
         // Composition write-epoch fence (design note §3): the deploy recompile is
         // epoch-fenced HERE (non-fenced file) — the fenced decide.js needs no edit;
         // a closed epoch refuses the deploy ({proceed:false}, 409 upstream).
-        try { await validateWriteEpochInTx(tx, db); }
+        try { await validateWriteEpochInTx(tx, db, { actor }); }
         catch (e) { if (e instanceof EpochClosedError) return { proceed: false, reason: 'epoch_closed' }; throw e; }
         if (!agentSnap.exists) return { proceed: false, reason: 'agent_not_found' };
         const agent = agentSnap.data();
@@ -136,6 +137,7 @@ export async function ensureDeployableCompiledBuild({
         // the transaction so verify and recompile see one consistent state.
         const inputs = await prepareCompileInputs(tx, {
           agentRef,
+          db, // Sol review #11: record-scoped candidate selection
           nextEquippedBundleIds: agent.equippedBundleIds || [],
           enabled: true,
         });
@@ -195,6 +197,7 @@ export async function ensureDeployableCompiledBuild({
           // PR 3.5: the candidate-mode projection inputs (absent while dark)
           ruleDocs: inputs.ruleDocs ?? null,
           allBundles: inputs.allBundles ?? null,
+          candidateMode: inputs.candidateMode, // #11: the record's selection
           enabled: true,
           nowIso: new Date().toISOString(),
           revision: 'current',

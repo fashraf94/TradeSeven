@@ -14,6 +14,17 @@
 // refactor. The scanner is also the §8 runbook step-0 instrument (re-run at
 // the deployed SHA).
 //
+// B3-EXT (PR 4, ledger row): ONE-LEVEL HELPER-PARAMETER DATA-FLOW. A function
+// whose OWN parameter flows into a write method — `function f(ref){ ref.set(…) }`
+// (callee-base form) or `function f(tx, r){ tx.set(r, …) }` (handle ref-argument
+// form) — is itself a scanned WRITE-HELPER: its definition is a listed site
+// (collection `param:<name>`, unless the same call is already visible to the
+// direct pass), and EVERY call site of the helper is scanned — the argument at
+// the flowing param index resolves through the same chain logic, and a call
+// passing a protected-store or unresolvable ref must be allowlisted at its
+// per-callsite count (`call:<helper>#<idx>` keys). Exactly one hop, per the
+// ruling — NOT full data-flow analysis, NOT the capability refactor.
+//
 // RESOLUTION MODEL (documented so the allowlist reads honestly):
 //   - The scan follows the callee chain (and, for tx/batch writes, the ref
 //     ARGUMENT's chain) looking for a `.collection('<literal>')`. Identifier
@@ -25,17 +36,31 @@
 //   - Firestore-shaped = the chain contains .collection()/.doc()/.batch()/
 //     .runTransaction(), or the base identifier looks like a transaction/
 //     batch handle. Map#set etc. never qualify.
+//   - B3-EXT callee-base helper detection requires REF EVIDENCE: the param is
+//     ref-named (/^(ref|doc)$|Ref$|Doc$/) or the chain between param and write
+//     method steps through .doc()/.collection(). The handle ref-argument form
+//     needs no name evidence (tx.set(<param>, …) is Firestore by construction).
+//   - Helper call sites resolve by binding: a callee identifier defined in the
+//     same file, or bound via an `import { x [as y] }` specifier whose imported
+//     name is a registered helper. Namespace-member calls (`mod.helper()`) are
+//     not resolved (documented limit).
 //
-// DOCUMENTED LIMITS (adversarial review, PR 3 — the scan is one belt among
-// four; the B8 behavioral suite, the A46 census chokepoints, and the
+// DOCUMENTED LIMITS (adversarial review, PR 3 + B3-EXT; the scan is one belt
+// among four — the B8 behavioral suite, the A46 census chokepoints, and the
 // firestore.rules layer are the others):
-//   - A write through a ref received as a FUNCTION PARAMETER
-//     (`function f(ref){ ref.set(d) }`) is invisible to the static chain —
-//     the helper's CALLERS are visible instead, and the census chokepoint
-//     scans cover the known helper surfaces (txUpdateAgentSettings,
-//     writeCompiledBuildsInTx, copyAgentSubcollections).
-//   - A DESTRUCTURED write method (`const {set} = ref; set(d)`) is invisible;
-//     no repo code writes Firestore this way.
+//   - A TWO-HOP chain (helper passes its param into a second helper that
+//     writes) resolves the first helper's call-site argument to 'unresolved' —
+//     visible and listed at the call site, but the intermediate hop is not
+//     followed (the one-level fallback only).
+//   - A callee-base param write with NO ref evidence (param named e.g.
+//     `target`, bare `.set()` with no .doc()/.collection() step) is invisible
+//     — the ref-naming convention is repo-wide, and the census chokepoints
+//     cover the known helper surfaces.
+//   - DESTRUCTURED/rest params (`function f({ref})`) do not register; a
+//     DESTRUCTURED/EXTRACTED write method is NO LONGER invisible (Sol review
+//     #10): detectWriteMethodExtractions flags every `const {set} = ref` /
+//     `const f = tx.update` pattern as an unresolved site — deny-by-default
+//     applies; the repo carries zero occurrences (pinned).
 //   - Allowlist keys count SITES per (file, fn, method, collection) — a new
 //     write added inside an already-listed tuple changes the pinned COUNT and
 //     fails CI (review F3a).
@@ -47,9 +72,11 @@ import { parse } from 'acorn';
 export const PROTECTED_COLLECTIONS = new Set([
   'agents', 'rules', 'bundles', 'compiledBuilds',
   'composition', 'compositionCandidateState', 'compositionEpochOverrides',
+  'compositionProvisionerLeases', // B2 (PR 4): the provisioner-lease registry — part of the fence surface
 ]);
 export const WRITE_METHODS = new Set(['set', 'update', 'create', 'delete', 'add']);
 const HANDLE_RE = /^(tx|txn|transaction|batch|writeBatch)$/;
+const REF_PARAM_RE = /^(ref|doc)$|Ref$|Doc$/;
 
 // PR-1 transcription FRAGMENTS: bare object-literal data snippets consumed by
 // the PR-1 registry-generation pipeline — not parseable JS modules, and they
@@ -114,29 +141,134 @@ function chainInfo(node, consts, depth = 0) {
   return { firestoreShaped: shaped, collection };
 }
 
-/** Scan one parsed file; returns write-site records. */
-function scanSource(relPath, src) {
+// B3-EXT: the terminal base Identifier of a member/call chain (no const hops —
+// used to test whether a chain roots at a function PARAMETER).
+function chainBaseName(node) {
+  let cur = node;
+  while (cur) {
+    if (cur.type === 'CallExpression') { cur = cur.callee; continue; }
+    if (cur.type === 'MemberExpression') { cur = cur.object; continue; }
+    if (cur.type === 'AwaitExpression' || cur.type === 'ParenthesizedExpression') { cur = cur.argument ?? cur.expression; continue; }
+    if (cur.type === 'Identifier') return cur.name;
+    break;
+  }
+  return null;
+}
+
+// B3-EXT: does the chain step through .doc()/.collection() between its base
+// and the write method? (Ref evidence for a non-ref-named param.)
+function chainHasRefStep(node) {
+  let cur = node; let has = false;
+  while (cur) {
+    if (cur.type === 'CallExpression') {
+      const cal = cur.callee;
+      if (cal?.type === 'MemberExpression' && !cal.computed
+        && (cal.property?.name === 'doc' || cal.property?.name === 'collection')) has = true;
+      cur = cal?.type === 'MemberExpression' ? cal.object : cal; continue;
+    }
+    if (cur.type === 'MemberExpression') { cur = cur.object; continue; }
+    if (cur.type === 'AwaitExpression' || cur.type === 'ParenthesizedExpression') { cur = cur.argument ?? cur.expression; continue; }
+    break;
+  }
+  return has;
+}
+
+// Sol pre-activation review #10: DESTRUCTURED/EXTRACTED write methods. Any
+// pattern that pulls a write method OFF a Firestore-shaped ref/tx/batch —
+// `const { set } = ref`, `const f = tx.update`, `run(docRef.delete)` — makes
+// the eventual write invisible to the call-site pass. Conservative fail-loud
+// rule: every such EXTRACTION is itself a site (`extract:<method>`, always
+// collection-unresolved), so it lands in the deny-by-default listing — a
+// human allowlists it or the scan fails. The repo carries ZERO occurrences
+// today (pinned by the zero-extraction test row).
+export function detectWriteMethodExtractions(relPath, ast, consts, enclosing) {
+  const out = [];
+  const callees = new Set();
+  const typeofOperands = new Set();
+  for (const n of astWalk(ast)) {
+    if (n.type === 'CallExpression' && n.callee) callees.add(n.callee);
+    // `typeof ref.delete === 'function'` (the moverCandidates feature-detect
+    // precedent): the member value is consumed by typeof and can never
+    // produce a write — excluding it is sound, not a rule weakening; the
+    // adjacent actual call remains visible to the direct pass.
+    if (n.type === 'UnaryExpression' && n.operator === 'typeof' && n.argument) typeofOperands.add(n.argument);
+  }
+  const shapedSource = (node) => {
+    if (!node) return false;
+    if (node.type === 'Identifier' && (HANDLE_RE.test(node.name) || REF_PARAM_RE.test(node.name))) return true;
+    if (chainInfo(node, consts).firestoreShaped) return true;
+    return node.type !== 'Identifier' && chainHasRefStep(node);
+  };
+  for (const n of astWalk(ast)) {
+    // Form 1 — destructuring: const { set, update: u } = <firestore-shaped>
+    if (n.type === 'VariableDeclarator' && n.id?.type === 'ObjectPattern' && n.init && shapedSource(n.init)) {
+      for (const prop of n.id.properties ?? []) {
+        const key = prop.key?.type === 'Identifier' ? prop.key.name
+          : (prop.key?.type === 'Literal' && typeof prop.key.value === 'string' ? prop.key.value : null);
+        if (key && WRITE_METHODS.has(key)) {
+          out.push({ file: relPath, fn: enclosing(n.start), method: `extract:${key}`, collection: null });
+        }
+      }
+    }
+    // Form 2 — method-value extraction: a write member that is NOT the callee
+    // of a call (const f = ref.set; fn(tx.update); ref.delete.bind(ref)).
+    if (n.type === 'MemberExpression' && !callees.has(n) && !typeofOperands.has(n)) {
+      const m = writeMethodOf(n);
+      if (m && shapedSource(n.object)) {
+        out.push({ file: relPath, fn: enclosing(n.start), method: `extract:${m}`, collection: null });
+      }
+    }
+  }
+  return out;
+}
+
+// Unit-testable wrapper: parse a source string and run the #10 detector with
+// the same const-hop map the file scan builds.
+export function detectExtractionsInSource(relPath, src) {
+  const ast = parse(src, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true });
+  const consts = new Map();
+  for (const n of astWalk(ast)) {
+    if (n.type === 'VariableDeclarator' && n.id?.type === 'Identifier' && n.init) consts.set(n.id.name, n.init);
+  }
+  return detectWriteMethodExtractions(relPath, ast, consts, () => '<unit>');
+}
+
+// Shared write-method extraction (review F3(c)/design-F1: ref['set'](...) —
+// a computed member whose property is a string literal counts like ref.set()).
+function writeMethodOf(cal) {
+  if (cal?.type !== 'MemberExpression') return null;
+  const method = !cal.computed && cal.property?.type === 'Identifier' ? cal.property.name
+    : cal.computed && cal.property?.type === 'Literal' && typeof cal.property.value === 'string' ? cal.property.value
+    : null;
+  return method && WRITE_METHODS.has(method) ? method : null;
+}
+
+/** Parse + per-file analysis: direct sites, helper defs, import bindings. */
+function scanFile(relPath, src) {
   let ast;
   try {
     ast = parse(src, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true });
   } catch (e) {
-    return [{ file: relPath, fn: '<parse-error>', method: 'parse', collection: `parse_error:${e.message.slice(0, 60)}` }];
+    return {
+      sites: [{ file: relPath, fn: '<parse-error>', method: 'parse', collection: `parse_error:${e.message.slice(0, 60)}` }],
+      helpers: [], imports: new Map(), ast: null, consts: new Map(), enclosing: () => '<top>',
+    };
   }
   // Same-file const/let single-assignment map (identifier → init expression).
   const consts = new Map();
   for (const n of astWalk(ast)) {
     if (n.type === 'VariableDeclarator' && n.id?.type === 'Identifier' && n.init) consts.set(n.id.name, n.init);
   }
-  // Enclosing-function naming via a positioned pass.
+  // Named function-like nodes: enclosing-fn attribution + B3-EXT param lists.
   const fnRanges = [];
   for (const n of astWalk(ast)) {
-    if (n.type === 'FunctionDeclaration' && n.id) fnRanges.push({ start: n.start, end: n.end, name: n.id.name });
+    if (n.type === 'FunctionDeclaration' && n.id) fnRanges.push({ start: n.start, end: n.end, name: n.id.name, node: n });
     if (n.type === 'VariableDeclarator' && n.id?.type === 'Identifier'
       && (n.init?.type === 'ArrowFunctionExpression' || n.init?.type === 'FunctionExpression')) {
-      fnRanges.push({ start: n.init.start, end: n.init.end, name: n.id.name });
+      fnRanges.push({ start: n.init.start, end: n.init.end, name: n.id.name, node: n.init });
     }
     if (n.type === 'ExportDefaultDeclaration' && (n.declaration?.type === 'FunctionDeclaration' || n.declaration?.type === 'ArrowFunctionExpression')) {
-      fnRanges.push({ start: n.declaration.start, end: n.declaration.end, name: n.declaration.id?.name ?? 'default' });
+      fnRanges.push({ start: n.declaration.start, end: n.declaration.end, name: n.declaration.id?.name ?? 'default', node: n.declaration });
     }
   }
   const enclosing = (pos) => {
@@ -145,39 +277,129 @@ function scanSource(relPath, src) {
     return best?.name ?? '<top>';
   };
 
+  // Import bindings: local name → imported name (aliases resolved).
+  const imports = new Map();
+  for (const n of astWalk(ast)) {
+    if (n.type !== 'ImportDeclaration') continue;
+    for (const s of n.specifiers) {
+      if (s.type === 'ImportSpecifier' && s.imported?.type === 'Identifier') imports.set(s.local.name, s.imported.name);
+    }
+  }
+
   const sites = [];
   for (const n of astWalk(ast)) {
     if (n.type !== 'CallExpression') continue;
-    const cal = n.callee;
-    if (cal?.type !== 'MemberExpression') continue;
-    // review F3(c)/design-F1: ref['set'](...) — a computed member whose
-    // property is a string literal counts exactly like ref.set(...).
-    const method = !cal.computed && cal.property?.type === 'Identifier' ? cal.property.name
-      : cal.computed && cal.property?.type === 'Literal' && typeof cal.property.value === 'string' ? cal.property.value
-      : null;
-    if (!method || !WRITE_METHODS.has(method)) continue;
-    const target = chainInfo(cal.object, consts);
+    const method = writeMethodOf(n.callee);
+    if (!method) continue;
+    const target = chainInfo(n.callee.object, consts);
     const viaArg = !target.firestoreShaped && n.arguments[0] ? chainInfo(n.arguments[0], consts) : null;
     const shaped = target.firestoreShaped || viaArg?.firestoreShaped;
     if (!shaped) continue;
     const collection = target.collection ?? viaArg?.collection ?? null;
     sites.push({ file: relPath, fn: enclosing(n.start), method, collection });
   }
-  return sites;
+
+  // B3-EXT: param-write helper detection, per named function-like node. A
+  // nested function checks its OWN params on its own row; walking the full
+  // subtree can only over-report (deny-by-default: over is safe, under is not).
+  const helpers = [];
+  const seen = new Set();
+  for (const r of fnRanges) {
+    const params = (r.node.params || []).map((p) => (p.type === 'Identifier' ? p.name : null));
+    if (!params.some(Boolean)) continue;
+    for (const n of astWalk(r.node)) {
+      if (n.type !== 'CallExpression') continue;
+      const method = writeMethodOf(n.callee);
+      if (!method) continue;
+      const target = chainInfo(n.callee.object, consts);
+      const argInfo = n.arguments[0] ? chainInfo(n.arguments[0], consts) : null;
+      // When the chain (or ref argument) already resolves a LITERAL collection,
+      // the write target is statically known and the direct pass governs — the
+      // param supplies only the handle, not the target. Register a helper ONLY
+      // when the collection genuinely flows through the param (unresolved here).
+      if (target.collection !== null || argInfo?.collection != null) continue;
+      let paramIndex = -1; let paramName = null;
+      // Callee-base form: <param>[.doc(x)].set(…) with ref evidence.
+      const base = chainBaseName(n.callee.object);
+      const bi = base === null ? -1 : params.indexOf(base);
+      if (bi >= 0 && (REF_PARAM_RE.test(base) || chainHasRefStep(n.callee.object))) {
+        paramIndex = bi; paramName = base;
+      }
+      // Handle ref-argument form: tx.set(<param>, …) — Firestore by construction.
+      if (paramIndex === -1 && target.firestoreShaped && n.arguments[0]) {
+        const ab = chainBaseName(n.arguments[0]);
+        const ai = ab === null ? -1 : params.indexOf(ab);
+        if (ai >= 0) { paramIndex = ai; paramName = ab; }
+      }
+      if (paramIndex === -1) continue;
+      const key = `${r.name}#${paramIndex}#${method}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      helpers.push({ file: relPath, name: r.name, paramIndex, paramName, method });
+      // The helper's own write is a listed site UNLESS the direct pass above
+      // already captured this call (handle-shaped or const-resolved chains).
+      const viaArg = !target.firestoreShaped && n.arguments[0] ? chainInfo(n.arguments[0], consts) : null;
+      if (!(target.firestoreShaped || viaArg?.firestoreShaped)) {
+        sites.push({ file: relPath, fn: r.name, method, collection: `param:${paramName}` });
+      }
+    }
+  }
+
+  return { sites, helpers, imports, ast, consts, enclosing };
 }
 
 export function siteKey(s) {
   return `${s.file}::${s.fn}::${s.method}::${s.collection ?? 'unresolved'}`;
 }
 
+function needsListingFilter(s) {
+  return s.collection === null
+    || PROTECTED_COLLECTIONS.has(s.collection)
+    || String(s.collection).startsWith('parse_error:')
+    || String(s.collection).startsWith('param:');
+}
+
 /**
- * The full scan: every Firestore-shaped write site under api/ + scripts/.
- * `needsListing` = protected-or-unresolved sites (the deny-by-default set).
+ * The full scan: every Firestore-shaped write site under api/ + scripts/,
+ * PLUS (B3-EXT) every param-write helper definition and every call site of a
+ * registered helper. `needsListing` = protected-or-unresolved sites (the
+ * deny-by-default set).
  */
 export function scanProtectedStoreWrites(repoRoot) {
   const files = [...walkFiles(repoRoot, 'api', []), ...walkFiles(repoRoot, 'scripts', [])];
+  const perFile = files.map((f) => ({ file: f, ...scanFile(f, readFileSync(resolve(repoRoot, f), 'utf8')) }));
+
+  // Global helper registry: name → merged param indexes (cross-file by name,
+  // bound at call sites through import specifiers or same-file definition).
+  const registry = new Map();
+  for (const pf of perFile) {
+    for (const h of pf.helpers) {
+      if (!registry.has(h.name)) registry.set(h.name, new Set());
+      registry.get(h.name).add(h.paramIndex);
+    }
+  }
+
   const all = [];
-  for (const f of files) all.push(...scanSource(f, readFileSync(resolve(repoRoot, f), 'utf8')));
-  const needsListing = all.filter((s) => s.collection === null || PROTECTED_COLLECTIONS.has(s.collection) || String(s.collection).startsWith('parse_error:'));
+  for (const pf of perFile) {
+    all.push(...pf.sites);
+    if (!pf.ast) continue;
+    // #10: extracted write methods are sites too (always unresolved).
+    all.push(...detectWriteMethodExtractions(pf.file, pf.ast, pf.consts, pf.enclosing));
+    const localNames = new Set(pf.helpers.map((h) => h.name));
+    for (const n of astWalk(pf.ast)) {
+      if (n.type !== 'CallExpression' || n.callee?.type !== 'Identifier') continue;
+      const local = n.callee.name;
+      const bound = localNames.has(local) ? local
+        : (pf.imports.has(local) && registry.has(pf.imports.get(local)) ? pf.imports.get(local) : null);
+      if (!bound || !registry.has(bound)) continue;
+      for (const paramIndex of registry.get(bound)) {
+        const arg = n.arguments[paramIndex];
+        const info = arg ? chainInfo(arg, pf.consts) : { collection: null };
+        all.push({ file: pf.file, fn: pf.enclosing(n.start), method: `call:${bound}#${paramIndex}`, collection: info.collection });
+      }
+    }
+  }
+
+  const needsListing = all.filter(needsListingFilter);
   return { all, needsListing };
 }

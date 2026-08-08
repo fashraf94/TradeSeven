@@ -1,3 +1,4 @@
+import { withEpochToken, fetchBirthProvenance } from './compositionIdentityClient';
 import {
   collection, doc, addDoc, updateDoc,
   getDoc, getDocs, query, where, orderBy, limit,
@@ -133,7 +134,9 @@ export const createAgent = async (ownerId, agentData) => {
       lastDeployedAt: null,
     };
 
-    const docRef = await addDoc(collection(db, AGENTS_COLLECTION), agentDoc);
+    // #1: epoch-bound; #6: birth provenance (both no-ops pre-genesis).
+    const docRef = await addDoc(collection(db, AGENTS_COLLECTION),
+      await withEpochToken({ ...agentDoc, ...(await fetchBirthProvenance()) }));
     return docRef.id;
   } catch (error) {
     console.error('Error creating agent:', error);

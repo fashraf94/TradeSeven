@@ -1,55 +1,95 @@
 {
-  "_comment": "Composition PR 2 — the identity-affecting writer census of record (Phase 0 item 14, mechanized; test A46 in compositionWriterCensus.test.js). Every writer class carries its fence mechanism per docs/composition/PR2_RESOLVER_AND_EPOCH_DESIGN.md §3. A new writer of the identity surface that is absent from this census fails CI.",
-  "fencedEndpoints": [
-    "api/agent/equip-bundle.js",
-    "api/agent/unequip-bundle.js",
-    "api/agent/equip-lean.js",
-    "api/agent/unequip-lean.js",
-    "api/agent/equip-watchlist.js",
-    "api/agent/unequip-watchlist.js",
-    "api/agent/change-archetype.js",
-    "api/agent/update-agent-settings.js",
-    "api/agent/set-tempo-dial.js",
-    "api/agent/set-rule-hardness.js",
-    "api/agent/reforge-bundle.js"
-  ],
-  "fencedTransactionalUtils": [
-    "api/_utils/deployBuildValidation.js"
-  ],
-  "backgroundLoops": [
-    { "file": "api/_utils/trainingClone.js", "guard": "per-iteration", "note": "clone provisioning births identity state; assertWriteEpochOpen per human seat" },
-    { "file": "api/_utils/casualClone.js", "guard": "entry (ensureCasualClone)", "note": "endpoint-invoked provisioner (ensure-casual-clone, PR #716 merge reconciliation) — births AND re-syncs identity state incl. rules/bundles subcollections via copyAgentSubcollections; closed epoch → 409 epoch_closed at the endpoint, nothing written" },
-    { "file": "api/_utils/archetypeSeeding.js", "guard": "entry (softDeleteReplacedTraitRuleDocs)", "note": "the one POST-COMMIT writer of the fenced rules store (change-archetype + trainingClone call sites); closed epoch → skip, orphans inert (review C3)" }
-  ],
-  "adminCliScripts": [
-    { "file": "scripts/rule-compat-cleanup.js", "guard": "entry", "note": "founder-serialized CLI; §8 runbook pause is the second belt" },
-    { "file": "scripts/mastery-preflip-normalize.js", "guard": "entry (apply path)", "note": "dry-run touches nothing live" },
-    { "file": "scripts/ws1-observe-walk.js", "guard": "entry", "note": "synthetic test-marked docs only" },
-    { "file": "scripts/composition/migration-scan.js", "guard": "per-iteration + pre-apply", "note": "the migration runner itself; writes candidate namespace only" }
-  ],
-  "clientSdkRulesLayer": {
-    "mechanism": "epochWriteOpen() in firestore.rules (inert until Console deploy; absent doc = open)",
-    "gatedClauses": [
-      "agents create (births)",
-      "agents/{id}/rules create+update (rule authoring)",
-      "agents/{id}/bundles create+update (bundle authoring / forge)"
-    ],
-    "writers": [
-      "src/services/agentService.js#createAgent",
-      "src/services/forgeService.js#createRule/updateRule/softDeleteRule/createBundle/addRuleToBundle/removeRuleFromBundle/forgeBundle/archiveBundle"
-    ]
+ "_comment": "Composition PR 2 — the identity-affecting writer census of record (Phase 0 item 14, mechanized; test A46 in compositionWriterCensus.test.js). Every writer class carries its fence mechanism per docs/composition/PR2_RESOLVER_AND_EPOCH_DESIGN.md §3. A new writer of the identity surface that is absent from this census fails CI.",
+ "fencedEndpoints": [
+  "api/agent/equip-bundle.js",
+  "api/agent/unequip-bundle.js",
+  "api/agent/equip-lean.js",
+  "api/agent/unequip-lean.js",
+  "api/agent/equip-watchlist.js",
+  "api/agent/unequip-watchlist.js",
+  "api/agent/change-archetype.js",
+  "api/agent/update-agent-settings.js",
+  "api/agent/set-tempo-dial.js",
+  "api/agent/set-rule-hardness.js",
+  "api/agent/reforge-bundle.js"
+ ],
+ "fencedTransactionalUtils": [
+  "api/_utils/deployBuildValidation.js"
+ ],
+ "backgroundLoops": [
+  {
+   "file": "api/_utils/trainingClone.js",
+   "guard": "provisioner lease (B2)",
+   "note": "clone provisioning births identity state; B2 (PR 4): registered lease — transactional epoch-open acquisition at entry, assertLeaseCurrent per human seat (TTL-bounded conformance), released in finally; the §8 close drains leases before its watermark",
+   "guardToken": "acquireProvisionerLease"
   },
-  "derivedClassified": [
-    {
-      "file": "api/agent/decide.js",
-      "site": "activeRules projection write (~:280, skipped when activeBattleId set)",
-      "classification": "DERIVED, transitively fenced — projectActiveRules is a pure function of rules docs + non-archived bundles (status/ruleIds/ruleHardness/name) + agent.equippedTraits — ALL epoch-fenced stores — and the written value additionally passes through resolveForDeploy, which is pure and REMOVAL-ONLY (it can never add content); a window write can only re-derive values the frozen inputs imply. The residual scan reads authority stores through the resolver, never activeRules (census host A: derived). FENCED FILE — a literal in-file check is the optional PR-4 sanctioned-entry splice, not a PR-2 edit.",
-      "founderRuling": "REVERSED — Sol design-review adjudication, Aug 6, 2026 (supersedes the same-day acceptance): DERIVED classification stands for DARK OPERATION ONLY. The PR-4 fenced splice is REQUIRED — epoch/generation validation before the activeRules write + a generation stamp on the written projection; readers reject stale-generation projections. Recorded reason: Sol's cross-generation counterexample — a decide.js window in flight across the activation boundary re-derives from pre-activation reads and commits the stale projection after the new generation activates, unmarked. See docs/composition/ACTIVATION_PRECONDITIONS.md (ruling of record)."
-    }
+  {
+   "file": "api/_utils/casualClone.js",
+   "guard": "provisioner lease (B2)",
+   "note": "endpoint-invoked provisioner (ensure-casual-clone, PR #716 merge reconciliation) — births AND re-syncs identity state incl. rules/bundles subcollections via copyAgentSubcollections; B2 (PR 4): registered lease — transactional epoch-open acquisition at entry, assertLeaseCurrent per write phase, released in finally; closed epoch → 409 epoch_closed at the endpoint, nothing written",
+   "guardToken": "acquireProvisionerLease"
+  },
+  {
+   "file": "api/_utils/archetypeSeeding.js",
+   "guard": "entry (softDeleteReplacedTraitRuleDocs)",
+   "note": "the one POST-COMMIT writer of the fenced rules store (change-archetype + trainingClone call sites); closed epoch → skip, orphans inert (review C3)",
+   "guardToken": "assertWriteEpochOpen"
+  }
+ ],
+ "adminCliScripts": [
+  {
+   "file": "scripts/rule-compat-cleanup.js",
+   "guard": "entry",
+   "note": "founder-serialized CLI; §8 runbook pause is the second belt"
+  },
+  {
+   "file": "scripts/mastery-preflip-normalize.js",
+   "guard": "entry (apply path)",
+   "note": "dry-run touches nothing live"
+  },
+  {
+   "file": "scripts/ws1-observe-walk.js",
+   "guard": "entry",
+   "note": "synthetic test-marked docs only"
+  },
+  {
+   "file": "scripts/composition/migration-scan.js",
+   "guard": "per-iteration + pre-apply",
+   "note": "the migration runner itself; writes candidate namespace only"
+  }
+ ],
+ "clientSdkRulesLayer": {
+  "mechanism": "epochWriteAdmitted() in firestore.rules (inert until Console deploy; absent doc = open; present doc requires the writeEpochId token — Sol re-review #1 — and the probe state admits only listed identities — #4)",
+  "gatedClauses": [
+   "agents create (births)",
+   "agents/{id}/rules create+update (rule authoring)",
+   "agents/{id}/bundles create+update (bundle authoring / forge)"
   ],
-  "noopClasses": [
-    { "class": "CPU/house seeds (api/_utils/tournamentCpu.js)", "reason": "activeRules:[] and no rules subcollection — no identity content to fence" },
-    { "class": "compiled-build writes (api/_utils/compileOnSettingsChange.js#writeCompiledBuildsInTx)", "reason": "covered atomically by the calling endpoint/deploy-gate transaction that already validated the epoch" },
-    { "class": "archetypeSeeding in-tx seeds", "reason": "ride change-archetype's validated transaction; deterministic loop rides ensureTrainingClones' per-iteration guard" }
+  "writers": [
+   "src/services/agentService.js#createAgent",
+   "src/services/forgeService.js#createRule/updateRule/softDeleteRule/createBundle/addRuleToBundle/removeRuleFromBundle/forgeBundle/archiveBundle"
   ]
+ },
+ "derivedClassified": [
+  {
+   "file": "api/agent/decide.js",
+   "site": "activeRules projection write (~:280, skipped when activeBattleId set)",
+   "classification": "DERIVED, transitively fenced — projectActiveRules is a pure function of rules docs + non-archived bundles (status/ruleIds/ruleHardness/name) + agent.equippedTraits — ALL epoch-fenced stores — and the written value additionally passes through resolveForDeploy, which is pure and REMOVAL-ONLY (it can never add content); a window write can only re-derive values the frozen inputs imply. The residual scan reads authority stores through the resolver, never activeRules (census host A: derived). FENCED FILE — a literal in-file check is the optional PR-4 sanctioned-entry splice, not a PR-2 edit.",
+   "founderRuling": "REVERSED — Sol design-review adjudication, Aug 6, 2026 (supersedes the same-day acceptance): DERIVED classification stands for DARK OPERATION ONLY. The PR-4 fenced splice is REQUIRED — epoch/generation validation before the activeRules write + a generation stamp on the written projection; readers reject stale-generation projections. Recorded reason: Sol's cross-generation counterexample — a decide.js window in flight across the activation boundary re-derives from pre-activation reads and commits the stale projection after the new generation activates, unmarked. See docs/composition/ACTIVATION_PRECONDITIONS.md (ruling of record)."
+  }
+ ],
+ "noopClasses": [
+  {
+   "class": "CPU/house seeds (api/_utils/tournamentCpu.js)",
+   "reason": "activeRules:[] and no rules subcollection — no identity content to fence"
+  },
+  {
+   "class": "compiled-build writes (api/_utils/compileOnSettingsChange.js#writeCompiledBuildsInTx)",
+   "reason": "covered atomically by the calling endpoint/deploy-gate transaction that already validated the epoch"
+  },
+  {
+   "class": "archetypeSeeding in-tx seeds",
+   "reason": "ride change-archetype's validated transaction; deterministic loop rides ensureTrainingClones' per-iteration guard"
+  }
+ ]
 }

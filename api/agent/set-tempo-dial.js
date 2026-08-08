@@ -97,7 +97,7 @@ export default async function handler(req, res) {
       const agentSnap = await tx.get(agentRef);
       // Composition write-epoch fence (design note §3): read-phase validation —
       // zero I/O while dark; a closed epoch 409s with nothing written (A41).
-      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX });
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX, actor: user.uid }); // #4: probe-window admission
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
@@ -139,6 +139,7 @@ export default async function handler(req, res) {
       // P2.4a compile reads (dark no-op): must precede the first tx write.
       const compileInputs = await prepareCompileInputs(tx, {
         agentRef,
+        db, // Sol review #11: record-scoped candidate selection
         nextEquippedBundleIds: agent.equippedBundleIds || [],
         enabled: COMPILER_ENABLED,
       });
@@ -158,6 +159,7 @@ export default async function handler(req, res) {
         // PR 3.5: candidate-mode projection inputs (absent while dark)
         ruleDocs: compileInputs?.ruleDocs ?? null,
         allBundles: compileInputs?.allBundles ?? null,
+        candidateMode: compileInputs?.candidateMode, // #11: the record's selection, never bare flag
         enabled: COMPILER_ENABLED,
         nowIso,
       });

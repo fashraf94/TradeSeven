@@ -563,7 +563,11 @@ ${ctx.consolidatedInsight}`);
     // Composition PR 3: advisory index from the ACTIVATED compiled artifact
     // only (A25) — the battle's frozen manifest slice, attached at creation
     // from the deploy gate's build. Absent on every battle today (dark).
-    const compositionAdvisories = buildCompositionAdvisoryIndex(battle.resolvedAgentManifest?.compositionCompat ?? null);
+    const compositionAdvisories = buildCompositionAdvisoryIndex(battle.resolvedAgentManifest?.compositionCompat ?? null, {
+      // PR 4 (FC-1 reader side, §7-signed): the manifest half of the
+      // generation-stamp pair — a mismatched pair renders nothing.
+      expectedSourceGeneration: battle.resolvedAgentManifest?.compositionSourceGeneration ?? null,
+    });
 
     const ruleLines = [];
     if (constraints.length > 0) {
