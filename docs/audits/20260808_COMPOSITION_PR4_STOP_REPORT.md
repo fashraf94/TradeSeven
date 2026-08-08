@@ -6,7 +6,7 @@
 
 ## Status — nothing pending a ruling
 
-| Review round | Outcome | State at `55943b6d` |
+| Review round | Outcome | State at `d6c292ed` |
 |---|---|---|
 | Founder rulings (Aug 7) | Substitutions RATIFIED · §7 sign‑off GRANTED · F2 ruled GENESIS · L1‑1 ruled no‑gate | All folded (batches 3–9) |
 | §2 two‑pass adversarial review | 18 findings | All fixed/disclosed; 13 mutations killed |
@@ -23,7 +23,7 @@
 | C. Ledger PR‑4 rows | ✅ B1, B2, B4, M6, B9, M10, B1‑EXT, B3‑EXT, B8‑FINAL, A7‑LOCK, M7‑E2E, BARE‑CELL‑INVARIANT — with acceptance suites |
 | D. Flip obligations | ✅ ON‑state goldens promoted; endpoint tx fakes reconciled; F7 candidate round‑trip + record‑state + malformed‑reject rows |
 | E. Runbook | ✅ steps −1 → 9 + THE ROLLBACK PROTOCOL (Rollback‑A/B) + the 8A/8B split on the mechanical probe gate; strict run log |
-| Dark guarantee | ✅ flags dark, no record, no epoch doc: byte‑identical (zero added keys, zero added reads on server paths — falsifiable via the read‑logging fixture); full suite **7,383 passed / 53 skipped**; rules emulator **130/130**; `vite build` clean |
+| Dark guarantee | ✅ flags dark, no record, no epoch doc: byte‑identical (zero added keys, zero added reads on server paths — falsifiable via the read‑logging fixture); full suite **7,386 passed / 53 skipped**; rules emulator **133/133**; `vite build` clean |
 
 ## The batch‑12 delta — Sol's confirmation pass, all folded
 
