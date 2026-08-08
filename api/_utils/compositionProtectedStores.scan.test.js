@@ -122,3 +122,34 @@ describe('B3-EXT — one-level helper-parameter data-flow (PR 4 ledger row)', ()
     }
   });
 });
+
+describe('#10 (Sol pre-activation review) — destructured/extracted write methods fail loud', () => {
+  it('the repo carries ZERO write-method extractions (the conservative rule: any occurrence must resolve through the allowlist or fail unresolved)', () => {
+    const { all } = scanProtectedStoreWrites(REPO);
+    const extractions = all.filter((s) => s.method.startsWith('extract:'));
+    expect(extractions).toEqual([]);
+  });
+
+  it('the detector catches destructuring, aliases, method-value extraction, and bind — and ignores non-Firestore shapes and ordinary calls', async () => {
+    const { detectExtractionsInSource } = await import('./compositionProtectedStoresScan.js');
+    const flagged = (src) => detectExtractionsInSource('unit.js', src).map((s) => s.method);
+    // Destructured off a tx handle:
+    expect(flagged('export function f(tx) { const { set } = tx; set(a, b); }')).toEqual(['extract:set']);
+    // Aliased destructure off a ref:
+    expect(flagged('export function f(agentRef) { const { update: u } = agentRef; u({}); }')).toEqual(['extract:update']);
+    // Destructure off a const-hopped handle:
+    expect(flagged('export function f(tx) { const t = tx; const { create } = t; }')).toEqual(['extract:create']);
+    // Method-value extraction from a chain:
+    expect(flagged("export function f(db) { const del = db.collection('agents').doc('a').delete; del(); }")).toEqual(['extract:delete']);
+    // Passed as a value / bound:
+    expect(flagged('export function f(docRef, run) { run(docRef.set); }')).toEqual(['extract:set']);
+    expect(flagged('export function f(docRef) { return docRef.delete.bind(docRef); }')).toEqual(['extract:delete']);
+    // NOT flagged: a Map/store delete (non-Firestore shape), an ordinary called write:
+    expect(flagged('export function f(store, k) { store.delete(k); const { add } = someSet; }')).toEqual([]);
+    expect(flagged("export function f(tx, ref) { tx.set(ref, {}); ref.update({}); }")).toEqual([]);
+    // NOT flagged: a typeof feature-detect — the member value is consumed by
+    // typeof and can never write (the moverCandidates precedent); the
+    // adjacent actual call stays visible to the direct pass:
+    expect(flagged("export function f(ref) { if (typeof ref.delete === 'function') ref.delete(); }")).toEqual([]);
+  });
+});

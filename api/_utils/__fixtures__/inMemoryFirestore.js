@@ -44,6 +44,7 @@ export function makeInMemoryDb(initial = {}) {
         applyDotPathUpdate(data, updates);
         writeLog.push(['update', path]);
       },
+      delete: async () => { store.delete(path); writeLog.push(['delete', path]); },
       collection: (sub) => makeCollection(`${path}/${sub}`),
     };
   }

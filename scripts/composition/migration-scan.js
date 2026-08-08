@@ -12,7 +12,15 @@
 //
 //   node scripts/composition/migration-scan.js                  # dry-run, full fleet
 //   node scripts/composition/migration-scan.js --agent <id>     # dry-run one agent
-//   node scripts/composition/migration-scan.js --apply --yes    # LIVE overlay write (founder-gated)
+//   node scripts/composition/migration-scan.js --apply --yes    # LIVE overlay write (founder-gated; open epoch)
+//   node scripts/composition/migration-scan.js --apply --yes --during-close
+//     # Sol review #5: the RUNBOOK STEP-3 form — the candidate-namespace
+//     # apply EXPLICITLY AUTHORIZED while the live epoch is CLOSED (the
+//     # post-watermark freeze). A dedicated inverse guard
+//     # (assertClosedEpochCandidateWindow) replaces the open-epoch check;
+//     # the general guard is untouched. Every write is path-asserted into
+//     # compositionCandidateState/* — live/base/protected stores are
+//     # structurally out of the write set AND belt-checked at runtime.
 //
 // Requires Firestore Admin credentials (FIREBASE_PROJECT_ID + service account
 // env) — the report is written to scripts/composition/out/ and, at apply time,
@@ -31,12 +39,13 @@ import { getFirebaseAdmin } from '../../api/_utils/firebaseAdmin.js';
 import { planAgentMigration, scanResidualsAfterPlan } from '../../api/_utils/compositionMigration.js';
 import { computeOverlayRunHash, computeOverlaySemanticHash, entryDocId } from '../../api/_utils/compositionStateResolver.js';
 import { buildIdentityMigrationFeedEntries } from '../../api/_utils/identityMigrationFeed.js';
-import { assertWriteEpochOpen } from '../../api/_utils/compositionWriteEpoch.js';
+import { assertWriteEpochOpen, assertClosedEpochCandidateWindow } from '../../api/_utils/compositionWriteEpoch.js';
 import { ARCHETYPE_IDENTITY_VERSION } from '../../api/_utils/archetypeVersionConstants.js';
 
 const args = process.argv.slice(2);
 const APPLY = args.includes('--apply');
 const YES = args.includes('--yes');
+const DURING_CLOSE = args.includes('--during-close'); // Sol #5: the runbook step-3 closed-epoch authorization
 const ONE_AGENT = args.includes('--agent') ? args[args.indexOf('--agent') + 1] : null;
 
 // Explicit replacementMaps for enum narrowings (M4): founder-authored per
@@ -76,8 +85,10 @@ async function main() {
   let scanned = 0;
 
   for (const agentDoc of agentsSnap) {
-    // bounded conformance: the epoch guard runs per agent iteration (design §3)
-    await assertWriteEpochOpen(db, { enabled: true }); // review P5: the migration ALWAYS checks, flag-independent
+    // bounded conformance: the epoch guard runs per agent iteration (design §3).
+    // #5: --during-close swaps in the INVERSE assertion (closed window), never a bypass.
+    if (DURING_CLOSE) await assertClosedEpochCandidateWindow(db);
+    else await assertWriteEpochOpen(db, { enabled: true }); // review P5: the migration ALWAYS checks, flag-independent
     const records = await fetchAgentRecords(db, agentDoc);
     if (!records.agent.archetype) continue;
     scanned += 1;
@@ -126,8 +137,16 @@ async function main() {
   if (!YES) { console.error('\n--apply requires --yes (founder-gated).'); process.exit(2); }
 
   // ── APPLY: candidate namespace ONLY (Method B) ───────────────────────────
-  await assertWriteEpochOpen(db, { enabled: true }); // review P5: the migration ALWAYS checks, flag-independent // final pre-write check
+  if (DURING_CLOSE) await assertClosedEpochCandidateWindow(db); // #5: the closed-window claim re-verified at the final pre-write check
+  else await assertWriteEpochOpen(db, { enabled: true }); // review P5: the migration ALWAYS checks, flag-independent // final pre-write check
   const runRef = db.collection('compositionCandidateState').doc(runId);
+  // #5 belt: every apply write must land in the candidate namespace — a
+  // future edit that widens the write set fails LOUD here, not in review.
+  const assertCandidatePath = (ref) => {
+    if (!String(ref.path).startsWith('compositionCandidateState/')) {
+      throw new Error(`apply write outside the candidate namespace: ${ref.path}`);
+    }
+  };
   const feedEntries = buildIdentityMigrationFeedEntries(allEntries, {
     nowIso: new Date().toISOString(), migrationRunId: runId,
   });
@@ -137,10 +156,13 @@ async function main() {
   for (let i = 0; i < allEntries.length; i += 400) {
     const batch = db.batch();
     for (const e of allEntries.slice(i, i + 400)) {
-      batch.set(runRef.collection('entries').doc(entryDocId(e.entryKey)), e); // M12: injective base64url id
+      const entryRef = runRef.collection('entries').doc(entryDocId(e.entryKey));
+      assertCandidatePath(entryRef);
+      batch.set(entryRef, e); // M12: injective base64url id
     }
     await batch.commit();
   }
+  assertCandidatePath(runRef);
   await runRef.set({
     migrationRunId: runId, candidateStateId: runId,
     activeIdentityVersion: summary.activeIdentityVersion,

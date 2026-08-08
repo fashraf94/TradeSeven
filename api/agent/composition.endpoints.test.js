@@ -171,7 +171,7 @@ const DEFERRED_SNAP = { id: 'rd2', sourceRef: 'f-12', paramValues: {}, params: {
 const OUT_OF_DOMAIN_SNAP = { id: 'rd3', sourceRef: 'alloc-sector-cap', paramValues: { pct: 90 }, params: { pct: {} } }; // mc domain {40..80}
 const LEGAL_SNAP = { id: 'rd4', sourceRef: 'tech-volume-surge', paramValues: {}, params: {} };
 
-function fleet({ archetype = 'degen', snaps = [BANNED_SNAP], epochDoc = null, withRuleDocs = false } = {}) {
+function fleet({ archetype = 'degen', snaps = [BANNED_SNAP], epochDoc = null, withRuleDocs = false, activationDoc = null } = {}) {
   return makeFakeFirestore({
     agentDocs: { 'agent-1': { ownerId: 'owner-1', archetype, equippedBundleIds: [], activeRules: [], settingsRev: 3 } },
     bundleDocs: { 'agent-1/bundle-1': { status: 'forged', ruleIds: snaps.map((s) => s.id), ruleSnapshots: snaps, ruleHardness: {} } },
@@ -182,8 +182,21 @@ function fleet({ archetype = 'degen', snaps = [BANNED_SNAP], epochDoc = null, wi
       subDocs: Object.fromEntries(snaps.map((s2) => [`agent-1/rules/${s2.id}`, { sourceRef: s2.sourceRef, paramValues: s2.paramValues, params: s2.params, text: 'r' }])),
     } : {}),
     epochDoc,
+    activationDoc,
   });
 }
+
+// Sol review #11 (record-scoped candidate selection): the candidate cell
+// source follows THE RECORD, never the bare flag — these are the three
+// record states the compile chokepoint distinguishes.
+const V3_RECORD = Object.freeze({
+  activeIdentityVersion: 3, boundaryStateVersion: 1, activeEpochId: 'e-1',
+  candidateStateId: 'run-1', semanticHash: 'h-1', activationGeneration: 2, overrideRevision: 0,
+});
+const GENESIS_RECORD = Object.freeze({
+  activeIdentityVersion: 2, boundaryStateVersion: 1, activeEpochId: 'e-0',
+  candidateStateId: 'genesis', semanticHash: 'genesis:null', activationGeneration: 1, overrideRevision: 0,
+});
 
 beforeEach(() => {
   flagState.mode = 'off';
@@ -367,10 +380,11 @@ describe('F7 (D15) — candidate-mode endpoint ROUND-TRIP: the compile path lit 
   // endpoint-observable today is the unified-projection vector component
   // (projectedRulesHash, the 3.5 freshness key): present in candidate mode,
   // absent in legacy — the dual-state contract at the persisted boundary.
-  it('equip-bundle with COMPILER + candidate boundary ON → 200; the persisted build carries the CANDIDATE vector fingerprint (projectedRulesHash) and reports the X6 metadata gap honestly', async () => {
+  it('equip-bundle with COMPILER + candidate flag ON + the RECORD selecting v3 → 200; the persisted build carries the CANDIDATE vector fingerprint (projectedRulesHash) and reports the X6 metadata gap honestly', async () => {
     flagState.compiler = true;
     flagState.candidate = true;
-    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP], withRuleDocs: true });
+    // #11: the record — not the flag — selects the candidate cell source.
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP], withRuleDocs: true, activationDoc: { ...V3_RECORD } });
     activeFirestore = db;
     const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
     await equipBundleHandler(req, res);
@@ -384,10 +398,36 @@ describe('F7 (D15) — candidate-mode endpoint ROUND-TRIP: the compile path lit 
     expect(build.validation.errors.some((e) => e.code === 'metadata_missing')).toBe(true); // X6, recorded
   });
 
-  it('same drive with the candidate boundary OFF → the persisted build is LEGACY (no projectedRulesHash key) — the dual-state contract', async () => {
+  it('GENESIS-PRESENT (Sol review #11): flags lit + the genesis record → the persisted build is LEGACY — genesis never lights the candidate pipeline, so a rollback-to-genesis restores live-cell compiles even with the fence flag standing', async () => {
+    flagState.compiler = true;
+    flagState.candidate = true;
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP], withRuleDocs: true, activationDoc: { ...GENESIS_RECORD } });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    const buildKeys = Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'));
+    expect(buildKeys.length).toBeGreaterThan(0);
+    expect('projectedRulesHash' in state.subDocs[buildKeys[0]].sourceRevisionVector).toBe(false);
+  });
+
+  it('RECORD ABSENT (the pre-genesis lit window) → LEGACY build — absence never selects the candidate (A48: only a record naming v3 does)', async () => {
+    flagState.compiler = true;
+    flagState.candidate = true;
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP], withRuleDocs: true });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    const buildKeys = Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'));
+    expect(buildKeys.length).toBeGreaterThan(0);
+    expect('projectedRulesHash' in state.subDocs[buildKeys[0]].sourceRevisionVector).toBe(false);
+  });
+
+  it('same drive with the candidate boundary OFF (dark) → LEGACY build even under a v3 record — the flag stays the dark switch (A23), zero record reads', async () => {
     flagState.compiler = true;
     flagState.candidate = false;
-    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP] });
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP], activationDoc: { ...V3_RECORD } });
     activeFirestore = db;
     const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
     await equipBundleHandler(req, res);

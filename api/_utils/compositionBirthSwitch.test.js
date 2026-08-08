@@ -156,3 +156,32 @@ describe('F2 ruling — GENESIS births are pre-activation births (rollback-to-ge
     expect(genesisClient.traitOf('trait-steady-anchor')).toEqual(nullClient.traitOf('trait-steady-anchor'));
   });
 });
+
+describe('#1 (Sol pre-activation review) — the honest rollback-scope regression: what rollback does and does NOT reverse', () => {
+  it('a v3-BORN agent keeps its v3-born base docs after rollback-to-genesis; a v2-born agent differs — rollback is SELECTOR-total, base state needs the named reconciliation', async () => {
+    // The lifecycle Sol prescribed: genesis → activate v3 → an agent is BORN
+    // at v3 → rollback (the selector now says live). The recorded HONEST
+    // result — not an asserted equality:
+    const refV3Born = makeAgentRefFake();
+    await seedArchetypeTraitsDeterministic(refV3Born, 'guardian', { identityVersion: CANDIDATE_IDENTITY_VERSION });
+    const refV2Born = makeAgentRefFake();
+    await seedArchetypeTraitsDeterministic(refV2Born, 'guardian'); // the post-rollback selector's world (live)
+
+    const v3Refs = seededSourceRefs(refV3Born.docs);
+    const v2Refs = seededSourceRefs(refV2Born.docs);
+    // (1) The v3-born agent's PERSISTED base docs are untouched by the
+    // selector repoint — they remain the substituted set:
+    expect(v3Refs).toContain('alloc-sector-cap');
+    expect(v3Refs).not.toContain('risk-single-stock-limit');
+    // (2) A v2-born agent (any birth after the rollback) carries the live set:
+    expect(v2Refs).toContain('risk-single-stock-limit');
+    expect(v2Refs).not.toContain('alloc-sector-cap');
+    // (3) THE HONEST RESULT OF RECORD: the two resolutions DIVERGE. Rollback
+    // reverses the selector (births, reads, cell sources) but NOT base state
+    // born under v3 — that is the runbook's enumerated hand reconciliation
+    // (delete/reseed the probe identities' born-with docs), and why the
+    // rollback guarantee is TOTAL only while the fleet is frozen (through
+    // 8A), probe-enumerable during 8B, and selector-total after unfreeze.
+    expect(v3Refs).not.toEqual(v2Refs);
+  });
+});

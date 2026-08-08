@@ -140,7 +140,7 @@ describe('P2.4a enabled behavior (preview-smoke path)', () => {
     const empty = await prepareCompileInputs(tx2, {
       agentRef, nextEquippedBundleIds: [], enabled: true,
     });
-    expect(empty).toEqual({ bundles: [] });
+    expect(empty).toEqual({ bundles: [], candidateMode: false }); // #11: the resolved selection rides the prepared inputs
     expect(tx2.calls.getAll).toEqual([]);
   });
 

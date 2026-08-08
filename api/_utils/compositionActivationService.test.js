@@ -370,3 +370,19 @@ describe('F2 ruling — the GENESIS descriptor (generation 1 = live identity, ba
     expect(def.defaultTraits.find((t) => t.id === 'trait-steady-anchor').ruleIds).toContain('risk-single-stock-limit');
   });
 });
+
+describe('#5 (Sol pre-activation review) — the closed-epoch candidate-apply window', () => {
+  it('CLOSED epoch admits the window; open / closing / absent each REFUSE (the general open-epoch guard is untouched — this is a dedicated inverse assertion)', async () => {
+    const { assertClosedEpochCandidateWindow } = await import('./compositionWriteEpoch.js');
+    const closed = makeInMemoryDb({ 'composition/writeEpoch': { state: 'closed', epochId: 'e-1' } });
+    await expect(assertClosedEpochCandidateWindow(closed.db)).resolves.toEqual({ state: 'closed', epochId: 'e-1' });
+    for (const initial of [
+      { 'composition/writeEpoch': { state: 'open', epochId: 'e-1' } },    // window claim is false — run without --during-close
+      { 'composition/writeEpoch': { state: 'closing', epochId: 'e-1' } }, // the drain has not reached its watermark
+      {},                                                                  // pre-genesis: no sanctioned window exists
+    ]) {
+      const { db } = makeInMemoryDb(initial);
+      await expect(assertClosedEpochCandidateWindow(db)).rejects.toMatchObject({ code: 'candidate_window_not_closed' });
+    }
+  });
+});

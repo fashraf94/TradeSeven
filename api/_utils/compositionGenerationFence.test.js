@@ -260,6 +260,42 @@ describe('FC-1 — readers tolerate both compositionCompat shapes; mismatched st
   });
 });
 
+describe('#2 (Sol pre-activation review) — the ROLLBACK PROTOCOL interleaving guarantee', () => {
+  it('a write pinned under the PRE-rollback world cannot commit after the protocol runs — closed-epoch belt first, descriptor belt after reopen', async () => {
+    flagState.fence = true;
+    const { db, store, writeLog } = makeInMemoryDb({
+      'composition/activation': { ...DESC_B },                       // the activated world (gen 2, epoch ep-B)
+      'composition/writeEpoch': { state: 'open', epochId: 'ep-B' },
+      'agents/agent-1': { activeRules: [] },
+    });
+    const pin = await pinActivationDescriptor(db); // the E1-world flow starts BEFORE the rollback
+    expect(pin.descriptor.activationGeneration).toBe(2);
+
+    // THE PROTOCOL (runbook): close → drain → repoint (fresh generation,
+    // prior tuple) → epoch doc to the TARGET descriptor's epoch, still closed.
+    store.set('composition/writeEpoch', { state: 'closed', epochId: 'ep-B' });
+    store.set('composition/activation', { ...DESC_A, activationGeneration: 3 }); // rollback = prior tuple, fresh generation
+    store.set('composition/writeEpoch', { state: 'closed', epochId: 'ep-A' });
+
+    // Belt 1 — while closed: the stale-pinned write rejects at the epoch.
+    await expect(commitActiveRulesProjection(db, db.collection('agents').doc('agent-1'), RULES, pin))
+      .rejects.toMatchObject({ code: 'epoch_closed' });
+
+    // Belt 2 — after the verified REOPEN: the stale pin STILL rejects (the
+    // descriptor compare) — reopening never re-admits a pre-rollback flow.
+    store.set('composition/writeEpoch', { state: 'open', epochId: 'ep-A' });
+    await expect(commitActiveRulesProjection(db, db.collection('agents').doc('agent-1'), RULES, pin))
+      .rejects.toBeInstanceOf(ProjectionStaleError);
+    expect(writeLog.filter(([, p]) => p.startsWith('agents/'))).toEqual([]);
+
+    // The battle writer's half of the same guarantee: a battle flow pinned
+    // pre-rollback aborts at its commit re-validation with nothing created.
+    await expect(commitBattleDocWithPin(db, { agentId: 'agent-1' }, pin))
+      .rejects.toBeInstanceOf(CutoverInterleavedError);
+    expect([...store.keys()].filter((k) => k.startsWith('agentBattles/'))).toEqual([]);
+  });
+});
+
 describe('the decide.js catch fix (§2 review F1) — static source guard (the decide.auth.test.js pattern)', () => {
   // No test drives the decide handler end-to-end (its fixture surface is the
   // whole deploy), so the F1 fix — fence rejections must 409, never ride the

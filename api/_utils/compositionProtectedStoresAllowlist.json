@@ -28,6 +28,7 @@
     "api/_utils/compositionProvisionerLease.js::acquireProvisionerLease::set::unresolved": 1,
     "api/_utils/compositionProvisionerLease.js::purgeReleasedProvisionerLeases::delete::unresolved": 1,
     "api/_utils/compositionProvisionerLease.js::releaseProvisionerLease::update::unresolved": 1,
+    "api/_utils/compositionProvisionerLease.js::resolveStuckProvisionerLease::update::unresolved": 1,
     "api/_utils/ingestedClaims.js::cleanupExpiredClaims::delete::unresolved": 1,
     "api/_utils/ingestedClaims.js::storeClaims::set::unresolved": 1,
     "api/_utils/liveDraftFormation.js::claimSlotSeat::set::unresolved": 1,

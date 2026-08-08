@@ -57,8 +57,10 @@
 //     — the ref-naming convention is repo-wide, and the census chokepoints
 //     cover the known helper surfaces.
 //   - DESTRUCTURED/rest params (`function f({ref})`) do not register; a
-//     DESTRUCTURED write method (`const {set} = ref`) is invisible; no repo
-//     code writes Firestore either way.
+//     DESTRUCTURED/EXTRACTED write method is NO LONGER invisible (Sol review
+//     #10): detectWriteMethodExtractions flags every `const {set} = ref` /
+//     `const f = tx.update` pattern as an unresolved site — deny-by-default
+//     applies; the repo carries zero occurrences (pinned).
 //   - Allowlist keys count SITES per (file, fn, method, collection) — a new
 //     write added inside an already-listed tuple changes the pinned COUNT and
 //     fails CI (review F3a).
@@ -169,6 +171,66 @@ function chainHasRefStep(node) {
     break;
   }
   return has;
+}
+
+// Sol pre-activation review #10: DESTRUCTURED/EXTRACTED write methods. Any
+// pattern that pulls a write method OFF a Firestore-shaped ref/tx/batch —
+// `const { set } = ref`, `const f = tx.update`, `run(docRef.delete)` — makes
+// the eventual write invisible to the call-site pass. Conservative fail-loud
+// rule: every such EXTRACTION is itself a site (`extract:<method>`, always
+// collection-unresolved), so it lands in the deny-by-default listing — a
+// human allowlists it or the scan fails. The repo carries ZERO occurrences
+// today (pinned by the zero-extraction test row).
+export function detectWriteMethodExtractions(relPath, ast, consts, enclosing) {
+  const out = [];
+  const callees = new Set();
+  const typeofOperands = new Set();
+  for (const n of astWalk(ast)) {
+    if (n.type === 'CallExpression' && n.callee) callees.add(n.callee);
+    // `typeof ref.delete === 'function'` (the moverCandidates feature-detect
+    // precedent): the member value is consumed by typeof and can never
+    // produce a write — excluding it is sound, not a rule weakening; the
+    // adjacent actual call remains visible to the direct pass.
+    if (n.type === 'UnaryExpression' && n.operator === 'typeof' && n.argument) typeofOperands.add(n.argument);
+  }
+  const shapedSource = (node) => {
+    if (!node) return false;
+    if (node.type === 'Identifier' && (HANDLE_RE.test(node.name) || REF_PARAM_RE.test(node.name))) return true;
+    if (chainInfo(node, consts).firestoreShaped) return true;
+    return node.type !== 'Identifier' && chainHasRefStep(node);
+  };
+  for (const n of astWalk(ast)) {
+    // Form 1 — destructuring: const { set, update: u } = <firestore-shaped>
+    if (n.type === 'VariableDeclarator' && n.id?.type === 'ObjectPattern' && n.init && shapedSource(n.init)) {
+      for (const prop of n.id.properties ?? []) {
+        const key = prop.key?.type === 'Identifier' ? prop.key.name
+          : (prop.key?.type === 'Literal' && typeof prop.key.value === 'string' ? prop.key.value : null);
+        if (key && WRITE_METHODS.has(key)) {
+          out.push({ file: relPath, fn: enclosing(n.start), method: `extract:${key}`, collection: null });
+        }
+      }
+    }
+    // Form 2 — method-value extraction: a write member that is NOT the callee
+    // of a call (const f = ref.set; fn(tx.update); ref.delete.bind(ref)).
+    if (n.type === 'MemberExpression' && !callees.has(n) && !typeofOperands.has(n)) {
+      const m = writeMethodOf(n);
+      if (m && shapedSource(n.object)) {
+        out.push({ file: relPath, fn: enclosing(n.start), method: `extract:${m}`, collection: null });
+      }
+    }
+  }
+  return out;
+}
+
+// Unit-testable wrapper: parse a source string and run the #10 detector with
+// the same const-hop map the file scan builds.
+export function detectExtractionsInSource(relPath, src) {
+  const ast = parse(src, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true });
+  const consts = new Map();
+  for (const n of astWalk(ast)) {
+    if (n.type === 'VariableDeclarator' && n.id?.type === 'Identifier' && n.init) consts.set(n.id.name, n.init);
+  }
+  return detectWriteMethodExtractions(relPath, ast, consts, () => '<unit>');
 }
 
 // Shared write-method extraction (review F3(c)/design-F1: ref['set'](...) —
@@ -321,6 +383,8 @@ export function scanProtectedStoreWrites(repoRoot) {
   for (const pf of perFile) {
     all.push(...pf.sites);
     if (!pf.ast) continue;
+    // #10: extracted write methods are sites too (always unresolved).
+    all.push(...detectWriteMethodExtractions(pf.file, pf.ast, pf.consts, pf.enclosing));
     const localNames = new Set(pf.helpers.map((h) => h.name));
     for (const n of astWalk(pf.ast)) {
       if (n.type !== 'CallExpression' || n.callee?.type !== 'Identifier') continue;

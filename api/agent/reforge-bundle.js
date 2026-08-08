@@ -190,6 +190,7 @@ export default async function handler(req, res) {
       // path): must precede the first tx write.
       const compileInputs = await prepareCompileInputs(tx, {
         agentRef,
+        db, // Sol review #11: record-scoped candidate selection
         nextEquippedBundleIds: agentUpdate ? agentUpdate.equippedBundleIds : [],
         enabled: COMPILER_ENABLED && !!agentUpdate,
       });
@@ -219,6 +220,7 @@ export default async function handler(req, res) {
         // PR 3.5: candidate-mode projection inputs (absent while dark)
         ruleDocs: compileInputs?.ruleDocs ?? null,
         allBundles: compileInputs?.allBundles ?? null,
+        candidateMode: compileInputs?.candidateMode, // #11: the record's selection, never bare flag
             enabled: COMPILER_ENABLED,
             nowIso,
           })

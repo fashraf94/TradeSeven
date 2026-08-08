@@ -76,6 +76,7 @@ export default async function handler(req, res) {
       // P2.4a compile reads (dark no-op): must precede the first tx write.
       const compileInputs = await prepareCompileInputs(tx, {
         agentRef,
+        db, // Sol review #11: record-scoped candidate selection
         nextEquippedBundleIds: agent.equippedBundleIds || [],
         enabled: COMPILER_ENABLED,
       });
@@ -96,6 +97,7 @@ export default async function handler(req, res) {
         // PR 3.5: candidate-mode projection inputs (absent while dark)
         ruleDocs: compileInputs?.ruleDocs ?? null,
         allBundles: compileInputs?.allBundles ?? null,
+        candidateMode: compileInputs?.candidateMode, // #11: the record's selection, never bare flag
         enabled: COMPILER_ENABLED,
         nowIso,
       });

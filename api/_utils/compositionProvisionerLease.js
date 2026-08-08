@@ -23,12 +23,16 @@
 //      it) or hasn't acquired yet (its acquisition rejects). No write lands
 //      after the watermark.
 //
-// TTL BACKSTOP, stated honestly: a provisioner that crashes mid-hold leaves a
-// lease the drain would wait on forever — expiresAt bounds that wait. The
-// price is a bounded conformance window: a provisioner stalled PAST its TTL
-// must not write again (assertLeaseCurrent per phase enforces it in-process);
-// a process stalled past TTL that skips the check is outside what any lease
-// can promise — the B8 watermark scan is the backstop of record.
+// TTL SEMANTICS (Sol pre-activation review #3 — the straddle closed): the
+// TTL bounds the HOLDER's write authority in-process (assertLeaseCurrent per
+// phase refuses past expiry), but an expired-but-UNRELEASED lease is NEVER
+// treated as drained — a process stalled past its TTL may still be mid-copy
+// between checks, and completing the drain over it would let writes land
+// after the watermark. The drain REFUSES on such a lease (StuckProvisioner-
+// LeaseError, holders named): the operator must verify the holder process is
+// actually dead (the platform's max function lifetime bounds this) and then
+// resolve it EXPLICITLY (resolveStuckProvisionerLease — a named, attributed
+// release). The B8 watermark scan remains the backstop of record.
 //
 // DARK POSTURE (A23): with COMPOSITION_EPOCH_FENCE_ENABLED=false every helper
 // returns a no-op lease before ANY read — zero added I/O, byte-identical
@@ -53,6 +57,16 @@ export class ProvisionerLeaseExpiredError extends Error {
     this.name = 'ProvisionerLeaseExpiredError';
     this.code = `provisioner_lease_${detail}`;
     this.leaseId = leaseId;
+  }
+}
+
+/** #3: an expired-but-unreleased lease — the drain refuses; explicit resolution required. */
+export class StuckProvisionerLeaseError extends Error {
+  constructor(stuck) {
+    super(`provisioner_lease_stuck: ${stuck.map((l) => `${l.holder} (${l.leaseId})`).join(', ')} — expired without release; verify the holder process is dead, then resolveStuckProvisionerLease`);
+    this.name = 'StuckProvisionerLeaseError';
+    this.code = 'provisioner_lease_stuck';
+    this.stuck = stuck;
   }
 }
 
@@ -132,17 +146,51 @@ export async function releaseProvisionerLease(db, lease, { now = new Date() } = 
   }
 }
 
-/** Active = neither released nor expired, as of `now`. */
-export async function listActiveProvisionerLeases(db, { now = new Date() } = {}) {
+/**
+ * Classify the registry as of `now`: `active` = unreleased + unexpired
+ * (the drain waits on these), `stuck` = unreleased + EXPIRED (#3: the drain
+ * REFUSES on these — never auto-drained).
+ */
+export async function listUnreleasedProvisionerLeases(db, { now = new Date() } = {}) {
   const snap = await db.collection(PROVISIONER_LEASE_COLLECTION).get();
   const active = [];
+  const stuck = [];
   for (const doc of snap.docs || []) {
     const d = doc.data();
     if (d.releasedAt) continue;
-    if (typeof d.expiresAtMs === 'number' && now.getTime() >= d.expiresAtMs) continue;
-    active.push({ leaseId: doc.id, ...d });
+    const expired = typeof d.expiresAtMs === 'number' && now.getTime() >= d.expiresAtMs;
+    (expired ? stuck : active).push({ leaseId: doc.id, ...d });
   }
-  return active;
+  return { active, stuck };
+}
+
+/** Active = neither released nor expired, as of `now`. */
+export async function listActiveProvisionerLeases(db, { now = new Date() } = {}) {
+  return (await listUnreleasedProvisionerLeases(db, { now })).active;
+}
+
+/**
+ * #3: the EXPLICIT resolution for a stuck (expired-but-unreleased) lease.
+ * Only callable on a lease that is genuinely stuck — a live lease refuses
+ * (the holder may still be writing). Marks the release ATTRIBUTED
+ * (resolvedBy/resolvedReason) so the runbook log carries who declared the
+ * holder dead and why; the drain then completes normally.
+ */
+export async function resolveStuckProvisionerLease(db, leaseId, { operator, reason, now = new Date() } = {}) {
+  if (typeof operator !== 'string' || !operator) throw new Error('resolveStuckProvisionerLease: operator required');
+  if (typeof reason !== 'string' || !reason) throw new Error('resolveStuckProvisionerLease: reason required');
+  const ref = db.collection(PROVISIONER_LEASE_COLLECTION).doc(leaseId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error(`resolveStuckProvisionerLease: no lease ${leaseId}`);
+  const d = snap.data();
+  if (d.releasedAt) throw new Error(`resolveStuckProvisionerLease: ${leaseId} is already released`);
+  if (!(typeof d.expiresAtMs === 'number' && now.getTime() >= d.expiresAtMs)) {
+    throw new Error(`resolveStuckProvisionerLease: ${leaseId} has not expired — the holder may still be writing (resolution is for DEAD holders only)`);
+  }
+  await db.collection(PROVISIONER_LEASE_COLLECTION).doc(leaseId).update({
+    releasedAt: now.toISOString(), resolvedBy: operator, resolvedReason: reason,
+  });
+  return { resolved: true, leaseId, holder: d.holder };
 }
 
 /**
@@ -154,26 +202,22 @@ export async function listActiveProvisionerLeases(db, { now = new Date() } = {})
  * @returns {Promise<{drained:true, waitedMs:number, polls:number}>}
  */
 /**
- * §2 review F9: bound the registry. Released and long-expired leases are
- * PURGED at the runbook's unfreeze step (and may be purged any time) — the
- * keep-on-release semantics exist so the DRAIN never races a delete; once
- * the close is over, the trail has been archived in the runbook log and the
- * docs are dead weight.
+ * §2 review F9, narrowed by Sol review #3: bound the registry by purging
+ * RELEASED leases ONLY (at the runbook's unfreeze step, or any time). An
+ * expired-but-unreleased lease is NEVER purged — it is an unresolved stuck
+ * holder the drain must refuse on; purging it would hide exactly that
+ * signal. Resolve it first (resolveStuckProvisionerLease), then purge. The
+ * keep-on-release semantics exist so the DRAIN never races a delete.
  *
  * @returns {Promise<number>} purged count
  */
-export async function purgeReleasedProvisionerLeases(db, { now = new Date(), expiredGraceMs = PROVISIONER_LEASE_TTL_MS } = {}) {
-  const graceMs = Math.max(0, expiredGraceMs); // a negative grace could reach ACTIVE leases — clamp
+export async function purgeReleasedProvisionerLeases(db) {
   const snap = await db.collection(PROVISIONER_LEASE_COLLECTION).get();
   let purged = 0;
   for (const doc of snap.docs || []) {
-    const d = doc.data();
-    const released = !!d.releasedAt;
-    const longExpired = typeof d.expiresAtMs === 'number' && now.getTime() >= d.expiresAtMs + graceMs;
-    if (released || longExpired) {
-      await db.collection(PROVISIONER_LEASE_COLLECTION).doc(doc.id).delete();
-      purged += 1;
-    }
+    if (!doc.data().releasedAt) continue; // unreleased — active OR stuck; never purged
+    await db.collection(PROVISIONER_LEASE_COLLECTION).doc(doc.id).delete();
+    purged += 1;
   }
   return purged;
 }
@@ -188,7 +232,13 @@ export async function drainProvisionerLeases(db, {
   let polls = 0;
   for (;;) {
     polls += 1;
-    const active = await listActiveProvisionerLeases(db, { now: nowFn() });
+    const { active, stuck } = await listUnreleasedProvisionerLeases(db, { now: nowFn() });
+    if (stuck.length > 0) {
+      // #3: expired-but-unreleased is NOT drained — the holder may be
+      // stalled mid-copy between currency checks. REFUSE, name the holders,
+      // require explicit resolution (the runbook STOP).
+      throw new StuckProvisionerLeaseError(stuck);
+    }
     if (active.length === 0) {
       return { drained: true, waitedMs: nowFn().getTime() - startMs, polls };
     }

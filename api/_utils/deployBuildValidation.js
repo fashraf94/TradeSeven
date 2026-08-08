@@ -136,6 +136,7 @@ export async function ensureDeployableCompiledBuild({
         // the transaction so verify and recompile see one consistent state.
         const inputs = await prepareCompileInputs(tx, {
           agentRef,
+          db, // Sol review #11: record-scoped candidate selection
           nextEquippedBundleIds: agent.equippedBundleIds || [],
           enabled: true,
         });
@@ -195,6 +196,7 @@ export async function ensureDeployableCompiledBuild({
           // PR 3.5: the candidate-mode projection inputs (absent while dark)
           ruleDocs: inputs.ruleDocs ?? null,
           allBundles: inputs.allBundles ?? null,
+          candidateMode: inputs.candidateMode, // #11: the record's selection
           enabled: true,
           nowIso: new Date().toISOString(),
           revision: 'current',

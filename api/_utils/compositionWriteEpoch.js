@@ -119,6 +119,34 @@ export async function validateWriteEpochInTx(tx, db, { enabled = COMPOSITION_EPO
   return { state: 'open', epochId: data.epochId ?? null };
 }
 
+/** Sol review #5: the closed-epoch candidate window's refusal. */
+export class CandidateWindowError extends Error {
+  constructor(detail) {
+    super(`candidate_window_not_closed: ${detail}`);
+    this.name = 'CandidateWindowError';
+    this.code = 'candidate_window_not_closed';
+  }
+}
+
+/**
+ * Sol pre-activation review #5: the CLOSED-EPOCH CANDIDATE-APPLY WINDOW —
+ * a DEDICATED authorization for the runbook's step-3 `--apply --during-close`
+ * (writes ONLY compositionCandidateState/*, while the live epoch is frozen).
+ * The general open-epoch guard (assertWriteEpochOpen, below) is UNTOUCHED —
+ * this helper asserts the INVERSE posture: the epoch doc must EXIST and be
+ * 'closed' (the post-watermark freeze). An OPEN epoch refuses (the claimed
+ * window is not real — run without --during-close); 'closing' refuses (the
+ * drain has not reached its watermark); an absent doc refuses (pre-genesis
+ * there is no sanctioned closed window to claim).
+ */
+export async function assertClosedEpochCandidateWindow(db) {
+  const snap = await writeEpochRef(db).get();
+  if (!snap.exists) throw new CandidateWindowError('no epoch doc — the sanctioned window opens at the runbook close, never before genesis');
+  const { state, epochId } = snap.data();
+  if (state !== 'closed') throw new CandidateWindowError(`epoch state '${state}' — the candidate window exists only at the post-watermark freeze`);
+  return { state: 'closed', epochId: epochId ?? null };
+}
+
 /**
  * Non-transactional guard for background loops and admin scripts — called at
  * entry AND per batch/agent iteration (bounded conformance: a loop straddling

@@ -2,7 +2,7 @@
 
 **Governs:** the `ARCHETYPE_IDENTITY_VERSION` composition event's activation (identity v2 → v3). · **Basis:** Spec V0.9 §8/§10 as amended by the closure sheet §V, `ACTIVATION_PRECONDITIONS.md` (every PR-4 row), and the founder rulings of Aug 6–7, 2026 (Q1 boundaryStateVersion, Q2 A24, Q3 substitution policy, the 7-field descriptor union, the clean rename). · **Posture at merge:** everything below is DEPLOYED INACTIVE — flags dark, no activation record, byte-identical production behavior. Nothing in this document runs at merge; the founder runs it live, step by step, each step with a named VERIFY and a named ROLLBACK point.
 
-**The one rollback mechanism (A29/A45/A49 + the F2 GENESIS ruling, Aug 7):** atomic repoint of the **prior descriptor** — `rollbackActivationRecord(db, { toGeneration })` repoints the COMPLETE prior tuple from the append-only history under a strictly-greater generation. **Rollback is TOTAL:** generation 1 is the GENESIS descriptor (written at step 1, before the epoch close — live identity, no overlay participation), so a prior tuple exists at every generation and rolling back to generation 1 restores the pre-activation world exactly (births/reads identical — proven rows). The catalog holds every version immutably; **nothing is ever "restored"**; the abandoned epoch's overrides silently leave resolution and never resurrect. Before genesis (steps −1 to 1.2), "rollback" = stop; nothing has changed.
+**The one rollback mechanism (A29/A45/A49 + the F2 GENESIS ruling; scope per Sol's pre-activation review #1/#12):** atomic repoint of the **prior descriptor** — `rollbackActivationRecord(db, { toGeneration })` repoints the COMPLETE prior tuple from the append-only history under a strictly-greater generation, executed only through **THE ROLLBACK PROTOCOL** (its own section below). **The guarantee, stated honestly:** rollback is **TOTAL while the fleet is frozen** (through step 8A — no v3 base state exists anywhere, so the selector repoint restores the pre-activation world exactly; proven rows). **During 8B** the only v3 base state is the ENUMERABLE operator probe identities — reversed by the named hand reconciliation listed in the protocol. **After general unfreeze,** rollback is **selector-total plus that reconciliation** (base state born under v3 is not reversed by the repoint — the honest-divergence regression row records this). **Rollback-to-genesis is claimed for THIS event only** (generation 2 → 1); an arbitrary-generation rollback claim is FILED post-event behind its prerequisite (immutable per-revision override snapshots / frozen final epoch revision — the ledger's filed item). The catalog holds every version immutably; **nothing is ever "restored"**; the abandoned epoch's overrides silently leave resolution and never resurrect. Before genesis, "rollback" = stop; nothing has changed.
 
 **Standing rules for the window:** **once step 7 has run, `COMPOSITION_EPOCH_FENCE_ENABLED` NEVER lowers** — post-activation it is load-bearing for the server-side descriptor pins (birth-path version selection, projection guard, FC-1 stamping); lowering it splits identity selection instead of deactivating (§2 review F5); deactivation is `rollbackActivationRecord`, nothing else. Also: the §6/§8 freeze holds (no new builds/births/enforced saves); every row of `EXTERNAL_ADMIN_WRITE_PATHS.md` is confirmed paused at the close and resumed at the unfreeze; the A7-LOCK freeze (ACTIVATION_EVIDENCE.json) is in force from step 3 — any movement in a frozen value re-opens the gate chain.
 
@@ -20,20 +20,27 @@
 
 1. Confirm the Vercel production deployment SHA == the merged PR-4 SHA. Record both in the log below.
 2. Run **`node scripts/composition/preflight-at-sha.js --sha <deployed-sha>`** (B8-FINAL). It refuses on HEAD mismatch or a dirty tree and re-runs: the A46 writer census, the B3/B3-EXT deny-by-default scan, the composition battery, the fence-behavior suite, the candidate registry + default-trait suites. **Any newly-discovered writer is reconciled BEFORE proceeding** (the PR #716 casualClone precedent).
-3. **Drain gate (A26/A35):** no active battle's birth identity may differ from the candidate boundary. Predicate over active `agentBattles`: `resolvedAgentManifest.versionStamps.identityVersionAtLock < ARCHETYPE_IDENTITY_VERSION` **or** `identityHashAtLock != <live registry hash>` ⇒ wait for those battles to complete (battles run ≤ a day). Record the drained count.
+3. **Drain gate (A26/A35) — ADVISORY here (Sol review #7):** no active battle's birth identity may differ from the candidate boundary. Predicate over active `agentBattles`: `resolvedAgentManifest.versionStamps.identityVersionAtLock < ARCHETYPE_IDENTITY_VERSION` **or** `identityHashAtLock != <live registry hash>` ⇒ wait for those battles to complete (battles run ≤ a day). Record the drained count. This early run is a scheduling aid — **the HARD gate is the post-watermark repeat at step 1.10**, because battles can start between this check and the close.
 
 **VERIFY:** preflight report green (`validatePreflightReport` at the pinned SHA); drain query returns zero. **ROLLBACK POINT:** nothing changed — stop is free.
 
-## Step 1 — Deploy inactive, write GENESIS, close the write epoch
+## Step 1 — Deploy the flip commits, pin the ACTIVATION SHA, write GENESIS, close the write epoch
 
-1. The merged deploy IS the inactive deploy (v3 snapshot committed, resolver present, no activation record). Flag flips (`COMPOSITION_EPOCH_FENCE_ENABLED=true`, and `COMPOSITION_COMPILED_IDENTITY_ENABLED=true` for the candidate pipeline steps below) are **flip commits deployed here**, reconciling their own pins in the same commit (§2 flip rule); behavior stays byte-identical — the fence fail-opens pre-close, the candidate boundary is dark by absence (no record, no candidate builds).
-2. **B9 re-verification:** the rules deploy + gate ran at step −1; confirm `check-rules-deploy-gate.js` still PASSES against the filled record at this SHA.
-3. **Open the epoch EXPLICITLY:** write `composition/writeEpoch {state:'open', epochId:<E0, new>}` — today's implicit fail-open world made explicit. Required now: the next write arms B1, and the armed world must never see an absent epoch doc.
-4. **GENESIS (the F2 ruling, Aug 7 — BEFORE the epoch close, paired with the open epoch doc):** **`writeGenesisDescriptor(db, { activeEpochId: '<E0>' })`** — generation 1 = the genesis descriptor `{activeIdentityVersion: 2 (live), boundaryStateVersion: 1, candidateStateId: 'genesis', semanticHash: <the reserved null-sentinel>, activeEpochId: E0, overrideRevision: 0}`. No overlay participation — the loader short-circuits to base-only; births and reads are UNCHANGED (proven rows). The write validates the open epoch pairing in its own transaction and refuses if any record exists. **From this write on: B1's absent-epoch-doc-fails-closed is armed coherently, and rollback is TOTAL (a prior descriptor exists at every future generation).**
-5. **Close the epoch:** update `composition/writeEpoch` to `{state:'closing'}` → new writes + lease acquisitions reject → **drain provisioner leases** (`drainProvisionerLeases`; B2 — bounded by TTL, stuck holders named) → `{state:'closed'}` — **the watermark**. (The epoch doc is UPDATED, never deleted — post-genesis an absent doc fails closed everywhere.) Pause every EXTERNAL_ADMIN_WRITE_PATHS row (checklist signed).
-6. **Watermark sweep (B8):** every protected-store doc updated after the watermark must be attributable to a named runbook step.
+*(Ordering per Sol's pre-activation review #8/#4/#9: deploy FIRST → preflight at the final deployed SHA → drain old invocations → pause admin BEFORE any epoch-state write → snapshot smoke BEFORE genesis.)*
 
-**VERIFY:** B9 gate PASS; the loader returns `{activated: true, genesis: true, generation: 1}` and a probe birth still seeds the LIVE defaults (genesis = pre-activation behavior); drain result `{drained:true}`; fence suite semantics live (a probe write 409s `epoch_closed`). **ROLLBACK POINT:** reopen (`{state:'open', epochId: E0}`) + resume the paused rows — genesis stays: it is generation 1 forever, selects the live identity, and changes no behavior.
+1. **Deploy the flip commits FIRST** (`COMPOSITION_EPOCH_FENCE_ENABLED=true`, and `COMPOSITION_COMPILED_IDENTITY_ENABLED=true` for the candidate pipeline steps below — flip commits reconciling their own pins, §2 flip rule) and **WAIT for the deployment to be live**. Behavior stays byte-identical — the fence fail-opens pre-close; the candidate boundary follows THE RECORD (#11: `resolveCandidateModeInTx` — no record / genesis ⇒ live cells; the flag is only the dark switch).
+2. **Re-run the COMPLETE step-0 preflight at the final deployed SHA** (`preflight-at-sha.js --sha <deployed>`), then **record that SHA as THE ACTIVATION SHA** in the log. **No further commits or deploys after this point** — any commit re-opens step 1 from 1.1.
+3. **Old-deployment-invocation drain (#8):** invocations of PREVIOUS deployments may still be executing. Wait out the platform's maximum function lifetime (Vercel: the configured `maxDuration` ceiling) — or trigger the explicit drain signal if one exists — and record the wait. Nothing that follows may race code from a prior SHA.
+4. **B9 re-verification:** the rules deploy + gate ran at step −1; confirm `check-rules-deploy-gate.js` still PASSES against the filled record at the activation SHA.
+5. **Pause + POSITIVELY ACKNOWLEDGE every external admin writer (#4 — BEFORE any epoch-state write):** every row of `EXTERNAL_ADMIN_WRITE_PATHS.md` is paused AND each pause is positively acknowledged (per-row sign-off in the checklist: operator, timestamp, mechanism). No `state:'closing'` write may precede the last acknowledgment.
+6. **Open the epoch EXPLICITLY:** write `composition/writeEpoch {state:'open', epochId:<E0, new>}` — today's implicit fail-open world made explicit. Required now: the genesis write arms B1, and the armed world must never see an absent epoch doc.
+7. **Deployed-lambda snapshot smoke (#9 — BEFORE genesis):** invoke a REAL deployed path that resolves **v2 via the bundled historical snapshot** AND **v3 via the catalog** (the F7 `includeFiles` verification made concrete — e.g. an internal-caller probe of the version-parameterized resolver at both versions). **Record BOTH identity hashes** in the log; they must equal the catalog-lock values. **Failure ⇒ do NOT write genesis** — stop, fix the bundling, redeploy, restart from 1.1.
+8. **GENESIS (the F2 ruling — BEFORE the epoch close, paired with the open epoch doc):** **`writeGenesisDescriptor(db, { activeEpochId: '<E0>' })`** — generation 1 = the genesis descriptor `{activeIdentityVersion: 2 (live), boundaryStateVersion: 1, candidateStateId: 'genesis', semanticHash: <the reserved null-sentinel>, activeEpochId: E0, overrideRevision: 0}`. No overlay participation — the loader short-circuits to base-only; births, reads, and compiles are UNCHANGED (proven rows incl. the genesis-present pipeline row). The write validates the open epoch pairing in its own transaction and refuses if any record exists. **From this write on: B1's absent-epoch-doc-fails-closed is armed coherently, and a prior descriptor exists for every future generation.**
+9. **Close the epoch:** update `composition/writeEpoch` to `{state:'closing'}` → new writes + lease acquisitions reject → **drain provisioner leases** (`drainProvisionerLeases`; B2). **A lease that expires without release does NOT drain (#3):** the drain REFUSES and names the holder — verify the holder process is dead (the max-function-lifetime bound of 1.3), then `resolveStuckProvisionerLease(db, leaseId, { operator, reason })` (attributed in the log), and re-run the drain. Then `{state:'closed'}` — **the watermark**. (The epoch doc is UPDATED, never deleted — post-genesis an absent doc fails closed everywhere.)
+10. **Battle-drain HARD GATE (#7 — the post-watermark repeat of A26/A35):** re-run the step-0.3 predicate over active `agentBattles` NOW, after the watermark. **This result — not step 0's — is the gate:** any battle matching the predicate ⇒ wait for it to complete before step 2. Record the post-watermark count (expected 0).
+11. **Watermark sweep (B8):** every protected-store doc updated after the watermark must be attributable to a named runbook step.
+
+**VERIFY:** preflight green at the activation SHA; both snapshot-smoke hashes recorded and catalog-equal; B9 gate PASS; the loader returns `{activated: true, genesis: true, generation: 1}` and a probe birth still seeds the LIVE defaults (genesis = pre-activation behavior); drain result `{drained:true}` with zero unresolved stuck leases; post-watermark battle predicate = 0; fence suite semantics live (a probe write 409s `epoch_closed`). **ROLLBACK POINT:** reopen (`{state:'open', epochId: E0}`) + resume the paused rows (each resume acknowledged) — genesis stays: it is generation 1 forever, selects the live identity, and changes no behavior.
 
 ## Step 2 — FINAL-DRYRUN (hard gate; founder ratifies the exact counts)
 
@@ -43,9 +50,9 @@ Run **`node scripts/composition/migration-scan.js`** (dry-run) at the deployed S
 
 **VERIFY:** two consecutive dry-runs agree on `semanticHash` (M12 — the runId-independent identity). **ROLLBACK POINT:** reopen the epoch (step 1 rollback); no state written.
 
-## Step 3 — `--apply` (Method B overlay, candidate namespace only)
+## Step 3 — `--apply --during-close` (Method B overlay, candidate namespace only)
 
-**`node scripts/composition/migration-scan.js --apply --yes`** — writes overlay entries + the run doc (the completion sentinel, entries-first order) into `compositionCandidateState/{runId}`. Base records untouched (A32/A36/A38).
+**`node scripts/composition/migration-scan.js --apply --yes --during-close`** — writes overlay entries + the run doc (the completion sentinel, entries-first order) into `compositionCandidateState/{runId}`. Base records untouched (A32/A36/A38). **The closed-epoch authorization (Sol review #5, built at the fold):** `--during-close` swaps the general open-epoch guard for the DEDICATED inverse assertion `assertClosedEpochCandidateWindow` — the epoch doc must exist and be `'closed'` (the post-watermark freeze); open/closing/absent each refuse (`candidate_window_not_closed`, tested). Every apply write is path-asserted into `compositionCandidateState/*` at runtime (the #5 belt). PR 2's general guard is untouched; without the flag the script still requires an open epoch.
 
 **VERIFY:** the apply summary's `semanticHash` equals the ratified dry-run's; `entryCount` equals the ratified entry count. **ROLLBACK POINT:** the candidate namespace is inert (nothing reads it without the record) — abandon the runId and stop, or proceed.
 
@@ -57,7 +64,7 @@ Re-run the scan in verify mode: the scanner observes base+overlay through `resol
 
 ## Step 5 — Candidate-scoped pipeline, in the Phase-0-proven order (A37)
 
-With the candidate flags deployed (step 1) and the record still absent, run the candidate pipeline **scoped to the candidate namespace**: enable candidate manifest writing → **candidate-compile step** → verify candidate manifests → enable candidate shadow assembly → verify candidate shadow. (The compiled builds minted here carry the candidate vector fingerprint — `projectedRulesHash` — and, until the X6 base-metadata arc, `metadata_missing` validation entries; the honest-expectations rider of §II applies: **no gate-green is claimed by this event**.)
+With the candidate flags deployed (step 1) and **the record at GENESIS** (#11 — post-genesis the record ALWAYS exists; nothing infers candidate status from its absence), run the candidate pipeline **scoped EXPLICITLY to `{candidateStateId: <the step-3 runId>, activeIdentityVersion: 3}`** — the pipeline tooling passes `candidateMode: true` and the target version as explicit parameters; it never derives candidate status from the flag or the record state (which, at genesis, correctly resolves LIVE for every production compile — the genesis-present pipeline row pins this). Sequence: enable candidate manifest writing → **candidate-compile step** → verify candidate manifests → enable candidate shadow assembly → verify candidate shadow. (The compiled builds minted here carry the candidate vector fingerprint — `projectedRulesHash` — and, until the X6 base-metadata arc, `metadata_missing` validation entries; the honest-expectations rider of §II applies: **no gate-green is claimed by this event**.)
 
 **VERIFY:** candidate builds carry `projectedRulesHash`; manifests rev-match; shadow capture manifest-anchored. **ROLLBACK POINT:** candidate artifacts are self-invalidating (vector-keyed); abandon and stop.
 
@@ -73,26 +80,56 @@ Sweep the item-10 census locations (A15): every stored artifact whose source vec
 
 `activeEpochId` must be **fresh** — A49's history-wide check rejects any epoch id already in history, and **genesis holds E0 at generation 1**, so reusing the step-1 epoch aborts (proven row). One transaction: R6-B1 (descriptor vs candidate manifest) + M6 (exact entryCount, recomputed semantic hash, create-only ids, no stale extras) verify INSIDE it — any defect aborts with nothing repointed; the genesis ids are RESERVED and reject here. The writer mints generation MAX+1 — **the first real activation is generation 2** (Q1 ruling framing: boundaryStateVersion starts at **1**; `overrideRevision` at 0). Per-boundary states ride this record — no independent flag flips at the flip.
 
-**VERIFY:** the loader returns `{activated: true, genesis: false, generation: 2}` with the full 7-field descriptor. **ROLLBACK POINT (TOTAL — the F2 ruling):** `rollbackActivationRecord(db, { toGeneration: <prior> })` at any generation; **`toGeneration: 1` restores the GENESIS world** — live identity, base-only resolution, births/reads identical to pre-activation (proven rows: rollback-to-genesis in the activation battery, base-only in the loader contract, birth parity in the birth-switch suite). No special case, no tuple reuse, no point of no return.
+**VERIFY:** the loader returns `{activated: true, genesis: false, generation: 2}` with the full 7-field descriptor. **ROLLBACK POINT (scope per #1/#12):** THE ROLLBACK PROTOCOL (below), at any time; **`toGeneration: 1` restores the GENESIS world** — live identity, base-only resolution, base-only compiles (proven rows: rollback-to-genesis in the activation battery, base-only in the loader contract, birth parity in the birth-switch suite, the genesis-present pipeline row). While the fleet is frozen (through 8A) this restoration is TOTAL; from 8B on, the enumerated probe reconciliation applies (see the protocol's scope statement).
 
-## Step 8 — §10 post-flip checks, then unfreeze
+## Step 8A — CLOSED verification (everything provable WITHOUT writes; Sol review #6)
 
-**Positive checks:** a new battle's manifest carries the FC-1 stamps (`compositionSourceGeneration` = the record's generation, slice stamp equal); a trait-hosted tension renders its advisory exactly once in a live prompt; a birth seeds the SUBSTITUTED defaults (guardian: `alloc-sector-cap`; the record is what selected them — A24).
+The epoch stays **closed**; the fleet is frozen; nothing here writes production state.
 
-**NEGATIVE checks (each observed, not assumed):**
-- `core_conflict` **absent** from a live prompt (equip a banned pairing via the client SDK; compile blocks it; the prompt renders nothing for it);
+- **identityHash equality**: the served identity's hash equals the v3 snapshot's `identityHash` (catalog lock recompute — a read).
+- **Loader checks**: `{activated: true, genesis: false, generation: 2}`, full descriptor, seqlock steady.
+- **Stale-build rejection observed (read side)**: a pre-flip compiled build reads STALE through `diffSourceRevisionVector` (presence-aware compare) — verified via the gate's verify half without minting a recompile.
+- **ACTION_COPY checkpoint:** founder reviews the user-facing product copy (identityMigration feed entries via `projectIdentityMigrationFeed` under A44 in preview, advisory sentences on rendered previews, renamed trait cards) — a copy defect here is a STOP-and-fix before 8B, not after.
+- **M7 estimate check:** the chars/4 estimates recomputed against the v3 composition (the live-request measurement happens at 8B when a probe eval runs).
+
+**VERIFY:** every check recorded with its observation. **ROLLBACK:** THE ROLLBACK PROTOCOL — still TOTAL here (no v3 base state exists anywhere).
+
+## Step 8B — CONTROLLED verification-open (named operator probes ONLY), then the general unfreeze
+
+**Open for probes:** update `composition/writeEpoch` to `{state:'open', epochId: <E1, the step-7 epoch>}` (UPDATE, never delete: post-genesis an absent doc fails closed at every boundary incl. the provisioner lease). **General traffic and external admin stay gated:** the §6 freeze remains announced and in force, every EXTERNAL_ADMIN_WRITE_PATHS row stays paused, crons stay paused — **only the NAMED OPERATOR PROBE IDENTITIES (enumerated in the log before 8B starts) exercise the real production writer paths.**
+
+**Probe checks (the §10 positive/negative set that needs writes — each observed, not assumed):**
+- a probe birth seeds the SUBSTITUTED defaults (guardian: `alloc-sector-cap`; the record selected them — A24);
+- a probe deploy + battle: the new battle's manifest carries the FC-1 stamps (`compositionSourceGeneration` = 2, slice stamp equal); a trait-hosted tension renders its advisory exactly once in the live prompt;
+- `core_conflict` **absent** from a live prompt (probe-equip a banned pairing via the client SDK; compile blocks it; the prompt renders nothing for it);
 - `deferred` **absent** the same way;
-- **stale-build rejection observed**: a pre-flip compiled build reads STALE through `diffSourceRevisionVector` and recompiles — never serves;
-- **out-of-domain save rejected BY THE VALIDATOR through the freeze-passing path**: an in-window save carrying an out-of-domain param 409s from `checkCandidatePairing` at the endpoint (the A7 kernel — not the freeze, not the fence);
-- **identityHash equality**: the served identity's hash equals the v3 snapshot's `identityHash` (catalog lock recompute).
+- **out-of-domain save rejected BY THE VALIDATOR through the freeze-passing path**: a probe save carrying an out-of-domain param 409s from `checkCandidatePairing` at the endpoint (the A7 kernel — not the freeze, not the fence);
+- **stale-build rejection observed (write side)**: a pre-flip build recompiles at current revision — never serves;
+- **M7 live measurement:** one probe eval request's `usage.input_tokens` + one draft request's recorded against the M7-E2E budgets.
 
-**ACTION_COPY checkpoint:** founder reviews the user-facing product copy (identityMigration feed entries via `projectIdentityMigrationFeed` under A44, advisory sentences on live prompts, renamed trait cards) — a copy defect here is a STOP-and-fix before unfreeze, not after.
+**8B FAILURE ⇒ THE ROLLBACK PROTOCOL** (below). The only v3 base state at that point is the enumerated probes' — reversed by the protocol's named hand reconciliation.
 
-**M7 live measurement:** capture one real eval request's `usage.input_tokens` + one draft request's and record them against the M7-E2E budgets (the chars/4 estimates must over-state the real counts).
+**General unfreeze (ONLY after every 8B check passes):** lift the §6 freeze for general traffic; resume the EXTERNAL_ADMIN_WRITE_PATHS rows (each resume acknowledged); `COMPOSITION_MIGRATION_FEED_ENABLED` flips only after the record is verified (A44, flag-ownership table); purge the lease registry (`purgeReleasedProvisionerLeases` — released-only, #3/F9).
 
-**Unfreeze:** reopen the write epoch — update `composition/writeEpoch` to `{state:'open', epochId: <E1, the step-7 epoch>}` (UPDATE, never delete: post-genesis an absent doc fails closed at every boundary incl. the provisioner lease); resume the EXTERNAL_ADMIN_WRITE_PATHS rows; lift the §6/§8 freeze; `COMPOSITION_MIGRATION_FEED_ENABLED` flips only after the record is verified (A44, flag-ownership table); purge the lease registry (`purgeReleasedProvisionerLeases` — §2 review F9).
+**VERIFY:** every probe check recorded with its observation + the probe-identity enumeration. **ROLLBACK:** THE ROLLBACK PROTOCOL, any time — scope per its statement.
 
-**VERIFY:** every check above recorded in the log with its observation. **ROLLBACK:** the step-7 rollback, any time.
+## THE ROLLBACK PROTOCOL (Sol pre-activation review #2 — symmetric with activation; the ONLY way a rollback runs)
+
+A bare `rollbackActivationRecord` call is never executed alone. The protocol, in order:
+
+1. **Close the current epoch:** update `composition/writeEpoch` to `{state:'closing'}` — new writes and lease acquisitions reject from this write on.
+2. **Pause external admin:** every EXTERNAL_ADMIN_WRITE_PATHS row paused + positively acknowledged (the #4 discipline applies here too).
+3. **Drain provisioner leases to the watermark:** `drainProvisionerLeases` → `{state:'closed'}`. A stuck (expired-unreleased) lease REFUSES the drain (#3) — resolve explicitly, then re-run.
+4. **Fresh-generation descriptor repoint:** `rollbackActivationRecord(db, { toGeneration: <target> })` — the COMPLETE prior tuple under generation MAX+1.
+5. **Verify the load:** the loader returns the restored tuple at the fresh generation (`toGeneration: 1` ⇒ `{activated: true, genesis: true}`, base-only).
+6. **Set the epoch doc to the TARGET descriptor's epoch, still closed:** `{state:'closed', epochId: <the restored activeEpochId>}`.
+7. **Reopen ONLY after verification:** the restored world's checks pass first — a probe birth seeds the restored identity's defaults, a probe compile resolves the restored cell source (record-scoped, #11), stale-stamped agents reject at battle creation until redeployed. Then `{state:'open', epochId: <restored epoch>}`.
+
+**The interleaving guarantee (proven row):** a write flow pinned under the pre-rollback world cannot commit after the protocol runs — while closed it rejects at the epoch belt; after the verified reopen it STILL rejects at the descriptor compare (`projection_stale_generation` / `battle_cutover_interleaved`). Reopening never re-admits a pre-rollback flow.
+
+**The battle rule (the #2 question, answered with the PROOF branch):** in-flight battles are NOT drained before the repoint — **locked manifests make them independent**: (a) the prompt surface is structurally banned from every compat/resolver import (the forbidden-reads CI rule + M11 one-hop sweep); (b) the eval path performs no re-projection (battle `agentContext.activeRules` is frozen at creation); (c) the advisory admissibility gate compares the manifest/slice stamp pair WITHIN the battle doc — both halves were stamped atomically by FC-1, so a pre-rollback battle stays internally consistent and renders its own generation's content to completion. New battles for stale-stamped agents reject until redeploy (the reader direction).
+
+**Scope statement (#1/#12 — the claim of record):** through 8A the protocol is TOTAL (no v3 base state exists). During 8B the only v3 base state is the ENUMERATED probe identities — reversed by the **named hand reconciliation**: for each probe identity, delete its v3 born-with rule docs + reseed at the restored version (`seedArchetypeTraitsDeterministic`, deterministic ids overwrite), reset its `equippedTraits` to the reseeded set, and force a redeploy (its projection re-derives + restamps at the restored generation). After general unfreeze, the protocol is **selector-total plus that reconciliation applied to every v3-born identity** (enumerable from born-with doc ids `bornwith__<candidate-trait>__*`). The honest-divergence regression row (birth-switch suite) records exactly what the repoint does not reverse. **Rollback-to-genesis is claimed for THIS event only** (2 → 1); arbitrary-generation rollback is FILED post-event behind immutable per-revision override snapshots / a frozen final epoch revision (the ledger's filed prerequisite).
 
 ## Step 9 — PR 5 docs closeout
 
@@ -120,6 +157,8 @@ Observe-window evidence is **equip-bundle only** (PR 2 instrumented that boundar
 |---|---|---|---|---|
 | −1 | | | | |
 | 0 | | | | |
+| 1 (SHA pin + genesis + close) | | | | |
+| 8A / 8B (probe ids enumerated) | | | | |
 | 1 | | | | |
 | 2 (RATIFICATION) | | | | |
 | 3 | | | | |

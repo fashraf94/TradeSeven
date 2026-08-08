@@ -110,7 +110,7 @@
     },
     {
       "file": "scripts/composition/migration-scan.js",
-      "reason": "writes ONLY the candidate namespace (Method B), epoch-checked, founder-gated --apply --yes; the activation transaction (M6) verifies its output before ratifying"
+      "reason": "writes ONLY the candidate namespace (Method B), path-asserted at runtime; epoch-checked in BOTH modes (open-epoch guard by default; the dedicated assertClosedEpochCandidateWindow inverse guard under --during-close — Sol review #5); founder-gated --apply --yes; the activation transaction (M6) verifies its output before ratifying"
     },
     {
       "file": "api/_utils/deployBuildValidation.js",

@@ -28,7 +28,9 @@ vi.mock('./compositionConfig.js', () => ({
 const {
   acquireProvisionerLease, assertLeaseCurrent, releaseProvisionerLease,
   listActiveProvisionerLeases, drainProvisionerLeases,
-  PROVISIONER_LEASE_COLLECTION, PROVISIONER_LEASE_TTL_MS, ProvisionerLeaseExpiredError,
+  resolveStuckProvisionerLease, purgeReleasedProvisionerLeases,
+  PROVISIONER_LEASE_COLLECTION, PROVISIONER_LEASE_TTL_MS,
+  ProvisionerLeaseExpiredError, StuckProvisionerLeaseError,
 } = await import('./compositionProvisionerLease.js');
 const { ensureTrainingClones } = await import('./trainingClone.js');
 const { makeInMemoryDb } = await import('./__fixtures__/inMemoryFirestore.js');
@@ -115,18 +117,51 @@ describe('B2 — the close-side drain', () => {
     expect(out.drained).toBe(true);
   });
 
-  it('a CRASHED holder (never releases) bounds the wait by TTL — the drain proceeds once the lease expires', async () => {
+  it('#3 (Sol review): TTL expires MID-COPY without release → the drain REFUSES to complete, naming the holder — expired-unreleased is a STUCK holder, never auto-drained', async () => {
     const { db } = makeInMemoryDb({ ...openEpoch });
-    await acquireProvisionerLease(db, { holder: 'test:crashed', now: T0 });
-    let clockMs = 0;
-    const out = await drainProvisionerLeases(db, {
-      nowFn: () => at(clockMs),
-      pollMs: 1,
-      timeoutMs: PROVISIONER_LEASE_TTL_MS + 30_000,
-      sleep: async () => { clockMs += PROVISIONER_LEASE_TTL_MS / 2; },
+    const lease = await acquireProvisionerLease(db, { holder: 'test:straddler', now: T0 });
+    // Mid-copy: one write phase passes its currency check, then the process
+    // stalls past TTL without releasing. The next in-process check would
+    // refuse — but the DRAIN cannot know the process is dead, so it must
+    // not complete over this lease.
+    expect(assertLeaseCurrent(lease, { now: T0 })).toBe(null);
+    let clockMs = PROVISIONER_LEASE_TTL_MS + 1; // past expiry, unreleased
+    await expect(drainProvisionerLeases(db, {
+      nowFn: () => at(clockMs), pollMs: 1, timeoutMs: 60_000,
+      sleep: async () => { clockMs += 1_000; },
+    })).rejects.toMatchObject({ code: 'provisioner_lease_stuck', message: expect.stringContaining('test:straddler') });
+  });
+
+  it('#3: explicit resolution unblocks the drain — resolveStuckProvisionerLease is attributed, refuses LIVE leases, and only then does the drain complete', async () => {
+    const { db, store } = makeInMemoryDb({ ...openEpoch });
+    const lease = await acquireProvisionerLease(db, { holder: 'test:crashed', now: T0 });
+    // A LIVE lease cannot be "resolved" — the holder may still be writing:
+    await expect(resolveStuckProvisionerLease(db, lease.leaseId, { operator: 'founder', reason: 'x', now: T0 }))
+      .rejects.toThrow(/has not expired/);
+    const after = at(PROVISIONER_LEASE_TTL_MS + 1);
+    const out = await resolveStuckProvisionerLease(db, lease.leaseId, {
+      operator: 'founder', reason: 'holder function exceeded max lifetime — verified dead', now: after,
     });
-    expect(out.drained).toBe(true);
-    expect(clockMs).toBeGreaterThanOrEqual(PROVISIONER_LEASE_TTL_MS);
+    expect(out).toMatchObject({ resolved: true, holder: 'test:crashed' });
+    const doc = store.get(`${PROVISIONER_LEASE_COLLECTION}/${lease.leaseId}`);
+    expect(doc.resolvedBy).toBe('founder'); // the attribution the runbook log archives
+    let clockMs = PROVISIONER_LEASE_TTL_MS + 2;
+    const drained = await drainProvisionerLeases(db, {
+      nowFn: () => at(clockMs), pollMs: 1, timeoutMs: 60_000, sleep: async () => { clockMs += 1_000; },
+    });
+    expect(drained.drained).toBe(true);
+  });
+
+  it('#3/F9: the purge removes RELEASED leases only — an expired-but-unreleased (stuck) lease survives the purge so its signal is never hidden', async () => {
+    const { db, store } = makeInMemoryDb({ ...openEpoch });
+    const released = await acquireProvisionerLease(db, { holder: 'test:done', now: T0 });
+    await releaseProvisionerLease(db, released, { now: at(10) });
+    await acquireProvisionerLease(db, { holder: 'test:stuck-unreleased', now: T0 });
+    const purged = await purgeReleasedProvisionerLeases(db);
+    expect(purged).toBe(1);
+    const remaining = [...store.keys()].filter((k) => k.startsWith(PROVISIONER_LEASE_COLLECTION));
+    expect(remaining.length).toBe(1); // the stuck lease survives — resolve it, never purge it away
+    expect(store.get(remaining[0]).holder).toBe('test:stuck-unreleased');
   });
 
   it('a lease that never clears times the drain OUT with the holder named (the runbook sees who is stuck)', async () => {
