@@ -87,6 +87,22 @@ export function makeInMemoryDb(initial = {}) {
 
   const db = {
     collection: (name) => makeCollection(name),
+    batch: () => {
+      const ops = [];
+      return {
+        set: (ref, data) => { ops.push(() => { store.set(ref.path, structuredClone(data)); writeLog.push(['batch.set', ref.path]); }); },
+        update: (ref, updates) => {
+          ops.push(() => {
+            const data = store.get(ref.path);
+            if (data === undefined) throw new Error(`batch.update on missing doc ${ref.path}`);
+            applyDotPathUpdate(data, updates);
+            writeLog.push(['batch.update', ref.path]);
+          });
+        },
+        delete: (ref) => { ops.push(() => { store.delete(ref.path); writeLog.push(['batch.delete', ref.path]); }); },
+        commit: async () => { for (const op of ops) op(); },
+      };
+    },
     runTransaction: async (fn) => fn({
       get: async (ref) => { readLog.push(['tx.get', ref.path]); return ref._read ? ref._read() : ref.get(); },
       update: (ref, updates) => {

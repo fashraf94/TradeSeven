@@ -84,7 +84,7 @@ export function provisionerLeaseRef(db, leaseId) {
  * @returns {Promise<{dark:boolean, leaseId:string|null, epochId:string|null, expiresAtMs:number|null}>}
  * @throws {EpochClosedError} when the epoch is not open.
  */
-export async function acquireProvisionerLease(db, { holder, now = new Date(), ttlMs = PROVISIONER_LEASE_TTL_MS, enabled = COMPOSITION_EPOCH_FENCE_ENABLED } = {}) {
+export async function acquireProvisionerLease(db, { holder, now = new Date(), ttlMs = PROVISIONER_LEASE_TTL_MS, enabled = COMPOSITION_EPOCH_FENCE_ENABLED, actor = null } = {}) {
   if (!enabled) return { dark: true, leaseId: null, epochId: null, expiresAtMs: null }; // zero reads (A23)
   if (typeof holder !== 'string' || holder.length === 0) throw new Error('acquireProvisionerLease: holder required');
   // §2 review F8: a random suffix — two same-holder acquisitions in the same
@@ -102,7 +102,14 @@ export async function acquireProvisionerLease(db, { holder, now = new Date(), tt
       const act = await tx.get(db.collection(ACTIVATION_COLLECTION).doc(ACTIVATION_DOC_ID));
       if (act.exists) throw new EpochClosedError(null, 'absent_epoch_doc_post_activation');
     }
-    if (data && data.state !== 'open') {
+    // Sol re-review #4: 'probe' admits ONLY a listed actor (the 8B /
+    // Rollback-B verification windows); everything else — incl. system
+    // provisioning with no actor — rejects, matching validateWriteEpochInTx.
+    if (data && data.state === 'probe') {
+      const admitted = typeof actor === 'string' && actor.length > 0
+        && Array.isArray(data.probeIdentities) && data.probeIdentities.includes(actor);
+      if (!admitted) throw new EpochClosedError(data.epochId ?? null, 'probe_only');
+    } else if (data && data.state !== 'open') {
       throw new EpochClosedError(data.epochId ?? null, data.state ?? 'unrecognized');
     }
     await tx.set(provisionerLeaseRef(db, leaseId), {

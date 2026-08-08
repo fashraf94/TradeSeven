@@ -25,7 +25,7 @@
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { txUpdateAgentSettings } from '../_utils/agentSettingsTx.js';
 import { pinActivationDescriptor } from '../_utils/compositionGenerationFence.js';
-import { selectIdentityVersion } from '../_utils/compositionActivationService.js';
+import { selectIdentityVersion, birthProvenanceStamp } from '../_utils/compositionActivationService.js';
 // Mastery P2 (V2.1 STOP-B: customization bundles are per-archetype —
 // "switching archetypes switches/invalidates them"): an equipped
 // 'aggressive' dial re-validates against the NEW archetype's mastery level
@@ -129,7 +129,7 @@ export default async function handler(req, res) {
       const agentSnap = await tx.get(agentRef);
       // Composition write-epoch fence (design note §3): read-phase validation —
       // zero I/O while dark; a closed epoch 409s with nothing written (A41).
-      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX });
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX, actor: user.uid }); // #4: probe-window admission
 
       // Agent must exist, belong to the caller, and be battle-free.
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
@@ -254,6 +254,9 @@ export default async function handler(req, res) {
         archetype,
         updatedAt: nowIso,
         ...(seeded && seeded.equippedTraits ? { equippedTraits: seeded.equippedTraits } : {}),
+        // Sol re-review #6: a re-birth stamps the version + generation its
+        // born-with content was seeded under (dark pin: no keys — A23).
+        ...(seeded ? birthProvenanceStamp(seedPin) : {}),
         // Dial invalidation rides the same atomic commit (V2.1 STOP-B).
         ...(dialInvalidated ? { 'dials.tempo': 'standard' } : {}),
       });

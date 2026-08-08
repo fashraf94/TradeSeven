@@ -284,7 +284,7 @@ export default async function handler(req, res) {
       // creating a battle, and edits are locked mid-battle, so the write is a
       // redundant no-op. The in-memory value above still feeds the prompt.
       if (!agent.activeBattleId) {
-        await commitActiveRulesProjection(db, agentRef, activeRulesForDeploy, projectionPin); // PR 4 splice
+        await commitActiveRulesProjection(db, agentRef, activeRulesForDeploy, projectionPin, { actor: agent.ownerId }); // PR 4 splice (#4: probe admission)
       }
     } catch (projErr) {
       // PR 4 (§2 review F1): the GENERATION-FENCE rejections must NOT ride the
@@ -900,7 +900,7 @@ export default async function handler(req, res) {
     // refuses the deploy (A-3: stale/version-less builds are undeployable)
     // — loud 409, lock cleared, never an improvised deploy.
     const buildGate = await ensureDeployableCompiledBuild({
-      db, agentRef, agentId: agentDoc.id, gameMode: TIERED_GAME_MODE, enabled: COMPILER_ENABLED,
+      db, agentRef, agentId: agentDoc.id, gameMode: TIERED_GAME_MODE, enabled: COMPILER_ENABLED, actor: agent.ownerId,
     });
     if (!buildGate.proceed) {
       await agentRef.update({ deployingAt: null });
@@ -1446,7 +1446,7 @@ export async function runPrescribedTournamentDeploy({ db, req, res, agentRef, ag
   // bad-prescription contract: LOUD 4xx, lock cleared, orchestrator retries
   // on its failure cooldown — never an improvised deploy.
   const buildGate = await ensureDeployableCompiledBuild({
-    db, agentRef, agentId, gameMode: FLAT6_GAME_MODE, enabled: COMPILER_ENABLED,
+    db, agentRef, agentId, gameMode: FLAT6_GAME_MODE, enabled: COMPILER_ENABLED, actor: agent.ownerId,
   });
   if (!buildGate.proceed) {
     await clearLock();

@@ -121,7 +121,7 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
   // lease currency, and the §8 close drains leases before its watermark —
   // a provisioner that read "open" can no longer land writes after the close.
   // Zero I/O while the fence flag is dark (A23/A46 census row).
-  const lease = await acquireProvisionerLease(db, { holder: `casualClone:${odUserId}`, now });
+  const lease = await acquireProvisionerLease(db, { holder: `casualClone:${odUserId}`, now, actor: odUserId }); // #4: probe admission
   try {
     const nowIso = now.toISOString();
     const cloneId = casualCloneDocId(odUserId);

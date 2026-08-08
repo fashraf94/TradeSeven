@@ -437,3 +437,57 @@ describe('F7 (D15) — candidate-mode endpoint ROUND-TRIP: the compile path lit 
     expect('projectedRulesHash' in state.subDocs[buildKeys[0]].sourceRevisionVector).toBe(false);
   });
 });
+
+describe('#5 (Sol re-review) — the compile boundary FAILS CLOSED on a malformed/unrecognized record', () => {
+  const TENSION_SNAP_5 = { id: 'rd5', sourceRef: 'alloc-sector-cap', paramValues: { pct: 60 }, params: { pct: {} } };
+  it('a PRESENT-but-malformed record (missing semanticHash) REJECTS the save — zero agent writes, zero builds persisted', async () => {
+    flagState.compiler = true;
+    flagState.candidate = true;
+    const malformed = { ...V3_RECORD };
+    delete malformed.semanticHash; // fails the loader's per-field contract
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP_5], withRuleDocs: true, activationDoc: malformed });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBeGreaterThanOrEqual(400); // rejected, never 200
+    expect(state.agentDocs['agent-1'].equippedBundleIds).toEqual([]); // the save never landed
+    expect(Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'))).toEqual([]);
+  });
+
+  it('a VALID record naming an UNRECOGNIZED version (v5) REJECTS the same way — never a silent cell-source guess', async () => {
+    flagState.compiler = true;
+    flagState.candidate = true;
+    const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP_5], withRuleDocs: true, activationDoc: { ...V3_RECORD, activeIdentityVersion: 5 } });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(state.agentDocs['agent-1'].equippedBundleIds).toEqual([]);
+    expect(Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'))).toEqual([]);
+  });
+});
+
+describe('#4 (Sol re-review) — the PROBE-ONLY gate at the server chokepoint (the 8B / Rollback-B window)', () => {
+  const PROBE_EPOCH = { state: 'probe', epochId: 'e-1', probeIdentities: ['owner-1'] };
+
+  it('NEGATIVE CONTROL: epoch state probe + a NON-probe identity ⇒ 409, zero writes', async () => {
+    flagState.fence = true;
+    const { db, state } = fleet({ archetype: 'degen', snaps: [LEGAL_SNAP], epochDoc: { ...PROBE_EPOCH, probeIdentities: ['some-other-operator'] } });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBe(409);
+    expect(state.agentDocs['agent-1'].equippedBundleIds).toEqual([]);
+    expect(state.writes).toBe(0);
+  });
+
+  it('a LISTED probe identity passes through the same real writer path (200, the save lands)', async () => {
+    flagState.fence = true;
+    const { db, state } = fleet({ archetype: 'degen', snaps: [LEGAL_SNAP], epochDoc: { ...PROBE_EPOCH } });
+    activeFirestore = db;
+    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+    await equipBundleHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(state.agentDocs['agent-1'].equippedBundleIds).toEqual(['bundle-1']);
+  });
+});

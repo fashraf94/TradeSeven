@@ -2,6 +2,7 @@
 // Manages Forge state: tabs, category filter, expanded card, rules, bundles,
 // and all CRUD actions (add, refine, delete, forge, equip, unequip, reforge).
 
+import { withEpochToken } from '../services/compositionIdentityClient';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { collection, query, getDocs, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -659,7 +660,7 @@ export function useForge(agentId) {
     }
     try {
       const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
-      await updateDoc(bundleRef, { name: sanitized });
+      await updateDoc(bundleRef, await withEpochToken({ name: sanitized })); // #1: epoch-bound identity write
       await loadData();
     } catch (err) {
       console.error('[useForge] renameDraftBundle failed:', err);

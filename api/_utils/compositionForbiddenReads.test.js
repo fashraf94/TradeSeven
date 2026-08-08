@@ -86,11 +86,18 @@ describe('A36 (structural) — no production module reads the resolver/overlay p
     // ONLY inside the activation transaction itself — the activation, not a
     // pre-activation production read; nothing calls it until the runbook does.
     'api/_utils/compositionActivationService.js',
+    // Sol re-review #8: the EXTRACTED candidate-apply writer — imports ONLY
+    // entryDocId (the injective id function) to address entry docs it
+    // WRITES; it reads no candidate/resolver state (same class as the
+    // activation service's id/hash imports). Its writes are belt-checked
+    // into compositionCandidateState/* (compositionCandidateApply.test.js).
+    'api/_utils/compositionCandidateApply.js',
     'api/_utils/composition.acceptance.test.js',   // tests
     'api/_utils/composition.pr3.acceptance.test.js',
     'api/_utils/compositionProductionLoader.contract.test.js',
     'api/_utils/compositionForbiddenReads.test.js',
     'api/_utils/compositionActivationService.test.js',
+    'api/_utils/compositionCandidateApply.test.js',
   ]);
 
   it('the only api/ importers of compositionStateResolver are the migration planner and tests', () => {

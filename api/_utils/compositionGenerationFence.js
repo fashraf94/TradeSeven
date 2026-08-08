@@ -83,14 +83,14 @@ export async function pinActivationDescriptor(db, { enabled = COMPOSITION_EPOCH_
  * never persist past N's watermark), then the update WITH the
  * activeRulesProjection stamp when a record exists.
  */
-export async function commitActiveRulesProjection(db, agentRef, activeRules, pin) {
+export async function commitActiveRulesProjection(db, agentRef, activeRules, pin, { actor = null } = {}) {
   if (!pin || pin.dark) {
     await agentRef.update({ activeRules });
     return { stamped: false };
   }
   const epochPin = {};
   await db.runTransaction(async (tx) => {
-    await validateWriteEpochInTx(tx, db, { enabled: true, epochPin });
+    await validateWriteEpochInTx(tx, db, { enabled: true, epochPin, actor }); // #4: probe-window admission rides the actor
     const current = readActivationDescriptor(await tx.get(activationDocRef(db)));
     const bothAbsent = pin.descriptor === null && current === null;
     if (!bothAbsent && !sameActivationDescriptor(pin.descriptor, current)) {

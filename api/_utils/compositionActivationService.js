@@ -284,3 +284,21 @@ export async function bumpOverrideRevisionInTx(tx, db, currentDescriptor) {
 export function selectIdentityVersion(descriptor) {
   return descriptor?.activeIdentityVersion ?? ARCHETYPE_IDENTITY_VERSION;
 }
+
+/**
+ * Sol re-review #6 — BIRTH PROVENANCE (ruling: stamp, don't narrow the
+ * claim again): every FRESH seed of born-with identity stamps the agent doc
+ * with the version and generation it was born under, so the rollback
+ * protocol's reconciliation QUERIES these fields instead of inferring from
+ * born-with trait ids. Dark (no pin / pin dark): {} — zero new keys, the
+ * A23 byte-identity. Clone paths that COPY identity content inherit the
+ * SOURCE's stamps instead (INHERITED_LOADOUT_FIELDS) — a copy's content
+ * provenance is the source's, not the copy time's.
+ */
+export function birthProvenanceStamp(pin) {
+  if (!pin || pin.dark) return {};
+  return {
+    identityVersionAtBirth: selectIdentityVersion(pin.descriptor),
+    activationGenerationAtBirth: pin.descriptor?.activationGeneration ?? 0,
+  };
+}

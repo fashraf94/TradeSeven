@@ -37,9 +37,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getFirebaseAdmin } from '../../api/_utils/firebaseAdmin.js';
 import { planAgentMigration, scanResidualsAfterPlan } from '../../api/_utils/compositionMigration.js';
-import { computeOverlayRunHash, computeOverlaySemanticHash, entryDocId } from '../../api/_utils/compositionStateResolver.js';
+import { computeOverlayRunHash, computeOverlaySemanticHash } from '../../api/_utils/compositionStateResolver.js';
 import { buildIdentityMigrationFeedEntries } from '../../api/_utils/identityMigrationFeed.js';
 import { assertWriteEpochOpen, assertClosedEpochCandidateWindow } from '../../api/_utils/compositionWriteEpoch.js';
+import { applyCandidateEntries } from '../../api/_utils/compositionCandidateApply.js';
 import { ARCHETYPE_IDENTITY_VERSION } from '../../api/_utils/archetypeVersionConstants.js';
 
 const args = process.argv.slice(2);
@@ -139,35 +140,21 @@ async function main() {
   // ── APPLY: candidate namespace ONLY (Method B) ───────────────────────────
   if (DURING_CLOSE) await assertClosedEpochCandidateWindow(db); // #5: the closed-window claim re-verified at the final pre-write check
   else await assertWriteEpochOpen(db, { enabled: true }); // review P5: the migration ALWAYS checks, flag-independent // final pre-write check
-  const runRef = db.collection('compositionCandidateState').doc(runId);
-  // #5 belt: every apply write must land in the candidate namespace — a
-  // future edit that widens the write set fails LOUD here, not in review.
-  const assertCandidatePath = (ref) => {
-    if (!String(ref.path).startsWith('compositionCandidateState/')) {
-      throw new Error(`apply write outside the candidate namespace: ${ref.path}`);
-    }
-  };
   const feedEntries = buildIdentityMigrationFeedEntries(allEntries, {
     nowIso: new Date().toISOString(), migrationRunId: runId,
   });
-  // entries FIRST, run doc LAST — the run doc is the completion sentinel
-  // (review P6, the trainingClone sentinel-order precedent): an interrupted
-  // apply leaves entries without a run doc, never a run doc overstating them.
-  for (let i = 0; i < allEntries.length; i += 400) {
-    const batch = db.batch();
-    for (const e of allEntries.slice(i, i + 400)) {
-      const entryRef = runRef.collection('entries').doc(entryDocId(e.entryKey));
-      assertCandidatePath(entryRef);
-      batch.set(entryRef, e); // M12: injective base64url id
-    }
-    await batch.commit();
-  }
-  assertCandidatePath(runRef);
-  await runRef.set({
-    migrationRunId: runId, candidateStateId: runId,
-    activeIdentityVersion: summary.activeIdentityVersion,
-    overlayContentHash, semanticHash, runHash, entryCount: allEntries.length,
-    createdAt: new Date().toISOString(), feedEntries,
+  // The extracted, unit-proven apply writer (Sol re-review #8): entries
+  // FIRST, run doc LAST (the completion sentinel — review P6), every ref
+  // path-asserted into compositionCandidateState/* BEFORE its write.
+  await applyCandidateEntries(db, {
+    runId,
+    entries: allEntries,
+    runDoc: {
+      migrationRunId: runId, candidateStateId: runId,
+      activeIdentityVersion: summary.activeIdentityVersion,
+      overlayContentHash, semanticHash, runHash, entryCount: allEntries.length,
+      createdAt: new Date().toISOString(), feedEntries,
+    },
   });
   console.log(`\nAPPLIED: ${allEntries.length} overlay entries → compositionCandidateState/${runId} (base records untouched).`);
 }

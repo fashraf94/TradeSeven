@@ -59,7 +59,7 @@
   }
  ],
  "clientSdkRulesLayer": {
-  "mechanism": "epochWriteOpen() in firestore.rules (inert until Console deploy; absent doc = open)",
+  "mechanism": "epochWriteAdmitted() in firestore.rules (inert until Console deploy; absent doc = open; present doc requires the writeEpochId token — Sol re-review #1 — and the probe state admits only listed identities — #4)",
   "gatedClauses": [
    "agents create (births)",
    "agents/{id}/rules create+update (rule authoring)",

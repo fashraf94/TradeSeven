@@ -40,7 +40,7 @@
 10. **Battle-drain HARD GATE (#7 — the post-watermark repeat of A26/A35):** re-run the step-0.3 predicate over active `agentBattles` NOW, after the watermark. **This result — not step 0's — is the gate:** any battle matching the predicate ⇒ wait for it to complete before step 2. Record the post-watermark count (expected 0).
 11. **Watermark sweep (B8):** every protected-store doc updated after the watermark must be attributable to a named runbook step.
 
-**VERIFY:** preflight green at the activation SHA; both snapshot-smoke hashes recorded and catalog-equal; B9 gate PASS; the loader returns `{activated: true, genesis: true, generation: 1}` and a probe birth still seeds the LIVE defaults (genesis = pre-activation behavior); drain result `{drained:true}` with zero unresolved stuck leases; post-watermark battle predicate = 0; fence suite semantics live (a probe write 409s `epoch_closed`). **ROLLBACK POINT:** reopen (`{state:'open', epochId: E0}`) + resume the paused rows (each resume acknowledged) — genesis stays: it is generation 1 forever, selects the live identity, and changes no behavior.
+**VERIFY:** preflight green at the activation SHA; both snapshot-smoke hashes recorded and catalog-equal; B9 gate PASS; the loader returns `{activated: true, genesis: true, generation: 1}` and — **the NON-WRITING birth check (re-review #7)** — the seed plan RESOLVED under the genesis-selected version (`selectIdentityVersion` → `buildSeedPlan`) equals the live defaults, a pure computation with zero writes (the fleet is closing/closed here; the behavioral proof is the birth-parity suite row, re-executed as a resolution, not a write); drain result `{drained:true}` with zero unresolved stuck leases; post-watermark battle predicate = 0; fence suite semantics live (a probe write 409s `epoch_closed`). **ROLLBACK POINT:** reopen (`{state:'open', epochId: E0}`) + resume the paused rows (each resume acknowledged) — genesis stays: it is generation 1 forever, selects the live identity, and changes no behavior.
 
 ## Step 2 — FINAL-DRYRUN (hard gate; founder ratifies the exact counts)
 
@@ -52,7 +52,7 @@ Run **`node scripts/composition/migration-scan.js`** (dry-run) at the deployed S
 
 ## Step 3 — `--apply --during-close` (Method B overlay, candidate namespace only)
 
-**`node scripts/composition/migration-scan.js --apply --yes --during-close`** — writes overlay entries + the run doc (the completion sentinel, entries-first order) into `compositionCandidateState/{runId}`. Base records untouched (A32/A36/A38). **The closed-epoch authorization (Sol review #5, built at the fold):** `--during-close` swaps the general open-epoch guard for the DEDICATED inverse assertion `assertClosedEpochCandidateWindow` — the epoch doc must exist and be `'closed'` (the post-watermark freeze); open/closing/absent each refuse (`candidate_window_not_closed`, tested). Every apply write is path-asserted into `compositionCandidateState/*` at runtime (the #5 belt). PR 2's general guard is untouched; without the flag the script still requires an open epoch.
+**`node scripts/composition/migration-scan.js --apply --yes --during-close`** — writes overlay entries + the run doc (the completion sentinel, entries-first order) into `compositionCandidateState/{runId}`. Base records untouched (A32/A36/A38). **The closed-epoch authorization (Sol review #5, built at the fold):** `--during-close` swaps the general open-epoch guard for the DEDICATED inverse assertion `assertClosedEpochCandidateWindow` — the epoch doc must exist and be `'closed'` (the post-watermark freeze); open/closing/absent each refuse (`candidate_window_not_closed`, tested). **The namespace belt is UNIT-PROVEN (re-review #8):** the apply writer is the extracted `compositionCandidateApply.applyCandidateEntries`, whose mutation row redirects the write set toward `agents/*` and proves the run aborts BEFORE any Firestore write (`compositionCandidateApply.test.js` — zero writes land; sentinel order also pinned there). PR 2's general guard is untouched; without the flag the script still requires an open epoch.
 
 **VERIFY:** the apply summary's `semanticHash` equals the ratified dry-run's; `entryCount` equals the ratified entry count. **ROLLBACK POINT:** the candidate namespace is inert (nothing reads it without the record) — abandon the runId and stop, or proceed.
 
@@ -96,7 +96,7 @@ The epoch stays **closed**; the fleet is frozen; nothing here writes production 
 
 ## Step 8B — CONTROLLED verification-open (named operator probes ONLY), then the general unfreeze
 
-**Open for probes:** update `composition/writeEpoch` to `{state:'open', epochId: <E1, the step-7 epoch>}` (UPDATE, never delete: post-genesis an absent doc fails closed at every boundary incl. the provisioner lease). **General traffic and external admin stay gated:** the §6 freeze remains announced and in force, every EXTERNAL_ADMIN_WRITE_PATHS row stays paused, crons stay paused — **only the NAMED OPERATOR PROBE IDENTITIES (enumerated in the log before 8B starts) exercise the real production writer paths.**
+**Open for probes — MECHANICALLY GATED (re-review #4):** update `composition/writeEpoch` to **`{state:'probe', epochId: <E1, the step-7 epoch>, probeIdentities: [<the enumerated operator uids>]}`** (UPDATE, never delete: post-genesis an absent doc fails closed at every boundary incl. the provisioner lease). The gate is CODE-ENFORCED, not operational assertion: the server chokepoint (`validateWriteEpochInTx` + the provisioner-lease acquisition) rejects any actor not in `probeIdentities` — and any writer that doesn't thread an actor at all — with `probe_only` (negative-control row: probe state + non-probe identity ⇒ 409, zero writes); the rules layer denies any client-SDK identity write whose `request.auth.uid` is not listed or whose epoch token is stale (emulator rows). The §6 freeze stays announced, every EXTERNAL_ADMIN_WRITE_PATHS row stays paused, crons stay paused — but none of that is what holds the door: **the probe state does.**
 
 **Probe checks (the §10 positive/negative set that needs writes — each observed, not assumed):**
 - a probe birth seeds the SUBSTITUTED defaults (guardian: `alloc-sector-cap`; the record selected them — A24);
@@ -109,27 +109,28 @@ The epoch stays **closed**; the fleet is frozen; nothing here writes production 
 
 **8B FAILURE ⇒ THE ROLLBACK PROTOCOL** (below). The only v3 base state at that point is the enumerated probes' — reversed by the protocol's named hand reconciliation.
 
-**General unfreeze (ONLY after every 8B check passes):** lift the §6 freeze for general traffic; resume the EXTERNAL_ADMIN_WRITE_PATHS rows (each resume acknowledged); `COMPOSITION_MIGRATION_FEED_ENABLED` flips only after the record is verified (A44, flag-ownership table); purge the lease registry (`purgeReleasedProvisionerLeases` — released-only, #3/F9).
+**General unfreeze (ONLY after every 8B check passes):** update the epoch doc to `{state:'open', epochId: E1}` — removing the probe gate is what opens general traffic (clients capture the token on their next formed mutation); lift the §6 freeze announcement; resume the EXTERNAL_ADMIN_WRITE_PATHS rows (each resume acknowledged); `COMPOSITION_MIGRATION_FEED_ENABLED` flips only after the record is verified (A44, flag-ownership table); purge the lease registry (`purgeReleasedProvisionerLeases` — released-only, #3/F9).
 
 **VERIFY:** every probe check recorded with its observation + the probe-identity enumeration. **ROLLBACK:** THE ROLLBACK PROTOCOL, any time — scope per its statement.
 
 ## THE ROLLBACK PROTOCOL (Sol pre-activation review #2 — symmetric with activation; the ONLY way a rollback runs)
 
-A bare `rollbackActivationRecord` call is never executed alone. The protocol, in order:
+A bare `rollbackActivationRecord` call is never executed alone. The protocol, in order *(re-review #2: the pause-and-acknowledge discipline is IMPLEMENTED in the numbered order — before any epoch-state write; re-review #3: verification splits Rollback-A / Rollback-B, mirroring 8A/8B on the same probe-gate mechanism)*:
 
-1. **Close the current epoch:** update `composition/writeEpoch` to `{state:'closing'}` — new writes and lease acquisitions reject from this write on.
-2. **Pause external admin:** every EXTERNAL_ADMIN_WRITE_PATHS row paused + positively acknowledged (the #4 discipline applies here too).
-3. **Drain provisioner leases to the watermark:** `drainProvisionerLeases` → `{state:'closed'}`. A stuck (expired-unreleased) lease REFUSES the drain (#3) — resolve explicitly, then re-run.
+1. **Pause external admin FIRST:** every EXTERNAL_ADMIN_WRITE_PATHS row paused + positively acknowledged (per-row sign-off: operator, timestamp, mechanism). No epoch-state write may precede the last acknowledgment.
+2. **Close the current epoch:** update `composition/writeEpoch` to `{state:'closing'}` — new writes and lease acquisitions reject from this write on.
+3. **Drain provisioner leases to the watermark:** `drainProvisionerLeases` → `{state:'closed'}`. A stuck (expired-unreleased) lease REFUSES the drain (#3) — resolve explicitly (`resolveStuckProvisionerLease`, attributed), then re-run.
 4. **Fresh-generation descriptor repoint:** `rollbackActivationRecord(db, { toGeneration: <target> })` — the COMPLETE prior tuple under generation MAX+1.
-5. **Verify the load:** the loader returns the restored tuple at the fresh generation (`toGeneration: 1` ⇒ `{activated: true, genesis: true}`, base-only).
-6. **Set the epoch doc to the TARGET descriptor's epoch, still closed:** `{state:'closed', epochId: <the restored activeEpochId>}`.
-7. **Reopen ONLY after verification:** the restored world's checks pass first — a probe birth seeds the restored identity's defaults, a probe compile resolves the restored cell source (record-scoped, #11), stale-stamped agents reject at battle creation until redeployed. Then `{state:'open', epochId: <restored epoch>}`.
+5. **Set the epoch doc to the TARGET descriptor's epoch, still closed:** `{state:'closed', epochId: <the restored activeEpochId>}`.
+6. **ROLLBACK-A — closed, read-only verification:** the loader returns the restored tuple at the fresh generation (`toGeneration: 1` ⇒ `{activated: true, genesis: true}`, base-only); the descriptor's full 7-field tuple equals the history row's content; a seed-plan RESOLUTION under the restored version equals the restored identity's defaults (a computation — zero writes, the #7 pattern); stale stamps confirmed rejectable by inspection of a persisted projection stamp vs the new generation.
+7. **ROLLBACK-B — probe-gated verification-open:** write `{state:'probe', epochId: <restored epoch>, probeIdentities: [<the enumerated operator ids>]}` — **the same mechanically-enforced gate as 8B** (server chokepoint rejects any unlisted/unthreaded actor `probe_only`; the rules layer requires `request.auth.uid` in the list AND the current epoch token — both negative-control-proven). Under the gate: run the **provenance-queried reconciliation** (below), then real probes — a probe birth seeds the restored identity's defaults; a probe compile resolves the restored cell source (record-scoped, #11); a stale-stamped agent rejects at battle creation until redeployed.
+8. **Reopen + resume ONLY after Rollback-B passes:** `{state:'open', epochId: <restored epoch>}` (clients re-capture the token on their next formed mutation); resume the external-admin rows (each resume acknowledged); lift the traffic gate.
 
 **The interleaving guarantee (proven row):** a write flow pinned under the pre-rollback world cannot commit after the protocol runs — while closed it rejects at the epoch belt; after the verified reopen it STILL rejects at the descriptor compare (`projection_stale_generation` / `battle_cutover_interleaved`). Reopening never re-admits a pre-rollback flow.
 
 **The battle rule (the #2 question, answered with the PROOF branch):** in-flight battles are NOT drained before the repoint — **locked manifests make them independent**: (a) the prompt surface is structurally banned from every compat/resolver import (the forbidden-reads CI rule + M11 one-hop sweep); (b) the eval path performs no re-projection (battle `agentContext.activeRules` is frozen at creation); (c) the advisory admissibility gate compares the manifest/slice stamp pair WITHIN the battle doc — both halves were stamped atomically by FC-1, so a pre-rollback battle stays internally consistent and renders its own generation's content to completion. New battles for stale-stamped agents reject until redeploy (the reader direction).
 
-**Scope statement (#1/#12 — the claim of record):** through 8A the protocol is TOTAL (no v3 base state exists). During 8B the only v3 base state is the ENUMERATED probe identities — reversed by the **named hand reconciliation**: for each probe identity, delete its v3 born-with rule docs + reseed at the restored version (`seedArchetypeTraitsDeterministic`, deterministic ids overwrite), reset its `equippedTraits` to the reseeded set, and force a redeploy (its projection re-derives + restamps at the restored generation). After general unfreeze, the protocol is **selector-total plus that reconciliation applied to every v3-born identity** (enumerable from born-with doc ids `bornwith__<candidate-trait>__*`). The honest-divergence regression row (birth-switch suite) records exactly what the repoint does not reverse. **Rollback-to-genesis is claimed for THIS event only** (2 → 1); arbitrary-generation rollback is FILED post-event behind immutable per-revision override snapshots / a frozen final epoch revision (the ledger's filed prerequisite).
+**Scope statement (#1/#12 — the claim of record):** through 8A the protocol is TOTAL (no v3 base state exists). During 8B the only v3 base state is the ENUMERATED probe identities — reversed by the **named hand reconciliation**: for each identity found by the provenance query, delete its v3 born-with rule docs + reseed at the restored version (`seedArchetypeTraitsDeterministic`, deterministic ids overwrite), reset its `equippedTraits` to the reseeded set, and force a redeploy (its projection re-derives + restamps at the restored generation). After general unfreeze, the protocol is **selector-total plus that reconciliation applied to every v3-born identity**. **The reconciliation QUERIES the birth-provenance stamps (re-review #6)** — `agents` where `activationGenerationAtBirth >= <the rolled-back-from generation>` (equivalently `identityVersionAtBirth: 3` for this event) — never inference from born-with trait ids; every fresh seed stamps both fields (server paths from their pinned descriptor, the client birth from the record read; clone paths inherit the source's stamps). The honest-divergence regression row (birth-switch suite) records exactly what the repoint does not reverse. **Rollback-to-genesis is claimed for THIS event only** (2 → 1); arbitrary-generation rollback is FILED post-event behind immutable per-revision override snapshots / a frozen final epoch revision (the ledger's filed prerequisite).
 
 ## Step 9 — PR 5 docs closeout
 
@@ -153,12 +154,23 @@ Observe-window evidence is **equip-bundle only** (PR 2 instrumented that boundar
 
 ## Run log (append-only; the founder fills during the run)
 
+*(Re-review #9: STRICT order — −1 → 0 → 1 → … → 8A → 8B → 9. If THE ROLLBACK PROTOCOL is invoked at any point, append its own rows (R1–R8, one per protocol step) at the point of invocation — never overwrite a completed step's row.)*
+
 | Step | Started | Result / counts | Verified by | Operator |
 |---|---|---|---|---|
-| −1 | | | | |
-| 0 | | | | |
-| 1 (SHA pin + genesis + close) | | | | |
-| 8A / 8B (probe ids enumerated) | | | | |
+| −1 (rules deploy) | | | | |
+| 0 (preflight + advisory drain) | | | | |
+| 1 (deploy → SHA pin → pause+ack → genesis → close → hard drain gate) | | | | |
+| 2 (FINAL-DRYRUN ratification) | | | | |
+| 3 (--apply --during-close) | | | | |
+| 4 (zero-residual verify) | | | | |
+| 5 (candidate pipeline, explicit scope) | | | | |
+| 6 (stale-artifact sweep) | | | | |
+| 7 (THE FLIP — generation 2) | | | | |
+| 8A (closed read-only verification) | | | | |
+| 8B (probe-gated verification; probe ids enumerated here) | | | | |
+| 9 (docs closeout) | | | | |
+| R1–R8 (rollback protocol, if invoked — appended per step) | | | | |
 | 1 | | | | |
 | 2 (RATIFICATION) | | | | |
 | 3 | | | | |

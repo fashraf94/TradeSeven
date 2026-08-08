@@ -386,3 +386,32 @@ describe('#5 (Sol pre-activation review) — the closed-epoch candidate-apply wi
     }
   });
 });
+
+describe('#6 (Sol re-review) — birth provenance stamps (queryable reconciliation, not trait-id inference)', () => {
+  it('birthProvenanceStamp: dark → {} (A23 byte-identity); pinned pre-record → {live, 0}; pinned at a record → its version + generation', async () => {
+    const { birthProvenanceStamp } = await import('./compositionActivationService.js');
+    expect(birthProvenanceStamp(null)).toEqual({});
+    expect(birthProvenanceStamp({ dark: true, descriptor: null })).toEqual({});
+    expect(birthProvenanceStamp({ dark: false, descriptor: null }))
+      .toEqual({ identityVersionAtBirth: ARCHETYPE_IDENTITY_VERSION, activationGenerationAtBirth: 0 });
+    expect(birthProvenanceStamp({
+      dark: false,
+      descriptor: { activeIdentityVersion: CANDIDATE_IDENTITY_VERSION, activationGeneration: 2 },
+    })).toEqual({ identityVersionAtBirth: CANDIDATE_IDENTITY_VERSION, activationGenerationAtBirth: 2 });
+  });
+
+  it('clones INHERIT the source stamps (INHERITED_LOADOUT_FIELDS); an unstamped source yields an unstamped clone — byte-identity for the pre-stamp fleet', async () => {
+    const { INHERITED_LOADOUT_FIELDS, buildTrainingCloneDoc } = await import('./trainingClone.js');
+    expect(INHERITED_LOADOUT_FIELDS).toContain('identityVersionAtBirth');
+    expect(INHERITED_LOADOUT_FIELDS).toContain('activationGenerationAtBirth');
+    const stamped = buildTrainingCloneDoc(
+      { id: 'r1', archetype: 'guardian', identityVersionAtBirth: 3, activationGenerationAtBirth: 2 },
+      { groupId: 'g1', odUserId: 'u1', nowIso: 't' },
+    );
+    expect(stamped.identityVersionAtBirth).toBe(3);
+    expect(stamped.activationGenerationAtBirth).toBe(2);
+    const unstamped = buildTrainingCloneDoc({ id: 'r2', archetype: 'guardian' }, { groupId: 'g1', odUserId: 'u1', nowIso: 't' });
+    expect('identityVersionAtBirth' in unstamped).toBe(false);
+    expect('activationGenerationAtBirth' in unstamped).toBe(false);
+  });
+});

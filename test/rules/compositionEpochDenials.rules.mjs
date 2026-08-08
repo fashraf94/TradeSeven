@@ -8,7 +8,13 @@
 //   • composition/writeEpoch ABSENT  → every gated write behaves EXACTLY as
 //     today (fail-open; the dark posture — also proven by the untouched 114
 //     pre-existing rules tests, which run with no epoch doc).
-//   • {state:'open'}                 → writes admitted.
+//   • {state:'open'}                 → writes admitted ONLY with the epoch
+//     TOKEN (Sol re-review #1): the doc must carry writeEpochId equal to
+//     the current epochId — a mutation FORMED under E0 and submitted after
+//     E1 opens is DENIED at commit, and a tokenless write denies too.
+//   • {state:'probe'}                → the #4 probe-only gate: ONLY a uid in
+//     probeIdentities, with the current token, writes (the 8B / Rollback-B
+//     verification windows).
 //   • {state:'closed'}               → rule/bundle authoring + agent births
 //     DENIED at commit, while NON-identity writes (agent directives) still
 //     pass — the fence is surgical, not a global freeze.
@@ -87,12 +93,36 @@ describe('epoch ABSENT — fail-open: everything behaves as today (dark posture)
   });
 });
 
-describe('epoch OPEN — writes admitted', () => {
-  it('rule + bundle authoring succeed under an explicit open epoch', async () => {
+describe('epoch OPEN — writes admitted WITH the current token (#1)', () => {
+  it('rule + bundle authoring + agent birth succeed carrying writeEpochId == the current epochId', async () => {
     await seed(EPOCH_PATH, { state: 'open', epochId: 'e-1' });
-    await assertSucceeds(setDoc(doc(asOwner(), AGENT_PATH), CREATE_AGENT_DOC));
-    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r1`), RULE_DOC));
-    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/bundles/b1`), BUNDLE_DOC));
+    await assertSucceeds(setDoc(doc(asOwner(), AGENT_PATH), { ...CREATE_AGENT_DOC, writeEpochId: 'e-1' }));
+    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r1`), { ...RULE_DOC, writeEpochId: 'e-1' }));
+    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/bundles/b1`), { ...BUNDLE_DOC, writeEpochId: 'e-1' }));
+  });
+
+  it('#1 THE STRADDLE: a mutation formed under E0 submitted after E1 opens is DENIED — and a tokenless write denies too', async () => {
+    await seed(EPOCH_PATH, { state: 'open', epochId: 'e-1' });
+    // Formed under the OLD epoch (token e-0), submitted under e-1:
+    await assertFails(setDoc(doc(asOwner(), AGENT_PATH), { ...CREATE_AGENT_DOC, writeEpochId: 'e-0' }));
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r1`), { ...RULE_DOC, writeEpochId: 'e-0' }));
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/bundles/b1`), { ...BUNDLE_DOC, writeEpochId: 'e-0' }));
+    // No token at all (a pre-token client straddling the deploy): DENIED.
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r2`), RULE_DOC));
+  });
+});
+
+describe("epoch PROBE — the #4 probe-only gate (8B / Rollback-B), client half", () => {
+  it('a LISTED probe identity with the current token writes; the same uid UNLISTED is denied; a listed uid with a stale token is denied', async () => {
+    await seed(EPOCH_PATH, { state: 'probe', epochId: 'e-1', probeIdentities: [OWNER_UID] });
+    await assertSucceeds(setDoc(doc(asOwner(), AGENT_PATH), { ...CREATE_AGENT_DOC, writeEpochId: 'e-1' }));
+    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r1`), { ...RULE_DOC, writeEpochId: 'e-1' }));
+    // Listed but formed under the wrong epoch:
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r2`), { ...RULE_DOC, writeEpochId: 'e-0' }));
+    // The negative control: the gate names someone else — this uid is OUT.
+    await seed(EPOCH_PATH, { state: 'probe', epochId: 'e-1', probeIdentities: ['some-other-operator'] });
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r3`), { ...RULE_DOC, writeEpochId: 'e-1' }));
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/bundles/b2`), { ...BUNDLE_DOC, writeEpochId: 'e-1' }));
   });
 });
 

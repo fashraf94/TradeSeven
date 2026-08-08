@@ -103,6 +103,7 @@ export function diffSourceRevisionVector(vector, expected) {
  * Dark (enabled=false): { proceed: true, dark: true } with zero I/O.
  */
 export async function ensureDeployableCompiledBuild({
+  actor = null, // Sol re-review #4: probe-window admission for the deploy path
   db,
   agentRef,
   agentId,
@@ -123,7 +124,7 @@ export async function ensureDeployableCompiledBuild({
         // Composition write-epoch fence (design note §3): the deploy recompile is
         // epoch-fenced HERE (non-fenced file) — the fenced decide.js needs no edit;
         // a closed epoch refuses the deploy ({proceed:false}, 409 upstream).
-        try { await validateWriteEpochInTx(tx, db); }
+        try { await validateWriteEpochInTx(tx, db, { actor }); }
         catch (e) { if (e instanceof EpochClosedError) return { proceed: false, reason: 'epoch_closed' }; throw e; }
         if (!agentSnap.exists) return { proceed: false, reason: 'agent_not_found' };
         const agent = agentSnap.data();

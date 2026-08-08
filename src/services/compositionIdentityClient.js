@@ -69,6 +69,78 @@ export async function fetchActiveIdentityVersion() {
 }
 
 /**
+ * Sol re-review #1 — CLIENT-SDK EPOCH BINDING (B1's "every identity write",
+ * the path no server pin can see): capture the write-epoch token WHEN THE
+ * MUTATION IS FORMED; the rules layer requires the submitted doc's
+ * `writeEpochId` to EQUAL the current `composition/writeEpoch.epochId` at
+ * commit. So a mutation formed under epoch E0 and submitted after E1 opens
+ * is DENIED by the rules engine itself (emulator-proven).
+ *
+ * Fail direction: epoch doc ABSENT (pre-genesis) → null → the write carries
+ * NO token and the rules admit it (today's world, byte-identical). Doc
+ * PRESENT but the read fails/times out → null → the write carries no token
+ * and the rules DENY it — fail closed for identity writes, retryable.
+ */
+export async function captureWriteEpochToken() {
+  let timer;
+  try {
+    const [{ doc, getDoc }, { db }] = await Promise.all([
+      import('firebase/firestore'),
+      import('../firebase/config'),
+    ]);
+    const snap = await Promise.race([
+      getDoc(doc(db, 'composition', 'writeEpoch')),
+      new Promise((res) => { timer = setTimeout(() => res(null), RECORD_READ_TIMEOUT_MS); }),
+    ]);
+    if (!snap || !snap.exists()) return null;
+    const id = snap.data()?.epochId;
+    return typeof id === 'string' && id.length > 0 ? id : null;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Stamp `writeEpochId` onto an identity-write payload (no-op pre-genesis). */
+export async function withEpochToken(data) {
+  const token = await captureWriteEpochToken();
+  return token == null ? data : { ...data, writeEpochId: token };
+}
+
+/**
+ * Sol re-review #6 — the CLIENT birth's provenance stamp. Post-genesis the
+ * record always exists, so every client birth records the version +
+ * generation it was born under (the rollback protocol's reconciliation
+ * queries these fields). Record absent (pre-genesis) or unreadable → {} —
+ * no new keys, byte-identical births.
+ */
+export async function fetchBirthProvenance() {
+  let timer;
+  try {
+    const [{ doc, getDoc }, { db }] = await Promise.all([
+      import('firebase/firestore'),
+      import('../firebase/config'),
+    ]);
+    const snap = await Promise.race([
+      getDoc(doc(db, 'composition', 'activation')),
+      new Promise((res) => { timer = setTimeout(() => res(null), RECORD_READ_TIMEOUT_MS); }),
+    ]);
+    if (!snap || !snap.exists()) return {};
+    const d = snap.data() ?? {};
+    if (!Number.isInteger(d.activeIdentityVersion) || !Number.isInteger(d.activationGeneration)) return {};
+    return {
+      identityVersionAtBirth: d.activeIdentityVersion,
+      activationGenerationAtBirth: d.activationGeneration,
+    };
+  } catch {
+    return {};
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * The seed source for a birth at `identityVersion` (null = live). Returns
  * { traitIds, traitOf } for buildSeedPlan.
  */

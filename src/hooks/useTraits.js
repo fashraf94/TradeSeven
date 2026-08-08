@@ -16,6 +16,7 @@
  * - canEquip(traitId): boolean — checks slot availability
  */
 
+import { withEpochToken } from '../services/compositionIdentityClient';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -362,7 +363,7 @@ export function useTraits(agentId, forge) {
           const paramOverrides = profile[ruleId] || {};
           try {
             const ruleRef = doc(db, 'agents', agentId, 'rules', rule.id);
-            await updateDoc(ruleRef, { paramValues: paramOverrides });
+            await updateDoc(ruleRef, await withEpochToken({ paramValues: paramOverrides })); // #1: epoch-bound identity write
           } catch (err) {
             console.error(`[useTraits] Failed to update rule ${ruleId} params:`, err);
           }

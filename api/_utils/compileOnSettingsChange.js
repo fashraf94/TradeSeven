@@ -53,30 +53,39 @@ import {
 import { computeIdentityHash, CANDIDATE_IDENTITY_VERSION } from './archetypeRegistry.js';
 import {
   ACTIVATION_COLLECTION, ACTIVATION_DOC_ID, readActivationDescriptor,
+  MalformedActivationDescriptorError,
 } from './compositionProductionLoader.js';
 
 /**
- * Sol pre-activation review #11 (genesis-present contract): the candidate
- * cell-source selection is RECORD-SCOPED, not flag-scoped. The flag stays
- * the DARK switch (off ⇒ zero reads, zero behavior change — A23); when lit,
- * THE RECORD decides (A48): candidate cells ONLY when the activation record
- * selects the candidate version. Post-genesis the record always exists —
- * genesis (live version, no candidate) resolves the LIVE map, exactly like
- * pre-genesis; a rollback-to-genesis therefore also restores live-cell
- * compiles even though the flag never lowers (the F5 split-brain closed at
- * this boundary). Malformed records fail closed to the LIVE map here: this
- * is a cell-SOURCE selector for user saves, and live is the conservative
- * source (the activation writer and loader carry the loud fail-closed).
+ * Sol pre-activation review #11 + re-review #5 (the compile boundary's
+ * four-state contract, aligned with the production loader):
+ *
+ *   no record (pre-genesis)                → LIVE cells
+ *   valid record, live version (genesis/v2)→ LIVE cells
+ *   valid record, candidate version (v3)   → CANDIDATE cells
+ *   PRESENT but malformed / unrecognized   → REJECT (fail closed — the tx
+ *                                            aborts before any write; a
+ *                                            corrupt selector must never
+ *                                            silently pick a cell source)
+ *
+ * The flag stays the DARK switch (off ⇒ zero reads, zero behavior change —
+ * A23); when lit, THE RECORD decides (A48). Post-genesis the record always
+ * exists — genesis resolves the LIVE map exactly like pre-genesis, so a
+ * rollback-to-genesis restores live-cell compiles even though the flag
+ * never lowers (the F5 split-brain closed at this boundary).
  */
 export async function resolveCandidateModeInTx(tx, db, { enabled = COMPOSITION_COMPILED_IDENTITY_ENABLED } = {}) {
   if (!enabled) return false; // dark: zero reads (A23)
-  try {
-    const snap = await tx.get(db.collection(ACTIVATION_COLLECTION).doc(ACTIVATION_DOC_ID));
-    const descriptor = readActivationDescriptor(snap);
-    return descriptor?.activeIdentityVersion === CANDIDATE_IDENTITY_VERSION;
-  } catch {
-    return false; // malformed record → the LIVE map (conservative cell source)
-  }
+  const snap = await tx.get(db.collection(ACTIVATION_COLLECTION).doc(ACTIVATION_DOC_ID));
+  const descriptor = readActivationDescriptor(snap); // malformed THROWS here — fails closed (#5)
+  if (descriptor === null) return false; // pre-genesis
+  if (descriptor.activeIdentityVersion === CANDIDATE_IDENTITY_VERSION) return true;
+  if (descriptor.activeIdentityVersion === ARCHETYPE_IDENTITY_VERSION) return false; // genesis / live
+  // A well-formed record naming a version this deploy cannot compile for
+  // (neither live nor its shipped candidate) — reject, never guess (#5).
+  throw new MalformedActivationDescriptorError(
+    `unrecognized activeIdentityVersion ${descriptor.activeIdentityVersion} at the compile boundary (fail closed)`,
+  );
 }
 
 // §5.1 metadata fields lifted from a corpus template when (Phase 3+) they

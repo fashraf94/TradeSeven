@@ -11,7 +11,7 @@
       ],
       "callTokens": [
         "await pinActivationDescriptor(db)",
-        "await commitActiveRulesProjection(db, agentRef, activeRulesForDeploy, projectionPin)"
+        "await commitActiveRulesProjection(db, agentRef, activeRulesForDeploy, projectionPin, { actor: agent.ownerId })"
       ],
       "order": [
         ["await pinActivationDescriptor(", "await commitActiveRulesProjection("]

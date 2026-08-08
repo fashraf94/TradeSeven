@@ -97,7 +97,7 @@ export default async function handler(req, res) {
       const agentSnap = await tx.get(agentRef);
       // Composition write-epoch fence (design note §3): read-phase validation —
       // zero I/O while dark; a closed epoch 409s with nothing written (A41).
-      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX });
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX, actor: user.uid }); // #4: probe-window admission
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');

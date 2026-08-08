@@ -91,7 +91,7 @@ export function writeEpochRef(db) {
  *
  * @returns {null | {state:string, epochId:string|null}} null while dark.
  */
-export async function validateWriteEpochInTx(tx, db, { enabled = COMPOSITION_EPOCH_FENCE_ENABLED, sentinel = null, epochPin = null } = {}) {
+export async function validateWriteEpochInTx(tx, db, { enabled = COMPOSITION_EPOCH_FENCE_ENABLED, sentinel = null, epochPin = null, actor = null } = {}) {
   if (!enabled) return null; // dark: zero reads, zero behavior change (A23)
   const reject = (code, epochId = null, state = 'closed') => {
     if (sentinel) throw new Error(sentinel + code);
@@ -110,6 +110,19 @@ export async function validateWriteEpochInTx(tx, db, { enabled = COMPOSITION_EPO
     return { state: 'open', epochId: null };
   }
   const data = snap.data();
+  // Sol re-review #4: the PROBE-ONLY gate, mechanically enforced. During the
+  // 8B / Rollback-B verification windows the runbook sets state 'probe' with
+  // an explicit identity allowlist — ONLY a caller that names a listed actor
+  // is admitted; every unthreaded or unlisted writer rejects (fail closed;
+  // 'probe' is present-but-not-open to everything that predates this arm).
+  if (data.state === 'probe') {
+    if (typeof actor === 'string' && actor.length > 0
+      && Array.isArray(data.probeIdentities) && data.probeIdentities.includes(actor)) {
+      pinOrReject(data.epochId ?? null);
+      return { state: 'probe', epochId: data.epochId ?? null };
+    }
+    reject('epoch_closed', data.epochId ?? null, 'probe_only');
+  }
   // B8 (PR 3): a PRESENT doc admits ONLY state === 'open' — 'closed' and any
   // unrecognized/mid-transition state reject. The rules layer was already
   // fail-closed on a present doc (`data.state == 'open'`, firestore.rules:14);

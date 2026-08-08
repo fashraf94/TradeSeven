@@ -103,11 +103,11 @@ describe('A46 — the writer census is complete and mechanically derived', () =>
     }
   });
 
-  it('the rules layer gates every censused client-SDK clause with epochWriteOpen()', () => {
+  it('the rules layer gates every censused client-SDK clause with epochWriteAdmitted() (renamed at Sol re-review #1/#4: token equality + the probe state)', () => {
     const rules = read('firestore.rules');
-    expect(rules).toContain('function epochWriteOpen()');
+    expect(rules).toContain('function epochWriteAdmitted()');
     // 1 definition + 4 gated clauses (agents create; rules create/update; bundles create; bundles update)
-    expect((rules.match(/epochWriteOpen\(\)/g) || []).length).toBeGreaterThanOrEqual(5);
+    expect((rules.match(/epochWriteAdmitted\(\)/g) || []).length).toBeGreaterThanOrEqual(5);
     expect(rules).toContain("composition/writeEpoch");
   });
 });

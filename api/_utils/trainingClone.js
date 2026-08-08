@@ -43,7 +43,7 @@ import {
   acquireProvisionerLease, assertLeaseCurrent, releaseProvisionerLease,
 } from './compositionProvisionerLease.js';
 import { pinActivationDescriptor } from './compositionGenerationFence.js';
-import { selectIdentityVersion } from './compositionActivationService.js';
+import { selectIdentityVersion, birthProvenanceStamp } from './compositionActivationService.js';
 
 const LOG_PREFIX = '[TrainingClone]';
 
@@ -75,6 +75,13 @@ export const INHERITED_LOADOUT_FIELDS = Object.freeze([
   'evolutionCycle',
   'starterKitCompleted',
   'name',
+  // Sol re-review #6: a clone COPYING identity content inherits the SOURCE's
+  // birth provenance — the content's provenance is the source's, not the
+  // copy time's (a reseeded training clone overwrites these with a fresh
+  // stamp from its own pin below). Absent on the source ⇒ absent on the
+  // clone (the builder skips undefined) — byte-identical for the pre-stamp fleet.
+  'identityVersionAtBirth',
+  'activationGenerationAtBirth',
 ]);
 
 export const FRESH_STATS = Object.freeze({
@@ -211,6 +218,7 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
       // inert (their traitId is no longer in equippedTraits, projectActiveRules gate).
       if (cloneDoc.archetype && cloneDoc.archetype !== ranked.archetype && hasBornWithSet(cloneDoc.archetype, { identityVersion: seedVersion })) {
         const { equippedTraits } = await seedArchetypeTraitsDeterministic(cloneRef, cloneDoc.archetype, { identityVersion: seedVersion });
+        Object.assign(cloneDoc, birthProvenanceStamp(seedPin)); // #6: FRESH-seeded content stamps at its own pin (dark: no keys)
         if (equippedTraits) {
           cloneDoc.equippedTraits = equippedTraits;
           // Soft-delete the copied ranked trait docs the override replaced (traitId

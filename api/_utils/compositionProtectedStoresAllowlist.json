@@ -1,5 +1,5 @@
 {
-  "_comment": "B3 (ledger, PR 3) — the deny-by-default protected-store write allowlist. Every Firestore-shaped write site under api/ + scripts/ whose collection resolves to a protected store OR cannot be resolved statically MUST have its key here (file::function::method::collection), pinned at its SITE COUNT (review F3a: a new write inside a listed tuple drifts the count and fails CI). Baseline enumerated at PR-3 HEAD, cross-checked against the A46 census. Adding or re-counting a key requires human review of the writer in the same PR; a key with zero matching sites fails stale. Documented resolution limits: see compositionProtectedStoresScan.js header. B3-EXT (PR 4): param-write helper definitions carry collection param:<name>; helper call sites carry method call:<helper>#<paramIndex> with the CALLER-side collection resolution — per-callsite counts, same both-direction ratchet.",
+  "_comment": "B3 (ledger, PR 3) \u2014 the deny-by-default protected-store write allowlist. Every Firestore-shaped write site under api/ + scripts/ whose collection resolves to a protected store OR cannot be resolved statically MUST have its key here (file::function::method::collection), pinned at its SITE COUNT (review F3a: a new write inside a listed tuple drifts the count and fails CI). Baseline enumerated at PR-3 HEAD, cross-checked against the A46 census. Adding or re-counting a key requires human review of the writer in the same PR; a key with zero matching sites fails stale. Documented resolution limits: see compositionProtectedStoresScan.js header. B3-EXT (PR 4): param-write helper definitions carry collection param:<name>; helper call sites carry method call:<helper>#<paramIndex> with the CALLER-side collection resolution \u2014 per-callsite counts, same both-direction ratchet.",
   "allowedWriteSites": {
     "api/_utils/__fixtures__/wireFirestoreFake.js::createFirestoreFake::set::unresolved": 1,
     "api/_utils/agentChatBudget.js::chargeAgentChatBudget::set::unresolved": 1,
@@ -22,6 +22,7 @@
     "api/_utils/compositionActivationService.js::bumpOverrideRevisionInTx::update::unresolved": 1,
     "api/_utils/compositionActivationService.js::writeDescriptorInTx::create::unresolved": 1,
     "api/_utils/compositionActivationService.js::writeDescriptorInTx::set::unresolved": 1,
+    "api/_utils/compositionCandidateApply.js::applyCandidateEntries::set::unresolved": 2,
     "api/_utils/compositionGenerationFence.js::commitActiveRulesProjection::update::param:agentRef": 1,
     "api/_utils/compositionGenerationFence.js::commitActiveRulesProjection::update::unresolved": 1,
     "api/_utils/compositionGenerationFence.js::commitBattleDocWithPin::create::unresolved": 1,
@@ -182,8 +183,6 @@
     "api/tournament/flip.js::handler::update::unresolved": 1,
     "api/tournament/resolve-user-draft.js::resolveUserDraftForGroup::set::unresolved": 1,
     "api/tournament/resolve-user-draft.js::resolveUserDraftForGroup::update::unresolved": 1,
-    "scripts/composition/migration-scan.js::main::set::compositionCandidateState": 1,
-    "scripts/composition/migration-scan.js::main::set::unresolved": 1,
     "scripts/mastery-backfill.js::main::set::unresolved": 2,
     "scripts/mastery-preflip-normalize.js::main::call:txUpdateAgentSettings#1::unresolved": 2,
     "scripts/mastery-preflip-normalize.js::main::update::unresolved": 1,
