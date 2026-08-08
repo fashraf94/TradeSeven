@@ -93,8 +93,13 @@ export async function captureWriteEpochToken() {
       new Promise((res) => { timer = setTimeout(() => res(null), RECORD_READ_TIMEOUT_MS); }),
     ]);
     if (!snap || !snap.exists()) return null;
-    const id = snap.data()?.epochId;
-    return typeof id === 'string' && id.length > 0 ? id : null;
+    const d = snap.data() ?? {};
+    if (typeof d.epochId !== 'string' || d.epochId.length === 0) return null;
+    // Sol confirmation pass BL1: the token is the TUPLE — epochId names WHICH
+    // epoch, fenceGeneration names WHICH INCARNATION of it (a rollback that
+    // reopens the same epoch id mints a new incarnation, so a token formed
+    // under the earlier incarnation can never be re-admitted — the ABA closed).
+    return { epochId: d.epochId, fenceGeneration: d.fenceGeneration ?? null };
   } catch {
     return null;
   } finally {
@@ -102,10 +107,10 @@ export async function captureWriteEpochToken() {
   }
 }
 
-/** Stamp `writeEpochId` onto an identity-write payload (no-op pre-genesis). */
+/** Stamp the {writeEpochId, writeFenceGeneration} tuple onto an identity-write payload (no-op pre-genesis). */
 export async function withEpochToken(data) {
   const token = await captureWriteEpochToken();
-  return token == null ? data : { ...data, writeEpochId: token };
+  return token == null ? data : { ...data, writeEpochId: token.epochId, writeFenceGeneration: token.fenceGeneration };
 }
 
 /**

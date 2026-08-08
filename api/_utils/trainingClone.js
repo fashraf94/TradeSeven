@@ -75,14 +75,21 @@ export const INHERITED_LOADOUT_FIELDS = Object.freeze([
   'evolutionCycle',
   'starterKitCompleted',
   'name',
-  // Sol re-review #6: a clone COPYING identity content inherits the SOURCE's
-  // birth provenance — the content's provenance is the source's, not the
-  // copy time's (a reseeded training clone overwrites these with a fresh
-  // stamp from its own pin below). Absent on the source ⇒ absent on the
-  // clone (the builder skips undefined) — byte-identical for the pre-stamp fleet.
-  'identityVersionAtBirth',
-  'activationGenerationAtBirth',
+  // Sol confirmation pass BL2 — BIRTH PROVENANCE MEANS BIRTH: the birth
+  // fields are NOT inherited (a new clone object stamps its OWN creation
+  // descriptor). The SOURCE's birth stamp travels as LINEAGE instead —
+  // loadoutSourceIdentityVersion / loadoutSourceActivationGeneration,
+  // assigned by the builders below (absent on the source ⇒ absent on the
+  // clone; byte-identical for the pre-stamp fleet).
 ]);
+
+// BL2: lineage from the source's birth stamp — separate fields, never the
+// clone's own birth provenance. Shared by the training + casual builders.
+export function assignLoadoutLineage(target, sourceAgent) {
+  if (sourceAgent.identityVersionAtBirth !== undefined) target.loadoutSourceIdentityVersion = sourceAgent.identityVersionAtBirth;
+  if (sourceAgent.activationGenerationAtBirth !== undefined) target.loadoutSourceActivationGeneration = sourceAgent.activationGenerationAtBirth;
+  return target;
+}
 
 export const FRESH_STATS = Object.freeze({
   wins: 0, losses: 0, gamesPlayed: 0, totalScore: 0, avgScore: 0, currentStreak: 0, bestStreak: 0,
@@ -110,6 +117,7 @@ export function buildTrainingCloneDoc(rankedAgent, { groupId, odUserId, loadoutS
   for (const field of INHERITED_LOADOUT_FIELDS) {
     if (rankedAgent[field] !== undefined) loadout[field] = rankedAgent[field];
   }
+  assignLoadoutLineage(loadout, rankedAgent); // BL2: source birth stamp -> lineage fields
   // Slice-5 override hook: a partial loadout spec replaces inherited fields.
   if (loadoutSpec && typeof loadoutSpec === 'object') {
     for (const [k, v] of Object.entries(loadoutSpec)) loadout[k] = v;
@@ -209,6 +217,9 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
       await copyAgentSubcollections(db, ranked.id, cloneId);
 
       const cloneDoc = buildTrainingCloneDoc(ranked, { groupId: group.id, odUserId, loadoutSpec, nowIso });
+      // BL2: a NEW clone object stamps its OWN creation descriptor (dark pin:
+      // zero keys, A23) — lineage was already assigned by the builder.
+      Object.assign(cloneDoc, birthProvenanceStamp(seedPin));
       // Invariant convergence (same rule as the Command Center change): if the
       // loadout override picked an archetype that DIFFERS from the ranked agent's,
       // the clone carries the OVERRIDE archetype's born-with traits, not the
@@ -218,7 +229,6 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
       // inert (their traitId is no longer in equippedTraits, projectActiveRules gate).
       if (cloneDoc.archetype && cloneDoc.archetype !== ranked.archetype && hasBornWithSet(cloneDoc.archetype, { identityVersion: seedVersion })) {
         const { equippedTraits } = await seedArchetypeTraitsDeterministic(cloneRef, cloneDoc.archetype, { identityVersion: seedVersion });
-        Object.assign(cloneDoc, birthProvenanceStamp(seedPin)); // #6: FRESH-seeded content stamps at its own pin (dark: no keys)
         if (equippedTraits) {
           cloneDoc.equippedTraits = equippedTraits;
           // Soft-delete the copied ranked trait docs the override replaced (traitId

@@ -93,36 +93,79 @@ describe('epoch ABSENT — fail-open: everything behaves as today (dark posture)
   });
 });
 
-describe('epoch OPEN — writes admitted WITH the current token (#1)', () => {
-  it('rule + bundle authoring + agent birth succeed carrying writeEpochId == the current epochId', async () => {
-    await seed(EPOCH_PATH, { state: 'open', epochId: 'e-1' });
-    await assertSucceeds(setDoc(doc(asOwner(), AGENT_PATH), { ...CREATE_AGENT_DOC, writeEpochId: 'e-1' }));
-    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r1`), { ...RULE_DOC, writeEpochId: 'e-1' }));
-    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/bundles/b1`), { ...BUNDLE_DOC, writeEpochId: 'e-1' }));
+describe('epoch OPEN — writes admitted WITH the current TUPLE token (#1/BL1)', () => {
+  it('rule + bundle authoring + agent birth succeed carrying {writeEpochId, writeFenceGeneration} == the doc tuple', async () => {
+    await seed(EPOCH_PATH, { state: 'open', epochId: 'e-1', fenceGeneration: 1 });
+    await assertSucceeds(setDoc(doc(asOwner(), AGENT_PATH), { ...CREATE_AGENT_DOC, writeEpochId: 'e-1', writeFenceGeneration: 1 }));
+    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r1`), { ...RULE_DOC, writeEpochId: 'e-1', writeFenceGeneration: 1 }));
+    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/bundles/b1`), { ...BUNDLE_DOC, writeEpochId: 'e-1', writeFenceGeneration: 1 }));
   });
 
   it('#1 THE STRADDLE: a mutation formed under E0 submitted after E1 opens is DENIED — and a tokenless write denies too', async () => {
-    await seed(EPOCH_PATH, { state: 'open', epochId: 'e-1' });
-    // Formed under the OLD epoch (token e-0), submitted under e-1:
-    await assertFails(setDoc(doc(asOwner(), AGENT_PATH), { ...CREATE_AGENT_DOC, writeEpochId: 'e-0' }));
-    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r1`), { ...RULE_DOC, writeEpochId: 'e-0' }));
-    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/bundles/b1`), { ...BUNDLE_DOC, writeEpochId: 'e-0' }));
+    await seed(EPOCH_PATH, { state: 'open', epochId: 'e-1', fenceGeneration: 2 });
+    // Formed under the OLD epoch (token e-0/1), submitted under e-1/2:
+    await assertFails(setDoc(doc(asOwner(), AGENT_PATH), { ...CREATE_AGENT_DOC, writeEpochId: 'e-0', writeFenceGeneration: 1 }));
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r1`), { ...RULE_DOC, writeEpochId: 'e-0', writeFenceGeneration: 1 }));
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/bundles/b1`), { ...BUNDLE_DOC, writeEpochId: 'e-0', writeFenceGeneration: 1 }));
     // No token at all (a pre-token client straddling the deploy): DENIED.
     await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r2`), RULE_DOC));
+  });
+
+  it('BL1 REGRESSION ROW (a) — THE INCARNATION ABA: a token pinned at E0/inc1 is DENIED after a rollback reopens E0 as inc2, even though the epoch id MATCHES', async () => {
+    // The lifecycle: E0 open inc1 (token formed here) → E1 world → the
+    // rollback protocol reopens the RESTORED epoch id E0 as a NEW incarnation.
+    await seed(AGENT_PATH, CREATE_AGENT_DOC); // the authoring parent (owner check)
+    await seed(EPOCH_PATH, { state: 'open', epochId: 'e-0', fenceGeneration: 1 });
+    await seed(EPOCH_PATH, { state: 'open', epochId: 'e-1', fenceGeneration: 2 });
+    await seed(EPOCH_PATH, { state: 'open', epochId: 'e-0', fenceGeneration: 3 }); // rollback reopened E0 — same id, NEW incarnation
+    // The E0/inc1-formed mutation: epoch id matches the doc; incarnation does NOT.
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r1`), { ...RULE_DOC, writeEpochId: 'e-0', writeFenceGeneration: 1 }));
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/bundles/b1`), { ...BUNDLE_DOC, writeEpochId: 'e-0', writeFenceGeneration: 1 }));
+    // The current tuple writes fine — the fence rejects the INCARNATION, not the epoch.
+    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r2`), { ...RULE_DOC, writeEpochId: 'e-0', writeFenceGeneration: 3 }));
   });
 });
 
 describe("epoch PROBE — the #4 probe-only gate (8B / Rollback-B), client half", () => {
-  it('a LISTED probe identity with the current token writes; the same uid UNLISTED is denied; a listed uid with a stale token is denied', async () => {
-    await seed(EPOCH_PATH, { state: 'probe', epochId: 'e-1', probeIdentities: [OWNER_UID] });
-    await assertSucceeds(setDoc(doc(asOwner(), AGENT_PATH), { ...CREATE_AGENT_DOC, writeEpochId: 'e-1' }));
-    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r1`), { ...RULE_DOC, writeEpochId: 'e-1' }));
-    // Listed but formed under the wrong epoch:
-    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r2`), { ...RULE_DOC, writeEpochId: 'e-0' }));
+  it('a LISTED probe identity with the current tuple writes; the same uid UNLISTED is denied; a listed uid with a stale tuple is denied', async () => {
+    await seed(EPOCH_PATH, { state: 'probe', epochId: 'e-1', fenceGeneration: 2, probeIdentities: [OWNER_UID] });
+    await assertSucceeds(setDoc(doc(asOwner(), AGENT_PATH), { ...CREATE_AGENT_DOC, writeEpochId: 'e-1', writeFenceGeneration: 2 }));
+    await assertSucceeds(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r1`), { ...RULE_DOC, writeEpochId: 'e-1', writeFenceGeneration: 2 }));
+    // Listed but formed under the wrong epoch/incarnation:
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r2`), { ...RULE_DOC, writeEpochId: 'e-0', writeFenceGeneration: 1 }));
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r2`), { ...RULE_DOC, writeEpochId: 'e-1', writeFenceGeneration: 1 }));
     // The negative control: the gate names someone else — this uid is OUT.
-    await seed(EPOCH_PATH, { state: 'probe', epochId: 'e-1', probeIdentities: ['some-other-operator'] });
-    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r3`), { ...RULE_DOC, writeEpochId: 'e-1' }));
-    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/bundles/b2`), { ...BUNDLE_DOC, writeEpochId: 'e-1' }));
+    await seed(EPOCH_PATH, { state: 'probe', epochId: 'e-1', fenceGeneration: 2, probeIdentities: ['some-other-operator'] });
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/rules/r3`), { ...RULE_DOC, writeEpochId: 'e-1', writeFenceGeneration: 2 }));
+    await assertFails(setDoc(doc(asOwner(), `${AGENT_PATH}/bundles/b2`), { ...BUNDLE_DOC, writeEpochId: 'e-1', writeFenceGeneration: 2 }));
+  });
+});
+
+describe('BL2 — birth provenance is VALIDATED at create and IMMUTABLE after (the trust point)', () => {
+  const ACTIVATION_PATH = 'composition/activation';
+  const V3_RECORD = {
+    activeIdentityVersion: 3, boundaryStateVersion: 1, activeEpochId: 'e-1',
+    candidateStateId: 'run-1', semanticHash: 'h-1', activationGeneration: 2, overrideRevision: 0,
+  };
+
+  it('a v3-world client birth with FORGED v2/gen1 provenance is DENIED; the truthful {3,2} stamp succeeds; a stampless post-genesis birth denies', async () => {
+    await seed(ACTIVATION_PATH, V3_RECORD);
+    await seed(EPOCH_PATH, { state: 'open', epochId: 'e-1', fenceGeneration: 1 });
+    const tuple = { writeEpochId: 'e-1', writeFenceGeneration: 1 };
+    await assertFails(setDoc(doc(asOwner(), AGENT_PATH),
+      { ...CREATE_AGENT_DOC, ...tuple, identityVersionAtBirth: 2, activationGenerationAtBirth: 1 })); // forged
+    await assertFails(setDoc(doc(asOwner(), AGENT_PATH), { ...CREATE_AGENT_DOC, ...tuple })); // stampless post-genesis
+    await assertSucceeds(setDoc(doc(asOwner(), AGENT_PATH),
+      { ...CREATE_AGENT_DOC, ...tuple, identityVersionAtBirth: 3, activationGenerationAtBirth: 2 })); // the live descriptor
+  });
+
+  it('an update ALTERING birth provenance is DENIED (the agents update allowlist has never admitted the fields); pre-genesis a stamped create denies', async () => {
+    await seed(AGENT_PATH, { ...CREATE_AGENT_DOC, identityVersionAtBirth: 3, activationGenerationAtBirth: 2 });
+    await assertFails(updateDoc(doc(asOwner(), AGENT_PATH), { identityVersionAtBirth: 2 }));
+    await assertFails(updateDoc(doc(asOwner(), AGENT_PATH), { activationGenerationAtBirth: 9, directives: ['x'] }));
+    // Pre-genesis (no record): a forged stamp cannot be minted either.
+    await assertFails(setDoc(doc(asOwner(), 'agents/comp-agent-2'),
+      { ...CREATE_AGENT_DOC, identityVersionAtBirth: 3, activationGenerationAtBirth: 2 }));
   });
 });
 

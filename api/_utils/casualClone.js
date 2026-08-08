@@ -32,9 +32,12 @@ import { casualCloneDocId, isCasualCloneId } from '../../src/constants/leagueTou
 import {
   resolveRankedAgent,
   INHERITED_LOADOUT_FIELDS,
+  assignLoadoutLineage,
   FRESH_STATS,
   copyAgentSubcollections,
 } from './trainingClone.js';
+import { birthProvenanceStamp } from './compositionActivationService.js';
+import { pinActivationDescriptor } from './compositionGenerationFence.js';
 import {
   acquireProvisionerLease, assertLeaseCurrent, releaseProvisionerLease,
 } from './compositionProvisionerLease.js';
@@ -55,6 +58,7 @@ export function buildCasualCloneDoc(rankedAgent, { odUserId, nowIso }) {
   for (const field of INHERITED_LOADOUT_FIELDS) {
     if (rankedAgent[field] !== undefined) loadout[field] = rankedAgent[field];
   }
+  assignLoadoutLineage(loadout, rankedAgent); // BL2: source birth stamp -> lineage fields
   return {
     ...loadout,
     ownerId: odUserId,            // the PLAYER — mastery (owner-keyed) reaches them
@@ -89,6 +93,7 @@ export function buildCasualCloneResync(rankedAgent) {
   for (const field of INHERITED_LOADOUT_FIELDS) {
     if (rankedAgent[field] !== undefined) out[field] = rankedAgent[field];
   }
+  assignLoadoutLineage(out, rankedAgent); // BL2: lineage refreshes on re-sync; the clone's OWN birth stamp is untouched (not in the copy set)
   out.memory = Array.isArray(rankedAgent.memory) ? rankedAgent.memory : [];
   return out;
 }
@@ -122,6 +127,8 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
   // a provisioner that read "open" can no longer land writes after the close.
   // Zero I/O while the fence flag is dark (A23/A46 census row).
   const lease = await acquireProvisionerLease(db, { holder: `casualClone:${odUserId}`, now, actor: odUserId }); // #4: probe admission
+  // BL2: the clone's OWN creation descriptor (dark: zero reads, zero keys).
+  const clonePin = await pinActivationDescriptor(db);
   try {
     const nowIso = now.toISOString();
     const cloneId = casualCloneDocId(odUserId);
@@ -181,7 +188,7 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
     if (existing) {
       // Heal a squat: overwrite (create() would fail on the existing doc). Admin SDK
       // bypasses the rules; the squat carries no legit state to preserve.
-      await cloneRef.set(cloneDoc);
+      await cloneRef.set({ ...cloneDoc, ...birthProvenanceStamp(clonePin) }); // BL2: a new birth stamps its own descriptor
       console.log(`${LOG_PREFIX} healed casual clone ${cloneId} from ranked agent ${ranked.id}`);
       return { cloneId, rankedAgentId: ranked.id, created: true };
     }
@@ -189,7 +196,7 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
     try {
       // create() (not set()) so a concurrent double-tap cannot overwrite a legit
       // clone: the loser gets ALREADY_EXISTS and returns the winner AS-IS.
-      await cloneRef.create(cloneDoc);
+      await cloneRef.create({ ...cloneDoc, ...birthProvenanceStamp(clonePin) }); // BL2: a new birth stamps its own descriptor
     } catch (err) {
       if (err?.code === 6 || /ALREADY_EXISTS/i.test(String(err?.message || ''))) {
         const raced = await cloneRef.get();

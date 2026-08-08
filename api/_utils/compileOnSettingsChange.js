@@ -53,7 +53,6 @@ import {
 import { computeIdentityHash, CANDIDATE_IDENTITY_VERSION } from './archetypeRegistry.js';
 import {
   ACTIVATION_COLLECTION, ACTIVATION_DOC_ID, readActivationDescriptor,
-  MalformedActivationDescriptorError,
 } from './compositionProductionLoader.js';
 
 /**
@@ -74,16 +73,38 @@ import {
  * rollback-to-genesis restores live-cell compiles even though the flag
  * never lowers (the F5 split-brain closed at this boundary).
  */
+/**
+ * Sol confirmation-pass note: the compile boundary's fail-closed rejection is
+ * OPERATIONALLY LOUD and distinguishable from an ordinary validation 409 —
+ * its own error code + a distinct log line. A malformed/unrecognized record
+ * means the ONE identity selector is corrupt; that page-worthy state must
+ * never blend into routine save-validation noise. (Fail-closed unweakened.)
+ */
+export class CompileBoundaryDescriptorError extends Error {
+  constructor(detail) {
+    super(`compile_boundary_descriptor_rejected: ${detail}`);
+    this.name = 'CompileBoundaryDescriptorError';
+    this.code = 'compile_boundary_descriptor_rejected';
+  }
+}
+
 export async function resolveCandidateModeInTx(tx, db, { enabled = COMPOSITION_COMPILED_IDENTITY_ENABLED } = {}) {
   if (!enabled) return false; // dark: zero reads (A23)
   const snap = await tx.get(db.collection(ACTIVATION_COLLECTION).doc(ACTIVATION_DOC_ID));
-  const descriptor = readActivationDescriptor(snap); // malformed THROWS here — fails closed (#5)
+  let descriptor;
+  try {
+    descriptor = readActivationDescriptor(snap); // malformed THROWS here — fails closed (#5)
+  } catch (err) {
+    console.error('[composition] COMPILE BOUNDARY FAIL-CLOSED: activation descriptor MALFORMED — REFUSING the save (this is the identity selector, not a validation error):', err?.message);
+    throw new CompileBoundaryDescriptorError(`malformed activation descriptor: ${err?.message}`);
+  }
   if (descriptor === null) return false; // pre-genesis
   if (descriptor.activeIdentityVersion === CANDIDATE_IDENTITY_VERSION) return true;
   if (descriptor.activeIdentityVersion === ARCHETYPE_IDENTITY_VERSION) return false; // genesis / live
   // A well-formed record naming a version this deploy cannot compile for
   // (neither live nor its shipped candidate) — reject, never guess (#5).
-  throw new MalformedActivationDescriptorError(
+  console.error(`[composition] COMPILE BOUNDARY FAIL-CLOSED: activation descriptor names UNRECOGNIZED activeIdentityVersion ${descriptor.activeIdentityVersion} — REFUSING the save (this deploy compiles v${ARCHETYPE_IDENTITY_VERSION}/v${CANDIDATE_IDENTITY_VERSION} only)`);
+  throw new CompileBoundaryDescriptorError(
     `unrecognized activeIdentityVersion ${descriptor.activeIdentityVersion} at the compile boundary (fail closed)`,
   );
 }

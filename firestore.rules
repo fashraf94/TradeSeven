@@ -25,13 +25,39 @@ service cloud.firestore {
     function epochDoc() {
       return get(/databases/$(database)/documents/composition/writeEpoch).data;
     }
+    // Sol confirmation pass BL1: the token is the TUPLE {writeEpochId,
+    // writeFenceGeneration} — fenceGeneration is the fence INCARNATION
+    // (increments every time a quiesced/closed world becomes writable again),
+    // so a mutation formed under an EARLIER incarnation of the SAME epoch id
+    // (the rollback-reopens-E0 ABA) is DENIED even though the epoch id
+    // matches. A missing field errors → false → deny (fail closed).
+    function epochTokenCurrent() {
+      return request.resource.data.writeEpochId == epochDoc().epochId
+             && request.resource.data.writeFenceGeneration == epochDoc().fenceGeneration;
+    }
     function epochWriteAdmitted() {
       return !exists(/databases/$(database)/documents/composition/writeEpoch)
-             || (epochDoc().state == 'open'
-                 && request.resource.data.writeEpochId == epochDoc().epochId)
+             || (epochDoc().state == 'open' && epochTokenCurrent())
              || (epochDoc().state == 'probe'
                  && request.auth.uid in epochDoc().probeIdentities
-                 && request.resource.data.writeEpochId == epochDoc().epochId);
+                 && epochTokenCurrent());
+    }
+
+    // Sol confirmation pass BL2 (immutability — the trust point): a client
+    // birth's provenance stamp must EQUAL the live activation descriptor at
+    // create — a forged stamp (any other version/generation pair) is DENIED.
+    // Pre-genesis (no record): the fields must be ABSENT (today's shape,
+    // byte-identical). Post-genesis a stampless create denies too (the field
+    // access errors → false). Updates cannot alter the stamp: the agents
+    // update allowlist (hasOnly) has never admitted these fields.
+    function birthProvenanceValid() {
+      return !exists(/databases/$(database)/documents/composition/activation)
+             ? (!('identityVersionAtBirth' in request.resource.data)
+                && !('activationGenerationAtBirth' in request.resource.data))
+             : (request.resource.data.identityVersionAtBirth
+                  == get(/databases/$(database)/documents/composition/activation).data.activeIdentityVersion
+                && request.resource.data.activationGenerationAtBirth
+                  == get(/databases/$(database)/documents/composition/activation).data.activationGeneration);
     }
 
 
@@ -221,6 +247,7 @@ service cloud.firestore {
       // as doubles still passes; hasOnly pins the key set.
       allow create: if request.auth != null
                     && epochWriteAdmitted()
+                    && birthProvenanceValid()
                     && request.resource.data.ownerId == request.auth.uid
                     // Per-Battle Loadout Phase 1 (security review CONFIRMED-1/2):
                     // reserve the clone/system agent-id namespaces from CLIENT
@@ -339,12 +366,12 @@ service cloud.firestore {
         allow create: if request.auth != null
                     && epochWriteAdmitted()
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
-                    && request.resource.data.keys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency', 'writeEpochId'])
+                    && request.resource.data.keys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency', 'writeEpochId', 'writeFenceGeneration'])
                     && (!('status' in request.resource.data) || request.resource.data.status in ['draft', 'forged']);
         allow update: if request.auth != null
                     && epochWriteAdmitted()
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency', 'writeEpochId'])
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'version', 'previousVersionId', 'status', 'ruleIds', 'ruleSnapshots', 'conflictCheckResult', 'createdAt', 'forgedAt', 'equippedAt', 'archivedAt', 'updatedAt', 'performanceData', 'entrySource', 'hiddenFromBundleList', 'dimensionHash', 'dimensionValues', 'dimensionSchemaVersion', 'compileConfidence', 'compileTransparency', 'writeEpochId', 'writeFenceGeneration'])
                     // Status transition vocabulary (ruling B3): the ONLY
                     // status changes a client may perform are the live forge
                     // and archive gestures — draft→forged, draft→archived,

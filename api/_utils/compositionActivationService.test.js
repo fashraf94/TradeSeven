@@ -400,18 +400,75 @@ describe('#6 (Sol re-review) — birth provenance stamps (queryable reconciliati
     })).toEqual({ identityVersionAtBirth: CANDIDATE_IDENTITY_VERSION, activationGenerationAtBirth: 2 });
   });
 
-  it('clones INHERIT the source stamps (INHERITED_LOADOUT_FIELDS); an unstamped source yields an unstamped clone — byte-identity for the pre-stamp fleet', async () => {
+  it('BL2 (confirmation pass): BIRTH is never inherited — the source stamp travels as LINEAGE; an unstamped source yields no lineage (byte-identity for the pre-stamp fleet)', async () => {
     const { INHERITED_LOADOUT_FIELDS, buildTrainingCloneDoc } = await import('./trainingClone.js');
-    expect(INHERITED_LOADOUT_FIELDS).toContain('identityVersionAtBirth');
-    expect(INHERITED_LOADOUT_FIELDS).toContain('activationGenerationAtBirth');
-    const stamped = buildTrainingCloneDoc(
-      { id: 'r1', archetype: 'guardian', identityVersionAtBirth: 3, activationGenerationAtBirth: 2 },
+    expect(INHERITED_LOADOUT_FIELDS).not.toContain('identityVersionAtBirth');
+    expect(INHERITED_LOADOUT_FIELDS).not.toContain('activationGenerationAtBirth');
+    const ofStamped = buildTrainingCloneDoc(
+      { id: 'r1', archetype: 'guardian', identityVersionAtBirth: 2, activationGenerationAtBirth: 1 },
       { groupId: 'g1', odUserId: 'u1', nowIso: 't' },
     );
-    expect(stamped.identityVersionAtBirth).toBe(3);
-    expect(stamped.activationGenerationAtBirth).toBe(2);
-    const unstamped = buildTrainingCloneDoc({ id: 'r2', archetype: 'guardian' }, { groupId: 'g1', odUserId: 'u1', nowIso: 't' });
-    expect('identityVersionAtBirth' in unstamped).toBe(false);
-    expect('activationGenerationAtBirth' in unstamped).toBe(false);
+    // The builder yields LINEAGE, never birth — the ensure path stamps the
+    // clone's OWN creation descriptor separately:
+    expect(ofStamped.loadoutSourceIdentityVersion).toBe(2);
+    expect(ofStamped.loadoutSourceActivationGeneration).toBe(1);
+    expect('identityVersionAtBirth' in ofStamped).toBe(false);
+    expect('activationGenerationAtBirth' in ofStamped).toBe(false);
+    const ofUnstamped = buildTrainingCloneDoc({ id: 'r2', archetype: 'guardian' }, { groupId: 'g1', odUserId: 'u1', nowIso: 't' });
+    expect('loadoutSourceIdentityVersion' in ofUnstamped).toBe(false);
+    expect('loadoutSourceActivationGeneration' in ofUnstamped).toBe(false);
+  });
+
+  it('BL2: a v3-WORLD clone of a v2-BORN source stamps its OWN descriptor {v3, gen 2} with v2/gen-1 lineage — and the rollback reconciliation query FINDS it', async () => {
+    const { birthProvenanceStamp } = await import('./compositionActivationService.js');
+    const { buildTrainingCloneDoc } = await import('./trainingClone.js');
+    const v3Pin = { dark: false, descriptor: { activeIdentityVersion: CANDIDATE_IDENTITY_VERSION, activationGeneration: 2 } };
+    const cloneDoc = {
+      ...buildTrainingCloneDoc(
+        { id: 'r1', archetype: 'guardian', identityVersionAtBirth: ARCHETYPE_IDENTITY_VERSION, activationGenerationAtBirth: 1 },
+        { groupId: 'g1', odUserId: 'u1', nowIso: 't' },
+      ),
+      ...birthProvenanceStamp(v3Pin), // the ensure path's own-birth stamp
+    };
+    expect(cloneDoc.identityVersionAtBirth).toBe(CANDIDATE_IDENTITY_VERSION);   // BIRTH = the clone's creation world
+    expect(cloneDoc.activationGenerationAtBirth).toBe(2);                       // Sol's row: stamped generation 2
+    expect(cloneDoc.loadoutSourceIdentityVersion).toBe(ARCHETYPE_IDENTITY_VERSION); // LINEAGE = the source's birth
+    expect(cloneDoc.loadoutSourceActivationGeneration).toBe(1);
+    // The rollback reconciliation predicate (protocol scope statement):
+    const rolledFromGeneration = 2;
+    expect(cloneDoc.activationGenerationAtBirth >= rolledFromGeneration).toBe(true); // the clone IS found
+  });
+});
+
+describe('BL1 (confirmation pass) — the write-fence INCARNATION tuple pin, server half', () => {
+  it('REGRESSION ROW (b): a tx pinned at E0/inc1 whose retry observes E0/inc2 (close→reopen, SAME epoch id) is DENIED — epochId alone can no longer revalidate', async () => {
+    const { db, store } = makeInMemoryDb({ 'composition/writeEpoch': { state: 'open', epochId: 'e-0', fenceGeneration: 1 } });
+    const epochPin = {}; // one logical write, pinned across retries
+    await db.runTransaction(async (tx) => {
+      await validateWriteEpochInTx(tx, db, { enabled: true, epochPin }); // attempt 1 pins {e-0, 1}
+    });
+    // Between the attempt and its retry: close → reopen of the SAME epoch id
+    // (the rollback-reopens-E0 shape) — a NEW incarnation.
+    store.set('composition/writeEpoch', { state: 'open', epochId: 'e-0', fenceGeneration: 2 });
+    await expect(db.runTransaction(async (tx) => {
+      await validateWriteEpochInTx(tx, db, { enabled: true, epochPin }); // the retry
+    })).rejects.toMatchObject({ code: 'epoch_closed', state: 'epoch_changed_across_retry' });
+  });
+
+  it('transitionWriteEpoch computes the incarnation mechanically: initial open = 1; close retains; reopen increments; probe→open retains; probe requires identities', async () => {
+    const { transitionWriteEpoch } = await import('./compositionWriteEpoch.js');
+    const { db } = makeInMemoryDb({});
+    expect((await transitionWriteEpoch(db, { state: 'open', epochId: 'e-0' })).fenceGeneration).toBe(1);    // initial open
+    expect((await transitionWriteEpoch(db, { state: 'closing', epochId: 'e-0' })).fenceGeneration).toBe(1); // close retains
+    expect((await transitionWriteEpoch(db, { state: 'closed', epochId: 'e-0' })).fenceGeneration).toBe(1);
+    expect((await transitionWriteEpoch(db, { state: 'open', epochId: 'e-0' })).fenceGeneration).toBe(2);    // close→reopen SAME epoch = 2
+    expect((await transitionWriteEpoch(db, { state: 'closed', epochId: 'e-0' })).fenceGeneration).toBe(2);
+    const probe = await transitionWriteEpoch(db, { state: 'probe', epochId: 'e-1', probeIdentities: ['op-1'] });
+    expect(probe.fenceGeneration).toBe(3); // quiesced → probe-writable: NEW incarnation
+    expect(probe.probeIdentities).toEqual(['op-1']);
+    const opened = await transitionWriteEpoch(db, { state: 'open', epochId: 'e-1' });
+    expect(opened.fenceGeneration).toBe(3); // probe→open RETAINS (no intervening close)
+    expect('probeIdentities' in opened).toBe(false);
+    await expect(transitionWriteEpoch(db, { state: 'probe', epochId: 'e-1' })).rejects.toThrow(/probeIdentities/);
   });
 });

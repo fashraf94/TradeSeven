@@ -440,18 +440,26 @@ describe('F7 (D15) — candidate-mode endpoint ROUND-TRIP: the compile path lit 
 
 describe('#5 (Sol re-review) — the compile boundary FAILS CLOSED on a malformed/unrecognized record', () => {
   const TENSION_SNAP_5 = { id: 'rd5', sourceRef: 'alloc-sector-cap', paramValues: { pct: 60 }, params: { pct: {} } };
-  it('a PRESENT-but-malformed record (missing semanticHash) REJECTS the save — zero agent writes, zero builds persisted', async () => {
+  it('a PRESENT-but-malformed record (missing semanticHash) REJECTS the save — zero agent writes, zero builds persisted, and the rejection is LOUD + distinguishable (its own code + log line, Sol note)', async () => {
     flagState.compiler = true;
     flagState.candidate = true;
     const malformed = { ...V3_RECORD };
     delete malformed.semanticHash; // fails the loader's per-field contract
     const { db, state } = fleet({ archetype: 'momentum_chaser', snaps: [TENSION_SNAP_5], withRuleDocs: true, activationDoc: malformed });
     activeFirestore = db;
-    const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
-    await equipBundleHandler(req, res);
-    expect(res.statusCode).toBeGreaterThanOrEqual(400); // rejected, never 200
-    expect(state.agentDocs['agent-1'].equippedBundleIds).toEqual([]); // the save never landed
-    expect(Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'))).toEqual([]);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { req, res } = makeReqRes({ body: { agentId: 'agent-1', bundleId: 'bundle-1' } });
+      await equipBundleHandler(req, res);
+      expect(res.statusCode).toBeGreaterThanOrEqual(400); // rejected, never 200
+      expect(state.agentDocs['agent-1'].equippedBundleIds).toEqual([]); // the save never landed
+      expect(Object.keys(state.subDocs).filter((k) => k.includes('/compiledBuilds/'))).toEqual([]);
+      // The Sol note: page-worthy, never blended into validation noise —
+      // the dedicated log line fired with the dedicated framing.
+      expect(errSpy.mock.calls.some((c) => String(c[0]).includes('COMPILE BOUNDARY FAIL-CLOSED'))).toBe(true);
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it('a VALID record naming an UNRECOGNIZED version (v5) REJECTS the same way — never a silent cell-source guess', async () => {

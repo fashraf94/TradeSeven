@@ -97,10 +97,21 @@ export async function validateWriteEpochInTx(tx, db, { enabled = COMPOSITION_EPO
     if (sentinel) throw new Error(sentinel + code);
     throw new EpochClosedError(epochId, state);
   };
-  const pinOrReject = (observedEpochId) => {
+  // Sol confirmation pass BL1 (the write-fence INCARNATION — the ABA's third
+  // appearance): epochId alone cannot distinguish incarnations of the same
+  // epoch (close→reopen, or a rollback reopening a restored epoch id). The
+  // pin is the TUPLE {epochId, fenceGeneration} — a retry observing the SAME
+  // epoch id under a DIFFERENT incarnation REJECTS.
+  const pinOrReject = (observedEpochId, observedFenceGeneration = null) => {
     if (!epochPin) return;
-    if (!('epochId' in epochPin)) { epochPin.epochId = observedEpochId; return; }
-    if (epochPin.epochId !== observedEpochId) reject('epoch_closed', observedEpochId, 'epoch_changed_across_retry');
+    if (!('epochId' in epochPin)) {
+      epochPin.epochId = observedEpochId;
+      epochPin.fenceGeneration = observedFenceGeneration;
+      return;
+    }
+    if (epochPin.epochId !== observedEpochId || epochPin.fenceGeneration !== observedFenceGeneration) {
+      reject('epoch_closed', observedEpochId, 'epoch_changed_across_retry');
+    }
   };
   const snap = await tx.get(writeEpochRef(db));
   if (!snap.exists) {
@@ -118,8 +129,8 @@ export async function validateWriteEpochInTx(tx, db, { enabled = COMPOSITION_EPO
   if (data.state === 'probe') {
     if (typeof actor === 'string' && actor.length > 0
       && Array.isArray(data.probeIdentities) && data.probeIdentities.includes(actor)) {
-      pinOrReject(data.epochId ?? null);
-      return { state: 'probe', epochId: data.epochId ?? null };
+      pinOrReject(data.epochId ?? null, data.fenceGeneration ?? null);
+      return { state: 'probe', epochId: data.epochId ?? null, fenceGeneration: data.fenceGeneration ?? null };
     }
     reject('epoch_closed', data.epochId ?? null, 'probe_only');
   }
@@ -128,8 +139,48 @@ export async function validateWriteEpochInTx(tx, db, { enabled = COMPOSITION_EPO
   // fail-closed on a present doc (`data.state == 'open'`, firestore.rules:14);
   // this aligns the server helpers with it.
   if (data.state !== 'open') reject('epoch_closed', data.epochId ?? null, data.state ?? 'unrecognized');
-  pinOrReject(data.epochId ?? null);
-  return { state: 'open', epochId: data.epochId ?? null };
+  pinOrReject(data.epochId ?? null, data.fenceGeneration ?? null);
+  return { state: 'open', epochId: data.epochId ?? null, fenceGeneration: data.fenceGeneration ?? null };
+}
+
+/**
+ * Sol confirmation pass BL1 — the WRITE-FENCE INCARNATION counter, made
+ * mechanical: every runbook epoch-state transition goes through this helper,
+ * which computes `fenceGeneration` so the operator never hand-tracks it.
+ *
+ *   • A quiesced/closed (or absent) world becoming WRITABLE again (state →
+ *     'open' or 'probe') INCREMENTS the incarnation (initial open = 1;
+ *     close→reopen of the SAME epoch id = 2; a rollback reopening a
+ *     restored epoch id = next — monotonic over the doc's whole life).
+ *   • probe → open RETAINS the incarnation (no intervening close/watermark).
+ *   • open/probe → closing/closed RETAINS it (the incarnation persists
+ *     through its close; only the NEXT reopen mints a new one).
+ *
+ * Clients pin the tuple {epochId, fenceGeneration} in their write token;
+ * server transactions pin it across retries — an E0-formed token or pin
+ * can never be re-admitted by a LATER incarnation of E0 (the ABA closed).
+ */
+export async function transitionWriteEpoch(db, { state, epochId, probeIdentities = null }) {
+  if (!['open', 'probe', 'closing', 'closed'].includes(state)) throw new Error(`transitionWriteEpoch: unknown state '${state}'`);
+  if (typeof epochId !== 'string' || !epochId) throw new Error('transitionWriteEpoch: epochId required');
+  if (state === 'probe' && !(Array.isArray(probeIdentities) && probeIdentities.length > 0)) {
+    throw new Error('transitionWriteEpoch: probe requires a non-empty probeIdentities list');
+  }
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(writeEpochRef(db));
+    const prior = snap.exists ? snap.data() : null;
+    const wasWritable = prior?.state === 'open' || prior?.state === 'probe';
+    const becomesWritable = state === 'open' || state === 'probe';
+    const fenceGeneration = becomesWritable && !wasWritable
+      ? (prior?.fenceGeneration ?? 0) + 1 // a quiesced world becomes writable: NEW incarnation
+      : (prior?.fenceGeneration ?? (becomesWritable ? 1 : 0)); // retain (probe→open, or any close)
+    const doc = {
+      state, epochId, fenceGeneration,
+      ...(state === 'probe' ? { probeIdentities } : {}),
+    };
+    await tx.set(writeEpochRef(db), doc);
+    return doc;
+  });
 }
 
 /** Sol review #5: the closed-epoch candidate window's refusal. */
