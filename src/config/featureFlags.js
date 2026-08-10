@@ -885,7 +885,7 @@ export const LEARNING_L1_CAPTURE_ENABLED = true;
  * REGIME_STAMP_ENABLED. The flip date is the corpus E2 full-coverage boundary
  * recorded in that flip PR.
  */
-export const LEARNING_L1_CAPTURE_EXPANSION_ENABLED = false;
+export const LEARNING_L1_CAPTURE_EXPANSION_ENABLED = true;
 
 /**
  * Corpus Capture Patch W3 — write-once `regimeAtStart` stamp on agentBattles
@@ -903,7 +903,7 @@ export const LEARNING_L1_CAPTURE_EXPANSION_ENABLED = false;
  * When FALSE: no battle doc is touched, no stamp field exists — prior
  * behavior exactly. Already-stamped docs are inert data either way.
  */
-export const REGIME_STAMP_ENABLED = false;
+export const REGIME_STAMP_ENABLED = true;
 
 /**
  * BaggerBomb opener — lazy regeneration + template floor.
