@@ -232,7 +232,7 @@ export const LEAGUE_BATTLE_VIEW_V2_ENABLED = true;
  * so a mid-pilot rollback still attributes existing casual battles correctly. Do
  * NOT flip it in a build PR (the PR #510 lesson) — only after a Vercel preview.
  */
-export const CASUAL_CLONE_CONCURRENCY_ENABLED = false;
+export const CASUAL_CLONE_CONCURRENCY_ENABLED = true;
 
 /**
  * League Battleview Routing (Spec V1.2, Phase A) — the Command Center live-game
@@ -277,7 +277,7 @@ export const LEAGUE_BATTLEVIEW_ROUTING_ENABLED = true;
  * idiom). Smoke alongside routing: `?leagueRouting=1&leagueLiveOrb=1`. The
  * production flip stays a separate one-line PR after smoke (the PR #510 precedent).
  */
-export const LEAGUE_LIVE_ORB_ENABLED =
+export const LEAGUE_LIVE_ORB_ENABLED = true;
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('leagueLiveOrb') === '1';
 
