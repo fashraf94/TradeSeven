@@ -38,7 +38,8 @@ import DeployCeremony from './deployCeremony/DeployCeremony';
 // an OPAQUE CMD.bg over the z0 background slot, so it is what hides the
 // starfield. Flag on => transparent and the field shows through; off =>
 // byte-identical to today.
-import { SCOUTING_BOARD_ENABLED, isDeployCeremonyOn, isStarfieldOn } from '../../config/featureFlags';
+import { SCOUTING_BOARD_ENABLED, CASUAL_CLONE_CONCURRENCY_ENABLED, isDeployCeremonyOn, isStarfieldOn } from '../../config/featureFlags';
+import { deriveDeployGate } from '../../utils/commandCenterLiveBattles';
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -89,13 +90,22 @@ export default function CommandDashboardDesktop({
   const liveBattles = (activeAgentBattles || []).filter((b) => b.status === 'active');
   const liveBattle = liveBattles[0] || null;
   const isLive = Boolean(liveBattle);
+  // Per-Battle Concurrency (Phase 1.5) — the per-type deploy gate, shared with the
+  // mobile shell via deriveDeployGate (identical logic, one source). Flag-OFF every
+  // value reduces to the legacy `isLive` gate, byte-identical.
+  const concurrencyOn = CASUAL_CLONE_CONCURRENCY_ENABLED;
+  const { orderedLiveBattles, deployBlockedByLive, deployBlockReason, equipLocked } =
+    deriveDeployGate({ liveBattles, agent, concurrencyEnabled: concurrencyOn });
   const recentCompleted = useRecentCompletedAgentBattles(3);
+  // Loop rail. Kept on isLive by design: it marks the FURTHEST beat the daily loop has
+  // reached (a concurrent BaggerBomb stays deployable beside a live ranked battle, but
+  // the furthest beat is still Manage). (Phase 1.5 deliberate disposition; mirrors mobile.)
   const activeStage = isLive ? 'manage' : 'read';
 
   const [deploying, setDeploying] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
-  const deployDisabled = deploying || isLive || !agent;
+  const deployDisabled = deploying || deployBlockedByLive || !agent;
 
   // ── Deploy Ceremony (flag-gated) — mirrors the mobile shell (ruling #2). ────
   const ceremonyOn = isDeployCeremonyOn();
@@ -211,14 +221,17 @@ export default function CommandDashboardDesktop({
             onDeploy={handleDeploy}
             deployDisabled={deployDisabled}
             deploying={deploying}
-            isLive={isLive}
+            isLive={deployBlockedByLive}
+            blockReason={deployBlockReason}
             boardEnabled={SCOUTING_BOARD_ENABLED}
             onSeeEyeing={() => setBoardOpen(true)}
           />
           <div id="cmd-desk-equip">
-            <EquipBench agent={agent} accent={accent} setShowForge={setShowForge} isLive={isLive} />
+            <EquipBench agent={agent} accent={accent} setShowForge={setShowForge} isLive={equipLocked} />
           </div>
-          {!isLive && (
+          {/* Deploy card shows while a BaggerBomb can start (flag-off === !isLive,
+              byte-identical); flag-on it stays available beside a live ranked battle. */}
+          {!deployBlockedByLive && (
             <div style={{ marginTop: 'auto' }}>
               <SectionLabel n="03" label="Deploy" color={accent} />
               <DeployCard
@@ -237,10 +250,19 @@ export default function CommandDashboardDesktop({
         <div className="cmd-desk-col" style={{ ...colScroll, gridArea: 'lifecycle', display: 'flex', flexDirection: 'column', gap: 22 }}>
           <div>
             <SectionLabel n="04" label={isLive ? 'Manage · live' : 'Manage'} color={isLive ? accent : CMD.ink3} />
-            {isLive ? (
-              <ManageStation battle={liveBattle} agent={agent} accent={accent} onOpen={onOpenAgentBattle} />
-            ) : (
+            {/* Flag-ON: every live battle, each labeled by type, deterministically
+                ordered — no unsorted liveBattles[0] (acceptance #4). Flag-OFF: the
+                single legacy card, byte-identical. */}
+            {!isLive ? (
               <IdleBlock icon={<Activity size={18} color={CMD.ink3} />} title="No battle live" sub="Deploy to send your agent in" />
+            ) : concurrencyOn ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+                {orderedLiveBattles.map((b) => (
+                  <ManageStation key={b.id} battle={b} showType agent={agent} accent={accent} onOpen={onOpenAgentBattle} />
+                ))}
+              </div>
+            ) : (
+              <ManageStation battle={liveBattle} agent={agent} accent={accent} onOpen={onOpenAgentBattle} />
             )}
           </div>
 
@@ -280,7 +302,7 @@ export default function CommandDashboardDesktop({
           accent={accent}
           deploying={deploying}
           deployDisabled={deployDisabled}
-          isLive={isLive}
+          isLive={deployBlockedByLive}
           onDeploy={handleDeploy}
         />
       )}

@@ -13,6 +13,7 @@ import { motion } from 'framer-motion';
 import { Clock, ArrowRight } from 'lucide-react';
 import GainLossBadge from '../shared/GainLossBadge';
 import { CMD, alpha, Mono } from './commandUI';
+import { classifyBattleType, battleTypeLabel, BATTLE_TYPE_RANKED } from '../../utils/commandCenterLiveBattles';
 
 function timeLeft(expiresAt) {
   if (!expiresAt) return null;
@@ -25,12 +26,18 @@ function timeLeft(expiresAt) {
   return `${h}h ${mins % 60}m left`;
 }
 
-export default function ManageStation({ battle, agent, accent, onOpen }) {
+export default function ManageStation({ battle, agent, accent, onOpen, showType }) {
   if (!battle) return null;
   const agentName = battle.agentContext?.agentName || agent?.name || 'Your agent';
   const score = battle.scoreState?.currentScore;
   const tradeCount = battle.scoreState?.tradeCount ?? (battle.trades?.length || 0);
   const left = timeLeft(battle.expiresAt);
+  // Header label and the opponent line both derive from ONE classification (§9 —
+  // never a second raw read of battle.groupId). Gated by showType so flag-off (no
+  // showType passed) is byte-identical to the legacy "Battle live … · vs CPU" card.
+  const battleType = showType ? classifyBattleType(battle) : null;
+  const typeLabel = battleType ? battleTypeLabel(battle) : null;
+  const showVsCpu = battleType !== BATTLE_TYPE_RANKED; // ranked = league opponent, not CPU
 
   return (
     <div
@@ -50,7 +57,7 @@ export default function ManageStation({ battle, agent, accent, onOpen }) {
             transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
             style={{ width: 9, height: 9, borderRadius: '50%', background: accent, display: 'block' }}
           />
-          <Mono style={{ fontSize: 11, letterSpacing: '0.16em', color: accent, textTransform: 'uppercase', fontWeight: 600 }}>Battle live</Mono>
+          <Mono style={{ fontSize: 11, letterSpacing: '0.16em', color: accent, textTransform: 'uppercase', fontWeight: 600 }}>{typeLabel ? `${typeLabel} · live` : 'Battle live'}</Mono>
         </div>
         {left && (
           <Mono style={{ fontSize: 12, color: CMD.ink2, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -62,7 +69,7 @@ export default function ManageStation({ battle, agent, accent, onOpen }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 12, gap: 12 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 13, color: CMD.ink, lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agentName} is trading</div>
-          <Mono style={{ fontSize: 11, color: CMD.ink3, marginTop: 3, display: 'block' }}>{tradeCount} trades · vs CPU</Mono>
+          <Mono style={{ fontSize: 11, color: CMD.ink3, marginTop: 3, display: 'block' }}>{tradeCount} trades{showVsCpu ? ' · vs CPU' : ''}</Mono>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
           <GainLossBadge value={score} variant="compact" size="lg" showPercent={false} />

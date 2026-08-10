@@ -45,7 +45,8 @@ import { getEquipSlotCounts } from '../../utils/equipSlots';
 // paints an OPAQUE CMD.bg over the z0 background slot, so it is what hides the
 // starfield. Flag on => transparent and the field shows through; off =>
 // byte-identical to today.
-import { SCOUTING_BOARD_ENABLED, isDeployCeremonyOn, isStarfieldMobileOn } from '../../config/featureFlags';
+import { SCOUTING_BOARD_ENABLED, CASUAL_CLONE_CONCURRENCY_ENABLED, isDeployCeremonyOn, isStarfieldMobileOn } from '../../config/featureFlags';
+import { deriveDeployGate } from '../../utils/commandCenterLiveBattles';
 import HoldToDeployButton from './deployCeremony/HoldToDeployButton';
 import DeployCeremony from './deployCeremony/DeployCeremony';
 
@@ -139,7 +140,19 @@ export default function CommandDashboard({
   const liveBattles = (activeAgentBattles || []).filter((b) => b.status === 'active');
   const liveBattle = liveBattles[0] || null;
   const isLive = Boolean(liveBattle);
+  // Per-Battle Concurrency (Phase 1.5) — the per-type deploy gate, shared with the
+  // desktop shell via deriveDeployGate so the two can never silently diverge. Flag-OFF
+  // every value reduces to the legacy `isLive` gate, byte-identical. The whole
+  // restructure (per-type gate, all-live labeled cards, G2 suppression) rides this one
+  // existing flag and flips as a unit.
+  const concurrencyOn = CASUAL_CLONE_CONCURRENCY_ENABLED;
+  const { orderedLiveBattles, deployBlockedByLive, deployBlockReason, equipLocked } =
+    deriveDeployGate({ liveBattles, agent, concurrencyEnabled: concurrencyOn });
   const recentCompleted = useRecentCompletedAgentBattles(3);
+  // Loop rail. Kept on isLive by design: it marks the FURTHEST beat the daily loop has
+  // reached. Flag-on a concurrent BaggerBomb stays deployable beside a live ranked
+  // battle, but the loop's furthest beat is still Manage — a live battle highlights
+  // Manage rather than rewinding the rail to Deploy. (Phase 1.5 deliberate disposition.)
   const activeStage = isLive ? 'manage' : 'read';
 
   // "n/m slots" — derived from the same slot array EquipStation renders.
@@ -148,7 +161,7 @@ export default function CommandDashboard({
   const [deploying, setDeploying] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
-  const deployDisabled = deploying || isLive || !agent;
+  const deployDisabled = deploying || deployBlockedByLive || !agent;
 
   // ── Deploy Ceremony (flag-gated) ──────────────────────────────────────────
   // Founder ruling #2: the ceremony mounts HERE at the shell on hold-completion,
@@ -360,28 +373,34 @@ export default function CommandDashboard({
               <div style={{ fontSize: 11, color: CMD.ink3, marginTop: 12 }}>Showing the latest available brief ({dateLabel}).</div>
             )}
 
+            {/* Per-type block reason (Phase 1.5, flag-on only): names the conflict so
+                the disabled CTA is never a bare disabled state (acceptance #2). */}
+            {deployBlockReason && (
+              <div role="status" style={{ margin: '14px 0 0', fontSize: 12, color: CMD.ink3, lineHeight: 1.5 }}>{deployBlockReason}</div>
+            )}
+
             {/* the read flows into the decision */}
             <div style={{ display: 'flex', gap: 9, marginTop: 15 }}>
               {SCOUTING_BOARD_ENABLED ? (
                 <motion.button
                   type="button"
                   onClick={() => setBoardOpen(true)}
-                  disabled={isLive || !agent}
-                  whileTap={(isLive || !agent) ? undefined : { scale: 0.985 }}
+                  disabled={deployBlockedByLive || !agent}
+                  whileTap={(deployBlockedByLive || !agent) ? undefined : { scale: 0.985 }}
                   style={{
                     flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    padding: 12, borderRadius: 12, border: 'none', cursor: (isLive || !agent) ? 'default' : 'pointer', fontFamily: 'inherit',
-                    background: accent, color: readableOn(accent), fontWeight: 700, fontSize: 13.5, opacity: (isLive || !agent) ? 0.55 : 1,
+                    padding: 12, borderRadius: 12, border: 'none', cursor: (deployBlockedByLive || !agent) ? 'default' : 'pointer', fontFamily: 'inherit',
+                    background: accent, color: readableOn(accent), fontWeight: 700, fontSize: 13.5, opacity: (deployBlockedByLive || !agent) ? 0.55 : 1,
                   }}
                 >
                   <Eye size={16} color={readableOn(accent)} />
-                  <span>{isLive ? 'Battle in progress' : 'See what it’s eyeing'}</span>
+                  <span>{deployBlockedByLive ? 'Battle in progress' : 'See what it’s eyeing'}</span>
                 </motion.button>
               ) : ceremonyOn ? (
                 <HoldToDeployButton
                   variant="filled"
                   accent={accent}
-                  label={isLive ? 'Battle in progress' : 'Deploy on this read'}
+                  label={deployBlockedByLive ? 'Battle in progress' : 'Deploy on this read'}
                   Icon={Zap}
                   iconSize={16}
                   iconFill
@@ -402,7 +421,7 @@ export default function CommandDashboard({
                   }}
                 >
                   <Zap size={16} color={readableOn(accent)} fill={readableOn(accent)} />
-                  <span>{deploying ? 'Deploying…' : isLive ? 'Battle in progress' : 'Deploy on this read'}</span>
+                  <span>{deploying ? 'Deploying…' : deployBlockedByLive ? 'Battle in progress' : 'Deploy on this read'}</span>
                 </motion.button>
               )}
               {/* Voice Layer deferred — visible "coming soon" entry point, no-op tap */}
@@ -454,18 +473,27 @@ export default function CommandDashboard({
         <motion.div variants={sectionVariants} id="cmd-equip">
           <SectionLabel
             n="02"
-            label={isLive ? 'Equip · locked in battle' : 'Equip · loadout bench'}
-            color={isLive ? CMD.ink3 : accent}
+            label={equipLocked ? 'Equip · locked in battle' : 'Equip · loadout bench'}
+            color={equipLocked ? CMD.ink3 : accent}
             right={<Mono style={{ fontSize: 10.5, color: CMD.ink3 }}>{slotCounts.filled}/{slotCounts.total} slots</Mono>}
           />
           <EquipStation agent={agent} accent={accent} onOpenAgentRecord={() => setRecordOpen(true)} setShowForge={setShowForge} />
         </motion.div>
 
-        {/* ── 03 · DEPLOY  /  04 · MANAGE (when live) ────────────────────── */}
-        {!isLive ? (
+        {/* ── 03 · DEPLOY  +  04 · MANAGE ──────────────────────────────────
+            Split (not a ternary) so flag-ON both can show at once: a live RANKED
+            battle is managed (04) while a concurrent BaggerBomb is still deployable
+            (03). Deploy shows while a BaggerBomb can start (!deployBlockedByLive);
+            Manage shows whenever any battle is live (isLive). Flag-OFF
+            deployBlockedByLive === isLive, so exactly one renders — byte-identical. */}
+        {!deployBlockedByLive && (
           <motion.div variants={sectionVariants}>
             <SectionLabel n="03" label="Deploy" color={accent} />
-            {podSessionConflict && (
+            {/* G2 pod-session heads-up. Flag-ON this is a FALSE POSITIVE: the casual
+                deploy now runs on the persistent clone, so it no longer locks the real
+                agent out of its pod session — suppress it. Unchanged flag-off. (Phase
+                1.5 founder ruling; the ScoutingBoardSheet:87 fallback is filed separately.) */}
+            {!concurrencyOn && podSessionConflict && (
               <div
                 role="status"
                 style={{
@@ -481,10 +509,22 @@ export default function CommandDashboard({
             )}
             <DeployStation agent={agent} accent={accent} deploying={deploying} onDeploy={handleDeploy} deployText={deployText} />
           </motion.div>
-        ) : (
+        )}
+        {isLive && (
           <motion.div variants={sectionVariants}>
             <SectionLabel n="04" label="Manage · live" color={accent} />
-            <ManageStation battle={liveBattle} agent={agent} accent={accent} onOpen={onOpenAgentBattle} />
+            {/* Flag-ON: every live battle, each labeled by type, deterministically
+                ordered — no unsorted liveBattles[0] (acceptance #4). Flag-OFF: the
+                single legacy card, byte-identical. */}
+            {concurrencyOn ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {orderedLiveBattles.map((b) => (
+                  <ManageStation key={b.id} battle={b} showType agent={agent} accent={accent} onOpen={onOpenAgentBattle} />
+                ))}
+              </div>
+            ) : (
+              <ManageStation battle={liveBattle} agent={agent} accent={accent} onOpen={onOpenAgentBattle} />
+            )}
           </motion.div>
         )}
 
@@ -527,7 +567,7 @@ export default function CommandDashboard({
           accent={accent}
           deploying={deploying}
           deployDisabled={deployDisabled}
-          isLive={isLive}
+          isLive={deployBlockedByLive}
           onDeploy={handleDeploy}
         />
       )}

@@ -38,3 +38,106 @@ export function excludeVoidedGroupBattles(battles, groupsById = {}) {
     return deriveArenaTerminalKind(group) !== 'voided';
   });
 }
+
+// ── Phase 1.5 · Command Center multi-battle ─────────────────────────────────
+//
+// Battle-TYPE classification for the live-battle card layer. The discriminator is
+// `Boolean(b.groupId)` — founder-ruled over gameMode and the agentId prefix because
+// it is the only signal that is BOTH flag-agnostic AND correct for the optimistic
+// post-deploy entry:
+//   - RANKED (League / tournament) battles carry a groupId. The fenced
+//     createAgentBattle joint-stamp writes gameMode+groupId together for tournament
+//     modes only (api/_utils/agentBattleService.js), so groupId ⇔ ranked.
+//   - CASUAL / BaggerBomb battles never carry a groupId.
+//   - gameMode is NULLABLE at the card: the optimistic post-deploy settle entry
+//     (App.jsx, DEPLOY_SKY_COUPLING) hard-codes gameMode:null, groupId:null for up
+//     to one poll interval, so a gameMode-keyed classifier would misread it.
+//   - the `casual-agent-` agentId prefix only exists flag-ON (a flag-off casual
+//     deploy runs on the real agent id), so isCasualCloneId is confirm-only.
+// Training battles never reach the card (dropped upstream by the training-agent-
+// prefix in the poll), so the card only ever classifies ranked vs BaggerBomb.
+
+export const BATTLE_TYPE_RANKED = 'ranked';
+export const BATTLE_TYPE_BAGGERBOMB = 'baggerbomb';
+
+/** The live-battle card's type, from the flag-agnostic groupId-presence signal. */
+export function classifyBattleType(battle) {
+  return battle && battle.groupId ? BATTLE_TYPE_RANKED : BATTLE_TYPE_BAGGERBOMB;
+}
+
+/** Human label for a live-battle card (acceptance #4: each card labeled by type). */
+export function battleTypeLabel(battle) {
+  return classifyBattleType(battle) === BATTLE_TYPE_RANKED ? 'Ranked' : 'BaggerBomb';
+}
+
+/**
+ * True when the owner has a live BaggerBomb (casual) battle. This is the per-type
+ * gate for the Command Center Deploy CTA, which always starts a BaggerBomb: flag-ON
+ * a second BaggerBomb is blocked while a live one runs, but a live RANKED battle does
+ * NOT block (it runs concurrently under a separate clone id). Flag-OFF the CTA uses
+ * the legacy any-live-battle gate instead (no clone exists, so a second deploy would
+ * collide on the real agent) — see the dashboards' `deployBlockedByLive`.
+ */
+export function hasLiveBaggerBomb(battles) {
+  // Require active status defensively: "live" is in the name, and a stale COMPLETED
+  // casual battle (no groupId) must never latch the Deploy CTA permanently blocked if a
+  // caller's upstream status filter ever regresses.
+  return (battles || []).some((b) => b && b.status === 'active' && classifyBattleType(b) === BATTLE_TYPE_BAGGERBOMB);
+}
+
+/**
+ * Deterministic order for the live-battle card set (acceptance #4: no unsorted index
+ * access). Ranked first (higher-stakes, competitive), then most-recently-activated,
+ * then id — a total order so the render never depends on Firestore's arrival order.
+ * The set is ≤2 by game mechanics (≤1 ranked + ≤1 casual clone; training filtered
+ * upstream; decide.js caps one active battle per agentId). Pure; does not mutate.
+ */
+const BATTLE_TYPE_ORDER = { [BATTLE_TYPE_RANKED]: 0, [BATTLE_TYPE_BAGGERBOMB]: 1 };
+export function sortLiveBattles(battles) {
+  return [...(battles || [])].sort((a, b) => {
+    const byType = BATTLE_TYPE_ORDER[classifyBattleType(a)] - BATTLE_TYPE_ORDER[classifyBattleType(b)];
+    if (byType !== 0) return byType;
+    const ta = a?.activatedAt || a?.createdAt || '';
+    const tb = b?.activatedAt || b?.createdAt || '';
+    if (ta !== tb) return ta < tb ? 1 : -1; // most-recently-activated first
+    const ia = String(a?.id ?? '');
+    const ib = String(b?.id ?? '');
+    if (ia === ib) return 0;              // comparator contract: equal → 0
+    return ia < ib ? -1 : 1;             // stable id tiebreak
+  });
+}
+
+/** Single-sourced copy for the disabled-CTA reason (acceptance #2). */
+export const DEPLOY_BLOCK_REASON = 'A BaggerBomb battle is already running — one at a time.';
+
+/**
+ * Derive the Command Center deploy-gate values from a shell's live-battle set — the ONE
+ * source of truth shared by the mobile and desktop shells (which otherwise duplicate this
+ * verbatim, risking silent divergence). Pure; flag-off every value reduces to the legacy
+ * `isLive`-gated behavior, byte-identical.
+ *
+ * @param {Object} p
+ * @param {Array} p.liveBattles - the owner's active battles (training-clone- and
+ *   voided-group-excluded upstream by the poll).
+ * @param {{activeBattleId?: string}|null} p.agent - the REAL agent doc, for the equip lock.
+ * @param {boolean} p.concurrencyEnabled - CASUAL_CLONE_CONCURRENCY_ENABLED.
+ * @returns {{orderedLiveBattles: Array, deployBlockedByLive: boolean,
+ *   deployBlockReason: (string|null), equipLocked: boolean}}
+ */
+export function deriveDeployGate({ liveBattles, agent, concurrencyEnabled }) {
+  // Legacy any-live gate, derived HERE from the same liveBattles the gate reasons over —
+  // never taken as a separate param that could drift from it. Matches the shells' isLive.
+  const isLive = Boolean((liveBattles || [])[0]);
+  const orderedLiveBattles = concurrencyEnabled ? sortLiveBattles(liveBattles) : liveBattles;
+  // The Deploy CTA starts a BaggerBomb: flag-on it is blocked only by a live BaggerBomb (a
+  // live ranked battle runs concurrently under a separate clone id); flag-off keep the
+  // legacy any-live-battle block (no clone exists, a second deploy collides on the real
+  // agent and decide.js blocks it), byte-identical.
+  const deployBlockedByLive = concurrencyEnabled ? hasLiveBaggerBomb(liveBattles) : isLive;
+  const deployBlockReason = (concurrencyEnabled && deployBlockedByLive) ? DEPLOY_BLOCK_REASON : null;
+  // Equip lock label bound to the same agent.activeBattleId source as the actual lock
+  // (§9): flag-on a casual battle runs on the clone and must NOT read as a locked ranked
+  // loadout. Flag-off keep isLive, byte-identical.
+  const equipLocked = concurrencyEnabled ? Boolean(agent?.activeBattleId) : isLive;
+  return { orderedLiveBattles, deployBlockedByLive, deployBlockReason, equipLocked };
+}
