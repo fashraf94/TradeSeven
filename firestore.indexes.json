@@ -171,16 +171,6 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "expiresAt",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "ingestedClaims",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
           "fieldPath": "ticker",
           "order": "ASCENDING"
         },
