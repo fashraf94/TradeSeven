@@ -109,7 +109,14 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // pre-existing defect unmasked by the morning window; changes the reporter
 // userMessage bytes (real operands now reach the prompt), so the mechanism
 // forces this bump. Gates R9 S5 liveness; must land before WIRE_WRITES flips.
-export const WIRE_GENERATION_VERSION = 15;
+// v16 (Catalyst-path defects, Aug 10): two manifest members edited —
+// ingestedClaims.js (getClaimsForReporter ticker path restructured off the
+// double array-contains + uncommitted composite; the formatClaimsForPrompt
+// half is unchanged) and scan-movers.js (two decomposition counters added to
+// runMoverScan; two-tick machinery untouched). Both changes are generation-
+// inert — no reporter-request byte changes — but the conservative file-level
+// content lock still fires, so the mechanism forces this bump.
+export const WIRE_GENERATION_VERSION = 16;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────
