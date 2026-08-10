@@ -168,6 +168,38 @@ describe('fault isolation — one symbol error does not abort the whole tick', (
   });
 });
 
+describe('C4 — moversDetected decomposes into visible buckets (§9 display-agreement)', () => {
+  it('each detected mover lands in exactly one of candidatesRecorded / moverAlreadyStoried / moverAlreadyPending', async () => {
+    const db = makeMockDb();
+    const world = makeWorld({ covered: ['STORIED'] }); // STORIED already has a story today
+
+    // Arm a pending candidate for PENDING at T0.
+    await scan(db, world, [q('PENDING', 4.0, 100, 96)], T0);
+
+    // An overlapping pass (5s later, too young to confirm): PENDING is still a
+    // mover (candidate already armed -> already-pending), FRESH is a new mover
+    // (-> recorded), STORIED is a mover already covered (-> birth-suppressed).
+    const r = await scan(db, world, [
+      q('PENDING', 4.1, 101, 96),
+      q('FRESH', 5.0, 210, 200),
+      q('STORIED', 6.0, 320, 300),
+    ], T0b);
+
+    expect(r.moversDetected).toBe(3);
+    expect(r.candidatesRecorded).toBe(1);      // FRESH
+    expect(r.moverAlreadyStoried).toBe(1);     // STORIED (pre-fix: silent bucket)
+    expect(r.moverAlreadyPending).toBe(1);     // PENDING (pre-fix: silent bucket)
+    expect(r.confirmed).toBe(0);               // PENDING too young; two-tick intact
+    expect(r.storiesGenerated).toBe(0);
+
+    // The invariant the founder's counters failed: moversDetected must
+    // decompose into visible terms (no arm-errors in this scenario).
+    expect(r.moversDetected).toBe(
+      r.candidatesRecorded + r.moverAlreadyStoried + r.moverAlreadyPending,
+    );
+  });
+});
+
 describe('threshold export', () => {
   it('MOVE_THRESHOLD_PCT is 3', () => expect(MOVE_THRESHOLD_PCT).toBe(3));
 });

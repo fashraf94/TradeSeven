@@ -124,31 +124,51 @@ export async function getClaimsForReporter(reporter, options = {}) {
       return snapshot.docs.map(doc => doc.data());
     }
 
-    // Two queries for ticker: primary match + linkedTickers match, then merge
-    const primaryQuery = baseQuery
-      .where('ticker', '==', ticker)
-      .orderBy('sourceDate', 'desc')
-      .limit(limit);
+    // Ticker path: primary (ticker ==) + linked (linkedTickers array-contains),
+    // then merge. The reporter is scoped in memory rather than on the query
+    // because Firestore forbids >1 array-contains per query (which killed the
+    // old linkedQuery outright) AND no (relevantReporters, ticker, sourceDate)
+    // composite index exists (which would have killed the old primaryQuery on a
+    // missing-index error even after removing the second array-contains). Both
+    // queries below use committed single-array-contains/equality indexes:
+    // (ticker, sourceDate), (ticker, source, sourceDate), (linkedTickers,
+    // sourceDate). Tradeoff: the in-memory reporter filter runs after limit(N),
+    // so a linked-ticker claim outside that ticker's freshest N can be missed —
+    // the ideal reporter∧ticker indexed query needs a composite this fix does
+    // not add. Direct (ticker ==) matches are unaffected in practice.
+    const cutoff = maxAgeDays
+      ? new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      : null;
 
-    const linkedQuery = db.collection(COLLECTION)
-      .where('relevantReporters', 'array-contains', reporter)
-      .where('linkedTickers', 'array-contains', ticker)
-      .orderBy('sourceDate', 'desc')
-      .limit(limit);
+    let primaryQuery = db.collection(COLLECTION).where('ticker', '==', ticker);
+    if (source) primaryQuery = primaryQuery.where('source', '==', source);
+    if (cutoff) primaryQuery = primaryQuery.where('sourceDate', '>=', cutoff);
+    primaryQuery = primaryQuery.orderBy('sourceDate', 'desc').limit(limit);
+
+    let linkedQuery = db.collection(COLLECTION).where('linkedTickers', 'array-contains', ticker);
+    if (cutoff) linkedQuery = linkedQuery.where('sourceDate', '>=', cutoff);
+    linkedQuery = linkedQuery.orderBy('sourceDate', 'desc').limit(limit);
 
     const [primarySnap, linkedSnap] = await Promise.all([
       primaryQuery.get(),
       linkedQuery.get(),
     ]);
 
-    // Merge and deduplicate by claimId
+    const relevantToReporter = (d) =>
+      Array.isArray(d.relevantReporters) && d.relevantReporters.includes(reporter);
+
+    // Merge and deduplicate by claimId, scoping to the reporter in memory.
     const claimsMap = new Map();
     for (const doc of primarySnap.docs) {
       const data = doc.data();
-      claimsMap.set(data.claimId, data);
+      if (relevantToReporter(data)) claimsMap.set(data.claimId, data);
     }
     for (const doc of linkedSnap.docs) {
       const data = doc.data();
+      if (!relevantToReporter(data)) continue;
+      // Apply source in memory on the linked path (no linkedTickers+source
+      // composite index) so the option is honored consistently with primary.
+      if (source && data.source !== source) continue;
       if (!claimsMap.has(data.claimId)) {
         claimsMap.set(data.claimId, data);
       }

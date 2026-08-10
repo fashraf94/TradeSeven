@@ -22,11 +22,20 @@ const STOP_WORDS = new Set([
   'that', 'this', 'has', 'had', 'have', 'will', 'be', 'been', 'stock',
   'stocks', 'shares', 'today', 'after', 'says', 'report', 'reports',
   'new', 'could', 'may', 'also', 'about', 'more', 'than', 'into',
+  // Question words: EODHD mover headlines are dominated by "Why X Stock Is …"
+  // phrasing and our own catalyst query (sonarCatalystFetch.js) is "Why is …
+  // today?" — so these recur >=3x and the dominant-keyword gate latches onto
+  // them, computing confidence off pure filler (Aug 10 "keyword=why" defect).
+  'why', 'how', 'what', 'when', 'where', 'who', 'which', 'whose',
+  // Generic price-motion fillers: describe the move we already know about,
+  // never the catalyst.
+  'moving', 'move', 'moves', 'moved', 'higher', 'lower', 'down',
 ]);
 
 // ─── Keyword extraction ─────────────────────────────────────────────────────
 
-function extractKeywords(text) {
+// Exported so the stopword contract is directly testable (A6 C3).
+export function extractKeywords(text) {
   if (!text || typeof text !== 'string') return [];
   return text
     .toLowerCase()
@@ -131,7 +140,7 @@ export async function getValidatedCatalyst(symbol) {
  * @param {string} companyName
  * @param {string} direction - "up" or "down"
  * @param {number} percentChange
- * @returns {Promise<{ catalyst: string, confidence: string, source: string, agreementScore: number, sonarKeywords: string[], headlineKeywords: [string, number][] }>}
+ * @returns {Promise<{ catalyst: string, confidence: string, source: string, agreementScore: number, sonarKeywords: string[], headlineKeywords: {keyword: string, count: number}[] }>}
  */
 export async function validateAndCacheCatalyst(symbol, companyName, direction, percentChange) {
   const upperSymbol = symbol.toUpperCase();
@@ -193,9 +202,13 @@ export async function validateAndCacheCatalyst(symbol, companyName, direction, p
 
   // Step 5: Cache in Firestore
   const dateStr = getTodayDateStr();
+  // Array-of-objects, NOT Object.entries() tuples: Firestore forbids an array
+  // whose elements are themselves arrays ("invalid nested entity"), which
+  // rejected the whole cache write and forced every mover to re-fetch uncached.
   const sortedHeadlineKeywords = Object.entries(headlineFreq)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
+    .slice(0, 10)
+    .map(([keyword, count]) => ({ keyword, count }));
 
   const validatedEntry = {
     catalyst,

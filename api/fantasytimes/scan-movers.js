@@ -125,7 +125,13 @@ export async function runMoverScan(db, {
   error = () => {},
 }) {
   const results = {
+    // Display-agreement (§9): moversDetected decomposes over the T-detection
+    // pass into exactly candidatesRecorded + moverAlreadyStoried (birth-
+    // suppressed: a story already exists) + moverAlreadyPending (a candidate is
+    // already armed) — plus any arm-error captured in errors[]. Without the
+    // last two counters the summary showed movers landing in no bucket.
     scanned: 0, moversDetected: 0, candidatesRecorded: 0,
+    moverAlreadyStoried: 0, moverAlreadyPending: 0,
     confirmed: 0, reverted: 0, expired: 0,
     storiesGenerated: 0, dedupSkipped: 0, skipped: 0, errors: [],
   };
@@ -221,7 +227,7 @@ export async function runMoverScan(db, {
       // Birth-suppression, story half (F1b): a symbol already covered in the
       // dedup window arms no candidate (and a symbol just confirmed above now
       // has a story, so the sustained mover pays retrieval exactly once, R1a).
-      if (await hasRecentStory(symbol)) continue;
+      if (await hasRecentStory(symbol)) { results.moverAlreadyStoried++; continue; }
       const rec = await recordCandidate(db, {
         marketDate,
         symbol,
@@ -234,6 +240,10 @@ export async function runMoverScan(db, {
         now,
       });
       if (rec.created) { results.candidatesRecorded++; info(`candidate armed: ${symbol} ${fresh.changeP.toFixed(2)}%`); }
+      // recordCandidate returns created:false only when a pending candidate for
+      // this symbol already exists (armed on an earlier pass) — the mover is
+      // accounted for, just not newly armed (was previously a silent bucket).
+      else { results.moverAlreadyPending++; }
     } catch (err) {
       results.errors.push(`${symbol}: ${err.message}`);
       error(`arm error for ${symbol}`, { error: err.message });
@@ -307,6 +317,8 @@ export default async function handler(req, res) {
       scanned: results.scanned,
       moversDetected: results.moversDetected,
       candidatesRecorded: results.candidatesRecorded,
+      moverAlreadyStoried: results.moverAlreadyStoried,
+      moverAlreadyPending: results.moverAlreadyPending,
       confirmed: results.confirmed,
       reverted: results.reverted,
       expired: results.expired,
