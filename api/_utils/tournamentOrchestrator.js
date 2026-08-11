@@ -96,6 +96,7 @@ export const ORCHESTRATOR_STATE_DOC_ID = 'state';
 // fence, exactly as contracted. This is the first merge that changes
 // production behavior for real groups; the dev-group exclusion
 // (fetchEligibleGroupsByStatus, companion a) is what makes that safe.
+// Pinned by: p4Flips.test.js, tournamentOrchestrator.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const TOURNAMENT_DEPLOY_ENABLED = true;
 
 export const DEPLOY_PACING_MS = 20_000;            // ≥20s between real deploy calls (3/min limit priced)

@@ -19,6 +19,7 @@ export const WATCH_LIST_RAIL_ENABLED = false;
  * (instant rollback). When true, it renders the new agent-command surface.
  * Mobile only — desktop (DashboardDesktop) is unaffected either way.
  */
+// Pinned by: activeNavigation.shelvedSurfaces.test.jsx (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMMAND_DASHBOARD_ENABLED = true;
 
 /**
@@ -30,6 +31,7 @@ export const COMMAND_DASHBOARD_ENABLED = true;
  * CommandDashboardDesktop. Built/merged dark; flip to ship after a preview
  * smoke test — the same play used for the mobile flag above.
  */
+// Pinned by: activeNavigation.shelvedSurfaces.test.jsx (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMMAND_DASHBOARD_DESKTOP_ENABLED = true;
 
 /**
@@ -479,6 +481,7 @@ export function isTrainingPodDesktopOn() {
  * INJECT half (below) is a separate, fence-gated flag and implies this one.
  * See the Rule Conflict Reconciler build spec + RULES_LAUNCHBLOCKER findings.
  */
+// Pinned by: ruleConflictReconciler.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const CONFLICT_RECONCILER_DETECT_ENABLED = true;
 
 /**
@@ -497,6 +500,7 @@ export const CONFLICT_RECONCILER_DETECT_ENABLED = true;
  * fenced commit is reviewed for prompt parity and signed off, and after a
  * preview calibration smoke. See the Rule Conflict Reconciler build spec.
  */
+// Pinned by: ruleConflictReconciler.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const CONFLICT_RECONCILER_INJECT_ENABLED = true;
 
 /**
@@ -885,6 +889,7 @@ export const LEARNING_L1_CAPTURE_ENABLED = true;
  * REGIME_STAMP_ENABLED. The flip date is the corpus E2 full-coverage boundary
  * recorded in that flip PR.
  */
+// Pinned by: agent-evaluate.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const LEARNING_L1_CAPTURE_EXPANSION_ENABLED = true;
 
 /**
@@ -903,6 +908,7 @@ export const LEARNING_L1_CAPTURE_EXPANSION_ENABLED = true;
  * When FALSE: no battle doc is touched, no stamp field exists — prior
  * behavior exactly. Already-stamped docs are inert data either way.
  */
+// Pinned by: agent-evaluate.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const REGIME_STAMP_ENABLED = true;
 
 /**
@@ -1053,6 +1059,7 @@ export const POD_EXPIRY_SWEEP_ENABLED = false;
  * (P2.4b) refuses them. Flip only via a deliberate founder flag-flip PR with
  * a green activation gate — NEVER in a build PR (Phase 2 exit criteria).
  */
+// Pinned by: compileOnSettingsChange.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMPILER_ENABLED = false;
 
 /**
@@ -1074,6 +1081,7 @@ export const COMPILER_ENABLED = false;
  * phase behind the DR-10 two-stage validation. Flip only via a deliberate
  * founder flag-flip PR — never in a build PR.
  */
+// Pinned by: agentBattleService.test.js, resolvedAgentManifest.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const MANIFEST_WRITE_ENABLED = true;
 
 /**
@@ -1095,6 +1103,7 @@ export const MANIFEST_WRITE_ENABLED = true;
  * (the envelope is manifest-anchored; no envelope-less record ever exists).
  * Flip only via a deliberate founder flag-flip PR — never in a build PR.
  */
+// Pinned by: shadowAssemblyCapture.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const SHADOW_ASSEMBLY_ENABLED = true;
 
 /**
@@ -1146,6 +1155,7 @@ export function isDeployCeremonyOn() {
  * payload equality with metrics on, writes off. Flipped FIRST (≥3 trading
  * days) to capture the p95 baseline the §6.1 gate needs.
  */
+// Pinned by: wireFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const WIRE_METRICS_ENABLED = false;
 
 /**
@@ -1157,6 +1167,7 @@ export const WIRE_METRICS_ENABLED = false;
  * boundary). Flip only after the metrics baseline; ≥2 trading days solo
  * before continuity. Each flip is its own one-line PR (Pushed ≠ deployed).
  */
+// Pinned by: wireFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const WIRE_WRITES_ENABLED = false;
 
 /**
@@ -1165,6 +1176,7 @@ export const WIRE_WRITES_ENABLED = false;
  * resolution point (api/_utils/wireFlags.js getWireFlags) enforces the
  * dependency; this raw const is never read directly by call sites.
  */
+// Pinned by: wireFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const CONTINUITY_MEMORY_ENABLED = false;
 
 /**
@@ -1182,6 +1194,7 @@ export const CONTINUITY_MEMORY_ENABLED = false;
  * 7), at founder discretion once dark-solo health is clean. Each flip is
  * its own one-line PR (Pushed ≠ deployed).
  */
+// Pinned by: wireFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const WIRE_NEWSLINE_ENABLED = false;
 
 /**
@@ -1200,6 +1213,7 @@ export const WIRE_NEWSLINE_ENABLED = false;
  * (step 5: first Sunday after writes). Each flip is its own one-line PR
  * (Pushed ≠ deployed).
  */
+// Pinned by: wireFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const EDITORIAL_REVIEW_ENABLED = false;
 
 /**
@@ -1270,6 +1284,7 @@ export const EVAL_IDENTITY_BLOCK_ENABLED = true;
  * assertions in fundamentalsRender.test.js and regenerate the P4 battery
  * goldens in the SAME commit, exactly as the flip's reconciliation did.
  */
+// Pinned by: fundamentalsRender.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const FUNDAMENTAL_MIRROR_ENABLED = true;
 
 /**
@@ -1299,6 +1314,7 @@ export const FUNDAMENTAL_MIRROR_ENABLED = true;
  * SAME commit, update the assertions that now pin the LIVE state — the value
  * pins in starfield.inert.test.jsx and this docstring.
  */
+// Pinned by: starfield.inert.test.jsx (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const STARFIELD_BACKGROUND_ENABLED = true;
 
 /**
@@ -1345,6 +1361,7 @@ export function isStarfieldOn() {
  * SAME commit, update the assertions that now pin the LIVE state — the mobile
  * value pin in starfield.inert.test.jsx and this docstring.
  */
+// Pinned by: starfield.inert.test.jsx (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const STARFIELD_MOBILE_ENABLED = true;
 
 /**
@@ -1473,5 +1490,6 @@ export function isDeploySkyCouplingOn() {
  * (compositionDisplay.js through compatSurfaceCopy). false — DEFAULT:
  * copy builders return their legacy output byte-identically (A23 test).
  */
+// Pinned by: composition.acceptance.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMPOSITION_DISPLAY_ENABLED = false;
 
