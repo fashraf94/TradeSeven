@@ -32,6 +32,7 @@ export const COMPOSITION_ENFORCEMENT_MODE = 'off';
  * writers validate composition/writeEpoch in their transactions' read phase
  * and 409 'epoch_closed' when the §8 runbook has closed the epoch.
  */
+// Pinned by: composition.acceptance.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMPOSITION_EPOCH_FENCE_ENABLED = false;
 // ⚠ LOAD-BEARING ONCE ACTIVATED (§2 review F5): after the activation record
 // exists, this flag gates the server-side descriptor pins (birth-path version
@@ -46,6 +47,7 @@ export const COMPOSITION_EPOCH_FENCE_ENABLED = false;
  * identityMigration feed publication gate (M12; A44). false — DEFAULT: the
  * projector returns [] regardless of stored candidate feed entries.
  */
+// Pinned by: composition.acceptance.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMPOSITION_MIGRATION_FEED_ENABLED = false;
 
 /**
