@@ -1156,7 +1156,7 @@ export function isDeployCeremonyOn() {
  * days) to capture the p95 baseline the §6.1 gate needs.
  */
 // Pinned by: wireFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const WIRE_METRICS_ENABLED = false;
+export const WIRE_METRICS_ENABLED = true;
 
 /**
  * The Wire writes machinery: cloned extended tool schema + agentFacts prompt
