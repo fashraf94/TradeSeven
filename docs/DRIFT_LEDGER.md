@@ -113,3 +113,13 @@ S5 "News-Catalyst Momentum" — decided dissolved, still live. Regime Revamp dis
 **Why not "fixed":** committing a `.firebaserc` binds a specific production project into the repo — a founder/ops decision, and one that may be withheld deliberately. Not created unilaterally.
 **Fix seam (founder decision):** either commit `.firebaserc` with the prod alias, or codify `--project <PROD_ID>` as a standing step in the Wire deployed-rules runbook. Until then, the deployed-run command must name the project. Referenced from `test/rules/wireDenials.rules.mjs` (rules-text loader note).
 **Owner:** Wire arc / ops. Recorded Aug 11, 2026.
+
+---
+
+## D-6 — A7 deployed-ruleset run is not independently runnable — needs a JVM (founder machine) or a credentialed CI job
+
+**Found:** V1.6 A7 deployed-ruleset gate resolution, 2026-08-11. Registered by founder instruction. Full record: `docs/audits/20260811_WIRE_A7_DEPLOYED_RULESET_GATE_RESOLUTION.md`.
+**Where/what:** the deployed-ruleset run — executing `test/rules/wireDenials.rules.mjs` (and its siblings) against the **fetched live** rules text in the Firestore emulator — requires BOTH (a) the Firestore emulator, i.e. a **JVM**, and (b) fetching the deployed text, i.e. **prod credentials + project id**. No single environment currently has both: the CC harness has a JVM but no creds/project (D-5); the founder's Windows machine has console/credential access but no JVM.
+**Impact:** A7's deployed run is satisfiable today only by **provenance** (verbatim console publish + repo-ruleset suite run), not by an independent emulator execution of fetched deployed text. That is adequate for a **verbatim** publish (live = repo by construction; the 2026-08-11 gate was resolved this way), but a future deploy whose console text diverged from the repo (hand-edit, transform) could **not** be caught this way.
+**Fix seam:** either (a) install a JVM on the founder's machine — then `COMPOSITION_RULES_TEXT_PATH=<fetched> npm run test:rules` runs locally; or (b) stand up a CI job with a service-account credential + project that fetches the deployed rules and runs the suite. The F-1 fix already makes the suite deployed-text-ready and self-proving (it prints the loaded text's sha256); only the **runner** is missing.
+**Owner:** Wire arc / ops. Recorded Aug 11, 2026.
