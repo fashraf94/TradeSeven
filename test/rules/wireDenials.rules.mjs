@@ -16,6 +16,7 @@
 // which wraps this in `firebase emulators:exec --only firestore`.
 
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { beforeAll, afterAll, beforeEach, describe, it } from 'vitest';
@@ -27,7 +28,21 @@ import {
 import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const RULES_PATH = resolve(__dirname, '../../firestore.rules');
+// V1.6 A7 deployed-ruleset run: point COMPOSITION_RULES_TEXT_PATH at a file
+// holding the FETCHED deployed rules text to prove the LIVE ruleset — the same
+// env var the composition sibling honors, so ONE knob steers the whole
+// `npm run test:rules` pass against deployed text. Default: the repo text
+// (CI / the A5-1 repo-ruleset run). The loaded text's sha256 is printed in
+// beforeAll so a deployed run is SELF-PROVING: that printed hash must equal the
+// deployed ruleset's sha256 (RULES_DEPLOY_RECORD convention).
+// NOTE (drift ledger D-5): `.firebaserc` is intentionally absent — no prod
+// project alias is committed — so the fetch step must name the project
+// explicitly (`--project <PROD_ID>`).
+const RULES_PATH = process.env.COMPOSITION_RULES_TEXT_PATH
+  ? resolve(process.env.COMPOSITION_RULES_TEXT_PATH)
+  : resolve(__dirname, '../../firestore.rules');
+const RULES_TEXT = readFileSync(RULES_PATH, 'utf8');
+const RULES_SHA256 = createHash('sha256').update(RULES_TEXT).digest('hex');
 
 const USER_UID = 'wire-user-1';
 // "Privileged" here = the strongest client-side identity the app mints (an
@@ -63,12 +78,16 @@ const asPrivileged = () => testEnv.authenticatedContext(PRIVILEGED_UID, PRIVILEG
 const asAnon = () => testEnv.unauthenticatedContext().firestore();
 
 beforeAll(async () => {
+  // Self-proving marker: for a deployed-ruleset run, this printed hash MUST
+  // equal the sha256 of the fetched deployed text (RULES_DEPLOY_RECORD).
+  console.log(`[wireDenials] loaded rules text: ${RULES_PATH}`);
+  console.log(`[wireDenials] rules text sha256: ${RULES_SHA256}`);
   const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
   const [emuHost, emuPort] = host.split(':');
   testEnv = await initializeTestEnvironment({
     projectId: 'demo-tradeseven-rules',
     firestore: {
-      rules: readFileSync(RULES_PATH, 'utf8'),
+      rules: RULES_TEXT,
       host: emuHost,
       port: Number(emuPort),
     },

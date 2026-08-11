@@ -102,3 +102,14 @@ D-3**.
 ---
 
 S5 "News-Catalyst Momentum" — decided dissolved, still live. Regime Revamp dissolved news-as-entry-signal; at HEAD dd28eedf, S5 ships in both game-mode variants of the eval system prompt (agentEvalPromptAssembly.js:154-159, 376-380), directing entries on positive-sentiment FantasyTimes stories and exits on negative. Retirement is scoped into FantasyTimes Wire Phase 3. Until then, live behavior contradicts locked design. Owner: Wire arc. Recorded Jul 24, 2026.
+
+---
+
+## D-5 — `.firebaserc` absent: no committed prod project alias (the deployed-rules gate must name the project)
+
+**Found:** V1.6 A7 deployed-ruleset gate feasibility pass, 2026-08-11. Registered by founder instruction.
+**Where:** repo root — **there is no `.firebaserc`**. `firebase.json` declares `firestore.rules` / `firestore.indexes.json` but no project. The only Firestore project ids committed anywhere are the demo/test ones the emulator suites pin in-file (`demo-tradeseven-rules`, `demo-tradeseven-rules-test`, `demo-preview`); the **production** project id is not in the repo.
+**Impact:** any `firebase` command that must resolve a project — fetching the **DEPLOYED** ruleset for the A7 run, `deploy`, `firestore:*` — has no default target and must be given one explicitly (`--project <PROD_ID>`, or an authed `firebase use`). This is one of the two reasons the A7 deployed-ruleset run **cannot execute in the CC harness** (the other: no credentials — `firebase login:list` → none; empty configstore; no `FIREBASE_TOKEN` / `GOOGLE_APPLICATION_CREDENTIALS`). The deployed run is therefore the **pre-flip founder action** (FantasyTimes Wire Spec V1.6 A5-1 / A7). The emulator smoke suites are unaffected — they hardcode the demo project id.
+**Why not "fixed":** committing a `.firebaserc` binds a specific production project into the repo — a founder/ops decision, and one that may be withheld deliberately. Not created unilaterally.
+**Fix seam (founder decision):** either commit `.firebaserc` with the prod alias, or codify `--project <PROD_ID>` as a standing step in the Wire deployed-rules runbook. Until then, the deployed-run command must name the project. Referenced from `test/rules/wireDenials.rules.mjs` (rules-text loader note).
+**Owner:** Wire arc / ops. Recorded Aug 11, 2026.
