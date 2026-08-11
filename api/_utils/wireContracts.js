@@ -116,7 +116,18 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // runMoverScan; two-tick machinery untouched). Both changes are generation-
 // inert — no reporter-request byte changes — but the conservative file-level
 // content lock still fires, so the mechanism forces this bump.
-export const WIRE_GENERATION_VERSION = 16;
+// v17 (Doug recap surprise-split fix, Aug 11): the doug_earnings_recap seam
+// (generate-recap.js, a manifest member) now derives the printed EPS surprise
+// AND beat/miss outcome from the SAME calendar epsActual/epsEstimate the recap
+// prints — matching the STRICT eps_surprise_pct adapter — instead of the EODHD
+// /fundamentals feed's surprisePercent/outcome (a possibly-different quarter,
+// split from the printed operands: the AMD +6.7% beat printed beside a −80%
+// surprise). Also passes reportDate to getEarningsResult so its supplementary
+// context is the recapped quarter. Changes the reporter userMessage bytes (the
+// Surprise/Outcome lines), so the mechanism forces this bump. Gates S5's STRICT
+// surprise slot; must land before WIRE_WRITES flips; epoch-resetting after the
+// gate window opens.
+export const WIRE_GENERATION_VERSION = 17;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────
