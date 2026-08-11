@@ -30,8 +30,9 @@ import { dirname, resolve, join, relative, sep } from 'node:path';
 // Corpus Capture Patch — §4 dependency-surface guard: this import of the REAL
 // flags module is the runtime guard for agent-evaluate.js's own featureFlags
 // import (it explodes in the Node test env if a browser dep ever enters that
-// graph) — it must NEVER be mocked. It also pins the merge-dark contract in
-// the W1/W2 suite below.
+// graph) — it must NEVER be mocked. It also pins each flag's LIVE (flipped)
+// state in the W1/W2 suites below (BUILD_RULES §2: a flip reconciles its pins
+// in the same commit).
 import {
   LEARNING_L1_CAPTURE_ENABLED,
   LEARNING_L1_CAPTURE_EXPANSION_ENABLED,
@@ -518,10 +519,13 @@ describe('agent-evaluate cron — Corpus Capture Patch W1/W2 L1 capture wiring',
     }
   });
 
-  it('merge-dark contract: the expansion flag defaults FALSE; the master kill-switch stays a live founder-owned value', () => {
-    // Founder ruling (Phase 1 greenlight memo, July 21 2026): expansion ships
-    // dark and flips in its own PR; the master flag is NOT reset in this patch.
-    expect(LEARNING_L1_CAPTURE_EXPANSION_ENABLED).toBe(false);
+  it('LEARNING_L1_CAPTURE_EXPANSION_ENABLED pins its live (flipped) state; the master kill-switch stays a founder-owned value', () => {
+    // Flipped false→true in its own founder flip PR (the Phase 1 greenlight memo,
+    // July 21 2026, sequenced the dark merge first, then the flip). This PINS the
+    // live state; a flip back to false updates this assertion in the SAME commit
+    // (BUILD_RULES §2). The master LEARNING_L1_CAPTURE_ENABLED stays founder-owned
+    // — assert only that it remains a boolean, never its literal value.
+    expect(LEARNING_L1_CAPTURE_EXPANSION_ENABLED).toBe(true);
     expect(typeof LEARNING_L1_CAPTURE_ENABLED).toBe('boolean');
   });
 });
@@ -576,8 +580,10 @@ describe('agent-evaluate cron — Corpus Capture Patch W3 regimeAtStart wiring',
     expect(source).toMatch(/regimeAtStart stamp failed \(ignored, evaluation unaffected\)/);
   });
 
-  it('merge-dark contract: REGIME_STAMP_ENABLED defaults FALSE (flips later with the expansion flag, per founder ruling)', () => {
-    expect(REGIME_STAMP_ENABLED).toBe(false);
+  it('REGIME_STAMP_ENABLED pins its live (flipped) state (flipped alongside the L1 capture expansion, per founder ruling)', () => {
+    // Flipped false→true with the expansion flag. Pins the live state; a flip back
+    // to false updates this assertion in the SAME commit (BUILD_RULES §2).
+    expect(REGIME_STAMP_ENABLED).toBe(true);
   });
 });
 
