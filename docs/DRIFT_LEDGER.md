@@ -123,3 +123,13 @@ S5 "News-Catalyst Momentum" — decided dissolved, still live. Regime Revamp dis
 **Impact:** A7's deployed run is satisfiable today only by **provenance** (verbatim console publish + repo-ruleset suite run), not by an independent emulator execution of fetched deployed text. That is adequate for a **verbatim** publish (live = repo by construction; the 2026-08-11 gate was resolved this way), but a future deploy whose console text diverged from the repo (hand-edit, transform) could **not** be caught this way.
 **Fix seam:** either (a) install a JVM on the founder's machine — then `COMPOSITION_RULES_TEXT_PATH=<fetched> npm run test:rules` runs locally; or (b) stand up a CI job with a service-account credential + project that fetches the deployed rules and runs the suite. The F-1 fix already makes the suite deployed-text-ready and self-proving (it prints the loaded text's sha256); only the **runner** is missing.
 **Owner:** Wire arc / ops. Recorded Aug 11, 2026.
+
+---
+
+## D-7 — `compositionProtectedStores.scan.test.js` flakes over its 5 s timeout on a repo-wide AST scan
+
+**Found:** Doug recap surprise-split fix, 2026-08-11 (full-suite run). Registered per §3 (found outside task; **not fixed here**).
+**Where:** `api/_utils/compositionProtectedStores.scan.test.js:127-131` — the `#10` row calls `scanProtectedStoreWrites(REPO)` (`compositionProtectedStoresScan.js`), which acorn-parses **every non-test `.js` under `api/` + `scripts/`**. The `it` runs on the default **5000 ms** timeout.
+**Impact:** the scan runtime has grown to **~4.6–5.1 s** as `main` accumulated merges, so it now flakes over the 5 s limit **on clean `main` (`d1dff398`) itself** — measured this session (clean tree timed out under sampling; my tree 4.8–5.1 s). The security **assertion** ("ZERO write-method extractions") still PASSES — only the timeout trips. **Not caused by the Doug diff:** test files are excluded from the scan (`compositionProtectedStoresScan.js:97`) and the change adds no write-method surface. It will intermittently red any PR's full-suite CI until the headroom is restored.
+**Fix seam (separate task):** give the `#10` row an explicit generous timeout (e.g. `it(name, fn, 20000)`), or memoize the parse so the walk isn't re-run per assertion. A one-line timeout bump is the conservative unblock.
+**Owner:** Composition / test-infra. Recorded Aug 11, 2026.

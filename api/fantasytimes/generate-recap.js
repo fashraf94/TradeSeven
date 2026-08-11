@@ -38,6 +38,52 @@ import { recordWireSample } from '../_utils/wireMetrics.js';
 
 export const config = { maxDuration: 60 };
 
+// ── Recap surprise/outcome, derived from the PRINTED operands (§9) ─────────
+// The displayed EPS surprise and beat/miss outcome are derived from the SAME
+// epsActual / epsEstimate the recap prints — the /calendar/earnings operands —
+// never from the EODHD /fundamentals feed (getEarningsResult), whose
+// surprisePercent/outcome are for a possibly-different quarter and split from
+// the printed EPS. §9 display-agreement: a shown number decomposes into its
+// shown terms.
+//
+// The formula and the degrade boundaries are byte-for-byte the editorial
+// adapter's STRICT eps_surprise_pct recomputation (api/_utils/
+// wireEditorialAdapters.js: '(epsActual − epsEstimate) / |epsEstimate| × 100';
+// non-number operand or estimate === 0 → NOT_VERIFIABLE), so the number Doug
+// prints is the number the STRICT slot re-derives and verifies — a feed
+// disagreement can no longer score VERIFIED_WRONG on a plumbing split.
+export const RECAP_SURPRISE_UNVERIFIABLE = 'N/A';
+export const RECAP_OUTCOME_UNVERIFIABLE = 'unconfirmed';
+
+export function deriveRecapSurprise(epsActual, epsEstimate) {
+  const a = typeof epsActual === 'number' && Number.isFinite(epsActual) ? epsActual : null;
+  const e = typeof epsEstimate === 'number' && Number.isFinite(epsEstimate) ? epsEstimate : null;
+
+  // Degrade exactly where the STRICT adapter does: a non-number operand
+  // (missing_operand) or a zero estimate (zero_denominator). Never throws — a
+  // null-estimate recap yields NOT_VERIFIABLE, not a fabricated beat/miss.
+  if (a === null || e === null || e === 0) {
+    return {
+      verifiable: false,
+      surprisePercent: null,
+      surprise: RECAP_SURPRISE_UNVERIFIABLE,
+      outcome: RECAP_OUTCOME_UNVERIFIABLE,
+    };
+  }
+
+  const surprisePercent = ((a - e) / Math.abs(e)) * 100;
+  // |e| > 0 ⇒ sign(surprisePercent) === sign(a − e): outcome FOLLOWS the
+  // computed surprise (beat / miss / meet), never a foreign feed's sign.
+  const outcome = a > e ? 'beat' : a < e ? 'miss' : 'meet';
+  const sign = surprisePercent > 0 ? '+' : '';
+  return {
+    verifiable: true,
+    surprisePercent,
+    surprise: `${sign}${surprisePercent.toFixed(1)}%`,
+    outcome,
+  };
+}
+
 const LOG_PREFIX = '[FantasyTimes:Doug:Recap]';
 
 function logInfo(msg, data = null) {
@@ -270,7 +316,11 @@ export default async function handler(req, res) {
     // Get detailed earnings result
     let earningsDetail = null;
     try {
-      earningsDetail = await getEarningsResult(earning.symbol);
+      // Pass reportDate so the 7-day matcher (getEarningsResult.js:298-305)
+      // returns the RECAPPED quarter's fundamentals row, not entries[0] (the
+      // most recent history row). Used only for supplementary context below
+      // (priceMove / magnitude / revenue) — never the printed surprise/outcome.
+      earningsDetail = await getEarningsResult(earning.symbol, earning.reportDate);
     } catch (e) {
       logError(`getEarningsResult failed for ${earning.symbol}`, { error: e.message });
     }
@@ -305,18 +355,14 @@ export default async function handler(req, res) {
       logError('Preview query failed, continuing without', { error: e.message });
     }
 
-    // Determine outcome
-    const outcome = earningsDetail?.outcome || (
-      earning.epsActual > (earning.epsEstimate || 0)
-        ? 'beat'
-        : earning.epsActual < (earning.epsEstimate || 0)
-          ? 'miss'
-          : 'meet'
-    );
-
-    const surprise = earningsDetail?.surprisePercent
-      ? `${earningsDetail.surprisePercent.toFixed(1)}%`
-      : 'N/A';
+    // Surprise + outcome are derived from the SAME operands the recap prints
+    // (the calendar epsActual/epsEstimate), matching the STRICT adapter's
+    // recomputation — NOT from earningsDetail (the /fundamentals feed), whose
+    // surprisePercent/outcome are for a possibly-different quarter and split
+    // from the printed EPS. This is the fix for the recap surprise split
+    // (diagnosis Part 4): the AMD case showed a +6.7% beat next to a −80%
+    // surprise because the two came from different feeds with no date match.
+    const { surprise, outcome } = deriveRecapSurprise(earning.epsActual, earning.epsEstimate);
 
     let userMessage = [
       `EARNINGS RESULT: ${earning.symbol}`,

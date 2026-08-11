@@ -1,13 +1,13 @@
 {
   "note": "Committed baseline for the GENERATION_SURFACE lock (P2-15). Never hand-edit: regenerate via WIRE_GENERATION_BASELINE_REGEN=1 after bumping the bound version constant in wireContracts.js.",
   "generatedAgainst": {
-    "WIRE_GENERATION_VERSION": 16,
+    "WIRE_GENERATION_VERSION": 17,
     "WIRE_DIGEST_RENDERER_VERSION": "1.0.0",
     "WIRE_VALIDATOR_VERSION": "1.6.0"
   },
   "generationSurface": {
-    "version": 16,
-    "hash": "f97a216abc6c2c8eeb157b1649ae4765152fb92b054c31123665bc4abf6f521d",
+    "version": 17,
+    "hash": "8d47f3bd9aaea68bce2dad1d64ba665da4071b2e6fdb89fc04187660b1404d4e",
     "files": {
       "api/_utils/econPrintVerifier.js": "63575ec0c96f4edcf6dbc491887a5f47fc538cfd4b66245d54c2f67e5ff8075c",
       "api/_utils/exaCatalystFetch.js": "39a2d03e743b7e34fd1d13f2cc4e62ec2a84fb41968f00e56f011a785803d4a6",
@@ -18,7 +18,7 @@
       "api/_utils/ingestedClaims.js": "045fc379b77ad610044e3c4e49e5056df4d9fcae684c0483321d931f5958701a",
       "api/_utils/stockIntelligenceData.js": "1bcbe7e63137e1a9c50e2267b4226e786c68a8ff44b6b47c4b3764e7bccde946",
       "api/_utils/wireContinuity.js": "c9b5002292934ce48bbc399fc977d4aef51220ff8775187383be1adc1b301619",
-      "api/_utils/wireContracts.js": "d4052d2a8162fb77e70ad89ab056941e43cb4fba2eaa72b0d3cbd8672e49828f",
+      "api/_utils/wireContracts.js": "d0cf48c6bdd08d7fb2f0dd6bd4f4723587522a382f70872f831ff3f260dc6dcd",
       "api/_utils/wireEntryGuard.js": "de523d9b3d236de0bf5cd207b412aa1449b50a58e8020851580db5d362ba3908",
       "api/_utils/wireExemplars.js": "3971486a2104956be2f62bfd0befbae4921a8945a6c563a6e1ff292d491628f5",
       "api/_utils/wireGenerationConfig.js": "7b3186109f79810db0d09169d49f20165acaa3af128ae812ac67c1d95158e13e",
@@ -30,7 +30,7 @@
       "api/fantasytimes/generate-macro.js": "ac3ccdabd8173f92ca5573aaae8622cc5b23f94ba36d211c226efcf6bbecb32b",
       "api/fantasytimes/generate-mover.js": "c9d4e6d3cdcb138d4cd2f74c406d7a58565c0fcb7f388163d34bb22cdc0471f2",
       "api/fantasytimes/generate-pulse.js": "d840c3b7be244b89871b57d7ce3b71ac3b6ab5cc388b4cb9992e04a9ab5d7e5c",
-      "api/fantasytimes/generate-recap.js": "618a4f38f97df1711ae00ee9a91c7fd3b3384e3941232ae6a0cf1f8f0559b203",
+      "api/fantasytimes/generate-recap.js": "2a7c6626e242077560c8dfa7123f1c2ca83d11318c0e375cd7780aab6f4b4f3c",
       "api/fantasytimes/ingest-deepdive.js": "7bab7279c60b9352f5eeddd1f7f3831592d68741680001fcb6a16fa25a005265",
       "api/fantasytimes/scan-movers.js": "8ed5f62aee3bded596df341dd5b0ddc08a4084daadac417ee318861e27850dd8",
       "api/fantasytimes/submit-earnings-batch.js": "8ecffb982ff06d22a110f13adc474767a68b36a1c043ea19d9d844e1847351c3",
