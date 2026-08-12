@@ -199,6 +199,11 @@ export default async function handler(req, res) {
  * greppable outcome line carrying the F1 dual count (R-B6):
  *   outcome=<fetch_failed|empty_window|already_written|operand_implausible|wrote>
  *   fetched=<EODHD rows pre-filter> tier1=<released+settled Tier-1 count>
+ *   actualsPresent=<fetched rows whose actual has posted>
+ * actualsPresent disambiguates the two empty_window causes the R9 fallback
+ * bucket otherwise conflates: fetched>0 tier1=0 actualsPresent=0 is the EODHD
+ * actual-latency signature (feed listed the release, no number posted yet —
+ * matcher exonerated); actualsPresent>0 tier1=0 is a genuine matcher/window miss.
  */
 async function handleRecap(req, res, db) {
   const wireInstant = new Date();
@@ -220,7 +225,7 @@ async function handleRecap(req, res, db) {
   try {
     operandRows = await fetchEconomicEventsEODHD({ fromDate: priorSessionET, toDate: todayET });
   } catch (err) {
-    logError(`outcome=fetch_failed fetched=0 tier1=0 error=${err.message}`);
+    logError(`outcome=fetch_failed fetched=0 tier1=0 actualsPresent=0 error=${err.message}`);
     return res.status(200).json({
       success: false, skipped: true, code: 'fetch_failed',
       reason: 'EODHD economic-events fetch failed',
@@ -250,9 +255,16 @@ async function handleRecap(req, res, db) {
   });
 
   // The single per-firing outcome line (F1 dual count + taxonomy code).
-  const counts = { fetched: operandRows.length, tier1: released.length };
+  // actualsPresent counts fetched rows whose actual has posted (same parse
+  // authority as the released filter above). It makes a zero window legible at
+  // a glance: fetched>0 tier1=0 actualsPresent=0 is EODHD actual-latency (the
+  // feed listed the release but has not posted the number — the CPI 2026-08-12
+  // empty_window), NOT a matcher miss (R9 fallback disambiguation).
+  const actualsPresent = operandRows.filter(
+    (r) => parseEconOperand(r.actual).reason !== 'missing_operand').length;
+  const counts = { fetched: operandRows.length, tier1: released.length, actualsPresent };
   const skip = (code, reason) => {
-    logInfo(`outcome=${code} fetched=${counts.fetched} tier1=${counts.tier1}`);
+    logInfo(`outcome=${code} fetched=${counts.fetched} tier1=${counts.tier1} actualsPresent=${counts.actualsPresent}`);
     return res.status(200).json({ success: true, skipped: true, code, reason });
   };
 
@@ -488,7 +500,7 @@ async function handleRecap(req, res, db) {
   // Close the measured window immediately: nothing between the
   // publish and this line may be metrics I/O.
   const genPublishMs = Date.now() - wireT0;
-  logInfo(`outcome=wrote fetched=${counts.fetched} tier1=${counts.tier1} storyId=${docRef.id}`,
+  logInfo(`outcome=wrote fetched=${counts.fetched} tier1=${counts.tier1} actualsPresent=${counts.actualsPresent} storyId=${docRef.id}`,
     { event: event.event, headline: storyDoc.headline });
 
   if (wireFlags.metricsEnabled) {

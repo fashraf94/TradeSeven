@@ -259,6 +259,30 @@ describe('R-B6 taxonomy + F1 dual count', () => {
     expect(res.body.code).toBe('empty_window');
     expect(loggedLines().some((l) => l.match(/outcome=empty_window fetched=0 tier1=0/))).toBe(true);
   });
+
+  it('actual-latency: a MATCHED row whose actual has not posted yet → empty_window with actualsPresent=0 (the CPI 2026-08-12 signature, NOT a matcher miss)', async () => {
+    // EODHD lists a scheduled release immediately but backfills `actual`
+    // hours-to-T+1 later (capture econCapture20260730.json: that day's 8:30 ET
+    // PCE/GDP were still actual:null at 16:06 ET). The matcher MATCHES the row
+    // (type/comparison/date all correct) — there is simply no number yet, so
+    // the actual-present gate drops it from `released`. fetched=1 (row present,
+    // matcher fired) with tier1=0 actualsPresent=0 is the latency signature the
+    // R9 fallback must NOT read as a mapping defect — distinct from the
+    // fetched=0 true-empty above.
+    vi.setSystemTime(new Date('2026-07-30T19:00:00Z')); // 15:00 ET — settled
+    fetchEconomicEventsEODHD.mockResolvedValue([{ ...GDP_ROW, actual: null }]);
+    const { db, added } = makeFakeDb();
+    getFirebaseAdmin.mockReturnValue(db);
+
+    const res = makeRes();
+    await handler(recapReq(), res);
+
+    expect(res.body.code).toBe('empty_window');
+    expect(added).toHaveLength(0);                // excluded from released — nothing published
+    expect(wireModelCall).not.toHaveBeenCalled(); // no number → no model call
+    expect(loggedLines().some((l) =>
+      l.includes('outcome=empty_window fetched=1 tier1=0 actualsPresent=0'))).toBe(true);
+  });
 });
 
 describe('C8 A6 + R-B4: referent dedup closes the S3 multi-day 5×', () => {

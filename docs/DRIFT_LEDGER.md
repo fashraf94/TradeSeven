@@ -133,3 +133,24 @@ S5 "News-Catalyst Momentum" — decided dissolved, still live. Regime Revamp dis
 **Impact:** the scan runtime has grown to **~4.6–5.1 s** as `main` accumulated merges, so it now flakes over the 5 s limit **on clean `main` (`d1dff398`) itself** — measured this session (clean tree timed out under sampling; my tree 4.8–5.1 s). The security **assertion** ("ZERO write-method extractions") still PASSES — only the timeout trips. **Not caused by the Doug diff:** test files are excluded from the scan (`compositionProtectedStoresScan.js:97`) and the change adds no write-method surface. It will intermittently red any PR's full-suite CI until the headroom is restored.
 **Fix seam (separate task):** give the `#10` row an explicit generous timeout (e.g. `it(name, fn, 20000)`), or memoize the parse so the walk isn't re-run per assertion. A one-line timeout bump is the conservative unblock.
 **Owner:** Composition / test-infra. Recorded Aug 11, 2026.
+
+---
+
+## D-8 — Neta's S3 econ recap has no same-day operand source (EODHD posts econ actuals with an hours→T+1 lag)
+
+**Found:** S3 CPI `empty_window` diagnosis, 2026-08-12. CPI (July) printed 8:30 ET; the 9:30 ET recap logged `outcome=empty_window fetched=42 tier1=0`, and the founder's capture of the 8/12 window showed **0/35 rows carried an `actual`**.
+**Where/what:** `api/_utils/fetchEconomicEventsEODHD.js` — the recap's sole operand source is EODHD `/economic-events`, which lists a scheduled release immediately but backfills `actual` with a multi-hour-to-next-day lag (fixture `api/_utils/__fixtures__/econCapture20260730.json`: that day's 8:30 ET PCE/GDP still `actual: null` at 16:06 ET). The matcher (`selectOperandRow`) is correct — type/comparison/date all match the observed feed; there is simply no number to match on release morning. Matcher/window/settle faults were all ruled out.
+**Impact:** Neta rarely produces a **same-day** econ recap. The two-session window (`generate-econ.js:206-208`) recovers the release the **next** trading morning once EODHD posts, and referent dedup prevents a double-write — so S3's R9 liveness floor is still met, a day late. **Founder ruling (2026-08-12): ACCEPT next-morning recovery as the designed norm** — stale-but-accurate is the tradeoff; the same-day expectation was not the design's. (The R9-observability half of that ruling — the `actualsPresent` log token — shipped in the same PR as this entry.)
+**Why not fixed here:** this PR is scoped to the observability change; a same-day source is a post-gate enhancement, not a matcher fix.
+**Fix seam (separate task, post-gate):** add a same-day econ-actual source keyed to the macroCalendar release — **BLS direct** (the authoritative primary print) is the intended answer. **Sonar is explicitly NOT the source**: R-B1 replaced Sonar on the recap path for exactly this unreliability class, so reintroducing it would reopen the defect the mini-arc closed.
+**Owner:** Wire arc / Neta S3. Recorded Aug 12, 2026.
+
+---
+
+## D-9 — `wireFlags.test.js` still pins metrics OFF after the `WIRE_METRICS_ENABLED` flip (reds full-suite CI)
+
+**Found:** S3 R9-observability PR full-suite sweep, 2026-08-12. Registered per §3 (found outside task; **not fixed here** — this PR is scoped to the econ `actualsPresent` log token + its test; the metrics-flag pins are a separate flag-reconciliation concern).
+**Where:** `api/_utils/wireFlags.test.js:13` (`all five Wire flags ship FALSE`) and `:22-25` (`getWireFlags reports everything off at HEAD`) both assert `metricsEnabled: false`, but `WIRE_METRICS_ENABLED` is `true` at HEAD (`src/config/featureFlags.js:1159`). The same file at `:73-76` already assumes metrics-ON, so the suite is internally inconsistent: the metrics rollout flip (`wireFlags.js` §4.8 step 1) reconciled some assertions but not these two.
+**Impact:** 2 tests fail on **clean `origin/main`** (verified via `git show origin/main:…` — main carries both the `true` flag and the `false` pins), so the full-suite CI reds on every open PR. NOT caused by this diff (it touches none of `wireFlags.js` / `featureFlags.js` / `wireFlags.test.js`). The `flagPinGuard` (§2) missed it because these are `expect(getWireFlags()).toEqual({…})` / array-loop pins, not the guarded `expect(FLAG).toBe(…)` single-flag pattern.
+**Fix seam (separate task):** update the two pins to metrics-ON (per the BUILD_RULES §2 flag-flip reconciliation the metrics flip owed), and optionally widen `flagPinGuard` to catch `getWireFlags()` object pins so this class can't drift silently again.
+**Owner:** Wire arc / flags. Recorded Aug 12, 2026.

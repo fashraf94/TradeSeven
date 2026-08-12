@@ -127,7 +127,16 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // Surprise/Outcome lines), so the mechanism forces this bump. Gates S5's STRICT
 // surprise slot; must land before WIRE_WRITES flips; epoch-resetting after the
 // gate window opens.
-export const WIRE_GENERATION_VERSION = 17;
+// v18 (S3 R9 observability, Aug 12): generate-econ.js (a manifest member) adds
+// an `actualsPresent` count to the recap outcome= log line — the R9 fallback
+// disambiguator separating EODHD actual-latency (fetched>0 tier1=0
+// actualsPresent=0: the feed listed the release but has not posted its number
+// yet — the CPI 2026-08-12 empty_window) from a genuine matcher/window miss
+// (actualsPresent>0 tier1=0). Log + diagnostic count only; NO reporter-request
+// byte changes (M8 intact) — the conservative file-level content lock still
+// fires, so the mechanism forces this bump. Free pre-runway (WIRE_WRITES off):
+// the epoch reset is a no-op until the gate window opens.
+export const WIRE_GENERATION_VERSION = 18;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────
