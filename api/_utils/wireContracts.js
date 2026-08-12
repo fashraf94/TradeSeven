@@ -150,7 +150,14 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // untouched, so assessTickerUniverseCaveat does NOT fire (no validator bump).
 // Free pre-runway (WIRE_WRITES off): the epoch reset is a no-op until the gate
 // window opens.
-export const WIRE_GENERATION_VERSION = 19;
+// v20 (Doug universe-expansion §8-8 ruling, Aug 12): the api/stocks/analysis.js
+// Tier-1 guard is simplified to `isTier1 = !!STOCK_DATA[x]` — deep-data
+// membership alone, independent of TICKERS (so BX/PNC/ALLY keep Tier-1).
+// analysis.js is NOT a surface member; this bump is forced solely by the
+// one-line comment edit to stockIntelligenceData.js's header (which documents
+// that guard). No prompt/universe change, TICKER_TO_SECTOR untouched (no
+// validator bump). Free pre-runway.
+export const WIRE_GENERATION_VERSION = 20;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────

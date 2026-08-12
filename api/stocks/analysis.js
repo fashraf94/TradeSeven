@@ -11,7 +11,7 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { sanitizeDocumentId } from '../_utils/sanitizeInput.js';
 import { getFromCache, setInCache, setCacheHeaders } from '../_utils/serverCache.js';
-import { getStockContext, STOCK_DATA, TICKERS } from '../_utils/stockIntelligenceData.js';
+import { getStockContext, STOCK_DATA } from '../_utils/stockIntelligenceData.js';
 import { getStockBrief } from '../_utils/stockBriefService.js';
 import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
 
@@ -247,13 +247,13 @@ export default async function handler(req, res) {
     let tier = 2;
     let source = 'sonar';
 
-    // Tier-1 means "we have a deep-data bundle for this name." Since TICKERS
-    // (the earnings universe) is now a superset of STOCK_DATA's keys, gate on
-    // STOCK_DATA membership too — a TICKERS name without deep data would make
-    // getStockContext throw (stockIntelligenceData.js), and the catch below
-    // would turn that into a 500. This keeps such names on the Tier-2 Sonar
-    // brief path (their prior behavior before they entered TICKERS).
-    const isTier1 = TICKERS.includes(upper) && !!STOCK_DATA[upper];
+    // Tier-1 means exactly "we have a deep-data bundle for this name" — gate on
+    // STOCK_DATA membership alone (founder ruling, Aug 2026), independent of
+    // Doug's earnings universe (TICKERS). A widened TICKERS name without deep
+    // data takes the Tier-2 Sonar brief (getStockContext would otherwise throw
+    // → the catch below would 500 it); a deep-data name outside TICKERS
+    // (BX, PNC, ALLY) keeps its Tier-1 knowledge-package analysis.
+    const isTier1 = !!STOCK_DATA[upper];
 
     if (isTier1) {
       tier = 1;

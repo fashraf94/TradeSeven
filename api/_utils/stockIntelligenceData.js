@@ -15,10 +15,11 @@
 // clauses — do NOT delete either half. They differ ON PURPOSE. Consumers that read STOCK_DATA for a TICKERS name
 // must tolerate a miss: generate-recap never reads it; submit-earnings-batch /
 // generate-mover / generate-column guard it; and api/stocks/analysis.js gates
-// its Tier-1 path on STOCK_DATA membership (isTier1 = TICKERS.includes(x) &&
-// !!STOCK_DATA[x]) so a TICKERS name without deep data degrades to the Tier-2
-// Sonar brief instead of throwing. getStockContext still THROWS on an unknown
-// key by design — only call it for a name you know is a STOCK_DATA key.
+// its Tier-1 path on STOCK_DATA membership alone (isTier1 = !!STOCK_DATA[x],
+// founder ruling Aug 2026) so a TICKERS name without deep data degrades to the
+// Tier-2 Sonar brief instead of throwing, while a deep-data name outside
+// TICKERS (BX, PNC, ALLY) keeps Tier-1. getStockContext still THROWS on an
+// unknown key by design — only call it for a name you know is a STOCK_DATA key.
 //
 // Batch 1: Tech/Digital Economy (NVDA, AAPL, MSFT, AMZN, META, GOOGL, TSLA, AMD, AVGO, SNOW)
 // Batch 2: Financial Sector (JPM, C, GS, MS, V, AXP, BX, AFRM, PNC, ALLY)

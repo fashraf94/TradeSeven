@@ -1,13 +1,13 @@
 {
   "note": "Committed baseline for the GENERATION_SURFACE lock (P2-15). Never hand-edit: regenerate via WIRE_GENERATION_BASELINE_REGEN=1 after bumping the bound version constant in wireContracts.js.",
   "generatedAgainst": {
-    "WIRE_GENERATION_VERSION": 19,
+    "WIRE_GENERATION_VERSION": 20,
     "WIRE_DIGEST_RENDERER_VERSION": "1.0.0",
     "WIRE_VALIDATOR_VERSION": "1.6.0"
   },
   "generationSurface": {
-    "version": 19,
-    "hash": "2be5a98e5c1931b1c74dd7a4d8c96b041f86ccdea1fe75c2a908fb7e3d35513a",
+    "version": 20,
+    "hash": "fb5abd645aadd2826d0245ee1445e8accb30381a806a5746c6ccafb5e7b31f55",
     "files": {
       "api/_utils/econPrintVerifier.js": "63575ec0c96f4edcf6dbc491887a5f47fc538cfd4b66245d54c2f67e5ff8075c",
       "api/_utils/exaCatalystFetch.js": "39a2d03e743b7e34fd1d13f2cc4e62ec2a84fb41968f00e56f011a785803d4a6",
@@ -16,9 +16,9 @@
       "api/_utils/fantasyTimesTickers.js": "5fa5b520383fd46416ec650bbefb2292abfb7d2c29f0635478a6b1a5ec8adfa3",
       "api/_utils/fetchEconomicEventsEODHD.js": "c2a4a392804519589e4008fd80d7625c76fc1a8c161e214a2d7b439f1278d35f",
       "api/_utils/ingestedClaims.js": "045fc379b77ad610044e3c4e49e5056df4d9fcae684c0483321d931f5958701a",
-      "api/_utils/stockIntelligenceData.js": "508c9d3c00980a0aadde87cf1aa59104847771e0d9f7618a694b5493e70182bc",
+      "api/_utils/stockIntelligenceData.js": "b3291ba019b40952f17ad4133f1c2ce5eb4d3fa41d496d4965e2329caae9bfc4",
       "api/_utils/wireContinuity.js": "c9b5002292934ce48bbc399fc977d4aef51220ff8775187383be1adc1b301619",
-      "api/_utils/wireContracts.js": "01099e80deea0bfe56a990df80aa8d8e003ce5a8bb33f9f1a81cffdcab1f9850",
+      "api/_utils/wireContracts.js": "a70b99144299a9d18247178b1c31d371713fbbcd5ee1987efcdccb4c056911bb",
       "api/_utils/wireEntryGuard.js": "de523d9b3d236de0bf5cd207b412aa1449b50a58e8020851580db5d362ba3908",
       "api/_utils/wireExemplars.js": "3971486a2104956be2f62bfd0befbae4921a8945a6c563a6e1ff292d491628f5",
       "api/_utils/wireGenerationConfig.js": "7b3186109f79810db0d09169d49f20165acaa3af128ae812ac67c1d95158e13e",
