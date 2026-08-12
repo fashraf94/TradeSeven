@@ -63,5 +63,16 @@ The genuinely user-visible question is upstream: **was enabling the league live 
 - **If the flip was intended for production** → reconcile the 4 tests to the flag-**on** contract. Preferred shape: drive `LEAGUE_LIVE_ORB_ENABLED` through a test getter exactly like the existing `LEAGUE_AGENT_CHAT_ENABLED` idiom (`:21-27`) so **both** flag states are covered, rather than deleting the flag-off assertions and losing the off-state guard. (This is the `WIRE_METRICS_ENABLED` / TASK 2 resolution pattern, applied to behavioral tests.)
 - **If the flip was premature/accidental** → revert `LEAGUE_LIVE_ORB_ENABLED` to `false` (the tests were correctly guarding); the live orb returns to dark until a deliberate, test-reconciled flip.
 
+## Phase B — executed (founder ruling: "Intended — reconcile the tests", 2026-08-12)
+
+Reconciled the tests to cover **both** flag states; the source flag is unchanged (still `true`). Changes are confined to `buildArenaModel.test.js`:
+
+- Drove `LEAGUE_LIVE_ORB_ENABLED` through a hoisted test getter (`orbFlag`), matching the existing `LEAGUE_AGENT_CHAT_ENABLED` idiom; it **defaults ON** to match production.
+- Added an `offGate(fn)` helper that runs `fn` with the flag off and restores the **previous** value (not a hardcoded `true` — so the toggle never leaks and mutation-testing is honest).
+- The 4 dark-contract tests now opt into `offGate()` explicitly, so they keep guarding the flag-**off** behavior regardless of the source flag (ranked stays banked; `liveComposites` ignored; decomposition null / cards "mult").
+- Added 3 flag-**on** counterparts (previously **uncovered**): ranked rides the live orb at parity with training; a supplied `liveComposites` map surfaces and swaps the rival seat score; the decomposition strip lights up and reconciles (`agentSide + userLayer === orb === youLiveScore`) with the cards no longer leading with "mult".
+
+**Result:** 56/56 pass (49 original + 4 reconciled off-tests + 3 new on-tests). **Mutation-checked:** with the flag defaulted off, exactly the 3 new on-tests fail — they are real guards, not vacuous.
+
 ## Process note (for the same standing convention TASK 2 adds)
 This is the second live instance of the class in one review pass (`WIRE_METRICS_ENABLED` + `LEAGUE_LIVE_ORB_ENABLED`). The flag-pin guard (`flagPinGuard.test.js`) catches `expect(FLAG).toBe()` pins but is structurally blind to **behavioral** tests that inherit a flag via `importOriginal` and assert the off-state. "Flip and pin travel together" should be read to include behavioral tests, not just literal pins — otherwise a deliberate flip silently reddens `main` through a behavioral suite the guard cannot see.
