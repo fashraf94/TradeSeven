@@ -22,8 +22,9 @@
 // forbidden OHLCV refetch — so this module never fabricates it. `baseUnavailable`
 // carries that fact to the view, which labels it rather than approximating.
 
-import { buildClimbSeries, climbSeriesPhase } from '../leagueClimbAdapter';
-import { pickCurrentTournamentBattle } from '../../../constants/leagueTournament';
+import { buildClimbSeries } from '../leagueClimbAdapter';
+import { pickCurrentTournamentBattle, deriveCurrentTradingDay } from '../../../constants/leagueTournament';
+import { deriveArenaState } from './arenaStateMap';
 import { buildSwapLedger } from './leagueSwapLedger';
 
 /** Ascending day numbers from a group's dailyScores keys (day1, day2, …). */
@@ -68,17 +69,28 @@ function docTradingDate(doc) {
  * @param {Object} args.group        a tournamentGroups doc (dailyScores, status, players)
  * @param {Object[]} args.battleChain the caller's OWN daily-chained agentBattles docs
  * @param {string} args.uid          the caller's odUserId
+ * @param {number} [args.now]        injected epoch ms (the arena's clock) — used to
+ *   derive today's ET date and the 1-based current TRADING-DAY index, so the
+ *   recap's current-day label matches the arena header (same deriveCurrentTradingDay).
  * @returns {{
  *   phase: 'awaiting'|'live'|'complete',
+ *   currentTradingDay: number|null,
  *   timeline: Array<{ day:number|null, composite:number, delta:number|null }>,
- *   swapDays: Array<{ day:number, isCurrent:boolean, items:Object[], subtotal:number }>,
+ *   swapDays: Array<{ day:number, dayIsOrdinalFallback:boolean, isCurrent:boolean, items:Object[], subtotal:number }>,
  *   swapTotal: number,
  *   currentSwapSubtotal: number,
  *   swapCount: number,
  *   baseUnavailable: true
  * }}
  */
-export function buildScoreHistory({ group = null, battleChain = [], uid = null } = {}) {
+export function buildScoreHistory({ group = null, battleChain = [], uid = null, now = null } = {}) {
+  // Today's ET date + the 1-based current trading-day index (founder ruling: the
+  // authoritative day index for the live day is deriveCurrentTradingDay — the
+  // same one the arena header binds to flag-on, and the claim window uses).
+  const etDate = Number.isFinite(now)
+    ? new Date(now).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    : null;
+  const currentTradingDay = etDate ? deriveCurrentTradingDay(group, etDate) : null;
   // ── Level 1: the per-day composite timeline (REUSE buildClimbSeries) ──
   const series = (uid && buildClimbSeries(group, { metric: 'composite' })[uid]) || [];
   const dayNums = ascendingDayNumbers(group);
@@ -108,14 +120,24 @@ export function buildScoreHistory({ group = null, battleChain = [], uid = null }
   const swapDays = ordered
     .map((doc, i) => {
       const ledger = buildSwapLedger(doc?.trades);
+      const isCurrent = currentId != null && doc?.id === currentId;
       const mapped = dateToDay[docTradingDate(doc)];
-      return {
-        day: Number.isFinite(mapped) ? mapped : i + 1,
-        dayIsOrdinalFallback: !Number.isFinite(mapped),
-        isCurrent: currentId != null && doc?.id === currentId,
-        items: ledger.items,
-        subtotal: ledger.total,
-      };
+      // Banked day → its banked dayN (C3, robust to chain gaps: labels by DATE,
+      // not position). The live/unbanked CURRENT day → the trading-day index,
+      // the SAME number the arena header shows (ruling 1) — never a bare ordinal.
+      // Only a stray unmapped, non-current doc (a real degrade) falls to the
+      // ordinal, and it is flagged.
+      let day;
+      let dayIsOrdinalFallback = false;
+      if (Number.isFinite(mapped)) {
+        day = mapped;
+      } else if (isCurrent && Number.isFinite(currentTradingDay)) {
+        day = currentTradingDay;
+      } else {
+        day = i + 1;
+        dayIsOrdinalFallback = true;
+      }
+      return { day, dayIsOrdinalFallback, isCurrent, items: ledger.items, subtotal: ledger.total };
     })
     .filter((d) => d.items.length > 0);
   const swapTotal = swapDays.reduce((a, d) => a + d.subtotal, 0);
@@ -125,7 +147,13 @@ export function buildScoreHistory({ group = null, battleChain = [], uid = null }
   const currentSwapSubtotal = buildSwapLedger(current?.trades).total;
 
   return {
-    phase: climbSeriesPhase(group),
+    // Phase follows the ARENA (deriveArenaState), not the banked-day count
+    // (climbSeriesPhase). The arena is the authority on live-vs-complete: a live
+    // UNBANKED day (status BATTLE, 0 banked) must read 'live' so the recap shows
+    // live copy, never "banked into your final standing" for unbanked money
+    // (founder ruling 2). Same vocabulary (awaiting|live|complete).
+    phase: deriveArenaState(group),
+    currentTradingDay,
     timeline,
     swapDays,
     swapTotal,

@@ -1,7 +1,10 @@
 // src/components/League/battleArena/buildScoreHistory.test.js
 import { describe, it, expect } from 'vitest';
+import React from 'react';
+import { renderToString } from 'react-dom/server';
 import { buildScoreHistory } from './buildScoreHistory';
 import { buildSwapLedger } from './leagueSwapLedger';
+import { FilmRoomRecap } from './FilmRoomRecap';
 
 const UID = 'u-you';
 
@@ -127,5 +130,58 @@ describe('buildScoreHistory — swap day labels bind to the timeline dayN (recor
     const h = buildScoreHistory({ group: g, battleChain: chain, uid: UID });
     expect(h.swapDays[0].day).toBe(1);
     expect(h.swapDays[0].dayIsOrdinalFallback).toBe(true);
+  });
+});
+
+describe('buildScoreHistory — phase follows the arena, not the banked-day count (ruling 2)', () => {
+  it('a LIVE, UNBANKED day (status BATTLE, 0 banked) reads phase live — not awaiting', () => {
+    // climbSeriesPhase returned 'awaiting' here (banked dayN = 0); deriveArenaState
+    // returns 'live' for status BATTLE. This row is RED before the phase binding.
+    const liveDay0 = { status: 'battle', players: [{ odUserId: UID }], dailyScores: {} };
+    const h = buildScoreHistory({ group: liveDay0, battleChain: [], uid: UID });
+    expect(h.phase).toBe('live');
+  });
+
+  it('a completed group reads phase complete; a forming group reads awaiting', () => {
+    expect(buildScoreHistory({ group: { status: 'complete', players: [{ odUserId: UID }], dailyScores: {} }, uid: UID }).phase).toBe('complete');
+    expect(buildScoreHistory({ group: { status: 'forming', players: [{ odUserId: UID }], dailyScores: {} }, uid: UID }).phase).toBe('awaiting');
+  });
+});
+
+describe('FilmRoomRecap — live vs completed copy follows history.phase (ruling 2)', () => {
+  const swapChain = (date) => [{
+    id: 't', status: 'active', createdAt: `${date}T13:30:00.000Z`,
+    timing: { tradingDays: [date] }, trades: [{ symbolOut: 'A', symbolIn: 'B', lockedPoints: 2 }],
+  }];
+
+  it('LIVE unbanked day: the recap shows the live copy and the "· today" marker', () => {
+    // The exact scenario the phase fix protects: a live, unbanked Day-with-a-swap.
+    // Before the fix (climbSeriesPhase → awaiting) the recap wrongly showed the
+    // "banked into your final standing" copy and dropped "· today" — asserting
+    // unbanked money is banked. This render is RED before the fix.
+    const liveGroup = { status: 'battle', players: [{ odUserId: UID }], dailyScores: {} };
+    const h = buildScoreHistory({ group: liveGroup, battleChain: swapChain('2026-06-16'), uid: UID, now: Date.parse('2026-06-16T14:00:00.000Z') });
+    expect(h.phase).toBe('live');
+    const html = renderToString(React.createElement(FilmRoomRecap, { history: h }));
+    expect(html).toContain('on the live strip');            // live footer
+    expect(html).toContain('· today');                 // the "· today" marker on the current day
+    expect(html).not.toContain('banked into your final standing');
+  });
+
+  it('COMPLETED battle: the recap shows the banked copy and no "· today"', () => {
+    const doneGroup = {
+      status: 'complete', players: [{ odUserId: UID }],
+      dailyScores: { day1: { recordedDate: '2026-06-16', closeScores: { [UID]: { compositePoints: 5 } } } },
+    };
+    const doneChain = [{
+      id: 'd1', status: 'completed', createdAt: '2026-06-16T13:30:00.000Z',
+      timing: { tradingDays: ['2026-06-16'] }, trades: [{ symbolOut: 'A', symbolIn: 'B', lockedPoints: 2 }],
+    }];
+    const h = buildScoreHistory({ group: doneGroup, battleChain: doneChain, uid: UID, now: Date.parse('2026-06-17T14:00:00.000Z') });
+    expect(h.phase).toBe('complete');
+    const html = renderToString(React.createElement(FilmRoomRecap, { history: h }));
+    expect(html).toContain('banked into your final standing'); // completed footer
+    expect(html).not.toContain('on the live strip');
+    expect(html).not.toContain('· today');
   });
 });

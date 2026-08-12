@@ -47,7 +47,9 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
     [battleChain, battle],
   );
   const history = React.useMemo(
-    () => (LEAGUE_SCORE_HISTORY_ON ? buildScoreHistory({ group, battleChain: effectiveChain, uid }) : null),
+    () => (LEAGUE_SCORE_HISTORY_ON
+      ? buildScoreHistory({ group, battleChain: effectiveChain, uid, now: Date.now() })
+      : null),
     [group, effectiveChain, uid],
   );
   // L-A: a voided cohort reads terminal ('complete'); the distinct kind drives the
