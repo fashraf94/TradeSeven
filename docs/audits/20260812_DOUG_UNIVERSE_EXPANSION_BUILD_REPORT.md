@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-12 · **Branch:** `claude/doug-universe-expansion-5w3ryj` · **Base:** `origin/main` @ `fe4f8668`
 **Preceded by:** the discovery-lite report (delivered as a file to the founder; HARD STOP, rulings received).
-**Scope:** cumulative branch diff = **11 files, +250 / −67 lines**. ≥10 files → BUILD_RULES §2 adversarial review MANDATORY (record in §7 below).
+**Scope:** cumulative branch diff = **12 files, +424 / −70 lines** (across two commits — the build, then the §2 review fixes). ≥10 files → BUILD_RULES §2 adversarial review MANDATORY (recorded in §7 below).
 
 Widen Doug's earnings/recap universe from 20 to a curated ~66 names spanning all 11 GICS sectors, so S5 (earnings recap) produces stories most weeks of earnings season instead of only during the mega-cap-tech cluster — making it a reliable contributing shape for the §5 editorial floor.
 
@@ -50,7 +50,7 @@ Widen Doug's earnings/recap universe from 20 to a curated ~66 names spanning all
 
 ## §4 — Version / surface impact (single-axis, as discovery predicted)
 
-- `WIRE_GENERATION_VERSION` **18 → 19** + baseline regen. Validated end-to-end: the surface lock went **RED** before regen (detecting the three changed surface files) and **GREEN** after (`WIRE_GENERATION_BASELINE_REGEN=1 …`).
+- `WIRE_GENERATION_VERSION` **18 → 19** + baseline regen. Validated end-to-end: the surface lock went **RED** before regen and **GREEN** after (`WIRE_GENERATION_BASELINE_REGEN=1 …`). **Four** per-file hashes move: the three functional changes (`stockIntelligenceData.js`, `submit-earnings-batch.js`, `generate-recap.js`) plus `wireContracts.js` itself (it hosts the bumped constant — mechanical). Independently recomputed by the review (28/28 hashes match; no value-lock changed).
 - **No dual-bump.** `TICKER_TO_SECTOR` / `ALL_TICKERS` untouched (they derive from `STOCK_UNIVERSE`, not `TICKERS`), so `assessTickerUniverseCaveat` does not fire — `WIRE_VALIDATOR_VERSION` (1.6.0) and `WIRE_DIGEST_RENDERER_VERSION` (1.0.0) stay put. This is exactly why the widened set was constrained to a subset of the existing 239 and why BX/PNC/ALLY were dropped.
 
 ## §5 — Deploy note (crons don't run on preview; §6)
@@ -68,9 +68,26 @@ Widen Doug's earnings/recap universe from 20 to a curated ~66 names spanning all
 
 Multi-lens, independently-refuted review across 3 dimensions (recap-throughput correctness; TICKERS-widening consumers; surface/version + test integrity). Each finding was handed to a refutation pass; CONFIRMED = survived a concrete-repro refutation, REFUTED = did not.
 
-> **[REVIEW TABLE PENDING — filled after finder + refuter agents return. Any CONFIRMED finding is fixed on-branch before push; REFUTED findings recorded with reasoning.]**
+Three independent finder agents (recap-throughput correctness; TICKERS-widening consumers; surface/version + test integrity), each self-refuting with concrete repros. `vite build` ✅. **No CONFIRMED blocking issue remains unaddressed.** Findings and dispositions:
 
-Build (`vite build`) run as part of this review: ✅. Mutation-check on the reconciled tests: the ordering assertion (AAPL −16.5% ranks above AMZN −8.2%) and the count/dedup assertions still fail under a wrong-story regression — see §7 table.
+| # | Dimension | Finding | Sev | Disposition |
+|---|---|---|---|---|
+| A1 | recap-throughput | A hard throw (`wireModelCall`/`publishStoryWithWire`/`recordWireSample`) mid-loop aborted the firing → HTTP 500 + **zero `outcome=` lines** even though earlier stories persisted (worse than pre-diff, which logged the outcome before those calls) | **MED** | **FIXED** — per-candidate `try/catch`→`continue`; story counted into `written` the instant it persists (`generate-recap.js:352-601`) |
+| A2 | recap-throughput | Budget bounded *successes* not *attempts* → a run of soft `no-tool_use` skips could reach 8 Haiku calls and blow `maxDuration:60` | LOW-MED | **FIXED** — loop now breaks on `attempts >= firingBudget` |
+| A3 | recap-throughput | Degrade-open silently unenforces the daily ceiling until the new composite index finishes building (≤20/day during the window) | LOW-MED | **ACCEPTED** (fail-safe direction, bounded, self-heals) — deploy note strengthened (§5); registered §8-6 |
+| A4 | recap-throughput | Surprise-first "dropped = least newsworthy" is guaranteed *within a firing*, best-effort *across the ET day* under streaming actual arrivals | LOW | **REGISTERED** §8-7 (inherent to hard-ceiling + streaming) |
+| A5 | recap-throughput | count-query vs `covered`-set filter mismatch (same-day supersede) | LOW | **REFUTED** for prod — handler never supersedes same-day; one story doc per recap |
+| B1 | TICKERS consumers | Header comments claimed "STOCK_DATA ⊆ TICKERS" / "RECAP_UNIVERSE ⊇ DEEP_DATA" — **false** (BX/PNC/ALLY); could invite deleting the load-bearing guard | LOW | **FIXED** — comments corrected in both files |
+| B2 | TICKERS consumers | Dropping BX/PNC/ALLY from `TICKERS` also demotes their *stock-analysis* Tier-1→Tier-2 and drops them from mover/column deep-context | LOW-MED | **FOUNDER DECISION** — registered §8-8 (accept + prune the 3 dead bundles, or guard on `!!STOCK_DATA[x]` alone) |
+| B3 | TICKERS consumers | Preview starvation for lowest-rank names under a binding cap | LOW | **REFUTED** — acknowledged bounded tradeoff, 6-night window, dedup frees slots |
+| C1 | surface/version | All 28 surface hashes recomputed independently: 0 mismatch; exactly the right 4 per-file hashes moved; no dual-bump; no value-lock changed | — | **CONFIRMED CLEAN** |
+| C2 | test integrity | 6 reconciled assertions empirically mutation-tested — none weakened; each still fails under a wrong-story/wrong-count regression | — | **CONFIRMED CLEAN** |
+| C3 | test integrity | The founder-ruled surprise-first **drop** property had **zero** coverage (all prior scenarios feed ≤2 candidates < budget) | LOW-MOD | **FIXED** — added a 6-candidate/budget-4 drop test with shuffled input; **mutation-verified** (fails when the sort is reversed *or removed*) |
+| C4 | surface/version | Changelog said "three surface members change content" while four hashes moved | INFO | **FIXED** — changelog now names the 4th (`wireContracts.js` itself, mechanical) |
+
+**Mutation evidence (§2 "a row that cannot fail is not a guard"):** the new drop test — with input rows deliberately shuffled out of surprise order — was run against a reversed comparator and **failed** (`['META','AMZN','MSFT','GOOGL'] ≠ ['NVDA','AAPL','GOOGL','MSFT']`); restored, it passes. The reconciled ordering/count/dedup assertions were independently mutation-tested by the reviewer (single-story regression → `count===2` fails; reversed sort → `stories[0]` fails; broken dedup → AMZN/AAPL swap fails).
+
+**Note — no feature flag.** The multi-story loop ships ON (the recap handler writes story docs regardless of `WIRE_WRITES_ENABLED`, which gates only the wire envelope). The founder-tunable constant **is** the revert lever: `RECAP_MAX_STORIES_PER_FIRING = 1` restores the pre-expansion one-story-per-firing behavior with no code change.
 
 ## §8 — Residual defects registered for separate tasking (BUILD_RULES §3 — not fixed here)
 
@@ -79,5 +96,8 @@ Build (`vite build`) run as part of this review: ✅. Mutation-check on the reco
 3. **Recap ordering was arbitrary pre-change** — provider-order pick (now fixed to surprise-first as part of this build; the *general* "no canonical ticker universe / six divergent lists" fragmentation remains — see the Wire Phase-0 discovery register).
 4. **`submit-earnings-batch.js` sequential per-name `fetchEarningsHistory`** under `maxDuration:60` — mitigated by the preview cap (bounds the loop), but the underlying sequential-fetch pattern remains a latent timeout risk at large caps; consider parallelizing/`Promise.all` with a concurrency limit.
 5. **EODHD earnings-calendar has no `country=US`/`symbols=` filter** (~3,531 global rows/fetch). Universe-independent, so expansion does not worsen it; `symbols=` is already used at `api/cron/compute-estimates.js:176` — a cheap correctness cleanup when convenient.
+6. **Daily-ceiling index deploy window (review A3).** Between the code deploy and the `fantasyTimesStories(type, publishedAt)` index finishing its build, the count query throws `FAILED_PRECONDITION` → degrades open → up to 20 recaps/day (vs the 12 ceiling) until the index is live. Bounded, fail-safe, self-healing. Optional hardening: an explicit degraded-open alert distinguishing it from normal operation (only a `logError` today).
+7. **Surprise-first drop is per-firing, not per-day (review A4).** Under streaming actual arrivals, a high-surprise name posting late can be dropped if earlier lower-surprise names already consumed the daily ceiling. Inherent to hard-ceiling + streaming; the per-firing guarantee is tested. Mitigation if it matters: raise `RECAP_DAILY_STORY_CEILING`, or reserve slots for late high-surprise arrivals.
+8. **BX/PNC/ALLY deep-context demotion (review B2) — founder decision.** Dropping them from `TICKERS` (per the ruling) also removes their Tier-1 stock-analysis, mover knowledge-excerpt, and column sector-context (all gated on `TICKERS.includes`). Their `STOCK_DATA` bundles are now retained-but-unreachable. Options: (a) accept + prune the 3 bundles from `STOCK_DATA`; (b) re-add BX/PNC/ALLY to `TICKERS` (re-introduces the dual-bump — not recommended); (c) change the `analysis.js` guard to `!!STOCK_DATA[upper]` alone (Tier-1 = "has deep data", independent of the earnings universe) — the finder's suggestion, closest to the founder's stated intent, and it keeps mover/column on the `TICKERS.includes` gate. **No change made pending your ruling.**
 
 **D. Decoupling (founder-flagged as a possible better long-term shape):** `TICKERS` currently does double duty — the earnings/recap universe AND the Tier-1 deep-context set — reconciled here by the `analysis.js` guard. A cleaner long-term shape is a dedicated `RECAP_UNIVERSE`/earnings constant separate from the `STOCK_DATA`/Tier-1 set (the generator already models this split via `DEEP_DATA_TICKERS` vs `RECAP_UNIVERSE`). Registered per the founder's ruling ("file the decoupling as a register item if you think it's the better long-term shape") — recommended when a second consumer needs the distinction.

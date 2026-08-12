@@ -23,8 +23,10 @@ const DEEP_DATA_TICKERS = [
 // Aug 2026): a curated ~66-name subset of rankingConfig.js ALL_TICKERS (the D8
 // wire universe), all 11 GICS sectors, ordered ~market-cap descending (the
 // array index is submit-earnings-batch.js's curation-rank priority proxy).
-// A SUPERSET of DEEP_DATA_TICKERS — names without deep data degrade to the
-// Tier-2 Sonar brief (see api/stocks/analysis.js), they do not throw.
+// Overlaps DEEP_DATA_TICKERS in 17 names (BX/PNC/ALLY are deep-only, dropped
+// here) — neither list is a subset of the other. Names without deep data
+// degrade to the Tier-2 Sonar brief (see api/stocks/analysis.js); they do not
+// throw.
 const RECAP_UNIVERSE = [
   'NVDA', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'AVGO', 'TSLA', 'BRK-B', 'LLY',
   'JPM', 'WMT', 'V', 'MA', 'UNH', 'ORCL', 'XOM', 'COST', 'JNJ', 'HD',

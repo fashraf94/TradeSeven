@@ -136,11 +136,14 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // byte changes (M8 intact) — the conservative file-level content lock still
 // fires, so the mechanism forces this bump. Free pre-runway (WIRE_WRITES off):
 // the epoch reset is a no-op until the gate window opens.
-// v19 (Doug universe-expansion, Aug 12): three surface members change content —
-// stockIntelligenceData.js (TICKERS widened 20→66, the earnings intersection
-// universe), submit-earnings-batch.js (per-run preview cap + curation-rank
-// sort), generate-recap.js (multi-story-per-firing loop + surprise-first order
-// + daily-ceiling). These change WHICH/HOW-MANY stories Doug writes, NOT the
+// v19 (Doug universe-expansion, Aug 12): three surface members change
+// FUNCTIONALLY — stockIntelligenceData.js (TICKERS widened 20→66, the earnings
+// intersection universe), submit-earnings-batch.js (per-run preview cap +
+// curation-rank sort), generate-recap.js (multi-story-per-firing loop +
+// surprise-first order + daily-ceiling + per-candidate error isolation) — plus
+// this file (wireContracts.js) mechanically, since it hosts the bumped
+// constant, so FOUR per-file hashes move in the baseline. These change
+// WHICH/HOW-MANY stories Doug writes, NOT the
 // per-story reporter-request bytes (the recap userMessage assembly is
 // byte-identical; M8 intact) — but the conservative file-level content lock
 // fires on any diff, so the mechanism forces this bump. TICKER_TO_SECTOR is

@@ -349,8 +349,12 @@ export default async function handler(req, res) {
     // are emitted after the loop.
     const written = [];
     let heldCount = 0;
+    let attempts = 0;
     for (const earning of ranked) {
-      if (written.length >= firingBudget) break;
+      // Bound MODEL-CALL ATTEMPTS, not just successes: each attempt below is a
+      // Haiku round-trip, so gating on attempts (rather than written.length)
+      // keeps a run of soft failures from blowing maxDuration:60.
+      if (attempts >= firingBudget) break;
       if (covered.has(`${earning.symbol}:${earning.reportDate}`)) continue;
       const gate = assessEpsPlausibility(earning.epsActual, earning.epsEstimate);
       if (gate.hold) {
@@ -362,10 +366,16 @@ export default async function handler(req, res) {
         continue;
       }
       // Claim it for THIS firing so a duplicate calendar row can't double-write;
-      // a generation failure below leaves it unpublished, so a later firing
-      // (whose covered set is rebuilt from Firestore) retries it.
+      // an unpublished candidate (soft skip or hard error below) is left for a
+      // later firing (whose covered set is rebuilt from Firestore).
       covered.add(`${earning.symbol}:${earning.reportDate}`);
+      attempts += 1;
 
+    // Per-candidate isolation: a hard error (wireModelCall / publishStoryWithWire
+    // / recordWireSample) must NOT abort the firing or void the outcome line for
+    // stories already published this firing — log it and move to the next
+    // candidate, exactly like the soft no-tool_use skip.
+    try {
     logInfo(`Generating recap for ${earning.symbol}`);
 
     // Get detailed earnings result
@@ -553,6 +563,10 @@ export default async function handler(req, res) {
     // Close the measured window immediately: nothing between the
     // publish and this line may be metrics I/O.
     const genPublishMs = Date.now() - wireT0;
+    // Count the story the moment it is persisted, so a later non-critical step
+    // (metrics / consensus / art-director) throwing cannot un-count it or drop
+    // it from the response.
+    written.push({ storyId: docRef.id, symbol: earning.symbol, outcome, headline: storyDoc.headline });
     // Per-story line (plain — NOT the `outcome=` taxonomy, which stays one per
     // firing; the firing-level outcome line is emitted after the loop).
     logInfo(`Recap published symbol=${earning.symbol} storyId=${docRef.id}`, {
@@ -591,13 +605,14 @@ export default async function handler(req, res) {
     if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
       await callArtDirector(storyDoc, docRef.id, db);
     }
-
-    written.push({
-      storyId: docRef.id,
-      symbol: earning.symbol,
-      outcome,
-      headline: storyDoc.headline,
-    });
+    } catch (err) {
+      // The story (if any) was pushed to `written` right after persist, so an
+      // error here is post-publish side-effect noise. Log and move on — never
+      // abort the firing or void the outcome line for the stories already
+      // written this firing.
+      logError('Recap candidate failed (continuing)', { symbol: earning.symbol, error: err.message });
+      continue;
+    }
     }
 
     // The single per-firing outcome line (F1 dual count + taxonomy, R-B6): one

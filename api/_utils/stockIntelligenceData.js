@@ -7,8 +7,12 @@
 //                         D8 wire universe), spanning all 11 GICS sectors, so
 //                         Doug has a reporter most weeks of earnings season.
 //   - STOCK_DATA (20)   = the deep-context "Tier-1" names (knowledgePackage /
-//                         ledgerExtract / deepResearch). A subset of TICKERS.
-// The two differ ON PURPOSE. Consumers that read STOCK_DATA for a TICKERS name
+//                         ledgerExtract / deepResearch).
+// The two OVERLAP but neither is a subset of the other: 17 names are in both,
+// BX/PNC/ALLY are in STOCK_DATA only (dropped from TICKERS in the expansion),
+// and the other 49 TICKERS names have no STOCK_DATA. So the analysis.js Tier-1
+// guard `TICKERS.includes(x) && !!STOCK_DATA[x]` is load-bearing on BOTH
+// clauses — do NOT delete either half. They differ ON PURPOSE. Consumers that read STOCK_DATA for a TICKERS name
 // must tolerate a miss: generate-recap never reads it; submit-earnings-batch /
 // generate-mover / generate-column guard it; and api/stocks/analysis.js gates
 // its Tier-1 path on STOCK_DATA membership (isTier1 = TICKERS.includes(x) &&
