@@ -36,7 +36,7 @@
 // (30 days) is P5's — no batch docs exist under direct transport.
 
 import { markBook } from './mandateValuation.js';
-import { buildDailyRow, buildDecision, buildCorporateAction, MANDATE_SCHEMA_VERSION } from './mandateSchema.js';
+import { buildDailyRow, buildDecision, buildCorporateAction } from './mandateSchema.js';
 import {
   pendingActionsFor,
   applyCorporateAction,
@@ -46,6 +46,7 @@ import { caActionsBySymbol, snapshotExcluding } from './mandateUniverseSnapshot.
 import { computeMandateScoring } from './mandateRiskMetrics.js';
 import { logMandateScoring } from './shadowLogger.js';
 import {
+  MANDATE_SCHEMA_VERSION,
   MANDATE_USD_DP,
   MANDATE_RESULT_MAX_AGE_MS,
   MANDATE_FRICTION_MODEL_VERSION,
