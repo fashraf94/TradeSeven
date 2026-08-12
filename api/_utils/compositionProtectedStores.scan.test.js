@@ -16,8 +16,20 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../..');
 const ALLOWLIST = JSON.parse(readFileSync(resolve(HERE, 'compositionProtectedStoresAllowlist.json'), 'utf8'));
 
+// ONE full-repo scan, shared across every block below. The scan reads and
+// AST-parses every non-test .js under api/ + scripts/ — inherently proportional
+// to repo size (~1.5s today). It used to be invoked THREE times (once per
+// describe, and once INSIDE the #10 test body), so the whole tree was re-read
+// and re-parsed 3×; the in-#10-body invocation was the only one bound by
+// vitest's 5s per-test timeout, and it intermittently crossed it under full-
+// suite CPU contention after the mandate-substrate PR grew the tree. Scanning
+// once at module load (collection time, NOT per-test-timeout-bound) removes the
+// redundancy AND makes the #10 body a pure in-memory filter. Synthetic-repo
+// scans below run on tiny temp dirs and are unaffected.
+const SCAN = scanProtectedStoreWrites(REPO);
+
 describe('B3 — deny-by-default protected-store write scan (AST, api/ + scripts/)', () => {
-  const { all, needsListing } = scanProtectedStoreWrites(REPO);
+  const { all, needsListing } = SCAN;
   // review F3a: the allowlist pins a SITE COUNT per key — a second write
   // added inside an already-listed (file, fn, method, collection) tuple
   // changes the count and fails CI, not just brand-new tuples.
@@ -56,7 +68,7 @@ describe('B3 — deny-by-default protected-store write scan (AST, api/ + scripts
 });
 
 describe('B3-EXT — one-level helper-parameter data-flow (PR 4 ledger row)', () => {
-  const { needsListing } = scanProtectedStoreWrites(REPO);
+  const { needsListing } = SCAN;
   const keys = new Set(needsListing.map(siteKey));
 
   it('a helper taking a ref param that writes IS detected (definition site + census-chokepoint call sites)', () => {
@@ -125,8 +137,10 @@ describe('B3-EXT — one-level helper-parameter data-flow (PR 4 ledger row)', ()
 
 describe('#10 (Sol pre-activation review) — destructured/extracted write methods fail loud', () => {
   it('the repo carries ZERO write-method extractions (the conservative rule: any occurrence must resolve through the allowlist or fail unresolved)', () => {
-    const { all } = scanProtectedStoreWrites(REPO);
-    const extractions = all.filter((s) => s.method.startsWith('extract:'));
+    // Reads the SHARED module-load scan (no re-scan in the test body — that
+    // in-body full-repo scan was the intermittent 5s timeout). Same data, same
+    // assertion: any extract: site anywhere in api/ + scripts/ fails loud.
+    const extractions = SCAN.all.filter((s) => s.method.startsWith('extract:'));
     expect(extractions).toEqual([]);
   });
 
