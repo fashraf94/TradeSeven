@@ -1,0 +1,173 @@
+// api/_utils/mandateSessionSlots.js
+//
+// Spec 1 — Mandate Substrate — market-calendar gating + session-relative slots
+// (§3.1, F17). "The cron fires generously; the handler decides." Eligibility is
+// governed by the single market-calendar source of record — marketSchedule
+// (NYSE holidays, early closes) — evaluated in America/New_York. Cadence tiers
+// map to SESSION-RELATIVE slots (open+30m, midday, pre-close), never raw UTC
+// hours. Holidays and post-close half-day ticks are no-ops.
+//
+// Node-clean, pure. ET wall-clock is derived via Intl (DST-safe, host-TZ
+// independent — the mandateCalendar precedent), not the getETDate() local-TZ
+// hack. marketSchedule is a CALENDAR source, not a market-fetch client, so this
+// module is clean under the §3.0 sole-fetch scan.
+//
+// LAST-SLOT RULE (F3): the final eligible tick of a session does not submit —
+// submission needs a later same-session harvest opportunity. That NO-SUBMIT
+// behavior is batch-transport machinery and lands in P5; this module computes
+// `isLastSlotForTier` now so P5 wires it without re-deriving the calendar.
+
+import { isEarlyCloseDay, MAINTAINED_HOLIDAY_YEARS } from './marketSchedule.js';
+import { isTradingDayStr } from './mandateCalendar.js';
+
+const MAX_MAINTAINED_YEAR = Math.max(...MAINTAINED_HOLIDAY_YEARS);
+
+// Session wall-clock (ET). Source of record: marketSchedule.js:23-29
+// (MARKET_OPEN 9:30, MARKET_CLOSE 16:00, EARLY_CLOSE 13:00) — those constants are
+// module-private there, restated here with provenance (the mandateCalendar
+// precedent) rather than reached through a private symbol.
+const OPEN_MIN = 9 * 60 + 30;         // 570 — 9:30 ET
+const REGULAR_CLOSE_MIN = 16 * 60;    // 960 — 16:00 ET
+const EARLY_CLOSE_MIN = 13 * 60;      // 780 — 13:00 ET
+
+// A slot is "active" for this many minutes from its target time. Sized to be
+// caught by a generously-firing cron (≥ its interval) while keeping the three
+// slots non-overlapping even on the compressed early-close session.
+const SLOT_WINDOW_MIN = 30;
+
+export const SLOT_NAMES = Object.freeze(['open30', 'midday', 'preClose']);
+
+// Cadence tier → the session-relative slots at which that tier evaluates (D-19).
+// Slow rides an EARLY slot by construction (§3.3): the last-slot rule (F3, P5)
+// forbids submitting on the final eligible tick, so a once-daily book must
+// evaluate early enough to leave a later harvest tick. Provisional, founder-
+// tunable, orthogonal to the §6.3 user-mix assumption.
+const TIER_SLOTS = Object.freeze({
+  slow: Object.freeze(['open30']),
+  standard: Object.freeze(['open30', 'midday']),
+  fast: Object.freeze(['open30', 'midday', 'preClose']),
+});
+
+// ── ET wall-clock via Intl (DST-safe, host-TZ independent) ───────────────────
+
+function etParts(instant) {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(instant).map((x) => [x.type, x.value]),
+  );
+  return {
+    dateStr: `${p.year}-${p.month}-${p.day}`,
+    minutes: (Number(p.hour) % 24) * 60 + Number(p.minute),
+  };
+}
+
+// ── Pure slot geometry ───────────────────────────────────────────────────────
+
+/**
+ * The session's slot geometry for a date string. Returns `{ trading:false }` on
+ * a weekend/holiday (fail-closed — a non-session is never a slot).
+ *
+ * @returns {{ trading: boolean, date?, isEarlyClose?, openMin?, closeMin?,
+ *             slots?: Array<{name, atMin, windowEndMin}> }}
+ */
+export function resolveSessionSlots(dateStr) {
+  // Fail-closed past the maintained holiday horizon: beyond MAINTAINED_HOLIDAY_YEARS
+  // the holiday/early-close tables are empty, so a real 2028+ holiday would read
+  // as a full session and books would evaluate on a closed market (arch review F4).
+  // Refuse to emit slots until the calendar is extended (the Wire-walker precedent).
+  const year = Number(String(dateStr).slice(0, 4));
+  if (!Number.isFinite(year) || year > MAX_MAINTAINED_YEAR) return { trading: false, reason: 'beyond_calendar_horizon' };
+  if (!isTradingDayStr(dateStr)) return { trading: false };
+  const isEarly = isEarlyCloseDay(dateStr);
+  const closeMin = isEarly ? EARLY_CLOSE_MIN : REGULAR_CLOSE_MIN;
+  const targets = {
+    open30: OPEN_MIN + 30,
+    midday: Math.round((OPEN_MIN + closeMin) / 2),
+    preClose: closeMin - 30,
+  };
+  const slots = SLOT_NAMES.map((name) => ({
+    name,
+    atMin: targets[name],
+    windowEndMin: Math.min(targets[name] + SLOT_WINDOW_MIN, closeMin),
+  }));
+  return { trading: true, date: dateStr, isEarlyClose: isEarly, openMin: OPEN_MIN, closeMin, slots };
+}
+
+/**
+ * Which slot's activation window `minutes` (ET minutes-of-day) falls in for
+ * `dateStr`, or null if outside every slot window (pre-open, between slots,
+ * post-close). Slot windows are non-overlapping, so at most one matches.
+ */
+export function slotAtEtMinutes(minutes, dateStr) {
+  const s = resolveSessionSlots(dateStr);
+  if (!s.trading) return null;
+  for (const slot of s.slots) {
+    if (minutes >= slot.atMin && minutes < slot.windowEndMin) return slot.name;
+  }
+  return null;
+}
+
+/** Does cadence tier `tier` evaluate at slot `slotName`? Unknown tier → false. */
+export function tierEligibleAt(tier, slotName) {
+  return (TIER_SLOTS[tier] || []).includes(slotName);
+}
+
+/** The ordered slots a tier evaluates at (empty for an unknown tier). */
+export function slotsForTier(tier) {
+  return [...(TIER_SLOTS[tier] || [])];
+}
+
+/** Is `slotName` the LAST slot this tier evaluates at in a session? (F3 input, P5). */
+export function isLastSlotForTier(tier, slotName) {
+  const slots = TIER_SLOTS[tier] || [];
+  return slots.length > 0 && slots[slots.length - 1] === slotName;
+}
+
+/** The platform-wide tick key for a (date, slot): shared by every book at that tick. */
+export function buildTickKey(dateStr, slotName) {
+  return `${dateStr}_${slotName}`;
+}
+
+/**
+ * The handler's one-call entry: resolve the evaluation context for a cadence
+ * tier at instant `now`.
+ *
+ * @returns {{
+ *   trading: boolean, date: string|null, slot: string|null, eligible: boolean,
+ *   tickKey: string|null, isLastSlotForTier: boolean, isEarlyClose: boolean,
+ * }}
+ */
+export function resolveEvalContext(tier, now = new Date()) {
+  const { dateStr, minutes } = etParts(now);
+  const session = resolveSessionSlots(dateStr);
+  if (!session.trading) {
+    return { trading: false, date: dateStr, slot: null, eligible: false, tickKey: null, isLastSlotForTier: false, isEarlyClose: false };
+  }
+  const slot = slotAtEtMinutes(minutes, dateStr);
+  const eligible = slot != null && tierEligibleAt(tier, slot);
+  return {
+    trading: true,
+    date: dateStr,
+    slot,
+    eligible,
+    tickKey: slot ? buildTickKey(dateStr, slot) : null,
+    isLastSlotForTier: slot ? isLastSlotForTier(tier, slot) : false,
+    isEarlyClose: session.isEarlyClose,
+  };
+}
+
+/**
+ * The active slot at instant `now`, tier-independent (drives the platform-wide
+ * snapshot tick — the snapshot is built once per active slot regardless of which
+ * tiers evaluate). Returns `{ date, slot, tickKey }` or null when no slot is
+ * active (non-session, or between/outside slot windows).
+ */
+export function activeTick(now = new Date()) {
+  const { dateStr, minutes } = etParts(now);
+  const slot = slotAtEtMinutes(minutes, dateStr);
+  if (!slot) return null;
+  return { date: dateStr, slot, tickKey: buildTickKey(dateStr, slot) };
+}
