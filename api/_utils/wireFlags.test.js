@@ -9,20 +9,20 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-describe('shipped flag values — the merge must be dark', () => {
-  it('all five Wire flags ship FALSE', async () => {
+describe('shipped flag values — the write path ships dark (metrics is runway step 1, live)', () => {
+  it('four Wire write-path flags ship FALSE; WIRE_METRICS_ENABLED is live (runway §4.8 step 1)', async () => {
     const flags = await import('../../src/config/featureFlags.js');
-    expect(flags.WIRE_METRICS_ENABLED).toBe(false);
+    expect(flags.WIRE_METRICS_ENABLED).toBe(true); // runway step 1: flipped FIRST for the p95 baseline, before writes
     expect(flags.WIRE_WRITES_ENABLED).toBe(false);
     expect(flags.CONTINUITY_MEMORY_ENABLED).toBe(false);
     expect(flags.WIRE_NEWSLINE_ENABLED).toBe(false);
     expect(flags.EDITORIAL_REVIEW_ENABLED).toBe(false);
   });
 
-  it('getWireFlags reports everything off at HEAD', async () => {
+  it('getWireFlags reports metrics ON, the write path off at HEAD', async () => {
     const { getWireFlags } = await import('./wireFlags.js');
     expect(getWireFlags()).toEqual({
-      metricsEnabled: false,
+      metricsEnabled: true,
       writesEnabled: false,
       continuityEnabled: false,
       newslineEnabled: false,
