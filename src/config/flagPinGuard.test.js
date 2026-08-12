@@ -16,16 +16,21 @@
 // flags KEEP their loud tripwire pins (see DARK_BY_DESIGN); the guard's job is to
 // make any contradiction self-explaining and tell you WHETHER you meant to flip.
 //
-// KNOWN LIMITATION, stated on purpose (the tokens.guard "documented limits"
-// precedent): the guard matches direct `expect(<flag>).toBe(<bool>)` pins only.
-// Aggregate/wrapper-output pins — e.g. wireFlags.test.js asserting
-// `getWireFlags()` toEqual an all-false object — are NOT detected here; they are
-// covered by that suite's own five direct WIRE_* pins, which ARE detected.
+// COVERAGE — two pin forms (the tokens.guard "documented limits" precedent):
+//   (1) direct    `expect(<flag>).toBe(<bool>)`  — bare or `ns.`-namespaced;
+//   (2) aggregate `expect(getWireFlags()).toEqual({ <key>: <bool>, … })`,
+//       checked key-by-key against the LIVE getWireFlags() resolution.
+// Form (2) was added after the WIRE_METRICS_ENABLED flip: its direct
+// `flags.WIRE_METRICS_ENABLED` pin WAS caught, but its `toEqual` twin in
+// wireFlags.test.js was invisible and reddened only that suite. REMAINING LIMIT:
+// only getWireFlags() is understood as a wrapper — a different flag-resolving
+// wrapper needs its own opener added below (don't let the blind spot re-form).
 
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { getWireFlags } from '../../api/_utils/wireFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
@@ -53,8 +58,10 @@ const FLAG_SOURCE_MODULES = [
 const DARK_BY_DESIGN = {
   COMPILER_ENABLED:
     'double-gated behind the activationGate; flips ONLY via a deliberate founder PR with a green gate, never a build PR',
-  WIRE_METRICS_ENABLED:
-    'Wire runway step 1 — flips FIRST for a ≥3-trading-day p95 baseline before writes',
+  // WIRE_METRICS_ENABLED intentionally ABSENT: it flipped true (runway step 1,
+  // src/config/featureFlags.js) — the deliberate flip drops it here in the same
+  // change, per the guard's own "if DELIBERATE" instruction. Re-adding it while
+  // it ships true fails the DARK_BY_DESIGN integrity test below.
   WIRE_WRITES_ENABLED:
     'Wire runway — dark until the metrics baseline lands, ≥2 trading days solo before continuity (runway: metrics → 3-day baseline → writes)',
   CONTINUITY_MEMORY_ENABLED:
@@ -159,13 +166,42 @@ for (const p of PINS) {
   (PIN_FILES_BY_FLAG[p.flag] ||= new Set()).add(base(p.file));
 }
 
+// ── Object-form (wrapper-output) pins: expect(getWireFlags()).toEqual({…}) ───
+// getWireFlags() resolves several flags into a derived object (continuity and
+// newsline are AND-ed with writes), so an object pin is checked KEY-BY-KEY
+// against the LIVE getWireFlags() result rather than a single flag. Its sole
+// live-reflecting object pin is in wireFlags.test.js; the withFlags(...) tests
+// there assert sub-keys under a mock and never match the opener below.
+const LIVE_WIRE_FLAGS = getWireFlags();
+const WIRE_WRAPPER_OPENER = /expect\(\s*getWireFlags\(\)\s*\)\s*\.toEqual\(\s*\{/;
+const WIRE_KV_LINE = /^\s*([A-Za-z_$][\w$]*)\s*:\s*(true|false)\s*,?\s*$/;
+
+function findWireFlagObjectPins() {
+  const pins = [];
+  for (const rel of TEST_FILES) {
+    if (base(rel) === 'flagPinGuard.test.js') continue; // never scan the guard's own examples
+    const lines = read(rel).split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (!WIRE_WRAPPER_OPENER.test(lines[i])) continue;
+      for (let j = i + 1; j < lines.length && !/^\s*\}\s*\)/.test(lines[j]); j++) {
+        const kv = WIRE_KV_LINE.exec(lines[j]);
+        if (kv && kv[1] in LIVE_WIRE_FLAGS) {
+          pins.push({ key: kv[1], file: rel, line: j + 1, literal: kv[2] === 'true' });
+        }
+      }
+    }
+  }
+  return pins;
+}
+const WIRE_OBJECT_PINS = findWireFlagObjectPins();
+
 describe('flag-pin guard — no test pins a flag against its live value (BUILD_RULES §2)', () => {
   it('resolves flag values cleanly (modules read, no duplicate names)', () => {
     expect(FLAG_DUPES, `duplicate *_ENABLED names across flag modules: ${FLAG_DUPES.join(', ')}`).toEqual([]);
     expect(Object.keys(FLAG_MAP).length, 'flag modules were not read').toBeGreaterThan(20);
   });
 
-  it('is not vacuous — it detects real pins in both bare and namespaced forms', () => {
+  it('is not vacuous — it detects real pins in bare, namespaced, and object forms', () => {
     // Anti-vacuous mutation check (BUILD_RULES §2: a row that cannot fail is not a
     // guard). A regex/walk regression that stops matching pins would make every
     // check below pass green; anchor on two PERMANENT dark-by-design tripwires
@@ -175,6 +211,10 @@ describe('flag-pin guard — no test pins a flag against its live value (BUILD_R
     expect(found('COMPILER_ENABLED', 'compileOnSettingsChange.test.js'), 'bare-form pin not detected').toBe(true);
     expect(found('WIRE_WRITES_ENABLED', 'wireFlags.test.js'), 'namespaced (flags.) pin not detected').toBe(true);
     expect(PINS.length, 'no flag pins found at all — the walker or regex is broken').toBeGreaterThan(0);
+    // Object-form (aggregate) detection must stay live too — the metricsEnabled
+    // key of wireFlags.test.js's getWireFlags() toEqual is the permanent anchor.
+    expect(WIRE_OBJECT_PINS.some((p) => p.key === 'metricsEnabled' && p.file.includes('wireFlags.test.js')),
+      'getWireFlags() object-form pin not detected — the wrapper walker regressed').toBe(true);
   });
 
   it('every pinned flag matches its live value; a contradiction names the fix and the intent', () => {
@@ -193,6 +233,16 @@ describe('flag-pin guard — no test pins a flag against its live value (BUILD_R
           + `Update THIS assertion in the same commit as the flip (BUILD_RULES §2), or refactor it to a behavior branch.`;
       });
     expect(bad, `flag pins contradict live values:\n  ${bad.join('\n  ')}`).toEqual([]);
+  });
+
+  it('every getWireFlags() object pin matches the live resolution (aggregate-form coverage)', () => {
+    const bad = WIRE_OBJECT_PINS
+      .filter((p) => p.literal !== LIVE_WIRE_FLAGS[p.key])
+      .map((p) =>
+        `${p.file}:${p.line} — getWireFlags().${p.key} resolves to ${LIVE_WIRE_FLAGS[p.key]} live `
+        + `but this assertion pins ${p.literal}. Update THIS assertion in the same commit as the flip `
+        + `(BUILD_RULES §2); the underlying flag is in src/config/featureFlags.js.`);
+    expect(bad, `getWireFlags() object pins contradict the live resolution:\n  ${bad.join('\n  ')}`).toEqual([]);
   });
 
   it('DARK_BY_DESIGN lists only real, currently-dark flags, each with a note', () => {
