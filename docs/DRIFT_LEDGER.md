@@ -81,7 +81,37 @@ Nasdaq-led pulse keeps `NDX`, a Dow-led pulse keeps `DJI`, a genuine S&P pulse s
 
 ---
 
-## D-4 — Wire Kim `sector_vs_spy` has no SPY operand at the S7 seam (founder decision memo)
+## D-4 — Wire Kim `sector_vs_spy` has no SPY operand at the S7 seam — ✅ RULED (A), post-gate (2026-08-12)
+
+**Ruling (Aug 12, 2026):** founder confirms **Option (A)** — thread a SPY operand into the S7 snapshot
+so `sector_vs_spy` is computed and verified — and accepts the decision memo's scope correction: (A) is a
+coordinated epoch change (snapshot shape → §1 shape-photograph re-issue + `WIRE_GENERATION_VERSION`;
+adapter formula + tolerance → `WIRE_EDITORIAL_ADAPTER_VERSION` + two-period-window reset; sector
+entity-resolution reaching the validator → likely `WIRE_VALIDATOR_VERSION`), **not** the single-file
+snapshot touch the original one-liner implied. **Deferred post-gate** — both options reset the two-period
+window, so the fix waits until the Phase-2 editorial gate has qualified on the current 11-exemplar set; it
+then lands as its own arc together with Kim's deferred v2 exemplar embed. First step when unblocked: a
+Phase-0 discovery on the entity-resolution fork (sector `subjectRef` enum vs single-sector `primaryTicker`),
+which decides whether the validator is in scope. **No code written at ruling — scheduling only.** Decision
+memo: `docs/audits/20260812_WIRE_D4_SECTOR_VS_SPY_DECISION_MEMO.md`.
+
+**Accepted cost of the deferral (founder, Aug 12, 2026).** The mislabel is latent **only while writes are
+off**. Once `WIRE_WRITES_ENABLED` flips, Kim's `sector_rotation` entries persist a `sector_vs_spy` magnitude
+asserting an **uncomputed** relationship — the seam exposes the basis and populates agentFacts under writes
+(`generate-column.js:288,306,403`), the validator accepts it (`sector_vs_spy` ∈ `sector_rotation.magnitudeBases`,
+`wireContracts.js:397`; `wireValidator.js:252`), and the digest renders "…% vs SPY" from it on a raw sector move
+(`wireDigest.js:37`). This is **gate-harmless** — the adapter returns NOT_VERIFIABLE(`missing_operand`)
+(`wireEditorialAdapters.js:379-380`) and NOT_VERIFIABLE is excluded from the scored denominator (calibration
+§4) — but it writes **false records into the Wire**, and that assertion is **agent-visible once the Wire is
+consumed (post-Phase-3)**. The founder accepts this as the cost of deferring the real fix post-gate.
+
+**Stopgap if the flip-to-arc gap runs long (advisory, not yet committed).** If `WIRE_WRITES` flips before the
+(A) arc lands, a considered interim is to **suppress Kim's magnitude figure entirely** — declare `eventType` +
+`direction`, omit the basis — so nothing false is asserted while the real fix waits (magnitude is optional at the
+validator, `wireValidator.js:246`; the digest drops the clause on a null magnitude, `wireDigest.js:78`, leaving
+"<sector> rotation." with no vs-SPY claim). It keeps Kim gate-silent (unchanged) but honest. It is itself a small
+generation-surface change (an epoch bump), so it is also post-gate — a smaller honesty-only touch than (A), not a
+substitute for it. Original finding retained below.
 
 **Found:** FantasyTimes Wire N2 exemplar qualification (N2.1), 2026-07-31. Full memo (two options,
 recommendation): `docs/audits/20260731_WIRE_N2_EXEMPLAR_QUALIFICATION_AND_EMBED.md` (Defect D-4).
