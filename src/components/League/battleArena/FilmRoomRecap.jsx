@@ -16,12 +16,15 @@
 import React from 'react';
 import { Mono, Eyebrow, LIcon, Icon } from '../LeagueParts';
 import { LTOKENS, alpha, MONO } from '../leagueTokens';
-import { fmtPoints, fmtScore } from '../../../utils/leagueFormat';
+import { fmtScore } from '../../../utils/leagueFormat';
 import { OWN_AGENT, ST_GOOD, ST_BAD } from './arenaTheme';
 
-// Tints from the ROUNDED value so the color and the printed number come from one
-// source (§9): a value that prints '0' / '0.0' is never painted green/red.
-const tintPts = (v) => { const r = Math.round(v); return r > 0 ? ST_GOOD : r < 0 ? ST_BAD : LTOKENS.ink2; };
+// Tint from the ROUNDED value so color and printed number come from one source
+// (§9): a value that prints '0.0' is never painted green/red. Swap points AND
+// the composite timeline both render with fmtScore (signed one-decimal) — the
+// SAME formatter the live decomposition strip uses for its SWAPS term
+// (DecompositionStrip.jsx → fmtScore), so the recap's today-subtotal and the
+// strip's SWAPS are byte-identical strings, not "−29" vs "−29.0".
 const tintScore = (v) => { const r = Math.round(v * 10); return r > 0 ? ST_GOOD : r < 0 ? ST_BAD : LTOKENS.ink2; };
 
 // A tiny, dependency-free polyline of the composite climb — "the shape of the
@@ -67,8 +70,9 @@ const rowBase = {
 export function FilmRoomRecap({ history = null }) {
   if (!history) return null;
   const {
-    timeline = [], swapDays = [], swapTotal = 0, currentSwapSubtotal = 0, swapCount = 0,
+    timeline = [], swapDays = [], swapTotal = 0, currentSwapSubtotal = 0, swapCount = 0, phase = 'complete',
   } = history;
+  const live = phase === 'live';
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', width: '100%', textAlign: 'left' }}>
@@ -116,11 +120,11 @@ export function FilmRoomRecap({ history = null }) {
                 <div key={d.day}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
                     <Mono style={{ fontSize: 10.5, fontWeight: 800, color: LTOKENS.ink2, letterSpacing: '0.04em' }}>
-                      DAY {d.day}{d.isCurrent ? ' · today' : ''}
+                      DAY {d.day}{live && d.isCurrent ? ' · today' : ''}
                     </Mono>
                     <span style={{ flex: 1, height: 1, background: LTOKENS.hair }} />
-                    <Mono style={{ fontSize: 11.5, fontWeight: 800, color: alpha(tintPts(d.subtotal), 0.95), fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtPoints(d.subtotal)}
+                    <Mono style={{ fontSize: 11.5, fontWeight: 800, color: alpha(tintScore(d.subtotal), 0.95), fontVariantNumeric: 'tabular-nums' }}>
+                      {fmtScore(d.subtotal)}
                     </Mono>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -137,8 +141,8 @@ export function FilmRoomRecap({ history = null }) {
                             </Mono>
                           )}
                         </Mono>
-                        <Mono style={{ fontSize: 12.5, fontWeight: 800, color: alpha(tintPts(it.pts), 0.95), fontVariantNumeric: 'tabular-nums' }}>
-                          {fmtPoints(it.pts)}
+                        <Mono style={{ fontSize: 12.5, fontWeight: 800, color: alpha(tintScore(it.pts), 0.95), fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtScore(it.pts)}
                         </Mono>
                       </div>
                     ))}
@@ -150,11 +154,17 @@ export function FilmRoomRecap({ history = null }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '10px 12px', borderRadius: 10,
               background: alpha(OWN_AGENT, 0.08), border: `1px solid ${alpha(OWN_AGENT, 0.3)}` }}>
               <Mono style={{ flex: 1, fontSize: 11, fontWeight: 700, color: LTOKENS.ink2, letterSpacing: '0.02em' }}>ALL SWAPS · THIS BATTLE</Mono>
-              <Mono style={{ fontSize: 14, fontWeight: 800, color: alpha(tintPts(swapTotal), 0.95), fontVariantNumeric: 'tabular-nums' }}>{fmtPoints(swapTotal)}</Mono>
+              <Mono style={{ fontSize: 14, fontWeight: 800, color: alpha(tintScore(swapTotal), 0.95), fontVariantNumeric: 'tabular-nums' }}>{fmtScore(swapTotal)}</Mono>
             </div>
-            <Mono style={{ display: 'block', marginTop: 9, fontSize: 10, color: LTOKENS.ink3, lineHeight: 1.5 }}>
-              Today&rsquo;s swaps ({fmtPoints(currentSwapSubtotal)}) are the <b style={{ color: LTOKENS.ink2 }}>SWAPS</b> term on the live strip — the same number. Earlier days&rsquo; swaps are already banked into your altitude (they sit inside <b style={{ color: LTOKENS.ink2 }}>BANKED</b>).
-            </Mono>
+            {live ? (
+              <Mono style={{ display: 'block', marginTop: 9, fontSize: 10, color: LTOKENS.ink3, lineHeight: 1.5 }}>
+                Today&rsquo;s swaps ({fmtScore(currentSwapSubtotal)}) are the <b style={{ color: LTOKENS.ink2 }}>SWAPS</b> term on the live strip — the same number. Earlier days&rsquo; swaps are already banked into your altitude (they sit inside <b style={{ color: LTOKENS.ink2 }}>BANKED</b>).
+              </Mono>
+            ) : (
+              <Mono style={{ display: 'block', marginTop: 9, fontSize: 10, color: LTOKENS.ink3, lineHeight: 1.5 }}>
+                Every swap is locked and banked into your final standing — each day&rsquo;s realized points, in full. While the battle ran, each day&rsquo;s swaps were that day&rsquo;s <b style={{ color: LTOKENS.ink2 }}>SWAPS</b> term; once banked they fold into <b style={{ color: LTOKENS.ink2 }}>BANKED</b>.
+              </Mono>
+            )}
           </>
         ) : (
           <Mono style={{ display: 'block', fontSize: 11.5, color: LTOKENS.ink2, lineHeight: 1.6 }}>

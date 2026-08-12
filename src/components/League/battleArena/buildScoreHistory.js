@@ -37,6 +37,31 @@ function ascendingDayNumbers(group) {
 }
 
 /**
+ * ET-recordedDate → tournament dayN, from the group's dailyScores. This is what
+ * lets the swap ledger share the SAME day axis as the Level 1 timeline: both key
+ * off the group's banked dayN, not a parallel chain ordinal. Each banked day
+ * entry carries recordedDate (the ET trading date, tournamentBanking.js), and
+ * each daily agentBattles doc carries timing.tradingDays (its ET trading date),
+ * so a doc maps to its banked dayN by date.
+ */
+function recordedDateToDay(group) {
+  const ds = group?.dailyScores || {};
+  const out = {};
+  for (const key of Object.keys(ds)) {
+    const m = /^day(\d+)$/.exec(key);
+    const rd = ds[key]?.recordedDate;
+    if (m && typeof rd === 'string' && rd) out[rd] = Number(m[1]);
+  }
+  return out;
+}
+
+/** A daily agentBattles doc's ET trading date (the day it closed). */
+function docTradingDate(doc) {
+  const td = doc?.timing?.tradingDays;
+  return Array.isArray(td) && td.length ? td[td.length - 1] : null;
+}
+
+/**
  * Assemble the Level 1 timeline + swap ledger for one player.
  *
  * @param {Object} args
@@ -75,11 +100,18 @@ export function buildScoreHistory({ group = null, battleChain = [], uid = null }
   );
   const current = pickCurrentTournamentBattle(chain);
   const currentId = current?.id ?? null;
+  // Day labels come from the group's banked dayN (via recordedDate), so the swap
+  // ledger and the Level 1 timeline never print two different DAY numbers for the
+  // same day. Only when a doc can't be mapped (a chain gap / an unstamped doc —
+  // the rare degrade) do we fall back to the createdAt-ordered position.
+  const dateToDay = recordedDateToDay(group);
   const swapDays = ordered
     .map((doc, i) => {
       const ledger = buildSwapLedger(doc?.trades);
+      const mapped = dateToDay[docTradingDate(doc)];
       return {
-        day: i + 1,
+        day: Number.isFinite(mapped) ? mapped : i + 1,
+        dayIsOrdinalFallback: !Number.isFinite(mapped),
         isCurrent: currentId != null && doc?.id === currentId,
         items: ledger.items,
         subtotal: ledger.total,

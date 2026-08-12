@@ -35,9 +35,20 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
   // for the Film Room recap, from the SAME banked group + the caller's OWN daily
   // battle chain. Null off-gate → the arena is byte-identical (no recap, no entry
   // point). Swap totals reconcile with the live strip's SWAPS by construction (§9).
+  //
+  // Chain fallback: a host that only threads the current `battle` (the training
+  // and card-render hosts) still gets a §9-correct recap — the recap's CURRENT
+  // day is then the same doc the live strip reads, so its today-subtotal matches
+  // the strip's SWAPS. Prior days are simply absent (not a wrong number, not a
+  // false "no swaps" while the strip shows a term). Hosts that thread the full
+  // chain (the ranked participant flow) get every day.
+  const effectiveChain = React.useMemo(
+    () => (Array.isArray(battleChain) && battleChain.length > 0 ? battleChain : (battle ? [battle] : [])),
+    [battleChain, battle],
+  );
   const history = React.useMemo(
-    () => (LEAGUE_SCORE_HISTORY_ON ? buildScoreHistory({ group, battleChain, uid }) : null),
-    [group, battleChain, uid],
+    () => (LEAGUE_SCORE_HISTORY_ON ? buildScoreHistory({ group, battleChain: effectiveChain, uid }) : null),
+    [group, effectiveChain, uid],
   );
   // L-A: a voided cohort reads terminal ('complete'); the distinct kind drives the
   // client's "voided — no result" pill so it never reads as a real finish.

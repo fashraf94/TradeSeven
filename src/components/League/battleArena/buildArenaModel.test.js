@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
 import { buildArenaModel, liveDayIdx, buildAskChips } from './buildArenaModel';
+import { buildScoreHistory } from './buildScoreHistory';
 import { buildFlat6BattleModel } from '../../../utils/flat6BattleEnrichment';
 import { BASELINE_POLICY, CAPTURE_STATE, computeComposite } from '../../../constants/leagueTournament';
 
@@ -300,6 +301,24 @@ describe('buildArenaModel — departed-position points (model fields)', () => {
     const m = buildArenaModel(liveArgs({ battle }));
     expect(m.agentDeparted.total).toBeCloseTo(9, 6); // 12 + (-3)
     expect(m.agentDeparted.items.map((i) => [i.out, i.in, i.pts])).toEqual([['LLY', 'NVDA', 12], ['PFE', 'AMD', -3]]);
+  });
+
+  it('§9 CROSS-SURFACE: the live strip SWAPS term === the recap current-day subtotal (one buildSwapLedger source, both call sites)', () => {
+    // Binds the two SURFACES on the SAME input — not by asserting each against
+    // its own literal (which would let a reintroduced local swap copy in either
+    // call site pass, the §4 anti-pattern the name-only parity missed). Fractional
+    // locked points so the value is a real float threaded through both paths.
+    const battle = { ...TODAY_BATTLE, trades: [
+      { symbolOut: 'LLY', symbolIn: 'NVDA', lockedPoints: 12.5, swapDay: 1 },
+      { symbolOut: 'PFE', symbolIn: 'AMD', lockedPoints: -3.2, swapDay: 1 },
+    ] };
+    const strip = buildArenaModel(liveArgs({ battle })).decomposition;
+    expect(strip).not.toBeNull(); // orb live (training) → the decomposition strip renders
+    const recap = buildScoreHistory({ group: BASE.group, battleChain: [battle], uid: 'u-you' });
+    // The strip's SWAPS term and the recap's today-subtotal are ONE number by
+    // construction (both = buildSwapLedger(battle.trades).total) — exact equality.
+    expect(recap.currentSwapSubtotal).toBe(strip.swaps);
+    expect(strip.swaps).toBeCloseTo(9.3, 6); // 12.5 + (-3.2)
   });
 
   it('userDeparted aggregates dropped banked points and flags same-day pending drops (no fake 0)', () => {

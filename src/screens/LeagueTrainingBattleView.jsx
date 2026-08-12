@@ -64,7 +64,7 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
 
   // The player's OWN agent battle for this pod (owner-scoped rule; hook uses the
   // auth uid internally). Null until the agent layer has deployed.
-  const { battle: myBattle } = useMyTournamentBattle(podId);
+  const { battle: myBattle, chain: myChain } = useMyTournamentBattle(podId);
 
   const framing = useMemo(() => trainingStatusFraming(pod?.status), [pod?.status]);
   const compositeContext = useMemo(() => deriveCompositeContext(pod, uid), [pod, uid]);
@@ -159,6 +159,7 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
         <LeagueBattleArenaLive
           group={pod}
           battle={myBattle}
+          battleChain={myChain}
           mode="training"
           uid={uid}
           compositeContext={compositeContext}

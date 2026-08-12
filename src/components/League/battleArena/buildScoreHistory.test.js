@@ -89,3 +89,43 @@ describe('buildScoreHistory — swap ledger across the chain', () => {
     expect(h.baseUnavailable).toBe(true);
   });
 });
+
+describe('buildScoreHistory — swap day labels bind to the timeline dayN (recordedDate axis, §9)', () => {
+  const dayEntry = (rd, comp) => ({ recordedDate: rd, closeScores: { [UID]: { compositePoints: comp } } });
+  const g = {
+    status: 'complete',
+    players: [{ odUserId: UID }],
+    dailyScores: {
+      day1: dayEntry('2026-08-10', 5),
+      day2: dayEntry('2026-08-11', 8),
+      day3: dayEntry('2026-08-12', 6),
+    },
+  };
+  const doc = (id, date, trades) => ({ id, createdAt: `${date}T13:00:00Z`, timing: { tradingDays: [date] }, trades });
+
+  it('labels swaps by mapped tournament dayN, NOT chain ordinal — a mid-battle no-swap day does not shift later days', () => {
+    const chain = [
+      doc('b1', '2026-08-10', [{ symbolOut: 'A', symbolIn: 'B', lockedPoints: 4 }]),
+      doc('b2', '2026-08-11', []), // no swap on day 2
+      doc('b3', '2026-08-12', [{ symbolOut: 'C', symbolIn: 'D', lockedPoints: -2 }]),
+    ];
+    const h = buildScoreHistory({ group: g, battleChain: chain, uid: UID });
+    // The day-3 swap stays DAY 3 (its banked dayN) — a filter-then-ordinal
+    // numbering would mislabel it DAY 2. This row fails under that regression.
+    expect(h.swapDays.map((d) => d.day)).toEqual([1, 3]);
+    expect(h.swapDays.every((d) => d.dayIsOrdinalFallback === false)).toBe(true);
+    // Swap DAY numbers are a subset of the timeline DAY numbers — one axis, no §9
+    // self-contradiction between the two halves of the recap.
+    const timelineDays = h.timeline.map((t) => t.day);
+    expect(h.swapDays.every((d) => timelineDays.includes(d.day))).toBe(true);
+  });
+
+  it('falls back to the chain ordinal (flagged) only when a doc has no mappable trading date', () => {
+    const chain = [
+      { id: 'x1', createdAt: '2026-08-10T13:00:00Z', trades: [{ symbolOut: 'A', symbolIn: 'B', lockedPoints: 1 }] }, // no timing.tradingDays
+    ];
+    const h = buildScoreHistory({ group: g, battleChain: chain, uid: UID });
+    expect(h.swapDays[0].day).toBe(1);
+    expect(h.swapDays[0].dayIsOrdinalFallback).toBe(true);
+  });
+});
