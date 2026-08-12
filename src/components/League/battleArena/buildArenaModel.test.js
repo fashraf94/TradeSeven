@@ -9,19 +9,22 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
 import { buildArenaModel, liveDayIdx, buildAskChips } from './buildArenaModel';
+import { buildScoreHistory } from './buildScoreHistory';
 import { buildFlat6BattleModel } from '../../../utils/flat6BattleEnrichment';
 import { BASELINE_POLICY, CAPTURE_STATE, computeComposite } from '../../../constants/leagueTournament';
 
 // H1 — LEAGUE_AGENT_CHAT_ENABLED and LEAGUE_LIVE_ORB_ENABLED are BOTH ON in
 // source (flipped to production — the live-orb flip is commit 2bd50fc9,
-// "Enable ... league live orb"). We drive each through a live getter (the
-// scouting-board.test.js idiom) instead of the source default, so a test can
-// exercise BOTH the flag-ON contract (today's production default) and the
-// flag-OFF/dark contract via offGate(), without editing the source. Each flag
-// defaults ON here to match production; the dark-contract tests opt OUT locally.
-// importOriginal keeps every OTHER flag real, so the dependency-surface guard
-// above (the real buildArenaModel graph loading clean) is untouched.
-const { chatFlag, orbFlag } = vi.hoisted(() => ({ chatFlag: { on: true }, orbFlag: { on: true } }));
+// "Enable ... league live orb"); LEAGUE_SCORE_HISTORY_ON is DARK (OFF). We drive
+// all three through live getters (the scouting-board.test.js idiom) instead of
+// the source default, so a test can exercise each flag's ON and OFF contract
+// without editing the source: chat + live-orb default ON to match production (the
+// live-orb dark contract runs via offGate()), while score-history defaults OFF
+// (dark) and the day-index tests flip it ON locally to exercise the trading-day-
+// index header binding. importOriginal keeps every OTHER flag real, so the
+// dependency-surface guard above (the real buildArenaModel graph loading clean)
+// is untouched.
+const { chatFlag, orbFlag, scoreHistoryFlag } = vi.hoisted(() => ({ chatFlag: { on: true }, orbFlag: { on: true }, scoreHistoryFlag: { on: false } }));
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   get LEAGUE_AGENT_CHAT_ENABLED() {
@@ -29,6 +32,11 @@ vi.mock('../../../config/featureFlags', async (importOriginal) => ({
   },
   get LEAGUE_LIVE_ORB_ENABLED() {
     return orbFlag.on;
+  },
+  // Dark by default (flag-off = today's banked-count header, byte-identical); the
+  // day-index tests flip it on to exercise the trading-day-index header binding.
+  get LEAGUE_SCORE_HISTORY_ON() {
+    return scoreHistoryFlag.on;
   },
 }));
 
@@ -331,6 +339,24 @@ describe('buildArenaModel — departed-position points (model fields)', () => {
     const m = buildArenaModel(liveArgs({ battle }));
     expect(m.agentDeparted.total).toBeCloseTo(9, 6); // 12 + (-3)
     expect(m.agentDeparted.items.map((i) => [i.out, i.in, i.pts])).toEqual([['LLY', 'NVDA', 12], ['PFE', 'AMD', -3]]);
+  });
+
+  it('§9 CROSS-SURFACE: the live strip SWAPS term === the recap current-day subtotal (one buildSwapLedger source, both call sites)', () => {
+    // Binds the two SURFACES on the SAME input — not by asserting each against
+    // its own literal (which would let a reintroduced local swap copy in either
+    // call site pass, the §4 anti-pattern the name-only parity missed). Fractional
+    // locked points so the value is a real float threaded through both paths.
+    const battle = { ...TODAY_BATTLE, trades: [
+      { symbolOut: 'LLY', symbolIn: 'NVDA', lockedPoints: 12.5, swapDay: 1 },
+      { symbolOut: 'PFE', symbolIn: 'AMD', lockedPoints: -3.2, swapDay: 1 },
+    ] };
+    const strip = buildArenaModel(liveArgs({ battle })).decomposition;
+    expect(strip).not.toBeNull(); // orb live (training) → the decomposition strip renders
+    const recap = buildScoreHistory({ group: BASE.group, battleChain: [battle], uid: 'u-you' });
+    // The strip's SWAPS term and the recap's today-subtotal are ONE number by
+    // construction (both = buildSwapLedger(battle.trades).total) — exact equality.
+    expect(recap.currentSwapSubtotal).toBe(strip.swaps);
+    expect(strip.swaps).toBeCloseTo(9.3, 6); // 12.5 + (-3.2)
   });
 
   it('userDeparted aggregates dropped banked points and flags same-day pending drops (no fake 0)', () => {
@@ -652,5 +678,73 @@ describe('buildArenaModel — live orb flag gating (Option X, flag off vs on)', 
     expect(m.decomposition.orb).toBeCloseTo(m.youLiveScore, 6);
     expect(m.decomposition.agentSide + m.decomposition.userLayer).toBeCloseTo(m.youLiveScore, 6);
     expect(m.headline).not.toBe('mult');   // cards no longer lead with the multiplier
+  });
+});
+
+// ── Day-index axis reconciliation (founder ruling: header ↔ recap, one index) ──
+describe('buildArenaModel — the day index binds the header to the recap current-day label', () => {
+  const g = {
+    id: 'g', status: 'battle', watchers: 0, userPool: [],
+    players: [{ odUserId: 'u-you', picks: [] }],
+    dailyScores: {
+      day1: { recordedDate: '2026-06-14', closeScores: { 'u-you': { compositePoints: 5 } } },
+      day2: { recordedDate: '2026-06-15', closeScores: { 'u-you': { compositePoints: 8 } } },
+    },
+  };
+  const now = Date.parse('2026-06-16T14:00:00.000Z'); // ET 2026-06-16 → the live, UNBANKED 3rd day
+  const todayDoc = {
+    id: 't', status: 'active', createdAt: '2026-06-16T13:30:00.000Z',
+    timing: { tradingDays: ['2026-06-16'] },
+    trades: [{ symbolOut: 'A', symbolIn: 'B', lockedPoints: 2 }],
+  };
+
+  it('flag-OFF: the header stays the banked-day count (byte-identical — Day 2)', () => {
+    const m = buildArenaModel({ group: g, priceCtx: { now }, uid: 'u-you', mode: 'ranked' });
+    expect(m.pod.day).toBe(2); // getLatestDayEntry().dayN — today's behavior, unchanged
+  });
+
+  it('flag-ON: the header reads the trading-day index (Day 3 for the in-progress day, never Day 0)', () => {
+    scoreHistoryFlag.on = true;
+    try {
+      const m = buildArenaModel({ group: g, priceCtx: { now }, uid: 'u-you', mode: 'ranked' });
+      expect(m.pod.day).toBe(3); // deriveCurrentTradingDay: latest day2 (6-15) ≠ today → 2+1
+    } finally {
+      scoreHistoryFlag.on = false;
+    }
+  });
+
+  it('the arena header day === the recap current-day label (one index, both deriveCurrentTradingDay)', () => {
+    scoreHistoryFlag.on = true;
+    try {
+      const m = buildArenaModel({ group: g, priceCtx: { now }, uid: 'u-you', mode: 'ranked' });
+      const h = buildScoreHistory({ group: g, battleChain: [todayDoc], uid: 'u-you', now });
+      expect(h.currentTradingDay).toBe(m.pod.day);                     // 3 === 3
+      expect(h.swapDays.find((d) => d.isCurrent).day).toBe(m.pod.day); // today's swaps read DAY 3, matching the header
+    } finally {
+      scoreHistoryFlag.on = false;
+    }
+  });
+
+  it('C3 preserved: a BANKED day reads its banked dayN, and it AGREES with the trading-day index', () => {
+    // "Today" IS banked (recordedDate matches) — the current doc maps to day2 (via
+    // recordedDate, robust to gaps) AND deriveCurrentTradingDay returns 2; the two
+    // axes agree on a banked day, no papering-over.
+    scoreHistoryFlag.on = true;
+    try {
+      const bankedToday = Date.parse('2026-06-15T20:30:00.000Z'); // ET 2026-06-15 = day2's recordedDate
+      const m = buildArenaModel({ group: g, priceCtx: { now: bankedToday }, uid: 'u-you', mode: 'ranked' });
+      expect(m.pod.day).toBe(2);
+      const day2Doc = {
+        id: 'd2', status: 'completed', createdAt: '2026-06-15T13:30:00.000Z',
+        timing: { tradingDays: ['2026-06-15'] }, trades: [{ symbolOut: 'C', symbolIn: 'D', lockedPoints: 1 }],
+      };
+      const h = buildScoreHistory({ group: g, battleChain: [day2Doc], uid: 'u-you', now: bankedToday });
+      const cur = h.swapDays.find((d) => d.isCurrent);
+      expect(cur.day).toBe(2);                 // banked dayN (recordedDate map) — C3
+      expect(cur.dayIsOrdinalFallback).toBe(false);
+      expect(cur.day).toBe(m.pod.day);         // banked dayN === trading-day index (agree)
+    } finally {
+      scoreHistoryFlag.on = false;
+    }
   });
 });

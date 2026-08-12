@@ -29,6 +29,7 @@ import {
   selectActiveLobby,
   selectMyGroup,
   selectMyMostRecentVoidedGroup,
+  selectMyMostRecentCompletedGroup,
   selectMyTrainingPod,
   selectBaseLayerField,
   BASE_LAYER_FIELD_OVERFETCH,
@@ -233,6 +234,33 @@ export function subscribeMyMostRecentVoidedGroup(uid, callback) {
     callback(selectMyMostRecentVoidedGroup(docs));
   }, (error) => {
     console.error('[TournamentGroupService] My-voided-group subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live "my most-recent COMPLETED group" subscription (League Score History — the
+ * survives-the-bank recap). The EXACT twin of subscribeMyMostRecentVoidedGroup:
+ * the SAME member-scoped `array-contains` query (no new index), selected by the
+ * pure `selectMyMostRecentCompletedGroup` predicate so a finished cohort can be
+ * SURFACED to its own member for the recap WITHOUT ever entering selectMyGroup's
+ * active allowlist. Deliberately separate from subscribeMyGroup (rather than
+ * widening it) so the active-consumer inertness lock stays green — COMPLETE must
+ * remain excluded from every "active" path (THE FIELD, the live arena, the
+ * composite). Callback receives { id, ...group } or null. Returns the
+ * unsubscribe fn. Only wired behind LEAGUE_SCORE_HISTORY_ON — flag-off, this
+ * subscription is never created (byte-identical).
+ */
+export function subscribeMyMostRecentCompletedGroup(uid, callback) {
+  const groupsQuery = query(
+    collection(db, TOURNAMENT_GROUPS_COLLECTION),
+    where('groupMembers', 'array-contains', uid)
+  );
+  return onSnapshot(groupsQuery, (snapshot) => {
+    const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(selectMyMostRecentCompletedGroup(docs));
+  }, (error) => {
+    console.error('[TournamentGroupService] My-completed-group subscription error:', error);
     callback(null);
   });
 }

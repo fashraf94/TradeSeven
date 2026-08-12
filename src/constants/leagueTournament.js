@@ -656,6 +656,36 @@ export function selectMyMostRecentVoidedGroup(docs) {
 }
 
 /**
+ * League Score History — the dedicated most-recent-COMPLETED read behind the
+ * survives-the-bank recap. The EXACT twin of selectMyMostRecentVoidedGroup: same
+ * member-scoped set, same most-recent-ranked anchor, same durable auto-expiry —
+ * only the terminal status differs (COMPLETE, not VOIDED).
+ *
+ * WHY A DEDICATED READ (founder ruling): selectMyGroup's active allowlist
+ * (FORMING/DRAFTING/AWAITING_OPEN/BATTLE) is INERT to terminal states on
+ * purpose, and that inertness is load-bearing — it has been protected twice
+ * (VOIDED, and the training/ranked split). Loosening it to admit COMPLETE would
+ * leak a finished cohort into every "active" consumer (THE FIELD, the live
+ * arena, the composite). So the recap gets its own read, exactly as the voided
+ * card did, and the allowlist is never touched.
+ *
+ * Returns the member's most-recent ranked group ONLY WHEN that most-recent group
+ * is COMPLETE — so the recap surfaces the instant a battle banks (selectMyGroup
+ * drops to null) and CLEARS the instant a newer group appears (forming, or a
+ * later completion): the same durable expiry the voided card relies on. VOIDED
+ * is handled by its own card, and EXPIRED (a pre-BATTLE terminal that never
+ * climbed) has no history — both are correctly excluded by the COMPLETE check.
+ * Returns the group doc or null. Pure — unit-tested without Firestore, beside
+ * the inertness lock it must never break. `docs` are { id, ...group }.
+ */
+export function selectMyMostRecentCompletedGroup(docs) {
+  const mostRecentRanked = (docs ?? [])
+    .filter(g => g?.isTraining !== true)
+    .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))[0];
+  return mostRecentRanked?.status === GROUP_STATUS.COMPLETE ? mostRecentRanked : null;
+}
+
+/**
  * G2 honest-warning predicate (docs/audits/20260720_G2_ACTIVEBATTLEID_CONFLICT_DISCOVERY.md).
  * A casual (vs-CPU) Command-Center deploy creates a 'fullday' battle that expires at the
  * next market close (`expiryEtDate`). Because a competitive pod deploys the user's REAL

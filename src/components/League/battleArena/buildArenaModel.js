@@ -19,6 +19,7 @@
 
 import { buildSeat, seatColor } from '../leagueAdapter';
 import { buildClimbSeries } from '../leagueClimbAdapter';
+import { buildSwapLedger } from './leagueSwapLedger';
 import { readAgentStars, readUserStars, readDroppedPickLedger } from '../../../utils/leagueStarMeter';
 import { resolveBaseATR } from '../../../../api/_utils/tournamentUserScoring.js';
 import { isFlat6ActivationDay } from '../../../utils/flat6BattleEnrichment';
@@ -26,11 +27,11 @@ import { deriveBeats } from '../../../utils/leagueBeats';
 import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
 import {
   getLatestDayEntry, getWeeklyComposite, rankByScores, WEEK_DAYS_REQUIRED, TOURNAMENT_TUNING, BASELINE_POLICY,
-  GROUP_STATUS, computeComposite,
+  GROUP_STATUS, computeComposite, deriveCurrentTradingDay,
 } from '../../../constants/leagueTournament';
 import { statusFeedToVoice } from './statusFeedToVoice';
 import { seatAltitude } from './seatAltitude';
-import { LEAGUE_AGENT_CHAT_ENABLED, LEAGUE_LIVE_ORB_ENABLED } from '../../../config/featureFlags';
+import { LEAGUE_AGENT_CHAT_ENABLED, LEAGUE_LIVE_ORB_ENABLED, LEAGUE_SCORE_HISTORY_ON } from '../../../config/featureFlags';
 
 // The strategy chips (founder starter set) for the two-way ask. Each chip's text
 // IS the message sent to the agent (cost 1, same budget + honesty path as free-text)
@@ -286,15 +287,17 @@ export function buildArenaModel({
   let agentDeparted = null;
   let userDeparted = null;
   if (youOrbLive) {
-    const swapItems = (Array.isArray(battle?.trades) ? battle.trades : [])
-      .filter((t) => t && (t.symbolOut || t.symbolIn))
-      .map((t) => ({
-        out: t.symbolOut ?? null,
-        in: t.symbolIn ?? null,
-        pts: Number.isFinite(t.lockedPoints) ? t.lockedPoints : 0,
-      }));
-    if (swapItems.length > 0) {
-      agentDeparted = { total: swapItems.reduce((a, s) => a + s.pts, 0), items: swapItems };
+    // §9: the SWAPS term comes through buildSwapLedger — the SAME function the
+    // Film Room recap sums per day — so the live strip and the recap's current-
+    // day subtotal are one number by construction. agentDeparted keeps its
+    // {out,in,pts} item shape (DepartedLedger + the co-located test read exactly
+    // those); the recap consumes the richer ledger via buildScoreHistory.
+    const swapLedger = buildSwapLedger(battle?.trades);
+    if (swapLedger.items.length > 0) {
+      agentDeparted = {
+        total: swapLedger.total,
+        items: swapLedger.items.map((s) => ({ out: s.out, in: s.in, pts: s.pts })),
+      };
     }
     const dropItems = readDroppedPickLedger(myPlayer);
     if (dropItems.length > 0) {
@@ -411,8 +414,16 @@ export function buildArenaModel({
   const voice = statusFeedToVoice(battle, now, archName);
 
   // ── pod (day from dailyScores; bell countdowns deferred → null = no live tick) ──
+  // Day index (founder ruling, Score-History axis reconciliation): the header,
+  // the recap timeline, and the swap ledger must stop being three derivations of
+  // the same word. FLAG-ON, the header reads the 1-based TRADING-DAY index
+  // (deriveCurrentTradingDay — the same index the recap's current-day label and
+  // the claim window use), so an in-progress day reads "Day 1", never "Day 0".
+  // FLAG-OFF, it stays the banked-day count exactly as today (byte-identical).
   const pod = {
-    day: getLatestDayEntry(group)?.dayN || 0,
+    day: (LEAGUE_SCORE_HISTORY_ON && todayEt)
+      ? deriveCurrentTradingDay(group, todayEt)
+      : (getLatestDayEntry(group)?.dayN || 0),
     days: WEEK_DAYS_REQUIRED,
     watchers: Number.isFinite(group?.watchers) ? group.watchers : null,
     toOpen: null,

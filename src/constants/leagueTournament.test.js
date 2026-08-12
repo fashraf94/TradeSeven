@@ -108,6 +108,7 @@ import {
   isoWeekString,
   // L-A follow-up (B) — the member voided-card's dedicated read + reason projection.
   selectMyMostRecentVoidedGroup,
+  selectMyMostRecentCompletedGroup,
   voidReasonLabel,
   VOID_REASON_LABELS,
   VOIDED_NO_RESULT_COPY,
@@ -1240,6 +1241,73 @@ describe('selectMyMostRecentVoidedGroup — the member voided-card read (separat
     const newerBattle = { id: 'nb', status: GROUP_STATUS.BATTLE, updatedAt: '2026-08-09T00:00:00.000Z' };
     expect(selectMyGroup([voidedB, newerBattle])?.id).toBe('nb');
     expect(selectMyMostRecentVoidedGroup([voidedB, newerBattle])).toBeNull();
+  });
+});
+
+describe('selectMyMostRecentCompletedGroup — the survives-the-bank recap read (twin of the voided read)', () => {
+  const completeA = { id: 'ca', status: GROUP_STATUS.COMPLETE, updatedAt: '2026-07-22T19:00:00.000Z' };
+  const completeB = { id: 'cb', status: GROUP_STATUS.COMPLETE, updatedAt: '2026-08-05T00:00:00.000Z' };
+  const battle = { id: 'b', status: GROUP_STATUS.BATTLE, updatedAt: '2026-08-04T00:00:00.000Z' };
+  const voided = { id: 'v', status: GROUP_STATUS.VOIDED, updatedAt: '2026-08-06T00:00:00.000Z' };
+  const expired = { id: 'e', status: GROUP_STATUS.EXPIRED, updatedAt: '2026-08-06T00:00:00.000Z' };
+  const completeTraining = { id: 'ct', status: GROUP_STATUS.COMPLETE, isTraining: true, updatedAt: '2026-08-07T00:00:00.000Z' };
+
+  it('returns the MOST-RECENT completed ranked group (most-recently-updated wins)', () => {
+    expect(selectMyMostRecentCompletedGroup([completeA, completeB])?.id).toBe('cb');
+    expect(selectMyMostRecentCompletedGroup([completeB, completeA])?.id).toBe('cb');
+  });
+
+  it('surfaces the recap the instant a battle banks (BATTLE→COMPLETE is the latest situation)', () => {
+    // A single ranked group that just completed: selectMyGroup drops to null
+    // (COMPLETE not in the active allowlist) and the recap read picks it up.
+    expect(selectMyGroup([completeB])).toBeNull();
+    expect(selectMyMostRecentCompletedGroup([completeB])?.id).toBe('cb');
+  });
+
+  it('CLEARS the instant a newer group appears (durable auto-expiry — a forming/battle group shadows the recap)', () => {
+    const newerForming = { id: 'nf', status: GROUP_STATUS.FORMING, updatedAt: '2026-08-09T00:00:00.000Z' };
+    expect(selectMyMostRecentCompletedGroup([completeB, newerForming])).toBeNull();
+    const newerBattle = { id: 'nb', status: GROUP_STATUS.BATTLE, updatedAt: '2026-08-09T00:00:00.000Z' };
+    expect(selectMyMostRecentCompletedGroup([completeB, newerBattle])).toBeNull();
+  });
+
+  it('a VOIDED or EXPIRED most-recent group is NOT a completed recap (each has its own handling)', () => {
+    // VOIDED has its own card; EXPIRED never climbed → no history. Neither surfaces here.
+    expect(selectMyMostRecentCompletedGroup([completeA, voided])).toBeNull();
+    expect(selectMyMostRecentCompletedGroup([completeA, expired])).toBeNull();
+    // but an OLDER void/expired behind a completed group does not shadow it.
+    const oldVoided = { id: 'ov', status: GROUP_STATUS.VOIDED, updatedAt: '2026-08-01T00:00:00.000Z' };
+    expect(selectMyMostRecentCompletedGroup([completeB, oldVoided])?.id).toBe('cb');
+  });
+
+  it('excludes a training completed pod (the ranked recap is the only surfaced kind)', () => {
+    expect(selectMyMostRecentCompletedGroup([completeTraining])).toBeNull();
+    expect(selectMyMostRecentCompletedGroup([completeB, completeTraining])?.id).toBe('cb');
+  });
+
+  it('returns null for no completions / empty / null input', () => {
+    expect(selectMyMostRecentCompletedGroup([battle])).toBeNull();
+    expect(selectMyMostRecentCompletedGroup([])).toBeNull();
+    expect(selectMyMostRecentCompletedGroup(null)).toBeNull();
+  });
+
+  it('is COMPLEMENTARY to selectMyGroup and never leaks a completed group into the active read (inertness intact)', () => {
+    expect(selectMyGroup([completeB])).toBeNull();
+    expect(selectMyMostRecentCompletedGroup([completeB])?.id).toBe('cb');
+    // an active BATTLE newer than the completion: active read picks the battle; recap read
+    // is null (the completed group is shadowed) — the completion never reaches an active
+    // consumer, and the recap won't compete with a live game.
+    const newerBattle = { id: 'nb', status: GROUP_STATUS.BATTLE, updatedAt: '2026-08-09T00:00:00.000Z' };
+    expect(selectMyGroup([completeB, newerBattle])?.id).toBe('nb');
+    expect(selectMyMostRecentCompletedGroup([completeB, newerBattle])).toBeNull();
+  });
+
+  it('the completed and voided reads are mutually exclusive on the same most-recent group', () => {
+    // Whichever terminal state the most-recent ranked group is in, only ONE read returns it.
+    expect(selectMyMostRecentCompletedGroup([completeB])?.id).toBe('cb');
+    expect(selectMyMostRecentVoidedGroup([completeB])).toBeNull();
+    expect(selectMyMostRecentVoidedGroup([voided])?.id).toBe('v');
+    expect(selectMyMostRecentCompletedGroup([voided])).toBeNull();
   });
 });
 

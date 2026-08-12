@@ -20,6 +20,7 @@ import { fmtPoints } from '../../../utils/leagueFormat';
 import { ArenaCount } from './ArenaPrimitives';
 import { OWN_AGENT, OWN_YOU, ST_GOOD, ST_BAD } from './arenaTheme';
 import { prefersReducedMotion } from './arenaEngineCore';
+import { FilmRoomRecap } from './FilmRoomRecap';
 
 // a centred modal frame with a dimmed, click-to-close backdrop. `maxWidth`
 // (mobile) caps the fixed `width` to the viewport; default undefined → desktop
@@ -269,7 +270,17 @@ export function DepartedLedger({ kind, departed, onClose, maxWidth, fixed = fals
   );
 }
 
-export function FilmRoomOverlay({ onClose, fixed = false }) {
+// The complete-state "break the seal" room. With `history` (League Score
+// History flag on + a battle chain present) it fills with the Level 1 composite
+// timeline + the per-day swap ledger (FilmRoomRecap); without it — flag off, or
+// the fixtures/preview path — it keeps the placeholder byte-identically. The
+// title adapts to lifecycle: a live battle reads "the week so far", a completed
+// one reads "everything sealed, now open".
+export function FilmRoomOverlay({ onClose, fixed = false, history = null }) {
+  const live = history?.phase === 'live';
+  const title = history
+    ? (live ? 'The week so far' : 'Everything sealed, now open')
+    : 'Everything sealed, now open';
   return (
     <div style={{ position: fixed ? 'fixed' : 'absolute', inset: 0, zIndex: 50, display: 'flex', flexDirection: 'column', background: 'rgba(8,9,13,0.9)',
       backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }} className="bv2-fadein">
@@ -277,20 +288,26 @@ export function FilmRoomOverlay({ onClose, fixed = false }) {
         <LIcon name="crown" size={22} color={LTOKENS.gold} stroke={2} />
         <div>
           <Eyebrow color={LTOKENS.gold}>The Film Room</Eyebrow>
-          <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', marginTop: 2 }}>Everything sealed, now open</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', marginTop: 2 }}>{title}</div>
         </div>
         <button className="bv2-tap" onClick={onClose} style={{ all: 'unset', marginLeft: 'auto', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7,
           padding: '9px 14px', borderRadius: 10, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}`, color: LTOKENS.ink2 }}>
           <LIcon name="arrowL" size={14} color={LTOKENS.ink2} /> <Mono style={{ fontSize: 11 }}>Back to the arena</Mono>
         </button>
       </div>
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 26px 28px' }}>
-        <div style={{ maxWidth: 460, textAlign: 'center' }}>
-          <Mono style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.6 }}>
-            The seal breaks here — every rival&rsquo;s full book, their points, and their agent&rsquo;s reasoning, unrolled across the week. The dossier room lands in the next phase of this build.
-          </Mono>
+      {history ? (
+        <div className="bv2-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '2px 22px 30px' }}>
+          <FilmRoomRecap history={history} />
         </div>
-      </div>
+      ) : (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 26px 28px' }}>
+          <div style={{ maxWidth: 460, textAlign: 'center' }}>
+            <Mono style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.6 }}>
+              The seal breaks here — every rival&rsquo;s full book, their points, and their agent&rsquo;s reasoning, unrolled across the week. The dossier room lands in the next phase of this build.
+            </Mono>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

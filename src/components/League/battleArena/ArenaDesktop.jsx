@@ -11,6 +11,8 @@
 // scales it to fit the viewport.
 
 import React from 'react';
+import { Mono, LIcon, Icon } from '../LeagueParts';
+import { LTOKENS, alpha } from '../leagueTokens';
 import { ArenaTopStrip, BeatCaption } from './ArenaPrimitives';
 import { ClimbArena } from './ClimbArena';
 import { DecompositionStrip } from './DecompositionStrip';
@@ -26,10 +28,14 @@ import { AD_W, AD_H, HERO_W, HERO_H, DOCK_H } from './arenaLayout';
 // `data` (buildArenaModel's output) + `handlers`; the dev preview passes neither,
 // so `D` falls back to the fixtures packed into the SAME shape — keeping the
 // ?battleViewV2=1 path (and its render smoke) byte-identical to Phase 2.
-export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = null, handlers = null, voided = false }) {
+export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = null, handlers = null, voided = false, history = null }) {
   const live = state === 'live';
   const done = state === 'complete';
   const calm = state === 'awaiting';
+  // League Score History (flag-gated): reachable during a LIVE battle via a hero
+  // chip, and at completion via the state panel's Film Room doorway. Null/empty
+  // off-gate → no chip, no overlay change (byte-identical).
+  const hasRecap = !!history && (((history.timeline?.length) || 0) > 0 || (history.swapCount || 0) > 0);
 
   // Keep the fixtures fallback MEMOIZED on [state] — a bare buildFixtureModel(state)
   // would mint a new object each render, churning D's identity and restarting the
@@ -85,6 +91,15 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
             <DecompositionStrip decomposition={D.decomposition} />
           </div>
         )}
+        {hasRecap && !done && (
+          <button className="bv2-tap" onClick={() => setFilmOpen(true)} style={{ all: 'unset', position: 'absolute', top: 10, right: 10, zIndex: 26, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 11px', borderRadius: 9,
+            background: alpha(LTOKENS.gold, 0.12), border: `1px solid ${alpha(LTOKENS.gold, 0.4)}` }}>
+            <LIcon name="crown" size={13} color={LTOKENS.gold} stroke={2} />
+            <Mono style={{ fontSize: 11, fontWeight: 700, color: LTOKENS.ink }}>The week so far</Mono>
+            <Icon name="chevR" size={12} color={LTOKENS.gold} />
+          </button>
+        )}
       </div>
 
       {/* THE COMMAND DOCK — your stars, always in reach */}
@@ -99,7 +114,7 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
           ask={D.ask} youRank={youRank} onFilm={() => setFilmOpen(true)} style={{ flex: 1.02 }} voided={voided} />
       </div>
 
-      {done && filmOpen && <FilmRoomOverlay onClose={() => setFilmOpen(false)} />}
+      {filmOpen && <FilmRoomOverlay onClose={() => setFilmOpen(false)} history={history} />}
       {faOpen && <FreeAgencyDoorway onClose={() => setFaOpen(false)} claim={data ? D.claim : null} onClaim={handlers?.onClaim} />}
       {oppSeat && <OpponentSnapshot seat={oppSeat} composite={D.climb[opp]?.[lastIdx] ?? 0} onClose={() => setOpp(null)} />}
       {departedView && (departedView === 'swap' ? D.agentDeparted : D.userDeparted) && (
