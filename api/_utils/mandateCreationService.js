@@ -93,9 +93,19 @@ export async function createMandate(db, { userId, archetype, now = new Date(), r
     const meta = metaSnap.exists ? metaSnap.data() : {};
 
     if (meta.activeMandateId) {
-      // Idempotent retry of THIS create (same request key) → return the book it made.
+      // Idempotent retry of THIS create (same request key) → return the book it
+      // ALREADY made, echoing the STORED book's own values. Read the persisted
+      // book (never this call's retry-clock derivations) so the replayed
+      // escape-hatch deadline and rollover date stay truthful (§7). This branch
+      // performs NO write, so the read-before-write rule holds.
       if (requestKey && meta.lastCreateRequestKey === requestKey) {
-        return { ok: true, mandateId: meta.activeMandateId, idempotentReplay: true };
+        const bookSnap = await tx.get(db.collection('mandates').doc(meta.activeMandateId));
+        return {
+          ok: true,
+          idempotentReplay: true,
+          mandateId: meta.activeMandateId,
+          book: bookSnap.exists ? bookSnap.data() : null,
+        };
       }
       // Otherwise the user already has an active book — reject (one active per user).
       return { ok: false, code: 'active_book_exists', activeMandateId: meta.activeMandateId };
@@ -119,10 +129,32 @@ export async function createMandate(db, { userId, archetype, now = new Date(), r
 
   if (!result.ok) return result;
 
+  // Idempotent replay: report the PERSISTED book's own values, not this call's
+  // request-clock derivations (the retry clock would report a later escape-hatch
+  // deadline / rollover date than the book actually has). Normalize Firestore
+  // Timestamps back to Dates so the envelope shape matches the fresh-create path.
+  if (result.idempotentReplay) {
+    const book = result.book || {};
+    const tsToDate = (v) => (v && typeof v.toDate === 'function' ? v.toDate() : (v ?? null));
+    return {
+      ok: true,
+      idempotentReplay: true,
+      mandateId: result.mandateId,
+      vintageRef: book.vintageRef ?? null,
+      vintagePublished: false, // nothing new was published for the already-existing book
+      managerAgentId: book.managerAgentId ?? null,
+      cadenceTier: book.cadenceTier ?? null,
+      quarterKey: book.quarterKey ?? `${result.mandateId}:${book.quarterIndex ?? 1}`,
+      createdAt: tsToDate(book.createdAt),
+      nextRolloverAt: tsToDate(book.nextRolloverAt),
+      escapeHatchEligibleUntil: tsToDate(book.escapeHatchEligibleUntil),
+    };
+  }
+
   return {
     ok: true,
     mandateId: result.mandateId,
-    idempotentReplay: result.idempotentReplay === true,
+    idempotentReplay: false,
     vintageRef,
     vintagePublished,
     managerAgentId,

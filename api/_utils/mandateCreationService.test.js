@@ -97,6 +97,30 @@ describe('createMandate — one active book per user (§5.2 same-doc claim)', ()
     expect(res.mandateId).toBe('MID_PREV');
   });
 
+  it('idempotent replay echoes the STORED book values, not the retry clock (bug-hunt §7)', async () => {
+    const { db } = makeFakeDb();
+    const T0 = new Date('2026-08-12T12:00:00Z');
+    const first = await createMandate(db, { userId: 'u1', archetype: CODE, now: T0, requestKey: 'K1' });
+    expect(first.ok).toBe(true);
+
+    // Retry the SAME request 8 days later — the escape-hatch deadline (§2.1/§5.4)
+    // and the rollover date must NOT move to the retry clock.
+    const T1 = new Date('2026-08-20T09:00:00Z');
+    const replay = await createMandate(db, { userId: 'u1', archetype: CODE, now: T1, requestKey: 'K1' });
+    expect(replay.ok).toBe(true);
+    expect(replay.idempotentReplay).toBe(true);
+    expect(replay.mandateId).toBe(first.mandateId);
+    // the envelope reports the ORIGINAL book's values (T0-derived), not T1-derived
+    expect(replay.createdAt.getTime()).toBe(first.createdAt.getTime());
+    expect(replay.nextRolloverAt.getTime()).toBe(first.nextRolloverAt.getTime());
+    expect(replay.escapeHatchEligibleUntil.getTime()).toBe(first.escapeHatchEligibleUntil.getTime());
+    // specifically NOT the retry-clock escape deadline (T1 + 14d) — the defect this guards
+    expect(replay.escapeHatchEligibleUntil.getTime()).not.toBe(T1.getTime() + 14 * 24 * 60 * 60 * 1000);
+    expect(replay.vintageRef).toBe(first.vintageRef);
+    expect(replay.managerAgentId).toBe(first.managerAgentId);
+    expect(replay.vintagePublished).toBe(false);
+  });
+
   it('a DIFFERENT requestKey against an active book still rejects (not a replay)', async () => {
     const { db } = makeFakeDb({
       'userMeta/u1': { activeMandateId: 'MID_PREV', lastCreateRequestKey: 'req-1' },
