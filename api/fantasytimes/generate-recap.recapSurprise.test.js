@@ -142,8 +142,8 @@ describe('A6 — recap surprise/outcome follow the PRINTED calendar operands', (
     const { res, story, prompt } = await runOne([calRow('AMD', 1.44, 1.35)]);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.symbol).toBe('AMD');
-    expect(res.body.outcome).toBe('beat');
+    expect(res.body.stories[0].symbol).toBe('AMD');
+    expect(res.body.stories[0].outcome).toBe('beat');
     expect(story.dataSnapshot.surprise).toBe('+6.7%');
     expect(story.dataSnapshot.outcome).toBe('beat');
     expect(story.dataSnapshot.epsActual).toBe(1.44);
@@ -160,7 +160,7 @@ describe('A6 — recap surprise/outcome follow the PRINTED calendar operands', (
     getEarningsResult.mockResolvedValue(null); // EODHD /fundamentals hasn't posted
     const { res, story, prompt } = await runOne([calRow('NVDA', 1.20, 1.35)]);
 
-    expect(res.body.outcome).toBe('miss');
+    expect(res.body.stories[0].outcome).toBe('miss');
     expect(story.dataSnapshot.surprise).toBe('-11.1%'); // pre-fix: 'N/A'
     expect(story.dataSnapshot.outcome).toBe('miss');
     expect(prompt).toContain('Surprise: -11.1%');
@@ -172,7 +172,7 @@ describe('A6 — recap surprise/outcome follow the PRINTED calendar operands', (
 
     expect(res.statusCode).toBe(200);          // not a crash
     expect(res.body.success).toBe(true);
-    expect(res.body.outcome).toBe(RECAP_OUTCOME_UNVERIFIABLE); // pre-fix fabricated 'beat'
+    expect(res.body.stories[0].outcome).toBe(RECAP_OUTCOME_UNVERIFIABLE); // pre-fix fabricated 'beat'
     expect(story.dataSnapshot.outcome).toBe(RECAP_OUTCOME_UNVERIFIABLE);
     expect(story.dataSnapshot.surprise).toBe('N/A');
   });

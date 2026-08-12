@@ -147,10 +147,15 @@ describe('GREEN — Doug writes an earnings recap from the captured intersection
     // (SGE.F, CAP.PA, CAPMF.US) are excluded by the symbol clause.
     expect(loggedLines().some((l) => l.includes('outcome=wrote fetched=5 tracked=2'))).toBe(true);
     expect(res.body.success).toBe(true);
-    expect(res.body.symbol).toBe('AAPL'); // first tracked row
-    expect(res.body.outcome).toBe('miss'); // 1.57 actual < 1.88 estimate
+    // Post-expansion: BOTH tracked reporters are recapped in one firing,
+    // surprise-first — AAPL (−16.5%) outranks AMZN (−8.2%), so it is written
+    // first (added[0]); AMZN follows.
+    expect(res.body.count).toBe(2);
+    expect(res.body.stories[0].symbol).toBe('AAPL');
+    expect(res.body.stories[0].outcome).toBe('miss'); // 1.57 actual < 1.88 estimate
+    expect(res.body.stories[1].symbol).toBe('AMZN');
 
-    expect(added).toHaveLength(1);
+    expect(added).toHaveLength(2);
     const story = added[0].doc;
     expect(story.primaryTicker).toBe('AAPL');
     expect(story.referentDate).toBe('2026-07-30');
@@ -191,8 +196,9 @@ describe('GREEN — Doug writes an earnings recap from the captured intersection
     const res = makeRes();
     await handler({ ...cronReq }, res);
 
-    // AAPL covered → AMZN is the first uncovered → still writes one story.
-    expect(res.body.symbol).toBe('AMZN');
-    expect(res.body.outcome).toBe('miss'); // 1.68 < 1.83
+    // AAPL covered → AMZN is the only uncovered candidate → exactly one story.
+    expect(res.body.count).toBe(1);
+    expect(res.body.stories[0].symbol).toBe('AMZN');
+    expect(res.body.stories[0].outcome).toBe('miss'); // 1.68 < 1.83
   });
 });

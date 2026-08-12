@@ -84,6 +84,25 @@ export function deriveRecapSurprise(epsActual, epsEstimate) {
   };
 }
 
+// ── Recap throughput (founder-tunable, Doug universe-expansion, Aug 2026) ──
+// The pre-expansion recap wrote at most ONE story per firing; with the widened
+// earnings universe (~66 names) a peak-season day puts more tracked reporters
+// on the calendar than the five daily firings can cover, and every un-recapped
+// name is a lost story (and lost S5 editorial-floor material). We now write up
+// to RECAP_MAX_STORIES_PER_FIRING per firing, bounded across the ET trading day
+// by RECAP_DAILY_STORY_CEILING (the founder-visible knob). Candidates are
+// ordered surprise-first, so when a ceiling binds the DROPPED names are the
+// least newsworthy — the property the founder ruled must be preserved.
+export const RECAP_DAILY_STORY_CEILING = 12;   // max recaps published per ET trading day
+export const RECAP_MAX_STORIES_PER_FIRING = 4; // per-invocation bound (maxDuration:60 safety)
+
+// Newsworthiness sort key: larger |EPS surprise %| ranks first; an
+// unverifiable surprise (null estimate / zero denominator) sorts last.
+export function recapNewsworthiness(candidate) {
+  const { verifiable, surprisePercent } = deriveRecapSurprise(candidate.epsActual, candidate.epsEstimate);
+  return verifiable ? Math.abs(surprisePercent) : -1;
+}
+
 const LOG_PREFIX = '[FantasyTimes:Doug:Recap]';
 
 function logInfo(msg, data = null) {
@@ -284,32 +303,68 @@ export default async function handler(req, res) {
         .map((s) => `${s.primaryTicker}:${s.referentDate}`)
     );
 
-    // First uncovered candidate passing the R-B1a surprise gate; held
-    // candidates log loud and are skipped (one per invocation to stay
-    // within timeout).
+    // Surprise-first: the most newsworthy uncovered names fill the day's
+    // slots, so when a ceiling binds the dropped stories are the least
+    // newsworthy (founder ruling). Ranked by |EPS surprise %| — see
+    // recapNewsworthiness.
+    const ranked = [...trackedResults].sort((a, b) => recapNewsworthiness(b) - recapNewsworthiness(a));
+
+    // Daily ceiling, accumulated across the day's firings. Every firing for one
+    // ET trading day publishes on the SAME UTC date (13/20/21/22/23 UTC ≈
+    // 09:00–19:00 ET), so counting recaps with publishedAt >= 00:00 UTC(today)
+    // is exactly "recaps already published today". Degrades OPEN on a count
+    // failure (falls back to the per-firing bound), never closed.
+    const todayStartUTC = new Date(Date.UTC(
+      wireInstant.getUTCFullYear(), wireInstant.getUTCMonth(), wireInstant.getUTCDate(),
+    ));
+    let publishedToday = 0;
+    try {
+      const todaySnap = await db
+        .collection('fantasyTimesStories')
+        .where('type', '==', 'earnings_recap')
+        .where('publishedAt', '>=', todayStartUTC)
+        .limit(RECAP_DAILY_STORY_CEILING + 1)
+        .get();
+      // .docs.length (not .size) — equivalent on a real QuerySnapshot and also
+      // works against the lightweight test doubles.
+      publishedToday = todaySnap.docs.length;
+    } catch (err) {
+      logError('Daily-ceiling count failed; using per-firing bound only', { error: err.message });
+    }
+    const firingBudget = Math.min(
+      Math.max(0, RECAP_DAILY_STORY_CEILING - publishedToday),
+      RECAP_MAX_STORIES_PER_FIRING,
+    );
+    if (firingBudget === 0) {
+      return skip('daily_ceiling', `Daily recap ceiling reached (${publishedToday}/${RECAP_DAILY_STORY_CEILING})`);
+    }
+
+    // The per-candidate generation block below is kept BYTE-IDENTICAL to the
+    // pre-expansion single-story path (it retains the 4-space indent it had
+    // when it lived directly under `try`), so this diff shows only the
+    // control-flow change — the loop wrapper plus the two return→continue /
+    // return→collect edits — rather than a 220-line reindent of live
+    // generation logic. Each iteration publishes at most one recap; `written`
+    // collects the successes and the single per-firing outcome line + response
+    // are emitted after the loop.
+    const written = [];
     let heldCount = 0;
-    let earning = null;
-    for (const candidate of trackedResults) {
-      if (covered.has(`${candidate.symbol}:${candidate.reportDate}`)) continue;
-      const gate = assessEpsPlausibility(candidate.epsActual, candidate.epsEstimate);
+    for (const earning of ranked) {
+      if (written.length >= firingBudget) break;
+      if (covered.has(`${earning.symbol}:${earning.reportDate}`)) continue;
+      const gate = assessEpsPlausibility(earning.epsActual, earning.epsEstimate);
       if (gate.hold) {
         heldCount += 1;
         logError(
-          `operand_implausible symbol=${candidate.symbol} reportDate=${candidate.reportDate} ` +
+          `operand_implausible symbol=${earning.symbol} reportDate=${earning.reportDate} ` +
           `reason=${gate.reason} detail="${gate.detail}"`,
         );
         continue;
       }
-      earning = candidate;
-      break;
-    }
-
-    if (!earning) {
-      if (heldCount > 0) {
-        return skip('operand_implausible', `${heldCount} candidate(s) held by the plausibility gate`);
-      }
-      return skip('already_written', 'All earnings results already covered');
-    }
+      // Claim it for THIS firing so a duplicate calendar row can't double-write;
+      // a generation failure below leaves it unpublished, so a later firing
+      // (whose covered set is rebuilt from Firestore) retries it.
+      covered.add(`${earning.symbol}:${earning.reportDate}`);
 
     logInfo(`Generating recap for ${earning.symbol}`);
 
@@ -430,8 +485,9 @@ export default async function handler(req, res) {
 
     const toolBlock = response.content.find((block) => block.type === 'tool_use');
     if (!toolBlock || !toolBlock.input) {
-      logError('No tool_use block in recap response');
-      return res.status(500).json({ success: false, error: 'AI did not return structured story' });
+      // Skip this candidate, keep the firing going for the rest of the budget.
+      logError('No tool_use block in recap response', { symbol: earning.symbol });
+      continue;
     }
 
     const storyData = toolBlock.input;
@@ -497,8 +553,9 @@ export default async function handler(req, res) {
     // Close the measured window immediately: nothing between the
     // publish and this line may be metrics I/O.
     const genPublishMs = Date.now() - wireT0;
-    logInfo(`outcome=wrote fetched=${counts.fetched} tracked=${counts.tracked} storyId=${docRef.id}`, {
-      symbol: earning.symbol,
+    // Per-story line (plain — NOT the `outcome=` taxonomy, which stays one per
+    // firing; the firing-level outcome line is emitted after the loop).
+    logInfo(`Recap published symbol=${earning.symbol} storyId=${docRef.id}`, {
       outcome,
       headline: storyDoc.headline,
     });
@@ -535,12 +592,27 @@ export default async function handler(req, res) {
       await callArtDirector(storyDoc, docRef.id, db);
     }
 
-    return res.status(200).json({
-      success: true,
+    written.push({
       storyId: docRef.id,
-      headline: storyDoc.headline,
       symbol: earning.symbol,
       outcome,
+      headline: storyDoc.headline,
+    });
+    }
+
+    // The single per-firing outcome line (F1 dual count + taxonomy, R-B6): one
+    // `outcome=` per firing, now carrying the story count.
+    if (written.length === 0) {
+      if (heldCount > 0) {
+        return skip('operand_implausible', `${heldCount} candidate(s) held by the plausibility gate`);
+      }
+      return skip('already_written', 'All earnings results already covered');
+    }
+    logInfo(`outcome=wrote fetched=${counts.fetched} tracked=${counts.tracked} stories=${written.length}`);
+    return res.status(200).json({
+      success: true,
+      count: written.length,
+      stories: written,
     });
   } catch (error) {
     logError('Recap generation failed', {

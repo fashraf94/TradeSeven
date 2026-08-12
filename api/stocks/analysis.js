@@ -11,7 +11,7 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { sanitizeDocumentId } from '../_utils/sanitizeInput.js';
 import { getFromCache, setInCache, setCacheHeaders } from '../_utils/serverCache.js';
-import { getStockContext, TICKERS } from '../_utils/stockIntelligenceData.js';
+import { getStockContext, STOCK_DATA, TICKERS } from '../_utils/stockIntelligenceData.js';
 import { getStockBrief } from '../_utils/stockBriefService.js';
 import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
 
@@ -247,7 +247,13 @@ export default async function handler(req, res) {
     let tier = 2;
     let source = 'sonar';
 
-    const isTier1 = TICKERS.includes(upper);
+    // Tier-1 means "we have a deep-data bundle for this name." Since TICKERS
+    // (the earnings universe) is now a superset of STOCK_DATA's keys, gate on
+    // STOCK_DATA membership too — a TICKERS name without deep data would make
+    // getStockContext throw (stockIntelligenceData.js), and the catch below
+    // would turn that into a 500. This keeps such names on the Tier-2 Sonar
+    // brief path (their prior behavior before they entered TICKERS).
+    const isTier1 = TICKERS.includes(upper) && !!STOCK_DATA[upper];
 
     if (isTier1) {
       tier = 1;
