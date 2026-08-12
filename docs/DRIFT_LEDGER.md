@@ -81,7 +81,19 @@ Nasdaq-led pulse keeps `NDX`, a Dow-led pulse keeps `DJI`, a genuine S&P pulse s
 
 ---
 
-## D-4 — Wire Kim `sector_vs_spy` has no SPY operand at the S7 seam (founder decision memo)
+## D-4 — Wire Kim `sector_vs_spy` has no SPY operand at the S7 seam — ✅ RULED (A), post-gate (2026-08-12)
+
+**Ruling (Aug 12, 2026):** founder confirms **Option (A)** — thread a SPY operand into the S7 snapshot
+so `sector_vs_spy` is computed and verified — and accepts the decision memo's scope correction: (A) is a
+coordinated epoch change (snapshot shape → §1 shape-photograph re-issue + `WIRE_GENERATION_VERSION`;
+adapter formula + tolerance → `WIRE_EDITORIAL_ADAPTER_VERSION` + two-period-window reset; sector
+entity-resolution reaching the validator → likely `WIRE_VALIDATOR_VERSION`), **not** the single-file
+snapshot touch the original one-liner implied. **Deferred post-gate** — both options reset the two-period
+window, so the fix waits until the Phase-2 editorial gate has qualified on the current 11-exemplar set; it
+then lands as its own arc together with Kim's deferred v2 exemplar embed. First step when unblocked: a
+Phase-0 discovery on the entity-resolution fork (sector `subjectRef` enum vs single-sector `primaryTicker`),
+which decides whether the validator is in scope. **No code written at ruling — scheduling only.** Decision
+memo: `docs/audits/20260812_WIRE_D4_SECTOR_VS_SPY_DECISION_MEMO.md`. Original finding retained below.
 
 **Found:** FantasyTimes Wire N2 exemplar qualification (N2.1), 2026-07-31. Full memo (two options,
 recommendation): `docs/audits/20260731_WIRE_N2_EXEMPLAR_QUALIFICATION_AND_EMBED.md` (Defect D-4).

@@ -1,6 +1,6 @@
 # WIRE D-4 — DECISION MEMO: Kim's `sector_vs_spy` unverifiable basis
 
-**Date:** August 12, 2026 · **Branch:** `claude/d4-sector-vs-spy-memo-u5zbhb` · **HEAD:** `fe4f8668` (= `origin/main`, 0 behind; `git fetch origin` run first per §3) · **Posture:** read-only decision memo — no code, no fix, no fence contact. Advisory input to a founder ruling.
+**Date:** August 12, 2026 · **Branch:** `claude/d4-sector-vs-spy-memo-u5zbhb` · **HEAD:** `fe4f8668` (= `origin/main`, 0 behind; `git fetch origin` run first per §3) · **Posture:** read-only decision memo — no code, no fix, no fence contact. Advisory input to a founder ruling. · **RULED (A), post-gate (Aug 12, 2026)** — see the Founder Ruling at the end.
 
 **What this answers.** D-4 (`DRIFT_LEDGER.md:84-100`) asks the founder to choose between **(A)** threading a SPY operand into Kim's S7 snapshot so `sector_vs_spy` becomes real, and **(B)** retiring `sector_vs_spy` for an honest raw-sector-move basis. The five questions below are answered against the shipping code at HEAD; every claim carries a `file:line` + **VERIFIED** anchor (appendix).
 
@@ -141,4 +141,22 @@ Either way the mechanism is structural (operand or vocabulary), not a soft promp
 | gateEpoch axes (generation/validator/renderer) reset the window | `api/_utils/wireEditorialRun.js:154-162`; `api/_utils/wireContracts.js:38-44` |
 | Exemplar deployment is a gateEpoch input | `api/_utils/wireExemplars.js:55`; `api/_utils/wireContracts.js:92` |
 
-*20260812_WIRE_D4_SECTOR_VS_SPY_DECISION_MEMO.md — advisory; founder rules. Dark; no code.*
+---
+
+## FOUNDER RULING (August 12, 2026)
+
+**Option (A) confirmed — seam-fix: thread a SPY operand into the S7 snapshot so `sector_vs_spy` is computed and verified.** The memo's scope correction is **accepted**: (A) is a coordinated epoch change, not a single-file snapshot touch —
+
+- snapshot shape (`+spy`) → re-issues the §1 shape photograph + forces `WIRE_GENERATION_VERSION`;
+- adapter formula + tolerance → `WIRE_EDITORIAL_ADAPTER_VERSION` + **two-period-window reset**;
+- sector entity-resolution (which sector the figure is about) → reaches the validator, likely `WIRE_VALIDATOR_VERSION`.
+
+**Deferred post-gate — no code at ruling.** This is a scheduling decision only. Because (A) resets the two-period window, it must **not** run inside the Phase-2 editorial baseline window; it waits until the gate has qualified on the current 11-exemplar set, then lands as its own arc together with Kim's deferred **v2 exemplar embed** (the embed is itself a gateEpoch input).
+
+**First step when unblocked:** a Phase-0 read-only discovery scoped to the entity-resolution fork — **sector `subjectRef` enum vs single-sector `primaryTicker`** — since that fork decides whether the validator is in scope (and therefore whether this is a two-axis or three-axis epoch change). That discovery is a new task on a fresh branch (BUILD_RULES §2), cut when the gate window is clear.
+
+*Ruling recorded on the D-4 memo branch; DRIFT_LEDGER D-4 updated to RULED (A), post-gate.*
+
+---
+
+*20260812_WIRE_D4_SECTOR_VS_SPY_DECISION_MEMO.md — advisory; founder ruled (A), post-gate. Dark; no code.*
