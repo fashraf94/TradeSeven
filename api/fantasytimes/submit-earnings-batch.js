@@ -22,6 +22,18 @@ import { recordWireSample } from '../_utils/wireMetrics.js';
 
 export const config = { maxDuration: 60 };
 
+// ── Preview throughput (founder-tunable) ──────────────────────────────────
+// One Sonnet Batch-API request per qualifying name, and fetchEarningsHistory
+// is awaited PER NAME in the build loop below — so an uncapped run over the
+// widened earnings universe (~66 names) both floods the batch and risks the
+// maxDuration:60 budget before submit. Cap the run and order by curation rank
+// (TICKERS is ~market-cap descending) — surprise is unavailable pre-report, so
+// rank is the only priority signal. When the cap binds, the deferred names are
+// the lowest-ranked; they remain eligible on later nightly runs (until their
+// report drops out of the +2..+7 window). Tune this to trade coverage vs. the
+// per-run batch size / function-time budget.
+export const PREVIEW_MAX_PER_RUN = 18;
+
 const LOG_PREFIX = '[FantasyTimes:Doug:BatchSubmit]';
 
 function logInfo(msg, data = null) {
@@ -168,6 +180,23 @@ export default async function handler(req, res) {
       });
     }
 
+    // Cap the run, ordered by curation rank (TICKERS index ≈ market cap). This
+    // bounds the batch size AND the per-name sequential fetchEarningsHistory
+    // work below (the maxDuration:60 risk). Deferred (lowest-rank) names stay
+    // eligible on later nightly runs. See PREVIEW_MAX_PER_RUN.
+    const previewRank = new Map(TICKERS.map((t, i) => [t.toUpperCase(), i]));
+    const cappedEarnings = [...qualifyingEarnings]
+      .sort((a, b) => (previewRank.get(a.symbol) ?? Infinity) - (previewRank.get(b.symbol) ?? Infinity))
+      .slice(0, PREVIEW_MAX_PER_RUN);
+    if (cappedEarnings.length < qualifyingEarnings.length) {
+      logInfo('Preview cap applied', {
+        cap: PREVIEW_MAX_PER_RUN,
+        qualifying: qualifyingEarnings.length,
+        submitting: cappedEarnings.length,
+        deferred: qualifyingEarnings.length - cappedEarnings.length,
+      });
+    }
+
     // ── FantasyTimes Wire (Spec V1.5 §4.5/§4.8) ────────────────────────
     // marketDate is stamped HERE, at key-creation/submit time, and carried
     // to poll-batch on the fantasyTimesBatches doc — the poll invocation
@@ -190,7 +219,7 @@ export default async function handler(req, res) {
 
     // Build batch requests
     const requests = [];
-    for (const earning of qualifyingEarnings) {
+    for (const earning of cappedEarnings) {
       // Build context for each symbol
       let knowledgeExcerpt = '';
       if (STOCK_DATA[earning.symbol]?.knowledgePackage) {
@@ -255,7 +284,7 @@ export default async function handler(req, res) {
     logInfo('Batch submitted', { batchId: batch.id, processingStatus: batch.processing_status });
 
     // Save batch info to Firestore
-    const symbols = qualifyingEarnings.map((e) => e.symbol);
+    const symbols = cappedEarnings.map((e) => e.symbol);
     await db.collection('fantasyTimesBatches').doc(batch.id).set({
       batchId: batch.id,
       type: 'earnings_preview',

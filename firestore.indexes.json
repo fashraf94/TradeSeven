@@ -419,6 +419,20 @@
       ]
     },
     {
+      "collectionGroup": "fantasyTimesStories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "publishedAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "mandates",
       "queryScope": "COLLECTION",
       "fields": [

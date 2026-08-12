@@ -136,7 +136,28 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // byte changes (M8 intact) — the conservative file-level content lock still
 // fires, so the mechanism forces this bump. Free pre-runway (WIRE_WRITES off):
 // the epoch reset is a no-op until the gate window opens.
-export const WIRE_GENERATION_VERSION = 18;
+// v19 (Doug universe-expansion, Aug 12): three surface members change
+// FUNCTIONALLY — stockIntelligenceData.js (TICKERS widened 20→66, the earnings
+// intersection universe), submit-earnings-batch.js (per-run preview cap +
+// curation-rank sort), generate-recap.js (multi-story-per-firing loop +
+// surprise-first order + daily-ceiling + per-candidate error isolation) — plus
+// this file (wireContracts.js) mechanically, since it hosts the bumped
+// constant, so FOUR per-file hashes move in the baseline. These change
+// WHICH/HOW-MANY stories Doug writes, NOT the
+// per-story reporter-request bytes (the recap userMessage assembly is
+// byte-identical; M8 intact) — but the conservative file-level content lock
+// fires on any diff, so the mechanism forces this bump. TICKER_TO_SECTOR is
+// untouched, so assessTickerUniverseCaveat does NOT fire (no validator bump).
+// Free pre-runway (WIRE_WRITES off): the epoch reset is a no-op until the gate
+// window opens.
+// v20 (Doug universe-expansion §8-8 ruling, Aug 12): the api/stocks/analysis.js
+// Tier-1 guard is simplified to `isTier1 = !!STOCK_DATA[x]` — deep-data
+// membership alone, independent of TICKERS (so BX/PNC/ALLY keep Tier-1).
+// analysis.js is NOT a surface member; this bump is forced solely by the
+// one-line comment edit to stockIntelligenceData.js's header (which documents
+// that guard). No prompt/universe change, TICKER_TO_SECTOR untouched (no
+// validator bump). Free pre-runway.
+export const WIRE_GENERATION_VERSION = 20;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────

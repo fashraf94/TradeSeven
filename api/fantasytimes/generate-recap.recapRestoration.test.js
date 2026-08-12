@@ -132,7 +132,7 @@ describe('S5 windows (R-B2)', () => {
     await handler({ ...cronReq }, res);
 
     expect(calendarCalls[0]).toContain('from=2026-07-30&to=2026-07-30');
-    expect(res.body.outcome).toBe('beat');
+    expect(res.body.stories[0].outcome).toBe('beat');
     expect(added).toHaveLength(1);
     const story = added[0].doc;
     expect(story.referentDate).toBe('2026-07-30');       // R-B4 top-level

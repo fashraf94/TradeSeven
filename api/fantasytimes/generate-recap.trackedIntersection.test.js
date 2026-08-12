@@ -27,7 +27,7 @@ vi.mock('../_utils/fantasyTimesConsensus.js', () => ({
   appendEconomics: vi.fn(async () => {}),
 }));
 
-import handler from './generate-recap.js';
+import handler, { RECAP_MAX_STORIES_PER_FIRING } from './generate-recap.js';
 import { wireModelCall } from '../_utils/wireModelCall.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import {
@@ -147,10 +147,15 @@ describe('GREEN — Doug writes an earnings recap from the captured intersection
     // (SGE.F, CAP.PA, CAPMF.US) are excluded by the symbol clause.
     expect(loggedLines().some((l) => l.includes('outcome=wrote fetched=5 tracked=2'))).toBe(true);
     expect(res.body.success).toBe(true);
-    expect(res.body.symbol).toBe('AAPL'); // first tracked row
-    expect(res.body.outcome).toBe('miss'); // 1.57 actual < 1.88 estimate
+    // Post-expansion: BOTH tracked reporters are recapped in one firing,
+    // surprise-first — AAPL (−16.5%) outranks AMZN (−8.2%), so it is written
+    // first (added[0]); AMZN follows.
+    expect(res.body.count).toBe(2);
+    expect(res.body.stories[0].symbol).toBe('AAPL');
+    expect(res.body.stories[0].outcome).toBe('miss'); // 1.57 actual < 1.88 estimate
+    expect(res.body.stories[1].symbol).toBe('AMZN');
 
-    expect(added).toHaveLength(1);
+    expect(added).toHaveLength(2);
     const story = added[0].doc;
     expect(story.primaryTicker).toBe('AAPL');
     expect(story.referentDate).toBe('2026-07-30');
@@ -191,8 +196,53 @@ describe('GREEN — Doug writes an earnings recap from the captured intersection
     const res = makeRes();
     await handler({ ...cronReq }, res);
 
-    // AAPL covered → AMZN is the first uncovered → still writes one story.
-    expect(res.body.symbol).toBe('AMZN');
-    expect(res.body.outcome).toBe('miss'); // 1.68 < 1.83
+    // AAPL covered → AMZN is the only uncovered candidate → exactly one story.
+    expect(res.body.count).toBe(1);
+    expect(res.body.stories[0].symbol).toBe('AMZN');
+    expect(res.body.stories[0].outcome).toBe('miss'); // 1.68 < 1.83
+  });
+});
+
+// ── Throughput: the founder-ruled surprise-first DROP property ─────────────
+// "When a ceiling binds, the dropped names are the LEAST newsworthy." This is
+// the property the founder ruled must be preserved, and the only test that
+// feeds MORE candidates than the per-firing budget (all prior tests feed ≤2).
+describe('THROUGHPUT — a binding per-firing budget drops the least-newsworthy candidates', () => {
+  it('feeds 6 same-day reporters into a budget of 4 → the 4 highest-|surprise| survive, in order; the 2 lowest drop', async () => {
+    vi.setSystemTime(new Date('2026-07-31T13:00:00Z'));
+    // Six tracked reporters, all AMC 2026-07-30, distinct |EPS surprise %|
+    // (all well inside the plausibility band, EPS_SURPRISE_BAND_ABS=20):
+    //   NVDA 16.7% > AAPL 13.3% > GOOGL 11.1% > MSFT 6.7% > AMZN 2.0% > META 0.5%
+    // Input order is DELIBERATELY SHUFFLED (not surprise order) so the test
+    // also fails if the surprise-first sort is removed entirely, not just
+    // reversed.
+    const row = (code, actual, estimate) => ({
+      code, report_date: '2026-07-30', before_after_market: 'AfterMarket', actual, estimate,
+    });
+    stubFetch([
+      row('META.US', 1.005, 1.00),  // +0.5%  — least newsworthy
+      row('NVDA.US', 1.50, 1.80),   // -16.7% — most newsworthy
+      row('AMZN.US', 1.02, 1.00),   // +2.0%
+      row('AAPL.US', 1.30, 1.50),   // -13.3%
+      row('MSFT.US', 1.44, 1.35),   // +6.7%
+      row('GOOGL.US', 1.20, 1.35),  // -11.1%
+    ]);
+    const { db, added } = makeFakeDb();
+    getFirebaseAdmin.mockReturnValue(db);
+
+    const res = makeRes();
+    await handler({ ...cronReq }, res);
+
+    const N = RECAP_MAX_STORIES_PER_FIRING; // 4 (no prior stories → budget = min(12, 4))
+    expect(res.body.count).toBe(N);
+    expect(added).toHaveLength(N);
+    // The N most newsworthy survive, surprise-first; the 2 least newsworthy drop.
+    expect(res.body.stories.map((s) => s.symbol)).toEqual(['NVDA', 'AAPL', 'GOOGL', 'MSFT']);
+    const survived = new Set(res.body.stories.map((s) => s.symbol));
+    expect(survived.has('AMZN')).toBe(false); // +2.0%  dropped
+    expect(survived.has('META')).toBe(false); // +0.5%  dropped (least newsworthy)
+    // Exactly one firing-level outcome line, carrying the story count.
+    expect(loggedLines().filter((l) => l.includes('outcome=wrote'))).toHaveLength(1);
+    expect(loggedLines().some((l) => l.includes(`stories=${N}`))).toBe(true);
   });
 });
