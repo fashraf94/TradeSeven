@@ -1,0 +1,276 @@
+// api/_utils/mandateSchema.js
+//
+// Spec 1 — Mandate Substrate — the record shapes (§2.1 mandate doc, §2.2
+// subcollections) and the identity/key derivations. Node-clean, pure (no
+// Firestore I/O — builders return plain objects; the creation service and the
+// close/rollover passes do the writing).
+//
+// Phase 1 obligation (kickoff item 1–2): the mandate doc carries EVERY block —
+// health, execState, costTelemetry, dormancy, scoring, dual-lens HWM/drawdown —
+// present in the shape even where later phases populate them; and the four
+// subcollection shapes are DEFINED here (Phases 2–4 write them).
+//
+// Enums are the field contracts the later phases bind to (I1 terminal states,
+// I10 agency states, FR-4 corporate-action types).
+
+import { createHash } from 'node:crypto';
+import {
+  MANDATE_SCHEMA_VERSION,
+  MANDATE_STARTING_CAPITAL,
+  MANDATE_DECISION_VERBS,
+} from './mandateConfig.js';
+
+// ── Enums / contracts ────────────────────────────────────────────────────────
+
+/** §3.3 / I1 — the six terminal states; exactly one per submission. */
+export const DECISION_STATUSES = Object.freeze([
+  'executed', 'rejected_stale', 'gated', 'failed', 'cancelled', 'expired',
+]);
+
+/** §2.2 / I10 — per-session agency; `skipped:<reason>` is a family, checked by prefix. */
+export const AGENCY_STATES = Object.freeze(['full', 'exit_only', 'frozen']);
+export function isValidAgencyState(v) {
+  return typeof v === 'string' && (AGENCY_STATES.includes(v) || v.startsWith('skipped:'));
+}
+
+/** §4.3 / FR-4 — corporate-action V1 scope. */
+export const CORPORATE_ACTION_TYPES = Object.freeze([
+  'split', 'reverse_split', 'cash_dividend', 'stock_distribution', 'ticker_change', 'delisting',
+]);
+
+export const MANDATE_STATUSES = Object.freeze(['active', 'closed']);
+
+// Re-export the decision verb set so decision-shape consumers have one import.
+export const DECISION_VERBS = MANDATE_DECISION_VERBS;
+
+// ── Identity / keys ──────────────────────────────────────────────────────────
+
+/**
+ * managerAgentId — STABLE per user × archetype (FR-7 / D-46.3): re-hiring an
+ * archetype must resume the SAME manager, so the id is a pure deterministic
+ * function of (userId, archetype), never a fresh id per mandate. Distinct
+ * namespace from the arena agentId (D-7): the `mgr_` prefix keeps a mandate
+ * manager from ever colliding with a battle agent id. The userId is hashed, not
+ * embedded in the clear.
+ */
+export function deriveManagerAgentId(userId, archetype) {
+  if (!userId || !archetype) throw new Error('deriveManagerAgentId: userId and archetype required');
+  const h = createHash('sha256').update(`${userId}::${archetype}`, 'utf8').digest('hex').slice(0, 16);
+  return `mgr_${archetype}_${h}`;
+}
+
+/** quarterKey — deterministic (§2.1 / F7): `${mandateId}:${quarterIndex}`. */
+export function buildQuarterKey(mandateId, quarterIndex) {
+  return `${mandateId}:${quarterIndex}`;
+}
+
+// ── Mandate-doc block factories (§2.1) ───────────────────────────────────────
+// Each block is present at creation with its blocks-present-but-later-populated
+// fields defaulted. Dual-lens HWM/drawdown initialize to the starting value /
+// zero — this is INITIALIZATION, not a peak-write; the close pass remains the
+// sole peak writer thereafter (I6).
+
+export function buildPortfolioBlock(startingCapital = MANDATE_STARTING_CAPITAL) {
+  return {
+    cash: startingCapital,
+    positions: {}, // { TICKER: { shares, costBasisTotal, avgCost, lastMark, lastMarkAsOf, lastMarkSource, sector } }
+    totalValue: startingCapital,
+    initialValue: startingCapital,
+    sectorWeights: {},
+    // F15 — lifetime lens (never reset)
+    lifetimeHighWaterMark: startingCapital,
+    lifetimeDrawdownFromPeak: 0,
+    // F15 — tenure lens (reset at rollover, §5.3)
+    quarterHighWaterMark: startingCapital,
+    quarterDrawdownFromPeak: 0,
+  };
+}
+
+/** FR-2 — tenure-scoped primary. Null metrics until P3 computes them (§4.2 warmup: null, never 0/NaN). */
+export function buildScoringBlock() {
+  return { quarter: null, lifetime: null, asOf: null };
+}
+
+/** §6.4 / F25 — persisted failure state. */
+export function buildHealthBlock() {
+  return {
+    consecutiveEvalFailures: 0,
+    lastSuccessfulEvalAt: null,
+    lastCloseMarkAt: null,
+    missedMarks: 0, // §3.6 / §6.4 — incremented on an un-markable close
+    quarantined: false,
+  };
+}
+
+/** §6.5 — dormancy plumbing (Spec 3 wires touches; trading/close never downshift). */
+export function buildDormancyBlock() {
+  return { lastUserActivityAt: null, downshifted: false };
+}
+
+/** §6.2 — cost telemetry, accumulated per book. */
+export function buildCostTelemetryBlock() {
+  return { tokensIn: 0, tokensOut: 0, estUsd: 0, monthKey: null };
+}
+
+/** §3.3 / I1 / I9 — execution/liveness state. openBatchId gates submission. */
+export function buildExecStateBlock() {
+  return {
+    openBatchId: null,
+    openBatchSubmittedAt: null,
+    lastProcessedRolloverKey: null,
+    lastCloseKey: null,
+    // I9 liveness counters (executedVsSubmitted); populated by the exec path (P2+).
+    submitted: 0,
+    executed: 0,
+  };
+}
+
+/**
+ * The full mandate doc at creation (§2.1). `revision:0`, `status:'active'`,
+ * `voided:false`. Timestamps are JS Dates (Admin SDK → Firestore Timestamp;
+ * the status+nextRolloverAt range query in §5.3 needs a Timestamp, not a
+ * string). `quarterIndex:1`; `quarterKey` derived. Every §2.1 block present.
+ */
+export function buildNewMandateDoc({
+  mandateId,
+  userId,
+  archetype,
+  managerAgentId,
+  vintageRef,
+  cadenceTier,
+  createdAt,
+  quarterStartAt,
+  nextRolloverAt,
+  escapeHatchEligibleUntil,
+  startingCapital = MANDATE_STARTING_CAPITAL,
+}) {
+  if (!mandateId || !userId || !archetype || !managerAgentId || !vintageRef) {
+    throw new Error('buildNewMandateDoc: mandateId, userId, archetype, managerAgentId, vintageRef required');
+  }
+  return {
+    schemaVersion: MANDATE_SCHEMA_VERSION,
+    userId,
+    status: 'active',
+    voided: false, // FR-3: only escape-hatch books flip this
+    revision: 0, // §5.2 — the correctness backbone; every mutating txn increments it (F1)
+    archetype,
+    managerAgentId,
+    vintageRef,
+    quarterIndex: 1,
+    quarterKey: buildQuarterKey(mandateId, 1),
+    createdAt,
+    quarterStartAt,
+    nextRolloverAt,
+    cadenceTier,
+    escapeHatchEligibleUntil, // first book only; createdAt + 14d
+    portfolio: buildPortfolioBlock(startingCapital),
+    scoring: buildScoringBlock(),
+    health: buildHealthBlock(),
+    dormancy: buildDormancyBlock(),
+    costTelemetry: buildCostTelemetryBlock(),
+    execState: buildExecStateBlock(),
+  };
+}
+
+// ── Subcollection shape definitions (§2.2) ───────────────────────────────────
+// Phase 1 DEFINES these; Phases 2–4 WRITE them. Each factory returns the
+// canonical shape with the §2.2 field set present (defaulted/null), carrying
+// `schemaVersion`. They are the contract later phases populate — no Phase-1 code
+// writes a subcollection doc.
+
+/**
+ * dailyRows/{YYYY-MM-DD} — written by the daily close pass (§3.6), never by an
+ * eval tick. `quarterIndex` makes tenure-scoping a query (FR-2). `agencyState`
+ * records whether the manager could act (I10). `partial:true` on carry-over /
+ * creation-day rows (I17).
+ */
+export function buildDailyRow({ date, quarterIndex, ...rest } = {}) {
+  return {
+    schemaVersion: MANDATE_SCHEMA_VERSION,
+    date: date ?? null,
+    totalValue: rest.totalValue ?? null,
+    dayReturnPct: rest.dayReturnPct ?? null,
+    quarterDrawdown: rest.quarterDrawdown ?? null,
+    regime: rest.regime ?? 'unknown', // §6.1 — never a silently stale label
+    regimeAsOf: rest.regimeAsOf ?? null,
+    regimeSource: rest.regimeSource ?? null,
+    markSource: rest.markSource ?? null,
+    agencyState: rest.agencyState ?? null, // full | exit_only | frozen | skipped:<reason>
+    evalCount: rest.evalCount ?? 0,
+    tokensIn: rest.tokensIn ?? 0,
+    tokensOut: rest.tokensOut ?? 0,
+    estUsd: rest.estUsd ?? 0,
+    quarterIndex: quarterIndex ?? null,
+    partial: rest.partial ?? false, // I17 / §3.6 — creation-day & carry-over rows
+  };
+}
+
+/**
+ * decisions/{decisionId} — deterministic id (§3.3). One terminal `status` per
+ * submission (I1). `priceBasis:'harvest_tick'` (I3). `influenceStateRef` is
+ * PROVABLY NULL in V1 (FR-7 / I8). Friction breakdown carries its model version.
+ */
+export function buildDecision({ decisionId, verb, ticker, ...rest } = {}) {
+  return {
+    schemaVersion: MANDATE_SCHEMA_VERSION,
+    decisionId: decisionId ?? null,
+    verb: verb ?? null, // one of DECISION_VERBS
+    ticker: ticker ?? null,
+    requestedSizeUsd: rest.requestedSizeUsd ?? null,
+    executedSizeUsd: rest.executedSizeUsd ?? null,
+    executedPrice: rest.executedPrice ?? null,
+    priceBasis: 'harvest_tick', // I3
+    clamped: rest.clamped ?? false, // §4.1 — SELL/TRIM clamped to held shares
+    friction: rest.friction ?? null, // { slippageBps, spreadProxyBps, spreadBasis:'proxy', frictionPaid, frictionBasis:'idealized_no_market_impact' }
+    frictionModelVersion: rest.frictionModelVersion ?? null,
+    gateOutcome: rest.gateOutcome ?? null, // { rule, passed } — the specific rule that fired
+    vintageRef: rest.vintageRef ?? null,
+    baseRevision: rest.baseRevision ?? null,
+    submitTickKey: rest.submitTickKey ?? null, // I3
+    harvestTickKey: rest.harvestTickKey ?? null, // I3
+    mandatePromptTemplateVersion: rest.mandatePromptTemplateVersion ?? null,
+    influenceStateRef: null, // FR-7 / I8 — provably null in V1
+    status: rest.status ?? null, // one of DECISION_STATUSES
+  };
+}
+
+/**
+ * quarterSummaries/{quarterIndex} — the tenure record (FR-2). `scoring:false`
+ * when the quarter is voided (FR-3). `empty:true` for a catch-up quarter whose
+ * row range is empty rather than fabricated (§5.3 / F21).
+ */
+export function buildQuarterSummary({ quarterIndex, archetype, vintageRef, ...rest } = {}) {
+  return {
+    schemaVersion: MANDATE_SCHEMA_VERSION,
+    quarterIndex: quarterIndex ?? null,
+    archetype: archetype ?? null,
+    vintageRef: vintageRef ?? null,
+    quarterStartAt: rest.quarterStartAt ?? null,
+    quarterEndAt: rest.quarterEndAt ?? null,
+    openingValue: rest.openingValue ?? null,
+    closingValue: rest.closingValue ?? null,
+    tenureReturn: rest.tenureReturn ?? null,
+    riskMetrics: rest.riskMetrics ?? null, // tenure-scoped (§4.2)
+    regimeMix: rest.regimeMix ?? null,
+    scoring: rest.scoring ?? true, // false when voided (FR-3)
+    empty: rest.empty ?? false, // §5.3 catch-up
+  };
+}
+
+/**
+ * corporateActions/{actionId} — applied action log (§4.3), idempotency-keyed on
+ * {mandateId, actionId}. Written in the close pass before marking (P3).
+ */
+export function buildCorporateAction({ actionId, type, ticker, ...rest } = {}) {
+  return {
+    schemaVersion: MANDATE_SCHEMA_VERSION,
+    actionId: actionId ?? null,
+    type: type ?? null, // one of CORPORATE_ACTION_TYPES
+    ticker: ticker ?? null,
+    ratio: rest.ratio ?? null, // split / reverse-split
+    amount: rest.amount ?? null, // cash dividend per share
+    renamedTo: rest.renamedTo ?? null, // ticker change
+    appliedAt: rest.appliedAt ?? null,
+    source: rest.source ?? null,
+  };
+}

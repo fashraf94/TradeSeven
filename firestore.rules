@@ -996,6 +996,59 @@ service cloud.firestore {
     // denies it; adding an explicit block rides that PR.
 
     // ═══════════════════════════════════════════
+    // SPEC 1 — THE MANDATE (§2.4)
+    // Owner-READ on books + subcollections; ALL client writes DENIED
+    // (Admin SDK only). Every user action routes through an authenticated
+    // endpoint (§7). Phase 1 defines the subcollection shapes; Phases 2–4
+    // write them. mandateUniverseSnapshots (§2.3) is P2 and is left to the
+    // catch-all deny below until then.
+    // ═══════════════════════════════════════════
+
+    // The book: mandates/{mandateId}. Owner-read via the doc's own userId.
+    match /mandates/{mandateId} {
+      allow read: if request.auth != null
+                  && request.auth.uid == resource.data.userId;
+      allow write: if false;  // Admin SDK only (§2.4)
+
+      // Subcollections (§2.2) — owner-read via the PARENT book's userId.
+      match /dailyRows/{rowId} {
+        allow read: if request.auth != null
+                    && request.auth.uid == get(/databases/$(database)/documents/mandates/$(mandateId)).data.userId;
+        allow write: if false;  // Admin SDK only
+      }
+      match /decisions/{decisionId} {
+        allow read: if request.auth != null
+                    && request.auth.uid == get(/databases/$(database)/documents/mandates/$(mandateId)).data.userId;
+        allow write: if false;  // Admin SDK only
+      }
+      match /quarterSummaries/{quarterIndex} {
+        allow read: if request.auth != null
+                    && request.auth.uid == get(/databases/$(database)/documents/mandates/$(mandateId)).data.userId;
+        allow write: if false;  // Admin SDK only
+      }
+      match /corporateActions/{actionId} {
+        allow read: if request.auth != null
+                    && request.auth.uid == get(/databases/$(database)/documents/mandates/$(mandateId)).data.userId;
+        allow write: if false;  // Admin SDK only
+      }
+    }
+
+    // userMeta/{uid} — activeMandateId + mandateEscapeHatchUsed (§2.1, §5.2).
+    // Owner-read; Admin-only writes (the transactional active-book claim and
+    // the escape-hatch once-ever flag are written server-side).
+    match /userMeta/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;  // Admin SDK only (§5.2)
+    }
+
+    // archetypeVintages/{codeId}_{hash} — platform behavioral contracts (§5.1).
+    // Admin SDK only; no client access in Phase 1 (the substrate is headless).
+    match /archetypeVintages/{vintageId} {
+      allow read: if false;   // Admin SDK only
+      allow write: if false;  // Admin SDK only
+    }
+
+    // ═══════════════════════════════════════════
     // Default deny everything else
     // ═══════════════════════════════════════════
     match /{document=**} {
