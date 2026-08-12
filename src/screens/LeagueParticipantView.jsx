@@ -26,15 +26,17 @@ import LiveDraftPicker from '../components/League/liveDraft/LiveDraftPicker';
 import LiveDraftGlimpse from '../components/League/liveDraft/LiveDraftGlimpse';
 import LiveDraftAwaiting from '../components/League/liveDraft/LiveDraftAwaiting';
 import { releaseSlot } from '../services/liveDraftActions';
-import { LEAGUE_LOBBY_ENABLED, LEAGUE_LIVE_DRAFT } from '../config/featureFlags';
+import { LEAGUE_LOBBY_ENABLED, LEAGUE_LIVE_DRAFT, LEAGUE_SCORE_HISTORY_ON } from '../config/featureFlags';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
 import { useIsMobile } from '../hooks/useIsMobile';
 import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
 import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
 import LeagueVoidedNotice from '../components/League/LeagueVoidedNotice';
+import LeagueRecapEntry from '../components/League/LeagueRecapEntry';
 import {
   subscribeMyGroup,
   subscribeMyMostRecentVoidedGroup,
+  subscribeMyMostRecentCompletedGroup,
   subscribeBracket,
   subscribeRank,
 } from '../services/tournamentGroupService';
@@ -97,9 +99,28 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
     return subscribeMyMostRecentVoidedGroup(uid, setVoidedGroup);
   }, [uid]);
 
+  // League Score History (flag-gated): the DEDICATED most-recent-completed read
+  // behind the survives-the-bank recap card — the exact twin of the voided read,
+  // kept separate from subscribeMyGroup so the active allowlist stays inert to
+  // COMPLETE. Flag-off, this subscription is never created (byte-identical). Like
+  // the voided read it auto-expires when a newer group appears.
+  const [completedGroup, setCompletedGroup] = useState(null);
+  useEffect(() => {
+    if (!LEAGUE_SCORE_HISTORY_ON || !uid) { setCompletedGroup(null); return undefined; }
+    return subscribeMyMostRecentCompletedGroup(uid, setCompletedGroup);
+  }, [uid]);
+
   // Participant mode reads the player's OWN battle live (owner-scoped rule
-  // allows it); null until a battle week is underway.
-  const { battle: myBattle } = useMyTournamentBattle(group?.id);
+  // allows it); null until a battle week is underway. `chain` (all daily docs)
+  // feeds the live arena's Score-History recap (the swap ledger); existing
+  // consumers ignore it.
+  const { battle: myBattle, chain: myChain } = useMyTournamentBattle(group?.id);
+
+  // The completed group's OWN daily chain for the recap card — only subscribed
+  // when the flag is on AND there is no active group (the recap interlude).
+  const { chain: completedChain } = useMyTournamentBattle(
+    LEAGUE_SCORE_HISTORY_ON && !group ? completedGroup?.id : null,
+  );
 
   // C — the round-boundary read surface. The bracketId is recovered from the
   // current group OR (for an eliminated player, whose subscribeMyGroup returns
@@ -169,6 +190,13 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
     // states). Renders in whichever no-active-group surface follows, so the member
     // whose battle was voided gets the explanation instead of a bare poster.
     const voidedNotice = uid && loaded && voidedGroup ? <LeagueVoidedNotice group={voidedGroup} /> : null;
+    // League Score History (flag-gated): the survives-the-bank recap card. Sits
+    // beside the voided card in the no-group region; the two are mutually
+    // exclusive (a group's most-recent terminal state is one or the other), and
+    // both auto-expire when a newer group forms. Null off-gate (byte-identical).
+    const recapEntry = LEAGUE_SCORE_HISTORY_ON && uid && loaded && completedGroup
+      ? <LeagueRecapEntry group={completedGroup} battleChain={completedChain} uid={uid} />
+      : null;
     // P10b — the lobby front door replaces the dead "no active group" poster
     // for a signed-in, loaded player with no group, ONLY when the flag is on.
     // Flag-off renders the poster below byte-unchanged (regression-safe); the
@@ -180,6 +208,7 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
       return (
         <div style={page}>
           {voidedNotice}
+          {recapEntry}
           {LEAGUE_LIVE_DRAFT && (
             <LiveDraftPicker tokens={tokens} currentUserId={uid} displayName={user?.displayName} />
           )}
@@ -190,6 +219,7 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
     return (
       <div style={{ ...page, alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
         {voidedNotice}
+        {recapEntry}
         <div style={{
           width: 64, height: 64, borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: tokens.bgCard, border: `1px solid ${tokens.borderDivider}`,
@@ -228,6 +258,7 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
         <LeagueBattleArenaLive
           group={group}
           battle={myBattle}
+          battleChain={myChain}
           mode="ranked"
           uid={uid}
           compositeContext={compositeContext}

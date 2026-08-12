@@ -19,6 +19,7 @@
 
 import { buildSeat, seatColor } from '../leagueAdapter';
 import { buildClimbSeries } from '../leagueClimbAdapter';
+import { buildSwapLedger } from './leagueSwapLedger';
 import { readAgentStars, readUserStars, readDroppedPickLedger } from '../../../utils/leagueStarMeter';
 import { resolveBaseATR } from '../../../../api/_utils/tournamentUserScoring.js';
 import { isFlat6ActivationDay } from '../../../utils/flat6BattleEnrichment';
@@ -286,15 +287,17 @@ export function buildArenaModel({
   let agentDeparted = null;
   let userDeparted = null;
   if (youOrbLive) {
-    const swapItems = (Array.isArray(battle?.trades) ? battle.trades : [])
-      .filter((t) => t && (t.symbolOut || t.symbolIn))
-      .map((t) => ({
-        out: t.symbolOut ?? null,
-        in: t.symbolIn ?? null,
-        pts: Number.isFinite(t.lockedPoints) ? t.lockedPoints : 0,
-      }));
-    if (swapItems.length > 0) {
-      agentDeparted = { total: swapItems.reduce((a, s) => a + s.pts, 0), items: swapItems };
+    // §9: the SWAPS term comes through buildSwapLedger — the SAME function the
+    // Film Room recap sums per day — so the live strip and the recap's current-
+    // day subtotal are one number by construction. agentDeparted keeps its
+    // {out,in,pts} item shape (DepartedLedger + the co-located test read exactly
+    // those); the recap consumes the richer ledger via buildScoreHistory.
+    const swapLedger = buildSwapLedger(battle?.trades);
+    if (swapLedger.items.length > 0) {
+      agentDeparted = {
+        total: swapLedger.total,
+        items: swapLedger.items.map((s) => ({ out: s.out, in: s.in, pts: s.pts })),
+      };
     }
     const dropItems = readDroppedPickLedger(myPlayer);
     if (dropItems.length > 0) {

@@ -46,10 +46,14 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, data = null, handlers = null, voided = false }) {
+export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, data = null, handlers = null, voided = false, history = null }) {
   const live = state === 'live';
   const done = state === 'complete';
   const calm = state === 'awaiting';
+  // League Score History (flag-gated): the recap is reachable during a LIVE
+  // battle (a "week so far" entry) as well as at completion (the MComplete
+  // doorway). Null/empty off-gate → no entry, no overlay change (byte-identical).
+  const hasRecap = !!history && (((history.timeline?.length) || 0) > 0 || (history.swapCount || 0) > 0);
 
   // Same fixtures fallback as ArenaDesktop — MEMOIZED on [state] (identity-stable,
   // so the preview beat-loop doesn't restart each render).
@@ -148,6 +152,15 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
             <DecompositionStrip decomposition={D.decomposition} compact />
           </div>
         )}
+        {hasRecap && !done && (
+          <button className="bv2-tap" onClick={() => setFilmOpen(true)} style={{ all: 'unset', boxSizing: 'border-box', width: '100%', marginTop: 8, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px', borderRadius: 10,
+            background: alpha(LTOKENS.gold, 0.1), border: `1px solid ${alpha(LTOKENS.gold, 0.34)}` }}>
+            <LIcon name="crown" size={13} color={LTOKENS.gold} stroke={2} />
+            <Mono style={{ fontSize: 11, fontWeight: 700, color: LTOKENS.ink }}>The week so far · history</Mono>
+            <Icon name="chevR" size={13} color={LTOKENS.gold} />
+          </button>
+        )}
         {!done && (
           <div style={{ display: 'flex', gap: 7, padding: '12px 0 10px' }}>
             <MTab id="you" label="Your Portfolio" color={OWN_YOU} active={tab} pulse={pulse.you} onClick={goTab} />
@@ -182,7 +195,7 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
 
       {/* overlays pin to the VIEWPORT (fixed) — the mobile root is a tall scroller,
           so an absolute modal would center off-screen on the full scroll height. */}
-      {done && filmOpen && <FilmRoomOverlay onClose={() => setFilmOpen(false)} fixed />}
+      {filmOpen && <FilmRoomOverlay onClose={() => setFilmOpen(false)} fixed history={history} />}
       {faOpen && (
         <FreeAgencyDoorway onClose={() => setFaOpen(false)} claim={data ? D.claim : null} onClaim={handlers?.onClaim} maxWidth={SHEET_FIT} fixed />
       )}

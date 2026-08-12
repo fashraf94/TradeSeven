@@ -21,14 +21,24 @@ import { ArenaMobile } from './ArenaMobile';
 import { AD_W, AD_H } from './arenaLayout';
 import { deriveArenaState, deriveArenaTerminalKind, normalizeArenaMode } from './arenaStateMap';
 import { useArenaModel } from './useArenaModel';
+import { buildScoreHistory } from './buildScoreHistory';
+import { LEAGUE_SCORE_HISTORY_ON } from '../../../config/featureFlags';
 
 // Agent Presence now lives on the battle axis itself (the per-seat heads inside
 // ClimbArena), not as a corner overlay. The provisional overlay this file used to mount
 // was removed when Placement 1 landed — the arena renders the presence in-place.
 
-export default function LeagueBattleArenaLive({ group, battle, mode, uid, compositeContext, onBack = null, viewport = 'desktop' }) {
+export default function LeagueBattleArenaLive({ group, battle, mode, uid, compositeContext, onBack = null, viewport = 'desktop', battleChain = [] }) {
   const { model, handlers, ready } = useArenaModel({ group, battle, mode, uid, compositeContext });
   const state = deriveArenaState(group);
+  // League Score History (flag-gated): the Level 1 timeline + per-day swap ledger
+  // for the Film Room recap, from the SAME banked group + the caller's OWN daily
+  // battle chain. Null off-gate → the arena is byte-identical (no recap, no entry
+  // point). Swap totals reconcile with the live strip's SWAPS by construction (§9).
+  const history = React.useMemo(
+    () => (LEAGUE_SCORE_HISTORY_ON ? buildScoreHistory({ group, battleChain, uid }) : null),
+    [group, battleChain, uid],
+  );
   // L-A: a voided cohort reads terminal ('complete'); the distinct kind drives the
   // client's "voided — no result" pill so it never reads as a real finish.
   const voided = deriveArenaTerminalKind(group) === 'voided';
@@ -65,7 +75,7 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
       <div style={{ width: '100%', minHeight: '100%', background: '#050609',
         backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(primary, 0.06)}, transparent 55%)` }}>
         {ready && model ? (
-          <ArenaMobile key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} />
+          <ArenaMobile key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />
         ) : (
           <div style={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: LTOKENS.ink3, fontFamily: 'monospace', fontSize: 12 }}>
             Loading the arena…
@@ -81,7 +91,7 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
       {ready && model ? (
         <div style={{ height: Math.ceil(fit.scale * AD_H), overflow: 'hidden' }}>
           <div style={{ width: AD_W, height: AD_H, transform: `scale(${fit.scale})`, transformOrigin: 'top left', marginLeft: fit.offset }}>
-            <ArenaDesktop key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} />
+            <ArenaDesktop key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />
           </div>
         </div>
       ) : (

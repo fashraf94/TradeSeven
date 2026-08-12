@@ -335,6 +335,48 @@ export const LEAGUE_TRAINING_CLIMB_PREVIEW_ENABLED = true;
 export const LEAGUE_CANONICAL_OPEN_CAPTURE = true;
 
 /**
+ * League — SCORE HISTORY / recap (Level 1 per-day composite timeline + swap
+ * history) in the Film Room.
+ *
+ * The shipped decomposition strip answers "how is TODAY built" but (a) leaves
+ * `BANKED` a single opaque aggregate, and (b) vanishes at the bank (the live
+ * path is gated on `!dayBanked`). This flag lights the across-the-battle half:
+ * the Film Room (the complete-state "break the seal" overlay, until now an empty
+ * placeholder) fills with the per-day composite timeline and the per-day swap
+ * ledger, and becomes reachable BOTH during a live battle (a "week so far"
+ * entry) and — via a dedicated most-recent-COMPLETED group read that mirrors the
+ * voided-card read — after the bank, so the recap survives completion.
+ *
+ * Every number shown is already persisted or re-derivable (NO new persistence):
+ * Level 1 is a pure read of `dailyScores.dayN.closeScores[uid].compositePoints`
+ * (buildClimbSeries); swaps are the per-day `agentBattles.trades[]` chain the
+ * client already fetches then discards (pickCurrentTournamentBattle). Swap
+ * points reconcile with the live strip's SWAPS term BY CONSTRUCTION — both
+ * derive from `buildSwapLedger` (BUILD_RULES §9). Per-symbol agent BASE for
+ * prior days is NOT persisted (aggregate only) and is labelled unavailable,
+ * never approximated.
+ *
+ * When false (DEFAULT, merge-dark): the Film Room keeps its placeholder, no
+ * completed-group read is subscribed, `useMyTournamentBattle`'s chain is unread,
+ * and nothing new renders on any surface — flag-off is byte-identical.
+ *
+ * PREVIEW SMOKE OVERRIDE: `?leagueScoreHistory=1` force-enables it in a Vercel
+ * preview WITHOUT flipping the shipped default (the `?leagueLiveOrb=1` /
+ * `?battleArenaLive=1` idiom). The production flip stays a separate one-line PR
+ * after the founder smokes the preview (the PR #510 precedent).
+ */
+export const LEAGUE_SCORE_HISTORY_ENABLED = false;
+
+// The resolved gate consumers read (the ARENA_LIVE_ON idiom): the shipped
+// default OR the preview param. Evaluated once at module load. Never pin THIS —
+// pin LEAGUE_SCORE_HISTORY_ENABLED (the literal) if a suite must assert the dark
+// default.
+export const LEAGUE_SCORE_HISTORY_ON =
+  LEAGUE_SCORE_HISTORY_ENABLED ||
+  (typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('leagueScoreHistory') === '1');
+
+/**
  * League — Competitive Live Draft (slot lobbies). The interactive live draft
  * as the competitive entry: a weekly schedule of draft slots (config-driven),
  * a user claims a seat, and a slot with ≥1 human at fire time drafts (CPU fills
