@@ -3,6 +3,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  effectiveVerbs,
+  EXIT_MODE_VERBS,
   buildMandateDecisionTool,
   normalizeDecisionInput,
   MANDATE_DECISION_TOOL_NAME,
@@ -40,5 +42,20 @@ describe('normalizeDecisionInput', () => {
     expect(normalizeDecisionInput({ verb: 'YOLO', rationale: 'x' })).toEqual({ ok: false, reason: 'bad_verb' });
     expect(normalizeDecisionInput({ verb: 'BUY', ticker: 'AAPL', sizeUsd: 0, rationale: 'x' })).toEqual({ ok: false, reason: 'bad_size' });
     expect(normalizeDecisionInput({ verb: 'BUY', ticker: 'AAPL', sizeUsd: -10, rationale: 'x' })).toEqual({ ok: false, reason: 'bad_size' });
+  });
+});
+
+describe('effectiveVerbs — exit-only tool restriction (§6.4/I2)', () => {
+  it('full mode passes the vintage verbs through', () => {
+    expect(effectiveVerbs(['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'], { quarantined: false }))
+      .toEqual(['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD']);
+  });
+  it('quarantined mode intersects with SELL/TRIM/HOLD — the model cannot even emit an entry', () => {
+    expect(effectiveVerbs(['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'], { quarantined: true }))
+      .toEqual(['SELL', 'TRIM', 'HOLD']);
+    expect(EXIT_MODE_VERBS).toEqual(['SELL', 'TRIM', 'HOLD']);
+  });
+  it('a degenerate vintage verb set still yields HOLD (never an empty tool)', () => {
+    expect(effectiveVerbs(['BUY', 'ADD'], { quarantined: true })).toEqual(['HOLD']);
   });
 });

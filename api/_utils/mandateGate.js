@@ -48,13 +48,15 @@ function outcome(passed, rule, extra = {}) {
  * @param {object} args.snapshot                     tick snapshot (§3.0)
  * @param {object} args.gateConfig                   pinned-vintage gateConfig (D-44/O-5)
  * @param {Set<string>} [args.actionableHeld]        held symbols with a fresh mark (I2)
+ * @param {boolean} [args.quarantined]               §6.4/I2 exit-only mode: entries blocked, exits untouched
+ * @param {Set<string>} [args.caFrozen]              §4.3/I7 gap-detector frozen symbols this tick
  * @returns {{
  *   passed:boolean, rule:string, gateOutcome:{rule,passed}, reason?:string,
  *   execSizeUsd?:number|null, clamped?:boolean, bootstrapping:boolean,
  *   sector?:string, cap?:number, weightAfter?:number, deferred?:boolean,
  * }}
  */
-export function evaluateGate({ decision, positions = {}, cash = 0, snapshot = null, gateConfig = {}, actionableHeld = null }) {
+export function evaluateGate({ decision, positions = {}, cash = 0, snapshot = null, gateConfig = {}, actionableHeld = null, quarantined = false, caFrozen = null }) {
   const verb = decision?.verb;
   const ticker = decision?.ticker;
 
@@ -89,6 +91,21 @@ export function evaluateGate({ decision, positions = {}, cash = 0, snapshot = nu
   // ── ENTRY VERBS (BUY / ADD) ──────────────────────────────────────────────
   if (!ENTRY_VERBS.includes(verb)) {
     return outcome(false, 'unknown_verb', { reason: 'unknown_verb', bootstrapping });
+  }
+
+  // 0. Exit-only mode (§6.4/I2): a quarantined book keeps evaluating with
+  // ENTRIES BLOCKED — the exit lane above already passed, so nothing here can
+  // suppress a SELL/TRIM (C-21 outranks ops hygiene). Defense in depth on top
+  // of the restricted decision tool (the model shouldn't even emit an entry).
+  if (quarantined) {
+    return outcome(false, 'quarantined', { reason: 'exit_only_mode', bootstrapping });
+  }
+
+  // 0b. Suspected/pending-CA symbol this tick (§4.3/I7): the fresh mark is
+  // CA-adjusted while the position is not — an entry priced off it would be a
+  // phantom fill. Symbol-level, never a book freeze; exits already passed above.
+  if (caFrozen && caFrozen.has(ticker)) {
+    return outcome(false, 'suspected_ca', { reason: 'ca_frozen', bootstrapping });
   }
 
   // 1. Universe check.

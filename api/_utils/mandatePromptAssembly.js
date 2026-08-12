@@ -12,10 +12,15 @@
 // cannot reach an active book because this reads only the frozen pin.
 //
 // CLOSED PROMPT-INPUT ALLOWLIST (§3.2): the prompt is assembled ONLY from
-//   pinned_vintage · gate_config · book_state · tick_snapshot · static_scaffold.
+//   pinned_vintage · gate_config · book_state · tick_snapshot · regime_context
+//   · static_scaffold.
 // Market data is the shared snapshot only (§3.0) — there is no per-book fetch and
 // no candidate list source other than the tick's snapshot. The candidate COUNT
 // surfaced is a config constant (MANDATE_PROMPT_CANDIDATE_COUNT), not a live knob.
+// REGIME (§6.1, P3) arrives as already-resolved DATA from the handler's one
+// per-fire read of indexIntelligence/marketContext (stale ⇒ 'unknown') — adding
+// it to the allowlist is the deliberate review event D-45 requires; the
+// assembler itself still performs NO live read.
 //
 // TOKEN BUDGET (§6.3): the assembled input is measured and enforced pre-send.
 // Over budget → the candidate slate is trimmed first; if the base scaffold alone
@@ -34,7 +39,7 @@ import {
 
 /** The closed set of sources the prompt may be assembled from (§3.2). */
 export const MANDATE_PROMPT_INPUT_SOURCES = Object.freeze([
-  'pinned_vintage', 'gate_config', 'book_state', 'tick_snapshot', 'static_scaffold',
+  'pinned_vintage', 'gate_config', 'book_state', 'tick_snapshot', 'regime_context', 'static_scaffold',
 ]);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -113,12 +118,16 @@ function renderCandidateSlate(slate) {
  * @param {object} args.book              the mandate doc (portfolio, quarterStartAt, ...)
  * @param {object} args.snapshot          the tick snapshot (§3.0)
  * @param {Date}   [args.now]
+ * @param {string} [args.regime]          §6.1 — already-resolved regime label ('unknown' when stale/absent)
+ * @param {string} [args.regimeAsOf]
+ * @param {string[]} [args.verbs]         effective verb set (quarantine restricts to SELL/TRIM/HOLD, §6.4)
  * @param {number} [args.candidateCount]  config constant (defaults to MANDATE_PROMPT_CANDIDATE_COUNT)
  * @param {number} [args.tokenBudget]
  * @returns {{ system, messages, tools, tokenEstimate, candidateCount, inputSources, contextData }}
  */
 export function assembleMandatePrompt({
   vintage, book, snapshot, now = new Date(),
+  regime = null, regimeAsOf = null, verbs = null,
   candidateCount = MANDATE_PROMPT_CANDIDATE_COUNT,
   tokenBudget = MANDATE_EVAL_INPUT_TOKEN_BUDGET,
 }) {
@@ -137,17 +146,24 @@ export function assembleMandatePrompt({
   const daysIntoQuarter = quarterStartAt ? Math.floor((now.getTime() - quarterStartAt.getTime()) / DAY_MS) + 1 : 0;
   const bootstrapping = heldSet.size < (gc.minPositions ?? 0);
 
+  const effectiveVerbList = verbs || gc.decisionVerbs;
+  // Exit-only honesty (§6.4/I2 + D-17): the manager is TOLD its mandate is
+  // restricted — the record and the manager's own view must agree.
+  const exitOnly = Array.isArray(effectiveVerbList)
+    && !effectiveVerbList.includes('BUY') && !effectiveVerbList.includes('ADD');
+
   const context = buildContextBlock({
     marked, cash, totalValue,
     initialValue: book.portfolio?.initialValue ?? totalValue,
     quarterDrawdown: book.portfolio?.quarterDrawdownFromPeak ?? 0,
     daysIntoQuarter, actionableHeld: actionable,
-    regime: null, regimeAsOf: null, // §6.1 regime provenance is P3
+    regime, regimeAsOf, // §6.1 — resolved by the handler, 'unknown' when stale
     bootstrapping, minPositions: gc.minPositions ?? null,
+    exitOnly,
   });
 
   const system = buildSystemPrompt(vintage);
-  const tool = buildMandateDecisionTool(gc.decisionVerbs);
+  const tool = buildMandateDecisionTool(effectiveVerbList);
   const instruction = 'Decide now: call submit_mandate_decision with exactly one action for this evaluation.';
 
   // Pre-send budget (§6.3): measure, then ENFORCE by trimming the candidate slate

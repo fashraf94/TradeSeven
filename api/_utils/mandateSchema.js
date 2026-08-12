@@ -98,6 +98,7 @@ export function buildHealthBlock() {
     lastSuccessfulEvalAt: null,
     lastCloseMarkAt: null,
     missedMarks: 0, // §3.6 / §6.4 — incremented on an un-markable close
+    consecutiveMissedMarks: 0, // §6.4 — alert at MANDATE_MISSED_MARKS_ALERT consecutive partial closes (P3)
     quarantined: false,
   };
 }
@@ -122,6 +123,9 @@ export function buildExecStateBlock() {
     // I9 liveness counters (executedVsSubmitted); populated by the exec path (P2+).
     submitted: 0,
     executed: 0,
+    // I9 (P3): consecutive rejected_stale/expired submissions — THE liveness
+    // wire (founder ruling: HOLD-only is healthy, the ratio is secondary).
+    staleRejectStreak: 0,
   };
 }
 
@@ -183,13 +187,20 @@ export function buildNewMandateDoc({
  * eval tick. `quarterIndex` makes tenure-scoping a query (FR-2). `agencyState`
  * records whether the manager could act (I10). `partial:true` on carry-over /
  * creation-day rows (I17).
+ *
+ * P3 additions (first writer — no row was ever written before the close pass
+ * existed, so the shape stays schemaVersion 1): dividend income (§4.3 — income,
+ * not trading P&L), the day/cumulative friction figures that let gross be
+ * reconstructed as net + Σ friction (F14, single-direction), the cumulative
+ * liveness counters snapshotted for the I9 trailing-window ratio, and
+ * `degradedMarks` (any carry-over mark among today's position marks, I6).
  */
 export function buildDailyRow({ date, quarterIndex, ...rest } = {}) {
   return {
     schemaVersion: MANDATE_SCHEMA_VERSION,
     date: date ?? null,
     totalValue: rest.totalValue ?? null,
-    dayReturnPct: rest.dayReturnPct ?? null,
+    dayReturnPct: rest.dayReturnPct ?? null, // null when no prior row exists (never a fabricated multi-day figure)
     quarterDrawdown: rest.quarterDrawdown ?? null,
     regime: rest.regime ?? 'unknown', // §6.1 — never a silently stale label
     regimeAsOf: rest.regimeAsOf ?? null,
@@ -200,8 +211,15 @@ export function buildDailyRow({ date, quarterIndex, ...rest } = {}) {
     tokensIn: rest.tokensIn ?? 0,
     tokensOut: rest.tokensOut ?? 0,
     estUsd: rest.estUsd ?? 0,
+    cacheHitTokens: rest.cacheHitTokens ?? 0, // §6.3 — present now, zero until P5 wires caching
     quarterIndex: quarterIndex ?? null,
     partial: rest.partial ?? false, // I17 / §3.6 — creation-day & carry-over rows
+    degradedMarks: rest.degradedMarks ?? false, // I6 — any carry-over mark in today's marking
+    dividendIncomeUsd: rest.dividendIncomeUsd ?? 0, // §4.3 — income, not trading P&L
+    dayFrictionPaid: rest.dayFrictionPaid ?? 0, // F14 — gross = net + this, never subtracted twice
+    frictionPaidCum: rest.frictionPaidCum ?? 0,
+    submittedCum: rest.submittedCum ?? 0, // I9 — trailing-window liveness inputs
+    executedCum: rest.executedCum ?? 0,
   };
 }
 

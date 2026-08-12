@@ -12,6 +12,7 @@ import {
   buildTickKey,
   resolveEvalContext,
   activeTick,
+  activeCloseTick,
   SLOT_NAMES,
 } from './mandateSessionSlots.js';
 
@@ -126,5 +127,31 @@ describe('resolveEvalContext / activeTick — at real instants', () => {
 
   it('buildTickKey is the shared platform-wide key', () => {
     expect(buildTickKey('2026-08-12', 'midday')).toBe('2026-08-12_midday');
+  });
+});
+
+describe('activeCloseTick — the §3.6 post-close duty window (P3)', () => {
+  it('is null during the session and inside the settle delay, active after close+delay', () => {
+    // Regular session (EDT): close 16:00 ET = 20:00 UTC.
+    expect(activeCloseTick(new Date('2026-08-12T19:30:00Z'))).toBe(null);      // 15:30 ET — still trading
+    expect(activeCloseTick(new Date('2026-08-12T20:05:00Z'))).toBe(null);      // 16:05 ET — inside the settle delay
+    expect(activeCloseTick(new Date('2026-08-12T20:16:00Z'))).toEqual({ date: '2026-08-12', closeKey: '2026-08-12_close' });
+    expect(activeCloseTick(new Date('2026-08-12T21:50:00Z'))).toEqual({ date: '2026-08-12', closeKey: '2026-08-12_close' });
+    expect(activeCloseTick(new Date('2026-08-12T22:05:00Z'))).toBe(null);      // 18:05 ET — window closed
+  });
+  it('shifts with the calendar on early-close days (13:00 ET close)', () => {
+    // Nov 27 2026 — the day after Thanksgiving, an early close. 13:00 ET = 18:00 UTC (EST).
+    expect(activeCloseTick(new Date('2026-11-27T18:05:00Z'))).toBe(null);
+    expect(activeCloseTick(new Date('2026-11-27T18:20:00Z'))).toEqual({ date: '2026-11-27', closeKey: '2026-11-27_close' });
+    // A regular-close-time fire on an early-close day is far past the window.
+    expect(activeCloseTick(new Date('2026-11-27T21:20:00Z'))).toBe(null);
+  });
+  it('never fires on a non-session day', () => {
+    expect(activeCloseTick(new Date('2026-08-15T20:30:00Z'))).toBe(null); // Saturday
+  });
+  it('the eval slots and the close window are disjoint (no wall-clock overlap by geometry)', () => {
+    // preClose window ends AT the close; the close duty starts at close+15.
+    // 15:59 ET (19:59 UTC) is an eval instant; 16:16 ET is a close instant.
+    expect(activeCloseTick(new Date('2026-08-12T19:59:00Z'))).toBe(null);
   });
 });

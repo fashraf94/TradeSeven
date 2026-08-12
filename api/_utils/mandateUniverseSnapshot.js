@@ -32,6 +32,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { fetchBatchQuotes } from './tournamentPrices.js';
 import { getStockAnalysisData } from './marketDataCache.js';
 import { CANDIDATE_UNIVERSE } from './mandateCandidateUniverse.js';
+import { parseSplitsPayload, parseDividendsPayload } from './mandateCorporateActions.js';
 import {
   MANDATE_UNIVERSE_MAX_SYMBOLS,
   MANDATE_SNAPSHOT_MAX_BYTES,
@@ -40,6 +41,8 @@ import {
   MANDATE_UPSTREAM_DAILY_CEILING,
   MANDATE_UPSTREAM_ALERT_FRACTION,
   MANDATE_MARK_MAX_AGE_MS,
+  MANDATE_CA_FETCH_LOOKBACK_DAYS,
+  MANDATE_CA_FETCH_LOOKAHEAD_DAYS,
 } from './mandateConfig.js';
 
 const LOG_PREFIX = '[MandateUniverse]';
@@ -162,6 +165,9 @@ export function assembleFastEntries(symbols, quotes, {
       sector: daily?.sector ?? null,
       industry: daily?.industry ?? null,
       marketCap: daily?.marketCap ?? null,
+      // §4.3 (P3): the symbol's CA window from the daily layer, denormalized so
+      // the eval path's gap detector reads ONE doc (only present when non-empty).
+      ...(daily?.corporateActions?.length ? { corporateActions: daily.corporateActions } : {}),
     };
   }
 
@@ -252,17 +258,73 @@ export async function bumpUpstreamCounter(db, dateStr, delta, {
   return post.next;
 }
 
+// ── Corporate-actions fetch (§4.3, P3 — the slow layer's third field group) ──
+
+const EODHD_BASE = 'https://eodhd.com/api';
+
+/** YYYY-MM-DD ± days, UTC-safe on the date string. */
+export function shiftDateStr(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Fetch splits + dividends for ONE symbol from EODHD (Q5: no CA feed existed in
+ * the repo — the book brings its own; this module is the §3.0 sole-fetch home).
+ * TWO upstream calls per symbol. Failures are LOUD but partial: a failed leg
+ * returns `failed:true` for that symbol so the daily doc records honest CA
+ * coverage — the §4.3 gap detector is the independent backstop, so a missing
+ * feed day degrades to symbol-level freezes, never silent mismarks.
+ *
+ * @returns {Promise<{ actions: Array<object>, calls: number, failed: boolean }>}
+ */
+export async function fetchCorporateActionsEODHD(symbol, {
+  from, to,
+  fetchImpl = fetch,
+  apiKey = process.env.EODHD_API_KEY,
+} = {}) {
+  if (!apiKey) throw new Error('fetchCorporateActionsEODHD: EODHD_API_KEY not configured');
+  const sym = String(symbol || '').trim().toUpperCase();
+  const q = `api_token=${apiKey}&fmt=json&from=${from}&to=${to}`;
+  let calls = 0;
+  let failed = false;
+  const actions = [];
+
+  for (const [endpoint, parse] of [
+    [`${EODHD_BASE}/splits/${sym}.US?${q}`, parseSplitsPayload],
+    [`${EODHD_BASE}/div/${sym}.US?${q}`, parseDividendsPayload],
+  ]) {
+    try {
+      calls++;
+      const res = await fetchImpl(endpoint);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const { actions: parsed, rejects } = parse(sym, json);
+      actions.push(...parsed);
+      for (const rej of rejects) {
+        console.error(`${LOG_PREFIX} CA row rejected for ${sym}: ${rej.reason} ${JSON.stringify(rej.row)}`);
+      }
+    } catch (err) {
+      failed = true;
+      console.error(`${LOG_PREFIX} CA fetch failed for ${sym} (${endpoint.includes('/splits/') ? 'splits' : 'dividends'}): ${err.message}`);
+    }
+  }
+  return { actions, calls, failed };
+}
+
 /**
  * SLOW LAYER (§3.0): build the daily fundamentals-derived doc for `date`,
  * idempotent (skips if already built — the slow layer runs once daily pre-open).
- * Enriches each build-set symbol with {marketCap, sector, industry}. Corporate
- * actions and technical baselines are P3 — not fetched here.
+ * Enriches each build-set symbol with {marketCap, sector, industry} and (P3,
+ * §4.3) its corporate-actions window [date−lookback, date+lookahead] from the
+ * EODHD splits/dividends endpoints — held + universe symbols, per spec.
  *
- * Upstream cost: fundamentals is one field group per symbol, and
- * getStockAnalysisData caches it (24h TTL), so only cache-miss symbols hit
- * upstream; only those are counted.
+ * Upstream cost: fundamentals is one field group per symbol with a 24h cache
+ * (only cache-miss symbols count); CA is 2 uncached calls per symbol (~600/day
+ * at the 300 cap — inside the §3.0 ~900/day slow-layer budget).
  *
- * @returns {Promise<{ ref, date, built: boolean, symbolCount, completeCount, upstreamCalls }>}
+ * @returns {Promise<{ ref, date, built: boolean, symbolCount, completeCount, upstreamCalls, caFailedCount }>}
  */
 export async function ensureDailySnapshot(db, {
   date,
@@ -271,6 +333,7 @@ export async function ensureDailySnapshot(db, {
   force = false,
   candidateUniverse = CANDIDATE_UNIVERSE,
   getFundamentals = (sym) => getStockAnalysisData(sym, { fields: ['fundamentals'] }),
+  fetchCorporateActions = fetchCorporateActionsEODHD,
   concurrency = 8,
 } = {}) {
   if (!db) throw new Error('ensureDailySnapshot: db required');
@@ -283,34 +346,47 @@ export async function ensureDailySnapshot(db, {
     const existing = await ref.get();
     if (existing.exists) {
       const d = existing.data();
-      return { ref, date, built: false, symbolCount: d.symbolCount ?? 0, completeCount: d.completeCount ?? 0, upstreamCalls: 0 };
+      return { ref, date, built: false, symbolCount: d.symbolCount ?? 0, completeCount: d.completeCount ?? 0, upstreamCalls: 0, caFailedCount: d.caFailedCount ?? 0 };
     }
   }
 
   const { symbols, heldSet } = assembleBuildSet(heldTickers, { candidateUniverse });
+  const caFrom = shiftDateStr(date, -MANDATE_CA_FETCH_LOOKBACK_DAYS);
+  const caTo = shiftDateStr(date, MANDATE_CA_FETCH_LOOKAHEAD_DAYS);
 
   const entries = {};
   const missing = [];
   let completeCount = 0;
   let upstreamCalls = 0;
+  let caFailedCount = 0;
 
   // Bounded-concurrency enrichment (the slow layer runs once daily; most days
-  // this is cache hits after the first build).
+  // fundamentals are cache hits after the first build; CA is fetched fresh).
   for (const group of chunk(symbols, concurrency)) {
     const results = await Promise.all(group.map(async (sym) => {
+      let sector = null; let industry = null; let marketCap = null; let upstream = 0;
       try {
         const res = await getFundamentals(sym);
         const f = res?.fundamentals || {};
-        const upstream = res?.cacheStatus?.fundamentals === 'fresh' ? 1 : 0;
-        const sector = f.sector ?? null;
-        return { sym, sector, industry: f.industry ?? null, marketCap: f.marketCap ?? null, upstream };
+        upstream = res?.cacheStatus?.fundamentals === 'fresh' ? 1 : 0;
+        sector = f.sector ?? null;
+        industry = f.industry ?? null;
+        marketCap = f.marketCap ?? null;
       } catch (err) {
         console.error(`${LOG_PREFIX} fundamentals fetch failed for ${sym}: ${err.message}`);
-        return { sym, sector: null, industry: null, marketCap: null, upstream: 0, failed: true };
       }
+      let ca = { actions: [], calls: 0, failed: false };
+      try {
+        ca = await fetchCorporateActions(sym, { from: caFrom, to: caTo });
+      } catch (err) {
+        ca = { actions: [], calls: 0, failed: true };
+        console.error(`${LOG_PREFIX} CA fetch threw for ${sym}: ${err.message}`);
+      }
+      return { sym, sector, industry, marketCap, upstream: upstream + ca.calls, caActions: ca.actions, caFailed: ca.failed };
     }));
     for (const r of results) {
       upstreamCalls += r.upstream;
+      if (r.caFailed) caFailedCount++;
       const complete = r.sector != null; // sector is the field the gate depends on
       if (complete) completeCount++;
       else missing.push(r.sym);
@@ -320,8 +396,17 @@ export async function ensureDailySnapshot(db, {
         marketCap: r.marketCap,
         source: DAILY_SOURCE,
         complete,
+        // §4.3: the day's corporate-actions window for this symbol (only when
+        // non-empty — most symbols carry none); caFetchFailed marks honest
+        // coverage gaps (the gap detector backstops them).
+        ...(r.caActions.length > 0 ? { corporateActions: r.caActions } : {}),
+        ...(r.caFailed ? { caFetchFailed: true } : {}),
       };
     }
+  }
+
+  if (caFailedCount > 0) {
+    console.error(`${LOG_PREFIX} MANDATE_CA_FETCH_DEGRADED — CA fetch failed for ${caFailedCount}/${symbols.length} symbols on ${date} (gap detector backstops)`);
   }
 
   const doc = {
@@ -332,12 +417,14 @@ export async function ensureDailySnapshot(db, {
     symbolCount: symbols.length,
     completeCount,
     missing,
+    caWindow: { from: caFrom, to: caTo },
+    caFailedCount,
     symbols: entries,
   };
   await ref.set(doc);
   if (upstreamCalls > 0) await bumpUpstreamCounter(db, date, upstreamCalls);
 
-  return { ref, date, built: true, symbolCount: symbols.length, completeCount, upstreamCalls };
+  return { ref, date, built: true, symbolCount: symbols.length, completeCount, upstreamCalls, caFailedCount };
 }
 
 /**
@@ -483,4 +570,28 @@ export function isSymbolActionable(snapshot, symbol) {
 export function markFor(snapshot, symbol) {
   const e = snapshot?.symbols?.[norm(symbol)];
   return e && e.complete ? e.price : null;
+}
+
+/** The per-symbol CA map denormalized onto a snapshot (§4.3) — gap-detector input. */
+export function caActionsBySymbol(snapshot) {
+  const out = {};
+  for (const [sym, e] of Object.entries(snapshot?.symbols || {})) {
+    if (e?.corporateActions?.length) out[sym] = e.corporateActions;
+  }
+  return out;
+}
+
+/**
+ * A shallow view of `snapshot` with `excludeSet` symbols' entries removed, so
+ * markBook falls back to each excluded symbol's carry-over mark (§4.3: a
+ * CA-frozen symbol must never be priced at the already-adjusted fresh mark
+ * while the position is still unadjusted).
+ */
+export function snapshotExcluding(snapshot, excludeSet) {
+  if (!excludeSet || excludeSet.size === 0) return snapshot;
+  const symbols = {};
+  for (const [sym, e] of Object.entries(snapshot?.symbols || {})) {
+    if (!excludeSet.has(sym)) symbols[sym] = e;
+  }
+  return { ...snapshot, symbols };
 }
