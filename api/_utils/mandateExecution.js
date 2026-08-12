@@ -393,6 +393,8 @@ export async function executeDecision(db, {
       executedShares: exec.receipt.shares,       // §4.1 — the filled quantity
       executedPrice: exec.receipt.executedPrice,
       realizedPnl: exec.receipt.realizedPnl,     // §4.1 — recorded here; needs the historical basis, unrecoverable otherwise
+      // 'snapshot' → 'fresh'; carry_over/basis pass through (founder rider).
+      fillMarkQuality: exec.receipt.markSource === 'snapshot' ? 'fresh' : (exec.receipt.markSource ?? null),
       clamped: exec.receipt.clamped,
       friction: exec.receipt.friction,
       frictionModelVersion: MANDATE_FRICTION_MODEL_VERSION,
@@ -409,6 +411,13 @@ export async function executeDecision(db, {
     // Mutate the book: portfolio + revision + clear openBatchId + liveness (I9).
     // NEVER writes HWM/drawdown — the close pass is the sole peak writer (I6).
     // lastEvalTickKey stamped atomically → same-slot re-fire is hard-idempotent.
+    //
+    // LIVENESS SIGNAL (founder ruling, Phase 2 close-out): a HOLD is a terminal
+    // `executed` decision and increments `executed` here — a book that only ever
+    // HOLDs is HEALTHY. Liveness (I9/§6.4) is therefore judged by the STALE-REJECTION
+    // STREAK (P3), not by the executed/submitted ratio: a book that only *rejects*
+    // is the unhealthy case. P3 must wire the liveness floor to the streak, not this
+    // counter.
     tx.update(mandateRef, {
       'portfolio.cash': newCash,
       'portfolio.positions': newPositions,

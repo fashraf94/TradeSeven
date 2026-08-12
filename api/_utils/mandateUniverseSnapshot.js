@@ -230,9 +230,13 @@ export async function bumpUpstreamCounter(db, dateStr, delta, {
   alertFraction = MANDATE_UPSTREAM_ALERT_FRACTION,
 } = {}) {
   if (!delta) return null;
-  const ref = db.collection(UPSTREAM_COUNTER_COLLECTION).doc(dateStr);
   const threshold = Math.floor(ceiling * alertFraction);
   const post = await db.runTransaction(async (tx) => {
+    // Writes the non-protected mandateUpstreamCalls counter. The protected-store
+    // scanner cannot statically resolve a tx.set(ref, …) handle-form ref argument
+    // (unlike a callee-base ref.set()), so this site is ALLOWLISTED with a note
+    // rather than restructured away from its atomic read-modify-write (§3.0/Q5).
+    const ref = db.collection('mandateUpstreamCalls').doc(dateStr);
     const snap = await tx.get(ref);
     const prev = snap.exists ? (snap.data().count || 0) : 0;
     const next = prev + delta;
@@ -272,7 +276,9 @@ export async function ensureDailySnapshot(db, {
   if (!db) throw new Error('ensureDailySnapshot: db required');
   if (!date) throw new Error('ensureDailySnapshot: date required');
 
-  const ref = db.collection(DAILY_COLLECTION).doc(date);
+  // Literal collection (see bumpUpstreamCounter) — keeps this write resolvable to
+  // the non-protected mandateUniverseDaily store for the protected-store scan.
+  const ref = db.collection('mandateUniverseDaily').doc(date);
   if (!force) {
     const existing = await ref.get();
     if (existing.exists) {
@@ -363,7 +369,9 @@ export async function ensureUniverseSnapshot(db, {
   if (!tickKey) throw new Error('ensureUniverseSnapshot: tickKey required');
   if (!sessionDate) throw new Error('ensureUniverseSnapshot: sessionDate required');
 
-  const ref = db.collection(SNAPSHOT_COLLECTION).doc(tickKey);
+  // Literal collection (see bumpUpstreamCounter) — keeps this write resolvable to
+  // the non-protected mandateUniverseSnapshots store for the protected-store scan.
+  const ref = db.collection('mandateUniverseSnapshots').doc(tickKey);
   if (!force) {
     const existing = await ref.get();
     if (existing.exists) {

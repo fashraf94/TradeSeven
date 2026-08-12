@@ -222,6 +222,11 @@ export function buildDecision({ decisionId, verb, ticker, ...rest } = {}) {
     executedPrice: rest.executedPrice ?? null,
     realizedPnl: rest.realizedPnl ?? null, // §4.1 — proceedsNet − Δbasis on a SELL/TRIM; needs the historical basis at sale time, so it is recorded here (unrecoverable otherwise)
     priceBasis: 'harvest_tick', // I3
+    // Which mark QUALITY the fill executed at (founder rider, Phase 2 close-out):
+    // 'fresh' = the tick snapshot; 'carry_over' = a held symbol's last-good mark
+    // when frozen (§4.3, exits only); 'basis' = average cost fallback. P3 scoring /
+    // narration must be able to tell a degraded fill from a fresh one. null = no fill.
+    fillMarkQuality: rest.fillMarkQuality ?? null,
     clamped: rest.clamped ?? false, // §4.1 — SELL/TRIM clamped to held shares
     friction: rest.friction ?? null, // { slippageBps, spreadProxyBps, spreadBasis:'proxy', frictionPaid, frictionBasis:'idealized_no_market_impact' }
     frictionModelVersion: rest.frictionModelVersion ?? null,

@@ -123,3 +123,32 @@ Config additions (`mandateConfig.js`), the sweep composite index (`firestore.ind
 ## 6. Verdict
 
 All four reviewers' confirmed findings (2 HIGH-fail-open/constitutional, 1 HIGH-scaling, 1 HIGH-sweep, 1 MAJOR-freshness, plus the medium/low set) are fixed and covered by tests; the do-not-build-ahead line holds. Phase 2 is a **working, dark, tested** evaluation pipeline. Opened as a PR (not merged) for founder review per the kickoff.
+
+---
+
+## 7. Founder close-out (2026-08-12) — rulings, rider, CI fix
+
+**Rulings on §4 (all four ratified as built):** (1) mandate-scoped prompt registry — ratified; literal C-20 membership explicitly declined (cross-coupling); recorded in spec §8. (2) exit-at-last-good-mark — ratified **with a rider** (below). (3) cash-floor size-to-fit clamp — ratified. (4) HOLD as terminal `executed` — ratified; a comment at the `execState.submitted/executed` counters now records that liveness is judged by the P3 **stale-rejection streak**, not the executed ratio, so P3 wires the floor to the right signal.
+
+**Rider (ruling #2):** the decision receipt now records **`fillMarkQuality: 'fresh' | 'carry_over' | 'basis'`** (`buildDecision` field; set from the exec receipt's `markSource`, `'snapshot'→'fresh'`). P3 scoring/narration can now tell a degraded fill from a fresh one. Test: an executed BUY records `'fresh'`; a frozen-symbol SELL that fills at the last-good mark records `'carry_over'`.
+
+**CI fix — the protected-store scan (the only red):** twelve new mandate write sites, deny-by-default doing its job (same class as Phase-1 Task 1). Resolvability checked first:
+
+- **Made RESOLVABLE (preferred over allowlisting):** `ensureUniverseSnapshot` and `ensureDailySnapshot` used `db.collection(CONST)`; inlining the string literal at the callee-base `ref.set()` lets the scanner resolve them to the non-protected `mandateUniverseSnapshots` / `mandateUniverseDaily` stores → **no allowlist entry**.
+- **Allowlisted (10, each count 1, with per-entry notes in the allowlist `_notes_spec1_phase2`):** the scanner cannot statically resolve a `tx.set(ref,…)` **handle-form ref argument** (only callee-base chains), and none of these may be restructured away from their atomic transactions.
+
+| Site | Verified write target(s) | Protected? |
+|---|---|---|
+| `mandateExecution::executeDecision` (set, update) | `mandates/{id}/decisions/{decisionId}` (receipt) + `mandates/{id}` (portfolio/revision/execState) | no |
+| `mandateExecution::writeTerminal` (set, update) | same pair, for a non-executing terminal transition | no |
+| `mandateLease::acquireLease/releaseLease/renewLease` (set) | the `lease` **field** on `mandates/{id}` (not a separate doc) | no |
+| `mandateUniverseSnapshot::bumpUpstreamCounter` (set) | `mandateUpstreamCalls/{date}` (daily counter) | no |
+| `mandate-evaluate handler::call:acquireLease#1 / call:releaseLease#1` | one-hop into the lease writes above (ref = query `docSnap.ref`) | no |
+
+**None touches a composition-protected store.** This statement is the human review the guard demands. Scan re-run: **9/9 green.**
+
+---
+
+## 8. Standing instruction for P3–P6 (founder, effective now)
+
+Every remaining phase adds write sites, so this scan **will** fire again by design. Standing rule, part of each phase's definition of done: **review-and-allowlist new protected-store write sites in the same PR as the phase that introduces them** — resolvability check first (prefer a static-literal collection over an allowlist entry where it's a clean change; never restructure a transaction to achieve it), a verified write-target statement in the PR, allowlist entries with per-entry notes. Not a post-CI surprise.

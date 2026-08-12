@@ -189,7 +189,24 @@ describe('executeDecision — atomic transaction (§3.5)', () => {
     expect(book.execState.executed).toBe(1);
     // within-slot idempotency stamp, written atomically with the money commit
     expect(book.execState.lastEvalTickKey).toBe('2026-08-12_open30');
-    expect(db._store.get('mandates/m1/decisions/d1').status).toBe('executed');
+    const dec = db._store.get('mandates/m1/decisions/d1');
+    expect(dec.status).toBe('executed');
+    expect(dec.fillMarkQuality).toBe('fresh');     // filled at the tick snapshot (rider)
+    expect(dec.realizedPnl).toBe(0);
+    expect(dec.executedShares).toBe(50);
+  });
+
+  it('records fillMarkQuality:carry_over when a frozen exit fills at the last-good mark (rider)', async () => {
+    const db = makeFakeDb({ 'mandates/m1': baseBook({ portfolio: { cash: 90000, positions: { AAPL: { shares: 50, costBasisTotal: 10000, avgCost: 200, lastMark: 210, sector: 'Technology' } }, totalValue: 100500 } }) });
+    const ref = db.collection('mandates').doc('m1');
+    const frozenSnap = { tickKey: '2026-08-12_open30', symbols: { AAPL: { complete: false, price: null } } };
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'dx', decision: { verb: 'SELL', ticker: 'AAPL', sizeUsd: null },
+      gateResult: { passed: true, execSizeUsd: null, gateOutcome: { rule: 'exit_lane', passed: true } },
+      envelope: ENV, snapshot: frozenSnap, submitMark: null, currentSessionDate: '2026-08-12', now: NOW,
+    });
+    expect(r.status).toBe('executed');
+    expect(db._store.get('mandates/m1/decisions/dx').fillMarkQuality).toBe('carry_over');
   });
 
   it('is exactly-once: a replay of the same decisionId no-ops (F2)', async () => {
