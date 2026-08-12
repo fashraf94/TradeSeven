@@ -13,24 +13,45 @@ import { buildScoreHistory } from './buildScoreHistory';
 import { buildFlat6BattleModel } from '../../../utils/flat6BattleEnrichment';
 import { BASELINE_POLICY, CAPTURE_STATE, computeComposite } from '../../../constants/leagueTournament';
 
-// H1 — LEAGUE_AGENT_CHAT_ENABLED is ON in source (flipped to production). The
-// two-way-ask flag-OFF stub behavior is preserved here by driving the flag
-// through a live getter (the scouting-board.test.js idiom) instead of the source
-// default. importOriginal keeps every OTHER flag real, so the dependency-surface
-// guard above (the real buildArenaModel graph loading clean) is untouched — only
-// this single flag flips, and only inside the test that opts in.
-const { chatFlag, scoreHistoryFlag } = vi.hoisted(() => ({ chatFlag: { on: true }, scoreHistoryFlag: { on: false } }));
+// H1 — LEAGUE_AGENT_CHAT_ENABLED and LEAGUE_LIVE_ORB_ENABLED are BOTH ON in
+// source (flipped to production — the live-orb flip is commit 2bd50fc9,
+// "Enable ... league live orb"); LEAGUE_SCORE_HISTORY_ON is DARK (OFF). We drive
+// all three through live getters (the scouting-board.test.js idiom) instead of
+// the source default, so a test can exercise each flag's ON and OFF contract
+// without editing the source: chat + live-orb default ON to match production (the
+// live-orb dark contract runs via offGate()), while score-history defaults OFF
+// (dark) and the day-index tests flip it ON locally to exercise the trading-day-
+// index header binding. importOriginal keeps every OTHER flag real, so the
+// dependency-surface guard above (the real buildArenaModel graph loading clean)
+// is untouched.
+const { chatFlag, orbFlag, scoreHistoryFlag } = vi.hoisted(() => ({ chatFlag: { on: true }, orbFlag: { on: true }, scoreHistoryFlag: { on: false } }));
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   get LEAGUE_AGENT_CHAT_ENABLED() {
     return chatFlag.on;
   },
-  // Dark by default (flag-off = today's banked-count header, byte-identical); a
-  // single test flips it on to exercise the trading-day-index header binding.
+  get LEAGUE_LIVE_ORB_ENABLED() {
+    return orbFlag.on;
+  },
+  // Dark by default (flag-off = today's banked-count header, byte-identical); the
+  // day-index tests flip it on to exercise the trading-day-index header binding.
   get LEAGUE_SCORE_HISTORY_ON() {
     return scoreHistoryFlag.on;
   },
 }));
+
+// Run `fn` with the live-orb flag OFF (the dark contract), ALWAYS restoring the
+// production-default ON afterward (even on a thrown assertion) so the toggle
+// never leaks across tests.
+function offGate(fn) {
+  const prev = orbFlag.on;
+  orbFlag.on = false;
+  try {
+    return fn();
+  } finally {
+    orbFlag.on = prev;
+  }
+}
 
 const NOW = Date.parse('2026-06-16T20:30:00.000Z'); // Tue 16:30 ET — claim wire OPEN
 
@@ -205,8 +226,10 @@ describe('buildArenaModel — pre-deploy (no battle)', () => {
 // ── Branch 1 — the live YOUR-seat composite for the orb ──
 describe('buildArenaModel — live YOUR-seat composite (youLiveScore)', () => {
   const sum = (rows) => rows.reduce((a, s) => a + (Number.isFinite(s?.points) ? s.points : 0), 0);
-  // The live orb is TRAINING-only and requires TODAY's fullday battle doc — the
-  // pod's NOW is 2026-06-16 ET, so the battle must be activated that ET day.
+  // The live orb requires TODAY's fullday battle doc — the pod's NOW is
+  // 2026-06-16 ET, so the battle must be activated that ET day. Training always
+  // rides the orb; ranked rides it too when the live-orb flag is ON (production
+  // today) and stays banked when it is OFF (the offGate() dark-contract tests).
   const TODAY_BATTLE = { ...flat6Battle(), activatedAt: '2026-06-16T14:00:00.000Z', createdAt: '2026-06-16T14:00:00.000Z' };
   const liveArgs = (extra = {}) => ({ ...BASE, mode: 'training', battle: TODAY_BATTLE, ...extra });
 
@@ -263,8 +286,18 @@ describe('buildArenaModel — live YOUR-seat composite (youLiveScore)', () => {
     expect(buildArenaModel(liveArgs({ battle: null })).youLiveScore).toBeNull();
   });
 
-  it('is null in RANKED mode — Branch 1 is training-only (ranked orb stays banked)', () => {
-    expect(buildArenaModel(liveArgs({ mode: 'ranked' })).youLiveScore).toBeNull();
+  it('is null in RANKED mode when the live orb is OFF — Branch 1 is training-only (ranked orb stays banked)', () => {
+    offGate(() => {
+      expect(buildArenaModel(liveArgs({ mode: 'ranked' })).youLiveScore).toBeNull();
+    });
+  });
+
+  it('goes LIVE in RANKED mode when the live orb is ON — ranked rides the same orb as training', () => {
+    // orbFlag defaults ON (production, commit 2bd50fc9): ranked no longer stays
+    // banked — it rides the live orb at parity with the training orb.
+    const rankedLive = buildArenaModel(liveArgs({ mode: 'ranked' })).youLiveScore;
+    expect(rankedLive).not.toBeNull();
+    expect(rankedLive).toBeCloseTo(buildArenaModel(liveArgs({ mode: 'training' })).youLiveScore, 6);
   });
 
   it('is null for a STALE prior-day battle doc — no double-count of an already-banked agent layer', () => {
@@ -415,14 +448,16 @@ describe('buildArenaModel — orb swap/drop-accurate (Phase 2)', () => {
     spy.mockRestore();
   });
 
-  it('ranked stays byte-identical — the orb never goes live (departed never added off training)', () => {
-    const battle = { ...TODAY_BATTLE, trades: [{ symbolOut: 'LLY', symbolIn: 'NVDA', lockedPoints: 99, swapDay: 1 }] };
-    const g = makeGroup();
-    g.players[0].droppedPicks = [{ symbol: 'KO', legs: [{ direction: 'long', baselinePrice: 60, closedAt: '2026-06-14T20:00:00Z', bankedScore: 99 }] }];
-    const m = buildArenaModel({ ...BASE, mode: 'ranked', battle, group: g });
-    expect(m.youLiveScore).toBeNull();      // ranked orb stays banked
-    expect(m.agentDeparted).toBeNull();
-    expect(m.userDeparted).toBeNull();
+  it('ranked stays byte-identical when the live orb is OFF — the orb never goes live (departed never added off training)', () => {
+    offGate(() => {
+      const battle = { ...TODAY_BATTLE, trades: [{ symbolOut: 'LLY', symbolIn: 'NVDA', lockedPoints: 99, swapDay: 1 }] };
+      const g = makeGroup();
+      g.players[0].droppedPicks = [{ symbol: 'KO', legs: [{ direction: 'long', baselinePrice: 60, closedAt: '2026-06-14T20:00:00Z', bankedScore: 99 }] }];
+      const m = buildArenaModel({ ...BASE, mode: 'ranked', battle, group: g });
+      expect(m.youLiveScore).toBeNull();      // ranked orb stays banked
+      expect(m.agentDeparted).toBeNull();
+      expect(m.userDeparted).toBeNull();
+    });
   });
 });
 
@@ -596,26 +631,53 @@ describe('buildArenaModel — user-layer settlement states (Deliverables 1,3,4)'
 // no window → false), so it proves the dark posture: a supplied liveComposites map
 // is IGNORED and every rival stays on the banked series, byte-identical to today.
 // The flag-ON behavior (rivals live) is proven in b3Lockstep.test.js. ──
-describe('buildArenaModel — live orb flag gating (Option X, flag off = today)', () => {
+describe('buildArenaModel — live orb flag gating (Option X, flag off vs on)', () => {
+  const map = { 'u-riv': 999, 'cpu-1': 888 }; // a rival overtake — ignored while dark, surfaced when live
+  const TODAY_BATTLE = { ...flat6Battle(), activatedAt: '2026-06-16T14:00:00.000Z', createdAt: '2026-06-16T14:00:00.000Z' };
+
   it('a supplied liveComposites map is IGNORED off-gate: rivals banked, model.liveComposites null', () => {
-    const map = { 'u-riv': 999, 'cpu-1': 888 }; // a rival overtake that MUST be ignored while dark
+    offGate(() => {
+      const withMap = buildArenaModel({ ...BASE, mode: 'ranked', liveComposites: map });
+      const without = buildArenaModel({ ...BASE, mode: 'ranked' });
+      expect(withMap.liveComposites).toBeNull();                 // never surfaced when off
+      expect(withMap.youRank).toBe(without.youRank);             // the 999 rival overtake is ignored
+      const rivWith = withMap.seats.find((s) => s.id === 'u-riv');
+      const rivWithout = without.seats.find((s) => s.id === 'u-riv');
+      expect(rivWith.score).toBe(rivWithout.score);              // rival seat.score stays banked (no swap off-gate)
+    });
+  });
+
+  it('a supplied liveComposites map IS surfaced on-gate: rivals go live', () => {
+    // orbFlag defaults ON (production): the 999 rival overtake now surfaces and
+    // moves the rival's seat score vs the off-gate banked value.
     const withMap = buildArenaModel({ ...BASE, mode: 'ranked', liveComposites: map });
-    const without = buildArenaModel({ ...BASE, mode: 'ranked' });
-    expect(withMap.liveComposites).toBeNull();                 // never surfaced when off
-    expect(withMap.youRank).toBe(without.youRank);             // the 999 rival overtake is ignored
-    const rivWith = withMap.seats.find((s) => s.id === 'u-riv');
-    const rivWithout = without.seats.find((s) => s.id === 'u-riv');
-    expect(rivWith.score).toBe(rivWithout.score);              // rival seat.score stays banked (no swap off-gate)
+    expect(withMap.liveComposites).toEqual(map);               // surfaced when on
+    const rivOn = withMap.seats.find((s) => s.id === 'u-riv');
+    const rivOff = offGate(() => buildArenaModel({ ...BASE, mode: 'ranked', liveComposites: map }))
+      .seats.find((s) => s.id === 'u-riv');
+    expect(rivOn.score).not.toBe(rivOff.score);                // the seat score swaps to live when on
   });
 
   it('the decomposition is null and cards stay "mult" off-gate — even when the orb is LIVE (training)', () => {
-    // training + today's battle → youLiveScore is LIVE (as today), but the NEW
-    // decomposition strip + points-led cards are flag-gated → dark here.
-    const TODAY_BATTLE = { ...flat6Battle(), activatedAt: '2026-06-16T14:00:00.000Z', createdAt: '2026-06-16T14:00:00.000Z' };
+    offGate(() => {
+      // training + today's battle → youLiveScore is LIVE, but the decomposition
+      // strip + points-led cards are flag-gated → dark when the orb flag is off.
+      const m = buildArenaModel({ ...BASE, mode: 'training', battle: TODAY_BATTLE });
+      expect(m.youLiveScore).not.toBeNull(); // the orb is live (training path, unchanged)
+      expect(m.decomposition).toBeNull();    // …but the decomposition is dark (flag off)
+      expect(m.headline).toBe('mult');       // …and the cards lead with the multiplier (the dark/pre-flip render)
+    });
+  });
+
+  it('the decomposition IS present and the cards lead with points on-gate (training)', () => {
+    // orbFlag defaults ON (production): the strip lights up and reconciles to
+    // the orb (agentSide + userLayer === orb === youLiveScore, Ruling A).
     const m = buildArenaModel({ ...BASE, mode: 'training', battle: TODAY_BATTLE });
-    expect(m.youLiveScore).not.toBeNull(); // the orb is live (training path, unchanged)
-    expect(m.decomposition).toBeNull();    // …but the decomposition is dark (flag off)
-    expect(m.headline).toBe('mult');       // …and the cards lead with the multiplier (byte-identical to today)
+    expect(m.youLiveScore).not.toBeNull();
+    expect(m.decomposition).not.toBeNull();
+    expect(m.decomposition.orb).toBeCloseTo(m.youLiveScore, 6);
+    expect(m.decomposition.agentSide + m.decomposition.userLayer).toBeCloseTo(m.youLiveScore, 6);
+    expect(m.headline).not.toBe('mult');   // cards no longer lead with the multiplier
   });
 });
 

@@ -48,7 +48,7 @@ import {
   assertSucceeds,
   assertFails,
 } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RULES_PATH = join(__dirname, 'firestore.rules');
@@ -506,5 +506,89 @@ suite('bundles rule — PROPOSED field allowlist + equipped-value deny', () => {
   it('DENY   owner delete (no hard deletes — archive instead)', async () => {
     const { deleteDoc } = await import('firebase/firestore');
     await assertFails(deleteDoc(bundleRef(ownerDb())));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SPEC 1 — THE MANDATE (§2.4): owner-READ on books + subcollections + userMeta;
+// ALL client writes DENIED (Admin SDK only); archetypeVintages is Admin-only.
+// Verifies the LIVE ruleset (readFileSync of firestore.rules, no patch).
+// Auto-skips without FIRESTORE_EMULATOR_HOST; runs in `npm run test:rules`.
+// ═══════════════════════════════════════════════════════════════════════════
+suite('mandate rules — owner-read; ALL client writes denied (§2.4)', () => {
+  let testEnv;
+  const MANDATE_ID = 'MID_alice';
+
+  beforeAll(async () => {
+    const [host, portStr] = EMULATOR_HOST.split(':');
+    testEnv = await initializeTestEnvironment({
+      projectId: 'demo-tradeseven-rules-test',
+      firestore: { rules: readFileSync(RULES_PATH, 'utf8'), host, port: Number(portStr) },
+    });
+  }, 30000);
+
+  afterAll(async () => {
+    await testEnv?.cleanup();
+  });
+
+  beforeEach(async () => {
+    await testEnv.clearFirestore();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'mandates', MANDATE_ID), { userId: OWNER, status: 'active', schemaVersion: 1 });
+      await setDoc(doc(db, 'mandates', MANDATE_ID, 'dailyRows', '2026-08-12'), { date: '2026-08-12', schemaVersion: 1 });
+      await setDoc(doc(db, 'mandates', MANDATE_ID, 'decisions', 'd1'), { schemaVersion: 1 });
+      await setDoc(doc(db, 'mandates', MANDATE_ID, 'quarterSummaries', '1'), { quarterIndex: 1, schemaVersion: 1 });
+      await setDoc(doc(db, 'userMeta', OWNER), { activeMandateId: MANDATE_ID, mandateEscapeHatchUsed: false });
+      await setDoc(doc(db, 'archetypeVintages', 'contrarian_hash'), { codeId: 'contrarian' });
+    });
+  });
+
+  const ownerDb = () => testEnv.authenticatedContext(OWNER).firestore();
+  const otherDb = () => testEnv.authenticatedContext(OTHER).firestore();
+  const anonDb = () => testEnv.unauthenticatedContext().firestore();
+  const mRef = (db) => doc(db, 'mandates', MANDATE_ID);
+  const subRef = (db, sub, id) => doc(db, 'mandates', MANDATE_ID, sub, id);
+  const metaRef = (db) => doc(db, 'userMeta', OWNER);
+
+  // ── READ: owner allowed ─────────────────────────────────────────────────────
+  it('ALLOW  owner reads own book + subcollections + userMeta', async () => {
+    await assertSucceeds(getDoc(mRef(ownerDb())));
+    await assertSucceeds(getDoc(subRef(ownerDb(), 'dailyRows', '2026-08-12')));
+    await assertSucceeds(getDoc(subRef(ownerDb(), 'decisions', 'd1')));
+    await assertSucceeds(getDoc(subRef(ownerDb(), 'quarterSummaries', '1')));
+    await assertSucceeds(getDoc(metaRef(ownerDb())));
+  });
+
+  // ── READ: non-owner / anonymous denied ──────────────────────────────────────
+  it('DENY   non-owner reads the book / subcollection / userMeta', async () => {
+    await assertFails(getDoc(mRef(otherDb())));
+    await assertFails(getDoc(subRef(otherDb(), 'dailyRows', '2026-08-12')));
+    await assertFails(getDoc(metaRef(otherDb())));
+  });
+  it('DENY   anonymous reads the book / userMeta', async () => {
+    await assertFails(getDoc(mRef(anonDb())));
+    await assertFails(getDoc(metaRef(anonDb())));
+  });
+
+  // ── WRITE: ALL denied (Admin SDK only) ──────────────────────────────────────
+  it('DENY   owner writes own book (create + update both denied)', async () => {
+    await assertFails(setDoc(mRef(ownerDb()), { userId: OWNER, hacked: true }));
+    await assertFails(updateDoc(mRef(ownerDb()), { status: 'closed' }));
+  });
+  it('DENY   owner writes subcollections + userMeta', async () => {
+    await assertFails(setDoc(subRef(ownerDb(), 'decisions', 'd2'), { forged: true }));
+    await assertFails(updateDoc(metaRef(ownerDb()), { activeMandateId: 'other' }));
+  });
+  it('DENY   non-owner + anonymous write anything', async () => {
+    await assertFails(updateDoc(mRef(otherDb()), { status: 'closed' }));
+    await assertFails(setDoc(metaRef(anonDb()), { activeMandateId: 'x' }));
+  });
+
+  // ── archetypeVintages: Admin only (no client read or write) ─────────────────
+  it('DENY   everyone reads/writes archetypeVintages (Admin SDK only)', async () => {
+    await assertFails(getDoc(doc(ownerDb(), 'archetypeVintages', 'contrarian_hash')));
+    await assertFails(getDoc(doc(anonDb(), 'archetypeVintages', 'contrarian_hash')));
+    await assertFails(setDoc(doc(ownerDb(), 'archetypeVintages', 'x'), { y: 1 }));
   });
 });

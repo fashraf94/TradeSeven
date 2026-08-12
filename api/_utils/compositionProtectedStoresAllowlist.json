@@ -1,5 +1,9 @@
 {
   "_comment": "B3 (ledger, PR 3) \u2014 the deny-by-default protected-store write allowlist. Every Firestore-shaped write site under api/ + scripts/ whose collection resolves to a protected store OR cannot be resolved statically MUST have its key here (file::function::method::collection), pinned at its SITE COUNT (review F3a: a new write inside a listed tuple drifts the count and fails CI). Baseline enumerated at PR-3 HEAD, cross-checked against the A46 census. Adding or re-counting a key requires human review of the writer in the same PR; a key with zero matching sites fails stale. Documented resolution limits: see compositionProtectedStoresScan.js header. B3-EXT (PR 4): param-write helper definitions carry collection param:<name>; helper call sites carry method call:<helper>#<paramIndex> with the CALLER-side collection resolution \u2014 per-callsite counts, same both-direction ratchet.",
+  "_notes_spec1_phase1": {
+    "api/_utils/mandateCreationService.js::createMandate::set::unresolved": "SPEC1 Phase 1 (PR #740). Two tx.set writes in ONE runTransaction — mandates/{mandateId} (the book) + userMeta/{uid} (the transactional active-book claim + escape-hatch flag); count 2. NEITHER is a composition-protected store. Unresolved because the tx.set(ref,…) target is a DocumentReference variable and the scanner does not trace ref-args for transaction-handle writes; making it a literal would require abandoning the atomic §5.2 claim, so it is allowlisted per the guard's human-review rule.",
+    "api/_utils/mandateVintage.js::publishVintage::set::unresolved": "SPEC1 Phase 1 (PR #740). One tx.set — archetypeVintages/{codeId}_{hash} (the content-addressed vintage doc) via create-if-absent inside a runTransaction; count 1. NOT a composition-protected store. Unresolved for the same transaction-handle reason; the transaction is what makes publish immutable, so it is allowlisted rather than restructured."
+  },
   "allowedWriteSites": {
     "api/_utils/__fixtures__/wireFirestoreFake.js::createFirestoreFake::set::unresolved": 1,
     "api/_utils/agentChatBudget.js::chargeAgentChatBudget::set::unresolved": 1,
@@ -45,6 +49,8 @@
     "api/_utils/liveDraftLifecycle.js::fireCompetitiveSlotDraft::update::unresolved": 1,
     "api/_utils/liveDraftLifecycle.js::padAndStampPool::set::unresolved": 1,
     "api/_utils/liveDraftLifecycle.js::padAndStampPool::update::unresolved": 1,
+    "api/_utils/mandateCreationService.js::createMandate::set::unresolved": 2,
+    "api/_utils/mandateVintage.js::publishVintage::set::unresolved": 1,
     "api/_utils/marketDataCache.js::invalidateCache::delete::unresolved": 1,
     "api/_utils/masterySettlement.js::commitZeroReceipt::set::unresolved": 1,
     "api/_utils/masterySettlement.js::runAwardTransaction::set::unresolved": 1,
