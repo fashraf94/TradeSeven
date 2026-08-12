@@ -1493,3 +1493,74 @@ export function isDeploySkyCouplingOn() {
 // Pinned by: composition.acceptance.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMPOSITION_DISPLAY_ENABLED = false;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SPEC 1 — THE MANDATE (§7). All default false / safest, MERGE DARK.
+// Spec 1 is HEADLESS (§1): in Phase 1 these gate server crons (registered in
+// P6, no-op'ing while false) and the founder create endpoint; no client surface
+// consumes them yet (MANAGED_MANDATE_ENABLED anticipates Spec 2+ client use).
+// Flips are separate one-line PRs after a preview smoke — NEVER in a build PR;
+// per BUILD_RULES §2/§11 a flip PR reconciles its pin (mandateFlags.test.js)
+// and drops the flag's DARK_BY_DESIGN entry in the same commit.
+// Spec: docs/SPEC1_MANDATE_SUBSTRATE_SPEC_V1_4.md §7.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * MASTER gate for The Mandate. When FALSE (DEFAULT, merge-dark) nothing
+ * mandate-related runs: the eval/close/rollover crons no-op and the founder
+ * create endpoint is closed regardless of the sub-flags below. The one switch
+ * that keeps the whole substrate inert while it is built dark across Phases 1–6.
+ */
+// Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const MANAGED_MANDATE_ENABLED = false;
+
+/**
+ * The scheduled evaluation loop (§3.1). When FALSE (DEFAULT), the
+ * mandate-evaluate handler no-ops — no snapshot, no harvest, no submit. Built
+ * P2; registered P6.
+ */
+// Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const MANDATE_EVAL_ENABLED = false;
+
+/**
+ * The authoritative daily close pass (§3.6). When FALSE (DEFAULT), no book is
+ * marked and no dailyRow is written by the close duty. Built P3. Close is the
+ * sole writer of high-water marks / drawdown peaks (I6).
+ */
+// Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const MANDATE_CLOSE_ENABLED = false;
+
+/**
+ * The rolling per-user rollover sweep (§5.3). When FALSE (DEFAULT), no book
+ * crosses a quarter boundary. Built P4. Capital carries forward at rollover
+ * (FR-1); the transaction asserts totalValue unchanged (I15).
+ */
+// Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const MANDATE_ROLLOVER_ENABLED = false;
+
+/**
+ * Dormancy downshift (§6.5 / D-21). When FALSE (DEFAULT), no downshift derives.
+ * Trading cadence and the daily close are NEVER downshifted — only future
+ * reflection/narration depth (Spec 3). Built later.
+ */
+// Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const MANDATE_DORMANCY_DOWNSHIFT_ENABLED = false;
+
+/**
+ * The founder-gated creation endpoint (api/mandate/create.js, §7). When FALSE
+ * (DEFAULT), the endpoint returns 403 for everyone — even an allowlisted
+ * founder uid — because a flag alone is not authorization AND authorization
+ * alone is not the flag: creation requires BOTH this flag true AND the caller's
+ * uid in MANDATE_FOUNDER_UIDS. This is the Phase 1 dark-testing switch.
+ */
+// Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const MANDATE_FOUNDER_CREATE_ENABLED = false;
+
+/**
+ * Transport mode for mandate model calls (§3.3). 'direct' (DEFAULT, safest) or
+ * 'batch' (production transport, built P5). A STRING enum, not a boolean gate,
+ * so the flag-pin guard (which matches `*_ENABLED = true|false`) does not track
+ * it — it is pinned directly in mandateFlags.test.js. A mode change takes effect
+ * only after open batches drain (§3.3 drain protocol).
+ */
+export const MANDATE_TRANSPORT_MODE = 'direct';
+
