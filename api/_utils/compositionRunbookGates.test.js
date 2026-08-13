@@ -2,9 +2,18 @@
 //
 // Composition PR 4 — B9 + B8-FINAL gate logic. The acceptance rows: the flip
 // checklist FAILS without a deploy record naming the deployed rules SHA + a
-// green smoke AT THAT TEXT; the committed template fails BY DESIGN; the
+// green smoke AT THAT TEXT; an unfilled record fails BY DESIGN; the
 // preflight report is valid only at the pinned SHA on a clean tree with every
 // suite green.
+//
+// NOTE on the unfilled case: it asserts against the PRISTINE FIXTURE, never
+// against docs/composition/RULES_DEPLOY_RECORD.json. That live file is filled
+// IN PLACE and committed at runbook step −1 (ACTIVATION_RUNBOOK.md:44) and
+// re-verified at step 4 (:69) — it must be committed, since B8-FINAL requires
+// a CLEAN tree at the activation SHA. So its unfilled-ness is a fact about the
+// pre-run repo, not an invariant of this validator. The anti-fabrication guard
+// is smoke.rulesTextSha256 === deployedRulesSha over the FETCHED deployed text
+// (compositionRunbookGates.js:36-38) — not the unfilled-template check.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -13,7 +22,7 @@ import { dirname, resolve } from 'node:path';
 import { validateRulesDeployRecord, validatePreflightReport } from './compositionRunbookGates.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TEMPLATE = JSON.parse(readFileSync(resolve(HERE, '../../docs/composition/RULES_DEPLOY_RECORD.json'), 'utf8'));
+const UNFILLED = JSON.parse(readFileSync(resolve(HERE, '__fixtures__/rulesDeployRecord.unfilled.json'), 'utf8'));
 
 const FILLED = {
   status: 'filled',
@@ -24,8 +33,8 @@ const FILLED = {
 };
 
 describe('B9 — the rules deploy-record gate', () => {
-  it('the COMMITTED template is unfilled and FAILS the gate by design', () => {
-    const { ok, failures } = validateRulesDeployRecord(TEMPLATE);
+  it('an UNFILLED record (the pristine template) FAILS the gate by design', () => {
+    const { ok, failures } = validateRulesDeployRecord(UNFILLED);
     expect(ok).toBe(false);
     expect(failures.some((f) => f.includes("status must be 'filled'"))).toBe(true);
   });
