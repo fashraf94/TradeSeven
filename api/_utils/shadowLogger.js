@@ -152,3 +152,16 @@ export const logTradeNarration         = (r) => appendToStream('trade_narration'
 // dispatch under time pressure. Caller must use `.catch(() => {})` to
 // preserve the fire-and-forget contract.
 export const logAnticipation           = (r) => appendToStream('anticipation', r);
+
+// Spec 1 — Mandate Substrate — the DUAL-LABEL SCORING STREAM (O-11, I14, §3.6).
+// One record per book per session close: gross + net day figures, risk metrics
+// (both lenses), regime, vintage, agencyState. UNLIKE the fire-and-forget
+// streams above, the close pass AWAITS AND CHECKS the boolean (the WS1
+// rule_compat precedent): `false` writes a durable
+// mandates/{id}/pendingScoringAppends/{date} marker that the NEXT close
+// consumes and retries — a logged failure followed by process death is a
+// deferred row, never a silently missing one (BUILD_RULES §5; the shadow
+// logger's silent multi-week data loss is the cautionary tale). The append
+// never blocks or re-runs the committed close itself. `captureReceipt` (the
+// outcome-blind battle stream) is untouched by design (O-11).
+export const logMandateScoring         = (r) => appendToStream('mandate_scoring', r);

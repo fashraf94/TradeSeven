@@ -501,7 +501,21 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "health.lastSuccessfulEvalAt",
+          "fieldPath": "health.lastEvalSweepAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "mandates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "health.lastCloseAttemptAt",
           "order": "ASCENDING"
         }
       ]

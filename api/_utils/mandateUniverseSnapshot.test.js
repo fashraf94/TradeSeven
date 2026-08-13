@@ -30,6 +30,14 @@ function makeFakeDb() {
       if (opts?.merge && store.has(path)) store.set(path, { ...store.get(path), ...data });
       else store.set(path, data);
     },
+    async create(data) {
+      if (store.has(path)) {
+        const err = new Error(`already exists: ${path}`);
+        err.code = 6; // grpc ALREADY_EXISTS — what the Admin SDK throws
+        throw err;
+      }
+      store.set(path, data);
+    },
   });
   const db = {
     _store: store,
@@ -217,5 +225,67 @@ describe('bumpUpstreamCounter — alert crossing', () => {
     await bumpUpstreamCounter(db, '2026-08-12', 10, { ceiling: 100, alertFraction: 0.5 }); // already over — no re-alert
     expect(spy).toHaveBeenCalledOnce();
     spy.mockRestore();
+  });
+});
+
+describe('P3 §4.3 — corporate-actions fetch in the slow layer', () => {
+  it('fetchCorporateActionsEODHD parses both endpoints, counts 2 calls, fails LOUDLY per leg', async () => {
+    const { fetchCorporateActionsEODHD } = await import('./mandateUniverseSnapshot.js');
+    const fetchImpl = async (url) => ({
+      ok: true,
+      json: async () => (url.includes('/splits/')
+        ? [{ date: '2026-08-12', split: '2.000000/1.000000' }]
+        : [{ date: '2026-08-11', value: 0.25, unadjustedValue: 0.25 }]),
+    });
+    const r = await fetchCorporateActionsEODHD('AAPL', { from: '2026-08-07', to: '2026-08-14', fetchImpl, apiKey: 'k' });
+    expect(r.calls).toBe(2);
+    expect(r.failed).toBe(false);
+    expect(r.actions).toEqual([
+      expect.objectContaining({ type: 'split', ticker: 'AAPL', effectiveDate: '2026-08-12', ratio: 2 }),
+      expect.objectContaining({ type: 'cash_dividend', ticker: 'AAPL', effectiveDate: '2026-08-11', amount: 0.25 }),
+    ]);
+
+    const failing = async (url) => (url.includes('/splits/') ? { ok: false, status: 503 } : { ok: true, json: async () => [] });
+    const spy = (await import('vitest')).vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r2 = await fetchCorporateActionsEODHD('AAPL', { from: 'a', to: 'b', fetchImpl: failing, apiKey: 'k' });
+    expect(r2.failed).toBe(true); // honest coverage gap — the gap detector backstops
+    spy.mockRestore();
+  });
+
+  it('ensureDailySnapshot attaches per-symbol CA windows and counts the upstream calls', async () => {
+    const store = new Map();
+    const db = {
+      collection: (c) => ({ doc: (id) => ({
+        path: `${c}/${id}`,
+        async get() { return { exists: store.has(`${c}/${id}`), data: () => store.get(`${c}/${id}`) }; },
+        async set(d, opts) { store.set(`${c}/${id}`, opts?.merge ? { ...(store.get(`${c}/${id}`) || {}), ...d } : d); },
+        async create(d) {
+          if (store.has(`${c}/${id}`)) { const e = new Error('already exists'); e.code = 6; throw e; }
+          store.set(`${c}/${id}`, d);
+        },
+      }) }),
+      async runTransaction(fn) {
+        return fn({
+          get: async (r) => ({ exists: store.has(r.path), data: () => store.get(r.path) }),
+          set: (r, d) => { store.set(r.path, d); },
+        });
+      },
+    };
+    const { ensureDailySnapshot } = await import('./mandateUniverseSnapshot.js');
+    const r = await ensureDailySnapshot(db, {
+      date: '2026-08-12',
+      heldTickers: ['NVDA'],
+      candidateUniverse: ['NVDA', 'AAPL'],
+      getFundamentals: async () => ({ fundamentals: { sector: 'Technology', industry: 'Semis', marketCap: 1e12 }, cacheStatus: { fundamentals: 'fresh' } }),
+      fetchCorporateActions: async (sym) => (sym === 'NVDA'
+        ? { actions: [{ type: 'split', ticker: 'NVDA', effectiveDate: '2026-08-12', ratio: 10, source: 'eodhd_splits' }], calls: 2, failed: false }
+        : { actions: [], calls: 2, failed: false }),
+    });
+    expect(r.built).toBe(true);
+    expect(r.upstreamCalls).toBe(2 + 2 + 2); // 2 fundamentals (fresh) + 2×2 CA calls
+    const daily = store.get('mandateUniverseDaily/2026-08-12');
+    expect(daily.symbols.NVDA.corporateActions).toHaveLength(1);
+    expect(daily.symbols.AAPL.corporateActions).toBeUndefined(); // empty windows carry no field
+    expect(daily.caWindow).toEqual({ from: '2026-08-07', to: '2026-08-14' });
   });
 });

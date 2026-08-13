@@ -39,6 +39,11 @@ export const MANDATE_FORBIDDEN_LIVE_SOURCES = [
 ];
 
 // The closed set of sources the assembled prompt may draw from (§3.2).
+// P3 adds 'regime_context' (§6.1): the handler's one per-fire read of
+// indexIntelligence/marketContext, resolved to an honest label (stale ⇒
+// 'unknown') and passed to the assembler AS DATA — adding it here is the
+// deliberate review event the D-45 closed allowlist exists to force; the
+// assembler still performs no live read.
 export const MANDATE_PROMPT_INPUT_SOURCES = [
-  'pinned_vintage', 'gate_config', 'book_state', 'tick_snapshot', 'static_scaffold',
+  'pinned_vintage', 'gate_config', 'book_state', 'tick_snapshot', 'regime_context', 'static_scaffold',
 ];

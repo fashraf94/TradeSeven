@@ -18,21 +18,28 @@
 // records. Health.lastSuccessfulEvalAt / consecutiveEvalFailures are the
 // handler's concern (§3.1), not this transaction's.
 //
-// FRICTION (§4.1): P2 executes at the harvest mark with ZERO friction (slippage
-// and spread proxy are 0), but every receipt carries the honesty labels
-// (spreadBasis:'proxy', frictionBasis:'idealized_no_market_impact', D-15/O-3) and
-// the friction model version, so P3 changes VALUES, not shape.
+// FRICTION (§4.1, P3): fills price through the market-cap-tier model
+// (mandateFrictionModel.js) — friction is computed HERE, at the execution
+// boundary, from the decision + the harvest snapshot, so it enters EXACTLY ONCE
+// through cash (F14) and no call site can forget it. Every receipt carries the
+// honesty labels (spreadBasis:'proxy', frictionBasis:'idealized_no_market_impact',
+// D-15/O-3) and the friction model version. `grossPnl` is later reconstructed
+// as `netPnl + Σ frictionPaid` from the accumulated `portfolio.frictionPaidCum`
+// — friction is never subtracted a second time.
+//
+// CA-FROZEN SYMBOLS (§4.3/I7): a symbol the gap detector froze this tick is
+// carried in `caFrozen` — an ENTRY on it is gated; an EXIT skips the (already
+// CA-adjusted) fresh mark and fills at the position's LAST-GOOD mark, the
+// ratified C-21 path.
 
 import { buildDecision } from './mandateSchema.js';
 import { markBook, avgCostOf } from './mandateValuation.js';
-import { markFor } from './mandateUniverseSnapshot.js';
+import { markFor, snapshotExcluding } from './mandateUniverseSnapshot.js';
+import { frictionForDecision, zeroFriction } from './mandateFrictionModel.js';
 import {
   MANDATE_SHARES_DP,
-  MANDATE_USD_DP,
   MANDATE_RESULT_MAX_AGE_MS,
   MANDATE_PRICE_DRIFT_MAX_BPS,
-  MANDATE_P2_SLIPPAGE_BPS,
-  MANDATE_P2_SPREAD_PROXY_BPS,
   MANDATE_FRICTION_MODEL_VERSION,
   MANDATE_FRICTION_SPREAD_BASIS,
   MANDATE_FRICTION_BASIS,
@@ -43,33 +50,16 @@ import { EXIT_VERBS, ENTRY_VERBS } from './mandateDecisionTool.js';
 
 // ── Rounding (§4.1) ──────────────────────────────────────────────────────────
 
-/** Banker's rounding (round half to even) to `dp` decimals. */
-export function bankersRound(value, dp) {
-  if (!Number.isFinite(value)) return 0;
-  const f = 10 ** dp;
-  const scaled = value * f;
-  const floor = Math.floor(scaled);
-  const diff = scaled - floor;
-  // Relative half-detection tolerance: at $millions the ULP of `scaled` exceeds a
-  // fixed 1e-9, which would drop true half-cents to Math.round (half-up). Scale
-  // the tolerance so half-to-even holds at all magnitudes (money-math review M5).
-  const halfTol = 1e-9 * Math.max(1, Math.abs(scaled));
-  let rounded;
-  if (Math.abs(diff - 0.5) < halfTol) rounded = (floor % 2 === 0) ? floor : floor + 1;
-  else rounded = Math.round(scaled);
-  return rounded / f;
-}
-
-const roundUsd = (n) => bankersRound(n, MANDATE_USD_DP);
+// One ledger, one rounding regime: bankersRound moved to mandateRounding.js in
+// P3 (its old 1e-9-relative half tolerance swallowed every value above $5M into
+// the half-to-even branch — odd cents unrepresentable at the $10M base). The
+// re-export keeps this module the import point for execution-math callers.
+export { bankersRound } from './mandateRounding.js';
+import { roundUsd, roundShares } from './mandateRounding.js';
 /** Shares are floored to 6dp so a BUY can never overspend its sized dollars. */
 const floorShares = (n) => Math.floor(n * 10 ** MANDATE_SHARES_DP) / 10 ** MANDATE_SHARES_DP;
-const roundShares = (n) => bankersRound(n, MANDATE_SHARES_DP);
 
-// ── Friction (§4.1) — zeroed in P2, labeled honestly ─────────────────────────
-
-export function defaultFriction() {
-  return { slippageBps: MANDATE_P2_SLIPPAGE_BPS, spreadProxyBps: MANDATE_P2_SPREAD_PROXY_BPS };
-}
+// ── Friction (§4.1) — cap-tier model (P3), labeled honestly ──────────────────
 
 /** Execution price = mark ± friction (buys pay more, sells receive less). §4.1. */
 export function executedPriceFor(verb, mark, { slippageBps, spreadProxyBps }) {
@@ -143,26 +133,33 @@ export function validateEnvelope(book, envelope, { currentSessionDate, now, subm
  * Firestore. Returns the new cash/positions and the receipt fields, or a
  * non-executing status (e.g. a size too small to buy a single 6dp share).
  *
+ * `friction` defaults through the §4.1 cap-tier model from the harvest
+ * snapshot; `caFrozen` carries the gap detector's frozen symbols (§4.3/I7).
+ *
  * @returns {{ ok:true, mutation, receipt } | { ok:false, status, reason }}
  */
-export function computeExecution({ decision, execSizeUsd, positions, cash, snapshot, friction = defaultFriction(), sectorOf = null }) {
+export function computeExecution({ decision, execSizeUsd, positions, cash, snapshot, friction = null, caFrozen = null, sectorOf = null, sessionDate = null }) {
   const verb = decision.verb;
   const ticker = decision.ticker;
   const nextPositions = { ...positions };
+  const fx = friction ?? frictionForDecision(decision, snapshot);
 
   if (verb === 'HOLD') {
-    return { ok: true, mutation: { cash, positions: nextPositions }, receipt: { executedSizeUsd: 0, executedPrice: null, shares: 0, clamped: false, realizedPnl: 0, friction: frictionReceipt(friction, 0) } };
+    return { ok: true, mutation: { cash, positions: nextPositions }, receipt: { executedSizeUsd: 0, executedPrice: null, shares: 0, clamped: false, realizedPnl: 0, friction: frictionReceipt(zeroFriction(), 0) } };
   }
 
-  const snapMark = markFor(snapshot, ticker);
+  const caFrozenHere = !!(caFrozen && ticker && caFrozen.has(ticker));
+  const snapMark = caFrozenHere ? null : markFor(snapshot, ticker); // a CA-frozen fresh mark prices NOTHING this tick (§4.3)
   const DUST = 1 / 10 ** MANDATE_SHARES_DP;
 
   // ── ENTRY: BUY / ADD — a fresh, POSITIVE mark is REQUIRED (fail-closed, no
-  //    carry-over; a 0/negative/absent mark never opens or grows a position). ──
+  //    carry-over; a 0/negative/absent mark never opens or grows a position).
+  //    A CA-frozen symbol never opens or grows a position either (§4.3/I7). ──
   if (ENTRY_VERBS.includes(verb)) {
+    if (caFrozenHere) return { ok: false, status: 'gated', reason: 'suspected_ca' };
     const mark = snapMark;
     if (!(mark > 0)) return { ok: false, status: 'rejected_stale', reason: 'no_mark' };
-    const execPrice = executedPriceFor(verb, mark, friction);
+    const execPrice = executedPriceFor(verb, mark, fx);
 
     const shares = floorShares(execSizeUsd / execPrice);
     if (shares <= 0) return { ok: false, status: 'gated', reason: 'size_too_small' };
@@ -184,12 +181,19 @@ export function computeExecution({ decision, execSizeUsd, positions, cash, snaps
       lastMarkAsOf: snapshot?.symbols?.[ticker]?.priceAsOf ?? null,
       lastMarkSource: 'snapshot',
       sector,
+      // ENTITLEMENT SUBSTRATE (§4.3, spec+money review P3): the ET session
+      // date this CONTINUOUS holding began. A top-up keeps the original date;
+      // an exit-and-rebuy starts a new one. The CA applier only credits
+      // date-entitlement actions (splits/dividends/distributions) to holdings
+      // opened STRICTLY BEFORE the effective date — never a phantom dividend
+      // to a post-ex-date buyer.
+      openedAt: prev ? (prev.openedAt ?? null) : (sessionDate ?? null),
     };
     const frictionPaid = (execPrice - mark) * shares;
     return {
       ok: true,
       mutation: { cash: roundUsd(cash - cost), positions: nextPositions },
-      receipt: { executedSizeUsd: cost, executedPrice: execPrice, shares, clamped: false, realizedPnl: 0, markSource: 'snapshot', friction: frictionReceipt(friction, frictionPaid) },
+      receipt: { executedSizeUsd: cost, executedPrice: execPrice, shares, clamped: false, realizedPnl: 0, markSource: 'snapshot', friction: frictionReceipt(fx, frictionPaid) },
     };
   }
 
@@ -208,7 +212,7 @@ export function computeExecution({ decision, execSizeUsd, positions, cash, snaps
     if (!(mark > 0)) { mark = Number(prev.lastMark); exitMarkSource = 'carry_over'; }
     if (!(mark > 0)) { mark = avgCostOf(prev); exitMarkSource = 'basis'; }
     if (!(mark > 0)) return { ok: false, status: 'rejected_stale', reason: 'no_mark' };
-    const execPrice = executedPriceFor(verb, mark, friction);
+    const execPrice = executedPriceFor(verb, mark, fx);
 
     let wantShares;
     let clamped = false;
@@ -247,7 +251,7 @@ export function computeExecution({ decision, execSizeUsd, positions, cash, snaps
     return {
       ok: true,
       mutation: { cash: roundUsd(cash + proceedsNet), positions: nextPositions },
-      receipt: { executedSizeUsd: proceedsNet, executedPrice: execPrice, shares: wantShares, clamped, realizedPnl, markSource: exitMarkSource, friction: frictionReceipt(friction, frictionPaid) },
+      receipt: { executedSizeUsd: proceedsNet, executedPrice: execPrice, shares: wantShares, clamped, realizedPnl, markSource: exitMarkSource, friction: frictionReceipt(fx, frictionPaid) },
     };
   }
 
@@ -283,15 +287,38 @@ function sectorWeightsPct(marked, totalValue) {
  * @param {number} args.submitMark          the mark the model reasoned over (drift guard)
  * @param {string} args.currentSessionDate  today's trading session
  * @param {Date}   [args.now]
- * @param {object} [args.friction]
+ * @param {object} [args.friction]   override; defaults through the §4.1 cap-tier model
+ * @param {Set<string>} [args.caFrozen]  gap-detector frozen symbols this tick (§4.3/I7)
  * @returns {Promise<{ status, applied:boolean, idempotent?:boolean, decision, failCondition?, reason? }>}
  */
 export async function executeDecision(db, {
   mandateRef, decisionId, decision, gateResult, envelope, snapshot, submitMark,
-  currentSessionDate, now = new Date(), friction = defaultFriction(),
+  currentSessionDate, now = new Date(), friction = null, caFrozen = null,
 }) {
   const decRef = mandateRef.collection('decisions').doc(decisionId);
   const harvestTickKey = snapshot?.tickKey ?? null;
+  // §3.5 "one consistent valuation" must be consistent WITH THE FILL BASIS:
+  // a CA-frozen symbol fills (and is valued) at its last-good carry-over mark,
+  // never the already-adjusted fresh mark — so the valuation snapshot excludes
+  // frozen symbols throughout, or the conservation invariant would compare a
+  // carry-over fill against a phantom-mark baseline and abort a correct exit.
+  const vSnap = snapshotExcluding(snapshot, caFrozen);
+  // FRICTION TIER from the ORIGINAL snapshot, not vSnap: market cap is
+  // split-invariant (price × shares outstanding), so a suspected CA impugns the
+  // MARK, never the tier — pricing a $30B name's frozen exit at the 'unknown'
+  // 20bps tier undercredits the exit for no safety (money review P3 finding 4).
+  const fx = friction ?? frictionForDecision(decision, snapshot);
+
+  // I9 (P3): the stale-rejection streak — consecutive submissions that die as
+  // rejected_stale/expired. It is THE liveness signal (founder ruling: HOLD-only
+  // is healthy, so the executed ratio can't be); executed/gated/failed all mean
+  // the pipeline delivered a live answer, so they reset it. Updated atomically
+  // with every terminal transition.
+  const streakAfter = (book, status) => (
+    (status === 'rejected_stale' || status === 'expired')
+      ? (book.execState?.staleRejectStreak || 0) + 1
+      : 0
+  );
 
   const writeTerminal = (tx, book, status, extra = {}) => {
     const doc = buildDecision({
@@ -321,8 +348,9 @@ export async function executeDecision(db, {
       'execState.lastEvalTickKey': envelope.submitTickKey ?? null,
       'execState.submitted': (book.execState?.submitted || 0) + 1,
       'execState.executed': (book.execState?.executed || 0) + (status === 'executed' ? 1 : 0),
+      'execState.staleRejectStreak': streakAfter(book, status),
     });
-    return { status, applied: status === 'executed', decision: doc, ...('failCondition' in extra ? { failCondition: extra.failCondition } : {}) };
+    return { status, applied: status === 'executed', decision: doc, staleRejectStreak: streakAfter(book, status), ...('failCondition' in extra ? { failCondition: extra.failCondition } : {}) };
   };
 
   return db.runTransaction(async (tx) => {
@@ -336,15 +364,26 @@ export async function executeDecision(db, {
 
     // Book value BEFORE the mutation, at THIS snapshot — the independent baseline
     // the post-mutation conservation invariant checks against (money-review M2).
-    const preTotalValue = markBook(book.portfolio?.positions || {}, book.portfolio?.cash || 0, snapshot).totalValue;
+    const preTotalValue = markBook(book.portfolio?.positions || {}, book.portfolio?.cash || 0, vSnap).totalValue;
 
     // If the gate rejected upstream, record the gated terminal state (no mutation).
     if (gateResult && gateResult.passed === false) {
       return writeTerminal(tx, book, 'gated', { failCondition: gateResult.reason ?? gateResult.rule });
     }
 
+    // Defense-in-depth (money review P3 finding 5): an ENTRY on a CA-frozen
+    // symbol must terminate as 'gated'/suspected_ca — the honest cause — not
+    // fall through to validateEnvelope's no_harvest_mark (vSnap excludes the
+    // symbol, so the harvest mark is null) and die 'rejected_stale', which
+    // would bump the I9 staleRejectStreak for a data-quality freeze. The gate
+    // already blocks this with the same in-process set; nothing ENFORCES that
+    // callers pass the same set to both, so the executor restates it.
+    if (caFrozen && decision.ticker && ENTRY_VERBS.includes(decision.verb) && caFrozen.has(decision.ticker)) {
+      return writeTerminal(tx, book, 'gated', { failCondition: 'suspected_ca' });
+    }
+
     // Harvest validation (§3.3).
-    const harvestMark = decision.ticker ? markFor(snapshot, decision.ticker) : null;
+    const harvestMark = decision.ticker ? markFor(vSnap, decision.ticker) : null;
     const v = validateEnvelope(book, envelope, {
       currentSessionDate, now, submitMark, harvestMark, verb: decision.verb, ticker: decision.ticker,
     });
@@ -354,17 +393,19 @@ export async function executeDecision(db, {
       return writeTerminal(tx, book, v.status, extra);
     }
 
-    // Compute the mutation (pure).
+    // Compute the mutation (pure). Friction defaults through the §4.1 cap-tier
+    // model inside computeExecution — the single entry point (F14).
     const exec = computeExecution({
       decision, execSizeUsd: gateResult?.execSizeUsd ?? decision.sizeUsd,
-      positions: book.portfolio.positions || {}, cash: book.portfolio.cash || 0, snapshot, friction,
+      positions: book.portfolio.positions || {}, cash: book.portfolio.cash || 0, snapshot: vSnap, friction: fx, caFrozen,
+      sessionDate: currentSessionDate,
     });
     if (!exec.ok) return writeTerminal(tx, book, exec.status, { failCondition: exec.reason });
 
     const { cash: newCash, positions: newPositions } = exec.mutation;
 
     // Re-value at the SAME harvest snapshot (the one consistent valuation, I6).
-    const { marked, totalValue } = markBook(newPositions, newCash, snapshot);
+    const { marked, totalValue } = markBook(newPositions, newCash, vSnap);
 
     // §3.5 invariants — a violation ABORTS to `failed`, never partially commits.
     if (newCash < -MANDATE_VALUE_RECONCILE_TOLERANCE_USD) {
@@ -423,13 +464,17 @@ export async function executeDecision(db, {
       'portfolio.positions': newPositions,
       'portfolio.totalValue': roundUsd(totalValue),
       'portfolio.sectorWeights': sectorWeightsPct(marked, totalValue),
+      // F14 reporting accumulator: friction paid to date, so gross can always be
+      // reconstructed as net + Σ friction (added back once, never subtracted twice).
+      'portfolio.frictionPaidCum': roundUsd((book.portfolio?.frictionPaidCum || 0) + frictionPaid),
       revision: book.revision + 1,
       'execState.openBatchId': null,
       'execState.lastEvalTickKey': envelope.submitTickKey ?? null,
       'execState.submitted': (book.execState?.submitted || 0) + 1,
       'execState.executed': (book.execState?.executed || 0) + 1,
+      'execState.staleRejectStreak': 0, // a live fill resets the I9 streak
     });
 
-    return { status: 'executed', applied: true, decision: doc, receipt: exec.receipt };
+    return { status: 'executed', applied: true, decision: doc, receipt: exec.receipt, staleRejectStreak: 0 };
   });
 }

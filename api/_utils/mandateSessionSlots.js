@@ -19,6 +19,7 @@
 
 import { isEarlyCloseDay, MAINTAINED_HOLIDAY_YEARS } from './marketSchedule.js';
 import { isTradingDayStr } from './mandateCalendar.js';
+import { MANDATE_CLOSE_DELAY_MIN, MANDATE_CLOSE_WINDOW_MIN } from './mandateConfig.js';
 
 const MAX_MAINTAINED_YEAR = Math.max(...MAINTAINED_HOLIDAY_YEARS);
 
@@ -170,4 +171,31 @@ export function activeTick(now = new Date()) {
   const slot = slotAtEtMinutes(minutes, dateStr);
   if (!slot) return null;
   return { date: dateStr, slot, tickKey: buildTickKey(dateStr, slot) };
+}
+
+/**
+ * The CLOSE-DUTY window (§3.6, P3): the eval handler's post-close duty runs in
+ * [close + MANDATE_CLOSE_DELAY_MIN, close + DELAY + MANDATE_CLOSE_WINDOW_MIN) ET
+ * — after the official close print settles, long enough that a generously-firing
+ * cron gets several idempotent attempts, and derived from the calendar's
+ * closeMin so early-close days shift automatically. This is NOT an eval slot
+ * (no model calls happen here); it shares the handler and its schedule (no new
+ * cron slot, no vercel.json change — registration itself is P6).
+ *
+ * The eval slots end AT the close and the close window starts DELAY minutes
+ * after it, so with the handler's 300s maxDuration an in-flight eval invocation
+ * can never overlap a close invocation in wall-clock — and correctness never
+ * rests on that anyway (both sides are revision-preconditioned transactions).
+ *
+ * Returns `{ date, closeKey }` (closeKey = `${date}_close`) or null outside the
+ * window / on a non-session day.
+ */
+export function activeCloseTick(now = new Date()) {
+  const { dateStr, minutes } = etParts(now);
+  const session = resolveSessionSlots(dateStr);
+  if (!session.trading) return null;
+  const start = session.closeMin + MANDATE_CLOSE_DELAY_MIN;
+  const end = start + MANDATE_CLOSE_WINDOW_MIN;
+  if (minutes < start || minutes >= end) return null;
+  return { date: dateStr, closeKey: `${dateStr}_close` };
 }

@@ -3,7 +3,7 @@
 // execute), driven with a fake db + an injected model call (no network).
 
 import { describe, it, expect, vi } from 'vitest';
-import { unionHeldTickers, runBookEval } from './mandate-evaluate.js';
+import { unionHeldTickers, runBookEval, telemetryPatch } from './mandate-evaluate.js';
 
 // Fake Firestore with subcollections, transactions, and ref.id.
 function makeFakeDb(seed = {}) {
@@ -90,8 +90,11 @@ describe('runBookEval — end-to-end pipeline', () => {
     expect(r.outcome).toBe('terminal');
     expect(r.status).toBe('executed');
     const book = db._store.get('mandates/m1');
+    // P3 friction (§4.1): the fixture symbol has no marketCap → widest tier
+    // (20bps) → execPrice 200.40; the BUY is sized DOWN to fit its $10,000
+    // (cash moves exactly $10,000; shares absorb the friction).
     expect(book.portfolio.cash).toBe(90000);
-    expect(book.portfolio.positions.AAPL.shares).toBe(50);
+    expect(book.portfolio.positions.AAPL.shares).toBe(49.900199);
     expect(book.revision).toBe(6);
   });
 
@@ -145,5 +148,118 @@ describe('runBookEval — end-to-end pipeline', () => {
     expect(r2.status).toBe('executed'); // returns the committed decision's status
     expect(db._store.get('mandates/m1').portfolio.cash).toBe(90000); // not double-applied
     expect(db._store.get('mandates/m1').revision).toBe(6);
+  });
+});
+
+describe('P3 — quarantine exit-only, gap-frozen symbols, regime, telemetry', () => {
+  it('a QUARANTINED book: the tool schema is restricted and a smuggled BUY dies as bad_decision', async () => {
+    const quarantinedBook = bookFixture({ health: { quarantined: true, consecutiveEvalFailures: 5 } });
+    const db = makeFakeDb({ 'mandates/m1': quarantinedBook });
+    const ref = db.collection('mandates').doc('m1');
+    let toolVerbs = null;
+    const spyModel = async (seat, content) => {
+      toolVerbs = content.tools[0].input_schema.properties.verb.enum;
+      return { decision: { ok: true, input: { verb: 'BUY', ticker: 'AAPL', sizeUsd: 1000, rationale: 'x' } }, usage: null };
+    };
+    const r = await runBookEval(db, {
+      book: { _id: 'm1', ...quarantinedBook }, mandateRef: ref, vintage: VINTAGE, snapshot: SNAP,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW, callModel: spyModel,
+    });
+    expect(toolVerbs).toEqual(['SELL', 'TRIM', 'HOLD']); // the model never even sees BUY
+    expect(r.outcome).toBe('bad_decision');              // and a smuggled BUY is rejected at normalize
+  });
+
+  it('a quarantined book still EXITS freely (C-21): SELL executes', async () => {
+    const held = bookFixture({
+      health: { quarantined: true },
+      portfolio: { cash: 90000, positions: { AAPL: { shares: 50, costBasisTotal: 10000, avgCost: 200, lastMark: 200, sector: 'Technology' } }, totalValue: 100000, initialValue: 100000, quarterDrawdownFromPeak: 0 },
+    });
+    const db = makeFakeDb({ 'mandates/m1': held });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await runBookEval(db, {
+      book: { _id: 'm1', ...held }, mandateRef: ref, vintage: VINTAGE, snapshot: SNAP,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW,
+      callModel: fakeModel({ verb: 'SELL', ticker: 'AAPL', rationale: 'de-risk' }),
+    });
+    expect(r.status).toBe('executed');
+    expect(db._store.get('mandates/m1').portfolio.positions.AAPL).toBeUndefined();
+  });
+
+  it('a gap-frozen symbol (÷2 overnight, no feed): SELL fills at LAST-GOOD, never the phantom mark', async () => {
+    const preSplitHeld = bookFixture({
+      portfolio: { cash: 0, positions: { AAPL: { shares: 50, costBasisTotal: 10000, avgCost: 200, lastMark: 400, sector: 'Technology' } }, totalValue: 20000, initialValue: 20000, quarterDrawdownFromPeak: 0 },
+    });
+    // Fresh mark 200 vs lastMark 400 → exactly ÷2, no CA in the snapshot feed.
+    const db = makeFakeDb({ 'mandates/m1': preSplitHeld });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await runBookEval(db, {
+      book: { _id: 'm1', ...preSplitHeld }, mandateRef: ref, vintage: VINTAGE, snapshot: SNAP,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW,
+      callModel: fakeModel({ verb: 'SELL', ticker: 'AAPL', rationale: 'exit' }),
+    });
+    expect(r.status).toBe('executed');
+    const book = db._store.get('mandates/m1');
+    // Last-good fill at 400 (NOT the ÷2 phantom 200), less the widest-tier
+    // 20bps friction — a frozen symbol has no snapshot marketCap, so the exit
+    // prices fail-conservative: 50 × 400 × (1 − 0.002) = 19,960.
+    expect(book.portfolio.cash).toBe(19960);
+    const dec = db._store.get(`mandates/m1/decisions/${r.decisionId}`);
+    expect(dec.fillMarkQuality).toBe('carry_over');
+  });
+
+  it('a gap-frozen symbol: BUY is gated as suspected_ca', async () => {
+    const preSplitHeld = bookFixture({
+      portfolio: { cash: 50000, positions: { AAPL: { shares: 50, costBasisTotal: 10000, avgCost: 200, lastMark: 400, sector: 'Technology' } }, totalValue: 70000, initialValue: 70000, quarterDrawdownFromPeak: 0 },
+    });
+    const db = makeFakeDb({ 'mandates/m1': preSplitHeld });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await runBookEval(db, {
+      book: { _id: 'm1', ...preSplitHeld }, mandateRef: ref, vintage: VINTAGE, snapshot: SNAP,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW,
+      callModel: fakeModel({ verb: 'ADD', ticker: 'AAPL', sizeUsd: 1000, rationale: 'double down' }),
+    });
+    expect(r.status).toBe('gated');
+  });
+
+  it('regime data reaches the prompt context (§6.1) and usage is returned for telemetry (§6.2)', async () => {
+    const db = makeFakeDb({ 'mandates/m1': bookFixture() });
+    const ref = db.collection('mandates').doc('m1');
+    let sawRegime = false;
+    const model = async (seat, content) => {
+      sawRegime = content.messages[0].content.includes('Regime: risk_on');
+      return { decision: { ok: true, input: { verb: 'HOLD', rationale: 'wait' } }, usage: { input_tokens: 9000, output_tokens: 300 } };
+    };
+    const r = await runBookEval(db, {
+      book: { _id: 'm1', ...bookFixture() }, mandateRef: ref, vintage: VINTAGE, snapshot: SNAP,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW, callModel: model,
+      regime: { regime: 'risk_on', regimeAsOf: '2026-08-12T14:00:00.000Z' },
+    });
+    expect(sawRegime).toBe(true);
+    expect(r.usage).toEqual({ input_tokens: 9000, output_tokens: 300 });
+  });
+});
+
+describe('telemetryPatch — §6.2 accumulation', () => {
+  const priced = { tokensIn: 12000, tokensOut: 600, cacheHitTokens: 0, estUsd: 0.015, priced: true };
+  it('accumulates within the month and the day', () => {
+    const book = { costTelemetry: { monthKey: '2026-08', tokensIn: 100, tokensOut: 10, estUsd: 0.001, cacheHitTokens: 0, unpricedCalls: 0, today: { date: '2026-08-12', evalCount: 1, tokensIn: 100, tokensOut: 10, estUsd: 0.001, cacheHitTokens: 0 } } };
+    const p = telemetryPatch(book, '2026-08-12', priced);
+    expect(p.costTelemetry.tokensIn).toBe(12100);
+    expect(p.costTelemetry.estUsd).toBeCloseTo(0.016, 9);
+    expect(p.costTelemetry.today.evalCount).toBe(2);
+    expect(p.costTelemetry.today.tokensIn).toBe(12100);
+  });
+  it('resets on month rollover and day rollover', () => {
+    const book = { costTelemetry: { monthKey: '2026-07', tokensIn: 999999, estUsd: 9, today: { date: '2026-07-31', evalCount: 9, tokensIn: 5, tokensOut: 5, estUsd: 1 } } };
+    const p = telemetryPatch(book, '2026-08-03', priced);
+    expect(p.costTelemetry.tokensIn).toBe(12000);   // fresh month
+    expect(p.costTelemetry.monthKey).toBe('2026-08');
+    expect(p.costTelemetry.today).toMatchObject({ date: '2026-08-03', evalCount: 1, tokensIn: 12000 });
+  });
+  it('an unpriced call counts tokens and increments unpricedCalls (never a silent $0 understatement)', () => {
+    const p = telemetryPatch({ costTelemetry: { monthKey: '2026-08', unpricedCalls: 0 } }, '2026-08-12', { tokensIn: 500, tokensOut: 50, cacheHitTokens: 0, estUsd: null, priced: false });
+    expect(p.costTelemetry.unpricedCalls).toBe(1);
+    expect(p.costTelemetry.tokensIn).toBe(500);
+    expect(p.costTelemetry.estUsd).toBe(0); // unchanged, flagged via unpricedCalls
   });
 });

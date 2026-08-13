@@ -1031,6 +1031,11 @@ service cloud.firestore {
                     && request.auth.uid == get(/databases/$(database)/documents/mandates/$(mandateId)).data.userId;
         allow write: if false;  // Admin SDK only
       }
+      // Internal close-pass bookkeeping (§3.6/I14): durable retry markers for
+      // the dual-label stream. Not a user-facing record — no client access.
+      match /pendingScoringAppends/{date} {
+        allow read, write: if false;  // Admin SDK only
+      }
     }
 
     // userMeta/{uid} — activeMandateId + mandateEscapeHatchUsed (§2.1, §5.2).

@@ -184,3 +184,26 @@ describe('sector cap unit — fail-closed policy on fresh exposure', () => {
     expect(exp).toEqual({ X: 70, Y: 100 });
   });
 });
+
+describe('quarantine exit-only mode (§6.4/I2) + CA-frozen symbols (§4.3/I7)', () => {
+  const SNAP = { tickKey: 't', symbols: { AAPL: { complete: true, price: 200, sector: 'Technology' }, XOM: { complete: true, price: 100, sector: 'Energy' } } };
+  const GC = { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 0.30 };
+  const held = { AAPL: { shares: 10, costBasisTotal: 2000, avgCost: 200, lastMark: 200, sector: 'Technology' } };
+
+  it('a quarantined book: ENTRIES are gated, EXITS pass untouched (C-21 outranks ops hygiene)', () => {
+    const buy = evaluateGate({ decision: { verb: 'BUY', ticker: 'XOM', sizeUsd: 1000 }, positions: held, cash: 10000, snapshot: SNAP, gateConfig: GC, quarantined: true });
+    expect(buy.passed).toBe(false);
+    expect(buy.rule).toBe('quarantined');
+    const sell = evaluateGate({ decision: { verb: 'SELL', ticker: 'AAPL' }, positions: held, cash: 10000, snapshot: SNAP, gateConfig: GC, quarantined: true });
+    expect(sell.passed).toBe(true);
+    expect(sell.rule).toBe('exit_lane');
+  });
+  it('a CA-frozen symbol: entry gated as suspected_ca; exits still pass the gate', () => {
+    const frozen = new Set(['AAPL']);
+    const add = evaluateGate({ decision: { verb: 'ADD', ticker: 'AAPL', sizeUsd: 1000 }, positions: held, cash: 10000, snapshot: SNAP, gateConfig: GC, caFrozen: frozen });
+    expect(add.passed).toBe(false);
+    expect(add.rule).toBe('suspected_ca');
+    const sell = evaluateGate({ decision: { verb: 'SELL', ticker: 'AAPL' }, positions: held, cash: 10000, snapshot: SNAP, gateConfig: GC, caFrozen: frozen });
+    expect(sell.passed).toBe(true);
+  });
+});

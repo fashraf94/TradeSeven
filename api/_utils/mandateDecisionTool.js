@@ -74,6 +74,20 @@ export const SIZED_VERBS = Object.freeze(['BUY', 'ADD', 'TRIM']);
 export const ENTRY_VERBS = Object.freeze(['BUY', 'ADD']);
 /** Exit verbs (the exit lane — never blocked by entry rules, C-21). */
 export const EXIT_VERBS = Object.freeze(['SELL', 'TRIM']);
+/** §6.4/I2 exit-only mode: the verb set a QUARANTINED book's tool is restricted to. */
+export const EXIT_MODE_VERBS = Object.freeze(['SELL', 'TRIM', 'HOLD']);
+
+/** The effective verb set for a book: the vintage's verbs, intersected with
+ * EXIT_MODE_VERBS when quarantined (§6.4 — entries leave the tool schema
+ * itself, so the model cannot even emit a BUY/ADD in exit-only mode). */
+export function effectiveVerbs(vintageVerbs = MANDATE_DECISION_VERBS, { quarantined = false } = {}) {
+  const base = [...(vintageVerbs || MANDATE_DECISION_VERBS)];
+  if (!quarantined) return base;
+  const restricted = base.filter((v) => EXIT_MODE_VERBS.includes(v));
+  // A vintage whose verb set somehow lacks every exit verb still gets HOLD —
+  // the tool must never be empty (fail-safe, not fail-open: HOLD trades nothing).
+  return restricted.length > 0 ? restricted : ['HOLD'];
+}
 
 /**
  * Shape-validate a raw tool input into a normalized decision, or return an error.

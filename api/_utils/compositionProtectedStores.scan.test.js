@@ -136,13 +136,18 @@ describe('B3-EXT — one-level helper-parameter data-flow (PR 4 ledger row)', ()
 });
 
 describe('#10 (Sol pre-activation review) — destructured/extracted write methods fail loud', () => {
+  // Explicit timeout: this test re-parses every non-test .js under api/ +
+  // scripts/ (a full-repo AST scan by design), which sits right at the 5s
+  // default under full-suite worker load as the scanned surface grows — the
+  // SPEC1 P3 additions pushed it over intermittently. Long-running on purpose;
+  // 20s is headroom, not slack.
   it('the repo carries ZERO write-method extractions (the conservative rule: any occurrence must resolve through the allowlist or fail unresolved)', () => {
     // Reads the SHARED module-load scan (no re-scan in the test body — that
     // in-body full-repo scan was the intermittent 5s timeout). Same data, same
     // assertion: any extract: site anywhere in api/ + scripts/ fails loud.
     const extractions = SCAN.all.filter((s) => s.method.startsWith('extract:'));
     expect(extractions).toEqual([]);
-  });
+  }, 20000);
 
   it('the detector catches destructuring, aliases, method-value extraction, and bind — and ignores non-Firestore shapes and ordinary calls', async () => {
     const { detectExtractionsInSource } = await import('./compositionProtectedStoresScan.js');

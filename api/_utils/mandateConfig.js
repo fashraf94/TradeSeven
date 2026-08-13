@@ -156,16 +156,34 @@ export const MANDATE_EVAL_INPUT_TOKEN_BUDGET = 14000;
 // candidate slate, not all ~300 build-set symbols.
 export const MANDATE_PROMPT_CANDIDATE_COUNT = 40;
 
-// ── Friction (§4.1) — IDEALIZED, zeroed in P2 ────────────────────────────────
-// P2 executes at the harvest mark with ZERO friction; the market-cap-tier spread
-// proxy and slippage model land in P3 (§4.1), which bumps the model version. The
-// receipt still carries the honesty labels (D-15 / O-3): spread is a modeled
-// proxy, never observed; frictions are idealized and model no market impact.
-export const MANDATE_P2_SLIPPAGE_BPS = 0;
-export const MANDATE_P2_SPREAD_PROXY_BPS = 0;
-export const MANDATE_FRICTION_MODEL_VERSION = 'p2_zero_friction';
+// ── Friction (§4.1) — IDEALIZED, market-cap-tier model (P3) ──────────────────
+// P3 replaces P2's zero-friction placeholder ('p2_zero_friction') with the
+// market-cap-tier model: commission $0 (V1); `slippageBps` and `spreadProxyBps`
+// by cap tier, the tier read from the daily snapshot layer's marketCap
+// denormalized onto each tick-snapshot entry. ALL constants live here, in one
+// config, and the model version is bumped with them (§4.1: receipts carry
+// `frictionModelVersion`). The receipt honesty labels are unchanged (D-15/O-3):
+// spread is a modeled PROXY (bid/ask exist in no repo payload, Q5), and the
+// whole model is IDEALIZED — no market impact, no liquidity constraint — which
+// at $10M scale (D-43) must never be described as realistic execution cost.
+//
+// Tier bps are PROVISIONAL P3 defaults (founder-tunable; the spec pins the
+// mechanism, not the numbers — flagged in the P3 PR). An UNKNOWN cap tier
+// (missing marketCap in the daily layer) prices at the WIDEST tier —
+// fail-conservative: degraded data must never buy cheaper fills.
+export const MANDATE_FRICTION_MODEL_VERSION = 'p3_cap_tier_v1';
 export const MANDATE_FRICTION_SPREAD_BASIS = 'proxy';                  // §4.1 label
 export const MANDATE_FRICTION_BASIS = 'idealized_no_market_impact';    // §4.1 / O-3 label
+export const MANDATE_FRICTION_COMMISSION_USD = 0;                      // §4.1: commission $0 (V1)
+// Cap-tier boundaries (USD market cap) and per-tier bps. Order matters: the
+// first tier whose floor the cap meets applies; no tier match / no cap → 'unknown'.
+export const MANDATE_FRICTION_TIERS = Object.freeze({
+  mega:    Object.freeze({ minMarketCap: 200e9, slippageBps: 1, spreadProxyBps: 2 }),
+  large:   Object.freeze({ minMarketCap: 10e9,  slippageBps: 2, spreadProxyBps: 3 }),
+  mid:     Object.freeze({ minMarketCap: 2e9,   slippageBps: 3, spreadProxyBps: 7 }),
+  small:   Object.freeze({ minMarketCap: 0,     slippageBps: 5, spreadProxyBps: 15 }),
+  unknown: Object.freeze({ minMarketCap: null,  slippageBps: 5, spreadProxyBps: 15 }), // == widest (fail-conservative)
+});
 
 // ── Execution invariants (§3.5) ──────────────────────────────────────────────
 // The atomic execution transaction asserts cash ≥ 0 within this tight rounding
@@ -178,3 +196,106 @@ export const MANDATE_VALUE_RECONCILE_TOLERANCE_USD = 0.01;
 // A real share/cash mis-record moves totalValue by ≫ this, so it still fires; only
 // legitimate rounding noise is absorbed. At $10M scale 5¢ is ~5e-9 relative.
 export const MANDATE_VALUE_CONSERVE_TOLERANCE_USD = 0.05;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PHASE 3 — close pass, scoring, corporate actions, health, telemetry
+// (§3.6, §3.7, §4.2, §4.3, §6.1–§6.4). Added by the phase that first uses them
+// (do-not-build-ahead). Numeric initials are the spec's where it pins one;
+// values the spec names without an initial are PROVISIONAL P3 defaults, marked
+// so and flagged in the P3 PR (the P1 weight-cap precedent).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Daily close pass (§3.6) ──────────────────────────────────────────────────
+// The close duty runs inside the eval handler (no new cron slot) in a window
+// AFTER the session close: [close + DELAY, close + DELAY + WINDOW) ET. The delay
+// lets the upstream feed settle on the official close print; the window is long
+// enough that a generously-firing cron gets several attempts (the pass is
+// idempotent per date via execState.lastCloseKey). Both derive from the
+// calendar's closeMin, so early-close days shift automatically.
+export const MANDATE_CLOSE_DELAY_MIN = 15;
+export const MANDATE_CLOSE_WINDOW_MIN = 105; // window closes at close + 120min
+
+// ── Risk-metric warmup (§4.2) ────────────────────────────────────────────────
+// Dispersion metrics return NULL (never NaN, never 0) below these row counts:
+// 20 for Sharpe/consistency, 5 for drawdown (spec initials).
+export const MANDATE_METRIC_MIN_ROWS = Object.freeze({
+  sharpe: 20,
+  consistency: 20,
+  drawdown: 5,
+});
+
+// Composite weights over the §4.2 components (renormalized over the non-null
+// subset at compute time; the scoring block records which contributed).
+// PROVISIONAL P3 defaults, founder-tunable.
+export const MANDATE_COMPOSITE_WEIGHTS = Object.freeze({
+  sharpe: 0.4,
+  drawdown: 0.35,
+  consistency: 0.25,
+});
+
+// ── Corporate actions + gap detector (§4.3 / I7) ─────────────────────────────
+// Overnight move beyond this fraction on a HELD symbol enters the gap detector
+// (below it, gaps — earnings included — pass untouched; earnings gaps are not
+// anomalies). Spec names MANDATE_CA_GAP_THRESHOLD without an initial;
+// 0.40 is the PROVISIONAL default: routine earnings gaps run -10%..-30%,
+// while the smallest split signature (÷2) is a ±50% move.
+export const MANDATE_CA_GAP_THRESHOLD = 0.40;
+// Ratio-shape tolerance: a gap is "ratio-shaped" iff the price ratio lands
+// within this RELATIVE tolerance of an exact split ratio (n or 1/n, n=2..10).
+// Tight on purpose (I7): the test must catch ÷2/÷3/÷10 signatures without
+// swallowing near-50% news crashes — discrimination, not suspicion.
+export const MANDATE_CA_RATIO_TOLERANCE = 0.015;
+// Split signatures checked: ÷2..÷N, ×2..×N. Raised 10→50 after the C-21
+// review executed 12:1/20:1/50:1 no-feed splits straight through the detector
+// (Amazon 2022 was 20:1, Chipotle 2024 was 50:1): each extra n adds only a
+// ±1.5%-relative band around 1/n — negligible false-freeze measure — while a
+// missed one silently evaporates ~1−1/n of the position's recorded value.
+// Non-integer ratios (3:2, 5:2) remain the documented accepted residual,
+// bounded by the feed cross-check.
+export const MANDATE_CA_RATIO_MAX_N = 50;
+// The slow layer fetches splits/dividends for a window around the session date:
+// lookback catches actions missed by outage days; lookahead surfaces imminent
+// ex-dates for context. (Fetch cost: 2 calls/symbol/day, inside the §3.0 budget.)
+export const MANDATE_CA_FETCH_LOOKBACK_DAYS = 5;
+export const MANDATE_CA_FETCH_LOOKAHEAD_DAYS = 2;
+
+// ── Regime provenance (§6.1) ─────────────────────────────────────────────────
+// Regime is stamped at write time from indexIntelligence/marketContext. A doc
+// older than this is stamped regime:'unknown' — NEVER a silently stale label.
+// The source doc updates hourly intraday (compute-index-intelligence cron), so
+// 6h covers every close-pass timing including early-close days; a weekend-stale
+// doc read on Monday correctly resolves 'unknown' until the premarket write.
+export const MANDATE_REGIME_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+export const MANDATE_REGIME_SOURCE = 'indexIntelligence/marketContext';
+
+// ── Health, quarantine, liveness (§6.4 / I2 / I9) ────────────────────────────
+export const MANDATE_QUARANTINE_THRESHOLD = 5; // consecutive eval failures → exit-only mode (spec initial)
+// Stale-rejection streak (I9): consecutive terminal rejected_stale/expired
+// submissions. Alerts INDEPENDENTLY of eval failures — a platform of
+// never-trading books must be loudly distinguishable from a healthy one.
+// (Re-introduced from P2 deferral; its consumer now exists. Per the Phase 2
+// founder ruling, LIVENESS wires to THIS streak, not the executed ratio —
+// HOLD-only is healthy.)
+export const MANDATE_STALE_STREAK_ALERT = 3; // spec initial
+// executedVsSubmitted ratio over a trailing window (§6.4 names the floor
+// without an initial — PROVISIONAL defaults, founder-tunable). HOLD counts as
+// executed (founder ruling), so a healthy book's ratio sits near 1; the floor
+// is a coarse secondary signal, subordinate to the streak above.
+export const MANDATE_LIVENESS_FLOOR = 0.5;
+export const MANDATE_LIVENESS_WINDOW_ROWS = 10; // trailing sessions for the ratio
+// Missed close marks on consecutive sessions (§6.4: "≥ 2 consecutive sessions").
+export const MANDATE_MISSED_MARKS_ALERT = 2;
+
+// ── Cost telemetry (§6.2 / I-6 / D-22) ───────────────────────────────────────
+// The D-22 band: < $1.00 per active user per month all-in. A book whose
+// current-month estUsd exceeds this logs MANDATE_RUNRATE_EXCEEDED.
+export const MANDATE_RUNRATE_MONTHLY_USD = 1.0;
+
+// ── Retention (§3.7) ─────────────────────────────────────────────────────────
+// Universe snapshots (tick + daily) retained 120 days (I13 — the scoring window
+// narration runs against); cleanup piggybacks the close pass, bounded per run.
+// decisions / dailyRows / quarterSummaries / corporateActions are retained
+// indefinitely (they are the record). Terminal BATCH bookkeeping (30 days) is a
+// P5 concern — no batch docs exist under direct transport.
+export const MANDATE_SNAPSHOT_RETENTION_DAYS = 120;
+export const MANDATE_RETENTION_DELETE_BATCH = 200; // per close fire, per collection

@@ -33,16 +33,18 @@ function fmtPct(frac) {
  * @param {number} args.quarterDrawdown   fraction (book.portfolio.quarterDrawdownFromPeak)
  * @param {number} args.daysIntoQuarter
  * @param {Set<string>} [args.actionableHeld]  held symbols with a fresh mark (I2)
- * @param {string} [args.regime]          §6.1 regime label (P3); 'unknown' until then
+ * @param {string} [args.regime]          §6.1 regime label, resolved by the handler ('unknown' when stale/absent)
  * @param {string} [args.regimeAsOf]
  * @param {boolean} [args.bootstrapping]  below the construction target (F9)
  * @param {number} [args.minPositions]
+ * @param {boolean} [args.exitOnly]       §6.4/I2 quarantine exit-only mode — the manager is told honestly
  * @returns {{ text: string, data: object }}
  */
 export function buildContextBlock({
   marked = {}, cash = 0, totalValue = 0, initialValue = 0,
   quarterDrawdown = 0, daysIntoQuarter = 0, actionableHeld = null,
   regime = null, regimeAsOf = null, bootstrapping = false, minPositions = null,
+  exitOnly = false,
 }) {
   const tickers = Object.keys(marked);
   const lines = [];
@@ -52,6 +54,11 @@ export function buildContextBlock({
   lines.push(`Quarter drawdown from peak: ${fmtPct(quarterDrawdown)}`);
   lines.push(`Day ${daysIntoQuarter} of this quarter.`);
   lines.push(`Regime: ${regime || 'unknown'}${regimeAsOf ? ` (as of ${regimeAsOf})` : ''}`);
+  if (exitOnly) {
+    // §6.4/I2 + D-17: the restriction is stated to the manager — the record
+    // (agencyState:'exit_only') and the manager's own view must agree.
+    lines.push('NOTE: your mandate is temporarily restricted to exits — you may SELL, TRIM, or HOLD this evaluation; entries are administratively blocked.');
+  }
   if (bootstrapping && minPositions != null) {
     lines.push(`You are building toward the ${minPositions}-position construction target — keep buying quality toward it.`);
   }
@@ -75,7 +82,7 @@ export function buildContextBlock({
 
   const data = {
     totalValue, cash, initialValue, quarterDrawdown, daysIntoQuarter,
-    regime: regime || 'unknown', regimeAsOf: regimeAsOf || null, bootstrapping,
+    regime: regime || 'unknown', regimeAsOf: regimeAsOf || null, bootstrapping, exitOnly,
     positions: tickers.map((t) => ({
       ticker: t, shares: marked[t].shares, avgCost: marked[t].avgCost, mark: marked[t].mark,
       markSource: marked[t].markSource, sector: marked[t].sector,
