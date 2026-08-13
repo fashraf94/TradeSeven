@@ -44,6 +44,7 @@ import {
   classifyOvernightGaps,
 } from './mandateCorporateActions.js';
 import { caActionsBySymbol, snapshotExcluding, shiftDateStr } from './mandateUniverseSnapshot.js';
+import { MANDATE_BATCH_COLLECTION } from './mandateBatchTransport.js';
 import { computeMandateScoring, isDegradedRow } from './mandateRiskMetrics.js';
 import { logMandateScoring } from './shadowLogger.js';
 import { roundUsd } from './mandateRounding.js';
@@ -418,6 +419,7 @@ export async function closeBook(db, mandateRef, {
       estUsd: today?.estUsd ?? 0,
       cacheHitTokens: today?.cacheHitTokens ?? 0,
       cacheWriteTokens: today?.cacheWriteTokens ?? 0, // §6.3 (P5) — D-20 stacking rate needs both sides
+      unpricedCalls: today?.unpricedCalls ?? 0, // §6.2 (P5) — estUsd understatement made visible per day
       partial,
       degradedMarks,
       sessionsSpanned,
@@ -573,6 +575,13 @@ export function healthAlertsAfterClose({ mandateId, rows, monthEstUsd }) {
   if ((monthEstUsd || 0) > MANDATE_RUNRATE_MONTHLY_USD) {
     alerts.push(`MANDATE_RUNRATE_EXCEEDED ${mandateId} month estUsd $${monthEstUsd.toFixed(4)} > D-22 band $${MANDATE_RUNRATE_MONTHLY_USD.toFixed(2)}`);
   }
+  // §6.2 honesty (P5, review MONEY-P5-4): any day with unpriced calls means the
+  // run-rate figure UNDERSTATES real spend — say so daily at close, not once
+  // per process at the price table.
+  const latest = (rows || [])[rows.length - 1];
+  if ((latest?.unpricedCalls || 0) > 0) {
+    alerts.push(`MANDATE_UNPRICED_SPEND ${mandateId} ${latest.unpricedCalls} call(s) on ${latest.date} had no price-table entry — estUsd/run-rate understate real spend (add the model id to MODEL_PRICES_PER_MTOK)`);
+  }
   return alerts;
 }
 
@@ -609,10 +618,15 @@ export async function runRetentionCleanup(db, { now = new Date(), documentIdPath
   // filtered CLIENT-SIDE within the bounded page because an OPEN doc must
   // never be deleted — it holds undisposed submissions (I1). An open doc that
   // old means every disposal path failed for a month: alert, never destroy.
+  //
+  // mandateBatchStats/{date} is DELIBERATELY NOT swept (stated reading, P5
+  // review SPEC-P5-12): the per-day turnaround distribution is §9 acceptance
+  // #8's evidence and the standing I9 instrument — the RECORD side of §3.7's
+  // line, not bookkeeping. One tiny doc per batch day; growth is trivial.
   const batchCutoff = new Date(now.getTime() - MANDATE_BATCH_RETENTION_DAYS * 24 * 60 * 60 * 1000)
     .toISOString().slice(0, 10);
   try {
-    const snap = await db.collection('mandateBatches')
+    const snap = await db.collection(MANDATE_BATCH_COLLECTION)
       .where('sessionDate', '<', batchCutoff)
       .limit(MANDATE_RETENTION_DELETE_BATCH)
       .get();
@@ -625,16 +639,7 @@ export async function runRetentionCleanup(db, { now = new Date(), documentIdPath
       await d.ref.delete(); deleted++;
     }
   } catch (err) {
-    console.error(`${LOG_PREFIX} retention cleanup failed on mandateBatches: ${err.message}`);
-  }
-  try {
-    const snap = await db.collection('mandateBatchStats')
-      .where(documentIdPath, '<', batchCutoff)
-      .limit(MANDATE_RETENTION_DELETE_BATCH)
-      .get();
-    for (const d of snap.docs || []) { await d.ref.delete(); deleted++; }
-  } catch (err) {
-    console.error(`${LOG_PREFIX} retention cleanup failed on mandateBatchStats: ${err.message}`);
+    console.error(`${LOG_PREFIX} retention cleanup failed on ${MANDATE_BATCH_COLLECTION}: ${err.message}`);
   }
 
   if (deleted > 0) console.log(`${LOG_PREFIX} retention: deleted ${deleted} snapshot/batch docs past their §3.7 windows`);

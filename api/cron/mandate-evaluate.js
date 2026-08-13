@@ -32,6 +32,7 @@ import {
   MANDATE_STALE_STREAK_ALERT,
   MANDATE_MISSED_MARKS_ALERT,
   MANDATE_REGIME_SOURCE,
+  MANDATE_RESULT_MAX_AGE_MS,
 } from '../_utils/mandateConfig.js';
 import { activeTick, activeCloseTick, tierEligibleAt, resolveSessionSlots, isFinalSessionSlot } from '../_utils/mandateSessionSlots.js';
 import { ensureUniverseSnapshot, ensureDailySnapshot, classifyBookTick, shiftDateStr, SNAPSHOT_COLLECTION } from '../_utils/mandateUniverseSnapshot.js';
@@ -40,7 +41,7 @@ import { assembleMandatePrompt } from '../_utils/mandatePromptAssembly.js';
 import { buildSubmissionEnvelope, callMandateModelDirect } from '../_utils/mandateModelCall.js';
 import { normalizeDecisionInput, effectiveVerbs } from '../_utils/mandateDecisionTool.js';
 import { evaluateGate } from '../_utils/mandateGate.js';
-import { executeDecision } from '../_utils/mandateExecution.js';
+import { executeDecision, disposeSubmission } from '../_utils/mandateExecution.js';
 import { markFor } from '../_utils/mandateUniverseSnapshot.js';
 import { resolveRegime } from '../_utils/mandateRegime.js';
 import { priceUsage, telemetryPatch } from '../_utils/modelPriceTable.js';
@@ -99,8 +100,35 @@ export async function runBookEval(db, {
   // it BEFORE this sweep ran; under direct it is non-null only mid-drain (a
   // mode flip with batches still open), where evaluating would double-spend
   // against an in-flight request. Inert in pure direct operation (always null).
-  if ((book.execState?.openBatchId ?? null) !== null) {
-    return { outcome: 'skipped_open_batch' };
+  //
+  // BOOK-LEVEL AGE-OUT, also transport-independent (§6.4 "auto-expired, not
+  // merely alerted" — mode-independent language; P5 review C21-P5-2): a gate
+  // past MANDATE_RESULT_MAX_AGE_MS is expired HERE, at eval granularity, so a
+  // mid-drain book under 'direct' is submit-blocked for at most 4h + one slot
+  // gap — not until the once-daily close pass happens to catch it (whose age
+  // check provably misses same-day midday submissions). The book then
+  // proceeds to a normal eval THIS fire.
+  const openBatchId = book.execState?.openBatchId ?? null;
+  if (openBatchId !== null) {
+    const submittedAtRaw = book.execState?.openBatchSubmittedAt;
+    const submittedMs = submittedAtRaw
+      ? (typeof submittedAtRaw.toDate === 'function' ? submittedAtRaw.toDate().getTime() : new Date(submittedAtRaw).getTime())
+      : NaN;
+    const gateAge = Number.isFinite(submittedMs) ? now.getTime() - submittedMs : Infinity; // fail-closed: unparseable = infinitely old
+    if (gateAge <= MANDATE_RESULT_MAX_AGE_MS) {
+      return { outcome: 'skipped_open_batch' };
+    }
+    const expired = await disposeSubmission(db, {
+      mandateRef, requestId: openBatchId, status: 'expired', failCondition: 'result_age',
+    });
+    console.error(
+      `${LOG_PREFIX} MANDATE_GATE_EXPIRED ${mandateRef.id} — open submission ${openBatchId} aged out at the eval `
+      + `sweep (${Math.round(gateAge / 60000)}m old${expired.idempotent ? ', terminal already claimed' : ''}); book returns to submit-eligibility (I1)`,
+    );
+    if ((expired.staleRejectStreak || 0) >= MANDATE_STALE_STREAK_ALERT) {
+      console.error(`${LOG_PREFIX} MANDATE_STALE_STREAK ${mandateRef.id} — ${expired.staleRejectStreak} consecutive stale-rejected/expired submissions (I9 liveness)`);
+    }
+    book = { ...book, revision: expired.idempotent ? book.revision : (book.revision || 0) + 1, execState: { ...book.execState, openBatchId: null, openBatchSubmittedAt: null, openProviderBatchId: null } };
   }
 
   const positions = book.portfolio?.positions || {};
@@ -279,7 +307,11 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     // TICK ORDER (§3.1): HARVEST BEFORE SUBMIT. Poll every open batch, run the
     // full §3.3 validation per result, execute/dispose through the §3.5
     // discipline — so a book whose submission terminates here re-enters
-    // submit-eligibility in THIS tick's sweep below.
+    // submit-eligibility in THIS tick's sweep below. (Same-TICK re-submission
+    // is exact at ≤ page-size populations; above it, a harvested book's
+    // advanced sweep key sorts it behind never-served books — fairness first —
+    // and a later generous fire in the slot, or the next slot, picks it up.
+    // Self-balancing, never starving; stated in the audit.)
     if (transport === 'batch') {
       summary.harvest = await harvestOpenBatches(db, {
         currentSnapshot: snapshot, sessionDate: tick.date, ownerToken, now, deadlineMs,
@@ -341,8 +373,10 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     const vintageCache = new Map();
     const pendingSubmissions = []; // batch transport: enqueued books, submitted as ONE batch after the loop
     let newlyEvaluated = 0;
+    let leaseSkips = 0;
+    let deferred = false;
     for (const docSnap of page) {
-      if (Date.now() - startedAt > TIME_BUDGET_MS) break; // defer remaining to the next fire
+      if (Date.now() - startedAt > TIME_BUDGET_MS) { deferred = true; break; } // defer remaining to the next fire
       const mandateRef = docSnap.ref;
 
       // Cheap pre-filter on the PAGE COPY (may be stale — the authoritative
@@ -352,7 +386,7 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
         || pageCopy.execState?.lastSweepTickKey === tick.tickKey) { summary.skipped++; continue; }
 
       const lease = await acquireLease(db, mandateRef, ownerToken, { now });
-      if (!lease.acquired) { summary.skipped++; continue; }
+      if (!lease.acquired) { summary.skipped++; leaseSkips++; continue; }
       let book = null; // assigned from the fresh in-lease read; catch falls back to the page copy
       try {
         // Within-slot idempotency on a FRESH read UNDER THE LEASE (invariants
@@ -414,24 +448,47 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
           }
         };
 
-        if (result.outcome === 'skipped_tier' || result.outcome === 'skipped_open_batch') {
-          // Ineligible tier this slot, or an open submission still in flight
-          // (§3.3 double-submit gate — its batch terminates via harvest/expiry,
-          // never a second submit) — routine, not a failure; the sweep stamp
-          // rotates the book behind the frontier without billing.
+        if (result.outcome === 'skipped_tier') {
+          // Ineligible tier this slot — routine cadence, not a failure; the
+          // sweep stamp rotates the book behind the frontier without billing.
           summary.skipped++;
           await persistOutcome({
             health: { lastEvalSweepAt: now },
             execState: { lastSweepTickKey: tick.tickKey },
           });
+        } else if (result.outcome === 'skipped_open_batch') {
+          // An open submission still in flight (§3.3 double-submit gate — its
+          // batch terminates via harvest/expiry, never a second submit). The
+          // block is TRANSIENT — the next fire's harvest may clear it — so it
+          // gets NO lastSweepTickKey slot stamp (P5 review C21-P5-1: stamping
+          // converted a mid-slot gate clearance into a slot-long submit
+          // lockout); only the frontier key advances. Counted separately, and
+          // LOUD under direct transport, where a gated book means a mid-drain
+          // flip left work behind (F26 visibility).
+          summary.skipped++;
+          summary.gatedOpenBatch = (summary.gatedOpenBatch || 0) + 1;
+          if (transport !== 'batch') {
+            console.error(`${LOG_PREFIX} MANDATE_OPEN_BATCH_UNDER_DIRECT ${book._id} — open submission ${book.execState?.openBatchId} gates evals under 'direct' transport; run the founder drain (api/mandate/drain) or wait for the ≤4h gate expiry`);
+          }
+          await persistOutcome({
+            health: { lastEvalSweepAt: now },
+          });
         } else if (result.outcome === 'enqueue') {
-          // BATCH transport: collected for the single post-loop submission. NO
-          // per-book write here — the submit's gate txn stamps lastEvalTickKey
-          // and advances the sweep key atomically with the gate; a crash before
-          // provider creation therefore leaves NOTHING and the slot retries
-          // cleanly (liveness-optimal; Risk 7).
+          // BATCH transport: collected for the single post-loop submission.
+          // The billed-eval stamp + frontier key land NOW, UNDER THE LEASE
+          // (the P3 INV-3 idiom; P5 review INV-P5-1: stamping only in the
+          // post-loop gate txn left the whole page re-enqueueable by an
+          // overlapping generous fire — double provider spend on routine cron
+          // overlap). Accepted trade, stated: a crash between this stamp and
+          // provider creation costs the stamped books THIS slot (they submit
+          // fresh next slot) — a lost slot is recoverable, duplicate spend is
+          // not.
           newlyEvaluated++;
           summary.enqueued++;
+          await persistOutcome({
+            health: { lastEvalSweepAt: now },
+            execState: { lastEvalTickKey: tick.tickKey },
+          });
           pendingSubmissions.push(result.pending);
         } else if (result.outcome === 'skipped') {
           // Missing/corrupt vintage: the book CANNOT evaluate — that is an
@@ -540,9 +597,14 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
       }
     }
 
-    // 8. Completion (F24): a full page with zero newly-evaluated books means the
-    //    frontier has reached books already served this slot → sweep complete.
-    if (newlyEvaluated === 0) {
+    // 8. Completion (F24) — and it must be TRUE (P5 review C21-P5-7/INV-P5-8,
+    //    the close sweep's INV-1 lesson applied here): errors, lease-skips, a
+    //    time-budget break, or an incomplete harvest all leave books unproven,
+    //    so such a fire never claims complete. A clean full page with zero
+    //    newly-evaluated books means the frontier reached books already served
+    //    this slot → complete.
+    const harvestClean = !summary.harvest || (summary.harvest.errors === 0 && summary.harvest.leaseSkips === 0);
+    if (newlyEvaluated === 0 && summary.errors === 0 && leaseSkips === 0 && !deferred && harvestClean) {
       summary.complete = true;
       console.log(`${LOG_PREFIX} sweep complete for slot ${tick.tickKey} — all active books served`);
     }

@@ -43,7 +43,7 @@ import {
 import { buildSubmissionEnvelope } from './mandateModelCall.js';
 import { makeMandateFakeDb } from './__testsupport__/mandateFakeFirestore.js';
 import { buildNewMandateDoc } from './mandateSchema.js';
-import { MANDATE_RESULT_MAX_AGE_MS } from './mandateConfig.js';
+import { MANDATE_RESULT_MAX_AGE_MS, MANDATE_BATCH_BILLING_GIVEUP_MS } from './mandateConfig.js';
 
 const NOW = new Date('2026-08-12T14:05:00Z'); // 10:05 ET — open30 window
 const TICK = { date: '2026-08-12', slot: 'open30', tickKey: '2026-08-12_open30' };
@@ -356,29 +356,48 @@ describe('harvestOpenBatches — the §3.3 validation → §3.5 execution path',
     expect(db._get('mandates/m1').execState.openBatchId).toBe(env.requestId); // gate stays — no double submit
   });
 
-  it('LATE BATCH (I9/I1 acceptance-critical): age-out → provider cancel → expired terminal → gate cleared → submit-eligible', async () => {
+  it('LATE BATCH (I9/I1 acceptance-critical): age-out → dispositions + gate cleared NOW; the doc waits, then the late result BILLS (never executes) and finalizes expired', async () => {
     const { db, env } = seedSubmitted();
-    batchApi.retrieve.mockResolvedValue({ processing_status: 'in_progress' }); // never returns
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'in_progress' }); // still running at age-out
     batchApi.cancel.mockResolvedValue({});
     const late = new Date(NOW.getTime() + MANDATE_RESULT_MAX_AGE_MS + 60_000);
 
     const s = await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: late });
-    expect(s.expired).toBe(1);
+    expect(s.disposed).toBe(1);
     expect(batchApi.cancel).toHaveBeenCalledWith('msgbatch_h'); // stop paying for a dead batch
     const dec = db._get(`mandates/m1/decisions/${env.requestId}`);
     expect(dec.status).toBe('expired');
     const book = db._get('mandates/m1');
-    expect(book.execState.openBatchId).toBe(null);          // submit-eligibility restored (I1)
+    expect(book.execState.openBatchId).toBe(null);          // submit-eligibility restored (I1) — IMMEDIATELY
     expect(book.execState.staleRejectStreak).toBe(1);       // an aged-out submission is a liveness event
-    expect(db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`).status).toBe('expired');
-    // A LATE provider result after the expiry no-ops on the claim:
+    expect(book.health.consecutiveEvalFailures).toBe(1);    // an UNDELIVERED cycle is an eval failure (C21-P5-6)
+    // The DOC stays open awaiting provider end, so pre-cancel spend can still
+    // be billed (MONEY-P5-1) — books were freed above; only bookkeeping waits.
+    const bdocMid = db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`);
+    expect(bdocMid.status).toBe('open');
+    expect(bdocMid.agedOutAt).toBeTruthy();
+    expect(bdocMid.disposed[env.requestId]).toBe('expired');
+
+    // The provider later ends: the request had actually SUCCEEDED pre-cancel.
+    // Its usage is billed (batch rates) against the book; the terminal stays
+    // 'expired' (claim) and no money moves; the doc finalizes 'expired'.
     batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'later' });
     batchApi.results.mockResolvedValue(asAsyncIterable([
       { custom_id: env.requestId, result: succeededResult({ verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, rationale: 'q' }) },
     ]));
-    await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h2', now: late });
+    const s2 = await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h2', now: late });
+    expect(s2.billedEntries).toBe(1);
+    expect(s2.expired).toBe(1); // finalized non-harvested
+    const after = db._get('mandates/m1');
     expect(db._get(`mandates/m1/decisions/${env.requestId}`).status).toBe('expired'); // still expired — never executed
-    expect(db._get('mandates/m1').portfolio.cash).toBe(book.portfolio.cash);          // no late money motion
+    expect(after.portfolio.cash).toBe(book.portfolio.cash);                            // no late money motion
+    expect(after.costTelemetry.tokensIn).toBe(1200);                                   // the REAL spend is recorded (§6.2)
+    const bdoc = db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`);
+    expect(bdoc.status).toBe('expired');
+    expect(bdoc.billed[env.requestId]).toBe(true);
+    // And a THIRD pass changes nothing (billing is exactly-once via the map).
+    await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h3', now: late });
+    expect(db._get('mandates/m1').costTelemetry.tokensIn).toBe(1200);
   });
 
   it('provider cancel FAILURE does not block the age-out dispositions (best-effort by contract)', async () => {
@@ -389,7 +408,29 @@ describe('harvestOpenBatches — the §3.3 validation → §3.5 execution path',
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const s = await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: late });
     spy.mockRestore();
+    expect(s.disposed).toBe(1);
+    expect(db._get(`mandates/m1/decisions/${env.requestId}`).status).toBe('expired');
+    expect(db._get('mandates/m1').execState.openBatchId).toBe(null); // books never wait on the provider
+  });
+
+  it('BILLING GIVE-UP: a batch that never ends finalizes past the horizon with its unbilled spend counted and alerted', async () => {
+    const { db, env } = seedSubmitted();
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'in_progress' }); // never ends
+    batchApi.cancel.mockResolvedValue({});
+    const late = new Date(NOW.getTime() + MANDATE_RESULT_MAX_AGE_MS + 60_000);
+    await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: late });
+    expect(db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`).status).toBe('open'); // waiting to bill
+
+    const pastHorizon = new Date(NOW.getTime() + MANDATE_BATCH_BILLING_GIVEUP_MS + 60_000);
+    const errs = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((m) => errs.push(String(m)));
+    const s = await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h2', now: pastHorizon });
+    spy.mockRestore();
     expect(s.expired).toBe(1);
+    const bdoc = db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`);
+    expect(bdoc.status).toBe('expired');
+    expect(bdoc.unbilledRequestCount).toBe(1); // understatement is LOUD, never silent (§6.2)
+    expect(errs.some((e) => e.includes('MANDATE_BATCH_UNBILLED_SPEND'))).toBe(true);
     expect(db._get(`mandates/m1/decisions/${env.requestId}`).status).toBe('expired');
   });
 
@@ -404,6 +445,8 @@ describe('harvestOpenBatches — the §3.3 validation → §3.5 execution path',
     const dec = db._get(`mandates/m1/decisions/${env.requestId}`);
     expect(dec.status).toBe('gated');
     expect(dec.failCondition).toBe('exit_only_mode'); // harvest gates against the book as it IS
+    // I1 set-completeness (SPEC-P5-7): the gated terminal ALSO releases the gate.
+    expect(db._get('mandates/m1').execState.openBatchId).toBe(null);
   });
 
   it('a result with NO tool_use reaches terminal failed (I1 — never the direct path soft-skip)', async () => {
@@ -462,5 +505,115 @@ describe('drainOpenBatches — the explicit F26 protocol', () => {
     expect(r.batches).toBe(1);
     expect(db._get(`mandates/m1/decisions/${env.requestId}`).status).toBe('cancelled'); // untouched — claim wins
     expect(db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`).status).toBe('cancelled');
+  });
+});
+
+// ── P5 review fixes — mutation guards ────────────────────────────────────────
+
+describe('P5 review SPEC-P5-3 — a partially-drained batch keeps the drain disposition', () => {
+  it("a 'canceled' result row on a drain-marked batch disposes rejected_stale/drained_transport_change (streak++), never lifecycle 'cancelled'", async () => {
+    const { db, env } = seedSubmitted();
+    await db.doc(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`).update({ drainRequested: true }); // the drain marked it, then lease-skipped this entry
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'x' });
+    batchApi.results.mockResolvedValue(asAsyncIterable([
+      { custom_id: env.requestId, result: { type: 'canceled' } },
+    ]));
+    await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: H_NOW });
+    const dec = db._get(`mandates/m1/decisions/${env.requestId}`);
+    expect(dec.status).toBe('rejected_stale');                  // §3.3 drain language survives the partial path
+    expect(dec.failCondition).toBe('drained_transport_change');
+    expect(db._get('mandates/m1').execState.staleRejectStreak).toBe(1); // the I9 evidence is kept, not reset
+    expect(db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`).status).toBe('cancelled'); // the doc keeps the drain terminal
+  });
+
+  it("a 'canceled' row WITHOUT the drain marker keeps the lifecycle word (console-cancel case)", async () => {
+    const { db, env } = seedSubmitted();
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'x' });
+    batchApi.results.mockResolvedValue(asAsyncIterable([
+      { custom_id: env.requestId, result: { type: 'canceled' } },
+    ]));
+    await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: H_NOW });
+    expect(db._get(`mandates/m1/decisions/${env.requestId}`).status).toBe('cancelled');
+  });
+});
+
+describe('P5 review INV-P5-5 — a deleted book cannot strand its batch doc', () => {
+  it('the entry is disposed leaselessly (terminal claimed under the dead path) and the doc converges', async () => {
+    const { db, env } = seedSubmitted();
+    db._store.delete('mandates/m1'); // out-of-band delete
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'x' });
+    batchApi.results.mockResolvedValue(asAsyncIterable([
+      { custom_id: env.requestId, result: succeededResult({ verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, rationale: 'q' }) },
+    ]));
+    const s = await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: H_NOW });
+    expect(s.leaseSkips).toBe(0);                                // no_such_book is NOT contention
+    expect(s.disposed).toBe(1);
+    const dec = db._get(`mandates/m1/decisions/${env.requestId}`);
+    expect(dec.status).toBe('failed');
+    expect(dec.failCondition).toBe('book_missing');
+    expect(db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`).status).toBe('harvested'); // converged (I1)
+  });
+});
+
+describe('P5 review MONEY-P5-1/SPEC-P5-9 — billing end-to-end', () => {
+  it('a close-expiry-claimed terminal still gets its usage billed at harvest (idempotent decision, non-idempotent billing), incl. cache tokens', async () => {
+    const { db, env } = seedSubmitted();
+    // The close pass expired it overnight (claim exists, gate cleared, no bill).
+    db._store.set(`mandates/m1/decisions/${env.requestId}`, { data: { decisionId: env.requestId, status: 'expired' }, version: 1 });
+    const b = db._get('mandates/m1');
+    db._store.set('mandates/m1', { data: { ...b, execState: { ...b.execState, openBatchId: null, openBatchSubmittedAt: null, openProviderBatchId: null } }, version: 2 });
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'x' });
+    batchApi.results.mockResolvedValue(asAsyncIterable([
+      { custom_id: env.requestId, result: succeededResult({ verb: 'HOLD', rationale: 'steady' }, { input_tokens: 800, output_tokens: 40, cache_read_input_tokens: 2000, cache_creation_input_tokens: 500 }) },
+    ]));
+    const s = await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: H_NOW });
+    expect(s.billedEntries).toBe(1);
+    const ct = db._get('mandates/m1').costTelemetry;
+    expect(ct.tokensIn).toBe(800);
+    expect(ct.cacheHitTokens).toBe(2000);   // the D-20 stacking measurement, end-to-end
+    expect(ct.cacheWriteTokens).toBe(500);
+    expect(db._get(`mandates/m1/decisions/${env.requestId}`).status).toBe('expired'); // the claim stands — billing never re-executes
+    // A second harvest bills nothing more (the billed map is the exactly-once).
+    await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h2', now: H_NOW });
+    expect(db._get('mandates/m1').costTelemetry.tokensIn).toBe(800);
+  });
+});
+
+describe('P5 review INV-P5-7 — a transient submit-snapshot read failure leaves the batch open (no terminal rejections from a blip)', () => {
+  it('the batch is retried next fire; nothing is disposed', async () => {
+    const { db, env } = seedSubmitted();
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'x' });
+    batchApi.results.mockResolvedValue(asAsyncIterable([
+      { custom_id: env.requestId, result: succeededResult({ verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, rationale: 'q' }) },
+    ]));
+    // Poison the submit-snapshot read only.
+    const realCollection = db.collection.bind(db);
+    const wrapped = {
+      ...db,
+      collection: (name) => {
+        const col = realCollection(name);
+        if (name !== 'mandateUniverseSnapshots') return col;
+        return { ...col, doc: (id) => ({ ...col.doc(id), get: async () => { throw new Error('injected read blip'); } }) };
+      },
+    };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = await harvestOpenBatches(wrapped, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: H_NOW });
+    spy.mockRestore();
+    expect(s.errors).toBeGreaterThanOrEqual(1);
+    expect(s.disposed).toBe(0);                                            // NOT terminally rejected on our blip
+    expect(db._get(`mandates/m1/decisions/${env.requestId}`)).toBeUndefined();
+    expect(db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`).status).toBe('open'); // retried next fire
+  });
+});
+
+describe('P5 review C21-P5-5 — batch-doc age fails CLOSED on a corrupt submittedAt', () => {
+  it('a doc with no parseable submittedAt is infinitely old: disposed immediately', async () => {
+    const { db, env } = seedSubmitted();
+    await db.doc(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`).update({ submittedAt: 'not-a-date' });
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'in_progress' });
+    batchApi.cancel.mockResolvedValue({});
+    const s = await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: H_NOW });
+    expect(s.disposed).toBe(1); // the liveness backstop cannot be defeated by a corrupt field
+    expect(db._get(`mandates/m1/decisions/${env.requestId}`).status).toBe('expired');
   });
 });

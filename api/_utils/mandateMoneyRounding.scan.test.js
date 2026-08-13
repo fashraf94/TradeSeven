@@ -88,6 +88,10 @@ const BASELINE = {
     count: 2,
     note: 'display: Math.round on turnaround/harvest-lag SECONDS in the I9 log line — latency telemetry formatting, not money',
   },
+  'api/cron/mandate-evaluate.js': {
+    count: 1,
+    note: 'display: Math.round on the gate AGE (minutes) in the MANDATE_GATE_EXPIRED log line (P5 review C21-P5-2 fix) — latency formatting, not money',
+  },
 };
 
 const RAW_ROUNDING = /Math\.round\s*\(|Math\.floor\s*\(|Math\.ceil\s*\(|\.toFixed\s*\(/g;

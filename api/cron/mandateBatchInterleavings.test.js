@@ -486,6 +486,12 @@ describe('(g) a failed-snapshot tick still harvests — C-21 holds degraded', ()
     const decA = db._get(`mandates/mExit/decisions/${envA.requestId}`);
     expect(decA.status).toBe('executed');
     expect(decA.fillMarkQuality).toBe('carry_over');
+    // MONEY-P5-2 guard: the friction TIER comes from the submit snapshot's
+    // marketCap (3e12 → mega, 1+2=3bps) when the degraded current snapshot
+    // cannot tier — never the 'unknown' 20bps penalty for a platform outage.
+    expect(decA.friction.slippageBps).toBe(1);
+    expect(decA.friction.spreadProxyBps).toBe(2);
+    expect(decA.executedPrice).toBeCloseTo(205 * (1 - 3 / 10000), 10);
     expect(db._get('mandates/mExit').portfolio.positions.AAPL).toBeUndefined(); // fully exited
     // ENTRY: failed closed at the universe gate (no snapshot data).
     const decB = db._get(`mandates/mEntry/decisions/${envB.requestId}`);
@@ -515,5 +521,91 @@ describe('(h) slow tier — submits on its early slot by construction; harvested
     expect(f2.body.skipped).toBeGreaterThanOrEqual(1); // tier-skip stamped
     expect(db._get(`mandates/mSlow/decisions/${requestId}`).status).toBe('executed');
     expect(db._get('mandates/mSlow').execState.openBatchId).toBe(null);
+  });
+});
+
+// ── P5 review fixes — handler-level mutation guards ──────────────────────────
+
+describe('(i) INV-P5-1 — the enqueue stamp lands under the lease, so an overlapping fire cannot double-spend the page', () => {
+  it('fire A crashes at provider create (stamped, unsubmitted); fire B the same slot skips — no second create', async () => {
+    const db = baseDb({ 'mandates/m1': seedBook() });
+    batchApi.create.mockRejectedValueOnce(new Error('provider 500 mid-create'));
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const f1 = await fire(db, OPEN30, T_OPEN30);
+    expect(f1.body.errors).toBe(1);                     // loud
+    const book = db._get('mandates/m1');
+    expect(book.execState.lastEvalTickKey).toBe(OPEN30.tickKey); // stamped UNDER THE LEASE, before create
+    expect(book.execState.openBatchId).toBe(null);               // nothing gated
+
+    batchApi.create.mockResolvedValue({ id: 'msgbatch_should_not_exist' });
+    const f2 = await fire(db, OPEN30, new Date(T_OPEN30.getTime() + 120_000));
+    spy.mockRestore();
+    expect(f2.body.enqueued).toBe(0);                   // stamped → skipped: the slot is LOST, not re-billed
+    expect(batchApi.create).toHaveBeenCalledTimes(1);   // exactly the crashed attempt — never a duplicate batch
+    expect(f2.body.complete).toBe(true);
+  });
+});
+
+describe('(j) C21-P5-1 — a transient open-batch skip does not lock the rest of the slot', () => {
+  it('fire 1: batch in flight → skip WITHOUT a slot stamp; fire 2 same slot: harvest clears the gate and the book re-submits', async () => {
+    const book = seedBook();
+    const env = buildSubmissionEnvelope({
+      mandateId: 'm1', baseRevision: 0, quarterKey: book.quarterKey, vintageRef: book.vintageRef,
+      snapshotTickKey: OPEN30.tickKey, bookStatus: 'active', submittedAt: T_OPEN30.toISOString(), sessionDate: OPEN30.date,
+    });
+    const db = baseDb({
+      'mandates/m1': seedBook({ execState: { openBatchId: env.requestId, openBatchSubmittedAt: T_OPEN30, openProviderBatchId: 'msgbatch_j' } }),
+    });
+    db._store.set(`${MANDATE_BATCH_COLLECTION}/msgbatch_j`, {
+      data: {
+        schemaVersion: 1, providerBatchId: 'msgbatch_j', tickKey: OPEN30.tickKey, sessionDate: OPEN30.date,
+        status: 'open', submittedAt: T_OPEN30, requestCount: 1, disposed: {}, billed: {},
+        entries: { [env.requestId]: { mandateId: 'm1', model: VINTAGE.modelSeat.model, verbs: VINTAGE.gateConfig.decisionVerbs, envelope: env } },
+      },
+      version: 1,
+    });
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    // Fire 1 (midday): provider still in flight → the book is gate-skipped but
+    // NOT slot-stamped.
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'in_progress' });
+    const f1 = await fire(db, MIDDAY, T_MIDDAY);
+    expect(f1.body.gatedOpenBatch).toBe(1);
+    expect(db._get('mandates/m1').execState.lastSweepTickKey ?? null).toBe(null); // no slot lockout
+
+    // Fire 2 (same slot, 5 min later): the provider has ended; the harvest
+    // clears the gate and THE SAME FIRE's sweep re-submits the book.
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'x' });
+    batchApi.results.mockResolvedValue(asAsyncIterable([
+      { custom_id: env.requestId, result: toolUse({ verb: 'HOLD', rationale: 'steady' }) },
+    ]));
+    batchApi.create.mockResolvedValueOnce({ id: 'msgbatch_j2' });
+    const f2 = await fire(db, MIDDAY, new Date(T_MIDDAY.getTime() + 5 * 60_000));
+    spy.mockRestore();
+    expect(f2.body.harvest.disposed).toBe(1);
+    expect(f2.body.enqueued).toBe(1);                    // the mid-slot clearance is USED, not lost
+    expect(db._get('mandates/m1').execState.openProviderBatchId).toBe('msgbatch_j2');
+  });
+});
+
+describe('(k) C21-P5-2 — the gate age-out is transport-independent: a mid-drain book under direct expires at eval granularity', () => {
+  it("a >4h gate under 'direct' is expired by the sweep itself and the book EVALUATES the same fire", async () => {
+    const staleSubmit = new Date(T_MIDDAY.getTime() - 5 * 60 * 60 * 1000); // 5h ago — past MANDATE_RESULT_MAX_AGE_MS
+    const db = baseDb({
+      'mandates/m1': seedBook({ execState: { openBatchId: 'req_old_mode', openBatchSubmittedAt: staleSubmit, openProviderBatchId: 'msgbatch_k' } }),
+    });
+    directSpy.mockResolvedValue({ decision: { ok: true, input: { verb: 'HOLD', rationale: 'steady' } }, usage: null });
+    const errs = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((m) => errs.push(String(m)));
+    const f = await fire(db, MIDDAY, T_MIDDAY, 'direct');
+    spy.mockRestore();
+
+    expect(errs.some((e) => e.includes('MANDATE_GATE_EXPIRED') && e.includes('m1'))).toBe(true);
+    expect(db._get('mandates/m1/decisions/req_old_mode').status).toBe('expired'); // I1 terminal claimed
+    expect(db._get('mandates/m1').execState.openBatchId).toBe(null);
+    expect(directSpy).toHaveBeenCalledTimes(1);          // the book was SERVED this very fire
+    expect(f.body.evaluated).toBe(1);
+    expect(batchApi.retrieve).not.toHaveBeenCalled();    // still no implicit batch harvest under direct
   });
 });

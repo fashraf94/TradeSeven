@@ -60,10 +60,14 @@ export function priceUsage(modelId, usage, { batch = false } = {}) {
 
   const price = MODEL_PRICES_PER_MTOK[modelId];
   if (!price) {
-    if (modelId && !alertedUnknown.has(modelId)) {
-      alertedUnknown.add(modelId);
+    // A NULL/undefined id alerts too (keyed as its string form) — the header
+    // rule is "degrade loudly", and a nullish id is the quietest failure of
+    // all (P5 review MONEY-P5-6). Once per id per process, as before.
+    const alertKey = String(modelId);
+    if (!alertedUnknown.has(alertKey)) {
+      alertedUnknown.add(alertKey);
       console.error(
-        `[ModelPriceTable] MODEL_PRICE_UNKNOWN — no $/MTok entry for '${modelId}' `
+        `[ModelPriceTable] MODEL_PRICE_UNKNOWN — no $/MTok entry for '${alertKey}' `
         + `(table v${MODEL_PRICE_TABLE_VERSION}); estUsd recorded as null, never a silent $0`,
       );
     }
@@ -113,6 +117,11 @@ export function telemetryPatch(book, sessionDate, priced) {
         cacheHitTokens: (today.cacheHitTokens || 0) + priced.cacheHitTokens,
         cacheWriteTokens: (today.cacheWriteTokens || 0) + (priced.cacheWriteTokens || 0),
         estUsd: (today.estUsd || 0) + (priced.estUsd || 0),
+        // P5 (review MONEY-P5-4): the unpriced count reaches the DAY block and
+        // from there the daily row + close alert — a rotated/unknown model id
+        // must not understate spend with one process-lifetime console line as
+        // the only trace.
+        unpricedCalls: (today.unpricedCalls || 0) + (priced.priced ? 0 : 1),
       },
     },
   };

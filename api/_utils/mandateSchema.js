@@ -243,6 +243,7 @@ export function buildDailyRow({ date, quarterIndex, ...rest } = {}) {
     estUsd: rest.estUsd ?? 0,
     cacheHitTokens: rest.cacheHitTokens ?? 0, // §6.3 — cache reads (the D-20 stacking measurement)
     cacheWriteTokens: rest.cacheWriteTokens ?? 0, // §6.3 (P5) — cache writes; hit rate needs both sides
+    unpricedCalls: rest.unpricedCalls ?? 0, // §6.2 (P5) — calls whose estUsd degraded to null (unknown model id); alerted at close
     quarterIndex: quarterIndex ?? null,
     partial: rest.partial ?? false, // I17 / §3.6 — creation-day & carry-over rows
     degradedMarks: rest.degradedMarks ?? false, // I6 — any carry-over mark in today's marking

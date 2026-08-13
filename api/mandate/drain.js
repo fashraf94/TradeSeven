@@ -11,9 +11,15 @@
 // (§3.3). This endpoint is that protocol made EXPLICIT AND INVOCABLE — never an
 // implicit side effect of the config flip: the founder flips the mode (a
 // separate one-line config PR), invokes this, and books gated on old-mode
-// batches return to submit-eligibility immediately instead of waiting out the
-// MANDATE_RESULT_MAX_AGE_MS expiry backstop. Idempotent: already-terminal
-// entries and already-finalized batches no-op; re-invoke until `batches: 0`.
+// batches return to submit-eligibility immediately. Without it the automatic
+// backstops still release every book — the eval sweep expires any gate older
+// than MANDATE_RESULT_MAX_AGE_MS on its next fire under EITHER transport
+// (MANDATE_GATE_EXPIRED), and the close pass's once-daily expiry duty layers
+// beneath that — but the drain is the prompt path, and the only one that
+// finishes the BATCH DOCS (an undrained doc waits on founder action or the
+// 30-day MANDATE_BATCH_STUCK_OPEN alert). Idempotent: already-terminal
+// entries and already-finalized batches no-op; re-invoke until `batches: 0`
+// (an incomplete pass logs MANDATE_DRAIN_INCOMPLETE loudly).
 //
 // Mode-agnostic by design: draining under EITHER transport mode is safe (it
 // only disposes open submissions), so the flip order (flip-then-drain or

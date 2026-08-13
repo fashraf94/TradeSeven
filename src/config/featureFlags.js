@@ -1592,9 +1592,11 @@ export const MANDATE_DORMANCY_DOWNSHIFT_ENABLED = false;
  * (DEFAULT), the endpoint returns 403 for everyone — even an allowlisted
  * founder uid — because a flag alone is not authorization AND authorization
  * alone is not the flag: creation requires BOTH this flag true AND the caller's
- * uid in MANDATE_FOUNDER_UIDS. This is the Phase 1 dark-testing switch.
+ * uid in MANDATE_FOUNDER_UIDS. This is the Phase 1 dark-testing switch. Also
+ * gates the P4 accelerate and P5 drain founder-ops endpoints (the ambiguity-4
+ * precedent: founder machinery, no new flag).
  */
-// Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+// Pinned by: mandateFlags.test.js, drain.test.js (flagPinGuard: this value and the pins move together — BUILD_RULES §2).
 export const MANDATE_FOUNDER_CREATE_ENABLED = false;
 
 /**

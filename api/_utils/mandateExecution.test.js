@@ -593,3 +593,96 @@ describe('P5 — disposeSubmission (result-less terminal dispositions)', () => {
     expect(db._store.get('mandates/m1').execState.staleRejectStreak).toBe(0);
   });
 });
+
+// ── P5 review fixes — mutation guards ────────────────────────────────────────
+
+describe('P5 review INV-P5-3 — base validation precedes the gate (staleness is never masked as gated)', () => {
+  it('a STALE result whose decision also fails the gate dies rejected_stale/base_revision, streak++ (not gated, not reset)', async () => {
+    // The batch shape: SELL submitted at revision 5; the position exited and
+    // revision moved before harvest → gate says not_held, validation says
+    // base_revision. §3.3 is the outer contract: the staleness must win.
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({ revision: 9, execState: { openBatchId: 'd_stale', submitted: 0, executed: 0, staleRejectStreak: 1 } }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_stale', decision: { verb: 'SELL', ticker: 'AAPL', sizeUsd: null },
+      gateResult: { passed: false, rule: 'exit_lane', reason: 'not_held', gateOutcome: { rule: 'exit_lane', passed: false } },
+      envelope: ENV, snapshot: SNAP, submitMark: 200, currentSessionDate: '2026-08-12', now: NOW,
+    });
+    expect(r.status).toBe('rejected_stale');            // NOT 'gated' — the mutation guard
+    expect(r.failCondition).toBe('base_revision');      // the true condition, durable
+    expect(r.staleRejectStreak).toBe(2);                // the I9 wire moves, never resets
+    expect(db._store.get('mandates/m1/decisions/d_stale').failCondition).toBe('base_revision');
+  });
+
+  it('an AGED result that would be gated dies expired (condition 4), not gated', async () => {
+    const db = makeFakeDb({ 'mandates/m1': baseBook() });
+    const ref = db.collection('mandates').doc('m1');
+    const oldEnv = { ...ENV, submittedAt: new Date(NOW.getTime() - 5 * 60 * 60 * 1000).toISOString() };
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_aged', decision: { verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000 },
+      gateResult: { passed: false, rule: 'quarantined', reason: 'exit_only_mode', gateOutcome: { rule: 'quarantined', passed: false } },
+      envelope: oldEnv, snapshot: SNAP, submitMark: 200, currentSessionDate: '2026-08-12', now: NOW,
+    });
+    expect(r.status).toBe('expired');
+    expect(r.failCondition).toBe('result_age');
+  });
+
+  it('a HALLUCINATED entry (no submit mark, no harvest mark) keeps its honest gated/universe label', async () => {
+    // Direct-mode P2 behavior preserved: never-eligible ≠ stale. Condition 5
+    // only rejects when the ticker HAD a submit mark and lost it in flight.
+    const db = makeFakeDb({ 'mandates/m1': baseBook() });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_halluc', decision: { verb: 'BUY', ticker: 'ZZZZ', sizeUsd: 5000 },
+      gateResult: { passed: false, rule: 'universe', reason: 'not_in_snapshot', gateOutcome: { rule: 'universe', passed: false } },
+      envelope: ENV, snapshot: SNAP, submitMark: null, currentSessionDate: '2026-08-12', now: NOW,
+    });
+    expect(r.status).toBe('gated');
+    expect(r.failCondition).toBe('not_in_snapshot');
+  });
+
+  it('a VANISHED entry (submit mark present, harvest mark gone) is rejected_stale/no_harvest_mark — the universe changed under the decision', async () => {
+    const db = makeFakeDb({ 'mandates/m1': baseBook() });
+    const ref = db.collection('mandates').doc('m1');
+    const emptySnap = { tickKey: '2026-08-12_midday', symbols: {} };
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_vanish', decision: { verb: 'BUY', ticker: 'AAPL', sizeUsd: 5000 },
+      gateResult: { passed: true, execSizeUsd: 5000, gateOutcome: { rule: 'buy', passed: true } },
+      envelope: ENV, snapshot: emptySnap, submitMark: 200, currentSessionDate: '2026-08-12', now: NOW,
+    });
+    expect(r.status).toBe('rejected_stale');
+    expect(r.failCondition).toBe('no_harvest_mark');
+  });
+});
+
+describe('P5 review INV-P5-6 — a foreign terminal never moves the billing stamp backward', () => {
+  it("a zombie's disposition leaves a newer submission's lastEvalTickKey untouched", async () => {
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({
+        execState: {
+          openBatchId: 'd_live', openBatchSubmittedAt: NOW, openProviderBatchId: 'b_live',
+          lastEvalTickKey: '2026-08-12_midday', submitted: 0, executed: 0, staleRejectStreak: 0,
+        },
+      }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const oldEnv = { ...ENV, submitTickKey: '2026-08-12_open30' };
+    await disposeSubmission(db, { mandateRef: ref, requestId: 'd_zombie_old', status: 'expired', failCondition: 'result_age', envelope: oldEnv });
+    const es = db._store.get('mandates/m1').execState;
+    expect(es.lastEvalTickKey).toBe('2026-08-12_midday'); // NOT dragged back to open30
+    expect(es.openBatchId).toBe('d_live');                // gate untouched (ownership)
+  });
+});
+
+describe('P5 review INV-P5-5/SPEC-P5-8 — a missing book cannot strand a submission', () => {
+  it('disposeSubmission on a deleted book still claims the terminal decision (no limbo, I1)', async () => {
+    const db = makeFakeDb({}); // no mandates/m1 at all
+    const ref = db.collection('mandates').doc('m1');
+    const r = await disposeSubmission(db, { mandateRef: ref, requestId: 'req_gone', status: 'failed', failCondition: 'book_missing' });
+    expect(r.bookMissing).toBe(true);
+    expect(db._store.get('mandates/m1/decisions/req_gone').status).toBe('failed'); // the claim exists → batch doc can converge
+    expect(db._store.get('mandates/m1')).toBeUndefined(); // no book fabricated
+  });
+});

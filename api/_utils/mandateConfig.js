@@ -316,6 +316,14 @@ export const MANDATE_BATCH_POLL_PAGE = 20;
 // not state to silently destroy (I1: no undisposed submission may vanish).
 export const MANDATE_BATCH_RETENTION_DAYS = 30;
 
+// Billing give-up horizon (§6.2 honesty): an aged-out batch's entries are
+// disposed immediately (books freed) but the DOC waits for the provider to
+// end so pre-cancel usage can still be billed — provider batches end within
+// 24h by contract. Past this horizon the doc finalizes with its unbilled
+// requests counted and alerted (MANDATE_BATCH_UNBILLED_SPEND) rather than
+// polling forever: understatement is loud, never silent.
+export const MANDATE_BATCH_BILLING_GIVEUP_MS = 26 * 60 * 60 * 1000; // 24h provider bound + slack
+
 // ── Rollover (§5.3, P4) ──────────────────────────────────────────────────────
 // The rollover sweep runs daily PRE-MARKET (§5.3): the boundary session's close
 // is already the last row of the old quarter, so processing pre-market lets the
