@@ -1,14 +1,12 @@
 {
-  "_what": "B9 (Composition PR 4, ACTIVATION_PRECONDITIONS.md) — the firestore.rules DEPLOY RECORD the §8 runbook's fence-flip checklist item validates (scripts/composition/check-rules-deploy-gate.js). The rules-layer epoch fence is INERT until the rules are actually deployed; this record makes that deploy auditable instead of trusted. Committed UNFILLED (status 'unfilled') — the gate FAILS on this template by design.",
-  "_howToFill": "At runbook step: (1) deploy firestore.rules; (2) fetch the DEPLOYED text (firebase CLI) to a local file and compute its sha256; (3) run the emulator smoke against the FETCHED text: COMPOSITION_RULES_TEXT_PATH=<fetched-file> npm run test:rules -- test/rules/compositionEpochDenials.rules.mjs; (4) fill every field below, set status 'filled', and re-run the gate. smoke.rulesTextSha256 MUST equal deployedRulesSha — that equality is what proves the smoke ran the deployed text.",
-  "status": "unfilled",
-  "deployedRulesSha": null,
-  "deployedAt": null,
-  "operator": null,
+  "status": "filled",
+  "deployedRulesSha": "7bd361d818af06429ccbdd06b237663c1924b72b59ff079fe3395674c091013a",
+  "deployedAt": "2026-08-13T06:20:16Z",
+  "operator": "Flash",
   "smoke": {
     "suite": "compositionEpochDenials",
-    "result": null,
-    "ranAt": null,
-    "rulesTextSha256": null
+    "result": "green",
+    "ranAt": "2026-08-13T15:46:51Z",
+    "rulesTextSha256": "7bd361d818af06429ccbdd06b237663c1924b72b59ff079fe3395674c091013a"
   }
 }
