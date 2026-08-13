@@ -50,6 +50,31 @@ describe('deriveQuarterSummary — window + valuations (I4)', () => {
     expect(s.quarterStartAt).toEqual(new Date('2026-01-05T21:00:00Z'));
     expect(s.quarterEndAt).toEqual(new Date('2026-03-31T20:00:00Z'));
   });
+
+  it('MONEY-P4-2: an edge row with a missing totalValue is null (unknown), NEVER a fabricated $0', () => {
+    // Number(null) === 0 would silently invent a $0 opening — the M2 lesson: an
+    // absent value is not a zero value. A genuine 0 must still read as 0.
+    const missingOpen = deriveQuarterSummary(
+      [row('2026-01-05', 1, { totalValue: null }), row('2026-01-06', 1, { totalValue: 101000 })],
+      { quarterIndex: 1 },
+    );
+    expect(missingOpen.openingValue).toBeNull();   // not 0
+    expect(missingOpen.closingValue).toBe(101000);
+
+    const missingClose = deriveQuarterSummary(
+      [row('2026-01-05', 1, { totalValue: 100000 }), row('2026-01-06', 1, { totalValue: undefined })],
+      { quarterIndex: 1 },
+    );
+    expect(missingClose.openingValue).toBe(100000);
+    expect(missingClose.closingValue).toBeNull(); // not 0
+
+    const genuineZero = deriveQuarterSummary(
+      [row('2026-01-05', 1, { totalValue: 0 }), row('2026-01-06', 1, { totalValue: 0 })],
+      { quarterIndex: 1 },
+    );
+    expect(genuineZero.openingValue).toBe(0);      // a real 0 is preserved, not nulled
+    expect(genuineZero.closingValue).toBe(0);
+  });
 });
 
 describe('deriveQuarterSummary — degraded-row discipline (I6/I11) carried from the metrics', () => {
@@ -98,6 +123,19 @@ describe('deriveQuarterSummary — mixes + term totals (I10/§4.3)', () => {
     const s = deriveQuarterSummary(rows, { quarterIndex: 1 });
     expect(s.frictionTotalUsd).toBe(19.75);
     expect(s.dividendIncomeTotalUsd).toBe(100);
+  });
+
+  it('MONEY-P4-3: term totals round with the canonical banker\'s regime, not a private half-up', () => {
+    // A true decimal half at 2dp: 0.625 → 0.62 half-to-even (canonical) but 0.63
+    // under the old private Math.round (half-up). This is the exact §4.1 defect the
+    // shared rounder exists to prevent — one ledger, one rounding regime.
+    const rows = [
+      row('2026-01-05', 1, { dayFrictionPaid: null, dividendIncomeUsd: 0.625 }),
+      row('2026-01-06', 1, { dayFrictionPaid: 0.125, dividendIncomeUsd: 0 }),
+    ];
+    const s = deriveQuarterSummary(rows, { quarterIndex: 1 });
+    expect(s.dividendIncomeTotalUsd).toBe(0.62); // banker's (even floor), NOT 0.63
+    expect(s.frictionTotalUsd).toBe(0.12);       // banker's (even floor), NOT 0.13
   });
 });
 

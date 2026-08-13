@@ -131,6 +131,17 @@ describe('assertCapitalConserved (exported guard)', () => {
     expect(() => assertCapitalConserved(0, {})).toThrow(/FR-1/);
     expect(() => assertCapitalConserved(NaN, {})).toThrow(/FR-1/);
   });
+  it('MONEY-P4-1: a COARSE portfolio parent-write (or bracket index) is caught, not just dotted leaves', () => {
+    // The whitelist closes the hole a leaf-only blacklist left open: replacing the
+    // whole portfolio map — or a would-be array index — smuggles capital past a
+    // check that only inspected `portfolio.<leaf>` strings. Both must throw.
+    expect(() => assertCapitalConserved(10500000, { portfolio: { totalValue: 999 } })).toThrow(/FR-1 violation/);
+    expect(() => assertCapitalConserved(10500000, { 'portfolio[0]': 999 })).toThrow(/FR-1 violation/);
+    // ...while the two tenure-lens leaves the rollover is ALLOWED to reset still pass.
+    expect(() => assertCapitalConserved(10500000, {
+      'portfolio.quarterHighWaterMark': 10500000, 'portfolio.quarterDrawdownFromPeak': 0,
+    })).not.toThrow();
+  });
 });
 
 describe('rollOneBoundary — idempotency (F7 / acceptance #4)', () => {

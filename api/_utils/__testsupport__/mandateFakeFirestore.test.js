@@ -89,6 +89,27 @@ describe('mandateFakeFirestore — create-if-absent arbitration', () => {
   });
 });
 
+describe('mandateFakeFirestore — update is NOT an upsert (NOT_FOUND on absent, never a silent create)', () => {
+  it('non-txn update on an absent doc throws NOT_FOUND (code 5) and writes nothing', async () => {
+    const db = makeMandateFakeDb({});
+    await expect(db.doc('c/missing').update({ v: 1 })).rejects.toMatchObject({ code: 5 });
+    expect(db._get('c/missing')).toBeUndefined(); // never fabricated
+  });
+  it('txn update on an absent doc aborts the WHOLE commit atomically (NOT_FOUND, no partial state)', async () => {
+    const db = makeMandateFakeDb({ 'c/present': { v: 0 } });
+    let err = null;
+    try {
+      await db.runTransaction(async (tx) => {
+        tx.set(db.doc('c/present/child/ok'), { written: true }); // a sibling write in the same commit
+        tx.update(db.doc('c/absent'), { v: 1 });                 // the offending update
+      });
+    } catch (e) { err = e; }
+    expect(err?.code).toBe(5);                              // NOT_FOUND surfaced
+    expect(db._get('c/absent')).toBeUndefined();            // update target never fabricated
+    expect(db._get('c/present/child/ok')).toBeUndefined();  // sibling write rolled back — atomic
+  });
+});
+
 describe('mandateFakeFirestore — atomicity', () => {
   it('a callback that throws mid-way commits NOTHING', async () => {
     const db = makeMandateFakeDb({ 'mandates/m1': { revision: 0 } });

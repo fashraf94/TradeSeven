@@ -14,8 +14,14 @@
 
 import { buildQuarterSummary } from './mandateSchema.js';
 import { computeLensMetrics, computeTotalReturnPct } from './mandateRiskMetrics.js';
+import { roundUsd } from './mandateRounding.js';
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+// I4 edge valuation: a missing/non-finite edge close is null (unknown), NEVER 0.
+// Number(null) === 0 would fabricate a $0 opening/closing — the M2 lesson: an
+// absent value is not a zero value. Only a genuinely finite number passes.
+const edgeVal = (v) => (v == null ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
 
 /**
  * Derive the tenure summary for one quarterIndex from a set of dailyRows.
@@ -54,8 +60,8 @@ export function deriveQuarterSummary(rows, {
   const last = tagged[tagged.length - 1];
 
   // I4 — opening/closing are the authoritative closes of the tagged edge rows.
-  const openingValue = Number.isFinite(Number(first.totalValue)) ? Number(first.totalValue) : null;
-  const closingValue = Number.isFinite(Number(last.totalValue)) ? Number(last.totalValue) : null;
+  const openingValue = edgeVal(first.totalValue);
+  const closingValue = edgeVal(last.totalValue);
 
   // Tenure return + risk metrics over the tagged rows themselves (a single lens).
   // computeLensMetrics carries the §4.2 warmup nulls and the I6/I11 degraded-row
@@ -88,8 +94,8 @@ export function deriveQuarterSummary(rows, {
     frictionTotalUsd += num(r.dayFrictionPaid);
     dividendIncomeTotalUsd += num(r.dividendIncomeUsd);
   }
-  frictionTotalUsd = roundUsd2(frictionTotalUsd);
-  dividendIncomeTotalUsd = roundUsd2(dividendIncomeTotalUsd);
+  frictionTotalUsd = roundUsd(frictionTotalUsd);
+  dividendIncomeTotalUsd = roundUsd(dividendIncomeTotalUsd);
 
   return buildQuarterSummary({
     quarterIndex, archetype, vintageRef, scoring, empty: false,
@@ -99,8 +105,4 @@ export function deriveQuarterSummary(rows, {
     riskMetrics, regimeMix, agencyStateMix,
     frictionTotalUsd, dividendIncomeTotalUsd,
   });
-}
-
-function roundUsd2(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
 }

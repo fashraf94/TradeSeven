@@ -43,27 +43,40 @@ function toDate(v) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-// FR-1 — capital fields the rollover write-set must NEVER contain.
-function isCapitalKey(k) {
-  return k === 'portfolio.totalValue' || k === 'portfolio.initialValue'
-    || k === 'portfolio.cash' || k.startsWith('portfolio.cash.')
-    || k === 'portfolio.positions' || k.startsWith('portfolio.positions.')
-    || k.startsWith('portfolio.lifetime');
+// FR-1 — the ONLY `portfolio` writes a rollover may make are the two tenure-lens
+// leaves. A WHITELIST (not a blacklist): a blacklist enumerates the ways capital
+// could be touched and misses the bare parent key 'portfolio' (which Firestore
+// update() REPLACES wholesale, wiping cash/positions/totalValue) and any future
+// stray 'portfolio.*' path. The whitelist proves the write-set CANNOT touch
+// capital — the M2 lesson: prove the invariant, don't enumerate its violations.
+const ROLLOVER_PORTFOLIO_ALLOWED = new Set([
+  'portfolio.quarterHighWaterMark',
+  'portfolio.quarterDrawdownFromPeak',
+]);
+function touchesCapital(k) {
+  if (k === 'portfolio') return true;                     // wholesale map replace → wipes capital
+  if (k.startsWith('portfolio[')) return true;            // bracket/array form
+  if (k.startsWith('portfolio.')) return !ROLLOVER_PORTFOLIO_ALLOWED.has(k);
+  return false;
 }
 
 /**
- * FR-1 / I15 enforcement (M2-safe). Throws if the rollover write-set would alter
- * capital, if the pre-read total is not a sane positive number, or if the
- * tenure-lens reset does not equal the carried total. Exported so the assertion
- * itself is directly testable with a crafted violating patch.
+ * FR-1 / I15 enforcement (M2-safe). Throws if the rollover write-set contains ANY
+ * portfolio path other than the two permitted tenure-lens leaves (so it CANNOT
+ * touch capital — cash/positions/totalValue/initialValue/lifetime lens), if the
+ * pre-read total is not a sane positive number, or if the tenure-lens reset does
+ * not equal the carried total. The write-set restriction is the real invariant
+ * (non-tautological — it inspects the actual patch); the reset-equality arm
+ * additionally fires under a crafted/injected violation. Exported for direct
+ * testing.
  */
 export function assertCapitalConserved(preTotalValue, patch) {
   if (!Number.isFinite(preTotalValue) || preTotalValue <= 0) {
     throw new Error(`FR-1: rollover pre-read totalValue is not a positive number (${preTotalValue})`);
   }
   for (const k of Object.keys(patch || {})) {
-    if (isCapitalKey(k)) {
-      throw new Error(`FR-1 violation: rollover write-set would alter capital field '${k}' — capital must carry unchanged`);
+    if (touchesCapital(k)) {
+      throw new Error(`FR-1 violation: rollover write-set would alter capital via '${k}' — only the tenure-lens leaves may be written; capital must carry unchanged`);
     }
   }
   const qhwm = patch?.['portfolio.quarterHighWaterMark'];
@@ -143,14 +156,18 @@ export async function rollOneBoundary(db, mandateRef, { now = new Date(), archet
     const newQuarterIndex = oldQuarterIndex + 1;
     const newQuarterKey = buildQuarterKey(mandateRef.id, newQuarterIndex);
 
-    // The OLD tenure's summary — derived from its tagged rows, boundaries logical
-    // (never processing-time). Archetype + vintageRef are what SERVED that quarter.
+    // The OLD tenure's summary — derived ENTIRELY from its tagged rows (§5.3): the
+    // window is the tagged edge rows' own dates, NOT the book's logical boundary.
+    // Under processing lag the close pass keeps tagging rows with the un-advanced
+    // quarterIndex, so the logical boundary can precede the last tagged close — an
+    // override would record quarterEndAt < the closingValue row's date, an
+    // internally inconsistent tenure. Row tags are truth (I4): the window follows
+    // them and stays consistent with opening/closing under lag and catch-up alike.
+    // Archetype + vintageRef are what SERVED that quarter.
     const summary = deriveQuarterSummary(priorRows, {
       quarterIndex: oldQuarterIndex,
       archetype: book.archetype,
       vintageRef: book.vintageRef,
-      quarterStartAt: book.quarterStartAt ?? null,
-      quarterEndAt: book.nextRolloverAt ?? null,
     });
 
     const newNextRolloverAt = computeNextRolloverAt(boundaryAt).at; // I4: same normalizer as creation

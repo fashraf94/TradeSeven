@@ -38,6 +38,10 @@
 
 const ABORTED = () => { const e = new Error('ABORTED: transaction contention (too many retries)'); e.code = 10; return e; };
 const ALREADY_EXISTS = (path) => { const e = new Error(`ALREADY_EXISTS: ${path}`); e.code = 6; return e; };
+// Real Admin SDK: `update()` on an absent doc rejects with NOT_FOUND (grpc 5) —
+// it is NOT an upsert (that is `set`). Modeling this keeps a stray update from
+// silently fabricating a doc the code never created.
+const NOT_FOUND = (path) => { const e = new Error(`NOT_FOUND: no document to update: ${path}`); e.code = 5; return e; };
 
 function clone(v) {
   // structuredClone preserves Date instances and nested objects (mandate docs
@@ -118,7 +122,9 @@ export function makeMandateFakeDb(seed = {}) {
       return;
     }
     if (w.op === 'update') {
-      store.set(path, { data: applyUpdate(cur?.data, w.data), version: (cur?.version || 0) + 1 });
+      // update is NOT an upsert: an absent target is NOT_FOUND, never a silent create.
+      if (!cur) throw NOT_FOUND(path);
+      store.set(path, { data: applyUpdate(cur.data, w.data), version: cur.version + 1 });
       return;
     }
   }
@@ -254,15 +260,11 @@ export function makeMandateFakeDb(seed = {}) {
         delete(ref) { writes.set(ref.path, { op: 'delete' }); },
       };
 
-      let result;
-      try {
-        result = await fn(tx);
-      } catch (err) {
-        // A callback throw commits NOTHING (atomicity). Propagate — the caller's
-        // own try/catch owns it (rollover/escape treat a thrown boundary as a
-        // deferred, uncommitted attempt).
-        throw err;
-      }
+      // A callback throw commits NOTHING (atomicity): writes are buffered here and
+      // only applied after the commit-check below, so an exception out of `fn`
+      // propagates with the store untouched. The caller's own try/catch owns it
+      // (rollover/escape treat a thrown boundary as a deferred, uncommitted attempt).
+      const result = await fn(tx);
 
       // Deterministic interleaving: let the test commit a rival write here, so a
       // read this callback depends on becomes stale and forces a retry.
@@ -279,10 +281,19 @@ export function makeMandateFakeDb(seed = {}) {
         }
       }
       if (!conflict) {
+        // update precondition: the target must exist at commit (grpc NOT_FOUND
+        // otherwise). Checked BEFORE any write is applied so a bad update aborts
+        // the whole commit atomically — no partial state ever reaches the store.
+        for (const [path, w] of writes) {
+          if (w.op === 'update' && !store.has(path)) { conflict = ['NOT_FOUND', path]; break; }
+        }
+      }
+      if (!conflict) {
         for (const [path, w] of writes) applyWrite(path, w);
         return result;
       }
       if (Array.isArray(conflict) && conflict[0] === 'ALREADY_EXISTS') throw ALREADY_EXISTS(conflict[1]);
+      if (Array.isArray(conflict) && conflict[0] === 'NOT_FOUND') throw NOT_FOUND(conflict[1]);
       if (attempt >= maxAttempts) throw ABORTED();
       // else loop: re-invoke fn against the winner's committed state
     }

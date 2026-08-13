@@ -118,15 +118,16 @@ export async function escapeMandate(db, { userId, archetype, now = new Date(), r
 
     const oldQuarterIndex = book.quarterIndex;
 
-    // Terminal NON-SCORING summary (FR-3) — derived from the old book's rows like
-    // any other; the void flag (not emptiness) is what excludes it from scoring.
+    // Terminal NON-SCORING summary (FR-3) — derived ENTIRELY from the old book's
+    // tagged rows like any other; the void flag (not emptiness) is what excludes it
+    // from scoring. The window is the tagged edge rows' own dates (§5.3 / I4), not
+    // the escape instant: an override could record quarterEndAt before the last
+    // tagged close, an internally inconsistent tenure. Row tags are truth.
     const summary = deriveQuarterSummary(priorRows, {
       quarterIndex: oldQuarterIndex,
       archetype: book.archetype,
       vintageRef: book.vintageRef,
       voided: true,
-      quarterStartAt: book.quarterStartAt ?? null,
-      quarterEndAt: now,
     });
 
     // Open-batch disposal (I1 / D-3): cancel INSIDE the txn, never refuse.
