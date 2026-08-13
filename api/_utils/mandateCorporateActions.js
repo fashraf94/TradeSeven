@@ -38,14 +38,11 @@ import {
   MANDATE_CA_GAP_THRESHOLD,
   MANDATE_CA_RATIO_TOLERANCE,
   MANDATE_CA_RATIO_MAX_N,
-  MANDATE_SHARES_DP,
-  MANDATE_USD_DP,
 } from './mandateConfig.js';
 import { CORPORATE_ACTION_TYPES } from './mandateSchema.js';
+import { roundUsd, roundShares } from './mandateRounding.js';
 
 const norm = (s) => String(s || '').trim().toUpperCase();
-const roundShares = (n) => Math.round(n * 10 ** MANDATE_SHARES_DP) / 10 ** MANDATE_SHARES_DP;
-const roundUsd = (n) => Math.round(n * 10 ** MANDATE_USD_DP) / 10 ** MANDATE_USD_DP;
 
 // ── Identity ─────────────────────────────────────────────────────────────────
 
@@ -130,10 +127,22 @@ export function parseDividendsPayload(symbol, rows) {
  * @param {{ onOrBefore:string, appliedIds?:Set<string> }} opts
  * @returns {{ pending: Array<object>, unrecognized: Array<object> }}
  */
+// ENTITLEMENT (§4.3, spec+money review P3 — both found the same HIGH defect):
+// splits, reverse splits, distributions, and cash dividends adjust/credit only
+// holdings that existed ACROSS the effective date — the market price already
+// reflects the action for anyone buying on or after it. Crediting a post-ex-
+// date buyer fabricates income (D-15) and corrupting a post-split buyer's
+// share count self-inflicts a suspected-CA freeze. `ticker_change` and
+// `delisting` are identity/termination events on the INSTRUMENT: they apply
+// to any current holder regardless of acquisition date.
+const DATE_ENTITLEMENT_TYPES = new Set(['split', 'reverse_split', 'cash_dividend', 'stock_distribution']);
+
 export function pendingActionsFor(positions, actionsBySymbol, { onOrBefore, appliedIds = new Set() } = {}) {
   const pending = [];
   const unrecognized = [];
-  for (const rawTicker of Object.keys(positions || {})) {
+  const notEntitled = [];
+  const noEntitlementData = [];
+  for (const [rawTicker, pos] of Object.entries(positions || {})) {
     const sym = norm(rawTicker);
     for (const action of actionsBySymbol?.[sym] || []) {
       if (!action?.effectiveDate || action.effectiveDate > onOrBefore) continue;
@@ -143,12 +152,29 @@ export function pendingActionsFor(positions, actionsBySymbol, { onOrBefore, appl
         unrecognized.push({ ...action, actionId: id });
         continue;
       }
+      if (DATE_ENTITLEMENT_TYPES.has(action.type)) {
+        const openedAt = typeof pos?.openedAt === 'string' ? pos.openedAt : null;
+        if (openedAt == null) {
+          // No acquisition evidence → NEVER fabricate (D-15). Skipping a real
+          // split degrades to the DESIGNED backstop: the stale-basis position
+          // trips the gap detector's suspected-CA freeze — visible, alerting,
+          // exits fillable at last-good — instead of silent phantom money.
+          noEntitlementData.push({ ...action, actionId: id });
+          continue;
+        }
+        if (!(openedAt < action.effectiveDate)) {
+          // Strict inequality: a buy ON the ex/effective date fills at the
+          // already-adjusted price and earns nothing (US ex-date convention).
+          notEntitled.push({ ...action, actionId: id });
+          continue;
+        }
+      }
       pending.push({ ...action, actionId: id });
     }
   }
   // Deterministic order: by date then id, so multi-action days replay identically.
   pending.sort((a, b) => (a.effectiveDate + a.actionId).localeCompare(b.effectiveDate + b.actionId));
-  return { pending, unrecognized };
+  return { pending, unrecognized, notEntitled, noEntitlementData };
 }
 
 // ── Application (pure) ───────────────────────────────────────────────────────
@@ -218,10 +244,20 @@ export function applyCorporateAction({ positions, cash }, action) {
       };
     }
     case 'delisting': {
-      // Forced close at the LAST GOOD mark (never a fabricated fresh one).
-      const mark = Number(pos.lastMark) > 0
-        ? Number(pos.lastMark)
-        : (shares > 0 ? (Number(pos.costBasisTotal) || 0) / shares : 0);
+      // Forced close at the LAST GOOD mark (never a fabricated fresh one) —
+      // UNLESS the action carries an explicit cashPerShare: a cash merger's
+      // consideration is a fact of the deal, not a market mark, and a
+      // suspected-CA pin freezes lastMark at the PRE-announcement price for
+      // the whole arb window (C-21 review P3 finding 5: force-closing a 2.00×
+      // deal at the frozen mark permanently realizes half the consideration).
+      // Founder-inserted delistings for cash deals should set cashPerShare;
+      // absent, the spec-letter last-good behavior holds unchanged.
+      const dealPrice = Number(action.cashPerShare);
+      const mark = dealPrice > 0
+        ? dealPrice
+        : (Number(pos.lastMark) > 0
+          ? Number(pos.lastMark)
+          : (shares > 0 ? (Number(pos.costBasisTotal) || 0) / shares : 0));
       if (!(mark > 0)) return { ok: false, reason: 'no_last_good_mark' };
       const proceeds = roundUsd(shares * mark);
       const deltaBasis = Number(pos.costBasisTotal) || 0; // full exit
@@ -229,7 +265,9 @@ export function applyCorporateAction({ positions, cash }, action) {
       return {
         ok: true, positions: next, cash: roundUsd((Number(cash) || 0) + proceeds), incomeUsd: 0,
         forcedClose: { ticker: sym, shares, mark, proceeds, realizedPnl: roundUsd(proceeds - deltaBasis) },
-        note: `delisting: forced close ${shares} sh @ last-good $${mark} → $${proceeds}`,
+        note: dealPrice > 0
+          ? `delisting: forced close ${shares} sh @ cashPerShare $${mark} → $${proceeds}`
+          : `delisting: forced close ${shares} sh @ last-good $${mark} → $${proceeds}`,
       };
     }
     default:
@@ -278,15 +316,30 @@ function feedExplainsGap(ratio, actions, tol, lastMark) {
  * @param {object} actionsBySymbol  { SYM: [normalized feed actions] } for the window
  * @returns {{ frozen:Set<string>, pendingCA:Map<string,object>, suspectedCA:Map<string,object>, passed:string[] }}
  */
+const SHARE_BASIS_TYPES = new Set(['split', 'reverse_split', 'stock_distribution']);
+
 export function classifyOvernightGaps(positions, snapshot, actionsBySymbol, {
   threshold = MANDATE_CA_GAP_THRESHOLD,
   tol = MANDATE_CA_RATIO_TOLERANCE,
   maxN = MANDATE_CA_RATIO_MAX_N,
+  // GAP WINDOW (C-21 review P3 findings 2/4): only actions effective inside
+  // the overnight gap — (sinceDate, asOfDate], both ET YYYY-MM-DD — can
+  // explain or pre-freeze it. Without the filter, a split applied five days
+  // ago (or dated two days AHEAD) "explains" a genuine crash into a silent
+  // pending_ca freeze. Callers pass sinceDate = the book's last close date;
+  // null bounds are permissive (legacy behavior) on that side only.
+  sinceDate = null,
+  asOfDate = null,
+  // Actions this book has already applied/declined (their idempotency claims
+  // exist) — excluded from the pre-threshold freeze so the close pass's
+  // apply-then-scan ordering still marks fresh after a same-day application.
+  excludeActionIds = null,
 } = {}) {
   const frozen = new Set();
   const pendingCA = new Map();
   const suspectedCA = new Map();
   const passed = [];
+  const asOf = asOfDate ?? snapshot?.date ?? null;
 
   for (const [rawTicker, pos] of Object.entries(positions || {})) {
     const sym = norm(rawTicker);
@@ -295,11 +348,32 @@ export function classifyOvernightGaps(positions, snapshot, actionsBySymbol, {
     const last = Number(pos?.lastMark);
     if (!(fresh > 0) || !(last > 0)) continue; // nothing to compare — freshness machinery owns this case
 
+    const gapActions = (actionsBySymbol?.[sym] || []).filter((a) => a?.effectiveDate
+      && (asOf == null || a.effectiveDate <= asOf)
+      && (sinceDate == null || a.effectiveDate > sinceDate)
+      && !(excludeActionIds && excludeActionIds.has(deriveActionId(a))));
+
     const ratio = fresh / last;
     const move = Math.abs(ratio - 1);
+
+    // FEED FIRST, before the threshold (C-21 review P3 finding 2): a feed-known
+    // SHARE-BASIS action effective inside the gap means the fresh price and the
+    // held share count are on different bases NO MATTER how small the move — a
+    // 3:2 split gaps only 33%, under the news threshold, yet a panic exit at
+    // the post-split price against unadjusted shares realizes a real loss. The
+    // symbol freezes pending application at close (exits fill at last-good,
+    // C-21). Sub-threshold cash dividends stay threshold-gated: they shift no
+    // share basis and the mark is honest to within the dividend.
+    const pendingShareBasis = gapActions.find((a) => SHARE_BASIS_TYPES.has(a.type) && Number(a.ratio) > 0);
+    if (pendingShareBasis) {
+      frozen.add(sym);
+      pendingCA.set(sym, { action: pendingShareBasis, ratio });
+      continue;
+    }
+
     if (move < threshold) { passed.push(sym); continue; } // routine volatility — earnings gaps are not anomalies
 
-    const explaining = feedExplainsGap(ratio, actionsBySymbol?.[sym], tol, last);
+    const explaining = feedExplainsGap(ratio, gapActions, tol, last);
     if (explaining) {
       // Feed match → the CA applies normally at close; meanwhile the position
       // is NOT yet adjusted, so the fresh mark must not price it this tick.

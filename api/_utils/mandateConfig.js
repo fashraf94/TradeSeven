@@ -245,7 +245,14 @@ export const MANDATE_CA_GAP_THRESHOLD = 0.40;
 // Tight on purpose (I7): the test must catch ÷2/÷3/÷10 signatures without
 // swallowing near-50% news crashes — discrimination, not suspicion.
 export const MANDATE_CA_RATIO_TOLERANCE = 0.015;
-export const MANDATE_CA_RATIO_MAX_N = 10; // split signatures checked: ÷2..÷10, ×2..×10
+// Split signatures checked: ÷2..÷N, ×2..×N. Raised 10→50 after the C-21
+// review executed 12:1/20:1/50:1 no-feed splits straight through the detector
+// (Amazon 2022 was 20:1, Chipotle 2024 was 50:1): each extra n adds only a
+// ±1.5%-relative band around 1/n — negligible false-freeze measure — while a
+// missed one silently evaporates ~1−1/n of the position's recorded value.
+// Non-integer ratios (3:2, 5:2) remain the documented accepted residual,
+// bounded by the feed cross-check.
+export const MANDATE_CA_RATIO_MAX_N = 50;
 // The slow layer fetches splits/dividends for a window around the session date:
 // lookback catches actions missed by outage days; lookahead surfaces imminent
 // ex-dates for context. (Fetch cost: 2 calls/symbol/day, inside the §3.0 budget.)

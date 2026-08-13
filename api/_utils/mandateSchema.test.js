@@ -159,3 +159,18 @@ describe('mandateSchema — subcollection shape definitions (§2.2; Phase 1 defi
     expect(ca.ratio).toBe(2);
   });
 });
+
+// ── P3 verification-pass regression guards: sweep keys must be SEEDED ────────
+// (an orderBy silently DROPS docs missing its field — a book created without
+// these keys would vanish from the sweeps; INV-4/INV-1 fix depends on them)
+describe('sweep ordering keys are seeded on every new book', () => {
+  it('health seeds lastEvalSweepAt/lastCloseAttemptAt/consecutiveCloseFailures; execState seeds lastSweepTickKey', async () => {
+    const { buildHealthBlock, buildExecStateBlock } = await import('./mandateSchema.js');
+    const h = buildHealthBlock();
+    expect(h).toMatchObject({
+      lastEvalSweepAt: null, lastCloseAttemptAt: null, consecutiveCloseFailures: 0,
+      lastSuccessfulEvalAt: null, lastCloseMarkAt: null,
+    });
+    expect(buildExecStateBlock()).toMatchObject({ lastSweepTickKey: null });
+  });
+});

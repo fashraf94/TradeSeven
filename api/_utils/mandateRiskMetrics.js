@@ -60,6 +60,12 @@ function usableReturns(rows) {
   const out = [];
   for (const r of rows) {
     if (isDegradedRow(r)) continue;
+    // NOT single-session returns (P3 review INV-2/MONEY-8): a row spanning a
+    // missed session, or baselined on a degraded (carry-over) prior value,
+    // carries a factual-but-not-daily number — labeled on the row, excluded
+    // from variance here, still counted in drawdown (values are real).
+    if ((r?.sessionsSpanned ?? 1) > 1) continue;
+    if (r?.returnBaseDegraded) continue;
     // A null return (first-ever close: "cannot compute") is EXCLUDED, never
     // coerced — Number(null) is 0, which would silently record a flat day.
     const raw = r?.dayReturnPct;

@@ -30,6 +30,14 @@ function makeFakeDb() {
       if (opts?.merge && store.has(path)) store.set(path, { ...store.get(path), ...data });
       else store.set(path, data);
     },
+    async create(data) {
+      if (store.has(path)) {
+        const err = new Error(`already exists: ${path}`);
+        err.code = 6; // grpc ALREADY_EXISTS — what the Admin SDK throws
+        throw err;
+      }
+      store.set(path, data);
+    },
   });
   const db = {
     _store: store,
@@ -251,6 +259,10 @@ describe('P3 §4.3 — corporate-actions fetch in the slow layer', () => {
         path: `${c}/${id}`,
         async get() { return { exists: store.has(`${c}/${id}`), data: () => store.get(`${c}/${id}`) }; },
         async set(d, opts) { store.set(`${c}/${id}`, opts?.merge ? { ...(store.get(`${c}/${id}`) || {}), ...d } : d); },
+        async create(d) {
+          if (store.has(`${c}/${id}`)) { const e = new Error('already exists'); e.code = 6; throw e; }
+          store.set(`${c}/${id}`, d);
+        },
       }) }),
       async runTransaction(fn) {
         return fn({

@@ -231,6 +231,29 @@ export function fitToByteBudget(doc, entries, heldSet, {
  * count crosses the configured fraction of the ceiling (§3.0 / Q5). Returns the
  * post-increment count.
  */
+/**
+ * Create-if-absent for snapshot docs (P3 review INV-7): the ensure* check-then-
+ * write let two concurrent first-fires both build and the LAST writer overwrite
+ * the doc other books were already closed/marked from — a provenance mismatch
+ * on the stored evidence. create() makes the first commit win; the loser adopts
+ * the winner's doc so every reader shares ONE provenance. The duplicate
+ * upstream fetch work is accepted (rare, honestly quota-counted). `force`
+ * keeps intentional-overwrite semantics via set().
+ */
+async function createOrAdopt(ref, doc, { force = false } = {}) {
+  if (force) { await ref.set(doc); return { won: true }; }
+  try {
+    await ref.create(doc);
+    return { won: true };
+  } catch (err) {
+    const alreadyExists = err?.code === 6 || /already.?exists/i.test(String(err?.message || ''));
+    if (!alreadyExists) throw err;
+    const winner = await ref.get();
+    if (winner.exists) return { won: false, winner: winner.data() };
+    throw err; // exists-race then deletion — surface loudly rather than guess
+  }
+}
+
 export async function bumpUpstreamCounter(db, dateStr, delta, {
   ceiling = MANDATE_UPSTREAM_DAILY_CEILING,
   alertFraction = MANDATE_UPSTREAM_ALERT_FRACTION,
@@ -421,9 +444,12 @@ export async function ensureDailySnapshot(db, {
     caFailedCount,
     symbols: entries,
   };
-  await ref.set(doc);
-  if (upstreamCalls > 0) await bumpUpstreamCounter(db, date, upstreamCalls);
-
+  const settled = await createOrAdopt(ref, doc, { force });
+  if (upstreamCalls > 0) await bumpUpstreamCounter(db, date, upstreamCalls); // the fetches happened — count them even when the build lost the race
+  if (!settled.won) {
+    const w = settled.winner;
+    return { ref, date, built: false, symbolCount: w.symbolCount ?? 0, completeCount: w.completeCount ?? 0, upstreamCalls, caFailedCount: w.caFailedCount ?? 0 };
+  }
   return { ref, date, built: true, symbolCount: symbols.length, completeCount, upstreamCalls, caFailedCount };
 }
 
@@ -528,9 +554,12 @@ export async function ensureUniverseSnapshot(db, {
     symbols: finalEntries,
   };
 
-  await ref.set(doc);
+  const settled = await createOrAdopt(ref, doc, { force });
   if (upstreamCalls > 0) await bumpUpstreamCounter(db, sessionDate, upstreamCalls);
-
+  if (!settled.won) {
+    const w = settled.winner;
+    return { ref, tickKey, built: false, snapshot: w, degraded: !!w.degraded, droppedForSize: w.droppedForSize ?? 0, upstreamCalls };
+  }
   return { ref, tickKey, built: true, snapshot: doc, degraded, droppedForSize: fitted.dropped, upstreamCalls };
 }
 

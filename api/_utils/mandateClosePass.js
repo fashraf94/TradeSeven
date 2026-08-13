@@ -42,12 +42,15 @@ import {
   applyCorporateAction,
   classifyOvernightGaps,
 } from './mandateCorporateActions.js';
-import { caActionsBySymbol, snapshotExcluding } from './mandateUniverseSnapshot.js';
-import { computeMandateScoring } from './mandateRiskMetrics.js';
+import { caActionsBySymbol, snapshotExcluding, shiftDateStr } from './mandateUniverseSnapshot.js';
+import { computeMandateScoring, isDegradedRow } from './mandateRiskMetrics.js';
 import { logMandateScoring } from './shadowLogger.js';
+import { roundUsd } from './mandateRounding.js';
+import { resolveSessionSlots } from './mandateSessionSlots.js';
 import {
   MANDATE_SCHEMA_VERSION,
-  MANDATE_USD_DP,
+  MANDATE_FRICTION_BASIS,
+  MANDATE_FRICTION_SPREAD_BASIS,
   MANDATE_RESULT_MAX_AGE_MS,
   MANDATE_FRICTION_MODEL_VERSION,
   MANDATE_LIVENESS_FLOOR,
@@ -59,7 +62,6 @@ import {
 } from './mandateConfig.js';
 
 const LOG_PREFIX = '[MandateClose]';
-const roundUsd = (n) => Math.round((Number(n) || 0) * 10 ** MANDATE_USD_DP) / 10 ** MANDATE_USD_DP;
 
 // ── Small time helpers (DST-safe via Intl — the mandateCalendar precedent) ───
 
@@ -102,12 +104,38 @@ export function etDateOf(instant) {
  */
 export function deriveAgencyState(book, date) {
   if (book?.health?.quarantined) return 'exit_only';
-  const evaluatedToday = typeof book?.execState?.lastEvalTickKey === 'string'
+  // 'full' requires a SUCCESSFUL eval today (invariants review P3 finding 5):
+  // the catch/soft-failure paths stamp lastEvalTickKey too, so the attempt
+  // stamp alone would record full agency on a day the manager produced
+  // nothing — the exact D-17/I10 corruption the field exists to prevent.
+  // lastSuccessfulEvalAt advances only on non-failed terminals (executed,
+  // gated, rejected_stale, no_decision — the manager had its shot).
+  const succeededToday = etDateOf(book?.health?.lastSuccessfulEvalAt) === date;
+  if (succeededToday) return 'full';
+  const attemptedToday = typeof book?.execState?.lastEvalTickKey === 'string'
     && book.execState.lastEvalTickKey.startsWith(`${date}_`);
-  if (evaluatedToday) return 'full';
+  if (attemptedToday) return 'skipped:eval_failure'; // attempted, no completed cycle (model throw, soft failure, or a §3.5 abort)
   if (etDateOf(book?.createdAt) === date) return 'skipped:created_intraday';
   if ((book?.health?.consecutiveEvalFailures || 0) > 0) return 'skipped:eval_failure';
   return 'skipped:not_evaluated';
+}
+
+/**
+ * Trading sessions STRICTLY BETWEEN two ET dates (both exclusive), walking the
+ * market calendar backward from `date`, bounded. 0 = consecutive sessions.
+ * Bounded at `maxWalk` calendar days: a longer gap undercounts rather than
+ * unbounding the close transaction — the row's sessionsSpanned label still
+ * flags it as multi-session (P3 review INV-2).
+ */
+export function tradingSessionsBetween(prevDate, date, { maxWalk = 30 } = {}) {
+  if (!prevDate || !date || prevDate >= date) return 0;
+  let count = 0;
+  let d = shiftDateStr(date, -1);
+  for (let i = 0; i < maxWalk && d > prevDate; i++) {
+    if (resolveSessionSlots(d)?.trading) count++;
+    d = shiftDateStr(d, -1);
+  }
+  return count;
 }
 
 // ── The per-book close (one transaction) ─────────────────────────────────────
@@ -179,18 +207,45 @@ export async function closeBook(db, mandateRef, {
     // date ∩ not yet applied. Idempotent per {mandateId, actionId} via a
     // create-if-absent log doc read inside THIS transaction.
     const actionsBySym = caActionsBySymbol(closeSnapshot);
-    const { pending, unrecognized } = pendingActionsFor(positions, actionsBySym, { onOrBefore: date });
+    const { pending, unrecognized, notEntitled, noEntitlementData } = pendingActionsFor(positions, actionsBySym, { onOrBefore: date });
     const caQuarantined = new Set();
     for (const bad of unrecognized) {
       // Unrecognized action type → SYMBOL-level quarantine, never a silent mismark (§4.3).
       caQuarantined.add(bad.ticker);
       alerts.push(`MANDATE_CA_UNRECOGNIZED ${bad.ticker} type=${bad.type} — symbol frozen, founder review`);
     }
+    // Entitlement declines (§4.3 P3): durable applied:false claims under the
+    // same idempotency key — "seen and declined, because X" — so the action is
+    // never re-examined for this book. A missing-openedAt skip additionally
+    // alerts: it means a real action may go unapplied on a legacy position
+    // (the gap detector backstops with a visible freeze, never phantom money).
+    const settledIds = new Set(); // applied or declined by THIS book — excluded from the post-apply gap scan
+    for (const { list, reason, alert } of [
+      { list: notEntitled, reason: 'not_entitled', alert: false },
+      { list: noEntitlementData, reason: 'no_entitlement_data', alert: true },
+    ]) {
+      for (const decl of list) {
+        settledIds.add(decl.actionId);
+        const caRef = mandateRef.collection('corporateActions').doc(decl.actionId);
+        const existing = await tx.get(caRef);
+        if (existing.exists) continue; // claim already recorded (idempotent, no re-alert)
+        txWrites.push([caRef, {
+          ...buildCorporateAction({
+            actionId: decl.actionId, type: decl.type, ticker: decl.ticker,
+            ratio: decl.ratio ?? null, amount: decl.amount ?? null,
+            renamedTo: decl.renamedTo ?? null, appliedAt: null, source: decl.source ?? null,
+            applied: false, reason,
+          }),
+          effectiveDate: decl.effectiveDate,
+        }, 'set']);
+        if (alert) alerts.push(`MANDATE_CA_NO_ENTITLEMENT_DATA ${decl.ticker} ${decl.type} ${decl.effectiveDate} — position has no openedAt; action NOT applied (gap detector backstops)`);
+      }
+    }
     const appliedActions = [];
     for (const action of pending) {
       const caRef = mandateRef.collection('corporateActions').doc(action.actionId);
       const existing = await tx.get(caRef);
-      if (existing.exists) continue; // already applied (idempotency key held)
+      if (existing.exists) { settledIds.add(action.actionId); continue; } // already applied (idempotency key held)
       const applied = applyCorporateAction({ positions, cash }, action);
       if (!applied.ok) {
         if (applied.reason !== 'not_held') {
@@ -212,6 +267,7 @@ export async function closeBook(db, mandateRef, {
         note: applied.note,
       }, 'set']);
       appliedActions.push(action.actionId);
+      settledIds.add(action.actionId);
       if (applied.forcedClose) {
         // Delisting/merger: forced close at last good mark → CORPORATE_CLOSE
         // decision receipt (§4.3); the symbol leaves the carry-over build set
@@ -229,6 +285,17 @@ export async function closeBook(db, mandateRef, {
           fillMarkQuality: 'carry_over', // last good mark, by definition
           status: 'executed',
           frictionModelVersion: MANDATE_FRICTION_MODEL_VERSION,
+          // §4.1 "every receipt" (spec review P3 finding 4): an executed,
+          // money-moving forced fill carries the honesty labels like any other
+          // fill — zero friction (administrative close, no modeled spread),
+          // labeled, never an unlabeled friction:null.
+          friction: {
+            slippageBps: 0,
+            spreadProxyBps: 0,
+            spreadBasis: MANDATE_FRICTION_SPREAD_BASIS,
+            frictionPaid: 0,
+            frictionBasis: MANDATE_FRICTION_BASIS,
+          },
         }), 'set']);
       }
     }
@@ -237,7 +304,13 @@ export async function closeBook(db, mandateRef, {
     // still-ratio-shaped gap with no feed entry keeps its symbol on carry-over
     // (frozen mark) — the row goes partial rather than a phantom mark becoming
     // the record. News-shaped gaps pass and mark normally.
-    const gapScan = classifyOvernightGaps(positions, closeSnapshot, actionsBySym);
+    const gapScan = classifyOvernightGaps(positions, closeSnapshot, actionsBySym, {
+      // Gap window = (previous close, today]; actions this book just applied or
+      // declined are settled — apply-then-scan must mark fresh, not re-freeze.
+      sinceDate: book.execState?.lastCloseKey ?? null,
+      asOfDate: date,
+      excludeActionIds: settledIds,
+    });
     for (const sym of gapScan.suspectedCA.keys()) {
       alerts.push(`MANDATE_SUSPECTED_CA ${sym} ratio=${gapScan.suspectedCA.get(sym).ratio.toFixed(4)} — frozen mark pending resolution`);
     }
@@ -264,16 +337,28 @@ export async function closeBook(db, mandateRef, {
       };
     }
 
-    // Partial-close discipline (I11/F19 + I17).
+    // Partial-close discipline (I11/F19 + I17) — INCLUDING fully-missed
+    // sessions (§6.4, P3 review INV-1/SPEC-2): a session with NO committed
+    // close is a missed close mark for the whole book; it leaves no row, so
+    // the accounting happens RETROACTIVELY at the next close that does
+    // commit, from the trading-calendar gap since the previous row. Without
+    // this, the "missed close marks ≥ 2 consecutive sessions" alert was
+    // structurally unreachable for the actual missed-session case, and the
+    // next full close silently reset the streak.
     const carryOverSyms = Object.values(marked).filter((m) => m.markSource !== 'snapshot').length;
     const createdToday = etDateOf(book.createdAt) === date;
     const partial = carryOverSyms > 0 || createdToday;
     const degradedMarks = carryOverSyms > 0;
     const missedMark = carryOverSyms > 0; // creation-day partial is NOT a missed mark
-    const missedMarks = (book.health?.missedMarks || 0) + (missedMark ? 1 : 0);
-    const consecutiveMissedMarks = missedMark ? (book.health?.consecutiveMissedMarks || 0) + 1 : 0;
-    if (consecutiveMissedMarks >= MANDATE_MISSED_MARKS_ALERT) {
-      alerts.push(`MANDATE_MISSED_MARKS ${consecutiveMissedMarks} consecutive partial closes`);
+    const gapSessions = prevRow ? tradingSessionsBetween(prevRow.date, date) : 0;
+    const priorStreak = book.health?.consecutiveMissedMarks || 0;
+    const retroStreak = priorStreak + gapSessions + (missedMark ? 1 : 0);
+    const missedMarks = (book.health?.missedMarks || 0) + gapSessions + (missedMark ? 1 : 0);
+    // The streak survives today only if today itself was partial; a full close
+    // ends it — but the alert still fires retroactively for the gap it closed.
+    const consecutiveMissedMarks = missedMark ? retroStreak : 0;
+    if (retroStreak >= MANDATE_MISSED_MARKS_ALERT && (missedMark || gapSessions > 0)) {
+      alerts.push(`MANDATE_MISSED_MARKS ${retroStreak} consecutive missed close marks (${gapSessions} fully-missed session${gapSessions === 1 ? '' : 's'}, today ${missedMark ? 'partial' : 'full'})`);
     }
 
     // 5. HWM / drawdown, BOTH lenses — the close pass is the SOLE peak writer (I6).
@@ -300,8 +385,16 @@ export async function closeBook(db, mandateRef, {
     // them, and the row separately records them as income (not trading P&L).
     const prevTotal = Number(prevRow?.totalValue);
     const dayReturnPct = Number.isFinite(prevTotal) && prevTotal > 0 ? (totalValue - prevTotal) / prevTotal : null;
+    // Return-quality labels (P3 review INV-2/MONEY-8): a return spanning
+    // missed sessions, or baselined on a degraded (carry-over) prior row,
+    // stays factual on the row but is excluded from variance metrics.
+    const sessionsSpanned = prevRow ? 1 + gapSessions : null;
+    const returnBaseDegraded = !!(prevRow && isDegradedRow(prevRow));
     const frictionPaidCum = roundUsd(book.portfolio?.frictionPaidCum || 0);
-    const dayFrictionPaid = roundUsd(frictionPaidCum - (Number(prevRow?.frictionPaidCum) || 0));
+    // First row: no window — null, never all-inception friction labeled as one
+    // day's (money review P3 finding 6). Σ over labeled rows still telescopes
+    // to frictionPaidCum via the cum field on every row.
+    const dayFrictionPaid = prevRow ? roundUsd(frictionPaidCum - (Number(prevRow.frictionPaidCum) || 0)) : null;
     const today = book.costTelemetry?.today?.date === date ? book.costTelemetry.today : null;
     const agencyState = deriveAgencyState(book, date);
 
@@ -323,6 +416,8 @@ export async function closeBook(db, mandateRef, {
       cacheHitTokens: today?.cacheHitTokens ?? 0,
       partial,
       degradedMarks,
+      sessionsSpanned,
+      returnBaseDegraded,
       dividendIncomeUsd,
       dayFrictionPaid,
       frictionPaidCum,
@@ -349,6 +444,8 @@ export async function closeBook(db, mandateRef, {
       'portfolio.quarterDrawdownFromPeak': quarterDD,
       scoring,
       'health.lastCloseMarkAt': now,
+      'health.lastCloseAttemptAt': now, // the sweep's ordering key: success and failure both advance it (INV-1/C21-1)
+      'health.consecutiveCloseFailures': 0, // a committed close ends any whole-close failure streak
       'health.missedMarks': missedMarks,
       'health.consecutiveMissedMarks': consecutiveMissedMarks,
       revision: (book.revision || 0) + 1,
@@ -374,6 +471,8 @@ export async function closeBook(db, mandateRef, {
       regimeAsOf: regime.regimeAsOf,
       net: { totalValue, dayReturnPct },
       gross: { dayFrictionPaid, grossDayReturnPct },
+      sessionsSpanned,
+      returnBaseDegraded,
       dividendIncomeUsd,
       partial,
       degradedMarks,

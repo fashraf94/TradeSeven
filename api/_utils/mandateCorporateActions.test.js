@@ -36,12 +36,44 @@ describe('feed parsing (EODHD payload shapes)', () => {
 });
 
 describe('pending selection + idempotency (applied per {mandateId, actionId})', () => {
-  const positions = { NVDA: { shares: 10, costBasisTotal: 5000 } };
+  const positions = { NVDA: { shares: 10, costBasisTotal: 5000, openedAt: '2026-08-01' } }; // held ACROSS the effective date
   const bySym = { NVDA: [{ type: 'split', ticker: 'NVDA', effectiveDate: '2026-08-12', ratio: 10 }] };
   it('selects held-symbol actions effective on or before the session date', () => {
     const { pending } = pendingActionsFor(positions, bySym, { onOrBefore: '2026-08-12' });
     expect(pending.length).toBe(1);
     expect(pending[0].actionId).toBe(deriveActionId(bySym.NVDA[0]));
+  });
+
+  // ENTITLEMENT (spec+money review P3 — both independently found phantom
+  // dividend income credited to never-entitled post-ex-date buyers).
+  it('ENTITLEMENT: a position opened ON or AFTER the effective date is NOT credited (strict <)', () => {
+    const boughtOnExDate = { NVDA: { shares: 10, costBasisTotal: 5000, openedAt: '2026-08-12' } };
+    const r1 = pendingActionsFor(boughtOnExDate, bySym, { onOrBefore: '2026-08-12' });
+    expect(r1.pending).toEqual([]);
+    expect(r1.notEntitled.length).toBe(1);
+    expect(r1.notEntitled[0].actionId).toBe(deriveActionId(bySym.NVDA[0]));
+    const boughtAfter = { NVDA: { shares: 10, costBasisTotal: 5000, openedAt: '2026-08-13' } };
+    const r2 = pendingActionsFor(boughtAfter, bySym, { onOrBefore: '2026-08-14' });
+    expect(r2.pending).toEqual([]);
+    expect(r2.notEntitled.length).toBe(1);
+  });
+  it('ENTITLEMENT: a position with NO openedAt is declined as no_entitlement_data (never fabricate — D-15)', () => {
+    const legacy = { NVDA: { shares: 10, costBasisTotal: 5000 } };
+    const r = pendingActionsFor(legacy, bySym, { onOrBefore: '2026-08-12' });
+    expect(r.pending).toEqual([]);
+    expect(r.notEntitled).toEqual([]);
+    expect(r.noEntitlementData.length).toBe(1);
+  });
+  it('ENTITLEMENT: ticker_change and delisting apply to ANY current holder regardless of openedAt', () => {
+    const boughtAfter = { OLDCO: { shares: 10, costBasisTotal: 5000, openedAt: '2026-08-12' } };
+    const events = { OLDCO: [
+      { type: 'ticker_change', ticker: 'OLDCO', effectiveDate: '2026-08-10', renamedTo: 'NEWCO' },
+      { type: 'delisting', ticker: 'OLDCO', effectiveDate: '2026-08-11' },
+    ] };
+    const r = pendingActionsFor(boughtAfter, events, { onOrBefore: '2026-08-12' });
+    expect(r.pending.length).toBe(2);
+    expect(r.notEntitled).toEqual([]);
+    expect(r.noEntitlementData).toEqual([]);
   });
   it('future-dated and already-applied actions are not pending', () => {
     const { pending: future } = pendingActionsFor(positions, bySym, { onOrBefore: '2026-08-11' });
@@ -159,5 +191,73 @@ describe('the gap detector (I7) — discrimination, not suspicion', () => {
     const r = classifyOvernightGaps(held(100), snap(55), feed);
     expect(r.pendingCA.has('NVDA')).toBe(true);
     expect(r.suspectedCA.has('NVDA')).toBe(false);
+  });
+});
+
+// ── P3 verification-pass regression guards (C-21 findings 2/3/4/5, CONFIRMED) ─
+
+describe('gap detector — feed-first, date-windowed (C-21 review P3)', () => {
+  const held = (lastMark) => ({ NVDA: { shares: 10, costBasisTotal: 5000, lastMark } });
+  const snap = (price, date = '2026-08-12') => ({ date, symbols: { NVDA: { complete: true, price } } });
+
+  it('C21-2: a feed-known SUB-THRESHOLD split (3:2, −33%) freezes pending_ca — the feed check precedes the threshold', () => {
+    const feed = { NVDA: [{ type: 'split', ticker: 'NVDA', effectiveDate: '2026-08-12', ratio: 1.5 }] };
+    const r = classifyOvernightGaps(held(100), snap(66.67), feed, { sinceDate: '2026-08-11' });
+    expect(r.pendingCA.has('NVDA')).toBe(true);
+    expect(r.frozen.has('NVDA')).toBe(true);
+  });
+  it('C21-2 boundary: sub-threshold cash dividends stay threshold-gated (no share-basis shift)', () => {
+    const feed = { NVDA: [{ type: 'cash_dividend', ticker: 'NVDA', effectiveDate: '2026-08-12', amount: 0.5 }] };
+    const r = classifyOvernightGaps(held(100), snap(99.5), feed, { sinceDate: '2026-08-11' });
+    expect(r.frozen.size).toBe(0);
+    expect(r.passed).toContain('NVDA');
+  });
+  it('C21-4: an action OUTSIDE the gap window — applied days ago or future-dated — never explains a genuine crash', () => {
+    // Real −50% crash; the only feed rows are a split effective BEFORE the last
+    // close and one effective AFTER today. Old behavior froze this pending_ca.
+    const feed = { NVDA: [
+      { type: 'split', ticker: 'NVDA', effectiveDate: '2026-08-07', ratio: 2 },
+      { type: 'split', ticker: 'NVDA', effectiveDate: '2026-08-14', ratio: 2 },
+    ] };
+    const r = classifyOvernightGaps(held(100), snap(50), feed, { sinceDate: '2026-08-11', asOfDate: '2026-08-12' });
+    expect(r.pendingCA.has('NVDA')).toBe(false);
+    expect(r.suspectedCA.has('NVDA')).toBe(true); // 0.5 is split-shaped with NO valid feed row — suspected, exits at last-good
+  });
+  it('C21-2/apply-then-scan: an action this book already settled (applied/declined) never re-freezes at close', () => {
+    const action = { type: 'split', ticker: 'NVDA', effectiveDate: '2026-08-12', ratio: 1.5 };
+    const feed = { NVDA: [action] };
+    const settled = new Set([deriveActionId(action)]);
+    // Post-application state: shares adjusted, lastMark ÷1.5, price ≈ lastMark.
+    const r = classifyOvernightGaps({ NVDA: { shares: 15, costBasisTotal: 5000, lastMark: 66.67 } }, snap(66.8), feed, {
+      sinceDate: '2026-08-11', excludeActionIds: settled,
+    });
+    expect(r.frozen.size).toBe(0);
+    expect(r.passed).toContain('NVDA');
+  });
+  it('C21-3: integer split signatures to 50 are caught no-feed (12:1, 20:1, 50:1); odd ratios remain the documented residual', () => {
+    for (const price of [100 / 12, 100 / 20, 100 / 50]) {
+      const r = classifyOvernightGaps(held(100), snap(price), {});
+      expect(r.suspectedCA.has('NVDA')).toBe(true);
+    }
+    // 5:2 (2.5) is NOT n or 1/n for integer n — accepted residual, feed-bounded.
+    const odd = classifyOvernightGaps(held(100), snap(40), {});
+    expect(odd.frozen.size).toBe(0);
+  });
+});
+
+describe('delisting cashPerShare (C-21 review P3 finding 5)', () => {
+  const book = () => ({ positions: { PINY: { shares: 100, costBasisTotal: 9000, lastMark: 100, sector: 'Industrials' } }, cash: 0 });
+  it('a founder-supplied cashPerShare prices the forced close (cash-merger consideration, not the frozen mark)', () => {
+    const r = applyCorporateAction(book(), { type: 'delisting', ticker: 'PINY', effectiveDate: '2026-08-12', cashPerShare: 200 });
+    expect(r.ok).toBe(true);
+    expect(r.cash).toBe(20000); // 100 sh × $200 deal price — not the $100 frozen mark
+    expect(r.forcedClose.mark).toBe(200);
+    expect(r.forcedClose.realizedPnl).toBe(11000);
+  });
+  it('absent cashPerShare, the spec-letter last-good behavior is unchanged', () => {
+    const r = applyCorporateAction(book(), { type: 'delisting', ticker: 'PINY', effectiveDate: '2026-08-12' });
+    expect(r.ok).toBe(true);
+    expect(r.cash).toBe(10000);
+    expect(r.forcedClose.mark).toBe(100);
   });
 });

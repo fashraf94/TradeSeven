@@ -95,10 +95,13 @@ export function buildScoringBlock() {
 export function buildHealthBlock() {
   return {
     consecutiveEvalFailures: 0,
-    lastSuccessfulEvalAt: null,
-    lastCloseMarkAt: null,
-    missedMarks: 0, // §3.6 / §6.4 — incremented on an un-markable close
-    consecutiveMissedMarks: 0, // §6.4 — alert at MANDATE_MISSED_MARKS_ALERT consecutive partial closes (P3)
+    lastSuccessfulEvalAt: null, // SUCCESS record only (agencyState 'full' evidence) — not a sweep key
+    lastEvalSweepAt: null, // eval sweep ORDERING KEY — advanced on every processed outcome (P3 review INV-4/C21-1: success-only keys starve the tail)
+    lastCloseMarkAt: null, // success record of the last committed close
+    lastCloseAttemptAt: null, // close sweep ORDERING KEY — advanced by commits AND failures
+    consecutiveCloseFailures: 0, // whole-close failure streak (§6.4 — the missed-session channel, P3 review INV-1)
+    missedMarks: 0, // §3.6 / §6.4 — incremented on an un-markable close AND retroactively per fully-missed session
+    consecutiveMissedMarks: 0, // §6.4 — alert at MANDATE_MISSED_MARKS_ALERT consecutive missed close marks (P3)
     quarantined: false,
   };
 }
@@ -126,6 +129,10 @@ export function buildExecStateBlock() {
     // I9 (P3): consecutive rejected_stale/expired submissions — THE liveness
     // wire (founder ruling: HOLD-only is healthy, the ratio is secondary).
     staleRejectStreak: 0,
+    // Within-slot idempotency stamp for UNBILLED sweep skips (tier-ineligible,
+    // missing vintage) — parallel to execState.lastEvalTickKey, which only
+    // attempts write (P3 review INV-4: unstamped skips re-processed every fire).
+    lastSweepTickKey: null,
   };
 }
 
@@ -215,8 +222,16 @@ export function buildDailyRow({ date, quarterIndex, ...rest } = {}) {
     quarterIndex: quarterIndex ?? null,
     partial: rest.partial ?? false, // I17 / §3.6 — creation-day & carry-over rows
     degradedMarks: rest.degradedMarks ?? false, // I6 — any carry-over mark in today's marking
+    // RETURN-QUALITY LABELS (P3 review): dayReturnPct is a DAY return only when
+    // sessionsSpanned === 1 and its baseline was a fresh mark. A row whose
+    // previous close never happened (sessionsSpanned > 1), or whose baseline
+    // row carried degraded marks (returnBaseDegraded), keeps its factual
+    // number but is EXCLUDED from variance metrics — labeled-degraded, never
+    // silently blended (I11/F19). null = no prior row (first close).
+    sessionsSpanned: rest.sessionsSpanned ?? null,
+    returnBaseDegraded: rest.returnBaseDegraded ?? false,
     dividendIncomeUsd: rest.dividendIncomeUsd ?? 0, // §4.3 — income, not trading P&L
-    dayFrictionPaid: rest.dayFrictionPaid ?? 0, // F14 — gross = net + this, never subtracted twice
+    dayFrictionPaid: rest.dayFrictionPaid ?? null, // F14 — gross = net + this, never subtracted twice; null on the first row (no window)
     frictionPaidCum: rest.frictionPaidCum ?? 0,
     submittedCum: rest.submittedCum ?? 0, // I9 — trailing-window liveness inputs
     executedCum: rest.executedCum ?? 0,
@@ -297,5 +312,11 @@ export function buildCorporateAction({ actionId, type, ticker, ...rest } = {}) {
     renamedTo: rest.renamedTo ?? null, // ticker change
     appliedAt: rest.appliedAt ?? null,
     source: rest.source ?? null,
+    // Entitlement claims (P3 review): applied:false docs are durable "seen and
+    // DECLINED, because <reason>" records — they hold the same idempotency key
+    // so the close pass never re-examines (or re-alerts) the action for this
+    // book. reason ∈ {not_entitled, no_entitlement_data} today.
+    applied: rest.applied ?? true,
+    reason: rest.reason ?? null,
   };
 }

@@ -410,3 +410,78 @@ describe('sole peak writer (I6) — the execution txn NEVER writes HWM/drawdown'
     expect(book.portfolio.quarterDrawdownFromPeak).toBe(0.03);
   });
 });
+
+// ── P3 verification-pass regression guards (money findings 4/5 + entitlement substrate) ─
+
+describe('frozen-exit friction tier + frozen-entry terminal (money review P3 findings 4/5)', () => {
+  it('MONEY-4: a CA-frozen exit prices at the symbol\'s REAL cap tier from the original snapshot, never the widest', async () => {
+    // FRZN: $30B (large tier 2+3 = 5bps) present on the tick snapshot, gap-frozen.
+    const snap = { tickKey: 't', symbols: { FRZN: { complete: true, price: 95, sector: 'Energy', marketCap: 30e9 } } };
+    const seeded = baseBook({
+      revision: 4,
+      portfolio: { ...baseBook().portfolio, cash: 0, positions: { FRZN: { shares: 200, costBasisTotal: 16000, avgCost: 80, lastMark: 90, lastMarkSource: 'close', sector: 'Energy' } } },
+    });
+    const db = makeFakeDb({ 'mandates/m1': seeded });
+    const r = await executeDecision(db, {
+      mandateRef: db.collection('mandates').doc('m1'), decisionId: 'fz1',
+      decision: { verb: 'SELL', ticker: 'FRZN' },
+      gateResult: { passed: true, gateOutcome: { rule: 'exit_lane', passed: true } },
+      envelope: { ...ENV, baseRevision: 4 }, snapshot: snap, submitMark: 90,
+      currentSessionDate: '2026-08-12', now: NOW, caFrozen: new Set(['FRZN']),
+    });
+    expect(r.status).toBe('executed');
+    // Large tier 5bps on the carry-over mark 90 → 89.955; the old vSnap lookup
+    // degraded to unknown 20bps → 89.82 ($27 undercredited on this exit).
+    expect(r.decision.friction.slippageBps).toBe(2);
+    expect(r.decision.friction.spreadProxyBps).toBe(3);
+    expect(db._store.get('mandates/m1').portfolio.cash).toBe(17991);
+  });
+
+  it('MONEY-5: an ENTRY on a CA-frozen symbol terminates gated/suspected_ca — never rejected_stale (no I9 streak pollution)', async () => {
+    const snap = { tickKey: 't', symbols: { FRZN: { complete: true, price: 95, sector: 'Energy', marketCap: 30e9 } } };
+    const db = makeFakeDb({ 'mandates/m1': baseBook({ revision: 4 }) });
+    const r = await executeDecision(db, {
+      mandateRef: db.collection('mandates').doc('m1'), decisionId: 'fz2',
+      decision: { verb: 'BUY', ticker: 'FRZN', sizeUsd: 5000 },
+      gateResult: { passed: true, execSizeUsd: 5000, gateOutcome: { rule: 'buy', passed: true } }, // gate wrongly passed — the executor restates the freeze
+      envelope: { ...ENV, baseRevision: 4 }, snapshot: snap, submitMark: 95,
+      currentSessionDate: '2026-08-12', now: NOW, caFrozen: new Set(['FRZN']),
+    });
+    expect(r.status).toBe('gated');
+    expect(r.failCondition).toBe('suspected_ca');
+    expect(db._store.get('mandates/m1').execState.staleRejectStreak).toBe(0); // gated = live answer, streak reset — not +1
+  });
+});
+
+describe('openedAt entitlement substrate (spec+money review P3 — the position knows when its holding began)', () => {
+  it('a BUY creating a position stamps openedAt with the session date; a top-up preserves the ORIGINAL', () => {
+    const first = computeExecution({
+      decision: { verb: 'BUY', ticker: 'AAPL' }, execSizeUsd: 10000, positions: {}, cash: 100000,
+      snapshot: SNAP, friction: ZERO, sessionDate: '2026-08-12',
+    });
+    expect(first.ok).toBe(true);
+    expect(first.mutation.positions.AAPL.openedAt).toBe('2026-08-12');
+
+    const topUp = computeExecution({
+      decision: { verb: 'ADD', ticker: 'AAPL' }, execSizeUsd: 5000,
+      positions: first.mutation.positions, cash: 90000,
+      snapshot: SNAP, friction: ZERO, sessionDate: '2026-09-01',
+    });
+    expect(topUp.ok).toBe(true);
+    expect(topUp.mutation.positions.AAPL.openedAt).toBe('2026-08-12'); // continuous holding keeps its origin
+  });
+  it('an exit-and-rebuy starts a NEW holding (fresh openedAt — not entitled to pre-rebuy actions)', () => {
+    const held = { AAPL: { shares: 50, costBasisTotal: 10000, avgCost: 200, lastMark: 200, sector: 'Technology', openedAt: '2026-08-01' } };
+    const out = computeExecution({
+      decision: { verb: 'SELL', ticker: 'AAPL' }, positions: held, cash: 0,
+      snapshot: SNAP, friction: ZERO, sessionDate: '2026-08-12',
+    });
+    expect(out.ok).toBe(true);
+    expect(out.mutation.positions.AAPL).toBeUndefined();
+    const rebuy = computeExecution({
+      decision: { verb: 'BUY', ticker: 'AAPL' }, execSizeUsd: 5000, positions: out.mutation.positions, cash: out.mutation.cash,
+      snapshot: SNAP, friction: ZERO, sessionDate: '2026-09-15',
+    });
+    expect(rebuy.mutation.positions.AAPL.openedAt).toBe('2026-09-15');
+  });
+});

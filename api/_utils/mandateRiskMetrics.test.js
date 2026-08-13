@@ -119,3 +119,28 @@ describe('composite (§4.2) — non-null components, renormalized weights, contr
     expect(c.contributed).toEqual([]);
   });
 });
+
+// ── P3 verification-pass regression guards (INV-2 / MONEY-8) ─────────────────
+describe('variance exclusion of not-single-session returns (P3 review)', () => {
+  const full = (date, ret, extra = {}) => ({ date, totalValue: 100000, dayReturnPct: ret, quarterIndex: 1, partial: false, ...extra });
+  it('a row spanning missed sessions (sessionsSpanned > 1) is excluded from Sharpe/consistency inputs but counted in drawdown', () => {
+    const rows = [
+      ...Array.from({ length: 21 }, (_, i) => full(`2026-07-${String(i + 1).padStart(2, '0')}`, 0.001)),
+      full('2026-08-12', 0.4, { sessionsSpanned: 2, totalValue: 140000 }), // 2-session move — NOT a day return
+    ];
+    const withSpan = computeLensMetrics(rows, new Date('2026-08-12T21:00:00Z'));
+    const without = computeLensMetrics(rows.slice(0, 21), new Date('2026-08-12T21:00:00Z'));
+    expect(withSpan.rowsUsable).toBe(without.rowsUsable); // the spanning row added NOTHING to variance inputs
+    expect(withSpan.sharpe).toBeCloseTo(without.sharpe ?? 0, 10);
+  });
+  it('a row baselined on a degraded prior value (returnBaseDegraded) is excluded from variance inputs', () => {
+    const rows = [
+      ...Array.from({ length: 21 }, (_, i) => full(`2026-07-${String(i + 1).padStart(2, '0')}`, 0.001)),
+      full('2026-08-12', 0.25, { returnBaseDegraded: true }),
+    ];
+    const withLeak = computeLensMetrics(rows, new Date('2026-08-12T21:00:00Z'));
+    const without = computeLensMetrics(rows.slice(0, 21), new Date('2026-08-12T21:00:00Z'));
+    expect(withLeak.rowsUsable).toBe(without.rowsUsable);
+    expect(withLeak.sharpe).toBeCloseTo(without.sharpe ?? 0, 10);
+  });
+});

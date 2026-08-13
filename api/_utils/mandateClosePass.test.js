@@ -107,7 +107,7 @@ function bookDoc(overrides = {}) {
     createdAt: new Date('2026-07-01T13:00:00Z'),
     portfolio: {
       cash: 100000,
-      positions: { AAPL: { shares: 100, costBasisTotal: 20000, avgCost: 200, lastMark: 200, lastMarkAsOf: '2026-08-11T20:00:00Z', lastMarkSource: 'snapshot', sector: 'Technology' } },
+      positions: { AAPL: { shares: 100, costBasisTotal: 20000, avgCost: 200, lastMark: 200, lastMarkAsOf: '2026-08-11T20:00:00Z', lastMarkSource: 'snapshot', sector: 'Technology', openedAt: '2026-08-01' } },
       totalValue: 120000, initialValue: 120000,
       lifetimeHighWaterMark: 121000, lifetimeDrawdownFromPeak: 0,
       quarterHighWaterMark: 121000, quarterDrawdownFromPeak: 0,
@@ -134,7 +134,7 @@ describe('deriveAgencyState — the manager\'s alibi', () => {
     expect(deriveAgencyState(bookDoc({ health: { quarantined: true } }), DATE)).toBe('exit_only');
   });
   it("created intra-session, never evaluated → 'skipped:created_intraday' (I17)", () => {
-    const b = bookDoc({ createdAt: new Date('2026-08-12T15:00:00Z'), execState: { lastEvalTickKey: null } });
+    const b = bookDoc({ createdAt: new Date('2026-08-12T15:00:00Z'), execState: { lastEvalTickKey: null }, health: { consecutiveEvalFailures: 0, lastSuccessfulEvalAt: null, quarantined: false } });
     expect(deriveAgencyState(b, DATE)).toBe('skipped:created_intraday');
   });
   it("not evaluated + failure streak → 'skipped:eval_failure' (was NOT permitted to act)", () => {
@@ -142,7 +142,7 @@ describe('deriveAgencyState — the manager\'s alibi', () => {
     expect(deriveAgencyState(b, DATE)).toBe('skipped:eval_failure');
   });
   it("not evaluated, no failures → 'skipped:not_evaluated'", () => {
-    const b = bookDoc({ execState: { lastEvalTickKey: '2026-08-11_midday' } });
+    const b = bookDoc({ execState: { lastEvalTickKey: '2026-08-11_midday' }, health: { consecutiveEvalFailures: 0, lastSuccessfulEvalAt: new Date('2026-08-11T18:00:00Z'), quarantined: false } });
     expect(deriveAgencyState(b, DATE)).toBe('skipped:not_evaluated');
   });
   it('etDateOf converts instants to ET calendar dates (DST-safe)', () => {
@@ -231,7 +231,7 @@ describe('closeBook — authoritative close (§3.6)', () => {
   });
 
   it('creation-day close (I17): partial:true row, skipped:created_intraday, null dayReturnPct', async () => {
-    const db = seed(bookDoc({ createdAt: new Date('2026-08-12T15:30:00Z'), execState: { openBatchId: null, lastEvalTickKey: null, lastCloseKey: null, submitted: 0, executed: 0, staleRejectStreak: 0 } }));
+    const db = seed(bookDoc({ createdAt: new Date('2026-08-12T15:30:00Z'), execState: { openBatchId: null, lastEvalTickKey: null, lastCloseKey: null, submitted: 0, executed: 0, staleRejectStreak: 0 }, health: { consecutiveEvalFailures: 0, lastSuccessfulEvalAt: null, lastCloseMarkAt: null, missedMarks: 0, consecutiveMissedMarks: 0, quarantined: false } }));
     const ref = db.doc('mandates/m1');
     await closeBook(db, ref, { date: DATE, closeSnapshot: CLOSE_SNAP, now: NOW, regime: REGIME });
     const row = db._store.get(`mandates/m1/dailyRows/${DATE}`);
@@ -418,5 +418,107 @@ describe('runRetentionCleanup', () => {
     expect(db._store.has('mandateUniverseSnapshots/2026-08-11_close')).toBe(true);
     expect(db._store.has('mandateUniverseDaily/2026-03-01')).toBe(false);
     expect(db._store.has('mandates/m1/dailyRows/2026-03-01')).toBe(true);
+  });
+});
+
+// ── P3 verification-pass regression guards (INV-1/INV-2/SPEC-2/MONEY-6/MONEY-8 + entitlement) ─
+
+describe('missed-session accounting + return-quality labels (P3 review)', () => {
+  it('INV-2/SPEC-2: a close after a fully-missed session labels the row (sessionsSpanned) and counts the gap retroactively', async () => {
+    // prev row Monday 2026-08-10; close Wednesday 2026-08-12 → Tuesday 08-11
+    // was a trading session with NO row: gapSessions = 1.
+    const db = seed(bookDoc(), {
+      'mandates/m1/dailyRows/2026-08-10': { date: '2026-08-10', totalValue: 125000, dayReturnPct: 0.01, quarterIndex: 1, partial: false, frictionPaidCum: 1.5 },
+    });
+    const r = await closeBook(db, db.doc('mandates/m1'), { date: DATE, closeSnapshot: CLOSE_SNAP, now: NOW, regime: REGIME });
+    const row = db._store.get(`mandates/m1/dailyRows/${DATE}`);
+    expect(row.sessionsSpanned).toBe(2); // NOT a day return — spans 08-10 → 08-12
+    expect(row.dayReturnPct).toBeCloseTo((121000 - 125000) / 125000, 10); // factual, labeled
+    const book = db._store.get('mandates/m1');
+    expect(book.health.missedMarks).toBe(1); // the fully-missed 08-11 counted
+    expect(book.health.consecutiveMissedMarks).toBe(0); // today closed FULL — streak ends (already alerted retroactively if ≥ threshold)
+    expect(r.row.sessionsSpanned).toBe(2);
+  });
+  it('INV-2: two missed sessions + today partial reaches the §6.4 alert threshold retroactively', async () => {
+    // prev row Friday 2026-08-07; close Wednesday 08-12 with a partial mark:
+    // gap = Mon 08-10 + Tue 08-11 = 2, today partial = +1 → streak 3, alert ≥2.
+    const thinSnap = { ...CLOSE_SNAP, symbols: { XOM: CLOSE_SNAP.symbols.XOM } };
+    const db = seed(bookDoc(), {
+      'mandates/m1/dailyRows/2026-08-07': { date: '2026-08-07', totalValue: 125000, quarterIndex: 1, partial: false, frictionPaidCum: 0 },
+    });
+    const r = await closeBook(db, db.doc('mandates/m1'), { date: DATE, closeSnapshot: thinSnap, now: NOW, regime: REGIME });
+    const book = db._store.get('mandates/m1');
+    expect(book.health.missedMarks).toBe(3);
+    expect(book.health.consecutiveMissedMarks).toBe(3);
+    expect(r.alerts.some((a) => a.startsWith('MANDATE_MISSED_MARKS 3'))).toBe(true);
+  });
+  it('MONEY-8: the first fresh row after a carry-over row is labeled returnBaseDegraded', async () => {
+    const db = seed(bookDoc(), {
+      'mandates/m1/dailyRows/2026-08-11': { date: '2026-08-11', totalValue: 120000, quarterIndex: 1, partial: true, markSource: 'carry_over', degradedMarks: true, frictionPaidCum: 0 },
+    });
+    await closeBook(db, db.doc('mandates/m1'), { date: DATE, closeSnapshot: CLOSE_SNAP, now: NOW, regime: REGIME });
+    const row = db._store.get(`mandates/m1/dailyRows/${DATE}`);
+    expect(row.returnBaseDegraded).toBe(true); // baselined on a frozen value — excluded from variance
+    expect(row.sessionsSpanned).toBe(1);
+  });
+  it('MONEY-6: the FIRST row\'s dayFrictionPaid is null (no window), never all-inception friction as one day', async () => {
+    const db = seed(bookDoc()); // no prior rows; book carries frictionPaidCum 3.5
+    await closeBook(db, db.doc('mandates/m1'), { date: DATE, closeSnapshot: CLOSE_SNAP, now: NOW, regime: REGIME });
+    const row = db._store.get(`mandates/m1/dailyRows/${DATE}`);
+    expect(row.dayFrictionPaid).toBeNull();
+    expect(row.frictionPaidCum).toBe(3.5); // the cum field still carries the total
+    expect(row.sessionsSpanned).toBeNull(); // no prior row — no span to label
+  });
+  it('INV-1 (success side): a committed close stamps lastCloseAttemptAt and clears consecutiveCloseFailures', async () => {
+    const db = seed(bookDoc({ health: { ...bookDoc().health, consecutiveCloseFailures: 2 } }));
+    await closeBook(db, db.doc('mandates/m1'), { date: DATE, closeSnapshot: CLOSE_SNAP, now: NOW, regime: REGIME });
+    const book = db._store.get('mandates/m1');
+    expect(book.health.lastCloseAttemptAt).toBe(NOW);
+    expect(book.health.consecutiveCloseFailures).toBe(0);
+  });
+});
+
+describe('CA entitlement through closeBook (SPEC-1 ≡ MONEY-2, CONFIRMED by independent verifier)', () => {
+  it('a dividend whose ex-date precedes the position\'s openedAt is DECLINED: no phantom income, durable not_entitled claim', async () => {
+    // Book bought AAPL 2026-08-01… but this dividend went ex on 2026-08-01 too?
+    // No: position openedAt 2026-08-01; dividend effective 2026-08-01 → NOT
+    // entitled (strict <). Use an ex-date equal to openedAt to pin strictness.
+    const divSnap = {
+      ...CLOSE_SNAP,
+      symbols: { ...CLOSE_SNAP.symbols, AAPL: { ...CLOSE_SNAP.symbols.AAPL, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', effectiveDate: '2026-08-01', amount: 0.25, source: 'eodhd_dividends' }] } },
+    };
+    const db = seed();
+    await closeBook(db, db.doc('mandates/m1'), { date: DATE, closeSnapshot: divSnap, now: NOW, regime: REGIME });
+    const book = db._store.get('mandates/m1');
+    expect(book.portfolio.cash).toBe(100000); // NOT 100025 — no fabricated income
+    const row = db._store.get(`mandates/m1/dailyRows/${DATE}`);
+    expect(row.dividendIncomeUsd).toBe(0);
+    const claim = db._store.get('mandates/m1/corporateActions/cash_dividend_AAPL_2026-08-01');
+    expect(claim).toMatchObject({ applied: false, reason: 'not_entitled' });
+  });
+  it('a position with NO openedAt declines as no_entitlement_data WITH an alert (never fabricate, never silent)', async () => {
+    const legacyBook = bookDoc();
+    delete legacyBook.portfolio.positions.AAPL.openedAt;
+    const divSnap = {
+      ...CLOSE_SNAP,
+      symbols: { ...CLOSE_SNAP.symbols, AAPL: { ...CLOSE_SNAP.symbols.AAPL, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', effectiveDate: '2026-08-01', amount: 0.25, source: 'eodhd_dividends' }] } },
+    };
+    const db = seed(legacyBook);
+    const r = await closeBook(db, db.doc('mandates/m1'), { date: DATE, closeSnapshot: divSnap, now: NOW, regime: REGIME });
+    expect(db._store.get('mandates/m1').portfolio.cash).toBe(100000);
+    expect(r.alerts.some((a) => a.startsWith('MANDATE_CA_NO_ENTITLEMENT_DATA'))).toBe(true);
+    const claim = db._store.get('mandates/m1/corporateActions/cash_dividend_AAPL_2026-08-01');
+    expect(claim).toMatchObject({ applied: false, reason: 'no_entitlement_data' });
+  });
+  it('an entitled dividend (openedAt strictly before ex-date) still credits income — the guard blocks fabrication, not §4.3', async () => {
+    const divSnap = {
+      ...CLOSE_SNAP,
+      symbols: { ...CLOSE_SNAP.symbols, AAPL: { ...CLOSE_SNAP.symbols.AAPL, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', effectiveDate: DATE, amount: 0.25, source: 'eodhd_dividends' }] } },
+    };
+    const db = seed(); // fixture openedAt 2026-08-01 < 2026-08-12 ex-date → entitled
+    await closeBook(db, db.doc('mandates/m1'), { date: DATE, closeSnapshot: divSnap, now: NOW, regime: REGIME });
+    const book = db._store.get('mandates/m1');
+    expect(book.portfolio.cash).toBe(100025);
+    expect(db._store.get(`mandates/m1/dailyRows/${DATE}`).dividendIncomeUsd).toBe(25);
   });
 });
