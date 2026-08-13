@@ -14,8 +14,10 @@
 //
 // LAST-SLOT RULE (F3): the final eligible tick of a session does not submit —
 // submission needs a later same-session harvest opportunity. That NO-SUBMIT
-// behavior is batch-transport machinery and lands in P5; this module computes
-// `isLastSlotForTier` now so P5 wires it without re-deriving the calendar.
+// behavior is batch-transport machinery, wired in P5 via `isFinalSessionSlot`
+// (session-scoped — the rule's subject) with `isLastSlotForTier` as the
+// per-tier view; the construction property joining them (every tier keeps ≥1
+// submitting slot under batch) is suite-asserted.
 
 import { isEarlyCloseDay, MAINTAINED_HOLIDAY_YEARS } from './marketSchedule.js';
 import { isTradingDayStr } from './mandateCalendar.js';
@@ -125,6 +127,29 @@ export function slotsForTier(tier) {
 export function isLastSlotForTier(tier, slotName) {
   const slots = TIER_SLOTS[tier] || [];
   return slots.length > 0 && slots[slots.length - 1] === slotName;
+}
+
+/**
+ * F3 / §3.3 — is `slotName` the session's FINAL eval tick, the one with no
+ * later same-session harvest fire? Under BATCH transport submission is
+ * forbidden here (wired P5): a batch submitted at the final slot could only be
+ * harvested after the close, and every §3.3 safety mechanism would then discard
+ * it (cross-session / age-out) — pure spend for a guaranteed discard.
+ *
+ * SESSION-scoped by definition ("the final eligible tick of a session"): the
+ * harvest runs on EVERY eval fire regardless of which tiers evaluate there, so
+ * a tier riding an early slot (slow at open30) submits freely — its harvest
+ * arrives on the later slots' fires. That is exactly why TIER_SLOTS seats slow
+ * early ("submit on their early slot by construction"); the per-TIER view is
+ * `isLastSlotForTier` above, and the construction property tying the two —
+ * every tier retains at least one submitting slot under batch — is
+ * suite-asserted (mandateSessionSlots.test.js, P5).
+ *
+ * Early-close days shift this slot's WALL CLOCK via the calendar (preClose =
+ * closeMin − 30), never its identity — the rule follows automatically.
+ */
+export function isFinalSessionSlot(slotName) {
+  return SLOT_NAMES.length > 0 && SLOT_NAMES[SLOT_NAMES.length - 1] === slotName;
 }
 
 /** The platform-wide tick key for a (date, slot): shared by every book at that tick. */

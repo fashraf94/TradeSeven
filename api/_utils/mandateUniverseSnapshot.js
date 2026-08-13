@@ -32,7 +32,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { fetchBatchQuotes } from './tournamentPrices.js';
 import { getStockAnalysisData } from './marketDataCache.js';
 import { CANDIDATE_UNIVERSE } from './mandateCandidateUniverse.js';
-import { parseSplitsPayload, parseDividendsPayload } from './mandateCorporateActions.js';
+import { parseSplitsPayload, parseDividendsPayload, classifyOvernightGaps } from './mandateCorporateActions.js';
 import {
   MANDATE_UNIVERSE_MAX_SYMBOLS,
   MANDATE_SNAPSHOT_MAX_BYTES,
@@ -623,4 +623,33 @@ export function snapshotExcluding(snapshot, excludeSet) {
     if (!excludeSet.has(sym)) symbols[sym] = e;
   }
   return { ...snapshot, symbols };
+}
+
+/**
+ * The per-book TICK CONTEXT (§3.0 freshness + §4.3/I7 gap freeze + the
+ * frozen-excluded valuation view) — extracted in P5 (mechanical, P4 seam
+ * precedent) so the eval path and the batch HARVEST classify one book with ONE
+ * implementation; a harvest that classified differently from the eval it
+ * executes for would drift the fill basis. Lives here because this module
+ * already owns the freshness/exclusion primitives and imports the CA parser
+ * (no cycle).
+ *
+ * The frozen-excluded view is THE valuation basis for the tick (§3.5/§4.3):
+ * the prompt's book context, the gate's exposure math, the submit mark, and
+ * the execution boundary all price frozen symbols at last-good — the manager
+ * never reasons over, and never fills at, a phantom mark.
+ *
+ * @returns {{ actionable:Set<string>, caFrozen:Set<string>, evalSnapshot:object }}
+ */
+export function classifyBookTick(book, snapshot, { now = new Date(), sessionDate = null } = {}) {
+  const positions = book.portfolio?.positions || {};
+  const { actionable: freshActionable } = classifyHeldFreshness(snapshot, Object.keys(positions), { now, maxAgeMs: MANDATE_MARK_MAX_AGE_MS });
+  // Gap window = (last close, this session]: only actions effective inside it
+  // can explain or pre-freeze the overnight move (C-21 review P3).
+  const gaps = classifyOvernightGaps(positions, snapshot, caActionsBySymbol(snapshot), {
+    sinceDate: book.execState?.lastCloseKey ?? null, asOfDate: sessionDate,
+  });
+  const caFrozen = gaps.frozen;
+  const actionable = new Set([...freshActionable].filter((s) => !caFrozen.has(s)));
+  return { actionable, caFrozen, evalSnapshot: snapshotExcluding(snapshot, caFrozen) };
 }

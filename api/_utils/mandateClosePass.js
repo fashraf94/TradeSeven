@@ -33,10 +33,11 @@
 //
 // RETENTION (§3.7): snapshot cleanup (120 days) piggybacks the sweep's
 // completion fire — bounded deletes, no new cron. Terminal BATCH bookkeeping
-// (30 days) is P5's — no batch docs exist under direct transport.
+// (30 days) landed with P5's batch transport; OPEN batch docs are never
+// retention-deleted (an open doc that old is a loud bug, not garbage).
 
 import { markBook } from './mandateValuation.js';
-import { buildDailyRow, buildDecision, buildCorporateAction } from './mandateSchema.js';
+import { buildDailyRow, buildDecision, buildCorporateAction, clearedOpenSubmissionPatch } from './mandateSchema.js';
 import {
   pendingActionsFor,
   applyCorporateAction,
@@ -59,6 +60,7 @@ import {
   MANDATE_RUNRATE_MONTHLY_USD,
   MANDATE_SNAPSHOT_RETENTION_DAYS,
   MANDATE_RETENTION_DELETE_BATCH,
+  MANDATE_BATCH_RETENTION_DAYS,
 } from './mandateConfig.js';
 
 const LOG_PREFIX = '[MandateClose]';
@@ -195,6 +197,7 @@ export async function closeBook(db, mandateRef, {
           txWrites.push([decRef, buildDecision({
             decisionId: openBatchId,
             status: 'expired',
+            failCondition: 'result_age', // §3.3 condition recorded (P5 durable-failCondition rule)
             frictionModelVersion: MANDATE_FRICTION_MODEL_VERSION,
           }), 'set']);
         }
@@ -414,6 +417,7 @@ export async function closeBook(db, mandateRef, {
       tokensOut: today?.tokensOut ?? 0,
       estUsd: today?.estUsd ?? 0,
       cacheHitTokens: today?.cacheHitTokens ?? 0,
+      cacheWriteTokens: today?.cacheWriteTokens ?? 0, // §6.3 (P5) — D-20 stacking rate needs both sides
       partial,
       degradedMarks,
       sessionsSpanned,
@@ -450,7 +454,7 @@ export async function closeBook(db, mandateRef, {
       'health.consecutiveMissedMarks': consecutiveMissedMarks,
       revision: (book.revision || 0) + 1,
       'execState.lastCloseKey': date,
-      ...(expiredBatch ? { 'execState.openBatchId': null, 'execState.openBatchSubmittedAt': null } : {}),
+      ...(expiredBatch ? clearedOpenSubmissionPatch() : {}),
       'execState.staleRejectStreak': staleRejectStreak,
     });
 
@@ -599,6 +603,40 @@ export async function runRetentionCleanup(db, { now = new Date(), documentIdPath
       console.error(`${LOG_PREFIX} retention cleanup failed on ${collection}: ${err.message}`);
     }
   }
-  if (deleted > 0) console.log(`${LOG_PREFIX} retention: deleted ${deleted} snapshot docs older than ${cutoff} (§3.7)`);
+
+  // §3.7 (P5): TERMINAL batch bookkeeping 30 days. Batch doc ids are provider
+  // ids (not date-prefixed), so the window queries sessionDate; status is
+  // filtered CLIENT-SIDE within the bounded page because an OPEN doc must
+  // never be deleted — it holds undisposed submissions (I1). An open doc that
+  // old means every disposal path failed for a month: alert, never destroy.
+  const batchCutoff = new Date(now.getTime() - MANDATE_BATCH_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+  try {
+    const snap = await db.collection('mandateBatches')
+      .where('sessionDate', '<', batchCutoff)
+      .limit(MANDATE_RETENTION_DELETE_BATCH)
+      .get();
+    for (const d of snap.docs || []) {
+      const status = d.data()?.status;
+      if (status === 'open') {
+        console.error(`${LOG_PREFIX} MANDATE_BATCH_STUCK_OPEN ${d.id} — open past the ${MANDATE_BATCH_RETENTION_DAYS}d retention window; NOT deleted (I1) — founder review`);
+        continue;
+      }
+      await d.ref.delete(); deleted++;
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} retention cleanup failed on mandateBatches: ${err.message}`);
+  }
+  try {
+    const snap = await db.collection('mandateBatchStats')
+      .where(documentIdPath, '<', batchCutoff)
+      .limit(MANDATE_RETENTION_DELETE_BATCH)
+      .get();
+    for (const d of snap.docs || []) { await d.ref.delete(); deleted++; }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} retention cleanup failed on mandateBatchStats: ${err.message}`);
+  }
+
+  if (deleted > 0) console.log(`${LOG_PREFIX} retention: deleted ${deleted} snapshot/batch docs past their §3.7 windows`);
   return deleted;
 }

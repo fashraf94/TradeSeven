@@ -24,17 +24,17 @@ import {
   MANAGED_MANDATE_ENABLED,
   MANDATE_EVAL_ENABLED,
   MANDATE_CLOSE_ENABLED,
+  MANDATE_TRANSPORT_MODE,
 } from '../../src/config/featureFlags.js';
 import {
   MANDATE_SWEEP_PAGE_SIZE,
-  MANDATE_MARK_MAX_AGE_MS,
   MANDATE_QUARANTINE_THRESHOLD,
   MANDATE_STALE_STREAK_ALERT,
   MANDATE_MISSED_MARKS_ALERT,
   MANDATE_REGIME_SOURCE,
 } from '../_utils/mandateConfig.js';
-import { activeTick, activeCloseTick, tierEligibleAt, resolveSessionSlots } from '../_utils/mandateSessionSlots.js';
-import { ensureUniverseSnapshot, ensureDailySnapshot, classifyHeldFreshness, caActionsBySymbol, snapshotExcluding, shiftDateStr, SNAPSHOT_COLLECTION } from '../_utils/mandateUniverseSnapshot.js';
+import { activeTick, activeCloseTick, tierEligibleAt, resolveSessionSlots, isFinalSessionSlot } from '../_utils/mandateSessionSlots.js';
+import { ensureUniverseSnapshot, ensureDailySnapshot, classifyBookTick, shiftDateStr, SNAPSHOT_COLLECTION } from '../_utils/mandateUniverseSnapshot.js';
 import { mintOwnerToken, acquireLease, releaseLease } from '../_utils/mandateLease.js';
 import { assembleMandatePrompt } from '../_utils/mandatePromptAssembly.js';
 import { buildSubmissionEnvelope, callMandateModelDirect } from '../_utils/mandateModelCall.js';
@@ -42,9 +42,14 @@ import { normalizeDecisionInput, effectiveVerbs } from '../_utils/mandateDecisio
 import { evaluateGate } from '../_utils/mandateGate.js';
 import { executeDecision } from '../_utils/mandateExecution.js';
 import { markFor } from '../_utils/mandateUniverseSnapshot.js';
-import { classifyOvernightGaps } from '../_utils/mandateCorporateActions.js';
 import { resolveRegime } from '../_utils/mandateRegime.js';
-import { priceUsage } from '../_utils/modelPriceTable.js';
+import { priceUsage, telemetryPatch } from '../_utils/modelPriceTable.js';
+import { harvestOpenBatches, submitMandateBatch } from '../_utils/mandateBatchTransport.js';
+
+// §6.2 telemetryPatch moved to modelPriceTable.js in P5 (the batch harvest
+// bills without importing a cron entrypoint); re-exported here so existing
+// consumers/tests keep their import path. Mechanical, behavior-preserving.
+export { telemetryPatch };
 import {
   closeBook,
   appendScoringWithRetry,
@@ -68,42 +73,42 @@ export function unionHeldTickers(bookDocs) {
 
 // ── Per-book eval (exported + model-call injected for testability) ───────────
 /**
- * Run one book's tick: assemble prompt from the pinned vintage → call model →
- * normalize → gate → execute. Returns a terminal result. `callModel` is injected
- * so tests drive the full pipeline without the network.
+ * Run one book's tick. DIRECT transport (P2, unchanged): assemble prompt from
+ * the pinned vintage → call model → normalize → gate → execute; returns a
+ * terminal result. BATCH transport (P5, `transport:'batch'`): assemble prompt →
+ * build envelope → return `{ outcome:'enqueue', pending }` for the sweep to
+ * submit as one Message Batch — the model is NOT called here (billing happens
+ * at provider batch creation) and normalize/gate/execute happen at HARVEST
+ * against the then-current book. A book with an open submission never
+ * double-submits (`skipped_open_batch`). `callModel` is injected so tests
+ * drive the full pipeline without the network.
  *
- * @returns {Promise<{ outcome:string, status?:string, reason?:string }>}
+ * @returns {Promise<{ outcome:string, status?:string, reason?:string, pending?:object }>}
  */
 export async function runBookEval(db, {
   book, mandateRef, vintage, snapshot, sessionDate, slot, now = new Date(),
-  callModel = callMandateModelDirect, regime = null,
+  callModel = callMandateModelDirect, regime = null, transport = 'direct',
 }) {
   // Tier gating (§3.1): cadence tiers map to session-relative slots.
   if (!tierEligibleAt(book.cadenceTier, slot)) return { outcome: 'skipped_tier' };
   if (!vintage) return { outcome: 'skipped', reason: 'no_vintage' };
 
-  const positions = book.portfolio?.positions || {};
-  const { actionable: freshActionable } = classifyHeldFreshness(snapshot, Object.keys(positions), { now, maxAgeMs: MANDATE_MARK_MAX_AGE_MS });
+  // Double-submit gate (§3.3) — TRANSPORT-INDEPENDENT by design (F26): "a
+  // mid-drain mandate cannot submit under the NEW mode until its old batch
+  // reaches terminal state." Under batch, the tick's harvest normally cleared
+  // it BEFORE this sweep ran; under direct it is non-null only mid-drain (a
+  // mode flip with batches still open), where evaluating would double-spend
+  // against an in-flight request. Inert in pure direct operation (always null).
+  if ((book.execState?.openBatchId ?? null) !== null) {
+    return { outcome: 'skipped_open_batch' };
+  }
 
-  // Gap detector (§4.3/I7): a held symbol whose overnight move is CA-shaped is
-  // FROZEN this tick — its (already-adjusted) fresh mark prices nothing, so the
-  // manager can't act on a phantom while the position is still unadjusted.
-  // Ephemeral per tick: once the close pass applies the action (or the price
-  // normalizes), the symbol stops classifying. News-shaped gaps pass untouched.
-  // Gap window = (last close, this session]: only actions effective inside it
-  // can explain or pre-freeze the overnight move (C-21 review P3 — an applied
-  // or future-dated action must not freeze a genuine crash as pending_ca).
-  const gaps = classifyOvernightGaps(positions, snapshot, caActionsBySymbol(snapshot), {
-    sinceDate: book.execState?.lastCloseKey ?? null, asOfDate: sessionDate,
-  });
-  const caFrozen = gaps.frozen;
-  const actionable = new Set([...freshActionable].filter((s) => !caFrozen.has(s)));
-  // The frozen-excluded view is THE valuation basis this tick (§3.5/§4.3): the
-  // prompt's book context, the gate's exposure math, the submit mark, and the
-  // execution boundary all price frozen symbols at last-good — the manager
-  // never reasons over, and never fills at, a phantom mark. The candidate
-  // slate is unaffected (held symbols are excluded from it anyway).
-  const evalSnapshot = snapshotExcluding(snapshot, caFrozen);
+  const positions = book.portfolio?.positions || {};
+  // Per-book tick context (§3.0 freshness + §4.3/I7 gap freeze + the
+  // frozen-excluded valuation view) — ONE classifier shared with the batch
+  // harvest (P5 extraction; semantics unchanged from the P2/P3 inline block).
+  // The candidate slate is unaffected (held symbols are excluded from it anyway).
+  const { actionable, caFrozen, evalSnapshot } = classifyBookTick(book, snapshot, { now, sessionDate });
 
   // Quarantine (§6.4/I2): exit-only mode restricts the DECISION TOOL ITSELF to
   // SELL/TRIM/HOLD — the model cannot emit an entry; the gate and executor
@@ -121,16 +126,10 @@ export async function runBookEval(db, {
     verbs,
   });
   const modelSeat = vintage.modelSeat;
-  const { decision: extracted, usage } = await callModel(modelSeat, {
-    system: prompt.system, messages: prompt.messages, tools: prompt.tools,
-  });
-  if (!extracted?.ok) return { outcome: 'no_decision', reason: extracted?.reason || 'model_no_tool_use', usage: usage ?? extracted?.usage ?? null };
-
-  const norm = normalizeDecisionInput(extracted.input, { verbs });
-  if (!norm.ok) return { outcome: 'bad_decision', reason: norm.reason, usage: usage ?? extracted?.usage ?? null };
-  const decision = norm.decision;
 
   // Submission envelope (F1/F2) — deterministic requestId is the decisionId.
+  // Built BEFORE the transport branch: it is the base-state identity of THIS
+  // eval (pure book+tick state, independent of the model's answer).
   const envelope = buildSubmissionEnvelope({
     mandateId: mandateRef.id ?? book.mandateId ?? book.id,
     baseRevision: book.revision,
@@ -140,8 +139,34 @@ export async function runBookEval(db, {
     bookStatus: book.status,
     submittedAt: now.toISOString(),
     sessionDate,
-    mandatePromptTemplateVersion: null, // template versioning stamped from platform machinery (P5)
+    mandatePromptTemplateVersion: null, // template versioning stamped from platform machinery
   });
+
+  // BATCH transport (§3.3, P5): enqueue — the sweep submits every enqueued book
+  // as ONE Message Batch after the page loop; normalize/gate/execute happen at
+  // harvest. The verbs travel with the request (normalize against the tool the
+  // model SAW; gate against the book as it IS at harvest).
+  if (transport === 'batch') {
+    return {
+      outcome: 'enqueue',
+      pending: {
+        mandateRef,
+        envelope,
+        verbs,
+        modelSeat,
+        content: { system: prompt.system, messages: prompt.messages, tools: prompt.tools },
+      },
+    };
+  }
+
+  const { decision: extracted, usage } = await callModel(modelSeat, {
+    system: prompt.system, messages: prompt.messages, tools: prompt.tools,
+  });
+  if (!extracted?.ok) return { outcome: 'no_decision', reason: extracted?.reason || 'model_no_tool_use', usage: usage ?? extracted?.usage ?? null };
+
+  const norm = normalizeDecisionInput(extracted.input, { verbs });
+  if (!norm.ok) return { outcome: 'bad_decision', reason: norm.reason, usage: usage ?? extracted?.usage ?? null };
+  const decision = norm.decision;
 
   // Deterministic gate (§3.4) — quarantine blocks entries (never exits); a
   // CA-frozen symbol blocks entries and defers pricing to last-good on exits.
@@ -163,45 +188,6 @@ export async function runBookEval(db, {
     outcome: 'terminal', status: res.status, decisionId: envelope.requestId,
     usage: usage ?? extracted?.usage ?? null,
     staleRejectStreak: res.staleRejectStreak ?? null,
-  };
-}
-
-// ── Cost-telemetry accumulation (§6.2/§6.3, I-6) ─────────────────────────────
-/**
- * Build the costTelemetry merge patch for one billed eval: current-month
- * accumulators (reset on month rollover; monthKey = YYYY-MM) plus the intra-day
- * block the close pass folds into the daily row. Computed client-side from the
- * book read FRESH UNDER THE PER-BOOK LEASE (P3 review INV-3): read → bill →
- * merge all happen while holding the lease, so the read-modify-write cannot
- * lose a concurrent fire's accumulation, and the in-lease re-check of
- * lastEvalTickKey stops the duplicate billing that a stale page copy allowed.
- * An unpriced model id accumulates tokens with `unpricedCalls` incremented —
- * estUsd must degrade loudly, never silently understate (modelPriceTable
- * alerts once per id).
- */
-export function telemetryPatch(book, sessionDate, priced) {
-  if (!priced) return null;
-  const monthKey = sessionDate.slice(0, 7);
-  const sameMonth = book.costTelemetry?.monthKey === monthKey;
-  const prev = sameMonth ? (book.costTelemetry || {}) : {};
-  const today = book.costTelemetry?.today?.date === sessionDate ? book.costTelemetry.today : {};
-  return {
-    costTelemetry: {
-      monthKey,
-      tokensIn: (prev.tokensIn || 0) + priced.tokensIn,
-      tokensOut: (prev.tokensOut || 0) + priced.tokensOut,
-      cacheHitTokens: (prev.cacheHitTokens || 0) + priced.cacheHitTokens,
-      estUsd: (prev.estUsd || 0) + (priced.estUsd || 0),
-      unpricedCalls: (prev.unpricedCalls || 0) + (priced.priced ? 0 : 1),
-      today: {
-        date: sessionDate,
-        evalCount: (today.evalCount || 0) + 1,
-        tokensIn: (today.tokensIn || 0) + priced.tokensIn,
-        tokensOut: (today.tokensOut || 0) + priced.tokensOut,
-        cacheHitTokens: (today.cacheHitTokens || 0) + priced.cacheHitTokens,
-        estUsd: (today.estUsd || 0) + (priced.estUsd || 0),
-      },
-    },
   };
 }
 
@@ -249,10 +235,11 @@ export default async function handler(req, res) {
  * fake — the P3-flagged test debt this phase pays. Production calls it with the
  * live admin db (default) and the handler-computed tick; behavior is unchanged.
  */
-export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin() }) {
+export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(), transport = MANDATE_TRANSPORT_MODE }) {
   const startedAt = Date.now();
+  const deadlineMs = startedAt + TIME_BUDGET_MS;
   const ownerToken = mintOwnerToken();
-  const summary = { slot: tick.slot, tickKey: tick.tickKey, evaluated: 0, executed: 0, gated: 0, rejected: 0, failed: 0, skipped: 0, errors: 0, complete: false };
+  const summary = { slot: tick.slot, tickKey: tick.tickKey, transport, evaluated: 0, enqueued: 0, executed: 0, gated: 0, rejected: 0, failed: 0, skipped: 0, errors: 0, complete: false };
 
   try {
     // 4–5. Ensure the tick snapshot (PRECONDITION, §3.1). The platform-wide
@@ -274,10 +261,42 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
         });
         snapshot = built.snapshot;
       } catch (snapErr) {
-        // Precondition failed — a tick harvests but does NOT submit (§3.1).
+        // Precondition failed — the tick HARVESTS but does NOT submit (§3.1).
+        // Under batch transport the harvest still runs, against a minimal
+        // context: entries fail closed at the universe/drift gates while exits
+        // fill at carry-over marks (C-21 holds even degraded).
         console.error(`${LOG_PREFIX} snapshot precondition failed — harvest-only tick, no submit: ${snapErr.message}`);
+        if (transport === 'batch') {
+          summary.harvest = await harvestOpenBatches(db, {
+            currentSnapshot: { tickKey: tick.tickKey, symbols: {} },
+            sessionDate: tick.date, ownerToken, now, deadlineMs,
+          });
+        }
         return res.status(200).json({ ok: true, noop: true, reason: 'snapshot_failed', ...summary });
       }
+    }
+
+    // TICK ORDER (§3.1): HARVEST BEFORE SUBMIT. Poll every open batch, run the
+    // full §3.3 validation per result, execute/dispose through the §3.5
+    // discipline — so a book whose submission terminates here re-enters
+    // submit-eligibility in THIS tick's sweep below.
+    if (transport === 'batch') {
+      summary.harvest = await harvestOpenBatches(db, {
+        currentSnapshot: snapshot, sessionDate: tick.date, ownerToken, now, deadlineMs,
+      });
+    }
+
+    // LAST-TICK RULE (§3.3 / F3): the session's final eval tick does not
+    // submit — a batch submitted here could only be harvested after the close,
+    // where every safety mechanism would discard it. Harvest-only tick; the
+    // close pass's expiry duty backstops anything this harvest missed. (Direct
+    // transport is untouched: its submit and harvest share the tick, so the
+    // "later same-session harvest opportunity" is the tick itself.)
+    if (transport === 'batch' && isFinalSessionSlot(tick.slot)) {
+      summary.complete = true;
+      summary.reason = 'last_tick_no_submit';
+      console.log(`${LOG_PREFIX} ${tick.tickKey} is the session's final tick — harvest-only under batch transport (F3)`);
+      return res.status(200).json({ ok: true, ...summary });
     }
 
     // 6. Bounded sweep (F24), ordered by health.lastEvalSweepAt ASC — the
@@ -320,6 +339,7 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
 
     // 7. Per-book eval with lease + isolation.
     const vintageCache = new Map();
+    const pendingSubmissions = []; // batch transport: enqueued books, submitted as ONE batch after the loop
     let newlyEvaluated = 0;
     for (const docSnap of page) {
       if (Date.now() - startedAt > TIME_BUDGET_MS) break; // defer remaining to the next fire
@@ -356,7 +376,7 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
         }
 
         const result = await runBookEval(db, {
-          book, mandateRef, vintage, snapshot, sessionDate: tick.date, slot: tick.slot, now, regime,
+          book, mandateRef, vintage, snapshot, sessionDate: tick.date, slot: tick.slot, now, regime, transport,
         });
 
         // §6.2: accumulate cost telemetry for any BILLED call, whatever the
@@ -394,14 +414,25 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
           }
         };
 
-        if (result.outcome === 'skipped_tier') {
-          // Ineligible tier this slot — routine cadence, not a failure; the
-          // sweep stamp rotates it behind the frontier without billing.
+        if (result.outcome === 'skipped_tier' || result.outcome === 'skipped_open_batch') {
+          // Ineligible tier this slot, or an open submission still in flight
+          // (§3.3 double-submit gate — its batch terminates via harvest/expiry,
+          // never a second submit) — routine, not a failure; the sweep stamp
+          // rotates the book behind the frontier without billing.
           summary.skipped++;
           await persistOutcome({
             health: { lastEvalSweepAt: now },
             execState: { lastSweepTickKey: tick.tickKey },
           });
+        } else if (result.outcome === 'enqueue') {
+          // BATCH transport: collected for the single post-loop submission. NO
+          // per-book write here — the submit's gate txn stamps lastEvalTickKey
+          // and advances the sweep key atomically with the gate; a crash before
+          // provider creation therefore leaves NOTHING and the slot retries
+          // cleanly (liveness-optimal; Risk 7).
+          newlyEvaluated++;
+          summary.enqueued++;
+          pendingSubmissions.push(result.pending);
         } else if (result.outcome === 'skipped') {
           // Missing/corrupt vintage: the book CANNOT evaluate — that is an
           // eval failure of the infrastructure kind (§6.4), not a quiet skip.
@@ -488,6 +519,24 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
         }
       } finally {
         await releaseLease(db, mandateRef, ownerToken).catch(() => {});
+      }
+    }
+
+    // 7b. BATCH SUBMISSION (§3.3): one Message Batch for every enqueued book —
+    // provider create first (the billing moment), the bookkeeping doc, then the
+    // revision-disciplined per-book gate writes. A failure here is loud and
+    // leaves nothing stamped, so the affected books retry on the next generous
+    // fire in this slot.
+    if (pendingSubmissions.length > 0) {
+      try {
+        const sub = await submitMandateBatch(db, pendingSubmissions, {
+          tickKey: tick.tickKey, sessionDate: tick.date, now,
+        });
+        summary.batch = { providerBatchId: sub.providerBatchId, gated: sub.gated, zombies: sub.zombies.length };
+        console.log(`${LOG_PREFIX} submitted batch ${sub.providerBatchId} — ${sub.gated}/${pendingSubmissions.length} gated for ${tick.tickKey}`);
+      } catch (subErr) {
+        summary.errors++;
+        console.error(`${LOG_PREFIX} batch submission failed for ${tick.tickKey} (books unstamped — next fire retries): ${subErr.message}`);
       }
     }
 

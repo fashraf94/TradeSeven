@@ -68,3 +68,40 @@ describe('extractDecisionInput — deny-unknown block types', () => {
     expect(r.reason).toContain('unexpected_block');
   });
 });
+
+// ── P5: prompt caching (D-20) + the batch request shape ──────────────────────
+
+describe('P5 — cache_control on the stable scaffold (D-20)', () => {
+  it('a string system becomes ONE cache-marked block; the context stays in messages, uncached', () => {
+    const req = buildMandateRequest(SEAT, { system: 'IDENTITY SCAFFOLD', messages: [{ role: 'user', content: 'per-tick context' }] });
+    expect(req.system).toEqual([{ type: 'text', text: 'IDENTITY SCAFFOLD', cache_control: { type: 'ephemeral' } }]);
+    // The per-tick context rides in messages — after the cache breakpoint.
+    expect(req.messages[0].content).toBe('per-tick context');
+    expect(JSON.stringify(req.messages)).not.toContain('cache_control');
+  });
+
+  it('a caller-supplied block ARRAY is passed through untouched (caller owns its markers)', () => {
+    const blocks = [{ type: 'text', text: 'a' }, { type: 'text', text: 'b', cache_control: { type: 'ephemeral' } }];
+    const req = buildMandateRequest(SEAT, { system: blocks, messages: [] });
+    expect(req.system).toBe(blocks);
+  });
+
+  it('no system → no fabricated block', () => {
+    const req = buildMandateRequest(SEAT, { messages: [] });
+    expect(req.system).toBeUndefined();
+  });
+});
+
+describe('P5 — createMandateBatch request shape (the Doug batches.create nesting)', () => {
+  it('nests params per request with custom_id = requestId; deny-unknown applies AT THE PARAMS LEVEL per request', async () => {
+    // Import lazily so the module mock in other suites never interferes.
+    const { createMandateBatch } = await import('./mandateModelCall.js');
+    // No network in unit tests: assert the THROW path proves per-request
+    // assembly runs BEFORE any client call.
+    await expect(createMandateBatch([
+      { customId: 'req1', modelSeat: SEAT, content: { messages: [], smuggled: 1 } },
+    ])).rejects.toThrow(/unknown content key/);
+    await expect(createMandateBatch([])).rejects.toThrow(/at least one request/);
+    await expect(createMandateBatch([{ modelSeat: SEAT, content: { messages: [] } }])).rejects.toThrow(/customId/);
+  });
+});

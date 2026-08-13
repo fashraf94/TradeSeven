@@ -32,7 +32,7 @@
 // CA-adjusted) fresh mark and fills at the position's LAST-GOOD mark, the
 // ratified C-21 path.
 
-import { buildDecision } from './mandateSchema.js';
+import { buildDecision, clearedOpenSubmissionPatch } from './mandateSchema.js';
 import { markBook, avgCostOf } from './mandateValuation.js';
 import { markFor, snapshotExcluding } from './mandateUniverseSnapshot.js';
 import { frictionForDecision, zeroFriction } from './mandateFrictionModel.js';
@@ -272,6 +272,94 @@ function sectorWeightsPct(marked, totalValue) {
   return pct;
 }
 
+// ── Terminal-transition bookkeeping (§3.3 / I1 / I9) ─────────────────────────
+
+// I9 (P3): the stale-rejection streak — consecutive submissions that die as
+// rejected_stale/expired. It is THE liveness signal (founder ruling: HOLD-only
+// is healthy, so the executed ratio can't be); executed/gated/failed all mean
+// the pipeline delivered a live answer, so they reset it. Updated atomically
+// with every terminal transition.
+export const streakAfter = (book, status) => (
+  (status === 'rejected_stale' || status === 'expired')
+    ? (book.execState?.staleRejectStreak || 0) + 1
+    : 0
+);
+
+/**
+ * The execState portion of EVERY terminal transition — the ONE builder all
+ * disposal paths share (I1: no bare doc-write path outside the discipline).
+ * Counters + streak + the gate clear.
+ *
+ * OWNERSHIP-CONDITIONAL GATE CLEAR (P5). Under direct transport the gate is
+ * never set, so clearing was trivially safe. Under batch transport a book can
+ * transiently have TWO submissions alive at once — a crash between provider
+ * batch creation and the gate write leaves a ZOMBIE request in flight with no
+ * gate, and the book legitimately re-submits; the zombie's result can still
+ * validate and terminate first. An UNCONDITIONAL clear would then release the
+ * gate the LIVE submission holds, re-opening double-submit — so the clear
+ * applies only when the gate names the submission being terminated
+ * (openBatchId === decisionId; house convention: the gate holds the requestId).
+ * A non-owning terminal leaves the gate to its owner, whose own terminal
+ * transition clears it — the I1 invariant "gate set ⟺ a live submission it
+ * names" holds in both cases.
+ */
+export function execStateTerminalPatch(book, decisionId, status, { submitTickKey = null } = {}) {
+  const ownsGate = (book.execState?.openBatchId ?? null) === decisionId;
+  return {
+    ...(ownsGate ? clearedOpenSubmissionPatch() : {}),
+    // lastEvalTickKey stamps the SUBMIT tick (the billed eval) atomically with
+    // the commit so a same-slot re-fire is hard-idempotent at the book level.
+    ...(submitTickKey != null ? { 'execState.lastEvalTickKey': submitTickKey } : {}),
+    'execState.submitted': (book.execState?.submitted || 0) + 1,
+    'execState.executed': (book.execState?.executed || 0) + (status === 'executed' ? 1 : 0),
+    'execState.staleRejectStreak': streakAfter(book, status),
+  };
+}
+
+/**
+ * Terminal disposition for a submission WITHOUT a model result to execute
+ * (§3.3 / I1): API-errored (`failed`), aged-out or provider-expired
+ * (`expired`), operator/lifecycle disposal (`cancelled`), drain
+ * (`rejected_stale`). One revision-disciplined transaction: claim the decision
+ * doc if absent (a replay no-ops on the claim), write the terminal receipt,
+ * bump revision, apply the shared execState terminal patch (counters, streak,
+ * ownership-conditional gate clear).
+ *
+ * @returns {Promise<{ status, applied:false, idempotent?:true, staleRejectStreak?:number }>}
+ */
+export async function disposeSubmission(db, {
+  mandateRef, requestId, status, failCondition = null, envelope = null, verb = null, ticker = null,
+}) {
+  const decRef = mandateRef.collection('decisions').doc(requestId);
+  return db.runTransaction(async (tx) => {
+    const existing = await tx.get(decRef);
+    if (existing.exists) {
+      return { status: existing.data().status, applied: false, idempotent: true };
+    }
+    const bookSnap = await tx.get(mandateRef);
+    if (!bookSnap.exists) throw new Error('disposeSubmission: book missing');
+    const book = bookSnap.data();
+
+    tx.set(decRef, buildDecision({
+      decisionId: requestId,
+      verb,
+      ticker,
+      status,
+      frictionModelVersion: MANDATE_FRICTION_MODEL_VERSION,
+      vintageRef: envelope?.vintageRef ?? null,
+      baseRevision: envelope?.baseRevision ?? null,
+      submitTickKey: envelope?.submitTickKey ?? null,
+      mandatePromptTemplateVersion: envelope?.mandatePromptTemplateVersion ?? null,
+      ...(failCondition != null ? { failCondition } : {}),
+    }));
+    tx.update(mandateRef, {
+      revision: (book.revision || 0) + 1,
+      ...execStateTerminalPatch(book, requestId, status, { submitTickKey: envelope?.submitTickKey ?? null }),
+    });
+    return { status, applied: false, staleRejectStreak: streakAfter(book, status), failCondition };
+  });
+}
+
 // ── The atomic transaction (§3.5) ────────────────────────────────────────────
 
 /**
@@ -309,17 +397,6 @@ export async function executeDecision(db, {
   // 20bps tier undercredits the exit for no safety (money review P3 finding 4).
   const fx = friction ?? frictionForDecision(decision, snapshot);
 
-  // I9 (P3): the stale-rejection streak — consecutive submissions that die as
-  // rejected_stale/expired. It is THE liveness signal (founder ruling: HOLD-only
-  // is healthy, so the executed ratio can't be); executed/gated/failed all mean
-  // the pipeline delivered a live answer, so they reset it. Updated atomically
-  // with every terminal transition.
-  const streakAfter = (book, status) => (
-    (status === 'rejected_stale' || status === 'expired')
-      ? (book.execState?.staleRejectStreak || 0) + 1
-      : 0
-  );
-
   const writeTerminal = (tx, book, status, extra = {}) => {
     const doc = buildDecision({
       decisionId,
@@ -337,18 +414,16 @@ export async function executeDecision(db, {
       ...extra,
     });
     tx.set(decRef, doc);
-    // Every terminal transition clears openBatchId in a revision-disciplined txn (I1).
-    // lastEvalTickKey is set ATOMICALLY with the commit so a same-slot re-fire is
-    // hard-idempotent at the book level (the handler skips a book already stamped
-    // with the current tickKey) — the decision-doc claim only guards a replay of
-    // the SAME requestId, not a re-eval at the new (post-commit) revision.
+    // Every terminal transition releases the gate under revision discipline
+    // (I1) — via the shared execStateTerminalPatch, which makes the clear
+    // OWNERSHIP-CONDITIONAL (P5: a zombie duplicate's terminal must not release
+    // the live submission's gate) and stamps lastEvalTickKey atomically with
+    // the commit so a same-slot re-fire is hard-idempotent at the book level —
+    // the decision-doc claim only guards a replay of the SAME requestId, not a
+    // re-eval at the new (post-commit) revision.
     tx.update(mandateRef, {
       revision: book.revision + 1,
-      'execState.openBatchId': null,
-      'execState.lastEvalTickKey': envelope.submitTickKey ?? null,
-      'execState.submitted': (book.execState?.submitted || 0) + 1,
-      'execState.executed': (book.execState?.executed || 0) + (status === 'executed' ? 1 : 0),
-      'execState.staleRejectStreak': streakAfter(book, status),
+      ...execStateTerminalPatch(book, decisionId, status, { submitTickKey: envelope.submitTickKey ?? null }),
     });
     return { status, applied: status === 'executed', decision: doc, staleRejectStreak: streakAfter(book, status), ...('failCondition' in extra ? { failCondition: extra.failCondition } : {}) };
   };
@@ -468,11 +543,9 @@ export async function executeDecision(db, {
       // reconstructed as net + Σ friction (added back once, never subtracted twice).
       'portfolio.frictionPaidCum': roundUsd((book.portfolio?.frictionPaidCum || 0) + frictionPaid),
       revision: book.revision + 1,
-      'execState.openBatchId': null,
-      'execState.lastEvalTickKey': envelope.submitTickKey ?? null,
-      'execState.submitted': (book.execState?.submitted || 0) + 1,
-      'execState.executed': (book.execState?.executed || 0) + 1,
-      'execState.staleRejectStreak': 0, // a live fill resets the I9 streak
+      // Shared terminal bookkeeping (counters, streak reset — a live fill resets
+      // the I9 streak — ownership-conditional gate clear, submit-tick stamp).
+      ...execStateTerminalPatch(book, decisionId, 'executed', { submitTickKey: envelope.submitTickKey ?? null }),
     });
 
     return { status: 'executed', applied: true, decision: doc, receipt: exec.receipt, staleRejectStreak: 0 };

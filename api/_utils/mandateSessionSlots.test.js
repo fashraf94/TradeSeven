@@ -9,6 +9,7 @@ import {
   tierEligibleAt,
   slotsForTier,
   isLastSlotForTier,
+  isFinalSessionSlot,
   buildTickKey,
   resolveEvalContext,
   activeTick,
@@ -168,5 +169,49 @@ describe('activeRolloverTick — the §5.3 pre-market rollover window (P4)', () 
   it('is disjoint from the eval slots (which start at open+30) and never fires on a non-session day', () => {
     expect(activeRolloverTick(new Date('2026-08-12T14:00:00Z'))).toBe(null);      // 10:00 ET — the open30 eval slot
     expect(activeRolloverTick(new Date('2026-08-15T12:00:00Z'))).toBe(null);      // Saturday
+  });
+});
+
+describe('isFinalSessionSlot — the F3 no-submit predicate (P5)', () => {
+  it('preClose is the final session slot; open30/midday are not', () => {
+    expect(isFinalSessionSlot('preClose')).toBe(true);
+    expect(isFinalSessionSlot('open30')).toBe(false);
+    expect(isFinalSessionSlot('midday')).toBe(false);
+    expect(isFinalSessionSlot('nonsense')).toBe(false);
+  });
+
+  it('EARLY-CLOSE days shift the final tick WALL CLOCK via the calendar, never its identity (F3 test, kickoff-named)', () => {
+    // 2026-11-27 (day after Thanksgiving): close 13:00 ET. preClose = 12:30 ET
+    // = 17:30 UTC (EST). At 12:35 ET the ACTIVE slot is preClose — the final
+    // tick — three hours earlier than on a regular day.
+    const early = activeTick(new Date('2026-11-27T17:35:00Z'));
+    expect(early).toEqual({ date: '2026-11-27', slot: 'preClose', tickKey: '2026-11-27_preClose' });
+    expect(isFinalSessionSlot(early.slot)).toBe(true);
+    // The same wall-clock instant on a REGULAR day is between slots (midday
+    // 12:45 has not opened): no tick at all — the rule follows the calendar.
+    expect(activeTick(new Date('2026-08-12T16:35:00Z'))).toBe(null);
+    // And a regular day's preClose (15:35 ET) is the final tick as usual.
+    const regular = activeTick(new Date('2026-08-12T19:35:00Z'));
+    expect(regular.slot).toBe('preClose');
+    expect(isFinalSessionSlot(regular.slot)).toBe(true);
+  });
+
+  it('CONSTRUCTION PROPERTY (F3 × D-19): every tier keeps ≥1 submitting slot under batch — isLastSlotForTier joins isFinalSessionSlot', () => {
+    // The last-tick rule removes only final-session slots from submission.
+    // If a tier's slot list ever became ONLY final-session slots (e.g. slow
+    // reconfigured to ['preClose']), that tier would silently stop trading
+    // under batch transport. This test makes that regression loud.
+    for (const tier of ['slow', 'standard', 'fast']) {
+      const submitting = slotsForTier(tier).filter((s) => !isFinalSessionSlot(s));
+      expect(submitting.length, `tier '${tier}' has no submitting slot under batch (F3)`).toBeGreaterThan(0);
+    }
+    // The tier-scoped view: slow's LAST slot is open30 — an early, non-final
+    // slot — which is exactly why slow "submits on its early slot by
+    // construction" (§3.3): its harvest arrives on later fires.
+    expect(isLastSlotForTier('slow', 'open30')).toBe(true);
+    expect(isFinalSessionSlot('open30')).toBe(false);
+    // fast's last slot IS the session-final slot — the one tier the rule bites.
+    expect(isLastSlotForTier('fast', 'preClose')).toBe(true);
+    expect(isFinalSessionSlot('preClose')).toBe(true);
   });
 });

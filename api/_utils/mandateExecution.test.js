@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   bankersRound, executedPriceFor, driftBps, validateEnvelope,
-  computeExecution, executeDecision,
+  computeExecution, executeDecision, disposeSubmission,
 } from './mandateExecution.js';
 import { zeroFriction, frictionFor } from './mandateFrictionModel.js';
 import { MANDATE_FRICTION_TIERS, MANDATE_FRICTION_MODEL_VERSION } from './mandateConfig.js';
@@ -483,5 +483,113 @@ describe('openedAt entitlement substrate (spec+money review P3 — the position 
       snapshot: SNAP, friction: ZERO, sessionDate: '2026-09-15',
     });
     expect(rebuy.mutation.positions.AAPL.openedAt).toBe('2026-09-15');
+  });
+});
+
+// ── P5: the ownership-conditional gate clear + disposeSubmission ─────────────
+// The gate holds the open submission's requestId (house convention). Under
+// batch transport a ZOMBIE duplicate can terminate while a NEWER submission
+// holds the gate — an unconditional clear would release the live gate and
+// re-open double-submit. These are the mutation guards: each fails without the
+// ownership check or the shared terminal patch.
+
+describe('P5 — ownership-conditional gate clear (execStateTerminalPatch)', () => {
+  const gatePass = { passed: true, execSizeUsd: 10000, gateOutcome: { rule: 'buy', passed: true } };
+
+  it('OWNED gate: the terminal transition clears the WHOLE open-submission block', async () => {
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({
+        execState: {
+          openBatchId: 'd_owned', openBatchSubmittedAt: NOW, openProviderBatchId: 'msgbatch_x',
+          submitted: 0, executed: 0, staleRejectStreak: 0,
+        },
+      }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_owned', decision: { verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000 },
+      gateResult: gatePass, envelope: ENV, snapshot: SNAP, submitMark: 200, currentSessionDate: '2026-08-12', now: NOW,
+      friction: ZERO,
+    });
+    expect(r.status).toBe('executed');
+    const es = db._store.get('mandates/m1').execState;
+    expect(es.openBatchId).toBe(null);
+    expect(es.openBatchSubmittedAt).toBe(null);
+    expect(es.openProviderBatchId).toBe(null); // the FULL block, not just the id
+  });
+
+  it("FOREIGN gate: a zombie's terminal leaves the live submission's gate untouched (mutation guard)", async () => {
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({
+        execState: {
+          openBatchId: 'd_live', openBatchSubmittedAt: NOW, openProviderBatchId: 'msgbatch_live',
+          submitted: 0, executed: 0, staleRejectStreak: 0,
+        },
+      }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    // The zombie (same revision — the crash-window shape) executes first.
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_zombie', decision: { verb: 'HOLD' },
+      gateResult: { passed: true, execSizeUsd: null, gateOutcome: { rule: 'hold', passed: true } },
+      envelope: ENV, snapshot: SNAP, submitMark: null, currentSessionDate: '2026-08-12', now: NOW,
+      friction: ZERO,
+    });
+    expect(r.status).toBe('executed');
+    const es = db._store.get('mandates/m1').execState;
+    expect(es.openBatchId).toBe('d_live');               // the live gate SURVIVES
+    expect(es.openProviderBatchId).toBe('msgbatch_live');
+    expect(es.submitted).toBe(1);                        // counters still move
+  });
+});
+
+describe('P5 — disposeSubmission (result-less terminal dispositions)', () => {
+  it('writes the terminal decision with failCondition, bumps revision, clears an owned gate, moves the streak', async () => {
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({
+        execState: {
+          openBatchId: 'req_x', openBatchSubmittedAt: NOW, openProviderBatchId: 'msgbatch_x',
+          submitted: 3, executed: 2, staleRejectStreak: 0,
+        },
+      }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await disposeSubmission(db, {
+      mandateRef: ref, requestId: 'req_x', status: 'expired', failCondition: 'result_age', envelope: ENV,
+    });
+    expect(r.status).toBe('expired');
+    expect(r.staleRejectStreak).toBe(1); // expired increments the I9 streak
+    const dec = db._store.get('mandates/m1/decisions/req_x');
+    expect(dec.status).toBe('expired');
+    expect(dec.failCondition).toBe('result_age'); // §3.3: durable on the doc
+    expect(dec.baseRevision).toBe(5);             // envelope provenance carried
+    const book = db._store.get('mandates/m1');
+    expect(book.revision).toBe(6);
+    expect(book.execState.openBatchId).toBe(null);
+    expect(book.execState.submitted).toBe(4);
+    expect(book.execState.executed).toBe(2);      // not an execution
+  });
+
+  it('is claim-idempotent: a second disposition of the same requestId no-ops (I1 exactly-one-terminal)', async () => {
+    const db = makeFakeDb({ 'mandates/m1': baseBook() });
+    const ref = db.collection('mandates').doc('m1');
+    await disposeSubmission(db, { mandateRef: ref, requestId: 'req_y', status: 'expired', failCondition: 'result_age' });
+    const r2 = await disposeSubmission(db, { mandateRef: ref, requestId: 'req_y', status: 'cancelled', failCondition: 'other' });
+    expect(r2.idempotent).toBe(true);
+    expect(r2.status).toBe('expired'); // the FIRST terminal stands — exactly one per submission
+    expect(db._store.get('mandates/m1/decisions/req_y').status).toBe('expired');
+    expect(db._store.get('mandates/m1').revision).toBe(6); // one bump, not two
+  });
+
+  it("'failed' resets the streak (P3 semantics: a definite failure is a live answer, not a staleness death)", async () => {
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({ execState: { openBatchId: 'req_z', submitted: 0, executed: 0, staleRejectStreak: 2 } }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await disposeSubmission(db, {
+      mandateRef: ref, requestId: 'req_z', status: 'failed', failCondition: 'api_error:overloaded_error',
+    });
+    expect(r.staleRejectStreak).toBe(0);
+    expect(db._store.get('mandates/m1').execState.staleRejectStreak).toBe(0);
   });
 });

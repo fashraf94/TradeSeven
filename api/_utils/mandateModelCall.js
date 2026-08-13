@@ -6,11 +6,22 @@
 // model, and params come from the pinned vintage's model seat
 // (mandateGenerationConfig.js), never a live config read.
 //
-// P2 = DIRECT TRANSPORT ONLY (MANDATE_TRANSPORT_MODE 'direct'). The batch
-// transport, the drain protocol, prompt caching, and the last-tick rule are P5 —
-// not built here. The submission envelope (F1) and its deterministic requestId
-// (F2) ARE built now: they are the base-state identity every request carries and
-// the harvest validates against (mandateExecution.validateEnvelope).
+// P2 built DIRECT transport + the submission envelope (F1) and deterministic
+// requestId (F2). P5 adds the BATCH transport surface (§3.3 / D-20): the
+// Message-Batch wrappers below (the wireModelCall/Doug submit→poll precedent —
+// batches.create with params nested per request, retrieve, results, cancel) and
+// prompt caching (cache_control on the stable scaffold). Batch STATE — docs,
+// harvest, dispositions, drain — lives in mandateBatchTransport.js; this module
+// stays the transport-agnostic client seam.
+//
+// PROMPT CACHING (D-20/§3.3): buildMandateRequest marks the system scaffold —
+// identity assembled from the pinned vintage, stable per vintage×verb-set —
+// with cache_control, which caches the (tools + system) prefix; the per-tick
+// context block rides in `messages` and stays UNCACHED. Applied uniformly to
+// both transports; whether batch processing actually HITS the cache is never
+// assumed — cacheHitTokens is measured per call from the API response (§6.3),
+// and at the current Haiku seat the scaffold may sit under the model's minimum
+// cacheable prefix, in which case the marker no-ops and the measurement says so.
 //
 // DENY-UNKNOWN (R4-B2 precedent): content is a closed allowlist
 // {system, messages, tools, tool_choice}; an unknown content key THROWS rather
@@ -96,6 +107,13 @@ export function buildMandateRequest(modelSeat, content) {
   if (params.temperature !== undefined) request.temperature = params.temperature;
   for (const key of CONTENT_KEYS) if (key in content) request[key] = content[key];
   if (!request.tool_choice) request.tool_choice = { type: 'tool', name: MANDATE_DECISION_TOOL_NAME };
+  // D-20 (P5): the string system scaffold becomes a single cache-marked block —
+  // the prefix (tools + system) is stable per vintage×verb-set; the context
+  // block stays in `messages`, after the breakpoint, uncached. A caller that
+  // passes its own block ARRAY owns its cache markers (left untouched).
+  if (typeof request.system === 'string') {
+    request.system = [{ type: 'text', text: request.system, cache_control: { type: 'ephemeral' } }];
+  }
   return request;
 }
 
@@ -124,7 +142,7 @@ export function extractDecisionInput(response) {
 
 /**
  * Direct-transport model call. Returns the raw response + the decision input +
- * token usage. Batch transport is P5.
+ * token usage.
  *
  * @param {object} modelSeat  from the pinned vintage / mandateGenerationConfig
  * @param {object} content    { system, messages, tools, tool_choice? }
@@ -133,4 +151,52 @@ export async function callMandateModelDirect(modelSeat, content) {
   const request = buildMandateRequest(modelSeat, content);
   const response = await getClient().messages.create(request);
   return { response, decision: extractDecisionInput(response), usage: response?.usage ?? null };
+}
+
+// ── The batch transport surface (P5, §3.3) — the Doug submit→poll shape ──────
+// Thin client wrappers ONLY (the sole-importer rule is why they live here);
+// batch state, harvest validation, and dispositions live in
+// mandateBatchTransport.js. Params nest inside requests[].params, built through
+// the SAME buildMandateRequest as direct transport (deny-unknown per request,
+// cache marker included) — one construction site, byte-equal request params
+// across transports.
+
+/**
+ * Create one Anthropic Message Batch from per-book request specs. Each spec's
+ * customId is the deterministic requestId (F2) — the join key the harvest
+ * matches results back on. Seats may differ per request (books pin different
+ * vintages); each request carries its own params.
+ *
+ * @param {Array<{ customId: string, modelSeat: object, content: object }>} requestSpecs
+ * @returns {Promise<object>} the provider batch object ({ id, processing_status, ... })
+ */
+export async function createMandateBatch(requestSpecs) {
+  if (!Array.isArray(requestSpecs) || requestSpecs.length === 0) {
+    throw new Error('createMandateBatch: at least one request spec required');
+  }
+  const requests = requestSpecs.map(({ customId, modelSeat, content }) => {
+    if (!customId) throw new Error('createMandateBatch: customId (requestId) required per spec');
+    return { custom_id: customId, params: buildMandateRequest(modelSeat, content) };
+  });
+  return getClient().messages.batches.create({ requests });
+}
+
+/** Poll one batch's processing status ({ processing_status, request_counts, ended_at, ... }). */
+export async function retrieveMandateBatch(providerBatchId) {
+  return getClient().messages.batches.retrieve(providerBatchId);
+}
+
+/** The per-request results stream (async iterable of { custom_id, result }). */
+export async function mandateBatchResults(providerBatchId) {
+  return getClient().messages.batches.results(providerBatchId);
+}
+
+/**
+ * Cancel a batch provider-side (drain protocol F26 / age-out §6.4). Best-effort
+ * by contract: requests already processing may still complete provider-side —
+ * which is safe, because the caller writes terminal dispositions FIRST and the
+ * decision-doc claim makes any late result a no-op.
+ */
+export async function cancelMandateBatch(providerBatchId) {
+  return getClient().messages.batches.cancel(providerBatchId);
 }
