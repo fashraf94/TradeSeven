@@ -19,7 +19,7 @@
 
 import { isEarlyCloseDay, MAINTAINED_HOLIDAY_YEARS } from './marketSchedule.js';
 import { isTradingDayStr } from './mandateCalendar.js';
-import { MANDATE_CLOSE_DELAY_MIN, MANDATE_CLOSE_WINDOW_MIN } from './mandateConfig.js';
+import { MANDATE_CLOSE_DELAY_MIN, MANDATE_CLOSE_WINDOW_MIN, MANDATE_ROLLOVER_PREOPEN_MIN } from './mandateConfig.js';
 
 const MAX_MAINTAINED_YEAR = Math.max(...MAINTAINED_HOLIDAY_YEARS);
 
@@ -198,4 +198,25 @@ export function activeCloseTick(now = new Date()) {
   const end = start + MANDATE_CLOSE_WINDOW_MIN;
   if (minutes < start || minutes >= end) return null;
   return { date: dateStr, closeKey: `${dateStr}_close` };
+}
+
+/**
+ * The ROLLOVER duty window (§5.3, P4): daily PRE-MARKET on a trading day, in
+ * [open − MANDATE_ROLLOVER_PREOPEN_MIN, open) ET. Runs before the session opens
+ * so the boundary session's close (already the old quarter's last row) is behind
+ * us and the same day's close becomes the new quarter's first row (I4). Disjoint
+ * from every eval slot (which start at open+30) and from the post-close window by
+ * construction. Correctness never rests on the window — the rollover is
+ * idempotent (nextRolloverAt / lastProcessedRolloverKey) and its sweep query
+ * filters `nextRolloverAt <= now` — the window only pins WHEN the (P6-registered)
+ * cron fires. Returns `{ date, rolloverKey }` or null off-window / non-session.
+ */
+export function activeRolloverTick(now = new Date()) {
+  const { dateStr, minutes } = etParts(now);
+  const session = resolveSessionSlots(dateStr);
+  if (!session.trading) return null;
+  const start = session.openMin - MANDATE_ROLLOVER_PREOPEN_MIN;
+  const end = session.openMin; // strictly before the open
+  if (minutes < start || minutes >= end) return null;
+  return { date: dateStr, rolloverKey: `${dateStr}_rollover` };
 }

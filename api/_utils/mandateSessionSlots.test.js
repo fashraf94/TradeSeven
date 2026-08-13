@@ -13,6 +13,7 @@ import {
   resolveEvalContext,
   activeTick,
   activeCloseTick,
+  activeRolloverTick,
   SLOT_NAMES,
 } from './mandateSessionSlots.js';
 
@@ -153,5 +154,19 @@ describe('activeCloseTick — the §3.6 post-close duty window (P3)', () => {
     // preClose window ends AT the close; the close duty starts at close+15.
     // 15:59 ET (19:59 UTC) is an eval instant; 16:16 ET is a close instant.
     expect(activeCloseTick(new Date('2026-08-12T19:59:00Z'))).toBe(null);
+  });
+});
+
+describe('activeRolloverTick — the §5.3 pre-market rollover window (P4)', () => {
+  it('is active only in [open−120, open) ET on a trading day', () => {
+    // 2026-08-12 EDT (UTC-4): open 9:30 ET = 13:30 UTC; window opens 7:30 ET = 11:30 UTC.
+    expect(activeRolloverTick(new Date('2026-08-12T11:00:00Z'))).toBe(null);      // 7:00 ET — before the window
+    expect(activeRolloverTick(new Date('2026-08-12T11:35:00Z'))).toEqual({ date: '2026-08-12', rolloverKey: '2026-08-12_rollover' });
+    expect(activeRolloverTick(new Date('2026-08-12T13:25:00Z'))).toEqual({ date: '2026-08-12', rolloverKey: '2026-08-12_rollover' });
+    expect(activeRolloverTick(new Date('2026-08-12T13:30:00Z'))).toBe(null);      // 9:30 ET — the open (exclusive)
+  });
+  it('is disjoint from the eval slots (which start at open+30) and never fires on a non-session day', () => {
+    expect(activeRolloverTick(new Date('2026-08-12T14:00:00Z'))).toBe(null);      // 10:00 ET — the open30 eval slot
+    expect(activeRolloverTick(new Date('2026-08-15T12:00:00Z'))).toBe(null);      // Saturday
   });
 });
