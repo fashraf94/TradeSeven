@@ -365,7 +365,7 @@ export const LEAGUE_CANONICAL_OPEN_CAPTURE = true;
  * `?battleArenaLive=1` idiom). The production flip stays a separate one-line PR
  * after the founder smokes the preview (the PR #510 precedent).
  */
-export const LEAGUE_SCORE_HISTORY_ENABLED = false;
+export const LEAGUE_SCORE_HISTORY_ENABLED = true;
 
 // The resolved gate consumers read (the ARENA_LIVE_ON idiom): the shipped
 // default OR the preview param. Evaluated once at module load. Never pin THIS —
