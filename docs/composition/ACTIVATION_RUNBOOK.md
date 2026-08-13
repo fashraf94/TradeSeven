@@ -136,6 +136,10 @@ A bare `rollbackActivationRecord` call is never executed alone. The protocol, in
 
 The `--apply` report, zero-residual output, preflight reports, watermark sweep, the filled RULES_DEPLOY_RECORD, the §10 observations, and this log → `docs/audits/` in a docs-only PR 5. The ledger's PR-4 rows move to CLOSED with their observations cited.
 
+LAST — restore CASUAL_CLONE_CONCURRENCY_ENABLED → true, deployed (founder ruling, Aug 12). This runs after the general unfreeze
+  ▎ of 8B, and after every other step-9 item: it is the only deliberate re-widening of the identity-write surface in this event, so
+  ▎ it lands last and is logged with its own operator + timestamp row. (process-pending-reflections resumes with the other crons at
+  ▎ the 8B general unfreeze, not here.)
 ---
 
 ## M10 — per-boundary evidence checklist (fill at step 1, verify at step 7)
