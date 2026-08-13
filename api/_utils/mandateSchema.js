@@ -300,6 +300,11 @@ export function buildDecision({ decisionId, verb, ticker, ...rest } = {}) {
     baseRevision: rest.baseRevision ?? null,
     submitTickKey: rest.submitTickKey ?? null, // I3
     harvestTickKey: rest.harvestTickKey ?? null, // I3
+    // P5 (refuter, MONEY-P5-7): true when the harvest ran against the empty
+    // degraded context of a failed-snapshot tick — the tickKey's snapshot doc
+    // either does not exist or was written LATER by a luckier fire, so replay
+    // audits must not price this receipt against it. Additive at v1.
+    harvestSnapshotDegraded: rest.harvestSnapshotDegraded ?? false,
     mandatePromptTemplateVersion: rest.mandatePromptTemplateVersion ?? null,
     influenceStateRef: null, // FR-7 / I8 — provably null in V1
     status: rest.status ?? null, // one of DECISION_STATUSES

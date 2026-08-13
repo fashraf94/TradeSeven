@@ -572,6 +572,10 @@ describe('P5 review MONEY-P5-1/SPEC-P5-9 — billing end-to-end', () => {
     expect(ct.tokensIn).toBe(800);
     expect(ct.cacheHitTokens).toBe(2000);   // the D-20 stacking measurement, end-to-end
     expect(ct.cacheWriteTokens).toBe(500);
+    // Refuter D3: the BATCH RATE is wired into the harvest, not just the unit
+    // table — dropping {batch:true} at the harvest call site doubles this.
+    // (800×$1 + 40×$5 + 2000×$1×0.1 + 500×$1×1.25) / 1e6 × 0.5
+    expect(ct.estUsd).toBeCloseTo(((800 * 1 + 40 * 5 + 2000 * 0.1 + 500 * 1.25) / 1e6) * 0.5, 12);
     expect(db._get(`mandates/m1/decisions/${env.requestId}`).status).toBe('expired'); // the claim stands — billing never re-executes
     // A second harvest bills nothing more (the billed map is the exactly-once).
     await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h2', now: H_NOW });
@@ -615,5 +619,39 @@ describe('P5 review C21-P5-5 — batch-doc age fails CLOSED on a corrupt submitt
     const s = await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: H_NOW });
     expect(s.disposed).toBe(1); // the liveness backstop cannot be defeated by a corrupt field
     expect(db._get(`mandates/m1/decisions/${env.requestId}`).status).toBe('expired');
+  });
+});
+
+describe('P5 refuter D1 — the ENDED lane never finalizes silently past unbilled spend', () => {
+  it('an entry disposed by age-out whose usage-bearing result is lease-blocked keeps the doc OPEN; the next fire bills and finalizes', async () => {
+    const { db, env } = seedSubmitted();
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'in_progress' });
+    batchApi.cancel.mockResolvedValue({});
+    const late = new Date(NOW.getTime() + MANDATE_RESULT_MAX_AGE_MS + 60_000);
+    // Fire 1: age-out disposes the entry (books freed), doc stays open awaiting billing.
+    await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_a', now: late });
+    expect(db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`).disposed[env.requestId]).toBe('expired');
+
+    // Fire 2: the provider has ended with REAL usage — but the book's lease is
+    // held by another live invocation, so billing is blocked this fire.
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'x' });
+    batchApi.results.mockResolvedValue(asAsyncIterable([
+      { custom_id: env.requestId, result: succeededResult({ verb: 'HOLD', rationale: 's' }, { input_tokens: 900, output_tokens: 30, cache_creation_input_tokens: 4000 }) },
+    ]));
+    await db.doc('mandates/m1').set({ lease: { ownerToken: 'someone_else', acquiredAt: late, expiresAt: new Date(late.getTime() + 300_000) } }, { merge: true });
+    const s2 = await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_b', now: late });
+    expect(s2.leaseSkips).toBe(1);
+    // THE GUARD (refuter D1): the doc must NOT finalize with the spend unrecorded.
+    expect(db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`).status).toBe('open');
+    expect(db._get('mandates/m1').costTelemetry?.cacheWriteTokens ?? 0).toBe(0); // not billed YET — but not forgotten
+
+    // Fire 3: lease released → the usage bills and the doc finalizes.
+    await db.doc('mandates/m1').set({ lease: { ownerToken: null, acquiredAt: null, expiresAt: null } }, { merge: true });
+    const s3 = await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_c', now: late });
+    expect(s3.billedEntries).toBe(1);
+    const ct = db._get('mandates/m1').costTelemetry;
+    expect(ct.tokensIn).toBe(900);
+    expect(ct.cacheWriteTokens).toBe(4000); // the caching-regression signal SURVIVES (MONEY-P5-5's measurement claim)
+    expect(db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_h`).status).toBe('expired');
   });
 });

@@ -524,11 +524,21 @@ export async function harvestOpenBatches(db, {
 }
 
 /** Harvest one open batch doc (exported for the drain/interleaving tests). */
-export async function harvestOneBatch(db, batchDoc, {
+export async function harvestOneBatch(db, batchDocFromQuery, {
   currentSnapshot, sessionDate, ownerToken, now = new Date(), vintageCache = new Map(), deadlineMs = Infinity,
 }) {
   const res = { disposed: 0, billedEntries: 0, leaseSkips: 0, errors: 0, finalized: null };
-  const providerBatchId = batchDoc.providerBatchId;
+  const providerBatchId = batchDocFromQuery.providerBatchId;
+  // FRESH doc read (refuter D6): the query snapshot can predate a concurrent
+  // drain's drainRequested marker (whose disposition wording this fire must
+  // honor) or another fire's disposed/billed merges. One read; falls back to
+  // the query copy on a transient failure.
+  let batchDoc = batchDocFromQuery;
+  try {
+    const freshDoc = await db.collection(MANDATE_BATCH_COLLECTION).doc(providerBatchId).get();
+    if (freshDoc.exists) batchDoc = freshDoc.data();
+    if (batchDoc.status !== 'open') return res; // another fire finalized between query and here
+  } catch { /* query copy stands; merges below are idempotent */ }
   const disposed = { ...(batchDoc.disposed || {}) };
   const billed = { ...(batchDoc.billed || {}) };
   const entryCount = Object.keys(batchDoc.entries || {}).length;
@@ -656,26 +666,39 @@ export async function harvestOneBatch(db, batchDoc, {
         });
         if (!out.skipped) out.billedUsage = true; // errored/canceled/expired rows carry no usage
       }
+      // markEntry INSIDE the per-entry guard (refuter D7): a failed
+      // bookkeeping merge must cost a retry of THIS entry, never abort the
+      // batch (which would re-bill every later sibling next fire).
+      if (out.skipped !== 'lease') {
+        const newlyDisposed = !alreadyDisposed;
+        if (newlyDisposed) { disposed[requestId] = out.status; res.disposed += 1; }
+        if (out.billedUsage && !alreadyBilled) { billed[requestId] = true; res.billedEntries += 1; }
+        await markEntry(db, providerBatchId, requestId, {
+          status: newlyDisposed ? out.status : null,
+          billed: out.billedUsage && !alreadyBilled,
+        });
+      }
     } catch (err) {
       res.errors += 1;
       console.error(`${LOG_PREFIX} entry ${requestId} harvest failed (retried next fire): ${err.message}`);
       continue;
     }
     if (out.skipped === 'lease') { res.leaseSkips += 1; continue; }
-    const newlyDisposed = !alreadyDisposed;
-    if (newlyDisposed) { disposed[requestId] = out.status; res.disposed += 1; }
-    if (out.billedUsage && !alreadyBilled) { billed[requestId] = true; res.billedEntries += 1; }
-    await markEntry(db, providerBatchId, requestId, {
-      status: newlyDisposed ? out.status : null,
-      billed: out.billedUsage && !alreadyBilled,
-    });
   }
 
-  if (Object.keys(disposed).length >= entryCount) {
+  // Finalize (refuter D1): the ENDED lane requires FULL BILLING COVERAGE too,
+  // not just disposed coverage — an entry disposed by an earlier age-out whose
+  // usage-bearing result was lease-skipped THIS fire must keep the doc open so
+  // the next fire bills it; past the give-up horizon, finalize anyway with the
+  // unbilled count recorded and alerted (never a silent terminal).
+  const disposedFull = Object.keys(disposed).length >= entryCount;
+  const unbilled = Object.keys(batchDoc.entries || {}).filter((rid) => !billed[rid]).length;
+  if (disposedFull && (unbilled === 0 || ageMs > MANDATE_BATCH_BILLING_GIVEUP_MS)) {
     const status = batchDoc.drainRequested ? 'cancelled' : (batchDoc.agedOutAt ? 'expired' : 'harvested');
-    const ok = await finalizeBatch(db, providerBatchId, { status, endedAt: provider.ended_at ?? null, now });
+    const ok = await finalizeBatch(db, providerBatchId, {
+      status, endedAt: provider.ended_at ?? null, now, unbilledCount: unbilled,
+    });
     if (ok) res.finalized = status === 'harvested' ? 'harvested' : 'expired';
-    if (ok && status === 'cancelled') res.finalized = 'expired'; // summary bucket: non-harvested
   }
   return res;
 }

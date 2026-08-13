@@ -363,6 +363,22 @@ export async function disposeSubmission(db, {
   return db.runTransaction(async (tx) => {
     const existing = await tx.get(decRef);
     if (existing.exists) {
+      // Idempotent replay — the terminal stands. GATE HEAL (P5 refuter D2): a
+      // gate still pointing at this ALREADY-TERMINAL request is the exact
+      // state I1 forbids ("gate set with no live batch behind it") — normally
+      // unreachable (every owning terminal clears in-txn) but constructible by
+      // ops recovery (a book restored from backup with a stale gate). Left
+      // unhealed it re-bills the book every fire forever, because subsequent
+      // terminals are non-owning and never stamp. Repair it here, under the
+      // same revision discipline.
+      const bookHeal = await tx.get(mandateRef);
+      if (bookHeal.exists && (bookHeal.data().execState?.openBatchId ?? null) === requestId) {
+        tx.update(mandateRef, {
+          revision: (bookHeal.data().revision || 0) + 1,
+          ...clearedOpenSubmissionPatch(),
+        });
+        return { status: existing.data().status, applied: false, idempotent: true, gateHealed: true };
+      }
       return { status: existing.data().status, applied: false, idempotent: true };
     }
     const bookSnap = await tx.get(mandateRef);
@@ -447,6 +463,7 @@ export async function executeDecision(db, {
       mandatePromptTemplateVersion: envelope.mandatePromptTemplateVersion ?? null,
       gateOutcome: gateResult?.gateOutcome ?? null,
       frictionModelVersion: MANDATE_FRICTION_MODEL_VERSION,
+      harvestSnapshotDegraded: !!snapshot?.degraded, // P5 provenance (refuter, MONEY-P5-7)
       status,
       ...extra,
     });
@@ -506,21 +523,35 @@ export async function executeDecision(db, {
       return writeTerminal(tx, book, vBase.status, { failCondition: vBase.failCondition });
     }
 
-    // The deterministic gate (§3.4), on a base-valid result. Runs before the
-    // MARK conditions (5–6) so a never-eligible (hallucinated) entry keeps its
-    // honest 'gated'/universe label instead of a staleness one — see
-    // validateEnvelope's condition-5 refinement.
+    // MARK conditions 5–6 vs the gate — ordered by VERIFIABILITY (refuter D4):
+    // with a submit mark in hand, staleness (vanished ticker, price drift) is
+    // provable and must be recorded even when the decision also trips a gate —
+    // §3.3 outranks §3.4 and the I9 streak must move. Without one, the mark
+    // conditions cannot distinguish staleness from never-eligibility, so the
+    // gate speaks first and a hallucinated entry keeps its honest
+    // 'gated'/universe label (P2 direct-mode semantics preserved). Residual,
+    // documented: an entry with NO submit mark that both drifted and gates
+    // records the gate's condition.
+    const marksFirst = submitMark != null;
+    const runMarks = () => validateEnvelope(book, envelope, { ...vArgs, phase: 'marks' });
+    if (marksFirst) {
+      const vMarks = runMarks();
+      if (!vMarks.ok) {
+        const extra = { failCondition: vMarks.failCondition };
+        if (vMarks.drift != null) extra.gateOutcome = { rule: 'price_drift', passed: false, driftBps: vMarks.drift };
+        return writeTerminal(tx, book, vMarks.status, extra);
+      }
+    }
     if (gateResult && gateResult.passed === false) {
       return writeTerminal(tx, book, 'gated', { failCondition: gateResult.reason ?? gateResult.rule });
     }
-
-    // Harvest validation, MARK conditions 5–6 (entries only: harvest-mark
-    // presence for a ticker that WAS submit-eligible, and the I3 drift guard).
-    const vMarks = validateEnvelope(book, envelope, { ...vArgs, phase: 'marks' });
-    if (!vMarks.ok) {
-      const extra = { failCondition: vMarks.failCondition };
-      if (vMarks.drift != null) extra.gateOutcome = { rule: 'price_drift', passed: false, driftBps: vMarks.drift };
-      return writeTerminal(tx, book, vMarks.status, extra);
+    if (!marksFirst) {
+      const vMarks = runMarks();
+      if (!vMarks.ok) {
+        const extra = { failCondition: vMarks.failCondition };
+        if (vMarks.drift != null) extra.gateOutcome = { rule: 'price_drift', passed: false, driftBps: vMarks.drift };
+        return writeTerminal(tx, book, vMarks.status, extra);
+      }
     }
 
     // Compute the mutation (pure). Friction defaults through the §4.1 cap-tier
@@ -575,6 +606,7 @@ export async function executeDecision(db, {
       submitTickKey: envelope.submitTickKey ?? null,
       harvestTickKey,
       mandatePromptTemplateVersion: envelope.mandatePromptTemplateVersion ?? null,
+      harvestSnapshotDegraded: !!snapshot?.degraded, // P5 provenance (refuter, MONEY-P5-7)
       status: 'executed',
     });
     tx.set(decRef, doc);

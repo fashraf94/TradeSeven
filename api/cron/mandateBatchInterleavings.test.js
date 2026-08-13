@@ -493,10 +493,20 @@ describe('(g) a failed-snapshot tick still harvests — C-21 holds degraded', ()
     expect(decA.friction.spreadProxyBps).toBe(2);
     expect(decA.executedPrice).toBeCloseTo(205 * (1 - 3 / 10000), 10);
     expect(db._get('mandates/mExit').portfolio.positions.AAPL).toBeUndefined(); // fully exited
-    // ENTRY: failed closed at the universe gate (no snapshot data).
+    // ENTRY: failed closed — §3.3 condition 5's letter (the ticker WAS
+    // submit-eligible; the CURRENT tick cannot mark it → rejected_stale /
+    // no_harvest_mark, streak moves). Post-D4 ordering: provable staleness
+    // outranks the gate's universe label; the receipt's degraded flag (below)
+    // attributes it to the platform outage for the audit trail.
     const decB = db._get(`mandates/mEntry/decisions/${envB.requestId}`);
-    expect(decB.status).toBe('gated');
+    expect(decB.status).toBe('rejected_stale');
+    expect(decB.failCondition).toBe('no_harvest_mark');
     expect(db._get('mandates/mEntry').portfolio.cash).toBe(10_000_000); // no fill
+    // Refuter (MONEY-P5-7 overturn): every receipt from the degraded context
+    // says so durably — a later fire may write the REAL snapshot under this
+    // same tickKey, and replay audits must not price these against it.
+    expect(decA.harvestSnapshotDegraded).toBe(true);
+    expect(decB.harvestSnapshotDegraded).toBe(true);
   });
 });
 

@@ -686,3 +686,40 @@ describe('P5 review INV-P5-5/SPEC-P5-8 — a missing book cannot strand a submis
     expect(db._store.get('mandates/m1')).toBeUndefined(); // no book fabricated
   });
 });
+
+describe('P5 refuter D4 — provable staleness outranks the gate', () => {
+  it('a DRIFTED entry that also trips a gate records price_drift (streak++), not gated', async () => {
+    const db = makeFakeDb({ 'mandates/m1': baseBook({ execState: { openBatchId: 'd_drift', submitted: 0, executed: 0, staleRejectStreak: 1 } }) });
+    const ref = db.collection('mandates').doc('m1');
+    const drifted = { tickKey: '2026-08-12_midday', symbols: { AAPL: { complete: true, price: 210, sector: 'Technology' } } };
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_drift', decision: { verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000 },
+      // The gate ALSO failed (sector cap) — but the drift is provable (submit mark in hand): §3.3 wins.
+      gateResult: { passed: false, rule: 'sector_cap', reason: 'sector_cap_exceeded', gateOutcome: { rule: 'sector_cap', passed: false } },
+      envelope: ENV, snapshot: drifted, submitMark: 200, currentSessionDate: '2026-08-12', now: NOW,
+    });
+    expect(r.status).toBe('rejected_stale');
+    expect(r.failCondition).toBe('price_drift');
+    expect(r.staleRejectStreak).toBe(2); // the I9 wire moves
+  });
+});
+
+describe('P5 refuter D2 — the gate heal on an idempotent disposal', () => {
+  it('a gate pointing at an ALREADY-TERMINAL request is cleared by the idempotent replay (revision-disciplined)', async () => {
+    // The ops-recovery shape: a book restored from backup with its gate set to
+    // a request whose terminal was claimed before the backup was taken.
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({ revision: 7, execState: { openBatchId: 'req_stuck', openBatchSubmittedAt: NOW, openProviderBatchId: 'b_old', submitted: 3, executed: 2, staleRejectStreak: 0 } }),
+      'mandates/m1/decisions/req_stuck': { decisionId: 'req_stuck', status: 'expired' },
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await disposeSubmission(db, { mandateRef: ref, requestId: 'req_stuck', status: 'expired', failCondition: 'result_age' });
+    expect(r.idempotent).toBe(true);
+    expect(r.gateHealed).toBe(true);
+    const book = db._store.get('mandates/m1');
+    expect(book.execState.openBatchId).toBe(null);           // DURABLY cleared — not a local-copy illusion
+    expect(book.execState.openProviderBatchId).toBe(null);
+    expect(book.revision).toBe(8);                           // under revision discipline
+    expect(db._store.get('mandates/m1/decisions/req_stuck').status).toBe('expired'); // the terminal stands untouched
+  });
+});

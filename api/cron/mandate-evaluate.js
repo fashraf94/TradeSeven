@@ -128,7 +128,12 @@ export async function runBookEval(db, {
     if ((expired.staleRejectStreak || 0) >= MANDATE_STALE_STREAK_ALERT) {
       console.error(`${LOG_PREFIX} MANDATE_STALE_STREAK ${mandateRef.id} — ${expired.staleRejectStreak} consecutive stale-rejected/expired submissions (I9 liveness)`);
     }
-    book = { ...book, revision: expired.idempotent ? book.revision : (book.revision || 0) + 1, execState: { ...book.execState, openBatchId: null, openBatchSubmittedAt: null, openProviderBatchId: null } };
+    // Both branches durably cleared the gate: a fresh disposition clears it in
+    // its own txn; an idempotent replay (terminal already claimed elsewhere)
+    // triggers disposeSubmission's GATE HEAL (refuter D2 — without it the
+    // local-only patch left the durable gate set and every fire re-billed).
+    const bumped = !expired.idempotent || expired.gateHealed;
+    book = { ...book, revision: bumped ? (book.revision || 0) + 1 : book.revision, execState: { ...book.execState, openBatchId: null, openBatchSubmittedAt: null, openProviderBatchId: null } };
   }
 
   const positions = book.portfolio?.positions || {};
@@ -295,8 +300,13 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
         // fill at carry-over marks (C-21 holds even degraded).
         console.error(`${LOG_PREFIX} snapshot precondition failed — harvest-only tick, no submit: ${snapErr.message}`);
         if (transport === 'batch') {
+          // `degraded: true` travels on the context and lands on every receipt
+          // as harvestSnapshotDegraded (refuter, MONEY-P5-7 overturn): a later
+          // fire in this slot may successfully WRITE the real snapshot doc for
+          // this same tickKey, and an auditor replaying these receipts against
+          // it must be able to see they executed against the empty context.
           summary.harvest = await harvestOpenBatches(db, {
-            currentSnapshot: { tickKey: tick.tickKey, symbols: {} },
+            currentSnapshot: { tickKey: tick.tickKey, symbols: {}, degraded: true },
             sessionDate: tick.date, ownerToken, now, deadlineMs,
           });
         }
