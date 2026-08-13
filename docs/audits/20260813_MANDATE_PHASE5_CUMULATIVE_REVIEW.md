@@ -2,7 +2,7 @@
 
 **Phase:** P5 of 6 (the batch transport — §3.3 made real; the spec's named top risk, Risk 7).
 **Branch:** `claude/mandate-substrate-phase-5-5pk22u` off `main` @ `0332fd0c` (with P1 #740, P2 #745, P3 #750, P4 #752 merged).
-**Diff:** 22 files, +2618 −165. Over the BUILD_RULES §2 threshold (≥10 files / ≥1500 lines) → the multi-lens adversarial + refute-with-repro review below was mandatory and is recorded in §3–§4. Per the standing P5 allocation the executor/reviewer pair is inverted: Fable executed; four Opus reviewers ran the adversarial pass.
+**Diff:** 26 files, +3677 −222 (cumulative branch diff vs `main`, incl. both review-fix rounds). Over the BUILD_RULES §2 threshold (≥10 files / ≥1500 lines) → the multi-lens adversarial + refute-with-repro review below was mandatory and is recorded in §3–§4. Per the standing P5 allocation the executor/reviewer pair is inverted: Fable executed; four Opus reviewers ran the adversarial pass.
 **Everything ships dark:** `MANDATE_TRANSPORT_MODE` stays `'direct'` (pinned, `mandateFlags.test.js:41`); the drain endpoint is founder-gated (`MANDATE_FOUNDER_CREATE_ENABLED` + allowlist, both required); no new flags; no `vercel.json` change (P6). The production flip is a later config PR after acceptance.
 
 ---
