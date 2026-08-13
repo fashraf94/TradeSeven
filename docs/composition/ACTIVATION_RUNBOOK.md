@@ -12,9 +12,19 @@
 
 **Run within minutes of the merge deploy** (founder ruling, Aug 7): the client birth path reads `composition/activation` on every agent creation by design (A48 — the record is the only selector; no client flag). Until the merged `firestore.rules` read clause is DEPLOYED, that read is DENIED — writes stay byte-identical (every failure resolves LIVE, time-boxed at 1.5 s), but each birth carries one rejected round trip. **This step closes that window operationally.**
 
-1. Deploy `firestore.rules`; fetch the DEPLOYED text; run the emulator smoke against it (`COMPOSITION_RULES_TEXT_PATH=<fetched> npm run test:rules -- test/rules/compositionEpochDenials.rules.mjs`); fill `docs/composition/RULES_DEPLOY_RECORD.json`; **`node scripts/composition/check-rules-deploy-gate.js` must PASS** (the B9 gate — it runs HERE now; step 1 re-verifies it).
+1. **Quiesce the two live protected-store writers that are not runbook steps** (founder rulings, Aug 12 — the casual-clone ruling and R7):
+   - `CASUAL_CLONE_CONCURRENCY_ENABLED` → **false, deployed**. It flipped true on Aug 11 (2bd50fc9, PR #739), after the PR-4 merge, so casual-clone births and re-syncs write `agents` + `rules`/`bundles` subcollections continuously in production — the one B2-leased provisioner that would otherwise mint identity state inside the window and land in the step-1.11 watermark sweep unattributed. Flag off is preferred over attributing those births and reconciling them on rollback.
+   - **Pause the `process-pending-reflections` cron** (`vercel.json:161`). `api/agent/reflect.js` writes `agents/{id}` at four allowlisted sites and calls `consolidateAgentEvolution` (`agentConsolidationApply.js:271,302`) for two more. It carries no epoch guard and is Admin-SDK, so neither the fence nor the rules layer stops it; it is correctly absent from the A46 census (it writes evolution/memory fields, not the identity surface) but the watermark sweep is scoped to protected-store docs, so every reflection write appears there. `reflect.js` has no default export — it is not an HTTP endpoint, and this cron is its only caller, so pausing the cron closes the path completely. "Crons stay paused" is not sufficient here; this one is load-bearing for the sweep's zero-result and is named for that reason.
 
-**VERIFY:** B9 gate PASS; a client read of `composition/activation` while signed in returns not-found (allowed, record absent) instead of permission-denied. **ROLLBACK POINT:** nothing else changed — stop is free.
+2. **Deploy `firestore.rules`; fetch the DEPLOYED text; run the emulator smoke against it; fill `docs/composition/RULES_DEPLOY_RECORD.json`; `node scripts/composition/check-rules-deploy-gate.js` must PASS** (the B9 gate — it runs HERE now; step 1 re-verifies it). The command below is the corrected form — `npm run test:rules -- <spec>` appends the spec to `firebase emulators:exec`, not to vitest, and exits 1 with no output (R2):
+
+   ```bash
+   COMPOSITION_RULES_TEXT_PATH=<fetched> npx firebase emulators:exec --only firestore \
+     --project demo-tradeseven-rules \
+     "npx vitest run --config vitest.rules.config.mjs test/rules/compositionEpochDenials.rules.mjs"
+   ```
+
+**VERIFY:** `CASUAL_CLONE_CONCURRENCY_ENABLED=false` in the DEPLOYED build — fetch the production `index.html`, follow its `/assets/index-*.js`, and confirm the literal `ensure-casual-clone` is **absent** (the flag block at `agentDeploy.js:39` is dead-code-eliminated when the flag is false) while `api/agent/decide` — the sibling fetch in the same function — is **present** as the positive control. Absence-with-control is the proof; a bare 403 probe is NOT reachable, since `requireAuth` (`ensure-casual-clone.js:43`) returns 401 before the flag check at `:48` (R8). `process-pending-reflections` confirmed paused. B9 gate PASS; a client read of `composition/activation` while signed in returns not-found (allowed, record absent) instead of permission-denied. **ROLLBACK POINT:** nothing else changed — stop is free.
 
 ## Step 0 — Preflight at the deployed SHA (census re-run + drain gate)
 
@@ -136,10 +146,8 @@ A bare `rollbackActivationRecord` call is never executed alone. The protocol, in
 
 The `--apply` report, zero-residual output, preflight reports, watermark sweep, the filled RULES_DEPLOY_RECORD, the §10 observations, and this log → `docs/audits/` in a docs-only PR 5. The ledger's PR-4 rows move to CLOSED with their observations cited.
 
-LAST — restore CASUAL_CLONE_CONCURRENCY_ENABLED → true, deployed (founder ruling, Aug 12). This runs after the general unfreeze
-  ▎ of 8B, and after every other step-9 item: it is the only deliberate re-widening of the identity-write surface in this event, so
-  ▎ it lands last and is logged with its own operator + timestamp row. (process-pending-reflections resumes with the other crons at
-  ▎ the 8B general unfreeze, not here.)
+**LAST — restore `CASUAL_CLONE_CONCURRENCY_ENABLED` → true, deployed** (founder ruling, Aug 12). This runs after the general unfreeze of 8B, and after every other step-9 item: it is the only deliberate re-widening of the identity-write surface in this event, so it lands last and is logged with its own operator + timestamp row. (`process-pending-reflections` resumes with the other crons at the 8B general unfreeze, not here.)
+
 ---
 
 ## M10 — per-boundary evidence checklist (fill at step 1, verify at step 7)
@@ -157,6 +165,8 @@ Observe-window evidence is **equip-bundle only** (PR 2 instrumented that boundar
 | background loops | census guard tokens + pause checklist | |
 
 ## Run log (append-only; the founder fills during the run)
+
+**MERGE FREEZE — declared 2026-08-12 22:57 -0500 (founder).** No merges to `main` until activation completes or the founder lifts it. Rationale: `main` took two feature merges (PR #750 Mandate Phase 3 at 21:04:27, PR #751 flag-off at 21:34:57) inside the pre-flight window, each re-opening the step-0 preflight and one of them changing `firestore.rules`. Step 1.2 pins THE ACTIVATION SHA and forbids any later commit; the freeze is what makes that pin hold. Freeze SHA: `3069ba09ab2fe301810530a4620b9a032d9b1f64`. Lift is a logged act with its own timestamp + operator.
 
 *(Re-review #9: STRICT order — −1 → 0 → 1 → … → 8A → 8B → 9. If THE ROLLBACK PROTOCOL is invoked at any point, append its own rows (R1–R8, one per protocol step) at the point of invocation — never overwrite a completed step's row.)*
 
