@@ -30,6 +30,7 @@ import {
   MANDATE_MARK_MAX_AGE_MS,
   MANDATE_QUARANTINE_THRESHOLD,
   MANDATE_STALE_STREAK_ALERT,
+  MANDATE_MISSED_MARKS_ALERT,
   MANDATE_REGIME_SOURCE,
 } from '../_utils/mandateConfig.js';
 import { activeTick, activeCloseTick, tierEligibleAt, resolveSessionSlots } from '../_utils/mandateSessionSlots.js';
@@ -236,7 +237,19 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, noop: true, reason: 'mandate_eval_dark' });
   }
 
-  const db = getFirebaseAdmin();
+  return runEvalSweep(req, res, { now, tick });
+}
+
+// ── The eval sweep (§3.1) — the handler's model-cadence duty ──────────────────
+/**
+ * The bounded per-slot eval sweep, extracted from the handler as an injectable
+ * seam (P4 integration harness): `db` and `now`/`tick` are parameters so the
+ * handler-level tests drive the real loop (fresh-read-under-lease idempotency,
+ * no_vintage→quarantine, truthful completion) against a transaction-faithful
+ * fake — the P3-flagged test debt this phase pays. Production calls it with the
+ * live admin db (default) and the handler-computed tick; behavior is unchanged.
+ */
+export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin() }) {
   const startedAt = Date.now();
   const ownerToken = mintOwnerToken();
   const summary = { slot: tick.slot, tickKey: tick.tickKey, evaluated: 0, executed: 0, gated: 0, rejected: 0, failed: 0, skipped: 0, errors: 0, complete: false };
@@ -511,8 +524,7 @@ export default async function handler(req, res) {
  * complete (the old newlyClosed===0 heuristic logged "all active books
  * closed" while a thrower sat unclosed forever).
  */
-async function runCloseSweep(req, res, { now, closeTick }) {
-  const db = getFirebaseAdmin();
+export async function runCloseSweep(req, res, { now, closeTick, db = getFirebaseAdmin() }) {
   const startedAt = Date.now();
   const ownerToken = mintOwnerToken();
   const date = closeTick.date;

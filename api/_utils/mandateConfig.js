@@ -299,3 +299,23 @@ export const MANDATE_RUNRATE_MONTHLY_USD = 1.0;
 // P5 concern — no batch docs exist under direct transport.
 export const MANDATE_SNAPSHOT_RETENTION_DAYS = 120;
 export const MANDATE_RETENTION_DELETE_BATCH = 200; // per close fire, per collection
+
+// ── Rollover (§5.3, P4) ──────────────────────────────────────────────────────
+// The rollover sweep runs daily PRE-MARKET (§5.3): the boundary session's close
+// is already the last row of the old quarter, so processing pre-market lets the
+// same day's close become the first row of the new quarter. This window opens
+// this many minutes before the 9:30 ET open — disjoint from every eval slot
+// (which start at open+30) and from the post-close duty window by construction.
+// Registration (a cron slot) is P6; the handler is dark until MANDATE_ROLLOVER_ENABLED.
+export const MANDATE_ROLLOVER_PREOPEN_MIN = 120; // pre-market window width (ET minutes before open)
+// Catch-up (F21): a book that lagged multiple boundaries (outage) processes ONE
+// boundary per transaction, oldest first. This caps the per-book catch-up in a
+// single fire — ~8 quarters is two years of lag, far beyond any real gap; a
+// deeper backlog spills to the next fire (still oldest-first, still bounded).
+export const MANDATE_ROLLOVER_CATCHUP_CAP = 8;
+// The cursor-walk batch size (the due set is paged by nextRolloverAt ASC, oldest
+// first, walked with startAfter so a persistently-failing book cannot pin the
+// frontier — the Firestore-correct equivalent of the close sweep's attempt-marker
+// rotation under the nextRolloverAt<=now inequality). A hard per-fire book cap
+// backstops a runaway; the time budget is the real bound.
+export const MANDATE_ROLLOVER_MAX_BOOKS_PER_FIRE = 2000;

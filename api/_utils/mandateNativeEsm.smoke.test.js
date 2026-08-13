@@ -21,16 +21,30 @@ import { dirname, resolve } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+// Every mandate ROUTE entrypoint (each pulls a distinct slice of the module
+// graph). A missing/misspelled named export anywhere in a route's graph fails
+// the deploy; this is the only check that catches it (vite build doesn't bundle
+// api/; vite-node resolves missing named exports to undefined).
+const ROUTE_ENTRYPOINTS = [
+  '../cron/mandate-evaluate.js',  // eval + close sweeps → close pass, execution, CA, metrics, schema, config
+  '../cron/mandate-rollover.js',  // P4 rollover sweep → rollover core, vintage, quarter summary, calendar
+  '../mandate/create.js',         // creation endpoint
+  '../mandate/escape.js',         // P4 escape endpoint
+  '../mandate/accelerate.js',     // P4 accelerated-clock harness endpoint
+];
+
 describe('native-ESM smoke — the mandate module graph loads under real node', () => {
-  it('api/cron/mandate-evaluate.js (pulls close pass, execution, CA, metrics, schema, config)', () => {
-    const entry = resolve(HERE, '../cron/mandate-evaluate.js');
-    // Child prints OK on success; a resolution/StaticSyntax error surfaces on
-    // stderr and exits 1, failing execFileSync loudly with the message.
-    const out = execFileSync(
-      process.execPath,
-      ['-e', 'import(process.argv[1]).then(() => { console.log("OK"); }, (e) => { console.error(e.message); process.exit(1); })', entry],
-      { encoding: 'utf8', timeout: 30000 },
-    );
-    expect(out.trim()).toBe('OK');
-  }, 35000);
+  for (const rel of ROUTE_ENTRYPOINTS) {
+    it(`${rel} loads under real node (no missing named export)`, () => {
+      const entry = resolve(HERE, rel);
+      // Child prints OK on success; a resolution/StaticSyntax error surfaces on
+      // stderr and exits 1, failing execFileSync loudly with the message.
+      const out = execFileSync(
+        process.execPath,
+        ['-e', 'import(process.argv[1]).then(() => { console.log("OK"); }, (e) => { console.error(e.message); process.exit(1); })', entry],
+        { encoding: 'utf8', timeout: 30000 },
+      );
+      expect(out.trim()).toBe('OK');
+    }, 35000);
+  }
 });

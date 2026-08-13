@@ -292,6 +292,12 @@ export function buildQuarterSummary({ quarterIndex, archetype, vintageRef, ...re
     tenureReturn: rest.tenureReturn ?? null,
     riskMetrics: rest.riskMetrics ?? null, // tenure-scoped (§4.2)
     regimeMix: rest.regimeMix ?? null,
+    // I10 (§2.2): sessions by agencyState — so a tenure charged with drawdown
+    // can show WHEN the manager could act vs. was administratively frozen.
+    agencyStateMix: rest.agencyStateMix ?? null,
+    // §4.3 term totals — the rows carry both (income is not trading P&L).
+    frictionTotalUsd: rest.frictionTotalUsd ?? 0,
+    dividendIncomeTotalUsd: rest.dividendIncomeTotalUsd ?? 0,
     scoring: rest.scoring ?? true, // false when voided (FR-3)
     empty: rest.empty ?? false, // §5.3 catch-up
   };
