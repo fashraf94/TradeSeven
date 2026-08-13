@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   bankersRound, executedPriceFor, driftBps, validateEnvelope,
-  computeExecution, executeDecision,
+  computeExecution, executeDecision, disposeSubmission,
 } from './mandateExecution.js';
 import { zeroFriction, frictionFor } from './mandateFrictionModel.js';
 import { MANDATE_FRICTION_TIERS, MANDATE_FRICTION_MODEL_VERSION } from './mandateConfig.js';
@@ -483,5 +483,243 @@ describe('openedAt entitlement substrate (spec+money review P3 — the position 
       snapshot: SNAP, friction: ZERO, sessionDate: '2026-09-15',
     });
     expect(rebuy.mutation.positions.AAPL.openedAt).toBe('2026-09-15');
+  });
+});
+
+// ── P5: the ownership-conditional gate clear + disposeSubmission ─────────────
+// The gate holds the open submission's requestId (house convention). Under
+// batch transport a ZOMBIE duplicate can terminate while a NEWER submission
+// holds the gate — an unconditional clear would release the live gate and
+// re-open double-submit. These are the mutation guards: each fails without the
+// ownership check or the shared terminal patch.
+
+describe('P5 — ownership-conditional gate clear (execStateTerminalPatch)', () => {
+  const gatePass = { passed: true, execSizeUsd: 10000, gateOutcome: { rule: 'buy', passed: true } };
+
+  it('OWNED gate: the terminal transition clears the WHOLE open-submission block', async () => {
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({
+        execState: {
+          openBatchId: 'd_owned', openBatchSubmittedAt: NOW, openProviderBatchId: 'msgbatch_x',
+          submitted: 0, executed: 0, staleRejectStreak: 0,
+        },
+      }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_owned', decision: { verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000 },
+      gateResult: gatePass, envelope: ENV, snapshot: SNAP, submitMark: 200, currentSessionDate: '2026-08-12', now: NOW,
+      friction: ZERO,
+    });
+    expect(r.status).toBe('executed');
+    const es = db._store.get('mandates/m1').execState;
+    expect(es.openBatchId).toBe(null);
+    expect(es.openBatchSubmittedAt).toBe(null);
+    expect(es.openProviderBatchId).toBe(null); // the FULL block, not just the id
+  });
+
+  it("FOREIGN gate: a zombie's terminal leaves the live submission's gate untouched (mutation guard)", async () => {
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({
+        execState: {
+          openBatchId: 'd_live', openBatchSubmittedAt: NOW, openProviderBatchId: 'msgbatch_live',
+          submitted: 0, executed: 0, staleRejectStreak: 0,
+        },
+      }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    // The zombie (same revision — the crash-window shape) executes first.
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_zombie', decision: { verb: 'HOLD' },
+      gateResult: { passed: true, execSizeUsd: null, gateOutcome: { rule: 'hold', passed: true } },
+      envelope: ENV, snapshot: SNAP, submitMark: null, currentSessionDate: '2026-08-12', now: NOW,
+      friction: ZERO,
+    });
+    expect(r.status).toBe('executed');
+    const es = db._store.get('mandates/m1').execState;
+    expect(es.openBatchId).toBe('d_live');               // the live gate SURVIVES
+    expect(es.openProviderBatchId).toBe('msgbatch_live');
+    expect(es.submitted).toBe(1);                        // counters still move
+  });
+});
+
+describe('P5 — disposeSubmission (result-less terminal dispositions)', () => {
+  it('writes the terminal decision with failCondition, bumps revision, clears an owned gate, moves the streak', async () => {
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({
+        execState: {
+          openBatchId: 'req_x', openBatchSubmittedAt: NOW, openProviderBatchId: 'msgbatch_x',
+          submitted: 3, executed: 2, staleRejectStreak: 0,
+        },
+      }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await disposeSubmission(db, {
+      mandateRef: ref, requestId: 'req_x', status: 'expired', failCondition: 'result_age', envelope: ENV,
+    });
+    expect(r.status).toBe('expired');
+    expect(r.staleRejectStreak).toBe(1); // expired increments the I9 streak
+    const dec = db._store.get('mandates/m1/decisions/req_x');
+    expect(dec.status).toBe('expired');
+    expect(dec.failCondition).toBe('result_age'); // §3.3: durable on the doc
+    expect(dec.baseRevision).toBe(5);             // envelope provenance carried
+    const book = db._store.get('mandates/m1');
+    expect(book.revision).toBe(6);
+    expect(book.execState.openBatchId).toBe(null);
+    expect(book.execState.submitted).toBe(4);
+    expect(book.execState.executed).toBe(2);      // not an execution
+  });
+
+  it('is claim-idempotent: a second disposition of the same requestId no-ops (I1 exactly-one-terminal)', async () => {
+    const db = makeFakeDb({ 'mandates/m1': baseBook() });
+    const ref = db.collection('mandates').doc('m1');
+    await disposeSubmission(db, { mandateRef: ref, requestId: 'req_y', status: 'expired', failCondition: 'result_age' });
+    const r2 = await disposeSubmission(db, { mandateRef: ref, requestId: 'req_y', status: 'cancelled', failCondition: 'other' });
+    expect(r2.idempotent).toBe(true);
+    expect(r2.status).toBe('expired'); // the FIRST terminal stands — exactly one per submission
+    expect(db._store.get('mandates/m1/decisions/req_y').status).toBe('expired');
+    expect(db._store.get('mandates/m1').revision).toBe(6); // one bump, not two
+  });
+
+  it("'failed' resets the streak (P3 semantics: a definite failure is a live answer, not a staleness death)", async () => {
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({ execState: { openBatchId: 'req_z', submitted: 0, executed: 0, staleRejectStreak: 2 } }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await disposeSubmission(db, {
+      mandateRef: ref, requestId: 'req_z', status: 'failed', failCondition: 'api_error:overloaded_error',
+    });
+    expect(r.staleRejectStreak).toBe(0);
+    expect(db._store.get('mandates/m1').execState.staleRejectStreak).toBe(0);
+  });
+});
+
+// ── P5 review fixes — mutation guards ────────────────────────────────────────
+
+describe('P5 review INV-P5-3 — base validation precedes the gate (staleness is never masked as gated)', () => {
+  it('a STALE result whose decision also fails the gate dies rejected_stale/base_revision, streak++ (not gated, not reset)', async () => {
+    // The batch shape: SELL submitted at revision 5; the position exited and
+    // revision moved before harvest → gate says not_held, validation says
+    // base_revision. §3.3 is the outer contract: the staleness must win.
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({ revision: 9, execState: { openBatchId: 'd_stale', submitted: 0, executed: 0, staleRejectStreak: 1 } }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_stale', decision: { verb: 'SELL', ticker: 'AAPL', sizeUsd: null },
+      gateResult: { passed: false, rule: 'exit_lane', reason: 'not_held', gateOutcome: { rule: 'exit_lane', passed: false } },
+      envelope: ENV, snapshot: SNAP, submitMark: 200, currentSessionDate: '2026-08-12', now: NOW,
+    });
+    expect(r.status).toBe('rejected_stale');            // NOT 'gated' — the mutation guard
+    expect(r.failCondition).toBe('base_revision');      // the true condition, durable
+    expect(r.staleRejectStreak).toBe(2);                // the I9 wire moves, never resets
+    expect(db._store.get('mandates/m1/decisions/d_stale').failCondition).toBe('base_revision');
+  });
+
+  it('an AGED result that would be gated dies expired (condition 4), not gated', async () => {
+    const db = makeFakeDb({ 'mandates/m1': baseBook() });
+    const ref = db.collection('mandates').doc('m1');
+    const oldEnv = { ...ENV, submittedAt: new Date(NOW.getTime() - 5 * 60 * 60 * 1000).toISOString() };
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_aged', decision: { verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000 },
+      gateResult: { passed: false, rule: 'quarantined', reason: 'exit_only_mode', gateOutcome: { rule: 'quarantined', passed: false } },
+      envelope: oldEnv, snapshot: SNAP, submitMark: 200, currentSessionDate: '2026-08-12', now: NOW,
+    });
+    expect(r.status).toBe('expired');
+    expect(r.failCondition).toBe('result_age');
+  });
+
+  it('a HALLUCINATED entry (no submit mark, no harvest mark) keeps its honest gated/universe label', async () => {
+    // Direct-mode P2 behavior preserved: never-eligible ≠ stale. Condition 5
+    // only rejects when the ticker HAD a submit mark and lost it in flight.
+    const db = makeFakeDb({ 'mandates/m1': baseBook() });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_halluc', decision: { verb: 'BUY', ticker: 'ZZZZ', sizeUsd: 5000 },
+      gateResult: { passed: false, rule: 'universe', reason: 'not_in_snapshot', gateOutcome: { rule: 'universe', passed: false } },
+      envelope: ENV, snapshot: SNAP, submitMark: null, currentSessionDate: '2026-08-12', now: NOW,
+    });
+    expect(r.status).toBe('gated');
+    expect(r.failCondition).toBe('not_in_snapshot');
+  });
+
+  it('a VANISHED entry (submit mark present, harvest mark gone) is rejected_stale/no_harvest_mark — the universe changed under the decision', async () => {
+    const db = makeFakeDb({ 'mandates/m1': baseBook() });
+    const ref = db.collection('mandates').doc('m1');
+    const emptySnap = { tickKey: '2026-08-12_midday', symbols: {} };
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_vanish', decision: { verb: 'BUY', ticker: 'AAPL', sizeUsd: 5000 },
+      gateResult: { passed: true, execSizeUsd: 5000, gateOutcome: { rule: 'buy', passed: true } },
+      envelope: ENV, snapshot: emptySnap, submitMark: 200, currentSessionDate: '2026-08-12', now: NOW,
+    });
+    expect(r.status).toBe('rejected_stale');
+    expect(r.failCondition).toBe('no_harvest_mark');
+  });
+});
+
+describe('P5 review INV-P5-6 — a foreign terminal never moves the billing stamp backward', () => {
+  it("a zombie's disposition leaves a newer submission's lastEvalTickKey untouched", async () => {
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({
+        execState: {
+          openBatchId: 'd_live', openBatchSubmittedAt: NOW, openProviderBatchId: 'b_live',
+          lastEvalTickKey: '2026-08-12_midday', submitted: 0, executed: 0, staleRejectStreak: 0,
+        },
+      }),
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const oldEnv = { ...ENV, submitTickKey: '2026-08-12_open30' };
+    await disposeSubmission(db, { mandateRef: ref, requestId: 'd_zombie_old', status: 'expired', failCondition: 'result_age', envelope: oldEnv });
+    const es = db._store.get('mandates/m1').execState;
+    expect(es.lastEvalTickKey).toBe('2026-08-12_midday'); // NOT dragged back to open30
+    expect(es.openBatchId).toBe('d_live');                // gate untouched (ownership)
+  });
+});
+
+describe('P5 review INV-P5-5/SPEC-P5-8 — a missing book cannot strand a submission', () => {
+  it('disposeSubmission on a deleted book still claims the terminal decision (no limbo, I1)', async () => {
+    const db = makeFakeDb({}); // no mandates/m1 at all
+    const ref = db.collection('mandates').doc('m1');
+    const r = await disposeSubmission(db, { mandateRef: ref, requestId: 'req_gone', status: 'failed', failCondition: 'book_missing' });
+    expect(r.bookMissing).toBe(true);
+    expect(db._store.get('mandates/m1/decisions/req_gone').status).toBe('failed'); // the claim exists → batch doc can converge
+    expect(db._store.get('mandates/m1')).toBeUndefined(); // no book fabricated
+  });
+});
+
+describe('P5 refuter D4 — provable staleness outranks the gate', () => {
+  it('a DRIFTED entry that also trips a gate records price_drift (streak++), not gated', async () => {
+    const db = makeFakeDb({ 'mandates/m1': baseBook({ execState: { openBatchId: 'd_drift', submitted: 0, executed: 0, staleRejectStreak: 1 } }) });
+    const ref = db.collection('mandates').doc('m1');
+    const drifted = { tickKey: '2026-08-12_midday', symbols: { AAPL: { complete: true, price: 210, sector: 'Technology' } } };
+    const r = await executeDecision(db, {
+      mandateRef: ref, decisionId: 'd_drift', decision: { verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000 },
+      // The gate ALSO failed (sector cap) — but the drift is provable (submit mark in hand): §3.3 wins.
+      gateResult: { passed: false, rule: 'sector_cap', reason: 'sector_cap_exceeded', gateOutcome: { rule: 'sector_cap', passed: false } },
+      envelope: ENV, snapshot: drifted, submitMark: 200, currentSessionDate: '2026-08-12', now: NOW,
+    });
+    expect(r.status).toBe('rejected_stale');
+    expect(r.failCondition).toBe('price_drift');
+    expect(r.staleRejectStreak).toBe(2); // the I9 wire moves
+  });
+});
+
+describe('P5 refuter D2 — the gate heal on an idempotent disposal', () => {
+  it('a gate pointing at an ALREADY-TERMINAL request is cleared by the idempotent replay (revision-disciplined)', async () => {
+    // The ops-recovery shape: a book restored from backup with its gate set to
+    // a request whose terminal was claimed before the backup was taken.
+    const db = makeFakeDb({
+      'mandates/m1': baseBook({ revision: 7, execState: { openBatchId: 'req_stuck', openBatchSubmittedAt: NOW, openProviderBatchId: 'b_old', submitted: 3, executed: 2, staleRejectStreak: 0 } }),
+      'mandates/m1/decisions/req_stuck': { decisionId: 'req_stuck', status: 'expired' },
+    });
+    const ref = db.collection('mandates').doc('m1');
+    const r = await disposeSubmission(db, { mandateRef: ref, requestId: 'req_stuck', status: 'expired', failCondition: 'result_age' });
+    expect(r.idempotent).toBe(true);
+    expect(r.gateHealed).toBe(true);
+    const book = db._store.get('mandates/m1');
+    expect(book.execState.openBatchId).toBe(null);           // DURABLY cleared — not a local-copy illusion
+    expect(book.execState.openProviderBatchId).toBe(null);
+    expect(book.revision).toBe(8);                           // under revision discipline
+    expect(db._store.get('mandates/m1/decisions/req_stuck').status).toBe('expired'); // the terminal stands untouched
   });
 });

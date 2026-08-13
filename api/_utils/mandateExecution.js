@@ -32,7 +32,7 @@
 // CA-adjusted) fresh mark and fills at the position's LAST-GOOD mark, the
 // ratified C-21 path.
 
-import { buildDecision } from './mandateSchema.js';
+import { buildDecision, clearedOpenSubmissionPatch } from './mandateSchema.js';
 import { markBook, avgCostOf } from './mandateValuation.js';
 import { markFor, snapshotExcluding } from './mandateUniverseSnapshot.js';
 import { frictionForDecision, zeroFriction } from './mandateFrictionModel.js';
@@ -89,38 +89,60 @@ export function driftBps(submitMark, harvestMark) {
 // ── Harvest validation (§3.3) — a result is applied only if ALL hold ─────────
 
 /**
+ * §3.3 harvest validation. `phase` (P5) lets the execution boundary split the
+ * check around the deterministic gate: `'base'` = conditions 1–4 (pure
+ * base-state staleness — MUST precede the gate, or a stale result whose
+ * decision also fails a gate dies 'gated' and resets the I9 streak, review
+ * INV-P5-3); `'marks'` = conditions 5–6 (harvest-mark presence + price drift —
+ * entangled with the universe gate, so they run AFTER it); `'all'` (default) =
+ * the standalone contract.
+ *
+ * Condition 5 refinement (P5): a null harvest mark rejects as staleness ONLY
+ * when the ticker HAD a submit mark — i.e. it was eligible when the model
+ * chose it and vanished in flight (the universe changed under the decision).
+ * A ticker with no submit mark either was never eligible (a hallucinated
+ * entry — the UNIVERSE GATE's case, 'gated', streak-neutral) or cannot be
+ * drift-checked (missing submit snapshot — fail closed as price_drift via the
+ * Infinity path below). Exits are NEVER subject to 5/6 (C-21).
+ *
  * @returns {{ ok:true } | { ok:false, status:'rejected_stale'|'expired', failCondition:string, drift?:number }}
  */
-export function validateEnvelope(book, envelope, { currentSessionDate, now, submitMark, harvestMark, verb, ticker }) {
-  // 1. base revision
-  if (book.revision !== envelope.baseRevision) {
-    return { ok: false, status: 'rejected_stale', failCondition: 'base_revision' };
-  }
-  // 2. quarter identity + liveness
-  if (book.quarterKey !== envelope.quarterKey || book.status !== 'active' || book.voided) {
-    return { ok: false, status: 'rejected_stale', failCondition: 'quarter_or_status' };
-  }
-  // 3. same trading session (cross-session results are NEVER applied, F3)
-  if (envelope.sessionDate !== currentSessionDate) {
-    return { ok: false, status: 'rejected_stale', failCondition: 'cross_session' };
-  }
-  // 4. result age (age-out → expired terminal state, I1)
-  const ageMs = now.getTime() - new Date(envelope.submittedAt).getTime();
-  if (ageMs > MANDATE_RESULT_MAX_AGE_MS) {
-    return { ok: false, status: 'expired', failCondition: 'result_age' };
-  }
-  // 5/6. ENTRIES ONLY: a BUY/ADD needs a fresh harvest mark and must not fill at a
-  // price that drifted materially from the one reasoned over (I3). Exits are NEVER
-  // subject to these — a data-quality mechanism must never suppress an exit
-  // (C-21); a SELL/TRIM fills at the best available mark (fresh, else carry-over)
-  // and is validated only by the base-state checks above.
-  if (ENTRY_VERBS.includes(verb) && ticker) {
-    if (harvestMark == null) {
-      return { ok: false, status: 'rejected_stale', failCondition: 'no_harvest_mark' };
+export function validateEnvelope(book, envelope, { currentSessionDate, now, submitMark, harvestMark, verb, ticker, phase = 'all' }) {
+  if (phase !== 'marks') {
+    // 1. base revision
+    if (book.revision !== envelope.baseRevision) {
+      return { ok: false, status: 'rejected_stale', failCondition: 'base_revision' };
     }
-    const d = driftBps(submitMark, harvestMark);
-    if (d > MANDATE_PRICE_DRIFT_MAX_BPS) {
-      return { ok: false, status: 'rejected_stale', failCondition: 'price_drift', drift: d };
+    // 2. quarter identity + liveness
+    if (book.quarterKey !== envelope.quarterKey || book.status !== 'active' || book.voided) {
+      return { ok: false, status: 'rejected_stale', failCondition: 'quarter_or_status' };
+    }
+    // 3. same trading session (cross-session results are NEVER applied, F3)
+    if (envelope.sessionDate !== currentSessionDate) {
+      return { ok: false, status: 'rejected_stale', failCondition: 'cross_session' };
+    }
+    // 4. result age (age-out → expired terminal state, I1)
+    const ageMs = now.getTime() - new Date(envelope.submittedAt).getTime();
+    if (ageMs > MANDATE_RESULT_MAX_AGE_MS) {
+      return { ok: false, status: 'expired', failCondition: 'result_age' };
+    }
+  }
+  if (phase !== 'base') {
+    // 5/6. ENTRIES ONLY: a BUY/ADD needs a fresh harvest mark and must not fill
+    // at a price that drifted materially from the one reasoned over (I3). Exits
+    // are NEVER subject to these — a data-quality mechanism must never suppress
+    // an exit (C-21); a SELL/TRIM fills at the best available mark (fresh, else
+    // carry-over) and is validated only by the base-state checks above.
+    if (ENTRY_VERBS.includes(verb) && ticker) {
+      if (harvestMark == null && submitMark != null) {
+        return { ok: false, status: 'rejected_stale', failCondition: 'no_harvest_mark' };
+      }
+      if (harvestMark != null) {
+        const d = driftBps(submitMark, harvestMark);
+        if (d > MANDATE_PRICE_DRIFT_MAX_BPS) {
+          return { ok: false, status: 'rejected_stale', failCondition: 'price_drift', drift: d };
+        }
+      }
     }
   }
   return { ok: true };
@@ -272,6 +294,125 @@ function sectorWeightsPct(marked, totalValue) {
   return pct;
 }
 
+// ── Terminal-transition bookkeeping (§3.3 / I1 / I9) ─────────────────────────
+
+// I9 (P3): the stale-rejection streak — consecutive submissions that die as
+// rejected_stale/expired. It is THE liveness signal (founder ruling: HOLD-only
+// is healthy, so the executed ratio can't be); executed/gated/failed all mean
+// the pipeline delivered a live answer, so they reset it. Updated atomically
+// with every terminal transition.
+export const streakAfter = (book, status) => (
+  (status === 'rejected_stale' || status === 'expired')
+    ? (book.execState?.staleRejectStreak || 0) + 1
+    : 0
+);
+
+/**
+ * The execState portion of EVERY terminal transition — the ONE builder all
+ * disposal paths share (I1: no bare doc-write path outside the discipline).
+ * Counters + streak + the gate clear.
+ *
+ * OWNERSHIP-CONDITIONAL GATE CLEAR (P5). Under direct transport the gate is
+ * never set, so clearing was trivially safe. Under batch transport a book can
+ * transiently have TWO submissions alive at once — a crash between provider
+ * batch creation and the gate write leaves a ZOMBIE request in flight with no
+ * gate, and the book legitimately re-submits; the zombie's result can still
+ * validate and terminate first. An UNCONDITIONAL clear would then release the
+ * gate the LIVE submission holds, re-opening double-submit — so the clear
+ * applies only when the gate names the submission being terminated
+ * (openBatchId === decisionId; house convention: the gate holds the requestId).
+ * A non-owning terminal leaves the gate to its owner, whose own terminal
+ * transition clears it — the I1 invariant "gate set ⟺ a live submission it
+ * names" holds in both cases.
+ */
+export function execStateTerminalPatch(book, decisionId, status, { submitTickKey = null } = {}) {
+  const openBatchId = book.execState?.openBatchId ?? null;
+  const ownsGate = openBatchId === decisionId;
+  return {
+    ...(ownsGate ? clearedOpenSubmissionPatch() : {}),
+    // lastEvalTickKey stamps the SUBMIT tick (the billed eval) atomically with
+    // the commit so a same-slot re-fire is hard-idempotent at the book level.
+    // Written only when this terminal OWNS the gate (batch) or no gate exists
+    // (direct mode / post-disposal) — a ZOMBIE's terminal must not move the
+    // billing stamp BACKWARD over a newer submission's (P5 review INV-P5-6:
+    // the old-tick overwrite re-opened same-slot re-eval once the live gate
+    // cleared).
+    ...(submitTickKey != null && (ownsGate || openBatchId == null)
+      ? { 'execState.lastEvalTickKey': submitTickKey } : {}),
+    'execState.submitted': (book.execState?.submitted || 0) + 1,
+    'execState.executed': (book.execState?.executed || 0) + (status === 'executed' ? 1 : 0),
+    'execState.staleRejectStreak': streakAfter(book, status),
+  };
+}
+
+/**
+ * Terminal disposition for a submission WITHOUT a model result to execute
+ * (§3.3 / I1): API-errored (`failed`), aged-out or provider-expired
+ * (`expired`), operator/lifecycle disposal (`cancelled`), drain
+ * (`rejected_stale`). One revision-disciplined transaction: claim the decision
+ * doc if absent (a replay no-ops on the claim), write the terminal receipt,
+ * bump revision, apply the shared execState terminal patch (counters, streak,
+ * ownership-conditional gate clear).
+ *
+ * @returns {Promise<{ status, applied:false, idempotent?:true, staleRejectStreak?:number }>}
+ */
+export async function disposeSubmission(db, {
+  mandateRef, requestId, status, failCondition = null, envelope = null, verb = null, ticker = null,
+}) {
+  const decRef = mandateRef.collection('decisions').doc(requestId);
+  return db.runTransaction(async (tx) => {
+    const existing = await tx.get(decRef);
+    if (existing.exists) {
+      // Idempotent replay — the terminal stands. GATE HEAL (P5 refuter D2): a
+      // gate still pointing at this ALREADY-TERMINAL request is the exact
+      // state I1 forbids ("gate set with no live batch behind it") — normally
+      // unreachable (every owning terminal clears in-txn) but constructible by
+      // ops recovery (a book restored from backup with a stale gate). Left
+      // unhealed it re-bills the book every fire forever, because subsequent
+      // terminals are non-owning and never stamp. Repair it here, under the
+      // same revision discipline.
+      const bookHeal = await tx.get(mandateRef);
+      if (bookHeal.exists && (bookHeal.data().execState?.openBatchId ?? null) === requestId) {
+        tx.update(mandateRef, {
+          revision: (bookHeal.data().revision || 0) + 1,
+          ...clearedOpenSubmissionPatch(),
+        });
+        return { status: existing.data().status, applied: false, idempotent: true, gateHealed: true };
+      }
+      return { status: existing.data().status, applied: false, idempotent: true };
+    }
+    const bookSnap = await tx.get(mandateRef);
+
+    tx.set(decRef, buildDecision({
+      decisionId: requestId,
+      verb,
+      ticker,
+      status,
+      frictionModelVersion: MANDATE_FRICTION_MODEL_VERSION,
+      vintageRef: envelope?.vintageRef ?? null,
+      baseRevision: envelope?.baseRevision ?? null,
+      submitTickKey: envelope?.submitTickKey ?? null,
+      mandatePromptTemplateVersion: envelope?.mandatePromptTemplateVersion ?? null,
+      ...(failCondition != null ? { failCondition } : {}),
+    }));
+    // A MISSING book (deleted out-of-band) still gets its terminal decision —
+    // the claim is what makes the batch doc converge (I1: no request left in
+    // limbo; P5 review INV-P5-5/SPEC-P5-8 found the old throw left the entry
+    // undisposable and its batch doc immortal). Decision subcollection docs
+    // exist independently of the parent in Firestore; there is simply no book
+    // state to update.
+    if (!bookSnap.exists) {
+      return { status, applied: false, bookMissing: true, failCondition };
+    }
+    const book = bookSnap.data();
+    tx.update(mandateRef, {
+      revision: (book.revision || 0) + 1,
+      ...execStateTerminalPatch(book, requestId, status, { submitTickKey: envelope?.submitTickKey ?? null }),
+    });
+    return { status, applied: false, staleRejectStreak: streakAfter(book, status), failCondition };
+  });
+}
+
 // ── The atomic transaction (§3.5) ────────────────────────────────────────────
 
 /**
@@ -309,17 +450,6 @@ export async function executeDecision(db, {
   // 20bps tier undercredits the exit for no safety (money review P3 finding 4).
   const fx = friction ?? frictionForDecision(decision, snapshot);
 
-  // I9 (P3): the stale-rejection streak — consecutive submissions that die as
-  // rejected_stale/expired. It is THE liveness signal (founder ruling: HOLD-only
-  // is healthy, so the executed ratio can't be); executed/gated/failed all mean
-  // the pipeline delivered a live answer, so they reset it. Updated atomically
-  // with every terminal transition.
-  const streakAfter = (book, status) => (
-    (status === 'rejected_stale' || status === 'expired')
-      ? (book.execState?.staleRejectStreak || 0) + 1
-      : 0
-  );
-
   const writeTerminal = (tx, book, status, extra = {}) => {
     const doc = buildDecision({
       decisionId,
@@ -333,22 +463,21 @@ export async function executeDecision(db, {
       mandatePromptTemplateVersion: envelope.mandatePromptTemplateVersion ?? null,
       gateOutcome: gateResult?.gateOutcome ?? null,
       frictionModelVersion: MANDATE_FRICTION_MODEL_VERSION,
+      harvestSnapshotDegraded: !!snapshot?.degraded, // P5 provenance (refuter, MONEY-P5-7)
       status,
       ...extra,
     });
     tx.set(decRef, doc);
-    // Every terminal transition clears openBatchId in a revision-disciplined txn (I1).
-    // lastEvalTickKey is set ATOMICALLY with the commit so a same-slot re-fire is
-    // hard-idempotent at the book level (the handler skips a book already stamped
-    // with the current tickKey) — the decision-doc claim only guards a replay of
-    // the SAME requestId, not a re-eval at the new (post-commit) revision.
+    // Every terminal transition releases the gate under revision discipline
+    // (I1) — via the shared execStateTerminalPatch, which makes the clear
+    // OWNERSHIP-CONDITIONAL (P5: a zombie duplicate's terminal must not release
+    // the live submission's gate) and stamps lastEvalTickKey atomically with
+    // the commit so a same-slot re-fire is hard-idempotent at the book level —
+    // the decision-doc claim only guards a replay of the SAME requestId, not a
+    // re-eval at the new (post-commit) revision.
     tx.update(mandateRef, {
       revision: book.revision + 1,
-      'execState.openBatchId': null,
-      'execState.lastEvalTickKey': envelope.submitTickKey ?? null,
-      'execState.submitted': (book.execState?.submitted || 0) + 1,
-      'execState.executed': (book.execState?.executed || 0) + (status === 'executed' ? 1 : 0),
-      'execState.staleRejectStreak': streakAfter(book, status),
+      ...execStateTerminalPatch(book, decisionId, status, { submitTickKey: envelope.submitTickKey ?? null }),
     });
     return { status, applied: status === 'executed', decision: doc, staleRejectStreak: streakAfter(book, status), ...('failCondition' in extra ? { failCondition: extra.failCondition } : {}) };
   };
@@ -366,31 +495,63 @@ export async function executeDecision(db, {
     // the post-mutation conservation invariant checks against (money-review M2).
     const preTotalValue = markBook(book.portfolio?.positions || {}, book.portfolio?.cash || 0, vSnap).totalValue;
 
-    // If the gate rejected upstream, record the gated terminal state (no mutation).
-    if (gateResult && gateResult.passed === false) {
-      return writeTerminal(tx, book, 'gated', { failCondition: gateResult.reason ?? gateResult.rule });
-    }
-
     // Defense-in-depth (money review P3 finding 5): an ENTRY on a CA-frozen
-    // symbol must terminate as 'gated'/suspected_ca — the honest cause — not
-    // fall through to validateEnvelope's no_harvest_mark (vSnap excludes the
-    // symbol, so the harvest mark is null) and die 'rejected_stale', which
-    // would bump the I9 staleRejectStreak for a data-quality freeze. The gate
-    // already blocks this with the same in-process set; nothing ENFORCES that
-    // callers pass the same set to both, so the executor restates it.
+    // symbol must terminate as 'gated'/suspected_ca — the honest cause of a
+    // DATA-QUALITY freeze — not fall through to validateEnvelope's
+    // no_harvest_mark (vSnap excludes the symbol, so the harvest mark is null)
+    // and die 'rejected_stale', which would bump the I9 staleRejectStreak for
+    // a freeze that is not transport staleness. Deliberately BEFORE validation
+    // (the P3 ruling ranks the CA classification over the staleness label).
     if (caFrozen && decision.ticker && ENTRY_VERBS.includes(decision.verb) && caFrozen.has(decision.ticker)) {
       return writeTerminal(tx, book, 'gated', { failCondition: 'suspected_ca' });
     }
 
-    // Harvest validation (§3.3).
+    // Harvest validation, BASE conditions 1–4, BEFORE the deterministic gate
+    // (P5 review INV-P5-3): §3.3 is the OUTER contract — "a result is applied
+    // only if ALL hold; any failure → rejected_stale" — and the §3.4 gate
+    // governs VALID results. Under direct transport the order was invisible
+    // (submit and harvest share the tick, so 1–4 always passed); under batch,
+    // gating first let a stale result whose decision ALSO failed the gate
+    // (position exited between submit and harvest → 'not_held') die as
+    // 'gated' — recording the wrong condition and RESETTING the I9 staleness
+    // streak, the designated liveness wire, exactly when submissions were
+    // dying stale.
     const harvestMark = decision.ticker ? markFor(vSnap, decision.ticker) : null;
-    const v = validateEnvelope(book, envelope, {
-      currentSessionDate, now, submitMark, harvestMark, verb: decision.verb, ticker: decision.ticker,
-    });
-    if (!v.ok) {
-      const extra = { failCondition: v.failCondition };
-      if (v.drift != null) extra.gateOutcome = { rule: 'price_drift', passed: false, driftBps: v.drift };
-      return writeTerminal(tx, book, v.status, extra);
+    const vArgs = { currentSessionDate, now, submitMark, harvestMark, verb: decision.verb, ticker: decision.ticker };
+    const vBase = validateEnvelope(book, envelope, { ...vArgs, phase: 'base' });
+    if (!vBase.ok) {
+      return writeTerminal(tx, book, vBase.status, { failCondition: vBase.failCondition });
+    }
+
+    // MARK conditions 5–6 vs the gate — ordered by VERIFIABILITY (refuter D4):
+    // with a submit mark in hand, staleness (vanished ticker, price drift) is
+    // provable and must be recorded even when the decision also trips a gate —
+    // §3.3 outranks §3.4 and the I9 streak must move. Without one, the mark
+    // conditions cannot distinguish staleness from never-eligibility, so the
+    // gate speaks first and a hallucinated entry keeps its honest
+    // 'gated'/universe label (P2 direct-mode semantics preserved). Residual,
+    // documented: an entry with NO submit mark that both drifted and gates
+    // records the gate's condition.
+    const marksFirst = submitMark != null;
+    const runMarks = () => validateEnvelope(book, envelope, { ...vArgs, phase: 'marks' });
+    if (marksFirst) {
+      const vMarks = runMarks();
+      if (!vMarks.ok) {
+        const extra = { failCondition: vMarks.failCondition };
+        if (vMarks.drift != null) extra.gateOutcome = { rule: 'price_drift', passed: false, driftBps: vMarks.drift };
+        return writeTerminal(tx, book, vMarks.status, extra);
+      }
+    }
+    if (gateResult && gateResult.passed === false) {
+      return writeTerminal(tx, book, 'gated', { failCondition: gateResult.reason ?? gateResult.rule });
+    }
+    if (!marksFirst) {
+      const vMarks = runMarks();
+      if (!vMarks.ok) {
+        const extra = { failCondition: vMarks.failCondition };
+        if (vMarks.drift != null) extra.gateOutcome = { rule: 'price_drift', passed: false, driftBps: vMarks.drift };
+        return writeTerminal(tx, book, vMarks.status, extra);
+      }
     }
 
     // Compute the mutation (pure). Friction defaults through the §4.1 cap-tier
@@ -445,6 +606,7 @@ export async function executeDecision(db, {
       submitTickKey: envelope.submitTickKey ?? null,
       harvestTickKey,
       mandatePromptTemplateVersion: envelope.mandatePromptTemplateVersion ?? null,
+      harvestSnapshotDegraded: !!snapshot?.degraded, // P5 provenance (refuter, MONEY-P5-7)
       status: 'executed',
     });
     tx.set(decRef, doc);
@@ -468,11 +630,9 @@ export async function executeDecision(db, {
       // reconstructed as net + Σ friction (added back once, never subtracted twice).
       'portfolio.frictionPaidCum': roundUsd((book.portfolio?.frictionPaidCum || 0) + frictionPaid),
       revision: book.revision + 1,
-      'execState.openBatchId': null,
-      'execState.lastEvalTickKey': envelope.submitTickKey ?? null,
-      'execState.submitted': (book.execState?.submitted || 0) + 1,
-      'execState.executed': (book.execState?.executed || 0) + 1,
-      'execState.staleRejectStreak': 0, // a live fill resets the I9 streak
+      // Shared terminal bookkeeping (counters, streak reset — a live fill resets
+      // the I9 streak — ownership-conditional gate clear, submit-tick stamp).
+      ...execStateTerminalPatch(book, decisionId, 'executed', { submitTickKey: envelope.submitTickKey ?? null }),
     });
 
     return { status: 'executed', applied: true, decision: doc, receipt: exec.receipt, staleRejectStreak: 0 };

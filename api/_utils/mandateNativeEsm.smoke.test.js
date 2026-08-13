@@ -26,11 +26,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // the deploy; this is the only check that catches it (vite build doesn't bundle
 // api/; vite-node resolves missing named exports to undefined).
 const ROUTE_ENTRYPOINTS = [
-  '../cron/mandate-evaluate.js',  // eval + close sweeps → close pass, execution, CA, metrics, schema, config
+  '../cron/mandate-evaluate.js',  // eval + close sweeps → close pass, execution, CA, metrics, schema, config, P5 batch transport
   '../cron/mandate-rollover.js',  // P4 rollover sweep → rollover core, vintage, quarter summary, calendar
   '../mandate/create.js',         // creation endpoint
   '../mandate/escape.js',         // P4 escape endpoint
   '../mandate/accelerate.js',     // P4 accelerated-clock harness endpoint
+  '../mandate/drain.js',          // P5 drain-protocol endpoint (F26) → batch transport, model seam
 ];
 
 describe('native-ESM smoke — the mandate module graph loads under real node', () => {

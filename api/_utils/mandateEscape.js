@@ -14,7 +14,7 @@
 import { publishVintage, VINTAGE_COLLECTION, resolveVintage } from './mandateVintage.js';
 import { deriveQuarterSummary } from './mandateQuarterSummary.js';
 import {
-  buildNewMandateDoc, buildDecision, deriveManagerAgentId,
+  buildNewMandateDoc, buildDecision, deriveManagerAgentId, clearedOpenSubmissionPatch,
 } from './mandateSchema.js';
 import { getCadenceTier } from './mandateGenerationConfig.js';
 import { listArchetypeIds } from './archetypeRegistry.js';
@@ -171,7 +171,7 @@ export async function escapeMandate(db, { userId, archetype, now = new Date(), r
       escapeCohort: true,
       escapeReplacedBy: newMandateId,
       revision: (book.revision || 0) + 1,
-      ...(openBatchId ? { 'execState.openBatchId': null, 'execState.openBatchSubmittedAt': null } : {}),
+      ...(openBatchId ? clearedOpenSubmissionPatch() : {}),
     });
     // 4. Create the replacement.
     tx.set(newMandateRef, newDoc);

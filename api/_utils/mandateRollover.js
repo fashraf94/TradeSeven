@@ -23,7 +23,7 @@
 
 import { publishVintage, VINTAGE_COLLECTION, resolveVintage } from './mandateVintage.js';
 import { deriveQuarterSummary } from './mandateQuarterSummary.js';
-import { buildQuarterKey, deriveManagerAgentId, buildDecision } from './mandateSchema.js';
+import { buildQuarterKey, deriveManagerAgentId, buildDecision, clearedOpenSubmissionPatch } from './mandateSchema.js';
 import { getCadenceTier } from './mandateGenerationConfig.js';
 import { computeNextRolloverAt } from './mandateCalendar.js';
 import {
@@ -195,11 +195,12 @@ export async function rollOneBoundary(db, mandateRef, { now = new Date(), archet
 
     // Open-batch disposal (I1): a book crossing a boundary with an open batch has
     // it cancelled INSIDE this transaction — stale batches never cross a boundary.
-    // Dormant under direct transport (openBatchId always null until P5).
+    // Live under P5's batch transport; the provider-side batch is untouched (it
+    // carries OTHER books' requests) — its late result for this id no-ops on the
+    // decision-doc claim written below.
     const openBatchId = book.execState?.openBatchId ?? null;
     if (openBatchId) {
-      patch['execState.openBatchId'] = null;
-      patch['execState.openBatchSubmittedAt'] = null;
+      Object.assign(patch, clearedOpenSubmissionPatch());
     }
 
     // Test-only injection seam, then the FR-1 assertion (M2-safe).

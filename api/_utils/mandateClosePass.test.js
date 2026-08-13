@@ -419,6 +419,25 @@ describe('runRetentionCleanup', () => {
     expect(db._store.has('mandateUniverseDaily/2026-03-01')).toBe(false);
     expect(db._store.has('mandates/m1/dailyRows/2026-03-01')).toBe(true);
   });
+
+  it('P5 (§3.7): deletes TERMINAL batch docs past 30 days; an OPEN one is preserved and alerted; the I9 stats record is never swept', async () => {
+    const db = makeFakeDb({
+      'mandateBatches/msgbatch_old_done': { providerBatchId: 'msgbatch_old_done', sessionDate: '2026-06-01', status: 'harvested' },
+      'mandateBatches/msgbatch_old_open': { providerBatchId: 'msgbatch_old_open', sessionDate: '2026-06-01', status: 'open' },
+      'mandateBatches/msgbatch_recent': { providerBatchId: 'msgbatch_recent', sessionDate: '2026-08-10', status: 'harvested' },
+      'mandateBatchStats/2026-06-01': { date: '2026-06-01', batches: {} }, // acceptance-#8 evidence — retained (stated reading)
+    });
+    const errs = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((m) => errs.push(String(m)));
+    const deleted = await runRetentionCleanup(db, { now: NOW });
+    spy.mockRestore();
+    expect(deleted).toBe(1);
+    expect(db._store.has('mandateBatches/msgbatch_old_done')).toBe(false);   // terminal + old → swept
+    expect(db._store.has('mandateBatches/msgbatch_old_open')).toBe(true);    // OPEN → never deleted (I1)
+    expect(errs.some((e) => e.includes('MANDATE_BATCH_STUCK_OPEN') && e.includes('msgbatch_old_open'))).toBe(true);
+    expect(db._store.has('mandateBatches/msgbatch_recent')).toBe(true);      // inside the window
+    expect(db._store.has('mandateBatchStats/2026-06-01')).toBe(true);        // the record side — kept
+  });
 });
 
 // ── P3 verification-pass regression guards (INV-1/INV-2/SPEC-2/MONEY-6/MONEY-8 + entitlement) ─

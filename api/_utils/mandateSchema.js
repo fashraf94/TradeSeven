@@ -119,8 +119,16 @@ export function buildCostTelemetryBlock() {
 /** §3.3 / I1 / I9 — execution/liveness state. openBatchId gates submission. */
 export function buildExecStateBlock() {
   return {
+    // The OPEN-SUBMISSION gate (§3.3). House convention (P3 expiry, P4
+    // rollover/escape cancels, P5 batch transport): openBatchId holds the open
+    // submission's deterministic REQUEST id — which is also its decisionId, so
+    // every disposal path writes decisions/{openBatchId}. The provider-side
+    // Anthropic batch id is the separate field below (P5): one provider batch
+    // carries many books' requests, so it is bookkept platform-side
+    // (mandateBatches/{providerBatchId}) and mirrored here for drain/ops.
     openBatchId: null,
     openBatchSubmittedAt: null,
+    openProviderBatchId: null,
     lastProcessedRolloverKey: null,
     lastCloseKey: null,
     // I9 liveness counters (executedVsSubmitted); populated by the exec path (P2+).
@@ -133,6 +141,21 @@ export function buildExecStateBlock() {
     // missing vintage) — parallel to execState.lastEvalTickKey, which only
     // attempts write (P3 review INV-4: unstamped skips re-processed every fire).
     lastSweepTickKey: null,
+  };
+}
+
+/**
+ * The dotted-leaf patch that clears the WHOLE open-submission gate block (I1).
+ * P5 single source of truth: every terminal transition that releases the gate
+ * (execution, harvest disposition, close-pass expiry, rollover/escape cancel,
+ * drain) spreads THIS — so a new gate field can never be cleared at one site
+ * and leak at another.
+ */
+export function clearedOpenSubmissionPatch() {
+  return {
+    'execState.openBatchId': null,
+    'execState.openBatchSubmittedAt': null,
+    'execState.openProviderBatchId': null,
   };
 }
 
@@ -218,7 +241,9 @@ export function buildDailyRow({ date, quarterIndex, ...rest } = {}) {
     tokensIn: rest.tokensIn ?? 0,
     tokensOut: rest.tokensOut ?? 0,
     estUsd: rest.estUsd ?? 0,
-    cacheHitTokens: rest.cacheHitTokens ?? 0, // §6.3 — present now, zero until P5 wires caching
+    cacheHitTokens: rest.cacheHitTokens ?? 0, // §6.3 — cache reads (the D-20 stacking measurement)
+    cacheWriteTokens: rest.cacheWriteTokens ?? 0, // §6.3 (P5) — cache writes; hit rate needs both sides
+    unpricedCalls: rest.unpricedCalls ?? 0, // §6.2 (P5) — calls whose estUsd degraded to null (unknown model id); alerted at close
     quarterIndex: quarterIndex ?? null,
     partial: rest.partial ?? false, // I17 / §3.6 — creation-day & carry-over rows
     degradedMarks: rest.degradedMarks ?? false, // I6 — any carry-over mark in today's marking
@@ -264,10 +289,22 @@ export function buildDecision({ decisionId, verb, ticker, ...rest } = {}) {
     friction: rest.friction ?? null, // { slippageBps, spreadProxyBps, spreadBasis:'proxy', frictionPaid, frictionBasis:'idealized_no_market_impact' }
     frictionModelVersion: rest.frictionModelVersion ?? null,
     gateOutcome: rest.gateOutcome ?? null, // { rule, passed } — the specific rule that fired
+    // §3.3 "with the failing condition recorded" — the terminal condition that
+    // produced a non-executed status (base_revision, cross_session, result_age,
+    // price_drift, api_error:*, drained_transport_change, …). P2 carried it on
+    // return values only; P5 makes it DURABLE on the doc, because under batch
+    // transport the submit context is gone by harvest time and the receipt is
+    // the only record. Additive at schemaVersion 1 (the P3/P4 row precedent).
+    failCondition: rest.failCondition ?? null,
     vintageRef: rest.vintageRef ?? null,
     baseRevision: rest.baseRevision ?? null,
     submitTickKey: rest.submitTickKey ?? null, // I3
     harvestTickKey: rest.harvestTickKey ?? null, // I3
+    // P5 (refuter, MONEY-P5-7): true when the harvest ran against the empty
+    // degraded context of a failed-snapshot tick — the tickKey's snapshot doc
+    // either does not exist or was written LATER by a luckier fire, so replay
+    // audits must not price this receipt against it. Additive at v1.
+    harvestSnapshotDegraded: rest.harvestSnapshotDegraded ?? false,
     mandatePromptTemplateVersion: rest.mandatePromptTemplateVersion ?? null,
     influenceStateRef: null, // FR-7 / I8 — provably null in V1
     status: rest.status ?? null, // one of DECISION_STATUSES

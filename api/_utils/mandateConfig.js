@@ -300,6 +300,30 @@ export const MANDATE_RUNRATE_MONTHLY_USD = 1.0;
 export const MANDATE_SNAPSHOT_RETENTION_DAYS = 120;
 export const MANDATE_RETENTION_DELETE_BATCH = 200; // per close fire, per collection
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PHASE 5 — batch transport (§3.3 / §3.7 / I9). Added by the phase that first
+// uses them (do-not-build-ahead).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Open-batch poll page per harvest fire. Realistically 1–3 batch docs are open
+// at once (one per prior tick × generous fires); the bound only caps a
+// pathological backlog so a harvest fire stays inside the handler budget. A
+// batch past the page is picked up by the next fire (docs stay 'open').
+export const MANDATE_BATCH_POLL_PAGE = 20;
+
+// §3.7: terminal batch bookkeeping retained 30 days (spec-pinned). OPEN batch
+// docs are NEVER retention-deleted — an open doc that old is a bug to alert on,
+// not state to silently destroy (I1: no undisposed submission may vanish).
+export const MANDATE_BATCH_RETENTION_DAYS = 30;
+
+// Billing give-up horizon (§6.2 honesty): an aged-out batch's entries are
+// disposed immediately (books freed) but the DOC waits for the provider to
+// end so pre-cancel usage can still be billed — provider batches end within
+// 24h by contract. Past this horizon the doc finalizes with its unbilled
+// requests counted and alerted (MANDATE_BATCH_UNBILLED_SPEND) rather than
+// polling forever: understatement is loud, never silent.
+export const MANDATE_BATCH_BILLING_GIVEUP_MS = 26 * 60 * 60 * 1000; // 24h provider bound + slack
+
 // ── Rollover (§5.3, P4) ──────────────────────────────────────────────────────
 // The rollover sweep runs daily PRE-MARKET (§5.3): the boundary session's close
 // is already the last row of the old quarter, so processing pre-market lets the
