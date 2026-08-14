@@ -76,18 +76,15 @@ const DARK_BY_DESIGN = {
     'identityMigration feed gate — dark until composition activation',
   COMPOSITION_DISPLAY_ENABLED:
     'the one client-consumed composition flag — dark until activation (legacy copy is byte-identical when off)',
-  MANAGED_MANDATE_ENABLED:
-    'Spec 1 (The Mandate) MASTER gate — dark across Phases 1–6; the whole substrate stays inert until a deliberate founder PR after preview smoke',
-  MANDATE_EVAL_ENABLED:
-    'Spec 1 eval loop (§3.1) — built P2, registered P6; flips only after a founder preview smoke, never in a build PR',
-  MANDATE_CLOSE_ENABLED:
-    'Spec 1 daily close pass (§3.6) — built P3; flips only after a founder preview smoke',
+  // Spec 1 mandate substrate LIT at activation step 3 (Flip PR #1): the master
+  // gate + eval + close + founder-create flipped true and were dropped from
+  // DARK_BY_DESIGN here in the same commit (the guard's "if DELIBERATE"
+  // instruction; the integrity test below reds if a lit flag is left listed).
+  // Rollover and dormancy stay dark below.
   MANDATE_ROLLOVER_ENABLED:
     'Spec 1 rollover sweep (§5.3) — built P4; flips only after a founder preview smoke',
   MANDATE_DORMANCY_DOWNSHIFT_ENABLED:
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
-  MANDATE_FOUNDER_CREATE_ENABLED:
-    'Spec 1 founder create endpoint (§7) — dark-testing switch; creation also requires an allowlisted uid, so the flag alone is inert',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────

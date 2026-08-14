@@ -94,10 +94,20 @@ describe('mandate-rollover handler — auth + dark gates', () => {
     expect(captured.code).toBe(401);
   });
 
-  it('the master flag is dark by default → no-op, no I/O', async () => {
-    // MANAGED_MANDATE_ENABLED is false by default → mandate_dark before any db work.
-    const { req, res, captured } = fakeReqRes();
-    await handler(req, res);
-    expect(captured.body).toMatchObject({ ok: true, noop: true, reason: 'mandate_dark' });
+  it('rollover stays dark under Flip PR #1 → no-op even with the master gate lit and the window open', async () => {
+    // Flip PR #1 lights the master gate but NOT the rollover flag (that is Flip
+    // PR #2). Pin the clock inside the pre-market window (08:00 ET) so the
+    // calendar gate opens and the ROLLOVER FLAG is provably the thing holding
+    // the sweep dark — no I/O, no getFirebaseAdmin reached. Flip PR #2 retires
+    // this test when rollover goes live.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-03T12:00:00Z')); // 08:00 ET, inside [7:30,9:30)
+    try {
+      const { req, res, captured } = fakeReqRes();
+      await handler(req, res);
+      expect(captured.body).toMatchObject({ ok: true, noop: true, reason: 'mandate_rollover_dark' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
