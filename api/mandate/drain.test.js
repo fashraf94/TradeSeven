@@ -6,8 +6,8 @@
 // create.js helpers — the P4 ambiguity-4 no-new-flag precedent). The drain
 // CORE's behavior (cancel + rejected_stale + doc lifecycle + idempotence) is
 // proven in mandateBatchTransport.test.js and the interleavings harness; here
-// we lock the HTTP surface: dark by default, founder-only, POST-only, and the
-// authorization refusal reveals nothing about which condition failed.
+// we lock the HTTP surface: founder-only (flag AND allowlist), POST-only, and
+// the authorization refusal reveals nothing about which condition failed.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -41,15 +41,17 @@ beforeEach(() => {
 });
 
 describe('mandate/drain — founder gate (§7: flag AND allowlist, both required)', () => {
-  it('is DARK by default: with the flag off, even an allowlisted uid gets an opaque 403 and the drain core never runs', async () => {
+  it('is LIVE for a founder (Flip PR #1): with the flag on, an allowlisted uid runs the drain core', async () => {
     process.env.MANDATE_FOUNDER_UIDS = 'u_founder';
-    // The flag ships false (merge-dark, pinned in mandateFlags.test.js) — this
-    // test runs against the real constant so a flip is loud here too.
-    expect(MANDATE_FOUNDER_CREATE_ENABLED).toBe(false);
+    // The flag ships true from Flip PR #1 (activation step 3) — this test runs
+    // against the real constant so a later dark-revert is loud here too. The
+    // flag-OFF refusal (a flag alone is not authorization) is proven against a
+    // literal false in create.test.js.
+    expect(MANDATE_FOUNDER_CREATE_ENABLED).toBe(true);
     const r = await invoke();
-    expect(r.code).toBe(403);
-    expect(r.body).toEqual({ error: 'forbidden' }); // reveals nothing about which condition failed
-    expect(drainSpy).not.toHaveBeenCalled();
+    expect(r.code).toBe(200);
+    expect(r.body).toEqual({ success: true, batches: 0, disposed: 0, leaseSkips: 0, errors: 0, incomplete: 0 });
+    expect(drainSpy).toHaveBeenCalledTimes(1);
   });
 
   it('an un-allowlisted uid is refused identically (no allowlist set → nobody is a founder)', async () => {

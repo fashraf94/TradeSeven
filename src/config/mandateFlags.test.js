@@ -18,14 +18,17 @@ import {
   MANDATE_TRANSPORT_MODE,
 } from './featureFlags.js';
 
-describe('Spec 1 mandate flags — all default false / safest (merge dark, §7)', () => {
-  it('the master gate is dark', () => {
-    expect(MANAGED_MANDATE_ENABLED).toBe(false);
+describe('Spec 1 mandate flags — merge-dark pins track live values (§7 / BUILD_RULES §2)', () => {
+  it('the master gate is lit (activation step 3, Flip PR #1)', () => {
+    expect(MANAGED_MANDATE_ENABLED).toBe(true);
   });
 
-  it('the eval / close / rollover loop gates are dark', () => {
-    expect(MANDATE_EVAL_ENABLED).toBe(false);
-    expect(MANDATE_CLOSE_ENABLED).toBe(false);
+  it('the eval / close loop gates are lit (Flip PR #1)', () => {
+    expect(MANDATE_EVAL_ENABLED).toBe(true);
+    expect(MANDATE_CLOSE_ENABLED).toBe(true);
+  });
+
+  it('the rollover gate stays dark until its own flip (Flip PR #2)', () => {
     expect(MANDATE_ROLLOVER_ENABLED).toBe(false);
   });
 
@@ -33,8 +36,8 @@ describe('Spec 1 mandate flags — all default false / safest (merge dark, §7)'
     expect(MANDATE_DORMANCY_DOWNSHIFT_ENABLED).toBe(false);
   });
 
-  it('the founder create endpoint gate is dark', () => {
-    expect(MANDATE_FOUNDER_CREATE_ENABLED).toBe(false);
+  it('the founder create endpoint gate is lit (activation step 3, Flip PR #1)', () => {
+    expect(MANDATE_FOUNDER_CREATE_ENABLED).toBe(true);
   });
 
   it('transport defaults to the safest direct mode (string enum, not a boolean gate)', () => {

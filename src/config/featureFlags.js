@@ -1553,7 +1553,7 @@ export const COMPOSITION_DISPLAY_ENABLED = false;
  * that keeps the whole substrate inert while it is built dark across Phases 1–6.
  */
 // Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const MANAGED_MANDATE_ENABLED = false;
+export const MANAGED_MANDATE_ENABLED = true;
 
 /**
  * The scheduled evaluation loop (§3.1). When FALSE (DEFAULT), the
@@ -1561,7 +1561,7 @@ export const MANAGED_MANDATE_ENABLED = false;
  * P2; registered P6.
  */
 // Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const MANDATE_EVAL_ENABLED = false;
+export const MANDATE_EVAL_ENABLED = true;
 
 /**
  * The authoritative daily close pass (§3.6). When FALSE (DEFAULT), no book is
@@ -1569,7 +1569,7 @@ export const MANDATE_EVAL_ENABLED = false;
  * sole writer of high-water marks / drawdown peaks (I6).
  */
 // Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const MANDATE_CLOSE_ENABLED = false;
+export const MANDATE_CLOSE_ENABLED = true;
 
 /**
  * The rolling per-user rollover sweep (§5.3). When FALSE (DEFAULT), no book
@@ -1597,7 +1597,7 @@ export const MANDATE_DORMANCY_DOWNSHIFT_ENABLED = false;
  * precedent: founder machinery, no new flag).
  */
 // Pinned by: mandateFlags.test.js, drain.test.js (flagPinGuard: this value and the pins move together — BUILD_RULES §2).
-export const MANDATE_FOUNDER_CREATE_ENABLED = false;
+export const MANDATE_FOUNDER_CREATE_ENABLED = true;
 
 /**
  * Transport mode for mandate model calls (§3.3). 'direct' (DEFAULT, safest) or
