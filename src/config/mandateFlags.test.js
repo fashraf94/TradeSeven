@@ -37,7 +37,7 @@ describe('Spec 1 mandate flags — all default false / safest (merge dark, §7)'
     expect(MANDATE_FOUNDER_CREATE_ENABLED).toBe(false);
   });
 
-  it('transport runs in batch mode (Config PR-D; string enum, not a boolean gate)', () => {
-    expect(MANDATE_TRANSPORT_MODE).toBe('batch');
+  it('transport runs in direct mode (PR-D-revert fallback; string enum, not a boolean gate)', () => {
+    expect(MANDATE_TRANSPORT_MODE).toBe('direct');
   });
 });
