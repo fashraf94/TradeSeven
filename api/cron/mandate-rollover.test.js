@@ -4,7 +4,14 @@
 // frontier), the durable failure trace + streak alert, and truthful completion.
 
 import { describe, it, expect, vi } from 'vitest';
+
+// getFirebaseAdmin is mocked so the handler's default-db path (the Flip PR #2
+// live test) drives the sweep against an injected fake; the runRolloverSweep
+// tests pass their own db explicitly and never reach this.
+vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: vi.fn() }));
+
 import handler, { runRolloverSweep } from './mandate-rollover.js';
+import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { makeMandateFakeDb } from '../_utils/__testsupport__/mandateFakeFirestore.js';
 import { buildNewMandateDoc, buildDailyRow, deriveManagerAgentId } from '../_utils/mandateSchema.js';
 
@@ -87,26 +94,29 @@ describe('runRolloverSweep — due-set cursor walk + capital carry (FR-1)', () =
   });
 });
 
-describe('mandate-rollover handler — auth + dark gates', () => {
+describe('mandate-rollover handler — auth gate + live sweep wiring', () => {
   it('401 without a cron header or the CRON_SECRET bearer', async () => {
     const { req, res, captured } = fakeReqRes({}); // no cron header, no auth
     await handler(req, res);
     expect(captured.code).toBe(401);
   });
 
-  it('rollover stays dark under Flip PR #1 → no-op even with the master gate lit and the window open', async () => {
-    // Flip PR #1 lights the master gate but NOT the rollover flag (that is Flip
-    // PR #2). Pin the clock inside the pre-market window (08:00 ET) so the
-    // calendar gate opens and the ROLLOVER FLAG is provably the thing holding
-    // the sweep dark — no I/O, no getFirebaseAdmin reached. Flip PR #2 retires
-    // this test when rollover goes live.
+  it('rollover is LIVE under Flip PR #2 → all gates pass in-window and the sweep runs', async () => {
+    // Flip PR #2 lights the rollover flag. With auth + master + window + rollover
+    // all green, the handler drives runRolloverSweep against the default db
+    // (mocked to an empty fake) → a clean, complete sweep of zero due books,
+    // never a dark no-op.
+    getFirebaseAdmin.mockReturnValue(makeMandateFakeDb({}));
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-03T12:00:00Z')); // 08:00 ET, inside [7:30,9:30)
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       const { req, res, captured } = fakeReqRes();
       await handler(req, res);
-      expect(captured.body).toMatchObject({ ok: true, noop: true, reason: 'mandate_rollover_dark' });
+      expect(captured.body).toMatchObject({ complete: true, rolledBooks: 0, errors: 0 });
+      expect(captured.body.noop).toBeUndefined(); // the sweep ran — not a dark no-op
     } finally {
+      spy.mockRestore();
       vi.useRealTimers();
     }
   });
