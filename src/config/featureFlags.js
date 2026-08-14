@@ -1577,7 +1577,7 @@ export const MANDATE_CLOSE_ENABLED = true;
  * (FR-1); the transaction asserts totalValue unchanged (I15).
  */
 // Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const MANDATE_ROLLOVER_ENABLED = false;
+export const MANDATE_ROLLOVER_ENABLED = true;
 
 /**
  * Dormancy downshift (§6.5 / D-21). When FALSE (DEFAULT), no downshift derives.

@@ -28,8 +28,8 @@ describe('Spec 1 mandate flags — merge-dark pins track live values (§7 / BUIL
     expect(MANDATE_CLOSE_ENABLED).toBe(true);
   });
 
-  it('the rollover gate stays dark until its own flip (Flip PR #2)', () => {
-    expect(MANDATE_ROLLOVER_ENABLED).toBe(false);
+  it('the rollover gate is lit (Flip PR #2)', () => {
+    expect(MANDATE_ROLLOVER_ENABLED).toBe(true);
   });
 
   it('dormancy downshift is dark', () => {
