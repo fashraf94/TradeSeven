@@ -177,6 +177,19 @@ describe('M2 regression — deploy readers honor new-canonical writes', () => {
     expect(profit.value).toBe(12);  // NOT default 15
   });
 
+  it('honesty (Tier 1): maxPosition is labeled soft, matching the engine no-op — never promises hard enforcement', () => {
+    const guardrails = dimensionsToGuardrails(newOnlyDv);
+    const maxPos = guardrails.find((g) => g.type === 'maxPosition');
+    // maxPosition is not a SUPPORTED_GUARDRAIL_SHAPE; the engine skips it
+    // (skipped_incompatible). Labeling it 'hard' was the lie this relabel fixes.
+    expect(maxPos.enforcement).toBe('soft');
+    // The genuinely-enforced shapes stay hard; profitTarget stays soft (unchanged).
+    expect(guardrails.find((g) => g.type === 'stopLoss').enforcement).toBe('hard');
+    expect(guardrails.find((g) => g.type === 'trailingStop').enforcement).toBe('hard');
+    expect(guardrails.find((g) => g.type === 'maxSectorWeight').enforcement).toBe('hard');
+    expect(guardrails.find((g) => g.type === 'profitTarget').enforcement).toBe('soft');
+  });
+
   it('dimensionsToDirectives emits user-driven text, not defaults', () => {
     const dirs = dimensionsToDirectives(newOnlyDv);
     const stopLoss = dirs.find((d) => d.id === 'dir-stop-loss');

@@ -24,6 +24,17 @@ export const TRADE_DECISION_TOOL = {
         description:
           'Ticker from bench entering active portfolio. Required if SWAP. Must not be on cooldown.',
       },
+      swap_type: {
+        type: 'string',
+        enum: ['defensive_cut', 'profit_take', 'momentum_rotation', 'upgrade'],
+        description:
+          'Which of these best classifies this swap. Required if SWAP; omit on HOLD. ' +
+          'defensive_cut = exiting a loser or deteriorating position to stop the bleed. ' +
+          'profit_take = realizing gains on a winner. ' +
+          'momentum_rotation = exiting a stalling or weakening name for a stronger setup (outgoing-side). ' +
+          'upgrade = the incoming bench candidate is simply better (the outgoing name is not necessarily weak). ' +
+          'Report the one that fits what you are doing — this is a label, not an instruction.',
+      },
       rationale: {
         type: 'string',
         description:

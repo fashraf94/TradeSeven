@@ -18,6 +18,7 @@ import { Mono, Eyebrow, LIcon, Icon } from '../LeagueParts';
 import { LTOKENS, alpha, MONO } from '../leagueTokens';
 import { fmtScore } from '../../../utils/leagueFormat';
 import { OWN_AGENT, ST_GOOD, ST_BAD } from './arenaTheme';
+import { SWAP_MOTIVE_DISPLAY_ENABLED } from '../../../config/featureFlags';
 
 // Tint from the ROUNDED value so color and printed number come from one source
 // (§9): a value that prints '0.0' is never painted green/red. Swap points AND
@@ -138,6 +139,11 @@ export function FilmRoomRecap({ history = null }) {
                           {(it.entryPrice != null && it.exitPrice != null) && (
                             <Mono style={{ display: 'block', fontSize: 9.5, color: LTOKENS.ink3, marginTop: 2 }}>
                               {it.entryPrice} &rarr; {it.exitPrice}{it.gainPct != null ? ` · ${fmtScore(it.gainPct)}%` : ''}
+                            </Mono>
+                          )}
+                          {SWAP_MOTIVE_DISPLAY_ENABLED && it.reason && (
+                            <Mono style={{ display: 'block', fontSize: 9, color: LTOKENS.ink3, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              {it.reason}
                             </Mono>
                           )}
                         </Mono>

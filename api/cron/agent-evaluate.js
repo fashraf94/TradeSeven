@@ -2217,6 +2217,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               // (computed above), so trades[].exitReason carries the protective
               // origin for Phase 5 Knob C / Phase 7. Discretionary → 'haiku_decision'.
               exitReason: haikuSwapReason,
+              // Swap Motive Observability (Tier 1) — the model's DECLARED judgment,
+              // a NEW sibling next to exitReason (which stays the machinery-provenance
+              // key four subsystems depend on). null when the model omitted swap_type
+              // (rendered "undeclared"); never repurposes exitReason. Additive/inert.
+              swapMotive: haikuResult?.swap_type ?? null,
               ...buildSwapReceiptSource({ source: swapSource, archetype: ctx.archetype }),
               // Release 2 PR-b — the §14 provenance sibling.
               ...buildSwapProvenance(dialClamp.provenance),
@@ -2479,6 +2484,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               entryPreset: battle.strategyPreset || 'balanced',
               entryMode: mode,
               exitReason: 'haiku_decision',
+              // Swap Motive Observability (Tier 1) — declared model judgment sibling
+              // (see the autopilot metadata above). Rides onto trades[] when the
+              // proposal resolves, via the ...(proposal.evaluationMetadata) merge.
+              swapMotive: haikuResult?.swap_type ?? null,
               // Phase 6 (§4.6) — receipt source. Dormant under the autopilot launch
               // guard; stamped for forward-compat (mirrors how Phase 4 stamped
               // exitReason here). Rides onto trades[] when the proposal is later
