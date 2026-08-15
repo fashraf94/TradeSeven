@@ -103,8 +103,11 @@ export function createFirestoreFake() {
   function matches(actual, op, expected) {
     switch (op) {
       case '==': return valueOf(actual) === valueOf(expected);
+      case '!=': return valueOf(actual) !== valueOf(expected);
       case '<': return cmp(actual, expected) < 0;
+      case '<=': return cmp(actual, expected) <= 0;
       case '>': return cmp(actual, expected) > 0;
+      case '>=': return cmp(actual, expected) >= 0;
       default: throw new Error(`fake: unsupported operator ${op}`);
     }
   }

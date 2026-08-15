@@ -26,6 +26,16 @@ vi.mock('../_utils/fantasyTimesConsensus.js', () => ({
   appendEarningsResult: vi.fn(async () => {}),
   appendEconomics: vi.fn(async () => {}),
 }));
+// WIRE_WRITES is LIVE in production (PR #763): pin writes ON so these seams
+// exercise the real publishStoryWithWire write-through, not the retired
+// writes-off `.add()` surface. wireFlags is read by both the handler and
+// wireWriteThrough, so one mock covers both.
+vi.mock('../_utils/wireFlags.js', () => ({
+  getWireFlags: () => ({
+    metricsEnabled: false, writesEnabled: true, continuityEnabled: false,
+    newslineEnabled: false, editorialEnabled: false,
+  }),
+}));
 
 import handler, { RECAP_MAX_STORIES_PER_FIRING } from './generate-recap.js';
 import { wireModelCall } from '../_utils/wireModelCall.js';
@@ -35,30 +45,7 @@ import {
   NONTRACKED_SHAPE_FILLERS,
   TRACKED_UNRELEASED_FILLER,
 } from '../_utils/__fixtures__/earningsCalendarCapture.js';
-
-function makeFakeDb(existingStories = []) {
-  const added = [];
-  function collectionRef(name) {
-    const filters = [];
-    const ref = {
-      where(field, op, value) { filters.push({ field, op, value }); return ref; },
-      orderBy() { return ref; },
-      limit() { return ref; },
-      async get() {
-        let rows = name === 'fantasyTimesStories' ? [...existingStories, ...added.map((a) => a.doc)] : [];
-        for (const f of filters) {
-          if (f.op === '==') rows = rows.filter((s) => s[f.field] === f.value);
-          if (f.op === '>') rows = rows.filter((s) => (s[f.field]?.getTime?.() ?? 0) > f.value.getTime());
-        }
-        return { empty: rows.length === 0, docs: rows.map((r) => ({ data: () => r })) };
-      },
-      async add(doc) { added.push({ name, doc }); return { id: `story-${added.length}` }; },
-      doc() { return { async set() {}, async get() { return { exists: false, data: () => null }; } }; },
-    };
-    return ref;
-  }
-  return { db: { collection: collectionRef }, added };
-}
+import { makeWireDb, writtenStories, wireDay, stubRecapModel } from './__fixtures__/recapWireHarness.js';
 
 function makeRes() {
   const r = { statusCode: null, body: null };
@@ -70,13 +57,9 @@ function makeRes() {
 const cronReq = { headers: { 'x-vercel-cron': '1' }, method: 'POST', query: {}, body: {} };
 
 function stubToolResponse() {
-  wireModelCall.mockResolvedValue({
-    response: {
-      content: [{ type: 'tool_use', input: { headline: 'H', subheadline: 'S', body: 'B', themes: [], sentiment: 'neutral', recommended_action: 'EARNINGSGAME' } }],
-      stop_reason: 'tool_use',
-    },
-    generationConfig: { seam: 'doug_earnings_recap' },
-  });
+  // Extended-tool response carrying a PASSED agentFacts payload per symbol, so
+  // the writes-ON path renders a real wire entry (the gate-corpus coverage).
+  stubRecapModel(wireModelCall);
 }
 
 function stubFetch(earnings) {
@@ -137,7 +120,7 @@ describe('GREEN — Doug writes an earnings recap from the captured intersection
     // Fri 2026-07-31 09:00 ET (morning): window [Thu 2026-07-30, Fri 2026-07-31].
     vi.setSystemTime(new Date('2026-07-31T13:00:00Z'));
     stubFetch([...CAPTURED_TRACKED_ROWS, ...NONTRACKED_SHAPE_FILLERS]);
-    const { db, added } = makeFakeDb();
+    const db = makeWireDb();
     getFirebaseAdmin.mockReturnValue(db);
 
     const res = makeRes();
@@ -149,19 +132,28 @@ describe('GREEN — Doug writes an earnings recap from the captured intersection
     expect(res.body.success).toBe(true);
     // Post-expansion: BOTH tracked reporters are recapped in one firing,
     // surprise-first — AAPL (−16.5%) outranks AMZN (−8.2%), so it is written
-    // first (added[0]); AMZN follows.
+    // first; AMZN follows.
     expect(res.body.count).toBe(2);
     expect(res.body.stories[0].symbol).toBe('AAPL');
     expect(res.body.stories[0].outcome).toBe('miss'); // 1.57 actual < 1.88 estimate
     expect(res.body.stories[1].symbol).toBe('AMZN');
 
-    expect(added).toHaveLength(2);
-    const story = added[0].doc;
+    // Both stories persist through the LIVE write-through (batch + transaction),
+    // surprise-first; the story doc carries its cleared wirePending stamp.
+    const stories = writtenStories(db);
+    expect(stories).toHaveLength(2);
+    const story = stories[0];
     expect(story.primaryTicker).toBe('AAPL');
     expect(story.referentDate).toBe('2026-07-30');
     expect(story.beforeAfterMarket).toBe('AMC');
     expect(story.dataSnapshot.epsActual).toBe(1.57);  // from `actual`, not `actual_eps`
     expect(story.dataSnapshot.epsEstimate).toBe(1.88); // from `estimate`
+    expect(story.wireValidation.outcome).toBe('passed');
+    expect(story.wirePending).toBe(false);
+
+    // The gate corpus: one wire entry per story, surprise-first, honest ticker.
+    const day = wireDay(db);
+    expect(day.entries.map((e) => e.agentFacts.primaryTicker)).toEqual(['AAPL', 'AMZN']);
 
     // companyName falls back to the symbol (no `name` field in the feed).
     const prompt = wireModelCall.mock.calls[0][1].messages[0].content;
@@ -173,14 +165,14 @@ describe('GREEN — Doug writes an earnings recap from the captured intersection
   it('an unreleased tracked row (actual null) is held by the data gate, not counted or errored', async () => {
     vi.setSystemTime(new Date('2026-07-31T13:00:00Z'));
     stubFetch([TRACKED_UNRELEASED_FILLER]); // MSFT, actual null, report_date today
-    const { db, added } = makeFakeDb();
+    const db = makeWireDb();
     getFirebaseAdmin.mockReturnValue(db);
 
     const res = makeRes();
     await handler({ ...cronReq }, res);
 
     expect(res.body.code).toBe('empty_window');
-    expect(added).toHaveLength(0);
+    expect(writtenStories(db)).toHaveLength(0);
     expect(wireModelCall).not.toHaveBeenCalled();
     expect(loggedLines().some((l) => l.includes('outcome=empty_window fetched=1 tracked=0'))).toBe(true);
   });
@@ -188,7 +180,7 @@ describe('GREEN — Doug writes an earnings recap from the captured intersection
   it('referent dedup still holds post-fix: a prior story for the same (symbol, reportDate) → zero model calls', async () => {
     vi.setSystemTime(new Date('2026-07-31T13:00:00Z'));
     stubFetch([...CAPTURED_TRACKED_ROWS]);
-    const { db } = makeFakeDb([
+    const db = makeWireDb([
       { type: 'earnings_recap', primaryTicker: 'AAPL', referentDate: '2026-07-30', status: 'published' },
     ]);
     getFirebaseAdmin.mockReturnValue(db);
@@ -200,6 +192,10 @@ describe('GREEN — Doug writes an earnings recap from the captured intersection
     expect(res.body.count).toBe(1);
     expect(res.body.stories[0].symbol).toBe('AMZN');
     expect(res.body.stories[0].outcome).toBe('miss'); // 1.68 < 1.83
+    // Exactly one story written through the wire; AAPL never regenerated.
+    const stories = writtenStories(db);
+    expect(stories).toHaveLength(1);
+    expect(stories[0].primaryTicker).toBe('AMZN');
   });
 });
 
@@ -227,7 +223,7 @@ describe('THROUGHPUT — a binding per-firing budget drops the least-newsworthy 
       row('MSFT.US', 1.44, 1.35),   // +6.7%
       row('GOOGL.US', 1.20, 1.35),  // -11.1%
     ]);
-    const { db, added } = makeFakeDb();
+    const db = makeWireDb();
     getFirebaseAdmin.mockReturnValue(db);
 
     const res = makeRes();
@@ -235,7 +231,9 @@ describe('THROUGHPUT — a binding per-firing budget drops the least-newsworthy 
 
     const N = RECAP_MAX_STORIES_PER_FIRING; // 4 (no prior stories → budget = min(12, 4))
     expect(res.body.count).toBe(N);
-    expect(added).toHaveLength(N);
+    expect(writtenStories(db)).toHaveLength(N);
+    // Every survivor lands one wire entry — the whole budget feeds the corpus.
+    expect(wireDay(db).entries).toHaveLength(N);
     // The N most newsworthy survive, surprise-first; the 2 least newsworthy drop.
     expect(res.body.stories.map((s) => s.symbol)).toEqual(['NVDA', 'AAPL', 'GOOGL', 'MSFT']);
     const survived = new Set(res.body.stories.map((s) => s.symbol));

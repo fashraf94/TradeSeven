@@ -24,37 +24,22 @@ vi.mock('../_utils/fantasyTimesConsensus.js', () => ({
   appendEarningsResult: vi.fn(async () => {}),
   appendEconomics: vi.fn(async () => {}),
 }));
+// WIRE_WRITES is LIVE (PR #763): pin writes ON so the recap seam exercises the
+// real publishStoryWithWire write-through (read by both handler and write-through).
+vi.mock('../_utils/wireFlags.js', () => ({
+  getWireFlags: () => ({
+    metricsEnabled: false, writesEnabled: true, continuityEnabled: false,
+    newslineEnabled: false, editorialEnabled: false,
+  }),
+}));
 
 import handler from './generate-recap.js';
 import { wireModelCall } from '../_utils/wireModelCall.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { appendEarningsResult } from '../_utils/fantasyTimesConsensus.js';
+import { makeWireDb, writtenStories, stubRecapModel } from './__fixtures__/recapWireHarness.js';
 
 // ── fakes ────────────────────────────────────────────────────────────────
-
-function makeFakeDb(existingStories = []) {
-  const added = [];
-  function collectionRef(name) {
-    const filters = [];
-    const ref = {
-      where(field, op, value) { filters.push({ field, op, value }); return ref; },
-      orderBy() { return ref; },
-      limit() { return ref; },
-      async get() {
-        let rows = name === 'fantasyTimesStories' ? [...existingStories, ...added.map((a) => a.doc)] : [];
-        for (const f of filters) {
-          if (f.op === '==') rows = rows.filter((s) => s[f.field] === f.value);
-          if (f.op === '>') rows = rows.filter((s) => (s[f.field]?.getTime?.() ?? 0) > f.value.getTime());
-        }
-        return { empty: rows.length === 0, docs: rows.map((r) => ({ data: () => r })) };
-      },
-      async add(doc) { added.push({ name, doc }); return { id: `story-${added.length}` }; },
-      doc() { return { async set() {}, async get() { return { exists: false, data: () => null }; } }; },
-    };
-    return ref;
-  }
-  return { db: { collection: collectionRef }, added };
-}
 
 function makeRes() {
   const r = { statusCode: null, body: null };
@@ -66,13 +51,7 @@ function makeRes() {
 const cronReq = { headers: { 'x-vercel-cron': '1' }, method: 'POST', query: {}, body: {} };
 
 function stubToolResponse() {
-  wireModelCall.mockResolvedValue({
-    response: {
-      content: [{ type: 'tool_use', input: { headline: 'H', subheadline: 'S', body: 'B', themes: [], sentiment: 'neutral', recommended_action: 'EARNINGSGAME' } }],
-      stop_reason: 'tool_use',
-    },
-    generationConfig: { seam: 'doug_earnings_recap' },
-  });
+  stubRecapModel(wireModelCall);
 }
 
 // Route the handler's two inline fetches: EODHD earnings calendar + the
@@ -125,7 +104,7 @@ describe('S5 windows (R-B2)', () => {
   it('evening fire queries [today, today] in ET, and writes the AMC recap with honest labels', async () => {
     vi.setSystemTime(new Date('2026-07-30T21:00:00Z')); // 17:00 ET Thursday
     const calendarCalls = stubFetch({ earnings: [MSFT_AMC_TODAY] });
-    const { db, added } = makeFakeDb();
+    const db = makeWireDb();
     getFirebaseAdmin.mockReturnValue(db);
 
     const res = makeRes();
@@ -133,11 +112,13 @@ describe('S5 windows (R-B2)', () => {
 
     expect(calendarCalls[0]).toContain('from=2026-07-30&to=2026-07-30');
     expect(res.body.stories[0].outcome).toBe('beat');
-    expect(added).toHaveLength(1);
-    const story = added[0].doc;
+    const stories = writtenStories(db);
+    expect(stories).toHaveLength(1);
+    const story = stories[0];
     expect(story.referentDate).toBe('2026-07-30');       // R-B4 top-level
     expect(story.beforeAfterMarket).toBe('AMC');         // R-B5 top-level
     expect(story.dataSnapshot.reportDate).toBeUndefined(); // C1: never inside dataSnapshot
+    expect(story.wireValidation.outcome).toBe('passed');   // live write-through ran
 
     const prompt = wireModelCall.mock.calls[0][1].messages[0].content;
     expect(prompt).toContain('Report timing: AMC (reports today)');
@@ -150,13 +131,13 @@ describe('S5 windows (R-B2)', () => {
     vi.setSystemTime(new Date('2026-07-27T11:00:00Z')); // Monday 07:00 ET (EDT)
     const fridayAmc = { ...MSFT_AMC_TODAY, code: 'NVDA.US', name: 'NVIDIA', report_date: '2026-07-24' };
     const calendarCalls = stubFetch({ earnings: [fridayAmc] });
-    const { db, added } = makeFakeDb();
+    const db = makeWireDb();
     getFirebaseAdmin.mockReturnValue(db);
 
     await handler({ ...cronReq }, makeRes());
 
     expect(calendarCalls[0]).toContain('from=2026-07-24&to=2026-07-27'); // Friday, via the walker
-    expect(added[0].doc.referentDate).toBe('2026-07-24');
+    expect(writtenStories(db)[0].referentDate).toBe('2026-07-24');
     const prompt = wireModelCall.mock.calls[0][1].messages[0].content;
     expect(prompt).toContain('Report timing: AMC (reported the prior session)');
     // 07:00 ET is pre-open (review H1): the quote may still reflect the
@@ -170,7 +151,7 @@ describe('S5 windows (R-B2)', () => {
     vi.setSystemTime(new Date('2026-07-27T14:00:00Z')); // Monday 10:00 ET — market open
     const fridayAmc = { ...MSFT_AMC_TODAY, code: 'NVDA.US', name: 'NVIDIA', report_date: '2026-07-24' };
     stubFetch({ earnings: [fridayAmc] });
-    const { db } = makeFakeDb();
+    const db = makeWireDb();
     getFirebaseAdmin.mockReturnValue(db);
 
     await handler({ ...cronReq }, makeRes());
@@ -182,7 +163,7 @@ describe('S5 windows (R-B2)', () => {
   it('C2 fixture: day-after-holiday morning fire walks to the pre-holiday session', async () => {
     vi.setSystemTime(new Date('2026-06-22T11:00:00Z')); // Monday after Juneteenth Friday
     const calendarCalls = stubFetch({ earnings: [] });
-    getFirebaseAdmin.mockReturnValue(makeFakeDb().db);
+    getFirebaseAdmin.mockReturnValue(makeWireDb());
 
     await handler({ ...cronReq }, makeRes());
 
@@ -192,7 +173,7 @@ describe('S5 windows (R-B2)', () => {
   it('C2 fixture: 00:30 UTC boundary — the window is the ET day, not the UTC day', async () => {
     vi.setSystemTime(new Date('2026-07-31T00:30:00Z')); // 20:30 ET Thu Jul 30 → evening fire
     const calendarCalls = stubFetch({ earnings: [] });
-    getFirebaseAdmin.mockReturnValue(makeFakeDb().db);
+    getFirebaseAdmin.mockReturnValue(makeWireDb());
 
     await handler({ ...cronReq }, makeRes());
 
@@ -205,17 +186,19 @@ describe('R-B3: UTC-midnight consensus coherence (replacement acceptance row)', 
   it("the 8pm-ET fire's operand write and story land coherently — one instant, the locked UTC expression", async () => {
     vi.setSystemTime(new Date('2026-07-31T00:30:00Z')); // 20:30 ET Jul 30; UTC day is Jul 31
     stubFetch({ earnings: [MSFT_AMC_TODAY] });
-    const { db, added } = makeFakeDb();
+    const db = makeWireDb();
     getFirebaseAdmin.mockReturnValue(db);
 
     await handler({ ...cronReq }, makeRes());
 
-    expect(added).toHaveLength(1);
-    const story = added[0].doc;
+    const stories = writtenStories(db);
+    expect(stories).toHaveLength(1);
+    const story = stories[0];
     const consensusKey = appendEarningsResult.mock.calls[0][0];
     // The locked join: adapter applies the same UTC expression to
-    // story.publishedAt — must land on the doc the writer keyed.
-    expect(consensusKey).toBe(story.publishedAt.toISOString().split('T')[0]);
+    // story.publishedAt — must land on the doc the writer keyed. (Persisted
+    // through the wire fake, publishedAt round-trips as an ISO string.)
+    expect(consensusKey).toBe(new Date(story.publishedAt).toISOString().split('T')[0]);
     expect(consensusKey).toBe('2026-07-31'); // UTC firing date, NOT the ET day or event date
   });
 });
@@ -224,7 +207,7 @@ describe('C8 A6 rows + referent dedup (R-B4)', () => {
   it('already-written: second firing skips with ZERO model calls', async () => {
     vi.setSystemTime(new Date('2026-07-30T22:00:00Z'));
     stubFetch({ earnings: [MSFT_AMC_TODAY] });
-    const { db } = makeFakeDb([
+    const db = makeWireDb([
       { type: 'earnings_recap', primaryTicker: 'MSFT', referentDate: '2026-07-30', status: 'published' },
     ]);
     getFirebaseAdmin.mockReturnValue(db);
@@ -243,34 +226,36 @@ describe('C8 A6 rows + referent dedup (R-B4)', () => {
     // Firing 1: same-day evening → writes.
     vi.setSystemTime(new Date('2026-07-30T21:00:00Z'));
     stubFetch({ earnings: [unknownTiming] });
-    const { db: db1, added: added1 } = makeFakeDb();
+    const db1 = makeWireDb();
     getFirebaseAdmin.mockReturnValue(db1);
     await handler({ ...cronReq }, makeRes());
-    expect(added1).toHaveLength(1);
-    expect(added1[0].doc.beforeAfterMarket).toBeNull();
+    const firing1 = writtenStories(db1);
+    expect(firing1).toHaveLength(1);
+    expect(firing1[0].beforeAfterMarket).toBeNull();
     const prompt = wireModelCall.mock.calls[0][1].messages[0].content;
     expect(prompt).toContain('Session move (report timing unconfirmed — do not attribute it to the report)');
 
     // Firing 2: next-morning window still sees the Jul-30 row — the
-    // referent dedup, not the window, guarantees exactly-once.
+    // referent dedup, not the window, guarantees exactly-once. Firing 1's
+    // persisted story seeds firing 2's coverage set.
     vi.clearAllMocks();
     stubToolResponse();
     vi.setSystemTime(new Date('2026-07-31T13:00:00Z')); // 09:00 ET Friday, morning fire
     stubFetch({ earnings: [unknownTiming] });
-    const { db: db2, added: added2 } = makeFakeDb([{ ...added1[0].doc }]);
+    const db2 = makeWireDb([{ ...firing1[0] }]);
     getFirebaseAdmin.mockReturnValue(db2);
     const res2 = makeRes();
     await handler({ ...cronReq }, res2);
 
     expect(res2.body.code).toBe('already_written');
     expect(wireModelCall).not.toHaveBeenCalled();
-    expect(added2).toHaveLength(0);
+    expect(writtenStories(db2)).toHaveLength(0);
   });
 
   it('a superseded story does NOT satisfy the dedup (C8(b) non-superseded)', async () => {
     vi.setSystemTime(new Date('2026-07-30T22:00:00Z'));
     stubFetch({ earnings: [MSFT_AMC_TODAY] });
-    const { db, added } = makeFakeDb([
+    const db = makeWireDb([
       { type: 'earnings_recap', primaryTicker: 'MSFT', referentDate: '2026-07-30', status: 'published', wireSuperseded: true },
     ]);
     getFirebaseAdmin.mockReturnValue(db);
@@ -278,7 +263,7 @@ describe('C8 A6 rows + referent dedup (R-B4)', () => {
     await handler({ ...cronReq }, makeRes());
 
     expect(wireModelCall).toHaveBeenCalledTimes(1);
-    expect(added).toHaveLength(1);
+    expect(writtenStories(db)).toHaveLength(1);
   });
 });
 
@@ -289,7 +274,7 @@ describe('R-B6 skip-log taxonomy', () => {
       if (String(url).includes('/calendar/earnings')) return { ok: false, status: 503 };
       return { ok: true, json: async () => ({}) };
     }));
-    getFirebaseAdmin.mockReturnValue(makeFakeDb().db);
+    getFirebaseAdmin.mockReturnValue(makeWireDb());
 
     const res = makeRes();
     await handler({ ...cronReq }, res);
@@ -303,7 +288,7 @@ describe('R-B6 skip-log taxonomy', () => {
   it('empty_window: dual-count line fires on the zero path', async () => {
     vi.setSystemTime(new Date('2026-07-30T21:00:00Z'));
     stubFetch({ earnings: [] });
-    getFirebaseAdmin.mockReturnValue(makeFakeDb().db);
+    getFirebaseAdmin.mockReturnValue(makeWireDb());
 
     const res = makeRes();
     await handler({ ...cronReq }, res);
@@ -315,7 +300,7 @@ describe('R-B6 skip-log taxonomy', () => {
   it('operand_implausible: cents-for-dollars EPS is held loudly, zero model calls', async () => {
     vi.setSystemTime(new Date('2026-07-30T21:00:00Z'));
     stubFetch({ earnings: [{ ...MSFT_AMC_TODAY, actual_eps: 310, eps_estimate: 3.1 }] });
-    getFirebaseAdmin.mockReturnValue(makeFakeDb().db);
+    getFirebaseAdmin.mockReturnValue(makeWireDb());
 
     const res = makeRes();
     await handler({ ...cronReq }, res);
