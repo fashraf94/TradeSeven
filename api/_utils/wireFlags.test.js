@@ -9,21 +9,21 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-describe('shipped flag values — the write path ships dark (metrics is runway step 1, live)', () => {
-  it('four Wire write-path flags ship FALSE; WIRE_METRICS_ENABLED is live (runway §4.8 step 1)', async () => {
+describe('shipped flag values — metrics + writes are live; continuity/newsline/editorial ship dark (runway §4.8)', () => {
+  it('WIRE_METRICS_ENABLED + WIRE_WRITES_ENABLED are live; the three downstream write-path flags ship FALSE', async () => {
     const flags = await import('../../src/config/featureFlags.js');
     expect(flags.WIRE_METRICS_ENABLED).toBe(true); // runway step 1: flipped FIRST for the p95 baseline, before writes
-    expect(flags.WIRE_WRITES_ENABLED).toBe(false);
+    expect(flags.WIRE_WRITES_ENABLED).toBe(true); // flipped after the metrics baseline landed (runway: metrics → 3-day baseline → writes)
     expect(flags.CONTINUITY_MEMORY_ENABLED).toBe(false);
     expect(flags.WIRE_NEWSLINE_ENABLED).toBe(false);
     expect(flags.EDITORIAL_REVIEW_ENABLED).toBe(false);
   });
 
-  it('getWireFlags reports metrics ON, the write path off at HEAD', async () => {
+  it('getWireFlags reports metrics + writes ON; continuity/newsline/editorial off at HEAD', async () => {
     const { getWireFlags } = await import('./wireFlags.js');
     expect(getWireFlags()).toEqual({
       metricsEnabled: true,
-      writesEnabled: false,
+      writesEnabled: true,
       continuityEnabled: false,
       newslineEnabled: false,
       editorialEnabled: false,
