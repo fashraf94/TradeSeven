@@ -1269,7 +1269,7 @@ export const EDITORIAL_REVIEW_ENABLED = false;
  * expected outcome on fast movers. Flip only after the founder's cost/quality
  * review; its own one-line PR (Pushed ≠ deployed).
  */
-export const EXA_RETRIEVAL_ENABLED = false;
+export const EXA_RETRIEVAL_ENABLED = true;
 
 /**
  * Archetype Architecture Phase 3 — the DR-13 eval-time archetype identity
