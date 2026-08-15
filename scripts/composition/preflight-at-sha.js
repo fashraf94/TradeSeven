@@ -18,7 +18,7 @@
 // gate (validatePreflightReport) checks.
 
 import { execSync, spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -51,11 +51,50 @@ const SUITES = [
   { name: 'candidate registry + default traits', spec: 'src/data/archetypeCompatibilityCandidate.test.js src/data/archetypeDefaultTraits.composition.test.js' },
 ];
 
+// Runner portability (fixed 2026-08-15 — the step-0.2 ENOENT). The harness
+// used to spawn bare `npx` with shell:false. On win32 the runner is `npx.cmd`,
+// so every spawn failed ENOENT before any test started; spawnSync returned
+// status === null, the old code recorded the string "exit null", and the
+// report rendered five FAILING suites when in fact NONE had run.
+//
+// Two fixes were rejected before this one:
+//   • `shell: true` — Windows would re-parse the whole command line through
+//     cmd.exe, so a spec containing & | ^ > < (or merely a path with a space)
+//     changes meaning silently. SUITES is edited by whoever adds a suite, so
+//     that is a latent footgun in exactly the harness meant to prevent them.
+//   • `npx.cmd` with shell:false — rejected by Node itself since the
+//     BatBadBut mitigation (CVE-2024-27980): spawning a .cmd/.bat without a
+//     shell now fails EINVAL by design. Measured here on Node v22.20.0.
+//
+// So: spawn THIS Node on vitest's own JS entrypoint. No .cmd, no shell, no
+// PATH lookup, identical on every platform — argv is passed through verbatim,
+// so the injection surface stays closed BY CONSTRUCTION rather than by the
+// current contents of a constant.
+const VITEST_BIN = resolve(REPO, 'node_modules/vitest/vitest.mjs');
+if (!existsSync(VITEST_BIN)) {
+  console.error(`✗ vitest entrypoint not found at ${VITEST_BIN} — run \`npm install\` before the preflight.`);
+  console.error('  (Failing loudly here: a missing runner must never be recorded as a suite result.)');
+  process.exit(1);
+}
+
 const suites = [];
 for (const s of SUITES) {
   console.log(`\n── running ${s.name} …`);
-  const r = spawnSync('npx', ['vitest', 'run', ...s.spec.split(' ')], { cwd: REPO, stdio: 'inherit', shell: false });
-  suites.push({ name: s.name, spec: s.spec, result: r.status === 0 ? 'green' : `exit ${r.status}` });
+  const r = spawnSync(process.execPath, [VITEST_BIN, 'run', ...s.spec.split(' ')], { cwd: REPO, stdio: 'inherit', shell: false });
+  // R6: "did this actually run" must be recorded UNAMBIGUOUSLY. A null status
+  // means the child never started (spawn error) — categorically different from
+  // a suite that ran and failed. Never collapse the two into one string.
+  const entry = { name: s.name, spec: s.spec };
+  if (r.status === 0) {
+    entry.result = 'green';
+  } else if (r.status === null) {
+    entry.result = 'did-not-run';
+    entry.spawnError = r.error ? `${r.error.code || 'spawn failure'} — ${r.error.message}` : 'child never started (status null, no error object)';
+    console.error(`\n✗ ${s.name} NEVER EXECUTED: ${entry.spawnError}`);
+  } else {
+    entry.result = `exit ${r.status}`;
+  }
+  suites.push(entry);
 }
 
 const report = {
@@ -76,6 +115,22 @@ writeFileSync(outPath, `${JSON.stringify(report, null, 2)}\n`);
 // runbook log, printed here so it is never skipped in silence.
 console.log('\n⚠ MANUAL GATE (F5): if composition/activation EXISTS in production, confirm the deployed build has COMPOSITION_EPOCH_FENCE_ENABLED=true — the flag must NEVER be false while a record exists (split-brain identity selection).');
 
-const allGreen = suites.every((s) => s.result === 'green');
-console.log(`\nB8-FINAL preflight: ${allGreen ? 'PASS' : 'FAIL'} — report written to ${outPath}`);
+// R6: an INCONCLUSIVE run is not a FAIL. Reporting "FAIL" for suites that
+// never executed invites the reader to look for a composition defect that
+// does not exist — and, worse, invites them to treat a later green as having
+// fixed something. Name the three outcomes separately.
+const didNotRun = suites.filter((s) => s.result === 'did-not-run');
+const ranAndFailed = suites.filter((s) => s.result !== 'green' && s.result !== 'did-not-run');
+const allGreen = didNotRun.length === 0 && ranAndFailed.length === 0;
+
+let verdict;
+if (allGreen) verdict = 'PASS';
+else if (didNotRun.length > 0) verdict = `INCONCLUSIVE — ${didNotRun.length}/${suites.length} suite(s) NEVER EXECUTED (this is NOT a test failure; the report proves nothing about the SHA)`;
+else verdict = 'FAIL';
+
+console.log(`\nB8-FINAL preflight: ${verdict} — report written to ${outPath}`);
+if (didNotRun.length) {
+  console.error('\n✗ The following suites never started — fix the runner and re-run; do NOT read this as a composition finding:');
+  for (const s of didNotRun) console.error(`   • ${s.name}: ${s.spawnError}`);
+}
 process.exit(allGreen ? 0 : 1);

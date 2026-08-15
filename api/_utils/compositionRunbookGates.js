@@ -46,6 +46,19 @@ export function validateRulesDeployRecord(record, { repoRulesSha256 = null } = {
   return { ok: blocking.length === 0, failures };
 }
 
+/**
+ * R6 — did the suite actually execute? `did-not-run` is what the harness
+ * records today; `exit null` is the legacy string it wrote when spawnSync
+ * returned a null status (the child never started). A missing/blank result is
+ * equally inconclusive. None of these are test failures.
+ * @returns {boolean}
+ */
+export function isNeverExecuted(result) {
+  if (result === undefined || result === null) return true;
+  const r = String(result).trim().toLowerCase();
+  return r === '' || r === 'did-not-run' || r === 'exit null' || r === 'null';
+}
+
 /** @returns {{ok: boolean, failures: string[]}} */
 export function validatePreflightReport(report, { expectedSha } = {}) {
   const failures = [];
@@ -59,7 +72,22 @@ export function validatePreflightReport(report, { expectedSha } = {}) {
     failures.push('report.suites missing');
   } else {
     for (const s of suites) {
-      if (s.result !== 'green') failures.push(`suite NOT green at the pinned SHA: ${s.name} (${s.result})`);
+      if (s.result === 'green') continue;
+      // R6 (closed 2026-08-15) — "did this actually run" is a DISTINCT
+      // rejection from "this ran and failed". A gate artifact must never be
+      // ambiguous about whether it executed: a suite that never started
+      // proves nothing about the SHA in either direction, whereas a suite
+      // that ran and failed is a finding. Collapsing them into one "NOT
+      // green" message is what let a five-suite ENOENT (spawnSync returning
+      // status null, recorded as the string "exit null") read as five failing
+      // suites at the deployed SHA. Both the current `did-not-run` form and
+      // the legacy `exit null` form are treated as never-executed, so old
+      // artifacts on disk are classified correctly too.
+      if (isNeverExecuted(s.result)) {
+        failures.push(`suite NEVER EXECUTED at the pinned SHA: ${s.name} (${s.result}${s.spawnError ? `: ${s.spawnError}` : ''}) — this is NOT a test failure and NOT evidence about the SHA; the harness did not start the child process. Fix the runner and re-run.`);
+      } else {
+        failures.push(`suite RAN AND FAILED at the pinned SHA: ${s.name} (${s.result})`);
+      }
     }
     for (const required of ['compositionWriterCensus', 'compositionProtectedStores.scan']) {
       if (!suites.some((s) => String(s.name).includes(required))) failures.push(`required suite missing from the report: ${required}`);
