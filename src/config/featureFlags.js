@@ -1210,7 +1210,7 @@ export const WIRE_METRICS_ENABLED = true;
  * before continuity. Each flip is its own one-line PR (Pushed ≠ deployed).
  */
 // Pinned by: wireFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const WIRE_WRITES_ENABLED = false;
+export const WIRE_WRITES_ENABLED = true;
 
 /**
  * Continuity prompt block ONLY (reporter's recent Wire digests + eventTypes
