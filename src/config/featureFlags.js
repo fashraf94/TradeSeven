@@ -1204,10 +1204,19 @@ export const WIRE_METRICS_ENABLED = true;
  * The Wire writes machinery: cloned extended tool schema + agentFacts prompt
  * instructions + extraction + validation + digest rendering + the story/
  * envelope batch, Wire transaction, receipts, chainId resolution, replay
- * sweep + raised max_tokens. FALSE = byte-identical outbound model request
+ * sweep + raised max_tokens.
+ *
+ * FLIPPED false→true in the founder flag-flip PR (runway: metrics → 3-day
+ * baseline → writes), after the metrics baseline landed. The merge-dark era is
+ * over; TRUE is now the default and FALSE is the deliberate-revert path.
+ *
+ * When TRUE (CURRENT): the write path is live — the cloned schema, agentFacts
+ * extraction/validation, digest rendering, and the persisted story/envelope
+ * batch all run. When FALSE (revert): byte-identical outbound model request
  * payload vs the pre-Wire build (M8 — dark means dark at the model-request
- * boundary). Flip only after the metrics baseline; ≥2 trading days solo
- * before continuity. Each flip is its own one-line PR (Pushed ≠ deployed).
+ * boundary). Continuity/newsline still AND-gate on this flag via getWireFlags,
+ * so each stays dark until its own flip. Each flip is its own one-line PR
+ * (Pushed ≠ deployed).
  */
 // Pinned by: wireFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const WIRE_WRITES_ENABLED = true;
@@ -1260,14 +1269,19 @@ export const EDITORIAL_REVIEW_ENABLED = false;
 
 /**
  * Alex Catalyst Confirmation mini-arc (spec V1.1) — F2 EXA supplementary
- * retrieval. When TRUE, the confirmed-mover path fetches EXA /search evidence
- * alongside the existing Sonar/validated-catalyst context and presents both as
- * tagged [ATTRIBUTION]/[CONTEXT] channels. FALSE = the EXA client is never
- * called and the mover prompt is byte-identical to the Sonar-only path — F1+F3
- * ship with ZERO EXA dependency (C9). DOWNGRADED per the C9 ruling: EXA is
- * supplementary context, never a catalyst oracle; the honesty floor is the
- * expected outcome on fast movers. Flip only after the founder's cost/quality
- * review; its own one-line PR (Pushed ≠ deployed).
+ * retrieval. When TRUE (CURRENT), the confirmed-mover path fetches EXA /search
+ * evidence alongside the existing Sonar/validated-catalyst context and presents
+ * both as tagged [ATTRIBUTION]/[CONTEXT] channels. When FALSE (revert): the EXA
+ * client is never called and the mover prompt is byte-identical to the
+ * Sonar-only path — F1+F3 carry ZERO EXA dependency (C9). DOWNGRADED per the C9
+ * ruling: EXA is supplementary context, never a catalyst oracle; the honesty
+ * floor is the expected outcome on fast movers.
+ *
+ * FLIPPED false→true in the founder flag-flip PR after the cost/quality review.
+ * TRUE is now the default and FALSE is the deliberate-revert path. Not pinned by
+ * any test and not dark-by-design, so the flag-pin guard needs no entry for it;
+ * its sole consumer is api/fantasytimes/generate-mover.js. Its own one-line PR
+ * (Pushed ≠ deployed).
  */
 export const EXA_RETRIEVAL_ENABLED = true;
 

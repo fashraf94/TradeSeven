@@ -62,8 +62,12 @@ const DARK_BY_DESIGN = {
   // src/config/featureFlags.js) — the deliberate flip drops it here in the same
   // change, per the guard's own "if DELIBERATE" instruction. Re-adding it while
   // it ships true fails the DARK_BY_DESIGN integrity test below.
-  WIRE_WRITES_ENABLED:
-    'Wire runway — dark until the metrics baseline lands, ≥2 trading days solo before continuity (runway: metrics → 3-day baseline → writes)',
+  // WIRE_WRITES_ENABLED intentionally ABSENT: it flipped true (runway step:
+  // writes, after the metrics baseline; src/config/featureFlags.js) — the
+  // deliberate flip drops it here in the same change, per the guard's own "if
+  // DELIBERATE" instruction. Re-adding it while it ships true fails the
+  // DARK_BY_DESIGN integrity test below. Its wireFlags.test.js pins now assert
+  // the live true value (direct + getWireFlags() object form).
   CONTINUITY_MEMORY_ENABLED:
     'Wire runway — requires WIRE_WRITES_ENABLED live first',
   WIRE_NEWSLINE_ENABLED:
