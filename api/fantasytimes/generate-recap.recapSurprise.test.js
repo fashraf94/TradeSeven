@@ -34,35 +34,20 @@ vi.mock('../_utils/fantasyTimesConsensus.js', () => ({
   appendEarningsResult: vi.fn(async () => {}),
   appendEconomics: vi.fn(async () => {}),
 }));
+// WIRE_WRITES is LIVE (PR #763): pin writes ON so the recap seam exercises the
+// real publishStoryWithWire write-through (read by both handler and write-through).
+vi.mock('../_utils/wireFlags.js', () => ({
+  getWireFlags: () => ({
+    metricsEnabled: false, writesEnabled: true, continuityEnabled: false,
+    newslineEnabled: false, editorialEnabled: false,
+  }),
+}));
 
 import handler, { deriveRecapSurprise, RECAP_OUTCOME_UNVERIFIABLE } from './generate-recap.js';
 import { wireModelCall } from '../_utils/wireModelCall.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { getEarningsResult } from '../earnings/_helpers/getEarningsResult.js';
-
-function makeFakeDb(existingStories = []) {
-  const added = [];
-  function collectionRef(name) {
-    const filters = [];
-    const ref = {
-      where(field, op, value) { filters.push({ field, op, value }); return ref; },
-      orderBy() { return ref; },
-      limit() { return ref; },
-      async get() {
-        let rows = name === 'fantasyTimesStories' ? [...existingStories, ...added.map((a) => a.doc)] : [];
-        for (const f of filters) {
-          if (f.op === '==') rows = rows.filter((s) => s[f.field] === f.value);
-          if (f.op === '>') rows = rows.filter((s) => (s[f.field]?.getTime?.() ?? 0) > f.value.getTime());
-        }
-        return { empty: rows.length === 0, docs: rows.map((r) => ({ data: () => r })) };
-      },
-      async add(doc) { added.push({ name, doc }); return { id: `story-${added.length}` }; },
-      doc() { return { async set() {}, async get() { return { exists: false, data: () => null }; } }; },
-    };
-    return ref;
-  }
-  return { db: { collection: collectionRef }, added };
-}
+import { makeWireDb, writtenStories, stubRecapModel } from './__fixtures__/recapWireHarness.js';
 
 function makeRes() {
   const r = { statusCode: null, body: null };
@@ -74,13 +59,7 @@ function makeRes() {
 const cronReq = { headers: { 'x-vercel-cron': '1' }, method: 'POST', query: {}, body: {} };
 
 function stubToolResponse() {
-  wireModelCall.mockResolvedValue({
-    response: {
-      content: [{ type: 'tool_use', input: { headline: 'H', subheadline: 'S', body: 'B', themes: [], sentiment: 'neutral', recommended_action: 'EARNINGSGAME' } }],
-      stop_reason: 'tool_use',
-    },
-    generationConfig: { seam: 'doug_earnings_recap' },
-  });
+  stubRecapModel(wireModelCall);
 }
 
 function stubFetch(earnings) {
@@ -125,11 +104,14 @@ afterEach(() => {
 
 async function runOne(rows) {
   stubFetch(rows);
-  const { db, added } = makeFakeDb();
+  const db = makeWireDb();
   getFirebaseAdmin.mockReturnValue(db);
   const res = makeRes();
   await handler({ ...cronReq }, res);
-  return { res, story: added[0]?.doc, prompt: wireModelCall.mock.calls[0]?.[1]?.messages?.[0]?.content };
+  // The first story persisted through the LIVE write-through (writes-ON): the
+  // dataSnapshot the assertions read is the whitelisted story doc, carried
+  // verbatim into the batch write alongside the wire fields.
+  return { res, story: writtenStories(db)[0], prompt: wireModelCall.mock.calls[0]?.[1]?.messages?.[0]?.content };
 }
 
 // ── A6 rows — handler level (RED under the pre-fix foreign-feed read) ───────
