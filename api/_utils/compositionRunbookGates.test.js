@@ -19,7 +19,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { validateRulesDeployRecord, validatePreflightReport } from './compositionRunbookGates.js';
+import { validateRulesDeployRecord, validatePreflightReport, isNeverExecuted } from './compositionRunbookGates.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UNFILLED = JSON.parse(readFileSync(resolve(HERE, '__fixtures__/rulesDeployRecord.unfilled.json'), 'utf8'));
@@ -94,6 +94,89 @@ describe('B8-FINAL — the SHA-pinned preflight report gate', () => {
       ...GOOD_REPORT,
       suites: [{ name: 'compositionWriterCensus', result: 'green' }],
     }, {}).ok).toBe(false);
+  });
+
+  // ── R6 (closed 2026-08-15): "did this actually run" ────────────────────
+  // The defect this guards: the harness spawned bare `npx` with shell:false,
+  // which is ENOENT on win32, so spawnSync returned status null for all five
+  // suites and the report recorded the string "exit null". The old validator
+  // said only "suite NOT green", which reads as five FAILING suites at the
+  // deployed SHA when in fact NOTHING RAN. A gate artifact must never be
+  // ambiguous about whether it executed.
+  describe('R6 — a never-executed suite is rejected DISTINCTLY from one that ran and failed', () => {
+    const withSuite = (result, extra = {}) => ({
+      ...GOOD_REPORT,
+      suites: [
+        { name: 'compositionWriterCensus', result, ...extra },
+        { name: 'compositionProtectedStores.scan', result: 'green' },
+      ],
+    });
+
+    it("the LEGACY 'exit null' artifact is classified as never-executed, not as a failure", () => {
+      const r = validatePreflightReport(withSuite('exit null'), {});
+      expect(r.ok).toBe(false);
+      expect(r.failures.some((f) => f.includes('NEVER EXECUTED'))).toBe(true);
+      // The mutation this row exists to catch: if the validator collapsed the
+      // two classes again, this would read as RAN AND FAILED.
+      expect(r.failures.some((f) => f.includes('RAN AND FAILED'))).toBe(false);
+    });
+
+    it("the current 'did-not-run' form is classified the same way, and surfaces the spawn error", () => {
+      const r = validatePreflightReport(
+        withSuite('did-not-run', { spawnError: 'ENOENT — spawnSync npx ENOENT' }),
+        {}
+      );
+      expect(r.ok).toBe(false);
+      const f = r.failures.find((x) => x.includes('NEVER EXECUTED'));
+      expect(f).toBeTruthy();
+      expect(f).toContain('ENOENT');
+      expect(f).toContain('NOT a test failure');
+    });
+
+    it('a suite that RAN AND FAILED is still rejected, but under the other label', () => {
+      const r = validatePreflightReport(withSuite('exit 1'), {});
+      expect(r.ok).toBe(false);
+      expect(r.failures.some((f) => f.includes('RAN AND FAILED'))).toBe(true);
+      expect(r.failures.some((f) => f.includes('NEVER EXECUTED'))).toBe(false);
+    });
+
+    it('a missing or blank result is inconclusive, never silently green', () => {
+      for (const bad of [undefined, null, '', '   ']) {
+        const r = validatePreflightReport(withSuite(bad), {});
+        expect(r.ok).toBe(false);
+        expect(r.failures.some((f) => f.includes('NEVER EXECUTED'))).toBe(true);
+      }
+    });
+
+    it('isNeverExecuted separates the two classes directly', () => {
+      for (const v of ['did-not-run', 'exit null', 'null', '', undefined, null]) {
+        expect(isNeverExecuted(v)).toBe(true);
+      }
+      for (const v of ['green', 'exit 1', 'exit 127']) {
+        expect(isNeverExecuted(v)).toBe(false);
+      }
+    });
+
+    it('the FULL five-suite ENOENT report — the exact artifact step 0.2 produced — is rejected as inconclusive', () => {
+      const asItHappened = {
+        sha: '0f79b0c295b5250d2bf64fa23b5d97a06cbc1933',
+        treeClean: true,
+        ranAt: '2026-08-15T20:08:38.502Z',
+        suites: [
+          { name: 'compositionWriterCensus', result: 'exit null' },
+          { name: 'compositionProtectedStores.scan', result: 'exit null' },
+          { name: 'composition battery (api/_utils/composition*)', result: 'exit null' },
+          { name: 'fence behavior', result: 'exit null' },
+          { name: 'candidate registry + default traits', result: 'exit null' },
+        ],
+      };
+      const r = validatePreflightReport(asItHappened, {
+        expectedSha: '0f79b0c295b5250d2bf64fa23b5d97a06cbc1933',
+      });
+      expect(r.ok).toBe(false);
+      expect(r.failures.filter((f) => f.includes('NEVER EXECUTED'))).toHaveLength(5);
+      expect(r.failures.some((f) => f.includes('RAN AND FAILED'))).toBe(false);
+    });
   });
 });
 
