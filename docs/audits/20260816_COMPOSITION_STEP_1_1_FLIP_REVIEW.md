@@ -1,5 +1,13 @@
 # Composition ACTIVATION step 1.1 — cumulative review record
 
+> ## ⛔ DO NOT MERGE — the independent review found a live defect this flip activates
+>
+> The `/code-review high` pass returned after this record was first written and after the branch was pushed. It **refuted a conclusion this document had recorded as verified**. Finding R1 below is a HIGH-severity production defect that step 1.1 turns on, and it is **not** fixed by this branch.
+>
+> §6 item 2 of the original record claimed the injectable-clock/lease split was "not a production defect." **That claim was WRONG** and is corrected in §7. The error: I confirmed both entry points pass `now: new Date()` and stopped there, concluding the clocks agree. They agree *at entry* — but the orchestrator tick then runs for up to 270s on that one frozen `now` while the lease TTL is 120s of real time.
+>
+> Worse, my own fixture change (`tournamentOrchestrator.test.js`) froze the system clock in a way that makes the suite **structurally unable to catch this bug**. That is the failure mode this whole review was supposed to prevent.
+
 **Branch:** `ops/composition-flip-1-1` · **Base:** `main` @ `f59e76f3` · **Diff:** 25 files, +561 / −35
 **Review trigger:** BUILD_RULES §2 — ≥10 files on the cumulative branch diff. Founder accepted the threshold explicitly when authorizing the fixture reconciliation.
 **Session:** 2026-08-16. `git fetch origin` run first (§3). Read-only until the founder authorized 1.1.
@@ -119,6 +127,22 @@ Each claim below was stated and then attacked, per §2's "a review that never re
 
 ---
 
+## 4b. The independent pass — findings (arrived after the push)
+
+`/code-review high` completed after the branch was pushed. I verified each finding against the code rather than accepting it; verdicts are mine.
+
+| # | Finding | Verified? |
+|---|---|---|
+| **R1** | **`trainingClone.js:183` HIGH — the B2 lease is minted from the tick's frozen `now` but checked against the real clock, so training pods reached >120s into an orchestrator tick fail every tick.** | **CONFIRMED — I reproduced the reasoning in code.** `api/cron/tournament-orchestrator.js:47` captures `now: new Date()` ONCE; `runOrchestratorTick` runs to `DUTY_DEADLINE_MS = 270_000` (`tournamentOrchestrator.js:103`) measuring elapsed with `Date.now()` (`:958`), pacing deploys at `DEPLOY_PACING_MS = 20_000` (`:102`); the same frozen `now` reaches `ensureTrainingClones` (`:799`), which mints `expiresAtMs = now + 120_000` (`compositionProvisionerLease.js:93`). `assertLeaseCurrent(lease)` (`trainingClone.js:196`) compares against `new Date()` and sits **before** the clone-exists check at `:200` — so even the idempotent no-op path throws. `activateTrainingPod`'s catch swallows it to `summary.errors++`, and stable pod ordering makes it repeat every tick. Inert while dark; **live from this flip.** |
+| **R2** | `compositionProvisionerLease.js:146` MED-HIGH — lease docs accumulate unbounded on hot paths; `purgeReleasedProvisionerLeases` has no caller; the close-time drain refuses on any stuck lease. | **PLAUSIBLE — relayed, not independently traced.** I confirmed `releaseProvisionerLease` marks rather than deletes and that no production caller of the purge exists. The operational consequence for the §8 close is the reviewer's inference and matches the runbook's own stuck-lease protocol. |
+| **R3** | `ensure-casual-clone.js:66` MED — a lease expiry returns 500 `server_error`, not a retryable 409. | **CONFIRMED.** The catch maps `no_ranked_agent` and `err?.code === 'epoch_closed'` only; `ProvisionerLeaseExpiredError.code` is `provisioner_lease_expired` and falls through to the generic 500. |
+| **R4** | `casualClone.js:129` MED — the lease is acquired before the clone-exists check, so the common no-op path now costs a transaction + 2 writes. | **CONFIRMED by inspection** (`acquireProvisionerLease` at `:129`, `pinActivationDescriptor` at `:130`, `cloneRef.get()` at `:145`). Severity is a judgement call; the ordering is fact. |
+| **R5** | `compileOnSettingsChange.js:243-247` LOW — the `db` docstring still says "the legacy flag default applies", contradicting my own change 20 lines below. | **CONFIRMED.** My drift, introduced by this commit. |
+| **R6** | `tournamentOrchestrator.test.js` MED (coverage) — freezing `Date` removes the only coverage of R1 and freezes `Date.now()`, which the tick budget and deploy pacing read, so the deferral path becomes untestable. | **CONFIRMED, and this one is mine.** `budget.startMs = Date.now()` (`:958`) and pacing (`:406`, `:411`) both read the faked clock. My fixture change made those rows unfalsifiable — and made the suite blind to R1 specifically. |
+| **R7** | `PR2_FLAG_OWNERSHIP.md:11` LOW — the flag-ownership table still declares `COMPOSITION_EPOCH_FENCE_ENABLED` default `false`. | **CONFIRMED.** That table is the declared boundary→flag→default authority and a flip must reconcile it (§2). Missed. |
+
+**How R1 escaped my own pass.** I treated "both entry points pass `now: new Date()`" as sufficient and never asked how long the tick holds that value. My refutation of C6 stopped at the entry point instead of following the clock through the loop. The independent reviewer went one step further, and that step was the whole finding.
+
 ## 4a. DISCLOSURE — how this review was and was not run
 
 BUILD_RULES §2 requires that a session unable to run the adversarial pass **say so explicitly rather than report the review as done** (the Task 4 Phase 2 precedent). Stating it plainly:
@@ -147,5 +171,23 @@ BUILD_RULES §2 requires that a session unable to run the adversarial pass **say
 ## 6. Reported for separate tasking (BUILD_RULES §3 — not fixed here)
 
 1. **A24 guard is win32-blind** — §3 above. Blocks local use of an activation-relevant invariant before step 5.
-2. **Injectable clock vs wall-clock lease TTL.** `ensureCasualClone` / `ensureTrainingClones` mint a B2 lease from the caller's injected `now`, then `assertLeaseCurrent` re-checks against the real clock. That asymmetry is *correct* — the guard exists to catch a provisioner stalled past its TTL, so it must not read a caller-supplied instant — but it means injecting a historical clock is incoherent with the lease. Invisible while the fence was dark. **Not a production defect:** both entry points pass `now: new Date()` (`api/cron/tournament-orchestrator.js:47`, `api/tournament/activate-training-pod.js:74`), so the two clocks agree in production. Worth a decision on whether the injectable-clock contract should be documented or narrowed.
+2. ~~**Injectable clock vs wall-clock lease TTL** — "not a production defect."~~ **RETRACTED — this was wrong. See R1 in §4b.** It IS a production defect, and step 1.1 activates it. The clocks agree at handler entry but the orchestrator tick holds that frozen `now` for up to 270s against a 120s TTL. Corrected in §7.
 3. **Extra per-request I/O from 1.1** (D2). Not a defect, but the fence's reads are now on every equip/deploy/battle path and were never load-measured. The M7 budget rows measure prompt tokens, not Firestore round trips.
+
+---
+
+## 7. Disposition — what must happen before this merges
+
+**Recommendation: do NOT merge this branch as it stands.** It is green, but green partly because a fixture change of mine blinded the suite to R1.
+
+**R1 is the blocker.** Step 1.1 cannot deploy while a training-pod provisioner deterministically fails from the third pod of every orchestrator tick onward. The failure is silent-ish — swallowed into `summary.errors++` — so it would present as training pods quietly not activating, not as an alarm.
+
+**The fix I'd propose (founder's call — NOT applied):** mint the lease from a **live** clock rather than the tick's logical one, i.e. `acquireProvisionerLease(db, { holder, now: new Date() })` at `trainingClone.js:183` and `casualClone.js:129`. Rationale: the lease TTL is a wall-clock resource, so it must be stamped in wall-clock time; the injected `now` is a *duty/scheduling* clock used for market-hour and day-boundary decisions, and conflating the two is the actual bug. The alternative — threading `now` into `assertLeaseCurrent` — is wrong: it would defeat the guard's entire purpose (detecting a provisioner stalled past its TTL) by making elapsed time unobservable.
+
+**Then R6 must be undone.** My `vi.useFakeTimers({ toFake: ['Date'] })` blocks in `tournamentOrchestrator.test.js` and `tournamentLobbyFormation.seam.test.js` must come out, and the `new Date()` swaps in `casualClone.test.js` / `trainingClone.test.js` should return to their frozen fixtures. With R1 fixed, those suites pass on the real clock with their original deterministic dates — which is the outcome that proves the fix rather than hiding the bug. A new row should assert the lease survives a tick that elapses past the TTL.
+
+**Also in scope for the flip commit (§2 reconciliation), currently missing:** R5 (my own docstring drift at `compileOnSettingsChange.js:243-247`) and R7 (`PR2_FLAG_OWNERSHIP.md:11` still declaring the pre-flip default).
+
+**R2, R3, R4** are real but not blockers for 1.1; R3 in particular becomes user-visible the moment R1's underlying condition occurs on the casual-clone path, so it is worth folding in.
+
+**On the step-0 evidence:** unchanged and still valid — the flip diff itself and the dark-state probe are unaffected by all of this. What changed is that the flip is now known to activate a latent defect elsewhere.
