@@ -212,7 +212,7 @@ const DIMENSION_CONFIGS = [
     question: 'Equal weight or conviction?',
     span: 3,
     controls: [
-      { paramKey: 'maxPositionWeightPct', legacyKey: 'maxPosition', type: 'slider', tier: 'baseline', label: 'Max single position', min: 10, max: 30, step: 1, unit: '%', hint: 'Hard cap on any one holding.' },
+      { paramKey: 'maxPositionWeightPct', legacyKey: 'maxPosition', type: 'slider', tier: 'baseline', label: 'Max single position', min: 10, max: 30, step: 1, unit: '%', hint: 'Preferred ceiling for any one holding — guidance the agent weighs, not an enforced limit.' },
       { paramKey: 'cashDeploymentTriggerPct', legacyKey: 'cashDeploymentTrigger', type: 'slider', tier: 'baseline', label: 'Cash deployment trigger', min: 5, max: 40, step: 5, unit: '%', hint: 'Deploy cash once idle balance exceeds this.' },
       { paramKey: 'trimThreshold', type: 'slider', tier: 'baseline', label: 'Trim threshold', min: 3, max: 20, step: 1, unit: '%', hint: 'Target trim back this far below the max position cap.' },
       { paramKey: 'addToWinnersEnabled', legacyKey: 'addToWinners', legacyDim: 'momentumSensitivity', type: 'toggle', tier: 'baseline', label: 'Add to winners', hint: 'Pyramid into positions that keep running.' },

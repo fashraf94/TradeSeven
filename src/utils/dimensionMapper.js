@@ -1335,7 +1335,12 @@ export function dimensionsToGuardrails(dv) {
   }
   const maxPosition = readDimensionField(dv, 'maxPositionWeightPct');
   if (typeof maxPosition === 'number') {
-    out.push({ type: 'maxPosition', value: maxPosition, unit: '%', enforcement: 'hard' });
+    // Honesty fix (Swap Motive Observability Tier 1): maxPosition is a documented
+    // engine no-op (agentGuardrails.js 'skipped_incompatible') and is NOT one of
+    // SUPPORTED_GUARDRAIL_SHAPES, so labeling it 'hard' promised an enforcement the
+    // engine never delivers. Relabel to 'soft' to match reality — the label only;
+    // no enforcement is built here (that is a separate, Tier-2-adjacent question).
+    out.push({ type: 'maxPosition', value: maxPosition, unit: '%', enforcement: 'soft' });
   }
   const profitTarget = readDimensionField(dv, 'profitTargetPct');
   if (typeof profitTarget === 'number') {

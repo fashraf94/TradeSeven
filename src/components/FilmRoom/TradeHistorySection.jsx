@@ -1,6 +1,8 @@
 import React from 'react';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { filterTradesByDay } from '../../utils/computeDayScore';
+import { swapReasonLabel, isSwapTrade } from '../League/battleArena/leagueSwapLedger';
+import { SWAP_MOTIVE_DISPLAY_ENABLED } from '../../config/featureFlags';
 
 const TIER_STYLES = {
   star:    { color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.12)', label: 'Star' },
@@ -38,6 +40,14 @@ function TradeRow({ trade, tokens, onSymbolClick }) {
       ? tokens.emerald || '#34d399'
       : tokens.red || '#ef4444';
   const PnlIcon = pnlPct == null ? null : pnlPct >= 0 ? ArrowUpRight : ArrowDownRight;
+
+  // Swap Motive Observability (Tier 1) — one short reason label per row, from the
+  // §9 single-source helper. Rendered only behind the dark flag, and ONLY for actual
+  // swaps (isSwapTrade — same predicate the recap ledger filters on), so a non-swap
+  // record never gets a fabricated swap-reason badge. Flag-off → byte-identical.
+  const reasonLabel = SWAP_MOTIVE_DISPLAY_ENABLED && isSwapTrade(trade)
+    ? swapReasonLabel(trade)
+    : null;
 
   const handleSymbolClick = (sym) => {
     if (sym && onSymbolClick) onSymbolClick({ symbol: sym });
@@ -137,6 +147,19 @@ function TradeRow({ trade, tokens, onSymbolClick }) {
           color: tokens.textMuted || '#94a3b8',
         }}
       >
+        {reasonLabel && (
+          <span
+            style={{
+              color: tokens.textPrimary || '#e2e8f0',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              fontSize: 9.5,
+            }}
+          >
+            {reasonLabel}
+          </span>
+        )}
         <span>Entry {formatPrice(entryPrice)}</span>
         <span>Exit {formatPrice(exitPrice)}</span>
         {typeof trade?.lockedPoints === 'number' && (

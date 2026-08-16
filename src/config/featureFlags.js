@@ -1309,6 +1309,17 @@ export const EXA_RETRIEVAL_ENABLED = true;
 export const EVAL_IDENTITY_BLOCK_ENABLED = true;
 
 /**
+ * Swap Motive Observability (Tier 1) — the Film Room per-swap reason display.
+ * DARK by default: when FALSE (CURRENT), the ledger renders exactly as before
+ * (no reason label on any row) — flag-off byte-identity. When TRUE, every swap
+ * row shows a human-readable reason (declared model motive, deterministic
+ * taxonomy, or the graceful legacy fallback). Gates ONLY the display; the
+ * swap_type schema field and the swapMotive stamp are additive and inert to all
+ * existing readers regardless of this flag.
+ */
+export const SWAP_MOTIVE_DISPLAY_ENABLED = false;
+
+/**
  * Fundamental Wire arc (Jul 25 2026 founder rulings D1–D7) — the peerRankings→
  * stockRankings fundamentals mirror (Commit 1) + the two prompt render blocks
  * that read it (Commit 2, §7-gated fence contact).
