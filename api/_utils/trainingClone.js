@@ -210,6 +210,17 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
   // throw orphaned the lease, which went `stuck` 120s later and made
   // `drainProvisionerLeases` refuse ENTIRELY until hand-resolved. The activation
   // could orphan its own lease and then refuse its own drain.
+  //
+  // ⚠ DELIBERATE SEMANTIC SHIFT, stated because it is easy to miss. The lease
+  // acquisition is what rejects on a closed/probe epoch, and it now runs only
+  // when a seat needs provisioning. So during a CLOSED epoch an all-existing
+  // pod no longer throws `epoch_closed` — it returns its `existing` list having
+  // read nothing but agent docs and written nothing at all. That is consistent
+  // with what the fence is FOR (it stops writes past the watermark, and this
+  // path performs none) and it keeps the §6 freeze from spuriously erroring
+  // pods that need no work. A pod with even ONE unprovisioned seat still
+  // acquires, and so still rejects, before any write. The step-1.11 watermark
+  // sweep is unaffected: a read-only pass updates no protected-store doc.
   let lease = null;
   let seedPin = null;
   let seedVersion = null;

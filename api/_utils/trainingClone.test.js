@@ -262,6 +262,27 @@ describe('ensureTrainingClones', () => {
     expect(leasesAfterSecond, 'the idempotent tick minted a lease for zero writes').toBe(leasesAfterFirst);
   });
 
+  // The semantic shift S1 introduces, pinned explicitly. The lease acquisition
+  // is what rejects on a closed epoch, and it is now lazy — so a pod needing no
+  // work passes read-only during the freeze, while a pod with real work to do
+  // still rejects BEFORE any write. Both halves matter: the first is the point
+  // of S1, the second is the fence still doing its job.
+  it('S1 semantics: a CLOSED epoch lets an all-existing pod pass read-only, but still rejects one that must provision', async () => {
+    const { db, store } = seededDb();
+    await ensureTrainingClones(db, trainingGroup, { now: new Date() }); // provision while open
+    store.set('composition/writeEpoch', { state: 'closed', epochId: 'E0', fenceGeneration: 1 });
+
+    // Nothing to do ⇒ no lease ⇒ no rejection, and nothing written.
+    const idle = await ensureTrainingClones(db, trainingGroup, { now: new Date() });
+    expect(idle.existing).toEqual(['u1']);
+    expect(idle.created).toEqual([]);
+
+    // A pod with an unprovisioned seat still hits the fence, before any write.
+    const freshPod = { ...trainingGroup, id: 'pod2' };
+    await expect(ensureTrainingClones(db, freshPod, { now: new Date() })).rejects.toThrow(/epoch_closed/);
+    expect(store.get(`agents/${trainingCloneDocId('pod2', 'u1')}`)).toBeUndefined();
+  });
+
   // ── S2 REGRESSION: the lease must never be orphaned by a throw ──────────
   // pinActivationDescriptor reads composition/activation once the fence is lit,
   // and readActivationDescriptor throws MalformedActivationDescriptorError on a

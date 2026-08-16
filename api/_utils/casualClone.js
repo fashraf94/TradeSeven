@@ -142,6 +142,9 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
   const existingSnap = await cloneRef.get();
   const existing = existingSnap.exists ? existingSnap.data() : null;
   const isAuthentic = !!existing && existing.ownerId === odUserId && existing.isCasualClone === true;
+  // Mutable view of the pre-lease doc for the WRITE path below: cleared when
+  // the re-read shows the clone vanished (T1), so the create() arm runs.
+  let priorDoc = existing;
   const mayResync = isAuthentic && !existing.activeBattleId
     && typeof existing.rankedAgentId === 'string' && existing.rankedAgentId.length > 0;
   // Authentic clone with no re-sync to do: nothing is written, so no lease.
@@ -193,6 +196,12 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
       // again here, after the lease is held, and decide on THAT.
       const freshSnap = await cloneRef.get();
       const fresh = freshSnap.exists ? freshSnap.data() : null;
+      // The clone VANISHED between the two reads (admin cleanup, account
+      // deletion) — review finding T1, 2026-08-16. Absorbing this into a
+      // `fresh ?? existing` fallback would return created:false naming a
+      // rankedAgentId for a doc that no longer exists, and the caller would
+      // deploy against a missing agent. Fall through to the provisioning path
+      // instead: this function's contract is get-or-CREATE.
       if (fresh && !fresh.activeBattleId && typeof fresh.rankedAgentId === 'string' && fresh.rankedAgentId.length > 0) {
         const parentSnap = await db.collection(AGENTS_COLLECTION).doc(fresh.rankedAgentId).get();
         if (parentSnap.exists && parentSnap.data().ownerId === odUserId) {
@@ -208,10 +217,15 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
       } else if (fresh?.activeBattleId) {
         console.log(`${LOG_PREFIX} skipped re-sync of ${cloneId} — a battle started while the lease was being taken (GUARD 1)`);
       }
-      return { cloneId, rankedAgentId: (fresh ?? existing).rankedAgentId ?? null, created: false };
+      if (fresh) return { cloneId, rankedAgentId: fresh.rankedAgentId ?? null, created: false };
+      // fresh === null: the doc VANISHED between the pre-lease read and the
+      // re-read, so it is NOT reported as an existing clone — execution falls
+      // through to the provisioning path below and `priorDoc` is cleared so the
+      // create() arm runs rather than the squat-heal arm.
+      priorDoc = null;
     }
-    if (existing) {
-      console.warn(`${LOG_PREFIX} healing inauthentic doc at ${cloneId} (ownerId=${existing.ownerId ?? 'none'}, isCasualClone=${existing.isCasualClone === true}) — overwriting with a fresh clone`);
+    if (priorDoc) {
+      console.warn(`${LOG_PREFIX} healing inauthentic doc at ${cloneId} (ownerId=${priorDoc.ownerId ?? 'none'}, isCasualClone=${priorDoc.isCasualClone === true}) — overwriting with a fresh clone`);
     }
 
     const ranked = await resolveRankedAgent(db, odUserId);
@@ -224,7 +238,7 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
     const cloneDoc = buildCasualCloneDoc(ranked, { odUserId, nowIso });
     assertLeaseCurrent(lease); // B2: the sentinel-doc phase re-checks too
 
-    if (existing) {
+    if (priorDoc) {
       // Heal a squat: overwrite (create() would fail on the existing doc). Admin SDK
       // bypasses the rules; the squat carries no legit state to preserve.
       await cloneRef.set({ ...cloneDoc, ...birthProvenanceStamp(clonePin) }); // BL2: a new birth stamps its own descriptor

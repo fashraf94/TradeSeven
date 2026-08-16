@@ -377,6 +377,35 @@ describe('ensureCasualClone', () => {
     expect(store.get('agents/casual-agent-user-42/rules/rule-a')).toBeUndefined();
   });
 
+  // ── T1 REGRESSION: a clone that VANISHES between the two reads ──────────
+  // The S4 re-read introduced a second observation of the clone doc. Absorbing
+  // `fresh === null` into a `fresh ?? existing` fallback returned created:false
+  // naming a rankedAgentId for a doc that no longer exists, and the caller then
+  // deployed against a missing agent. get-or-CREATE means re-provision.
+  it('T1: a clone deleted between the pre-lease read and the re-read is RE-PROVISIONED, not reported as existing', async () => {
+    const { db, store } = makeDb({
+      'agents/ranked-1': RANKED,
+      'agents/casual-agent-user-42': {
+        ownerId: 'user-42', isCasualClone: true, rankedAgentId: 'ranked-1', activeBattleId: null,
+      },
+    });
+    // The clone is deleted at the moment the lease transaction commits.
+    const baseRunTransaction = db.runTransaction;
+    db.runTransaction = async (fn) => {
+      const result = await baseRunTransaction(fn);
+      store.delete('agents/casual-agent-user-42');
+      return result;
+    };
+
+    const r = await ensureCasualClone(db, { odUserId: 'user-42' });
+    expect(r.created, 'a vanished clone must be re-provisioned, not reported as existing').toBe(true);
+    expect(r.rankedAgentId).toBe('ranked-1');
+    const rebuilt = store.get('agents/casual-agent-user-42');
+    expect(rebuilt, 'the clone doc was not re-created').toBeTruthy();
+    expect(rebuilt.isCasualClone).toBe(true);
+    expect(rebuilt.archetype).toBe('contrarian'); // freshly inherited from the parent
+  });
+
   // R4 regression: the idempotent no-op path must not take a lease at all.
   it('R4: an existing clone with nothing to re-sync writes NOTHING — no lease acquired', async () => {
     const { db, store } = makeDb({
