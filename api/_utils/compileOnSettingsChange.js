@@ -147,11 +147,21 @@ function metadataForRule(ruleId) {
  */
 export function resolveEquippedCompatCells(bundles, archetype, {
   // PR 3 (spec §7 row 3): the CANDIDATE registry becomes the compat source
-  // when the compiled-identity flag lights. toCompilerCompatCell(null) is
-  // null, and compileBuild treats a null cell as ABSENCE (A-4) — so a rule
-  // outside the candidate universe (manual free-text) lands compat_cell_missing
-  // under either source. Dark (default): the legacy map, byte-identical.
-  candidateMode = COMPOSITION_COMPILED_IDENTITY_ENABLED,
+  // when the RECORD selects the candidate identity version.
+  // toCompilerCompatCell(null) is null, and compileBuild treats a null cell as
+  // ABSENCE (A-4) — so a rule outside the candidate universe (manual
+  // free-text) lands compat_cell_missing under either source.
+  //
+  // DEFAULT false, NEVER the flag (founder ruling 2026-08-16, at the step-1.1
+  // flip). #11 makes THE RECORD the sole selector; a bare-flag default meant
+  // that the moment COMPOSITION_COMPILED_IDENTITY_ENABLED lit, any caller
+  // that forgot to thread candidateMode would silently switch to the
+  // candidate registry with no record consulted. Legacy is the only safe
+  // default: a caller that wants candidate cells must say so explicitly, and
+  // the ONE path allowed to decide that is resolveCandidateModeInTx.
+  // Guarded by the 'candidate-mode defaults' rows in
+  // compileOnSettingsChange.test.js.
+  candidateMode = false,
 } = {}) {
   const compatCells = {};
   for (const bundle of bundles ?? []) {
@@ -248,9 +258,15 @@ export async function prepareCompileInputs(tx, {
   candidateMode = undefined,
 } = {}) {
   if (!enabled) return null;
+  // DEFAULT false when neither an explicit candidateMode nor a db is supplied
+  // (founder ruling 2026-08-16, extended from :154/:312 — same defect class,
+  // flagged at the step-1.1 flip). Without a db there is no record to consult,
+  // and #11 forbids inferring the selection from the bare flag; legacy is the
+  // only answer that cannot silently mis-select. Every production caller
+  // passes db (all 12 sites), so this arm is unreachable in production today.
   const mode = candidateMode !== undefined
     ? candidateMode
-    : (db ? await resolveCandidateModeInTx(tx, db) : COMPOSITION_COMPILED_IDENTITY_ENABLED);
+    : (db ? await resolveCandidateModeInTx(tx, db) : false);
   const ids = (nextEquippedBundleIds ?? []).filter(Boolean);
   const bundlesCol = ids.length > 0 || mode ? agentRef.collection('bundles') : null;
   let bundles = [];
@@ -307,9 +323,14 @@ export function writeCompiledBuildsInTx(tx, {
   nowIso,
   revision = 'mint',
   // Sol review #11: the cell-source selection resolved by prepareCompileInputs
-  // (record-scoped) — thread `compileInputs?.candidateMode`. The flag default
-  // survives only for direct unit-fixture calls that pass neither.
-  candidateMode = COMPOSITION_COMPILED_IDENTITY_ENABLED,
+  // (record-scoped) — thread `compileInputs?.candidateMode`.
+  //
+  // DEFAULT false, NEVER the flag (founder ruling 2026-08-16, at the step-1.1
+  // flip) — same reasoning as resolveEquippedCompatCells above: the record is
+  // the sole selector, so an unthreaded caller must fall back to LEGACY, not
+  // to whatever the dark switch happens to be. Guarded by the
+  // 'candidate-mode defaults' rows in compileOnSettingsChange.test.js.
+  candidateMode = false,
   // Optional collector: when a caller needs the FULL CompiledBuild documents
   // (the deploy gate feeds one to the manifest builder), pass an object and
   // each mode's full build is set on it — the return value stays the client

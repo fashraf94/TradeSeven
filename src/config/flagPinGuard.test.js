@@ -74,8 +74,12 @@ const DARK_BY_DESIGN = {
     'Wire runway step 7 (LAST) — requires WIRE_WRITES_ENABLED; flips last at founder discretion',
   EDITORIAL_REVIEW_ENABLED:
     'Wire runway step 5 — flips after WIRE_WRITES_ENABLED (first Sunday after writes)',
-  COMPOSITION_EPOCH_FENCE_ENABLED:
-    'ships dark until the §8 activation runbook runs; LOAD-BEARING once activated — never lowered after (A48)',
+  // COMPOSITION_EPOCH_FENCE_ENABLED intentionally ABSENT: it flipped true at
+  // ACTIVATION_RUNBOOK step 1.1 (api/_utils/compositionConfig.js) — the
+  // deliberate flip drops it here in the same change, per the guard's own "if
+  // DELIBERATE" instruction. Re-adding it while it ships true fails the
+  // DARK_BY_DESIGN integrity test below. It is now LOAD-BEARING and never
+  // lowers (A48 / §2 review F5); deactivation is rollbackActivationRecord.
   COMPOSITION_MIGRATION_FEED_ENABLED:
     'identityMigration feed gate — dark until composition activation',
   COMPOSITION_DISPLAY_ENABLED:

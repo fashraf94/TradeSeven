@@ -13,6 +13,7 @@
 // settings helper here.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { makeCompositionStoreDouble } from '../_utils/__fixtures__/compositionStoreDouble.js';
 
 const { authReturnValue } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
@@ -33,6 +34,11 @@ vi.mock('../_utils/authMiddleware.js', () => ({
 const { default: handler } = await import('./update-agent-settings.js');
 
 function makeFakeFirestore({ agentDocs = {} } = {}) {
+  // ACTIVATION_RUNBOOK step 1.1: the write-epoch fence is LIVE, so the
+  // endpoint's validateWriteEpochInTx genuinely reads composition/writeEpoch
+  // inside the transaction. Model the PRE-GENESIS store (both docs absent =>
+  // the fence fails open) instead of mocking the flag back to dark.
+  const __composition = makeCompositionStoreDouble();
   const state = { agentDocs };
   const buildAgentRef = (id) => ({
     get: async () => ({ exists: !!state.agentDocs[id], data: () => state.agentDocs[id] }),
@@ -42,6 +48,8 @@ function makeFakeFirestore({ agentDocs = {} } = {}) {
     db: {
       collection: (name) => {
         if (name === 'agents') return { doc: (id) => buildAgentRef(id) };
+        const __c = __composition.collection(name);
+        if (__c) return __c;
         throw new Error(`Unmocked collection: ${name}`);
       },
       runTransaction: async (fn) =>

@@ -16,6 +16,7 @@
 // design) is the base change-archetype.test.js — see its header.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { makeCompositionStoreDouble } from '../_utils/__fixtures__/compositionStoreDouble.js';
 
 const { authReturnValue, shadowLogCalls, shadowLogReturnsFalse } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
@@ -63,6 +64,11 @@ const { default: changeArchetypeHandler } = await import('./change-archetype.js'
 // (the cleanup + rescan). failSubreads gates only READS (the seed writes docs
 // even when reads are down — only the best-effort cleanup/rescan degrade).
 function makeFakeFirestore({ agentDocs = {}, subcollections = {}, failSubreads = false } = {}) {
+  // ACTIVATION_RUNBOOK step 1.1: the write-epoch fence is LIVE, so the
+  // endpoint's validateWriteEpochInTx genuinely reads composition/writeEpoch
+  // inside the transaction. Model the PRE-GENESIS store (both docs absent =>
+  // the fence fails open) instead of mocking the flag back to dark.
+  const __composition = makeCompositionStoreDouble();
   const state = { agentDocs, subcollections };
   let autoSeq = 0;
   const store = (id, sub) => {
@@ -91,6 +97,8 @@ function makeFakeFirestore({ agentDocs = {}, subcollections = {}, failSubreads =
   return {
     collection: (name) => {
       if (name === 'agents') return { doc: (id) => buildAgentRef(id) };
+      const __c = __composition.collection(name);
+      if (__c) return __c;
       throw new Error(`Unmocked collection: ${name}`);
     },
     runTransaction: async (fn) =>

@@ -19,6 +19,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ARCHETYPE_DEFAULT_TRAITS } from '../../src/data/traitLibrary.js';
+import { makeCompositionStoreDouble } from '../_utils/__fixtures__/compositionStoreDouble.js';
 
 // ==================== HOISTED MOCK STATE ====================
 
@@ -67,6 +68,11 @@ const { default: changeArchetypeHandler } = await import('./change-archetype.js'
 // (the seed creates rule docs via tx.set; the post-commit cleanup + rescan read
 // them back). A shared mutable store backs both in-tx writes and post-tx reads.
 function makeFakeFirestore({ agentDocs = {}, subcollections = {} } = {}) {
+  // ACTIVATION_RUNBOOK step 1.1: the write-epoch fence is LIVE, so the
+  // endpoint's validateWriteEpochInTx genuinely reads composition/writeEpoch
+  // inside the transaction. Model the PRE-GENESIS store (both docs absent =>
+  // the fence fails open) instead of mocking the flag back to dark.
+  const __composition = makeCompositionStoreDouble();
   const state = { agentDocs, subcollections };
   let autoSeq = 0;
 
@@ -102,6 +108,12 @@ function makeFakeFirestore({ agentDocs = {}, subcollections = {} } = {}) {
 
   const buildAgentRef = (id) => ({
     id,
+    // A real DocumentReference carries `.firestore`; the post-commit
+    // softDeleteReplacedTraitRuleDocs reads it to run the now-live
+    // assertWriteEpochOpen check (archetypeSeeding.js:142). While the fence
+    // was dark that helper returned before dereferencing it, so the double
+    // never needed the property.
+    get firestore() { return db; },
     get: async () => ({
       exists: !!state.agentDocs[id],
       data: () => state.agentDocs[id],
@@ -114,6 +126,8 @@ function makeFakeFirestore({ agentDocs = {}, subcollections = {} } = {}) {
 
   const collection = (name) => {
     if (name === 'agents') return { doc: (id) => buildAgentRef(id) };
+    const __c = __composition.collection(name);
+    if (__c) return __c;
     throw new Error(`Unmocked collection: ${name}`);
   };
 
@@ -126,7 +140,8 @@ function makeFakeFirestore({ agentDocs = {}, subcollections = {} } = {}) {
     return fn(tx);
   };
 
-  return { db: { collection, runTransaction }, state };
+  const db = { collection, runTransaction };
+  return { db, state };
 }
 
 // ==================== TEST HELPERS ====================

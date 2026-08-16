@@ -24,6 +24,7 @@ import {
   diffSourceRevisionVector,
 } from './deployBuildValidation.js';
 import { __resetCompileMemos } from './compileOnSettingsChange.js';
+import { makeCompositionStoreDouble } from './__fixtures__/compositionStoreDouble.js';
 import { TIERED_GAME_MODE, FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
 
 const AGENT_ID = 'a1';
@@ -48,8 +49,19 @@ function makeAgentRef(agentDoc, { bundles = {}, compiledBuilds = {} } = {}) {
 function makeDb(agentRef, { failTransactions = 0 } = {}) {
   const writes = [];
   let failures = failTransactions;
+  // The compiled-identity boundary resolves through resolveCandidateModeInTx,
+  // which reads composition/activation inside this transaction now that the
+  // step-1.1 flags are live. Model the PRE-GENESIS store (record absent ⇒
+  // legacy cells) rather than mocking the flag back to dark.
+  const composition = makeCompositionStoreDouble();
   return {
     writes,
+    composition,
+    collection: (name) => {
+      const c = composition.collection(name);
+      if (c) return c;
+      throw new Error(`Unmocked collection: ${name}`);
+    },
     async runTransaction(fn) {
       if (failures > 0) {
         failures -= 1;
@@ -58,6 +70,7 @@ function makeDb(agentRef, { failTransactions = 0 } = {}) {
       const state = agentRef.__state;
       const tx = {
         async get(ref) {
+          if (composition.isCompositionRef(ref)) return composition.get(ref);
           if (ref === agentRef) return { exists: state.agentDoc != null, data: () => state.agentDoc };
           if (ref.__kind === 'compiledBuilds') {
             const doc = state.compiledBuilds[ref.__id];

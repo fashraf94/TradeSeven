@@ -83,7 +83,19 @@ function makeDb(initial = {}) {
       get: async () => snapshotOf(topLevelDocs(prefix)),
     };
   }
-  return { db: { collection: (name) => makeCollection(name) }, store };
+  // The store is path-keyed, so composition/writeEpoch and
+  // composition/activation already resolve ABSENT — the pre-genesis posture
+  // the live fence fails open on. The missing piece was the transaction:
+  // acquireProvisionerLease (lit at ACTIVATION_RUNBOOK step 1.1) registers the
+  // B2 lease inside db.runTransaction, which the dark helper never reached.
+  const runTransaction = async (fn) => fn({
+    get: async (ref) => ref.get(),
+    getAll: async (...refs) => Promise.all(refs.map((r) => r.get())),
+    set: async (ref, d) => ref.set(d),
+    create: async (ref, d) => ref.create(d),
+    update: async (ref, u) => ref.update(u),
+  });
+  return { db: { collection: (name) => makeCollection(name), runTransaction }, store };
 }
 
 const RANKED = Object.freeze({
@@ -180,7 +192,13 @@ describe('buildCasualCloneDoc', () => {
 describe('ensureCasualClone', () => {
   it('creates the clone from the ranked agent when absent', async () => {
     const { db, store } = makeDb({ 'agents/ranked-1': RANKED });
-    const r = await ensureCasualClone(db, { odUserId: 'user-42', now: new Date('2026-08-05T12:00:00.000Z') });
+    // LIVE clock, matching this suite's other ensureCasualClone calls. The B2
+    // provisioner lease is minted from the INJECTED clock but its currency is
+    // re-checked against the REAL one (casualClone.js:183 calls
+    // assertLeaseCurrent with no `now`), so a frozen historical date now reads
+    // as an expired lease the moment the fence is lit. Nothing here asserts on
+    // a timestamp, so the live clock costs the test nothing.
+    const r = await ensureCasualClone(db, { odUserId: 'user-42', now: new Date() });
     expect(r).toEqual({ cloneId: 'casual-agent-user-42', rankedAgentId: 'ranked-1', created: true });
     const clone = store.get('agents/casual-agent-user-42');
     expect(clone.isCasualClone).toBe(true);
@@ -314,8 +332,17 @@ describe('ensureCasualClone', () => {
       collection: (name) => ({
         doc: (id) => (name === 'agents' && id === 'casual-agent-user-42'
           ? cloneRef
-          : { get: async () => ({ exists: false }), collection: () => ({ get: async () => ({ docs: [], forEach() {} }) }) }),
+          // The catch-all now also serves composition/writeEpoch and
+          // composition/activation as ABSENT (pre-genesis ⇒ the live fence
+          // fails open) and absorbs the B2 lease write.
+          : { get: async () => ({ exists: false }), set: async () => {}, collection: () => ({ get: async () => ({ docs: [], forEach() {} }) }) }),
         where: () => ({ get: async () => ({ docs: [{ id: 'ranked-1', data: () => structuredClone(RANKED) }], empty: false, forEach(cb) { this.docs.forEach(cb); } }) }),
+      }),
+      // acquireProvisionerLease takes the B2 lease inside a transaction now
+      // that ACTIVATION_RUNBOOK step 1.1 has lit the fence.
+      runTransaction: async (fn) => fn({
+        get: async (ref) => ref.get(),
+        set: async (ref, d) => ref.set(d),
       }),
     };
     const r = await ensureCasualClone(db, { odUserId: 'user-42' });

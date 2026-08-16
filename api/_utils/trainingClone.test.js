@@ -49,6 +49,10 @@ function makeDb(initial = {}) {
   function makeDocRef(path) {
     return {
       path,
+      // Real DocumentReferences carry `.firestore`;
+      // softDeleteReplacedTraitRuleDocs reads it for the now-live
+      // assertWriteEpochOpen check (archetypeSeeding.js:142).
+      get firestore() { return db; },
       get: async () => {
         const data = store.get(path);
         return { exists: data !== undefined, id: path.split('/').pop(), data: () => structuredClone(data) };
@@ -70,7 +74,20 @@ function makeDb(initial = {}) {
       get: async () => snapshotOf(topLevelDocs(prefix)),
     };
   }
-  return { db: { collection: (name) => makeCollection(name) }, store };
+  // Path-keyed store: composition/writeEpoch and composition/activation
+  // already resolve ABSENT (pre-genesis ⇒ the live fence fails open). The
+  // missing piece was the transaction — the B2 provisioner lease that
+  // acquireProvisionerLease takes inside db.runTransaction now that
+  // ACTIVATION_RUNBOOK step 1.1 has lit the fence.
+  const runTransaction = async (fn) => fn({
+    get: async (ref) => ref.get(),
+    getAll: async (...refs) => Promise.all(refs.map((r) => r.get())),
+    set: async (ref, d) => ref.set(d),
+    create: async (ref, d) => ref.create(d),
+    update: async (ref, u) => ref.update(u),
+  });
+  const db = { collection: (name) => makeCollection(name), runTransaction };
+  return { db, store };
 }
 
 // ==================== FIXTURES ====================
@@ -196,7 +213,12 @@ describe('buildTrainingCloneDoc', () => {
 describe('ensureTrainingClones', () => {
   it('provisions the human clone, copies subcollections, skips CPU seats', async () => {
     const { db, store } = seededDb();
-    const res = await ensureTrainingClones(db, trainingGroup, { now: new Date('2026-06-17T12:00:00.000Z') });
+    // LIVE clock, matching the neighbouring cases. The B2 lease is minted from
+    // the INJECTED clock but re-checked against the REAL one
+    // (trainingClone.js:196 calls assertLeaseCurrent with no `now`), so a
+    // frozen historical date reads as expired once the fence is lit. No
+    // assertion below depends on the timestamp.
+    const res = await ensureTrainingClones(db, trainingGroup, { now: new Date() });
     expect(res.created).toEqual(['u1']);
     expect(res.existing).toEqual([]);
     expect(res.skipped).toEqual([]);

@@ -89,6 +89,7 @@ import {
 } from '../agent/decide.js';
 import { resolveModeConfig, FLAT6_GAME_MODE, TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
 import { ARCHETYPE_CONFIGS, resolveHftConfig } from './agentArchetypeConfig.js';
+import { makeCompositionStoreDouble } from './__fixtures__/compositionStoreDouble.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -471,14 +472,30 @@ describe('P4 — resolveHftConfig (founder-signed zero-delta table) + Gate-1 dif
 
 const FROZEN_NOW = new Date('2026-06-10T14:00:00Z'); // Wed June 10 2026, 10:00 ET — market open, EDT
 
+// ACTIVATION_RUNBOOK step 1.1 — the write path, not the document, changed.
+// With COMPOSITION_EPOCH_FENCE_ENABLED lit, createAgentBattle pins the
+// activation descriptor and commits through commitBattleDocWithPin. Pre-genesis
+// the pin is {dark:false, descriptor:null}, which takes the TRANSACTIONAL arm:
+// a descriptor re-read plus tx.create(ref, doc) instead of collection().add().
+// Both arms are captured here so the byte-identity photograph below still
+// compares the same document either way — that assertion must keep biting.
 function makeCaptureDb() {
   const captured = { doc: null };
+  const composition = makeCompositionStoreDouble();
   const db = {
-    collection: (name) => ({
+    collection: (name) => composition.collection(name) ?? {
       add: async (doc) => {
         captured.doc = doc;
         captured.collection = name;
         return { id: 'battle-photo-1' };
+      },
+      doc: (id) => ({ id: id ?? 'battle-photo-1', __collection: name }),
+    },
+    runTransaction: async (fn) => fn({
+      get: async (ref) => ref.get(),
+      create: async (ref, doc) => {
+        captured.doc = doc;
+        captured.collection = ref.__collection; // the real name, never hardcoded
       },
     }),
   };

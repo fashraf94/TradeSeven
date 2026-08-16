@@ -97,6 +97,11 @@ function makeDb(initial = {}) {
   function makeDocRef(path) {
     return {
       path,
+      // A real DocumentReference carries `.firestore`. The loadout-override
+      // path reaches softDeleteReplacedTraitRuleDocs, which reads it for the
+      // now-live assertWriteEpochOpen check (archetypeSeeding.js:142) — a
+      // no-op that never dereferenced it while the fence was dark.
+      get firestore() { return db; },
       get: async () => {
         const data = store.get(path);
         return { exists: data !== undefined, id: path.split('/').pop(), data: () => structuredClone(data) };
@@ -920,6 +925,27 @@ describe('failure cooldown — ≥10 min, consumed even on failure', () => {
 // ==================== TRAINING ACTIVATION (Slice 3) ====================
 
 describe('sweepTrainingActivation (Slice 3)', () => {
+  // ACTIVATION_RUNBOOK step 1.1 — freeze the SYSTEM clock to match the
+  // injected one for the clone-provisioning cases. These pass a fixed
+  // historical `now` (June 2026) down to ensureTrainingClones, which mints a
+  // B2 provisioner lease from THAT clock; assertLeaseCurrent then re-checks it
+  // against the LIVE clock, by design — the guard exists to catch a provisioner
+  // stalled past its TTL, so it must never read a caller-supplied instant.
+  // While the fence was dark the lease was an inert no-op and the split could
+  // not bite. Lit, a half-frozen world reads every lease as months expired.
+  //
+  // Production has ONE clock — both entry points pass `now: new Date()`
+  // (api/cron/tournament-orchestrator.js:47,
+  // api/tournament/activate-training-pod.js:74) — so agreeing the two clocks
+  // here models production rather than papering over it. Scoped to THIS block
+  // deliberately: the deploy-pacing block measures real elapsed time through
+  // Date and must keep a live clock.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(MON_MORNING_EDT);
+  });
+  afterEach(() => vi.useRealTimers());
+
   function trainingPodDocs(id, { status = GROUP_STATUS.BATTLE, withStream = false } = {}) {
     const docs = {
       [`tournamentGroups/${id}`]: {

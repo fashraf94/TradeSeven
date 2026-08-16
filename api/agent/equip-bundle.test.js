@@ -17,6 +17,7 @@
 // test env — NEVER mock those modules here; this import IS the guard.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { makeCompositionStoreDouble } from '../_utils/__fixtures__/compositionStoreDouble.js';
 
 // ==================== HOISTED MOCK STATE ====================
 
@@ -62,6 +63,11 @@ const { default: equipBundleHandler } = await import('./equip-bundle.js');
 // ==================== FIRESTORE MOCK ====================
 
 function makeFakeFirestore({ agentDocs = {}, bundleDocs = {} } = {}) {
+  // ACTIVATION_RUNBOOK step 1.1: the write-epoch fence is LIVE, so the
+  // endpoint's validateWriteEpochInTx genuinely reads composition/writeEpoch
+  // inside the transaction. Model the PRE-GENESIS store (both docs absent =>
+  // the fence fails open) instead of mocking the flag back to dark.
+  const __composition = makeCompositionStoreDouble();
   // bundleDocs is keyed `${agentId}/${bundleId}`.
   const state = { agentDocs, bundleDocs };
 
@@ -95,6 +101,8 @@ function makeFakeFirestore({ agentDocs = {}, bundleDocs = {} } = {}) {
 
   const collection = (name) => {
     if (name === 'agents') return { doc: (id) => buildAgentRef(id) };
+    const __c = __composition.collection(name);
+    if (__c) return __c;
     throw new Error(`Unmocked collection: ${name}`);
   };
 
