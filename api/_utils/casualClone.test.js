@@ -192,13 +192,7 @@ describe('buildCasualCloneDoc', () => {
 describe('ensureCasualClone', () => {
   it('creates the clone from the ranked agent when absent', async () => {
     const { db, store } = makeDb({ 'agents/ranked-1': RANKED });
-    // LIVE clock, matching this suite's other ensureCasualClone calls. The B2
-    // provisioner lease is minted from the INJECTED clock but its currency is
-    // re-checked against the REAL one (casualClone.js:183 calls
-    // assertLeaseCurrent with no `now`), so a frozen historical date now reads
-    // as an expired lease the moment the fence is lit. Nothing here asserts on
-    // a timestamp, so the live clock costs the test nothing.
-    const r = await ensureCasualClone(db, { odUserId: 'user-42', now: new Date() });
+    const r = await ensureCasualClone(db, { odUserId: 'user-42', now: new Date('2026-08-05T12:00:00.000Z') });
     expect(r).toEqual({ cloneId: 'casual-agent-user-42', rankedAgentId: 'ranked-1', created: true });
     const clone = store.get('agents/casual-agent-user-42');
     expect(clone.isCasualClone).toBe(true);
@@ -307,6 +301,42 @@ describe('ensureCasualClone', () => {
     store.set('agents/ranked-1', RANKED);
     const r = await ensureCasualClone(db, { odUserId: 'user-42' });
     expect(r.rankedAgentId).toBe('ranked-1'); // the non-clone doc, never the training clone
+  });
+
+  // R1 regression, casual-clone half (see the fuller note in
+  // trainingClone.test.js). Same defect, same fix: the lease is stamped in
+  // WALL-CLOCK time, never from the caller's scheduling clock. Observes REAL
+  // elapsed time deliberately — do not "fix" this with fake timers.
+  it('R1: a caller clock older than the lease TTL still provisions (lease stamped in WALL-CLOCK time)', async () => {
+    const { db, store } = makeDb({ 'agents/ranked-1': RANKED });
+    const staleCallerClock = new Date(Date.now() - 5 * 60_000);
+    const r = await ensureCasualClone(db, { odUserId: 'user-42', now: staleCallerClock });
+    expect(r.created).toBe(true);
+    expect(store.get('agents/casual-agent-user-42')).toBeTruthy();
+    // MUTATION ANCHOR for the R4 row below: a path that DOES take a lease
+    // leaves a visible lease doc in this store. Without this, R4's
+    // "no lease doc" assertion could pass simply because the double never
+    // records leases at all.
+    expect([...store.keys()].some((k) => k.startsWith('compositionProvisionerLeases/'))).toBe(true);
+  });
+
+  // R4 regression: the idempotent no-op path must not take a lease at all.
+  it('R4: an existing clone with nothing to re-sync writes NOTHING — no lease acquired', async () => {
+    const { db, store } = makeDb({
+      'agents/ranked-1': RANKED,
+      // Authentic clone, MID-BATTLE ⇒ re-sync is skipped ⇒ pure no-op.
+      'agents/casual-agent-user-42': {
+        ownerId: 'user-42', isCasualClone: true, rankedAgentId: 'ranked-1', activeBattleId: 'live-1',
+      },
+    });
+    const before = store.size;
+    const r = await ensureCasualClone(db, { odUserId: 'user-42' });
+    expect(r).toEqual({ cloneId: 'casual-agent-user-42', rankedAgentId: 'ranked-1', created: false });
+    // No lease doc minted, no release write, nothing else touched. Before the
+    // R4 fix this path cost a transaction plus an acquire+release pair on the
+    // per-deploy hot path, which is what fed the lease-collection growth.
+    expect(store.size).toBe(before);
+    expect([...store.keys()].some((k) => k.startsWith('compositionProvisionerLeases/'))).toBe(false);
   });
 
   it('is race-safe: a create() that hits ALREADY_EXISTS returns the winner untouched, no throw', async () => {

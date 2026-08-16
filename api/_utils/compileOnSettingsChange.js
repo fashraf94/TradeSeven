@@ -241,10 +241,11 @@ export function registryIdentityHash() {
 export async function prepareCompileInputs(tx, {
   agentRef,
   // Sol review #11: the db handle for the RECORD-SCOPED candidate selection
-  // (resolveCandidateModeInTx). Endpoints pass it; when absent AND no
-  // explicit candidateMode is given, the legacy flag default applies (unit
-  // fixtures that drive the compiler directly) — production call shapes are
-  // pinned by the endpoint suites' genesis-present rows.
+  // (resolveCandidateModeInTx). Endpoints pass it; when absent AND no explicit
+  // candidateMode is given, the selection is LEGACY — never the flag (see the
+  // note at the `mode` resolution below; founder ruling 2026-08-16). That arm
+  // exists for unit fixtures that drive the compiler directly; production call
+  // shapes are pinned by the endpoint suites' genesis-present rows.
   db = null,
   nextEquippedBundleIds,
   enabled = false,

@@ -61,21 +61,8 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.stubEnv('CRON_SECRET', 's3cret');
   vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', 'tradeseven.vercel.app');
-  // ACTIVATION_RUNBOOK step 1.1 — agree the SYSTEM clock with the injected
-  // one. This seam drives the real activation path with fixed June-2026
-  // instants; ensureTrainingClones mints a B2 provisioner lease from that
-  // clock while assertLeaseCurrent re-checks against the LIVE clock by design
-  // (the guard catches a provisioner stalled past its TTL, so it must not read
-  // a caller-supplied instant). Dark, the lease was inert and the split could
-  // not bite; lit, a half-frozen world reads every lease as months expired.
-  // Production runs ONE clock (`now: new Date()` at both entry points), so
-  // freezing both here models it. Only Date is faked — this suite paces at
-  // pacingMs:0 and measures no elapsed time.
-  vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(MON_MORNING);
 });
 afterEach(() => {
-  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });

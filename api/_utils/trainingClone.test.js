@@ -211,14 +211,35 @@ describe('buildTrainingCloneDoc', () => {
 // ==================== ensureTrainingClones ====================
 
 describe('ensureTrainingClones', () => {
+  // ── R1 REGRESSION (founder ruling 2026-08-16, ACTIVATION_RUNBOOK step 1.1) ──
+  // The B2 provisioner lease is a WALL-CLOCK resource; `now` is a SCHEDULING
+  // clock. The orchestrator captures `now` ONCE per tick
+  // (api/cron/tournament-orchestrator.js:47) and keeps working for up to
+  // DUTY_DEADLINE_MS = 270s, pacing deploys 20s apart, while
+  // PROVISIONER_LEASE_TTL_MS is 120s of REAL time. Minting the lease from `now`
+  // meant every pod reached >120s into a tick got a lease already expired on
+  // arrival and threw `provisioner_lease_expired` before even the clone-exists
+  // check — every tick, from roughly the third pod on. Inert while the fence
+  // was dark; live from the moment step 1.1 lit it.
+  //
+  // This row observes REAL elapsed time on purpose. It must never be "fixed"
+  // with fake timers: freezing Date makes the injected and real clocks agree,
+  // which is precisely the condition under which the bug cannot bite — a test
+  // that cannot observe elapsed time cannot guard a TTL.
+  it('R1: a tick whose scheduling clock is older than the lease TTL still provisions (lease stamped in WALL-CLOCK time)', async () => {
+    const { db, store } = seededDb();
+    // A tick that began 5 minutes ago — well past the 120s lease TTL, and
+    // inside the orchestrator's real 270s budget.
+    const staleTickClock = new Date(Date.now() - 5 * 60_000);
+    const res = await ensureTrainingClones(db, trainingGroup, { now: staleTickClock });
+    expect(res.created).toEqual(['u1']);
+    expect(res.skipped).toEqual([]);
+    expect(store.get(`agents/${trainingCloneDocId('pod1', 'u1')}`)).toBeTruthy();
+  });
+
   it('provisions the human clone, copies subcollections, skips CPU seats', async () => {
     const { db, store } = seededDb();
-    // LIVE clock, matching the neighbouring cases. The B2 lease is minted from
-    // the INJECTED clock but re-checked against the REAL one
-    // (trainingClone.js:196 calls assertLeaseCurrent with no `now`), so a
-    // frozen historical date reads as expired once the fence is lit. No
-    // assertion below depends on the timestamp.
-    const res = await ensureTrainingClones(db, trainingGroup, { now: new Date() });
+    const res = await ensureTrainingClones(db, trainingGroup, { now: new Date('2026-06-17T12:00:00.000Z') });
     expect(res.created).toEqual(['u1']);
     expect(res.existing).toEqual([]);
     expect(res.skipped).toEqual([]);

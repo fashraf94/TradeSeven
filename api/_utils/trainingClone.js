@@ -180,7 +180,19 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
   // re-checks lease currency (the bounded-conformance boundary, now with a
   // hard TTL deadline), and the §8 close drains leases before its watermark.
   // Zero I/O while the fence flag is dark (A23/A46 census row).
-  const lease = await acquireProvisionerLease(db, { holder: `trainingClone:${group.id}`, now });
+  //
+  // ⚠ THE LEASE IS STAMPED IN WALL-CLOCK TIME, NEVER `now` (founder ruling
+  // 2026-08-16, review finding R1). `now` is a SCHEDULING clock: the
+  // orchestrator captures it ONCE per tick (api/cron/tournament-orchestrator.js:47)
+  // and uses it for market-hour and day-boundary decisions across a run that
+  // lasts up to DUTY_DEADLINE_MS (270s), pacing deploys 20s apart. The lease
+  // TTL is 120s of REAL time, and assertLeaseCurrent below rightly measures
+  // against the real clock — that is the whole point of a stall guard. Minting
+  // from `now` meant every pod reached more than 120s into a tick got a
+  // lease that was already expired on arrival, and threw before even the
+  // clone-exists check. Inert while the fence was dark; live the moment
+  // step 1.1 lit it. Wall-clock in, wall-clock out.
+  const lease = await acquireProvisionerLease(db, { holder: `trainingClone:${group.id}`, now: new Date() });
   // Composition PR 4 (A24): clone seeding derives from the version the
   // activation record selects (dark: zero reads → live, byte-identical).
   const seedPin = await pinActivationDescriptor(db);

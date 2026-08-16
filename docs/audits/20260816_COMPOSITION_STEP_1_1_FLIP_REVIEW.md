@@ -1,12 +1,14 @@
 # Composition ACTIVATION step 1.1 — cumulative review record
 
-> ## ⛔ DO NOT MERGE — the independent review found a live defect this flip activates
+> ## Status: R1 FIXED — see §8. Ready for founder review.
 >
-> The `/code-review high` pass returned after this record was first written and after the branch was pushed. It **refuted a conclusion this document had recorded as verified**. Finding R1 below is a HIGH-severity production defect that step 1.1 turns on, and it is **not** fixed by this branch.
+> **History, kept deliberately.** The `/code-review high` pass returned after this record was first written and after the branch was first pushed, and it **refuted a conclusion this document had recorded as verified**. R1 was a HIGH-severity production defect that step 1.1 would have activated.
 >
-> §6 item 2 of the original record claimed the injectable-clock/lease split was "not a production defect." **That claim was WRONG** and is corrected in §7. The error: I confirmed both entry points pass `now: new Date()` and stopped there, concluding the clocks agree. They agree *at entry* — but the orchestrator tick then runs for up to 270s on that one frozen `now` while the lease TTL is 120s of real time.
+> §6 item 2 originally claimed the injectable-clock/lease split was "not a production defect." **That claim was WRONG.** The error: I confirmed both entry points pass `now: new Date()` and stopped there, concluding the clocks agree. They agree *at entry* — the orchestrator tick then runs for up to 270s on that one frozen `now` while the lease TTL is 120s of real time.
 >
-> Worse, my own fixture change (`tournamentOrchestrator.test.js`) froze the system clock in a way that makes the suite **structurally unable to catch this bug**. That is the failure mode this whole review was supposed to prevent.
+> Worse, my own fixture change froze the system clock in a way that made the suite **structurally unable to catch it**. Founder ruling, recorded: *a green suite bought by blindness is worse than a red one.* Those fixture changes are now fully reverted (§8, R6) and the suites pass on the real clock.
+>
+> R1, R3, R4, R5, R6, R7 are fixed in this branch. R2 is traced and reported, not fixed, per founder instruction.
 
 **Branch:** `ops/composition-flip-1-1` · **Base:** `main` @ `f59e76f3` · **Diff:** 25 files, +561 / −35
 **Review trigger:** BUILD_RULES §2 — ≥10 files on the cumulative branch diff. Founder accepted the threshold explicitly when authorizing the fixture reconciliation.
@@ -22,10 +24,12 @@
 | Flip diff | **As authorized** — 2 flags, 1 pin, 1 DARK_BY_DESIGN removal, docstrings reconciled |
 | Hazard fix (candidate-mode defaults) | **APPLIED at 3 sites**, guarded by 4 defect-sensitive rows, **mutation-checked** |
 | Fixture reconciliation | **21 suites**, modelling shipped reality — no flag re-mocking |
-| Full suite | **12 failed files / 21 failed tests = byte-equal to baseline; ZERO new failures** |
-| `vite build` | **GREEN** (22.10s) |
+| Full suite | **12 failed files / 21 failed tests = byte-equal to baseline; ZERO new failures; +7 net new passing rows** |
+| `vite build` | **GREEN** (44.80s) |
 | A24 structural row | **BENIGN — win32 path-separator artifact in the guard, NOT a B10 violation** |
 | Fenced files edited | **NONE** (BUILD_RULES §1) |
+| Review findings R1/R3/R4/R5/R6/R7 | **FIXED in-branch** — R1 mutation-checked, fixture distortion fully reverted |
+| Review finding R2 | **TRACED, not fixed** (founder instruction) — operational blocker for step 1.9, see §9 |
 
 ---
 
@@ -191,3 +195,74 @@ BUILD_RULES §2 requires that a session unable to run the adversarial pass **say
 **R2, R3, R4** are real but not blockers for 1.1; R3 in particular becomes user-visible the moment R1's underlying condition occurs on the casual-clone path, so it is worth folding in.
 
 **On the step-0 evidence:** unchanged and still valid — the flip diff itself and the dark-state probe are unaffected by all of this. What changed is that the flip is now known to activate a latent defect elsewhere.
+
+---
+
+## 8. R-series remediation (founder-authorized, 2026-08-16)
+
+### R1 — FIXED. The lease is a wall-clock resource; `now` is a scheduling clock.
+
+`acquireProvisionerLease(db, { holder, now: new Date() })` at `trainingClone.js:195` and `casualClone.js:165`. Both carry a comment naming the two clocks and why they must not be conflated.
+
+**`assertLeaseCurrent` was deliberately left reading the real clock.** Threading `now` into it would have "fixed" the symptom by destroying the guard: its entire purpose is to notice that a provisioner has stalled past its TTL, which is unobservable if elapsed time comes from a caller-supplied instant. Founder ruling, and it is the correct one.
+
+**Regression rows added** — `trainingClone.test.js` "R1: a tick whose scheduling clock is older than the lease TTL still provisions" and the casual-clone twin. Each passes a clock 5 minutes stale (past the 120s TTL, inside the orchestrator's real 270s budget) and asserts provisioning still succeeds. They observe **real** elapsed time; both carry an explicit warning never to "fix" them with fake timers.
+
+**Mutation-checked.** Reverting both call sites to `now` fails **4 rows**: the two new R1 rows plus the two restored frozen-date rows — i.e. the bug resurfaces exactly where it lived.
+
+### R6 — FIXED, and the fixture distortion fully reverted.
+
+- `tournamentOrchestrator.test.js`: the scoped `vi.useFakeTimers({ toFake: ['Date'] })` block is **gone**.
+- `tournamentLobbyFormation.seam.test.js`: the file-wide fake clock is **gone**.
+- `casualClone.test.js` / `trainingClone.test.js`: the frozen fixture dates (`2026-08-05`, `2026-06-17`) are **restored**; the `new Date()` swaps are reverted.
+
+**No `useFakeTimers`, `setSystemTime` or `useRealTimers` remains in either tournament suite** (verified by grep). All five affected suites — 111 tests — pass on the real clock. That they now pass *without* any clock manipulation is the strongest available evidence the R1 fix is real rather than papered over: the same suites could only be made green by distortion before it.
+
+The restored frozen dates are no longer a liability but additional coverage — under the mutation they fail, because a stale scheduling clock is precisely the production condition.
+
+### R3 — FIXED. `ensure-casual-clone.js` now maps `provisioner_lease_expired` → **409** with a retry message, alongside the existing `epoch_closed` 409. A transient, retryable abort no longer presents as an unrecoverable 500.
+
+### R4 — FIXED. The clone-exists read moved **ahead** of the lease in `ensureCasualClone`. An authentic clone with nothing to re-sync now returns having taken no lease and written nothing. Guarded by "R4: an existing clone with nothing to re-sync writes NOTHING — no lease acquired", with a **mutation anchor** in the R1 row asserting that a path which *does* take a lease leaves a visible lease doc — so R4's "no lease doc" assertion cannot pass vacuously.
+
+**Scope, stated honestly:** this exempts the mid-battle / no-parent no-op. The ordinary re-sync path still mints a lease per deploy, because it genuinely writes. R4 removes a needless cost; it does not eliminate lease traffic — see R2.
+
+### R5 — FIXED. The `db` param docstring at `compileOnSettingsChange.js:243` no longer claims "the legacy flag default applies"; it now states the selection is LEGACY and never the flag, pointing at the `mode` resolution below.
+
+### R7 — FIXED. `PR2_FLAG_OWNERSHIP.md` row updated to `true` with the activation date, its A23 zero-read evidence re-labelled as describing the pre-flip posture, and a new table recording both step-1.1 flips and their actual live effect.
+
+---
+
+## 9. R2 — traced, NOT fixed (founder instruction). This is an operational finding for step 1.9.
+
+Traced rather than relayed. Facts, each verified:
+
+**Who mints leases — exactly two sites**, both now wall-clock-stamped: `casualClone.js:165` (per casual deploy that writes) and `trainingClone.js:195` (per training-pod activation).
+
+**Nothing in the repo ever drains or purges.** `grep` for `purgeReleasedProvisionerLeases`, `drainProvisionerLeases`, and `listUnreleasedProvisionerLeases` across all non-test code returns **zero callers** — no cron, no endpoint, and **nothing in `scripts/composition/`** either. The runbook names these functions at steps 1.9 and 8B, but no tooling invokes them. **At the close the founder has no command to run** — the invocation would have to be hand-written at the moment it is needed, under time pressure, inside a closed epoch. That is the finding that matters most here, and it is cheap to fix *before* the window opens.
+
+**Growth.** `releaseProvisionerLease` marks `releasedAt` rather than deleting (deliberate — so the drain never races a delete), and nothing purges. From 1.1 until someone purges, the collection grows by roughly one doc per casual deploy plus one per training-pod activation.
+
+**Drain cost.** `listUnreleasedProvisionerLeases` does an **unfiltered** `collection(...).get()` and `drainProvisionerLeases` calls it once per 1s poll up to `timeoutMs` (TTL + 30s = 150s) — so worst case ~150 full-collection scans at the close, over however many docs have accumulated. Bounded and survivable, but it scales with an unbounded collection.
+
+**The real risk — orphaned leases become manual blockers, and they are plausible.** `releaseProvisionerLease` runs in a `finally`, which does **not** run on a platform kill. `api/agent/ensure-casual-clone.js` declares `maxDuration: 10` — **ten seconds**, against a flow that does a lease transaction, a descriptor pin, two reads, a full `copyAgentSubcollections` (N reads + N writes over rules *and* bundles) and a doc write. A kill inside that window is entirely realistic for a large loadout. The orphan sits unreleased, becomes "stuck" 120s later, and then `drainProvisionerLeases` **throws `StuckProvisionerLeaseError` and refuses to drain at all** until an operator resolves each one by hand with an attributed `resolveStuckProvisionerLease(db, leaseId, { operator, reason })`.
+
+So: every function kill between 1.1 and 1.9 leaves a permanent, manual blocker on the step-1.9 drain. Over days of live traffic a nonzero count is close to certain.
+
+**Not fixed here — it is not trivial.** The candidate one-liner (filtering the query on `releasedAt == null`) bounds the read cost but needs a Firestore index and does nothing about stuck leases, which are the actual blocker. **Recommended as its own task before the activation window opens:** (a) write the step-1.9 drain and step-8B purge as real scripts under `scripts/composition/`, with the stuck-lease report and the attributed resolution built in; (b) decide whether `ensure-casual-clone`'s 10s `maxDuration` is right for a flow that copies subcollections, since that ceiling is what manufactures the orphans.
+
+---
+
+## 10. Final verification (at the pushed commit)
+
+| Check | Result |
+|---|---|
+| `npx vitest run` (484 files) | 12 failed / 469 passed / 3 skipped — **identical failing set to the `f59e76f3` baseline** |
+| New failures vs baseline | **ZERO** (`comm -13` empty) |
+| Net new passing rows | **+7** vs baseline (8009 total vs 8002) |
+| Clock manipulation in the suite | **NONE** — no `useFakeTimers` / `setSystemTime` anywhere in the tournament suites |
+| `npx vite build` | **green**, 44.80s |
+| R1 mutation check | 4 rows fail when the fix is reverted |
+| R4 mutation anchor | present — a lease-taking path is asserted to leave a visible lease doc |
+| Fenced files edited | **NONE** |
+
+The 12 pre-existing failures are unchanged and untouched (§5).
