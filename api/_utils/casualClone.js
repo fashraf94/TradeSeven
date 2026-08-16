@@ -163,9 +163,16 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
   // while the TTL and assertLeaseCurrent below both measure REAL elapsed time.
   // See the matching note in trainingClone.js.
   const lease = await acquireProvisionerLease(db, { holder: `casualClone:${odUserId}`, now: new Date(), actor: odUserId }); // #4: probe admission
-  // BL2: the clone's OWN creation descriptor (dark: zero reads, zero keys).
-  const clonePin = await pinActivationDescriptor(db);
   try {
+    // BL2: the clone's OWN creation descriptor (dark: zero reads, zero keys).
+    //
+    // INSIDE the try (review finding S2, 2026-08-16): once the fence is lit
+    // this performs a real read, and readActivationDescriptor throws
+    // MalformedActivationDescriptorError on a partial descriptor — the
+    // mid-flight state at runbook step 7. Outside the try, that throw orphaned
+    // the lease we just took; it went `stuck` 120s later and made
+    // drainProvisionerLeases refuse entirely until hand-resolved.
+    const clonePin = await pinActivationDescriptor(db);
     if (isAuthentic) {
       // Ruling 3: RE-SYNC the clone to the CURRENT parent brain at deploy so
       // BaggerBomb runs today's agent (and the learning it redirects back to the
@@ -177,8 +184,17 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
       // subcollections; markers/pointers/stats untouched (never-overwrite for identity
       // still holds). Same-owner re-checked (defense-in-depth vs a poisoned
       // rankedAgentId on an otherwise-authentic clone).
-      if (!existing.activeBattleId && typeof existing.rankedAgentId === 'string' && existing.rankedAgentId.length > 0) {
-        const parentSnap = await db.collection(AGENTS_COLLECTION).doc(existing.rankedAgentId).get();
+      // GUARD 1 IS EVALUATED ON A FRESH READ, UNDER THE LEASE (review finding
+      // S4, 2026-08-16). The snapshot above was taken BEFORE the lease
+      // transaction and the descriptor pin — two round trips earlier — and the
+      // R4 reordering is what widened that gap. Re-checking the stale copy meant
+      // a battle that started inside the window still got its clone's brain
+      // re-pointed underneath it, which is exactly what GUARD 1 forbids. Read
+      // again here, after the lease is held, and decide on THAT.
+      const freshSnap = await cloneRef.get();
+      const fresh = freshSnap.exists ? freshSnap.data() : null;
+      if (fresh && !fresh.activeBattleId && typeof fresh.rankedAgentId === 'string' && fresh.rankedAgentId.length > 0) {
+        const parentSnap = await db.collection(AGENTS_COLLECTION).doc(fresh.rankedAgentId).get();
         if (parentSnap.exists && parentSnap.data().ownerId === odUserId) {
           const parent = { id: parentSnap.id, ...parentSnap.data() };
           assertLeaseCurrent(lease); // B2 (F6): the RE-SYNC copy is a write phase — currency-check BEFORE it, parity with the create path
@@ -187,10 +203,12 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
           await cloneRef.update({ ...buildCasualCloneResync(parent), updatedAt: nowIso });
           console.log(`${LOG_PREFIX} re-synced casual clone ${cloneId} to parent ${parent.id} at deploy`);
         } else {
-          console.warn(`${LOG_PREFIX} skipped re-sync of ${cloneId} — parent ${existing.rankedAgentId} missing or not same-owner`);
+          console.warn(`${LOG_PREFIX} skipped re-sync of ${cloneId} — parent ${fresh.rankedAgentId} missing or not same-owner`);
         }
+      } else if (fresh?.activeBattleId) {
+        console.log(`${LOG_PREFIX} skipped re-sync of ${cloneId} — a battle started while the lease was being taken (GUARD 1)`);
       }
-      return { cloneId, rankedAgentId: existing.rankedAgentId ?? null, created: false };
+      return { cloneId, rankedAgentId: (fresh ?? existing).rankedAgentId ?? null, created: false };
     }
     if (existing) {
       console.warn(`${LOG_PREFIX} healing inauthentic doc at ${cloneId} (ownerId=${existing.ownerId ?? 'none'}, isCasualClone=${existing.isCasualClone === true}) — overwriting with a fresh clone`);

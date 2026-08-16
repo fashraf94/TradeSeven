@@ -320,6 +320,63 @@ describe('ensureCasualClone', () => {
     expect([...store.keys()].some((k) => k.startsWith('compositionProvisionerLeases/'))).toBe(true);
   });
 
+  // ── S2 REGRESSION (casual half): a throw must never orphan the lease ────
+  // Same defect and same fix as the trainingClone row: pinActivationDescriptor
+  // reads composition/activation once the fence is lit and throws
+  // MalformedActivationDescriptorError on a PARTIAL descriptor — the mid-flight
+  // state at runbook step 7. With the pin outside the try, the just-acquired
+  // lease was never released, went `stuck` after the TTL, and made
+  // drainProvisionerLeases refuse entirely until hand-resolved.
+  it('S2: a malformed activation descriptor RELEASES the lease before propagating (never orphans it)', async () => {
+    const { db, store } = makeDb({ 'agents/ranked-1': RANKED });
+    // Epoch present and OPEN, or B1's absent-doc fail-closed rejects at
+    // acquisition and the pin is never reached (the row would be vacuous).
+    store.set('composition/writeEpoch', { state: 'open', epochId: 'E0', fenceGeneration: 1 });
+    store.set('composition/activation', { activationGeneration: 2 }); // partial
+
+    await expect(ensureCasualClone(db, { odUserId: 'user-42' }))
+      .rejects.toThrow(/activeIdentityVersion|malformed/i);
+
+    const leases = [...store.entries()].filter(([k]) => k.startsWith('compositionProvisionerLeases/'));
+    expect(leases.length, 'no lease was minted — this row would be vacuous').toBe(1);
+    expect(leases[0][1].releasedAt, 'lease orphaned by the throw — it would go stuck and block the 1.9 drain').toBeTruthy();
+  });
+
+  // ── S4 REGRESSION: GUARD 1 must be decided on a FRESH read ──────────────
+  // The clone-exists snapshot is taken before the lease transaction and the
+  // descriptor pin (the R4 reordering widened that gap by two round trips).
+  // Re-checking the STALE copy meant a battle that started inside the window
+  // still got its clone's brain re-pointed underneath it — exactly what
+  // "GUARD 1: a live clone's brain is never re-pointed under it" forbids.
+  // Modelled deterministically: the battle starts at the moment the lease
+  // transaction runs.
+  it('S4: a battle that starts while the lease is being taken BLOCKS the re-sync (GUARD 1 on a fresh read)', async () => {
+    const { db, store } = makeDb({
+      'agents/ranked-1': RANKED,
+      'agents/ranked-1/rules/rule-a': { id: 'rule-a', status: 'active' },
+      'agents/casual-agent-user-42': {
+        ownerId: 'user-42', isCasualClone: true, rankedAgentId: 'ranked-1',
+        archetype: 'stale-archetype', activeBattleId: null,
+      },
+    });
+    // The instant the lease transaction commits, a battle begins on the clone.
+    const baseRunTransaction = db.runTransaction;
+    db.runTransaction = async (fn) => {
+      const result = await baseRunTransaction(fn);
+      store.set('agents/casual-agent-user-42', {
+        ...store.get('agents/casual-agent-user-42'), activeBattleId: 'started-mid-flight',
+      });
+      return result;
+    };
+
+    const r = await ensureCasualClone(db, { odUserId: 'user-42' });
+    expect(r.created).toBe(false);
+    // The brain was NOT re-pointed: archetype untouched and the parent's rules
+    // were never copied over. Under the stale-snapshot form both flip.
+    expect(store.get('agents/casual-agent-user-42').archetype).toBe('stale-archetype');
+    expect(store.get('agents/casual-agent-user-42/rules/rule-a')).toBeUndefined();
+  });
+
   // R4 regression: the idempotent no-op path must not take a lease at all.
   it('R4: an existing clone with nothing to re-sync writes NOTHING — no lease acquired', async () => {
     const { db, store } = makeDb({

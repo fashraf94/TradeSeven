@@ -237,6 +237,57 @@ describe('ensureTrainingClones', () => {
     expect(store.get(`agents/${trainingCloneDocId('pod1', 'u1')}`)).toBeTruthy();
   });
 
+  // ── S1 REGRESSION: no lease on the idempotent all-existing tick ─────────
+  // sweepTrainingActivation calls this for every training BATTLE pod on every
+  // orchestrator tick (vercel.json: */10 across 7 hours, weekdays = 42/day).
+  // After the pod's first day every seat exists, so the common outcome is
+  // all-`existing` with ZERO writes — and it used to mint and release a lease
+  // anyway, per pod per tick. That was the dominant feeder of the unbounded
+  // compositionProvisionerLeases growth the step-1.9 drain has to scan.
+  it('S1: an all-existing tick provisions nothing and takes NO lease', async () => {
+    const { db, store } = seededDb();
+    // First pass provisions and (correctly) uses a lease.
+    const first = await ensureTrainingClones(db, trainingGroup, { now: new Date() });
+    expect(first.created).toEqual(['u1']);
+    const leasesAfterFirst = [...store.keys()].filter((k) => k.startsWith('compositionProvisionerLeases/')).length;
+    // MUTATION ANCHOR: a provisioning pass DOES mint a lease, so the assertion
+    // below cannot pass merely because this double never records leases.
+    expect(leasesAfterFirst, 'the provisioning pass minted no lease — the anchor is broken').toBe(1);
+
+    // Second pass: every seat already exists ⇒ nothing written, no lease.
+    const second = await ensureTrainingClones(db, trainingGroup, { now: new Date() });
+    expect(second.created).toEqual([]);
+    expect(second.existing).toEqual(['u1']);
+    const leasesAfterSecond = [...store.keys()].filter((k) => k.startsWith('compositionProvisionerLeases/')).length;
+    expect(leasesAfterSecond, 'the idempotent tick minted a lease for zero writes').toBe(leasesAfterFirst);
+  });
+
+  // ── S2 REGRESSION: the lease must never be orphaned by a throw ──────────
+  // pinActivationDescriptor reads composition/activation once the fence is lit,
+  // and readActivationDescriptor throws MalformedActivationDescriptorError on a
+  // PARTIAL descriptor — precisely the mid-flight state during runbook step 7.
+  // With the acquire outside the try, that throw left the lease unreleased; it
+  // became `stuck` after the TTL and made drainProvisionerLeases refuse
+  // ENTIRELY until an operator hand-resolved it. i.e. the activation could
+  // orphan its own lease and then refuse its own drain — a circular failure.
+  it('S2: a malformed activation descriptor RELEASES the lease before propagating (never orphans it)', async () => {
+    const { db, store } = seededDb();
+    // The epoch doc must be PRESENT and open, or B1's absent-doc fail-closed
+    // rejects at lease acquisition and the pin is never reached — the lease
+    // would never be minted and this row would prove nothing.
+    store.set('composition/writeEpoch', { state: 'open', epochId: 'E0', fenceGeneration: 1 });
+    // A PARTIAL descriptor: activationGeneration written, the rest not yet.
+    store.set('composition/activation', { activationGeneration: 2 });
+
+    await expect(ensureTrainingClones(db, trainingGroup, { now: new Date() }))
+      .rejects.toThrow(/activeIdentityVersion|malformed/i);
+
+    // The lease was taken (a seat needed provisioning) and MUST be released.
+    const leases = [...store.entries()].filter(([k]) => k.startsWith('compositionProvisionerLeases/'));
+    expect(leases.length, 'the lease was never minted — this row would be vacuous').toBe(1);
+    expect(leases[0][1].releasedAt, 'lease orphaned by the throw — it would go stuck and block the 1.9 drain').toBeTruthy();
+  });
+
   it('provisions the human clone, copies subcollections, skips CPU seats', async () => {
     const { db, store } = seededDb();
     const res = await ensureTrainingClones(db, trainingGroup, { now: new Date('2026-06-17T12:00:00.000Z') });

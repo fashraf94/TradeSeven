@@ -192,20 +192,31 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
   // lease that was already expired on arrival, and threw before even the
   // clone-exists check. Inert while the fence was dark; live the moment
   // step 1.1 lit it. Wall-clock in, wall-clock out.
-  const lease = await acquireProvisionerLease(db, { holder: `trainingClone:${group.id}`, now: new Date() });
-  // Composition PR 4 (A24): clone seeding derives from the version the
-  // activation record selects (dark: zero reads → live, byte-identical).
-  const seedPin = await pinActivationDescriptor(db);
-  const seedVersion = seedPin.dark ? null : (seedPin.descriptor ? selectIdentityVersion(seedPin.descriptor) : null);
+  // LAZY, and INSIDE the try (review findings S1 + S2, 2026-08-16).
+  //
+  // S1 — acquire only once a write is actually in prospect. This function runs
+  // for every training BATTLE pod on every orchestrator tick (vercel.json: 42
+  // ticks/day), and after the pod's first day every seat already exists, so the
+  // overwhelmingly common outcome is all-`existing` with zero writes. Minting a
+  // lease for that cost a transaction plus an acquire+release pair per pod per
+  // tick and was the dominant feeder of unbounded `compositionProvisionerLeases`
+  // growth — the collection the step-1.9 drain has to scan.
+  //
+  // S2 — everything that can THROW after the acquire must sit inside the try
+  // whose finally releases. `pinActivationDescriptor` performs a real read once
+  // the fence is lit, and `readActivationDescriptor` throws
+  // MalformedActivationDescriptorError on a partial descriptor — precisely the
+  // mid-flight state during runbook step 7. With the pin outside the try, that
+  // throw orphaned the lease, which went `stuck` 120s later and made
+  // `drainProvisionerLeases` refuse ENTIRELY until hand-resolved. The activation
+  // could orphan its own lease and then refuse its own drain.
+  let lease = null;
+  let seedPin = null;
+  let seedVersion = null;
   try {
-
     for (const player of group.players || []) {
       const odUserId = player.odUserId;
       if (player.isCpu === true || isCpuUserId(odUserId)) continue; // CPU seats: system agents already exist
-
-      // B2: per-seat lease currency check — a loop stalled past the TTL stops
-      // at the next seat boundary instead of writing past a possible watermark.
-      assertLeaseCurrent(lease);
 
       const cloneId = trainingCloneDocId(group.id, odUserId);
       const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);
@@ -218,6 +229,20 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
         skipped.push(odUserId);
         continue;
       }
+
+      // FIRST seat that will actually write: take the lease and pin the
+      // descriptor, once, for the rest of this invocation.
+      if (!lease) {
+        lease = await acquireProvisionerLease(db, { holder: `trainingClone:${group.id}`, now: new Date() });
+        // Composition PR 4 (A24): clone seeding derives from the version the
+        // activation record selects (dark: zero reads → live, byte-identical).
+        seedPin = await pinActivationDescriptor(db);
+        seedVersion = seedPin.dark ? null : (seedPin.descriptor ? selectIdentityVersion(seedPin.descriptor) : null);
+      }
+
+      // B2: per-seat lease currency check — a loop stalled past the TTL stops
+      // at the next seat boundary instead of writing past a possible watermark.
+      assertLeaseCurrent(lease);
 
       const loadoutSpec = loadoutSpecByUser ? loadoutSpecByUser[odUserId] : null;
       // Copy the rules/bundles subcollections FIRST, then write the clone doc LAST
@@ -260,6 +285,8 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
     return { created, existing, skipped };
 
   } finally {
-    await releaseProvisionerLease(db, lease);
+    // Null when no seat needed provisioning (S1) — releaseProvisionerLease
+    // already no-ops on a null/dark lease, but the guard states the intent.
+    if (lease) await releaseProvisionerLease(db, lease);
   }
 }

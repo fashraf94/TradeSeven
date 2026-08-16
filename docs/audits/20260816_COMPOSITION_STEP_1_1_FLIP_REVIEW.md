@@ -292,3 +292,61 @@ Run as the independent lens the first round didn't get. Five findings; verdicts 
 ### Disposition
 
 **S1, S2, S4 are mine and should be fixed before merge** — S1 because it is the live path and the dominant feeder of the R2 drain problem, S2 because it manufactures the exact stuck leases that hard-block step 1.9, S4 because it is a race I widened. All three are small and well understood. **S3 and S5 are decisions or pre-existing** and are reported for tasking, not fixed. None applied without authorization.
+
+---
+
+## 12. S-series remediation (founder-authorized, 2026-08-16)
+
+### S2 — FIXED, and it was the sharpest of the three.
+
+The founder's framing is the right one: an orphan minted by `pinActivationDescriptor` throwing on a partial descriptor is **the step-7 mid-flight state**, so the activation could orphan its own lease and then have that orphan refuse its own step-1.9 drain. A circular failure, now closed.
+
+Both provisioners acquire and then enter the `try` **immediately**; the descriptor pin and everything else that can throw is inside it, so the `finally` releases. `casualClone.js` — pin moved to `:175`, inside the try. `trainingClone.js` — acquire + pin both inside, at first write (see S1).
+
+**Guarded in BOTH files** — "S2: a malformed activation descriptor RELEASES the lease before propagating". Each seeds a PARTIAL descriptor (`{activationGeneration: 2}` only) plus a present, open epoch doc, asserts the call rejects, and then asserts the minted lease carries `releasedAt`. Both rows also assert **a lease was actually minted** first, so neither can pass by never reaching the lease at all.
+
+*Fixture note worth recording:* the first attempt seeded only the malformed descriptor and the call failed with `epoch_closed` instead — B1's absent-epoch-doc fail-closed arm rejects at lease acquisition, so the pin was never reached and the row proved nothing. The epoch doc must be present and open to exercise S2. Caught because the row asserted on the error, not merely that something threw.
+
+### S1 — FIXED on the live path.
+
+`ensureTrainingClones` now acquires the lease **lazily, at the first seat that will actually write**, after the per-seat exists check and the ranked-agent resolution. An all-existing tick — the common case after a pod's first day, across 42 orchestrator ticks/day — now takes **no lease and performs no lease writes at all**.
+
+Guarded by "S1: an all-existing tick provisions nothing and takes NO lease", which runs two passes: the first provisions and asserts a lease WAS minted (the **mutation anchor** — without it the second assertion could pass merely because the double never records leases), the second asserts the lease count is unchanged.
+
+This is the single largest reduction in the R2 growth rate: the dominant minting path is now silent on the common case.
+
+### S4 — FIXED.
+
+GUARD 1 is evaluated on a **fresh read taken under the lease** (`casualClone.js:194`), not on the pre-lease snapshot. The re-sync branch and its logging now key off `fresh`, and a battle that starts inside the window is logged and skipped.
+
+Guarded by "S4: a battle that starts while the lease is being taken BLOCKS the re-sync", which models the race deterministically — the db double's `runTransaction` sets `activeBattleId` at the moment the lease commits — then asserts the clone's brain was NOT re-pointed (archetype unchanged, parent's rules never copied).
+
+### Mutation matrix — every guard fails its own defect, and only its own
+
+| Mutation | Rows that failed |
+|---|---|
+| S2 (casualClone): pin back outside the `try` | **only** the casualClone S2 row |
+| S4: GUARD 1 back on the stale snapshot | **only** the S4 row |
+| S1 (trainingClone): acquire eagerly before the loop (which also puts the pin outside the try) | the S1 row **and** the trainingClone S2 row |
+
+No guard fires on an unrelated mutation, and no mutation passes unnoticed.
+
+### S3 — FILED, not fixed (founder ruling)
+
+The degrade-never-block fallback in `src/services/agentDeploy.js:33-48` stays as designed. Whether a *retryable* 409 should be exempt from it is a real question and **not this event's** — filed for separate tasking. Scope correction stands: `CASUAL_CLONE_CONCURRENCY_ENABLED` is off for the entire activation window by step −1's design, so the exposure is **post-step-9**, not during the close.
+
+### S5 — FILED for the step-1.9 checklist (founder ruling)
+
+`assertWriteEpochOpen` (`compositionWriteEpoch.js:219`) lacks the absent-doc fail-closed arm that `validateWriteEpochInTx:117-120` and `acquireProvisionerLease:97-104` both have. Post-activation, a missing epoch doc would let background loops and the one post-commit rules writer (`archetypeSeeding.js:142`) through while the transactional writers correctly fail closed. Exactly the kind of asymmetry that bites during a freeze — carried to the 1.9 checklist.
+
+### Verification at this head
+
+| Check | Result |
+|---|---|
+| `npx vitest run` | 12 failed / 469 passed / 3 skipped — **identical failing set to the `f59e76f3` baseline** |
+| New failures vs baseline | **ZERO** |
+| Net new passing rows | **+11** vs baseline (8013 vs 8002) |
+| Clock manipulation | still **none** anywhere in the affected suites |
+| `npx vite build` | **green**, 40.62s |
+| Mutation matrix | 4 mutations, each failing exactly its target row |
+| Fenced files edited | **NONE** |
