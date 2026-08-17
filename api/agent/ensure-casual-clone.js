@@ -30,7 +30,22 @@ import { requireAuth } from '../_utils/authMiddleware.js';
 import { ensureCasualClone } from '../_utils/casualClone.js';
 import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../../src/config/featureFlags.js';
 
-export const config = { maxDuration: 10 };
+// 10 → 60 (founder ruling, 2026-08-16 — R2 follow-up, option A). The re-sync
+// path calls copyAgentSubcollections, which writes the parent's rules AND
+// bundles SEQUENTIALLY — one round trip per doc. A read-only sample of the
+// live fleet found a heaviest ranked agent at 202 docs (176 rules + 26
+// bundles), i.e. roughly 5–10s of round trips against the old 10s ceiling. A
+// kill there leaves the B2 provisioner lease unreleased (`finally` does not run
+// on a platform kill), and it goes STUCK 120s later — which REFUSES the step-1.9
+// drain until an operator hand-resolves it. Headroom, not a fix.
+//
+// THE FIX IS FILED, NOT DONE: batch the copy (db.batch(), 500-doc limit — 202
+// fits) so 202 round trips become 1. Deliberately a POST-ACTIVATION task with
+// its own diff, tests and review, and explicitly NOT during the window —
+// copyAgentSubcollections (trainingClone.js:150) is SHARED with the training
+// provisioner, which IS live throughout. Basis:
+// docs/audits/20260817_LEASE_DRAIN_TOOLING_REVIEW.md §6.
+export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60_000 } })) {

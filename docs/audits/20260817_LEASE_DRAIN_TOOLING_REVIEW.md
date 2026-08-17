@@ -20,6 +20,7 @@
 | `vite build` | green |
 | B3 protected-store ratchet | **tripped and satisfied** — two new call sites registered with human-review notes |
 | Fenced files edited | **NONE** |
+| `maxDuration` ruling | **A APPLIED** (10 → 60); **B FILED post-activation**, explicitly not during the window |
 
 ---
 
@@ -106,4 +107,12 @@ Measured rather than asserted. A read-only sample of ranked agents (the copy **s
 | **B — batch the copy** | Replace the sequential loop with a `db.batch()` (500-doc limit; 202 fits) or chunked `Promise.all`. Turns 202 round trips into one, cutting re-sync to well under a second. | **This is the real fix** — but `copyAgentSubcollections` is SHARED with the training path, which **is** live during the window. Changing its write batching during an activation is exactly the kind of change that should not ride a tooling PR. |
 | **C — do nothing** | Rely on the scoping above plus the new `resolve` tooling. | Defensible: the window is protected, the rate is down, and recovery is now one command. |
 
-**My recommendation: A now if you want anything in this branch, B as its own task after the activation, never B during the window.** A is one line with no behavioural change beyond headroom; B touches a function the live training path depends on and deserves its own diff, its own tests, and its own review — not this one. I have applied **neither** pending your word.
+**My recommendation: A now if you want anything in this branch, B as its own task after the activation, never B during the window.** A is one line with no behavioural change beyond headroom; B touches a function the live training path depends on and deserves its own diff, its own tests, and its own review — not this one.
+
+### FOUNDER RULING — 2026-08-16
+
+**Option A: APPLIED in this branch.** `api/agent/ensure-casual-clone.js` `maxDuration: 10 → 60`. One line, headroom bought, nothing structural touched. The measurement above and the reason the ceiling matters (a kill orphans the lease, which goes stuck at +120s and refuses the 1.9 drain) are recorded at the constant itself, so the next reader does not have to find this document to understand the number.
+
+**Option B: FILED as a POST-ACTIVATION task — batch `copyAgentSubcollections` (202 round trips → 1).** Its own diff, its own tests, its own review. **Explicitly NOT during the window:** `copyAgentSubcollections` (`trainingClone.js:150`) is shared with the training provisioner, which is live throughout the activation, and changing its write batching mid-event is the kind of change that must not ride another PR. A pointer to this ruling sits at the `maxDuration` constant.
+
+**Option C: not taken** — the ceiling is cheap to widen and the measurement showed a real margin problem for heavy agents, even if the window itself is protected.
