@@ -26,14 +26,21 @@
 export const COMPOSITION_ENFORCEMENT_MODE = 'off';
 
 /**
- * The write-epoch fence (design note §3; A41/A46). false — DEFAULT: every
- * helper returns before any read (zero added I/O; the endpoint suites passing
- * unchanged with the fence wired IS the A23 regression evidence). true:
+ * The write-epoch fence (design note §3; A41/A46).
+ *
+ * true — LIVE, flipped by the §8 ACTIVATION_RUNBOOK step 1.1 (2026-08-16):
  * writers validate composition/writeEpoch in their transactions' read phase
- * and 409 'epoch_closed' when the §8 runbook has closed the epoch.
+ * and 409 'epoch_closed' once the runbook has closed the epoch. The flip
+ * itself is behavior-neutral — pre-close the fence FAIL-OPENS (an absent or
+ * open epoch doc admits every write), so nothing changes until step 1.9
+ * writes {state:'closed'}.
+ *
+ * false — the shipped-dark posture through PR 4: every helper returned before
+ * any read (zero added I/O; the endpoint suites passing unchanged with the
+ * fence wired IS the A23 regression evidence).
  */
 // Pinned by: composition.acceptance.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const COMPOSITION_EPOCH_FENCE_ENABLED = false;
+export const COMPOSITION_EPOCH_FENCE_ENABLED = true;
 // ⚠ LOAD-BEARING ONCE ACTIVATED (§2 review F5): after the activation record
 // exists, this flag gates the server-side descriptor pins (birth-path version
 // selection, the decide.js projection guard, FC-1 battle stamping). Lowering
@@ -52,10 +59,25 @@ export const COMPOSITION_MIGRATION_FEED_ENABLED = false;
 
 /**
  * PR 3 — the CompiledBuild candidate-identity boundary (spec §7 row 3; ledger
- * A7/A15). false — DEFAULT: the compiler resolves compat cells from the
- * LEGACY map exactly as before (byte-identical builds); the candidate
- * registry, deferred vocabulary, advisory/narrowedParams carriage, and the
- * quarantine disposition all activate only when this flips (PR-4 runbook,
- * after the A48 activation record exists).
+ * A7/A15).
+ *
+ * true — LIVE, flipped by the §8 ACTIVATION_RUNBOOK step 1.1 (2026-08-16)
+ * because the step-5 candidate pipeline needs it deployed. The flip is
+ * behavior-neutral: the flag is only the DARK SWITCH, never the selector —
+ * the candidate boundary follows THE RECORD (runbook #11,
+ * `resolveCandidateModeInTx` in compileOnSettingsChange.js:91), and with no
+ * activation record (or at genesis) every production compile still resolves
+ * LIVE cells. Step 5 scopes the candidate pipeline EXPLICITLY by
+ * {candidateStateId, activeIdentityVersion}; it never derives candidate
+ * status from this flag.
+ *
+ * false — the shipped-dark posture through PR 4: the compiler resolved compat
+ * cells from the LEGACY map exactly as before (byte-identical builds), and
+ * the candidate registry, deferred vocabulary, advisory/narrowedParams
+ * carriage, and quarantine disposition were all inert.
  */
-export const COMPOSITION_COMPILED_IDENTITY_ENABLED = false;
+// Pinned by: compileOnSettingsChange.test.js (the 'candidate-mode defaults'
+// rows pin this TRUE deliberately — they guard the defaults that must NOT
+// follow the flag, and are only reachable while it is lit; flagPinGuard keeps
+// this value and that pin moving together — BUILD_RULES §2).
+export const COMPOSITION_COMPILED_IDENTITY_ENABLED = true;

@@ -177,12 +177,14 @@ describe('A9 — migration is idempotent and logs once', () => {
     expect(entries.filter((e) => e.docPath === fx.bundles[0].docPath && e.field.includes('paramValues.pct'))).toHaveLength(1);
   });
 
-  it('C2/C4 pins — the epoch doc address of record and the shipped dark defaults', async () => {
+  it('C2/C4 pins — the epoch doc address of record and the live flag posture', async () => {
     const epoch = await import('./compositionWriteEpoch.js');
     expect(`${epoch.WRITE_EPOCH_COLLECTION}/${epoch.WRITE_EPOCH_DOC_ID}`).toBe('composition/writeEpoch'); // the §8 runbook + rules layer address
     const cfg = await import('./compositionConfig.js');
     expect(cfg.COMPOSITION_ENFORCEMENT_MODE).toBe('off');
-    expect(cfg.COMPOSITION_EPOCH_FENCE_ENABLED).toBe(false);
+    // Flipped at ACTIVATION_RUNBOOK step 1.1 — the fence is LIVE and fail-opens
+    // until the runbook closes the epoch. Never lowers again (A48 / §2 review F5).
+    expect(cfg.COMPOSITION_EPOCH_FENCE_ENABLED).toBe(true);
     expect(cfg.COMPOSITION_MIGRATION_FEED_ENABLED).toBe(false);
     const ff = await import('../../src/config/featureFlags.js');
     expect(ff.COMPOSITION_DISPLAY_ENABLED).toBe(false);

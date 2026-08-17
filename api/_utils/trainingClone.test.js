@@ -49,6 +49,10 @@ function makeDb(initial = {}) {
   function makeDocRef(path) {
     return {
       path,
+      // Real DocumentReferences carry `.firestore`;
+      // softDeleteReplacedTraitRuleDocs reads it for the now-live
+      // assertWriteEpochOpen check (archetypeSeeding.js:142).
+      get firestore() { return db; },
       get: async () => {
         const data = store.get(path);
         return { exists: data !== undefined, id: path.split('/').pop(), data: () => structuredClone(data) };
@@ -70,7 +74,20 @@ function makeDb(initial = {}) {
       get: async () => snapshotOf(topLevelDocs(prefix)),
     };
   }
-  return { db: { collection: (name) => makeCollection(name) }, store };
+  // Path-keyed store: composition/writeEpoch and composition/activation
+  // already resolve ABSENT (pre-genesis ⇒ the live fence fails open). The
+  // missing piece was the transaction — the B2 provisioner lease that
+  // acquireProvisionerLease takes inside db.runTransaction now that
+  // ACTIVATION_RUNBOOK step 1.1 has lit the fence.
+  const runTransaction = async (fn) => fn({
+    get: async (ref) => ref.get(),
+    getAll: async (...refs) => Promise.all(refs.map((r) => r.get())),
+    set: async (ref, d) => ref.set(d),
+    create: async (ref, d) => ref.create(d),
+    update: async (ref, u) => ref.update(u),
+  });
+  const db = { collection: (name) => makeCollection(name), runTransaction };
+  return { db, store };
 }
 
 // ==================== FIXTURES ====================
@@ -194,6 +211,104 @@ describe('buildTrainingCloneDoc', () => {
 // ==================== ensureTrainingClones ====================
 
 describe('ensureTrainingClones', () => {
+  // ── R1 REGRESSION (founder ruling 2026-08-16, ACTIVATION_RUNBOOK step 1.1) ──
+  // The B2 provisioner lease is a WALL-CLOCK resource; `now` is a SCHEDULING
+  // clock. The orchestrator captures `now` ONCE per tick
+  // (api/cron/tournament-orchestrator.js:47) and keeps working for up to
+  // DUTY_DEADLINE_MS = 270s, pacing deploys 20s apart, while
+  // PROVISIONER_LEASE_TTL_MS is 120s of REAL time. Minting the lease from `now`
+  // meant every pod reached >120s into a tick got a lease already expired on
+  // arrival and threw `provisioner_lease_expired` before even the clone-exists
+  // check — every tick, from roughly the third pod on. Inert while the fence
+  // was dark; live from the moment step 1.1 lit it.
+  //
+  // This row observes REAL elapsed time on purpose. It must never be "fixed"
+  // with fake timers: freezing Date makes the injected and real clocks agree,
+  // which is precisely the condition under which the bug cannot bite — a test
+  // that cannot observe elapsed time cannot guard a TTL.
+  it('R1: a tick whose scheduling clock is older than the lease TTL still provisions (lease stamped in WALL-CLOCK time)', async () => {
+    const { db, store } = seededDb();
+    // A tick that began 5 minutes ago — well past the 120s lease TTL, and
+    // inside the orchestrator's real 270s budget.
+    const staleTickClock = new Date(Date.now() - 5 * 60_000);
+    const res = await ensureTrainingClones(db, trainingGroup, { now: staleTickClock });
+    expect(res.created).toEqual(['u1']);
+    expect(res.skipped).toEqual([]);
+    expect(store.get(`agents/${trainingCloneDocId('pod1', 'u1')}`)).toBeTruthy();
+  });
+
+  // ── S1 REGRESSION: no lease on the idempotent all-existing tick ─────────
+  // sweepTrainingActivation calls this for every training BATTLE pod on every
+  // orchestrator tick (vercel.json: */10 across 7 hours, weekdays = 42/day).
+  // After the pod's first day every seat exists, so the common outcome is
+  // all-`existing` with ZERO writes — and it used to mint and release a lease
+  // anyway, per pod per tick. That was the dominant feeder of the unbounded
+  // compositionProvisionerLeases growth the step-1.9 drain has to scan.
+  it('S1: an all-existing tick provisions nothing and takes NO lease', async () => {
+    const { db, store } = seededDb();
+    // First pass provisions and (correctly) uses a lease.
+    const first = await ensureTrainingClones(db, trainingGroup, { now: new Date() });
+    expect(first.created).toEqual(['u1']);
+    const leasesAfterFirst = [...store.keys()].filter((k) => k.startsWith('compositionProvisionerLeases/')).length;
+    // MUTATION ANCHOR: a provisioning pass DOES mint a lease, so the assertion
+    // below cannot pass merely because this double never records leases.
+    expect(leasesAfterFirst, 'the provisioning pass minted no lease — the anchor is broken').toBe(1);
+
+    // Second pass: every seat already exists ⇒ nothing written, no lease.
+    const second = await ensureTrainingClones(db, trainingGroup, { now: new Date() });
+    expect(second.created).toEqual([]);
+    expect(second.existing).toEqual(['u1']);
+    const leasesAfterSecond = [...store.keys()].filter((k) => k.startsWith('compositionProvisionerLeases/')).length;
+    expect(leasesAfterSecond, 'the idempotent tick minted a lease for zero writes').toBe(leasesAfterFirst);
+  });
+
+  // The semantic shift S1 introduces, pinned explicitly. The lease acquisition
+  // is what rejects on a closed epoch, and it is now lazy — so a pod needing no
+  // work passes read-only during the freeze, while a pod with real work to do
+  // still rejects BEFORE any write. Both halves matter: the first is the point
+  // of S1, the second is the fence still doing its job.
+  it('S1 semantics: a CLOSED epoch lets an all-existing pod pass read-only, but still rejects one that must provision', async () => {
+    const { db, store } = seededDb();
+    await ensureTrainingClones(db, trainingGroup, { now: new Date() }); // provision while open
+    store.set('composition/writeEpoch', { state: 'closed', epochId: 'E0', fenceGeneration: 1 });
+
+    // Nothing to do ⇒ no lease ⇒ no rejection, and nothing written.
+    const idle = await ensureTrainingClones(db, trainingGroup, { now: new Date() });
+    expect(idle.existing).toEqual(['u1']);
+    expect(idle.created).toEqual([]);
+
+    // A pod with an unprovisioned seat still hits the fence, before any write.
+    const freshPod = { ...trainingGroup, id: 'pod2' };
+    await expect(ensureTrainingClones(db, freshPod, { now: new Date() })).rejects.toThrow(/epoch_closed/);
+    expect(store.get(`agents/${trainingCloneDocId('pod2', 'u1')}`)).toBeUndefined();
+  });
+
+  // ── S2 REGRESSION: the lease must never be orphaned by a throw ──────────
+  // pinActivationDescriptor reads composition/activation once the fence is lit,
+  // and readActivationDescriptor throws MalformedActivationDescriptorError on a
+  // PARTIAL descriptor — precisely the mid-flight state during runbook step 7.
+  // With the acquire outside the try, that throw left the lease unreleased; it
+  // became `stuck` after the TTL and made drainProvisionerLeases refuse
+  // ENTIRELY until an operator hand-resolved it. i.e. the activation could
+  // orphan its own lease and then refuse its own drain — a circular failure.
+  it('S2: a malformed activation descriptor RELEASES the lease before propagating (never orphans it)', async () => {
+    const { db, store } = seededDb();
+    // The epoch doc must be PRESENT and open, or B1's absent-doc fail-closed
+    // rejects at lease acquisition and the pin is never reached — the lease
+    // would never be minted and this row would prove nothing.
+    store.set('composition/writeEpoch', { state: 'open', epochId: 'E0', fenceGeneration: 1 });
+    // A PARTIAL descriptor: activationGeneration written, the rest not yet.
+    store.set('composition/activation', { activationGeneration: 2 });
+
+    await expect(ensureTrainingClones(db, trainingGroup, { now: new Date() }))
+      .rejects.toThrow(/activeIdentityVersion|malformed/i);
+
+    // The lease was taken (a seat needed provisioning) and MUST be released.
+    const leases = [...store.entries()].filter(([k]) => k.startsWith('compositionProvisionerLeases/'));
+    expect(leases.length, 'the lease was never minted — this row would be vacuous').toBe(1);
+    expect(leases[0][1].releasedAt, 'lease orphaned by the throw — it would go stuck and block the 1.9 drain').toBeTruthy();
+  });
+
   it('provisions the human clone, copies subcollections, skips CPU seats', async () => {
     const { db, store } = seededDb();
     const res = await ensureTrainingClones(db, trainingGroup, { now: new Date('2026-06-17T12:00:00.000Z') });

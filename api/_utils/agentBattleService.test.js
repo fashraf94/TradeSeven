@@ -8,16 +8,28 @@
 import { describe, it, expect } from 'vitest';
 import { createAgentBattle } from './agentBattleService.js';
 import { MANIFEST_WRITE_ENABLED } from '../../src/config/featureFlags.js';
+import { makeCompositionStoreDouble } from './__fixtures__/compositionStoreDouble.js';
 
+// ACTIVATION_RUNBOOK step 1.1: with the write-epoch fence lit, createAgentBattle
+// pins the activation descriptor first and commits via commitBattleDocWithPin.
+// Pre-genesis (no record) the pin is {dark:false, descriptor:null}, which takes
+// the transactional arm — tx.create rather than collection().add(). Both land in
+// `added`, so every assertion below reads the same battle document as before.
 function makeFakeDb() {
   const added = [];
+  const composition = makeCompositionStoreDouble();
   return {
     added,
-    collection: () => ({
+    collection: (name) => composition.collection(name) ?? {
       add: async (doc) => {
         added.push(doc);
         return { id: 'battle-test-1' };
       },
+      doc: (id) => ({ id: id ?? 'battle-test-1', __collection: name }),
+    },
+    runTransaction: async (fn) => fn({
+      get: async (ref) => ref.get(),
+      create: async (_ref, doc) => { added.push(doc); },
     }),
   };
 }

@@ -90,6 +90,10 @@ function makeDb(initial = {}) {
     return {
       path,
       id: path.split('/').pop(),
+      // Real DocumentReferences carry `.firestore`;
+      // softDeleteReplacedTraitRuleDocs reads it for the now-live
+      // assertWriteEpochOpen check (archetypeSeeding.js:142).
+      get firestore() { return db; },
       get: async () => {
         const data = store.get(path);
         return { exists: data !== undefined, id: path.split('/').pop(), data: () => structuredClone(data) };

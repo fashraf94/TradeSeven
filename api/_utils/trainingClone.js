@@ -180,20 +180,54 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
   // re-checks lease currency (the bounded-conformance boundary, now with a
   // hard TTL deadline), and the §8 close drains leases before its watermark.
   // Zero I/O while the fence flag is dark (A23/A46 census row).
-  const lease = await acquireProvisionerLease(db, { holder: `trainingClone:${group.id}`, now });
-  // Composition PR 4 (A24): clone seeding derives from the version the
-  // activation record selects (dark: zero reads → live, byte-identical).
-  const seedPin = await pinActivationDescriptor(db);
-  const seedVersion = seedPin.dark ? null : (seedPin.descriptor ? selectIdentityVersion(seedPin.descriptor) : null);
+  //
+  // ⚠ THE LEASE IS STAMPED IN WALL-CLOCK TIME, NEVER `now` (founder ruling
+  // 2026-08-16, review finding R1). `now` is a SCHEDULING clock: the
+  // orchestrator captures it ONCE per tick (api/cron/tournament-orchestrator.js:47)
+  // and uses it for market-hour and day-boundary decisions across a run that
+  // lasts up to DUTY_DEADLINE_MS (270s), pacing deploys 20s apart. The lease
+  // TTL is 120s of REAL time, and assertLeaseCurrent below rightly measures
+  // against the real clock — that is the whole point of a stall guard. Minting
+  // from `now` meant every pod reached more than 120s into a tick got a
+  // lease that was already expired on arrival, and threw before even the
+  // clone-exists check. Inert while the fence was dark; live the moment
+  // step 1.1 lit it. Wall-clock in, wall-clock out.
+  // LAZY, and INSIDE the try (review findings S1 + S2, 2026-08-16).
+  //
+  // S1 — acquire only once a write is actually in prospect. This function runs
+  // for every training BATTLE pod on every orchestrator tick (vercel.json: 42
+  // ticks/day), and after the pod's first day every seat already exists, so the
+  // overwhelmingly common outcome is all-`existing` with zero writes. Minting a
+  // lease for that cost a transaction plus an acquire+release pair per pod per
+  // tick and was the dominant feeder of unbounded `compositionProvisionerLeases`
+  // growth — the collection the step-1.9 drain has to scan.
+  //
+  // S2 — everything that can THROW after the acquire must sit inside the try
+  // whose finally releases. `pinActivationDescriptor` performs a real read once
+  // the fence is lit, and `readActivationDescriptor` throws
+  // MalformedActivationDescriptorError on a partial descriptor — precisely the
+  // mid-flight state during runbook step 7. With the pin outside the try, that
+  // throw orphaned the lease, which went `stuck` 120s later and made
+  // `drainProvisionerLeases` refuse ENTIRELY until hand-resolved. The activation
+  // could orphan its own lease and then refuse its own drain.
+  //
+  // ⚠ DELIBERATE SEMANTIC SHIFT, stated because it is easy to miss. The lease
+  // acquisition is what rejects on a closed/probe epoch, and it now runs only
+  // when a seat needs provisioning. So during a CLOSED epoch an all-existing
+  // pod no longer throws `epoch_closed` — it returns its `existing` list having
+  // read nothing but agent docs and written nothing at all. That is consistent
+  // with what the fence is FOR (it stops writes past the watermark, and this
+  // path performs none) and it keeps the §6 freeze from spuriously erroring
+  // pods that need no work. A pod with even ONE unprovisioned seat still
+  // acquires, and so still rejects, before any write. The step-1.11 watermark
+  // sweep is unaffected: a read-only pass updates no protected-store doc.
+  let lease = null;
+  let seedPin = null;
+  let seedVersion = null;
   try {
-
     for (const player of group.players || []) {
       const odUserId = player.odUserId;
       if (player.isCpu === true || isCpuUserId(odUserId)) continue; // CPU seats: system agents already exist
-
-      // B2: per-seat lease currency check — a loop stalled past the TTL stops
-      // at the next seat boundary instead of writing past a possible watermark.
-      assertLeaseCurrent(lease);
 
       const cloneId = trainingCloneDocId(group.id, odUserId);
       const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);
@@ -206,6 +240,20 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
         skipped.push(odUserId);
         continue;
       }
+
+      // FIRST seat that will actually write: take the lease and pin the
+      // descriptor, once, for the rest of this invocation.
+      if (!lease) {
+        lease = await acquireProvisionerLease(db, { holder: `trainingClone:${group.id}`, now: new Date() });
+        // Composition PR 4 (A24): clone seeding derives from the version the
+        // activation record selects (dark: zero reads → live, byte-identical).
+        seedPin = await pinActivationDescriptor(db);
+        seedVersion = seedPin.dark ? null : (seedPin.descriptor ? selectIdentityVersion(seedPin.descriptor) : null);
+      }
+
+      // B2: per-seat lease currency check — a loop stalled past the TTL stops
+      // at the next seat boundary instead of writing past a possible watermark.
+      assertLeaseCurrent(lease);
 
       const loadoutSpec = loadoutSpecByUser ? loadoutSpecByUser[odUserId] : null;
       // Copy the rules/bundles subcollections FIRST, then write the clone doc LAST
@@ -248,6 +296,8 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
     return { created, existing, skipped };
 
   } finally {
-    await releaseProvisionerLease(db, lease);
+    // Null when no seat needed provisioning (S1) — releaseProvisionerLease
+    // already no-ops on a null/dark lease, but the guard states the intent.
+    if (lease) await releaseProvisionerLease(db, lease);
   }
 }

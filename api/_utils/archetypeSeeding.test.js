@@ -16,6 +16,7 @@ import {
   softDeleteReplacedTraitRuleDocs,
 } from './archetypeSeeding.js';
 import { ARCHETYPE_DEFAULT_TRAITS } from '../../src/data/traitLibrary.js';
+import { makeCompositionStoreDouble } from './__fixtures__/compositionStoreDouble.js';
 
 // Minimal admin-SDK-shaped fake: one agent's rules subcollection as a Map that
 // both the in-tx writes and the post-tx reads share (via closure).
@@ -33,9 +34,24 @@ function makeAgent() {
     },
     get: async () => ({ docs: [...rules.values()].map((d) => ({ id: d.id, data: () => d })) }),
   };
-  const agentRef = { collection: (sub) => (sub === 'rules' ? rulesRef : { doc: () => ({ set() {}, update() {} }), get: async () => ({ docs: [] }) }) };
+  // softDeleteReplacedTraitRuleDocs runs assertWriteEpochOpen(agentRef.firestore)
+  // — live from ACTIVATION_RUNBOOK step 1.1, a no-op read while the fence was
+  // dark. A real DocumentReference carries `.firestore`; model it, pointing at
+  // the PRE-GENESIS store (epoch doc absent ⇒ open).
+  const composition = makeCompositionStoreDouble();
+  const firestore = {
+    collection: (name) => {
+      const c = composition.collection(name);
+      if (c) return c;
+      throw new Error(`Unmocked collection: ${name}`);
+    },
+  };
+  const agentRef = {
+    firestore,
+    collection: (sub) => (sub === 'rules' ? rulesRef : { doc: () => ({ set() {}, update() {} }), get: async () => ({ docs: [] }) }),
+  };
   const tx = { set: (ref, data) => ref.set(data), update: (ref, updates) => ref.update(updates) };
-  return { agentRef, tx, rules };
+  return { agentRef, tx, rules, composition };
 }
 
 describe('archetypeSeeding — hasBornWithSet', () => {

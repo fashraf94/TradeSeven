@@ -83,7 +83,19 @@ function makeDb(initial = {}) {
       get: async () => snapshotOf(topLevelDocs(prefix)),
     };
   }
-  return { db: { collection: (name) => makeCollection(name) }, store };
+  // The store is path-keyed, so composition/writeEpoch and
+  // composition/activation already resolve ABSENT — the pre-genesis posture
+  // the live fence fails open on. The missing piece was the transaction:
+  // acquireProvisionerLease (lit at ACTIVATION_RUNBOOK step 1.1) registers the
+  // B2 lease inside db.runTransaction, which the dark helper never reached.
+  const runTransaction = async (fn) => fn({
+    get: async (ref) => ref.get(),
+    getAll: async (...refs) => Promise.all(refs.map((r) => r.get())),
+    set: async (ref, d) => ref.set(d),
+    create: async (ref, d) => ref.create(d),
+    update: async (ref, u) => ref.update(u),
+  });
+  return { db: { collection: (name) => makeCollection(name), runTransaction }, store };
 }
 
 const RANKED = Object.freeze({
@@ -291,6 +303,128 @@ describe('ensureCasualClone', () => {
     expect(r.rankedAgentId).toBe('ranked-1'); // the non-clone doc, never the training clone
   });
 
+  // R1 regression, casual-clone half (see the fuller note in
+  // trainingClone.test.js). Same defect, same fix: the lease is stamped in
+  // WALL-CLOCK time, never from the caller's scheduling clock. Observes REAL
+  // elapsed time deliberately — do not "fix" this with fake timers.
+  it('R1: a caller clock older than the lease TTL still provisions (lease stamped in WALL-CLOCK time)', async () => {
+    const { db, store } = makeDb({ 'agents/ranked-1': RANKED });
+    const staleCallerClock = new Date(Date.now() - 5 * 60_000);
+    const r = await ensureCasualClone(db, { odUserId: 'user-42', now: staleCallerClock });
+    expect(r.created).toBe(true);
+    expect(store.get('agents/casual-agent-user-42')).toBeTruthy();
+    // MUTATION ANCHOR for the R4 row below: a path that DOES take a lease
+    // leaves a visible lease doc in this store. Without this, R4's
+    // "no lease doc" assertion could pass simply because the double never
+    // records leases at all.
+    expect([...store.keys()].some((k) => k.startsWith('compositionProvisionerLeases/'))).toBe(true);
+  });
+
+  // ── S2 REGRESSION (casual half): a throw must never orphan the lease ────
+  // Same defect and same fix as the trainingClone row: pinActivationDescriptor
+  // reads composition/activation once the fence is lit and throws
+  // MalformedActivationDescriptorError on a PARTIAL descriptor — the mid-flight
+  // state at runbook step 7. With the pin outside the try, the just-acquired
+  // lease was never released, went `stuck` after the TTL, and made
+  // drainProvisionerLeases refuse entirely until hand-resolved.
+  it('S2: a malformed activation descriptor RELEASES the lease before propagating (never orphans it)', async () => {
+    const { db, store } = makeDb({ 'agents/ranked-1': RANKED });
+    // Epoch present and OPEN, or B1's absent-doc fail-closed rejects at
+    // acquisition and the pin is never reached (the row would be vacuous).
+    store.set('composition/writeEpoch', { state: 'open', epochId: 'E0', fenceGeneration: 1 });
+    store.set('composition/activation', { activationGeneration: 2 }); // partial
+
+    await expect(ensureCasualClone(db, { odUserId: 'user-42' }))
+      .rejects.toThrow(/activeIdentityVersion|malformed/i);
+
+    const leases = [...store.entries()].filter(([k]) => k.startsWith('compositionProvisionerLeases/'));
+    expect(leases.length, 'no lease was minted — this row would be vacuous').toBe(1);
+    expect(leases[0][1].releasedAt, 'lease orphaned by the throw — it would go stuck and block the 1.9 drain').toBeTruthy();
+  });
+
+  // ── S4 REGRESSION: GUARD 1 must be decided on a FRESH read ──────────────
+  // The clone-exists snapshot is taken before the lease transaction and the
+  // descriptor pin (the R4 reordering widened that gap by two round trips).
+  // Re-checking the STALE copy meant a battle that started inside the window
+  // still got its clone's brain re-pointed underneath it — exactly what
+  // "GUARD 1: a live clone's brain is never re-pointed under it" forbids.
+  // Modelled deterministically: the battle starts at the moment the lease
+  // transaction runs.
+  it('S4: a battle that starts while the lease is being taken BLOCKS the re-sync (GUARD 1 on a fresh read)', async () => {
+    const { db, store } = makeDb({
+      'agents/ranked-1': RANKED,
+      'agents/ranked-1/rules/rule-a': { id: 'rule-a', status: 'active' },
+      'agents/casual-agent-user-42': {
+        ownerId: 'user-42', isCasualClone: true, rankedAgentId: 'ranked-1',
+        archetype: 'stale-archetype', activeBattleId: null,
+      },
+    });
+    // The instant the lease transaction commits, a battle begins on the clone.
+    const baseRunTransaction = db.runTransaction;
+    db.runTransaction = async (fn) => {
+      const result = await baseRunTransaction(fn);
+      store.set('agents/casual-agent-user-42', {
+        ...store.get('agents/casual-agent-user-42'), activeBattleId: 'started-mid-flight',
+      });
+      return result;
+    };
+
+    const r = await ensureCasualClone(db, { odUserId: 'user-42' });
+    expect(r.created).toBe(false);
+    // The brain was NOT re-pointed: archetype untouched and the parent's rules
+    // were never copied over. Under the stale-snapshot form both flip.
+    expect(store.get('agents/casual-agent-user-42').archetype).toBe('stale-archetype');
+    expect(store.get('agents/casual-agent-user-42/rules/rule-a')).toBeUndefined();
+  });
+
+  // ── T1 REGRESSION: a clone that VANISHES between the two reads ──────────
+  // The S4 re-read introduced a second observation of the clone doc. Absorbing
+  // `fresh === null` into a `fresh ?? existing` fallback returned created:false
+  // naming a rankedAgentId for a doc that no longer exists, and the caller then
+  // deployed against a missing agent. get-or-CREATE means re-provision.
+  it('T1: a clone deleted between the pre-lease read and the re-read is RE-PROVISIONED, not reported as existing', async () => {
+    const { db, store } = makeDb({
+      'agents/ranked-1': RANKED,
+      'agents/casual-agent-user-42': {
+        ownerId: 'user-42', isCasualClone: true, rankedAgentId: 'ranked-1', activeBattleId: null,
+      },
+    });
+    // The clone is deleted at the moment the lease transaction commits.
+    const baseRunTransaction = db.runTransaction;
+    db.runTransaction = async (fn) => {
+      const result = await baseRunTransaction(fn);
+      store.delete('agents/casual-agent-user-42');
+      return result;
+    };
+
+    const r = await ensureCasualClone(db, { odUserId: 'user-42' });
+    expect(r.created, 'a vanished clone must be re-provisioned, not reported as existing').toBe(true);
+    expect(r.rankedAgentId).toBe('ranked-1');
+    const rebuilt = store.get('agents/casual-agent-user-42');
+    expect(rebuilt, 'the clone doc was not re-created').toBeTruthy();
+    expect(rebuilt.isCasualClone).toBe(true);
+    expect(rebuilt.archetype).toBe('contrarian'); // freshly inherited from the parent
+  });
+
+  // R4 regression: the idempotent no-op path must not take a lease at all.
+  it('R4: an existing clone with nothing to re-sync writes NOTHING — no lease acquired', async () => {
+    const { db, store } = makeDb({
+      'agents/ranked-1': RANKED,
+      // Authentic clone, MID-BATTLE ⇒ re-sync is skipped ⇒ pure no-op.
+      'agents/casual-agent-user-42': {
+        ownerId: 'user-42', isCasualClone: true, rankedAgentId: 'ranked-1', activeBattleId: 'live-1',
+      },
+    });
+    const before = store.size;
+    const r = await ensureCasualClone(db, { odUserId: 'user-42' });
+    expect(r).toEqual({ cloneId: 'casual-agent-user-42', rankedAgentId: 'ranked-1', created: false });
+    // No lease doc minted, no release write, nothing else touched. Before the
+    // R4 fix this path cost a transaction plus an acquire+release pair on the
+    // per-deploy hot path, which is what fed the lease-collection growth.
+    expect(store.size).toBe(before);
+    expect([...store.keys()].some((k) => k.startsWith('compositionProvisionerLeases/'))).toBe(false);
+  });
+
   it('is race-safe: a create() that hits ALREADY_EXISTS returns the winner untouched, no throw', async () => {
     // A db where the pre-check get() sees the clone ABSENT (racer has not committed
     // yet), but create() throws ALREADY_EXISTS (racer committed in between) — then
@@ -314,8 +448,17 @@ describe('ensureCasualClone', () => {
       collection: (name) => ({
         doc: (id) => (name === 'agents' && id === 'casual-agent-user-42'
           ? cloneRef
-          : { get: async () => ({ exists: false }), collection: () => ({ get: async () => ({ docs: [], forEach() {} }) }) }),
+          // The catch-all now also serves composition/writeEpoch and
+          // composition/activation as ABSENT (pre-genesis ⇒ the live fence
+          // fails open) and absorbs the B2 lease write.
+          : { get: async () => ({ exists: false }), set: async () => {}, collection: () => ({ get: async () => ({ docs: [], forEach() {} }) }) }),
         where: () => ({ get: async () => ({ docs: [{ id: 'ranked-1', data: () => structuredClone(RANKED) }], empty: false, forEach(cb) { this.docs.forEach(cb); } }) }),
+      }),
+      // acquireProvisionerLease takes the B2 lease inside a transaction now
+      // that ACTIVATION_RUNBOOK step 1.1 has lit the fence.
+      runTransaction: async (fn) => fn({
+        get: async (ref) => ref.get(),
+        set: async (ref, d) => ref.set(d),
       }),
     };
     const r = await ensureCasualClone(db, { odUserId: 'user-42' });

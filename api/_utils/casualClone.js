@@ -118,6 +118,40 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
   if (typeof odUserId !== 'string' || odUserId.length === 0) {
     throw new Error('ensureCasualClone: odUserId required');
   }
+  const nowIso = now.toISOString();
+  const cloneId = casualCloneDocId(odUserId);
+  const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);
+
+  // Existing doc: return a LEGIT clone AS-IS (never-overwrite, R1), but HEAL an
+  // inauthentic one. The agents create rule (firestore.rules) lets any authed user
+  // create a doc at an ARBITRARY id with their OWN ownerId, so a client can SQUAT
+  // the reserved casual-agent-{uid} namespace (security review CONFIRMED-2 DoS,
+  // and CONFIRMED-1 poisoned rankedAgentId). A legit clone is
+  // `ownerId===caller && isCasualClone`; anything else is a squat with no
+  // legitimate accumulated learning → overwrite it. (The firestore.rules namespace
+  // reservation is the primary defense; this heals any squat planted before the
+  // rules are deployed — rules deploy is manual in this repo.)
+  //
+  // THIS READ COMES FIRST, AHEAD OF THE LEASE (review finding R4, 2026-08-16).
+  // This function is the per-deploy feeder and its overwhelmingly common
+  // outcome is "clone exists, nothing to re-sync" — a pure no-op. Taking the
+  // B2 lease before knowing that made every such call pay a transaction plus
+  // two lease writes (acquire + release) for nothing, on a user-facing path,
+  // and fed the lease-collection growth of finding R2. A lease guards WRITES;
+  // acquire it only once a write is actually in prospect.
+  const existingSnap = await cloneRef.get();
+  const existing = existingSnap.exists ? existingSnap.data() : null;
+  const isAuthentic = !!existing && existing.ownerId === odUserId && existing.isCasualClone === true;
+  // Mutable view of the pre-lease doc for the WRITE path below: cleared when
+  // the re-read shows the clone vanished (T1), so the create() arm runs.
+  let priorDoc = existing;
+  const mayResync = isAuthentic && !existing.activeBattleId
+    && typeof existing.rankedAgentId === 'string' && existing.rankedAgentId.length > 0;
+  // Authentic clone with no re-sync to do: nothing is written, so no lease.
+  if (isAuthentic && !mayResync) {
+    return { cloneId, rankedAgentId: existing.rankedAgentId ?? null, created: false };
+  }
+
   // Composition write-epoch fence — B2 (PR 4): the clone BIRTHS + RE-SYNCS
   // identity state (loadout fields + rules/bundles subcollections via
   // copyAgentSubcollections) through a NONTRANSACTIONAL multi-write flow, so
@@ -126,26 +160,23 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
   // lease currency, and the §8 close drains leases before its watermark —
   // a provisioner that read "open" can no longer land writes after the close.
   // Zero I/O while the fence flag is dark (A23/A46 census row).
-  const lease = await acquireProvisionerLease(db, { holder: `casualClone:${odUserId}`, now, actor: odUserId }); // #4: probe admission
-  // BL2: the clone's OWN creation descriptor (dark: zero reads, zero keys).
-  const clonePin = await pinActivationDescriptor(db);
+  //
+  // ⚠ STAMPED IN WALL-CLOCK TIME, NEVER `now` (founder ruling 2026-08-16,
+  // finding R1): `now` is a SCHEDULING clock a caller may hold for minutes,
+  // while the TTL and assertLeaseCurrent below both measure REAL elapsed time.
+  // See the matching note in trainingClone.js.
+  const lease = await acquireProvisionerLease(db, { holder: `casualClone:${odUserId}`, now: new Date(), actor: odUserId }); // #4: probe admission
   try {
-    const nowIso = now.toISOString();
-    const cloneId = casualCloneDocId(odUserId);
-    const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);
-
-    // Existing doc: return a LEGIT clone AS-IS (never-overwrite, R1), but HEAL an
-    // inauthentic one. The agents create rule (firestore.rules) lets any authed user
-    // create a doc at an ARBITRARY id with their OWN ownerId, so a client can SQUAT
-    // the reserved casual-agent-{uid} namespace (security review CONFIRMED-2 DoS,
-    // and CONFIRMED-1 poisoned rankedAgentId). A legit clone is
-    // `ownerId===caller && isCasualClone`; anything else is a squat with no
-    // legitimate accumulated learning → overwrite it. (The firestore.rules namespace
-    // reservation is the primary defense; this heals any squat planted before the
-    // rules are deployed — rules deploy is manual in this repo.)
-    const existingSnap = await cloneRef.get();
-    const existing = existingSnap.exists ? existingSnap.data() : null;
-    if (existing && existing.ownerId === odUserId && existing.isCasualClone === true) {
+    // BL2: the clone's OWN creation descriptor (dark: zero reads, zero keys).
+    //
+    // INSIDE the try (review finding S2, 2026-08-16): once the fence is lit
+    // this performs a real read, and readActivationDescriptor throws
+    // MalformedActivationDescriptorError on a partial descriptor — the
+    // mid-flight state at runbook step 7. Outside the try, that throw orphaned
+    // the lease we just took; it went `stuck` 120s later and made
+    // drainProvisionerLeases refuse entirely until hand-resolved.
+    const clonePin = await pinActivationDescriptor(db);
+    if (isAuthentic) {
       // Ruling 3: RE-SYNC the clone to the CURRENT parent brain at deploy so
       // BaggerBomb runs today's agent (and the learning it redirects back to the
       // parent is generated by a current brain, not a day-zero one). GUARD 1: only
@@ -156,8 +187,23 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
       // subcollections; markers/pointers/stats untouched (never-overwrite for identity
       // still holds). Same-owner re-checked (defense-in-depth vs a poisoned
       // rankedAgentId on an otherwise-authentic clone).
-      if (!existing.activeBattleId && typeof existing.rankedAgentId === 'string' && existing.rankedAgentId.length > 0) {
-        const parentSnap = await db.collection(AGENTS_COLLECTION).doc(existing.rankedAgentId).get();
+      // GUARD 1 IS EVALUATED ON A FRESH READ, UNDER THE LEASE (review finding
+      // S4, 2026-08-16). The snapshot above was taken BEFORE the lease
+      // transaction and the descriptor pin — two round trips earlier — and the
+      // R4 reordering is what widened that gap. Re-checking the stale copy meant
+      // a battle that started inside the window still got its clone's brain
+      // re-pointed underneath it, which is exactly what GUARD 1 forbids. Read
+      // again here, after the lease is held, and decide on THAT.
+      const freshSnap = await cloneRef.get();
+      const fresh = freshSnap.exists ? freshSnap.data() : null;
+      // The clone VANISHED between the two reads (admin cleanup, account
+      // deletion) — review finding T1, 2026-08-16. Absorbing this into a
+      // `fresh ?? existing` fallback would return created:false naming a
+      // rankedAgentId for a doc that no longer exists, and the caller would
+      // deploy against a missing agent. Fall through to the provisioning path
+      // instead: this function's contract is get-or-CREATE.
+      if (fresh && !fresh.activeBattleId && typeof fresh.rankedAgentId === 'string' && fresh.rankedAgentId.length > 0) {
+        const parentSnap = await db.collection(AGENTS_COLLECTION).doc(fresh.rankedAgentId).get();
         if (parentSnap.exists && parentSnap.data().ownerId === odUserId) {
           const parent = { id: parentSnap.id, ...parentSnap.data() };
           assertLeaseCurrent(lease); // B2 (F6): the RE-SYNC copy is a write phase — currency-check BEFORE it, parity with the create path
@@ -166,13 +212,20 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
           await cloneRef.update({ ...buildCasualCloneResync(parent), updatedAt: nowIso });
           console.log(`${LOG_PREFIX} re-synced casual clone ${cloneId} to parent ${parent.id} at deploy`);
         } else {
-          console.warn(`${LOG_PREFIX} skipped re-sync of ${cloneId} — parent ${existing.rankedAgentId} missing or not same-owner`);
+          console.warn(`${LOG_PREFIX} skipped re-sync of ${cloneId} — parent ${fresh.rankedAgentId} missing or not same-owner`);
         }
+      } else if (fresh?.activeBattleId) {
+        console.log(`${LOG_PREFIX} skipped re-sync of ${cloneId} — a battle started while the lease was being taken (GUARD 1)`);
       }
-      return { cloneId, rankedAgentId: existing.rankedAgentId ?? null, created: false };
+      if (fresh) return { cloneId, rankedAgentId: fresh.rankedAgentId ?? null, created: false };
+      // fresh === null: the doc VANISHED between the pre-lease read and the
+      // re-read, so it is NOT reported as an existing clone — execution falls
+      // through to the provisioning path below and `priorDoc` is cleared so the
+      // create() arm runs rather than the squat-heal arm.
+      priorDoc = null;
     }
-    if (existing) {
-      console.warn(`${LOG_PREFIX} healing inauthentic doc at ${cloneId} (ownerId=${existing.ownerId ?? 'none'}, isCasualClone=${existing.isCasualClone === true}) — overwriting with a fresh clone`);
+    if (priorDoc) {
+      console.warn(`${LOG_PREFIX} healing inauthentic doc at ${cloneId} (ownerId=${priorDoc.ownerId ?? 'none'}, isCasualClone=${priorDoc.isCasualClone === true}) — overwriting with a fresh clone`);
     }
 
     const ranked = await resolveRankedAgent(db, odUserId);
@@ -185,7 +238,7 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
     const cloneDoc = buildCasualCloneDoc(ranked, { odUserId, nowIso });
     assertLeaseCurrent(lease); // B2: the sentinel-doc phase re-checks too
 
-    if (existing) {
+    if (priorDoc) {
       // Heal a squat: overwrite (create() would fail on the existing doc). Admin SDK
       // bypasses the rules; the squat carries no legit state to preserve.
       await cloneRef.set({ ...cloneDoc, ...birthProvenanceStamp(clonePin) }); // BL2: a new birth stamps its own descriptor

@@ -66,6 +66,26 @@ export default async function handler(req, res) {
     if (err?.code === 'epoch_closed') {
       return res.status(409).json({ error: 'epoch_closed', message: 'Agent identity is briefly locked for a migration. Try again shortly.' });
     }
+    // B2 provisioner lease expiry — TRANSIENT and retryable, so it gets the same
+    // 409 contract as the fence rather than a 500 (review finding R3,
+    // 2026-08-16). A provisioning run whose write phase straddles the 120s TTL
+    // aborts deliberately rather than write past a possible watermark, and the
+    // caller should simply try again. Before the step 1.1 flip the lease was an
+    // inert no-op object and this could never fire, so the code fell through to
+    // the generic 500 — which told the client an unrecoverable server fault
+    // when the right answer is "retry".
+    //
+    // ⚠ NOT atomic, stated precisely (review finding T3): on the RE-SYNC path
+    // the currency check at casualClone.js:210 fires AFTER
+    // copyAgentSubcollections has already refreshed the clone's rules/bundles
+    // but BEFORE the doc-level loadout update, so an expiry there leaves a TORN
+    // re-sync — new subcollections, stale archetype/equippedTraits/activeRules.
+    // That state is self-healing: the next successful call re-runs the whole
+    // re-sync. The 409 is still the right status precisely BECAUSE the retry is
+    // what repairs it — but do not read this as "nothing was written".
+    if (err?.code === 'provisioner_lease_expired') {
+      return res.status(409).json({ error: 'provisioner_lease_expired', message: 'Preparing your agent took too long. Try again.' });
+    }
     console.error('[ensure-casual-clone] error:', err);
     return res.status(500).json({ error: 'server_error', message: 'Could not prepare the casual agent.' });
   }

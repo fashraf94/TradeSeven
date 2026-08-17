@@ -58,7 +58,19 @@ function makeDb(initial = {}) {
     where: (f, _op, v) => ({ get: async () => snap(topLevel(prefix).filter(d => d.data()[f] === v)) }),
     get: async () => snap(topLevel(prefix)),
   });
-  return { db: { collection: (n) => coll(n) }, store };
+  // This store is path-keyed, so `composition/writeEpoch` and
+  // `composition/activation` already resolve as ABSENT — the pre-genesis
+  // posture the live fence fails open on. What it lacked was a transaction:
+  // acquireProvisionerLease (lit from ACTIVATION_RUNBOOK step 1.1) takes the
+  // lease inside db.runTransaction, which the dark helper never reached.
+  const runTransaction = async (fn) => fn({
+    get: async (ref) => ref.get(),
+    getAll: async (...refs) => Promise.all(refs.map((r) => r.get())),
+    set: async (ref, d) => ref.set(d),
+    create: async (ref, d) => ref.create(d),
+    update: async (ref, u) => ref.update(u),
+  });
+  return { db: { collection: (n) => coll(n), runTransaction }, store };
 }
 
 function makeReqRes({ method = 'POST', body = {} } = {}) {

@@ -97,6 +97,11 @@ function makeDb(initial = {}) {
   function makeDocRef(path) {
     return {
       path,
+      // A real DocumentReference carries `.firestore`. The loadout-override
+      // path reaches softDeleteReplacedTraitRuleDocs, which reads it for the
+      // now-live assertWriteEpochOpen check (archetypeSeeding.js:142) — a
+      // no-op that never dereferenced it while the fence was dark.
+      get firestore() { return db; },
       get: async () => {
         const data = store.get(path);
         return { exists: data !== undefined, id: path.split('/').pop(), data: () => structuredClone(data) };
@@ -920,6 +925,7 @@ describe('failure cooldown — ≥10 min, consumed even on failure', () => {
 // ==================== TRAINING ACTIVATION (Slice 3) ====================
 
 describe('sweepTrainingActivation (Slice 3)', () => {
+
   function trainingPodDocs(id, { status = GROUP_STATUS.BATTLE, withStream = false } = {}) {
     const docs = {
       [`tournamentGroups/${id}`]: {

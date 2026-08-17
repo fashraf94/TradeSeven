@@ -7,6 +7,7 @@
 // menu/version/conflict-group kernel runs UN-mocked.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { makeCompositionStoreDouble } from '../_utils/__fixtures__/compositionStoreDouble.js';
 
 const { flagState, authReturnValue, shadowLogCalls } = vi.hoisted(() => ({
   flagState: { leansEnabled: true },
@@ -46,6 +47,11 @@ const { default: equipLeanHandler } = await import('./equip-lean.js');
 const { default: unequipLeanHandler } = await import('./unequip-lean.js');
 
 function makeFakeFirestore({ agentDocs = {} } = {}) {
+  // ACTIVATION_RUNBOOK step 1.1: the write-epoch fence is LIVE, so the
+  // endpoint's validateWriteEpochInTx genuinely reads composition/writeEpoch
+  // inside the transaction. Model the PRE-GENESIS store (both docs absent =>
+  // the fence fails open) instead of mocking the flag back to dark.
+  const __composition = makeCompositionStoreDouble();
   const state = { agentDocs };
   const buildAgentRef = (id) => ({
     get: async () => ({ exists: !!state.agentDocs[id], data: () => state.agentDocs[id] }),
@@ -53,6 +59,8 @@ function makeFakeFirestore({ agentDocs = {} } = {}) {
   });
   const collection = (name) => {
     if (name === 'agents') return { doc: (id) => buildAgentRef(id) };
+    const __c = __composition.collection(name);
+    if (__c) return __c;
     throw new Error(`Unmocked collection: ${name}`);
   };
   const runTransaction = async (fn) => fn({

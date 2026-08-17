@@ -10,6 +10,7 @@
 // the collection-correct refs.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { makeCompositionStoreDouble } from '../_utils/__fixtures__/compositionStoreDouble.js';
 
 // ==================== HOISTED MOCK STATE ====================
 
@@ -56,6 +57,11 @@ const { default: unequipHandler } = await import('./unequip-watchlist.js');
 // ==================== FIRESTORE MOCK ====================
 
 function makeFakeFirestore({ agentDocs = {}, watchlistDocs = {} } = {}) {
+  // ACTIVATION_RUNBOOK step 1.1: the write-epoch fence is LIVE, so the
+  // endpoint's validateWriteEpochInTx genuinely reads composition/writeEpoch
+  // inside the transaction. Model the PRE-GENESIS store (both docs absent =>
+  // the fence fails open) instead of mocking the flag back to dark.
+  const __composition = makeCompositionStoreDouble();
   const state = { agentDocs, watchlistDocs };
 
   const buildAgentRef = (id) => ({
@@ -83,6 +89,8 @@ function makeFakeFirestore({ agentDocs = {}, watchlistDocs = {} } = {}) {
   const collection = (name) => {
     if (name === 'agents') return { doc: (id) => buildAgentRef(id) };
     if (name === 'watchlists') return { doc: (id) => buildWatchlistRef(id) };
+    const __c = __composition.collection(name);
+    if (__c) return __c;
     throw new Error(`Unmocked collection: ${name}`);
   };
 

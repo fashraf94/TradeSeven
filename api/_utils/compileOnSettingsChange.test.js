@@ -32,6 +32,7 @@ import {
 import { validateCompiledBuild } from './archetypeBuildSchemas.js';
 import { getRuleCompatInfo } from '../../src/data/archetypeRuleCompatibility.js';
 import { COMPILER_ENABLED } from '../../src/config/featureFlags.js';
+import { COMPOSITION_COMPILED_IDENTITY_ENABLED } from './compositionConfig.js';
 import { LIVE_DEPLOY_MODES } from './gameModePolicy.js';
 import { TIERED_GAME_MODE, FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
 
@@ -273,5 +274,98 @@ describe('resolveEquippedCompatCells — compat keys on the TEMPLATE id, not the
       ARCHETYPE,
     );
     expect(Object.keys(cells)).toEqual([DOC_ID]);
+  });
+});
+
+// ── candidate-mode defaults: THE RECORD IS THE SOLE SELECTOR ─────────────────
+//
+// Founder ruling, 2026-08-16 (ACTIVATION_RUNBOOK step 1.1). The compile
+// helpers used to default `candidateMode` to
+// COMPOSITION_COMPILED_IDENTITY_ENABLED. That was inert while the flag was
+// dark, but the moment step 1.1 lit it, ANY caller that forgot to thread the
+// record's selection would have silently compiled against the CANDIDATE
+// registry with no activation record consulted — the exact inference #11
+// forbids. The defaults are now hard `false`; candidate cells require an
+// explicit opt-in, and the only path allowed to grant it is
+// resolveCandidateModeInTx.
+//
+// These rows are DEFECT-SENSITIVE by construction: each pairs the defaulted
+// call against an explicit candidateMode:true call and asserts they DIFFER.
+// If a default ever resolves true again, the "same as legacy" half fails; if
+// the two arms ever stop differing the mutation anchor fails, so the rows can
+// never pass vacuously.
+describe('candidate-mode defaults — the record is the sole selector (#11)', () => {
+  const ARCHETYPE = 'contrarian';
+  const TEMPLATE_ID = 'sr-04';
+  const BUNDLES = [{ bundleId: 'b1', ruleSnapshots: [{ id: 'rule_9f3a17c2', sourceRef: TEMPLATE_ID }] }];
+
+  it('the guard is live, not vacuous: the compiled-identity flag actually ships TRUE', () => {
+    // If this flag were dark, every row below would pass no matter what the
+    // defaults did — the bug it guards is only reachable while the flag is
+    // lit. Pinned deliberately: it fails the day the flag moves, which is the
+    // day someone must re-read these rows.
+    expect(COMPOSITION_COMPILED_IDENTITY_ENABLED).toBe(true);
+  });
+
+  it('resolveEquippedCompatCells defaults to LEGACY cells, not the flag', () => {
+    const defaulted = resolveEquippedCompatCells(BUNDLES, ARCHETYPE);
+    const legacy = resolveEquippedCompatCells(BUNDLES, ARCHETYPE, { candidateMode: false });
+    const candidate = resolveEquippedCompatCells(BUNDLES, ARCHETYPE, { candidateMode: true });
+
+    expect(defaulted).toEqual(legacy);
+    // MUTATION ANCHOR: the two sources must genuinely disagree for this
+    // fixture, or the assertion above proves nothing.
+    expect(candidate).not.toEqual(legacy);
+    expect(defaulted).not.toEqual(candidate);
+  });
+
+  it('prepareCompileInputs without a db resolves LEGACY — it never falls back to the flag', async () => {
+    const tx = makeFakeTx();
+    const prep = await prepareCompileInputs(tx, {
+      agentRef: makeAgentRef('a1', { b1: liveishBundle }),
+      nextEquippedBundleIds: ['b1'],
+      enabled: true,
+      // no db, no candidateMode: nothing to consult ⇒ legacy, never the flag
+    });
+    expect(prep.candidateMode).toBe(false);
+    // The candidate arm's extra reads (rules + all bundles) never happened.
+    expect(tx.calls.getAll).toEqual([['b1']]);
+  });
+
+  it('writeCompiledBuildsInTx defaults to LEGACY verdict entries (no advisory carriage)', () => {
+    // Anchor pair: `tech-moving-average-trend` on contrarian is a rule the
+    // LEGACY map scores `core_conflict` (blocked:true) and the CANDIDATE
+    // registry scores differently — a difference that reaches the written
+    // build's compatVerdicts, so the two arms are observably distinct. A rule
+    // whose cells differ only in `via` would NOT reach the build and would
+    // leave this row vacuous.
+    const RULE_ID = 'tech-moving-average-trend';
+    const CARRIAGE_BUNDLES = [{
+      bundleId: 'b1',
+      ruleIds: [RULE_ID],
+      status: 'equipped',
+      ruleSnapshots: [{ id: RULE_ID, sourceRef: RULE_ID, params: null, paramValues: {} }],
+    }];
+    const build = (opts) => {
+      const tx = makeFakeTx();
+      writeCompiledBuildsInTx(tx, {
+        agentRef: makeAgentRef('a1'),
+        agentId: 'a1',
+        agent: { archetype: ARCHETYPE, settingsRev: 4 },
+        nextState: {},
+        bundles: CARRIAGE_BUNDLES,
+        enabled: true,
+        nowIso: NOW,
+        ...opts,
+      });
+      return tx.calls.set[0].data;
+    };
+    const defaulted = build({});
+    const legacy = build({ candidateMode: false });
+    const candidate = build({ candidateMode: true });
+
+    expect(defaulted).toEqual(legacy);
+    // MUTATION ANCHOR: candidate mode really does change the written build.
+    expect(candidate).not.toEqual(legacy);
   });
 });
