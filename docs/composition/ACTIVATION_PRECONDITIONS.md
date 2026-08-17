@@ -49,6 +49,24 @@ The PR-3 §2 review + Sol's pre-activation pass surfaced hardenings that are act
 
 > **STEP 0 — census re-run at the exact merged SHA.** Before any epoch close or activation step, re-run the full A46 census suite (`compositionWriterCensus.test.js`) and the B3 protected-store scan **at the SHA actually deployed**, and record SHA + result in the runbook log. The census is a build-time artifact; writers merged between the census's last green run and the deploy SHA (the PR #716 casualClone interception is the precedent) MUST be caught before the fence goes live, not after.
 
+## PRE-8B DECISION ITEM — `buildCompositionAdvisoryIndex` bare-flag default (founder ruling, Aug 16 2026)
+
+> **RE-READ THIS BEFORE STEP 8B.** Filed as a named item precisely so it is re-read at the probe window rather than rediscovered there.
+
+**The item.** `buildCompositionAdvisoryIndex` (`api/_utils/compositionAdvisoryRender.js:45`) still defaults `enabled = COMPOSITION_COMPILED_IDENTITY_ENABLED` — the last un-converted member of the bare-flag default class that the Aug 16 ruling converted to hard `false` at `compileOnSettingsChange.js:164`, `:270` and `:334`. Selection by the bare flag rather than THE RECORD is the inference runbook #11 forbids.
+
+**FOUNDER RULING (Aug 16, 2026): leave the default UN-CONVERTED.** Recorded reasoning: both call sites are on the BUILD_RULES §1 calibration fence, so converting now buys a §7 gate for a seam that is **provably inert**, and darkening it changes what 8B's probes can observe — a worse trade *during* the window than after it.
+
+**The mechanism, CORRECTED.** The step-1.1 flip record first justified "no live effect" by claiming every consumer is double-gated behind `COMPILER_ENABLED`. **That justification was wrong** and is corrected here so the next reader inherits the real one:
+
+- `buildCompositionAdvisoryIndex` is **NOT** `COMPILER_ENABLED`-gated. It is called unconditionally from two FENCED assemblers — `agentPromptAssembly.js:110` and `agentEvalPromptAssembly.js:566`.
+- It is inert because **its input is always null**, not because of a flag gate: `compositionCompat` is written in exactly one place, `resolvedAgentManifest.js:191`, and only when the build carries advisory keys (`compatVerdicts.some(v => 'advisory' in v)`) — i.e. only from a **candidate-mode** `CompiledBuild`. No `CompiledBuild` is minted at all while `COMPILER_ENABLED` is `false`, and `agent.compositionCompat` (the prompt-path argument) is never written anywhere. `buildCompositionAdvisoryIndex` returns `null` on `!compatSurface` regardless of `enabled`.
+- So the selection **is** record-gated — but **transitively**, through the only source of `compositionCompat`, not by construction. That is the residual, and it is what step 8B must re-examine.
+
+**What to check at 8B.** The probe checks deliberately make `compositionCompat` non-null for the first time (a probe deploy + battle whose manifest carries the FC-1 stamps, and a trait-hosted tension rendering its advisory exactly once). From that moment the transitive gate is doing real work: confirm the advisory that renders is the one THE RECORD selected, and that `compositionSourceGeneration` and the slice stamp agree — the pair `buildCompositionAdvisoryIndex` compares via `expectedSourceGeneration`. If 8B is to run with the default still bare, that agreement is the whole guarantee.
+
+**Basis:** `docs/audits/20260816_COMPOSITION_STEP_1_1_FLIP_REVIEW.md` §13 (finding T2) and the correction note in `docs/composition/PR2_FLAG_OWNERSHIP.md`.
+
 ## Ruling of record — `decide.js` (REVERSED, Aug 6, 2026)
 
 The prior ruling ("DERIVED classification ACCEPTED; no PR-4 splice required") is **REVERSED by the Sol adjudication**: the DERIVED classification **stands for dark operation only**. **The PR-4 fenced splice is now REQUIRED** — epoch/generation validation before the `activeRules` write, plus a **generation stamp** on the written projection, with readers rejecting stale-generation projections.
