@@ -81,7 +81,22 @@
 6. **Open the epoch EXPLICITLY:** **`transitionWriteEpoch(db, { state: 'open', epochId: '<E0, new>' })`** ⇒ `{state:'open', epochId:E0, fenceGeneration:1}` — today's implicit fail-open world made explicit, at **incarnation 1** (BL1: every epoch-state write goes through the helper, which computes `fenceGeneration` mechanically — a quiesced world becoming writable increments it; closes retain it; clients and server transactions pin the {epochId, fenceGeneration} TUPLE, so no later incarnation can re-admit an earlier incarnation's mutation). Required now: the genesis write arms B1, and the armed world must never see an absent epoch doc.
 7. **Deployed-lambda snapshot smoke (#9 — BEFORE genesis):** invoke a REAL deployed path that resolves **v2 via the bundled historical snapshot** AND **v3 via the catalog** (the F7 `includeFiles` verification made concrete — e.g. an internal-caller probe of the version-parameterized resolver at both versions). **Record BOTH identity hashes** in the log; they must equal the catalog-lock values. **Failure ⇒ do NOT write genesis** — stop, fix the bundling, redeploy, restart from 1.1.
 8. **GENESIS (the F2 ruling — BEFORE the epoch close, paired with the open epoch doc):** **`writeGenesisDescriptor(db, { activeEpochId: '<E0>' })`** — generation 1 = the genesis descriptor `{activeIdentityVersion: 2 (live), boundaryStateVersion: 1, candidateStateId: 'genesis', semanticHash: <the reserved null-sentinel>, activeEpochId: E0, overrideRevision: 0}`. No overlay participation — the loader short-circuits to base-only; births, reads, and compiles are UNCHANGED (proven rows incl. the genesis-present pipeline row). The write validates the open epoch pairing in its own transaction and refuses if any record exists. **From this write on: B1's absent-epoch-doc-fails-closed is armed coherently, and a prior descriptor exists for every future generation.**
-9. **Close the epoch:** `transitionWriteEpoch(db, { state: 'closing', epochId: 'E0' })` (the incarnation RETAINS — 1) → new writes + lease acquisitions reject → **drain provisioner leases** (`drainProvisionerLeases`; B2). **A lease that expires without release does NOT drain (#3):** the drain REFUSES and names the holder — verify the holder process is dead (the max-function-lifetime bound of 1.3), then `resolveStuckProvisionerLease(db, leaseId, { operator, reason })` (attributed in the log), and re-run the drain. Then `transitionWriteEpoch(db, { state: 'closed', epochId: 'E0' })` — **the watermark** (still incarnation 1). (The epoch doc is UPDATED, never deleted — post-genesis an absent doc fails closed everywhere.)
+9. **Close the epoch:** `transitionWriteEpoch(db, { state: 'closing', epochId: 'E0' })` (the incarnation RETAINS — 1) → new writes + lease acquisitions reject → **drain provisioner leases** (`drainProvisionerLeases`; B2).
+
+   **THE COMMAND (added 2026-08-16 — review finding R2; before this the runbook named the function and nothing in the repo invoked it, so the operator had no command to run):**
+
+   ```bash
+   node scripts/composition/lease-ops.js drain            # DRY RUN — one pass, no polling: drain / wait / refuse
+   node scripts/composition/lease-ops.js drain --apply    # THE 1.9 CALL — polls until nothing is active
+   ```
+
+   Run the dry form first: it classifies instantly instead of blocking up to 150s, and it prints exactly what the live drain will do. **On a refusal the live run names every stuck holder and prints a ready-to-run `resolve` command per lease** — supply your own operator and reason (#3: a named human declares the holder dead), then re-run the drain:
+
+   ```bash
+   node scripts/composition/lease-ops.js resolve --lease-id <id> --operator "<you>" --reason "<why>" --apply
+   ```
+
+   `node scripts/composition/lease-ops.js list` gives the same registry view at any time. All three **work with the epoch CLOSED** — which is the state this step runs in — proven by `api/_utils/compositionLeaseOps.test.js`'s closed-epoch block, not assumed. Every run writes a JSON artifact under `scripts/composition/out/` for the step-9 docs closeout to cite. **A lease that expires without release does NOT drain (#3):** the drain REFUSES and names the holder — verify the holder process is dead (the max-function-lifetime bound of 1.3), then `resolveStuckProvisionerLease(db, leaseId, { operator, reason })` (attributed in the log), and re-run the drain. Then `transitionWriteEpoch(db, { state: 'closed', epochId: 'E0' })` — **the watermark** (still incarnation 1). (The epoch doc is UPDATED, never deleted — post-genesis an absent doc fails closed everywhere.)
 10. **Battle-drain HARD GATE (#7 — the post-watermark repeat of A26/A35):** re-run the step-0.3 predicate over active `agentBattles` NOW, after the watermark. **This result — not step 0's — is the gate:** any battle matching the predicate ⇒ wait for it to complete before step 2. Record the post-watermark count (expected 0). **`agent-evaluate` MUST be running for this gate to clear** — it is the sole battle-completer, so pausing it deadlocks this step (see the standing warning above).
 11. **Watermark sweep (B8):** every protected-store doc updated after the watermark must be attributable to a named runbook step.
 
@@ -154,7 +169,14 @@ The epoch stays **closed**; the fleet is frozen; nothing here writes production 
 
 **8B FAILURE ⇒ THE ROLLBACK PROTOCOL** (below). The only v3 base state at that point is the enumerated probes' — reversed by the protocol's named hand reconciliation.
 
-**General unfreeze (ONLY after every 8B check passes):** `transitionWriteEpoch(db, { state: 'open', epochId: 'E1' })` — probe→open RETAINS the incarnation (2; no intervening close, BL1) and removing the probe gate is what opens general traffic (clients capture the {epochId, fenceGeneration} tuple on their next formed mutation); lift the §6 freeze announcement; resume the EXTERNAL_ADMIN_WRITE_PATHS rows (each resume acknowledged); `COMPOSITION_MIGRATION_FEED_ENABLED` flips only after the record is verified (A44, flag-ownership table); purge the lease registry (`purgeReleasedProvisionerLeases` — released-only, #3/F9).
+**General unfreeze (ONLY after every 8B check passes):** `transitionWriteEpoch(db, { state: 'open', epochId: 'E1' })` — probe→open RETAINS the incarnation (2; no intervening close, BL1) and removing the probe gate is what opens general traffic (clients capture the {epochId, fenceGeneration} tuple on their next formed mutation); lift the §6 freeze announcement; resume the EXTERNAL_ADMIN_WRITE_PATHS rows (each resume acknowledged); `COMPOSITION_MIGRATION_FEED_ENABLED` flips only after the record is verified (A44, flag-ownership table); purge the lease registry (`purgeReleasedProvisionerLeases` — released-only, #3/F9):
+
+```bash
+node scripts/composition/lease-ops.js purge                            # DRY RUN — what would be deleted
+node scripts/composition/lease-ops.js purge --operator "<you>" --apply # THE 8B CALL
+```
+
+Released leases only — an expired-but-unreleased (stuck) lease is **never** purged, because purging it would destroy the very signal the drain refuses on (#3). The report records the unreleased population either side of the delete as proof only released docs were touched.
 
 **VERIFY:** every probe check recorded with its observation + the probe-identity enumeration. **ROLLBACK:** THE ROLLBACK PROTOCOL, any time — scope per its statement.
 
