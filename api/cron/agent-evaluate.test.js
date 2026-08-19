@@ -112,15 +112,17 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
     expect(source).toMatch(/import\s*\{\s*buildTechnicalSnapshot\s*\}\s*from\s*'\.\.\/_utils\/buildTechnicalSnapshot\.js'/);
   });
 
-  it('builds a {symbolOut, symbolIn} snapshot at exactly 3 decision sites (proposal-create, autopilot, risk-triggered)', () => {
+  it('builds a {symbolOut, symbolIn} snapshot at exactly 4 decision sites (proposal-create, autopilot, risk-triggered, R11 suppression pass)', () => {
     // Each site builds a snapshot via two buildTechnicalSnapshot calls inside
     // an object literal containing both symbolOut and symbolIn keys. We count
     // the symbolOut: buildTechnicalSnapshot(...) opener as a stable marker.
+    // Exit-Behavior Tier 2 Ask 3 (R11): the suppression-path deterministic
+    // pass is the 4th decision site (3 → 4).
     const builderOpenings = source.match(/symbolOut:\s*buildTechnicalSnapshot\(/g) || [];
     const builderClosings = source.match(/symbolIn:\s*buildTechnicalSnapshot\(/g) || [];
 
-    expect(builderOpenings.length).toBe(3);
-    expect(builderClosings.length).toBe(3);
+    expect(builderOpenings.length).toBe(4);
+    expect(builderClosings.length).toBe(4);
   });
 
   it('attaches snapshot onto pendingProposalUpdate at the proposal-creation site', () => {
@@ -130,14 +132,15 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
   });
 
   it('passes the snapshot as the 10th positional arg through every executeSwapServer call site that the cron creates', () => {
-    // 5 call sites total in agent-evaluate.js:
+    // 6 call sites total in agent-evaluate.js:
     //   - autopilot direct                (in scope: snapshot built inline, passed)
     //   - risk-triggered swap             (in scope: snapshot built inline, passed)
     //   - copilot-approved-execute        (in scope: forwards proposal.snapshot)
     //   - copilot-expired-auto-execute    (in scope: forwards proposal.snapshot)
     //   - gameplan-rotation               (out of scope per Phase 4 plan)
+    //   - R11 suppression pass            (in scope: snapshot built inline, passed — Ask 3)
     const inScopeSites = source.match(/executeSwapServer\([\s\S]+?(snapshot|proposal\.snapshot \|\| null)\s*\)/g) || [];
-    expect(inScopeSites.length).toBe(4);
+    expect(inScopeSites.length).toBe(5);
   });
 
   it('forwards proposal.snapshot through the copilot-approved and expired-auto-execute paths', () => {
@@ -415,17 +418,20 @@ describe('agent-evaluate cron — Knob §4.6 receipt source wiring (Gate 7)', ()
     expect(source).toMatch(/import\s*\{[^}]*\bbuildSwapReceiptSource\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
   });
 
-  it('stamps the receipt source at all 4 swap origin paths (spread into evaluationMetadata) + the 2 flag-#4 fallback syntheses', () => {
+  it('stamps the receipt source at all 5 swap origin paths (spread into evaluationMetadata) + the 2 flag-#4 fallback syntheses', () => {
     // Corpus Capture Patch W2 raised the total from 4 → 6: the 4 origin-path
     // metadata spreads are unchanged, and the two proposal-execution fallbacks
     // (approved + expired) now synthesize minimal provenance via the SAME
     // fenced helper instead of passing a bare {} (founder-approved flag-#4
     // hardening — a metadata-less proposal must never persist a sourceless
     // swap). The synthesis spelling is pinned by the W1/W2 suite below.
+    // Exit-Behavior Tier 2 Ask 3 (R11) raised it 6 → 7: the suppression-path
+    // deterministic pass is a FIFTH origin path with its own pinned spelling
+    // (Path E below). Existing Gate-7 locked call forms untouched (NO-EDIT).
     const spreads = source.match(/\.\.\.buildSwapReceiptSource\(\{/g) || [];
-    expect(spreads.length).toBe(6);
+    expect(spreads.length).toBe(7);
     const fallbackSyntheses = source.match(/\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: null \}\)/g) || [];
-    expect(fallbackSyntheses.length).toBe(2); // 6 − 2 = the 4 origin paths, untouched
+    expect(fallbackSyntheses.length).toBe(2); // 7 − 2 = the 5 origin paths
   });
 
   it('Path A (risk loop): source = archetype for stagnation, else risk_manager (mirrors statusFeed)', () => {
@@ -444,6 +450,10 @@ describe('agent-evaluate cron — Knob §4.6 receipt source wiring (Gate 7)', ()
   it('Path D (gameplan, dormant): source = gameplan_meeting (archetype off battle.agentContext — ctx not in scope in handleGameplanMeeting)', () => {
     expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: 'gameplan_meeting', archetype: battle\.agentContext\?\.archetype \}\)/);
   });
+
+  it("Path E (R11 suppression pass, dark): source = guardrail — the executor's true origin, constructed from scratch", () => {
+    expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: 'guardrail', archetype: ctx\.archetype \}\)/);
+  });
 });
 
 // Corpus Capture Patch (W1 + W2) — L1 capture coverage guards. Same
@@ -458,11 +468,14 @@ describe('agent-evaluate cron — Corpus Capture Patch W1/W2 L1 capture wiring',
   // closing `});` — enough to assert per-site fields without executing.
   const captureBlocks = source.split('await captureSwapReceipt({').slice(1).map(s => s.slice(0, s.indexOf('});')));
 
-  it('all FIVE swap-execution sites invoke captureSwapReceipt (4 executeSwapServer classes; the proposal class has two execution points)', () => {
-    expect(captureBlocks.length).toBe(5);
+  it('all SIX swap-execution sites invoke captureSwapReceipt (5 executeSwapServer classes; the proposal class has two execution points)', () => {
+    // Exit-Behavior Tier 2 Ask 3 (R11): the suppression-path deterministic
+    // pass is the 6th capture site / 6th executeSwapServer call (5 → 6) —
+    // a suppression-tick guardrail fire must not open a corpus gap.
+    expect(captureBlocks.length).toBe(6);
     // One capture per executeSwapServer call — no swap class is left out.
     const swaps = source.match(/await executeSwapServer\(/g) || [];
-    expect(swaps.length).toBe(5);
+    expect(swaps.length).toBe(6);
   });
 
   it('every capture call threads archetype from the battle-creation-frozen agentContext (never the mutable agent scalar)', () => {
@@ -475,9 +488,10 @@ describe('agent-evaluate cron — Corpus Capture Patch W1/W2 L1 capture wiring',
     expect(source).not.toMatch(/archetype: agent\.archetype/);
   });
 
-  it('the 4 NEW sites are triple-gated (master && expansion && live_agent); the original autopilot site keeps its master-only gate', () => {
+  it('the 5 NEW sites are triple-gated (master && expansion && live_agent); the original autopilot site keeps its master-only gate', () => {
+    // W2's four + the R11 suppression-pass capture (Ask 3) = 5 triple gates.
     const tripleGates = source.match(/LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED\s*\n\s*&& classifyEvidence\(/g) || [];
-    expect(tripleGates.length).toBe(4);
+    expect(tripleGates.length).toBe(5);
     const masterOnlyGates = source.match(/LEARNING_L1_CAPTURE_ENABLED && classifyEvidence\(/g) || [];
     expect(masterOnlyGates.length).toBe(1);
   });
@@ -491,11 +505,15 @@ describe('agent-evaluate cron — Corpus Capture Patch W1/W2 L1 capture wiring',
     // proposal class ×2 (approved + expired): source haiku, exitReason from metadata
     const proposalPairs = joined.match(/source: 'haiku',\s*\n\s*exitReason: proposal\.evaluationMetadata\?\.exitReason \?\? 'haiku_decision',/g) || [];
     expect(proposalPairs.length).toBe(2);
+    // R11 suppression-pass class (Ask 3): source guardrail, exitReason from the
+    // guardrail sourceNote — a member of the closed enum by construction.
+    expect(joined).toMatch(/source: 'guardrail',\s*\n\s*exitReason: deterministicExitReason,/);
   });
 
   it('every capture is post-commit and isolated: inside a try/catch that logs and swallows (trade unaffected)', () => {
+    // 5 → 6 with the R11 suppression-pass capture (Ask 3).
     const isolations = source.match(/L1 capture threw \(ignored, trade unaffected\)/g) || [];
-    expect(isolations.length).toBe(5);
+    expect(isolations.length).toBe(6);
   });
 
   it('flag #4 hardening (#5 per-key merge): both proposal metadata fallbacks synthesize the floor then let present keys override — no truthy-{} bypass', () => {
@@ -616,9 +634,9 @@ describe('agent-evaluate cron — adversarial-review fixes (#3/#8/#9/#10)', () =
     // capture passes entryAtrSource. 4 new sites use `entryAtrSource:` (the
     // autopilot site uses the shorthand `entryAtrSource,`).
     const perSite = source.match(/entryAtrSource: \w+EntryAtrSource,/g) || [];
-    expect(perSite.length).toBe(4); // risk, approved, expired, gameplan
+    expect(perSite.length).toBe(5); // risk, approved, expired, gameplan, R11 pass (Ask 3)
     const classifierCalls = source.match(/classifyEntryAtrSource\(\{/g) || [];
-    expect(classifierCalls.length).toBe(5); // 4 new + 1 autopilot
+    expect(classifierCalls.length).toBe(6); // 5 new + 1 autopilot
   });
 
   it('#9: both proposal captures pass decisionAtMs = proposal.createdAt (predicate instant ≠ execution timestamp)', () => {
@@ -639,10 +657,10 @@ describe('agent-evaluate cron — adversarial-review fixes (#3/#8/#9/#10)', () =
     expect(source).not.toMatch(/archetype: agent\.archetype/);   // never the mutable scalar
   });
 
-  it('#10: the five capture archetype reads resolve to the same frozen field (2 ctx + 3 battle.agentContext)', () => {
+  it('#10: the six capture archetype reads resolve to the same frozen field (3 ctx + 3 battle.agentContext)', () => {
     const ctxReads = source.match(/archetype: ctx\.archetype \?\? null/g) || [];
     const battleReads = source.match(/archetype: battle\.agentContext\?\.archetype \?\? null/g) || [];
-    expect(ctxReads.length).toBe(2);   // risk + autopilot (processAgentBattle scope)
+    expect(ctxReads.length).toBe(3);   // risk + autopilot + R11 pass (ctx threaded in — Ask 3)
     expect(battleReads.length).toBe(3); // approved + expired + gameplan (ctx out of scope)
   });
 });
@@ -691,32 +709,35 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     expect(groupIdCheck).toBeLessThan(firstAwait);
   });
 
-  it('every one of the 5 executeSwapServer call sites is preceded by the shared phase-1 reserve helper', () => {
+  it('every one of the 6 executeSwapServer call sites is preceded by the shared phase-1 reserve helper', () => {
+    // Ask 3 (R11): the suppression-pass site joins the protocol (5 → 6).
     // Find each call site (the import line has no opening paren on the name).
     const sites = [...source.matchAll(/executeSwapServer\(\s*\n?\s*db,/g)].map(m => m.index);
-    expect(sites.length).toBe(5);
+    expect(sites.length).toBe(6);
     for (const idx of sites) {
       const windowBefore = source.slice(Math.max(0, idx - 3000), idx);
       expect(windowBefore).toContain('await reserveTournamentSymbolIn(db, tournamentCtx, battle,');
     }
-    // The helper count pins the protocol to exactly the five sites.
+    // The helper count pins the protocol to exactly the six sites.
     const helperCalls = source.match(/await reserveTournamentSymbolIn\(/g) || [];
-    expect(helperCalls.length).toBe(5);
+    expect(helperCalls.length).toBe(6);
     // Regular-battle contract: the helper performs ZERO ledger I/O and
     // reports success when tournamentCtx is null (sites sail through).
     expect(source).toMatch(/async function reserveTournamentSymbolIn\([\s\S]*?if \(!tournamentCtx\) return \{ reserved: true \};/);
   });
 
-  it('every one of the 5 call sites confirms on success (two-phase, phase 2) and releases in its catch (compensating action)', () => {
+  it('every one of the 6 call sites confirms on success (two-phase, phase 2) and releases in its catch (compensating action)', () => {
     const sites = [...source.matchAll(/executeSwapServer\(\s*\n?\s*db,/g)].map(m => m.index);
     for (const idx of sites) {
       const windowAfter = source.slice(idx, idx + 3000);
       expect(windowAfter).toContain('await confirmTournamentSwap(db, tournamentCtx, battle,');
     }
+    // Ask 3 (R11): the suppression-pass site carries the same two-phase
+    // wrapper — reserve marker, confirm, compensating release (5 → 6 each).
     const releases = source.match(/await releaseTournamentReservation\(db, tournamentCtx, reservedSymbolIn\);/g) || [];
-    expect(releases.length).toBe(5);
+    expect(releases.length).toBe(6);
     const reserveMarkers = source.match(/let reservedSymbolIn = null;/g) || [];
-    expect(reserveMarkers.length).toBe(5);
+    expect(reserveMarkers.length).toBe(6);
   });
 
   it('the confirm helper never rethrows (the swap already executed; reconciliation repairs) and the release helper never masks the original error', () => {
@@ -743,8 +764,9 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     // unfiltered, so a raw Object.assign refresh would re-admit rival-held
     // names mid-tick (review finding). refreshBattleFromDoc is the single
     // re-read chokepoint — exactly 9 call sites, zero raw re-assigns left.
+    // 9 → 10: the R11 suppression pass re-reads after its swap (Ask 3).
     const refreshCalls = source.match(/await refreshBattleFromDoc\(battleRef, battle, tournamentCtx\);/g) || [];
-    expect(refreshCalls.length).toBe(9);
+    expect(refreshCalls.length).toBe(10);
     const rawReassigns = source.match(/Object\.assign\(battle, \w+Doc\.data\(\)\)/g) || [];
     expect(rawReassigns.length).toBe(1); // only inside refreshBattleFromDoc itself
     expect(source).toMatch(/async function refreshBattleFromDoc\([\s\S]*?applyTournamentCandidateFilter\(battle, tournamentCtx\);/);
@@ -774,7 +796,7 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     expect(builder).toContain("action: 'tournament_pool_empty'");
     expect(builder).toContain("source: 'tournament_ledger'");
     const builderCalls = source.match(/buildPoolEmptyFeedEntry\(\{/g) || [];
-    expect(builderCalls.length).toBe(3); // definition + the two sites
+    expect(builderCalls.length).toBe(4); // definition + the two risk-loop sites + the R11 pass reserve-fail site (Ask 3)
   });
 
   it('double-down feed entries carry the spec fields and both event kinds', () => {
@@ -785,8 +807,9 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
   });
 
   it('every confirm sources symbols from the ACTUAL closedTrade (executeSwapServer swaps the slot occupant, not the intent)', () => {
+    // 5 → 6 with the R11 suppression-pass confirm (Ask 3).
     const confirms = source.match(/closedTrade\?\.symbolOut \|\|/g) || [];
-    expect(confirms.length).toBe(5);
+    expect(confirms.length).toBe(6);
   });
 
   it('REPO-LEVEL: executeSwapServer has no consumers outside the fenced module and this wrapped cron', () => {
@@ -913,16 +936,18 @@ describe('agent-evaluate cron — Release 2 tempo-dial wiring (structural)', () 
     expect(source).not.toMatch(/\.dials\b/);
   });
 
-  it('stamps the §14 provenance SIBLING at all 4 swap origin paths — origin-path receipt spreads untouched', () => {
+  it('stamps the §14 provenance SIBLING at all 5 swap origin paths — origin-path receipt spreads untouched', () => {
+    // Ask 3 (R11): the suppression pass is a dial-resolved origin path and
+    // carries the sibling too (4 → 5).
     const provenanceSpreads = source.match(/\.\.\.buildSwapProvenance\(/g) || [];
-    expect(provenanceSpreads.length).toBe(4);
-    // Corpus Capture Patch W2: total receiptSource spreads are now 6 (4 origin
+    expect(provenanceSpreads.length).toBe(5);
+    // Corpus Capture Patch W2: total receiptSource spreads are now 7 (5 origin
     // paths + 2 flag-#4 fallback syntheses — see the Gate-7 test). The dial
     // provenance sibling deliberately does NOT ride the fallback syntheses
     // (they are metadata-absent emergency shims, not dial-resolved decisions),
-    // so its count stays 4.
+    // so its count stays 5.
     const receiptSpreads = source.match(/\.\.\.buildSwapReceiptSource\(\{/g) || [];
-    expect(receiptSpreads.length).toBe(6);
+    expect(receiptSpreads.length).toBe(7);
   });
 
   it('the epoch telemetry event carries the clamp provenance (desired-vs-effective rides the same record)', () => {

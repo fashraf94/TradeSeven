@@ -1633,3 +1633,19 @@ export const MANDATE_FOUNDER_CREATE_ENABLED = true;
  */
 export const MANDATE_TRANSPORT_MODE = 'direct';
 
+
+/**
+ * Exit-Behavior Rebalance Tier 2, Ask 3 — the profitTarget deterministic
+ * executor (Founder Rulings V1 R1-R3/R10 + Addendum V1.1 R11). When FALSE
+ * (DEFAULT, merge-dark): profitTarget stays a soft advisory note in
+ * applyGuardrails, stays OUT of compileBuild's SUPPORTED_GUARDRAIL_SHAPES,
+ * and the R11 suppression-path deterministic pass in agent-evaluate.js is a
+ * no-op — byte-identical engine behavior. When TRUE, ONE flag lights all
+ * three together (F11: compiler acceptance and executor registration can
+ * never drift apart), and user-directive deterministic orders (equipped
+ * stops + the profit target) fire through gameplan suppression (R11).
+ * Flips WITH Ask 1's enforcement-true prompt copy per R10 — never alone,
+ * never in a build PR.
+ */
+// Pinned by: agentGuardrails.pairing.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const PROFIT_TARGET_EXECUTOR_ENABLED = false;

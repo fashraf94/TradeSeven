@@ -52,7 +52,7 @@ import { generateAnticipation } from '../_utils/voiceLayerAnticipation.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails, injectDiversifierSectorCap, resolveSectorSlotObserveCap } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
-import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
+import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, USER_DIRECTIVE_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { buildFreshAtrPercentileMap, resolveHurdleAtr } from '../_utils/hurdleAtr.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps, seedVwapFireGuard, isReplacementQualified, VWAP_CASCADE_GUARD_N, CASCADE_QUALIFY_TIMEOUT_MS } from '../_utils/agentVwapFloor.js';
@@ -76,7 +76,7 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
 // Corpus Capture Patch W3 — pure regimeAtStart stamp helpers (write-once /
 // flag / shape semantics live there so they are behaviorally unit-testable).
 import { shouldStampRegime, buildRegimeAtStart } from '../_utils/regimeStamp.js';
@@ -1793,7 +1793,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
     // ---- Gameplan meeting lifecycle check (after proposals, before triggers) ----
     const gameplanHandled = await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx);
+    // R11 (Exit-Behavior Tier 2): a pending-and-unexpired meeting suppresses
+    // DISCRETIONARY trading, never the user's standing deterministic orders —
+    // the pass below runs the guardrail stops + profit target before the
+    // early return that used to silently swallow them (Phase-0 item 2).
     if (gameplanHandled === 'skip_haiku') {
+      await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks });
       finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -1806,7 +1811,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // ---- Gameplan meeting trigger detection (only if no meeting pending) ----
     if (!battle.gameplanMeeting) {
       const gameplanTrigger = detectGameplanMeetingTrigger(battle, assetScores, prices, flatPortfolio, benchAssets, technicalScoresMap);
+      // R11: the tick that CREATES a meeting is a suppression tick too ("gameplan
+      // IS the evaluation" returns below) — deterministic orders run first. The
+      // meeting trigger was computed pre-pass; if the pass swaps, a proposal leg
+      // referencing the departed symbol resolves through the existing
+      // reserve-fail/hold path at approval time (the same staleness class risk
+      // swaps already create for pending meetings today).
       if (gameplanTrigger) {
+        await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks });
         const todayET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
@@ -2147,11 +2159,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // Forge Enforcement Keystone V1.4 §4.3 (Knob B) — hurdle floor on the
         // Haiku-proposed swap, applied after validation, before execution. A2
         // (§3.1): a guardrail-forced exit carries a guardrail_* reason via
-        // guardrailSourceNote and BYPASSES the floor (clearsHurdleFloor step 1); a
-        // discretionary Haiku swap is gated by byReason.haiku_decision. Compute the
-        // reason ONCE and reuse it for the gate AND the exitReason stamp below.
+        // guardrailSourceNote and BYPASSES the floor (clearsHurdleFloor step 1
+        // for the protective stops; step 1b — the Ask 3 USER-DIRECTIVE class —
+        // for guardrail_profitTarget); a discretionary Haiku swap is gated by
+        // byReason.haiku_decision. Compute the reason ONCE and reuse it for
+        // the gate AND the exitReason stamp below.
         const haikuSwapReason =
-          (guardrailSourceNote === 'guardrail_stopLoss' || guardrailSourceNote === 'guardrail_trailingStop')
+          (guardrailSourceNote === 'guardrail_stopLoss' || guardrailSourceNote === 'guardrail_trailingStop' || guardrailSourceNote === 'guardrail_profitTarget')
             ? guardrailSourceNote
             : 'haiku_decision';
         const activeBaseATR = assetScores.find(s => s.symbol === haikuResult.symbolOut)?.baseATR ?? 2.5;
@@ -2174,6 +2188,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         const swCfg = archetypeConfig.hftConfig?.swapWindow;
         const capBlocked = swCfg?.enabled
           && !EMERGENCY_BYPASS_REASONS.has(haikuSwapReason)
+          // Ask 3 (R2/F12): a user-directive fire is never throttled by the
+          // model-churn breaker — the user's standing order is not churn.
+          && !USER_DIRECTIVE_BYPASS_REASONS.has(haikuSwapReason)
           && getRecentSwapCount(battle.trades || [], swCfg.windowMinutes, Date.now(), { countEmergencies: swCfg.countEmergencies }) >= swCfg.capPerWindow;
 
         if (!hurdle.clears) {
@@ -2221,7 +2238,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               // a NEW sibling next to exitReason (which stays the machinery-provenance
               // key four subsystems depend on). null when the model omitted swap_type
               // (rendered "undeclared"); never repurposes exitReason. Additive/inert.
-              swapMotive: haikuResult?.swap_type ?? null,
+              // Ask 3 (F3, endorsed): a DETERMINISTIC exitReason stamps motive NULL —
+              // a guardrail-materialized haikuResult spreads the prior model output,
+              // so a stale swap_type could otherwise ride onto a forced swap and
+              // poison the Tier-1 motive baseline (engine physics indistinguishable
+              // from model behavior). Applies to the reinforced case too: once the
+              // record's provenance is guardrail_*, its motive lane is engine-owned.
+              swapMotive: haikuSwapReason === 'haiku_decision' ? (haikuResult?.swap_type ?? null) : null,
               ...buildSwapReceiptSource({ source: swapSource, archetype: ctx.archetype }),
               // Release 2 PR-b — the §14 provenance sibling.
               ...buildSwapProvenance(dialClamp.provenance),
@@ -3283,6 +3306,307 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
   await battleRef.update({ pendingProposal: null, proposalHistory: history });
   await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
   return 'continue';
+}
+
+// ==================== R11 SUPPRESSION-PATH DETERMINISTIC PASS ====================
+
+/**
+ * R11 (Exit-Behavior Tier 2, Founder Rulings Addendum V1.1) — user-directive
+ * deterministic orders fire through gameplan suppression.
+ *
+ * Phase-0 item 2: applyGuardrails' sole call site sits DOWNSTREAM of the two
+ * gameplan early-returns, so the user's equipped stops (and now the profit
+ * target) were silently suppressed on every pending-and-unexpired-meeting
+ * tick — a pre-existing §9 violation on the stop's own "hard, enforced"
+ * promise. Suppression governs DISCRETIONARY trading, never the user's
+ * standing deterministic orders: a stop or target firing mid-meeting is not
+ * the agent trading, it is the engine honoring the user's directive.
+ *
+ * SHAPE (founder-endorsed): suppression-path-scoped — invoked ONLY on the two
+ * gameplan early-return paths, before they return. NOT an unconditional hoist:
+ * the catalyst override mutates the bench between the gameplan gate and the
+ * main call site, so hoisting the normal-tick check would pick pre-catalyst
+ * replacements and break the byte-identical invariant. Normal ticks are
+ * untouched by construction.
+ *
+ * SEMANTICS INVARIANT (R11): same guardrail construction as the main site —
+ * same injector, same thresholds, same LOCK deference, same replacement path
+ * (applyGuardrails → pickSwapReplacementCandidate, R13) — only WHEN in the
+ * tick they are checked changes. Execution mirrors the risk-loop template:
+ * reserve → executeSwapServer → confirm → narrate → feed → L1 capture →
+ * refresh. Provenance is constructed FROM SCRATCH (F3): exitReason from the
+ * guardrail sourceNote, swapMotive/trade_reasoning literal null — no
+ * haikuResult exists on this path and nothing model-side is inherited.
+ *
+ * DARK (R10): no-ops until PROFIT_TARGET_EXECUTOR_ENABLED flips with Ask 1 —
+ * the whole user-directive class (existing stops included) starts firing
+ * through suppression at that flip, never piecemeal.
+ */
+async function runSuppressionDeterministicPass({
+  db, battleRef, battle, prices, lockedPositions, stockRegimes,
+  statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx,
+  currentDay, currentScore, marketPosture, dialClamp, momentumData,
+  technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks,
+}) {
+  if (!PROFIT_TARGET_EXECUTOR_ENABLED) return;
+
+  let reservedSymbolIn = null;
+  let deterministicResult = null;
+  try {
+    // Same construction as the main call site (C2 injector included) so stop
+    // semantics are identical; the observe shadow is meaningless with no
+    // proposed SWAP, so it is not resolved here.
+    const deployedGuardrails = injectDiversifierSectorCap(
+      battle.agentContext?.deployedGuardrails || [],
+      battle,
+    );
+    if (deployedGuardrails.length === 0) return;
+
+    deterministicResult = applyGuardrails({
+      haikuResult: null,
+      guardrails: deployedGuardrails,
+      battle,
+      prices,
+      lockedPositions,
+      stockRegimes,
+      sectorSlotObserveCap: null,
+    });
+
+    // [VWAP Floor B7] parity: a wanted-but-impossible exit is a feed beat.
+    const noBench = (deterministicResult.overrides || []).find(o => o.action === 'forced_exit_no_bench');
+    if (noBench) {
+      statusFeedEntries.push({
+        timestamp: new Date().toISOString(),
+        message: `Wanted out of ${noBench.symbol} — no eligible replacement (bench on cooldown or empty).`,
+        pvpContext: null,
+        action: 'pool_empty',
+        regime: stockRegimes[noBench.symbol] || null,
+        score: Math.round(currentScore * 100) / 100,
+        citedRules: [`guardrail_${noBench.type}`],
+        triggeredBy: `guardrail_${noBench.type}`,
+        source: 'guardrail',
+        evalId: null,
+        symbolOut: noBench.symbol,
+        symbolIn: null,
+      });
+    }
+
+    if (deterministicResult.decision !== 'SWAP' || !deterministicResult.symbolOut || !deterministicResult.symbolIn) return;
+
+    // Fail-closed reason guard: only a guardrail_* provenance may execute from
+    // this pass — the forced-exit path always stamps one; anything else is a
+    // shape drift this pass refuses to run.
+    const deterministicExitReason = deterministicResult.sourceNote;
+    if (typeof deterministicExitReason !== 'string' || !deterministicExitReason.startsWith('guardrail_')) return;
+
+    const slot = findPortfolioSlot(battle.portfolio, deterministicResult.symbolOut);
+    if (!slot) {
+      console.warn(`${LOG_PREFIX} R11 pass: no portfolio slot for ${deterministicResult.symbolOut} — skipping`);
+      return;
+    }
+    const benchAsset = findBenchAsset(battle.portfolio?.bench, deterministicResult.symbolIn);
+    if (!benchAsset) {
+      console.warn(`${LOG_PREFIX} R11 pass: replacement ${deterministicResult.symbolIn} not on bench — skipping`);
+      return;
+    }
+
+    // F3 provenance purity: constructed from scratch — nothing model-side.
+    const evaluationMetadata = {
+      id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
+      action: 'SWAP',
+      trigger: deterministicExitReason,
+      rationale: deterministicResult.statusMessage || 'Deterministic guardrail enforcement during gameplan suppression (R11).',
+      hypothesis: null,
+      evaluationId: `guardrail_${deterministicExitReason}_${deterministicResult.symbolOut}_${Date.now()}`,
+      tradingDay: currentDay,
+      entryRegime: stockRegimes[deterministicResult.symbolOut] || null,
+      entryMarketPosture: marketPosture,
+      entryConviction: 0,
+      entryPreset: battle.strategyPreset || 'balanced',
+      entryMode: battle.executionMode || 'autopilot',
+      exitReason: deterministicExitReason,
+      swapMotive: null,
+      ...buildSwapReceiptSource({ source: 'guardrail', archetype: ctx.archetype }),
+      ...buildSwapProvenance(dialClamp.provenance),
+      trade_reasoning: null,
+    };
+
+    const snapshot = {
+      symbolOut: buildTechnicalSnapshot(deterministicResult.symbolOut, {
+        momentumData,
+        technicalScoresMap,
+        rankingsMap: momentumData.rankingsMap,
+      }),
+      symbolIn: buildTechnicalSnapshot(deterministicResult.symbolIn, {
+        momentumData,
+        technicalScoresMap,
+        rankingsMap: momentumData.rankingsMap,
+      }),
+    };
+
+    // P2 phase 1: transactional reserve (no-op — always reserved — for
+    // regular battles); a lost reserve skips with a feed event, position kept.
+    const reservation = await reserveTournamentSymbolIn(db, tournamentCtx, battle, deterministicResult.symbolIn);
+    if (!reservation.reserved) {
+      console.warn(`${LOG_PREFIX} R11 pass: reserve failed for ${deterministicResult.symbolIn} (${reservation.reason}) — skipped`);
+      statusFeedEntries.push(buildPoolEmptyFeedEntry({
+        message: `Wanted out of ${deterministicResult.symbolOut} — ${deterministicResult.symbolIn} is already taken in the group's agent market.`,
+        symbolOut: deterministicResult.symbolOut,
+        symbolIn: deterministicResult.symbolIn,
+        regime: stockRegimes[deterministicResult.symbolOut] || null,
+        score: Math.round(currentScore * 100) / 100,
+        reason: deterministicExitReason,
+      }));
+      return;
+    }
+    if (tournamentCtx) reservedSymbolIn = deterministicResult.symbolIn;
+
+    // Corpus Capture Patch W2 posture — snapshot the outgoing position BEFORE
+    // executeSwapServer closes it. A single null assignment while dark.
+    const l1OutgoingPosition = LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
+      ? (battle.portfolio?.[slot.tier]?.[slot.slotIndex] || null)
+      : null;
+
+    const passSwapResult = await executeSwapServer(
+      db, battle.id, battle,
+      slot.tier, slot.slotIndex,
+      benchAsset, currentDay, prices, evaluationMetadata, snapshot
+    );
+
+    // P2 phase 2: confirm + double-down detection (no-op when tournamentCtx
+    // is null). Actual symbols from closedTrade.
+    await confirmTournamentSwap(db, tournamentCtx, battle, {
+      symbolIn: passSwapResult.closedTrade?.symbolIn || deterministicResult.symbolIn,
+      symbolOut: passSwapResult.closedTrade?.symbolOut || deterministicResult.symbolOut,
+    }, statusFeedEntries);
+    reservedSymbolIn = null;
+
+    pendingNarrations.push({
+      closedTrade: passSwapResult.closedTrade,
+      evalId: null, // suppression-tick fires carry no eval umbrella id (risk-loop precedent)
+    });
+
+    statusFeedEntries.push({
+      timestamp: new Date().toISOString(),
+      message: deterministicResult.statusMessage || `Guardrail override: forced exit ${deterministicResult.symbolOut} → ${deterministicResult.symbolIn}.`,
+      pvpContext: null,
+      action: 'forced_exit',
+      regime: stockRegimes[deterministicResult.symbolOut] || null,
+      score: Math.round(currentScore * 100) / 100,
+      citedRules: [deterministicExitReason],
+      triggeredBy: deterministicExitReason,
+      source: 'guardrail',
+      evalId: null,
+      symbolOut: deterministicResult.symbolOut,
+      symbolIn: deterministicResult.symbolIn,
+    });
+
+    summary.swapped++;
+
+    // [VWAP Floor B1b] parity: reset the incoming symbol's in-memory counters —
+    // finalizeCronState runs right after this pass on both suppression paths
+    // and must not persist a stale streak onto the fresh position.
+    vwapTicks[deterministicResult.symbolIn] = 0;
+    stagnationTicks[deterministicResult.symbolIn] = 0;
+
+    // Corpus Capture Patch W2 — L1 capture, guardrail class (this pass).
+    // Post-commit, triple-gated, awaited fail-closed, isolated try/catch that
+    // can never break the executed trade.
+    if (LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
+        && classifyEvidence({ isCpu: battle.isCpu, agentId: attributionAgentId }) === 'live_agent') {
+      try {
+        // Replacement can be a hotBench swap-in — refetch exactly like the
+        // risk-loop site; a failed/absent refetch degrades to nulls.
+        const { snapshotIn: passSnapshotIn, techDocIn: passTechDocIn, entrySnapshotSource: passEntrySnapshotSource } =
+          await resolveEntrySnapshot({
+            db,
+            symbol: deterministicResult.symbolIn,
+            primarySnapshotIn: snapshot.symbolIn,
+            primaryTechDoc: technicalScoresMap?.[deterministicResult.symbolIn] ?? null,
+            momentumData,
+            technicalScoresMap,
+          });
+        const passRegimeIn =
+          stockRegimes[deterministicResult.symbolIn] ??
+          (passTechDocIn ? classifyStockRegime(passTechDocIn) : null);
+        const passRankingsData =
+          rankingsResult?.status === 'fulfilled' && rankingsResult.value?.exists
+            ? rankingsResult.value.data()
+            : null;
+        const passEntryATR = passSwapResult.incomingAsset?.baseATR ?? null;
+        const passEntryAtrSource = classifyEntryAtrSource({
+          entryATR: passEntryATR,
+          scoredThreshold: battle.scoring?.thresholds?.[deterministicResult.symbolIn]?.threshold,
+          benchBaseATR: benchAsset?.baseATR,
+          isCrypto: benchAsset?.isCrypto,
+        });
+        await captureSwapReceipt({
+          enabled: true,
+          db,
+          agentId: attributionAgentId,
+          archetype: ctx.archetype ?? null,
+          isCpu: battle.isCpu,
+          battleId: battle.id,
+          battleDay: currentDay,
+          timestamp: passSwapResult.closedTrade?.swappedOutAt || null,
+          receiptSeq: (battle.scoreState?.tradeCount || 0) + 1,
+          symbolIn: passSwapResult.closedTrade?.symbolIn ?? deterministicResult.symbolIn,
+          symbolOut: passSwapResult.closedTrade?.symbolOut ?? deterministicResult.symbolOut,
+          source: 'guardrail',
+          exitReason: deterministicExitReason,
+          haikuSwapReason: null, // not a Haiku path
+          resolvedTier: slot.tier,
+          resolvedSlotIndex: slot.slotIndex,
+          entryMark: passSwapResult.incomingAsset?.swapPrice ?? null,
+          entryATR: passEntryATR,
+          entryAtrSource: passEntryAtrSource,
+          outgoingEntryPrice: passSwapResult.closedTrade?.entryPrice ?? null,
+          outgoingBaseATR: l1OutgoingPosition?.baseATR ?? null,
+          thresholdHistory: battle.thresholdHistory?.[deterministicResult.symbolOut] ?? null,
+          outgoingSwappedInAt: l1OutgoingPosition?.swappedInAt ?? null,
+          outgoingSwappedInDay: l1OutgoingPosition?.swappedInDay ?? null,
+          archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+          snapshotIn: passSnapshotIn,
+          snapshotOut: snapshot.symbolOut,
+          entrySnapshotSource: passEntrySnapshotSource,
+          regimeIn: passRegimeIn,
+          regimeOut: stockRegimes[deterministicResult.symbolOut] ?? null,
+          techDocIn: passTechDocIn,
+          techDocOut: technicalScoresMap?.[deterministicResult.symbolOut] ?? null,
+          dataMode: passRankingsData?.mode ?? null,
+          rankingsComputedAtMs: passRankingsData?.computedAt?.toMillis?.() ?? null,
+          tradeCountAtDecision: battle.scoreState?.tradeCount ?? null,
+          tradesLenAtDecision: battle.trades?.length ?? null,
+          capturedAt: new Date().toISOString(),
+        });
+      } catch (l1Err) {
+        console.error(`${LOG_PREFIX} L1 capture threw (ignored, trade unaffected): ${l1Err?.message}`);
+      }
+    }
+
+    // Re-read battle doc after swap so the suppression block's own write
+    // (finalizeCronState → battleRef.update) works from fresh state.
+    await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} R11 deterministic pass failed for ${battle.id}:`, err?.message);
+    // [VWAP Floor B7] parity: a deterministically-failing exit must not go unobserved.
+    statusFeedEntries.push({
+      timestamp: new Date().toISOString(),
+      message: `Guardrail exit failed during gameplan suppression: ${String(err?.message || err).slice(0, 140)}`,
+      pvpContext: null,
+      action: 'risk_swap_failed',
+      regime: null,
+      score: Math.round(currentScore * 100) / 100,
+      citedRules: deterministicResult?.sourceNote ? [deterministicResult.sourceNote] : ['guardrail'],
+      triggeredBy: deterministicResult?.sourceNote || 'guardrail',
+      source: 'guardrail',
+      evalId: null,
+      symbolOut: deterministicResult?.symbolOut || null,
+      symbolIn: deterministicResult?.symbolIn || null,
+    });
+    // P2: compensating release (the reserve landed but the swap didn't).
+    await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
+  }
 }
 
 // ==================== GAMEPLAN MEETING ====================

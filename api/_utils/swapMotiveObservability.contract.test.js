@@ -69,9 +69,26 @@ describe('Swap Motive Observability — exitReason byte-equality across the four
 describe('Swap Motive Observability — swapMotive is a SEPARATE additive sibling', () => {
   it('the motive is stamped from the model swap_type, never onto exitReason', () => {
     // Present on the model-swap metadata objects, alongside (not replacing) exitReason.
-    const stamps = cronSource.match(/swapMotive: haikuResult\?\.swap_type \?\? null,/g) || [];
-    // Autopilot (live) + proposal creation (dormant, forward-compat) = 2 sites.
-    expect(stamps.length).toBe(2);
+    // Exit-Behavior Tier 2 Ask 3 (F3, endorsed constraint — amended additively
+    // in the same PR per R3): the AUTOPILOT stamp is now deterministic-aware —
+    // a guardrail_* exitReason stamps motive NULL (a guardrail-materialized
+    // haikuResult spreads prior model output, and a stale swap_type must never
+    // ride onto a forced swap). The unconditional spelling remains only at the
+    // proposal-creation site (dormant, always discretionary by construction).
+    const conditionalStamps = cronSource.match(/swapMotive: haikuSwapReason === 'haiku_decision' \? \(haikuResult\?\.swap_type \?\? null\) : null,/g) || [];
+    expect(conditionalStamps.length).toBe(1); // autopilot (live)
+    const unconditionalStamps = cronSource.match(/swapMotive: haikuResult\?\.swap_type \?\? null,/g) || [];
+    expect(unconditionalStamps.length).toBe(1); // proposal creation (dormant)
+  });
+
+  it('F3 (Ask 3): every deterministic execution path stamps motive null — engine physics never masquerades as model judgment', () => {
+    // The R11 suppression pass constructs its receipt from scratch: motive is
+    // the literal null, trade_reasoning likewise (nothing model-side exists).
+    const fromScratch = cronSource.match(/swapMotive: null,/g) || [];
+    expect(fromScratch.length).toBeGreaterThanOrEqual(1);
+    // And the risk-loop metadata (bust/vwap/trail/stagnation) never stamps a
+    // model motive at all — absent field, never a fabricated value.
+    expect(cronSource).not.toMatch(/swapMotive: riskResult/);
   });
 
   it('no stamp ever writes a compound haiku:* value into exitReason (the retired approach)', () => {
