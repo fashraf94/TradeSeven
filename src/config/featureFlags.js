@@ -508,6 +508,43 @@ export function isTrainingPodDesktopOn() {
 }
 
 /**
+ * League Training — "Awaiting the Open" REDESIGN of the practice pod's
+ * awaiting-open body (AwaitingOpenPodView). Visual + structural, presentation
+ * only: layered surfaces, atmosphere, a hero countdown, a full-width draftboard
+ * panel, and a wire panel whose rows each carry their own Claim — replacing the
+ * standalone two-dropdown claims builder with a per-row swap sheet.
+ *
+ * INDEPENDENT of TRAINING_POD_DRAFT_V2_ENABLED and TRAINING_POD_DESKTOP_ENABLED
+ * (both LIVE) — this gates ONLY the redesigned awaiting-open body. Flag-off
+ * (default) = today's screen at every width, byte-identical (instant rollback).
+ *
+ * No data, scoring, decision, or claims-logic change: the same reads, and claims
+ * still go through the unchanged placeClaim({ groupId, dropSymbol, addSymbol })
+ * — the redesign changes the UI that CALLS it, never the call. The calibration
+ * fence is untouched. Ranked (LiveDraftAwaiting) is a separate component and is
+ * not touched.
+ *
+ * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview
+ * smoke (the TRAINING_POD_DESKTOP_ENABLED precedent) — never in the build PR.
+ */
+export const AWAITING_OPEN_REDESIGN_ENABLED = false;
+
+/**
+ * The ONE home for the redesign gate — the flag OR the `?awaitingOpenRedesign=1`
+ * dev-preview override (the `?trainingPodDesktop=1` idiom). SSR/Node-safe
+ * (guards `window`); a malformed URL degrades to the flag alone.
+ */
+export function isAwaitingOpenRedesignOn() {
+  if (AWAITING_OPEN_REDESIGN_ENABLED) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('awaitingOpenRedesign') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Rule Conflict Reconciler — equip-time DETECTION (shadow-safe half).
  *
  * The agent (BaggerBomb) path has no conflict resolution: contradictory hard

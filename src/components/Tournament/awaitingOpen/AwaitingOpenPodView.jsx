@@ -35,6 +35,8 @@ import FreeAgentsList from './FreeAgentsList';
 import ClaimFlipWindow from '../ClaimFlipWindow';
 import GroupFeed from '../GroupFeed';
 import AssetResearchModal from '../../draft/AssetResearchModal';
+import AwaitingOpenShell from './AwaitingOpenShell';
+import { isAwaitingOpenRedesignOn } from '../../../config/featureFlags';
 
 const CLAIM_CAP = TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE; // 3 pending
 
@@ -133,18 +135,54 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
     <ClaimFlipWindow group={pod} uid={uid} claimsOnly prefillRequest={claimPrefill} claims={claims} />
   );
 
+  // The research modal is wired ONCE for both the classic and the redesigned
+  // body (spec §6.3 — preserve, don't redesign): a ticker tap on either surface
+  // lands here, so the two paths can never drift on how research opens.
+  const researchModal = researchSym && (
+    <AssetResearchModal
+      asset={{ symbol: researchSym, name: researchSym, sector: researchSector }}
+      sector={researchSector}
+      onClose={() => setResearchSym(null)}
+    />
+  );
+
+  const countdownHero = <PodCountdownHero targetIso={pod?.startAnchor?.anchorIso || null} />;
+
+  const draftboard = (
+    <UserDraftboard
+      pod={pod}
+      uid={uid}
+      events={events}
+      sectorMap={sectorMap}
+      picksPerPlayer={PICKS_PER_PLAYER}
+      onResearch={setResearchSym}
+    />
+  );
+
+  // Awaiting-the-Open REDESIGN (AWAITING_OPEN_REDESIGN_ENABLED or
+  // ?awaitingOpenRedesign=1). Same reads, same claim call — the shell owns the
+  // layout and atmosphere; the sections are replaced phase by phase. Flag-off
+  // falls through to today's body below, byte-identical.
+  if (isAwaitingOpenRedesignOn()) {
+    return (
+      <>
+        <AwaitingOpenShell desktop={desktop}>
+          {countdownHero}
+          {draftboard}
+          {freeAgents}
+          <div ref={claimsRef}>{claimsBuilder}</div>
+          <GroupFeed feed={pod?.feed} uid={uid} />
+        </AwaitingOpenShell>
+        {researchModal}
+      </>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, ...FONT_VARS }}>
-      <PodCountdownHero targetIso={pod?.startAnchor?.anchorIso || null} />
+      {countdownHero}
 
-      <UserDraftboard
-        pod={pod}
-        uid={uid}
-        events={events}
-        sectorMap={sectorMap}
-        picksPerPlayer={PICKS_PER_PLAYER}
-        onResearch={setResearchSym}
-      />
+      {draftboard}
 
       {desktop ? (
         // Desktop (D-L3): the two-column interactive body — best-remaining free
@@ -172,13 +210,7 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
 
       <GroupFeed feed={pod?.feed} uid={uid} />
 
-      {researchSym && (
-        <AssetResearchModal
-          asset={{ symbol: researchSym, name: researchSym, sector: researchSector }}
-          sector={researchSector}
-          onClose={() => setResearchSym(null)}
-        />
-      )}
+      {researchModal}
     </div>
   );
 }
