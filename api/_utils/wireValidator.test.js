@@ -14,6 +14,7 @@ import {
   EVENT_TYPES,
   DIRECTIONS,
   UNITS,
+  BASIS_UNITS,
 } from './wireContracts.js';
 
 const goodEarningsFacts = () => ({
@@ -324,20 +325,118 @@ describe('wireValidator — R5 truncation', () => {
 });
 
 describe('wireValidator — derived-not-literal contract lock', () => {
-  it('accepts every direction/unit the contracts export, rejects one past the fence', () => {
+  it('accepts every direction/unit the contract allows; drops units past the per-basis fence', () => {
     for (const direction of DIRECTIONS) {
       const facts = goodEarningsFacts();
       facts.direction = direction;
       facts.magnitude.value = direction === 'down' ? -8.2 : 8.2;
       expect(run(facts).codes).not.toContain(WIRE_CODES.SALVAGE_DIRECTION);
     }
-    for (const unit of UNITS) {
+    // Units are DERIVED from the contract, now per-basis (V1.7 BASIS_UNITS):
+    // every unit the allowlist permits for eps_vs_consensus survives...
+    for (const unit of BASIS_UNITS.eps_vs_consensus) {
       const facts = goodEarningsFacts();
       facts.magnitude = { value: 1, unit, basis: 'eps_vs_consensus' };
       expect(run(facts).facts.magnitude?.unit, unit).toBe(unit);
     }
+    // ...a unit in UNITS but OUTSIDE the basis's set is a mislabel, salvage-
+    // dropped (magnitude degrades away), distinctly coded...
+    const offBasisUnit = UNITS.find((u) => !BASIS_UNITS.eps_vs_consensus.includes(u)); // e.g. 'pp'
+    const mislabel = goodEarningsFacts();
+    mislabel.magnitude = { value: 1, unit: offBasisUnit, basis: 'eps_vs_consensus' };
+    const mv = run(mislabel);
+    expect(mv.facts.magnitude).toBeNull();
+    expect(mv.codes).toContain(WIRE_CODES.SALVAGE_UNIT_FOR_BASIS);
+    // ...and a unit past the whole UNITS fence is shape-invalid.
     const bad = goodEarningsFacts();
     bad.magnitude = { value: 1, unit: 'furlongs', basis: 'eps_vs_consensus' };
     expect(run(bad).codes).toContain(WIRE_CODES.SALVAGE_MAGNITUDE);
+  });
+});
+
+// ── A6: the figure-quality belt (V1.7) over the REAL 2026-08-19 defects ────
+// SALVAGE-DROP, not hold: a figure is supplementary, so the story stays true
+// without it; distinct codes so every drop is counted in validationStats.byRule.
+describe('wireValidator — figure-quality belt (V1.7): unit allowlist · same-basis consistency · band', () => {
+  // A market_mover (alex): magnitude + figures all on price_vs_prior_close.
+  const mover = (magnitude, figures) => ({
+    eventType: 'market_mover', tickers: ['MRK'], direction: 'up', magnitude, figures,
+  });
+
+  it('MRK: three price_vs_prior_close figures — count mislabel + 49% contradiction drop, the $ move stays', () => {
+    const v = run(
+      mover(
+        { value: 9.41, unit: 'pct', basis: 'price_vs_prior_close' },
+        [
+          { value: 12.72, unit: 'usd', basis: 'price_vs_prior_close' }, // legit second unit — KEEP
+          { value: 1137, unit: 'count', basis: 'price_vs_prior_close' }, // trial-readout mislabel — DROP
+          { value: 49, unit: 'pct', basis: 'price_vs_prior_close' },     // contradicts the +9.41% anchor — DROP
+        ]
+      ),
+      { reporter: 'alex' }
+    );
+    expect(v.outcome).toBe(WIRE_OUTCOMES.SALVAGED);
+    expect(v.facts.magnitude).toEqual({ value: 9.41, unit: 'pct', basis: 'price_vs_prior_close' });
+    expect(v.facts.figures).toEqual([{ value: 12.72, unit: 'usd', basis: 'price_vs_prior_close' }]);
+    expect(v.codes).toContain(WIRE_CODES.SALVAGE_UNIT_FOR_BASIS);  // the 1137 count
+    expect(v.codes).toContain(WIRE_CODES.SALVAGE_BASIS_CONFLICT);  // the 49 vs 9.41
+  });
+
+  // A volume_surge (kai): magnitude on volume_vs_avg, which is a MULTIPLE (x).
+  const volume = (magnitude) => ({
+    eventType: 'volume_surge', tickers: ['ZZZ'], direction: 'up', magnitude,
+  });
+
+  it('TSLA unit mislabel: volume_vs_avg in `count` drops the magnitude (degrades to a bare move)', () => {
+    const v = run({ ...volume({ value: 19.52, unit: 'count', basis: 'volume_vs_avg' }), tickers: ['TSLA'] }, { reporter: 'kai' });
+    expect(v.outcome).toBe(WIRE_OUTCOMES.SALVAGED);
+    expect(v.facts.magnitude).toBeNull();
+    expect(v.codes).toContain(WIRE_CODES.SALVAGE_UNIT_FOR_BASIS);
+  });
+
+  it('PFE: volume_vs_avg in the correct unit `x` passes clean (the other side of the mislabel)', () => {
+    const v = run({ ...volume({ value: 26.03, unit: 'x', basis: 'volume_vs_avg' }), tickers: ['PFE'] }, { reporter: 'kai' });
+    expect(v.outcome).toBe(WIRE_OUTCOMES.PASSED);
+    expect(v.facts.magnitude).toEqual({ value: 26.03, unit: 'x', basis: 'volume_vs_avg' });
+    expect(v.codes).toEqual([]);
+  });
+
+  it('a GENUINE 49% mover passes: magnitude agrees, so consistency and the loose band both hold fire', () => {
+    const v = run(
+      mover(
+        { value: 49, unit: 'pct', basis: 'price_vs_prior_close' },
+        [{ value: 49, unit: 'pct', basis: 'price_vs_prior_close' }] // agrees with the anchor
+      ),
+      { reporter: 'alex' }
+    );
+    expect(v.outcome).toBe(WIRE_OUTCOMES.PASSED);
+    expect(v.facts.magnitude.value).toBe(49);
+    expect(v.facts.figures).toHaveLength(1);
+    expect(v.codes).toEqual([]);
+  });
+
+  it('the loose band is a backstop, not a plausibility judge: a physical-impossibility lone figure drops', () => {
+    // No magnitude anchor, legal unit, but 4000% is a mis-map, not a mover.
+    const v = run(
+      { eventType: 'market_mover', tickers: ['MRK'], direction: 'up',
+        figures: [{ value: 4000, unit: 'pct', basis: 'price_vs_prior_close' }] },
+      { reporter: 'alex' }
+    );
+    expect(v.facts.figures).toEqual([]);
+    expect(v.codes).toContain(WIRE_CODES.SALVAGE_IMPLAUSIBLE);
+  });
+
+  // ── documented limits (the tokens.guard / motion.guard precedent) ────────
+  describe('documented limits', () => {
+    it('is the TYPED channel only — a figure echoed in the story PROSE is the editorial advisory layer\'s job', () => {
+      // The belt cleans agentFacts (the typed figures/magnitude the digest
+      // renders). It neither receives nor emits the model's prose (headline /
+      // subheadline / body / pullquote) — the projection whitelist excludes it —
+      // so a stray "1137" in Alex's BODY is NOT scrubbed here. That hygiene
+      // belongs to the editorial advisory pass (REGISTERED, not a validator gap).
+      const v = run(goodEarningsFacts());
+      expect(Object.keys(v.facts)).not.toContain('body');
+      expect(Object.keys(v.facts)).not.toContain('headline');
+    });
   });
 });

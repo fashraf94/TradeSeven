@@ -34,6 +34,8 @@ import {
   WIRE_OUTCOMES,
   WIRE_VALIDATOR_VERSION,
   figureBasesFor,
+  BASIS_UNITS,
+  BASIS_UNIT_BANDS,
 } from './wireContracts.js';
 
 // The ONLY keys projection copies through. Anything else, at any depth of
@@ -46,6 +48,17 @@ const FIGURE_KEYS = ['value', 'unit', 'basis'];
 
 // R2's named check (observability; subsumed by R1 but reported distinctly).
 const DIRECTIVE_FIELDS = ['recommended_action', 'sentiment'];
+
+// Two declarations of the SAME quantity (same basis+unit) agree within a
+// rounding / source-variance allowance. This is a RELATIVE agreement anchored
+// to the pair — NOT an absolute plausibility threshold — so it never judges a
+// lone value as "too big"; it only tells whether two numbers that must be equal
+// are equal (V1.7 same-basis consistency belt). 9.41 vs 49 disagree; 49 vs 48.6
+// agree. Guards a tiny absolute floor so near-zero values don't over-agree.
+const CONSISTENCY_REL_TOL = 0.05;
+function valuesAgree(a, b) {
+  return Math.abs(a - b) <= Math.max(1e-9, CONSISTENCY_REL_TOL * Math.max(Math.abs(a), Math.abs(b)));
+}
 
 /** Normalize a ticker: uppercase, trim, dots→hyphens (D8/F1). */
 export function normalizeWireTicker(raw) {
@@ -359,6 +372,90 @@ export function validateAgentFacts({ rawAgentFacts, reporter, stopReason, primar
         reasons.push(`direction=${direction} contradicts figures[] value=${f.value} on direction-subject basis ${f.basis}`);
         return reject();
       }
+    }
+  }
+
+  // ── figure-quality belt (V1.7): basis↔unit allowlist · same-(basis,unit)
+  //    consistency vs the magnitude anchor · loose mis-map band ────────────
+  // Shape-legal ≠ semantically-coherent. Runs AFTER the A3 sign-reject (so an
+  // opposite-sign figure still REJECTs, unchanged) and SALVAGE-DROPS the
+  // remaining incoherent declarations (magnitude · figures · keyLevel) — a
+  // figure is supplementary, so the story stays true without it (a dropped
+  // magnitude degrades the digest to "SYM move."). Each drop carries a DISTINCT
+  // code so validationStats.byRule counts the reason. Order per founder ruling:
+  // allowlist → same-basis consistency → loose band.
+  {
+    // (1) Per-basis unit allowlist: a unit a basis cannot carry is a mislabel
+    //     (2026-08-19: volume_vs_avg in 'count', price_vs_prior_close in
+    //     'count'). A basis absent from BASIS_UNITS is intentionally
+    //     unconstrained (the econ bases — native units span the whole enum).
+    const unitAllowed = (basis, unit) => {
+      const allowed = BASIS_UNITS[basis];
+      return !allowed || allowed.includes(unit);
+    };
+    if (magnitude && !unitAllowed(magnitude.basis, magnitude.unit)) {
+      codes.push(WIRE_CODES.SALVAGE_UNIT_FOR_BASIS);
+      reasons.push(`magnitude unit '${magnitude.unit}' cannot carry basis '${magnitude.basis}'; dropped`);
+      magnitude = null;
+    }
+    figures = figures.filter((f) => {
+      if (unitAllowed(f.basis, f.unit)) return true;
+      codes.push(WIRE_CODES.SALVAGE_UNIT_FOR_BASIS);
+      reasons.push(`figure unit '${f.unit}' cannot carry basis '${f.basis}'; dropped`);
+      return false;
+    });
+
+    // (2) Same-(basis,unit) consistency vs the magnitude anchor. A figure that
+    //     shares the magnitude's basis AND unit declares the SAME quantity, so a
+    //     value that disagrees beyond rounding is provably wrong — the
+    //     data-anchored magnitude wins, the figure drops (2026-08-19 MRK:
+    //     magnitude +9.41% vs a +49% figure on price_vs_prior_close). No
+    //     absolute threshold, so it cannot misfire on a genuine 49% mover (its
+    //     magnitude is 49% and agrees). A DIFFERENT unit on the same basis (a
+    //     $12.72 move beside a +9.41% move) is a legitimate second expression
+    //     and is NOT compared.
+    if (magnitude) {
+      figures = figures.filter((f) => {
+        if (f.basis !== magnitude.basis || f.unit !== magnitude.unit) return true;
+        if (valuesAgree(f.value, magnitude.value)) return true;
+        codes.push(WIRE_CODES.SALVAGE_BASIS_CONFLICT);
+        reasons.push(
+          `figure {${f.value},${f.unit},${f.basis}} contradicts magnitude ` +
+          `{${magnitude.value},${magnitude.unit}} on the same basis+unit; dropped`
+        );
+        return false;
+      });
+    }
+
+    // (3) Loose mis-map band backstop (BASIS_UNIT_BANDS, sparse). Ranked LAST:
+    //     only catches a lone legal-unit value that is a physical impossibility
+    //     for its basis (a 'pct' price move of 1137×-scale). Sized for
+    //     mis-mapping, never close calls.
+    const overBand = (basis, unit, value) => {
+      const cap = BASIS_UNIT_BANDS[`${basis}:${unit}`];
+      return cap !== undefined && Math.abs(value) > cap;
+    };
+    if (magnitude && overBand(magnitude.basis, magnitude.unit, magnitude.value)) {
+      codes.push(WIRE_CODES.SALVAGE_IMPLAUSIBLE);
+      reasons.push(`magnitude value ${magnitude.value}${magnitude.unit} exceeds the mis-map band for ${magnitude.basis}; dropped`);
+      magnitude = null;
+    }
+    figures = figures.filter((f) => {
+      if (!overBand(f.basis, f.unit, f.value)) return true;
+      codes.push(WIRE_CODES.SALVAGE_IMPLAUSIBLE);
+      reasons.push(`figure value ${f.value}${f.unit} exceeds the mis-map band for ${f.basis}; dropped`);
+      return false;
+    });
+
+    // keyLevel carries no basis/unit vocabulary; the one deterministic coherence
+    // available is that a price LEVEL is strictly positive (a negative/zero
+    // "prior high" is impossible). A tighter level band would need an
+    // absolute-price anchor the typed facts do not carry — registered limitation
+    // (wireValidator.test.js "documented limits").
+    if (keyLevel && !(keyLevel.price > 0)) {
+      codes.push(WIRE_CODES.SALVAGE_IMPLAUSIBLE);
+      reasons.push(`keyLevel price ${keyLevel.price} is not a positive price level; dropped`);
+      keyLevel = null;
     }
   }
 
