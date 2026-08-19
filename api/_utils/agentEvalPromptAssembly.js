@@ -20,10 +20,12 @@ import { isDirectiveActive } from './directiveUtils.js';
 // api → src Node-clean (BUILD_RULES §4).
 import { resolveControls, renderControlBlocks } from './controlPromptRenderer.js';
 import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
-// Ask 1 data-add #1: the canonical bonus levels (BUILD_RULES §4 — never a
-// local copy of scoring constants). Node-clean; the ask1 test's unmocked
-// import of this module is the dependency-surface guard.
-import { THRESHOLD_MULTIPLIERS } from '../../src/constants/baggerBombScoring.js';
+// Ask 1 data-add #1: the canonical ordered bonus tiers (BUILD_RULES §4 —
+// never a local copy of scoring constants; /code-review CR-5: derive the
+// level list, never hand-copy it, so a future tier addition cannot silently
+// skip the Δ column). Node-clean; the ask1 test's unmocked import of this
+// module is the dependency-surface guard.
+import { BAGGER_TIERS } from '../../src/constants/baggerBombScoring.js';
 import {
   computeGameContext,
   rankAndSelectStories,
@@ -140,27 +142,44 @@ function renderForgeRulesGuidance() {
 ${renderPrecedenceBlock()}`;
 }
 
-/** Resolve an equipped SX-04's numeric target — paramValues first, authored
- * default second, null when neither is numeric (fail-honest: the caller falls
- * back to the rule's own text rather than fabricating an X). */
-function resolveSx04TargetPct(r) {
-  const v = r?.paramValues?.profitTargetPct ?? r?.params?.profitTargetPct?.default;
-  return typeof v === 'number' && v > 0 ? v : null;
+/** The §9-true X for the SX-04 render: the value the ENGINE actually enforces
+ * — battle.agentContext.deployedGuardrails' profitTarget entry, the exact
+ * store applyGuardrails fires on (review C-6: the rule item's paramValues can
+ * drift from the deployed value on a legacy bundle, and a sentence claiming
+ * deterministic enforcement must never cite a number the engine does not
+ * hold — so there is deliberately NO rule-store fallback). Null when no
+ * profitTarget guardrail is deployed: then the executor will not fire and
+ * the enforcement-true render would be a lie — the rule's own text renders. */
+function resolveEnforcedProfitTargetPct(battle) {
+  const guardrails = battle?.agentContext?.deployedGuardrails;
+  if (!Array.isArray(guardrails)) return null;
+  // MIRROR the engine exactly (/code-review CR-1): applyGuardrails indexes
+  // byType with keep-LAST dedup, then fires on Math.abs(value) — so a doc
+  // carrying two profitTarget entries, or a legacy negative value, must
+  // resolve HERE to the same number it resolves to THERE.
+  let last = null;
+  for (const g of guardrails) {
+    if (g && g.type === 'profitTarget') last = g;
+  }
+  if (!last || typeof last.value !== 'number') return null;
+  const x = Math.abs(last.value);
+  // The executor skips non-positive thresholds (pickBestTargetBreach's
+  // `!(threshold > 0)` guard) — a 0 target never fires, so never claim it.
+  return x > 0 ? x : null;
 }
 
 /** Equipped-rule text for the prompt. Flag-on, SX-04 gets the post-executor
  * render (Rulings V1, verbatim intent): the target is a FACT the engine
  * enforces — the framework must never fight the user's own rule in the same
- * prompt again. Every other rule (and SX-04 with an unresolvable X, or while
- * dark) renders exactly as before. */
-function renderEquippedRuleText(r) {
-  if (PROFIT_TARGET_EXECUTOR_ENABLED && r?.id === 'sx-04') {
-    const x = resolveSx04TargetPct(r);
-    if (x !== null) {
-      return sanitizeRuleText(
-        `Profit target: the user's target is ${x}%. The engine enforces it deterministically — treat it as a fact of the environment. You may exit earlier in character; the target itself is never negotiable.`,
-      );
-    }
+ * prompt again. Keys on `ruleId` — the field BOTH live projection writers
+ * emit (projectActiveRules / bundleRuleProjection; review C-5) — with `id`
+ * tolerated for legacy shapes. Every other rule (and SX-04 with no deployed
+ * enforcement value, or while dark) renders exactly as before. */
+function renderEquippedRuleText(r, enforcedTargetPct) {
+  if (PROFIT_TARGET_EXECUTOR_ENABLED && (r?.ruleId ?? r?.id) === 'sx-04' && enforcedTargetPct !== null) {
+    return sanitizeRuleText(
+      `Profit target: the user's target is ${enforcedTargetPct}%. The engine enforces it deterministically — treat it as a fact of the environment. You may exit earlier in character; the target itself is never negotiable.`,
+    );
   }
   return resolveRuleText(r);
 }
@@ -668,16 +687,19 @@ ${ctx.consolidatedInsight}`);
       expectedSourceGeneration: battle.resolvedAgentManifest?.compositionSourceGeneration ?? null,
     });
 
+    // Ask 1 (C-6): resolve the ENGINE's enforced target once per battle — the
+    // SX-04 render cites this value or nothing.
+    const enforcedTargetPct = resolveEnforcedProfitTargetPct(battle);
     const ruleLines = [];
     if (constraints.length > 0) {
       const cLines = constraints.map((r, i) =>
-        `C${i + 1}. ${appendCompositionAdvisory(renderEquippedRuleText(r), r, compositionAdvisories)} [${capitalize(r.category)}]`
+        `C${i + 1}. ${appendCompositionAdvisory(renderEquippedRuleText(r, enforcedTargetPct), r, compositionAdvisories)} [${capitalize(r.category)}]`
       );
       ruleLines.push(`== CONSTRAINTS (must obey) ==\n${cLines.join('\n')}`);
     }
     if (strategies.length > 0) {
       const sLines = strategies.map((r, i) =>
-        `S${i + 1}. ${appendCompositionAdvisory(renderEquippedRuleText(r), r, compositionAdvisories)} [${capitalize(r.category || 'general')}]`
+        `S${i + 1}. ${appendCompositionAdvisory(renderEquippedRuleText(r, enforcedTargetPct), r, compositionAdvisories)} [${capitalize(r.category || 'general')}]`
       );
       ruleLines.push(`== STRATEGY PREFERENCES (should follow) ==\n${sLines.join('\n')}`);
     }
@@ -1296,8 +1318,9 @@ function lockNowCell(score) {
  * bonuses are earned. */
 function nextBonusCell(score) {
   const crossedMax = score.history?.maxMultiplier ?? 0;
-  const next = [THRESHOLD_MULTIPLIERS.bagger, THRESHOLD_MULTIPLIERS.doubleBagger, THRESHOLD_MULTIPLIERS.tenBagger]
-    .find(level => level > crossedMax);
+  // BAGGER_TIERS is the canonical ascending positive-tier array — the same
+  // source the scorer's badge grants read (§4 one source, CR-5).
+  const next = BAGGER_TIERS.map(t => t.multiplier).find(level => level > crossedMax);
   if (next === undefined) return 'maxed';
   const distPct = (next - score.multiplier) * score.baseATR;
   return `+${distPct.toFixed(1)}%`;
@@ -1311,7 +1334,9 @@ function levelsCell(ranking) {
   if (!lvls) return '-';
   const side = (prefix, value, dist) => {
     if (value == null) return null;
-    const d = dist != null ? `(${dist >= 0 ? '+' : ''}${dist.toFixed(1)}%)` : '';
+    // toFixed(2) — the same precision the bench Levels line renders for the
+    // same read (review C-4: one read, one precision).
+    const d = dist != null ? `(${dist >= 0 ? '+' : ''}${dist.toFixed(2)}%)` : '';
     return `${prefix}${value.toFixed(2)}${d}`;
   };
   const parts = [

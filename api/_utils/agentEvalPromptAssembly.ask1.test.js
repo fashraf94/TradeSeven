@@ -184,8 +184,8 @@ describe('Ask 1 Phase B — FLAG ON: the position line prices the exit (data-add
 
   it('Levels renders where the read exists and "-" where it does not (R12 honest-null)', () => {
     const lines = csvOn().split('\n');
-    // 3.35.toFixed(1) → "3.4" (float ≈ 3.3500000000000001; toFixed convention).
-    expect(lines.find(l => l.startsWith('NVDA,'))).toMatch(/,S101\.20\(-3\.2%\)\/R108\.00\(\+3\.4%\)$/);
+    // toFixed(2) — the bench Levels line's precision, one read one precision (C-4).
+    expect(lines.find(l => l.startsWith('NVDA,'))).toMatch(/,S101\.20\(-3\.16%\)\/R108\.00\(\+3\.35%\)$/);
     expect(lines.find(l => l.startsWith('MSFT,'))).toMatch(/,-$/);
   });
 
@@ -205,15 +205,23 @@ describe('Ask 1 Phase B — the SX-04 render is enforcement-true on day one (Rul
     expect(identity).not.toContain('Sell any position that gains 15% from entry.');
   });
 
-  it('fail-honest: an SX-04 without a resolvable numeric target keeps its own text (no fabricated X)', () => {
+  it('fail-honest: SX-04 with NO deployed profitTarget guardrail keeps its own text — never claims enforcement the engine will not deliver (C-6)', () => {
     flagState.profitTarget = true;
     const battle = makeBattle(FLAT6_GAME_MODE);
-    battle.agentContext.activeRules = [
-      { id: 'sx-04', text: 'Sell winners into strength.', category: 'exit', hardness: 'soft' },
-    ];
+    battle.agentContext.deployedGuardrails = [];
     const identity = buildAgentIdentityBlock(battle);
-    expect(identity).toContain('Sell winners into strength.');
+    expect(identity).toContain('Sell any position that gains 15% from entry.');
     expect(identity).not.toContain("the user's target is");
+  });
+
+  it("drifted legacy bundle: the render cites the ENGINE's X, never the rule store's (§9 — review C-6's exact scenario)", () => {
+    flagState.profitTarget = true;
+    const battle = makeBattle(FLAT6_GAME_MODE);
+    // Rule text/paramValues say 15; the deployed (enforced) value is 20.
+    battle.agentContext.deployedGuardrails = [{ type: 'profitTarget', value: 20, unit: '%', enforcement: 'soft' }];
+    const identity = buildAgentIdentityBlock(battle);
+    expect(identity).toContain("the user's target is 20%");
+    expect(identity).not.toContain("the user's target is 15%");
   });
 
   it('flag OFF: the equipped rule renders exactly as today (golden already pins the whole block)', () => {

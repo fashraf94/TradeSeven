@@ -54,15 +54,39 @@ The joint Ask 1+3 flip PR (one constant + Ask 1's copy going live) reconciles:
 3. Nothing else: the ask1 suite, `ruleCompatInvariantR`, and `hardSoftOverride.parity` are flip-proof (empirically verified under a simulated flip this session), and the display pins were behavior-branched in Ask 3.
 4. State in the flip PR: from the flip forward, deterministic-reason swaps stamp `swapMotive: null` (Ask 3 A1 — the pre/post boundary for the Tier-1 motive baseline read), and the Ask 1 prose delta is live in every eval prompt.
 
-## 5. STOP-2 review (Phase B) — recorded below in §7 after the third adversarial pass and `/code-review`.
+## 5. STOP-2 review (Phase B) — Reviewer C + `/code-review` (high), findings & dispositions
+
+**Reviewer C** (Phase B fenced diff: §9 numeric honesty, rulings fidelity, dark contract; verdict BLOCK-as-was, two CONFIRMED — both dispositioned below). `/code-review` at high effort: 5 findings, all dispositioned.
+
+| # | Finding | Disposition |
+|---|---|---|
+| **C-5/C-6 CONFIRMED (critical, in-fence)** | The SX-04 render was DEAD against production data: keyed on `id` (live writers emit `ruleId`), read param `profitTargetPct` (stores key `pct`), and cited the rule store instead of the value the ENGINE enforces; its test passed on an invented fixture shape | **Fixed**: render keys `ruleId ?? id`; X resolves ONLY from `deployedGuardrails` (the store `applyGuardrails` fires on), engine-mirrored (keep-last dedup + `Math.abs` + the non-positive skip — CR-1 folded in); fixtures reshaped to the production item shape; drifted-bundle test asserts the render cites the engine's 20, never the store's 15. Deviation from C's suggestion argued: NO rule-store fallback — the enforcement sentence must never cite a number the engine does not hold |
+| **C-2 CONFIRMED (pre-existing engine; ESCALATION — see §6 item 1)** | Flat6 live scoring drops the D2 `tierMultiplier: 1.0` stamp (the cron rebuilds assets without it at its four scorer call sites; the executor's outgoing-asset rebuild likewise), so slot labels score 2.0/1.5x in production flat6 — and flag-on, the LockNow cell makes that contradiction with the same prompt's "flat — NO tier multipliers" text model-checkable. CSV==ledger HOLDS (the cell honestly previews the actual lock); the flat6 scoring TEXT is the falsified party | **Escalated, not patched** (§3 report-don't-fix + the guardrails escalate-never-patch doctrine; the engine sites are outside this task's sanction). Founder ruling required BEFORE flip: fix the stamp pass-through (engine change) or accept/hold the flat6 cell. Fixture models the STAMPED design shape (CR-3), stated in-file |
+| CR-1 | Enforced-X selection didn't mirror the engine (find-first + `>0` vs keep-last + `Math.abs`) | **Fixed** (folded into the C-6 fix; two-entry and negative-value docs now resolve identically at both sites) |
+| CR-2 | The live `targetFor` per-position override hook can contradict "never negotiable" if a doc carries `profitTargetOverridePct` | **Accepted + recorded**: no writer exists (verified); the Tier-3 lever arc MUST update the render when the writer ships — carried in §6 and the register |
+| CR-3 | Fixture computed flat6 scores with tier multipliers (an off-design shape) | **Fixed**: fixture stamps `tierMultiplier: 1.0` (the D2 doc shape) with the C-2 caveat stated in-file |
+| CR-4 | `sx-04`↔`profitTarget` pairing duplicated from `compile-dimensions.js` | Accepted + registered (a structural tripwire is future hygiene) |
+| CR-5 | Hand-listed bonus levels | **Fixed**: derived from the canonical ordered `BAGGER_TIERS` (§4 one-source) |
+| C-1, C-3, C-4, dark contract, flip sims, promise module, motive bullet | LockNow parity with the executor's lock math (baseline precedences identical both sides), NextBonus correctness, Levels staleness = bench precedent, goldens, flip map exactness | **REFUTED-OK** — attacks failed; C's flip simulation confirmed §4's map exactly (Phase B removed 3 flip-reds, added zero) |
 
 ## 6. Founder attention (pre-flip)
 
+- **① C-2 — FLIP-BLOCKING ESCALATION (and a standalone production finding):** flat6 live scoring applies 2.0/1.5x by slot label because the D2 `tierMultiplier: 1.0` stamp is dropped when the cron (and the executor's outgoing-asset rebuild) reconstruct assets for the scorer — production tournament `activeScore`/`lockedPoints` are off the flat-1x design TODAY, masked because nothing prints the decomposition. This predates Ask 1 entirely and deserves its own tasking regardless of this arc. For THIS arc: flag-on, the LockNow cell would let the model see the ×2 against the same prompt's flat-1x text — rule before flip: (a) fix the stamp pass-through (engine change, its own PR), or (b) accept the current math and fix the flat6 scoring TEXT instead, or (c) hold the flat6 LockNow cell. The build models the stamped design (a).
 - **R10 gate:** flip only with this branch merged — Phase A prose alone was ruled not flip-ready (A11); Phase B closes that, but the flip PR should confirm both commits are in.
 - **The inter-flip window (A9):** until Ask 2 flips, every prompt carries both the new inversion and the DR-13 "never reverse them" postscript. R8's yield clause is the Ask 2 fix; decide whether the window is acceptable (it is founder-sequenced today).
 - **A10 MUSTs:** optional one-line qualifiers on §8/late-battle text = new fence contact; rule if wanted, else the precedence block governs.
 - **R9:** N set at flip; the Tier-1 motive baseline is pre-treatment evidence on both sides of the boundary named in §4.4.
 
-## 7. Verification & Phase B review
+## 7. Separate-tasking register (§3 — found, not fixed)
 
-*(completed at STOP-2 — see the closing section below)*
+1. **The C-2 engine defect** (§6 ①): flat6 tier-multiplier stamp dropped at the cron's four scorer call sites + the executor's outgoing rebuild; no test pins the pass-through (the P4 battery proves the mechanism honors an explicit stamp, never that the callers supply it).
+2. Tier-3 coupling (CR-2): when the `profitTargetOverridePct` writer ships, the SX-04 render must account for per-position overrides.
+3. `sx-04`↔`profitTarget` pairing tripwire (CR-4); `sanitizeRuleText` 200-char clip on fractional X (cosmetic); NextBonus baseline-denomination header hint (precedented, optional).
+4. The explicit-object `featureFlags` mock migration (carried from the Ask 3 register; six files remain).
+
+## 8. Verification (STOP-2 gate)
+
+- Golden-provenance note: the fixture was reshaped post-capture (production `ruleId`/`pct` shape + the D2 stamp + `deployedGuardrails`); the flag-off goldens still bind byte-exactly because every reshaped field is invisible to the dark render (text/hardness drive it; points never print dark) — asserted by the passing golden suite, and the reshape is why the SX-04 dead-render class can never pass on an invented shape again.
+- Full repository suite at the final commit: exit code asserted and the `Test Files` line read directly (never piped through tail — the Ask 3 §8 lesson); numbers in the closing line below.
+- `vite build` ✓ (§2). Touched files lint clean against the repo's pre-existing baseline.
+- Flip simulations (three independent runs this arc — reviewers B, C, and the in-session pin check): the §4 map is exact.

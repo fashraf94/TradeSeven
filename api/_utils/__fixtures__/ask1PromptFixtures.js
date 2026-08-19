@@ -24,8 +24,15 @@ export const SYSTEM_PROMPT_ARGS = Object.freeze({
 // Two held positions: a winner deep past its first bonus (badges + positive
 // base) and a loser (negative base, no badges) — exercises both signs of the
 // decomposition and a real Δ-to-next-bonus on each.
-const NVDA = { symbol: 'NVDA', name: 'NVIDIA', tier: 'star', baseATR: 3.0, isCrypto: false, sector: 'Technology', swapPrice: 100, swappedInDay: 1 };
-const MSFT = { symbol: 'MSFT', name: 'Microsoft', tier: 'core', baseATR: 2.0, isCrypto: false, sector: 'Technology', swapPrice: 200, swappedInDay: 2 };
+// tierMultiplier: 1.0 — the D2 flat6 stamp (agentBattleService stamps every
+// tournament asset flat; /code-review CR-3: the fixture models the STAMPED
+// doc shape, so the §9 assertions validate the intended flat6 point values).
+// NOTE (review C-2, escalated in the audit record): the LIVE cron currently
+// DROPS this stamp when rebuilding assets for the scorer — a pre-existing
+// engine defect outside this fence. The fixture models the design, not the
+// bug; C-2's ruling decides which one production converges to before flip.
+const NVDA = { symbol: 'NVDA', name: 'NVIDIA', tier: 'star', tierMultiplier: 1.0, baseATR: 3.0, isCrypto: false, sector: 'Technology', swapPrice: 100, swappedInDay: 1 };
+const MSFT = { symbol: 'MSFT', name: 'Microsoft', tier: 'core', tierMultiplier: 1.0, baseATR: 2.0, isCrypto: false, sector: 'Technology', swapPrice: 200, swappedInDay: 2 };
 
 export const PRICES = Object.freeze({
   NVDA: { current: 104.5, changePercent: 1.9, previousClose: 102.1 },
@@ -45,7 +52,7 @@ function scoreOf(asset, currentPrice) {
   // Swapped-in assets use swapPrice as the threshold baseline too (the cron's
   // rule: no retroactive badge credit) — one baseline, both halves.
   return calculateAssetScoreServer(
-    { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, direction: null },
+    { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, tierMultiplier: asset.tierMultiplier, direction: null },
     priceChange,
     THRESHOLD_HISTORY[asset.symbol] || {},
     {},
@@ -71,9 +78,18 @@ export function makeBattle(gameMode) {
       riskTolerance: 55,
       evaluationInterval: 15,
       strategyBrief: 'Fixture brief: momentum with discipline.',
+      // PRODUCTION item shape (review C-5): both live projection writers emit
+      // `ruleId` (never `id`), and the sx-04 param key in every rule store is
+      // `pct` (never the dimension-field name). An invented shape here let a
+      // dead render pass its tests once — never again.
       activeRules: [
-        { id: 'rk-01', text: 'Never hold a position past -1.5x ATR.', category: 'risk', hardness: 'hard' },
-        { id: 'sx-04', text: 'Sell any position that gains 15% from entry.', category: 'exit', hardness: 'soft', paramValues: { profitTargetPct: 15 } },
+        { ruleId: 'rk-01', text: 'Never hold a position past -1.5x ATR.', category: 'risk', hardness: 'hard' },
+        { ruleId: 'sx-04', text: 'Sell any position that gains 15% from entry.', category: 'exit', hardness: 'soft', paramValues: { pct: 15 } },
+      ],
+      // The store the ENGINE fires on (agentGuardrails byType.profitTarget) —
+      // the §9-true source for the SX-04 render's X (review C-6).
+      deployedGuardrails: [
+        { type: 'profitTarget', value: 15, unit: '%', enforcement: 'soft' },
       ],
     },
   };
