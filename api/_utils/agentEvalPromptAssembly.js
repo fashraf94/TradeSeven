@@ -19,7 +19,7 @@ import { isDirectiveActive } from './directiveUtils.js';
 // (directive, standing leans). Non-fenced pure module; the flags import is
 // api → src Node-clean (BUILD_RULES §4).
 import { resolveControls, renderControlBlocks } from './controlPromptRenderer.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
 import {
   computeGameContext,
   rankAndSelectStories,
@@ -64,6 +64,83 @@ import { buildFundamentalsBlock } from './fundamentalsRender.js';
  * to the pre-DR-13 text of record (battery snapshots); omitted callers
  * (battery, legacy) get the same '' via the undefined key.
  */
+// ==================== ASK 1 — THE HONEST EXIT-BEHAVIOR PROSE ====================
+// Exit-Behavior Rebalance Tier 2, Ask 1 (fence contact sanctioned in the
+// kickoff; Rulings V1 four-layer precedence + anti-churn pricing, R10 one-flag
+// sequencing). Every helper below reads PROFIT_TARGET_EXECUTOR_ENABLED at
+// CALL TIME — never module scope: Ask 3's compileBuild module-scope read broke
+// seven distant test files whose hermetic featureFlags mocks didn't list the
+// flag; prose gating must not repeat that (audit record §8).
+// Flag OFF: every helper returns today's prose BYTE-IDENTICALLY (golden-pinned
+// against the branch base in agentEvalPromptAssembly.ask1.test.js). Flag ON
+// (flips with Ask 3's executor, one flip PR): the prohibition is deleted, the
+// four-layer precedence replaces "constraints always override strategy
+// preferences" at all three sites from ONE wording (§9 — no second copy), and
+// the P&L-protection framing yields to fact-of-the-environment framing with
+// the bust-override machinery (ignoredDirectiveIds) preserved verbatim.
+
+/** Framework §2 — shared verbatim by both prompt variants (one source). */
+function renderEvSection() {
+  if (!PROFIT_TARGET_EXECUTOR_ENABLED) {
+    return `2. EVALUATE FORWARD EXPECTED VALUE (EV), NOT PAST PERFORMANCE.
+   - Do NOT sell a winner just to "bank" positive points if its momentum
+     is intact and it has room to earn the next threshold bonus.
+   - Do NOT hold a bleeding loser just to avoid locking in a loss. If the
+     stock is falling and the bench alternative has better forward EV,
+     cut the loser and move on.
+   - Ask: "Over the remaining battle time, which asset will earn MORE
+     points from this moment forward?"`;
+  }
+  // The anti-churn replacement (Fable F5, ruled): restraint lives in PHYSICS
+  // (hurdle floors, the swap-window breaker, cooldowns) — the deletion of the
+  // prohibition is not a loosening, and the prompt's job becomes pricing.
+  return `2. EVALUATE FORWARD EXPECTED VALUE (EV), NOT PAST PERFORMANCE.
+   - An exit needs a reason — a rule, a target, a thesis change, or a
+     better use of the slot — not merely a green number. Restraint is
+     already enforced by the engine (hurdle floors, the swap-window
+     breaker, cooldowns): your job is to PRICE an exit, never to fear it.
+   - Do NOT hold a bleeding loser just to avoid locking in a loss. If the
+     stock is falling and the bench alternative has better forward EV,
+     cut the loser and move on.
+   - Ask: "Over the remaining battle time, which asset will earn MORE
+     points from this moment forward?"`;
+}
+
+/** The ONE four-layer precedence wording (Rulings V1, endorsed constraints) —
+ * rendered at both system-prompt sites AND the forge-rules trailer, from this
+ * single helper so the copies cannot drift (§9). Flag-on only. */
+function renderPrecedenceBlock() {
+  return `DECISION PRECEDENCE (highest to lowest):
+1. Deterministic floors and guardrails — facts of the environment, enforced by the engine. Acknowledge them; never re-litigate them.
+2. User-equipped rules — hard rules first, then soft. The user's soft preferences outrank framework defaults and your archetype stance.
+3. Archetype stance — shapes HOW an exit is taken, never WHETHER the user's rules are honored.
+4. Framework defaults — apply last.`;
+}
+
+/** The forge-rules reporting guidance paragraph (both variants). Flag-off
+ * keeps the old closing sentence; flag-on replaces it with the block. */
+function renderForgeRulesGuidance() {
+  const reporting = 'When forge rules influence your decision, populate cited_forge_rules with the rule IDs and how they influenced you (followed or blocked_trade). If you considered a rule but it did not apply, use overridden_forge_rules with the appropriate reason. If Survival Mode forces you to break a constraint, use overridden_forge_rules.';
+  if (!PROFIT_TARGET_EXECUTOR_ENABLED) {
+    return `${reporting} Constraints always override strategy preferences.`;
+  }
+  return `${reporting}
+
+${renderPrecedenceBlock()}`;
+}
+
+/** SURVIVAL MODE paragraph (both variants). The bust-override MACHINERY —
+ * ignoredDirectiveIds, the -1.0x ATR condition — is identical in both states;
+ * only the "primary directive is P&L protection" framing yields (layer 1:
+ * a fact of the environment, not an identity). */
+function renderSurvivalMode() {
+  const machinery = 'You have explicit permission to OVERRIDE user directives if live data shows a position has breached -1.0x ATR (Bust) or is accelerating toward it with no sign of reversal. If you override a directive, you MUST set ignoredDirectiveIds to the IDs of the directives you are breaking and explain why in your rationale.';
+  if (!PROFIT_TARGET_EXECUTOR_ENABLED) {
+    return `Your primary directive is P&L protection. ${machinery}`;
+  }
+  return `Deterministic protection floors are facts of the environment. ${machinery}`;
+}
+
 export function buildEvalSystemPrompt(agentName, archetype, gameMode = TIERED_GAME_MODE, archetypeKey) {
   const identityBlock = renderEvalIdentityBlock(archetypeKey);
   if (resolveModeConfig(gameMode).promptVariant === 'flat6') {
@@ -94,14 +171,7 @@ When you swap out an asset, its current points are LOCKED permanently. The incom
    Most evaluations should result in HOLD. Trading is expensive — the
    incoming asset resets to 0 points and needs time to earn bonuses.
 
-2. EVALUATE FORWARD EXPECTED VALUE (EV), NOT PAST PERFORMANCE.
-   - Do NOT sell a winner just to "bank" positive points if its momentum
-     is intact and it has room to earn the next threshold bonus.
-   - Do NOT hold a bleeding loser just to avoid locking in a loss. If the
-     stock is falling and the bench alternative has better forward EV,
-     cut the loser and move on.
-   - Ask: "Over the remaining battle time, which asset will earn MORE
-     points from this moment forward?"
+${renderEvSection()}
 
 3. RELATIVE STRENGTH: Compare asset performance to the MACRO BENCHMARKS.
    A stock that is down 1% on a day the market is down 3% is showing
@@ -217,7 +287,7 @@ When FORGE RULES are present in your identity block, they represent user-configu
 - CONSTRAINTS (C1, C2, ...) are HARD rules — you must obey them unless Survival Mode activates.
 - STRATEGY PREFERENCES (S1, S2, ...) are SOFT rules — follow them when possible but you may deviate with explanation.
 
-When forge rules influence your decision, populate cited_forge_rules with the rule IDs and how they influenced you (followed or blocked_trade). If you considered a rule but it did not apply, use overridden_forge_rules with the appropriate reason. If Survival Mode forces you to break a constraint, use overridden_forge_rules. Constraints always override strategy preferences.
+${renderForgeRulesGuidance()}
 
 ━━━ ANTI-THRASH RULES (MANDATORY) ━━━
 
@@ -230,7 +300,7 @@ When forge rules influence your decision, populate cited_forge_rules with the ru
 
 ━━━ SURVIVAL MODE ━━━
 
-Your primary directive is P&L protection. You have explicit permission to OVERRIDE user directives if live data shows a position has breached -1.0x ATR (Bust) or is accelerating toward it with no sign of reversal. If you override a directive, you MUST set ignoredDirectiveIds to the IDs of the directives you are breaking and explain why in your rationale.
+${renderSurvivalMode()}
 
 ━━━ ANTICIPATION CANDIDATES — WHEN TO POPULATE ━━━
 
@@ -322,14 +392,7 @@ When you swap out an asset, its current points are LOCKED permanently. The incom
    Most evaluations should result in HOLD. Trading is expensive — the
    incoming asset resets to 0 points and needs time to earn bonuses.
 
-2. EVALUATE FORWARD EXPECTED VALUE (EV), NOT PAST PERFORMANCE.
-   - Do NOT sell a winner just to "bank" positive points if its momentum
-     is intact and it has room to earn the next threshold bonus.
-   - Do NOT hold a bleeding loser just to avoid locking in a loss. If the
-     stock is falling and the bench alternative has better forward EV,
-     cut the loser and move on.
-   - Ask: "Over the remaining battle time, which asset will earn MORE
-     points from this moment forward?"
+${renderEvSection()}
 
 3. RELATIVE STRENGTH: Compare asset performance to the MACRO BENCHMARKS.
    A stock that is down 1% on a day the market is down 3% is showing
@@ -443,7 +506,7 @@ When FORGE RULES are present in your identity block, they represent user-configu
 - CONSTRAINTS (C1, C2, ...) are HARD rules — you must obey them unless Survival Mode activates.
 - STRATEGY PREFERENCES (S1, S2, ...) are SOFT rules — follow them when possible but you may deviate with explanation.
 
-When forge rules influence your decision, populate cited_forge_rules with the rule IDs and how they influenced you (followed or blocked_trade). If you considered a rule but it did not apply, use overridden_forge_rules with the appropriate reason. If Survival Mode forces you to break a constraint, use overridden_forge_rules. Constraints always override strategy preferences.
+${renderForgeRulesGuidance()}
 
 ━━━ ANTI-THRASH RULES (MANDATORY) ━━━
 
@@ -456,7 +519,7 @@ When forge rules influence your decision, populate cited_forge_rules with the ru
 
 ━━━ SURVIVAL MODE ━━━
 
-Your primary directive is P&L protection. You have explicit permission to OVERRIDE user directives if live data shows a position has breached -1.0x ATR (Bust) or is accelerating toward it with no sign of reversal. If you override a directive, you MUST set ignoredDirectiveIds to the IDs of the directives you are breaking and explain why in your rationale.
+${renderSurvivalMode()}
 
 ━━━ ANTICIPATION CANDIDATES — WHEN TO POPULATE ━━━
 
@@ -600,7 +663,11 @@ ${ctx.consolidatedInsight}`);
       '- Check ALL constraints before executing. If a trade violates a constraint, do not execute. Cite the constraint.\n' +
       '- Use strategy preferences to rank opportunities. Cite preferences that influenced your picks.\n' +
       '- If no strategy preference matches, trade on your own analysis.\n' +
-      '- Constraints always override strategy preferences.'
+      // Ask 1: the four-layer precedence replaces the old blanket sentence at
+      // this third site too — same single-source block as the system prompts.
+      (PROFIT_TARGET_EXECUTOR_ENABLED
+        ? `\n${renderPrecedenceBlock()}`
+        : '- Constraints always override strategy preferences.')
     );
     parts.push(`YOUR FORGE RULES:\n${ruleLines.join('\n\n')}`);
   }
@@ -1171,7 +1238,9 @@ export function formatRecentEvals(evaluations, limit = 3) {
 
 // ==================== CSV BUILDERS ====================
 
-function buildPortfolioCSV(assetScores, prices, battle) {
+// Exported for the Ask 1 test surface (golden byte-identity + the §9
+// cost-decomposition assertions run the builder directly). Output-neutral.
+export function buildPortfolioCSV(assetScores, prices, battle) {
   // P4: flat6 battles drop the Tier column — the eval model must never be
   // told a 2x slot exists in tournament mode. Tiered rows are byte-identical
   // to the pre-P4 format.
