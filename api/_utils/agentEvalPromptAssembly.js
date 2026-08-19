@@ -20,6 +20,10 @@ import { isDirectiveActive } from './directiveUtils.js';
 // api → src Node-clean (BUILD_RULES §4).
 import { resolveControls, renderControlBlocks } from './controlPromptRenderer.js';
 import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
+// Ask 1 data-add #1: the canonical bonus levels (BUILD_RULES §4 — never a
+// local copy of scoring constants). Node-clean; the ask1 test's unmocked
+// import of this module is the dependency-surface guard.
+import { THRESHOLD_MULTIPLIERS } from '../../src/constants/baggerBombScoring.js';
 import {
   computeGameContext,
   rankAndSelectStories,
@@ -94,11 +98,18 @@ function renderEvSection() {
   // The anti-churn replacement (Fable F5, ruled): restraint lives in PHYSICS
   // (hurdle floors, the swap-window breaker, cooldowns) — the deletion of the
   // prohibition is not a loosening, and the prompt's job becomes pricing.
+  // Brief V2 Ask 1 bullet 2 (review-A finding 11c): profit-taking and
+  // momentum rotation are SANCTIONED as legitimate motives, in the same
+  // vocabulary the decision schema's swap_type enum speaks — prompt and
+  // schema one language, R5 untouched (no gate ever keys on the declaration).
   return `2. EVALUATE FORWARD EXPECTED VALUE (EV), NOT PAST PERFORMANCE.
    - An exit needs a reason — a rule, a target, a thesis change, or a
      better use of the slot — not merely a green number. Restraint is
      already enforced by the engine (hurdle floors, the swap-window
      breaker, cooldowns): your job is to PRICE an exit, never to fear it.
+   - Profit-taking and momentum rotation are LEGITIMATE motives. When one
+     drives your swap, declare it honestly in swap_type — it is never
+     penalized; it is how your judgment gets measured.
    - Do NOT hold a bleeding loser just to avoid locking in a loss. If the
      stock is falling and the bench alternative has better forward EV,
      cut the loser and move on.
@@ -127,6 +138,31 @@ function renderForgeRulesGuidance() {
   return `${reporting}
 
 ${renderPrecedenceBlock()}`;
+}
+
+/** Resolve an equipped SX-04's numeric target — paramValues first, authored
+ * default second, null when neither is numeric (fail-honest: the caller falls
+ * back to the rule's own text rather than fabricating an X). */
+function resolveSx04TargetPct(r) {
+  const v = r?.paramValues?.profitTargetPct ?? r?.params?.profitTargetPct?.default;
+  return typeof v === 'number' && v > 0 ? v : null;
+}
+
+/** Equipped-rule text for the prompt. Flag-on, SX-04 gets the post-executor
+ * render (Rulings V1, verbatim intent): the target is a FACT the engine
+ * enforces — the framework must never fight the user's own rule in the same
+ * prompt again. Every other rule (and SX-04 with an unresolvable X, or while
+ * dark) renders exactly as before. */
+function renderEquippedRuleText(r) {
+  if (PROFIT_TARGET_EXECUTOR_ENABLED && r?.id === 'sx-04') {
+    const x = resolveSx04TargetPct(r);
+    if (x !== null) {
+      return sanitizeRuleText(
+        `Profit target: the user's target is ${x}%. The engine enforces it deterministically — treat it as a fact of the environment. You may exit earlier in character; the target itself is never negotiable.`,
+      );
+    }
+  }
+  return resolveRuleText(r);
 }
 
 /** SURVIVAL MODE paragraph (both variants). The bust-override MACHINERY —
@@ -635,13 +671,13 @@ ${ctx.consolidatedInsight}`);
     const ruleLines = [];
     if (constraints.length > 0) {
       const cLines = constraints.map((r, i) =>
-        `C${i + 1}. ${appendCompositionAdvisory(resolveRuleText(r), r, compositionAdvisories)} [${capitalize(r.category)}]`
+        `C${i + 1}. ${appendCompositionAdvisory(renderEquippedRuleText(r), r, compositionAdvisories)} [${capitalize(r.category)}]`
       );
       ruleLines.push(`== CONSTRAINTS (must obey) ==\n${cLines.join('\n')}`);
     }
     if (strategies.length > 0) {
       const sLines = strategies.map((r, i) =>
-        `S${i + 1}. ${appendCompositionAdvisory(resolveRuleText(r), r, compositionAdvisories)} [${capitalize(r.category || 'general')}]`
+        `S${i + 1}. ${appendCompositionAdvisory(renderEquippedRuleText(r), r, compositionAdvisories)} [${capitalize(r.category || 'general')}]`
       );
       ruleLines.push(`== STRATEGY PREFERENCES (should follow) ==\n${sLines.join('\n')}`);
     }
@@ -995,7 +1031,9 @@ SPY (S&P 500): ${formatPct(macroPrices?.SPY)}% | QQQ (Nasdaq): ${formatPct(macro
   }
 
   // 3b. Active Portfolio CSV
-  const portfolioCSV = buildPortfolioCSV(assetScores, prices, battle);
+  // Ask 1 data-add #3: rankingsMap threads through so held-position rows can
+  // render their Levels cell (flag-on; '-' when the read is absent — R12).
+  const portfolioCSV = buildPortfolioCSV(assetScores, prices, battle, momentumData?.rankingsMap || {});
   parts.push(`ACTIVE POSITIONS:
 ${portfolioCSV}`);
 
@@ -1238,16 +1276,65 @@ export function formatRecentEvals(evaluations, limit = 3) {
 
 // ==================== CSV BUILDERS ====================
 
+// ---- Ask 1 data-adds (flag-on cells; every helper pure and comma-free) ----
+
+/** Data-add #1, the decomposition half: what a swap would LOCK right now —
+ * rendered straight off the score object the ONE fenced scorer produced
+ * (lockedPoints at execution = scoreResult.totalPoints, agentSwapExecution),
+ * so the prompt's number and the ledger's lock are the same computation (§9),
+ * never a re-derivation. Neutral information, not deterrent. */
+function lockNowCell(score) {
+  const s = (n) => `${n >= 0 ? '+' : ''}${n}`;
+  return `${s(score.totalPoints)}(${s(score.basePoints)}/${s(score.bonusPoints)})`;
+}
+
+/** Data-add #1, the Δ half: distance to the next UNCROSSED bonus — a FRESH
+ * compute (Phase-0 #5: detectRedZone/isSwapLocked are proximity-banded and
+ * return null outside their bands; ruled do-NOT-reuse). Crossed-ness keys on
+ * the effective max exactly like badge grants, so the column can never claim
+ * a bonus the scorer already paid. Always present: 'maxed' when all three
+ * bonuses are earned. */
+function nextBonusCell(score) {
+  const crossedMax = score.history?.maxMultiplier ?? 0;
+  const next = [THRESHOLD_MULTIPLIERS.bagger, THRESHOLD_MULTIPLIERS.doubleBagger, THRESHOLD_MULTIPLIERS.tenBagger]
+    .find(level => level > crossedMax);
+  if (next === undefined) return 'maxed';
+  const distPct = (next - score.multiplier) * score.baseATR;
+  return `+${distPct.toFixed(1)}%`;
+}
+
+/** Data-add #3 (R12): the held-position Levels cell — nearestSupport /
+ * nearestResistance where the read exists, '-' where it does not
+ * (conditionally populated by design; never an implied always-on signal). */
+function levelsCell(ranking) {
+  const lvls = ranking?.levels;
+  if (!lvls) return '-';
+  const side = (prefix, value, dist) => {
+    if (value == null) return null;
+    const d = dist != null ? `(${dist >= 0 ? '+' : ''}${dist.toFixed(1)}%)` : '';
+    return `${prefix}${value.toFixed(2)}${d}`;
+  };
+  const parts = [
+    side('S', lvls.nearestSupport, lvls.distanceToSupportPct),
+    side('R', lvls.nearestResistance, lvls.distanceToResistancePct),
+  ].filter(Boolean);
+  return parts.length ? parts.join('/') : '-';
+}
+
 // Exported for the Ask 1 test surface (golden byte-identity + the §9
-// cost-decomposition assertions run the builder directly). Output-neutral.
-export function buildPortfolioCSV(assetScores, prices, battle) {
+// cost-decomposition assertions run the builder directly). Flag OFF renders
+// the pre-Ask-1 header and rows byte-identically; flag ON appends the three
+// data-add cells (call-time flag read — never module scope).
+export function buildPortfolioCSV(assetScores, prices, battle, rankingsMap = {}) {
   // P4: flat6 battles drop the Tier column — the eval model must never be
   // told a 2x slot exists in tournament mode. Tiered rows are byte-identical
   // to the pre-P4 format.
   const isFlat6 = resolveModeConfig(battle?.gameMode).promptVariant === 'flat6';
-  const header = isFlat6
+  const dataAdds = PROFIT_TARGET_EXECUTOR_ENABLED;
+  const baseHeader = isFlat6
     ? 'Symbol,Sector,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%'
     : 'Tier,Symbol,Sector,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%';
+  const header = dataAdds ? `${baseHeader},LockNow(base/badges),NextBonus,Levels` : baseHeader;
   const flat = flattenPortfolioServer(battle.portfolio);
 
   const rows = assetScores.map(score => {
@@ -1260,7 +1347,10 @@ export function buildPortfolioCSV(assetScores, prices, battle) {
     const badgeStr = score.badges.length > 0 ? `[${score.badges.join(',')}]` : '[]';
 
     const sharedColumns = `${score.symbol},${sector},${entryDay},$${entryPrice.toFixed(2)},$${currentPrice.toFixed(2)},${formatPct(score.priceChange)}%,${score.multiplier >= 0 ? '+' : ''}${score.multiplier.toFixed(2)}x,${badgeStr},${score.baseATR.toFixed(1)}%`;
-    return isFlat6 ? sharedColumns : `${asset?.tier || 'support'},${sharedColumns}`;
+    const baseRow = isFlat6 ? sharedColumns : `${asset?.tier || 'support'},${sharedColumns}`;
+    return dataAdds
+      ? `${baseRow},${lockNowCell(score)},${nextBonusCell(score)},${levelsCell(rankingsMap[score.symbol])}`
+      : baseRow;
   });
 
   return [header, ...rows].join('\n');
