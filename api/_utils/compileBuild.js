@@ -1,9 +1,12 @@
 // api/_utils/compileBuild.js
 //
 // Archetype Architecture Phase 2 (P2.3) — the compiler core (Spec §4.4 +
-// A-2/A-3, §5.2–§5.6). PURE: no I/O, no clock, no flag reads — every input
-// including `now` arrives as an argument; identical inputs produce identical
-// output (contentHash-stable). Ships DARK: the only Phase-2 caller is the
+// A-2/A-3, §5.2–§5.6). PURE: no I/O, no clock, no flag reads inside
+// compileBuild() — every input including `now` arrives as an argument;
+// identical inputs produce identical output (contentHash-stable). The ONE
+// module-scope exception (Ask 3, F11): PROFIT_TARGET_EXECUTOR_ENABLED gates
+// the §5.5 shape TABLE at import time, so compiler acceptance and executor
+// registration flip together. Ships DARK: the only Phase-2 caller is the
 // flag-gated equip-time helper (P2.4a), and production activation is
 // additionally gated on the §5.6 metadata completeness check
 // (activationGate.js), which correctly FAILS against today's corpus.
@@ -42,22 +45,41 @@ import { canonicalContentHash } from './canonicalHash.js';
 // PR 3 (A7): the ONE domain-admit predicate — shared with the equip/save
 // legality kernel so the compile boundary can never disagree with it.
 import { resolveNarrowedDomains, domainAdmits } from './compositionEnforcement.js';
+// Ask 3 (F11): the ONE flag gating profitTarget's compiler acceptance AND its
+// executor registration (agentGuardrails.js imports the same identifier).
+// Module-scope table gate only — see the §5.5 comment; compileBuild() stays
+// pure per its input contract ("no flag reads" inside the compile itself).
+import { PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
 
 // ── §5.5 supported guardrail engine shapes ───────────────────────────────
 // Compilation requires an EXACT semantic match on all eight descriptor
 // fields (R1-9): type, scope, basis, unit, trigger, side, resetBehavior,
-// evaluationTiming. The rows below describe the three shapes the live
-// engine deterministically enforces (agentGuardrails.applyGuardrails):
+// evaluationTiming. The rows below describe the shapes the live engine
+// deterministically enforces (agentGuardrails.applyGuardrails):
 //   stopLoss        — forced exit swap, pct below entry     (:208-269, :367-470)
 //   trailingStop    — forced exit, pct retrace from HWM     (:208-269, :367-470)
 //   maxSectorWeight — blocked entry over portfolio cap      (:272-292, :472-482)
 // DELIBERATELY ABSENT (display-agreement, BUILD_RULES §9): maxPosition is a
-// documented engine no-op ('skipped_incompatible', agentGuardrails.js
-// :327-339) and profitTarget is a soft note (:341-364) — compiling either
-// would promise deterministic enforcement the engine does not deliver, the
-// exact §5.5 "no lossy coercion" case. Token vocabulary for
-// trigger/side/reset/timing is engine-derived (the Spec names the fields;
-// the engine's behavior fixes the values).
+// documented engine no-op ('skipped_incompatible') — compiling it would
+// promise deterministic enforcement the engine does not deliver, the exact
+// §5.5 "no lossy coercion" case.
+// profitTarget (Exit-Behavior Tier 2 Ask 3, rulings R1/R3 + F11): the same
+// §9 principle now runs in BOTH directions. While the executor flag is dark,
+// profitTarget stays out (soft note only — promising enforcement would be
+// the maxPosition lie); the moment PROFIT_TARGET_EXECUTOR_ENABLED is live,
+// the shape enters TOGETHER WITH its executor — one flag gates compiler
+// acceptance and executor registration so no shape can ever enter
+// promise-first (the pairing test in agentGuardrails.pairing.test.js is the
+// structural guard). The module-scope flag read gates only this table;
+// compileBuild() itself stays pure per its input contract.
+// Token vocabulary for trigger/side/reset/timing is engine-derived (the Spec
+// names the fields; the engine's behavior fixes the values).
+export const PROFIT_TARGET_GUARDRAIL_SHAPE = Object.freeze({
+  type: 'profitTarget', scope: 'position', basis: 'entry', unit: 'pct',
+  trigger: 'price_above_threshold', side: 'exit', resetBehavior: 'none',
+  evaluationTiming: 'post_decision_tick',
+});
+
 export const SUPPORTED_GUARDRAIL_SHAPES = Object.freeze({
   stopLoss: Object.freeze({
     type: 'stopLoss', scope: 'position', basis: 'entry', unit: 'pct',
@@ -74,16 +96,21 @@ export const SUPPORTED_GUARDRAIL_SHAPES = Object.freeze({
     trigger: 'sector_weight_exceeds', side: 'entry_block', resetBehavior: 'none',
     evaluationTiming: 'post_decision_tick',
   }),
+  ...(PROFIT_TARGET_EXECUTOR_ENABLED ? { profitTarget: PROFIT_TARGET_GUARDRAIL_SHAPE } : {}),
 });
 
 export const BINDING_DESCRIPTOR_FIELDS = Object.freeze([
   'type', 'scope', 'basis', 'unit', 'trigger', 'side', 'resetBehavior', 'evaluationTiming',
 ]);
 
-// Strictest-wins comparator per supported type (§5.5): for all three shapes
-// a SMALLER value is the tighter constraint (tighter stop, tighter trail,
-// lower sector cap).
-const STRICTEST = Object.freeze({ stopLoss: 'min', trailingStop: 'min', maxSectorWeight: 'min' });
+// Strictest-wins comparator per supported type (§5.5): for every shape a
+// SMALLER value is the tighter constraint (tighter stop, tighter trail,
+// lower sector cap — and for profitTarget, a LOWER target fires sooner, the
+// promise-keeping direction on the winner side).
+const STRICTEST = Object.freeze({
+  stopLoss: 'min', trailingStop: 'min', maxSectorWeight: 'min',
+  ...(PROFIT_TARGET_EXECUTOR_ENABLED ? { profitTarget: 'min' } : {}),
+});
 
 /**
  * §3.2 + founder rulings (P2.0 approval #2): bundleContentHash covers the

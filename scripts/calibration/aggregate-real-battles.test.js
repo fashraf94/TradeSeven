@@ -61,6 +61,15 @@ describe('partitionTrades uses the REAL fenced EMERGENCY_BYPASS_REASONS', () => 
     expect(p.emergency).toHaveLength(1);
     expect(p.nonEmergency).toHaveLength(0);
   });
+
+  it('Ask 3 (R3 mirror): guardrail_profitTarget lands in its OWN userDirective lane — never emergency, never unknown-inflating non-emergency', () => {
+    const p = partitionTrades([trade('guardrail_profitTarget'), trade('haiku_decision')]);
+    expect(p.userDirective).toHaveLength(1);
+    expect(p.userDirectiveByReason.guardrail_profitTarget).toBe(1);
+    expect(p.emergency).toHaveLength(0);
+    expect(p.nonEmergency).toHaveLength(1); // only the haiku_decision row
+    expect(p.unknown).toBe(0);
+  });
 });
 
 describe('isTruncated', () => {

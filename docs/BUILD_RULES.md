@@ -81,7 +81,7 @@ Every catalog event (see `VISION_PROGRAM_POST_LAUNCH_PLACEMENT_ADDENDUM_A` §4 +
 
 - **Design of record:** `docs/FANTASYTRADES_LEAGUE_TOURNAMENT_IMPLEMENTATION_SPEC_V1.md` (binding) over V2.1 (rationale).
 - **Dual markets, per group of four:** user layer (3 picks, overnight claims, in-battle flips, shorts allowed) and agent layer (6 picks, intraday swaps, long-only V1) never share state; the only cross-layer fact is the per-player double-down. Max two holders of a symbol per group: one user, one agent.
-- **Agent exclusivity** is enforced via candidate-pool filtering (non-fenced) + a two-phase reserve/confirm ledger around the five `executeSwapServer` call sites in `agent-evaluate.js` — never inside fenced code.
+- **Agent exclusivity** is enforced via candidate-pool filtering (non-fenced) + a two-phase reserve/confirm ledger around the six `executeSwapServer` call sites in `agent-evaluate.js` — never inside fenced code. *(Count updated Aug 19, 2026 — the Exit-Behavior Tier 2 Ask 3 kickoff sanctioned a sixth site: the R11 suppression-path deterministic pass, carrying the same reserve → confirm → compensating-release wrapper; Addendum V1.1 R11.)*
 - **Deploys never self-select in tournament mode:** prescribed-portfolio payloads only (draft resolution Mondays, incumbents Tue–Fri).
 - **Layer weighting:** composite = agentScore + **1.5 ×** userScore (founder-set; tuning ledger).
 - Citation baseline: `docs/audits/2026-06-10_IMPLEMENTATION_DISCOVERY.md` (@ `f12f852`). Lines drift — re-verify before relying.

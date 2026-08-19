@@ -48,7 +48,7 @@ import {
   GAME_MODE_POLICY_VERSION,
 } from './archetypeVersionConstants.js';
 import { KNOB_CONFIG_VERSION } from './agentArchetypeConfig.js';
-import { EMERGENCY_BYPASS_REASONS } from './agentRiskManager.js';
+import { EMERGENCY_BYPASS_REASONS, USER_DIRECTIVE_BYPASS_REASONS } from './agentRiskManager.js';
 import { TEMPO_DIAL_BANDS } from './tempoDialBands.js';
 import { canonicalContentHash } from './canonicalHash.js';
 
@@ -61,6 +61,10 @@ import { canonicalContentHash } from './canonicalHash.js';
 // writes deterministically.
 export const DETERMINISTIC_GATE_TAGS = new Set([
   ...EMERGENCY_BYPASS_REASONS,
+  // Ask 3 (R2): the user-directive class is deterministic engine vocabulary
+  // too — same by-reference single-source rule as the emergency set, so the
+  // profit-target executor's citedRules tag tallies post-flip.
+  ...USER_DIRECTIVE_BYPASS_REASONS,
   'stagnation',
   'swap_window_cap',
   'vwap_cascade_guard',

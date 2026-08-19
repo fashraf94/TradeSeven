@@ -53,6 +53,7 @@ vi.mock('@vercel/functions', () => ({
 }));
 vi.mock('../../src/config/featureFlags.js', () => ({
   COMPILER_ENABLED: false, // P2.4a: keep the dark compiler dark under this suite's flag mock
+  PROFIT_TARGET_EXECUTOR_ENABLED: false, // Ask 3: dark; compileBuild reads it at module scope (via compileOnSettingsChange) — a hermetic mock must list it
   get RULE_COMPAT_MODE() { return flagState.mode; },
 }));
 

@@ -35,6 +35,14 @@ export const RECEIPT_EXIT_REASONS = Object.freeze([
   'stagnation',
   'guardrail_stopLoss',
   'guardrail_trailingStop',
+  // Exit-Behavior Tier 2 Ask 3 (rulings R3/R4, additive in the executor's own
+  // PR): the profit-target deterministic executor's stamp. Mirrors the two
+  // guardrail stops — VALID here so a target fire's receipt is never dropped
+  // fail-closed (a corpus gap for exactly the new class), and deliberately
+  // NOT in D3_DISCRETIONARY_EXIT_REASONS below (R4: a deterministic fire
+  // contains no model judgment — including it would teach the learner engine
+  // physics).
+  'guardrail_profitTarget',
   'gameplan_rotation',
 ]);
 

@@ -9,11 +9,15 @@ const LOCK_PROXIMITY = 0.2; // ATR multiples within which to lock
 
 /**
  * Forge Enforcement Keystone V1.4 §3.1 (Invariant 1) — the single source of
- * truth for which swap REASONS bypass the quality knobs (Knob B hurdle floor
- * here in Phase 4; Knob C circuit breaker in Phase 5). A swap is emergency-bypass
- * IFF its `reason` is in this set; every other swap is gated. Gates consult
- * `reason`, NEVER the action label — because Knob A's forced rotation reuses the
- * `SWAP_OUT` action, action-keying would silently bypass the floor for stagnation.
+ * truth for which swap REASONS are the EMERGENCY bypass class (Knob B hurdle
+ * floor here in Phase 4; Knob C circuit breaker in Phase 5). A swap is
+ * emergency-bypass IFF its `reason` is in this set; every swap outside this
+ * set AND outside USER_DIRECTIVE_BYPASS_REASONS below is gated (Ask 3 R2
+ * amended the total-bypass predicate to the union of the two classes — the
+ * Invariant-1 matrix asserts the amended IFF in both directions). Gates
+ * consult `reason`, NEVER the action label — because Knob A's forced rotation
+ * reuses the `SWAP_OUT` action, action-keying would silently bypass the floor
+ * for stagnation.
  *
  * Members:
  *  - bust_avoidance / vwap_failure / stepped_trail — protective risk-manager exits
@@ -31,6 +35,29 @@ export const EMERGENCY_BYPASS_REASONS = new Set([
   'stepped_trail',
   'guardrail_stopLoss',
   'guardrail_trailingStop',
+]);
+
+/**
+ * Exit-Behavior Rebalance Tier 2, Ask 3 — ruling R2 (Fable review F2): the
+ * ADDITIVE keystone extension, the sanctioned parallel to the LOCKED set
+ * above ("future reasons added via additive extension only"). Taxonomy kept
+ * honest: EMERGENCY = protective (something bad is happening); USER-DIRECTIVE
+ * = the user's explicit deterministic order (nothing bad is happening — the
+ * engine is honoring a standing instruction). Both bypass the quality knobs,
+ * for different stated reasons:
+ *  - Knob B (clearsHurdleFloor step 1b): the floor — INCLUDING
+ *    requireBenchPositive — must never block the user's own order for a
+ *    quality opinion the user didn't ask for (the A2 safety shape, gain-side).
+ *  - Knob C (getRecentSwapCount): user-directive fires never count toward the
+ *    model-churn window — the breaker exists to stop MODEL churn (F12; the
+ *    accepted consequence: a tight target in a volatile name can fire often;
+ *    it is user-authored and cooldowns still bound it).
+ * Members mirror guardrail_stopLoss across the four keyed subsystems (R3);
+ * adding a future user-directive reason must mean editing ONLY this constant.
+ * The LOCKED emergency set above is untouched by design — never merge them.
+ */
+export const USER_DIRECTIVE_BYPASS_REASONS = new Set([
+  'guardrail_profitTarget',
 ]);
 
 /**
@@ -287,6 +314,8 @@ export function computeBenchVsActiveMargin({ activeDailyPct, benchDailyPct, acti
  * Order is load-bearing (§3.1 / §4.3):
  *  1. EMERGENCY BYPASS FIRST — reason ∈ EMERGENCY_BYPASS_REASONS → clears, never
  *     gated. This is the A2 safety contract; it must precede every other check.
+ *  1b. USER-DIRECTIVE BYPASS (Ask 3, R2) — reason ∈ USER_DIRECTIVE_BYPASS_REASONS
+ *     → clears, never gated; precedes requireBenchPositive by construction.
  *  2. Disabled floor → clears (archetype opted out).
  *  3. Shape-B per-reason lookup: byReason[reason] || default.
  *  4. Bench-positive rule (non-emergency only — emergencies already returned).
@@ -309,6 +338,15 @@ export function clearsHurdleFloor({ active, benchCandidate, reason, archetypeCon
   // 1. Emergency bypass FIRST (A2 safety contract).
   if (EMERGENCY_BYPASS_REASONS.has(reason)) {
     return { clears: true, bypassed: true, reason };
+  }
+
+  // 1b. User-directive bypass (Ask 3, R2): the user's explicit deterministic
+  // order clears unconditionally — before the disabled-floor check and before
+  // requireBenchPositive, which must never veto the user's own instruction.
+  // Distinct marker (userDirective: true) so telemetry and the Invariant-1
+  // matrix can tell the two bypass classes apart.
+  if (USER_DIRECTIVE_BYPASS_REASONS.has(reason)) {
+    return { clears: true, bypassed: true, userDirective: true, reason };
   }
 
   // 2. Disabled archetype floor.
@@ -492,6 +530,12 @@ export function getRecentSwapCount(trades, windowMinutes, now, { countEmergencie
     }
     // exitReason is top-level (Trap 1). Missing → undefined → not an emergency → counted.
     if (!countEmergencies && EMERGENCY_BYPASS_REASONS.has(t.exitReason)) continue;
+    // User-directive fires are NEVER windowable churn (Ask 3, R2/F12) — the
+    // breaker exists to stop MODEL churn, and a user's standing order is not
+    // model churn. Unconditional (not tied to countEmergencies: that knob is
+    // about emergencies, and overloading it would hide user-directive volume
+    // behind an unrelated config).
+    if (USER_DIRECTIVE_BYPASS_REASONS.has(t.exitReason)) continue;
     count++;
   }
 
