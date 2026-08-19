@@ -593,14 +593,14 @@ export function targetFor(position, globalTargetValue) {
   return typeof override === 'number' && override > 0 ? override : globalTargetValue;
 }
 
-// Types whose non-enforcement is an EXPLICIT, displayed advisory classification
-// (the honest alternative F11 demands when no executor exists): maxPosition is
-// the documented BaggerBomb no-op (skipped_incompatible + the Tier-1 'soft'
-// relabel in dimensionMapper), and profitTarget sits here only while the
-// executor flag is dark.
-export const GUARDRAIL_TYPES_WITH_DISPLAYED_ADVISORY = Object.freeze(
-  PROFIT_TARGET_EXECUTOR_ENABLED ? ['maxPosition'] : ['maxPosition', 'profitTarget'],
-);
+// The closed set of guardrail types the engine knows AT ALL — flag-independent
+// on purpose (/code-review CR4: a flag-dependent list frozen at import time
+// could disagree with guardrailExecutionClass's call-time read under the
+// live-getter mock pattern). Which of these are executors vs displayed
+// advisories is answered ONLY by guardrailExecutionClass below, at call time.
+export const KNOWN_GUARDRAIL_TYPES = Object.freeze([
+  'stopLoss', 'trailingStop', 'maxSectorWeight', 'maxPosition', 'profitTarget',
+]);
 
 /**
  * F11's pairing source of truth: which execution class a guardrail type has

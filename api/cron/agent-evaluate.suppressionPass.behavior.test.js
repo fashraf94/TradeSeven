@@ -189,7 +189,7 @@ describe('R11 behavioral — the deferral surfaces (B3 / R6 / F2 physics)', () =
     expect(defer?.triggeredBy).toBe('guardrail_stopLoss');
   });
 
-  it('a LOCKED breacher defers inside the executor — no execution, no fire beat (R6)', async () => {
+  it('a LOCKED breacher defers inside the executor — no execution, and the R6 deferral is a visible beat (CR5)', async () => {
     flagState.profitTarget = true;
     const { args, statusFeedEntries, summary } = makeArgs({
       guardrails: STOP_8,
@@ -200,6 +200,9 @@ describe('R11 behavioral — the deferral surfaces (B3 / R6 / F2 physics)', () =
     expect(executeSwapServerMock).not.toHaveBeenCalled();
     expect(summary.swapped).toBe(0);
     expect(statusFeedEntries.find(e => e.action === 'guardrail_forced_swap')).toBeUndefined();
+    const deferBeat = statusFeedEntries.find(e => e.action === 'hold');
+    expect(deferBeat?.message).toContain('LOCKED');
+    expect(deferBeat?.triggeredBy).toBe('guardrail_stopLoss');
   });
 
   it('an empty bench defers with the pool_empty beat (F2: fires when a replacement becomes eligible)', async () => {

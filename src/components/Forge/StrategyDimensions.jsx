@@ -142,7 +142,7 @@ const DIMENSION_CONFIGS = [
       // swap-not-sell, replacement availability, LOCK carve-out, one exit per
       // evaluation. Promise-true means the promise got more precise.
       { paramKey: 'profitTargetPct', legacyKey: 'profitTarget', type: 'slider', tier: 'baseline', label: 'Profit target', min: 5, max: 50, step: 1, unit: '%', hint: PROFIT_TARGET_EXECUTOR_ENABLED
-        ? 'Sells at the next evaluation (~15-min market-hours cadence) once gain from entry reaches this %, by swapping into the best eligible bench name. No eligible replacement → fires when one becomes eligible; a position locked near a bonus threshold defers it; one exit per evaluation.'
+        ? 'Sells by swapping into the best eligible bench name at the next evaluation once gain from entry reaches this %. Evaluations tick ~every 15 min in market hours but only run on market triggers — a quiet stretch can defer the fire, as can no eligible replacement or a position locked near a bonus threshold. One exit per evaluation.'
         : 'Lock in gains once a position reaches this return.' },
       { paramKey: 'timeExitDays', legacyKey: 'timeExit', type: 'slider', tier: 'baseline', label: 'Time-based exit', min: 2, max: 15, step: 1, unit: 'days', hint: 'Close flat positions that haven’t moved within this window.' },
       { paramKey: 'timeExitMinGainPct', type: 'chipPicker', tier: 'advanced', label: 'Time-exit minimum gain', options: [0, 1, 3, 5], formatChip: (v) => `${v}%`, hint: 'Minimum gain to count as a successful hold — below this, the position is closed.' },

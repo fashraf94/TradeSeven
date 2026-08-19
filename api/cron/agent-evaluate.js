@@ -3429,6 +3429,29 @@ export async function runSuppressionDeterministicPass({
       }
     }
 
+    // Lock-deferral visibility (/code-review CR5): on suppression ticks there
+    // is no eval record to persist guardrailOverrides into, so the feed is the
+    // only channel — a user watching a breached position through a multi-day
+    // meeting deserves the R6 explanation (B7 doctrine). pending_next_tick
+    // secondaries stay silent: they fire on a following tick by design.
+    const lockDeferred = (deterministicResult.overrides || []).find(o => o.action === 'blocked_by_lock');
+    if (lockDeferred) {
+      statusFeedEntries.push({
+        timestamp: new Date().toISOString(),
+        message: `${lockDeferred.symbol} breached its ${lockDeferred.type === 'profitTarget' ? 'profit target' : 'stop'} but is LOCKED near a bonus threshold — guardrail deferred.`,
+        pvpContext: null,
+        action: 'hold',
+        regime: stockRegimes[lockDeferred.symbol] || null,
+        score: Math.round(currentScore * 100) / 100,
+        citedRules: [`guardrail_${lockDeferred.type}`],
+        triggeredBy: `guardrail_${lockDeferred.type}`,
+        source: 'guardrail',
+        evalId: null,
+        symbolOut: lockDeferred.symbol,
+        symbolIn: null,
+      });
+    }
+
     if (deterministicResult.decision !== 'SWAP' || !deterministicResult.symbolOut || !deterministicResult.symbolIn) return;
 
     // Fail-closed reason guard: only a guardrail_* provenance may execute from

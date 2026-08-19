@@ -252,6 +252,8 @@ export function aggregateBattles(battles) {
     let totalUnknown = 0;
     const emergencyPerBattle = [];
     const emergencyByReason = {};
+    const userDirectivePerBattle = [];
+    const userDirectiveByReason = {};
     const unknownByReason = {};
     const perBattleUnknownSharePct = [];
     // Release 1 additions: opponent-split tempo + swap-cap pinning.
@@ -272,6 +274,11 @@ export function aggregateBattles(battles) {
       totalUnknown += p.unknown;
       emergencyPerBattle.push(p.emergency.length);
       for (const [r, c] of Object.entries(p.emergencyByReason)) emergencyByReason[r] = (emergencyByReason[r] || 0) + c;
+      // Ask 3 (/code-review CR2): the user-directive lane rides the report —
+      // post-flip, profit-target fires must be visible to the R9 rollback
+      // reader and the partitions must keep summing to baselineTradeCount.
+      userDirectivePerBattle.push(p.userDirective.length);
+      for (const [r, c] of Object.entries(p.userDirectiveByReason)) userDirectiveByReason[r] = (userDirectiveByReason[r] || 0) + c;
       for (const [r, c] of Object.entries(p.unknownByReason)) unknownByReason[r] = (unknownByReason[r] || 0) + c;
       if (trades.length) perBattleUnknownSharePct.push(round((p.unknown / trades.length) * 100));
       // Opponent-split tempo (both groups still feed `rotations` above).
@@ -297,6 +304,13 @@ export function aggregateBattles(battles) {
         perBattle: summarize(emergencyPerBattle),
         total: sum(emergencyPerBattle),
         byReason: sortObj(emergencyByReason),
+      },
+      // Ask 3 (R2's honest third lane): deterministic user-directive fires —
+      // never folded into emergency (protective) or non-emergency (8A) stats.
+      userDirectiveBypass: {
+        perBattle: summarize(userDirectivePerBattle),
+        total: sum(userDirectivePerBattle),
+        byReason: sortObj(userDirectiveByReason),
       },
       // Release 1 §4.1 — swap-cap pinning (live-anchored runaway metric). pinnedSharePct
       // is the share of cap-subject rolling windows that reached capPerWindow; the §4.1

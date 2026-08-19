@@ -20,7 +20,7 @@ import {
   PROFIT_TARGET_GUARDRAIL_SHAPE,
   BINDING_DESCRIPTOR_FIELDS,
 } from './compileBuild.js';
-import { guardrailExecutionClass, GUARDRAIL_TYPES_WITH_DISPLAYED_ADVISORY } from './agentGuardrails.js';
+import { guardrailExecutionClass, KNOWN_GUARDRAIL_TYPES } from './agentGuardrails.js';
 import { PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -37,11 +37,18 @@ describe('F11 pairing — every supported shape has a registered executor', () =
     }
   });
 
-  it('every known non-executor type carries the explicit displayed-advisory classification', () => {
-    for (const type of GUARDRAIL_TYPES_WITH_DISPLAYED_ADVISORY) {
-      expect(guardrailExecutionClass(type)).toBe('advisory_displayed');
-      expect(SUPPORTED_GUARDRAIL_SHAPES[type]).toBeUndefined();
+  it('every known type resolves to exactly one class, and every non-executor is an explicit displayed advisory outside the shape table', () => {
+    // Advisory membership DERIVED at call time from the one classifier (CR4:
+    // no second, import-frozen list that could disagree with it).
+    for (const type of KNOWN_GUARDRAIL_TYPES) {
+      const cls = guardrailExecutionClass(type);
+      expect(['executor', 'advisory_displayed']).toContain(cls);
+      if (cls === 'advisory_displayed') {
+        expect(SUPPORTED_GUARDRAIL_SHAPES[type]).toBeUndefined();
+      }
     }
+    // maxPosition is permanently advisory (the documented BaggerBomb no-op).
+    expect(guardrailExecutionClass('maxPosition')).toBe('advisory_displayed');
   });
 
   it('an unknown type resolves to no class at all (fail-closed, never silently "executor")', () => {
