@@ -1652,16 +1652,15 @@ export const PROFIT_TARGET_EXECUTOR_ENABLED = false;
 
 /**
  * Metric History Snapshot Substrate (EXA_RETRIEVAL_INTEGRATION_SPEC_V1_4 §6.0 —
- * FOUNDER DECISION 2). When FALSE (DEFAULT), the ranking cron
- * (api/cron/compute-rankings.js) behaves exactly as before — no snapshot doc is
- * written. When TRUE, after the ranking documents persist, the cron additionally
+ * FOUNDER DECISION 2). ENABLED. After the ranking cron
+ * (api/cron/compute-rankings.js) persists its ranking documents, it additionally
  * writes the daily per-ticker metric history (metricSnapshots/{ticker}/daily/{date})
  * and retains the raw quarterly series it already fetches transiently
  * (quarterlySeries/{ticker}) — detection substrate for Workstream B's decomposition
  * gate. Nothing reads this data yet; it is a failure-isolated, additive co-tenant
- * write. Merged DARK; the flip is a separate one-line PR after a Vercel preview smoke
- * (the MANDATE_ROLLOVER_ENABLED dark-runway precedent — flip-and-pin travel together,
- * and drop this flag's DARK_BY_DESIGN entry in the same commit).
+ * write (no new EODHD fetch, no new cron slot). Flipped true after the substrate
+ * merge + Vercel preview smoke; instant rollback is set-false (which re-pins the
+ * metricSnapshots.test.js off-state and restores this flag's DARK_BY_DESIGN entry).
  */
 // Pinned by: metricSnapshots.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const METRIC_HISTORY_SNAPSHOT_ENABLED = false;
+export const METRIC_HISTORY_SNAPSHOT_ENABLED = true;

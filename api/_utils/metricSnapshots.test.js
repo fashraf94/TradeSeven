@@ -147,27 +147,35 @@ afterEach(() => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// 1. Off-state pin — flag false ⇒ zero snapshot writes (the flagPinGuard assertion)
+// 1. On-state pin — flag true ⇒ the writer runs (the flagPinGuard assertion)
 // ─────────────────────────────────────────────────────────────────────────
-describe('off-state pin (flagPinGuard)', () => {
-  it('ships dark — METRIC_HISTORY_SNAPSHOT_ENABLED is false', () => {
-    // BUILD_RULES §2: this pin and the const value move together. When the founder
-    // flips the flag, this assertion flips to true in the same commit (and the flag's
-    // DARK_BY_DESIGN entry is dropped) — the flagPinGuard enforces it.
-    expect(METRIC_HISTORY_SNAPSHOT_ENABLED).toBe(false);
+describe('on-state pin (flagPinGuard)', () => {
+  it('is live — METRIC_HISTORY_SNAPSHOT_ENABLED is true', () => {
+    // BUILD_RULES §2: this pin and the const value move together. Flipped true in the
+    // same commit that dropped the flag's DARK_BY_DESIGN entry — the flagPinGuard
+    // enforces the coupling.
+    expect(METRIC_HISTORY_SNAPSHOT_ENABLED).toBe(true);
   });
 
-  it('the cron hook is gated: with the flag false the snapshot writer is never reached', () => {
+  it('the cron hook is live: with the flag true the snapshot writer runs', async () => {
     // The hook in compute-rankings.js is `if (METRIC_HISTORY_SNAPSHOT_ENABLED) { … }`.
-    // Mirror that gate here to prove the off-state performs zero writes without booting
-    // the whole cron handler.
+    // Mirror that gate here to prove the on-state admits the writer and writes occur,
+    // without booting the whole cron handler.
     const db = makeFakeDb();
+    let ran = false;
     if (METRIC_HISTORY_SNAPSHOT_ENABLED) {
-      // unreachable while dark — a real capture would run here
-      throw new Error('flag unexpectedly enabled');
+      ran = true;
+      await captureMetricHistorySnapshots({
+        db,
+        metricsByTicker: makeMetricsFixture(),
+        quarterlyByTicker: makeQuarterlyFixture(),
+        asOfDate: DATE,
+        startTime: Date.now(),
+      });
     }
-    expect(db._sets).toHaveLength(0);
-    expect(db._commitCount).toBe(0);
+    expect(ran).toBe(true);
+    expect(db._sets.length).toBeGreaterThan(0);
+    expect(db._commitCount).toBeGreaterThan(0);
   });
 });
 
