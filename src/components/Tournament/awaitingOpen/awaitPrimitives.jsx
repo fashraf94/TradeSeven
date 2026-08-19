@@ -17,7 +17,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { Mono } from '../../League/draft/draftPrimitives';
-import { awaitPalette, alpha } from './awaitTokens';
+import { awaitPalette, alpha, wSec } from './awaitTokens';
 
 export { Mono };
 
@@ -157,6 +157,113 @@ export function BandHead({ eyebrow, title, sub = null, right = null, compact = f
       </div>
       {right && <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>{right}</div>}
     </header>
+  );
+}
+
+/**
+ * THE TICKER PLATE — a spined market plate rather than a flat pill. Sector
+ * colour arrives as a glowing spine + tint + tick marks while the symbol itself
+ * stays near-white, so it reads as light ON colour instead of tinted text.
+ *
+ * Colour comes from wSec() → the live getSectorColor map — the same source the
+ * research modal uses, so a ticker's colour is identical wherever it appears.
+ * With `onResearch` the plate is a real <button> (keyboard-reachable, labelled);
+ * without it, an inert span.
+ */
+export function TickerPlate({ symbol, sector, size = 'md', tag = null, tagColor = null, onResearch = null }) {
+  const pal = useAwaitPalette();
+  const c = wSec(sector);
+  const S = {
+    sm: { h: 26, f: 12, sp: 2.5, pad: '0 9px 0 8px', r: 8, tick: 5 },
+    md: { h: 34, f: 15, sp: 3, pad: '0 11px 0 10px', r: 10, tick: 7 },
+    lg: { h: 44, f: 21, sp: 4, pad: '0 15px 0 13px', r: 12, tick: 9 },
+  }[size] || {};
+
+  const inner = (
+    <>
+      <span aria-hidden="true" style={{
+        position: 'absolute', left: 0, top: 0, bottom: 0, width: S.sp, background: c,
+        boxShadow: `0 0 10px 0 ${alpha(c, 0.85)}`,
+      }} />
+      <Mono style={{
+        fontSize: S.f, fontWeight: 700, letterSpacing: '-0.005em', color: pal.white,
+        textShadow: `0 0 12px ${alpha(c, 0.65)}`, whiteSpace: 'nowrap',
+      }}>
+        {symbol}
+      </Mono>
+      {tag && (
+        <Mono style={{
+          fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
+          color: alpha(tagColor || c, 0.95), textTransform: 'uppercase',
+        }}>
+          {tag}
+        </Mono>
+      )}
+      <span aria-hidden="true" style={{ display: 'flex', gap: 2, alignItems: 'center', marginLeft: 'auto', paddingLeft: 4 }}>
+        {[0.9, 0.55, 0.3].map((o, i) => (
+          <span key={i} style={{ width: 1.5, height: S.tick, borderRadius: 1, background: alpha(c, o) }} />
+        ))}
+      </span>
+    </>
+  );
+
+  const style = {
+    position: 'relative', display: 'inline-flex', alignItems: 'center',
+    gap: size === 'sm' ? 7 : 9, height: S.h, padding: S.pad, borderRadius: S.r,
+    overflow: 'hidden', minWidth: 0, maxWidth: '100%',
+    background: `linear-gradient(96deg, ${alpha(c, 0.26)} 0%, ${alpha(c, 0.1)} 48%, ${alpha(pal.bg, 0.28)} 100%)`,
+    border: `1px solid ${alpha(c, 0.42)}`,
+    boxShadow: `inset 0 1px 0 ${alpha(pal.white, 0.1)}, 0 0 20px -12px ${alpha(c, 1)}`,
+  };
+
+  if (onResearch) {
+    return (
+      <button
+        type="button"
+        className="aw-tk"
+        onClick={(e) => { e.stopPropagation(); onResearch(symbol); }}
+        aria-label={`Research ${symbol}`}
+        title={`Research ${symbol}`}
+        style={{ ...style, font: 'inherit', cursor: 'pointer' }}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return <span style={style}>{inner}</span>;
+}
+
+/** A tick-marked rail with a glowing bead — the battle screen's meter grammar. */
+export function TickRail({ pct, color = null, ticks = 12, h = 7, live = false }) {
+  const pal = useAwaitPalette();
+  const c = color || pal.teal;
+  const p = Math.max(0, Math.min(100, pct));
+  return (
+    <div aria-hidden="true" style={{ position: 'relative', width: '100%', height: h, borderRadius: h, background: pal.raised }}>
+      {Array.from({ length: ticks }).map((_, i) => {
+        const x = ((i + 1) / (ticks + 1)) * 100;
+        const crossed = x <= p;
+        return (
+          <span key={i} style={{
+            position: 'absolute', left: `${x}%`, top: -2, bottom: -2, width: 1.5,
+            transform: 'translateX(-50%)', borderRadius: 2,
+            background: crossed ? alpha(c, 0.85) : alpha(c, 0.22),
+            boxShadow: crossed ? `0 0 6px ${alpha(c, 0.6)}` : 'none',
+          }} />
+        );
+      })}
+      <span style={{
+        position: 'absolute', left: 0, width: `${p}%`, top: 0, bottom: 0, borderRadius: h,
+        background: `linear-gradient(90deg, ${alpha(c, 0.35)}, ${c})`,
+        boxShadow: `0 0 12px -2px ${alpha(c, 0.7)}`,
+      }} />
+      <span style={{
+        position: 'absolute', left: `${p}%`, top: '50%', width: h + 5, height: h + 5, borderRadius: '50%',
+        transform: 'translate(-50%,-50%)', background: c, border: `2px solid ${pal.bg}`,
+        boxShadow: `0 0 12px ${alpha(c, 0.95)}`,
+        animation: live ? 'awOpenBead 2s ease-in-out infinite' : 'none',
+      }} />
+    </div>
   );
 }
 

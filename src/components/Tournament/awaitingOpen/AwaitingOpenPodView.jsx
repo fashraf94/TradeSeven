@@ -36,6 +36,8 @@ import ClaimFlipWindow from '../ClaimFlipWindow';
 import GroupFeed from '../GroupFeed';
 import AssetResearchModal from '../../draft/AssetResearchModal';
 import AwaitingOpenShell from './AwaitingOpenShell';
+import AwaitCountdownHero from './AwaitCountdownHero';
+import AwaitDraftBoard from './AwaitDraftBoard';
 import { isAwaitingOpenRedesignOn } from '../../../config/featureFlags';
 
 const CLAIM_CAP = TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE; // 3 pending
@@ -167,8 +169,19 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
     return (
       <>
         <AwaitingOpenShell desktop={desktop}>
-          {countdownHero}
-          {draftboard}
+          <AwaitCountdownHero
+            targetIso={pod?.startAnchor?.anchorIso || null}
+            compact={!desktop}
+          />
+          <AwaitDraftBoard
+            pod={pod}
+            uid={uid}
+            events={events}
+            sectorMap={sectorMap}
+            picksPerPlayer={PICKS_PER_PLAYER}
+            onResearch={setResearchSym}
+            compact={!desktop}
+          />
           {freeAgents}
           <div ref={claimsRef}>{claimsBuilder}</div>
           <GroupFeed feed={pod?.feed} uid={uid} />
