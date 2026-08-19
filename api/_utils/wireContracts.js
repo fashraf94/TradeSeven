@@ -12,7 +12,11 @@
 // is a Wire spec amendment, not a drive-by edit.
 
 export const WIRE_SCHEMA_VERSION = 'wire-1.6';
-export const WIRE_VALIDATOR_VERSION = '1.6.0';
+// V1.6.0 → V1.7.0: figure-quality belt — per-basis unit allowlist +
+// same-(basis,unit) consistency vs the magnitude anchor + loose mis-map band
+// (wireValidator.js). Behavior change → epoch input (bumped alongside
+// WIRE_GENERATION_VERSION below; the 2026-08-19 MRK/TSLA/PFE figure defects).
+export const WIRE_VALIDATOR_VERSION = '1.7.0';
 
 // ── Phase 2 provenance versions (Spec V1.3 N0, D-P2-9 + companion) ────────
 //
@@ -157,7 +161,7 @@ export const WIRE_VALIDATOR_VERSION = '1.6.0';
 // one-line comment edit to stockIntelligenceData.js's header (which documents
 // that guard). No prompt/universe change, TICKER_TO_SECTOR untouched (no
 // validator bump). Free pre-runway.
-export const WIRE_GENERATION_VERSION = 20;
+export const WIRE_GENERATION_VERSION = 21;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────
@@ -244,6 +248,13 @@ export const WIRE_CODES = Object.freeze({
   SALVAGE_KEYLEVEL: 'SALVAGE_KEYLEVEL',
   SALVAGE_QUALIFIER: 'SALVAGE_QUALIFIER',
   SALVAGE_FIGURE: 'SALVAGE_FIGURE',
+  // Figure/magnitude SEMANTIC salvage-drops (V1.7 figure-quality belt). Each is
+  // DISTINCT so validationStats.byRule counts the reason, not just "a figure
+  // dropped": a unit its basis cannot carry, a same-(basis,unit) contradiction
+  // of the data-anchored magnitude, and the loose mis-map band backstop.
+  SALVAGE_UNIT_FOR_BASIS: 'SALVAGE_UNIT_FOR_BASIS',
+  SALVAGE_BASIS_CONFLICT: 'SALVAGE_BASIS_CONFLICT',
+  SALVAGE_IMPLAUSIBLE: 'SALVAGE_IMPLAUSIBLE',
   SALVAGE_DIRECTION: 'SALVAGE_DIRECTION',
   SALVAGE_SUBJECTREF: 'SALVAGE_SUBJECTREF',
   S1_SUBJECT_REMAPPED: 'S1_SUBJECT_REMAPPED',
@@ -298,6 +309,48 @@ export const KEY_LEVEL_TYPES = Object.freeze([
 export const SHARED_FIGURE_BASES = Object.freeze([
   'gap_vs_prior_close', 'price_vs_prior_close', 'volume_vs_avg',
 ]);
+
+// ── Per-basis unit allowlist (V1.7 figure-quality belt) ──────────────────
+// A basis's value is a specific quantity, so only certain units can carry it —
+// a price move is pct|usd, a volume-vs-average ratio is a multiple (x). A unit
+// outside its basis's set is a MISLABEL (the production 2026-08-19 defect:
+// `volume_vs_avg` in `count`, `price_vs_prior_close` in `count`); the validator
+// salvage-drops it (SALVAGE_UNIT_FOR_BASIS). A basis ABSENT here is deliberately
+// UNCONSTRAINED: the three econ bases (print_vs_expected / consensus_estimate /
+// prior_print) legitimately span pct·pp·usd·pts·count across CPI, NFP, claims,
+// GDP, retail — no honest allowlist exists, so they are left open (the same
+// posture the editorial adapter takes, recomputing them under `print_native`).
+export const BASIS_UNITS = Object.freeze({
+  price_vs_prior_close: Object.freeze(['pct', 'usd']),
+  gap_vs_prior_close: Object.freeze(['pct', 'usd']),
+  price_vs_level: Object.freeze(['pct', 'usd']),
+  index_vs_prior_close: Object.freeze(['pct', 'pts']),
+  eps_vs_consensus: Object.freeze(['pct', 'usd']),
+  revenue_vs_consensus: Object.freeze(['pct', 'usd']),
+  sector_vs_spy: Object.freeze(['pct', 'pp']),
+  rs_vs_peers: Object.freeze(['pct', 'pp', 'x']),
+  volume_vs_avg: Object.freeze(['x']),
+  range_vs_atr: Object.freeze(['x']),
+});
+
+// ── Loose per-(basis,unit) mis-map band (V1.7 figure-quality belt) ───────
+// The LAST-resort backstop, ranked BELOW the unit allowlist and the same-basis
+// consistency check (founder ruling): those two catch the real defects
+// deterministically with no threshold. This band only catches a lone figure
+// (no magnitude anchor) whose legal-unit value is still a physical impossibility
+// — a `pct` price move of 1137, a `volume_vs_avg` of thousands×. Sized for
+// MIS-MAPPING, never close calls: a genuine +300% small-cap biotech and a 90×
+// RVOL both pass. Sparse — `usd` moves (share-price-dependent: BRK.A) and every
+// econ basis carry NO band. Keyed `basis:unit`; absent = no band.
+export const BASIS_UNIT_BANDS = Object.freeze({
+  'price_vs_prior_close:pct': 1000,
+  'gap_vs_prior_close:pct': 1000,
+  'price_vs_level:pct': 1000,
+  'index_vs_prior_close:pct': 100,
+  'sector_vs_spy:pct': 200,
+  'volume_vs_avg:x': 1000,
+  'range_vs_atr:x': 1000,
+});
 
 // ── subjectRef vocabularies (V1.6 A2) ────────────────────────────────────
 // index_move: MODEL-EMITTED, required — Kai's idempotency key is a time-slot

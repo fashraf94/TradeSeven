@@ -1,13 +1,13 @@
 {
   "note": "Committed baseline for the GENERATION_SURFACE lock (P2-15). Never hand-edit: regenerate via WIRE_GENERATION_BASELINE_REGEN=1 after bumping the bound version constant in wireContracts.js.",
   "generatedAgainst": {
-    "WIRE_GENERATION_VERSION": 20,
+    "WIRE_GENERATION_VERSION": 21,
     "WIRE_DIGEST_RENDERER_VERSION": "1.0.0",
-    "WIRE_VALIDATOR_VERSION": "1.6.0"
+    "WIRE_VALIDATOR_VERSION": "1.7.0"
   },
   "generationSurface": {
-    "version": 20,
-    "hash": "fb5abd645aadd2826d0245ee1445e8accb30381a806a5746c6ccafb5e7b31f55",
+    "version": 21,
+    "hash": "58504b552eed8ab82b3f7e52636423e571b2c3e09c02b03431ec2ebf7d77a4a9",
     "files": {
       "api/_utils/econPrintVerifier.js": "63575ec0c96f4edcf6dbc491887a5f47fc538cfd4b66245d54c2f67e5ff8075c",
       "api/_utils/exaCatalystFetch.js": "39a2d03e743b7e34fd1d13f2cc4e62ec2a84fb41968f00e56f011a785803d4a6",
@@ -18,7 +18,7 @@
       "api/_utils/ingestedClaims.js": "045fc379b77ad610044e3c4e49e5056df4d9fcae684c0483321d931f5958701a",
       "api/_utils/stockIntelligenceData.js": "b3291ba019b40952f17ad4133f1c2ce5eb4d3fa41d496d4965e2329caae9bfc4",
       "api/_utils/wireContinuity.js": "c9b5002292934ce48bbc399fc977d4aef51220ff8775187383be1adc1b301619",
-      "api/_utils/wireContracts.js": "a70b99144299a9d18247178b1c31d371713fbbcd5ee1987efcdccb4c056911bb",
+      "api/_utils/wireContracts.js": "cb8c9bb717c41c59a400d8823dc2aaa1c664010b350399cefb5d25594ca42f44",
       "api/_utils/wireEntryGuard.js": "de523d9b3d236de0bf5cd207b412aa1449b50a58e8020851580db5d362ba3908",
       "api/_utils/wireExemplars.js": "3971486a2104956be2f62bfd0befbae4921a8945a6c563a6e1ff292d491628f5",
       "api/_utils/wireGenerationConfig.js": "7b3186109f79810db0d09169d49f20165acaa3af128ae812ac67c1d95158e13e",
@@ -44,7 +44,7 @@
     "hash": "5b08fcbeac5164d53de63efd69d3f429e195ce25611fd936ae40e38b9a3cb82e"
   },
   "validator": {
-    "version": "1.6.0",
-    "hash": "dcee546e9159d3a848a2a7e56e129bfe63ef2b83ff0e148385d1a712ab6c19c9"
+    "version": "1.7.0",
+    "hash": "92429a5585046a476f7ea79a6c88052bd76e973d460aecf8447b8be37033000e"
   }
 }
