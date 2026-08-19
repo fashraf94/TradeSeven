@@ -221,6 +221,7 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
             claimCap={CLAIM_CAP}
             windowLine={windowLine.text}
             wireOpen={windowLine.isOpen}
+            hasPicks={myPicks.length > 0}
             onClaim={setSwapRow}
             onResearch={setResearchSym}
             compact={!desktop}

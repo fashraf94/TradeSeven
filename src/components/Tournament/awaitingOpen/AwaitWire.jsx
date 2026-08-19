@@ -75,9 +75,9 @@ function StatStrip({ stock, compact, pal }) {
   );
 }
 
-function WireRow({ stock, rank, queued, locked, capReached, onClaim, onResearch, compact, pal }) {
+function WireRow({ stock, rank, queued, locked, capReached, hasPicks, onClaim, onResearch, compact, pal }) {
   const lead = rank === 1 && !queued;
-  const disabled = queued || locked || capReached;
+  const disabled = queued || locked || capReached || !hasPicks;
 
   const claimTitle = queued
     ? `A claim for ${stock.symbol} is already pending`
@@ -85,9 +85,11 @@ function WireRow({ stock, rank, queued, locked, capReached, onClaim, onResearch,
       ? 'The claim wire is closed right now'
       : capReached
         ? 'You have the maximum pending claims — wait for tonight’s processing'
-        : `Claim ${stock.symbol}`;
+        : !hasPicks
+          ? 'You have no picks to drop for a claim'
+          : `Claim ${stock.symbol}`;
 
-  const claimColor = queued ? pal.teal : locked || capReached ? pal.ink3 : pal.teal;
+  const claimColor = queued ? pal.teal : disabled ? pal.ink3 : pal.teal;
 
   return (
     <div className={disabled ? undefined : 'aw-row'} style={{
@@ -133,7 +135,7 @@ function WireRow({ stock, rank, queued, locked, capReached, onClaim, onResearch,
       >
         {queued
           ? <><Clock size={12} color={claimColor} strokeWidth={2.2} /> QUEUED</>
-          : locked
+          : locked || !hasPicks
             ? <><Lock size={12} color={claimColor} strokeWidth={2.2} /> LOCKED</>
             : <><Gavel size={12} color={claimColor} strokeWidth={2.2} /> Claim</>}
       </button>
@@ -148,6 +150,7 @@ export default function AwaitWire({
   claimCap = 3,
   windowLine = '',
   wireOpen = false,
+  hasPicks = true,
   onClaim,
   onResearch,
   compact = false,
@@ -181,6 +184,7 @@ export default function AwaitWire({
           queued={pendingSymbols ? pendingSymbols.has(stock.symbol) : false}
           locked={locked}
           capReached={capReached}
+          hasPicks={hasPicks}
           onClaim={onClaim}
           onResearch={onResearch}
           compact={compact}
