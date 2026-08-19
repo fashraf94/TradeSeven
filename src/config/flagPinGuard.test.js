@@ -93,6 +93,8 @@ const DARK_BY_DESIGN = {
     'Spec 1 rollover sweep (§5.3) — built P4; flips only after a founder preview smoke',
   MANDATE_DORMANCY_DOWNSHIFT_ENABLED:
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
+  METRIC_HISTORY_SNAPSHOT_ENABLED:
+    'EXA §6.0 metric-history substrate — additive co-tenant write in compute-rankings; merged dark, flips only after a founder preview smoke',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────

@@ -93,6 +93,8 @@
     "api/_utils/masterySettlement.js::runAwardTransaction::set::unresolved": 1,
     "api/_utils/masterySettlement.js::runRepairSweep::set::unresolved": 2,
     "api/_utils/masterySettlement.js::stampMasterySlotFirstTick::set::unresolved": 1,
+    "api/_utils/metricSnapshots.js::retainQuarterlySeries::set::unresolved": 1,
+    "api/_utils/metricSnapshots.js::writeDailySnapshots::set::unresolved": 1,
     "api/_utils/moverCandidates.js::consumeCandidate::set::unresolved": 1,
     "api/_utils/moverCandidates.js::flushExpiredCandidates::delete::unresolved": 1,
     "api/_utils/moverCandidates.js::recordCandidate::set::unresolved": 1,

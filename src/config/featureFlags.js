@@ -1633,3 +1633,19 @@ export const MANDATE_FOUNDER_CREATE_ENABLED = true;
  */
 export const MANDATE_TRANSPORT_MODE = 'direct';
 
+/**
+ * Metric History Snapshot Substrate (EXA_RETRIEVAL_INTEGRATION_SPEC_V1_4 §6.0 —
+ * FOUNDER DECISION 2). When FALSE (DEFAULT), the ranking cron
+ * (api/cron/compute-rankings.js) behaves exactly as before — no snapshot doc is
+ * written. When TRUE, after the ranking documents persist, the cron additionally
+ * writes the daily per-ticker metric history (metricSnapshots/{ticker}/daily/{date})
+ * and retains the raw quarterly series it already fetches transiently
+ * (quarterlySeries/{ticker}) — detection substrate for Workstream B's decomposition
+ * gate. Nothing reads this data yet; it is a failure-isolated, additive co-tenant
+ * write. Merged DARK; the flip is a separate one-line PR after a Vercel preview smoke
+ * (the MANDATE_ROLLOVER_ENABLED dark-runway precedent — flip-and-pin travel together,
+ * and drop this flag's DARK_BY_DESIGN entry in the same commit).
+ */
+// Pinned by: metricSnapshots.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const METRIC_HISTORY_SNAPSHOT_ENABLED = false;
+
