@@ -137,6 +137,32 @@ export function buildSeatLanes({ events, groupMembers, picksPerPlayer = 3, uid =
 }
 
 /**
+ * The caller's own picks in the redesign's pick shape — the drop options in the
+ * swap sheet, and the source of "your book".
+ *
+ * Uses the SAME `norm` every other derivation here uses (trim + uppercase), so
+ * a symbol carrying stray whitespace keys `sectorMap` identically to the
+ * draftboard's plates. An inline `String(x).toUpperCase()` would skip the trim
+ * and silently colour the same ticker differently in the sheet than on the
+ * board (BUILD_RULES §9). Pure.
+ *
+ * Returns `[{ symbol, sector, round }]`, empty for a missing player.
+ */
+export function buildMyPicks({ player, sectorMap = null } = {}) {
+  return (player?.picks || [])
+    .map((pick, i) => {
+      const symbol = norm(typeof pick === 'string' ? pick : pick?.symbol);
+      if (!symbol) return null;
+      return {
+        symbol,
+        sector: (sectorMap && sectorMap.get(symbol)) || 'Other',
+        round: `R${i + 1}`,
+      };
+    })
+    .filter(Boolean);
+}
+
+/**
  * Sector spread of a set of picks — "your book" at a glance. Counts by sector,
  * densest first, ties broken alphabetically so the order is stable across
  * renders. Nulls (an undrafted slot) are ignored. Pure.

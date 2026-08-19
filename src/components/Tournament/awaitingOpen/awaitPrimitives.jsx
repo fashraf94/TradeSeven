@@ -4,8 +4,14 @@
 // Awaiting-the-Open redesign — the surface primitives (build spec §7).
 // WSurf is the panel; BandHead is the section band; WChip is the small mono
 // label. Depth comes from layered surfaces (bg / surface / raised), hairline
-// borders and a gradient wash; glow is reserved for the countdown and the
-// user's own panel/lane and is used nowhere else.
+// borders and a gradient wash.
+//
+// GLOW DISCIPLINE, stated precisely: PANEL-level bloom (WSurf's `glow`) is
+// reserved for the countdown and the user's own lane, and appears nowhere else.
+// It is not a ban on light — the ticker plate's sector spine, the tick rails and
+// the live-control bloom are part of the plate/meter grammar and are present
+// wherever those primitives are, CPU lanes included. What CPU lanes do not get
+// is the ownership wash and the panel bloom.
 //
 // Reduced motion: `useAwaitCSS` puts every hover/transition rule behind
 // `@media (prefers-reduced-motion: no-preference)`, so the browser drops them
@@ -66,13 +72,15 @@ const CSS_ID = '__await_open_css';
  */
 export function useAwaitCSS(pal) {
   useEffect(() => {
-    if (typeof document === 'undefined') return;
+    if (typeof document === 'undefined') return undefined;
+    let injected = null;
     let el = document.getElementById(CSS_ID);
     if (!el) {
       el = document.createElement('style');
       el.id = CSS_ID;
       document.head.appendChild(el);
     }
+    injected = el;
     el.textContent = `
       @keyframes awOpenSheet { from { transform: translateY(103%) } to { transform: none } }
       @keyframes awOpenDim   { from { opacity: 0 } to { opacity: 1 } }
@@ -92,7 +100,17 @@ export function useAwaitCSS(pal) {
         .aw-tk:hover { transform: translateY(-1px); }
       }
       .aw-btn:disabled { cursor: not-allowed; }
+      /* src/index.css:6-11 ships an UNLAYERED
+         input,select,textarea,button { font-size:16px !important } (the iOS
+         auto-zoom guard). It beats inline styles, so without this every button
+         in this surface renders at 16px — measured, that turns the mobile wire
+         row's Claim button into 37% of the row. Countered only for our own
+         classes, via a custom property so each call site keeps its own size. */
+      .aw-btn { font-size: var(--aw-btn-fs, 11px) !important; }
     `;
+    // Remove on unmount so the rules do not outlive the surface for the rest of
+    // the SPA session.
+    return () => { if (injected && injected.parentNode) injected.remove(); };
   }, [pal]);
 }
 

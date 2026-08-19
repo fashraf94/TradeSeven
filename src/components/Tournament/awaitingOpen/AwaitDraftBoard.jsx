@@ -11,8 +11,10 @@
 // Every ticker is a real button into AssetResearchModal (spec §6.3) on both the
 // board and the wire.
 //
-// Glow discipline (spec §7): the bloom is on YOUR lane only. CPU lanes get a
-// flat surface and a hairline.
+// Glow discipline (spec §7): the ownership WASH and the lane bloom are on YOUR
+// lane only — CPU lanes get a flat surface and a hairline. The sector-spine
+// light on a ticker plate is the plate's own grammar and is present on every
+// plate, yours and theirs alike.
 
 import React, { useMemo } from 'react';
 import { Layers, User, Cpu } from 'lucide-react';

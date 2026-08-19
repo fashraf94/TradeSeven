@@ -28,6 +28,7 @@ import { DEFAULT_ARCH } from '../../League/draft/boardModel';
 import { FONT_VARS } from '../../League/draft/draftTokens';
 import {
   buildFreeAgentBoard, sectorMapOf, ownedSectorCountsFrom, heldSymbolsOf, eventsFromPlayers,
+  buildMyPicks,
 } from './podBoard';
 import PodCountdownHero from './PodCountdownHero';
 import UserDraftboard from './UserDraftboard';
@@ -118,7 +119,9 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
     requestAnimationFrame(() => claimsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
-  // ── redesign-only state (inert on the classic path) ───────────────────────
+  // ── redesign-only state ───────────────────────────────────────────────────
+  const redesignOn = isAwaitingOpenRedesignOn();
+
   // The row whose Claim opened the swap sheet. The sheet is pre-filled with it;
   // the user's only decision is which of their three picks it replaces.
   const [swapRow, setSwapRow] = useState(null);
@@ -126,25 +129,41 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
   // The claim window, re-evaluated on a timer so the "opens in Xh Ym" line
   // stays honest while the page sits open. Display-only — the server's 403
   // window_closed is the sole authority on any submit (ClaimFlipWindow.jsx:6-14).
+  //
+  // The timer is GATED ON THE FLAG. Left ungated it would re-render the classic
+  // tree every 30s, and ClaimFlipWindow recomputes getClaimWindowDisplay during
+  // render with no memo (ClaimFlipWindow.jsx:81) — so its countdown line and its
+  // colour would start updating live where main leaves them frozen until the
+  // next snapshot. That is a visible flag-off behaviour change, which the dark
+  // merge forbids.
   const [windowNow, setWindowNow] = useState(() => new Date());
   useEffect(() => {
+    if (!redesignOn) return undefined;
     const id = setInterval(() => setWindowNow(new Date()), 30000);
     return () => clearInterval(id);
-  }, []);
-  const claimWindow = useMemo(() => getClaimWindowDisplay(windowNow), [windowNow]);
-  const windowLine = useMemo(() => wireWindowLine(claimWindow, windowNow), [claimWindow, windowNow]);
+  }, [redesignOn]);
+  const claimWindow = useMemo(
+    () => (redesignOn ? getClaimWindowDisplay(windowNow) : null),
+    [redesignOn, windowNow],
+  );
+  const windowLine = useMemo(
+    () => (redesignOn ? wireWindowLine(claimWindow, windowNow) : { text: '', isOpen: false }),
+    [redesignOn, claimWindow, windowNow],
+  );
 
   // The user's three picks, with the sector each plate is coloured by — the
-  // drop options in the swap sheet.
-  const myPicks = useMemo(
-    () => (player?.picks || []).map((pick, i) => {
-      const symbol = typeof pick === 'string' ? pick : pick?.symbol;
-      if (!symbol) return null;
-      const sym = String(symbol).toUpperCase();
-      return { symbol: sym, sector: sectorMap.get(sym) || 'Other', round: `R${i + 1}` };
-    }).filter(Boolean),
-    [player, sectorMap],
-  );
+  // drop options in the swap sheet. Built through the shared podBoard helper so
+  // the symbols are normalised exactly as the draftboard normalises them; an
+  // inline uppercase would skip the trim and could colour the same ticker
+  // differently in the sheet than on the board (BUILD_RULES §9).
+  const myPicks = useMemo(() => buildMyPicks({ player, sectorMap }), [player, sectorMap]);
+
+  // Every claim of the caller's own, newest first — pending AND resolved. The
+  // classic body surfaces these through ClaimFlipWindow (:200-211); the redesign
+  // does not render that panel, so without this an approved or denied claim (and
+  // its denialReason) would be visible nowhere and the row would simply revert
+  // to a live Claim button after the processing pass.
+  const myClaims = useMemo(() => claims.filter((c) => c.odUserId === uid), [claims, uid]);
 
   const researchSector = researchSym ? (sectorMap.get(researchSym) || null) : null;
 
@@ -197,7 +216,7 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
   // ?awaitingOpenRedesign=1). Same reads, same claim call — the shell owns the
   // layout and atmosphere; the sections are replaced phase by phase. Flag-off
   // falls through to today's body below, byte-identical.
-  if (isAwaitingOpenRedesignOn()) {
+  if (redesignOn) {
     return (
       <>
         <AwaitingOpenShell desktop={desktop}>
@@ -222,6 +241,7 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
             windowLine={windowLine.text}
             wireOpen={windowLine.isOpen}
             hasPicks={myPicks.length > 0}
+            claims={myClaims}
             onClaim={setSwapRow}
             onResearch={setResearchSym}
             compact={!desktop}

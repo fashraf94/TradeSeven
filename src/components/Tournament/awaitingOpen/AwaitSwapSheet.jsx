@@ -26,13 +26,15 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { X, Check, AlertCircle } from 'lucide-react';
 import { placeClaim, mapTournamentActionError } from '../../../services/tournamentActions';
-import { actionReducer, initialActionState, isActionPending } from '../../../utils/tournamentActionMachine';
+import { actionReducer, initialActionState, isActionPending, ACTION_STATUS } from '../../../utils/tournamentActionMachine';
+import { FONT_VARS } from '../../League/draft/draftTokens';
 import { alpha, readableOn, WPOD } from './awaitTokens';
 import { Mono, TickerPlate, useAwaitPalette, usePrefersReducedMotion } from './awaitPrimitives';
 
 // The fixed bottom nav (Navigation/BottomNav.jsx:53-59) — 64px plus its
 // safe-area inset. The sheet clears both.
-const NAV_CLEARANCE = 'calc(64px + env(safe-area-inset-bottom, 0px))';
+// 64px + its 1px borderTop (the app ships no box-sizing reset) + the inset.
+const NAV_CLEARANCE = 'calc(65px + env(safe-area-inset-bottom, 0px))';
 
 export default function AwaitSwapSheet({
   row,                 // the wire row being claimed: { symbol, sectorName, fit }
@@ -55,6 +57,7 @@ export default function AwaitSwapSheet({
   const panelRef = useRef(null);
 
   const symbol = row?.symbol || null;
+  const pending = isActionPending(state);
 
   // A new row resets the choice and any prior error — the sheet never carries a
   // stale selection or a stale failure across tickers.
@@ -63,17 +66,72 @@ export default function AwaitSwapSheet({
     dispatch({ type: 'reset' });
   }, [symbol]);
 
-  // Escape closes; focus moves into the sheet so the choice is keyboard-reachable.
-  useEffect(() => {
-    if (!row) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') onClose && onClose(); };
-    document.addEventListener('keydown', onKey);
-    panelRef.current?.focus();
-    return () => document.removeEventListener('keydown', onKey);
-  }, [row, onClose]);
+  // A submit in flight holds the sheet open: closing mid-flight would unmount
+  // before the server answers and the rejection would land nowhere, leaving a
+  // failed claim with no error, no queued row and no meter change — exactly the
+  // swallowed failure this file's contract forbids.
+  const requestClose = useCallback(() => {
+    if (inFlight.current) return;
+    if (onClose) onClose();
+  }, [onClose]);
 
-  const pending = isActionPending(state);
-  const canSubmit = !!(drop && symbol && groupId && open && !capReached && !pending);
+  // Focus moves into the sheet once per ticker — keyed on `symbol`, NOT on the
+  // onClose identity, which the parent recreates on every render (its 30s
+  // window timer would otherwise yank focus back here every 30 seconds).
+  // The element that opened the sheet is remembered and refocused on close, so
+  // a keyboard user is returned to where they were rather than to <body>.
+  useEffect(() => {
+    if (!symbol) return undefined;
+    const opener = document.activeElement;
+    panelRef.current?.focus();
+    return () => {
+      if (opener && typeof opener.focus === 'function' && document.contains(opener)) {
+        // The opener may now be disabled (a placed claim greys its row's Claim
+        // button); focusing a disabled element is a no-op, not an error.
+        opener.focus();
+      }
+    };
+  }, [symbol]);
+
+  // aria-modal="true" promises the rest of the page is inert, so Tab must not
+  // walk out of the dialog into the wire behind the scrim or the fixed bottom
+  // nav. Cycle within the panel; Escape closes. Both read through a ref so the
+  // listener binds once per open rather than on every parent render.
+  const closeRef = useRef(requestClose);
+  closeRef.current = requestClose;
+  useEffect(() => {
+    if (!symbol) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') { closeRef.current(); return; }
+      if (e.key !== 'Tab') return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = Array.from(
+        panel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+      ).filter((el) => !el.disabled && el.getAttribute('aria-hidden') !== 'true');
+      if (!focusable.length) { e.preventDefault(); panel.focus(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (!panel.contains(active)) { e.preventDefault(); first.focus(); return; }
+      if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [symbol]);
+
+  // Lock the page behind the sheet — without this a touch drag on the scrim
+  // scrolls the wire underneath on mobile.
+  useEffect(() => {
+    if (!symbol || typeof document === 'undefined') return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [symbol]);
+
+  const placed = state.status === ACTION_STATUS.CONFIRMED;
+  const canSubmit = !!(drop && symbol && groupId && open && !capReached && !pending && !placed);
 
   const submit = useCallback(async () => {
     // Synchronous guard: `disabled` cannot stop a same-tick double click.
@@ -82,34 +140,44 @@ export default function AwaitSwapSheet({
     dispatch({ type: 'submit' }); // claims are never applied optimistically
     try {
       await placeClaim({ groupId, dropSymbol: drop, addSymbol: symbol });
+      // The sheet HOLDS on success rather than closing: closing silently gave
+      // the user no confirmation at all, and until the claims snapshot lands
+      // the meter still reads the old count and the row still offers a live
+      // Claim — so a re-tap would spend a second cap slot on the same name.
       dispatch({ type: 'confirm' });
       if (onPlaced) onPlaced(symbol);
-      if (onClose) onClose();
     } catch (err) {
       dispatch({ type: 'reject', error: mapTournamentActionError(err) });
     } finally {
       inFlight.current = false;
     }
-  }, [canSubmit, groupId, drop, symbol, onPlaced, onClose]);
+  }, [canSubmit, groupId, drop, symbol, onPlaced]);
 
   const dropPick = useMemo(() => picks.find((p) => p.symbol === drop) || null, [picks, drop]);
 
+  // Only a press that BEGINS on the scrim dismisses it.
+  const scrimPress = useRef(false);
+
   if (!row) return null;
 
-  const confirmLabel = pending
-    ? 'Placing…'
-    : drop
-      ? `${WPOD.place.toUpperCase()} · ${symbol} FOR ${drop}`
-      : 'PICK A NAME TO DROP';
+  const confirmLabel = placed
+    ? 'CLAIM PLACED'
+    : pending
+      ? 'Placing…'
+      : drop
+        ? `${WPOD.place.toUpperCase()} · ${symbol} FOR ${drop}`
+        : 'PICK A NAME TO DROP';
 
   return (
     <div
-      onClick={onClose}
+      onMouseDown={(e) => { scrimPress.current = e.target === e.currentTarget; }}
+      onClick={(e) => { if (e.target === e.currentTarget && scrimPress.current) requestClose(); }}
       style={{
         position: 'fixed', inset: 0, zIndex: 90, display: 'flex',
         alignItems: compact ? 'flex-end' : 'center', justifyContent: 'center',
         padding: compact ? 0 : 20, paddingBottom: compact ? NAV_CLEARANCE : 20,
-        background: alpha(pal.bg, 0.72), backdropFilter: 'blur(3px)',
+        background: alpha(pal.bg, 0.72),
+        backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)', ...FONT_VARS,
         animation: reduced ? 'none' : 'awOpenDim .18s ease-out both',
       }}
     >
@@ -139,7 +207,7 @@ export default function AwaitSwapSheet({
             <div style={{ fontSize: 11.5, color: pal.ink2, marginTop: 3 }}>{row.sectorName}</div>
           </div>
           <button
-            type="button" className="aw-btn" onClick={onClose} aria-label="Close"
+            type="button" className="aw-btn" onClick={requestClose} aria-label="Close" disabled={pending}
             style={{
               marginLeft: 'auto', background: alpha(pal.white, 0.05), border: `1px solid ${pal.hair2}`,
               borderRadius: 9, padding: 7, lineHeight: 0, cursor: 'pointer',
@@ -212,7 +280,7 @@ export default function AwaitSwapSheet({
           disabled={!canSubmit}
           onClick={submit}
           style={{
-            font: 'inherit', width: '100%', fontFamily: 'var(--ld-mono)', fontSize: 11.5, fontWeight: 700,
+            font: 'inherit', width: '100%', fontFamily: 'var(--ld-mono)', '--aw-btn-fs': '11.5px', fontWeight: 700,
             letterSpacing: '0.1em', padding: '13px 16px', borderRadius: 12,
             cursor: canSubmit ? 'pointer' : 'not-allowed',
             color: canSubmit ? readableOn(pal.teal) : pal.ink3,
@@ -224,18 +292,46 @@ export default function AwaitSwapSheet({
           {confirmLabel}
         </button>
 
+        {placed && (
+          <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
+            <Check size={13} color={pal.teal} strokeWidth={2.6} />
+            <span style={{ fontSize: 11.5, color: pal.teal, lineHeight: 1.4 }}>
+              Claim placed — it resolves at the 9:24 AM ET processing pass.
+            </span>
+          </div>
+        )}
+
         {state.error && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
+          <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
             <AlertCircle size={13} color={pal.copper} />
             <span style={{ fontSize: 11.5, color: pal.copper, lineHeight: 1.4 }}>{state.error}</span>
           </div>
         )}
 
+        {placed && (
+          <button
+            type="button" className="aw-btn" onClick={requestClose}
+            style={{
+              font: 'inherit', width: '100%', fontFamily: 'var(--ld-mono)', '--aw-btn-fs': '11px',
+              fontWeight: 700, letterSpacing: '0.1em', padding: '11px 16px', borderRadius: 11,
+              marginTop: 10, cursor: 'pointer', color: pal.ink2,
+              background: alpha(pal.white, 0.04), border: `1px solid ${pal.hair2}`,
+            }}
+          >
+            DONE
+          </button>
+        )}
+
+        {/* The count, not the flip copy: "Flips open when the battle starts" is a
+            FLIP-mechanic string, and under a disabled claim button it reads as
+            the reason claiming is unavailable, which is false. */}
         <Mono style={{
           display: 'block', textAlign: 'center', fontSize: 9.5, color: pal.ink3,
           letterSpacing: '0.06em', marginTop: 9,
         }}>
-          {dropPick ? `${symbol} REPLACES ${dropPick.symbol} · ${pendingCount}/${claimCap} PENDING` : WPOD.flips.toUpperCase()}
+          {dropPick
+            ? `${symbol} REPLACES ${dropPick.symbol} · ${pendingCount}/${claimCap} PENDING`
+            : `${pendingCount}/${claimCap} PENDING`}
         </Mono>
       </div>
     </div>

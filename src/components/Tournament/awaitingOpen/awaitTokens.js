@@ -150,6 +150,27 @@ export function runStartDay(targetIso) {
   }
 }
 
+/**
+ * The five TRADING days of the run, in order, starting at the day the battle
+ * actually begins.
+ *
+ * A training pod's anchor is the next market open on ANY weekday
+ * (trainingLifecycle nextMarketOpenAnchor), so a pod that finishes drafting on
+ * a Tuesday evening runs Wed–Thu–Fri–Mon–Tue. Rendering a fixed MON…FRI row and
+ * lighting one chip would state the wrong five days — and would imply the chips
+ * before the lit one were run days already past. This wraps the weekday cycle
+ * instead, so the strip always names the real run.
+ *
+ * Falls back to the plain Mon–Fri week when the start day is unknown or is a
+ * weekend (which a real market-open anchor never is).
+ */
+export function runDays(startDay) {
+  const week = WPOD.run;
+  const i = week.indexOf(String(startDay || '').toUpperCase());
+  if (i < 0) return week;
+  return Array.from({ length: week.length }, (_, n) => week[(i + n) % week.length]);
+}
+
 /** ET weekday key ('Mon'…'Sun') — Intl with America/New_York, never a
  *  hand-rolled offset (BUILD_RULES §6). Returns null if it cannot be resolved. */
 export function etWeekday(now = new Date()) {

@@ -7,8 +7,8 @@
 // segments/run-day come from the one countdown value the numerals show.
 
 import { describe, it, expect } from 'vitest';
-import { buildSeatLanes, sectorSpread, buildDraftGrid } from './podBoard';
-import { waitSegments, runStartDay, wireWindowLine, etWeekday } from './awaitTokens';
+import { buildSeatLanes, sectorSpread, buildDraftGrid, buildMyPicks } from './podBoard';
+import { waitSegments, runStartDay, wireWindowLine, etWeekday, runDays } from './awaitTokens';
 import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
 
 const MEMBERS = ['u1', 'cpu-a', 'cpu-b', 'cpu-c'];
@@ -144,8 +144,13 @@ describe('runStartDay', () => {
   });
 
   it('honours the DST offset rather than a hand-rolled one', () => {
-    // 2026-01-05T14:30:00Z === Monday 09:30 ET in EST (UTC-5).
-    expect(runStartDay('2026-01-05T14:30:00Z')).toBe('MON');
+    // A pair of ET-midnight-boundary instants: each discriminates one direction,
+    // which a midday instant cannot (midday is the same weekday in every zone,
+    // so a fixed -4 or -5 offset would pass it).
+    // Real ET (EDT, -4) = Mon 00:30. A hand-rolled fixed -5 would say SUN.
+    expect(runStartDay('2026-08-24T04:30:00Z')).toBe('MON');
+    // Real ET (EST, -5) = Sun 23:30. A hand-rolled fixed -4 — or UTC — says MON.
+    expect(runStartDay('2026-01-05T04:30:00Z')).toBe('SUN');
   });
 
   it('returns null for a missing or malformed anchor rather than guessing', () => {
@@ -177,7 +182,8 @@ describe('wireWindowLine', () => {
   it('reports OPEN with the lock-in countdown after 4:00 PM ET on a weekday', () => {
     const { line } = at('2026-08-19T20:30:00Z'); // Wed 16:30 ET
     expect(line.isOpen).toBe(true);
-    expect(line.text).toMatch(/^Open — claims lock in .* \(9:24 AM ET\)\.$/);
+    // Exact text, not a regex: `.*` let a transposed duration through.
+    expect(line.text).toBe('Open — claims lock in 16h 54m (9:24 AM ET).');
   });
 
   it('NEVER shows a countdown on a Friday afternoon — the wire does not open at 4pm Friday', () => {
@@ -223,5 +229,85 @@ describe('wireWindowLine', () => {
 
   it('degrades safely on a missing window', () => {
     expect(wireWindowLine(null)).toEqual({ text: '', isOpen: false });
+  });
+});
+
+// etWeekday is the input to wireWindowLine's Friday branch. Every instant the
+// Friday tests use is one where UTC and ET agree on the weekday (ET Friday
+// daytime never crosses the UTC date line), so dropping the timeZone from
+// etWeekday passes them all. This row is the direct guard: an instant where
+// UTC and ET disagree.
+describe('etWeekday', () => {
+  it('resolves the ET weekday, not the UTC one', () => {
+    // 2026-08-22T02:00:00Z is Saturday in UTC but Friday 22:00 in ET.
+    expect(etWeekday(new Date('2026-08-22T02:00:00Z'))).toBe('Fri');
+  });
+
+  it('resolves a plain midweek instant', () => {
+    expect(etWeekday(new Date('2026-08-19T18:00:00Z'))).toBe('Wed');
+  });
+});
+
+describe('runDays', () => {
+  it('starts the run on the day the battle actually begins', () => {
+    expect(runDays('WED')).toEqual(['WED', 'THU', 'FRI', 'MON', 'TUE']);
+  });
+
+  it('is the plain week when the run starts Monday', () => {
+    expect(runDays('MON')).toEqual(['MON', 'TUE', 'WED', 'THU', 'FRI']);
+  });
+
+  it('wraps the weekend — a Friday start runs into the next week', () => {
+    expect(runDays('FRI')).toEqual(['FRI', 'MON', 'TUE', 'WED', 'THU']);
+  });
+
+  it('always names five trading days, each exactly once', () => {
+    for (const d of ['MON', 'TUE', 'WED', 'THU', 'FRI']) {
+      const days = runDays(d);
+      expect(days).toHaveLength(5);
+      expect(new Set(days).size).toBe(5);
+      expect(days[0]).toBe(d);
+    }
+  });
+
+  it('falls back to the plain week for an unknown or weekend start', () => {
+    expect(runDays(null)).toEqual(['MON', 'TUE', 'WED', 'THU', 'FRI']);
+    expect(runDays('SUN')).toEqual(['MON', 'TUE', 'WED', 'THU', 'FRI']);
+  });
+});
+
+describe('buildMyPicks', () => {
+  const sectors = new Map([['NEM', 'Materials'], ['MSFT', 'Technology']]);
+
+  it('builds the drop options with round labels and sectors', () => {
+    expect(buildMyPicks({ player: { picks: [{ symbol: 'NEM' }, { symbol: 'MSFT' }] }, sectorMap: sectors }))
+      .toEqual([
+        { symbol: 'NEM', sector: 'Materials', round: 'R1' },
+        { symbol: 'MSFT', sector: 'Technology', round: 'R2' },
+      ]);
+  });
+
+  it('NORMALISES like the draftboard — trims as well as uppercases', () => {
+    // The board keys sectorMap through norm() (trim + uppercase). An inline
+    // String(x).toUpperCase() would yield ' NEM' here and miss the sector,
+    // colouring the same ticker differently in the sheet than on the board.
+    const [pick] = buildMyPicks({ player: { picks: [' nem '] }, sectorMap: sectors });
+    expect(pick.symbol).toBe('NEM');
+    expect(pick.sector).toBe('Materials');
+  });
+
+  it('accepts bare-string picks as well as pick objects', () => {
+    expect(buildMyPicks({ player: { picks: ['nem'] }, sectorMap: sectors })[0].symbol).toBe('NEM');
+  });
+
+  it('degrades an unmapped sector to Other rather than dropping the pick', () => {
+    expect(buildMyPicks({ player: { picks: ['ZZZ'] }, sectorMap: sectors }))
+      .toEqual([{ symbol: 'ZZZ', sector: 'Other', round: 'R1' }]);
+  });
+
+  it('is empty for a missing player and skips empty slots', () => {
+    expect(buildMyPicks({})).toEqual([]);
+    expect(buildMyPicks({ player: null })).toEqual([]);
+    expect(buildMyPicks({ player: { picks: [null, { symbol: '' }] } })).toEqual([]);
   });
 });

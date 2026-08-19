@@ -79,17 +79,20 @@ function WireRow({ stock, rank, queued, locked, capReached, hasPicks, onClaim, o
   const lead = rank === 1 && !queued;
   const disabled = queued || locked || capReached || !hasPicks;
 
-  const claimTitle = queued
-    ? `A claim for ${stock.symbol} is already pending`
+  // The button's LABEL names the same reason its title does — a greyed button
+  // still reading "Claim" would disagree with why it is dead.
+  const [claimTitle, claimLabel] = queued
+    ? [`A claim for ${stock.symbol} is already pending`, 'QUEUED']
     : locked
-      ? 'The claim wire is closed right now'
+      ? ['The claim wire is closed right now', 'LOCKED']
       : capReached
-        ? 'You have the maximum pending claims — wait for tonight’s processing'
+        ? ['You have the maximum pending claims — wait for tonight’s processing', 'CAP FULL']
         : !hasPicks
-          ? 'You have no picks to drop for a claim'
-          : `Claim ${stock.symbol}`;
+          ? ['You have no picks to drop for a claim', 'NO PICKS']
+          : [`Claim ${stock.symbol}`, 'Claim'];
 
   const claimColor = queued ? pal.teal : disabled ? pal.ink3 : pal.teal;
+  const ClaimIcon = queued ? Clock : disabled ? Lock : Gavel;
 
   return (
     <div className={disabled ? undefined : 'aw-row'} style={{
@@ -121,9 +124,9 @@ function WireRow({ stock, rank, queued, locked, capReached, hasPicks, onClaim, o
         onClick={() => !disabled && onClaim(stock)}
         disabled={disabled}
         title={claimTitle}
-        aria-label={claimTitle}
+        aria-label={`${claimLabel} — ${claimTitle}`}
         style={{
-          font: 'inherit', fontFamily: 'var(--ld-mono)', fontSize: compact ? 10 : 10.5, fontWeight: 700,
+          font: 'inherit', fontFamily: 'var(--ld-mono)', '--aw-btn-fs': compact ? '10px' : '10.5px', fontWeight: 700,
           letterSpacing: '0.1em', padding: compact ? '9px 12px' : '10px 15px', borderRadius: 10,
           whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
           cursor: disabled ? 'not-allowed' : 'pointer',
@@ -133,12 +136,45 @@ function WireRow({ stock, rank, queued, locked, capReached, hasPicks, onClaim, o
           boxShadow: disabled ? 'none' : `0 0 24px -14px ${alpha(pal.teal, 1)}`,
         }}
       >
-        {queued
-          ? <><Clock size={12} color={claimColor} strokeWidth={2.2} /> QUEUED</>
-          : locked || !hasPicks
-            ? <><Lock size={12} color={claimColor} strokeWidth={2.2} /> LOCKED</>
-            : <><Gavel size={12} color={claimColor} strokeWidth={2.2} /> Claim</>}
+        <ClaimIcon size={12} color={claimColor} strokeWidth={2.2} /> {claimLabel}
       </button>
+    </div>
+  );
+}
+
+/**
+ * The caller's own claims, every status — the ledger the classic body gets from
+ * ClaimFlipWindow (:200-211). Without it a claim's DROP side is invisible (so
+ * two claims can silently stake the same pick) and an approved or denied claim
+ * — with its denialReason — is surfaced nowhere once the processing pass runs.
+ * Self-scoped: the caller's claims only, never another seat's.
+ */
+function ClaimsLedger({ claims, compact, pal }) {
+  if (!claims || !claims.length) return null;
+  const statusColor = { pending: pal.gold, approved: pal.teal, denied: pal.copper };
+  return (
+    <div style={{
+      marginTop: 12, paddingTop: 11, borderTop: `1px solid ${pal.hair}`,
+      display: 'flex', flexDirection: 'column', gap: 6,
+    }}>
+      <Mono style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.22em', color: pal.ink3 }}>
+        YOUR CLAIMS
+      </Mono>
+      {claims.map((c) => (
+        <div key={c.id || `${c.dropSymbol}-${c.addSymbol}`} style={{
+          display: 'flex', alignItems: 'baseline', gap: 8, fontSize: compact ? 11 : 11.5,
+        }}>
+          <Mono style={{ flex: 1, minWidth: 0, color: pal.ink2 }}>
+            {c.dropSymbol} → {c.addSymbol}
+          </Mono>
+          <Mono style={{
+            fontWeight: 700, fontSize: 10, textTransform: 'uppercase', textAlign: 'right',
+            color: statusColor[c.status] || pal.ink3,
+          }}>
+            {c.status}{c.status === 'denied' && c.denialReason ? ` · ${c.denialReason}` : ''}
+          </Mono>
+        </div>
+      ))}
     </div>
   );
 }
@@ -151,12 +187,13 @@ export default function AwaitWire({
   windowLine = '',
   wireOpen = false,
   hasPicks = true,
+  claims = null,
   onClaim,
   onResearch,
   compact = false,
 }) {
   const pal = useAwaitPalette();
-  if (!board.length) return null;
+  const empty = !board.length;
 
   const capReached = pendingCount >= claimCap;
   const locked = !wireOpen;
@@ -222,7 +259,16 @@ export default function AwaitWire({
         </div>
       )}
 
-      {rows}
+      {empty ? (
+        <div style={{
+          padding: '14px 12px', borderRadius: 12, textAlign: 'center',
+          background: alpha(pal.white, 0.014), border: `1px dashed ${pal.hair2}`,
+        }}>
+          <Mono style={{ fontSize: 10.5, color: pal.ink3, letterSpacing: '0.06em' }}>
+            NO FREE AGENTS AVAILABLE RIGHT NOW
+          </Mono>
+        </div>
+      ) : rows}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 12, flexWrap: 'wrap' }}>
         <Mono style={{ fontSize: 9.5, color: pal.ink3, letterSpacing: '0.06em', marginLeft: 'auto' }}>
@@ -233,6 +279,8 @@ export default function AwaitWire({
       <p style={{ margin: '9px 0 0', fontSize: 11, color: pal.ink3, lineHeight: 1.5, maxWidth: 900 }}>
         {WPOD.note}
       </p>
+
+      <ClaimsLedger claims={claims} compact={compact} pal={pal} />
     </WSurf>
   );
 }

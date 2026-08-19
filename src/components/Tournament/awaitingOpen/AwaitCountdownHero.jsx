@@ -20,11 +20,11 @@
 // all gated on usePrefersReducedMotion — under Reduce Motion the hero is still,
 // and the layout is unchanged.
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Clock, Check } from 'lucide-react';
 import { useCountdown } from '../../../hooks/useCountdown';
 import { TOURNAMENT_TUNING, AGENT_PICKS_PER_AGENT, PICKS_PER_PLAYER } from '../../../constants/leagueTournament';
-import { alpha, WPOD, WMODES, modeColor, waitSegments, runStartDay } from './awaitTokens';
+import { alpha, WPOD, WMODES, modeColor, waitSegments, runStartDay, runDays } from './awaitTokens';
 import { Mono, WChip, TickRail, useAwaitPalette, usePrefersReducedMotion } from './awaitPrimitives';
 
 // The rail spans the final day of waiting → the bell. Beyond a day out the bead
@@ -50,12 +50,15 @@ function CDNum({ value, label, compact, dense, pal }) {
 }
 
 function RunStrip({ startDay, compact, pal }) {
+  // The real five trading days from the anchor — a pod that starts Wednesday
+  // runs WED THU FRI MON TUE, not a Mon–Fri week with WED lit.
+  const days = runDays(startDay);
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 7 : 9, flexWrap: 'wrap' }}>
       <Mono style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.24em', color: pal.ink3 }}>THE RUN</Mono>
       <div style={{ display: 'flex', gap: 4 }}>
-        {WPOD.run.map((d) => {
-          const on = d === startDay;
+        {days.map((d, i) => {
+          const on = i === 0;
           return (
             <span key={d} style={{
               padding: '4px 7px', borderRadius: 6,
@@ -116,9 +119,30 @@ export default function AwaitCountdownHero({ targetIso = null, mode = 'practice'
   // is treated as "no target" below rather than as an expiry.
   const { timeRemaining, isExpired } = useCountdown(targetIso || null, { interval: 1000 });
 
-  const hasTarget = !!targetIso;
-  const totalSec = Math.max(0, Math.floor(timeRemaining / 1000));
-  const opening = hasTarget && isExpired;
+  // useCountdown seeds timeRemaining at 0 and only corrects it in a post-mount
+  // effect, so isExpired is TRUE on the very first render even with a target
+  // hours away. On the classic hero that flashes a small "Opening…" line; here
+  // it would paint the whole hero as the opening takeover before swapping. So
+  // the first render uses a synchronous seed of the SAME quantity the hook
+  // computes (target − now), and every render after that is hook-driven —
+  // one displayed value, never two sources (BUILD_RULES §9).
+  const { seedMs, seedValid } = useMemo(() => {
+    if (!targetIso) return { seedMs: 0, seedValid: false };
+    const t = new Date(targetIso).getTime();
+    if (Number.isNaN(t)) return { seedMs: 0, seedValid: false };
+    return { seedMs: Math.max(0, t - Date.now()), seedValid: true };
+  }, [targetIso]);
+  const [ticked, setTicked] = useState(false);
+  useEffect(() => { setTicked(true); }, [targetIso]);
+
+  // A malformed anchor is treated as NO target: useCountdown returns NaN for
+  // one, isExpired (NaN <= 0) is false, and the hero would paint "NaN : NaN"
+  // over a dead rail instead of the honest no-target line.
+  const hasTarget = seedValid;
+
+  const remainingMs = ticked ? timeRemaining : seedMs;
+  const totalSec = Number.isFinite(remainingMs) ? Math.max(0, Math.floor(remainingMs / 1000)) : 0;
+  const opening = hasTarget && (ticked ? isExpired : seedMs <= 0);
   const segs = useMemo(() => waitSegments(totalSec), [totalSec]);
   const startDay = useMemo(() => runStartDay(targetIso), [targetIso]);
   // Same totalSec as the numerals — one source for the number and its rail.
@@ -179,11 +203,14 @@ export default function AwaitCountdownHero({ targetIso = null, mode = 'practice'
               {segs.map(([v, lb], i) => (
                 <React.Fragment key={lb}>
                   {i > 0 && (
-                    <Mono aria-hidden="true" style={{
-                      fontSize: dense ? (compact ? 28 : 32) : (compact ? 40 : 44), fontWeight: 400,
-                      color: alpha(pal.teal, 0.45), lineHeight: 1, paddingTop: compact ? 3 : 5,
-                      animation: reduced ? 'none' : 'awOpenColon 1s steps(1,end) infinite',
-                    }}>:</Mono>
+                    <span aria-hidden="true">
+                      <Mono style={{
+                        display: 'block',
+                        fontSize: dense ? (compact ? 28 : 32) : (compact ? 40 : 44), fontWeight: 400,
+                        color: alpha(pal.teal, 0.45), lineHeight: 1, paddingTop: compact ? 3 : 5,
+                        animation: reduced ? 'none' : 'awOpenColon 1s steps(1,end) infinite',
+                      }}>:</Mono>
+                    </span>
                   )}
                   <CDNum value={v} label={lb} compact={compact} dense={dense} pal={pal} />
                 </React.Fragment>
