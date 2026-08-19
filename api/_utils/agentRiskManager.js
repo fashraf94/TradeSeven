@@ -9,11 +9,15 @@ const LOCK_PROXIMITY = 0.2; // ATR multiples within which to lock
 
 /**
  * Forge Enforcement Keystone V1.4 §3.1 (Invariant 1) — the single source of
- * truth for which swap REASONS bypass the quality knobs (Knob B hurdle floor
- * here in Phase 4; Knob C circuit breaker in Phase 5). A swap is emergency-bypass
- * IFF its `reason` is in this set; every other swap is gated. Gates consult
- * `reason`, NEVER the action label — because Knob A's forced rotation reuses the
- * `SWAP_OUT` action, action-keying would silently bypass the floor for stagnation.
+ * truth for which swap REASONS are the EMERGENCY bypass class (Knob B hurdle
+ * floor here in Phase 4; Knob C circuit breaker in Phase 5). A swap is
+ * emergency-bypass IFF its `reason` is in this set; every swap outside this
+ * set AND outside USER_DIRECTIVE_BYPASS_REASONS below is gated (Ask 3 R2
+ * amended the total-bypass predicate to the union of the two classes — the
+ * Invariant-1 matrix asserts the amended IFF in both directions). Gates
+ * consult `reason`, NEVER the action label — because Knob A's forced rotation
+ * reuses the `SWAP_OUT` action, action-keying would silently bypass the floor
+ * for stagnation.
  *
  * Members:
  *  - bust_avoidance / vwap_failure / stepped_trail — protective risk-manager exits

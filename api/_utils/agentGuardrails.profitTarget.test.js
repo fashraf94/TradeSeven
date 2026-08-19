@@ -324,6 +324,29 @@ describe('targetFor — the per-position override hook (F11, Tier-3-ready)', () 
     expect(targetFor({ profitTargetOverridePct: -3 }, 15)).toBe(15);
   });
 
+  it('most-breaching means largest EXCESS over the per-position target, not largest raw gain (F7 × F11 — dual-review surviving mutation A8a closed)', () => {
+    flagState.profitTarget = true;
+    const battle = makeBattle({
+      // A: override 5, gain +9 → excess 4. B: global 15, gain +16 → excess 1.
+      // Excess-ordering fires A; raw-gain ordering would fire B.
+      star: [{ ...NVDA_POSITION, profitTargetOverridePct: 5 }],
+      core: [MSFT_POSITION],
+      bench: { stocks: [AMD_BENCH], crypto: null },
+    });
+    const result = applyGuardrails({
+      haikuResult: { decision: 'HOLD' },
+      guardrails: [TARGET_15],
+      battle,
+      prices: { NVDA: { current: 109 }, MSFT: { current: 116 }, AMD: { current: 105, changePercent: 1.2 } },
+    });
+    expect(result.decision).toBe('SWAP');
+    expect(result.symbolOut).toBe('NVDA');
+    const forced = result.overrides.find(o => o.action === 'forced_exit');
+    expect(forced.threshold).toBe(5);
+    // MSFT (+16 over 15) waits its tick as the secondary.
+    expect(result.overrides.find(o => o.action === 'pending_next_tick')?.symbol).toBe('MSFT');
+  });
+
   it('the executor resolves each position through the hook (override fires at 5% while the global needs 15%)', () => {
     flagState.profitTarget = true;
     const battle = makeBattle({

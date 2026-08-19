@@ -73,9 +73,13 @@ describe('Swap Motive Observability — swapMotive is a SEPARATE additive siblin
     // in the same PR per R3): the AUTOPILOT stamp is now deterministic-aware —
     // a guardrail_* exitReason stamps motive NULL (a guardrail-materialized
     // haikuResult spreads prior model output, and a stale swap_type must never
-    // ride onto a forced swap). The unconditional spelling remains only at the
-    // proposal-creation site (dormant, always discretionary by construction).
-    const conditionalStamps = cronSource.match(/swapMotive: haikuSwapReason === 'haiku_decision' \? \(haikuResult\?\.swap_type \?\? null\) : null,/g) || [];
+    // ride onto a forced swap). FLAG-GATED per dual-review finding A1: under
+    // the dark flag the stamp evaluates byte-identically to Tier 1, because
+    // the motive baseline is PRE-TREATMENT evidence (R9) and a dark merge must
+    // not mutate it mid-collection (R10). The unconditional spelling remains
+    // only at the proposal-creation site (dormant, discretionary by
+    // construction).
+    const conditionalStamps = cronSource.match(/swapMotive: \(haikuSwapReason === 'haiku_decision' \|\| !PROFIT_TARGET_EXECUTOR_ENABLED\)\s*\n\s*\? \(haikuResult\?\.swap_type \?\? null\)\s*\n\s*: null,/g) || [];
     expect(conditionalStamps.length).toBe(1); // autopilot (live)
     const unconditionalStamps = cronSource.match(/swapMotive: haikuResult\?\.swap_type \?\? null,/g) || [];
     expect(unconditionalStamps.length).toBe(1); // proposal creation (dormant)

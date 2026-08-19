@@ -18,8 +18,10 @@ import {
   computeBundleContentHash,
   matchSupportedShape,
   SUPPORTED_GUARDRAIL_SHAPES,
+  PROFIT_TARGET_GUARDRAIL_SHAPE,
   BINDING_DESCRIPTOR_FIELDS,
 } from './compileBuild.js';
+import { PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
 import { validateCompiledBuild } from './archetypeBuildSchemas.js';
 import { getGameModePolicy, computeGameModePolicyHash } from './gameModePolicy.js';
 import { TIERED_GAME_MODE, FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
@@ -238,13 +240,21 @@ describe('§5.5 guardrailBinding — every mismatch case stays prompt_advisory (
     expect(build.effectiveGuardrailsPreview.perType).toEqual({});
   });
 
-  it.each(['maxPosition', 'profitTarget'])(
-    'the engine-no-op type %s is NOT a supported shape (display-agreement §9)',
-    (type) => {
-      expect(SUPPORTED_GUARDRAIL_SHAPES[type]).toBeUndefined();
-      expect(matchSupportedShape({ type })).toEqual({ matched: false, reason: `unsupported_type:${type}` });
+  it('the engine-no-op type maxPosition is NOT a supported shape (display-agreement §9)', () => {
+    expect(SUPPORTED_GUARDRAIL_SHAPES.maxPosition).toBeUndefined();
+    expect(matchSupportedShape({ type: 'maxPosition' })).toEqual({ matched: false, reason: 'unsupported_type:maxPosition' });
+  });
+
+  it('profitTarget tracks its executor flag — absent while dark, present-and-matching once live (Ask 3 F11: same §9 rule, both directions)', () => {
+    // Behavior-branched so the Ask 1 flip PR does not have to reconcile this
+    // pin: the assertion states the COUPLING, not the constant.
+    if (PROFIT_TARGET_EXECUTOR_ENABLED) {
+      expect(SUPPORTED_GUARDRAIL_SHAPES.profitTarget).toEqual(PROFIT_TARGET_GUARDRAIL_SHAPE);
+    } else {
+      expect(SUPPORTED_GUARDRAIL_SHAPES.profitTarget).toBeUndefined();
+      expect(matchSupportedShape({ type: 'profitTarget' })).toEqual({ matched: false, reason: 'unsupported_type:profitTarget' });
     }
-  );
+  });
 
   it('an absent binding is simply advisory — eligible-but-unbound is not an error', () => {
     const build = compile(buildDelta([advisoryRule()]));

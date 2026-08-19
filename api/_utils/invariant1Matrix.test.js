@@ -4,14 +4,23 @@
 // cross-product against the PURE gate functions (not the monolithic cron):
 //
 //   A swap bypasses BOTH Knob B (clearsHurdleFloor) AND Knob C (getRecentSwapCount)
-//   IFF reason ∈ EMERGENCY_BYPASS_REASONS. Every other reason is GATED. Bypass is
-//   keyed on REASON, never ACTION, and is independent of `source`.
+//   IFF reason ∈ EMERGENCY_BYPASS_REASONS ∪ USER_DIRECTIVE_BYPASS_REASONS.
+//   Every other reason is GATED. Bypass is keyed on REASON, never ACTION, and
+//   is independent of `source`.
+//
+//   AMENDED (Exit-Behavior Tier 2 Ask 3, ruling R2 — the sanctioned ADDITIVE
+//   keystone extension): the LOCKED emergency set keeps its exact five
+//   protective members; USER_DIRECTIVE_BYPASS_REASONS is the parallel class
+//   (the user's explicit deterministic order), distinguishable by the
+//   `userDirective: true` marker on the Knob-B verdict so the two bypass
+//   classes can never be conflated in telemetry or here.
 //
 // Shipped reason strings the gates actually see (NOT the spec taxonomy where it
 // differs — the cron stamps exitReason:'gameplan_rotation', not gameplan_proposal):
-//   emergencies: bust_avoidance, vwap_failure, stepped_trail,
-//                guardrail_stopLoss, guardrail_trailingStop
-//   gated:       stagnation, haiku_decision, gameplan_rotation
+//   emergencies:     bust_avoidance, vwap_failure, stepped_trail,
+//                    guardrail_stopLoss, guardrail_trailingStop
+//   user-directive:  guardrail_profitTarget
+//   gated:           stagnation, haiku_decision, gameplan_rotation
 //   + unknown/missing reason edge rows (default-deny).
 //
 // A red cell here is a FINDING (latent bug), not a test to massage.
@@ -19,6 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   EMERGENCY_BYPASS_REASONS,
+  USER_DIRECTIVE_BYPASS_REASONS,
   clearsHurdleFloor,
   getRecentSwapCount,
   pickSwapReplacementCandidate,
@@ -29,9 +39,10 @@ import { getPresetConfig } from './agentPresetConfig.js';
 
 // ---- Canonical taxonomy (the shipped strings) ----
 const EMERGENCY = ['bust_avoidance', 'vwap_failure', 'stepped_trail', 'guardrail_stopLoss', 'guardrail_trailingStop'];
+const USER_DIRECTIVE = ['guardrail_profitTarget']; // Ask 3 (R2): the additive parallel class
 const GATED = ['stagnation', 'haiku_decision', 'gameplan_rotation'];
 const UNKNOWN = ['news_event', undefined]; // default-deny rows: unknown + missing
-const ALL_REASONS = [...EMERGENCY, ...GATED, ...UNKNOWN];
+const ALL_REASONS = [...EMERGENCY, ...USER_DIRECTIVE, ...GATED, ...UNKNOWN];
 
 const degen = getArchetypeConfig('degen');       // forcedRotation ON, cap 12; floors haiku 0.2 / stagnation 0.3 (B4-tuned) / default 0.2
 const guardian = getArchetypeConfig('guardian');  // forcedRotation OFF, cap 2; floors 0.5 across
@@ -64,6 +75,17 @@ describe('Gate 6 · Knob B — clearsHurdleFloor bypass IFF emergency (§3.1)', 
     expect(r.clears).toBe(true);
     expect(r.bypassed).toBe(true);
     expect(r.reason).toBe(reason);
+  });
+
+  it.each(USER_DIRECTIVE)('user-directive %s BYPASSES a failing floor with its OWN class marker (R2 — never mislabeled emergency)', (reason) => {
+    const r = clearB(reason);
+    expect(r.clears).toBe(true);
+    expect(r.bypassed).toBe(true);
+    expect(r.userDirective).toBe(true); // the class discriminator
+    expect(r.reason).toBe(reason);
+    // The emergency rows above never carry the marker — assert the inverse on
+    // one representative so the two classes stay distinguishable forever.
+    expect(clearB('guardrail_stopLoss').userDirective).toBeUndefined();
   });
 
   it.each(GATED)('gated %s is subject to the floor (blocked, not bypassed)', (reason) => {
@@ -105,6 +127,14 @@ describe('Gate 6 · Knob C — getRecentSwapCount skips IFF emergency (§3.1)', 
     expect(getRecentSwapCount(windowOf(reason, 3), 60, NOW)).toBe(0);
   });
 
+  it.each(USER_DIRECTIVE)('user-directive %s does NOT consume the cap (R2/F12: the breaker gates model churn, and countEmergencies never re-counts it)', (reason) => {
+    expect(getRecentSwapCount(windowOf(reason, 3), 60, NOW)).toBe(0);
+    // Unlike emergencies, the skip is UNCONDITIONAL — the countEmergencies
+    // config knob is about emergencies and must not hide user-directive volume.
+    expect(getRecentSwapCount(windowOf(reason, 3), 60, NOW, { countEmergencies: true })).toBe(0);
+    expect(getRecentSwapCount(windowOf('guardrail_stopLoss', 3), 60, NOW, { countEmergencies: true })).toBe(3);
+  });
+
   it.each(GATED)('gated %s consumes the cap (window of 3 → count 3)', (reason) => {
     expect(getRecentSwapCount(windowOf(reason, 3), 60, NOW)).toBe(3);
   });
@@ -123,26 +153,34 @@ describe('Gate 6 · Knob C — getRecentSwapCount skips IFF emergency (§3.1)', 
 // Suite 3 — the CONSOLIDATED contract: same reason through BOTH gates agrees
 //           with the single EMERGENCY_BYPASS_REASONS constant.
 // =====================================================================
-describe('Gate 6 · both knobs honor ONE constant (the IFF, both directions)', () => {
-  it.each(ALL_REASONS)('reason %s: Knob B bypass and Knob C skip are consistent with EMERGENCY_BYPASS_REASONS', (reason) => {
+describe('Gate 6 · both knobs honor the TWO class constants (the IFF, both directions)', () => {
+  it.each(ALL_REASONS)('reason %s: Knob B bypass and Knob C skip are consistent with EMERGENCY ∪ USER_DIRECTIVE', (reason) => {
     const isEmergency = EMERGENCY_BYPASS_REASONS.has(reason);
+    const isUserDirective = USER_DIRECTIVE_BYPASS_REASONS.has(reason);
+    const isBypass = isEmergency || isUserDirective;
 
-    // Knob B: bypassed (clears a failing floor) IFF emergency.
+    // Knob B: bypassed (clears a failing floor) IFF emergency or user-directive,
+    // with the class marker discriminating (R2).
     const b = clearB(reason);
-    expect(b.bypassed === true).toBe(isEmergency);
-    expect(b.clears).toBe(isEmergency);
+    expect(b.bypassed === true).toBe(isBypass);
+    expect(b.clears).toBe(isBypass);
+    expect(b.userDirective === true).toBe(isUserDirective);
 
-    // Knob C: skipped (count 0) IFF emergency; counted otherwise.
+    // Knob C: skipped (count 0) IFF bypass-class; counted otherwise.
     const c = getRecentSwapCount(windowOf(reason, 1), 60, NOW);
-    expect(c).toBe(isEmergency ? 0 : 1);
+    expect(c).toBe(isBypass ? 0 : 1);
 
     // Both gates agree with each other (the single-source property).
     expect(b.bypassed === true).toBe(c === 0);
   });
 
-  it('the IFF is exact: ONLY the 5 emergency strings bypass, all others gate', () => {
+  it('the IFF is exact: ONLY the 5 emergency strings + the 1 user-directive string bypass, all others gate', () => {
     const bypassers = ALL_REASONS.filter((r) => clearB(r).bypassed === true);
-    expect([...bypassers].sort()).toEqual([...EMERGENCY].sort());
+    expect([...bypassers].sort()).toEqual([...EMERGENCY, ...USER_DIRECTIVE].sort());
+    // And the LOCKED emergency set itself is untouched — exactly its five
+    // protective members, never merged with the user-directive class.
+    expect([...EMERGENCY_BYPASS_REASONS].sort()).toEqual([...EMERGENCY].sort());
+    expect([...USER_DIRECTIVE_BYPASS_REASONS].sort()).toEqual([...USER_DIRECTIVE].sort());
   });
 });
 

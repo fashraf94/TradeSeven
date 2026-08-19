@@ -796,7 +796,9 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     expect(builder).toContain("action: 'tournament_pool_empty'");
     expect(builder).toContain("source: 'tournament_ledger'");
     const builderCalls = source.match(/buildPoolEmptyFeedEntry\(\{/g) || [];
-    expect(builderCalls.length).toBe(4); // definition + the two risk-loop sites + the R11 pass reserve-fail site (Ask 3)
+    // definition + the two risk-loop sites + the R11 pass's two sites (Ask 3:
+    // reserve-fail + the tournament branch of the no-bench beat — review B6b).
+    expect(builderCalls.length).toBe(5);
   });
 
   it('double-down feed entries carry the spec fields and both event kinds', () => {

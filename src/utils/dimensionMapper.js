@@ -34,6 +34,10 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+// Ask 3 (F11 one-flag rule): the profitTarget enforcement LABEL keys on the
+// same flag as the executor and the compiler shape — display and engine can
+// never disagree by construction (§9).
+import { PROFIT_TARGET_EXECUTOR_ENABLED } from '../config/featureFlags.js';
 import {
   readDimensionField,
   writeDimensionField,
@@ -1344,7 +1348,12 @@ export function dimensionsToGuardrails(dv) {
   }
   const profitTarget = readDimensionField(dv, 'profitTargetPct');
   if (typeof profitTarget === 'number') {
-    out.push({ type: 'profitTarget', value: profitTarget, unit: '%', enforcement: 'soft' });
+    // Exit-Behavior Tier 2 Ask 3 (§9 display-agreement): the label derives
+    // from the SAME flag that gates the executor and the compiler shape
+    // (F11's one-flag rule) — 'soft' while the executor is dark (today's
+    // truth), 'hard' the moment it flips with Ask 1. A 'soft' label on a
+    // hard-enforced record would be the maxPosition label lie inverted.
+    out.push({ type: 'profitTarget', value: profitTarget, unit: '%', enforcement: PROFIT_TARGET_EXECUTOR_ENABLED ? 'hard' : 'soft' });
   }
   return out;
 }

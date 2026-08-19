@@ -79,6 +79,11 @@ describe('swapReasonLabel — one human reason per swap (Tier 1), never blank, n
     // protective taxonomy must win — printing "stop-loss" as "upgrade" is the
     // exact honesty failure this precedence prevents.
     expect(swapReasonLabel({ swapMotive: 'upgrade', exitReason: 'guardrail_stopLoss' })).toBe('stop-loss');
+    // Ask 3 (R3, same-PR keyed-list add): the profit-target executor's stamp
+    // renders its protective taxonomy — deterministic-first outranks any
+    // declared motive here exactly as it does for the stops.
+    expect(swapReasonLabel({ exitReason: 'guardrail_profitTarget' })).toBe('profit target');
+    expect(swapReasonLabel({ swapMotive: 'upgrade', exitReason: 'guardrail_profitTarget' })).toBe('profit target');
     expect(swapReasonLabel({ swapMotive: 'profit_take', exitReason: 'bust_avoidance' })).toBe('stop (bust avoidance)');
     // an out-of-enum motive must not shadow a real deterministic reason either
     expect(swapReasonLabel({ swapMotive: 'sideways', exitReason: 'vwap_failure' })).toBe('VWAP failure');

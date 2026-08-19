@@ -70,6 +70,13 @@ describe('F11 one-flag gate — compiler acceptance and executor registration sh
     expect(guardrailsSource).toMatch(/PROFIT_TARGET_EXECUTOR_ENABLED/);
   });
 
+  it('the STRICTEST comparator gains its profitTarget row under the SAME flag (dual-review surviving mutation A8b closed)', () => {
+    // Without this entry, a flag-on §5.5 merge of two targets silently flips
+    // to LOOSEST-wins (compileBuild's min/max branch) — the user's 10% + a
+    // rule's 20% would compile to 20%, firing later than the user's order.
+    expect(compileSource).toMatch(/const STRICTEST = Object\.freeze\(\{\s*\n\s*stopLoss: 'min', trailingStop: 'min', maxSectorWeight: 'min',\s*\n\s*\.\.\.\(PROFIT_TARGET_EXECUTOR_ENABLED \? \{ profitTarget: 'min' \} : \{\}\),/);
+  });
+
   it('the shape descriptor is complete and winner-side (all eight R1-9 fields, exit at price_above_threshold, entry basis)', () => {
     expect(Object.keys(PROFIT_TARGET_GUARDRAIL_SHAPE).sort()).toEqual([...BINDING_DESCRIPTOR_FIELDS].sort());
     expect(PROFIT_TARGET_GUARDRAIL_SHAPE).toEqual({

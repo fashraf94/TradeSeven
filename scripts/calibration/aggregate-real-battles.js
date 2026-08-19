@@ -62,7 +62,7 @@ import { fileURLToPath } from 'node:url';
 // §4.1). We CALL it (reading/calling fenced exports is permitted; BUILD_RULES §1)
 // so the cap-pinning metric mirrors the runtime window semantics exactly rather
 // than re-implementing them.
-import { EMERGENCY_BYPASS_REASONS, getRecentSwapCount } from '../../api/_utils/agentRiskManager.js';
+import { EMERGENCY_BYPASS_REASONS, USER_DIRECTIVE_BYPASS_REASONS, getRecentSwapCount } from '../../api/_utils/agentRiskManager.js';
 // Cap-pinning resolves each archetype's swapWindow (capPerWindow/windowMinutes)
 // from the SAME fenced source the runtime deploys — so the metric measures pinning
 // against the cap actually in force at run time (Release 1 §4.1, "the system's own
@@ -133,15 +133,25 @@ export function isTruncated(battle) {
 export function partitionTrades(trades) {
   const nonEmergency = [];
   const emergency = [];
+  const userDirective = [];
   let stagnation = 0;
   let unknown = 0;
   const emergencyByReason = {};
+  const userDirectiveByReason = {};
   const unknownByReason = {};
   for (const t of trades) {
     const reason = t?.exitReason;
     if (EMERGENCY_BYPASS_REASONS.has(reason)) {
       emergency.push(t);
       emergencyByReason[reason] = (emergencyByReason[reason] || 0) + 1;
+    } else if (USER_DIRECTIVE_BYPASS_REASONS.has(reason)) {
+      // Exit-Behavior Tier 2 Ask 3 (R3's calibration-partition mirror, argued
+      // as its own THIRD lane): a profit-target fire is deterministic — it
+      // must not inflate the non-emergency (8A) stats — but it is not
+      // protective either, so folding it into `emergency` would dilute that
+      // partition's meaning exactly the way the LOCKED-set ruling forbids.
+      userDirective.push(t);
+      userDirectiveByReason[reason] = (userDirectiveByReason[reason] || 0) + 1;
     } else {
       nonEmergency.push(t);
       if (reason === 'stagnation') stagnation += 1;
@@ -152,7 +162,7 @@ export function partitionTrades(trades) {
       }
     }
   }
-  return { nonEmergency, emergency, stagnation, unknown, emergencyByReason, unknownByReason };
+  return { nonEmergency, emergency, userDirective, stagnation, unknown, emergencyByReason, userDirectiveByReason, unknownByReason };
 }
 
 // Opponent classification (Release 1 Decision 2 refinement). isCpu is stamped on

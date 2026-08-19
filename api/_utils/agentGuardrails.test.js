@@ -17,6 +17,9 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 }));
 
 import { applyGuardrails, injectDiversifierSectorCap, resolveSectorSlotObserveCap, DIVERSIFIER_SECTOR_CAP_PCT } from './agentGuardrails.js';
+// Real value via the importOriginal spread above (the mock only walks the
+// sector-cap flags) — used to behavior-branch the dark-half suite below.
+import { PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
 
 // ==================== FIXTURES ====================
 
@@ -344,7 +347,12 @@ describe('applyGuardrails — maxPosition (n/a in BaggerBomb)', () => {
   });
 });
 
-describe('applyGuardrails — profitTarget (soft)', () => {
+// Ask 3: the soft note is the DARK half of the executor flag split. This suite
+// pins today's live (flag-false) behavior and self-retires at the Ask 1 flip —
+// the flip PR reconciles nothing here (behavior-branched per BUILD_RULES §2);
+// flag-ON coverage lives in agentGuardrails.profitTarget.test.js, which walks
+// the flag explicitly.
+describe.runIf(!PROFIT_TARGET_EXECUTOR_ENABLED)('applyGuardrails — profitTarget (soft, dark half)', () => {
   it('surfaces a note but does not override decision', () => {
     const battle = makeBattle({
       star: [NVDA_POSITION],

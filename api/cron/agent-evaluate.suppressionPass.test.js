@@ -45,6 +45,21 @@ describe('R11 — the suppression-path deterministic pass (red-first wiring)', (
     expect(calls.length).toBe(2);
   });
 
+  it('both call sites thread the FULL argument object (dual-review blind spot: a dropped arg would crash the pass, not a pin)', () => {
+    const ARGS = 'runSuppressionDeterministicPass\\(\\{ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks \\}\\)';
+    const full = source.match(new RegExp(ARGS, 'g')) || [];
+    expect(full.length).toBe(2);
+  });
+
+  it('the dark gate is the FIRST statement of the body (dual-review blind spot: nothing may precede it)', () => {
+    expect(source).toMatch(/\}\) \{\s*\n\s*if \(!PROFIT_TARGET_EXECUTOR_ENABLED\) return;/);
+  });
+
+  it('the distressed-replacement deferral mirrors the main site (dual-review finding B3)', () => {
+    const fn = extractPassBody();
+    expect(fn).toMatch(/stockRegimes\[deterministicResult\.symbolIn\] === 'distressed'/);
+  });
+
   it('the normal-tick guardrail call site is unchanged and single; the pass uses its own invocation', () => {
     expect((source.match(/const result = applyGuardrails\(\{/g) || []).length).toBe(1);
     // `let` + assignment (not const): the catch block reads the result for its

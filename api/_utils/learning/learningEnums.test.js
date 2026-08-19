@@ -15,12 +15,21 @@ describe('learningEnums — closed enums (ANNEX A5)', () => {
     expect(Object.isFrozen(RECEIPT_SOURCES)).toBe(true);
   });
 
-  it('exitReason enum is exactly the eight members, frozen', () => {
+  it('exitReason enum is exactly the nine members, frozen', () => {
+    // Exit-Behavior Tier 2 Ask 3 (R3, additive in the executor's PR):
+    // guardrail_profitTarget joined the guardrail family — 8 → 9 members.
     expect([...RECEIPT_EXIT_REASONS]).toEqual([
       'haiku_decision', 'bust_avoidance', 'vwap_failure', 'stepped_trail',
-      'stagnation', 'guardrail_stopLoss', 'guardrail_trailingStop', 'gameplan_rotation',
+      'stagnation', 'guardrail_stopLoss', 'guardrail_trailingStop',
+      'guardrail_profitTarget', 'gameplan_rotation',
     ]);
     expect(Object.isFrozen(RECEIPT_EXIT_REASONS)).toBe(true);
+  });
+
+  it('R4 (Ask 3): guardrail_profitTarget is VALID as a receipt but EXCLUDED from the D3 discretionary allowlist', () => {
+    expect(isValidExitReason('guardrail_profitTarget')).toBe(true);
+    expect(D3_DISCRETIONARY_EXIT_REASONS).not.toContain('guardrail_profitTarget');
+    expect(isAllowlistedDiscretionary('guardrail_profitTarget')).toBe(false);
   });
 
   it('isValidSource accepts members and rejects out-of-enum / coercions', () => {

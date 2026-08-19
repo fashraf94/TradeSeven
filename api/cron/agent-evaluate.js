@@ -1814,9 +1814,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // R11: the tick that CREATES a meeting is a suppression tick too ("gameplan
       // IS the evaluation" returns below) — deterministic orders run first. The
       // meeting trigger was computed pre-pass; if the pass swaps, a proposal leg
-      // referencing the departed symbol resolves through the existing
-      // reserve-fail/hold path at approval time (the same staleness class risk
-      // swaps already create for pending meetings today).
+      // referencing the departed symbol resolves at approval time via
+      // handleGameplanMeeting's per-leg slot re-resolve: findPortfolioSlot on the
+      // refreshed doc returns null for a departed symbolOut and the leg is
+      // SILENTLY skipped (`if (!slot) continue;`), while a taken symbolIn gets
+      // the visible reserve-fail hold. The same staleness class risk swaps
+      // already create for pending meetings today (they run before this gate on
+      // every tick); the pass widens its frequency, never its mechanism.
       if (gameplanTrigger) {
         await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks });
         const todayET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
@@ -2244,7 +2248,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               // poison the Tier-1 motive baseline (engine physics indistinguishable
               // from model behavior). Applies to the reinforced case too: once the
               // record's provenance is guardrail_*, its motive lane is engine-owned.
-              swapMotive: haikuSwapReason === 'haiku_decision' ? (haikuResult?.swap_type ?? null) : null,
+              // FLAG-GATED (dual-review finding A1): the F3 null lands only when
+              // the executor flips — under the dark flag the stamp is byte-identical
+              // to Tier 1, because the motive baseline is PRE-TREATMENT evidence
+              // (R9) and must not be mutated mid-collection by a dark merge (R10).
+              swapMotive: (haikuSwapReason === 'haiku_decision' || !PROFIT_TARGET_EXECUTOR_ENABLED)
+                ? (haikuResult?.swap_type ?? null)
+                : null,
               ...buildSwapReceiptSource({ source: swapSource, archetype: ctx.archetype }),
               // Release 2 PR-b — the §14 provenance sibling.
               ...buildSwapProvenance(dialClamp.provenance),
@@ -3331,18 +3341,34 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
  *
  * SEMANTICS INVARIANT (R11): same guardrail construction as the main site —
  * same injector, same thresholds, same LOCK deference, same replacement path
- * (applyGuardrails → pickSwapReplacementCandidate, R13) — only WHEN in the
- * tick they are checked changes. Execution mirrors the risk-loop template:
- * reserve → executeSwapServer → confirm → narrate → feed → L1 capture →
- * refresh. Provenance is constructed FROM SCRATCH (F3): exitReason from the
- * guardrail sourceNote, swapMotive/trade_reasoning literal null — no
- * haikuResult exists on this path and nothing model-side is inherited.
+ * (applyGuardrails → pickSwapReplacementCandidate, R13), same
+ * distressed-replacement deferral (the main site's SWAP→HOLD downgrade,
+ * mirrored here as a defer-with-beat) — only WHEN in the tick they are
+ * checked changes. Execution mirrors the risk-loop template: reserve →
+ * executeSwapServer → confirm → narrate → feed → L1 capture → refresh.
+ * Provenance is constructed FROM SCRATCH (F3): exitReason from the guardrail
+ * sourceNote, swapMotive/trade_reasoning literal null — no haikuResult exists
+ * on this path and nothing model-side is inherited.
+ *
+ * SCOPE, stated honestly: this pass covers the two GAMEPLAN early returns —
+ * the paths R11 names. Two sibling early exits still precede the main
+ * guardrail site: the pending-PROPOSAL return (dormant — the launch guard
+ * forces autopilot, so no production battle reaches it) and the no-trigger
+ * quiet tick (the compiled shape declares evaluationTiming
+ * 'post_decision_tick', and the promise copy carries the next-eval cadence —
+ * a breach on a triggerless tick fires at the next triggered evaluation).
+ * Both are recorded in the Ask 3 audit record for founder visibility.
  *
  * DARK (R10): no-ops until PROFIT_TARGET_EXECUTOR_ENABLED flips with Ask 1 —
  * the whole user-directive class (existing stops included) starts firing
- * through suppression at that flip, never piecemeal.
+ * through suppression at that flip, never piecemeal. The trade-off is
+ * explicit: the Phase-0 item-2 stop-suppression defect stays live until the
+ * joint flip (founder-visible in the audit record).
  */
-async function runSuppressionDeterministicPass({
+// Exported for the behavioral suite (dual-review hardening: the wiring pins
+// are static-source; this export lets a test EXECUTE the pass with mocked
+// executeSwapServer/capture collaborators — never imported by production code).
+export async function runSuppressionDeterministicPass({
   db, battleRef, battle, prices, lockedPositions, stockRegimes,
   statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx,
   currentDay, currentScore, marketPosture, dialClamp, momentumData,
@@ -3372,23 +3398,35 @@ async function runSuppressionDeterministicPass({
       sectorSlotObserveCap: null,
     });
 
-    // [VWAP Floor B7] parity: a wanted-but-impossible exit is a feed beat.
+    // [VWAP Floor B7] parity: a wanted-but-impossible exit is a feed beat —
+    // branched on battle kind exactly like the risk loop (tournament pools
+    // read the shared tournament_pool_empty builder; review nit B6b).
     const noBench = (deterministicResult.overrides || []).find(o => o.action === 'forced_exit_no_bench');
     if (noBench) {
-      statusFeedEntries.push({
-        timestamp: new Date().toISOString(),
-        message: `Wanted out of ${noBench.symbol} — no eligible replacement (bench on cooldown or empty).`,
-        pvpContext: null,
-        action: 'pool_empty',
-        regime: stockRegimes[noBench.symbol] || null,
-        score: Math.round(currentScore * 100) / 100,
-        citedRules: [`guardrail_${noBench.type}`],
-        triggeredBy: `guardrail_${noBench.type}`,
-        source: 'guardrail',
-        evalId: null,
-        symbolOut: noBench.symbol,
-        symbolIn: null,
-      });
+      if (tournamentCtx) {
+        statusFeedEntries.push(buildPoolEmptyFeedEntry({
+          message: `Wanted out of ${noBench.symbol} — no replacement available in the group's agent market.`,
+          symbolOut: noBench.symbol,
+          regime: stockRegimes[noBench.symbol] || null,
+          score: Math.round(currentScore * 100) / 100,
+          reason: `guardrail_${noBench.type}`,
+        }));
+      } else {
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Wanted out of ${noBench.symbol} — no eligible replacement (bench on cooldown or empty).`,
+          pvpContext: null,
+          action: 'pool_empty',
+          regime: stockRegimes[noBench.symbol] || null,
+          score: Math.round(currentScore * 100) / 100,
+          citedRules: [`guardrail_${noBench.type}`],
+          triggeredBy: `guardrail_${noBench.type}`,
+          source: 'guardrail',
+          evalId: null,
+          symbolOut: noBench.symbol,
+          symbolIn: null,
+        });
+      }
     }
 
     if (deterministicResult.decision !== 'SWAP' || !deterministicResult.symbolOut || !deterministicResult.symbolIn) return;
@@ -3410,6 +3448,29 @@ async function runSuppressionDeterministicPass({
       return;
     }
 
+    // Distressed-replacement downgrade (dual-review finding B3): the main site
+    // defers a guardrail-forced swap whose replacement is in a distressed
+    // regime (the SWAP→HOLD downgrade after applyGuardrails). The pass mirrors
+    // that — defer to the next tick with a visible beat — so the same equipped
+    // stop produces the same outcome on suppression and normal ticks alike.
+    if (stockRegimes[deterministicResult.symbolIn] === 'distressed') {
+      statusFeedEntries.push({
+        timestamp: new Date().toISOString(),
+        message: `Guardrail exit of ${deterministicResult.symbolOut} deferred — ${deterministicResult.symbolIn} is in a distressed regime.`,
+        pvpContext: null,
+        action: 'hold',
+        regime: stockRegimes[deterministicResult.symbolOut] || null,
+        score: Math.round(currentScore * 100) / 100,
+        citedRules: [deterministicExitReason],
+        triggeredBy: deterministicExitReason,
+        source: 'guardrail',
+        evalId: null,
+        symbolOut: deterministicResult.symbolOut,
+        symbolIn: deterministicResult.symbolIn,
+      });
+      return;
+    }
+
     // F3 provenance purity: constructed from scratch — nothing model-side.
     const evaluationMetadata = {
       id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
@@ -3417,7 +3478,7 @@ async function runSuppressionDeterministicPass({
       trigger: deterministicExitReason,
       rationale: deterministicResult.statusMessage || 'Deterministic guardrail enforcement during gameplan suppression (R11).',
       hypothesis: null,
-      evaluationId: `guardrail_${deterministicExitReason}_${deterministicResult.symbolOut}_${Date.now()}`,
+      evaluationId: `${deterministicExitReason}_${deterministicResult.symbolOut}_${Date.now()}`,
       tradingDay: currentDay,
       entryRegime: stockRegimes[deterministicResult.symbolOut] || null,
       entryMarketPosture: marketPosture,
@@ -3490,7 +3551,9 @@ async function runSuppressionDeterministicPass({
       timestamp: new Date().toISOString(),
       message: deterministicResult.statusMessage || `Guardrail override: forced exit ${deterministicResult.symbolOut} → ${deterministicResult.symbolIn}.`,
       pvpContext: null,
-      action: 'forced_exit',
+      // Same action literal the main site's guardrail beat uses (review nit
+      // B6a) — one vocabulary for one event class.
+      action: 'guardrail_forced_swap',
       regime: stockRegimes[deterministicResult.symbolOut] || null,
       score: Math.round(currentScore * 100) / 100,
       citedRules: [deterministicExitReason],
