@@ -18,6 +18,7 @@ import {
   STOCK_UNIVERSE,
   ALL_TICKERS,
   TICKER_TO_SECTOR,
+  TICKER_TO_INDUSTRY,
   DIMENSIONS,
   PILLARS,
   COMPETE_PILLAR_WEIGHTS,
@@ -28,6 +29,12 @@ import {
   normalizeToScore,
   computeReturn,
 } from '../_utils/rankingConfig.js';
+// Metric History Snapshot Substrate (dark). Additive co-tenant write; see the single
+// gated hook after persistResults() in the handler below. EXA spec §6.0 / DECISION 2.
+import { captureMetricHistorySnapshots } from '../_utils/metricSnapshots.js';
+// featureFlags is a pure constants module (no imports) — this api→src import is
+// Node-clean and well-precedented (10+ api/_utils importers); BUILD_RULES §4.
+import { METRIC_HISTORY_SNAPSHOT_ENABLED } from '../../src/config/featureFlags.js';
 import {
   annualizedVolatility,
   computeVAD,
@@ -1576,6 +1583,70 @@ export default async function handler(req, res) {
     // ===== PHASE D: PERSIST =====
 
     await persistResults(db, allRanked, sectorAggregates, scannerResults, scannerSummary);
+
+    // ===== METRIC HISTORY SNAPSHOT SUBSTRATE (dark; additive co-tenant write) =====
+    // EXA_RETRIEVAL_INTEGRATION_SPEC_V1_4 §6.0 (FOUNDER DECISION 2). Runs ONLY after
+    // the ranking documents above have persisted, gated dark by
+    // METRIC_HISTORY_SNAPSHOT_ENABLED. Nothing reads this data yet. The whole block is
+    // failure-isolated: any error logs and continues — a snapshot failure must never
+    // fail or delay the ranking computation (which is already complete at this point).
+    // Persists only data already in memory: no new EODHD fetch, no new cron slot.
+    if (METRIC_HISTORY_SNAPSHOT_ENABLED) {
+      try {
+        // UTC date == ET trading date at the 11:00Z run hour; matches how the rolling
+        // priceHistory above keys its days (new Date().toISOString() split at 'T').
+        const asOfDate = new Date().toISOString().split('T')[0];
+        const computedAt = new Date();
+
+        // Map the in-memory ranked stocks → one snapshot payload per ticker, and the
+        // transiently-fetched raw quarterly series → one retention payload per ticker.
+        // Reads only; no ranking value is recomputed, mutated, or re-persisted.
+        const metricsByTicker = {};
+        const quarterlyByTicker = {};
+        for (const stock of allRanked) {
+          const ticker = stock.ticker;
+          metricsByTicker[ticker] = {
+            ticker,
+            sectorId: stock.sectorId,
+            sectorName: STOCK_UNIVERSE[stock.sectorId]?.name ?? null,
+            industryName: TICKER_TO_INDUSTRY[ticker] ?? null,
+            compositeScore: stock.compositeScore ?? null,
+            compositeRank: stock.compositeRank ?? null,
+            totalPeers: stock.totalPeers ?? null,
+            metricsAvailable: stock.metricsAvailable ?? null,
+            tier: stock.tier ?? null,
+            pillars: stock.pillars ?? null,   // 7 pillar percentiles
+            ranks: stock.ranks ?? null,       // per-dimension { rank, totalWithData, value, percentile }
+            metrics: stock.metrics ?? null,   // raw growth / momentum / health / sentiment values
+            dnaBadge: stock.dnaBadge ?? null,
+            debtRiskBadge: stock.debtRiskBadge ?? null,
+          };
+          const f = allFundamentals[ticker];
+          if (f) {
+            quarterlyByTicker[ticker] = {
+              earningsHistory: f.earnings?.History ?? null,   // raw quarterly EPS series (as fetched)
+              incomeQuarterly: f.incomeQ ?? null,             // raw quarterly income (revenue) series
+              balanceSheetQuarterly: f.balanceSheetQ ?? null, // raw quarterly balance sheet (share-count series)
+            };
+          }
+        }
+
+        const snapResult = await captureMetricHistorySnapshots({
+          db,
+          metricsByTicker,
+          quarterlyByTicker,
+          asOfDate,
+          computedAt,
+          startTime,
+          maxDurationMs: config.maxDuration * 1000,
+        });
+        logInfo('Metric history snapshot', snapResult);
+      } catch (snapErr) {
+        // Redundant outer guard (captureMetricHistorySnapshots already isolates): even a
+        // synchronous throw while building the payloads cannot touch the ranking result.
+        logError(`Metric history snapshot failed (rankings already persisted): ${snapErr.message}`);
+      }
+    }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     logInfo(`Rankings cron complete in ${elapsed}s`);

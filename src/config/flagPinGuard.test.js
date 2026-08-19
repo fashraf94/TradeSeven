@@ -95,6 +95,8 @@ const DARK_BY_DESIGN = {
     'Exit-Behavior Tier 2 Ask 3 — the profitTarget executor + R11 suppression pass; flips WITH Ask 1 per R10, never alone',
   MANDATE_DORMANCY_DOWNSHIFT_ENABLED:
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
+  METRIC_HISTORY_SNAPSHOT_ENABLED:
+    'EXA §6.0 metric-history substrate — additive co-tenant write in compute-rankings; merged dark, flips only after a founder preview smoke',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────
