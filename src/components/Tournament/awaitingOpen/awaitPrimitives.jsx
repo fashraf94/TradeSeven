@@ -161,6 +161,38 @@ export function BandHead({ eyebrow, title, sub = null, right = null, compact = f
 }
 
 /**
+ * The claims meter — n/3 pending as filled beads plus the count. `used` is the
+ * caller's OWN pending claim count (self-scoped; no other seat's claims are
+ * read), and `max` is the live TOURNAMENT_TUNING cap passed by the caller, so
+ * the beads and the number can never disagree with the cap the server enforces.
+ */
+export function ClaimsMeter({ used = 0, max = 3, compact = false }) {
+  const pal = useAwaitPalette();
+  const on = used > 0;
+  const c = on ? pal.teal : pal.ink3;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 7, padding: compact ? '4px 8px' : '5px 10px',
+      borderRadius: 999, background: on ? alpha(pal.teal, 0.1) : alpha(pal.white, 0.03),
+      border: `1px solid ${on ? alpha(pal.teal, 0.32) : pal.hair2}`, whiteSpace: 'nowrap',
+    }}>
+      <span aria-hidden="true" style={{ display: 'flex', gap: 3 }}>
+        {Array.from({ length: max }).map((_, i) => (
+          <span key={i} style={{
+            width: 5, height: 5, borderRadius: '50%',
+            background: i < used ? pal.teal : alpha(pal.white, 0.16),
+            boxShadow: i < used ? `0 0 6px ${pal.teal}` : 'none',
+          }} />
+        ))}
+      </span>
+      <Mono style={{ fontSize: compact ? 9.5 : 10, fontWeight: 700, color: c, letterSpacing: '0.06em' }}>
+        {used}/{max} pending
+      </Mono>
+    </span>
+  );
+}
+
+/**
  * THE TICKER PLATE — a spined market plate rather than a flat pill. Sector
  * colour arrives as a glowing spine + tint + tick marks while the symbol itself
  * stays near-white, so it reads as light ON colour instead of tinted text.

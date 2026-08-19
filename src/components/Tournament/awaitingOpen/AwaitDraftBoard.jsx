@@ -125,7 +125,7 @@ export default function AwaitDraftBoard({
   pod, uid, events, sectorMap, picksPerPlayer = 3, onResearch = null, compact = false,
 }) {
   const pal = useAwaitPalette();
-  const members = pod?.groupMembers || [];
+  const members = useMemo(() => pod?.groupMembers || [], [pod?.groupMembers]);
   const lanes = useMemo(
     () => buildSeatLanes({ events, groupMembers: members, picksPerPlayer, uid, sectorMap }),
     [events, members, picksPerPlayer, uid, sectorMap],

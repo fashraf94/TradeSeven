@@ -8,7 +8,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildSeatLanes, sectorSpread, buildDraftGrid } from './podBoard';
-import { waitSegments, runStartDay } from './AwaitCountdownHero';
+import { waitSegments, runStartDay, wireWindowLine, etWeekday } from './awaitTokens';
+import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
 
 const MEMBERS = ['u1', 'cpu-a', 'cpu-b', 'cpu-c'];
 const SECTORS = new Map([
@@ -151,5 +152,76 @@ describe('runStartDay', () => {
     expect(runStartDay(null)).toBeNull();
     expect(runStartDay('')).toBeNull();
     expect(runStartDay('not-a-date')).toBeNull();
+  });
+});
+
+// The locked-wire copy (build spec §6.1). These run against the REAL
+// getClaimWindowDisplay so the line can never drift from the window state it
+// describes — the founder ruled the shared helper must not be widened, so the
+// one nuance it cannot express (Friday) is handled in wireWindowLine and is
+// pinned here.
+describe('wireWindowLine', () => {
+  // 2026-08-21 is a Friday; 2026-08-22 a Saturday; 2026-08-19 a Wednesday.
+  const at = (iso) => {
+    const now = new Date(iso);
+    return { now, line: wireWindowLine(getClaimWindowDisplay(now), now) };
+  };
+
+  it('counts down honestly on a mid-week afternoon', () => {
+    const { now, line } = at('2026-08-19T18:00:00Z'); // Wed 14:00 ET
+    expect(etWeekday(now)).toBe('Wed');
+    expect(line.isOpen).toBe(false);
+    expect(line.text).toBe('Closed — the wire opens in 2h 0m (4:00 PM ET).');
+  });
+
+  it('reports OPEN with the lock-in countdown after 4:00 PM ET on a weekday', () => {
+    const { line } = at('2026-08-19T20:30:00Z'); // Wed 16:30 ET
+    expect(line.isOpen).toBe(true);
+    expect(line.text).toMatch(/^Open — claims lock in .* \(9:24 AM ET\)\.$/);
+  });
+
+  it('NEVER shows a countdown on a Friday afternoon — the wire does not open at 4pm Friday', () => {
+    const { now, line } = at('2026-08-21T18:00:00Z'); // Fri 14:00 ET
+    expect(etWeekday(now)).toBe('Fri');
+    // The raw window still reports market_hours with a countdown to today 16:00…
+    expect(getClaimWindowDisplay(now).countdownMinutes).toBe(120);
+    // …but Friday 16:00 is friday_evening (closed until Monday), so a countdown
+    // would be a lie. The line states the real reopen instead.
+    expect(line.text).not.toMatch(/opens in/);
+    expect(line.text).toBe('Closed — the wire reopens Monday at 4:00 PM ET.');
+    expect(line.isOpen).toBe(false);
+  });
+
+  it('states the Monday reopen on a Friday evening', () => {
+    const { line } = at('2026-08-21T21:00:00Z'); // Fri 17:00 ET
+    expect(line.text).toBe('Closed — the wire reopens Monday at 4:00 PM ET.');
+    expect(line.isOpen).toBe(false);
+  });
+
+  it('states the Monday open across the weekend', () => {
+    const { line } = at('2026-08-22T18:00:00Z'); // Sat 14:00 ET
+    expect(line.text).toBe('Closed for the weekend — the wire opens Monday at 4:00 PM ET.');
+    expect(line.isOpen).toBe(false);
+  });
+
+  it('agrees with the window mirror it describes — isOpen is never invented', () => {
+    for (const iso of [
+      '2026-08-19T18:00:00Z', '2026-08-19T20:30:00Z', '2026-08-21T18:00:00Z',
+      '2026-08-21T21:00:00Z', '2026-08-22T18:00:00Z', '2026-08-20T12:00:00Z',
+    ]) {
+      const now = new Date(iso);
+      const win = getClaimWindowDisplay(now);
+      expect(wireWindowLine(win, now).isOpen).toBe(win.isOpen);
+    }
+  });
+
+  it('never emits a countdown without a finite countdownMinutes', () => {
+    const now = new Date('2026-08-22T18:00:00Z');
+    const line = wireWindowLine({ isOpen: false, reason: 'market_hours', countdownMinutes: null }, now);
+    expect(line.text).not.toMatch(/in\s+\d/);
+  });
+
+  it('degrades safely on a missing window', () => {
+    expect(wireWindowLine(null)).toEqual({ text: '', isOpen: false });
   });
 });

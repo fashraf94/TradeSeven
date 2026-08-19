@@ -24,38 +24,12 @@ import React, { useMemo } from 'react';
 import { Clock, Check } from 'lucide-react';
 import { useCountdown } from '../../../hooks/useCountdown';
 import { TOURNAMENT_TUNING, AGENT_PICKS_PER_AGENT, PICKS_PER_PLAYER } from '../../../constants/leagueTournament';
-import { alpha, WPOD, WMODES, modeColor } from './awaitTokens';
+import { alpha, WPOD, WMODES, modeColor, waitSegments, runStartDay } from './awaitTokens';
 import { Mono, WChip, TickRail, useAwaitPalette, usePrefersReducedMotion } from './awaitPrimitives';
 
 // The rail spans the final day of waiting → the bell. Beyond a day out the bead
 // simply sits at the start; the numerals remain the truth.
 const WAIT_SPAN_SEC = 86400;
-
-/** Countdown segments from the SAME totalSec the rail uses. Days appear only
- *  when the open is more than a day out (a weekend or a holiday). */
-export function waitSegments(totalSec) {
-  const days = Math.floor(totalSec / 86400);
-  const hours = Math.floor((totalSec % 86400) / 3600);
-  const mins = Math.floor((totalSec % 3600) / 60);
-  const secs = totalSec % 60;
-  if (days > 0) return [[days, days === 1 ? 'DAY' : 'DAYS'], [hours, 'HRS'], [mins, 'MIN'], [secs, 'SEC']];
-  if (hours > 0) return [[hours, 'HRS'], [mins, 'MIN'], [secs, 'SEC']];
-  return [[mins, 'MIN'], [secs, 'SEC']];
-}
-
-/** The ET weekday the run starts on, as a 3-letter key matching WPOD.run.
- *  Intl with America/New_York — never a hand-rolled offset (BUILD_RULES §6). */
-export function runStartDay(targetIso) {
-  if (!targetIso) return null;
-  const d = new Date(targetIso);
-  if (Number.isNaN(d.getTime())) return null;
-  try {
-    return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' })
-      .format(d).toUpperCase();
-  } catch {
-    return null;
-  }
-}
 
 function CDNum({ value, label, compact, dense, pal }) {
   return (

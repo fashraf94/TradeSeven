@@ -1,7 +1,11 @@
 // src/components/Tournament/awaitingOpen/awaitTokens.js
 //
-// Awaiting-the-Open redesign — the ONE token/copy mapping site for the
-// redesigned awaiting-open surface (flag: AWAITING_OPEN_REDESIGN_ENABLED).
+// Awaiting-the-Open redesign — the redesign's NON-REACT layer: the one
+// token/copy mapping site plus the pure display model (countdown segmentation,
+// the ET run day, the wire's window line) for the redesigned awaiting-open
+// surface (flag: AWAITING_OPEN_REDESIGN_ENABLED). Kept out of the component
+// files so the derivations stay unit-testable without a DOM — and so those
+// files export components only (fast refresh).
 //
 // THEMING (founder ruling, Option A): this surface keeps useTheme() as its token
 // source rather than going dark-only via LTOKENS/CMD. The app mounts a single
@@ -110,4 +114,89 @@ export const WMODES = {
 /** Mode identity colour, resolved off the live palette (practice = copper). */
 export function modeColor(pal, mode = 'practice') {
   return mode === 'ranked' ? pal.gold : pal.copper;
+}
+
+/**
+ * Countdown segments, from the SAME total-seconds value the numerals render —
+ * so the label and its number can never come from two sources (BUILD_RULES §9).
+ * A DAYS segment appears only when the open is more than a day out (a weekend
+ * or a holiday); under an hour the hours segment is dropped entirely.
+ */
+export function waitSegments(totalSec) {
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  if (days > 0) return [[days, days === 1 ? 'DAY' : 'DAYS'], [hours, 'HRS'], [mins, 'MIN'], [secs, 'SEC']];
+  if (hours > 0) return [[hours, 'HRS'], [mins, 'MIN'], [secs, 'SEC']];
+  return [[mins, 'MIN'], [secs, 'SEC']];
+}
+
+/**
+ * The ET weekday the run starts on, as a 3-letter key matching WPOD.run, so the
+ * run strip highlights the day the battle ACTUALLY begins rather than assuming
+ * Monday. Intl with America/New_York — never a hand-rolled offset
+ * (BUILD_RULES §6). Null for a missing or malformed anchor.
+ */
+export function runStartDay(targetIso) {
+  if (!targetIso) return null;
+  const d = new Date(targetIso);
+  if (Number.isNaN(d.getTime())) return null;
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' })
+      .format(d).toUpperCase();
+  } catch {
+    return null;
+  }
+}
+
+/** ET weekday key ('Mon'…'Sun') — Intl with America/New_York, never a
+ *  hand-rolled offset (BUILD_RULES §6). Returns null if it cannot be resolved. */
+export function etWeekday(now = new Date()) {
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }).format(now);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The wire's window line (build spec §6.1), derived from the LIVE
+ * getClaimWindowDisplay() state the caller passes in — the display-only mirror
+ * of the server window, which stays the sole authority on any submit.
+ *
+ * The window helper is deliberately NOT widened (founder ruling: it has two
+ * callers and this needs nothing from it that it doesn't already return), so
+ * the one nuance it cannot express is handled here: on a FRIDAY during market
+ * hours it reports `market_hours` with a countdown to today's 16:00, but the
+ * wire never actually opens then — Friday ≥16:00 is `friday_evening`, closed
+ * until Monday. Showing "opens in 2h 0m" there would be a countdown that lies,
+ * so that branch drops the countdown and states the reopen plainly.
+ *
+ * Returns `{ text, isOpen }`. Copy mirrors ClaimFlipWindow's countdownLabel.
+ */
+export function wireWindowLine(win, now = new Date()) {
+  if (!win) return { text: '', isOpen: false };
+  if (win.reason === 'weekend') {
+    return { text: 'Closed for the weekend — the wire opens Monday at 4:00 PM ET.', isOpen: false };
+  }
+  if (win.reason === 'friday_evening') {
+    return { text: 'Closed — the wire reopens Monday at 4:00 PM ET.', isOpen: false };
+  }
+  if (!win.isOpen && etWeekday(now) === 'Fri') {
+    // Friday daytime: today's 16:00 "open" is immediately friday_evening.
+    return { text: 'Closed — the wire reopens Monday at 4:00 PM ET.', isOpen: false };
+  }
+  const mins = win.countdownMinutes;
+  if (!Number.isFinite(mins)) {
+    return win.isOpen
+      ? { text: 'Open — claims lock at 9:24 AM ET.', isOpen: true }
+      : { text: 'Closed — the wire opens at 4:00 PM ET.', isOpen: false };
+  }
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const dur = h > 0 ? `${h}h ${m}m` : `${m}m`;
+  return win.isOpen
+    ? { text: `Open — claims lock in ${dur} (9:24 AM ET).`, isOpen: true }
+    : { text: `Closed — the wire opens in ${dur} (4:00 PM ET).`, isOpen: false };
 }

@@ -38,6 +38,10 @@ import AssetResearchModal from '../../draft/AssetResearchModal';
 import AwaitingOpenShell from './AwaitingOpenShell';
 import AwaitCountdownHero from './AwaitCountdownHero';
 import AwaitDraftBoard from './AwaitDraftBoard';
+import AwaitWire from './AwaitWire';
+import AwaitSwapSheet from './AwaitSwapSheet';
+import { wireWindowLine } from './awaitTokens';
+import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
 import { isAwaitingOpenRedesignOn } from '../../../config/featureFlags';
 
 const CLAIM_CAP = TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE; // 3 pending
@@ -114,6 +118,34 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
     requestAnimationFrame(() => claimsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
+  // ── redesign-only state (inert on the classic path) ───────────────────────
+  // The row whose Claim opened the swap sheet. The sheet is pre-filled with it;
+  // the user's only decision is which of their three picks it replaces.
+  const [swapRow, setSwapRow] = useState(null);
+
+  // The claim window, re-evaluated on a timer so the "opens in Xh Ym" line
+  // stays honest while the page sits open. Display-only — the server's 403
+  // window_closed is the sole authority on any submit (ClaimFlipWindow.jsx:6-14).
+  const [windowNow, setWindowNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setWindowNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+  const claimWindow = useMemo(() => getClaimWindowDisplay(windowNow), [windowNow]);
+  const windowLine = useMemo(() => wireWindowLine(claimWindow, windowNow), [claimWindow, windowNow]);
+
+  // The user's three picks, with the sector each plate is coloured by — the
+  // drop options in the swap sheet.
+  const myPicks = useMemo(
+    () => (player?.picks || []).map((pick, i) => {
+      const symbol = typeof pick === 'string' ? pick : pick?.symbol;
+      if (!symbol) return null;
+      const sym = String(symbol).toUpperCase();
+      return { symbol: sym, sector: sectorMap.get(sym) || 'Other', round: `R${i + 1}` };
+    }).filter(Boolean),
+    [player, sectorMap],
+  );
+
   const researchSector = researchSym ? (sectorMap.get(researchSym) || null) : null;
 
   const freeAgents = (
@@ -182,10 +214,33 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
             onResearch={setResearchSym}
             compact={!desktop}
           />
-          {freeAgents}
-          <div ref={claimsRef}>{claimsBuilder}</div>
+          <AwaitWire
+            board={freeAgentBoard}
+            pendingSymbols={pendingClaimSymbols}
+            pendingCount={pendingCount}
+            claimCap={CLAIM_CAP}
+            windowLine={windowLine.text}
+            wireOpen={windowLine.isOpen}
+            onClaim={setSwapRow}
+            onResearch={setResearchSym}
+            compact={!desktop}
+          />
           <GroupFeed feed={pod?.feed} uid={uid} />
         </AwaitingOpenShell>
+
+        <AwaitSwapSheet
+          row={swapRow}
+          picks={myPicks}
+          groupId={podId}
+          open={windowLine.isOpen}
+          windowLine={windowLine.text}
+          capReached={capReached}
+          claimCap={CLAIM_CAP}
+          pendingCount={pendingCount}
+          compact={!desktop}
+          onClose={() => setSwapRow(null)}
+        />
+
         {researchModal}
       </>
     );
