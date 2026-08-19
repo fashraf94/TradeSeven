@@ -12,7 +12,15 @@
 //                               -value% from its implied peak (via thresholdHistory)
 //   - maxSectorWeight  (hard) → block SWAP that would push a sector above value%
 //   - maxPosition      (hard) → logged as incompatible in BaggerBomb (fixed slots)
-//   - profitTarget     (soft) → surfaced as note, no override
+//   - profitTarget     → SOFT note while PROFIT_TARGET_EXECUTOR_ENABLED is false
+//                        (byte-identical dark contract); HARD winner-side forced
+//                        exit once the flag is live (Exit-Behavior Tier 2 Ask 3,
+//                        rulings R1/R3 — sanctioned fence contact per the Aug 19
+//                        kickoff). The executor mirrors guardrail_stopLoss across
+//                        the four keyed subsystems (R3 meta-principle): forced
+//                        SWAP via the same held/self-excluding picker, the same
+//                        LOCK deference, sourceNote `guardrail_profitTarget`.
+//                        F7 precedence: stops outrank the target on the same tick.
 //
 // The function is pure — no Firestore I/O, no mutation of inputs. All errors
 // are caught per-check so a single bad guardrail never crashes the pipeline.
@@ -20,7 +28,7 @@
 import { pickSwapReplacementCandidate } from './agentRiskManager.js';
 import { flattenBenchServer } from './agentScoring.js';
 import { ARCHETYPE_CONFIGS } from './agentArchetypeConfig.js';
-import { SECTOR_CAP_MODE } from '../../src/config/featureFlags.js';
+import { SECTOR_CAP_MODE, PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
 import { getEffectiveArchetype } from './directiveIdentity.js';
 import { TOURNAMENT_GAME_MODE, AGENT_PICKS_PER_AGENT } from '../../src/constants/leagueTournament.js';
 
@@ -300,8 +308,49 @@ export function applyGuardrails({
     }
   }
 
-  const forcedBreach = stopLossBreach || trailingBreach;
-  const forcedType = stopLossBreach ? 'stopLoss' : trailingBreach ? 'trailingStop' : null;
+  // ---- 2c) Profit target — HARD once the executor flag is live (Ask 3, R1) ----
+  // Winner-side mirror of the stop scan: fires when gain-from-entry crosses the
+  // user's target, resolved per position through the targetFor override hook
+  // (F11, Tier-3-ready). F7 precedence: only consulted when NO stop breached —
+  // the protective trigger owns the tick's single exit. Flag false → this block
+  // is dead and the soft note below renders, byte-identical to Phase 4B.
+  const profitTarget = byType.profitTarget;
+  let targetBreach = null;
+  if (
+    PROFIT_TARGET_EXECUTOR_ENABLED &&
+    profitTarget &&
+    typeof profitTarget.value === 'number' &&
+    !stopLossBreach &&
+    !trailingBreach
+  ) {
+    try {
+      targetBreach = pickBestTargetBreach(held, prices, battle, profitTarget.value);
+      // Log secondary over-target positions — one exit per eval, the rest wait
+      // a tick (mirrors the stop scan's pending_next_tick secondary logging).
+      for (const pos of held) {
+        const pnl = computePnLPct(pos, prices, battle);
+        if (pnl === null) continue;
+        const posTarget = Math.abs(targetFor(pos, profitTarget.value));
+        if (posTarget > 0 && pnl >= posTarget && pos.symbol !== targetBreach?.symbol) {
+          overrides.push({
+            type: 'profitTarget',
+            symbol: pos.symbol,
+            metric: 'pnlPct',
+            threshold: posTarget,
+            actual: round2(pnl),
+            action: 'pending_next_tick',
+            originalDecision,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[Guardrails] profitTarget executor check failed:', err?.message);
+    }
+  }
+
+  const forcedBreach = stopLossBreach || trailingBreach || targetBreach;
+  const forcedType =
+    stopLossBreach ? 'stopLoss' : trailingBreach ? 'trailingStop' : targetBreach ? 'profitTarget' : null;
 
   // ---- 3) Max sector weight (hard): pre-execution check on proposed SWAP ----
   const maxSector = byType.maxSectorWeight;
@@ -372,9 +421,11 @@ export function applyGuardrails({
     });
   }
 
-  // ---- 5) Profit target (soft): informational only ----
-  const profitTarget = byType.profitTarget;
-  if (profitTarget && typeof profitTarget.value === 'number') {
+  // ---- 5) Profit target (soft): informational only — the DARK half of the
+  // Ask 3 flag split. Renders only while the executor is off; once
+  // PROFIT_TARGET_EXECUTOR_ENABLED is live, block 2c owns the semantic and
+  // the note would be a second, contradictory voice on the same signal.
+  if (!PROFIT_TARGET_EXECUTOR_ENABLED && profitTarget && typeof profitTarget.value === 'number') {
     try {
       for (const pos of held) {
         const pnl = computePnLPct(pos, prices, battle);
@@ -438,6 +489,9 @@ export function applyGuardrails({
         // proposed it. Surface the guardrail sourceNote (not null) so the Knob B
         // hurdle hook bypasses the floor — otherwise a reinforced protective exit
         // could be gated and leave the agent parked in a breaching position.
+        // Ask 3 (R2): a profitTarget breach reinforces identically — its sourceNote
+        // routes the USER-DIRECTIVE bypass (clearsHurdleFloor step 1b), the same
+        // never-parked contract for the user's standing order.
         sourceNote: `guardrail_${forcedType}`,
       };
     }
@@ -477,7 +531,9 @@ export function applyGuardrails({
     const thresholdLabel =
       forcedType === 'stopLoss'
         ? `stop-loss at ${Math.abs(forcedBreach.threshold)}%`
-        : `trailing stop at ${Math.abs(forcedBreach.threshold)}% from peak`;
+        : forcedType === 'trailingStop'
+          ? `trailing stop at ${Math.abs(forcedBreach.threshold)}% from peak`
+          : `profit target at ${Math.abs(forcedBreach.threshold)}%`;
 
     overrides.push({
       type: forcedType,
@@ -519,7 +575,98 @@ export function applyGuardrails({
   return { ...passthrough, overrides };
 }
 
+// ==================== ASK 3 EXECUTION-CLASS SURFACE ====================
+
+/**
+ * The per-position target resolver (F11 — the Tier-3-ready override hook).
+ * Today every target is the global Exit-Discipline percentage; the coming
+ * per-position conversational lever writes `profitTargetOverridePct` onto the
+ * position and this hook honors it with zero executor rework. Fail-closed:
+ * anything but a positive number falls back to the global value.
+ *
+ * @param {Object|null} position - a held position (may carry profitTargetOverridePct)
+ * @param {number} globalTargetValue - the equipped profitTarget guardrail value
+ * @returns {number}
+ */
+export function targetFor(position, globalTargetValue) {
+  const override = position?.profitTargetOverridePct;
+  return typeof override === 'number' && override > 0 ? override : globalTargetValue;
+}
+
+// The closed set of guardrail types the engine knows AT ALL — flag-independent
+// on purpose (/code-review CR4: a flag-dependent list frozen at import time
+// could disagree with guardrailExecutionClass's call-time read under the
+// live-getter mock pattern). Which of these are executors vs displayed
+// advisories is answered ONLY by guardrailExecutionClass below, at call time.
+export const KNOWN_GUARDRAIL_TYPES = Object.freeze([
+  'stopLoss', 'trailingStop', 'maxSectorWeight', 'maxPosition', 'profitTarget',
+]);
+
+/**
+ * F11's pairing source of truth: which execution class a guardrail type has
+ * TODAY. 'executor' = a real deterministic enforcement path in applyGuardrails;
+ * 'advisory_displayed' = explicitly no executor, displayed as advisory; null =
+ * unknown type (fail-closed — never silently an executor). Reads the flag at
+ * call time so the pairing test and the compiler gate can never disagree.
+ *
+ * @param {string} type - guardrail type literal
+ * @returns {'executor'|'advisory_displayed'|null}
+ */
+export function guardrailExecutionClass(type) {
+  switch (type) {
+    case 'stopLoss':
+    case 'trailingStop':
+    case 'maxSectorWeight':
+      return 'executor';
+    case 'profitTarget':
+      return PROFIT_TARGET_EXECUTOR_ENABLED ? 'executor' : 'advisory_displayed';
+    case 'maxPosition':
+      return 'advisory_displayed';
+    default:
+      return null;
+  }
+}
+
 // ==================== INTERNAL HELPERS ====================
+
+/**
+ * Winner-side mirror of pickWorstBreach for the profit-target executor (F7:
+ * most-breaching first — the LARGEST excess of gain over its per-position
+ * target fires; the rest wait a tick). Returns the same breach shape
+ * pickWorstBreach produces ({symbol,tier,slotIndex,isCrypto,metric,threshold,
+ * actual}) with threshold POSITIVE (winner-side), so the shared compose block
+ * downstream needs no target-specific branch.
+ */
+function pickBestTargetBreach(positions, prices, battle, globalTargetValue) {
+  let best = null;
+  let bestExcess = -Infinity;
+  for (const pos of positions) {
+    let pnl;
+    try {
+      pnl = computePnLPct(pos, prices, battle);
+    } catch {
+      pnl = null;
+    }
+    if (pnl === null || pnl === undefined) continue;
+    const threshold = Math.abs(targetFor(pos, globalTargetValue));
+    if (!(threshold > 0)) continue;
+    if (pnl < threshold) continue;
+    const excess = pnl - threshold;
+    if (best === null || excess > bestExcess) {
+      bestExcess = excess;
+      best = {
+        symbol: pos.symbol,
+        tier: pos.tier,
+        slotIndex: pos.slotIndex,
+        isCrypto: pos.isCrypto === true,
+        metric: 'pnlPct',
+        threshold,
+        actual: pnl,
+      };
+    }
+  }
+  return best;
+}
 
 function collectHeldPositions(battle) {
   const out = [];

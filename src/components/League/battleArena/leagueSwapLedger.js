@@ -62,6 +62,11 @@ const DETERMINISTIC_LABELS = {
   stagnation: 'stagnation rotation',
   guardrail_stopLoss: 'stop-loss',
   guardrail_trailingStop: 'trailing stop',
+  // Exit-Behavior Tier 2 Ask 3 (R3, same-PR keyed-list add): the profit-target
+  // executor's stamp — deterministic-first precedence applies unchanged, so an
+  // engine-forced target fire can never render as "agent decision" (or worse,
+  // a stale declared motive).
+  guardrail_profitTarget: 'profit target',
   gameplan_rotation: 'gameplan rotation',
 };
 

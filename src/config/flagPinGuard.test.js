@@ -91,6 +91,8 @@ const DARK_BY_DESIGN = {
   // Rollover and dormancy stay dark below.
   MANDATE_ROLLOVER_ENABLED:
     'Spec 1 rollover sweep (§5.3) — built P4; flips only after a founder preview smoke',
+  PROFIT_TARGET_EXECUTOR_ENABLED:
+    'Exit-Behavior Tier 2 Ask 3 — the profitTarget executor + R11 suppression pass; flips WITH Ask 1 per R10, never alone',
   MANDATE_DORMANCY_DOWNSHIFT_ENABLED:
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
   METRIC_HISTORY_SNAPSHOT_ENABLED:
