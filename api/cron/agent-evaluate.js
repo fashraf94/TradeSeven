@@ -87,6 +87,10 @@ import { finalizeCronState } from '../_utils/agentCronState.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
 // string literal). Zero-import schema module, BUILD_RULES §4.
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
+// C-2 fix: the mode config is the flat-stamp authority (flatMultiplier: 1.0
+// flat6 / null tiered) — the same resolver the executor's incoming-swap stamp
+// already uses.
+import { resolveModeConfig } from '../../src/constants/agentGameModes.js';
 // Per-Battle Loadout + Concurrency Phase 1 — attribution redirects. A BaggerBomb
 // battle runs on the persistent casual clone, but its record + corpus belong to
 // the PARENT ranked agent. resolveAttributionAgentId (async — the corpus sites)
@@ -747,13 +751,23 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // Guard 2 cutoff for crypto (24/7, UTC-dated daily bars).
     const utcToday = new Date().toISOString().slice(0, 10);
     const startingPrices = battle.portfolio?.startingPrices || {};
+    // C-2 fix (flat6 tier-stamp pass-through, founder ruling option a): the
+    // D2 flat stamp lives on the battle docs, but these rebuild literals
+    // dropped it — the scorer's fallback then applied slot-label multipliers
+    // (star 2.0x / core 1.5x) to flat6 battles. Resolve the mode's flat
+    // multiplier ONCE per battle and stamp every rebuilt scorer asset —
+    // mirroring the executor's own incoming-swap precedent. Tiered battles
+    // resolve null and gain no field: byte-identical.
+    const flat6StampMultiplier = resolveModeConfig(battle.gameMode).flatMultiplier;
+    const flat6Stamp = flat6StampMultiplier != null ? { tierMultiplier: flat6StampMultiplier } : {};
+
     const assetScores = flatPortfolio.map(asset => {
       const currentPrice = prices[asset.symbol]?.current;
       const entryPrice = asset.swapPrice || startingPrices[asset.symbol] || 0;
 
       if (!currentPrice || entryPrice <= 0) {
         return calculateAssetScoreServer(
-          { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, direction: asset.direction },
+          { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, direction: asset.direction, ...flat6Stamp },
           0,
           battle.thresholdHistory?.[asset.symbol] || {}
         );
@@ -790,7 +804,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         : null;
 
       return calculateAssetScoreServer(
-        { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, direction: asset.direction },
+        { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, direction: asset.direction, ...flat6Stamp },
         priceChange,
         battle.thresholdHistory?.[asset.symbol] || {},
         {},
@@ -805,7 +819,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
       if (!currentPrice || entryPrice <= 0) {
         return calculateAssetScoreServer(
-          { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, direction: asset.direction },
+          { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, direction: asset.direction, ...flat6Stamp },
           0,
           {}
         );
@@ -838,7 +852,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         : null;
 
       return calculateAssetScoreServer(
-        { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, direction: asset.direction },
+        { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, direction: asset.direction, ...flat6Stamp },
         priceChange,
         {},
         {},

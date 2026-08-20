@@ -823,6 +823,10 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     const allowed = new Set([
       'api/_utils/agentSwapExecution.js',
       'api/_utils/agentSwapExecution.test.js',
+      // C-2 fix: the flat6 stamp pass-through behavioral test executes the
+      // fenced module through the same in-memory harness shape as its own
+      // test file — a test consumer, not a new call site.
+      'api/_utils/flat6TierStamp.passthrough.test.js',
       'api/cron/agent-evaluate.js',
       'api/cron/agent-evaluate.test.js',
     ]);

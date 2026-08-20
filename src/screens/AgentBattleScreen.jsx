@@ -651,6 +651,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     // scorer negates the scalar args but NOT the caller-supplied `history`,
     // which is already adjusted above. Locked by agentBattleScoring.test.js —
     // do NOT add `direction` back to this call.
+    // LOAD-BEARING full-asset spread: on tournament docs the D2 flat6
+    // `tierMultiplier: 1.0` stamp rides `...asset` into the scorer's override —
+    // narrowing this to a field subset re-scores flat6 display at slot labels
+    // (the C-2 server defect class, fixed 2026-08).
     const score = calculateAssetScoreV3(
       { ...asset, baseATR, tier, direction: undefined },
       priceChange,
