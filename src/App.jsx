@@ -9230,13 +9230,23 @@ export default function PortfolioDuel() {
   // trapped). Landing precisely on the Training sub-tab is a deferred follow-up.
   if (screen === 'trainingBattle' && trainingBattlePodId) {
     return (
-      <ErrorBoundary name="Training Battle" onNavigateDashboard={() => setScreen('dashboard')}>
-        <LeagueTrainingBattleView
-          podId={trainingBattlePodId}
-          user={user}
-          onBack={() => setScreen('league')}
-        />
-      </ErrorBoundary>
+      // PRE-EXISTING FIX (not part of the awaiting-open feature): this screen
+      // was the only one of its siblings returning bare, without the desktop
+      // sidebar offset every other screen wraps in (see filmRoom :9394 and
+      // friends). `trainingBattle` is absent from GAMEPLAY_SCREENS (:1082), so
+      // DesktopSidebar (:9993) DOES render over it, covering the left 64px
+      // collapsed / 220px expanded of the column. Harmless-looking on the
+      // narrow classic body; the redesign's full-width draftboard puts the
+      // round spine and the top wire row's fit score under it.
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
+        <ErrorBoundary name="Training Battle" onNavigateDashboard={() => setScreen('dashboard')}>
+          <LeagueTrainingBattleView
+            podId={trainingBattlePodId}
+            user={user}
+            onBack={() => setScreen('league')}
+          />
+        </ErrorBoundary>
+      </div>
     );
   }
 
