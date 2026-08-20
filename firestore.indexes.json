@@ -289,6 +289,20 @@
       ]
     },
     {
+      "collectionGroup": "agentBattles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "agentId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "resolvedAgentManifest.equippedConfigHash",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "gameDesignFeedback",
       "queryScope": "COLLECTION",
       "fields": [

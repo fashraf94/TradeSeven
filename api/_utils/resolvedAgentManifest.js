@@ -121,7 +121,12 @@ export function buildResolvedAgentManifest({ agentData, compiledBuild = null, eq
     };
   }
 
-  const frozenLayers = {
+  // E9 (Strategy Foundation audit, founder-authorized 2026-08-20): the
+  // equipped-config content, built ONCE so the frozen layers and the
+  // fingerprint below cannot disagree (§9 one-source). frozenLayers derives
+  // from this object by adding ONLY the per-creation snapshotAt stamp to the
+  // watchlist; equippedConfigHash hashes exactly this object.
+  const equippedConfigContent = {
     activeRules: agentData.activeRules || [],
     equippedBundleIds: agentData.equippedBundleIds || [],
     standingLeans: customization.standingLeans,
@@ -130,8 +135,34 @@ export function buildResolvedAgentManifest({ agentData, compiledBuild = null, eq
     deployedGuardrails: Array.isArray(agentData.deployedStrategy?.guardrails)
       ? agentData.deployedStrategy.guardrails
       : [],
+    equippedWatchlist: equippedWatchlist ?? null,
+  };
+
+  const frozenLayers = {
+    ...equippedConfigContent,
     equippedWatchlist: equippedWatchlist ? { ...equippedWatchlist, snapshotAt: now } : null,
   };
+
+  // The equipped-config fingerprint — sha256 (canonicalContentHash) over the
+  // equipped-config content ONLY, so "battles fought under config X" is an
+  // equality query (agentId + resolvedAgentManifest.equippedConfigHash;
+  // firestore.indexes.json entry + Console creation per the index-drift
+  // dual-write note).
+  //
+  // Coverage caveat: config as frozen at battle birth, six axes by value —
+  // activeRules (rules + params + hardness), equippedBundleIds,
+  // standingLeans (+ the bounded invalidated record), dials (tempo),
+  // deployedGuardrails, equippedWatchlist — version stamps deliberately
+  // excluded. valuesAtLock/versionStamps are context, not config; if the
+  // identity/rule-library epoch must be pinned too, that is a SECOND field
+  // (configEpochHash), never a widening of this one.
+  //
+  // The one deviation from hashing frozenLayers literally: the watchlist
+  // enters WITHOUT its per-creation snapshotAt stamp — the compileBuild
+  // contentHash rule ("identical inputs at different times are the SAME
+  // build"). Hashing snapshotAt would mint a new "config" per battle and
+  // defeat the query the field exists for.
+  const equippedConfigHash = canonicalContentHash(equippedConfigContent);
 
   const valuesAtLock = {
     archetype: agentData.archetype || 'unknown',
@@ -176,6 +207,9 @@ export function buildResolvedAgentManifest({ agentData, compiledBuild = null, eq
     freezePolicyVersion: FREEZE_POLICY_VERSION,
     createdAt: now,
     frozenLayers,
+    // E9: equipped-config fingerprint — coverage caveat and hash-input
+    // contract at the computation above.
+    equippedConfigHash,
     valuesAtLock,
     versionStamps,
     guardrails: buildGuardrailsLayer(agentData, buildForManifest),
