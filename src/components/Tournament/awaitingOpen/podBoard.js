@@ -27,6 +27,10 @@ export function joinPoolRows(poolSymbols, universe) {
     return {
       symbol: key,
       sectorName: meta.sectorName || 'Other',
+      // Carried for the free-agent browser's text search. The universe has no
+      // company-name field, so ticker + sector + industry is the whole of the
+      // searchable text that actually exists.
+      industryName: meta.industryName || null,
       archScores: meta.arch_scores || {},
       compositeScore: meta.compositeScore ?? null,
       momentumScore: meta.momentumScore ?? null,
@@ -77,9 +81,73 @@ export function ownedSectorCountsFrom(heldSymbols, universe) {
  * lobby. Pure.
  */
 export function buildFreeAgentBoard({ poolSymbols, universe, archKey = DEFAULT_ARCH, ownedSectorCounts = {}, topN = 12 } = {}) {
+  return buildFreeAgentUniverse({ poolSymbols, universe, archKey, ownedSectorCounts }).slice(0, topN);
+}
+
+/**
+ * The SAME fit-ranked board, unsliced — every claimable name in the pool, not
+ * just the wire's top N. This is what the free-agent browser searches and
+ * browses.
+ *
+ * The wire is literally `buildFreeAgentUniverse(...).slice(0, topN)`, so the two
+ * surfaces cannot disagree about a name's fit, its rationale or its ordering:
+ * there is one computation and one fit metric, never a second one recomputed
+ * for the browser (BUILD_RULES §9). Each row carries `boardRank` — its 1-based
+ * position in the FULL board — which is a DISPLAY position only and must never
+ * be passed as placeClaim's `rank` (that field is the user's own preference
+ * ordering among their pending claims; see AwaitSwapSheet). Pure.
+ */
+export function buildFreeAgentUniverse({ poolSymbols, universe, archKey = DEFAULT_ARCH, ownedSectorCounts = {} } = {}) {
   const rows = joinPoolRows(poolSymbols, universe);
-  const board = buildFitBoard({ availableRows: rows, archKey, ownedSectorCounts });
-  return board.slice(0, topN);
+  return buildFitBoard({ availableRows: rows, archKey, ownedSectorCounts });
+}
+
+/**
+ * The distinct sectors present in a ranked board, each with how many claimable
+ * names it holds — the browser's sector filter. Ordered by count descending
+ * then alphabetically, so the list is stable across renders. Pure.
+ */
+export function sectorFacets(board) {
+  const counts = new Map();
+  for (const row of board || []) {
+    const sector = row?.sectorName || 'Other';
+    counts.set(sector, (counts.get(sector) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([sector, n]) => ({ sector, n }))
+    .sort((a, b) => (b.n - a.n) || a.sector.localeCompare(b.sector));
+}
+
+/**
+ * Search + sector filter over the ranked board, for the free-agent browser.
+ *
+ * ORDERING: the input board is already fit-descending, and every operation here
+ * is a FILTER — nothing re-sorts — so results stay in fit order in both search
+ * and browse, satisfying the one-fit-metric rule by construction.
+ *
+ * MATCHING: the universe carries no company name (compute-index-intelligence.js
+ * stockEntry has symbol / sectorId / sectorName / industryName and no name
+ * field), so a query matches the TICKER, plus the sector and industry names it
+ * does carry — which makes "energy" or "semiconductors" work without inventing
+ * data that isn't there.
+ *
+ * EXCLUSIONS: `excludeSymbols` drops names the user cannot actually claim right
+ * now — their own held picks and any symbol already carrying a pending claim.
+ * Names drafted by any seat are already absent from `userPool` upstream.
+ * Pure.
+ */
+export function filterFreeAgents({ board, query = '', sector = null, excludeSymbols = null } = {}) {
+  const q = String(query || '').trim().toUpperCase();
+  const wanted = sector ? String(sector) : null;
+  return (board || []).filter((row) => {
+    if (!row) return false;
+    if (excludeSymbols && excludeSymbols.has(row.symbol)) return false;
+    if (wanted && (row.sectorName || 'Other') !== wanted) return false;
+    if (!q) return true;
+    return norm(row.symbol).includes(q)
+      || String(row.sectorName || '').toUpperCase().includes(q)
+      || String(row.industryName || '').toUpperCase().includes(q);
+  });
 }
 
 /**

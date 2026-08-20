@@ -7,7 +7,10 @@
 // segments/run-day come from the one countdown value the numerals show.
 
 import { describe, it, expect } from 'vitest';
-import { buildSeatLanes, sectorSpread, buildDraftGrid, buildMyPicks } from './podBoard';
+import {
+  buildSeatLanes, sectorSpread, buildDraftGrid, buildMyPicks,
+  buildFreeAgentUniverse, buildFreeAgentBoard, sectorFacets, filterFreeAgents,
+} from './podBoard';
 import { waitSegments, runStartDay, wireWindowLine, etWeekday, runDays } from './awaitTokens';
 import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
 
@@ -309,5 +312,147 @@ describe('buildMyPicks', () => {
     expect(buildMyPicks({})).toEqual([]);
     expect(buildMyPicks({ player: null })).toEqual([]);
     expect(buildMyPicks({ player: { picks: [null, { symbol: '' }] } })).toEqual([]);
+  });
+});
+
+// ── §7.0 free-agent browser ─────────────────────────────────────────────────
+// The capability these guard: the wire is capped at twelve, so the browser is
+// the only way to reach a name ranked #40. If the browser ever re-sorted, or
+// silently dropped/kept the wrong names, that reach would be wrong in a way no
+// other test would notice.
+describe('buildFreeAgentUniverse / buildFreeAgentBoard', () => {
+  const bigUniverse = Array.from({ length: 40 }, (_, i) => ({
+    symbol: `S${String(i).padStart(2, '0')}`,
+    sectorName: i % 2 ? 'Energy' : 'Technology',
+    industryName: i % 2 ? 'Oil & Gas' : 'Semiconductors',
+    arch_scores: { analyst: 100 - i },
+    compositeScore: 100 - i,
+    momentumRank: i + 1,
+    return1W: 1,
+    atrPercentile: 0.5,
+  }));
+  const pool = bigUniverse.map((s) => s.symbol);
+  const args = { poolSymbols: pool, universe: bigUniverse, archKey: 'analyst' };
+
+  it('returns EVERY claimable name, not just the wire slice', () => {
+    expect(buildFreeAgentUniverse(args)).toHaveLength(40);
+  });
+
+  it('THE WIRE IS THE FIRST TWELVE OF IT — one fit metric, not two', () => {
+    const full = buildFreeAgentUniverse(args);
+    const wire = buildFreeAgentBoard({ ...args, topN: 12 });
+    expect(wire).toHaveLength(12);
+    expect(wire.map((r) => r.symbol)).toEqual(full.slice(0, 12).map((r) => r.symbol));
+    // and the same numbers, not merely the same names
+    expect(wire.map((r) => r.fit)).toEqual(full.slice(0, 12).map((r) => r.fit));
+    expect(wire.map((r) => r.reason)).toEqual(full.slice(0, 12).map((r) => r.reason));
+  });
+
+  it('is fit-descending and stamps a 1-based boardRank', () => {
+    const full = buildFreeAgentUniverse(args);
+    for (let i = 1; i < full.length; i += 1) expect(full[i - 1].fit).toBeGreaterThanOrEqual(full[i].fit);
+    expect(full.map((r) => r.boardRank)).toEqual(full.map((_, i) => i + 1));
+  });
+
+  it('reaches a name well outside the wire — the regression this restores', () => {
+    const full = buildFreeAgentUniverse(args);
+    const deep = full[30];
+    expect(deep.boardRank).toBe(31);
+    expect(buildFreeAgentBoard({ ...args, topN: 12 }).some((r) => r.symbol === deep.symbol)).toBe(false);
+    expect(filterFreeAgents({ board: full, query: deep.symbol })).toHaveLength(1);
+  });
+
+  it('is empty for an empty pool and never throws', () => {
+    expect(buildFreeAgentUniverse({})).toEqual([]);
+    expect(buildFreeAgentUniverse({ poolSymbols: null, universe: null })).toEqual([]);
+  });
+});
+
+describe('sectorFacets', () => {
+  const board = [
+    { symbol: 'A', sectorName: 'Energy' }, { symbol: 'B', sectorName: 'Technology' },
+    { symbol: 'C', sectorName: 'Energy' }, { symbol: 'D', sectorName: 'Energy' },
+    { symbol: 'E', sectorName: 'Technology' },
+  ];
+
+  it('counts the names available in each sector, densest first', () => {
+    expect(sectorFacets(board)).toEqual([
+      { sector: 'Energy', n: 3 }, { sector: 'Technology', n: 2 },
+    ]);
+  });
+
+  it('breaks ties alphabetically so the chip order is stable', () => {
+    const a = sectorFacets([{ sectorName: 'Utilities' }, { sectorName: 'Energy' }]);
+    const b = sectorFacets([{ sectorName: 'Energy' }, { sectorName: 'Utilities' }]);
+    expect(a).toEqual(b);
+    expect(a[0].sector).toBe('Energy');
+  });
+
+  it('buckets a missing sector as Other rather than dropping the name', () => {
+    expect(sectorFacets([{ symbol: 'X' }])).toEqual([{ sector: 'Other', n: 1 }]);
+  });
+
+  it('is empty for an empty board', () => {
+    expect(sectorFacets([])).toEqual([]);
+    expect(sectorFacets(null)).toEqual([]);
+  });
+});
+
+describe('filterFreeAgents', () => {
+  const board = [
+    { symbol: 'NVDA', sectorName: 'Technology', industryName: 'Semiconductors', fit: 90, boardRank: 1 },
+    { symbol: 'DVN', sectorName: 'Energy', industryName: 'Oil & Gas', fit: 70, boardRank: 2 },
+    { symbol: 'AMD', sectorName: 'Technology', industryName: 'Semiconductors', fit: 60, boardRank: 3 },
+    { symbol: 'COP', sectorName: 'Energy', industryName: 'Oil & Gas', fit: 50, boardRank: 4 },
+  ];
+
+  it('returns everything when unfiltered', () => {
+    expect(filterFreeAgents({ board })).toHaveLength(4);
+  });
+
+  it('matches on ticker, case-insensitively and as a prefix or substring', () => {
+    expect(filterFreeAgents({ board, query: 'nv' }).map((r) => r.symbol)).toEqual(['NVDA']);
+    expect(filterFreeAgents({ board, query: 'MD' }).map((r) => r.symbol)).toEqual(['AMD']);
+  });
+
+  it('matches on sector and industry text — the searchable fields that DO exist', () => {
+    expect(filterFreeAgents({ board, query: 'energy' }).map((r) => r.symbol)).toEqual(['DVN', 'COP']);
+    expect(filterFreeAgents({ board, query: 'semiconduct' }).map((r) => r.symbol)).toEqual(['NVDA', 'AMD']);
+  });
+
+  it('BROWSES a whole sector with no query — the discovery path', () => {
+    expect(filterFreeAgents({ board, sector: 'Energy' }).map((r) => r.symbol)).toEqual(['DVN', 'COP']);
+  });
+
+  it('combines sector filter and query', () => {
+    expect(filterFreeAgents({ board, sector: 'Technology', query: 'a' }).map((r) => r.symbol)).toEqual(['NVDA', 'AMD']);
+    expect(filterFreeAgents({ board, sector: 'Energy', query: 'nvda' })).toEqual([]);
+  });
+
+  it('NEVER re-sorts — results stay in the board fit order in search AND browse', () => {
+    for (const opts of [{}, { query: 'a' }, { sector: 'Technology' }, { query: 'o' }]) {
+      const out = filterFreeAgents({ board, ...opts });
+      expect(out.map((r) => r.boardRank)).toEqual([...out.map((r) => r.boardRank)].sort((a, b) => a - b));
+      for (let i = 1; i < out.length; i += 1) expect(out[i - 1].fit).toBeGreaterThanOrEqual(out[i].fit);
+    }
+  });
+
+  it('excludes names that are not claimable right now', () => {
+    const out = filterFreeAgents({ board, excludeSymbols: new Set(['NVDA', 'COP']) });
+    expect(out.map((r) => r.symbol)).toEqual(['DVN', 'AMD']);
+  });
+
+  it('applies exclusions even when a query would otherwise match', () => {
+    expect(filterFreeAgents({ board, query: 'nvda', excludeSymbols: new Set(['NVDA']) })).toEqual([]);
+  });
+
+  it('trims a padded query rather than matching nothing', () => {
+    expect(filterFreeAgents({ board, query: '  dvn  ' }).map((r) => r.symbol)).toEqual(['DVN']);
+  });
+
+  it('degrades safely on missing input', () => {
+    expect(filterFreeAgents({})).toEqual([]);
+    expect(filterFreeAgents({ board: null, query: 'x' })).toEqual([]);
+    expect(filterFreeAgents({ board: [null, undefined] })).toEqual([]);
   });
 });
