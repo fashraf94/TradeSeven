@@ -167,7 +167,27 @@ under the current prohibition**, the undeclared rate (`swapMotive === null` — 
 answered) vs the legacy rate (field absent — predates Tier 1), the deterministic-reason
 split, and the F3 contamination check (non-null motive on deterministic swaps, which the
 un-gated pre-fix stamp could have produced before the Ask 3 dark-contract fix). Flags:
-`--since` / `--until` (YYYY-MM-DD), `--status active|completed|all`, `--json out.json`.
+`--since` / `--until` (YYYY-MM-DD), `--status active|completed|all`, `--trailing N`,
+`--json out.json`.
+
+**Concurrency-normalized rate (founder follow-up).** Raw swap counts inflate as concurrency
+ramps, so the R9 trigger must key on a **rate**, not a count. The script adds a denominator
+of **battle-days** — distinct (battle × trading-date) pairs on which a battle was active,
+NOT calendar days. A trading-date is a US market-open day (weekend + NYSE-holiday excluded
+via `src/utils/marketHolidays.js`, the codebase's own calendar, so this reuses the engine's
+definition rather than inventing one). Battle span is `activatedAt → completedAt` (both ISO
+on the doc); an ACTIVE battle is counted through today ET, capped at `expiresAt` if earlier.
+It reports total-swaps-per-battle-day and MODEL-swaps-per-battle-day **split by mode** (flat6
+league `baggerbomb_tournament` vs casual `baggerbomb_agent`, via the engine's own
+`resolveModeConfig`), plus a **trailing-N-trading-day drift table** (per-day model/battle-day
+so a rising or falling rate is visible before a threshold is set against it). Caveat surfaced
+in-output: a casual crypto swap can land on a weekend/holiday — it counts in the numerator but
+its date is not a battle-day, so it is reported separately (`off-market-dated swaps`) and left
+out of the per-day table; flat6 has no crypto and is unaffected. Because this environment has
+no production creds, the battle-day math (denominator, mode split, ET dating, weekend/holiday
+exclusion, trailing window) is locked by `motive-baseline-summary.test.js` (12 cases) against
+a pure exported `aggregate(docs, flags, nowMs)` with a fixed `nowMs` — the DB runner stays
+guarded behind the CLI entrypoint, the `export-agent-battles` convention.
 
 ## 7. Review + verification gate (at the audit commit)
 
