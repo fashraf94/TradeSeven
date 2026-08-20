@@ -103,6 +103,82 @@ export function buildDraftGrid({ events, groupMembers, picksPerPlayer = 3 } = {}
 }
 
 /**
+ * Seat-major view of the same draft grid, for the redesigned draftboard: one
+ * LANE per seat, each carrying that seat's picks in round order. The classic
+ * board is round-major (rounds as rows); the redesign reads down a seat's
+ * column, with YOUR lane rendered as the hero.
+ *
+ * Derived from buildDraftGrid so both boards resolve identically from one
+ * source — a symbol can never appear in one and not the other (BUILD_RULES §9).
+ * Seat labels mirror the existing convention ("You" / "CPU {seatIdx}",
+ * UserDraftboard.jsx:18). Sector is looked up through the caller's sectorMap
+ * (the live getSectorColor keying), missing entries degrading to 'Other' rather
+ * than dropping the pick. Pure.
+ *
+ * Returns `[{ odUserId, seat, you, picks: [{ symbol, sector, round } | null] }]`.
+ */
+export function buildSeatLanes({ events, groupMembers, picksPerPlayer = 3, uid = null, sectorMap = null } = {}) {
+  const members = groupMembers || [];
+  const grid = buildDraftGrid({ events, groupMembers: members, picksPerPlayer });
+  return members.map((odUserId, seatIdx) => ({
+    odUserId,
+    seat: odUserId === uid ? 'You' : `CPU ${seatIdx}`,
+    you: odUserId === uid,
+    picks: Array.from({ length: picksPerPlayer }, (_, r) => {
+      const cell = grid[r]?.[seatIdx];
+      if (!cell) return null;
+      return {
+        symbol: cell.symbol,
+        sector: (sectorMap && sectorMap.get(cell.symbol)) || 'Other',
+        round: `R${r + 1}`,
+      };
+    }),
+  }));
+}
+
+/**
+ * The caller's own picks in the redesign's pick shape — the drop options in the
+ * swap sheet, and the source of "your book".
+ *
+ * Uses the SAME `norm` every other derivation here uses (trim + uppercase), so
+ * a symbol carrying stray whitespace keys `sectorMap` identically to the
+ * draftboard's plates. An inline `String(x).toUpperCase()` would skip the trim
+ * and silently colour the same ticker differently in the sheet than on the
+ * board (BUILD_RULES §9). Pure.
+ *
+ * Returns `[{ symbol, sector, round }]`, empty for a missing player.
+ */
+export function buildMyPicks({ player, sectorMap = null } = {}) {
+  return (player?.picks || [])
+    .map((pick, i) => {
+      const symbol = norm(typeof pick === 'string' ? pick : pick?.symbol);
+      if (!symbol) return null;
+      return {
+        symbol,
+        sector: (sectorMap && sectorMap.get(symbol)) || 'Other',
+        round: `R${i + 1}`,
+      };
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Sector spread of a set of picks — "your book" at a glance. Counts by sector,
+ * densest first, ties broken alphabetically so the order is stable across
+ * renders. Nulls (an undrafted slot) are ignored. Pure.
+ */
+export function sectorSpread(picks) {
+  const counts = {};
+  for (const p of picks || []) {
+    if (!p || !p.sector) continue;
+    counts[p.sector] = (counts[p.sector] || 0) + 1;
+  }
+  return Object.entries(counts)
+    .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
+    .map(([sector, n]) => ({ sector, n }));
+}
+
+/**
  * Fallback pick "events" from materialized players[].picks (each seat's picks in
  * draft order → round = index + 1). Used only when the pick stream is absent.
  * `players[].picks` are pick-state objects ({ symbol, ... }) or bare symbols. Pure.

@@ -36,7 +36,7 @@ import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattle
 import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
 import { subscribeGroup } from '../services/tournamentGroupService';
 import { GROUP_STATUS } from '../constants/leagueTournament';
-import { isTrainingPodDraftV2On, isTrainingPodDesktopOn } from '../config/featureFlags';
+import { isTrainingPodDraftV2On, isTrainingPodDesktopOn, isAwaitingOpenRedesignOn } from '../config/featureFlags';
 import { trainingStatusFraming, deriveCompositeContext } from './leagueTrainingBattleFraming';
 
 export default function LeagueTrainingBattleView({ podId, user, onBack = null }) {
@@ -75,7 +75,13 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
   // ?trainingPodDesktop=1) — only the V2 awaiting-open body, only at ≥1024. When
   // off / mobile / not-awaiting-open this is false and `page` stays today's
   // single-column, document-scroll column (byte-identical).
-  const desktopPod = isTrainingPodDesktopOn() && isWideDesktop
+  // The REDESIGN owns its own desktop layout (full-width board, wire rows
+  // two-up, no side rail), so it must not inherit the rollback switch for the
+  // OLD desktop reflow: flipping TRAINING_POD_DESKTOP_ENABLED false to revert
+  // that would otherwise silently drop the redesign to its mobile layout in a
+  // 560px column on a wide screen. With the redesign flag off this expression
+  // is byte-identical to before.
+  const desktopPod = (isTrainingPodDesktopOn() || isAwaitingOpenRedesignOn()) && isWideDesktop
     && v2On && pod?.status === GROUP_STATUS.AWAITING_OPEN;
 
   const page = {

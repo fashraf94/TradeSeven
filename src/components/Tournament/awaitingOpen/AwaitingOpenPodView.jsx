@@ -28,6 +28,7 @@ import { DEFAULT_ARCH } from '../../League/draft/boardModel';
 import { FONT_VARS } from '../../League/draft/draftTokens';
 import {
   buildFreeAgentBoard, sectorMapOf, ownedSectorCountsFrom, heldSymbolsOf, eventsFromPlayers,
+  buildMyPicks,
 } from './podBoard';
 import PodCountdownHero from './PodCountdownHero';
 import UserDraftboard from './UserDraftboard';
@@ -35,6 +36,14 @@ import FreeAgentsList from './FreeAgentsList';
 import ClaimFlipWindow from '../ClaimFlipWindow';
 import GroupFeed from '../GroupFeed';
 import AssetResearchModal from '../../draft/AssetResearchModal';
+import AwaitingOpenShell from './AwaitingOpenShell';
+import AwaitCountdownHero from './AwaitCountdownHero';
+import AwaitDraftBoard from './AwaitDraftBoard';
+import AwaitWire from './AwaitWire';
+import AwaitSwapSheet from './AwaitSwapSheet';
+import { wireWindowLine } from './awaitTokens';
+import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
+import { isAwaitingOpenRedesignOn } from '../../../config/featureFlags';
 
 const CLAIM_CAP = TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE; // 3 pending
 
@@ -110,6 +119,52 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
     requestAnimationFrame(() => claimsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
+  // ── redesign-only state ───────────────────────────────────────────────────
+  const redesignOn = isAwaitingOpenRedesignOn();
+
+  // The row whose Claim opened the swap sheet. The sheet is pre-filled with it;
+  // the user's only decision is which of their three picks it replaces.
+  const [swapRow, setSwapRow] = useState(null);
+
+  // The claim window, re-evaluated on a timer so the "opens in Xh Ym" line
+  // stays honest while the page sits open. Display-only — the server's 403
+  // window_closed is the sole authority on any submit (ClaimFlipWindow.jsx:6-14).
+  //
+  // The timer is GATED ON THE FLAG. Left ungated it would re-render the classic
+  // tree every 30s, and ClaimFlipWindow recomputes getClaimWindowDisplay during
+  // render with no memo (ClaimFlipWindow.jsx:81) — so its countdown line and its
+  // colour would start updating live where main leaves them frozen until the
+  // next snapshot. That is a visible flag-off behaviour change, which the dark
+  // merge forbids.
+  const [windowNow, setWindowNow] = useState(() => new Date());
+  useEffect(() => {
+    if (!redesignOn) return undefined;
+    const id = setInterval(() => setWindowNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, [redesignOn]);
+  const claimWindow = useMemo(
+    () => (redesignOn ? getClaimWindowDisplay(windowNow) : null),
+    [redesignOn, windowNow],
+  );
+  const windowLine = useMemo(
+    () => (redesignOn ? wireWindowLine(claimWindow, windowNow) : { text: '', isOpen: false }),
+    [redesignOn, claimWindow, windowNow],
+  );
+
+  // The user's three picks, with the sector each plate is coloured by — the
+  // drop options in the swap sheet. Built through the shared podBoard helper so
+  // the symbols are normalised exactly as the draftboard normalises them; an
+  // inline uppercase would skip the trim and could colour the same ticker
+  // differently in the sheet than on the board (BUILD_RULES §9).
+  const myPicks = useMemo(() => buildMyPicks({ player, sectorMap }), [player, sectorMap]);
+
+  // Every claim of the caller's own, newest first — pending AND resolved. The
+  // classic body surfaces these through ClaimFlipWindow (:200-211); the redesign
+  // does not render that panel, so without this an approved or denied claim (and
+  // its denialReason) would be visible nowhere and the row would simply revert
+  // to a live Claim button after the processing pass.
+  const myClaims = useMemo(() => claims.filter((c) => c.odUserId === uid), [claims, uid]);
+
   const researchSector = researchSym ? (sectorMap.get(researchSym) || null) : null;
 
   const freeAgents = (
@@ -133,18 +188,90 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
     <ClaimFlipWindow group={pod} uid={uid} claimsOnly prefillRequest={claimPrefill} claims={claims} />
   );
 
+  // The research modal is wired ONCE for both the classic and the redesigned
+  // body (spec §6.3 — preserve, don't redesign): a ticker tap on either surface
+  // lands here, so the two paths can never drift on how research opens.
+  const researchModal = researchSym && (
+    <AssetResearchModal
+      asset={{ symbol: researchSym, name: researchSym, sector: researchSector }}
+      sector={researchSector}
+      onClose={() => setResearchSym(null)}
+    />
+  );
+
+  const countdownHero = <PodCountdownHero targetIso={pod?.startAnchor?.anchorIso || null} />;
+
+  const draftboard = (
+    <UserDraftboard
+      pod={pod}
+      uid={uid}
+      events={events}
+      sectorMap={sectorMap}
+      picksPerPlayer={PICKS_PER_PLAYER}
+      onResearch={setResearchSym}
+    />
+  );
+
+  // Awaiting-the-Open REDESIGN (AWAITING_OPEN_REDESIGN_ENABLED or
+  // ?awaitingOpenRedesign=1). Same reads, same claim call — the shell owns the
+  // layout and atmosphere; the sections are replaced phase by phase. Flag-off
+  // falls through to today's body below, byte-identical.
+  if (redesignOn) {
+    return (
+      <>
+        <AwaitingOpenShell desktop={desktop}>
+          <AwaitCountdownHero
+            targetIso={pod?.startAnchor?.anchorIso || null}
+            compact={!desktop}
+          />
+          <AwaitDraftBoard
+            pod={pod}
+            uid={uid}
+            events={events}
+            sectorMap={sectorMap}
+            picksPerPlayer={PICKS_PER_PLAYER}
+            onResearch={setResearchSym}
+            compact={!desktop}
+          />
+          <AwaitWire
+            board={freeAgentBoard}
+            pendingSymbols={pendingClaimSymbols}
+            pendingCount={pendingCount}
+            claimCap={CLAIM_CAP}
+            windowLine={windowLine.text}
+            wireOpen={windowLine.isOpen}
+            hasPicks={myPicks.length > 0}
+            claims={myClaims}
+            onClaim={setSwapRow}
+            onResearch={setResearchSym}
+            compact={!desktop}
+          />
+          <GroupFeed feed={pod?.feed} uid={uid} />
+        </AwaitingOpenShell>
+
+        <AwaitSwapSheet
+          row={swapRow}
+          picks={myPicks}
+          groupId={podId}
+          open={windowLine.isOpen}
+          windowLine={windowLine.text}
+          capReached={capReached}
+          claimCap={CLAIM_CAP}
+          pendingCount={pendingCount}
+          compact={!desktop}
+          onClose={() => setSwapRow(null)}
+        />
+
+        {researchModal}
+      </>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, ...FONT_VARS }}>
-      <PodCountdownHero targetIso={pod?.startAnchor?.anchorIso || null} />
+      {countdownHero}
 
-      <UserDraftboard
-        pod={pod}
-        uid={uid}
-        events={events}
-        sectorMap={sectorMap}
-        picksPerPlayer={PICKS_PER_PLAYER}
-        onResearch={setResearchSym}
-      />
+      {draftboard}
 
       {desktop ? (
         // Desktop (D-L3): the two-column interactive body — best-remaining free
@@ -172,13 +299,7 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
 
       <GroupFeed feed={pod?.feed} uid={uid} />
 
-      {researchSym && (
-        <AssetResearchModal
-          asset={{ symbol: researchSym, name: researchSym, sector: researchSector }}
-          sector={researchSector}
-          onClose={() => setResearchSym(null)}
-        />
-      )}
+      {researchModal}
     </div>
   );
 }
