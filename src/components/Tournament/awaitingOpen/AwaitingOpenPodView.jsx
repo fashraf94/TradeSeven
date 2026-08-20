@@ -28,7 +28,7 @@ import { DEFAULT_ARCH } from '../../League/draft/boardModel';
 import { FONT_VARS } from '../../League/draft/draftTokens';
 import {
   buildFreeAgentUniverse, sectorMapOf, ownedSectorCountsFrom, heldSymbolsOf, eventsFromPlayers,
-  buildMyPicks,
+  buildMyPicks, browseCounts,
 } from './podBoard';
 import PodCountdownHero from './PodCountdownHero';
 import UserDraftboard from './UserDraftboard';
@@ -181,9 +181,11 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
     for (const sym of held) out.add(sym);
     return out;
   }, [pendingClaimSymbols, held]);
-  const claimablePoolCount = useMemo(
-    () => freeAgentUniverse.reduce((n, r) => (unavailableSymbols.has(r.symbol) ? n : n + 1), 0),
-    [freeAgentUniverse, unavailableSymbols],
+  const { claimable: claimablePoolCount, beyondWire: beyondWireCount } = useMemo(
+    () => browseCounts({
+      universe: freeAgentUniverse, wire: freeAgentBoard, excludeSymbols: unavailableSymbols,
+    }),
+    [freeAgentUniverse, freeAgentBoard, unavailableSymbols],
   );
 
   const researchSector = researchSym ? (sectorMap.get(researchSym) || null) : null;
@@ -264,6 +266,7 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
             hasPicks={myPicks.length > 0}
             claims={myClaims}
             poolCount={claimablePoolCount}
+            beyondWire={beyondWireCount}
             onClaim={setSwapRow}
             onBrowse={() => { setSwapRow(null); setBrowsing(true); }}
             onResearch={setResearchSym}

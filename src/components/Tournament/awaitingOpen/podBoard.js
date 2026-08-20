@@ -119,6 +119,28 @@ export function sectorFacets(board) {
 }
 
 /**
+ * The two counts the browse entry point needs:
+ *   `claimable`  — every name the user could claim right now (the browser's set)
+ *   `beyondWire` — how many of those the WIRE does not already show
+ *
+ * The entry point's visibility keys on `beyondWire`, never on
+ * `claimable > wire.length`: pending claims shrink `claimable` without shrinking
+ * the wire, so that comparison hides the button precisely when names past the
+ * wire are still reachable — the unreachable-name regression, re-opened. Pure.
+ */
+export function browseCounts({ universe = [], wire = [], excludeSymbols = null } = {}) {
+  const shown = new Set((wire || []).map((r) => r?.symbol));
+  let claimable = 0;
+  let beyondWire = 0;
+  for (const row of universe || []) {
+    if (!row || (excludeSymbols && excludeSymbols.has(row.symbol))) continue;
+    claimable += 1;
+    if (!shown.has(row.symbol)) beyondWire += 1;
+  }
+  return { claimable, beyondWire };
+}
+
+/**
  * Search + sector filter over the ranked board, for the free-agent browser.
  *
  * ORDERING: the input board is already fit-descending, and every operation here

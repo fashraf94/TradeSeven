@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildSeatLanes, sectorSpread, buildDraftGrid, buildMyPicks,
-  buildFreeAgentUniverse, buildFreeAgentBoard, sectorFacets, filterFreeAgents,
+  buildFreeAgentUniverse, buildFreeAgentBoard, sectorFacets, filterFreeAgents, browseCounts,
 } from './podBoard';
 import { waitSegments, runStartDay, wireWindowLine, etWeekday, runDays } from './awaitTokens';
 import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
@@ -454,5 +454,81 @@ describe('filterFreeAgents', () => {
     expect(filterFreeAgents({})).toEqual([]);
     expect(filterFreeAgents({ board: null, query: 'x' })).toEqual([]);
     expect(filterFreeAgents({ board: [null, undefined] })).toEqual([]);
+  });
+});
+
+describe('browseCounts', () => {
+  const universe = Array.from({ length: 14 }, (_, i) => ({ symbol: `S${i}` }));
+  const wire = universe.slice(0, 12);
+
+  it('counts every claimable name and how many sit past the wire', () => {
+    expect(browseCounts({ universe, wire })).toEqual({ claimable: 14, beyondWire: 2 });
+  });
+
+  it('THE REGRESSION GUARD: pending claims inside the wire must not hide the entry point', () => {
+    // 3 of the wire's twelve carry a pending claim, so claimable (11) drops
+    // BELOW the wire length (12) — yet two names past the wire are still
+    // reachable. The old `claimable > wire.length` gate hid the button here.
+    const excluded = new Set(['S0', 'S1', 'S2']);
+    const { claimable, beyondWire } = browseCounts({ universe, wire, excludeSymbols: excluded });
+    expect(claimable).toBe(11);
+    expect(claimable > wire.length).toBe(false);  // the old, broken gate
+    expect(beyondWire).toBe(2);                   // the correct one
+  });
+
+  it('reports nothing beyond the wire when the wire IS the whole pool', () => {
+    expect(browseCounts({ universe: wire, wire })).toEqual({ claimable: 12, beyondWire: 0 });
+  });
+
+  it('excludes unavailable names from both counts', () => {
+    const { claimable, beyondWire } = browseCounts({
+      universe, wire, excludeSymbols: new Set(['S12', 'S13']),
+    });
+    expect(claimable).toBe(12);
+    expect(beyondWire).toBe(0);
+  });
+
+  it('degrades safely on missing input', () => {
+    expect(browseCounts({})).toEqual({ claimable: 0, beyondWire: 0 });
+    expect(browseCounts({ universe: null, wire: null })).toEqual({ claimable: 0, beyondWire: 0 });
+  });
+});
+
+describe('sector facets agree with what clicking the chip returns', () => {
+  const board = [
+    { symbol: 'NVDA', sectorName: 'Technology', industryName: 'Semiconductors', fit: 90 },
+    { symbol: 'AMD', sectorName: 'Technology', industryName: 'Semiconductors', fit: 80 },
+    { symbol: 'MSFT', sectorName: 'Technology', industryName: 'Software', fit: 70 },
+    { symbol: 'DVN', sectorName: 'Energy', industryName: 'Oil & Gas', fit: 60 },
+    { symbol: 'COP', sectorName: 'Energy', industryName: 'Oil & Gas', fit: 50 },
+  ];
+
+  // The browser computes facets over the QUERY-filtered set; a chip's number
+  // must equal the number of rows you get when you click it (BUILD_RULES §9).
+  const facetsFor = (query) => sectorFacets(filterFreeAgents({ board, query }));
+
+  it('with no query, every chip count matches its result count', () => {
+    for (const { sector, n } of facetsFor('')) {
+      expect(filterFreeAgents({ board, sector })).toHaveLength(n);
+    }
+  });
+
+  it('WITH a query, every chip count STILL matches its result count', () => {
+    const query = 'semiconduct';
+    const facets = facetsFor(query);
+    // Energy has no semiconductors, so it must not be offered at all…
+    expect(facets.map((f) => f.sector)).toEqual(['Technology']);
+    // …and the count it does show is exactly what clicking it yields.
+    for (const { sector, n } of facets) {
+      expect(filterFreeAgents({ board: filterFreeAgents({ board, query }), sector })).toHaveLength(n);
+    }
+  });
+
+  it('never offers a chip that would return nothing', () => {
+    for (const query of ['', 'a', 'oil', 'nvda', 'software', 'zzz']) {
+      for (const { sector } of facetsFor(query)) {
+        expect(filterFreeAgents({ board: filterFreeAgents({ board, query }), sector }).length).toBeGreaterThan(0);
+      }
+    }
   });
 });

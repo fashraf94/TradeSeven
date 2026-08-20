@@ -285,6 +285,8 @@ export default function AwaitSwapSheet({
             onQuery={setQuery}
             onSector={setSector}
             onSelect={(stock) => onPickRow && onPickRow(stock)}
+            capReached={capReached}
+            hasPicks={picks.length > 0}
             onResearch={null}
             compact={compact}
           />

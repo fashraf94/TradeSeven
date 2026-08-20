@@ -110,6 +110,7 @@ export default function AwaitWire({
   hasPicks = true,
   claims = null,
   poolCount = 0,      // every claimable name, not just the wire's twelve
+  beyondWire = 0,     // claimable names the wire does NOT show
   onClaim,
   onBrowse = null,    // open the free-agent browser (§7.0)
   onResearch,
@@ -198,7 +199,11 @@ export default function AwaitWire({
         </div>
       ) : rows}
 
-      {onBrowse && poolCount > board.length && (
+      {/* Shown whenever a claimable name sits past the wire. Comparing the
+          claim-filtered pool count against the raw slice length would hide the
+          button exactly when pending claims shrink the count below twelve —
+          re-opening the unreachable-name regression this closes. */}
+      {onBrowse && beyondWire > 0 && (
         <button
           type="button"
           className="aw-btn"

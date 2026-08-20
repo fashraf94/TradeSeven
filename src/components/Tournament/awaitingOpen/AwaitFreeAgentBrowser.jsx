@@ -27,23 +27,38 @@
 // here is genuinely claimable.
 
 import React, { useMemo, useRef } from 'react';
-import { Search, X, ArrowRight } from 'lucide-react';
+import { Search, X, ArrowRight, Lock } from 'lucide-react';
 import { filterFreeAgents, sectorFacets } from './podBoard';
 import { alpha, wSec } from './awaitTokens';
 import { Mono, useAwaitPalette } from './awaitPrimitives';
 import AwaitWireRow from './AwaitWireRow';
 
-/** The browser's per-row action: pick this name and carry it into the existing
- *  drop-selection step. Never a claim in itself. */
-function selectAction(onSelect) {
-  return (stock) => ({
-    label: 'SELECT',
-    title: `Claim ${stock.symbol} — choose which pick it replaces next`,
-    icon: ArrowRight,
-    disabled: false,
-    tone: 'live',
-    onAction: onSelect,
-  });
+/**
+ * The browser's per-row action: pick this name and carry it into the existing
+ * drop-selection step. Never a claim in itself.
+ *
+ * It honours the SAME gates the wire's Claim button applies, because selecting
+ * into a drop step whose submit can never enable is a dead end — and in the
+ * no-picks case it would be one with no explanation at all. `locked` is
+ * deliberately absent here too: the window mirror never blocks (founder ruling).
+ */
+function selectAction({ onSelect, capReached, hasPicks }) {
+  return (stock) => {
+    const [title, label] = capReached
+      ? ['You have the maximum pending claims — wait for tonight’s processing', 'CAP FULL']
+      : !hasPicks
+        ? ['You have no picks to drop for a claim', 'NO PICKS']
+        : [`Claim ${stock.symbol} — choose which pick it replaces next`, 'SELECT'];
+    const disabled = capReached || !hasPicks;
+    return {
+      label,
+      title,
+      icon: disabled ? Lock : ArrowRight,
+      disabled,
+      tone: disabled ? 'dim' : 'live',
+      onAction: onSelect,
+    };
+  };
 }
 
 export default function AwaitFreeAgentBrowser({
@@ -54,24 +69,36 @@ export default function AwaitFreeAgentBrowser({
   onQuery,
   onSector,
   onSelect,
+  capReached = false,
+  hasPicks = true,
   onResearch = null,
   compact = false,
 }) {
   const pal = useAwaitPalette();
   const inputRef = useRef(null);
 
-  // Facets come from the AVAILABLE set, so a sector chip never offers a filter
-  // that would return nothing, and its count is the count you actually get.
   const available = useMemo(
     () => filterFreeAgents({ board, excludeSymbols }),
     [board, excludeSymbols],
   );
-  const facets = useMemo(() => sectorFacets(available), [available]);
-  const results = useMemo(
-    () => filterFreeAgents({ board: available, query, sector }),
-    [available, query, sector],
+  // Facets are computed over the QUERY-filtered set (sector deliberately not
+  // applied, so each chip answers "how many would I get if I picked this one").
+  // Counting over `available` instead would let a chip advertise 41 names and
+  // then yield NO MATCHES once a query is typed — the number and the result
+  // disagreeing, which is the display-agreement rule (BUILD_RULES §9).
+  const searched = useMemo(
+    () => filterFreeAgents({ board: available, query }),
+    [available, query],
   );
-  const act = useMemo(() => selectAction(onSelect), [onSelect]);
+  const facets = useMemo(() => sectorFacets(searched), [searched]);
+  const results = useMemo(
+    () => filterFreeAgents({ board: searched, sector }),
+    [searched, sector],
+  );
+  const act = useMemo(
+    () => selectAction({ onSelect, capReached, hasPicks }),
+    [onSelect, capReached, hasPicks],
+  );
 
   const filtered = !!(query || sector);
 
@@ -124,7 +151,7 @@ export default function AwaitFreeAgentBrowser({
             border: `1px solid ${!sector ? alpha(pal.teal, 0.36) : pal.hair2}`,
           }}
         >
-          ALL {available.length}
+          ALL {searched.length}
         </button>
         {facets.map(({ sector: name, n }) => {
           const on = sector === name;
@@ -136,7 +163,7 @@ export default function AwaitFreeAgentBrowser({
               className="aw-btn"
               onClick={() => onSector && onSector(on ? null : name)}
               aria-pressed={on}
-              title={`${n} available in ${name}`}
+              title={`${n} ${query ? 'matching' : 'available'} in ${name}`}
               style={{
                 font: 'inherit', fontFamily: 'var(--ld-mono)', '--aw-btn-fs': '9.5px', fontWeight: 700,
                 letterSpacing: '0.08em', padding: '5px 10px', borderRadius: 999, cursor: 'pointer',
