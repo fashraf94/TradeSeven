@@ -33,6 +33,16 @@ export const config = { maxDuration: 30 };
 
 const LOG_PREFIX = '[FantasyTimes:Alex]';
 
+// The DETERMINISTIC content-suppression reasons generateAlexMoverStory can
+// return with success:false — a re-generation would reproduce the same block.
+// scan-movers keys off this set to terminate the candidate as BLOCKED (no
+// re-arm) rather than looping. NOT included: 'dedup' (self-heals — a story
+// exists) and transient failures (worth retrying next tick).
+export const BLOCKING_STORY_REASONS = Object.freeze([
+  'earnings_attribution_blocked',
+  'units_collision',
+]);
+
 function logInfo(msg, data = null) {
   const ts = new Date().toISOString();
   console.log(`${ts} ${LOG_PREFIX} ${msg}`, data ? JSON.stringify(data) : '');
@@ -151,16 +161,29 @@ export async function generateAlexMoverStory({
   }
   logInfo('Step 4: Knowledge loaded', { hasKnowledge: !!knowledgeExcerpt, excerptLength: knowledgeExcerpt.length });
 
-  // ── Check consensus for existing catalyst ──────────────────────
+  // ── Check consensus for existing catalyst + the earnings-valid list ─────
+  // The earnings-valid list is read HERE (pre-generation) for two uses: it is
+  // injected into the prompt below so Alex can honor the earnings-attribution
+  // rule AT GENERATION TIME (the system prompt's FACT_CHECK_RULES promise this
+  // list, but the mover seam never provided it — so the block only ever fired
+  // post-hoc, after the full generation was paid for and then discarded), and it
+  // is reused by the post-generation interceptor as a backstop — one read, not two.
   let consensusContext = '';
+  let earningsValidList = [];
   try {
     const today = new Date().toISOString().split('T')[0];
     const consensusDoc = await db.collection('fantasyTimesConsensus').doc(today).get();
     if (consensusDoc.exists) {
-      const existing = consensusDoc.data()?.catalysts?.[upperSymbol];
+      const cdata = consensusDoc.data();
+      const existing = cdata?.catalysts?.[upperSymbol];
       if (existing) {
         consensusContext = `\n\nNEWSROOM CONTEXT: Another reporter attributed ${upperSymbol}'s move to: "${existing.catalyst}". Align with or update this attribution.\n`;
       }
+      const earnings = cdata?.earnings || {};
+      earningsValidList = [
+        ...(earnings.reportingToday || []),
+        ...(earnings.reportedYesterdayAfterClose || []),
+      ];
     }
   } catch (err) {
     logError('Consensus read failed (non-blocking)', { error: err.message });
@@ -237,6 +260,17 @@ export async function generateAlexMoverStory({
     userMessage += consensusContext;
   }
 
+  // ── EARNINGS_VALID (moved BEFORE the model call) ────────────────────────
+  // FACT_CHECK_RULES (in ALEX_SYSTEM_PROMPT) tell the model it "will receive a
+  // list of companies with valid earnings attribution under EARNINGS_VALID" —
+  // this is where that promise is kept. Empty ⇒ "None" ⇒ do NOT attribute the
+  // move to earnings. Injecting it lets Alex comply at generation time instead
+  // of paying for a full story that the post-generation interceptor then
+  // discards. The interceptor below is retained as a backstop for the residual
+  // case the prompt cannot guarantee (a model that still attributes to earnings).
+  const earningsValidLine = earningsValidList.length > 0 ? earningsValidList.join(', ') : 'None';
+  userMessage += `\n\nEARNINGS_VALID (attribute this move to earnings ONLY if ${upperSymbol} appears here — otherwise the move was NOT caused by earnings): ${earningsValidLine}`;
+
   // ── BaggerBomb tier classification ────────────────────────────
   const resolvedDirection = direction || (percentChange >= 0 ? 'up' : 'down');
   const baggerTier = classifyBaggerTier(atrMultiple, resolvedDirection);
@@ -290,16 +324,16 @@ POINTS/UNITS RULE: game relevance is QUALITATIVE only. Never state a numeric poi
 
   const storyData = toolBlock.input;
 
-  // ── Publish interceptor — check earnings attribution ────────────
+  // ── Publish interceptor — earnings attribution (BACKSTOP) ───────
+  // The earnings-valid list is now injected into the prompt (above) so the model
+  // can comply at generation time; this deterministic check is retained as a
+  // backstop for the residual case the prompt cannot guarantee. It reuses the
+  // pre-call earningsValidList (one consensus read, not two) and keys off the
+  // GENERATED body, so it still catches a story that attributes the move to
+  // earnings for a ticker outside the valid list.
   try {
     const today = new Date().toISOString().split('T')[0];
-    const consensusDoc = await db.collection('fantasyTimesConsensus').doc(today).get();
-    const earnings = consensusDoc.exists ? consensusDoc.data()?.earnings : {};
-    const earningsValid = [
-      ...(earnings?.reportingToday || []),
-      ...(earnings?.reportedYesterdayAfterClose || []),
-    ];
-    const check = checkEarningsAttribution(storyData.body, earningsValid);
+    const check = checkEarningsAttribution(storyData.body, earningsValidList);
     if (!check.passed) {
       console.warn(`[CONSENSUS] BLOCKED Alex mover: earnings attribution for ${check.violations.join(', ')}`);
       try {

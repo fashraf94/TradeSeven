@@ -30,6 +30,15 @@ export const CANDIDATE_STATUS = Object.freeze({
   CONFIRMED: 'confirmed',
   REVERTED: 'reverted',
   EXPIRED: 'expired',
+  // BLOCKED (Alex scan-movers incident, 2026-08-20): a candidate that CONFIRMED
+  // and then had its story deterministically SUPPRESSED (earnings-attribution /
+  // units collision) — the story was never written, so hasRecentStory can never
+  // birth-suppress the re-arm. BLOCKED is a terminal state recordCandidate
+  // refuses to re-arm for the rest of the market day, closing the
+  // confirm → generate → block → re-arm loop (HD looping every 15 min). Reached
+  // only via markCandidateBlocked (a confirmed→blocked refinement), NEVER via
+  // consumeCandidate — so it is deliberately OUT of TERMINAL_OUTCOMES below.
+  BLOCKED: 'blocked',
 });
 
 const TERMINAL_OUTCOMES = Object.freeze([
@@ -95,6 +104,15 @@ export async function recordCandidate(db, { marketDate, symbol, triggerSnapshot,
     if (snap.exists && snap.data().status === CANDIDATE_STATUS.PENDING) {
       return { created: false, reason: 'pending_exists' };
     }
+    // BLOCKED is terminal FOR THE DAY (Alex scan-movers incident): the block
+    // reason is deterministic, so re-arming would only reproduce the same
+    // suppression — the confirm → generate → block → re-arm loop. Refuse the
+    // re-arm here (the guard must precede the `t.set` re-arm below). The
+    // date-keyed docId ({marketDate}__{SYMBOL}) lets the symbol arm fresh on
+    // the next trading day with no cleanup needed.
+    if (snap.exists && snap.data().status === CANDIDATE_STATUS.BLOCKED) {
+      return { created: false, reason: 'blocked_terminal' };
+    }
     const doc = {
       marketDate,
       symbol: String(symbol).toUpperCase(),
@@ -149,6 +167,44 @@ export async function consumeCandidate(db, { marketDate, symbol, outcome, reason
     };
     t.set(ref, updated);
     return { won: true, status: outcome, candidate: updated };
+  });
+}
+
+/**
+ * Mark a candidate BLOCKED — a terminal state recordCandidate refuses to re-arm
+ * for the rest of the market day (Alex scan-movers incident, 2026-08-20). Called
+ * when generateStory returns a deterministic content-suppression
+ * (earnings_attribution_blocked / units_collision): the story was never written,
+ * so hasRecentStory can never birth-suppress the re-arm, and without this the
+ * confirm → generate ($ + latency) → block → re-arm loop repeats every scan tick.
+ *
+ * Flips CONFIRMED (the normal case, since scan-movers consumes the candidate to
+ * CONFIRMED before generating) OR PENDING (the race case: an overlapping scan's
+ * T-arm pass re-armed the doc to PENDING during generateStory's await window —
+ * blocking it anyway is correct, the block is a fact about (symbol, day)). A
+ * no-op if the doc is absent, already BLOCKED, or otherwise terminal. Transactional
+ * so the flip and any concurrent re-arm serialize on the doc version.
+ *
+ * @returns {Promise<{blocked: boolean, status: string}>}
+ */
+export async function markCandidateBlocked(db, { marketDate, symbol, reason = null, now = new Date() }) {
+  const ref = candidateRef(db, marketDate, symbol);
+  return db.runTransaction(async (t) => {
+    const snap = await t.get(ref);
+    if (!snap.exists) return { blocked: false, status: 'absent' };
+    const c = snap.data();
+    if (c.status !== CANDIDATE_STATUS.CONFIRMED && c.status !== CANDIDATE_STATUS.PENDING) {
+      return { blocked: false, status: c.status };
+    }
+    t.set(ref, {
+      ...c,
+      status: CANDIDATE_STATUS.BLOCKED,
+      version: (c.version || 0) + 1,
+      terminalAt: now,
+      terminalReason: reason,
+      updatedAt: now,
+    });
+    return { blocked: true, status: CANDIDATE_STATUS.BLOCKED };
   });
 }
 

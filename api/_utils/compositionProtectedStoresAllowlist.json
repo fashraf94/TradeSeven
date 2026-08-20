@@ -97,6 +97,7 @@
     "api/_utils/metricSnapshots.js::writeDailySnapshots::set::unresolved": 1,
     "api/_utils/moverCandidates.js::consumeCandidate::set::unresolved": 1,
     "api/_utils/moverCandidates.js::flushExpiredCandidates::delete::unresolved": 1,
+    "api/_utils/moverCandidates.js::markCandidateBlocked::set::unresolved": 1,
     "api/_utils/moverCandidates.js::recordCandidate::set::unresolved": 1,
     "api/_utils/moverCandidates.js::tickPendingCandidate::set::unresolved": 2,
     "api/_utils/tournamentAdvancement.js::advanceCohort::call:stampEntrySideEffects#0::unresolved": 1,
