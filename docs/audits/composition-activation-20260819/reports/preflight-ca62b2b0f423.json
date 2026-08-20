@@ -1,0 +1,34 @@
+{
+  "_what": "B8-FINAL preflight report — census + scan + battery at the pinned SHA (see preflight-at-sha.js)",
+  "sha": "ca62b2b0f4236d2bc3bd93fcce7eab5d56d0f4b4",
+  "pinnedShaArg": "ca62b2b0f4236d2bc3bd93fcce7eab5d56d0f4b4",
+  "treeClean": true,
+  "ranAt": "2026-08-19T22:13:04.746Z",
+  "suites": [
+    {
+      "name": "compositionWriterCensus",
+      "spec": "api/_utils/compositionWriterCensus.test.js",
+      "result": "green"
+    },
+    {
+      "name": "compositionProtectedStores.scan",
+      "spec": "api/_utils/compositionProtectedStores.scan.test.js",
+      "result": "green"
+    },
+    {
+      "name": "composition battery (api/_utils/composition*)",
+      "spec": "api/_utils/composition",
+      "result": "green"
+    },
+    {
+      "name": "fence behavior",
+      "spec": "api/agent/composition.fenceBehavior.test.js",
+      "result": "green"
+    },
+    {
+      "name": "candidate registry + default traits",
+      "spec": "src/data/archetypeCompatibilityCandidate.test.js src/data/archetypeDefaultTraits.composition.test.js",
+      "result": "green"
+    }
+  ]
+}

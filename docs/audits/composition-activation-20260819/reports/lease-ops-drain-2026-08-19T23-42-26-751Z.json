@@ -1,0 +1,9 @@
+{
+  "subcommand": "drain",
+  "ranAt": "2026-08-19T23:42:26.751Z",
+  "applied": false,
+  "verdict": "WOULD_DRAIN_IMMEDIATELY",
+  "stuck": [],
+  "active": [],
+  "resolveCommands": []
+}
