@@ -1,0 +1,494 @@
+{
+  "summary": {
+    "runId": "composition-migration-2026-08-19T23-59-09-930Z",
+    "mode": "apply",
+    "scannedAgents": 62,
+    "affectedAgents": 6,
+    "overlayEntries": 20,
+    "byAction": {
+      "clamp": 13,
+      "replace": 3,
+      "unequip": 4
+    },
+    "reportClasses": {},
+    "overlayContentHash": "5af98f21ffb9979efe2399689bf12fe957c51efcdcd212bb4ec4820315b671e3",
+    "semanticHash": "1b76ddbe5a3687d583125d4e68c02e03322a7a6c67469e971366fed60ea52f26",
+    "runHash": "5af98f21ffb9979efe2399689bf12fe957c51efcdcd212bb4ec4820315b671e3",
+    "activeIdentityVersion": 3
+  },
+  "perAgent": [
+    {
+      "agentId": "F3WIPUHnLzLA22l7atLV",
+      "archetype": "analyst",
+      "entries": 2,
+      "reports": []
+    },
+    {
+      "agentId": "training-agent-2jkl5WDgCQaOZ1Hy33IS-7ML6i7WyfuaAtJjl16Smh2kETPw1",
+      "archetype": "analyst",
+      "entries": 4,
+      "reports": []
+    },
+    {
+      "agentId": "training-agent-8osyIrfNwwXIj3W5YNP0-7ML6i7WyfuaAtJjl16Smh2kETPw1",
+      "archetype": "guardian",
+      "entries": 3,
+      "reports": []
+    },
+    {
+      "agentId": "training-agent-SbXd6nPD5KS6tVL35gLV-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63",
+      "archetype": "momentum_chaser",
+      "entries": 2,
+      "reports": []
+    },
+    {
+      "agentId": "training-agent-Ug4ezm8zQueGwGiRmxYX-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63",
+      "archetype": "contrarian",
+      "entries": 5,
+      "reports": []
+    },
+    {
+      "agentId": "training-agent-jsvFBUG5vnm71Bh8YXN2-7ML6i7WyfuaAtJjl16Smh2kETPw1",
+      "archetype": "analyst",
+      "entries": 4,
+      "reports": []
+    }
+  ],
+  "entries": [
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/F3WIPUHnLzLA22l7atLV/rules/ZpkNIAEtu0DpHuE0FaT6",
+      "field": "paramValues.fund_score",
+      "action": "clamp",
+      "beforeValue": 65,
+      "afterValue": 71,
+      "ruleId": "tv-10",
+      "archetype": "analyst",
+      "cellRef": {
+        "rulingIds": [
+          "R-38"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/F3WIPUHnLzLA22l7atLV/rules/ZpkNIAEtu0DpHuE0FaT6|paramValues.fund_score",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/F3WIPUHnLzLA22l7atLV/rules/dYh27I5h7Yh1kEEltWjW",
+      "field": "paramValues.minutes",
+      "action": "clamp",
+      "beforeValue": 90,
+      "afterValue": 60,
+      "ruleId": "mb-01",
+      "archetype": "analyst",
+      "cellRef": {
+        "rulingIds": [
+          "R-111"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/F3WIPUHnLzLA22l7atLV/rules/dYh27I5h7Yh1kEEltWjW|paramValues.minutes",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/training-agent-2jkl5WDgCQaOZ1Hy33IS-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/7rfRfl8xHor5GjeGHxJy",
+      "field": "paramValues.minutes",
+      "action": "clamp",
+      "beforeValue": 90,
+      "afterValue": 60,
+      "ruleId": "mb-01",
+      "archetype": "analyst",
+      "cellRef": {
+        "rulingIds": [
+          "R-111"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/training-agent-2jkl5WDgCQaOZ1Hy33IS-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/7rfRfl8xHor5GjeGHxJy|paramValues.minutes",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/training-agent-2jkl5WDgCQaOZ1Hy33IS-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/OOrTs2BwrpcCw3Fn43CF",
+      "field": "paramValues.fund_score",
+      "action": "clamp",
+      "beforeValue": 65,
+      "afterValue": 71,
+      "ruleId": "tv-10",
+      "archetype": "analyst",
+      "cellRef": {
+        "rulingIds": [
+          "R-38"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/training-agent-2jkl5WDgCQaOZ1Hy33IS-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/OOrTs2BwrpcCw3Fn43CF|paramValues.fund_score",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/training-agent-2jkl5WDgCQaOZ1Hy33IS-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/3nE7P7zAgQcLRHpqnRLT",
+      "field": "paramValues.pct",
+      "action": "clamp",
+      "beforeValue": 60,
+      "afterValue": 50,
+      "ruleId": "mb-11",
+      "archetype": "analyst",
+      "cellRef": {
+        "rulingIds": [
+          "R-134"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/training-agent-2jkl5WDgCQaOZ1Hy33IS-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/3nE7P7zAgQcLRHpqnRLT|paramValues.pct",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "bundleSnapshot",
+      "docPath": "agents/training-agent-2jkl5WDgCQaOZ1Hy33IS-7ML6i7WyfuaAtJjl16Smh2kETPw1/bundles/4lPaT1RTO2NWLBFHxOwc",
+      "field": "ruleSnapshots[3nE7P7zAgQcLRHpqnRLT].paramValues.pct",
+      "action": "clamp",
+      "beforeValue": 60,
+      "afterValue": 50,
+      "ruleId": "mb-11",
+      "archetype": "analyst",
+      "cellRef": {
+        "rulingIds": [
+          "R-134"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "bundleSnapshot|agents/training-agent-2jkl5WDgCQaOZ1Hy33IS-7ML6i7WyfuaAtJjl16Smh2kETPw1/bundles/4lPaT1RTO2NWLBFHxOwc|ruleSnapshots[3nE7P7zAgQcLRHpqnRLT].paramValues.pct",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/training-agent-8osyIrfNwwXIj3W5YNP0-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/vkPJgrmBentV6SX1tTPK",
+      "field": "paramValues.action",
+      "action": "replace",
+      "beforeValue": "reduce tier",
+      "afterValue": "hold but monitor",
+      "ruleId": "tv-02",
+      "archetype": "guardian",
+      "cellRef": {
+        "rulingIds": [
+          "R-22"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/training-agent-8osyIrfNwwXIj3W5YNP0-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/vkPJgrmBentV6SX1tTPK|paramValues.action",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/training-agent-8osyIrfNwwXIj3W5YNP0-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/3nE7P7zAgQcLRHpqnRLT",
+      "field": "paramValues.pct",
+      "action": "clamp",
+      "beforeValue": 60,
+      "afterValue": 50,
+      "ruleId": "mb-11",
+      "archetype": "guardian",
+      "cellRef": {
+        "rulingIds": [
+          "R-133"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/training-agent-8osyIrfNwwXIj3W5YNP0-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/3nE7P7zAgQcLRHpqnRLT|paramValues.pct",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "bundleSnapshot",
+      "docPath": "agents/training-agent-8osyIrfNwwXIj3W5YNP0-7ML6i7WyfuaAtJjl16Smh2kETPw1/bundles/4lPaT1RTO2NWLBFHxOwc",
+      "field": "ruleIds",
+      "action": "unequip",
+      "beforeValue": [
+        "bUFdlut1M0cKaHDULkMa",
+        "hhVd9F05Vs4ApLYKY2Ru",
+        "3nE7P7zAgQcLRHpqnRLT",
+        "nQojFbmgoxeLSX7gKfmY",
+        "loBLwl4Y7hSkoiCD6EKI",
+        "8YpwrID8qDxMHJWTDjmn",
+        "kTu21pkKviEqYCxeiU0i",
+        "U58aIWYxKJlnqmV0xmNd",
+        "uKrTW6ceIeiWW1t4luic",
+        "DTxRXyfXMKoFzpJYXBFh"
+      ],
+      "afterValue": [
+        "bUFdlut1M0cKaHDULkMa",
+        "hhVd9F05Vs4ApLYKY2Ru",
+        "3nE7P7zAgQcLRHpqnRLT",
+        "nQojFbmgoxeLSX7gKfmY",
+        "loBLwl4Y7hSkoiCD6EKI",
+        "kTu21pkKviEqYCxeiU0i",
+        "U58aIWYxKJlnqmV0xmNd",
+        "uKrTW6ceIeiWW1t4luic",
+        "DTxRXyfXMKoFzpJYXBFh"
+      ],
+      "ruleId": "mb-03",
+      "archetype": "guardian",
+      "cellRef": null,
+      "entryKey": "bundleSnapshot|agents/training-agent-8osyIrfNwwXIj3W5YNP0-7ML6i7WyfuaAtJjl16Smh2kETPw1/bundles/4lPaT1RTO2NWLBFHxOwc|ruleIds",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "bundleSnapshot",
+      "docPath": "agents/training-agent-SbXd6nPD5KS6tVL35gLV-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/bundles/Gkq0QRcUDUicdessBIqZ",
+      "field": "ruleIds",
+      "action": "unequip",
+      "beforeValue": [
+        "96cPzzo393Kuszyp2ifV",
+        "gKB9QN5Qc0zRgCVRDXAY",
+        "9ikI1i2ezsuBDqao9TwK",
+        "OECpVrdIIVohMIIl91I4",
+        "ymXXNc0RzNzuxZaalSO9"
+      ],
+      "afterValue": [
+        "gKB9QN5Qc0zRgCVRDXAY",
+        "9ikI1i2ezsuBDqao9TwK",
+        "OECpVrdIIVohMIIl91I4",
+        "ymXXNc0RzNzuxZaalSO9"
+      ],
+      "ruleId": "tech-rsi-oversold",
+      "archetype": "momentum_chaser",
+      "cellRef": null,
+      "entryKey": "bundleSnapshot|agents/training-agent-SbXd6nPD5KS6tVL35gLV-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/bundles/Gkq0QRcUDUicdessBIqZ|ruleIds",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "bundleSnapshot",
+      "docPath": "agents/training-agent-SbXd6nPD5KS6tVL35gLV-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/bundles/e6BkeNJBYiPKLtZhPq6g",
+      "field": "ruleIds",
+      "action": "unequip",
+      "beforeValue": [
+        "hgSxeKzOMkMdtEaKJgg7",
+        "OMH9XDXetOCkEDiycddv",
+        "8o3GW8p7qc7z0euJuLzt",
+        "aGrdenBN1u7dKTik8pTJ",
+        "XmFV6aouaJ5BdXMskPJM",
+        "IO1hpG1Fp4L3JEwNJBW8",
+        "OVjdHe71Xat1kkNnYeNS",
+        "1wQM72Enr5CXd43IO1m7",
+        "OuEURPT0lHcYOP96K0tT",
+        "Om92X4KN9ZHwgwBxHTIA",
+        "yGvmxBYwwl53js2uQhnq",
+        "WL1ERSgfji9tTCgYLTD8",
+        "sa4G0gF2AnUQUGlU3UaU",
+        "AcnzTwLe8Hp7BIzFwskP",
+        "G3Tqf32qxWYhDWChVHuY"
+      ],
+      "afterValue": [
+        "OMH9XDXetOCkEDiycddv",
+        "8o3GW8p7qc7z0euJuLzt",
+        "aGrdenBN1u7dKTik8pTJ",
+        "XmFV6aouaJ5BdXMskPJM",
+        "IO1hpG1Fp4L3JEwNJBW8",
+        "OVjdHe71Xat1kkNnYeNS",
+        "1wQM72Enr5CXd43IO1m7",
+        "OuEURPT0lHcYOP96K0tT",
+        "Om92X4KN9ZHwgwBxHTIA",
+        "yGvmxBYwwl53js2uQhnq",
+        "WL1ERSgfji9tTCgYLTD8",
+        "sa4G0gF2AnUQUGlU3UaU",
+        "AcnzTwLe8Hp7BIzFwskP",
+        "G3Tqf32qxWYhDWChVHuY"
+      ],
+      "ruleId": "tech-rsi-oversold",
+      "archetype": "momentum_chaser",
+      "cellRef": null,
+      "entryKey": "bundleSnapshot|agents/training-agent-SbXd6nPD5KS6tVL35gLV-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/bundles/e6BkeNJBYiPKLtZhPq6g|ruleIds",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/training-agent-Ug4ezm8zQueGwGiRmxYX-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/rules/WL1ERSgfji9tTCgYLTD8",
+      "field": "paramValues.macdDirection",
+      "action": "replace",
+      "beforeValue": "histogram expanding",
+      "afterValue": "bullish crossover",
+      "ruleId": "tech-macd-bullish",
+      "archetype": "contrarian",
+      "cellRef": {
+        "rulingIds": [
+          "R-19"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/training-agent-Ug4ezm8zQueGwGiRmxYX-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/rules/WL1ERSgfji9tTCgYLTD8|paramValues.macdDirection",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "bundleSnapshot",
+      "docPath": "agents/training-agent-Ug4ezm8zQueGwGiRmxYX-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/bundles/e6BkeNJBYiPKLtZhPq6g",
+      "field": "ruleSnapshots[WL1ERSgfji9tTCgYLTD8].paramValues.macdDirection",
+      "action": "replace",
+      "beforeValue": "histogram expanding",
+      "afterValue": "bullish crossover",
+      "ruleId": "tech-macd-bullish",
+      "archetype": "contrarian",
+      "cellRef": {
+        "rulingIds": [
+          "R-19"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "bundleSnapshot|agents/training-agent-Ug4ezm8zQueGwGiRmxYX-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/bundles/e6BkeNJBYiPKLtZhPq6g|ruleSnapshots[WL1ERSgfji9tTCgYLTD8].paramValues.macdDirection",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/training-agent-Ug4ezm8zQueGwGiRmxYX-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/rules/WL1ERSgfji9tTCgYLTD8",
+      "field": "paramValues.rsiFloor",
+      "action": "clamp",
+      "beforeValue": 55,
+      "afterValue": 50,
+      "ruleId": "tech-macd-bullish",
+      "archetype": "contrarian",
+      "cellRef": {
+        "rulingIds": [
+          "R-19"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/training-agent-Ug4ezm8zQueGwGiRmxYX-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/rules/WL1ERSgfji9tTCgYLTD8|paramValues.rsiFloor",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "bundleSnapshot",
+      "docPath": "agents/training-agent-Ug4ezm8zQueGwGiRmxYX-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/bundles/e6BkeNJBYiPKLtZhPq6g",
+      "field": "ruleSnapshots[WL1ERSgfji9tTCgYLTD8].paramValues.rsiFloor",
+      "action": "clamp",
+      "beforeValue": 55,
+      "afterValue": 50,
+      "ruleId": "tech-macd-bullish",
+      "archetype": "contrarian",
+      "cellRef": {
+        "rulingIds": [
+          "R-19"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "bundleSnapshot|agents/training-agent-Ug4ezm8zQueGwGiRmxYX-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/bundles/e6BkeNJBYiPKLtZhPq6g|ruleSnapshots[WL1ERSgfji9tTCgYLTD8].paramValues.rsiFloor",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "bundleSnapshot",
+      "docPath": "agents/training-agent-Ug4ezm8zQueGwGiRmxYX-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/bundles/e6BkeNJBYiPKLtZhPq6g",
+      "field": "ruleIds",
+      "action": "unequip",
+      "beforeValue": [
+        "hgSxeKzOMkMdtEaKJgg7",
+        "OMH9XDXetOCkEDiycddv",
+        "8o3GW8p7qc7z0euJuLzt",
+        "aGrdenBN1u7dKTik8pTJ",
+        "XmFV6aouaJ5BdXMskPJM",
+        "IO1hpG1Fp4L3JEwNJBW8",
+        "OVjdHe71Xat1kkNnYeNS",
+        "1wQM72Enr5CXd43IO1m7",
+        "OuEURPT0lHcYOP96K0tT",
+        "Om92X4KN9ZHwgwBxHTIA",
+        "yGvmxBYwwl53js2uQhnq",
+        "WL1ERSgfji9tTCgYLTD8",
+        "sa4G0gF2AnUQUGlU3UaU",
+        "AcnzTwLe8Hp7BIzFwskP",
+        "G3Tqf32qxWYhDWChVHuY"
+      ],
+      "afterValue": [
+        "hgSxeKzOMkMdtEaKJgg7",
+        "OMH9XDXetOCkEDiycddv",
+        "8o3GW8p7qc7z0euJuLzt",
+        "aGrdenBN1u7dKTik8pTJ",
+        "XmFV6aouaJ5BdXMskPJM",
+        "IO1hpG1Fp4L3JEwNJBW8",
+        "OVjdHe71Xat1kkNnYeNS",
+        "1wQM72Enr5CXd43IO1m7",
+        "OuEURPT0lHcYOP96K0tT",
+        "Om92X4KN9ZHwgwBxHTIA",
+        "yGvmxBYwwl53js2uQhnq",
+        "WL1ERSgfji9tTCgYLTD8",
+        "AcnzTwLe8Hp7BIzFwskP",
+        "G3Tqf32qxWYhDWChVHuY"
+      ],
+      "ruleId": "t-11",
+      "archetype": "contrarian",
+      "cellRef": null,
+      "entryKey": "bundleSnapshot|agents/training-agent-Ug4ezm8zQueGwGiRmxYX-Uy7u20M3wcbz1Dc5iZD4Yk9oTU63/bundles/e6BkeNJBYiPKLtZhPq6g|ruleIds",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/training-agent-jsvFBUG5vnm71Bh8YXN2-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/8qpyHxvieetnXXSEGmRh",
+      "field": "paramValues.fund_score",
+      "action": "clamp",
+      "beforeValue": 65,
+      "afterValue": 71,
+      "ruleId": "tv-10",
+      "archetype": "analyst",
+      "cellRef": {
+        "rulingIds": [
+          "R-38"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/training-agent-jsvFBUG5vnm71Bh8YXN2-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/8qpyHxvieetnXXSEGmRh|paramValues.fund_score",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/training-agent-jsvFBUG5vnm71Bh8YXN2-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/fJrvNuKbE8Ls7TaGR7MQ",
+      "field": "paramValues.minutes",
+      "action": "clamp",
+      "beforeValue": 90,
+      "afterValue": 60,
+      "ruleId": "mb-01",
+      "archetype": "analyst",
+      "cellRef": {
+        "rulingIds": [
+          "R-111"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/training-agent-jsvFBUG5vnm71Bh8YXN2-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/fJrvNuKbE8Ls7TaGR7MQ|paramValues.minutes",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "ruleDoc",
+      "docPath": "agents/training-agent-jsvFBUG5vnm71Bh8YXN2-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/3nE7P7zAgQcLRHpqnRLT",
+      "field": "paramValues.pct",
+      "action": "clamp",
+      "beforeValue": 60,
+      "afterValue": 50,
+      "ruleId": "mb-11",
+      "archetype": "analyst",
+      "cellRef": {
+        "rulingIds": [
+          "R-134"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "ruleDoc|agents/training-agent-jsvFBUG5vnm71Bh8YXN2-7ML6i7WyfuaAtJjl16Smh2kETPw1/rules/3nE7P7zAgQcLRHpqnRLT|paramValues.pct",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    },
+    {
+      "host": "bundleSnapshot",
+      "docPath": "agents/training-agent-jsvFBUG5vnm71Bh8YXN2-7ML6i7WyfuaAtJjl16Smh2kETPw1/bundles/4lPaT1RTO2NWLBFHxOwc",
+      "field": "ruleSnapshots[3nE7P7zAgQcLRHpqnRLT].paramValues.pct",
+      "action": "clamp",
+      "beforeValue": 60,
+      "afterValue": 50,
+      "ruleId": "mb-11",
+      "archetype": "analyst",
+      "cellRef": {
+        "rulingIds": [
+          "R-134"
+        ],
+        "state": "tension"
+      },
+      "entryKey": "bundleSnapshot|agents/training-agent-jsvFBUG5vnm71Bh8YXN2-7ML6i7WyfuaAtJjl16Smh2kETPw1/bundles/4lPaT1RTO2NWLBFHxOwc|ruleSnapshots[3nE7P7zAgQcLRHpqnRLT].paramValues.pct",
+      "migrationRunId": "composition-migration-2026-08-19T23-59-09-930Z"
+    }
+  ],
+  "reports": []
+}

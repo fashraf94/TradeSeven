@@ -1,0 +1,9 @@
+{
+  "subcommand": "drain",
+  "ranAt": "2026-08-19T23:42:33.030Z",
+  "applied": true,
+  "verdict": "DRAINED",
+  "drained": true,
+  "waitedMs": 538,
+  "polls": 1
+}
