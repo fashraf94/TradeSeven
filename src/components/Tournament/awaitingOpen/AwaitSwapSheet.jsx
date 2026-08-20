@@ -14,9 +14,15 @@
 //   • a synchronous inFlight ref, because a `disabled` prop cannot stop a
 //     same-tick double click and two POSTs would follow (:132-134)
 //   • errors surfaced through mapTournamentActionError, never swallowed
-//   • canSubmit includes the window's open state — the client-side gate the
-//     live arena's ClaimSheet already applies (ArenaOverlays.jsx:99), with the
-//     server's 403 window_closed remaining the sole authority.
+//   • the submit is NOT gated on the claim-window mirror (founder ruling).
+//     ClaimFlipWindow.jsx:6-14 states the invariant — "NEVER gate a submit on
+//     the WINDOW mirror ... the server's 403 window_closed is the sole
+//     authority" — and it governs here. The mirror reads a device clock, so a
+//     slow client would otherwise block a claim the server would accept and
+//     cost the user a move. The wire still LOOKS locked and the sheet still
+//     says so; the server answers, and a rejection surfaces as mapped copy
+//     (`window_closed` / `claims_closed_during_market_hours`,
+//     tournamentActions.js:106-109) in the role="alert" line below.
 //
 // Bottom-nav clearance (spec §4.2): on mobile the sheet is pinned ABOVE the
 // fixed 64px nav plus the safe-area inset, so its confirm button is never
@@ -31,16 +37,15 @@ import { FONT_VARS } from '../../League/draft/draftTokens';
 import { alpha, readableOn, WPOD } from './awaitTokens';
 import { Mono, TickerPlate, useAwaitPalette, usePrefersReducedMotion } from './awaitPrimitives';
 
-// The fixed bottom nav (Navigation/BottomNav.jsx:53-59) — 64px plus its
-// safe-area inset. The sheet clears both.
-// 64px + its 1px borderTop (the app ships no box-sizing reset) + the inset.
+// The fixed bottom nav (Navigation/BottomNav.jsx:53-63) — 64px plus its 1px
+// borderTop (the app ships no box-sizing reset) plus its safe-area inset.
 const NAV_CLEARANCE = 'calc(65px + env(safe-area-inset-bottom, 0px))';
 
 export default function AwaitSwapSheet({
   row,                 // the wire row being claimed: { symbol, sectorName, fit }
   picks = [],          // the user's three picks: [{ symbol, sector, round }]
   groupId,
-  open = true,         // whether the claim wire is open (client-side gate)
+  open = true,         // whether the wire LOOKS open — informational only
   windowLine = '',     // the honest window copy, when closed
   capReached = false,
   claimCap = 3,
@@ -131,7 +136,8 @@ export default function AwaitSwapSheet({
   }, [symbol]);
 
   const placed = state.status === ACTION_STATUS.CONFIRMED;
-  const canSubmit = !!(drop && symbol && groupId && open && !capReached && !pending && !placed);
+  // `open` is deliberately absent: the mirror informs, the server decides.
+  const canSubmit = !!(drop && symbol && groupId && !capReached && !pending && !placed);
 
   const submit = useCallback(async () => {
     // Synchronous guard: `disabled` cannot stop a same-tick double click.
@@ -264,8 +270,10 @@ export default function AwaitSwapSheet({
             display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', borderRadius: 10,
             background: alpha(pal.gold, 0.08), border: `1px solid ${alpha(pal.gold, 0.28)}`, marginBottom: 10,
           }}>
-            <AlertCircle size={13} color={pal.gold} />
-            <span style={{ fontSize: 11.5, color: pal.ink2, lineHeight: 1.4 }}>{windowLine}</span>
+            <AlertCircle size={13} color={pal.gold} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 11.5, color: pal.ink2, lineHeight: 1.4 }}>
+              {windowLine} You can still place it — the server has the final say.
+            </span>
           </div>
         )}
         {capReached && (

@@ -21,9 +21,9 @@
 | Full suite | ✅ **8,108 passed** / 494 files, 0 failures (+12 new tests, 50 in the surface) |
 | eslint | ✅ Clean |
 | Review | ✅ 5 independent dimensions + `/code-review` high, every finding refuted-or-confirmed |
-| **Founder decisions still open** | **2 — see §6** |
+| Founder rulings R1–R3 | ✅ R2 + R3 executed here; R1 scoped as §7.0, **blocks the flag flip** |
 
-**Headline:** the redesign is built and green, but the review was not a formality — it found a real dark-merge violation, a claim flow that gave no confirmation and invited a duplicate claim, a lost claim-outcome surface, a symbol-normalisation drift, and a global CSS rule that silently killed the entire button type scale. All fixed. Two product questions remain for the founder.
+**Headline:** the redesign is built and green, but the review was not a formality — it found a real dark-merge violation, a claim flow that gave no confirmation and invited a duplicate claim, a lost claim-outcome surface, a symbol-normalisation drift, and a global CSS rule that silently killed the entire button type scale. All fixed. The two product questions it raised were ruled the same day (§6): the submit gate is softened and the sidebar overlap fixed here; the claimable-universe fix is scoped as §7.0 and blocks the flag flip.
 
 ---
 
@@ -34,7 +34,7 @@
 | 1 | `576500a3` | Flag + `?awaitingOpenRedesign=1`, token/copy layer, `WSurf`/`BandHead`/`WChip`, reduced-motion layer, page shell + atmosphere |
 | 2 | `dace85bf` | `AwaitCountdownHero`, `AwaitDraftBoard` (seat lanes), `BookSpread`, `TickerPlate`/`TickRail`, `buildSeatLanes`/`sectorSpread` |
 | 3 | `6f0298b0` | `AwaitWire` (rows two-up, locked state), `AwaitSwapSheet` (per-row claim), `ClaimsMeter`, `wireWindowLine` |
-| 4 | `[phase-4]` | Feed placement, research wiring, desktop-gate decoupling, no-picks state |
+| 4 | `0f7b0ee4` | Feed placement, research wiring, desktop-gate decoupling, no-picks state |
 | Review | `d5014014` | 16 findings fixed (§4) |
 
 **Theming (founder ruling — Option A):** the surface keeps `useTheme()`. The app mounts a single dark-default `ThemeProvider` (`ThemeContext.jsx:7`, never toggled anywhere), and `DARK_TOKENS` already carries the reference palette byte-for-byte — `bgApp #0D0E12`, `bgCard #15171E`, `bgAgent #1C1A27`, `teal #5eead4`, `medalGold #F0C75E`, `warmCopper #E8927C`. The design's names are a rename of live tokens, not a second palette. The one missing value, the ownership blue, comes from `LX.human` (`#5B8DEF`) per ruling 2. **No raw core-palette hex is introduced** — every colour is a token identifier composed through `alpha()`/`readableOn()`, which both fail silently on `var()` strings (BUILD_RULES §10).
@@ -139,21 +139,46 @@ A review that never refutes itself has not been run adversarially. These were at
 
 ---
 
-## 6. Open founder decisions (not code defects)
+## 6. Founder rulings on the review (2026-08-19, post-review)
 
-**Q1 — The claimable universe narrowed from the whole pool to the wire's top 12.**
-The classic panel's "Claim a name…" dropdown offers **every** name in `userPool` (the ranked universe minus the 12 drafted — on the order of 100+ names). The redesign's only claim entry is a wire row, and the wire is `topN: 12` with no search or expander. A name ranked #40 for your archetype is now unreachable in the UI, though the server would accept it.
+Both questions raised in review were ruled the same day; both are executed in this branch.
 
-This follows the spec as written (§5: "Every waiver row keeps its Claim button", and the standalone panel "is gone"), and the founder withdrew the §6.2 expander on the grounds that twelve is a small fixed number — but that ruling was about *reachability of the twelve*, not about the ~100 names the dropdown could reach. **Not changed unilaterally.** Options: accept (the wire is archetype-ranked, so the top 12 is the curated set), raise `topN`, or add a search affordance in a follow-up.
+**R1 — Claimable universe: accepted as a real regression, fix deferred to its own task.**
+Founder: *"it's my spec's fault, not your build's… going from ~100 names to 12 removes a capability. That's a narrowing of the game, not a UI simplification."*
 
-**Q2 — The submit is now gated client-side on the window mirror.**
-`ClaimFlipWindow`'s binding header states the UI "**NEVER** gates a submit on the WINDOW mirror". The redesign does gate it — as spec §6.1 requires ("Claim buttons disabled with a clear locked affordance") and as the founder's "use the production prior art" ruling directs (the live arena's `ClaimSheet` gates on `claim.open`, `ArenaOverlays.jsx:99`). The trade-off: a device clock ~20 minutes slow just after 16:00 ET renders every Claim LOCKED and blocks a claim the server would accept. The server's 403 remains the sole authority; this is UI-only. **Recorded as an accepted consequence of §6.1 + the prior-art ruling** — flag if you want the gate softened to display-only.
+- **Do NOT raise `topN`.** The wire's value is that twelve names are the twelve best fits; inflating it "stops being a recommendation and becomes a list."
+- **Direction:** a search affordance *inside the claim sheet* — the wire stays at twelve, and a "Claim a different name" control opens a ticker search over the full `userPool`. Preserves the recommendation surface and the capability.
+- **Scope:** its own task. **Merge dark now; ship search before the flag flips.** Recorded as §7.0 below.
+
+**R2 — Submit gating: softened. EXECUTED in this branch.**
+Founder: *"Treat the ClaimFlipWindow header as authoritative… the arena prior art matching your implementation doesn't override it — it may simply mean the arena carries the same defect."*
+
+The window mirror reads a **device clock**, so a slow client silently blocked a claim the server would accept — a user losing a move they were entitled to. Now:
+
+- The **locked visual stays** (§6.1 is correct — no live button on a wire that looks shut): dimmed treatment, lock glyph, `LOCKED` label, reopen time legible in the head and repeated in the sheet.
+- The button still **opens** and the sheet still **submits**. `canSubmit` no longer includes the window; the sheet's closed banner now reads "You can still place it — the server has the final say."
+- A rejection surfaces as mapped copy (`window_closed` / `claims_closed_during_market_hours`, `tournamentActions.js:106-109`) in the `role="alert"` line.
+- The genuine client-side blocks **stay** — duplicate pending claim, the 3-pending cap, no picks to drop. Those derive from the authoritative claims subscription and the roster, not from a clock, and `ClaimFlipWindow` gates on the cap too.
+
+**R3 — `App.jsx:9231` sidebar offset: fixed in this branch.**
+Founder: *"shipping a redesign whose headline element sits under the sidebar isn't defensible on a technicality."* One-line wrapper matching its siblings (`:9394`, `:9643`), committed separately from the feature and labelled pre-existing. Verified: `getScreenContent` spans `8550–9922`, so the `trainingBattle` early return feeds `screenContent` (`:9949`, rendered `:9989`) and `DesktopSidebar` (`:9993`) **does** render alongside it — `trainingBattle` is absent from `GAMEPLAY_SCREENS` (`:1082-1089`). eslint on `App.jsx` reports 147 problems before and after the change, none in the edited range.
 
 ---
 
-## 7. Separate-tasking register (pre-existing, NOT fixed here — BUILD_RULES §3)
+## 7. Separate-tasking register
 
-1. **Desktop sidebar overlaps the training-battle column.** `App.jsx:9231-9241` returns `LeagueTrainingBattleView` with **no** `marginLeft: sidebarCollapsed ? '64px' : '220px'` wrapper, unlike sibling screens (`:9394`, `:9643`), and `trainingBattle` is absent from `GAMEPLAY_SCREENS` (`:1082-1089`) so the sidebar renders. Measured at 1024px: the board's round-spine labels and the top wire row's FIT number sit under the collapsed sidebar. **Affects today's classic screen too**, but the redesign's full-width board is the first layout to put load-bearing content there. **This will be visible in the preview smoke.**
+**7.0 — NAMED FOLLOW-UP, BLOCKS THE FLAG FLIP (founder ruling R1).**
+Add a ticker-search affordance inside the claim sheet, over the full `userPool`
+(`pod.userPool` minus held symbols — the same list `ClaimFlipWindow.jsx:75-78`
+builds). The wire stays at `topN: 12`. Until this ships, the redesign can only
+claim the twelve ranked names, where today's dropdown reaches ~100+. Merge dark
+is fine; **do not flip the flag before this lands.**
+
+---
+
+Pre-existing, NOT fixed here (BUILD_RULES §3):
+
+1. ~~**Desktop sidebar overlaps the training-battle column.**~~ **FIXED in this branch per ruling R3** — retained here for the record. `App.jsx:9231-9241` returns `LeagueTrainingBattleView` with **no** `marginLeft: sidebarCollapsed ? '64px' : '220px'` wrapper, unlike sibling screens (`:9394`, `:9643`), and `trainingBattle` is absent from `GAMEPLAY_SCREENS` (`:1082-1089`) so the sidebar renders. Measured at 1024px: the board's round-spine labels and the top wire row's FIT number sit under the collapsed sidebar. **Affects today's classic screen too**, but the redesign's full-width board is the first layout to put load-bearing content there. **This will be visible in the preview smoke.**
 2. **`src/index.css:6-11` global `!important` button font-size** defeats every inline button size app-wide, not just here. Worked around scoped to `.aw-btn`; the global rule deserves a proper layered fix.
 3. **"the wire opens Monday at 4:00 PM ET" understates the reopen by ~16h** — the window is also open Mon 00:00–09:24 ET. Copy is verbatim from the shipped `ClaimFlipWindow.jsx:44-45`; kept consistent rather than diverging the two surfaces.
 4. **No cancel path for a tournament claim.** `placeClaim` is the only claim mutation; the `cancelClaim` in `claimFreeAgencyService.js:319` belongs to the separate BaggerBomb subsystem. This is why spec §5's "undo" is not built.
@@ -172,10 +197,11 @@ This follows the spec as written (§5: "Every waiver row keeps its Claim button"
 ## 9. Preview smoke checklist (spec §11)
 
 - [ ] Flag off: screen identical to main (incl. the claims countdown staying frozen, per F-D1)
-- [ ] Flag on, desktop: board full width, wire rows two-up, claims inline, no dead space — **note the §7.1 sidebar overlap at 1024**
+- [ ] Flag on, desktop: board full width, wire rows two-up, claims inline, no dead space, and **nothing under the sidebar at 1024** (ruling R3)
 - [ ] Flag on, mobile: everything reachable; nothing under the bottom nav; the swap sheet clears it
 - [ ] Claim flow: tap Claim → sheet opens pre-filled → pick a drop → confirm → confirmation shown → row shows QUEUED, meter increments, ledger lists `drop → add`
-- [ ] Wire closed: Claim buttons LOCKED, reopen time shown, research still works
+- [ ] Wire closed: Claim buttons show the LOCKED treatment but still OPEN the sheet; the sheet says "you can still place it"; reopen time shown; research still works
+- [ ] Wire closed + submit anyway: the server's rejection appears as mapped copy in the sheet (not a silent failure)
 - [ ] **Friday afternoon: the wire shows the Monday reopen, never a countdown**
 - [ ] Ticker tap opens `AssetResearchModal` from both board and wire
 - [ ] Countdown ticks, legible at both breakpoints, no "Opening…" flash on load

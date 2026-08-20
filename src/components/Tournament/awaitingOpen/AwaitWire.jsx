@@ -5,13 +5,21 @@
 // head. Every row carries its own Claim, which opens the swap sheet pre-filled
 // with that ticker — this is what replaces the standalone two-dropdown panel.
 //
-// LOCKED STATE (§6.1) — a genuine treatment, not a hidden button:
-//   • Claim buttons disable with a visible lock affordance and a title that
-//     names the reason, gated on the live getClaimWindowDisplay() mirror.
-//   • The reopen time is legible in the head (and repeated in the sheet).
-//   • Rows stay fully readable and every ticker stays tappable for research —
-//     only CLAIMING is gated. The lock is client-side UX; the server's 403
-//     window_closed remains the sole authority on any submit.
+// LOCKED STATE (§6.1) — a HINT, never a gate (founder ruling):
+//   • When the wire looks shut the Claim button takes the locked treatment —
+//     dimmed, lock glyph, LOCKED label, reopen time legible in the head. Users
+//     should not see a live button on a wire that looks closed.
+//   • But the button still OPENS, and the sheet still SUBMITS. The window
+//     mirror is a client clock; a device running twenty minutes slow would
+//     otherwise silently block a claim the server would accept, costing the
+//     user a move they were entitled to. ClaimFlipWindow.jsx:6-14 states the
+//     invariant — "NEVER gate a submit on the WINDOW mirror" — and it governs
+//     here. (The live arena's ClaimSheet does gate on claim.open; that is prior
+//     art carrying the same defect, not a licence to repeat it.)
+//   • The genuine client-side blocks stay: a duplicate pending claim, the
+//     3-pending cap, and having no picks to drop. Those derive from the
+//     authoritative claims subscription and the roster, not from a clock.
+//   • Rows stay fully readable and every ticker stays tappable for research.
 //
 // QUEUED ROWS: a name with a pending claim shows a non-interactive QUEUED
 // state. The build spec asked for an undo affordance here, but the tournament
@@ -77,22 +85,25 @@ function StatStrip({ stock, compact, pal }) {
 
 function WireRow({ stock, rank, queued, locked, capReached, hasPicks, onClaim, onResearch, compact, pal }) {
   const lead = rank === 1 && !queued;
-  const disabled = queued || locked || capReached || !hasPicks;
+  // `locked` is deliberately NOT here — the window mirror dims the button but
+  // never blocks it; the server is the authority (see the header).
+  const disabled = queued || capReached || !hasPicks;
+  const dimmed = disabled || locked;
 
   // The button's LABEL names the same reason its title does — a greyed button
-  // still reading "Claim" would disagree with why it is dead.
+  // still reading "Claim" would disagree with why it looks dead.
   const [claimTitle, claimLabel] = queued
     ? [`A claim for ${stock.symbol} is already pending`, 'QUEUED']
-    : locked
-      ? ['The claim wire is closed right now', 'LOCKED']
-      : capReached
-        ? ['You have the maximum pending claims — wait for tonight’s processing', 'CAP FULL']
-        : !hasPicks
-          ? ['You have no picks to drop for a claim', 'NO PICKS']
+    : capReached
+      ? ['You have the maximum pending claims — wait for tonight’s processing', 'CAP FULL']
+      : !hasPicks
+        ? ['You have no picks to drop for a claim', 'NO PICKS']
+        : locked
+          ? [`Claim ${stock.symbol} — the wire looks closed, but you can still place it; the server decides`, 'LOCKED']
           : [`Claim ${stock.symbol}`, 'Claim'];
 
-  const claimColor = queued ? pal.teal : disabled ? pal.ink3 : pal.teal;
-  const ClaimIcon = queued ? Clock : disabled ? Lock : Gavel;
+  const claimColor = queued ? pal.teal : dimmed ? pal.ink3 : pal.teal;
+  const ClaimIcon = queued ? Clock : dimmed ? Lock : Gavel;
 
   return (
     <div className={disabled ? undefined : 'aw-row'} style={{
@@ -131,9 +142,9 @@ function WireRow({ stock, rank, queued, locked, capReached, hasPicks, onClaim, o
           whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
           cursor: disabled ? 'not-allowed' : 'pointer',
           color: claimColor,
-          background: queued ? alpha(pal.teal, 0.1) : disabled ? alpha(pal.white, 0.03) : alpha(pal.teal, 0.1),
-          border: `1px solid ${queued ? alpha(pal.teal, 0.34) : disabled ? pal.hair2 : alpha(pal.teal, 0.45)}`,
-          boxShadow: disabled ? 'none' : `0 0 24px -14px ${alpha(pal.teal, 1)}`,
+          background: queued ? alpha(pal.teal, 0.1) : dimmed ? alpha(pal.white, 0.03) : alpha(pal.teal, 0.1),
+          border: `1px solid ${queued ? alpha(pal.teal, 0.34) : dimmed ? pal.hair2 : alpha(pal.teal, 0.45)}`,
+          boxShadow: dimmed ? 'none' : `0 0 24px -14px ${alpha(pal.teal, 1)}`,
         }}
       >
         <ClaimIcon size={12} color={claimColor} strokeWidth={2.2} /> {claimLabel}
