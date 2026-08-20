@@ -9,7 +9,17 @@
 // assembler internals, so a regression in the split logic is caught by the exact
 // byte compare AND by the structural / override-movement assertions.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// Ask 1 flip-proofing (STOP-1 review finding): this suite's inline goldens
+// include the forge-rules trailer, which is executor-flag-conditional prose.
+// The suite tests hard/soft override PARITY, not exit-behavior copy — pin the
+// dark branch so the Ask 1+3 flip reconciles nothing here.
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  PROFIT_TARGET_EXECUTOR_ENABLED: false,
+}));
+
 import { buildStrategyUserPrompt } from './agentPromptAssembly.js';
 import { buildAgentIdentityBlock } from './agentEvalPromptAssembly.js';
 import { projectActiveRules } from './projectActiveRules.js';

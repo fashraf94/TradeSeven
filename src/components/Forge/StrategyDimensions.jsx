@@ -26,8 +26,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 // Ask 3 (F12): the profit-target hint is executor-conditional — see the
-// exitDiscipline control row below.
+// exitDiscipline control row below. Ask 1: the copy itself lives in the ONE
+// promise-source module (§9 — no second wording can drift).
 import { PROFIT_TARGET_EXECUTOR_ENABLED } from '../../config/featureFlags.js';
+import { PROFIT_TARGET_PROMISE_DARK, PROFIT_TARGET_PROMISE_LIVE } from '../../constants/profitTargetPromise.js';
 import { ChevronDown } from 'lucide-react';
 import ParamSlider from './ParamControls/ParamSlider';
 import ParamToggle from './ParamControls/ParamToggle';
@@ -136,14 +138,10 @@ const DIMENSION_CONFIGS = [
     span: 2,
     controls: [
       // Ask 3 (R2 — the promise carries the physics; F12 — executor-conditional
-      // copy): while the executor is dark the hint keeps its aspirational Tier-1
-      // wording; the moment PROFIT_TARGET_EXECUTOR_ENABLED flips with Ask 1, the
-      // copy states exactly what the engine delivers — next-eval cadence,
-      // swap-not-sell, replacement availability, LOCK carve-out, one exit per
-      // evaluation. Promise-true means the promise got more precise.
-      { paramKey: 'profitTargetPct', legacyKey: 'profitTarget', type: 'slider', tier: 'baseline', label: 'Profit target', min: 5, max: 50, step: 1, unit: '%', hint: PROFIT_TARGET_EXECUTOR_ENABLED
-        ? 'Sells by swapping into the best eligible bench name at the next evaluation once gain from entry reaches this %. Evaluations tick ~every 15 min in market hours but only run on market triggers — a quiet stretch can defer the fire, as can no eligible replacement or a position locked near a bonus threshold. One exit per evaluation.'
-        : 'Lock in gains once a position reaches this return.' },
+      // copy) + Ask 1 (§9 one source): both wordings come from
+      // profitTargetPromise.js; this row only selects on the executor flag.
+      // Promise-true means the promise got more precise.
+      { paramKey: 'profitTargetPct', legacyKey: 'profitTarget', type: 'slider', tier: 'baseline', label: 'Profit target', min: 5, max: 50, step: 1, unit: '%', hint: PROFIT_TARGET_EXECUTOR_ENABLED ? PROFIT_TARGET_PROMISE_LIVE : PROFIT_TARGET_PROMISE_DARK },
       { paramKey: 'timeExitDays', legacyKey: 'timeExit', type: 'slider', tier: 'baseline', label: 'Time-based exit', min: 2, max: 15, step: 1, unit: 'days', hint: 'Close flat positions that haven’t moved within this window.' },
       { paramKey: 'timeExitMinGainPct', type: 'chipPicker', tier: 'advanced', label: 'Time-exit minimum gain', options: [0, 1, 3, 5], formatChip: (v) => `${v}%`, hint: 'Minimum gain to count as a successful hold — below this, the position is closed.' },
       { paramKey: 'technicalExitEnabled', legacyKey: 'technicalExit', type: 'toggle', tier: 'baseline', label: 'Technical exit signal', hint: 'Exit on a chart-based breakdown signal.' },

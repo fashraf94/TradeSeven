@@ -29,6 +29,11 @@ import { fileURLToPath } from 'node:url';
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   RULE_COMPAT_MODE: 'enforce',
+  // Ask 1 flip-proofing (STOP-1 review finding): this suite's EVAL_GOLDEN pins
+  // the forge-rules trailer, which is executor-flag-conditional prose. The
+  // suite tests COMPAT invariants, not exit-behavior copy — pin the dark
+  // branch so the Ask 1+3 flip reconciles nothing here.
+  PROFIT_TARGET_EXECUTOR_ENABLED: false,
 }));
 
 import { projectActiveRules } from './projectActiveRules.js';

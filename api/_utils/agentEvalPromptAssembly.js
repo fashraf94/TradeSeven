@@ -19,7 +19,13 @@ import { isDirectiveActive } from './directiveUtils.js';
 // (directive, standing leans). Non-fenced pure module; the flags import is
 // api → src Node-clean (BUILD_RULES §4).
 import { resolveControls, renderControlBlocks } from './controlPromptRenderer.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
+// Ask 1 data-add #1: the canonical ordered bonus tiers (BUILD_RULES §4 —
+// never a local copy of scoring constants; /code-review CR-5: derive the
+// level list, never hand-copy it, so a future tier addition cannot silently
+// skip the Δ column). Node-clean; the ask1 test's unmocked import of this
+// module is the dependency-surface guard.
+import { BAGGER_TIERS } from '../../src/constants/baggerBombScoring.js';
 import {
   computeGameContext,
   rankAndSelectStories,
@@ -64,6 +70,132 @@ import { buildFundamentalsBlock } from './fundamentalsRender.js';
  * to the pre-DR-13 text of record (battery snapshots); omitted callers
  * (battery, legacy) get the same '' via the undefined key.
  */
+// ==================== ASK 1 — THE HONEST EXIT-BEHAVIOR PROSE ====================
+// Exit-Behavior Rebalance Tier 2, Ask 1 (fence contact sanctioned in the
+// kickoff; Rulings V1 four-layer precedence + anti-churn pricing, R10 one-flag
+// sequencing). Every helper below reads PROFIT_TARGET_EXECUTOR_ENABLED at
+// CALL TIME — never module scope: Ask 3's compileBuild module-scope read broke
+// seven distant test files whose hermetic featureFlags mocks didn't list the
+// flag; prose gating must not repeat that (audit record §8).
+// Flag OFF: every helper returns today's prose BYTE-IDENTICALLY (golden-pinned
+// against the branch base in agentEvalPromptAssembly.ask1.test.js). Flag ON
+// (flips with Ask 3's executor, one flip PR): the prohibition is deleted, the
+// four-layer precedence replaces "constraints always override strategy
+// preferences" at all three sites from ONE wording (§9 — no second copy), and
+// the P&L-protection framing yields to fact-of-the-environment framing with
+// the bust-override machinery (ignoredDirectiveIds) preserved verbatim.
+
+/** Framework §2 — shared verbatim by both prompt variants (one source). */
+function renderEvSection() {
+  if (!PROFIT_TARGET_EXECUTOR_ENABLED) {
+    return `2. EVALUATE FORWARD EXPECTED VALUE (EV), NOT PAST PERFORMANCE.
+   - Do NOT sell a winner just to "bank" positive points if its momentum
+     is intact and it has room to earn the next threshold bonus.
+   - Do NOT hold a bleeding loser just to avoid locking in a loss. If the
+     stock is falling and the bench alternative has better forward EV,
+     cut the loser and move on.
+   - Ask: "Over the remaining battle time, which asset will earn MORE
+     points from this moment forward?"`;
+  }
+  // The anti-churn replacement (Fable F5, ruled): restraint lives in PHYSICS
+  // (hurdle floors, the swap-window breaker, cooldowns) — the deletion of the
+  // prohibition is not a loosening, and the prompt's job becomes pricing.
+  // Brief V2 Ask 1 bullet 2 (review-A finding 11c): profit-taking and
+  // momentum rotation are SANCTIONED as legitimate motives, in the same
+  // vocabulary the decision schema's swap_type enum speaks — prompt and
+  // schema one language, R5 untouched (no gate ever keys on the declaration).
+  return `2. EVALUATE FORWARD EXPECTED VALUE (EV), NOT PAST PERFORMANCE.
+   - An exit needs a reason — a rule, a target, a thesis change, or a
+     better use of the slot — not merely a green number. Restraint is
+     already enforced by the engine (hurdle floors, the swap-window
+     breaker, cooldowns): your job is to PRICE an exit, never to fear it.
+   - Profit-taking and momentum rotation are LEGITIMATE motives. When one
+     drives your swap, declare it honestly in swap_type — it is never
+     penalized; it is how your judgment gets measured.
+   - Do NOT hold a bleeding loser just to avoid locking in a loss. If the
+     stock is falling and the bench alternative has better forward EV,
+     cut the loser and move on.
+   - Ask: "Over the remaining battle time, which asset will earn MORE
+     points from this moment forward?"`;
+}
+
+/** The ONE four-layer precedence wording (Rulings V1, endorsed constraints) —
+ * rendered at both system-prompt sites AND the forge-rules trailer, from this
+ * single helper so the copies cannot drift (§9). Flag-on only. */
+function renderPrecedenceBlock() {
+  return `DECISION PRECEDENCE (highest to lowest):
+1. Deterministic floors and guardrails — facts of the environment, enforced by the engine. Acknowledge them; never re-litigate them.
+2. User-equipped rules — hard rules first, then soft. The user's soft preferences outrank framework defaults and your archetype stance.
+3. Archetype stance — shapes HOW an exit is taken, never WHETHER the user's rules are honored.
+4. Framework defaults — apply last.`;
+}
+
+/** The forge-rules reporting guidance paragraph (both variants). Flag-off
+ * keeps the old closing sentence; flag-on replaces it with the block. */
+function renderForgeRulesGuidance() {
+  const reporting = 'When forge rules influence your decision, populate cited_forge_rules with the rule IDs and how they influenced you (followed or blocked_trade). If you considered a rule but it did not apply, use overridden_forge_rules with the appropriate reason. If Survival Mode forces you to break a constraint, use overridden_forge_rules.';
+  if (!PROFIT_TARGET_EXECUTOR_ENABLED) {
+    return `${reporting} Constraints always override strategy preferences.`;
+  }
+  return `${reporting}
+
+${renderPrecedenceBlock()}`;
+}
+
+/** The §9-true X for the SX-04 render: the value the ENGINE actually enforces
+ * — battle.agentContext.deployedGuardrails' profitTarget entry, the exact
+ * store applyGuardrails fires on (review C-6: the rule item's paramValues can
+ * drift from the deployed value on a legacy bundle, and a sentence claiming
+ * deterministic enforcement must never cite a number the engine does not
+ * hold — so there is deliberately NO rule-store fallback). Null when no
+ * profitTarget guardrail is deployed: then the executor will not fire and
+ * the enforcement-true render would be a lie — the rule's own text renders. */
+function resolveEnforcedProfitTargetPct(battle) {
+  const guardrails = battle?.agentContext?.deployedGuardrails;
+  if (!Array.isArray(guardrails)) return null;
+  // MIRROR the engine exactly (/code-review CR-1): applyGuardrails indexes
+  // byType with keep-LAST dedup, then fires on Math.abs(value) — so a doc
+  // carrying two profitTarget entries, or a legacy negative value, must
+  // resolve HERE to the same number it resolves to THERE.
+  let last = null;
+  for (const g of guardrails) {
+    if (g && g.type === 'profitTarget') last = g;
+  }
+  if (!last || typeof last.value !== 'number') return null;
+  const x = Math.abs(last.value);
+  // The executor skips non-positive thresholds (pickBestTargetBreach's
+  // `!(threshold > 0)` guard) — a 0 target never fires, so never claim it.
+  return x > 0 ? x : null;
+}
+
+/** Equipped-rule text for the prompt. Flag-on, SX-04 gets the post-executor
+ * render (Rulings V1, verbatim intent): the target is a FACT the engine
+ * enforces — the framework must never fight the user's own rule in the same
+ * prompt again. Keys on `ruleId` — the field BOTH live projection writers
+ * emit (projectActiveRules / bundleRuleProjection; review C-5) — with `id`
+ * tolerated for legacy shapes. Every other rule (and SX-04 with no deployed
+ * enforcement value, or while dark) renders exactly as before. */
+function renderEquippedRuleText(r, enforcedTargetPct) {
+  if (PROFIT_TARGET_EXECUTOR_ENABLED && (r?.ruleId ?? r?.id) === 'sx-04' && enforcedTargetPct !== null) {
+    return sanitizeRuleText(
+      `Profit target: the user's target is ${enforcedTargetPct}%. The engine enforces it deterministically — treat it as a fact of the environment. You may exit earlier in character; the target itself is never negotiable.`,
+    );
+  }
+  return resolveRuleText(r);
+}
+
+/** SURVIVAL MODE paragraph (both variants). The bust-override MACHINERY —
+ * ignoredDirectiveIds, the -1.0x ATR condition — is identical in both states;
+ * only the "primary directive is P&L protection" framing yields (layer 1:
+ * a fact of the environment, not an identity). */
+function renderSurvivalMode() {
+  const machinery = 'You have explicit permission to OVERRIDE user directives if live data shows a position has breached -1.0x ATR (Bust) or is accelerating toward it with no sign of reversal. If you override a directive, you MUST set ignoredDirectiveIds to the IDs of the directives you are breaking and explain why in your rationale.';
+  if (!PROFIT_TARGET_EXECUTOR_ENABLED) {
+    return `Your primary directive is P&L protection. ${machinery}`;
+  }
+  return `Deterministic protection floors are facts of the environment. ${machinery}`;
+}
+
 export function buildEvalSystemPrompt(agentName, archetype, gameMode = TIERED_GAME_MODE, archetypeKey) {
   const identityBlock = renderEvalIdentityBlock(archetypeKey);
   if (resolveModeConfig(gameMode).promptVariant === 'flat6') {
@@ -94,14 +226,7 @@ When you swap out an asset, its current points are LOCKED permanently. The incom
    Most evaluations should result in HOLD. Trading is expensive — the
    incoming asset resets to 0 points and needs time to earn bonuses.
 
-2. EVALUATE FORWARD EXPECTED VALUE (EV), NOT PAST PERFORMANCE.
-   - Do NOT sell a winner just to "bank" positive points if its momentum
-     is intact and it has room to earn the next threshold bonus.
-   - Do NOT hold a bleeding loser just to avoid locking in a loss. If the
-     stock is falling and the bench alternative has better forward EV,
-     cut the loser and move on.
-   - Ask: "Over the remaining battle time, which asset will earn MORE
-     points from this moment forward?"
+${renderEvSection()}
 
 3. RELATIVE STRENGTH: Compare asset performance to the MACRO BENCHMARKS.
    A stock that is down 1% on a day the market is down 3% is showing
@@ -217,7 +342,7 @@ When FORGE RULES are present in your identity block, they represent user-configu
 - CONSTRAINTS (C1, C2, ...) are HARD rules — you must obey them unless Survival Mode activates.
 - STRATEGY PREFERENCES (S1, S2, ...) are SOFT rules — follow them when possible but you may deviate with explanation.
 
-When forge rules influence your decision, populate cited_forge_rules with the rule IDs and how they influenced you (followed or blocked_trade). If you considered a rule but it did not apply, use overridden_forge_rules with the appropriate reason. If Survival Mode forces you to break a constraint, use overridden_forge_rules. Constraints always override strategy preferences.
+${renderForgeRulesGuidance()}
 
 ━━━ ANTI-THRASH RULES (MANDATORY) ━━━
 
@@ -230,7 +355,7 @@ When forge rules influence your decision, populate cited_forge_rules with the ru
 
 ━━━ SURVIVAL MODE ━━━
 
-Your primary directive is P&L protection. You have explicit permission to OVERRIDE user directives if live data shows a position has breached -1.0x ATR (Bust) or is accelerating toward it with no sign of reversal. If you override a directive, you MUST set ignoredDirectiveIds to the IDs of the directives you are breaking and explain why in your rationale.
+${renderSurvivalMode()}
 
 ━━━ ANTICIPATION CANDIDATES — WHEN TO POPULATE ━━━
 
@@ -322,14 +447,7 @@ When you swap out an asset, its current points are LOCKED permanently. The incom
    Most evaluations should result in HOLD. Trading is expensive — the
    incoming asset resets to 0 points and needs time to earn bonuses.
 
-2. EVALUATE FORWARD EXPECTED VALUE (EV), NOT PAST PERFORMANCE.
-   - Do NOT sell a winner just to "bank" positive points if its momentum
-     is intact and it has room to earn the next threshold bonus.
-   - Do NOT hold a bleeding loser just to avoid locking in a loss. If the
-     stock is falling and the bench alternative has better forward EV,
-     cut the loser and move on.
-   - Ask: "Over the remaining battle time, which asset will earn MORE
-     points from this moment forward?"
+${renderEvSection()}
 
 3. RELATIVE STRENGTH: Compare asset performance to the MACRO BENCHMARKS.
    A stock that is down 1% on a day the market is down 3% is showing
@@ -443,7 +561,7 @@ When FORGE RULES are present in your identity block, they represent user-configu
 - CONSTRAINTS (C1, C2, ...) are HARD rules — you must obey them unless Survival Mode activates.
 - STRATEGY PREFERENCES (S1, S2, ...) are SOFT rules — follow them when possible but you may deviate with explanation.
 
-When forge rules influence your decision, populate cited_forge_rules with the rule IDs and how they influenced you (followed or blocked_trade). If you considered a rule but it did not apply, use overridden_forge_rules with the appropriate reason. If Survival Mode forces you to break a constraint, use overridden_forge_rules. Constraints always override strategy preferences.
+${renderForgeRulesGuidance()}
 
 ━━━ ANTI-THRASH RULES (MANDATORY) ━━━
 
@@ -456,7 +574,7 @@ When forge rules influence your decision, populate cited_forge_rules with the ru
 
 ━━━ SURVIVAL MODE ━━━
 
-Your primary directive is P&L protection. You have explicit permission to OVERRIDE user directives if live data shows a position has breached -1.0x ATR (Bust) or is accelerating toward it with no sign of reversal. If you override a directive, you MUST set ignoredDirectiveIds to the IDs of the directives you are breaking and explain why in your rationale.
+${renderSurvivalMode()}
 
 ━━━ ANTICIPATION CANDIDATES — WHEN TO POPULATE ━━━
 
@@ -569,16 +687,19 @@ ${ctx.consolidatedInsight}`);
       expectedSourceGeneration: battle.resolvedAgentManifest?.compositionSourceGeneration ?? null,
     });
 
+    // Ask 1 (C-6): resolve the ENGINE's enforced target once per battle — the
+    // SX-04 render cites this value or nothing.
+    const enforcedTargetPct = resolveEnforcedProfitTargetPct(battle);
     const ruleLines = [];
     if (constraints.length > 0) {
       const cLines = constraints.map((r, i) =>
-        `C${i + 1}. ${appendCompositionAdvisory(resolveRuleText(r), r, compositionAdvisories)} [${capitalize(r.category)}]`
+        `C${i + 1}. ${appendCompositionAdvisory(renderEquippedRuleText(r, enforcedTargetPct), r, compositionAdvisories)} [${capitalize(r.category)}]`
       );
       ruleLines.push(`== CONSTRAINTS (must obey) ==\n${cLines.join('\n')}`);
     }
     if (strategies.length > 0) {
       const sLines = strategies.map((r, i) =>
-        `S${i + 1}. ${appendCompositionAdvisory(resolveRuleText(r), r, compositionAdvisories)} [${capitalize(r.category || 'general')}]`
+        `S${i + 1}. ${appendCompositionAdvisory(renderEquippedRuleText(r, enforcedTargetPct), r, compositionAdvisories)} [${capitalize(r.category || 'general')}]`
       );
       ruleLines.push(`== STRATEGY PREFERENCES (should follow) ==\n${sLines.join('\n')}`);
     }
@@ -600,7 +721,11 @@ ${ctx.consolidatedInsight}`);
       '- Check ALL constraints before executing. If a trade violates a constraint, do not execute. Cite the constraint.\n' +
       '- Use strategy preferences to rank opportunities. Cite preferences that influenced your picks.\n' +
       '- If no strategy preference matches, trade on your own analysis.\n' +
-      '- Constraints always override strategy preferences.'
+      // Ask 1: the four-layer precedence replaces the old blanket sentence at
+      // this third site too — same single-source block as the system prompts.
+      (PROFIT_TARGET_EXECUTOR_ENABLED
+        ? `\n${renderPrecedenceBlock()}`
+        : '- Constraints always override strategy preferences.')
     );
     parts.push(`YOUR FORGE RULES:\n${ruleLines.join('\n\n')}`);
   }
@@ -928,7 +1053,9 @@ SPY (S&P 500): ${formatPct(macroPrices?.SPY)}% | QQQ (Nasdaq): ${formatPct(macro
   }
 
   // 3b. Active Portfolio CSV
-  const portfolioCSV = buildPortfolioCSV(assetScores, prices, battle);
+  // Ask 1 data-add #3: rankingsMap threads through so held-position rows can
+  // render their Levels cell (flag-on; '-' when the read is absent — R12).
+  const portfolioCSV = buildPortfolioCSV(assetScores, prices, battle, momentumData?.rankingsMap || {});
   parts.push(`ACTIVE POSITIONS:
 ${portfolioCSV}`);
 
@@ -1171,14 +1298,68 @@ export function formatRecentEvals(evaluations, limit = 3) {
 
 // ==================== CSV BUILDERS ====================
 
-function buildPortfolioCSV(assetScores, prices, battle) {
+// ---- Ask 1 data-adds (flag-on cells; every helper pure and comma-free) ----
+
+/** Data-add #1, the decomposition half: what a swap would LOCK right now —
+ * rendered straight off the score object the ONE fenced scorer produced
+ * (lockedPoints at execution = scoreResult.totalPoints, agentSwapExecution),
+ * so the prompt's number and the ledger's lock are the same computation (§9),
+ * never a re-derivation. Neutral information, not deterrent. */
+function lockNowCell(score) {
+  const s = (n) => `${n >= 0 ? '+' : ''}${n}`;
+  return `${s(score.totalPoints)}(${s(score.basePoints)}/${s(score.bonusPoints)})`;
+}
+
+/** Data-add #1, the Δ half: distance to the next UNCROSSED bonus — a FRESH
+ * compute (Phase-0 #5: detectRedZone/isSwapLocked are proximity-banded and
+ * return null outside their bands; ruled do-NOT-reuse). Crossed-ness keys on
+ * the effective max exactly like badge grants, so the column can never claim
+ * a bonus the scorer already paid. Always present: 'maxed' when all three
+ * bonuses are earned. */
+function nextBonusCell(score) {
+  const crossedMax = score.history?.maxMultiplier ?? 0;
+  // BAGGER_TIERS is the canonical ascending positive-tier array — the same
+  // source the scorer's badge grants read (§4 one source, CR-5).
+  const next = BAGGER_TIERS.map(t => t.multiplier).find(level => level > crossedMax);
+  if (next === undefined) return 'maxed';
+  const distPct = (next - score.multiplier) * score.baseATR;
+  return `+${distPct.toFixed(1)}%`;
+}
+
+/** Data-add #3 (R12): the held-position Levels cell — nearestSupport /
+ * nearestResistance where the read exists, '-' where it does not
+ * (conditionally populated by design; never an implied always-on signal). */
+function levelsCell(ranking) {
+  const lvls = ranking?.levels;
+  if (!lvls) return '-';
+  const side = (prefix, value, dist) => {
+    if (value == null) return null;
+    // toFixed(2) — the same precision the bench Levels line renders for the
+    // same read (review C-4: one read, one precision).
+    const d = dist != null ? `(${dist >= 0 ? '+' : ''}${dist.toFixed(2)}%)` : '';
+    return `${prefix}${value.toFixed(2)}${d}`;
+  };
+  const parts = [
+    side('S', lvls.nearestSupport, lvls.distanceToSupportPct),
+    side('R', lvls.nearestResistance, lvls.distanceToResistancePct),
+  ].filter(Boolean);
+  return parts.length ? parts.join('/') : '-';
+}
+
+// Exported for the Ask 1 test surface (golden byte-identity + the §9
+// cost-decomposition assertions run the builder directly). Flag OFF renders
+// the pre-Ask-1 header and rows byte-identically; flag ON appends the three
+// data-add cells (call-time flag read — never module scope).
+export function buildPortfolioCSV(assetScores, prices, battle, rankingsMap = {}) {
   // P4: flat6 battles drop the Tier column — the eval model must never be
   // told a 2x slot exists in tournament mode. Tiered rows are byte-identical
   // to the pre-P4 format.
   const isFlat6 = resolveModeConfig(battle?.gameMode).promptVariant === 'flat6';
-  const header = isFlat6
+  const dataAdds = PROFIT_TARGET_EXECUTOR_ENABLED;
+  const baseHeader = isFlat6
     ? 'Symbol,Sector,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%'
     : 'Tier,Symbol,Sector,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%';
+  const header = dataAdds ? `${baseHeader},LockNow(base/badges),NextBonus,Levels` : baseHeader;
   const flat = flattenPortfolioServer(battle.portfolio);
 
   const rows = assetScores.map(score => {
@@ -1191,7 +1372,10 @@ function buildPortfolioCSV(assetScores, prices, battle) {
     const badgeStr = score.badges.length > 0 ? `[${score.badges.join(',')}]` : '[]';
 
     const sharedColumns = `${score.symbol},${sector},${entryDay},$${entryPrice.toFixed(2)},$${currentPrice.toFixed(2)},${formatPct(score.priceChange)}%,${score.multiplier >= 0 ? '+' : ''}${score.multiplier.toFixed(2)}x,${badgeStr},${score.baseATR.toFixed(1)}%`;
-    return isFlat6 ? sharedColumns : `${asset?.tier || 'support'},${sharedColumns}`;
+    const baseRow = isFlat6 ? sharedColumns : `${asset?.tier || 'support'},${sharedColumns}`;
+    return dataAdds
+      ? `${baseRow},${lockNowCell(score)},${nextBonusCell(score)},${levelsCell(rankingsMap[score.symbol])}`
+      : baseRow;
   });
 
   return [header, ...rows].join('\n');
