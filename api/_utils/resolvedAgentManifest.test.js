@@ -26,8 +26,9 @@ import { validateResolvedAgentManifest } from './archetypeBuildSchemas.js';
 import { buildCustomizationSnapshot } from './leanRevalidation.js';
 import { FREEZE_POLICY_VERSION } from './archetypeVersionConstants.js';
 import { computeGameModePolicyHash } from './gameModePolicy.js';
+import { canonicalContentHash } from './canonicalHash.js';
 import { MANIFEST_WRITE_ENABLED } from '../../src/config/featureFlags.js';
-import { TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
+import { TIERED_GAME_MODE, FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
 
 const NOW = '2026-07-23T15:00:00.000Z';
 
@@ -166,5 +167,75 @@ describe('P2.5 manifest builder', () => {
     expect(build().manifestHash).toBe(build().manifestHash);
     const changed = build({ gameMode: TIERED_GAME_MODE, now: NOW, compiledBuild: null });
     expect(changed.manifestHash).not.toBe(build().manifestHash);
+  });
+});
+
+// ── E9 — equippedConfigHash (the equipped-config fingerprint) ─────────────
+//
+// Founder-authorized 2026-08-20 off the Strategy Foundation audit. Contract:
+// config as frozen at battle birth, six axes BY VALUE (activeRules incl.
+// params + hardness, equippedBundleIds, standingLeans + the bounded
+// invalidated record, dials/tempo, deployedGuardrails, equippedWatchlist),
+// version stamps deliberately excluded. The battery below is the acceptance
+// bar as ruled: stability across identical configs, one mutation per axis,
+// context-indifference. (The emulator query round-trip lives in
+// test/rules/equippedConfigHashQuery.rules.mjs — npm run test:rules.)
+describe('E9 — equippedConfigHash', () => {
+  const mutate = (patch) => build({ agentData: { ...agentData(), ...patch } }).equippedConfigHash;
+
+  it('is a sha256 hex string, STABLE across battle creations of the same config (different now) — while manifestHash moves with the clock', () => {
+    const a = build();
+    const b = build({ now: '2026-07-24T09:30:00.000Z' });
+    expect(a.equippedConfigHash).toMatch(/^[0-9a-f]{64}$/);
+    // Identical equipped config at a different creation instant is the SAME
+    // config — the snapshotAt exclusion is load-bearing here: hashing
+    // frozenLayers literally would fail this row whenever a watchlist is
+    // equipped.
+    expect(b.equippedConfigHash).toBe(a.equippedConfigHash);
+    // The whole-manifest hash rightly DOES move (createdAt + snapshotAt are
+    // content there) — the two fields answer different questions.
+    expect(b.manifestHash).not.toBe(a.manifestHash);
+  });
+
+  it('binds to the manifest\'s OWN frozenLayers minus only the snapshotAt stamp (§9: the query key and the frozen record cannot disagree)', () => {
+    const m = build();
+    const { snapshotAt, ...watchlistContent } = m.frozenLayers.equippedWatchlist;
+    expect(m.equippedConfigHash).toBe(canonicalContentHash({
+      ...m.frozenLayers,
+      equippedWatchlist: watchlistContent,
+    }));
+    // And with no watchlist equipped the binding is frozenLayers verbatim.
+    const bare = build({ equippedWatchlist: null });
+    expect(bare.equippedConfigHash).toBe(canonicalContentHash(bare.frozenLayers));
+  });
+
+  it('is indifferent to context: compiledBuild presence and gameMode never move it (version stamps deliberately excluded)', () => {
+    const base = build().equippedConfigHash;
+    expect(build({ compiledBuild: null }).equippedConfigHash).toBe(base);
+    expect(build({ gameMode: FLAT6_GAME_MODE }).equippedConfigHash).toBe(base);
+  });
+
+  it('moves when any single equipped axis moves — one mutation per axis', () => {
+    const base = build().equippedConfigHash;
+
+    // activeRules — a rule param value moves.
+    expect(mutate({ activeRules: [{ ruleId: 'tech-rsi-oversold', text: 'Prefer stocks with RSI below 30', paramValues: { threshold: 25 } }] }), 'paramValues').not.toBe(base);
+    // activeRules — resolved hardness moves (the axis projectedRulesHash is
+    // structurally blind to; this hash must not be).
+    expect(mutate({ activeRules: [{ ruleId: 'tech-rsi-oversold', text: 'Prefer stocks with RSI below 30', hardness: 'hard' }] }), 'hardness').not.toBe(base);
+    // equippedBundleIds.
+    expect(mutate({ equippedBundleIds: ['b1', 'b2'] }), 'equippedBundleIds').not.toBe(base);
+    // standingLeans — the valid channel (unequip the lean).
+    expect(mutate({ standingLeans: [] }), 'standingLeans').not.toBe(base);
+    // standingLeansInvalidated — the bounded invalidated record (a not-in-menu
+    // pin lands there, valid channel unchanged).
+    expect(mutate({ standingLeans: [{ adjustmentId: 'TF-01', version: 1, equippedAt: NOW }, { adjustmentId: 'ZZ-99', version: 1 }] }), 'standingLeansInvalidated').not.toBe(base);
+    // dials.tempo.
+    expect(mutate({ dials: { tempo: 'aggressive' } }), 'dials.tempo').not.toBe(base);
+    // deployedGuardrails.
+    expect(mutate({ deployedStrategy: { guardrails: [{ type: 'stopLoss', value: 6, enforcement: 'hard' }] } }), 'deployedGuardrails').not.toBe(base);
+    // equippedWatchlist — content moves, and unequip entirely.
+    expect(build({ equippedWatchlist: { watchlistId: 'w1', name: 'Focus', tickers: ['NVDA', 'AMD'] } }).equippedConfigHash, 'watchlist tickers').not.toBe(base);
+    expect(build({ equippedWatchlist: null }).equippedConfigHash, 'watchlist unequip').not.toBe(base);
   });
 });
