@@ -234,7 +234,7 @@ export const LEAGUE_BATTLE_VIEW_V2_ENABLED = true;
  * so a mid-pilot rollback still attributes existing casual battles correctly. Do
  * NOT flip it in a build PR (the PR #510 lesson) — only after a Vercel preview.
  */
-export const CASUAL_CLONE_CONCURRENCY_ENABLED = false;
+export const CASUAL_CLONE_CONCURRENCY_ENABLED = true;
 
 /**
  * League Battleview Routing (Spec V1.2, Phase A) — the Command Center live-game
