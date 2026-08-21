@@ -527,7 +527,7 @@ export function isTrainingPodDesktopOn() {
  * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview
  * smoke (the TRAINING_POD_DESKTOP_ENABLED precedent) — never in the build PR.
  */
-export const AWAITING_OPEN_REDESIGN_ENABLED = false;
+export const AWAITING_OPEN_REDESIGN_ENABLED = true;
 
 /**
  * The ONE home for the redesign gate — the flag OR the `?awaitingOpenRedesign=1`
