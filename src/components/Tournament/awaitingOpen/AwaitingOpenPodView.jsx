@@ -27,8 +27,8 @@ import { PICKS_PER_PLAYER, TOURNAMENT_TUNING } from '../../../constants/leagueTo
 import { DEFAULT_ARCH } from '../../League/draft/boardModel';
 import { FONT_VARS } from '../../League/draft/draftTokens';
 import {
-  buildFreeAgentBoard, sectorMapOf, ownedSectorCountsFrom, heldSymbolsOf, eventsFromPlayers,
-  buildMyPicks,
+  buildFreeAgentUniverse, sectorMapOf, ownedSectorCountsFrom, heldSymbolsOf, eventsFromPlayers,
+  buildMyPicks, browseCounts,
 } from './podBoard';
 import PodCountdownHero from './PodCountdownHero';
 import UserDraftboard from './UserDraftboard';
@@ -93,10 +93,14 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
   );
   const sectorMap = useMemo(() => sectorMapOf(universe), [universe]);
   const ownedSectorCounts = useMemo(() => ownedSectorCountsFrom(held, universe), [held, universe]);
-  const freeAgentBoard = useMemo(
-    () => buildFreeAgentBoard({ poolSymbols: pod?.userPool, universe, archKey, ownedSectorCounts, topN: 12 }),
+  // The FULL fit-ranked pool, computed once. The wire is its first twelve; the
+  // free-agent browser searches the whole thing (§7.0). One computation means
+  // the two surfaces cannot disagree about a name's fit or ordering.
+  const freeAgentUniverse = useMemo(
+    () => buildFreeAgentUniverse({ poolSymbols: pod?.userPool, universe, archKey, ownedSectorCounts }),
     [pod?.userPool, universe, archKey, ownedSectorCounts],
   );
+  const freeAgentBoard = useMemo(() => freeAgentUniverse.slice(0, 12), [freeAgentUniverse]);
 
   const myPendingClaims = useMemo(
     () => claims.filter((c) => c.odUserId === uid && c.status === 'pending'),
@@ -125,6 +129,8 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
   // The row whose Claim opened the swap sheet. The sheet is pre-filled with it;
   // the user's only decision is which of their three picks it replaces.
   const [swapRow, setSwapRow] = useState(null);
+  // §7.0 — the free-agent browser inside the sheet.
+  const [browsing, setBrowsing] = useState(false);
 
   // The claim window, re-evaluated on a timer so the "opens in Xh Ym" line
   // stays honest while the page sits open. Display-only — the server's 403
@@ -164,6 +170,23 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
   // its denialReason) would be visible nowhere and the row would simply revert
   // to a live Claim button after the processing pass.
   const myClaims = useMemo(() => claims.filter((c) => c.odUserId === uid), [claims, uid]);
+
+  // Names the user cannot claim right now, for the browser's availability
+  // filter: their own held picks, plus anything already carrying a pending
+  // claim. Everything drafted by ANY seat is already absent from userPool
+  // upstream, and the claim processor keeps that list live
+  // (tournamentClaims.js:241-242).
+  const unavailableSymbols = useMemo(() => {
+    const out = new Set(pendingClaimSymbols);
+    for (const sym of held) out.add(sym);
+    return out;
+  }, [pendingClaimSymbols, held]);
+  const { claimable: claimablePoolCount, beyondWire: beyondWireCount } = useMemo(
+    () => browseCounts({
+      universe: freeAgentUniverse, wire: freeAgentBoard, excludeSymbols: unavailableSymbols,
+    }),
+    [freeAgentUniverse, freeAgentBoard, unavailableSymbols],
+  );
 
   const researchSector = researchSym ? (sectorMap.get(researchSym) || null) : null;
 
@@ -242,7 +265,10 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
             wireOpen={windowLine.isOpen}
             hasPicks={myPicks.length > 0}
             claims={myClaims}
+            poolCount={claimablePoolCount}
+            beyondWire={beyondWireCount}
             onClaim={setSwapRow}
+            onBrowse={() => { setSwapRow(null); setBrowsing(true); }}
             onResearch={setResearchSym}
             compact={!desktop}
           />
@@ -253,13 +279,18 @@ export default function AwaitingOpenPodView({ pod, uid, desktop = false }) {
           row={swapRow}
           picks={myPicks}
           groupId={podId}
+          universe={freeAgentUniverse}
+          excludeSymbols={unavailableSymbols}
+          browsing={browsing}
+          onBrowse={setBrowsing}
+          onPickRow={(stock) => { setSwapRow(stock); setBrowsing(false); }}
           open={windowLine.isOpen}
           windowLine={windowLine.text}
           capReached={capReached}
           claimCap={CLAIM_CAP}
           pendingCount={pendingCount}
           compact={!desktop}
-          onClose={() => setSwapRow(null)}
+          onClose={() => { setSwapRow(null); setBrowsing(false); }}
         />
 
         {researchModal}

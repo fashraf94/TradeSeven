@@ -30,12 +30,13 @@
 // desktop scroll frame, which carries no transform/filter/contain.
 
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { X, Check, AlertCircle } from 'lucide-react';
+import { X, Check, AlertCircle, ListFilter, ArrowLeft } from 'lucide-react';
 import { placeClaim, mapTournamentActionError } from '../../../services/tournamentActions';
 import { actionReducer, initialActionState, isActionPending, ACTION_STATUS } from '../../../utils/tournamentActionMachine';
 import { FONT_VARS } from '../../League/draft/draftTokens';
 import { alpha, readableOn, WPOD } from './awaitTokens';
 import { Mono, TickerPlate, useAwaitPalette, usePrefersReducedMotion } from './awaitPrimitives';
+import AwaitFreeAgentBrowser from './AwaitFreeAgentBrowser';
 
 // The fixed bottom nav (Navigation/BottomNav.jsx:53-63) — 64px plus its 1px
 // borderTop (the app ships no box-sizing reset) plus its safe-area inset.
@@ -45,6 +46,13 @@ export default function AwaitSwapSheet({
   row,                 // the wire row being claimed: { symbol, sectorName, fit }
   picks = [],          // the user's three picks: [{ symbol, sector, round }]
   groupId,
+  // §7.0 free-agent browser — the full fit-ranked universe (the wire is its
+  // first twelve) plus the names that are not claimable right now.
+  universe = null,
+  excludeSymbols = null,
+  browsing = false,
+  onBrowse = null,
+  onPickRow = null,
   open = true,         // whether the wire LOOKS open — informational only
   windowLine = '',     // the honest window copy, when closed
   capReached = false,
@@ -63,6 +71,17 @@ export default function AwaitSwapSheet({
 
   const symbol = row?.symbol || null;
   const pending = isActionPending(state);
+  // The sheet is up in EITHER mode — browsing with no row selected still needs
+  // the focus trap, Escape and the scroll lock.
+  const sheetOpen = !!(row || browsing);
+  const [query, setQuery] = useState('');
+  const [sector, setSector] = useState(null);
+
+  // Entering the browser starts from a clean search rather than whatever the
+  // last visit left behind.
+  useEffect(() => {
+    if (browsing) { setQuery(''); setSector(null); }
+  }, [browsing]);
 
   // A new row resets the choice and any prior error — the sheet never carries a
   // stale selection or a stale failure across tickers.
@@ -86,7 +105,7 @@ export default function AwaitSwapSheet({
   // The element that opened the sheet is remembered and refocused on close, so
   // a keyboard user is returned to where they were rather than to <body>.
   useEffect(() => {
-    if (!symbol) return undefined;
+    if (!sheetOpen) return undefined;
     const opener = document.activeElement;
     panelRef.current?.focus();
     return () => {
@@ -96,7 +115,7 @@ export default function AwaitSwapSheet({
         opener.focus();
       }
     };
-  }, [symbol]);
+  }, [sheetOpen, symbol]);
 
   // aria-modal="true" promises the rest of the page is inert, so Tab must not
   // walk out of the dialog into the wire behind the scrim or the fixed bottom
@@ -105,7 +124,7 @@ export default function AwaitSwapSheet({
   const closeRef = useRef(requestClose);
   closeRef.current = requestClose;
   useEffect(() => {
-    if (!symbol) return undefined;
+    if (!sheetOpen) return undefined;
     const onKey = (e) => {
       if (e.key === 'Escape') { closeRef.current(); return; }
       if (e.key !== 'Tab') return;
@@ -124,16 +143,16 @@ export default function AwaitSwapSheet({
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [symbol]);
+  }, [sheetOpen]);
 
   // Lock the page behind the sheet — without this a touch drag on the scrim
   // scrolls the wire underneath on mobile.
   useEffect(() => {
-    if (!symbol || typeof document === 'undefined') return undefined;
+    if (!sheetOpen || typeof document === 'undefined') return undefined;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
-  }, [symbol]);
+  }, [sheetOpen]);
 
   const placed = state.status === ACTION_STATUS.CONFIRMED;
   // `open` is deliberately absent: the mirror informs, the server decides.
@@ -164,7 +183,7 @@ export default function AwaitSwapSheet({
   // Only a press that BEGINS on the scrim dismisses it.
   const scrimPress = useRef(false);
 
-  if (!row) return null;
+  if (!sheetOpen) return null;
 
   const confirmLabel = placed
     ? 'CLAIM PLACED'
@@ -192,10 +211,17 @@ export default function AwaitSwapSheet({
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label={`Claim ${symbol}`}
+        aria-label={browsing ? 'Claim a different name' : `Claim ${symbol}`}
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: '100%', maxWidth: compact ? 'none' : 560, maxHeight: '100%', overflowY: 'auto',
+          width: '100%', maxWidth: compact ? 'none' : 560,
+          // In browse mode the PANEL is a bounded flex column and the result
+          // list scrolls inside it, so the search and sector chips stay put and
+          // results are never buried below the fold on mobile. In pick-drop
+          // mode the panel itself scrolls, as before.
+          maxHeight: compact ? '82vh' : '86vh',
+          display: 'flex', flexDirection: 'column', minHeight: 0,
+          overflowY: browsing ? 'hidden' : 'auto',
           borderRadius: compact ? '20px 20px 0 0' : 20,
           padding: compact ? '16px 15px 20px' : '20px 22px', outline: 'none', boxSizing: 'border-box',
           background: `linear-gradient(172deg, ${alpha(pal.teal, 0.09)}, ${alpha(pal.bg, 0.6)} 46%), ${pal.surface}`,
@@ -204,14 +230,41 @@ export default function AwaitSwapSheet({
           animation: reduced ? 'none' : 'awOpenSheet .24s cubic-bezier(.2,.8,.25,1) both',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14 }}>
-          <TickerPlate symbol={symbol} sector={row.sectorName} size="lg" />
-          <div style={{ minWidth: 0 }}>
-            {Number.isFinite(row.fit) && (
-              <Mono style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.2em', color: pal.ink3 }}>FIT {row.fit}</Mono>
-            )}
-            <div style={{ fontSize: 11.5, color: pal.ink2, marginTop: 3 }}>{row.sectorName}</div>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexShrink: 0 }}>
+          {browsing ? (
+            <>
+              {row && (
+                <button
+                  type="button" className="aw-btn" onClick={() => onBrowse && onBrowse(false)}
+                  aria-label={`Back to claiming ${symbol}`} title={`Back to claiming ${symbol}`}
+                  style={{
+                    background: alpha(pal.white, 0.05), border: `1px solid ${pal.hair2}`,
+                    borderRadius: 9, padding: 7, lineHeight: 0, cursor: 'pointer', flexShrink: 0,
+                  }}
+                >
+                  <ArrowLeft size={13} color={pal.ink2} strokeWidth={2.2} />
+                </button>
+              )}
+              <div style={{ minWidth: 0 }}>
+                <Mono style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.2em', color: pal.gold }}>
+                  FREE AGENTS
+                </Mono>
+                <div style={{ fontSize: 14, fontWeight: 700, color: pal.ink, marginTop: 3, letterSpacing: '-0.01em' }}>
+                  Claim a different name
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <TickerPlate symbol={symbol} sector={row.sectorName} size="lg" />
+              <div style={{ minWidth: 0 }}>
+                {Number.isFinite(row.fit) && (
+                  <Mono style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.2em', color: pal.ink3 }}>FIT {row.fit}</Mono>
+                )}
+                <div style={{ fontSize: 11.5, color: pal.ink2, marginTop: 3 }}>{row.sectorName}</div>
+              </div>
+            </>
+          )}
           <button
             type="button" className="aw-btn" onClick={requestClose} aria-label="Close" disabled={pending}
             style={{
@@ -223,124 +276,164 @@ export default function AwaitSwapSheet({
           </button>
         </div>
 
-        <div style={{ fontSize: compact ? 12.5 : 13.5, color: pal.ink, fontWeight: 600, marginBottom: 4 }}>
-          Which pick does {symbol} replace?
-        </div>
-        <p style={{ margin: '0 0 13px', fontSize: compact ? 11 : 11.5, color: pal.ink2, lineHeight: 1.5 }}>
-          {WPOD.note}
-        </p>
+        {browsing ? (
+          <AwaitFreeAgentBrowser
+            board={universe || []}
+            excludeSymbols={excludeSymbols}
+            query={query}
+            sector={sector}
+            onQuery={setQuery}
+            onSector={setSector}
+            onSelect={(stock) => onPickRow && onPickRow(stock)}
+            capReached={capReached}
+            hasPicks={picks.length > 0}
+            onResearch={null}
+            compact={compact}
+          />
+        ) : (
+          <>
+          <div style={{ fontSize: compact ? 12.5 : 13.5, color: pal.ink, fontWeight: 600, marginBottom: 4 }}>
+            Which pick does {symbol} replace?
+          </div>
+          <p style={{ margin: '0 0 13px', fontSize: compact ? 11 : 11.5, color: pal.ink2, lineHeight: 1.5 }}>
+            {WPOD.note}
+          </p>
 
-        <div style={{
-          display: 'grid', gridTemplateColumns: compact ? '1fr' : 'repeat(3, minmax(0,1fr))',
-          gap: 8, marginBottom: 14,
-        }}>
-          {picks.map((p) => {
-            const on = drop === p.symbol;
-            return (
-              <button
-                key={p.symbol}
-                type="button"
-                className="aw-pick"
-                onClick={() => setDrop(p.symbol)}
-                aria-pressed={on}
-                disabled={pending}
-                style={{
-                  font: 'inherit', textAlign: 'left', padding: '10px 11px', borderRadius: 12, cursor: 'pointer',
-                  background: on ? alpha(pal.you, 0.14) : alpha(pal.white, 0.025),
-                  border: `1px solid ${on ? alpha(pal.you, 0.5) : pal.hair}`,
-                  boxShadow: on ? `0 0 28px -14px ${alpha(pal.you, 1)}` : 'none',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <Mono style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.1em', color: pal.ink3 }}>{p.round}</Mono>
-                  {on && <Check size={12} color={pal.you} strokeWidth={2.6} />}
-                </div>
-                <div style={{ marginTop: 7 }}>
-                  <TickerPlate symbol={p.symbol} sector={p.sector} size="sm" />
-                </div>
-                <div style={{ fontSize: 10, color: pal.ink3, marginTop: 6 }}>{p.sector}</div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Honest gates, in the order the server would reject them. */}
-        {!open && windowLine && (
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', borderRadius: 10,
-            background: alpha(pal.gold, 0.08), border: `1px solid ${alpha(pal.gold, 0.28)}`, marginBottom: 10,
+            display: 'grid', gridTemplateColumns: compact ? '1fr' : 'repeat(3, minmax(0,1fr))',
+            gap: 8, marginBottom: 14,
           }}>
-            <AlertCircle size={13} color={pal.gold} style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: 11.5, color: pal.ink2, lineHeight: 1.4 }}>
-              {windowLine} You can still place it — the server has the final say.
-            </span>
+            {picks.map((p) => {
+              const on = drop === p.symbol;
+              return (
+                <button
+                  key={p.symbol}
+                  type="button"
+                  className="aw-pick"
+                  onClick={() => setDrop(p.symbol)}
+                  aria-pressed={on}
+                  disabled={pending}
+                  style={{
+                    font: 'inherit', textAlign: 'left', padding: '10px 11px', borderRadius: 12, cursor: 'pointer',
+                    background: on ? alpha(pal.you, 0.14) : alpha(pal.white, 0.025),
+                    border: `1px solid ${on ? alpha(pal.you, 0.5) : pal.hair}`,
+                    boxShadow: on ? `0 0 28px -14px ${alpha(pal.you, 1)}` : 'none',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <Mono style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.1em', color: pal.ink3 }}>{p.round}</Mono>
+                    {on && <Check size={12} color={pal.you} strokeWidth={2.6} />}
+                  </div>
+                  <div style={{ marginTop: 7 }}>
+                    <TickerPlate symbol={p.symbol} sector={p.sector} size="sm" />
+                  </div>
+                  <div style={{ fontSize: 10, color: pal.ink3, marginTop: 6 }}>{p.sector}</div>
+                </button>
+              );
+            })}
           </div>
-        )}
-        {capReached && (
-          <div style={{ fontSize: 11, color: pal.gold, marginBottom: 10, lineHeight: 1.45 }}>
-            You have {claimCap} pending claims — wait for tonight’s processing before lining up another.
-          </div>
-        )}
 
-        <button
-          type="button"
-          className="aw-btn"
-          disabled={!canSubmit}
-          onClick={submit}
-          style={{
-            font: 'inherit', width: '100%', fontFamily: 'var(--ld-mono)', '--aw-btn-fs': '11.5px', fontWeight: 700,
-            letterSpacing: '0.1em', padding: '13px 16px', borderRadius: 12,
-            cursor: canSubmit ? 'pointer' : 'not-allowed',
-            color: canSubmit ? readableOn(pal.teal) : pal.ink3,
-            background: canSubmit ? `linear-gradient(180deg, ${alpha(pal.teal, 0.85)}, ${pal.teal})` : alpha(pal.white, 0.04),
-            border: `1px solid ${canSubmit ? alpha(pal.teal, 0.6) : pal.hair2}`,
-            boxShadow: canSubmit ? `0 0 32px -12px ${alpha(pal.teal, 0.95)}` : 'none',
-          }}
-        >
-          {confirmLabel}
-        </button>
+          {/* Honest gates, in the order the server would reject them. */}
+          {!open && windowLine && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', borderRadius: 10,
+              background: alpha(pal.gold, 0.08), border: `1px solid ${alpha(pal.gold, 0.28)}`, marginBottom: 10,
+            }}>
+              <AlertCircle size={13} color={pal.gold} style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 11.5, color: pal.ink2, lineHeight: 1.4 }}>
+                {windowLine} You can still place it — the server has the final say.
+              </span>
+            </div>
+          )}
+          {capReached && (
+            <div style={{ fontSize: 11, color: pal.gold, marginBottom: 10, lineHeight: 1.45 }}>
+              You have {claimCap} pending claims — wait for tonight’s processing before lining up another.
+            </div>
+          )}
 
-        {placed && (
-          <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
-            <Check size={13} color={pal.teal} strokeWidth={2.6} />
-            <span style={{ fontSize: 11.5, color: pal.teal, lineHeight: 1.4 }}>
-              Claim placed — it resolves at the 9:24 AM ET processing pass.
-            </span>
-          </div>
-        )}
-
-        {state.error && (
-          <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
-            <AlertCircle size={13} color={pal.copper} />
-            <span style={{ fontSize: 11.5, color: pal.copper, lineHeight: 1.4 }}>{state.error}</span>
-          </div>
-        )}
-
-        {placed && (
           <button
-            type="button" className="aw-btn" onClick={requestClose}
+            type="button"
+            className="aw-btn"
+            disabled={!canSubmit}
+            onClick={submit}
             style={{
-              font: 'inherit', width: '100%', fontFamily: 'var(--ld-mono)', '--aw-btn-fs': '11px',
-              fontWeight: 700, letterSpacing: '0.1em', padding: '11px 16px', borderRadius: 11,
-              marginTop: 10, cursor: 'pointer', color: pal.ink2,
-              background: alpha(pal.white, 0.04), border: `1px solid ${pal.hair2}`,
+              font: 'inherit', width: '100%', fontFamily: 'var(--ld-mono)', '--aw-btn-fs': '11.5px', fontWeight: 700,
+              letterSpacing: '0.1em', padding: '13px 16px', borderRadius: 12,
+              cursor: canSubmit ? 'pointer' : 'not-allowed',
+              color: canSubmit ? readableOn(pal.teal) : pal.ink3,
+              background: canSubmit ? `linear-gradient(180deg, ${alpha(pal.teal, 0.85)}, ${pal.teal})` : alpha(pal.white, 0.04),
+              border: `1px solid ${canSubmit ? alpha(pal.teal, 0.6) : pal.hair2}`,
+              boxShadow: canSubmit ? `0 0 32px -12px ${alpha(pal.teal, 0.95)}` : 'none',
             }}
           >
-            DONE
+            {confirmLabel}
           </button>
-        )}
 
-        {/* The count, not the flip copy: "Flips open when the battle starts" is a
-            FLIP-mechanic string, and under a disabled claim button it reads as
-            the reason claiming is unavailable, which is false. */}
-        <Mono style={{
-          display: 'block', textAlign: 'center', fontSize: 9.5, color: pal.ink3,
-          letterSpacing: '0.06em', marginTop: 9,
-        }}>
-          {dropPick
-            ? `${symbol} REPLACES ${dropPick.symbol} · ${pendingCount}/${claimCap} PENDING`
-            : `${pendingCount}/${claimCap} PENDING`}
-        </Mono>
+          {placed && (
+            <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
+              <Check size={13} color={pal.teal} strokeWidth={2.6} />
+              <span style={{ fontSize: 11.5, color: pal.teal, lineHeight: 1.4 }}>
+                Claim placed — it resolves at the 9:24 AM ET processing pass.
+              </span>
+            </div>
+          )}
+
+          {state.error && (
+            <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
+              <AlertCircle size={13} color={pal.copper} />
+              <span style={{ fontSize: 11.5, color: pal.copper, lineHeight: 1.4 }}>{state.error}</span>
+            </div>
+          )}
+
+          {placed && (
+            <button
+              type="button" className="aw-btn" onClick={requestClose}
+              style={{
+                font: 'inherit', width: '100%', fontFamily: 'var(--ld-mono)', '--aw-btn-fs': '11px',
+                fontWeight: 700, letterSpacing: '0.1em', padding: '11px 16px', borderRadius: 11,
+                marginTop: 10, cursor: 'pointer', color: pal.ink2,
+                background: alpha(pal.white, 0.04), border: `1px solid ${pal.hair2}`,
+              }}
+            >
+              DONE
+            </button>
+          )}
+
+          {/* The count, not the flip copy: "Flips open when the battle starts" is a
+              FLIP-mechanic string, and under a disabled claim button it reads as
+              the reason claiming is unavailable, which is false. */}
+          <Mono style={{
+            display: 'block', textAlign: 'center', fontSize: 9.5, color: pal.ink3,
+            letterSpacing: '0.06em', marginTop: 9,
+          }}>
+            {dropPick
+              ? `${symbol} REPLACES ${dropPick.symbol} · ${pendingCount}/${claimCap} PENDING`
+              : `${pendingCount}/${claimCap} PENDING`}
+          </Mono>
+
+            {/* the way past the wire's twelve — §7.0 */}
+            {onBrowse && (universe || []).length > 0 && (
+              <button
+                type="button"
+                className="aw-btn"
+                onClick={() => onBrowse(true)}
+                disabled={pending || placed}
+                aria-label="Claim a different name — browse and search every available free agent"
+                style={{
+                  font: 'inherit', width: '100%', fontFamily: 'var(--ld-mono)', '--aw-btn-fs': '10px',
+                  fontWeight: 700, letterSpacing: '0.1em', padding: '10px 14px', borderRadius: 11,
+                  marginTop: 10, cursor: (pending || placed) ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  color: pal.gold, background: alpha(pal.gold, 0.07),
+                  border: `1px dashed ${alpha(pal.gold, 0.34)}`,
+                }}
+              >
+                <ListFilter size={12} color={pal.gold} strokeWidth={2.2} />
+                CLAIM A DIFFERENT NAME
+              </button>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

@@ -35,64 +35,16 @@
 // twelve is a small fixed number, so the expander was friction without benefit).
 
 import React from 'react';
-import { Search, Gavel, Lock, Check, Clock } from 'lucide-react';
+import { Search, Gavel, Lock, Check, Clock, ListFilter } from 'lucide-react';
 import { alpha, WPOD } from './awaitTokens';
-import {
-  Mono, WSurf, BandHead, WChip, TickerPlate, TickRail, ClaimsMeter, useAwaitPalette,
-} from './awaitPrimitives';
+import { Mono, WSurf, BandHead, WChip, ClaimsMeter, useAwaitPalette } from './awaitPrimitives';
+import AwaitWireRow from './AwaitWireRow';
 
-/** Fit readout — the mono headline number over its own ticked rail. Both come
- *  from the single `fit` value, so the bar can never disagree with the number. */
-function FitScore({ fit, lead, compact, pal }) {
-  const c = lead ? pal.teal : pal.ink;
-  const v = Number.isFinite(fit) ? Math.round(fit) : null;
-  return (
-    <div style={{ width: compact ? 46 : 56, flexShrink: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-        <Mono style={{
-          fontSize: compact ? 24 : 27, fontWeight: 700, lineHeight: 1, color: c, letterSpacing: '-0.03em',
-          fontVariantNumeric: 'tabular-nums',
-          textShadow: lead ? `0 0 20px ${alpha(pal.teal, 0.5)}` : 'none',
-        }}>
-          {v == null ? '—' : v}
-        </Mono>
-        <Mono style={{ fontSize: 8.5, fontWeight: 700, color: pal.ink3, letterSpacing: '0.1em' }}>FIT</Mono>
-      </div>
-      <div style={{ marginTop: 7 }}>
-        <TickRail pct={v || 0} ticks={6} h={5} color={lead ? pal.teal : alpha(pal.teal, 0.75)} />
-      </div>
-    </div>
-  );
-}
-
-/** MOM / 1W / VOL — the same three signals the classic list shows. */
-function StatStrip({ stock, compact, pal }) {
-  const cell = (k, v, c) => (
-    <span key={k} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4 }}>
-      <Mono style={{ fontSize: compact ? 8.5 : 9, fontWeight: 600, color: pal.ink3, letterSpacing: '0.12em' }}>{k}</Mono>
-      <Mono style={{ fontSize: compact ? 10.5 : 11, fontWeight: 700, color: c || pal.ink2 }}>{v}</Mono>
-    </span>
-  );
-  const w = stock.return1W;
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: compact ? 11 : 14, flexWrap: 'wrap' }}>
-      {cell('MOM', stock.momentumRank != null ? `#${stock.momentumRank}` : '—')}
-      {cell('1W', w == null ? '—' : `${w >= 0 ? '+' : ''}${w.toFixed(1)}%`, w == null ? null : (w >= 0 ? pal.teal : pal.copper))}
-      {cell('VOL', stock.volTxt || '—')}
-    </div>
-  );
-}
-
-function WireRow({ stock, rank, queued, locked, capReached, hasPicks, onClaim, onResearch, compact, pal }) {
-  const lead = rank === 1 && !queued;
-  // `locked` is deliberately NOT here — the window mirror dims the button but
-  // never blocks it; the server is the authority (see the header).
+/** The wire's per-row action: place a claim. `locked` dims but never blocks —
+ *  the window mirror is a hint, the server is the gate (see the header). */
+function claimAction({ stock, queued, locked, capReached, hasPicks, onClaim }) {
   const disabled = queued || capReached || !hasPicks;
-  const dimmed = disabled || locked;
-
-  // The button's LABEL names the same reason its title does — a greyed button
-  // still reading "Claim" would disagree with why it looks dead.
-  const [claimTitle, claimLabel] = queued
+  const [title, label] = queued
     ? [`A claim for ${stock.symbol} is already pending`, 'QUEUED']
     : capReached
       ? ['You have the maximum pending claims — wait for tonight’s processing', 'CAP FULL']
@@ -101,56 +53,14 @@ function WireRow({ stock, rank, queued, locked, capReached, hasPicks, onClaim, o
         : locked
           ? [`Claim ${stock.symbol} — the wire looks closed, but you can still place it; the server decides`, 'LOCKED']
           : [`Claim ${stock.symbol}`, 'Claim'];
-
-  const claimColor = queued ? pal.teal : dimmed ? pal.ink3 : pal.teal;
-  const ClaimIcon = queued ? Clock : dimmed ? Lock : Gavel;
-
-  return (
-    <div className={disabled ? undefined : 'aw-row'} style={{
-      display: 'flex', alignItems: 'center', gap: compact ? 11 : 14,
-      padding: compact ? '10px 12px' : '11px 14px', borderRadius: 14, minWidth: 0,
-      background: queued ? alpha(pal.teal, 0.075) : lead ? alpha(pal.white, 0.028) : alpha(pal.white, 0.014),
-      border: `1px solid ${queued ? alpha(pal.teal, 0.34) : lead ? alpha(pal.teal, 0.18) : pal.hair}`,
-    }}>
-      <FitScore fit={stock.fit} lead={lead} compact={compact} pal={pal} />
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {/* research stays live even when the wire is locked (§6.1) */}
-          <TickerPlate symbol={stock.symbol} sector={stock.sectorName} size="md" onResearch={onResearch} />
-          {lead && <WChip icon={<Check size={11} color={pal.teal} strokeWidth={2.4} />} color={pal.teal} solid>TOP FIT</WChip>}
-          {queued && <WChip icon={<Clock size={11} color={pal.teal} strokeWidth={2.4} />} color={pal.teal} solid>QUEUED</WChip>}
-        </div>
-        {stock.reason && (
-          <div style={{ fontSize: compact ? 11 : 11.5, color: pal.ink2, margin: '6px 0 5px', lineHeight: 1.35 }}>
-            {stock.reason}
-          </div>
-        )}
-        <StatStrip stock={stock} compact={compact} pal={pal} />
-      </div>
-
-      <button
-        type="button"
-        className="aw-btn"
-        onClick={() => !disabled && onClaim(stock)}
-        disabled={disabled}
-        title={claimTitle}
-        aria-label={`${claimLabel} — ${claimTitle}`}
-        style={{
-          font: 'inherit', fontFamily: 'var(--ld-mono)', '--aw-btn-fs': compact ? '10px' : '10.5px', fontWeight: 700,
-          letterSpacing: '0.1em', padding: compact ? '9px 12px' : '10px 15px', borderRadius: 10,
-          whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          color: claimColor,
-          background: queued ? alpha(pal.teal, 0.1) : dimmed ? alpha(pal.white, 0.03) : alpha(pal.teal, 0.1),
-          border: `1px solid ${queued ? alpha(pal.teal, 0.34) : dimmed ? pal.hair2 : alpha(pal.teal, 0.45)}`,
-          boxShadow: dimmed ? 'none' : `0 0 24px -14px ${alpha(pal.teal, 1)}`,
-        }}
-      >
-        <ClaimIcon size={12} color={claimColor} strokeWidth={2.2} /> {claimLabel}
-      </button>
-    </div>
-  );
+  return {
+    label,
+    title,
+    icon: queued ? Clock : (disabled || locked) ? Lock : Gavel,
+    disabled,
+    tone: queued ? 'on' : (disabled || locked) ? 'dim' : 'live',
+    onAction: onClaim,
+  };
 }
 
 /**
@@ -199,7 +109,10 @@ export default function AwaitWire({
   wireOpen = false,
   hasPicks = true,
   claims = null,
+  poolCount = 0,      // every claimable name, not just the wire's twelve
+  beyondWire = 0,     // claimable names the wire does NOT show
   onClaim,
+  onBrowse = null,    // open the free-agent browser (§7.0)
   onResearch,
   compact = false,
 }) {
@@ -224,21 +137,26 @@ export default function AwaitWire({
       gridTemplateColumns: compact ? '1fr' : 'repeat(2, minmax(0,1fr))',
       gap: compact ? 7 : 8,
     }}>
-      {board.map((stock, i) => (
-        <WireRow
-          key={stock.symbol}
-          stock={stock}
-          rank={i + 1}
-          queued={pendingSymbols ? pendingSymbols.has(stock.symbol) : false}
-          locked={locked}
-          capReached={capReached}
-          hasPicks={hasPicks}
-          onClaim={onClaim}
-          onResearch={onResearch}
-          compact={compact}
-          pal={pal}
-        />
-      ))}
+      {board.map((stock, i) => {
+        const queued = pendingSymbols ? pendingSymbols.has(stock.symbol) : false;
+        const lead = i === 0 && !queued;
+        return (
+          <AwaitWireRow
+            key={stock.symbol}
+            stock={stock}
+            highlight={lead}
+            queued={queued}
+            badge={lead
+              ? <WChip icon={<Check size={11} color={pal.teal} strokeWidth={2.4} />} color={pal.teal} solid>TOP FIT</WChip>
+              : queued
+                ? <WChip icon={<Clock size={11} color={pal.teal} strokeWidth={2.4} />} color={pal.teal} solid>QUEUED</WChip>
+                : null}
+            action={claimAction({ stock, queued, locked, capReached, hasPicks, onClaim })}
+            onResearch={onResearch}
+            compact={compact}
+          />
+        );
+      })}
     </div>
   );
 
@@ -280,6 +198,31 @@ export default function AwaitWire({
           </Mono>
         </div>
       ) : rows}
+
+      {/* Shown whenever a claimable name sits past the wire. Comparing the
+          claim-filtered pool count against the raw slice length would hide the
+          button exactly when pending claims shrink the count below twelve —
+          re-opening the unreachable-name regression this closes. */}
+      {onBrowse && beyondWire > 0 && (
+        <button
+          type="button"
+          className="aw-btn"
+          onClick={onBrowse}
+          title={`Browse and search all ${poolCount} claimable free agents`}
+          aria-label={`Claim a different name — browse and search all ${poolCount} claimable free agents`}
+          style={{
+            font: 'inherit', fontFamily: 'var(--ld-mono)', '--aw-btn-fs': compact ? '10px' : '10.5px',
+            fontWeight: 700, letterSpacing: '0.1em', width: '100%', marginTop: compact ? 8 : 9,
+            padding: compact ? '11px 12px' : '11px 14px', borderRadius: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            color: pal.gold, background: alpha(pal.gold, 0.08),
+            border: `1px dashed ${alpha(pal.gold, 0.38)}`,
+          }}
+        >
+          <ListFilter size={12} color={pal.gold} strokeWidth={2.2} />
+          CLAIM A DIFFERENT NAME · {poolCount} AVAILABLE
+        </button>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 12, flexWrap: 'wrap' }}>
         <Mono style={{ fontSize: 9.5, color: pal.ink3, letterSpacing: '0.06em', marginLeft: 'auto' }}>
