@@ -12,6 +12,7 @@ import {
   candidateDocId,
   recordCandidate,
   consumeCandidate,
+  markCandidateBlocked,
   tickPendingCandidate,
   listPendingCandidates,
   reSatisfiesTrigger,
@@ -45,6 +46,60 @@ describe('recordCandidate — birth-suppression (F1b / R1a birth half)', () => {
     expect(doc.status).toBe(CANDIDATE_STATUS.PENDING);
     expect(doc.triggerSnapshot.changePct).toBe(-4.0);
     expect(doc.ticksSeen).toBe(0);
+  });
+});
+
+describe('markCandidateBlocked + BLOCKED terminal (scan-movers incident — loop fix)', () => {
+  it('flips a CONFIRMED candidate to BLOCKED with the block reason recorded', async () => {
+    const db = makeMockDb();
+    await recordCandidate(db, { marketDate: DATE, symbol: SYM, triggerSnapshot: trigger });
+    await consumeCandidate(db, { marketDate: DATE, symbol: SYM, outcome: CANDIDATE_STATUS.CONFIRMED });
+    const r = await markCandidateBlocked(db, { marketDate: DATE, symbol: SYM, reason: 'earnings_attribution_blocked' });
+    expect(r).toEqual({ blocked: true, status: CANDIDATE_STATUS.BLOCKED });
+    const doc = db.__dump(path);
+    expect(doc.status).toBe(CANDIDATE_STATUS.BLOCKED);
+    expect(doc.terminalReason).toBe('earnings_attribution_blocked');
+  });
+
+  it('recordCandidate REFUSES to re-arm a BLOCKED candidate (closes the confirm→block→re-arm loop)', async () => {
+    const db = makeMockDb();
+    await recordCandidate(db, { marketDate: DATE, symbol: SYM, triggerSnapshot: trigger });
+    await consumeCandidate(db, { marketDate: DATE, symbol: SYM, outcome: CANDIDATE_STATUS.CONFIRMED });
+    await markCandidateBlocked(db, { marketDate: DATE, symbol: SYM, reason: 'earnings_attribution_blocked' });
+
+    // A later re-trigger for the same symbol/day must NOT re-arm (vs. a reverted
+    // candidate, which does — see the re_armed test above).
+    const re = await recordCandidate(db, { marketDate: DATE, symbol: SYM, triggerSnapshot: { changePct: -4.0 } });
+    expect(re).toEqual({ created: false, reason: 'blocked_terminal' });
+    const doc = db.__dump(path);
+    expect(doc.status).toBe(CANDIDATE_STATUS.BLOCKED);
+    expect(doc.triggerSnapshot.changePct).toBe(-3.2); // original snapshot preserved; no new lifecycle
+  });
+
+  it('RACE case: an overlapping re-arm to PENDING during generation is still terminated as BLOCKED', async () => {
+    const db = makeMockDb();
+    await recordCandidate(db, { marketDate: DATE, symbol: SYM, triggerSnapshot: trigger });
+    await consumeCandidate(db, { marketDate: DATE, symbol: SYM, outcome: CANDIDATE_STATUS.CONFIRMED });
+    // An overlapping scan's T-arm pass re-arms the confirmed doc to PENDING while
+    // the winner is still generating (recordCandidate re-arms a terminal confirmed doc).
+    await recordCandidate(db, { marketDate: DATE, symbol: SYM, triggerSnapshot: { changePct: -3.9 } });
+    expect(db.__dump(path).status).toBe(CANDIDATE_STATUS.PENDING);
+    const r = await markCandidateBlocked(db, { marketDate: DATE, symbol: SYM, reason: 'units_collision' });
+    expect(r.blocked).toBe(true);
+    expect(db.__dump(path).status).toBe(CANDIDATE_STATUS.BLOCKED);
+  });
+
+  it('is a no-op on an absent doc and on a non-CONFIRMED/PENDING terminal (idempotent, non-destructive)', async () => {
+    const db = makeMockDb();
+    const absent = await markCandidateBlocked(db, { marketDate: DATE, symbol: 'NONE', reason: 'x' });
+    expect(absent).toEqual({ blocked: false, status: 'absent' });
+
+    // A reverted candidate is not looping (no story generated) — leave it reverted.
+    await recordCandidate(db, { marketDate: DATE, symbol: SYM, triggerSnapshot: trigger });
+    await consumeCandidate(db, { marketDate: DATE, symbol: SYM, outcome: CANDIDATE_STATUS.REVERTED });
+    const rev = await markCandidateBlocked(db, { marketDate: DATE, symbol: SYM, reason: 'x' });
+    expect(rev.blocked).toBe(false);
+    expect(db.__dump(path).status).toBe(CANDIDATE_STATUS.REVERTED);
   });
 });
 

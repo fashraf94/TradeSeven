@@ -8,16 +8,22 @@ import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { STOCK_DATA } from '../_utils/stockIntelligenceData.js';
 import { FANTASYTIMES_TICKERS, SECTOR_MAP } from '../_utils/fantasyTimesTickers.js';
-import { generateAlexMoverStory } from './generate-mover.js';
+import { generateAlexMoverStory, BLOCKING_STORY_REASONS } from './generate-mover.js';
 import {
   recordCandidate,
   consumeCandidate,
+  markCandidateBlocked,
   tickPendingCandidate,
   listPendingCandidates,
   reSatisfiesTrigger,
   CANDIDATE_STATUS,
   DEFAULT_EXPIRY_TICKS,
 } from '../_utils/moverCandidates.js';
+
+// Deterministic story-suppression reasons that must TERMINATE the candidate
+// (BLOCKED, no re-arm) instead of leaving it to re-arm and loop. Set for O(1)
+// membership; the source of truth is generate-mover's BLOCKING_STORY_REASONS.
+const BLOCK_REASON_SET = new Set(BLOCKING_STORY_REASONS);
 
 export const config = { maxDuration: 60 };
 
@@ -128,11 +134,12 @@ export async function runMoverScan(db, {
     // Display-agreement (§9): moversDetected decomposes over the T-detection
     // pass into exactly candidatesRecorded + moverAlreadyStoried (birth-
     // suppressed: a story already exists) + moverAlreadyPending (a candidate is
-    // already armed) — plus any arm-error captured in errors[]. Without the
-    // last two counters the summary showed movers landing in no bucket.
+    // already armed) + moverAlreadyBlocked (a candidate BLOCKED earlier today,
+    // not re-armed) — plus any arm-error captured in errors[]. Without these
+    // counters the summary showed movers landing in no bucket.
     scanned: 0, moversDetected: 0, candidatesRecorded: 0,
-    moverAlreadyStoried: 0, moverAlreadyPending: 0,
-    confirmed: 0, reverted: 0, expired: 0,
+    moverAlreadyStoried: 0, moverAlreadyPending: 0, moverAlreadyBlocked: 0,
+    confirmed: 0, reverted: 0, expired: 0, blocked: 0,
     storiesGenerated: 0, dedupSkipped: 0, skipped: 0, errors: [],
   };
 
@@ -213,6 +220,18 @@ export async function runMoverScan(db, {
         sector: sectorOf(symbol),
       });
       if (sr?.success) { results.storiesGenerated++; info(`wrote story: ${symbol} (${sr.headline || ''})`); }
+      else if (sr && BLOCK_REASON_SET.has(sr.reason)) {
+        // Deterministic suppression (earnings attribution / units) wrote NO
+        // story, so hasRecentStory can never birth-suppress the re-arm.
+        // Terminate the candidate as BLOCKED so it is NOT re-armed next tick —
+        // this closes the confirm → generate → block → re-arm loop (the HD
+        // incident). Best-effort: a failure here degrades to the old behavior,
+        // never aborts the tick.
+        try { await markCandidateBlocked(db, { marketDate, symbol, reason: sr.reason, now }); }
+        catch (mbErr) { error(`markCandidateBlocked failed for ${symbol}`, { error: mbErr.message }); }
+        results.blocked++;
+        info(`story blocked → candidate terminated (no re-arm): ${symbol} (${sr.reason})`);
+      }
       else { results.skipped++; info(`story skipped: ${symbol} (${sr?.reason || sr?.message || 'unknown'})`); }
     } catch (err) {
       results.errors.push(`${symbol}: ${err.message}`);
@@ -240,9 +259,12 @@ export async function runMoverScan(db, {
         now,
       });
       if (rec.created) { results.candidatesRecorded++; info(`candidate armed: ${symbol} ${fresh.changeP.toFixed(2)}%`); }
-      // recordCandidate returns created:false only when a pending candidate for
-      // this symbol already exists (armed on an earlier pass) — the mover is
-      // accounted for, just not newly armed (was previously a silent bucket).
+      // recordCandidate returns created:false when the symbol is accounted for
+      // but not newly armed: 'pending_exists' (armed on an earlier pass) or
+      // 'blocked_terminal' (BLOCKED earlier today, re-arm refused — the loop
+      // fix). Split into distinct §9 buckets so the still-moving-but-blocked
+      // case is honest, not silently counted as "pending".
+      else if (rec.reason === 'blocked_terminal') { results.moverAlreadyBlocked++; }
       else { results.moverAlreadyPending++; }
     } catch (err) {
       results.errors.push(`${symbol}: ${err.message}`);
@@ -319,9 +341,11 @@ export default async function handler(req, res) {
       candidatesRecorded: results.candidatesRecorded,
       moverAlreadyStoried: results.moverAlreadyStoried,
       moverAlreadyPending: results.moverAlreadyPending,
+      moverAlreadyBlocked: results.moverAlreadyBlocked,
       confirmed: results.confirmed,
       reverted: results.reverted,
       expired: results.expired,
+      blocked: results.blocked,
       storiesGenerated: results.storiesGenerated,
       dedupSkipped: results.dedupSkipped,
     });

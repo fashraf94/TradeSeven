@@ -21,6 +21,17 @@ import { queryExa } from '../helpers/exaClient.js';
 
 const EXA_TIMEOUT_MS = 8000;
 
+// Payload cap (Alex scan-movers incident, 2026-08-20). C9 keeps EXA
+// SUPPLEMENTARY; this bounds how much EXA volume reaches Alex's prompt. Eight
+// full trigger-day results inflated the mover prompt several-fold — cost plus
+// token pressure that worsens the SDK's rate-limit backoff. Three is ample
+// supplementary color, and each rendered snippet is capped below. This changes
+// only the VOLUME injected, not the [ATTRIBUTION]/[CONTEXT] tagging (which is
+// working-as-designed per C9: a concrete trigger-day-dated item is
+// attribution-grade by definition).
+const EXA_NUM_RESULTS = 3;
+const MAX_RENDERED_SNIPPET_CHARS = 240;
+
 // Edge-clone / syndication / mirror hosts observed date-laundering stale
 // stories (the C9 capture surfaced a Sept-2025 antitrust piece stamped
 // 2026-07-30 from such a host). Starter denylist — a FRESHNESS guard, not a
@@ -50,7 +61,7 @@ function withinWindow(publishedDate, fromMs, toMs) {
  *
  * @returns {Promise<{ attribution: object[], context: object[], costDollars: any, degraded: boolean }>}
  */
-export async function fetchExaCatalystChannels({ symbol, companyName, direction, marketDate, numResults = 8 }) {
+export async function fetchExaCatalystChannels({ symbol, companyName, direction, marketDate, numResults = EXA_NUM_RESULTS }) {
   const nameStr = companyName ? `${companyName} (${symbol})` : symbol;
   const move = direction === 'down' ? '(decline OR selloff OR drop OR plunge)' : '(surge OR rally OR jump OR pop)';
   // EVENT-shaped, NOT "why is X down Y%": name the event classes and let EXA
@@ -126,7 +137,13 @@ export function buildRetrievalChannels({ validatedCatalyst = null, validatedConf
 function renderItem(it, i) {
   const cite = it.url ? ` (${it.host || it.url}${it.publishedDate ? `, ${String(it.publishedDate).slice(0, 10)}` : ''})` : '';
   const head = it.title ? `${it.title} — ` : '';
-  return `${i + 1}. ${head}${it.snippet || ''}${cite}`.trim();
+  // Deterministic snippet cap (no word-boundary heuristic) so the same inputs
+  // always render identical prompt text — the generation-surface baseline hash
+  // depends on it. EXA highlights are otherwise uncapped and were the bulk of
+  // the prompt inflation.
+  const raw = it.snippet || '';
+  const snippet = raw.length > MAX_RENDERED_SNIPPET_CHARS ? `${raw.slice(0, MAX_RENDERED_SNIPPET_CHARS)}…` : raw;
+  return `${i + 1}. ${head}${snippet}${cite}`.trim();
 }
 
 /**

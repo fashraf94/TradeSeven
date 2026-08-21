@@ -161,7 +161,14 @@ export const WIRE_VALIDATOR_VERSION = '1.7.0';
 // one-line comment edit to stockIntelligenceData.js's header (which documents
 // that guard). No prompt/universe change, TICKER_TO_SECTOR untouched (no
 // validator bump). Free pre-runway.
-export const WIRE_GENERATION_VERSION = 21;
+// v21 (prior).
+// v22 (Alex scan-movers incident, Aug 20): three surface files change prompt
+// bytes — generate-mover.js injects the EARNINGS_VALID list into Alex's
+// userMessage (attribution check moved before the model call), exaCatalystFetch.js
+// caps the EXA payload (numResults 8→3 + a per-item snippet cap), and
+// scan-movers.js gains the BLOCKED-candidate wiring. No universe change,
+// TICKER_TO_SECTOR untouched (no validator bump). Free pre-runway.
+export const WIRE_GENERATION_VERSION = 22;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────

@@ -168,6 +168,71 @@ describe('fault isolation — one symbol error does not abort the whole tick', (
   });
 });
 
+describe('blocked story terminates the candidate — no re-arm loop (scan-movers incident)', () => {
+  // A world whose writer DETERMINISTICALLY suppresses (earnings attribution /
+  // units) — returns success:false and writes NO story, so hasRecentStory stays
+  // false. Pre-fix this looped forever (confirm → generate → block → re-arm).
+  function makeBlockingWorld(reason = 'earnings_attribution_blocked') {
+    const generateStory = vi.fn(async () => ({ success: false, reason }));
+    const hasRecentStory = vi.fn(async () => false);
+    return { generateStory, hasRecentStory };
+  }
+
+  it('a blocked story marks the candidate BLOCKED; it is NOT re-armed or re-generated next tick', async () => {
+    const db = makeMockDb();
+    const world = makeBlockingWorld('earnings_attribution_blocked');
+
+    // T: arm.
+    await scan(db, world, [q('HD', -3.5, 300, 311)], T0);
+    expect(db.__dump(candPath('HD')).status).toBe(CANDIDATE_STATUS.PENDING);
+
+    // T+1: confirm → generate → BLOCKED (no story written).
+    const t2 = await scan(db, world, [q('HD', -3.4, 301, 312)], T1);
+    expect(t2.confirmed).toBe(1);
+    expect(t2.blocked).toBe(1);
+    expect(t2.storiesGenerated).toBe(0);
+    expect(world.generateStory).toHaveBeenCalledTimes(1);
+    expect(db.__dump(candPath('HD')).status).toBe(CANDIDATE_STATUS.BLOCKED);
+
+    // T+2: HD still a mover → the candidate is NOT re-armed and NOT re-generated.
+    // Pre-fix, generateStory would have been called a SECOND time here.
+    const t3 = await scan(db, world, [q('HD', -3.6, 299, 313)], T2);
+    expect(t3.moverAlreadyBlocked).toBe(1);
+    expect(t3.candidatesRecorded).toBe(0);
+    expect(t3.confirmed).toBe(0);
+    expect(world.generateStory).toHaveBeenCalledTimes(1); // STILL 1 — the loop is broken
+    expect(db.__dump(candPath('HD')).status).toBe(CANDIDATE_STATUS.BLOCKED);
+
+    // §9: the still-moving-but-blocked mover decomposes into moverAlreadyBlocked.
+    expect(t3.moversDetected).toBe(
+      t3.candidatesRecorded + t3.moverAlreadyStoried + t3.moverAlreadyPending + t3.moverAlreadyBlocked,
+    );
+  });
+
+  it('units_collision is treated as a terminal block too (both deterministic suppressions)', async () => {
+    const db = makeMockDb();
+    const world = makeBlockingWorld('units_collision');
+    await scan(db, world, [q('HD', 3.5, 300, 289)], T0);
+    const t2 = await scan(db, world, [q('HD', 3.4, 301, 291)], T1);
+    expect(t2.blocked).toBe(1);
+    expect(db.__dump(candPath('HD')).status).toBe(CANDIDATE_STATUS.BLOCKED);
+  });
+
+  it('a NON-block skip (e.g. dedup) does NOT terminate — the candidate re-arms, unlike a block', async () => {
+    const db = makeMockDb();
+    const world = { generateStory: vi.fn(async () => ({ success: false, reason: 'dedup' })), hasRecentStory: vi.fn(async () => false) };
+    await scan(db, world, [q('HD', -3.5, 300, 311)], T0);
+    const t2 = await scan(db, world, [q('HD', -3.4, 301, 312)], T1);
+    expect(t2.blocked).toBe(0);
+    expect(t2.skipped).toBe(1);
+    // A non-block skip leaves the candidate re-armable (the same tick's T-arm
+    // pass re-arms the confirmed doc back to PENDING) — the exact opposite of the
+    // BLOCKED terminal a real suppression produces.
+    expect(db.__dump(candPath('HD')).status).toBe(CANDIDATE_STATUS.PENDING);
+    expect(db.__dump(candPath('HD')).status).not.toBe(CANDIDATE_STATUS.BLOCKED);
+  });
+});
+
 describe('C4 — moversDetected decomposes into visible buckets (§9 display-agreement)', () => {
   it('each detected mover lands in exactly one of candidatesRecorded / moverAlreadyStoried / moverAlreadyPending', async () => {
     const db = makeMockDb();
