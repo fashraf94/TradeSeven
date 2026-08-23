@@ -196,6 +196,10 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
     let lockedPoints = 0;
     let lockedGainPct = 0;
 
+    // C-2 fix: resolved BEFORE the outgoing-score rebuild (it previously lived
+    // just above the incoming-asset stamp) — both stamp sites read one resolve.
+    const swapModeConfig = resolveModeConfig(liveData.gameMode);
+
     if (entryPrice > 0) {
       const threshold = liveData.scoring?.thresholds?.[outSymbol];
       const baseATR = threshold?.threshold || outAsset.baseATR || 2.5;
@@ -204,6 +208,11 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
         baseATR,
         tier: resolvedTier,
         direction: outAsset.direction || null,
+        // C-2 fix (flat6 stamp pass-through, founder ruling option a): this
+        // rebuild dropped the D2 flat stamp, so flat6 swap LOCKS applied
+        // slot-label multipliers. Same mode-resolved authority as the
+        // incoming-swap stamp below; tiered resolves null and gains no field.
+        ...(swapModeConfig.flatMultiplier != null ? { tierMultiplier: swapModeConfig.flatMultiplier } : {}),
       };
 
       // Guard 3: badge baseline parity with agent-evaluate. Same precedence
@@ -284,7 +293,7 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
     // P4 flat6 (founder ruling D2): swap-ins on tournament battles carry the
     // mode's flat multiplier, like every creation-time asset. Tiered battles
     // resolve a null flatMultiplier and gain no field — byte-identical.
-    const swapModeConfig = resolveModeConfig(liveData.gameMode);
+    // (swapModeConfig resolved once, above the outgoing-score rebuild — C-2.)
     if (swapModeConfig.flatMultiplier != null) {
       incomingAsset.tierMultiplier = swapModeConfig.flatMultiplier;
     }
