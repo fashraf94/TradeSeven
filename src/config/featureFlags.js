@@ -301,6 +301,16 @@ export const LEAGUE_LIVE_ORB_ENABLED = true;
  * PR; `ClimbArena` removal is a third, later cleanup PR, only once the fuse has
  * held on a live flag.
  *
+ * CLEANUP-PR OBLIGATIONS (Amendment B §B3 — recorded here so they survive the
+ * three months until that PR). Two guards will read as dead tests for a deleted
+ * component. Neither is:
+ *   - b3Lockstep.test.js pins the seatAltitude call SHAPE at both resolution
+ *     sites; before ClimbArena is deleted it needs a FuseHero counterpart (or
+ *     an equivalent basis-invariant test) — never plain deletion.
+ *   - the seatHasLiveSample truth table in seatAltitude.test.js pins the
+ *     sampling predicate to the resolver's own branches; it guards the session
+ *     trail (and therefore the B2 cut), not ClimbArena, and stays.
+ *
  * Pinned by: leagueBattleviewFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
  */
 export const LEAGUE_FUSE_HERO_ENABLED = false;
