@@ -20,6 +20,8 @@ import { Mono, Eyebrow, LIcon, Icon } from '../LeagueParts';
 import { LTOKENS, alpha } from '../leagueTokens';
 import { ArenaTopStrip, BeatCaption, ArenaOrb, MeterKey } from './ArenaPrimitives';
 import { ClimbArena } from './ClimbArena';
+import { FuseHero } from './FuseHero';
+import { LEAGUE_FUSE_HERO_ENABLED } from '../../../config/featureFlags';
 import { DecompositionStrip } from './DecompositionStrip';
 import { StarCell } from './StarCell';
 import { FlipControl, AgentDock, AgentMoveChip, DepartedChip } from './CommandDock';
@@ -137,8 +139,15 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
       <div style={{ position: 'sticky', top: 0, zIndex: 20, background: LTOKENS.bg, padding: '14px 14px 0' }}>
         <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} compact voided={voided} />
         <div ref={heroRef} style={{ position: 'relative', marginTop: 10 }}>
-          <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
-            w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} />
+          {/* Branch A: the top half — and ONLY the top half — swaps on the fuse
+              flag. Dark today, so this renders ClimbArena exactly as before. */}
+          {LEAGUE_FUSE_HERO_ENABLED ? (
+            <FuseHero state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
+              w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} />
+          ) : (
+            <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
+              w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} />
+          )}
           {live && eng.beat && (
             <div style={{ position: 'absolute', top: 8, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
               <BeatCaption beat={eng.beat} compact />

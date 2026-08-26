@@ -283,6 +283,27 @@ export const LEAGUE_LIVE_ORB_ENABLED = true;
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('leagueLiveOrb') === '1';
 
+
+/**
+ * League — the FUSE HERO (Branch A): the battleview's top half becomes a fuse
+ * board (x is the CLOCK, y is POINTS; the four seats render as glowing lines
+ * with a burning tip carrying the seat's mech head and its running value) in
+ * place of the points-axis `ClimbArena` scatter. Authority:
+ * LEAGUE_BATTLEVIEW_ADJUDICATION_V1 (R1-R14) + the Branch A Build Spec and its
+ * Amendment A (Phase 0.5 gate: G1 CLEAR, G2 client-derived cut, G3 confirmed).
+ *
+ * Default OFF (dark). `ClimbArena` remains the live path and is neither
+ * modified nor moved while this ships dark: ArenaDesktop / ArenaMobile branch
+ * ONLY the top-half hero on this flag, so flag-off renders exactly as today.
+ *
+ * The production flip is its own one-line PR after a Vercel preview smoke (the
+ * LEAGUE_BATTLE_VIEW_V2_ENABLED / PR #510 precedent) and never rides the build
+ * PR; `ClimbArena` removal is a third, later cleanup PR, only once the fuse has
+ * held on a live flag.
+ *
+ * Pinned by: leagueBattleviewFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+ */
+export const LEAGUE_FUSE_HERO_ENABLED = false;
 /**
  * League — Training-tab CLIMB PREVIEW (the second-arc re-entry surface).
  *
