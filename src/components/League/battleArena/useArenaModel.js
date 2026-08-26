@@ -19,6 +19,8 @@ import { buildArenaModel } from './buildArenaModel';
 import { useArenaPriceContext } from './useArenaPriceContext';
 import { useAtrPercentiles } from './useAtrPercentiles';
 import { useLiveComposites } from './useLiveComposites';
+import { useSessionCompositeTrail } from './useSessionCompositeTrail';
+import { LEAGUE_FUSE_HERO_ENABLED } from '../../../config/featureFlags';
 
 export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   // ── the symbol union (agent six ∪ your three), content-keyed so the price hook
@@ -90,6 +92,24 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   // adopt the just-built star-states as the next tick's "prev" (after render)
   React.useEffect(() => { if (model?.starStates) prevRef.current = model.starStates; }, [model]);
 
+  // ── the session composite trail (Phase 2, R3 / A3) — the fuse board's TODAY
+  //    spine, accumulated in memory from the model's OWN altitudes so it samples
+  //    the same ruler the crown and cut read. Gated on the fuse flag: while dark
+  //    NO timer runs and nothing accumulates, so production is untouched until
+  //    the flip. Nothing consumes `trail` yet — FuseHero draws it in Phase 3. ──
+  const seatIds = React.useMemo(() => (model?.seats || []).map((s) => s.id), [model]);
+  const trail = useSessionCompositeTrail({
+    ids: seatIds,
+    scoresAtLast: model?.scoresAtLast,
+    seatLive: model?.seatLive,
+    seatBanked: model?.seatBanked,
+    enabled: LEAGUE_FUSE_HERO_ENABLED && group?.status === GROUP_STATUS.BATTLE,
+  });
+  const modelWithTrail = React.useMemo(
+    () => (model ? { ...model, trail } : null),
+    [model, trail],
+  );
+
   // ── write handlers (server-authoritative; flipPick toggles by symbol). Errors
   //    are mapped HERE (the connected layer already loads tournamentActions/
   //    Firebase) and re-thrown as a friendly Error, so the presentational dock /
@@ -106,5 +126,5 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
 
   const ready = !!group && (battle ? priceCtx.pricesLoaded : true);
 
-  return { model, handlers: { onFlip, onClaim, onAsk }, ready };
+  return { model: modelWithTrail, handlers: { onFlip, onClaim, onAsk }, ready };
 }

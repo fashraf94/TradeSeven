@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
 import { buildArenaModel, liveDayIdx, buildAskChips } from './buildArenaModel';
+import { seatAltitude, seatHasLiveSample } from './seatAltitude';
 import { buildScoreHistory } from './buildScoreHistory';
 import { buildFlat6BattleModel } from '../../../utils/flat6BattleEnrichment';
 import { BASELINE_POLICY, CAPTURE_STATE, computeComposite } from '../../../constants/leagueTournament';
@@ -746,5 +747,61 @@ describe('buildArenaModel — the day index binds the header to the recap curren
     } finally {
       scoreHistoryFlag.on = false;
     }
+  });
+});
+
+// ── Phase 2 / Phase 3 sampling + cut inputs (Amendment A3.1 / A4) ───────────
+// The session trail and the ranked cut BOTH read these off the model. They are
+// pinned here because the alternative — deriving either from seats[].score — is
+// a §9 violation that would look plausible all session and be wrong all session:
+// with the orb on, a rival's seat.score is its LIVE endpoint composite while
+// YOUR seat keeps the BANKED getWeeklyComposite.
+describe('buildArenaModel — scoresAtLast / seatLive / seatBanked (the ONE sampling basis)', () => {
+  it('exposes all three, keyed by every seat', () => {
+    const m = buildArenaModel({ ...BASE });
+    const ids = m.seats.map((s) => s.id);
+    expect(ids.length).toBe(4);
+    for (const id of ids) {
+      expect(Number.isFinite(m.scoresAtLast[id]), `scoresAtLast[${id}]`).toBe(true);
+      expect(Number.isFinite(m.seatBanked[id]), `seatBanked[${id}]`).toBe(true);
+      expect(typeof m.seatLive[id], `seatLive[${id}]`).toBe('boolean');
+    }
+  });
+
+  it('agrees with the resolver + predicate seat for seat (one ruler, no second copy)', () => {
+    const m = buildArenaModel({ ...BASE });
+    const ctx = (id) => ({
+      youId: 'u-you',
+      youLiveScore: m.youLiveScore,
+      liveComposites: m.liveComposites,
+      banked: m.seatBanked[id],
+    });
+    for (const id of m.seats.map((s) => s.id)) {
+      expect(m.scoresAtLast[id]).toBe(seatAltitude(id, ctx(id)));
+      expect(m.seatLive[id]).toBe(seatHasLiveSample(id, ctx(id)));
+    }
+  });
+
+  it('seatBanked is the banked CLOSE, independent of the live orb', () => {
+    const on = buildArenaModel({ ...BASE });
+    const off = offGate(() => buildArenaModel({ ...BASE }));
+    expect(off.seatBanked).toEqual(on.seatBanked);
+  });
+
+  it('off-gate: no seat reports a live sample, so the trail would not extend', () => {
+    const off = offGate(() => buildArenaModel({ ...BASE, mode: 'ranked' }));
+    const live = Object.values(off.seatLive);
+    expect(live.length).toBe(4);
+    expect(live.every((v) => v === false)).toBe(true);
+  });
+
+  it('the mixed-basis hazard is REAL: a rival seat.score can differ from its banked close', () => {
+    // Guards the reason A4 forbids deriving the cut from seats[].score. If this
+    // ever stops holding, the hazard note (and the ruling) needs revisiting.
+    const m = buildArenaModel({ ...BASE });
+    const rival = m.seats.find((s) => !s.you && m.seatLive[s.id]);
+    if (rival) expect(m.scoresAtLast[rival.id]).toBe(rival.score);
+    const you = m.seats.find((s) => s.you);
+    expect(you.score).toBe(m.seatBanked[you.id]); // YOUR seat stays banked
   });
 });

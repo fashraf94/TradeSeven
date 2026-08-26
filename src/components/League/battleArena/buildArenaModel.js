@@ -30,7 +30,7 @@ import {
   GROUP_STATUS, computeComposite, deriveCurrentTradingDay,
 } from '../../../constants/leagueTournament';
 import { statusFeedToVoice } from './statusFeedToVoice';
-import { seatAltitude } from './seatAltitude';
+import { seatAltitude, seatHasLiveSample } from './seatAltitude';
 import { LEAGUE_AGENT_CHAT_ENABLED, LEAGUE_LIVE_ORB_ENABLED, LEAGUE_SCORE_HISTORY_ON } from '../../../config/featureFlags';
 
 // The strategy chips (founder starter set) for the two-way ask. Each chip's text
@@ -458,10 +458,20 @@ export function buildArenaModel({
   const lastIdx = liveDayIdx(climb);
   const ids = seats.map((s) => s.id);
   const scoresAtLast = {};
+  // Phase 2 sampling inputs, gathered in the SAME loop off the SAME resolver so
+  // the session trail can never sample a different ruler than the crown and the
+  // cut (§9). `seatBanked` is the trail's SEED (each seat's last banked close);
+  // `seatLive` says whether THIS tick carries a real reading, which is what lets
+  // the trail carry a seat forward instead of re-appending the banked floor.
+  const seatBanked = {};
+  const seatLive = {};
   for (const id of ids) {
+    const banked = climb[id]?.[lastIdx] ?? 0;
     scoresAtLast[id] = seatAltitude(id, {
-      youId: uid, youLiveScore, liveComposites: rivalLive, banked: climb[id]?.[lastIdx] ?? 0,
+      youId: uid, youLiveScore, liveComposites: rivalLive, banked,
     });
+    seatBanked[id] = banked;
+    seatLive[id] = seatHasLiveSample(id, { youId: uid, youLiveScore, liveComposites: rivalLive });
   }
   const ranked = rankByScores(scoresAtLast, ids);
   const yIdx = ranked.indexOf(uid);
@@ -489,6 +499,17 @@ export function buildArenaModel({
     pod,
     wire,
     youRank,
+    // ── Phase 2 / Phase 3 sampling + cut inputs (Amendment A3.1 / A4) ──
+    // scoresAtLast: every seat's CURRENT altitude on ONE basis — the session
+    //   trail samples it, and Phase 3's cut is scoresAtLast[ranked[1]]. NEVER
+    //   derive either from seats[].score, which is mixed-basis when the orb is
+    //   on (a rival carries its live endpoint composite while YOUR seat keeps
+    //   the banked getWeeklyComposite).
+    // seatLive:   per seat, whether this tick carried a real reading.
+    // seatBanked: per seat, the last banked close — the trail's seed.
+    scoresAtLast,
+    seatLive,
+    seatBanked,
     // Points-led cards (Rulings B/C) flip on WITH the decomposition — the six and
     // three lead with star.points. Off-gate → 'mult' (today, byte-identical).
     headline: decompLive ? 'pts' : 'mult',
