@@ -114,3 +114,28 @@ describe('fuse review cases — each reaches the condition it exists to show', (
     expect(h[5].v).not.toBe(BUNCHED_LAST_CLOSE_HELIOS); // and not the banked close
   });
 });
+
+// ── D2: each case must OPEN in the scope its question can be answered in ────
+describe('fuse review cases — forced scope (D2)', () => {
+  it('every case declares a scope, and the compressed cases open in THE WEEK', () => {
+    for (const k of FUSE_REVIEW_KEYS) {
+      expect(['day', 'week'], k).toContain(FUSE_REVIEW_CASES[k].scope);
+      expect(fuseReviewOverlay(k).scope, k).toBe(FUSE_REVIEW_CASES[k].scope);
+    }
+    // basement is week-only by construction — opening these in Today disabled
+    // the exact behaviour they exist to show (the D2 defect).
+    expect(FUSE_REVIEW_CASES.underwater.scope).toBe('week');
+    expect(FUSE_REVIEW_CASES.extremes.scope).toBe('week');
+  });
+
+  it("each case's forced scope actually ENABLES the behaviour its banner asks about", () => {
+    for (const k of ['underwater', 'extremes']) {
+      const { climb, scope } = FUSE_REVIEW_CASES[k];
+      const day = scope === 'day';
+      const s = makeScale({ values: weekValues(climb), day, ...GEO });
+      expect(s.basement, `${k} in its own scope`).toBe(0.2);
+      // and the scope it is NOT opened in would have hidden it
+      expect(makeScale({ values: weekValues(climb), day: !day, ...GEO }).basement).toBe(0);
+    }
+  });
+});

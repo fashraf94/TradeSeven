@@ -159,7 +159,7 @@ const fmt = (v, signed) => `${signed && v > 0 ? '+' : ''}${v.toFixed(1)}`;
 export function FuseHero({
   state, mode, seats = [], climb = {}, youId = null, dayIdx = 0,
   w, h, surge = null, onPlayer = null, compact = false, voided = false,
-  trail = null, scope: scopeProp = null, onScope: onScopeProp = null,
+  trail = null, scope: scopeProp = null, onScope: onScopeProp = null, initialScope = null,
   nowFn = Date.now,
 }) {
   const live = state === 'live';
@@ -172,8 +172,10 @@ export function FuseHero({
   // Scope: controlled when the host passes scope/onScope; else self-managed.
   // Defaults to Today while live, The Week at the close (spec) — a user's
   // explicit pick sticks for the session.
+  // `scope` is a hard control (host-driven); `initialScope` only SEEDS the
+  // self-managed pick, so a reviewer's toggle still works after it (D2).
   const [scopePick, setScopePick] = React.useState(null);
-  const scope = scopeProp ?? scopePick ?? (done ? 'week' : 'day');
+  const scope = scopeProp ?? scopePick ?? initialScope ?? (done ? 'week' : 'day');
   const onScope = onScopeProp ?? setScopePick;
   const DAY = scope === 'day';
 

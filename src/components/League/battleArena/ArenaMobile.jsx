@@ -143,7 +143,7 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
               flag. Dark today, so this renders ClimbArena exactly as before. */}
           {FUSE_HERO_ON ? (
             <FuseHero state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
-              w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} trail={D.trail} />
+              w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} trail={D.trail} initialScope={D.initialScope} />
           ) : (
             <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
               w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} />

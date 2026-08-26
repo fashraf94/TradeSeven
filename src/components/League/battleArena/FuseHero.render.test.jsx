@@ -201,3 +201,27 @@ describe('FuseHero — archetype tips (Phase 4 / R12)', () => {
     for (const id of IDS) expect(html).toContain(`data-fh-tip="${id}"`);
   });
 });
+
+describe('FuseHero — initialScope seeds without locking (D2)', () => {
+  it('opens in the seeded scope', () => {
+    const week = render({ state: 'live', mode: 'ranked', trail: liveTrail(), initialScope: 'week' });
+    expect(week).toContain('MON');
+    expect(week).not.toContain('OPEN');
+    const day = render({ state: 'live', mode: 'ranked', trail: liveTrail(), initialScope: 'day' });
+    expect(day).toContain('OPEN');
+    expect(day).not.toContain('MON');
+  });
+
+  it('leaves the toggle live — both options still render and are clickable', () => {
+    const html = render({ state: 'live', mode: 'ranked', trail: liveTrail(), initialScope: 'week' });
+    expect(html).toContain('Today');
+    expect(html).toContain('The week');
+    expect(html.split('<button').length - 1).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a hard `scope` prop still overrides the seed (host control is unchanged)', () => {
+    const html = render({ state: 'live', mode: 'ranked', trail: liveTrail(), initialScope: 'week', scope: 'day' });
+    expect(html).toContain('OPEN');
+    expect(html).not.toContain('MON');
+  });
+});

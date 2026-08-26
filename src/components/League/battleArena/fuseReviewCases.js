@@ -18,6 +18,12 @@
 // board is signed off; drop it in the same cleanup PR that removes ClimbArena,
 // or sooner. Nothing else will notice.
 //
+// EACH CASE FORCES ITS OWN SCOPE (D2). underwater and extremes previously
+// opened in Today, where `outlier = !DAY && ...` disables the compression they
+// exist to show — a reviewer following the banner would have reported "looks
+// fine" about a case that never ran. The forced scope only SEEDS the toggle, so
+// switching scope by hand still works.
+//
 // The trails below are built through the REAL appendTrailSnapshot — the same
 // accumulator production uses — so what the reviewer sees is the actual
 // carry-forward and shared-clock behaviour, not a hand-drawn shape. Timestamps
@@ -117,24 +123,28 @@ const RELOAD_CLIMB = {
 export const FUSE_REVIEW_CASES = Object.freeze({
   underwater: {
     label: 'Underwater · basement',
+    scope: 'week', // basement compression is week-only by construction
     look: 'Does the compressed negative read as "in the hole" rather than as a rendering fault? Is BASEMENT · COMPRESSED legible?',
     climb: UNDERWATER_CLIMB,
     trail: trailFrom(lastOf(UNDERWATER_CLIMB), UNDERWATER_PATH),
   },
   extremes: {
     label: 'Extreme range · compressed',
+    scope: 'week', // the 44,000 / −18,000 TOTALS live here; day shows deltas
     look: 'Y labels at 44,000 / −18,000: do they thin cleanly and never overprint? Does the axis stay readable?',
     climb: EXTREME_CLIMB,
     trail: trailFrom(lastOf(EXTREME_CLIMB), EXTREME_PATH),
   },
   bunched: {
     label: 'Four seats bunched · elbows',
+    scope: 'day', // the clock axis + the tightest tip cluster
     look: 'Four tips within ~0.4 pts: do the de-collided heads read, and do the elbow connectors track back to the right fuse?',
     climb: BUNCHED_CLIMB,
     trail: trailFrom(lastOf(BUNCHED_CLIMB), BUNCHED_PATH),
   },
   reload: {
     label: 'Cold mount · reload state',
+    scope: 'day', // the live state a user lands in
     look: 'The state most users see most often (R3): flat spine at the last close plus the live tip. Does it look deliberate rather than broken?',
     climb: RELOAD_CLIMB,
     trail: null, // no accumulated history — exactly a fresh tab
@@ -148,5 +158,5 @@ export const FUSE_REVIEW_KEYS = Object.freeze(Object.keys(FUSE_REVIEW_CASES));
 export function fuseReviewOverlay(key) {
   const c = FUSE_REVIEW_CASES[key];
   if (!c) return null;
-  return { climb: c.climb, trail: c.trail, label: c.label, look: c.look };
+  return { climb: c.climb, trail: c.trail, scope: c.scope, label: c.label, look: c.look };
 }

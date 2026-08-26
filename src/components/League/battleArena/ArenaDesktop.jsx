@@ -85,7 +85,7 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
             flag. Dark today, so this renders ClimbArena exactly as before. */}
         {FUSE_HERO_ON ? (
           <FuseHero state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
-            w={HERO_W} h={climbH} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} trail={D.trail} />
+            w={HERO_W} h={climbH} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} trail={D.trail} initialScope={D.initialScope} />
         ) : (
           <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
             w={HERO_W} h={climbH} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} />

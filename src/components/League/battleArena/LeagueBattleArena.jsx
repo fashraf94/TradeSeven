@@ -59,7 +59,7 @@ export default function LeagueBattleArena({ state = 'live', mode = 'ranked', onB
   );
   const reviewData = React.useMemo(() => {
     if (!review) return null;
-    return { ...buildFixtureModel(st), climb: review.climb, trail: review.trail };
+    return { ...buildFixtureModel(st), climb: review.climb, trail: review.trail, initialScope: review.scope };
   }, [review, st]);
 
   const primary = md === 'ranked' ? LTOKENS.gold : LTOKENS.teal;
@@ -77,7 +77,7 @@ export default function LeagueBattleArena({ state = 'live', mode = 'ranked', onB
           background: alpha('#0B0C10', 0.92), border: `1px solid ${alpha(primary, 0.4)}`, pointerEvents: 'none' }}>
           <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, letterSpacing: '0.12em',
             textTransform: 'uppercase', color: primary, marginBottom: 3 }}>
-            Review case · {review.label}
+            Review case · {review.label} · opened in {review.scope === 'week' ? 'THE WEEK' : 'TODAY'}
           </div>
           <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10.5, lineHeight: 1.45, color: LTOKENS.ink2 }}>
             {review.look}
