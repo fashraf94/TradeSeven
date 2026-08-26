@@ -17,7 +17,7 @@
 // useArenaModel; this module is the testable transform, and its co-located test's
 // import IS the dependency-surface guard (loads clean in Node — never mocked).
 
-import { buildSeat, seatColor } from '../leagueAdapter';
+import { buildSeat, seatColor, archetypeLabel } from '../leagueAdapter';
 import { buildClimbSeries } from '../leagueClimbAdapter';
 import { buildSwapLedger } from './leagueSwapLedger';
 import { readAgentStars, readUserStars, readDroppedPickLedger } from '../../../utils/leagueStarMeter';
@@ -27,7 +27,7 @@ import { deriveBeats } from '../../../utils/leagueBeats';
 import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
 import {
   getLatestDayEntry, getWeeklyComposite, rankByScores, WEEK_DAYS_REQUIRED, TOURNAMENT_TUNING, BASELINE_POLICY,
-  GROUP_STATUS, computeComposite, deriveCurrentTradingDay,
+  GROUP_STATUS, computeComposite, deriveCurrentTradingDay, cpuNFromUserId, cpuArchetypeForN,
 } from '../../../constants/leagueTournament';
 import { statusFeedToVoice } from './statusFeedToVoice';
 import { seatAltitude, seatHasLiveSample } from './seatAltitude';
@@ -100,6 +100,7 @@ function quotesFromPrices(effectivePrices, myPlayer) {
 export function buildArenaModel({
   group, battle = null, priceCtx = {}, claims = [], displayNames = {},
   uid = null, mode = 'ranked', prevStarStates = {}, compositeContext = null,
+  spectatedBattles = null,
   liveComposites = null,
 } = {}) {
   const players = group?.players || [];
@@ -171,6 +172,10 @@ export function buildArenaModel({
     // when it can't resolve — the raw key would overflow the lane and mean
     // nothing, and the name is now the mobile climb's primary identifier.
     const name = isCpuSeat ? s.name : (displayNames[p.odUserId] || 'Player');
+    const cpuN = isCpuSeat ? cpuNFromUserId(p.odUserId) : null;
+    const archId = (s.you ? (battle?.agentContext?.archetype || null) : null)
+      ?? (cpuN != null ? cpuArchetypeForN(cpuN) : null)
+      ?? (spectatedBattles?.[p.odUserId]?.agentContext?.archetype || null);
     return {
       id: s.id,
       name,
@@ -182,7 +187,21 @@ export function buildArenaModel({
       // YOU stays teal (the locked invariant); rivals get a distinct, non-teal
       // hue from rivalHue (above).
       color: s.you ? YOU_COLOR : rivalHue(s.id),
-      arch: s.archName, // the label (rivals → undefined; never fabricated — owner-only)
+      // ── Phase 4 (R12): the seat carries the STABLE CODE-ID, resolved from
+      // TWO sources — never fabricated:
+      //   YOU        → your own battle's agentContext (via buildSeat, as before)
+      //   CPU rival  → the deterministic id→archetype map (cpuArchetypeForN)
+      //   HUMAN rival→ the server-side spectator projection (archetype is in
+      //                PUBLIC_AGENT_CONTEXT — tournamentBattleView.js), polled
+      //                by useSpectatedTournamentBattles only while the fuse
+      //                gate is on
+      // Unresolved → null: the tip renders the generic mech (neutral
+      // disposition), never a crash. The LABEL derives from the id via the
+      // adapter's archetypeLabel — itself backed by the canonical display map
+      // (the arena's former duplicated map is retired; the adapter is the ONE
+      // Spec-2.3-recorded importer of the display table for this surface).
+      archId,
+      arch: s.archName ?? (archId ? archetypeLabel(archId) : undefined), // the label (yours from your battle; rivals via archId when known)
       // The seat's CURRENT composite (Option X rival-source swap): a rival's is the
       // endpoint live composite when the orb is on (rivalScore, above), else banked;
       // YOUR seat is the banked getWeeklyComposite (untouched — your live number is

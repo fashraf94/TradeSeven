@@ -188,3 +188,16 @@ describe('FuseHero — scope toggle', () => {
     expect(html).toContain('OPEN'); // day axis active
   });
 });
+
+describe('FuseHero — archetype tips (Phase 4 / R12)', () => {
+  it('a resolved code-id, an unknown id, and a wholly-unresolved seat ALL render tips (defined fallback, never a crash)', () => {
+    const seats = [
+      { ...SEATS[0], archId: 'degen' },                 // resolved — Speculator mech
+      { ...SEATS[1], archId: 'momentum_chaser' },       // resolved — deterministic CPU
+      { ...SEATS[2], archId: 'not_a_real_archetype' },  // unknown id → neutral/generic
+      { ...SEATS[3], archId: null, arch: undefined },   // unresolved → neutral/generic
+    ];
+    const html = render({ state: 'live', mode: 'ranked', trail: liveTrail(), seats });
+    for (const id of IDS) expect(html).toContain(`data-fh-tip="${id}"`);
+  });
+});

@@ -66,6 +66,10 @@ function FuseEnvTape({ reduce }) {
 }
 
 // ── the burning tip ─────────────────────────────────────────────────────────
+// The mech keys off the seat's STABLE CODE-ID (Phase 4 / R12 — seat.archId;
+// display-label fallback for older callers). Unresolved → archetypeToDisposition
+// returns 'neutral' → the generic mech renders. A tip never crashes on an
+// unknown archetype.
 function FhTip({ x, tipY, headY, color, seat, lead, you, value, dead, compact, reduce, onTap, showHead }) {
   const hs = compact ? (you ? 30 : 25) : (you ? 44 : 36);
   const displaced = Math.abs(headY - tipY) > 4;
@@ -100,7 +104,7 @@ function FhTip({ x, tipY, headY, color, seat, lead, you, value, dead, compact, r
               transform: `translate(-50%, calc(-50% - ${(HEAD_FACE_LIFT * hs).toFixed(1)}px))`,
               width: hs * 140 / 156, height: hs }}>
               <AgentPresence
-                disposition={archetypeToDisposition(seat.arch)}
+                disposition={archetypeToDisposition(seat.archId ?? seat.arch)}
                 accent={color}
                 standing={0}
                 size={hs}

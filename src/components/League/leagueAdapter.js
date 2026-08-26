@@ -27,6 +27,7 @@
 //        (computed ONCE via the centralized marketSchedule, holiday/early-close
 //        aware); watchers/presence omitted; userBook weight omitted (none stored).
 
+import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import {
   isCpuUserId,
   cpuNFromUserId,
@@ -44,20 +45,6 @@ import {
 const CPU_COLOR = '#9A8CE0';
 const HUMAN_PALETTE = ['#33B4C4', '#5B8DEF', '#F0C75E', '#E8927C', '#7BD88F', '#B79CED', '#5EEAD4', '#EBA6C8'];
 
-// Client mirror of api/_utils/agentArchetypeConfig.getArchetypeLabel for the CPU
-// archetype set (that module is fenced + api-only, so it can't be imported into
-// the client bundle). Kept in sync so a CPU's name matches the leaderboard/rank
-// surfaces (which use the server cpuAgentName = "CPU — <label>"). If a label here
-// drifts from agentArchetypeConfig, the same CPU would read two ways across
-// surfaces — update both together.
-const ARCHETYPE_LABELS = {
-  momentum_chaser: 'Trend Follower',
-  contrarian: 'Contrarian',
-  diversifier: 'Diversifier',
-  degen: 'Speculator',
-  analyst: 'Fundamental Investor',
-  guardian: 'Capital Preserver',
-};
 
 // evocative pod-name schemes (ruling A) — never "Round N · Game M".
 const BRACKET_R1_NAMES = ['East', 'West', 'North', 'South', 'Northeast', 'Northwest', 'Southeast', 'Southwest'];
@@ -85,10 +72,14 @@ function titleCaseSnake(snake) {
     .join(' ');
 }
 
-// archetype → display label (server-parity labels; title-case fallback for any
-// key not in the curated map).
-function archetypeLabel(key) {
-  return ARCHETYPE_LABELS[key] || titleCaseSnake(key);
+// archetype → display label, via the CANONICAL frontend source (Phase 4 / R12:
+// the arena's former local ARCHETYPE_LABELS mirror is retired — one home,
+// src/data/archetypeDisplay.js, whose strings the server's .label set mirrors).
+// getArchetypeDisplayName humanizes unknown ids and returns 'Unknown' for
+// falsy; the title-case fallback here preserves this module's prior behaviour
+// for the falsy case (callers render their own placeholder).
+export function archetypeLabel(key) {
+  return key ? getArchetypeDisplayName(key) : titleCaseSnake(key);
 }
 
 function num(x) {

@@ -19,6 +19,7 @@ import { buildArenaModel } from './buildArenaModel';
 import { useArenaPriceContext } from './useArenaPriceContext';
 import { useAtrPercentiles } from './useAtrPercentiles';
 import { useLiveComposites } from './useLiveComposites';
+import useSpectatedTournamentBattles from '../../../hooks/useSpectatedTournamentBattles';
 import { useSessionCompositeTrail } from './useSessionCompositeTrail';
 import { FUSE_HERO_ON } from './fuseHeroGate';
 
@@ -46,6 +47,22 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   //    off-gate (flag off → no poll → rivals stay on the banked series). Feeds
   //    ONLY rival seats; YOUR seat rides youLiveScore (never the endpoint). ──
   const liveComposites = useLiveComposites(group?.id, group?.status === GROUP_STATUS.BATTLE);
+
+  // ── rival HUMAN archetypes (Phase 4 / R12) — the server-side spectator
+  //    projection (archetype is PUBLIC_AGENT_CONTEXT). Polled ~60s ONLY while
+  //    the fuse gate is on, the round is live, and a human rival exists — so
+  //    with the flag dark this adds ZERO network traffic (acceptance 14 read
+  //    with Amendment C: the spectator read is Phase 4's specified source and
+  //    rides the same gate as the hero itself). CPU rivals never need it
+  //    (deterministic recovery); a CPU-only pod never polls. ──
+  const hasHumanRival = React.useMemo(
+    () => (group?.players || []).some((p) => p?.odUserId && p.odUserId !== uid && !isCpuUserId(p.odUserId)),
+    [group, uid],
+  );
+  const { battles: spectatedBattles } = useSpectatedTournamentBattles(
+    group?.id,
+    FUSE_HERO_ON && group?.status === GROUP_STATUS.BATTLE && hasHumanRival,
+  );
 
   // ── claims subcollection (live) ──
   const [claims, setClaims] = React.useState([]);
@@ -85,8 +102,9 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
       prevStarStates: prevRef.current,
       compositeContext,
       liveComposites, // Option X: rivals' endpoint composites (null off-gate → banked)
+      spectatedBattles, // Phase 4: rival-human archetypes ({} until the gated poll lands)
     }) : null),
-    [group, battle, priceCtx, atrPercentiles, claims, names, uid, mode, compositeContext, liveComposites],
+    [group, battle, priceCtx, atrPercentiles, claims, names, uid, mode, compositeContext, liveComposites, spectatedBattles],
   );
 
   // adopt the just-built star-states as the next tick's "prev" (after render)

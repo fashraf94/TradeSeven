@@ -121,17 +121,43 @@ describe('buildArenaModel — seats', () => {
     expect(you.kind).toBe('you');
     expect(you.arch).toBe('Speculator'); // from battle.agentContext.archetype 'degen'
   });
-  it('names CPU seats and keeps their archetype omitted', () => {
+  it('names CPU seats and recovers their archetype deterministically (Phase 4 / R12)', () => {
+    // Pre-Phase-4 this pinned cpu.arch undefined; R12 plumbs it — cpu-1 →
+    // CPU_ARCHETYPE_ORDER[0] 'momentum_chaser', label via the canonical map.
     const cpu = seats.find((s) => s.id === 'cpu-1');
     expect(cpu.kind).toBe('cpu');
     expect(cpu.name.startsWith('CPU')).toBe(true);
-    expect(cpu.arch).toBeUndefined();
+    expect(cpu.archId).toBe('momentum_chaser');
+    expect(cpu.arch).toBe('Trend Follower');
+    const cpu2 = seats.find((s) => s.id === 'cpu-2');
+    expect(cpu2.archId).toBe('contrarian');
   });
-  it('SEALS a rival human: name shown, archetype never fabricated', () => {
+  it('a rival human WITHOUT a spectator projection: name shown, archetype never fabricated', () => {
     const riv = seats.find((s) => s.id === 'u-riv');
     expect(riv.kind).toBe('human');
     expect(riv.name).toBe('Riva');
-    expect(riv.arch).toBeUndefined(); // rival battle never read → arch sealed
+    expect(riv.archId).toBeNull();    // no projection supplied → the defined fallback
+    expect(riv.arch).toBeUndefined(); // label never fabricated
+  });
+  it('a rival human WITH the spectator projection: archId from PUBLIC_AGENT_CONTEXT (Phase 4 / R12)', () => {
+    const m = buildArenaModel({
+      ...BASE,
+      spectatedBattles: { 'u-riv': { agentContext: { archetype: 'guardian' } } },
+    });
+    const riv = m.seats.find((s) => s.id === 'u-riv');
+    expect(riv.archId).toBe('guardian');
+    expect(riv.arch).toBe('Capital Preserver'); // canonical label, not a local map
+    // and YOUR seat is never sourced from the projection, even if it carries you
+    const m2 = buildArenaModel({
+      ...BASE,
+      spectatedBattles: { 'u-you': { agentContext: { archetype: 'guardian' } } },
+    });
+    expect(m2.seats.find((s) => s.you).archId).toBe('degen'); // own battle wins
+  });
+  it('YOUR seat carries the stable code-id alongside the label', () => {
+    const you = seats.find((s) => s.you);
+    expect(you.archId).toBe('degen');
+    expect(you.arch).toBe('Speculator');
   });
   it('gives every seat a DISTINCT hue — no shared CPU violet, YOU teal', () => {
     const you = seats.find((s) => s.you);
