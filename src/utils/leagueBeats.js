@@ -21,6 +21,7 @@
 
 import { feedEventText } from './tournamentSurfaces';
 import { rankByScores } from '../constants/leagueTournament';
+import { swapReasonLabel } from '../components/League/battleArena/leagueSwapLedger';
 
 const numOrNull = (n) => (Number.isFinite(n) ? n : null);
 const toneOf = (n) => (Number.isFinite(n) ? (n > 0 ? 'good' : n < 0 ? 'bad' : 'neutral') : 'neutral');
@@ -189,9 +190,16 @@ export function deriveBeats({
 
   for (const t of trades || []) {
     if (!t?.symbolIn && !t?.symbolOut) continue;
+    // PHASE 5b / R9 — surface WHY the swap happened. swapReasonLabel already
+    // resolves the protective taxonomy first (a forced stop can never print as
+    // an "upgrade") and degrades to 'agent decision' when nothing is stamped;
+    // in that case we keep the plain caption rather than printing a non-answer.
+    // Client-only: the motive is already on the trade record.
+    const why = swapReasonLabel(t);
+    const swapText = `swapped ${t.symbolOut ?? '—'} → ${t.symbolIn ?? '—'}`;
     beats.push(withTs({
       kind: 'swap',
-      text: `swapped ${t.symbolOut ?? '—'} → ${t.symbolIn ?? '—'}`,
+      text: why && why !== 'agent decision' ? `${swapText} · ${why}` : swapText,
       pts: numOrNull(t.lockedPoints),
       star: t.symbolIn ?? t.symbolOut ?? null,
       tone: toneOf(t.lockedPoints),
