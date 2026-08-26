@@ -156,6 +156,11 @@ export const FUSE_REVIEW_KEYS = Object.freeze(Object.keys(FUSE_REVIEW_CASES));
 /** The overlay for a named case, or null when the key is unknown/absent (→ the
  *  ordinary fixtures preview, unchanged). */
 export function fuseReviewOverlay(key) {
+  // The key comes straight off a query param, so a bare property read would
+  // resolve INHERITED members: `?fuseCase=toString` returns a function, passes a
+  // truthy guard, and then throws on `c.climb` — white-screening the preview.
+  // Membership is checked against the published key list instead.
+  if (!FUSE_REVIEW_KEYS.includes(key)) return null;
   const c = FUSE_REVIEW_CASES[key];
   if (!c) return null;
   // F3 nit: the shared fixture pod chrome reads "Day 2 of 5" while these cases

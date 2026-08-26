@@ -380,3 +380,46 @@ describe('FuseHero — F1/F2 at the render level', () => {
     expect(html).toContain('>The week<');
   });
 });
+
+describe('FuseHero — code-review regressions', () => {
+  it('CR1: the Today cut is drawn as a LEVEL on the delta axis, not the remaining gap', () => {
+    // seed 10 / you 12 / cut 13 — the reviewer's case. Your fuse draws at +2;
+    // the cut must draw at +3 (the delta you must reach), NOT at +1 (the gap),
+    // which would put you visually clear of a cut you are a point behind.
+    const seeds = { you: 10, r1: 10, r2: 10, r3: 10 };
+    const trail = appendTrailSnapshot(emptyTrail({ ...seeds }), {
+      ids: IDS,
+      scoresAtLast: { you: 12, r1: 20, r2: 13, r3: 9 }, // 2nd place = r2 at 13
+      seatLive: Object.fromEntries(IDS.map((id) => [id, true])),
+      t: T('18:15'),
+    });
+    const html = render({ state: 'live', mode: 'ranked', trail, initialScope: 'day' });
+    expect(html).toContain('data-fh-cut');
+    // the CUT gridline label carries the LEVEL (3.0), and the annotation the gap (1.0)
+    const labels = [...html.matchAll(/left:5px[^>]*>(.*?)<\/div>/g)].map((m) => m[1].replace(/<[^>]*>/g, ''));
+    expect(labels).toContain('CUT');
+    // renderToString splits adjacent text nodes, so match the pieces rather
+    // than one literal run.
+    expect(html).toMatch(/TODAY MAKES THE CUT/);
+    const ann = html.slice(Math.max(0, html.indexOf('TODAY MAKES THE CUT') - 90), html.indexOf('TODAY MAKES THE CUT'));
+    expect(ann.replace(/<[^>]*>/g, '')).toMatch(/\+.*1\.0/); // needToday — what you must ADD
+  });
+
+  it('CR1: the cut sits ABOVE your fuse tip while you are behind', () => {
+    const seeds = { you: 10, r1: 10, r2: 10, r3: 10 };
+    const trail = appendTrailSnapshot(emptyTrail({ ...seeds }), {
+      ids: IDS,
+      scoresAtLast: { you: 12, r1: 20, r2: 13, r3: 9 },
+      seatLive: Object.fromEntries(IDS.map((id) => [id, true])),
+      t: T('18:15'),
+    });
+    const html = render({ state: 'live', mode: 'ranked', trail, initialScope: 'day' });
+    const cutY = parseFloat(html.match(/data-fh-cut[\s\S]*?y1="([0-9.]+)"/)[1]);
+    // the first positioned element inside YOUR tip block is the heat halo,
+    // centred on the tip's y — slice the block rather than regex across it.
+    const blk = html.slice(html.indexOf('data-fh-tip="you"'));
+    const youY = parseFloat(blk.match(/top:([0-9.]+)px/)[1]);
+    // smaller y = higher on screen; the cut must sit ABOVE your tip while behind
+    expect(cutY).toBeLessThan(youY);
+  });
+});

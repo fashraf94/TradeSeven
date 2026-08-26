@@ -137,6 +137,12 @@ export function etMinuteOfDay(tMs) {
   return h * 60 + m;
 }
 
+/** The ET calendar day for an epoch ms — the trail's session identity. */
+export function etDayKey(tMs) {
+  if (!Number.isFinite(tMs)) return null;
+  return new Date(tMs).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
+
 /** Fraction of the regular session elapsed at t, clamped to [0, 1]. (Early-close
  *  days render their shortened afternoon pinned at CLOSE — noted, accepted.) */
 export function sessionFraction(tMs) {

@@ -228,9 +228,21 @@ export function FuseHero({
   const { HI, LO, basement, zeroY, Y } = makeScale({ values: allVals, day: DAY, plotT: F.plotT, floorY: F.floorY });
 
   // ── the cut (ranked only; never in training, never when voided/calm) ──
-  const targetVal = DAY ? needToday : cutTotal;
-  const showTarget = ranked && !calm && !voided && (DAY ? (needToday > 0 && needToday <= HI) : true);
-  const targetY = Y(Math.min(targetVal, HI));
+  // The cut must be drawn in the SAME quantity the axis plots. Week scope plots
+  // totals, so the level is cutTotal. Today plots DELTAS SINCE THE OPEN, so the
+  // level is the delta you must REACH — cutTotal − your open baseline — not
+  // `needToday`, which is the remaining gap between two TOTALS.
+  //
+  // Drawing that gap on a delta axis inverts the board as you gain: your fuse
+  // rises while the line falls, crossing at half the required move. With seed 10
+  // / you 12 / cut 13 it drew you at +2 above a cut at +1 — the board showing you
+  // clear of a cut you are a point behind. Same display-disagreement family as
+  // the mixed-basis cut (B2), one axis over.
+  //
+  // `needToday` stays correct as the LABEL: it is what you still have to add.
+  const cutLevel = DAY ? cutTotal - (seed[youId] ?? 0) : cutTotal;
+  const showTarget = ranked && !calm && !voided && (DAY ? (needToday > 0 && cutLevel <= HI) : true);
+  const targetY = Y(Math.min(cutLevel, HI));
 
   // ── tips: x at the clock's newest sample; head anchors spread apart ──
   const tipF = calm ? 0 : DAY ? Math.max(dayFrac, 0.02) : weekTipF(bankedCount, done ? 1 : dayFrac);
@@ -259,7 +271,7 @@ export function FuseHero({
   const fitted = (v, signed) => fitYLabel(v, { gutter: yGutter, fontSize: yFont, signed });
   const yLabels = calm ? [] : thinYLabels([
     { v: HI, t: fitted(HI, DAY), y: Y(HI) },
-    ...(showTarget ? [{ v: targetVal, t: 'CUT', y: targetY }] : []),
+    ...(showTarget ? [{ v: cutLevel, t: 'CUT', y: targetY }] : []),
     { v: 0, t: DAY ? 'OPEN' : '0', y: Y(0) },
     ...(LO < 0 ? [{ v: LO, t: fitted(LO), y: Y(LO) }] : []),
   ], F.yLabelGap);

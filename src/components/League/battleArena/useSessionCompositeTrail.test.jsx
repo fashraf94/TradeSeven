@@ -240,3 +240,47 @@ describe('useSessionCompositeTrail — seed, capacity, gating, hygiene', () => {
     expect(latest.ticks).toBe(2);
   });
 });
+
+describe('CR2 — the trail resets at the ET day boundary', () => {
+  const T = (iso) => Date.parse(iso);
+  const live = Object.fromEntries(IDS.map((id) => [id, true]));
+  const scores = { [YOU]: 15, r1: 25, r2: 35, r3: 45 };
+
+  it('a sample on a NEW ET day drops the previous day and re-seeds', () => {
+    let t = emptyTrail({ ...BANKED }, '2026-08-26');
+    t = appendTrailSnapshot(t, { ids: IDS, scoresAtLast: scores, seatLive: live, t: T('2026-08-26T18:00:00Z') });
+    expect(t.samples[YOU]).toHaveLength(1);
+
+    // next morning, with fresh banked closes
+    const fresh = { [YOU]: 15, r1: 25, r2: 35, r3: 45 };
+    t = appendTrailSnapshot(t, {
+      ids: IDS, scoresAtLast: { ...scores, [YOU]: 16 }, seatLive: live,
+      t: T('2026-08-27T14:00:00Z'), seeds: fresh,
+    });
+    expect(t.dayKey).toBe('2026-08-27');
+    expect(t.samples[YOU]).toHaveLength(1);   // yesterday dropped, not appended to
+    expect(t.seeds).toEqual(fresh);           // seed re-adopted from the new close
+    expect(t.ticks).toBe(1);
+  });
+
+  it('an overnight tick with nothing live still rolls the day rather than accumulating', () => {
+    let t = emptyTrail({ ...BANKED }, '2026-08-26');
+    t = appendTrailSnapshot(t, { ids: IDS, scoresAtLast: scores, seatLive: live, t: T('2026-08-26T18:00:00Z') });
+    const rolled = appendTrailSnapshot(t, {
+      // 05:00Z is 01:00 ET on the 27th — 02:00Z would still be the 26th in ET,
+      // which is the trap this test exists to avoid tripping over.
+      ids: IDS, scoresAtLast: {}, seatLive: {}, t: T('2026-08-27T05:00:00Z'), seeds: { ...BANKED },
+    });
+    expect(rolled.dayKey).toBe('2026-08-27');
+    expect(rolled.samples[YOU] ?? []).toHaveLength(0);
+  });
+
+  it('same-day ticks are unaffected — the roll is a boundary, not a reset-per-tick', () => {
+    let t = emptyTrail({ ...BANKED }, '2026-08-26');
+    for (const hh of ['14:00', '15:00', '18:00']) {
+      t = appendTrailSnapshot(t, { ids: IDS, scoresAtLast: scores, seatLive: live, t: T(`2026-08-26T${hh}:00Z`) });
+    }
+    expect(t.samples[YOU]).toHaveLength(3);
+    expect(t.ticks).toBe(3);
+  });
+});

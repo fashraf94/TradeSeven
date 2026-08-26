@@ -17,7 +17,7 @@
 // useArenaModel; this module is the testable transform, and its co-located test's
 // import IS the dependency-surface guard (loads clean in Node — never mocked).
 
-import { buildSeat, seatColor, archetypeLabel } from '../leagueAdapter';
+import { buildSeat, seatColor } from '../leagueAdapter';
 import { buildClimbSeries } from '../leagueClimbAdapter';
 import { buildSwapLedger } from './leagueSwapLedger';
 import { readAgentStars, readUserStars, readDroppedPickLedger } from '../../../utils/leagueStarMeter';
@@ -201,7 +201,13 @@ export function buildArenaModel({
       // (the arena's former duplicated map is retired; the adapter is the ONE
       // Spec-2.3-recorded importer of the display table for this surface).
       archId,
-      arch: s.archName ?? (archId ? archetypeLabel(archId) : undefined), // the label (yours from your battle; rivals via archId when known)
+      // The LABEL stays owner-only, exactly as before Phase 4. Populating it for
+      // rivals changed the LIVE ClimbArena with the fuse dark — CPU heads flip
+      // from neutral to their archetype disposition, and the label prints again
+      // under a seat already named "CPU — Trend Follower" — breaking the
+      // flag-off-is-byte-identical invariant the hosts assert. FuseHero keys its
+      // mech off `archId` (seat.archId ?? seat.arch), so the id is all it needs.
+      arch: s.archName,
       // The seat's CURRENT composite (Option X rival-source swap): a rival's is the
       // endpoint live composite when the orb is on (rivalScore, above), else banked;
       // YOUR seat is the banked getWeeklyComposite (untouched — your live number is

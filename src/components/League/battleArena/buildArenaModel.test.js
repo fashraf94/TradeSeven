@@ -128,7 +128,10 @@ describe('buildArenaModel — seats', () => {
     expect(cpu.kind).toBe('cpu');
     expect(cpu.name.startsWith('CPU')).toBe(true);
     expect(cpu.archId).toBe('momentum_chaser');
-    expect(cpu.arch).toBe('Trend Follower');
+    // The LABEL stays owner-only (code review): populating `arch` for rivals
+    // changed the LIVE ClimbArena with the fuse dark — CPU heads would flip
+    // from neutral to their archetype disposition. FuseHero needs only the id.
+    expect(cpu.arch).toBeUndefined();
     const cpu2 = seats.find((s) => s.id === 'cpu-2');
     expect(cpu2.archId).toBe('contrarian');
   });
@@ -146,7 +149,7 @@ describe('buildArenaModel — seats', () => {
     });
     const riv = m.seats.find((s) => s.id === 'u-riv');
     expect(riv.archId).toBe('guardian');
-    expect(riv.arch).toBe('Capital Preserver'); // canonical label, not a local map
+    expect(riv.arch).toBeUndefined(); // label owner-only; the id is what the fuse keys off
     // and YOUR seat is never sourced from the projection, even if it carries you
     const m2 = buildArenaModel({
       ...BASE,
@@ -829,5 +832,27 @@ describe('buildArenaModel — scoresAtLast / seatLive / seatBanked (the ONE samp
     if (rival) expect(m.scoresAtLast[rival.id]).toBe(rival.score);
     const you = m.seats.find((s) => s.you);
     expect(you.score).toBe(m.seatBanked[you.id]); // YOUR seat stays banked
+  });
+});
+
+// Code-review regression: Phase 4 must not change the LIVE (flag-off) surface.
+describe('buildArenaModel — rival archetype plumbing is fuse-only (flag-off invariant)', () => {
+  it('no rival seat carries an arch LABEL, so ClimbArena renders exactly as before', () => {
+    const m = buildArenaModel({
+      ...BASE,
+      spectatedBattles: { 'u-riv': { agentContext: { archetype: 'guardian' } } },
+    });
+    for (const s of m.seats.filter((x) => !x.you)) {
+      expect(s.arch, `${s.id} leaked a label to the live path`).toBeUndefined();
+    }
+    // …while the ids ARE plumbed, which is all the fuse needs
+    expect(m.seats.find((s) => s.id === 'cpu-1').archId).toBe('momentum_chaser');
+    expect(m.seats.find((s) => s.id === 'u-riv').archId).toBe('guardian');
+  });
+
+  it('YOUR seat keeps both, exactly as before Phase 4', () => {
+    const you = buildArenaModel({ ...BASE }).seats.find((s) => s.you);
+    expect(you.arch).toBe('Speculator');
+    expect(you.archId).toBe('degen');
   });
 });

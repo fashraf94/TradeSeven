@@ -51,6 +51,7 @@
 // lose its anchor to the banked value. `seeds` is structurally un-evictable.
 
 import React from 'react';
+import { etDayKey } from './fuseGeometry';
 
 /** One sample per seat per minute — matches both upstream cadences. */
 export const TRAIL_SAMPLE_MS = 60 * 1000;
@@ -59,8 +60,8 @@ export const TRAIL_SAMPLE_MS = 60 * 1000;
 export const TRAIL_CAPACITY = 480;
 
 /** The empty trail — a seeded trail with no samples yet (the reload state). */
-export function emptyTrail(seeds = {}) {
-  return { seeds, samples: {}, ticks: 0 };
+export function emptyTrail(seeds = {}, dayKey = null) {
+  return { seeds, samples: {}, ticks: 0, dayKey };
 }
 
 /**
@@ -79,25 +80,39 @@ export function emptyTrail(seeds = {}) {
  * @param {number} [args.capacity]
  * @returns {Object} the next trail (or `prev` unchanged)
  */
-export function appendTrailSnapshot(prev, { ids, scoresAtLast, seatLive, t, capacity = TRAIL_CAPACITY }) {
+export function appendTrailSnapshot(prev, { ids, scoresAtLast, seatLive, t, capacity = TRAIL_CAPACITY, seeds = null }) {
   const isLive = (id) => seatLive?.[id] === true && Number.isFinite(scoresAtLast?.[id]);
+
+  // ── THE ET DAY BOUNDARY ──────────────────────────────────────────────────
+  // This is a TODAY trail, and a battle spans a week: nothing stops a tab
+  // sitting open past the close. Without this, overnight ticks keep appending,
+  // sessionFraction (date-blind) clamps them all to f=0/f=1, and the next
+  // morning's line backtracks across the board from yesterday's readings — with
+  // the seed still yesterday's close, so "since the open" renders a multi-day
+  // delta. On a new ET day the samples are dropped and the seed re-adopted from
+  // the freshly banked close.
+  const day = etDayKey(t);
+  const rolled = prev.dayKey != null && day != null && day !== prev.dayKey;
+  const base = rolled
+    ? { seeds: seeds ? { ...seeds } : prev.seeds, samples: {}, ticks: 0, dayKey: day }
+    : prev;
 
   // A3.3 — a tick with no real reading anywhere appends NOTHING. This is the
   // off-gate (`null`) and failed-fetch (`{}`) case: the trail must not extend
   // past the newest real sample, and must never append a zero. Returning `prev`
   // by reference also means no re-render.
-  if (!ids.some(isLive)) return prev;
+  if (!ids.some(isLive)) return rolled ? base : prev;
 
   const samples = {};
   for (const id of ids) {
-    const arr = prev.samples[id] || [];
+    const arr = base.samples[id] || [];
     let v;
     if (isLive(id)) {
       v = scoresAtLast[id];
     } else {
       // Carry the last OBSERVED value forward (A3.2): the newest sample, else
       // the seed. Never scoresAtLast (the banked floor), never 0.
-      const last = arr.length ? arr[arr.length - 1].v : prev.seeds[id];
+      const last = arr.length ? arr[arr.length - 1].v : base.seeds[id];
       if (!Number.isFinite(last)) { samples[id] = arr; continue; } // nothing observed yet — append nothing rather than invent
       v = last;
     }
@@ -107,7 +122,7 @@ export function appendTrailSnapshot(prev, { ids, scoresAtLast, seatLive, t, capa
     next.push({ t, v });
     samples[id] = next;
   }
-  return { seeds: prev.seeds, samples, ticks: prev.ticks + 1 };
+  return { seeds: base.seeds, samples, ticks: base.ticks + 1, dayKey: day ?? base.dayKey };
 }
 
 /**
@@ -137,15 +152,15 @@ export function useSessionCompositeTrail({
   // The timer must read the NEWEST upstream values without re-subscribing on
   // every render — a fresh interval per render would reset the shared clock and
   // resynchronise it to React, defeating the point.
-  const latest = React.useRef({ ids, scoresAtLast, seatLive, capacity, nowFn });
-  latest.current = { ids, scoresAtLast, seatLive, capacity, nowFn };
+  const latest = React.useRef({ ids, scoresAtLast, seatLive, seatBanked, capacity, nowFn });
+  latest.current = { ids, scoresAtLast, seatLive, seatBanked, capacity, nowFn };
 
   // Seeds are adopted once per seat-set, OUTSIDE the rolling buffer. Keyed by the
   // seat ids so a genuine seat-set change (a new pod) re-seeds and clears, while
   // a fresh-but-equal object identity each render does not.
   const seedKey = (ids || []).join(',');
   React.useEffect(() => {
-    setTrail(emptyTrail(seedKey ? { ...seatBanked } : {}));
+    setTrail(emptyTrail(seedKey ? { ...seatBanked } : {}, etDayKey((nowFn || Date.now)())));
     // seatBanked is intentionally read at seat-set change only: the seed is the
     // banked CLOSE, which does not move intraday. Re-seeding on every banked
     // object identity would reset the trail each render.
@@ -158,7 +173,8 @@ export function useSessionCompositeTrail({
       const cur = latest.current;
       const t = (cur.nowFn || Date.now)();
       setTrail((prev) => appendTrailSnapshot(prev, {
-        ids: cur.ids, scoresAtLast: cur.scoresAtLast, seatLive: cur.seatLive, t, capacity: cur.capacity,
+        ids: cur.ids, scoresAtLast: cur.scoresAtLast, seatLive: cur.seatLive, t,
+        capacity: cur.capacity, seeds: cur.seatBanked,
       }));
     };
     const iv = setInterval(tick, intervalMs);

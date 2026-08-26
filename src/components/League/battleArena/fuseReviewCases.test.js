@@ -139,3 +139,14 @@ describe('fuse review cases — forced scope (D2)', () => {
     }
   });
 });
+
+describe('CR4 — the case key is validated against the published list', () => {
+  it('inherited prototype members never resolve (an unvalidated param would white-screen)', () => {
+    for (const k of ['toString', 'constructor', 'hasOwnProperty', '__proto__', 'valueOf']) {
+      expect(fuseReviewOverlay(k), k).toBeNull();
+    }
+  });
+  it('real keys still resolve', () => {
+    for (const k of FUSE_REVIEW_KEYS) expect(fuseReviewOverlay(k)).toBeTruthy();
+  });
+});
