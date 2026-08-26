@@ -1685,7 +1685,7 @@ export const MANDATE_TRANSPORT_MODE = 'direct';
  * never in a build PR.
  */
 // Pinned by: agentGuardrails.pairing.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const PROFIT_TARGET_EXECUTOR_ENABLED = false;
+export const PROFIT_TARGET_EXECUTOR_ENABLED = true;
 
 /**
  * Metric History Snapshot Substrate (EXA_RETRIEVAL_INTEGRATION_SPEC_V1_4 §6.0 —

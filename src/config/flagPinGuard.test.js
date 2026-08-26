@@ -91,8 +91,13 @@ const DARK_BY_DESIGN = {
   // Rollover and dormancy stay dark below.
   MANDATE_ROLLOVER_ENABLED:
     'Spec 1 rollover sweep (§5.3) — built P4; flips only after a founder preview smoke',
-  PROFIT_TARGET_EXECUTOR_ENABLED:
-    'Exit-Behavior Tier 2 Ask 3 — the profitTarget executor + R11 suppression pass; flips WITH Ask 1 per R10, never alone',
+  // PROFIT_TARGET_EXECUTOR_ENABLED intentionally ABSENT: it flipped true in the
+  // Asks 1+3 joint-flip PR (R10: the executor + R11 suppression pass light WITH
+  // Ask 1's enforcement-true prompt copy — never alone). The deliberate flip
+  // drops it here in the same change, per the guard's own "if DELIBERATE"
+  // instruction; agentGuardrails.pairing.test.js now pins the live true value.
+  // Re-adding it while it ships true fails the DARK_BY_DESIGN integrity test
+  // below.
   MANDATE_DORMANCY_DOWNSHIFT_ENABLED:
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
 };

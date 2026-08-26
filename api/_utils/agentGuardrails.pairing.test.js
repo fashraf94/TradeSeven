@@ -57,8 +57,8 @@ describe('F11 pairing — every supported shape has a registered executor', () =
 });
 
 describe('F11 one-flag gate — compiler acceptance and executor registration share PROFIT_TARGET_EXECUTOR_ENABLED', () => {
-  it('the flag is DARK (R10: Ask 3 merges dark; flips with Ask 1)', () => {
-    expect(PROFIT_TARGET_EXECUTOR_ENABLED).toBe(false);
+  it('the flag is LIVE (R10: flipped jointly with Ask 1 — the 2026-08 joint-flip PR)', () => {
+    expect(PROFIT_TARGET_EXECUTOR_ENABLED).toBe(true);
   });
 
   it('dark state: profitTarget is absent from the supported shapes and classified displayed-advisory; live state: present and executor', () => {
