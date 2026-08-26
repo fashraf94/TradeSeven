@@ -42,7 +42,22 @@ import {
 // (leagueTokens transitively imports the browser-side commandUI). If LX ever moves
 // to a node-clean home, import it instead of duplicating.
 const CPU_COLOR = '#9A8CE0';
-const HUMAN_PALETTE = ['#33B4C4', '#5B8DEF', '#F0C75E', '#E8927C', '#7BD88F', '#B79CED', '#5EEAD4', '#EBA6C8'];
+// CROWN COLLISION FIX. Slot 2 was '#F0C75E' — BYTE-IDENTICAL to LTOKENS.gold,
+// the leader crown's colour — so one human rival in eight wore the crown's own
+// hue as identity, and gold meant "this seat" and "the leader" at once.
+//
+// Re-stepping slot 2 alone was the approved fix; writing the guard proved it
+// insufficient. Two further hues sat just under the normal-vision floor of 15
+// (the dataviz validator's hard-fail for two colours a reader must tell apart):
+//   #E8927C ΔE 14.9   #7BD88F ΔE 14.3
+// Lowering the floor to let them pass would be tuning the guard to the code, so
+// all three were re-stepped instead. Distances from the crown, normal vision:
+//   slot 2  #F0C75E → #E86A92    1.6 → 25.5
+//   slot 3  #E8927C → #E07A6B   14.9 → 20.1
+//   slot 4  #7BD88F → #4FBF86   14.3 → 19.4
+// Worst remaining seat-hue-vs-gold distance: 17.8 (#EBA6C8).
+// Guarded by leagueSeatPalette.guard.test.js.
+const HUMAN_PALETTE = ['#33B4C4', '#5B8DEF', '#E86A92', '#E07A6B', '#4FBF86', '#B79CED', '#5EEAD4', '#EBA6C8'];
 
 // Client mirror of api/_utils/agentArchetypeConfig.getArchetypeLabel for the CPU
 // archetype set (that module is fenced + api-only, so it can't be imported into
