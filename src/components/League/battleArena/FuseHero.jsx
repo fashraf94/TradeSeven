@@ -40,6 +40,7 @@ import { prefersReducedMotion } from './arenaEngineCore';
 import { ArenaAtmosphere } from './arenaAtmosphere';
 import {
   fuseFrame, makeScale, catmullPath, spreadLabels, thinYLabels, headerYieldsToNow,
+  fitYLabel, yGutterWidth, nowPillX,
   sessionFraction, DAY_XLABELS, WEEK_XLABELS, weekTipF,
   latestTrailSnapshot, deriveCut, seatDaySeries, seatWeekSeries,
 } from './fuseGeometry';
@@ -118,8 +119,9 @@ function FhTip({ x, tipY, headY, color, seat, lead, you, value, subValue, dead, 
           {/* E2.2 — the crowned seat shows the TOTAL that earned its crown, so
               the crown's basis is visible rather than merely implied. Today
               scope only: in The Week the value already IS the total.
-              PROVISIONAL (E2.2): if this crowds the bunched case at re-review,
-              delete this one block and E2.1's microcopy stands alone. */}
+              Provisional LIFTED at F0: it does not crowd the bunched case, and
+              the asymmetry (only the leader shows a total) is deliberate — the
+              line justifies the crown, it does not rank the field. */}
           {subValue != null && (
             <span data-fh-subvalue>
               <Mono style={{ fontSize: compact ? 7 : 8.5, fontWeight: 600, letterSpacing: '0.04em',
@@ -244,13 +246,22 @@ export function FuseHero({
   const headerYield = !calm && !compact && headerYieldsToNow({
     burnX, headerText, headerLeft: compact ? 10 : 16, headerSize: compact ? 8 : 9.5,
   });
+  // F2 — the pill slides left rather than overlapping the scope toggle, which
+  // is interactive and must stay hittable. Bounded displacement, so it stays
+  // attached to the burn; the tip embers remain the precise NOW marker.
+  const pillX = nowPillX({ burnX, w, compact });
 
   // ── y labels: priority top → cut → zero/open → floor, greedily thinned ──
+  // F1 — each numeric label is FITTED to its gutter (abbreviating at magnitude)
+  // so it can never wrap mid-number, which is what `-22800.0` did in a 45px box.
+  const yGutter = yGutterWidth(F.padL);
+  const yFont = compact ? 8 : 9.5;
+  const fitted = (v, signed) => fitYLabel(v, { gutter: yGutter, fontSize: yFont, signed });
   const yLabels = calm ? [] : thinYLabels([
-    { v: HI, t: fmt(HI, DAY), y: Y(HI) },
+    { v: HI, t: fitted(HI, DAY), y: Y(HI) },
     ...(showTarget ? [{ v: targetVal, t: 'CUT', y: targetY }] : []),
     { v: 0, t: DAY ? 'OPEN' : '0', y: Y(0) },
-    ...(LO < 0 ? [{ v: LO, t: fmt(LO), y: Y(LO) }] : []),
+    ...(LO < 0 ? [{ v: LO, t: fitted(LO), y: Y(LO) }] : []),
   ], F.yLabelGap);
 
   const xLabels = DAY ? DAY_XLABELS : WEEK_XLABELS;
@@ -328,7 +339,7 @@ export function FuseHero({
 
       {/* y labels — left gutter, thinned */}
       {yLabels.map((g, i) => (
-        <div key={i} style={{ position: 'absolute', left: 5, top: g.y - 6, width: F.padL - 11, textAlign: 'right' }}>
+        <div key={i} style={{ position: 'absolute', left: 5, top: g.y - 6, width: yGutter, textAlign: 'right', whiteSpace: 'nowrap' }}>
           <Mono style={{ fontSize: /CUT|OPEN/.test(g.t) ? (compact ? 7 : 8) : (compact ? 8 : 9.5), fontWeight: 700,
             letterSpacing: /CUT|OPEN/.test(g.t) ? '0.1em' : 0,
             color: g.t === 'CUT' ? LX.cut : g.v < 0 ? LX.neg : LTOKENS.ink3 }}>{g.t}</Mono>
@@ -354,7 +365,7 @@ export function FuseHero({
       ))}
       {/* NOW — desktop pill; compact uses the cursor line + ember instead */}
       {!calm && !compact && (
-        <div style={{ position: 'absolute', left: burnX, top: F.plotT - 22, transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
+        <div data-fh-now style={{ position: 'absolute', left: pillX, top: F.plotT - 22, transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
           <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: 999, background: alpha('#0B0C10', 0.9), border: `1px solid ${alpha(LX.cut, 0.45)}` }}>
             <Mono style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.12em', color: LX.cut }}>NOW</Mono>
           </span>

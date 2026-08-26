@@ -59,7 +59,14 @@ export default function LeagueBattleArena({ state = 'live', mode = 'ranked', onB
   );
   const reviewData = React.useMemo(() => {
     if (!review) return null;
-    return { ...buildFixtureModel(st), climb: review.climb, trail: review.trail, initialScope: review.scope };
+    const base = buildFixtureModel(st);
+    return {
+      ...base,
+      climb: review.climb,
+      trail: review.trail,
+      initialScope: review.scope,
+      pod: { ...base.pod, day: review.day, days: review.days }, // F3 nit: chrome agrees with the plotted week
+    };
   }, [review, st]);
 
   const primary = md === 'ranked' ? LTOKENS.gold : LTOKENS.teal;

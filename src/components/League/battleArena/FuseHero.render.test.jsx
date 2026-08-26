@@ -13,7 +13,7 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { FuseHero } from './FuseHero';
 import { emptyTrail, appendTrailSnapshot } from './useSessionCompositeTrail';
-import { FH } from './fuseGeometry';
+import { FH, fuseFrame, scopeToggleLeft, yGutterWidth, monoWidth } from './fuseGeometry';
 
 const IDS = ['you', 'r1', 'r2', 'r3'];
 const SEATS = [
@@ -315,5 +315,68 @@ describe('FuseHero — E4: the header yields to the NOW pill, then returns', () 
     const html = render({ state: 'awaiting', mode: 'ranked', trail: emptyTrail({}) });
     expect(html).toContain('At the start line');
     expect(html).not.toContain('NOW');
+  });
+});
+
+describe('FuseHero — F1/F2 at the render level', () => {
+  // Five banked closes: makes LO −22,800 (the value that wrapped) AND saturates
+  // weekTipF, parking the burn at plotR — the exact state F2 was observed in.
+  const EXTREME_CLIMB = {
+    you: [300, 900, 1500, 2100, 2600],
+    r1: [12000, 26000, 33000, 40000, 44000],
+    r2: [-200, -500, -700, -850, -900],
+    r3: [-4000, -9000, -14000, -19000, -22800],
+  };
+  const extremeWeek = () => render({
+    state: 'live', mode: 'ranked', climb: EXTREME_CLIMB, initialScope: 'week',
+    trail: appendTrailSnapshot(emptyTrail({ you: 2600, r1: 44000, r2: -900, r3: -22800 }), {
+      ids: IDS,
+      scoresAtLast: { you: 2600, r1: 44000, r2: -900, r3: -22800 },
+      seatLive: Object.fromEntries(IDS.map((id) => [id, true])),
+      t: T('18:15'),
+    }),
+  });
+  const labelTexts = (html) => [...html.matchAll(/left:5px[^>]*>(.*?)<\/div>/g)]
+    .map((m) => m[1].replace(/<[^>]*>/g, ''));
+
+  it('F1 — the value that wrapped renders abbreviated, on one line', () => {
+    const texts = labelTexts(extremeWeek());
+    expect(texts).toContain('-22.8k');
+    expect(texts).not.toContain('-22800.0'); // the form too wide for the gutter
+  });
+
+  it('F1 — EVERY rendered y-label fits the gutter (width, not collision)', () => {
+    const gutter = yGutterWidth(FH.desktop.padL);
+    for (const t of labelTexts(extremeWeek())) {
+      expect(monoWidth(t, 9.5), `"${t}" overflows the ${gutter}px gutter`).toBeLessThanOrEqual(gutter);
+    }
+  });
+
+  it('F1 — full precision is kept where it fits (abbreviation is a fallback)', () => {
+    const texts = labelTexts(render({ state: 'live', mode: 'ranked', trail: liveTrail() }));
+    expect(texts.some((t) => /^\+?\d+\.\d$/.test(t))).toBe(true);
+  });
+
+  it('F1 — y-label boxes are nowrap, so no future format can break a number', () => {
+    const html = extremeWeek();
+    const boxes = html.match(/position:absolute;left:5px[^"]*/g) || [];
+    expect(boxes.length).toBeGreaterThan(0);
+    for (const b of boxes) expect(b).toContain('white-space:nowrap');
+  });
+
+  it('F2 — at a full banked week the pill is pulled in, clear of the toggle', () => {
+    const html = extremeWeek();
+    const m = html.match(/data-fh-now[^>]*left:([0-9.]+)px/);
+    expect(m, 'the NOW pill did not render').toBeTruthy();
+    const pillLeft = parseFloat(m[1]);
+    const frame = fuseFrame({ w: 1316, h: 420 });
+    expect(pillLeft).toBeLessThan(frame.plotR);                        // displaced from the burn
+    expect(pillLeft + 18).toBeLessThan(scopeToggleLeft({ w: 1316 }));  // and clear of the control
+  });
+
+  it('F2 — the toggle never yields: both controls still render at the collision', () => {
+    const html = extremeWeek();
+    expect(html).toContain('>Today<');
+    expect(html).toContain('>The week<');
   });
 });

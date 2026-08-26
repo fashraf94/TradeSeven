@@ -13,7 +13,7 @@ import {
   FH, fuseFrame, makeScale, catmullPath, spreadLabels, thinYLabels,
   etMinuteOfDay, sessionFraction, DAY_XLABELS, WEEK_XLABELS,
   latestTrailSnapshot, deriveCut, seatDaySeries, seatWeekSeries, weekTipF,
-  headerYieldsToNow, monoWidth,
+  headerYieldsToNow, monoWidth, fitYLabel, yGutterWidth, nowPillX, scopeToggleLeft,
 } from './fuseGeometry';
 import { appendTrailSnapshot, emptyTrail } from './useSessionCompositeTrail';
 import { rankByScores } from '../../../constants/leagueTournament';
@@ -386,5 +386,107 @@ describe('headerYieldsToNow — the functional mark keeps its x, the microcopy y
   it('monoWidth counts letter-spacing, so the estimate errs GENEROUS (yield early, never collide)', () => {
     expect(monoWidth('ABCD', 10, 0)).toBeCloseTo(4 * 6, 6);
     expect(monoWidth('ABCD', 10, 0.16)).toBeGreaterThan(monoWidth('ABCD', 10, 0));
+  });
+});
+
+// ── F1 acceptance: a label must FIT ITS GUTTER (width, not collision) ───────
+// The prior criterion asserted labels never overprint EACH OTHER and passed
+// while `-22800.0` wrapped mid-number inside a 45px box. These assert rendered
+// width against gutter width — the property that actually failed.
+describe('F1 — y labels fit their own gutter at every magnitude', () => {
+  const DESKTOP = { padL: FH.desktop.padL, font: 9.5 };
+  const COMPACT = { padL: FH.compact.padL, font: 8 };
+
+  for (const [name, G] of [['desktop', DESKTOP], ['compact', COMPACT]]) {
+    it(`${name}: extreme magnitudes render on one line, inside the gutter`, () => {
+      const gutter = yGutterWidth(G.padL);
+      for (const v of [44.5, -575, 44000, -22800, 50400, -18000, 1234567, -0.8, 0]) {
+        const t = fitYLabel(v, { gutter, fontSize: G.font });
+        expect(t, `${v}`).not.toContain('\n');
+        expect(monoWidth(t, G.font), `${v} → "${t}" overflows ${gutter}px`).toBeLessThanOrEqual(gutter);
+      }
+    });
+  }
+
+  it('THE REGRESSION: the value that wrapped now fits, abbreviated', () => {
+    const gutter = yGutterWidth(FH.desktop.padL);
+    // the raw form is genuinely too wide — that is why it wrapped
+    expect(monoWidth('-22800.0', 9.5)).toBeGreaterThan(gutter);
+    const t = fitYLabel(-22800, { gutter, fontSize: 9.5 });
+    expect(t).toBe('-22.8k');
+    expect(monoWidth(t, 9.5)).toBeLessThanOrEqual(gutter);
+  });
+
+  it('keeps full precision when it fits — abbreviation is a fallback, not a default', () => {
+    const gutter = yGutterWidth(FH.desktop.padL);
+    expect(fitYLabel(44.5, { gutter, fontSize: 9.5 })).toBe('44.5');
+    expect(fitYLabel(-575, { gutter, fontSize: 9.5 })).toBe('-575.0');
+    expect(fitYLabel(12, { gutter, fontSize: 9.5, signed: true })).toBe('+12.0');
+  });
+
+  it('escalates to integer abbreviation only when one decimal still will not fit', () => {
+    const t = fitYLabel(-1234567, { gutter: 26, fontSize: 9.5 });
+    expect(monoWidth(t, 9.5)).toBeLessThanOrEqual(30);
+    expect(t).toMatch(/M$/);
+  });
+});
+
+// ── F2 acceptance: the pill never touches the header band or the toggle ─────
+describe('F2 — the NOW pill clears the scope toggle across the whole burn range', () => {
+  const W = 1316;
+  const frame = fuseFrame({ w: W, h: 420 });
+  const X = (f) => frame.padL + Math.max(0, Math.min(1, f)) * (frame.plotR - frame.padL);
+  const PILL_HALF = 18;
+
+  it('at EVERY burn fraction the pill stays clear of the toggle hit area', () => {
+    const toggleLeft = scopeToggleLeft({ w: W });
+    for (let f = 0; f <= 1.0001; f += 0.01) {
+      const px = nowPillX({ burnX: X(f), w: W });
+      expect(px + PILL_HALF, `f=${f.toFixed(2)} pill right edge intrudes on the toggle`)
+        .toBeLessThan(toggleLeft);
+    }
+  });
+
+  it('the WEEK-SCOPE FULL WEEK is where it bites — the raw burn WOULD have collided', () => {
+    // This is the observed case, and it is not an edge case: weekTipF saturates
+    // to 1.0 once five days are banked, so a completed week parks the burn at
+    // plotR — 6px from the toggle by the (already widened) estimate, which is
+    // what read as "arguably touching" at review. D2's switch to week scope for
+    // underwater/extremes is what put all of them there.
+    const toggleLeft = scopeToggleLeft({ w: W });
+    const maxBurn = frame.plotR;                                     // f = 1.0
+    expect(maxBurn + PILL_HALF).toBeGreaterThan(toggleLeft);         // the F2 defect
+    expect(nowPillX({ burnX: maxBurn, w: W }) + PILL_HALF).toBeLessThan(toggleLeft); // fixed
+  });
+
+  it('week scope with a full week parks the burn at the far right (why F2 shows up there)', () => {
+    expect(weekTipF(5, 0.73)).toBe(1);   // five closes banked → saturated
+    expect(weekTipF(2, 0.5)).toBeCloseTo(0.5); // mid-week still burns inside its band
+  });
+
+  it('early and mid session are UNTOUCHED — the pill still sits on the burn', () => {
+    for (const f of [0.02, 0.25, 0.5, 0.6]) {
+      const bx = X(f);
+      expect(nowPillX({ burnX: bx, w: W })).toBe(bx);
+    }
+  });
+
+  it('displacement is bounded, so the pill never detaches from the burn', () => {
+    for (let f = 0.6; f <= 1.0001; f += 0.02) {
+      const bx = X(f);
+      expect(bx - nowPillX({ burnX: bx, w: W })).toBeLessThanOrEqual(PILL_HALF + 8 + 1);
+    }
+  });
+
+  it('holds at narrower widths too (the toggle tracks the right inset)', () => {
+    for (const w of [1316, 1000, 760]) {
+      const f2 = fuseFrame({ w, h: 420 });
+      const bx = f2.plotR; // the furthest right the burn can reach
+      expect(nowPillX({ burnX: bx, w }) + PILL_HALF, `w=${w}`).toBeLessThan(scopeToggleLeft({ w }));
+    }
+  });
+
+  it('degrades safely on a non-finite burn', () => {
+    expect(Number.isNaN(nowPillX({ burnX: NaN, w: W }))).toBe(true);
   });
 });

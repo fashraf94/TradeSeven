@@ -158,5 +158,9 @@ export const FUSE_REVIEW_KEYS = Object.freeze(Object.keys(FUSE_REVIEW_CASES));
 export function fuseReviewOverlay(key) {
   const c = FUSE_REVIEW_CASES[key];
   if (!c) return null;
-  return { climb: c.climb, trail: c.trail, scope: c.scope, label: c.label, look: c.look };
+  // F3 nit: the shared fixture pod chrome reads "Day 2 of 5" while these cases
+  // carry five banked closes. Overridden here so the header agrees with the
+  // data a reviewer is looking at.
+  const days = Math.max(...Object.values(c.climb).map((a) => a.length), 1);
+  return { climb: c.climb, trail: c.trail, scope: c.scope, label: c.label, look: c.look, day: days, days };
 }

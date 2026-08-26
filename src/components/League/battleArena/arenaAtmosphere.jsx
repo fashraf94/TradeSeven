@@ -10,19 +10,11 @@
 // it was the only thing in an otherwise empty plot, pulling the eye to the
 // least meaningful element exactly when the board has least to say.
 //
-// ── ON THE DUPLICATION, DELIBERATELY ────────────────────────────────────────
-// E1 asked to REUSE ClimbArena's `ClimbAtmosphere`. That function is
-// module-private inside ClimbArena.jsx, so reusing it literally would mean
-// editing that file — and every amendment in this arc, E's own closing line
-// included, holds ClimbArena untouched while the fuse ships dark. A hard
-// constraint outranks a preference, so this is a copy of that markup rather
-// than an extraction of it.
-//
-// The duplication is BOUNDED and SELF-RESOLVING: ClimbArena is deleted in the
-// post-flip cleanup PR, and its private twin dies with it, leaving this as the
-// single copy. It is presentation only — no scoring math, so not the local-copy
-// bug class BUILD_RULES §4 forbids. Recorded in the flag docstring's cleanup
-// obligations so the twin is not left orphaned.
+// F4 — this is a genuine EXTRACTION, not a copy. It began as a duplicate of
+// ClimbArena's module-private `ClimbAtmosphere` because the arc held that file
+// untouched; F4 amended the constraint to permit behaviour-preserving
+// extractions covered by existing tests, so the twin was deleted and ClimbArena
+// now imports this module. ONE copy, two consumers.
 //
 // The starfield is a SEEDED LCG (seed 7), not Math.random — deterministic
 // across renders and R13-clean.

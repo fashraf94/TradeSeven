@@ -291,3 +291,86 @@ export function headerYieldsToNow({
   const headerRight = headerLeft + monoWidth(headerText, headerSize, headerTrack);
   return (burnX - pillHalf) < (headerRight + gap);
 }
+
+// ── F1: a y-label must FIT ITS OWN GUTTER ───────────────────────────────────
+//
+// Acceptance #5 asserted labels never OVERPRINT each other, and passed while the
+// board failed: at 44,000-scale the floor label `-22800.0` was too wide for the
+// 45px gutter and WRAPPED mid-number, rendering as `-22800.` above `0`. A fit
+// defect hid behind a collision test. Width-vs-gutter is now its own rule.
+//
+// Abbreviation is preferred over widening the gutter: a gutter sized for
+// arbitrary magnitude would eat the plot, and the plot is the point.
+
+/** The drawable width of the y-label gutter, matching the rendered box. */
+export const yGutterWidth = (padL) => padL - 11;
+
+/**
+ * The widest faithful rendering of `value` that fits `gutter`, tried in order:
+ * full → one-decimal abbreviated (k/M) → integer abbreviated. The last is
+ * returned even if it overflows, so the caller always gets a single-line
+ * string; in practice it fits every magnitude the board can reach.
+ */
+export function fitYLabel(value, { gutter, fontSize, signed = false }) {
+  if (!Number.isFinite(value)) return '';
+  const sign = signed && value > 0 ? '+' : '';
+  const fits = (t) => monoWidth(t, fontSize) <= gutter;
+
+  const full = `${sign}${value.toFixed(1)}`;
+  if (fits(full)) return full;
+
+  const a = Math.abs(value);
+  const [scaled, suffix] = a >= 1e6 ? [value / 1e6, 'M'] : a >= 1e3 ? [value / 1e3, 'k'] : [value, ''];
+  const one = `${sign}${scaled.toFixed(1)}${suffix}`;
+  if (fits(one)) return one;
+  return `${sign}${Math.round(scaled)}${suffix}`;
+}
+
+// ── F2: the NOW pill vs the scope toggle (the mirrored right-edge case) ─────
+//
+// E4 solved the LEFT edge by having the header yield — it is decorative. The
+// right-edge obstacle is the scope toggle, which CANNOT yield: it is
+// interactive, it is how scope is changed, and its hit area must stay live.
+// So the PILL moves. See nowPillX.
+
+/**
+ * Left edge of the scope toggle, from the same mono metrics it renders with,
+ * WIDENED by a safety factor.
+ *
+ * The factor is calibrated against observation, not invented: at F2's review the
+ * pill read as "arguably touching" the toggle at maximum burn, where the
+ * unfactored estimate said it cleared by ~5px. So the estimate under-states the
+ * real control by at least that much — unsurprising, since the mono advance is
+ * nominal, letter-spacing lands after the final glyph, and the shell adds
+ * borders and padding the metrics do not see.
+ *
+ * The estimate must therefore err WIDE (toggle further left ⇒ pill keeps more
+ * distance), the same direction-of-safety rule headerYieldsToNow uses. The cost
+ * of erring is a pill that slides a few pixels early; the cost of erring the
+ * other way is occluding a control the user must be able to hit.
+ */
+export const TOGGLE_WIDTH_SAFETY = 1.15;
+
+export function scopeToggleLeft({ w, compact = false }) {
+  const fontSize = compact ? 8.5 : 9.5;
+  const padX = compact ? 8 : 11;
+  const btn = (label) => monoWidth(label, fontSize, 0.06) + padX * 2 + 2; // +border
+  const raw = btn('Today') + btn('The week') + 3 + 6 + 2;                 // gap + shell padding + shell border
+  const rightInset = compact ? 10 : 16;
+  return w - rightInset - raw * TOGGLE_WIDTH_SAFETY;
+}
+
+/**
+ * Where the NOW pill's CENTRE actually goes.
+ *
+ * Normally the burn. Near the right edge it is clamped left so the pill's box
+ * (plus a gap) stops short of the toggle — never occluding a control the user
+ * must be able to hit. The displacement is bounded by pillHalf + gap, so the
+ * pill stays adjacent to the burn rather than detaching from it; the tips' own
+ * embers remain the precise NOW marker.
+ */
+export function nowPillX({ burnX, w, compact = false, pillHalf = 18, gap = 8 }) {
+  if (!Number.isFinite(burnX)) return burnX;
+  const limit = scopeToggleLeft({ w, compact }) - gap - pillHalf;
+  return Math.min(burnX, limit);
+}
