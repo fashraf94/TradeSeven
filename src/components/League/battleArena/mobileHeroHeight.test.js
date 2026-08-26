@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   MOBILE_STICKY_CHROME, MOBILE_DOCK_ROW, MOBILE_HERO_MIN, MOBILE_HERO_MAX,
-  mobileHeroHeight, dockRowsVisible, mobileHeroCss,
+  mobileHeroHeight, dockRowsVisible, mobileHeroCss, heroReservePx, HERO_ROW_CANDIDATES,
 } from './mobileHeroHeight';
 
 const SE_USABLE = 553;   // iPhone SE with Safari chrome showing (G1)
@@ -104,6 +104,31 @@ describe('G2 — the unit is svh, with a vh fallback, scoped to the hero', () =>
     expect(reserved).toBe(368);
     expect(preferred).toContain(`100svh - ${reserved}px`);
     expect(fallback).toContain(`100vh - ${reserved}px`);
-    expect(CSS).toContain(`calc(100svh - ${reserved}px)`); // CSS and JS cannot drift
+    // The CSS reserves via a custom property so the row target is switchable
+    // for H2's device comparison; its DEFAULT must equal the shipped budget.
+    expect(CSS).toContain('var(--fh-reserve, 368px)');
+    expect(heroReservePx(2)).toBe(reserved);
+  });
+});
+
+describe('H1/H2 — the two candidate row targets', () => {
+  it('the shipped default is two full rows; the candidates bracket it', () => {
+    expect(heroReservePx(HERO_ROW_CANDIDATES.two)).toBe(368);
+    expect(heroReservePx(HERO_ROW_CANDIDATES.sixty)).toBe(316);  // 1 + 60% of a second
+    expect(heroReservePx(HERO_ROW_CANDIDATES.one)).toBe(239);
+  });
+
+  it('each candidate yields the hero height the ruling is being judged against', () => {
+    const at = (rows) => mobileHeroHeight({ usableVh: SE_USABLE, rows });
+    expect(at(HERO_ROW_CANDIDATES.two)).toBe(185);
+    expect(at(HERO_ROW_CANDIDATES.sixty)).toBeCloseTo(236.6, 1);
+    expect(at(HERO_ROW_CANDIDATES.one)).toBe(314);
+  });
+
+  it("H1's concern is real: at two rows the head stack dominates the hero", () => {
+    // The measured four-seat stack bottoms at 151.5 regardless of height.
+    const HEAD_STACK = 151.5;
+    expect(HEAD_STACK / 185).toBeGreaterThan(0.8);  // ~82% of the hero is label stack
+    expect(HEAD_STACK / 314).toBeLessThan(0.5);     // under half at the relaxed target
   });
 });

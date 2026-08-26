@@ -21,8 +21,8 @@ import { LTOKENS, alpha } from '../leagueTokens';
 import { ArenaTopStrip, BeatCaption, ArenaOrb, MeterKey } from './ArenaPrimitives';
 import { ClimbArena } from './ClimbArena';
 import { FuseHero } from './FuseHero';
-import { FUSE_HERO_ON } from './fuseHeroGate';
-import { MOBILE_HERO_MIN } from './mobileHeroHeight';
+import { FUSE_HERO_ON, FUSE_HERO_ROWS } from './fuseHeroGate';
+import { MOBILE_HERO_MIN, heroReservePx } from './mobileHeroHeight';
 import { DecompositionStrip } from './DecompositionStrip';
 import { StarCell } from './StarCell';
 import { FlipControl, AgentDock, AgentMoveChip, DepartedChip } from './CommandDock';
@@ -150,7 +150,10 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
             can never clip when Safari's chrome is showing. The class is applied
             ONLY on the fuse arm — ClimbArena keeps its fixed height, unchanged. */}
         <div ref={heroRef} className={FUSE_HERO_ON ? 'bv2-fuse-hero-m' : undefined}
-          style={{ position: 'relative', marginTop: 10 }}>
+          style={{ position: 'relative', marginTop: 10,
+            // H2: the row target drives the reserved budget; ?heroRows= lets the
+            // two candidate heights be compared on one device.
+            ...(FUSE_HERO_ON ? { '--fh-reserve': `${heroReservePx(FUSE_HERO_ROWS ?? 2)}px` } : null) }}>
           {/* Branch A: the top half — and ONLY the top half — swaps on the fuse
               flag. Dark today, so this renders ClimbArena exactly as before. */}
           {FUSE_HERO_ON ? (

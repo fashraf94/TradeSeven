@@ -380,3 +380,38 @@ export function nowPillX({ burnX, w, compact = false, pillHalf = 18, gap = 8 }) 
   const limit = scopeToggleLeft({ w, compact }) - gap - pillHalf;
   return Math.min(burnX, limit);
 }
+
+// ── H3: THE ONE AXIS TRANSFORM ─────────────────────────────────────────────
+//
+// The cut line has been wrong three separate ways, every one of them plausible
+// on screen, every one a different pair of quantities compared as if they were
+// the same:
+//   A4/B2  mixed basis   — live rival composites against a banked own-score
+//   B2     floored value — a dropped poll reading as a genuine banked number
+//   CR1    wrong axis    — a gap between TOTALS drawn on an axis of DELTAS
+//
+// Three fixes for one property. This is that property, as a single function:
+// EVERY y on the board — each seat's curve, each seat's tip, the cut line, and
+// the cut's own label — is a total put through THIS transform and nothing else.
+// Week scope plots totals; Today plots each seat's move since its own open.
+//
+// Structural, not merely tested: there is one conversion, so a future fourth
+// member of the family has to go out of its way to exist. The property test
+// (fuseGeometry.test.js) asserts the cut sits exactly where YOUR seat would sit
+// at total === cutTotal, in both scopes, over randomised inputs.
+//
+// NOTE, deliberately: in Today scope the cut is YOUR-seat-specific — it answers
+// "what must I do today", and a rival with a different open baseline sits on a
+// different delta for the same total. That is the design ("all level at the
+// open"), not a defect, and it is why the invariant is stated against YOUR seat
+// rather than against every seat.
+export function toAxisValue(total, seed, day) {
+  if (!Number.isFinite(total)) return 0;
+  return day ? total - (Number.isFinite(seed) ? seed : 0) : total;
+}
+
+/** Where the cut line belongs on the axis: exactly where YOUR seat would be if
+ *  your total were the cut. Same transform, same inputs — by construction. */
+export function cutAxisLevel({ cutTotal, youSeed, day }) {
+  return toAxisValue(cutTotal, youSeed, day);
+}

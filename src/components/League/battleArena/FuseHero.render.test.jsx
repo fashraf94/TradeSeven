@@ -398,11 +398,14 @@ describe('FuseHero — code-review regressions', () => {
     // the CUT gridline label carries the LEVEL (3.0), and the annotation the gap (1.0)
     const labels = [...html.matchAll(/left:5px[^>]*>(.*?)<\/div>/g)].map((m) => m[1].replace(/<[^>]*>/g, ''));
     expect(labels).toContain('CUT');
-    // renderToString splits adjacent text nodes, so match the pieces rather
-    // than one literal run.
+    // H3: the LABEL states the same number the LINE is drawn at — the day's
+    // total you must post (3.0), not the remaining gap (1.0). The earlier pin
+    // asserted 1.0 and was encoding the line/label mismatch as correct.
     expect(html).toMatch(/TODAY MAKES THE CUT/);
     const ann = html.slice(Math.max(0, html.indexOf('TODAY MAKES THE CUT') - 90), html.indexOf('TODAY MAKES THE CUT'));
-    expect(ann.replace(/<[^>]*>/g, '')).toMatch(/\+.*1\.0/); // needToday — what you must ADD
+    const annText = ann.replace(/<[^>]*>/g, '');
+    expect(annText).toMatch(/\+.*3\.0/);
+    expect(annText).not.toMatch(/\+.*1\.0/);
   });
 
   it('CR1: the cut sits ABOVE your fuse tip while you are behind', () => {

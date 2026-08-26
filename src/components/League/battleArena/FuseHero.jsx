@@ -40,7 +40,7 @@ import { prefersReducedMotion } from './arenaEngineCore';
 import { ArenaAtmosphere } from './arenaAtmosphere';
 import {
   fuseFrame, makeScale, catmullPath, spreadLabels, thinYLabels, headerYieldsToNow,
-  fitYLabel, yGutterWidth, nowPillX,
+  fitYLabel, yGutterWidth, nowPillX, toAxisValue, cutAxisLevel,
   sessionFraction, DAY_XLABELS, WEEK_XLABELS, weekTipF,
   latestTrailSnapshot, deriveCut, seatDaySeries, seatWeekSeries,
 } from './fuseGeometry';
@@ -199,7 +199,8 @@ export function FuseHero({
 
   // ── per-seat series + display values ──
   const seatData = seats.map((s) => {
-    const dispVal = calm ? 0 : (DAY ? snap.values[s.id] - seed[s.id] : snap.values[s.id]);
+    // H3: every seat value goes through the ONE axis transform.
+    const dispVal = calm ? 0 : toAxisValue(snap.values[s.id], seed[s.id], DAY);
     let pts;
     let spine = false;
     if (calm) {
@@ -228,19 +229,15 @@ export function FuseHero({
   const { HI, LO, basement, zeroY, Y } = makeScale({ values: allVals, day: DAY, plotT: F.plotT, floorY: F.floorY });
 
   // ── the cut (ranked only; never in training, never when voided/calm) ──
-  // The cut must be drawn in the SAME quantity the axis plots. Week scope plots
-  // totals, so the level is cutTotal. Today plots DELTAS SINCE THE OPEN, so the
-  // level is the delta you must REACH — cutTotal − your open baseline — not
-  // `needToday`, which is the remaining gap between two TOTALS.
-  //
-  // Drawing that gap on a delta axis inverts the board as you gain: your fuse
-  // rises while the line falls, crossing at half the required move. With seed 10
-  // / you 12 / cut 13 it drew you at +2 above a cut at +1 — the board showing you
-  // clear of a cut you are a point behind. Same display-disagreement family as
-  // the mixed-basis cut (B2), one axis over.
-  //
-  // `needToday` stays correct as the LABEL: it is what you still have to add.
-  const cutLevel = DAY ? cutTotal - (seed[youId] ?? 0) : cutTotal;
+  // H3 — the cut goes through the SAME transform as the seats, so it cannot
+  // drift into a different quantity space. `cutAxisLevel` is literally
+  // "where YOUR seat would sit at total === cutTotal".
+  const cutLevel = cutAxisLevel({ cutTotal, youSeed: seed[youId], day: DAY });
+  // The LABEL states the same number the LINE is drawn at (§9: one source). In
+  // Today that reads "+3.0 TODAY MAKES THE CUT" — the day's total you must post,
+  // which is what the line's height means. It stays put as you climb toward it,
+  // rather than counting down while the line does not move.
+  const cutLabelVal = cutLevel;
   const showTarget = ranked && !calm && !voided && (DAY ? (needToday > 0 && cutLevel <= HI) : true);
   const targetY = Y(Math.min(cutLevel, HI));
 
@@ -359,7 +356,7 @@ export function FuseHero({
       ))}
       {DAY && showTarget && !compact && (
         <div style={{ position: 'absolute', left: F.padL + 8, top: targetY - 15 }}>
-          <Mono style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', color: LX.cut }}>+{fmt(needToday)} TODAY MAKES THE CUT</Mono>
+          <Mono style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', color: LX.cut }}>+{fmt(cutLabelVal)} TODAY MAKES THE CUT</Mono>
         </div>
       )}
       {basement > 0 && !calm && !compact && (

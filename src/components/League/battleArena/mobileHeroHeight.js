@@ -99,3 +99,16 @@ export function mobileHeroCss({ rows = 2, chrome = MOBILE_STICKY_CHROME, row = M
     preferred: `clamp(${min}px, calc(100svh - ${reserved}px), ${max}px)`,
   };
 }
+
+/** The sticky budget the hero must leave below it, for a given row target. */
+export const heroReservePx = (rows = 2, chrome = MOBILE_STICKY_CHROME, row = MOBILE_DOCK_ROW) =>
+  Math.round(chrome + rows * row);
+
+/**
+ * H1/H2 — the two candidates the founder is comparing on a real device:
+ *   2    → 368px reserved, hero ~185 on a 553 viewport (two FULL rows)
+ *   1.6  → 316px reserved, hero ~237
+ *   1    → 239px reserved, hero ~314 (one full row + a substantial partial)
+ * H1's provisional ruling is ~60% of a second row visible ⇒ rows = 1.6.
+ */
+export const HERO_ROW_CANDIDATES = Object.freeze({ two: 2, sixty: 1.6, one: 1 });

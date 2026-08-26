@@ -14,6 +14,7 @@ import {
   etMinuteOfDay, sessionFraction, DAY_XLABELS, WEEK_XLABELS,
   latestTrailSnapshot, deriveCut, seatDaySeries, seatWeekSeries, weekTipF,
   headerYieldsToNow, monoWidth, fitYLabel, yGutterWidth, nowPillX, scopeToggleLeft,
+  toAxisValue, cutAxisLevel,
 } from './fuseGeometry';
 import { appendTrailSnapshot, emptyTrail } from './useSessionCompositeTrail';
 import { rankByScores } from '../../../constants/leagueTournament';
@@ -488,5 +489,86 @@ describe('F2 — the NOW pill clears the scope toggle across the whole burn rang
 
   it('degrades safely on a non-finite burn', () => {
     expect(Number.isNaN(nowPillX({ burnX: NaN, w: W }))).toBe(true);
+  });
+});
+
+// ── H3: THE CUT-LINE INVARIANT ─────────────────────────────────────────────
+//
+// Not three regressions for three past bugs — ONE property, stated so that any
+// future member of the family fails it:
+//
+//   THE CUT SITS EXACTLY WHERE YOUR SEAT WOULD SIT AT total === cutTotal.
+//
+// Every past defect violates it. Mixed basis: the cut is computed from a banked
+// number while your seat rides a live one, so the two stop agreeing. Floored
+// value: a dropped poll silently substitutes a different quantity. Wrong axis: a
+// gap between totals is not the axis value of any total at all.
+//
+// Stated against YOUR seat rather than every seat because in Today scope the cut
+// is your-seat-specific by design — "all level at the open" means a rival with a
+// different baseline sits on a different delta for the same total.
+describe('H3 — the cut and the seats are ONE quantity space', () => {
+  // a deterministic spread of totals/seeds, including negatives and zero
+  const CASES = [];
+  for (const cutTotal of [-575, -12.5, 0, 0.1, 13, 44.5, 44000]) {
+    for (const youSeed of [-40, 0, 10, 11, 2600]) CASES.push({ cutTotal, youSeed });
+  }
+
+  for (const day of [true, false]) {
+    const scope = day ? 'Today' : 'The Week';
+    it(`${scope}: the cut level IS your seat's axis value at total === cutTotal`, () => {
+      for (const { cutTotal, youSeed } of CASES) {
+        const cut = cutAxisLevel({ cutTotal, youSeed, day });
+        const youAtCut = toAxisValue(cutTotal, youSeed, day);
+        expect(cut, `cutTotal=${cutTotal} seed=${youSeed} day=${day}`).toBe(youAtCut);
+      }
+    });
+
+    it(`${scope}: reaching the cut level means reaching the cut TOTAL — no drift`, () => {
+      for (const { cutTotal, youSeed } of CASES) {
+        const level = cutAxisLevel({ cutTotal, youSeed, day });
+        // invert the axis: a seat rendering AT the cut level holds cutTotal
+        const impliedTotal = day ? level + youSeed : level;
+        expect(impliedTotal).toBeCloseTo(cutTotal, 9);
+      }
+    });
+  }
+
+  it('rejects the WRONG-AXIS defect (CR1): a totals gap is not an axis level', () => {
+    const cutTotal = 13; const youSeed = 10; const youTotal = 12;
+    const needToday = cutTotal - youTotal;                 // the shipped defect
+    const correct = cutAxisLevel({ cutTotal, youSeed, day: true });
+    expect(correct).toBe(3);
+    expect(needToday).toBe(1);
+    expect(needToday).not.toBe(correct);
+    // and the defect INVERTS the reading: you at +2 would clear a cut at +1
+    expect(toAxisValue(youTotal, youSeed, true)).toBeGreaterThan(needToday);
+    expect(toAxisValue(youTotal, youSeed, true)).toBeLessThan(correct);
+  });
+
+  it('rejects the MIXED-BASIS defect: a cut off a different basis stops agreeing', () => {
+    const youSeed = 10;
+    const liveCut = 13;
+    const bankedCut = 11; // the same seat read on the other basis
+    for (const day of [true, false]) {
+      expect(cutAxisLevel({ cutTotal: liveCut, youSeed, day }))
+        .not.toBe(cutAxisLevel({ cutTotal: bankedCut, youSeed, day }));
+    }
+  });
+
+  it('the transform is the ONLY conversion — seats and cut share it verbatim', () => {
+    // If a seat is at the cut total, its rendered value and the cut coincide.
+    for (const day of [true, false]) {
+      for (const { cutTotal, youSeed } of CASES) {
+        const seatValue = toAxisValue(cutTotal, youSeed, day);
+        expect(cutAxisLevel({ cutTotal, youSeed, day })).toBe(seatValue);
+      }
+    }
+  });
+
+  it('degrades safely: non-finite totals and absent seeds never emit NaN', () => {
+    expect(toAxisValue(NaN, 10, true)).toBe(0);
+    expect(toAxisValue(12, undefined, true)).toBe(12);
+    expect(Number.isFinite(cutAxisLevel({ cutTotal: 5, youSeed: undefined, day: true }))).toBe(true);
   });
 });

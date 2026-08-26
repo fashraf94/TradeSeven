@@ -106,7 +106,7 @@
  *
  * SCOPED TO THE HERO ONLY. The app's wider 100vh usage is a real latent issue
  * and is deliberately not touched here. */
-.bv2-fuse-hero-m { height: clamp(180px, calc(100vh - 368px), 384px); }
+.bv2-fuse-hero-m { height: clamp(180px, calc(100vh - var(--fh-reserve, 368px)), 384px); }
 @supports (height: 100svh) {
-  .bv2-fuse-hero-m { height: clamp(180px, calc(100svh - 368px), 384px); }
+  .bv2-fuse-hero-m { height: clamp(180px, calc(100svh - var(--fh-reserve, 368px)), 384px); }
 }
