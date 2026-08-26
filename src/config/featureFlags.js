@@ -308,9 +308,9 @@ export const LEAGUE_LIVE_ORB_ENABLED = true;
  * line + `|| SP.get('fuseHero')` clause in the SAME COMMIT that flips this pin
  * — flip, pin, and override travel together (the ?leagueLiveOrb=1 lesson).
  *
- * CLEANUP-PR OBLIGATIONS (Amendment B §B3 — recorded here so they survive the
- * three months until that PR). Two guards will read as dead tests for a deleted
- * component. Neither is:
+ * CLEANUP-PR OBLIGATIONS (Amendment B §B3, extended F4 — recorded here so they
+ * survive the months until that PR). THREE items will look like dead weight for
+ * a deleted component to whoever does the cleanup. None of them is:
  *   - b3Lockstep.test.js pins the seatAltitude call SHAPE at both resolution
  *     sites; before ClimbArena is deleted it needs a FuseHero counterpart (or
  *     an equivalent basis-invariant test) — never plain deletion.

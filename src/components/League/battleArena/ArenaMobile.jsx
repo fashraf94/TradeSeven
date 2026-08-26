@@ -22,6 +22,7 @@ import { ArenaTopStrip, BeatCaption, ArenaOrb, MeterKey } from './ArenaPrimitive
 import { ClimbArena } from './ClimbArena';
 import { FuseHero } from './FuseHero';
 import { FUSE_HERO_ON } from './fuseHeroGate';
+import { MOBILE_HERO_MIN } from './mobileHeroHeight';
 import { DecompositionStrip } from './DecompositionStrip';
 import { StarCell } from './StarCell';
 import { FlipControl, AgentDock, AgentMoveChip, DepartedChip } from './CommandDock';
@@ -101,8 +102,15 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
   // keeps the fallback — effects don't run there).
   const heroRef = React.useRef(null);
   const [heroW, setHeroW] = React.useState(HERO_W_FALLBACK);
+  const [heroH, setHeroH] = React.useState(calm ? HERO_H_CALM : HERO_H);
   React.useEffect(() => {
-    const compute = () => { const el = heroRef.current; if (el && el.clientWidth) setHeroW(Math.max(280, el.clientWidth)); };
+    const compute = () => {
+      const el = heroRef.current;
+      if (el && el.clientWidth) setHeroW(Math.max(280, el.clientWidth));
+      // Phase 6: the CSS (svh) owns the height; the component reads back what it
+      // resolved to, so the SVG viewport always matches the real box.
+      if (el && el.clientHeight) setHeroH(Math.max(MOBILE_HERO_MIN, el.clientHeight));
+    };
     compute();
     const raf = requestAnimationFrame(compute);
     let ro;
@@ -138,12 +146,16 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
       {/* PINNED TOP — sticky so the hero + tab bar stay put while the body scrolls */}
       <div style={{ position: 'sticky', top: 0, zIndex: 20, background: LTOKENS.bg, padding: '14px 14px 0' }}>
         <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} compact voided={voided} />
-        <div ref={heroRef} style={{ position: 'relative', marginTop: 10 }}>
+        {/* Phase 6 / G2: the fuse hero is sized in svh via .bv2-fuse-hero-m so it
+            can never clip when Safari's chrome is showing. The class is applied
+            ONLY on the fuse arm — ClimbArena keeps its fixed height, unchanged. */}
+        <div ref={heroRef} className={FUSE_HERO_ON ? 'bv2-fuse-hero-m' : undefined}
+          style={{ position: 'relative', marginTop: 10 }}>
           {/* Branch A: the top half — and ONLY the top half — swaps on the fuse
               flag. Dark today, so this renders ClimbArena exactly as before. */}
           {FUSE_HERO_ON ? (
             <FuseHero state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
-              w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} trail={D.trail} initialScope={D.initialScope} />
+              w={heroW} h={heroH} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} trail={D.trail} initialScope={D.initialScope} />
           ) : (
             <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
               w={heroW} h={calm ? HERO_H_CALM : HERO_H} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} compact youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} />

@@ -93,3 +93,20 @@
 @keyframes fhCreep { to { stroke-dashoffset: -22; } }
 @keyframes fhStep  { 0% { opacity: 0; transform: scale(.4); } 40% { opacity: 1; } 100% { opacity: 0; transform: scale(2.2); } }
 @keyframes fhFly   { 0% { opacity: 0; transform: translate(-50%, 10px) scale(.8); } 18% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -110px) scale(1.15); } }
+
+/* ── Phase 6 / G2: the mobile fuse hero's height ───────────────────────────
+ * svh (the SMALL viewport — chrome VISIBLE) is the correct unit for a sticky
+ * element that must never clip: vh resolves against the large viewport and
+ * would pass only by accident, and dvh is dynamic, so the hero would resize
+ * while the dock scrolls beneath it.
+ *
+ * Reserved = 110 sticky chrome + 2 × 129 dock row = 368 (measured constants —
+ * see mobileHeroHeight.js). Floor 180 is the measured head-stack + x-label band; ceiling
+ * 384 is today's fixed height.
+ *
+ * SCOPED TO THE HERO ONLY. The app's wider 100vh usage is a real latent issue
+ * and is deliberately not touched here. */
+.bv2-fuse-hero-m { height: clamp(180px, calc(100vh - 368px), 384px); }
+@supports (height: 100svh) {
+  .bv2-fuse-hero-m { height: clamp(180px, calc(100svh - 368px), 384px); }
+}
