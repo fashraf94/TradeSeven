@@ -166,7 +166,7 @@ describe('FuseHero — reduced motion (acceptance 13)', () => {
   it('no ember pulse, no sparks, no creep, no fly, no tape scroll — board still complete', () => {
     setRM(true);
     const html = render({ state: 'live', mode: 'ranked', trail: liveTrail(), surge: { key: 1, pts: '+15' } });
-    expect(html).not.toMatch(/fhEmber|fhSpark|fhCreep|fhFly|fhHeat|fhTapeScroll/);
+    expect(html).not.toMatch(/fhEmber|fhSpark|fhCreep|fhFly|fhHeat/);
     // fully legible with animation off: cut, tips, values, labels all present
     expect(html).toContain('data-fh-cut');
     expect(html).toContain('data-fh-tip="you"');
@@ -223,5 +223,97 @@ describe('FuseHero — initialScope seeds without locking (D2)', () => {
     const html = render({ state: 'live', mode: 'ranked', trail: liveTrail(), initialScope: 'week', scope: 'day' });
     expect(html).toContain('OPEN');
     expect(html).not.toContain('MON');
+  });
+});
+
+describe('FuseHero — E1: the tape is gone, the atmosphere is texture-only', () => {
+  it('emits NO scrolling tape and no ticker glyphs', () => {
+    const html = render({ state: 'live', mode: 'ranked', trail: liveTrail() });
+    expect(html).not.toContain('fhTapeScroll');
+    expect(html).not.toMatch(/NVDA \+1\.4|MSFT −0\.3|AVGO/); // the old tape string
+  });
+
+  it('renders the shared atmosphere instead — gradient/aurora/particles, no text', () => {
+    const html = render({ state: 'live', mode: 'ranked', trail: liveTrail() });
+    expect(html).toContain('bv2-aurora1');
+    expect(html).toContain('bv2-particles');
+  });
+
+  it('the reload state no longer leads with wallpaper: no tape in an empty plot', () => {
+    const html = render({ state: 'live', mode: 'ranked', trail: emptyTrail({ ...SEEDS }) });
+    expect(html).not.toContain('fhTapeScroll');
+    expect(html).toContain('data-fh-tip="you"');
+  });
+});
+
+describe('FuseHero — E2: the header names the quantity, the crown shows its basis', () => {
+  it('E2.1 — Today names what the numbers are; The Week names its own', () => {
+    const day = render({ state: 'live', mode: 'ranked', trail: liveTrail(), initialScope: 'day' });
+    expect(day).toMatch(/Today · since the open/i);
+    expect(day).not.toContain('The session'); // the old, unqualified microcopy
+    const week = render({ state: 'live', mode: 'ranked', trail: liveTrail(), initialScope: 'week' });
+    expect(week).toMatch(/The week · running total/i);
+  });
+
+  it('E2.2 — in Today the crowned seat carries the TOTAL that earned the crown', () => {
+    const html = render({ state: 'live', mode: 'ranked', trail: liveTrail(), initialScope: 'day' });
+    expect(html).toContain('data-fh-subvalue');
+    expect(html).toContain('25.0 total');       // r1 leads on standing
+    // exactly one seat carries it — it is a crown annotation, not a row label
+    expect(html.split('data-fh-subvalue').length - 1).toBe(1);
+  });
+
+  it('E2.2 — The Week shows NO second line (there the value already IS the total)', () => {
+    const html = render({ state: 'live', mode: 'ranked', trail: liveTrail(), initialScope: 'week' });
+    expect(html).not.toContain('data-fh-subvalue');
+  });
+
+  it('E2.2 — voided suppresses it along with the crown', () => {
+    const html = render({ state: 'live', mode: 'ranked', trail: liveTrail(), initialScope: 'day', voided: true });
+    expect(html).not.toContain('data-fh-subvalue');
+    expect(html).not.toContain('data-fh-crown');
+  });
+});
+
+describe('FuseHero — E4: the header yields to the NOW pill, then returns', () => {
+  // burnX follows the newest sample's clock position, so an early-session trail
+  // collides and a mid-afternoon one does not.
+  const trailAt = (hhmmZ) => appendTrailSnapshot(emptyTrail({ ...SEEDS }), {
+    ids: IDS,
+    scoresAtLast: { you: 12, r1: 25, r2: 13, r3: 11 },
+    seatLive: Object.fromEntries(IDS.map((id) => [id, true])),
+    t: T(hhmmZ),
+  });
+
+  it('early session (9:35): the microcopy is GONE, the pill keeps its true x', () => {
+    const html = render({ state: 'live', mode: 'ranked', trail: trailAt('13:35'), initialScope: 'day' });
+    expect(html).not.toContain('data-fh-header');
+    expect(html).not.toMatch(/Today · since the open/i);
+    expect(html).toContain('NOW'); // the functional mark never moves or hides
+  });
+
+  it('mid-afternoon (14:15): the microcopy is back, both render together', () => {
+    const html = render({ state: 'live', mode: 'ranked', trail: trailAt('18:15'), initialScope: 'day' });
+    expect(html).toContain('data-fh-header');
+    expect(html).toMatch(/Today · since the open/i);
+    expect(html).toContain('NOW');
+  });
+
+  it('it is a clean disappearance — the element is absent, not truncated or faded', () => {
+    const html = render({ state: 'live', mode: 'ranked', trail: trailAt('13:35'), initialScope: 'day' });
+    // the whole span is gone…
+    expect(html).not.toContain('data-fh-header');
+    // …so no fragment of the MICROCOPY survives (a truncation leaves a prefix).
+    // Scoped to its distinctive phrase: the bare word "Today" is also the scope
+    // toggle's button label and legitimately stays on screen.
+    expect(html).not.toMatch(/since the open/i);
+    expect(html).not.toMatch(/ellipsis|text-overflow/i);
+    expect(html).toContain('>Today<'); // the toggle is untouched by the yield
+  });
+
+  it('awaiting keeps its start-line copy (no pill to collide with)', () => {
+    const html = render({ state: 'awaiting', mode: 'ranked', trail: emptyTrail({}) });
+    expect(html).toContain('At the start line');
+    expect(html).not.toContain('NOW');
   });
 });

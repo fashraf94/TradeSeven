@@ -35,8 +35,10 @@ describe('FuseHero host branch (flag ON) — wired, exclusive, non-destructive',
       const html = renderToString(<Host state="live" mode="ranked" onBack={() => {}} />);
       // the fuse arm rendered…
       expect(html).toContain('data-testid="fuse-hero"');
-      // …and the climb arm did NOT (bv2-aurora1 is emitted only by ClimbArena)
-      expect(html).not.toContain('bv2-aurora1');
+      // …and the climb arm did NOT. Marker changed at E1: FuseHero now shares
+      // ArenaAtmosphere (so bv2-aurora1 is no longer ClimbArena-only), but
+      // bv2-bob — the orb bob — is still emitted by ClimbArena alone.
+      expect(html).not.toContain('bv2-bob');
     });
 
     it(`${label}: swaps ONLY the top half — the docks still compose`, () => {

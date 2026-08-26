@@ -13,6 +13,7 @@ import {
   FH, fuseFrame, makeScale, catmullPath, spreadLabels, thinYLabels,
   etMinuteOfDay, sessionFraction, DAY_XLABELS, WEEK_XLABELS,
   latestTrailSnapshot, deriveCut, seatDaySeries, seatWeekSeries, weekTipF,
+  headerYieldsToNow, monoWidth,
 } from './fuseGeometry';
 import { appendTrailSnapshot, emptyTrail } from './useSessionCompositeTrail';
 import { rankByScores } from '../../../constants/leagueTournament';
@@ -346,5 +347,44 @@ describe('D1 — every sample renders at X(its own timestamp), never at X(its in
     const pts = seatDaySeries({ samples: [{ t: T('15:00'), v: 5 }], seed: 0 });
     const label = DAY_XLABELS.find((l) => l.t === '11:00');
     expect(pts[1].f).toBeCloseTo(label.f, 9);
+  });
+});
+
+// ── E4 / D6: the header yields to the NOW pill ──────────────────────────────
+describe('headerYieldsToNow — the functional mark keeps its x, the microcopy yields', () => {
+  const HDR = { headerText: 'Today · since the open', headerLeft: 16, headerSize: 9.5 };
+
+  it('yields while the burn sits early (the collision D6 measured)', () => {
+    expect(headerYieldsToNow({ burnX: 78, ...HDR })).toBe(true);   // f≈0.02
+    expect(headerYieldsToNow({ burnX: 110, ...HDR })).toBe(true);  // f≈0.05
+  });
+
+  it('RETURNS once the pill clears — it is a disappearance, not a permanent drop', () => {
+    expect(headerYieldsToNow({ burnX: 320, ...HDR })).toBe(false);
+    expect(headerYieldsToNow({ burnX: 700, ...HDR })).toBe(false);
+  });
+
+  it('there is a real crossover, and it sits early in the session', () => {
+    let crossover = null;
+    for (let x = 40; x <= 1200; x += 1) {
+      if (!headerYieldsToNow({ burnX: x, ...HDR })) { crossover = x; break; }
+    }
+    expect(crossover).toBeGreaterThan(120);   // genuinely collides for a while
+    expect(crossover).toBeLessThan(400);      // but clears early, not mid-afternoon
+  });
+
+  it('a LONGER header yields for longer — the rule tracks the text actually drawn', () => {
+    const short = { headerText: 'The week', headerLeft: 16, headerSize: 9.5 };
+    const findX = (h) => { for (let x = 40; x <= 1200; x += 1) if (!headerYieldsToNow({ burnX: x, ...h })) return x; return null; };
+    expect(findX(HDR)).toBeGreaterThan(findX(short));
+  });
+
+  it('degrades safely on a non-finite burn (never hides the header by accident)', () => {
+    expect(headerYieldsToNow({ burnX: NaN, ...HDR })).toBe(false);
+  });
+
+  it('monoWidth counts letter-spacing, so the estimate errs GENEROUS (yield early, never collide)', () => {
+    expect(monoWidth('ABCD', 10, 0)).toBeCloseTo(4 * 6, 6);
+    expect(monoWidth('ABCD', 10, 0.16)).toBeGreaterThan(monoWidth('ABCD', 10, 0));
   });
 });

@@ -253,3 +253,41 @@ export function seatWeekSeries({ closes, tipValue, tipF, live }) {
   }
   return pts;
 }
+
+// ── the NOW pill vs the header microcopy (D6 / E4) ─────────────────────────
+//
+// The pill is FUNCTIONAL and must sit at the burn's true x; the header is
+// microcopy. So the HEADER yields — a clean disappearance, never a truncation
+// or a fade to unreadable — and it returns the moment the pill clears (E4).
+//
+// Widths are estimated from monospace metrics rather than measured, so no ref
+// or layout pass is needed and the rule stays pure and testable. The estimate
+// is deliberately GENEROUS (it over-states the header's width), so the failure
+// mode is yielding a few pixels early rather than colliding.
+
+/** Monospace advance ≈ 0.6em; the League mono stack is a fixed-advance face. */
+export const MONO_ADVANCE_EM = 0.6;
+
+/** Rendered width of a mono run, including letter-spacing. */
+export function monoWidth(text, fontSize, letterSpacingEm = 0) {
+  return String(text || '').length * fontSize * (MONO_ADVANCE_EM + letterSpacingEm);
+}
+
+/**
+ * Should the header microcopy yield to the NOW pill this frame?
+ * @param {Object} a
+ * @param {number} a.burnX        - the pill's centre x (the burn)
+ * @param {string} a.headerText   - the microcopy actually rendered
+ * @param {number} a.headerLeft   - its left inset
+ * @param {number} a.headerSize   - its font size
+ * @param {number} [a.headerTrack]- its letter-spacing in em
+ * @param {number} [a.pillHalf]   - half the pill's width (NOW + padding)
+ * @param {number} [a.gap]        - breathing room required between them
+ */
+export function headerYieldsToNow({
+  burnX, headerText, headerLeft, headerSize, headerTrack = 0.16, pillHalf = 18, gap = 10,
+}) {
+  if (!Number.isFinite(burnX)) return false;
+  const headerRight = headerLeft + monoWidth(headerText, headerSize, headerTrack);
+  return (burnX - pillHalf) < (headerRight + gap);
+}

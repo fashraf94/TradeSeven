@@ -317,6 +317,10 @@ export const LEAGUE_LIVE_ORB_ENABLED = true;
  *   - the seatHasLiveSample truth table in seatAltitude.test.js pins the
  *     sampling predicate to the resolver's own branches; it guards the session
  *     trail (and therefore the B2 cut), not ClimbArena, and stays.
+ *   - ClimbArena's private `ClimbAtmosphere` is a TWIN of the shared
+ *     battleArena/arenaAtmosphere.jsx (E1: reuse would have meant editing
+ *     ClimbArena, which this arc holds untouched). Deleting ClimbArena resolves
+ *     the duplication to one copy — verify the shared module is the survivor.
  *
  * Pinned by: leagueBattleviewFlags.test.js, fuseHeroGate.test.jsx (flagPinGuard: this value and the pins move together — BUILD_RULES §2; the gate suite's dark-default rows flip with the pin).
  */

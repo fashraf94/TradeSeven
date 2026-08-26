@@ -93,4 +93,3 @@
 @keyframes fhCreep { to { stroke-dashoffset: -22; } }
 @keyframes fhStep  { 0% { opacity: 0; transform: scale(.4); } 40% { opacity: 1; } 100% { opacity: 0; transform: scale(2.2); } }
 @keyframes fhFly   { 0% { opacity: 0; transform: translate(-50%, 10px) scale(.8); } 18% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -110px) scale(1.15); } }
-@keyframes fhTapeScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }

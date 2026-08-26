@@ -24,8 +24,11 @@
 //
 // PROHIBITED SCAFFOLDING, not present (R13): no flSeries, no 900ms burn timer /
 // frac-stepKey loop, no useMarketPulse, no fixed stage, no candles, no tweaks
-// panel. The env tape below is SYNTHETIC texture (R14) — a fixed string, no
-// quote wiring, no randomness.
+// panel.
+//
+// E1: the scrolling env tape is CUT. The backdrop is ArenaAtmosphere — texture
+// without glyphs, so nothing competes with the fuses for attention (and the
+// empty-plot reload state no longer leads with its own wallpaper).
 
 import React from 'react';
 import { Mono, LIcon } from '../LeagueParts';
@@ -34,8 +37,9 @@ import AgentPresence, { archetypeToDisposition } from '../../AgentPresence';
 import { isAgentPresenceOn } from '../../../config/featureFlags';
 import { HEAD_FACE_LIFT } from './climbHeadLayout';
 import { prefersReducedMotion } from './arenaEngineCore';
+import { ArenaAtmosphere } from './arenaAtmosphere';
 import {
-  fuseFrame, makeScale, catmullPath, spreadLabels, thinYLabels,
+  fuseFrame, makeScale, catmullPath, spreadLabels, thinYLabels, headerYieldsToNow,
   sessionFraction, DAY_XLABELS, WEEK_XLABELS, weekTipF,
   latestTrailSnapshot, deriveCut, seatDaySeries, seatWeekSeries,
 } from './fuseGeometry';
@@ -48,29 +52,12 @@ const SPARKS = [
   { dx: 18, dy: 8, dur: 1.3, delay: 0.15 },
 ];
 
-// Synthetic env tape (R14): texture only. A FIXED strip — no quotes, no
-// randomness, no network. Duplicated once for a seamless CSS loop.
-const TAPE = 'NVDA +1.4 · MSFT −0.3 · AAPL +0.6 · AMZN +2.1 · GOOG −0.8 · META +1.1 · TSLA −2.4 · AMD +3.0 · NFLX +0.4 · CRM −1.2 · AVGO +1.8 · COST +0.2 · ';
-
-function FuseEnvTape({ reduce }) {
-  return (
-    <div aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-      <div style={{ position: 'absolute', top: '38%', left: 0, whiteSpace: 'nowrap', opacity: 0.16, filter: 'blur(1.5px)',
-        animation: reduce ? 'none' : 'fhTapeScroll 60s linear infinite' }}>
-        <Mono style={{ fontSize: 11, letterSpacing: '0.08em', color: LTOKENS.ink3 }}>{TAPE}{TAPE}</Mono>
-      </div>
-      {/* substrate: the tape reads BEHIND the board, never through the text */}
-      <div style={{ position: 'absolute', inset: 0, background: alpha('#0B0C10', 0.34) }} />
-    </div>
-  );
-}
-
 // ── the burning tip ─────────────────────────────────────────────────────────
 // The mech keys off the seat's STABLE CODE-ID (Phase 4 / R12 — seat.archId;
 // display-label fallback for older callers). Unresolved → archetypeToDisposition
 // returns 'neutral' → the generic mech renders. A tip never crashes on an
 // unknown archetype.
-function FhTip({ x, tipY, headY, color, seat, lead, you, value, dead, compact, reduce, onTap, showHead }) {
+function FhTip({ x, tipY, headY, color, seat, lead, you, value, subValue, dead, compact, reduce, onTap, showHead }) {
   const hs = compact ? (you ? 30 : 25) : (you ? 44 : 36);
   const displaced = Math.abs(headY - tipY) > 4;
   const neg = typeof value === 'string' && value.startsWith('-');
@@ -128,6 +115,17 @@ function FhTip({ x, tipY, headY, color, seat, lead, you, value, dead, compact, r
         <span style={{ display: 'flex', flexDirection: 'column' }}>
           <Mono style={{ fontSize: compact ? (you ? 12.5 : 11) : (you ? 17 : 14), fontWeight: 700, lineHeight: 1.05,
             color: valueColor, textShadow: `0 0 12px ${alpha(valueColor, 0.55)}` }}>{value}</Mono>
+          {/* E2.2 — the crowned seat shows the TOTAL that earned its crown, so
+              the crown's basis is visible rather than merely implied. Today
+              scope only: in The Week the value already IS the total.
+              PROVISIONAL (E2.2): if this crowds the bunched case at re-review,
+              delete this one block and E2.1's microcopy stands alone. */}
+          {subValue != null && (
+            <span data-fh-subvalue>
+              <Mono style={{ fontSize: compact ? 7 : 8.5, fontWeight: 600, letterSpacing: '0.04em',
+                color: alpha(color, 0.7), marginTop: 1 }}>{subValue}</Mono>
+            </span>
+          )}
           {you && <Mono style={{ fontSize: compact ? 6.5 : 7.5, fontWeight: 700, letterSpacing: '0.1em', color, marginTop: 1 }}>YOU</Mono>}
         </span>
       </div>
@@ -241,6 +239,12 @@ export function FuseHero({
     F.headGap, F.plotT + (compact ? 14 : 20), F.floorY - 4,
   );
 
+  // ── the header microcopy + its E4 yield (both need burnX) ──
+  const headerText = calm ? 'At the start line' : DAY ? 'Today · since the open' : 'The week · running total';
+  const headerYield = !calm && !compact && headerYieldsToNow({
+    burnX, headerText, headerLeft: compact ? 10 : 16, headerSize: compact ? 8 : 9.5,
+  });
+
   // ── y labels: priority top → cut → zero/open → floor, greedily thinned ──
   const yLabels = calm ? [] : thinYLabels([
     { v: HI, t: fmt(HI, DAY), y: Y(HI) },
@@ -255,14 +259,24 @@ export function FuseHero({
   return (
     <div data-testid="fuse-hero" style={{ position: 'relative', width: w, height: h, overflow: 'hidden', borderRadius: 18,
       background: LTOKENS.bg, border: `1px solid ${LTOKENS.hair}` }}>
-      <FuseEnvTape reduce={reduce} />
+      <ArenaAtmosphere tone={ranked ? LTOKENS.gold : LTOKENS.teal} />
 
       {/* head row: microcopy + the scope toggle */}
       <div style={{ position: 'absolute', top: compact ? 8 : 12, left: compact ? 10 : 16, right: compact ? 10 : 16,
         display: 'flex', alignItems: 'center', gap: 8, zIndex: 6 }}>
-        <Mono style={{ fontSize: compact ? 8 : 9.5, letterSpacing: '0.16em', textTransform: 'uppercase', color: LTOKENS.ink3 }}>
-          {calm ? 'At the start line' : DAY ? 'The session' : 'The week'}
-        </Mono>
+        {/* E2.1 — the header NAMES the quantity. In Today the tip values are
+            changes since the open while the crown reads standing, and nothing
+            previously said so; that mismatch is what made a crowned +0.3 beside
+            an uncrowned +0.4 look like a bug (D4).
+            E4 — it YIELDS to the NOW pill (a clean disappearance, never a
+            truncation) and returns the moment the pill clears. */}
+        {!headerYield && (
+          <span data-fh-header>
+            <Mono style={{ fontSize: compact ? 8 : 9.5, letterSpacing: '0.16em', textTransform: 'uppercase', color: LTOKENS.ink3 }}>
+              {headerText}
+            </Mono>
+          </span>
+        )}
         <span style={{ marginLeft: 'auto' }}>
           {!calm && <FhScopeToggle scope={scope} onScope={onScope} compact={compact} />}
         </span>
@@ -358,6 +372,7 @@ export function FuseHero({
           lead={d.seat.id === leaderId && !calm && !voided}
           you={!!d.seat.you}
           value={calm ? '—' : fmt(d.dispVal, DAY)}
+          subValue={!calm && DAY && d.seat.id === leaderId && !voided ? `${fmt(snap.values[d.seat.id])} total` : null}
           dead={calm || done}
           compact={compact}
           reduce={reduce}
