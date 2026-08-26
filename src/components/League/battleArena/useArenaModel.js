@@ -20,7 +20,7 @@ import { useArenaPriceContext } from './useArenaPriceContext';
 import { useAtrPercentiles } from './useAtrPercentiles';
 import { useLiveComposites } from './useLiveComposites';
 import { useSessionCompositeTrail } from './useSessionCompositeTrail';
-import { LEAGUE_FUSE_HERO_ENABLED } from '../../../config/featureFlags';
+import { FUSE_HERO_ON } from './fuseHeroGate';
 
 export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   // ── the symbol union (agent six ∪ your three), content-keyed so the price hook
@@ -103,7 +103,7 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
     scoresAtLast: model?.scoresAtLast,
     seatLive: model?.seatLive,
     seatBanked: model?.seatBanked,
-    enabled: LEAGUE_FUSE_HERO_ENABLED && group?.status === GROUP_STATUS.BATTLE,
+    enabled: FUSE_HERO_ON && group?.status === GROUP_STATUS.BATTLE,
   });
   const modelWithTrail = React.useMemo(
     () => (model ? { ...model, trail } : null),

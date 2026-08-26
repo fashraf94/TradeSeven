@@ -301,6 +301,13 @@ export const LEAGUE_LIVE_ORB_ENABLED = true;
  * PR; `ClimbArena` removal is a third, later cleanup PR, only once the fuse has
  * held on a live flag.
  *
+ * PREVIEW OVERRIDE (Amendment C §C3): `?fuseHero=1` force-enables the fuse on
+ * a Vercel preview WITHOUT flipping this default — the gate is FUSE_HERO_ON in
+ * battleArena/fuseHeroGate.js (the arenaLiveGate idiom; this module keeps the
+ * pinned literal). REMOVAL IS SCHEDULED: the flip PR deletes the override's SP
+ * line + `|| SP.get('fuseHero')` clause in the SAME COMMIT that flips this pin
+ * — flip, pin, and override travel together (the ?leagueLiveOrb=1 lesson).
+ *
  * CLEANUP-PR OBLIGATIONS (Amendment B §B3 — recorded here so they survive the
  * three months until that PR). Two guards will read as dead tests for a deleted
  * component. Neither is:
@@ -311,7 +318,7 @@ export const LEAGUE_LIVE_ORB_ENABLED = true;
  *     sampling predicate to the resolver's own branches; it guards the session
  *     trail (and therefore the B2 cut), not ClimbArena, and stays.
  *
- * Pinned by: leagueBattleviewFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+ * Pinned by: leagueBattleviewFlags.test.js, fuseHeroGate.test.jsx (flagPinGuard: this value and the pins move together — BUILD_RULES §2; the gate suite's dark-default rows flip with the pin).
  */
 export const LEAGUE_FUSE_HERO_ENABLED = false;
 /**
