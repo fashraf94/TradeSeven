@@ -289,3 +289,62 @@ describe('seat series — real points only', () => {
     expect(pts[5]).toEqual({ f: 1, v: 14 });
   });
 });
+
+// ── D1 acceptance: x is the CLOCK, for data as well as for labels ───────────
+// Amendment D diagnosed an index mapping (X(i) for i in 0..n). These rows are
+// the executable refutation AND the lock: they fail loudly if a sample ever
+// stops being placed by its own timestamp. C1.3 put the LABELS on true clock
+// fractions; these keep the DATA on the same domain, so the axis and the thing
+// it measures cannot drift apart.
+describe('D1 — every sample renders at X(its own timestamp), never at X(its index)', () => {
+  const T = (hhmmZ) => Date.parse(`2026-08-26T${hhmmZ}:00Z`); // EDT: 13:30Z = 9:30 ET open
+  const SEED = 10;
+
+  it('a trail spanning 9:30→14:15 puts its newest point at the 14:15 clock position', () => {
+    // 9:35, 12:00, 14:15 — three samples, wildly non-uniform.
+    const pts = seatDaySeries({
+      samples: [
+        { t: T('13:35'), v: 11 },
+        { t: T('16:00'), v: 14 },
+        { t: T('18:15'), v: 19 },
+      ],
+      seed: SEED,
+    });
+    expect(pts[0]).toEqual({ f: 0, v: 0 });                 // the seed anchors at the OPEN
+    expect(pts[1].f).toBeCloseTo(5 / 390, 6);               // 9:35
+    expect(pts[2].f).toBeCloseTo(150 / 390, 6);             // 12:00
+    expect(pts[3].f).toBeCloseTo(285 / 390, 6);             // 14:15 ≈ 73% across
+    // an index mapping would have produced 1/3, 2/3, 3/3 — assert we are NOT there
+    expect(pts[3].f).not.toBeCloseTo(1, 3);
+    expect(pts[1].f).not.toBeCloseTo(1 / 3, 3);
+  });
+
+  it('a 10-minute gap renders as 10 minutes — gaps are proportional, never evened out', () => {
+    const pts = seatDaySeries({
+      samples: [
+        { t: T('14:00'), v: 11 },  // 10:00 ET
+        { t: T('14:10'), v: 12 },  // 10:10 — a 10-minute gap
+        { t: T('15:10'), v: 13 },  // 11:10 — a 60-minute gap
+      ],
+      seed: SEED,
+    });
+    const d1 = pts[2].f - pts[1].f;
+    const d2 = pts[3].f - pts[2].f;
+    expect(d1).toBeCloseTo(10 / 390, 6);
+    expect(d2).toBeCloseTo(60 / 390, 6);
+    expect(d2 / d1).toBeCloseTo(6, 3); // an index mapping would make this ratio 1
+  });
+
+  it('a dropped poll leaves a WIDER gap than a normal minute (the tell D1 names)', () => {
+    const normal = seatDaySeries({ samples: [{ t: T('14:00'), v: 1 }, { t: T('14:01'), v: 2 }], seed: 0 });
+    const dropped = seatDaySeries({ samples: [{ t: T('14:00'), v: 1 }, { t: T('14:05'), v: 2 }], seed: 0 });
+    expect(dropped[2].f - dropped[1].f).toBeGreaterThan(normal[2].f - normal[1].f);
+  });
+
+  it('the newest sample and the x-labels share ONE domain (C1.3 parity)', () => {
+    // A sample taken exactly at the 11:00 label must land exactly on that label.
+    const pts = seatDaySeries({ samples: [{ t: T('15:00'), v: 5 }], seed: 0 });
+    const label = DAY_XLABELS.find((l) => l.t === '11:00');
+    expect(pts[1].f).toBeCloseTo(label.f, 9);
+  });
+});

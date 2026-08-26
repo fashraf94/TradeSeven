@@ -29,16 +29,32 @@ const IDS = ['vela', 'atlas', 'helios', 'ember'];
 const OPEN = Date.parse('2026-08-26T13:30:00Z'); // 9:30 ET — a real session start
 const MIN = 60_000;
 
-/** Build a trail by walking per-seat value rows through the real accumulator.
- *  `rows` = [{ vela, atlas, helios, ember }, …], one row per shared-clock tick. */
-function trailFrom(seeds, rows) {
+// Shared-clock ticks, as MINUTES AFTER THE OPEN.
+//
+// D1 FIX: these were three ticks five minutes apart, so every fuse rendered
+// inside the leftmost ~4% of a 390-minute axis while the labels spanned
+// OPEN→CLOSE. The renderer was right — `seatDaySeries` has always placed a
+// sample at `sessionFraction(s.t)` — the FIXTURES were wrong. These now span
+// 9:35 → 14:15, so a case fills the board the way a real afternoon session does.
+//
+// Deliberately NON-UNIFORM: the 45-minute step between 125 and 170 exists so a
+// reviewer can SEE that a gap renders as a gap. Under the index mapping D1
+// suspected, that step would be indistinguishable from a 30-minute one.
+const TICKS_MIN = Object.freeze([5, 35, 65, 95, 125, 170, 215, 245, 275, 285]);
+
+/** Zip hand-authored per-seat value paths against TICKS_MIN and walk them
+ *  through the REAL accumulator. A `null` in a path is a DROPPED POLL for that
+ *  seat at that tick — seatLive false — so the trail carries its last observed
+ *  value forward, exactly as production would. */
+function trailFrom(seeds, paths) {
   let t = emptyTrail({ ...seeds });
-  rows.forEach((row, i) => {
+  TICKS_MIN.forEach((mins, i) => {
+    const row = Object.fromEntries(IDS.map((id) => [id, paths[id][i]]));
     t = appendTrailSnapshot(t, {
       ids: IDS,
       scoresAtLast: row,
       seatLive: Object.fromEntries(IDS.map((id) => [id, row[id] != null])),
-      t: OPEN + (i + 1) * 5 * MIN,
+      t: OPEN + mins * MIN,
     });
   });
   return t;
@@ -53,6 +69,12 @@ const UNDERWATER_CLIMB = {
   helios: [1, 3, 6, 8, 11],
   ember: [-20, -45, -78, -110, -142], // |LO| 142 ≫ 0.3 × 31 → compression engages
 };
+const UNDERWATER_PATH = {
+  vela: [32, 33, 35, 34, 36, 38, 37, 39, 40, 41],
+  atlas: [17, 16, 18, 15, 19, 20, 22, 21, 23, 24],
+  helios: [12, 13, 12, 14, 15, 14, 16, 17, 16, 18],
+  ember: [-148, -152, -161, -158, -170, -176, -181, -179, -188, -194],
+};
 
 // ── 2. Compressed EXTREME range — 44,000 up, −18,000 down ───────────────────
 const EXTREME_CLIMB = {
@@ -61,6 +83,12 @@ const EXTREME_CLIMB = {
   helios: [-200, -500, -700, -850, -900],
   ember: [-2000, -6000, -11000, -15000, -18000], // |LO| 18000 > 0.3 × 44000
 };
+const EXTREME_PATH = {
+  vela: [44900, 45400, 46100, 45600, 47000, 48200, 47800, 49100, 49800, 50400],
+  atlas: [2800, 3050, 3300, 3150, 3600, 3900, 4200, 4050, 4400, 4700],
+  helios: [-940, -905, -880, -915, -860, -830, -845, -800, -780, -760],
+  ember: [-18600, -19200, -19850, -19500, -20400, -21100, -21600, -21300, -22200, -22800],
+};
 
 // ── 3. Four seats inside a couple of points — the elbow connectors ──────────
 const BUNCHED_CLIMB = {
@@ -68,6 +96,14 @@ const BUNCHED_CLIMB = {
   atlas: [3.0, 6.0, 8.8, 11.5, 12.1],
   helios: [2.9, 6.1, 9.0, 11.3, 12.2],
   ember: [3.2, 5.9, 8.7, 11.6, 12.0],
+};
+const BUNCHED_PATH = {
+  vela: [12.4, 12.5, 12.6, 12.5, 12.7, 12.8, 12.7, 12.9, 13.0, 13.1],
+  atlas: [12.2, 12.4, 12.5, 12.6, 12.6, 12.7, 12.8, 12.8, 12.9, 13.0],
+  // helios drops a poll at the 170-minute tick — its fuse holds its last
+  // observed value across the gap instead of diving to the banked floor.
+  helios: [12.3, 12.4, 12.4, 12.5, 12.5, null, 12.7, 12.8, 12.8, 12.9],
+  ember: [12.1, 12.3, 12.4, 12.4, 12.6, 12.6, 12.6, 12.7, 12.8, 12.9],
 };
 
 // ── 4. Cold mount — no trail at all: the flat spine + live tip (R3) ─────────
@@ -83,31 +119,19 @@ export const FUSE_REVIEW_CASES = Object.freeze({
     label: 'Underwater · basement',
     look: 'Does the compressed negative read as "in the hole" rather than as a rendering fault? Is BASEMENT · COMPRESSED legible?',
     climb: UNDERWATER_CLIMB,
-    trail: trailFrom(lastOf(UNDERWATER_CLIMB), [
-      { vela: 33, atlas: 17, helios: 12, ember: -150 },
-      { vela: 35, atlas: 15, helios: 13, ember: -166 },
-      { vela: 34, atlas: 19, helios: 14, ember: -181 },
-    ]),
+    trail: trailFrom(lastOf(UNDERWATER_CLIMB), UNDERWATER_PATH),
   },
   extremes: {
     label: 'Extreme range · compressed',
     look: 'Y labels at 44,000 / −18,000: do they thin cleanly and never overprint? Does the axis stay readable?',
     climb: EXTREME_CLIMB,
-    trail: trailFrom(lastOf(EXTREME_CLIMB), [
-      { vela: 44900, atlas: 2800, helios: -940, ember: -18600 },
-      { vela: 45400, atlas: 3050, helios: -905, ember: -19200 },
-      { vela: 46100, atlas: 3300, helios: -880, ember: -19850 },
-    ]),
+    trail: trailFrom(lastOf(EXTREME_CLIMB), EXTREME_PATH),
   },
   bunched: {
     label: 'Four seats bunched · elbows',
     look: 'Four tips within ~0.4 pts: do the de-collided heads read, and do the elbow connectors track back to the right fuse?',
     climb: BUNCHED_CLIMB,
-    trail: trailFrom(lastOf(BUNCHED_CLIMB), [
-      { vela: 12.4, atlas: 12.2, helios: 12.3, ember: 12.1 },
-      { vela: 12.5, atlas: 12.4, helios: 12.4, ember: 12.3 },
-      { vela: 12.6, atlas: 12.5, helios: 12.5, ember: 12.4 },
-    ]),
+    trail: trailFrom(lastOf(BUNCHED_CLIMB), BUNCHED_PATH),
   },
   reload: {
     label: 'Cold mount · reload state',

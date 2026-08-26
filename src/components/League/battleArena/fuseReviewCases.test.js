@@ -8,10 +8,11 @@
 
 import { describe, it, expect } from 'vitest';
 import { FUSE_REVIEW_CASES, FUSE_REVIEW_KEYS, fuseReviewOverlay } from './fuseReviewCases';
-import { makeScale, latestTrailSnapshot, spreadLabels, fuseFrame } from './fuseGeometry';
+import { makeScale, latestTrailSnapshot, spreadLabels, fuseFrame, sessionFraction } from './fuseGeometry';
 
 const IDS = ['vela', 'atlas', 'helios', 'ember'];
 const GEO = { plotT: 42, floorY: 358 };
+const BUNCHED_LAST_CLOSE_HELIOS = 12.2;
 const weekValues = (climb) => IDS.flatMap((id) => climb[id]);
 
 describe('fuse review cases — each reaches the condition it exists to show', () => {
@@ -74,11 +75,42 @@ describe('fuse review cases — each reaches the condition it exists to show', (
   it('the trailed cases carry REAL accumulator output: one shared x per tick, all four seats', () => {
     for (const key of ['underwater', 'extremes', 'bunched']) {
       const { trail } = FUSE_REVIEW_CASES[key];
-      expect(trail.ticks, key).toBe(3);
-      for (let k = 0; k < 3; k++) {
+      expect(trail.ticks, key).toBe(10);
+      for (let k = 0; k < trail.ticks; k++) {
         const xs = IDS.map((id) => trail.samples[id][k].t);
         expect(new Set(xs).size, `${key} tick ${k}`).toBe(1);
       }
     }
+  });
+
+  // ── D1 regression: the instrument must SPAN the session ──────────────────
+  // The defect the founder saw was these pods spanning ten minutes of a
+  // 390-minute axis, so every fuse sat in the leftmost ~4% and the board looked
+  // like it was mapping by index. A pod that silently reverts to a narrow span
+  // would reproduce that false signal on the next review.
+  it('every trailed case spans most of the session and ENDS mid-afternoon', () => {
+    for (const key of ['underwater', 'extremes', 'bunched']) {
+      const { trail } = FUSE_REVIEW_CASES[key];
+      const ts = trail.samples.vela.map((x) => x.t);
+      const first = sessionFraction(ts[0]);
+      const last = sessionFraction(ts[ts.length - 1]);
+      expect(first, `${key} first`).toBeLessThan(0.05);
+      expect(last, `${key} last`).toBeGreaterThan(0.6);   // fills the board
+      expect(last, `${key} last`).toBeLessThan(1);        // still burning, not at CLOSE
+    }
+  });
+
+  it('the ticks are NON-uniform, so a gap visibly renders as a gap (D1)', () => {
+    const ts = FUSE_REVIEW_CASES.bunched.trail.samples.vela.map((x) => sessionFraction(x.t));
+    const gaps = ts.slice(1).map((f, i) => f - ts[i]);
+    const widest = Math.max(...gaps);
+    const narrowest = Math.min(...gaps);
+    expect(widest / narrowest).toBeGreaterThan(2); // an index mapping would give exactly 1
+  });
+
+  it('bunched exercises carry-forward on screen: helios holds through a dropped poll', () => {
+    const h = FUSE_REVIEW_CASES.bunched.trail.samples.helios;
+    expect(h[5].v).toBe(h[4].v);                       // held, not floored
+    expect(h[5].v).not.toBe(BUNCHED_LAST_CLOSE_HELIOS); // and not the banked close
   });
 });
