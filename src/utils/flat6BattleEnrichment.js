@@ -110,6 +110,10 @@ export function enrichFlat6Asset(asset, {
     minMultiplier: Math.min(persistedHistory.minMultiplier || 0, multiplier < 0 ? multiplier : 0),
   };
 
+  // LOAD-BEARING full-asset spread: the D2 flat6 `tierMultiplier: 1.0` doc
+  // stamp rides `...asset` into the scorer's per-asset override — narrowing
+  // this to a field subset silently re-scores flat6 display at slot-label
+  // 2.0x/1.5x (the C-2 server defect class, fixed 2026-08).
   const score = calculateAssetScoreV3(
     { ...asset, baseATR, tier: slotKey ?? asset.tier },
     priceChange,
