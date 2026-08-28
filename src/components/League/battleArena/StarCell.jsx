@@ -24,11 +24,25 @@ import { meterPct, meterInfo, meterNear, tickCrossed, METER_TICKS } from './aren
 import { ST_GOOD, ST_BAD, OWN_AGENT, tierMeta } from './arenaTheme';
 import { prefersReducedMotion } from './arenaEngineCore';
 
-// tier → meter tick size + label weight
+// tier → meter tick size + label weight.
+//
+// PHASE 5a / R1 — FLAT ACROSS ALL THREE TIERS. Star used to render larger
+// (19/15.5) and Support dimmer (0.82), which on a scoring surface reads as
+// WEIGHT: bigger and brighter says "this one counts for more". In the League it
+// does not. flat6 stamps tierMultiplier 1.0 on every agent pick
+// (agentGameModes.js) and user picks carry no tier at all
+// (tournamentUserScoring.js), so all nine holdings score at ×1.0 and any size
+// hierarchy is a false claim — a §9 display-agreement violation.
+//
+// Tier stays as IDENTITY: the label is kept, and StarGlyph's non-scalar
+// star/half/dot shapes are untouched. Only the scalar signals — tick size and
+// dim — are flattened. No tier multiplier is rendered anywhere.
+//
+// Re-activating tiered scoring for the League is a game-design change requiring
+// the §7 gated process (R1); if that ever happens, this is where the hierarchy
+// comes back.
 function tierProminence(tier, big) {
-  if (tier === 'star') return { tick: big ? 19 : 15.5, dim: 1, weight: 700 };
-  if (tier === 'core') return { tick: big ? 16.5 : 14, dim: 1, weight: 700 };
-  return { tick: big ? 14.5 : 12.5, dim: 0.82, weight: 600 };
+  return { tick: big ? 16.5 : 14, dim: 1, weight: 700 };
 }
 
 // ── tier glyph — filled star (Star) / half (Core) / dot (Support) ───────────

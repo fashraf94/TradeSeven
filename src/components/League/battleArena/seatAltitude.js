@@ -40,3 +40,29 @@ export function seatAltitude(id, { youId = null, youLiveScore = null, liveCompos
   const live = liveComposites?.[id];
   return Number.isFinite(live) ? live : floor;
 }
+
+/**
+ * Does this seat have a GENUINE live observation this tick?
+ *
+ * `seatAltitude` deliberately FLOORS to the banked value when a live reading is
+ * absent, which is right for altitude but ambiguous for sampling: a rival that
+ * genuinely reports its banked number and a rival whose poll just failed both
+ * resolve to the same scalar. The session trail (Phase 2) must tell them apart —
+ * it carries a seat's last OBSERVED value forward rather than re-appending the
+ * banked floor, which would draw a live seat diving back to its close as if it
+ * had lost the day's gains.
+ *
+ * Branches on EXACTLY the same conditions as `seatAltitude` above, in the same
+ * order — YOU on youLiveScore, a rival on the endpoint map, else not live. The
+ * co-located test pins the two together: change one branch and it fails.
+ *
+ * Pure + node-clean (no React, no clock).
+ *
+ * @param {string} id - the seat's odUserId
+ * @param {Object} ctx - the same context object `seatAltitude` takes
+ * @returns {boolean} true when this tick carries a real reading for the seat
+ */
+export function seatHasLiveSample(id, { youId = null, youLiveScore = null, liveComposites = null } = {}) {
+  if (id === youId) return Number.isFinite(youLiveScore);
+  return Number.isFinite(liveComposites?.[id]);
+}

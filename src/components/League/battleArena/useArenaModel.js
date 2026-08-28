@@ -19,6 +19,9 @@ import { buildArenaModel } from './buildArenaModel';
 import { useArenaPriceContext } from './useArenaPriceContext';
 import { useAtrPercentiles } from './useAtrPercentiles';
 import { useLiveComposites } from './useLiveComposites';
+import useSpectatedTournamentBattles from '../../../hooks/useSpectatedTournamentBattles';
+import { useSessionCompositeTrail } from './useSessionCompositeTrail';
+import { FUSE_HERO_ON } from './fuseHeroGate';
 
 export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   // ── the symbol union (agent six ∪ your three), content-keyed so the price hook
@@ -44,6 +47,22 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   //    off-gate (flag off → no poll → rivals stay on the banked series). Feeds
   //    ONLY rival seats; YOUR seat rides youLiveScore (never the endpoint). ──
   const liveComposites = useLiveComposites(group?.id, group?.status === GROUP_STATUS.BATTLE);
+
+  // ── rival HUMAN archetypes (Phase 4 / R12) — the server-side spectator
+  //    projection (archetype is PUBLIC_AGENT_CONTEXT). Polled ~60s ONLY while
+  //    the fuse gate is on, the round is live, and a human rival exists — so
+  //    with the flag dark this adds ZERO network traffic (acceptance 14 read
+  //    with Amendment C: the spectator read is Phase 4's specified source and
+  //    rides the same gate as the hero itself). CPU rivals never need it
+  //    (deterministic recovery); a CPU-only pod never polls. ──
+  const hasHumanRival = React.useMemo(
+    () => (group?.players || []).some((p) => p?.odUserId && p.odUserId !== uid && !isCpuUserId(p.odUserId)),
+    [group, uid],
+  );
+  const { battles: spectatedBattles } = useSpectatedTournamentBattles(
+    group?.id,
+    FUSE_HERO_ON && group?.status === GROUP_STATUS.BATTLE && hasHumanRival,
+  );
 
   // ── claims subcollection (live) ──
   const [claims, setClaims] = React.useState([]);
@@ -83,12 +102,31 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
       prevStarStates: prevRef.current,
       compositeContext,
       liveComposites, // Option X: rivals' endpoint composites (null off-gate → banked)
+      spectatedBattles, // Phase 4: rival-human archetypes ({} until the gated poll lands)
     }) : null),
-    [group, battle, priceCtx, atrPercentiles, claims, names, uid, mode, compositeContext, liveComposites],
+    [group, battle, priceCtx, atrPercentiles, claims, names, uid, mode, compositeContext, liveComposites, spectatedBattles],
   );
 
   // adopt the just-built star-states as the next tick's "prev" (after render)
   React.useEffect(() => { if (model?.starStates) prevRef.current = model.starStates; }, [model]);
+
+  // ── the session composite trail (Phase 2, R3 / A3) — the fuse board's TODAY
+  //    spine, accumulated in memory from the model's OWN altitudes so it samples
+  //    the same ruler the crown and cut read. Gated on the fuse flag: while dark
+  //    NO timer runs and nothing accumulates, so production is untouched until
+  //    the flip. Nothing consumes `trail` yet — FuseHero draws it in Phase 3. ──
+  const seatIds = React.useMemo(() => (model?.seats || []).map((s) => s.id), [model]);
+  const trail = useSessionCompositeTrail({
+    ids: seatIds,
+    scoresAtLast: model?.scoresAtLast,
+    seatLive: model?.seatLive,
+    seatBanked: model?.seatBanked,
+    enabled: FUSE_HERO_ON && group?.status === GROUP_STATUS.BATTLE,
+  });
+  const modelWithTrail = React.useMemo(
+    () => (model ? { ...model, trail } : null),
+    [model, trail],
+  );
 
   // ── write handlers (server-authoritative; flipPick toggles by symbol). Errors
   //    are mapped HERE (the connected layer already loads tournamentActions/
@@ -106,5 +144,5 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
 
   const ready = !!group && (battle ? priceCtx.pricesLoaded : true);
 
-  return { model, handlers: { onFlip, onClaim, onAsk }, ready };
+  return { model: modelWithTrail, handlers: { onFlip, onClaim, onAsk }, ready };
 }

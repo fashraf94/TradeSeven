@@ -27,10 +27,10 @@ import { deriveBeats } from '../../../utils/leagueBeats';
 import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
 import {
   getLatestDayEntry, getWeeklyComposite, rankByScores, WEEK_DAYS_REQUIRED, TOURNAMENT_TUNING, BASELINE_POLICY,
-  GROUP_STATUS, computeComposite, deriveCurrentTradingDay,
+  GROUP_STATUS, computeComposite, deriveCurrentTradingDay, cpuNFromUserId, cpuArchetypeForN,
 } from '../../../constants/leagueTournament';
 import { statusFeedToVoice } from './statusFeedToVoice';
-import { seatAltitude } from './seatAltitude';
+import { seatAltitude, seatHasLiveSample } from './seatAltitude';
 import { LEAGUE_AGENT_CHAT_ENABLED, LEAGUE_LIVE_ORB_ENABLED, LEAGUE_SCORE_HISTORY_ON } from '../../../config/featureFlags';
 
 // The strategy chips (founder starter set) for the two-way ask. Each chip's text
@@ -100,6 +100,7 @@ function quotesFromPrices(effectivePrices, myPlayer) {
 export function buildArenaModel({
   group, battle = null, priceCtx = {}, claims = [], displayNames = {},
   uid = null, mode = 'ranked', prevStarStates = {}, compositeContext = null,
+  spectatedBattles = null,
   liveComposites = null,
 } = {}) {
   const players = group?.players || [];
@@ -171,6 +172,10 @@ export function buildArenaModel({
     // when it can't resolve — the raw key would overflow the lane and mean
     // nothing, and the name is now the mobile climb's primary identifier.
     const name = isCpuSeat ? s.name : (displayNames[p.odUserId] || 'Player');
+    const cpuN = isCpuSeat ? cpuNFromUserId(p.odUserId) : null;
+    const archId = (s.you ? (battle?.agentContext?.archetype || null) : null)
+      ?? (cpuN != null ? cpuArchetypeForN(cpuN) : null)
+      ?? (spectatedBattles?.[p.odUserId]?.agentContext?.archetype || null);
     return {
       id: s.id,
       name,
@@ -182,7 +187,27 @@ export function buildArenaModel({
       // YOU stays teal (the locked invariant); rivals get a distinct, non-teal
       // hue from rivalHue (above).
       color: s.you ? YOU_COLOR : rivalHue(s.id),
-      arch: s.archName, // the label (rivals → undefined; never fabricated — owner-only)
+      // ── Phase 4 (R12): the seat carries the STABLE CODE-ID, resolved from
+      // TWO sources — never fabricated:
+      //   YOU        → your own battle's agentContext (via buildSeat, as before)
+      //   CPU rival  → the deterministic id→archetype map (cpuArchetypeForN)
+      //   HUMAN rival→ the server-side spectator projection (archetype is in
+      //                PUBLIC_AGENT_CONTEXT — tournamentBattleView.js), polled
+      //                by useSpectatedTournamentBattles only while the fuse
+      //                gate is on
+      // Unresolved → null: the tip renders the generic mech (neutral
+      // disposition), never a crash. The LABEL derives from the id via the
+      // adapter's archetypeLabel — itself backed by the canonical display map
+      // (the arena's former duplicated map is retired; the adapter is the ONE
+      // Spec-2.3-recorded importer of the display table for this surface).
+      archId,
+      // The LABEL stays owner-only, exactly as before Phase 4. Populating it for
+      // rivals changed the LIVE ClimbArena with the fuse dark — CPU heads flip
+      // from neutral to their archetype disposition, and the label prints again
+      // under a seat already named "CPU — Trend Follower" — breaking the
+      // flag-off-is-byte-identical invariant the hosts assert. FuseHero keys its
+      // mech off `archId` (seat.archId ?? seat.arch), so the id is all it needs.
+      arch: s.archName,
       // The seat's CURRENT composite (Option X rival-source swap): a rival's is the
       // endpoint live composite when the orb is on (rivalScore, above), else banked;
       // YOUR seat is the banked getWeeklyComposite (untouched — your live number is
@@ -458,10 +483,20 @@ export function buildArenaModel({
   const lastIdx = liveDayIdx(climb);
   const ids = seats.map((s) => s.id);
   const scoresAtLast = {};
+  // Phase 2 sampling inputs, gathered in the SAME loop off the SAME resolver so
+  // the session trail can never sample a different ruler than the crown and the
+  // cut (§9). `seatBanked` is the trail's SEED (each seat's last banked close);
+  // `seatLive` says whether THIS tick carries a real reading, which is what lets
+  // the trail carry a seat forward instead of re-appending the banked floor.
+  const seatBanked = {};
+  const seatLive = {};
   for (const id of ids) {
+    const banked = climb[id]?.[lastIdx] ?? 0;
     scoresAtLast[id] = seatAltitude(id, {
-      youId: uid, youLiveScore, liveComposites: rivalLive, banked: climb[id]?.[lastIdx] ?? 0,
+      youId: uid, youLiveScore, liveComposites: rivalLive, banked,
     });
+    seatBanked[id] = banked;
+    seatLive[id] = seatHasLiveSample(id, { youId: uid, youLiveScore, liveComposites: rivalLive });
   }
   const ranked = rankByScores(scoresAtLast, ids);
   const yIdx = ranked.indexOf(uid);
@@ -489,6 +524,17 @@ export function buildArenaModel({
     pod,
     wire,
     youRank,
+    // ── Phase 2 / Phase 3 sampling + cut inputs (Amendment A3.1 / A4) ──
+    // scoresAtLast: every seat's CURRENT altitude on ONE basis — the session
+    //   trail samples it, and Phase 3's cut is scoresAtLast[ranked[1]]. NEVER
+    //   derive either from seats[].score, which is mixed-basis when the orb is
+    //   on (a rival carries its live endpoint composite while YOUR seat keeps
+    //   the banked getWeeklyComposite).
+    // seatLive:   per seat, whether this tick carried a real reading.
+    // seatBanked: per seat, the last banked close — the trail's seed.
+    scoresAtLast,
+    seatLive,
+    seatBanked,
     // Points-led cards (Rulings B/C) flip on WITH the decomposition — the six and
     // three lead with star.points. Off-gate → 'mult' (today, byte-identical).
     headline: decompLive ? 'pts' : 'mult',

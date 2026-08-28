@@ -15,6 +15,8 @@ import { Mono, LIcon, Icon } from '../LeagueParts';
 import { LTOKENS, alpha } from '../leagueTokens';
 import { ArenaTopStrip, BeatCaption } from './ArenaPrimitives';
 import { ClimbArena } from './ClimbArena';
+import { FuseHero } from './FuseHero';
+import { FUSE_HERO_ON } from './fuseHeroGate';
 import { DecompositionStrip } from './DecompositionStrip';
 import { DockAgentSix, DockYourThree, DockStatePanel } from './CommandDock';
 import { FreeAgencyDoorway, OpponentSnapshot, FilmRoomOverlay, DepartedLedger } from './ArenaOverlays';
@@ -79,8 +81,15 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
 
       {/* THE HERO — the competition climb (+ the decomposition strip nested in-band) */}
       <div style={{ position: 'relative', marginTop: 11, height: HERO_H }}>
-        <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
-          w={HERO_W} h={climbH} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} />
+        {/* Branch A: the top half — and ONLY the top half — swaps on the fuse
+            flag. Dark today, so this renders ClimbArena exactly as before. */}
+        {FUSE_HERO_ON ? (
+          <FuseHero state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
+            w={HERO_W} h={climbH} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} trail={D.trail} initialScope={D.initialScope} />
+        ) : (
+          <ClimbArena state={state} mode={mode} seats={D.seats} climb={D.climb} youId={D.youId} dayIdx={lastIdx}
+            w={HERO_W} h={climbH} surge={live ? eng.surge : null} onPlayer={done ? null : setOpp} youLiveScore={D.youLiveScore} liveComposites={D.liveComposites} voided={voided} />
+        )}
         {live && eng.beat && (
           <div style={{ position: 'absolute', top: 12, left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 25, pointerEvents: 'none' }}>
             <BeatCaption beat={eng.beat} />

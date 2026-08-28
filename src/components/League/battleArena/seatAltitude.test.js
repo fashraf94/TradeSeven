@@ -5,7 +5,7 @@
 // the "both call sites move together" guarantee.
 
 import { describe, it, expect } from 'vitest';
-import { seatAltitude } from './seatAltitude';
+import { seatAltitude, seatHasLiveSample } from './seatAltitude';
 
 const CTX = (over = {}) => ({
   youId: 'u-you', youLiveScore: 93, liveComposites: { 'u-riv': 41, 'cpu-1': 8 }, banked: 5, ...over,
@@ -41,5 +41,42 @@ describe('seatAltitude', () => {
 
   it('a live composite of exactly 0 is honored (0 is a real altitude, not "absent")', () => {
     expect(seatAltitude('u-riv', CTX({ liveComposites: { 'u-riv': 0 }, banked: 5 }))).toBe(0);
+  });
+});
+
+// ── the sampling predicate (Phase 2) ────────────────────────────────────────
+// seatHasLiveSample must branch on EXACTLY the conditions seatAltitude branches
+// on. These rows pin them TOGETHER: the truth table below is derived from the
+// resolver's own behaviour, so changing one branch without the other fails here.
+describe('seatHasLiveSample — pinned to seatAltitude\'s branches', () => {
+  it('is true exactly when the resolver returns a LIVE reading rather than the floor', () => {
+    // Each row: a context where the answer is unambiguous because the live value
+    // and the banked floor differ. live ⇔ resolver !== floor.
+    const rows = [
+      ['u-you', CTX()],                                              // you, live
+      ['u-you', CTX({ youLiveScore: null })],                        // you, off-gate
+      ['u-you', CTX({ youLiveScore: NaN })],                         // you, degraded
+      ['u-riv', CTX()],                                              // rival, live
+      ['u-riv', CTX({ liveComposites: null })],                      // rival, flag off
+      ['u-riv', CTX({ liveComposites: {} })],                        // rival, failed fetch
+      ['u-riv', CTX({ liveComposites: { 'u-riv': NaN } })],          // rival, degraded value
+      ['cpu-9', CTX()],                                              // rival, absent from map
+    ];
+    for (const [id, ctx] of rows) {
+      const resolvedIsLive = seatAltitude(id, ctx) !== ctx.banked;
+      expect(seatHasLiveSample(id, ctx), `${id} / ${JSON.stringify(ctx.liveComposites)}`)
+        .toBe(resolvedIsLive);
+    }
+  });
+
+  it('YOUR seat is never live off the endpoint map, even when it carries your id', () => {
+    expect(seatHasLiveSample('u-you', CTX({ youLiveScore: null, liveComposites: { 'u-you': 999 } }))).toBe(false);
+  });
+
+  it('a live composite of exactly 0 counts as a real sample (not "absent")', () => {
+    // The zero-coercion trap: 0 is a real altitude. Treating it as absent would
+    // make the trail carry a seat forward through a genuine flat-to-zero move.
+    expect(seatHasLiveSample('u-riv', CTX({ liveComposites: { 'u-riv': 0 } }))).toBe(true);
+    expect(seatHasLiveSample('u-you', CTX({ youLiveScore: 0 }))).toBe(true);
   });
 });

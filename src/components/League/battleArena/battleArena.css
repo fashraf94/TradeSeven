@@ -82,3 +82,31 @@
   transition: transform 0.12s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease;
 }
 .bv2-tap:active { transform: scale(0.985); }
+
+/* ── Phase 3: the FUSE HERO (fh- namespace — never collides with bv2-/lg-) ──
+ * Same reduced-motion contract as above: the global index.css guard neutralizes
+ * these keyframes; JS-driven transients (sparks, the surge fly-up, the rung
+ * pulse) additionally check prefersReducedMotion() and do not render at all. */
+@keyframes fhEmber { 0%, 100% { opacity: .55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.35); } }
+@keyframes fhHeat  { 0%, 100% { opacity: .28; } 50% { opacity: .62; } }
+@keyframes fhSpark { 0% { opacity: 1; transform: translate(0, 0) scale(1); } 100% { opacity: 0; transform: translate(var(--fh-dx), var(--fh-dy)) scale(.3); } }
+@keyframes fhCreep { to { stroke-dashoffset: -22; } }
+@keyframes fhStep  { 0% { opacity: 0; transform: scale(.4); } 40% { opacity: 1; } 100% { opacity: 0; transform: scale(2.2); } }
+@keyframes fhFly   { 0% { opacity: 0; transform: translate(-50%, 10px) scale(.8); } 18% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -110px) scale(1.15); } }
+
+/* ── Phase 6 / G2: the mobile fuse hero's height ───────────────────────────
+ * svh (the SMALL viewport — chrome VISIBLE) is the correct unit for a sticky
+ * element that must never clip: vh resolves against the large viewport and
+ * would pass only by accident, and dvh is dynamic, so the hero would resize
+ * while the dock scrolls beneath it.
+ *
+ * Reserved = 110 sticky chrome + 2 × 129 dock row = 368 (measured constants —
+ * see mobileHeroHeight.js). Floor 180 is the measured head-stack + x-label band; ceiling
+ * 384 is today's fixed height.
+ *
+ * SCOPED TO THE HERO ONLY. The app's wider 100vh usage is a real latent issue
+ * and is deliberately not touched here. */
+.bv2-fuse-hero-m { height: clamp(180px, calc(100vh - 368px), 384px); }
+@supports (height: 100svh) {
+  .bv2-fuse-hero-m { height: clamp(180px, calc(100svh - 368px), 384px); }
+}

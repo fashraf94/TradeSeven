@@ -65,6 +65,7 @@
   "src/components/Forge/workshop/character/CharacterKit.jsx",
   "src/components/Forge/workshop/traits/TraitsExploration.jsx",
   "src/components/Forge/workshop/traits/TraitsExplorationKit.jsx",
+  "src/components/League/leagueAdapter.js",
   "src/components/Search/ScreenerView.jsx",
   "src/components/Search/screenerAdapter.js",
   "src/components/Season/PitStopChanges.jsx",

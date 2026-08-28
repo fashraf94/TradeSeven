@@ -1,0 +1,631 @@
+// src/components/League/battleArena/fuseGeometry.test.js
+//
+// The fuse board's pure core. The import loading clean in Node is the
+// dependency-surface guard (BUILD_RULES §4 — never mocked): rankByScores is
+// reached from src/constants/leagueTournament, not copied.
+//
+// The B2 rows drive the REAL appendTrailSnapshot from Phase 2 — the cut is
+// tested against the actual accumulator's carry-forward, not a hand-built
+// trail shape.
+
+import { describe, it, expect } from 'vitest';
+import {
+  FH, fuseFrame, makeScale, catmullPath, spreadLabels, thinYLabels,
+  etMinuteOfDay, sessionFraction, DAY_XLABELS, WEEK_XLABELS,
+  latestTrailSnapshot, deriveCut, seatDaySeries, seatWeekSeries, weekTipF,
+  headerYieldsToNow, monoWidth, fitYLabel, yGutterWidth, nowPillX, scopeToggleLeft,
+  toAxisValue, cutAxisLevel,
+} from './fuseGeometry';
+import { appendTrailSnapshot, emptyTrail } from './useSessionCompositeTrail';
+import { rankByScores } from '../../../constants/leagueTournament';
+
+const IDS = ['you', 'r1', 'r2', 'r3'];
+
+// ── frame ───────────────────────────────────────────────────────────────────
+
+describe('fuseFrame — fluid, TIPROOM reserved (R13 / acceptance 6)', () => {
+  it('reserves the tip gutter at every width: plotR = max(padL+40, w − padR − TIPROOM)', () => {
+    const wide = fuseFrame({ w: 1316, h: 420 });
+    expect(wide.plotR).toBe(1316 - 24 - 156);
+    // narrow desktop: the clamp floor engages rather than collapsing the plot
+    const narrow = fuseFrame({ w: 200, h: 420 });
+    expect(narrow.plotR).toBe(56 + 40);
+    // compact uses the compact tokens
+    const c = fuseFrame({ w: 374, h: 388, compact: true });
+    expect(c.plotR).toBe(374 - 16 - 96);
+    expect(c.LABEL_ROOM).toBe(FH.compact.LABEL_ROOM);
+  });
+});
+
+// ── scale + basement (acceptance 4) ─────────────────────────────────────────
+
+describe('makeScale — basement engages ONLY on !day && LO<0 && |LO| > 0.3·HI', () => {
+  const GEO = { plotT: 42, floorY: 358 };
+
+  it('day scope is always linear, even with a huge negative', () => {
+    const s = makeScale({ values: [44, -575], day: true, ...GEO });
+    expect(s.linear).toBe(true);
+    expect(s.basement).toBe(0);
+  });
+
+  it('a trivial loss scales linearly through zero (−0.8 reads barely under water)', () => {
+    const s = makeScale({ values: [44.5, -0.8], day: false, ...GEO });
+    expect(s.linear).toBe(true);
+    expect(s.basement).toBe(0);
+  });
+
+  it('the boundary is strict: |LO| exactly 0.3·HI does NOT engage', () => {
+    const s = makeScale({ values: [100, -30], day: false, ...GEO });
+    expect(s.basement).toBe(0);
+    const s2 = makeScale({ values: [100, -30.01], day: false, ...GEO });
+    expect(s2.basement).toBe(0.2);
+    expect(s2.linear).toBe(false);
+  });
+
+  it('compressed mapping pins the three anchors: Y(HI)=plotT, Y(0)=zeroY, Y(LO)=floorY', () => {
+    const s = makeScale({ values: [44, -575], day: false, ...GEO });
+    expect(s.basement).toBe(0.2);
+    expect(s.Y(44)).toBeCloseTo(GEO.plotT, 6);
+    expect(s.Y(0)).toBeCloseTo(s.zeroY, 6);
+    expect(s.Y(-575)).toBeCloseTo(GEO.floorY, 6);
+    // and the basement band is exactly BASEMENT · spanY tall
+    expect(GEO.floorY - s.zeroY).toBeCloseTo(0.2 * (GEO.floorY - GEO.plotT), 6);
+  });
+
+  it('linear mapping pins its endpoints too', () => {
+    const s = makeScale({ values: [10, 4, -2], day: true, ...GEO });
+    expect(s.Y(10)).toBeCloseTo(GEO.plotT, 6);
+    expect(s.Y(-2)).toBeCloseTo(GEO.floorY, 6);
+  });
+
+  it('scales over ALL rendered values, not just tips (a mid-week peak cannot clip)', () => {
+    // tips 5 and 3, but a path point at 12 — HI must cover 12
+    const s = makeScale({ values: [5, 3, 12], day: false, ...GEO });
+    expect(s.HI).toBe(12);
+    expect(s.Y(12)).toBeGreaterThanOrEqual(GEO.plotT); // inside the plot
+  });
+});
+
+// ── y labels (acceptance 5 — the three ranges named by the spec) ────────────
+
+describe('thinYLabels — never overprints, priority order wins', () => {
+  const GEO = { plotT: 42, floorY: 358 };
+  const build = (values, day, cutRow) => {
+    const s = makeScale({ values, day, ...GEO });
+    const cands = [
+      { v: s.HI, t: String(s.HI), y: s.Y(s.HI) },
+      ...(cutRow != null ? [{ v: cutRow, t: 'CUT', y: s.Y(Math.min(cutRow, s.HI)) }] : []),
+      { v: 0, t: day ? 'OPEN' : '0', y: s.Y(0) },
+      ...(s.LO < 0 ? [{ v: s.LO, t: String(s.LO), y: s.Y(s.LO) }] : []),
+    ];
+    return thinYLabels(cands, 14);
+  };
+
+  for (const [label, values, day, cut] of [
+    ['44.5', [44.5, 12, 3, -1], false, 40],
+    ['−575', [44, -575, 10, 2], false, 30],
+    ['44,000', [44000, 12000, 300, -900], false, 39000],
+  ]) {
+    it(`${label}: no two kept labels land within minGap`, () => {
+      const kept = build(values, day, cut);
+      expect(kept.length).toBeGreaterThan(0);
+      for (let i = 0; i < kept.length; i++) {
+        for (let j = i + 1; j < kept.length; j++) {
+          expect(Math.abs(kept[i].y - kept[j].y), `${kept[i].t} vs ${kept[j].t}`).toBeGreaterThanOrEqual(14);
+        }
+      }
+      // the top label always survives (first in priority)
+      expect(kept[0].t).toBe(String(makeScale({ values, day, ...GEO }).HI));
+    });
+  }
+
+  it('a CUT hugging the top drops (top has priority); zero survives', () => {
+    const s = makeScale({ values: [100, -5], day: false, ...GEO });
+    const kept = thinYLabels([
+      { v: s.HI, t: 'top', y: s.Y(s.HI) },
+      { v: 99, t: 'CUT', y: s.Y(99) },      // ~3px under the top
+      { v: 0, t: '0', y: s.Y(0) },
+    ], 14);
+    expect(kept.map((k) => k.t)).toEqual(['top', '0']);
+  });
+});
+
+// ── label spread (acceptance 7) ─────────────────────────────────────────────
+
+describe('spreadLabels — anchors part, fuses stay', () => {
+  it('four colliding seats de-collide to the minimum gap, inside bounds', () => {
+    const y = spreadLabels(
+      [{ id: 'a', y: 100 }, { id: 'b', y: 101 }, { id: 'c', y: 102 }, { id: 'd', y: 103 }],
+      42, 62, 354,
+    );
+    const ys = ['a', 'b', 'c', 'd'].map((id) => y[id]).sort((p, q) => p - q);
+    for (let i = 1; i < ys.length; i++) expect(ys[i] - ys[i - 1]).toBeGreaterThanOrEqual(42);
+    expect(ys[0]).toBeGreaterThanOrEqual(62);
+    expect(ys[ys.length - 1]).toBeLessThanOrEqual(354);
+  });
+
+  it('non-colliding anchors are untouched (no gratuitous displacement)', () => {
+    const y = spreadLabels([{ id: 'a', y: 80 }, { id: 'b', y: 200 }], 42, 62, 354);
+    expect(y.a).toBe(80);
+    expect(y.b).toBe(200);
+  });
+});
+
+// ── path ────────────────────────────────────────────────────────────────────
+
+describe('catmullPath', () => {
+  it('passes through the endpoints exactly and emits cubic segments', () => {
+    const d = catmullPath([{ x: 0, y: 10 }, { x: 50, y: 40 }, { x: 100, y: 20 }]);
+    expect(d.startsWith('M0.0,10.0')).toBe(true);
+    expect(d).toContain('C');
+    expect(d.endsWith('100.0,20.0')).toBe(true);
+  });
+  it('degenerates cleanly: one point → a move, zero → empty', () => {
+    expect(catmullPath([{ x: 3, y: 4 }])).toBe('M3.0,4.0');
+    expect(catmullPath([])).toBe('');
+  });
+});
+
+// ── the session clock ───────────────────────────────────────────────────────
+
+describe('sessionFraction — x IS the clock (ET, Intl, never an offset)', () => {
+  // 2026-08-26 is EDT (UTC−4): 9:30 ET = 13:30Z.
+  const T = (hhmmZ) => Date.parse(`2026-08-26T${hhmmZ}:00Z`);
+  it('pins open, close, and the three label times to their true fractions', () => {
+    expect(sessionFraction(T('13:30'))).toBe(0);              // OPEN
+    expect(sessionFraction(T('15:00'))).toBeCloseTo(90 / 390); // 11:00 ET
+    expect(sessionFraction(T('16:30'))).toBeCloseTo(180 / 390); // 12:30 ET
+    expect(sessionFraction(T('18:00'))).toBeCloseTo(270 / 390); // 14:00 ET
+    expect(sessionFraction(T('20:00'))).toBe(1);              // CLOSE
+  });
+  it('clamps outside the session and tolerates garbage', () => {
+    expect(sessionFraction(T('11:00'))).toBe(0);  // pre-open
+    expect(sessionFraction(T('23:00'))).toBe(1);  // after hours
+    expect(sessionFraction(NaN)).toBe(0);
+  });
+  it('the day x-labels sit at those same true fractions (not even slots)', () => {
+    expect(DAY_XLABELS.map((l) => l.t)).toEqual(['OPEN', '11:00', '12:30', '14:00', 'CLOSE']);
+    expect(DAY_XLABELS[1].f).toBeCloseTo(90 / 390);
+    expect(WEEK_XLABELS.map((l) => l.t)).toEqual(['MON', 'TUE', 'WED', 'THU', 'FRI']);
+    expect(WEEK_XLABELS.map((l) => l.f)).toEqual([0, 1 / 5, 2 / 5, 3 / 5, 4 / 5]);
+  });
+  it('etMinuteOfDay reads America/New_York regardless of host TZ', () => {
+    expect(etMinuteOfDay(T('13:30'))).toBe(9 * 60 + 30);
+  });
+});
+
+// ── the B2 cut ──────────────────────────────────────────────────────────────
+
+describe('deriveCut — B2: one snapshot, server-identical ranking', () => {
+  const BANKED = { you: 10, r1: 20, r2: 30, r3: 40 };
+
+  it('empty/absent trail → the cut renders from the banked closes, never zero, never absent', () => {
+    for (const trail of [undefined, null, emptyTrail(), emptyTrail({ ...BANKED })]) {
+      const snap = latestTrailSnapshot(trail, IDS, BANKED);
+      const cut = deriveCut(snap, IDS, 'you');
+      expect(cut.cutTotal).toBe(30);            // 2nd place of the banked closes
+      expect(cut.needToday).toBe(20);           // 30 − 10
+      expect(cut.leaderId).toBe('r3');
+      expect(cut.cutTotal).not.toBe(0);
+    }
+  });
+
+  it('the HEAD wins over the newest sample — the cut states NOW, not a minute ago', () => {
+    // §9: the strip renders the model's current composite every render. A cut
+    // (and a tip, and a crown) sourced from the newest 60s sample was up to a
+    // full interval behind it. The head is the trail's statement of the present.
+    const live = Object.fromEntries(IDS.map((id) => [id, true]));
+    const stale = { you: 15, r1: 22, r2: 31, r3: 41 };
+    const trail = appendTrailSnapshot(emptyTrail({ ...BANKED }), {
+      ids: IDS, scoresAtLast: stale, seatLive: live, t: 1_000,
+    });
+    const withoutHead = latestTrailSnapshot(trail, IDS, BANKED);
+    expect(withoutHead.values.you).toBe(15);
+
+    const now = { you: 26, r1: 22, r2: 31, r3: 41 };
+    const headed = latestTrailSnapshot({ ...trail, head: { t: 61_000, values: now } }, IDS, BANKED);
+    expect(headed.values.you).toBe(26);          // the model's current number
+    expect(headed.hasSamples).toBe(true);        // the HISTORY is still the samples
+    expect(headed.t).toBe(61_000);               // …and the burn is at the head's clock
+    expect(deriveCut(headed, IDS, 'you').needToday).toBe(31 - 26);
+  });
+
+  it('a head that omits a seat falls back to that seat\'s newest sample, then its seed', () => {
+    const live = Object.fromEntries(IDS.map((id) => [id, true]));
+    const s1 = { you: 15, r1: 22, r2: 31, r3: 41 };
+    const trail = appendTrailSnapshot(emptyTrail({ ...BANKED }), {
+      ids: IDS, scoresAtLast: s1, seatLive: live, t: 1_000,
+    });
+    const snap = latestTrailSnapshot({ ...trail, head: { t: 61_000, values: { you: 26 } } }, IDS, BANKED);
+    expect(snap.values.you).toBe(26);
+    expect(snap.values.r1).toBe(22);   // its newest sample
+    const seeded = latestTrailSnapshot({ seeds: { ...BANKED }, samples: {}, head: { t: 5, values: { you: 26 } } }, IDS, BANKED);
+    expect(seeded.values.r1).toBe(20); // its seed
+  });
+
+  it('the cut is the 2nd-place value under the SAME rankByScores the server locks with', () => {
+    const values = { you: 12, r1: 44, r2: 44, r3: 3 }; // tie at the top
+    const snap = { values, hasSamples: true, t: 1 };
+    const cut = deriveCut(snap, IDS, 'you');
+    const ranking = rankByScores(values, IDS);   // the lockTopTwo input, verbatim
+    expect(cut.ranked).toEqual(ranking);
+    expect(cut.cutTotal).toBe(values[ranking[1]]);
+  });
+
+  it('B2 ACCEPTANCE: a dropped rival poll does not move the rendered cut', () => {
+    // Three snapshots through the REAL accumulator; r2 (the 2nd-place seat,
+    // the cut seat) is missing from the middle poll.
+    const live = (m) => Object.fromEntries(IDS.map((id) => [id, m[id] != null]));
+    let trail = emptyTrail({ ...BANKED });
+    const s1 = { you: 15, r1: 22, r2: 31, r3: 41 };
+    trail = appendTrailSnapshot(trail, { ids: IDS, scoresAtLast: s1, seatLive: live(s1), t: 1_000 });
+    const cut1 = deriveCut(latestTrailSnapshot(trail, IDS, BANKED), IDS, 'you');
+
+    // r2's poll drops — scoresAtLast FLOORS it to banked 30 (the seatAltitude
+    // floor); seatLive says it is not a real reading. The trail carries 31.
+    const s2 = { you: 16, r1: 23, r2: 30, r3: 42 };
+    trail = appendTrailSnapshot(trail, {
+      ids: IDS, scoresAtLast: s2, seatLive: { you: true, r1: true, r2: false, r3: true }, t: 61_000,
+    });
+    const cut2 = deriveCut(latestTrailSnapshot(trail, IDS, BANKED), IDS, 'you');
+
+    const s3 = { you: 17, r1: 24, r2: 31, r3: 43 };
+    trail = appendTrailSnapshot(trail, { ids: IDS, scoresAtLast: s3, seatLive: live(s3), t: 121_000 });
+    const cut3 = deriveCut(latestTrailSnapshot(trail, IDS, BANKED), IDS, 'you');
+
+    expect(cut1.cutTotal).toBe(31);
+    expect(cut2.cutTotal).toBe(31);   // held — NOT the banked 30 flicker
+    expect(cut3.cutTotal).toBe(31);
+    expect(new Set([cut1.cutTotal, cut2.cutTotal, cut3.cutTotal].map(String)).size).toBe(1);
+  });
+
+  it('the prohibited parallel read WOULD flicker (the defect B2 exists to prevent)', () => {
+    // Characterizes the hazard: scoresAtLast itself, read directly for the cut,
+    // moves when r2's poll drops. If this stops failing-the-naive-way, B2's
+    // rationale needs re-examination.
+    const naiveCut2 = [...IDS].sort((a, b) => ({ you: 16, r1: 23, r2: 30, r3: 42 }[b] - { you: 16, r1: 23, r2: 30, r3: 42 }[a]))[1];
+    expect({ you: 16, r1: 23, r2: 30, r3: 42 }[naiveCut2]).toBe(30); // ≠ the held 31
+  });
+});
+
+// ── series builders ─────────────────────────────────────────────────────────
+
+describe('seat series — real points only', () => {
+  const T0 = Date.parse('2026-08-26T13:30:00Z'); // OPEN
+  it('day: relative to seed, anchored level at the open', () => {
+    const pts = seatDaySeries({
+      samples: [{ t: T0 + 60_000, v: 12 }, { t: T0 + 120_000, v: 14 }],
+      seed: 10,
+    });
+    expect(pts[0]).toEqual({ f: 0, v: 0 });
+    expect(pts[1].v).toBe(2);
+    expect(pts[2].v).toBe(4);
+    expect(pts[1].f).toBeGreaterThan(0);
+  });
+  it('day: no samples AND no head → [] (the caller draws the flat spine, R3)', () => {
+    expect(seatDaySeries({ samples: [], seed: 10 })).toEqual([]);
+    expect(seatDaySeries({ samples: undefined, seed: 10 })).toEqual([]);
+  });
+  it('day: the head CLOSES the series, so the line ends where the tip prints', () => {
+    // Without this the last drawn point was the newest 60s sample while the tip
+    // text said something else — the same §9 split, expressed in geometry.
+    const pts = seatDaySeries({
+      samples: [{ t: T0 + 60_000, v: 12 }],
+      seed: 10,
+      head: { f: 0.5, v: 19 },
+    });
+    expect(pts[pts.length - 1]).toEqual({ f: 0.5, v: 9 });   // 19 − seed 10
+  });
+  it('day: a head at or before the newest sample REPLACES it — never doubles back', () => {
+    const sampleF = sessionFraction(T0 + 60_000);
+    const pts = seatDaySeries({
+      samples: [{ t: T0 + 60_000, v: 12 }],
+      seed: 10,
+      head: { f: sampleF, v: 17 },
+    });
+    expect(pts).toHaveLength(2);
+    expect(pts[1]).toEqual({ f: sampleF, v: 7 });            // fresher value, same x
+  });
+  it('day: a head ALONE draws the open→now run (the corrected cold mount)', () => {
+    const pts = seatDaySeries({ samples: [], seed: 10, head: { f: 0.4, v: 22 } });
+    expect(pts).toEqual([{ f: 0, v: 0 }, { f: 0.4, v: 12 }]);
+  });
+  it('week: anchored at the open, closes at (i+1)/5, live tip burns within its band', () => {
+    const pts = seatWeekSeries({ closes: [5, 9], tipValue: 11, tipF: weekTipF(2, 0.5), live: true });
+    expect(pts[0]).toEqual({ f: 0, v: 0 });          // Monday open — a real zero
+    expect(pts[1]).toEqual({ f: 1 / 5, v: 5 });      // Mon close
+    expect(pts[2]).toEqual({ f: 2 / 5, v: 9 });      // Tue close
+    expect(pts[3].f).toBeCloseTo(2.5 / 5);           // Wed, half burned
+    expect(pts[3].v).toBe(11);
+    const fresh = seatWeekSeries({ closes: [], tipValue: 3, tipF: weekTipF(0, 0.4), live: true });
+    expect(fresh[0]).toEqual({ f: 0, v: 0 });
+    expect(fresh[1].f).toBeCloseTo(0.4 / 5);         // Monday burns inside ITS band (no degenerate Friday clamp)
+    expect(fresh[1].v).toBe(3);
+  });
+  it('week complete: closes only, no tip appended; Friday close lands at f=1', () => {
+    const pts = seatWeekSeries({ closes: [5, 9, 12, 13, 14], tipValue: 14, tipF: 1, live: false });
+    expect(pts).toHaveLength(6);                     // open anchor + five closes
+    expect(pts[5]).toEqual({ f: 1, v: 14 });
+  });
+});
+
+// ── D1 acceptance: x is the CLOCK, for data as well as for labels ───────────
+// Amendment D diagnosed an index mapping (X(i) for i in 0..n). These rows are
+// the executable refutation AND the lock: they fail loudly if a sample ever
+// stops being placed by its own timestamp. C1.3 put the LABELS on true clock
+// fractions; these keep the DATA on the same domain, so the axis and the thing
+// it measures cannot drift apart.
+describe('D1 — every sample renders at X(its own timestamp), never at X(its index)', () => {
+  const T = (hhmmZ) => Date.parse(`2026-08-26T${hhmmZ}:00Z`); // EDT: 13:30Z = 9:30 ET open
+  const SEED = 10;
+
+  it('a trail spanning 9:30→14:15 puts its newest point at the 14:15 clock position', () => {
+    // 9:35, 12:00, 14:15 — three samples, wildly non-uniform.
+    const pts = seatDaySeries({
+      samples: [
+        { t: T('13:35'), v: 11 },
+        { t: T('16:00'), v: 14 },
+        { t: T('18:15'), v: 19 },
+      ],
+      seed: SEED,
+    });
+    expect(pts[0]).toEqual({ f: 0, v: 0 });                 // the seed anchors at the OPEN
+    expect(pts[1].f).toBeCloseTo(5 / 390, 6);               // 9:35
+    expect(pts[2].f).toBeCloseTo(150 / 390, 6);             // 12:00
+    expect(pts[3].f).toBeCloseTo(285 / 390, 6);             // 14:15 ≈ 73% across
+    // an index mapping would have produced 1/3, 2/3, 3/3 — assert we are NOT there
+    expect(pts[3].f).not.toBeCloseTo(1, 3);
+    expect(pts[1].f).not.toBeCloseTo(1 / 3, 3);
+  });
+
+  it('a 10-minute gap renders as 10 minutes — gaps are proportional, never evened out', () => {
+    const pts = seatDaySeries({
+      samples: [
+        { t: T('14:00'), v: 11 },  // 10:00 ET
+        { t: T('14:10'), v: 12 },  // 10:10 — a 10-minute gap
+        { t: T('15:10'), v: 13 },  // 11:10 — a 60-minute gap
+      ],
+      seed: SEED,
+    });
+    const d1 = pts[2].f - pts[1].f;
+    const d2 = pts[3].f - pts[2].f;
+    expect(d1).toBeCloseTo(10 / 390, 6);
+    expect(d2).toBeCloseTo(60 / 390, 6);
+    expect(d2 / d1).toBeCloseTo(6, 3); // an index mapping would make this ratio 1
+  });
+
+  it('a dropped poll leaves a WIDER gap than a normal minute (the tell D1 names)', () => {
+    const normal = seatDaySeries({ samples: [{ t: T('14:00'), v: 1 }, { t: T('14:01'), v: 2 }], seed: 0 });
+    const dropped = seatDaySeries({ samples: [{ t: T('14:00'), v: 1 }, { t: T('14:05'), v: 2 }], seed: 0 });
+    expect(dropped[2].f - dropped[1].f).toBeGreaterThan(normal[2].f - normal[1].f);
+  });
+
+  it('the newest sample and the x-labels share ONE domain (C1.3 parity)', () => {
+    // A sample taken exactly at the 11:00 label must land exactly on that label.
+    const pts = seatDaySeries({ samples: [{ t: T('15:00'), v: 5 }], seed: 0 });
+    const label = DAY_XLABELS.find((l) => l.t === '11:00');
+    expect(pts[1].f).toBeCloseTo(label.f, 9);
+  });
+});
+
+// ── E4 / D6: the header yields to the NOW pill ──────────────────────────────
+describe('headerYieldsToNow — the functional mark keeps its x, the microcopy yields', () => {
+  const HDR = { headerText: 'Today · since the open', headerLeft: 16, headerSize: 9.5 };
+
+  it('yields while the burn sits early (the collision D6 measured)', () => {
+    expect(headerYieldsToNow({ burnX: 78, ...HDR })).toBe(true);   // f≈0.02
+    expect(headerYieldsToNow({ burnX: 110, ...HDR })).toBe(true);  // f≈0.05
+  });
+
+  it('RETURNS once the pill clears — it is a disappearance, not a permanent drop', () => {
+    expect(headerYieldsToNow({ burnX: 320, ...HDR })).toBe(false);
+    expect(headerYieldsToNow({ burnX: 700, ...HDR })).toBe(false);
+  });
+
+  it('there is a real crossover, and it sits early in the session', () => {
+    let crossover = null;
+    for (let x = 40; x <= 1200; x += 1) {
+      if (!headerYieldsToNow({ burnX: x, ...HDR })) { crossover = x; break; }
+    }
+    expect(crossover).toBeGreaterThan(120);   // genuinely collides for a while
+    expect(crossover).toBeLessThan(400);      // but clears early, not mid-afternoon
+  });
+
+  it('a LONGER header yields for longer — the rule tracks the text actually drawn', () => {
+    const short = { headerText: 'The week', headerLeft: 16, headerSize: 9.5 };
+    const findX = (h) => { for (let x = 40; x <= 1200; x += 1) if (!headerYieldsToNow({ burnX: x, ...h })) return x; return null; };
+    expect(findX(HDR)).toBeGreaterThan(findX(short));
+  });
+
+  it('degrades safely on a non-finite burn (never hides the header by accident)', () => {
+    expect(headerYieldsToNow({ burnX: NaN, ...HDR })).toBe(false);
+  });
+
+  it('monoWidth counts letter-spacing, so the estimate errs GENEROUS (yield early, never collide)', () => {
+    expect(monoWidth('ABCD', 10, 0)).toBeCloseTo(4 * 6, 6);
+    expect(monoWidth('ABCD', 10, 0.16)).toBeGreaterThan(monoWidth('ABCD', 10, 0));
+  });
+});
+
+// ── F1 acceptance: a label must FIT ITS GUTTER (width, not collision) ───────
+// The prior criterion asserted labels never overprint EACH OTHER and passed
+// while `-22800.0` wrapped mid-number inside a 45px box. These assert rendered
+// width against gutter width — the property that actually failed.
+describe('F1 — y labels fit their own gutter at every magnitude', () => {
+  const DESKTOP = { padL: FH.desktop.padL, font: 9.5 };
+  const COMPACT = { padL: FH.compact.padL, font: 8 };
+
+  for (const [name, G] of [['desktop', DESKTOP], ['compact', COMPACT]]) {
+    it(`${name}: extreme magnitudes render on one line, inside the gutter`, () => {
+      const gutter = yGutterWidth(G.padL);
+      for (const v of [44.5, -575, 44000, -22800, 50400, -18000, 1234567, -0.8, 0]) {
+        const t = fitYLabel(v, { gutter, fontSize: G.font });
+        expect(t, `${v}`).not.toContain('\n');
+        expect(monoWidth(t, G.font), `${v} → "${t}" overflows ${gutter}px`).toBeLessThanOrEqual(gutter);
+      }
+    });
+  }
+
+  it('THE REGRESSION: the value that wrapped now fits, abbreviated', () => {
+    const gutter = yGutterWidth(FH.desktop.padL);
+    // the raw form is genuinely too wide — that is why it wrapped
+    expect(monoWidth('-22800.0', 9.5)).toBeGreaterThan(gutter);
+    const t = fitYLabel(-22800, { gutter, fontSize: 9.5 });
+    expect(t).toBe('-22.8k');
+    expect(monoWidth(t, 9.5)).toBeLessThanOrEqual(gutter);
+  });
+
+  it('keeps full precision when it fits — abbreviation is a fallback, not a default', () => {
+    const gutter = yGutterWidth(FH.desktop.padL);
+    expect(fitYLabel(44.5, { gutter, fontSize: 9.5 })).toBe('44.5');
+    expect(fitYLabel(-575, { gutter, fontSize: 9.5 })).toBe('-575.0');
+    expect(fitYLabel(12, { gutter, fontSize: 9.5, signed: true })).toBe('+12.0');
+  });
+
+  it('escalates to integer abbreviation only when one decimal still will not fit', () => {
+    const t = fitYLabel(-1234567, { gutter: 26, fontSize: 9.5 });
+    expect(monoWidth(t, 9.5)).toBeLessThanOrEqual(30);
+    expect(t).toMatch(/M$/);
+  });
+});
+
+// ── F2 acceptance: the pill never touches the header band or the toggle ─────
+describe('F2 — the NOW pill clears the scope toggle across the whole burn range', () => {
+  const W = 1316;
+  const frame = fuseFrame({ w: W, h: 420 });
+  const X = (f) => frame.padL + Math.max(0, Math.min(1, f)) * (frame.plotR - frame.padL);
+  const PILL_HALF = 18;
+
+  it('at EVERY burn fraction the pill stays clear of the toggle hit area', () => {
+    const toggleLeft = scopeToggleLeft({ w: W });
+    for (let f = 0; f <= 1.0001; f += 0.01) {
+      const px = nowPillX({ burnX: X(f), w: W });
+      expect(px + PILL_HALF, `f=${f.toFixed(2)} pill right edge intrudes on the toggle`)
+        .toBeLessThan(toggleLeft);
+    }
+  });
+
+  it('the WEEK-SCOPE FULL WEEK is where it bites — the raw burn WOULD have collided', () => {
+    // This is the observed case, and it is not an edge case: weekTipF saturates
+    // to 1.0 once five days are banked, so a completed week parks the burn at
+    // plotR — 6px from the toggle by the (already widened) estimate, which is
+    // what read as "arguably touching" at review. D2's switch to week scope for
+    // underwater/extremes is what put all of them there.
+    const toggleLeft = scopeToggleLeft({ w: W });
+    const maxBurn = frame.plotR;                                     // f = 1.0
+    expect(maxBurn + PILL_HALF).toBeGreaterThan(toggleLeft);         // the F2 defect
+    expect(nowPillX({ burnX: maxBurn, w: W }) + PILL_HALF).toBeLessThan(toggleLeft); // fixed
+  });
+
+  it('week scope with a full week parks the burn at the far right (why F2 shows up there)', () => {
+    expect(weekTipF(5, 0.73)).toBe(1);   // five closes banked → saturated
+    expect(weekTipF(2, 0.5)).toBeCloseTo(0.5); // mid-week still burns inside its band
+  });
+
+  it('early and mid session are UNTOUCHED — the pill still sits on the burn', () => {
+    for (const f of [0.02, 0.25, 0.5, 0.6]) {
+      const bx = X(f);
+      expect(nowPillX({ burnX: bx, w: W })).toBe(bx);
+    }
+  });
+
+  it('displacement is bounded, so the pill never detaches from the burn', () => {
+    for (let f = 0.6; f <= 1.0001; f += 0.02) {
+      const bx = X(f);
+      expect(bx - nowPillX({ burnX: bx, w: W })).toBeLessThanOrEqual(PILL_HALF + 8 + 1);
+    }
+  });
+
+  it('holds at narrower widths too (the toggle tracks the right inset)', () => {
+    for (const w of [1316, 1000, 760]) {
+      const f2 = fuseFrame({ w, h: 420 });
+      const bx = f2.plotR; // the furthest right the burn can reach
+      expect(nowPillX({ burnX: bx, w }) + PILL_HALF, `w=${w}`).toBeLessThan(scopeToggleLeft({ w }));
+    }
+  });
+
+  it('degrades safely on a non-finite burn', () => {
+    expect(Number.isNaN(nowPillX({ burnX: NaN, w: W }))).toBe(true);
+  });
+});
+
+// ── H3: THE CUT-LINE INVARIANT ─────────────────────────────────────────────
+//
+// Not three regressions for three past bugs — ONE property, stated so that any
+// future member of the family fails it:
+//
+//   THE CUT SITS EXACTLY WHERE YOUR SEAT WOULD SIT AT total === cutTotal.
+//
+// Every past defect violates it. Mixed basis: the cut is computed from a banked
+// number while your seat rides a live one, so the two stop agreeing. Floored
+// value: a dropped poll silently substitutes a different quantity. Wrong axis: a
+// gap between totals is not the axis value of any total at all.
+//
+// Stated against YOUR seat rather than every seat because in Today scope the cut
+// is your-seat-specific by design — "all level at the open" means a rival with a
+// different baseline sits on a different delta for the same total.
+describe('H3 — the cut and the seats are ONE quantity space', () => {
+  // a deterministic spread of totals/seeds, including negatives and zero
+  const CASES = [];
+  for (const cutTotal of [-575, -12.5, 0, 0.1, 13, 44.5, 44000]) {
+    for (const youSeed of [-40, 0, 10, 11, 2600]) CASES.push({ cutTotal, youSeed });
+  }
+
+  for (const day of [true, false]) {
+    const scope = day ? 'Today' : 'The Week';
+    it(`${scope}: the cut level IS your seat's axis value at total === cutTotal`, () => {
+      for (const { cutTotal, youSeed } of CASES) {
+        const cut = cutAxisLevel({ cutTotal, youSeed, day });
+        const youAtCut = toAxisValue(cutTotal, youSeed, day);
+        expect(cut, `cutTotal=${cutTotal} seed=${youSeed} day=${day}`).toBe(youAtCut);
+      }
+    });
+
+    it(`${scope}: reaching the cut level means reaching the cut TOTAL — no drift`, () => {
+      for (const { cutTotal, youSeed } of CASES) {
+        const level = cutAxisLevel({ cutTotal, youSeed, day });
+        // invert the axis: a seat rendering AT the cut level holds cutTotal
+        const impliedTotal = day ? level + youSeed : level;
+        expect(impliedTotal).toBeCloseTo(cutTotal, 9);
+      }
+    });
+  }
+
+  it('rejects the WRONG-AXIS defect (CR1): a totals gap is not an axis level', () => {
+    const cutTotal = 13; const youSeed = 10; const youTotal = 12;
+    const needToday = cutTotal - youTotal;                 // the shipped defect
+    const correct = cutAxisLevel({ cutTotal, youSeed, day: true });
+    expect(correct).toBe(3);
+    expect(needToday).toBe(1);
+    expect(needToday).not.toBe(correct);
+    // and the defect INVERTS the reading: you at +2 would clear a cut at +1
+    expect(toAxisValue(youTotal, youSeed, true)).toBeGreaterThan(needToday);
+    expect(toAxisValue(youTotal, youSeed, true)).toBeLessThan(correct);
+  });
+
+  it('rejects the MIXED-BASIS defect: a cut off a different basis stops agreeing', () => {
+    const youSeed = 10;
+    const liveCut = 13;
+    const bankedCut = 11; // the same seat read on the other basis
+    for (const day of [true, false]) {
+      expect(cutAxisLevel({ cutTotal: liveCut, youSeed, day }))
+        .not.toBe(cutAxisLevel({ cutTotal: bankedCut, youSeed, day }));
+    }
+  });
+
+  it('the transform is the ONLY conversion — seats and cut share it verbatim', () => {
+    // If a seat is at the cut total, its rendered value and the cut coincide.
+    for (const day of [true, false]) {
+      for (const { cutTotal, youSeed } of CASES) {
+        const seatValue = toAxisValue(cutTotal, youSeed, day);
+        expect(cutAxisLevel({ cutTotal, youSeed, day })).toBe(seatValue);
+      }
+    }
+  });
+
+  it('degrades safely: non-finite totals and absent seeds never emit NaN', () => {
+    expect(toAxisValue(NaN, 10, true)).toBe(0);
+    expect(toAxisValue(12, undefined, true)).toBe(12);
+    expect(Number.isFinite(cutAxisLevel({ cutTotal: 5, youSeed: undefined, day: true }))).toBe(true);
+  });
+});

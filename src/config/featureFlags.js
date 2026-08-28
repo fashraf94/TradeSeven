@@ -283,6 +283,47 @@ export const LEAGUE_LIVE_ORB_ENABLED = true;
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('leagueLiveOrb') === '1';
 
+
+/**
+ * League — the FUSE HERO (Branch A): the battleview's top half becomes a fuse
+ * board (x is the CLOCK, y is POINTS; the four seats render as glowing lines
+ * with a burning tip carrying the seat's mech head and its running value) in
+ * place of the points-axis `ClimbArena` scatter. Authority:
+ * LEAGUE_BATTLEVIEW_ADJUDICATION_V1 (R1-R14) + the Branch A Build Spec and its
+ * Amendment A (Phase 0.5 gate: G1 CLEAR, G2 client-derived cut, G3 confirmed).
+ *
+ * Default OFF (dark). `ClimbArena` remains the live path and is neither
+ * modified nor moved while this ships dark: ArenaDesktop / ArenaMobile branch
+ * ONLY the top-half hero on this flag, so flag-off renders exactly as today.
+ *
+ * The production flip is its own one-line PR after a Vercel preview smoke (the
+ * LEAGUE_BATTLE_VIEW_V2_ENABLED / PR #510 precedent) and never rides the build
+ * PR; `ClimbArena` removal is a third, later cleanup PR, only once the fuse has
+ * held on a live flag.
+ *
+ * PREVIEW OVERRIDE (Amendment C §C3): `?fuseHero=1` force-enables the fuse on
+ * a Vercel preview WITHOUT flipping this default — the gate is FUSE_HERO_ON in
+ * battleArena/fuseHeroGate.js (the arenaLiveGate idiom; this module keeps the
+ * pinned literal). REMOVAL IS SCHEDULED: the flip PR deletes the override's SP
+ * line + `|| SP.get('fuseHero')` clause in the SAME COMMIT that flips this pin
+ * — flip, pin, and override travel together (the ?leagueLiveOrb=1 lesson).
+ *
+ * CLEANUP-PR OBLIGATIONS (Amendment B §B3, extended F4 — recorded here so they
+ * survive the months until that PR). THREE items will look like dead weight for
+ * a deleted component to whoever does the cleanup. None of them is:
+ *   - b3Lockstep.test.js pins the seatAltitude call SHAPE at both resolution
+ *     sites; before ClimbArena is deleted it needs a FuseHero counterpart (or
+ *     an equivalent basis-invariant test) — never plain deletion.
+ *   - the seatHasLiveSample truth table in seatAltitude.test.js pins the
+ *     sampling predicate to the resolver's own branches; it guards the session
+ *     trail (and therefore the B2 cut), not ClimbArena, and stays.
+ *   - battleArena/arenaAtmosphere.jsx is SHARED by ClimbArena and FuseHero
+ *     (F4 extraction). Deleting ClimbArena must NOT take it with them — the
+ *     fuse is its other consumer.
+ *
+ * Pinned by: leagueBattleviewFlags.test.js, fuseHeroGate.test.jsx (flagPinGuard: this value and the pins move together — BUILD_RULES §2; the gate suite's dark-default rows flip with the pin).
+ */
+export const LEAGUE_FUSE_HERO_ENABLED = false;
 /**
  * League — Training-tab CLIMB PREVIEW (the second-arc re-entry surface).
  *
