@@ -84,11 +84,28 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
   // consumers below bind to it — the header framing, the desktop layout gate, the
   // arena takeover and the body ternary — so no subset can land and no pair can
   // disagree. It is deliberately gated on `v2On` as well as the phase: with the V2
-  // flag rolled back there is no awaiting body to route to, so binding the header
-  // and the arena to the phase ALONE would print "awaiting open" over the classic
-  // live body. Under rollback `showAwaiting` is false everywhere and this host is
-  // byte-identical to pre-change.
-  const showAwaiting = v2On && (pod?.status === GROUP_STATUS.AWAITING_OPEN || preOpen);
+  // flag rolled back the fallthrough body is the CLASSIC practice column, which
+  // reads live, so binding the header to the phase alone would print "awaiting
+  // open" over it.
+  //
+  // Under a V2 rollback `showAwaiting` is false everywhere and this host RENDERS
+  // identically to pre-change. Note the precise scope of that claim: with
+  // PREOPEN_PHASE_ROUTING_ENABLED also off, the hook short-circuits and nothing
+  // ticks, so flag-off is byte-identical outright. With PREOPEN on and V2 off the
+  // OUTPUT is identical but the hook still arms its 30s interval, so the render
+  // cadence is not — and in that combination the arena takes over pre-open and the
+  // header reads "Practice pod · live", i.e. this flag does not fix the practice
+  // host under a V2 rollback. Documented at the flag.
+  //
+  // `preOpenRouting` is the FLAG-GATED half on its own. The arena gate below binds
+  // to this rather than to `showAwaiting`, and the distinction is load-bearing:
+  // `showAwaiting` also contains the pre-existing `v2On && status === AWAITING_OPEN`
+  // term, so gating the arena on it would suppress a takeover that mounts today
+  // whenever an AWAITING_OPEN pod carries a non-null myBattle — a change with the
+  // flag OFF, which the dark merge forbids. It is true only when the pre-open
+  // routing would genuinely take over, and it implies showAwaiting.
+  const preOpenRouting = v2On && preOpen;
+  const showAwaiting = preOpenRouting || (v2On && pod?.status === GROUP_STATUS.AWAITING_OPEN);
 
   const framing = useMemo(() => trainingStatusFraming(pod?.status, { preOpen: showAwaiting }), [pod?.status, showAwaiting]);
   const compositeContext = useMemo(() => deriveCompositeContext(pod, uid), [pod, uid]);
@@ -185,9 +202,11 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
   // pre-open window and this takeover would otherwise preempt the awaiting
   // surface entirely. This gate has no status test of its own — it was held off
   // only by `myBattle` being null pre-deploy — so the condition is ADDED here.
-  // Bound to showAwaiting, not the bare phase, so it is never suppressed unless
-  // there is genuinely an awaiting body to fall through to.
-  if (ARENA_LIVE_ON && myBattle && !classic && !showAwaiting) {
+  // Bound to preOpenRouting (the flag-gated half), not the bare phase and not
+  // showAwaiting: the bare phase would suppress the takeover under a V2 rollback
+  // with no awaiting body to fall through to, and showAwaiting would change
+  // flag-OFF behaviour for an AWAITING_OPEN pod that already has a battle doc.
+  if (ARENA_LIVE_ON && myBattle && !classic && !preOpenRouting) {
     return (
       <div style={{ minHeight: '100vh', background: '#050609', padding: isDesktop ? 16 : 0, boxSizing: 'border-box' }}>
         <LeagueBattleArenaLive

@@ -85,6 +85,24 @@ describe('WhileYouWait — pre-open phase', () => {
     expect(html).not.toContain('Your game is live');
   });
 
+  it('a pre-open pod is NOT told to sharpen up "before the draft" — it already drafted', () => {
+    // Phase 5 review finding F3. Before this phase existed the non-inBattle arm was
+    // reachable only for a FORMING pod. A pre-open pod has already drafted — for the
+    // Mon 08:45 slot, minutes earlier — so inheriting pre-draft copy is a lie.
+    const html = renderToString(
+      <WhileYouWait status={GROUP_STATUS.BATTLE} preOpen st={emptySt2} onOpenTrainingPod={() => {}} hasAgent />,
+    );
+    expect(html).not.toContain('before the draft');
+    expect(html).toContain('The battle opens at the next market open.');
+  });
+
+  it('a FORMING pod KEEPS the pre-draft copy (the arm it was written for)', () => {
+    const html = renderToString(
+      <WhileYouWait status={GROUP_STATUS.FORMING} st={emptySt2} onOpenTrainingPod={() => {}} hasAgent />,
+    );
+    expect(html).toContain('before the draft');
+  });
+
   it('the SAME pod reads live once the bell has rung', () => {
     const html = renderToString(
       <WhileYouWait status={GROUP_STATUS.BATTLE} preOpen={false} st={emptySt2} onOpenTrainingPod={() => {}} hasAgent />,
@@ -108,5 +126,49 @@ describe('WhileYouWait — pre-open phase', () => {
       <WhileYouWait status={GROUP_STATUS.AWAITING_OPEN} preOpen st={emptySt2} onOpenTrainingPod={() => {}} hasAgent />,
     );
     expect(html).toContain('While you wait');
+  });
+});
+
+// ── DOCUMENTED LIMIT (Phase 5 review finding F2) ─────────────────────────────
+// This is an executable record of a KNOWN, deliberately-deferred incoherence, not
+// an endorsement of it. `liveWatchPod` (WhileYouWait.jsx:83-91) classifies pods by
+// the adapter's `status === 'live'`, which is chokepoint B — untouched by ruling
+// R-9 until the startAnchor stamp lands. So with the pre-open flag ON, this one
+// component can simultaneously say "While you wait" AND offer to spectate the
+// viewer's own pod as live.
+//
+// The row below PINS that contradiction. When chokepoint B lands it will fail,
+// which is the point: it forces this surface to be revisited rather than letting
+// the contradiction survive silently. The prior suite could not see it at all —
+// every case passed an empty `st`, so liveWatchPod was always null.
+describe('WhileYouWait — documented limit: the live-watch CTA still reads chokepoint B', () => {
+  const livePodSt = {
+    baseGames: [{ id: 'g-live', status: 'live', seats: [{ id: 's1', you: true }] }],
+    rounds: { r1: [], r2: [], r3: null },
+  };
+
+  it('offers "Watch a live game" for a pod the same render calls pre-open (KNOWN GAP)', () => {
+    const html = renderToString(
+      <WhileYouWait
+        status={GROUP_STATUS.BATTLE}
+        preOpen
+        st={livePodSt}
+        onOpenTrainingPod={() => {}}
+        onSpectate={() => {}}
+        hasAgent
+      />,
+    );
+    expect(html).toContain('While you wait');       // the pre-open half
+    expect(html).toContain('Watch a live game');    // the chokepoint-B half — contradictory
+  });
+
+  it('the contradiction needs a live pod in `st` — an empty field cannot show it', () => {
+    // Guards against the blind spot the original suite had: with an empty `st` the
+    // CTA never renders, so a test written that way proves nothing about F2.
+    const html = renderToString(
+      <WhileYouWait status={GROUP_STATUS.BATTLE} preOpen st={{ baseGames: [], rounds: { r1: [], r2: [], r3: null } }}
+        onOpenTrainingPod={() => {}} onSpectate={() => {}} hasAgent />,
+    );
+    expect(html).not.toContain('Watch a live game');
   });
 });

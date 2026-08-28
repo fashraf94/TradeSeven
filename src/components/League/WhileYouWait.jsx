@@ -136,9 +136,15 @@ export default function WhileYouWait({
   const inBattle = status === GROUP_STATUS.BATTLE && !preOpen;
   const headline = inBattle ? 'Between sessions' : 'While you wait';
   const eyebrow = inBattle ? 'Your game is live' : 'Your seat is locked in';
+  // Three-way, not two. Before this phase existed the non-inBattle arm was
+  // reachable only for a FORMING pod, so it could safely say "before the draft".
+  // A pre-open pod has ALREADY drafted — for the Mon 08:45 slot, minutes earlier —
+  // so it needs its own line rather than inheriting pre-draft copy.
   const sub = inBattle
     ? 'Your battle runs in the background — practice a round between checks.'
-    : 'Your seat is locked in for this week’s pod. Keep your instincts sharp before the draft.';
+    : preOpen
+      ? 'Your lineup is locked in for this week’s pod. The battle opens at the next market open.'
+      : 'Your seat is locked in for this week’s pod. Keep your instincts sharp before the draft.';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 560, margin: '0 auto', marginBottom: desktop ? 0 : 18 }}>

@@ -269,11 +269,25 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
   // on BOTH viewports — the gate short-circuits on ARENA_LIVE_ON before isDesktop.
   // The arena subsumes Flat6BattleView + ClaimFlipWindow + GroupFeed; draft replay /
   // board-commit are lifecycle chrome and stay in the classic view.
-  // `!preOpen`: the agent layer deploys before the bell, so `myBattle` exists all
-  // through the pre-open window and this takeover would otherwise preempt the
-  // awaiting surface — the primary ranked leak. Like its practice twin, the gate
-  // carries no status test of its own, so the condition is ADDED, not edited.
-  if (ARENA_LIVE_ON && myBattle && !classic && !preOpen) {
+  // DELIBERATELY NOT gated on the pre-open phase. Suppressing this takeover was
+  // tried twice and reverted twice, for the same reason both times: the arena is
+  // the DEFAULT ranked surface AND it carries its own claim doorway
+  // (buildArenaModel.js:458-465, :543 — the wire, open on getClaimWindowDisplay).
+  // Diverting a pre-open pod off it demoted the user onto the legacy column, which
+  // is exactly the capability loss the claim-window revert undid; and once the
+  // ladder no longer routes to LiveDraftAwaiting there is no awaiting surface on
+  // this route to preempt, so the gate would only trade one live body for another
+  // — under an awaiting header, with a Flips tab the practice pre-open surface
+  // deliberately hides.
+  //
+  // CONSEQUENCE, STATED PLAINLY: ranked is NOT fixed pre-open. Once the agent
+  // deploys (~06:00) the arena takes over and reads live until the bell, exactly as
+  // today. Only the classic column — the pre-deploy window, where myBattle is null
+  // and no Flat6 "Live" pill renders — gets the honest header below. Fixing ranked
+  // properly needs either claim controls on LiveDraftAwaiting or an awaiting state
+  // in the arena itself; both are rulings, not improvisations. See the Phase 5
+  // audit record.
+  if (ARENA_LIVE_ON && myBattle && !classic) {
     return (
       <div style={{ minHeight: '100vh', background: '#050609', padding: isDesktop ? 16 : 0, boxSizing: 'border-box' }}>
         <LeagueBattleArenaLive

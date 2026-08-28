@@ -113,3 +113,39 @@ describe('participantStatusFraming — anti-vacuous (BUILD_RULES §2)', () => {
       .not.toEqual(legacy(GROUP_STATUS.BATTLE));
   });
 });
+
+// ── ROUTING GUARD (Phase 5 adversarial pass) ─────────────────────────────────
+// The ranked routing sites have no render harness — no test in the repo mounts
+// LeagueParticipantView — so the two reverts that keep ranked SAFE are pinned
+// here as source-text tripwires. Both were tried, shipped, and reverted for the
+// same reason: they removed a capability to fix a label.
+import { readFileSync } from 'fs';
+import path from 'path';
+
+const VIEW_REL = 'src/screens/LeagueParticipantView.jsx';
+const VIEW_SRC = readFileSync(path.resolve(__dirname, '../..', VIEW_REL), 'utf8');
+
+describe('ranked routing — the reverts that preserve the day-1 claim window', () => {
+  it('the arena takeover is NOT gated on the pre-open phase', () => {
+    // The arena is the default ranked surface AND carries its own claim doorway
+    // (buildArenaModel.js:458-465). Suppressing it pre-open demotes the user onto
+    // the legacy column — the same capability loss the ladder revert undid.
+    expect(VIEW_SRC).toContain('if (ARENA_LIVE_ON && myBattle && !classic) {');
+    expect(VIEW_SRC, 'the arena gate must not carry a preOpen term')
+      .not.toContain('!classic && !preOpen');
+  });
+
+  it('the live-draft ladder does NOT divert a pre-open pod to LiveDraftAwaiting', () => {
+    // LiveDraftAwaiting has no claim controls, and Mon ~06:00-09:24 is the only
+    // day-1 claim window a competitive pod has (place-claim.js:96-97 requires
+    // BATTLE; the wire shuts 09:24 ET).
+    expect(VIEW_SRC).toContain('if (group.status === GROUP_STATUS.AWAITING_OPEN) {');
+    expect(VIEW_SRC, 'the ladder must not carry a preOpen term')
+      .not.toContain('GROUP_STATUS.AWAITING_OPEN || preOpen');
+  });
+
+  it('anti-vacuous: the guard is reading the real screen source', () => {
+    expect(VIEW_SRC.length).toBeGreaterThan(5000);
+    expect(VIEW_SRC).toContain('participantStatusFraming(group.status, { preOpen })');
+  });
+});

@@ -600,11 +600,24 @@ export function isAwaitingOpenRedesignOn() {
  * :1035-1038) that dispatches ranked fan-out. Only the DISPLAY was wrong: the
  * live body rendered during the pre-open window.
  *
- * When true, the routing sites consume `usePreOpenPhase` (src/hooks/) and render
- * the awaiting surface each mode already has — practice → AwaitingOpenPodView,
- * ranked → LiveDraftAwaiting — until the open, then the live surface. NO status
+ * When true, the routing sites consume `usePreOpenPhase` (src/hooks/). NO status
  * write moves, no anchor changes, no deploy-timing change, and no claims or duty
  * behavior change: this is display routing only.
+ *
+ * COVERAGE IS PARTIAL, and deliberately so — read this before flipping:
+ *   - practice → AwaitingOpenPodView, plus the training labels (the lobby card,
+ *     the climb gate, both draft-completion cards, the waiting room). Requires
+ *     TRAINING_POD_DRAFT_V2_ENABLED; under a V2 rollback the practice host reads
+ *     live again, and this flag does not change that.
+ *   - ranked → the classic column's header copy ONLY, i.e. the pre-deploy window.
+ *     Once the agent deploys the arena takes over and reads live until the bell,
+ *     as today. Routing ranked to LiveDraftAwaiting was tried and REVERTED: that
+ *     surface has no claim controls, and Mon ~06:00-09:24 is the only day-1 claim
+ *     window a competitive pod has (place-claim.js:96-97 + the 09:24 wire close).
+ *   - the ambient LIVE cascade (THE FIELD, lobby pod cards, funnel, spectate) is
+ *     untouched — chokepoint B (leagueAdapter.groupStatusToPodStatus) is deferred
+ *     until base-layer pods carry a startAnchor. So with this flag ON a pod can
+ *     read "awaiting" on its own screen and "live" in the field list.
  *
  * Flag-off (default) = today's routing at every site, byte-identical — the hook
  * short-circuits to false and never mounts its ticker (no extra re-renders).
