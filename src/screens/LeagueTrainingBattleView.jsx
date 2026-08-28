@@ -76,20 +76,22 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
   // false and every expression below is byte-identical to before.
   const preOpen = usePreOpenPhase(pod);
 
-  // Framing keys on the PHASE, exactly as it already keys on status — a pre-open
-  // battle day reads "awaiting open", not "live".
-  const framing = useMemo(() => trainingStatusFraming(pod?.status, { preOpen }), [pod?.status, preOpen]);
-  const compositeContext = useMemo(() => deriveCompositeContext(pod, uid), [pod, uid]);
   // Training Pod Draft V2 (Phase 2) gate. Flag-off (or non-awaiting-open) →
   // today's video-based composition, byte-identical.
   const v2On = isTrainingPodDraftV2On();
 
-  // The ONE awaiting-vs-live routing decision for this host (BUILD_RULES §9): the
-  // desktop layout gate, the arena takeover and the body ternary all bind to this
-  // single derivation by construction, so they cannot drift into a state where a
-  // header says "awaiting" over a live body or the awaiting body renders in the
-  // mobile column. Landing any subset of the three reproduces the original bug.
+  // The ONE awaiting-vs-live decision for this host (BUILD_RULES §9). All FOUR
+  // consumers below bind to it — the header framing, the desktop layout gate, the
+  // arena takeover and the body ternary — so no subset can land and no pair can
+  // disagree. It is deliberately gated on `v2On` as well as the phase: with the V2
+  // flag rolled back there is no awaiting body to route to, so binding the header
+  // and the arena to the phase ALONE would print "awaiting open" over the classic
+  // live body. Under rollback `showAwaiting` is false everywhere and this host is
+  // byte-identical to pre-change.
   const showAwaiting = v2On && (pod?.status === GROUP_STATUS.AWAITING_OPEN || preOpen);
+
+  const framing = useMemo(() => trainingStatusFraming(pod?.status, { preOpen: showAwaiting }), [pod?.status, showAwaiting]);
+  const compositeContext = useMemo(() => deriveCompositeContext(pod, uid), [pod, uid]);
   // Awaiting-open DESKTOP layout gate (TRAINING_POD_DESKTOP_ENABLED or
   // ?trainingPodDesktop=1) — only the V2 awaiting-open body, only at ≥1024. When
   // off / mobile / not-awaiting-open this is false and `page` stays today's
@@ -178,12 +180,14 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
   // (awaiting_open), flag-off, or classic → today's practice column, byte-identical
   // on BOTH viewports (the gate short-circuits on ARENA_LIVE_ON before isDesktop).
   // The arena subsumes Flat6 + ClaimFlipWindow + GroupFeed; draft replay stays classic.
-  // `!preOpen`: the agent battle deploys BEFORE the bell (the fast lane on a
+  // `!showAwaiting`: the agent battle deploys BEFORE the bell (the fast lane on a
   // pre-open draft, else the ~06:00 sweep), so `myBattle` exists all through the
   // pre-open window and this takeover would otherwise preempt the awaiting
   // surface entirely. This gate has no status test of its own — it was held off
   // only by `myBattle` being null pre-deploy — so the condition is ADDED here.
-  if (ARENA_LIVE_ON && myBattle && !classic && !preOpen) {
+  // Bound to showAwaiting, not the bare phase, so it is never suppressed unless
+  // there is genuinely an awaiting body to fall through to.
+  if (ARENA_LIVE_ON && myBattle && !classic && !showAwaiting) {
     return (
       <div style={{ minHeight: '100vh', background: '#050609', padding: isDesktop ? 16 : 0, boxSizing: 'border-box' }}>
         <LeagueBattleArenaLive

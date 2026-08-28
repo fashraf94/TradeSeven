@@ -49,7 +49,13 @@ export function participantStatusFraming(status, { preOpen = false } = {}) {
       phase: 'awaiting',
       tone: 'pending',
       sub: 'Locked in — your battle week begins at the next market open.',
-      showBattleBody: false,
+      // showBattleBody stays TRUE — it is `status !== FORMING` in every arm, exactly
+      // as the retired `!isForming` binary was. Suppressing the body here would take
+      // ClaimFlipWindow with it, and the pre-open window is the ONLY day-1 claim
+      // window a competitive pod has: place-claim.js:96-97 requires status BATTLE,
+      // and the claim wire shuts at 09:24 ET (tournamentTime.js:25), so Mon
+      // ~06:00-09:24 is the whole of it. This phase changes COPY, never capability.
+      showBattleBody: true,
     };
   }
   return {

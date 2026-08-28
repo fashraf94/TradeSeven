@@ -35,13 +35,25 @@ export const PREOPEN_TICK_MS = 30_000;
  * @returns {boolean} true while the group is BATTLE and pre-open on its anchor date.
  */
 export default function usePreOpenPhase(group) {
-  const [now, setNow] = useState(() => new Date());
+  // `tick` is ONLY a re-render trigger, never the clock the derivation reads.
+  //
+  // It used to be a `now` Date held in state, and that was a real bug: state is
+  // seeded at mount and advanced only by the interval, which arms only while the
+  // phase is ALREADY true. A tab left open at 23:50 the night before, on a pod
+  // still AWAITING_OPEN, therefore held yesterday's Date — so when the ~06:00
+  // status flip re-rendered it, the tuple compare ran against yesterday's ET date,
+  // returned false, and the pod showed the live surface for the whole pre-open
+  // window. Exactly the defect this hook exists to prevent, in the other
+  // direction. Reading the clock at render closes it: every path that can ENTER
+  // the phase (mount, or a group-prop change from the status snapshot) is a
+  // render, and every path that can LEAVE it is the ticker below.
+  const [, setTick] = useState(0);
 
   // Flag-off is a hard short-circuit evaluated FIRST: the derivation is never
   // consulted and the effect below never arms, so an off-flag site is
   // byte-equivalent to today — same routing AND the same render cadence (an
   // always-running timer would itself be a behavior change).
-  const preOpen = isPreOpenPhaseRoutingOn() && isPreOpenOnBattleDay(group, now);
+  const preOpen = isPreOpenPhaseRoutingOn() && isPreOpenOnBattleDay(group, new Date());
 
   // Tick ONLY while pre-open. Once the bell passes, `preOpen` goes false, this
   // effect tears the interval down, and it never re-arms for that pod: a BATTLE
@@ -50,7 +62,7 @@ export default function usePreOpenPhase(group) {
   // snapshot and re-renders this hook with a BATTLE group.
   useEffect(() => {
     if (!preOpen) return undefined;
-    const id = setInterval(() => setNow(new Date()), PREOPEN_TICK_MS);
+    const id = setInterval(() => setTick((t) => t + 1), PREOPEN_TICK_MS);
     return () => clearInterval(id);
   }, [preOpen]);
 

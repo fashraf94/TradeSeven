@@ -319,12 +319,14 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
         />
       );
     }
-    // `|| preOpen` closes the ranked pre-open leak: a slot pod that completed
-    // straight into BATTLE (the Mon 08:45 slot, by construction pre-open) has no
-    // AWAITING_OPEN state to match on, so without this it falls through to the
-    // live column below. LiveDraftAwaiting reads only the anchor, never status,
-    // so it renders a BATTLE-status pod unchanged.
-    if (group.status === GROUP_STATUS.AWAITING_OPEN || preOpen) {
+    // NOT `|| preOpen`. Diverting a pre-open BATTLE pod here was tried and
+    // REVERTED: LiveDraftAwaiting carries no claim controls, and the pre-open
+    // window is the only day-1 claim window a competitive pod has (place-claim.js:
+    // 96-97 requires BATTLE; the wire shuts 09:24 ET). Routing there fixed a label
+    // by removing a capability. A pre-open pod therefore falls through to the
+    // classic column, which keeps ClaimFlipWindow and reads awaiting copy via
+    // leagueParticipantFraming. See the Phase 5 audit record.
+    if (group.status === GROUP_STATUS.AWAITING_OPEN) {
       return (
         <LiveDraftAwaiting
           group={group} currentUserId={uid}

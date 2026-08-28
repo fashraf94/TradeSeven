@@ -47,7 +47,25 @@ describe('participantStatusFraming — phases', () => {
     expect(f.tone).toBe('pending');
     expect(f.sub).toMatch(/next market open/i);
     expect(f.sub).not.toBe(LIVE_COPY);
-    expect(f.showBattleBody).toBe(false);
+  });
+
+  it('pre-open changes COPY ONLY — the battle body (and its claim panel) still renders', () => {
+    // REGRESSION GUARD (Phase 5 review finding 2). Suppressing the body here takes
+    // ClaimFlipWindow with it, and the pre-open window is the ONLY day-1 claim
+    // window a competitive pod has: place-claim.js:96-97 requires status BATTLE and
+    // the claim wire shuts at 09:24 ET, so Mon ~06:00-09:24 is the whole of it.
+    // A label fix must never remove a capability.
+    expect(participantStatusFraming(GROUP_STATUS.BATTLE, { preOpen: true }).showBattleBody).toBe(true);
+    expect(participantStatusFraming(GROUP_STATUS.BATTLE, { preOpen: false }).showBattleBody).toBe(true);
+  });
+
+  it('showBattleBody is exactly `status !== FORMING` in EVERY arm, preOpen included', () => {
+    for (const status of ALL_STATUSES) {
+      for (const preOpen of [true, false]) {
+        expect(participantStatusFraming(status, { preOpen }).showBattleBody)
+          .toBe(status !== GROUP_STATUS.FORMING);
+      }
+    }
   });
 
   it('FORMING wins over preOpen (forming is never a pre-open battle day)', () => {
@@ -82,8 +100,9 @@ describe('participantStatusFraming — anti-vacuous (BUILD_RULES §2)', () => {
     const off = participantStatusFraming(GROUP_STATUS.BATTLE, { preOpen: false });
     const on = participantStatusFraming(GROUP_STATUS.BATTLE, { preOpen: true });
     expect(off.sub).not.toBe(on.sub);
-    expect(off.showBattleBody).not.toBe(on.showBattleBody);
     expect(off.tone).not.toBe(on.tone);
+    // showBattleBody deliberately does NOT differ — see the capability guard above.
+    expect(off.showBattleBody).toBe(on.showBattleBody);
   });
 
   it('the legacy re-implementation is not trivially equal to the module', () => {
