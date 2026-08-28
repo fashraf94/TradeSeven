@@ -9,6 +9,10 @@
 // third copy of the NYSE list.
 
 import { isMarketHoliday, isEarlyCloseDay } from './marketSchedule.js';
+// BUILD_RULES §4 api/ -> src/ import: leagueTournament.js is a ZERO-import
+// constants module (verified), so this adds nothing to the transitive graph.
+// The guard is tournamentTime.test.js's real import of THIS module — never mock it.
+import { GROUP_STATUS } from '../../src/constants/leagueTournament.js';
 
 const MARKET_OPEN_MIN = 9 * 60 + 30;   // 9:30 AM ET
 const MARKET_CLOSE_MIN = 16 * 60;      // 4:00 PM ET
@@ -80,6 +84,51 @@ export function isMarketOpenAt(now = new Date()) {
   if (isMarketHoliday(date)) return false;
   const closeMin = isEarlyCloseDay(date) ? EARLY_CLOSE_MIN : MARKET_CLOSE_MIN;
   return minutes >= MARKET_OPEN_MIN && minutes < closeMin;
+}
+
+/**
+ * PRE-OPEN PHASE — is this group on its battle day, but before the bell?
+ *
+ * True iff the group is BATTLE and the market has not yet opened on the group's
+ * own anchor date (`startAnchor.anchorEtDate`). This is the ONE shared derivation
+ * behind pre-open display routing; every routing site consumes it through
+ * `usePreOpenPhase` (src/hooks/usePreOpenPhase.js), which binds it to a ticker so
+ * no site can consume the derivation without the clock that makes it flip.
+ *
+ * WHY NOT `isMarketOpenAt`: it answers "is the market open RIGHT NOW", which is a
+ * different question. It ignores the anchor entirely (at 10:00 it reports open for
+ * a pod anchored next Monday, which would read as live days early) and it goes
+ * false again after the 16:00 close and on early-close days, which would flip a
+ * long-running battle day back to "pre-open" in the afternoon. So this compares the
+ * (date, minutes) tuple against (anchorEtDate, MARKET_OPEN_MIN) instead.
+ *
+ * The four cases (spec V2 §2), in the order they are decided:
+ *   - status is not BATTLE          -> false (a genuine AWAITING_OPEN pod is not
+ *                                      "pre-open on its battle day"; it routes on
+ *                                      its own status, unchanged)
+ *   - anchor date in the FUTURE     -> false
+ *   - anchor date in the PAST       -> false (stale / late-fire: the battle day has
+ *                                      been and gone, so it reads live and can never
+ *                                      strand on the awaiting surface)
+ *   - anchor date is TODAY          -> true iff ET minutes < 09:30
+ *
+ * A missing or malformed anchor returns false — the fail-safe direction, since
+ * false is exactly today's (pre-flag) routing.
+ *
+ * DST-immune: the only instant -> ET conversion is getEtParts (Intl), never an
+ * offset assumption. Pure and injectable; the React binding lives in the hook.
+ *
+ * @param {{status?: string, startAnchor?: {anchorEtDate?: string}}} group
+ * @param {Date} now
+ * @returns {boolean}
+ */
+export function isPreOpenOnBattleDay(group, now = new Date()) {
+  if (group?.status !== GROUP_STATUS.BATTLE) return false;
+  const anchorEtDate = group?.startAnchor?.anchorEtDate;
+  if (typeof anchorEtDate !== 'string' || anchorEtDate === '') return false;
+  const { date: nowEtDate, minutes } = getEtParts(now);
+  if (nowEtDate !== anchorEtDate) return false;
+  return minutes < MARKET_OPEN_MIN;
 }
 
 /**

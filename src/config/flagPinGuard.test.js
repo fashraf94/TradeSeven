@@ -102,6 +102,8 @@ const DARK_BY_DESIGN = {
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
   LEAGUE_FUSE_HERO_ENABLED:
     'Branch A fuse hero — dark until the FuseHero build lands and a founder preview smoke passes; ClimbArena stays the live top half until the flip, which is its own one-line PR',
+  PREOPEN_PHASE_ROUTING_ENABLED:
+    'pre-open display routing (spec V2.1) — display-only; flips only after a founder preview smoke of the 9:30 transition',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────
