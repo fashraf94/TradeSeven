@@ -31,7 +31,11 @@ import {
 import { getPreviousTradingDay } from '../_utils/marketSchedule.js';
 import { translateTiming } from '../_utils/fetchEarningsCalendarEODHD.js';
 import { etMinutesOfDay } from '../_utils/fetchEconomicEventsEODHD.js';
-import { assessEpsPlausibility } from '../_utils/econPrintVerifier.js';
+import {
+  assessEpsPlausibility,
+  assessEpsCrossSource,
+  EPS_CROSS_SOURCE_REL_TOLERANCE,
+} from '../_utils/econPrintVerifier.js';
 import { publishStoryWithWire } from '../_utils/wireWriteThrough.js';
 import { buildContinuityContext } from '../_utils/wireContinuity.js';
 import { recordWireSample } from '../_utils/wireMetrics.js';
@@ -262,6 +266,11 @@ export default async function handler(req, res) {
           // the symbol so the prompt never renders an empty "Company:".
           companyName: e.name || symbol,
           reportDate: e.report_date,
+          // EODHD ships a distinct `date` = fiscal PERIOD-END (e.g. 2026-06-30)
+          // alongside `report_date` = announcement date. Not printed or stored;
+          // carried only to enrich the cross-source hold log (quarter-mismatch
+          // diagnosis).
+          periodEnd: e.date || null,
           epsActual: e.actual ?? e.actual_eps,
           epsEstimate: e.estimate ?? e.eps_estimate,
           timing: translateTiming(e.before_after_market),
@@ -303,11 +312,61 @@ export default async function handler(req, res) {
         .map((s) => `${s.primaryTicker}:${s.referentDate}`)
     );
 
+    // ── Cross-source operand-integrity gate (PRIMARY, pre-sort) ───────────
+    // Corroborate each candidate's PRINTED calendar `actual` against the
+    // INDEPENDENT EODHD /fundamentals actual (getEarningsResult, date-matched)
+    // BEFORE the surprise-first sort, so a wrong-but-self-consistent operand
+    // (NVDA 0.99-vs-2.09 → a fabricated −52.6% "miss") can neither OUTRANK a
+    // correct beat nor be published. Ratio tolerance + fail-open on an
+    // unresolved / off-quarter fundamentals row (assessEpsCrossSource). The
+    // fetched detail is REUSED downstream for priceMove/magnitude (one
+    // getEarningsResult per candidate). A held candidate is TERMINAL for this
+    // firing — excluded, not re-armed; both operands, the ratio, and the
+    // ignored fiscal period-end are logged. Covered candidates skip the fetch
+    // (the loop's dedup drops them; they never publish).
+    let crossSourceHeldCount = 0;
+    const eligible = [];
+    for (const cand of trackedResults) {
+      if (covered.has(`${cand.symbol}:${cand.reportDate}`)) {
+        eligible.push(cand); // covered → loop drops it below; no fundamentals fetch needed
+        continue;
+      }
+      let detail = null;
+      try {
+        // Pass reportDate so the 7-day matcher (getEarningsResult.js:298-305)
+        // targets the RECAPPED quarter. Reused in the generation block below
+        // for priceMove/magnitude — never re-fetched, never the printed EPS.
+        detail = await getEarningsResult(cand.symbol, cand.reportDate);
+      } catch (e) {
+        logError(`getEarningsResult failed for ${cand.symbol}`, { error: e.message });
+      }
+      cand.earningsDetail = detail;
+      const xs = assessEpsCrossSource({
+        calendarActual: cand.epsActual,
+        calendarReportDate: cand.reportDate,
+        fundamentalsResolved: Boolean(detail?.resolved),
+        fundamentalsActual: detail?.epsActual,
+        fundamentalsReportDate: detail?.reportDate,
+      });
+      if (xs.hold) {
+        crossSourceHeldCount += 1;
+        logError(
+          `cross_source_disagreement symbol=${cand.symbol} reportDate=${cand.reportDate} ` +
+          `periodEnd=${cand.periodEnd ?? 'n/a'} fundReportDate=${detail?.reportDate ?? 'n/a'} ` +
+          `calendarActual=${xs.calendarActual} fundamentalsActual=${xs.fundamentalsActual} ` +
+          `ratio=${xs.ratio === null ? 'n/a' : xs.ratio.toFixed(4)} relDiff=${xs.relDiff.toFixed(4)} ` +
+          `tolerance=${EPS_CROSS_SOURCE_REL_TOLERANCE}`,
+        );
+        continue; // ineligible — never reaches the surprise-first sort
+      }
+      eligible.push(cand);
+    }
+
     // Surprise-first: the most newsworthy uncovered names fill the day's
     // slots, so when a ceiling binds the dropped stories are the least
     // newsworthy (founder ruling). Ranked by |EPS surprise %| — see
-    // recapNewsworthiness.
-    const ranked = [...trackedResults].sort((a, b) => recapNewsworthiness(b) - recapNewsworthiness(a));
+    // recapNewsworthiness. Only cross-source-AGREEING candidates are ranked.
+    const ranked = [...eligible].sort((a, b) => recapNewsworthiness(b) - recapNewsworthiness(a));
 
     // Daily ceiling, accumulated across the day's firings. Every firing for one
     // ET trading day publishes on the SAME UTC date (13/20/21/22/23 UTC ≈
@@ -378,17 +437,11 @@ export default async function handler(req, res) {
     try {
     logInfo(`Generating recap for ${earning.symbol}`);
 
-    // Get detailed earnings result
-    let earningsDetail = null;
-    try {
-      // Pass reportDate so the 7-day matcher (getEarningsResult.js:298-305)
-      // returns the RECAPPED quarter's fundamentals row, not entries[0] (the
-      // most recent history row). Used only for supplementary context below
-      // (priceMove / magnitude / revenue) — never the printed surprise/outcome.
-      earningsDetail = await getEarningsResult(earning.symbol, earning.reportDate);
-    } catch (e) {
-      logError(`getEarningsResult failed for ${earning.symbol}`, { error: e.message });
-    }
+    // The detailed fundamentals row was fetched ONCE in the cross-source gate
+    // above (getEarningsResult, reportDate-matched) and is REUSED here for
+    // supplementary context (priceMove / magnitude) — never the printed
+    // surprise/outcome, which derive from the calendar operands.
+    const earningsDetail = earning.earningsDetail || null;
 
     // Fetch the current-session price move. For an AMC name on report day
     // this is the INTO-EARNINGS (pre-reaction) session — the report drops
@@ -618,6 +671,10 @@ export default async function handler(req, res) {
     // The single per-firing outcome line (F1 dual count + taxonomy, R-B6): one
     // `outcome=` per firing, now carrying the story count.
     if (written.length === 0) {
+      if (crossSourceHeldCount > 0) {
+        return skip('cross_source_disagreement',
+          `${crossSourceHeldCount} candidate(s) held on cross-source EPS disagreement`);
+      }
       if (heldCount > 0) {
         return skip('operand_implausible', `${heldCount} candidate(s) held by the plausibility gate`);
       }

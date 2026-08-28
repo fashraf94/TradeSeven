@@ -13,8 +13,10 @@ import {
   verifyEconPrint,
   assessEconPlausibility,
   assessEpsPlausibility,
+  assessEpsCrossSource,
   isImplausibleDelta,
   PLAUSIBILITY_BANDS,
+  EPS_CROSS_SOURCE_REL_TOLERANCE,
 } from './econPrintVerifier.js';
 
 // ── R2 fixture ───────────────────────────────────────────────────────────
@@ -193,5 +195,73 @@ describe('R-B1a earnings surprise gate', () => {
   });
   it('unparseable actual is held', () => {
     expect(assessEpsPlausibility('garbage', 3.1).hold).toBe(true);
+  });
+});
+
+// ── Cross-source EPS integrity — the NVDA operand-truth gate ────────────────
+// The defect the plausibility band CANNOT see: NVDA printed a calendar actual
+// of 0.99 vs a correct 2.09 estimate (a clean, self-consistent −52.6% "miss")
+// while the true actual (~2.22) was a beat. |0.99−2.09|=1.10 clears the $20
+// band, and the STRICT adapter recomputes −52.6% from the same operand → both
+// score it correct. Only an INDEPENDENT feed disagreeing catches it.
+describe('assessEpsCrossSource — primary operand-truth gate', () => {
+  const SAME_Q = { calendarReportDate: '2026-07-30', fundamentalsResolved: true, fundamentalsReportDate: '2026-07-30' };
+
+  it('HOLDS the NVDA case: calendar 0.99 vs fundamentals 2.22 (same quarter)', () => {
+    const v = assessEpsCrossSource({ ...SAME_Q, calendarActual: 0.99, fundamentalsActual: 2.22 });
+    expect(v.hold).toBe(true);
+    expect(v.reason).toBe('cross_source_disagreement');
+    expect(v.relDiff).toBeCloseTo(0.5541, 3); // |0.99−2.22| / 2.22
+    expect(v.ratio).toBeCloseTo(0.4459, 3);    // 0.99 / 2.22
+    expect(v.calendarActual).toBe(0.99);
+    expect(v.fundamentalsActual).toBe(2.22);
+  });
+
+  it('does NOT hold when the two feeds agree within tolerance (rounding / GAAP noise)', () => {
+    expect(assessEpsCrossSource({ ...SAME_Q, calendarActual: 2.22, fundamentalsActual: 2.22 }).hold).toBe(false);
+    expect(assessEpsCrossSource({ ...SAME_Q, calendarActual: 1.57, fundamentalsActual: 1.60 }).hold).toBe(false); // ~1.9%
+  });
+
+  it('boundary: relDiff just past the tolerance holds; just inside does not', () => {
+    // ref=1.00 → a=0.60 gives relDiff 0.40 > 0.35 (hold); a=0.70 gives 0.30 < 0.35 (pass).
+    expect(assessEpsCrossSource({ ...SAME_Q, calendarActual: 0.60, fundamentalsActual: 1.00 }).hold).toBe(true);
+    expect(assessEpsCrossSource({ ...SAME_Q, calendarActual: 0.70, fundamentalsActual: 1.00 }).hold).toBe(false);
+    // exactly at the tolerance (0.35) does not hold — the comparison is strict >.
+    expect(assessEpsCrossSource({ ...SAME_Q, calendarActual: 0.65, fundamentalsActual: 1.00 }).hold).toBe(false);
+    expect(EPS_CROSS_SOURCE_REL_TOLERANCE).toBe(0.35);
+  });
+
+  it('sign disagreement (a loss vs a profit) is a hold', () => {
+    const v = assessEpsCrossSource({ ...SAME_Q, calendarActual: -0.50, fundamentalsActual: 2.00 });
+    expect(v.hold).toBe(true);
+    expect(v.relDiff).toBeCloseTo(1.25, 3);
+  });
+
+  it('FAIL-OPEN when fundamentals is unresolved (a silent second feed never holds a real story)', () => {
+    const v = assessEpsCrossSource({ calendarActual: 0.99, calendarReportDate: '2026-07-30', fundamentalsResolved: false });
+    expect(v.hold).toBe(false);
+    expect(v.reason).toBe('fundamentals_unresolved');
+  });
+
+  it('FAIL-OPEN when the fundamentals actual is absent/unparseable (resolved but no epsActual)', () => {
+    const v = assessEpsCrossSource({ ...SAME_Q, calendarActual: 0.99, fundamentalsActual: undefined });
+    expect(v.hold).toBe(false);
+    expect(v.reason).toBe('operand_unparseable');
+  });
+
+  it('FAIL-OPEN on a quarter mismatch (matcher fell back to a different report — split confound removed)', () => {
+    const v = assessEpsCrossSource({
+      calendarActual: 0.99, calendarReportDate: '2026-07-30',
+      fundamentalsResolved: true, fundamentalsActual: 2.22, fundamentalsReportDate: '2026-04-30',
+    });
+    expect(v.hold).toBe(false);
+    expect(v.reason).toBe('quarter_mismatch');
+    expect(v.dayGap).toBeGreaterThan(7);
+  });
+
+  it('FAIL-OPEN near break-even: both operands below the magnitude floor (ratio meaningless)', () => {
+    const v = assessEpsCrossSource({ ...SAME_Q, calendarActual: 0.01, fundamentalsActual: 0.05 });
+    expect(v.hold).toBe(false);
+    expect(v.reason).toBe('below_magnitude_floor');
   });
 });
