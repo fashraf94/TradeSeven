@@ -14,8 +14,16 @@ import { GROUP_STATUS, getWeeklyComposite, getWeeklyScore, round2 } from '../con
 // rehearsal — the framing makes that honest at the view level (we do NOT edit the
 // shared Flat6BattleView, whose internal "score of record" wording is reframed by
 // the practice banner).
-export function trainingStatusFraming(status) {
-  switch (status) {
+export function trainingStatusFraming(status, { preOpen = false } = {}) {
+  // PRE-OPEN PHASE: a pod on its battle day but before the 9:30 bell is BATTLE by
+  // status yet reads, to the player, exactly as awaiting-open. Collapsing it here
+  // means the header binds to the SAME derivation the body routes on
+  // (usePreOpenPhase, via LeagueTrainingBattleView) rather than re-deriving the
+  // phase from a parallel source — BUILD_RULES §9, so the label can never say
+  // "live" over the awaiting surface. `preOpen` is false off-flag, leaving every
+  // row below byte-identical.
+  const phase = (preOpen && status === GROUP_STATUS.BATTLE) ? GROUP_STATUS.AWAITING_OPEN : status;
+  switch (phase) {
     case GROUP_STATUS.AWAITING_OPEN:
       return {
         label: 'Practice pod · awaiting open',
