@@ -28,6 +28,7 @@ import LiveDraftAwaiting from '../components/League/liveDraft/LiveDraftAwaiting'
 import { releaseSlot } from '../services/liveDraftActions';
 import { LEAGUE_LOBBY_ENABLED, LEAGUE_LIVE_DRAFT, LEAGUE_SCORE_HISTORY_ON } from '../config/featureFlags';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
+import usePreOpenPhase from '../hooks/usePreOpenPhase';
 import { useIsMobile } from '../hooks/useIsMobile';
 import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
 import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
@@ -41,6 +42,7 @@ import {
   subscribeRank,
 } from '../services/tournamentGroupService';
 import { resolveRoundBoundary } from '../utils/roundBoundary';
+import { participantStatusFraming } from './leagueParticipantFraming';
 import {
   isRoundBoundaryAcknowledged,
   acknowledgeRoundBoundary,
@@ -115,6 +117,17 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
   // feeds the live arena's Score-History recap (the swap ledger); existing
   // consumers ignore it.
   const { battle: myBattle, chain: myChain } = useMyTournamentBattle(group?.id);
+
+  // PRE-OPEN PHASE (PREOPEN_PHASE_ROUTING_ENABLED): BATTLE, but the market has not
+  // opened yet on this pod's anchor date. Ranked reaches this two ways — the
+  // Mon 08:45 slot completes straight into BATTLE ~40min pre-open, and an
+  // overnight pod is flipped by the ~06:00 orchestrator sweep — and BOTH carry a
+  // startAnchor, which is what this derivation keys on. A single-shot ranked pod
+  // is resolved WITHOUT a startAnchor (api/tournament/resolve-user-draft.js:182
+  // writes it only when given), so the derivation is inert there by construction.
+  // The hook owns its ticker, so the view re-renders at the bell. Flag-off it is a
+  // constant false and every expression below reduces to today's.
+  const preOpen = usePreOpenPhase(group);
 
   // The completed group's OWN daily chain for the recap card — only subscribed
   // when the flag is on AND there is no active group (the recap interlude).
@@ -241,7 +254,11 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
   const roundLabel = group.bracketGameId
     ? `Bracket round ${parseBracketGameId(group.bracketGameId)?.roundNumber ?? group.roundNumber}`
     : `Base week ${group.baseLayerWeek ?? ''}`;
-  const isForming = group.status === GROUP_STATUS.FORMING;
+  // One derivation for the header tone, the header copy and the four body guards
+  // below (BUILD_RULES §9) — see leagueParticipantFraming.js. With `preOpen` false
+  // this is byte-identical to the `isForming ? … : …` binary it replaces (the
+  // local `isForming` it retires had no other consumer in this file).
+  const framing = participantStatusFraming(group.status, { preOpen });
 
   // Battle View V2 — the battle takeover. Reached ONLY once the agent battle has
   // deployed (myBattle), with the gate on and not dropped to classic. The viewport
@@ -252,7 +269,11 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
   // on BOTH viewports — the gate short-circuits on ARENA_LIVE_ON before isDesktop.
   // The arena subsumes Flat6BattleView + ClaimFlipWindow + GroupFeed; draft replay /
   // board-commit are lifecycle chrome and stay in the classic view.
-  if (ARENA_LIVE_ON && myBattle && !classic) {
+  // `!preOpen`: the agent layer deploys before the bell, so `myBattle` exists all
+  // through the pre-open window and this takeover would otherwise preempt the
+  // awaiting surface — the primary ranked leak. Like its practice twin, the gate
+  // carries no status test of its own, so the condition is ADDED, not edited.
+  if (ARENA_LIVE_ON && myBattle && !classic && !preOpen) {
     return (
       <div style={{ minHeight: '100vh', background: '#050609', padding: isDesktop ? 16 : 0, boxSizing: 'border-box' }}>
         <LeagueBattleArenaLive
@@ -298,7 +319,12 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
         />
       );
     }
-    if (group.status === GROUP_STATUS.AWAITING_OPEN) {
+    // `|| preOpen` closes the ranked pre-open leak: a slot pod that completed
+    // straight into BATTLE (the Mon 08:45 slot, by construction pre-open) has no
+    // AWAITING_OPEN state to match on, so without this it falls through to the
+    // live column below. LiveDraftAwaiting reads only the anchor, never status,
+    // so it renders a BATTLE-status pod unchanged.
+    if (group.status === GROUP_STATUS.AWAITING_OPEN || preOpen) {
       return (
         <LiveDraftAwaiting
           group={group} currentUserId={uid}
@@ -318,16 +344,14 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: tokens.textMuted }}>
-        <Swords size={13} color={isForming ? tokens.amber : tokens.teal} />
-        {isForming
-          ? 'Group forming — commit your draft board before Monday\'s draft.'
-          : 'Battle week — your group drafted Monday.'}
+        <Swords size={13} color={framing.tone === 'pending' ? tokens.amber : tokens.teal} />
+        {framing.sub}
         <span style={{ marginLeft: 'auto', color: tokens.textFaint }}>
           {(group.groupMembers || []).length} players
         </span>
       </div>
 
-      {!isForming && myBattle && (
+      {framing.showBattleBody && myBattle && (
         <Flat6BattleView
           battle={myBattle}
           isOwner
@@ -335,15 +359,15 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
         />
       )}
 
-      {!isForming && <ClaimFlipWindow group={group} uid={uid} />}
+      {framing.showBattleBody && <ClaimFlipWindow group={group} uid={uid} />}
 
-      {!isForming && (
+      {framing.showBattleBody && (
         <DraftPlaybackTheater groupId={group.id} group={group} uid={uid} />
       )}
 
       <BoardCommitFlow groupId={group.id} group={group} uid={uid} />
 
-      {!isForming && <GroupFeed feed={group.feed} uid={uid} />}
+      {framing.showBattleBody && <GroupFeed feed={group.feed} uid={uid} />}
     </div>
   );
 }
