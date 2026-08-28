@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { seatAltitude, seatHasLiveSample } from './seatAltitude';
-import { useSessionCompositeTrail, appendTrailSnapshot, emptyTrail, TRAIL_CAPACITY } from './useSessionCompositeTrail';
+import { useSessionCompositeTrail, appendTrailSnapshot, emptyTrail, trailHead, resolveSeatValue, TRAIL_CAPACITY } from './useSessionCompositeTrail';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -282,5 +282,76 @@ describe('CR2 — the trail resets at the ET day boundary', () => {
     }
     expect(t.samples[YOU]).toHaveLength(3);
     expect(t.ticks).toBe(3);
+  });
+});
+
+// ── THE HEAD (§9) ──────────────────────────────────────────────────────────
+describe('trailHead — the present, under the SAME policy as a sample', () => {
+  const live = Object.fromEntries(IDS.map((id) => [id, true]));
+  const scores = { [YOU]: 12, r1: 25, r2: 13, r3: 11 };
+
+  it('a live seat reads its CURRENT value, not its newest sample', () => {
+    const t = appendTrailSnapshot(emptyTrail({ ...BANKED }), {
+      ids: IDS, scoresAtLast: scores, seatLive: live, t: TICK,
+    });
+    const moved = { ...scores, [YOU]: 40 };
+    expect(trailHead(t, { ids: IDS, scoresAtLast: moved, seatLive: live, t: TICK + 5_000 }).values[YOU]).toBe(40);
+    expect(t.samples[YOU][0].v).toBe(12); // the HISTORY is untouched
+  });
+
+  it('THE ONE POLICY: the head and the appended sample resolve a seat identically', () => {
+    // The §9 structure, stated as an identity rather than trusted: whatever the
+    // trail would APPEND for a seat is exactly what the head shows for it. A
+    // future change that teaches one branch a new rule breaks this row.
+    const cases = [
+      { scoresAtLast: scores, seatLive: live },
+      { scoresAtLast: scores, seatLive: { ...live, r2: false } },        // dropped poll
+      { scoresAtLast: { ...scores, r3: NaN }, seatLive: live },          // junk reading
+      { scoresAtLast: {}, seatLive: { [YOU]: true } },                   // partial map
+    ];
+    let t = appendTrailSnapshot(emptyTrail({ ...BANKED }), {
+      ids: IDS, scoresAtLast: scores, seatLive: live, t: TICK,
+    });
+    for (const c of cases) {
+      const appended = appendTrailSnapshot(t, { ids: IDS, ...c, t: TICK * 2 });
+      const head = trailHead(t, { ids: IDS, ...c, t: TICK * 2 });
+      if (head === null) {
+        expect(appended).toBe(t);   // the anyLive guard, in lockstep: BOTH no-op
+        continue;
+      }
+      for (const id of IDS) {
+        const fromSample = appended.samples[id]?.[appended.samples[id].length - 1]?.v;
+        expect(head.values[id], id).toBe(fromSample);
+      }
+    }
+  });
+
+  it('NOTHING LIVE ⇒ no head at all — the board never draws past its last real sample', () => {
+    const t = appendTrailSnapshot(emptyTrail({ ...BANKED }), {
+      ids: IDS, scoresAtLast: scores, seatLive: live, t: TICK,
+    });
+    expect(trailHead(t, { ids: IDS, scoresAtLast: null, seatLive: null, t: TICK * 2 })).toBeNull();
+    expect(trailHead(t, { ids: IDS, scoresAtLast: {}, seatLive: {}, t: TICK * 2 })).toBeNull();
+    // Same guard the append path uses: nothing live ⇒ nothing appended, either.
+    expect(appendTrailSnapshot(t, { ids: IDS, scoresAtLast: {}, seatLive: {}, t: TICK * 2 })).toBe(t);
+  });
+
+  it('a seat with nothing EVER observed is absent from the head, not zero', () => {
+    const head = trailHead({ seeds: {}, samples: {} }, {
+      ids: IDS, scoresAtLast: { [YOU]: 12 }, seatLive: { [YOU]: true }, t: TICK,
+    });
+    expect(head.values[YOU]).toBe(12);
+    expect('r1' in head.values).toBe(false);
+    expect(resolveSeatValue('r1', { scoresAtLast: { r1: 99 }, seatLive: { r1: false }, samples: {}, seeds: {} })).toBeNull();
+  });
+
+  it('the HOOK carries the head while enabled and drops it while dark', () => {
+    const { scoresAtLast, seatLive } = resolve({ youLiveScore: 21 });
+    mount({ scoresAtLast, seatLive, nowFn: () => TICK });
+    expect(latest.head.values[YOU]).toBe(21);
+    expect(latest.samples[YOU] ?? []).toHaveLength(0);  // no timer fire yet — a head is not a sample
+
+    update({ scoresAtLast, seatLive, enabled: false, nowFn: () => TICK });
+    expect(latest.head).toBeUndefined();                 // dark ⇒ nothing resolved at all
   });
 });

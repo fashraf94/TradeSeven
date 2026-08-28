@@ -210,6 +210,39 @@ describe('deriveCut — B2: one snapshot, server-identical ranking', () => {
     }
   });
 
+  it('the HEAD wins over the newest sample — the cut states NOW, not a minute ago', () => {
+    // §9: the strip renders the model's current composite every render. A cut
+    // (and a tip, and a crown) sourced from the newest 60s sample was up to a
+    // full interval behind it. The head is the trail's statement of the present.
+    const live = Object.fromEntries(IDS.map((id) => [id, true]));
+    const stale = { you: 15, r1: 22, r2: 31, r3: 41 };
+    const trail = appendTrailSnapshot(emptyTrail({ ...BANKED }), {
+      ids: IDS, scoresAtLast: stale, seatLive: live, t: 1_000,
+    });
+    const withoutHead = latestTrailSnapshot(trail, IDS, BANKED);
+    expect(withoutHead.values.you).toBe(15);
+
+    const now = { you: 26, r1: 22, r2: 31, r3: 41 };
+    const headed = latestTrailSnapshot({ ...trail, head: { t: 61_000, values: now } }, IDS, BANKED);
+    expect(headed.values.you).toBe(26);          // the model's current number
+    expect(headed.hasSamples).toBe(true);        // the HISTORY is still the samples
+    expect(headed.t).toBe(61_000);               // …and the burn is at the head's clock
+    expect(deriveCut(headed, IDS, 'you').needToday).toBe(31 - 26);
+  });
+
+  it('a head that omits a seat falls back to that seat\'s newest sample, then its seed', () => {
+    const live = Object.fromEntries(IDS.map((id) => [id, true]));
+    const s1 = { you: 15, r1: 22, r2: 31, r3: 41 };
+    const trail = appendTrailSnapshot(emptyTrail({ ...BANKED }), {
+      ids: IDS, scoresAtLast: s1, seatLive: live, t: 1_000,
+    });
+    const snap = latestTrailSnapshot({ ...trail, head: { t: 61_000, values: { you: 26 } } }, IDS, BANKED);
+    expect(snap.values.you).toBe(26);
+    expect(snap.values.r1).toBe(22);   // its newest sample
+    const seeded = latestTrailSnapshot({ seeds: { ...BANKED }, samples: {}, head: { t: 5, values: { you: 26 } } }, IDS, BANKED);
+    expect(seeded.values.r1).toBe(20); // its seed
+  });
+
   it('the cut is the 2nd-place value under the SAME rankByScores the server locks with', () => {
     const values = { you: 12, r1: 44, r2: 44, r3: 3 }; // tie at the top
     const snap = { values, hasSamples: true, t: 1 };
@@ -269,9 +302,33 @@ describe('seat series — real points only', () => {
     expect(pts[2].v).toBe(4);
     expect(pts[1].f).toBeGreaterThan(0);
   });
-  it('day: no samples → [] (the caller draws the flat spine + tip, R3 reload state)', () => {
+  it('day: no samples AND no head → [] (the caller draws the flat spine, R3)', () => {
     expect(seatDaySeries({ samples: [], seed: 10 })).toEqual([]);
     expect(seatDaySeries({ samples: undefined, seed: 10 })).toEqual([]);
+  });
+  it('day: the head CLOSES the series, so the line ends where the tip prints', () => {
+    // Without this the last drawn point was the newest 60s sample while the tip
+    // text said something else — the same §9 split, expressed in geometry.
+    const pts = seatDaySeries({
+      samples: [{ t: T0 + 60_000, v: 12 }],
+      seed: 10,
+      head: { f: 0.5, v: 19 },
+    });
+    expect(pts[pts.length - 1]).toEqual({ f: 0.5, v: 9 });   // 19 − seed 10
+  });
+  it('day: a head at or before the newest sample REPLACES it — never doubles back', () => {
+    const sampleF = sessionFraction(T0 + 60_000);
+    const pts = seatDaySeries({
+      samples: [{ t: T0 + 60_000, v: 12 }],
+      seed: 10,
+      head: { f: sampleF, v: 17 },
+    });
+    expect(pts).toHaveLength(2);
+    expect(pts[1]).toEqual({ f: sampleF, v: 7 });            // fresher value, same x
+  });
+  it('day: a head ALONE draws the open→now run (the corrected cold mount)', () => {
+    const pts = seatDaySeries({ samples: [], seed: 10, head: { f: 0.4, v: 22 } });
+    expect(pts).toEqual([{ f: 0, v: 0 }, { f: 0.4, v: 12 }]);
   });
   it('week: anchored at the open, closes at (i+1)/5, live tip burns within its band', () => {
     const pts = seatWeekSeries({ closes: [5, 9], tipValue: 11, tipF: weekTipF(2, 0.5), live: true });

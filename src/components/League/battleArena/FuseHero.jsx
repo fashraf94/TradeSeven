@@ -192,10 +192,13 @@ export function FuseHero({
   }
 
   // ── the frame + clock ──
+  // `tipF` is hoisted ABOVE the series so the last PATH point and the tip's x
+  // are the same number by construction, not two roundings of one idea.
   const F = fuseFrame({ w, h, compact });
   const X = (f) => F.padL + Math.max(0, Math.min(1, f)) * (F.plotR - F.padL);
   const dayFrac = snap.t != null ? sessionFraction(snap.t) : (live ? sessionFraction(nowFn()) : done ? 1 : 0);
   const bankedCount = Math.max(...ids.map((id) => (climb[id] || []).length), 0);
+  const tipF = calm ? 0 : DAY ? Math.max(dayFrac, 0.02) : weekTipF(bankedCount, done ? 1 : dayFrac);
 
   // ── per-seat series + display values ──
   const seatData = seats.map((s) => {
@@ -206,11 +209,20 @@ export function FuseHero({
     if (calm) {
       pts = [{ f: 0, v: 0 }];
     } else if (DAY) {
-      pts = seatDaySeries({ samples: trail?.samples?.[s.id], seed: seed[s.id] });
+      // The series ENDS at the same value the tip PRINTS (§9). `snap.values` is
+      // the trail's head — the model's current composite under the trail's
+      // carry-forward policy — so the line, the tip and the strip are one
+      // quantity rather than three samples of it taken at different moments.
+      const sampled = trail?.samples?.[s.id];
+      pts = seatDaySeries({ samples: sampled, seed: seed[s.id], head: { f: tipF, v: snap.values[s.id] } });
+      // No sampled history behind the head → the stretch is DASHED: we know
+      // where the seat is now, we did not observe how it got there.
+      spine = !(sampled && sampled.length > 0);
       if (pts.length === 0) {
-        // The designed reload state (R3): the last close as a FLAT SPINE to the
-        // clock's now, plus the live tip. Never a fabricated curve, never empty.
-        pts = [{ f: 0, v: 0 }, { f: Math.max(dayFrac, 0.02), v: 0 }];
+        // Nothing observed at all (no samples, no live reading anywhere): the
+        // designed reload state (R3) — the last close as a FLAT SPINE to the
+        // clock's now. Never a fabricated curve, never empty.
+        pts = [{ f: 0, v: 0 }, { f: tipF, v: 0 }];
         spine = true;
       }
     } else {
@@ -241,8 +253,7 @@ export function FuseHero({
   const showTarget = ranked && !calm && !voided && (DAY ? (needToday > 0 && cutLevel <= HI) : true);
   const targetY = Y(Math.min(cutLevel, HI));
 
-  // ── tips: x at the clock's newest sample; head anchors spread apart ──
-  const tipF = calm ? 0 : DAY ? Math.max(dayFrac, 0.02) : weekTipF(bankedCount, done ? 1 : dayFrac);
+  // ── tips: x at the burn (tipF, hoisted above); head anchors spread apart ──
   const burnX = X(done && !DAY ? (seatData[0]?.pts?.[seatData[0].pts.length - 1]?.f ?? 1) : tipF);
   const tipYOf = (d) => Y(d.pts[d.pts.length - 1]?.v ?? 0);
   const headY = spreadLabels(

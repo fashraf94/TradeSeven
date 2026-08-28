@@ -29,7 +29,7 @@
 // carry-forward and shared-clock behaviour, not a hand-drawn shape. Timestamps
 // are fixed literals (a known ET session), never Date.now().
 
-import { emptyTrail, appendTrailSnapshot } from './useSessionCompositeTrail';
+import { emptyTrail, appendTrailSnapshot, trailHead } from './useSessionCompositeTrail';
 
 const IDS = ['vela', 'atlas', 'helios', 'ember'];
 const OPEN = Date.parse('2026-08-26T13:30:00Z'); // 9:30 ET — a real session start
@@ -48,6 +48,11 @@ const MIN = 60_000;
 // suspected, that step would be indistinguishable from a 30-minute one.
 const TICKS_MIN = Object.freeze([5, 35, 65, 95, 125, 170, 215, 245, 275, 285]);
 
+/** Where the burn sits: a few minutes PAST the newest sample, which is the
+ *  ordinary live condition — the head moves with the model while the samples
+ *  land once a minute. */
+const NOW_MIN = 292;
+
 /** Zip hand-authored per-seat value paths against TICKS_MIN and walk them
  *  through the REAL accumulator. A `null` in a path is a DROPPED POLL for that
  *  seat at that tick — seatLive false — so the trail carries its last observed
@@ -63,7 +68,25 @@ function trailFrom(seeds, paths) {
       t: OPEN + mins * MIN,
     });
   });
-  return t;
+  return withHead(t, lastRow(paths), OPEN + NOW_MIN * MIN);
+}
+
+/** The last authored value per seat — the "model reading" a live board would
+ *  hold right now. A trailing null is a seat whose poll is currently failing. */
+const lastRow = (paths) => Object.fromEntries(IDS.map((id) => [id, paths[id][paths[id].length - 1]]));
+
+/** Attach the trail's HEAD through the REAL resolver, so a reviewer sees the
+ *  shipped shape: the line ends at the CURRENT value, not at the newest 60s
+ *  sample. Without this the fixtures would render the very lag that the
+ *  display-agreement fix removed. */
+function withHead(t, row, at) {
+  const head = trailHead(t, {
+    ids: IDS,
+    scoresAtLast: row,
+    seatLive: Object.fromEntries(IDS.map((id) => [id, row[id] != null])),
+    t: at,
+  });
+  return head ? { ...t, head } : t;
 }
 
 const lastOf = (climb) => Object.fromEntries(IDS.map((id) => [id, climb[id][climb[id].length - 1]]));
@@ -119,6 +142,9 @@ const RELOAD_CLIMB = {
   helios: [2.1, 3.0, 4.9, 5.2, 5.0],
   ember: [0.4, -0.8, -1.6, 1.2, 2.3],
 };
+// The live composites the model holds at mount — up, down and flat against the
+// last closes above, so the reviewer can tell the tip apart from the seed.
+const RELOAD_NOW = { vela: 11.8, atlas: 8.1, helios: 6.4, ember: 2.9 };
 
 export const FUSE_REVIEW_CASES = Object.freeze({
   underwater: {
@@ -145,9 +171,13 @@ export const FUSE_REVIEW_CASES = Object.freeze({
   reload: {
     label: 'Cold mount · reload state',
     scope: 'day', // the live state a user lands in
-    look: 'The state most users see most often (R3): flat spine at the last close plus the live tip. Does it look deliberate rather than broken?',
+    look: 'The state most users see most often (R3): no sampled history, so each fuse is a DASHED run from the open to its live tip. Does the dash read as "we did not watch this happen" rather than as a broken line — and does the tip number match the decomposition strip below?',
     climb: RELOAD_CLIMB,
-    trail: null, // no accumulated history — exactly a fresh tab
+    // A fresh tab: seeded, ZERO samples — but a live head, because the model has
+    // a reading from its first render. This is the case the display-agreement
+    // fix changed most: the tip used to print the seed (0.0 in Today) for the
+    // first minute of every session.
+    trail: withHead(emptyTrail(lastOf(RELOAD_CLIMB)), RELOAD_NOW, OPEN + NOW_MIN * MIN),
   },
 });
 

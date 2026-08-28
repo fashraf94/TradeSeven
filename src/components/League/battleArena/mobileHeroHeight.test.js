@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   MOBILE_STICKY_CHROME, MOBILE_DOCK_ROW, MOBILE_HERO_MIN, MOBILE_HERO_MAX,
-  mobileHeroHeight, dockRowsVisible, mobileHeroCss, heroReservePx, HERO_ROW_CANDIDATES,
+  mobileHeroHeight, dockRowsVisible, mobileHeroCss,
 } from './mobileHeroHeight';
 
 const SE_USABLE = 553;   // iPhone SE with Safari chrome showing (G1)
@@ -104,31 +104,41 @@ describe('G2 — the unit is svh, with a vh fallback, scoped to the hero', () =>
     expect(reserved).toBe(368);
     expect(preferred).toContain(`100svh - ${reserved}px`);
     expect(fallback).toContain(`100vh - ${reserved}px`);
-    // The CSS reserves via a custom property so the row target is switchable
-    // for H2's device comparison; its DEFAULT must equal the shipped budget.
-    expect(CSS).toContain('var(--fh-reserve, 368px)');
-    expect(heroReservePx(2)).toBe(reserved);
+    expect(CSS).toContain(`100svh - ${reserved}px`);
   });
 });
 
-describe('H1/H2 — the two candidate row targets', () => {
-  it('the shipped default is two full rows; the candidates bracket it', () => {
-    expect(heroReservePx(HERO_ROW_CANDIDATES.two)).toBe(368);
-    expect(heroReservePx(HERO_ROW_CANDIDATES.sixty)).toBe(316);  // 1 + 60% of a second
-    expect(heroReservePx(HERO_ROW_CANDIDATES.one)).toBe(239);
+describe('H1 — two rows is RULED, and there is no longer a knob', () => {
+  // The founder compared 185 / 237 / 314 on a real phone and ruled two rows.
+  // The comparison instrument (?heroRows= → --fh-reserve) was deleted with the
+  // ruling; these rows keep the ruled numbers, and the absence of the knob,
+  // from drifting back in.
+  it('the shipped default is two full rows on the shortest usable viewport', () => {
+    expect(mobileHeroHeight({ usableVh: SE_USABLE })).toBe(185);
+    expect(dockRowsVisible({ usableVh: SE_USABLE, heroH: 185 })).toBeGreaterThanOrEqual(2);
   });
 
-  it('each candidate yields the hero height the ruling is being judged against', () => {
-    const at = (rows) => mobileHeroHeight({ usableVh: SE_USABLE, rows });
-    expect(at(HERO_ROW_CANDIDATES.two)).toBe(185);
-    expect(at(HERO_ROW_CANDIDATES.sixty)).toBeCloseTo(236.6, 1);
-    expect(at(HERO_ROW_CANDIDATES.one)).toBe(314);
+  it('the alternatives the ruling rejected are what they were judged as', () => {
+    // Kept as a record of what 185 was chosen OVER, not as selectable targets.
+    expect(mobileHeroHeight({ usableVh: SE_USABLE, rows: 1.6 })).toBeCloseTo(236.6, 1);
+    expect(mobileHeroHeight({ usableVh: SE_USABLE, rows: 1 })).toBe(314);
   });
 
-  it("H1's concern is real: at two rows the head stack dominates the hero", () => {
-    // The measured four-seat stack bottoms at 151.5 regardless of height.
+  it('nothing overrides the reserve at runtime — no param, no custom property', () => {
+    const css = readFileSync(new URL('./battleArena.css', import.meta.url), 'utf8');
+    expect(css).not.toContain('--fh-reserve');
+    const gate = readFileSync(new URL('./fuseHeroGate.js', import.meta.url), 'utf8');
+    expect(gate).not.toMatch(/heroRows/);
+    const mobile = readFileSync(new URL('./ArenaMobile.jsx', import.meta.url), 'utf8');
+    expect(mobile).not.toMatch(/fh-reserve|heroReservePx|FUSE_HERO_ROWS/);
+  });
+
+  it("H1's concern was real and is accepted, not designed away", () => {
+    // The measured four-seat stack bottoms at 151.5 regardless of height, so at
+    // 185 it is ~82% of the hero. Ruled acceptable on glass; the remedy, if one
+    // is ever wanted, is the compact headGap ticket — not a shorter dock.
     const HEAD_STACK = 151.5;
-    expect(HEAD_STACK / 185).toBeGreaterThan(0.8);  // ~82% of the hero is label stack
-    expect(HEAD_STACK / 314).toBeLessThan(0.5);     // under half at the relaxed target
+    expect(HEAD_STACK / 185).toBeGreaterThan(0.8);
+    expect(HEAD_STACK / 314).toBeLessThan(0.5);
   });
 });

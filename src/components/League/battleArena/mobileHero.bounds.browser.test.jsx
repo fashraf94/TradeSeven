@@ -80,6 +80,27 @@ const MEASURE = () => {
   };
 };
 
+// The scope toggle's box versus the PLOT it sits over. All numbers are relative
+// to the hero's own top-left, so they compare directly against `fuseFrame`.
+const HEADER_BAND = () => {
+  const hero = document.querySelector('[data-testid="fuse-hero"]').getBoundingClientRect();
+  const rel = (r) => ({ t: r.top - hero.top, b: r.bottom - hero.top, l: r.left - hero.left, r: r.right - hero.left });
+  const toggle = rel(document.querySelector('[data-testid="fuse-hero"] button').parentElement.getBoundingClientRect());
+  const inBox = (r) => r.b > toggle.t && r.t < toggle.b && r.r > toggle.l && r.l < toggle.r;
+  const paths = [...document.querySelectorAll('[data-fh-fuse] path')].map((p) => rel(p.getBoundingClientRect()));
+  const glows = [...document.querySelectorAll('[data-fh-tip] > span')]
+    .filter((sp) => (sp.getAttribute('style') || '').includes('blur'))
+    .map((sp) => rel(sp.getBoundingClientRect()));
+  const heads = [...document.querySelectorAll('[data-fh-tip] > div')].map((d) => rel(d.getBoundingClientRect()));
+  return {
+    toggle,
+    pathsInToggle: paths.filter(inBox).length,
+    glowsInToggle: glows.filter(inBox).length,
+    headsInToggle: heads.filter(inBox).length,
+    plotRight: Math.max(...paths.map((p) => p.r)),
+  };
+};
+
 describe.skipIf(!hasBrowser)('G4 — the fuse READS at its floor on the shortest usable viewport', () => {
   it('four bunched seats de-collide without overlapping heads', async () => {
     await mount({ h: MOBILE_HERO_MIN });
@@ -153,5 +174,65 @@ describe.skipIf(!hasBrowser)('G4 — the fuse READS at its floor on the shortest
     expect(MOBILE_DOCK_ROW).toBe(129);
     expect(SE_USABLE - MOBILE_STICKY_CHROME - 2 * MOBILE_DOCK_ROW).toBe(185);
     expect(monoWidth('-22.8k', 8)).toBeLessThanOrEqual(yGutterWidth(FH.compact.padL));
+  });
+});
+
+describe.skipIf(!hasBrowser)('TICKETED, NOT FIXED: the fuses cross the scope toggle', () => {
+  // Founder finding (phone check, pre-un-draft): "Fuse lines cross the scope
+  // header." Measured here rather than reasoned about, and PINNED rather than
+  // fixed, because the ruling that would fix it is not mine to make.
+  //
+  // E4's yield rule does NOT extend to this. E4 is chrome-versus-chrome: the
+  // header MICROCOPY disappears when the NOW pill needs its space, and it can
+  // do that because microcopy is expendable. Here the collision is DATA versus
+  // an INTERACTIVE CONTROL — the fuses cannot move (they are the reading) and
+  // the scope toggle cannot vanish (F2 already ruled it must stay hittable,
+  // which is why the NOW pill slides instead of the toggle). Neither side of
+  // E4's rule has a counterpart here, so applying it would mean inventing a
+  // second mechanism, which the instruction forbids.
+  //
+  // The actual cause is one number: `fuseFrame`'s padT (34 compact / 42 desktop)
+  // is an assumed plot inset, not the header row's measured height. The row is
+  // 34px tall on compact and starts at y=9, so it ENDS at 43 — nine pixels
+  // inside a plot that begins at 34. The remedy is to derive padT from the
+  // header band (and give spreadLabels' top bound the head's half-height), which
+  // costs ~10% of the plot on the 185px hero H1 just ruled. That trade needs a
+  // ruling, so it is a ticket with numbers attached rather than a quiet change.
+  const CASES = [
+    { caseKey: 'underwater', scope: 'week' },  // a seat at HI — the worst case
+    { caseKey: 'bunched', scope: 'day' },
+    { caseKey: 'reload', scope: 'day' },
+  ];
+
+  it('the toggle box reaches BELOW the plot top and LEFT of the plot right edge', async () => {
+    await mount({ h: MOBILE_HERO_MIN, caseKey: 'underwater', scope: 'week' });
+    const m = await pg.evaluate(HEADER_BAND);
+    const F = FH.compact;
+    expect(m.toggle.b).toBeGreaterThan(F.padT);           // 43 > 34 — it intrudes
+    expect(m.toggle.b - F.padT).toBeCloseTo(9, 0);        // by nine pixels
+    expect(m.toggle.l).toBeLessThan(m.plotRight);         // and horizontally too
+  });
+
+  it('at least one FUSE PATH enters that box — the founder read this correctly', async () => {
+    await mount({ h: MOBILE_HERO_MIN, caseKey: 'underwater', scope: 'week' });
+    const m = await pg.evaluate(HEADER_BAND);
+    expect(m.pathsInToggle).toBeGreaterThan(0);
+    expect(m.glowsInToggle).toBeGreaterThan(0);
+  });
+
+  it('and a HEAD enters it in every case, not just the extreme one', async () => {
+    for (const c of CASES) {
+      await mount({ h: MOBILE_HERO_MIN, ...c });
+      const m = await pg.evaluate(HEADER_BAND);
+      expect(m.headsInToggle, c.caseKey).toBeGreaterThan(0);
+    }
+  });
+
+  it('the fuses are NOT clipped — they are drawn under a translucent control', async () => {
+    // Worth stating: nothing is hidden or lost, so this is a legibility defect
+    // rather than a correctness one. That is why it can wait for a ruling.
+    await mount({ h: MOBILE_HERO_MIN, caseKey: 'underwater', scope: 'week' });
+    const drawn = await pg.evaluate(() => [...document.querySelectorAll('[data-fh-fuse] path')].length);
+    expect(drawn).toBeGreaterThan(0);
   });
 });

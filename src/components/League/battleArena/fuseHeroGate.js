@@ -26,15 +26,3 @@ const SP = typeof window !== 'undefined' ? new URLSearchParams(window.location.s
 
 export const FUSE_HERO_ON = LEAGUE_FUSE_HERO_ENABLED || SP.get('fuseHero') === '1';
 
-/**
- * H2 — the dock-row target, overridable for the founder's device inspection:
- * `?heroRows=2` (two full rows) vs `?heroRows=1` (one + a partial) vs the
- * shipped default. Without the param the shipped value is used.
- *
- * REMOVED WITH THE OVERRIDE: this line goes in the same flip commit as the
- * `?fuseHero=1` clause above — flip, pin and both overrides travel together.
- */
-export const FUSE_HERO_ROWS = (() => {
-  const raw = Number(SP.get('heroRows'));
-  return Number.isFinite(raw) && raw > 0 && raw <= 4 ? raw : null;
-})();

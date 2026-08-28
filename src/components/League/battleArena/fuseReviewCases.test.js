@@ -63,13 +63,26 @@ describe('fuse review cases — each reaches the condition it exists to show', (
     expect(displaced.length).toBeGreaterThan(0);
   });
 
-  it('reload supplies NO trail — the cold-mount spine state, seeded from the closes', () => {
+  // PIN MOVED, DELIBERATELY. This row used to assert `trail === null` and that
+  // every cold-mount value equalled the BANKED SEED — which is precisely the
+  // defect the founder caught on a phone: for the first minute of every session
+  // your seat printed 0.0 in Today while the decomposition strip already showed
+  // the live number. The fixture now carries a seeded trail with NO samples and
+  // a live HEAD, which is what a real fresh mount holds, and the row asserts the
+  // corrected reading.
+  it('reload has NO sampled history but a LIVE head — the corrected cold-mount', () => {
     const { trail, climb } = FUSE_REVIEW_CASES.reload;
-    expect(trail).toBeNull();
     const banked = Object.fromEntries(IDS.map((id) => [id, climb[id][climb[id].length - 1]]));
     const snap = latestTrailSnapshot(trail, IDS, banked);
-    expect(snap.hasSamples).toBe(false);
-    for (const id of IDS) expect(snap.values[id]).toBe(banked[id]); // never zero, never absent
+    expect(snap.hasSamples).toBe(false);                    // nothing observed yet
+    expect(trail.samples).toEqual({});                      // …genuinely nothing
+    for (const id of IDS) {
+      expect(snap.values[id]).toBe(trail.head.values[id]);  // the tip is the model's NOW
+      expect(Number.isFinite(snap.values[id])).toBe(true);  // never zero, never absent
+    }
+    // At least one seat has actually moved off its close, or the case cannot
+    // show what it exists to show.
+    expect(IDS.some((id) => snap.values[id] !== banked[id])).toBe(true);
   });
 
   it('the trailed cases carry REAL accumulator output: one shared x per tick, all four seats', () => {

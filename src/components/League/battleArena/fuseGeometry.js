@@ -21,6 +21,22 @@ export const FH = Object.freeze({
   compact: Object.freeze({ padL: 40, padR: 16, padT: 34, padB: 26, LABEL_ROOM: 22, TIPROOM: 96, headGap: 30, yLabelGap: 12 }),
 });
 
+/**
+ * KNOWN, TICKETED, NOT FIXED — `padT` is an assumed inset, not a measurement.
+ *
+ * The head row (microcopy + scope toggle) is laid out independently of this
+ * frame, and it is TALLER than padT reserves: measured in Chromium the compact
+ * row runs y 9→43 against a padT of 34, and the desktop row 13→49 against 42.
+ * So the toggle's box sits 9px (compact) / 7px (desktop) inside the plot, and
+ * fuse paths, tip glows and heads cross it — the founder's phone-check finding.
+ *
+ * Deliberately not fixed here: deriving padT from the header band costs ~10% of
+ * the plot on the 185px hero H1 just ruled, and that trade is a founder call.
+ * The overlap is PINNED with real numbers in mobileHero.bounds.browser.test.jsx
+ * so a change to padT cannot silently claim to have fixed it — or silently make
+ * it worse. E4's yield rule does not apply (chrome-vs-chrome, not data-vs-
+ * control); see that test's header for why.
+ */
 export function fuseFrame({ w, h, compact = false }) {
   const g = compact ? FH.compact : FH.desktop;
   const plotT = g.padT;
@@ -186,19 +202,33 @@ export function latestTrailSnapshot(trail, ids, banked = {}) {
   const values = {};
   let hasSamples = false;
   let t = null;
+  // THE HEAD WINS (§9). It is the trail's statement of NOW — resolved with the
+  // model, under the SAME per-seat carry-forward policy as an appended sample
+  // (useSessionCompositeTrail.resolveSeatValue). Reading the newest SAMPLE here
+  // instead left every number on this board up to a full 60s sample behind the
+  // DecompositionStrip, and behind by its whole value for the first minute after
+  // a mount, when there was no sample at all. `samples` stays the source for the
+  // LINE's history; the head is the source for the present.
+  const head = trail?.head;
   for (const id of ids || []) {
     const arr = trail?.samples?.[id];
     const last = arr && arr.length ? arr[arr.length - 1] : null;
     if (last && Number.isFinite(last.v)) {
-      values[id] = last.v;
       hasSamples = true;
       t = t == null ? last.t : Math.max(t, last.t);
+    }
+    const hv = head?.values?.[id];
+    if (Number.isFinite(hv)) {
+      values[id] = hv;
+    } else if (last && Number.isFinite(last.v)) {
+      values[id] = last.v;
     } else if (Number.isFinite(trail?.seeds?.[id])) {
       values[id] = trail.seeds[id];
     } else {
       values[id] = Number.isFinite(banked?.[id]) ? banked[id] : 0;
     }
   }
+  if (head && Number.isFinite(head.t)) t = t == null ? head.t : Math.max(t, head.t);
   return { values, hasSamples, t };
 }
 
@@ -227,15 +257,30 @@ export function deriveCut(snapshot, ids, youId) {
  * Day scope: TODAY relative to the seat's seed (all level at the open — the
  * seed IS the open baseline, a real banked value). Points connect the open
  * anchor to the real samples; the path between mount times is the R3-accepted
- * cosmetic interpolation between server-truth endpoints. No samples ⇒ [] and
- * the caller draws the flat spine + live tip (the designed reload state).
+ * cosmetic interpolation between server-truth endpoints.
+ *
+ * `head` — the seat's CURRENT value at the burn's x — closes the series so the
+ * line ENDS where the tip's number says it does. Without it the last drawn
+ * point was the newest 60s sample while the printed value was something else,
+ * which is the same §9 split in geometry that it was in text. It is a real
+ * endpoint (the model's live composite), so connecting to it is the same
+ * accepted interpolation as connecting two samples — and the caller dashes the
+ * stretch when there is no sampled history behind it.
+ *
+ * No samples AND no head ⇒ [] and the caller draws the flat spine (the designed
+ * reload state: nothing has been observed yet, so nothing is claimed).
  */
-export function seatDaySeries({ samples, seed }) {
+export function seatDaySeries({ samples, seed, head = null }) {
   const s0 = Number.isFinite(seed) ? seed : 0;
   const pts = [{ f: 0, v: 0 }];
   for (const s of samples || []) {
     if (!Number.isFinite(s?.v) || !Number.isFinite(s?.t)) continue;
     pts.push({ f: sessionFraction(s.t), v: s.v - s0 });
+  }
+  if (head && Number.isFinite(head.v) && Number.isFinite(head.f)) {
+    const lastF = pts[pts.length - 1].f;
+    if (head.f > lastF) pts.push({ f: head.f, v: head.v - s0 });
+    else if (pts.length > 1) pts[pts.length - 1] = { f: lastF, v: head.v - s0 }; // same x, fresher value
   }
   return pts.length > 1 ? pts : [];
 }
