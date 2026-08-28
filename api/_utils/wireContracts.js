@@ -168,7 +168,21 @@ export const WIRE_VALIDATOR_VERSION = '1.7.0';
 // caps the EXA payload (numResults 8→3 + a per-item snippet cap), and
 // scan-movers.js gains the BLOCKED-candidate wiring. No universe change,
 // TICKER_TO_SECTOR untouched (no validator bump). Free pre-runway.
-export const WIRE_GENERATION_VERSION = 22;
+// v23 (Doug recap cross-source operand gate, Aug 28): two surface members
+// change FUNCTIONALLY — econPrintVerifier.js adds assessEpsCrossSource (the
+// PRIMARY operand-truth gate: corroborates the printed /calendar/earnings
+// actual against the independent /fundamentals actual under a ratio tolerance,
+// fail-open on an unresolved/off-quarter row) and generate-recap.js runs it
+// pre-sort so a wrong-but-self-consistent operand (NVDA 0.99-vs-2.09 → a
+// fabricated −52.6% "miss") is held (distinct outcome code, terminal) BEFORE
+// the surprise-first sort and can neither outrank nor publish. This changes
+// WHICH stories Doug writes, NOT the per-story reporter-request bytes (the
+// recap userMessage assembly is byte-identical; the pre-fetched
+// getEarningsResult is reused, not re-fetched — M8 intact); wireContracts.js
+// moves mechanically as the constant host, so THREE per-file hashes move.
+// TICKER_TO_SECTOR untouched (no validator bump). Editorial gate off
+// (EDITORIAL_REVIEW_ENABLED=false), so the gateEpoch reset is dormant.
+export const WIRE_GENERATION_VERSION = 23;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────

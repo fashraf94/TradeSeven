@@ -217,3 +217,100 @@ export function assessEpsPlausibility(epsActual, epsEstimate) {
   }
   return { hold: false };
 }
+
+// ── Cross-source EPS integrity — the PRIMARY operand-truth gate ───────────
+//
+// assessEpsPlausibility (above) and the STRICT editorial adapter both
+// re-derive the surprise from the SAME printed calendar operand, so neither
+// can see a wrong-but-self-consistent `actual`: NVDA printed a calendar
+// actual of 0.99 against a (correct) 2.09 estimate, which recomputes a clean
+// −52.6% "miss" and scores VERIFIED_CORRECT — while the true actual (~2.22)
+// was a beat. The plausibility band cannot help either: |0.99−2.09|=1.10 is
+// far below the $20 absolute arm.
+//
+// This gate corroborates the printed /calendar/earnings `actual` against an
+// INDEPENDENT EODHD /fundamentals `actual` (getEarningsResult, date-matched
+// to the same quarter) and HOLDS when the two feeds materially disagree —
+// firing on DISAGREEMENT, not on magnitude, so a genuine large surprise is
+// not held. Design constraints (founder-ruled 2026-08-28):
+//   · RATIO (relative) tolerance, never equality — rounding and small
+//     GAAP-vs-nonGAAP feed differences on the same quarter must not fire.
+//   · FAIL-OPEN whenever the second feed cannot corroborate at the operand
+//     level: unresolved / absent / unparseable fundamentals; both operands
+//     below a near-break-even magnitude floor (ratio meaningless there); or a
+//     fundamentals row that resolved to a DIFFERENT quarter (getEarningsResult's
+//     7-day matcher can fall back to entries[0]). A silent or off-quarter
+//     second feed must NEVER hold a real story.
+//   · Restricting the comparison to the SAME quarter also removes the
+//     split-adjust confound by construction: a split only sits BETWEEN
+//     quarters, so a same-quarter as-reported value and a possibly-adjusted
+//     fundamentals value do not diverge on a split.
+export const EPS_CROSS_SOURCE_REL_TOLERANCE = 0.35;   // relative gap vs the larger |operand| (founder-tunable; catches the ~2.24× NVDA error with margin over rounding/GAAP noise)
+export const EPS_CROSS_SOURCE_QUARTER_DAYS = 7;       // fundamentals must resolve within N days of the calendar reportDate to be comparable
+export const EPS_CROSS_SOURCE_MIN_MAGNITUDE = 0.10;   // both operands below this (near break-even) → ratio meaningless → fail-open
+
+// Whole-day gap between two YYYY-MM-DD strings; null if either is unusable.
+function reportDateDayGap(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return null;
+  const da = new Date(`${a}T00:00:00Z`).getTime();
+  const db = new Date(`${b}T00:00:00Z`).getTime();
+  if (Number.isNaN(da) || Number.isNaN(db)) return null;
+  return Math.abs(da - db) / 86_400_000;
+}
+
+/**
+ * Cross-source EPS-actual corroboration for the recap (PRIMARY operand gate).
+ * Compares the printed calendar `actual` against the independent fundamentals
+ * `actual` for the SAME quarter, under a relative (ratio) tolerance.
+ *
+ * @param {object} o
+ * @param {*}       o.calendarActual        — the printed /calendar/earnings actual
+ * @param {*}       o.calendarReportDate     — its report_date (YYYY-MM-DD)
+ * @param {boolean} o.fundamentalsResolved   — getEarningsResult(...).resolved
+ * @param {*}       o.fundamentalsActual      — getEarningsResult(...).epsActual
+ * @param {*}       o.fundamentalsReportDate  — getEarningsResult(...).reportDate
+ * @returns {{ hold:boolean, reason:string, relDiff:number|null, ratio:number|null,
+ *             calendarActual:number|null, fundamentalsActual:number|null, dayGap:number|null }}
+ */
+export function assessEpsCrossSource({
+  calendarActual, calendarReportDate,
+  fundamentalsResolved, fundamentalsActual, fundamentalsReportDate,
+}) {
+  const base = {
+    hold: false, relDiff: null, ratio: null,
+    calendarActual: null, fundamentalsActual: null, dayGap: null,
+  };
+
+  // FAIL-OPEN: no corroborating feed value at all.
+  if (!fundamentalsResolved) return { ...base, reason: 'fundamentals_unresolved' };
+  const pc = parseEconOperand(calendarActual);
+  const pf = parseEconOperand(fundamentalsActual);
+  if (!pc.ok || !pf.ok) return { ...base, reason: 'operand_unparseable' };
+
+  const a = pc.value;
+  const b = pf.value;
+
+  // FAIL-OPEN when the fundamentals row is a DIFFERENT quarter (matcher
+  // fallback) — the two actuals legitimately differ and a split may sit
+  // between them, so the comparison is not trustworthy.
+  const dayGap = reportDateDayGap(calendarReportDate, fundamentalsReportDate);
+  if (dayGap === null || dayGap > EPS_CROSS_SOURCE_QUARTER_DAYS) {
+    return { ...base, reason: 'quarter_mismatch', calendarActual: a, fundamentalsActual: b, dayGap };
+  }
+
+  const ref = Math.max(Math.abs(a), Math.abs(b));
+  const ratio = b !== 0 ? a / b : null;
+  // FAIL-OPEN near break-even: relative difference is meaningless when both
+  // operands are ~0 (a 0.01-vs-0.02 print is a 100% relDiff but not a
+  // disagreement about the print).
+  if (ref < EPS_CROSS_SOURCE_MIN_MAGNITUDE) {
+    return { ...base, reason: 'below_magnitude_floor', calendarActual: a, fundamentalsActual: b, ratio, dayGap };
+  }
+
+  const relDiff = Math.abs(a - b) / ref;   // sign/zero-safe
+  const out = { hold: false, reason: 'agree', relDiff, ratio, calendarActual: a, fundamentalsActual: b, dayGap };
+  if (relDiff > EPS_CROSS_SOURCE_REL_TOLERANCE) {
+    return { ...out, hold: true, reason: 'cross_source_disagreement' };
+  }
+  return out;
+}
