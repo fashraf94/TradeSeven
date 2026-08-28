@@ -56,12 +56,19 @@ describe('ArenaDesktop render smoke', () => {
   // scores), stating the void instead. Film Room stays (review only). Uses the
   // spread-score DATA so the NON-voided render actually carries the cut, making the
   // suppression a real mutation check, not a vacuous absence.
+  // PINS MOVED BY THE FLIP, DELIBERATELY. These two rows asserted the cut through
+  // ClimbArena's copy ("CUT · TOP 2 ADVANCE"). The CONTRACT under test — a voided
+  // cohort suppresses the placement claim on the hero board — is unchanged; only
+  // the board that expresses it is. FuseHero draws the cut as a `data-fh-cut`
+  // group (gold dashed line + make-it band), gated on the same `!voided`, so the
+  // rows now read the live board's own marker. ClimbArena keeps its own copy pin
+  // in ClimbArena.test.jsx, where it belongs while it remains the rollback path.
   it('a VOIDED complete run shows no placement/standings and states the void', () => {
     const html = renderToString(<ArenaDesktop state="complete" mode="ranked" data={DATA} voided onBack={() => {}} />);
     expect(html).not.toContain('of four');        // no placement ordinal
     expect(html).not.toContain('You advanced');    // no advanced framing
     expect(html).not.toContain('Run ended');       // no eliminated framing
-    expect(html).not.toContain('TOP 2 ADVANCE');   // no cut/standings on the board
+    expect(html).not.toContain('data-fh-cut');     // no cut/standings on the board
     expect(html).toContain('No result recorded');   // the verdict states the void
     expect(html).toContain('Film Room');            // kept for review only
     expect(html.length).toBeGreaterThan(2000);
@@ -70,6 +77,6 @@ describe('ArenaDesktop render smoke', () => {
   it('the SAME complete run WITHOUT voided DOES show placement + cut (suppression is real)', () => {
     const html = renderToString(<ArenaDesktop state="complete" mode="ranked" data={DATA} onBack={() => {}} />);
     expect(html).toContain('of four');        // placement present when not voided
-    expect(html).toContain('TOP 2 ADVANCE');  // the cut/standings present when not voided
+    expect(html).toContain('data-fh-cut');    // the cut/standings present when not voided
   });
 });

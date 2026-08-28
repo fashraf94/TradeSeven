@@ -67,12 +67,19 @@ describe('ArenaMobile render smoke', () => {
   // shows no placement (MComplete) and no cut/standings on the hero board, stating
   // the void; Film Room stays (review only). Mutation-checked against the same
   // spread-score DATA rendered WITHOUT voided.
+  // PINS MOVED BY THE FLIP, DELIBERATELY. These two rows asserted the cut through
+  // ClimbArena's copy ("CUT · TOP 2 ADVANCE"). The CONTRACT under test — a voided
+  // cohort suppresses the placement claim on the hero board — is unchanged; only
+  // the board that expresses it is. FuseHero draws the cut as a `data-fh-cut`
+  // group (gold dashed line + make-it band), gated on the same `!voided`, so the
+  // rows now read the live board's own marker. ClimbArena keeps its own copy pin
+  // in ClimbArena.test.jsx, where it belongs while it remains the rollback path.
   it('a VOIDED complete run shows no placement/standings and states the void', () => {
     const html = renderToString(<ArenaMobile state="complete" mode="ranked" data={DATA} voided />);
     expect(html).not.toContain('of four');
     expect(html).not.toContain('You advanced');
     expect(html).not.toContain('Run ended');
-    expect(html).not.toContain('TOP 2 ADVANCE');
+    expect(html).not.toContain('data-fh-cut');
     expect(html).toContain('No result recorded');
     expect(html).toContain('Film Room');
     expect(html.length).toBeGreaterThan(2000);
@@ -81,7 +88,7 @@ describe('ArenaMobile render smoke', () => {
   it('the SAME complete run WITHOUT voided DOES show placement + cut (suppression is real)', () => {
     const html = renderToString(<ArenaMobile state="complete" mode="ranked" data={DATA} />);
     expect(html).toContain('of four');
-    expect(html).toContain('TOP 2 ADVANCE');
+    expect(html).toContain('data-fh-cut');
   });
 
   // The Agent-Portfolio tab is behind tab state renderToString can't switch to, so
