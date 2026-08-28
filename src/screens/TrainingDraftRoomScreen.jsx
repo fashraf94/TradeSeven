@@ -15,6 +15,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTrainingDraft } from '../hooks/useTrainingDraft';
+import usePreOpenPhase from '../hooks/usePreOpenPhase';
 import { GROUP_STATUS } from '../constants/leagueTournament';
 import { TRAINING_BOARD_REDESIGN_ENABLED } from '../config/featureFlags';
 import DraftBoardRoom from '../components/League/draft/DraftBoardRoom';
@@ -62,11 +63,16 @@ function seatLabel(seat) {
 
 function LegacyTrainingDraftRoom({ user, groupId, onComplete = null, onExit = null }) {
   const {
+    group,
     boardBySector, highlightSet, seats, myPicks,
     isMyTurn, isComplete, finalStatus,
     currentPickIndex, totalPicks, round, pickClock,
     submitting, error, submitPick, draft,
   } = useTrainingDraft({ user, groupId, active: true });
+
+  // The legacy path carries the SAME completion copy as DraftBoardRoom, so the
+  // two must move together or they disagree about the same pod.
+  const preOpen = usePreOpenPhase(group);
 
   const [selected, setSelected] = useState(null);
 
@@ -87,7 +93,7 @@ function LegacyTrainingDraftRoom({ user, groupId, onComplete = null, onExit = nu
   }
 
   if (isComplete) {
-    const flipped = finalStatus === GROUP_STATUS.BATTLE;
+    const flipped = finalStatus === GROUP_STATUS.BATTLE && !preOpen;
     // Training-Pod P0 R2: EXPIRED is terminal — honest 'closed' copy, not the
     // "waiting for the next market open" line meant for a still-live pod.
     const expired = finalStatus === GROUP_STATUS.EXPIRED;

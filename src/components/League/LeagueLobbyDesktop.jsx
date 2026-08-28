@@ -27,6 +27,7 @@ import { subscribeMyGroup, subscribeMyTrainingPod } from '../../services/tournam
 import { logLeagueSignal } from '../../services/leagueSignals';
 import { LEAGUE_TRAINING_POD_ENABLED } from '../../config/featureFlags';
 import SlotCenter from './liveDraft/SlotCenter';
+import usePreOpenPhase from '../../hooks/usePreOpenPhase';
 import WhileYouWait from './WhileYouWait';
 import { LTOKENS, LX, alpha } from './leagueTokens';
 import { Eyebrow, Mono } from './LeagueParts';
@@ -131,6 +132,9 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
   // conditional MyGameBar (no game → no bar) and the no-game slot-picker center.
   // Fixture mode has no myGroup, so the bar simply hides there.
   const [activeGroup, setActiveGroup] = React.useState(null);
+  // Bound to the SAME activeGroup that supplies `status` at the WhileYouWait
+  // mount below (BUILD_RULES §9). One hook for the surface, not one per pod.
+  const preOpen = usePreOpenPhase(activeGroup);
   React.useEffect(() => {
     if (!uid) { setActiveGroup(null); return undefined; }
     return subscribeMyGroup(uid, setActiveGroup);
@@ -234,6 +238,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
               <WhileYouWait
                 viewport="desktop"
                 status={activeGroup.status}
+                preOpen={preOpen}
                 st={st}
                 activeTrainingPod={activeTrainingPod}
                 onOpenTrainingPod={onOpenTrainingPod}

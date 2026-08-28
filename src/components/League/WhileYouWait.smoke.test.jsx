@@ -67,3 +67,46 @@ describe('WhileYouWait (Seated Waiting Room) render smoke', () => {
     expect(html).toContain('Sharpen up in a Training Pod');               // the hero still renders
   });
 });
+
+// ── PRE-OPEN PHASE (PREOPEN_PHASE_ROUTING_ENABLED) ───────────────────────────
+// `preOpen` is bound by the caller to the same activeGroup that supplies
+// `status`. A pre-open player IS still waiting, so the room must not claim the
+// game is live.
+describe('WhileYouWait — pre-open phase', () => {
+  const emptySt2 = { baseGames: [], rounds: { r1: [], r2: [], r3: null } };
+
+  it('a pre-open BATTLE pod keeps "While you wait", not "Between sessions"', () => {
+    const html = renderToString(
+      <WhileYouWait status={GROUP_STATUS.BATTLE} preOpen st={emptySt2} onOpenTrainingPod={() => {}} hasAgent />,
+    );
+    expect(html).toContain('While you wait');
+    expect(html).toContain('Your seat is locked in');
+    expect(html).not.toContain('Between sessions');
+    expect(html).not.toContain('Your game is live');
+  });
+
+  it('the SAME pod reads live once the bell has rung', () => {
+    const html = renderToString(
+      <WhileYouWait status={GROUP_STATUS.BATTLE} preOpen={false} st={emptySt2} onOpenTrainingPod={() => {}} hasAgent />,
+    );
+    expect(html).toContain('Between sessions');
+    expect(html).toContain('Your game is live');
+  });
+
+  it('flag-off arm: omitting preOpen is byte-identical to passing false', () => {
+    const omitted = renderToString(
+      <WhileYouWait status={GROUP_STATUS.BATTLE} st={emptySt2} onOpenTrainingPod={() => {}} hasAgent />,
+    );
+    const explicit = renderToString(
+      <WhileYouWait status={GROUP_STATUS.BATTLE} preOpen={false} st={emptySt2} onOpenTrainingPod={() => {}} hasAgent />,
+    );
+    expect(omitted).toBe(explicit);
+  });
+
+  it('preOpen does not disturb a non-BATTLE status', () => {
+    const html = renderToString(
+      <WhileYouWait status={GROUP_STATUS.AWAITING_OPEN} preOpen st={emptySt2} onOpenTrainingPod={() => {}} hasAgent />,
+    );
+    expect(html).toContain('While you wait');
+  });
+});

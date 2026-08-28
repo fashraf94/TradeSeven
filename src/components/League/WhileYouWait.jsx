@@ -65,6 +65,7 @@ export default function WhileYouWait({
   viewport = 'mobile',
   accent = LX.energy,
   status = null,
+  preOpen = false,
   st = null,
   activeTrainingPod = null,
   onOpenTrainingPod = null,
@@ -128,7 +129,11 @@ export default function WhileYouWait({
 
   // Headline swap — the one status read already in scope (activeGroup.status). A
   // BATTLE player isn't waiting for anything, so the room reads "Between sessions".
-  const inBattle = status === GROUP_STATUS.BATTLE;
+  // PRE-OPEN PHASE: on its battle day before the bell the player IS still waiting,
+  // so a pre-open pod keeps "While you wait" rather than claiming the game is live.
+  // `preOpen` is bound by the caller to the SAME activeGroup that supplies `status`
+  // (BUILD_RULES §9); false off-flag → byte-identical.
+  const inBattle = status === GROUP_STATUS.BATTLE && !preOpen;
   const headline = inBattle ? 'Between sessions' : 'While you wait';
   const eyebrow = inBattle ? 'Your game is live' : 'Your seat is locked in';
   const sub = inBattle

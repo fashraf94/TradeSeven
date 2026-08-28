@@ -13,6 +13,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useTrainingDraft } from '../../../hooks/useTrainingDraft';
+import usePreOpenPhase from '../../../hooks/usePreOpenPhase';
 import { isTrainingPodDraftV2On } from '../../../config/featureFlags';
 import { PICKS_PER_PLAYER, GROUP_STATUS, GROUP_SIZE } from '../../../constants/leagueTournament';
 import { TOKENS, DX, alpha, injectDraftCSS, FONT_VARS } from './draftTokens';
@@ -90,6 +91,10 @@ export default function DraftBoardRoom({ user, groupId, mode = 'training', onCom
     currentPickIndex, totalPicks, round, pickClock, clockTotalSec, submitting, error, submitPick, draft,
     onClockSeatIdx,
   } = d;
+
+  // Bound to the group the draft hook already returns, so the completion card and
+  // the pod's real phase cannot disagree (BUILD_RULES §9).
+  const preOpen = usePreOpenPhase(group);
 
   const narrow = useNarrow();
   const [selected, setSelected] = useState(null);
@@ -276,7 +281,12 @@ export default function DraftBoardRoom({ user, groupId, mode = 'training', onCom
 
   // ── forming / loading / complete ────────────────────────────────────────
   if (isComplete && !revealing) {
-    const flipped = finalStatus === GROUP_STATUS.BATTLE;
+    // PRE-OPEN PHASE: the Mon 08:45 slot is timed so the draft completes BEFORE
+    // the 9:30 open by construction (liveDraftSlots.js:28-30), so this card is the
+    // first thing a ranked drafter sees — and it told them the battle had begun ~40
+    // minutes early. Pre-open reuses the existing "waiting for the next market
+    // open" copy; no new string. False off-flag → byte-identical.
+    const flipped = finalStatus === GROUP_STATUS.BATTLE && !preOpen;
     // Training-Pod P0 R2: EXPIRED is terminal — never show the "waiting for the
     // next market open" copy for a pod that was closed before it started.
     const expired = finalStatus === GROUP_STATUS.EXPIRED;

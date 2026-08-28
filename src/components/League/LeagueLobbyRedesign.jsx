@@ -15,6 +15,7 @@ import { PodCard } from './LeaguePod';
 import { quickPlayTraining, mapLobbyError } from '../../services/tournamentLobbyActions';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
 import SlotCenter from './liveDraft/SlotCenter';
+import usePreOpenPhase from '../../hooks/usePreOpenPhase';
 import WhileYouWait from './WhileYouWait';
 import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
 import TrainingClimbPreview from './TrainingClimbPreview';
@@ -159,6 +160,9 @@ function MyGameBar({ onOpenMyGame }) {
 // LEAGUE_LIVE_DRAFT gate internally (P2c) so flag-off still keeps the Auto-draft
 // entry affordance.
 function BracketFunnelSection({ st, activeGroup = null, currentUserId = null, displayName = null, onEnterGame = null, activeTrainingPod = null, onOpenTrainingPod = null, hasAgent, onSpectate = null }) {
+  // Bound to the SAME activeGroup that supplies `status` below (BUILD_RULES §9).
+  // Must sit above the early return (rules of hooks).
+  const preOpen = usePreOpenPhase(activeGroup);
   if (!activeGroup) {
     return (
       <div style={{ marginBottom: 18 }}>
@@ -170,6 +174,7 @@ function BracketFunnelSection({ st, activeGroup = null, currentUserId = null, di
     <WhileYouWait
       viewport="mobile"
       status={activeGroup.status}
+      preOpen={preOpen}
       st={st}
       activeTrainingPod={activeTrainingPod}
       onOpenTrainingPod={onOpenTrainingPod}
@@ -335,6 +340,8 @@ function TrainingReentryBar({ pod, accent, onResume }) {
 // the fresh DRAFTING pod via onOpenTrainingPod. The server still enforces
 // no_agent / already_active — the client gates are courtesy, not the authority.
 function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, hasAgent, agentLoadout = null, uid = null }) {
+  // Above the early return below (rules of hooks); the climb gate is pure.
+  const trainingPreOpen = usePreOpenPhase(activeTrainingPod);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [chooserOpen, setChooserOpen] = useState(false);
@@ -388,7 +395,7 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
   if (activeTrainingPod) {
     return (
       <div>
-        {shouldPreviewClimb(activeTrainingPod, CLIMB_PREVIEW_ON) ? (
+        {shouldPreviewClimb(activeTrainingPod, CLIMB_PREVIEW_ON, { preOpen: trainingPreOpen }) ? (
           <TrainingClimbPreview pod={activeTrainingPod} uid={uid} onOpen={() => onOpenTrainingPod?.(activeTrainingPod)} viewport="mobile" accent={accent} />
         ) : (
           <TrainingReentryBar pod={activeTrainingPod} accent={accent} onResume={() => onOpenTrainingPod?.(activeTrainingPod)} />
