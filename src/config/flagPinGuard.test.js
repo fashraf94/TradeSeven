@@ -100,8 +100,13 @@ const DARK_BY_DESIGN = {
   // below.
   MANDATE_DORMANCY_DOWNSHIFT_ENABLED:
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
-  LEAGUE_FUSE_HERO_ENABLED:
-    'Branch A fuse hero — dark until the FuseHero build lands and a founder preview smoke passes; ClimbArena stays the live top half until the flip, which is its own one-line PR',
+  // LEAGUE_FUSE_HERO_ENABLED intentionally ABSENT: it flipped true in its own
+  // one-line flip PR, over a weekend between tournaments — the deliberate flip
+  // drops it here in the same change, per the guard's own "if DELIBERATE"
+  // instruction, and leagueBattleviewFlags.test.js now pins the live true value.
+  // Re-adding it while it ships true fails the DARK_BY_DESIGN integrity test
+  // below. ClimbArena stays mounted behind the flag as the rollback path; its
+  // removal is a separate, later PR.
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────

@@ -1,11 +1,14 @@
 // src/config/leagueBattleviewFlags.test.js
 //
-// League Battleview — Branch A merge-dark pin (BUILD_RULES §2). The fuse hero
-// ships at its safest default while `ClimbArena` remains the live top half.
-// This pin is the loud tripwire: the flip PR MUST update the assertion here AND
-// drop the flag's DARK_BY_DESIGN entry in flagPinGuard.test.js, in the same
-// commit (the flag-pin guard enforces the coupling). Referenced by the flag's
-// "Pinned by:" docstring in featureFlags.js.
+// League Battleview — Branch A LIVE pin (BUILD_RULES §2). The fuse hero is the
+// live top half; `ClimbArena` is still mounted behind the flag as the rollback
+// path. This pin flipped WITH the flag and WITH the flag's DARK_BY_DESIGN entry
+// being dropped from flagPinGuard.test.js, in one commit — the coupling the
+// flag-pin guard enforces. Referenced by the flag's "Pinned by:" docstring in
+// featureFlags.js.
+//
+// It stays a loud tripwire in the other direction now: an accidental revert to
+// false is a silent rollback of a shipped redesign, and this row is what says so.
 //
 // Deliberately pins ONLY the fuse flag. An earlier draft also pinned
 // LEAGUE_BATTLE_VIEW_V2_ENABLED as "context" — the guard correctly rejected it:
@@ -16,8 +19,8 @@
 import { describe, it, expect } from 'vitest';
 import { LEAGUE_FUSE_HERO_ENABLED } from './featureFlags.js';
 
-describe('League battleview flags — Branch A merge-dark pin (BUILD_RULES §2)', () => {
-  it('the fuse hero is dark — ClimbArena is still the live top half', () => {
-    expect(LEAGUE_FUSE_HERO_ENABLED).toBe(false);
+describe('League battleview flags — Branch A live pin (BUILD_RULES §2)', () => {
+  it('the fuse hero is LIVE — it is the battle arena\'s top half', () => {
+    expect(LEAGUE_FUSE_HERO_ENABLED).toBe(true);
   });
 });

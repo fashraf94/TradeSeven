@@ -292,21 +292,20 @@ export const LEAGUE_LIVE_ORB_ENABLED = true;
  * LEAGUE_BATTLEVIEW_ADJUDICATION_V1 (R1-R14) + the Branch A Build Spec and its
  * Amendment A (Phase 0.5 gate: G1 CLEAR, G2 client-derived cut, G3 confirmed).
  *
- * Default OFF (dark). `ClimbArena` remains the live path and is neither
- * modified nor moved while this ships dark: ArenaDesktop / ArenaMobile branch
- * ONLY the top-half hero on this flag, so flag-off renders exactly as today.
+ * LIVE. The fuse hero is the top half of the League battle arena; ArenaDesktop
+ * and ArenaMobile branch ONLY that top half on this flag, so `ClimbArena` is
+ * still mounted and still correct — it is the ROLLBACK PATH, and it stays for a
+ * couple of weeks while the fuse holds. Setting this back to `false` restores
+ * the previous board exactly, with no other change required.
  *
- * The production flip is its own one-line PR after a Vercel preview smoke (the
- * LEAGUE_BATTLE_VIEW_V2_ENABLED / PR #510 precedent) and never rides the build
- * PR; `ClimbArena` removal is a third, later cleanup PR, only once the fuse has
- * held on a live flag.
+ * FLIPPED in its own one-line PR (the LEAGUE_BATTLE_VIEW_V2_ENABLED / PR #510
+ * precedent), over a weekend BETWEEN tournaments — a League runs Monday to
+ * Friday and the board must not change under players mid-competition. The
+ * `?fuseHero=1` preview override was deleted in that same commit: flip, pin and
+ * override travel together (the ?leagueLiveOrb=1 lesson — a retired override
+ * left behind becomes a dangling no-op nobody dares remove).
  *
- * PREVIEW OVERRIDE (Amendment C §C3): `?fuseHero=1` force-enables the fuse on
- * a Vercel preview WITHOUT flipping this default — the gate is FUSE_HERO_ON in
- * battleArena/fuseHeroGate.js (the arenaLiveGate idiom; this module keeps the
- * pinned literal). REMOVAL IS SCHEDULED: the flip PR deletes the override's SP
- * line + `|| SP.get('fuseHero')` clause in the SAME COMMIT that flips this pin
- * — flip, pin, and override travel together (the ?leagueLiveOrb=1 lesson).
+ * `ClimbArena` removal is a THIRD, later PR, not this one.
  *
  * CLEANUP-PR OBLIGATIONS (Amendment B §B3, extended F4 — recorded here so they
  * survive the months until that PR). THREE items will look like dead weight for
@@ -323,7 +322,7 @@ export const LEAGUE_LIVE_ORB_ENABLED = true;
  *
  * Pinned by: leagueBattleviewFlags.test.js, fuseHeroGate.test.jsx (flagPinGuard: this value and the pins move together — BUILD_RULES §2; the gate suite's dark-default rows flip with the pin).
  */
-export const LEAGUE_FUSE_HERO_ENABLED = false;
+export const LEAGUE_FUSE_HERO_ENABLED = true;
 /**
  * League — Training-tab CLIMB PREVIEW (the second-arc re-entry surface).
  *
