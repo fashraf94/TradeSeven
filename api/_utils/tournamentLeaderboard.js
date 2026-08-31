@@ -7,6 +7,15 @@
 // negative totals are first-class rows (the cautionary-learning ruling),
 // never floored, never hidden.
 //
+// WEEKLY LADDER (dark, WEEKLY_LADDER_PLACEMENT_ENABLED — spec
+// 20260831_WEEKLY_LADDER_BUILD_SPEC_V1): behind the flag this board's PRIMARY
+// score becomes cumulative PLACEMENT POINTS (3/2/1/0 off the day-5 finish
+// order), with the cumulative composite retained as the stored tiebreak input
+// (margin over the group average). Placement is awarded on FINAL rows only.
+// Flag-off emits none of those keys, and the board scores on composite exactly
+// as it does today. Career RP (tournamentRanks) and its cpuFarmGuard are
+// untouched — that guard has no code path from this file.
+//
 // IDEMPOTENT BY CONSTRUCTION: each player's contribution is keyed
 // entries.{odUserId}.weeks.{groupId} and SET (never incremented); the month
 // total is recomputed as the sum of the weeks map on every write — re-run =
@@ -52,12 +61,13 @@ import {
   leaderboardDocId,
   isCpuUserId,
   cpuNFromUserId,
+  rankByScores,
   round2,
 } from '../../src/constants/leagueTournament.js';
 import { fetchEligibleGroupsByStatus } from './tournamentGroupService.js';
 import { cpuAgentName } from './tournamentCpu.js';
 import { toIso } from './tournamentTime.js';
-import { TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
+import { TOURNAMENT_ADVANCEMENT_FROZEN, WEEKLY_LADDER_PLACEMENT_ENABLED } from '../../src/config/featureFlags.js';
 
 const LOG_PREFIX = '[TournamentLeaderboard]';
 
@@ -105,6 +115,73 @@ export async function resolveDisplayNames(db, odUserIds) {
   return names;
 }
 
+// ==================== WEEKLY LADDER — PLACEMENT POINTS (dark) ====================
+//
+// Spec 20260831_WEEKLY_LADDER_BUILD_SPEC_V1 §1-§3, behind
+// WEEKLY_LADDER_PLACEMENT_ENABLED. Re-scores this board from cumulative
+// COMPOSITE to cumulative PLACEMENT POINTS; the composite is retained as the
+// stored tiebreak input (margin over the group average), never the primary key.
+// Everything below is PURE and derives from the group doc alone — the finish
+// order needs no new read, because lockTopTwo's order is itself just
+// rankByScores over each seat's getWeeklyComposite.
+
+/** 1st=3 · 2nd=2 · 3rd=1 · 4th=0 (spec §1). Frozen — a config entry, not code. */
+export const PLACEMENT_POINTS = Object.freeze([3, 2, 1, 0]);
+
+/** Points for a 1-based placement; 0 for unplaced or out-of-table. Pure. */
+export function placementPointsFor(placement) {
+  if (!Number.isInteger(placement) || placement < 1) return 0;
+  return PLACEMENT_POINTS[placement - 1] ?? 0;
+}
+
+/**
+ * Per-seat placement + composite margin for one group (spec §1/§3). Pure.
+ *
+ * ORDER OF RECORD: ranks over `groupMembers`, exactly as lockTopTwo does
+ * (tournamentAdvancement.js:104-111) — NOT over `players`. The two carry the
+ * same seats in the same order at creation (leagueTournament.js:1459), but
+ * groupMembers is the sequence rankByScores uses for its draft-order tiebreak,
+ * so ranking anything else could produce a finish order that disagrees with the
+ * one the career path already recorded for the same week. Falls back to the
+ * players' ids only if groupMembers is absent.
+ *
+ * SORTED ON the day-5 clamped composite (getWeeklyComposite — the L-B Guard 2
+ * value), which is the same input the advancement's cut reads.
+ *
+ * MARGIN = seat composite − mean(group composites), over ALL seats including
+ * CPUs: the CPUs are part of the field the human actually competed against, and
+ * the ruling counts their finishes.
+ *
+ * FINAL-ONLY (founder decision D1, 2026-08-31): placement is a WEEK'S OUTCOME.
+ * An unfinished week contributes nothing — 0 points, 0 margin, null placement —
+ * so the nightly in-progress rewrite cannot churn the season rank on a day
+ * nobody finished. THE FIELD carries the live state; this board carries results.
+ */
+export function buildPlacementForGroup(group, final) {
+  const members = (group?.groupMembers?.length ? group.groupMembers : (group?.players || []).map(p => p?.odUserId))
+    .filter(id => typeof id === 'string' && id.length > 0);
+  const out = {};
+  if (!final) {
+    for (const id of members) out[id] = { placement: null, placementPoints: 0, compositeMargin: 0 };
+    return out;
+  }
+  const composites = {};
+  for (const id of members) composites[id] = getWeeklyComposite(group, id);
+  const ranking = rankByScores(composites, members);
+  const mean = members.length
+    ? members.reduce((sum, id) => sum + composites[id], 0) / members.length
+    : 0;
+  for (const id of members) {
+    const placement = ranking.indexOf(id) + 1;
+    out[id] = {
+      placement: placement >= 1 ? placement : null,
+      placementPoints: placementPointsFor(placement),
+      compositeMargin: round2(composites[id] - mean),
+    };
+  }
+  return out;
+}
+
 /**
  * One group's per-player week contributions (pure): the weekly composite of
  * record + the user-layer detail, keyed for the entries.{uid}.weeks.{groupId}
@@ -112,6 +189,9 @@ export async function resolveDisplayNames(db, odUserIds) {
  */
 export function buildGroupWeekRows(group, nowIso) {
   const final = isWeekBanked(group) || group.status === GROUP_STATUS.COMPLETE;
+  // Dark: null when the flag is off, so the spread below contributes NOTHING and
+  // the row shape is byte-identical to today's (acceptance 7).
+  const placement = WEEKLY_LADDER_PLACEMENT_ENABLED ? buildPlacementForGroup(group, final) : null;
   return (group.players || []).map(player => ({
     odUserId: player.odUserId,
     isCpu: player.isCpu === true,
@@ -124,6 +204,7 @@ export function buildGroupWeekRows(group, nowIso) {
         ? { bracketGameId: group.bracketGameId }
         : { baseLayerWeek: group.baseLayerWeek ?? null }),
       final,
+      ...(placement?.[player.odUserId] ?? {}),
       updatedAt: nowIso,
     },
   }));
@@ -308,6 +389,16 @@ export async function upsertLeaderboardForGroups(db, groups, { now = new Date(),
               // The month total: Σ over the weeks map, recomputed every
               // write — signed, never floored (re-run = same totals).
               points: round2(Object.values(weeks).reduce((sum, w) => sum + (w.points || 0), 0)),
+              // Weekly ladder (dark): the PRIMARY sort key and its tiebreak,
+              // accumulated on the SAME Σ-over-weeks grain as `points` above —
+              // SET-not-increment, recomputed every write, so a cron re-run,
+              // retry or replay re-derives the identical total instead of
+              // double-awarding (spec §6; the guard this path already had).
+              // Flag-off contributes no keys at all (acceptance 7).
+              ...(WEEKLY_LADDER_PLACEMENT_ENABLED ? {
+                placementPoints: Object.values(weeks).reduce((sum, w) => sum + (w.placementPoints || 0), 0),
+                compositeMargin: round2(Object.values(weeks).reduce((sum, w) => sum + (w.compositeMargin || 0), 0)),
+              } : {}),
               // Tier-2 spectator entry (P6b reads it): the latest group —
               // an active group always wins; otherwise keep the prior
               // pointer, defaulting to this group when none exists.

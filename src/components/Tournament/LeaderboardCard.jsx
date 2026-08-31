@@ -13,7 +13,8 @@ import { ChevronLeft, ChevronRight, Trophy } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { subscribeLeaderboard } from '../../services/tournamentGroupService';
 import { leaderboardDocId, shiftMonthKey } from '../../constants/leagueTournament';
-import { etMonthKey, monthNavState } from '../../utils/tournamentSurfaces';
+import { etMonthKey, monthNavState, rankLeaderboardEntries, decomposeEntryWeeks } from '../../utils/tournamentSurfaces';
+import { WEEKLY_LADDER_PLACEMENT_ENABLED } from '../../config/featureFlags';
 
 export default function LeaderboardCard({ uid, dev = false, initialMonthKey, onOpenGroup }) {
   const { tokens } = useTheme();
@@ -21,6 +22,8 @@ export default function LeaderboardCard({ uid, dev = false, initialMonthKey, onO
   const [monthKey, setMonthKey] = useState(initialMonthKey || currentMonthKey);
   const [doc, setDoc] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  // Which row is showing its week decomposition (§9). Dark-flag only.
+  const [expandedId, setExpandedId] = useState(null);
 
   useEffect(() => {
     setLoaded(false);
@@ -28,8 +31,10 @@ export default function LeaderboardCard({ uid, dev = false, initialMonthKey, onO
   }, [monthKey, dev]);
 
   const { canNewer, canOlder } = monthNavState({ monthKey, currentMonthKey, docExists: !!doc });
+  // THE ONE ORDERING HOME (tournamentSurfaces.rankLeaderboardEntries) — never a
+  // local comparator, so this view and any other board surface cannot drift (§9).
   const rows = useMemo(
-    () => Object.values(doc?.entries || {}).sort((a, b) => (b.points ?? 0) - (a.points ?? 0)),
+    () => rankLeaderboardEntries(doc?.entries, { placementEnabled: WEEKLY_LADDER_PLACEMENT_ENABLED }),
     [doc],
   );
 
@@ -63,33 +68,144 @@ export default function LeaderboardCard({ uid, dev = false, initialMonthKey, onO
           <div style={{ fontSize: 12, color: tokens.textMuted }}>Loading…</div>
         ) : rows.length === 0 ? (
           <div style={{ fontSize: 12, color: tokens.textMuted }}>No board for {monthKey} yet.</div>
-        ) : rows.map((entry, i) => {
-          const mine = entry.odUserId === uid;
-          const clickable = !!entry.currentGroupId && !!onOpenGroup;
-          return (
-            <button key={entry.odUserId} disabled={!clickable}
-              onClick={() => clickable && onOpenGroup(entry.currentGroupId)}
-              style={{
-                display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12, padding: '4px 8px',
-                borderRadius: 6, border: 'none', textAlign: 'left', width: '100%',
-                cursor: clickable ? 'pointer' : 'default',
-                background: mine ? 'rgba(20,184,166,0.12)' : 'transparent',
-              }}>
-              <span style={{ color: tokens.textFaint, fontVariantNumeric: 'tabular-nums', width: 22 }}>#{i + 1}</span>
-              <span style={{ flex: 1, fontWeight: mine ? 800 : 500, color: mine ? '#14b8a6' : tokens.textPrimary }}>
-                {mine ? 'You' : entry.displayName}
-                {entry.isCpu && <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8' }}> CPU</span>}
-              </span>
-              <span style={{ fontSize: 10, color: tokens.textFaint }}>{Object.keys(entry.weeks || {}).length} wk</span>
-              <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: (entry.points ?? 0) < 0 ? '#ef4444' : tokens.textPrimary }}>
-                {(entry.points ?? 0) >= 0 ? '+' : ''}{entry.points}
-              </span>
-            </button>
-          );
-        })}
+        ) : rows.map((entry, i) => (
+          WEEKLY_LADDER_PLACEMENT_ENABLED
+            ? <SeasonEntryRow key={entry.odUserId} entry={entry} rank={i + 1} mine={entry.odUserId === uid}
+                expanded={expandedId === entry.odUserId}
+                onToggle={() => setExpandedId(expandedId === entry.odUserId ? null : entry.odUserId)}
+                onOpenGroup={onOpenGroup} />
+            : <LegacyEntryRow key={entry.odUserId} entry={entry} rank={i + 1} mine={entry.odUserId === uid}
+                onOpenGroup={onOpenGroup} />
+        ))}
       </div>
 
       {doc?.feeds && <LeaderboardFeeds feeds={doc.feeds} />}
+    </div>
+  );
+}
+
+/**
+ * FLAG-OFF row — byte-identical to the board's shipping markup. Extracted
+ * verbatim so the dark path cannot alter it; do not "tidy" this into the
+ * season row (acceptance 7).
+ */
+function LegacyEntryRow({ entry, rank, mine, onOpenGroup }) {
+  const { tokens } = useTheme();
+  const clickable = !!entry.currentGroupId && !!onOpenGroup;
+  return (
+    <button disabled={!clickable}
+      onClick={() => clickable && onOpenGroup(entry.currentGroupId)}
+      style={{
+        display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12, padding: '4px 8px',
+        borderRadius: 6, border: 'none', textAlign: 'left', width: '100%',
+        cursor: clickable ? 'pointer' : 'default',
+        background: mine ? 'rgba(20,184,166,0.12)' : 'transparent',
+      }}>
+      <span style={{ color: tokens.textFaint, fontVariantNumeric: 'tabular-nums', width: 22 }}>#{rank}</span>
+      <span style={{ flex: 1, fontWeight: mine ? 800 : 500, color: mine ? '#14b8a6' : tokens.textPrimary }}>
+        {mine ? 'You' : entry.displayName}
+        {entry.isCpu && <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8' }}> CPU</span>}
+      </span>
+      <span style={{ fontSize: 10, color: tokens.textFaint }}>{Object.keys(entry.weeks || {}).length} wk</span>
+      <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: (entry.points ?? 0) < 0 ? '#ef4444' : tokens.textPrimary }}>
+        {(entry.points ?? 0) >= 0 ? '+' : ''}{entry.points}
+      </span>
+    </button>
+  );
+}
+
+const ORDINAL = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th' };
+
+/**
+ * SEASON row (dark flag) — cumulative PLACEMENT POINTS as the headline number,
+ * expanding into the weeks that produced it.
+ *
+ * §9 DISPLAY-AGREEMENT: the total and every week beneath it are read from the
+ * SAME stored `entry.weeks` map the writer summed — the rows are never
+ * re-derived from composites here, so the parts cannot disagree with the whole.
+ *
+ * CPU seats (ruling §4) are archetype-named by the writer (`cpuAgentName` →
+ * "CPU — Capital Preserver"); a raw `cpu-40` id is never rendered. They carry a
+ * visible BOT chip and a muted name so a player can see at a glance how much of
+ * the field is bots — marked, never hidden, and never excluded from any
+ * position including first.
+ */
+function SeasonEntryRow({ entry, rank, mine, expanded, onToggle, onOpenGroup }) {
+  const { tokens } = useTheme();
+  const weeks = decomposeEntryWeeks(entry);
+  const clickable = !!entry.currentGroupId && !!onOpenGroup;
+  const isCpu = entry.isCpu === true;
+  const total = entry.placementPoints ?? 0;
+
+  return (
+    <div style={{
+      borderRadius: 6, background: mine ? 'rgba(20,184,166,0.12)' : 'transparent',
+      border: `1px solid ${expanded ? tokens.borderDivider : 'transparent'}`,
+    }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12, padding: '4px 8px' }}>
+        <span style={{ color: tokens.textFaint, fontVariantNumeric: 'tabular-nums', width: 22 }}>#{rank}</span>
+        <button
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-label={`${mine ? 'You' : entry.displayName} — ${total} placement points across ${weeks.length} weeks`}
+          style={{
+            flex: 1, display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0,
+            background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer',
+            fontSize: 12, fontWeight: mine ? 800 : 500,
+            color: mine ? '#14b8a6' : isCpu ? tokens.textMuted : tokens.textPrimary,
+          }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {mine ? 'You' : entry.displayName}
+          </span>
+          {isCpu && (
+            <span style={{
+              flexShrink: 0, fontSize: 8.5, fontWeight: 800, letterSpacing: '0.06em',
+              color: tokens.textFaint, border: `1px solid ${tokens.borderDivider}`,
+              borderRadius: 3, padding: '0 3px', lineHeight: 1.5,
+            }}>BOT</span>
+          )}
+        </button>
+        <span style={{ fontSize: 10, color: tokens.textFaint }}>{weeks.length} wk</span>
+        <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: tokens.textPrimary, minWidth: 28, textAlign: 'right' }}>
+          {total}
+        </span>
+      </div>
+
+      {expanded && (
+        <div style={{ padding: '2px 8px 8px 30px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {weeks.length === 0 && (
+            <span style={{ fontSize: 10.5, color: tokens.textFaint }}>No weeks on the board yet.</span>
+          )}
+          {weeks.map(w => (
+            <div key={w.groupId} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 10.5, color: tokens.textMuted }}>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.label}</span>
+              <span style={{ color: tokens.textFaint, minWidth: 52 }}>
+                {w.final ? (ORDINAL[w.placement] ?? '—') : 'in progress'}
+              </span>
+              <span style={{ fontVariantNumeric: 'tabular-nums', color: tokens.textFaint, minWidth: 46, textAlign: 'right' }}>
+                {w.final ? `${w.compositeMargin >= 0 ? '+' : ''}${w.compositeMargin}` : ''}
+              </span>
+              <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700, minWidth: 28, textAlign: 'right' }}>
+                {w.placementPoints}
+              </span>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 8, fontSize: 10, color: tokens.textFaint, paddingTop: 3, borderTop: `1px solid ${tokens.borderDivider}` }}>
+            <span style={{ flex: 1 }}>Margin over group average · tiebreak</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {(entry.compositeMargin ?? 0) >= 0 ? '+' : ''}{entry.compositeMargin ?? 0}
+            </span>
+          </div>
+          {clickable && (
+            <button onClick={() => onOpenGroup(entry.currentGroupId)}
+              style={{
+                alignSelf: 'flex-start', marginTop: 4, background: 'none', cursor: 'pointer',
+                border: `1px solid ${tokens.borderDivider}`, borderRadius: 5, padding: '2px 7px',
+                fontSize: 10, color: tokens.textMuted,
+              }}>Open current pod</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

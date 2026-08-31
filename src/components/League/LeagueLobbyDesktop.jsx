@@ -33,9 +33,10 @@ import { LTOKENS, LX, alpha } from './leagueTokens';
 import { Eyebrow, Mono } from './LeagueParts';
 import Spectate from './LeagueSpectate';
 import {
-  DeskStat, DeskYourGroup, DeskFollowRail, DeskLeaderboard, DeskPodPanel,
+  DeskStat, DeskYourGroup, DeskFollowRail, DeskPodPanel,
   LDFocus, DeskTabBar, DeskTrainingPanel, TRAIN,
 } from './LeagueDeskParts';
+import DeskSeasonRail from './DeskSeasonRail';
 
 const ACCENT = LX.energy; // teal — the league energy accent (tournament surface)
 
@@ -147,6 +148,13 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
 
   const pickPod = (pod) => { setSpec(null); setSelectedPodId(pod.id); signal('pod-tap', { podId: pod.id }); };
   const closePod = () => setSelectedPodId(null);
+  // Weekly ladder §5: a season row opens the player's CURRENT pod in the same
+  // docked rail the board already uses — reusing pickPod, never a second
+  // navigation path. A group not in the current field simply does not open.
+  const openGroupById = (groupId) => { const pod = findPod(st, groupId); if (pod) pickPod(pod); };
+  // Lifted out of DeskSeasonRail: the right rail swaps the whole component out
+  // for DeskPodPanel when a pod is docked, so the tab has to survive up here.
+  const [railTab, setRailTab] = React.useState('field');
   const openSpectate = (pod, focusId) => { if (!pod) return; setSpec({ pod, focusId }); signal('spectate-open', { podId: pod.id, focusId }); };
   // Switching tabs dismisses any open tournament overlay so a ranked overlay
   // can't linger over the (purple) training surface.
@@ -205,9 +213,9 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
               </Mono>
             </div>
           </div>
-          {/* RIGHT — the season leaderboard, for context */}
+          {/* RIGHT — the standings rail, for context */}
           <div className="ld-rail-right">
-            <DeskLeaderboard st={st} accent={ACCENT} />
+            <DeskSeasonRail st={st} accent={ACCENT} uid={uid} tab={railTab} onTabChange={setRailTab} />
           </div>
         </div>
       ) : (
@@ -252,7 +260,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
           <div className="ld-rail-right" style={{ border: `1px solid ${selectedPod ? alpha(ACCENT, 0.3) : LTOKENS.hair}` }}>
             {selectedPod
               ? <DeskPodPanel pod={selectedPod} accent={ACCENT} onClose={closePod} onSpectate={(seat) => openSpectate(selectedPod, seat.id)} />
-              : <DeskLeaderboard st={st} accent={ACCENT} />}
+              : <DeskSeasonRail st={st} accent={ACCENT} uid={uid} onOpenGroup={openGroupById} tab={railTab} onTabChange={setRailTab} />}
           </div>
         </div>
       )}
