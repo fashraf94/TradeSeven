@@ -167,10 +167,59 @@ describe('the drain releases the queue on EVERY terminal path', () => {
     expect(updates).toEqual([]);
   });
 
+  it('a completed battle already debriefed on its OWN last day is not reviewed again', async () => {
+    // THE DUPLICATE-DEBRIEF DEFECT. A battle reviewed while still active on day
+    // D, completing overnight, used to find no review dated D+1 and be reviewed
+    // a SECOND time — a duplicate debrief, a duplicate statusFeed beat, and a
+    // duplicate lesson arrayUnion'd onto the agent doc, which feeds prompt
+    // assembly. A completed battle dedupes against its own completion day.
+    const { db, updates } = updateSpy();
+    const battle = {
+      id: 'battle-yesterday',
+      status: 'completed',
+      reviewPending: true,
+      completedAt: '2026-09-01T23:30:00.000Z',      // Tue 7:30 PM ET
+      timing: { tradingDays: [todayEt()] },
+      dailyReviews: [{ date: '2026-09-01' }],        // already debriefed for Tue
+    };
+    const result = await processBattleReview(db, battle, { clearReviewPending: true });
+    expect(result).toEqual({ status: 'skipped', reason: 'already_reviewed' });
+    // ...and it still leaves the queue.
+    expect(updates).toEqual([{ id: 'battle-yesterday', payload: { reviewPending: false } }]);
+  });
+
+  it('an ACTIVE battle still dedupes against TODAY, not a completion date it lacks', async () => {
+    const { db } = updateSpy();
+    const battle = {
+      id: 'battle-active', status: 'active',
+      timing: { tradingDays: [todayEt()] },
+      dailyReviews: [{ date: todayEt() }],
+    };
+    const result = await processBattleReview(db, battle, { clearReviewPending: false });
+    expect(result).toEqual({ status: 'skipped', reason: 'already_reviewed' });
+  });
+
   it('releasing is non-fatal: a failed clear leaves the battle queued for the next run', async () => {
     const db = { collection: () => ({ doc: () => ({ update: async () => { throw new Error('boom'); } }) }) };
     // Must not throw — a thrown error here would abort the whole cron run.
     await expect(releaseReviewPending(db, 'b1')).resolves.toBeUndefined();
+  });
+});
+
+describe('the queue is scheduled to survive the handler\'s time budget', () => {
+  // One review can cost ~30s of a 60s maxDuration (Haiku 15s + Gemma debrief
+  // 15s), so whatever is last in the work list may never run.
+  it('the pending queue is processed BEFORE the active list', () => {
+    const source = readSource('agent-batch-review.js');
+    const loop = blockAfter(source, 'const work = [];', 'const deadline');
+    expect(loop.indexOf('of pending'), 'the queue must be pushed first')
+      .toBeLessThan(loop.indexOf('of battles'));
+  });
+
+  it('new reviews stop starting near the budget rather than being killed mid-write', () => {
+    const source = readSource('agent-batch-review.js');
+    expect(source).toContain('TIME_BUDGET_MS');
+    expect(source).toContain('if (Date.now() > deadline)');
   });
 });
 

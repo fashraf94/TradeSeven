@@ -57,6 +57,12 @@ import { resolveAttributionAgentId } from '../_utils/casualClone.js';
 
 export const config = { maxDuration: 60 };
 
+// Stop starting new reviews this far into the 60s budget. One review can cost
+// ~30s (Haiku 15s + Gemma debrief 15s), so a run that begins one at :50 is
+// killed mid-flight; better to defer it to the next tick with its queue flag
+// intact.
+const TIME_BUDGET_MS = 45_000;
+
 const LOG_PREFIX = '[BatchReview]';
 
 let anthropicClient = null;
@@ -126,9 +132,25 @@ export async function processBattleReview(db, battle, { clearReviewPending = fal
   const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
+  // Which day's review would this be?
+  //
+  // For an ACTIVE battle it is today's. For a QUEUE-SOURCED (completed) battle
+  // it is the day the battle ENDED — which is usually yesterday, because the
+  // queue exists precisely for battles that completed after the day's last run.
+  //
+  // Deduping a completed battle against todayStr was a real defect: a battle
+  // reviewed while still active on day D, completing overnight, would find no
+  // review dated D+1 and be reviewed a SECOND time — a duplicate debrief, a
+  // duplicate statusFeed beat, and a duplicate lesson arrayUnion'd onto the
+  // agent doc, which feeds prompt assembly. A completed battle gets one final
+  // debrief, keyed to its own last day.
+  const reviewDate = (clearReviewPending && battle.completedAt)
+    ? new Date(battle.completedAt).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    : todayStr;
+
   // Check if review already done
-  if ((battle.dailyReviews || []).some(r => r.date === todayStr)) {
-    console.log(`${LOG_PREFIX} Battle ${battle.id}: review already exists for ${todayStr}, skipping`);
+  if ((battle.dailyReviews || []).some(r => r.date === reviewDate)) {
+    console.log(`${LOG_PREFIX} Battle ${battle.id}: review already exists for ${reviewDate}, skipping`);
     if (clearReviewPending) await releaseReviewPending(db, battle.id);
     return { status: 'skipped', reason: 'already_reviewed' };
   }
@@ -464,11 +486,26 @@ export default async function handler(req, res) {
     // both lists, and reviewing it twice would append two dailyReviews entries
     // for one day. The queue entry wins, because it is the one that also needs
     // its flag cleared.
+    // The QUEUE GOES FIRST. One review can cost ~30s of the handler's 60s
+    // maxDuration (a Haiku call with a 15s timeout, then a Gemma debrief with
+    // another 15s), so whatever is last in this list may not run at all. A
+    // queue entry is a battle that has ALREADY missed its debrief once; an
+    // active battle gets another chance on the next tick.
     const seen = new Set();
     const work = [];
     for (const b of pending) { seen.add(b.id); work.push({ battle: b, clearReviewPending: true }); }
     for (const b of battles) { if (!seen.has(b.id)) work.push({ battle: b, clearReviewPending: false }); }
+
+    // Stop STARTING new reviews once the handler is close to its budget, rather
+    // than being killed mid-write. An unstarted battle keeps its flag (or stays
+    // active) and is picked up next run — the queue is designed to drain across
+    // runs.
+    const deadline = Date.now() + TIME_BUDGET_MS;
     for (const { battle, clearReviewPending } of work) {
+      if (Date.now() > deadline) {
+        console.log(`${LOG_PREFIX} Time budget reached; ${work.length - summary.reviewed - summary.skipped - summary.errors} battle(s) deferred to the next run`);
+        break;
+      }
       try {
         const result = await processBattleReview(db, battle, { clearReviewPending });
         if (result.status === 'reviewed') {
