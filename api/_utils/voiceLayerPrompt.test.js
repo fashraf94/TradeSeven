@@ -3681,6 +3681,16 @@ describe('buildVoiceLayerPrompt — Tier-3 forward consensus (additive)', () => 
 // Goldens captured from PRE-edit code at HEAD ec610b26 (deterministic fixture:
 // no battle.timing, marketSnapshot:null, getMarketState mocked). Regenerate only
 // if flag-OFF battle/review/workshop output intentionally changes (it must not).
+//
+// Moved once since capture, deliberately: P-2 dropped `or "permanent"` from the
+// OUTPUT_FORMAT expiry line, because the model could offer a persistence level
+// storage cannot deliver (directiveUtils.js treats permanent as end-of-battle).
+// The golden was edited by targeted string replacement, not regeneration, so the
+// diff is provably that one line in `battle` and `review` and nothing else —
+// `workshop` never carried the line. The "it must not" above still binds: this
+// guard exists to catch the archetype apparatus leaking into flag-OFF output,
+// and a deliberate product edit to the base prompt is the one thing that moves
+// it — in the same commit as the prompt change, never after.
 // =============================================================================
 
 const PD_GOLDEN = JSON.parse(
