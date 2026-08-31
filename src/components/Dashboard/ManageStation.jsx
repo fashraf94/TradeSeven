@@ -47,14 +47,15 @@ export default function ManageStation({ battle, agent, accent, onOpen, showType,
     ? DESK_COPY.manageLive(agentName)
     : phase === 'PRE_OPEN'
       ? DESK_COPY.managePreOpen
-      : DESK_COPY.manageClosed;
-  // Off-hours the countdown to expiry is still true but no longer the useful
-  // fact; when the agent next wakes is. Derived from the same adapter field
-  // the Desk's posture line uses, so the two cannot disagree (BUILD_RULES §9).
-  const resumes = (phase === 'LIVE_CLOSED' || phase === 'PRE_OPEN')
-    ? DESK_COPY.manageResumes(sync?.nextOpenEt)
-    : null;
-  const rightRail = resumes || left;
+      : DESK_COPY.manageClosedResuming(sync?.nextOpenEt);
+  // The expiry countdown STAYS in the right rail. It is still true off-hours
+  // and, for a crypto fullday battle (which expires 8:00 PM ET, four hours
+  // after the close), it is the truer of the two facts — that battle ends
+  // before the next open the resume line names. So the resume time rides the
+  // activity line instead of displacing the countdown. Both are derived from
+  // the same adapter field the Desk's posture line uses, so no two surfaces can
+  // disagree about them (BUILD_RULES §9).
+  const rightRail = left || (phase === 'PRE_OPEN' ? DESK_COPY.manageResumes(sync?.nextOpenEt) : null);
   // Header label and the opponent line both derive from ONE classification (§9 —
   // never a second raw read of battle.groupId). Gated by showType so flag-off (no
   // showType passed) is byte-identical to the legacy "Battle live … · vs CPU" card.

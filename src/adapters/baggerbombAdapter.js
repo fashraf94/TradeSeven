@@ -251,6 +251,34 @@ function buildStatusFeedLatest(battle) {
   };
 }
 
+/** How far back a feed entry can be and still surface as a live alert. */
+const ALERT_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * The feed slice the breakthrough-alert visual may treat as NEW.
+ *
+ * BreakthroughAlerts keeps a mount-scoped dedupe set and shows each admitted
+ * entry for 60 seconds. Inside AgentChat that is fine — the panel mounts when a
+ * battle opens. On the Dashboard it mounts every time the user lands there, so
+ * an unfiltered feed replays an hours-old gameplan_meeting as a freshly-arrived
+ * alert on every visit. Bounding the window to an hour keeps the alert channel
+ * meaning "this just happened", which is the only reading that makes a
+ * 60-second TTL honest.
+ *
+ * The Desk's own feed LINE is unbounded and still shows the latest entry
+ * whatever its age — that one is stamped, so it makes no freshness claim.
+ */
+function buildAlertFeed(battle, now) {
+  const feed = battle?.statusFeed;
+  if (!Array.isArray(feed)) return [];
+  const nowMs = toMillis(now);
+  if (nowMs == null) return [];
+  return feed.filter((entry) => {
+    const ts = toMillis(entry?.timestamp);
+    return ts != null && nowMs - ts <= ALERT_WINDOW_MS;
+  });
+}
+
 /**
  * When the agent next checks, during LIVE only.
  *
@@ -396,7 +424,7 @@ export function buildBaggerbombAdapter(battle, voiceLayerCacheDoc, agent, now, m
     // alert visual takes the array. Without this a shell would have to hand
     // AgentDesk `battle.statusFeed` directly, which is exactly the direct
     // document read the pass exists to prevent (spec §5 rule 1).
-    statusFeed: Array.isArray(battle?.statusFeed) ? battle.statusFeed : [],
+    statusFeed: buildAlertFeed(battle, now),
 
     loadout: {
       archetype: agent?.archetype ?? battle?.agentContext?.archetype ?? null,

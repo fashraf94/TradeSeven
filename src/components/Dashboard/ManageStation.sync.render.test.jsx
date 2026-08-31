@@ -126,33 +126,44 @@ describe('lit — the phase drives the activity line', () => {
   });
 });
 
-describe('lit — the right rail becomes the next wake, off-hours', () => {
-  it('LIVE_CLOSED shows when the agent resumes, in ET, instead of the countdown', () => {
+describe('lit — the resume time never displaces a still-true countdown', () => {
+  // A crypto fullday battle expires at 8:00 PM ET, four hours after the market
+  // closes. For that window it is LIVE_CLOSED and still counting down to an end
+  // the next open never reaches — so an earlier version, which replaced the
+  // countdown with "Resumes Tue 9:30 AM ET", discarded the truer of the two
+  // facts. The resume time now rides the activity line instead.
+  it('LIVE_CLOSED keeps the expiry countdown in the right rail', () => {
     const html = render({ sync: syncFor('LIVE_CLOSED') });
-    expect(html).toContain('Resumes Tue 9:30 AM ET');
-    expect(html).not.toContain('left');
-  });
-
-  it('PRE_OPEN also shows the resume time', () => {
-    expect(render({ sync: syncFor('PRE_OPEN') })).toContain('Resumes Tue 9:30 AM ET');
-  });
-
-  it('LIVE keeps the expiry countdown — the next tick is the Desk\'s job, not the rail\'s', () => {
-    const html = render({ sync: syncFor('LIVE') });
     expect(html).toContain('left');
-    expect(html).not.toContain('Resumes');
   });
 
-  it('falls back to generic wording when there is no next-open wall clock', () => {
-    const html = render({ sync: syncFor('LIVE_CLOSED', { nextOpenEt: null }) });
-    expect(html).toContain('Resumes at next open');
+  it('LIVE_CLOSED still says when the agent resumes — on the activity line', () => {
+    const html = render({ sync: syncFor('LIVE_CLOSED') });
+    expect(html).toContain('Market closed · resumes Tue 9:30 AM ET');
   });
 
   it('the resume time comes from WALL-CLOCK FIELDS, not an epoch', () => {
-    // Same timezone fix as the Desk: reading the fields keeps this string
-    // stable for every viewer, wherever they are.
+    // Reading the fields keeps this string identical for every viewer,
+    // wherever they are; formatting the epoch did not.
     const html = render({ sync: syncFor('LIVE_CLOSED', { nextOpenEt: { weekdayIndex: 1, hour: 9, minute: 30 } }) });
-    expect(html).toContain('Resumes Mon 9:30 AM ET');
+    expect(html).toContain('resumes Mon 9:30 AM ET');
+  });
+
+  it('degrades to a bare "Market closed" when the next open is unknown', () => {
+    const html = render({ sync: syncFor('LIVE_CLOSED', { nextOpenEt: null }) });
+    expect(html).toContain('Market closed');
+    expect(html).not.toContain('resumes');
+  });
+
+  it('PRE_OPEN, which has no meaningful countdown yet, shows the resume time in the rail', () => {
+    const html = render({ sync: syncFor('PRE_OPEN'), battleOver: { expiresAt: null } });
+    expect(html).toContain('Waiting for the open');
+  });
+
+  it('LIVE keeps the countdown and says nothing about resuming', () => {
+    const html = render({ sync: syncFor('LIVE') });
+    expect(html).toContain('left');
+    expect(html).not.toContain('resumes');
   });
 });
 

@@ -165,6 +165,16 @@ export const DESK_COPY = Object.freeze({
   // trading, and the card said so anyway before this pass.
   manageLive: (agentName) => `${agentName} is trading`,
   manageClosed: 'Market closed',
+  // The resume time rides the ACTIVITY line, not the right rail, so it never
+  // displaces the expiry countdown. A crypto fullday battle expires at 8:00 PM
+  // ET, four hours after the market closes — for that window the battle is
+  // LIVE_CLOSED and still counting down to an end the next open never reaches.
+  // Replacing "3h left" with "Resumes Tue 9:30 AM" there discarded the truer
+  // of the two facts.
+  manageClosedResuming: (nextOpenEt) => {
+    const label = etWallClockLabel(nextOpenEt);
+    return label ? `Market closed · resumes ${label} ET` : 'Market closed';
+  },
   manageResumes: (nextOpenEt) => {
     const label = etWallClockLabel(nextOpenEt);
     return label ? `Resumes ${label} ET` : 'Resumes at next open';

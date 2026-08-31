@@ -556,6 +556,36 @@ describe('buildBaggerbombAdapter', () => {
     });
   });
 
+  describe('the alert feed is bounded to the last hour', () => {
+    // BreakthroughAlerts keeps a MOUNT-scoped dedupe set and shows each entry
+    // for 60 seconds. Inside AgentChat that is fine — it mounts when a battle
+    // opens. On the Dashboard it mounts on every visit, so an unfiltered feed
+    // replays an hours-old gameplan_meeting as freshly-arrived, every time.
+    const feedAt = (iso) => [{ timestamp: iso, message: 'Gameplan Meeting: rotate', action: 'gameplan_meeting' }];
+
+    it('carries a recent entry', () => {
+      const b = makeBattle({ statusFeed: feedAt('2026-09-01T16:45:00.000Z') }); // 15 min before NOW
+      expect(build(b, makeCache(), AGENT, NOW, MS.open).statusFeed).toHaveLength(1);
+    });
+
+    it('drops an entry older than the window — it is not news any more', () => {
+      const b = makeBattle({ statusFeed: feedAt('2026-09-01T13:45:00.000Z') }); // 3h+ before NOW
+      expect(build(b, makeCache(), AGENT, NOW, MS.open).statusFeed).toEqual([]);
+    });
+
+    it('the LATEST-entry line is NOT bounded — it is stamped, so it claims no freshness', () => {
+      const b = makeBattle({ statusFeed: feedAt('2026-09-01T13:45:00.000Z') });
+      const a = build(b, makeCache(), AGENT, NOW, MS.open);
+      expect(a.statusFeed).toEqual([]);
+      expect(a.statusFeedLatest?.message).toBe('Gameplan Meeting: rotate');
+    });
+
+    it('drops entries with no usable timestamp rather than guessing they are new', () => {
+      const b = makeBattle({ statusFeed: [{ message: 'no stamp', action: 'gameplan_meeting' }] });
+      expect(build(b, makeCache(), AGENT, NOW, MS.open).statusFeed).toEqual([]);
+    });
+  });
+
   it('is pure — the same inputs give the same output, and inputs are not mutated', () => {
     const battle = makeBattle();
     const cache = makeCache();
