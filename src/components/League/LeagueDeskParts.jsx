@@ -28,6 +28,7 @@ import { PodCard } from './LeaguePod';
 import LoadoutChooserSheet from './LoadoutChooserSheet';
 import { quickPlayTraining, mapLobbyError } from '../../services/tournamentLobbyActions';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
+import usePreOpenPhase from '../../hooks/usePreOpenPhase';
 import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
 import TrainingClimbPreview from './TrainingClimbPreview';
 
@@ -451,11 +452,18 @@ export function DeskTabBar({ tab, onSwitchTab, accent }) {
 //    Purple, clearly labelled practice so it never reads as a live bracket game.
 //    Mirrors DeploymentCard's routable-card pattern; tap → onOpenTrainingPod.
 export function ActiveTrainingGameCard({ pod, onResume }) {
+  // PRE-OPEN PHASE: BATTLE on its anchor date but before the bell. The card
+  // already has honest awaiting copy — reuse it rather than minting a new label,
+  // so a pre-open pod reads AWAITING OPEN instead of a pulsing LIVE heartbeat.
+  const preOpen = usePreOpenPhase(pod);
   const drafting = pod?.status === GROUP_STATUS.DRAFTING;
-  const live = pod?.status === GROUP_STATUS.BATTLE;
+  const live = pod?.status === GROUP_STATUS.BATTLE && !preOpen;
   const title = drafting ? 'Resume your draft' : 'Return to your training pod';
   const sub = drafting ? 'live snake draft · finish your picks' : 'your training battle · CPU opponents';
-  const statusLabel = drafting ? 'DRAFTING' : live ? 'LIVE' : pod?.status === GROUP_STATUS.AWAITING_OPEN ? 'AWAITING OPEN' : 'ACTIVE';
+  const statusLabel = drafting ? 'DRAFTING'
+    : live ? 'LIVE'
+      : (preOpen || pod?.status === GROUP_STATUS.AWAITING_OPEN) ? 'AWAITING OPEN'
+        : 'ACTIVE';
   return (
     <button className="lg-tap" onClick={onResume} style={{ all: 'unset', boxSizing: 'border-box', width: '100%', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13,
       padding: '16px 18px', borderRadius: 16,
@@ -501,6 +509,9 @@ function TrainingCpuNote() {
 //    onOpenTrainingPod; the server is the sole authority (client gates are
 //    courtesy). Purple throughout, per the build spec.
 export function DeskTrainingPanel({ onOpenTrainingPod, activeTrainingPod = null, hasAgent, agentLoadout = null, uid = null }) {
+  // Above the early return below (rules of hooks). The climb gate is a PURE
+  // module, so the pre-open phase is resolved here and passed in.
+  const trainingPreOpen = usePreOpenPhase(activeTrainingPod);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [chooserOpen, setChooserOpen] = useState(false);
@@ -539,7 +550,7 @@ export function DeskTrainingPanel({ onOpenTrainingPod, activeTrainingPod = null,
   if (activeTrainingPod) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {shouldPreviewClimb(activeTrainingPod, CLIMB_PREVIEW_ON) ? (
+        {shouldPreviewClimb(activeTrainingPod, CLIMB_PREVIEW_ON, { preOpen: trainingPreOpen }) ? (
           <TrainingClimbPreview pod={activeTrainingPod} uid={uid} onOpen={() => onOpenTrainingPod?.(activeTrainingPod)} viewport="desktop" accent={TRAIN.base} />
         ) : (
           <ActiveTrainingGameCard pod={activeTrainingPod} onResume={() => onOpenTrainingPod?.(activeTrainingPod)} />

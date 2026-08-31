@@ -38,8 +38,15 @@ export function climbPreviewEnabled() {
  * @param {boolean} enabled  the resolved gate (climbPreviewEnabled())
  * @returns {boolean}
  */
-export function shouldPreviewClimb(pod, enabled) {
+export function shouldPreviewClimb(pod, enabled, { preOpen = false } = {}) {
+  // PRE-OPEN PHASE: a pod on its battle day but before the 9:30 bell is BATTLE by
+  // status while the market is shut, so the five-day climb has nothing to plot and
+  // TrainingClimbPreview renders an unconditional LIVE pill (:112-118). Hold the
+  // re-entry bar until the bell instead. This module is PURE, so `preOpen` is
+  // supplied by the two mount sites from usePreOpenPhase rather than read here.
+  // False off-flag → byte-identical to the original gate.
   return enabled === true
+    && preOpen !== true
     && pod?.status === GROUP_STATUS.BATTLE
     && Array.isArray(pod?.players)
     && pod.players.length > 0;

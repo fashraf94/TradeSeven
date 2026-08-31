@@ -6,11 +6,13 @@
 // lint cannot. Data + auth + signal deps are mocked so the fixtures path is
 // deterministic and no Firestore listener is opened.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { leagueState } from './leagueFixtures';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
+
+const { flagState } = vi.hoisted(() => ({ flagState: { on: false } }));
 
 vi.mock('../../hooks/useLeagueState', () => ({
   default: () => ({ state: leagueState('open'), loading: false, isFixtures: true }),
@@ -30,6 +32,13 @@ vi.mock('../../services/liveDraftActions', () => ({
   mapSlotActionError: () => 'error',
 }));
 vi.mock('./LoadoutChooserSheet', () => ({ default: () => null }));
+
+// PRE-OPEN PHASE: only the gate is stubbed, so the REAL usePreOpenPhase and the
+// REAL isPreOpenOnBattleDay tuple compare run under a fake system clock.
+vi.mock('../../config/featureFlags', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, isPreOpenPhaseRoutingOn: () => flagState.on };
+});
 
 const LeagueLobbyDesktop = (await import('./LeagueLobbyDesktop')).default;
 const { DeskTrainingPanel, ActiveTrainingGameCard } = await import('./LeagueDeskParts');
@@ -75,5 +84,63 @@ describe('Training Pod panel render smoke', () => {
     const html = renderToString(<ActiveTrainingGameCard pod={pod} onResume={() => {}} />);
     expect(html).toContain('Return to your training pod');
     expect(html).toContain('LIVE');
+  });
+});
+
+// ── PRE-OPEN PHASE (PREOPEN_PHASE_ROUTING_ENABLED) ───────────────────────────
+// A training pod is BATTLE from its anchor date's midnight while the market is
+// shut. The card already owns honest awaiting copy — a pre-open pod must reach it
+// rather than showing the pulsing LIVE heartbeat.
+describe('ActiveTrainingGameCard — pre-open phase', () => {
+  const ANCHOR = '2026-08-27';
+  const PRE_OPEN = '2026-08-27T12:00:00.000Z'; // ET 08:00
+  const AFTER_BELL = '2026-08-27T13:30:00.000Z'; // ET 09:30
+  const preOpenPod = { id: 'tp3', status: GROUP_STATUS.BATTLE, startAnchor: { anchorEtDate: ANCHOR } };
+  const render = (pod) => renderToString(<ActiveTrainingGameCard pod={pod} onResume={() => {}} />);
+
+  beforeEach(() => { vi.useFakeTimers(); flagState.on = false; });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('flag OFF: an anchored pod pre-open still reads LIVE (byte-equivalent to today)', () => {
+    vi.setSystemTime(new Date(PRE_OPEN));
+    const html = render(preOpenPod);
+    expect(html).toContain('LIVE');
+    expect(html).not.toContain('AWAITING OPEN');
+  });
+
+  it('flag ON: the same pod at the same instant reads AWAITING OPEN', () => {
+    flagState.on = true;
+    vi.setSystemTime(new Date(PRE_OPEN));
+    const html = render(preOpenPod);
+    expect(html).toContain('AWAITING OPEN');
+    expect(html).not.toContain('>LIVE<');
+  });
+
+  it('flag ON: the same pod reads LIVE once the bell has rung', () => {
+    flagState.on = true;
+    vi.setSystemTime(new Date(AFTER_BELL));
+    expect(render(preOpenPod)).toContain('LIVE');
+  });
+
+  it('flag ON: a pod with NO startAnchor is untouched — it still reads LIVE', () => {
+    // The single-shot base-layer shape: no anchor, so the derivation cannot fire.
+    flagState.on = true;
+    vi.setSystemTime(new Date(PRE_OPEN));
+    expect(render({ id: 'tp4', status: GROUP_STATUS.BATTLE })).toContain('LIVE');
+  });
+
+  it('flag ON: an AWAITING_OPEN pod keeps its existing label', () => {
+    flagState.on = true;
+    vi.setSystemTime(new Date(PRE_OPEN));
+    expect(render({ id: 'tp5', status: GROUP_STATUS.AWAITING_OPEN })).toContain('AWAITING OPEN');
+  });
+
+  it('anti-vacuous: the flag is what changes the answer', () => {
+    vi.setSystemTime(new Date(PRE_OPEN));
+    flagState.on = false;
+    const off = render(preOpenPod);
+    flagState.on = true;
+    const on = render(preOpenPod);
+    expect(off).not.toBe(on);
   });
 });

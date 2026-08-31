@@ -31,6 +31,7 @@ import DraftPlaybackTheater from '../components/Tournament/DraftPlaybackTheater'
 import GroupFeed from '../components/Tournament/GroupFeed';
 import AwaitingOpenPodView from '../components/Tournament/awaitingOpen/AwaitingOpenPodView';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
+import usePreOpenPhase from '../hooks/usePreOpenPhase';
 import { useIsMobile } from '../hooks/useIsMobile';
 import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
 import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
@@ -66,11 +67,48 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
   // auth uid internally). Null until the agent layer has deployed.
   const { battle: myBattle, chain: myChain } = useMyTournamentBattle(podId);
 
-  const framing = useMemo(() => trainingStatusFraming(pod?.status), [pod?.status]);
-  const compositeContext = useMemo(() => deriveCompositeContext(pod, uid), [pod, uid]);
+  // PRE-OPEN PHASE (PREOPEN_PHASE_ROUTING_ENABLED): the pod is BATTLE, but the
+  // market has not opened yet on its anchor date. The status is CORRECT and is
+  // deliberately not moved — the 9:25 ET claims pass and the orchestrator duty
+  // marker both require it set before the open — so the pre-open window is a
+  // DISPLAY phase. The hook owns its own ticker, so this re-renders at the bell
+  // even though nothing writes to the group doc then. Flag-off it is a constant
+  // false and every expression below is byte-identical to before.
+  const preOpen = usePreOpenPhase(pod);
+
   // Training Pod Draft V2 (Phase 2) gate. Flag-off (or non-awaiting-open) →
   // today's video-based composition, byte-identical.
   const v2On = isTrainingPodDraftV2On();
+
+  // The ONE awaiting-vs-live decision for this host (BUILD_RULES §9). All FOUR
+  // consumers below bind to it — the header framing, the desktop layout gate, the
+  // arena takeover and the body ternary — so no subset can land and no pair can
+  // disagree. It is deliberately gated on `v2On` as well as the phase: with the V2
+  // flag rolled back the fallthrough body is the CLASSIC practice column, which
+  // reads live, so binding the header to the phase alone would print "awaiting
+  // open" over it.
+  //
+  // Under a V2 rollback `showAwaiting` is false everywhere and this host RENDERS
+  // identically to pre-change. Note the precise scope of that claim: with
+  // PREOPEN_PHASE_ROUTING_ENABLED also off, the hook short-circuits and nothing
+  // ticks, so flag-off is byte-identical outright. With PREOPEN on and V2 off the
+  // OUTPUT is identical but the hook still arms its 30s interval, so the render
+  // cadence is not — and in that combination the arena takes over pre-open and the
+  // header reads "Practice pod · live", i.e. this flag does not fix the practice
+  // host under a V2 rollback. Documented at the flag.
+  //
+  // `preOpenRouting` is the FLAG-GATED half on its own. The arena gate below binds
+  // to this rather than to `showAwaiting`, and the distinction is load-bearing:
+  // `showAwaiting` also contains the pre-existing `v2On && status === AWAITING_OPEN`
+  // term, so gating the arena on it would suppress a takeover that mounts today
+  // whenever an AWAITING_OPEN pod carries a non-null myBattle — a change with the
+  // flag OFF, which the dark merge forbids. It is true only when the pre-open
+  // routing would genuinely take over, and it implies showAwaiting.
+  const preOpenRouting = v2On && preOpen;
+  const showAwaiting = preOpenRouting || (v2On && pod?.status === GROUP_STATUS.AWAITING_OPEN);
+
+  const framing = useMemo(() => trainingStatusFraming(pod?.status, { preOpen: showAwaiting }), [pod?.status, showAwaiting]);
+  const compositeContext = useMemo(() => deriveCompositeContext(pod, uid), [pod, uid]);
   // Awaiting-open DESKTOP layout gate (TRAINING_POD_DESKTOP_ENABLED or
   // ?trainingPodDesktop=1) — only the V2 awaiting-open body, only at ≥1024. When
   // off / mobile / not-awaiting-open this is false and `page` stays today's
@@ -82,7 +120,7 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
   // 560px column on a wide screen. With the redesign flag off this expression
   // is byte-identical to before.
   const desktopPod = (isTrainingPodDesktopOn() || isAwaitingOpenRedesignOn()) && isWideDesktop
-    && v2On && pod?.status === GROUP_STATUS.AWAITING_OPEN;
+    && showAwaiting;
 
   const page = {
     background: tokens.bgApp,
@@ -159,7 +197,16 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
   // (awaiting_open), flag-off, or classic → today's practice column, byte-identical
   // on BOTH viewports (the gate short-circuits on ARENA_LIVE_ON before isDesktop).
   // The arena subsumes Flat6 + ClaimFlipWindow + GroupFeed; draft replay stays classic.
-  if (ARENA_LIVE_ON && myBattle && !classic) {
+  // `!showAwaiting`: the agent battle deploys BEFORE the bell (the fast lane on a
+  // pre-open draft, else the ~06:00 sweep), so `myBattle` exists all through the
+  // pre-open window and this takeover would otherwise preempt the awaiting
+  // surface entirely. This gate has no status test of its own — it was held off
+  // only by `myBattle` being null pre-deploy — so the condition is ADDED here.
+  // Bound to preOpenRouting (the flag-gated half), not the bare phase and not
+  // showAwaiting: the bare phase would suppress the takeover under a V2 rollback
+  // with no awaiting body to fall through to, and showAwaiting would change
+  // flag-OFF behaviour for an AWAITING_OPEN pod that already has a battle doc.
+  if (ARENA_LIVE_ON && myBattle && !classic && !preOpenRouting) {
     return (
       <div style={{ minHeight: '100vh', background: '#050609', padding: isDesktop ? 16 : 0, boxSizing: 'border-box' }}>
         <LeagueBattleArenaLive
@@ -198,7 +245,7 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
         </div>
       </div>
 
-      {v2On && pod.status === GROUP_STATUS.AWAITING_OPEN ? (
+      {showAwaiting ? (
         // Phase 2 (L4–L8): the rebuilt awaiting-open pod — no user-draft video;
         // countdown → user draftboard → best-remaining free agents → relocated
         // claims. The draft-replay theater is removed from THIS surface only;

@@ -109,6 +109,8 @@ const DARK_BY_DESIGN = {
   // Re-adding it while it ships true fails the DARK_BY_DESIGN integrity test
   // below. ClimbArena stays mounted behind the flag as the rollback path; its
   // removal is a separate, later PR.
+  PREOPEN_PHASE_ROUTING_ENABLED:
+    'pre-open display routing (spec V2.1) — display-only; flips only after a founder preview smoke of the 9:30 transition',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────

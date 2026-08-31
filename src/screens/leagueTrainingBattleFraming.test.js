@@ -63,3 +63,42 @@ describe('deriveCompositeContext', () => {
     expect(deriveCompositeContext({ status: GROUP_STATUS.AWAITING_OPEN }, uid)).toEqual({ composite: 0, userPoints: 0 });
   });
 });
+
+// ── PRE-OPEN PHASE (PREOPEN_PHASE_ROUTING_ENABLED) ───────────────────────────
+// The header binds to the SAME derivation the body routes on (BUILD_RULES §9):
+// a pod on its battle day but before the bell reads "awaiting open", never "live".
+describe('trainingStatusFraming — pre-open phase', () => {
+  it('frames a BATTLE pod as awaiting-open while preOpen is true', () => {
+    const f = trainingStatusFraming(GROUP_STATUS.BATTLE, { preOpen: true });
+    expect(f.label).toBe('Practice pod · awaiting open');
+    expect(f.sub).toMatch(/next market open/i);
+  });
+
+  it('frames the SAME pod as live once preOpen goes false at the bell', () => {
+    const f = trainingStatusFraming(GROUP_STATUS.BATTLE, { preOpen: false });
+    expect(f.label).toBe('Practice pod · live');
+  });
+
+  it('is byte-identical to the old one-arg call when the option is omitted (flag-off arm)', () => {
+    for (const s of [
+      GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.BATTLE, GROUP_STATUS.COMPLETE,
+      GROUP_STATUS.EXPIRED, GROUP_STATUS.FORMING, GROUP_STATUS.DRAFTING, undefined,
+    ]) {
+      expect(trainingStatusFraming(s)).toEqual(trainingStatusFraming(s, { preOpen: false }));
+    }
+  });
+
+  it('preOpen never rewrites a non-BATTLE status (it is a BATTLE-only phase)', () => {
+    // COMPLETE/EXPIRED must stay terminal even if a caller passed preOpen true —
+    // the derivation is BATTLE-only, so this can only be defensive, never routing.
+    expect(trainingStatusFraming(GROUP_STATUS.COMPLETE, { preOpen: true }).label).toBe('Practice pod · complete');
+    expect(trainingStatusFraming(GROUP_STATUS.EXPIRED, { preOpen: true }).label).toBe('Practice pod · expired');
+    expect(trainingStatusFraming(GROUP_STATUS.AWAITING_OPEN, { preOpen: true }).label).toBe('Practice pod · awaiting open');
+  });
+
+  it('anti-vacuous: preOpen is what changes the answer for a BATTLE pod', () => {
+    const off = trainingStatusFraming(GROUP_STATUS.BATTLE, { preOpen: false }).label;
+    const on = trainingStatusFraming(GROUP_STATUS.BATTLE, { preOpen: true }).label;
+    expect(off).not.toBe(on);
+  });
+});
