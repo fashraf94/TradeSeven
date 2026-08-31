@@ -1708,7 +1708,7 @@ export const MANDATE_FOUNDER_CREATE_ENABLED = true;
  * it — it is pinned directly in mandateFlags.test.js. A mode change takes effect
  * only after open batches drain (§3.3 drain protocol).
  */
-export const MANDATE_TRANSPORT_MODE = 'direct';
+export const MANDATE_TRANSPORT_MODE = 'batch';
 
 
 /**
