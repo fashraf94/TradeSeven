@@ -4285,6 +4285,24 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
       // P4: tournament CPU battles skip reflection (contract #5 passivity).
       pendingReflection: disposition.pendingReflection,
       reflectedAt: null,
+      // P-6 (Command Center Sync Pass 1): the debrief-liveness queue flag.
+      //
+      // agent-batch-review only ever selected ACTIVE battles
+      // (findActiveAgentBattles), so a fullday battle completing near 20:00 UTC
+      // was already 'completed' when the 20:25 run looked, and never got a
+      // daily review at all — the Dashboard's POST_CLOSE card would have shown
+      // "debrief pending" forever. This flag is what the review cron drains, so
+      // a battle that completes between runs is still picked up by the next one.
+      //
+      // A NEW field rather than a reuse of pendingReflection beside it:
+      // that one is a live work queue drained every 15 minutes by
+      // process-pending-reflections, and it carries a schema-presence
+      // invariant (see the discriminator at :4172 / :4510). Two consumers
+      // racing to clear one flag would mean whichever ran first won.
+      // Mirrors pendingReflection's CPU rule above: a passive tournament CPU
+      // battle gets no debrief, so queueing one would park an entry that can
+      // only ever be skipped (P4 contract #5 passivity).
+      reviewPending: disposition.pendingReflection,
       'cronState.evaluatingAt': null,
       statusFeed: [...existingFeed, {
         timestamp: now,

@@ -1858,3 +1858,30 @@ export const PROFIT_TARGET_EXECUTOR_ENABLED = true;
  */
 // Pinned by: metricSnapshots.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const METRIC_HISTORY_SNAPSHOT_ENABLED = true;
+
+/**
+ * Command Center Sync, Pass 1 (PASS1_SPEC_COMMAND_CENTER_SYNC_V1.md).
+ * DARK — default FALSE.
+ *
+ * When TRUE, a live BaggerBomb battle turns the Dashboard from a
+ * scoreboard-with-a-link into the surface that shows the agent's situation:
+ * the derived phase (PRE_OPEN / LIVE / LIVE_CLOSED / POST_CLOSE), the Agent
+ * Desk with score proximity and swap locks, the next-decision clock, and the
+ * Huddle tab label in the battle view.
+ *
+ * READ-ONLY by construction. This flag gates rendering only — Pass 1 writes no
+ * battle state, makes no model calls, and adds no listeners. When FALSE every
+ * surface is byte-identical to today, which its render tests assert directly.
+ *
+ * Read it at RENDER scope, never module scope: 15 of 56 featureFlags vi.mock
+ * call sites use a bare factory with no importOriginal spread, so a
+ * module-scope const in a shared module resolves to undefined inside those
+ * suites (the hazard documented in
+ * docs/audits/20260819_EXIT_BEHAVIOR_ASK3_BUILD_REVIEW.md:120).
+ *
+ * The flip is its own deliberate PR after a founder preview smoke — never a
+ * build PR. It updates the pin below AND drops the DARK_BY_DESIGN entry, in
+ * that same commit.
+ */
+// Pinned by: commandCenterSyncFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const COMMAND_CENTER_SYNC_ENABLED = false;

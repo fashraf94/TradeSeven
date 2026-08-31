@@ -64,6 +64,11 @@ const WIRE_PATHS = [WIRE_DOC, ENVELOPE_DOC, METRICS_DOC, EDITORIAL_DOC];
 // Positive-control paths (F2-4)
 const PUBLIC_STORY_DOC = 'fantasyTimesStories/story-pub-1';
 const AUTHED_OK_DOC = 'voiceLayerCache/battle-1';
+// P-4 (Command Center Sync Pass 1): voiceLayerCache reads are now owner-scoped
+// via a get() join onto the battle doc, so the positive control needs the
+// battle to exist and to name an owner. USER_UID owns it; PRIVILEGED_UID does
+// not, which is what makes the negative control below meaningful.
+const AUTHED_OK_BATTLE_DOC = 'agentBattles/battle-1';
 
 let testEnv;
 
@@ -106,14 +111,44 @@ beforeEach(async () => {
   await seed(EDITORIAL_DOC, { isoWeek: '2026-W31', canonicalRunId: null, runs: {} });
   await seed(PUBLIC_STORY_DOC, { headline: 'h', status: 'published' });
   await seed(AUTHED_OK_DOC, { battleId: 'battle-1', scoutAlerts: [] });
+  await seed(AUTHED_OK_BATTLE_DOC, { ownerId: USER_UID, status: 'active' });
 });
 
 describe('POSITIVE CONTROLS (F2-4) — the ruleset is loaded and not over-broad', () => {
   it('public story read succeeds unauthenticated', async () => {
     await assertSucceeds(getDoc(doc(asAnon(), PUBLIC_STORY_DOC)));
   });
-  it('known-allowed privileged op succeeds (authed voiceLayerCache read)', async () => {
+  // Still the F2-4 anti-vacuous control: a ruleset that denied everything
+  // would fail here. P-4 narrowed WHICH authed identity succeeds (the battle's
+  // owner) without giving up the "something is allowed" proof.
+  it('known-allowed privileged op succeeds (OWNER voiceLayerCache read)', async () => {
     await assertSucceeds(getDoc(doc(asUser(), AUTHED_OK_DOC)));
+  });
+});
+
+// P-4 (Command Center Sync Pass 1, PASS1_PHASE0_STOP_RULINGS_AND_GO.md §1).
+// Before this pass, `allow read: if request.auth != null` let ANY authenticated
+// user read ANY battle's voiceLayerCache — including an opponent's threshold
+// proximity, which the Agent Desk is about to surface. The rule now resolves
+// ownership by a get() join onto agentBattles/{battleId}.ownerId, because the
+// cache doc carries no owner field of its own and this pass writes no battle
+// state. These rows encode that policy so a future widening fails loudly.
+describe('voiceLayerCache — owner-scoped read (P-4)', () => {
+  it('a non-owner CANNOT read another user\'s cache, even with admin claims', async () => {
+    await assertFails(getDoc(doc(asPrivileged(), AUTHED_OK_DOC)));
+  });
+
+  it('an unauthenticated client cannot read', async () => {
+    await assertFails(getDoc(doc(asAnon(), AUTHED_OK_DOC)));
+  });
+
+  it('the owner still cannot WRITE (server-only, Admin SDK)', async () => {
+    await assertFails(setDoc(doc(asUser(), AUTHED_OK_DOC), { battleId: 'battle-1' }));
+  });
+
+  it('denies when the battle doc is missing (get() join has nothing to resolve)', async () => {
+    await seed('voiceLayerCache/orphan-1', { battleId: 'orphan-1', scoutAlerts: [] });
+    await assertFails(getDoc(doc(asUser(), 'voiceLayerCache/orphan-1')));
   });
 });
 

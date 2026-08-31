@@ -689,9 +689,22 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Voice Layer Cache — authenticated read, server-only write (Admin SDK)
+    // Voice Layer Cache — OWNER-scoped read, server-only write (Admin SDK).
+    //
+    // P-4 (Command Center Sync Pass 1, PASS1_PHASE0_STOP_RULINGS_AND_GO.md §1).
+    // Was `request.auth != null` — any authenticated user could read any
+    // battle's cache, including an opponent's threshold proximity. The doc
+    // carries no owner field of its own (api/cron/voice-layer-cache.js:801-817
+    // writes ten keys, none an owner), and this pass writes no battle state,
+    // so ownership is resolved by a lookup: the cache doc's ID *is* the
+    // battleId, and the battle doc carries ownerId.
+    //
+    // A missing agentBattles doc makes get() return null and the comparison
+    // error out, which denies — the safe direction.
     match /voiceLayerCache/{battleId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null
+                  && get(/databases/$(database)/documents/agentBattles/$(battleId))
+                       .data.ownerId == request.auth.uid;
       allow write: if false;
     }
 

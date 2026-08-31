@@ -100,6 +100,8 @@ const DARK_BY_DESIGN = {
   // below.
   MANDATE_DORMANCY_DOWNSHIFT_ENABLED:
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
+  COMMAND_CENTER_SYNC_ENABLED:
+    'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
   WEEKLY_LADDER_PLACEMENT_ENABLED:
     'Weekly ladder placement points on the monthly board — built dark; flips only after a founder preview smoke (flag flip is its own one-line PR)',
   // LEAGUE_FUSE_HERO_ENABLED intentionally ABSENT: it flipped true in its own

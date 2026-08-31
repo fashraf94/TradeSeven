@@ -2347,6 +2347,11 @@ export default function PortfolioDuel() {
   const [completedDraftBattles, setCompletedDraftBattles] = useState([]);
   const [activeTrainingBattles, setActiveTrainingBattles] = useState([]); // Firebase-persisted training battles
   const [activeAgentBattles, setActiveAgentBattles] = useState([]); // agentBattles collection (agent deploys)
+  // Command Center Sync (Pass 1): voiceLayerCache docs keyed by battleId, filled
+  // by the same 120s poll. Separate from activeAgentBattles on purpose — the
+  // poll's source guard pins exactly one setActiveAgentBattles call. Stays {}
+  // while COMMAND_CENTER_SYNC_ENABLED is dark, because the fetch never runs.
+  const [voiceLayerCaches, setVoiceLayerCaches] = useState({});
   // Delight Layer Task 2 Phase 2 (R-T2-S1): the starfield's live-game input, a
   // pure projection of the poll result above — ZERO new Firestore reads. It
   // deliberately reuses the SAME source and status filter the "No battle live"
@@ -3949,6 +3954,36 @@ export default function PortfolioDuel() {
         const groupsById = Object.fromEntries(resolved.filter(Boolean));
         const liveBattles = excludeVoidedGroupBattles(battles, groupsById);
         setActiveAgentBattles(liveBattles);
+
+        // Command Center Sync (Pass 1) — the ONE added read, piggybacked on
+        // this existing 120s cycle rather than given a poll or a listener of
+        // its own. The underlying voiceLayerCache doc refreshes every ~15 min,
+        // so 120s is already more live than the source.
+        //
+        // Lands in its OWN state setter, never merged into activeAgentBattles:
+        // App.agentBattlesPoll.test.js:76-78 pins exactly one
+        // setActiveAgentBattles call fed `liveBattles`, and that pin is a
+        // defect guard (R-T2-S11) worth keeping intact.
+        //
+        // Flag-gated so flag-OFF adds no Firestore reads at all — byte-identical
+        // includes the read bill. The flag is imported here, inside the async
+        // closure, rather than at module scope (the bare-factory vi.mock hazard).
+        const { COMMAND_CENTER_SYNC_ENABLED } = await import('./config/featureFlags');
+        if (COMMAND_CENTER_SYNC_ENABLED && liveBattles.length > 0) {
+          const cacheEntries = await Promise.all(liveBattles.map(async (b) => {
+            try {
+              const csnap = await getDoc(doc(db, 'voiceLayerCache', b.id));
+              return csnap.exists() ? [b.id, csnap.data()] : null;
+            } catch (cacheErr) {
+              // Fail-open per battle, exactly as the group lookup above does: a
+              // missing cache costs the Desk its proximity block, never the
+              // card. The Desk renders posture + feed without it.
+              console.error('Error resolving voice layer cache for the Desk (rendering without it):', cacheErr);
+              return null;
+            }
+          }));
+          setVoiceLayerCaches(Object.fromEntries(cacheEntries.filter(Boolean)));
+        }
       } catch (error) {
         // RETAIN the last-known-good battles instead of blanking the list. A
         // transient Firestore error must not flip the "No battle live" card to
@@ -8710,6 +8745,7 @@ export default function PortfolioDuel() {
               activeDraftBattles={activeDraftBattles}
               activeTrainingBattles={activeTrainingBattles}
               activeAgentBattles={activeAgentBattles}
+              voiceLayerCaches={voiceLayerCaches}
               lobbyBattles={lobbyBattles}
               completedBattles={completedBattles}
               setCurrentBattle={setCurrentBattle}
@@ -8760,6 +8796,7 @@ export default function PortfolioDuel() {
                 setShowForge={setShowForge}
                 setCurrentBattle={setCurrentBattle}
                 activeAgentBattles={activeAgentBattles}
+                voiceLayerCaches={voiceLayerCaches}
                 onCreateAgentBattle={handleCreateAgentTrainingBattle}
                 onEnterBattle={handleEnterCeremonyBattle}
                 onOpenAgentBattle={handleOpenAgentBattle}

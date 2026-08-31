@@ -12,6 +12,38 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
+
+// P-6 (Command Center Sync Pass 1): completed battles still owed a debrief.
+//
+// WHY THIS EXISTS. This cron fires at 20:25 and 21:25 UTC and, until now,
+// only ever looked at ACTIVE battles. completeBattle can land around 20:00
+// UTC, so a fullday battle that expired just before the first run was already
+// 'completed' when the query ran and was never reviewed at all — the
+// Dashboard's POST_CLOSE card would show "debrief pending" indefinitely. That
+// is the liveness half of P-6; the pending card without it would just be a
+// prettier way to display a broken pipeline.
+//
+// SHAPE. Single-field equality, so Firestore auto-indexes it — no composite
+// index and no schema deploy, unlike a `status == completed AND completedAt >=
+// X` window, which none of the six existing agentBattles composite indexes
+// serves. The flag is set by completeBattle (api/cron/agent-evaluate.js) and
+// cleared in the same write that appends the review, so a crash between the
+// two leaves the battle in the queue for the next run rather than dropping it.
+//
+// Bounded per run for the same reason process-pending-reflections is: this
+// handler makes a model call per battle and runs on a cron budget. A backlog
+// drains across runs.
+export const REVIEW_PENDING_LIMIT = 5;
+
+export async function findReviewPendingBattles(db) {
+  const snapshot = await db
+    .collection('agentBattles')
+    .where('reviewPending', '==', true)
+    .limit(REVIEW_PENDING_LIMIT)
+    .get();
+
+  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+}
 import { getCurrentTradingDayServer } from '../_utils/agentEvalPromptAssembly.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
@@ -24,6 +56,12 @@ import { renderLegacyDirectives } from '../_utils/legacyDirectiveSanitize.js';
 import { resolveAttributionAgentId } from '../_utils/casualClone.js';
 
 export const config = { maxDuration: 60 };
+
+// Stop starting new reviews this far into the 60s budget. One review can cost
+// ~30s (Haiku 15s + Gemma debrief 15s), so a run that begins one at :50 is
+// killed mid-flight; better to defer it to the next tick with its queue flag
+// intact.
+const TIME_BUDGET_MS = 45_000;
 
 const LOG_PREFIX = '[BatchReview]';
 
@@ -68,13 +106,52 @@ function isToday(isoStr, todayStr) {
   return isoStr.slice(0, 10) === todayStr;
 }
 
-async function processBattleReview(db, battle) {
+/**
+ * Leave the P-6 queue without having written a review.
+ *
+ * A skip is a TERMINAL outcome — "already reviewed" and "no activity" both mean
+ * there is nothing left to do for this battle — so the flag must clear here too.
+ * An earlier version cleared it only in the review write, which meant every
+ * skipped battle stayed in the queue forever; five of those permanently starve
+ * a limit-5 drain and no battle ever gets a debrief again. That is strictly
+ * worse than the bug P-6 was written to fix.
+ *
+ * Failures are deliberately NOT drained: a thrown error leaves the flag set so
+ * the next run retries, which is the whole point of a queue flag.
+ */
+export async function releaseReviewPending(db, battleId) {
+  try {
+    await db.collection('agentBattles').doc(battleId).update({ reviewPending: false });
+  } catch (err) {
+    // Non-fatal: the battle stays queued and the next run retries it.
+    console.error(`${LOG_PREFIX} Battle ${battleId}: failed to clear reviewPending:`, err.message);
+  }
+}
+
+export async function processBattleReview(db, battle, { clearReviewPending = false } = {}) {
   const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
+  // Which day's review would this be?
+  //
+  // For an ACTIVE battle it is today's. For a QUEUE-SOURCED (completed) battle
+  // it is the day the battle ENDED — which is usually yesterday, because the
+  // queue exists precisely for battles that completed after the day's last run.
+  //
+  // Deduping a completed battle against todayStr was a real defect: a battle
+  // reviewed while still active on day D, completing overnight, would find no
+  // review dated D+1 and be reviewed a SECOND time — a duplicate debrief, a
+  // duplicate statusFeed beat, and a duplicate lesson arrayUnion'd onto the
+  // agent doc, which feeds prompt assembly. A completed battle gets one final
+  // debrief, keyed to its own last day.
+  const reviewDate = (clearReviewPending && battle.completedAt)
+    ? new Date(battle.completedAt).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    : todayStr;
+
   // Check if review already done
-  if ((battle.dailyReviews || []).some(r => r.date === todayStr)) {
-    console.log(`${LOG_PREFIX} Battle ${battle.id}: review already exists for ${todayStr}, skipping`);
+  if ((battle.dailyReviews || []).some(r => r.date === reviewDate)) {
+    console.log(`${LOG_PREFIX} Battle ${battle.id}: review already exists for ${reviewDate}, skipping`);
+    if (clearReviewPending) await releaseReviewPending(db, battle.id);
     return { status: 'skipped', reason: 'already_reviewed' };
   }
 
@@ -91,6 +168,7 @@ async function processBattleReview(db, battle) {
   // If no activity today, skip
   if (todayTrades.length === 0 && todayEvals.length === 0) {
     console.log(`${LOG_PREFIX} Battle ${battle.id}: no activity on day ${currentDay}, skipping`);
+    if (clearReviewPending) await releaseReviewPending(db, battle.id);
     return { status: 'skipped', reason: 'no_activity' };
   }
 
@@ -220,6 +298,12 @@ ${directiveLines}`;
   };
 
   await battleRef.update({
+    // P-6: the queue flag clears in the SAME write that appends the review, so
+    // a battle can never be dropped from the queue without having been
+    // reviewed (the drain pattern process-pending-reflections.js:87-90 uses).
+    // Only for queue-sourced battles: active battles never carried the flag,
+    // and writing it onto them would put a completion field on a live doc.
+    ...(clearReviewPending ? { reviewPending: false } : {}),
     dailyReviews: [...(battle.dailyReviews || []), reviewEntry],
     statusFeed: [...existingFeed, {
       timestamp: new Date().toISOString(),
@@ -379,16 +463,51 @@ export default async function handler(req, res) {
     // ---- 2. Find all active battles ----
     const battles = await findActiveAgentBattles(db);
 
-    if (battles.length === 0) {
+    // ---- 2b. P-6: drain the reviewPending queue ----
+    // Additive, and deliberately a SECOND query rather than a change to
+    // findActiveAgentBattles: that function lives in the §1-fenced
+    // api/_utils/agentBattleService.js, and widening it there would be fence
+    // contact. This one is local, single-field, and needs no composite index.
+    const pending = await findReviewPendingBattles(db);
+    if (pending.length > 0) {
+      console.log(`${LOG_PREFIX} Found ${pending.length} completed battle(s) awaiting a debrief`);
+    }
+
+    if (battles.length === 0 && pending.length === 0) {
       return res.status(200).json({ reviewed: 0, message: 'No active agent battles' });
     }
 
     console.log(`${LOG_PREFIX} Found ${battles.length} active agent battle(s)`);
 
     // ---- 3. Process each battle ----
-    for (const battle of battles) {
+    // Queue-sourced battles run through the SAME review path; the only
+    // difference is that their write also clears the flag.
+    // De-duped: a battle that completes BETWEEN the two queries above appears in
+    // both lists, and reviewing it twice would append two dailyReviews entries
+    // for one day. The queue entry wins, because it is the one that also needs
+    // its flag cleared.
+    // The QUEUE GOES FIRST. One review can cost ~30s of the handler's 60s
+    // maxDuration (a Haiku call with a 15s timeout, then a Gemma debrief with
+    // another 15s), so whatever is last in this list may not run at all. A
+    // queue entry is a battle that has ALREADY missed its debrief once; an
+    // active battle gets another chance on the next tick.
+    const seen = new Set();
+    const work = [];
+    for (const b of pending) { seen.add(b.id); work.push({ battle: b, clearReviewPending: true }); }
+    for (const b of battles) { if (!seen.has(b.id)) work.push({ battle: b, clearReviewPending: false }); }
+
+    // Stop STARTING new reviews once the handler is close to its budget, rather
+    // than being killed mid-write. An unstarted battle keeps its flag (or stays
+    // active) and is picked up next run — the queue is designed to drain across
+    // runs.
+    const deadline = Date.now() + TIME_BUDGET_MS;
+    for (const { battle, clearReviewPending } of work) {
+      if (Date.now() > deadline) {
+        console.log(`${LOG_PREFIX} Time budget reached; ${work.length - summary.reviewed - summary.skipped - summary.errors} battle(s) deferred to the next run`);
+        break;
+      }
       try {
-        const result = await processBattleReview(db, battle);
+        const result = await processBattleReview(db, battle, { clearReviewPending });
         if (result.status === 'reviewed') {
           summary.reviewed++;
         } else {

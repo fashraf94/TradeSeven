@@ -40,6 +40,12 @@ import DeployCeremony from './deployCeremony/DeployCeremony';
 // byte-identical to today.
 import { SCOUTING_BOARD_ENABLED, CASUAL_CLONE_CONCURRENCY_ENABLED, isDeployCeremonyOn, isStarfieldOn } from '../../config/featureFlags';
 import { deriveDeployGate } from '../../utils/commandCenterLiveBattles';
+// Command Center Sync (Pass 1): the ONE seam through which this shell sees
+// battle state. No field of agentBattles / voiceLayerCache / agents is read
+// directly here — that is the DO-NOT line the pass exists to hold (spec §5).
+import useCommandCenterSync from '../../hooks/useCommandCenterSync';
+import { syncForBattle } from '../../adapters/baggerbombAdapter';
+import AgentDesk from './desk/AgentDesk';
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -72,6 +78,7 @@ export default function CommandDashboardDesktop({
   setShowForge,
   setCurrentBattle,
   activeAgentBattles = [],
+  voiceLayerCaches = {},
   onCreateAgentBattle,
   onOpenAgentBattle,
   onEnterBattle,
@@ -97,6 +104,15 @@ export default function CommandDashboardDesktop({
   const { orderedLiveBattles, deployBlockedByLive, deployBlockReason, equipLocked } =
     deriveDeployGate({ liveBattles, agent, concurrencyEnabled: concurrencyOn });
   const recentCompleted = useRecentCompletedAgentBattles(3);
+  // null while the flag is dark, which is what keeps flag-OFF byte-identical:
+  // the slots below receive nothing and render exactly what they rendered.
+  // The Desk describes the SAME battle the first Manage card below shows.
+  // liveBattles[0] is UNSORTED; orderedLiveBattles is the deterministic
+  // order the cards render in, so with a ranked battle and a casual clone
+  // live together the Desk would otherwise describe one and sit above the
+  // other, unlabelled.
+  const deskBattle = orderedLiveBattles[0] || liveBattle;
+  const sync = useCommandCenterSync(deskBattle, voiceLayerCaches[deskBattle?.id], agent);
   // Loop rail. Kept on isLive by design: it marks the FURTHEST beat the daily loop has
   // reached (a concurrent BaggerBomb stays deployable beside a live ranked battle, but
   // the furthest beat is still Manage). (Phase 1.5 deliberate disposition; mirrors mobile.)
@@ -249,6 +265,10 @@ export default function CommandDashboardDesktop({
         {/* RIGHT — the battle lifecycle (folds beneath center at ≤1199) */}
         <div className="cmd-desk-col" style={{ ...colScroll, gridArea: 'lifecycle', display: 'flex', flexDirection: 'column', gap: 22 }}>
           <div>
+            {/* Command Center Sync (Pass 1): the Agent Desk. `sync` is null while
+                the flag is dark, and AgentDesk returns null for a null sync, so
+                flag-OFF this renders nothing and the column is unchanged. */}
+            {sync && <AgentDesk sync={sync} accent={accent} />}
             <SectionLabel n="04" label={isLive ? 'Manage · live' : 'Manage'} color={isLive ? accent : CMD.ink3} />
             {/* Flag-ON: every live battle, each labeled by type, deterministically
                 ordered — no unsorted liveBattles[0] (acceptance #4). Flag-OFF: the
@@ -258,7 +278,7 @@ export default function CommandDashboardDesktop({
             ) : concurrencyOn ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
                 {orderedLiveBattles.map((b) => (
-                  <ManageStation key={b.id} battle={b} showType agent={agent} accent={accent} onOpen={onOpenAgentBattle} />
+                  <ManageStation key={b.id} battle={b} showType agent={agent} accent={accent} onOpen={onOpenAgentBattle} sync={syncForBattle(sync, b.id)} />
                 ))}
               </div>
             ) : (

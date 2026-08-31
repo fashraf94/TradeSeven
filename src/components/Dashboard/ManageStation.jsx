@@ -14,6 +14,7 @@ import { Clock, ArrowRight } from 'lucide-react';
 import GainLossBadge from '../shared/GainLossBadge';
 import { CMD, alpha, Mono } from './commandUI';
 import { classifyBattleType, battleTypeLabel, BATTLE_TYPE_RANKED } from '../../utils/commandCenterLiveBattles';
+import { DESK_COPY } from './desk/deskCopy';
 
 function timeLeft(expiresAt) {
   if (!expiresAt) return null;
@@ -26,12 +27,35 @@ function timeLeft(expiresAt) {
   return `${h}h ${mins % 60}m left`;
 }
 
-export default function ManageStation({ battle, agent, accent, onOpen, showType }) {
+export default function ManageStation({ battle, agent, accent, onOpen, showType, sync = null }) {
   if (!battle) return null;
   const agentName = battle.agentContext?.agentName || agent?.name || 'Your agent';
   const score = battle.scoreState?.currentScore;
   const tradeCount = battle.scoreState?.tradeCount ?? (battle.trades?.length || 0);
   const left = timeLeft(battle.expiresAt);
+
+  // Command Center Sync (Pass 1, spec §7 Manage rail). `sync` is the adapter
+  // object, or null while the flag is dark — in which case every value below
+  // falls back to exactly what this card rendered before.
+  //
+  // The line this replaces was an unconditional "{agentName} is trading". It
+  // is false for most of a fullday battle's life: evals are hard-gated to
+  // regular trading hours (agent-evaluate.js:284-286), so overnight, at the
+  // weekend and on holidays the agent is not trading and the card said it was.
+  const phase = sync?.phase ?? null;
+  const activity = phase === 'LIVE' || phase === null
+    ? DESK_COPY.manageLive(agentName)
+    : phase === 'PRE_OPEN'
+      ? DESK_COPY.managePreOpen
+      : DESK_COPY.manageClosedResuming(sync?.nextOpenEt);
+  // The expiry countdown STAYS in the right rail. It is still true off-hours
+  // and, for a crypto fullday battle (which expires 8:00 PM ET, four hours
+  // after the close), it is the truer of the two facts — that battle ends
+  // before the next open the resume line names. So the resume time rides the
+  // activity line instead of displacing the countdown. Both are derived from
+  // the same adapter field the Desk's posture line uses, so no two surfaces can
+  // disagree about them (BUILD_RULES §9).
+  const rightRail = left || (phase === 'PRE_OPEN' ? DESK_COPY.manageResumes(sync?.nextOpenEt) : null);
   // Header label and the opponent line both derive from ONE classification (§9 —
   // never a second raw read of battle.groupId). Gated by showType so flag-off (no
   // showType passed) is byte-identical to the legacy "Battle live … · vs CPU" card.
@@ -59,16 +83,16 @@ export default function ManageStation({ battle, agent, accent, onOpen, showType 
           />
           <Mono style={{ fontSize: 11, letterSpacing: '0.16em', color: accent, textTransform: 'uppercase', fontWeight: 600 }}>{typeLabel ? `${typeLabel} · live` : 'Battle live'}</Mono>
         </div>
-        {left && (
+        {rightRail && (
           <Mono style={{ fontSize: 12, color: CMD.ink2, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            <Clock size={13} color={CMD.ink2} /> {left}
+            <Clock size={13} color={CMD.ink2} /> {rightRail}
           </Mono>
         )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 12, gap: 12 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, color: CMD.ink, lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agentName} is trading</div>
+          <div style={{ fontSize: 13, color: CMD.ink, lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activity}</div>
           <Mono style={{ fontSize: 11, color: CMD.ink3, marginTop: 3, display: 'block' }}>{tradeCount} trades{showVsCpu ? ' · vs CPU' : ''}</Mono>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>

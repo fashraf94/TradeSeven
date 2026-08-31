@@ -1,0 +1,551 @@
+# Command Center ↔ Battle View Sync — Design Framework V1.2
+
+**Date:** August 31, 2026
+**Status:** Design framework, pre-spec. **Supersedes V1.1** (and, through it, V1, Amendment A, Amendment B). Locked items are marked LOCKED. Open items are in §15. All proposed rulings are confirmed (§0). Amended in place Aug 31 (evening) for D-20, D-21, §7.1.
+**Prepared by:** Fable (Anthropic), with Flash. Design authority for this arc lives in this chat.
+**Commit location:** `docs/audits/COMMAND_CENTER_BATTLE_SYNC_DESIGN_FRAMEWORK_V1_2.md`
+
+**Inputs folded into this version:**
+- Everything in V1.1 (V1, Amendment A, Sol pass one, Phase 0 discovery, founder rulings of Aug 31, Amendment B with corrections)
+- **Sol second pass on V1.1 (Aug 31)** — 2 blockers, 5 majors, 2 advisories; disposition in Appendix C. Verdict: "V1.1: proceed, with targeted corrections." All corrections applied here.
+
+**Companions:** `SOL_REVIEW_BRIEF_COMMAND_CENTER_BATTLE_SYNC_V1.md` · `PHASE0_COMMAND_CENTER_BATTLE_SYNC_DISCOVERY.md` · `DRB_DUAL_LENS_BOOKMARK.md` (C1/C2 origin) · `QUARTERLY_PORTFOLIO_RESTRUCTURE_CHARTER_V1_1.md` (connection model, borrowed) · `COMMAND_CENTER_UNIFICATION_CONTEXT_HANDOVER.md` (three-surface inversion) · `FANTASYTRADES_VOICE_LAYER_PRODUCT_STANCE_V1_1_ADDENDUM_B.md` (evidence-first, Research lane)
+
+---
+
+## 0. Rulings of record
+
+| # | Item | Ruling | By | Date |
+|---|---|---|---|---|
+| — | Authority line | Agent has 100% execution authority. No veto, no manual trade, no co-pilot. | Founder (standing) | Jun 10 |
+| — | Model | Gemma 4 26B stays for this arc. Prerequisite C re-pointed at GPT-5.6 Luna + GLM-5.3-Flash, runs in parallel, off this arc's critical path. | Founder | Aug 30 |
+| — | Vision | Command Center is the Voice Layer home for all games. BaggerBomb first. Shell is game-agnostic; games are adapters. | Founder | Aug 31 |
+| — | Design authority | One chat. Parallel outputs come here as input and are adjudicated, not appended. | Founder | Aug 31 |
+| **Duration** | Beta battle length | **Fullday for beta.** 3-day is a fenced constant (`agentBattleService.js:35`, inactive `'legacy'` path) and is its own gated ruling (D-14). Phase model is duration-agnostic so the flip changes nothing here. | Founder ("either is fine") + Fable lean | Aug 31 |
+| **D-2** | Dual surface vs collapse | **Dual surface.** Battle View keeps its chat; Dashboard gains the Desk (Pass 1) and Talk It Over (Pass 2). Layout via Claude Design *after* §3 adapter shape is fixed. Makes P-1 a hard prerequisite. | Founder | Aug 31 |
+| **D-4** | Budget | **10 per day.** Equals current per-battle behavior under fullday. Under 3-day requires a reset in `chat.js` (budget is cumulative today) — scoped to D-14. | Founder | Aug 31 |
+| **D-5** | Entry cards | Five cards per §6.1. "Closest to a trade" and "Why are we holding X" deleted. | Fable, founder deferred | Aug 31 |
+| **Opponent** | Dashboard visibility | Dashboard shows the user's own portfolio only. Opponent view stays in Battle View. | Founder | Aug 31 |
+| **D-3** | Resting state | Resolved by discovery: distance-to-score via `voiceLayerCache.thresholdProximity`, discrete-check cadence, existing idle copy. §5. | Fable, from Phase 0 | Aug 31 |
+| **D-6** | Mid-battle rule proposals | Already structurally suppressed (`chat.js` gates `forgeSuggestions` on `mode==='review'`). Semantic honesty rule (§6.4) covers what the agent *says*. Closed. | Fable, from Phase 0 | Aug 31 |
+| **D-9** | Shell + adapter ratified | Ratified by adoption of the vision. §3 rule is LOCKED; §3.2 schema is **provisional** (Sol pass two). | Founder | Aug 31 |
+| **D-13 (proposal)** | Front-door gate timing and Condition 2 ownership | **Proposed, then confirmed below:** the gate applies at **Pass 2**, not Pass 1 — Pass 1 puts no conversation on the Dashboard, so there is nothing for the precedence contradiction to say. Chat-side reconciliation becomes **P-7, a Pass 2 prerequisite**, moved forward from Pass 3. Eval-side stays with exit-behavior Ask 2. | Fable proposal — **founder to confirm** | Aug 31 |
+| **D-18 (proposal)** | Directive slot contract | **Proposed, then confirmed below:** `battle.directive` is a **single slot, latest-wins, by declaration.** A new directive supersedes the prior one; the prior is rendered SUPERSEDED in the ledger; both surfaces show the current directive above the composer before send. | Fable proposal — **founder to confirm** | Aug 31 |
+| **D-17** | `directiveGate` flag state | Elevated from discovery item to **hard Pass 2 gate.** §6 language corrected to "mechanism exists; live enforcement unverified." | Sol pass two, sustained | Aug 31 |
+| **D-13** | Front-door timing / Condition 2 | **Confirmed.** Gate bites at Pass 2; P-7 minimum honest fix; ownership check with harness-revamp first. | Founder | Aug 31 |
+| **D-18** | Directive slot contract | **Confirmed.** One slot, newest replaces oldest, visibly. | Founder | Aug 31 |
+| **D-20** | Mid-battle watchlist expansion via conversation | **Deferred.** Game-rule change (frozen `agentContext`, fenced; swap universe; player asymmetry). Bookmarked as a possible post-launch *mode*, not a chat lever. | Founder | Aug 31 |
+| **D-21** | "Add X" response shape | **Ruled.** Not a dead end. The agent researches the name on request and returns evidence, with next-deploy as the forward path. The Research lane's first thesis type is pulled forward from Pass 4 into Pass 2 as a narrow slice (§7.1). | Founder | Aug 31 |
+
+### 0.2 Corrections applied from Sol's second pass
+
+1. **"Predicts" → "measures."** The Desk measures the scoreboard. Prediction was removed from the design and is now removed from the governing sentence. §5.1.
+2. **§11/§12 sequencing contradiction resolved** by D-13 above. §12 now states when the gate bites.
+3. **Ledger collapsed to what is provable.** Two-state floor (FILED → HONORED-by-trade / EXPIRED); "Seen" and "not honored" are gated on discovery item 8 finding a real per-directive receipt. §8.
+4. **P-1 split** into what the transaction proves (post-close TOCTOU) and what it does not (concurrent-directive survival, budget check atomicity). §10.
+5. **P-6 is a liveness prerequisite** — pending UI *plus* guaranteed eventual debrief. §10.
+6. **Condition 1 reworded** — shared authoritative truth for overlapping concepts, not a superset. §12.
+7. **§3.2 schema marked provisional** — the rule is locked, the field contract is BaggerBomb adapter v1 until the league adapter validates it. §3.
+8. **"File this" flagged** as Pass 4's central product experiment. §7.
+9. **Messaging rule** — product copy describes what exists now. §12.
+
+### 0.1 Corrections applied to Amendment B on absorption
+
+1. **`gateState` ("what would have to be true for the agent to move") is replaced by `scoreProximity` + `swapLock`.** Discovery found that the persisted, comparable proximity object measures distance to the next *scoring* threshold, not to agent action. Rendering it as action-proximity is the fabricated-certainty failure Sol named. §5.1.
+2. **The ledger's "Seen" state has a real receipt for honored directives**, not just timestamp derivation: the control prompt instructs Haiku to echo `directiveThreadId` in `submit_trade_decision`, and `AgentChat` already renders "↳ from directive." Timestamp fallback applies only to not-honored. §8.
+3. **Passes 3 and 4 are separate arcs with their own kickoffs after Pass 2 lands.** The shell constraint (§3) is honored in Pass 1 so they are adapters, not rewrites. §11.
+
+---
+
+## 1. Purpose
+
+The Dashboard and the BaggerBomb Battle View are two products that share an agent. Pre-battle the Dashboard is the whole experience; once a battle starts it becomes a scoreboard with a link and everything moves behind a tab bar.
+
+This arc makes them one continuous surface, and — per the Aug 31 vision — makes that surface the Voice Layer home for every game. The Dashboard remains the pre-battle loop; once a battle is live it becomes where the user feels the agent thinking and can influence it, without the agent ever surrendering execution authority.
+
+**Why the unification is worth doing:** the three agent surfaces have inverted properties. Deploy has real archetype force. Eval makes every trade with ~3% archetype content. Chat has the richest personality (~12%), the thinnest state, and no agency. The surface that talks is not the surface that trades. Unifying the UI does not fix that; it moves it to the front door — which is precisely why it is worth doing, **if the fix is sequenced ahead of the promotion** (§12).
+
+---
+
+## 2. The authority line — LOCKED
+
+The agent is 100% responsible for every action. The user influences through conversation and Signal Drop. Nothing in this arc adds a veto, a manual trade, or a co-pilot path. Launch is autopilot-only. Not reopened.
+
+---
+
+## 3. The shell and the adapter — LOCKED (pending Sol)
+
+### 3.1 One shell; the game is an adapter
+
+| Shared across all games | Swapped per game |
+|---|---|
+| Chat thread (Voice Layer, existing modes) | State adapter (§3.2) |
+| Action ledger (§8) | Action vocabulary (§3.3) |
+| Agent Desk + resting state (§5) | Phase enumeration (§4) |
+| Entry cards (§6.1), derived from adapter state | Next-decision clock source |
+| Research lane (§7, Pass 4) | — |
+
+**Tabs are per live battle, not per game type.** Each tab owns its own thread, ledger, and directives. No cross-battle bleed.
+
+**Beta scope rule:** BaggerBomb owns the Command Center. League surfaces (fuse board, arena) stay league. Discovery confirmed a user can hold a ranked battle (real agent) and a BaggerBomb battle (casual clone `casual-agent-{odUserId}`) simultaneously with `CASUAL_CLONE_CONCURRENCY_ENABLED = true`. The concurrent pair is handled by **scope**, not by multiplexing one card between two battles. The Manage-card poll already spans both agentIds (`App.jsx:3913-3917`); the shell filters to the BaggerBomb battle at beta.
+
+**Constraint on Pass 1:** shell components read battle state only through the adapter shape below, even though only the BaggerBomb adapter exists. **No direct document-field reads from shell components.** This is the DO-NOT-VIOLATE line for CC.
+
+### 3.2 Adapter fields — BaggerBomb adapter v1 (schema PROVISIONAL)
+
+**What is locked is the rule: shell components read only through adapters.** What is *not* locked is this field list as the universal contract. Sol's second pass is right that `scoreProximity`, `swapLock`, `book`, `tradeCount`, `recentMotives`, and the shape of `score` are BaggerBomb concepts wearing generic names. Putting them behind an adapter is better than reading documents directly; it does not by itself make the shell game-agnostic. **The abstraction is validated when the league adapter maps into it in Pass 3.** Until then this is adapter v1, and the shell should treat any field it does not need as optional.
+
+| Field | Source at HEAD (BaggerBomb) | Notes |
+|---|---|---|
+| `game` | battle doc | id, type, label |
+| `phase` | derived: `status` × `getMarketState().state` | §4 |
+| `score` | `scoreState.currentScore`, `tradeCount` | already on the Manage poll |
+| `book` | battle positions, tiers, entry, P&L, held-since | |
+| `scoreProximity` | `voiceLayerCache/{battleId}.portfolioBriefs[].thresholdProximity` — `currentMultiplier` (ATR units), `redZone.zoneProgressPercent`, `direction`, `targetMultiple` | ~15-min refresh in market hours. **Not** action proximity. §5.1 |
+| `swapLock` | same object, `swapLock.distancePercent` | the one action-relevant leg |
+| `lastCheckedAt` / `nextDecisionAt` | eval cron cadence (15 min, RTH, weekdays) + `getNextMarketOpen()` | §5.2 |
+| `directives` | `agentBattles.directive` + `chatExchanges[].directiveThreadId` | §8 |
+| `recentMotives` | swap-motive observability (exit-behavior Ask 1) | populate when Ask 1 ships; absent until then |
+| `vocabulary` | `archetypeAdjustments.js` canonical allowlist via `directiveGate.js` | §6.5 |
+| `loadout` | `agent` doc via `useAgent`; locked-visible via `benchLocked` | ships today |
+
+### 3.3 Action vocabulary, per game (draft)
+
+| Game | Agent acts… | Vocabulary source |
+|---|---|---|
+| BaggerBomb | 15-min eval ticks, RTH | `directiveGate.js` allowlist for the equipped archetype |
+| Snake Draft / League Tournament (agent layer) | next eval tick; next-day claim window | same allowlist. **Claims and flips are user-layer only** — the agent cannot touch them and the chips must say so. Pass 3. |
+| Training pod | inherits from engine mode | Pass 3 |
+| The Mandate | term boundary | out of scope; listed so the shell does not preclude it |
+
+---
+
+## 4. The phase model — four states, derived
+
+Battle `status` is ad-hoc `'active'` / `'completed'` (no enum). Market state comes from `getMarketState()` → `OPEN` / `PRE_MARKET` / `CLOSED_AFTERHOURS` / `CLOSED_WEEKEND` / `CLOSED_HOLIDAY` (`marketSchedule.js:180-213`). `chat.js:125` already composes these two. The phase is **derived, never stored.**
+
+| Phase | Derivation | Agent is… |
+|---|---|---|
+| **PRE_OPEN** | `active` × (`PRE_MARKET` or closed) and no eval has run yet | waiting for first check |
+| **LIVE** | `active` × `OPEN` | checking every 15 min |
+| **LIVE_CLOSED** | `active` × any closed state, after ≥1 eval | dormant until next open. Evals are hard-gated to RTH (`agent-evaluate.js:284-286`); only expiry completion runs off-hours |
+| **POST_CLOSE** | `completed` | done; debrief on delay |
+
+**Duration-agnostic.** Under fullday, LIVE_CLOSED is evening-to-expiry. Under 3-day, it is overnights and weekends. Same derivation, same rendering.
+
+| Slot | PRE_OPEN | LIVE | LIVE_CLOSED | POST_CLOSE |
+|---|---|---|---|---|
+| Primary card | DRB, plus "first check at 9:30 ET" | **Agent Desk** | Desk, dormant mode | Debrief lead; **"debrief pending" state required** (see P-6) |
+| Action row | Deploy / preview | Talk it over · View battle | Talk it over · View battle | Talk it over (review) · Game Tape |
+| Loadout bench | editable (no battle) / locked-visible | locked-visible (`benchLocked`, ships) | locked-visible | editable |
+| Manage rail | absent / clock | score, clock, trades | score, "resumes Mon 9:30" | final |
+| Rail step | 01–03 | 04 | 04 | 05 |
+
+**Open discovery (D-16):** what chat mode `chat.js:125` selects during LIVE_CLOSED. If it routes to review mode (directives off, budget 5), Talk It Over during closed hours is a different product than during open hours and the card row must say so.
+
+**Memory discrepancy logged:** `isPreOpenOnBattleDay` / `usePreOpenPhase` are NOT FOUND at HEAD on this branch despite memory recording them as shipped through Phase 3. Likely on an unmerged branch. **This phase model does not depend on them** — it uses `getMarketState()` directly.
+
+---
+
+## 5. The Agent Desk and the honest resting state
+
+### 5.1 Distance to score, not distance to action — LOCKED
+
+The V1 framing — "what would have to happen for me to move" — was a causal promise the system cannot keep. Sol showed the gate is compound and heterogeneous; discovery showed the one persisted, comparable proximity object measures **distance to the next bonus/bust scoring threshold**, not distance to a risk trigger. A position can sit 0.2 ATR from a bonus tier and the agent may hold straight through it.
+
+**The Desk measures the scoreboard, not the mind.** "PLTR is 0.4 ATR from its next bonus tier" is an observable game fact. It is interesting because it is the game's tension, and it is honest because it makes no claim about what the agent will do. The single action-relevant leg — `swapLock.distancePercent` — is rendered as a constraint ("locked · 1.2% from unlock"), which is also a fact, not a forecast.
+
+**Copy rule:** no "about to," no "close to trading," no agent-verb framing anywhere on the Desk. Scoreboard language only. Harness fixture.
+
+**Source:** `voiceLayerCache/{battleId}.portfolioBriefs[].thresholdProximity`, written by non-fenced `api/cron/voice-layer-cache.js:257-272, 800-817`. **No fence entry required.** Fence contact arises only if an implementation reaches into `agentRiskManager.js` or `agentScoring.js` for a new return field — that path is forbidden by this document.
+
+### 5.2 Cadence honesty — LOCKED
+
+Everything runs at 15 minutes: evals, the `voiceLayerCache` refresh, the statusFeed. The Manage card polls at 120 s. The Desk **cannot be more live than the system**, and rendering it as continuous would be the fabrication C1 forbids by another route.
+
+The posture line is therefore **discrete**: *"Checked 9:47 · next ~10:02"* during LIVE, *"Market closed · next check Mon 9:30 ET"* during LIVE_CLOSED. No verb that implies attention between checks. This answers Sol's continuous-cognition objection directly.
+
+### 5.3 The existing idle state is already honest
+
+Agent Pulse renders, verbatim: eyebrow **"Standing by"** (`LiveActivityPanel.jsx:152`), status **"Your agent will start analyzing when the market opens."** (`:98`). Users have been seeing a truthful resting state since the Pulse shipped. Only one of five breakthrough types (`gameplan_meeting`) has a live writer — the Pulse is *mostly* its idle state. The question was never "fill a void"; it is "enrich an honest surface with scoring proximity."
+
+### 5.4 C1 and C2, restated precisely — LOCKED
+
+**C1.** The Desk renders only what the decision path actually produces or the scoring path actually persists. No invented research, no generated introspection, no garnish the agent never sees. Model-authored idle narration is not shipped at beta — not because LLM text is inherently fabrication (Sol's MINOR is accepted on that point) but because the provenance verification that would make it safe is not being built now.
+
+**C2.** No automated path from any display surface into prompt assembly. **User-initiated messages are input by definition and always were.** Entry cards (§6.1) are prefilled user text: they may be *selected* by state, but their *text* must not carry values computed by the UI that the agent does not already receive through its own context. Selection is fine. Payload is not.
+
+### 5.5 What the Desk shows — Pass 1
+
+1. Posture line (§5.2)
+2. Score proximity: top 2–3 positions by `|currentMultiplier − targetMultiple|`, with direction and `zoneProgressPercent`
+3. Swap-lock status for any locked position
+4. Most recent real statusFeed entry (from the Pulse, portable — `LiveActivityPanel` takes plain props)
+5. Breakthrough alerts: `gameplan_meeting` only until P-5 resolves
+6. Next-decision clock (Amendment B §B7.1, convergent with §5.2)
+
+**Own portfolio only.** Opponent view stays in Battle View (ruling, Aug 31).
+
+---
+
+## 6. Talk It Over
+
+Battle mode ships (`POST /api/agent/chat`, `{agentId, battleId, message}`, server-authoritative `MODE_BUDGET` battle 10 / review 5 at `chat.js:135-138`). Directive threading ships. `directiveGate.js` exists at the `chat.js:469-484` chokepoint and, **when enforcing**, validates every directive against the archetype's canonical allowlist — only a verbatim allowlist string can be persisted; against-style asks classify `core_conflict` → deterministic null + code-owned `'no_change'` status. **The gate is flag-gated between `observe` and `enforce`, and its live state at HEAD is unverified (D-17).** Under `observe` the mechanism logs and does not block, which would mean the central guarantee of the conversational authority system is not currently guaranteed. **D-17 is a hard Pass 2 gate**, not a routine discovery item: no Pass 2 spec is written as if enforcement is live until the flag state is confirmed with `file:line`.
+
+What has never existed is an obvious opening move, and a parameter to seed one (Q6.1: NOT FOUND; new `chat.js` parameter required).
+
+### 6.1 The entry set — RULED (D-5)
+
+| Card | Surfaces when | Framing |
+|---|---|---|
+| **"Walk me through the book"** | always | neutral |
+| **"We're behind — what's realistic from here?"** | score deficit past threshold | honest — the answer is often "hold" |
+| **"We're ahead — what protects it?"** | score lead past threshold | the counterweight; archetype-differentiating |
+| **"What's the plan into the close?"** | final hour | neutral |
+| **"I'm seeing something"** | always | hands off to Signal Drop, not chat |
+
+Deleted: *"What's closest to a trade right now?"* (the Desk shows it — paying a message for it indicts one or the other). *"Why are we still holding X?"* (a symbol chosen by the UI is a computed payload). Asking about a specific position comes from **tapping it in the book** — user-chosen, C2-clean. Pass 2 follow-on.
+
+**Symmetry is deliberate.** Sol showed the V1 set framed conversation around losing, teaching intervention at exactly the moment archetype discipline matters most. Two situational cards, one for each side.
+
+### 6.2 Card rules
+- Selected by adapter state; text carries no UI-computed values (§5.4 C2).
+- A card is prefilled input. The user still sends. Costs one message, same as typing. No free-tap tier, no menu-browsing into an empty budget.
+- Vocabulary chips (§6.5) constrain cards to what the gate honors.
+
+### 6.3 Budget — RULED (D-4)
+10 per day. Fullday: unchanged. 3-day: reset required in `chat.js` (cumulative today, Q6.3) — scoped to D-14.
+
+### 6.4 Routing and the semantic honesty rule — LOCKED
+
+Three tiers stand: **tactical** (battle directive, dies at close) / **lessons** (review only) / **rules** (review only, Forge). Discovery confirmed the write-side gates exist (`chat.js` gates lessons/`forgeSuggestions` on `mode==='review'`).
+
+**But write-side honesty is not voice-side honesty.** Discovery found:
+- `OUTPUT_FORMAT` offers the model `expiry: "permanent"` (`voiceLayerPrompt.js:41`); `directiveUtils.js:15-18` treats permanent as end-of-battle. **The agent can already promise permanence the storage cannot deliver.** → P-2.
+- No refusal or redirect copy exists for a persistence ask the mode cannot honor (Q7.2: NOT FOUND). Enforcement is silent. → Pass 2 adds one line: *"That's a review-room thing — after the battle."*
+- `forgeSuggestions[]` is a write-only sink (zero consumers in `src/`). The agent can say "I'll queue that for the Forge" and nothing ever acts on it. Not this arc's to fix; the semantic honesty rule means the agent stops saying it until a consumer exists.
+
+**Rule:** the agent never claims a persistence level, a memory, or a Forge action that the current mode and existing consumers cannot deliver. Enforced by prompt copy in Pass 2, verified by fixture in the harness.
+
+### 6.5 Vocabulary chips — Pass 2
+Per game, the directive kinds the gate accepts, rendered above the input. Source: the same `archetypeAdjustments.js` allowlist `directiveGate.js` imports. Half of "questions don't land" is context; the other half is asking for things the mode cannot do.
+
+---
+
+## 7. Research / Action — LOCKED as an authority boundary (pending Sol)
+
+The founder's words are "research" and "execution." In the record the lanes are **Research** and **Action**, because under §2 nothing executes on the user's say-so. Action is what the user *sees happen*.
+
+**Research lane (Pass 4)** — read-only, always. Inputs: Signal Drops, screener, correlation intelligence, DRB, FantasyTimes, the book. Output: thesis cards — claim, evidence, invalidation condition, proposed directive. Evidence-first; falsifiable or it does not render. **Writes nothing to battle state, ever.** Tool parity: the agent queries the same data the user's own screener shows.
+
+**Action lane (Pass 2)** — the existing directive channel made visible. Every chat-originated directive renders as a ledger card (§8). The trading brain treats a directive as strong preference, not authority; the ledger shows truthfully what it did with it.
+
+**The bridge** — one gesture. A thesis card carries "file this"; tapping writes the proposed directive through the normal channel and opens a ledger card. Discussion becomes action and the user watches.
+
+**Warning on the bridge (Sol, sustained):** "file this" creates an unusual loop. The agent generates a proposal; the user performs one gesture; the proposal returns to the trading brain carrying user authority as a strong preference. The agent has, in effect, proposed an instruction to itself and had it rubber-stamped. This does not violate §2 — the agent still decides — but it may materially increase the practical force and frequency of directives. **"File this" is Pass 4's central product experiment, not connective tissue.** It ships behind its own flag, with tap-rate and honor-rate instrumented, and its default may reasonably be *off* until the data says otherwise.
+
+**Messaging rule:** product copy describes what exists now. Do not tell users "Command Center is where your agent lives across every game" while ranked activity still lives on league surfaces. Architecturally future-facing is fine; product claims are present-tense.
+
+### 7.1 "Look into it" — the Research slice pulled forward to Pass 2 (D-21)
+
+**The problem it solves.** The most natural thing a user will type mid-battle is "what about PLTR?" The truthful-but-dead answer is "not in this battle's loadout." The founder's ruling: the agent researches the name and comes back with evidence. The lock still exists; it stops being the first thing the agent says.
+
+**Why it is a slice and not the lane.** Three things exist. `directiveGate.js` already classifies research asks (`research_only` → today, deterministic null). The platform already has single-ticker research machinery (Research Intelligence Hub, Stock Intelligence Agent, technicals incl. RSI and moving-average distance). Tool parity (§7) is satisfied by construction if the agent calls the same path the user's own research modal calls. **The integration is one wire:** `research_only` → call the existing research path → Gemma voices the findings in character → forward path.
+
+**The turn, in three beats:**
+1. *"I can't add it mid-battle — let me look at it."* The lock, once, softly.
+2. Evidence. Where it sits against its moving averages, RSI, correlation with what is already in the book, whether the equipped archetype would even want it. Findings are the research path's own output; Gemma voices them and does not invent them.
+3. *"If you like the case, I'll flag it for your next deploy."* → writes `nextDeployCandidates` on the agent doc; Equip renders it as a pre-filled chip at next deploy. **This is the door; without it the slice is still a dead end.** The chip ships in the same pass as the write, or the write does not ship — `forgeSuggestions[]` is the cautionary precedent.
+
+**Guardrails — what keeps it a slice:**
+- Single ticker, on explicit request. No screener sweeps, no correlation runs, no "file this" (Pass 4).
+- Evidence, never a trigger. The agent says what it sees, not what it will do. No entry condition is committed to; if the user wants "enter when X," that is a Forge rule for next deploy and the agent says so.
+- Capped per battle. Start at **3**. The research call does not consume the user's message budget beyond the ask that triggered it.
+- Model: whatever the existing research path uses (Haiku/Sonnet); Gemma for voice. No new model dependency.
+- C1 holds because research actually runs — "looking into it" is true in a way "watching" never was. C2 holds: research writes nothing to battle state.
+
+**Shape is decided by latency (discovery item 18).** If the research path returns in ~10–15 s, it runs inside the same turn and there is no new mechanic. If slower, "get back to you" is an async agent turn landing in the thread — the server-initiated-turn pattern exists (`ensure-opener.js`, statusFeed writes) but it is a second thing to build. Discovery decides which.
+
+**Not in scope:** adding the name to this battle's universe (D-20, deferred — game-rule change), timing research as an executable condition (retired trading-authority model), any Research lane surface beyond this one turn type.
+
+**On the Battle Execution Manifest:** BEM V1's status vocabulary is worth borrowing; its execution semantics belong to the trading-authority model retired June 10 and are not resurrected. Phase 0 item 11 confirms how much shipped (expected: little).
+
+**Why the split is simpler:** Research is Sonnet-tier, on-demand, capped (~1/day/battle, mirroring gameplan-meeting cadence). Action rides existing Gemma extraction. Nothing fires per tick. And the liar problem becomes tractable — Research never promises; Action only shows what the engine did.
+
+---
+
+## 8. The action ledger — Pass 2
+
+Sol's second-pass blocker stands: **"Seen" is a claim about agent behavior, and C1 applies.** An eval occurring after a directive was filed proves an eval occurred — not that the directive reached the decision context — unless every applicable eval deterministically ingests the current directive, which discovery item 8 has not established. The same gap infects "not honored, because X," and it is worse than V1.1 admitted: **a "hold" directive that is honored produces no trade, and therefore no `submit_trade_decision` echo.** The one receipt that exists is for trade-producing directives only.
+
+The ledger is therefore specified as a **floor** the data supports today and a **ceiling** gated on discovery.
+
+### 8.1 Floor — ships in Pass 2 regardless
+
+```
+FILED → SUPERSEDED | HONORED (trade) | EXPIRED
+```
+
+| State | Source of truth at HEAD | Claim it makes |
+|---|---|---|
+| **Filed** | directive write timestamp (`chat.js:617-639`) | the user said this |
+| **Superseded** | a later directive replaced it (D-18, single slot latest-wins) | the user said something else after |
+| **Honored (trade)** | `directiveThreadId` echoed in `submit_trade_decision` (`controlPromptRenderer.js:217-218`, `agentEvalToolSchema.js:67`); `AgentChat` already renders "↳ from directive" | a trade cited this |
+| **Expired** | battle close, or `expiry` reached (`directiveUtils.js`) | the window passed |
+
+No state in the floor claims the agent *read* anything. A hold directive that was honored shows as Filed until it Expires — thin, but true.
+
+### 8.2 Ceiling — only if discovery item 8 finds a per-directive receipt
+
+```
+FILED → SEEN → HONORED | DECLINED (motive) | EXPIRED
+```
+
+**Seen** and **Declined** require evidence that the specific directive entered the decision context and the engine chose. If item 8 comes back NOT FOUND, the path to a receipt is a per-eval acknowledgment field the trading brain fills ("directive X: acting / holding / declining because Y"). `controlPromptRenderer.js` and `agentEvalToolSchema.js` are not on the fence list by name, but changing what Haiku emits every tick is trading-brain territory in spirit — **that is a founder ruling, not a workaround, and it is not designed here.**
+
+### 8.3 Rules
+
+- Never show a state the data cannot support. Floor by default; ceiling only on evidence.
+- Outcome text is engine text. **Never a Gemma paraphrase** (C1). `recentMotives` when Ask 1 ships; until then, the statusFeed trade entry for trade-producing directives only.
+- Ledger cards die with the battle; readable post-close in Game Tape (**gap: Game Tape and the debrief render no directives today — Q10**; Game Tape ledger visibility is Pass 2 scope).
+- The ledger is a mirror, not an input (C2).
+- **Both chat surfaces show the current directive above the composer before send** (D-18), so replacement is a choice the user sees, not an accident.
+
+---
+
+## 9. Model decision — LOCKED (Amendment A absorbed)
+
+Gemma stays for this arc. Pass 1 makes no model calls; Pass 2 uses battle mode as-is. Prerequisite C runs in parallel with contenders re-pointed from DeepSeek V4-Flash to **GPT-5.6 Luna** ($0.20/$0.02 cached/$1.20 per M; GA Jul 9; ~122 tok/s) and **Z.ai GLM-5.3-Flash** ($0.15/$0.03/$0.50 list; released Aug 26; **50% promo expires Sept 9**; MIT weights; first-party throughput reportedly ~49 tok/s). Price is not the deciding input — caching dominates at this volume. Harness riders D-7 (schema-adherence failure rate against the live `OUTPUT_FORMAT`) and D-8 (p95 latency) stand. **No challenger adopted without a harness run.** Amendment B's caution holds: Gemma-as-front-door is a heavier bet than Gemma-as-side-panel, and the harness result should precede league promotion even if BaggerBomb promotes first on the lock.
+
+---
+
+## 10. Prerequisites exposed by discovery and review
+
+All non-fenced. None is this arc's fault; all would be amplified by inviting more conversation.
+
+| # | Fix | Where | Before |
+|---|---|---|---|
+| **P-1a** | Directive write becomes a transaction: re-read, require `status==='active'`, write. **Proves:** closes the after-close TOCTOU. | `chat.js:617-639` | Pass 2 |
+| **P-1b** | Concurrent directives from two surfaces. A transaction serializes; it does not preserve the earlier write — two directives filed near-simultaneously still end with only the second. **Resolution is D-18 (single slot, latest-wins, declared)**, plus: both surfaces display the current directive before send; the ledger renders SUPERSEDED. If the founder instead wants both to survive, the slot becomes a list and P-1b is a larger change. | `chat.js`, both chat surfaces | Pass 2 |
+| **P-1c** | Budget check-then-increment atomicity. `increment` is atomic; the check at `chat.js:237` and the increment at `:623` are not in one transaction. Two surfaces at 9/10 can both pass and both charge → 11. Wrap the check in the P-1a transaction. **"Server-authoritative" and "race-safe" are different properties** — discovery item 16 confirms. | `chat.js:237, 623` | Pass 2 |
+| **P-2** | Remove `"permanent"` from `OUTPUT_FORMAT` expiry until cross-battle directives exist. One line. | `voiceLayerPrompt.js:41` | Immediately — own small PR |
+| **P-3** | Seeded-opener parameter on `POST /api/agent/chat`. | `chat.js:168-180` | Pass 2 scope (is Pass 2 work) |
+| **P-4** | `voiceLayerCache` read rule → owner-scoped. Currently any authenticated user (`firestore.rules:693-695`). | `firestore.rules` | Pre-launch security list; **pre-Pass-1** |
+| **P-5** | Four dead breakthrough types — cut from `BREAKTHROUGH_MAP` or wire writers. | `LiveActivityPanel.jsx:42-48` | Pre-Pass-1 |
+| **P-6** | **Debrief liveness, not just a pending card.** `completeBattle` can land ~20:00 UTC; `agent-batch-review` fires 20:25 querying active-only → fullday battles can miss the debrief and "pending" becomes permanent. **P-6 = pending UI + guaranteed eventual debrief.** The batch-review selection must include recently-completed battles (or `completeBattle` must enqueue). Note: `completeBattle` already stamps `pendingReflection` (Q9.1) — discovery item 17 asks whether anything consumes it; if nothing does, that flag is the natural hook. The cron fix is *part of* P-6, not beside it. | `agent-batch-review.js` + POST_CLOSE card | **Pre-Pass-1** (the card is Pass 1's primary in POST_CLOSE) |
+| **P-7** | **Chat-side precedence reconciliation.** The identity text chat reads says equipped rules "never reverse" the archetype (`voiceLayerPrompt.js` IMMUTABLE CORE / PROTECTED BIAS zones); the reconciler ranks `user_equipped` above `archetype_default` and deletes the losing archetype rule (`decide.js:262`). For beta, **the text describes what the engine does** — minimum honest fix. Eval-side reconciliation stays with exit-behavior Ask 2. **Ownership check first:** harness-revamp workstream may own archetype identity surfaces. | `voiceLayerPrompt.js` four-zone blocks | **Pass 2** (moved forward from Pass 3 per D-13) |
+
+---
+
+## 11. Passes
+
+| | Pass 1 — The Sync | Pass 2 — Talk It Over + Ledger | Pass 3 — League adapter | Pass 4 — Research lane |
+|---|---|---|---|---|
+| What | §4 phases, §5 Desk, clock, own-portfolio, built on §3 shell rule and adapter v1 | §6 cards, chips, P-3 seeded opener, §8 ledger (floor), Game Tape directive visibility, semantic-honesty copy, **§7.1 "Look into it" research slice + `nextDeployCandidates` chip** | Snake Draft / Tournament adapter, weekly-score parity, league directives visible, **adapter schema validated or revised** | Full Research lane: screener/correlation tool use, thesis cards beyond single-ticker, "file this" (flagged, instrumented) |
+| New model calls | None | Gemma (existing); **existing research path, capped 3/battle** | Gemma (existing) | Sonnet, on-demand, capped |
+| Fenced files | None | None | None expected — STOP if parity needs one | None expected |
+| Prereqs | P-4, P-5, **P-6 (liveness)**, D-16 | Pass 1; P-1a/b/c, P-2, **P-7**, **D-17**, D-18, discovery items 8, 16, **18–19** | Pass 1; front-door gate §12 for league; D-11 | Pass 2; D-12 |
+| Front-door gate | does not apply — no conversation on the Dashboard | **applies** (§12) | applies, per game | — |
+| Status | **Beta** | **Beta** | Own arc, own kickoff, after Pass 2 | Own arc, post-launch |
+
+**Pass 1 stands alone.** If Pass 2 slips, the connective tissue still lands.
+
+---
+
+## 12. The front-door gate — LOCKED (Sol pass two: sustained with corrections)
+
+The Command Center does not become a **conversational** landing surface for a game until both conditions hold **for that game**. Per game; BaggerBomb can clear it while league is still working.
+
+**When the gate bites (D-13, confirmed):** at **Pass 2**, not Pass 1. Pass 1 puts the Desk on the Dashboard — a read-only mirror. It puts no conversation there. The precedence contradiction is something the agent *says* about itself in chat; a surface with no chat cannot say it. Pass 1 therefore does not promote the Command Center in the sense the gate governs. Pass 2 does, and must clear both conditions first. V1.1's contradiction (gate before promotion, but Condition 2's work in Pass 3, with promotion in Passes 1–2) is resolved by moving Condition 2's chat-side work to **P-7, pre-Pass-2**.
+
+**Condition 1 — Shared truth on overlapping concepts.** Chat and eval operate from the **same authoritative source for the concepts they share**: positions, P&L, scoring state, applicable rules and constraints, market state, current directives. Chat *also* needs what eval never sees — conversation history, user intent, prior promises. Eval *also* carries execution-specific content that does not belong in conversation. **"Same eyes" is not "chat is a superset of eval."** Phase 0 item 7's field-level diff is discovery, and its output is not a requirement to shovel every eval field into chat — it identifies which shared concepts diverge in source, and those are fixed at the source. If a shared concept the eval computes in-prompt is not persisted anywhere chat can reach without a fence change, that is a **STOP for fence ruling**, not a workaround.
+
+**Condition 2 — The precedence contradiction is resolved on the chat side.** Live today: the reconciler ranks `user_equipped: 1, archetype_default: 2` and deletes the losing archetype rule (`decide.js:262`), while the identity text the models read says equipped rules "never reverse" the archetype (`evalIdentityBlocks.js:58`; `voiceLayerPrompt.js` IMMUTABLE CORE / PROTECTED BIAS zones). Users meet this in week one at any conversational front door. **Resolution is P-7:** for beta the chat-side text describes what the engine does. Eval-side reconciliation (`evalIdentityBlocks.js`, the 13 absolutist MUSTs, R8, SX-04 × mb-08) stays with exit-behavior Ask 2 — fenced territory, different relay. Ownership check before P-7 edits the four-zone blocks: the harness-revamp workstream may own archetype identity surfaces.
+
+**What the gate does not require:** a model change. Gemma stays locked (§9). But Gemma-as-front-door is a heavier bet than Gemma-as-side-panel; the Prerequisite C harness result should precede league promotion even if BaggerBomb promotes first on the lock.
+
+**Messaging (Sol, sustained):** BaggerBomb-first promotion is coherent because §3.1 scopes the Dashboard to BaggerBomb and league stays on league surfaces. The danger is copy, not architecture. Product claims are present-tense.
+
+---
+
+## 13. Reuse register — verified by Phase 0
+
+| Asset | Verified state | Reuse |
+|---|---|---|
+| Voice Layer battle mode | ships; server-authoritative budget; no seeded param | yes, + P-3 |
+| `directiveGate.js` | ships; allowlist-gated; flag-gated `observe`/`enforce` — **live state unconfirmed** | yes — **confirm flag state** |
+| Agent Pulse (`LiveActivityPanel`) | ships; portable (plain props, no router); 1 of 5 alert types fires | yes, + P-5 |
+| statusFeed | array field on battle doc; owner-scoped; opponent gets `PUBLIC_STATUSFEED` projection | yes |
+| `voiceLayerCache.thresholdProximity` | ships; non-fenced writer; any-auth read | yes, + P-4 |
+| Manage-card data | 120 s `getDocs` poll, spans both agentIds; no `onSnapshot` | yes — reuse the poll, no second source |
+| Locked-visible loadout | ships (`benchLocked`) | yes |
+| Review mode + auto-debrief | ships; on delay after close | yes, + P-6 |
+| Signal Drop pipeline | ships | yes |
+| "↳ from directive" linkage | ships in `AgentChat`; absent from Game Tape/debrief | yes for ledger; Game Tape gap is Pass 2 |
+| `getMarketState()` phase ladder | ships | yes — phase derivation |
+| League partner-influence model | **design-complete, not built**; engine work fenced | **no** |
+| `isPreOpenOnBattleDay` / `usePreOpenPhase` | **NOT FOUND at HEAD** | not needed |
+| BEM `VOICE_SEQUENCE` | Phase 0 item 11 pending; expected little | vocabulary only |
+
+---
+
+## 14. Non-goals
+
+- No veto, manual trade, or co-pilot path.
+- No fenced-file changes (11-file list, `docs/BUILD_RULES.md:14-24`). Any phase that discovers otherwise stops for a fence ruling.
+- No new cron slots.
+- No Mandate build. Framing borrowed, feature not built.
+- No grading (dead per Amendment 2, Jun 10).
+- No scoring or trading-behavior change.
+- **Narrowed from V1:** chat-side context assembly (`chat.js`, `voiceLayerPrompt.js`, any new adapter module) **is** in scope. Eval-side is not.
+- No duration flip. D-14 is its own ruling.
+
+---
+
+## 15. Open items
+
+| # | Item | Blocks | Fable's lean |
+|---|---|---|---|
+| D-1 | Rename. Discovery deflated the blast radius: 115 matches / 41 files, **5 user-visible strings, 0 persisted fields, 0 analytics, 0 routes** — a refactor, not a data change. Sol no longer objects. | Pass 1 spec | Confirm; in-battle tab renamed (D-15) |
+| D-10 | Lane placement — two panels, two modes of one thread, or chat-left / lanes-right | Pass 2 layout (Claude Design) | Two modes of one thread; ledger in the Pulse column; do not split the conversation |
+| D-11 | Pass order — league adapter before research lane | Pass 3 kickoff | League first; both after Pass 2 |
+| D-12 | Research lane cap and invocation | Pass 4 | On-demand, ~1/day/battle, Sonnet; no per-tick |
+| D-13 | Front-door gate bites at Pass 2; chat-side reconciliation is P-7 pre-Pass-2; eval-side with Ask 2 | Pass 2 | **Confirmed Aug 31.** Ownership check with harness-revamp is the open sub-item |
+| D-14 | 3-day flip — fenced constant, inactive path, budget reset | Not this arc | Own gated ruling after beta proves the surface on fullday |
+| D-15 | In-battle tab name | Pass 1 rename | "Huddle" — Sol: "communicates conversation rather than command authority" |
+| D-16 | Chat mode during LIVE_CLOSED (`chat.js:125`) | **Pass 1 spec** | Discovery item 13 — Sol: run before freezing Pass 1 |
+| **D-17** | `directiveGate.js` flag state — `observe` or `enforce` live? | **Hard Pass 2 gate** | Discovery item 14; enforce expected, nothing assumed |
+| D-18 | Directive slot contract — single slot latest-wins, declared; SUPERSEDED in ledger; current directive shown before send | Pass 2 (P-1b) | **Confirmed Aug 31.** Closed |
+| **D-19** | Does anything consume `pendingReflection` stamped by `completeBattle`? | P-6 design | Discovery item 17; if unconsumed, it is the natural debrief hook |
+| **D-20** | Mid-battle universe expansion — **the Call-Up arc** | Own gated arc | **Accepted in principle (Aug 31), superseding the earlier deferral.** Founder's rebuttal sustained: the frozen-universe rule rewards watchlist padding, not commitment, and BaggerBomb-vs-CPU has no fairness counterparty. Shape: user-spotted name, researched via §7.1, added to the battle bench on demand — **cap 2/battle, thresholds seeded at add-time (`baseATR` is daily; swap-in scoring semantics already ship per Q3), enters at Support tier, vs-CPU modes only until PvP symmetry ruling.** The trading brain decides any swap-in on its own authority — no chat-armed execution, ever. **Fence contact is certain** (`decide.js` threshold seeding, swap universe) → own mini-arc with fence ruling, own Phase 0, own spec. §7.1's forward path is pluggable: next-deploy at first, Call-Up when this arc lands. Wildcard-slot (pre-seated symmetric version) remains the PvP candidate. |
+| **D-21** | §7.1 research slice — cap and shape | Pass 2 spec | Cap 3/battle; in-turn if item 18 latency allows, else async; no new model |
+
+---
+
+## 16. Discovery follow-ups remaining (read-only, hard STOP)
+
+7. **Chat context vs. eval context, side by side.** What `chat.js` + `voice-layer-cache.js` assemble versus `agentEvalPromptAssembly.js`, same live battle, field-level diff with `file:line`. **Highest-value unrun item** — sizes front-door Condition 1. Output is a divergence list on *shared* concepts, not a shovel list (§12).
+8. **Per-directive receipt, sharpened.** Does every applicable eval deterministically ingest the current `battle.directive` into the decision context? Is there *any* write, keyed by `directiveThreadId`, that fires for a directive the eval saw but did not trade on — including honored "hold" directives that by nature produce no trade? If NOT FOUND, name the minimum non-fenced write that would provide one, without designing it. **Gates §8.2.**
+9. Directive visibility in league — whether league battles write `agentBattles.directive` at all.
+10. Weekly-score path — where snake-draft daily-close aggregation lands; readable from the chat route?
+11. BEM `VOICE_SEQUENCE` shipped surface.
+12. Fence check on 7–11.
+13. **D-16** — chat mode selection during LIVE_CLOSED and its budget. **Pass 1 spec gate.**
+14. **D-17** — `directiveGate` flag state at HEAD, `file:line`. **Pass 2 gate.**
+15. Which branch holds `isPreOpenOnBattleDay` / `usePreOpenPhase`.
+16. **Budget check atomicity.** Is the `chat.js:237` check and the `:623` increment in one transaction? Can two simultaneous requests at 9/10 both pass and both charge? **Gates P-1c.**
+17. **`pendingReflection` consumer.** `completeBattle` stamps it (Q9.1). Does `agent-batch-review` or anything else read it? **Gates P-6 design.**
+18. **Single-ticker research path.** What endpoint(s) produce the Research Intelligence Hub / Stock Intelligence Agent output for one symbol? Callable server-side from `chat.js`? What do they return (fields, technicals incl. RSI / MA distance / correlation)? **p50 and p95 latency, and cost per call.** Latency decides whether §7.1 runs in-turn or async. **Gates §7.1 shape.**
+19. **`research_only` handling today.** Exactly what `directiveGate.js` does with a `research_only` classification and what the user currently sees. Is there a clean seam to branch to a research call instead of null? Does anything else (Signal Drop) already call research from the chat path? **Gates §7.1 integration.**
+20. **`nextDeployCandidates` landing.** Is there an existing per-agent "suggested for next deploy" field or Equip chip pattern to reuse, or is this net-new on `agents/{id}` + `EquipBench.jsx`?
+
+---
+
+## 17. Risks
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| Score proximity read as action proximity by users | **High** | §5.1 copy rule; no "about to," "close to trading," or agent-verb framing. Harness fixture. |
+| Pass 1 reads BaggerBomb fields directly; league becomes a rewrite | **High** | §3 rule in the spec; CC DO-NOT list |
+| Front door exposes the precedence contradiction before fix | **High** | §12 gate bites at Pass 2; P-7 pre-Pass-2 |
+| `directiveGate` in `observe` at HEAD — central guarantee not live | **High** | D-17 hard Pass 2 gate |
+| Ledger overclaims "Seen" or "Declined" without a receipt | **High** | §8 floor by default; ceiling on evidence only |
+| Silent directive replacement across two surfaces | High | D-18 declared; current directive shown before send; SUPERSEDED rendered |
+| Post-close TOCTOU | High | P-1a |
+| Budget double-charge under two surfaces | Medium | P-1c |
+| Agent promises persistence it cannot deliver | High | P-2 now; §6.4 copy in Pass 2; fixture |
+| Opponent reads proximity via `voiceLayerCache` | High (standing) | P-4 pre-Pass-1 |
+| "Debrief pending" becomes permanent | High | P-6 liveness pre-Pass-1 |
+| Desk inherits dead breakthrough promises | Medium | P-5 pre-Pass-1 |
+| Honored "hold" directives are receipt-less and look ignored | Medium | §8.1 copy: Filed is a truthful state; item 8 may raise the ceiling |
+| Entry cards re-teach intervention-when-losing | Medium | §6.1 symmetry; watch card-tap distribution in beta |
+| "File this" becomes a directive cannon | Medium (Pass 4) | flagged, instrumented, default may be off |
+| §7.1 research slice creeps into the full lane | Medium | single ticker, on request, cap 3/battle, no screener, no "file this"; anything more is Pass 4 |
+| Research findings read as a promise to act | Medium | three-beat copy; evidence not trigger; "next deploy" is the only forward path |
+| `nextDeployCandidates` becomes a second write-only sink | Medium | chip ships in the same pass as the write, or neither ships |
+| Async research turn built when in-turn would do | Low | item 18 latency decides before spec |
+| Adapter v1 schema hardens into a false universal | Medium | §3.2 provisional; validated by league adapter |
+| 10/day too tight once cards invite conversation | Low under fullday | tuning ledger; revisit at D-14 |
+| Parallel design chats diverge | Medium | §0 authority ruling; this document is the merge point |
+| Research lane cost creep | Medium (Pass 4) | D-12 |
+
+---
+
+## 18. Next step — Pass 1 spec, gated
+
+Sol's second pass is complete and does not require a third on this framework. His disposition: *"If those results come back clean, I no longer see a reason to stop the Command Center arc."*
+
+**Before the Pass 1 spec is frozen:**
+1. ~~Founder confirms D-13 and D-18~~ — **done Aug 31.**
+2. Founder confirms D-1 / D-15 (rename; "Huddle").
+3. CC runs discovery items **13 (D-16)** and **17 (`pendingReflection`)** — two short read-only questions, foldable into the Pass 1 spec's own Phase 0.
+4. P-6 is written as liveness in the spec's prerequisite list.
+
+**Before the Pass 2 spec is frozen:**
+1. CC runs discovery items **8, 14 (D-17), 16, 18, 19, 20.**
+2. P-1a/b/c and P-7 are written as prerequisites, each claiming only what discovery proved.
+3. Ownership of the `voiceLayerPrompt.js` four-zone blocks confirmed with the harness-revamp workstream — **ask now, not at Pass 2.**
+4. §7.1 shape (in-turn vs async) decided by item 18.
+
+**P-2 does not wait for either.** One line, own PR, now.
+
+**Do not issue a build prompt from this document.** It is a framework, not a spec. The Pass 1 spec is the next artifact, and it goes to CC for its own Phase 0 before any branch exists.
+
+---
+
+## Appendix C — Sol V1.1 findings, disposition
+
+| Sol finding | Severity | Disposition | Where resolved |
+|---|---|---|---|
+| "Predicts" → "measures" | wording | Sustained | §5.1, §0.2 |
+| §11/§12 front-door sequencing contradiction | BLOCKER | Sustained; gate bites at Pass 2; Condition 2 → P-7 pre-Pass-2 | §12, D-13 |
+| Ledger "Seen" unprovable for not-honored; "hold" directives receipt-less | BLOCKER (Pass 2) | Sustained, and worse than V1.1 admitted; floor/ceiling split | §8, item 8 |
+| P-1 does not fix last-write-wins; budget atomicity unproven | MAJOR | Sustained; P-1 split into a/b/c; D-18 declares the slot contract | §10, D-18, item 16 |
+| §6 assumes enforce; §13 admits unknown | MAJOR | Sustained; §6 rewritten; D-17 elevated to hard Pass 2 gate | §6, D-17 |
+| P-6 understates — pending without liveness hides a broken pipeline | MAJOR | Sustained; P-6 = pending UI + guaranteed debrief; pre-Pass-1 | §10, D-19 |
+| Condition 1 wording — parity ≠ superset | MAJOR | Sustained; reworded to shared truth on overlapping concepts | §12 |
+| Adapter schema is BaggerBomb-shaped | MAJOR (architecture) | Sustained; rule locked, schema provisional until league validates | §3.2 |
+| "File this" is a self-proposal loop | advisory | Accepted; Pass 4 central experiment, flagged and instrumented | §7 |
+| Messaging must be present-tense | advisory | Accepted | §7, §12 |
+| D-1 rename; "Huddle" | withdrawn | Sol no longer objects | D-1, D-15 |
+
+---
+
+## Appendix A — Sol V1 findings, disposition
+
+| Sol finding | Severity | Disposition | Where resolved |
+|---|---|---|---|
+| Battle live / market closed unhandled | BLOCKER | Sustained; premise reduced (fullday at HEAD) — state still exists overnight | §4 |
+| Sequencing backwards | BLOCKER | Sustained; discovery ran before V1.1 | §0, process |
+| D-3 may violate no-fence | BLOCKER | Sustained → resolved: non-fenced `voiceLayerCache` path | §5.1 |
+| C2 contradicts seeded cards | BLOCKER | Sustained; C2 restated; payload rule added | §5.4 |
+| One-active-battle assumed | BLOCKER | Sustained; premise false; resolved by scope | §3.1 |
+| "What would move me" is a causal promise | MAJOR | Sustained → reframed to score | §5.1 |
+| No common distance metric | MAJOR → **upgraded to BLOCKER** by Fable | Sustained → resolved: `currentMultiplier` in uniform ATR units | §5.1 |
+| Competitive leak | MAJOR | Sustained; own-portfolio ruling + P-4 | §5.5, §10 |
+| Tier lock ≠ conversational honesty | MAJOR | Sustained; discovery found it live (`permanent`) | §6.4, P-2 |
+| Directives not archetype-aware | MAJOR | **Overruled by discovery** — `directiveGate.js` is the keystone and works; flag state to confirm | §6, D-17 |
+| 10-message budget not a tuning value | MAJOR | Sustained; Low rating overruled; card deleted | §6.1, §17 |
+| Battle-close race | MAJOR | Sustained; P-1 | §10 |
+| Dual surface races | MAJOR | Sustained; P-1 | §10 |
+| Rename riskier than admitted | MAJOR | **Substantially deflated by discovery** — 5 strings, 0 persisted | D-1 |
+| Quiet not proven a failure | MAJOR | Sustained; softened — honest idle state already ships | §5.3 |
+| Cards frame around losing | MAJOR | Sustained; symmetric set | §6.1 |
+| Shipped ≠ reusable | MAJOR | Sustained; register verified per asset | §13 |
+| Post-close continuity gap | MAJOR | Sustained; Game Tape shows no directives | §8, Pass 2 |
+| LLM text ≠ fabrication | MINOR | Accepted on reasoning; prohibition kept for beta on provenance grounds | §5.4 |
+| Risk register underrepresents | MAJOR | Sustained; rewritten | §17 |
+
+## Appendix B — Phase 0 verdicts
+
+| Blocker | Verdict | Basis |
+|---|---|---|
+| B1 | CONSTRAINED | live+closed derivable from `getMarketState()` + `status`; fullday at HEAD; `isPreOpen*` NOT FOUND |
+| B2 | n/a | process; corrected in sequence |
+| B3 | CONSTRAINED | `voiceLayerCache.thresholdProximity` persisted, comparable, non-fenced; no unified cross-condition score; any-auth read |
+| B4 | CONSTRAINED | Pulse portable, statusFeed opponent-safe; no seeded param; `directiveThreadId` last-write-wins; 4/5 alert types dead |
+| B5 | CONSTRAINED, premise false | two live battles possible (ranked + BaggerBomb clone); resolved by scope |
+
+---
+
+*Prepared August 31, 2026. Design authority: Fable, this chat. Locked items are marked LOCKED. Sol's second pass is complete; D-13 and D-18 confirmed; D-20 deferred; D-21 ruled. Nothing here is a build instruction.*

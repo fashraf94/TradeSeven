@@ -15,6 +15,7 @@ import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
 import { isAgentPresenceOn, isMatchupsBackdropOn } from '../config/featureFlags';
+import { TAB_KEYS, tabLabels } from './agentBattleTabs';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
 // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Uncomment to revive.
 // import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
@@ -74,8 +75,8 @@ const BACKDROP_GLOW = [
   'radial-gradient(ellipse 700px 700px at 75% 15%, rgba(45, 212, 191, 0.12), transparent 70%)',
 ];
 
-const TAB_KEYS = ['matchups', 'command', 'gametape'];
-const TAB_LABELS = { matchups: 'Matchups', command: 'Command Center', gametape: 'Game Tape' };
+// Tab identity lives in ./agentBattleTabs so it can be tested against the
+// real flag rather than re-implemented in a test (D-1 / D-15).
 
 const isCryptoSymbol = (symbol) => {
   return POPULAR_CRYPTO.some(c => c.symbol === symbol) || symbol?.endsWith('-USD');
@@ -359,7 +360,7 @@ function TabBar({ activeTab, onTabChange, hasCommandDot, commandDotColor, hasGam
               whiteSpace: 'nowrap',
             }}
           >
-            {TAB_LABELS[key]}
+            {tabLabels()[key]}
             {showDot && (
               <span style={{
                 position: 'absolute',
