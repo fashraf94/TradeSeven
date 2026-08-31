@@ -1080,6 +1080,65 @@ export const OPENER_LAZY_FALLBACK_ENABLED = true;
 export const TOURNAMENT_ADVANCEMENT_FROZEN = false;
 
 /**
+ * Weekly Ladder — placement points on the MONTHLY board (20260831_WEEKLY_LADDER_
+ * BUILD_SPEC_V1; structure ruling 20260831_TOURNAMENT_STRUCTURE_RULING_V1).
+ *
+ * Re-scores tournamentLeaderboards/{YYYY-MM} from cumulative COMPOSITE to
+ * cumulative PLACEMENT POINTS — 1st=3, 2nd=2, 3rd=1, 4th=0 off the existing
+ * day-5 finish order (lockTopTwo/rankByScores, the L-B Guard 2 clamped
+ * composite). The composite is retained as the stored TIEBREAK input (margin
+ * over the group average), never the primary key.
+ *
+ * MONTHLY BOARD, NOT THE CAREER DOC (the spec's load-bearing decision). The
+ * career tournamentRanks path applies cpuFarmGuard — which DISCOUNTS a human's
+ * gain in CPU-heavy groups, the exact penalty the ruling overturns — and never
+ * resets. The monthly board has no code path to that guard (cpuFarmGuard's only
+ * production caller is computeRankBreakdown, whose only caller is
+ * tournamentRank.js) and resets by design ("reset = a new doc key"). Career RP
+ * is UNTOUCHED by this flag in either position.
+ *
+ * When FALSE (default), flag-off is BYTE-IDENTICAL: buildGroupWeekRows emits
+ * today's exact row shape (no new keys), the month entry carries no new fields,
+ * and the reader sorts on cumulative composite exactly as it does today.
+ *
+ * AWARDED ON FINAL ROWS ONLY (founder decision D1, 2026-08-31): placement is a
+ * week's OUTCOME, so a row scores only once `final` is true (day 5 banked or the
+ * group COMPLETE). The nightly aggregation rewrites in-progress BATTLE rows
+ * every night; awarding provisionally would churn the season rank on days
+ * nobody finished. 0 until Friday is honest — THE FIELD carries live state.
+ *
+ * CPU seats are FULL entries (ruling §4): archetype-named via cpuAgentName,
+ * visually marked, and eligible for ANY position INCLUDING first. A CPU topping
+ * the board is ACCEPTED and pre-ruled — a finding worth investigating (it would
+ * say something real about whether agent decision-making beats holding a drafted
+ * book), never a defect to patch. Build no eligibility exclusion. CPUs come off
+ * the board later as a DISPLAY change when the human population makes them
+ * unnecessary — not a data migration; their presence is not load-bearing.
+ *
+ * ⚠ FLIP ON A MONTH BOUNDARY (build review finding F2, CONFIRMED with a repro).
+ * This board is month-keyed and "reset = a new doc key", so a flip taken at a
+ * month boundary scores the new month whole, from week 1. A MID-MONTH flip does
+ * NOT backfill: weeks finalized while the flag was dark carry no placement keys,
+ * and the nightly aggregation only revisits BATTLE groups (a closed week is
+ * COMPLETE and never revisited), so those weeks count 0 toward the month Σ
+ * PERMANENTLY — a 3-week month would score out of its 1 post-flip week, and the
+ * §9 decomposition would show "—" against weeks a player actually won. The
+ * ordering failure this also caused (the whole board collapsing to alphabetical
+ * by odUserId) is fixed — rankLeaderboardEntries now falls back to cumulative
+ * composite before the id — but that only makes a mid-month flip GRACEFUL, not
+ * correct. If a mid-month flip is ever required, backfill first: every seat's
+ * composite for a given week is recoverable from the month doc alone
+ * (entries[*].weeks[groupId].points across the four seats), so the placement and
+ * margin for a dark week can be re-derived without re-reading group docs.
+ *
+ * Built/merged DARK behind this flag; flip in a one-line follow-up PR after a
+ * Vercel preview smoke (the AGENT_PRESENCE_ENABLED precedent) — never in the
+ * build PR.
+ */
+// Pinned by: src/utils/weeklyLadderSurface.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2; the flag-ON battery api/_utils/tournamentLeaderboard.placement.test.js MOCKS this flag rather than pinning it).
+export const WEEKLY_LADDER_PLACEMENT_ENABLED = false;
+
+/**
  * Agent Presence — the reactive agent FACE (expression rig + mood baseline + event
  * reactions + environment layer). A READ-ONLY display surface: it writes nothing,
  * gates nothing, and is removable without touching any scoring or decision path.

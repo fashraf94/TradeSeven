@@ -119,6 +119,81 @@ export function etMonthKey(date = new Date()) {
 }
 
 /**
+ * THE ONE ORDERING HOME for the monthly board (spec §2/§3, founder decision D2).
+ *
+ * Every surface that ranks the board — the season ladder, the dev card, anything
+ * later — sorts THROUGH this function. A second copy of the sort is exactly how
+ * the season view and THE FIELD would silently drift apart (§9
+ * display-agreement): the rank a player is shown and the number beside it have
+ * to come from one place, by construction.
+ *
+ * FLAG OFF (default): cumulative composite DESC — byte-identical to the sort the
+ * board ships today (`(b.points ?? 0) - (a.points ?? 0)`).
+ *
+ * FLAG ON: cumulative PLACEMENT POINTS DESC → cumulative composite MARGIN over
+ * the group average DESC → cumulative COMPOSITE DESC → `odUserId` ASC. The last
+ * key is what makes the order total and stable: it is immutable and unique per
+ * entry, where `displayName` is neither — two CPUs of one archetype share a
+ * name, and a human can rename mid-month, which would reshuffle equal rows
+ * between renders.
+ *
+ * WHY COMPOSITE SITS BETWEEN MARGIN AND THE ID (a refinement of founder
+ * decision D2, raised for ratification in the build report). D2 named
+ * placement → margin → odUserId. Review found that on a MID-MONTH flip every
+ * entry reads 0/0 — weeks finalized while the flag was dark carry no placement
+ * keys, and the nightly pass only revisits BATTLE groups, so it never
+ * backfills them — and the board therefore collapsed straight through to
+ * `localeCompare`: ordered ALPHABETICALLY BY USER ID, worst player first. That
+ * is not a tie-break, it is a total ordering failure wearing one. Composite is
+ * the score this board ranked on for that whole month, so falling back to it
+ * degrades to TODAY'S order instead of to nonsense. It is not a third scoring
+ * dimension (spec §3) — it is the stored value the margin is derived from, used
+ * only after both ladder keys have tied.
+ *
+ * This makes the failure GRACEFUL; it does not make it correct. A mid-month
+ * flip still under-scores the month permanently, because the Σ over weeks
+ * counts dark weeks as 0 forever. The flip belongs on a MONTH BOUNDARY — see
+ * the flag's docstring in src/config/featureFlags.js.
+ *
+ * CPU entries rank on the same keys as humans, with no eligibility exclusion —
+ * a CPU may finish top of the board, which is accepted and pre-ruled (§4), not
+ * a defect to patch. Pure; never mutates the input.
+ */
+export function rankLeaderboardEntries(entries, { placementEnabled = false } = {}) {
+  const rows = Object.values(entries || {});
+  if (!placementEnabled) return rows.sort((a, b) => (b.points ?? 0) - (a.points ?? 0));
+  return rows.sort((a, b) =>
+    ((b.placementPoints ?? 0) - (a.placementPoints ?? 0))
+    || ((b.compositeMargin ?? 0) - (a.compositeMargin ?? 0))
+    || ((b.points ?? 0) - (a.points ?? 0))
+    || String(a.odUserId ?? '').localeCompare(String(b.odUserId ?? '')));
+}
+
+/**
+ * A month entry decomposed into the weeks that produced it (§9 display-agreement:
+ * "the number shown must decompose into the weeks that produced it"). Returns
+ * the per-week rows NEWEST-FIRST, each carrying the same stored values the total
+ * was summed from — never a re-derivation, so a row and the total cannot
+ * disagree. Weeks that have not closed yet are marked `final: false` and
+ * contribute 0, which is what the board shows for them. Pure.
+ */
+export function decomposeEntryWeeks(entry) {
+  return Object.entries(entry?.weeks || {})
+    .map(([groupId, week]) => ({
+      groupId,
+      label: week?.baseLayerWeek ?? (week?.bracketGameId != null ? `Bracket ${week.bracketGameId}` : groupId),
+      placement: week?.placement ?? null,
+      placementPoints: week?.placementPoints ?? 0,
+      compositeMargin: week?.compositeMargin ?? 0,
+      points: week?.points ?? 0,
+      final: week?.final === true,
+      updatedAt: week?.updatedAt ?? null,
+    }))
+    .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''))
+      || String(a.groupId).localeCompare(String(b.groupId)));
+}
+
+/**
  * The chevron boundary state for the leaderboard month nav (founder-ruled
  * boundaries): you can never browse PAST the current ET month (no future
  * boards), and "older" stops once you reach an empty month — so the prev
