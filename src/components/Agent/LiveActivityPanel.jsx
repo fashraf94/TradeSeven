@@ -7,9 +7,8 @@
 // Structure (top to bottom):
 //   1. AgentStatusIndicator -- pulsing dot + one-line status from the most
 //      recent statusFeed entry's message. Crossfade when the source changes.
-//   2. BreakthroughAlerts -- compact cards for 5 admitted types
-//      (risk_alert, threshold_event, gameplan_meeting, lock,
-//      hypothesis_resolved). Max 3 visible. Auto-dismiss after 60s OR
+//   2. BreakthroughAlerts -- compact cards for the admitted types (see
+//      BREAKTHROUGH_MAP). Max 3 visible. Auto-dismiss after 60s OR
 //      tap-to-dismiss-early. Routine evaluations/holds do NOT appear here;
 //      they feed the status indicator only.
 //   3. Agent Reasoning (N) -- collapsible Gemma scratchpad section, gray
@@ -18,7 +17,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, X, Trophy, AlertTriangle, Users, Lightbulb, Lock } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, Users } from 'lucide-react';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -36,15 +35,19 @@ const PALETTE = {
 };
 
 // Breakthrough types only. Everything else feeds the status indicator text.
-// threshold_event and lock use GOLD (scoring milestones / celebratory),
-// risk_alert uses RED, gameplan_meeting uses PURPLE, hypothesis_resolved
-// uses AMBER (pending outcome).
+// gameplan_meeting uses PURPLE.
+//
+// P-5 (Command Center Sync Pass 1): four types were removed here —
+// `risk_alert`, `threshold_event`, `lock`, `hypothesis_resolved`. None had a
+// live writer: no `action`/`type` in src/ or api/ ever carries those values,
+// so the cards could not fire. `lock` is the near-miss worth naming — the risk
+// manager does return `action: 'LOCK'` (api/_utils/agentRiskManager.js:156),
+// but agent-evaluate.js:1374 admits only EMERGENCY_SWAP / SWAP_OUT /
+// TRAIL_STOP into the loop that writes statusFeed, and siphons LOCK off at
+// :1377-1379 with no feed push. Re-wiring any of these means shipping its
+// writer in the same change — deliberately, not by re-adding a key here.
 const BREAKTHROUGH_MAP = {
-  risk_alert:          { label: 'RISK',   color: PALETTE.red,    Icon: AlertTriangle },
-  threshold_event:     { label: 'SCORE',  color: PALETTE.gold,   Icon: Trophy },
-  lock:                { label: 'LOCK',   color: PALETTE.gold,   Icon: Lock },
   gameplan_meeting:    { label: 'PLAN',   color: PALETTE.purple, Icon: Users },
-  hypothesis_resolved: { label: 'HYPO',   color: PALETTE.amber,  Icon: Lightbulb },
 };
 
 const BREAKTHROUGH_KEYS = new Set(Object.keys(BREAKTHROUGH_MAP));
@@ -176,7 +179,12 @@ function AgentStatusIndicator({ latestEntry }) {
 // ─── BreakthroughAlertCard ────────────────────────────────────────────────────
 
 function BreakthroughAlertCard({ alert, onDismiss }) {
-  const cfg = BREAKTHROUGH_MAP[alert.key] || BREAKTHROUGH_MAP.risk_alert;
+  // P-5: render nothing for an unmapped type rather than borrowing another
+  // type's visual. The old fallback pointed at risk_alert, so any unknown key
+  // rendered as a RISK card — a label the event never earned. An invented
+  // visual is the fabrication rule in miniature.
+  const cfg = BREAKTHROUGH_MAP[alert.key];
+  if (!cfg) return null;
   const ts = normalizeTimestamp(alert.timestamp);
   const body = truncate(extractMessage(alert.event), 140);
 
@@ -518,3 +526,9 @@ function LiveActivityPanel({
 }
 
 export default LiveActivityPanel;
+
+// P-5 (Command Center Sync Pass 1): named exports so the Agent Desk can reuse
+// the alert visual instead of forking it (Pass 1 spec §8.5, "import, don't
+// fork"). BreakthroughAlerts takes a plain `statusFeed` prop and owns its own
+// TTL/dismiss state, so it is portable as-is. Default export unchanged.
+export { BreakthroughAlerts, BreakthroughAlertCard };
