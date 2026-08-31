@@ -121,6 +121,34 @@ describe('rankLeaderboardEntries — flag ON (acceptance 2, founder decision D2)
     expect(rankLeaderboardEntries(entries, on).map(e => e.odUserId)).toEqual(['b', 'a']);
     expect(rankLeaderboardEntries(undefined, on)).toEqual([]);
   });
+
+  // THE MID-MONTH FLIP. Review finding F2 (CONFIRMED with a repro): the case
+  // above is a MIXED doc and passes vacuously — the real post-flip state is a
+  // board where EVERY entry predates the ladder, so both ladder keys read 0 for
+  // every pair. Before the composite fallback this collapsed to localeCompare
+  // and the board came out ALPHABETICAL BY USER ID, worst player first.
+  it('an ALL pre-flip board degrades to composite order, never to alphabetical', () => {
+    const pre = (id, points) => ({ odUserId: id, points, weeks: { g1: { points, final: true } } });
+    const entries = {
+      'mike-5': pre('mike-5', 116.3),
+      'zeta-9': pre('zeta-9', 80.7),
+      'bravo-2': pre('bravo-2', 58.6),
+      'alpha-1': pre('alpha-1', -8.9),
+    };
+    const order = rankLeaderboardEntries(entries, on).map(e => e.odUserId);
+    expect(order).toEqual(['mike-5', 'zeta-9', 'bravo-2', 'alpha-1']); // composite DESC
+    expect(order).not.toEqual([...order].sort());                      // NOT alphabetical
+    // and it matches exactly what the board shows today, flag-off
+    expect(order).toEqual(rankLeaderboardEntries(entries).map(e => e.odUserId));
+  });
+
+  it('a PARTIALLY scored board puts real placement above unscored composite', () => {
+    const entries = {
+      'alpha-1': { odUserId: 'alpha-1', points: 500, placementPoints: 0, compositeMargin: 0 },
+      'zeta-9': { odUserId: 'zeta-9', points: 1, placementPoints: 3, compositeMargin: 40 },
+    };
+    expect(rankLeaderboardEntries(entries, on)[0].odUserId).toBe('zeta-9');
+  });
 });
 
 // ==================== §9 — THE DECOMPOSITION ====================

@@ -31,8 +31,15 @@ const TABS = [
   { key: 'season', label: 'Season', hint: 'the month' },
 ];
 
-export default function DeskSeasonRail({ st, accent, uid = null, onOpenGroup = null }) {
-  const [tab, setTab] = useState('field');
+export default function DeskSeasonRail({ st, accent, uid = null, onOpenGroup = null, tab: tabProp, onTabChange }) {
+  // The tab is CONTROLLED when the parent supplies it. It must be, in the
+  // desktop lobby: that rail swaps this component out for the docked
+  // DeskPodPanel, so local state here would be unmounted — and silently reset
+  // Season back to The Field — every time a player opened a pod. The
+  // uncontrolled fallback keeps the component usable standalone.
+  const [tabLocal, setTabLocal] = useState('field');
+  const tab = tabProp ?? tabLocal;
+  const setTab = onTabChange ?? setTabLocal;
 
   // Dark: the rail is exactly what it is today.
   if (!WEEKLY_LADDER_PLACEMENT_ENABLED) return <DeskLeaderboard st={st} accent={accent} />;

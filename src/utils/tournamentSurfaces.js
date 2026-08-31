@@ -131,10 +131,29 @@ export function etMonthKey(date = new Date()) {
  * board ships today (`(b.points ?? 0) - (a.points ?? 0)`).
  *
  * FLAG ON: cumulative PLACEMENT POINTS DESC → cumulative composite MARGIN over
- * the group average DESC → `odUserId` ASC. The last key is what makes the order
- * total and stable: it is immutable and unique per entry, where `displayName`
- * is neither — two CPUs of one archetype share a name, and a human can rename
- * mid-month, which would reshuffle equal rows between renders.
+ * the group average DESC → cumulative COMPOSITE DESC → `odUserId` ASC. The last
+ * key is what makes the order total and stable: it is immutable and unique per
+ * entry, where `displayName` is neither — two CPUs of one archetype share a
+ * name, and a human can rename mid-month, which would reshuffle equal rows
+ * between renders.
+ *
+ * WHY COMPOSITE SITS BETWEEN MARGIN AND THE ID (a refinement of founder
+ * decision D2, raised for ratification in the build report). D2 named
+ * placement → margin → odUserId. Review found that on a MID-MONTH flip every
+ * entry reads 0/0 — weeks finalized while the flag was dark carry no placement
+ * keys, and the nightly pass only revisits BATTLE groups, so it never
+ * backfills them — and the board therefore collapsed straight through to
+ * `localeCompare`: ordered ALPHABETICALLY BY USER ID, worst player first. That
+ * is not a tie-break, it is a total ordering failure wearing one. Composite is
+ * the score this board ranked on for that whole month, so falling back to it
+ * degrades to TODAY'S order instead of to nonsense. It is not a third scoring
+ * dimension (spec §3) — it is the stored value the margin is derived from, used
+ * only after both ladder keys have tied.
+ *
+ * This makes the failure GRACEFUL; it does not make it correct. A mid-month
+ * flip still under-scores the month permanently, because the Σ over weeks
+ * counts dark weeks as 0 forever. The flip belongs on a MONTH BOUNDARY — see
+ * the flag's docstring in src/config/featureFlags.js.
  *
  * CPU entries rank on the same keys as humans, with no eligibility exclusion —
  * a CPU may finish top of the board, which is accepted and pre-ruled (§4), not
@@ -146,6 +165,7 @@ export function rankLeaderboardEntries(entries, { placementEnabled = false } = {
   return rows.sort((a, b) =>
     ((b.placementPoints ?? 0) - (a.placementPoints ?? 0))
     || ((b.compositeMargin ?? 0) - (a.compositeMargin ?? 0))
+    || ((b.points ?? 0) - (a.points ?? 0))
     || String(a.odUserId ?? '').localeCompare(String(b.odUserId ?? '')));
 }
 
