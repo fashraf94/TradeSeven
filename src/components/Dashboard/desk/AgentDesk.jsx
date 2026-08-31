@@ -67,11 +67,10 @@ function Block({ label, children }) {
 }
 
 /**
- * @param {object}      sync   the adapter object (never a raw document)
- * @param {string}      accent the agent's colour, resolved by the shell
- * @param {Array|null}  statusFeed the battle's feed, for the alert visual
+ * @param {object} sync   the adapter object (never a raw document)
+ * @param {string} accent the agent's colour, resolved by the shell
  */
-export default function AgentDesk({ sync, accent = CMD.teal, statusFeed = null }) {
+export default function AgentDesk({ sync, accent = CMD.teal }) {
   if (!sync) return null;
 
   const { phase, lastCheckedAt, nextDecisionAt, scoreProximity, swapLock, statusFeedLatest } = sync;
@@ -155,7 +154,7 @@ export default function AgentDesk({ sync, accent = CMD.teal, statusFeed = null }
 
       {/* Breakthrough alerts — gameplan_meeting only, post-P-5. Imported, not
           forked; the panel's own admission gate drops anything unmapped. */}
-      {statusFeed && <BreakthroughAlerts statusFeed={statusFeed} />}
+      {sync.statusFeed?.length > 0 && <BreakthroughAlerts statusFeed={sync.statusFeed} />}
     </div>
   );
 }

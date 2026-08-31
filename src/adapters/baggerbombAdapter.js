@@ -295,6 +295,11 @@ export function buildBaggerbombAdapter(battle, voiceLayerCacheDoc, agent, now, m
     proximityAsOf,
 
     statusFeedLatest: buildStatusFeedLatest(battle),
+    // The whole feed, carried through the boundary because the breakthrough
+    // alert visual takes the array. Without this a shell would have to hand
+    // AgentDesk `battle.statusFeed` directly, which is exactly the direct
+    // document read the pass exists to prevent (spec §5 rule 1).
+    statusFeed: Array.isArray(battle?.statusFeed) ? battle.statusFeed : [],
 
     loadout: {
       archetype: agent?.archetype ?? battle?.agentContext?.archetype ?? null,

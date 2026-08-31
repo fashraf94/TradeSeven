@@ -261,7 +261,7 @@ export default function CommandDashboardDesktop({
             {/* Command Center Sync (Pass 1): the Agent Desk. `sync` is null while
                 the flag is dark, and AgentDesk returns null for a null sync, so
                 flag-OFF this renders nothing and the column is unchanged. */}
-            {sync && <AgentDesk sync={sync} accent={accent} statusFeed={liveBattle?.statusFeed} />}
+            {sync && <AgentDesk sync={sync} accent={accent} />}
             <SectionLabel n="04" label={isLive ? 'Manage · live' : 'Manage'} color={isLive ? accent : CMD.ink3} />
             {/* Flag-ON: every live battle, each labeled by type, deterministically
                 ordered — no unsorted liveBattles[0] (acceptance #4). Flag-OFF: the
