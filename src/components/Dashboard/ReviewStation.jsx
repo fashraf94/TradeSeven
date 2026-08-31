@@ -10,6 +10,9 @@ import React from 'react';
 import { Film, ChevronRight } from 'lucide-react';
 import GainLossBadge from '../shared/GainLossBadge';
 import { CMD, alpha } from './commandUI';
+import { COMMAND_CENTER_SYNC_ENABLED } from '../../config/featureFlags';
+import { deriveDebriefPending } from '../../adapters/baggerbombAdapter';
+import { DESK_COPY } from './desk/deskCopy';
 
 export default function ReviewStation({ battles = [], agent, accent, onReview }) {
   if (!battles.length) return null;
@@ -17,6 +20,20 @@ export default function ReviewStation({ battles = [], agent, accent, onReview })
   const agentName = latest.agentContext?.agentName || agent?.name || 'Your agent';
   const score = latest.scoreState?.currentScore;
   const more = battles.length - 1;
+
+  // Command Center Sync (Pass 1, spec §7 POST_CLOSE / §12 acceptance): a battle
+  // can complete after the day's last batch-review run, so the debrief lands on
+  // a later run rather than immediately. Saying so is better than showing a
+  // Film Room entry that opens onto nothing.
+  //
+  // The copy promises no TIME on purpose. agent-batch-review fires at 20:25 and
+  // 21:25 weekdays; a battle completing after the last run waits for the next
+  // one, so "shortly" would be a claim the cron cannot honor. P-6's queue is
+  // what guarantees it arrives at all.
+  //
+  // Flag read at render scope, and the whole branch is dark by default, so
+  // flag-off this component is byte-identical.
+  const debriefPending = COMMAND_CENTER_SYNC_ENABLED && deriveDebriefPending(latest);
 
   return (
     <div
@@ -39,7 +56,11 @@ export default function ReviewStation({ battles = [], agent, accent, onReview })
         <div style={{ fontSize: 13.5, color: CMD.ink, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agentName}’s last battle</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 3 }}>
           <GainLossBadge value={score} variant="text" size="sm" showPercent={false} />
-          <span style={{ fontSize: 11.5, color: CMD.ink2 }}>Break down the tape{more > 0 ? ` · +${more} more` : ''}</span>
+          <span style={{ fontSize: 11.5, color: CMD.ink2 }}>
+            {debriefPending
+              ? DESK_COPY.debriefPending
+              : `Break down the tape${more > 0 ? ` · +${more} more` : ''}`}
+          </span>
         </div>
       </div>
       <ChevronRight size={16} color={CMD.ink3} style={{ flexShrink: 0 }} />

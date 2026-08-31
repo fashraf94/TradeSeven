@@ -230,6 +230,26 @@ function deriveNextDecisionAt(phase, lastCheckedAt, marketState) {
 }
 
 /**
+ * Is this completed battle still owed its debrief?
+ *
+ * The "review doc" is `battle.dailyReviews[]` — the array
+ * api/cron/agent-batch-review.js:223 appends to and :76 dedupes on. It rides
+ * the battle doc the 120s poll already carries, so the POST_CLOSE card needs
+ * no new read.
+ *
+ * Exported from the adapter rather than derived in a component: knowing that
+ * `dailyReviews` is where a debrief lands is document knowledge, and this
+ * module is the one place allowed to hold it (spec §5 rule 1).
+ *
+ * @returns {boolean} true only for a completed battle with no review yet
+ */
+export function deriveDebriefPending(battle) {
+  if (!battle || battle.status !== 'completed') return false;
+  const reviews = battle.dailyReviews;
+  return !Array.isArray(reviews) || reviews.length === 0;
+}
+
+/**
  * Build the adapter object.
  *
  * @param {object|null} battle   agentBattles doc ({id, ...data}) from the 120s poll
