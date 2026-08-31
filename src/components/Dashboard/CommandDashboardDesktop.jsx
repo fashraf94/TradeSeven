@@ -40,6 +40,10 @@ import DeployCeremony from './deployCeremony/DeployCeremony';
 // byte-identical to today.
 import { SCOUTING_BOARD_ENABLED, CASUAL_CLONE_CONCURRENCY_ENABLED, isDeployCeremonyOn, isStarfieldOn } from '../../config/featureFlags';
 import { deriveDeployGate } from '../../utils/commandCenterLiveBattles';
+// Command Center Sync (Pass 1): the ONE seam through which this shell sees
+// battle state. No field of agentBattles / voiceLayerCache / agents is read
+// directly here — that is the DO-NOT line the pass exists to hold (spec §5).
+import useCommandCenterSync from '../../hooks/useCommandCenterSync';
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -72,6 +76,7 @@ export default function CommandDashboardDesktop({
   setShowForge,
   setCurrentBattle,
   activeAgentBattles = [],
+  voiceLayerCaches = {},
   onCreateAgentBattle,
   onOpenAgentBattle,
   onEnterBattle,
@@ -97,6 +102,9 @@ export default function CommandDashboardDesktop({
   const { orderedLiveBattles, deployBlockedByLive, deployBlockReason, equipLocked } =
     deriveDeployGate({ liveBattles, agent, concurrencyEnabled: concurrencyOn });
   const recentCompleted = useRecentCompletedAgentBattles(3);
+  // null while the flag is dark, which is what keeps flag-OFF byte-identical:
+  // the slots below receive nothing and render exactly what they rendered.
+  const sync = useCommandCenterSync(liveBattle, voiceLayerCaches[liveBattle?.id], agent);
   // Loop rail. Kept on isLive by design: it marks the FURTHEST beat the daily loop has
   // reached (a concurrent BaggerBomb stays deployable beside a live ranked battle, but
   // the furthest beat is still Manage). (Phase 1.5 deliberate disposition; mirrors mobile.)
@@ -258,7 +266,7 @@ export default function CommandDashboardDesktop({
             ) : concurrencyOn ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
                 {orderedLiveBattles.map((b) => (
-                  <ManageStation key={b.id} battle={b} showType agent={agent} accent={accent} onOpen={onOpenAgentBattle} />
+                  <ManageStation key={b.id} battle={b} showType agent={agent} accent={accent} onOpen={onOpenAgentBattle} sync={b.id === sync?.game?.id ? sync : null} />
                 ))}
               </div>
             ) : (

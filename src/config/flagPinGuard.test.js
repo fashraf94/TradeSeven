@@ -100,6 +100,8 @@ const DARK_BY_DESIGN = {
   // below.
   MANDATE_DORMANCY_DOWNSHIFT_ENABLED:
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
+  COMMAND_CENTER_SYNC_ENABLED:
+    'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
   // LEAGUE_FUSE_HERO_ENABLED intentionally ABSENT: it flipped true in its own
   // one-line flip PR, over a weekend between tournaments — the deliberate flip
   // drops it here in the same change, per the guard's own "if DELIBERATE"
