@@ -187,6 +187,32 @@ describe('buildGroupWeekRows', () => {
     const completeRows = buildGroupWeekRows(group({ scores: SCORES, status: GROUP_STATUS.COMPLETE }), NOW_ISO);
     expect(completeRows[0].week.final).toBe(true);
   });
+
+  // WEEKLY LADDER, FLAG OFF (acceptance 7 — flag-off byte-identical). This file
+  // leaves WEEKLY_LADDER_PLACEMENT_ENABLED at its real dark value, so it is the
+  // one that can prove the dark path adds NOTHING. The flag-on behaviour lives
+  // in tournamentLeaderboard.placement.test.js.
+  it('emits no placement keys while the ladder flag is dark — the row shape is unchanged', () => {
+    const rows = buildGroupWeekRows(group({ scores: SCORES, days: 5 }), NOW_ISO);
+    expect(rows[0].week.final).toBe(true); // a FINAL week — the flag-on award point
+    for (const row of rows) {
+      expect(Object.keys(row.week).sort()).toEqual(
+        ['bracketGameId', 'final', 'points', 'roundNumber', 'updatedAt', 'userPoints'],
+      );
+      expect(row.week).not.toHaveProperty('placementPoints');
+      expect(row.week).not.toHaveProperty('compositeMargin');
+      expect(row.week).not.toHaveProperty('placement');
+    }
+  });
+
+  it('the month entry carries no placement fields while the flag is dark', async () => {
+    const { db, store } = makeDb();
+    await upsertLeaderboardForGroups(db, [group({ scores: SCORES, days: 5 })], { now: NOW });
+    const entry = store.get('tournamentLeaderboards/2026-06').entries.founder;
+    expect(entry.points).toBe(60);
+    expect(entry).not.toHaveProperty('placementPoints');
+    expect(entry).not.toHaveProperty('compositeMargin');
+  });
 });
 
 // ==================== THE UPSERT ====================

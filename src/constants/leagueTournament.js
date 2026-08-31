@@ -897,6 +897,53 @@ export function isoWeekString(date) {
   return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
+/**
+ * The ET calendar date ('YYYY-MM-DD') of a UTC instant — Intl with
+ * America/New_York, never a hand-rolled offset (BUILD_RULES §6). Pure.
+ */
+export function etDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date);
+  const get = (type) => parts.find(p => p.type === type).value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+/**
+ * The CURRENT base-layer week key, ET-anchored — the READ-side twin of the
+ * write-side liveDraftFormation.deriveBaseLayerWeek, and the ONE home for
+ * "which week is THE FIELD showing" (BUILD_RULES §4 one-home rule).
+ *
+ * WHY THIS EXISTS (the D-WEEKBOUNDARY fix, 2026-08-31). The write side stamps
+ * baseLayerWeek from the battle week's ET MONDAY (deriveBaseLayerWeek →
+ * isoWeekString(etDateToUtcNoon(mondayEtDate))). The read side used to call
+ * isoWeekString(new Date()) on the raw instant — pure UTC — so the queried week
+ * advanced 4-5 HOURS EARLY, at Sunday 20:00 ET (EDT) / 19:00 ET (EST), when UTC
+ * crosses into Monday while it is still Sunday in ET. In that window THE FIELD
+ * asked for a week with no groups in it while dropping the week just played, and
+ * rendered EMPTY — the same class as a zombie falling out of an equality-matched
+ * current-week query.
+ *
+ * It also broke §9 display-agreement for the season surface, which reads MONTHS
+ * in ET (tournamentSurfaces.etMonthKey, Intl/America/New_York) — months-in-ET
+ * beside weeks-in-UTC is two sources for one boundary, which is exactly how a
+ * label and its number drift apart.
+ *
+ * Walks back from the ET calendar date to that ET week's Monday, then labels it
+ * through the SAME isoWeekString the writer uses, so read and write agree by
+ * construction. Date arithmetic runs on UTC-midnight calendar dates (the
+ * liveDraftFormation etDateToUtcNoon idiom) — no offsets, DST-immune. Pure: the
+ * caller supplies the instant.
+ */
+export function currentBaseLayerWeek(now = new Date()) {
+  const [y, m, d] = etDateString(now).split('-').map(Number);
+  const etMidnightUtc = new Date(Date.UTC(y, m - 1, d));
+  const dow = etMidnightUtc.getUTCDay();          // 0=Sun … 6=Sat
+  const daysSinceMonday = (dow + 6) % 7;          // Mon→0, Sun→6
+  etMidnightUtc.setUTCDate(etMidnightUtc.getUTCDate() - daysSinceMonday);
+  return isoWeekString(etMidnightUtc);
+}
+
 // ==================== CAREER RANK (founder-signed, June 12, 2026) ====================
 //
 // The tier ladder and RP math below are the FOUNDER-SIGNED table from the P6

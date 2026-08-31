@@ -100,6 +100,8 @@ const DARK_BY_DESIGN = {
   // below.
   MANDATE_DORMANCY_DOWNSHIFT_ENABLED:
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
+  WEEKLY_LADDER_PLACEMENT_ENABLED:
+    'Weekly ladder placement points on the monthly board — built dark; flips only after a founder preview smoke (flag flip is its own one-line PR)',
   // LEAGUE_FUSE_HERO_ENABLED intentionally ABSENT: it flipped true in its own
   // one-line flip PR, over a weekend between tournaments — the deliberate flip
   // drops it here in the same change, per the guard's own "if DELIBERATE"
