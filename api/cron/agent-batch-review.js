@@ -12,6 +12,38 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
+
+// P-6 (Command Center Sync Pass 1): completed battles still owed a debrief.
+//
+// WHY THIS EXISTS. This cron fires at 20:25 and 21:25 UTC and, until now,
+// only ever looked at ACTIVE battles. completeBattle can land around 20:00
+// UTC, so a fullday battle that expired just before the first run was already
+// 'completed' when the query ran and was never reviewed at all — the
+// Dashboard's POST_CLOSE card would show "debrief pending" indefinitely. That
+// is the liveness half of P-6; the pending card without it would just be a
+// prettier way to display a broken pipeline.
+//
+// SHAPE. Single-field equality, so Firestore auto-indexes it — no composite
+// index and no schema deploy, unlike a `status == completed AND completedAt >=
+// X` window, which none of the six existing agentBattles composite indexes
+// serves. The flag is set by completeBattle (api/cron/agent-evaluate.js) and
+// cleared in the same write that appends the review, so a crash between the
+// two leaves the battle in the queue for the next run rather than dropping it.
+//
+// Bounded per run for the same reason process-pending-reflections is: this
+// handler makes a model call per battle and runs on a cron budget. A backlog
+// drains across runs.
+export const REVIEW_PENDING_LIMIT = 5;
+
+export async function findReviewPendingBattles(db) {
+  const snapshot = await db
+    .collection('agentBattles')
+    .where('reviewPending', '==', true)
+    .limit(REVIEW_PENDING_LIMIT)
+    .get();
+
+  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+}
 import { getCurrentTradingDayServer } from '../_utils/agentEvalPromptAssembly.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
@@ -68,7 +100,7 @@ function isToday(isoStr, todayStr) {
   return isoStr.slice(0, 10) === todayStr;
 }
 
-async function processBattleReview(db, battle) {
+async function processBattleReview(db, battle, { clearReviewPending = false } = {}) {
   const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
@@ -220,6 +252,12 @@ ${directiveLines}`;
   };
 
   await battleRef.update({
+    // P-6: the queue flag clears in the SAME write that appends the review, so
+    // a battle can never be dropped from the queue without having been
+    // reviewed (the drain pattern process-pending-reflections.js:87-90 uses).
+    // Only for queue-sourced battles: active battles never carried the flag,
+    // and writing it onto them would put a completion field on a live doc.
+    ...(clearReviewPending ? { reviewPending: false } : {}),
     dailyReviews: [...(battle.dailyReviews || []), reviewEntry],
     statusFeed: [...existingFeed, {
       timestamp: new Date().toISOString(),
@@ -379,16 +417,32 @@ export default async function handler(req, res) {
     // ---- 2. Find all active battles ----
     const battles = await findActiveAgentBattles(db);
 
-    if (battles.length === 0) {
+    // ---- 2b. P-6: drain the reviewPending queue ----
+    // Additive, and deliberately a SECOND query rather than a change to
+    // findActiveAgentBattles: that function lives in the §1-fenced
+    // api/_utils/agentBattleService.js, and widening it there would be fence
+    // contact. This one is local, single-field, and needs no composite index.
+    const pending = await findReviewPendingBattles(db);
+    if (pending.length > 0) {
+      console.log(`${LOG_PREFIX} Found ${pending.length} completed battle(s) awaiting a debrief`);
+    }
+
+    if (battles.length === 0 && pending.length === 0) {
       return res.status(200).json({ reviewed: 0, message: 'No active agent battles' });
     }
 
     console.log(`${LOG_PREFIX} Found ${battles.length} active agent battle(s)`);
 
     // ---- 3. Process each battle ----
-    for (const battle of battles) {
+    // Queue-sourced battles run through the SAME review path; the only
+    // difference is that their write also clears the flag.
+    const work = [
+      ...battles.map((b) => ({ battle: b, clearReviewPending: false })),
+      ...pending.map((b) => ({ battle: b, clearReviewPending: true })),
+    ];
+    for (const { battle, clearReviewPending } of work) {
       try {
-        const result = await processBattleReview(db, battle);
+        const result = await processBattleReview(db, battle, { clearReviewPending });
         if (result.status === 'reviewed') {
           summary.reviewed++;
         } else {
