@@ -44,6 +44,7 @@ import { deriveDeployGate } from '../../utils/commandCenterLiveBattles';
 // battle state. No field of agentBattles / voiceLayerCache / agents is read
 // directly here — that is the DO-NOT line the pass exists to hold (spec §5).
 import useCommandCenterSync from '../../hooks/useCommandCenterSync';
+import AgentDesk from './desk/AgentDesk';
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -257,6 +258,10 @@ export default function CommandDashboardDesktop({
         {/* RIGHT — the battle lifecycle (folds beneath center at ≤1199) */}
         <div className="cmd-desk-col" style={{ ...colScroll, gridArea: 'lifecycle', display: 'flex', flexDirection: 'column', gap: 22 }}>
           <div>
+            {/* Command Center Sync (Pass 1): the Agent Desk. `sync` is null while
+                the flag is dark, and AgentDesk returns null for a null sync, so
+                flag-OFF this renders nothing and the column is unchanged. */}
+            {sync && <AgentDesk sync={sync} accent={accent} statusFeed={liveBattle?.statusFeed} />}
             <SectionLabel n="04" label={isLive ? 'Manage · live' : 'Manage'} color={isLive ? accent : CMD.ink3} />
             {/* Flag-ON: every live battle, each labeled by type, deterministically
                 ordered — no unsorted liveBattles[0] (acceptance #4). Flag-OFF: the

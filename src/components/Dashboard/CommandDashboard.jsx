@@ -51,6 +51,7 @@ import { deriveDeployGate } from '../../utils/commandCenterLiveBattles';
 // battle state. No field of agentBattles / voiceLayerCache / agents is read
 // directly here — that is the DO-NOT line the pass exists to hold (spec §5).
 import useCommandCenterSync from '../../hooks/useCommandCenterSync';
+import AgentDesk from './desk/AgentDesk';
 import HoldToDeployButton from './deployCeremony/HoldToDeployButton';
 import DeployCeremony from './deployCeremony/DeployCeremony';
 
@@ -520,6 +521,10 @@ export default function CommandDashboard({
         )}
         {isLive && (
           <motion.div variants={sectionVariants}>
+{/* Command Center Sync (Pass 1): the Agent Desk. `sync` is null while
+                the flag is dark, and AgentDesk returns null for a null sync, so
+                flag-OFF this renders nothing and the column is unchanged. */}
+            {sync && <AgentDesk sync={sync} accent={accent} statusFeed={liveBattle?.statusFeed} />}
             <SectionLabel n="04" label="Manage · live" color={accent} />
             {/* Flag-ON: every live battle, each labeled by type, deterministically
                 ordered — no unsorted liveBattles[0] (acceptance #4). Flag-OFF: the

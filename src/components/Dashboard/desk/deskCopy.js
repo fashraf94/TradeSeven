@@ -122,6 +122,12 @@ export const DESK_COPY = Object.freeze({
 
   swapLockHeading: 'Swap locks',
 
+  // ── Latest feed line (spec §8 item 4) ──────────────────────────────────────
+  // When that entry was written. Deliberately NOT the "as of" wording used for
+  // proximity: they are different facts, and one label for two facts is how a
+  // display starts disagreeing with itself (BUILD_RULES §9).
+  feedStamp: (iso) => etStamp(iso),
+
   // ── Manage rail (spec §7) ──────────────────────────────────────────────────
   // Replaces the unconditional "is trading". Off-hours the agent is not
   // trading, and the card said so anyway before this pass.
