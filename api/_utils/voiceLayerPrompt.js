@@ -38,7 +38,7 @@ const OUTPUT_FORMAT = `RESPONSE FORMAT — You MUST respond with valid JSON only
   "hasDirective": true or false,
   "directive": null OR {
     "text": "Cold, concise strategic preference for the trading brain to weigh. Strip personality — just strategic essence.",
-    "expiry": "end_of_battle" or "3_games" or "permanent"
+    "expiry": "end_of_battle" or "3_games"
   },
   "suggestedActions": null OR ["Action Button 1", "Action Button 2", "Action Button 3"],
   "_lesson": null OR {
