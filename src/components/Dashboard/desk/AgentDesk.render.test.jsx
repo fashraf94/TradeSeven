@@ -30,7 +30,9 @@ const SYNC = {
   ],
   swapLock: [{ symbol: 'NVDA', locked: true, direction: 'negative', distancePercent: 1.234, message: 'locked' }],
   lastCheckedAt: '2026-09-01T16:47:00.000Z', // 12:47 ET
-  nextDecisionAt: '2026-09-01T17:02:00.000Z', // 13:02 ET
+  nextDecisionAt: '2026-09-01T17:02:00.000Z', // 13:02 ET (a TRUE instant)
+  // ET wall-clock fields, the shape the adapter emits for the next open.
+  nextOpenEt: { weekdayIndex: 2, hour: 9, minute: 30 }, // Tue 9:30 AM
   proximityStale: false,
   proximityAsOf: '2026-09-01T16:50:00.000Z',
   statusFeedLatest: { message: 'Holding PLTR into the close.', timestamp: '2026-09-01T16:47:00.000Z', action: 'hold' },
@@ -62,8 +64,22 @@ describe('posture line — discrete, never continuous', () => {
   });
 
   it('LIVE_CLOSED names the market state and the next check, with no agent verb', () => {
-    const html = render({ phase: 'LIVE_CLOSED', nextDecisionAt: '2026-09-08T13:30:00.000Z' });
+    const html = render({ phase: 'LIVE_CLOSED', nextDecisionAt: null });
     expect(html).toContain('Market closed · next check Tue 9:30 AM ET');
+  });
+
+  it('the next-check time comes from WALL-CLOCK FIELDS, so it cannot shift with the viewer zone', () => {
+    // The timezone defect: formatting the next open's EPOCH through Intl gave a
+    // wrong time (and, far enough east, a wrong day) for every non-ET viewer.
+    // These fields are read directly, so the rendered string is fixed.
+    const html = render({ phase: 'LIVE_CLOSED', nextOpenEt: { weekdayIndex: 1, hour: 9, minute: 30 } });
+    expect(html).toContain('next check Mon 9:30 AM ET');
+  });
+
+  it('falls back to a bare "Market closed" when the next open is unknown', () => {
+    const html = render({ phase: 'LIVE_CLOSED', nextOpenEt: null });
+    expect(html).toContain('Market closed');
+    expect(html).not.toContain('next check');
   });
 
   it('PRE_OPEN states the scheduled open — a fact, not a guess', () => {
@@ -114,6 +130,20 @@ describe('swap locks — a constraint, not a forecast', () => {
     const html = render({ swapLock: [] });
     expect(html).not.toContain('Swap locks');
     expect(html).not.toContain('from unlock');
+  });
+
+  it('never renders a bare "0.0" for a real but tiny distance', () => {
+    // detectRedZone only admits positions close to a threshold, so sub-0.05
+    // gaps are common. "0.0 ATR from next bonus tier" reads as "it arrived".
+    const html = render({
+      scoreProximity: [{ symbol: 'AMD', currentMultiplier: 1.98, targetMultiple: 2.0, direction: 'positive', zoneProgressPercent: 96 }],
+      swapLock: [{ symbol: 'AMD', locked: true, distancePercent: 0.02 }],
+    });
+    // React escapes the leading "<" in the SSR output; it renders as "<0.1".
+    expect(html).toContain('AMD · &lt;0.1 ATR from next bonus tier');
+    expect(html).toContain('AMD locked · &lt;0.1% from unlock');
+    expect(html).not.toContain('0.0 ATR');
+    expect(html).not.toContain('0.0% from unlock');
   });
 
   it('renders a bare lock when no distance is known', () => {

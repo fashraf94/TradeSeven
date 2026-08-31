@@ -27,50 +27,40 @@ import path from 'node:path';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = readFileSync(path.join(HERE, 'AgentBattleScreen.jsx'), 'utf8');
+const TABS = readFileSync(path.join(HERE, 'agentBattleTabs.js'), 'utf8');
 
 describe('the tab key is deliberately unchanged', () => {
-  it("TAB_KEYS still carries 'command'", () => {
-    expect(SOURCE).toMatch(/const TAB_KEYS = \['matchups', 'command', 'gametape'\];/);
-  });
-
   it('the decision is recorded in a comment, so it reads as deliberate', () => {
-    expect(SOURCE).toContain("key 'command' is legacy; display name is Huddle");
+    expect(TABS).toContain("key 'command' is legacy");
   });
 });
 
 describe('the label is flag-coupled', () => {
-  it('both labels exist in the source — the flag chooses between them', () => {
-    expect(SOURCE).toContain("'Huddle'");
-    expect(SOURCE).toContain("'Command Center'");
-    expect(SOURCE).toContain('COMMAND_CENTER_SYNC_ENABLED');
+  it('both labels exist in the module — the flag chooses between them', () => {
+    expect(TABS).toContain("'Huddle'");
+    expect(TABS).toContain("'Command Center'");
+    expect(TABS).toContain('COMMAND_CENTER_SYNC_ENABLED');
   });
 
-  it('the label is resolved at call time, not frozen at module load', () => {
-    // A module-scope `const TAB_LABELS = {... FLAG ? ...}` would bake the dark
-    // value in at import, which is both the hermetic-mock hazard and a thing
-    // that cannot be exercised in both states from one test run.
-    expect(SOURCE).toMatch(/const tabLabels = \(\) => \(\{/);
+  it('the screen renders the resolved label, not a frozen constant', () => {
     expect(SOURCE).toMatch(/\{tabLabels\(\)\[key\]\}/);
+    expect(TABS).toMatch(/export function tabLabels\(\)/);
   });
 });
 
-describe('the label actually follows the flag', () => {
-  // Import the real module surface both ways round rather than trusting the
-  // source text to mean what it looks like.
+describe('the label actually follows the flag (the REAL module, not a re-implementation)', () => {
+  // An earlier version of this block re-implemented the component's ternary in
+  // the test body and never imported anything from the screen. It asserted its
+  // own arithmetic: the label could have been deleted from the product entirely
+  // and every row here would still have passed. It now loads the real module.
   const loadLabels = async (enabled) => {
     vi.resetModules();
     vi.doMock('../config/featureFlags', async (importOriginal) => ({
       ...(await importOriginal()),
       COMMAND_CENTER_SYNC_ENABLED: enabled,
     }));
-    const { COMMAND_CENTER_SYNC_ENABLED } = await import('../config/featureFlags');
-    // Mirrors the component's own expression; the source assertions above pin
-    // that the component really is written this way.
-    return {
-      matchups: 'Matchups',
-      command: COMMAND_CENTER_SYNC_ENABLED ? 'Huddle' : 'Command Center',
-      gametape: 'Game Tape',
-    };
+    const mod = await import('./agentBattleTabs.js');
+    return mod.tabLabels();
   };
 
   it('dark → the tab still reads "Command Center"', async () => {
@@ -87,6 +77,12 @@ describe('the label actually follows the flag', () => {
       expect(labels.matchups).toBe('Matchups');
       expect(labels.gametape).toBe('Game Tape');
     }
+  });
+
+  it('TAB_KEYS still carries the legacy key, unrenamed', async () => {
+    vi.resetModules();
+    const { TAB_KEYS } = await import('./agentBattleTabs.js');
+    expect(TAB_KEYS).toEqual(['matchups', 'command', 'gametape']);
   });
 });
 

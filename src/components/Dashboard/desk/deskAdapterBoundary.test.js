@@ -99,6 +99,55 @@ describe('the shells hand the Desk the adapter and nothing else', () => {
   }
 });
 
+describe('syncForBattle — the guard that keeps one battle\'s phase off another\'s card', () => {
+  // Both shells render a Manage card per live battle but build ONE adapter, for
+  // the battle the Desk describes. Handing that adapter to every card would let
+  // a casual clone borrow a ranked battle's phase and claim the market is
+  // closed while its own is open — live today under
+  // CASUAL_CLONE_CONCURRENCY_ENABLED.
+  //
+  // Extracted from an inline ternary in both shells specifically so it could be
+  // tested. The inline version was "guarded" by a row that compared the
+  // component to itself and could not fail.
+  const sync = { game: { id: 'battle-1' }, phase: 'LIVE_CLOSED' };
+
+  it('returns the adapter for its own battle', async () => {
+    const { syncForBattle } = await import('../../../adapters/baggerbombAdapter.js');
+    expect(syncForBattle(sync, 'battle-1')).toBe(sync);
+  });
+
+  it('returns null for a DIFFERENT battle', async () => {
+    const { syncForBattle } = await import('../../../adapters/baggerbombAdapter.js');
+    expect(syncForBattle(sync, 'battle-2')).toBeNull();
+  });
+
+  it('returns null for a missing sync or a missing battle id', async () => {
+    const { syncForBattle } = await import('../../../adapters/baggerbombAdapter.js');
+    expect(syncForBattle(null, 'battle-1')).toBeNull();
+    expect(syncForBattle(sync, null)).toBeNull();
+    expect(syncForBattle(sync, undefined)).toBeNull();
+  });
+
+  it('both shells use it rather than an inline comparison', () => {
+    for (const shell of ['CommandDashboardDesktop.jsx', 'CommandDashboard.jsx']) {
+      const source = read(path.join(SRC, 'components', 'Dashboard', shell));
+      expect(source).toContain('syncForBattle(sync, b.id)');
+      expect(source).not.toMatch(/b\.id === sync\?\.game\?\.id/);
+    }
+  });
+
+  it('the Desk follows the ORDERED battle list, so it describes the first card', () => {
+    // liveBattles[0] is unsorted; orderedLiveBattles is the order the cards
+    // render in. Building the adapter from the former let the Desk describe one
+    // battle while sitting above another, unlabelled.
+    for (const shell of ['CommandDashboardDesktop.jsx', 'CommandDashboard.jsx']) {
+      const source = read(path.join(SRC, 'components', 'Dashboard', shell));
+      expect(source).toContain('const deskBattle = orderedLiveBattles[0]');
+      expect(source).toContain('useCommandCenterSync(deskBattle');
+    }
+  });
+});
+
 describe('the adapter is the only thing that names document fields', () => {
   it('carries statusFeed itself, so no shell has to reach for it', async () => {
     const { buildBaggerbombAdapter } = await import('../../../adapters/baggerbombAdapter.js');

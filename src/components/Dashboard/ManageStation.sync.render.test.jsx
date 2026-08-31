@@ -71,7 +71,8 @@ const render = (props = {}) => stripComments(renderToString(
 const syncFor = (phase, over = {}) => ({
   game: { id: 'battle-1', type: 'baggerbomb', label: 'BaggerBomb' },
   phase,
-  nextDecisionAt: '2026-09-08T13:30:00.000Z', // Tue 9:30 ET
+  nextDecisionAt: null,
+  nextOpenEt: { weekdayIndex: 2, hour: 9, minute: 30 }, // Tue 9:30 ET, wall clock
   ...over,
 });
 
@@ -95,11 +96,10 @@ describe('flag-OFF is byte-identical (spec §12)', () => {
     expect(render()).toContain('left');
   });
 
-  it('an unrelated battle\'s sync object is ignored (the shells pass null for a mismatch)', () => {
-    // The shells guard with `b.id === sync?.game?.id ? sync : null`, so a second
-    // concurrent battle's card must never borrow the first battle's phase.
-    expect(render({ sync: null })).toBe(render());
-  });
+  // NOTE: an earlier row here claimed to guard the shells' battle-id match and
+  // actually compared the component to itself — it could not fail. The real
+  // guard lives in the shells, and it is now tested where it lives, against the
+  // extracted helper: see syncForBattle in deskAdapterBoundary.test.js.
 });
 
 describe('lit — the phase drives the activity line', () => {
@@ -143,9 +143,16 @@ describe('lit — the right rail becomes the next wake, off-hours', () => {
     expect(html).not.toContain('Resumes');
   });
 
-  it('falls back to generic wording when there is no next-open instant', () => {
-    const html = render({ sync: syncFor('LIVE_CLOSED', { nextDecisionAt: null }) });
+  it('falls back to generic wording when there is no next-open wall clock', () => {
+    const html = render({ sync: syncFor('LIVE_CLOSED', { nextOpenEt: null }) });
     expect(html).toContain('Resumes at next open');
+  });
+
+  it('the resume time comes from WALL-CLOCK FIELDS, not an epoch', () => {
+    // Same timezone fix as the Desk: reading the fields keeps this string
+    // stable for every viewer, wherever they are.
+    const html = render({ sync: syncFor('LIVE_CLOSED', { nextOpenEt: { weekdayIndex: 1, hour: 9, minute: 30 } }) });
+    expect(html).toContain('Resumes Mon 9:30 AM ET');
   });
 });
 

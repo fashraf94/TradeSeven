@@ -57,7 +57,28 @@ export function etWeekday(iso) {
   }).format(d);
 }
 
-/** "Fri 3:45 PM ET" — the as-of stamp's shape. */
+const ET_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/**
+ * Format ET WALL-CLOCK FIELDS (not an instant) as "Tue 9:30 AM".
+ *
+ * getMarketState()'s nextOpenTime / nextCloseTime are Dates whose LOCAL fields
+ * are the ET wall clock but whose epoch is shifted by the viewer's offset, so
+ * they must be formatted from their fields. Running their epoch through Intl
+ * renders a wrong time — and, far enough east, a wrong day — for every viewer
+ * outside ET. The adapter carries them as {weekdayIndex, hour, minute} for
+ * exactly this reason; see etWallClock() in baggerbombAdapter.js.
+ */
+export function etWallClockLabel(wc) {
+  if (!wc || typeof wc.hour !== 'number' || typeof wc.minute !== 'number') return null;
+  const day = ET_WEEKDAYS[wc.weekdayIndex];
+  if (!day) return null;
+  const suffix = wc.hour >= 12 ? 'PM' : 'AM';
+  const hour12 = wc.hour % 12 === 0 ? 12 : wc.hour % 12;
+  return `${day} ${hour12}:${String(wc.minute).padStart(2, '0')} ${suffix}`;
+}
+
+/** "Fri 3:45 PM ET" — the as-of stamp's shape. Takes a TRUE instant. */
 export function etStamp(iso) {
   const day = etWeekday(iso);
   const time = etTime(iso);
@@ -84,11 +105,9 @@ export const DESK_COPY = Object.freeze({
 
   // LIVE_CLOSED. "Market closed" is a market fact; the next check is the next
   // open. No verb about the agent at all — it is not doing anything.
-  postureClosed: (nextOpenIso) => {
-    const day = etWeekday(nextOpenIso);
-    const time = etTime(nextOpenIso);
-    if (!day || !time) return 'Market closed';
-    return `Market closed · next check ${day} ${time} ET`;
+  postureClosed: (nextOpenEt) => {
+    const label = etWallClockLabel(nextOpenEt);
+    return label ? `Market closed · next check ${label} ET` : 'Market closed';
   },
 
   // POST_CLOSE — the battle is over; there is no next check.
@@ -99,6 +118,19 @@ export const DESK_COPY = Object.freeze({
   // sign math in the UI, and the tier named is a scoring tier — not a trade.
   proximityRow: (symbol, atrAway, direction) =>
     `${symbol} · ${atrAway} ATR from next ${direction === 'negative' ? 'bust' : 'bonus'} tier`,
+
+  /**
+   * One decimal, but never a bare "0.0" for a distance that is not zero.
+   * detectRedZone only admits positions within the last stretch before a
+   * threshold, so sub-0.05 distances are common — and "0.0 ATR from next bonus
+   * tier" reads as "it has arrived" for a position that has not crossed
+   * anything. "<0.1" is the honest rendering of a real, tiny gap.
+   */
+  distance1dp: (value) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    if (value === 0) return '0.0';
+    return value < 0.05 ? '<0.1' : value.toFixed(1);
+  },
 
   proximityHeading: 'Scoring proximity',
 
@@ -133,10 +165,9 @@ export const DESK_COPY = Object.freeze({
   // trading, and the card said so anyway before this pass.
   manageLive: (agentName) => `${agentName} is trading`,
   manageClosed: 'Market closed',
-  manageResumes: (nextOpenIso) => {
-    const day = etWeekday(nextOpenIso);
-    const time = etTime(nextOpenIso);
-    return day && time ? `Resumes ${day} ${time} ET` : 'Resumes at next open';
+  manageResumes: (nextOpenEt) => {
+    const label = etWallClockLabel(nextOpenEt);
+    return label ? `Resumes ${label} ET` : 'Resumes at next open';
   },
   managePreOpen: 'Waiting for the open',
 

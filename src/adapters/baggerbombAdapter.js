@@ -69,6 +69,53 @@ function toMillis(raw) {
 }
 
 /**
+ * Read the ET wall-clock fields off a Date produced by
+ * src/utils/marketSchedule.js.
+ *
+ * THIS IS NOT AN INSTANT AND MUST NOT BE TREATED AS ONE. getMarketState()
+ * builds nextOpenTime / nextCloseTime from getETDate() (marketSchedule.js:76),
+ * which re-parses a toLocaleString('en-US', {timeZone:'America/New_York'})
+ * string in the BROWSER's zone. The resulting Date's LOCAL FIELDS are the ET
+ * wall clock, but its epoch is shifted by (browserOffset − etOffset).
+ * CommandDashboard.jsx:203 already documents this for its own use.
+ *
+ * Taking .getTime() and formatting it back through Intl/America/New_York — as
+ * an earlier version of this adapter did — double-converts and produces a
+ * wrong time for every viewer outside ET. Measured at the real instant
+ * 2026-09-14T22:00:00Z, whose true next open is Tue 9:30 AM ET:
+ *   America/New_York  -> "Tue 9:30 AM ET"   (correct)
+ *   UTC               -> "Tue 5:30 AM ET"
+ *   America/Los_Angeles -> "Tue 12:30 PM ET"
+ *   Asia/Tokyo        -> "Mon 8:30 PM ET"   (wrong DAY, and in the past)
+ *
+ * So the wall-clock fields are carried structurally and formatted from the
+ * fields, never from the epoch.
+ *
+ * @returns {{weekdayIndex:number, hour:number, minute:number}|null}
+ */
+export function etWallClock(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+  return { weekdayIndex: date.getDay(), hour: date.getHours(), minute: date.getMinutes() };
+}
+
+/** Minutes-since-ET-midnight for a wall-clock field set. */
+const wallClockMinutes = (wc) => (wc ? wc.hour * 60 + wc.minute : null);
+
+/**
+ * Minutes-since-ET-midnight for a TRUE instant. Safe to use Intl here, because
+ * the input really is an instant (unlike the marketSchedule Dates above).
+ */
+function etMinutesOfInstant(ms) {
+  if (ms == null) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(ms));
+  const h = Number(parts.find((p) => p.type === 'hour')?.value);
+  const m = Number(parts.find((p) => p.type === 'minute')?.value);
+  return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+}
+
+/**
  * Derive the phase (framework §4). Never stored — always derived.
  *
  * PRE_OPEN's marker is `scoreState.evaluationCount`, NOT a statusFeed entry.
@@ -205,37 +252,63 @@ function buildStatusFeedLatest(battle) {
 }
 
 /**
- * When the agent next checks.
+ * When the agent next checks, during LIVE only.
  *
- * During LIVE: last check + 15 min, unless that lands past the close, in which
- * case it is the next open. Off-hours: the next open. Evals are hard-gated to
- * RTH (agent-evaluate.js:284-286), so there is no honest intermediate answer.
+ * Returns a TRUE ISO instant or null. Off-hours the answer is the next market
+ * open, which is a wall clock rather than an instant and is carried separately
+ * as `nextOpenEt` — mixing the two in one field was the timezone defect.
  *
- * Returns null when nothing has been checked yet — the Desk renders
- * "First check coming up" rather than a fabricated time (spec §8).
+ * Null when nothing has been checked yet (the Desk says a check is coming
+ * rather than inventing a time), and null when the computed next check is
+ * already in the past — a starved cron must not produce a "next ~" that has
+ * been and gone.
  */
-function deriveNextDecisionAt(phase, lastCheckedAt, marketState) {
-  const nextOpen = toIso(marketState?.nextOpenTime);
-
-  if (phase === PHASE.POST_CLOSE) return null;
-  if (phase !== PHASE.LIVE) return nextOpen;
+function deriveNextDecisionAt(phase, lastCheckedAt, marketState, now) {
+  if (phase !== PHASE.LIVE) return null;
 
   const lastMs = toMillis(lastCheckedAt);
   if (lastMs == null) return null;
 
   const candidate = lastMs + EVAL_INTERVAL_MS;
-  const closeMs = toMillis(marketState?.nextCloseTime);
-  if (closeMs != null && candidate >= closeMs) return nextOpen;
+  const nowMs = toMillis(now);
+  if (nowMs != null && candidate <= nowMs) return null;
+
+  // Clamp to the session close. Both sides are compared as ET minutes-past-
+  // midnight: the candidate is a true instant (Intl is correct for it), the
+  // close is a wall clock (its fields are read directly). Comparing their
+  // epochs — as an earlier version did — mixed the two clocks.
+  const closeMinutes = wallClockMinutes(etWallClock(marketState?.nextCloseTime));
+  const candidateMinutes = etMinutesOfInstant(candidate);
+  if (closeMinutes != null && candidateMinutes != null && candidateMinutes >= closeMinutes) {
+    return null;
+  }
   return new Date(candidate).toISOString();
+}
+
+/**
+ * The adapter for THIS battle, or null.
+ *
+ * Both shells render a Manage card per live battle but build only ONE adapter
+ * (for the battle the Desk describes). Handing that adapter to every card would
+ * let a second concurrent battle — a casual clone beside a ranked battle, live
+ * today under CASUAL_CLONE_CONCURRENCY_ENABLED — borrow the first battle's
+ * phase and claim the market is closed when its own is open.
+ *
+ * Extracted from an inline ternary in both shells so it can be tested. The
+ * inline version was guarded only by a test that compared the component to
+ * itself and could not fail.
+ */
+export function syncForBattle(sync, battleId) {
+  if (!sync || !battleId) return null;
+  return sync.game?.id === battleId ? sync : null;
 }
 
 /**
  * Is this completed battle still owed its debrief?
  *
  * The "review doc" is `battle.dailyReviews[]` — the array
- * api/cron/agent-batch-review.js:223 appends to and :76 dedupes on. It rides
- * the battle doc the 120s poll already carries, so the POST_CLOSE card needs
- * no new read.
+ * api/cron/agent-batch-review.js appends to and dedupes on. It rides the battle
+ * doc the 120s poll already carries, so the POST_CLOSE card needs no new read.
  *
  * Exported from the adapter rather than derived in a component: knowing that
  * `dailyReviews` is where a debrief lands is document knowledge, and this
@@ -306,7 +379,11 @@ export function buildBaggerbombAdapter(battle, voiceLayerCacheDoc, agent, now, m
     swapLock,
 
     lastCheckedAt,
-    nextDecisionAt: deriveNextDecisionAt(phase, lastCheckedAt, marketState),
+    // A true ISO instant, LIVE only (last check + 15 min, inside the session).
+    nextDecisionAt: deriveNextDecisionAt(phase, lastCheckedAt, marketState, now),
+    // The next market open as ET WALL-CLOCK FIELDS, never an epoch — see
+    // etWallClock() above for why the distinction is load-bearing.
+    nextOpenEt: etWallClock(marketState?.nextOpenTime),
 
     // Whether the proximity block may render at all, and what it is current
     // as of. `proximityAsOf` is non-null even when stale so a caller can say

@@ -25,49 +25,50 @@ import {
 // Market-state fixtures. Shape mirrors getMarketState()'s real return
 // (src/utils/marketSchedule.js:162-168): { isOpen, state, nextOpenTime,
 // nextCloseTime, isEarlyClose }.
+//
+// CRITICAL: nextOpenTime / nextCloseTime are ET WALL-CLOCK Dates, not instants.
+// getMarketState() builds them from getETDate(), which re-parses an ET string
+// in the browser's zone — so their LOCAL FIELDS are the ET wall clock and their
+// epoch is meaningless. These fixtures are therefore constructed with the
+// LOCAL-field constructor (new Date(y, m, d, h, min)), matching what the real
+// producer emits. An earlier version used new Date('...Z'), a shape the
+// producer never returns, which is why the timezone defect passed its tests.
 const MS = {
   open: {
-    isOpen: true,
-    state: 'OPEN',
-    nextOpenTime: new Date('2026-09-02T13:30:00Z'),
-    nextCloseTime: new Date('2026-09-01T20:00:00Z'),
+    isOpen: true, state: 'OPEN',
+    nextOpenTime: new Date(2026, 8, 2, 9, 30),   // Wed 9:30 ET (wall clock)
+    nextCloseTime: new Date(2026, 8, 1, 16, 0),  // Tue 16:00 ET
     isEarlyClose: false,
   },
   preMarket: {
-    isOpen: false,
-    state: 'PRE_MARKET',
-    nextOpenTime: new Date('2026-09-01T13:30:00Z'),
-    nextCloseTime: new Date('2026-09-01T20:00:00Z'),
+    isOpen: false, state: 'PRE_MARKET',
+    nextOpenTime: new Date(2026, 8, 1, 9, 30),   // Tue 9:30 ET
+    nextCloseTime: new Date(2026, 8, 1, 16, 0),
     isEarlyClose: false,
   },
   afterHours: {
-    isOpen: false,
-    state: 'CLOSED_AFTERHOURS',
-    nextOpenTime: new Date('2026-09-02T13:30:00Z'),
-    nextCloseTime: new Date('2026-09-02T20:00:00Z'),
+    isOpen: false, state: 'CLOSED_AFTERHOURS',
+    nextOpenTime: new Date(2026, 8, 2, 9, 30),
+    nextCloseTime: new Date(2026, 8, 2, 16, 0),
     isEarlyClose: false,
   },
   weekend: {
-    isOpen: false,
-    state: 'CLOSED_WEEKEND',
-    nextOpenTime: new Date('2026-09-07T13:30:00Z'),
-    nextCloseTime: new Date('2026-09-07T20:00:00Z'),
+    isOpen: false, state: 'CLOSED_WEEKEND',
+    nextOpenTime: new Date(2026, 8, 7, 9, 30),   // Mon 9:30 ET
+    nextCloseTime: new Date(2026, 8, 7, 16, 0),
     isEarlyClose: false,
   },
   holiday: {
-    isOpen: false,
-    state: 'CLOSED_HOLIDAY',
-    nextOpenTime: new Date('2026-09-08T13:30:00Z'),
-    nextCloseTime: new Date('2026-09-08T20:00:00Z'),
+    isOpen: false, state: 'CLOSED_HOLIDAY',
+    nextOpenTime: new Date(2026, 8, 8, 9, 30),   // Tue 9:30 ET
+    nextCloseTime: new Date(2026, 8, 8, 16, 0),
     isEarlyClose: false,
   },
-  // 2026-11-27, day after Thanksgiving — 1:00 PM ET close
-  // (src/utils/marketSchedule.js:55-58 NYSE_EARLY_CLOSE_2026).
+  // 2026-11-27, day after Thanksgiving — 1:00 PM ET close.
   earlyCloseOpen: {
-    isOpen: true,
-    state: 'OPEN',
-    nextOpenTime: new Date('2026-11-30T14:30:00Z'),
-    nextCloseTime: new Date('2026-11-27T18:00:00Z'), // 13:00 ET = 18:00 UTC (EST)
+    isOpen: true, state: 'OPEN',
+    nextOpenTime: new Date(2026, 10, 30, 9, 30),
+    nextCloseTime: new Date(2026, 10, 27, 13, 0), // 13:00 ET
     isEarlyClose: true,
   },
 };
@@ -443,12 +444,24 @@ describe('buildBaggerbombAdapter', () => {
       expect(a.nextDecisionAt).toBe('2026-09-01T17:02:00.000Z');
     });
 
-    it('LIVE: a next check that would land past the close rolls to the next open', () => {
+    it('LIVE: a next check that would land past the close is withheld, not faked', () => {
+      // 15:50 ET + 15min = 16:05 ET, past the 16:00 close. There is no honest
+      // "next check" inside this session, so the field is null and the posture
+      // line degrades to "Checked 3:50 PM" with no invented follow-up.
       const late = makeBattle({
         scoreState: { evaluationCount: 9, lastScoredAt: '2026-09-01T19:50:00.000Z' },
       });
       const a = build(late, makeCache(), AGENT, '2026-09-01T19:55:00Z', MS.open);
-      expect(a.nextDecisionAt).toBe(MS.open.nextOpenTime.toISOString());
+      expect(a.nextDecisionAt).toBeNull();
+    });
+
+    it('LIVE: a next check already in the PAST is withheld — a starved cron never fabricates', () => {
+      const starved = makeBattle({
+        scoreState: { evaluationCount: 9, lastScoredAt: '2026-09-01T14:00:00.000Z' },
+      });
+      // now is two hours after the check + 15min would have landed
+      const a = build(starved, makeCache(), AGENT, '2026-09-01T16:30:00Z', MS.open);
+      expect(a.nextDecisionAt).toBeNull();
     });
 
     it('LIVE with no eval yet → null, never a fabricated time', () => {
@@ -456,12 +469,28 @@ describe('buildBaggerbombAdapter', () => {
       expect(build(fresh, makeCache(), AGENT, NOW, MS.open).nextDecisionAt).toBeNull();
     });
 
-    it('LIVE_CLOSED / PRE_OPEN: next decision is the next market open', () => {
-      expect(build(makeBattle(), makeCache(), AGENT, NOW, MS.weekend).nextDecisionAt)
-        .toBe(MS.weekend.nextOpenTime.toISOString());
+    it('LIVE_CLOSED / PRE_OPEN: the next open is carried as ET WALL-CLOCK FIELDS, not an instant', () => {
+      // This is the timezone fix. The next open is a wall clock; putting its
+      // epoch in an ISO field and formatting it back through Intl rendered a
+      // wrong time — and, far enough east, a wrong day — for every viewer
+      // outside ET.
+      const closed = build(makeBattle(), makeCache(), AGENT, NOW, MS.weekend);
+      expect(closed.nextDecisionAt).toBeNull();
+      expect(closed.nextOpenEt).toEqual({ weekdayIndex: 1, hour: 9, minute: 30 }); // Mon 9:30
+
       const fresh = makeBattle({ scoreState: { evaluationCount: 0, lastScoredAt: null } });
-      expect(build(fresh, makeCache(), AGENT, NOW, MS.preMarket).nextDecisionAt)
-        .toBe(MS.preMarket.nextOpenTime.toISOString());
+      const pre = build(fresh, makeCache(), AGENT, NOW, MS.preMarket);
+      expect(pre.nextOpenEt).toEqual({ weekdayIndex: 2, hour: 9, minute: 30 }); // Tue 9:30
+    });
+
+    it('the wall-clock fields are read from LOCAL fields, so they do not shift with the viewer zone', () => {
+      // The producer emits a Date whose local fields are the ET wall clock.
+      // Reading .getDay()/.getHours() is stable under any TZ; reading .getTime()
+      // and re-formatting through Intl is not. This asserts the former.
+      const wc = build(makeBattle(), makeCache(), AGENT, NOW, MS.weekend).nextOpenEt;
+      expect(wc.hour).toBe(MS.weekend.nextOpenTime.getHours());
+      expect(wc.minute).toBe(MS.weekend.nextOpenTime.getMinutes());
+      expect(wc.weekdayIndex).toBe(MS.weekend.nextOpenTime.getDay());
     });
 
     it('POST_CLOSE: there is no next decision', () => {
@@ -469,13 +498,22 @@ describe('buildBaggerbombAdapter', () => {
       expect(build(done, makeCache(), AGENT, NOW, MS.afterHours).nextDecisionAt).toBeNull();
     });
 
-    it('early-close day: the close that matters is 1pm ET, so 12:55 + 15min rolls over', () => {
+    it('early-close day: the 1pm ET close clamps the next check, not the usual 4pm', () => {
       const b = makeBattle({
         scoreState: { evaluationCount: 8, lastScoredAt: '2026-11-27T17:55:00.000Z' }, // 12:55 ET
       });
       const a = build(b, makeCache({ updatedAt: '2026-11-27T17:56:00.000Z' }), AGENT, '2026-11-27T17:57:00Z', MS.earlyCloseOpen);
       expect(a.phase).toBe(PHASE.LIVE);
-      expect(a.nextDecisionAt).toBe(MS.earlyCloseOpen.nextOpenTime.toISOString());
+      // 12:55 + 15min = 13:10 ET, past the 13:00 early close.
+      expect(a.nextDecisionAt).toBeNull();
+    });
+
+    it('early-close day: a check comfortably before 1pm still gets its next tick', () => {
+      const b = makeBattle({
+        scoreState: { evaluationCount: 8, lastScoredAt: '2026-11-27T17:00:00.000Z' }, // 12:00 ET
+      });
+      const a = build(b, makeCache({ updatedAt: '2026-11-27T17:01:00.000Z' }), AGENT, '2026-11-27T17:02:00Z', MS.earlyCloseOpen);
+      expect(a.nextDecisionAt).toBe('2026-11-27T17:15:00.000Z'); // 12:15 ET
     });
   });
 

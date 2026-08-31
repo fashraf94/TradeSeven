@@ -52,7 +52,7 @@ export default function ManageStation({ battle, agent, accent, onOpen, showType,
   // fact; when the agent next wakes is. Derived from the same adapter field
   // the Desk's posture line uses, so the two cannot disagree (BUILD_RULES §9).
   const resumes = (phase === 'LIVE_CLOSED' || phase === 'PRE_OPEN')
-    ? DESK_COPY.manageResumes(sync?.nextDecisionAt)
+    ? DESK_COPY.manageResumes(sync?.nextOpenEt)
     : null;
   const rightRail = resumes || left;
   // Header label and the opponent line both derive from ONE classification (§9 —

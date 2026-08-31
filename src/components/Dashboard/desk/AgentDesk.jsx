@@ -36,7 +36,7 @@ function ProximityRow({ row, accent }) {
   // ATR distance is rounded for display, and the SAME rounded number is what
   // the copy renders — never a label computed from one value and a number from
   // another (BUILD_RULES §9).
-  const atrAway = Math.abs(row.targetMultiple - row.currentMultiplier).toFixed(1);
+  const atrAway = DESK_COPY.distance1dp(Math.abs(row.targetMultiple - row.currentMultiplier));
   const pct = typeof row.zoneProgressPercent === 'number' ? row.zoneProgressPercent : null;
 
   return (
@@ -81,7 +81,7 @@ export default function AgentDesk({ sync, accent = CMD.teal }) {
   const posture = phase === 'LIVE'
     ? DESK_COPY.postureLive(lastCheckedAt, nextDecisionAt)
     : phase === 'LIVE_CLOSED'
-      ? DESK_COPY.postureClosed(nextDecisionAt)
+      ? DESK_COPY.postureClosed(sync.nextOpenEt)
       : phase === 'PRE_OPEN'
         ? DESK_COPY.posturePreOpen
         : DESK_COPY.postureComplete;
@@ -128,7 +128,7 @@ export default function AgentDesk({ sync, accent = CMD.teal }) {
             <Mono key={lock.symbol} style={{ fontSize: 12, color: CMD.ink2 }}>
               {DESK_COPY.swapLockRow(
                 lock.symbol,
-                typeof lock.distancePercent === 'number' ? lock.distancePercent.toFixed(1) : null,
+                DESK_COPY.distance1dp(lock.distancePercent),
               )}
             </Mono>
           ))}

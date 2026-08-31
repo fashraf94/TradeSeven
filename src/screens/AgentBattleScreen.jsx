@@ -14,7 +14,8 @@ import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
-import { isAgentPresenceOn, isMatchupsBackdropOn, COMMAND_CENTER_SYNC_ENABLED } from '../config/featureFlags';
+import { isAgentPresenceOn, isMatchupsBackdropOn } from '../config/featureFlags';
+import { TAB_KEYS, tabLabels } from './agentBattleTabs';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
 // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Uncomment to revive.
 // import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
@@ -74,25 +75,8 @@ const BACKDROP_GLOW = [
   'radial-gradient(ellipse 700px 700px at 75% 15%, rgba(45, 212, 191, 0.12), transparent 70%)',
 ];
 
-// key 'command' is legacy; display name is Huddle (see PASS1 spec §10).
-// Deliberately NOT renamed: it is not user-visible, not persisted anywhere (no
-// localStorage, no Firestore field, no analytics event — and this app has no
-// router at all), so renaming it would churn six comparison sites in this file
-// for zero user-facing value.
-const TAB_KEYS = ['matchups', 'command', 'gametape'];
-
-// D-15: the in-battle tab is "Huddle" — it communicates conversation rather
-// than command authority, and "Command Center" now names the Dashboard, which
-// this pass makes the surface that actually holds the agent's situation. One
-// name for two different places was the confusion worth removing.
-//
-// Behind COMMAND_CENTER_SYNC_ENABLED so flag-off keeps the old label: the
-// rename and the surface it describes ship together or neither ships.
-const tabLabels = () => ({
-  matchups: 'Matchups',
-  command: COMMAND_CENTER_SYNC_ENABLED ? 'Huddle' : 'Command Center',
-  gametape: 'Game Tape',
-});
+// Tab identity lives in ./agentBattleTabs so it can be tested against the
+// real flag rather than re-implemented in a test (D-1 / D-15).
 
 const isCryptoSymbol = (symbol) => {
   return POPULAR_CRYPTO.some(c => c.symbol === symbol) || symbol?.endsWith('-USD');

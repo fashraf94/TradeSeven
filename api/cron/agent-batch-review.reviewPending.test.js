@@ -40,7 +40,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { findReviewPendingBattles, REVIEW_PENDING_LIMIT } from './agent-batch-review.js';
+import { findReviewPendingBattles, processBattleReview, releaseReviewPending, REVIEW_PENDING_LIMIT } from './agent-batch-review.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const readSource = (f) => readFileSync(path.join(HERE, f), 'utf8');
@@ -113,52 +113,64 @@ describe('findReviewPendingBattles — the predicate', () => {
   });
 });
 
-describe('the selection actually catches the defect (fixture timestamps)', () => {
-  // The scenario P-6 exists for: a fullday battle completes at 20:05 UTC,
-  // AFTER the 20:25 run's active-battles query would have stopped seeing it as
-  // active, and the old code had nothing else that would ever look at it.
-  const COMPLETED_BETWEEN_RUNS = {
+describe('the drain releases the queue on EVERY terminal path', () => {
+  // THE BUG THIS EXISTS FOR. An earlier version cleared reviewPending only in
+  // the review write, so a queue-sourced battle that SKIPPED kept the flag
+  // forever. The queue is limit-5, so five stuck battles permanently starve the
+  // drain and no battle ever gets a debrief again — strictly worse than the
+  // bug P-6 was written to fix. These rows exercise the skip paths for real
+  // rather than asserting on source text.
+  const todayEt = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+  /** Records update() calls against agentBattles/{id}. */
+  function updateSpy() {
+    const updates = [];
+    const db = {
+      collection: () => ({
+        doc: (id) => ({
+          update: async (payload) => { updates.push({ id, payload }); },
+        }),
+      }),
+    };
+    return { db, updates };
+  }
+
+  const reviewedToday = () => ({
     id: 'battle-late',
     status: 'completed',
-    completedAt: '2026-09-01T20:05:00.000Z',
     reviewPending: true,
-    dailyReviews: [],
-  };
-  // Already debriefed on an earlier run — drained, must not be picked up again.
-  const ALREADY_REVIEWED = {
-    id: 'battle-done',
-    status: 'completed',
-    completedAt: '2026-08-31T20:05:00.000Z',
-    reviewPending: false,
-    dailyReviews: [{ date: '2026-08-31' }],
-  };
-
-  it('selects the battle that completed between runs', async () => {
-    // The double returns whatever the query "matched"; the assertion that
-    // matters is the predicate above. Here we prove the intended battle
-    // satisfies it and the drained one does not.
-    expect(COMPLETED_BETWEEN_RUNS.reviewPending).toBe(true);
-    const { db } = fakeDb([COMPLETED_BETWEEN_RUNS]);
-    const out = await findReviewPendingBattles(db);
-    expect(out.map((b) => b.id)).toEqual(['battle-late']);
+    timing: { tradingDays: [todayEt()] },
+    dailyReviews: [{ date: todayEt() }],
   });
 
-  it('a drained battle no longer satisfies the predicate', () => {
-    expect(ALREADY_REVIEWED.reviewPending).toBe(false);
+  it('already_reviewed: a queue-sourced battle is released, not left stuck', async () => {
+    const { db, updates } = updateSpy();
+    const result = await processBattleReview(db, reviewedToday(), { clearReviewPending: true });
+    expect(result).toEqual({ status: 'skipped', reason: 'already_reviewed' });
+    expect(updates).toEqual([{ id: 'battle-late', payload: { reviewPending: false } }]);
   });
 
-  it('the flag survives a crash between selection and review', () => {
-    // The clear rides the SAME update as the review append, so there is no
-    // window where a battle is out of the queue but un-reviewed. If the write
-    // never lands, the flag is still true and the next run retries.
-    const source = readSource('agent-batch-review.js');
-    const updateBlock = blockAfter(
-      source,
-      'await battleRef.update({',
-      'console.log(`${LOG_PREFIX} Battle ${battle.id}: Day',
-    );
-    expect(updateBlock).toContain('reviewPending: false');
-    expect(updateBlock).toContain('dailyReviews:');
+  it('no_activity: a queue-sourced battle with no trades or evals is released too', async () => {
+    const { db, updates } = updateSpy();
+    const battle = {
+      id: 'battle-quiet', status: 'completed', reviewPending: true,
+      timing: { tradingDays: [todayEt()] }, dailyReviews: [], trades: [], evaluations: [],
+    };
+    const result = await processBattleReview(db, battle, { clearReviewPending: true });
+    expect(result).toEqual({ status: 'skipped', reason: 'no_activity' });
+    expect(updates).toEqual([{ id: 'battle-quiet', payload: { reviewPending: false } }]);
+  });
+
+  it('an ACTIVE battle that skips is NOT written to — it never carried the flag', async () => {
+    const { db, updates } = updateSpy();
+    await processBattleReview(db, reviewedToday(), { clearReviewPending: false });
+    expect(updates).toEqual([]);
+  });
+
+  it('releasing is non-fatal: a failed clear leaves the battle queued for the next run', async () => {
+    const db = { collection: () => ({ doc: () => ({ update: async () => { throw new Error('boom'); } }) }) };
+    // Must not throw — a thrown error here would abort the whole cron run.
+    await expect(releaseReviewPending(db, 'b1')).resolves.toBeUndefined();
   });
 });
 
@@ -186,8 +198,11 @@ describe('completeBattle stamps the flag', () => {
       'const updatePayload = {',
       "'cronState.evaluatingAt': null,",
     );
-    expect(payload).toContain('reviewPending: true');
-    // ...and it does NOT repurpose pendingReflection, which has its own consumer.
+    // A NEW field, not a repurposing of pendingReflection (which has its own
+    // consumer draining it every 15 minutes), and CPU-gated the same way so a
+    // passive tournament CPU battle is never parked in a queue it can only
+    // ever be skipped out of.
+    expect(payload).toContain('reviewPending: disposition.pendingReflection');
     expect(payload).toContain('pendingReflection: disposition.pendingReflection');
   });
 });

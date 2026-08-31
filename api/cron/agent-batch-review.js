@@ -100,13 +100,36 @@ function isToday(isoStr, todayStr) {
   return isoStr.slice(0, 10) === todayStr;
 }
 
-async function processBattleReview(db, battle, { clearReviewPending = false } = {}) {
+/**
+ * Leave the P-6 queue without having written a review.
+ *
+ * A skip is a TERMINAL outcome — "already reviewed" and "no activity" both mean
+ * there is nothing left to do for this battle — so the flag must clear here too.
+ * An earlier version cleared it only in the review write, which meant every
+ * skipped battle stayed in the queue forever; five of those permanently starve
+ * a limit-5 drain and no battle ever gets a debrief again. That is strictly
+ * worse than the bug P-6 was written to fix.
+ *
+ * Failures are deliberately NOT drained: a thrown error leaves the flag set so
+ * the next run retries, which is the whole point of a queue flag.
+ */
+export async function releaseReviewPending(db, battleId) {
+  try {
+    await db.collection('agentBattles').doc(battleId).update({ reviewPending: false });
+  } catch (err) {
+    // Non-fatal: the battle stays queued and the next run retries it.
+    console.error(`${LOG_PREFIX} Battle ${battleId}: failed to clear reviewPending:`, err.message);
+  }
+}
+
+export async function processBattleReview(db, battle, { clearReviewPending = false } = {}) {
   const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
   // Check if review already done
   if ((battle.dailyReviews || []).some(r => r.date === todayStr)) {
     console.log(`${LOG_PREFIX} Battle ${battle.id}: review already exists for ${todayStr}, skipping`);
+    if (clearReviewPending) await releaseReviewPending(db, battle.id);
     return { status: 'skipped', reason: 'already_reviewed' };
   }
 
@@ -123,6 +146,7 @@ async function processBattleReview(db, battle, { clearReviewPending = false } = 
   // If no activity today, skip
   if (todayTrades.length === 0 && todayEvals.length === 0) {
     console.log(`${LOG_PREFIX} Battle ${battle.id}: no activity on day ${currentDay}, skipping`);
+    if (clearReviewPending) await releaseReviewPending(db, battle.id);
     return { status: 'skipped', reason: 'no_activity' };
   }
 
@@ -436,10 +460,14 @@ export default async function handler(req, res) {
     // ---- 3. Process each battle ----
     // Queue-sourced battles run through the SAME review path; the only
     // difference is that their write also clears the flag.
-    const work = [
-      ...battles.map((b) => ({ battle: b, clearReviewPending: false })),
-      ...pending.map((b) => ({ battle: b, clearReviewPending: true })),
-    ];
+    // De-duped: a battle that completes BETWEEN the two queries above appears in
+    // both lists, and reviewing it twice would append two dailyReviews entries
+    // for one day. The queue entry wins, because it is the one that also needs
+    // its flag cleared.
+    const seen = new Set();
+    const work = [];
+    for (const b of pending) { seen.add(b.id); work.push({ battle: b, clearReviewPending: true }); }
+    for (const b of battles) { if (!seen.has(b.id)) work.push({ battle: b, clearReviewPending: false }); }
     for (const { battle, clearReviewPending } of work) {
       try {
         const result = await processBattleReview(db, battle, { clearReviewPending });
