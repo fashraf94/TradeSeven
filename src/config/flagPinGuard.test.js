@@ -102,6 +102,8 @@ const DARK_BY_DESIGN = {
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
   COMMAND_CENTER_SYNC_ENABLED:
     'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
+  WEEKLY_LADDER_PLACEMENT_ENABLED:
+    'Weekly ladder placement points on the monthly board — built dark; flips only after a founder preview smoke (flag flip is its own one-line PR)',
   // LEAGUE_FUSE_HERO_ENABLED intentionally ABSENT: it flipped true in its own
   // one-line flip PR, over a weekend between tournaments — the deliberate flip
   // drops it here in the same change, per the guard's own "if DELIBERATE"
@@ -109,6 +111,8 @@ const DARK_BY_DESIGN = {
   // Re-adding it while it ships true fails the DARK_BY_DESIGN integrity test
   // below. ClimbArena stays mounted behind the flag as the rollback path; its
   // removal is a separate, later PR.
+  PREOPEN_PHASE_ROUTING_ENABLED:
+    'pre-open display routing (spec V2.1) — display-only; flips only after a founder preview smoke of the 9:30 transition',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────

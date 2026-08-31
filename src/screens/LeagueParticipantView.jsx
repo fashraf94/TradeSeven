@@ -28,6 +28,7 @@ import LiveDraftAwaiting from '../components/League/liveDraft/LiveDraftAwaiting'
 import { releaseSlot } from '../services/liveDraftActions';
 import { LEAGUE_LOBBY_ENABLED, LEAGUE_LIVE_DRAFT, LEAGUE_SCORE_HISTORY_ON } from '../config/featureFlags';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
+import usePreOpenPhase from '../hooks/usePreOpenPhase';
 import { useIsMobile } from '../hooks/useIsMobile';
 import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
 import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
@@ -41,6 +42,7 @@ import {
   subscribeRank,
 } from '../services/tournamentGroupService';
 import { resolveRoundBoundary } from '../utils/roundBoundary';
+import { participantStatusFraming } from './leagueParticipantFraming';
 import {
   isRoundBoundaryAcknowledged,
   acknowledgeRoundBoundary,
@@ -115,6 +117,17 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
   // feeds the live arena's Score-History recap (the swap ledger); existing
   // consumers ignore it.
   const { battle: myBattle, chain: myChain } = useMyTournamentBattle(group?.id);
+
+  // PRE-OPEN PHASE (PREOPEN_PHASE_ROUTING_ENABLED): BATTLE, but the market has not
+  // opened yet on this pod's anchor date. Ranked reaches this two ways — the
+  // Mon 08:45 slot completes straight into BATTLE ~40min pre-open, and an
+  // overnight pod is flipped by the ~06:00 orchestrator sweep — and BOTH carry a
+  // startAnchor, which is what this derivation keys on. A single-shot ranked pod
+  // is resolved WITHOUT a startAnchor (api/tournament/resolve-user-draft.js:182
+  // writes it only when given), so the derivation is inert there by construction.
+  // The hook owns its ticker, so the view re-renders at the bell. Flag-off it is a
+  // constant false and every expression below reduces to today's.
+  const preOpen = usePreOpenPhase(group);
 
   // The completed group's OWN daily chain for the recap card — only subscribed
   // when the flag is on AND there is no active group (the recap interlude).
@@ -241,7 +254,11 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
   const roundLabel = group.bracketGameId
     ? `Bracket round ${parseBracketGameId(group.bracketGameId)?.roundNumber ?? group.roundNumber}`
     : `Base week ${group.baseLayerWeek ?? ''}`;
-  const isForming = group.status === GROUP_STATUS.FORMING;
+  // One derivation for the header tone, the header copy and the four body guards
+  // below (BUILD_RULES §9) — see leagueParticipantFraming.js. With `preOpen` false
+  // this is byte-identical to the `isForming ? … : …` binary it replaces (the
+  // local `isForming` it retires had no other consumer in this file).
+  const framing = participantStatusFraming(group.status, { preOpen });
 
   // Battle View V2 — the battle takeover. Reached ONLY once the agent battle has
   // deployed (myBattle), with the gate on and not dropped to classic. The viewport
@@ -252,6 +269,24 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
   // on BOTH viewports — the gate short-circuits on ARENA_LIVE_ON before isDesktop.
   // The arena subsumes Flat6BattleView + ClaimFlipWindow + GroupFeed; draft replay /
   // board-commit are lifecycle chrome and stay in the classic view.
+  // DELIBERATELY NOT gated on the pre-open phase. Suppressing this takeover was
+  // tried twice and reverted twice, for the same reason both times: the arena is
+  // the DEFAULT ranked surface AND it carries its own claim doorway
+  // (buildArenaModel.js:458-465, :543 — the wire, open on getClaimWindowDisplay).
+  // Diverting a pre-open pod off it demoted the user onto the legacy column, which
+  // is exactly the capability loss the claim-window revert undid; and once the
+  // ladder no longer routes to LiveDraftAwaiting there is no awaiting surface on
+  // this route to preempt, so the gate would only trade one live body for another
+  // — under an awaiting header, with a Flips tab the practice pre-open surface
+  // deliberately hides.
+  //
+  // CONSEQUENCE, STATED PLAINLY: ranked is NOT fixed pre-open. Once the agent
+  // deploys (~06:00) the arena takes over and reads live until the bell, exactly as
+  // today. Only the classic column — the pre-deploy window, where myBattle is null
+  // and no Flat6 "Live" pill renders — gets the honest header below. Fixing ranked
+  // properly needs either claim controls on LiveDraftAwaiting or an awaiting state
+  // in the arena itself; both are rulings, not improvisations. See the Phase 5
+  // audit record.
   if (ARENA_LIVE_ON && myBattle && !classic) {
     return (
       <div style={{ minHeight: '100vh', background: '#050609', padding: isDesktop ? 16 : 0, boxSizing: 'border-box' }}>
@@ -298,6 +333,13 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
         />
       );
     }
+    // NOT `|| preOpen`. Diverting a pre-open BATTLE pod here was tried and
+    // REVERTED: LiveDraftAwaiting carries no claim controls, and the pre-open
+    // window is the only day-1 claim window a competitive pod has (place-claim.js:
+    // 96-97 requires BATTLE; the wire shuts 09:24 ET). Routing there fixed a label
+    // by removing a capability. A pre-open pod therefore falls through to the
+    // classic column, which keeps ClaimFlipWindow and reads awaiting copy via
+    // leagueParticipantFraming. See the Phase 5 audit record.
     if (group.status === GROUP_STATUS.AWAITING_OPEN) {
       return (
         <LiveDraftAwaiting
@@ -318,16 +360,14 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: tokens.textMuted }}>
-        <Swords size={13} color={isForming ? tokens.amber : tokens.teal} />
-        {isForming
-          ? 'Group forming — commit your draft board before Monday\'s draft.'
-          : 'Battle week — your group drafted Monday.'}
+        <Swords size={13} color={framing.tone === 'pending' ? tokens.amber : tokens.teal} />
+        {framing.sub}
         <span style={{ marginLeft: 'auto', color: tokens.textFaint }}>
           {(group.groupMembers || []).length} players
         </span>
       </div>
 
-      {!isForming && myBattle && (
+      {framing.showBattleBody && myBattle && (
         <Flat6BattleView
           battle={myBattle}
           isOwner
@@ -335,15 +375,15 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
         />
       )}
 
-      {!isForming && <ClaimFlipWindow group={group} uid={uid} />}
+      {framing.showBattleBody && <ClaimFlipWindow group={group} uid={uid} />}
 
-      {!isForming && (
+      {framing.showBattleBody && (
         <DraftPlaybackTheater groupId={group.id} group={group} uid={uid} />
       )}
 
       <BoardCommitFlow groupId={group.id} group={group} uid={uid} />
 
-      {!isForming && <GroupFeed feed={group.feed} uid={uid} />}
+      {framing.showBattleBody && <GroupFeed feed={group.feed} uid={uid} />}
     </div>
   );
 }

@@ -48,3 +48,42 @@ describe('climbPreviewEnabled', () => {
     expect(climbPreviewEnabled()).toBe(LEAGUE_TRAINING_CLIMB_PREVIEW_ENABLED);
   });
 });
+
+// ── PRE-OPEN PHASE (PREOPEN_PHASE_ROUTING_ENABLED) ───────────────────────────
+// The climb plots a five-day battle and TrainingClimbPreview renders an
+// unconditional LIVE pill, so a pod that is BATTLE-by-status but pre-bell must
+// keep the re-entry bar. This module is pure; the mount sites resolve `preOpen`
+// from usePreOpenPhase and pass it in.
+describe('shouldPreviewClimb — pre-open phase', () => {
+  it('hides the climb for a pre-open BATTLE pod (keeps the re-entry bar)', () => {
+    expect(shouldPreviewClimb(battlePod(), true, { preOpen: true })).toBe(false);
+  });
+
+  it('shows the climb for the SAME pod once the bell has rung', () => {
+    expect(shouldPreviewClimb(battlePod(), true, { preOpen: false })).toBe(true);
+  });
+
+  it('flag-off arm: the omitted option is byte-identical to the old two-arg call', () => {
+    for (const [pod, enabled] of [
+      [battlePod(), true], [battlePod(), false],
+      [{ status: GROUP_STATUS.DRAFTING, players: [{ odUserId: 'u1' }] }, true],
+      [{ status: GROUP_STATUS.AWAITING_OPEN, players: [{ odUserId: 'u1' }] }, true],
+      [{ status: GROUP_STATUS.COMPLETE, players: [{ odUserId: 'u1' }] }, true],
+      [null, true], [undefined, true],
+    ]) {
+      expect(shouldPreviewClimb(pod, enabled)).toBe(shouldPreviewClimb(pod, enabled, { preOpen: false }));
+    }
+  });
+
+  it('preOpen cannot RESURRECT a climb the base gate already refused', () => {
+    // It is a suppressor, never an enabler — false stays false in every arm.
+    expect(shouldPreviewClimb(battlePod(), false, { preOpen: false })).toBe(false);
+    expect(shouldPreviewClimb(null, true, { preOpen: false })).toBe(false);
+    expect(shouldPreviewClimb({ status: GROUP_STATUS.AWAITING_OPEN, players: [{ odUserId: 'u1' }] }, true, { preOpen: false })).toBe(false);
+  });
+
+  it('anti-vacuous: preOpen is what changes the answer', () => {
+    expect(shouldPreviewClimb(battlePod(), true, { preOpen: false }))
+      .not.toBe(shouldPreviewClimb(battlePod(), true, { preOpen: true }));
+  });
+});

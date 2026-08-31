@@ -21,7 +21,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { auth } from '../firebase/config';
-import { isoWeekString, parseBracketGameId } from '../constants/leagueTournament';
+import { currentBaseLayerWeek, parseBracketGameId } from '../constants/leagueTournament';
 import {
   subscribeMyGroup,
   subscribeBracket,
@@ -49,8 +49,15 @@ function collectUserIds(myGroup, bracket, fieldGroups) {
 
 export default function useRealLeagueState(enabled) {
   const uid = auth.currentUser?.uid || null;
+  // ET-ANCHORED (D-WEEKBOUNDARY fix, 2026-08-31): the write side stamps
+  // baseLayerWeek from the battle week's ET Monday, so the read side must ask in
+  // the same frame. isoWeekString(new Date()) is pure UTC and advanced the week
+  // 4-5h early — Sunday 20:00 ET (EDT) / 19:00 ET (EST) — which emptied THE
+  // FIELD in that window and put weeks-in-UTC beside months-in-ET on the season
+  // surface (§9). currentBaseLayerWeek is the read-side twin of
+  // liveDraftFormation.deriveBaseLayerWeek; they agree by construction.
   const currentWeek = useMemo(() => {
-    try { return isoWeekString(new Date()); } catch { return null; }
+    try { return currentBaseLayerWeek(new Date()); } catch { return null; }
   }, []);
 
   const [myGroup, setMyGroup] = useState(null);

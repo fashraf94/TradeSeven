@@ -8,7 +8,9 @@
 // bodies can never disagree about when the bell rings. The pod's status flip is
 // date-based and runs on the orchestrator sweep, which can land slightly BEFORE
 // the anchor, so at expiry this holds an "Opening…" state rather than a frozen
-// 0:00 or a negative timer, exactly as PodCountdownHero does today.
+// 0:00 or a negative timer, exactly as PodCountdownHero does today. The host
+// leaves that state when usePreOpenPhase ticks past 09:30 (on-flag) or when the
+// status snapshot arrives (off-flag) — never from anything this component does.
 //
 // Every displayed number is derived from the one `totalSec` the numerals show —
 // the wait rail included — so a label can never disagree with its number
@@ -114,9 +116,10 @@ function MathStrip({ mode, compact, pal }) {
 export default function AwaitCountdownHero({ targetIso = null, mode = 'practice', compact = false }) {
   const pal = useAwaitPalette();
   const reduced = usePrefersReducedMotion();
-  // Interval ticks every second; onExpire is not needed — the host swaps the
-  // whole view on the group-status flip. A null target reports isExpired, which
-  // is treated as "no target" below rather than as an expiry.
+  // Interval ticks every second; onExpire is not needed — the host owns the swap
+  // (usePreOpenPhase's ticker on-flag, the group-status snapshot off-flag). A null
+  // target reports isExpired, which is treated as "no target" below rather than as
+  // an expiry.
   const { timeRemaining, isExpired } = useCountdown(targetIso || null, { interval: 1000 });
 
   // useCountdown seeds timeRemaining at 0 and only corrects it in a post-mount

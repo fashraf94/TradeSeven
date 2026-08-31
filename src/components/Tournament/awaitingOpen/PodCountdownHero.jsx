@@ -9,8 +9,14 @@
 // The pod's status flip is DATE-based and runs on the orchestrator morning
 // sweep, which can land slightly BEFORE the 09:30 anchor. So a user sitting on
 // the page across the boundary must never see a frozen 0:00 or a negative
-// timer: at expiry the hero shows an "Opening…" state and holds it until
-// subscribeGroup reports the BATTLE flip and the host swaps to the live view.
+// timer: at expiry the hero shows an "Opening…" state.
+//
+// WHAT LEAVES THAT STATE (corrected with PREOPEN_PHASE_ROUTING_ENABLED): NOT a
+// status write. On-flag the pod is already BATTLE through the whole pre-open
+// window and NOTHING writes to the group doc at 09:30 — the host re-renders
+// because usePreOpenPhase runs its own ticker and flips at the bell. Off-flag the
+// original path still holds: the host swaps when subscribeGroup reports the
+// BATTLE flip. Either way the swap is the host's, never this component's.
 
 import React from 'react';
 import { Timer, Zap } from 'lucide-react';
@@ -32,9 +38,10 @@ function Segment({ tokens, value, label }) {
 
 export default function PodCountdownHero({ targetIso }) {
   const { tokens } = useTheme();
-  // Interval ticks every second; onExpire not needed (the host swaps on the
-  // group-status flip). With a null target the hook reports isExpired — which we
-  // treat as "no target" below, not as an expiry.
+  // Interval ticks every second; onExpire not needed — the host owns the swap
+  // (usePreOpenPhase's ticker on-flag, the group-status snapshot off-flag). With a
+  // null target the hook reports isExpired — which we treat as "no target" below,
+  // not as an expiry.
   const { timeRemaining, isExpired } = useCountdown(targetIso || null, { interval: 1000 });
 
   const hasTarget = !!targetIso;

@@ -585,6 +585,64 @@ export function isAwaitingOpenRedesignOn() {
 }
 
 /**
+ * League — PRE-OPEN PHASE ROUTING (the awaiting surface during a battle day's
+ * pre-open window).
+ *
+ * A pod's `status` flips to BATTLE on a DATE-based predicate (anchorDateReached,
+ * api/_utils/trainingLifecycle.js), so between the anchor date's midnight and the
+ * 9:30 ET open a pod is legitimately BATTLE while the market is still shut. The
+ * STATUS IS CORRECT and must not move: BATTLE means "this pod's battle day is
+ * today", and two consumers depend on it being set BEFORE the open — the 9:25 ET
+ * claims pass (api/_utils/tournamentClaims.js:82-83, whose pre-open ordering
+ * api/tournament/place-claim.js:100-107 documents as a precondition) and the
+ * orchestrator duty marker (api/_utils/tournamentOrchestrator.js:901-909,
+ * :1035-1038) that dispatches ranked fan-out. Only the DISPLAY was wrong: the
+ * live body rendered during the pre-open window.
+ *
+ * When true, the routing sites consume `usePreOpenPhase` (src/hooks/). NO status
+ * write moves, no anchor changes, no deploy-timing change, and no claims or duty
+ * behavior change: this is display routing only.
+ *
+ * COVERAGE IS PARTIAL, and deliberately so — read this before flipping:
+ *   - practice → AwaitingOpenPodView, plus the training labels (the lobby card,
+ *     the climb gate, both draft-completion cards, the waiting room). Requires
+ *     TRAINING_POD_DRAFT_V2_ENABLED; under a V2 rollback the practice host reads
+ *     live again, and this flag does not change that.
+ *   - ranked → the classic column's header copy ONLY, i.e. the pre-deploy window.
+ *     Once the agent deploys the arena takes over and reads live until the bell,
+ *     as today. Routing ranked to LiveDraftAwaiting was tried and REVERTED: that
+ *     surface has no claim controls, and Mon ~06:00-09:24 is the only day-1 claim
+ *     window a competitive pod has (place-claim.js:96-97 + the 09:24 wire close).
+ *   - the ambient LIVE cascade (THE FIELD, lobby pod cards, funnel, spectate) is
+ *     untouched — chokepoint B (leagueAdapter.groupStatusToPodStatus) is deferred
+ *     until base-layer pods carry a startAnchor. So with this flag ON a pod can
+ *     read "awaiting" on its own screen and "live" in the field list.
+ *
+ * Flag-off (default) = today's routing at every site, byte-identical — the hook
+ * short-circuits to false and never mounts its ticker (no extra re-renders).
+ *
+ * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview
+ * smoke (the AWAITING_OPEN_REDESIGN_ENABLED precedent) — never in the build PR.
+ */
+// Pinned by: usePreOpenPhase.test.jsx (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const PREOPEN_PHASE_ROUTING_ENABLED = false;
+
+/**
+ * The ONE home for the pre-open routing gate — the flag OR the `?preOpenPhase=1`
+ * dev-preview override (the `?awaitingOpenRedesign=1` idiom). SSR/Node-safe
+ * (guards `window`); a malformed URL degrades to the flag alone.
+ */
+export function isPreOpenPhaseRoutingOn() {
+  if (PREOPEN_PHASE_ROUTING_ENABLED) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('preOpenPhase') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Rule Conflict Reconciler — equip-time DETECTION (shadow-safe half).
  *
  * The agent (BaggerBomb) path has no conflict resolution: contradictory hard
@@ -1078,6 +1136,65 @@ export const OPENER_LAZY_FALLBACK_ENABLED = true;
  * its first real effect is the next cohort's day-5 Friday close.
  */
 export const TOURNAMENT_ADVANCEMENT_FROZEN = false;
+
+/**
+ * Weekly Ladder — placement points on the MONTHLY board (20260831_WEEKLY_LADDER_
+ * BUILD_SPEC_V1; structure ruling 20260831_TOURNAMENT_STRUCTURE_RULING_V1).
+ *
+ * Re-scores tournamentLeaderboards/{YYYY-MM} from cumulative COMPOSITE to
+ * cumulative PLACEMENT POINTS — 1st=3, 2nd=2, 3rd=1, 4th=0 off the existing
+ * day-5 finish order (lockTopTwo/rankByScores, the L-B Guard 2 clamped
+ * composite). The composite is retained as the stored TIEBREAK input (margin
+ * over the group average), never the primary key.
+ *
+ * MONTHLY BOARD, NOT THE CAREER DOC (the spec's load-bearing decision). The
+ * career tournamentRanks path applies cpuFarmGuard — which DISCOUNTS a human's
+ * gain in CPU-heavy groups, the exact penalty the ruling overturns — and never
+ * resets. The monthly board has no code path to that guard (cpuFarmGuard's only
+ * production caller is computeRankBreakdown, whose only caller is
+ * tournamentRank.js) and resets by design ("reset = a new doc key"). Career RP
+ * is UNTOUCHED by this flag in either position.
+ *
+ * When FALSE (default), flag-off is BYTE-IDENTICAL: buildGroupWeekRows emits
+ * today's exact row shape (no new keys), the month entry carries no new fields,
+ * and the reader sorts on cumulative composite exactly as it does today.
+ *
+ * AWARDED ON FINAL ROWS ONLY (founder decision D1, 2026-08-31): placement is a
+ * week's OUTCOME, so a row scores only once `final` is true (day 5 banked or the
+ * group COMPLETE). The nightly aggregation rewrites in-progress BATTLE rows
+ * every night; awarding provisionally would churn the season rank on days
+ * nobody finished. 0 until Friday is honest — THE FIELD carries live state.
+ *
+ * CPU seats are FULL entries (ruling §4): archetype-named via cpuAgentName,
+ * visually marked, and eligible for ANY position INCLUDING first. A CPU topping
+ * the board is ACCEPTED and pre-ruled — a finding worth investigating (it would
+ * say something real about whether agent decision-making beats holding a drafted
+ * book), never a defect to patch. Build no eligibility exclusion. CPUs come off
+ * the board later as a DISPLAY change when the human population makes them
+ * unnecessary — not a data migration; their presence is not load-bearing.
+ *
+ * ⚠ FLIP ON A MONTH BOUNDARY (build review finding F2, CONFIRMED with a repro).
+ * This board is month-keyed and "reset = a new doc key", so a flip taken at a
+ * month boundary scores the new month whole, from week 1. A MID-MONTH flip does
+ * NOT backfill: weeks finalized while the flag was dark carry no placement keys,
+ * and the nightly aggregation only revisits BATTLE groups (a closed week is
+ * COMPLETE and never revisited), so those weeks count 0 toward the month Σ
+ * PERMANENTLY — a 3-week month would score out of its 1 post-flip week, and the
+ * §9 decomposition would show "—" against weeks a player actually won. The
+ * ordering failure this also caused (the whole board collapsing to alphabetical
+ * by odUserId) is fixed — rankLeaderboardEntries now falls back to cumulative
+ * composite before the id — but that only makes a mid-month flip GRACEFUL, not
+ * correct. If a mid-month flip is ever required, backfill first: every seat's
+ * composite for a given week is recoverable from the month doc alone
+ * (entries[*].weeks[groupId].points across the four seats), so the placement and
+ * margin for a dark week can be re-derived without re-reading group docs.
+ *
+ * Built/merged DARK behind this flag; flip in a one-line follow-up PR after a
+ * Vercel preview smoke (the AGENT_PRESENCE_ENABLED precedent) — never in the
+ * build PR.
+ */
+// Pinned by: src/utils/weeklyLadderSurface.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2; the flag-ON battery api/_utils/tournamentLeaderboard.placement.test.js MOCKS this flag rather than pinning it).
+export const WEEKLY_LADDER_PLACEMENT_ENABLED = false;
 
 /**
  * Agent Presence — the reactive agent FACE (expression rig + mood baseline + event
