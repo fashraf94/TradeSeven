@@ -114,7 +114,10 @@ export const DESK_COPY = Object.freeze({
 
   // PRE_OPEN — the market has not opened, so the first check is scheduled, not
   // guessed: 9:30 ET is the market open, a fact.
-  posturePreOpen: 'First check at 9:30 ET',
+  // F-5: "9:30 AM ET", matching the closed-state strings ("next check Mon 9:30
+  // AM ET", "Resumes Tue 9:30 AM ET"). One format across every phase; a bare
+  // "9:30 ET" beside them read as a different kind of time.
+  posturePreOpen: 'First check at 9:30 AM ET',
 
   // LIVE_CLOSED. "Market closed" is a market fact; the next check is the next
   // open. No verb about the agent at all — it is not doing anything.

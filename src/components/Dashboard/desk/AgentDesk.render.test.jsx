@@ -101,7 +101,21 @@ describe('posture line — discrete, never continuous', () => {
   });
 
   it('PRE_OPEN states the scheduled open — a fact, not a guess', () => {
-    expect(render({ phase: 'PRE_OPEN' })).toContain('First check at 9:30 ET');
+    expect(render({ phase: 'PRE_OPEN' })).toContain('First check at 9:30 AM ET');
+  });
+
+  it('F-5: every phase names its time in ONE format — h:mm AM/PM ET', () => {
+    // A bare "9:30 ET" beside "next check Mon 9:30 AM ET" read as a different
+    // kind of time. Each phase's time-bearing line now matches the same shape.
+    const preOpen = render({ phase: 'PRE_OPEN' });
+    const closed = render({ phase: 'LIVE_CLOSED', nextDecisionAt: null });
+    const live = render();
+    for (const html of [preOpen, closed, live]) {
+      expect(html).toMatch(/\d{1,2}:\d{2}\s(AM|PM)/);
+    }
+    // ...and the one that regressed is explicitly pinned.
+    expect(preOpen).toContain('9:30 AM ET');
+    expect(preOpen).not.toMatch(/9:30 ET/);
   });
 
   it('POST_CLOSE says the battle is complete', () => {
