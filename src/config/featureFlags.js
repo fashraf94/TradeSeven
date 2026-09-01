@@ -1861,17 +1861,20 @@ export const METRIC_HISTORY_SNAPSHOT_ENABLED = true;
 
 /**
  * Command Center Sync, Pass 1 (PASS1_SPEC_COMMAND_CENTER_SYNC_V1.md).
- * DARK — default FALSE.
+ * LIVE — flipped true after the pre-flip list (F-1/F-2/F-4/F-5) landed.
  *
- * When TRUE, a live BaggerBomb battle turns the Dashboard from a
+ * A live BaggerBomb battle turns the Dashboard from a
  * scoreboard-with-a-link into the surface that shows the agent's situation:
  * the derived phase (PRE_OPEN / LIVE / LIVE_CLOSED / POST_CLOSE), the Agent
  * Desk with score proximity and swap locks, the next-decision clock, and the
- * Huddle tab label in the battle view.
+ * Huddle tab label in the battle view. The Desk describes the BaggerBomb
+ * battle specifically, by type — a live ranked battle never drives it (F-1).
  *
  * READ-ONLY by construction. This flag gates rendering only — Pass 1 writes no
- * battle state, makes no model calls, and adds no listeners. When FALSE every
- * surface is byte-identical to today, which its render tests assert directly.
+ * battle state, makes no model calls, and adds no listeners. Set FALSE, every
+ * surface returns to byte-identical, which its render tests assert directly
+ * against a golden captured from the pre-pass component — so this is a
+ * one-line rollback, not a revert.
  *
  * Read it at RENDER scope, never module scope: 15 of 56 featureFlags vi.mock
  * call sites use a bare factory with no importOriginal spread, so a
@@ -1879,9 +1882,10 @@ export const METRIC_HISTORY_SNAPSHOT_ENABLED = true;
  * suites (the hazard documented in
  * docs/audits/20260819_EXIT_BEHAVIOR_ASK3_BUILD_REVIEW.md:120).
  *
- * The flip is its own deliberate PR after a founder preview smoke — never a
- * build PR. It updates the pin below AND drops the DARK_BY_DESIGN entry, in
- * that same commit.
+ * Flipped in its own one-commit PR, which updated the pin below AND dropped the
+ * DARK_BY_DESIGN entry in the same commit — the coupling the flag-pin guard
+ * enforces. Rollback is set-false, which restores the pin's dark assertion and
+ * the registry entry.
  */
 // Pinned by: commandCenterSyncFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const COMMAND_CENTER_SYNC_ENABLED = false;
+export const COMMAND_CENTER_SYNC_ENABLED = true;

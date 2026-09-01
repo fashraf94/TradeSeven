@@ -100,8 +100,12 @@ const DARK_BY_DESIGN = {
   // below.
   MANDATE_DORMANCY_DOWNSHIFT_ENABLED:
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
-  COMMAND_CENTER_SYNC_ENABLED:
-    'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
+  // COMMAND_CENTER_SYNC_ENABLED intentionally ABSENT: it flipped true in its own
+  // one-commit PR, after the pre-flip list (F-1/F-2/F-4/F-5) landed — the
+  // deliberate flip drops it here in the same change, per the guard's own "if
+  // DELIBERATE" instruction, and commandCenterSyncFlags.test.js now pins the
+  // live true value. Re-adding it while it ships true fails the DARK_BY_DESIGN
+  // integrity test below. Rollback is set-false, which restores this entry.
   WEEKLY_LADDER_PLACEMENT_ENABLED:
     'Weekly ladder placement points on the monthly board — built dark; flips only after a founder preview smoke (flag flip is its own one-line PR)',
   // LEAGUE_FUSE_HERO_ENABLED intentionally ABSENT: it flipped true in its own
