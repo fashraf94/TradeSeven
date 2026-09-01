@@ -79,10 +79,35 @@ export function battleTypeLabel(battle) {
  * collide on the real agent) — see the dashboards' `deployBlockedByLive`.
  */
 export function hasLiveBaggerBomb(battles) {
-  // Require active status defensively: "live" is in the name, and a stale COMPLETED
-  // casual battle (no groupId) must never latch the Deploy CTA permanently blocked if a
-  // caller's upstream status filter ever regresses.
-  return (battles || []).some((b) => b && b.status === 'active' && classifyBattleType(b) === BATTLE_TYPE_BAGGERBOMB);
+  return Boolean(findLiveBaggerBomb(battles));
+}
+
+/**
+ * The owner's live BaggerBomb (casual) battle, or null.
+ *
+ * The Command Center Sync Desk describes THIS battle and no other: framework
+ * §3.1 scopes the Dashboard to BaggerBomb, and a ranked battle never drives the
+ * Desk in Pass 1. Selecting by index could not honour that — sortLiveBattles
+ * puts ranked FIRST (BATTLE_TYPE_ORDER below), so `orderedLiveBattles[0]` picks
+ * the ranked battle precisely when both are live.
+ *
+ * Deliberately built on the SAME classifyBattleType the Manage card labels from
+ * (ManageStation.jsx). A second discriminator — `gameMode`, say — would let the
+ * Desk's eyebrow and the card beneath it disagree about which game is on
+ * screen, which is the display-agreement failure BUILD_RULES §9 exists to
+ * prevent.
+ *
+ * Requires active status defensively, for the same reason hasLiveBaggerBomb
+ * always has: a stale COMPLETED casual battle must never latch a surface on.
+ * Deterministic across a set: takes the first in sortLiveBattles order, so two
+ * casual battles (not reachable today — decide.js caps one active battle per
+ * agentId — but cheap to be right about) resolve stably.
+ */
+export function findLiveBaggerBomb(battles) {
+  const live = (battles || []).filter(
+    (b) => b && b.status === 'active' && classifyBattleType(b) === BATTLE_TYPE_BAGGERBOMB,
+  );
+  return live.length > 1 ? sortLiveBattles(live)[0] : (live[0] || null);
 }
 
 /**

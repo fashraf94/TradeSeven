@@ -136,14 +136,18 @@ describe('syncForBattle — the guard that keeps one battle\'s phase off another
     }
   });
 
-  it('the Desk follows the ORDERED battle list, so it describes the first card', () => {
-    // liveBattles[0] is unsorted; orderedLiveBattles is the order the cards
-    // render in. Building the adapter from the former let the Desk describe one
-    // battle while sitting above another, unlabelled.
+  it('the Desk selects its battle BY TYPE, never by index (F-1)', () => {
+    // Framework §3.1 scopes the Command Center to BaggerBomb. Index selection
+    // could not honour that: sortLiveBattles puts ranked FIRST, so
+    // orderedLiveBattles[0] picked the ranked battle exactly when both were
+    // live. hasLiveBaggerBomb is the render gate; no BaggerBomb, no Desk.
     for (const shell of ['CommandDashboardDesktop.jsx', 'CommandDashboard.jsx']) {
       const source = read(path.join(SRC, 'components', 'Dashboard', shell));
-      expect(source).toContain('const deskBattle = orderedLiveBattles[0]');
+      expect(source).toContain('findLiveBaggerBomb(liveBattles)');
+      expect(source).toContain('hasLiveBaggerBomb(liveBattles)');
       expect(source).toContain('useCommandCenterSync(deskBattle');
+      // The regression this pins.
+      expect(source).not.toMatch(/deskBattle = orderedLiveBattles\[0\]/);
     }
   });
 });

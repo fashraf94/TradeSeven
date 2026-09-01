@@ -46,7 +46,7 @@ import { getEquipSlotCounts } from '../../utils/equipSlots';
 // starfield. Flag on => transparent and the field shows through; off =>
 // byte-identical to today.
 import { SCOUTING_BOARD_ENABLED, CASUAL_CLONE_CONCURRENCY_ENABLED, isDeployCeremonyOn, isStarfieldMobileOn } from '../../config/featureFlags';
-import { deriveDeployGate } from '../../utils/commandCenterLiveBattles';
+import { deriveDeployGate, findLiveBaggerBomb, hasLiveBaggerBomb } from '../../utils/commandCenterLiveBattles';
 // Command Center Sync (Pass 1): the ONE seam through which this shell sees
 // battle state. No field of agentBattles / voiceLayerCache / agents is read
 // directly here — that is the DO-NOT line the pass exists to hold (spec §5).
@@ -157,12 +157,13 @@ export default function CommandDashboard({
     deriveDeployGate({ liveBattles, agent, concurrencyEnabled: concurrencyOn });
   // null while the flag is dark, which is what keeps flag-OFF byte-identical:
   // the slots below receive nothing and render exactly what they rendered.
-  // The Desk describes the SAME battle the first Manage card below shows.
-  // liveBattles[0] is UNSORTED; orderedLiveBattles is the deterministic
-  // order the cards render in, so with a ranked battle and a casual clone
-  // live together the Desk would otherwise describe one and sit above the
-  // other, unlabelled.
-  const deskBattle = orderedLiveBattles[0] || liveBattle;
+  // F-1: the Desk describes the BaggerBomb battle, BY TYPE — never by index.
+  // Framework §3.1 scopes the Command Center to BaggerBomb, and a ranked battle
+  // never drives the Desk in Pass 1. Index selection could not honour that:
+  // sortLiveBattles puts ranked FIRST, so orderedLiveBattles[0] picked the
+  // ranked battle exactly when both were live. If no BaggerBomb battle is live,
+  // there is no Desk — hasLiveBaggerBomb is the render gate.
+  const deskBattle = hasLiveBaggerBomb(liveBattles) ? findLiveBaggerBomb(liveBattles) : null;
   const sync = useCommandCenterSync(deskBattle, voiceLayerCaches[deskBattle?.id], agent);
   const recentCompleted = useRecentCompletedAgentBattles(3);
   // Loop rail. Kept on isLive by design: it marks the FURTHEST beat the daily loop has

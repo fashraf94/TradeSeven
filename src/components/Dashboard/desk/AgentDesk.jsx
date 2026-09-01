@@ -75,6 +75,10 @@ export default function AgentDesk({ sync, accent = CMD.teal }) {
 
   const { phase, lastCheckedAt, nextDecisionAt, scoreProximity, swapLock, statusFeedLatest } = sync;
 
+  // ── 0. Identity ────────────────────────────────────────────────────────────
+  // Both halves come from the adapter, never from the Manage card beside it.
+  const eyebrow = DESK_COPY.deskEyebrow(sync.game?.agentName, sync.game?.label);
+
   // ── 1. Posture line ────────────────────────────────────────────────────────
   // Never a fabricated time: LIVE with no eval landed says a check is coming
   // rather than inventing when.
@@ -102,6 +106,9 @@ export default function AgentDesk({ sync, accent = CMD.teal }) {
       padding: '15px 16px', borderRadius: 18,
       background: CMD.surface, border: `1px solid ${CMD.hair}`,
     }}>
+      {/* Identity — which battle this Desk is describing (F-1) */}
+      {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
+
       {/* Posture */}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <Mono style={{ fontSize: 11.5, color: CMD.ink2 }}>{posture}</Mono>

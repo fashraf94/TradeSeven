@@ -24,8 +24,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { renderToString } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
+import { renderToString } from 'react-dom/server';
+
 import ManageStation from './ManageStation.jsx';
 
 // Captured from the PRE-PASS component at commit eebc8ffe by rendering it with
@@ -174,4 +175,47 @@ describe('the score and trade count are untouched by the phase', () => {
       expect(html).toContain('3 trades');
     });
   }
+});
+
+describe('F-4 — the pulse is static in the closed phases', () => {
+  // The eyebrow TEXT stays "LIVE": the battle is still running, and that is
+  // true. The pulse is a separate claim — motion reads as activity, and
+  // overnight / at the weekend / on a holiday there is none, because evals are
+  // hard-gated to regular trading hours. A dot pulsing beside "Market closed"
+  // animates something that is not happening.
+  //
+  // Framer's `animate` prop is not observable in renderToString output, so
+  // these assert on the SOURCE expression that drives it — the same reason the
+  // poll's guards are source tests. What they pin is that the decision comes
+  // from the adapter's phase and from nothing else.
+  const source = readFileSync(
+    new URL('./ManageStation.jsx', import.meta.url), 'utf8',
+  );
+
+  it('the static/animated choice is driven by the adapter phase', () => {
+    expect(source).toContain("const pulseStatic = phase === 'PRE_OPEN' || phase === 'LIVE_CLOSED';");
+  });
+
+  it('the dot consumes that decision', () => {
+    expect(source).toMatch(/animate=\{pulseStatic \?/);
+    expect(source).toMatch(/transition=\{pulseStatic \?/);
+  });
+
+  it('does NOT re-read market state in the component (BUILD_RULES §9)', () => {
+    // Two sources for "is the market open" eventually disagree. The Desk above
+    // this card and this card must derive it from the one adapter value.
+    expect(source).not.toMatch(/getMarketState/);
+    expect(source).not.toMatch(/isMarketOpen/);
+  });
+
+  it('the LIVE text is untouched — only the motion stops', () => {
+    expect(source).toContain("`${typeLabel} · live`");
+    for (const phase of ['LIVE', 'LIVE_CLOSED', 'PRE_OPEN']) {
+      expect(render({ sync: syncFor(phase) })).toContain('live');
+    }
+  });
+
+  it('dark, the pulse is unchanged — flag-off byte-identity still holds', () => {
+    expect(render()).toBe(DARK_GOLDEN);
+  });
 });

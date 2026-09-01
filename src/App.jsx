@@ -3973,6 +3973,12 @@ export default function PortfolioDuel() {
           const cacheEntries = await Promise.all(liveBattles.map(async (b) => {
             try {
               const csnap = await getDoc(doc(db, 'voiceLayerCache', b.id));
+              // F-2: one read per live battle per cycle, accounted like every
+              // other poll read here (trackRead('agentBattlePoll', …) above).
+              // A getDoc has no .size, so the count is 1 — accounting must be
+              // right the moment the flag flips, not after someone notices the
+              // bill.
+              trackRead('voiceLayerCachePoll', 1);
               return csnap.exists() ? [b.id, csnap.data()] : null;
             } catch (cacheErr) {
               // Fail-open per battle, exactly as the group lookup above does: a
