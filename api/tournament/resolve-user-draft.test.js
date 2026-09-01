@@ -10,9 +10,14 @@
 // mock this import.
 
 import { describe, it, expect } from 'vitest';
-import { resolveSnakeDraft } from './resolve-user-draft.js';
+import { resolveSnakeDraft, resolveUserDraftForGroup } from './resolve-user-draft.js';
 import { generateSnakeOrder } from '../../src/services/draftAssets.js';
-import { GROUP_SIZE, PICKS_PER_PLAYER } from '../../src/constants/leagueTournament.js';
+import {
+  GROUP_SIZE,
+  PICKS_PER_PLAYER,
+  GROUP_STATUS,
+  currentBaseLayerWeek,
+} from '../../src/constants/leagueTournament.js';
 
 const POOL = [
   'NVDA', 'AMD', 'TSLA', 'META', 'AAPL', 'MSFT', 'AMZN', 'GOOG', 'NFLX', 'AVGO',
@@ -174,5 +179,116 @@ describe('preconditions', () => {
   it('requires a pool of at least 12', () => {
     expect(() => resolveSnakeDraft(makeGroup({ userPool: POOL.slice(0, 11) }), disjointBoards()))
       .toThrow(/pool_too_small/);
+  });
+});
+
+
+// ==================== D-LOBBYWEEK (ii): the FORMING→BATTLE restamp ====================
+//
+// The drift-proof half of the fix. A base-layer pod's battle week is NOT reliably
+// knowable at formation: a pod that lingers in FORMING past its formation-derived
+// Monday (board auto-commit deferral, or a cron gap spanning a Monday morning — there
+// is no expiry backstop for a non-training lobby pod) battles a LATER week, and its
+// formation stamp would stay wrong forever. Resolution is the moment the true battle
+// week is certain, so the cohort key is re-stamped here with currentBaseLayerWeek —
+// the ET-anchored READ-side twin THE FIELD queries with.
+//
+// The lingering row below is modelled on a REAL production document found by the
+// D-LOBBYWEEK pre-check: created 2026-07-01 (formation derives 2026-W28) but first
+// banked 2026-07-15 (2026-W29) — it sat through two Mondays. Formation-time
+// derivation alone would have stamped that group wrong.
+
+function makeTxDb(initial = {}) {
+  const store = new Map(Object.entries(initial).map(([k, v]) => [k, structuredClone(v)]));
+  const ref = (path) => ({
+    path,
+    id: path.split('/').pop(),
+    collection: (name) => ({ doc: (id) => ref(`${path}/${name}/${id}`) }),
+  });
+  const snap = (path) => ({
+    exists: store.has(path),
+    data: () => (store.has(path) ? structuredClone(store.get(path)) : undefined),
+  });
+  return {
+    store,
+    collection: (name) => ({ doc: (id) => ref(`${name}/${id}`) }),
+    runTransaction: async (fn) => fn({
+      get: async (r) => snap(r.path),
+      getAll: async (...refs) => refs.map(r => snap(r.path)),
+      update: (r, updates) => store.set(r.path, { ...structuredClone(store.get(r.path)), ...structuredClone(updates) }),
+      set: (r, data) => store.set(r.path, structuredClone(data)),
+    }),
+  };
+}
+
+const RS_MEMBERS = ['user-a', 'user-b', 'user-c', 'user-d'];
+
+function seedGroup(groupId, groupOverrides = {}) {
+  const seed = {
+    [`tournamentGroups/${groupId}`]: {
+      status: GROUP_STATUS.FORMING,
+      roundNumber: 1,
+      groupMembers: [...RS_MEMBERS],
+      players: RS_MEMBERS.map(odUserId => ({ odUserId, picks: [] })),
+      userPool: [...POOL],
+      ...groupOverrides,
+    },
+  };
+  const boards = disjointBoards();
+  for (const uid of RS_MEMBERS) seed[`tournamentGroups/${groupId}/boards/${uid}`] = boards[uid];
+  return seed;
+}
+
+describe('D-LOBBYWEEK (ii) — baseLayerWeek is re-stamped at FORMING→BATTLE', () => {
+  // The production lingering case: formed 2026-07-01 (derives 2026-W28), but it sat
+  // in FORMING through two Mondays and actually resolved into battle in 2026-W29.
+  const LINGERED_RESOLVE = new Date('2026-07-13T13:00:00.000Z'); // Mon 2026-07-13, 09:00 ET
+
+  it('a pod that LINGERED in FORMING is re-stamped to the week it actually battles', async () => {
+    const db = makeTxDb(seedGroup('lingerer', { baseLayerWeek: '2026-W28' }));
+    await resolveUserDraftForGroup(db, 'lingerer', { now: LINGERED_RESOLVE });
+
+    const group = db.store.get('tournamentGroups/lingerer');
+    expect(group.status).toBe(GROUP_STATUS.BATTLE);
+    // The week it actually plays — what THE FIELD will ask for all that week.
+    expect(group.baseLayerWeek).toBe(currentBaseLayerWeek(LINGERED_RESOLVE));
+    expect(group.baseLayerWeek).toBe('2026-W29');
+    // The stale formation-derived week is gone. Without the restamp this stays
+    // '2026-W28' and the pod is absent from THE FIELD for the whole week it plays.
+    expect(group.baseLayerWeek).not.toBe('2026-W28');
+  });
+
+  it('an ON-TIME resolution keeps the already-correct week (the restamp is not a change)', async () => {
+    const onTime = currentBaseLayerWeek(LINGERED_RESOLVE);
+    const db = makeTxDb(seedGroup('ontime', { baseLayerWeek: onTime }));
+    await resolveUserDraftForGroup(db, 'ontime', { now: LINGERED_RESOLVE });
+    expect(db.store.get('tournamentGroups/ontime').baseLayerWeek).toBe(onTime);
+  });
+
+  it('a BRACKET pod is never given a baseLayerWeek — the bracketGameId XOR is preserved', async () => {
+    // createTournamentGroupDoc enforces exactly one of bracketGameId | baseLayerWeek.
+    // Bracket groups resolve through this very path, so an unconditional restamp
+    // would break that invariant and silently change the doc shape.
+    const db = makeTxDb(seedGroup('bracket-r2-g7', { bracketGameId: 'bracket-r2-g7' }));
+    await resolveUserDraftForGroup(db, 'bracket-r2-g7', { now: LINGERED_RESOLVE });
+
+    const group = db.store.get('tournamentGroups/bracket-r2-g7');
+    expect(group.status).toBe(GROUP_STATUS.BATTLE);
+    expect(group.bracketGameId).toBe('bracket-r2-g7');
+    expect('baseLayerWeek' in group).toBe(false);
+  });
+
+  it('an AWAITING_OPEN resolution (training on-demand) does NOT restamp — the battle has not started', async () => {
+    const db = makeTxDb(seedGroup('training-pod', { baseLayerWeek: '2026-W28', isTraining: true }));
+    await resolveUserDraftForGroup(db, 'training-pod', {
+      now: LINGERED_RESOLVE,
+      targetStatus: GROUP_STATUS.AWAITING_OPEN,
+      startAnchor: { anchorEtDate: '2026-07-14', anchorIso: '2026-07-14T13:30:00.000Z' },
+    });
+
+    const group = db.store.get('tournamentGroups/training-pod');
+    expect(group.status).toBe(GROUP_STATUS.AWAITING_OPEN);
+    expect(group.baseLayerWeek).toBe('2026-W28'); // untouched — stamping here would be premature
+    expect(group.startAnchor).toEqual({ anchorEtDate: '2026-07-14', anchorIso: '2026-07-14T13:30:00.000Z' });
   });
 });
