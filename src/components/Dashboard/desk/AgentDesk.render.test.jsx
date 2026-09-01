@@ -20,7 +20,7 @@ vi.mock('../../Agent/LiveActivityPanel', () => ({
 const stripComments = (h) => h.replace(/<!-- -->/g, '');
 
 const SYNC = {
-  game: { id: 'battle-1', type: 'baggerbomb', label: 'BaggerBomb' },
+  game: { id: 'battle-1', type: 'baggerbomb', label: 'BaggerBomb', agentName: 'Aurora' },
   phase: 'LIVE',
   score: { current: 42, tradeCount: 3 },
   book: [],
@@ -46,6 +46,24 @@ const render = (over = {}) => stripComments(
 describe('the Desk renders nothing without an adapter', () => {
   it('null sync → null (this is what flag-off looks like)', () => {
     expect(renderToString(<AgentDesk sync={null} accent="#5eead4" />)).toBe('');
+  });
+});
+
+describe('the Desk says which battle it describes (F-1)', () => {
+  it('renders an agent · mode eyebrow', () => {
+    expect(render()).toContain('Aurora · BaggerBomb');
+  });
+
+  it('the mode half comes from the adapter, so a ranked battle would say so', () => {
+    // The Desk never selects a ranked battle in Pass 1 (F-1's gate), but the
+    // label is derived rather than constant, so it cannot silently mislabel.
+    const html = render({ game: { id: 'b1', type: 'ranked', label: 'Ranked', agentName: 'Aurora' } });
+    expect(html).toContain('Aurora · Ranked');
+  });
+
+  it('degrades gracefully when either half is missing', () => {
+    expect(render({ game: { id: 'b1', label: 'BaggerBomb', agentName: null } })).toContain('BaggerBomb');
+    expect(render({ game: { id: 'b1', label: null, agentName: 'Aurora' } })).toContain('Aurora');
   });
 });
 

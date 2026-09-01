@@ -87,6 +87,19 @@ export function etStamp(iso) {
 }
 
 export const DESK_COPY = Object.freeze({
+  // ── Desk identity (F-1) ────────────────────────────────────────────────────
+  // The Desk says WHICH battle it describes. Before F-1 it was unlabelled and
+  // selected by index, so with a ranked battle and a casual clone live together
+  // it could describe one while sitting above the other. Both halves come from
+  // the adapter's `game`, which derives them from the same classification the
+  // Manage card labels from — so the two can never disagree (BUILD_RULES §9).
+  deskEyebrow: (agentName, modeLabel) => {
+    if (!agentName && !modeLabel) return null;
+    if (!agentName) return modeLabel;
+    if (!modeLabel) return agentName;
+    return `${agentName} · ${modeLabel}`;
+  },
+
   // ── Posture line (spec §8 item 1) ──────────────────────────────────────────
   // LIVE. Discrete by construction: a last check and an approximate next one.
   postureLive: (lastIso, nextIso) => {

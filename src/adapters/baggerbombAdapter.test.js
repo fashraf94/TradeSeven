@@ -12,6 +12,7 @@
 // (there is no vi.mock-of-marketSchedule precedent anywhere in src/).
 
 import { describe, it, expect } from 'vitest';
+import { battleTypeLabel } from '../utils/commandCenterLiveBattles';
 import {
   buildBaggerbombAdapter,
   derivePhase,
@@ -80,6 +81,9 @@ function makeBattle(over = {}) {
     id: 'battle-1',
     status: 'active',
     activatedAt: '2026-09-01T13:30:00.000Z',
+    // Every real battle carries this (createAgentBattle stamps agentContext),
+    // and the Desk's F-1 eyebrow reads the agent name from it.
+    agentContext: { agentName: 'Aurora' },
     scoreState: {
       currentScore: 42,
       tradeCount: 3,
@@ -252,8 +256,45 @@ describe('buildBaggerbombAdapter', () => {
 
   it('carries game identity and the score from the same fields ManageStation uses', () => {
     const a = build(makeBattle(), makeCache(), AGENT, NOW, MS.open);
-    expect(a.game).toEqual({ id: 'battle-1', type: 'baggerbomb', label: 'BaggerBomb' });
+    expect(a.game).toEqual({
+      id: 'battle-1', type: 'baggerbomb', label: 'BaggerBomb', agentName: 'Aurora',
+    });
     expect(a.score).toEqual({ current: 42, tradeCount: 3 });
+  });
+
+  describe('game identity is DERIVED, never constant (F-1)', () => {
+    // It was hardcoded to baggerbomb/BaggerBomb, which was a lie whenever the
+    // Desk was handed a ranked battle — and before F-1 it could be, because the
+    // shells selected by index and sortLiveBattles puts ranked first.
+    it('a ranked battle (groupId present) reports itself as ranked', () => {
+      const ranked = makeBattle({ groupId: 'grp-1' });
+      const a = build(ranked, makeCache(), AGENT, NOW, MS.open);
+      expect(a.game.type).toBe('ranked');
+      expect(a.game.label).toBe('Ranked');
+    });
+
+    it('a casual battle (no groupId) reports itself as BaggerBomb', () => {
+      const a = build(makeBattle(), makeCache(), AGENT, NOW, MS.open);
+      expect(a.game.type).toBe('baggerbomb');
+      expect(a.game.label).toBe('BaggerBomb');
+    });
+
+    it('the label matches what the Manage card would print for the same battle', () => {
+      // One classification, so the Desk eyebrow and the card cannot disagree.
+      const ranked = makeBattle({ groupId: 'grp-1' });
+      expect(build(ranked, makeCache(), AGENT, NOW, MS.open).game.label)
+        .toBe(battleTypeLabel(ranked));
+      expect(build(makeBattle(), makeCache(), AGENT, NOW, MS.open).game.label)
+        .toBe(battleTypeLabel(makeBattle()));
+    });
+
+    it('carries the agent name for the eyebrow, preferring the frozen battle snapshot', () => {
+      expect(build(makeBattle(), makeCache(), AGENT, NOW, MS.open).game.agentName).toBe('Aurora');
+      const noSnapshot = makeBattle({ agentContext: undefined });
+      expect(build(noSnapshot, makeCache(), { name: 'Live Name' }, NOW, MS.open).game.agentName)
+        .toBe('Live Name');
+      expect(build(noSnapshot, makeCache(), null, NOW, MS.open).game.agentName).toBeNull();
+    });
   });
 
   it('falls back to trades.length for tradeCount, as ManageStation does', () => {

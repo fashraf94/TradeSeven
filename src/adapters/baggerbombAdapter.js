@@ -23,6 +23,8 @@
  * have to know which is which.
  */
 
+import { classifyBattleType, battleTypeLabel } from '../utils/commandCenterLiveBattles';
+
 export const PHASE = Object.freeze({
   PRE_OPEN: 'PRE_OPEN',
   LIVE: 'LIVE',
@@ -387,10 +389,20 @@ export function buildBaggerbombAdapter(battle, voiceLayerCacheDoc, agent, now, m
   const swapLock = proximityStale ? [] : buildSwapLock(briefs);
 
   return {
+    // Derived, never constant. `type`/`label` were hardcoded to 'baggerbomb' /
+    // 'BaggerBomb', which was a lie whenever the Desk was handed a ranked
+    // battle — and before F-1 it could be, because the shells selected by
+    // index and sortLiveBattles puts ranked first. Both now come from the SAME
+    // classifyBattleType the Manage card labels from (ManageStation.jsx), so
+    // the Desk's eyebrow and the card beneath it cannot disagree about which
+    // game is on screen (BUILD_RULES §9).
     game: {
       id: battle.id ?? null,
-      type: 'baggerbomb',
-      label: 'BaggerBomb',
+      type: classifyBattleType(battle),
+      label: battleTypeLabel(battle),
+      // For the Desk's eyebrow: the Desk says which battle it describes rather
+      // than borrowing the identity of whatever card happens to sit under it.
+      agentName: battle?.agentContext?.agentName ?? agent?.name ?? null,
     },
 
     phase,
