@@ -56,6 +56,22 @@ export default function ManageStation({ battle, agent, accent, onOpen, showType,
   // the same adapter field the Desk's posture line uses, so no two surfaces can
   // disagree about them (BUILD_RULES §9).
   const rightRail = left || (phase === 'PRE_OPEN' ? DESK_COPY.manageResumes(sync?.nextOpenEt) : null);
+
+  // F-4: the dot stops pulsing in the closed phases.
+  //
+  // The eyebrow TEXT stays "LIVE" — that is true of the battle, which is still
+  // running. The pulse is a different claim: motion reads as activity, and
+  // overnight, at the weekend and on holidays there is none. Evals are
+  // hard-gated to regular trading hours (agent-evaluate.js:284-286), so a
+  // pulsing dot beside "Market closed" animates something that is not
+  // happening — the same fabrication class as an agent verb, made of motion
+  // instead of words.
+  //
+  // Driven from the adapter's phase, never from a market-state read here: this
+  // card and the Desk above it must not derive "is the market open" from two
+  // sources that can drift (BUILD_RULES §9). Dark (phase null) it pulses
+  // exactly as before, which is what keeps flag-off byte-identical.
+  const pulseStatic = phase === 'PRE_OPEN' || phase === 'LIVE_CLOSED';
   // Header label and the opponent line both derive from ONE classification (§9 —
   // never a second raw read of battle.groupId). Gated by showType so flag-off (no
   // showType passed) is byte-identical to the legacy "Battle live … · vs CPU" card.
@@ -77,8 +93,8 @@ export default function ManageStation({ battle, agent, accent, onOpen, showType,
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
           <motion.span
-            animate={{ scale: [1, 1.35, 1], opacity: [1, 0.5, 1] }}
-            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+            animate={pulseStatic ? { scale: 1, opacity: 1 } : { scale: [1, 1.35, 1], opacity: [1, 0.5, 1] }}
+            transition={pulseStatic ? { duration: 0 } : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
             style={{ width: 9, height: 9, borderRadius: '50%', background: accent, display: 'block' }}
           />
           <Mono style={{ fontSize: 11, letterSpacing: '0.16em', color: accent, textTransform: 'uppercase', fontWeight: 600 }}>{typeLabel ? `${typeLabel} · live` : 'Battle live'}</Mono>
