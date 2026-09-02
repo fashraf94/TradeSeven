@@ -43,7 +43,21 @@ function whyBattle(overrides = {}) {
       riskTolerance: 70,
     },
     statusFeed: [
-      { message: 'Swapped OLD → NVDA', action: 'swap', trade_reasoning: 'OLD stalled, NVDA breaking out', citedForgeRules: ['r1'] },
+      // Shaped after the REAL swap writer (api/cron/agent-evaluate.js) so the
+      // allowlist is exercised against the fields production actually stamps —
+      // `source` + `triggeredBy` among them (Phase 0 V2 Hazard 12).
+      {
+        timestamp: '2026-09-02T14:00:00.000Z',
+        message: 'Swapped OLD → NVDA',
+        action: 'swap',
+        symbolOut: 'OLD',
+        symbolIn: 'NVDA',
+        source: 'haiku',
+        triggeredBy: 'threshold_breach, momentum_shift',
+        evalId: 'eval_001',
+        trade_reasoning: 'OLD stalled, NVDA breaking out',
+        citedForgeRules: ['r1'],
+      },
     ],
     trades: [
       { symbolOut: 'OLD', symbolIn: 'NVDA', lockedPoints: 12, rationale: 'cut the laggard', hypothesis: 'NVDA runs', trade_reasoning: 'rotation', snapshot: { secret: true } },
@@ -106,6 +120,37 @@ describe('projectTournamentBattle — non-owner active = WHAT only', () => {
     expect(projected.statusFeed[0].action).toBe('swap');
     expect(projected.statusFeed[0].trade_reasoning).toBeUndefined();
     expect(projected.statusFeed[0].citedForgeRules).toBeUndefined();
+  });
+
+  // Phase 0 V2 Hazard 12. `source` / `triggeredBy` name the MECHANISM that
+  // fired a swap (risk_manager / guardrail / haiku / gameplan_meeting). That is
+  // WHY, and the sibling trades[] projection has always withheld it — so a
+  // rival could read from the feed what the trade record refused to tell them.
+  // These two rows are the whole fix; if either regresses, the leak is back.
+  it('strips swap ATTRIBUTION from the statusFeed for a non-owner (same posture as PUBLIC_TRADE)', () => {
+    const e = projected.statusFeed[0];
+    expect(e.source).toBeUndefined();
+    expect(e.triggeredBy).toBeUndefined();
+    // ...while the WHAT the rival is entitled to still lands.
+    expect(e.symbolOut).toBe('OLD');
+    expect(e.symbolIn).toBe('NVDA');
+    expect(e.timestamp).toBe('2026-09-02T14:00:00.000Z');
+    // The sibling projection this now agrees with — one posture, both lists.
+    expect(projected.trades[0].source).toBeUndefined();
+    expect(projected.trades[0].triggeredBy).toBeUndefined();
+  });
+
+  it('the OWNER still sees swap attribution (concealment is per-viewer, not deletion)', () => {
+    const b = whyBattle();
+    const own = projectTournamentBattle(b, { isOwner: true });
+    expect(own.statusFeed[0].source).toBe('haiku');
+    expect(own.statusFeed[0].triggeredBy).toBe('threshold_breach, momentum_shift');
+  });
+
+  it('a COMPLETED battle unlocks attribution for everyone (Film Room)', () => {
+    const done = projectTournamentBattle(whyBattle({ status: 'completed' }), { isOwner: false });
+    expect(done.statusFeed[0].source).toBe('haiku');
+    expect(done.statusFeed[0].triggeredBy).toBe('threshold_breach, momentum_shift');
   });
 
   it('keeps trade WHAT (symbols, points) but strips trade WHY', () => {
