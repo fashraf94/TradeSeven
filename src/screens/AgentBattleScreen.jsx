@@ -198,7 +198,9 @@ function ScoreHeader({
   turnLine = null, landingKey = null, rowCount = 0, reducedMotion = false,
   // Phase A: tap the score header → the book-level Why? (D-53: Direct is
   // book-level; Why? on the header is the book's own panel). Absent flag-off.
-  onOpenBook = null, bookOpen = false,
+  // A4.3 (review F16): a SHORT accessible name for that button instead of
+  // its whole content (names, scores, the day label).
+  onOpenBook = null, bookOpen = false, bookName = null,
 }) {
   const myScore = playerScore ?? (agentBattle?.scoreState?.currentScore || 0);
   const oppScore = opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0);
@@ -229,6 +231,7 @@ function ScoreHeader({
           role: 'button',
           tabIndex: 0,
           'aria-expanded': bookOpen ? 'true' : 'false',
+          ...(bookName ? { 'aria-label': bookName } : {}),
           onClick: onOpenBook,
           onKeyDown: (e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenBook(); }
@@ -1076,6 +1079,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 onWhy: (asset) => handleWhyToggle(rowKey, asset),
                 whyOpen: isWhyOpen,
                 whyLabel: BATTLE_VIEW_COPY.why,
+                // A4.3: the button's short name and the id root of the facts
+                // that describe it (the price change, the proximity text).
+                whyName: BATTLE_VIEW_COPY.whyName(leftAsset.symbol),
+                whyId: `why-${rowKey}`,
                 // The row hands the panel the SAME proximity it just
                 // rendered — one call, one number (hazard 15).
                 renderWhy: (proximity) => (
@@ -1370,6 +1377,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           reducedMotion={reducedMotion}
           onOpenBook={controllerOn ? handleBookWhyToggle : null}
           bookOpen={bookWhyOpen}
+          bookName={controllerOn ? BATTLE_VIEW_COPY.whyBookName : null}
         />
 
         {/* Book-level Why? (Phase A, controller flag): the latest decision for

@@ -144,6 +144,26 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
     expect(container.querySelector('[data-why-symbol="SLB"]')).toBeNull();
   });
 
+  it('A4.3 (F16): the row button\'s name is `Why? {symbol}`; its description ids resolve to the price change and the proximity text', () => {
+    mount();
+    const slb = rowButtonFor('SLB');
+    expect(slb.getAttribute('aria-label')).toBe('Why? SLB');
+    const ids = slb.getAttribute('aria-describedby').split(' ');
+    expect(ids.length).toBe(2);
+    const [pct, proximity] = ids.map((id) => document.getElementById(id));
+    expect(pct).toBeTruthy();
+    expect(proximity).toBeTruthy();
+    expect(slb.contains(pct)).toBe(true);
+    expect(slb.contains(proximity)).toBe(true);
+    expect(pct.textContent).toMatch(/[+-]?\d+\.\d{2}%/);
+    expect(proximity.textContent).toContain('% to');
+    // The inner symbol / points targets stay out of the tab order (mouse-only, as shipped).
+    expect(slb.querySelectorAll('button, [tabindex]').length).toBe(0);
+    // The header button is named for the book, not by its numbers.
+    const header = [...container.querySelectorAll('[role="button"][aria-expanded]')].find((el) => el.textContent.includes('Aurora') && el.textContent.includes('CPU'));
+    expect(header.getAttribute('aria-label')).toBe('Why? · the whole book');
+  });
+
   it('only one row is open at a time; the CPU side never opens', async () => {
     mount();
     click(rowButtonFor('AAPL'));

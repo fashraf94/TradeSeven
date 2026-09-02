@@ -50,6 +50,12 @@ function AssetSide({
   onWhy = null,
   whyOpen = false,
   whyLabel = null,
+  // A4.3 (review F16): the button's accessible NAME (`Why? {symbol}`) and the
+  // id root for the facts it is DESCRIBED by — the price change and the
+  // proximity text keep reaching assistive tech as the description, while
+  // the name stays short. Both absent flag-off.
+  whyName = null,
+  whyId = null,
 }) {
   // Computed once per side when the row did not hand one down (the standalone
   // AssetSide path). Placed before the early returns so the hook order is the
@@ -216,6 +222,15 @@ function AssetSide({
     }
   } : undefined;
 
+  // A4.3: the inner symbol / points targets are pre-existing MOUSE-ONLY
+  // divs (they stop propagation and stay out of the tab order); promoting
+  // them to real buttons is a flag-off markup change that belongs to the
+  // rows PR, not here. The row button is named for its verb and its piece,
+  // and described by the facts it shows.
+  const pctId = whyEnabled && whyId ? `${whyId}-pct` : undefined;
+  const proximityId = whyEnabled && whyId ? `${whyId}-proximity` : undefined;
+  const describedBy = pctId && proximityId ? `${pctId} ${proximityId}` : undefined;
+
   return (
     <div
       onClick={handleAssetClick}
@@ -223,6 +238,8 @@ function AssetSide({
         role: 'button',
         tabIndex: 0,
         'aria-expanded': whyOpen ? 'true' : 'false',
+        ...(whyName ? { 'aria-label': whyName } : {}),
+        ...(describedBy ? { 'aria-describedby': describedBy } : {}),
         onKeyDown: handleWhyKeyDown,
       } : {})}
       style={{
@@ -300,7 +317,7 @@ function AssetSide({
               </span>
             )}
           </div>
-          <div style={{ position: 'relative', height: '20px', overflow: 'hidden' }}>
+          <div {...(pctId ? { id: pctId } : {})} style={{ position: 'relative', height: '20px', overflow: 'hidden' }}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={`${priceChange.toFixed(2)}`}
@@ -396,19 +413,38 @@ function AssetSide({
         )}
       </div>
 
-      {/* Proximity Label — uses daily-relative threshold progress */}
-      <ProximityLabel
-        priceChange={thresholdPriceChange ?? priceChange}
-        baseATR={baseATR}
-        history={history}
-        dailyLevels={asset.dailyLevels}
-        currentPrice={asset.currentPrice}
-        size="small"
-        align={isRight ? 'right' : 'left'}
-        proximityRatio={thresholdHeat.proximityRatio}
-        heatDirection={thresholdHeat.direction}
-        proximity={resolvedProximity}
-      />
+      {/* Proximity Label — uses daily-relative threshold progress. Under the
+          flag the label is wrapped once, so the row button can be described
+          by it (A4.3); flag-off renders the bare label as before. */}
+      {proximityId ? (
+        <div id={proximityId}>
+          <ProximityLabel
+            priceChange={thresholdPriceChange ?? priceChange}
+            baseATR={baseATR}
+            history={history}
+            dailyLevels={asset.dailyLevels}
+            currentPrice={asset.currentPrice}
+            size="small"
+            align={isRight ? 'right' : 'left'}
+            proximityRatio={thresholdHeat.proximityRatio}
+            heatDirection={thresholdHeat.direction}
+            proximity={resolvedProximity}
+          />
+        </div>
+      ) : (
+        <ProximityLabel
+          priceChange={thresholdPriceChange ?? priceChange}
+          baseATR={baseATR}
+          history={history}
+          dailyLevels={asset.dailyLevels}
+          currentPrice={asset.currentPrice}
+          size="small"
+          align={isRight ? 'right' : 'left'}
+          proximityRatio={thresholdHeat.proximityRatio}
+          heatDirection={thresholdHeat.direction}
+          proximity={resolvedProximity}
+        />
+      )}
 
       {/* Why? — the piece's verb, visible and part of the button's name.
           Rendered only when the screen hands the label down (the controller
@@ -454,6 +490,8 @@ AssetSide.propTypes = {
   onWhy: PropTypes.func,
   whyOpen: PropTypes.bool,
   whyLabel: PropTypes.string,
+  whyName: PropTypes.string,
+  whyId: PropTypes.string,
 };
 
 // Tier-specific badge colors
@@ -530,6 +568,8 @@ export default function TacticalRow({
   whyOpen = false,
   renderWhy = null,
   whyLabel = null,
+  whyName = null,
+  whyId = null,
 }) {
   // The left side's proximity, computed ONCE here and handed to both the
   // label (through AssetSide) and the Why? panel — never derived twice beside
@@ -568,6 +608,8 @@ export default function TacticalRow({
         onWhy={onWhy}
         whyOpen={whyOpen}
         whyLabel={whyLabel}
+        whyName={whyName}
+        whyId={whyId}
       />
 
       {/* Center Allocation Badge */}
@@ -635,6 +677,8 @@ TacticalRow.propTypes = {
   whyOpen: PropTypes.bool,
   renderWhy: PropTypes.func,
   whyLabel: PropTypes.string,
+  whyName: PropTypes.string,
+  whyId: PropTypes.string,
 };
 
 TacticalRow.defaultProps = {

@@ -200,6 +200,18 @@ describe('under the flag — the controller', () => {
     expect(html.indexOf('data-this-turn')).toBeLessThan(html.indexOf('Star Picks'));
   });
 
+  it('A4.3 (F16): each row button is NAMED `Why? {symbol}` and DESCRIBED by its price change and proximity; the header button is named for the book', () => {
+    const html = render();
+    for (const symbol of ['AAPL', 'SLB', 'NVDA']) expect(html).toContain(`aria-label="Why? ${symbol}"`);
+    expect((html.match(/aria-label="Why\? [A-Z]+"/g) || []).length).toBe(3);
+    expect(html).toContain('aria-describedby="why-star-1-pct why-star-1-proximity"');
+    expect(html).toContain('id="why-star-1-pct"');
+    expect(html).toContain('id="why-star-1-proximity"');
+    expect(html).toContain('aria-label="Why? · the whole book"');
+    // The CPU side carries no name, no description: it is not a tap surface.
+    expect(html).not.toContain('aria-label="Why? AMD"');
+  });
+
   it('every player row is a Why? tap surface (role=button, collapsed); the CPU side never is (A2)', () => {
     const html = render();
     // Three held player pieces (AAPL, SLB, NVDA) → three collapsed buttons on
@@ -250,6 +262,9 @@ describe('flag-off — the shipped tabbed screen', () => {
     const html = render();
     expect(html).not.toContain('aria-expanded');
     expect(html).not.toContain('data-why-kind');
+    expect(html).not.toContain('aria-label="Why?');
+    expect(html).not.toContain('aria-describedby');
+    expect(html).not.toContain('-proximity"');
   });
 
   it('no This turn strip (A3 is flag-only)', () => {
