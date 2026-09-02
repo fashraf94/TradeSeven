@@ -60,10 +60,16 @@ function AssetSide({
   // Computed once per side when the row did not hand one down (the standalone
   // AssetSide path). Placed before the early returns so the hook order is the
   // same for every render of this side.
+  // Keyed on the VALUES the label renders from — never on the asset object's
+  // identity (A4 review, refuter C): the pre-lift label memoised on its
+  // primitives, so a caller that mutates an asset in place must still see the
+  // same number the row's % shows (BUILD_RULES §9). No in-repo caller mutates
+  // an asset today; the contract is kept equal to the shipped one regardless.
   const ownProximity = useMemo(() => {
     if (proximity || !asset || asset.isCash) return null;
     return computeProximity(proximityInputs(asset));
-  }, [proximity, asset]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proximity, !!asset, asset?.isCash, asset?.priceChange, asset?.thresholdPriceChange, asset?.baseATR, asset?.history, asset?.dailyLevels, asset?.currentPrice]);
   const resolvedProximity = proximity ?? ownProximity;
 
   if (!asset) {
@@ -567,7 +573,9 @@ export default function TacticalRow({
   const leftProximity = useMemo(() => {
     if (!leftAsset || leftAsset.isCash) return null;
     return computeProximity(proximityInputs(leftAsset));
-  }, [leftAsset]);
+  // Value-keyed, like the pre-lift label (see AssetSide's memo above).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!leftAsset, leftAsset?.isCash, leftAsset?.priceChange, leftAsset?.thresholdPriceChange, leftAsset?.baseATR, leftAsset?.history, leftAsset?.dailyLevels, leftAsset?.currentPrice]);
 
   return (
     <>
