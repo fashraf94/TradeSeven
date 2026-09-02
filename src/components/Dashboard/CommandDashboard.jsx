@@ -613,7 +613,7 @@ export default function CommandDashboard({
           directiveCount={activeDirectives?.length || 0}
           deployResult={deployResult}
           targetAgentId={deployTargetId}
-          onEnterBattle={() => { onEnterBattle?.(); setCeremonyOpen(false); }}
+          onEnterBattle={(recoveredBattle) => { onEnterBattle?.(recoveredBattle); setCeremonyOpen(false); }}
           onDismiss={() => setCeremonyOpen(false)}
           onRetry={handleCeremonyRetry}
         />

@@ -22,12 +22,21 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 // ── module mocks ───────────────────────────────────────────────────────────
-const { getIdTokenMock, targetProgressState } = vi.hoisted(() => ({
+const { getIdTokenMock, targetProgressState, verifyMock } = vi.hoisted(() => ({
   getIdTokenMock: vi.fn(),
   targetProgressState: { value: null },
+  verifyMock: vi.fn(),
 }));
 
 vi.mock('../../../firebase/authService', () => ({ getIdToken: getIdTokenMock }));
+// PR 2: the ceremony now runs an existence check before committing to any
+// terminal claim. Mocked here so this file keeps testing PR 1's contract without
+// pulling in firebase/config; the check's own behavior is covered in
+// ceremonyTerminalState.test.jsx.
+vi.mock('../../../services/agentBattleVerify', () => ({
+  findActiveBattleForAgent: verifyMock,
+  default: verifyMock,
+}));
 vi.mock('../../../hooks/useDeployTargetProgress', () => ({
   default: () => targetProgressState.value,
 }));
@@ -54,6 +63,8 @@ beforeEach(() => {
   }
   seen = undefined;
   getIdTokenMock.mockReset();
+  verifyMock.mockReset();
+  verifyMock.mockResolvedValue({ found: false, battle: null });
   targetProgressState.value = null;
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -293,7 +304,11 @@ describe('DeployCeremony — deploy state from the target, identity from the ran
     lastDecision: { portfolio: { star: [{ symbol: 'RANKEDPICK' }] } },
   };
 
-  const renderCeremony = (targetProgress, extraProps = {}) => {
+  // PR 2: a client error routes to 'verifying' first, so the error surface these
+  // rows assert on appears only once the existence check has resolved (empty, per
+  // the default mock — two attempts, 400ms apart). Real timers here, so flush by
+  // waiting out the retry gap.
+  const renderCeremony = async (targetProgress, extraProps = {}) => {
     targetProgressState.value = {
       deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false, ...targetProgress,
     };
@@ -310,13 +325,14 @@ describe('DeployCeremony — deploy state from the target, identity from the ran
         />,
       );
     });
+    await act(async () => { await new Promise((r) => setTimeout(r, 600)); });
     return document.body.textContent;
   };
 
   // §7.6 — the countdown must reflect the deploy that actually happened. The
   // ranked doc's lastDeployedAt is from 2020; only the TARGET's is recent.
-  it('cooldown comes from the TARGET\'s lastDeployedAt (§7.6)', () => {
-    const text = renderCeremony({
+  it('cooldown comes from the TARGET\'s lastDeployedAt (§7.6)', async () => {
+    const text = await renderCeremony({
       targetKnown: true,
       lastDeployedAt: new Date(Date.now() - 20000).toISOString(), // 20s ago → ~100s left
     });
@@ -326,13 +342,13 @@ describe('DeployCeremony — deploy state from the target, identity from the ran
 
   // §6 — fail OPEN while the target is unresolved: fall back to the ranked
   // agent's value rather than stranding the retry button.
-  it('falls back to the ranked agent\'s lastDeployedAt when the target is unknown (§6)', () => {
-    const text = renderCeremony({ targetKnown: false, lastDeployedAt: null });
+  it('falls back to the ranked agent\'s lastDeployedAt when the target is unknown (§6)', async () => {
+    const text = await renderCeremony({ targetKnown: false, lastDeployedAt: null });
     expect(text).toContain('Try again');   // ranked value is ancient → unlocked
   });
 
-  it('a target that has never deployed leaves retry unlocked, matching the server gate', () => {
-    const text = renderCeremony({ targetKnown: true, lastDeployedAt: null });
+  it('a target that has never deployed leaves retry unlocked, matching the server gate', async () => {
+    const text = await renderCeremony({ targetKnown: true, lastDeployedAt: null });
     expect(text).toContain('Try again');
   });
 
