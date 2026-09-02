@@ -6,7 +6,7 @@
 **Branch:** `claude/battle-view-controller-phase-a-v5gog5` — the harness assigned this name to the build session. The seed and `docs/design/PHASE_A_RULINGS_AND_AMENDMENTS_V1.md` §1.2 name `claude/battle-view-controller-phase-a-i51j5l`, the Phase 0 session's branch; same task, new session, new harness name. The Phase 0 report is on `main` (merged in #807), so nothing on the older branch is lost.
 **Base:** `eaf2a0e2` (`main`, the D-58 docs merge). **Commits:** `540fdc9` A1 · `c570d61` A2 · `d817f16` A3 · `a41b311` review fixes. **Cumulative diff:** 43 files, ~+3.8k / −0.3k.
 **Flag:** `BATTLE_VIEW_CONTROLLER_ENABLED = false` (pin `battleViewControllerFlags.test.js`, `DARK_BY_DESIGN` entry); smoke override `?battleViewController=1`, deleted by the flip PR.
-**Review:** `docs/audits/20260902_BATTLE_VIEW_CONTROLLER_PHASE_A_BUILD_REVIEW.md` (BUILD_RULES §2 — five isolated lenses, refuted, `vite build`).
+**Review:** `docs/audits/20260902_BATTLE_VIEW_CONTROLLER_PHASE_A_BUILD_REVIEW.md` (BUILD_RULES §2 — five isolated lenses + `/code-review`, every finding refuted or confirmed by a second agent: 32 CONFIRMED / 2 REFUTED, `vite build` green).
 **STOP:** this session ends after A3 + review, for the founder's smoke. A4 (the layout) starts in a fresh session after the go.
 
 ---
@@ -65,7 +65,7 @@ Nothing under `api/`. No fenced file edited. Fenced or shared functions **called
 14. **Smoke step 3 could not be pre-located.** This environment has no Firestore access, so no live `downgraded === true` tick was found; the fixture-driven render tests are the guaranteed fallback the seed allows.
 15. **Until A4:** `LiveActivityPanel` still mounts under the flag (its `Agent is active.` pulse beside the turn line); This turn renders both above the board and inside the open book panel (the seed's letter for both places); the Why? door switches to the chat tab (`setActiveTab('command')`) — A4 replaces that with "reveal the chat" and, on mobile, opens the sheet before the focus.
 16. **`PROPOSAL` → `Held`.** A `PROPOSAL` entry held the position at the check pending an approval the chat carries; unreachable under the autopilot launch guard; mapped to `Held` and recorded.
-17. **Flag-off gains one runtime subscription** (`useReducedMotion`'s matchMedia listener in the screen); markup is byte-identical (review lens L3: 0 differences over ~76k rendered cases outside the sanctioned D-62 Desk string).
+17. **Flag-off runtime is unchanged** — the review's L2 note that `useReducedMotion` adds a matchMedia subscription flag-off was REFUTED by the refuter (framer keeps a module singleton the shipped screen's motion elements already initialised; flag-off gains one `useState` slot). Markup is byte-identical (review lens L3: 0 differences over ~76k rendered cases outside the sanctioned D-62 Desk string).
 18. **`useAgentBattle.js:13`** still logs on every render (Phase 0 bug 3, triaged for the flag-off rows PR).
 
 ## 6. What A4 needs from this branch
