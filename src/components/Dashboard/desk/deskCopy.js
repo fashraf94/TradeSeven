@@ -119,11 +119,31 @@ export const DESK_COPY = Object.freeze({
   // "9:30 ET" beside them read as a different kind of time.
   posturePreOpen: 'First check at 9:30 AM ET',
 
-  // LIVE_CLOSED. "Market closed" is a market fact; the next check is the next
-  // open. No verb about the agent at all — it is not doing anything.
-  postureClosed: (nextOpenEt) => {
+  // LIVE, and the due check has not landed (Phase A, D-62 / handover lock #5).
+  // Still discrete: the last check that DID run, and the one that WAS due —
+  // past tense, tilde kept, because the cron is not a metronome and "was due"
+  // is a fact about the schedule, not a claim about what the agent is doing.
+  // Consumed by the Battle View turn line only; the Desk's LIVE line keeps
+  // postureLive (its `next` goes null when past, which reads as `Checked {t}`).
+  postureLate: (lastIso, dueIso) => {
+    const last = etTime(lastIso);
+    const due = etTime(dueIso);
+    if (!last) return DESK_COPY.postureFirstCheckComing;
+    return due ? `Last check ${last} · next was due ~${due}` : `Last check ${last}`;
+  },
+
+  // LIVE_CLOSED. "Market closed" is a market fact; the last check is the as-of
+  // stamp (handover lock #5 — it stays visible in closed phases); the next
+  // check is the next open. No verb about the agent at all — it is not doing
+  // anything. ONE string on both surfaces (D-62): the Desk and the Battle View
+  // turn line render this same sentence, so they cannot disagree.
+  postureClosed: (nextOpenEt, lastIso) => {
     const label = etWallClockLabel(nextOpenEt);
-    return label ? `Market closed · next check ${label} ET` : 'Market closed';
+    const last = etTime(lastIso);
+    const parts = ['Market closed'];
+    if (last) parts.push(`last check ${last}`);
+    if (label) parts.push(`next ${label} ET`);
+    return parts.join(' · ');
   },
 
   // POST_CLOSE — the battle is over; there is no next check.

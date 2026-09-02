@@ -117,6 +117,8 @@ const DARK_BY_DESIGN = {
     'pre-open display routing (spec V2.1) — display-only; flips only after a founder preview smoke of the 9:30 transition',
   ARCHETYPE_VECTORS_V2_ENABLED:
     'Archetype Rank Interface V2 (spec V1.3) — the V2 scorer ships dark for the observation window; flips in its own §7 PR after spec §6 passes, with the P-3 version bumps, never a build PR',
+  BATTLE_VIEW_CONTROLLER_ENABLED:
+    'Battle View controller Phase A (D-59 → D-62) — the turn line, Why?, receipts and the controller layout ship dark; the founder smokes via the ?battleViewController=1 override; flips in its own one-line PR that also deletes the override, never a build PR',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────
