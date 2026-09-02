@@ -1913,6 +1913,8 @@ export const COMMAND_CENTER_SYNC_ENABLED = false;
  */
 // Pinned by: archetypeScoring.v2dispatch.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const ARCHETYPE_VECTORS_V2_ENABLED = false;
+
+/**
  * Exit-Behavior Rebalance Tier 2, Ask 2 (rescoped) — equipped-rule precedence
  * made honest across the three non-archetype surfaces (kickoff 2026-09-01;
  * five founder decisions 2026-09-02). DARK — default FALSE.
