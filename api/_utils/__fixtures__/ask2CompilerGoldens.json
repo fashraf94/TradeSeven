@@ -1,0 +1,265 @@
+{
+  "capturedAt": "pre-Ask2-edit @ branch base de4113fd",
+  "pairTiered": {
+    "compiledBuildId": "fx-agent_baggerbomb_agent_rev7",
+    "compilerVersion": 1,
+    "compiledAt": "2026-07-23T12:00:00.000Z",
+    "contentHash": "095c594b801f6b9fb406dcdf283dd062c09b8c7b9327e2b0d83ab9d7d2359e32",
+    "agentId": "fx-agent",
+    "buildVersion": 7,
+    "parentArchetypeId": "momentum_chaser",
+    "parentIdentityVersion": 1,
+    "identityHash": "fixture-identity-hash-v1",
+    "gameMode": "baggerbomb_agent",
+    "gameModePolicyVersion": 1,
+    "gameModePolicyHash": "c5ad06be25564ce95adb58c8f8068fa8817efca9162f773879f6e5ee77c8eedc",
+    "sourceRevisionVector": {
+      "settingsRev": 7,
+      "bundleContentHashes": {
+        "fx-bundle-1": "09665737d730c8bde7ff5c4a1efb7d8cb06b3ebb33c0ed085eebcb139b4ddf96"
+      },
+      "ruleLibraryVersion": 1,
+      "identityHash": "fixture-identity-hash-v1",
+      "calibrationBundleVersion": 1,
+      "guardrailSetVersion": 1,
+      "gameMode": "baggerbomb_agent",
+      "gameModePolicyVersion": 1,
+      "gameModePolicyHash": "c5ad06be25564ce95adb58c8f8068fa8817efca9162f773879f6e5ee77c8eedc"
+    },
+    "validation": {
+      "pass": true,
+      "errors": []
+    },
+    "compatVerdicts": [
+      {
+        "ruleId": "fx-stop-loss",
+        "bundleId": "fx-bundle-1",
+        "verdict": "native",
+        "intendedMode": "execution_constraint",
+        "effectiveEnforcement": "deterministic",
+        "copyClass": "enforced",
+        "compiledToGuardrail": true,
+        "renderExclusion": "system_enforcement_notice"
+      },
+      {
+        "ruleId": "fx-mb-08",
+        "bundleId": "fx-bundle-1",
+        "verdict": "compatible",
+        "intendedMode": "required_consideration",
+        "effectiveEnforcement": "prompt_advisory",
+        "copyClass": "advisory"
+      }
+    ],
+    "blockedControls": [],
+    "effectiveGuardrailsPreview": {
+      "perType": {
+        "profitTarget": {
+          "requestedByUser": 15,
+          "derivedFromRules": [],
+          "effective": 15,
+          "governingSource": "user",
+          "onUnequipBehavior": "unchanged (user value governs)"
+        },
+        "stopLoss": {
+          "requestedByUser": null,
+          "derivedFromRules": [
+            {
+              "ruleId": "fx-stop-loss",
+              "value": 5,
+              "binding": {
+                "type": "stopLoss",
+                "scope": "position",
+                "basis": "entry",
+                "unit": "pct",
+                "trigger": "price_below_threshold",
+                "side": "exit",
+                "resetBehavior": "none",
+                "evaluationTiming": "post_decision_tick",
+                "valueParamKey": "threshold"
+              }
+            }
+          ],
+          "effective": 5,
+          "governingSource": "rule:fx-stop-loss",
+          "onUnequipBehavior": "reverts to none (no user guardrail of this type)"
+        }
+      }
+    },
+    "renderedTensionCandidates": [],
+    "freshness": {
+      "validUntilSourceChange": true
+    }
+  },
+  "pairFlat6": {
+    "compiledBuildId": "fx-agent_baggerbomb_tournament_rev7",
+    "compilerVersion": 1,
+    "compiledAt": "2026-07-23T12:00:00.000Z",
+    "contentHash": "78f1df15fad102ad2ea876934c6c2d2c1b5a21057e65843a33d3e9cd537445b9",
+    "agentId": "fx-agent",
+    "buildVersion": 7,
+    "parentArchetypeId": "momentum_chaser",
+    "parentIdentityVersion": 1,
+    "identityHash": "fixture-identity-hash-v1",
+    "gameMode": "baggerbomb_tournament",
+    "gameModePolicyVersion": 1,
+    "gameModePolicyHash": "39da0fc4ba8ebe2f55a044617a96d7712d2d8fd513c6820d2ec9d4b931d23063",
+    "sourceRevisionVector": {
+      "settingsRev": 7,
+      "bundleContentHashes": {
+        "fx-bundle-1": "09665737d730c8bde7ff5c4a1efb7d8cb06b3ebb33c0ed085eebcb139b4ddf96"
+      },
+      "ruleLibraryVersion": 1,
+      "identityHash": "fixture-identity-hash-v1",
+      "calibrationBundleVersion": 1,
+      "guardrailSetVersion": 1,
+      "gameMode": "baggerbomb_tournament",
+      "gameModePolicyVersion": 1,
+      "gameModePolicyHash": "39da0fc4ba8ebe2f55a044617a96d7712d2d8fd513c6820d2ec9d4b931d23063"
+    },
+    "validation": {
+      "pass": true,
+      "errors": []
+    },
+    "compatVerdicts": [
+      {
+        "ruleId": "fx-stop-loss",
+        "bundleId": "fx-bundle-1",
+        "verdict": "native",
+        "intendedMode": "execution_constraint",
+        "effectiveEnforcement": "deterministic",
+        "copyClass": "enforced",
+        "compiledToGuardrail": true,
+        "renderExclusion": "system_enforcement_notice"
+      },
+      {
+        "ruleId": "fx-mb-08",
+        "bundleId": "fx-bundle-1",
+        "verdict": "compatible",
+        "intendedMode": "required_consideration",
+        "effectiveEnforcement": "prompt_advisory",
+        "copyClass": "advisory"
+      }
+    ],
+    "blockedControls": [],
+    "effectiveGuardrailsPreview": {
+      "perType": {
+        "profitTarget": {
+          "requestedByUser": 15,
+          "derivedFromRules": [],
+          "effective": 15,
+          "governingSource": "user",
+          "onUnequipBehavior": "unchanged (user value governs)"
+        },
+        "stopLoss": {
+          "requestedByUser": null,
+          "derivedFromRules": [
+            {
+              "ruleId": "fx-stop-loss",
+              "value": 5,
+              "binding": {
+                "type": "stopLoss",
+                "scope": "position",
+                "basis": "entry",
+                "unit": "pct",
+                "trigger": "price_below_threshold",
+                "side": "exit",
+                "resetBehavior": "none",
+                "evaluationTiming": "post_decision_tick",
+                "valueParamKey": "threshold"
+              }
+            }
+          ],
+          "effective": 5,
+          "governingSource": "rule:fx-stop-loss",
+          "onUnequipBehavior": "reverts to none (no user guardrail of this type)"
+        }
+      }
+    },
+    "renderedTensionCandidates": [],
+    "freshness": {
+      "validUntilSourceChange": true
+    }
+  },
+  "noPairTiered": {
+    "compiledBuildId": "fx-agent_baggerbomb_agent_rev7",
+    "compilerVersion": 1,
+    "compiledAt": "2026-07-23T12:00:00.000Z",
+    "contentHash": "03ebc63cce2df002c628bb38e0e059d5c367387ac042cf427a35c2fdf0ee1ccf",
+    "agentId": "fx-agent",
+    "buildVersion": 7,
+    "parentArchetypeId": "momentum_chaser",
+    "parentIdentityVersion": 1,
+    "identityHash": "fixture-identity-hash-v1",
+    "gameMode": "baggerbomb_agent",
+    "gameModePolicyVersion": 1,
+    "gameModePolicyHash": "c5ad06be25564ce95adb58c8f8068fa8817efca9162f773879f6e5ee77c8eedc",
+    "sourceRevisionVector": {
+      "settingsRev": 7,
+      "bundleContentHashes": {
+        "fx-bundle-1": "b420b18dc042cde594a049e73d212faf371efee9d968d7cb660ae24f519b07d9"
+      },
+      "ruleLibraryVersion": 1,
+      "identityHash": "fixture-identity-hash-v1",
+      "calibrationBundleVersion": 1,
+      "guardrailSetVersion": 1,
+      "gameMode": "baggerbomb_agent",
+      "gameModePolicyVersion": 1,
+      "gameModePolicyHash": "c5ad06be25564ce95adb58c8f8068fa8817efca9162f773879f6e5ee77c8eedc"
+    },
+    "validation": {
+      "pass": true,
+      "errors": []
+    },
+    "compatVerdicts": [
+      {
+        "ruleId": "fx-stop-loss",
+        "bundleId": "fx-bundle-1",
+        "verdict": "native",
+        "intendedMode": "execution_constraint",
+        "effectiveEnforcement": "deterministic",
+        "copyClass": "enforced",
+        "compiledToGuardrail": true,
+        "renderExclusion": "system_enforcement_notice"
+      }
+    ],
+    "blockedControls": [],
+    "effectiveGuardrailsPreview": {
+      "perType": {
+        "profitTarget": {
+          "requestedByUser": 15,
+          "derivedFromRules": [],
+          "effective": 15,
+          "governingSource": "user",
+          "onUnequipBehavior": "unchanged (user value governs)"
+        },
+        "stopLoss": {
+          "requestedByUser": null,
+          "derivedFromRules": [
+            {
+              "ruleId": "fx-stop-loss",
+              "value": 5,
+              "binding": {
+                "type": "stopLoss",
+                "scope": "position",
+                "basis": "entry",
+                "unit": "pct",
+                "trigger": "price_below_threshold",
+                "side": "exit",
+                "resetBehavior": "none",
+                "evaluationTiming": "post_decision_tick",
+                "valueParamKey": "threshold"
+              }
+            }
+          ],
+          "effective": 5,
+          "governingSource": "rule:fx-stop-loss",
+          "onUnequipBehavior": "reverts to none (no user guardrail of this type)"
+        }
+      }
+    },
+    "renderedTensionCandidates": [],
+    "freshness": {
+      "validUntilSourceChange": true
+    }
+  }
+}

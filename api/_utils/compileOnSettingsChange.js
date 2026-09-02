@@ -34,6 +34,11 @@ import {
 import { getRuleCompatInfo } from '../../src/data/archetypeRuleCompatibility.js';
 import { getCandidateCompatCell, toCompilerCompatCell } from '../../src/data/archetypeCompatibilityCandidate.js';
 import { COMPOSITION_COMPILED_IDENTITY_ENABLED } from './compositionConfig.js';
+// Ask 2 (rescoped): read at CALL time inside writeCompiledBuildsInTx's enabled
+// path ONLY — the dark endpoints (COMPILER_ENABLED=false, every hermetic
+// whitelist mock in api/agent) return null before this binding is ever
+// touched (the Ask 3 module-scope lesson, audit record §8).
+import { EQUIPPED_RULE_PRECEDENCE_ENABLED } from '../../src/config/featureFlags.js';
 // PR 3.5 (B4-TRAIT): THE shared effective-host projection — the same
 // selection kernel the migration planner/scanner uses (no second semantics).
 import { projectHostedRuleDocs } from './compositionMigration.js';
@@ -340,6 +345,12 @@ export function writeCompiledBuildsInTx(tx, {
 } = {}) {
   if (!enabled) return null;
 
+  // Ask 2 (rescoped): the ONE call-time flag read for the compiler's
+  // declared-conflict detection (R8 / F10) — after the enabled gate, so a
+  // dark compile never touches the binding. compileBuild receives it as an
+  // input and stays pure.
+  const declaredConflictDetection = EQUIPPED_RULE_PRECEDENCE_ENABLED;
+
   const settingsRevAfter = (agent?.settingsRev || 0) + (revision === 'current' ? 0 : 1);
   const archetype = nextState.archetype ?? agent?.archetype ?? null;
   const deployedStrategy = 'deployedStrategy' in nextState
@@ -394,6 +405,12 @@ export function writeCompiledBuildsInTx(tx, {
       projectedRulesHash: projected.projectedRulesHash,
     } : {}),
     userGuardrails: Array.isArray(deployedStrategy?.guardrails) ? deployedStrategy.guardrails : [],
+    // Ask 2 (rescoped): the equipped traits the declaration resolves by trait
+    // definition — from nextState when THIS save changes them (the PR 3.5
+    // review-F2 discipline), else the doc. Threaded only while detection is on.
+    ...(declaredConflictDetection
+      ? { equippedTraits: nextState.equippedTraits ?? agent?.equippedTraits ?? [] }
+      : {}),
   };
 
   const platformGuardrails = buildPlatformGuardrails();
@@ -410,6 +427,7 @@ export function writeCompiledBuildsInTx(tx, {
         calibrationBundleVersion: CALIBRATION_BUNDLE_VERSION,
       },
       now: nowIso,
+      declaredConflictDetection, // Ask 2: the call-time read above, as an input
     });
 
     // DELIBERATE DIVERGENCE from captureSwapReceipt's create-only pattern
@@ -429,6 +447,9 @@ export function writeCompiledBuildsInTx(tx, {
       validationErrorCount: build.validation.errors.length,
       effectiveGuardrailsPreview: build.effectiveGuardrailsPreview,
       blockedControls: build.blockedControls,
+      // Ask 2 (rescoped): the declared profit-target × mb-08 pairing rides the
+      // preview the settings endpoints return — present iff detection is on.
+      ...(build.declaredConflicts !== undefined ? { declaredConflicts: build.declaredConflicts } : {}),
     };
   }
   return previews;

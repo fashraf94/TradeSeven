@@ -45,7 +45,17 @@ const PUBLIC_TOP_LEVEL = [
 const PUBLIC_AGENT_CONTEXT = ['agentName', 'archetype', 'tournament', 'initialPortfolio'];
 // PUBLIC statusFeed entry — the narration MESSAGE + the trade WHAT; NOT
 // trade_reasoning / citedRules / citedForgeRules / directiveThreadId, etc.
-const PUBLIC_STATUSFEED = ['timestamp', 'message', 'action', 'regime', 'score', 'symbolOut', 'symbolIn', 'source', 'triggeredBy'];
+//
+// `source` and `triggeredBy` are DELIBERATELY ABSENT (Phase 0 V2 Hazard 12).
+// They name the MECHANISM that fired a swap — 'risk_manager' / 'guardrail' /
+// 'haiku' / 'gameplan_meeting' (agent-evaluate.js stamps both on the swap
+// entry) — which is WHY, not WHAT, and PUBLIC_TRADE below already withholds
+// the same attribution from the sibling trades[] projection. Letting them
+// through here let a rival read which mechanism moved an opponent's book
+// mid-battle while the trade record said nothing: one posture, two lists,
+// disagreeing. They stay out until completion, when the whole doc is returned
+// unchanged and the Film Room shows everything.
+const PUBLIC_STATUSFEED = ['timestamp', 'message', 'action', 'regime', 'score', 'symbolOut', 'symbolIn'];
 // PUBLIC trade entry — execution facts (drives the banked-score WHAT); NOT
 // rationale / hypothesis / trade_reasoning / snapshot / Forge citations.
 const PUBLIC_TRADE = ['symbolOut', 'symbolIn', 'name', 'slotIndex', 'entryPrice', 'exitPrice', 'lockedPoints', 'lockedGainPct', 'swappedOutAt', 'swapDay', 'action', 'tier', 'isCrypto'];

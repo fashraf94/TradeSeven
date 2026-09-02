@@ -267,7 +267,15 @@ export default async function handler(req, res) {
         agentRef,
         agentId,
         agent,
-        nextState: { archetype },
+        // Ask 2 (rescoped) review A-4: thread the NEWLY seeded trait layer the
+        // same write commits (PR 3.5 review-F2 discipline — every projection-
+        // relevant field the save changes), so the compile describes the
+        // post-change agent, never the pre-change doc's traits. Dark no-op
+        // while COMPILER_ENABLED is false (the call returns null first).
+        nextState: {
+          archetype,
+          ...(seeded && seeded.equippedTraits ? { equippedTraits: seeded.equippedTraits } : {}),
+        },
         bundles: compileInputs?.bundles,
         // PR 3.5: candidate-mode projection inputs (absent while dark)
         ruleDocs: compileInputs?.ruleDocs ?? null,
