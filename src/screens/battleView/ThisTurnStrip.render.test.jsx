@@ -11,7 +11,9 @@ import ThisTurnStrip from './ThisTurnStrip.jsx';
 import { deriveReceipts } from './deriveReceipts';
 
 const T1 = '2026-09-01T15:31:00.000Z'; // 11:31 AM ET
-const DIRECTIVE = { text: 'Protect the lead into the close', expiry: 'end_of_battle', directiveThreadId: 't-1', createdAt: '2026-09-01T15:31:00.400Z' };
+// createdAt is planted in a DIFFERENT minute from the filing exchange, so a
+// strip that read directive.createdAt would render 11:33, not 11:31 (T7).
+const DIRECTIVE = { text: 'Protect the lead into the close', expiry: 'end_of_battle', directiveThreadId: 't-1', createdAt: '2026-09-01T15:33:00.000Z' };
 const EXCHANGES = [
   { userMessage: 'protect the lead', agentResponse: 'Got it.', hasDirective: true, directive: { text: DIRECTIVE.text, expiry: 'end_of_battle', directiveThreadId: 't-1' }, directiveThreadId: 't-1', timestamp: T1 },
 ];
@@ -24,6 +26,7 @@ describe('ThisTurnStrip', () => {
   it('a filed directive: `Filed {t}` from the EXCHANGE timestamp, plus the text — no promise about the next check', () => {
     const html = render({ directive: DIRECTIVE, receipts: deriveReceipts(EXCHANGES, DIRECTIVE, 'active'), battleStatus: 'active', turn: TURN });
     expect(html).toContain('Filed 11:31 AM');
+    expect(html).not.toContain('11:33');
     expect(html).toContain('Protect the lead into the close');
     expect(html).toContain('data-this-turn="filed"');
     expect(html).not.toContain('for the');

@@ -77,10 +77,15 @@ describe('Replaced', () => {
 });
 
 describe('Expired — battle complete only (D-61)', () => {
-  it('every directive, current included, is expired once status === completed', () => {
+  it('the directive current at the close is expired; a directive already Replaced keeps that receipt (F11)', () => {
     const r = deriveReceipts([filed('t-1', T1), filed('t-2', T2)], { directiveThreadId: 't-2' }, 'completed');
-    expect(r['t-1']).toEqual({ state: RECEIPT_STATE.EXPIRED, at: null });
+    expect(r['t-1']).toEqual({ state: RECEIPT_STATE.REPLACED, at: T2 });
     expect(r['t-2']).toEqual({ state: RECEIPT_STATE.EXPIRED, at: null });
+  });
+
+  it('a lone directive expires at the close', () => {
+    const r = deriveReceipts([filed('t-1', T1)], { directiveThreadId: 't-1' }, 'completed');
+    expect(r).toEqual({ 't-1': { state: 'expired', at: null } });
   });
 
   it('`expiry` is an enum, never a time: a 3_games directive is filed, not expired, while the battle is active', () => {

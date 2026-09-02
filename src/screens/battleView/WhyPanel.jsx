@@ -89,7 +89,7 @@ export default function WhyPanel({
   return (
     <motion.section
       role="region"
-      aria-labelledby={id}
+      {...(state.header ? { 'aria-labelledby': id } : { 'aria-label': state.label })}
       data-why-kind={state.kind}
       data-why-symbol={isBook ? 'book' : symbol}
       initial={{ opacity: 0, height: 0 }}
@@ -116,11 +116,6 @@ export default function WhyPanel({
               <div key={`${t.at || 'trade'}-${i}`} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div style={{ ...mono, fontSize: 11.5, color: cssVar('text-secondary') }}>
                   {COPY.tradeLine(t.at, t.symbolOut, t.symbolIn)}
-                  {t.exitReason && (
-                    <span style={{ marginLeft: 8, fontSize: 10, color: cssVar('text-muted'), letterSpacing: '0.04em' }}>
-                      {t.exitReason}
-                    </span>
-                  )}
                 </div>
                 <Rationale text={t.rationale} symbol={symbol} />
               </div>

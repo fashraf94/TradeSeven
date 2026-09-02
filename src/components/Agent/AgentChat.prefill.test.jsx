@@ -69,7 +69,7 @@ describe('AgentChat — the composer prefill (the Why? door)', () => {
     expect(consumed).toHaveBeenCalledTimes(1);
   });
 
-  it('a new nonce replaces the text; the same nonce does not re-fill what the user has typed over', () => {
+  it('a new nonce replaces an UNTOUCHED prefill; the same nonce is a no-op', () => {
     const consumed = vi.fn();
     renderChat({ composerPrefill: { text: 'About SLB — ', nonce: 1 }, onComposerPrefillConsumed: consumed });
     // The screen clears the prefill after consumption (the consumed callback);
@@ -78,6 +78,26 @@ describe('AgentChat — the composer prefill (the Why? door)', () => {
     expect(consumed).toHaveBeenCalledTimes(1);
     renderChat({ composerPrefill: { text: 'About DVN — ', nonce: 2 }, onComposerPrefillConsumed: consumed });
     expect(textarea().value).toBe('About DVN — ');
+    expect(consumed).toHaveBeenCalledTimes(2);
+  });
+
+  it('a typed draft is never erased: a piece prefill leaves it, the empty book prefill only focuses (F13)', () => {
+    const consumed = vi.fn();
+    renderChat({ composerPrefill: null });
+    // The user types a draft.
+    act(() => {
+      const ta = textarea();
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(ta, 'my own words');
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(textarea().value).toBe('my own words');
+    renderChat({ composerPrefill: { text: 'About SLB — ', nonce: 7 }, onComposerPrefillConsumed: consumed });
+    expect(textarea().value).toBe('my own words');
+    expect(document.activeElement).toBe(textarea());
+    expect(consumed).toHaveBeenCalledTimes(1);
+    renderChat({ composerPrefill: { text: '', nonce: 8 }, onComposerPrefillConsumed: consumed });
+    expect(textarea().value).toBe('my own words');
     expect(consumed).toHaveBeenCalledTimes(2);
   });
 

@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { instant, fade } from '../../theme/motion';
 import {
   LANDING_TOTAL_MS,
+  LANDING_CLEAR_MS,
   landingRowDelayMs,
   landingTurnLineDelayMs,
 } from './landing';
@@ -46,6 +47,12 @@ describe('the landing fits inside 700 ms for any board', () => {
     expect(landingRowDelayMs(3, 0)).toBe(0);
     expect(landingRowDelayMs(undefined, undefined)).toBe(0);
     expect(landingTurnLineDelayMs(0)).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('the key clears after the sequence, never before it', () => {
+  it('LANDING_CLEAR_MS covers the whole sequence plus the last fade', () => {
+    expect(LANDING_CLEAR_MS).toBeGreaterThanOrEqual(LANDING_TOTAL_MS);
   });
 });
 

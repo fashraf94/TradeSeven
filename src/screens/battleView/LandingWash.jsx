@@ -15,8 +15,11 @@ import { landingRowDelayMs, useLandingTransition } from './landing';
 
 export default function LandingWash({ landingKey, index, count, reducedMotion }) {
   const transition = useLandingTransition(landingRowDelayMs(index, count), reducedMotion);
-  const [done, setDone] = useState(false);
-  if (!landingKey || reducedMotion || done) return null;
+  // Which landing this wash has already played. Keyed on the landing, never
+  // a bare boolean: a boolean would play the first check and swallow every
+  // later one (review finding F1 — one wash per mount instead of per check).
+  const [doneFor, setDoneFor] = useState(null);
+  if (!landingKey || reducedMotion || doneFor === landingKey) return null;
   return (
     <motion.div
       key={landingKey}
@@ -24,7 +27,7 @@ export default function LandingWash({ landingKey, index, count, reducedMotion })
       initial={{ opacity: 0.35 }}
       animate={{ opacity: 0 }}
       transition={transition}
-      onAnimationComplete={() => setDone(true)}
+      onAnimationComplete={() => setDoneFor(landingKey)}
       style={{
         position: 'absolute',
         inset: 0,

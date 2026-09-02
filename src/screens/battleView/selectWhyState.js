@@ -59,6 +59,15 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
     return { ...base, kind: WHY_KIND.ABSENT, label: COPY.noDecision };
   }
 
+  // An engine outage is not a decision (review finding F12). The cron stamps
+  // `haikuError` when the model call failed or was budget-skipped and the tick
+  // defaulted to HOLD with a placeholder rationale ("Haiku call failed —
+  // defaulting to HOLD", agent-evaluate.js:2637-2667) — the system's words,
+  // not the agent's. C1: the honest state is that no decision was recorded.
+  if (evaluation.haikuError) {
+    return { ...base, kind: WHY_KIND.ABSENT, label: COPY.noDecision };
+  }
+
   const rationale = cleanText(evaluation.rationale);
 
   // Downgraded FIRST — see the header.
@@ -100,13 +109,17 @@ export function emphasizeSymbol(text, symbol) {
   if (typeof text !== 'string' || !text) return [];
   if (typeof symbol !== 'string' || !symbol.trim()) return [{ text, emphasized: false }];
   const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, 'g');
+  // No lookbehind: Safari before 16.4 throws at RegExp construction on
+  // `(?<!…)`, inside Vite's default browser target (review finding F2). The
+  // leading boundary is a captured prefix character re-emitted unemphasised.
+  const re = new RegExp(`(^|[^A-Za-z0-9])(${escaped})(?![A-Za-z0-9])`, 'g');
   const out = [];
   let last = 0;
   for (const m of text.matchAll(re)) {
-    if (m.index > last) out.push({ text: text.slice(last, m.index), emphasized: false });
-    out.push({ text: m[0], emphasized: true });
-    last = m.index + m[0].length;
+    const start = m.index + m[1].length;
+    if (start > last) out.push({ text: text.slice(last, start), emphasized: false });
+    out.push({ text: m[2], emphasized: true });
+    last = start + m[2].length;
   }
   if (last < text.length) out.push({ text: text.slice(last), emphasized: false });
   return out;
@@ -114,8 +127,15 @@ export function emphasizeSymbol(text, symbol) {
 
 /**
  * The trades on this piece today, oldest first — each with the swap
- * receipt's own time, symbols and reason. Symbol-in or symbol-out both count:
- * the piece was either sold out of the book or bought into it.
+ * receipt's own time, symbols and the agent's rationale (its own words,
+ * verbatim). Symbol-in or symbol-out both count: the piece was either sold
+ * out of the book or bought into it.
+ *
+ * The receipt's `exitReason` is deliberately NOT surfaced (review finding
+ * F10): it is a machinery-provenance code (`haiku_decision`, `guardrail_*`,
+ * …) — the same attribution class hazard 12 keeps off the screen for
+ * `source` / `triggeredBy`, and one value names the model tier. A copy-mapped
+ * rendering, if wanted, is a design-chat request (recorded in the handover).
  */
 export function selectTradesForSymbol(trades, symbol) {
   if (!Array.isArray(trades) || !symbol) return [];
@@ -125,10 +145,7 @@ export function selectTradesForSymbol(trades, symbol) {
       at: toIso(t.swappedOutAt),
       symbolOut: t.symbolOut ?? null,
       symbolIn: t.symbolIn ?? null,
-      // Engine text, verbatim: the model's rationale when the swap was its
-      // decision; the machinery-provenance reason code either way.
       rationale: cleanText(t.rationale),
-      exitReason: cleanText(t.exitReason),
     }))
     .sort((a, b) => (toMillis(a.at) ?? 0) - (toMillis(b.at) ?? 0));
 }

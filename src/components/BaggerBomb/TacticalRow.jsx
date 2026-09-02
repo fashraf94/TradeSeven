@@ -49,6 +49,7 @@ function AssetSide({
   proximity = null,
   onWhy = null,
   whyOpen = false,
+  whyLabel = null,
 }) {
   // Computed once per side when the row did not hand one down (the standalone
   // AssetSide path). Placed before the early returns so the hook order is the
@@ -408,6 +409,24 @@ function AssetSide({
         heatDirection={thresholdHeat.direction}
         proximity={resolvedProximity}
       />
+
+      {/* Why? — the piece's verb, visible and part of the button's name.
+          Rendered only when the screen hands the label down (the controller
+          flag); the string itself lives in the guarded copy module. */}
+      {whyEnabled && whyLabel && (
+        <span
+          data-why-label="1"
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            color: '#14b8a6',
+            opacity: whyOpen ? 1 : 0.8,
+          }}
+        >
+          {whyLabel}
+        </span>
+      )}
     </div>
   );
 }
@@ -434,6 +453,7 @@ AssetSide.propTypes = {
   proximity: PropTypes.object,
   onWhy: PropTypes.func,
   whyOpen: PropTypes.bool,
+  whyLabel: PropTypes.string,
 };
 
 // Tier-specific badge colors
@@ -509,6 +529,7 @@ export default function TacticalRow({
   onWhy = null,
   whyOpen = false,
   renderWhy = null,
+  whyLabel = null,
 }) {
   // The left side's proximity, computed ONCE here and handed to both the
   // label (through AssetSide) and the Why? panel — never derived twice beside
@@ -546,6 +567,7 @@ export default function TacticalRow({
         proximity={leftProximity}
         onWhy={onWhy}
         whyOpen={whyOpen}
+        whyLabel={whyLabel}
       />
 
       {/* Center Allocation Badge */}
@@ -612,6 +634,7 @@ TacticalRow.propTypes = {
   onWhy: PropTypes.func,
   whyOpen: PropTypes.bool,
   renderWhy: PropTypes.func,
+  whyLabel: PropTypes.string,
 };
 
 TacticalRow.defaultProps = {
