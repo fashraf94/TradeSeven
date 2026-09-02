@@ -325,10 +325,24 @@ describe('DeployCeremony — the recovered path and the honest headline', () => 
   const renderCeremony = async ({ targetProgress = {}, serverError = null, ...extraProps } = {}) => {
     renderWith(null, { status: 'pending' }, targetProgress, extraProps);
     renderWith(serverError, { status: 'error', error: 'deploy_http_500' }, targetProgress, extraProps);
-    // Real timers here: the next 100ms tick, then attempt 1 → 400ms propagation
-    // gap → attempt 2.
-    await act(async () => { await new Promise((r) => setTimeout(r, 800)); });
+    // Real timers here, so POLL for the terminal surface rather than sleeping a
+    // fixed span: the check's real duration is the next 100ms tick plus attempt 1,
+    // the 400ms propagation gap and attempt 2, and a fixed sleep tuned to that is
+    // one slow CI box away from a flake (and silently reds if the attempt count
+    // is ever tuned).
+    await settle();
     return document.body.textContent;
+  };
+
+  // Wait until the ceremony leaves the theater — every terminal surface announces
+  // itself with one of these eyebrows.
+  const settle = async (timeoutMs = 5000) => {
+    const done = () => /Deployment (complete|failed|unconfirmed)/.test(document.body.textContent || '');
+    const start = Date.now();
+    while (!done() && Date.now() - start < timeoutMs) {
+      await act(async () => { await new Promise((r) => setTimeout(r, 40)); });
+    }
+    if (!done()) throw new Error(`ceremony never reached a terminal surface within ${timeoutMs}ms`);
   };
 
   const buttonWithText = (text) => [...document.body.querySelectorAll('button')]
