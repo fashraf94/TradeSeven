@@ -235,7 +235,7 @@ describe('useCeremonyStageMachine — baseline scoping (§5)', () => {
   // instance mounts while the subscription still holds the PREVIOUS deploy's
   // terminal state. The rule is scoped to (instance, target), not to a
   // fresh-snapshot event, so that already-held snapshot is a valid baseline.
-  it('retry: a fresh instance baselines off the previous deploy\'s held state (§7.5)', () => {
+  it('retry: a fresh instance baselines off the previous deploy\'s held state (§7.5)', async () => {
     const FIRST = '2026-09-02T14:00:00.000Z';
     const SECOND = '2026-09-02T14:05:00.000Z';
 
@@ -244,6 +244,10 @@ describe('useCeremonyStageMachine — baseline scoping (§5)', () => {
     step({ targetKnown: true, targetAgentId: CLONE, stage: 'strategy_running', deployId: FIRST, updatedAt: FIRST });
     expect(seen.serverRank).toBe(1);
     step({ targetKnown: true, targetAgentId: CLONE, stage: 'error', deployId: FIRST, updatedAt: `${FIRST}-e`, errorPhase: 'pre_decision' });
+    // PR 2: the error commit routes through 'verifying' first. No verifyBattle is
+    // wired here, which IS a check that could not run, so it resolves to the error
+    // surface on the next microtask rather than synchronously.
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(seen.phase).toBe('error');
 
     // Remount (the key bump). The subscription is unchanged and still delivers

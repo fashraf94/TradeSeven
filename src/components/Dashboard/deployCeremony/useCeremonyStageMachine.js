@@ -73,9 +73,12 @@ const STAGE_KEYS = ['loadout', 'scanning', 'brief', 'portfolio'];
 const VERIFY_BUDGET_MS = 2000;
 const VERIFY_ATTEMPTS = 2;
 const VERIFY_RETRY_GAP_MS = 400;
-// Sentinel for the budget arm of the race — distinguishable from any resolution
-// the checker itself could produce.
-const VERIFY_TIMED_OUT = Symbol('verify-timed-out');
+// The check produced no usable answer: the budget expired, no checker was wired,
+// the checker broke its contract, or the machine was torn down mid-check. Every
+// one of those is "we do not know", never "nothing happened" — so they all
+// resolve the same way. Distinguishable from any resolution a checker could
+// itself produce, which is the point of a Symbol.
+const VERIFY_NO_ANSWER = Symbol('verify-no-answer');
 
 export default function useCeremonyStageMachine({
   stage, deployId, updatedAt, errorPhase, deployStatus,
@@ -149,6 +152,14 @@ export default function useCeremonyStageMachine({
 
   useEffect(() => {
     const now = performance.now();
+    // A check belongs to the effect that started it: the cleanup below abandons
+    // its in-flight resolution (`alive = false`), but `phaseRef` is a COMPONENT
+    // ref and survives. React StrictMode mounts → destroys → remounts this effect
+    // in one dev commit, so without this release a check started by the mount-time
+    // `evaluate()` of pass #1 would leave the latch closed forever and pass #2
+    // could never re-arm — the ceremony spins on stage 1 with no reveal, no error
+    // and no CTA. Releasing it lets the surviving effect start its own check.
+    if (phaseRef.current === 'verifying') phaseRef.current = 'theater';
     mountRef.current = now;
     stageEnteredAtRef.current = now;
     lastProgressAtRef.current = now;
@@ -164,6 +175,14 @@ export default function useCeremonyStageMachine({
     // asynchronously and may land after unmount (dismiss, retry remount); every
     // resolution path is gated on it so the machine never setStates a dead tree.
     let alive = true;
+    // Timers owned by the in-flight check. The cleanup cancels them, so a
+    // dismissed or remounted ceremony leaves no straggler that wakes up 400ms
+    // later to run a second Firestore read against a tree that is gone.
+    const checkTimers = new Set();
+    const checkDelay = (ms) => new Promise((resolve) => {
+      const id = setTimeout(() => { checkTimers.delete(id); resolve(); }, ms);
+      checkTimers.add(id);
+    });
 
     // ── PR 2 §6: the verification seam ───────────────────────────────────────
     // Every error commit comes through here instead of committing to 'error'.
@@ -183,15 +202,50 @@ export default function useCeremonyStageMachine({
     // retries an EMPTY answer — never a throw. A throw means the check could not
     // complete, which is a conclusion in itself and is not improved by asking
     // again inside a 2s budget.
-    const attemptCheck = async (verify) => {
+    const attemptCheck = async () => {
+      // The best answer any attempt has actually COMPLETED with, kept so a later
+      // failure cannot discard it.
+      let completed = null;
       for (let n = 0; n < VERIFY_ATTEMPTS; n += 1) {
-        const r = await verify();
-        if (r && r.found) return r;
+        // Read the checker PER ATTEMPT, not once per check. `targetAgentId` can
+        // still be resolving (ranked → clone) and the 400ms gap is exactly the
+        // window that resolution lands in; a second attempt against the previous
+        // document is the "right answer, wrong document" failure this whole PR
+        // exists to prevent.
+        const verify = verifyRef.current;
+        // No checker wired is a check that could not RUN, not a "no".
+        if (typeof verify !== 'function') return completed ?? VERIFY_NO_ANSWER;
+        let r;
+        try {
+          r = await verify();
+        } catch (err) {
+          // A LATER attempt failing does not erase an EARLIER completed answer.
+          // The retry exists only to absorb propagation lag, so a completed
+          // "not found" is real evidence; only a FOUND answer could improve on
+          // it. Throwing away a definitive result because the redundant second
+          // look failed would report "lost contact" for a failure the check had
+          // already confirmed.
+          if (completed) return completed;
+          throw err;
+        }
+        if (!alive) return VERIFY_NO_ANSWER;
+        // A checker that resolves something other than its contract has not
+        // answered. Treated as a definitive "no", a broken contract would license
+        // "no battle was created" — the exact claim this machine may not make
+        // without evidence.
+        if (!r || typeof r.found !== 'boolean') return VERIFY_NO_ANSWER;
+        if (r.found) {
+          // "Found" with nothing to open is not an answer either: it would reveal
+          // a battle and then dead-end the CTA on a null id.
+          return r.battle?.id ? r : VERIFY_NO_ANSWER;
+        }
+        completed = { found: false, battle: null };
         if (n + 1 < VERIFY_ATTEMPTS) {
-          await new Promise((resolve) => { setTimeout(resolve, VERIFY_RETRY_GAP_MS); });
+          await checkDelay(VERIFY_RETRY_GAP_MS);
+          if (!alive) return VERIFY_NO_ANSWER;
         }
       }
-      return { found: false, battle: null };
+      return completed;
     };
 
     // Resolve the check into a terminal state. The ONLY path that may assert
@@ -199,38 +253,56 @@ export default function useCeremonyStageMachine({
     // other path — a throw, a timeout, an absent checker, an empty query with no
     // server signal — commits to "lost contact".
     const runVerification = async (kind) => {
-      const verify = verifyRef.current;
-      let outcome = null;
-      let checkFailed = false;
-
-      if (typeof verify !== 'function') {
-        // No checker wired is a check that could not run, not a "no".
-        checkFailed = true;
-      } else {
-        let budgetTimer = null;
-        try {
-          const budget = new Promise((resolve) => {
-            budgetTimer = setTimeout(() => resolve(VERIFY_TIMED_OUT), VERIFY_BUDGET_MS);
-          });
-          const raced = await Promise.race([attemptCheck(verify), budget]);
-          if (raced === VERIFY_TIMED_OUT) checkFailed = true;
-          else outcome = raced;
-        } catch (err) {
-          console.warn('[Ceremony] battle existence check failed:', err?.message || err);
-          checkFailed = true;
-        } finally {
-          if (budgetTimer != null) clearTimeout(budgetTimer);
-        }
+      let outcome = VERIFY_NO_ANSWER;
+      let budgetTimer = null;
+      try {
+        const budget = new Promise((resolve) => {
+          budgetTimer = setTimeout(() => { checkTimers.delete(budgetTimer); resolve(VERIFY_NO_ANSWER); }, VERIFY_BUDGET_MS);
+          checkTimers.add(budgetTimer);
+        });
+        outcome = await Promise.race([attemptCheck(), budget]);
+      } catch (err) {
+        console.warn('[Ceremony] battle existence check failed:', err?.message || err);
+        outcome = VERIFY_NO_ANSWER;
+      } finally {
+        if (budgetTimer != null) { clearTimeout(budgetTimer); checkTimers.delete(budgetTimer); }
       }
+      const checkFailed = outcome === VERIFY_NO_ANSWER;
 
       if (!alive) return;
 
-      if (!checkFailed && outcome && outcome.found) {
-        // A durable battle exists. The failure was downstream of the commit —
-        // decide.js:929 is the canonical case — so the honest terminal state is
-        // the reveal, carrying the id the query found.
-        setRecoveredBattle(outcome.battle || null);
-        setErrorTone(null);
+      // ATTRIBUTION. A battle on this target is not necessarily a battle THIS
+      // deploy created. The query answers "does an active battle exist for this
+      // agent", and on a deploy the server refused before writing anything — the
+      // 429s at decide.js:178 / :187 return before the deployProgress init at
+      // :208, as do auth and network failures — the battle it finds belongs to a
+      // PREVIOUS deploy. Revealing then announces "Deployment complete" for a
+      // deploy that never ran and walks the user into an unrelated live battle:
+      // the honesty invariant inverted, an unverified POSITIVE claim swapped in
+      // for the unverified negative one this PR removes.
+      //
+      // `ourDeployIdRef` is the tie. It is non-null only once the server has
+      // written deployProgress carrying a deployId that is OURS — one that
+      // differs from the baseline this machine observed for this target. If the
+      // server never began our deploy, nothing the query finds can be attributed
+      // to it. In the canonical :929 failure the server wrote strategy_running
+      // long before the throw and the client subscribed before the POST, so the
+      // pin is in place and recovery is unaffected.
+      //
+      // Suppressed, this falls through to the tone logic below and lands on lost
+      // contact — the honest answer: we saw no evidence the deploy began, and a
+      // battle we cannot attribute to it is not evidence that it did.
+      const serverBeganOurDeploy = ourDeployIdRef.current != null;
+
+      if (!checkFailed && outcome.found && serverBeganOurDeploy) {
+        // A durable battle exists AND this deploy reached the server. The failure
+        // was downstream of the commit — decide.js:929 is the canonical case — so
+        // the honest terminal state is the reveal, carrying the id the query
+        // found.
+        setRecoveredBattle(outcome.battle);
+        // No setErrorTone here: the latch guarantees this branch is reached at
+        // most once per machine instance and always from 'verifying', so the tone
+        // is still its initial null. A reset would be unfalsifiable dead code.
         stageEnteredAtRef.current = performance.now();
         ceremonyTiming.markReveal();
         phaseRef.current = 'reveal';
@@ -396,7 +468,12 @@ export default function useCeremonyStageMachine({
 
     const iv = setInterval(evaluate, 100);
     evaluate();
-    return () => { alive = false; clearInterval(iv); };
+    return () => {
+      alive = false;
+      clearInterval(iv);
+      checkTimers.forEach(clearTimeout);
+      checkTimers.clear();
+    };
     // Mount-once: the interval reads live inputs via inRef; deliberately not
     // re-subscribing per snapshot tick (spec §5.5).
   }, []);

@@ -252,7 +252,18 @@ export default function CommandDashboard({
   };
   // Retry from the error surface — remount the ceremony (fresh stage machine) and
   // re-run the deploy; the server's 120s lock still governs (may 429 → error).
-  const handleCeremonyRetry = () => { setCeremonyRun((r) => r + 1); handleDeploy(); };
+  // Remount ONLY if the deploy will actually re-run. handleDeploy bails on
+  // deployDisabled before it resets deployResult, so bumping the key regardless
+  // mounts a FRESH stage machine onto the PREVIOUS run's `{ status: 'error' }` —
+  // which then verifies and authors a terminal claim about a deploy that never
+  // happened. deployBlockedByLive flips true exactly when the durable battle from
+  // the failure this ceremony exists for lands in the live-battle subscription,
+  // so this is the reachable case, not a hypothetical one.
+  const handleCeremonyRetry = () => {
+    if (deployDisabled) return;
+    setCeremonyRun((r) => r + 1);
+    handleDeploy();
+  };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
 
   // ── Compact / expandable brief ────────────────────────────────────────────
