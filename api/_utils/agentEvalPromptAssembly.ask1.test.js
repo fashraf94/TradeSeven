@@ -28,6 +28,11 @@ const { flagState } = vi.hoisted(() => ({ flagState: { profitTarget: false } }))
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get PROFIT_TARGET_EXECUTOR_ENABLED() { return flagState.profitTarget; },
+  // Exit-Behavior Ask 2 (rescoped): Ask 1's goldens are the Ask-2-DARK text
+  // of record, so this suite pins the Ask 2 flag dark and stays flip-proof
+  // (the Ask 1 §3 A8+B4 precedent); Ask 2's own contract lives in
+  // agentEvalPromptAssembly.ask2.test.js.
+  get EQUIPPED_RULE_PRECEDENCE_ENABLED() { return false; },
 }));
 
 import {

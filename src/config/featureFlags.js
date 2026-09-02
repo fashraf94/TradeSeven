@@ -1921,8 +1921,17 @@ export const COMMAND_CENTER_SYNC_ENABLED = false;
  * docs/audits/20260819_EXIT_BEHAVIOR_ASK3_BUILD_REVIEW.md §8); compileBuild()
  * itself stays pure and receives the read as an input from the equip-time
  * caller, inside its enabled path only. Flips after Asks 1+3 (live) per R10,
- * in its own one-line PR after founder smoke — never a build PR. That flip
- * updates the pin below AND drops the DARK_BY_DESIGN entry, in one commit.
+ * in its own one-line PR after founder smoke — never a build PR. THE FLIP
+ * MAP (review B-F4, the Ask 1 §4 precedent): that flip updates the pin
+ * below AND drops the DARK_BY_DESIGN entry, in one commit, plus the
+ * mechanical snapshot regens — `npx vitest run
+ * api/_utils/p4Equivalence.battery.test.js
+ * api/_utils/evalIdentityBlock.injection.test.js -u` (2 P4 + 12 DR-13
+ * flag-on prompt snapshots re-capture the qualified MUSTs and the yield
+ * clause; review that diff — it must be exactly the ruled prose delta).
+ * Nothing else: evalIdentityBlocks.test.js branches on the live clause,
+ * and evalIdentityBlocks.flagOn.test.js + agentEvalPromptAssembly.ask1.test.js
+ * pin the Ask-2-dark branch (they test DR-13 / Ask 1, not this arc).
  */
 // Pinned by: equippedRulePrecedenceFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const EQUIPPED_RULE_PRECEDENCE_ENABLED = false;

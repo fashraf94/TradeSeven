@@ -508,19 +508,26 @@ export function compileBuild({
   // the target, and the CompiledBuild carries the declaration. Key present
   // ONLY when detection is on (present-and-empty = "checked, none found"), so
   // dark builds keep their bytes and contentHash.
+  // Only rules that will BEHAVE are declared (review B-F6): a rule the compile
+  // blocked (core_conflict / deferred / out-of-domain / mode-gated) or refused
+  // for missing metadata never reaches the prompt, so there is no veto to
+  // declare against — it carries no verdict, or a blocked one, below.
+  const behavingRuleIds = new Set(compatVerdicts.filter((v) => !v.blocked).map((v) => v.ruleId));
   const declaredConflicts = declaredConflictDetection
     ? detectDeclaredRuleConflicts({
         userGuardrails,
-        rules: [...rulesById].map(([id, { snapshot, bundleId, traitId }]) => ({
-          id,
-          sourceRef: snapshot?.sourceRef ?? null,
-          // Host KIND, not channel (review A-7): a trait-hosted doc reaches the
-          // compiler only through the unified projection ('projection', keyed
-          // by its traitId — the detector de-duplicates it against the trait
-          // definition); a bundle-hosted rule is 'bundle' in either mode.
-          host: traitId ? 'projection' : 'bundle',
-          hostRef: traitId ?? bundleId ?? null,
-        })),
+        rules: [...rulesById]
+          .filter(([id]) => behavingRuleIds.has(id))
+          .map(([id, { snapshot, bundleId, traitId }]) => ({
+            id,
+            sourceRef: snapshot?.sourceRef ?? null,
+            // Host KIND, not channel (review A-7): a trait-hosted doc reaches the
+            // compiler only through the unified projection ('projection', keyed
+            // by its traitId — the detector de-duplicates it against the trait
+            // definition); a bundle-hosted rule is 'bundle' in either mode.
+            host: traitId ? 'projection' : 'bundle',
+            hostRef: traitId ?? bundleId ?? null,
+          })),
         equippedTraits: delta.equippedTraits,
       })
     : null;

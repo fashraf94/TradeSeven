@@ -30,6 +30,13 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   get EVAL_IDENTITY_BLOCK_ENABLED() {
     return flagState.identity;
   },
+  // Exit-Behavior Ask 2 (rescoped): this file locks the DR-13 shape, so it is
+  // pinned to the Ask-2-DARK branch (the subordination clause below); the
+  // yield-clause shape is locked in evalIdentityBlocks.ask2.test.js. Keeps
+  // this suite flip-proof (the Ask 1 §3 A8+B4 precedent).
+  get EQUIPPED_RULE_PRECEDENCE_ENABLED() {
+    return false;
+  },
 }));
 
 const {

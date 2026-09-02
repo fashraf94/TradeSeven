@@ -44,6 +44,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 // Never mock it.
 import { buildEvalSystemPrompt, buildAgentIdentityBlock } from './agentEvalPromptAssembly.js';
 import { makeBattle, TIERED_GAME_MODE, FLAT6_GAME_MODE } from './__fixtures__/ask1PromptFixtures.js';
+import { makeInstitutionalBattle } from './__fixtures__/ask2PromptFixtures.js';
 import { FORBIDDEN_SIGNALS } from './__fixtures__/promptHonestyRegistry.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -57,16 +58,9 @@ const tiered = (key) => buildEvalSystemPrompt('TestAgent', displayLabel(key), TI
 const flat6 = (key) => buildEvalSystemPrompt('TestAgent', displayLabel(key), FLAT6_GAME_MODE, key);
 const bothVariants = (key) => [tiered(key), flat6(key)];
 
-/** The Ask 1 fixture battle plus one equipped institutional rule, so the
- *  C_INST data-lag block (the 13th MUST) renders. */
-function institutionalBattle() {
-  const battle = makeBattle(FLAT6_GAME_MODE);
-  battle.agentContext.activeRules = [
-    ...battle.agentContext.activeRules,
-    { ruleId: 'inst-01', text: 'Prefer stocks with net institutional accumulation.', category: 'institutional', hardness: 'soft' },
-  ];
-  return battle;
-}
+// The institutional trailer builder is SHARED with the golden-capture script
+// (ask2PromptFixtures.js) so the byte-exact golden and this suite read one input.
+const institutionalBattle = () => makeInstitutionalBattle(FLAT6_GAME_MODE);
 
 // ==================== The ruled flag-on prose (one wording, both variants) ====================
 
@@ -173,8 +167,9 @@ describe('Ask 2 — FLAG OFF: byte-identical to the pre-Ask-2 prompt (goldens @ 
     expect(buildAgentIdentityBlock(makeBattle(FLAT6_GAME_MODE))).toBe(GOLDENS.agentIdentityBlock);
   });
 
-  it('the C_INST data-lag block renders its pre-edit text', () => {
-    expect(buildAgentIdentityBlock(institutionalBattle())).toContain(
+  it('the trailer WITH an institutional rule (the C_INST data-lag block) is byte-identical (review B-F3)', () => {
+    expect(buildAgentIdentityBlock(institutionalBattle())).toBe(GOLDENS.agentIdentityBlockInstitutional);
+    expect(GOLDENS.agentIdentityBlockInstitutional).toContain(
       'filings is lagged up to 135 days. NEVER hold a position based solely on strong\ninstitutional accumulation',
     );
   });

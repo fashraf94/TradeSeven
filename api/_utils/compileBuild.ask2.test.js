@@ -23,14 +23,19 @@ import { dirname, join } from 'node:path';
 const { flagState } = vi.hoisted(() => ({ flagState: { precedence: false } }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  get EQUIPPED_RULE_PRECEDENCE_ENABLED() { return flagState.precedence; },
+  // 'THROW' arms the pre-gate guard (review B-F7): any read of the flag
+  // before the `enabled` gate throws instead of passing silently.
+  get EQUIPPED_RULE_PRECEDENCE_ENABLED() {
+    if (flagState.precedence === 'THROW') throw new Error('EQUIPPED_RULE_PRECEDENCE_ENABLED read before the enabled gate');
+    return flagState.precedence;
+  },
 }));
 
 const { compileBuild } = await import('./compileBuild.js');
 const { writeCompiledBuildsInTx } = await import('./compileOnSettingsChange.js');
 const { validateCompiledBuild } = await import('./archetypeBuildSchemas.js');
 const { getGameModePolicy, computeGameModePolicyHash, LIVE_DEPLOY_MODES } = await import('./gameModePolicy.js');
-const { FIXTURE_NOW, fixtureArchetypeDefinition, fixtureVersions, fixturePlatformGuardrails } = await import('./compilerFixtures.js');
+const { FIXTURE_NOW, fixtureArchetypeDefinition, fixtureVersions, fixturePlatformGuardrails, stopLossRule, buildDelta } = await import('./compilerFixtures.js');
 const { TIERED_GAME_MODE, FLAT6_GAME_MODE } = await import('../../src/constants/agentGameModes.js');
 const { pairDelta, noPairDelta, holdVetoRule, PROFIT_TARGET_GUARDRAIL } = await import('./__fixtures__/ask2CompilerFixtures.js');
 
@@ -114,6 +119,22 @@ describe('LIT — the declaration rides the build', () => {
     expect(validateCompiledBuild(build).valid).toBe(true);
   });
 
+  it('a BLOCKED mb-08 (core_conflict) is not declared — it never reaches the prompt, so there is no veto to declare against (review B-F6)', () => {
+    const blocked = { ...holdVetoRule(), cell: { state: 'core_conflict', via: 'fixture', zone1Ref: 'FX-Z1' } };
+    const delta = { ...buildDelta([stopLossRule(), blocked], { userGuardrails: [PROFIT_TARGET_GUARDRAIL] }), equippedTraits: [] };
+    const build = compile(delta, TIERED_GAME_MODE, { declaredConflictDetection: true });
+    expect(build.blockedControls.map((b) => b.ruleId)).toContain('fx-mb-08');
+    expect(build.declaredConflicts).toEqual([]);
+  });
+
+  it('a metadata-missing mb-08 (refused by §5.6) is not declared either — only rules that will behave are', () => {
+    const delta = { ...buildDelta([stopLossRule(), holdVetoRule()], { userGuardrails: [PROFIT_TARGET_GUARDRAIL] }), equippedTraits: [] };
+    delete delta.ruleMetadata['fx-mb-08'];
+    const build = compile(delta, TIERED_GAME_MODE, { declaredConflictDetection: true });
+    expect(build.validation.errors.some((e) => e.code === 'metadata_missing' && e.ruleId === 'fx-mb-08')).toBe(true);
+    expect(build.declaredConflicts).toEqual([]);
+  });
+
   it('a profit target with a non-positive value never declares (the executor would never fire)', () => {
     const delta = pairDelta({ userGuardrails: [{ ...PROFIT_TARGET_GUARDRAIL, value: 0 }] });
     expect(compile(delta, TIERED_GAME_MODE, { declaredConflictDetection: true }).declaredConflicts).toEqual([]);
@@ -157,12 +178,17 @@ describe('compileOnSettingsChange — the flag is read at CALL time, inside the 
     for (const mode of LIVE_DEPLOY_MODES) expect('declaredConflicts' in previews[mode]).toBe(false);
   });
 
-  it('flag ON: every mode\'s build and preview carry the declaration (bundle + trait hosts)', () => {
+  it('flag ON: every mode\'s build and preview carry the declaration — the trait host by definition; the bundle host only once the live corpus carries §5.6 metadata', () => {
     flagState.precedence = true;
     const tx = makeTx();
     const previews = write(tx);
     for (const { data } of tx.calls.set) {
-      expect(data.declaredConflicts.map((c) => c.host).sort()).toEqual(['bundle', 'trait']);
+      // LIVE-CORPUS HONESTY (§5.6 + review B-F6): through the real caller the
+      // bundle-hosted mb-08 resolves NO authored metadata today, so the compile
+      // refuses it (metadata_missing) and it is NOT declared — only rules that
+      // will behave are. The trait-hosted mb-08 is declared by trait definition.
+      expect(data.validation.errors.some((e) => e.code === 'metadata_missing' && e.ruleId === 'fx-mb-08')).toBe(true);
+      expect(data.declaredConflicts.map((c) => c.host)).toEqual(['trait']);
     }
     for (const mode of LIVE_DEPLOY_MODES) {
       expect(previews[mode].declaredConflicts).toEqual(tx.calls.set.find((s) => s.path.endsWith(`/${mode}`)).data.declaredConflicts);
@@ -184,10 +210,13 @@ describe('compileOnSettingsChange — the flag is read at CALL time, inside the 
     for (const { data } of tx.calls.set) expect(data.declaredConflicts).toEqual([]);
   });
 
-  it('disabled compile returns null before any flag read (the dark endpoints never touch the flag)', () => {
-    flagState.precedence = true;
+  it('disabled compile returns null BEFORE any flag read — a pre-gate read would throw here (review B-F7)', () => {
+    flagState.precedence = 'THROW';
     const tx = makeTx();
+    expect(() => write(tx, { enabled: false })).not.toThrow();
     expect(write(tx, { enabled: false })).toBeNull();
     expect(tx.calls.set).toEqual([]);
+    // Sanity: the armed getter really throws when the enabled path reads it.
+    expect(() => write(makeTx(), { enabled: true })).toThrow(/read before the enabled gate/);
   });
 });
