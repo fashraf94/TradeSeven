@@ -9,7 +9,27 @@ import { PCT_SLIDE, THRESHOLD_HEAT } from '../../constants/animationTokens';
 import ChamberFuse from './ChamberFuse';
 import BadgeRow from './BadgeRow';
 import ProximityLabel from './ProximityLabel';
+import { computeProximity } from './computeProximity';
 import DataStrike from '../shared/DataStrike';
+
+const DEFAULT_HISTORY = { maxMultiplier: 0, minMultiplier: 0 };
+
+/**
+ * The inputs ProximityLabel was always fed for a side, resolved with the same
+ * defaults AssetSide destructures — so computing here is the same number the
+ * label rendered before Phase A lifted the math (hazard 15: one call, one
+ * number, shared by the label and the Why? panel).
+ */
+function proximityInputs(asset) {
+  const priceChange = asset.priceChange === undefined ? 0 : asset.priceChange;
+  return {
+    priceChange: asset.thresholdPriceChange ?? priceChange,
+    baseATR: asset.baseATR === undefined ? 2.5 : asset.baseATR,
+    history: asset.history === undefined ? DEFAULT_HISTORY : asset.history,
+    dailyLevels: asset.dailyLevels,
+    currentPrice: asset.currentPrice,
+  };
+}
 
 /**
  * AssetSide - One side of the tactical row (player or opponent)
@@ -23,7 +43,22 @@ function AssetSide({
   highlighted = false,
   dimmed = false,
   onAssetSelect,
+  // Phase A (Battle View controller): the precomputed proximity for this
+  // side, and the Why? tap — LEFT side only, flag-gated by the screen (absent
+  // flag-off, so nothing below renders differently).
+  proximity = null,
+  onWhy = null,
+  whyOpen = false,
 }) {
+  // Computed once per side when the row did not hand one down (the standalone
+  // AssetSide path). Placed before the early returns so the hook order is the
+  // same for every render of this side.
+  const ownProximity = useMemo(() => {
+    if (proximity || !asset || asset.isCash) return null;
+    return computeProximity(proximityInputs(asset));
+  }, [proximity, asset]);
+  const resolvedProximity = proximity ?? ownProximity;
+
   if (!asset) {
     // Empty slot placeholder
     return (
@@ -160,15 +195,35 @@ function AssetSide({
       ? HOLO_COLORS.green
       : HOLO_COLORS.red;
 
+  // Why? — the left side is a piece the player can ask about (design brief
+  // §5.1); the CPU side never opens. The symbol and points taps keep stopping
+  // propagation, so they still open research / breakdown, not Why?.
+  const whyEnabled = !isRight && typeof onWhy === 'function';
+
   const handleAssetClick = () => {
     if (highlighted && onAssetSelect) {
       onAssetSelect(asset);
+      return;
     }
+    if (whyEnabled) onWhy(asset, resolvedProximity);
   };
+
+  const handleWhyKeyDown = whyEnabled ? (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onWhy(asset, resolvedProximity);
+    }
+  } : undefined;
 
   return (
     <div
       onClick={handleAssetClick}
+      {...(whyEnabled ? {
+        role: 'button',
+        tabIndex: 0,
+        'aria-expanded': whyOpen ? 'true' : 'false',
+        onKeyDown: handleWhyKeyDown,
+      } : {})}
       style={{
         flex: 1,
         padding: '12px',
@@ -176,6 +231,7 @@ function AssetSide({
         flexDirection: 'column',
         gap: '8px',
         textAlign: isRight ? 'right' : 'left',
+        ...(whyEnabled ? { cursor: 'pointer' } : {}),
         ...(highlighted ? {
           border: '1px solid rgba(0, 217, 255, 0.4)',
           borderRadius: '8px',
@@ -350,6 +406,7 @@ function AssetSide({
         align={isRight ? 'right' : 'left'}
         proximityRatio={thresholdHeat.proximityRatio}
         heatDirection={thresholdHeat.direction}
+        proximity={resolvedProximity}
       />
     </div>
   );
@@ -374,6 +431,9 @@ AssetSide.propTypes = {
   highlighted: PropTypes.bool,
   dimmed: PropTypes.bool,
   onAssetSelect: PropTypes.func,
+  proximity: PropTypes.object,
+  onWhy: PropTypes.func,
+  whyOpen: PropTypes.bool,
 };
 
 // Tier-specific badge colors
@@ -444,8 +504,23 @@ export default function TacticalRow({
   onLeftAssetSelect,
   opponentDimmed = false,
   leftDisabled = false,
+  // Phase A (Battle View controller) — Why? on the player's piece. All three
+  // are absent flag-off, and the row then renders exactly as before.
+  onWhy = null,
+  whyOpen = false,
+  renderWhy = null,
 }) {
+  // The left side's proximity, computed ONCE here and handed to both the
+  // label (through AssetSide) and the Why? panel — never derived twice beside
+  // a rendered number (hazard 15). The right side computes its own in
+  // AssetSide, once.
+  const leftProximity = useMemo(() => {
+    if (!leftAsset || leftAsset.isCash) return null;
+    return computeProximity(proximityInputs(leftAsset));
+  }, [leftAsset]);
+
   return (
+    <>
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -468,6 +543,9 @@ export default function TacticalRow({
         highlighted={swapTargetMode && !leftDisabled}
         dimmed={leftDisabled}
         onAssetSelect={onLeftAssetSelect}
+        proximity={leftProximity}
+        onWhy={onWhy}
+        whyOpen={whyOpen}
       />
 
       {/* Center Allocation Badge */}
@@ -486,6 +564,14 @@ export default function TacticalRow({
         dimmed={opponentDimmed}
       />
     </motion.div>
+    {/* Why? — expands in place beneath the row, inside the tier map, with the
+        SAME proximity the row just rendered. Absent flag-off. */}
+    {renderWhy ? (
+      <AnimatePresence initial={false}>
+        {whyOpen ? renderWhy(leftProximity) : null}
+      </AnimatePresence>
+    ) : null}
+    </>
   );
 }
 
@@ -523,6 +609,9 @@ TacticalRow.propTypes = {
   onLeftAssetSelect: PropTypes.func,
   opponentDimmed: PropTypes.bool,
   leftDisabled: PropTypes.bool,
+  onWhy: PropTypes.func,
+  whyOpen: PropTypes.bool,
+  renderWhy: PropTypes.func,
 };
 
 TacticalRow.defaultProps = {

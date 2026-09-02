@@ -130,6 +130,10 @@ describe('the Battle View directory is under the guard (Phase A)', () => {
     expect(BATTLE_VIEW_SOURCES.length).toBeGreaterThan(0);
   });
 
+  it('battleViewCopy.js exists and is guarded — the module every Battle View string goes through', () => {
+    expect(BATTLE_VIEW_SOURCES.some((f) => path.basename(f) === 'battleViewCopy.js')).toBe(true);
+  });
+
   it('every non-test source under src/screens/battleView is guarded', () => {
     for (const f of BATTLE_VIEW_SOURCES) expect(GUARDED).toContain(f);
   });
