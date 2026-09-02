@@ -1,5 +1,7 @@
 # Battle View controller — Phase A (A1 → A3) handover
 
+> **Superseded (Sep 2, A4):** the Phase A handover through A4 is `20260902_BATTLE_VIEW_CONTROLLER_PHASE_A_HANDOVER.md`. This file stays as the record of the A1 → A3 session; its §5 items 1–18 are carried there unchanged.
+
 **Date:** September 2, 2026
 **For:** the founder (smoke after A3) and the A4 / Phase B sessions.
 **Prepared by:** Claude Code, under `docs/BUILD_RULES.md`.
