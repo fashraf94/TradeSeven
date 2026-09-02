@@ -191,6 +191,12 @@ export default function CommandDashboard({
   const [ceremonyOpen, setCeremonyOpen] = useState(false);
   const [deployResult, setDeployResult] = useState(null);
   const [ceremonyRun, setCeremonyRun] = useState(0); // bump remounts the ceremony (retry)
+  // The DEPLOY TARGET's agentId, reported up from deployAgent as soon as it
+  // resolves (before the POST). On the casual-clone path this is the clone's id,
+  // NOT agent.id — and it is the document the ceremony must watch for progress,
+  // since the server writes deployProgress there. Never derived here: only
+  // deployAgent knows whether the clone resolved or the fallback fired.
+  const [deployTargetId, setDeployTargetId] = useState(null);
 
   // G2 (docs/audits/20260720_G2_ACTIVEBATTLEID_CONFLICT_DISCOVERY.md): a competitive pod
   // deploys the user's REAL agent, and /api/agent/decide allows only ONE active battle.
@@ -226,7 +232,7 @@ export default function CommandDashboard({
     setDeploying(true);
     let result = { success: false };
     try {
-      result = await deployAgent(agent.id, onCreateAgentBattle);
+      result = await deployAgent(agent.id, onCreateAgentBattle, setDeployTargetId);
     } catch (err) {
       console.error('[Deploy] Error:', err);
       if (ceremonyOn) result = { success: false, error: err?.message };
@@ -601,6 +607,7 @@ export default function CommandDashboard({
           agentName={agentName}
           directiveCount={activeDirectives?.length || 0}
           deployResult={deployResult}
+          targetAgentId={deployTargetId}
           onEnterBattle={() => { onEnterBattle?.(); setCeremonyOpen(false); }}
           onDismiss={() => setCeremonyOpen(false)}
           onRetry={handleCeremonyRetry}

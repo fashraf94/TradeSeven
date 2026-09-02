@@ -18,6 +18,7 @@ import { CMD } from '../commandUI';
 import useModalFocus from '../../../hooks/useModalFocus';
 import useMarketContext from '../../Research/useMarketContext';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
+import useDeployTargetProgress from '../../../hooks/useDeployTargetProgress';
 import useCeremonyStageMachine from './useCeremonyStageMachine';
 import { flattenPicks, getMonologueQuote, useEquippedWatchlistSymbols } from './ceremonyData';
 import CeremonyTheater from './CeremonyTheater';
@@ -30,20 +31,46 @@ const DEPLOY_LOCK_MS = 120000; // server's per-agent deploy cooldown
 
 export default function DeployCeremony({
   agent, accent = CMD.teal, agentName = 'Your agent', directiveCount = 0,
-  deployResult, onEnterBattle, onDismiss, onRetry,
+  deployResult, targetAgentId = null, onEnterBattle, onDismiss, onRetry,
 }) {
   const reduce = useReducedMotion();
   const containerRef = useRef(null);
   useModalFocus({ isOpen: true, autoFocusRef: containerRef, containerRef });
 
+  // ── Identity vs deploy state ──────────────────────────────────────────────
+  // `agent` is the RANKED agent (subscribeToUserAgent excludes clones) and is the
+  // source of IDENTITY only — name, archetype, equipped loadout, maturity copy.
+  //
+  // DEPLOY STATE comes from the deploy TARGET, which on the casual-clone path is
+  // a different document: the server writes deployProgress / lastDeployedAt /
+  // lastDecision to agents/{deployAgentId} (decide.js:150). Reading deploy state
+  // off the ranked doc meant watching a document that never receives progress,
+  // which stalled every clone-path ceremony at stage 1. `targetAgentId` is
+  // reported up from deployAgent as soon as it resolves — never reconstructed
+  // client-side, because the ensure-casual-clone fallback deploys the RANKED
+  // agent and a derived id would be wrong in exactly that branch.
+  //
+  // We subscribe UNIFORMLY: when the fallback fires and the target IS the ranked
+  // agent, this still subscribes to the target rather than branching to read the
+  // `agent` prop. Two listeners on one document share Firestore's local cache, so
+  // the cost is negligible — and branching on WHICH document to read is the shape
+  // of the bug being fixed.
+  const {
+    deployProgress, lastDeployedAt: targetLastDeployedAt, lastDecision: targetLastDecision, targetKnown,
+  } = useDeployTargetProgress(targetAgentId);
+
   // deployProgress primitives (spec §5.5)
-  const dp = agent?.deployProgress || {};
+  const dp = deployProgress || {};
   const machine = useCeremonyStageMachine({
     stage: dp.stage,
     deployId: dp.deployId,
     updatedAt: dp.updatedAt,
     errorPhase: dp.errorPhase,
     deployStatus: deployResult?.status,
+    // Baseline scoping (§5): until a snapshot for the target has been observed,
+    // these primitives are all null and MUST NOT establish a baseline.
+    targetKnown,
+    targetAgentId,
   });
 
   // Stage 1 chip data — all best-effort (§5.4).
@@ -56,8 +83,14 @@ export default function DeployCeremony({
   const { marketContext } = useMarketContext('SPY');
   const regime = marketContext?.regime || null;
 
-  // Reveal data — real artifacts of this deploy (§7/§9).
-  const lastDecision = agent?.lastDecision || null;
+  // Reveal data — real artifacts of this deploy (§7/§9). lastDecision is deploy
+  // state, not identity: decide.js writes it to the deploy TARGET in the same
+  // awaited update as lastDeployedAt and deployProgress.stage:'complete'
+  // (decide.js:664-694), so on the clone path it never lands on the ranked doc.
+  // Sourcing it from `agent` would leave the reveal empty on exactly the path
+  // this fix exists for. Falls back to the ranked agent while the target is
+  // unresolved, for the same fail-open reason as the cooldown below.
+  const lastDecision = (targetKnown ? targetLastDecision : agent?.lastDecision) || null;
   const picks = useMemo(() => flattenPicks(lastDecision?.portfolio), [lastDecision]);
   const monologue = getMonologueQuote(lastDecision, dp.fallbackKind);
   const fullBrief = lastDecision?.strategyBrief || null;
@@ -65,9 +98,21 @@ export default function DeployCeremony({
   // Retry cooldown (spec §8): respect the server's 120s lock. Pass the ABSOLUTE
   // unlock instant; the error surface ticks its own countdown off it (a memo'd
   // remaining would freeze — the machine stops setState-ing once in 'error').
+  //
+  // Sourced from the deploy TARGET: lastDeployedAt is written to agents/{target}
+  // (decide.js:675), and the server enforces the cooldown by reading it back off
+  // that same document (decide.js:184-188) — so client and server now gate on one
+  // field of one document, per the display-agreement rule.
+  //
+  // While the target is unresolved, fall back to the ranked agent's value rather
+  // than disabling retry. The client cooldown is a UX affordance, not a safety
+  // gate — the server enforces it with a 429 regardless. Failing OPEN degrades to
+  // today's behavior and risks nothing; failing closed could strand the retry
+  // button permanently if resolution never completes.
+  const cooldownSource = (targetKnown ? targetLastDeployedAt : agent?.lastDeployedAt) || null;
   const cooldownUntil = useMemo(() => (
-    agent?.lastDeployedAt ? new Date(agent.lastDeployedAt).getTime() + DEPLOY_LOCK_MS : 0
-  ), [agent?.lastDeployedAt]);
+    cooldownSource ? new Date(cooldownSource).getTime() + DEPLOY_LOCK_MS : 0
+  ), [cooldownSource]);
 
   // Polite live-region announcement (§9).
   const liveText = machine.phase === 'error'

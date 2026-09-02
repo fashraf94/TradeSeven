@@ -12,8 +12,33 @@
 import { getIdToken } from '../firebase/authService';
 import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../config/featureFlags';
 
-export async function deployAgent(agentId, onCreateAgentBattle) {
+export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetResolved) {
   if (!agentId) return { success: false, error: 'no-agent' };
+
+  // The deploy TARGET id, reported upward the instant it is known so the caller
+  // can subscribe to the document this deploy will actually write to. The
+  // ceremony reads deployProgress / lastDeployedAt / lastDecision off that doc;
+  // on the clone path it is NOT the ranked agent's.
+  //
+  // Every assignment to deployAgentId goes through setDeployTarget — that is the
+  // single point §3 requires, so a future branch cannot resolve a target without
+  // reporting it (assignment count === report count, by construction). Do NOT
+  // reconstruct the id client-side as `casual-agent-{uid}`: the fallback below
+  // deploys the RANKED agent when ensure-casual-clone fails, and a derived id
+  // would send the ceremony back to the wrong document in exactly that branch.
+  let deployAgentId = null;
+  const setDeployTarget = (id) => {
+    deployAgentId = id;
+    // A throwing consumer must never take down a deploy — this is telemetry for
+    // the ceremony, not part of the deploy contract.
+    try { onDeployTargetResolved?.(id); } catch (err) {
+      console.warn('[Deploy] target-resolved callback threw:', err?.message || err);
+    }
+  };
+  // Report the ranked agent FIRST: it is the target unless the clone resolves,
+  // so the subscription is live for the whole clone round trip and, on the
+  // fallback path, is already correct with nothing further to do.
+  setDeployTarget(agentId);
 
   // P4 contract #3: the deploy endpoint now authenticates client callers
   // (Firebase ID token + ownership). Same pattern as fetchWithAuth.
@@ -33,7 +58,6 @@ export async function deployAgent(agentId, onCreateAgentBattle) {
   // WHICH agentId decide receives). On ANY failure we fall back to the real
   // agentId: the deploy proceeds exactly as today, degraded to the real agent,
   // never blocked. Flag OFF → deployAgentId === agentId (byte-identical).
-  let deployAgentId = agentId;
   if (CASUAL_CLONE_CONCURRENCY_ENABLED) {
     try {
       const cloneRes = await fetch('/api/agent/ensure-casual-clone', {
@@ -42,11 +66,13 @@ export async function deployAgent(agentId, onCreateAgentBattle) {
       });
       const cloneData = await cloneRes.text().then((t) => { try { return JSON.parse(t); } catch { return null; } });
       if (cloneRes.ok && cloneData && typeof cloneData.cloneId === 'string') {
-        deployAgentId = cloneData.cloneId;
+        setDeployTarget(cloneData.cloneId);
       } else {
+        // Fallback: the target stays the ranked agent, already reported above.
         console.warn('[Deploy] casual clone ensure did not return a clone — deploying the real agent:', cloneRes.status, cloneData?.error || '');
       }
     } catch (err) {
+      // Fallback: the target stays the ranked agent, already reported above.
       console.warn('[Deploy] casual clone ensure errored — deploying the real agent:', err?.message || err);
     }
   }
