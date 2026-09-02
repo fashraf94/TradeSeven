@@ -366,6 +366,12 @@ export default function AgentChat({
   chatBudgetUsed = 0,
   reviewBudgetUsed = 0,
   proposalHistory = [],
+  // Phase A (Battle View controller): the Why? panel's one door. A string the
+  // USER edits and sends through this same path — never a UI-computed value
+  // (C2). `{ text, nonce }`; a new nonce fills the composer and focuses it,
+  // then the screen is told so the prefill cannot replay on a remount.
+  composerPrefill = null,
+  onComposerPrefillConsumed = null,
 }) {
   // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
   // reactively from the chatExchanges prop so Firestore-initiated writes
@@ -580,6 +586,28 @@ export default function AgentChat({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  // ── Composer prefill (Phase A — the Why? door) ─────────────────────────────
+  useEffect(() => {
+    if (!composerPrefill || composerPrefill.nonce == null) return;
+    setInputText(String(composerPrefill.text ?? '').slice(0, 2000));
+    const el = textareaRef.current;
+    if (el && typeof el.focus === 'function') {
+      el.focus();
+      // The value lands on the next render; put the caret after it then.
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          try {
+            const n = el.value.length;
+            el.setSelectionRange?.(n, n);
+          } catch {
+            // jsdom / SSR: no selection API — the focus alone is enough.
+          }
+        });
+      }
+    }
+    if (typeof onComposerPrefillConsumed === 'function') onComposerPrefillConsumed();
+  }, [composerPrefill?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-resize textarea ───────────────────────────────────────────────────
 

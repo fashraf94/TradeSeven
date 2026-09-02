@@ -25,6 +25,9 @@ import useCoarseNow from './battleView/useCoarseNow';
 import { useLandingKey } from './battleView/landing';
 import LandingWash from './battleView/LandingWash';
 import TurnLine from './battleView/TurnLine';
+import WhyPanel from './battleView/WhyPanel';
+import { selectWhyState, selectTradesForSymbol } from './battleView/selectWhyState';
+import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
 // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Uncomment to revive.
 // import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
@@ -186,6 +189,9 @@ function ScoreHeader({
   // Phase A (controller flag): the turn line and its landing tick. All null /
   // zero flag-off, which renders nothing extra.
   turnLine = null, landingKey = null, rowCount = 0, reducedMotion = false,
+  // Phase A: tap the score header → the book-level Why? (D-53: Direct is
+  // book-level; Why? on the header is the book's own panel). Absent flag-off.
+  onOpenBook = null, bookOpen = false,
 }) {
   const myScore = playerScore ?? (agentBattle?.scoreState?.currentScore || 0);
   const oppScore = opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0);
@@ -208,11 +214,24 @@ function ScoreHeader({
         gap: 6,
       }}
     >
-      {/* Names + Scores row */}
-      <div style={{
+      {/* Names + Scores row — under the controller flag this is the book's
+          Why? tap surface (role=button, keyboard-reachable). Flag-off: no
+          extra attribute, byte-identical. */}
+      <div
+        {...(typeof onOpenBook === 'function' ? {
+          role: 'button',
+          tabIndex: 0,
+          'aria-expanded': bookOpen ? 'true' : 'false',
+          onClick: onOpenBook,
+          onKeyDown: (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenBook(); }
+          },
+        } : {})}
+        style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
+        ...(typeof onOpenBook === 'function' ? { cursor: 'pointer' } : {}),
       }}>
         {/* Left: Agent — face → name → score (mirrors the CPU side on the right).
             The reactive presence face lives HERE now, immediately left of the name
@@ -459,6 +478,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
 
   // Notification dot tracking
   const lastSeenFeedLengthRef = useRef(0);
+
+  // Why? (Phase A, controller flag): which player row is open, the book
+  // panel, and the composer prefill the panel's one door hands the chat.
+  const [whyOpen, setWhyOpen] = useState(null); // { key, symbol } | null
+  const [bookWhyOpen, setBookWhyOpen] = useState(false);
+  const [composerPrefill, setComposerPrefill] = useState(null); // { text, nonce } | null
 
   // ── Agent battle data ─────────────────────────────────────────────────────
 
@@ -729,6 +754,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       badges: score.badges,
       history,
       currentPrice: curPrice,
+      // Phase A: the entry the row's % is computed from, carried so the Why?
+      // facts read the ROW's number (never the adapter's book — rulings §3.3).
+      openPrice,
     };
   }, [effectivePrices, startingPrices, thresholds, previousClosePrices, agentBattle?.thresholdHistory, agentBattle?.activatedAt, agentBattle?.createdAt]);
 
@@ -866,6 +894,28 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const handlePointsClick = useCallback((asset) => {
     setBreakdownAsset(asset);
   }, []);
+
+  // ── Why? (Phase A, controller flag) ───────────────────────────────────────
+  // A tap on the LEFT side of a row toggles that row's panel; the score header
+  // toggles the book's. The one door prefills the composer with a string the
+  // user edits and sends through the shipped chat path (C2) — in the tabbed
+  // layout that means switching to the chat tab, where AgentChat mounts and
+  // consumes the prefill once.
+  const handleWhyToggle = useCallback((rowKey, asset) => {
+    if (!asset?.symbol) return;
+    setWhyOpen(prev => (prev?.key === rowKey ? null : { key: rowKey, symbol: asset.symbol }));
+  }, []);
+  const handleBookWhyToggle = useCallback(() => setBookWhyOpen(open => !open), []);
+  const handleAskFollowUp = useCallback((symbol) => {
+    setComposerPrefill({
+      text: symbol ? BATTLE_VIEW_COPY.followUpPrefill(symbol) : '',
+      nonce: Date.now(),
+    });
+    setActiveTab('command');
+  }, []);
+  const handleComposerPrefillConsumed = useCallback(() => setComposerPrefill(null), []);
+  const lastScoredAt = agentBattle?.scoreState?.lastScoredAt ?? null;
+  const latestDecision = turnLine?.decision ?? null;
 
   // Memoize enriched research asset to avoid re-renders on every price tick
   const stableResearchAsset = useMemo(() => {
@@ -1024,7 +1074,27 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           landingKey={landingKey}
           rowCount={rowCount}
           reducedMotion={reducedMotion}
+          onOpenBook={controllerOn ? handleBookWhyToggle : null}
+          bookOpen={bookWhyOpen}
         />
+
+        {/* Book-level Why? (Phase A, controller flag): the latest decision for
+            the whole book, then This turn (A3), then the one door. */}
+        {controllerOn && (
+          <AnimatePresence initial={false}>
+            {bookWhyOpen ? (
+              <WhyPanel
+                key="book"
+                symbol={null}
+                state={selectWhyState(latestDecision, null, lastScoredAt)}
+                thisTurn={null}
+                onAskFollowUp={handleAskFollowUp}
+                reducedMotion={reducedMotion}
+                headingId="why-book-heading"
+              />
+            ) : null}
+          </AnimatePresence>
+        )}
 
         {/* Film Room banner — appears once the first daily review has been filed */}
         {onOpenFilmRoom && Array.isArray(agentBattle?.dailyReviews) && agentBattle.dailyReviews.length >= 1 && (
@@ -1075,16 +1145,40 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 <div key={tier.key}>
                   <TierHeader tier={tier} />
                   {Array.from({ length: tier.slots }).map((_, i) => {
+                    const rowKey = `${tier.key}-${i}`;
+                    const leftAsset = enrichedPlayerPortfolio[tier.key]?.[i] || null;
+                    const whyable = controllerOn && !!leftAsset?.symbol && !leftAsset.isCash;
+                    const isWhyOpen = whyable && whyOpen?.key === rowKey && whyOpen.symbol === leftAsset.symbol;
                     const row = (
                       <TacticalRow
-                        key={`${tier.key}-${i}`}
-                        leftAsset={enrichedPlayerPortfolio[tier.key]?.[i] || null}
+                        key={rowKey}
+                        leftAsset={leftAsset}
                         rightAsset={enrichedOpponentPortfolio[tier.key]?.[i] || null}
                         tier={tier.key}
                         allocationLabel={`${tier.emoji} ${tier.allocation}`}
                         isCryptoSlot={tier.hasCrypto && i === tier.slots - 1}
                         onSymbolClick={handleSymbolClick}
                         onPointsClick={handlePointsClick}
+                        {...(whyable ? {
+                          onWhy: (asset) => handleWhyToggle(rowKey, asset),
+                          whyOpen: isWhyOpen,
+                          // The row hands the panel the SAME proximity it just
+                          // rendered — one call, one number (hazard 15).
+                          renderWhy: (proximity) => (
+                            <WhyPanel
+                              key={`why-${rowKey}`}
+                              symbol={leftAsset.symbol}
+                              state={selectWhyState(latestDecision, leftAsset.symbol, lastScoredAt)}
+                              proximity={proximity}
+                              entryPrice={leftAsset.openPrice ?? null}
+                              heldSince={leftAsset.swappedInAt || agentBattle?.activatedAt || null}
+                              trades={selectTradesForSymbol(agentBattle?.trades, leftAsset.symbol)}
+                              onAskFollowUp={handleAskFollowUp}
+                              reducedMotion={reducedMotion}
+                              headingId={`why-${rowKey}-heading`}
+                            />
+                          ),
+                        } : {})}
                       />
                     );
                     if (!controllerOn) return row;
@@ -1149,6 +1243,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 // AgentChat pending post-launch revival of the proposal flow.
                 // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md.
                 proposalHistory={agentBattle?.proposalHistory || []}
+                // Phase A (controller flag): the Why? door's prefill. Null
+                // flag-off — the chat never sees the prop.
+                composerPrefill={controllerOn ? composerPrefill : null}
+                onComposerPrefillConsumed={controllerOn ? handleComposerPrefillConsumed : null}
               />
             </motion.div>
           )}

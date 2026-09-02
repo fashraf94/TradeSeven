@@ -140,6 +140,16 @@ describe('under the flag — the controller', () => {
       expect(html.toLowerCase()).not.toContain(term);
     }
   });
+
+  it('every player row is a Why? tap surface (role=button, collapsed); the CPU side never is (A2)', () => {
+    const html = render();
+    // Three held player pieces (AAPL, SLB, NVDA) → three collapsed buttons on
+    // the left; the score header adds one for the book.
+    const buttons = html.match(/role="button" tabindex="0" aria-expanded="false"/g) || [];
+    expect(buttons.length).toBe(4);
+    // Nothing is open on first paint — no panel in the tree.
+    expect(html).not.toContain('data-why-kind');
+  });
 });
 
 describe('flag-off — the shipped tabbed screen', () => {
@@ -156,5 +166,11 @@ describe('flag-off — the shipped tabbed screen', () => {
     const html = render();
     expect(html).toContain('>MU<');
     expect(html).not.toContain('SLB');
+  });
+
+  it('no Why? tap surface, no panel (A2 is flag-only)', () => {
+    const html = render();
+    expect(html).not.toContain('aria-expanded');
+    expect(html).not.toContain('data-why-kind');
   });
 });
