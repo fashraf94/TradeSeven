@@ -37,6 +37,8 @@ import useMasteryProfile from '../../hooks/useMasteryProfile';
 import useDailyRegimeBrief from '../../hooks/useDailyRegimeBrief';
 import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentBattles';
 import { deployAgent } from '../../services/agentDeploy';
+// Record-only ceremony instrumentation (console; no writes, nothing gates on it).
+import * as ceremonyTiming from './deployCeremony/ceremonyTiming';
 import { subscribeMyGroup } from '../../services/tournamentGroupService';
 import { casualDeployMissesPodSession } from '../../constants/leagueTournament';
 import { getMarketState } from '../../utils/marketSchedule';
@@ -226,6 +228,9 @@ export default function CommandDashboard({
 
   const handleDeploy = async () => {
     if (deployDisabled) return { success: false };
+    // t0 for the stage-duration instrumentation: the moment the user's deploy
+    // began, which is what the "felt stalled" report is measured from.
+    ceremonyTiming.startRun();
     // Flag-on: open the ceremony overlay BEFORE the deploy call (ruling #2), and
     // record our own deploy outcome for the dual-signal reveal (spec §5.3).
     if (ceremonyOn) { setCeremonyOpen(true); setDeployResult({ status: 'pending' }); }

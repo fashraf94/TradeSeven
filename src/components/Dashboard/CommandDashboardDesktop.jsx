@@ -24,6 +24,8 @@ import useAgent from '../../hooks/useAgent';
 import useMasteryProfile from '../../hooks/useMasteryProfile';
 import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentBattles';
 import { deployAgent } from '../../services/agentDeploy';
+// Record-only ceremony instrumentation (console; no writes, nothing gates on it).
+import * as ceremonyTiming from './deployCeremony/ceremonyTiming';
 import ManageStation from './ManageStation';
 import ReviewStation from './ReviewStation';
 import AgentRecordSheet from './AgentRecordSheet';
@@ -139,6 +141,8 @@ export default function CommandDashboardDesktop({
 
   const handleDeploy = async () => {
     if (deployDisabled) return { success: false };
+    // t0 for the stage-duration instrumentation — mirrors the mobile shell.
+    ceremonyTiming.startRun();
     if (ceremonyOn) { setCeremonyOpen(true); setDeployResult({ status: 'pending' }); }
     setDeploying(true);
     let result = { success: false };
