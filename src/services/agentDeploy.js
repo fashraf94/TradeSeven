@@ -11,6 +11,9 @@
 
 import { getIdToken } from '../firebase/authService';
 import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../config/featureFlags';
+// Record-only deploy instrumentation (console; no writes, nothing gates on it).
+// Every export is throw-proof, so these calls cannot affect the deploy contract.
+import * as ceremonyTiming from '../components/Dashboard/deployCeremony/ceremonyTiming';
 
 export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetResolved) {
   if (!agentId) return { success: false, error: 'no-agent' };
@@ -29,6 +32,10 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   let deployAgentId = null;
   const setDeployTarget = (id) => {
     deployAgentId = id;
+    // Measurement A rides the same single point: call #1 is the ranked agent,
+    // call #2 the resolved clone, so the clone round trip is observable here
+    // without a second seam.
+    ceremonyTiming.markDeployTarget(id);
     // A throwing consumer must never take down a deploy — this is telemetry for
     // the ceremony, not part of the deploy contract.
     try { onDeployTargetResolved?.(id); } catch (err) {
@@ -60,6 +67,11 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   // never blocked. Flag OFF → deployAgentId === agentId (byte-identical).
   if (CASUAL_CLONE_CONCURRENCY_ENABLED) {
     try {
+      // getIdToken sits between setDeployTarget #1 and here, so the raw gap
+      // between the two target reports is NOT the clone round trip. Marking the
+      // request separates auth time from clone time — the pre-warm decision only
+      // gets to claim the latter.
+      ceremonyTiming.markCloneRequest();
       const cloneRes = await fetch('/api/agent/ensure-casual-clone', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -69,20 +81,28 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
         setDeployTarget(cloneData.cloneId);
       } else {
         // Fallback: the target stays the ranked agent, already reported above.
+        // setDeployTarget never fires a second time, so the clone outcome is
+        // recorded here as a DISTINCT outcome rather than a missing value.
+        ceremonyTiming.markCloneFallback(`http_${cloneRes.status}`);
         console.warn('[Deploy] casual clone ensure did not return a clone — deploying the real agent:', cloneRes.status, cloneData?.error || '');
       }
     } catch (err) {
       // Fallback: the target stays the ranked agent, already reported above.
+      ceremonyTiming.markCloneFallback('threw');
       console.warn('[Deploy] casual clone ensure errored — deploying the real agent:', err?.message || err);
     }
   }
 
   // Step 1: generate the portfolio via the AI decision endpoint.
+  ceremonyTiming.markPostIssued();
   const response = await fetch('/api/agent/decide', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ agentId: deployAgentId }),
   });
+  // Marked at response arrival rather than after the body read, so this measures
+  // the server round trip and not the client's parse.
+  ceremonyTiming.markPostResolved(response.status);
   // Guard the body parse: /api/agent/decide can return a NON-JSON error page — a
   // 500 HTML page, a module-link crash (ERR_MODULE_NOT_FOUND), a gateway timeout.
   // Calling response.json() on that throws a SyntaxError that masks the real HTTP

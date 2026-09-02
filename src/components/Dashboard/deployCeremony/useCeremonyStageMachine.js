@@ -30,6 +30,8 @@
 // ticks over a deploy don't churn effects.
 
 import { useEffect, useRef, useState } from 'react';
+// Record-only stage instrumentation (console; no writes, nothing gates on it).
+import * as ceremonyTiming from './ceremonyTiming';
 
 // Server checkpoint → monotonic rank.
 const SERVER_RANK = {
@@ -100,6 +102,7 @@ export default function useCeremonyStageMachine({
     mountRef.current = now;
     stageEnteredAtRef.current = now;
     lastProgressAtRef.current = now;
+    ceremonyTiming.markStageEnter(0);
     // NO baseline capture here. At mount the deploy target is typically still
     // unresolved, so `deployId` is null — and a null baseline taken now would let
     // the first real payload's deployId look like a change and get pinned as
@@ -177,6 +180,7 @@ export default function useCeremonyStageMachine({
         }
         // Server-side failure telemetry for our deploy.
         if (s === 'error') {
+          ceremonyTiming.markError(ep === 'post_decision' ? 'server_post' : 'server');
           setErrorKind(ep === 'post_decision' ? 'server_post' : 'server');
           setPhase('error');
           return;
@@ -185,6 +189,7 @@ export default function useCeremonyStageMachine({
 
       // ── Client's own deploy outcome (dual-signal / post-persistence failure).
       if (ds === 'error') {
+        ceremonyTiming.markError('deploy');
         setErrorKind('deploy');
         setPhase('error');
         return;
@@ -196,6 +201,7 @@ export default function useCeremonyStageMachine({
       if (ds !== 'success') {
         const sinceProgress = t - lastProgressAtRef.current;
         if (sinceProgress >= WATCHDOG_MS) {
+          ceremonyTiming.markError('timeout');
           setErrorKind('timeout');
           setPhase('error');
           return;
@@ -222,10 +228,15 @@ export default function useCeremonyStageMachine({
       if (floorElapsed && nextRankOk && revealSignal) {
         const next = i + 1;
         stageEnteredAtRef.current = t;
+        // Record-only: `floor` is what was APPLIED (skip zeroes it), MIN_FLOOR_MS[i]
+        // the nominal — the pair is what separates floor-bound from skipped.
+        ceremonyTiming.markStageExit(i, floor, MIN_FLOOR_MS[i]);
         if (next >= 4) {
+          ceremonyTiming.markReveal();
           setStageIndex(4);
           setPhase('reveal');
         } else {
+          ceremonyTiming.markStageEnter(next);
           setStageIndex(next);
         }
       }
