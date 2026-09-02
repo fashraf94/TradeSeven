@@ -278,8 +278,26 @@ export function countBlockedGates(statusFeedEntries) {
   return counts;
 }
 
-/** §6.3 terminal-gate resolution from the tick's in-scope outcome. */
-export function resolveTerminalGate({ decision, haikuFailure, downgraded, evaluation }) {
+/**
+ * §6.3 terminal-gate resolution from the tick's in-scope outcome.
+ *
+ * `post_decision_downgrade` reads the proposed symbols from `haikuResult` — the
+ * MODEL's own output — never from `evaluation`. The evaluation record nulls
+ * symbolOut/symbolIn whenever the decision is not SWAP/PROPOSAL
+ * (agent-evaluate.js:2630, :2634-2635), and a downgrade sets decision='HOLD'
+ * BEFORE that record is built, so `evaluation` is null/null on exactly the
+ * ticks this gate exists to describe. Reading it there recorded the downgrade
+ * and lost the thing being downgraded.
+ *
+ * The seven downgrade sites (agent-evaluate.js:2129, :2144, :2152, :2163,
+ * :2217, :2223, :2465) all leave haikuResult holding the model's proposal —
+ * the guardrail path only rewrites it on the forced-SWAP branch (:2116-2124),
+ * never on the HOLD branch — so haikuResult is the honest source.
+ *
+ * `evaluation` stays as a fallback for a caller that has no haikuResult; it
+ * contributes nothing in production, where it is always nulled by then.
+ */
+export function resolveTerminalGate({ decision, haikuFailure, downgraded, evaluation, haikuResult }) {
   if (decision !== 'HOLD') return null; // an action tick has no terminal gate
   if (haikuFailure) {
     return { terminalGate: `transport_${haikuFailure.failureClass}`, reason: haikuFailure.message ?? null };
@@ -287,7 +305,10 @@ export function resolveTerminalGate({ decision, haikuFailure, downgraded, evalua
   if (downgraded) {
     return {
       terminalGate: 'post_decision_downgrade',
-      proposedAction: { symbolOut: evaluation?.symbolOut ?? null, symbolIn: evaluation?.symbolIn ?? null },
+      proposedAction: {
+        symbolOut: haikuResult?.symbolOut ?? evaluation?.symbolOut ?? null,
+        symbolIn: haikuResult?.symbolIn ?? evaluation?.symbolIn ?? null,
+      },
       reason: 'proposed swap downgraded to HOLD by a deterministic gate',
     };
   }

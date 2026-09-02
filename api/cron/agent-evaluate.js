@@ -2789,6 +2789,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             + (battle.watchlist?.hotBench?.length || 0),
           statusFeedEntries,
           decision, evaluation, haikuFailure, downgraded,
+          // The §6.3 post_decision_downgrade gate reads the PROPOSED symbols
+          // off the model's own result: `evaluation` has already nulled
+          // symbolOut/symbolIn by this point on any downgraded tick (:2630,
+          // :2634-2635), which is exactly the tick that gate describes.
+          // Capture-only — nothing here feeds a decision.
+          haikuResult,
         },
       });
     }

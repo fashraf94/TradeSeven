@@ -211,9 +211,47 @@ describe('§6.3 records', () => {
     expect(resolveTerminalGate({ decision: 'SWAP' })).toBeNull();
     expect(resolveTerminalGate({ decision: 'HOLD', haikuFailure: { failureClass: 'budget_skipped', message: 'm' } }))
       .toEqual({ terminalGate: 'transport_budget_skipped', reason: 'm' });
+    // PRODUCTION SHAPE: on a downgraded tick the evaluation record has ALREADY
+    // nulled both symbols (agent-evaluate.js:2630, :2634-2635) — decision is
+    // 'HOLD' by then, so isSwapOrProposal is false. The proposal survives only
+    // on haikuResult. This row is the regression guard: reading `evaluation`
+    // here recorded null/null for every downgrade since SHADOW_ASSEMBLY_ENABLED
+    // went true.
+    expect(resolveTerminalGate({
+      decision: 'HOLD',
+      downgraded: true,
+      evaluation: { decision: 'HOLD', symbolOut: null, symbolIn: null },
+      haikuResult: { decision: 'SWAP', symbolOut: 'A', symbolIn: 'B' },
+    })).toMatchObject({ terminalGate: 'post_decision_downgrade', proposedAction: { symbolOut: 'A', symbolIn: 'B' } });
+    // Fallback for a caller with no haikuResult — never the production path.
     expect(resolveTerminalGate({ decision: 'HOLD', downgraded: true, evaluation: { symbolOut: 'A', symbolIn: 'B' } }))
       .toMatchObject({ terminalGate: 'post_decision_downgrade', proposedAction: { symbolOut: 'A', symbolIn: 'B' } });
     expect(resolveTerminalGate({ decision: 'HOLD' })).toMatchObject({ terminalGate: 'haiku_hold_decision' });
+  });
+
+  it('post_decision_downgrade records WHAT WAS PROPOSED while decision records what was persisted', async () => {
+    const battle = manifestBattle();
+    const db = makeFakeDb();
+    const finalUpdate = {};
+    // The tick a downgrade site produces: haikuResult still carries the model's
+    // SWAP, `decision`/`evaluation` carry the persisted HOLD with null symbols.
+    await runShadowTickCapture({
+      db, battle, finalUpdate,
+      tick: {
+        cronStartIso: CRON_START, nowIso: NOW, modelId: MODEL, market: emptyMarket,
+        candidatesTested: 3,
+        statusFeedEntries: [],
+        decision: 'HOLD',
+        evaluation: { decision: 'HOLD', symbolOut: null, symbolIn: null, downgraded: true },
+        haikuFailure: null,
+        downgraded: true,
+        haikuResult: { decision: 'SWAP', symbolOut: 'OLD', symbolIn: 'NVDA' },
+      },
+    });
+    const gate = finalUpdate.shadowTerminalGates.at(-1);
+    expect(gate.terminalGate).toBe('post_decision_downgrade');
+    expect(gate.proposedAction).toEqual({ symbolOut: 'OLD', symbolIn: 'NVDA' });
+    expect(gate.reason).toBe('proposed swap downgraded to HOLD by a deterministic gate');
   });
 
   it('runShadowTickCapture: envelope once, awaited diff write, aggregates ride finalUpdate, capped append counts drops', async () => {
