@@ -71,7 +71,14 @@ const LIVE_DOC = {
   ],
   trades: [],
   statusFeed: [],
-  chatExchanges: [],
+  chatExchanges: [
+    {
+      userMessage: 'protect the lead', agentResponse: 'Got it.', hasDirective: true,
+      directive: { text: 'Protect the lead into the close', expiry: 'end_of_battle', directiveThreadId: 't-1' },
+      directiveThreadId: 't-1', timestamp: '2026-09-01T15:31:00.000Z', // 11:31 AM ET
+    },
+  ],
+  directive: { text: 'Protect the lead into the close', expiry: 'end_of_battle', directiveThreadId: 't-1', createdAt: '2026-09-01T15:31:00.400Z' },
 };
 
 vi.mock('../hooks/useAgentBattle', () => ({
@@ -82,7 +89,9 @@ vi.mock('../hooks/useAgentBattle', () => ({
     pendingProposal: null,
     strategyPreset: 'balanced',
     gameplanMeeting: null,
-    chatExchanges: [],
+    // The real hook extracts these from the doc (useAgentBattle.js:54); the
+    // mock must agree with the doc it hands back.
+    chatExchanges: LIVE_DOC.chatExchanges,
     feedBookmarks: [],
     loading: false,
   }),
@@ -141,6 +150,17 @@ describe('under the flag — the controller', () => {
     }
   });
 
+  it('This turn sits above the board: the current directive, filed at the EXCHANGE time (A3)', () => {
+    const html = render();
+    expect(html).toContain('data-this-turn="filed"');
+    expect(html).toContain('Filed 11:31 AM');
+    expect(html).toContain('Protect the lead into the close');
+    // No promise about the next check rides the strip (hazard 3).
+    expect(html).not.toContain('for the ~');
+    // ...and it renders before the first tier header.
+    expect(html.indexOf('data-this-turn')).toBeLessThan(html.indexOf('Star Picks'));
+  });
+
   it('every player row is a Why? tap surface (role=button, collapsed); the CPU side never is (A2)', () => {
     const html = render();
     // Three held player pieces (AAPL, SLB, NVDA) → three collapsed buttons on
@@ -172,5 +192,11 @@ describe('flag-off — the shipped tabbed screen', () => {
     const html = render();
     expect(html).not.toContain('aria-expanded');
     expect(html).not.toContain('data-why-kind');
+  });
+
+  it('no This turn strip (A3 is flag-only)', () => {
+    const html = render();
+    expect(html).not.toContain('data-this-turn');
+    expect(html).not.toContain('Filed 11:31 AM');
   });
 });

@@ -12,6 +12,10 @@ import {
   resolveMessageType,
 } from '../../utils/renderMessageWithEntities';
 import { OPENER_LAZY_FALLBACK_ENABLED } from '../../config/featureFlags';
+// Phase A (Battle View controller): the receipt strings live in the guarded
+// copy module, never inline here (this file is not under the copy guard —
+// its error strings would trip it).
+import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
 
 // "Didn't respond" means the proposal hit its deadline without the user
 // approving or vetoing. In strategist mode, agent-evaluate.js writes
@@ -86,8 +90,18 @@ function ActionButton({ text, onClick, disabled }) {
   );
 }
 
-function ExecutionCard({ directive }) {
+// `receipt` (Phase A, controller flag): undefined flag-off — the shipped card,
+// byte-identical; under the flag the screen passes the derived receipt for
+// this thread (or null when the exchange carries no thread id), and the card
+// replaces the shipped execution promise + infinite pulse with the receipt
+// line (D-60: receipts cannot sit beside a promise). The receipt is derived
+// from the subscribed doc in the screen (deriveReceipts.js); this card only
+// renders what it is handed.
+function ExecutionCard({ directive, receipt }) {
   const threadId = directive?.directiveThreadId || null;
+  const controllerReceipts = receipt !== undefined;
+  const receiptLine = controllerReceipts ? BATTLE_VIEW_COPY.receiptLine(receipt) : null;
+  const receiptState = receipt?.state || null;
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -124,27 +138,57 @@ function ExecutionCard({ directive }) {
       }}>
         {directive.text}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {[0, 1, 2].map(i => (
-            <motion.span
-              key={i}
+      {controllerReceipts ? (
+        // The receipt line: still, stamped, proven — or nothing at all.
+        receiptLine ? (
+          <div
+            data-receipt={receiptState}
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
+            <span
+              aria-hidden="true"
               style={{
-                width: 4,
-                height: 4,
+                width: 6,
+                height: 6,
                 borderRadius: '50%',
-                background: '#5EEAD4',
                 display: 'block',
+                background: receiptState === 'filed' ? '#5EEAD4' : 'transparent',
+                border: '1px solid #5EEAD4',
+                opacity: receiptState === 'filed' ? 1 : 0.5,
               }}
-              animate={{ opacity: [0.2, 0.7, 0.2] }}
-              transition={{ duration: 2, repeat: Infinity, delay: i * 0.3 }}
             />
-          ))}
+            <span style={{
+              fontSize: 12,
+              color: receiptState === 'filed' ? '#5EEAD4' : '#9CA3AF',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              {receiptLine}
+            </span>
+          </div>
+        ) : null
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {[0, 1, 2].map(i => (
+              <motion.span
+                key={i}
+                style={{
+                  width: 4,
+                  height: 4,
+                  borderRadius: '50%',
+                  background: '#5EEAD4',
+                  display: 'block',
+                }}
+                animate={{ opacity: [0.2, 0.7, 0.2] }}
+                transition={{ duration: 2, repeat: Infinity, delay: i * 0.3 }}
+              />
+            ))}
+          </div>
+          <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+            Executing on next evaluation window
+          </span>
         </div>
-        <span style={{ fontSize: 12, color: '#9CA3AF' }}>
-          Executing on next evaluation window
-        </span>
-      </div>
+      )}
       {threadId && (
         <div style={{
           fontSize: 10,
@@ -160,7 +204,7 @@ function ExecutionCard({ directive }) {
   );
 }
 
-function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending, onSymbolClick, knownTickers }) {
+function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending, onSymbolClick, knownTickers, receipts }) {
   if (message.role === 'user') {
     return (
       <motion.div
@@ -242,7 +286,12 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
         {renderMessageWithEntities(message.text, onSymbolClick, knownTickers)}
       </div>
       {message.hasDirective && message.directive ? (
-        <ExecutionCard directive={message.directive} />
+        <ExecutionCard
+          directive={message.directive}
+          // undefined flag-off (no receipts map) → the shipped card. Under the
+          // flag: this thread's receipt, or null when the exchange has none.
+          receipt={receipts ? (receipts[message.directive.directiveThreadId] ?? null) : undefined}
+        />
       ) : isLastAgent && message.suggestedActions?.length > 0 && !isSending ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8, paddingLeft: 4 }}>
           {message.suggestedActions.map((action, i) => (
@@ -372,6 +421,9 @@ export default function AgentChat({
   // then the screen is told so the prefill cannot replay on a remount.
   composerPrefill = null,
   onComposerPrefillConsumed = null,
+  // Phase A: { [directiveThreadId]: { state, at } } from deriveReceipts, or
+  // null flag-off. AgentChat never reads battle.directive itself.
+  receipts = null,
 }) {
   // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
   // reactively from the chatExchanges prop so Firestore-initiated writes
@@ -974,6 +1026,7 @@ export default function AgentChat({
                   isSending={isSending}
                   onSymbolClick={onSymbolClick}
                   knownTickers={knownTickers}
+                  receipts={receipts}
                 />
               );
             }
