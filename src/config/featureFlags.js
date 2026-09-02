@@ -1963,3 +1963,52 @@ export const ARCHETYPE_VECTORS_V2_ENABLED = false;
  */
 // Pinned by: equippedRulePrecedenceFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const EQUIPPED_RULE_PRECEDENCE_ENABLED = false;
+
+/**
+ * Battle View controller, Phase A (docs/design/PHASE_A_RULINGS_AND_AMENDMENTS_V1.md,
+ * ledger D-59 → D-62 in docs/audits/COMMAND_CENTER_BATTLE_SYNC_DESIGN_FRAMEWORK_V1_2.md).
+ * DARK — default FALSE.
+ *
+ * When TRUE, the live-battle screen (AgentBattleScreen) plays as a controller:
+ * the score header carries the turn line (`Checked 12:47 PM · next ~1:02 PM`,
+ * from the same adapter arithmetic the Desk ships), the Matchups rows read the
+ * subscribed battle doc rather than the frozen prop (D-59), every player row
+ * opens Why? — the agent's own persisted words from the last decision — and
+ * the chat's directive cards carry truthful receipts (`Filed · Replaced ·
+ * Expired`, D-51 / D-60) in place of the shipped execution promise.
+ *
+ * READ-ONLY by construction. Phase A writes nothing to the battle doc, makes
+ * no model call, adds no listener and never touches api/. When FALSE every
+ * surface is byte-identical to today, which the screen's render tests assert.
+ *
+ * INDEPENDENT of COMMAND_CENTER_SYNC_ENABLED (the dashboard Desk): neither
+ * flag reads the other.
+ *
+ * Read it at RENDER scope through isBattleViewControllerOn() below, never as
+ * a module-scope const (the Pass 1 hazard: 15 of 56 featureFlags vi.mock
+ * sites use a bare factory with no importOriginal spread).
+ *
+ * The flip is its own deliberate PR after the founder's preview smoke — never
+ * a build PR. It updates the pin below, drops the DARK_BY_DESIGN entry AND
+ * deletes the `?battleViewController=1` override in that same commit (flip,
+ * pin and override travel together — the `?fuseHero=1` precedent above).
+ */
+// Pinned by: battleViewControllerFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const BATTLE_VIEW_CONTROLLER_ENABLED = false;
+
+/**
+ * The ONE home for the Battle View controller gate — the flag OR the
+ * `?battleViewController=1` preview override (smoke Pattern B, Phase A
+ * rulings §1.4). SSR/Node-safe (guards `window`); a malformed URL degrades to
+ * the flag alone (the isMatchupsBackdropOn idiom). Read at render time, so a
+ * test can mock it in either state without touching module scope.
+ */
+export function isBattleViewControllerOn() {
+  if (BATTLE_VIEW_CONTROLLER_ENABLED) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('battleViewController') === '1';
+  } catch {
+    return false;
+  }
+}

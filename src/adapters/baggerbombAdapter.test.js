@@ -16,6 +16,7 @@ import { battleTypeLabel } from '../utils/commandCenterLiveBattles';
 import {
   buildBaggerbombAdapter,
   derivePhase,
+  deriveDueAt,
   toIso,
   PHASE,
   PROXIMITY_STALE_MS,
@@ -555,6 +556,61 @@ describe('buildBaggerbombAdapter', () => {
       });
       const a = build(b, makeCache({ updatedAt: '2026-11-27T17:01:00.000Z' }), AGENT, '2026-11-27T17:02:00Z', MS.earlyCloseOpen);
       expect(a.nextDecisionAt).toBe('2026-11-27T17:15:00.000Z'); // 12:15 ET
+    });
+  });
+
+  // Phase A (D-62): the ONE derivation of "next", exported so the Battle View
+  // turn line's late state can read the due instant that nextDecisionAt
+  // deliberately withholds once it is past. nextDecisionAt consumes it, so
+  // the goldens above are the proof the extraction changed nothing.
+  describe('deriveDueAt — the due instant, past or not', () => {
+    it('is the last check + 15 minutes, as a TRUE ISO instant', () => {
+      expect(deriveDueAt('2026-09-01T16:47:00.000Z', MS.open)).toBe('2026-09-01T17:02:00.000Z');
+    });
+
+    it('is returned even when already past — that is its whole reason to exist', () => {
+      // nextDecisionAt for this battle at 16:30Z is null (starved cron); the
+      // due instant is still a fact about the schedule and still 14:15Z.
+      expect(deriveDueAt('2026-09-01T14:00:00.000Z', MS.open)).toBe('2026-09-01T14:15:00.000Z');
+      const starved = makeBattle({ scoreState: { evaluationCount: 9, lastScoredAt: '2026-09-01T14:00:00.000Z' } });
+      expect(build(starved, makeCache(), AGENT, '2026-09-01T16:30:00Z', MS.open).nextDecisionAt).toBeNull();
+    });
+
+    it('null with no last check — never a fabricated time', () => {
+      expect(deriveDueAt(null, MS.open)).toBeNull();
+      expect(deriveDueAt(undefined, MS.open)).toBeNull();
+      expect(deriveDueAt('not a date', MS.open)).toBeNull();
+    });
+
+    it('null when the candidate lands at or past the session close (nothing can be late after the bell)', () => {
+      expect(deriveDueAt('2026-09-01T19:50:00.000Z', MS.open)).toBeNull();   // 15:50 → 16:05 ET
+      expect(deriveDueAt('2026-09-01T19:45:00.000Z', MS.open)).toBeNull();   // 15:45 → 16:00 ET, at the close
+      expect(deriveDueAt('2026-09-01T19:44:00.000Z', MS.open)).toBe('2026-09-01T19:59:00.000Z');
+    });
+
+    it('early-close day: the 1pm ET close clamps it', () => {
+      expect(deriveDueAt('2026-11-27T17:55:00.000Z', MS.earlyCloseOpen)).toBeNull();            // 12:55 → 13:10 ET
+      expect(deriveDueAt('2026-11-27T17:00:00.000Z', MS.earlyCloseOpen)).toBe('2026-11-27T17:15:00.000Z');
+    });
+
+    it('with no market state there is no close to clamp to — the arithmetic stands', () => {
+      expect(deriveDueAt('2026-09-01T19:50:00.000Z', null)).toBe('2026-09-01T20:05:00.000Z');
+    });
+
+    it('the close clamp compares ET minutes on both sides of the March DST switch', () => {
+      // 2026-03-06 is EST (UTC−5); 2026-03-09 is EDT (UTC−4). The same ET
+      // wall-clock check sits at different UTC offsets and must clamp the same.
+      const est = { ...MS.open, nextCloseTime: new Date(2026, 2, 6, 16, 0) };
+      const edt = { ...MS.open, nextCloseTime: new Date(2026, 2, 9, 16, 0) };
+      expect(deriveDueAt('2026-03-06T20:50:00.000Z', est)).toBeNull();                          // 15:50 EST
+      expect(deriveDueAt('2026-03-06T20:40:00.000Z', est)).toBe('2026-03-06T20:55:00.000Z');    // 15:40 EST
+      expect(deriveDueAt('2026-03-09T19:50:00.000Z', edt)).toBeNull();                          // 15:50 EDT
+      expect(deriveDueAt('2026-03-09T19:40:00.000Z', edt)).toBe('2026-03-09T19:55:00.000Z');    // 15:40 EDT
+    });
+
+    it('nextDecisionAt is deriveDueAt gated on phase and "not yet past" — one function, not two', () => {
+      const a = build(makeBattle(), makeCache(), AGENT, NOW, MS.open);
+      expect(a.nextDecisionAt).toBe(deriveDueAt(a.lastCheckedAt, MS.open));
     });
   });
 

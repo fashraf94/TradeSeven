@@ -52,6 +52,9 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   isAgentPresenceOn: () => false,
   isMatchupsBackdropOn: () => false,
+  // Phase A: the controller stays dark here — this suite characterizes the
+  // shipped tabbed screen (the controller has its own render suite).
+  isBattleViewControllerOn: () => false,
 }));
 // Market-data service: never hit in SSR (poll is an effect), but stub the module
 // so no real network/cache graph loads.

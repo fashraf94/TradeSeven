@@ -85,7 +85,7 @@ export default function AgentDesk({ sync, accent = CMD.teal }) {
   const posture = phase === 'LIVE'
     ? DESK_COPY.postureLive(lastCheckedAt, nextDecisionAt)
     : phase === 'LIVE_CLOSED'
-      ? DESK_COPY.postureClosed(sync.nextOpenEt)
+      ? DESK_COPY.postureClosed(sync.nextOpenEt, lastCheckedAt)
       : phase === 'PRE_OPEN'
         ? DESK_COPY.posturePreOpen
         : DESK_COPY.postureComplete;

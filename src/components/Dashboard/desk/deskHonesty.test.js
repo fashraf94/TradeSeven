@@ -40,12 +40,24 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // The two dashboard shells DUPLICATE their copy rather than share it
 // ('Talk it over', 'Deploy on this read' and friends each exist twice), so a
 // guard that covered only one shell would half-guard the product.
+//
+// Phase A (the Battle View controller, D-59 → D-62) puts Battle View strings
+// under the same guard: its copy module (battleViewCopy.js) and EVERY
+// component under src/screens/battleView/ — the directory is scanned, so a
+// new file there is guarded the moment it exists rather than when someone
+// remembers to list it (PHASE_A_RULINGS_AND_AMENDMENTS_V1.md §3.4).
+const BATTLE_VIEW_DIR = path.join(HERE, '..', '..', '..', 'screens', 'battleView');
+const BATTLE_VIEW_SOURCES = readdirSync(BATTLE_VIEW_DIR)
+  .filter((f) => /\.(js|jsx)$/.test(f) && !/\.test\.(js|jsx)$/.test(f))
+  .map((f) => path.join(BATTLE_VIEW_DIR, f));
+
 const GUARDED = [
   path.join(HERE, 'deskCopy.js'),
   path.join(HERE, 'AgentDesk.jsx'),
   path.join(HERE, '..', 'ManageStation.jsx'),
   path.join(HERE, '..', '..', '..', 'adapters', 'baggerbombAdapter.js'),
   path.join(HERE, '..', '..', '..', 'hooks', 'useCommandCenterSync.js'),
+  ...BATTLE_VIEW_SOURCES,
 ];
 
 const FORBIDDEN = [
@@ -113,12 +125,36 @@ describe('the grandfathered exemption is scoped, and still true', () => {
   });
 });
 
+describe('the Battle View directory is under the guard (Phase A)', () => {
+  it('there is at least one Battle View source to guard', () => {
+    expect(BATTLE_VIEW_SOURCES.length).toBeGreaterThan(0);
+  });
+
+  it('every non-test source under src/screens/battleView is guarded', () => {
+    for (const f of BATTLE_VIEW_SOURCES) expect(GUARDED).toContain(f);
+  });
+});
+
 describe('the copy module is the single source of Desk strings (spec §9)', () => {
   const deskFiles = readdirSync(HERE).filter((f) => f.endsWith('.jsx') && !f.includes('.test.'));
+  // Phase A: the same no-inline-copy rule binds the Battle View components —
+  // their strings live in battleViewCopy.js (rulings §3.4).
+  const battleViewComponents = BATTLE_VIEW_SOURCES.filter((f) => f.endsWith('.jsx'));
 
   it('there is at least one Desk component to check', () => {
     expect(deskFiles.length).toBeGreaterThan(0);
   });
+
+  for (const abs of battleViewComponents) {
+    const f = `battleView/${path.basename(abs)}`;
+    it(`${f} renders no inline user-facing string literal`, () => {
+      const source = strippedSource(abs);
+      const jsxText = [...source.matchAll(/>\s*([A-Za-z][A-Za-z ,'.:·—-]{6,})\s*</g)]
+        .map((m) => m[1].trim())
+        .filter((t) => !/^[A-Z_]+$/.test(t));
+      expect(jsxText, `inline copy in ${f}: ${JSON.stringify(jsxText)}`).toEqual([]);
+    });
+  }
 
   for (const f of deskFiles) {
     it(`${f} renders no inline user-facing string literal`, () => {
@@ -147,5 +183,23 @@ describe('the posture line is discrete, never continuous', () => {
     const line = DESK_COPY.postureLive(null, '2026-09-01T17:02:00.000Z');
     expect(line).toBe('First check coming up');
     expect(line).not.toMatch(/\d/);
+  });
+
+  it('the LATE posture keeps its "~" too — "was due" is a fact about the schedule, past tense', async () => {
+    // Phase A (D-62): the Battle View's late state. The due time stays
+    // approximate and stays in the past tense; it never becomes a promise.
+    const { DESK_COPY } = await import('./deskCopy.js');
+    const line = DESK_COPY.postureLate('2026-09-01T16:47:00.000Z', '2026-09-01T17:02:00.000Z');
+    expect(line).toBe('Last check 12:47 PM · next was due ~1:02 PM');
+    expect(line).toContain('~');
+    expect(line).not.toMatch(/\bnext ~/);
+  });
+
+  it('the CLOSED posture carries both facts in one sentence — as-of and resume (D-62)', async () => {
+    const { DESK_COPY } = await import('./deskCopy.js');
+    const line = DESK_COPY.postureClosed({ weekdayIndex: 2, hour: 9, minute: 30 }, '2026-09-01T19:45:00.000Z');
+    expect(line).toBe('Market closed · last check 3:45 PM · next Tue 9:30 AM ET');
+    // No tilde here: the next open is a scheduled fact, not a cron estimate.
+    expect(line).not.toContain('~');
   });
 });

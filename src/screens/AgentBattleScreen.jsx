@@ -7,15 +7,24 @@
 //   3. useWebSocketPrices + EODHD polling — live prices for matchup view
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronLeft, Activity, Bot, Bookmark } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
-import { isAgentPresenceOn, isMatchupsBackdropOn } from '../config/featureFlags';
+import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn } from '../config/featureFlags';
 import { TAB_KEYS, tabLabels } from './agentBattleTabs';
+// Battle View controller, Phase A (BATTLE_VIEW_CONTROLLER_ENABLED — dark).
+// Everything imported from ./battleView renders ONLY under the flag; flag-off
+// the screen is byte-identical to the tabbed screen it was before Phase A.
+import { getMarketState } from '../utils/marketSchedule';
+import { deriveTurnLine } from './battleView/deriveTurnLine';
+import useCoarseNow from './battleView/useCoarseNow';
+import { useLandingKey } from './battleView/landing';
+import LandingWash from './battleView/LandingWash';
+import TurnLine from './battleView/TurnLine';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
 // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Uncomment to revive.
 // import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
@@ -172,7 +181,12 @@ function TierHeader({ tier }) {
 
 // ─── Score Header ─────────────────────────────────────────────────────────────
 
-function ScoreHeader({ agentBattle, tokens, isDesktop, playerScore, opponentScore, statusFeed }) {
+function ScoreHeader({
+  agentBattle, tokens, isDesktop, playerScore, opponentScore, statusFeed,
+  // Phase A (controller flag): the turn line and its landing tick. All null /
+  // zero flag-off, which renders nothing extra.
+  turnLine = null, landingKey = null, rowCount = 0, reducedMotion = false,
+}) {
   const myScore = playerScore ?? (agentBattle?.scoreState?.currentScore || 0);
   const oppScore = opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0);
   const dayLabel = computeDayLabel(agentBattle?.timing);
@@ -322,6 +336,17 @@ function ScoreHeader({ agentBattle, tokens, isDesktop, playerScore, opponentScor
           borderRadius: '0 3px 3px 0',
         }} />
       </div>
+
+      {/* Turn line (Phase A, controller flag only): checked · next, from the
+          same adapter arithmetic the Desk ships. Null flag-off. */}
+      {turnLine && (
+        <TurnLine
+          turn={turnLine}
+          landingKey={landingKey}
+          rowCount={rowCount}
+          reducedMotion={reducedMotion}
+        />
+      )}
     </motion.div>
   );
 }
@@ -404,6 +429,16 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const { tokens } = useTheme();
   const isDesktop = useIsDesktop();
 
+  // Battle View controller (Phase A). Read at RENDER scope, never module scope
+  // (the featureFlags mock hazard). Flag OR the ?battleViewController=1 smoke
+  // override; the flip PR deletes the override.
+  const controllerOn = isBattleViewControllerOn();
+  const prefersReducedMotion = useReducedMotion();
+  const reducedMotion = Boolean(prefersReducedMotion);
+  // A coarse clock for the turn line: once a minute or on visibilitychange,
+  // never a per-second tick. Inert (no interval) flag-off.
+  const now = useCoarseNow(controllerOn);
+
   // Tab state
   const [activeTab, setActiveTab] = useState('matchups');
 
@@ -450,9 +485,30 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     lastSeenFeedLengthRef.current = statusFeed.length;
   }
 
+  // ── Row sources ───────────────────────────────────────────────────────────
+  //
+  // Flag-off (shipped): the rows read the `battle` PROP — a client-built
+  // snapshot of the polled agentBattles doc (DashboardDesktop.jsx:79-93,
+  // App.jsx handleOpenAgentBattle) that nothing refreshes while the screen is
+  // open. After an agent swap the row keeps the pre-swap symbol until the
+  // battle is re-opened (Phase 0 §6 bug 1 — fixed separately, NOT here).
+  //
+  // Under the controller flag (D-59): the rows read the SUBSCRIBED doc — the
+  // same doc the turn line and Why? read — so the landing cannot lie after a
+  // swap. The player's rows enrich from `agentBattle.portfolio` and its
+  // `startingPrices`; the CPU rows from `agentBattle.opponent.portfolio`
+  // (static from deploy, agentBattleService.js:167). The prop is the fallback
+  // only when the live field is absent (null).
+  const livePlayerPortfolio = controllerOn ? (agentBattle?.portfolio || null) : null;
+  const liveOpponentPortfolio = controllerOn ? (agentBattle?.opponent?.portfolio || null) : null;
+  const playerPortfolioSource = livePlayerPortfolio || battle?.creator?.portfolio;
+  const opponentPortfolioSource = liveOpponentPortfolio || battle?.opponent?.portfolio;
+
   // ── Symbol extraction ─────────────────────────────────────────────────────
 
-  const startingPrices = battle?.state?.startingPrices || {};
+  const startingPrices = (livePlayerPortfolio && livePlayerPortfolio.startingPrices)
+    || battle?.state?.startingPrices
+    || {};
   const thresholds = agentBattle?.scoring?.thresholds || {};
 
   const allSymbols = useMemo(() => {
@@ -463,10 +519,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         (portfolio[tier] || []).forEach(a => { if (a?.symbol) symbols.add(a.symbol); });
       });
     };
-    addFromPortfolio(battle?.creator?.portfolio);
-    addFromPortfolio(battle?.opponent?.portfolio);
+    addFromPortfolio(playerPortfolioSource);
+    addFromPortfolio(opponentPortfolioSource);
     return [...symbols];
-  }, [battle?.creator?.portfolio, battle?.opponent?.portfolio]);
+  }, [playerPortfolioSource, opponentPortfolioSource]);
 
   // ── WebSocket prices ──────────────────────────────────────────────────────
 
@@ -679,24 +735,24 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // ── Enriched portfolios ───────────────────────────────────────────────────
 
   const enrichedPlayerPortfolio = useMemo(() => {
-    const p = battle?.creator?.portfolio;
+    const p = playerPortfolioSource;
     if (!p) return { star: [], core: [], support: [] };
     return {
       star: (p.star || []).map(a => enrichAsset(a, 'star')),
       core: (p.core || []).map(a => enrichAsset(a, 'core')),
       support: (p.support || []).map(a => enrichAsset(a, 'support')),
     };
-  }, [battle?.creator?.portfolio, enrichAsset]);
+  }, [playerPortfolioSource, enrichAsset]);
 
   const enrichedOpponentPortfolio = useMemo(() => {
-    const p = battle?.opponent?.portfolio;
+    const p = opponentPortfolioSource;
     if (!p) return { star: [], core: [], support: [] };
     return {
       star: (p.star || []).map(a => enrichAsset(a, 'star')),
       core: (p.core || []).map(a => enrichAsset(a, 'core')),
       support: (p.support || []).map(a => enrichAsset(a, 'support')),
     };
-  }, [battle?.opponent?.portfolio, enrichAsset]);
+  }, [opponentPortfolioSource, enrichAsset]);
 
   // ── Known tickers for chat ticker linking ─────────────────────────────────
 
@@ -760,6 +816,24 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const hasCommandDot = hasPendingProposal || hasNewFeedEntries;
   const commandDotColor = hasPendingProposal ? '#f59e0b' : '#5eead4';
   const hasGameTapeDot = (feedBookmarks?.length || 0) > 0;
+
+  // ── Turn line + landing (Phase A, controller flag) ────────────────────────
+  //
+  // One source: the adapter over the subscribed doc, null cache, null agent —
+  // no cache read, no rules contact. `now` is the coarse clock above and
+  // marketState is read once per derivation (the useCommandCenterSync idiom).
+  // Null flag-off, so the header renders nothing extra.
+  const turnLine = useMemo(() => {
+    if (!controllerOn || !agentBattle) return null;
+    return deriveTurnLine(agentBattle, now, getMarketState());
+    // `now` is the memo's clock; the doc is the only other input.
+  }, [controllerOn, agentBattle, now]);
+
+  // The landing fires on the snapshot change of lastScoredAt only — never on
+  // a timer, never on open. Null flag-off (the hook is inert when disabled).
+  const landingKey = useLandingKey(agentBattle?.scoreState?.lastScoredAt, controllerOn);
+  const activeTiers = agentBattle?.gameMode === 'baggerbomb_tournament' ? FLAT6_TIERS : TIERS;
+  const rowCount = activeTiers.reduce((n, t) => n + t.slots, 0);
 
   // ── Callbacks ─────────────────────────────────────────────────────────────
 
@@ -946,6 +1020,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           playerScore={displayPlayerScore}
           opponentScore={displayOpponentScore}
           statusFeed={statusFeed}
+          turnLine={turnLine}
+          landingKey={landingKey}
+          rowCount={rowCount}
+          reducedMotion={reducedMotion}
         />
 
         {/* Film Room banner — appears once the first daily review has been filed */}
@@ -993,21 +1071,39 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.15 }}
             >
-              {(agentBattle?.gameMode === 'baggerbomb_tournament' ? FLAT6_TIERS : TIERS).map(tier => (
+              {activeTiers.map((tier, tierIndex) => (
                 <div key={tier.key}>
                   <TierHeader tier={tier} />
-                  {Array.from({ length: tier.slots }).map((_, i) => (
-                    <TacticalRow
-                      key={`${tier.key}-${i}`}
-                      leftAsset={enrichedPlayerPortfolio[tier.key]?.[i] || null}
-                      rightAsset={enrichedOpponentPortfolio[tier.key]?.[i] || null}
-                      tier={tier.key}
-                      allocationLabel={`${tier.emoji} ${tier.allocation}`}
-                      isCryptoSlot={tier.hasCrypto && i === tier.slots - 1}
-                      onSymbolClick={handleSymbolClick}
-                      onPointsClick={handlePointsClick}
-                    />
-                  ))}
+                  {Array.from({ length: tier.slots }).map((_, i) => {
+                    const row = (
+                      <TacticalRow
+                        key={`${tier.key}-${i}`}
+                        leftAsset={enrichedPlayerPortfolio[tier.key]?.[i] || null}
+                        rightAsset={enrichedOpponentPortfolio[tier.key]?.[i] || null}
+                        tier={tier.key}
+                        allocationLabel={`${tier.emoji} ${tier.allocation}`}
+                        isCryptoSlot={tier.hasCrypto && i === tier.slots - 1}
+                        onSymbolClick={handleSymbolClick}
+                        onPointsClick={handlePointsClick}
+                      />
+                    );
+                    if (!controllerOn) return row;
+                    // Controller flag: the row's slot in the landing sequence
+                    // (top to bottom across tiers). The wrapper exists only to
+                    // host the wash; flag-off renders the bare row above.
+                    const rowIndex = activeTiers.slice(0, tierIndex).reduce((n, t) => n + t.slots, 0) + i;
+                    return (
+                      <div key={`${tier.key}-${i}`} style={{ position: 'relative' }}>
+                        {row}
+                        <LandingWash
+                          landingKey={landingKey}
+                          index={rowIndex}
+                          count={rowCount}
+                          reducedMotion={reducedMotion}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
 

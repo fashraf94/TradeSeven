@@ -81,9 +81,13 @@ describe('posture line — discrete, never continuous', () => {
     expect(html).not.toContain('Checked');
   });
 
-  it('LIVE_CLOSED names the market state and the next check, with no agent verb', () => {
+  it('LIVE_CLOSED names the market state, the LAST check (as-of) and the next open, with no agent verb', () => {
+    // D-62 (Phase A): one closed-phase string on both surfaces, carrying the
+    // as-of stamp AND the resume time. Before Phase A the Desk had the resume
+    // time but not the as-of; the Battle View seed had the as-of but not the
+    // resume time. Two surfaces, one sentence.
     const html = render({ phase: 'LIVE_CLOSED', nextDecisionAt: null });
-    expect(html).toContain('Market closed · next check Tue 9:30 AM ET');
+    expect(html).toContain('Market closed · last check 12:47 PM · next Tue 9:30 AM ET');
   });
 
   it('the next-check time comes from WALL-CLOCK FIELDS, so it cannot shift with the viewer zone', () => {
@@ -91,13 +95,20 @@ describe('posture line — discrete, never continuous', () => {
     // wrong time (and, far enough east, a wrong day) for every non-ET viewer.
     // These fields are read directly, so the rendered string is fixed.
     const html = render({ phase: 'LIVE_CLOSED', nextOpenEt: { weekdayIndex: 1, hour: 9, minute: 30 } });
-    expect(html).toContain('next check Mon 9:30 AM ET');
+    expect(html).toContain('next Mon 9:30 AM ET');
   });
 
-  it('falls back to a bare "Market closed" when the next open is unknown', () => {
+  it('falls back to the as-of alone when the next open is unknown', () => {
     const html = render({ phase: 'LIVE_CLOSED', nextOpenEt: null });
+    expect(html).toContain('Market closed · last check 12:47 PM');
+    expect(html).not.toContain('· next ');
+  });
+
+  it('falls back to a bare "Market closed" when neither fact is known', () => {
+    const html = render({ phase: 'LIVE_CLOSED', nextOpenEt: null, lastCheckedAt: null });
     expect(html).toContain('Market closed');
-    expect(html).not.toContain('next check');
+    expect(html).not.toContain('last check');
+    expect(html).not.toContain('· next ');
   });
 
   it('PRE_OPEN states the scheduled open — a fact, not a guess', () => {
