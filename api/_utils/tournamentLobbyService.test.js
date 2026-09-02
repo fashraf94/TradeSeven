@@ -35,6 +35,9 @@ import {
   TOURNAMENT_TUNING,
   cpuAgentDocId,
   isCpuUserId,
+  isoWeekString,
+  currentBaseLayerWeek,
+  selectBaseLayerField,
 } from '../../src/constants/leagueTournament.js';
 import { deriveBattleStartWeek, deriveBaseLayerWeek } from './liveDraftFormation.js';
 
@@ -545,5 +548,138 @@ describe('formGroupFromLobby — the mirror guard (slot seat blocks same-battle-
     expect(resumed.alreadyFormed).toBe(false);
     expect(store.get(`tournamentGroups/${id}`).status).toBe(GROUP_STATUS.FORMING);
     expect(store.get(`tournamentLobby/${id}`).status).toBe(LOBBY_STATUS.FORMED);
+  });
+});
+
+
+// ==================== D-LOBBYWEEK: the formation stamp is the BATTLE week ====================
+//
+// The defect: formGroupFromLobby stamped baseLayerWeek = isoWeekString(now) — the
+// week the pod was FORMED — while a lobby pod plays the NEXT Monday-open. THE FIELD
+// is a current-week equality query keyed on the ET-anchored battle Monday, so a
+// mis-stamped pod was absent from THE FIELD for the entire week it actually played,
+// and the one-game-per-battle-week guard could not see it either.
+//
+// These rows are written to FAIL under the pre-fix stamp: every assertion that names
+// the battle week also asserts it differs from isoWeekString(now) wherever the two
+// genuinely differ, so a regression to the formation week reddens them.
+
+// THE FIELD, simulated honestly: the server equality query
+// (subscribeBaseLayerGroups -> where('baseLayerWeek','==',currentBaseLayerWeek))
+// followed by the client selector, which does NO week re-check of its own.
+function fieldAt(instant, docs) {
+  const week = currentBaseLayerWeek(instant);
+  return selectBaseLayerField(docs.filter(d => d.baseLayerWeek === week), 12);
+}
+
+describe('D-LOBBYWEEK — lobby formation stamps the BATTLE week, not the formation week', () => {
+  const battleWeekAt = (d) => deriveBaseLayerWeek(deriveBattleStartWeek(d.toISOString()));
+
+  it('formGroupFromLobby stamps the battle week (NOW is a Wednesday -> next Monday’s week)', async () => {
+    const { db, store } = withRankings();
+    const { id } = await createLobby(db, { createdBy: 'u1', now: NOW });
+    const { groupId } = await formGroupFromLobby(db, id, { now: NOW });
+    const group = store.get(`tournamentGroups/${groupId}`);
+
+    expect(group.baseLayerWeek).toBe(battleWeekAt(NOW));
+    // The pre-fix value, explicitly rejected — this is what made the row able to fail.
+    expect(group.baseLayerWeek).not.toBe(isoWeekString(NOW));
+  });
+
+  it('quickPlay (the solo cold-start) stamps the battle week too', async () => {
+    const { db, store } = withRankings();
+    const { groupId } = await quickPlay(db, { odUserId: 'u1', now: NOW });
+    const group = store.get(`tournamentGroups/${groupId}`);
+    expect(group.baseLayerWeek).toBe(battleWeekAt(NOW));
+    expect(group.baseLayerWeek).not.toBe(isoWeekString(NOW));
+  });
+
+  it('the LOBBY doc carries the same battle-week key as the group it forms', async () => {
+    const { db, store } = withRankings();
+    const { id } = await createLobby(db, { createdBy: 'u1', now: NOW });
+    const { groupId } = await formGroupFromLobby(db, id, { now: NOW });
+    expect(store.get(`tournamentLobby/${id}`).baseLayerWeek).toBe(battleWeekAt(NOW));
+    expect(store.get(`tournamentLobby/${id}`).baseLayerWeek)
+      .toBe(store.get(`tournamentGroups/${groupId}`).baseLayerWeek);
+  });
+
+  it('a formed pod IS in THE FIELD for its battle week — and is NOT there during its formation week', async () => {
+    const { db, store } = withRankings();
+    const { groupId } = await quickPlay(db, { odUserId: 'u1', now: NOW });
+    const group = { id: groupId, ...store.get(`tournamentGroups/${groupId}`) };
+
+    // Every ET day of the battle week: the pod is in the field.
+    const battleMonday = deriveBattleStartWeek(NOW.toISOString()).mondayEtDate;
+    for (let day = 0; day < 7; day++) {
+      const t = new Date(`${battleMonday}T12:00:00.000-04:00`);
+      t.setUTCDate(t.getUTCDate() + day);
+      expect(fieldAt(t, [group]).map(g => g.id)).toEqual([groupId]);
+    }
+    // Formation week (NOW is mid-week, before the battle Monday): correctly absent —
+    // the phantom-early presence the formation stamp used to produce is gone.
+    expect(fieldAt(NOW, [group])).toEqual([]);
+  });
+
+  // The read side was proven at all 168 hours of an ET week by the weekly-ladder
+  // build; this mirrors that rigor on the WRITE side, in both DST regimes.
+  for (const [regime, mondayEt, offset] of [['EDT (summer)', '2026-06-08', '-04:00'], ['EST (winter)', '2026-01-05', '-05:00']]) {
+    it(`stamps a battle week that the read side agrees with, at all 168 hours of an ET week — ${regime}`, async () => {
+      const start = new Date(`${mondayEt}T00:30:00.000${offset}`);
+      for (let hour = 0; hour < 168; hour++) {
+        const t = new Date(start.getTime() + hour * 3600_000);
+        const { db, store } = withRankings();
+        const { groupId } = await quickPlay(db, { odUserId: `u${hour}`, now: t });
+        const stamped = store.get(`tournamentGroups/${groupId}`).baseLayerWeek;
+
+        // 1. The stamp is the battle week, by the canonical derivation.
+        expect(stamped).toBe(deriveBaseLayerWeek(deriveBattleStartWeek(t.toISOString())));
+
+        // 2. Read/write agree: on the pod's own battle Monday, THE FIELD's
+        //    ET-anchored current-week key equals the stamp. This is the property
+        //    that was broken — a pod absent from the field the week it plays.
+        const battleMonday = deriveBattleStartWeek(t.toISOString()).mondayEtDate;
+        expect(currentBaseLayerWeek(new Date(`${battleMonday}T12:00:00.000${offset}`))).toBe(stamped);
+      }
+    });
+  }
+});
+
+// ==================== D-LOBBYWEEK: the guard bypass is closed ====================
+//
+// The reciprocal of the existing mirror-guard block above, which only ever used a
+// SLOT pod as the blocker (slot pods were always stamped correctly, so those rows
+// passed even with the defect present). The one-game-per-battle-week guard compares
+// its correct battle-week key against each doc's STORED baseLayerWeek, so a
+// formation-week-stamped LOBBY pod was invisible to it: a user could hold two
+// competitive games in the same battle week. These rows fail under the old stamp.
+
+describe('D-LOBBYWEEK — a lobby-formed group is detected by the one-game-per-battle-week guard', () => {
+  it('BLOCKS a second competitive entry in the same battle week as an existing LOBBY pod', async () => {
+    const { db } = withRankings();
+    // First entry: a real lobby-formed competitive pod (battle week = next Monday).
+    const first = await quickPlay(db, { odUserId: 'u1', now: NOW });
+    expect(first.groupId).toBeTruthy();
+
+    // Second entry by the SAME user, same battle week. Pre-fix the stored key was
+    // the formation week, so the guard's battle-week query missed it and this
+    // resolved instead of throwing — the silent double-entry.
+    await expect(quickPlay(db, { odUserId: 'u1', now: NOW }))
+      .rejects.toThrow(/^already_in_competitive/);
+  });
+
+  it('still does NOT block a genuinely different battle week', async () => {
+    const { db, store } = withRankings();
+    await quickPlay(db, { odUserId: 'u1', now: NOW });
+    // A week later: a new battle week, so the guard must let it through.
+    const later = new Date(NOW.getTime() + 7 * 24 * 3600_000);
+    const second = await quickPlay(db, { odUserId: 'u1', now: later });
+    expect(store.get(`tournamentGroups/${second.groupId}`).status).toBe(GROUP_STATUS.FORMING);
+  });
+
+  it('a lobby pod still never blocks TRAINING (P4b: practice is neither guarded nor guarding)', async () => {
+    const { db, store } = withRankings();
+    await quickPlay(db, { odUserId: 'u1', now: NOW });
+    const training = await quickPlay(db, { odUserId: 'u1', now: NOW, isTraining: true });
+    expect(store.get(`tournamentGroups/${training.groupId}`).isTraining).toBe(true);
   });
 });

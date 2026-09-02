@@ -1,5 +1,26 @@
 # Backlog — `baseLayerWeek` stamps the FORMATION week on the legacy lobby path
 
+> **RESOLVED 2026-09-01 — superseded by `audits/20260901_D-LOBBYWEEK_BUILD_REPORT.md` (D-LOBBYWEEK).**
+> The defect described below was real and is now fixed (formation stamps the battle week, plus a
+> re-stamp at FORMING→BATTLE for pods that linger). Two corrections to the analysis below, which a
+> reader must not re-inherit:
+>
+> 1. **The blast radius stated below is too wide.** "The same `baseLayerWeek ==` scoping governs the
+>    **leaderboard** and **advancement** paths" is **false** at HEAD, and was false when this was
+>    filed: the monthly board buckets on `dailyScores.day1.recordedDate` and keys per-week rows on
+>    `groupId`; advancement keys on `bracketGameId`. Neither reads `baseLayerWeek` for any decision,
+>    and no banking/settlement path does either. The only true `baseLayerWeek ==` consumers are THE
+>    FIELD's current-week query and the one-game-per-battle-week guard — so this was a **display
+>    defect plus a guard bypass, never a settlement defect**. (The claim was inherited from the
+>    `liveDraftFormation.js` docstring, which has also been corrected at its source.)
+> 2. **Its open question 2 ("existing documents / is a migration needed") is answered: NO.** The
+>    production pre-check found 8 of 8 lobby-shaped groups mis-stamped but **all `isTraining: true`**
+>    — FIELD- and leaderboard-excluded, so no user-visible damage on disk. No competitive group was
+>    affected. **The founder ruled no migration.** Do not re-open this.
+>
+> The original text is preserved verbatim below; its `file:line` anchors remain tied to `6684f3e0`.
+
+
 **Filed:** 2026-08-28 · **Status:** backlog, not scheduled · **Severity:** medium-high (cohort membership, not cosmetics)
 **Found during:** pre-open phase routing, Phase 4 pre-work. Out of scope there; filed per BUILD_RULES §3 (report, don't fix).
 **Own task, own branch, own Phase 0.** Nothing in this file has been changed.

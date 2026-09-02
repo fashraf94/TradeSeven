@@ -31,6 +31,7 @@ import {
   USER_HELD_NAMES_PER_GROUP,
   BASELINE_SOURCE,
   createPickState,
+  currentBaseLayerWeek,
 } from '../../src/constants/leagueTournament.js';
 
 export const config = { maxDuration: 10 };
@@ -136,6 +137,9 @@ export function resolveSnakeDraft(group, boardsByUser) {
  * path is byte-identical). The training on-demand path passes AWAITING_OPEN plus
  * `startAnchor` (the next-market-open anchor) so the resolved pod waits for the
  * open instead of ticking immediately; `startAnchor` is written only when given.
+ *
+ * D-LOBBYWEEK (2026-09-01): a base-layer pod's `baseLayerWeek` is RE-STAMPED here to
+ * the week it is actually resolving into battle — see the comment at the write below.
  */
 export async function resolveUserDraftForGroup(db, groupId, { now = new Date(), targetStatus = GROUP_STATUS.BATTLE, startAnchor = null } = {}) {
   const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
@@ -180,6 +184,29 @@ export async function resolveUserDraftForGroup(db, groupId, { now = new Date(), 
     // anchor (the next market open) so the awaiting-open flip and the day
     // clock read it; the default path passes none and leaves the doc unchanged.
     if (startAnchor != null) groupUpdate.startAnchor = startAnchor;
+    // D-LOBBYWEEK fix (ii) — the drift-proof half of the fix. A base-layer pod resolves
+    // on the Monday it ACTUALLY plays, so the cohort week is certain HERE even when it
+    // was not certain at formation: a pod that lingered in FORMING past its
+    // formation-derived Monday (a board auto-commit deferral, or a cron gap spanning a
+    // Monday morning — there is NO expiry backstop for a non-training lobby pod) battles
+    // a LATER week than formation predicted, and its formation stamp would otherwise stay
+    // wrong forever. Production case that proved this load-bearing: a pod created
+    // 2026-07-01 (formation derives 2026-W28) first banked 2026-07-15 (2026-W29) — it sat
+    // through two Mondays. `currentBaseLayerWeek` is the ET-anchored READ-side twin THE
+    // FIELD queries with, so writing it here makes read and write agree by construction.
+    // The slot path's effectiveBattleAnchor restamp is the precedent.
+    //
+    // Scoped twice, deliberately:
+    //   - targetStatus === BATTLE — the FORMING→BATTLE transition only. The training
+    //     on-demand path resolves to AWAITING_OPEN and has NOT started its battle yet, so
+    //     stamping the resolution week there would be premature.
+    //   - group.baseLayerWeek != null — base-layer pods only. A BRACKET pod carries
+    //     bracketGameId and NEVER a baseLayerWeek (the createTournamentGroupDoc XOR,
+    //     leagueTournament.js:1526), and bracket groups resolve through this very path —
+    //     an unconditional stamp would break that invariant and change the doc shape.
+    if (targetStatus === GROUP_STATUS.BATTLE && group.baseLayerWeek != null) {
+      groupUpdate.baseLayerWeek = currentBaseLayerWeek(now);
+    }
     tx.update(groupRef, groupUpdate);
     tx.set(groupRef.collection('streams').doc('userDraft'), {
       events,

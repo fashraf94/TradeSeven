@@ -63,7 +63,6 @@ import {
   createTournamentGroupDoc,
   lobbyHumanIds,
   lobbyHasMember,
-  isoWeekString,
   BASELINE_POLICY,
 } from '../../src/constants/leagueTournament.js';
 import { LEAGUE_CANONICAL_OPEN_CAPTURE } from '../../src/config/featureFlags.js';
@@ -106,7 +105,9 @@ export async function createLobby(db, { createdBy, displayName = null, mode = LO
     displayName,
     mode,
     joinCode: mode === LOBBY_MODE.PRIVATE ? makeJoinCode() : null,
-    baseLayerWeek: isoWeekString(now),
+    // D-LOBBYWEEK: the BATTLE week this lobby's game will play, not the week the
+    // lobby was opened — the same key the group doc and the mirror guard use.
+    baseLayerWeek: battleWeekKeyFor(nowIso),
     now: nowIso,
   });
   const ref = db.collection(TOURNAMENT_LOBBY_COLLECTION).doc();
@@ -269,6 +270,21 @@ async function claimLobbyForFormation(db, lobbyId, nowIso) {
  * bracket. Stamped only at creation; an idempotent re-entry reuses the frozen doc.
  */
 /**
+ * The BATTLE-week key for a game forming at `nowIso` — the ET-anchored ISO week of
+ * the next Monday-open at/after formation — via the CANONICAL slot-side helper pair
+ * (`deriveBattleStartWeek` → `deriveBaseLayerWeek`). Never a local re-derivation:
+ * BUILD_RULES §4, and a second definition of this math is precisely how the read and
+ * write sides drifted into D-LOBBYWEEK in the first place.
+ *
+ * ONE expression, shared by the mirror guard's conflict key AND both formation stamps
+ * below, so the week a pod is FILED under and the week the guard TESTS FOR can never
+ * disagree — the §9 display-agreement principle applied to a stored key.
+ */
+function battleWeekKeyFor(nowIso) {
+  return deriveBaseLayerWeek(deriveBattleStartWeek(nowIso));
+}
+
+/**
  * THE MIRROR GUARD core (Entry-Flow Consolidation P4, symmetric with the
  * slot-side claimSlotSeat guard): reject a COMPETITIVE entry when any seated
  * human already holds an active non-training group that plays the SAME battle
@@ -280,7 +296,7 @@ async function claimLobbyForFormation(db, lobbyId, nowIso) {
  * practice is never guarded — training neither blocks nor is blocked).
  */
 async function assertNoCompetitiveConflict(db, humanIds, nowIso, exceptGroupId = null) {
-  const battleWeek = deriveBaseLayerWeek(deriveBattleStartWeek(nowIso));
+  const battleWeek = battleWeekKeyFor(nowIso);
   for (const humanId of humanIds) {
     const conflict = await findActiveGroupInBattleWeek(db, humanId, battleWeek, exceptGroupId);
     if (conflict) {
@@ -346,7 +362,14 @@ export async function formGroupFromLobby(db, lobbyId, { now = new Date(), isTrai
       players: seats.map(s => ({ odUserId: s.odUserId, picks: [], isCpu: s.isCpu })),
       userPool,
       roundNumber: 1,
-      baseLayerWeek: isoWeekString(now),
+      // D-LOBBYWEEK fix (i): stamp the BATTLE week the pod actually plays — the next
+      // Monday-open at/after formation — NOT the formation week. isoWeekString(now)
+      // filed every Tue-through-Sun (and Mon-post-open) formation a week early, so
+      // THE FIELD's current-week query — ET-anchored on that same Monday — missed the
+      // pod for the entire week it played, and the one-game-per-battle-week guard
+      // could not see it either. Same helper pair the slot path stamps with
+      // (liveDraftFormation.js:301), so the two formation paths now agree.
+      baseLayerWeek: battleWeekKeyFor(nowIso),
       isTraining,
       status: GROUP_STATUS.FORMING,
       // Spec §1.1 — resolve the baseline policy ONCE from the flag at round

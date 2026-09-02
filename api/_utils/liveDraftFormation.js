@@ -211,11 +211,23 @@ export function deriveBattleStartWeek(fireIso) {
  * The base-layer week label (ISO-8601, e.g. '2026-W29') for a slot pod: the week
  * its BATTLE starts (battleStartWeek.mondayEtDate), NOT the claim week. A pod
  * claimed on a Wed/Sat/Sun plays the FOLLOWING ISO week, so keying baseLayerWeek
- * on the claim instant (isoWeekString(now)) filed it a week early in the base-
- * layer cohort / leaderboard / advancement (all `baseLayerWeek ==` scoped). This
- * derives it from the battle Monday so a slot pod sits in the cohort of the week
- * it actually plays — matching a single-shot pod formed for that week. Re-derived
- * alongside battleStartWeek whenever the stale-anchor guard restamps.
+ * on the claim instant (isoWeekString(now)) files it a week early. This derives it
+ * from the battle Monday so a slot pod sits in the cohort of the week it actually
+ * plays — matching a single-shot pod formed for that week. Re-derived alongside
+ * battleStartWeek whenever the stale-anchor guard restamps.
+ *
+ * BLAST-RADIUS CORRECTION (D-LOBBYWEEK Phase 0, 2026-09-01). This docstring used to
+ * say a formation-week key mis-files a pod in "the base-layer cohort / leaderboard /
+ * advancement (all `baseLayerWeek ==` scoped)". That was measured and is NOT true:
+ * the monthly leaderboard buckets a group by `dailyScores.day1.recordedDate`
+ * (tournamentLeaderboard.js:76-77) and keys per-week rows by `groupId` (:198, :382),
+ * while advancement keys on `bracketGameId` (tournamentAdvancement.js:806-817) —
+ * neither reads baseLayerWeek for any decision, and no banking/settlement path does
+ * either. The only true `baseLayerWeek ==` consumers are THE FIELD's current-week
+ * query (src/services/tournamentGroupService.js:322) and the one-game-per-battle-week
+ * guard (findActiveGroupInBattleWeek, below). A mis-stamp is therefore a DISPLAY
+ * defect plus a guard bypass — not a settlement defect. Do not re-inherit the wider
+ * claim; it drove D-LOBBYWEEK's severity read for a week.
  */
 export function deriveBaseLayerWeek(battleStartWeek) {
   const monday = battleStartWeek?.mondayEtDate;
