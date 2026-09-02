@@ -14,12 +14,17 @@
 //   - Slow state 45s / watchdog 90s (§5.2) while the deploy is still pending.
 //   - Unsolicited-progress guard (§5.3 / A.1 §7): pin the deployId of OUR deploy
 //     and ignore progress from any other deployId (cron write, cross-device,
-//     stale map).
+//     stale map). The baseline it pins against is scoped to (this machine
+//     instance, the current DEPLOY TARGET id) — see the guard block below.
 //   - Dual-signal reveal (§5.3 / A.2 §8): reveal only when the server stage is
 //     'complete' AND our own deployAgent call returned success. Telemetry alone
 //     never reveals; a persisted decision whose battle-creation threw (deploy
 //     error) routes to the error surface, not a reveal of a battle that does not
 //     exist.
+//
+// The deployProgress it consumes comes from the DEPLOY-TARGET document, not the
+// ranked agent doc: on the casual-clone path the server writes progress to
+// agents/{cloneId}, which the ranked-agent subscription excludes by design.
 //
 // Consumes deployProgress sub-fields as PRIMITIVES (spec §5.5) so the ~5 snapshot
 // ticks over a deploy don't churn effects.
@@ -51,6 +56,9 @@ const STAGE_KEYS = ['loadout', 'scanning', 'brief', 'portfolio'];
 
 export default function useCeremonyStageMachine({
   stage, deployId, updatedAt, errorPhase, deployStatus,
+  // Deploy-target scoping (§5). `targetKnown` is TRUE only once a snapshot for
+  // `targetAgentId` has actually been observed — see useDeployTargetProgress.
+  targetKnown = true, targetAgentId = null,
 }) {
   // Public outputs
   const [phase, setPhase] = useState('theater'); // 'theater' | 'reveal' | 'error'
@@ -61,12 +69,18 @@ export default function useCeremonyStageMachine({
 
   // Latest inputs, mirrored into refs so the single interval reads fresh values
   // without re-subscribing on every snapshot tick.
-  const inRef = useRef({ stage, deployId, updatedAt, errorPhase, deployStatus });
-  inRef.current = { stage, deployId, updatedAt, errorPhase, deployStatus };
+  const inRef = useRef({ stage, deployId, updatedAt, errorPhase, deployStatus, targetKnown, targetAgentId });
+  inRef.current = { stage, deployId, updatedAt, errorPhase, deployStatus, targetKnown, targetAgentId };
 
   // Internal bookkeeping
   const mountRef = useRef(0);
-  const baselineDeployIdRef = useRef(undefined); // deployId present at mount (pre our write)
+  // §5 baseline, scoped to (THIS machine instance, the CURRENT target id) — not
+  // to mount, and not to a fresh-snapshot event. `null` is a legitimate baseline
+  // value (a target that carries no deployProgress at all), so establishment is
+  // tracked by its own flag and can never be inferred from the value.
+  const baselineDeployIdRef = useRef(null);
+  const baselineSetRef = useRef(false);          // has a baseline been established?
+  const baselineTargetRef = useRef(null);        // which target it was established for
   const ourDeployIdRef = useRef(null);           // our deploy's pinned deployId
   const maxRankRef = useRef(0);
   const lastProgressAtRef = useRef(0);
@@ -86,20 +100,68 @@ export default function useCeremonyStageMachine({
     mountRef.current = now;
     stageEnteredAtRef.current = now;
     lastProgressAtRef.current = now;
-    baselineDeployIdRef.current = inRef.current.deployId ?? null;
-    lastUpdatedAtRef.current = inRef.current.updatedAt ?? null;
+    // NO baseline capture here. At mount the deploy target is typically still
+    // unresolved, so `deployId` is null — and a null baseline taken now would let
+    // the first real payload's deployId look like a change and get pinned as
+    // ours, even when it is a STALE id left on the target by a PREVIOUS deploy.
+    // The baseline is established below, from the first payload observed for the
+    // resolved target.
 
     const evaluate = () => {
       if (phaseRef.current === 'error' || phaseRef.current === 'reveal') return;
       const t = performance.now();
-      const { stage: s, deployId: id, updatedAt: up, errorPhase: ep, deployStatus: ds } = inRef.current;
+      const { stage: s, deployId: id, updatedAt: up, errorPhase: ep, deployStatus: ds, targetKnown: known, targetAgentId: target } = inRef.current;
 
-      // ── Unsolicited-progress guard: pin OUR deployId (the first id that differs
-      // from the pre-initiation baseline), then ignore all other deployIds.
-      if (!ourDeployIdRef.current && id != null && id !== baselineDeployIdRef.current) {
-        ourDeployIdRef.current = id;
+      // ── §5 Baseline + unsolicited-progress guard.
+      //
+      // RULE: the baseline is the deployId present in the FIRST progress payload
+      // this machine instance observes FOR THE CURRENT TARGET ID.
+      //
+      // Everything here is gated on `known`. A "target unknown" payload carries
+      // nulls (never the ranked agent's deployProgress) and must not establish a
+      // baseline: doing so is what lets a stale deployId — one left on the deploy
+      // target by a PREVIOUS deploy — get pinned as ours, after which `ours` is
+      // false for every genuine checkpoint that follows and the ceremony stalls
+      // exactly as it did when it watched the wrong document.
+      //
+      // RESIDUAL RACE (deliberately NOT closed here — PR 4): if this machine's
+      // first observation of the target somehow arrives AFTER the server's
+      // strategy_running write, the baseline becomes the current deploy's OWN
+      // deployId, nothing ever differs, and the machine stalls. Subscribing
+      // before the POST keeps the window very small — the server must complete a
+      // network round trip plus its pre-checks (decide.js:177, :186) before its
+      // first write, while the client's first snapshot typically serves from the
+      // local cache. The real fix is pinning by IDENTITY — the client knowing its
+      // own deployId instead of inferring it by difference — which needs deployId
+      // round-tripped through the POST response, a fenced decide.js change that
+      // belongs to PR 4. Do not paper over it here.
+      if (known) {
+        // Re-arm on a target change: nothing learned from the previous target is
+        // valid for this one.
+        // stageIndex is deliberately NOT rewound with the rank: the display is
+        // monotonic (§5.1), so the theater holds its current stage and waits for
+        // the new target's checkpoints rather than visibly regressing. In
+        // practice the only target change is ranked → clone, which resolves
+        // inside the first stage's 2s floor, so nothing has advanced yet.
+        if (baselineSetRef.current && baselineTargetRef.current !== target) {
+          baselineSetRef.current = false;
+          ourDeployIdRef.current = null;
+          maxRankRef.current = 0;
+          setServerRank(0);
+        }
+        if (!baselineSetRef.current) {
+          baselineSetRef.current = true;
+          baselineTargetRef.current = target;
+          baselineDeployIdRef.current = id ?? null;
+          lastUpdatedAtRef.current = up ?? null;
+        }
+        // Pin OUR deployId — the first id that differs from that baseline — then
+        // ignore all other deployIds (cron write, cross-device, stale map).
+        if (!ourDeployIdRef.current && id != null && id !== baselineDeployIdRef.current) {
+          ourDeployIdRef.current = id;
+        }
       }
-      const ours = ourDeployIdRef.current != null && id === ourDeployIdRef.current;
+      const ours = known && ourDeployIdRef.current != null && id === ourDeployIdRef.current;
 
       // ── Absorb the checkpoint (monotonic) only from our deploy.
       if (ours) {

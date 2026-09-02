@@ -34,6 +34,31 @@ export const subscribeToUserAgent = (ownerId, callback) => {
   });
 };
 
+// Deploy state lives on the DEPLOY TARGET doc, which on the casual-clone path is
+// NOT the ranked agent: agentDeploy.js resolves a clone id and decide.js writes
+// deployProgress / lastDeployedAt / lastDecision to agents/{deployAgentId}
+// (decide.js:150 derives agentRef from the POSTed agentId). subscribeToUserAgent
+// above deliberately EXCLUDES clone docs — correct for the Hub, sidebar and
+// evolution timeline, which must always show the RANKED agent — so a caller that
+// needs the deploy target's live state subscribes to that document BY ID here
+// instead of loosening the exclusion.
+//
+// The principle: identity comes from the ranked agent; deploy state comes from
+// the deploy target. These were the same document before the clone feature
+// existed, which is how they came to be conflated.
+export const subscribeToAgentDoc = (agentId, callback) => {
+  return onSnapshot(doc(db, AGENTS_COLLECTION, agentId), (docSnap) => {
+    if (!docSnap.exists()) {
+      callback(null);
+      return;
+    }
+    callback({ id: docSnap.id, ...docSnap.data() });
+  }, (error) => {
+    console.error('Agent doc subscription error:', error);
+    callback(null);
+  });
+};
+
 export const getAgentById = async (agentId) => {
   try {
     const docRef = doc(db, AGENTS_COLLECTION, agentId);
