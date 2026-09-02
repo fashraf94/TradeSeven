@@ -57,7 +57,7 @@ vi.mock('../components/Agent/LiveActivityPanel', () => ({
 
 // The feed the hook hands back is mutable so a test can grow it between
 // renders (the unread dot).
-const store = vi.hoisted(() => ({ statusFeed: [] }));
+const store = vi.hoisted(() => ({ statusFeed: [], lastScoredAt: '2026-09-01T16:47:00.000Z' }));
 
 const LIVE_DOC = {
   id: 'ab-1',
@@ -87,7 +87,7 @@ const LIVE_DOC = {
 };
 vi.mock('../hooks/useAgentBattle', () => ({
   default: () => ({
-    battle: { ...LIVE_DOC, statusFeed: store.statusFeed }, statusFeed: store.statusFeed,
+    battle: { ...LIVE_DOC, statusFeed: store.statusFeed, scoreState: { ...LIVE_DOC.scoreState, lastScoredAt: store.lastScoredAt } }, statusFeed: store.statusFeed,
     executionMode: 'copilot', pendingProposal: null, strategyPreset: 'balanced', gameplanMeeting: null,
     chatExchanges: LIVE_DOC.chatExchanges, feedBookmarks: [], loading: false,
   }),
@@ -110,7 +110,17 @@ if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => 
 const setViewport = (width, height = 800) => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
   Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: height });
-  window.matchMedia = () => ({ matches: width >= 768, addEventListener() {}, removeEventListener() {} });
+  // Query-aware: the breakpoint answers by width; every other query (framer's
+  // `(prefers-reduced-motion)`, latched once per module) answers false, so
+  // the landing can play and the sheet can animate.
+  window.matchMedia = (query) => ({
+    matches: /min-width/.test(String(query)) ? width >= 768 : false,
+    media: String(query),
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+  });
 };
 
 let container;
@@ -119,6 +129,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-09-01T17:00:00.000Z'));
   store.statusFeed = [];
+  store.lastScoredAt = '2026-09-01T16:47:00.000Z';
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -187,12 +198,44 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     expect(document.activeElement).toBe(q('textarea'));
   });
 
+  it('the landing still plays across the SEVEN tier slots in render order when a check lands (rowCount unchanged by the layout)', () => {
+    mount();
+    expect(qa('[data-wash]').length).toBe(0); // never on open
+    store.lastScoredAt = '2026-09-01T17:02:00.000Z';
+    rerender();
+    const washes = qa('[data-wash]');
+    expect(washes.length).toBe(7);
+    // Every wash sits inside the board column, in document order with the rows.
+    expect(washes.every((w) => q('[data-board]').contains(w))).toBe(true);
+  });
+
   it('the unread dot has nowhere to show on desktop — the feed grows and no dot markup appears', () => {
     mount();
     store.statusFeed = [{ action: 'hold', message: 'Held.', timestamp: '2026-09-01T16:47:00.000Z' }, { action: 'hold', message: 'Held again.', timestamp: '2026-09-01T17:02:00.000Z' }];
     rerender();
     expect(q('[data-sheet-dot]')).toBeNull();
     expect(q('[data-unread]')).toBeNull();
+  });
+
+  it('mounting steals no focus: the Game Tape focus effect acts only after an OPEN (review CR6)', () => {
+    mount();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('the score header button is named for the book and DESCRIBED by the names and scores inside it (review CR2)', () => {
+    mount();
+    const header = qa('[role="button"][aria-expanded]').find((el) => el.textContent.includes('Aurora') && el.textContent.includes('CPU'));
+    expect(header.getAttribute('aria-label')).toBe('Why? · the whole book');
+    const ids = header.getAttribute('aria-describedby').split(' ');
+    const described = ids.map((id) => document.getElementById(id));
+    expect(described.every(Boolean)).toBe(true);
+    expect(described.every((el) => header.contains(el))).toBe(true);
+    // The description is the names + scores row (the scores animate from 0
+    // in jsdom, so the numbers are not pinned here) and the trade count.
+    const description = described.map((el) => el.textContent).join(' ');
+    expect(description).toContain('Aurora');
+    expect(description).toContain('CPU');
+    expect(description).toContain('1 trade');
   });
 
   it('Game Tape: the header link opens the shipped view full-screen with a way back; the chat stays mounted beneath', async () => {
@@ -205,13 +248,16 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     expect(tape.getAttribute('aria-label')).toBe('Game Tape');
     expect(document.activeElement).toBe(q('[data-game-tape-back]'));
     expect(q('[data-game-tape-back]').textContent).toContain('Back to the battle');
-    // The page beneath is hidden, the chat still mounted (its draft survives).
+    // The page beneath is hidden, the chat still mounted (its draft survives),
+    // and the document does not scroll under the tape (review L2-F10).
     expect(q('[data-layout="desktop"]').style.visibility).toBe('hidden');
     expect(qa('textarea').length).toBe(1);
+    expect(document.body.style.overflow).toBe('hidden');
     click(q('[data-game-tape-back]'));
     await settle();
     expect(q('[data-game-tape="open"]')).toBeNull();
     expect(q('[data-layout="desktop"]').style.visibility).not.toBe('hidden');
+    expect(document.body.style.overflow).toBe('');
     expect(document.activeElement).toBe(q('[data-game-tape-link]'));
   });
 });
@@ -233,6 +279,14 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     expect(q('[data-sheet-content] textarea')).toBeTruthy();
     expect(q('[data-chat-column]')).toBeNull();
     expect(qa('[data-this-turn]').length).toBe(1);
+    // The sheet is NOT inside the layout container (its z-index: 2 stacking
+    // context would let the header paint over the sheet at full — review CR1).
+    expect(q('[data-layout="mobile"]').contains(sheet)).toBe(false);
+    // Peek: the sheet sizes itself (height auto) around the handle and the
+    // composer; the message list is collapsed (review CR3).
+    expect(sheet.getAttribute('data-sheet-height')).toBe('auto');
+    const list = q('[data-chat-layout="controller"] > div');
+    expect(list.style.display).toBe('none');
     // Peek carries the turn line — the same text the header renders.
     expect(q('[data-sheet-cycle]').textContent).toContain('Checked 12:47 PM · next ~1:02 PM');
     expect(q('[data-turn-state]').textContent).toBe('Checked 12:47 PM · next ~1:02 PM');
@@ -254,6 +308,9 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     expect(cycle.getAttribute('aria-label')).toBe('Show more of the chat');
     expect(document.activeElement).toBe(q('[data-chat-sheet]'));
     expect(q('[data-sheet-collapse]')).toBeTruthy();
+    // Half: a viewport share in px; the message list is back.
+    expect(q('[data-chat-sheet]').getAttribute('data-sheet-height')).toBe('400'); // 0.5 × the 800 px viewport
+    expect(q('[data-chat-layout="controller"] > div').style.display).not.toBe('none');
     click(cycle);
     expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('full');
     expect(cycle.getAttribute('aria-label')).toBe('Collapse the chat');
@@ -288,6 +345,36 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     click(q('[data-sheet-collapse]'));
     expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
     expect(document.activeElement).toBe(door);
+  });
+
+  it('a pointer that left nothing focused (Safari / touch): collapse hands focus to the handle, never leaves it in the composer (review CR4)', () => {
+    mount();
+    click(rowButtonFor('SLB'));
+    expect(document.activeElement).toBe(document.body); // the click focused nothing
+    click(doorButton());
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('half');
+    expect(document.activeElement).toBe(q('textarea'));
+    click(q('[data-sheet-collapse]'));
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
+    expect(document.activeElement).toBe(q('[data-sheet-cycle]'));
+  });
+
+  it('entries that land while the Game Tape covers the chat stay unseen, even with the sheet open (review L1-F3)', () => {
+    mount();
+    const cycle = q('[data-sheet-cycle]');
+    click(cycle); // half: visible
+    expect(cycle.getAttribute('data-unread')).toBe('false');
+    click(q('[data-game-tape-link]'));
+    expect(q('[data-game-tape="open"]')).toBeTruthy();
+    expect(q('[data-chat-sheet]').style.visibility).toBe('hidden');
+    store.statusFeed = [{ action: 'hold', message: 'Held.', timestamp: '2026-09-01T17:02:00.000Z' }];
+    rerender();
+    // Behind the tape the chat is not visible: the feed stays unseen.
+    expect(cycle.getAttribute('data-unread')).toBe('true');
+    click(q('[data-game-tape-back]'));
+    // Back on the page with the sheet at half, the effect marks it seen.
+    expect(q('[data-chat-sheet]').style.visibility).not.toBe('hidden');
+    expect(cycle.getAttribute('data-unread')).toBe('false');
   });
 
   it('the door leaves an open sheet at its detent (full stays full) and never erases a typed draft (F13)', () => {

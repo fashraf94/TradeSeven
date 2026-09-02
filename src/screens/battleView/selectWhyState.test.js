@@ -8,11 +8,13 @@
 // run points at exactly the missing branch.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import {
   selectWhyState,
   emphasizeSymbol,
   selectTradesForSymbol,
+  SWAP_FAILED_PREFIX,
   WHY_KIND,
 } from './selectWhyState';
 
@@ -71,6 +73,14 @@ describe('the branches, in order', () => {
     expect(selectWhyState(absent, 'SLB', LAST).kind).toBe(WHY_KIND.DOWNGRADED);
   });
 
+  it('TRIPWIRE — the prefix is the one the cron writes (agent-evaluate.js), read from its source: a reworded server string reds this row, never silently reverts the state', () => {
+    // Reading api/ is permitted (BUILD_RULES §1 fences edits, not reads); the
+    // A4 review (L5-N3) asked for a src-side pin on the server wording.
+    const cron = readFileSync(new URL('../../../api/cron/agent-evaluate.js', import.meta.url), 'utf8');
+    expect(cron).toContain('validationErrors.push(`' + SWAP_FAILED_PREFIX + ': ${swapErr.message}`)');
+    expect(SWAP_FAILED_PREFIX).toBe('Swap execution failed');
+  });
+
   it('the failure prefix without `downgraded` is not the fourth state — the flag is still the gate', () => {
     const odd = { timestamp: TS, decision: 'HOLD', downgraded: false, rationale: RATIONALE_HOLD, validationErrors: ['Swap execution failed: x'] };
     expect(selectWhyState(odd, 'SLB', LAST).kind).toBe(WHY_KIND.HELD);
@@ -109,17 +119,23 @@ describe('the branches, in order', () => {
     const outage = {
       timestamp: TS, decision: 'HOLD', downgraded: false,
       rationale: 'Haiku call failed — defaulting to HOLD',
-      haikuError: { failureClass: 'transport', message: 'timeout', timestamp: TS, evalId: 'eval_009' },
+      haikuError: { failureClass: 'timeout', message: 'The operation was aborted', timestamp: TS, evalId: 'eval_009' },
     };
     const s = selectWhyState(outage, 'SLB', LAST);
     expect(s.kind).toBe(WHY_KIND.ABSENT);
-    // D-65 (A4.0): the more specific absence — the fact is on the entry.
+    // D-65 (A4.0): the more specific absence — the fact is on the entry, and
+    // only a TIMEOUT class earns the timeout words (review L1-F1).
     expect(s.label).toBe('No decision recorded at this check · the evaluation timed out');
     expect(s.label).toBe(COPY.noDecisionOutage);
     expect(s.rationale).toBeNull();
-    const skipped = { ...outage, rationale: 'Evaluation skipped — cron budget too low to start Haiku call. Defaulting to HOLD.', haikuError: { failureClass: 'budget_skipped' } };
-    expect(selectWhyState(skipped, 'SLB', LAST).kind).toBe(WHY_KIND.ABSENT);
-    expect(selectWhyState(skipped, 'SLB', LAST).label).toBe(COPY.noDecisionOutage);
+    // Every other persisted class (agentEvalTransport.js classifyHaikuFailure /
+    // agent-evaluate.js) is an absence with the PLAIN label — never "timed out".
+    for (const failureClass of ['budget_skipped', 'truncated_response', '429', '529', '500', 'APIConnectionError', 'unknown', undefined]) {
+      const other = { ...outage, rationale: 'Evaluation skipped — cron budget too low to start Haiku call. Defaulting to HOLD.', haikuError: { failureClass } };
+      expect(selectWhyState(other, 'SLB', LAST).kind).toBe(WHY_KIND.ABSENT);
+      expect(selectWhyState(other, 'SLB', LAST).label).toBe(COPY.noDecision);
+      expect(selectWhyState(other, 'SLB', LAST).rationale).toBeNull();
+    }
     // haikuError null (the success shape) is a real decision.
     expect(selectWhyState({ ...outage, haikuError: null, rationale: RATIONALE_HOLD }, 'SLB', LAST).kind).toBe(WHY_KIND.HELD);
   });

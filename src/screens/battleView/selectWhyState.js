@@ -78,8 +78,17 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
   // failed — defaulting to HOLD", agent-evaluate.js:2637-2667) — the system's
   // words, not the agent's. C1: the honest state is that no decision was
   // recorded, and the more specific label says why (the fact is on the entry).
+  //
+  // The persisted fact is `haikuError.failureClass` (agentEvalTransport.js
+  // classifyHaikuFailure: `timeout` for a timed-out or aborted call; else an
+  // HTTP status, an error name, `budget_skipped`, `truncated_response`,
+  // `unknown`). Only a TIMEOUT earns the timeout words (review L1-F1 —
+  // honesty rule 8: the verb needs evidence for exactly that verb); every
+  // other outage keeps the plain absence label until a class-neutral line is
+  // ruled (copy request in the A4 handover).
   if (evaluation.haikuError) {
-    return { ...base, kind: WHY_KIND.ABSENT, label: COPY.noDecisionOutage };
+    const timedOut = evaluation.haikuError?.failureClass === 'timeout';
+    return { ...base, kind: WHY_KIND.ABSENT, label: timedOut ? COPY.noDecisionOutage : COPY.noDecision };
   }
 
   const rationale = cleanText(evaluation.rationale);

@@ -54,6 +54,22 @@ const GUARDED_FILES = [
   'src/components/Dashboard/CommandDashboard.jsx',
   'src/components/Dashboard/CommandDashboardDesktop.jsx',
   'src/components/DesktopBackground.jsx',
+  // Battle View controller, Phase A (A4 review L5-N6): new surfaces built on cssVar()
+  // from birth — a zero-literal ratchet on the whole directory (BUILD_RULES §10: the
+  // guarded-file list expands as files migrate).
+  'src/screens/battleView/ChatSheet.jsx',
+  'src/screens/battleView/LandingWash.jsx',
+  'src/screens/battleView/ThisTurnStrip.jsx',
+  'src/screens/battleView/TurnLine.jsx',
+  'src/screens/battleView/WhyPanel.jsx',
+  'src/screens/battleView/battleViewCopy.js',
+  'src/screens/battleView/deriveReceipts.js',
+  'src/screens/battleView/deriveTurnLine.js',
+  'src/screens/battleView/landing.js',
+  'src/screens/battleView/selectWhyState.js',
+  'src/screens/battleView/useChatSheet.js',
+  'src/screens/battleView/useCoarseNow.js',
+  'src/screens/battleView/useContentStable.js',
 ];
 
 /**

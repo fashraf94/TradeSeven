@@ -153,7 +153,7 @@ describe('the header, the facts and the trades', () => {
   });
 
   it('an engine-outage tick renders the absence state, not `Held` with the placeholder (F12)', () => {
-    const outage = { ...HELD, rationale: 'Haiku call failed — defaulting to HOLD', haikuError: { failureClass: 'transport' } };
+    const outage = { ...HELD, rationale: 'Haiku call failed — defaulting to HOLD', haikuError: { failureClass: 'timeout' } };
     const html = renderRow(outage);
     // D-65 (A4.0): the more specific absence label, from the persisted fact.
     expect(html).toContain('No decision recorded at this check · the evaluation timed out');
@@ -161,6 +161,11 @@ describe('the header, the facts and the trades', () => {
     expect(html).not.toContain('Haiku call failed');
     expect(html).not.toContain('Haiku');
     expect(html).not.toMatch(/>Held</);
+    // A budget-skipped tick is an outage too — but not a timeout (L1-F1).
+    const skipped = renderRow({ ...outage, haikuError: { failureClass: 'budget_skipped' } });
+    expect(skipped).toContain('No decision recorded at this check<');
+    expect(skipped).not.toContain('timed out');
+    expect(skipped).not.toContain('budget');
   });
 
   it('with no check time at all the region still has an accessible name (F6)', () => {

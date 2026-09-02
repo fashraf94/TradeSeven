@@ -54,7 +54,25 @@ const read = (rel) => readFileSync(path.join(REPO_ROOT, rel), 'utf8');
  * surfaces migrate — that is the ratchet. The motion-DEFINITION module (theme/motion.js)
  * is deliberately absent: it legitimately contains transition shapes.
  */
-const GUARDED_FILES = ['src/components/Forge/ParamControls/ParamToggle.jsx'];
+const GUARDED_FILES = [
+  'src/components/Forge/ParamControls/ParamToggle.jsx',
+  // Battle View controller, Phase A (A4 review L5-N6): NEW surfaces that consume the
+  // vocabulary from birth (motionToken / the named tokens) — a zero-literal ratchet on
+  // the whole directory, not a D3 retrofit of an existing surface.
+  'src/screens/battleView/ChatSheet.jsx',
+  'src/screens/battleView/LandingWash.jsx',
+  'src/screens/battleView/ThisTurnStrip.jsx',
+  'src/screens/battleView/TurnLine.jsx',
+  'src/screens/battleView/WhyPanel.jsx',
+  'src/screens/battleView/battleViewCopy.js',
+  'src/screens/battleView/deriveReceipts.js',
+  'src/screens/battleView/deriveTurnLine.js',
+  'src/screens/battleView/landing.js',
+  'src/screens/battleView/selectWhyState.js',
+  'src/screens/battleView/useChatSheet.js',
+  'src/screens/battleView/useCoarseNow.js',
+  'src/screens/battleView/useContentStable.js',
+];
 
 /**
  * Strip block comments and full-line `//` comments so a `transition={{` written inside

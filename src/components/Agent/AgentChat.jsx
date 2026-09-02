@@ -434,6 +434,10 @@ export default function AgentChat({
   // untouched. The message list also contains its overscroll so the mobile
   // sheet owns the scroll at half / full.
   controllerLayout = false,
+  // Controller layout only: the mobile sheet at PEEK collapses the message
+  // list so the sheet is the handle plus the composer, however tall the
+  // draft grows. Ignored flag-off and on desktop.
+  listCollapsed = false,
 }) {
   // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
   // reactively from the chatExchanges prop so Firestore-initiated writes
@@ -956,6 +960,7 @@ export default function AgentChat({
         display: 'flex',
         flexDirection: 'column',
         ...(controllerLayout ? { overscrollBehavior: 'contain' } : {}),
+        ...(controllerLayout && listCollapsed ? { display: 'none' } : {}),
       }}>
         {messages.length === 0 && tradeEvents.length === 0 ? (
           <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />

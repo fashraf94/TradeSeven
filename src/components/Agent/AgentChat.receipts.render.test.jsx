@@ -74,6 +74,10 @@ describe('under the flag — receipts on the directive cards', () => {
     expect(html).toContain('Old-style directive');
     expect(html).not.toContain('data-receipt');
     expect(html).not.toContain('Executing on next evaluation window');
+    // The eyebrow is keyed on the FLAG path, not on the receipt object: a
+    // flag-on card with no receipt still reads `Directive` (review L1-F7).
+    expect(html).toContain('>Directive<');
+    expect(html).not.toContain('DIRECTIVE LOCKED IN');
   });
 
   it('the vocabulary is D-51 — no Heard, Holding, Declined, Honored, Superseded', () => {

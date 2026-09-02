@@ -64,20 +64,33 @@ export function detentHeightPx(detent, viewportHeight) {
   return SHEET_PEEK_PX;
 }
 
+/** The VISIBLE viewport height: the visual viewport where the browser has one
+ * (iOS shrinks it for the software keyboard and the toolbars without firing a
+ * window resize — review L2-F11), else the window's inner height. */
+export function readViewportHeight() {
+  if (typeof window === 'undefined') return DEFAULT_VIEWPORT_HEIGHT;
+  const visual = window.visualViewport && window.visualViewport.height;
+  return Math.round(visual || window.innerHeight || DEFAULT_VIEWPORT_HEIGHT);
+}
+
 /**
- * The viewport height, refreshed on resize / orientation change. A listener
- * only while enabled (the mobile sheet under the flag); a constant otherwise.
+ * The viewport height, refreshed on resize / orientation change / the visual
+ * viewport's own resize (the keyboard). Listeners only while enabled (the
+ * controller under the flag); a constant otherwise.
  */
 export function useViewportHeight(enabled) {
-  const [height, setHeight] = useState(() => (
-    (typeof window !== 'undefined' && window.innerHeight) || DEFAULT_VIEWPORT_HEIGHT
-  ));
+  const [height, setHeight] = useState(readViewportHeight);
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return undefined;
-    const onResize = () => setHeight(window.innerHeight || DEFAULT_VIEWPORT_HEIGHT);
+    const onResize = () => setHeight(readViewportHeight());
     onResize();
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    const visual = window.visualViewport;
+    if (visual && typeof visual.addEventListener === 'function') visual.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      if (visual && typeof visual.removeEventListener === 'function') visual.removeEventListener('resize', onResize);
+    };
   }, [enabled]);
   return height;
 }

@@ -62,9 +62,11 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // tick ran (lastScoredAt advanced) and recorded no evaluation entry.
   noDecision: 'No decision recorded at this check',
   // The more specific absence (A4.0, D-65): the latest entry carries
-  // `haikuError` — the model call timed out or never ran and the tick
-  // defaulted to HOLD with the system's placeholder words. The fact is
-  // persisted on the entry itself; the label states it and nothing more.
+  // `haikuError` with `failureClass: 'timeout'` — the model call timed out
+  // and the tick defaulted to HOLD with the system's placeholder words. The
+  // fact is persisted on the entry itself; the label states it and nothing
+  // more. Other outage classes (budget_skipped, truncated_response, an HTTP
+  // status) keep `noDecision` — no class-neutral line is ruled yet.
   noDecisionOutage: 'No decision recorded at this check · the evaluation timed out',
 
   // Trades on this piece today — the section heading; each line is the swap
@@ -138,6 +140,9 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   sheetGrow: 'Show more of the chat',
   sheetCollapse: 'Collapse the chat',
   sheetUnread: 'new activity',
+  // The cycle control's whole name: the action, plus `new activity` while
+  // the dot shows. Composed HERE so the rule lives with the words.
+  sheetHandleName: (action, unread) => (unread ? `${action} · ${BATTLE_VIEW_COPY.sheetUnread}` : action),
 
   // Accessible names for the two Why? tap surfaces (A4.3, review F16): the
   // row button is named for its verb and its piece, the score header for the

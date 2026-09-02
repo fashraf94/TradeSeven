@@ -231,6 +231,23 @@ function AssetSide({
   const proximityId = whyEnabled && whyId ? `${whyId}-proximity` : undefined;
   const describedBy = pctId && proximityId ? `${pctId} ${proximityId}` : undefined;
 
+  // One label element; under the flag it is wrapped so the row button can
+  // be described by it (flag-off: the bare label, exactly as shipped).
+  const proximityLabel = (
+    <ProximityLabel
+      priceChange={thresholdPriceChange ?? priceChange}
+      baseATR={baseATR}
+      history={history}
+      dailyLevels={asset.dailyLevels}
+      currentPrice={asset.currentPrice}
+      size="small"
+      align={isRight ? 'right' : 'left'}
+      proximityRatio={thresholdHeat.proximityRatio}
+      heatDirection={thresholdHeat.direction}
+      proximity={resolvedProximity}
+    />
+  );
+
   return (
     <div
       onClick={handleAssetClick}
@@ -416,35 +433,7 @@ function AssetSide({
       {/* Proximity Label — uses daily-relative threshold progress. Under the
           flag the label is wrapped once, so the row button can be described
           by it (A4.3); flag-off renders the bare label as before. */}
-      {proximityId ? (
-        <div id={proximityId}>
-          <ProximityLabel
-            priceChange={thresholdPriceChange ?? priceChange}
-            baseATR={baseATR}
-            history={history}
-            dailyLevels={asset.dailyLevels}
-            currentPrice={asset.currentPrice}
-            size="small"
-            align={isRight ? 'right' : 'left'}
-            proximityRatio={thresholdHeat.proximityRatio}
-            heatDirection={thresholdHeat.direction}
-            proximity={resolvedProximity}
-          />
-        </div>
-      ) : (
-        <ProximityLabel
-          priceChange={thresholdPriceChange ?? priceChange}
-          baseATR={baseATR}
-          history={history}
-          dailyLevels={asset.dailyLevels}
-          currentPrice={asset.currentPrice}
-          size="small"
-          align={isRight ? 'right' : 'left'}
-          proximityRatio={thresholdHeat.proximityRatio}
-          heatDirection={thresholdHeat.direction}
-          proximity={resolvedProximity}
-        />
-      )}
+      {proximityId ? <div id={proximityId}>{proximityLabel}</div> : proximityLabel}
 
       {/* Why? — the piece's verb, visible and part of the button's name.
           Rendered only when the screen hands the label down (the controller

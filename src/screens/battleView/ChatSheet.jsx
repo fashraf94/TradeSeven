@@ -58,6 +58,7 @@ export default function ChatSheet({
   unread = false,
   unreadColor = null,
   reducedMotion = false,
+  hidden = false,
   children,
 }) {
   const sectionRef = useRef(null);
@@ -65,9 +66,27 @@ export default function ChatSheet({
   const contentId = useId();
   const open = isSheetOpen(detent);
   const wasOpenRef = useRef(open);
-  const height = detentHeightPx(detent, viewportHeight);
-  const transition = motionToken('smooth', { reducedMotion: Boolean(reducedMotion) });
+  // Peek sizes itself to its content — the handle row and the composer,
+  // however tall the draft grows (the chat collapses its message list at
+  // peek, so nothing else contributes); half and full are viewport shares.
+  const height = open ? detentHeightPx(detent, viewportHeight) : 'auto';
+  // The height TWEENS on a detent change only. A viewport change (a mobile
+  // toolbar collapsing as the player scrolls) re-sizes the sheet instantly —
+  // the sheet moves when the player moves it, never on its own (review L1-F9).
+  const prevDetentRef = useRef(detent);
+  const detentChanged = prevDetentRef.current !== detent;
+  useEffect(() => { prevDetentRef.current = detent; }, [detent]);
+  const transition = detentChanged
+    ? motionToken('smooth', { reducedMotion: Boolean(reducedMotion) })
+    : motionToken('instant');
+  // The grabber's release physics. Framer reads `dragTransition` for a drag's
+  // snap-back (never the element's `transition` — review L2-F7), so the
+  // `gesture` token's spring is handed over in that shape; reduced motion
+  // hands over nothing, which is framer's instant settle.
   const gesture = motionToken('gesture', { reducedMotion: Boolean(reducedMotion) });
+  const dragTransition = gesture.type === 'spring'
+    ? { bounceStiffness: gesture.stiffness, bounceDamping: gesture.damping }
+    : undefined;
 
   // Focus moves on the peek ↔ open transition only — never on half ↔ full.
   useEffect(() => {
@@ -87,8 +106,10 @@ export default function ChatSheet({
     }
     const back = returnFocusRef ? returnFocusRef.current : null;
     if (returnFocusRef) returnFocusRef.current = null;
-    const backIsOutside = Boolean(back && back.isConnected && typeof back.focus === 'function'
-      && !(section && section.contains(back)));
+    // document.body is what a pointer leaves focused on Safari / touch: not a
+    // return target (review CR4) — the handle is.
+    const backIsOutside = Boolean(back && back !== document.body && back.isConnected
+      && typeof back.focus === 'function' && !(section && section.contains(back)));
     if (backIsOutside) back.focus();
     else if (handle && typeof handle.focus === 'function') handle.focus();
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -102,8 +123,7 @@ export default function ChatSheet({
     else if (dy >= SHEET_DRAG_PX) change(lowerDetent(detent));
   };
 
-  const name = cycleName(detent);
-  const handleName = unread ? `${name} · ${COPY.sheetUnread}` : name;
+  const handleName = COPY.sheetHandleName(cycleName(detent), unread);
 
   return (
     <motion.section
@@ -112,6 +132,7 @@ export default function ChatSheet({
       aria-label={COPY.sheetName}
       tabIndex={-1}
       data-chat-sheet={detent}
+      data-sheet-height={String(height)}
       initial={false}
       animate={{ height }}
       transition={transition}
@@ -131,6 +152,7 @@ export default function ChatSheet({
         boxShadow: `0 -8px 24px rgba(${cssVar('shadow-rgb')}, 0.35)`,
         outline: 'none',
         overflow: 'hidden',
+        ...(hidden ? { visibility: 'hidden' } : {}),
       }}
     >
       {/* The handle row: grabber (pointer), the cycle control (keyboard),
@@ -156,7 +178,7 @@ export default function ChatSheet({
           dragElastic={0.12}
           dragMomentum={false}
           onDragEnd={onDragEnd}
-          transition={gesture}
+          {...(dragTransition ? { dragTransition } : {})}
           style={{
             width: 36,
             height: 4,

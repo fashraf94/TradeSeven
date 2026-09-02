@@ -231,7 +231,10 @@ function ScoreHeader({
           role: 'button',
           tabIndex: 0,
           'aria-expanded': bookOpen ? 'true' : 'false',
-          ...(bookName ? { 'aria-label': bookName } : {}),
+          // The short name, DESCRIBED by the names and scores it contains
+          // (review CR2): button children are presentational, so without the
+          // description the scores would leave the accessibility tree.
+          ...(bookName ? { 'aria-label': bookName, 'aria-describedby': 'why-book-agent why-book-day why-book-cpu' } : {}),
           onClick: onOpenBook,
           onKeyDown: (e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenBook(); }
@@ -247,7 +250,7 @@ function ScoreHeader({
             The reactive presence face lives HERE now, immediately left of the name
             and score it reflects (mood = standingFromDuel(myScore, oppScore)); it
             replaces the old lucide Bot glyph. Flag-off omits the face entirely. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: isDesktop ? 12 : 8 }}>
+        <div {...(bookName ? { id: 'why-book-agent' } : {})} style={{ display: 'flex', alignItems: 'center', gap: isDesktop ? 12 : 8 }}>
           {isAgentPresenceOn() && agentBattle && (
             <AgentPresenceMount
               surface="duel"
@@ -273,7 +276,7 @@ function ScoreHeader({
         </div>
 
         {/* Center: Day label + trade count */}
-        <div style={{
+        <div {...(bookName ? { id: 'why-book-day' } : {})} style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -305,7 +308,7 @@ function ScoreHeader({
         </div>
 
         {/* Right: CPU */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+        <div {...(bookName ? { id: 'why-book-cpu' } : {})} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -501,12 +504,15 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // an effect, never during render (rulings §3.9). Flag-off keeps the
   // shipped render-time clear above, byte for byte.
   const sheet = useChatSheet(controllerOn && !isDesktop);
-  const viewportHeight = useViewportHeight(controllerOn && !isDesktop);
+  // The visible viewport height sizes the mobile sheet's detents AND the
+  // desktop page (a fixed 100vh is the large viewport on iOS — review L2-F11).
+  const viewportHeight = useViewportHeight(controllerOn);
   const [gameTapeOpen, setGameTapeOpen] = useState(false);
   const [seenFeedLength, setSeenFeedLength] = useState(0);
   const gameTapeReturnRef = useRef(null);
   const gameTapeBackRef = useRef(null);
   const gameTapeLinkRef = useRef(null);
+  const gameTapeWasOpenRef = useRef(false);
 
   // ── Agent battle data ─────────────────────────────────────────────────────
 
@@ -983,11 +989,20 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   useEffect(() => {
     if (!controllerOn) return;
     if (gameTapeOpen) {
+      gameTapeWasOpenRef.current = true;
       gameTapeBackRef.current?.focus?.();
-      return;
+      // The page beneath must not scroll under the tape (review L2-F10):
+      // lock the document while it is up, restore on close or unmount.
+      const previousOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = previousOverflow; };
     }
-    // Back to the control that opened the tape — or to the link itself when
-    // the pointer left nothing focused (Safari does not focus a clicked button).
+    // Only after a CLOSE — never on mount (review CR6: the mount pass must
+    // not steal focus to the link). Back to the control that opened the tape,
+    // or to the link itself when the pointer left nothing focused (Safari
+    // does not focus a clicked button).
+    if (!gameTapeWasOpenRef.current) return;
+    gameTapeWasOpenRef.current = false;
     const back = gameTapeReturnRef.current;
     gameTapeReturnRef.current = null;
     const usable = back && back !== document.body && back.isConnected && typeof back.focus === 'function';
@@ -1154,6 +1169,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       onComposerPrefillConsumed={handleComposerPrefillConsumed}
       receipts={receipts}
       controllerLayout
+      // Peek is the composer alone: the message list is collapsed so the
+      // sheet can size itself to the handle + the composer, however tall the
+      // draft grows (review CR3).
+      listCollapsed={!isDesktop && !isSheetOpen(sheet.detent)}
     />
   ) : null;
 
@@ -1227,7 +1246,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       // Desktop under the flag: the columns fill the viewport and the board
       // column scrolls, so the chat column has a bounded height. Mobile and
       // flag-off: the page scrolls as today.
-      ...(controllerOn && isDesktop ? { height: '100vh' } : { minHeight: '100vh' }),
+      ...(controllerOn && isDesktop ? { height: viewportHeight } : { minHeight: '100vh' }),
       background: tokens.bgApp || '#0D0E12',
       display: 'flex',
       flexDirection: 'column',
@@ -1457,7 +1476,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             {boardRows}
             {closedTrades}
           </div>
-          {isDesktop ? (
+          {isDesktop && (
             <div
               data-chat-column="1"
               style={{
@@ -1471,19 +1490,6 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             >
               {chat}
             </div>
-          ) : (
-            <ChatSheet
-              detent={sheet.detent}
-              onDetentChange={sheet.setDetent}
-              returnFocusRef={sheet.returnFocusRef}
-              viewportHeight={viewportHeight}
-              turnText={turnLine?.text ?? null}
-              unread={Boolean(hasCommandDot)}
-              unreadColor={hasPendingProposal ? cssVar('amber') : cssVar('teal')}
-              reducedMotion={reducedMotion}
-            >
-              {chat}
-            </ChatSheet>
           )}
         </div>
       ) : (
@@ -1590,6 +1596,27 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           )}
         </AnimatePresence>
       </div>
+      )}
+
+      {/* The mobile sheet sits OUTSIDE the layout container (review CR1): a
+          `position: fixed` element inside that `z-index: 2` stacking context
+          would be painted over by the header (`z-index: 3`) at the full
+          detent. Here it stacks at the root, above the header, below the
+          Game Tape overlay — and hides with the page while the tape is up. */}
+      {controllerOn && !isDesktop && (
+        <ChatSheet
+          detent={sheet.detent}
+          onDetentChange={sheet.setDetent}
+          returnFocusRef={sheet.returnFocusRef}
+          viewportHeight={viewportHeight}
+          turnText={turnLine?.text ?? null}
+          unread={Boolean(hasCommandDot)}
+          unreadColor={hasPendingProposal ? cssVar('amber') : cssVar('teal')}
+          reducedMotion={reducedMotion}
+          hidden={gameTapeOpen}
+        >
+          {chat}
+        </ChatSheet>
       )}
 
       {gameTapeOverlay}
