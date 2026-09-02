@@ -65,7 +65,8 @@ export function toIso(raw) {
   return new Date(ms).toISOString();
 }
 
-function toMillis(raw) {
+/** Epoch millis for the same union, or null. Exported for the Battle View's derivers. */
+export function toMillis(raw) {
   const iso = toIso(raw);
   return iso == null ? null : new Date(iso).getTime();
 }
@@ -282,26 +283,25 @@ function buildAlertFeed(battle, now) {
 }
 
 /**
- * When the agent next checks, during LIVE only.
+ * When the next check is DUE — the last check + 15 minutes, inside the
+ * session — regardless of whether that instant has already passed.
  *
- * Returns a TRUE ISO instant or null. Off-hours the answer is the next market
- * open, which is a wall clock rather than an instant and is carried separately
- * as `nextOpenEt` — mixing the two in one field was the timezone defect.
+ * Exported for the Battle View turn line (Phase A, D-62): the late state
+ * `Last check 12:47 PM · next was due ~1:02 PM` needs the un-nulled candidate
+ * that `nextDecisionAt` deliberately withholds once it is in the past. This
+ * is the ONE derivation of "next" — the Desk's `nextDecisionAt` below consumes
+ * it, so the two surfaces cannot disagree about the number (BUILD_RULES §9);
+ * deriving `+15 min` a second time in the turn line was the hazard.
  *
- * Null when nothing has been checked yet (the Desk says a check is coming
- * rather than inventing a time), and null when the computed next check is
- * already in the past — a starved cron must not produce a "next ~" that has
- * been and gone.
+ * Returns a TRUE ISO instant, or null when nothing has been checked yet or
+ * when the candidate would land at/after the session close (there is no due
+ * check inside this session, so nothing can be late either).
  */
-function deriveNextDecisionAt(phase, lastCheckedAt, marketState, now) {
-  if (phase !== PHASE.LIVE) return null;
-
+export function deriveDueAt(lastCheckedAt, marketState) {
   const lastMs = toMillis(lastCheckedAt);
   if (lastMs == null) return null;
 
   const candidate = lastMs + EVAL_INTERVAL_MS;
-  const nowMs = toMillis(now);
-  if (nowMs != null && candidate <= nowMs) return null;
 
   // Clamp to the session close. Both sides are compared as ET minutes-past-
   // midnight: the candidate is a true instant (Intl is correct for it), the
@@ -313,6 +313,31 @@ function deriveNextDecisionAt(phase, lastCheckedAt, marketState, now) {
     return null;
   }
   return new Date(candidate).toISOString();
+}
+
+/**
+ * When the agent next checks, during LIVE only.
+ *
+ * Returns a TRUE ISO instant or null. Off-hours the answer is the next market
+ * open, which is a wall clock rather than an instant and is carried separately
+ * as `nextOpenEt` — mixing the two in one field was the timezone defect.
+ *
+ * Null when nothing has been checked yet (the Desk says a check is coming
+ * rather than inventing a time), and null when the computed next check is
+ * already in the past — a starved cron must not produce a "next ~" that has
+ * been and gone. The candidate itself comes from deriveDueAt() above; this
+ * function only adds the phase gate and the "already past" withholding, so
+ * its output is unchanged by the Phase A extraction (the Desk goldens stand).
+ */
+function deriveNextDecisionAt(phase, lastCheckedAt, marketState, now) {
+  if (phase !== PHASE.LIVE) return null;
+
+  const dueAt = deriveDueAt(lastCheckedAt, marketState);
+  if (dueAt == null) return null;
+
+  const nowMs = toMillis(now);
+  if (nowMs != null && toMillis(dueAt) <= nowMs) return null;
+  return dueAt;
 }
 
 /**

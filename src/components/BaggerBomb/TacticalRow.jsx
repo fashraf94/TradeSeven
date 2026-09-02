@@ -9,7 +9,27 @@ import { PCT_SLIDE, THRESHOLD_HEAT } from '../../constants/animationTokens';
 import ChamberFuse from './ChamberFuse';
 import BadgeRow from './BadgeRow';
 import ProximityLabel from './ProximityLabel';
+import { computeProximity } from './computeProximity';
 import DataStrike from '../shared/DataStrike';
+
+const DEFAULT_HISTORY = { maxMultiplier: 0, minMultiplier: 0 };
+
+/**
+ * The inputs ProximityLabel was always fed for a side, resolved with the same
+ * defaults AssetSide destructures — so computing here is the same number the
+ * label rendered before Phase A lifted the math (hazard 15: one call, one
+ * number, shared by the label and the Why? panel).
+ */
+function proximityInputs(asset) {
+  const priceChange = asset.priceChange === undefined ? 0 : asset.priceChange;
+  return {
+    priceChange: asset.thresholdPriceChange ?? priceChange,
+    baseATR: asset.baseATR === undefined ? 2.5 : asset.baseATR,
+    history: asset.history === undefined ? DEFAULT_HISTORY : asset.history,
+    dailyLevels: asset.dailyLevels,
+    currentPrice: asset.currentPrice,
+  };
+}
 
 /**
  * AssetSide - One side of the tactical row (player or opponent)
@@ -23,7 +43,35 @@ function AssetSide({
   highlighted = false,
   dimmed = false,
   onAssetSelect,
+  // Phase A (Battle View controller): the precomputed proximity for this
+  // side, and the Why? tap — LEFT side only, flag-gated by the screen (absent
+  // flag-off, so nothing below renders differently).
+  proximity = null,
+  onWhy = null,
+  whyOpen = false,
+  whyLabel = null,
+  // A4.3 (review F16): the button's accessible NAME (`Why? {symbol}`) and the
+  // id root for the facts it is DESCRIBED by — the price change and the
+  // proximity text keep reaching assistive tech as the description, while
+  // the name stays short. Both absent flag-off.
+  whyName = null,
+  whyId = null,
 }) {
+  // Computed once per side when the row did not hand one down (the standalone
+  // AssetSide path). Placed before the early returns so the hook order is the
+  // same for every render of this side.
+  // Keyed on the VALUES the label renders from — never on the asset object's
+  // identity (A4 review, refuter C): the pre-lift label memoised on its
+  // primitives, so a caller that mutates an asset in place must still see the
+  // same number the row's % shows (BUILD_RULES §9). No in-repo caller mutates
+  // an asset today; the contract is kept equal to the shipped one regardless.
+  const ownProximity = useMemo(() => {
+    if (proximity || !asset || asset.isCash) return null;
+    return computeProximity(proximityInputs(asset));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proximity, !!asset, asset?.isCash, asset?.priceChange, asset?.thresholdPriceChange, asset?.baseATR, asset?.history, asset?.dailyLevels, asset?.currentPrice]);
+  const resolvedProximity = proximity ?? ownProximity;
+
   if (!asset) {
     // Empty slot placeholder
     return (
@@ -160,15 +208,63 @@ function AssetSide({
       ? HOLO_COLORS.green
       : HOLO_COLORS.red;
 
+  // Why? — the left side is a piece the player can ask about (design brief
+  // §5.1); the CPU side never opens. The symbol and points taps keep stopping
+  // propagation, so they still open research / breakdown, not Why?.
+  const whyEnabled = !isRight && typeof onWhy === 'function';
+
   const handleAssetClick = () => {
     if (highlighted && onAssetSelect) {
       onAssetSelect(asset);
+      return;
     }
+    if (whyEnabled) onWhy(asset, resolvedProximity);
   };
+
+  const handleWhyKeyDown = whyEnabled ? (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onWhy(asset, resolvedProximity);
+    }
+  } : undefined;
+
+  // A4.3: the inner symbol / points targets are pre-existing MOUSE-ONLY
+  // divs (they stop propagation and stay out of the tab order); promoting
+  // them to real buttons is a flag-off markup change that belongs to the
+  // rows PR, not here. The row button is named for its verb and its piece,
+  // and described by the facts it shows.
+  const pctId = whyEnabled && whyId ? `${whyId}-pct` : undefined;
+  const proximityId = whyEnabled && whyId ? `${whyId}-proximity` : undefined;
+  const describedBy = pctId && proximityId ? `${pctId} ${proximityId}` : undefined;
+
+  // One label element; under the flag it is wrapped so the row button can
+  // be described by it (flag-off: the bare label, exactly as shipped).
+  const proximityLabel = (
+    <ProximityLabel
+      priceChange={thresholdPriceChange ?? priceChange}
+      baseATR={baseATR}
+      history={history}
+      dailyLevels={asset.dailyLevels}
+      currentPrice={asset.currentPrice}
+      size="small"
+      align={isRight ? 'right' : 'left'}
+      proximityRatio={thresholdHeat.proximityRatio}
+      heatDirection={thresholdHeat.direction}
+      proximity={resolvedProximity}
+    />
+  );
 
   return (
     <div
       onClick={handleAssetClick}
+      {...(whyEnabled ? {
+        role: 'button',
+        tabIndex: 0,
+        'aria-expanded': whyOpen ? 'true' : 'false',
+        ...(whyName ? { 'aria-label': whyName } : {}),
+        ...(describedBy ? { 'aria-describedby': describedBy } : {}),
+        onKeyDown: handleWhyKeyDown,
+      } : {})}
       style={{
         flex: 1,
         padding: '12px',
@@ -176,6 +272,7 @@ function AssetSide({
         flexDirection: 'column',
         gap: '8px',
         textAlign: isRight ? 'right' : 'left',
+        ...(whyEnabled ? { cursor: 'pointer' } : {}),
         ...(highlighted ? {
           border: '1px solid rgba(0, 217, 255, 0.4)',
           borderRadius: '8px',
@@ -243,7 +340,7 @@ function AssetSide({
               </span>
             )}
           </div>
-          <div style={{ position: 'relative', height: '20px', overflow: 'hidden' }}>
+          <div {...(pctId ? { id: pctId } : {})} style={{ position: 'relative', height: '20px', overflow: 'hidden' }}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={`${priceChange.toFixed(2)}`}
@@ -339,18 +436,28 @@ function AssetSide({
         )}
       </div>
 
-      {/* Proximity Label — uses daily-relative threshold progress */}
-      <ProximityLabel
-        priceChange={thresholdPriceChange ?? priceChange}
-        baseATR={baseATR}
-        history={history}
-        dailyLevels={asset.dailyLevels}
-        currentPrice={asset.currentPrice}
-        size="small"
-        align={isRight ? 'right' : 'left'}
-        proximityRatio={thresholdHeat.proximityRatio}
-        heatDirection={thresholdHeat.direction}
-      />
+      {/* Proximity Label — uses daily-relative threshold progress. Under the
+          flag the label is wrapped once, so the row button can be described
+          by it (A4.3); flag-off renders the bare label as before. */}
+      {proximityId ? <div id={proximityId}>{proximityLabel}</div> : proximityLabel}
+
+      {/* Why? — the piece's verb, visible and part of the button's name.
+          Rendered only when the screen hands the label down (the controller
+          flag); the string itself lives in the guarded copy module. */}
+      {whyEnabled && whyLabel && (
+        <span
+          data-why-label="1"
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            color: '#14b8a6',
+            opacity: whyOpen ? 1 : 0.8,
+          }}
+        >
+          {whyLabel}
+        </span>
+      )}
     </div>
   );
 }
@@ -374,6 +481,12 @@ AssetSide.propTypes = {
   highlighted: PropTypes.bool,
   dimmed: PropTypes.bool,
   onAssetSelect: PropTypes.func,
+  proximity: PropTypes.object,
+  onWhy: PropTypes.func,
+  whyOpen: PropTypes.bool,
+  whyLabel: PropTypes.string,
+  whyName: PropTypes.string,
+  whyId: PropTypes.string,
 };
 
 // Tier-specific badge colors
@@ -444,8 +557,28 @@ export default function TacticalRow({
   onLeftAssetSelect,
   opponentDimmed = false,
   leftDisabled = false,
+  // Phase A (Battle View controller) — Why? on the player's piece. All three
+  // are absent flag-off, and the row then renders exactly as before.
+  onWhy = null,
+  whyOpen = false,
+  renderWhy = null,
+  whyLabel = null,
+  whyName = null,
+  whyId = null,
 }) {
+  // The left side's proximity, computed ONCE here and handed to both the
+  // label (through AssetSide) and the Why? panel — never derived twice beside
+  // a rendered number (hazard 15). The right side computes its own in
+  // AssetSide, once.
+  const leftProximity = useMemo(() => {
+    if (!leftAsset || leftAsset.isCash) return null;
+    return computeProximity(proximityInputs(leftAsset));
+  // Value-keyed, like the pre-lift label (see AssetSide's memo above).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!leftAsset, leftAsset?.isCash, leftAsset?.priceChange, leftAsset?.thresholdPriceChange, leftAsset?.baseATR, leftAsset?.history, leftAsset?.dailyLevels, leftAsset?.currentPrice]);
+
   return (
+    <>
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -468,6 +601,12 @@ export default function TacticalRow({
         highlighted={swapTargetMode && !leftDisabled}
         dimmed={leftDisabled}
         onAssetSelect={onLeftAssetSelect}
+        proximity={leftProximity}
+        onWhy={onWhy}
+        whyOpen={whyOpen}
+        whyLabel={whyLabel}
+        whyName={whyName}
+        whyId={whyId}
       />
 
       {/* Center Allocation Badge */}
@@ -486,6 +625,14 @@ export default function TacticalRow({
         dimmed={opponentDimmed}
       />
     </motion.div>
+    {/* Why? — expands in place beneath the row, inside the tier map, with the
+        SAME proximity the row just rendered. Absent flag-off. */}
+    {renderWhy ? (
+      <AnimatePresence initial={false}>
+        {whyOpen ? renderWhy(leftProximity) : null}
+      </AnimatePresence>
+    ) : null}
+    </>
   );
 }
 
@@ -523,6 +670,12 @@ TacticalRow.propTypes = {
   onLeftAssetSelect: PropTypes.func,
   opponentDimmed: PropTypes.bool,
   leftDisabled: PropTypes.bool,
+  onWhy: PropTypes.func,
+  whyOpen: PropTypes.bool,
+  renderWhy: PropTypes.func,
+  whyLabel: PropTypes.string,
+  whyName: PropTypes.string,
+  whyId: PropTypes.string,
 };
 
 TacticalRow.defaultProps = {

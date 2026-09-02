@@ -12,6 +12,11 @@ import {
   resolveMessageType,
 } from '../../utils/renderMessageWithEntities';
 import { OPENER_LAZY_FALLBACK_ENABLED } from '../../config/featureFlags';
+// Phase A (Battle View controller): the receipt strings live in the guarded
+// copy module, never inline here (this file is not under the copy guard —
+// its error strings would trip it).
+import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
+import { cssVar } from '../../theme/cssTokens';
 
 // "Didn't respond" means the proposal hit its deadline without the user
 // approving or vetoing. In strategist mode, agent-evaluate.js writes
@@ -86,8 +91,18 @@ function ActionButton({ text, onClick, disabled }) {
   );
 }
 
-function ExecutionCard({ directive }) {
+// `receipt` (Phase A, controller flag): undefined flag-off — the shipped card,
+// byte-identical; under the flag the screen passes the derived receipt for
+// this thread (or null when the exchange carries no thread id), and the card
+// replaces the shipped execution promise + infinite pulse with the receipt
+// line (D-60: receipts cannot sit beside a promise). The receipt is derived
+// from the subscribed doc in the screen (deriveReceipts.js); this card only
+// renders what it is handed.
+function ExecutionCard({ directive, receipt }) {
   const threadId = directive?.directiveThreadId || null;
+  const controllerReceipts = receipt !== undefined;
+  const receiptLine = controllerReceipts ? BATTLE_VIEW_COPY.receiptLine(receipt) : null;
+  const receiptState = receipt?.state || null;
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -114,7 +129,9 @@ function ExecutionCard({ directive }) {
         marginBottom: 8,
       }}>
         <span>⚡</span>
-        <span>DIRECTIVE LOCKED IN</span>
+        {/* Under the flag the receipt line carries the state, so the eyebrow
+            names the thing (D-68). Flag-off: the shipped label, byte for byte. */}
+        <span>{controllerReceipts ? BATTLE_VIEW_COPY.directiveEyebrow : 'DIRECTIVE LOCKED IN'}</span>
       </div>
       <div style={{
         fontSize: 13,
@@ -124,27 +141,57 @@ function ExecutionCard({ directive }) {
       }}>
         {directive.text}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {[0, 1, 2].map(i => (
-            <motion.span
-              key={i}
+      {controllerReceipts ? (
+        // The receipt line: still, stamped, proven — or nothing at all.
+        receiptLine ? (
+          <div
+            data-receipt={receiptState}
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
+            <span
+              aria-hidden="true"
               style={{
-                width: 4,
-                height: 4,
+                width: 6,
+                height: 6,
                 borderRadius: '50%',
-                background: '#5EEAD4',
                 display: 'block',
+                background: receiptState === 'filed' ? cssVar('teal') : 'transparent',
+                border: `1px solid ${cssVar('teal')}`,
+                opacity: receiptState === 'filed' ? 1 : 0.5,
               }}
-              animate={{ opacity: [0.2, 0.7, 0.2] }}
-              transition={{ duration: 2, repeat: Infinity, delay: i * 0.3 }}
             />
-          ))}
+            <span style={{
+              fontSize: 12,
+              color: receiptState === 'filed' ? cssVar('teal') : cssVar('text-secondary'),
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              {receiptLine}
+            </span>
+          </div>
+        ) : null
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {[0, 1, 2].map(i => (
+              <motion.span
+                key={i}
+                style={{
+                  width: 4,
+                  height: 4,
+                  borderRadius: '50%',
+                  background: '#5EEAD4',
+                  display: 'block',
+                }}
+                animate={{ opacity: [0.2, 0.7, 0.2] }}
+                transition={{ duration: 2, repeat: Infinity, delay: i * 0.3 }}
+              />
+            ))}
+          </div>
+          <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+            Executing on next evaluation window
+          </span>
         </div>
-        <span style={{ fontSize: 12, color: '#9CA3AF' }}>
-          Executing on next evaluation window
-        </span>
-      </div>
+      )}
       {threadId && (
         <div style={{
           fontSize: 10,
@@ -160,7 +207,7 @@ function ExecutionCard({ directive }) {
   );
 }
 
-function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending, onSymbolClick, knownTickers }) {
+function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending, onSymbolClick, knownTickers, receipts }) {
   if (message.role === 'user') {
     return (
       <motion.div
@@ -242,7 +289,12 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
         {renderMessageWithEntities(message.text, onSymbolClick, knownTickers)}
       </div>
       {message.hasDirective && message.directive ? (
-        <ExecutionCard directive={message.directive} />
+        <ExecutionCard
+          directive={message.directive}
+          // undefined flag-off (no receipts map) → the shipped card. Under the
+          // flag: this thread's receipt, or null when the exchange has none.
+          receipt={receipts ? (receipts[message.directive.directiveThreadId] ?? null) : undefined}
+        />
       ) : isLastAgent && message.suggestedActions?.length > 0 && !isSending ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8, paddingLeft: 4 }}>
           {message.suggestedActions.map((action, i) => (
@@ -366,6 +418,26 @@ export default function AgentChat({
   chatBudgetUsed = 0,
   reviewBudgetUsed = 0,
   proposalHistory = [],
+  // Phase A (Battle View controller): the Why? panel's one door. A string the
+  // USER edits and sends through this same path — never a UI-computed value
+  // (C2). `{ text, nonce }`; a new nonce fills the composer and focuses it,
+  // then the screen is told so the prefill cannot replay on a remount.
+  composerPrefill = null,
+  onComposerPrefillConsumed = null,
+  // Phase A: { [directiveThreadId]: { state, at } } from deriveReceipts, or
+  // null flag-off. AgentChat never reads battle.directive itself.
+  receipts = null,
+  // Phase A (A4, the controller layout): render the chat column ALONE at any
+  // width — no Live Activity panel, no sub-tab bar. Its status line is the
+  // turn line; its alerts and "Agent Reasoning" stay on the Desk and
+  // flag-off (rulings §2.5). Absent flag-off, so the shipped layouts are
+  // untouched. The message list also contains its overscroll so the mobile
+  // sheet owns the scroll at half / full.
+  controllerLayout = false,
+  // Controller layout only: the mobile sheet at PEEK collapses the message
+  // list so the sheet is the handle plus the composer, however tall the
+  // draft grows. Ignored flag-off and on desktop.
+  listCollapsed = false,
 }) {
   // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
   // reactively from the chatExchanges prop so Firestore-initiated writes
@@ -380,6 +452,10 @@ export default function AgentChat({
   const [activeSubTab, setActiveSubTab] = useState('chat');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+  // The last prefill this composer applied (Phase A). A composer that still
+  // holds exactly that text is untouched and may be re-prefilled; anything
+  // else is the user's draft and is never overwritten.
+  const lastPrefillRef = useRef('');
 
   // Today's date in ET — matches agent-batch-review.js and is the bucket key
   // for dailyGrades writes. Recomputed each render is fine (cheap).
@@ -580,6 +656,37 @@ export default function AgentChat({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  // ── Composer prefill (Phase A — the Why? door) ─────────────────────────────
+  useEffect(() => {
+    if (!composerPrefill || composerPrefill.nonce == null) return;
+    const text = String(composerPrefill.text ?? '').slice(0, 2000);
+    // A draft the user already typed wins over the prefill (review finding
+    // F13): an empty prefill (the book door) only focuses; a piece prefill
+    // fills the composer only when it is empty or still holds the previous,
+    // untouched prefill.
+    const untouched = !inputText.trim() || inputText === lastPrefillRef.current;
+    if (text && untouched) {
+      setInputText(text);
+      lastPrefillRef.current = text;
+    }
+    const el = textareaRef.current;
+    if (el && typeof el.focus === 'function') {
+      el.focus();
+      // The value lands on the next render; put the caret after it then.
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          try {
+            const n = el.value.length;
+            el.setSelectionRange?.(n, n);
+          } catch {
+            // jsdom / SSR: no selection API — the focus alone is enough.
+          }
+        });
+      }
+    }
+    if (typeof onComposerPrefillConsumed === 'function') onComposerPrefillConsumed();
+  }, [composerPrefill?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-resize textarea ───────────────────────────────────────────────────
 
@@ -852,6 +959,8 @@ export default function AgentChat({
         padding: '12px 12px 8px',
         display: 'flex',
         flexDirection: 'column',
+        ...(controllerLayout ? { overscrollBehavior: 'contain' } : {}),
+        ...(controllerLayout && listCollapsed ? { display: 'none' } : {}),
       }}>
         {messages.length === 0 && tradeEvents.length === 0 ? (
           <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
@@ -946,6 +1055,7 @@ export default function AgentChat({
                   isSending={isSending}
                   onSymbolClick={onSymbolClick}
                   knownTickers={knownTickers}
+                  receipts={receipts}
                 />
               );
             }
@@ -1070,7 +1180,7 @@ export default function AgentChat({
     </>
   );
 
-  const activityContent = (
+  const activityContent = controllerLayout ? null : (
     <LiveActivityPanel
       messages={messages}
       statusFeed={statusFeed}
@@ -1079,6 +1189,23 @@ export default function AgentChat({
   );
 
   // ── Layout ──────────────────────────────────────────────────────────────────
+
+  if (controllerLayout) {
+    // ── Controller (Phase A, A4): the chat column alone, any width ───────
+    return (
+      <div
+        data-chat-layout="controller"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          minHeight: 0,
+        }}
+      >
+        {chatContent}
+      </div>
+    );
+  }
 
   if (isDesktop) {
     // ── Desktop: side-by-side ──────────────────────────────────────────────

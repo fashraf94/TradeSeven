@@ -1,34 +1,34 @@
 {
-  "_schema": "Each entry is { count, authority }. `count` is diffed against a live scan; the guard fails on any INCREASE (A4a) and flags a DECREASE as a stale baseline. `authority` is the ruling that exempts the literal (R-BL21) — R-H8 / R-#fff / R-S9 / UNSCOPED-P2 — so a future reader knows WHY it is exempt, not just that it is. Regenerate with GENERATE_TOKEN_GUARD_BASELINE=1; new entries land as UNTAGGED and fail the authority test until a ruling is cited.",
+  "_schema": "Each entry is { count, authority }. `count` is diffed against a live scan; the guard fails on any INCREASE (A4a) and flags a DECREASE as a stale baseline. `authority` is the ruling that exempts the literal (R-BL21) \u2014 R-H8 / R-#fff / R-S9 / UNSCOPED-P2 \u2014 so a future reader knows WHY it is exempt, not just that it is. Regenerate with GENERATE_TOKEN_GUARD_BASELINE=1; new entries land as UNTAGGED and fail the authority test until a ruling is cited.",
   "guarded": {
     "src/index.css": {
       "#0d1117": {
         "count": 3,
-        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+        "authority": "UNSCOPED-P2 \u2014 @layer utilities block, not scoped by the Phase 2 pilot migration"
       },
       "#161b22": {
         "count": 1,
-        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+        "authority": "UNSCOPED-P2 \u2014 @layer utilities block, not scoped by the Phase 2 pilot migration"
       },
       "#00d9ff": {
         "count": 1,
-        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+        "authority": "UNSCOPED-P2 \u2014 @layer utilities block, not scoped by the Phase 2 pilot migration"
       },
       "#10b981": {
         "count": 1,
-        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+        "authority": "UNSCOPED-P2 \u2014 @layer utilities block, not scoped by the Phase 2 pilot migration"
       },
       "#ef4444": {
         "count": 1,
-        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+        "authority": "UNSCOPED-P2 \u2014 @layer utilities block, not scoped by the Phase 2 pilot migration"
       },
       "#21262d": {
         "count": 4,
-        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+        "authority": "UNSCOPED-P2 \u2014 @layer utilities block, not scoped by the Phase 2 pilot migration"
       },
       "#8b5cf6": {
         "count": 4,
-        "authority": "UNSCOPED-P2 — @layer utilities block, not scoped by the Phase 2 pilot migration"
+        "authority": "UNSCOPED-P2 \u2014 @layer utilities block, not scoped by the Phase 2 pilot migration"
       }
     },
     "src/components/Dashboard/CommandDashboard.jsx": {
@@ -41,12 +41,25 @@
     "src/components/DesktopBackground.jsx": {
       "#00d9ff": {
         "count": 2,
-        "authority": "R-H8 x2 — SVG stroke presentation attributes at :98, :138"
+        "authority": "R-H8 x2 \u2014 SVG stroke presentation attributes at :98, :138"
       },
       "#8b5cf6": {
         "count": 1,
-        "authority": "R-H8 x1 — SVG stroke presentation attribute at :146"
+        "authority": "R-H8 x1 \u2014 SVG stroke presentation attribute at :146"
       }
-    }
+    },
+    "src/screens/battleView/ChatSheet.jsx": {},
+    "src/screens/battleView/LandingWash.jsx": {},
+    "src/screens/battleView/ThisTurnStrip.jsx": {},
+    "src/screens/battleView/TurnLine.jsx": {},
+    "src/screens/battleView/WhyPanel.jsx": {},
+    "src/screens/battleView/battleViewCopy.js": {},
+    "src/screens/battleView/deriveReceipts.js": {},
+    "src/screens/battleView/deriveTurnLine.js": {},
+    "src/screens/battleView/landing.js": {},
+    "src/screens/battleView/selectWhyState.js": {},
+    "src/screens/battleView/useChatSheet.js": {},
+    "src/screens/battleView/useCoarseNow.js": {},
+    "src/screens/battleView/useContentStable.js": {}
   }
 }
