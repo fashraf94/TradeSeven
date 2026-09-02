@@ -34,6 +34,17 @@ import { isTrainingPodDraftV2On, TRAINING_POD_PICK_CLOCK_MS } from '../config/fe
 const OVERLAY_SIZE = 5;
 const norm = (s) => (typeof s === 'string' ? s.trim().toUpperCase() : '');
 
+// Archetype Rank V2 (P-8 / P-13): the doc-level context a SUBSET caller hands
+// the V2 scorer. `undefined` when the doc predates Phase A (the scorer then
+// derives over the input and logs); `null` when the field is present but empty.
+function universeContextFromDoc(data) {
+  const num = (v) => (Number.isFinite(v) ? v : null);
+  return {
+    universeSize: data && 'axes_universe_size' in data ? num(data.axes_universe_size) : undefined,
+    universeMedianReturn1W: data && 'universe_median_return1W' in data ? num(data.universe_median_return1W) : undefined,
+  };
+}
+
 // One interactive-draft hook for BOTH modes (the "one room, both modes" reuse):
 // the subscription (group + the shared draft/state doc), board, seats, clock, and
 // turn logic are mode-agnostic. `submitAction` parameterizes the ONLY coupling —
@@ -45,6 +56,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
   const [group, setGroup] = useState(null);
   const [draft, setDraft] = useState(null);
   const [universe, setUniverse] = useState(null); // indexIntelligence/stockRankings.stocks
+  const [universeContext, setUniverseContext] = useState(null); // { universeSize, universeMedianReturn1W } — Archetype Rank V2
   const [pickClock, setPickClock] = useState(null); // seconds remaining on my turn
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -80,6 +92,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
       try {
         const snap = await getDoc(doc(db, 'indexIntelligence', 'stockRankings'));
         if (!cancelled) setUniverse(snap.exists() ? (snap.data().stocks || []) : []);
+        if (!cancelled) setUniverseContext(snap.exists() ? universeContextFromDoc(snap.data()) : null);
       } catch (err) {
         console.error('[useTrainingDraft] stockRankings read failed:', err?.message);
         if (!cancelled) setUniverse([]);
@@ -176,10 +189,20 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
     });
     if (available.length === 0) return new Set();
     let ranked = null;
-    try { ranked = computeArchetypeRankings(available, archetype); } catch { ranked = null; }
+    // Archetype Rank V2 (spec §4 census path 8): explicit 'training' mode, the
+    // doc-level subset context (P-8), and the §3.4 pinned overlay minimum. V1
+    // ignores opts; a V2 throw lands in the existing empty-overlay degrade.
+    try {
+      ranked = computeArchetypeRankings(available, archetype, {
+        gameMode: 'training',
+        universeSize: universeContext?.universeSize,
+        universeMedianReturn1W: universeContext?.universeMedianReturn1W,
+        minCandidates: OVERLAY_SIZE,
+      });
+    } catch { ranked = null; }
     if (!Array.isArray(ranked) || ranked.length === 0) return new Set();
     return new Set(ranked.slice(0, OVERLAY_SIZE).map((s) => norm(s.symbol)));
-  }, [universe, draft?.humanArchetype, draft?.archetypeByUser, currentUserId, poolSet, takenSet]);
+  }, [universe, universeContext, draft?.humanArchetype, draft?.archetypeByUser, currentUserId, poolSet, takenSet]);
 
   // ---- submit a pick (explicit or autopick) through the server endpoint ----
   const submitPick = useCallback(async (symbol, autopick = false) => {

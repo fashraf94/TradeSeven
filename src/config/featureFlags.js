@@ -1885,3 +1885,31 @@ export const METRIC_HISTORY_SNAPSHOT_ENABLED = true;
  */
 // Pinned by: commandCenterSyncFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMMAND_CENTER_SYNC_ENABLED = false;
+
+/**
+ * Archetype Rank Interface V2 (docs/specs/ARCHETYPE_RANK_INTERFACE_V2_BUILD_SPEC_V1_3.md).
+ * DARK — default FALSE.
+ *
+ * When TRUE, computeArchetypeRankings (the §1-fenced scoring engine) dispatches
+ * to the V2 pipeline in api/_utils/archetypeScoringV2.js: the axis vocabulary
+ * (quality / strength / persistence / volatility / calm / dislocation),
+ * deterministic pre-model filters, the bounded Diversifier sector interleave,
+ * and the caller-owned game-mode blend (P-7). Every caller must then pass
+ * opts.gameMode (P-5, fail closed) — the fenced decide.js:343 call gains its
+ * explicit { gameMode: 'baggerBomb' } in the flip PR, never in a build PR.
+ *
+ * When FALSE (this build) the fenced engine is byte-identical to V1: the one
+ * dispatch line returns null before a single V1 statement runs (the flag-off
+ * byte-identity snapshot in archetypeScoring.v2dispatch.test.js asserts it).
+ * The V2 module reads this flag at CALL time through a namespace import and
+ * treats anything but `true` as off, so a suite that mocks this module with a
+ * bare factory (no importOriginal) still takes the V1 path.
+ *
+ * The flip is its own §7 PR after the observation window passes spec §6
+ * (≥ 5 market days of ops/rankingSnapshots; every archetype ≥ 35 post-filter
+ * names on every snapshot). It updates the pin below AND drops the
+ * DARK_BY_DESIGN entry in that same commit, plus the P-3 version bumps
+ * (CALIBRATION_BUNDLE_VERSION 1→2, ARCHETYPE_IDENTITY_VERSION 3→4).
+ */
+// Pinned by: archetypeScoring.v2dispatch.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const ARCHETYPE_VECTORS_V2_ENABLED = false;

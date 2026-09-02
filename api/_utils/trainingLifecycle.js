@@ -206,12 +206,30 @@ export async function resolveHumanArchetype(db, odUserId) {
 /** The ranked universe (stock objects) for the human archetype autopick.
  *  Degrades to null (autopick falls back to best-available) on any failure. */
 export async function readStockUniverse(db) {
+  return (await readStockUniverseContext(db)).stocks;
+}
+
+/** The ranked universe PLUS the doc-level context a SUBSET caller must hand the
+ *  V2 scorer (Archetype Rank V2, P-8 / P-13): `axes_universe_size` and
+ *  `universe_median_return1W`. Each is `undefined` when the doc predates Phase A
+ *  (the scorer then derives over the input and logs), `null` when the doc
+ *  carries the field with no value. Degrades to all-null stocks on any failure
+ *  (autopick falls back to best-available). */
+export async function readStockUniverseContext(db) {
+  const empty = { stocks: null, universeSize: undefined, universeMedianReturn1W: undefined };
   try {
     const snap = await db.collection('indexIntelligence').doc('stockRankings').get();
-    return snap.exists ? (snap.data().stocks ?? null) : null;
+    if (!snap.exists) return empty;
+    const data = snap.data() || {};
+    const num = (v) => (Number.isFinite(v) ? v : null);
+    return {
+      stocks: data.stocks ?? null,
+      universeSize: 'axes_universe_size' in data ? num(data.axes_universe_size) : undefined,
+      universeMedianReturn1W: 'universe_median_return1W' in data ? num(data.universe_median_return1W) : undefined,
+    };
   } catch (err) {
     console.warn(`${LOG_PREFIX} stockRankings read failed — autopick degrades to best-available:`, err?.message);
-    return null;
+    return empty;
   }
 }
 
@@ -251,20 +269,24 @@ export function chooseCpuPick({ player, pool, taken, ownPicks }) {
  *  autopick (timeout / sweep) = top archetype-fit available; R3 fallback to the
  *  best-available (composite-ranked pool head) if the archetype ranking is
  *  unusable. */
-export function chooseHumanPick({ symbol, autopick, pool, taken, universe, archetype }) {
+export function chooseHumanPick({ symbol, autopick, pool, taken, universe, archetype, gameMode, universeSize, universeMedianReturn1W }) {
   if (!autopick && symbol != null) {
     const norm = String(symbol).trim().toUpperCase();
     if (!pool.includes(norm)) return null;   // must be on the universal board
     if (taken.has(norm)) return null;        // already drafted
     return { symbol: norm, boardRank: null, fallback: false, passedOver: [] };
   }
-  const fit = topArchetypeFit({ universe, archetype, taken, pool });
+  const fit = topArchetypeFit({ universe, archetype, taken, pool, gameMode, universeSize, universeMedianReturn1W });
   if (fit != null) return { symbol: fit, boardRank: null, fallback: false, passedOver: [] };
   const best = pool.find(s => !taken.has(s)) ?? null;
   return best == null ? null : { symbol: best, boardRank: null, fallback: true, passedOver: [] };
 }
 
-function topArchetypeFit({ universe, archetype, taken, pool }) {
+// Archetype Rank V2 (P-4 / P-8): `gameMode` is the calling mode ('training' for
+// pods, 'tournament' for the competitive live draft — both share this core);
+// `universeSize` + `universeMedianReturn1W` are the doc-level fields the V2
+// scorer needs from a SUBSET caller (this is one of the two). V1 ignores opts.
+function topArchetypeFit({ universe, archetype, taken, pool, gameMode, universeSize, universeMedianReturn1W }) {
   if (!Array.isArray(universe) || universe.length === 0) return null;
   const poolSet = new Set(pool);
   const available = universe.filter(s => {
@@ -272,7 +294,7 @@ function topArchetypeFit({ universe, archetype, taken, pool }) {
     return sym && poolSet.has(sym) && !taken.has(sym);
   });
   if (available.length === 0) return null;
-  const ranked = computeArchetypeRankings(available, archetype);
+  const ranked = computeArchetypeRankings(available, archetype, { gameMode, universeSize, universeMedianReturn1W, minCandidates: 1 });
   const sym = typeof ranked?.[0]?.symbol === 'string' ? ranked[0].symbol.trim().toUpperCase() : null;
   return sym && !taken.has(sym) ? sym : null;
 }
@@ -444,16 +466,20 @@ export async function formTrainingDraft(db, { odUserId, displayName = null, load
  * errors (draft_not_found / draft_not_active / not_your_turn / no_pick_available
  * / pool_exhausted). Returns `{ groupId, status, currentPickIndex, complete }`.
  */
-export async function applyTrainingPick(db, groupId, { odUserId, symbol = null, autopick = false, now = new Date(), stocks } = {}) {
+export async function applyTrainingPick(db, groupId, { odUserId, symbol = null, autopick = false, now = new Date(), stocks, universeSize, universeMedianReturn1W } = {}) {
   const nowIso = toIso(now);
   const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
   const stateRef = draftStateRef(db, groupId);
 
   // A human autopick needs the ranked universe for the archetype-fit pick; read
-  // it once, before the transaction (a static reference doc).
+  // it once, before the transaction (a static reference doc). The read also
+  // carries the doc-level V2 axis context (Archetype Rank V2, P-8).
   let universe = stocks;
   if ((autopick || symbol == null) && universe === undefined) {
-    universe = await readStockUniverse(db);
+    const ctx = await readStockUniverseContext(db);
+    universe = ctx.stocks;
+    universeSize = ctx.universeSize;
+    universeMedianReturn1W = ctx.universeMedianReturn1W;
   }
 
   return db.runTransaction(async (tx) => {
@@ -478,7 +504,10 @@ export async function applyTrainingPick(db, groupId, { odUserId, symbol = null, 
     for (const id of members) if (!acc.picksByUser[id]) acc.picksByUser[id] = [];
 
     // The human's own pick.
-    const human = chooseHumanPick({ symbol, autopick, pool: state.pool, taken: acc.taken, universe, archetype: state.humanArchetype || 'analyst' });
+    const human = chooseHumanPick({
+      symbol, autopick, pool: state.pool, taken: acc.taken, universe, archetype: state.humanArchetype || 'analyst',
+      gameMode: 'training', universeSize, universeMedianReturn1W, // Archetype Rank V2 (P-4): training pods pass 'training'
+    });
     if (human == null) throw pickError(autopick ? 'no_pick_available' : 'invalid_pick');
     appendPick(acc, members, { seatIdx, pickIndex: state.currentPickIndex, ...human, liveSource: 'human' });
 
@@ -626,7 +655,7 @@ export async function sweepIdleDraftingPods(db, { now = new Date(), includeDev =
         summary.active++; // an active draft — never interrupt
         continue;
       }
-      if (universe === undefined) universe = await readStockUniverse(db);
+      if (universe === undefined) universe = await readStockUniverseContext(db);
       // The lone human seat — derived from the pod's players (the one non-CPU
       // seat), with the state's humanId as a fallback. Deriving from players
       // means a missing/corrupt state.humanId cannot strand the pod.
@@ -641,7 +670,10 @@ export async function sweepIdleDraftingPods(db, { now = new Date(), includeDev =
       let guard = 0;
       let done = false;
       while (!done && guard++ < 16) {
-        const res = await applyTrainingPick(db, pod.id, { odUserId: humanId, autopick: true, now, stocks: universe ?? null });
+        const res = await applyTrainingPick(db, pod.id, {
+          odUserId: humanId, autopick: true, now, stocks: universe.stocks ?? null,
+          universeSize: universe.universeSize, universeMedianReturn1W: universe.universeMedianReturn1W,
+        });
         done = res.complete;
       }
       if (!done) {

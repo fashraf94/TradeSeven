@@ -43,6 +43,7 @@ import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR, TICKER_TO_INDUSTRY, TECH
 import { computeGameModeFits, assignGameModeRanks } from '../_utils/gameModeScoring.js';
 import { computeMomentumRankings } from '../_utils/momentumScoring.js';
 import { computeArchetypeRankings } from '../_utils/archetypeScoring.js';
+import { computeArchetypeRankingsV2 } from '../_utils/archetypeScoringV2.js';
 import { computeReturns } from '../_utils/returnCalculations.js';
 // Archetype Rank Interface V2 — Phase A (docs/specs/ARCHETYPE_RANK_INTERFACE_V2_BUILD_SPEC_V1_3.md
 // §2, §5, P-10, P-11): the pure axis derivation + the ops-gated observation snapshot writer.
@@ -439,6 +440,44 @@ export function buildIndustriesRollup(rankingStocks, minSize = MIN_INDUSTRY_SIZE
     industries[name] = entry;
   }
   return industries;
+}
+
+// ───────────────────────────────────────────────
+// Archetype Rank V2 — arch_scores_v2 dual-write (spec §5 Phase A / P-7, R9)
+// ───────────────────────────────────────────────
+
+/**
+ * Attach `arch_scores_v2` to every stock: the V2 archetypeBaseScore under
+ * gameMode 'standard' — NO game-mode term (baggerBombFit is caller-owned, R9;
+ * test 9 holds it varying while these stay fixed). Runs on the FULL, axes-
+ * bearing rankingStocks (strength / dislocation are cross-sectional). A name
+ * the V2 filters or R10 exclude for an archetype carries NO key for it — never
+ * a null, never an average. Mutates each stock (the arch_scores idiom); returns
+ * the per-archetype post-filter counts + every scorer event for the P-11
+ * snapshot. Pure + exported for unit testing (buildIndustriesRollup precedent).
+ * `arch_scores` (v1) is written by the loop above this call and is untouched.
+ */
+export function attachArchScoresV2(rankingStocks, { universeMedianReturn1W = undefined } = {}) {
+  const events = [];
+  const archetypePostFilterCounts = {};
+  const bySymbol = {};
+  for (const archetype of ARCHETYPES) {
+    const ranked = computeArchetypeRankingsV2(rankingStocks, archetype, {
+      gameMode: 'standard',
+      universeSize: rankingStocks.length,
+      universeMedianReturn1W,
+      onEvent: (event) => events.push(event),
+    });
+    archetypePostFilterCounts[archetype] = ranked.length;
+    for (const s of ranked) {
+      if (!bySymbol[s.symbol]) bySymbol[s.symbol] = {};
+      bySymbol[s.symbol][archetype] = s.archetypeBaseScore;
+    }
+  }
+  for (const stock of rankingStocks) {
+    stock.arch_scores_v2 = bySymbol[stock.symbol] || {};
+  }
+  return { archetypePostFilterCounts, events };
 }
 
 // ───────────────────────────────────────────────
@@ -1240,7 +1279,7 @@ export default async function handler(req, res) {
       // the input universe, so a filtered subset would yield different scores.
       const archScoresBySymbol = {};
       for (const archetype of ARCHETYPES) {
-        const ranked = computeArchetypeRankings(rankingStocks, archetype);
+        const ranked = computeArchetypeRankings(rankingStocks, archetype, { gameMode: 'standard' });
         for (const s of ranked) {
           if (!archScoresBySymbol[s.symbol]) archScoresBySymbol[s.symbol] = {};
           archScoresBySymbol[s.symbol][archetype] = s.archetypeScore;
@@ -1251,14 +1290,19 @@ export default async function handler(req, res) {
       }
       markStage('archScoresV1');
 
+      // Archetype Rank V2 — Phase B dual-write (spec §5 / P-7): arch_scores_v2
+      // beside the untouched v1 arch_scores. Excluded names carry no key (R10).
+      const { archetypePostFilterCounts, events: v2Events } = attachArchScoresV2(rankingStocks, { universeMedianReturn1W });
+      markStage('archScoresV2');
+
       // Archetype Rank V2 (P-11): what the observation snapshot records for this
       // run (written after the batch commits — see below).
       v2Snapshot = {
         universe: rankingStocks,
         universeMedianReturn1W,
         axisNullCounts,
-        archetypePostFilterCounts: null,
-        events: [],
+        archetypePostFilterCounts,
+        events: v2Events,
       };
 
       // Build sectors lookup for efficient frontend leaderboard rendering

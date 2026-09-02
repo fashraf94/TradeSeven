@@ -113,6 +113,8 @@ const DARK_BY_DESIGN = {
   // removal is a separate, later PR.
   PREOPEN_PHASE_ROUTING_ENABLED:
     'pre-open display routing (spec V2.1) — display-only; flips only after a founder preview smoke of the 9:30 transition',
+  ARCHETYPE_VECTORS_V2_ENABLED:
+    'Archetype Rank Interface V2 (spec V1.3) — the V2 scorer ships dark for the observation window; flips in its own §7 PR after spec §6 passes, with the P-3 version bumps, never a build PR',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────

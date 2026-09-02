@@ -110,7 +110,8 @@ export default async function handler(req, res) {
     const equippedSet = new Set(equippedSymbols);
 
     // 3. Rank the universe for this archetype (pure; full sorted-desc copy).
-    const ranked = computeArchetypeRankings(stocks, archetype);
+    // Archetype Rank V2 (spec §4 census): explicit mode + the §3.4 pinned minimum (V1 ignores opts).
+    const ranked = computeArchetypeRankings(stocks, archetype, { gameMode: 'scouting', minCandidates: BOARD_SIZE });
     const scoreBySymbol = new Map(ranked.map((s) => [s.symbol, s])); // also the in-universe test
     const top = ranked.slice(0, BOARD_SIZE);
     const topSet = new Set(top.map((s) => s.symbol));

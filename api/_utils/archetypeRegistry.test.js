@@ -177,6 +177,10 @@ describe('import-boundary ratchet (§2.3 / R1-25)', () => {
   const LEGACY_TABLE_BASENAMES = [
     'agentArchetypeConfig',
     'archetypeScoring',
+    // Archetype Rank V2 (spec §3 extras): the V2 scoring engine joins the
+    // table set — the bare basename above never matched `archetypeScoringV2.js`
+    // (the regex requires `.js` or a quote right after the name).
+    'archetypeScoringV2',
     'archetypeAdjustments',
     'traitLibrary',
     'archetypeRuleCompatibility',

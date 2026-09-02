@@ -50,6 +50,8 @@ import {
   GROUP_STATUS,
   GROUP_SIZE,
   AGENT_PICKS_PER_AGENT,
+  AGENT_MARKET_SIZE,
+  USER_HELD_NAMES_PER_GROUP,
 } from '../../src/constants/leagueTournament.js';
 import { readLedger, reserveBulk, isReservationStale } from './tournamentAgentLedger.js';
 import { computeArchetypeRankings } from './archetypeScoring.js';
@@ -255,7 +257,9 @@ export async function resolveAgentDraftForGroup(db, group, { now = new Date() } 
   for (const { agentId, odUserId } of agents) {
     const archetype = boardByUser[odUserId].archetype || 'analyst';
     if (!rankingByArchetype.has(archetype)) {
-      rankingByArchetype.set(archetype, computeArchetypeRankings(stocks, archetype).map(s => s.symbol));
+      // Archetype Rank V2 (spec §4 census): explicit mode + the §3.4 pinned minimum —
+      // the fallback catalog must cover 24 agent picks plus up to 12 user-held names (V-7).
+      rankingByArchetype.set(archetype, computeArchetypeRankings(stocks, archetype, { gameMode: 'tournament', minCandidates: AGENT_MARKET_SIZE + USER_HELD_NAMES_PER_GROUP }).map(s => s.symbol));
     }
     fallbackRankingByAgent[agentId] = rankingByArchetype.get(archetype);
   }
