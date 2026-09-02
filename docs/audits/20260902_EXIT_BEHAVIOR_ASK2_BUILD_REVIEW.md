@@ -47,7 +47,7 @@ Decision 3's registration: the flag docstring (`featureFlags.js`), the `COMPILER
 - `src/config/featureFlags.js` — `EQUIPPED_RULE_PRECEDENCE_ENABLED = false` with docstring + flip map + `// Pinned by:`; `src/config/equippedRulePrecedenceFlags.test.js` (dark pin); `src/config/flagPinGuard.test.js:58-62` (`DARK_BY_DESIGN` entry + the `COMPILER_ENABLED` carriage note).
 - Tests + fixtures: `agentEvalPromptAssembly.ask2.test.js`, `evalIdentityBlocks.ask2.test.js`, `declaredRuleConflicts.test.js`, `compileBuild.ask2.test.js`; `__fixtures__/ask2PromptGoldens.json` (both variants × six keys, the six identity renders, the trailer with and without an institutional rule), `__fixtures__/ask2CompilerGoldens.json` (three compiled builds), `__fixtures__/ask2CompilerFixtures.js`, `__fixtures__/ask2PromptFixtures.js`. Flip-proofed: `evalIdentityBlocks.flagOn.test.js`, `evalIdentityBlocks.test.js`, `agentEvalPromptAssembly.ask1.test.js`.
 
-## 4. The two Phase 0 corrections (deviations from the ruling as briefed — founder ratification requested)
+## 4. The two Phase 0 corrections (deviations from the ruling as briefed — RATIFIED by the founder post-push, §11)
 
 Both are the founder's own principle from decision 4, applied where the build found the engine fact the Phase 0 report missed: a qualifier must never promise what the engine refuses (the maxPosition label-lie class).
 
@@ -122,7 +122,7 @@ The flip PR (`EQUIPPED_RULE_PRECEDENCE_ENABLED` false → true, its own one-line
 3. Nothing else — proven by a simulated flip this session (flag set true, 12 suites run, reverted): exactly 15 red = 14 snapshots + the pin row. `evalIdentityBlocks.test.js` branches on the live clause; `evalIdentityBlocks.flagOn.test.js` and `agentEvalPromptAssembly.ask1.test.js` pin the Ask-2-dark branch (they lock DR-13 / Ask 1, not this arc); the ask2 suites, the honesty sweep and the M7 budgets are flip-proof.
 4. **Registered carriage (decision 3):** the compiler's `declaredConflicts` declaration reaches a user only when `COMPILER_ENABLED` flips — that flip PR carries it (its `DARK_BY_DESIGN` note says so).
 
-## 7. Founder attention (pre-flip)
+## 7. Founder attention (pre-flip) — items 1–2 closed by the §11 rulings
 
 - **Ratify the two absolutes of §4** (THRESHOLD PROXIMITY bonus bullet; §8 CONVICTION) — both deviate from the ruling as briefed, on the ruling's own principle, and both are one-line changes if you disagree.
 - **Read the seven flag-on sentences in §4** (review A-6): two carry words beyond the bare qualifier — "on your own initiative" (late battle) and "by default" (C_INST). Both yield only to an equipped user rule.
@@ -156,5 +156,14 @@ The flip PR (`EQUIPPED_RULE_PRECEDENCE_ENABLED` false → true, its own one-line
 - **The reviewer restore incident.** Reviewer B's mutation harness restored `agentEvalPromptAssembly.js` from its 01:33 backup five times (last ≈ 01:50:18), overwriting the CR-2 fixes in flight; Reviewer A caught the resulting inconsistency (A-1). The three edits were re-applied after the tree settled and the file's checksum (`29ca1342…`) was held constant through the rest of the session. B also notes the prescribed `git checkout -- <file>` revert would have restored the base tree and erased the unstaged build — it did not use it. Lesson registered (§8.5).
 - **Commit `152217ea`** was found on the branch when the final verification began (author `Claude`, 02:00:58 UTC, correct trailer, content = the build state at that time, not pushed). It was not issued by an explicit step in this session's transcript; its content was verified (no stale §8 helper, registry adapter present, two §8 literals) and kept as commit 1. Everything after it rides the second commit with this record.
 - `/code-review` ran single-pass and said so; the §2 multi-lens, independently-verified requirement is met by the two subagent reviewers whose refute attempts are recorded above.
+
+## 11. Post-push founder rulings (2026-09-02, verbatim)
+
+> Both absolutes ratified; seven sentences approved as written. Process rule going forward: subagent reviewers work on a snapshot tree and are read-only on git. Merging dark; flip PR after the current ranked week closes.
+
+- §4's two absolutes (§8 CONVICTION; the THRESHOLD PROXIMITY bonus bullet) are ratified — the build stands as pushed; no code change.
+- The seven flag-on sentences of §4 are approved as written (review A-6 closed).
+- The reviewer-isolation rule is codified in `docs/BUILD_RULES.md` §2 (founder-cited, this commit) and closes §8.5.
+- Merge is dark; the flip PR (§6 map) follows the close of the current ranked week — not this branch, not this session.
 
 **Push and STOP (BUILD_RULES §2):** pushed, not deployed; the founder reads CI, smokes the preview, and merges. The flag flip is a separate one-line PR.
