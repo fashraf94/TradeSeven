@@ -7,7 +7,7 @@
 **Branch:** `claude/battle-view-phase-a-layout-425nnm` — the harness assigned this name to the A4 session. It is `claude/battle-view-controller-phase-a-v5gog5` (A1 → A3, D-63) **rebased onto `def0fcbe`** (`main` had moved by one merge, #808, which touches none of Phase A's files) plus the four A4 commits and the A4 review fixes. The founder opens Phase A's PR from this branch. (`…-v5gog5` and `…-i51j5l` are retired; nothing on them is lost.)
 **Base:** `def0fcbe`. **Commits:** A1 `4a47acba` · A2 `f525b99b` · A3 `442ac29e` · A1–A3 review fixes `dea23db6` · docs `ef6b8e44` `55938e66` `ce574d46` · **A4.0 `59c67a6c` · A4.1 `89b07b37` · A4.2 `4a639fd6` · A4.3 `e1db2e08`** · the A4 review fixes and docs (the commits after `e1db2e08` on this branch).
 **Flag:** `BATTLE_VIEW_CONTROLLER_ENABLED = false` (pin `battleViewControllerFlags.test.js`, `DARK_BY_DESIGN` entry); smoke override `?battleViewController=1`, deleted by the flip PR.
-**Reviews:** A1 → A3 — `docs/audits/20260902_BATTLE_VIEW_CONTROLLER_PHASE_A_BUILD_REVIEW.md` (32 CONFIRMED / 2 REFUTED). A4 — `docs/audits/20260902_BATTLE_VIEW_CONTROLLER_PHASE_A_A4_BUILD_REVIEW.md` (five isolated lenses + `/code-review`, every finding refuted or confirmed; the totals are in its §1).
+**Reviews:** A1 → A3 — `docs/audits/20260902_BATTLE_VIEW_CONTROLLER_PHASE_A_BUILD_REVIEW.md` (32 CONFIRMED / 2 REFUTED). A4 — `docs/audits/20260902_BATTLE_VIEW_CONTROLLER_PHASE_A_A4_BUILD_REVIEW.md` (five isolated lenses + `/code-review`, three refuters: **44 CONFIRMED / 2 REFUTED**; fixes `958c5f17` · `23717042` · `7f480fb9` · `6ab3bdf9`; `vite build` green; full suite green).
 **STOP:** this session ends here, for the founder's second smoke. No PR; the founder opens Phase A's PR after the smoke.
 
 ---
@@ -78,7 +78,8 @@ Nothing under `api/`. No fenced file edited. Fenced functions **called**: none. 
 33. **The fourth state's gate is a server string** (`validationErrors[0]` prefix `Swap execution failed`, `agent-evaluate.js:2464`); a source-reading tripwire in `selectWhyState.test.js` reds if the cron rewords it (L5-N3).
 34. **`'Your Agent'`** — the pre-existing fallback is typed a third time in the controller's `AgentChat` mount (the screen is not under the copy guard) (L5-N4).
 35. **`Agent is thinking too hard. Try again.`** — the shipped chat error copy carries a forbidden verb and now lives on the controller page permanently; `AgentChat.jsx` is not guarded. For bug 2's "shipped promise copy" PR (L1-F8).
-36. **The landing under the new layout** is guarded by `LandingWash`'s `data-wash` attribute and one mounted row (seven washes in the board column on a stamp change) (L5-N2).
+36. **The landing under the new layout** is guarded by `LandingWash`'s `data-wash` / `data-wash-index` attributes and one mounted row (seven washes in the board column, indices 0 → 6, on a stamp change) (L5-N2).
+37. **A2's proximity memo is value-keyed** (refuter C's narrow refutation of the byte-identity headline): the lift had memoised the row's proximity on the asset object's identity where the shipped label memoised on its primitives, so a caller mutating an asset in place would have seen the row's `%` move while the label stayed (§9). No in-repo caller mutates an asset (`enrichAsset`, `buildTacticalAsset` return fresh literals); both memos now key on the values the label renders from, with a mounted guard (`TacticalRow.proximityMemo.jsdom.test.jsx`). The `🚀 MAX` / `🔥 MAX` label is reachable only through a non-numeric `thresholdHistory` multiplier (a corrupt doc) — the same in both trees, no action.
 
 ## 5. Tests — A4 (all import what they guard; every new row mutation-checked in the A4 review)
 
