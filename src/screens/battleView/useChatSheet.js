@@ -28,8 +28,14 @@ export const SHEET_DETENT = Object.freeze({
 
 const ORDER = Object.freeze([SHEET_DETENT.PEEK, SHEET_DETENT.HALF, SHEET_DETENT.FULL]);
 
-/** Peek: the handle row, the budget row and the composer — nothing else. */
-export const SHEET_PEEK_PX = 148;
+/**
+ * Peek sizes itself to its content (the sheet's height is `auto` there); this
+ * is the floor for the other detents and the clearance the mobile board
+ * reserves. It is the base peek height measured in Chromium under the
+ * production cascade (no preflight; buttons forced to 16 px): the handle
+ * row 39 + the budget row 24 + the one-line input row 105 (review refuter A).
+ */
+export const SHEET_PEEK_PX = 172;
 /** Full leaves this much of the header visible above the sheet. */
 export const SHEET_FULL_TOP_GAP_PX = 56;
 /** Half is this share of the viewport. */

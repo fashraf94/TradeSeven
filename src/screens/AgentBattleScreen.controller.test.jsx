@@ -281,9 +281,11 @@ describe('A4 — the unread-dot clear and the door, at the source (the mounted r
     expect(source).toContain("  // Mark feed as seen when switching to Command Center\n  if (activeTab === 'command') {\n    lastSeenFeedLengthRef.current = statusFeed.length;\n  }\n");
     // ...and it is the ONLY render-time write to the ref.
     expect((source.match(/lastSeenFeedLengthRef\.current = /g) || []).length).toBe(1);
-    // The controller path: state moved inside an effect with exactly these deps.
-    expect(source).toMatch(/useEffect\(\(\) => \{\n\s+if \(!chatVisible\) return;\n\s+setSeenFeedLength\(statusFeed\.length\);\n\s+\}, \[chatVisible, statusFeed\.length\]\);/);
-    expect((source.match(/setSeenFeedLength\(/g) || []).length).toBe(1);
+    // The controller path: state moved inside an effect keyed on the
+    // visibility, the feed's length and its newest stamp (the length alone
+    // plateaus at the server's cap — review refuter A on L2-F8).
+    expect(source).toMatch(/useEffect\(\(\) => \{\n\s+if \(!chatVisible\) return;\n\s+setSeenFeed\(\{ length: statusFeed\.length, stamp: newestFeedStamp \}\);\n\s+\}, \[chatVisible, statusFeed\.length, newestFeedStamp\]\);/);
+    expect((source.match(/setSeenFeed\(/g) || []).length).toBe(1);
     // The door never switches a tab under the flag.
     expect(source).not.toMatch(/handleAskFollowUp[\s\S]{0,900}setActiveTab\('command'\)/);
   });

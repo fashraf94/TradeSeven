@@ -210,7 +210,6 @@ export default function ChatSheet({
             padding: '4px 0',
             cursor: 'pointer',
             color: cssVar('text-secondary'),
-            fontSize: 11,
             letterSpacing: '0.02em',
             fontVariantNumeric: 'tabular-nums',
             textAlign: 'left',
@@ -229,7 +228,10 @@ export default function ChatSheet({
               }}
             />
           )}
-          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {/* The size sits on the SPAN: index.css forces every <button> to
+              16 px (!important), so the turn line matches the header's 11 px
+              only from here (review refuter A). */}
+          <span style={{ fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {turnText}
           </span>
         </button>

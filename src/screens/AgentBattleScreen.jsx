@@ -118,6 +118,20 @@ function computeTugOfWarWidth(myScore, oppScore) {
   return Math.max(10, Math.min(90, (Math.abs(myScore) / total) * 100));
 }
 
+// The newest feed entry's own stamp (its ISO / Firestore timestamp as a
+// millisecond key), for the controller's seen mark. Null when unreadable.
+function feedStampOf(entry) {
+  const ts = entry?.timestamp;
+  if (ts == null) return null;
+  if (typeof ts === 'string' || typeof ts === 'number') {
+    const ms = new Date(ts).getTime();
+    return Number.isNaN(ms) ? null : ms;
+  }
+  if (typeof ts.toMillis === 'function') return ts.toMillis();
+  if (typeof ts.seconds === 'number') return ts.seconds * 1000;
+  return null;
+}
+
 // ─── Responsive hook ──────────────────────────────────────────────────────────
 
 function useIsDesktop() {
@@ -508,7 +522,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // desktop page (a fixed 100vh is the large viewport on iOS — review L2-F11).
   const viewportHeight = useViewportHeight(controllerOn);
   const [gameTapeOpen, setGameTapeOpen] = useState(false);
-  const [seenFeedLength, setSeenFeedLength] = useState(0);
+  // The mark of what the chat has SEEN: the feed's length AND its newest
+  // entry's stamp. The server caps the feed (100 entries, sliced on every
+  // tick) and other writers push past the cap between ticks, so the length
+  // alone plateaus and can even shrink while entries keep arriving (review
+  // refuter A on L2-F8); the stamp keeps `new activity` honest at the cap.
+  const [seenFeed, setSeenFeed] = useState({ length: 0, stamp: null });
   const gameTapeReturnRef = useRef(null);
   const gameTapeBackRef = useRef(null);
   const gameTapeLinkRef = useRef(null);
@@ -882,12 +901,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // render. Desktop under the flag therefore never shows a dot; on mobile it
   // lives on the sheet's handle and clears when the sheet opens.
   const chatVisible = controllerOn && !gameTapeOpen && (isDesktop || isSheetOpen(sheet.detent));
+  const newestFeedStamp = feedStampOf(statusFeed[statusFeed.length - 1]);
   useEffect(() => {
     if (!chatVisible) return;
-    setSeenFeedLength(statusFeed.length);
-  }, [chatVisible, statusFeed.length]);
+    setSeenFeed({ length: statusFeed.length, stamp: newestFeedStamp });
+  }, [chatVisible, statusFeed.length, newestFeedStamp]);
   const hasNewFeedEntries = controllerOn
-    ? statusFeed.length > seenFeedLength
+    ? (statusFeed.length > seenFeed.length
+      || (seenFeed.stamp != null && newestFeedStamp != null && newestFeedStamp !== seenFeed.stamp))
     : statusFeed.length > lastSeenFeedLengthRef.current;
   const hasCommandDot = hasPendingProposal || hasNewFeedEntries;
   const commandDotColor = hasPendingProposal ? '#f59e0b' : '#5eead4';
@@ -1468,7 +1489,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             } : {
               flex: '1 1 auto',
               minWidth: 0,
-              paddingBottom: SHEET_PEEK_PX + 24,
+              paddingBottom: SHEET_PEEK_PX + 32,
             }}
           >
             {/* This turn (Phase A) — its one home, above the board. */}

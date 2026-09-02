@@ -419,6 +419,27 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     expect(list.style.overscrollBehavior).toBe('contain');
   });
 
+  it('at the server\'s feed cap the length stops moving — a newer entry still lights the dot; a shrink never hides one', () => {
+    const entry = (i) => ({ action: 'hold', message: `Held ${i}.`, timestamp: `2026-09-01T16:${String(i).padStart(2, '0')}:00.000Z` });
+    store.statusFeed = [entry(1), entry(2), entry(3)];
+    mount();
+    const cycle = q('[data-sheet-cycle]');
+    click(cycle); // half: seen (length 3, newest 16:03)
+    expect(cycle.getAttribute('data-unread')).toBe('false');
+    click(q('[data-sheet-collapse]'));
+    // A cap roll: the oldest falls off, a newer one lands — the length is still 3.
+    store.statusFeed = [entry(2), entry(3), entry(4)];
+    rerender();
+    expect(cycle.getAttribute('data-unread')).toBe('true');
+    click(cycle); // seen again (length 3, newest 16:04)
+    expect(cycle.getAttribute('data-unread')).toBe('false');
+    click(q('[data-sheet-collapse]'));
+    // A shrink below the seen length, then a newer entry: still new.
+    store.statusFeed = [entry(5)];
+    rerender();
+    expect(cycle.getAttribute('data-unread')).toBe('true');
+  });
+
   it('a pending proposal colours the handle dot amber, and — as shipped — keeps it while the sheet is open', () => {
     store.pendingProposal = { proposalId: 'p-1', resolvedAt: null };
     mount();
