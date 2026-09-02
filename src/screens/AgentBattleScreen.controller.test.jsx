@@ -65,7 +65,9 @@ const LIVE_DOC = {
     support: [],
     startingPrices: { AAPL: 150, NVDA: 900, MU: 90 },
   },
-  opponent: { portfolio: { star: [{ symbol: 'MSFT' }], core: [], support: [] } },
+  // The CPU side is static from deploy; the fixture's PROP carries a different
+  // CPU symbol (MSFT) than the doc (AMD) so the CPU half of D-59 can fail (T1).
+  opponent: { portfolio: { star: [{ symbol: 'AMD' }], core: [], support: [] } },
   evaluations: [
     { evalId: 'eval_005', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD', rationale: 'Held SLB.', downgraded: false },
   ],
@@ -78,7 +80,9 @@ const LIVE_DOC = {
       directiveThreadId: 't-1', timestamp: '2026-09-01T15:31:00.000Z', // 11:31 AM ET
     },
   ],
-  directive: { text: 'Protect the lead into the close', expiry: 'end_of_battle', directiveThreadId: 't-1', createdAt: '2026-09-01T15:31:00.400Z' },
+  // createdAt in a DIFFERENT minute from the exchange (11:33 vs 11:31), so a
+  // strip reading directive.createdAt is caught (T7).
+  directive: { text: 'Protect the lead into the close', expiry: 'end_of_battle', directiveThreadId: 't-1', createdAt: '2026-09-01T15:33:00.000Z' },
 };
 
 vi.mock('../hooks/useAgentBattle', () => ({
@@ -139,7 +143,20 @@ describe('under the flag — the controller', () => {
     const html = render();
     expect(html).toContain('SLB'); // swapped in after the prop was built
     expect(html).not.toContain('>MU<'); // the prop's stale symbol is gone
-    expect(html).toContain('MSFT'); // CPU rows from agentBattle.opponent.portfolio
+    expect(html).toContain('>AMD<'); // CPU rows from agentBattle.opponent.portfolio…
+    expect(html).not.toContain('>MSFT<'); // …not from the prop's opponent
+  });
+
+  it('the label text is the row-computed proximity — the same math the label computed before the lift (T2)', () => {
+    // No live price → priceChange 0 → distance = baseATR (2.5 by default) → `💣 2.5% to Bagger`.
+    const html = render();
+    expect((html.match(/💣 2\.5% to Bagger/g) || []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('every player row carries the visible Why? affordance; the CPU side does not (L5-F9)', () => {
+    const html = render();
+    expect((html.match(/data-why-label="1"/g) || []).length).toBe(3);
+    expect((html.match(/>Why\?</g) || []).length).toBe(3);
   });
 
   it('shows no countdown and no agent verb', () => {
@@ -154,6 +171,7 @@ describe('under the flag — the controller', () => {
     const html = render();
     expect(html).toContain('data-this-turn="filed"');
     expect(html).toContain('Filed 11:31 AM');
+    expect(html).not.toContain('11:33');
     expect(html).toContain('Protect the lead into the close');
     // No promise about the next check rides the strip (hazard 3).
     expect(html).not.toContain('for the ~');
@@ -186,6 +204,14 @@ describe('flag-off — the shipped tabbed screen', () => {
     const html = render();
     expect(html).toContain('>MU<');
     expect(html).not.toContain('SLB');
+    expect(html).toContain('>MSFT<');
+    expect(html).not.toContain('>AMD<');
+  });
+
+  it('the label text is unchanged flag-off (T2)', () => {
+    const html = render();
+    expect((html.match(/💣 2\.5% to Bagger/g) || []).length).toBeGreaterThanOrEqual(3);
+    expect(html).not.toContain('data-why-label');
   });
 
   it('no Why? tap surface, no panel (A2 is flag-only)', () => {

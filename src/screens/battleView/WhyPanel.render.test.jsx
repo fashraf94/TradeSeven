@@ -104,12 +104,18 @@ describe('the header, the facts and the trades', () => {
     expect(renderRow(HELD).toLowerCase()).not.toContain('lock');
   });
 
-  it('`This piece today` lists the piece\'s trades with the receipt\'s own time, symbols and reason', () => {
+  it('`This piece today` lists the piece\'s trades with the receipt\'s own time, symbols and the agent\'s words', () => {
     const html = renderRow(HELD);
     expect(html).toContain('This piece today');
     expect(html).toContain('11:02 AM · MU → SLB');
-    expect(html).toContain('haiku_decision');
     expect(html).toContain('MU rolled over');
+  });
+
+  it('never renders the receipt\'s machinery code or a model-tier name (F10)', () => {
+    const html = renderRow(HELD).toLowerCase();
+    expect(html).not.toContain('haiku_decision');
+    expect(html).not.toContain('haiku');
+    expect(html).not.toContain('guardrail_');
   });
 
   it('omits the trades section when the piece has no trades', () => {
@@ -121,6 +127,22 @@ describe('the header, the facts and the trades', () => {
     const html = renderRow(HELD);
     expect(html).not.toContain('triggeredBy');
     expect(html).not.toMatch(/\bsource\b/);
+  });
+
+  it('an engine-outage tick renders the absence state, not `Held` with the placeholder (F12)', () => {
+    const outage = { ...HELD, rationale: 'Haiku call failed — defaulting to HOLD', haikuError: { failureClass: 'transport' } };
+    const html = renderRow(outage);
+    expect(html).toContain('No decision recorded at this check');
+    expect(html).not.toContain('Haiku call failed');
+    expect(html).not.toMatch(/>Held</);
+  });
+
+  it('with no check time at all the region still has an accessible name (F6)', () => {
+    const html = strip(renderToString(
+      <WhyPanel symbol="SLB" state={selectWhyState(null, 'SLB', null)} onAskFollowUp={() => {}} />,
+    ));
+    expect(html).toContain('aria-label="No decision recorded at this check"');
+    expect(html).not.toContain('aria-labelledby');
   });
 });
 

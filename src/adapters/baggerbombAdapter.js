@@ -65,7 +65,8 @@ export function toIso(raw) {
   return new Date(ms).toISOString();
 }
 
-function toMillis(raw) {
+/** Epoch millis for the same union, or null. Exported for the Battle View's derivers. */
+export function toMillis(raw) {
   const iso = toIso(raw);
   return iso == null ? null : new Date(iso).getTime();
 }

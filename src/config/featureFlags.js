@@ -1979,7 +1979,11 @@ export const EQUIPPED_RULE_PRECEDENCE_ENABLED = false;
  *
  * READ-ONLY by construction. Phase A writes nothing to the battle doc, makes
  * no model call, adds no listener and never touches api/. When FALSE every
- * surface is byte-identical to today, which the screen's render tests assert.
+ * Battle View surface is byte-identical to today, which the screen's render
+ * tests assert. The ONE change outside this flag is D-62: the dashboard
+ * Desk's closed-phase string (DESK_COPY.postureClosed) now carries the as-of
+ * stamp too — one sentence on both surfaces — and that string is gated by
+ * the Desk's own COMMAND_CENTER_SYNC_ENABLED (dark), never by this flag.
  *
  * INDEPENDENT of COMMAND_CENTER_SYNC_ENABLED (the dashboard Desk): neither
  * flag reads the other.

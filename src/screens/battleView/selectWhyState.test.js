@@ -70,6 +70,22 @@ describe('the branches, in order', () => {
     expect(selectWhyState({ timestamp: TS, decision: 'HOLD', rationale: '   ' }, 'SLB', LAST).rationale).toBeNull();
     expect(selectWhyState({ timestamp: TS, decision: 'HOLD' }, 'SLB', LAST).rationale).toBeNull();
   });
+
+  it('an engine-outage tick (haikuError stamped) is the ABSENCE state, never `Held` with the system\'s placeholder words (F12)', () => {
+    const outage = {
+      timestamp: TS, decision: 'HOLD', downgraded: false,
+      rationale: 'Haiku call failed — defaulting to HOLD',
+      haikuError: { failureClass: 'transport', message: 'timeout', timestamp: TS, evalId: 'eval_009' },
+    };
+    const s = selectWhyState(outage, 'SLB', LAST);
+    expect(s.kind).toBe(WHY_KIND.ABSENT);
+    expect(s.label).toBe('No decision recorded at this check');
+    expect(s.rationale).toBeNull();
+    const skipped = { ...outage, rationale: 'Evaluation skipped — cron budget too low to start Haiku call. Defaulting to HOLD.', haikuError: { failureClass: 'budget_skipped' } };
+    expect(selectWhyState(skipped, 'SLB', LAST).kind).toBe(WHY_KIND.ABSENT);
+    // haikuError null (the success shape) is a real decision.
+    expect(selectWhyState({ ...outage, haikuError: null, rationale: RATIONALE_HOLD }, 'SLB', LAST).kind).toBe(WHY_KIND.HELD);
+  });
 });
 
 describe('absence — a truthful state, on the `>=` join only', () => {
@@ -146,15 +162,21 @@ describe('selectTradesForSymbol — the piece\'s trades today, engine text verba
     { symbolOut: 'SLB', symbolIn: 'XOM', swappedOutAt: '2026-09-01T16:17:00.000Z', exitReason: 'guardrail_stop_loss', rationale: null },
   ];
 
-  it('includes swaps in and out of the piece, oldest first, with time / symbols / reason', () => {
+  it('includes swaps in and out of the piece, oldest first, with time / symbols / the agent\'s words', () => {
     const rows = selectTradesForSymbol(TRADES, 'SLB');
     expect(rows.map((r) => `${r.symbolOut}→${r.symbolIn}`)).toEqual(['MU→SLB', 'SLB→XOM']);
     expect(rows[0]).toEqual({
       at: '2026-09-01T15:02:00.000Z', symbolOut: 'MU', symbolIn: 'SLB',
-      rationale: 'MU rolled over; SLB leads energy.', exitReason: 'haiku_decision',
+      rationale: 'MU rolled over; SLB leads energy.',
     });
     expect(rows[1].rationale).toBeNull();
-    expect(rows[1].exitReason).toBe('guardrail_stop_loss');
+  });
+
+  it('never surfaces the machinery-provenance code (exitReason) — the attribution class hazard 12 keeps off the screen (F10)', () => {
+    for (const row of selectTradesForSymbol(TRADES, 'SLB')) {
+      expect(row).not.toHaveProperty('exitReason');
+      expect(JSON.stringify(row)).not.toMatch(/haiku|guardrail/);
+    }
   });
 
   it('nothing for a piece with no trades, or with no trades array', () => {

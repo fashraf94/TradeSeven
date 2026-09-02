@@ -153,6 +153,41 @@ describe('computeProximity — the lifted text equals the pre-lift formatText ov
   });
 });
 
+describe('the config tables the oracle shares with the module are pinned literally (T8)', () => {
+  it('THRESHOLDS — multipliers, icons, labels', () => {
+    expect(THRESHOLDS).toEqual({
+      bagger: { multiplier: 1.0, icon: '💣', label: 'Bagger' },
+      doubleBagger: { multiplier: 1.5, icon: '💣💣', label: 'Double' },
+      tenBagger: { multiplier: 2.0, icon: '🚀', label: 'TenBagger' },
+      bust: { multiplier: -1.0, icon: '📉', label: 'Bust' },
+      crash: { multiplier: -1.5, icon: '💥', label: 'Crash' },
+      meltdown: { multiplier: -2.0, icon: '🔥', label: 'Meltdown' },
+    });
+  });
+
+  it('ACHIEVEMENT_CONFIG — the crossed-threshold texts', () => {
+    expect(Object.fromEntries(Object.entries(ACHIEVEMENT_CONFIG).map(([k, v]) => [k, v.text]))).toEqual({
+      bagger: '💣 BaggerBomb!',
+      doubleBagger: '💣💣 Double Bagger!',
+      tenBagger: '🚀 TenBagger!',
+      bust: '📉 Bust',
+      crash: '💥 Crash',
+      meltdown: '🔥 Meltdown',
+    });
+  });
+
+  it('calculateNextThreshold — spot values from the pre-lift table', () => {
+    expect(calculateNextThreshold(1, 2.5, { maxMultiplier: 0, minMultiplier: 0 })).toEqual({
+      distance: 1.5, label: 'Bagger', icon: '💣', direction: 'positive', isPrimed: false, highestCrossed: null,
+    });
+    expect(calculateNextThreshold(-1, 2.5, { maxMultiplier: 0, minMultiplier: -1.2 })).toMatchObject({
+      label: 'Crash', icon: '💥', direction: 'negative', highestCrossed: 'bust',
+    });
+    expect(calculateNextThreshold(5, 2.5, { maxMultiplier: 2.5, minMultiplier: 0 })).toMatchObject({ label: 'MAX', direction: 'maxed' });
+    expect(calculateNextThreshold(1, 0, {})).toMatchObject({ label: '—', direction: 'neutral' });
+  });
+});
+
 describe('the label module still exports what the barrel re-exports', () => {
   it('calculateNextThreshold and THRESHOLDS are the same objects through both paths', () => {
     expect(reExportedCalc).toBe(calculateNextThreshold);

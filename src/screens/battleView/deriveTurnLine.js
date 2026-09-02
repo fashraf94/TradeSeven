@@ -33,10 +33,14 @@
 import {
   buildBaggerbombAdapter,
   deriveDueAt,
-  toIso,
+  toMillis,
   PHASE,
 } from '../../adapters/baggerbombAdapter';
 import { DESK_COPY } from '../../components/Dashboard/desk/deskCopy';
+
+// The adapter's normalisation is the one boundary for the Firestore-Timestamp
+// / ISO / Date / number union; re-exported so the Why? selector shares it.
+export { toMillis };
 
 /**
  * How long past the due instant the turn line keeps saying "next ~" before it
@@ -53,12 +57,6 @@ export const TURN_STATE = Object.freeze({
   CLOSED: 'closed',
   COMPLETE: 'complete',
 });
-
-/** Epoch millis for the Firestore-Timestamp / ISO / Date / number union, or null. */
-export function toMillis(raw) {
-  const iso = toIso(raw);
-  return iso == null ? null : new Date(iso).getTime();
-}
 
 /**
  * THE ONE JOIN. An evaluation entry belongs to the latest check when its

@@ -13,11 +13,13 @@
 //             no longer the directive in front of the agent. Time = when the
 //             replacing directive was filed. Copy never says "never seen"
 //             (hazard 3): a replaced directive may have been in a prompt.
-//   expired   the battle is complete (D-61). Under fullday a `3_games`
-//             directive cannot expire mid-battle; `expiry` is an ENUM
-//             (`end_of_battle | 3_games | permanent`), never a timestamp
-//             (hazard 20), and the client never imports directiveUtils.js
-//             (hazard 22).
+//   expired   the battle is complete (D-61) and this was the CURRENT
+//             directive at the close — a directive already Replaced keeps
+//             that receipt, the more specific proven state (review finding
+//             F11). Under fullday a `3_games` directive cannot expire
+//             mid-battle; `expiry` is an ENUM (`end_of_battle | 3_games |
+//             permanent`), never a timestamp (hazard 20), and the client
+//             never imports directiveUtils.js (hazard 22).
 //   acted     is NOT derived here. It is the shipped `↳ from directive` on a
 //             statusFeed swap entry (AgentChat.jsx), keyed to the model's own
 //             echo of the thread id — unchanged by Phase A.
@@ -80,11 +82,10 @@ export function deriveReceipts(chatExchanges, directive, battleStatus) {
     receipts[threadId] = { state: RECEIPT_STATE.REPLACED, at: replacedBy ? replacedBy.at : null };
   }
 
-  // Expired: battle complete only (D-61) — every directive, current included.
+  // Expired: battle complete only (D-61), and only the directive that was
+  // still current at the close. Replaced stays Replaced.
   if (battleStatus === 'completed') {
-    for (const threadId of Object.keys(receipts)) {
-      receipts[threadId] = { state: RECEIPT_STATE.EXPIRED, at: null };
-    }
+    receipts[currentId] = { state: RECEIPT_STATE.EXPIRED, at: null };
   }
 
   return receipts;

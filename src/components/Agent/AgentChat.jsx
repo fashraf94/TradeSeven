@@ -16,6 +16,7 @@ import { OPENER_LAZY_FALLBACK_ENABLED } from '../../config/featureFlags';
 // copy module, never inline here (this file is not under the copy guard —
 // its error strings would trip it).
 import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
+import { cssVar } from '../../theme/cssTokens';
 
 // "Didn't respond" means the proposal hit its deadline without the user
 // approving or vetoing. In strategist mode, agent-evaluate.js writes
@@ -152,14 +153,14 @@ function ExecutionCard({ directive, receipt }) {
                 height: 6,
                 borderRadius: '50%',
                 display: 'block',
-                background: receiptState === 'filed' ? '#5EEAD4' : 'transparent',
-                border: '1px solid #5EEAD4',
+                background: receiptState === 'filed' ? cssVar('teal') : 'transparent',
+                border: `1px solid ${cssVar('teal')}`,
                 opacity: receiptState === 'filed' ? 1 : 0.5,
               }}
             />
             <span style={{
               fontSize: 12,
-              color: receiptState === 'filed' ? '#5EEAD4' : '#9CA3AF',
+              color: receiptState === 'filed' ? cssVar('teal') : cssVar('text-secondary'),
               fontVariantNumeric: 'tabular-nums',
             }}>
               {receiptLine}
@@ -438,6 +439,10 @@ export default function AgentChat({
   const [activeSubTab, setActiveSubTab] = useState('chat');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+  // The last prefill this composer applied (Phase A). A composer that still
+  // holds exactly that text is untouched and may be re-prefilled; anything
+  // else is the user's draft and is never overwritten.
+  const lastPrefillRef = useRef('');
 
   // Today's date in ET — matches agent-batch-review.js and is the bucket key
   // for dailyGrades writes. Recomputed each render is fine (cheap).
@@ -642,7 +647,16 @@ export default function AgentChat({
   // ── Composer prefill (Phase A — the Why? door) ─────────────────────────────
   useEffect(() => {
     if (!composerPrefill || composerPrefill.nonce == null) return;
-    setInputText(String(composerPrefill.text ?? '').slice(0, 2000));
+    const text = String(composerPrefill.text ?? '').slice(0, 2000);
+    // A draft the user already typed wins over the prefill (review finding
+    // F13): an empty prefill (the book door) only focuses; a piece prefill
+    // fills the composer only when it is empty or still holds the previous,
+    // untouched prefill.
+    const untouched = !inputText.trim() || inputText === lastPrefillRef.current;
+    if (text && untouched) {
+      setInputText(text);
+      lastPrefillRef.current = text;
+    }
     const el = textareaRef.current;
     if (el && typeof el.focus === 'function') {
       el.focus();

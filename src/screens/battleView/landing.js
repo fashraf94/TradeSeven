@@ -16,6 +16,15 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { motionToken } from '../../theme/motion';
 
+/**
+ * How long after the landing starts its key is cleared. The whole sequence
+ * (rows, then the turn line) is over by LANDING_TOTAL_MS; a little slack lets
+ * the last fade finish. Clearing the key is NOT a landing trigger — the
+ * landing fires on the snapshot only — it is what stops a re-entered tab from
+ * replaying a check that already landed (review finding L2-F2).
+ */
+export const LANDING_CLEAR_MS = 1000;
+
 /** The whole sequence, rows and turn line, fits inside this. */
 export const LANDING_TOTAL_MS = 700;
 /** The rows' staggered starts span at most this much of it. */
@@ -37,10 +46,22 @@ export function landingTurnLineDelayMs(count) {
 
 /**
  * The landing key: the `lastScoredAt` value of the check that just landed, or
- * null. It changes exactly once per confirmed check after the first snapshot,
- * which is what keys the row washes and the turn-line tick to remount.
+ * null. It is set exactly once per confirmed check after the doc's first
+ * snapshot, which is what keys the row washes and the turn-line tick — and it
+ * clears itself LANDING_CLEAR_MS later, so nothing that mounts afterwards (a
+ * re-entered tab) finds a landing to replay.
+ *
+ * Seeding is on the DOC's first snapshot, not on the first stamp (review
+ * finding F4): a battle opened before its first check has `lastScoredAt:
+ * null` on arrival, and the first check the player then waits through is a
+ * confirmed check that must land. A doc that arrives already stamped seeds
+ * silently — the player did not wait through that one.
+ *
+ * @param {string|null} lastScoredAt  scoreState.lastScoredAt from the doc
+ * @param {boolean} enabled           the controller flag
+ * @param {boolean} docPresent        whether the battle doc has arrived
  */
-export function useLandingKey(lastScoredAt, enabled) {
+export function useLandingKey(lastScoredAt, enabled, docPresent = lastScoredAt != null) {
   const [key, setKey] = useState(null);
   const prevRef = useRef(null);
   const seededRef = useRef(false);
@@ -49,8 +70,8 @@ export function useLandingKey(lastScoredAt, enabled) {
     if (!enabled) return;
     const current = lastScoredAt ?? null;
     if (!seededRef.current) {
-      // First snapshot with a stamp: remember it, play nothing.
-      if (current != null) {
+      // The doc's first snapshot: remember its stamp (even null), play nothing.
+      if (docPresent) {
         seededRef.current = true;
         prevRef.current = current;
       }
@@ -60,7 +81,15 @@ export function useLandingKey(lastScoredAt, enabled) {
       prevRef.current = current;
       setKey(current);
     }
-  }, [lastScoredAt, enabled]);
+  }, [lastScoredAt, enabled, docPresent]);
+
+  // End the landing: the sequence is over, the key goes back to null. A timer
+  // that only ENDS a landing the snapshot started — never one that starts it.
+  useEffect(() => {
+    if (key == null) return undefined;
+    const id = setTimeout(() => setKey((k) => (k === key ? null : k)), LANDING_CLEAR_MS);
+    return () => clearTimeout(id);
+  }, [key]);
 
   return key;
 }

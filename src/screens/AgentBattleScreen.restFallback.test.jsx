@@ -97,6 +97,9 @@ describe('AgentBattleScreen — composes with WS disabled (B1 first paint)', () 
     // Held symbols surface from the battle prop, independent of the socket.
     expect(html).toContain('AAPL');
     expect(html).toContain('NVDA');
+    // The proximity label text (Phase A moved the math into computeProximity;
+    // this pins the shipped text: no live price → 2.5% to the first tier).
+    expect(html).toContain('💣 2.5% to Bagger');
     // Real surface composed, not an early bail.
     expect(html.length).toBeGreaterThan(1000);
   });

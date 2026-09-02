@@ -30,6 +30,7 @@ import { selectWhyState, selectTradesForSymbol } from './battleView/selectWhySta
 import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
 import { deriveReceipts } from './battleView/deriveReceipts';
 import ThisTurnStrip from './battleView/ThisTurnStrip';
+import useContentStable from './battleView/useContentStable';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
 // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Uncomment to revive.
 // import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
@@ -526,8 +527,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // `startingPrices`; the CPU rows from `agentBattle.opponent.portfolio`
   // (static from deploy, agentBattleService.js:167). The prop is the fallback
   // only when the live field is absent (null).
-  const livePlayerPortfolio = controllerOn ? (agentBattle?.portfolio || null) : null;
-  const liveOpponentPortfolio = controllerOn ? (agentBattle?.opponent?.portfolio || null) : null;
+  //
+  // The live doc is a fresh object on every Firestore snapshot (a chat
+  // message, a feed entry, a tick), so the live sources are held by CONTENT:
+  // their identity changes only when their values do (review finding F3 —
+  // otherwise every snapshot restarted the 60 s price poll with an immediate
+  // extra REST fetch). Flag-off the prop is frozen and reaches nothing new.
+  const livePlayerPortfolio = useContentStable(controllerOn ? (agentBattle?.portfolio || null) : null);
+  const liveOpponentPortfolio = useContentStable(controllerOn ? (agentBattle?.opponent?.portfolio || null) : null);
   const playerPortfolioSource = livePlayerPortfolio || battle?.creator?.portfolio;
   const opponentPortfolioSource = liveOpponentPortfolio || battle?.opponent?.portfolio;
 
@@ -861,7 +868,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
 
   // The landing fires on the snapshot change of lastScoredAt only — never on
   // a timer, never on open. Null flag-off (the hook is inert when disabled).
-  const landingKey = useLandingKey(agentBattle?.scoreState?.lastScoredAt, controllerOn);
+  const landingKey = useLandingKey(agentBattle?.scoreState?.lastScoredAt, controllerOn, Boolean(agentBattle));
   const activeTiers = agentBattle?.gameMode === 'baggerbomb_tournament' ? FLAT6_TIERS : TIERS;
   const rowCount = activeTiers.reduce((n, t) => n + t.slots, 0);
 
@@ -905,7 +912,13 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // consumes the prefill once.
   const handleWhyToggle = useCallback((rowKey, asset) => {
     if (!asset?.symbol) return;
-    setWhyOpen(prev => (prev?.key === rowKey ? null : { key: rowKey, symbol: asset.symbol }));
+    // Toggle on the row AND its symbol: after a swap replaced the open row's
+    // piece, the first tap on the new piece opens it (review finding F5).
+    setWhyOpen(prev => (
+      prev?.key === rowKey && prev.symbol === asset.symbol
+        ? null
+        : { key: rowKey, symbol: asset.symbol }
+    ));
   }, []);
   const handleBookWhyToggle = useCallback(() => setBookWhyOpen(open => !open), []);
   const handleAskFollowUp = useCallback((symbol) => {
@@ -1182,6 +1195,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                         {...(whyable ? {
                           onWhy: (asset) => handleWhyToggle(rowKey, asset),
                           whyOpen: isWhyOpen,
+                          whyLabel: BATTLE_VIEW_COPY.why,
                           // The row hands the panel the SAME proximity it just
                           // rendered — one call, one number (hazard 15).
                           renderWhy: (proximity) => (

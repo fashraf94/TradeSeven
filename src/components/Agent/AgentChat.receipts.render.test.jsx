@@ -58,12 +58,12 @@ describe('under the flag — receipts on the directive cards', () => {
     expect(html).toContain('Protect the lead into the close');
   });
 
-  it('battle complete → every card reads `Expired`', () => {
+  it('battle complete → the current card reads `Expired`; the replaced one keeps `Replaced {t}` (F11)', () => {
     const html = render({ receipts: deriveReceipts(EXCHANGES, DIRECTIVE, 'completed'), battleStatus: 'completed' });
-    expect((html.match(/data-receipt="expired"/g) || []).length).toBe(2);
+    expect((html.match(/data-receipt="expired"/g) || []).length).toBe(1);
     expect(html).toContain('>Expired<');
+    expect(html).toContain('Replaced 12:58 PM');
     expect(html).not.toContain('Filed');
-    expect(html).not.toContain('Replaced');
   });
 
   it('a directive card whose exchange carries no thread id gets no line at all — never the promise', () => {
