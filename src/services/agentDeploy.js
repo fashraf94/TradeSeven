@@ -16,7 +16,7 @@ import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../config/featureFlags';
 import * as ceremonyTiming from '../components/Dashboard/deployCeremony/ceremonyTiming';
 
 export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetResolved) {
-  if (!agentId) return { success: false, error: 'no-agent' };
+  if (!agentId) return { success: false, postIssued: false, error: 'no-agent' };
 
   // The deploy TARGET id, reported upward the instant it is known so the caller
   // can subscribe to the document this deploy will actually write to. The
@@ -52,7 +52,7 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   const token = await getIdToken();
   if (!token) {
     console.error('[Deploy] No auth token — sign in required to deploy');
-    return { success: false, error: 'auth-required' };
+    return { success: false, postIssued: false, error: 'auth-required' };
   }
 
   // Per-Battle Loadout + Concurrency Phase 1: when enabled, a Command-Center
@@ -94,12 +94,34 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   }
 
   // Step 1: generate the portfolio via the AI decision endpoint.
+  //
+  // From here on the caller must be able to tell WHERE a failure happened, because
+  // the Deploy Ceremony's recovered-reveal gate turns on it: decide.js commits the
+  // battle at :910, and every pre-battle refusal returns a 4xx/409/503 (:106, :111,
+  // :140, :153, :165, :168, :171, :178, :187, :298, :337, :844, :907). The ONLY
+  // status it can return AFTER that commit is the catch's 500 at :1012 — which is
+  // exactly the :929 failure (`agentRef.update({ activeBattleId })` rejecting on a
+  // durable battle). So `httpStatus` distinguishes "the server refused before it
+  // could create anything" from "a battle may well exist", and `postIssued`
+  // separates a transport failure — where we genuinely do not know — from a
+  // client-side bail that never reached the server.
   ceremonyTiming.markPostIssued();
-  const response = await fetch('/api/agent/decide', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ agentId: deployAgentId }),
-  });
+  let response;
+  try {
+    response = await fetch('/api/agent/decide', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ agentId: deployAgentId }),
+    });
+  } catch (err) {
+    // The request left the client but produced no response. Whether the server
+    // saw it is unknowable here, which is itself the answer the ceremony needs.
+    console.error('[Deploy] Network failure posting to /api/agent/decide:', err?.message || err);
+    return {
+      success: false, postIssued: true, httpStatus: null,
+      error: 'deploy_network', details: err?.message || 'Network request failed',
+    };
+  }
   // Marked at response arrival rather than after the body read, so this measures
   // the server round trip and not the client's parse.
   ceremonyTiming.markPostResolved(response.status);
@@ -121,6 +143,8 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
       return {
         success: false,
         status,
+        postIssued: true,
+        httpStatus: status,
         error: `deploy_http_${status}`,
         details: snippet || response.statusText || `Request failed (${status})`,
       };
@@ -128,7 +152,10 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
     // [Deploy Ceremony §10] Forward `details`/`errorPhase` (previously dropped)
     // plus the HTTP status so the ceremony error surface can show something useful.
     console.error('[Deploy] Failed:', status, data.error, data.details || '');
-    return { success: false, status, error: data.error, details: data.details, errorPhase: data.errorPhase };
+    return {
+      success: false, status, postIssued: true, httpStatus: status,
+      error: data.error, details: data.details, errorPhase: data.errorPhase,
+    };
   }
 
   // Step 2: hand off to the app's battle-creation callback (it navigates).

@@ -82,6 +82,8 @@ const VERIFY_NO_ANSWER = Symbol('verify-no-answer');
 
 export default function useCeremonyStageMachine({
   stage, deployId, updatedAt, errorPhase, deployStatus,
+  // What the client's own POST learned. See the attribution block below.
+  deployHttpStatus = null, deployPostIssued = false,
   // Deploy-target scoping (§5). `targetKnown` is TRUE only once a snapshot for
   // `targetAgentId` has actually been observed — see useDeployTargetProgress.
   targetKnown = true, targetAgentId = null,
@@ -108,8 +110,8 @@ export default function useCeremonyStageMachine({
 
   // Latest inputs, mirrored into refs so the single interval reads fresh values
   // without re-subscribing on every snapshot tick.
-  const inRef = useRef({ stage, deployId, updatedAt, errorPhase, deployStatus, targetKnown, targetAgentId });
-  inRef.current = { stage, deployId, updatedAt, errorPhase, deployStatus, targetKnown, targetAgentId };
+  const inRef = useRef({ stage, deployId, updatedAt, errorPhase, deployStatus, targetKnown, targetAgentId, deployHttpStatus, deployPostIssued });
+  inRef.current = { stage, deployId, updatedAt, errorPhase, deployStatus, targetKnown, targetAgentId, deployHttpStatus, deployPostIssued };
   // Mirrored for the same reason as the inputs: the mount-once effect must call
   // the CURRENT checker, not the one captured at first render.
   const verifyRef = useRef(verifyBattle);
@@ -273,28 +275,37 @@ export default function useCeremonyStageMachine({
 
       // ATTRIBUTION. A battle on this target is not necessarily a battle THIS
       // deploy created. The query answers "does an active battle exist for this
-      // agent", and on a deploy the server refused before writing anything — the
-      // 429s at decide.js:178 / :187 return before the deployProgress init at
-      // :208, as do auth and network failures — the battle it finds belongs to a
-      // PREVIOUS deploy. Revealing then announces "Deployment complete" for a
-      // deploy that never ran and walks the user into an unrelated live battle:
-      // the honesty invariant inverted, an unverified POSITIVE claim swapped in
-      // for the unverified negative one this PR removes.
+      // agent", which is not an answer to "did this deploy create one" — and on a
+      // deploy the server REFUSED, the battle it finds belongs to a previous one.
+      // Revealing then announces "Deployment complete" for a deploy that never
+      // ran and walks the user into an unrelated live battle: the honesty
+      // invariant inverted, an unverified POSITIVE claim swapped in for the
+      // unverified negative one this PR removes.
       //
-      // `ourDeployIdRef` is the tie. It is non-null only once the server has
-      // written deployProgress carrying a deployId that is OURS — one that
-      // differs from the baseline this machine observed for this target. If the
-      // server never began our deploy, nothing the query finds can be attributed
-      // to it. In the canonical :929 failure the server wrote strategy_running
-      // long before the throw and the client subscribed before the POST, so the
-      // pin is in place and recovery is unaffected.
+      // The tie is the client's own HTTP status, and it is exact rather than
+      // inferred. decide.js commits the battle at :910; EVERY pre-battle refusal
+      // returns a 4xx/409/503 (:106, :111, :140, :153, :165, :168, :171, :178,
+      // :187, :298, :337, :844, :907), and the ONLY status it can return after
+      // that commit is the catch's 500 at :1012 — which is precisely the :929
+      // failure this recovery exists for. So a status other than 500 PROVES the
+      // server refused before it could create anything.
       //
-      // Suppressed, this falls through to the tone logic below and lands on lost
-      // contact — the honest answer: we saw no evidence the deploy began, and a
-      // battle we cannot attribute to it is not evidence that it did.
-      const serverBeganOurDeploy = ourDeployIdRef.current != null;
+      // A transport failure (postIssued with no status) is genuinely unknowable
+      // and stays eligible: the request may have landed and committed. A deploy
+      // that never reached the POST at all is not.
+      //
+      // Deliberately NOT keyed on `ourDeployIdRef`: that pin is inferred by
+      // DIFFERENCE from a baseline, and review proved it wrong in both
+      // directions — a late first snapshot (or a listen error, which
+      // subscribeToAgentDoc reports as a delivered null) leaves a real recovery
+      // unpinned and silently unrecoverable, while a foreign deployId from a
+      // cache-then-server delivery or another device pins as "ours" and buys a
+      // false reveal. The §5.3 unsolicited-progress hole belongs to PR 4; the
+      // reveal must not be built on top of it.
+      const { deployHttpStatus: httpStatus, deployPostIssued: postIssued } = inRef.current;
+      const failureCouldFollowCommit = postIssued && (httpStatus == null || httpStatus === 500);
 
-      if (!checkFailed && outcome.found && serverBeganOurDeploy) {
+      if (!checkFailed && outcome.found && failureCouldFollowCommit) {
         // A durable battle exists AND this deploy reached the server. The failure
         // was downstream of the commit — decide.js:929 is the canonical case — so
         // the honest terminal state is the reveal, carrying the id the query

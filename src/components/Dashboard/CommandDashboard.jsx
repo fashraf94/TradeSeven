@@ -240,13 +240,20 @@ export default function CommandDashboard({
       result = await deployAgent(agent.id, onCreateAgentBattle, setDeployTargetId);
     } catch (err) {
       console.error('[Deploy] Error:', err);
-      if (ceremonyOn) result = { success: false, error: err?.message };
+      if (ceremonyOn) result = { success: false, error: err?.message, postIssued: false, httpStatus: null };
     }
     setDeploying(false);
     if (ceremonyOn) {
       setDeployResult(result?.success
         ? { status: 'success', agentBattleId: result.agentBattleId }
-        : { status: 'error', error: result?.error, details: result?.details });
+        : {
+            status: 'error', error: result?.error, details: result?.details,
+            // Forwarded for the ceremony's recovered-reveal gate — see the
+            // deployAgent comment above the POST. Previously dropped here, which
+            // is why the ceremony could not tell a refusal from a real failure.
+            httpStatus: result?.httpStatus ?? null,
+            postIssued: result?.postIssued === true,
+          });
     }
     return result;
   };

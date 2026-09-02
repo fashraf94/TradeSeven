@@ -82,6 +82,10 @@ export default function DeployCeremony({
     updatedAt: dp.updatedAt,
     errorPhase: dp.errorPhase,
     deployStatus: deployResult?.status,
+    // What the client's own POST learned. The recovered reveal turns on it —
+    // see the attribution block in the machine.
+    deployHttpStatus: deployResult?.httpStatus ?? null,
+    deployPostIssued: deployResult?.postIssued === true,
     // Baseline scoping (§5): until a snapshot for the target has been observed,
     // these primitives are all null and MUST NOT establish a baseline.
     targetKnown,

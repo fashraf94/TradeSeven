@@ -95,7 +95,12 @@ describe('useCeremonyStageMachine — the verification seam', () => {
   const BASE = {
     stage: undefined, deployId: undefined, updatedAt: undefined, errorPhase: undefined,
     deployStatus: 'pending', targetKnown: false, targetAgentId: null,
+    deployHttpStatus: null, deployPostIssued: false,
   };
+  // The client outcome that leaves a battle POSSIBLE: the POST reached the server
+  // and came back 500 — the only status decide.js can return after the battle
+  // commit at :910 (its catch at :1012), i.e. the canonical :929 failure.
+  const COULD_HAVE_COMMITTED = { deployStatus: 'error', deployPostIssued: true, deployHttpStatus: 500 };
   let verify;
 
   function MachineProbe(props) { seen = useCeremonyStageMachine(props); return null; }
@@ -337,13 +342,24 @@ describe('useCeremonyStageMachine — the verification seam', () => {
   // finds belongs to a PREVIOUS deploy. Revealing then announces "Deployment
   // complete" for a deploy that never ran.
   // DIES UNDER: revealing on `outcome.found` alone.
-  it('attribution — a battle found when the server never began our deploy is NOT a reveal', async () => {
+  // Every pre-battle refusal in decide.js returns a 4xx/409/503 — :178 and :187
+  // (the two 429s) return before the deployProgress init at :208, and :844/:907
+  // before the commit at :910. So a status other than 500 PROVES the server
+  // refused before it could create anything, and the battle the query finds is a
+  // PREVIOUS deploy's. Revealing it announces "Deployment complete" for a deploy
+  // that never ran.
+  // DIES UNDER: revealing on `outcome.found` alone.
+  it.each([
+    ['429 — deploy already in progress (decide.js:178)', 429],
+    ['429 — the 2-minute cooldown (decide.js:187)', 429],
+    ['403 — ownership (decide.js:171)', 403],
+    ['503 — pricing baseline gate (decide.js:844)', 503],
+    ['409 — compiled-build gate (decide.js:907)', 409],
+  ])('attribution — a %s refusal never reveals a battle it did not create', async (_label, httpStatus) => {
     verify.mockResolvedValue({ found: true, battle: FOUND_BATTLE });
-    // The target carries a PRIOR deploy's id, which becomes the baseline. Our
-    // deploy is refused before the server writes anything, so nothing ever
-    // differs from that baseline and no deployId is pinned as ours.
     armBaseline(PRIOR);
-    step({ ...T, stage: 'complete', deployId: PRIOR, updatedAt: PRIOR, deployStatus: 'error' });
+    step({ ...T, stage: 'complete', deployId: PRIOR, updatedAt: PRIOR,
+           deployStatus: 'error', deployPostIssued: true, deployHttpStatus: httpStatus });
     await flush();
     expect(seen.phase).toBe('error');
     expect(seen.phase).not.toBe('reveal');
@@ -351,17 +367,38 @@ describe('useCeremonyStageMachine — the verification seam', () => {
     expect(seen.recoveredBattle).toBeNull();
   });
 
-  // The canonical :929 failure: the server DID begin our deploy (it wrote
-  // strategy_running long before the throw), so the found battle is ours.
-  it('attribution — the same battle IS a reveal once the server has begun our deploy', async () => {
+  // A deploy that never reached the POST cannot have created anything either.
+  it('attribution — a client-side bail that never reached the server never reveals', async () => {
     verify.mockResolvedValue({ found: true, battle: FOUND_BATTLE });
     armBaseline(PRIOR);
-    pinOurDeploy();
-    step({ ...T, stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1`, deployStatus: 'error' });
+    step({ ...T, stage: 'complete', deployId: PRIOR, updatedAt: PRIOR,
+           deployStatus: 'error', deployPostIssued: false, deployHttpStatus: null });
+    await flush();
+    expect(seen.phase).toBe('error');
+    expect(seen.recoveredBattle).toBeNull();
+  });
+
+  // The canonical :929 failure: a 500 from the catch at :1012, which is the ONLY
+  // status decide.js can return after the battle commit at :910.
+  it('attribution — a 500 IS a reveal: the battle may well be ours', async () => {
+    verify.mockResolvedValue({ found: true, battle: FOUND_BATTLE });
+    armBaseline(PRIOR);
+    step({ ...T, stage: 'complete', deployId: PRIOR, updatedAt: PRIOR, ...COULD_HAVE_COMMITTED });
     await flush();
     expect(seen.phase).toBe('reveal');
     expect(seen.stageIndex).toBe(4);
     expect(seen.recoveredBattle).toEqual(FOUND_BATTLE);
+  });
+
+  // A transport failure is genuinely unknowable — the request may have landed and
+  // committed — so it stays eligible.
+  it('attribution — a transport failure with no status stays eligible for recovery', async () => {
+    verify.mockResolvedValue({ found: true, battle: FOUND_BATTLE });
+    armBaseline(PRIOR);
+    step({ ...T, stage: 'complete', deployId: PRIOR, updatedAt: PRIOR,
+           deployStatus: 'error', deployPostIssued: true, deployHttpStatus: null });
+    await flush();
+    expect(seen.phase).toBe('reveal');
   });
 
   // §3 — the bounded retry absorbs CLIENT propagation lag. It retries an EMPTY
@@ -372,7 +409,7 @@ describe('useCeremonyStageMachine — the verification seam', () => {
       .mockResolvedValueOnce({ found: true, battle: FOUND_BATTLE });
     armBaseline();
     pinOurDeploy();
-    step({ ...T, stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1`, deployStatus: 'error' });
+    step({ ...T, stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1`, ...COULD_HAVE_COMMITTED });
     await flush();
     expect(verify).toHaveBeenCalledTimes(2);
     expect(seen.phase).toBe('reveal');
@@ -414,11 +451,11 @@ describe('useCeremonyStageMachine — the verification seam', () => {
     verify = rankedChecker;
     armBaseline();
     pinOurDeploy();
-    step({ ...T, stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1`, deployStatus: 'error' });
+    step({ ...T, stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1`, ...COULD_HAVE_COMMITTED });
     expect(seen.phase).toBe('verifying');
     // The clone resolves during the 400ms gap.
     verify = cloneChecker;
-    step({ ...T, stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1`, deployStatus: 'error' }, 0);
+    step({ ...T, stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1`, ...COULD_HAVE_COMMITTED }, 0);
     await flush();
     expect(cloneChecker).toHaveBeenCalled();
     expect(seen.phase).toBe('reveal');
@@ -641,10 +678,18 @@ describe('DeployCeremony — the recovered path and the honest headline', () => 
   // attributed to this deploy. (3) this deploy's outcome. Collapsing (1) and (3)
   // would make every "confirmed" row silently test the lost-contact path instead.
   const OUR_PROGRESS = { stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1` };
-  const renderCeremony = async ({ targetProgress = {}, serverError = null, ourDeploy = true, ...extraProps } = {}) => {
+  // Default outcome: the POST reached the server and came back 500 — the only
+  // status decide.js can return after the battle commit at :910, i.e. the
+  // canonical :929 failure. `httpStatus` overrides it to model a refusal.
+  const renderCeremony = async ({ targetProgress = {}, serverError = null, httpStatus = 500, ...extraProps } = {}) => {
     renderWith(null, { status: 'pending' }, targetProgress, extraProps);
-    if (ourDeploy) { renderWith(OUR_PROGRESS, { status: 'pending' }, targetProgress, extraProps); await tick(); }
-    renderWith(serverError ?? (ourDeploy ? OUR_PROGRESS : null), { status: 'error', error: 'deploy_http_500' }, targetProgress, extraProps);
+    renderWith(OUR_PROGRESS, { status: 'pending' }, targetProgress, extraProps);
+    await tick();
+    renderWith(
+      serverError ?? OUR_PROGRESS,
+      { status: 'error', error: 'deploy_http_500', postIssued: true, httpStatus },
+      targetProgress, extraProps,
+    );
     await settle();
     return document.body.textContent;
   };
@@ -700,7 +745,7 @@ describe('DeployCeremony — the recovered path and the honest headline', () => 
     await tick();
     renderWith(OUR_PROGRESS, { status: 'pending' }, {}, {}, CLONE);   // the server begins our deploy
     await tick();
-    renderWith(OUR_PROGRESS, { status: 'error', error: 'boom' }, {}, {}, CLONE);
+    renderWith(OUR_PROGRESS, { status: 'error', error: 'boom', postIssued: true, httpStatus: 500 }, {}, {}, CLONE);
     await settle();
     expect(verifyMock).toHaveBeenCalledWith(CLONE);
     expect(document.body.textContent).toContain('Nova is ready for battle.');
@@ -716,7 +761,7 @@ describe('DeployCeremony — the recovered path and the honest headline', () => 
     renderWith(null, { status: 'pending' }, {}, {});
     renderWith(OUR_PROGRESS, { status: 'pending' }, {}, {});
     await tick();
-    renderWith(OUR_PROGRESS, { status: 'error', error: 'boom' }, {}, {});
+    renderWith(OUR_PROGRESS, { status: 'error', error: 'boom', postIssued: true, httpStatus: 500 }, {}, {});
     await tick(300);
 
     const text = document.body.textContent;
@@ -776,9 +821,9 @@ describe('DeployCeremony — the recovered path and the honest headline', () => 
   // ── ATTRIBUTION (surface half) ───────────────────────────────────────────
   // A refused deploy must not be announced as a success just because the agent
   // already had a battle.
-  it('a refused deploy never reveals a battle it did not create', async () => {
+  it('a refused deploy (429) never reveals a battle it did not create', async () => {
     verifyMock.mockResolvedValue({ found: true, battle: FOUND_BATTLE });
-    const text = await renderCeremony({ ourDeploy: false });
+    const text = await renderCeremony({ httpStatus: 429 });
     expect(text).not.toContain('Nova is ready for battle.');
     expect(text).toContain(LOST_CONTACT_HEADLINE);
   });

@@ -80,6 +80,59 @@ describe('findActiveBattleForAgent — the query keys (§7 row 3)', () => {
     expect(out.battle.status).toBe('active');
   });
 
+  // `status: 'active'` is not the app's own predicate for "live": decide.js:718-728
+  // treats a past expiresAt as not-live and only sweeps the doc to 'completed'
+  // lazily, on the next deploy. Re-reading a WEAKER predicate than the app's would
+  // let this check announce a FINISHED battle as the one the deploy just created —
+  // and the whole authority of the check is that it is a direct re-read.
+  // DIES UNDER: removing the expiry filter.
+  it('an EXPIRED battle still stamped active is not a live battle', async () => {
+    getDocsMock.mockResolvedValue({
+      empty: false,
+      docs: [{ id: 'battle-stale', data: () => ({
+        agentId: CLONE, status: 'active', expiresAt: new Date(Date.now() - 60000).toISOString(),
+      }) }],
+    });
+    await expect(findActiveBattleForAgent(CLONE)).resolves.toEqual({ found: false, battle: null });
+  });
+
+  it('a battle whose clock has NOT run out is still live', async () => {
+    getDocsMock.mockResolvedValue({
+      empty: false,
+      docs: [{ id: 'battle-live', data: () => ({
+        agentId: CLONE, status: 'active', expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      }) }],
+    });
+    const out = await findActiveBattleForAgent(CLONE);
+    expect(out.found).toBe(true);
+    expect(out.battle.id).toBe('battle-live');
+  });
+
+  // An unreadable clock is not evidence of expiry. Failing closed here would
+  // discard real recoveries over a field shape, which is the opposite of the
+  // filter's purpose.
+  it.each([
+    ['no expiresAt at all', undefined],
+    ['an unparseable expiresAt', 'not-a-date'],
+  ])('%s does not count as expired', async (_label, expiresAt) => {
+    getDocsMock.mockResolvedValue({
+      empty: false,
+      docs: [{ id: 'battle-noclock', data: () => ({ agentId: CLONE, status: 'active', expiresAt }) }],
+    });
+    expect((await findActiveBattleForAgent(CLONE)).found).toBe(true);
+  });
+
+  // Firestore Timestamps and ISO strings both reach this code path depending on
+  // the SDK surface that wrote the doc.
+  it('a Firestore Timestamp expiresAt is honoured too', async () => {
+    const past = new Date(Date.now() - 60000);
+    getDocsMock.mockResolvedValue({
+      empty: false,
+      docs: [{ id: 'battle-ts', data: () => ({ agentId: CLONE, status: 'active', expiresAt: { toDate: () => past } }) }],
+    });
+    expect((await findActiveBattleForAgent(CLONE)).found).toBe(false);
+  });
+
   it('an empty result is a real answer: found=false, no throw', async () => {
     getDocsMock.mockResolvedValue({ empty: true, docs: [] });
     await expect(findActiveBattleForAgent(CLONE)).resolves.toEqual({ found: false, battle: null });

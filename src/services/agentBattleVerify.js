@@ -68,7 +68,28 @@ export async function findActiveBattleForAgent(targetAgentId) {
   const snapshot = await getDocs(q);
   if (snapshot.empty) return { found: false, battle: null };
   const docSnap = snapshot.docs[0];
-  return { found: true, battle: { id: docSnap.id, ...docSnap.data() } };
+  const battle = { id: docSnap.id, ...docSnap.data() };
+
+  // `status: 'active'` is not the same predicate the rest of the app uses for
+  // "live". decide.js:718-728 treats a past `expiresAt` as NOT live and sweeps
+  // such a doc to `completed` on the next deploy — the field is only reconciled
+  // lazily, so an expired battle sits in the collection still stamped 'active'.
+  // The whole authority of this check is that it is a direct re-read; re-reading
+  // a WEAKER predicate than the app's own would let it announce a finished
+  // battle as the one this deploy just created. Filtered client-side on the doc
+  // already fetched, so no index and no second round trip.
+  if (isExpired(battle)) return { found: false, battle: null };
+
+  return { found: true, battle };
+}
+
+function isExpired(battle) {
+  const raw = battle?.expiresAt;
+  if (!raw) return false;                      // no clock is not an expired clock
+  const at = raw?.toDate ? raw.toDate() : new Date(raw);
+  const ms = at?.getTime?.();
+  if (!Number.isFinite(ms)) return false;      // unparseable is not evidence either
+  return ms < Date.now();
 }
 
 export default findActiveBattleForAgent;

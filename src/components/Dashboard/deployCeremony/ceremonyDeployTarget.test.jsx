@@ -134,6 +134,65 @@ describe('agentDeploy — reports the resolved deploy target (§3)', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// PR 2 — what deployAgent reports about WHERE a failure happened
+//
+// The ceremony's recovered-reveal gate turns on this. decide.js commits the
+// battle at :910; every pre-battle refusal returns a 4xx/409/503, and the ONLY
+// status it can return after that commit is the catch's 500 at :1012 — the :929
+// failure this recovery exists for. Both fields were previously computed and
+// dropped, which is why the ceremony could not tell a refusal from a real
+// failure and would announce a refused deploy as a success.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('agentDeploy — reports where the failure happened (PR 2)', () => {
+  const postFailing = (status, body) => {
+    getIdTokenMock.mockResolvedValue('tok');
+    vi.stubGlobal('fetch', vi.fn(async (url) => (
+      url === '/api/agent/ensure-casual-clone'
+        ? { ok: true, status: 200, text: async () => JSON.stringify({ cloneId: CLONE }) }
+        : { ok: false, status, text: async () => body }
+    )));
+  };
+
+  it.each([429, 403, 503, 409, 500])('carries the HTTP status (%s) and postIssued', async (status) => {
+    postFailing(status, JSON.stringify({ error: 'nope' }));
+    const r = await deployAgent(RANKED, null, () => {});
+    expect(r.success).toBe(false);
+    expect(r.httpStatus).toBe(status);
+    expect(r.postIssued).toBe(true);
+  });
+
+  it('a NON-JSON error page still carries its status', async () => {
+    postFailing(502, '<html>gateway</html>');
+    const r = await deployAgent(RANKED, null, () => {});
+    expect(r.httpStatus).toBe(502);
+    expect(r.postIssued).toBe(true);
+  });
+
+  // The request left the client but produced no response: whether the server saw
+  // it is unknowable, and that IS the answer the ceremony needs — it stays
+  // eligible for recovery, unlike a refusal.
+  it('a transport failure reports postIssued with NO status, instead of throwing', async () => {
+    getIdTokenMock.mockResolvedValue('tok');
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (url === '/api/agent/ensure-casual-clone') return { ok: true, status: 200, text: async () => JSON.stringify({ cloneId: CLONE }) };
+      throw new TypeError('Failed to fetch');
+    }));
+    const r = await deployAgent(RANKED, null, () => {});
+    expect(r.success).toBe(false);
+    expect(r.postIssued).toBe(true);
+    expect(r.httpStatus).toBeNull();
+  });
+
+  // A bail before the POST cannot have created anything.
+  it('a client-side bail reports postIssued false', async () => {
+    getIdTokenMock.mockResolvedValue(null);          // no auth token → never posts
+    const r = await deployAgent(RANKED, null, () => {});
+    expect(r.postIssued).toBe(false);
+    expect(await deployAgent(null, null, () => {})).toMatchObject({ postIssued: false });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // §5 — baseline scoped to (machine instance, target id)
 // ═══════════════════════════════════════════════════════════════════════════
 describe('useCeremonyStageMachine — baseline scoping (§5)', () => {
