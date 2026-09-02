@@ -57,7 +57,9 @@ const FLAG_SOURCE_MODULES = [
 // here, in the same commit (the integrity test below enforces the coupling).
 const DARK_BY_DESIGN = {
   COMPILER_ENABLED:
-    'double-gated behind the activationGate; flips ONLY via a deliberate founder PR with a green gate, never a build PR',
+    'double-gated behind the activationGate; flips ONLY via a deliberate founder PR with a green gate, never a build PR — REGISTERED CARRIAGE (Ask 2 rescoped, founder decision 3, 2026-09-02): its flip PR also lights the compiler\'s declaredConflicts declaration (profit target × mb-08, R8/F10), which is doubly dark behind EQUIPPED_RULE_PRECEDENCE_ENABLED until then',
+  EQUIPPED_RULE_PRECEDENCE_ENABLED:
+    'Exit-Behavior Ask 2 (rescoped) — the qualified DECISION FRAMEWORK MUSTs, the R8 yield clause and the compiler declaration; flips after Asks 1+3 (live) per R10, in its own one-line PR after founder smoke, never a build PR',
   // WIRE_METRICS_ENABLED intentionally ABSENT: it flipped true (runway step 1,
   // src/config/featureFlags.js) — the deliberate flip drops it here in the same
   // change, per the guard's own "if DELIBERATE" instruction. Re-adding it while

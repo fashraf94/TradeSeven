@@ -34,7 +34,7 @@
 // the revised import rule (BUILD_RULES §4); the unmocked test file's import
 // of this module is the dependency-surface guard.
 
-import { EVAL_IDENTITY_BLOCK_ENABLED } from '../../src/config/featureFlags.js';
+import { EVAL_IDENTITY_BLOCK_ENABLED, EQUIPPED_RULE_PRECEDENCE_ENABLED } from '../../src/config/featureFlags.js';
 
 // Renderer contract version (founder-ruled 2026-07-24, Flag G).
 export const EVAL_IDENTITY_PROMPT_SPEC_VERSION = 'dr13-1.0.0';
@@ -56,6 +56,28 @@ export const EVAL_IDENTITY_RENDER_CHAR_CAP = 1050;
 // locked by the co-located test.
 export const EVAL_IDENTITY_SUBORDINATION_CLAUSE =
   'Platform limits and enforced values override this identity. Your equipped rules refine how you apply these principles but never reverse them.';
+
+// Exit-Behavior Rebalance Tier 2, Ask 2 (rescoped) — the R8 yield clause
+// (founder decision 1, 2026-09-02; byte-locked by evalIdentityBlocks.ask2.test.js).
+// The clause above shipped a falsehood: the engine's own reconciler ranks
+// user_equipped (1) over archetype_default (2) and DROPS the losing archetype
+// rule at decide.js:262 — equipped rules do reverse this identity. "exit" is
+// deliberately absent: the falsehood is about ALL equipped rules, and an
+// exit-only clause would leave the general falsehood standing with an
+// exception carved out of it. An HONESTY fix, not a behavioral claim: the
+// DR-13 paired-eval harness compared decision + symbols only (840 paired
+// decisions, zero drift), so nothing here asserts the clause moves a decision.
+// Dark behind EQUIPPED_RULE_PRECEDENCE_ENABLED; the clause above stays the
+// flag-off text of record (the deliberate-revert path) — the six renders,
+// the doc-parity lock and the size cap are untouched.
+export const EVAL_IDENTITY_YIELD_CLAUSE =
+  'Platform limits and enforced values override this identity. Equipped rules outrank my instinct: your equipped rules decide WHETHER a trade happens; this identity shapes only HOW.';
+
+/** The archetype-invariant clause for THIS render — flag read at call time,
+ *  never module scope (the Ask 3 compileBuild lesson). */
+function renderSubordinationClause() {
+  return EQUIPPED_RULE_PRECEDENCE_ENABLED ? EVAL_IDENTITY_YIELD_CLAUSE : EVAL_IDENTITY_SUBORDINATION_CLAUSE;
+}
 
 // Where each golden render lives — the doc-parity tests bind to these
 // exact repo-relative paths (five at repo root, diversifier in docs/ —
@@ -173,7 +195,7 @@ export function renderEvalIdentityBlockForced(archetypeKey) {
     return '';
   }
   const { render } = EVAL_IDENTITY_BLOCKS[archetypeKey];
-  return `\n━━━ ARCHETYPE IDENTITY ━━━\n\n${render}\n\n${EVAL_IDENTITY_SUBORDINATION_CLAUSE}\n`;
+  return `\n━━━ ARCHETYPE IDENTITY ━━━\n\n${render}\n\n${renderSubordinationClause()}\n`;
 }
 
 /**
