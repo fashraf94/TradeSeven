@@ -52,7 +52,7 @@ import {
   appendPick,
   computeHandoffWrites,
   resolveHumanArchetype,
-  readStockUniverse,
+  readStockUniverseContext,
 } from './trainingLifecycle.js';
 import { padGamesWithCpus, ensureCpuAgents, commitCpuUserBoards } from './tournamentCpu.js';
 import { CPU_SEQUENCE_DOC_ID } from './tournamentLobbyService.js';
@@ -271,7 +271,7 @@ export async function fireCompetitiveSlotDraft(db, groupId, { now = new Date() }
 export async function driveSlotDraftAutopick(db, groupId, { now = new Date() } = {}) {
   const nowMs = now.getTime();
   const nowIso = toIso(now);
-  const universe = await readStockUniverse(db); // stock objects for the archetype fit (before the tx)
+  const universeCtx = await readStockUniverseContext(db); // stock objects + V2 axis context for the archetype fit (before the tx)
   const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
   const stateRef = draftStateRef(db, groupId);
 
@@ -310,7 +310,9 @@ export async function driveSlotDraftAutopick(db, groupId, { now = new Date() } =
       const currentId = members[seatIdx];
       const pick = chooseHumanPick({
         symbol: null, autopick: true, pool: state.pool, taken: acc.taken,
-        universe, archetype: state.archetypeByUser?.[currentId] || 'analyst',
+        universe: universeCtx.stocks, archetype: state.archetypeByUser?.[currentId] || 'analyst',
+        // Archetype Rank V2 (P-4, census path 7b): the competitive live draft passes 'tournament'.
+        gameMode: 'tournament', universeSize: universeCtx.universeSize, universeMedianReturn1W: universeCtx.universeMedianReturn1W,
       });
       if (pick == null) throw liveDraftError('no_pick_available', `pool exhausted at pick ${idx + 1}`);
       appendPick(acc, members, { seatIdx, pickIndex: idx, ...pick, liveSource: 'autopick' });
@@ -376,7 +378,14 @@ export async function applyCompetitivePick(db, groupId, { odUserId, symbol = nul
   const stateRef = draftStateRef(db, groupId);
 
   let universe = stocks;
-  if ((autopick || symbol == null) && universe === undefined) universe = await readStockUniverse(db);
+  let universeSize;
+  let universeMedianReturn1W;
+  if ((autopick || symbol == null) && universe === undefined) {
+    const ctx = await readStockUniverseContext(db); // + the V2 axis context (Archetype Rank V2, P-8)
+    universe = ctx.stocks;
+    universeSize = ctx.universeSize;
+    universeMedianReturn1W = ctx.universeMedianReturn1W;
+  }
 
   return db.runTransaction(async (tx) => {
     const groupSnap = await tx.get(groupRef);
@@ -401,6 +410,8 @@ export async function applyCompetitivePick(db, groupId, { odUserId, symbol = nul
     const human = chooseHumanPick({
       symbol, autopick, pool: state.pool, taken: acc.taken,
       universe, archetype: state.archetypeByUser?.[odUserId] || 'analyst',
+      // Archetype Rank V2 (P-4, census path 7b): the competitive live draft passes 'tournament'.
+      gameMode: 'tournament', universeSize, universeMedianReturn1W,
     });
     if (human == null) throw liveDraftError(autopick ? 'no_pick_available' : 'invalid_pick');
     appendPick(acc, members, { seatIdx, pickIndex: state.currentPickIndex, ...human, liveSource: autopick ? 'autopick' : 'human' });

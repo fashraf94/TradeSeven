@@ -464,7 +464,8 @@ export async function produceGroupBoards(db, group, { anthropic, now = new Date(
 
       const archetype = agent?.archetype || 'analyst';
       if (!rankingByArchetype.has(archetype)) {
-        rankingByArchetype.set(archetype, computeArchetypeRankings(stocks, archetype));
+        // Archetype Rank V2 (spec §4 census): explicit mode + the §3.4 pinned minimum (V1 ignores opts).
+        rankingByArchetype.set(archetype, computeArchetypeRankings(stocks, archetype, { gameMode: 'tournament', minCandidates: TOURNAMENT_TUNING.BOARD_DEPTH_MIN }));
       }
       const rankedStocks = rankingByArchetype.get(archetype);
       const userPicks = getOwnUserPicks(group, odUserId);

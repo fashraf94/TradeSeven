@@ -4,6 +4,7 @@
  * Each archetype weights ranking metrics differently so agents
  * see a stock universe sorted by their strategic preference.
  */
+import { maybeComputeArchetypeRankingsV2 } from './archetypeScoringV2.js';
 
 // ---------- A) Weight profiles per archetype ----------
 // Each dimension weight set sums to 1.0.
@@ -104,7 +105,8 @@ export const ARCHETYPE_CONSTRAINTS = {
  * @param {string} archetype - agent archetype key
  * @returns {Array} new array with `archetypeScore` property added, sorted desc
  */
-export function computeArchetypeRankings(stocks, archetype) {
+export function computeArchetypeRankings(stocks, archetype, opts = {}) {
+  const v2 = maybeComputeArchetypeRankingsV2(stocks, archetype, opts); if (v2) return v2;
   const weights = ARCHETYPE_WEIGHTS[archetype] || ARCHETYPE_WEIGHTS.analyst;
 
   // Pre-compute sector counts for sectorDiversity scoring

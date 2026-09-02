@@ -5,6 +5,7 @@
  "importers": [
   "api/_utils/agentGuardrails.js",
   "api/_utils/agentPromptAssembly.js",
+  "api/_utils/archetypeScoring.js",
   "api/_utils/archetypeSeeding.js",
   "api/_utils/behaviorFingerprint.js",
   "api/_utils/directiveGate.js",

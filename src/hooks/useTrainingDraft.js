@@ -28,11 +28,18 @@ import { db } from '../firebase/config';
 import { subscribeGroup, subscribeDraftState } from '../services/tournamentGroupService';
 import { makeTrainingPick as makeTrainingPickAction, mapTournamentActionError } from '../services/tournamentActions';
 import { computeArchetypeRankings } from '../../api/_utils/archetypeScoring.js';
+import { readUniverseAxisContext } from '../../api/_utils/axisDerivation.js';
 import { GROUP_STATUS, PICKS_PER_PLAYER, TRAINING_TUNING } from '../constants/leagueTournament';
 import { isTrainingPodDraftV2On, TRAINING_POD_PICK_CLOCK_MS } from '../config/featureFlags';
 
 const OVERLAY_SIZE = 5;
 const norm = (s) => (typeof s === 'string' ? s.trim().toUpperCase() : '');
+
+// Archetype Rank V2: the scorer's default event sink is console.warn (the
+// producer collects events into the observation snapshot); in the browser the
+// overlay's coverage event fires on every late-draft recompute (< 5 names left),
+// so the client sink is silent — the server snapshots carry the observation.
+const silentScorerSink = () => {};
 
 // One interactive-draft hook for BOTH modes (the "one room, both modes" reuse):
 // the subscription (group + the shared draft/state doc), board, seats, clock, and
@@ -45,6 +52,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
   const [group, setGroup] = useState(null);
   const [draft, setDraft] = useState(null);
   const [universe, setUniverse] = useState(null); // indexIntelligence/stockRankings.stocks
+  const [universeContext, setUniverseContext] = useState(null); // { universeSize, universeMedianReturn1W } — Archetype Rank V2
   const [pickClock, setPickClock] = useState(null); // seconds remaining on my turn
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -80,6 +88,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
       try {
         const snap = await getDoc(doc(db, 'indexIntelligence', 'stockRankings'));
         if (!cancelled) setUniverse(snap.exists() ? (snap.data().stocks || []) : []);
+        if (!cancelled) setUniverseContext(snap.exists() ? readUniverseAxisContext(snap.data()) : null);
       } catch (err) {
         console.error('[useTrainingDraft] stockRankings read failed:', err?.message);
         if (!cancelled) setUniverse([]);
@@ -176,10 +185,25 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
     });
     if (available.length === 0) return new Set();
     let ranked = null;
-    try { ranked = computeArchetypeRankings(available, archetype); } catch { ranked = null; }
+    // Archetype Rank V2 (spec §4 census path 8): explicit 'training' mode, the
+    // doc-level subset context (P-8), and the §3.4 pinned overlay minimum. V1
+    // ignores opts; a V2 throw lands in the existing empty-overlay degrade.
+    try {
+      ranked = computeArchetypeRankings(available, archetype, {
+        gameMode: 'training',
+        universeSize: universeContext?.universeSize,
+        universeMedianReturn1W: universeContext?.universeMedianReturn1W,
+        minCandidates: OVERLAY_SIZE,
+        onEvent: silentScorerSink,
+      });
+    } catch (err) {
+      // R3 degrade (empty overlay) stays; the cause is no longer silent (V-5).
+      console.warn('[useTrainingDraft] archetype ranking unavailable — overlay hidden:', err?.message);
+      ranked = null;
+    }
     if (!Array.isArray(ranked) || ranked.length === 0) return new Set();
     return new Set(ranked.slice(0, OVERLAY_SIZE).map((s) => norm(s.symbol)));
-  }, [universe, draft?.humanArchetype, draft?.archetypeByUser, currentUserId, poolSet, takenSet]);
+  }, [universe, universeContext, draft?.humanArchetype, draft?.archetypeByUser, currentUserId, poolSet, takenSet]);
 
   // ---- submit a pick (explicit or autopick) through the server endpoint ----
   const submitPick = useCallback(async (symbol, autopick = false) => {

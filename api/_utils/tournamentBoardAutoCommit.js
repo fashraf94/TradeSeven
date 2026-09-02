@@ -158,7 +158,8 @@ export async function autoCommitMissingBoards(db, group, { now = new Date() } = 
       if (board.length < TOURNAMENT_TUNING.BOARD_DEPTH_MIN) {
         const universe = await readUniverse();
         if (Array.isArray(universe) && universe.length > 0 && !rankingByArchetype.has(archetype)) {
-          rankingByArchetype.set(archetype, computeArchetypeRankings(universe, archetype).map(s => s.symbol));
+          // Archetype Rank V2 (spec §4 census): explicit mode + the §3.4 pinned minimum (V1 ignores opts).
+          rankingByArchetype.set(archetype, computeArchetypeRankings(universe, archetype, { gameMode: 'tournament', minCandidates: TOURNAMENT_TUNING.BOARD_DEPTH_MIN }).map(s => s.symbol));
         }
         const padded = padBoardToFloor({
           board,
