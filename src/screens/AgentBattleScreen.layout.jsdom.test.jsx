@@ -57,7 +57,7 @@ vi.mock('../components/Agent/LiveActivityPanel', () => ({
 
 // The feed the hook hands back is mutable so a test can grow it between
 // renders (the unread dot).
-const store = vi.hoisted(() => ({ statusFeed: [], lastScoredAt: '2026-09-01T16:47:00.000Z' }));
+const store = vi.hoisted(() => ({ statusFeed: [], lastScoredAt: '2026-09-01T16:47:00.000Z', pendingProposal: null, feedBookmarks: [] }));
 
 const LIVE_DOC = {
   id: 'ab-1',
@@ -88,8 +88,8 @@ const LIVE_DOC = {
 vi.mock('../hooks/useAgentBattle', () => ({
   default: () => ({
     battle: { ...LIVE_DOC, statusFeed: store.statusFeed, scoreState: { ...LIVE_DOC.scoreState, lastScoredAt: store.lastScoredAt } }, statusFeed: store.statusFeed,
-    executionMode: 'copilot', pendingProposal: null, strategyPreset: 'balanced', gameplanMeeting: null,
-    chatExchanges: LIVE_DOC.chatExchanges, feedBookmarks: [], loading: false,
+    executionMode: 'copilot', pendingProposal: store.pendingProposal, strategyPreset: 'balanced', gameplanMeeting: null,
+    chatExchanges: LIVE_DOC.chatExchanges, feedBookmarks: store.feedBookmarks, loading: false,
   }),
 }));
 
@@ -106,21 +106,48 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
 
 // The screen reads window.innerWidth for its breakpoint at mount and
-// matchMedia for later changes; both are set per test.
-const setViewport = (width, height = 800) => {
-  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
-  Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: height });
-  // Query-aware: the breakpoint answers by width; every other query (framer's
-  // `(prefers-reduced-motion)`, latched once per module) answers false, so
-  // the landing can play and the sheet can animate.
-  window.matchMedia = (query) => ({
-    matches: /min-width/.test(String(query)) ? width >= 768 : false,
+// matchMedia `change` events for later crossings. The stub answers the
+// breakpoint query from a mutable width and records its listeners so a test
+// can cross 768 px after mount (`crossTo`); every other query (framer's
+// `(prefers-reduced-motion)`, latched once per module) answers false, so the
+// landing can play and the sheet can animate.
+const mq = { width: 1280, listeners: new Set() };
+window.matchMedia = (query) => {
+  const isWidth = /min-width/.test(String(query));
+  return {
     media: String(query),
-    addEventListener() {},
-    removeEventListener() {},
+    get matches() { return isWidth ? mq.width >= 768 : false; },
+    addEventListener: (_type, handler) => { if (isWidth) mq.listeners.add(handler); },
+    removeEventListener: (_type, handler) => { mq.listeners.delete(handler); },
     addListener() {},
     removeListener() {},
-  });
+  };
+};
+const setViewport = (width, height = 800) => {
+  mq.width = width;
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+  Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: height });
+};
+const crossTo = (width) => {
+  mq.width = width;
+  window.innerWidth = width;
+  act(() => { [...mq.listeners].forEach((handler) => handler({ matches: width >= 768 })); });
+};
+const resizeTo = (height) => act(() => {
+  window.innerHeight = height;
+  window.dispatchEvent(new Event('resize'));
+});
+// A pull on the grabber: real PointerEvents, the way framer's drag listens.
+const pev = (type, y) => new PointerEvent(type, {
+  bubbles: true, cancelable: true, clientX: 100, clientY: y, pointerId: 1, pointerType: 'touch', isPrimary: true, button: 0,
+});
+const pull = async (dy) => {
+  act(() => { q('[data-sheet-grabber]').dispatchEvent(pev('pointerdown', 500)); });
+  await settle(40);
+  act(() => { window.dispatchEvent(pev('pointermove', 500 + dy)); });
+  await settle(40);
+  act(() => { window.dispatchEvent(pev('pointerup', 500 + dy)); });
+  await settle(80);
 };
 
 let container;
@@ -130,6 +157,9 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-09-01T17:00:00.000Z'));
   store.statusFeed = [];
   store.lastScoredAt = '2026-09-01T16:47:00.000Z';
+  store.pendingProposal = null;
+  store.feedBookmarks = [];
+  mq.listeners.clear();
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -205,16 +235,35 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     rerender();
     const washes = qa('[data-wash]');
     expect(washes.length).toBe(7);
-    // Every wash sits inside the board column, in document order with the rows.
+    // Every wash sits inside the board column, in document order with the rows,
+    // and its landing index runs across the seven slots (never restarting per tier).
     expect(washes.every((w) => q('[data-board]').contains(w))).toBe(true);
+    expect(washes.map((w) => w.getAttribute('data-wash-index'))).toEqual(['0', '1', '2', '3', '4', '5', '6']);
   });
 
-  it('the unread dot has nowhere to show on desktop — the feed grows and no dot markup appears', () => {
+  it('the unread dot has nowhere to show on desktop, and the desktop column MARKS the feed seen — a later crossing to mobile shows no dot for those entries', () => {
     mount();
     store.statusFeed = [{ action: 'hold', message: 'Held.', timestamp: '2026-09-01T16:47:00.000Z' }, { action: 'hold', message: 'Held again.', timestamp: '2026-09-01T17:02:00.000Z' }];
     rerender();
     expect(q('[data-sheet-dot]')).toBeNull();
     expect(q('[data-unread]')).toBeNull();
+    // Seen on desktop (the effect ran with the column visible): the handle
+    // that appears after a crossing to mobile carries no dot for them…
+    crossTo(390);
+    expect(q('[data-layout="mobile"]')).toBeTruthy();
+    expect(q('[data-sheet-cycle]').getAttribute('data-unread')).toBe('false');
+    // …and a NEW entry at peek does show.
+    store.statusFeed = [...store.statusFeed, { action: 'hold', message: 'Held once more.', timestamp: '2026-09-01T17:17:00.000Z' }];
+    rerender();
+    expect(q('[data-sheet-cycle]').getAttribute('data-unread')).toBe('true');
+  });
+
+  it('the Game Tape link carries the bookmark dot exactly when a bookmark exists', () => {
+    mount();
+    expect(q('[data-game-tape-dot]')).toBeNull();
+    store.feedBookmarks = [{ evalId: 'eval_003' }];
+    rerender();
+    expect(q('[data-game-tape-link] [data-game-tape-dot]')).toBeTruthy();
   });
 
   it('mounting steals no focus: the Game Tape focus effect acts only after an OPEN (review CR6)', () => {
@@ -320,6 +369,83 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     expect(cycle.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(cycle);
     expect(q('[data-sheet-collapse]')).toBeNull();
+  });
+
+  it('a pull on the grabber moves ONE detent: past 40 px up raises, past 40 px down lowers, less changes nothing', async () => {
+    mount();
+    const sheet = () => q('[data-chat-sheet]').getAttribute('data-chat-sheet');
+    await pull(-45);
+    expect(sheet()).toBe('half');
+    await pull(-45);
+    expect(sheet()).toBe('full');
+    await pull(-45);
+    expect(sheet()).toBe('full'); // saturates
+    await pull(45);
+    expect(sheet()).toBe('half');
+    await pull(-39);
+    expect(sheet()).toBe('half'); // under the threshold
+    await pull(45);
+    expect(sheet()).toBe('peek');
+    await pull(45);
+    expect(sheet()).toBe('peek'); // saturates
+  });
+
+  it('a viewport change re-sizes an open sheet (the toolbar, the keyboard) from the visible height', () => {
+    mount();
+    click(q('[data-sheet-cycle]'));
+    expect(q('[data-chat-sheet]').getAttribute('data-sheet-height')).toBe('400');
+    resizeTo(600);
+    expect(q('[data-chat-sheet]').getAttribute('data-sheet-height')).toBe('300');
+    click(q('[data-sheet-cycle]'));
+    expect(q('[data-chat-sheet]').getAttribute('data-sheet-height')).toBe('544'); // 600 − 56
+  });
+
+  it('half → full does not move focus again: a control that holds focus keeps it', () => {
+    mount();
+    const cycle = q('[data-sheet-cycle]');
+    click(cycle); // peek → half: the region takes focus
+    expect(document.activeElement).toBe(q('[data-chat-sheet]'));
+    act(() => { cycle.focus(); });
+    click(cycle); // half → full: an open → open move
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('full');
+    expect(document.activeElement).toBe(cycle);
+  });
+
+  it('at half / full the message list is the scroll container and contains its overscroll', () => {
+    mount();
+    click(q('[data-sheet-cycle]'));
+    const list = q('[data-chat-layout="controller"] > div');
+    expect(list.style.overflowY).toBe('auto');
+    expect(list.style.overscrollBehavior).toBe('contain');
+  });
+
+  it('a pending proposal colours the handle dot amber, and — as shipped — keeps it while the sheet is open', () => {
+    store.pendingProposal = { proposalId: 'p-1', resolvedAt: null };
+    mount();
+    const dot = q('[data-sheet-dot]');
+    expect(dot).toBeTruthy();
+    expect(dot.style.background).toBe('var(--ft-amber)');
+    click(q('[data-sheet-cycle]'));
+    expect(q('[data-sheet-cycle]').getAttribute('data-unread')).toBe('true');
+  });
+
+  it('a breakpoint crossing keeps exactly ONE AgentChat at every moment and brings the sheet back at peek', () => {
+    mount();
+    const cycle = q('[data-sheet-cycle]');
+    click(cycle);
+    click(cycle);
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('full');
+    crossTo(1280);
+    expect(q('[data-layout="desktop"]')).toBeTruthy();
+    expect(q('[data-chat-sheet]')).toBeNull();
+    expect(qa('textarea').length).toBe(1);
+    expect(q('[data-chat-column] textarea')).toBeTruthy();
+    crossTo(390);
+    expect(q('[data-layout="mobile"]')).toBeTruthy();
+    expect(q('[data-chat-column]')).toBeNull();
+    expect(qa('textarea').length).toBe(1);
+    expect(q('[data-sheet-content] textarea')).toBeTruthy();
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek'); // the reset
   });
 
   it('the collapse control at half goes straight to peek', () => {

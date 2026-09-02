@@ -25,6 +25,7 @@ export default function LandingWash({ landingKey, index, count, reducedMotion })
       key={landingKey}
       aria-hidden="true"
       data-wash="1"
+      data-wash-index={index}
       initial={{ opacity: 0.35 }}
       animate={{ opacity: 0 }}
       transition={transition}

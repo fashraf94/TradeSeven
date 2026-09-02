@@ -173,6 +173,7 @@ export default function ChatSheet({
       >
         <motion.div
           aria-hidden="true"
+          data-sheet-grabber="1"
           drag="y"
           dragConstraints={DRAG_CONSTRAINTS}
           dragElastic={0.12}

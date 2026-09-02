@@ -53,8 +53,6 @@ export const nextDetent = (detent) => ORDER[(indexOf(detent) + 1) % ORDER.length
 export const raiseDetent = (detent) => ORDER[Math.min(indexOf(detent) + 1, ORDER.length - 1)];
 /** One detent down (peek stays peek). */
 export const lowerDetent = (detent) => ORDER[Math.max(indexOf(detent) - 1, 0)];
-/** The door's target: at least half — an open sheet keeps its detent. */
-export const atLeastHalf = (detent) => (isSheetOpen(detent) ? detent : SHEET_DETENT.HALF);
 
 /** The sheet's height for a detent, in px, from the viewport height. */
 export function detentHeightPx(detent, viewportHeight) {
