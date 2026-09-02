@@ -37,11 +37,16 @@ import {
   EVAL_IDENTITY_BLOCKS,
   EVAL_IDENTITY_CONSTITUTION_PATHS,
   EVAL_IDENTITY_SUBORDINATION_CLAUSE,
+  EVAL_IDENTITY_YIELD_CLAUSE,
   EVAL_IDENTITY_PROMPT_SPEC_VERSION,
   EVAL_IDENTITY_KERNEL_VERSION,
   EVAL_IDENTITY_RENDER_CHAR_CAP,
   renderEvalIdentityBlock,
 } from './evalIdentityBlocks.js';
+// Exit-Behavior Ask 2 (rescoped): the clause this REAL-flag file expects in a
+// render is a behavior branch on the live flag (never a pin — this file keeps
+// the flags module real as the §4 dependency-surface guard).
+import { EQUIPPED_RULE_PRECEDENCE_ENABLED } from '../../src/config/featureFlags.js';
 
 const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
 
@@ -154,7 +159,7 @@ describe('flag-on render contract — EVAL_IDENTITY_BLOCK_ENABLED=true (live)', 
       const block = renderEvalIdentityBlock(key);
       expect(block).toContain('━━━ ARCHETYPE IDENTITY ━━━');
       expect(block).toContain(EVAL_IDENTITY_BLOCKS[key].render);
-      expect(block).toContain(EVAL_IDENTITY_SUBORDINATION_CLAUSE);
+      expect(block).toContain(EQUIPPED_RULE_PRECEDENCE_ENABLED ? EVAL_IDENTITY_YIELD_CLAUSE : EVAL_IDENTITY_SUBORDINATION_CLAUSE);
     }
   });
 

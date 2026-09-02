@@ -1885,3 +1885,53 @@ export const METRIC_HISTORY_SNAPSHOT_ENABLED = true;
  */
 // Pinned by: commandCenterSyncFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMMAND_CENTER_SYNC_ENABLED = false;
+
+/**
+ * Exit-Behavior Rebalance Tier 2, Ask 2 (rescoped) — equipped-rule precedence
+ * made honest across the three non-archetype surfaces (kickoff 2026-09-01;
+ * five founder decisions 2026-09-02). DARK — default FALSE.
+ *
+ * When TRUE, ONE flag lights all three together (the F11 one-flag discipline):
+ *   1. the DECISION FRAMEWORK MUSTs the founder ruled qualifiable carry the
+ *      "absent an equipped user rule" qualifier in both eval prompt variants
+ *      (agentEvalPromptAssembly.js) — a framework default can no longer
+ *      silently override the user's own equipped rule, the inversion Ask 1's
+ *      four-layer precedence installed; the platform floors (LOCKED,
+ *      ANTI-THRASH, SURVIVAL MODE, the distressed exclusion, the THRESHOLD
+ *      PROXIMITY bonus band that IS the deterministic LOCK band) stay absolute;
+ *   2. the R8 yield clause replaces the DR-13 subordination clause in every
+ *      identity block (evalIdentityBlocks.js) — "equipped rules refine … but
+ *      never reverse" contradicted the reconciler, which ranks user_equipped
+ *      over archetype_default and drops the loser at decide.js:262 (an
+ *      honesty fix; the DR-13 harness measured decision + symbols only, so no
+ *      behavioral claim rides on it);
+ *   3. the equip-time compiler DECLARES the profit target × mb-08 combination
+ *      on the CompiledBuild and the compile preview (declaredConflicts; R8 /
+ *      F10 — executor wins over the prompt-delegated veto). DOUBLY DARK: the
+ *      compile itself runs only under COMPILER_ENABLED, so the declaration
+ *      reaches a user only once THAT flag flips — its flip PR carries this
+ *      declaration (registered in flagPinGuard's DARK_BY_DESIGN note).
+ *
+ * When FALSE (CURRENT), every prompt, every identity block and every compiled
+ * build is byte-identical to the pre-Ask-2 output — golden-pinned against the
+ * untouched tree at de4113fd (agentEvalPromptAssembly.ask2.test.js,
+ * evalIdentityBlocks.ask2.test.js, compileBuild.ask2.test.js).
+ *
+ * Read it at CALL time, never module scope (the Ask 3 compileBuild lesson —
+ * docs/audits/20260819_EXIT_BEHAVIOR_ASK3_BUILD_REVIEW.md §8); compileBuild()
+ * itself stays pure and receives the read as an input from the equip-time
+ * caller, inside its enabled path only. Flips after Asks 1+3 (live) per R10,
+ * in its own one-line PR after founder smoke — never a build PR. THE FLIP
+ * MAP (review B-F4, the Ask 1 §4 precedent): that flip updates the pin
+ * below AND drops the DARK_BY_DESIGN entry, in one commit, plus the
+ * mechanical snapshot regens — `npx vitest run
+ * api/_utils/p4Equivalence.battery.test.js
+ * api/_utils/evalIdentityBlock.injection.test.js -u` (2 P4 + 12 DR-13
+ * flag-on prompt snapshots re-capture the qualified MUSTs and the yield
+ * clause; review that diff — it must be exactly the ruled prose delta).
+ * Nothing else: evalIdentityBlocks.test.js branches on the live clause,
+ * and evalIdentityBlocks.flagOn.test.js + agentEvalPromptAssembly.ask1.test.js
+ * pin the Ask-2-dark branch (they test DR-13 / Ask 1, not this arc).
+ */
+// Pinned by: equippedRulePrecedenceFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const EQUIPPED_RULE_PRECEDENCE_ENABLED = false;

@@ -50,6 +50,9 @@ import { resolveNarrowedDomains, domainAdmits } from './compositionEnforcement.j
 // Module-scope table gate only — see the §5.5 comment; compileBuild() stays
 // pure per its input contract ("no flag reads" inside the compile itself).
 import { PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
+// Ask 2 (rescoped): the pure declared-conflict detector (R8 / F10) — no flag
+// read here; the caller threads its call-time read in as `declaredConflictDetection`.
+import { detectDeclaredRuleConflicts } from './declaredRuleConflicts.js';
 
 // ── §5.5 supported guardrail engine shapes ───────────────────────────────
 // Compilation requires an EXACT semantic match on all eight descriptor
@@ -157,6 +160,11 @@ export function compileBuild({
   gameModePolicyHash,
   versions,
   now,
+  // Ask 2 (rescoped) — the equip-time caller's CALL-TIME read of
+  // EQUIPPED_RULE_PRECEDENCE_ENABLED arrives as an INPUT (purity contract:
+  // no flag reads inside the compile). Default false ⇒ no new key, and the
+  // build (bytes + contentHash) is identical to the pre-Ask-2 compiler.
+  declaredConflictDetection = false,
 }) {
   const errors = [];
   let quarantined = false; // PR 3 (A7): out-of-domain persisted values quarantine the BUILD
@@ -490,6 +498,40 @@ export function compileBuild({
     ...(delta.projectedRulesHash ? { projectedRulesHash: delta.projectedRulesHash } : {}),
   };
 
+  // ── Ask 2 (rescoped) — declared conflicts (R8 / Fable F10) ───────────────
+  // The profit target × mb-08 hold veto is DECLARED here, at equip time, from
+  // the same inputs the compile already holds: userGuardrails (the store the
+  // executor fires on) and the assembled rule set (doc id + template id + host
+  // provenance), plus the equipped traits resolved by trait definition (the
+  // legacy compile mode never sees trait-hosted docs). Nothing is dropped or
+  // rewritten — the executor wins, mb-08 governs discretionary swaps below
+  // the target, and the CompiledBuild carries the declaration. Key present
+  // ONLY when detection is on (present-and-empty = "checked, none found"), so
+  // dark builds keep their bytes and contentHash.
+  // Only rules that will BEHAVE are declared (review B-F6): a rule the compile
+  // blocked (core_conflict / deferred / out-of-domain / mode-gated) or refused
+  // for missing metadata never reaches the prompt, so there is no veto to
+  // declare against — it carries no verdict, or a blocked one, below.
+  const behavingRuleIds = new Set(compatVerdicts.filter((v) => !v.blocked).map((v) => v.ruleId));
+  const declaredConflicts = declaredConflictDetection
+    ? detectDeclaredRuleConflicts({
+        userGuardrails,
+        rules: [...rulesById]
+          .filter(([id]) => behavingRuleIds.has(id))
+          .map(([id, { snapshot, bundleId, traitId }]) => ({
+            id,
+            sourceRef: snapshot?.sourceRef ?? null,
+            // Host KIND, not channel (review A-7): a trait-hosted doc reaches the
+            // compiler only through the unified projection ('projection', keyed
+            // by its traitId — the detector de-duplicates it against the trait
+            // definition); a bundle-hosted rule is 'bundle' in either mode.
+            host: traitId ? 'projection' : 'bundle',
+            hostRef: traitId ?? bundleId ?? null,
+          })),
+        equippedTraits: delta.equippedTraits,
+      })
+    : null;
+
   const build = {
     compiledBuildId: `${delta.agentId ?? 'unknown'}_${gameMode ?? 'unknown'}_rev${settingsRev ?? 'x'}`,
     compilerVersion: COMPILER_VERSION,
@@ -513,6 +555,8 @@ export function compileBuild({
     blockedControls,
     effectiveGuardrailsPreview: { perType },
     renderedTensionCandidates: tensionPairs,
+    // Ask 2: present iff detection is on — dark builds gain no key.
+    ...(declaredConflicts !== null ? { declaredConflicts } : {}),
     freshness: { validUntilSourceChange: true },
   };
 

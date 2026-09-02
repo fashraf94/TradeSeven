@@ -19,7 +19,7 @@ import { isDirectiveActive } from './directiveUtils.js';
 // (directive, standing leans). Non-fenced pure module; the flags import is
 // api → src Node-clean (BUILD_RULES §4).
 import { resolveControls, renderControlBlocks } from './controlPromptRenderer.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, EQUIPPED_RULE_PRECEDENCE_ENABLED } from '../../src/config/featureFlags.js';
 // Ask 1 data-add #1: the canonical ordered bonus tiers (BUILD_RULES §4 —
 // never a local copy of scoring constants; /code-review CR-5: derive the
 // level list, never hand-copy it, so a future tier addition cannot silently
@@ -196,6 +196,147 @@ function renderSurvivalMode() {
   return `Deterministic protection floors are facts of the environment. ${machinery}`;
 }
 
+// ==================== ASK 2 (RESCOPED) — THE QUALIFIED FRAMEWORK DEFAULTS ====================
+// Exit-Behavior Rebalance Tier 2, Ask 2 (rescoped; fence contact sanctioned in
+// the 2026-09-01 kickoff, five founder decisions 2026-09-02). The DECISION
+// FRAMEWORK's absolutist MUSTs predate Ask 1's four-layer precedence and
+// contradict its inversion: a framework default must never silently override
+// the user's own equipped rule. Every helper below reads
+// EQUIPPED_RULE_PRECEDENCE_ENABLED at CALL TIME — never module scope (Ask 3's
+// compileBuild module-scope read broke seven distant hermetic mocks; audit
+// record §8). Flag OFF: each helper returns today's prose BYTE-IDENTICALLY
+// (golden-pinned @ de4113fd in agentEvalPromptAssembly.ask2.test.js, both
+// variants × six archetypes). Flag ON: the ONE qualifier phrase below is woven
+// into the ruled MUSTs — one wording, rendered from one helper per MUST into
+// BOTH prompt variants (§9 — no drifting second copy).
+//
+// QUALIFIER DISCIPLINE: the qualifier yields to an EQUIPPED USER RULE, never
+// to model discretion. The platform floors stay absolute and are deliberately
+// NOT routed through these helpers: LOCKED (engine-enforced), ANTI-THRASH
+// (cooldowns, one-exit-per-eval, the breaker), SURVIVAL MODE (the bust floor),
+// the distressed exclusion (mirrors the engine's distressed blocks), and the
+// THRESHOLD PROXIMITY bonus bullet — its 0.2x band IS the risk manager's
+// deterministic LOCK band (agentRiskManager LOCK_PROXIMITY), so a qualifier
+// there would promise what the engine refuses (the maxPosition label-lie
+// class) — and §8 CONVICTION stays absolute for the same reason: its 70 is
+// the fenced swap validator's floor (agentSwapExecution.js:77 rejects every
+// SWAP below 70; the cron downgrades it to HOLD), so a qualifier would tell
+// the model an equipped rule lets a sub-70 swap through when the engine
+// never will (/code-review CR-2, correcting the Phase 0 reading). The MARKET
+// POSTURE `selective` line and the CLOCK mid-battle `>80%` line ARE qualified
+// (founder decision 5): 80 is prompt-only, so an equipped user rule lowers
+// the bar to the engine's 70 — never below it. The `defensive` posture, S5
+// and the FORGE RULES must-obey line stay out (decision 5).
+const EQUIPPED_RULE_QUALIFIER = 'absent an equipped user rule';
+const QUALIFIER_CAP = EQUIPPED_RULE_QUALIFIER.charAt(0).toUpperCase() + EQUIPPED_RULE_QUALIFIER.slice(1);
+
+/** Framework §1 — both variants. */
+function renderDefaultToHold() {
+  if (!EQUIPPED_RULE_PRECEDENCE_ENABLED) {
+    return `1. DEFAULT TO HOLD. You need a compelling, data-backed reason to trade.
+   Most evaluations should result in HOLD. Trading is expensive — the
+   incoming asset resets to 0 points and needs time to earn bonuses.`;
+  }
+  return `1. DEFAULT TO HOLD. ${QUALIFIER_CAP} that calls for the trade,
+   you need a compelling, data-backed reason to trade. Most evaluations
+   should result in HOLD. Trading is expensive — the incoming asset resets
+   to 0 points and needs time to earn bonuses.`;
+}
+
+/** Framework §3 — both variants. */
+function renderRelativeStrength() {
+  if (!EQUIPPED_RULE_PRECEDENCE_ENABLED) {
+    return `3. RELATIVE STRENGTH: Compare asset performance to the MACRO BENCHMARKS.
+   A stock that is down 1% on a day the market is down 3% is showing
+   strength — it is outperforming. Do not panic-sell outperformers.
+   A stock that is flat on a day the market is up 2% is showing weakness.`;
+  }
+  return `3. RELATIVE STRENGTH: Compare asset performance to the MACRO BENCHMARKS.
+   A stock that is down 1% on a day the market is down 3% is showing
+   strength — it is outperforming. ${QUALIFIER_CAP} that calls
+   for the exit, do not panic-sell outperformers.
+   A stock that is flat on a day the market is up 2% is showing weakness.`;
+}
+
+/** Framework §4 — both variants. The mid-battle `>80%` line and the late-battle
+ *  DEFENSIVE ONLY line carry the qualifier; "chase momentum late" stays
+ *  forbidden on the model's OWN initiative — the user's rule is the only override. */
+function renderClockManagement() {
+  if (!EQUIPPED_RULE_PRECEDENCE_ENABLED) {
+    return `4. CLOCK MANAGEMENT: New assets start at 0 points and need TIME to reach
+   threshold bonuses. Calculate whether enough trading time remains for
+   a new asset to realistically earn points.
+   - Early battle (>60% time remaining): Swaps have full runway. Offense OK.
+   - Mid battle (30-60% remaining): Only swap on strong conviction (>80%).
+   - Late battle (<30% remaining): Swaps are DEFENSIVE ONLY — cut a
+     position approaching Bust/Crash to protect banked points. Do NOT
+     chase momentum late.`;
+  }
+  return `4. CLOCK MANAGEMENT: New assets start at 0 points and need TIME to reach
+   threshold bonuses. Calculate whether enough trading time remains for
+   a new asset to realistically earn points.
+   - Early battle (>60% time remaining): Swaps have full runway. Offense OK.
+   - Mid battle (30-60% remaining): ${QUALIFIER_CAP} that calls
+     for the swap, only swap on strong conviction (>80%).
+   - Late battle (<30% remaining): ${QUALIFIER_CAP} that calls
+     for the swap, swaps are DEFENSIVE ONLY — cut a position approaching
+     Bust/Crash to protect banked points. Do NOT chase momentum late on
+     your own initiative.`;
+}
+
+/** Framework §7 — both variants. */
+function renderSectorAwareness() {
+  if (!EQUIPPED_RULE_PRECEDENCE_ENABLED) {
+    return `7. SECTOR AWARENESS: Do not swap a bleeding stock for a bench stock in
+   the same sector — if the sector is weak, the replacement will bleed too.
+   Rotate into a different sector for diversification.`;
+  }
+  return `7. SECTOR AWARENESS: ${QUALIFIER_CAP} that calls for it, do not
+   swap a bleeding stock for a bench stock in the same sector — if the
+   sector is weak, the replacement will bleed too. Rotate into a different
+   sector for diversification.`;
+}
+
+/** INTRADAY MOMENTUM SIGNALS — the NR7 line, both variants. */
+function renderNr7Line() {
+  if (!EQUIPPED_RULE_PRECEDENCE_ENABLED) {
+    return `- NR7 (Narrowest Range 7 Days): When flagged, the stock's daily range is the
+  tightest in 7 days. This is a volatility contraction pattern — often precedes
+  a sharp directional move. Do NOT swap out NR7 stocks unless they're bleeding.`;
+  }
+  return `- NR7 (Narrowest Range 7 Days): When flagged, the stock's daily range is the
+  tightest in 7 days. This is a volatility contraction pattern — often precedes
+  a sharp directional move. ${QUALIFIER_CAP} that calls for the
+  exit, do NOT swap out NR7 stocks unless they're bleeding.`;
+}
+
+/** MARKET POSTURE — the `selective` line, both variants (founder decision 5). */
+function renderSelectivePostureLine() {
+  if (!EQUIPPED_RULE_PRECEDENCE_ENABLED) {
+    return '- selective: Moderate caution. Only swap on >80% conviction. Prefer relative strength.';
+  }
+  return `- selective: Moderate caution. ${QUALIFIER_CAP} that calls for the swap, only swap on >80% conviction. Prefer relative strength.`;
+}
+
+/** The C_INST institutional data-lag note (identity block; renders only when
+ *  the user equipped institutional rules). The 135-day lag is a fact and
+ *  stays; the NEVER/ALWAYS weighting default yields to the user's own rule. */
+function renderInstitutionalLagNote() {
+  if (!EQUIPPED_RULE_PRECEDENCE_ENABLED) {
+    return 'C_INST: INSTITUTIONAL DATA LAG — Institutional accumulation/distribution data from 13F\n' +
+      'filings is lagged up to 135 days. NEVER hold a position based solely on strong\n' +
+      'institutional accumulation if VWAP (held positions) or RSI-14 shows a breakdown.\n' +
+      'Live technicals ALWAYS override stale institutional signals. Use institutional data for draft-time\n' +
+      'universe filtering, not intraday swap decisions.';
+  }
+  return 'C_INST: INSTITUTIONAL DATA LAG — Institutional accumulation/distribution data from 13F\n' +
+    `filings is lagged up to 135 days. ${QUALIFIER_CAP} that says otherwise,\n` +
+    'never hold a position based solely on strong institutional accumulation if VWAP (held\n' +
+    'positions) or RSI-14 shows a breakdown; live technicals override stale institutional\n' +
+    'signals by default. Use institutional data for draft-time universe filtering, not\n' +
+    'intraday swap decisions.';
+}
+
 export function buildEvalSystemPrompt(agentName, archetype, gameMode = TIERED_GAME_MODE, archetypeKey) {
   const identityBlock = renderEvalIdentityBlock(archetypeKey);
   if (resolveModeConfig(gameMode).promptVariant === 'flat6') {
@@ -222,25 +363,13 @@ When you swap out an asset, its current points are LOCKED permanently. The incom
 
 ━━━ DECISION FRAMEWORK ━━━
 
-1. DEFAULT TO HOLD. You need a compelling, data-backed reason to trade.
-   Most evaluations should result in HOLD. Trading is expensive — the
-   incoming asset resets to 0 points and needs time to earn bonuses.
+${renderDefaultToHold()}
 
 ${renderEvSection()}
 
-3. RELATIVE STRENGTH: Compare asset performance to the MACRO BENCHMARKS.
-   A stock that is down 1% on a day the market is down 3% is showing
-   strength — it is outperforming. Do not panic-sell outperformers.
-   A stock that is flat on a day the market is up 2% is showing weakness.
+${renderRelativeStrength()}
 
-4. CLOCK MANAGEMENT: New assets start at 0 points and need TIME to reach
-   threshold bonuses. Calculate whether enough trading time remains for
-   a new asset to realistically earn points.
-   - Early battle (>60% time remaining): Swaps have full runway. Offense OK.
-   - Mid battle (30-60% remaining): Only swap on strong conviction (>80%).
-   - Late battle (<30% remaining): Swaps are DEFENSIVE ONLY — cut a
-     position approaching Bust/Crash to protect banked points. Do NOT
-     chase momentum late.
+${renderClockManagement()}
 
 5. TIER IMPACT AWARENESS:
    - Star swaps affect score at 2.0x — high reward but high cost if wrong.
@@ -253,9 +382,7 @@ ${renderEvSection()}
    - If an active stock is within 0.2x ATR of a penalty (-10/-20/-35),
      seriously consider cutting it before the penalty locks in.
 
-7. SECTOR AWARENESS: Do not swap a bleeding stock for a bench stock in
-   the same sector — if the sector is weak, the replacement will bleed too.
-   Rotate into a different sector for diversification.
+${renderSectorAwareness()}
 
 8. CONVICTION THRESHOLD: If your conviction for a SWAP is below 70%, you
    MUST output decision "HOLD". Use your rationale to explain why you were
@@ -272,9 +399,7 @@ When provided, use these signals to refine your decisions:
   contracted, breakout likely. High percentile (≥80th) = expanded volatility.
   Squeezes on your active holdings suggest patience (breakout coming).
   Squeezes on bench stocks suggest swap opportunity (catch the breakout).
-- NR7 (Narrowest Range 7 Days): When flagged, the stock's daily range is the
-  tightest in 7 days. This is a volatility contraction pattern — often precedes
-  a sharp directional move. Do NOT swap out NR7 stocks unless they're bleeding.
+${renderNr7Line()}
 
 ━━━ REGIME-AWARE STRATEGY ━━━
 
@@ -282,7 +407,7 @@ Your decisions should adapt to the current market posture and per-stock regimes:
 
 MARKET POSTURE:
 - risk_on: Offense permitted. Swaps for upside OK. Full conviction range.
-- selective: Moderate caution. Only swap on >80% conviction. Prefer relative strength.
+${renderSelectivePostureLine()}
 - defensive: Capital preservation. Swaps are defensive only (cut losers). Do not chase.
 
 STOCK REGIMES:
@@ -443,25 +568,13 @@ When you swap out an asset, its current points are LOCKED permanently. The incom
 
 ━━━ DECISION FRAMEWORK ━━━
 
-1. DEFAULT TO HOLD. You need a compelling, data-backed reason to trade.
-   Most evaluations should result in HOLD. Trading is expensive — the
-   incoming asset resets to 0 points and needs time to earn bonuses.
+${renderDefaultToHold()}
 
 ${renderEvSection()}
 
-3. RELATIVE STRENGTH: Compare asset performance to the MACRO BENCHMARKS.
-   A stock that is down 1% on a day the market is down 3% is showing
-   strength — it is outperforming. Do not panic-sell outperformers.
-   A stock that is flat on a day the market is up 2% is showing weakness.
+${renderRelativeStrength()}
 
-4. CLOCK MANAGEMENT: New assets start at 0 points and need TIME to reach
-   threshold bonuses. Calculate whether enough trading time remains for
-   a new asset to realistically earn points.
-   - Early battle (>60% time remaining): Swaps have full runway. Offense OK.
-   - Mid battle (30-60% remaining): Only swap on strong conviction (>80%).
-   - Late battle (<30% remaining): Swaps are DEFENSIVE ONLY — cut a
-     position approaching Bust/Crash to protect banked points. Do NOT
-     chase momentum late.
+${renderClockManagement()}
 
 5. POSITION IMPACT: All six positions carry the same flat weight — no slot
    is safer to experiment in than another. Judge every swap purely on the
@@ -473,9 +586,7 @@ ${renderEvSection()}
    - If an active stock is within 0.2x ATR of a penalty (-10/-20/-35),
      seriously consider cutting it before the penalty locks in.
 
-7. SECTOR AWARENESS: Do not swap a bleeding stock for a bench stock in
-   the same sector — if the sector is weak, the replacement will bleed too.
-   Rotate into a different sector for diversification.
+${renderSectorAwareness()}
 
 8. CONVICTION THRESHOLD: If your conviction for a SWAP is below 70%, you
    MUST output decision "HOLD". Use your rationale to explain why you were
@@ -492,9 +603,7 @@ When provided, use these signals to refine your decisions:
   contracted, breakout likely. High percentile (≥80th) = expanded volatility.
   Squeezes on your active holdings suggest patience (breakout coming).
   Squeezes on bench stocks suggest swap opportunity (catch the breakout).
-- NR7 (Narrowest Range 7 Days): When flagged, the stock's daily range is the
-  tightest in 7 days. This is a volatility contraction pattern — often precedes
-  a sharp directional move. Do NOT swap out NR7 stocks unless they're bleeding.
+${renderNr7Line()}
 
 ━━━ REGIME-AWARE STRATEGY ━━━
 
@@ -502,7 +611,7 @@ Your decisions should adapt to the current market posture and per-stock regimes:
 
 MARKET POSTURE:
 - risk_on: Offense permitted. Swaps for upside OK. Full conviction range.
-- selective: Moderate caution. Only swap on >80% conviction. Prefer relative strength.
+${renderSelectivePostureLine()}
 - defensive: Capital preservation. Swaps are defensive only (cut losers). Do not chase.
 
 STOCK REGIMES:
@@ -707,13 +816,9 @@ ${ctx.consolidatedInsight}`);
     // Institutional data lag warning (only when institutional rules are active)
     const hasInstitutionalRules = activeRules.some(r => r.category === 'institutional');
     if (hasInstitutionalRules) {
-      ruleLines.push(
-        'C_INST: INSTITUTIONAL DATA LAG — Institutional accumulation/distribution data from 13F\n' +
-        'filings is lagged up to 135 days. NEVER hold a position based solely on strong\n' +
-        'institutional accumulation if VWAP (held positions) or RSI-14 shows a breakdown.\n' +
-        'Live technicals ALWAYS override stale institutional signals. Use institutional data for draft-time\n' +
-        'universe filtering, not intraday swap decisions.'
-      );
+      // Ask 2 (rescoped): the NEVER/ALWAYS weighting default yields to the
+      // user's own equipped rule flag-on; the lag fact survives both states.
+      ruleLines.push(renderInstitutionalLagNote());
     }
 
     ruleLines.push(
