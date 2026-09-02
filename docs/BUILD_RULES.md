@@ -75,7 +75,7 @@ Every catalog event (see `VISION_PROGRAM_POST_LAUNCH_PLACEMENT_ADDENDUM_A` §4 +
 
 ## 6. Cron constraints
 
-- **Budget:** 37/40 schedule entries used (assumed Pro ceiling). The tournament build may add **at most 2**. Prefer branching inside existing handlers over new entries.
+- **Budget:** **39/40** schedule entries used at HEAD (assumed Pro ceiling; counted from the `crons` array in `vercel.json` — Phase 0 V2 Q12, Sep 2 2026). **One slot remains**; the earlier "at most 2" tournament allowance is spent. Prefer branching inside existing handlers over new entries.
 - **Vercel crons are UTC-only.** Any job whose correctness depends on a specific Eastern-Time minute uses the DST pattern: dual-hour schedule entry + ET-aware guard (`Intl` with `America/New_York` — never hand-rolled offsets) + per-day idempotency. Template: `process-draft-claims.js` (`getClaimProcessingWindow`, `isAlreadyProcessedForDay` — exported, importable).
 - **Crons do not run on Vercel preview.** Verification = unit tests on guard logic + observation of the first production run. Say this in your PR rather than claiming preview-tested.
 - Cron auth = vercel-cron header / `CRON_SECRET` (in-repo pattern). Internal service-to-service calls use the same secret pattern.
