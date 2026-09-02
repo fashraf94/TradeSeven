@@ -79,6 +79,38 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // the user edits and sends through the shipped chat path. Costs a message.
   askFollowUp: 'Ask a follow-up · 1 message',
   followUpPrefill: (symbol) => `About ${symbol} — `,
+
+  // ── This turn (A3) ─────────────────────────────────────────────────────────
+  // Strict membership (D-49): only the current directive. `Filed {t}` is the
+  // filing EXCHANGE's timestamp. No "for the ~{t} check" — filed is not heard
+  // (hazard 3). Empty is a truthful state, stamped with the adapter's next.
+  thisTurn: 'This turn',
+  filed: (iso) => {
+    const t = etTime(iso);
+    return t ? `Filed ${t}` : 'Filed';
+  },
+  nothingQueued: (nextIso) => {
+    const next = etTime(nextIso);
+    return next ? `Nothing queued · next check ~${next}` : 'Nothing queued';
+  },
+
+  // ── Receipts (A3, D-51 / D-60) ─────────────────────────────────────────────
+  // `Filed · Acted · Replaced · Expired`. Acted is the shipped `↳ from
+  // directive` on a statusFeed swap entry (AgentChat.jsx) and stays there.
+  // Replaced shows text and time only — never "never seen". Expired is the
+  // bare word: it is a battle-complete fact, not a time.
+  replaced: (iso) => {
+    const t = etTime(iso);
+    return t ? `Replaced ${t}` : 'Replaced';
+  },
+  expired: 'Expired',
+  receiptLine: (receipt) => {
+    if (!receipt || typeof receipt !== 'object') return null;
+    if (receipt.state === 'filed') return BATTLE_VIEW_COPY.filed(receipt.at);
+    if (receipt.state === 'replaced') return BATTLE_VIEW_COPY.replaced(receipt.at);
+    if (receipt.state === 'expired') return BATTLE_VIEW_COPY.expired;
+    return null;
+  },
 });
 
 export default BATTLE_VIEW_COPY;

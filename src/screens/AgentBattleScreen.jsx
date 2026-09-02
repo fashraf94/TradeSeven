@@ -28,6 +28,8 @@ import TurnLine from './battleView/TurnLine';
 import WhyPanel from './battleView/WhyPanel';
 import { selectWhyState, selectTradesForSymbol } from './battleView/selectWhyState';
 import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
+import { deriveReceipts } from './battleView/deriveReceipts';
+import ThisTurnStrip from './battleView/ThisTurnStrip';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
 // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Uncomment to revive.
 // import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
@@ -917,6 +919,22 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const lastScoredAt = agentBattle?.scoreState?.lastScoredAt ?? null;
   const latestDecision = turnLine?.decision ?? null;
 
+  // ── Receipts + This turn (Phase A, controller flag) ───────────────────────
+  // Pure, from the subscribed doc; the chat and the strip only render what
+  // they are handed. Null flag-off, so AgentChat keeps its shipped card.
+  const receipts = useMemo(() => {
+    if (!controllerOn || !agentBattle) return null;
+    return deriveReceipts(chatExchanges, agentBattle.directive ?? null, agentBattle.status ?? null);
+  }, [controllerOn, agentBattle, chatExchanges]);
+  const thisTurnStrip = controllerOn && agentBattle ? (
+    <ThisTurnStrip
+      directive={agentBattle.directive ?? null}
+      receipts={receipts}
+      battleStatus={agentBattle.status ?? null}
+      turn={turnLine}
+    />
+  ) : null;
+
   // Memoize enriched research asset to avoid re-renders on every price tick
   const stableResearchAsset = useMemo(() => {
     if (!researchAsset) return null;
@@ -1087,7 +1105,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 key="book"
                 symbol={null}
                 state={selectWhyState(latestDecision, null, lastScoredAt)}
-                thisTurn={null}
+                thisTurn={thisTurnStrip}
                 onAskFollowUp={handleAskFollowUp}
                 reducedMotion={reducedMotion}
                 headingId="why-book-heading"
@@ -1141,6 +1159,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.15 }}
             >
+              {/* This turn (Phase A, controller flag) — above the board. */}
+              {thisTurnStrip}
               {activeTiers.map((tier, tierIndex) => (
                 <div key={tier.key}>
                   <TierHeader tier={tier} />
@@ -1247,6 +1267,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 // flag-off — the chat never sees the prop.
                 composerPrefill={controllerOn ? composerPrefill : null}
                 onComposerPrefillConsumed={controllerOn ? handleComposerPrefillConsumed : null}
+                receipts={receipts}
               />
             </motion.div>
           )}
