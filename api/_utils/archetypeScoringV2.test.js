@@ -23,9 +23,13 @@ import {
   ARCHETYPE_FILTERS_V2,
   ARCHETYPE_INTERLEAVE_V2,
   ARCHETYPE_CONSTRAINTS_V2,
+  ARCHETYPE_KEYS_V2,
   INTERLEAVE_TOP_N,
 } from './archetypeScoringV2.js';
 import { deriveAxes, AXIS_KEYS, round1 } from './axisDerivation.js';
+// The registry's own key source (archetypeRegistry.listArchetypeIds() returns it
+// verbatim) — imported HERE, in the test, so the runtime module stays free of
+// fenced imports (tests are outside the §2.3 ratchet scan).
 import { VALID_ARCHETYPES } from './agentArchetypeConfig.js';
 
 const V2_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'archetypeScoringV2.js');
@@ -132,6 +136,11 @@ describe('§4 contract — fail closed (test 8: missing gameMode, mandate, unkno
     expect(() => run(u, 'copycat')).toThrow(/archetype_unknown/);
     expect(() => run(u, undefined)).toThrow(/archetype_unknown/);
     expect(() => run(u, 'ANALYST')).toThrow(/archetype_unknown/);
+    // Inherited Object.prototype keys are truthy on a plain table lookup (the refuter's
+    // counter-example); the frozen key list rejects them.
+    for (const bad of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(() => run(u, bad)).toThrow(/archetype_unknown/);
+    }
     for (const a of ARCHETYPES) expect(() => run(u, a, { minCandidates: 1 })).not.toThrow();
   });
 
@@ -147,6 +156,9 @@ describe('§4 contract — fail closed (test 8: missing gameMode, mandate, unkno
 describe('§3.2 weight vectors (test 7)', () => {
   it('cover exactly the registry archetypes, are non-negative, name only axes, and each sums to 1.00', () => {
     expect(Object.keys(ARCHETYPE_WEIGHTS_V2).sort()).toEqual([...VALID_ARCHETYPES].sort());
+    expect([...ARCHETYPE_KEYS_V2].sort()).toEqual([...VALID_ARCHETYPES].sort());
+    // No runtime import of a fenced file or the node-only registry (the key pin lives here, in the test).
+    expect(readFileSync(V2_SOURCE, 'utf8')).not.toMatch(/from '\.\/(agentArchetypeConfig|archetypeRegistry|archetypeScoring)\.js'/);
     for (const w of Object.values(ARCHETYPE_WEIGHTS_V2)) {
       const sum = Object.values(w).reduce((a, b) => a + b, 0);
       expect(Math.abs(sum - 1)).toBeLessThan(1e-9);
@@ -337,6 +349,12 @@ describe('§3.1 filters (test 4 — signed percent P-1, week floor P-13, null fa
   it('the week floor: supplied doc median wins; null median ⇒ the absolute ≥ 0 gate; unsupplied on a full universe computes the same value', () => {
     const u = [stock({ symbol: 'A', return1W: -1 }), stock({ symbol: 'B', return1W: -3 }), stock({ symbol: 'C', return1W: 2 })];
     expect(syms(u, 'contrarian')).toEqual(['A', 'C']);                                        // median −1 ⇒ floor −1
+    const { events, onEvent } = collect();
+    run(withAxes(u), 'contrarian', { minCandidates: 1, onEvent });
+    expect(events.filter((e) => e.type === 'week_floor_computed')).toEqual([
+      { type: 'week_floor_computed', archetype: 'contrarian', gameMode: 'standard', median: -1, count: 3, universeSize: null },
+    ]);
+    expect(syms(u, 'contrarian', { universeMedianReturn1W: 'bad' })).toEqual(['C']);          // non-finite supplied ⇒ the null reading (floor 0)
     expect(syms(u, 'contrarian', { universeMedianReturn1W: -1 })).toEqual(['A', 'C']);
     expect(syms(u, 'contrarian', { universeMedianReturn1W: null })).toEqual(['C']);           // floor 0
     expect(syms(u, 'contrarian', { universeMedianReturn1W: -5 })).toEqual(['A', 'B', 'C']);   // floor −5
@@ -411,6 +429,21 @@ describe('§3.3(a) bounded sector interleave — Diversifier only (test 5)', () 
   it('the anchor is always eligible and the gap is never exceeded: a candidate exactly 10 below qualifies, 10.1 below does not', () => {
     expect(order([dv('T1', 95, 'Technology'), dv('T2', 90, 'Technology'), dv('H1', 80, 'Healthcare')])).toEqual(['T1', 'H1', 'T2']);
     expect(order([dv('T1', 95, 'Technology'), dv('T2', 90, 'Technology'), dv('H1', 79.9, 'Healthcare')])).toEqual(['T1', 'T2', 'H1']);
+    // Exact-gap at 1 dp where float subtraction is inexact (64.4 − 10 ≠ 54.4 in IEEE-754): still qualifies.
+    const { events, onEvent } = collect();
+    expect(order([dv('E1', 64.4, 'Energy'), dv('E2', 64.4, 'Energy'), dv('T1', 54.4, 'Technology'), dv('H1', 53.4, 'Healthcare'), dv('F1', 52.4, 'Financials'), dv('U1', 51.4, 'Utilities')], { onEvent }))
+      .toEqual(['E1', 'T1', 'H1', 'F1', 'U1', 'E2']);
+    expect(events.filter((e) => e.type === 'diversifier_interleave_gap_blocked' && e.reason === 'gap')).toEqual([]);
+  });
+
+  it('fewer than 5 sectors available: the breadth phase stops and still emits the event (reason no_unrepresented_sector)', () => {
+    const { events, onEvent } = collect();
+    const o = order([dv('T1', 95, 'Technology'), dv('T2', 94, 'Technology'), dv('H1', 90, 'Healthcare'), dv('E1', 85, 'Energy'), dv('E2', 84, 'Energy')], { onEvent });
+    expect(o).toEqual(['T1', 'H1', 'E1', 'T2', 'E2']);
+    const stops = events.filter((e) => e.type === 'diversifier_interleave_gap_blocked');
+    expect(stops).toHaveLength(1);
+    // T2 was skipped when H1 was placed over it, so the final anchor is E2 (the last eligible name).
+    expect(stops[0]).toMatchObject({ reason: 'no_unrepresented_sector', placed: 3, distinctSectors: 3, targetDistinctSectors: 5, anchor: 'E2', anchorScore: 84, bestUnrepresented: null, bestUnrepresentedScore: null });
   });
 
   it('gap blocked: stops the breadth phase, emits the event with counts, then fills in global order', () => {
@@ -423,6 +456,7 @@ describe('§3.3(a) bounded sector interleave — Diversifier only (test 5)', () 
       type: 'diversifier_interleave_gap_blocked',
       archetype: 'diversifier',
       gameMode: 'standard',
+      reason: 'gap',
       placed: 1,
       distinctSectors: 1,
       targetDistinctSectors: 5,
@@ -452,6 +486,15 @@ describe('§3.3(a) bounded sector interleave — Diversifier only (test 5)', () 
     const o = order([dv('K1', 99, 'Unknown'), dv('N1', 98, null), dv('T1', 90, 'Technology'), dv('H1', 85, 'Healthcare')]);
     // breadth: T1 (anchor, unrepresented) then H1; fill: K1, N1 by global order
     expect(o).toEqual(['T1', 'H1', 'K1', 'N1']);
+  });
+
+  it('ties outside the Diversifier: symbol asc only — a Speculator tie is never decided by FUND', () => {
+    const tie = [
+      axed('BBB', { quality: 90, strength: 60, persistence: 60, volatility: 60 }),
+      axed('AAA', { quality: 10, strength: 60, persistence: 60, volatility: 60 }),
+      axed('CCC', { quality: null, strength: 60, persistence: 60, volatility: 60 }),
+    ];
+    expect(run(tie, 'degen', { minCandidates: 1 }).map((s) => s.symbol)).toEqual(['AAA', 'BBB', 'CCC']);
   });
 
   it('ties: quality desc, then symbol asc', () => {

@@ -28,22 +28,18 @@ import { db } from '../firebase/config';
 import { subscribeGroup, subscribeDraftState } from '../services/tournamentGroupService';
 import { makeTrainingPick as makeTrainingPickAction, mapTournamentActionError } from '../services/tournamentActions';
 import { computeArchetypeRankings } from '../../api/_utils/archetypeScoring.js';
+import { readUniverseAxisContext } from '../../api/_utils/axisDerivation.js';
 import { GROUP_STATUS, PICKS_PER_PLAYER, TRAINING_TUNING } from '../constants/leagueTournament';
 import { isTrainingPodDraftV2On, TRAINING_POD_PICK_CLOCK_MS } from '../config/featureFlags';
 
 const OVERLAY_SIZE = 5;
 const norm = (s) => (typeof s === 'string' ? s.trim().toUpperCase() : '');
 
-// Archetype Rank V2 (P-8 / P-13): the doc-level context a SUBSET caller hands
-// the V2 scorer. `undefined` when the doc predates Phase A (the scorer then
-// derives over the input and logs); `null` when the field is present but empty.
-function universeContextFromDoc(data) {
-  const num = (v) => (Number.isFinite(v) ? v : null);
-  return {
-    universeSize: data && 'axes_universe_size' in data ? num(data.axes_universe_size) : undefined,
-    universeMedianReturn1W: data && 'universe_median_return1W' in data ? num(data.universe_median_return1W) : undefined,
-  };
-}
+// Archetype Rank V2: the scorer's default event sink is console.warn (the
+// producer collects events into the observation snapshot); in the browser the
+// overlay's coverage event fires on every late-draft recompute (< 5 names left),
+// so the client sink is silent — the server snapshots carry the observation.
+const silentScorerSink = () => {};
 
 // One interactive-draft hook for BOTH modes (the "one room, both modes" reuse):
 // the subscription (group + the shared draft/state doc), board, seats, clock, and
@@ -92,7 +88,7 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
       try {
         const snap = await getDoc(doc(db, 'indexIntelligence', 'stockRankings'));
         if (!cancelled) setUniverse(snap.exists() ? (snap.data().stocks || []) : []);
-        if (!cancelled) setUniverseContext(snap.exists() ? universeContextFromDoc(snap.data()) : null);
+        if (!cancelled) setUniverseContext(snap.exists() ? readUniverseAxisContext(snap.data()) : null);
       } catch (err) {
         console.error('[useTrainingDraft] stockRankings read failed:', err?.message);
         if (!cancelled) setUniverse([]);
@@ -198,8 +194,13 @@ export function useTrainingDraft({ user, groupId, active = true, clockPaused = f
         universeSize: universeContext?.universeSize,
         universeMedianReturn1W: universeContext?.universeMedianReturn1W,
         minCandidates: OVERLAY_SIZE,
+        onEvent: silentScorerSink,
       });
-    } catch { ranked = null; }
+    } catch (err) {
+      // R3 degrade (empty overlay) stays; the cause is no longer silent (V-5).
+      console.warn('[useTrainingDraft] archetype ranking unavailable — overlay hidden:', err?.message);
+      ranked = null;
+    }
     if (!Array.isArray(ranked) || ranked.length === 0) return new Set();
     return new Set(ranked.slice(0, OVERLAY_SIZE).map((s) => norm(s.symbol)));
   }, [universe, universeContext, draft?.humanArchetype, draft?.archetypeByUser, currentUserId, poolSet, takenSet]);

@@ -68,6 +68,7 @@ import {
   expireGroup,
 } from './tournamentGroupService.js';
 import { computeArchetypeRankings } from './archetypeScoring.js';
+import { readUniverseAxisContext } from './axisDerivation.js';
 import { getEtParts, toIso } from './tournamentTime.js';
 import { isMarketHoliday } from './marketSchedule.js';
 import { generateSnakeOrder } from '../../src/services/draftAssets.js';
@@ -203,17 +204,11 @@ export async function resolveHumanArchetype(db, odUserId) {
   }
 }
 
-/** The ranked universe (stock objects) for the human archetype autopick.
- *  Degrades to null (autopick falls back to best-available) on any failure. */
-export async function readStockUniverse(db) {
-  return (await readStockUniverseContext(db)).stocks;
-}
-
-/** The ranked universe PLUS the doc-level context a SUBSET caller must hand the
- *  V2 scorer (Archetype Rank V2, P-8 / P-13): `axes_universe_size` and
- *  `universe_median_return1W`. Each is `undefined` when the doc predates Phase A
- *  (the scorer then derives over the input and logs), `null` when the doc
- *  carries the field with no value. Degrades to all-null stocks on any failure
+/** The ranked universe (stock objects) for the human archetype autopick PLUS the
+ *  doc-level context a SUBSET caller must hand the V2 scorer (Archetype Rank V2,
+ *  P-8 / P-13): `axes_universe_size` and `universe_median_return1W`, parsed by
+ *  the shared readUniverseAxisContext (undefined = absent field, pre-Phase-A doc;
+ *  null = present with no value). Degrades to null stocks on any failure
  *  (autopick falls back to best-available). */
 export async function readStockUniverseContext(db) {
   const empty = { stocks: null, universeSize: undefined, universeMedianReturn1W: undefined };
@@ -221,12 +216,7 @@ export async function readStockUniverseContext(db) {
     const snap = await db.collection('indexIntelligence').doc('stockRankings').get();
     if (!snap.exists) return empty;
     const data = snap.data() || {};
-    const num = (v) => (Number.isFinite(v) ? v : null);
-    return {
-      stocks: data.stocks ?? null,
-      universeSize: 'axes_universe_size' in data ? num(data.axes_universe_size) : undefined,
-      universeMedianReturn1W: 'universe_median_return1W' in data ? num(data.universe_median_return1W) : undefined,
-    };
+    return { stocks: data.stocks ?? null, ...readUniverseAxisContext(data) };
   } catch (err) {
     console.warn(`${LOG_PREFIX} stockRankings read failed — autopick degrades to best-available:`, err?.message);
     return empty;
@@ -242,7 +232,7 @@ export async function readStockUniverseContext(db) {
 // the anti-byte-copy rule the arena price paths already paid for. Exported here
 // rather than moved to a draftCore.js (a future hygiene extraction is ledgered)
 // to keep the training path's diff byte-identical. resolveHumanArchetype /
-// readStockUniverse (above) are exported for the same reuse.
+// readStockUniverseContext (above) are exported for the same reuse.
 
 /** A CPU seat's pick: highest still-available name on its deterministic board
  *  (buildCpuUserBoard), falling back to the highest-ranked remaining pool name

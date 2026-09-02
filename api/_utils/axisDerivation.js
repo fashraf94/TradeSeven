@@ -49,9 +49,11 @@ export const DISLOCATION_WEIGHTS = Object.freeze({
   sma200_position: 0.2,
 });
 
-const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
+/** Finite-number predicate shared by the two halves of the pipeline (this module + archetypeScoringV2.js). */
+export const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 const numOrNull = (v) => (isFiniteNumber(v) ? v : null);
-const clamp100 = (x) => Math.max(0, Math.min(100, x));
+/** Clamp to the axis range [0, 100]. */
+export const clamp100 = (x) => Math.max(0, Math.min(100, x));
 
 /** Round to 1 dp; normalizes -0 to 0 so a rounded axis never serializes or compares as -0. */
 export function round1(x) {
@@ -115,26 +117,25 @@ function deriveVolatility(stock) {
  * so the function must be given the FULL universe — the V2 scorer enforces that
  * with the P-8 subset rule; the producer always passes the full rankingStocks.
  *
- * Dislocation pool: only names carrying all three inputs (null if any is null —
- * < 200 bars ⇒ sma200_position null ⇒ null). Each term's percentile is taken
- * over that same complete pool, so the three ranks are commensurable and the
- * outer percentile ranks the blend over the same names.
+ * Dislocation (spec §2, P-9 literal): each inner term is the tie-aware
+ * percentile of the NEGATED input over every name carrying THAT input (N = the
+ * number of non-null values of that field); the blend exists only for names
+ * carrying all three (< 200 bars ⇒ sma200_position null ⇒ null); the outer
+ * percentile ranks the blends over the names that have one.
  */
 export function deriveAxes(universe) {
   const stocks = Array.isArray(universe) ? universe : [];
 
   const strength = tieAwarePercentiles(stocks.map((s) => numOrNull(s?.technicalScore)));
 
-  const disloc = stocks.map((s) => {
-    const r1 = numOrNull(s?.return1M);
-    const r3 = numOrNull(s?.return3M);
-    const sma = numOrNull(s?.sma200_position);
-    return r1 != null && r3 != null && sma != null ? { r1, r3, sma } : null;
+  const negated = (field) => stocks.map((s) => {
+    const v = numOrNull(s?.[field]);
+    return v == null ? null : -v;
   });
-  const p1 = tieAwarePercentiles(disloc.map((d) => (d ? -d.r1 : null)));
-  const p3 = tieAwarePercentiles(disloc.map((d) => (d ? -d.r3 : null)));
-  const ps = tieAwarePercentiles(disloc.map((d) => (d ? -d.sma : null)));
-  const blend = disloc.map((d, i) => (d
+  const p1 = tieAwarePercentiles(negated('return1M'));
+  const p3 = tieAwarePercentiles(negated('return3M'));
+  const ps = tieAwarePercentiles(negated('sma200_position'));
+  const blend = stocks.map((_, i) => (p1[i] != null && p3[i] != null && ps[i] != null
     ? DISLOCATION_WEIGHTS.return1M * p1[i]
       + DISLOCATION_WEIGHTS.return3M * p3[i]
       + DISLOCATION_WEIGHTS.sma200_position * ps[i]
@@ -186,4 +187,24 @@ export function countAxisNulls(axesList) {
     for (const key of AXIS_KEYS) if (axes?.[key] == null) counts[key] += 1;
   }
   return counts;
+}
+
+/**
+ * The doc-level V2 context a SUBSET caller hands the scorer (P-8 / P-13), parsed
+ * from a stockRankings doc's data — ONE parser for the server draft core
+ * (trainingLifecycle.readStockUniverseContext) and the client overlay
+ * (useTrainingDraft), so the undefined-vs-null distinction cannot drift:
+ *   • `undefined` — the field is absent (a doc written before Phase A): the
+ *     scorer derives over its input and logs (the R-16 transitional case);
+ *   • `null`      — the field is present with no finite value: the scorer treats
+ *     the median as "no return data" (the absolute ≥ 0 week floor) and the size
+ *     as unknown.
+ */
+export function readUniverseAxisContext(data) {
+  const obj = data && typeof data === 'object' ? data : null;
+  const num = (v) => (isFiniteNumber(v) ? v : null);
+  return {
+    universeSize: obj && 'axes_universe_size' in obj ? num(obj.axes_universe_size) : undefined,
+    universeMedianReturn1W: obj && 'universe_median_return1W' in obj ? num(obj.universe_median_return1W) : undefined,
+  };
 }

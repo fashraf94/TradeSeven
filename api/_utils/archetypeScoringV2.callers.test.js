@@ -28,7 +28,7 @@ const CENSUS = [
   { id: '7 (core)', file: 'api/_utils/trainingLifecycle.js', mode: 'threaded', pattern: /computeArchetypeRankings\(available, archetype, \{ gameMode, universeSize, universeMedianReturn1W, minCandidates: 1 \}\)/ },
   { id: '7b (drive)', file: 'api/_utils/liveDraftLifecycle.js', mode: 'tournament', pattern: /gameMode: 'tournament', universeSize: universeCtx\.universeSize, universeMedianReturn1W: universeCtx\.universeMedianReturn1W,/ },
   { id: '7b (pick)', file: 'api/_utils/liveDraftLifecycle.js', mode: 'tournament', pattern: /gameMode: 'tournament', universeSize, universeMedianReturn1W,/ },
-  { id: 8, file: 'src/hooks/useTrainingDraft.js', mode: 'training', pattern: /computeArchetypeRankings\(available, archetype, \{\s*gameMode: 'training',\s*universeSize: universeContext\?\.universeSize,\s*universeMedianReturn1W: universeContext\?\.universeMedianReturn1W,\s*minCandidates: OVERLAY_SIZE,\s*\}\)/ },
+  { id: 8, file: 'src/hooks/useTrainingDraft.js', mode: 'training', pattern: /computeArchetypeRankings\(available, archetype, \{\s*gameMode: 'training',\s*universeSize: universeContext\?\.universeSize,\s*universeMedianReturn1W: universeContext\?\.universeMedianReturn1W,\s*minCandidates: OVERLAY_SIZE,\s*onEvent: silentScorerSink,\s*\}\)/ },
 ];
 
 function walk(dir, out = []) {

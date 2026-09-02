@@ -133,7 +133,7 @@ describe('deriveAxes — per-axis derivation (test 1)', () => {
     for (const k of AXIS_KEYS) expect(axes[k]).toBeNull();
   });
 
-  it('dislocation is null when ANY of its three inputs is null (< 200 bars ⇒ null), and that name leaves the pool', () => {
+  it('dislocation is null when ANY of its three inputs is null (< 200 bars ⇒ null); the name still counts toward the inner percentiles it has (P-9 literal)', () => {
     const u = [
       stock({ symbol: 'THIN', sma200_position: null, return1M: -50 }),
       stock({ symbol: 'A', return1M: -5, return3M: -5, sma200_position: -5 }),
@@ -141,9 +141,22 @@ describe('deriveAxes — per-axis derivation (test 1)', () => {
     ];
     const axes = deriveAxes(u);
     expect(axes[0].dislocation).toBeNull();
-    // Pool = {A, B} only: THIN's −50 does not push A off the top.
     expect(axes[1].dislocation).toBe(100);
     expect(axes[2].dislocation).toBe(0);
+    // Spec-literal pools: P(−10, 40, 0), Q(0, −30, 0), R(10, 10, −10) plus three names with
+    // returns but no SMA-200. return1M pool = all six → P 100 / Q 20 / R 0; return3M pool =
+    // all six → P 60 / Q 100 / R 80; sma pool = {P, Q, R} → P 25 / Q 25 / R 100.
+    // Blends: P 73, Q 45, R 44 → outer percentile P 100, Q 50, R 0. (A complete-set pool
+    // would give Q 100 / P 50 / R 0 — the reading the review rejected.)
+    const literal = deriveAxes([
+      stock({ symbol: 'P', return1M: -10, return3M: 40, sma200_position: 0 }),
+      stock({ symbol: 'Q', return1M: 0, return3M: -30, sma200_position: 0 }),
+      stock({ symbol: 'R', return1M: 10, return3M: 10, sma200_position: -10 }),
+      stock({ symbol: 'N1', return1M: -5, return3M: 50, sma200_position: null }),
+      stock({ symbol: 'N2', return1M: -6, return3M: 60, sma200_position: null }),
+      stock({ symbol: 'N3', return1M: -7, return3M: 70, sma200_position: null }),
+    ]);
+    expect(literal.map((a) => a.dislocation)).toEqual([100, 50, 0, null, null, null]);
   });
 
   it('volatility honours the raw ATR (P-10 / V-2): techRaw.atrPercent null ⇒ null; techRaw absent ⇒ persisted atrPercentile', () => {

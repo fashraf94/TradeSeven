@@ -27,9 +27,10 @@ const at = (needle) => {
 
 // Reproduces the stockEntry techRaw mirror VERBATIM (the attachArchScores /
 // computeSma200Position precedent): null readings stay null — never a default.
-function mirrorTechRaw(tech) {
+// rsi comes from the raw RSI-14 map, NOT factors.rsi (which imputes 50).
+function mirrorTechRaw(tech, rawRsi) {
   return {
-    rsi: tech.factors?.rsi ?? null,
+    rsi: rawRsi ?? null,
     bbPercentB: tech.bbPercentB ?? null,
     distTo52wkHigh: tech.factors?.distTo52wkHigh ?? null,
     atrPercent: tech.atrPercent ?? null,
@@ -75,13 +76,17 @@ describe('compute-index-intelligence — Phase A axis block wiring', () => {
     }
   });
 
-  it('mirrors techRaw { rsi, bbPercentB, distTo52wkHigh, atrPercent } with null-not-default semantics', () => {
-    expect(SOURCE).toMatch(/techRaw: \{\s*rsi: tech\.factors\?\.rsi \?\? null,\s*bbPercentB: tech\.bbPercentB \?\? null,\s*distTo52wkHigh: tech\.factors\?\.distTo52wkHigh \?\? null,\s*atrPercent: tech\.atrPercent \?\? null,\s*\}/);
-    expect(mirrorTechRaw({ factors: { rsi: 61.4, distTo52wkHigh: 3.2 }, bbPercentB: 0.71, atrPercent: 1.9 }))
+  it('mirrors techRaw { rsi, bbPercentB, distTo52wkHigh, atrPercent } with null-not-default semantics — rsi from the RAW reading, never factors.rsi', () => {
+    expect(SOURCE).toMatch(/techRaw: \{\s*rsi: rawRsiMap\.get\(tech\.symbol\) \?\? null,\s*bbPercentB: tech\.bbPercentB \?\? null,\s*distTo52wkHigh: tech\.factors\?\.distTo52wkHigh \?\? null,\s*atrPercent: tech\.atrPercent \?\? null,\s*\}/);
+    // The raw map is filled from calculateRSI's own value (null under 15 bars) —
+    // computeTechnicalScore's factors.rsi imputes 50 and must never be the source.
+    expect(SOURCE).toMatch(/const rsi = calculateRSI\(closes, 14\);\s*rawRsiMap\.set\(d\.sym, rsi\?\.value \?\? null\);/);
+    expect(SOURCE).not.toMatch(/rsi: tech\.factors\?\.rsi/);
+    expect(mirrorTechRaw({ factors: { rsi: 50, distTo52wkHigh: 3.2 }, bbPercentB: 0.71, atrPercent: 1.9 }, 61.4))
       .toEqual({ rsi: 61.4, bbPercentB: 0.71, distTo52wkHigh: 3.2, atrPercent: 1.9 });
-    expect(mirrorTechRaw({ factors: {}, bbPercentB: null, atrPercent: undefined }))
+    expect(mirrorTechRaw({ factors: { rsi: 50 }, bbPercentB: null, atrPercent: undefined }, null))
       .toEqual({ rsi: null, bbPercentB: null, distTo52wkHigh: null, atrPercent: null });
-    expect(mirrorTechRaw({})).toEqual({ rsi: null, bbPercentB: null, distTo52wkHigh: null, atrPercent: null });
+    expect(mirrorTechRaw({}, undefined)).toEqual({ rsi: null, bbPercentB: null, distTo52wkHigh: null, atrPercent: null });
   });
 
   it('snapshot writer: ops doc read at run start, write AFTER the rankings commit, expiry only on the premarket run, failures into `errors`', () => {
@@ -96,6 +101,9 @@ describe('compute-index-intelligence — Phase A axis block wiring', () => {
     expect(SOURCE).toMatch(/expiresAt: Timestamp\.fromMillis\(docData\.expiresAtMs\),/);
     expect(SOURCE).toMatch(/codeHead: process\.env\.VERCEL_GIT_COMMIT_SHA \|\| null,/);
     expect(SOURCE).toMatch(/if \(snapshotOps\.enabled && v2Snapshot\) \{/);
+    // Bound to the run's start, not its finish (review finding): label + ET date from startTime.
+    expect(SOURCE).toMatch(/const runStartedAt = new Date\(startTime\);\s*const runLabel = resolveSnapshotRunLabel\(\{ intraday, now: runStartedAt, override: snapshotOverride \}\);/);
+    expect(SOURCE).toMatch(/const now = runStartedAt;\s*const etDate = formatEtDate\(now\);/);
   });
 
   it('does not add a cron entry or touch the schedule (spec §5: no new cron)', () => {

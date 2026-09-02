@@ -772,6 +772,11 @@ export default async function handler(req, res) {
     let stocksProcessed = 0;
     const momentumMap = new Map();
     const returnsMap = new Map();
+    // Archetype Rank V2 (P-10): the RAW RSI-14 per symbol, kept in memory only.
+    // computeTechnicalScore imputes a missing RSI to 50 inside factors.rsi
+    // (indexIntelligence.js `technicals.rsi?.value ?? 50`), so techRaw.rsi is
+    // mirrored from this map instead — null when the reading is null.
+    const rawRsiMap = new Map();
 
     const spyCloses = indexData.SPY ? indexData.SPY.map(d => d.close) : null;
 
@@ -843,6 +848,7 @@ export default async function handler(req, res) {
         const sma50 = calculateSMA(closes, 50);
         const sma200 = calculateSMA(closes, 200);
         const rsi = calculateRSI(closes, 14);
+        rawRsiMap.set(d.sym, rsi?.value ?? null);
 
         // MACD computation (NEW) — uses existing calculateMACD
         const macdResult = calculateMACD(closes);
@@ -1210,7 +1216,7 @@ export default async function handler(req, res) {
           // stabilization inputs. Null when the reading is null — never a
           // neutral default. Named-field addition, inert to decide.js.
           techRaw: {
-            rsi: tech.factors?.rsi ?? null,
+            rsi: rawRsiMap.get(tech.symbol) ?? null,
             bbPercentB: tech.bbPercentB ?? null,
             distTo52wkHigh: tech.factors?.distTo52wkHigh ?? null,
             atrPercent: tech.atrPercent ?? null,
@@ -1369,10 +1375,14 @@ export default async function handler(req, res) {
     // universe was built this run.
     if (snapshotOps.enabled && v2Snapshot) {
       const snapshotOverride = typeof req.query?.snapshotLabel === 'string' ? req.query.snapshotLabel : null;
-      const runLabel = resolveSnapshotRunLabel({ intraday, now: new Date(), override: snapshotOverride });
+      // Bound to the run's START (the scheduled slot), not its finish: a late or
+      // long 20:00 UTC run must still label as the last intraday run, and the
+      // ET date is the date the data was computed for.
+      const runStartedAt = new Date(startTime);
+      const runLabel = resolveSnapshotRunLabel({ intraday, now: runStartedAt, override: snapshotOverride });
       if (runLabel) {
         try {
-          const now = new Date();
+          const now = runStartedAt;
           const etDate = formatEtDate(now);
           const id = snapshotDocId(etDate, runLabel);
           const docData = buildRankingSnapshotDoc({

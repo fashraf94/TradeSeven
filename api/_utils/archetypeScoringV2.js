@@ -17,13 +17,13 @@
 // returns null while it is off, so the fenced engine is byte-identical to V1
 // (flag-off byte-identity is snapshot-tested in archetypeScoring.v2dispatch.test.js).
 //
-// IMPORTS: nothing from the fenced calibration TABLES (ARCHETYPE_WEIGHTS /
-// TEMPERATURES / CONSTRAINTS are not read here). The archetype key list is the
-// registry's own source — VALID_ARCHETYPES, which archetypeRegistry.listArchetypeIds()
-// returns verbatim (archetypeRegistry.js:88-90). The registry module itself
-// pulls node:fs and cannot be imported from this client-reachable graph
-// (useTrainingDraft.js → archetypeScoring.js → here). Both new direct imports are
-// recorded in archetypeImportBoundaryBaseline.json (the §2.3 ratchet).
+// IMPORTS: nothing from the fenced files or tables. The archetype key list is
+// the weights table's own key set (ARCHETYPE_KEYS_V2); archetypeScoringV2.test.js
+// pins it equal to the registry's source list (archetypeRegistry.listArchetypeIds()
+// returns VALID_ARCHETYPES verbatim, archetypeRegistry.js:88-90). The registry
+// module itself pulls node:fs and cannot be imported from this client-reachable
+// graph (useTrainingDraft.js → archetypeScoring.js → here), so the pin lives in
+// the test, not in a runtime import.
 //
 // FLAG READ (V-15 + the COMMAND_CENTER_SYNC_ENABLED hazard note): read at CALL
 // time through a namespace import, inside try/catch, and only `=== true` counts.
@@ -41,8 +41,14 @@
 // producer collects them into the observation snapshot), else console.warn.
 
 import * as featureFlags from '../../src/config/featureFlags.js';
-import { VALID_ARCHETYPES } from './agentArchetypeConfig.js';
-import { deriveAxes, computeUniverseMedianReturn1W, countAxisNulls, round1 } from './axisDerivation.js';
+import {
+  deriveAxes,
+  computeUniverseMedianReturn1W,
+  countAxisNulls,
+  round1,
+  isFiniteNumber,
+  clamp100,
+} from './axisDerivation.js';
 
 // ---------- flag ----------
 
@@ -106,6 +112,9 @@ export const ARCHETYPE_WEIGHTS_V2 = Object.freeze({
   guardian: Object.freeze({ quality: 0.45, strength: 0.05, persistence: 0.15, calm: 0.35 }),
 });
 
+/** The six archetype code-ids the V2 tables cover — pinned equal to the registry's list in the test. */
+export const ARCHETYPE_KEYS_V2 = Object.freeze(Object.keys(ARCHETYPE_WEIGHTS_V2));
+
 // ---------- §3.1 filters (deterministic, pre-model; signed percent — P-1) ----------
 // `axis` rows read the derived axes; `field` rows read the raw persisted gate
 // field. `min`/`max` are inclusive. `minFn: 'weekFloor'` resolves to
@@ -154,9 +163,6 @@ export const ARCHETYPE_CONSTRAINTS_V2 = Object.freeze({
 
 // ---------- internals ----------
 
-const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
-const clamp100 = (x) => Math.max(0, Math.min(100, x));
-
 function makeEmitter(opts, archetype, gameMode) {
   const onEvent = typeof opts?.onEvent === 'function' ? opts.onEvent : null;
   return (type, payload) => {
@@ -197,10 +203,14 @@ function resolveAxes(input, opts, emit) {
  * input must be the full universe (a known subset throws, as for axes) and the
  * median is computed over it — identical to the doc value by construction.
  */
-function resolveWeekFloor(input, opts) {
+function resolveWeekFloor(input, opts, emit) {
   const supplied = opts.universeMedianReturn1W;
-  if (isFiniteNumber(supplied)) return Math.min(0, supplied);
-  if (supplied === null) return 0;
+  if (supplied !== undefined) {
+    // Supplied by the caller from the doc: a finite value is the median; null (or
+    // anything non-finite — the same reading the doc parsers apply) is "no return
+    // data" ⇒ the absolute ≥ 0 gate.
+    return isFiniteNumber(supplied) ? Math.min(0, supplied) : 0;
+  }
   const universeSize = isFiniteNumber(opts.universeSize) ? opts.universeSize : null;
   if (universeSize != null && input.length < universeSize) {
     throw new ArchetypeScoringV2Error(
@@ -209,6 +219,7 @@ function resolveWeekFloor(input, opts) {
     );
   }
   const median = computeUniverseMedianReturn1W(input);
+  emit('week_floor_computed', { median, count: input.length, universeSize });
   return median == null ? 0 : Math.min(0, median);
 }
 
@@ -235,15 +246,22 @@ function failingFilter(stock, axes, filters, weekFloor) {
   return null;
 }
 
-/** Global order: archetypeScore desc, then quality desc (null last), then symbol asc (§3.3(a) ties). */
-function compareRanked(a, b) {
+/**
+ * Global order: archetypeScore desc, then — for the Diversifier only (§3.3(a)
+ * step 4) — quality desc (null last), then symbol asc. Every other archetype
+ * breaks a tie by symbol alone: a Speculator or Trend Follower never ranks by
+ * FUND at a tie (§3.5 "Fundamentals are not part of this rank", P-6).
+ */
+function compareRanked(a, b, qualityTiebreak) {
   if (b.archetypeScore !== a.archetypeScore) return b.archetypeScore - a.archetypeScore;
-  const qa = a.axes?.quality;
-  const qb = b.axes?.quality;
-  const qan = isFiniteNumber(qa);
-  const qbn = isFiniteNumber(qb);
-  if (qan !== qbn) return qan ? -1 : 1;
-  if (qan && qb !== qa) return qb - qa;
+  if (qualityTiebreak) {
+    const qa = a.axes?.quality;
+    const qb = b.axes?.quality;
+    const qan = isFiniteNumber(qa);
+    const qbn = isFiniteNumber(qb);
+    if (qan !== qbn) return qan ? -1 : 1;
+    if (qan && qb !== qa) return qb - qa;
+  }
   const sa = String(a.symbol ?? '');
   const sb = String(b.symbol ?? '');
   return sa < sb ? -1 : sa > sb ? 1 : 0;
@@ -283,19 +301,25 @@ function applyBoundedInterleave(sorted, cfg, emit) {
   while (placed.length < INTERLEAVE_TOP_N && sectorCount.size < target) {
     const eligible = sorted.filter((s) => !placedSet.has(s) && !skipped.has(s)
       && sectorOf(s) != null && count(sectorOf(s)) < maxPer);
-    if (eligible.length === 0) break;
-    const anchor = eligible[0];
+    const anchor = eligible[0] ?? null;
     const candidate = eligible.find((s) => count(sectorOf(s)) === 0) ?? null;
-    if (candidate == null) break; // every eligible sector is already represented — nothing left to interleave
-    if (candidate.archetypeScore < anchor.archetypeScore - gap) {
+    // Scores are 1-dp numbers: compare the gap at that resolution so a candidate
+    // exactly `gap` below the anchor qualifies (64.4 − 10 is not 54.4 in floats).
+    const gapBlocked = anchor != null && candidate != null
+      && Math.round((anchor.archetypeScore - candidate.archetypeScore) * 10) > Math.round(gap * 10);
+    if (anchor == null || candidate == null || gapBlocked) {
+      // "If none qualifies, stop the breadth phase and emit … with counts" —
+      // whether the gap blocked the best unrepresented name, no unrepresented
+      // sector is left among the eligible names, or nothing eligible remains.
       emit('diversifier_interleave_gap_blocked', {
+        reason: gapBlocked ? 'gap' : candidate == null && anchor != null ? 'no_unrepresented_sector' : 'no_eligible',
         placed: placed.length,
         distinctSectors: sectorCount.size,
         targetDistinctSectors: target,
-        anchor: anchor.symbol,
-        anchorScore: anchor.archetypeScore,
-        bestUnrepresented: candidate.symbol,
-        bestUnrepresentedScore: candidate.archetypeScore,
+        anchor: anchor?.symbol ?? null,
+        anchorScore: anchor?.archetypeScore ?? null,
+        bestUnrepresented: candidate?.symbol ?? null,
+        bestUnrepresentedScore: candidate?.archetypeScore ?? null,
         maxInterleaveScoreGap: gap,
       });
       break;
@@ -348,8 +372,10 @@ export function computeArchetypeRankingsV2(stocks, archetype, opts = {}) {
       `opts.gameMode must be one of ${GAME_MODES_V2.join(' | ')} (got ${String(gameMode)})`,
     );
   }
-  const weights = ARCHETYPE_WEIGHTS_V2[archetype];
-  if (!VALID_ARCHETYPES.includes(archetype) || !weights) {
+  const weights = typeof archetype === 'string' && ARCHETYPE_KEYS_V2.includes(archetype)
+    ? ARCHETYPE_WEIGHTS_V2[archetype]
+    : null;
+  if (!weights) {
     throw new ArchetypeScoringV2Error('archetype_unknown', String(archetype));
   }
   const input = Array.isArray(stocks) ? stocks : [];
@@ -361,8 +387,12 @@ export function computeArchetypeRankingsV2(stocks, archetype, opts = {}) {
 
   // 1. Axes — persisted or derived over the full input, never mixed.
   const { axesList, derived } = resolveAxes(input, options, emit);
-  // 2. The week floor (only the Contrarian reads it; resolved lazily).
-  const weekFloor = filters.some((f) => f.minFn === 'weekFloor') ? resolveWeekFloor(input, options) : null;
+  // 2. The week floor (only the Contrarian reads it; resolved lazily). An empty
+  //    input has nothing to gate — it returns [] like every other archetype
+  //    (never a subset throw on zero names).
+  const weekFloor = input.length > 0 && filters.some((f) => f.minFn === 'weekFloor')
+    ? resolveWeekFloor(input, options, emit)
+    : null;
 
   // 3. Filter → 4. score.
   const gateFailCounts = {};
@@ -396,8 +426,8 @@ export function computeArchetypeRankingsV2(stocks, archetype, opts = {}) {
   });
 
   // 5. Order → 6. compose.
-  scored.sort(compareRanked);
   const interleave = ARCHETYPE_INTERLEAVE_V2[archetype];
+  scored.sort((a, b) => compareRanked(a, b, Boolean(interleave)));
   const ranked = interleave ? applyBoundedInterleave(scored, interleave, emit) : scored;
 
   // 7. Coverage (§3.4): shorter than the caller's pinned minimum ⇒ event.
