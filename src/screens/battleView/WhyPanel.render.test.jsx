@@ -187,8 +187,8 @@ describe('the one door', () => {
 });
 
 describe('the book-level panel (score header)', () => {
-  const renderBook = (thisTurn = null) => strip(renderToString(
-    <WhyPanel symbol={null} state={selectWhyState(HELD, null, LAST)} thisTurn={thisTurn} onAskFollowUp={() => {}} />,
+  const renderBook = () => strip(renderToString(
+    <WhyPanel symbol={null} state={selectWhyState(HELD, null, LAST)} onAskFollowUp={() => {}} />,
   ));
 
   it('renders the decision and the door, with no facts and no trades', () => {
@@ -202,11 +202,12 @@ describe('the book-level panel (score header)', () => {
     expect(html).toContain('data-why-symbol="book"');
   });
 
-  it('carries the This turn slot between the decision and the door', () => {
-    const html = renderBook(<div data-slot="this-turn">strip</div>);
-    const turn = html.indexOf('data-slot="this-turn"');
-    expect(turn).toBeGreaterThan(html.indexOf('At the 12:47 PM check'));
-    expect(turn).toBeLessThan(html.indexOf('Ask a follow-up'));
+  it('carries NO This turn copy — the strip has one home, above the board (A4)', () => {
+    const html = renderBook();
+    expect(html).not.toContain('This turn');
+    expect(html).not.toContain('data-this-turn');
+    // Order: the decision, then the door — nothing between them.
+    expect(html.indexOf('At the 12:47 PM check')).toBeLessThan(html.indexOf('Ask a follow-up'));
   });
 });
 

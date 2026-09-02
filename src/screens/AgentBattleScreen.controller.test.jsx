@@ -22,6 +22,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 
 const flagState = vi.hoisted(() => ({ on: true }));
 
@@ -159,6 +160,26 @@ describe('under the flag — the controller', () => {
     expect((html.match(/>Why\?</g) || []).length).toBe(3);
   });
 
+  it('A4: no tab bar, no LiveActivityPanel — the board and the ONE AgentChat share the page (mobile on the server paint)', () => {
+    const html = render();
+    for (const tab of ['>Matchups<', '>Command Center<', '>Huddle<']) expect(html).not.toContain(tab);
+    expect(html).not.toContain('Live Activity');
+    expect(html).not.toContain('analyzing');
+    // No window on the server → the mobile layout: the sheet at peek, the chat inside it.
+    expect(html).toContain('data-layout="mobile"');
+    expect(html).toContain('data-chat-sheet="peek"');
+    expect((html.match(/<textarea/g) || []).length).toBe(1);
+    expect(html).toContain('data-chat-layout="controller"');
+    // One Game Tape control: the header link; the string comes from the copy module.
+    expect((html.match(/data-game-tape-link="1"/g) || []).length).toBe(1);
+    expect((html.match(/>Game Tape</g) || []).length).toBe(1);
+    // This turn has ONE home.
+    expect((html.match(/data-this-turn=/g) || []).length).toBe(1);
+    // The sheet is a named region; its cycle control is a button named for its next activation.
+    expect(html).toContain('role="region" aria-label="Agent chat" tabindex="-1"');
+    expect(html).toContain('aria-label="Open the chat"');
+  });
+
   it('shows no countdown and no agent verb', () => {
     const html = render();
     expect(html).not.toMatch(/\d{1,2}:\d{2}:\d{2}/);
@@ -200,6 +221,17 @@ describe('flag-off — the shipped tabbed screen', () => {
     expect(html).not.toContain('data-decided');
   });
 
+  it('A4: the three tabs are back, the chat is not on the first paint, no sheet, no header Game Tape link', () => {
+    const html = render();
+    expect(html).toContain('>Matchups<');
+    expect(html).toContain('>Command Center<');
+    expect(html).toContain('>Game Tape<');
+    expect(html).not.toContain('data-layout=');
+    expect(html).not.toContain('data-chat-sheet');
+    expect(html).not.toContain('data-game-tape-link');
+    expect(html).not.toContain('<textarea');
+  });
+
   it('the rows read the prop, exactly as shipped (the freeze is bug 1, fixed separately)', () => {
     const html = render();
     expect(html).toContain('>MU<');
@@ -224,5 +256,20 @@ describe('flag-off — the shipped tabbed screen', () => {
     const html = render();
     expect(html).not.toContain('data-this-turn');
     expect(html).not.toContain('Filed 11:31 AM');
+  });
+});
+
+describe('A4 — the unread-dot clear and the door, at the source (the mounted rows are in AgentBattleScreen.layout.jsdom.test.jsx)', () => {
+  it('the seen-count moves from the effect keyed on [chatVisible, statusFeed.length] — never during render; the flag-off clear is untouched', () => {
+    const source = readFileSync(new URL('./AgentBattleScreen.jsx', import.meta.url), 'utf8');
+    // The shipped render-time clear (flag-off), byte for byte.
+    expect(source).toContain("  // Mark feed as seen when switching to Command Center\n  if (activeTab === 'command') {\n    lastSeenFeedLengthRef.current = statusFeed.length;\n  }\n");
+    // ...and it is the ONLY render-time write to the ref.
+    expect((source.match(/lastSeenFeedLengthRef\.current = /g) || []).length).toBe(1);
+    // The controller path: state moved inside an effect with exactly these deps.
+    expect(source).toMatch(/useEffect\(\(\) => \{\n\s+if \(!chatVisible\) return;\n\s+setSeenFeedLength\(statusFeed\.length\);\n\s+\}, \[chatVisible, statusFeed\.length\]\);/);
+    expect((source.match(/setSeenFeedLength\(/g) || []).length).toBe(1);
+    // The door never switches a tab under the flag.
+    expect(source).not.toMatch(/handleAskFollowUp[\s\S]{0,900}setActiveTab\('command'\)/);
   });
 });

@@ -31,6 +31,10 @@ import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
 import { deriveReceipts } from './battleView/deriveReceipts';
 import ThisTurnStrip from './battleView/ThisTurnStrip';
 import useContentStable from './battleView/useContentStable';
+import ChatSheet from './battleView/ChatSheet';
+import { useChatSheet, useViewportHeight, isSheetOpen, SHEET_PEEK_PX } from './battleView/useChatSheet';
+import { cssVar } from '../theme/cssTokens';
+import { motionToken } from '../theme/motion';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
 // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Uncomment to revive.
 // import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
@@ -488,6 +492,19 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const [bookWhyOpen, setBookWhyOpen] = useState(false);
   const [composerPrefill, setComposerPrefill] = useState(null); // { text, nonce } | null
 
+  // The layout (A4, controller flag): the mobile chat sheet's detent (inert
+  // on desktop and flag-off), the viewport height it is sized from, the
+  // full-screen Game Tape, and the feed length the chat has SEEN — moved by
+  // an effect, never during render (rulings §3.9). Flag-off keeps the
+  // shipped render-time clear above, byte for byte.
+  const sheet = useChatSheet(controllerOn && !isDesktop);
+  const viewportHeight = useViewportHeight(controllerOn && !isDesktop);
+  const [gameTapeOpen, setGameTapeOpen] = useState(false);
+  const [seenFeedLength, setSeenFeedLength] = useState(0);
+  const gameTapeReturnRef = useRef(null);
+  const gameTapeBackRef = useRef(null);
+  const gameTapeLinkRef = useRef(null);
+
   // ── Agent battle data ─────────────────────────────────────────────────────
 
   // Use direct agentBattleId if available (from dashboard), else look up via agentId
@@ -849,7 +866,20 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // ── Notification dots ─────────────────────────────────────────────────────
 
   const hasPendingProposal = pendingProposal && !pendingProposal.resolvedAt;
-  const hasNewFeedEntries = statusFeed.length > lastSeenFeedLengthRef.current;
+  // A4 (controller flag, hazard 14 / rulings §3.9): the chat is VISIBLE when
+  // the desktop column is on screen or the mobile sheet sits at half / full,
+  // and never while the Game Tape covers the page. The seen-count moves in
+  // this effect, keyed on the feed length and the visibility — never during
+  // render. Desktop under the flag therefore never shows a dot; on mobile it
+  // lives on the sheet's handle and clears when the sheet opens.
+  const chatVisible = controllerOn && !gameTapeOpen && (isDesktop || isSheetOpen(sheet.detent));
+  useEffect(() => {
+    if (!chatVisible) return;
+    setSeenFeedLength(statusFeed.length);
+  }, [chatVisible, statusFeed.length]);
+  const hasNewFeedEntries = controllerOn
+    ? statusFeed.length > seenFeedLength
+    : statusFeed.length > lastSeenFeedLengthRef.current;
   const hasCommandDot = hasPendingProposal || hasNewFeedEntries;
   const commandDotColor = hasPendingProposal ? '#f59e0b' : '#5eead4';
   const hasGameTapeDot = (feedBookmarks?.length || 0) > 0;
@@ -922,13 +952,45 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   }, []);
   const handleBookWhyToggle = useCallback(() => setBookWhyOpen(open => !open), []);
   const handleAskFollowUp = useCallback((symbol) => {
+    // The invoking control, captured synchronously so the mobile sheet can
+    // hand focus back to it on collapse (A4).
+    const invoker = typeof document !== 'undefined' ? document.activeElement : null;
     setComposerPrefill({
       text: symbol ? BATTLE_VIEW_COPY.followUpPrefill(symbol) : '',
       nonce: Date.now(),
     });
-    setActiveTab('command');
-  }, []);
+    // No tab change — there is no tab bar under the flag. Desktop: the chat
+    // column is always on screen, so the chat's prefill effect simply focuses
+    // the composer. Mobile: open the sheet to at least half, then let that
+    // same effect focus the textarea inside it (F13's draft rule stands).
+    if (!isDesktop) sheet.open(invoker);
+  }, [isDesktop, sheet.open]);
   const handleComposerPrefillConsumed = useCallback(() => setComposerPrefill(null), []);
+
+  // Game Tape (A4, rulings §2.5): one header link renders the shipped view
+  // full-screen over the page, with a way back. Focus goes to the way back on
+  // open and returns to the link on close. The chat stays mounted beneath
+  // (its draft survives); the page beneath is hidden from pointer, keyboard
+  // and assistive tech while the tape is up.
+  const openGameTape = useCallback(() => {
+    gameTapeReturnRef.current = typeof document !== 'undefined' ? document.activeElement : null;
+    setGameTapeOpen(true);
+  }, []);
+  const closeGameTape = useCallback(() => setGameTapeOpen(false), []);
+  useEffect(() => {
+    if (!controllerOn) return;
+    if (gameTapeOpen) {
+      gameTapeBackRef.current?.focus?.();
+      return;
+    }
+    // Back to the control that opened the tape — or to the link itself when
+    // the pointer left nothing focused (Safari does not focus a clicked button).
+    const back = gameTapeReturnRef.current;
+    gameTapeReturnRef.current = null;
+    const usable = back && back !== document.body && back.isConnected && typeof back.focus === 'function';
+    if (usable) back.focus();
+    else gameTapeLinkRef.current?.focus?.();
+  }, [controllerOn, gameTapeOpen]);
   const lastScoredAt = agentBattle?.scoreState?.lastScoredAt ?? null;
   const latestDecision = turnLine?.decision ?? null;
 
@@ -988,11 +1050,177 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     );
   }
 
+  // The board — the tier rows, shared by both layouts (one tree, one
+  // landing order: `index` runs top to bottom across the seven slots).
+  const boardRows = (
+    <>
+    {activeTiers.map((tier, tierIndex) => (
+      <div key={tier.key}>
+        <TierHeader tier={tier} />
+        {Array.from({ length: tier.slots }).map((_, i) => {
+          const rowKey = `${tier.key}-${i}`;
+          const leftAsset = enrichedPlayerPortfolio[tier.key]?.[i] || null;
+          const whyable = controllerOn && !!leftAsset?.symbol && !leftAsset.isCash;
+          const isWhyOpen = whyable && whyOpen?.key === rowKey && whyOpen.symbol === leftAsset.symbol;
+          const row = (
+            <TacticalRow
+              key={rowKey}
+              leftAsset={leftAsset}
+              rightAsset={enrichedOpponentPortfolio[tier.key]?.[i] || null}
+              tier={tier.key}
+              allocationLabel={`${tier.emoji} ${tier.allocation}`}
+              isCryptoSlot={tier.hasCrypto && i === tier.slots - 1}
+              onSymbolClick={handleSymbolClick}
+              onPointsClick={handlePointsClick}
+              {...(whyable ? {
+                onWhy: (asset) => handleWhyToggle(rowKey, asset),
+                whyOpen: isWhyOpen,
+                whyLabel: BATTLE_VIEW_COPY.why,
+                // The row hands the panel the SAME proximity it just
+                // rendered — one call, one number (hazard 15).
+                renderWhy: (proximity) => (
+                  <WhyPanel
+                    key={`why-${rowKey}`}
+                    symbol={leftAsset.symbol}
+                    state={selectWhyState(latestDecision, leftAsset.symbol, lastScoredAt)}
+                    proximity={proximity}
+                    entryPrice={leftAsset.openPrice ?? null}
+                    heldSince={leftAsset.swappedInAt || agentBattle?.activatedAt || null}
+                    trades={selectTradesForSymbol(agentBattle?.trades, leftAsset.symbol)}
+                    onAskFollowUp={handleAskFollowUp}
+                    reducedMotion={reducedMotion}
+                    headingId={`why-${rowKey}-heading`}
+                  />
+                ),
+              } : {})}
+            />
+          );
+          if (!controllerOn) return row;
+          // Controller flag: the row's slot in the landing sequence
+          // (top to bottom across tiers). The wrapper exists only to
+          // host the wash; flag-off renders the bare row above.
+          const rowIndex = activeTiers.slice(0, tierIndex).reduce((n, t) => n + t.slots, 0) + i;
+          return (
+            <div key={`${tier.key}-${i}`} style={{ position: 'relative' }}>
+              {row}
+              <LandingWash
+                landingKey={landingKey}
+                index={rowIndex}
+                count={rowCount}
+                reducedMotion={reducedMotion}
+              />
+            </div>
+          );
+        })}
+      </div>
+    ))}
+    </>
+  );
+  const closedTrades = (
+    <ClosedTradesSection
+      closedTrades={agentBattle?.trades || []}
+      defaultExpanded={false}
+    />
+  );
+
+  // The chat — ONE AgentChat per layout (rulings §3.10): the desktop column
+  // or the mobile sheet, never both, so `ensure-opener` fires once per mount
+  // as today. Under the controller layout the chat renders alone (no
+  // LiveActivityPanel, no sub-tabs).
+  const chat = controllerOn ? (
+    <AgentChat
+      battleId={agentBattleId}
+      agentId={agentBattle?.agentId}
+      agentName={agentBattle?.agentContext?.agentName || 'Your Agent'}
+      chatExchanges={chatExchanges}
+      battleStatus={agentBattle?.status}
+      statusFeed={statusFeed}
+      trades={agentBattle?.trades || []}
+      onSymbolClick={handleSymbolClick}
+      onSwitchToGameTape={openGameTape}
+      knownTickers={knownTickers}
+      dailyGrades={agentBattle?.dailyGrades || {}}
+      chatBudgetUsed={agentBattle?.chatBudgetUsed || 0}
+      reviewBudgetUsed={agentBattle?.reviewBudgetUsed || 0}
+      proposalHistory={agentBattle?.proposalHistory || []}
+      composerPrefill={composerPrefill}
+      onComposerPrefillConsumed={handleComposerPrefillConsumed}
+      receipts={receipts}
+      controllerLayout
+    />
+  ) : null;
+
+  // Game Tape, full-screen (A4): the shipped view over the page, with the
+  // way back first in the tab order. Nothing in GameTapeView changes.
+  const gameTapeOverlay = controllerOn && gameTapeOpen ? (
+    <motion.div
+      role="region"
+      aria-label={BATTLE_VIEW_COPY.gameTape}
+      data-game-tape="open"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={motionToken('fade', { reducedMotion })}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 30,
+        background: cssVar('bg-dashboard'),
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <div style={{
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        padding: isDesktop ? '8px 24px 0' : '8px 12px 0',
+        background: cssVar('bg-agent'),
+      }}>
+        <button
+          ref={gameTapeBackRef}
+          type="button"
+          onClick={closeGameTape}
+          data-game-tape-back="1"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            color: cssVar('teal'),
+            fontSize: 13,
+            fontWeight: 600,
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '8px 6px',
+            minHeight: 44,
+            borderRadius: 8,
+          }}
+        >
+          <ChevronLeft size={16} />
+          <span>{BATTLE_VIEW_COPY.gameTapeBack}</span>
+        </button>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <GameTapeView
+          agentBattle={agentBattle}
+          agentBattleId={agentBattleId}
+          statusFeed={statusFeed}
+          feedBookmarks={feedBookmarks}
+          tokens={tokens}
+          onCitationTap={handleCitationTap}
+        />
+      </div>
+    </motion.div>
+  ) : null;
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div style={{
-      minHeight: '100vh',
+      // Desktop under the flag: the columns fill the viewport and the board
+      // column scrolls, so the chat column has a bounded height. Mobile and
+      // flag-off: the page scrolls as today.
+      ...(controllerOn && isDesktop ? { height: '100vh' } : { minHeight: '100vh' }),
       background: tokens.bgApp || '#0D0E12',
       display: 'flex',
       flexDirection: 'column',
@@ -1001,7 +1229,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           network, teal/mint, pointer-events:none. Fixed full-viewport but below
           all interactive layers (canvas z1 < tab content z2 < chrome z3) and only
           mounted on the Matchups tab, so it never runs on Command/Game Tape. */}
-      {isMatchupsBackdropOn() && activeTab === 'matchups' && (
+      {isMatchupsBackdropOn() && (controllerOn ? !gameTapeOpen : activeTab === 'matchups') && (
         <BaggerBombBackground
           colors={BACKDROP_COLORS}
           lineColor={BACKDROP_LINE}
@@ -1016,6 +1244,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         background: tokens.bgAgent || '#1C1A27',
         position: 'relative',
         zIndex: 3,
+        ...(controllerOn && gameTapeOpen ? { visibility: 'hidden' } : {}),
       }}>
         {/* Back button bar */}
         <div style={{
@@ -1070,6 +1299,40 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               </span>
             )}
 
+            {/* Game Tape (A4, controller flag): the one header link. */}
+            {controllerOn && (
+              <button
+                ref={gameTapeLinkRef}
+                type="button"
+                onClick={openGameTape}
+                data-game-tape-link="1"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 10px',
+                  minHeight: 32,
+                  borderRadius: 8,
+                  border: `1px solid rgba(${cssVar('teal-rgb')}, 0.24)`,
+                  background: 'transparent',
+                  color: cssVar('teal'),
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  cursor: 'pointer',
+                }}
+              >
+                {BATTLE_VIEW_COPY.gameTape}
+                {hasGameTapeDot && (
+                  <span
+                    aria-hidden="true"
+                    data-game-tape-dot="1"
+                    style={{ width: 6, height: 6, borderRadius: '50%', background: cssVar('teal') }}
+                  />
+                )}
+              </button>
+            )}
+
             {agentBattle?.status && (
               <div style={{
                 display: 'flex',
@@ -1118,7 +1381,6 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 key="book"
                 symbol={null}
                 state={selectWhyState(latestDecision, null, lastScoredAt)}
-                thisTurn={thisTurnStrip}
                 onAskFollowUp={handleAskFollowUp}
                 reducedMotion={reducedMotion}
                 headingId="why-book-heading"
@@ -1137,18 +1399,87 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           />
         )}
 
-        {/* Tab bar */}
-        <TabBar
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          hasCommandDot={hasCommandDot}
-          commandDotColor={commandDotColor}
-          hasGameTapeDot={hasGameTapeDot}
-          isDesktop={isDesktop}
-        />
+        {/* Tab bar — not rendered under the controller flag (A4): the board
+            and the chat share the page; Game Tape is the header link above. */}
+        {!controllerOn && (
+          <TabBar
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            hasCommandDot={hasCommandDot}
+            commandDotColor={commandDotColor}
+            hasGameTapeDot={hasGameTapeDot}
+            isDesktop={isDesktop}
+          />
+        )}
       </div>
 
-      {/* ═══ TAB CONTENT ═══ */}
+      {controllerOn ? (
+        /* ═══ THE CONTROLLER LAYOUT (A4) — board and chat, no tab bar ═══
+           Desktop: board left (~60%), the chat right (~40%), both under the
+           score header; the board column scrolls. Mobile: header, This turn,
+           the board as the page; the chat as a non-modal sheet (ChatSheet). */
+        <div
+          data-layout={isDesktop ? 'desktop' : 'mobile'}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'row',
+            position: 'relative',
+            zIndex: 2,
+            ...(gameTapeOpen ? { visibility: 'hidden' } : {}),
+          }}
+        >
+          <div
+            data-board="1"
+            style={isDesktop ? {
+              flex: '3 1 0%',
+              minWidth: 0,
+              minHeight: 0,
+              overflowY: 'auto',
+              paddingBottom: 24,
+            } : {
+              flex: '1 1 auto',
+              minWidth: 0,
+              paddingBottom: SHEET_PEEK_PX + 24,
+            }}
+          >
+            {/* This turn (Phase A) — its one home, above the board. */}
+            {thisTurnStrip}
+            {boardRows}
+            {closedTrades}
+          </div>
+          {isDesktop ? (
+            <div
+              data-chat-column="1"
+              style={{
+                flex: '2 1 0%',
+                minWidth: 0,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                borderLeft: `1px solid rgba(${cssVar('scrim-rgb')}, 0.07)`,
+              }}
+            >
+              {chat}
+            </div>
+          ) : (
+            <ChatSheet
+              detent={sheet.detent}
+              onDetentChange={sheet.setDetent}
+              returnFocusRef={sheet.returnFocusRef}
+              viewportHeight={viewportHeight}
+              turnText={turnLine?.text ?? null}
+              unread={Boolean(hasCommandDot)}
+              unreadColor={hasPendingProposal ? cssVar('amber') : cssVar('teal')}
+              reducedMotion={reducedMotion}
+            >
+              {chat}
+            </ChatSheet>
+          )}
+        </div>
+      ) : (
+      /* ═══ TAB CONTENT (flag-off: the shipped tabbed screen) ═══ */
       <div style={activeTab === 'matchups' ? {
         flex: 1,
         overflowY: 'auto',
@@ -1174,72 +1505,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             >
               {/* This turn (Phase A, controller flag) — above the board. */}
               {thisTurnStrip}
-              {activeTiers.map((tier, tierIndex) => (
-                <div key={tier.key}>
-                  <TierHeader tier={tier} />
-                  {Array.from({ length: tier.slots }).map((_, i) => {
-                    const rowKey = `${tier.key}-${i}`;
-                    const leftAsset = enrichedPlayerPortfolio[tier.key]?.[i] || null;
-                    const whyable = controllerOn && !!leftAsset?.symbol && !leftAsset.isCash;
-                    const isWhyOpen = whyable && whyOpen?.key === rowKey && whyOpen.symbol === leftAsset.symbol;
-                    const row = (
-                      <TacticalRow
-                        key={rowKey}
-                        leftAsset={leftAsset}
-                        rightAsset={enrichedOpponentPortfolio[tier.key]?.[i] || null}
-                        tier={tier.key}
-                        allocationLabel={`${tier.emoji} ${tier.allocation}`}
-                        isCryptoSlot={tier.hasCrypto && i === tier.slots - 1}
-                        onSymbolClick={handleSymbolClick}
-                        onPointsClick={handlePointsClick}
-                        {...(whyable ? {
-                          onWhy: (asset) => handleWhyToggle(rowKey, asset),
-                          whyOpen: isWhyOpen,
-                          whyLabel: BATTLE_VIEW_COPY.why,
-                          // The row hands the panel the SAME proximity it just
-                          // rendered — one call, one number (hazard 15).
-                          renderWhy: (proximity) => (
-                            <WhyPanel
-                              key={`why-${rowKey}`}
-                              symbol={leftAsset.symbol}
-                              state={selectWhyState(latestDecision, leftAsset.symbol, lastScoredAt)}
-                              proximity={proximity}
-                              entryPrice={leftAsset.openPrice ?? null}
-                              heldSince={leftAsset.swappedInAt || agentBattle?.activatedAt || null}
-                              trades={selectTradesForSymbol(agentBattle?.trades, leftAsset.symbol)}
-                              onAskFollowUp={handleAskFollowUp}
-                              reducedMotion={reducedMotion}
-                              headingId={`why-${rowKey}-heading`}
-                            />
-                          ),
-                        } : {})}
-                      />
-                    );
-                    if (!controllerOn) return row;
-                    // Controller flag: the row's slot in the landing sequence
-                    // (top to bottom across tiers). The wrapper exists only to
-                    // host the wash; flag-off renders the bare row above.
-                    const rowIndex = activeTiers.slice(0, tierIndex).reduce((n, t) => n + t.slots, 0) + i;
-                    return (
-                      <div key={`${tier.key}-${i}`} style={{ position: 'relative' }}>
-                        {row}
-                        <LandingWash
-                          landingKey={landingKey}
-                          index={rowIndex}
-                          count={rowCount}
-                          reducedMotion={reducedMotion}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
+              {boardRows}
 
               {/* Closed trades */}
-              <ClosedTradesSection
-                closedTrades={agentBattle?.trades || []}
-                defaultExpanded={false}
-              />
+              {closedTrades}
             </motion.div>
           )}
 
@@ -1313,6 +1582,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           )}
         </AnimatePresence>
       </div>
+      )}
+
+      {gameTapeOverlay}
 
       {/* ═══ MODALS ═══ */}
       <DebateModal

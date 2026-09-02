@@ -427,6 +427,13 @@ export default function AgentChat({
   // Phase A: { [directiveThreadId]: { state, at } } from deriveReceipts, or
   // null flag-off. AgentChat never reads battle.directive itself.
   receipts = null,
+  // Phase A (A4, the controller layout): render the chat column ALONE at any
+  // width — no Live Activity panel, no sub-tab bar. Its status line is the
+  // turn line; its alerts and "Agent Reasoning" stay on the Desk and
+  // flag-off (rulings §2.5). Absent flag-off, so the shipped layouts are
+  // untouched. The message list also contains its overscroll so the mobile
+  // sheet owns the scroll at half / full.
+  controllerLayout = false,
 }) {
   // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
   // reactively from the chatExchanges prop so Firestore-initiated writes
@@ -948,6 +955,7 @@ export default function AgentChat({
         padding: '12px 12px 8px',
         display: 'flex',
         flexDirection: 'column',
+        ...(controllerLayout ? { overscrollBehavior: 'contain' } : {}),
       }}>
         {messages.length === 0 && tradeEvents.length === 0 ? (
           <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
@@ -1167,7 +1175,7 @@ export default function AgentChat({
     </>
   );
 
-  const activityContent = (
+  const activityContent = controllerLayout ? null : (
     <LiveActivityPanel
       messages={messages}
       statusFeed={statusFeed}
@@ -1176,6 +1184,23 @@ export default function AgentChat({
   );
 
   // ── Layout ──────────────────────────────────────────────────────────────────
+
+  if (controllerLayout) {
+    // ── Controller (Phase A, A4): the chat column alone, any width ───────
+    return (
+      <div
+        data-chat-layout="controller"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          minHeight: 0,
+        }}
+      >
+        {chatContent}
+      </div>
+    );
+  }
 
   if (isDesktop) {
     // ── Desktop: side-by-side ──────────────────────────────────────────────

@@ -12,7 +12,8 @@
 //      emphasised where it appears. Absence is a truthful state.
 //   3. Facts — the row's proximity text (passed in), entry, held since.
 //   4. One door: Ask a follow-up · 1 message → the composer, prefilled.
-// Book-level (the score header): 2 → This turn (A3) → the door. No facts.
+// Book-level (the score header): 2 → the door. No facts. This turn has ONE
+// home — the strip above the board (A4); the panel carries no second copy.
 //
 // Every string comes from battleViewCopy.js; the panel types no prose.
 // Colours via the token bridge; motion via the vocabulary, reduced-motion
@@ -72,7 +73,6 @@ export default function WhyPanel({
   entryPrice = null,
   heldSince = null,
   trades = [],
-  thisTurn = null,
   onAskFollowUp,
   reducedMotion = false,
   headingId,
@@ -144,9 +144,6 @@ export default function WhyPanel({
             {facts.join(' · ')}
           </div>
         )}
-
-        {/* Book-level: This turn (A3) sits between the decision and the door */}
-        {isBook && thisTurn}
 
         {/* 4. The one door */}
         {typeof onAskFollowUp === 'function' && (

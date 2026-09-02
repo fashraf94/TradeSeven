@@ -122,6 +122,29 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     return t ? `Replaced ${t}` : 'Replaced';
   },
   expired: 'Expired',
+
+  // ── The layout (A4) ────────────────────────────────────────────────────────
+  // Game Tape is ONE header link that opens the shipped view full-screen; the
+  // way back names the page it returns to. No `···` menu (rulings §2.5).
+  gameTape: 'Game Tape',
+  gameTapeBack: 'Back to the battle',
+
+  // The mobile chat sheet — a non-modal region with three detents. The cycle
+  // control is named for what its NEXT activation does; the region carries
+  // the name a screen reader lands on; `new activity` rides the control's
+  // name while the unread dot shows (the dot itself is decorative).
+  sheetName: 'Agent chat',
+  sheetOpen: 'Open the chat',
+  sheetGrow: 'Show more of the chat',
+  sheetCollapse: 'Collapse the chat',
+  sheetUnread: 'new activity',
+
+  // Accessible names for the two Why? tap surfaces (A4.3, review F16): the
+  // row button is named for its verb and its piece, the score header for the
+  // book — a short name instead of the whole visible content of each.
+  whyName: (symbol) => `Why? ${symbol}`,
+  whyBookName: 'Why? · the whole book',
+
   receiptLine: (receipt) => {
     if (!receipt || typeof receipt !== 'object') return null;
     if (receipt.state === 'filed') return BATTLE_VIEW_COPY.filed(receipt.at);

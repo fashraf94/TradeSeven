@@ -157,13 +157,13 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
     expect([...container.querySelectorAll('[role="button"][aria-expanded]')].some((el) => el.textContent.includes('AMD') && el.querySelector('[data-why-label]'))).toBe(false);
   });
 
-  it('the one door prefills the composer with `About SLB — ` on the chat tab, whose card carries the receipt (D-60)', async () => {
+  it('the one door prefills the composer with `About SLB — ` in the chat column, whose card carries the receipt (D-60)', async () => {
     mount();
     click(rowButtonFor('SLB'));
     const door = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Ask a follow-up · 1 message');
     expect(door).toBeTruthy();
     click(door);
-    await settle(1200); // AnimatePresence mode="wait": the matchups tab exits, then the chat mounts
+    await settle(200); // A4: the desktop chat column is always mounted — no tab hand-off
     const textarea = container.querySelector('textarea');
     expect(textarea).toBeTruthy();
     expect(textarea.value).toBe('About SLB — ');
@@ -174,7 +174,7 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
     expect(container.textContent).not.toContain('Executing on next evaluation window');
   });
 
-  it('the score header opens the book panel with This turn between the decision and the door', () => {
+  it('the score header opens the book panel — the decision and the door; This turn has ONE home, above the board (A4)', () => {
     mount();
     const header = [...container.querySelectorAll('[role="button"][aria-expanded]')].find((el) => el.textContent.includes('Aurora') && el.textContent.includes('CPU'));
     expect(header).toBeTruthy();
@@ -182,7 +182,8 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
     const book = container.querySelector('[data-why-symbol="book"]');
     expect(book).toBeTruthy();
     expect(book.textContent).toContain('At the 12:47 PM check');
-    expect(book.querySelector('[data-this-turn="filed"]')).toBeTruthy();
+    expect(book.querySelector('[data-this-turn]')).toBeNull();
+    expect(container.querySelectorAll('[data-this-turn]').length).toBe(1);
     expect(book.textContent).not.toContain('Entry $');
     expect(book.textContent).toContain('Ask a follow-up · 1 message');
   });
