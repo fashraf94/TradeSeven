@@ -689,6 +689,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Archetype Rank Interface V2 (spec §5 Phase A / P-11, §8): the observation
+    // snapshots and their ops toggle. Admin SDK only — the producer cron writes
+    // rankingSnapshots and reads ops/rankingSnapshots; the founder flips the
+    // toggle in the console. No client verb, ever: a snapshot carries the full
+    // per-symbol axes + both score tables, and the toggle is an ops control.
+    match /rankingSnapshots/{snapshotId} {
+      allow read, write: if false;  // Admin SDK only
+    }
+    match /ops/rankingSnapshots {
+      allow read, write: if false;  // Admin SDK only
+    }
+
     // Voice Layer Cache — OWNER-scoped read, server-only write (Admin SDK).
     //
     // P-4 (Command Center Sync Pass 1, PASS1_PHASE0_STOP_RULINGS_AND_GO.md §1).

@@ -44,6 +44,18 @@ import { computeGameModeFits, assignGameModeRanks } from '../_utils/gameModeScor
 import { computeMomentumRankings } from '../_utils/momentumScoring.js';
 import { computeArchetypeRankings } from '../_utils/archetypeScoring.js';
 import { computeReturns } from '../_utils/returnCalculations.js';
+// Archetype Rank Interface V2 — Phase A (docs/specs/ARCHETYPE_RANK_INTERFACE_V2_BUILD_SPEC_V1_3.md
+// §2, §5, P-10, P-11): the pure axis derivation + the ops-gated observation snapshot writer.
+import { deriveAxes, computeUniverseMedianReturn1W, countAxisNulls, AXES_FORMULA_VERSION } from '../_utils/axisDerivation.js';
+import {
+  readRankingSnapshotOps,
+  resolveSnapshotRunLabel,
+  snapshotDocId,
+  buildRankingSnapshotDoc,
+  writeRankingSnapshot,
+  expireRankingSnapshots,
+} from '../_utils/rankingSnapshots.js';
+import { formatEtDate } from '../_utils/tournamentTime.js';
 // Fundamental Wire (Commit 1, dark) — Node-clean api→src edge, ratified by the
 // three existing cron importers of featureFlags.js (BUILD_RULES §4; the runtime
 // guard is the real import in compute-index-intelligence.fundamentalsMirror.test.js).
@@ -553,12 +565,27 @@ export default async function handler(req, res) {
   const startTime = Date.now();
   const errors = [];
   const intraday = req.query?.mode === 'intraday' || req.headers['x-recompute-mode'] === 'intraday';
+  // Archetype Rank V2 (P-11): per-stage timings ride the observation snapshots so
+  // the window itself yields the runtime baseline V-13 could not measure.
+  const stageTimings = {};
+  let stageStartedAt = startTime;
+  const markStage = (name) => {
+    const t = Date.now();
+    stageTimings[name] = t - stageStartedAt;
+    stageStartedAt = t;
+  };
+  let v2Snapshot = null; // { universe, universeMedianReturn1W, axisNullCounts, archetypePostFilterCounts, events }
+  let snapshotWritten = null;
   // Reset module-level intraday state every invocation (warm-container safety).
   intradayQuotes = null;
   log(`Starting index intelligence computation... (mode=${intraday ? 'intraday' : 'premarket'})`);
 
   try {
     const db = getFirebaseAdmin();
+
+    // Archetype Rank V2 (P-11): the snapshot ops toggle, read once at run start.
+    // Absent doc ⇒ off; a read failure ⇒ off + logged. Never affects the run.
+    const snapshotOps = await readRankingSnapshotOps(db, { log });
 
     // Intraday mode: fetch live quotes for the WHOLE universe up-front so
     // fetchOHLCV can splice today's price onto each symbol's bars. The
@@ -576,6 +603,7 @@ export default async function handler(req, res) {
       if (intradayQuotes.size === 0) {
         errors.push({ stage: 'intraday-quotes', error: 'no real-time quotes; falling back to prior-close bars' });
       }
+      markStage('intradayQuotes');
     }
 
     // Step 2 — Fetch Index OHLCV + TNX + Sector ETFs in parallel
@@ -634,6 +662,7 @@ export default async function handler(req, res) {
     }
     sectorSnapshot.sort((a, b) => b.changePercent - a.changePercent);
     log(`  ✓ Indexes: ${Object.keys(indexData).length}/5, TNX: ${tnxData ? 'yes' : 'no'}, Sectors: ${sectorSnapshot.length}/11`);
+    markStage('fetchIndexSectorData');
 
     // Step 3 — Compute Per-Index Technicals
     log('Step 3: Computing per-index technicals...');
@@ -696,6 +725,7 @@ export default async function handler(req, res) {
     else if (breadthComposite >= 50) breadthTier = 'moderate';
     else if (breadthComposite >= 30) breadthTier = 'thinning';
     else breadthTier = 'weak';
+    markStage('indexIntelligence');
 
     // Step 5 — Compute RS + Technical Scores for full stock universe
     log(`Step 5: Fetching OHLCV for ${ALL_TICKERS.length} stocks...`);
@@ -713,6 +743,7 @@ export default async function handler(req, res) {
       const { results: stockOHLCV, errors: stockErrors } = await fetchBatch(ALL_TICKERS, 10, 500);
       errors.push(...stockErrors);
       log(`  Fetched ${Object.keys(stockOHLCV).length}/${ALL_TICKERS.length} stocks`);
+      markStage('fetchStockOHLCV');
 
       // Compute RS20 change for all stocks (for percentile ranking)
       log('  Computing RS + Technical Scores...');
@@ -916,6 +947,7 @@ export default async function handler(req, res) {
 
       stocksProcessed = stockScores.length;
       log(`  Scored ${stocksProcessed} stocks across ${Object.keys(sectorGroups).length} sectors`);
+      markStage('technicalScores');
 
       // Momentum Rank (Phase 2) — 6 metrics + sub-pillars. Reuses rsData which
       // already holds per-stock closes + ohlcv. Passes spyCloses for Residual
@@ -931,6 +963,7 @@ export default async function handler(req, res) {
       const momentumResults = computeMomentumRankings(stockMomentumData, spyCloses, null);
       momentumResults.forEach(r => momentumMap.set(r.symbol, r));
       log(`  Computed momentum rank for ${momentumResults.length} stocks`);
+      markStage('momentumRank');
 
       // Conversational Performance — realized 1W/1M/3M/YTD/12M returns from the SAME
       // newest-first adjusted closes momentum already uses (zero new EODHD calls).
@@ -940,6 +973,7 @@ export default async function handler(req, res) {
         returnsMap.set(d.sym, computeReturns(d.closes, d.ohlcv.map(o => o.date)));
       }
       log(`  Computed period returns for ${returnsMap.size} stocks`);
+      markStage('periodReturns');
     }
 
     // Top/Bottom leaders for marketContext
@@ -1022,6 +1056,7 @@ export default async function handler(req, res) {
           fundMap.set(d.ticker, d);
         });
       }
+      markStage('fetchPeerRankings');
 
       // Compute ATR percentiles across all stocks for game-mode scoring
       const atrValues = stockScores
@@ -1128,6 +1163,19 @@ export default async function handler(req, res) {
           // Game-mode fit scores
           baggerBombFit: gameModes.baggerBombFit ?? null,
           atrPercentile: Math.round(atrPercentile * 100) / 100,
+          // Archetype Rank V2 (spec §2 / P-10, V-2): raw technical readings
+          // mirrored off the SAME in-memory tech object stockTechnicalScores
+          // persists — the honest inputs behind the axes. atrPercent gates the
+          // `volatility` axis (null ⇒ null, never the dead `?? 0.5` fallback);
+          // rsi / bbPercentB / distTo52wkHigh are the V2.1 Contrarian
+          // stabilization inputs. Null when the reading is null — never a
+          // neutral default. Named-field addition, inert to decide.js.
+          techRaw: {
+            rsi: tech.factors?.rsi ?? null,
+            bbPercentB: tech.bbPercentB ?? null,
+            distTo52wkHigh: tech.factors?.distTo52wkHigh ?? null,
+            atrPercent: tech.atrPercent ?? null,
+          },
           // Intraday momentum fields (Sprint 1)
           dailyRange: tech.dailyRange ?? null,
           nr7Flag: tech.nr7Flag ?? false,
@@ -1171,6 +1219,21 @@ export default async function handler(req, res) {
         if (b.compositeScore == null) return -1;
         return b.compositeScore - a.compositeScore;
       });
+      markStage('assembleRankings');
+
+      // Archetype Rank V2 — Phase A (spec §2 / §5): the additive `axes` block,
+      // derived from the PERSISTED-SHAPE entries above (rounded first, derived
+      // second — P-10), so the V2 scorer's fallback derivation over this same
+      // doc is byte-identical (parity test 12). Must run against the FULL
+      // rankingStocks array — strength and dislocation are cross-sectional.
+      // Doc-level companions (written into rankingsPayload below):
+      // axes_formula_version, axes_universe_size, universe_median_return1W
+      // (the P-13 week floor's input — never computed on a subset).
+      const axesList = deriveAxes(rankingStocks);
+      rankingStocks.forEach((stock, i) => { stock.axes = axesList[i]; });
+      const universeMedianReturn1W = computeUniverseMedianReturn1W(rankingStocks);
+      const axisNullCounts = countAxisNulls(axesList);
+      markStage('axes');
 
       // Tier 0 Item 6: persist per-archetype ARCH scores for the universe screener.
       // Must run against the FULL rankingStocks array — sectorDiversity depends on
@@ -1186,6 +1249,17 @@ export default async function handler(req, res) {
       for (const stock of rankingStocks) {
         stock.arch_scores = archScoresBySymbol[stock.symbol] || {};
       }
+      markStage('archScoresV1');
+
+      // Archetype Rank V2 (P-11): what the observation snapshot records for this
+      // run (written after the batch commits — see below).
+      v2Snapshot = {
+        universe: rankingStocks,
+        universeMedianReturn1W,
+        axisNullCounts,
+        archetypePostFilterCounts: null,
+        events: [],
+      };
 
       // Build sectors lookup for efficient frontend leaderboard rendering
       const sectorGroupsLocal = {};
@@ -1215,6 +1289,11 @@ export default async function handler(req, res) {
         sectors,
         industries,
         mode: intraday ? 'intraday' : 'premarket',
+        // Archetype Rank V2 — Phase A doc-level fields (spec §2 / §8). Additive.
+        axes_formula_version: AXES_FORMULA_VERSION,
+        axes_universe_size: rankingStocks.length,
+        universe_median_return1W: universeMedianReturn1W,
+        arch_scores_version: 1,
         computedAt: FieldValue.serverTimestamp(),
         // Freshness horizon for consumers: intraday docs go stale within ~75min
         // (hourly cadence + slack); the pre-market baseline holds for the day.
@@ -1236,6 +1315,56 @@ export default async function handler(req, res) {
 
     await batch.commit();
     log(`  ✓ Wrote ${writeCount} documents to Firestore`);
+    markStage('firestoreCommit');
+
+    // Archetype Rank V2 — observation snapshot (P-11). Gated by the ops doc read
+    // at run start; the premarket run and the LAST intraday run only (or an
+    // explicit ?snapshotLabel= on a manual invocation). Runs AFTER the rankings
+    // commit so a snapshot failure can never fail the producer; expire-on-write
+    // rides the premarket run (no cron slot). Skipped when disabled or when no
+    // universe was built this run.
+    if (snapshotOps.enabled && v2Snapshot) {
+      const snapshotOverride = typeof req.query?.snapshotLabel === 'string' ? req.query.snapshotLabel : null;
+      const runLabel = resolveSnapshotRunLabel({ intraday, now: new Date(), override: snapshotOverride });
+      if (runLabel) {
+        try {
+          const now = new Date();
+          const etDate = formatEtDate(now);
+          const id = snapshotDocId(etDate, runLabel);
+          const docData = buildRankingSnapshotDoc({
+            etDate,
+            runLabel,
+            mode: intraday ? 'intraday' : 'premarket',
+            now,
+            codeHead: process.env.VERCEL_GIT_COMMIT_SHA || null,
+            universe: v2Snapshot.universe,
+            axesFormulaVersion: AXES_FORMULA_VERSION,
+            universeMedianReturn1W: v2Snapshot.universeMedianReturn1W,
+            axisNullCounts: v2Snapshot.axisNullCounts,
+            archetypePostFilterCounts: v2Snapshot.archetypePostFilterCounts,
+            events: v2Snapshot.events,
+            elapsedSeconds: Number(((Date.now() - startTime) / 1000).toFixed(1)),
+            stageTimings: { ...stageTimings },
+            retainDays: snapshotOps.retainDays,
+          });
+          await writeRankingSnapshot(db, id, {
+            ...docData,
+            expiresAt: Timestamp.fromMillis(docData.expiresAtMs),
+            createdAt: FieldValue.serverTimestamp(),
+          });
+          snapshotWritten = id;
+          log(`  ✓ rankingSnapshots/${id} written (retainDays=${snapshotOps.retainDays})`);
+          if (!intraday) {
+            const { deleted } = await expireRankingSnapshots(db, { nowMs: now.getTime(), retainDays: snapshotOps.retainDays });
+            if (deleted > 0) log(`  ✓ expired ${deleted} rankingSnapshots older than ${snapshotOps.retainDays} days`);
+          }
+        } catch (err) {
+          errors.push({ stage: 'rankingSnapshot', error: err.message });
+          log(`  ⚠ rankingSnapshot failed (the rankings write already committed): ${err.message}`);
+        }
+        markStage('snapshot');
+      }
+    }
 
     // Step 7 — Return Summary
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -1250,6 +1379,7 @@ export default async function handler(req, res) {
       stocksScored: stocksProcessed,
       sectorsProcessed: sectorSnapshot.length,
       firestoreWrites: writeCount,
+      rankingSnapshot: snapshotWritten,
       regime: regime.regime,
       topLeader: technicalLeaders[0] || null,
       elapsedSeconds: Number(elapsed),
