@@ -47,12 +47,25 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // carries a swap rationale), then the decision.
   downgradedLabel: 'Argued for a swap · held by a guardrail',
   downgradedFooter: 'The agent\'s own words · the system held it',
+
+  // The FOURTH state (A4.0, D-66). `downgraded === true` is also stamped when
+  // executeSwapServer threw (agent-evaluate.js: `validationErrors[0]` =
+  // `Swap execution failed: …`) — no guardrail held anything; the swap the
+  // agent argued for simply did not go through. selectWhyState.js branches
+  // on that prefix, so the guardrail label never over-claims on this path.
+  failedLabel: 'Argued for a swap · it did not go through',
+  failedFooter: 'The agent\'s own words · the position stayed as it was',
   heldLabel: 'Held',
   swappedLabel: (symbolOut, symbolIn) => `Swapped · ${symbolOut ?? '—'} → ${symbolIn ?? '—'}`,
 
   // The absence state is a real state, not a failure (honesty rule 7): the
   // tick ran (lastScoredAt advanced) and recorded no evaluation entry.
   noDecision: 'No decision recorded at this check',
+  // The more specific absence (A4.0, D-65): the latest entry carries
+  // `haikuError` — the model call timed out or never ran and the tick
+  // defaulted to HOLD with the system's placeholder words. The fact is
+  // persisted on the entry itself; the label states it and nothing more.
+  noDecisionOutage: 'No decision recorded at this check · the evaluation timed out',
 
   // Trades on this piece today — the section heading; each line is the swap
   // receipt's own time, symbols and reason (engine text, verbatim).
@@ -99,6 +112,11 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // directive` on a statusFeed swap entry (AgentChat.jsx) and stays there.
   // Replaced shows text and time only — never "never seen". Expired is the
   // bare word: it is a battle-complete fact, not a time.
+  // The directive card's eyebrow under the controller flag (A4.0, D-68): the
+  // receipt line carries the state, so the eyebrow names the thing, not a
+  // state (`DIRECTIVE LOCKED IN` above `Replaced {t}` contradicted itself).
+  // Flag-off keeps the shipped label byte-for-byte until bug 2's own PR.
+  directiveEyebrow: 'Directive',
   replaced: (iso) => {
     const t = etTime(iso);
     return t ? `Replaced ${t}` : 'Replaced';

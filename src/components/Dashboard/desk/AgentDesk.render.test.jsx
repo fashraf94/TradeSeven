@@ -98,6 +98,14 @@ describe('posture line — discrete, never continuous', () => {
     expect(html).toContain('next Mon 9:30 AM ET');
   });
 
+  it('with no last check at all, names the next open as a CHECK — the shipped cell, word for word (A4.0)', () => {
+    // D-62 added the as-of to the two-fact cell; the no-last-check cell keeps
+    // `next check {day} {t} ET` exactly as it shipped before Phase A.
+    const html = render({ phase: 'LIVE_CLOSED', nextDecisionAt: null, lastCheckedAt: null });
+    expect(html).toContain('Market closed · next check Tue 9:30 AM ET');
+    expect(html).not.toContain('last check');
+  });
+
   it('falls back to the as-of alone when the next open is unknown', () => {
     const html = render({ phase: 'LIVE_CLOSED', nextOpenEt: null });
     expect(html).toContain('Market closed · last check 12:47 PM');

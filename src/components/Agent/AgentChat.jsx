@@ -129,7 +129,9 @@ function ExecutionCard({ directive, receipt }) {
         marginBottom: 8,
       }}>
         <span>⚡</span>
-        <span>DIRECTIVE LOCKED IN</span>
+        {/* Under the flag the receipt line carries the state, so the eyebrow
+            names the thing (D-68). Flag-off: the shipped label, byte for byte. */}
+        <span>{controllerReceipts ? BATTLE_VIEW_COPY.directiveEyebrow : 'DIRECTIVE LOCKED IN'}</span>
       </div>
       <div style={{
         fontSize: 13,

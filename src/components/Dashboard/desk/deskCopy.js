@@ -137,12 +137,16 @@ export const DESK_COPY = Object.freeze({
   // check is the next open. No verb about the agent at all — it is not doing
   // anything. ONE string on both surfaces (D-62): the Desk and the Battle View
   // turn line render this same sentence, so they cannot disagree.
+  //
+  // With no last check at all the cell keeps the shipped `next check {day}
+  // {t} ET` (A4.0 copy ruling 3 — the word "check" was dropped when the
+  // two-fact form landed; restored). The two-fact cell is unchanged.
   postureClosed: (nextOpenEt, lastIso) => {
     const label = etWallClockLabel(nextOpenEt);
     const last = etTime(lastIso);
     const parts = ['Market closed'];
     if (last) parts.push(`last check ${last}`);
-    if (label) parts.push(`next ${label} ET`);
+    if (label) parts.push(last ? `next ${label} ET` : `next check ${label} ET`);
     return parts.join(' · ');
   },
 

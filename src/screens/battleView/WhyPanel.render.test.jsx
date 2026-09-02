@@ -13,7 +13,8 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import WhyPanel from './WhyPanel.jsx';
-import { selectWhyState, selectTradesForSymbol } from './selectWhyState';
+import { selectWhyState, selectTradesForSymbol, WHY_KIND } from './selectWhyState';
+import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 
 const LAST = '2026-09-01T16:47:00.000Z'; // 12:47 PM ET
 const TS = '2026-09-01T16:47:02.000Z';
@@ -64,6 +65,28 @@ describe('the downgraded state (smoke step 3 fallback)', () => {
     const html = renderRow(DOWNGRADED);
     expect(html).toContain('has lost its bid and DVN is showing the stronger tape');
     expect(html).toMatch(/<strong[^>]*>SLB<\/strong>/);
+  });
+});
+
+describe('the fourth state — a swap that did not go through (D-66)', () => {
+  // The state object is built directly here so that the selector's branch is
+  // guarded by exactly one row (selectWhyState.test.js); this row guards the
+  // panel's rendering of the kind — its label, its footer, its colour slot.
+  const FAILED_STATE = {
+    kind: WHY_KIND.FAILED, checkedAt: LAST, header: 'At the 12:47 PM check', symbol: 'SLB',
+    label: COPY.failedLabel, footer: COPY.failedFooter, rationale: DOWNGRADED.rationale, symbolOut: null, symbolIn: null,
+  };
+
+  it('labels the tick `Argued for a swap · it did not go through` with its own footer — never the guardrail words', () => {
+    const html = renderRow(HELD, { state: FAILED_STATE });
+    expect(html).toContain('Argued for a swap · it did not go through');
+    expect(html).toContain('The agent&#x27;s own words · the position stayed as it was');
+    expect(html).toContain('data-why-kind="failed"');
+    expect(html).not.toContain('guardrail');
+    expect(html).not.toContain('the system held it');
+    expect(html).not.toMatch(/>Held</);
+    // The label has a colour of its own (not the fallback slot).
+    expect(html).toContain('color:var(--ft-amber)');
   });
 });
 
@@ -132,8 +155,11 @@ describe('the header, the facts and the trades', () => {
   it('an engine-outage tick renders the absence state, not `Held` with the placeholder (F12)', () => {
     const outage = { ...HELD, rationale: 'Haiku call failed — defaulting to HOLD', haikuError: { failureClass: 'transport' } };
     const html = renderRow(outage);
-    expect(html).toContain('No decision recorded at this check');
+    // D-65 (A4.0): the more specific absence label, from the persisted fact.
+    expect(html).toContain('No decision recorded at this check · the evaluation timed out');
+    expect(html).toContain('data-why-kind="absent"');
     expect(html).not.toContain('Haiku call failed');
+    expect(html).not.toContain('Haiku');
     expect(html).not.toMatch(/>Held</);
   });
 

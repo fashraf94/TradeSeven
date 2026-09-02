@@ -206,4 +206,10 @@ describe('the posture line is discrete, never continuous', () => {
     // No tilde here: the next open is a scheduled fact, not a cron estimate.
     expect(line).not.toContain('~');
   });
+
+  it('the CLOSED posture with no last check keeps the shipped `next check` cell (A4.0 copy ruling 3)', async () => {
+    const { DESK_COPY } = await import('./deskCopy.js');
+    expect(DESK_COPY.postureClosed({ weekdayIndex: 2, hour: 9, minute: 30 }, null)).toBe('Market closed · next check Tue 9:30 AM ET');
+    expect(DESK_COPY.postureClosed(null, null)).toBe('Market closed');
+  });
 });

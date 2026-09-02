@@ -53,8 +53,10 @@ describe('under the flag — receipts on the directive cards', () => {
     expect(html).not.toContain('Executing on next evaluation window');
     // The shipped pulse is three 4px dots; none render under the flag.
     expect(html).not.toContain('width:4px;height:4px');
-    // The shipped label and the text still render — receipts sit beside them.
-    expect(html).toContain('DIRECTIVE LOCKED IN');
+    // The eyebrow names the thing, not a state (D-68): `Directive` above the
+    // receipt line; the shipped `DIRECTIVE LOCKED IN` is flag-off only.
+    expect(html).not.toContain('DIRECTIVE LOCKED IN');
+    expect((html.match(/>Directive</g) || []).length).toBe(2);
     expect(html).toContain('Protect the lead into the close');
   });
 
@@ -89,5 +91,8 @@ describe('flag-off — the shipped card, unchanged', () => {
     expect(html).not.toContain('data-receipt');
     expect(html).not.toContain('Replaced');
     expect(html).not.toContain('Filed');
+    // The shipped eyebrow, byte for byte (D-68 is flag-only; bug 2's PR later).
+    expect((html.match(/<span>DIRECTIVE LOCKED IN<\/span>/g) || []).length).toBe(2);
+    expect(html).not.toContain('>Directive<');
   });
 });

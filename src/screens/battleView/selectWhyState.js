@@ -22,9 +22,22 @@ import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 export const WHY_KIND = Object.freeze({
   ABSENT: 'absent',
   DOWNGRADED: 'downgraded',
+  FAILED: 'failed',
   HELD: 'held',
   SWAPPED: 'swapped',
 });
+
+/**
+ * The prefix agent-evaluate.js stamps on `validationErrors[0]` when
+ * executeSwapServer threw (`validationErrors.push(`Swap execution failed:
+ * ${swapErr.message}`)`) — the one downgrade that no guardrail caused (D-66).
+ */
+export const SWAP_FAILED_PREFIX = 'Swap execution failed';
+
+const swapDidNotGoThrough = (evaluation) => {
+  const first = Array.isArray(evaluation.validationErrors) ? evaluation.validationErrors[0] : null;
+  return typeof first === 'string' && first.startsWith(SWAP_FAILED_PREFIX);
+};
 
 const cleanText = (value) => (typeof value === 'string' && value.trim() ? value : null);
 
@@ -59,19 +72,32 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
     return { ...base, kind: WHY_KIND.ABSENT, label: COPY.noDecision };
   }
 
-  // An engine outage is not a decision (review finding F12). The cron stamps
-  // `haikuError` when the model call failed or was budget-skipped and the tick
-  // defaulted to HOLD with a placeholder rationale ("Haiku call failed —
-  // defaulting to HOLD", agent-evaluate.js:2637-2667) — the system's words,
-  // not the agent's. C1: the honest state is that no decision was recorded.
+  // An engine outage is not a decision (review finding F12, D-65). The cron
+  // stamps `haikuError` when the model call failed or was budget-skipped and
+  // the tick defaulted to HOLD with a placeholder rationale ("Haiku call
+  // failed — defaulting to HOLD", agent-evaluate.js:2637-2667) — the system's
+  // words, not the agent's. C1: the honest state is that no decision was
+  // recorded, and the more specific label says why (the fact is on the entry).
   if (evaluation.haikuError) {
-    return { ...base, kind: WHY_KIND.ABSENT, label: COPY.noDecision };
+    return { ...base, kind: WHY_KIND.ABSENT, label: COPY.noDecisionOutage };
   }
 
   const rationale = cleanText(evaluation.rationale);
 
-  // Downgraded FIRST — see the header.
+  // Downgraded FIRST — see the header. Two reasons carry the same flag
+  // (D-66): a thrown executeSwapServer stamps `validationErrors[0]` with the
+  // SWAP_FAILED_PREFIX — no guardrail held anything, the swap did not go
+  // through; every other downgrade is a guardrail holding the position.
   if (evaluation.downgraded === true) {
+    if (swapDidNotGoThrough(evaluation)) {
+      return {
+        ...base,
+        kind: WHY_KIND.FAILED,
+        label: COPY.failedLabel,
+        rationale,
+        footer: COPY.failedFooter,
+      };
+    }
     return {
       ...base,
       kind: WHY_KIND.DOWNGRADED,

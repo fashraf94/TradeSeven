@@ -42,6 +42,40 @@ describe('the branches, in order', () => {
     expect(selectWhyState(evaluation, 'SLB', LAST).kind).toBe(WHY_KIND.DOWNGRADED);
   });
 
+  it('MUTATION ROW (D-66) — a downgrade whose validationErrors[0] starts `Swap execution failed` is the FOURTH state: `Argued for a swap · it did not go through`', () => {
+    // executeSwapServer threw (agent-evaluate.js: `validationErrors.push(`Swap
+    // execution failed: ${swapErr.message}`)`, then `downgraded = true`). No
+    // guardrail held anything; the guardrail label would over-claim.
+    const evaluation = {
+      evalId: 'eval_021', timestamp: TS, decision: 'HOLD', downgraded: true, rationale: RATIONALE_SWAP,
+      validationErrors: ['Swap execution failed: EODHD price unavailable for DVN'],
+    };
+    const s = selectWhyState(evaluation, 'SLB', LAST);
+    expect(s.kind).toBe(WHY_KIND.FAILED);
+    expect(s.label).toBe('Argued for a swap · it did not go through');
+    expect(s.label).toBe(COPY.failedLabel);
+    expect(s.footer).toBe('The agent\'s own words · the position stayed as it was');
+    expect(s.footer).toBe(COPY.failedFooter);
+    expect(s.rationale).toBe(RATIONALE_SWAP);
+    expect(s.label).not.toBe(COPY.downgradedLabel);
+  });
+
+  it('the prefix is read on validationErrors[0] only — a guardrail downgrade keeps the guardrail label whatever else the array carries', () => {
+    const guardrail = { timestamp: TS, decision: 'HOLD', downgraded: true, rationale: RATIONALE_SWAP, validationErrors: ['ANTI-THRASH: SLB was swapped in 41 minutes ago'] };
+    expect(selectWhyState(guardrail, 'SLB', LAST).kind).toBe(WHY_KIND.DOWNGRADED);
+    const later = { ...guardrail, validationErrors: ['ANTI-THRASH: SLB was swapped in 41 minutes ago', 'Swap execution failed: x'] };
+    expect(selectWhyState(later, 'SLB', LAST).kind).toBe(WHY_KIND.DOWNGRADED);
+    const none = { ...guardrail, validationErrors: [] };
+    expect(selectWhyState(none, 'SLB', LAST).kind).toBe(WHY_KIND.DOWNGRADED);
+    const absent = { ...guardrail, validationErrors: undefined };
+    expect(selectWhyState(absent, 'SLB', LAST).kind).toBe(WHY_KIND.DOWNGRADED);
+  });
+
+  it('the failure prefix without `downgraded` is not the fourth state — the flag is still the gate', () => {
+    const odd = { timestamp: TS, decision: 'HOLD', downgraded: false, rationale: RATIONALE_HOLD, validationErrors: ['Swap execution failed: x'] };
+    expect(selectWhyState(odd, 'SLB', LAST).kind).toBe(WHY_KIND.HELD);
+  });
+
   it('HOLD → `Held`, the rationale carried verbatim, no footer', () => {
     const evaluation = { timestamp: TS, decision: 'HOLD', downgraded: false, rationale: RATIONALE_HOLD };
     const s = selectWhyState(evaluation, 'SLB', LAST);
@@ -79,10 +113,13 @@ describe('the branches, in order', () => {
     };
     const s = selectWhyState(outage, 'SLB', LAST);
     expect(s.kind).toBe(WHY_KIND.ABSENT);
-    expect(s.label).toBe('No decision recorded at this check');
+    // D-65 (A4.0): the more specific absence — the fact is on the entry.
+    expect(s.label).toBe('No decision recorded at this check · the evaluation timed out');
+    expect(s.label).toBe(COPY.noDecisionOutage);
     expect(s.rationale).toBeNull();
     const skipped = { ...outage, rationale: 'Evaluation skipped — cron budget too low to start Haiku call. Defaulting to HOLD.', haikuError: { failureClass: 'budget_skipped' } };
     expect(selectWhyState(skipped, 'SLB', LAST).kind).toBe(WHY_KIND.ABSENT);
+    expect(selectWhyState(skipped, 'SLB', LAST).label).toBe(COPY.noDecisionOutage);
     // haikuError null (the success shape) is a real decision.
     expect(selectWhyState({ ...outage, haikuError: null, rationale: RATIONALE_HOLD }, 'SLB', LAST).kind).toBe(WHY_KIND.HELD);
   });
@@ -96,6 +133,15 @@ describe('absence — a truthful state, on the `>=` join only', () => {
     expect(s.label).toBe(COPY.noDecision);
     expect(s.label).toBe('No decision recorded at this check');
     expect(s.rationale).toBeNull();
+  });
+
+  it('every OTHER absence keeps the plain label — the outage words belong to a haikuError entry only (D-65)', () => {
+    const stale = { timestamp: '2026-09-01T16:32:01.000Z', decision: 'HOLD', rationale: RATIONALE_HOLD, haikuError: { failureClass: 'transport' } };
+    // A stale outage entry is not the LATEST check's absence: the plain label.
+    expect(selectWhyState(stale, 'SLB', LAST).label).toBe(COPY.noDecision);
+    expect(selectWhyState(null, 'SLB', LAST).label).toBe(COPY.noDecision);
+    expect(selectWhyState({ decision: 'HOLD' }, 'SLB', LAST).label).toBe(COPY.noDecision);
+    expect(COPY.noDecisionOutage.startsWith(COPY.noDecision)).toBe(true);
   });
 
   it('an entry EQUAL to lastScoredAt belongs to the check (>=, never ===)', () => {
