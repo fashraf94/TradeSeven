@@ -1072,11 +1072,18 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
 
   // `Read the full check` on a row (D-89). It used to open the BOOK panel
   // above the board and move focus to its heading (A2.1 / A2.3 ruling 4).
-  // Two things were wrong with that and only a ruling could fix them: the
-  // panel is the LATEST check for the whole book, which is not necessarily the
-  // check the row's extract came from; and it opens above the board, so a
-  // reader on a low row was thrown to the top of the page to read one
-  // paragraph with no way back to where they were.
+  //
+  // What was wrong with that: the panel opens ABOVE THE BOARD, so a reader on a
+  // low row was thrown to the top of the page to read one paragraph, with no
+  // way back to where they were and the board they were reading now off the
+  // screen. The check's own CARD is where the check already lives, between the
+  // checks either side of it, and a reader who arrives there can keep going.
+  //
+  // (An earlier draft of this comment also said the panel might be showing a
+  // DIFFERENT check from the row's extract. It cannot: both read
+  // `latestDecision` — see the two `selectWhyState(latestDecision, …)` call
+  // sites below — so they are always the same tick, and only the extract
+  // differs. Corrected rather than left standing.)
   //
   // The door now opens THE CHECK'S OWN CARD in the conversation — where the
   // check sits between the checks either side of it, and where the reader can
