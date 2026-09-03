@@ -22,7 +22,7 @@ The single most important result: **the first fix was incomplete.** It closed th
 | R7 | Stale comments invalidated by this diff (`directiveGate.js`, `ensure-opener.js`, caller count) | all | LOW | CONFIRMED → fixed |
 | R8 | Over-classification (a genuine parse failure reported as a timeout) | classification | — | **REFUTED** — 1,248 race runs, 0 occurrences |
 | R9 | The rethrow escaping `directiveGate.attemptRepair` | blast radius | — | **REFUTED** — bare catch swallows it identically |
-| R10 | The repair-survival window narrowed by the 20s cap | timing | MEDIUM | **ACCEPTED, NOT FIXED** — founder ruling, see §5 |
+| R10 | The repair-survival window narrowed by the 20s cap | timing | MEDIUM | **FOUNDER-RULED → fixed at 19s**, see §5 |
 | R11 | The flagship abort rows go green **with the defect live** if headers arrive later than the 120ms budget | test integrity | **HIGH** | **CONFIRMED → fixed** |
 | R12 | `TURN_DEADLINE_MS` pinned but never proved wired to the gate | test integrity | MEDIUM | **CONFIRMED → fixed** |
 | R13 | Over-classification unguarded in `workshop-chat` and `expand-signal` (only the 504 arm pinned) | test integrity | MEDIUM | **CONFIRMED → fixed** |
@@ -111,7 +111,17 @@ Raising to 20s moved the directive-gate repair-survival threshold. The repair ru
 
 Consequence: on a slow turn, `hasDirective` can flip true→false on identical model output purely from timing, and it fails silently (200 + `directiveStatus:'no_change'` + the canned line, indistinguishable at the client from a deliberate null).
 
-**Not fixed — this is a consequence of the founder-ruled 20s, not a defect**, and the repair is best-effort by design. It is now pinned as executable documentation in `chat.timeout.test.js` so the trade-off is visible and any future move of these constants confronts it. **Raised to the founder for a ruling**; lowering to 19s would restore it.
+**Raised to the founder rather than decided here. Ruled Sep 3: lower to 19s.**
+
+The budget invariant the reviewer identified — `overhead + GEMMA_TIMEOUT_MS + MIN_REPAIR_MS <= TURN_DEADLINE_MS` — now holds again and is pinned as an executable row rather than a comment:
+
+| cap | 3.0s + cap + 1.5s | vs 24.0s |
+|---|---|---|
+| 15s (before the incident) | 19.5s | held |
+| 20s (first fix) | **24.5s** | **over by 500ms** — the repair was silently un-budgeted |
+| **19s (shipped)** | **23.5s** | **holds, 500ms spare** |
+
+Overhead tolerated after a worst-case first call is back above the 3.0s design allowance (3.5s, vs 2.6s at 20s). The invariant row is the one that would have caught the original raise; it fails on any future change that forgets the second model call. **Mutation check:** setting the cap back to 20s reddens it with `expected 24500 to be less than or equal to 24000`, independently of the value pin.
 
 ## 4a. R11 — the guards could be green while the defect shipped (HIGH)
 
@@ -206,12 +216,15 @@ Mutation-check ledger:
 2. **No shadow log on the newly-504 path** for `watchlist-analysis.js:475-489` and `screener/chat.js:229-237` — both return their failure with no `logConversation`, so for those two surfaces the timeout files nothing at all. Pre-existing; caps the observability this change buys.
 3. **`gemmaLatencyMs` covers the first call only.** On a gated turn, total model time can exceed it by up to `REPAIR_TIMEOUT_MS` (8s). Correct for verifying *this* fix; the comment was corrected to say so rather than widening scope. A `repairLatencyMs` would close it.
 4. **`callGemmaVoiceWithRetry` JSDoc claims malformed JSON is retried** (`gemmaClient.js:19-20`) — it is not: the `invalid_json` return carries status 200, which is not in `TRANSIENT_STATUSES`. Pre-existing.
-5. **Phase 0 report caller census** (`six` → `13`) needs a documentation correction where that report is filed.
+5. ~~**Phase 0 report caller census** (`six` → `13`).~~ **CLOSED Sep 3** — the report is now filed on this branch as `20260903_VOICE_CHAT_TIMEOUT_PHASE0_DISCOVERY.md` with a correction notice in its preamble and every occurrence annotated inline.
 6. **`watchlist-dialogue`'s sibling row duplicates a pre-existing row** at `:1561` (same fixture, same 504 + `gemma_timeout` assertions). Harmless, but it is redundant coverage rather than new.
 7. **Pre-existing intra-file order dependence**: a `--sequence.shuffle` run surfaced 15 failures across 6 files (`correlation-scan.boundary`, `correlation.boundary`, `voiceLayerPrompt`, `wireGenerationConfig`, `wireFlags`, `starfield.depstability`). **None in this change's blast radius** — all eight touched files pass under shuffle — but the suite is not order-independent.
 
 ## 11. Founder decisions outstanding
 
-1. **R10** — accept the narrowed repair window at 20s, or lower to 19s to restore it (`3000 + 19000 + 1500 = 23500 <= 24000`).
-2. **§8** — confirm the `decide.js` fence reading.
-3. The five items in §10 for separate tasking.
+All three resolved Sep 3, 2026:
+
+1. **R10** — ruled: **lower to 19s.** Shipped; see §5.
+2. **§8** — the `decide.js` fence reading is **confirmed: not an edit.**
+3. **§10** — items 1-4, 6 and 7 stand as separate tasks; item 5 is closed.
+4. The `src/` change for R3 is **sanctioned as shipped.**

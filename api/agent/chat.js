@@ -32,23 +32,31 @@ export const config = { maxDuration: 30 };
 //   maxDuration        30s  the platform ceiling (above)
 //   TURN_DEADLINE_MS   24s  every model call must be DONE by here, leaving ~6s
 //                           for the awaited Firestore writes after the gate
-//   GEMMA_TIMEOUT_MS   20s  the first (and only guaranteed) voice call
+//   GEMMA_TIMEOUT_MS   19s  the first (and only guaranteed) voice call
 //
-// Why 20s and not the 25s every other Gemma caller uses (forge/workshop-chat,
+// The whole budget has to hold at once:
+//   handler overhead (3s) + GEMMA_TIMEOUT_MS + MIN_REPAIR_MS (1.5s) <= 24s
+// i.e. 3 + 19 + 1.5 = 23.5s. That is what 19s buys over 20s: at 20s the sum was
+// 24.5s, half a second OVER the deadline, which silently un-budgeted the Phase
+// E1 directive-gate repair on any turn with a slow first call — `hasDirective`
+// could flip true→false on identical model output purely from timing, and fail
+// silently as a canned no-change line. Pinned in chat.timeout.test.js.
+//
+// Why not the 25s every other Gemma caller uses (forge/workshop-chat,
 // forge/watchlist-analysis, screener/chat, forge/watchlist-dialogue,
-// forge/expand-signal): this handler is the only one with a SECOND model call
-// (the Phase E1 directive gate) behind the same deadline. At 25s the first call
-// alone could outlive TURN_DEADLINE_MS and push the turn past maxDuration — the
+// forge/expand-signal): each of those has exactly ONE model call. This handler
+// has a second behind the same deadline, so 25s here would let the first call
+// alone outlive TURN_DEADLINE_MS and push the turn past maxDuration — the
 // platform then kills the function, and a platform kill produces a bare gateway
 // 504 with NO shadow log and NO honest client string. That is strictly worse
-// than the timeout it would be trying to avoid. 20s leaves the handler's own
-// overhead (auth + 5 sequential Firestore round trips, ~1-3s) inside 24s.
+// than the timeout it would be trying to avoid.
 //
 // Raised from 15s on Sep 3 2026 (voice-timeout incident): 15s cut Gemma off
-// with ~9s of the deadline unused.
+// with ~9s of the deadline unused. Landed at 19s rather than 20s on the review's
+// repair-window finding.
 // Exported so chat.timeout.test.js guards the real values rather than a copy of
 // them — a pinned constant that a test re-declares guards nothing.
-export const GEMMA_TIMEOUT_MS = 20_000;
+export const GEMMA_TIMEOUT_MS = 19_000;
 export const TURN_DEADLINE_MS = 24_000;
 
 // ==================== ELICITATION TARGET ====================
@@ -430,10 +438,10 @@ export default async function handler(req, res) {
     //     ask path), so an unclamped timer fires at `overhead + 20s` — a
     //     quantity with no relationship to the absolute deadline the gate is
     //     held to. Past ~4s of prologue that breaches TURN_DEADLINE_MS, and past
-    //     ~10s it fires AFTER maxDuration, i.e. after the platform has already
+    //     ~11s it fires AFTER maxDuration, i.e. after the platform has already
     //     killed the function: the bare gateway 504 with no shadow log and no
     //     honest client string that this whole change exists to prevent. The 15s
-    //     value tolerated 15.1s of prologue; 20s alone tolerates 10.1s.
+    //     value tolerated 15.1s of prologue; 19s alone tolerates 11.1s.
     //     Clamping restores an absolute guarantee instead of an assumption, and
     //     mirrors what directiveGate.js:105-107 already does for its own call.
     const controller = new AbortController();
