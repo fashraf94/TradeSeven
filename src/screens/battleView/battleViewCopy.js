@@ -36,8 +36,24 @@ const etDate = (raw) => {
   return d.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
 };
 
-/** The board's tier keys as the words a player reads on the tier headers. */
-const TIER_LABEL = Object.freeze({ star: 'Star', core: 'Core', support: 'Support' });
+/**
+ * A tier key as the word a player reads on the tier header.
+ *
+ * SHARED by `atDeployTier` (A2.1b) and `tradeCardLine` (A2.2), and written as
+ * a FUNCTION for a git reason as much as a style one (review L5-F1). A2.1b
+ * introduced this mapping as a frozen object, A2.2 then consumed it, and
+ * `git revert` of A2.1b — which D-76 requires to stay possible in isolation —
+ * matched that declaration and deleted it, leaving every trade card throwing
+ * at render. Nothing in either commit's diff resembles these lines, so the
+ * revert now leaves them alone. Verified by reverting A2.1b in a scratch
+ * worktree and running the suite.
+ */
+function tierLabel(tier) {
+  if (tier === 'star') return 'Star';
+  if (tier === 'core') return 'Core';
+  if (tier === 'support') return 'Support';
+  return null;
+}
 
 const money = (value) => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
@@ -112,15 +128,20 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // deploy date so it can never read as a decision made now. Gated by
   // selectDeployPlan.js — a tournament battle's plan and the algorithmic
   // fallback's template are SYSTEM strings and never render (C1).
+  // Null — the caller omits the section — when there is no deploy date to
+  // stamp (review L5-F6). D-76 requires the date precisely so the block reads
+  // as history; an undated `The plan at deploy` is a string the ruling does
+  // not contain, and the honest branch is the one `tierPrices` already takes
+  // when its inputs are missing: render nothing rather than something weaker.
   planAtDeploy: (iso) => {
     const d = etDate(iso);
-    return d ? `The plan at deploy · ${d}` : 'The plan at deploy';
+    return d ? `The plan at deploy · ${d}` : null;
   },
   // A row shows only its TIER's rationale, and only the sentences of it that
   // name the row's piece. The label says "tier" out loud, because the sentence
   // was written about the tier — never about this position alone.
   atDeployTier: (tier) => {
-    const label = TIER_LABEL[tier];
+    const label = tierLabel(tier);
     return label ? `At deploy · ${label} tier` : null;
   },
 
@@ -208,8 +229,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   tradeCardLine: (iso, symbolOut, symbolIn, tier) => {
     const t = etTime(iso);
     const pair = `${symbolOut ?? '—'} → ${symbolIn ?? '—'}`;
-    const tierLabel = TIER_LABEL[tier];
-    return [t, pair, tierLabel].filter(Boolean).join(' · ');
+    return [t, pair, tierLabel(tier)].filter(Boolean).join(' · ');
   },
   // The points the closed position locked in — a scoreboard fact, from the
   // trade record's own `lockedPoints`. Absent when the record carries none.
@@ -232,7 +252,16 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   checkCardLabel: (iso, label) => {
     const header = BATTLE_VIEW_COPY.atCheck(iso);
     if (!header) return label ?? null;
-    return label ? `${header} · ${label}` : header;
+    if (!label) return header;
+    // The two absence labels already END in "at this check" (D-65, D-69), so
+    // the full header in front of them said "check" three times in one line
+    // (review L5-F7). The time alone carries the same fact. Composed from the
+    // ruled strings either way — no third string is invented here.
+    if (label.includes('at this check')) {
+      const t = etTime(iso);
+      return t ? `${t} · ${label}` : label;
+    }
+    return `${header} · ${label}`;
   },
   readMore: 'Read more',
   // A run of consecutive checks that changed nothing a player can see (D-77):

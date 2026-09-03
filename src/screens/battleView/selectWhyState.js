@@ -72,7 +72,49 @@ export function guardrailForcedExit(evaluation) {
   return overrides.find((o) => o && o.action === GUARDRAIL_FORCED_EXIT) || null;
 }
 
-const cleanText = (value) => (typeof value === 'string' && value.trim() ? value : null);
+/**
+ * THE ONE MOTIVE-AUTHOR RULE (D-72 ruling 5, BUILD_RULES §9).
+ *
+ * Whether a rationale was written by the ENGINE rather than the model. Three
+ * shapes, all of them the cron's or the guardrail module's own sentence:
+ *
+ *   `Guardrail override (…): …`  agent-evaluate.js OVERWRITES haikuResult's
+ *                                rationale when a guardrail forces the pair.
+ *   `Guardrail override: …`      agentGuardrails.js's own statusMessage, which
+ *                                the R11 suppression pass persists verbatim.
+ *   `Risk manager: …`            the risk loop's trade rationale.
+ *   `Deterministic guardrail …`  R11's fallback when statusMessage is null.
+ *
+ * THE TEXT IS THE DISCRIMINATOR, NOT THE TRADE'S `source` (A2 review L1-F3 /
+ * L1-F4). `source` records who chose the EXIT, which is a different question
+ * from who wrote the SENTENCE, and it is wrong in both directions:
+ *   · a guardrail-forced swap that EXECUTES leaves `downgraded` false, so the
+ *     panel and the check card — which have no `source` at all — rendered the
+ *     cron's sentence as the agent's words;
+ *   · on the `reinforced_haiku` path (agentGuardrails.js ~468-497) the
+ *     guardrail agrees with a swap the model argued for and leaves its
+ *     rationale untouched, but the cron still stamps `source: 'guardrail'` —
+ *     which labelled the model's own first-person prose as the system's.
+ * One rule, one text, consumed by the panel, the check card and the trade
+ * card alike, so the tape cannot contradict itself about one tick.
+ *
+ * The prefixes are pinned against their writers by source tripwires in
+ * selectWhyState.test.js and buildTape.test.js: a reworded server string reds
+ * a row rather than silently re-attributing a sentence.
+ */
+export const ENGINE_MOTIVE_PREFIXES = Object.freeze([
+  'Guardrail override',
+  'Risk manager:',
+  'Deterministic guardrail enforcement',
+]);
+
+export function isEngineAuthoredMotive(text) {
+  if (typeof text !== 'string') return false;
+  const trimmed = text.trimStart();
+  return ENGINE_MOTIVE_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
+}
+
+const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
 /**
  * @param {object|null} evaluation  the latest evaluations[] entry, or null
@@ -182,6 +224,14 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
     };
   }
 
+  // A guardrail-forced swap that EXECUTED is not downgraded, so it reaches the
+  // ordinary SWAP and HOLD branches below carrying the cron's own sentence
+  // (review L1-F3). Naming its author is the whole of the fix: the words are
+  // still rendered verbatim, they are simply no longer implied to be the
+  // agent's. `null` where the model wrote them — an author line on every
+  // sentence would be noise.
+  const footer = isEngineAuthoredMotive(rationale) ? COPY.motiveSystem : null;
+
   if (evaluation.decision === 'SWAP') {
     const symbolOut = cleanText(evaluation.symbolOut);
     const symbolIn = cleanText(evaluation.symbolIn);
@@ -190,6 +240,7 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
       kind: WHY_KIND.SWAPPED,
       label: COPY.swappedLabel(symbolOut, symbolIn),
       rationale,
+      footer,
       symbolOut,
       symbolIn,
     };
@@ -198,7 +249,7 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
   // HOLD — and PROPOSAL, which held the position at the check pending an
   // approval the chat carries; the shipped launch mode is autopilot, so a
   // PROPOSAL entry is not reachable today (noted in the Phase A handover).
-  return { ...base, kind: WHY_KIND.HELD, label: COPY.heldLabel, rationale };
+  return { ...base, kind: WHY_KIND.HELD, label: COPY.heldLabel, rationale, footer };
 }
 
 /**
@@ -346,6 +397,10 @@ export function selectTradesForSymbol(trades, symbol) {
       symbolOut: t.symbolOut ?? null,
       symbolIn: t.symbolIn ?? null,
       rationale: cleanText(t.rationale),
+      // WHOSE WORDS (review L5-F2). `This piece today` renders the SAME field
+      // the tape's trade card does; one rule, so the two cannot describe one
+      // swap differently. Null where the model wrote them.
+      footer: isEngineAuthoredMotive(t.rationale) ? COPY.motiveSystem : null,
     }))
     .sort((a, b) => (toMillis(a.at) ?? 0) - (toMillis(b.at) ?? 0));
 }

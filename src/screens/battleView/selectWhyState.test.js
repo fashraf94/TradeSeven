@@ -339,14 +339,28 @@ describe('selectTradesForSymbol — the piece\'s trades today, engine text verba
     expect(rows[0]).toEqual({
       at: '2026-09-01T15:02:00.000Z', symbolOut: 'MU', symbolIn: 'SLB',
       rationale: 'MU rolled over; SLB leads energy.',
+      // The model wrote this one, so there is no author line (review L5-F2).
+      footer: null,
     });
     expect(rows[1].rationale).toBeNull();
+  });
+
+  it('MUTATION ROW (review L5-F2) — an ENGINE-authored swap reason is labelled here too', () => {
+    // `This piece today` renders the SAME field the tape's trade card does.
+    // Before this, one of the two surfaces named the author and the other did
+    // not — the same sentence, two different claims about who wrote it.
+    const forced = [{
+      symbolOut: 'SLB', symbolIn: 'DVN', swappedOutAt: '2026-09-01T17:31:00.000Z',
+      rationale: 'Guardrail override (guardrail_stopLoss): stop-loss breached on SLB. Forcing exit → DVN.',
+    }];
+    expect(selectTradesForSymbol(forced, 'SLB')[0].footer).toBe(COPY.motiveSystem);
+    expect(selectTradesForSymbol(forced, 'SLB')[0].footer).toBe('The system\'s reason');
   });
 
   it('never surfaces the machinery-provenance code (exitReason) — the attribution class hazard 12 keeps off the screen (F10)', () => {
     for (const row of selectTradesForSymbol(TRADES, 'SLB')) {
       expect(row).not.toHaveProperty('exitReason');
-      expect(JSON.stringify(row)).not.toMatch(/haiku|guardrail/);
+      expect(JSON.stringify(row)).not.toMatch(/haiku_decision|guardrail_/);
     }
   });
 

@@ -119,6 +119,24 @@ function etMinutesOfInstant(ms) {
 }
 
 /**
+ * The ET CALENDAR DAY of a true instant, as `YYYY-M-D`, in the same shape the
+ * wall-clock market-state Dates yield from their local fields. Intl is correct
+ * for an instant; the wall clock's fields are read directly. Mixing the two
+ * clocks is the timezone defect this module already guards against, so both
+ * sides of any comparison must be built the way its own producer builds them.
+ */
+function etDayOfInstant(ms) {
+  if (ms == null) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: 'numeric', day: 'numeric',
+  }).formatToParts(new Date(ms));
+  const y = parts.find((p) => p.type === 'year')?.value;
+  const m = parts.find((p) => p.type === 'month')?.value;
+  const d = parts.find((p) => p.type === 'day')?.value;
+  return y && m && d ? `${Number(y)}-${Number(m)}-${Number(d)}` : null;
+}
+
+/**
  * Derive the phase (framework §4). Never stored — always derived.
  *
  * PRE_OPEN's marker is `scoreState.evaluationCount`, NOT a statusFeed entry.
@@ -316,13 +334,26 @@ export function deriveDueAt(lastCheckedAt, marketState) {
 }
 
 /**
- * Whether the check that just landed is the LAST one of this session (D-71).
+ * Whether the check that just landed is the LAST one of THIS session (D-71).
  *
- * TRUE when the battle is LIVE, a check has landed, and deriveDueAt() returns
- * null — which it does for exactly one reason during LIVE: the +15 min
- * candidate lands at or after the session close, so there is no further
- * scheduled check today. A starved cron BEFORE the close still has a non-null
- * `dueAt` (it is late, not finished), so the two states cannot be confused.
+ * Two conjuncts, and the second is not optional (A2 review L1-F1):
+ *
+ *   1. `deriveDueAt()` returns null during LIVE — the +15 min candidate lands
+ *      at or after the session close, so no further check is scheduled today.
+ *      A starved cron BEFORE the close still has a non-null `dueAt` (it is
+ *      late, not finished), so those two states cannot be confused.
+ *   2. The check happened TODAY. The clamp inside deriveDueAt compares ET
+ *      minutes-past-midnight on both sides and is deliberately blind to the
+ *      DATE — correct for its own job, and wrong for this one: on day 2 of a
+ *      multi-day battle, yesterday's 3:50 PM check also clamps to null, and
+ *      without this conjunct both surfaces would open the morning claiming
+ *      `Checked 3:50 PM · last check today` about YESTERDAY while a full
+ *      session of checks was still to come.
+ *
+ * "Today" is the ET calendar day of the session close the market state names
+ * — not the viewer's local day, and not `Date.now()`: the close is the
+ * session this line is describing, and it is the same wall clock the clamp
+ * already reads.
  *
  * ONE derivation, exposed as one adapter field, because both the Desk and the
  * Battle View turn line render from it: testing the null in two places is how
@@ -331,7 +362,14 @@ export function deriveDueAt(lastCheckedAt, marketState) {
 export function deriveLastCheckOfSession(phase, lastCheckedAt, marketState) {
   if (phase !== PHASE.LIVE) return false;
   if (!lastCheckedAt) return false;
-  return deriveDueAt(lastCheckedAt, marketState) === null;
+  if (deriveDueAt(lastCheckedAt, marketState) !== null) return false;
+
+  // The session's own day, from the wall-clock close the clamp uses. With no
+  // market state there is no session to be the last check of.
+  const close = marketState?.nextCloseTime;
+  if (!close || typeof close.getFullYear !== 'function') return false;
+  const sessionDay = `${close.getFullYear()}-${close.getMonth() + 1}-${close.getDate()}`;
+  return etDayOfInstant(toMillis(lastCheckedAt)) === sessionDay;
 }
 
 /**

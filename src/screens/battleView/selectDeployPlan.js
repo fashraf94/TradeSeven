@@ -11,9 +11,9 @@
 // (agentEvalPromptAssembly.js:759-771). They are the deploy decision's own
 // persisted output, not narration written for a screen.
 //
-// WHY IT IS GATED (C1 — the agent's own words only). Two SYSTEM strings share
-// these exact keys, and rendering either under the agent's name would put
-// words in its mouth that no model wrote:
+// WHY IT IS GATED (C1 — the agent's own words only). THREE system strings
+// share these exact keys, and rendering any of them under the agent's name
+// would put words in its mouth that no model wrote:
 //
 //   (a) The prescribed tournament deploy writes `strategyBrief: 'Prescribed
 //       tournament deployment'` and `innerMonologue.strategy: 'Prescribed
@@ -25,6 +25,11 @@
 //       carries no `models` stamp — so the strategy string IS the gate. It is
 //       brittle by nature; the source tripwire in the test file reds if
 //       decide.js rewords it, rather than letting the gate fail open.
+//   (c) The STRATEGY call's own fallback writes `strategyBrief: 'Automated
+//       selection based on archetype fitness scores.'` when Sonnet does not
+//       use the tool (decide.js ~428-431) — independently reachable from (b),
+//       because Haiku can still author the tier rationales on that deploy.
+//       Only the BRIEF is suppressed there; the rationales are the model's.
 //
 // AND A THIRD RULE, IN THE SHAPE OF THE DATA. The rationales are per TIER, not
 // per position: `coreRationale` is about the two Core picks together. A row
@@ -46,6 +51,20 @@ import { extractSentences } from './selectWhyState';
  * selectDeployPlan.test.js.
  */
 export const FALLBACK_STRATEGY_PREFIX = 'Algorithmic selection';
+
+/**
+ * The brief `decide.js` writes when SONNET does not use the `submit_strategy`
+ * tool (`decide.js` ~428-431). A different fallback from the portfolio one
+ * above and independently reachable: the strategy call can fall back while
+ * Haiku still authors the tier rationales, so `innerMonologue.strategy` reads
+ * as a model's and gate (b) misses it entirely (A2 review L1-F2).
+ *
+ * The repo already refuses to quote this exact sentence elsewhere — the deploy
+ * ceremony stamps `fallbackKind: 'strategy'` and withholds the excerpt
+ * (`decide.js` ~477-479, `ceremonyData.js` `getMonologueQuote`) — so rendering
+ * it as "the plan at deploy" would have been the one surface that did.
+ */
+export const FALLBACK_BRIEF_PREFIX = 'Automated selection based on';
 
 /** The tier keys the board renders, mapped to their persisted rationale field. */
 export const TIER_RATIONALE_KEY = Object.freeze({
@@ -81,7 +100,11 @@ export function selectDeployPlan(battle) {
   const strategy = cleanText(monologue.strategy);
   if (strategy && strategy.startsWith(FALLBACK_STRATEGY_PREFIX)) return null;
 
-  const brief = cleanText(context.strategyBrief);
+  // GATE (a2) — the strategy-call fallback's brief. The brief alone is
+  // suppressed, not the whole plan: Haiku's tier rationales on this deploy are
+  // genuinely the model's, and a row's sentences stay honest.
+  const rawBrief = cleanText(context.strategyBrief);
+  const brief = rawBrief && rawBrief.startsWith(FALLBACK_BRIEF_PREFIX) ? null : rawBrief;
   const rationales = {
     star: cleanText(monologue[TIER_RATIONALE_KEY.star]),
     core: cleanText(monologue[TIER_RATIONALE_KEY.core]),

@@ -85,6 +85,23 @@ describe('the trade card', () => {
     expect(html).not.toContain('haiku');
   });
 
+  it('the provenance-code guard CAN fail: the cron embeds `guardrail_stopLoss` in the rationale it writes (review L5-F3)', () => {
+    // The HOSTILE RENDER row above asserts `not.toContain('guardrail_')`
+    // against a fixture whose rationale never had the token — a row that
+    // cannot fail under the defect it names. This one uses the string the cron
+    // ACTUALLY writes (agent-evaluate.js ~2121). It is recorded as a copy
+    // question for the founder, not silently edited: the sentence is the
+    // engine's own and C1 renders a motive verbatim. What ships today is the
+    // token, correctly labelled `The system's reason`.
+    const forced = { ...HOSTILE_TRADE, source: 'guardrail', rationale: 'Guardrail override (guardrail_stopLoss): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.' };
+    const html = tradeHtml(forced);
+    expect(html).toContain('The system&#x27;s reason');
+    // DOCUMENTED, NOT ASSERTED-AWAY: the token is on screen inside the
+    // engine's verbatim sentence. If the founder rules it must go, this row is
+    // where the expectation flips.
+    expect(html).toContain('guardrail_stopLoss');
+  });
+
   it('never renders the feed `message` — it is the status line, not the motive (hazard 24)', () => {
     expect(tradeHtml()).not.toContain('Rotated the core slot.');
   });

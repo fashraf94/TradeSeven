@@ -661,9 +661,14 @@ export default function AgentChat({
 
   // ── Auto-scroll on new messages ────────────────────────────────────────────
 
+  // A2.2 (review L2-F7): a check or trade card landing at the bottom is new
+  // content in a stream whose whole premise is "newest at the bottom", and
+  // `messages.length` does not move when one arrives. `tapeEntries` is null
+  // flag-off, so the second dep is a constant there and the shipped scroll
+  // behaviour is unchanged.
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+  }, [messages.length, tapeEntries?.length ?? 0]);
 
   // ── Composer prefill (Phase A — the Why? door) ─────────────────────────────
   useEffect(() => {
@@ -978,7 +983,15 @@ export default function AgentChat({
         ...(controllerLayout ? { overscrollBehavior: 'contain' } : {}),
         ...(controllerLayout && listCollapsed ? { display: 'none' } : {}),
       }}>
-        {messages.length === 0 && tradeEvents.length === 0 ? (
+        {/* The empty state asks whether the TIMELINE is empty, not whether two
+            of its inputs are (review L1-F8 / L2-F1 / L2-F2). Flag-off the two
+            questions have the same answer — `combinedTimeline` is exactly
+            `messages` plus `tradeEvents` — so this is byte-identical there.
+            Under the flag `tradeEvents` no longer feeds the stream, and the
+            old test both SUPPRESSED a tape of check cards on a battle with no
+            chat yet, and left a blank region on a legacy doc with feed swap
+            entries but no `trades[]`. */}
+        {combinedTimeline.length === 0 ? (
           <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
         ) : (
           combinedTimeline.map((item, idx) => {

@@ -21,10 +21,9 @@ import {
   buildCheckEntries,
   collapseQuietChecks,
   TAPE_KIND,
-  AGENT_TRADE_SOURCE,
   MIN_RUN,
 } from './buildTape';
-import { WHY_KIND } from './selectWhyState';
+import { WHY_KIND, isEngineAuthoredMotive, ENGINE_MOTIVE_PREFIXES } from './selectWhyState';
 import { deriveReceipts } from './deriveReceipts';
 
 const T = (hhmm) => `2026-09-01T${hhmm}:00.000Z`;
@@ -136,29 +135,66 @@ describe('the motive and its author (ruling 5)', () => {
 
   it('MUTATION ROW — the risk loop, the guardrail path and R11 are the SYSTEM\'s', () => {
     const guardrail = { ...HAIKU_TRADE, source: 'guardrail', rationale: 'Guardrail override (guardrail_stopLoss): forcing exit.' };
-    const r11 = { ...HAIKU_TRADE, source: 'guardrail', rationale: 'Deterministic guardrail enforcement during gameplan suppression (R11).' };
+    const r11status = { ...HAIKU_TRADE, source: 'guardrail', rationale: 'Guardrail override: stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.' };
+    const r11fallback = { ...HAIKU_TRADE, source: 'guardrail', rationale: 'Deterministic guardrail enforcement during gameplan suppression (R11).' };
     const archetype = { ...HAIKU_TRADE, source: 'archetype', rationale: 'Risk manager: stagnation.' };
     expect(buildTradeEntries([RISK_TRADE], FEED)[0].motiveIsAgent).toBe(false);
     expect(buildTradeEntries([guardrail], FEED)[0].motiveIsAgent).toBe(false);
-    expect(buildTradeEntries([r11], FEED)[0].motiveIsAgent).toBe(false);
+    expect(buildTradeEntries([r11status], FEED)[0].motiveIsAgent).toBe(false);
+    expect(buildTradeEntries([r11fallback], FEED)[0].motiveIsAgent).toBe(false);
     expect(buildTradeEntries([archetype], FEED)[0].motiveIsAgent).toBe(false);
-    // An unknown or missing source defaults to the SYSTEM — under-crediting
-    // the agent is the safe direction under C1.
-    expect(buildTradeEntries([{ ...HAIKU_TRADE, source: undefined }], FEED)[0].motiveIsAgent).toBe(false);
-    expect(buildTradeEntries([{ ...HAIKU_TRADE, source: 'something_new' }], FEED)[0].motiveIsAgent).toBe(false);
   });
 
-  it('TRIPWIRE — the ruling\'s three SYSTEM rationale shapes all carry a non-agent source in the cron', () => {
-    // The discriminator is `source`, read once (BUILD_RULES §9). This row
-    // proves it agrees with the ruling's description of the three cases, so
-    // the two can never be argued to have drifted apart.
+  it('MUTATION ROW (review L1-F4) — a `reinforced_haiku` swap keeps THE AGENT\'S words, whatever `source` says', () => {
+    // agentGuardrails.js ~468-497: the guardrail AGREES with a swap the model
+    // argued for, leaves its rationale untouched, and returns a `guardrail_*`
+    // sourceNote anyway — so the cron stamps `source: 'guardrail'`
+    // (agent-evaluate.js ~2196-2236) over the model's own first-person prose.
+    // `source` records who chose the EXIT; the footer names who wrote the
+    // SENTENCE. Discriminating on `source` labelled the agent's argument as
+    // the system's.
+    const reinforced = {
+      ...HAIKU_TRADE,
+      source: 'guardrail',
+      rationale: "I'm cutting GILD here — it lost the 50-day and my thesis was the breakout, not the bounce. MOS has the better setup into the close.",
+    };
+    expect(buildTradeEntries([reinforced], FEED)[0].motiveIsAgent).toBe(true);
+  });
+
+  it('MUTATION ROW (review L1-F3) — the TEXT decides, so the check card and the trade card agree about one tick', () => {
+    // A guardrail-forced swap that EXECUTED is not downgraded, so the check
+    // card reaches selectWhyState's ordinary SWAP branch — which has no
+    // `source` to read at all. One rule over the text is what keeps the two
+    // cards from labelling the same sentence differently.
+    const forcedRationale = 'Guardrail override (guardrail_stopLoss): Guardrail override: stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.';
+    const [trade] = buildTradeEntries([{ ...HAIKU_TRADE, source: 'guardrail', rationale: forcedRationale }], FEED);
+    const [check] = buildCheckEntries([{
+      evalId: 'eval_009', timestamp: T('17:31'), decision: 'SWAP', downgraded: false,
+      symbolOut: 'GILD', symbolIn: 'MOS', rationale: forcedRationale,
+      guardrailSourceNote: 'guardrail_stopLoss',
+      guardrailOverrides: [{ action: 'forced_exit', symbol: 'GILD', replacementSymbol: 'MOS' }],
+    }], {}, []);
+    expect(trade.motiveIsAgent).toBe(false);
+    expect(check.footer).toBe('The system\'s reason');
+    expect(isEngineAuthoredMotive(forcedRationale)).toBe(true);
+  });
+
+  it('TRIPWIRE — the ruling\'s SYSTEM rationale shapes are the ones the engine still writes', () => {
+    // The discriminator is THE TEXT, exactly as ruling 5 describes it. These
+    // rows pin each prefix to its writer: a reworded server string reds here
+    // rather than silently re-attributing a sentence to the agent.
     const cron = readFileSync(new URL('../../../api/cron/agent-evaluate.js', import.meta.url), 'utf8');
+    const guardrails = readFileSync(new URL('../../../api/_utils/agentGuardrails.js', import.meta.url), 'utf8');
     expect(cron).toContain('rationale: `Risk manager: ${riskResult.detail}`');
-    expect(cron).toContain("source: riskResult.reason === 'stagnation' ? 'archetype' : 'risk_manager'");
     expect(cron).toContain('rationale: `Guardrail override (${result.sourceNote || \'hard\'}): ${overrideNote}`');
-    expect(cron).toContain("const swapSource = haikuSwapReason === 'haiku_decision' ? 'haiku' : 'guardrail'");
-    expect(cron).toContain("Deterministic guardrail enforcement during gameplan suppression (R11)");
-    expect(AGENT_TRADE_SOURCE).toBe('haiku');
+    expect(cron).toContain('Deterministic guardrail enforcement during gameplan suppression (R11)');
+    expect(guardrails).toContain('statusMessage: `Guardrail override: ');
+    for (const prefix of ENGINE_MOTIVE_PREFIXES) {
+      expect(isEngineAuthoredMotive(`${prefix} something`)).toBe(true);
+    }
+    // …and a model's own sentence that merely MENTIONS a guardrail is not one.
+    expect(isEngineAuthoredMotive('The guardrail override would have fired, so I cut it myself.')).toBe(false);
+    expect(isEngineAuthoredMotive(null)).toBe(false);
   });
 
   it('`message` is never the motive (hazard 24)', () => {
@@ -175,10 +211,26 @@ describe('the directive echo — joined from the feed', () => {
     expect(buildTradeEntries([HAIKU_TRADE], FEED)[0].fromDirective).toBe(true);
   });
 
-  it('a risk-loop swap joins by SYMBOL PAIR — its feed entry carries evalId: null (hazard 35)', () => {
+  it('a swap joins by SYMBOL PAIR when its feed entry carries evalId: null (hazard 35)', () => {
     const withDirective = FEED.map((e) => (e.evalId === null ? { ...e, directiveThreadId: 'dir_2' } : e));
-    expect(buildTradeEntries([RISK_TRADE], withDirective)[0].fromDirective).toBe(true);
-    expect(buildTradeEntries([RISK_TRADE], FEED)[0].fromDirective).toBe(false);
+    // The risk loop's own motive is engine-authored, so the echo is withheld
+    // by the rule below whatever the join finds — use a model-authored swap
+    // on the same pair to prove the JOIN works.
+    const modelSwapOnRiskPair = { ...RISK_TRADE, evaluationId: null, source: 'haiku', rationale: 'Rotating CF into DVN on relative strength.' };
+    expect(buildTradeEntries([modelSwapOnRiskPair], withDirective)[0].fromDirective).toBe(true);
+    expect(buildTradeEntries([modelSwapOnRiskPair], FEED)[0].fromDirective).toBe(false);
+  });
+
+  it('MUTATION ROW (review L1-F5) — the echo is WITHHELD when the engine wrote the motive', () => {
+    // On a guardrail-forced tick the feed's `swap` entry keeps the model's
+    // PRE-override `directiveThreadId` while the pair is the guardrail's
+    // (agent-evaluate.js ~2116-2124 preserves it through the rewrite), so the
+    // echo would credit the user's directive with a swap it did not produce.
+    // `↳ from directive` is D-51's `Acted` — it is a claim, not decoration.
+    const forced = { ...HAIKU_TRADE, source: 'guardrail', rationale: 'Guardrail override (guardrail_stopLoss): forcing exit.' };
+    expect(buildTradeEntries([forced], FEED)[0].fromDirective).toBe(false);
+    // …and the model's own directive-driven swap still carries it.
+    expect(buildTradeEntries([HAIKU_TRADE], FEED)[0].fromDirective).toBe(true);
   });
 
   it('MUTATION ROW — among repeated pairs the NEAREST entry in time wins, not the last written', () => {
@@ -313,6 +365,25 @@ describe('`N checks · no change` — every conjunct of D-77', () => {
     expect(run(quiet)[0].count).toBe(4);
   });
 
+  it('the run key carries the RECEIPT STATE as well as the thread (D-77 "receipts unchanged")', () => {
+    // Review L4-F3: the state half is near-inert in practice — a state change
+    // with the SAME current thread means a completion (`expired`), which lands
+    // on every check at once. It is composed anyway so D-77's wording is
+    // literally true, and this row pins the composition so it is not silently
+    // dropped to the thread id alone.
+    const exchanges = [{ timestamp: T('13:50'), directiveThreadId: 'dir_1' }];
+    const filed = deriveReceipts(exchanges, { directiveThreadId: 'dir_1' }, 'active');
+    const expired = deriveReceipts(exchanges, { directiveThreadId: 'dir_1' }, 'completed');
+    expect(filed.dir_1.state).toBe('filed');
+    expect(expired.dir_1.state).toBe('expired');
+    const keyUnder = (receipts) => buildCheckEntries([check('14:00')], receipts, exchanges)[0].runKey;
+    expect(keyUnder(filed)).toContain('dir_1:filed');
+    expect(keyUnder(expired)).toContain('dir_1:expired');
+    expect(keyUnder(filed)).not.toBe(keyUnder(expired));
+    // …and with no directive at all the key still carries the banked score.
+    expect(buildCheckEntries([check('14:00')], {}, [])[0].runKey).toBe('40|');
+  });
+
   it('MUTATION ROW — a TRADE between two quiet checks breaks the run: the position set changed', () => {
     // This is what makes "positions unchanged" true by construction — every
     // executed swap is a card in this same stream, so it breaks adjacency.
@@ -337,6 +408,46 @@ describe('`N checks · no change` — every conjunct of D-77', () => {
     expect(run([message])).toEqual([message]);
     expect(run([])).toEqual([]);
     expect(run(null)).toEqual([]);
+  });
+});
+
+describe('ruling 9 — every other feed action renders NOTHING (hazards 32, 33)', () => {
+  it('MUTATION ROW — a feed full of non-swap actions produces no tape entry at all', () => {
+    // The guarantee held only because `buildTape` never reads `entry.action`
+    // (review L5-F4) — nothing named it, so a change that re-read the feed
+    // would have tripped no row. These are the actions the Phase 0 report
+    // enumerates as the ones that must render nothing.
+    const noise = [
+      { timestamp: T('14:00'), action: 'hold', evalId: 'eval_1400', message: 'Holding the book.' },
+      { timestamp: T('14:15'), action: 'trade_narration', message: 'Agent explained the latest trade.' },
+      { timestamp: T('14:30'), action: 'first_message', message: 'Deployed.' },
+      { timestamp: T('14:45'), action: 'eval_degraded', message: 'Evaluation engine degraded this tick (timeout).' },
+      { timestamp: T('15:00'), action: 'guardrail_block', message: 'Guardrail blocked the swap.' },
+      { timestamp: T('15:15'), action: 'watchlist_refresh', message: 'Watchlist refreshed.' },
+      { timestamp: T('15:30'), action: 'guardrail_forced_swap', symbolOut: 'MU', symbolIn: 'NVDA', message: 'Forcing exit.' },
+    ];
+    expect(buildTape({ trades: [], statusFeed: noise, evaluations: [], receipts: {}, chatExchanges: [] })).toEqual([]);
+  });
+
+  it('a `hold` feed entry never becomes a second card for a tick the CHECK card owns (hazard 33)', () => {
+    const held = check('14:00');
+    const holdLine = [{ timestamp: T('14:00'), action: 'hold', evalId: held.evalId, message: 'Holding the book.' }];
+    const entries = buildTape({ trades: [], statusFeed: holdLine, evaluations: [held], receipts: {}, chatExchanges: [] });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]._type).toBe(TAPE_KIND.CHECK);
+    expect(JSON.stringify(entries)).not.toContain('Holding the book.');
+  });
+
+  it('a `trade_narration` feed TWIN never becomes a second trade (hazard 32)', () => {
+    // The narration's own exchange stays a message; its feed twin renders
+    // nothing, so one swap is never two events on the tape.
+    const twin = [
+      FEED[0],
+      { timestamp: T('17:32'), action: 'trade_narration', symbolOut: 'GILD', symbolIn: 'MOS', message: 'Agent explained the latest trade.' },
+    ];
+    const entries = buildTradeEntries([HAIKU_TRADE], twin);
+    expect(entries).toHaveLength(1);
+    expect(JSON.stringify(entries)).not.toContain('explained');
   });
 });
 

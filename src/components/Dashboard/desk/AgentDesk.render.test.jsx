@@ -10,6 +10,7 @@ import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import AgentDesk from './AgentDesk.jsx';
+import { buildBaggerbombAdapter } from '../../../adapters/baggerbombAdapter';
 
 // The alert visual owns timers and framer-motion state that add nothing to the
 // assertions below; the panel's own behaviour is not what is under test here.
@@ -95,6 +96,27 @@ describe('posture line — discrete, never continuous', () => {
     const html = render({ lastCheckedAt: null, nextDecisionAt: null, lastCheckOfSession: true });
     expect(html).toContain('First check coming up');
     expect(html).not.toContain('last check today');
+  });
+
+  it('D-71 COMPOSITION (review L3-F3) — document → adapter → Desk, so the seam itself is guarded', () => {
+    // The three rows above inject `lastCheckOfSession` by hand; the adapter
+    // rows exercise the derivation alone. Neither sees the composition, and
+    // that is exactly the seam a false line fell through: both halves were
+    // green while the product was wrong for a prior-session stamp.
+    const doc = (lastScoredAt) => ({ id: 'b1', status: 'active', scoreState: { evaluationCount: 9, lastScoredAt }, portfolio: {} });
+    const wed = {
+      isOpen: true, state: 'OPEN',
+      nextOpenTime: new Date(2026, 8, 3, 9, 30),
+      nextCloseTime: new Date(2026, 8, 2, 16, 0),
+      isEarlyClose: false,
+    };
+    const at = (battle, now) => renderToString(
+      <AgentDesk sync={buildBaggerbombAdapter(battle, null, null, now, wed)} accent="#5eead4" />,
+    );
+    // Wednesday 9:31 AM ET, with TUESDAY's 3:50 PM stamp still on the doc.
+    expect(at(doc('2026-09-01T19:50:00.000Z'), '2026-09-02T13:31:00.000Z')).not.toContain('last check today');
+    // …and Wednesday's own last check does say so.
+    expect(at(doc('2026-09-02T19:50:00.000Z'), '2026-09-02T19:55:00.000Z')).toContain('Checked 3:50 PM · last check today');
   });
 
   it('LIVE with no eval yet says a check is coming — never a fabricated time', () => {

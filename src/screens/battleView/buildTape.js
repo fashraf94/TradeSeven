@@ -29,16 +29,19 @@
 // loop, the guardrail path and the R11 pass, that text is the SYSTEM's
 // sentence (`Risk manager: …`, `Guardrail override (…): …`, a statusMessage) —
 // rendering it unlabelled would put the system's words in the agent's mouth
-// (C1). The discriminator is the persisted `source` on the trade record, not a
-// prefix match on the text: one persisted fact, read once. `source` itself is
-// never RENDERED (hazard 12, D-64) — it decides which footer to show.
+// (C1). The discriminator is `isEngineAuthoredMotive` in selectWhyState.js —
+// THE TEXT, exactly as ruling 5 describes it, and the same rule the Why? panel
+// and the check card use, so the tape cannot contradict itself about one tick.
+// It is deliberately NOT the trade's `source`: that records who chose the
+// EXIT, which is a different question from who wrote the SENTENCE, and it was
+// wrong in both directions (review L1-F3 / L1-F4).
 //
 // `message` IS NEVER THE MOTIVE (hazard 24): the feed's `message` is the
 // optional `status_feed_update`, null on a legal SWAP, and on a
 // guardrail-forced swap it is the model's PRE-override line.
 
 import { toIso, toMillis } from '../../adapters/baggerbombAdapter';
-import { selectWhyState, splitSentences } from './selectWhyState';
+import { selectWhyState, splitSentences, isEngineAuthoredMotive } from './selectWhyState';
 import { directiveFilings } from './deriveReceipts';
 
 export const TAPE_KIND = Object.freeze({
@@ -46,15 +49,6 @@ export const TAPE_KIND = Object.freeze({
   CHECK: 'check',
   CHECK_RUN: 'checkRun',
 });
-
-/**
- * The one `source` value that means a model wrote the rationale. Everything
- * else — `guardrail`, `risk_manager`, `archetype`, and any source added later
- * — is the system's own sentence and is labelled as such. Defaulting the
- * UNKNOWN case to the system is the safe direction under C1: under-crediting
- * the agent is a smaller error than putting words in its mouth.
- */
-export const AGENT_TRADE_SOURCE = 'haiku';
 
 const cleanText = (value) => (typeof value === 'string' && value.trim() ? value : null);
 
@@ -115,6 +109,7 @@ export function buildTradeEntries(trades, statusFeed) {
     const ms = toMillis(at);
     if (ms == null) continue;
     const feed = joinFeedEntry(trade, feedByEvalId, feedByPair);
+    const engineAuthored = isEngineAuthoredMotive(trade.rationale);
     entries.push({
       _type: TAPE_KIND.TRADE,
       id: `tape-trade-${ms}-${trade.symbolOut ?? ''}-${trade.symbolIn ?? ''}`,
@@ -128,10 +123,18 @@ export function buildTradeEntries(trades, statusFeed) {
         : null,
       motive: cleanText(trade.rationale),
       // The author of the motive — the footer, not the text.
-      motiveIsAgent: trade.source === AGENT_TRADE_SOURCE,
+      motiveIsAgent: !engineAuthored,
       // The model's own echo of the directive it was acting on, on the feed
-      // entry for this swap. The receipt vocabulary's `Acted` (D-51).
-      fromDirective: Boolean(feed?.directiveThreadId),
+      // entry for this swap. The receipt vocabulary's `Acted` (D-51) — it
+      // claims the USER'S DIRECTIVE produced this swap.
+      //
+      // Withheld when the engine wrote the motive (review L1-F5): on a
+      // guardrail-forced tick the feed's `swap` entry keeps the model's
+      // PRE-override `directiveThreadId` while the pair is the guardrail's
+      // (agent-evaluate.js ~2116-2124 preserves it through the rewrite), so
+      // the echo would credit the user's directive with a swap the guardrail
+      // chose.
+      fromDirective: Boolean(feed?.directiveThreadId) && !engineAuthored,
     });
   }
   return entries;
@@ -189,6 +192,10 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges) {
       at,
       kind: state.kind,
       label: state.label,
+      // WHOSE WORDS (review L5-F2). The check card renders the same rationale
+      // the trade card does; without this it was the one surface of the three
+      // that showed an engine-authored sentence unlabelled.
+      footer: state.footer,
       triggers: state.triggers,
       rationale,
       firstSentence: splitSentences(rationale)[0] ?? null,

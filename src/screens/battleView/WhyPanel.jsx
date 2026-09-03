@@ -131,6 +131,11 @@ export default function WhyPanel({
     ? COPY.notNamedAtCheck(state.checkedAt)
     : null;
 
+  // The plan's label carries the deploy date (D-76 gate c). Null when the doc
+  // has no usable date, and the section is then absent whole rather than
+  // dropping to an undated label the ruling does not contain (review L5-F6).
+  const planLabel = deployPlan ? COPY.planAtDeploy(deployPlan.activatedAt) : null;
+
   return (
     <motion.section
       role="region"
@@ -175,6 +180,11 @@ export default function WhyPanel({
                   {COPY.tradeLine(t.at, t.symbolOut, t.symbolIn)}
                 </div>
                 <Rationale text={t.rationale} symbol={symbol} />
+                {t.footer && (
+                  <div style={{ fontSize: 10.5, color: cssVar('text-muted'), letterSpacing: '0.02em' }}>
+                    {t.footer}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -234,20 +244,20 @@ export default function WhyPanel({
         {/* 4. The plan at deploy — history, never a current decision. The row
                shows its TIER's sentences that name it; the book shows the
                brief. Absent whole when the caller gates it off. */}
-        {isBook && deployPlan?.brief && (
+        {isBook && deployPlan?.brief && planLabel && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={eyebrow}>{COPY.planAtDeploy(deployPlan.activatedAt)}</div>
+            <div style={eyebrow}>{planLabel}</div>
             <Rationale text={deployPlan.brief} symbol={symbol} />
           </div>
         )}
-        {!isBook && deployPlanForSymbol && (
+        {!isBook && deployPlanForSymbol && planLabel && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={eyebrow}>{COPY.atDeployTier(deployPlanForSymbol.tier)}</div>
             {deployPlanForSymbol.sentences.map((sentence, i) => (
               <Rationale key={`d-${i}`} text={sentence} symbol={symbol} />
             ))}
             <div style={{ fontSize: 10.5, color: cssVar('text-muted'), letterSpacing: '0.02em' }}>
-              {COPY.planAtDeploy(deployPlan?.activatedAt ?? null)}
+              {planLabel}
             </div>
           </div>
         )}

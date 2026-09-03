@@ -645,6 +645,34 @@ describe('buildBaggerbombAdapter', () => {
       expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-11-27T17:00:00.000Z', MS.earlyCloseOpen)).toBe(false);
     });
 
+    it('MUTATION ROW (review L1-F1 / L3-F1) — YESTERDAY\'s last check is not today\'s', () => {
+      // The clamp inside deriveDueAt compares ET minutes-past-midnight and is
+      // blind to the DATE, so a prior-session stamp at/after (close − 15 min)
+      // also yields null. `scoreState.lastScoredAt` is a running stamp that is
+      // never reset at the day rollover, so on day 2+ of a multi-day battle
+      // this is the state from the open until the day's first tick lands —
+      // and without the calendar-day conjunct both surfaces opened the morning
+      // claiming `Checked 3:50 PM · last check today` about yesterday.
+      const wed = { ...MS.open, nextOpenTime: new Date(2026, 8, 3, 9, 30), nextCloseTime: new Date(2026, 8, 2, 16, 0) };
+      // Tue 15:50 ET — the last check of TUESDAY's session.
+      expect(deriveDueAt('2026-09-01T19:50:00.000Z', wed)).toBeNull();
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:50:00.000Z', wed)).toBe(false);
+      // …while WEDNESDAY's own 15:50 check is the last of the session.
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-02T19:50:00.000Z', wed)).toBe(true);
+    });
+
+    it('with no market state there is no session to be the last check of', () => {
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:50:00.000Z', null)).toBe(false);
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:50:00.000Z', {})).toBe(false);
+    });
+
+    it('the calendar day is ET, not the runner\'s zone', () => {
+      // A late-session ET check is the NEXT calendar day in UTC; comparing in
+      // any zone but ET would make the same instant land on the wrong day.
+      const close = { ...MS.open, nextCloseTime: new Date(2026, 8, 1, 16, 0) };
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:50:00.000Z', close)).toBe(true);
+    });
+
     it('the adapter exposes the field, so neither surface re-derives the null', () => {
       const a = build(makeBattle(), makeCache(), AGENT, NOW, MS.open);
       expect(a.lastCheckOfSession).toBe(deriveLastCheckOfSession(a.phase, a.lastCheckedAt, MS.open));

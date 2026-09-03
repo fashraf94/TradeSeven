@@ -105,8 +105,13 @@ export function CheckCard({ entry }) {
   const [expanded, setExpanded] = useState(false);
   if (!entry) return null;
   const wokenBy = COPY.wokenBy(entry.triggers);
-  const hasMore = Boolean(entry.rationale) && entry.rationale !== entry.firstSentence;
-  const text = expanded ? entry.rationale : entry.firstSentence;
+  // Both sides trimmed (review L2-F4): a rationale ending in a space or a
+  // newline — which model prose routinely does — differed from its own only
+  // sentence, so a one-sentence HOLD showed a `Read more` that revealed
+  // nothing but its own disappearance.
+  const full = typeof entry.rationale === 'string' ? entry.rationale.trim() : '';
+  const hasMore = Boolean(full) && full !== entry.firstSentence;
+  const text = expanded ? full : entry.firstSentence;
   return (
     <div data-tape-kind="check" data-tape-check-kind={entry.kind} style={card}>
       <div style={{ fontSize: 11.5, fontWeight: 700, color: LABEL_COLOR[entry.kind] || cssVar('text-secondary') }}>
@@ -114,6 +119,7 @@ export function CheckCard({ entry }) {
       </div>
       {wokenBy && <div style={footnote}>{wokenBy}</div>}
       {text && <p style={body}>{text}</p>}
+      {entry.footer && text && <div style={footnote}>{entry.footer}</div>}
       {hasMore && !expanded && (
         <div>
           <button type="button" style={linkButton} onClick={() => setExpanded(true)}>{COPY.readMore}</button>

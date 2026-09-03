@@ -15,7 +15,7 @@
 //
 // This file runs in the default 'node' environment — it reads files, no DOM.
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -164,6 +164,24 @@ const BASELINE = JSON.parse(readFileSync(BASELINE_PATH, 'utf8')).guarded;
 describe('token guard — no core-palette hex reintroduced in migrated files (A4a)', () => {
   it('guards every file Phase 2 migrated', () => {
     expect(Object.keys(BASELINE).sort()).toEqual([...GUARDED_FILES].sort());
+  });
+
+  it('every file in src/screens/battleView/ is on this list (hazard 34)', () => {
+    // The list is explicit, so a new surface added without a line here is
+    // simply unguarded and nothing goes red — the exact silence hazard 34
+    // exists to prevent. deskHonesty.test.js already scans the directory; this
+    // makes the theme guards agree with it by construction.
+    const dir = path.join(REPO_ROOT, 'src', 'screens', 'battleView');
+    const onDisk = readdirSync(dir)
+      .filter((f) => /\.(js|jsx)$/.test(f) && !/\.test\.(js|jsx)$/.test(f))
+      .map((f) => `src/screens/battleView/${f}`);
+    const listed = new Set(GUARDED_FILES);
+    const missing = onDisk.filter((f) => !listed.has(f));
+    expect(
+      missing,
+      `these src/screens/battleView/ files are not on the guarded list: ${missing.join(', ')}.\n`
+        + 'REMEDY: add each to GUARDED_FILES and regenerate the baseline IN THE SAME COMMIT (hazard 34).',
+    ).toEqual([]);
   });
 
   it.each(GUARDED_FILES)('%s has not gained a core-palette hex literal', (rel) => {

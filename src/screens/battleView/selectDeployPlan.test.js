@@ -177,8 +177,11 @@ describe('a row shows only the sentences of its tier that name it', () => {
 describe('the labels say deploy, and say it with a date (gate c)', () => {
   it('the plan is labelled with the deploy date, never as a current decision', () => {
     expect(COPY.planAtDeploy('2026-09-01T13:30:00.000Z')).toBe('The plan at deploy · Sep 1');
-    expect(COPY.planAtDeploy(null)).toBe('The plan at deploy');
-    expect(COPY.planAtDeploy('not a date')).toBe('The plan at deploy');
+    // MUTATION ROW (review L5-F6) — D-76 requires the date on every label, so
+    // no date means NO LABEL, and the panel omits the section whole rather
+    // than dropping to an undated variant the ruling does not contain.
+    expect(COPY.planAtDeploy(null)).toBeNull();
+    expect(COPY.planAtDeploy('not a date')).toBeNull();
   });
 
   it('a row\'s label names the TIER out loud — the sentence was written about the tier', () => {

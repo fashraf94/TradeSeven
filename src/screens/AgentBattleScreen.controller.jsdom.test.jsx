@@ -68,10 +68,18 @@ const LIVE_DOC = {
   ],
   directive: { text: 'Protect the lead into the close', expiry: 'end_of_battle', directiveThreadId: 't-1', createdAt: '2026-09-01T15:33:00.000Z' },
 };
+// The doc the hook hands back, overridable per test: the SCREEN's own gating —
+// selectDeployPlan, selectDeployPlanForSymbol, the tape's receipts input, the
+// Why? door's handler, the short guard — ships at this call site, and a review
+// pass (L4-F1, F4, F5, F6, F7) showed every one of them could be removed with
+// the whole suite green because nothing mounted the screen against a document
+// that would notice.
+let DOC = LIVE_DOC;
+const withDoc = (over) => { DOC = { ...LIVE_DOC, ...over }; };
 vi.mock('../hooks/useAgentBattle', () => ({
   default: () => ({
-    battle: LIVE_DOC, statusFeed: [], executionMode: 'copilot', pendingProposal: null,
-    strategyPreset: 'balanced', gameplanMeeting: null, chatExchanges: LIVE_DOC.chatExchanges,
+    battle: DOC, statusFeed: [], executionMode: 'copilot', pendingProposal: null,
+    strategyPreset: 'balanced', gameplanMeeting: null, chatExchanges: DOC.chatExchanges,
     feedBookmarks: [], loading: false,
   }),
 }));
@@ -99,6 +107,7 @@ beforeEach(() => {
   // AnimatePresence tab hand-off actually complete.
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-09-01T17:00:00.000Z'));
+  DOC = LIVE_DOC;
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -239,9 +248,9 @@ describe('the tape (A2.2, D-72) — one stream, built in the screen, rendered in
     // The pair, the time and the motive — from trades[], not the feed.
     expect(trade.textContent).toContain('11:02 AM · MU → SLB');
     expect(trade.textContent).toContain('MU rolled over; SLB leads energy.');
-    // No `source` on this record, so the motive is the system's by default —
-    // under-crediting the agent is the safe direction under C1.
-    expect(trade.textContent).toContain('The system\'s reason');
+    // The model wrote this sentence — no engine prefix — so it is the agent's
+    // words, whatever the record's `source` says (review L1-F3 / L1-F4).
+    expect(trade.textContent).toContain('The agent\'s own words');
     // The machinery code never reaches the screen (hazard 29, D-64).
     expect(trade.textContent).not.toContain('haiku_decision');
 
@@ -267,5 +276,120 @@ describe('the tape (A2.2, D-72) — one stream, built in the screen, rendered in
     expect(container.querySelectorAll('[data-tape-kind="trade"]')).toHaveLength(1);
     const pairMentions = container.innerHTML.split('MU → SLB').length - 1;
     expect(pairMentions).toBe(1);
+  });
+});
+
+describe('the SCREEN\'s own gating — the call sites, not the selectors (review L4)', () => {
+  const PLAN_CONTEXT = {
+    agentName: 'Aurora',
+    strategyBrief: 'Energy is the only sector with a bid this week; semis are extended.',
+    innerMonologue: {
+      strategy: 'Lean energy, fade the extended semis.',
+      starRationale: 'SLB is the cleanest energy breakout on the board. AAPL is the ballast.',
+      coreRationale: 'NVDA is the one semi I will hold here.',
+    },
+  };
+
+  it('the plan at deploy is WIRED — a row shows its tier\'s sentences that name it, and only those', () => {
+    withDoc({ gameMode: 'baggerbomb_agent', agentContext: PLAN_CONTEXT });
+    mount();
+    click(rowButtonFor('SLB'));
+    const panel = container.querySelector('[data-why-symbol="SLB"]');
+    expect(panel.textContent).toContain('At deploy · Star tier');
+    expect(panel.textContent).toContain('The plan at deploy · Sep 1');
+    expect(panel.textContent).toContain('SLB is the cleanest energy breakout on the board.');
+    // MUTATION ROW (L4-F6): a tier rationale is never presented as a
+    // position's — AAPL's sentence is in the SAME rationale and must not show.
+    expect(panel.textContent).not.toContain('AAPL is the ballast');
+    // …nor another tier's words, nor the brief (that is the book panel's).
+    expect(panel.textContent).not.toContain('NVDA is the one semi');
+    expect(panel.textContent).not.toContain('Energy is the only sector');
+  });
+
+  it('MUTATION ROW (L4-F1) — the C1 gates run HERE: a tournament battle renders no plan at all', () => {
+    // The rationale NAMES SLB, so a bypassed gate would put it on the row —
+    // the row must fail on the gate, not on an empty fixture.
+    withDoc({ gameMode: 'baggerbomb_tournament', agentContext: {
+      agentName: 'Aurora',
+      strategyBrief: 'Prescribed tournament deployment',
+      innerMonologue: {
+        strategy: 'Prescribed tournament deployment — the drafted six.',
+        starRationale: 'Prescribed tournament deployment — SLB and AAPL are the drafted pair.',
+      },
+    } });
+    mount();
+    click(rowButtonFor('SLB'));
+    const panel = container.querySelector('[data-why-symbol="SLB"]');
+    expect(panel.textContent).not.toContain('At deploy');
+    expect(panel.textContent).not.toContain('The plan at deploy');
+    expect(container.textContent).not.toContain('Prescribed tournament deployment');
+  });
+
+  it('MUTATION ROW (L4-F1) — and the algorithmic fallback template renders no plan either', () => {
+    withDoc({ gameMode: 'baggerbomb_agent', agentContext: {
+      agentName: 'Aurora',
+      strategyBrief: 'Energy is the only sector with a bid this week.',
+      innerMonologue: {
+        strategy: 'Algorithmic selection based on BaggerBomb fitness scores.',
+        starRationale: 'Top 2 stocks by BaggerBomb fit score for maximum upside potential. SLB leads.',
+      },
+    } });
+    mount();
+    click(rowButtonFor('SLB'));
+    const panel = container.querySelector('[data-why-symbol="SLB"]');
+    expect(panel.textContent).not.toContain('At deploy');
+    expect(container.textContent).not.toContain('Top 2 stocks by BaggerBomb fit score');
+  });
+
+  it('MUTATION ROW (L4-F5) — the `Read the full check` door is wired on every row', () => {
+    mount();
+    click(rowButtonFor('SLB'));
+    const panel = container.querySelector('[data-why-symbol="SLB"]');
+    expect(panel.textContent).toContain('Read the full check');
+    // …and it opens the book panel, where the whole paragraph lives.
+    const door = [...panel.querySelectorAll('button')].find((b) => b.textContent.includes('Read the full check'));
+    click(door);
+    expect(container.querySelector('[data-why-symbol="book"]')).toBeTruthy();
+  });
+
+  it('MUTATION ROW (L4-F7) — the row passes its DIRECTION, so a short would get no tier lines', () => {
+    withDoc({ portfolio: { ...LIVE_DOC.portfolio,
+      star: [{ symbol: 'AAPL' }, { symbol: 'SLB', swapPrice: 34.1, direction: 'short', swappedInAt: '2026-09-01T15:02:00.000Z' }],
+    } });
+    mount();
+    click(rowButtonFor('SLB'));
+    const panel = container.querySelector('[data-why-symbol="SLB"]');
+    expect(panel.textContent).not.toContain('Bagger $');
+    expect(panel.textContent).not.toContain('from the scoring path');
+    // …while the same row long DOES get them (the guard is the direction, not
+    // a missing baseline).
+    DOC = LIVE_DOC;
+    act(() => root.unmount());
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    mount();
+    click(rowButtonFor('SLB'));
+    expect(container.querySelector('[data-why-symbol="SLB"]').textContent).toContain('from the scoring path');
+  });
+
+  it('MUTATION ROW (L4-F4) — the tape receives the RECEIPTS input: a directive filed between two quiet checks breaks their run', () => {
+    const quiet = (hhmm) => ({
+      evalId: `e_${hhmm}`, timestamp: `2026-09-01T${hhmm}:00.000Z`, decision: 'HOLD', downgraded: false,
+      rationale: 'The book is holding its shape.', scores: { active: 1, banked: 40, total: 41 },
+    });
+    withDoc({
+      evaluations: [quiet('14:00'), quiet('14:15'), quiet('14:30'), quiet('14:45')],
+      trades: [],
+      chatExchanges: [
+        { userMessage: 'a', agentResponse: 'ok', hasDirective: true, directiveThreadId: 't-1', timestamp: '2026-09-01T13:50:00.000Z' },
+        { userMessage: 'b', agentResponse: 'ok', hasDirective: true, directiveThreadId: 't-2', timestamp: '2026-09-01T14:20:00.000Z' },
+      ],
+      directive: { text: 'b', expiry: 'end_of_battle', directiveThreadId: 't-2' },
+    });
+    mount();
+    const runs = [...container.querySelectorAll('[data-tape-kind="checkRun"]')];
+    expect(runs).toHaveLength(2);
+    expect(runs.map((r) => r.getAttribute('data-tape-run-count'))).toEqual(['2', '2']);
   });
 });
