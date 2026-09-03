@@ -93,6 +93,11 @@ const BATTLE = {
   state: { startingPrices: { AAPL: 150, NVDA: 900, MU: 90 } },
 };
 
+// The two sides of the board, for D-85's row below: the player's pieces come
+// off the subscribed doc's own portfolio, the CPU's off `opponent`.
+const PLAYER_SYMBOLS = ['AAPL', 'SLB', 'NVDA'];
+const OPPONENT_SYMBOLS = ['AMD'];
+
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
 if (typeof window.matchMedia !== 'function') {
@@ -234,6 +239,18 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
     expect(container.textContent).toContain('Checked 12:45 PM · next ~1:00 PM');
     expect(container.querySelector('[data-this-turn="filed"]').textContent).toContain('Filed 11:31 AM');
     expect(container.textContent).not.toContain('11:33');
+  });
+
+  it('D-85 — the PLAYER\'s rows carry their current price; no CPU row does', () => {
+    // The screen's own wiring, which the row's unit test cannot see: the flag
+    // decides, and the prop reaches the left AssetSide only.
+    mount();
+    const prices = [...container.querySelectorAll('[data-row-price]')]
+      .map((el) => el.getAttribute('data-row-price'));
+    expect(prices.length).toBeGreaterThan(0);
+    // Every symbol carrying a price is one of the player's pieces.
+    for (const symbol of prices) expect(PLAYER_SYMBOLS).toContain(symbol);
+    for (const symbol of OPPONENT_SYMBOLS) expect(prices).not.toContain(symbol);
   });
 });
 

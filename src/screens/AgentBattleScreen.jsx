@@ -1152,6 +1152,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               isCryptoSlot={tier.hasCrypto && i === tier.slots - 1}
               onSymbolClick={handleSymbolClick}
               onPointsClick={handlePointsClick}
+              // A2 (D-85): the player's current price beside the % change.
+              // Keyed on the FLAG, not on `whyable` — the price is a fact about
+              // a piece, not a property of the Why? door — and read inside the
+              // row off `asset.currentPrice`, the field it already hands
+              // computeProximity, so the row's price and the panel's tier
+              // dollars cannot come from two sources (BUILD_RULES §9). Absent
+              // flag-off, so the shipped row markup is byte-identical.
+              {...(controllerOn ? { showCurrentPrice: true } : {})}
               {...(whyable ? {
                 onWhy: (asset) => handleWhyToggle(rowKey, asset),
                 whyOpen: isWhyOpen,

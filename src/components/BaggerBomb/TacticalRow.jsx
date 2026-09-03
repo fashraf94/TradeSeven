@@ -11,6 +11,7 @@ import BadgeRow from './BadgeRow';
 import ProximityLabel from './ProximityLabel';
 import { computeProximity } from './computeProximity';
 import DataStrike from '../shared/DataStrike';
+import { formatPrice } from '../../utils/formatters';
 
 const DEFAULT_HISTORY = { maxMultiplier: 0, minMultiplier: 0 };
 
@@ -56,6 +57,10 @@ function AssetSide({
   // the name stays short. Both absent flag-off.
   whyName = null,
   whyId = null,
+  // Phase A2 (D-85): the piece's CURRENT PRICE beside its % change. Absent
+  // flag-off and never passed to the opponent's side, so both the shipped
+  // markup and the CPU column are untouched.
+  showCurrentPrice = false,
 }) {
   // Computed once per side when the row did not hand one down (the standalone
   // AssetSide path). Placed before the early returns so the hook order is the
@@ -213,6 +218,16 @@ function AssetSide({
   // propagation, so they still open research / breakdown, not Why?.
   const whyEnabled = !isRight && typeof onWhy === 'function';
 
+  // D-85's gate: under the flag, the PLAYER's side, and only when a real
+  // price exists. The opponent's side never receives the prop (the screen
+  // passes it to the left AssetSide alone) and the `!isRight` conjunct keeps
+  // that true even if a future caller passes it to both.
+  const showPrice = showCurrentPrice
+    && !isRight
+    && typeof asset.currentPrice === 'number'
+    && Number.isFinite(asset.currentPrice)
+    && asset.currentPrice > 0;
+
   const handleAssetClick = () => {
     if (highlighted && onAssetSelect) {
       onAssetSelect(asset);
@@ -340,25 +355,55 @@ function AssetSide({
               </span>
             )}
           </div>
-          <div {...(pctId ? { id: pctId } : {})} style={{ position: 'relative', height: '20px', overflow: 'hidden' }}>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={`${priceChange.toFixed(2)}`}
-                initial={{ opacity: 0, y: PCT_SLIDE.enterY }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: PCT_SLIDE.exitY }}
-                transition={{ duration: PCT_SLIDE.duration }}
-                style={{
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: priceColor,
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                {isPositive ? '▲' : '▼'} {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
-              </motion.div>
-            </AnimatePresence>
-          </div>
+          {(() => {
+            const pctBlock = (
+              <div {...(pctId ? { id: pctId } : {})} style={{ position: 'relative', height: '20px', overflow: 'hidden' }}>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={`${priceChange.toFixed(2)}`}
+                    initial={{ opacity: 0, y: PCT_SLIDE.enterY }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: PCT_SLIDE.exitY }}
+                    transition={{ duration: PCT_SLIDE.duration }}
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: priceColor,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {isPositive ? '▲' : '▼'} {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            );
+            // D-85 — the piece's current price, beside the percent that is
+            // measured FROM it. Read off `asset.currentPrice`, the same field
+            // `proximityInputs` hands `computeProximity` two lines above, so
+            // `Bagger $ · Bust $` in the Why? panel and this number cannot
+            // come from two prices (BUILD_RULES §9). No fetch, no second
+            // source, no re-derivation.
+            //
+            // Absent when there is no live price to show — never `$0.00`,
+            // which `formatPrice` would produce from a missing one.
+            if (!showPrice) return pctBlock;
+            return (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                {pctBlock}
+                <span
+                  data-row-price={asset.symbol}
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: HOLO_COLORS.textMuted,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {formatPrice(asset.currentPrice)}
+                </span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Points and Badges */}
@@ -487,6 +532,7 @@ AssetSide.propTypes = {
   whyLabel: PropTypes.string,
   whyName: PropTypes.string,
   whyId: PropTypes.string,
+  showCurrentPrice: PropTypes.bool,
 };
 
 // Tier-specific badge colors
@@ -565,6 +611,8 @@ export default function TacticalRow({
   whyLabel = null,
   whyName = null,
   whyId = null,
+  // A2 (D-85): the player's current price on the row. Absent flag-off.
+  showCurrentPrice = false,
 }) {
   // The left side's proximity, computed ONCE here and handed to both the
   // label (through AssetSide) and the Why? panel — never derived twice beside
@@ -607,6 +655,7 @@ export default function TacticalRow({
         whyLabel={whyLabel}
         whyName={whyName}
         whyId={whyId}
+        showCurrentPrice={showCurrentPrice}
       />
 
       {/* Center Allocation Badge */}
@@ -676,6 +725,7 @@ TacticalRow.propTypes = {
   whyLabel: PropTypes.string,
   whyName: PropTypes.string,
   whyId: PropTypes.string,
+  showCurrentPrice: PropTypes.bool,
 };
 
 TacticalRow.defaultProps = {
