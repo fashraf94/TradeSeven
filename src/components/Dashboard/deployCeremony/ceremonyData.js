@@ -103,3 +103,26 @@ export function useEquippedWatchlistSymbols(equippedWatchlistId) {
 
   return { symbols, loaded };
 }
+
+// ── Which battle the reveal's CTA opens (PR 2 §5) ───────────────────────────
+//
+// `stash` is the battle App.jsx built at deploy time from the POST response;
+// `recoveredBattle` is the agentBattles doc the ceremony's existence check read
+// back as active, for this deploy target, moments ago.
+//
+// THE RECOVERED BATTLE WINS. In the canonical failure — the post-commit window in
+// services/agentBattleVerify.js — there is no stash at all, because the POST never
+// returned. But the stash is only cleared when a CTA actually fires, so a
+// reveal the user dismissed with "Back to hub" leaves the PREVIOUS deploy's
+// battle sitting in the ref for the rest of the SPA session. Preferring it would
+// open that stale, possibly expired battle instead of the one just verified —
+// reintroducing the dead-end this path exists to close.
+//
+// Returns `{ kind: 'recovered' | 'stash' | 'none', battle }`. 'recovered' must be
+// hydrated from the Firestore doc (handleOpenAgentBattle); 'stash' is already a
+// built battle object (enterAgentBattle).
+export function pickCeremonyEntry(stash, recoveredBattle) {
+  if (recoveredBattle?.id) return { kind: 'recovered', battle: recoveredBattle };
+  if (stash) return { kind: 'stash', battle: stash };
+  return { kind: 'none', battle: null };
+}

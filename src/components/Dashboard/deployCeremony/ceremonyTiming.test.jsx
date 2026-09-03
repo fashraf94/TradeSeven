@@ -217,7 +217,7 @@ describe('classification (§6.3)', () => {
 
   // A stage still OPEN when the run ends is the stall case, and is the row the
   // founder most needs to see — it must be measured, not dropped.
-  it('a stage still open when the watchdog fires is measured to the end of the run', () => {
+  it('a stage still open when the watchdog fires is measured to the end of the run', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'table').mockImplementation(() => {});
     const T = { targetKnown: true, targetAgentId: CLONE };
@@ -226,6 +226,11 @@ describe('classification (§6.3)', () => {
     step({ ...T, stage: 'strategy_running', deployId: 'ours', updatedAt: 'u1' }, 2500); // S1 → floor
     step({ ...T, stage: 'strategy_running', deployId: 'ours', updatedAt: 'u1' }, 95000); // watchdog
 
+    // PR 2: the watchdog routes through 'verifying' and markError now fires at the
+    // check's RESOLUTION, so the run's terminal record reflects the state actually
+    // reached rather than the branch that was entered. No verifyBattle is wired
+    // here, so the check resolves on the next microtask.
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(seen.phase).toBe('error');
     const run = window.__ceremonyTiming;
     expect(run.endKind).toBe('error:timeout');

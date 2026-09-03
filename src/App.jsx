@@ -120,6 +120,7 @@ import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
 import { excludeVoidedGroupBattles } from './utils/commandCenterLiveBattles';
 import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn } from './config/featureFlags';
+import { pickCeremonyEntry } from './components/Dashboard/deployCeremony/ceremonyData';
 // Delight Layer Task 2: the battle-weather starfield. Mounted ONLY at the two
 // dashboard sites below, each behind its own flag; every other DesktopBackground
 // mount is untouched (spec V2 R-T2-S5 + Amendment A2).
@@ -6612,10 +6613,25 @@ export default function PortfolioDuel() {
     setCurrentBattle(battleObj);
     setScreen('battle');
   };
-  const handleEnterCeremonyBattle = () => {
+  // [Deploy Ceremony PR 2 §5] `recoveredBattle` is the agentBattles doc the
+  // ceremony's existence check FOUND after a failed-looking deploy. It exists
+  // only on the recovered path, and on that path there is nothing else to use: in
+  // the canonical failure (THE POST-COMMIT WINDOW, in
+  // src/services/agentBattleVerify.js) the write that sets `agent.activeBattleId`
+  // IS the statement that threw, and the POST never returned — so
+  // pendingCeremonyBattleRef is null too. Hydrating from the found doc is the only route that does not dead-end
+  // the user on a null pointer. Ordinary reveal: no recovered battle, and the
+  // battle built at deploy time is used exactly as before.
+  const handleEnterCeremonyBattle = (recoveredBattle = null) => {
     const b = pendingCeremonyBattleRef.current;
     pendingCeremonyBattleRef.current = null;
-    if (b) enterAgentBattle(b);
+    // Precedence lives in pickCeremonyEntry (ceremonyData.js) so the rule is
+    // testable on its own — the recovered battle wins over a stash the user left
+    // behind by dismissing an earlier reveal. A 'recovered' entry is a raw
+    // Firestore doc and must be hydrated; a 'stash' is already a built battle.
+    const entry = pickCeremonyEntry(b, recoveredBattle);
+    if (entry.kind === 'recovered') handleOpenAgentBattle(entry.battle);
+    else if (entry.kind === 'stash') enterAgentBattle(entry.battle);
   };
 
   const handleCreateAgentTrainingBattle = async (portfolioData, benchData, agentMeta) => {

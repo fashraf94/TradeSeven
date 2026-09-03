@@ -240,19 +240,47 @@ export default function CommandDashboard({
       result = await deployAgent(agent.id, onCreateAgentBattle, setDeployTargetId);
     } catch (err) {
       console.error('[Deploy] Error:', err);
-      if (ceremonyOn) result = { success: false, error: err?.message };
+      // `postIssued: false` is now TRUE of every throw that can reach here.
+      // deployAgent's only remaining throw site is getIdToken(), which runs before
+      // the POST; the battle-creation handoff — which runs AFTER a 200 and used to
+      // arrive here mislabelled as "never reached the server" — is caught inside
+      // deployAgent and returns its battle id instead. Anything unforeseen still
+      // lands on the conservative pair, which fails toward "lost contact".
+      if (ceremonyOn) result = { success: false, error: err?.message, postIssued: false, httpStatus: null };
     }
     setDeploying(false);
     if (ceremonyOn) {
       setDeployResult(result?.success
         ? { status: 'success', agentBattleId: result.agentBattleId }
-        : { status: 'error', error: result?.error, details: result?.details });
+        : {
+            status: 'error', error: result?.error, details: result?.details,
+            // Forwarded for the ceremony's recovered-reveal gate — see the
+            // deployAgent comment above the POST. Previously dropped here, which
+            // is why the ceremony could not tell a refusal from a real failure.
+            httpStatus: result?.httpStatus ?? null,
+            postIssued: result?.postIssued === true,
+            // Set only when the server 200'd with a real battle id and the client
+            // handoff then threw. The battle exists and we are holding its id, so
+            // the ceremony pins the reveal to it rather than inferring from status.
+            battleId: result?.battleId ?? null,
+          });
     }
     return result;
   };
   // Retry from the error surface — remount the ceremony (fresh stage machine) and
   // re-run the deploy; the server's 120s lock still governs (may 429 → error).
-  const handleCeremonyRetry = () => { setCeremonyRun((r) => r + 1); handleDeploy(); };
+  // Remount ONLY if the deploy will actually re-run. handleDeploy bails on
+  // deployDisabled before it resets deployResult, so bumping the key regardless
+  // mounts a FRESH stage machine onto the PREVIOUS run's `{ status: 'error' }` —
+  // which then verifies and authors a terminal claim about a deploy that never
+  // happened. deployBlockedByLive flips true exactly when the durable battle from
+  // the failure this ceremony exists for lands in the live-battle subscription,
+  // so this is the reachable case, not a hypothetical one.
+  const handleCeremonyRetry = () => {
+    if (deployDisabled) return;
+    setCeremonyRun((r) => r + 1);
+    handleDeploy();
+  };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
 
   // ── Compact / expandable brief ────────────────────────────────────────────
@@ -613,7 +641,7 @@ export default function CommandDashboard({
           directiveCount={activeDirectives?.length || 0}
           deployResult={deployResult}
           targetAgentId={deployTargetId}
-          onEnterBattle={() => { onEnterBattle?.(); setCeremonyOpen(false); }}
+          onEnterBattle={(recoveredBattle) => { onEnterBattle?.(recoveredBattle); setCeremonyOpen(false); }}
           onDismiss={() => setCeremonyOpen(false)}
           onRetry={handleCeremonyRetry}
         />

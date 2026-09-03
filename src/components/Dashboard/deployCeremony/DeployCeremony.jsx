@@ -10,7 +10,7 @@
 // handed to the machine, so the ~5 snapshot ticks over a deploy never key effects
 // on the whole agent object.
 
-import React, { useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
@@ -19,6 +19,7 @@ import useModalFocus from '../../../hooks/useModalFocus';
 import useMarketContext from '../../Research/useMarketContext';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import useDeployTargetProgress from '../../../hooks/useDeployTargetProgress';
+import { findActiveBattleForAgent } from '../../../services/agentBattleVerify';
 import useCeremonyStageMachine from './useCeremonyStageMachine';
 import { flattenPicks, getMonologueQuote, useEquippedWatchlistSymbols } from './ceremonyData';
 import CeremonyTheater from './CeremonyTheater';
@@ -59,6 +60,20 @@ export default function DeployCeremony({
     deployProgress, lastDeployedAt: targetLastDeployedAt, lastDecision: targetLastDecision, targetKnown,
   } = useDeployTargetProgress(targetAgentId);
 
+  // ── The existence check (PR 2 §3) ─────────────────────────────────────────
+  // Keyed on `targetAgentId`, NEVER `agent.id`. The battle's `agentId` is the
+  // deploy target (agentBattleService.js:130 writes `agentData.id`), which on the
+  // casual-clone path is the clone. Keyed on the ranked id this returns empty
+  // every time and would report "no battle" with total confidence — the PR 1 bug
+  // one layer up, in exactly the case this check exists to prevent.
+  //
+  // A null target throws inside the service, which resolves to "lost contact" —
+  // the honest answer for a check that could not be expressed.
+  const verifyBattle = useCallback(
+    () => findActiveBattleForAgent(targetAgentId),
+    [targetAgentId],
+  );
+
   // deployProgress primitives (spec §5.5)
   const dp = deployProgress || {};
   const machine = useCeremonyStageMachine({
@@ -67,10 +82,19 @@ export default function DeployCeremony({
     updatedAt: dp.updatedAt,
     errorPhase: dp.errorPhase,
     deployStatus: deployResult?.status,
+    // What the client's own POST learned. The recovered reveal turns on it —
+    // see the attribution block in the machine.
+    deployHttpStatus: deployResult?.httpStatus ?? null,
+    deployPostIssued: deployResult?.postIssued === true,
+    // Present only when the server 200'd with a real battle id and the client
+    // handoff then threw (agentDeploy.js). It names the battle THIS deploy made,
+    // so the machine pins the reveal to it instead of inferring from the status.
+    deployBattleId: deployResult?.battleId ?? null,
     // Baseline scoping (§5): until a snapshot for the target has been observed,
     // these primitives are all null and MUST NOT establish a baseline.
     targetKnown,
     targetAgentId,
+    verifyBattle,
   });
 
   // Stage 1 chip data — all best-effort (§5.4).
@@ -114,9 +138,11 @@ export default function DeployCeremony({
     cooldownSource ? new Date(cooldownSource).getTime() + DEPLOY_LOCK_MS : 0
   ), [cooldownSource]);
 
-  // Polite live-region announcement (§9).
+  // Polite live-region announcement (§9). 'verifying' is deliberately absent:
+  // it renders as theater, so it keeps announcing the stage on screen rather
+  // than telling the user about a check they were never shown.
   const liveText = machine.phase === 'error'
-    ? 'Deployment failed.'
+    ? (machine.errorTone === 'confirmed' ? 'Deployment failed.' : 'Couldn’t confirm the deployment.')
     : machine.phase === 'reveal'
       ? `${agentName} is ready for battle.`
       : {
@@ -128,12 +154,23 @@ export default function DeployCeremony({
 
   const showBack = machine.phase !== 'reveal'; // reveal has its own explicit CTAs
 
+  // PR 2 §5 — the trap. On the recovered path `agent.activeBattleId` is guaranteed
+  // ABSENT (the FAILURE MODEL block in services/agentBattleVerify.js says why: the
+  // write that sets it is the statement that threw), so the reveal MUST carry the
+  // id the verification query found and must never fall back to it. On the
+  // ordinary reveal path this is null and the app falls through to the battle it
+  // already built at deploy time.
+  const enterBattle = () => onEnterBattle?.(machine.recoveredBattle || null);
+
   let body;
   if (machine.phase === 'error') {
     body = (
       <CeremonyError
         accent={accent}
         agentName={agentName}
+        // The VERIFICATION outcome selects the headline; errorKind is retained
+        // as diagnostic context and still feeds `details`.
+        errorTone={machine.errorTone}
         errorKind={machine.errorKind}
         details={deployResult?.details}
         cooldownUntil={cooldownUntil}
@@ -148,12 +185,14 @@ export default function DeployCeremony({
         agentName={agentName}
         picks={picks}
         monologue={monologue}
-        onEnterBattle={onEnterBattle}
+        onEnterBattle={enterBattle}
         onDismiss={onDismiss}
         reduce={reduce}
       />
     );
   } else if (reduce) {
+    // 'verifying' reaches here (and the theater below) on purpose — no new
+    // screen. The ceremony visibly continues while the check runs.
     body = (
       <CeremonyChecklist
         accent={accent}

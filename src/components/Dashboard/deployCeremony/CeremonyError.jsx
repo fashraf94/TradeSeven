@@ -1,10 +1,25 @@
 // src/components/Dashboard/deployCeremony/CeremonyError.jsx
 //
 // Deploy Ceremony · error / fallback surface (spec §8). Net-new UI: today a
-// failed deploy silently re-enables the button. The copy is precise — "no battle
-// was created", never "nothing was committed" (false on the post-persistence
-// path, where the stored decision DID change). data.details is shown when
+// failed deploy silently re-enables the button. data.details is shown when
 // present; retry respects the server's 120s deploy lock.
+//
+// TERMINAL-STATE HONESTY (PR 2). The headline is selected by the VERIFICATION
+// OUTCOME, not by the error's shape:
+//
+//   'confirmed'    — a server terminal-error signal AND an empty `agentBattles`
+//                    query. Both are required before the client may assert that
+//                    no battle was created. These strings may say so.
+//   'lost_contact' — the check threw, timed out, could not run, or came back
+//                    empty with no server error signal. We do not know what
+//                    happened, and the copy must not pretend otherwise: a check
+//                    that could not complete has learned nothing and must not
+//                    author a stronger claim than the one it replaced.
+//
+// `errorKind` is retained as DIAGNOSTIC context — it still selects among the
+// confirmed headlines and rides alongside `details` — but it is no longer the
+// sole headline selector. Defaulting `errorTone` to 'lost_contact' is deliberate:
+// an unstated outcome must fail toward the weaker claim, never the stronger one.
 
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowLeft, RotateCcw } from 'lucide-react';
@@ -15,6 +30,8 @@ function safeDetails(details) {
   try { return JSON.stringify(details); } catch { return String(details); }
 }
 
+// CONFIRMED failures only. Every one of these asserts non-creation, which the
+// verification has actually established.
 const HEADLINE = {
   deploy: () => 'Deployment failed — no battle was created.',
   server: () => 'Deployment failed — no battle was created.',
@@ -23,11 +40,22 @@ const HEADLINE = {
   timeout: () => 'Deployment timed out — no battle was created.',
 };
 
+// LOST CONTACT. Says what is true — we stopped being able to tell — and points
+// at the one place the answer will show up. It claims nothing about creation.
+const LOST_CONTACT_HEADLINE = 'Couldn’t confirm the deploy.';
+const LOST_CONTACT_EYEBROW = 'Deployment unconfirmed';
+const LOST_CONTACT_SUBTEXT = 'Your agent is safe. If the battle was created it will appear on your hub — check there before deploying again.';
+const CONFIRMED_SUBTEXT = 'Your agent is safe. Nothing is stuck — you can try again shortly.';
+
 export default function CeremonyError({
   accent = CMD.copper, agentName = 'Your agent', errorKind = 'deploy',
+  errorTone = 'lost_contact',
   details, cooldownUntil = 0, onRetry, onDismiss,
 }) {
-  const headline = (HEADLINE[errorKind] || HEADLINE.deploy)(agentName);
+  const confirmed = errorTone === 'confirmed';
+  const headline = confirmed
+    ? (HEADLINE[errorKind] || HEADLINE.deploy)(agentName)
+    : LOST_CONTACT_HEADLINE;
   // Tick a local clock so the retry countdown actually decrements and re-enables
   // when the server's 120s lock expires (the stage machine stops re-rendering
   // once in 'error').
@@ -51,7 +79,7 @@ export default function CeremonyError({
         <AlertTriangle size={26} color={CMD.copper} />
       </div>
 
-      <Eyebrow color={CMD.copper} style={{ marginBottom: 8 }}>Deployment failed</Eyebrow>
+      <Eyebrow color={CMD.copper} style={{ marginBottom: 8 }}>{confirmed ? 'Deployment failed' : LOST_CONTACT_EYEBROW}</Eyebrow>
       <div style={{ fontSize: 18, fontWeight: 600, color: CMD.ink, lineHeight: 1.4, marginBottom: 12 }}>{headline}</div>
 
       {details && (
@@ -94,8 +122,10 @@ export default function CeremonyError({
         </button>
       </div>
 
+      {/* The existing subtext was already more honest than the headline it sat
+          under; on the lost-contact path it now also says where the answer is. */}
       <Mono style={{ display: 'block', fontSize: 10.5, letterSpacing: '0.06em', color: CMD.ink3, marginTop: 14, lineHeight: 1.5 }}>
-        Your agent is safe. Nothing is stuck — you can try again shortly.
+        {confirmed ? CONFIRMED_SUBTEXT : LOST_CONTACT_SUBTEXT}
       </Mono>
     </div>
   );

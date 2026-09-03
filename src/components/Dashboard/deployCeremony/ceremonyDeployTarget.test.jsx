@@ -22,12 +22,21 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 // ── module mocks ───────────────────────────────────────────────────────────
-const { getIdTokenMock, targetProgressState } = vi.hoisted(() => ({
+const { getIdTokenMock, targetProgressState, verifyMock } = vi.hoisted(() => ({
   getIdTokenMock: vi.fn(),
   targetProgressState: { value: null },
+  verifyMock: vi.fn(),
 }));
 
 vi.mock('../../../firebase/authService', () => ({ getIdToken: getIdTokenMock }));
+// PR 2: the ceremony now runs an existence check before committing to any
+// terminal claim. Mocked here so this file keeps testing PR 1's contract without
+// pulling in firebase/config; the check's own behavior is covered in
+// ceremonyTerminalState.test.jsx.
+vi.mock('../../../services/agentBattleVerify', () => ({
+  findActiveBattleForAgent: verifyMock,
+  default: verifyMock,
+}));
 vi.mock('../../../hooks/useDeployTargetProgress', () => ({
   default: () => targetProgressState.value,
 }));
@@ -54,6 +63,8 @@ beforeEach(() => {
   }
   seen = undefined;
   getIdTokenMock.mockReset();
+  verifyMock.mockReset();
+  verifyMock.mockResolvedValue({ found: false, battle: null });
   targetProgressState.value = null;
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -119,6 +130,123 @@ describe('agentDeploy — reports the resolved deploy target (§3)', () => {
     )));
     const result = await deployAgent(RANKED, null, () => { throw new Error('consumer blew up'); });
     expect(result.success).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PR 2 — what deployAgent reports about WHERE a failure happened
+//
+// The ceremony's recovered-reveal gate turns on this: what a `decide.js` status
+// does and does not prove is stated once, in the FAILURE MODEL block at the top
+// of `services/agentBattleVerify.js`. Both fields were previously computed and
+// dropped, which is why the ceremony could not tell a refusal from a real
+// failure and would announce a refused deploy as a success.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('agentDeploy — reports where the failure happened (PR 2)', () => {
+  const postFailing = (status, body) => {
+    getIdTokenMock.mockResolvedValue('tok');
+    vi.stubGlobal('fetch', vi.fn(async (url) => (
+      url === '/api/agent/ensure-casual-clone'
+        ? { ok: true, status: 200, text: async () => JSON.stringify({ cloneId: CLONE }) }
+        : { ok: false, status, text: async () => body }
+    )));
+  };
+
+  it.each([429, 403, 503, 409, 500])('carries the HTTP status (%s) and postIssued', async (status) => {
+    postFailing(status, JSON.stringify({ error: 'nope' }));
+    const r = await deployAgent(RANKED, null, () => {});
+    expect(r.success).toBe(false);
+    expect(r.httpStatus).toBe(status);
+    expect(r.postIssued).toBe(true);
+  });
+
+  it('a NON-JSON error page still carries its status', async () => {
+    postFailing(502, '<html>gateway</html>');
+    const r = await deployAgent(RANKED, null, () => {});
+    expect(r.httpStatus).toBe(502);
+    expect(r.postIssued).toBe(true);
+  });
+
+  // The request left the client but produced no response: whether the server saw
+  // it is unknowable, and that IS the answer the ceremony needs — it stays
+  // eligible for recovery, unlike a refusal.
+  it('a transport failure reports postIssued with NO status, instead of throwing', async () => {
+    getIdTokenMock.mockResolvedValue('tok');
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (url === '/api/agent/ensure-casual-clone') return { ok: true, status: 200, text: async () => JSON.stringify({ cloneId: CLONE }) };
+      throw new TypeError('Failed to fetch');
+    }));
+    const r = await deployAgent(RANKED, null, () => {});
+    expect(r.success).toBe(false);
+    expect(r.postIssued).toBe(true);
+    expect(r.httpStatus).toBeNull();
+  });
+
+  // A bail before the POST cannot have created anything.
+  it('a client-side bail reports postIssued false', async () => {
+    getIdTokenMock.mockResolvedValue(null);          // no auth token → never posts
+    const r = await deployAgent(RANKED, null, () => {});
+    expect(r.postIssued).toBe(false);
+    expect(await deployAgent(null, null, () => {})).toMatchObject({ postIssued: false });
+  });
+
+  // ── R3 · THE IDENTIFIER MUST SURVIVE THE TRIP ────────────────────────────
+  // The handoff runs AFTER a 200 carrying a real, durable battle id. Letting the
+  // throw escape reported the whole deploy through the shells' catch as
+  // `postIssued: false` — "never reached the server" — for a deploy that
+  // definitively did, and threw the id away with it.
+  const postSucceeding = (body) => {
+    getIdTokenMock.mockResolvedValue('tok');
+    vi.stubGlobal('fetch', vi.fn(async (url) => (
+      url === '/api/agent/ensure-casual-clone'
+        ? { ok: true, status: 200, text: async () => JSON.stringify({ cloneId: CLONE }) }
+        : { ok: true, status: 200, text: async () => JSON.stringify(body) }
+    )));
+  };
+
+  // DIES UNDER: dropping `battleId` from the handoff-failure return; letting the
+  // callback throw escape; reporting postIssued false for it.
+  it('a callback throw after a 200 returns the server battle id instead of throwing', async () => {
+    postSucceeding({ success: true, agentBattleId: 'battle-real-1', portfolio: {}, bench: {} });
+    const boom = () => { throw new Error('could not build the battle'); };
+
+    const r = await deployAgent(RANKED, boom, () => {});
+    expect(r.success).toBe(false);
+    expect(r.battleId).toBe('battle-real-1');         // the id survived
+    expect(r.postIssued).toBe(true);                  // it DID reach the server
+    expect(r.httpStatus).toBe(200);
+    expect(r.error).toBe('deploy_handoff');
+  });
+
+  it('an async callback rejection after a 200 is caught the same way', async () => {
+    postSucceeding({ success: true, agentBattleId: 'battle-real-2', portfolio: {}, bench: {} });
+    const boom = async () => { throw new Error('async build failure'); };
+
+    const r = await deployAgent(RANKED, boom, () => {});
+    expect(r.battleId).toBe('battle-real-2');
+    expect(r.postIssued).toBe(true);
+  });
+
+  // decide.js:748-758 — "agent already has an active battle" — also returns 200 +
+  // success:true, carrying `existingBattleId` and NO `agentBattleId`. That battle
+  // was not created by this deploy, so there is no id to carry and the 200 must
+  // buy nothing. The machine's gate keys on the id, not the status, precisely so
+  // this row cannot become a reveal.
+  // DIES UNDER: fabricating an id here, or admitting 200 on the status alone.
+  it('a 200 carrying only existingBattleId yields NO battle id to carry', async () => {
+    postSucceeding({ success: true, existingBattleId: 'battle-someone-elses', portfolio: {}, bench: {} });
+    const boom = () => { throw new Error('could not build the battle'); };
+
+    const r = await deployAgent(RANKED, boom, () => {});
+    expect(r.battleId).toBeNull();
+    expect(r.postIssued).toBe(true);
+  });
+
+  // The ordinary success path is untouched: no battleId key, still success.
+  it('a callback that does NOT throw still reports plain success', async () => {
+    postSucceeding({ success: true, agentBattleId: 'battle-ok', portfolio: {}, bench: {} });
+    const r = await deployAgent(RANKED, async () => {}, () => {});
+    expect(r).toEqual({ success: true, agentBattleId: 'battle-ok' });
   });
 });
 
@@ -224,7 +352,7 @@ describe('useCeremonyStageMachine — baseline scoping (§5)', () => {
   // instance mounts while the subscription still holds the PREVIOUS deploy's
   // terminal state. The rule is scoped to (instance, target), not to a
   // fresh-snapshot event, so that already-held snapshot is a valid baseline.
-  it('retry: a fresh instance baselines off the previous deploy\'s held state (§7.5)', () => {
+  it('retry: a fresh instance baselines off the previous deploy\'s held state (§7.5)', async () => {
     const FIRST = '2026-09-02T14:00:00.000Z';
     const SECOND = '2026-09-02T14:05:00.000Z';
 
@@ -233,6 +361,10 @@ describe('useCeremonyStageMachine — baseline scoping (§5)', () => {
     step({ targetKnown: true, targetAgentId: CLONE, stage: 'strategy_running', deployId: FIRST, updatedAt: FIRST });
     expect(seen.serverRank).toBe(1);
     step({ targetKnown: true, targetAgentId: CLONE, stage: 'error', deployId: FIRST, updatedAt: `${FIRST}-e`, errorPhase: 'pre_decision' });
+    // PR 2: the error commit routes through 'verifying' first. No verifyBattle is
+    // wired here, which IS a check that could not run, so it resolves to the error
+    // surface on the next microtask rather than synchronously.
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(seen.phase).toBe('error');
 
     // Remount (the key bump). The subscription is unchanged and still delivers
@@ -293,7 +425,11 @@ describe('DeployCeremony — deploy state from the target, identity from the ran
     lastDecision: { portfolio: { star: [{ symbol: 'RANKEDPICK' }] } },
   };
 
-  const renderCeremony = (targetProgress, extraProps = {}) => {
+  // PR 2: a client error routes to 'verifying' first, so the error surface these
+  // rows assert on appears only once the existence check has resolved (empty, per
+  // the default mock — two attempts, 400ms apart). Real timers here, so flush by
+  // waiting out the retry gap.
+  const renderCeremony = async (targetProgress, extraProps = {}) => {
     targetProgressState.value = {
       deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false, ...targetProgress,
     };
@@ -310,13 +446,14 @@ describe('DeployCeremony — deploy state from the target, identity from the ran
         />,
       );
     });
+    await act(async () => { await new Promise((r) => setTimeout(r, 600)); });
     return document.body.textContent;
   };
 
   // §7.6 — the countdown must reflect the deploy that actually happened. The
   // ranked doc's lastDeployedAt is from 2020; only the TARGET's is recent.
-  it('cooldown comes from the TARGET\'s lastDeployedAt (§7.6)', () => {
-    const text = renderCeremony({
+  it('cooldown comes from the TARGET\'s lastDeployedAt (§7.6)', async () => {
+    const text = await renderCeremony({
       targetKnown: true,
       lastDeployedAt: new Date(Date.now() - 20000).toISOString(), // 20s ago → ~100s left
     });
@@ -326,13 +463,13 @@ describe('DeployCeremony — deploy state from the target, identity from the ran
 
   // §6 — fail OPEN while the target is unresolved: fall back to the ranked
   // agent's value rather than stranding the retry button.
-  it('falls back to the ranked agent\'s lastDeployedAt when the target is unknown (§6)', () => {
-    const text = renderCeremony({ targetKnown: false, lastDeployedAt: null });
+  it('falls back to the ranked agent\'s lastDeployedAt when the target is unknown (§6)', async () => {
+    const text = await renderCeremony({ targetKnown: false, lastDeployedAt: null });
     expect(text).toContain('Try again');   // ranked value is ancient → unlocked
   });
 
-  it('a target that has never deployed leaves retry unlocked, matching the server gate', () => {
-    const text = renderCeremony({ targetKnown: true, lastDeployedAt: null });
+  it('a target that has never deployed leaves retry unlocked, matching the server gate', async () => {
+    const text = await renderCeremony({ targetKnown: true, lastDeployedAt: null });
     expect(text).toContain('Try again');
   });
 
