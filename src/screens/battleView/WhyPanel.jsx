@@ -34,12 +34,12 @@
 // Colours via the token bridge; motion via the vocabulary, reduced-motion
 // aware; the expansion is the only motion and it plays once per open.
 
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
-import { WHY_KIND, emphasizeSymbol, extractSentences } from './selectWhyState';
+import { WHY_KIND, emphasizeSymbol, extractSentences, splitSentences } from './selectWhyState';
 
 const LABEL_COLOR = {
   [WHY_KIND.DOWNGRADED]: cssVar('amber'),
@@ -105,7 +105,23 @@ export default function WhyPanel({
   // never derives it. Both null on the book panel and flag-off.
   mentionCount = null,
   onScopeToPiece = null,
+  // D-89 — the book panel's close. The panel is a DISCLOSURE the score header
+  // owns: the header carries the `aria-expanded`, so the way out has to hand
+  // focus back to it or a keyboard reader is stranded on a region that has no
+  // owner. Null on a row panel, which closes by tapping its row again.
+  onCloseBook = null,
 }) {
+  // D-89: the book panel OPENS COLLAPSED. Before this it opened with the whole
+  // paragraph, the deploy brief and the door all at once, above the board —
+  // on a long check that pushed the board off the screen the panel was meant
+  // to explain. Collapsed it is five short lines; the rest is one tap away and
+  // lands in a bounded region rather than in the page's own height.
+  //
+  // LOCAL STATE, and deliberately so: an expansion is not a fact about the
+  // battle (the same rule the tape's `Read more` follows). The panel unmounts
+  // when the header closes it, so every open starts collapsed by construction
+  // rather than by a reset anyone has to remember to write.
+  const [expanded, setExpanded] = useState(false);
   if (!state) return null;
   const isBook = symbol == null;
   const transition = motionToken('smooth', { reducedMotion: Boolean(reducedMotion) });
@@ -133,6 +149,15 @@ export default function WhyPanel({
   // so — an outage, an absence) versus words that never named this piece.
   const sentences = isBook ? [] : extractSentences(state.rationale, symbol);
   const hasWords = Boolean(state.rationale);
+
+  // D-89 — what the COLLAPSED book panel shows of the check's words: the first
+  // sentence, and `Read more` only when there is more than that behind it. The
+  // same rule, and the same trim, the tape's records use (TapeCards'
+  // RecordProse), because one paragraph shown two ways on two surfaces is the
+  // disagreement §9 exists to prevent.
+  const bookFull = typeof state.rationale === 'string' ? state.rationale.trim() : '';
+  const bookOpening = isBook ? (splitSentences(bookFull)[0] ?? bookFull) : '';
+  const bookHasMore = isBook && Boolean(bookFull) && bookFull !== bookOpening;
   const notNamed = !isBook && hasWords && sentences.length === 0
     ? COPY.notNamedAtCheck(state.checkedAt)
     : null;
@@ -202,7 +227,12 @@ export default function WhyPanel({
 
         {/* 3. The check — the eyebrow names the CHECK, never the piece. The
                book panel carries the whole paragraph; a row carries only the
-               sentences that name it, verbatim. */}
+               sentences that name it, verbatim.
+               D-89: on the book panel the heading row also carries the CLOSE.
+               The score header owns this panel's `aria-expanded`, so the way
+               out belongs beside the thing it closes and hands focus back to
+               that header — a region a keyboard reader can enter and not
+               leave is worse than one that never opened. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {/* Ruling 4 says `Read the full check` "moves focus to its first
               HEADING". It was a styled div, and there is no `<h*>` anywhere in
@@ -211,11 +241,34 @@ export default function WhyPanel({
               `aria-level` is the whole fix: it changes no pixel — the eyebrow
               keeps its own type scale — and it makes the ruling's sentence
               true. Level 3: the panel opens under the row it belongs to. */}
-          {decisionHeading && (
-            <div id={id} tabIndex={-1} role="heading" aria-level={3} style={eyebrow}>
-              {decisionHeading}
-            </div>
-          )}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            {decisionHeading && (
+              <div id={id} tabIndex={-1} role="heading" aria-level={3} style={{ ...eyebrow, flex: 1, minWidth: 0 }}>
+                {decisionHeading}
+              </div>
+            )}
+            {isBook && typeof onCloseBook === 'function' && (
+              <button
+                type="button"
+                data-why-book-close="1"
+                aria-label={COPY.closeWhyBookName}
+                onClick={onCloseBook}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  marginLeft: 'auto',
+                  flexShrink: 0,
+                  color: cssVar('text-muted'),
+                  fontSize: 14,
+                  lineHeight: 1,
+                  cursor: 'pointer',
+                }}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            )}
+          </div>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: LABEL_COLOR[state.kind] || cssVar('text-secondary') }}>
             {state.label}
           </div>
@@ -225,7 +278,56 @@ export default function WhyPanel({
             </div>
           )}
           {isBook
-            ? <Rationale text={state.rationale} symbol={symbol} />
+            ? (
+              /* Collapsed: the first sentence. Expanded: the whole paragraph
+                 inside a BOUNDED, scrollable region (D-89). The bound is what
+                 makes the tap safe — an unbounded expansion above the board
+                 pushes the board off the screen, which is the defect this
+                 ruling exists to close, and a long check is the ordinary case
+                 rather than the edge one. `overscrollBehavior: contain` keeps
+                 a flick inside the region from scrolling the page behind it. */
+              expanded ? (
+                <div
+                  data-why-book-body="expanded"
+                  style={{
+                    maxHeight: '40vh',
+                    overflowY: 'auto',
+                    overscrollBehavior: 'contain',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                  }}
+                >
+                  <Rationale text={state.rationale} symbol={symbol} />
+                </div>
+              ) : (
+                <div data-why-book-body="collapsed" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <Rationale text={bookOpening} symbol={symbol} />
+                  {bookHasMore && (
+                    <div>
+                      <button
+                        type="button"
+                        data-why-book-more="1"
+                        onClick={() => setExpanded(true)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          padding: 0,
+                          color: cssVar('teal'),
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          textAlign: 'left',
+                          textDecoration: 'underline',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {COPY.readMore}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            )
             : sentences.map((sentence, i) => (
               <Rationale key={`s-${i}`} text={sentence} symbol={symbol} />
             ))}
@@ -265,7 +367,7 @@ export default function WhyPanel({
         {/* 4. The plan at deploy — history, never a current decision. The row
                shows its TIER's sentences that name it; the book shows the
                brief. Absent whole when the caller gates it off. */}
-        {isBook && deployPlan?.brief && planLabel && (
+        {isBook && expanded && deployPlan?.brief && planLabel && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={eyebrow}>{planLabel}</div>
             <Rationale text={deployPlan.brief} symbol={symbol} />
@@ -293,7 +395,11 @@ export default function WhyPanel({
         {/* 6. The doors — the follow-up, and the way into the conversation
                about this piece (A2.3). Both are the piece's; the book panel
                keeps the follow-up alone, because "the chat about the book" is
-               the chat. */}
+               the chat.
+               D-89: on the BOOK panel the door rides the expansion. Collapsed
+               is five lines about the latest check and nothing else — a door
+               under them turns a glance into a decision. */}
+        {(!isBook || expanded) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {typeof onAskFollowUp === 'function' && (
             <button
@@ -337,6 +443,7 @@ export default function WhyPanel({
             </button>
           )}
         </div>
+        )}
       </div>
     </motion.section>
   );

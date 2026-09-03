@@ -112,7 +112,13 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     const t = slotLabel(iso);
     return t ? `From the ${t} check` : null;
   },
-  // The door out of the extract and into the whole paragraph (the book panel).
+  // The door out of the extract and into the whole check — which, since D-89,
+  // is the check's own CARD in the conversation, not the panel at the top of
+  // the board. The words stay the same because what the player asked for did
+  // not: they want the whole check, and the tape is where it lives whole,
+  // beside the checks either side of it. The panel above the board carries the
+  // book's latest check and opens collapsed; it was never the place a row's
+  // reader was heading.
   readFullCheck: 'Read the full check',
   // A truthful state, not an absence of data: the check recorded words, and
   // none of its sentences named this piece. The full paragraph is one tap away.
@@ -359,6 +365,11 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     return `${header} · ${label}`;
   },
   readMore: 'Read more',
+  // D-89 — the book panel's own close. The glyph is decorative; this is the
+  // accessible name, and it says what the control does rather than naming the
+  // shape it is drawn as. Focus returns to the score header that opened it,
+  // which is the disclosure contract the header's `aria-expanded` promises.
+  closeWhyBookName: 'Close the check',
   // A run of consecutive checks that changed nothing a player can see (D-77):
   // HOLD, not downgraded, no outage, banked score unchanged, the position set
   // unchanged and the directive disposition unchanged. The live TOTAL is

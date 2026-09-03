@@ -133,8 +133,8 @@ const linkButton = {
  * sentence, so a one-sentence record showed a `Read more` that revealed
  * nothing but its own disappearance.
  */
-function RecordProse({ text, firstSentence }) {
-  const [expanded, setExpanded] = useState(false);
+function RecordProse({ text, firstSentence, startExpanded = false }) {
+  const [expanded, setExpanded] = useState(Boolean(startExpanded));
   const full = typeof text === 'string' ? text.trim() : '';
   if (!full) return null;
   const opening = firstSentence || full;
@@ -180,17 +180,27 @@ export function TradeCard({ entry }) {
  * words — `Read more` opens the rest in place. The label is the Why? panel's,
  * so the two surfaces cannot describe one tick differently.
  */
-export function CheckCard({ entry }) {
+export function CheckCard({ entry, startExpanded = false }) {
   if (!entry) return null;
   const wokenBy = COPY.wokenBy(entry.triggers);
   const edge = LABEL_COLOR[entry.kind] || cssVar('text-secondary');
   return (
-    <div data-tape-kind="check" data-tape-check-kind={entry.kind} style={record(edge)}>
+    <div
+      data-tape-kind="check"
+      data-tape-check-kind={entry.kind}
+      // D-89 — the address `Read the full check` asks for, and the focus stop
+      // it lands on. `tabIndex={-1}` makes the card programmatically focusable
+      // without putting every card in the tab order: a reader arrives here by
+      // asking to, never by tabbing past thirty of them.
+      data-tape-entry-id={entry.id}
+      tabIndex={-1}
+      style={record(edge)}
+    >
       <div style={{ ...eyebrow, color: edge }}>
         {COPY.checkCardLabel(entry.at, entry.label)}
       </div>
       {wokenBy && <div style={footnote}>{wokenBy}</div>}
-      <RecordProse text={entry.rationale} firstSentence={entry.firstSentence} />
+      <RecordProse text={entry.rationale} firstSentence={entry.firstSentence} startExpanded={startExpanded} />
       {entry.footer && entry.rationale && <div style={footnote}>{entry.footer}</div>}
     </div>
   );

@@ -31,7 +31,7 @@ import TurnLine from './battleView/TurnLine';
 import WhyPanel from './battleView/WhyPanel';
 import { selectWhyState, selectTradesForSymbol, deriveTierPrices } from './battleView/selectWhyState';
 import { selectDeployPlan, selectDeployPlanForSymbol } from './battleView/selectDeployPlan';
-import { buildTape } from './battleView/buildTape';
+import { buildTape, checkEntryId } from './battleView/buildTape';
 import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
 import { deriveReceipts } from './battleView/deriveReceipts';
 import ThisTurnStrip from './battleView/ThisTurnStrip';
@@ -260,6 +260,14 @@ function ScoreHeader({
           role: 'button',
           tabIndex: 0,
           'aria-expanded': bookOpen ? 'true' : 'false',
+          // D-89: the panel's close hands focus back HERE, and this is how it
+          // finds the control — the same query-by-attribute idiom the panel's
+          // own landing used. Controller-gated with the rest of this spread,
+          // so a flag-off render emits none of it. AFTER `aria-expanded`
+          // deliberately: `AgentBattleScreen.controller.test.jsx` counts the
+          // tap surfaces with a regex over the rendered attribute ORDER, and
+          // that triple is the contract it means to guard.
+          'data-why-book-toggle': '1',
           // The short name, DESCRIBED by the names and scores it contains
           // (review CR2): button children are presentational, so without the
           // description the scores would leave the accessibility tree.
@@ -534,6 +542,13 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const [pendingChatFocus, setPendingChatFocus] = useState(null);
   const collapseControlRef = useRef(null);
   const expandControlRef = useRef(null);
+  // D-89: the evaluation `Read the full check` names. The handler is defined
+  // above the derivation that produces it — the turn line needs the score
+  // header, which needs the layout — so the value reaches it through a ref
+  // written in an EFFECT rather than during render. An effect commits before
+  // any tap on the render that produced it, so the ref is never stale when the
+  // door is pressed, and nothing is written during a render pass.
+  const latestDecisionRef = useRef(null);
 
   // The layout (A4, controller flag): the mobile chat sheet's detent (inert
   // on desktop and flag-off), the viewport height it is sized from, the
@@ -1048,21 +1063,51 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     ));
   }, []);
   const handleBookWhyToggle = useCallback(() => setBookWhyOpen(open => !open), []);
-  // A2.1: `Read the full check` on a row opens the BOOK panel, which is where
-  // the whole paragraph lives (D-75). It opens rather than toggles — the door
-  // is never a way to close what the user just asked to read.
-  // A2.3 (ruling 4): the door OPENS the book panel, then brings it into view
-  // and moves focus to its heading — on both shells. The panel sits under the
-  // score header, above the board, so a row lower down the board opened it off
-  // the top of the screen (A2 handover item 38 / review L2-F3); and when it was
-  // already open the tap did nothing at all. The tick is what fixes the second
-  // case: it changes on every tap, so the effect runs whether or not the state
-  // moved.
-  const [readFullCheckTick, setReadFullCheckTick] = useState(0);
-  const handleReadFullCheck = useCallback(() => {
-    setBookWhyOpen(true);
-    setReadFullCheckTick((n) => n + 1);
+  // D-89 — the book panel's close. It closes the panel AND hands focus back to
+  // the score header, which is the control that owns its `aria-expanded`: a
+  // disclosure that leaves focus on a region it has just unmounted drops a
+  // keyboard reader to `document.body`. Queried rather than held in a ref for
+  // the same reason the panel's own landing was: the header renders in a
+  // sibling component, and one attribute is a smaller seam than a ref threaded
+  // through it.
+  const handleCloseBookWhy = useCallback(() => {
+    setBookWhyOpen(false);
+    if (typeof document === 'undefined') return;
+    document.querySelector('[data-why-book-toggle]')?.focus?.();
   }, []);
+
+  // `Read the full check` on a row (D-89). It used to open the BOOK panel
+  // above the board and move focus to its heading (A2.1 / A2.3 ruling 4).
+  // Two things were wrong with that and only a ruling could fix them: the
+  // panel is the LATEST check for the whole book, which is not necessarily the
+  // check the row's extract came from; and it opens above the board, so a
+  // reader on a low row was thrown to the top of the page to read one
+  // paragraph with no way back to where they were.
+  //
+  // The door now opens THE CHECK'S OWN CARD in the conversation — where the
+  // check sits between the checks either side of it, and where the reader can
+  // keep going. The card is named by `checkEntryId`, the builder's own rule,
+  // so the screen cannot ask for an id the tape does not stamp.
+  //
+  // The nonce re-fires the landing when the same card is asked for twice,
+  // exactly as the old tick did for the panel.
+  //
+  // The nonce is a COUNTER, not `Date.now()`: two taps inside the same
+  // millisecond — or under a pinned clock, which is how this screen is tested
+  // — produce the same stamp, and an unchanged nonce is an effect that does
+  // not re-run. The old book-panel tick was a counter for exactly this reason.
+  const [openCheck, setOpenCheck] = useState(null);
+  const handleReadFullCheck = useCallback(() => {
+    const invoker = typeof document !== 'undefined' ? document.activeElement : null;
+    const id = checkEntryId(latestDecisionRef.current);
+    if (!id) return;
+    setOpenCheck((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
+    // The conversation has to be OPEN, and at FULL rather than half: the card
+    // may be far up a long tape and the reader was promised the whole check.
+    // One call for both shells — since ruling 7 the detent is one thing, and
+    // FULL is an open detent on the desktop too, which renders the column.
+    sheet.setDetent(SHEET_DETENT.FULL, invoker);
+  }, [sheet.setDetent]);
   const handleAskFollowUp = useCallback((symbol) => {
     // The invoking control, captured synchronously so the mobile sheet can
     // hand focus back to it on collapse (A4).
@@ -1085,26 +1130,16 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   }, [chatOpen, sheet.open]);
   const handleComposerPrefillConsumed = useCallback(() => setComposerPrefill(null), []);
 
-  // The scroll and the focus for the door above (ruling 4). Runs AFTER the
-  // panel has rendered, so the target exists on the tap that opened it; and
-  // it is `block: 'nearest'`, so a panel already fully on screen does not
-  // move under the reader.
+  // The landing for the door above now lives in the CHAT (D-89), beside the
+  // card it lands on — `AgentChat`'s `openCheck` layout effect. It has to: the
+  // card may be inside a fold on the render that requests it, so the scroll
+  // can only run after the list has committed with that fold opened, and this
+  // component never sees the list.
   //
-  // Reduced motion takes the instant scroll — the same rule every other
-  // motion on this screen follows (BUILD_RULES §11). Focus is moved with
-  // `preventScroll` so the browser cannot undo the scroll that just ran.
-  //
-  // The mobile sheet's own focus rules are untouched: this is the board
-  // column, the sheet is non-modal, and nothing here reads or writes the
-  // sheet's return-focus ref.
-  useEffect(() => {
-    if (!controllerOn || readFullCheckTick === 0 || typeof document === 'undefined') return;
-    const target = document.getElementById('why-book-heading')
-      || document.querySelector('[data-why-symbol="book"]');
-    if (!target) return;
-    target.scrollIntoView?.({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'nearest' });
-    target.focus?.({ preventScroll: true });
-  }, [readFullCheckTick, controllerOn, reducedMotion]);
+  // What used to be here — a scroll to `#why-book-heading` and a focus on it —
+  // went with the retarget. The book panel is still reachable (the score
+  // header opens it) and now opens collapsed, so there is nothing above the
+  // board to bring into view.
 
   // A2.3: the second door. Scope is DISPLAY FILTERING — nothing is sent — and
   // the composer prefill is the existing one, so the door reads the
@@ -1198,6 +1233,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   }, [controllerOn, gameTapeOpen]);
   const lastScoredAt = agentBattle?.scoreState?.lastScoredAt ?? null;
   const latestDecision = turnLine?.decision ?? null;
+  useEffect(() => { latestDecisionRef.current = latestDecision; }, [latestDecision]);
 
   // ── Receipts + This turn (Phase A, controller flag) ───────────────────────
   // Pure, from the subscribed doc; the chat and the strip only render what
@@ -1426,6 +1462,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       // A2.3: the scoped stream and the way out of it.
       scopeSymbol={scopeSymbol}
       onClearScope={handleClearScope}
+      openCheck={openCheck}
       controllerLayout
       // Item 11: the controller's own line when a send never reaches the
       // model. Passed on the FLAG, beside the layout rather than through it.
@@ -1673,6 +1710,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 state={selectWhyState(latestDecision, null, lastScoredAt)}
                 deployPlan={deployPlan}
                 onAskFollowUp={handleAskFollowUp}
+                onCloseBook={handleCloseBookWhy}
                 reducedMotion={reducedMotion}
                 headingId="why-book-heading"
               />

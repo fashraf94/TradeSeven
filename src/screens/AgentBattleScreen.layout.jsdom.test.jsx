@@ -681,6 +681,30 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('full');
   });
 
+  it('D-89 — `Read the full check` opens the MOBILE sheet to FULL, at the card', () => {
+    // One call for both shells: since ruling 7 the detent is one thing. The
+    // desktop half (the column, open) is held in the controller file, which
+    // mounts at a desktop width; this is the phone, where FULL is what gives
+    // a card far up a long tape the room the door promised.
+    setViewport(390);
+    mount();
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
+
+    click(rowButtonFor('SLB'));
+    const door = qa('button').find((b) => b.textContent === 'Read the full check');
+    expect(door).toBeTruthy();
+    click(door);
+
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('full');
+    // …and the card the door named is in the sheet, expanded and focused.
+    const card = q('[data-sheet-content] [data-tape-kind="check"]');
+    expect(card).toBeTruthy();
+    expect(card.getAttribute('data-tape-entry-id')).toBeTruthy();
+    expect(document.activeElement).toBe(card);
+    // The panel above the board is NOT what opened.
+    expect(q('[data-why-symbol="book"]')).toBeNull();
+  });
+
   it('A2.4 (review L2-F6) — an UNTOUCHED phone widened to the desktop arrives with a chat column', () => {
     // `initialDetent` is read once, so before the adopt effect a session that
     // mounted below 768 px and was then widened arrived on a desktop with NO

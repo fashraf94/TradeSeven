@@ -459,6 +459,12 @@ export default function AgentChat({
   // both are null flag-off, where the stream is the shipped one.
   scopeSymbol = null,
   onClearScope = null,
+  // Phase A2 flip-prep (D-89): the check card `Read the full check` asked for.
+  // `{ id, nonce }` — the id is `buildTape`'s own `checkEntryId`, so the card
+  // the screen names and the card the builder stamps cannot drift; the nonce
+  // re-fires the scroll when the SAME card is asked for twice, exactly as the
+  // book panel's tick used to. Null flag-off and whenever nothing is pending.
+  openCheck = null,
 }) {
   // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
   // reactively from the chatExchanges prop so Firestore-initiated writes
@@ -675,6 +681,32 @@ export default function AgentChat({
     // dependency; the scope's transition is the whole trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeSymbol]);
+
+  // ── `Read the full check` lands on the card (D-89) ────────────────────────
+  //
+  // The door used to open the panel above the board and put focus on its
+  // heading. It now opens the CHECK'S OWN CARD, here, where the check sits
+  // between the checks either side of it and the player can keep reading. This
+  // effect is the landing: scroll the card into view, then focus it.
+  //
+  // A LAYOUT EFFECT, after the list has rendered: the card may not have
+  // existed on the render that requested it — it may have been inside a fold
+  // until `openCheck.id` unpinned it one memo above — so the query has to run
+  // after that render commits, not during it.
+  //
+  // Keyed on the NONCE, so asking twice for the same card scrolls twice. The
+  // card is `tabIndex={-1}`, so focus lands without putting thirty cards in
+  // the tab order; `preventScroll` keeps the browser from undoing the scroll
+  // that just ran, which is the same pairing the panel's own landing used.
+  const openCheckNonce = openCheck?.nonce ?? null;
+  const openCheckId = openCheck?.id ?? null;
+  useLayoutEffect(() => {
+    if (openCheckNonce == null || !openCheckId) return;
+    const el = listRef.current?.querySelector(`[data-tape-entry-id="${openCheckId}"]`);
+    if (!el) return;
+    el.scrollIntoView?.({ behavior: 'auto', block: 'nearest' });
+    el.focus?.({ preventScroll: true });
+  }, [openCheckNonce, openCheckId]);
 
   // ── Composer prefill (Phase A — the Why? door) ─────────────────────────────
   useEffect(() => {
@@ -927,8 +959,11 @@ export default function AgentChat({
     // meaningless in the other — and a folded run shows no text, so it names
     // no piece either way (scopeTape.js).
     if (scopeSymbol) return scopeTape(sorted, scopeSymbol, knownTickers);
-    return collapseQuietChecks(sorted);
-  }, [messages, tradeEvents, tapeEntries, scopeSymbol, knownTickers]);
+    // …and the card the player asked to read is never folded away (D-89): a
+    // HOLD with words is `quiet` by D-77's conjuncts, so the ordinary target
+    // of that door is the ordinary member of a run.
+    return collapseQuietChecks(sorted, openCheck?.id ?? null);
+  }, [messages, tradeEvents, tapeEntries, scopeSymbol, knownTickers, openCheck?.id]);
 
   // ── Review-mode injection points in the timeline ──────────────────────────
   // Unanswered proposals render BEFORE the first auto-debrief (transition point
@@ -1135,7 +1170,7 @@ export default function AgentChat({
 
             let body;
             if (item._type === TAPE_KIND.CHECK) {
-              body = <CheckCard key={item.id} entry={item} />;
+              body = <CheckCard key={item.id} entry={item} startExpanded={openCheck?.id === item.id} />;
             } else if (item._type === TAPE_KIND.CHECK_RUN) {
               body = <CheckRunLine key={item.id} entry={item} />;
             } else if (item._type === 'trade' && Array.isArray(tapeEntries)) {
