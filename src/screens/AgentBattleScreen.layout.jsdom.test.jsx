@@ -57,7 +57,7 @@ vi.mock('../components/Agent/LiveActivityPanel', () => ({
 
 // The feed the hook hands back is mutable so a test can grow it between
 // renders (the unread dot).
-const store = vi.hoisted(() => ({ statusFeed: [], lastScoredAt: '2026-09-01T16:47:00.000Z', pendingProposal: null, feedBookmarks: [] }));
+const store = vi.hoisted(() => ({ statusFeed: [], lastScoredAt: '2026-09-01T16:47:00.000Z', pendingProposal: null, feedBookmarks: [], evaluations: null }));
 
 const LIVE_DOC = {
   id: 'ab-1',
@@ -87,13 +87,18 @@ const LIVE_DOC = {
 };
 vi.mock('../hooks/useAgentBattle', () => ({
   default: () => ({
-    battle: { ...LIVE_DOC, statusFeed: store.statusFeed, scoreState: { ...LIVE_DOC.scoreState, lastScoredAt: store.lastScoredAt } }, statusFeed: store.statusFeed,
+    battle: { ...LIVE_DOC, statusFeed: store.statusFeed, evaluations: store.evaluations || LIVE_DOC.evaluations, scoreState: { ...LIVE_DOC.scoreState, lastScoredAt: store.lastScoredAt } }, statusFeed: store.statusFeed,
     executionMode: 'copilot', pendingProposal: store.pendingProposal, strategyPreset: 'balanced', gameplanMeeting: null,
     chatExchanges: LIVE_DOC.chatExchanges, feedBookmarks: store.feedBookmarks, loading: false,
   }),
 }));
 
 import AgentBattleScreen from './AgentBattleScreen';
+import { derivePeekLine } from './battleView/derivePeekLine';
+import { mergeRecordedTape } from './battleView/scopeTape';
+import { buildTape } from './battleView/buildTape';
+import { deriveReceipts } from './battleView/deriveReceipts';
+import { deriveChatMessages } from '../components/Agent/deriveChatMessages';
 
 const BATTLE = {
   agentId: 'agent-1', agentBattleId: 'ab-1',
@@ -159,6 +164,7 @@ beforeEach(() => {
   store.lastScoredAt = '2026-09-01T16:47:00.000Z';
   store.pendingProposal = null;
   store.feedBookmarks = [];
+  store.evaluations = null;
   mq.listeners.clear();
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -228,6 +234,39 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     expect(document.activeElement).toBe(q('textarea'));
   });
 
+  it('BOTH Why? doors EXPAND a collapsed desktop — the detent decides, not the breakpoint', () => {
+    // A4 wrote both doors as `if (!isDesktop) sheet.open(...)`, on the premise
+    // that "the chat column is always on screen" on a desktop. A2.4 made that
+    // false. The scope door was corrected for it in the review (L2-F2) and had
+    // NO guard — deleting the whole conjunct left the suite green (refuter A
+    // M12); its twin, the follow-up door, was never corrected at all and put
+    // the player in a prefilled composer with the conversation still folded
+    // behind `display: none` (refuter A RA-F3). One row for both.
+    mount();
+    click(q('[data-chat-collapse]'));
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
+    expect(q('[data-peek-strip]')).toBeTruthy();
+
+    // DOOR 1 — `Ask a follow-up`.
+    click(rowButtonFor('SLB'));
+    click(doorButton());
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('false');
+    expect(q('[data-peek-strip]')).toBeNull();
+    expect(q('textarea').value).toBe('About SLB — ');
+    expect(document.activeElement).toBe(q('textarea'));
+
+    // DOOR 2 — the scope door, from a collapse made after the panel is open.
+    click(q('[data-chat-collapse]'));
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
+    const scopeDoor = q('[data-why-scope="SLB"]');
+    expect(scopeDoor).toBeTruthy();
+    click(scopeDoor);
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('false');
+    expect(q('[data-peek-strip]')).toBeNull();
+    // …and the filter really landed, so the expansion is not the whole claim.
+    expect(q('[data-tape-scope="SLB"]')).toBeTruthy();
+  });
+
   it('the landing still plays across the SEVEN tier slots in render order when a check lands (rowCount unchanged by the layout)', () => {
     mount();
     expect(qa('[data-wash]').length).toBe(0); // never on open
@@ -241,21 +280,185 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     expect(washes.map((w) => w.getAttribute('data-wash-index'))).toEqual(['0', '1', '2', '3', '4', '5', '6']);
   });
 
-  it('the unread dot has nowhere to show on desktop, and the desktop column MARKS the feed seen — a later crossing to mobile shows no dot for those entries', () => {
+  it('an OPEN desktop column has nowhere to show the dot and MARKS the feed seen — the entries stay seen across a crossing', () => {
     mount();
     store.statusFeed = [{ action: 'hold', message: 'Held.', timestamp: '2026-09-01T16:47:00.000Z' }, { action: 'hold', message: 'Held again.', timestamp: '2026-09-01T17:02:00.000Z' }];
     rerender();
     expect(q('[data-sheet-dot]')).toBeNull();
+    expect(q('[data-peek-dot]')).toBeNull();
     expect(q('[data-unread]')).toBeNull();
-    // Seen on desktop (the effect ran with the column visible): the handle
-    // that appears after a crossing to mobile carries no dot for them…
+    // Seen on the desktop (the effect ran with the column visible). A2.4: the
+    // detent SURVIVES the crossing, so the phone arrives at half — still
+    // visible, still no dot — and only a collapse can show one again.
     crossTo(390);
     expect(q('[data-layout="mobile"]')).toBeTruthy();
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('half');
     expect(q('[data-sheet-cycle]').getAttribute('data-unread')).toBe('false');
+    click(q('[data-sheet-collapse]'));
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
     // …and a NEW entry at peek does show.
     store.statusFeed = [...store.statusFeed, { action: 'hold', message: 'Held once more.', timestamp: '2026-09-01T17:17:00.000Z' }];
     rerender();
     expect(q('[data-sheet-cycle]').getAttribute('data-unread')).toBe('true');
+  });
+
+  it('A2.4 (D-74) — collapsing folds the chat to the strip and the board takes the full width', () => {
+    mount();
+    const board = q('[data-board]');
+    expect(board.style.flex).toBe('3 1 0%');
+    expect(q('[data-chat-column]')).toBeTruthy();
+    expect(q('[data-peek-strip]')).toBeNull();
+
+    const collapse = q('[data-chat-collapse]');
+    expect(collapse.getAttribute('aria-label')).toBe('Collapse the chat');
+    // `aria-expanded` has to NAME something (review RB-F11). The two controls
+    // live in each other's chrome, so the region both of them are about is the
+    // COLUMN — the one node that holds the strip and the chat beneath it.
+    expect(collapse.getAttribute('aria-expanded')).toBe('true');
+    expect(collapse.getAttribute('aria-controls')).toBe(q('[data-chat-column]').id);
+    expect(q('[data-chat-column]').id).toBeTruthy();
+    click(collapse);
+
+    // The column is the chat's ONE home and it does not go away — it wraps
+    // onto its own line as the strip (review L2-F1). What changes is its
+    // chrome and its flex basis, never its position in the tree.
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
+    expect(q('[data-chat-collapse]')).toBeNull();
+    // THE COLLAPSED STYLE CONTRACT (review RA-F7). The row becomes a COLUMN,
+    // not a wrapped row: a multi-line flex container sizes each line to its
+    // content, so the board's line grew to the board's full height, its own
+    // `overflow-y: auto` scroller never bounded, and the PAGE scrolled —
+    // taking the strip and its unread dot below the fold. Every value here
+    // was previously unasserted except the board's `flex` (refuter A M17/M61:
+    // making the collapsed column a 40 %-wide stub, or leaving it the open
+    // state's left border, both passed the whole suite).
+    expect(q('[data-layout="desktop"]').style.flexDirection).toBe('column');
+    expect(q('[data-layout="desktop"]').style.flexWrap).toBe('');
+    const boardStyle = q('[data-board]').style;
+    expect(boardStyle.flex).toBe('1 1 0%');       // grows into the column…
+    expect(boardStyle.minHeight).toBe('0px');     // …and lets its scroller bound
+    const colStyle = q('[data-chat-column]').style;
+    expect(colStyle.flex).toBe('0 0 auto');       // the strip hugs its content
+    expect(colStyle.width).toBe('100%');
+    expect(colStyle.borderLeft).toBe('');         // nothing to its left any more
+    // The strip sits BENEATH the full-width board, on its own wrapped line.
+    // It is the board's SIBLING, not its child (review L2-F1): nesting it in
+    // the board column is what moved the chat between two tree positions and
+    // remounted it on every collapse. Same picture, stable tree.
+    const strip = q('[data-peek-strip]');
+    expect(strip).toBeTruthy();
+    const row = q('[data-layout="desktop"]');
+    const children = [...row.children];
+    expect(children.indexOf(q('[data-board]'))).toBeLessThan(children.indexOf(q('[data-chat-column]')));
+    expect(q('[data-chat-column]').contains(strip)).toBe(true);
+    expect(qa('textarea').length).toBe(1);
+    expect(q('[data-chat-column]').contains(q('textarea'))).toBe(true);
+    // …and the strip carries the turn line and the newest tape line.
+    const expand = q('[data-peek-expand]');
+    expect(expand.getAttribute('aria-label')).toBe('Expand the chat');
+    expect(expand.getAttribute('aria-expanded')).toBe('false');
+    // …the SAME region, across the collapse: one id, so neither reference is
+    // a dangling one and the pair reads as one disclosure (review RB-F11).
+    expect(expand.getAttribute('aria-controls')).toBe(q('[data-chat-column]').id);
+    expect(document.getElementById(expand.getAttribute('aria-controls'))).toBe(q('[data-chat-column]'));
+    expect(expand.textContent).toContain('Checked 12:45 PM');
+    expect(q('[data-peek-line]')).toBeTruthy();
+
+    // Expanding restores the chrome and the 60/40 split.
+    click(expand);
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('false');
+    expect(q('[data-peek-strip]')).toBeNull();
+    expect(q('[data-board]').style.flex).toBe('3 1 0%');
+    expect(q('[data-layout="desktop"]').style.flexDirection).toBe('row');
+    expect(q('[data-layout="desktop"]').style.flexWrap).toBe('');
+    // …and the open column is the narrow side of a ROW again, with its border.
+    expect(q('[data-chat-column]').style.flex).toBe('2 1 0%');
+    expect(q('[data-chat-column]').style.borderLeft).not.toBe('');
+    expect(qa('textarea').length).toBe(1);
+  });
+
+  it('A2.4 (review L2-F1) — collapsing and expanding NEVER remount the chat: the draft survives', () => {
+    // A4's F13 rule, on the desktop's new control. `{chat}` is rendered in ONE
+    // tree position; only its chrome and the column's flex basis change.
+    mount();
+    const before = q('[data-chat-layout="controller"]');
+    const ta = q('textarea');
+    typeDraft('sell SLB at the open');
+    expect(q('textarea').value).toBe('sell SLB at the open');
+
+    click(q('[data-chat-collapse]'));
+    expect(q('[data-peek-strip]')).toBeTruthy();
+    expect(q('textarea').value).toBe('sell SLB at the open');
+    // …the very same DOM node, not a fresh one with a restored value.
+    expect(q('[data-chat-layout="controller"]')).toBe(before);
+    expect(q('textarea')).toBe(ta);
+
+    click(q('[data-peek-expand]'));
+    expect(q('textarea').value).toBe('sell SLB at the open');
+    expect(q('[data-chat-layout="controller"]')).toBe(before);
+  });
+
+  it('A2.4 (review L2-F4) — focus moves to the control that replaces the one that vanished', () => {
+    mount();
+    const collapse = q('[data-chat-collapse]');
+    act(() => { collapse.focus(); });
+    expect(document.activeElement).toBe(collapse);
+    click(collapse);
+    expect(document.activeElement).toBe(q('[data-peek-expand]'));
+    click(q('[data-peek-expand]'));
+    expect(document.activeElement).toBe(q('[data-chat-collapse]'));
+  });
+
+  it('A2.4 (review L4-F2) — the strip\'s line IS the tape\'s newest entry, not a constant', () => {
+    // The presence assertions could not tell `derivePeekLine`'s output from
+    // any other string. This one recomputes it from the fixture's own doc and
+    // then moves the tape to prove the strip follows.
+    mount();
+    click(q('[data-chat-collapse]'));
+    const expected = derivePeekLine(mergeRecordedTape(
+      deriveChatMessages(LIVE_DOC.chatExchanges),
+      buildTape({
+        trades: LIVE_DOC.trades, statusFeed: LIVE_DOC.statusFeed,
+        evaluations: LIVE_DOC.evaluations,
+        receipts: deriveReceipts(LIVE_DOC.chatExchanges, LIVE_DOC.directive, LIVE_DOC.status),
+        chatExchanges: LIVE_DOC.chatExchanges,
+      }),
+    ));
+    expect(expected).toBeTruthy();
+    expect(q('[data-peek-line]').textContent).toBe(expected);
+
+    // A newer entry lands: the line moves with it.
+    store.evaluations = [...LIVE_DOC.evaluations, {
+      evalId: 'eval_new', timestamp: '2026-09-01T19:46:00.000Z', decision: 'HOLD',
+      downgraded: false, rationale: 'The book is quiet.', scores: { banked: 0 },
+    }];
+    // `rerender` re-renders the same root, so the detent survives — the strip
+    // is still up and only its line should have moved.
+    rerender();
+    expect(q('[data-peek-strip]')).toBeTruthy();
+    expect(q('[data-peek-line]').textContent).toBe('3:45 PM · Held');
+    expect(q('[data-peek-line]').textContent).not.toBe(expected);
+  });
+
+  it('A2.4 (D-74) — a COLLAPSED desktop shows the dot on the strip, the mobile rule', () => {
+    mount();
+    click(q('[data-chat-collapse]'));
+    expect(q('[data-peek-strip]')).toBeTruthy();
+    // Seen while the column was open, so nothing is unread yet…
+    expect(q('[data-peek-expand]').getAttribute('data-unread')).toBe('false');
+    expect(q('[data-peek-dot]')).toBeNull();
+    // …a new entry arrives with the chat collapsed, and the strip says so.
+    store.statusFeed = [{ action: 'hold', message: 'Held.', timestamp: '2026-09-01T17:17:00.000Z' }];
+    rerender();
+    expect(q('[data-peek-expand]').getAttribute('data-unread')).toBe('true');
+    expect(q('[data-peek-dot]')).toBeTruthy();
+    // Expanding clears it, exactly as opening the sheet does.
+    click(q('[data-peek-expand]'));
+    expect(q('[data-chat-column]')).toBeTruthy();
+    expect(q('[data-peek-strip]')).toBeNull();
+    store.statusFeed = [...store.statusFeed];
+    rerender();
+    expect(q('[data-peek-dot]')).toBeNull();
   });
 
   it('the Game Tape link carries the bookmark dot exactly when a bookmark exists', () => {
@@ -337,8 +540,8 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     const list = q('[data-chat-layout="controller"] > div');
     expect(list.style.display).toBe('none');
     // Peek carries the turn line — the same text the header renders.
-    expect(q('[data-sheet-cycle]').textContent).toContain('Checked 12:47 PM · next ~1:02 PM');
-    expect(q('[data-turn-state]').textContent).toBe('Checked 12:47 PM · next ~1:02 PM');
+    expect(q('[data-sheet-cycle]').textContent).toContain('Checked 12:45 PM · next ~1:00 PM');
+    expect(q('[data-turn-state]').textContent).toBe('Checked 12:45 PM · next ~1:00 PM');
     // The cycle control is a real button, named for its next activation, wired to the content.
     const cycle = q('[data-sheet-cycle]');
     expect(cycle.tagName).toBe('BUTTON');
@@ -450,23 +653,123 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     expect(q('[data-sheet-cycle]').getAttribute('data-unread')).toBe('true');
   });
 
-  it('a breakpoint crossing keeps exactly ONE AgentChat at every moment and brings the sheet back at peek', () => {
+  it('A2.4 (ruling 7) — a breakpoint crossing keeps ONE AgentChat and the DETENT SURVIVES', () => {
+    // This row asserted "brings the sheet back at peek" through A4, because
+    // the hook was disabled on the desktop and reset on every crossing. Ruling
+    // 7 moved it: one detent, both shells, and it survives the crossing.
     mount();
     const cycle = q('[data-sheet-cycle]');
     click(cycle);
     click(cycle);
     expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('full');
+
+    // OPEN on the phone → the column on the desktop.
     crossTo(1280);
     expect(q('[data-layout="desktop"]')).toBeTruthy();
     expect(q('[data-chat-sheet]')).toBeNull();
+    expect(q('[data-chat-column]')).toBeTruthy();
+    expect(q('[data-peek-strip]')).toBeNull();
     expect(qa('textarea').length).toBe(1);
     expect(q('[data-chat-column] textarea')).toBeTruthy();
+
+    // …and back: still open, at the detent it left with.
     crossTo(390);
     expect(q('[data-layout="mobile"]')).toBeTruthy();
     expect(q('[data-chat-column]')).toBeNull();
     expect(qa('textarea').length).toBe(1);
     expect(q('[data-sheet-content] textarea')).toBeTruthy();
-    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek'); // the reset
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('full');
+  });
+
+  it('A2.4 (review L2-F6) — an UNTOUCHED phone widened to the desktop arrives with a chat column', () => {
+    // `initialDetent` is read once, so before the adopt effect a session that
+    // mounted below 768 px and was then widened arrived on a desktop with NO
+    // chat column: the phone's untouched peek carried over, and peek is a
+    // usable chat on a phone and an absent one on a desktop. The two ruled
+    // crossings (desktop → mobile, both directions of it) were already
+    // guarded; the case the fix exists FOR was not, and deleting the whole
+    // adopt effect left the suite green (refuter A M25 / RA-F4).
+    setViewport(390);
+    mount();
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
+
+    crossTo(1280);
+    expect(q('[data-layout="desktop"]')).toBeTruthy();
+    // The desktop's own default, adopted because nothing has been touched…
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('false');
+    expect(q('[data-peek-strip]')).toBeNull();
+    expect(q('[data-chat-column] textarea')).toBeTruthy();
+  });
+
+  it('A2.4 (review L2-F6) — a TOUCHED phone keeps ITS detent across the same crossing', () => {
+    // The other half, and what makes the row above a guard rather than a
+    // statement that the desktop opens: once the player has moved the sheet
+    // the detent is theirs, and the adopt effect must not overrule it.
+    setViewport(390);
+    mount();
+    // A choice that ENDS at peek: the cycle wraps peek → half → full → peek,
+    // so three activations leave the detent where it started and the sheet
+    // touched. (At peek there is no collapse control — it is already down.)
+    const cycle = q('[data-sheet-cycle]');
+    click(cycle); click(cycle); click(cycle);
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
+
+    crossTo(1280);
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
+    expect(q('[data-peek-strip]')).toBeTruthy();
+  });
+
+  it('A2.4 (ruling 7) — COLLAPSED on the desktop arrives at PEEK on the phone, and back', () => {
+    setViewport(1280);
+    mount();
+    expect(q('[data-chat-column]')).toBeTruthy();
+    click(q('[data-chat-collapse]'));
+    expect(q('[data-peek-strip]')).toBeTruthy();
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
+    expect(qa('textarea').length).toBe(1);
+
+    crossTo(390);
+    expect(q('[data-layout="mobile"]')).toBeTruthy();
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
+    expect(q('[data-peek-strip]')).toBeNull();
+    expect(qa('textarea').length).toBe(1);
+
+    // …and the phone's peek is the desktop's strip when it goes back.
+    crossTo(1280);
+    expect(q('[data-peek-strip]')).toBeTruthy();
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
+    expect(qa('textarea').length).toBe(1);
+  });
+
+  it('A2.4 — expanding from the strip opens at HALF, so a crossing lands on half', () => {
+    setViewport(1280);
+    mount();
+    click(q('[data-chat-collapse]'));
+    click(q('[data-peek-expand]'));
+    expect(q('[data-chat-column]')).toBeTruthy();
+    crossTo(390);
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('half');
+  });
+
+  it('A2.4 (D-74) — the mobile peek carries the newest tape line, and open it does not', () => {
+    mount();
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
+    const line = q('[data-peek-line]');
+    expect(line).toBeTruthy();
+    // The newest entry of this fixture's tape, folded as the stream folds it.
+    expect(line.textContent.length).toBeGreaterThan(0);
+    expect(line.textContent).toContain(' · ');
+    // The turn line stays on the handle — the strip is turn line THEN the
+    // newest line, and the handle is the first of the two.
+    expect(q('[data-sheet-cycle]').textContent).toContain('Checked 12:45 PM');
+
+    // Open, the stream itself is on screen; a summary of its own last line
+    // would be noise.
+    click(q('[data-sheet-cycle]'));
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('half');
+    expect(q('[data-peek-line]')).toBeNull();
+    click(q('[data-sheet-collapse]'));
+    expect(q('[data-peek-line]')).toBeTruthy();
   });
 
   it('the collapse control at half goes straight to peek', () => {

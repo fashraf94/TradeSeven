@@ -13,10 +13,12 @@
 
 import { describe, it, expect } from 'vitest';
 import { battleTypeLabel } from '../utils/commandCenterLiveBattles';
+import { DESK_COPY } from '../components/Dashboard/desk/deskCopy';
 import {
   buildBaggerbombAdapter,
   derivePhase,
   deriveDueAt,
+  deriveLastCheckOfSession,
   toIso,
   PHASE,
   PROXIMITY_STALE_MS,
@@ -486,6 +488,35 @@ describe('buildBaggerbombAdapter', () => {
       expect(a.nextDecisionAt).toBe('2026-09-01T17:02:00.000Z');
     });
 
+    it('LIVE: `next ~` is withheld once its SLOT has gone by, not its candidate (D-83, review RA-F1)', () => {
+      // Since D-83 the posture strings render `next ~` as the CRON SLOT: a
+      // candidate of 1:02 PM shows as `next ~1:00 PM`, because 1:00 is when
+      // the cron fires and 1:02 is only when a two-minute-late check lands.
+      // The slot is the EARLIER of the two, so a gate on the candidate left
+      // the label naming a time already gone by — for exactly as long as the
+      // last check was late, δ of every fifteen minutes.
+      //
+      // The check here lands 2 min into its slot, so δ = 2 min.
+      const b = makeBattle({
+        scoreState: { evaluationCount: 4, lastScoredAt: '2026-09-01T16:47:00.000Z' },
+      });
+      const at = (iso) => build(b, makeCache(), AGENT, iso, MS.open).nextDecisionAt;
+      // Before the slot, and AT it: the label `next ~1:00 PM` is true, so the
+      // instant stands. A slot is a bucket and the cron fires at its start.
+      expect(at('2026-09-01T16:59:00Z')).toBe('2026-09-01T17:02:00.000Z');
+      expect(at('2026-09-01T17:00:00Z')).toBe('2026-09-01T17:02:00.000Z');
+      // One second later the slot has gone by and the label would be stale.
+      // This is the whole window the defect lived in: 1:00:01 → 1:02:00.
+      expect(at('2026-09-01T17:00:01Z')).toBeNull();
+      expect(at('2026-09-01T17:01:00Z')).toBeNull();
+      // …and the posture line degrades to the honest half rather than naming
+      // a past time as the next check.
+      expect(DESK_COPY.postureLive('2026-09-01T16:47:00.000Z', null))
+        .toBe('Checked 12:45 PM');
+      expect(DESK_COPY.postureLive('2026-09-01T16:47:00.000Z', '2026-09-01T17:02:00.000Z'))
+        .toBe('Checked 12:45 PM · next ~1:00 PM');
+    });
+
     it('LIVE: a next check that would land past the close is withheld, not faked', () => {
       // 15:50 ET + 15min = 16:05 ET, past the 16:00 close. There is no honest
       // "next check" inside this session, so the field is null and the posture
@@ -611,6 +642,84 @@ describe('buildBaggerbombAdapter', () => {
     it('nextDecisionAt is deriveDueAt gated on phase and "not yet past" — one function, not two', () => {
       const a = build(makeBattle(), makeCache(), AGENT, NOW, MS.open);
       expect(a.nextDecisionAt).toBe(deriveDueAt(a.lastCheckedAt, MS.open));
+    });
+  });
+
+  describe('lastCheckOfSession — the D-71 discriminator, derived ONCE for both surfaces', () => {
+    it('LIVE with no due slot inside the session is the last check of the day', () => {
+      // 15:50 ET + 15 = 16:05 ET, past the 16:00 close.
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:50:00.000Z', MS.open)).toBe(true);
+      // 15:45 ET + 15 = 16:00 ET — AT the close, which deriveDueAt clamps too.
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:45:00.000Z', MS.open)).toBe(true);
+    });
+
+    it('MUTATION ROW — a slot still inside the session is NOT the last check, however late it is', () => {
+      // The starved-cron case: the slot exists and was missed. Late, not done.
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:44:00.000Z', MS.open)).toBe(false);
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T14:00:00.000Z', MS.open)).toBe(false);
+    });
+
+    it('no check at all is not a last check — the Desk says one is coming instead', () => {
+      expect(deriveLastCheckOfSession(PHASE.LIVE, null, MS.open)).toBe(false);
+      expect(deriveLastCheckOfSession(PHASE.LIVE, undefined, MS.open)).toBe(false);
+    });
+
+    it('every non-LIVE phase is false — the closed and complete lines carry their own sentence', () => {
+      for (const phase of [PHASE.PRE_OPEN, PHASE.LIVE_CLOSED, PHASE.POST_CLOSE]) {
+        expect(deriveLastCheckOfSession(phase, '2026-09-01T19:50:00.000Z', MS.open)).toBe(false);
+      }
+    });
+
+    it('an early close clamps earlier — a 12:55 ET check is the last one of a 13:00 session', () => {
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-11-27T17:55:00.000Z', MS.earlyCloseOpen)).toBe(true);
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-11-27T17:00:00.000Z', MS.earlyCloseOpen)).toBe(false);
+    });
+
+    it('MUTATION ROW (review L1-F1 / L3-F1) — YESTERDAY\'s last check is not today\'s', () => {
+      // The clamp inside deriveDueAt compares ET minutes-past-midnight and is
+      // blind to the DATE, so a prior-session stamp at/after (close − 15 min)
+      // also yields null. `scoreState.lastScoredAt` is a running stamp that is
+      // never reset at the day rollover, so on day 2+ of a multi-day battle
+      // this is the state from the open until the day's first tick lands —
+      // and without the calendar-day conjunct both surfaces opened the morning
+      // claiming `Checked 3:50 PM · last check today` about yesterday.
+      const wed = { ...MS.open, nextOpenTime: new Date(2026, 8, 3, 9, 30), nextCloseTime: new Date(2026, 8, 2, 16, 0) };
+      // Tue 15:50 ET — the last check of TUESDAY's session.
+      expect(deriveDueAt('2026-09-01T19:50:00.000Z', wed)).toBeNull();
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:50:00.000Z', wed)).toBe(false);
+      // …while WEDNESDAY's own 15:50 check is the last of the session.
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-02T19:50:00.000Z', wed)).toBe(true);
+    });
+
+    it('with no market state there is no session to be the last check of', () => {
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:50:00.000Z', null)).toBe(false);
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:50:00.000Z', {})).toBe(false);
+    });
+
+    it('the calendar day is ET, not UTC — an instant whose UTC day differs still resolves to its ET day', () => {
+      // Review FIX-2 caught the earlier version of this row as vacuous: every
+      // IN-SESSION ET instant (13:30-20:00 UTC) shares its UTC calendar day,
+      // so it could not exercise the distinction at all. This one can:
+      // 2026-09-02T01:00Z is Sep 1 at 9 PM ET — Sep 2 in UTC, Sep 1 in ET.
+      const sep1 = { ...MS.open, nextCloseTime: new Date(2026, 8, 1, 16, 0) };
+      const sep2 = { ...MS.open, nextCloseTime: new Date(2026, 8, 2, 16, 0) };
+      // Against Sep 1's close it IS that session's day (a UTC comparison would
+      // read Sep 2 and answer false).
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-02T01:00:00.000Z', sep1)).toBe(true);
+      // Against Sep 2's close it is not (a UTC comparison would read Sep 2 and
+      // wrongly answer true — the L1-F1 defect, in the opposite direction).
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-02T01:00:00.000Z', sep2)).toBe(false);
+    });
+
+    it('the adapter exposes the field, so neither surface re-derives the null', () => {
+      const a = build(makeBattle(), makeCache(), AGENT, NOW, MS.open);
+      expect(a.lastCheckOfSession).toBe(deriveLastCheckOfSession(a.phase, a.lastCheckedAt, MS.open));
+      expect(a.lastCheckOfSession).toBe(false);
+      const late = build(
+        makeBattle({ scoreState: { evaluationCount: 25, lastScoredAt: '2026-09-01T19:50:00.000Z' } }),
+        makeCache(), AGENT, '2026-09-01T19:55:00.000Z', MS.open,
+      );
+      expect(late.lastCheckOfSession).toBe(true);
     });
   });
 

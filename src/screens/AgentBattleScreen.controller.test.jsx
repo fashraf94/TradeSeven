@@ -132,7 +132,7 @@ describe('under the flag — the controller', () => {
 
   it('the score header carries the turn line, from the adapter arithmetic the Desk ships', () => {
     const html = render();
-    expect(html).toContain('Checked 12:47 PM · next ~1:02 PM');
+    expect(html).toContain('Checked 12:45 PM · next ~1:00 PM');
     expect(html).toContain('data-turn-state="live"');
   });
 

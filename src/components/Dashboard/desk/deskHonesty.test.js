@@ -194,7 +194,7 @@ describe('the posture line is discrete, never continuous', () => {
     // approximate and stays in the past tense; it never becomes a promise.
     const { DESK_COPY } = await import('./deskCopy.js');
     const line = DESK_COPY.postureLate('2026-09-01T16:47:00.000Z', '2026-09-01T17:02:00.000Z');
-    expect(line).toBe('Last check 12:47 PM · next was due ~1:02 PM');
+    expect(line).toBe('Last check 12:45 PM · next was due ~1:00 PM');
     expect(line).toContain('~');
     expect(line).not.toMatch(/\bnext ~/);
   });

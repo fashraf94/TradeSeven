@@ -17,6 +17,7 @@
 //
 // The five states (Phase A seed §A1) and the string each consumes:
 //   live      → DESK_COPY.postureLive     `Checked 12:47 PM · next ~1:02 PM`
+//   lastToday → DESK_COPY.postureLastOfSession `Checked 3:46 PM · last check today`
 //   late      → DESK_COPY.postureLate     `Last check 12:47 PM · next was due ~1:02 PM`
 //   preOpen   → DESK_COPY.posturePreOpen  `First check at 9:30 AM ET`
 //   closed    → DESK_COPY.postureClosed   `Market closed · last check 3:45 PM · next Tue 9:30 AM ET`
@@ -33,14 +34,40 @@
 import {
   buildBaggerbombAdapter,
   deriveDueAt,
+  toIso,
   toMillis,
   PHASE,
 } from '../../adapters/baggerbombAdapter';
-import { DESK_COPY } from '../../components/Dashboard/desk/deskCopy';
+import { DESK_COPY, etSlotTime, SLOT_MS } from '../../components/Dashboard/desk/deskCopy';
 
 // The adapter's normalisation is the one boundary for the Firestore-Timestamp
 // / ISO / Date / number union; re-exported so the Why? selector shares it.
 export { toMillis };
+
+// D-83's slot width, re-exported from where the flooring lives so this
+// module's own tests can pin it against the cron's schedule.
+export { SLOT_MS };
+
+/**
+ * A CHECK, named by its cron slot (D-83) — the ruling's one helper.
+ *
+ * The arithmetic and the reason both live with `etTime` in deskCopy.js, as
+ * `etSlotTime`, because the DESK needs the same rule: the posture strings the
+ * turn line renders are the Desk's own, shared deliberately under D-62, and
+ * flooring in only one of their two callers made one tick read `12:47 PM` on
+ * the Desk and `12:45 PM` on the Battle View (A2.3 review L1-F2 / L5-F1).
+ * This is the name the ruling gave it and the name this phase's surfaces
+ * import; it is a delegation, not a second rule.
+ *
+ * Only LABELS floor. The exact timestamps still sort the tape and still answer
+ * the `>=` join, and a TRADE keeps its exact minute — a swap executes at an
+ * instant, and `1:31 PM · GILD → MOS` is that instant, not a check.
+ *
+ * @returns {string|null} `12:30 PM`, or null when there is no instant
+ */
+export function slotLabel(iso) {
+  return etSlotTime(toIso(iso));
+}
 
 /**
  * How long past the due instant the turn line keeps saying "next ~" before it
@@ -51,6 +78,7 @@ export const LATE_GRACE_MS = 5 * 60 * 1000;
 
 export const TURN_STATE = Object.freeze({
   LIVE: 'live',
+  LAST_OF_SESSION: 'lastOfSession',
   FIRST_CHECK: 'firstCheck',
   LATE: 'late',
   PRE_OPEN: 'preOpen',
@@ -110,11 +138,17 @@ export function deriveTurnLine(battle, now, marketState) {
   const sync = buildBaggerbombAdapter(battle, null, null, now, marketState);
   if (!sync) return null;
 
-  const { phase, lastCheckedAt, nextDecisionAt, nextOpenEt } = sync;
+  const { phase, lastCheckedAt, nextDecisionAt, nextOpenEt, lastCheckOfSession } = sync;
   const dueAt = phase === PHASE.LIVE ? deriveDueAt(lastCheckedAt, marketState) : null;
   const nowMs = toMillis(now);
   const dueMs = toMillis(dueAt);
   const decision = selectLatestDecision(battle);
+
+  // THE LABELS NAME THE SLOT (D-83) — and they do it inside the posture
+  // strings themselves (`etSlotTime`), so the Desk cannot render the same
+  // sentence with a different minute. The exact instants are passed straight
+  // through and returned unchanged, because the late branch's arithmetic and
+  // every caller's ordering are about real time, not about what the line says.
 
   let state;
   let text;
@@ -130,6 +164,12 @@ export function deriveTurnLine(battle, now, marketState) {
   } else if (!lastCheckedAt) {
     state = TURN_STATE.FIRST_CHECK;
     text = DESK_COPY.postureLive(null, null);
+  } else if (lastCheckOfSession) {
+    // D-71. Ordered BEFORE the late branch for legibility only: the field is
+    // true exactly when deriveDueAt() is null, and the late branch needs a
+    // non-null dueAt, so the two are mutually exclusive by construction.
+    state = TURN_STATE.LAST_OF_SESSION;
+    text = DESK_COPY.postureLastOfSession(lastCheckedAt);
   } else if (dueMs != null && nowMs != null && nowMs > dueMs + LATE_GRACE_MS) {
     // Strictly past the grace: at exactly dueAt + grace the line still reads
     // as live (`Checked {t}`, its next already withheld by the adapter).

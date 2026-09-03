@@ -21,18 +21,25 @@ import { TAB_KEYS, tabLabels } from './agentBattleTabs';
 // the screen is byte-identical to the tabbed screen it was before Phase A.
 import { getMarketState } from '../utils/marketSchedule';
 import { deriveTurnLine } from './battleView/deriveTurnLine';
+import { selectSymbolRoster } from './battleView/selectSymbolRoster';
+import { countMentions, mergeRecordedTape } from './battleView/scopeTape';
+import { deriveChatMessages } from '../components/Agent/deriveChatMessages';
 import useCoarseNow from './battleView/useCoarseNow';
 import { useLandingKey } from './battleView/landing';
 import LandingWash from './battleView/LandingWash';
 import TurnLine from './battleView/TurnLine';
 import WhyPanel from './battleView/WhyPanel';
-import { selectWhyState, selectTradesForSymbol } from './battleView/selectWhyState';
+import { selectWhyState, selectTradesForSymbol, deriveTierPrices } from './battleView/selectWhyState';
+import { selectDeployPlan, selectDeployPlanForSymbol } from './battleView/selectDeployPlan';
+import { buildTape } from './battleView/buildTape';
 import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
 import { deriveReceipts } from './battleView/deriveReceipts';
 import ThisTurnStrip from './battleView/ThisTurnStrip';
 import useContentStable from './battleView/useContentStable';
 import ChatSheet from './battleView/ChatSheet';
-import { useChatSheet, useViewportHeight, isSheetOpen, SHEET_PEEK_PX } from './battleView/useChatSheet';
+import { PeekStrip } from './battleView/PeekStrip';
+import { derivePeekLine } from './battleView/derivePeekLine';
+import { useChatSheet, useViewportHeight, isSheetOpen, SHEET_PEEK_PX, SHEET_DETENT } from './battleView/useChatSheet';
 import { cssVar } from '../theme/cssTokens';
 import { motionToken } from '../theme/motion';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
@@ -64,6 +71,14 @@ import { getEquippedWatchlistLabel } from '../utils/watchlistEquipUI';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PRICE_POLL_INTERVAL = 60000; // 60s
+
+// A2.4 (review RB-F11): the desktop chat column's id, so the two controls that
+// expand and collapse it — the strip's whole top row and the column's own ▾ —
+// can NAME what their `aria-expanded` is about. They live in each other's
+// chrome, and the column is the one region that contains both the strip and
+// the collapsed chat beneath it. One constant, because two spellings of an
+// `aria-controls` target is a broken reference that nothing renders.
+const CHAT_COLUMN_ID = 'battle-chat-column';
 
 const TIERS = [
   { key: 'star', label: 'Star Picks', emoji: '⭐', allocation: '2x', slots: 2 },
@@ -511,13 +526,27 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const [whyOpen, setWhyOpen] = useState(null); // { key, symbol } | null
   const [bookWhyOpen, setBookWhyOpen] = useState(false);
   const [composerPrefill, setComposerPrefill] = useState(null); // { text, nonce } | null
+  // A2.3 (D-73): the piece the tape is scoped to — display filtering only,
+  // nothing sent, nothing persisted. Null flag-off and when unscoped.
+  const [scopeSymbol, setScopeSymbol] = useState(null);
+  // A2.4 (review L2-F4): which desktop chat control should take focus after
+  // the next collapse or expand, resolved in an effect once it has rendered.
+  const [pendingChatFocus, setPendingChatFocus] = useState(null);
+  const collapseControlRef = useRef(null);
+  const expandControlRef = useRef(null);
 
   // The layout (A4, controller flag): the mobile chat sheet's detent (inert
   // on desktop and flag-off), the viewport height it is sized from, the
   // full-screen Game Tape, and the feed length the chat has SEEN — moved by
   // an effect, never during render (rulings §3.9). Flag-off keeps the
   // shipped render-time clear above, byte for byte.
-  const sheet = useChatSheet(controllerOn && !isDesktop);
+  // A2.4 (ruling 7): ONE detent for both shells. Desktop reads it as two —
+  // peek is the strip at the bottom of the board column, open is the column
+  // itself — which is what makes the detent survive a breakpoint crossing by
+  // construction. Each shell OPENS at its own default: the phone at peek (the
+  // board is the page), the desktop at half (the column is the layout).
+  const sheet = useChatSheet(controllerOn, isDesktop ? SHEET_DETENT.HALF : SHEET_DETENT.PEEK);
+  const chatOpen = isSheetOpen(sheet.detent);
   // The visible viewport height sizes the mobile sheet's detents AND the
   // desktop page (a fixed 100vh is the large viewport on iOS — review L2-F11).
   const viewportHeight = useViewportHeight(controllerOn);
@@ -811,6 +840,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       // Phase A: the entry the row's % is computed from, carried so the Why?
       // facts read the ROW's number (never the adapter's book — rulings §3.3).
       openPrice,
+      // A2.1 (ruling 1): the baseline the THRESHOLD percent is measured from —
+      // the one field the Why? tier lines need. `Bagger $ · Bust $` is
+      // `thresholdBaseline × (1 ± baseATR/100)`, the exact inverse of the
+      // percent the row renders beside it (deriveTierPrices). Computed here
+      // already; before A2.1 it was simply not returned.
+      thresholdBaseline,
     };
   }, [effectivePrices, startingPrices, thresholds, previousClosePrices, agentBattle?.thresholdHistory, agentBattle?.activatedAt, agentBattle?.createdAt]);
 
@@ -836,17 +871,44 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     };
   }, [opponentPortfolioSource, enrichAsset]);
 
+  // ── The plan at deploy (A2.1b, D-76) ──────────────────────────────────────
+  // Derived ONCE from the subscribed doc: frozen at creation, so it changes
+  // only when the doc's identity does. Null whenever it must not render — a
+  // tournament battle's plan and the algorithmic fallback's template are
+  // system strings (the gates live in selectDeployPlan.js, with the reasons).
+  const deployPlan = useMemo(
+    () => (controllerOn ? selectDeployPlan(agentBattle) : null),
+    [controllerOn, agentBattle?.agentContext, agentBattle?.gameMode, agentBattle?.activatedAt, agentBattle?.createdAt],
+  );
+
   // ── Known tickers for chat ticker linking ─────────────────────────────────
 
+  // A2.3 (ruling 8, hazard 27): under the flag the roster is the battle's own
+  // UNIVERSE — the book plus the three persisted bench lists — so a message
+  // about a name the agent is one tick from buying is underlined and counted.
+  // Flag-off it is the book alone, byte for byte: widening it would widen what
+  // the shipped chat underlines, and the underline opens a research modal.
   const knownTickers = useMemo(() => {
     const tickers = new Set();
+    // The BOOK, from the same source the rows render (review L1-F5 / L5-F10):
+    // `selectSymbolRoster` reads `agentBattle.portfolio`, and on a document
+    // that has none the board still renders from the prop fallback — so the
+    // roster would have been empty while seven pieces were on screen.
     ['star', 'core', 'support'].forEach(tier => {
       (enrichedPlayerPortfolio[tier] || []).forEach(a => {
         if (a?.symbol) tickers.add(a.symbol);
       });
     });
+    if (!controllerOn) return tickers;
+    // …plus the three bench lists, under the flag only (hazard 27).
+    for (const symbol of selectSymbolRoster(agentBattle)) tickers.add(symbol);
     return tickers;
-  }, [enrichedPlayerPortfolio]);
+    // Narrowed to the three subtrees `selectSymbolRoster` reads (review
+    // L2-F11): `agentBattle` is a fresh object on every Firestore snapshot, so
+    // depending on it rebuilt this Set — and the chat's whole timeline behind
+    // it — on writes that touch nothing in the roster, on the SHIPPED path too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controllerOn, enrichedPlayerPortfolio, agentBattle?.portfolio, agentBattle?.watchlist, agentBattle?.agentContext]);
 
   // ── Computed scores ───────────────────────────────────────────────────────
 
@@ -900,7 +962,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // this effect, keyed on the feed length and the visibility — never during
   // render. Desktop under the flag therefore never shows a dot; on mobile it
   // lives on the sheet's handle and clears when the sheet opens.
-  const chatVisible = controllerOn && !gameTapeOpen && (isDesktop || isSheetOpen(sheet.detent));
+  //
+  // A2.4 (D-74): the desktop can now be COLLAPSED, so "visible" is the one
+  // detent question on both shells. The dot therefore lives on the desktop
+  // strip while it is collapsed — the mobile rule, applied to the desktop's
+  // own collapsed state — and still never shows while the column is open.
+  const chatVisible = controllerOn && !gameTapeOpen && chatOpen;
   const newestFeedStamp = feedStampOf(statusFeed[statusFeed.length - 1]);
   useEffect(() => {
     if (!chatVisible) return;
@@ -981,6 +1048,21 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     ));
   }, []);
   const handleBookWhyToggle = useCallback(() => setBookWhyOpen(open => !open), []);
+  // A2.1: `Read the full check` on a row opens the BOOK panel, which is where
+  // the whole paragraph lives (D-75). It opens rather than toggles — the door
+  // is never a way to close what the user just asked to read.
+  // A2.3 (ruling 4): the door OPENS the book panel, then brings it into view
+  // and moves focus to its heading — on both shells. The panel sits under the
+  // score header, above the board, so a row lower down the board opened it off
+  // the top of the screen (A2 handover item 38 / review L2-F3); and when it was
+  // already open the tap did nothing at all. The tick is what fixes the second
+  // case: it changes on every tap, so the effect runs whether or not the state
+  // moved.
+  const [readFullCheckTick, setReadFullCheckTick] = useState(0);
+  const handleReadFullCheck = useCallback(() => {
+    setBookWhyOpen(true);
+    setReadFullCheckTick((n) => n + 1);
+  }, []);
   const handleAskFollowUp = useCallback((symbol) => {
     // The invoking control, captured synchronously so the mobile sheet can
     // hand focus back to it on collapse (A4).
@@ -989,13 +1071,97 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       text: symbol ? BATTLE_VIEW_COPY.followUpPrefill(symbol) : '',
       nonce: Date.now(),
     });
-    // No tab change — there is no tab bar under the flag. Desktop: the chat
-    // column is always on screen, so the chat's prefill effect simply focuses
-    // the composer. Mobile: open the sheet to at least half, then let that
-    // same effect focus the textarea inside it (F13's draft rule stands).
-    if (!isDesktop) sheet.open(invoker);
-  }, [isDesktop, sheet.open]);
+    // No tab change — there is no tab bar under the flag. The question is the
+    // DETENT's, not the breakpoint's (review RA-F3): this read `!isDesktop`
+    // and its comment said "the chat column is always on screen", which A2.4
+    // made false — a collapsed desktop dropped the player into a prefilled
+    // composer with the conversation still folded behind `display: none`,
+    // through a door the seed calls "a door into the conversation". Its twin,
+    // the scope door, was corrected for exactly this at review L2-F2; leaving
+    // this one on the old rule was the inconsistency that fix meant to close.
+    // Open, then let the chat's prefill effect focus the textarea inside it
+    // (F13's draft rule stands, on both shells).
+    if (!chatOpen) sheet.open(invoker);
+  }, [chatOpen, sheet.open]);
   const handleComposerPrefillConsumed = useCallback(() => setComposerPrefill(null), []);
+
+  // The scroll and the focus for the door above (ruling 4). Runs AFTER the
+  // panel has rendered, so the target exists on the tap that opened it; and
+  // it is `block: 'nearest'`, so a panel already fully on screen does not
+  // move under the reader.
+  //
+  // Reduced motion takes the instant scroll — the same rule every other
+  // motion on this screen follows (BUILD_RULES §11). Focus is moved with
+  // `preventScroll` so the browser cannot undo the scroll that just ran.
+  //
+  // The mobile sheet's own focus rules are untouched: this is the board
+  // column, the sheet is non-modal, and nothing here reads or writes the
+  // sheet's return-focus ref.
+  useEffect(() => {
+    if (!controllerOn || readFullCheckTick === 0 || typeof document === 'undefined') return;
+    const target = document.getElementById('why-book-heading')
+      || document.querySelector('[data-why-symbol="book"]');
+    if (!target) return;
+    target.scrollIntoView?.({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'nearest' });
+    target.focus?.({ preventScroll: true });
+  }, [readFullCheckTick, controllerOn, reducedMotion]);
+
+  // A2.3: the second door. Scope is DISPLAY FILTERING — nothing is sent — and
+  // the composer prefill is the existing one, so the door reads the
+  // conversation and the follow-up door still writes to it. Mobile opens the
+  // sheet to at least half (the same rule the follow-up door uses), because a
+  // filtered stream behind a peek strip is a filter nobody can see.
+  const handleScopeToPiece = useCallback((symbol, count) => {
+    if (!symbol) return;
+    const invoker = typeof document !== 'undefined' ? document.activeElement : null;
+    // ZERO OPENS THE WHOLE TAPE (seed §A2.3, review L1-F3 / L2-F3 / L5-F5).
+    // `In the chat · 0` is a true thing to say about a piece, and the ruling
+    // says the tap opens the UNSCOPED tape at the piece's prefill. Scoping to
+    // an empty filter instead dropped the chat through to its EmptyState —
+    // the fresh-battle onboarding copy — on a battle with a conversation.
+    setScopeSymbol(count > 0 ? symbol : null);
+    setComposerPrefill({ text: BATTLE_VIEW_COPY.followUpPrefill(symbol), nonce: Date.now() });
+    // …and the chat has to be ON SCREEN for a filter to mean anything
+    // (review L2-F2): since A2.4 the DESKTOP can be collapsed too, so the
+    // question is the detent's, not the breakpoint's.
+    if (!chatOpen) sheet.open(invoker);
+  }, [chatOpen, sheet.open]);
+  const handleClearScope = useCallback(() => setScopeSymbol(null), []);
+
+  // A2.3 (review L2-F7): the scope clears itself when its piece leaves the
+  // battle's universe — the agent swapped it out, or the doc changed under
+  // the player. A chip naming a piece the battle no longer has filters a
+  // stream nobody can get back to except by tapping it.
+  useEffect(() => {
+    if (!scopeSymbol) return;
+    if (!knownTickers.has(scopeSymbol)) setScopeSymbol(null);
+  }, [scopeSymbol, knownTickers]);
+
+  // A2.4 (D-74): the desktop's two states, through the SAME detent the mobile
+  // sheet uses. Expanding opens at HALF rather than FULL so a crossing to the
+  // phone lands on half, which is the ruled behaviour; the choice lives in
+  // the hook's state for the session and is never stored.
+  //
+  // FOCUS GOES TO THE CONTROL THAT REPLACES THE ONE THAT VANISHED (review
+  // L2-F4). Each control lives inside the chrome the other renders, so a
+  // keyboard user who collapsed the chat was dropped to `document.body` and
+  // their next Tab restarted at the top of the document. The mobile sheet has
+  // had a return-focus contract for this transition since A4 (review CR4);
+  // this is the desktop's.
+  const handleExpandChat = useCallback(() => {
+    sheet.open(null);
+    setPendingChatFocus('collapse');
+  }, [sheet.open]);
+  const handleCollapseChat = useCallback(() => {
+    sheet.collapse();
+    setPendingChatFocus('expand');
+  }, [sheet.collapse]);
+  useEffect(() => {
+    if (!pendingChatFocus) return;
+    const target = pendingChatFocus === 'expand' ? expandControlRef.current : collapseControlRef.current;
+    target?.focus?.();
+    setPendingChatFocus(null);
+  }, [pendingChatFocus]);
 
   // Game Tape (A4, rulings §2.5): one header link renders the shipped view
   // full-screen over the page, with a way back. Focus goes to the way back on
@@ -1040,6 +1206,50 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     if (!controllerOn || !agentBattle) return null;
     return deriveReceipts(chatExchanges, agentBattle.directive ?? null, agentBattle.status ?? null);
   }, [controllerOn, agentBattle, chatExchanges]);
+  // ── The tape (A2.2, D-72) ─────────────────────────────────────────────────
+  // Built ONCE here, from the subscribed doc, and passed down: the chat merges
+  // it into the one timeline it already sorts. No second list, and the screen
+  // stays the only place that reads the document (rulings §3.3).
+  const tapeEntries = useMemo(() => (controllerOn ? buildTape({
+    trades: agentBattle?.trades,
+    statusFeed: agentBattle?.statusFeed,
+    evaluations: agentBattle?.evaluations,
+    receipts,
+    chatExchanges: agentBattle?.chatExchanges,
+  }) : null), [
+    controllerOn,
+    agentBattle?.trades,
+    agentBattle?.statusFeed,
+    agentBattle?.evaluations,
+    agentBattle?.chatExchanges,
+    receipts,
+  ]);
+
+  // A2.3: the merged, UNFOLDED stream over the persisted record — messages
+  // (the chat's own derivation, so the count and the bubbles are one list) plus
+  // the tape's cards, one concat and one sort exactly as the chat merges them.
+  // Null flag-off, so nothing here runs on the shipped path.
+  const recordedTape = useMemo(() => (controllerOn
+    ? mergeRecordedTape(deriveChatMessages(chatExchanges), tapeEntries)
+    : null), [controllerOn, chatExchanges, tapeEntries]);
+
+  // `In the chat · {n}` for the OPEN row's piece — the length of the list the
+  // door opens, computed with the same function the chat filters with
+  // (BUILD_RULES §9). Only the open row needs it, so a board of seven pieces
+  // costs one scan, not seven.
+  const openWhySymbol = whyOpen?.symbol ?? null;
+  const mentionCount = useMemo(() => (controllerOn && openWhySymbol
+    ? countMentions(recordedTape, openWhySymbol, knownTickers)
+    : null), [controllerOn, openWhySymbol, recordedTape, knownTickers]);
+
+  // A2.4 (D-74): the newest tape entry as one line, folded exactly as the
+  // stream is, so the strip and the stream cannot name one moment two ways.
+  // Null flag-off and on an empty tape.
+  const peekLine = useMemo(
+    () => (controllerOn ? derivePeekLine(recordedTape) : null),
+    [controllerOn, recordedTape],
+  );
+
   const thisTurnStrip = controllerOn && agentBattle ? (
     <ThisTurnStrip
       directive={agentBattle.directive ?? null}
@@ -1111,6 +1321,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               isCryptoSlot={tier.hasCrypto && i === tier.slots - 1}
               onSymbolClick={handleSymbolClick}
               onPointsClick={handlePointsClick}
+              // A2 (D-85): the player's current price beside the % change.
+              // Keyed on the FLAG, not on `whyable` — the price is a fact about
+              // a piece, not a property of the Why? door — and read inside the
+              // row off `asset.currentPrice`, the field it already hands
+              // computeProximity, so the row's price and the panel's tier
+              // dollars cannot come from two sources (BUILD_RULES §9). Absent
+              // flag-off, so the shipped row markup is byte-identical.
+              {...(controllerOn ? { showCurrentPrice: true } : {})}
               {...(whyable ? {
                 onWhy: (asset) => handleWhyToggle(rowKey, asset),
                 whyOpen: isWhyOpen,
@@ -1129,8 +1347,21 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     proximity={proximity}
                     entryPrice={leftAsset.openPrice ?? null}
                     heldSince={leftAsset.swappedInAt || agentBattle?.activatedAt || null}
+                    // A2.1: the two scoring tiers as prices, from the row's own
+                    // baseline and its own baseATR — never a third source.
+                    lines={deriveTierPrices(leftAsset.thresholdBaseline, leftAsset.baseATR, leftAsset.direction)}
+                    // A2.1b: only the sentences of THIS tier's deploy
+                    // rationale that name THIS piece — else nothing.
+                    deployPlan={deployPlan}
+                    deployPlanForSymbol={selectDeployPlanForSymbol(deployPlan, leftAsset.symbol, tier.key)}
                     trades={selectTradesForSymbol(agentBattle?.trades, leftAsset.symbol)}
                     onAskFollowUp={handleAskFollowUp}
+                    onReadFullCheck={handleReadFullCheck}
+                    // A2.3: the count and the door that opens the filtered
+                    // tape. The count is only computed for the OPEN row, and
+                    // this panel only renders when its row is the open one.
+                    mentionCount={mentionCount}
+                    onScopeToPiece={handleScopeToPiece}
                     reducedMotion={reducedMotion}
                     headingId={`why-${rowKey}-heading`}
                   />
@@ -1189,11 +1420,22 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       composerPrefill={composerPrefill}
       onComposerPrefillConsumed={handleComposerPrefillConsumed}
       receipts={receipts}
+      // A2.2: the tape's trade and check cards, merged into the chat's one
+      // timeline. Built above from the subscribed doc; null flag-off.
+      tapeEntries={tapeEntries}
+      // A2.3: the scoped stream and the way out of it.
+      scopeSymbol={scopeSymbol}
+      onClearScope={handleClearScope}
       controllerLayout
+      // Item 11: the controller's own line when a send never reaches the
+      // model. Passed on the FLAG, beside the layout rather than through it.
+      controllerCopy
       // Peek is the composer alone: the message list is collapsed so the
       // sheet can size itself to the handle + the composer, however tall the
       // draft grows (review CR3).
-      listCollapsed={!isDesktop && !isSheetOpen(sheet.detent)}
+      // A2.4: at peek the chat is its composer — on both shells now, since the
+      // desktop strip is the same collapsed state.
+      listCollapsed={!chatOpen}
     />
   ) : null;
 
@@ -1429,6 +1671,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 key="book"
                 symbol={null}
                 state={selectWhyState(latestDecision, null, lastScoredAt)}
+                deployPlan={deployPlan}
                 onAskFollowUp={handleAskFollowUp}
                 reducedMotion={reducedMotion}
                 headingId="why-book-heading"
@@ -1473,42 +1716,146 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             minHeight: 0,
             display: 'flex',
             flexDirection: 'row',
+            // A2.4: collapsed, the desktop chat column sits on its own line
+            // beneath a full-width board — as a COLUMN, not as a wrapped row
+            // (review RB-F12, then RA-F7). Either way the chat keeps ONE
+            // parent across the collapse, which is the property that matters
+            // (see the column); the direction is how the two lines are sized.
+            //
+            // Wrapping got the picture and lost the scrolling. A multi-line
+            // flex container sizes each line to its CONTENT (CSS Flexbox
+            // §9.4), not to the container, so the board's line grew to the
+            // board's full height, the board's own `overflow-y: auto` scroller
+            // inside it never had a bounded height to scroll within, and the
+            // PAGE scrolled instead — carrying the strip, and the unread dot
+            // the seed puts on it, below the fold. `alignContent:'flex-start'`
+            // fixed only the opposite case, a board shorter than the viewport.
+            //
+            // A column is single-line: the board takes `1 1 0%` of a definite
+            // height with `minHeight: 0`, so its inner scroller bounds; the
+            // strip takes `0 0 auto` and stays pinned at the bottom of the
+            // viewport, which is the ruled picture. Children stretch to the
+            // full width on the cross axis, so nothing needs a width.
+            //
+            // jsdom does no layout, so what the rows below can hold is the
+            // style contract — the direction and both children's flex — not
+            // the pixels. The pixels want the founder's smoke.
+            ...(isDesktop && !chatOpen ? { flexDirection: 'column' } : {}),
             position: 'relative',
             zIndex: 2,
             ...(gameTapeOpen ? { visibility: 'hidden' } : {}),
           }}
         >
+          {/* The board column. A2.4: on the desktop it takes the FULL width
+              while the chat is collapsed, and carries the strip at its
+              bottom — so the collapse is a real gain of board, not a gap
+              where the column was. The board itself keeps its own scroller
+              inside, so the strip stays put while the board scrolls. */}
           <div
             data-board="1"
             style={isDesktop ? {
-              flex: '3 1 0%',
+              // Open, the board is the wide side of a row. Collapsed, the row
+              // IS a column and the board is its growing item: `1 1 0%` plus
+              // `minHeight: 0` is what gives the scroller inside it a definite
+              // height to bound against (review RA-F7). `0 0 100%` here would
+              // be a basis of 100% of the HEIGHT under a column direction.
+              flex: chatOpen ? '3 1 0%' : '1 1 0%',
               minWidth: 0,
               minHeight: 0,
-              overflowY: 'auto',
-              paddingBottom: 24,
+              display: 'flex',
+              flexDirection: 'column',
             } : {
               flex: '1 1 auto',
               minWidth: 0,
               paddingBottom: SHEET_PEEK_PX + 32,
             }}
           >
-            {/* This turn (Phase A) — its one home, above the board. */}
-            {thisTurnStrip}
-            {boardRows}
-            {closedTrades}
+            <div
+              data-board-scroll={isDesktop ? '1' : undefined}
+              style={isDesktop ? { flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: 24 } : undefined}
+            >
+              {/* This turn (Phase A) — its one home, above the board. */}
+              {thisTurnStrip}
+              {boardRows}
+              {closedTrades}
+            </div>
           </div>
           {isDesktop && (
+            /* THE CHAT'S ONE HOME ON THE DESKTOP (A2.4, review L2-F1 / L5-F7).
+               Collapsed and open are the SAME element with different chrome
+               and a different flex basis — never two tree positions. React
+               reconciles by position, so rendering `{chat}` in two places made
+               every collapse and every expand a full unmount: the typed draft,
+               the optimistic bubbles of a send still in flight, the error
+               banner and the scope's own scroll memory all went with it. A4
+               paid for the draft-survival rule explicitly (F13); a one-click
+               control that discards a half-typed message is not a layout
+               choice.
+
+               Collapsed, the row wraps: the board takes the whole first line
+               and this column takes the whole second, which is the ruled
+               layout (the board at full width, the strip beneath it). */
             <div
+              id={CHAT_COLUMN_ID}
               data-chat-column="1"
+              data-chat-collapsed={chatOpen ? 'false' : 'true'}
               style={{
-                flex: '2 1 0%',
                 minWidth: 0,
                 minHeight: 0,
                 display: 'flex',
                 flexDirection: 'column',
-                borderLeft: `1px solid rgba(${cssVar('scrim-rgb')}, 0.07)`,
+                ...(chatOpen ? {
+                  flex: '2 1 0%',
+                  borderLeft: `1px solid rgba(${cssVar('scrim-rgb')}, 0.07)`,
+                } : {
+                  // Collapsed: hug the strip's own content at the bottom of
+                  // the column, and drop the border that separated two side-
+                  // by-side panes — there is nothing to its left any more.
+                  flex: '0 0 auto',
+                  width: '100%',
+                }),
               }}
             >
+              {chatOpen ? (
+                /* The way out of the column, named for what it does next. */
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 8px 0' }}>
+                  <button
+                    ref={collapseControlRef}
+                    type="button"
+                    onClick={handleCollapseChat}
+                    aria-expanded="true"
+                    aria-controls={CHAT_COLUMN_ID}
+                    aria-label={BATTLE_VIEW_COPY.sheetCollapse}
+                    data-chat-collapse="1"
+                    style={{
+                      background: 'transparent',
+                      border: `1px solid rgba(${cssVar('scrim-rgb')}, 0.12)`,
+                      borderRadius: 8,
+                      color: cssVar('text-secondary'),
+                      cursor: 'pointer',
+                      width: 32,
+                      height: 26,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 12,
+                      lineHeight: 1,
+                    }}
+                  >
+                    <span aria-hidden="true">▾</span>
+                  </button>
+                </div>
+              ) : (
+                <PeekStrip
+                  expandRef={expandControlRef}
+                  controlsId={CHAT_COLUMN_ID}
+                  turnText={turnLine?.text ?? null}
+                  line={peekLine}
+                  unread={Boolean(hasCommandDot)}
+                  unreadColor={hasPendingProposal ? cssVar('amber') : cssVar('teal')}
+                  onExpand={handleExpandChat}
+                />
+              )}
               {chat}
             </div>
           )}
@@ -1586,6 +1933,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 composerPrefill={controllerOn ? composerPrefill : null}
                 onComposerPrefillConsumed={controllerOn ? handleComposerPrefillConsumed : null}
                 receipts={receipts}
+                // A2.2: null flag-off, so this shipped mount keeps the slim
+                // trade line byte for byte (the tabbed tree is not rendered
+                // under the flag — the controller layout replaces it).
+                tapeEntries={controllerOn ? tapeEntries : null}
               />
             </motion.div>
           )}
@@ -1631,6 +1982,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           returnFocusRef={sheet.returnFocusRef}
           viewportHeight={viewportHeight}
           turnText={turnLine?.text ?? null}
+          peekLine={peekLine}
           unread={Boolean(hasCommandDot)}
           unreadColor={hasPendingProposal ? cssVar('amber') : cssVar('teal')}
           reducedMotion={reducedMotion}

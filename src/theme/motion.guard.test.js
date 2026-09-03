@@ -38,7 +38,7 @@
 //     GENERATE_MOTION_GUARD_BASELINE=1 npx vitest run src/theme/motion.guard.test.js
 // then commit the updated motionGuardBaseline.json in the SAME commit.
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -60,13 +60,20 @@ const GUARDED_FILES = [
   // vocabulary from birth (motionToken / the named tokens) — a zero-literal ratchet on
   // the whole directory, not a D3 retrofit of an existing surface.
   'src/screens/battleView/ChatSheet.jsx',
+  'src/screens/battleView/TapeCards.jsx',
   'src/screens/battleView/LandingWash.jsx',
   'src/screens/battleView/ThisTurnStrip.jsx',
   'src/screens/battleView/TurnLine.jsx',
   'src/screens/battleView/WhyPanel.jsx',
   'src/screens/battleView/battleViewCopy.js',
+  'src/screens/battleView/buildTape.js',
   'src/screens/battleView/deriveReceipts.js',
   'src/screens/battleView/deriveTurnLine.js',
+  'src/screens/battleView/selectDeployPlan.js',
+  'src/screens/battleView/selectSymbolRoster.js',
+  'src/screens/battleView/scopeTape.js',
+  'src/screens/battleView/PeekStrip.jsx',
+  'src/screens/battleView/derivePeekLine.js',
   'src/screens/battleView/landing.js',
   'src/screens/battleView/selectWhyState.js',
   'src/screens/battleView/useChatSheet.js',
@@ -115,6 +122,24 @@ const BASELINE = JSON.parse(readFileSync(BASELINE_PATH, 'utf8')).guarded;
 describe('motion guard — no new raw transition literal in migrated files (A5)', () => {
   it('the baseline covers exactly the migrated (guarded) files', () => {
     expect(Object.keys(BASELINE).sort()).toEqual([...GUARDED_FILES].sort());
+  });
+
+  it('every file in src/screens/battleView/ is on this list (hazard 34)', () => {
+    // The list is explicit, so a new surface added without a line here is
+    // simply unguarded and nothing goes red — the exact silence hazard 34
+    // exists to prevent. deskHonesty.test.js already scans the directory; this
+    // makes the theme guards agree with it by construction.
+    const dir = path.join(REPO_ROOT, 'src', 'screens', 'battleView');
+    const onDisk = readdirSync(dir)
+      .filter((f) => /\.(js|jsx)$/.test(f) && !/\.test\.(js|jsx)$/.test(f))
+      .map((f) => `src/screens/battleView/${f}`);
+    const listed = new Set(GUARDED_FILES);
+    const missing = onDisk.filter((f) => !listed.has(f));
+    expect(
+      missing,
+      `these src/screens/battleView/ files are not on the guarded list: ${missing.join(', ')}.\n`
+        + 'REMEDY: add each to GUARDED_FILES and regenerate the baseline IN THE SAME COMMIT (hazard 34).',
+    ).toEqual([]);
   });
 
   it.each(GUARDED_FILES)('%s has not gained a raw `transition={{ ... }}` literal', (rel) => {

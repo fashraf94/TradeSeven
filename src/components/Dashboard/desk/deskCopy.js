@@ -46,6 +46,44 @@ export function etTime(iso) {
   }).format(d);
 }
 
+/**
+ * The cron's slot, in milliseconds. The evaluate cron runs on the quarter
+ * hour — the evaluate cron's schedule in vercel.json is every 15 minutes —
+ * so every check belongs to one of `:00 / :15 /
+ * :30 / :45`.
+ */
+export const SLOT_MS = 15 * 60 * 1000;
+
+/**
+ * A CHECK, named by its cron slot (D-83).
+ *
+ * `scoreState.lastScoredAt` and an evaluation entry's own `timestamp` are two
+ * `new Date()` calls inside one cron run, so one tick was called `12:30 PM` by
+ * one surface and `12:31 PM` by another. The instant is write latency; the
+ * SLOT is the thing that happened.
+ *
+ * IT LIVES HERE, BESIDE `etTime`, BECAUSE BOTH SURFACES NEED IT (A2.3 review
+ * L1-F2 / L5-F1). The posture strings below are deliberately shared by the
+ * Desk and the Battle View turn line — "ONE string on both surfaces (D-62):
+ * the Desk and the Battle View turn line render this same sentence, so they
+ * cannot disagree" — so flooring in only one of the two callers would have
+ * been exactly the drift the sharing exists to prevent. `slotLabel` in
+ * `deriveTurnLine.js` is the name the ruling gave this, and it delegates here.
+ *
+ * Floored on ABSOLUTE time, then formatted in ET, so no offset is hand-rolled
+ * (BUILD_RULES §6). That is exact for America/New_York because its offset is a
+ * whole number of hours in both halves of the year. The assumption is not left
+ * implicit: deriveTurnLine.test.js walks both 2026 DST switches and asserts
+ * every label lands on `:00 / :15 / :30 / :45`.
+ */
+export function etSlotTime(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  const ms = d.getTime();
+  if (Number.isNaN(ms)) return null;
+  return etTime(new Date(Math.floor(ms / SLOT_MS) * SLOT_MS).toISOString());
+}
+
 /** Format an ISO instant as an ET weekday, e.g. "Mon". */
 export function etWeekday(iso) {
   if (!iso) return null;
@@ -103,8 +141,10 @@ export const DESK_COPY = Object.freeze({
   // ── Posture line (spec §8 item 1) ──────────────────────────────────────────
   // LIVE. Discrete by construction: a last check and an approximate next one.
   postureLive: (lastIso, nextIso) => {
-    const last = etTime(lastIso);
-    const next = etTime(nextIso);
+    // D-83: both are CHECKS, so both name their slot — on the Desk and on the
+    // Battle View turn line alike, which is the point (D-62).
+    const last = etSlotTime(lastIso);
+    const next = etSlotTime(nextIso);
     if (!last) return DESK_COPY.postureFirstCheckComing;
     return next ? `Checked ${last} · next ~${next}` : `Checked ${last}`;
   },
@@ -126,10 +166,28 @@ export const DESK_COPY = Object.freeze({
   // Consumed by the Battle View turn line only; the Desk's LIVE line keeps
   // postureLive (its `next` goes null when past, which reads as `Checked {t}`).
   postureLate: (lastIso, dueIso) => {
-    const last = etTime(lastIso);
-    const due = etTime(dueIso);
+    const last = etSlotTime(lastIso);
+    const due = etSlotTime(dueIso);
     if (!last) return DESK_COPY.postureFirstCheckComing;
     return due ? `Last check ${last} · next was due ~${due}` : `Last check ${last}`;
+  },
+
+  // LIVE, and the check that just landed is the LAST one of the session
+  // (Phase A2, D-71). The adapter's `lastCheckOfSession` is the persisted-fact
+  // discriminator: LIVE, a last check exists, and deriveDueAt() returns null
+  // because the +15 min candidate lands at or after the session close. Before
+  // this string both surfaces rendered `Checked {t}` with the next silently
+  // withheld — true, but it read as a starved cron rather than a finished
+  // trading day. ONE derivation, in the adapter, consumed by the Desk and the
+  // Battle View turn line alike (BUILD_RULES §9, D-62).
+  //
+  // "today" is a session fact, not an agent verb: it says there is no further
+  // scheduled check inside this session, and claims nothing about what the
+  // agent is doing between now and the close.
+  postureLastOfSession: (lastIso) => {
+    const last = etSlotTime(lastIso);
+    if (!last) return DESK_COPY.postureFirstCheckComing;
+    return `Checked ${last} · last check today`;
   },
 
   // LIVE_CLOSED. "Market closed" is a market fact; the last check is the as-of
@@ -143,7 +201,7 @@ export const DESK_COPY = Object.freeze({
   // two-fact form landed; restored). The two-fact cell is unchanged.
   postureClosed: (nextOpenEt, lastIso) => {
     const label = etWallClockLabel(nextOpenEt);
-    const last = etTime(lastIso);
+    const last = etSlotTime(lastIso);
     const parts = ['Market closed'];
     if (last) parts.push(`last check ${last}`);
     if (label) parts.push(last ? `next ${label} ET` : `next check ${label} ET`);

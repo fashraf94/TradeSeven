@@ -24,6 +24,10 @@
  */
 
 import { classifyBattleType, battleTypeLabel } from '../utils/commandCenterLiveBattles';
+// The cron's slot width, from the module that FLOORS to it — one constant, so
+// the gate below and the label it protects cannot drift apart (D-83, §9).
+// `deskCopy` is a leaf: it imports nothing, so there is no cycle.
+import { SLOT_MS } from '../components/Dashboard/desk/deskCopy';
 
 export const PHASE = Object.freeze({
   PRE_OPEN: 'PRE_OPEN',
@@ -116,6 +120,24 @@ function etMinutesOfInstant(ms) {
   const h = Number(parts.find((p) => p.type === 'hour')?.value);
   const m = Number(parts.find((p) => p.type === 'minute')?.value);
   return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+}
+
+/**
+ * The ET CALENDAR DAY of a true instant, as `YYYY-M-D`, in the same shape the
+ * wall-clock market-state Dates yield from their local fields. Intl is correct
+ * for an instant; the wall clock's fields are read directly. Mixing the two
+ * clocks is the timezone defect this module already guards against, so both
+ * sides of any comparison must be built the way its own producer builds them.
+ */
+function etDayOfInstant(ms) {
+  if (ms == null) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: 'numeric', day: 'numeric',
+  }).formatToParts(new Date(ms));
+  const y = parts.find((p) => p.type === 'year')?.value;
+  const m = parts.find((p) => p.type === 'month')?.value;
+  const d = parts.find((p) => p.type === 'day')?.value;
+  return y && m && d ? `${Number(y)}-${Number(m)}-${Number(d)}` : null;
 }
 
 /**
@@ -316,6 +338,45 @@ export function deriveDueAt(lastCheckedAt, marketState) {
 }
 
 /**
+ * Whether the check that just landed is the LAST one of THIS session (D-71).
+ *
+ * Two conjuncts, and the second is not optional (A2 review L1-F1):
+ *
+ *   1. `deriveDueAt()` returns null during LIVE — the +15 min candidate lands
+ *      at or after the session close, so no further check is scheduled today.
+ *      A starved cron BEFORE the close still has a non-null `dueAt` (it is
+ *      late, not finished), so those two states cannot be confused.
+ *   2. The check happened TODAY. The clamp inside deriveDueAt compares ET
+ *      minutes-past-midnight on both sides and is deliberately blind to the
+ *      DATE — correct for its own job, and wrong for this one: on day 2 of a
+ *      multi-day battle, yesterday's 3:50 PM check also clamps to null, and
+ *      without this conjunct both surfaces would open the morning claiming
+ *      `Checked 3:50 PM · last check today` about YESTERDAY while a full
+ *      session of checks was still to come.
+ *
+ * "Today" is the ET calendar day of the session close the market state names
+ * — not the viewer's local day, and not `Date.now()`: the close is the
+ * session this line is describing, and it is the same wall clock the clamp
+ * already reads.
+ *
+ * ONE derivation, exposed as one adapter field, because both the Desk and the
+ * Battle View turn line render from it: testing the null in two places is how
+ * two surfaces start disagreeing about the same fact (BUILD_RULES §9).
+ */
+export function deriveLastCheckOfSession(phase, lastCheckedAt, marketState) {
+  if (phase !== PHASE.LIVE) return false;
+  if (!lastCheckedAt) return false;
+  if (deriveDueAt(lastCheckedAt, marketState) !== null) return false;
+
+  // The session's own day, from the wall-clock close the clamp uses. With no
+  // market state there is no session to be the last check of.
+  const close = marketState?.nextCloseTime;
+  if (!close || typeof close.getFullYear !== 'function') return false;
+  const sessionDay = `${close.getFullYear()}-${close.getMonth() + 1}-${close.getDate()}`;
+  return etDayOfInstant(toMillis(lastCheckedAt)) === sessionDay;
+}
+
+/**
  * When the agent next checks, during LIVE only.
  *
  * Returns a TRUE ISO instant or null. Off-hours the answer is the next market
@@ -336,7 +397,27 @@ function deriveNextDecisionAt(phase, lastCheckedAt, marketState, now) {
   if (dueAt == null) return null;
 
   const nowMs = toMillis(now);
-  if (nowMs != null && toMillis(dueAt) <= nowMs) return null;
+  const dueMs = toMillis(dueAt);
+  // WITHHOLD ON THE INSTANT THE LABEL WILL SHOW, NOT THE ONE COMPUTED HERE
+  // (review RA-F1). Since D-83 the posture strings render `next ~` as the
+  // CRON SLOT — `next ~12:45 PM` for a candidate of 12:48 — because 12:45 is
+  // when the cron fires and 12:48 is only when a 3-minute-late check would
+  // land. The slot is the earlier of the two, so gating on the raw candidate
+  // left the label naming a time that had already gone by for exactly as long
+  // as the last check was late: `next ~12:45 PM` still on screen at 12:47,
+  // which is the starved-cron misreading this function's own rule exists to
+  // prevent. `δ` of every fifteen minutes, and the repo's own LIVE fixture is
+  // an instance of it.
+  //
+  // The RETURNED value is still the exact candidate: `nextDecisionAt` is an
+  // instant that other code compares against, and the LABEL/INSTANT split is
+  // the whole of D-83's second half. Only the gate moved.
+  //
+  // STRICTLY past, not "at or past": a slot is a fifteen-minute bucket and the
+  // cron fires at its START, so `next ~1:00 PM` is true AT 1:00 and false from
+  // 1:00:01. The raw candidate had no such distinction — it was one instant —
+  // which is why the old gate could use `<=`.
+  if (nowMs != null && Math.floor(dueMs / SLOT_MS) * SLOT_MS < nowMs) return null;
   return dueAt;
 }
 
@@ -446,6 +527,9 @@ export function buildBaggerbombAdapter(battle, voiceLayerCacheDoc, agent, now, m
     lastCheckedAt,
     // A true ISO instant, LIVE only (last check + 15 min, inside the session).
     nextDecisionAt: deriveNextDecisionAt(phase, lastCheckedAt, marketState, now),
+    // Whether that check was the last one of the session (D-71). Both surfaces
+    // consume THIS field rather than re-deriving the null — see the helper.
+    lastCheckOfSession: deriveLastCheckOfSession(phase, lastCheckedAt, marketState),
     // The next market open as ET WALL-CLOCK FIELDS, never an epoch — see
     // etWallClock() above for why the distinction is load-bearing.
     nextOpenEt: etWallClock(marketState?.nextOpenTime),
