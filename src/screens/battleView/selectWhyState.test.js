@@ -23,6 +23,8 @@ import {
   renderMotive,
   isEngineAuthoredMotive,
   ENGINE_MOTIVE_PREFIXES,
+  parseEmphasis,
+  stripEmphasisMarkers,
   SWAP_FAILED_PREFIX,
   GUARDRAIL_SOURCE_PREFIX,
   GUARDRAIL_FORCED_EXIT,
@@ -642,5 +644,105 @@ describe('renderMotive — the provenance code, translated or dropped (D-80, rul
     expect(trade.rationale).toBe(state.rationale);
     expect(state.footer).toBe(COPY.motiveSystem);
     expect(trade.footer).toBe(COPY.motiveSystem);
+  });
+});
+
+describe('parseEmphasis — the model\'s own `**…**`, and C1 (flip-prep item 3)', () => {
+  const visible = (t) => parseEmphasis(t).map((s) => s.text).join('');
+
+  it('a MATCHED pair renders as emphasis, and the markers go', () => {
+    expect(parseEmphasis('MU rolled over; **SLB leads energy** into the close.')).toEqual([
+      { text: 'MU rolled over; ', strong: false },
+      { text: 'SLB leads energy', strong: true },
+      { text: ' into the close.', strong: false },
+    ]);
+  });
+
+  it('an UNMATCHED marker is stripped, and does not emphasise the rest', () => {
+    // The naive regex failure: an unterminated pair either renders its own
+    // asterisks or swallows the paragraph after it. Neither happens.
+    expect(parseEmphasis('MU rolled over; **SLB leads energy into the close.')).toEqual([
+      { text: 'MU rolled over; ', strong: false },
+      { text: 'SLB leads energy into the close.', strong: false },
+    ]);
+    expect(parseEmphasis('a **b** c **d').some((s) => s.strong && s.text === 'd')).toBe(false);
+  });
+
+  it('text with NO markers is one plain segment — and the same string', () => {
+    const plain = 'The book is holding its shape.';
+    expect(parseEmphasis(plain)).toEqual([{ text: plain, strong: false }]);
+    expect(visible(plain)).toBe(plain);
+  });
+
+  it('BYTE EQUALITY (C1) — the visible text is the source minus its markers, always', () => {
+    // The property, stated as an equality rather than sampled. `split('**')
+    // .join('')` is the definition of "minus its markers"; nothing else about
+    // the string may move — not a word, not the order, not the punctuation,
+    // not a space.
+    const cases = [
+      'a **b** c',
+      'a **b c',
+      'plain text',
+      '**a** **b**',
+      'a ** b',
+      '****x',
+      'a **b** c **d',
+      '**',
+      '',
+      'Guardrail override: stop-loss at 8% breached on GILD (-9.24%). **Forcing exit → MOS.**',
+      'multi\nline **with** breaks\n\nand a blank one',
+      '**leading** and trailing **',
+    ];
+    for (const t of cases) expect(visible(t)).toBe(t.split('**').join(''));
+  });
+
+  it('never throws on a non-string, and never invents one', () => {
+    for (const bad of [null, undefined, 0, {}, [], true]) {
+      expect(parseEmphasis(bad)).toEqual([]);
+      expect(stripEmphasisMarkers(bad)).toBe('');
+    }
+  });
+
+  it('MARKERS ARE TRANSPARENT TO THE SENTENCE SPLIT, and survive it intact', () => {
+    // `**It has stalled.** MOS is breaking out.` has NO boundary to a splitter
+    // that reads the raw text: the full stop is followed by an asterisk, not a
+    // space. The whole paragraph came back as one sentence — a record
+    // collapsed to all of itself with no `Read more`, and a row's extract
+    // quietly widened to the lot. Markup may not move a boundary any more than
+    // it may move a word.
+    const raw = '**GILD has stalled at the 200-day.** MOS is breaking out on volume.';
+    expect(splitSentences(raw)).toEqual([
+      '**GILD has stalled at the 200-day.**',
+      'MOS is breaking out on volume.',
+    ]);
+    // The pair SURVIVES the split — both markers land in the same piece, so
+    // the emphasis the model wrote still renders. Splitting on the stripped
+    // text would have thrown it away; slicing from the first visible character
+    // would have orphaned the opening marker and broken the pair.
+    expect(parseEmphasis(splitSentences(raw)[0])).toEqual([
+      { text: 'GILD has stalled at the 200-day.', strong: true },
+    ]);
+  });
+
+  it('the split still reads the SAME boundaries as before on text with no markers', () => {
+    // The transparency must not have moved anything else: `8.4%`, `U.S.` and
+    // a decimal are still not boundaries, which is the rule this function was
+    // written for.
+    expect(splitSentences('Up 8.4% today. Bought more.')).toEqual(['Up 8.4% today.', 'Bought more.']);
+    // …and the one the docstring used to claim and never delivered: `U.S.`'s
+    // final stop IS followed by a space, so it splits, and it always did. The
+    // comment is corrected rather than the behaviour: an abbreviation
+    // mid-sentence is a real limitation of the rule, not a regression here.
+    expect(splitSentences('The U.S. tape is thin. Nothing to do.'))
+      .toEqual(['The U.S.', 'tape is thin.', 'Nothing to do.']);
+    expect(splitSentences('One sentence only')).toEqual(['One sentence only']);
+    expect(splitSentences('  ')).toEqual([]);
+    expect(splitSentences('****')).toEqual([]);
+  });
+
+  it('`stripEmphasisMarkers` is what a reader SEES — one rule, so nothing disagrees', () => {
+    const t = 'SLB lost its bid; **swap SLB for DVN** keeps the energy exposure.';
+    expect(stripEmphasisMarkers(t)).toBe('SLB lost its bid; swap SLB for DVN keeps the energy exposure.');
+    expect(stripEmphasisMarkers(t)).toBe(parseEmphasis(t).map((s) => s.text).join(''));
   });
 });

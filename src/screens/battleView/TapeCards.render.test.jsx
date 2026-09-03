@@ -228,6 +228,48 @@ describe('the trade card', () => {
   });
 });
 
+describe('the model\'s own emphasis on a record (flip-prep item 3)', () => {
+  const EMPHASISED = 'GILD has stalled at the 200-day. **MOS is breaking out on volume**, so the core slot rotates.';
+
+  it('a matched pair renders BOLD on the card, and its markers never reach the screen', () => {
+    const html = strip(renderToString(
+      <CheckCard entry={buildCheckEntries([check({ rationale: EMPHASISED })], {}, [])[0]} startExpanded />,
+    ));
+    expect(html).not.toContain('**');
+    expect(html).toContain('MOS is breaking out on volume');
+    expect(html).toMatch(/<strong[^>]*font-weight:700[^>]*>MOS is breaking out on volume<\/strong>/);
+  });
+
+  it('BYTE EQUALITY — the card\'s text is the source minus its markers (C1)', () => {
+    const html = strip(renderToString(
+      <CheckCard entry={buildCheckEntries([check({ rationale: EMPHASISED })], {}, [])[0]} startExpanded />,
+    ));
+    expect(html.replace(/<[^>]+>/g, '')).toContain(EMPHASISED.split('**').join(''));
+  });
+
+  it('an UNMATCHED marker is stripped and emphasises nothing after it', () => {
+    const raw = 'GILD has stalled. **MOS is breaking out on volume, so the core slot rotates.';
+    const html = strip(renderToString(
+      <CheckCard entry={buildCheckEntries([check({ rationale: raw })], {}, [])[0]} startExpanded />,
+    ));
+    expect(html).not.toContain('**');
+    expect(html).not.toContain('<strong');
+    expect(html.replace(/<[^>]+>/g, '')).toContain(raw.split('**').join(''));
+  });
+
+  it('THE COLLAPSED first sentence gets the same rule — one paragraph, not two renderers', () => {
+    const raw = '**GILD has stalled at the 200-day.** MOS is breaking out on volume.';
+    const html = strip(renderToString(
+      <CheckCard entry={buildCheckEntries([check({ rationale: raw })], {}, [])[0]} />,
+    ));
+    expect(html).not.toContain('**');
+    expect(html).toMatch(/<strong[^>]*>GILD has stalled at the 200-day\.<\/strong>/);
+    // Still collapsed: the second sentence is behind `Read more`.
+    expect(html).not.toContain('MOS is breaking out on volume');
+    expect(html).toContain('Read more');
+  });
+});
+
 describe('the check card', () => {
   it('is `Status check · {t} · {label}` with the first sentence, and `Read more` for the rest', () => {
     const html = checkHtml(check());

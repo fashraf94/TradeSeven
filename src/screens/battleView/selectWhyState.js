@@ -394,28 +394,71 @@ export function namesSymbol(text, symbol) {
  * Split a paragraph into sentences, VERBATIM (A2.1).
  *
  * A boundary is a run of `. ! ?` followed by whitespace or the end of the
- * text. Requiring the trailing whitespace is what keeps `8.4%`, `-1.0x` and
- * `U.S.` intact — a bare `[.!?]` split would cut a rationale mid-number, and
- * these paragraphs are full of numbers. Each piece is trimmed at its edges and
+ * text. Requiring the trailing whitespace is what keeps `8.4%` and `-1.0x`
+ * intact — a bare `[.!?]` split would cut a rationale mid-number, and these
+ * paragraphs are full of numbers. Each piece is trimmed at its edges and
  * otherwise untouched: no re-punctuation, no capitalisation, no ellipsis.
+ *
+ * `U.S.` was named here as a third example and never was one: its final stop
+ * IS followed by a space, so it splits, and it always did. Corrected rather
+ * than left standing — a comment that claims a guarantee the code does not
+ * give is worse than no comment (flip-prep item 3, found by the row that
+ * tried to assert it). An abbreviation mid-sentence is a real limitation of
+ * this rule and is recorded rather than papered over.
+ *
+ * EMPHASIS MARKERS ARE TRANSPARENT TO THE SPLIT (flip-prep item 3). The
+ * boundaries are found on the text a READER sees and then mapped back onto the
+ * raw string, so each piece keeps its own `**…**` intact. Splitting the raw
+ * text directly made the markup decide the structure: `**It has stalled.**
+ * MOS is breaking out.` has no boundary at all to the regex below, because the
+ * full stop is followed by an asterisk rather than a space — so the whole
+ * paragraph came back as one sentence, a record collapsed to all of itself
+ * with no `Read more`, and a row's extract quietly widened to the lot. And
+ * splitting the STRIPPED text instead would have thrown the emphasis away.
+ * Markup may not move a word, an order, a mark — or a boundary.
  *
  * @returns {string[]} the sentences in order; [] for empty or non-text input
  */
 export function splitSentences(text) {
   if (typeof text !== 'string' || !text.trim()) return [];
+
+  // Where each VISIBLE character lives in the raw string. Markers occupy raw
+  // positions and no visible one, so they simply never get an entry.
+  const visible = [];
+  const rawIndex = [];
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === '*' && text[i + 1] === '*') { i += 1; continue; }
+    visible.push(text[i]);
+    rawIndex.push(i);
+  }
+  const seen = visible.join('');
+  if (!seen.trim()) return [];
+  // One past the end, so a boundary at the very end maps to the whole tail —
+  // including any unmatched trailing marker, which the renderer strips.
+  rawIndex.push(text.length);
+
+  // Spans run BOUNDARY to BOUNDARY in the raw string, not first-visible-char to
+  // first-visible-char: a `**` that opens a sentence sits before that
+  // sentence's first visible character, and starting the slice at the
+  // character would orphan the marker — the pair would break and both halves
+  // would lose the emphasis the model wrote.
   const out = [];
   const re = /[.!?]+(?=\s|$)/g;
-  let start = 0;
-  let match = re.exec(text);
-  while (match !== null) {
-    const end = match.index + match[0].length;
-    const piece = text.slice(start, end).trim();
+  let rawStart = 0;
+  const push = (visibleEnd) => {
+    const rawEnd = rawIndex[visibleEnd];
+    const piece = text.slice(rawStart, rawEnd).trim();
     if (piece) out.push(piece);
-    start = end;
-    match = re.exec(text);
+    rawStart = rawEnd;
+  };
+  let match = re.exec(seen);
+  let lastVisibleEnd = 0;
+  while (match !== null) {
+    lastVisibleEnd = match.index + match[0].length;
+    push(lastVisibleEnd);
+    match = re.exec(seen);
   }
-  const tail = text.slice(start).trim();
-  if (tail) out.push(tail);
+  if (lastVisibleEnd < seen.length) push(seen.length);
   return out;
 }
 
@@ -459,6 +502,51 @@ export function deriveTierPrices(thresholdBaseline, baseATR, direction = null) {
     bagger: thresholdBaseline * (1 + baseATR / 100),
     bust: thresholdBaseline * (1 - baseATR / 100),
   };
+}
+
+/**
+ * MARKDOWN EMPHASIS IN VERBATIM ENGINE TEXT (flip-prep item 3). PURE.
+ *
+ * `rationale` sometimes arrives with `**…**` around the model's inline
+ * hypothesis — its own emphasis, written into the sentence it is emphasising.
+ * Rendered raw, a player reads the asterisks; stripped silently, the model's
+ * stress on a clause is lost. So the pairs RENDER and the strays GO.
+ *
+ * C1 IS THE WHOLE CONSTRAINT. This changes no word, no order and no
+ * punctuation — only which characters are markup. The visible text of any
+ * input is exactly the source minus its `**` markers, which is a property a
+ * test can state as an equality rather than a sample.
+ *
+ * Pairing is left-to-right, which is what the model means by it: the first
+ * `**` opens and the second closes. An ODD number leaves the last marker
+ * unmatched and it is dropped — never rendered, and never allowed to
+ * emphasise the rest of the paragraph, which is what a naive regex over an
+ * unterminated pair does.
+ *
+ * @returns {Array<{ text: string, strong: boolean }>} in source order
+ */
+export function parseEmphasis(text) {
+  if (typeof text !== 'string' || !text) return [];
+  if (!text.includes('**')) return [{ text, strong: false }];
+  const parts = text.split('**');
+  const out = [];
+  for (let i = 0; i < parts.length; i += 1) {
+    // Odd parts sit between two markers — unless they are the LAST part, in
+    // which case the marker that opened them was never closed.
+    const strong = i % 2 === 1 && i < parts.length - 1;
+    if (parts[i]) out.push({ text: parts[i], strong });
+  }
+  return out;
+}
+
+/**
+ * The same text with its emphasis markers removed and nothing else changed —
+ * what a reader SEES. The one place any surface should ask "what does this
+ * say", so a search, a count or a comparison cannot disagree with the render.
+ */
+export function stripEmphasisMarkers(text) {
+  if (typeof text !== 'string') return '';
+  return parseEmphasis(text).map((seg) => seg.text).join('');
 }
 
 /**

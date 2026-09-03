@@ -312,6 +312,63 @@ describe('the book-level panel (score header)', () => {
   });
 });
 
+describe('the model\'s own emphasis (flip-prep item 3)', () => {
+  const EMPHASISED = {
+    ...HELD,
+    rationale: 'SLB lost its bid; **swap SLB for DVN** keeps the energy exposure with the leader.',
+  };
+
+  it('a matched pair renders BOLD, and its markers never reach the screen', () => {
+    // A fixture whose emphasised span names NO symbol, so the `<strong>` this
+    // row finds can only be the model's own. Asserting `font-weight:700`
+    // against the earlier fixture matched the SYMBOL's strong too — it carries
+    // the same weight — and the row passed with markdown emphasis switched off
+    // entirely.
+    const clean = { ...HELD, rationale: 'SLB lost its bid; **the energy exposure stays** either way.' };
+    const html = renderRow(clean, { trades: [] });
+    expect(html).not.toContain('**');
+    expect(html).toContain('the energy exposure stays');
+    // The model's own emphasis: bold, in the BODY colour, not the symbol teal.
+    expect(html).toMatch(/<strong style="font-weight:700">the energy exposure stays<\/strong>/);
+    // …and the symbol's is still teal and still separate.
+    expect(html).toMatch(/<strong[^>]*color:var\(--ft-teal\)[^>]*>SLB<\/strong>/);
+  });
+
+  it('THE TWO EMPHASES COMPOSE — the symbol inside the model\'s own stress gets both', () => {
+    // The symbol is teal (it is the piece you tapped, and an address); the
+    // model's stress is the body colour in bold (it is emphasis). One colour
+    // for both would read as half the paragraph underlined.
+    // `trades: []` so the only SLBs on screen are the check paragraph's own —
+    // `This piece today` renders a second rationale that would make the count
+    // below about the fixture rather than about the composition.
+    const html = renderRow(EMPHASISED, { trades: [] });
+    expect(html).toContain('color:var(--ft-teal)');
+    // BOTH SLBs in the paragraph are emphasised as the symbol, including the
+    // one inside the `**…**` — which a markdown pass that ran second could
+    // never have matched, because the marker sits on the word boundary.
+    expect((html.match(/<strong[^>]*color:var\(--ft-teal\)[^>]*>SLB<\/strong>/g) || []).length).toBe(2);
+  });
+
+  it('an UNMATCHED marker is stripped and emphasises nothing after it', () => {
+    const html = renderRow({ ...HELD, rationale: 'SLB lost its bid; **swap SLB for DVN keeps it.' });
+    expect(html).not.toContain('**');
+    expect(html).toContain('keeps it.');
+    // The only <strong> left is the symbol's.
+    const strongs = html.match(/<strong[^>]*>/g) || [];
+    expect(strongs.every((tag) => tag.includes('--ft-teal'))).toBe(true);
+  });
+
+  it('BYTE EQUALITY on the rendered output — the text is the source minus markers', () => {
+    const raw = EMPHASISED.rationale;
+    const html = renderRow(EMPHASISED);
+    // Pull the paragraph's own text back out of the markup and compare it to
+    // the source with its markers removed. Nothing else about the sentence may
+    // have moved (C1).
+    const text = html.replace(/<[^>]+>/g, '');
+    expect(text).toContain(raw.split('**').join(''));
+  });
+});
+
 describe('copy guard on the rendered output', () => {
   it('no agent verb reaches the html', () => {
     const html = renderRow(DOWNGRADED).toLowerCase();

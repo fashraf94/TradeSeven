@@ -39,7 +39,7 @@ import { motion } from 'framer-motion';
 import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
-import { WHY_KIND, emphasizeSymbol, extractSentences, splitSentences } from './selectWhyState';
+import { WHY_KIND, emphasizeSymbol, extractSentences, splitSentences, parseEmphasis } from './selectWhyState';
 
 const LABEL_COLOR = {
   [WHY_KIND.DOWNGRADED]: cssVar('amber'),
@@ -66,9 +66,24 @@ const mono = {
   fontVariantNumeric: 'tabular-nums',
 };
 
+/**
+ * The engine's own sentence, with the two emphases it can carry.
+ *
+ * MARKDOWN FIRST, THEN THE SYMBOL (flip-prep item 3). `parseEmphasis` removes
+ * the `**` markers, so running it first is what lets the symbol pass see the
+ * words rather than the markup — `**SLB is done**` would otherwise never match
+ * SLB against a whole-word boundary that an asterisk sits on. The symbol pass
+ * then runs INSIDE each segment, so a symbol inside the model's own emphasis
+ * gets both and neither swallows the other.
+ *
+ * The two read differently on purpose: the symbol is teal (it is the piece you
+ * tapped, and it is a link between this text and the row above it), the
+ * model's own stress is the body colour in bold (it is emphasis, not an
+ * address). One colour for both would make the panel look like it had
+ * underlined half the paragraph.
+ */
 function Rationale({ text, symbol }) {
   if (!text) return null;
-  const segments = emphasizeSymbol(text, symbol);
   return (
     <p style={{
       margin: 0,
@@ -78,9 +93,14 @@ function Rationale({ text, symbol }) {
       whiteSpace: 'pre-wrap',
       wordBreak: 'break-word',
     }}>
-      {segments.map((seg, i) => (seg.emphasized
-        ? <strong key={i} style={{ color: cssVar('teal'), fontWeight: 700 }}>{seg.text}</strong>
-        : <React.Fragment key={i}>{seg.text}</React.Fragment>))}
+      {parseEmphasis(text).map((span, si) => {
+        const inner = emphasizeSymbol(span.text, symbol).map((seg, i) => (seg.emphasized
+          ? <strong key={i} style={{ color: cssVar('teal'), fontWeight: 700 }}>{seg.text}</strong>
+          : <React.Fragment key={i}>{seg.text}</React.Fragment>));
+        return span.strong
+          ? <strong key={`e-${si}`} style={{ fontWeight: 700 }}>{inner}</strong>
+          : <React.Fragment key={`e-${si}`}>{inner}</React.Fragment>;
+      })}
     </p>
   );
 }

@@ -45,7 +45,7 @@
 import React, { useState } from 'react';
 import { cssVar } from '../../theme/cssTokens';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
-import { WHY_KIND } from './selectWhyState';
+import { WHY_KIND, parseEmphasis } from './selectWhyState';
 
 const LABEL_COLOR = {
   [WHY_KIND.DOWNGRADED]: cssVar('amber'),
@@ -141,7 +141,16 @@ function RecordProse({ text, firstSentence, startExpanded = false }) {
   const hasMore = full !== opening;
   return (
     <>
-      <p style={body}>{expanded ? full : opening}</p>
+      {/* The model's own `**…**` renders as emphasis and its strays are
+          stripped (flip-prep item 3) — the same rule, from the same function,
+          the Why? panel and the book panel use, so one sentence cannot be
+          shown three ways (BUILD_RULES §9). No word, order or punctuation
+          changes; only which characters were markup. */}
+      <p style={body}>
+        {parseEmphasis(expanded ? full : opening).map((span, i) => (span.strong
+          ? <strong key={i} style={{ fontWeight: 700 }}>{span.text}</strong>
+          : <React.Fragment key={i}>{span.text}</React.Fragment>))}
+      </p>
       {hasMore && !expanded && (
         <div>
           <button type="button" style={linkButton} onClick={() => setExpanded(true)}>{COPY.readMore}</button>
