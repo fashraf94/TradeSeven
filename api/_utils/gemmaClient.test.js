@@ -9,7 +9,7 @@
 //   { parseError: true, errorReason: 'plaintext_passthrough' | 'empty_content', rawText }
 // Callers MUST detect parseError and route to their own structured-error path.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { parseVoiceLayerResponse } from './gemmaClient.js';
 
 describe('parseVoiceLayerResponse — happy paths (tiers 1-3 unchanged)', () => {
@@ -130,5 +130,143 @@ describe('parseVoiceLayerResponse — contract guarantees', () => {
     expect(out.hasDirective).toBeUndefined();
     expect(out.directive).toBeUndefined();
     expect(out.suggestedActions).toBeUndefined();
+  });
+});
+
+// ==========================================================================
+// ABORT CLASSIFICATION — the Sep 3 2026 voice-timeout incident guard.
+//
+// These rows exist because a hand-mocked error could not have caught the bug.
+// The defect lived in WHERE the abort surfaces: a `signal` on fetch covers the
+// body read too, so a timeout firing mid-body leaves the response resolved
+// (200, headers received) and rejects `.json()` instead. That rejection landed
+// in a catch written for malformed JSON and came back out as a plain Error
+// reading `OpenRouter 200: Invalid JSON from OpenRouter: This operation was
+// aborted` — so every consumer classifying on `name === 'AbortError'` missed it.
+//
+// So these use a REAL http server, a REAL AbortController and REAL fetch. No
+// stubbed Response, no hand-set `err.name`: the seam under test is undici's own
+// behaviour, and modelling it by hand is how the original guard
+// (chat.test.js "AbortError → 504") passed for months against a live defect.
+//
+// MUTATION CHECK: reverting the `isAbortError(jsonErr) || signal?.aborted`
+// branch in _callGemmaOnce turns the first two rows red — callGemmaVoice throws
+// name 'Error', and callGemmaVoiceWithRetry reports aborted undefined.
+// ==========================================================================
+
+import http from 'node:http';
+import { callGemmaVoice, callGemmaVoiceWithRetry, isAbortError } from './gemmaClient.js';
+
+describe('abort classification — a timeout is never reported as invalid JSON', () => {
+  let server;
+  let baseUrl;
+  const openSockets = new Set();
+
+  beforeAll(async () => {
+    server = http.createServer((req, res) => {
+      if (req.url === '/stall-body') {
+        // Headers + a partial body, then stall: the exact production shape.
+        // fetch RESOLVES here (200) and the abort lands on the body read.
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.write('{"choices":[{"message":{"content":');
+        return;
+      }
+      if (req.url === '/stall-headers') return; // never respond — fetch itself rejects
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { content: '{"response":"ok"}' } }] }));
+    });
+    server.on('connection', (s) => { openSockets.add(s); s.on('close', () => openSockets.delete(s)); });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  afterAll(async () => {
+    for (const s of openSockets) s.destroy();
+    await new Promise((r) => server.close(r));
+  });
+
+  // OPENROUTER_URL is module-scoped, so point the call at the local server by
+  // swapping global.fetch for a thin forwarder. Everything downstream of the
+  // request — the real Response, the real body read, the real abort — is undici.
+  function useLocalServer(path) {
+    const realFetch = globalThis.fetch;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) =>
+      realFetch(`${baseUrl}${path}`, init));
+  }
+  afterEach(() => vi.restoreAllMocks());
+
+  const call = (fn, timeoutMs = 120) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    return Promise.resolve(fn({
+      systemPrompt: 'sys', conversationHistory: [], userMessage: 'hi',
+      signal: controller.signal,
+    })).finally(() => clearTimeout(timer));
+  };
+
+  it('callGemmaVoice: abort DURING BODY READ throws a real AbortError (not "Invalid JSON")', async () => {
+    useLocalServer('/stall-body');
+    const err = await call(callGemmaVoice).then(
+      () => { throw new Error('expected the call to reject'); },
+      (e) => e,
+    );
+
+    // The load-bearing assertion: chat.js:681 classifies on this exact name, and
+    // its 504 / gemma_timeout / honest-client-string path hangs off it.
+    expect(err.name).toBe('AbortError');
+    expect(isAbortError(err)).toBe(true);
+    // The production string that must never be produced for an abort again.
+    expect(err.message).not.toMatch(/Invalid JSON/);
+    expect(err.message).not.toMatch(/OpenRouter 200/);
+  });
+
+  it('callGemmaVoiceWithRetry: abort DURING BODY READ reports aborted:true and does NOT retry', async () => {
+    useLocalServer('/stall-body');
+    const result = await call(callGemmaVoiceWithRetry);
+
+    // The five sibling callers gate their 504 on this flag; without it they
+    // answered HTTP 200 with "I hit a snag" on a turn that actually timed out.
+    expect(result.success).toBe(false);
+    expect(result.aborted).toBe(true);
+    expect(result.error).not.toMatch(/Invalid JSON/);
+    // An abort is not transient — one attempt only, never a retry into a
+    // deadline that has already expired.
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('callGemmaVoice: abort BEFORE HEADERS also throws AbortError (the window that always worked)', async () => {
+    useLocalServer('/stall-headers');
+    const err = await call(callGemmaVoice).then(
+      () => { throw new Error('expected the call to reject'); },
+      (e) => e,
+    );
+    expect(err.name).toBe('AbortError');
+  });
+
+  it('a genuine malformed-JSON body is STILL reported as invalid JSON (no over-classification)', async () => {
+    // The regression this fix must not cause: non-abort parse failures keep
+    // their own error shape, so real bad payloads are not mislabelled timeouts.
+    const realFetch = globalThis.fetch;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      realFetch(`${baseUrl}/ok`).then((r) => ({
+        ok: true, status: 200,
+        json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON')),
+        text: r.text.bind(r),
+      })));
+
+    const err = await callGemmaVoice({
+      systemPrompt: 'sys', conversationHistory: [], userMessage: 'hi',
+    }).then(() => { throw new Error('expected the call to reject'); }, (e) => e);
+
+    expect(err.name).toBe('Error');
+    expect(err.message).toMatch(/Invalid JSON from OpenRouter/);
+  });
+
+  it('a healthy response is unaffected', async () => {
+    useLocalServer('/ok');
+    const content = await callGemmaVoice({
+      systemPrompt: 'sys', conversationHistory: [], userMessage: 'hi',
+    });
+    expect(JSON.parse(content).response).toBe('ok');
   });
 });

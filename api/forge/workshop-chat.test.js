@@ -384,3 +384,30 @@ describe('workshop-chat — concurrent_modification (Phase 2.5 Fix 4)', () => {
     expect(fixture.written.updateCalls).toHaveLength(0);
   });
 });
+
+// ==========================================================================
+// SIBLING TIMEOUT-CLASS ROW — Sep 3 2026 voice-timeout incident.
+//
+// gemmaClient now reports an abort that fires DURING THE BODY READ as
+// `aborted: true`. It previously came back as a generic failure with
+// `aborted` undefined, so this handler answered its non-abort status on a turn
+// that had actually timed out. This row pins that the new class is handled and
+// does not crash the handler. The classification itself is guarded at source in
+// api/_utils/gemmaClient.test.js.
+// ==========================================================================
+
+describe('workshop-chat — gemmaClient timeout class (aborted:true)', () => {
+  it('an aborted Gemma call returns 504, not 200, and keeps the session usable', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, sessionDocs: {} });
+    activeFirestore = fixture.db;
+    gemmaResult.current = { success: false, error: 'Request aborted', aborted: true, fallbackResponse: null };
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', message: 'hi' });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(504);
+    expect(res.body.error).toBe(true);
+    expect(res.body.agentMessage).toBeTruthy();   // graceful copy, not a crash
+    expect(res.body.messagesUsed).toBe(0);        // a failed turn never burns budget
+  });
+});

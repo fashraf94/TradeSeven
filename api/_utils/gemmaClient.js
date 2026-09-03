@@ -11,12 +11,18 @@
 //     — Fires one POST to OpenRouter with the shared Gemma config, returns
 //       the raw assistant content string. Caller is responsible for parsing.
 //       THROWS on any failure (HTTP error, malformed JSON, missing content).
+//       An abort ALWAYS throws with `name === 'AbortError'`, whether the signal
+//       fired before the headers arrived or during the body read — callers
+//       classify timeouts on that name, so it is part of the contract.
 //       Kept for backward compatibility with api/agent/chat.js.
 //   callGemmaVoiceWithRetry(options)
 //     — Same call, but with a single retry on transient errors (429/5xx,
 //       network errors, malformed JSON). Returns a STRUCTURED result:
 //         { success: true, content: '...' }
 //         { success: false, error: '...', fallbackResponse: null, aborted?: true }
+//       `aborted: true` is set for EVERY abort, including one that fires while
+//       the response body is still arriving — callers gate their timeout
+//       response on that flag.
 //       Never throws except if options.signal was aborted before the call.
 //   parseVoiceLayerResponse(rawText)
 //     — 4-tier JSON extractor with a safe plaintext fallback. Returns an
@@ -40,6 +46,27 @@ const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
 const RETRY_BACKOFF_MS = 2000;
 
 /**
+ * True when an error is an abort (a fired AbortSignal), whatever its class.
+ * undici/Node reject with a DOMException named 'AbortError'; the name is the
+ * stable, cross-runtime marker, and is what every consumer already tests.
+ */
+export function isAbortError(err) {
+  return err?.name === 'AbortError';
+}
+
+/**
+ * Normalize an abort into an Error whose `name` is 'AbortError', so callers can
+ * classify it uniformly. Errors that already carry that name pass through
+ * untouched (preserving the original stack).
+ */
+function asAbortError(err) {
+  if (isAbortError(err)) return err;
+  const e = new Error(err?.message || 'This operation was aborted');
+  e.name = 'AbortError';
+  return e;
+}
+
+/**
  * Internal: single attempt. Returns a structured result instead of throwing
  * for HTTP / parsing failures. Still propagates AbortError and network errors
  * (caller decides whether to retry).
@@ -60,26 +87,55 @@ async function _callGemmaOnce({
     { role: 'user', content: userMessage },
   ];
 
-  const response = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://fantasytrades.io',
-      'X-Title': 'FantasyTrades Voice Layer',
-    },
-    body: JSON.stringify({
+  // Model-latency instrumentation (Sep 3 2026 voice-timeout incident). Nothing
+  // on this path recorded how long the model actually took, so no p50/p95 could
+  // be read before or after a timeout change — the fix was unverifiable. One
+  // structured line per ATTEMPT, at every exit, tagged with the outcome so a
+  // successful p95 can be separated from a timed-out one. Machine-readable on
+  // purpose: `[gemmaClient] gemma_latency {json}` greps cleanly out of Vercel
+  // logs, and unlike the shadow record it does not depend on GCS_CREDENTIALS.
+  const startedAt = Date.now();
+  const emitLatency = (outcome, status) => {
+    console.log('[gemmaClient] gemma_latency ' + JSON.stringify({
+      ms: Date.now() - startedAt,
+      outcome,                       // ok | timeout | network_error | http_error | invalid_json | no_content
+      status: status ?? null,
       model: GEMMA_MODEL,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-      response_format: { type: 'json_object' },
-    }),
-    signal,
-  });
+      maxTokens,
+    }));
+  };
+
+  // The OTHER abort window: when the signal fires before any response headers
+  // arrive, fetch itself rejects (already a real AbortError, so classification
+  // was never broken here — only the body-read window below was). Caught solely
+  // to time it, then rethrown untouched.
+  let response;
+  try {
+    response = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://fantasytrades.io',
+        'X-Title': 'FantasyTrades Voice Layer',
+      },
+      body: JSON.stringify({
+        model: GEMMA_MODEL,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        response_format: { type: 'json_object' },
+      }),
+      signal,
+    });
+  } catch (fetchErr) {
+    emitLatency(isAbortError(fetchErr) ? 'timeout' : 'network_error', null);
+    throw fetchErr;
+  }
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'unknown');
+    emitLatency('http_error', response.status);
     return {
       ok: false,
       status: response.status,
@@ -91,6 +147,32 @@ async function _callGemmaOnce({
   try {
     data = await response.json();
   } catch (jsonErr) {
+    // ABORT vs MALFORMED JSON — these are different failures and must not share
+    // an error shape. A `signal` on fetch covers the WHOLE request, body read
+    // included, so a timeout that fires while the body is still arriving lands
+    // HERE, not on the fetch itself: the response resolved (headers arrived,
+    // status 200) and it is `.json()` that rejects with an AbortError.
+    //
+    // This catch was written for malformed JSON. Left undistinguished it
+    // rewrote the abort as `OpenRouter 200: Invalid JSON from OpenRouter: This
+    // operation was aborted` — a plain Error whose `name` is 'Error'. Every
+    // consumer that classifies by AbortError then failed to see a timeout:
+    // api/agent/chat.js took its 500 branch instead of its 504 (so the client
+    // rendered "Agent is thinking too hard" instead of the truthful "Agent took
+    // too long"), the shadow log filed `handler_exception` instead of
+    // `gemma_timeout`, and the five callGemmaVoiceWithRetry callers never got
+    // `aborted:true` (so they answered HTTP 200 on a failed turn).
+    //
+    // Rethrowing preserves name === 'AbortError' and is what makes BOTH existing
+    // classification paths work unchanged: callGemmaVoice propagates it to its
+    // caller's own AbortError check, and callGemmaVoiceWithRetry's catch maps it
+    // to { aborted: true }. Sep 3 2026 voice-timeout incident.
+    if (isAbortError(jsonErr) || signal?.aborted) {
+      console.error('[gemmaClient] Voice call timed out while reading the response body (abort during body read)');
+      emitLatency('timeout', response.status);
+      throw asAbortError(jsonErr);
+    }
+    emitLatency('invalid_json', response.status);
     return {
       ok: false,
       status: response.status,
@@ -100,6 +182,7 @@ async function _callGemmaOnce({
 
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== 'string') {
+    emitLatency('no_content', response.status);
     return {
       ok: false,
       status: response.status,
@@ -107,6 +190,7 @@ async function _callGemmaOnce({
     };
   }
 
+  emitLatency('ok', response.status);
   return { ok: true, content };
 }
 
@@ -178,7 +262,7 @@ export async function callGemmaVoiceWithRetry(options) {
         maxTokens,
       });
     } catch (err) {
-      if (err?.name === 'AbortError') {
+      if (isAbortError(err)) {
         return {
           success: false,
           error: 'Request aborted',

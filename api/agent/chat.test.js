@@ -7,7 +7,7 @@
 // (elicitation target, directive normalization, mode detection,
 // review lessons, etc.). Those are exercised by manual / E2E tests.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TOURNAMENT_GAME_MODE, GROUP_STATUS } from '../../src/constants/leagueTournament.js';
 
 // ==================== HOISTED MOCK STATE ====================
@@ -88,6 +88,12 @@ vi.mock('../_utils/gemmaClient.js', () => ({
   parseVoiceLayerResponse: (c) => parseVoiceLayerResponseImpl.current(c),
 }));
 
+// The REAL gemmaClient, bypassing the mock above. Used by the abort row so the
+// handler's timeout classification is exercised through the actual
+// _callGemmaOnce catch rather than a hand-shaped error object — see the comment
+// on that test for why the distinction is the whole point.
+const realGemmaClient = await vi.importActual('../_utils/gemmaClient.js');
+
 // Phase E1 — flip ARCHETYPE_INTEGRITY_MODE per-test via a live getter (real flags
 // preserved). chat.js reads the flag inside the handler, so the getter takes
 // effect at call time. Default 'off' so every pre-existing test stays flag-OFF.
@@ -114,7 +120,7 @@ vi.mock('firebase-admin/firestore', () => ({
   },
 }));
 
-const { default: handler } = await import('./chat.js');
+const { default: handler, GEMMA_TIMEOUT_MS } = await import('./chat.js');
 
 // ==================== Test fixture helpers ====================
 
@@ -217,6 +223,12 @@ beforeEach(() => {
   budget.chargeCalls = [];
 });
 
+// The abort row spies on globalThis.fetch to drive the real gemmaClient; without
+// this the stub would leak into every subsequent test in the file.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 // ==================== TESTS ====================
 
 describe('agent/chat — parseError 502 banner path', () => {
@@ -306,15 +318,35 @@ describe('agent/chat — catch-block shadow logging (gap closure)', () => {
   // calling logConversation. Production lost visibility into AbortError
   // timeouts and other handler exceptions.
 
-  it('AbortError → 504 + shadow logs gemma_timeout', async () => {
+  // REWRITTEN Sep 3 2026 (voice-timeout incident). This row previously mocked
+  // callGemmaVoice to throw an error with `name` hand-set to 'AbortError'. It
+  // passed for months while production returned 500 on every timeout, because
+  // hand-setting the name bypasses the only code that decides it:
+  // _callGemmaOnce's `.json()` catch. A timeout that fires while the body is
+  // still arriving leaves the response resolved (200) and rejects the body
+  // read, and that catch — written for malformed JSON — used to rewrite the
+  // abort as a plain Error. So `isAbort` below was false in production and
+  // never false in the test.
+  //
+  // It now drives the REAL callGemmaVoice against a fetch whose body read
+  // rejects with a genuine AbortError, so the classification under test is the
+  // handler's own, reached the way production reaches it.
+  //
+  // MUTATION CHECK: reverting the abort branch in gemmaClient._callGemmaOnce
+  // makes this row fail with 500 / handler_exception — the production symptom.
+  it('a timeout during the body read → 504 + shadow logs gemma_timeout (real abort path)', async () => {
     const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
     activeFirestore = fixture.db;
 
-    callGemmaVoiceImpl.current = async () => {
-      const err = new Error('aborted');
-      err.name = 'AbortError';
-      throw err;
-    };
+    // A resolved 200 response whose body read rejects mid-stream: the exact
+    // production shape. DOMException named 'AbortError' is what undici throws.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new DOMException('This operation was aborted', 'AbortError')),
+      text: () => Promise.resolve(''),
+    });
+    callGemmaVoiceImpl.current = realGemmaClient.callGemmaVoice;
 
     const { req, res } = makeReqRes({
       agentId: 'agent-1',
@@ -331,6 +363,9 @@ describe('agent/chat — catch-block shadow logging (gap closure)', () => {
     expect(shadowLogCalls.current[0].userMessage).toBe('hi');
     expect(shadowLogCalls.current[0].agentId).toBe('agent-1');
     expect(shadowLogCalls.current[0].battleId).toBe('battle-1');
+    // A timed-out turn is exactly the case p50/p95 must not be blind to, so the
+    // latency stamp has to survive the throw, not just the happy path.
+    expect(typeof shadowLogCalls.current[0].gemmaLatencyMs).toBe('number');
   });
 
   it('non-Abort error → 500 + shadow logs handler_exception with errorMessage', async () => {
@@ -729,5 +764,58 @@ describe('agent/chat — capabilities manifest → USER LEVERS wiring (Phase E2)
     const { res, manifest } = await run({ battle: tournamentBattle(), group: TOURNEY_GROUP });
     expect(res.statusCode).toBe(200);
     expect(manifest ?? null).toBeNull();               // capabilitiesManifest stays the null default
+  });
+});
+
+// ==========================================================================
+// TIMEOUT WIRING — Sep 3 2026 voice-timeout incident.
+//
+// chat.timeout.test.js pins the VALUE of GEMMA_TIMEOUT_MS and its arithmetic
+// against TURN_DEADLINE_MS and maxDuration. This row pins that the constant is
+// what actually arms the live AbortController: without it, replacing
+// `GEMMA_TIMEOUT_MS` at the call site with a bare literal would leave every
+// pin green while the real timeout drifted.
+// ==========================================================================
+
+describe('agent/chat — the timeout constant arms the real AbortController', () => {
+  it('does not abort before GEMMA_TIMEOUT_MS, and does at it', async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+      activeFirestore = fixture.db;
+
+      // Hold the call open and hand the signal back so the abort can be observed
+      // directly, rather than inferred from a downstream status code.
+      let captured = null;
+      callGemmaVoiceImpl.current = (opts) => {
+        captured = opts.signal;
+        return new Promise((_resolve, reject) => {
+          opts.signal.addEventListener('abort', () => {
+            const e = new Error('This operation was aborted');
+            e.name = 'AbortError';
+            reject(e);
+          }, { once: true });
+        });
+      };
+
+      const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+      const done = handler(req, res);
+
+      // Let the handler's pre-call awaits (auth + the Firestore reads) settle so
+      // the timer is actually armed before the clock is advanced.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(captured).not.toBeNull();
+
+      await vi.advanceTimersByTimeAsync(GEMMA_TIMEOUT_MS - 1);
+      expect(captured.aborted).toBe(false);   // still inside the budget
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(captured.aborted).toBe(true);    // armed by GEMMA_TIMEOUT_MS exactly
+
+      await done;
+      expect(res.statusCode).toBe(504);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
