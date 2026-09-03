@@ -13,7 +13,7 @@
 | # | Ruled | Built | Where |
 |---|---|---|---|
 | ruling 1 | D-80 — translate the guardrail's provenance code, or drop the parenthetical | ✅ | `selectWhyState.renderMotive`, `battleViewCopy.guardrailTypeWords` |
-| ruling 2 | D-81 — the other eight trigger strings, `near` not `nearing` | ✅ | `battleViewCopy.wokenByType` |
+| ruling 2 | D-81 — the other eight trigger strings, `near` not `nearing` | ✅ | `battleViewCopy.wokenByType` — **not named in the addendum's §4 Go list**; built because "Accepted" is a build instruction where rulings 3/5/6/7 carry explicit no-build dispositions, and because D-81 is one of the ledger rows §3 asks this session to leave behind |
 | ruling 3 | D-82 — D-71 stays unflagged | ✅ (nothing to build; recorded) | ledger |
 | ruling 4 | `Read the full check` scrolls into view and focuses | ✅ | `AgentBattleScreen`, `WhyPanel` |
 | ruling 5 | tap targets in trade cards — deferred | — | not built, by ruling |
@@ -26,7 +26,7 @@
 | A2.3 | the detector, the roster, `In the chat · n`, the scope chip | ✅ | `findKnownTickers.js`, `selectSymbolRoster.js`, `scopeTape.js` |
 | A2.4 | the peek line, the strip, the desktop collapse | ✅ | `derivePeekLine.js`, `PeekStrip.jsx` |
 
-**One thing needs a founder ruling before the flip** — §5 item 1: D-83 was applied to the flagged surfaces only, so after the flip the Desk and the Battle View can name one check by two different minutes. The alternative is a second unflagged Desk change, which the addendum did not ask for.
+**One thing the founder should see before anything else:** D-83 ships on the **unflagged Desk** as well. The first build scoped it to the flagged surfaces; the review found (twice, independently) that the turn line's strings ARE the Desk's, shared under a D-62 comment that says the two "cannot disagree" — and that the repo's own tests had begun to encode the contradiction. Fixing it at the shared seam is what the ledger row asks for ("on every surface") and it makes a real dashboard user read `Checked 12:45 PM` where they read `Checked 12:47 PM`. That is the **second** user-visible change in A2 that does not wait for the flip, beside D-82's. §4 item 54 has the reasoning.
 
 ---
 
@@ -43,6 +43,8 @@ On a live battle with the controller flag ON:
 7. **Desktop collapse.** The `▾` on the chat column folds it to a strip at the bottom of the board; the board takes the full width; the strip shows the turn line and the newest tape line (`Filed 3:50 PM · Widen the spread`). A new feed entry puts a dot on the strip. `▴` restores.
 8. **The crossing.** Collapse on the desktop, narrow the window to a phone width: the sheet is at PEEK. Open it, widen: the column is back. (Phase A reset it to peek every time; ruling 7 changed that.)
 9. **A failed send** (offline, or a 500): `The character couldn't answer just now · nothing was sent`, and the budget counter does not move.
+
+**And on the DASHBOARD, with the flag off** (the one thing here a real user already sees): the Desk's posture line now names the check's quarter-hour — `Checked 12:45 PM · next ~1:00 PM`, never `12:47`. Same sentence, same place; the minute is the cron's slot rather than its write latency.
 
 ---
 
@@ -81,14 +83,21 @@ Copy guard green. **One character is a request to the design chat:** `chatSendFa
 
 ## 5. Recorded, not fixed — for the founder
 
-1. **The Desk / turn line divergence after the flip** — CONSTRAINED 54 above. The one item that wants a ruling.
-2. **The 504 and the other send failures keep their own words.** Item 11 named one string; `Agent took too long. Try again.` is arguably the same class and was left alone rather than widened.
+The full list, with the reasoning for each, is §5 of the review record. The five worth a founder's minute:
+
+1. **The Desk names the slot now, unflagged** (§4 item 54). Not a question any more — it was the only way to satisfy D-83's "on every surface" and D-62 together — but it is user-visible before the flip.
+2. **The mobile peek sheet grew a row and its clearance did not.** `SHEET_PEEK_PX = 172` is a measured sum from the A4 review; peek is `height: auto`, so the sheet really does grow by the new peek line, while the board still reserves `SHEET_PEEK_PX + 32`. jsdom does no layout, so this is unmeasurable in tests. **Worth a look in the smoke: does anything at the bottom of the board sit under the sheet?**
+3. **`Read the full check` on mobile at the FULL detent** moves focus to a heading underneath the sheet. Lowering the detent from the door would break the sheet's own focus rules, which ruling 4 says to keep intact. A ruling, not a review call.
+4. **The 504 and the other send failures keep their own words.** Item 11 named one string; `Agent took too long. Try again.` is arguably the same class and was left alone rather than widened.
+5. **"nothing was sent" is unprovable on the thrown-fetch branch.** A request that reached the server and wrote the exchange before the connection dropped charges the budget while the banner promises it did not. The ruling scopes the string to *a server error*, and the shipped code had one string for both branches, so the build is faithful to the ruling's words.
 
 ---
 
 ## 6. Bugs outside this task — carried forward, not fixed (BUILD_RULES §3)
 
-The four in the A2 handover §6 are unchanged: the guardrail-forced swap's feed attribution, the pre-execution announcement, the shipped chat's trade filter, the stale cap comment. Nothing new was found outside the task in this session.
+The four in the A2 handover §6 are unchanged: the guardrail-forced swap's feed attribution, the pre-execution announcement, the shipped chat's trade filter, the stale cap comment.
+
+**ONE NEW, found by the review's copy lens and worth its own tasking.** `src/components/GameTape/GameTapeView.jsx` renders `citedForgeRules || citedRules` — raw `_`-joined machinery identifiers (`swap_window_cap`, `vwap_cascade_guard`, `risk_*`) — and renders `entry.action` as an eyebrow, which produces `GUARDRAIL_FORCED_SWAP`. It is the same class D-80 just closed on the tape, on a shipped surface that is **one header tap away** under the controller flag. Not fixed here (BUILD_RULES §3); it is a copy question first, and the D-80 pattern (`renderMotive` + `guardrailTypeWords`) plus `leagueSwapLedger.js`'s `DETERMINISTIC_LABELS` are the precedents a ruling would build on.
 
 ---
 
@@ -113,4 +122,23 @@ The four in the A2 handover §6 are unchanged: the guardrail-forced swap's feed 
 
 ## 8. Verification
 
-*(the review record, the suite, the build and the guards — see the review record cited below)*
+- **Full suite:** 584 files, **10,013 passed**, 63 skipped, 0 failed (9,819 at the branch's previous handoff).
+- **`vite build`:** green — the pre-existing chunk-size warning only.
+- **Flag-off goldens:** `agentBattleScreen.tabbed.html` and `agentChat.tabbed.html` unchanged and passing. The review found they cannot see three of this session's flag gates; those now have rows in the composition test instead (§9).
+- **Theme and motion guards:** green, with the four new battleView files on both lists and their baseline entries in the same commits. The directory-completeness row caught one omission before the suite did.
+- **Copy guard:** green.
+- **Adversarial review:** `docs/audits/20260903_BATTLE_VIEW_CONTROLLER_PHASE_A2_3_A2_4_BUILD_REVIEW.md` — five lenses on five trees, two refuters, ~130 executed mutations.
+- **Commits:** ruling 1 first, as ruled; then items 8–11 each its own; then D-81; then A2.3 in two; then A2.4; then the ledger; then the review's fixes.
+
+---
+
+## 9. Review — what it changed
+
+Five isolated lenses, each on its own tree, each handed all three rulings documents — the addendum's §2 process rule, in force for the first time and closing both process defects the A2 review disclosed. Then two refuters on fresh trees at the fixed head. **40 findings, 27 confirmed and fixed.** What the founder should know:
+
+1. **A ruling had been built at half its stated scope, and the repo's own tests had started to disagree with each other about it.** D-83 says a check is named by its slot *on every surface*; the build applied it inside the battle view only. But the turn line renders the DESK's strings, shared deliberately so the two cannot disagree — so one instant had begun to read `12:47 PM` in the Desk's test and `12:45 PM` in the turn line's. Two lenses found it independently. The fix moves the flooring to the shared seam, which is why the Desk changes.
+2. **Two flag gates on shipped surfaces could be deleted with the whole suite green** — the chat's ticker roster, and the receipts memo — and the artefact ruling 8 names as the proof of the detector extraction contains no entity spans at all. The dark-merge held in the code and not in the suite. Three new composition rows and two new test files close it.
+3. **The desktop collapse was destroying the player's typed draft.** `{chat}` was rendered in two tree positions, so React remounted it on every collapse. A4 paid for the draft-survival rule explicitly; the column is now the chat's one home and the collapse is a CSS reflow.
+4. **`In the chat · 0` did the opposite of what it was ruled to do** — three lenses found it — and two of the build's own comments described the ruled behaviour while the code did the reverse.
+5. **Eight assertions could not fail under the defects they named**, including one written in this session's own fix pass. All rewritten. This is the rule that keeps a green suite meaningful, and it is the easiest one to fail quietly.
+6. **Three comments over-claimed and were corrected rather than left standing** — two "the golden proves it" claims that it did not, and one "these cannot disagree" that omitted the one input where they do.
