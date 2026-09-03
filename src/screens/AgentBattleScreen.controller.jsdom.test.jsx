@@ -369,6 +369,34 @@ describe('the piece scope (A2.3, D-73) — the door, the chip, and the way back'
     expect(container.querySelector('textarea').value).toBe('About AAPL — ');
   });
 
+  it('the scope CLEARS ITSELF when its piece leaves the battle (review L2-F7)', async () => {
+    // The agent swaps SLB out, or the doc changes under the player: a chip
+    // naming a piece the battle no longer has filters a stream nobody can get
+    // back to except by tapping it. The fix had no row and survived being
+    // deleted with the whole suite green (refuter A M59).
+    mount();
+    click(rowButtonFor('SLB'));
+    click(container.querySelector('[data-why-scope="SLB"]'));
+    await settle(100);
+    expect(container.querySelector('[data-tape-scope="SLB"]')).toBeTruthy();
+
+    // SLB leaves the book — the roster is built from the portfolio the rows
+    // render, so removing it there is what a swap does to this screen.
+    withDoc({
+      portfolio: {
+        ...LIVE_DOC.portfolio,
+        star: [{ symbol: 'AAPL' }, { symbol: 'DVN', swapPrice: 34.1, swappedInAt: '2026-09-01T15:02:00.000Z' }],
+      },
+    });
+    mount();
+    await settle(100);
+    expect(container.querySelector('[data-tape-scope="SLB"]')).toBeNull();
+    expect(container.querySelector('[data-tape-scope]')).toBeNull();
+    // …and the whole tape is back, not a stream filtered to nothing.
+    expect(container.querySelector('[data-tape-kind]')).toBeTruthy();
+    expect(container.textContent).not.toContain('Your agent is ready');
+  });
+
   it('BOTH ENDS ARE NAMED AND THE CHANGE IS SPOKEN (review RB-F10)', async () => {
     // Neither visible label says what its button DOES: `In the chat · 2` reads
     // as a count, `SLB · All` as a label, and a screen reader announced a

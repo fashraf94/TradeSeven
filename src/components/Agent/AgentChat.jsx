@@ -655,14 +655,22 @@ export default function AgentChat({
   // poll. A programmatic write cancels the smooth scroll the effect above
   // starts, and nothing re-fires to finish it: the reader is left parked
   // partway with the newest card below the fold.
-  const scopedRef = useRef(Boolean(scopeSymbol));
+  //
+  // THE TRANSITION IS THE SYMBOL'S, NOT THE BOOLEAN'S (review RA-F5). The ref
+  // held `Boolean(scopeSymbol)`, so a scope→scope switch — open one row's
+  // Why?, tap its door, open another row, tap its door, which never clears the
+  // scope in between — read as "no change" and wrote nothing. The reader was
+  // left at the first piece's offset in the second piece's stream, against
+  // this effect's own premise that a scope opens at its newest entry.
+  const scopedRef = useRef(scopeSymbol ?? null);
   useLayoutEffect(() => {
-    const wasScoped = scopedRef.current;
-    scopedRef.current = Boolean(scopeSymbol);
+    const was = scopedRef.current;
+    const now = scopeSymbol ?? null;
+    scopedRef.current = now;
     const el = listRef.current;
     if (!el || !Array.isArray(tapeEntries)) return;
-    if (wasScoped === Boolean(scopeSymbol)) return;
-    el.scrollTop = scopeSymbol ? el.scrollHeight : unscopedScrollRef.current;
+    if (was === now) return;
+    el.scrollTop = now ? el.scrollHeight : unscopedScrollRef.current;
     // `tapeEntries` is read for the flag gate only and is deliberately not a
     // dependency; the scope's transition is the whole trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps

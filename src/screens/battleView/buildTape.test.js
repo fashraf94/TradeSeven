@@ -340,12 +340,21 @@ describe('`N checks · no change` — every conjunct of D-77', () => {
   const run = (entries) => collapseQuietChecks(entries);
   const quietChecks = (times, over = {}) => buildCheckEntries(times.map((t) => check(t, over)), {}, []);
 
-  it('a run of quiet checks folds to one line, stamped at the FIRST of them', () => {
+  it('a run of quiet checks folds to one line, ORDERED at the first of them and stamped at none', () => {
     const folded = run(quietChecks(['14:00', '14:15', '14:30']));
     expect(folded).toHaveLength(1);
     expect(folded[0]._type).toBe(TAPE_KIND.CHECK_RUN);
     expect(folded[0].count).toBe(3);
-    expect(folded[0].at).toBe(T('14:00'));
+    // The SORT POSITION is the first member's, which is what keeps the run
+    // where its earliest check was.
+    expect(folded[0].timestamp.toISOString()).toBe(T('14:00'));
+    // …and there is no `at`. A run does not happen at an instant, nothing
+    // renders a time for one, and the field it used to carry was the OLDEST
+    // check's — the one that got stamped onto the peek line and made the
+    // strip's two lines disagree (review L1-F4, removed at RA-F10). A field
+    // meaning "the run's time" is a defect waiting to be re-read.
+    expect(folded[0].at).toBeUndefined();
+    expect('at' in folded[0]).toBe(false);
   });
 
   it('a run of ONE is left as the card it is', () => {
@@ -601,10 +610,10 @@ describe('a check is named by its SLOT, a trade by its instant (D-83)', () => {
     expect(COPY.checkCardLabel(card.at, card.label)).toBe('At the 12:30 PM check · Held');
   });
 
-  it('the collapsed run is bounded by its FIRST check\'s slot, and orders on the instant', () => {
-    // `{n} checks · no change` stands for a contiguous slice; the bound it
-    // carries is the slot of the check the slice opens with (the line A2.4's
-    // peek strip renders).
+  it('the collapsed run ORDERS on the first check\'s exact instant and names no time at all', () => {
+    // `{n} checks · no change` stands for a contiguous slice, and the slice's
+    // position in the stream is the exact instant of the check it opens with
+    // — never a floored one, or two runs inside one slot would tie.
     const entries = buildCheckEntries(
       [{ ...check('16:30'), timestamp: TS('16:30:02') }, { ...check('16:45'), timestamp: TS('16:45:11') }],
       {}, [],
@@ -612,8 +621,11 @@ describe('a check is named by its SLOT, a trade by its instant (D-83)', () => {
     const [run] = collapseQuietChecks(entries);
     expect(run._type).toBe(TAPE_KIND.CHECK_RUN);
     expect(run.count).toBe(2);
-    expect(slotLabel(run.at)).toBe('12:30 PM');
-    expect(run.at).toBe(TS('16:30:02'));
+    expect(run.timestamp.toISOString()).toBe(TS('16:30:02'));
+    expect(slotLabel(run.timestamp)).toBe('12:30 PM');
+    // The run itself names NO time — not its first check's slot, not its
+    // last's. The card renders the count alone and so does the peek line.
+    expect(run.at).toBeUndefined();
   });
 
   it('a TRADE keeps its exact minute — a swap executes at an instant, not at a slot', () => {

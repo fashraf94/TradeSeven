@@ -9,10 +9,19 @@
 //              renders this under its handle row at peek — the handle already
 //              carries the turn line and the unread dot.
 //   PeekStrip  the DESKTOP collapsed shell: an expand control carrying the
-//              turn line and the unread dot, then the same PeekLine, then the
-//              chat with its message list collapsed (so what is left of it is
-//              the composer). It sits at the bottom of the board column while
-//              the board takes the full width.
+//              turn line and the unread dot, then the same PeekLine. That is
+//              all of it. It sits at the TOP of the collapsed chat column,
+//              beneath a full-width board, and the chat itself renders as its
+//              SIBLING with its message list collapsed — so what is left of
+//              the chat on screen is the composer.
+//
+//              The chat is a sibling rather than a child because a component
+//              that changes tree position remounts, and this one holds a
+//              typed draft, an in-flight send and a scroll position (review
+//              L2-F1). The strip took `children` and a `reducedMotion` flag
+//              while it was still the chat's parent; both were dead after
+//              that fix and are gone (review RA-F9) rather than left as a
+//              second way to build a shape the layout must never build.
 //
 // NO MOTION BETWEEN LINES (seed §A2.4). The line updates when the tape does
 // and does nothing in between — the whole screen's rule (nothing moves unless
@@ -75,8 +84,6 @@ export function PeekStrip({
   unread = false,
   unreadColor = null,
   onExpand,
-  reducedMotion = false,
-  children,
 }) {
   return (
     <div
@@ -135,21 +142,6 @@ export function PeekStrip({
         <span aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 12, lineHeight: 1 }}>▴</span>
       </button>
       <PeekLine text={line} />
-      {/* `children` is optional: on the desktop the chat is the strip's
-          SIBLING, not its child, so that collapsing cannot remount it
-          (review L2-F1). `reducedMotion` is accepted and deliberately
-          unused — nothing here animates, and a strip that grew a transition
-          later must take it from the vocabulary with this flag rather than
-          invent one (BUILD_RULES §11). */}
-      {children ? (
-        <div
-          data-peek-content="1"
-          style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}
-          data-reduced-motion={reducedMotion ? 'true' : 'false'}
-        >
-          {children}
-        </div>
-      ) : null}
     </div>
   );
 }

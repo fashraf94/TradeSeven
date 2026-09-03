@@ -1071,12 +1071,18 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       text: symbol ? BATTLE_VIEW_COPY.followUpPrefill(symbol) : '',
       nonce: Date.now(),
     });
-    // No tab change — there is no tab bar under the flag. Desktop: the chat
-    // column is always on screen, so the chat's prefill effect simply focuses
-    // the composer. Mobile: open the sheet to at least half, then let that
-    // same effect focus the textarea inside it (F13's draft rule stands).
-    if (!isDesktop) sheet.open(invoker);
-  }, [isDesktop, sheet.open]);
+    // No tab change — there is no tab bar under the flag. The question is the
+    // DETENT's, not the breakpoint's (review RA-F3): this read `!isDesktop`
+    // and its comment said "the chat column is always on screen", which A2.4
+    // made false — a collapsed desktop dropped the player into a prefilled
+    // composer with the conversation still folded behind `display: none`,
+    // through a door the seed calls "a door into the conversation". Its twin,
+    // the scope door, was corrected for exactly this at review L2-F2; leaving
+    // this one on the old rule was the inconsistency that fix meant to close.
+    // Open, then let the chat's prefill effect focus the textarea inside it
+    // (F13's draft rule stands, on both shells).
+    if (!chatOpen) sheet.open(invoker);
+  }, [chatOpen, sheet.open]);
   const handleComposerPrefillConsumed = useCallback(() => setComposerPrefill(null), []);
 
   // The scroll and the focus for the door above (ruling 4). Runs AFTER the
@@ -1710,19 +1716,31 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             minHeight: 0,
             display: 'flex',
             flexDirection: 'row',
-            // A2.4: collapsed, the desktop chat column wraps onto its own
-            // line beneath a full-width board. Wrapping is what lets the
-            // chat keep ONE parent across the collapse (see the column).
+            // A2.4: collapsed, the desktop chat column sits on its own line
+            // beneath a full-width board — as a COLUMN, not as a wrapped row
+            // (review RB-F12, then RA-F7). Either way the chat keeps ONE
+            // parent across the collapse, which is the property that matters
+            // (see the column); the direction is how the two lines are sized.
             //
-            // `alignContent` is not decoration (review RB-F12): a MULTI-LINE
-            // flex container defaults to stretching its lines, so the leftover
-            // cross space would be split between the board's line and the
-            // strip's — the strip would grow by half the free height and float
-            // a gap under the composer instead of hugging the board. Both
-            // children are `flex: 0 0 100%`, so this is the only property that
-            // decides it. jsdom does no layout and cannot see this; the
-            // founder's smoke can.
-            ...(isDesktop && !chatOpen ? { flexWrap: 'wrap', alignContent: 'flex-start' } : {}),
+            // Wrapping got the picture and lost the scrolling. A multi-line
+            // flex container sizes each line to its CONTENT (CSS Flexbox
+            // §9.4), not to the container, so the board's line grew to the
+            // board's full height, the board's own `overflow-y: auto` scroller
+            // inside it never had a bounded height to scroll within, and the
+            // PAGE scrolled instead — carrying the strip, and the unread dot
+            // the seed puts on it, below the fold. `alignContent:'flex-start'`
+            // fixed only the opposite case, a board shorter than the viewport.
+            //
+            // A column is single-line: the board takes `1 1 0%` of a definite
+            // height with `minHeight: 0`, so its inner scroller bounds; the
+            // strip takes `0 0 auto` and stays pinned at the bottom of the
+            // viewport, which is the ruled picture. Children stretch to the
+            // full width on the cross axis, so nothing needs a width.
+            //
+            // jsdom does no layout, so what the rows below can hold is the
+            // style contract — the direction and both children's flex — not
+            // the pixels. The pixels want the founder's smoke.
+            ...(isDesktop && !chatOpen ? { flexDirection: 'column' } : {}),
             position: 'relative',
             zIndex: 2,
             ...(gameTapeOpen ? { visibility: 'hidden' } : {}),
@@ -1736,7 +1754,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           <div
             data-board="1"
             style={isDesktop ? {
-              flex: chatOpen ? '3 1 0%' : '0 0 100%',
+              // Open, the board is the wide side of a row. Collapsed, the row
+              // IS a column and the board is its growing item: `1 1 0%` plus
+              // `minHeight: 0` is what gives the scroller inside it a definite
+              // height to bound against (review RA-F7). `0 0 100%` here would
+              // be a basis of 100% of the HEIGHT under a column direction.
+              flex: chatOpen ? '3 1 0%' : '1 1 0%',
               minWidth: 0,
               minHeight: 0,
               display: 'flex',
@@ -1785,7 +1808,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                   flex: '2 1 0%',
                   borderLeft: `1px solid rgba(${cssVar('scrim-rgb')}, 0.07)`,
                 } : {
-                  flex: '0 0 100%',
+                  // Collapsed: hug the strip's own content at the bottom of
+                  // the column, and drop the border that separated two side-
+                  // by-side panes — there is nothing to its left any more.
+                  flex: '0 0 auto',
                   width: '100%',
                 }),
               }}
@@ -1828,7 +1854,6 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                   unread={Boolean(hasCommandDot)}
                   unreadColor={hasPendingProposal ? cssVar('amber') : cssVar('teal')}
                   onExpand={handleExpandChat}
-                  reducedMotion={reducedMotion}
                 />
               )}
               {chat}

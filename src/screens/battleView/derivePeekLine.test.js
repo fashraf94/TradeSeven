@@ -96,6 +96,23 @@ describe('the properties', () => {
     expect(derivePeekLine(later)).toBe('4:00 PM · Held');
   });
 
+  it('an INVALID Date does not crash the strip — it just has no time (review L2-F12)', () => {
+    // `new Date('nonsense')` is `instanceof Date` and throws on
+    // `toISOString`. Unreachable through `deriveChatMessages`, which
+    // normalises every stamp to a finite number — but `mergeRecordedTape`
+    // takes items from any caller, and a strip is not worth a crash. The
+    // guard had no row and survived being deleted (refuter A M57).
+    const broken = { _type: 'message', role: 'agent', text: 'SLB holds.', timestamp: new Date('nonsense') };
+    expect(() => peekLineFor(broken)).not.toThrow();
+    expect(() => derivePeekLine([broken])).not.toThrow();
+    // …and it degrades to the line without its time, never to a fabricated one.
+    expect(derivePeekLine([broken])).toBe('SLB holds.');
+    // A valid Date still carries its time, so the guard is not just silencing
+    // the whole branch.
+    expect(derivePeekLine([{ ...broken, timestamp: new Date(T('19:01')) }]))
+      .toBe('3:01 PM · SLB holds.');
+  });
+
   it('FOLDS exactly as the stream does — a run reads as a run, not as its last check', () => {
     const quiet = buildTape({
       trades: [], statusFeed: [],

@@ -12,6 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { DESK_COPY } from '../../components/Dashboard/desk/deskCopy';
+import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { PHASE, buildBaggerbombAdapter, deriveLastCheckOfSession } from '../../adapters/baggerbombAdapter';
 import {
   deriveTurnLine,
@@ -388,6 +389,34 @@ describe('slotLabel — a check is named by its cron slot (D-83)', () => {
     expect(evaluate).toBeTruthy();
     expect(evaluate.schedule.startsWith('*/15 ')).toBe(true);
     expect(SLOT_MS).toBe(15 * 60 * 1000);
+  });
+
+  it('EVERY LABEL THAT NAMES A CHECK takes the slot — including the absence ones', () => {
+    // D-83 is "a check is named by its cron slot", not "some checks are". The
+    // four labels that name a check are asserted here by their OUTPUT, at an
+    // instant 2 min 2 s into its slot, so a label that reverts to `etTime`
+    // reds — `checkCardLabel`'s absence branch did not, and survived a
+    // mutation to `etTime` with the whole suite green (refuter A M56).
+    const at = '2026-09-01T16:47:02.000Z';   // 12:47:02 ET → the 12:45 slot
+    expect(COPY.fromCheck(at)).toContain('12:45 PM');
+    expect(COPY.atCheck(at)).toContain('12:45 PM');
+    expect(COPY.notNamedAtCheck(at)).toContain('12:45 PM');
+    expect(COPY.nothingQueued(at)).toContain('12:45 PM');
+    // …and the composed card label, on BOTH of its branches: the ordinary
+    // one, which prefixes the whole header, and the absence one, which drops
+    // the words `at the … check` because the label already ends in them.
+    expect(COPY.checkCardLabel(at, COPY.heldLabel)).toBe('At the 12:45 PM check · Held');
+    expect(COPY.checkCardLabel(at, COPY.noDecision))
+      .toBe('12:45 PM · No decision recorded at this check');
+    expect(COPY.checkCardLabel(at, COPY.noDecisionOutage))
+      .toBe('12:45 PM · No decision recorded at this check · the evaluation timed out');
+    // The whole point, stated once: none of the six says 12:47.
+    for (const line of [
+      COPY.fromCheck(at), COPY.atCheck(at), COPY.notNamedAtCheck(at), COPY.nothingQueued(at),
+      COPY.checkCardLabel(at, COPY.heldLabel), COPY.checkCardLabel(at, COPY.noDecision),
+    ]) {
+      expect(line).not.toContain('12:47');
+    }
   });
 
   it('MUTATION ROW — the turn line NAMES the slot and KEEPS the instant', () => {

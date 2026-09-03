@@ -158,6 +158,61 @@ describe('A2.3 — the scoped stream', () => {
     expect(el.scrollTop).toBe(300);
   });
 
+  it('a scope→SCOPE switch moves the stream to the new piece\'s newest entry (review RA-F5)', () => {
+    // Reachable without ever clearing: open one row's Why?, tap its door, open
+    // another row, tap its door — `setScopeSymbol` goes SLB → NVDA with no
+    // null in between. The transition ref held a BOOLEAN, so this read as "no
+    // change" and wrote nothing: the reader stayed at SLB's offset inside
+    // NVDA's stream, against this effect's own premise.
+    render();
+    const el = giveLayout(listEl(), { scrollHeight: 900, scrollTop: 0 });
+    render({ scopeSymbol: 'SLB' });
+    expect(el.scrollTop).toBe(900);
+
+    // Somewhere else in SLB's stream, then straight to NVDA.
+    el.scrollTop = 42;
+    act(() => { el.dispatchEvent(new Event('scroll')); });
+    render({ scopeSymbol: 'NVDA' });
+    expect(el.scrollTop).toBe(900);
+
+    // …and clearing from the SECOND scope still restores the WHOLE tape's
+    // position, not the first scope's — the scoped scroll was never recorded.
+    render({ scopeSymbol: null });
+    expect(el.scrollTop).toBe(0);
+  });
+
+  it('THE EFFECT WRITES NOTHING ON MOUNT — the early return\'s own claim (review RA-F5)', () => {
+    // Which half of the L2-F5 fix is load-bearing, stated honestly. The two
+    // are redundant GIVEN each other: with the dep list narrow the effect
+    // never re-runs at an unchanged scope, so the early return has nothing to
+    // catch there; with the early return present a widened dep list re-runs
+    // the effect and it returns immediately. Neither `writes === 0` row can
+    // separate them, which is why both survived mutation (refuter A M26/M27)
+    // and why the review record's claim that the DEP LIST is the fix was
+    // wrong. Only one behaviour distinguishes them, and it is this one: the
+    // effect must not write on MOUNT. Without the early return it does — and a
+    // programmatic `scrollTop` on mount is exactly the cancelled auto-scroll
+    // the finding was about. The dep list is kept for cost, not for behaviour.
+    //
+    // Spied on the prototype, because the element does not exist until the
+    // render whose mount is under test.
+    const proto = Object.getPrototypeOf(document.createElement('div'));
+    const original = Object.getOwnPropertyDescriptor(proto, 'scrollTop');
+    let writes = 0;
+    Object.defineProperty(proto, 'scrollTop', {
+      configurable: true, get: () => 0, set: () => { writes += 1; },
+    });
+    try {
+      render();                                   // mount, unscoped
+      expect(writes).toBe(0);
+      render({ scopeSymbol: 'SLB' });             // …and a real transition still writes
+      expect(writes).toBe(1);
+    } finally {
+      if (original) Object.defineProperty(proto, 'scrollTop', original);
+      else delete proto.scrollTop;
+    }
+  });
+
   it('a re-render with an UNCHANGED scope writes no scroll at all (review L2-F5)', () => {
     // `tapeEntries` is a fresh array on every Firestore snapshot — and through
     // `receipts`, on renders that touch nothing in the tape — so keeping it in

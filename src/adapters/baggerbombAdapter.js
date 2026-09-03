@@ -24,6 +24,10 @@
  */
 
 import { classifyBattleType, battleTypeLabel } from '../utils/commandCenterLiveBattles';
+// The cron's slot width, from the module that FLOORS to it — one constant, so
+// the gate below and the label it protects cannot drift apart (D-83, §9).
+// `deskCopy` is a leaf: it imports nothing, so there is no cycle.
+import { SLOT_MS } from '../components/Dashboard/desk/deskCopy';
 
 export const PHASE = Object.freeze({
   PRE_OPEN: 'PRE_OPEN',
@@ -393,7 +397,27 @@ function deriveNextDecisionAt(phase, lastCheckedAt, marketState, now) {
   if (dueAt == null) return null;
 
   const nowMs = toMillis(now);
-  if (nowMs != null && toMillis(dueAt) <= nowMs) return null;
+  const dueMs = toMillis(dueAt);
+  // WITHHOLD ON THE INSTANT THE LABEL WILL SHOW, NOT THE ONE COMPUTED HERE
+  // (review RA-F1). Since D-83 the posture strings render `next ~` as the
+  // CRON SLOT — `next ~12:45 PM` for a candidate of 12:48 — because 12:45 is
+  // when the cron fires and 12:48 is only when a 3-minute-late check would
+  // land. The slot is the earlier of the two, so gating on the raw candidate
+  // left the label naming a time that had already gone by for exactly as long
+  // as the last check was late: `next ~12:45 PM` still on screen at 12:47,
+  // which is the starved-cron misreading this function's own rule exists to
+  // prevent. `δ` of every fifteen minutes, and the repo's own LIVE fixture is
+  // an instance of it.
+  //
+  // The RETURNED value is still the exact candidate: `nextDecisionAt` is an
+  // instant that other code compares against, and the LABEL/INSTANT split is
+  // the whole of D-83's second half. Only the gate moved.
+  //
+  // STRICTLY past, not "at or past": a slot is a fifteen-minute bucket and the
+  // cron fires at its START, so `next ~1:00 PM` is true AT 1:00 and false from
+  // 1:00:01. The raw candidate had no such distinction — it was one instant —
+  // which is why the old gate could use `<=`.
+  if (nowMs != null && Math.floor(dueMs / SLOT_MS) * SLOT_MS < nowMs) return null;
   return dueAt;
 }
 

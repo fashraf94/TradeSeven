@@ -234,6 +234,39 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     expect(document.activeElement).toBe(q('textarea'));
   });
 
+  it('BOTH Why? doors EXPAND a collapsed desktop — the detent decides, not the breakpoint', () => {
+    // A4 wrote both doors as `if (!isDesktop) sheet.open(...)`, on the premise
+    // that "the chat column is always on screen" on a desktop. A2.4 made that
+    // false. The scope door was corrected for it in the review (L2-F2) and had
+    // NO guard — deleting the whole conjunct left the suite green (refuter A
+    // M12); its twin, the follow-up door, was never corrected at all and put
+    // the player in a prefilled composer with the conversation still folded
+    // behind `display: none` (refuter A RA-F3). One row for both.
+    mount();
+    click(q('[data-chat-collapse]'));
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
+    expect(q('[data-peek-strip]')).toBeTruthy();
+
+    // DOOR 1 — `Ask a follow-up`.
+    click(rowButtonFor('SLB'));
+    click(doorButton());
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('false');
+    expect(q('[data-peek-strip]')).toBeNull();
+    expect(q('textarea').value).toBe('About SLB — ');
+    expect(document.activeElement).toBe(q('textarea'));
+
+    // DOOR 2 — the scope door, from a collapse made after the panel is open.
+    click(q('[data-chat-collapse]'));
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
+    const scopeDoor = q('[data-why-scope="SLB"]');
+    expect(scopeDoor).toBeTruthy();
+    click(scopeDoor);
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('false');
+    expect(q('[data-peek-strip]')).toBeNull();
+    // …and the filter really landed, so the expansion is not the whole claim.
+    expect(q('[data-tape-scope="SLB"]')).toBeTruthy();
+  });
+
   it('the landing still plays across the SEVEN tier slots in render order when a check lands (rowCount unchanged by the layout)', () => {
     mount();
     expect(qa('[data-wash]').length).toBe(0); // never on open
@@ -291,8 +324,23 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     // chrome and its flex basis, never its position in the tree.
     expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
     expect(q('[data-chat-collapse]')).toBeNull();
-    expect(q('[data-board]').style.flex).toBe('0 0 100%');
-    expect(q('[data-layout="desktop"]').style.flexWrap).toBe('wrap');
+    // THE COLLAPSED STYLE CONTRACT (review RA-F7). The row becomes a COLUMN,
+    // not a wrapped row: a multi-line flex container sizes each line to its
+    // content, so the board's line grew to the board's full height, its own
+    // `overflow-y: auto` scroller never bounded, and the PAGE scrolled —
+    // taking the strip and its unread dot below the fold. Every value here
+    // was previously unasserted except the board's `flex` (refuter A M17/M61:
+    // making the collapsed column a 40 %-wide stub, or leaving it the open
+    // state's left border, both passed the whole suite).
+    expect(q('[data-layout="desktop"]').style.flexDirection).toBe('column');
+    expect(q('[data-layout="desktop"]').style.flexWrap).toBe('');
+    const boardStyle = q('[data-board]').style;
+    expect(boardStyle.flex).toBe('1 1 0%');       // grows into the column…
+    expect(boardStyle.minHeight).toBe('0px');     // …and lets its scroller bound
+    const colStyle = q('[data-chat-column]').style;
+    expect(colStyle.flex).toBe('0 0 auto');       // the strip hugs its content
+    expect(colStyle.width).toBe('100%');
+    expect(colStyle.borderLeft).toBe('');         // nothing to its left any more
     // The strip sits BENEATH the full-width board, on its own wrapped line.
     // It is the board's SIBLING, not its child (review L2-F1): nesting it in
     // the board column is what moved the chat between two tree positions and
@@ -321,7 +369,11 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('false');
     expect(q('[data-peek-strip]')).toBeNull();
     expect(q('[data-board]').style.flex).toBe('3 1 0%');
+    expect(q('[data-layout="desktop"]').style.flexDirection).toBe('row');
     expect(q('[data-layout="desktop"]').style.flexWrap).toBe('');
+    // …and the open column is the narrow side of a ROW again, with its border.
+    expect(q('[data-chat-column]').style.flex).toBe('2 1 0%');
+    expect(q('[data-chat-column]').style.borderLeft).not.toBe('');
     expect(qa('textarea').length).toBe(1);
   });
 
@@ -627,6 +679,44 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     expect(qa('textarea').length).toBe(1);
     expect(q('[data-sheet-content] textarea')).toBeTruthy();
     expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('full');
+  });
+
+  it('A2.4 (review L2-F6) — an UNTOUCHED phone widened to the desktop arrives with a chat column', () => {
+    // `initialDetent` is read once, so before the adopt effect a session that
+    // mounted below 768 px and was then widened arrived on a desktop with NO
+    // chat column: the phone's untouched peek carried over, and peek is a
+    // usable chat on a phone and an absent one on a desktop. The two ruled
+    // crossings (desktop → mobile, both directions of it) were already
+    // guarded; the case the fix exists FOR was not, and deleting the whole
+    // adopt effect left the suite green (refuter A M25 / RA-F4).
+    setViewport(390);
+    mount();
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
+
+    crossTo(1280);
+    expect(q('[data-layout="desktop"]')).toBeTruthy();
+    // The desktop's own default, adopted because nothing has been touched…
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('false');
+    expect(q('[data-peek-strip]')).toBeNull();
+    expect(q('[data-chat-column] textarea')).toBeTruthy();
+  });
+
+  it('A2.4 (review L2-F6) — a TOUCHED phone keeps ITS detent across the same crossing', () => {
+    // The other half, and what makes the row above a guard rather than a
+    // statement that the desktop opens: once the player has moved the sheet
+    // the detent is theirs, and the adopt effect must not overrule it.
+    setViewport(390);
+    mount();
+    // A choice that ENDS at peek: the cycle wraps peek → half → full → peek,
+    // so three activations leave the detent where it started and the sheet
+    // touched. (At peek there is no collapse control — it is already down.)
+    const cycle = q('[data-sheet-cycle]');
+    click(cycle); click(cycle); click(cycle);
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
+
+    crossTo(1280);
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
+    expect(q('[data-peek-strip]')).toBeTruthy();
   });
 
   it('A2.4 (ruling 7) — COLLAPSED on the desktop arrives at PEEK on the phone, and back', () => {

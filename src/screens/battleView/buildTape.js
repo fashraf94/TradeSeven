@@ -300,8 +300,17 @@ export function collapseQuietChecks(items) {
       out.push({
         _type: TAPE_KIND.CHECK_RUN,
         id: `tape-run-${run[0].id}`,
+        // `timestamp` is the run's SORT POSITION and is the first member's,
+        // which is what keeps the run where its earliest check was. There is
+        // deliberately NO `at` (review L1-F4, removed at RA-F10): a run does
+        // not happen at an instant, and the one it used to carry was the
+        // OLDEST check's — the field that got stamped onto the peek line and
+        // made the strip's two lines disagree. Nothing renders a time for a
+        // run: `CheckRunLine` shows the count alone, and `derivePeekLine`
+        // says the same thing the card says. A field that means "the run's
+        // time" is a defect waiting to be re-read, so it is gone rather than
+        // merely unused.
         timestamp: run[0].timestamp,
-        at: run[0].at,
         count: run.length,
       });
     } else {

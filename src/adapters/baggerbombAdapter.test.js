@@ -13,6 +13,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { battleTypeLabel } from '../utils/commandCenterLiveBattles';
+import { DESK_COPY } from '../components/Dashboard/desk/deskCopy';
 import {
   buildBaggerbombAdapter,
   derivePhase,
@@ -485,6 +486,35 @@ describe('buildBaggerbombAdapter', () => {
     it('LIVE: next decision is last check + 15 minutes', () => {
       const a = build(makeBattle(), makeCache(), AGENT, NOW, MS.open);
       expect(a.nextDecisionAt).toBe('2026-09-01T17:02:00.000Z');
+    });
+
+    it('LIVE: `next ~` is withheld once its SLOT has gone by, not its candidate (D-83, review RA-F1)', () => {
+      // Since D-83 the posture strings render `next ~` as the CRON SLOT: a
+      // candidate of 1:02 PM shows as `next ~1:00 PM`, because 1:00 is when
+      // the cron fires and 1:02 is only when a two-minute-late check lands.
+      // The slot is the EARLIER of the two, so a gate on the candidate left
+      // the label naming a time already gone by — for exactly as long as the
+      // last check was late, δ of every fifteen minutes.
+      //
+      // The check here lands 2 min into its slot, so δ = 2 min.
+      const b = makeBattle({
+        scoreState: { evaluationCount: 4, lastScoredAt: '2026-09-01T16:47:00.000Z' },
+      });
+      const at = (iso) => build(b, makeCache(), AGENT, iso, MS.open).nextDecisionAt;
+      // Before the slot, and AT it: the label `next ~1:00 PM` is true, so the
+      // instant stands. A slot is a bucket and the cron fires at its start.
+      expect(at('2026-09-01T16:59:00Z')).toBe('2026-09-01T17:02:00.000Z');
+      expect(at('2026-09-01T17:00:00Z')).toBe('2026-09-01T17:02:00.000Z');
+      // One second later the slot has gone by and the label would be stale.
+      // This is the whole window the defect lived in: 1:00:01 → 1:02:00.
+      expect(at('2026-09-01T17:00:01Z')).toBeNull();
+      expect(at('2026-09-01T17:01:00Z')).toBeNull();
+      // …and the posture line degrades to the honest half rather than naming
+      // a past time as the next check.
+      expect(DESK_COPY.postureLive('2026-09-01T16:47:00.000Z', null))
+        .toBe('Checked 12:45 PM');
+      expect(DESK_COPY.postureLive('2026-09-01T16:47:00.000Z', '2026-09-01T17:02:00.000Z'))
+        .toBe('Checked 12:45 PM · next ~1:00 PM');
     });
 
     it('LIVE: a next check that would land past the close is withheld, not faked', () => {
