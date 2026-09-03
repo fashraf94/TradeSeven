@@ -20,10 +20,13 @@ const {
   listWatchlists,
   deleteWatchlist,
   createWatchlist,
+  postWatchlistAnalysis,
 } = await import('./forgeWatchlistService.js');
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
-  return { ok, status, json: async () => body };
+  const res = { ok, status, json: async () => body };
+  res.clone = () => jsonResponse(body, { ok, status });
+  return res;
 }
 
 beforeEach(() => {
@@ -203,5 +206,64 @@ describe('forgeWatchlistService — createWatchlist', () => {
       ),
     );
     await expect(createWatchlist()).rejects.toMatchObject({ status: 500, code: 'server_error' });
+  });
+});
+
+// ==========================================================================
+// GRACEFUL-DEGRADATION CARVE-OUT — Sep 3 2026 voice-timeout incident.
+//
+// Once gemmaClient started classifying a mid-body abort correctly, this
+// endpoint's timeout branch began answering 504 instead of 200 — with a
+// byte-identical body. Without the carve-out the service threw, which makes
+// WatchlistAnalysisView take its catch and DELETE the user's optimistic turn
+// (WatchlistAnalysisView.jsx:154) while showing "I hit a snag" on what is
+// genuinely a timeout.
+//
+// MUTATION CHECK: reverting the carve-out to a bare
+// `if (!response.ok) throw await toError(response)` reddens the first row.
+// ==========================================================================
+
+describe('forgeWatchlistService — postWatchlistAnalysis timeout carve-out', () => {
+  it('returns the graceful body on a 504 that carries error:true', async () => {
+    const body = {
+      sessionId: 'sess-1',
+      message: 'I hit a snag analyzing that — could you ask again?',
+      error: true,
+      digest: { rows: 3 },
+      rows: null,
+    };
+    fetchMock.mockResolvedValue(jsonResponse(body, { ok: false, status: 504 }));
+
+    // Must RESOLVE, not throw — the view appends data.message as an analyst
+    // turn and keeps the user's turn in the transcript.
+    await expect(
+      postWatchlistAnalysis({ watchlistId: 'wl-1', userMessage: 'what do these share?' }),
+    ).resolves.toEqual(body);
+  });
+
+  it('still throws on a hard failure with no error:true body', async () => {
+    // The carve-out must not swallow real failures — 403/404/500 still deserve
+    // the red banner.
+    fetchMock.mockResolvedValue(jsonResponse({ message: 'Not authorized' }, { ok: false, status: 403 }));
+    await expect(
+      postWatchlistAnalysis({ watchlistId: 'wl-1', userMessage: 'hi' }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('still throws when the error body is not JSON at all', async () => {
+    const res = { ok: false, status: 502, json: async () => { throw new SyntaxError('not json'); } };
+    res.clone = () => res;
+    fetchMock.mockResolvedValue(res);
+    await expect(
+      postWatchlistAnalysis({ watchlistId: 'wl-1', userMessage: 'hi' }),
+    ).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('passes a 200 through unchanged', async () => {
+    const body = { sessionId: 'sess-1', message: 'They cluster in Technology.', rows: [1, 2] };
+    fetchMock.mockResolvedValue(jsonResponse(body));
+    await expect(
+      postWatchlistAnalysis({ watchlistId: 'wl-1', userMessage: 'hi' }),
+    ).resolves.toEqual(body);
   });
 });

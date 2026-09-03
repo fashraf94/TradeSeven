@@ -422,14 +422,33 @@ export default async function handler(req, res) {
       capabilitiesManifest,
     });
 
-    // 15. Call OpenRouter (Gemma 4) — with the GEMMA_TIMEOUT_MS budget.
+    // 15. Call OpenRouter (Gemma 4) — with the GEMMA_TIMEOUT_MS budget, CLAMPED
+    //     to the absolute turn deadline.
+    //
+    //     GEMMA_TIMEOUT_MS is relative and this timer is armed AFTER the whole
+    //     prologue (auth + 4 sequential Firestore round trips, 6 on the League
+    //     ask path), so an unclamped timer fires at `overhead + 20s` — a
+    //     quantity with no relationship to the absolute deadline the gate is
+    //     held to. Past ~4s of prologue that breaches TURN_DEADLINE_MS, and past
+    //     ~10s it fires AFTER maxDuration, i.e. after the platform has already
+    //     killed the function: the bare gateway 504 with no shadow log and no
+    //     honest client string that this whole change exists to prevent. The 15s
+    //     value tolerated 15.1s of prologue; 20s alone tolerates 10.1s.
+    //     Clamping restores an absolute guarantee instead of an assumption, and
+    //     mirrors what directiveGate.js:105-107 already does for its own call.
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), GEMMA_TIMEOUT_MS);
-    // Model latency for this turn, stamped whether the call succeeds, times out,
-    // or throws — every logConversation site below carries it, so p50/p95 is
-    // readable from the shadow stream and a timed-out turn is not a blind spot.
-    // (gemmaClient emits the same number as a structured log line for all six
-    // of its callers; this field is the chat path's durable copy.)
+    const gemmaBudgetMs = Math.max(0, Math.min(
+      GEMMA_TIMEOUT_MS,
+      turnStartMs + TURN_DEADLINE_MS - Date.now(),
+    ));
+    const timeoutId = setTimeout(() => controller.abort(), gemmaBudgetMs);
+    // Latency of THIS call — the first voice call — stamped whether it succeeds,
+    // times out, or throws, so every logConversation site below carries it and a
+    // timed-out turn is not a blind spot. Scope is deliberate and worth naming:
+    // it does NOT include the directive gate's repair call, so on a gated turn
+    // total model time can exceed this by up to REPAIR_TIMEOUT_MS. This is the
+    // number that verifies the timeout change; gemmaClient's per-attempt
+    // `gemma_latency` line covers both calls for anything wider.
     const gemmaStartedAt = Date.now();
     let rawResponse;
     try {

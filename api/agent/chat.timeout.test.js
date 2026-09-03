@@ -49,6 +49,22 @@ describe('agent/chat — turn timing budget', () => {
     expect(GEMMA_TIMEOUT_MS + 1_000).toBeLessThanOrEqual(TURN_DEADLINE_MS);
   });
 
+  it('documents the directive-gate repair window the 20s cap leaves', () => {
+    // Raising 15s → 20s narrowed the budget the Phase E1 repair can still fit
+    // in. directiveGate.js skips the repair when less than MIN_REPAIR_MS remains
+    // to the deadline, so the repair survives only while
+    //   prologue + firstCallLatency <= TURN_DEADLINE_MS - MIN_REPAIR_MS.
+    // Overhead tolerated after a worst-case first call: 7.6s before, 2.6s now.
+    // This is a CONSEQUENCE of the founder-ruled 20s, not a defect — the repair
+    // is best-effort and degrades to a deterministic null + the canned
+    // no-change line. It is pinned so the trade-off is visible and any future
+    // move of these constants has to face it rather than discover it.
+    const MIN_REPAIR_MS = 1_500;  // directiveGate.js
+    const latestFirstCallCompletion = TURN_DEADLINE_MS - MIN_REPAIR_MS;
+    expect(latestFirstCallCompletion).toBe(22_500);
+    expect(latestFirstCallCompletion - GEMMA_TIMEOUT_MS).toBe(2_500);
+  });
+
   it('leaves the handler its own pre-call overhead inside the deadline', () => {
     // Before the voice call the handler does auth (verifyIdToken, a network
     // round trip) plus five sequential Firestore reads and one parallel batch.

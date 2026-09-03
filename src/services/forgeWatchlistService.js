@@ -134,7 +134,21 @@ export async function postWatchlistAnalysis({ watchlistId, userMessage = '', ses
     body: JSON.stringify({ watchlistId, userMessage, sessionId }),
     signal,
   });
-  if (!response.ok) throw await toError(response);
+  // Graceful-degradation carve-out, matching the house pattern in
+  // WorkshopChat.jsx:556-573 ("known-shape error from the server ... display as
+  // a regular agent bubble"). The handler answers a TIMEOUT with 504 + a full,
+  // well-formed body carrying `error: true`, the graceful analyst line and the
+  // prior digest (watchlist-analysis.js:476-489) — the body is byte-identical
+  // to the 200 it used to send; only the status changed once gemmaClient began
+  // classifying aborts correctly. Throwing on it made the view take its catch,
+  // which DELETES the user's optimistic turn (WatchlistAnalysisView.jsx:154)
+  // and shows "I hit a snag" on what is genuinely a timeout — reintroducing,
+  // one layer up, the exact mislabel the abort fix removed.
+  if (!response.ok) {
+    const body = await response.clone().json().catch(() => null);
+    if (body?.error === true) return body;
+    throw await toError(response);
+  }
   return response.json();
 }
 

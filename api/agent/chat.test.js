@@ -13,6 +13,7 @@ import { TOURNAMENT_GAME_MODE, GROUP_STATUS } from '../../src/constants/leagueTo
 // ==================== HOISTED MOCK STATE ====================
 const {
   authReturnValue,
+  authDelayMs,
   callGemmaVoiceImpl,
   parseVoiceLayerResponseImpl,
   shadowLogCalls,
@@ -22,6 +23,7 @@ const {
   budget,
 } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
+  authDelayMs: { current: 0 },   // simulates a slow prologue (auth + Firestore reads)
   callGemmaVoiceImpl: { current: async () => '{"response":"hi"}' },
   parseVoiceLayerResponseImpl: { current: (c) => JSON.parse(c) },
   shadowLogCalls: { current: [] },
@@ -53,6 +55,7 @@ vi.mock('../_utils/security.js', () => ({
 
 vi.mock('../_utils/authMiddleware.js', () => ({
   requireAuth: async (req, res) => {
+    if (authDelayMs.current > 0) await new Promise((r) => setTimeout(r, authDelayMs.current));
     if (authReturnValue.current === null) {
       res.status(401).json({ error: 'auth required' });
       return null;
@@ -120,7 +123,7 @@ vi.mock('firebase-admin/firestore', () => ({
   },
 }));
 
-const { default: handler, GEMMA_TIMEOUT_MS } = await import('./chat.js');
+const { default: handler, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS } = await import('./chat.js');
 
 // ==================== Test fixture helpers ====================
 
@@ -208,6 +211,7 @@ const VALID_BATTLE = {
 
 beforeEach(() => {
   authReturnValue.current = { uid: 'test-user' };
+  authDelayMs.current = 0;
   callGemmaVoiceImpl.current = async () => '{"response":"hi"}';
   parseVoiceLayerResponseImpl.current = (c) => JSON.parse(c);
   shadowLogCalls.current = [];
@@ -817,5 +821,73 @@ describe('agent/chat — the timeout constant arms the real AbortController', ()
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ==========================================================================
+// THE ABSOLUTE CLAMP — found by adversarial review of the 15s→20s raise.
+//
+// GEMMA_TIMEOUT_MS is RELATIVE and its timer is armed after the prologue (auth
+// + 4 sequential Firestore round trips, 6 on the League ask path), so an
+// unclamped timer fires at `overhead + 20s` — unrelated to the absolute
+// deadline the gate is held to. Past ~4s of prologue that breaches
+// TURN_DEADLINE_MS; past ~10s it fires after maxDuration, i.e. after the
+// platform already killed the function — the bare gateway 504 with no shadow
+// log and no honest string that this change exists to prevent. The 15s value
+// tolerated 15.1s of prologue; 20s alone tolerates 10.1s.
+//
+// MUTATION CHECK: dropping the Math.min clamp at chat.js:439-443 reddens the
+// 8s row (abort fires at 28s, past the 24s deadline).
+// ==========================================================================
+
+describe('agent/chat — the voice call is clamped to the absolute turn deadline', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  async function abortTimeUnderOverhead(overheadMs) {
+    vi.useFakeTimers();
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    authDelayMs.current = overheadMs;
+
+    const turnStart = Date.now();
+    let abortedAt = null;
+    callGemmaVoiceImpl.current = (opts) => new Promise((_res, reject) => {
+      opts.signal.addEventListener('abort', () => {
+        abortedAt = Date.now() - turnStart;
+        const e = new Error('This operation was aborted');
+        e.name = 'AbortError';
+        reject(e);
+      }, { once: true });
+    });
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    const done = handler(req, res);
+    await vi.advanceTimersByTimeAsync(overheadMs + GEMMA_TIMEOUT_MS + 5_000);
+    await done;
+    return { abortedAt, status: res.statusCode };
+  }
+
+  it('a fast prologue still gets the full GEMMA_TIMEOUT_MS', async () => {
+    const { abortedAt, status } = await abortTimeUnderOverhead(0);
+    expect(abortedAt).toBe(GEMMA_TIMEOUT_MS);
+    expect(status).toBe(504);
+  });
+
+  it('an 8s prologue does NOT push the abort past TURN_DEADLINE_MS', async () => {
+    // Unclamped this fires at 28s — 4s past the deadline, and the writes that
+    // follow would run against a budget that no longer exists.
+    const { abortedAt, status } = await abortTimeUnderOverhead(8_000);
+    expect(abortedAt).toBeLessThanOrEqual(TURN_DEADLINE_MS);
+    expect(status).toBe(504);
+  });
+
+  it('a prologue that has already eaten the deadline gives the call ~no budget, not a fresh 20s', async () => {
+    // Unclamped this fires at 45s — long after the platform killed the function
+    // at 30s. Clamped, the budget floors at 0 and the call aborts on the next
+    // tick, so the turn still returns a real 504 with a shadow log.
+    const OVERHEAD = 25_000;
+    const { abortedAt, status } = await abortTimeUnderOverhead(OVERHEAD);
+    expect(abortedAt - OVERHEAD).toBeLessThanOrEqual(100);   // immediate, not +20s
+    expect(status).toBe(504);
   });
 });

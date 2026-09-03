@@ -61,7 +61,9 @@ export function isAbortError(err) {
  */
 function asAbortError(err) {
   if (isAbortError(err)) return err;
-  const e = new Error(err?.message || 'This operation was aborted');
+  // `cause` keeps the original class and stack — for a TimeoutError or a custom
+  // abort reason that is the only record of WHY the call aborted.
+  const e = new Error(err?.message || 'This operation was aborted', { cause: err });
   e.name = 'AbortError';
   return e;
 }
@@ -129,12 +131,39 @@ async function _callGemmaOnce({
       signal,
     });
   } catch (fetchErr) {
-    emitLatency(isAbortError(fetchErr) ? 'timeout' : 'network_error', null);
+    // Same test as the two body-read windows below. A bare isAbortError check
+    // here would classify the SAME abort differently depending on which window
+    // it landed in — `abort(reason)` and AbortSignal.timeout() surface as
+    // 'Error' / 'TimeoutError' on this path but as 'AbortError' on the body
+    // path. No caller uses either form today; the symmetry is what keeps that
+    // true if one starts.
+    if (isAbortError(fetchErr) || signal?.aborted) {
+      emitLatency('timeout', null);
+      throw asAbortError(fetchErr);
+    }
+    emitLatency('network_error', null);
     throw fetchErr;
   }
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => 'unknown');
+    // The SIBLING body-read window. `.text()` is a body read too, so an abort
+    // that fires here was being erased into errorText:'unknown' and escaping as
+    // a plain Error with no `aborted` flag — byte-for-byte the incident this
+    // module was just fixed for, on the branch above the fix. The likely
+    // production shape is a 429 retry whose deadline expires on attempt 2:
+    // the retry loop's signal check runs only BEFORE an attempt, so the last
+    // attempt was never re-checked. Classify here, at the read.
+    let errorText;
+    try {
+      errorText = await response.text();
+    } catch (textErr) {
+      if (isAbortError(textErr) || signal?.aborted) {
+        console.error('[gemmaClient] Voice call timed out while reading the error body (abort during body read)');
+        emitLatency('timeout', response.status);
+        throw asAbortError(textErr);
+      }
+      errorText = 'unknown';
+    }
     emitLatency('http_error', response.status);
     return {
       ok: false,
@@ -160,7 +189,7 @@ async function _callGemmaOnce({
     // api/agent/chat.js took its 500 branch instead of its 504 (so the client
     // rendered "Agent is thinking too hard" instead of the truthful "Agent took
     // too long"), the shadow log filed `handler_exception` instead of
-    // `gemma_timeout`, and the five callGemmaVoiceWithRetry callers never got
+    // `gemma_timeout`, and the eight callGemmaVoiceWithRetry callers never got
     // `aborted:true` (so they answered HTTP 200 on a failed turn).
     //
     // Rethrowing preserves name === 'AbortError' and is what makes BOTH existing
@@ -289,12 +318,20 @@ export async function callGemmaVoiceWithRetry(options) {
 
     // HTTP-level error — retry only if transient
     const isTransient = result.status == null || TRANSIENT_STATUSES.has(result.status);
-    if (isTransient && attempt < MAX_ATTEMPTS) {
+    if (isTransient && attempt < MAX_ATTEMPTS && !signal?.aborted) {
       console.warn(`[gemmaClient] Transient ${result.status} on attempt ${attempt}: ${result.errorText}; retrying in ${RETRY_BACKOFF_MS}ms`);
       await _delay(RETRY_BACKOFF_MS, signal);
       continue;
     }
 
+    // Last-attempt abort re-check. The loop's signal guard runs only BEFORE an
+    // attempt, so an abort that lands after the final attempt's body read (a
+    // non-transient status, nothing thrown) would otherwise return with no
+    // `aborted` flag — and every caller gating on it would answer 200 on a
+    // timed-out turn.
+    if (signal?.aborted) {
+      return { success: false, error: 'Request aborted', aborted: true, fallbackResponse: null };
+    }
     return {
       success: false,
       error: `OpenRouter ${result.status ?? 'unknown'}: ${result.errorText}`.slice(0, 300),

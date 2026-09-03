@@ -9,7 +9,7 @@
 //   { parseError: true, errorReason: 'plaintext_passthrough' | 'empty_content', rawText }
 // Callers MUST detect parseError and route to their own structured-error path.
 
-import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { parseVoiceLayerResponse } from './gemmaClient.js';
 
 describe('parseVoiceLayerResponse — happy paths (tiers 1-3 unchanged)', () => {
@@ -268,5 +268,119 @@ describe('abort classification — a timeout is never reported as invalid JSON',
       systemPrompt: 'sys', conversationHistory: [], userMessage: 'hi',
     });
     expect(JSON.parse(content).response).toBe('ok');
+  });
+});
+
+// ==========================================================================
+// THE SIBLING BODY-READ WINDOW — found by adversarial review of the first fix.
+//
+// `.text()` on a non-ok response is a body read too. The original fix closed
+// only the `.json()` window, leaving the SAME defect eleven lines above it: an
+// abort during the error-body read was erased into errorText:'unknown' and
+// escaped with no AbortError and no `aborted` flag — the incident, intact, on
+// the other branch. These rows pin both windows and the retry interaction.
+// ==========================================================================
+
+describe('abort classification — the error-body read window', () => {
+  let server; let baseUrl; const openSockets = new Set();
+  let attempts = 0;
+
+  beforeAll(async () => {
+    server = http.createServer((req, res) => {
+      attempts += 1;
+      if (req.url === '/stall-error-body') {
+        // Non-ok status, headers + partial body, then stall.
+        res.writeHead(429, { 'Content-Type': 'text/plain' });
+        res.write('partial error body');
+        return;
+      }
+      if (req.url === '/retry-then-stall') {
+        // Attempt 1: a COMPLETE 429 body, so the transient retry fires.
+        // Attempt 2: headers + partial, then stall, so the deadline expires
+        // inside the final attempt's error-body read — the window the retry
+        // loop's pre-attempt signal check can never cover.
+        res.writeHead(429, { 'Content-Type': 'text/plain' });
+        if (attempts === 1) { res.end('rate limited'); return; }
+        res.write('partial error body');
+        return;
+      }
+      if (req.url === '/fast-error-body') {
+        res.writeHead(400, { 'Content-Type': 'text/plain' });
+        res.end('bad request');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { content: '{"response":"ok"}' } }] }));
+    });
+    server.on('connection', (s) => { openSockets.add(s); s.on('close', () => openSockets.delete(s)); });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+  afterAll(async () => {
+    for (const s of openSockets) s.destroy();
+    await new Promise((r) => server.close(r));
+  });
+  beforeEach(() => { attempts = 0; });
+  afterEach(() => vi.restoreAllMocks());
+
+  function useLocalServer(path) {
+    const realFetch = globalThis.fetch;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) =>
+      realFetch(`${baseUrl}${path}`, init));
+  }
+  const call = (fn, timeoutMs = 120) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    return Promise.resolve(fn({
+      systemPrompt: 'sys', conversationHistory: [], userMessage: 'hi', signal: controller.signal,
+    })).finally(() => clearTimeout(timer));
+  };
+
+  it('callGemmaVoice: abort during the ERROR body read throws a real AbortError', async () => {
+    useLocalServer('/stall-error-body');
+    const err = await call(callGemmaVoice).then(
+      () => { throw new Error('expected the call to reject'); }, (e) => e);
+
+    expect(err.name).toBe('AbortError');
+    // Before the fix this was `OpenRouter 429: unknown` with name 'Error' —
+    // chat.js would classify 500 and the client would lie again.
+    expect(err.message).not.toMatch(/OpenRouter 429/);
+    expect(err.message).not.toMatch(/unknown/);
+  });
+
+  it('callGemmaVoiceWithRetry: the likely production shape — 429, retry, deadline expires on attempt 2', async () => {
+    // The retry loop only checks the signal BEFORE an attempt, so the last
+    // attempt was never re-checked and returned with no `aborted` flag.
+    useLocalServer('/retry-then-stall');
+    const result = await call(callGemmaVoiceWithRetry, 2_400); // past the 2s backoff
+
+    expect(result.success).toBe(false);
+    expect(result.aborted).toBe(true);
+    expect(attempts).toBeGreaterThanOrEqual(2);   // it really did retry first
+  });
+
+  it('a genuine non-ok response with NO abort still reports the HTTP error', async () => {
+    // The regression guard: 400s must keep their own shape, not become timeouts.
+    useLocalServer('/fast-error-body');
+    const err = await callGemmaVoice({
+      systemPrompt: 'sys', conversationHistory: [], userMessage: 'hi',
+    }).then(() => { throw new Error('expected the call to reject'); }, (e) => e);
+
+    expect(err.name).toBe('Error');
+    expect(err.message).toMatch(/OpenRouter 400/);
+  });
+
+  it('asAbortError preserves the original error as `cause`', async () => {
+    // A TimeoutError or a custom abort reason is the only record of WHY the
+    // call aborted; fabricating a bare Error would discard it.
+    const controller = new AbortController();
+    useLocalServer('/stall-error-body');
+    setTimeout(() => controller.abort(new Error('deadline exceeded')), 120);
+    const err = await callGemmaVoice({
+      systemPrompt: 'sys', conversationHistory: [], userMessage: 'hi', signal: controller.signal,
+    }).then(() => null, (e) => e);
+
+    expect(err.name).toBe('AbortError');
+    expect(err.cause).toBeDefined();
   });
 });
