@@ -23,6 +23,42 @@ import { getTournamentClaimWindow, formatEtDate } from '../_utils/tournamentTime
 
 export const config = { maxDuration: 30 };
 
+// ==================== TURN TIMING BUDGET ====================
+//
+// Three values, derived from maxDuration and from each other. They are a
+// system: moving one without the others either strands budget or overruns the
+// function. The relationship is pinned in chat.timeout.test.js.
+//
+//   maxDuration        30s  the platform ceiling (above)
+//   TURN_DEADLINE_MS   24s  every model call must be DONE by here, leaving ~6s
+//                           for the awaited Firestore writes after the gate
+//   GEMMA_TIMEOUT_MS   19s  the first (and only guaranteed) voice call
+//
+// The whole budget has to hold at once:
+//   handler overhead (3s) + GEMMA_TIMEOUT_MS + MIN_REPAIR_MS (1.5s) <= 24s
+// i.e. 3 + 19 + 1.5 = 23.5s. That is what 19s buys over 20s: at 20s the sum was
+// 24.5s, half a second OVER the deadline, which silently un-budgeted the Phase
+// E1 directive-gate repair on any turn with a slow first call — `hasDirective`
+// could flip true→false on identical model output purely from timing, and fail
+// silently as a canned no-change line. Pinned in chat.timeout.test.js.
+//
+// Why not the 25s every other Gemma caller uses (forge/workshop-chat,
+// forge/watchlist-analysis, screener/chat, forge/watchlist-dialogue,
+// forge/expand-signal): each of those has exactly ONE model call. This handler
+// has a second behind the same deadline, so 25s here would let the first call
+// alone outlive TURN_DEADLINE_MS and push the turn past maxDuration — the
+// platform then kills the function, and a platform kill produces a bare gateway
+// 504 with NO shadow log and NO honest client string. That is strictly worse
+// than the timeout it would be trying to avoid.
+//
+// Raised from 15s on Sep 3 2026 (voice-timeout incident): 15s cut Gemma off
+// with ~9s of the deadline unused. Landed at 19s rather than 20s on the review's
+// repair-window finding.
+// Exported so chat.timeout.test.js guards the real values rather than a copy of
+// them — a pinned constant that a test re-declares guards nothing.
+export const GEMMA_TIMEOUT_MS = 19_000;
+export const TURN_DEADLINE_MS = 24_000;
+
 // ==================== ELICITATION TARGET ====================
 
 const ELICITATION_INSTRUCTIONS = {
@@ -146,9 +182,14 @@ const LEAGUE_EXHAUSTED_LINE = "That's all the questions I can take today — we'
 
 export default async function handler(req, res) {
   // Turn deadline anchor (Phase E1). Stamped at invocation so the gate's repair
-  // budget is measured against true elapsed time vs maxDuration:30 — 24s leaves
-  // ~6s headroom for the awaited Firestore writes after the gate returns.
+  // budget is measured against true elapsed time vs maxDuration:30 —
+  // TURN_DEADLINE_MS leaves ~6s headroom for the awaited Firestore writes after
+  // the gate returns.
   const turnStartMs = Date.now();
+  // Declared at handler scope: the voice call lives inside the try, but the
+  // catch block's shadow record needs the elapsed time too. null = the turn
+  // failed before the model was ever called.
+  let gemmaLatencyMs = null;
 
   // 1. Security middleware
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
@@ -389,9 +430,34 @@ export default async function handler(req, res) {
       capabilitiesManifest,
     });
 
-    // 15. Call OpenRouter (Gemma 4) — with 15s timeout
+    // 15. Call OpenRouter (Gemma 4) — with the GEMMA_TIMEOUT_MS budget, CLAMPED
+    //     to the absolute turn deadline.
+    //
+    //     GEMMA_TIMEOUT_MS is relative and this timer is armed AFTER the whole
+    //     prologue (auth + 4 sequential Firestore round trips, 6 on the League
+    //     ask path), so an unclamped timer fires at `overhead + 20s` — a
+    //     quantity with no relationship to the absolute deadline the gate is
+    //     held to. Past ~4s of prologue that breaches TURN_DEADLINE_MS, and past
+    //     ~11s it fires AFTER maxDuration, i.e. after the platform has already
+    //     killed the function: the bare gateway 504 with no shadow log and no
+    //     honest client string that this whole change exists to prevent. The 15s
+    //     value tolerated 15.1s of prologue; 19s alone tolerates 11.1s.
+    //     Clamping restores an absolute guarantee instead of an assumption, and
+    //     mirrors what directiveGate.js:105-107 already does for its own call.
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const gemmaBudgetMs = Math.max(0, Math.min(
+      GEMMA_TIMEOUT_MS,
+      turnStartMs + TURN_DEADLINE_MS - Date.now(),
+    ));
+    const timeoutId = setTimeout(() => controller.abort(), gemmaBudgetMs);
+    // Latency of THIS call — the first voice call — stamped whether it succeeds,
+    // times out, or throws, so every logConversation site below carries it and a
+    // timed-out turn is not a blind spot. Scope is deliberate and worth naming:
+    // it does NOT include the directive gate's repair call, so on a gated turn
+    // total model time can exceed this by up to REPAIR_TIMEOUT_MS. This is the
+    // number that verifies the timeout change; gemmaClient's per-attempt
+    // `gemma_latency` line covers both calls for anything wider.
+    const gemmaStartedAt = Date.now();
     let rawResponse;
     try {
       rawResponse = await callGemmaVoice({
@@ -402,6 +468,7 @@ export default async function handler(req, res) {
       });
     } finally {
       clearTimeout(timeoutId);
+      gemmaLatencyMs = Date.now() - gemmaStartedAt;
     }
 
     // 16. Parse response
@@ -440,6 +507,7 @@ export default async function handler(req, res) {
         turnError: true,
         errorReason: `parse_${parsed.errorReason}`,
         rawGemmaContent: String(parsed.rawText || '').slice(0, 2000),
+        gemmaLatencyMs,
       }).catch(() => {});
       return res.status(502).json({
         error: 'gemma_invalid_shape',
@@ -475,7 +543,7 @@ export default async function handler(req, res) {
         conversationHistory,
         userMessage: sanitizedMessage,
         signal: controller.signal,
-        deadlineMs: turnStartMs + 24000,
+        deadlineMs: turnStartMs + TURN_DEADLINE_MS,
       });
       gateOutcome = gate.outcome;
       gateFallbackLine = gate.fallbackLine;
@@ -558,6 +626,7 @@ export default async function handler(req, res) {
       forgeSuggestion: forgeSuggestion ? { id: forgeSuggestion.id, text: forgeSuggestion.text } : null,
       tokenUsage: null,
       mode,
+      gemmaLatencyMs,
     }).catch(() => {});
 
     // 19. Write exchange to battle doc
@@ -710,6 +779,7 @@ export default async function handler(req, res) {
       turnError: true,
       errorReason: isAbort ? 'gemma_timeout' : 'handler_exception',
       errorMessage: String(error?.message || error || '').slice(0, 500),
+      gemmaLatencyMs,
     }).catch(() => {});
 
     if (isAbort) {

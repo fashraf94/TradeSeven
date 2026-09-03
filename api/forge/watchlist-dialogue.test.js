@@ -2643,3 +2643,38 @@ describe('detectNarrativeActionDrift — Phase 3.8', () => {
     expect(result.drift).toBe(true);
   });
 });
+
+// ==========================================================================
+// SIBLING TIMEOUT-CLASS ROW — Sep 3 2026 voice-timeout incident.
+//
+// gemmaClient now reports an abort that fires DURING THE BODY READ as
+// `aborted: true`. It previously came back as a generic failure with
+// `aborted` undefined, so this handler answered 200 with errorReason
+// 'gemma_invalid_shape' on a turn that had actually timed out. This row pins
+// that the new class is handled and does not crash the handler. The
+// classification itself is guarded at source in api/_utils/gemmaClient.test.js.
+// ==========================================================================
+
+describe('watchlist-dialogue — gemmaClient timeout class (aborted:true)', () => {
+  it('an aborted first turn returns 504 + gemma_timeout and materializes no session shell', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      discoverThemes: { [VALID_THEME_ID]: ACTIVE_THEME },
+    });
+    activeFirestore = fixture.db;
+    gemmaResult.current = { success: false, error: 'Request aborted', aborted: true, fallbackResponse: null };
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      message: 'Let us shape this into a watchlist',
+      themeId: VALID_THEME_ID,
+      dropId: VALID_DROP_ID,
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(504);
+    expect(res.body.errorReason).toBe('gemma_timeout');
+    expect(res.body.sessionId).toBeNull();
+    expect(res.body.agentMessage).toBeTruthy();  // graceful copy, not a crash
+  });
+});

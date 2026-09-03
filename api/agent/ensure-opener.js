@@ -233,9 +233,12 @@ export default async function handler(req, res) {
     // Patient Gemma bounded by the ABSOLUTE deadline (handlerStart + HARD_DEADLINE_MS)
     // minus a commit reserve, so a slow attempt can never push the commit past
     // maxDuration. A second attempt only runs when the first failed FAST and budget
-    // remains (a slow first attempt → floor). NB: not callGemmaVoiceWithRetry — it
-    // does not retry the invalid-JSON-200 abort that is the actual failure mode
-    // (gemmaClient.js:207).
+    // remains (a slow first attempt → floor). NB: not callGemmaVoiceWithRetry —
+    // this handler owns its own attempt loop against the absolute deadline, and
+    // a second, unbudgeted retry inside the client would break that accounting.
+    // (The original reason given here — that the helper "does not retry the
+    // invalid-JSON-200 abort" — no longer holds: as of the Sep 3 2026 timeout
+    // fix that failure is classified as an abort, and correctly not retried.)
     const attemptBudgetMs = () => Math.min(
       ATTEMPT_ABORT_MS,
       (handlerStart + HARD_DEADLINE_MS) - Date.now() - COMMIT_RESERVE_MS,

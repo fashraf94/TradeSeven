@@ -561,3 +561,28 @@ describe('watchlist-analysis — per-name rows + focusDimension', () => {
     expect(res.body.focusDimension).toBeNull();
   });
 });
+
+// ==========================================================================
+// SIBLING TIMEOUT-CLASS ROW — Sep 3 2026 voice-timeout incident.
+//
+// gemmaClient now reports an abort that fires DURING THE BODY READ as
+// `aborted: true`. It previously came back as a generic failure with
+// `aborted` undefined, so this handler answered its non-abort status on a turn
+// that had actually timed out. This row pins that the new class is handled and
+// does not crash the handler. The classification itself is guarded at source in
+// api/_utils/gemmaClient.test.js.
+// ==========================================================================
+
+describe('watchlist-analysis — gemmaClient timeout class (aborted:true)', () => {
+  it('an aborted Gemma call returns 504, not 200', async () => {
+    gemmaResult.current = { success: false, error: 'Request aborted', aborted: true, fallbackResponse: null };
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'what do these share?' });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(504);
+    expect(res.body.error).toBe(true);
+  });
+});

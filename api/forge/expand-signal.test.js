@@ -483,3 +483,49 @@ describe('expand-signal — lookup failures', () => {
     expect(res.body.error).toMatch(/Drop record not found/);
   });
 });
+
+// ==========================================================================
+// SIBLING TIMEOUT-CLASS ROW — Sep 3 2026 voice-timeout incident.
+//
+// gemmaClient now reports an abort that fires DURING THE BODY READ as
+// `aborted: true`. It previously came back as a generic failure with
+// `aborted` undefined, so this handler answered its non-abort status on a turn
+// that had actually timed out. This row pins that the new class is handled and
+// does not crash the handler. The classification itself is guarded at source in
+// api/_utils/gemmaClient.test.js.
+// ==========================================================================
+
+describe('expand-signal — gemmaClient timeout class (aborted:true)', () => {
+  it('an aborted Gemma call returns 504, not 502', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, drop: VALID_DROP_RECORD });
+    activeFirestore = fixture.db;
+    gemmaResult.current = { success: false, error: 'Request aborted', aborted: true, fallbackResponse: null };
+
+    const { req, res } = makeReqRes({
+      parsedSignal: VALID_PARSED_SIGNAL,
+      dropId: 'drop-1',
+      agentId: 'agent-1',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(504);
+    expect(res.body.error).toBe('Expansion timed out');
+  });
+
+  it('a NON-aborted Gemma failure still returns 502 (no over-classification)', async () => {
+    // Companion to the row above — pins the fallback arm of
+    // `gemmaResult.aborted ? 504 : 502` so a plain failure cannot drift into
+    // being reported as a timeout.
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, drop: VALID_DROP_RECORD });
+    activeFirestore = fixture.db;
+    gemmaResult.current = { success: false, error: 'OpenRouter 500: upstream', aborted: false, fallbackResponse: null };
+
+    const { req, res } = makeReqRes({
+      parsedSignal: VALID_PARSED_SIGNAL, dropId: 'drop-1', agentId: 'agent-1',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(502);
+    expect(res.body.error).toBe('Expansion failed');
+  });
+});

@@ -7,12 +7,14 @@
 // (elicitation target, directive normalization, mode detection,
 // review lessons, etc.). Those are exercised by manual / E2E tests.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TOURNAMENT_GAME_MODE, GROUP_STATUS } from '../../src/constants/leagueTournament.js';
 
 // ==================== HOISTED MOCK STATE ====================
 const {
   authReturnValue,
+  gateArgs,
+  authDelayMs,
   callGemmaVoiceImpl,
   parseVoiceLayerResponseImpl,
   shadowLogCalls,
@@ -22,6 +24,8 @@ const {
   budget,
 } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
+  gateArgs: { current: [] },     // pass-through capture of gateDirective's args
+  authDelayMs: { current: 0 },   // simulates a slow prologue (auth + Firestore reads)
   callGemmaVoiceImpl: { current: async () => '{"response":"hi"}' },
   parseVoiceLayerResponseImpl: { current: (c) => JSON.parse(c) },
   shadowLogCalls: { current: [] },
@@ -53,6 +57,7 @@ vi.mock('../_utils/security.js', () => ({
 
 vi.mock('../_utils/authMiddleware.js', () => ({
   requireAuth: async (req, res) => {
+    if (authDelayMs.current > 0) await new Promise((r) => setTimeout(r, authDelayMs.current));
     if (authReturnValue.current === null) {
       res.status(401).json({ error: 'auth required' });
       return null;
@@ -79,6 +84,18 @@ vi.mock('../_utils/tournamentTime.js', () => ({
   formatEtDate: () => '2026-06-26',
 }));
 
+// Pass-through spy on the directive gate. importOriginal keeps the REAL
+// implementation — the ten archetype tests below still exercise it unchanged —
+// while making its arguments observable, which is the only way to prove
+// TURN_DEADLINE_MS is actually WIRED and not merely pinned.
+vi.mock('../_utils/directiveGate.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    gateDirective: (args) => { gateArgs.current.push(args); return actual.gateDirective(args); },
+  };
+});
+
 vi.mock('../_utils/marketSchedule.js', () => ({
   getMarketState: () => ({ state: 'OPEN', isOpen: true }),
 }));
@@ -87,6 +104,12 @@ vi.mock('../_utils/gemmaClient.js', () => ({
   callGemmaVoice: (opts) => callGemmaVoiceImpl.current(opts),
   parseVoiceLayerResponse: (c) => parseVoiceLayerResponseImpl.current(c),
 }));
+
+// The REAL gemmaClient, bypassing the mock above. Used by the abort row so the
+// handler's timeout classification is exercised through the actual
+// _callGemmaOnce catch rather than a hand-shaped error object — see the comment
+// on that test for why the distinction is the whole point.
+const realGemmaClient = await vi.importActual('../_utils/gemmaClient.js');
 
 // Phase E1 — flip ARCHETYPE_INTEGRITY_MODE per-test via a live getter (real flags
 // preserved). chat.js reads the flag inside the handler, so the getter takes
@@ -114,7 +137,7 @@ vi.mock('firebase-admin/firestore', () => ({
   },
 }));
 
-const { default: handler } = await import('./chat.js');
+const { default: handler, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS } = await import('./chat.js');
 
 // ==================== Test fixture helpers ====================
 
@@ -202,6 +225,8 @@ const VALID_BATTLE = {
 
 beforeEach(() => {
   authReturnValue.current = { uid: 'test-user' };
+  authDelayMs.current = 0;
+  gateArgs.current = [];
   callGemmaVoiceImpl.current = async () => '{"response":"hi"}';
   parseVoiceLayerResponseImpl.current = (c) => JSON.parse(c);
   shadowLogCalls.current = [];
@@ -215,6 +240,12 @@ beforeEach(() => {
   budget.resolveCalls = [];
   budget.readCalls = [];
   budget.chargeCalls = [];
+});
+
+// The abort row spies on globalThis.fetch to drive the real gemmaClient; without
+// this the stub would leak into every subsequent test in the file.
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // ==================== TESTS ====================
@@ -306,15 +337,42 @@ describe('agent/chat — catch-block shadow logging (gap closure)', () => {
   // calling logConversation. Production lost visibility into AbortError
   // timeouts and other handler exceptions.
 
-  it('AbortError → 504 + shadow logs gemma_timeout', async () => {
+  // REWRITTEN Sep 3 2026 (voice-timeout incident). This row previously mocked
+  // callGemmaVoice to throw an error with `name` hand-set to 'AbortError'. It
+  // passed for months while production returned 500 on every timeout, because
+  // hand-setting the name bypasses the only code that decides it:
+  // _callGemmaOnce's `.json()` catch. A timeout that fires while the body is
+  // still arriving leaves the response resolved (200) and rejects the body
+  // read, and that catch — written for malformed JSON — used to rewrite the
+  // abort as a plain Error. So `isAbort` below was false in production and
+  // never false in the test.
+  //
+  // It now drives the REAL callGemmaVoice against a fetch whose body read
+  // rejects with a genuine AbortError, so the classification under test runs
+  // through _callGemmaOnce's real classifier — where the bug actually lived.
+  //
+  // Scope, stated honestly: the Response here is still a stub. No
+  // AbortController fires and undici is not involved, so this row proves the
+  // HANDLER wiring (classifier → 504 → gemma_timeout), not that a real undici
+  // body-read abort produces that classification. THAT is proven separately in
+  // gemmaClient.test.js, against a real http server and a real signal, with an
+  // assertion on which abort window actually fired.
+  //
+  // MUTATION CHECK: reverting the abort branch in gemmaClient._callGemmaOnce
+  // makes this row fail with 500 / handler_exception — the production symptom.
+  it('a timeout during the body read → 504 + shadow logs gemma_timeout (real abort path)', async () => {
     const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
     activeFirestore = fixture.db;
 
-    callGemmaVoiceImpl.current = async () => {
-      const err = new Error('aborted');
-      err.name = 'AbortError';
-      throw err;
-    };
+    // A resolved 200 response whose body read rejects mid-stream: the exact
+    // production shape. DOMException named 'AbortError' is what undici throws.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new DOMException('This operation was aborted', 'AbortError')),
+      text: () => Promise.resolve(''),
+    });
+    callGemmaVoiceImpl.current = realGemmaClient.callGemmaVoice;
 
     const { req, res } = makeReqRes({
       agentId: 'agent-1',
@@ -331,6 +389,9 @@ describe('agent/chat — catch-block shadow logging (gap closure)', () => {
     expect(shadowLogCalls.current[0].userMessage).toBe('hi');
     expect(shadowLogCalls.current[0].agentId).toBe('agent-1');
     expect(shadowLogCalls.current[0].battleId).toBe('battle-1');
+    // A timed-out turn is exactly the case p50/p95 must not be blind to, so the
+    // latency stamp has to survive the throw, not just the happy path.
+    expect(typeof shadowLogCalls.current[0].gemmaLatencyMs).toBe('number');
   });
 
   it('non-Abort error → 500 + shadow logs handler_exception with errorMessage', async () => {
@@ -729,5 +790,157 @@ describe('agent/chat — capabilities manifest → USER LEVERS wiring (Phase E2)
     const { res, manifest } = await run({ battle: tournamentBattle(), group: TOURNEY_GROUP });
     expect(res.statusCode).toBe(200);
     expect(manifest ?? null).toBeNull();               // capabilitiesManifest stays the null default
+  });
+});
+
+// ==========================================================================
+// TIMEOUT WIRING — Sep 3 2026 voice-timeout incident.
+//
+// chat.timeout.test.js pins the VALUE of GEMMA_TIMEOUT_MS and its arithmetic
+// against TURN_DEADLINE_MS and maxDuration. This row pins that the constant is
+// what actually arms the live AbortController: without it, replacing
+// `GEMMA_TIMEOUT_MS` at the call site with a bare literal would leave every
+// pin green while the real timeout drifted.
+// ==========================================================================
+
+describe('agent/chat — the timeout constant arms the real AbortController', () => {
+  it('does not abort before GEMMA_TIMEOUT_MS, and does at it', async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+      activeFirestore = fixture.db;
+
+      // Hold the call open and hand the signal back so the abort can be observed
+      // directly, rather than inferred from a downstream status code.
+      let captured = null;
+      callGemmaVoiceImpl.current = (opts) => {
+        captured = opts.signal;
+        return new Promise((_resolve, reject) => {
+          opts.signal.addEventListener('abort', () => {
+            const e = new Error('This operation was aborted');
+            e.name = 'AbortError';
+            reject(e);
+          }, { once: true });
+        });
+      };
+
+      const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+      const done = handler(req, res);
+
+      // Let the handler's pre-call awaits (auth + the Firestore reads) settle so
+      // the timer is actually armed before the clock is advanced.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(captured).not.toBeNull();
+
+      await vi.advanceTimersByTimeAsync(GEMMA_TIMEOUT_MS - 1);
+      expect(captured.aborted).toBe(false);   // still inside the budget
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(captured.aborted).toBe(true);    // armed by GEMMA_TIMEOUT_MS exactly
+
+      await done;
+      expect(res.statusCode).toBe(504);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ==========================================================================
+// THE ABSOLUTE CLAMP — found by adversarial review of the 15s→20s raise.
+//
+// GEMMA_TIMEOUT_MS is RELATIVE and its timer is armed after the prologue (auth
+// + 4 sequential Firestore round trips, 6 on the League ask path), so an
+// unclamped timer fires at `overhead + 20s` — unrelated to the absolute
+// deadline the gate is held to. Past ~4s of prologue that breaches
+// TURN_DEADLINE_MS; past ~10s it fires after maxDuration, i.e. after the
+// platform already killed the function — the bare gateway 504 with no shadow
+// log and no honest string that this change exists to prevent. The 15s value
+// tolerated 15.1s of prologue; 20s alone tolerates 10.1s.
+//
+// MUTATION CHECK: dropping the Math.min clamp at chat.js:439-443 reddens the
+// 8s row (abort fires at 28s, past the 24s deadline).
+// ==========================================================================
+
+describe('agent/chat — the voice call is clamped to the absolute turn deadline', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  async function abortTimeUnderOverhead(overheadMs) {
+    vi.useFakeTimers();
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    authDelayMs.current = overheadMs;
+
+    const turnStart = Date.now();
+    let abortedAt = null;
+    callGemmaVoiceImpl.current = (opts) => new Promise((_res, reject) => {
+      opts.signal.addEventListener('abort', () => {
+        abortedAt = Date.now() - turnStart;
+        const e = new Error('This operation was aborted');
+        e.name = 'AbortError';
+        reject(e);
+      }, { once: true });
+    });
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    const done = handler(req, res);
+    await vi.advanceTimersByTimeAsync(overheadMs + GEMMA_TIMEOUT_MS + 5_000);
+    await done;
+    return { abortedAt, status: res.statusCode };
+  }
+
+  it('a fast prologue still gets the full GEMMA_TIMEOUT_MS', async () => {
+    const { abortedAt, status } = await abortTimeUnderOverhead(0);
+    expect(abortedAt).toBe(GEMMA_TIMEOUT_MS);
+    expect(status).toBe(504);
+  });
+
+  it('an 8s prologue does NOT push the abort past TURN_DEADLINE_MS', async () => {
+    // Unclamped this fires at 28s — 4s past the deadline, and the writes that
+    // follow would run against a budget that no longer exists.
+    const { abortedAt, status } = await abortTimeUnderOverhead(8_000);
+    expect(abortedAt).toBeLessThanOrEqual(TURN_DEADLINE_MS);
+    expect(status).toBe(504);
+  });
+
+  it('a prologue that has already eaten the deadline gives the call ~no budget, not a fresh 20s', async () => {
+    // Unclamped this fires at 45s — long after the platform killed the function
+    // at 30s. Clamped, the budget floors at 0 and the call aborts on the next
+    // tick, so the turn still returns a real 504 with a shadow log.
+    const OVERHEAD = 25_000;
+    const { abortedAt, status } = await abortTimeUnderOverhead(OVERHEAD);
+    expect(abortedAt - OVERHEAD).toBeLessThanOrEqual(100);   // immediate, not +20s
+    expect(status).toBe(504);
+  });
+});
+
+// ==========================================================================
+// TURN_DEADLINE_MS IS WIRED, not merely pinned.
+//
+// chat.timeout.test.js pins the VALUE of TURN_DEADLINE_MS and four rows reason
+// about it, but nothing proved the gate actually receives it: replacing
+// `turnStartMs + TURN_DEADLINE_MS` at chat.js:519 with a bare `99_000` left
+// every one of those pins green while the real deadline drifted. That is the
+// same hole the GEMMA_TIMEOUT_MS wiring row above closes; this closes its twin.
+// ==========================================================================
+
+describe('agent/chat — the turn deadline handed to the directive gate is wired', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('gateDirective receives turnStartMs + TURN_DEADLINE_MS', async () => {
+    vi.useFakeTimers();
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    archetypeFlag.mode = 'enforce';   // the gate only runs outside 'off'
+    callGemmaVoiceImpl.current = async () => '{"response":"hi","hasDirective":false}';
+
+    const turnStart = Date.now();
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+
+    expect(gateArgs.current).toHaveLength(1);
+    // Absolute, and exactly TURN_DEADLINE_MS from the turn's start — the gate
+    // clamps its repair against this, so a wrong value silently un-budgets it.
+    expect(gateArgs.current[0].deadlineMs - turnStart).toBe(TURN_DEADLINE_MS);
   });
 });

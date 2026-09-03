@@ -19,7 +19,7 @@
 import { getAllowlist, isValidAdjustmentId, getCanonicalText, getCanonicalTextVersion } from '../../src/data/archetypeAdjustments.js';
 import { parseVoiceLayerResponse } from './gemmaClient.js';
 
-// The one-shot repair-retry is BUDGET-AWARE. chat.js clears the first call's 15s
+// The one-shot repair-retry is BUDGET-AWARE. chat.js clears the first call's
 // abort timer the instant it resolves, so the parent signal alone would never bound
 // the repair — leaving it free to run up to its own cap and risk overrunning
 // maxDuration:30 (killing the awaited Firestore write mid-flight). So the caller
