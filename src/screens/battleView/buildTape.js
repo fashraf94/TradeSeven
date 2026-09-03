@@ -41,9 +41,14 @@
 // `message` IS NEVER THE MOTIVE (hazard 24): the feed's `message` is the
 // optional `status_feed_update`, null on a legal SWAP, and on a
 // guardrail-forced swap it is the model's PRE-override line.
+//
+// THE MOTIVE'S TEXT IS RENDERED, NOT RAW (D-80). `renderMotive` translates the
+// cron's `(guardrail_*)` provenance parenthetical into the guardrail's plain
+// words, or drops it — the one place a rationale becomes display text, shared
+// with the Why? panel so one sentence cannot be shown two ways.
 
 import { toIso, toMillis } from '../../adapters/baggerbombAdapter';
-import { selectWhyState, splitSentences, isEngineAuthoredMotive } from './selectWhyState';
+import { selectWhyState, splitSentences, isEngineAuthoredMotive, renderMotive } from './selectWhyState';
 import { directiveFilings } from './deriveReceipts';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 
@@ -129,7 +134,11 @@ export function buildTradeEntries(trades, statusFeed) {
       lockedPoints: typeof trade.lockedPoints === 'number' && Number.isFinite(trade.lockedPoints)
         ? trade.lockedPoints
         : null,
-      motive: cleanText(trade.rationale),
+      // The DISPLAY text (D-80): the engine's provenance parenthetical
+      // translated or dropped, the model's own words untouched. Trimmed inside
+      // `renderMotive` — the same trim `This piece today` applies to the same
+      // field (review FIX-3), now in one place rather than two.
+      motive: renderMotive(trade.rationale),
       // The author of the motive — the footer, not the text.
       motiveIsAgent: !engineAuthored,
       // The model's own echo of the directive it was acting on, on the feed

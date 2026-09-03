@@ -209,8 +209,12 @@ describe('the header, the facts and the trades', () => {
     expect(html).toContain('The guardrail&#x27;s reason · the position stayed as it was');
     expect(html).toContain('data-why-kind="guardrailFailed"');
     // The system's words are still rendered verbatim — but never credited to
-    // the agent (the fourth state's footer would do exactly that).
-    expect(html).toContain('Guardrail override (guardrail_stopLoss)');
+    // the agent (the fourth state's footer would do exactly that), and the
+    // provenance code inside them is translated, never raw (D-80).
+    // (the panel emphasises the tapped symbol, so the sentence is split around `SLB`)
+    expect(html).toContain('Guardrail override (stop-loss): ');
+    expect(html).toContain(' breached the -8% stop; forcing exit to DVN.');
+    expect(html).not.toContain('guardrail_');
     expect(html).not.toContain('The agent&#x27;s own words');
     expect(html).not.toContain('Argued for a swap');
   });

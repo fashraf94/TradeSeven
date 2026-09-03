@@ -12,6 +12,14 @@
 // machinery-provenance code, review F10), `source`, `triggeredBy`. None of
 // them is on the entry the builder produces, so none can reach here.
 //
+// The one provenance code that used to reach the screen anyway did so INSIDE
+// the engine's own verbatim sentence — `Guardrail override (guardrail_stopLoss):
+// …` — where C1 and hazard 29 met and only a ruling could separate them (A2
+// review L5-F3). D-80 ruled it: the guardrail type renders in the words it is
+// called by, or the parenthetical goes. The translation happens once, in
+// `renderMotive`, before the entry is built, so every surface that shows a
+// motive shows the same sentence (BUILD_RULES §9).
+//
 // Colours via the token bridge; motion via the vocabulary, reduced-motion
 // aware. `Read more` is local state — one card's expansion is not a fact
 // about the battle and never leaves the component.

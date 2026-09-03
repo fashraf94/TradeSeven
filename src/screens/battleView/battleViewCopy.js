@@ -127,6 +127,37 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     return null;
   },
 
+  // ── The guardrail's provenance code, in plain words (A2.3, D-80, ruling 1) ─
+  // The cron composes a forced exit's rationale as
+  // `Guardrail override (${result.sourceNote || 'hard'}): ${overrideNote}`
+  // (api/cron/agent-evaluate.js:2121), so the guardrail module's own
+  // `guardrail_${forcedType}` token (api/_utils/agentGuardrails.js:495 / :558)
+  // rides INSIDE the sentence C1 renders verbatim. Two rules meet there: C1
+  // says render the engine's motive verbatim, hazard 29 / D-64 say a
+  // machinery-provenance code never reaches the screen (A2 review L5-F3, the
+  // one finding recorded for a founder ruling rather than fixed).
+  //
+  // The ruling separates them. The guardrail TYPE is a fact a player can read,
+  // so it is translated into the words that guardrail is called by; the
+  // sentence keeps its shape and everything after the colon is untouched. Any
+  // OTHER token — `guardrail_max_sector_weight`, the cron's own `hard`
+  // fallback, anything added later — loses the parenthetical entirely, because
+  // a code with no ruled words is not a fact a player can read. A raw
+  // `guardrail_*`, and any `_`-joined code, never reaches the screen.
+  //
+  // The three words are NOT invented here: they are the founder's existing
+  // taxonomy in src/components/League/battleArena/leagueSwapLedger.js:63-69,
+  // where the same three `exitReason` stamps already render for the League
+  // swap ledger. A source tripwire in TapeCards.render.test.jsx keeps the two
+  // tables in step; the copy is not shared because that module's table answers
+  // a different question (nine `exitReason` values, with a swapMotive
+  // precedence rule) and importing it would drag that rule onto this surface.
+  guardrailTypeWords: Object.freeze({
+    guardrail_stopLoss: 'stop-loss',
+    guardrail_trailingStop: 'trailing stop',
+    guardrail_profitTarget: 'profit target',
+  }),
+
   // ── The plan at deploy (A2.1b, D-76) ──────────────────────────────────────
   // The deploy decision's own persisted output, frozen at creation and in
   // front of the decider on every tick. It is HISTORY: every label carries the

@@ -148,6 +148,52 @@ export function isEngineAuthoredMotive(text, source = null) {
 const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
 /**
+ * The cron's provenance parenthetical, at the head of a forced exit's
+ * rationale: `Guardrail override (guardrail_stopLoss): …`
+ * (agent-evaluate.js:2121, composing agentGuardrails.js's own
+ * `guardrail_${forcedType}` sourceNote).
+ *
+ * ANCHORED to the `Guardrail override` prefix, deliberately, rather than
+ * matching any bracketed token anywhere in an engine sentence: that one
+ * composition site is the only place a code is spliced into prose, and a
+ * looser rule would eat the numbers the guardrail module's own statusMessage
+ * carries — `… breached on GILD (-9.24%).` — or the `(R11)` the suppression
+ * pass writes. The token shape is identifier-only for the same reason.
+ */
+const GUARDRAIL_CODE_PARENTHETICAL = /^(\s*Guardrail override)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*\)/;
+
+/**
+ * A motive as it is RENDERED (D-80, ruling 1) — the one place a rationale
+ * becomes display text, so the trade card, the check card, `This piece today`
+ * and the book panel cannot show one sentence two ways (BUILD_RULES §9).
+ *
+ * The model's own words pass through untouched (C1). An ENGINE-authored
+ * sentence has its provenance parenthetical translated into the guardrail's
+ * plain words, or dropped when the token has none — see
+ * `BATTLE_VIEW_COPY.guardrailTypeWords` for why, and for where the three words
+ * come from. Everything after the colon is the engine's sentence, verbatim.
+ *
+ * ONLY AN ENGINE MOTIVE IS REWRITTEN, and that is true BY CONSTRUCTION rather
+ * than by a second conjunct: the pattern's anchor, `Guardrail override`, IS
+ * `ENGINE_MOTIVE_PREFIXES[0]`, so any text the pattern can match is already
+ * engine-authored under the rule above. An `isEngineAuthoredMotive` gate in
+ * front of it could never fire — a conjunct that cannot fail is not a guard,
+ * and this module does not ship one. `selectWhyState.test.js` pins the two
+ * strings together so a rename of the prefix reds rather than silently
+ * unhooking the translation.
+ *
+ * @param {string|null} text  the persisted rationale
+ */
+export function renderMotive(text) {
+  const cleaned = cleanText(text);
+  if (cleaned == null) return null;
+  return cleaned.replace(GUARDRAIL_CODE_PARENTHETICAL, (match, prefix, token) => {
+    const words = COPY.guardrailTypeWords[token];
+    return words ? `${prefix} (${words})` : prefix;
+  });
+}
+
+/**
  * @param {object|null} evaluation  the latest evaluations[] entry, or null
  * @param {string} symbol           the tapped piece (book-level: null)
  * @param {string|null} lastScoredAt scoreState.lastScoredAt — the check
@@ -211,7 +257,12 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
     };
   }
 
-  const rationale = cleanText(evaluation.rationale);
+  // The DISPLAY text (D-80) — and the authorship below is read from the RAW
+  // field, not from this one. The translation preserves the `Guardrail
+  // override` prefix in both of its branches, so the two agree today; deriving
+  // "whose words" from a string this module has already rewritten is the
+  // drift BUILD_RULES §9 exists to forbid, so it does not.
+  const rationale = renderMotive(evaluation.rationale);
 
   // Downgraded FIRST — see the header. Two reasons carry the same flag
   // (D-66): a thrown executeSwapServer stamps `validationErrors[0]` with the
@@ -261,7 +312,7 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
   // still rendered verbatim, they are simply no longer implied to be the
   // agent's. `null` where the model wrote them — an author line on every
   // sentence would be noise.
-  const footer = isEngineAuthoredMotive(rationale) ? COPY.motiveSystem : null;
+  const footer = isEngineAuthoredMotive(evaluation.rationale) ? COPY.motiveSystem : null;
 
   if (evaluation.decision === 'SWAP') {
     const symbolOut = cleanText(evaluation.symbolOut);
@@ -427,7 +478,7 @@ export function selectTradesForSymbol(trades, symbol) {
       at: toIso(t.swappedOutAt),
       symbolOut: t.symbolOut ?? null,
       symbolIn: t.symbolIn ?? null,
-      rationale: cleanText(t.rationale),
+      rationale: renderMotive(t.rationale),
       // WHOSE WORDS (review L5-F2). `This piece today` renders the SAME field
       // the tape's trade card does; one rule, so the two cannot describe one
       // swap differently. Null where the model wrote them.

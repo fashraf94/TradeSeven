@@ -85,21 +85,106 @@ describe('the trade card', () => {
     expect(html).not.toContain('haiku');
   });
 
-  it('the provenance-code guard CAN fail: the cron embeds `guardrail_stopLoss` in the rationale it writes (review L5-F3)', () => {
-    // The HOSTILE RENDER row above asserts `not.toContain('guardrail_')`
-    // against a fixture whose rationale never had the token — a row that
-    // cannot fail under the defect it names. This one uses the string the cron
-    // ACTUALLY writes (agent-evaluate.js ~2121). It is recorded as a copy
-    // question for the founder, not silently edited: the sentence is the
-    // engine's own and C1 renders a motive verbatim. What ships today is the
-    // token, correctly labelled `The system's reason`.
+  it('the provenance code is TRANSLATED, never rendered raw (D-80, ruling 1)', () => {
+    // This row's expectation was `toContain('guardrail_stopLoss')` at
+    // `112b307d` — the A2 review recorded the token as a copy question for the
+    // founder (L5-F3) rather than editing the engine's verbatim sentence on
+    // its own authority. Ruled: translate. The fixture is the string the cron
+    // ACTUALLY writes (agent-evaluate.js:2121).
     const forced = { ...HOSTILE_TRADE, source: 'guardrail', rationale: 'Guardrail override (guardrail_stopLoss): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.' };
     const html = tradeHtml(forced);
     expect(html).toContain('The system&#x27;s reason');
-    // DOCUMENTED, NOT ASSERTED-AWAY: the token is on screen inside the
-    // engine's verbatim sentence. If the founder rules it must go, this row is
-    // where the expectation flips.
-    expect(html).toContain('guardrail_stopLoss');
+    expect(html).toContain('Guardrail override (stop-loss): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+    expect(html).not.toContain('guardrail_stopLoss');
+    expect(html).not.toContain('guardrail_');
+  });
+
+  it('one row per table entry — the three ruled guardrail types (D-80)', () => {
+    const motive = (token) => tradeHtml({
+      ...HOSTILE_TRADE, source: 'guardrail',
+      rationale: `Guardrail override (${token}): forcing exit → MOS.`,
+    });
+    expect(motive('guardrail_stopLoss')).toContain('Guardrail override (stop-loss): forcing exit → MOS.');
+    expect(motive('guardrail_trailingStop')).toContain('Guardrail override (trailing stop): forcing exit → MOS.');
+    expect(motive('guardrail_profitTarget')).toContain('Guardrail override (profit target): forcing exit → MOS.');
+    for (const token of Object.keys(COPY.guardrailTypeWords)) {
+      expect(motive(token)).not.toContain(token);
+    }
+  });
+
+  it('an UNRULED token loses the parenthetical entirely (D-80)', () => {
+    // `guardrail_max_sector_weight` (agentGuardrails.js:570) has no ruled
+    // words, and `hard` is the cron's own fallback when sourceNote is null.
+    // Neither is a fact a player can read, so neither renders.
+    const sector = tradeHtml({
+      ...HOSTILE_TRADE, source: 'guardrail',
+      rationale: 'Guardrail override (guardrail_max_sector_weight): sector cap breached. Forcing exit → MOS.',
+    });
+    expect(sector).toContain('Guardrail override: sector cap breached. Forcing exit → MOS.');
+    expect(sector).not.toContain('guardrail_max_sector_weight');
+    expect(sector).not.toContain('Guardrail override (');
+
+    const hard = tradeHtml({
+      ...HOSTILE_TRADE, source: 'guardrail',
+      rationale: 'Guardrail override (hard): hard threshold breach.',
+    });
+    expect(hard).toContain('Guardrail override: hard threshold breach.');
+    expect(hard).not.toContain('(hard)');
+  });
+
+  it('the translation touches ONLY the code parenthetical — the engine\'s numbers survive (D-80)', () => {
+    // agentGuardrails.js:557 writes its own statusMessage with no code
+    // parenthetical but WITH a percentage in brackets; the R11 pass writes
+    // `(R11)`. A rule that dropped every bracket would eat both.
+    const statusMessage = tradeHtml({
+      ...HOSTILE_TRADE, source: 'guardrail',
+      rationale: 'Guardrail override: stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.',
+    });
+    expect(statusMessage).toContain('(-9.24%)');
+    const r11 = tradeHtml({
+      ...HOSTILE_TRADE, source: 'risk_manager',
+      rationale: 'Deterministic guardrail enforcement during gameplan suppression (R11).',
+    });
+    expect(r11).toContain('(R11)');
+  });
+
+  it('the model\'s own words are never rewritten (C1)', () => {
+    // ONLY the engine's own sentence is touched, and the pattern's anchor is
+    // what makes that true — a rationale the model wrote keeps every bracket
+    // it typed, including one that looks like a code.
+    const agent = tradeHtml({
+      ...HOSTILE_TRADE, source: 'haiku',
+      rationale: 'GILD (stopLoss territory, by my read) has stalled at the 200-day.',
+    });
+    expect(agent).toContain('The agent&#x27;s own words');
+    expect(agent).toContain('(stopLoss territory, by my read)');
+
+    // …and a model sentence that DOES open with the engine's prefix is
+    // engine-authored under the shipped rule, so it is translated AND
+    // labelled the system's — one rule, not two that can disagree.
+    const looksEngine = tradeHtml({
+      ...HOSTILE_TRADE, source: 'haiku',
+      rationale: 'Guardrail override (guardrail_stopLoss): forcing exit → MOS.',
+    });
+    expect(looksEngine).toContain('The system&#x27;s reason');
+    expect(looksEngine).toContain('Guardrail override (stop-loss): forcing exit → MOS.');
+  });
+
+  it('SOURCE TRIPWIRE — the three words are the founder\'s existing swap-ledger taxonomy', () => {
+    // The words are not invented by this phase. If leagueSwapLedger.js renames
+    // one of the three, this row reds rather than letting two surfaces call
+    // one guardrail two different things.
+    const ledger = readFileSync(new URL('../../components/League/battleArena/leagueSwapLedger.js', import.meta.url), 'utf8');
+    for (const [token, words] of Object.entries(COPY.guardrailTypeWords)) {
+      expect(ledger).toContain(`${token}: '${words}'`);
+    }
+  });
+
+  it('SOURCE TRIPWIRE — the cron still composes the parenthetical this rule anchors on', () => {
+    const cron = readFileSync(new URL('../../../api/cron/agent-evaluate.js', import.meta.url), 'utf8');
+    expect(cron).toContain('rationale: `Guardrail override (${result.sourceNote || \'hard\'}): ${overrideNote}`');
+    const guardrails = readFileSync(new URL('../../../api/_utils/agentGuardrails.js', import.meta.url), 'utf8');
+    expect(guardrails).toContain('sourceNote: `guardrail_${forcedType}`');
   });
 
   it('never renders the feed `message` — it is the status line, not the motive (hazard 24)', () => {

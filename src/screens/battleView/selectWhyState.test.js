@@ -20,6 +20,9 @@ import {
   namesSymbol,
   symbolPattern,
   deriveTierPrices,
+  renderMotive,
+  isEngineAuthoredMotive,
+  ENGINE_MOTIVE_PREFIXES,
   SWAP_FAILED_PREFIX,
   GUARDRAIL_SOURCE_PREFIX,
   GUARDRAIL_FORCED_EXIT,
@@ -121,7 +124,11 @@ describe('the branches, in order', () => {
     // null on a downgraded HOLD (agent-evaluate.js ~2634-2635).
     expect(s.symbolOut).toBe('SLB');
     expect(s.symbolIn).toBe('DVN');
-    expect(s.rationale).toBe(evaluation.rationale);
+    // Verbatim EXCEPT the provenance parenthetical, which D-80 translates —
+    // the sentence the guardrail wrote, in words a player can read.
+    expect(s.rationale).toBe('Guardrail override (stop-loss): SLB breached the -8% stop; forcing exit to DVN.');
+    expect(s.rationale).toBe(renderMotive(evaluation.rationale));
+    expect(s.rationale).not.toContain('guardrail_');
   });
 
   it('D-70 — the fifth state also wins when the forced swap THREW (both gates match; the guardrail is the subject)', () => {
@@ -537,5 +544,80 @@ describe('the state carries the tick\'s triggers (A2.1, D-78)', () => {
     // …and the cron persists the TYPE, not the gate's detail string.
     const cron = readFileSync(new URL('../../../api/cron/agent-evaluate.js', import.meta.url), 'utf8');
     expect(cron).toContain('triggers: triggers.map(t => t.type)');
+  });
+});
+
+describe('renderMotive — the provenance code, translated or dropped (D-80, ruling 1)', () => {
+  const forced = (token) => `Guardrail override (${token}): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.`;
+
+  it('translates each of the three ruled types into its words', () => {
+    expect(renderMotive(forced('guardrail_stopLoss')))
+      .toBe('Guardrail override (stop-loss): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+    expect(renderMotive(forced('guardrail_trailingStop')))
+      .toBe('Guardrail override (trailing stop): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+    expect(renderMotive(forced('guardrail_profitTarget')))
+      .toBe('Guardrail override (profit target): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+  });
+
+  it('drops the parenthetical for any other token, including the cron\'s own `hard` fallback', () => {
+    expect(renderMotive(forced('guardrail_max_sector_weight')))
+      .toBe('Guardrail override: stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+    expect(renderMotive(forced('hard')))
+      .toBe('Guardrail override: stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+    expect(renderMotive(forced('guardrail_somethingRuledLater')))
+      .toBe('Guardrail override: stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+  });
+
+  it('NO `_`-joined code survives, whichever branch runs', () => {
+    for (const token of ['guardrail_stopLoss', 'guardrail_trailingStop', 'guardrail_profitTarget', 'guardrail_max_sector_weight', 'guardrail_future_thing']) {
+      expect(renderMotive(forced(token))).not.toContain('_');
+    }
+  });
+
+  it('touches ONLY the anchored parenthetical — the engine\'s numbers and the R11 stamp survive', () => {
+    const statusMessage = 'Guardrail override: stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.';
+    expect(renderMotive(statusMessage)).toBe(statusMessage);
+    const r11 = 'Deterministic guardrail enforcement during gameplan suppression (R11).';
+    expect(renderMotive(r11)).toBe(r11);
+    const risk = 'Risk manager: drawdown -7.2% (below the cut threshold), rotating GILD → MOS.';
+    expect(renderMotive(risk)).toBe(risk);
+  });
+
+  it('leaves the model\'s own words alone, and trims exactly as the panel does', () => {
+    const agent = 'GILD (stopLoss territory, by my read) has stalled at the 200-day.';
+    expect(renderMotive(agent)).toBe(agent);
+    expect(renderMotive(`  ${agent}\n`)).toBe(agent);
+    expect(renderMotive('   ')).toBeNull();
+    expect(renderMotive(null)).toBeNull();
+    expect(renderMotive(42)).toBeNull();
+  });
+
+  it('MUTATION — the anchor is an ENGINE motive prefix, so only an engine sentence can be rewritten', () => {
+    // The rule has no separate authorship conjunct, deliberately: one that
+    // could never fire is not a guard. This row is what keeps that true — if
+    // `Guardrail override` stops being an engine prefix, the translation is
+    // silently rewriting prose it has no licence to touch.
+    expect(ENGINE_MOTIVE_PREFIXES).toContain('Guardrail override');
+    expect(isEngineAuthoredMotive(forced('guardrail_stopLoss'))).toBe(true);
+    expect(isEngineAuthoredMotive(renderMotive(forced('guardrail_stopLoss')))).toBe(true);
+    // …and the translation cannot change whose words a sentence is.
+    expect(isEngineAuthoredMotive(renderMotive(forced('hard')))).toBe(true);
+  });
+
+  it('the panel and the trades list render the SAME translated text (BUILD_RULES §9)', () => {
+    const rationale = forced('guardrail_stopLoss');
+    const state = selectWhyState(
+      { timestamp: TS, decision: 'SWAP', symbolOut: 'GILD', symbolIn: 'MOS', rationale },
+      'GILD',
+      LAST,
+    );
+    const [trade] = selectTradesForSymbol(
+      [{ symbolOut: 'GILD', symbolIn: 'MOS', swappedOutAt: TS, rationale, source: 'guardrail' }],
+      'GILD',
+    );
+    expect(state.rationale).toBe(renderMotive(rationale));
+    expect(trade.rationale).toBe(state.rationale);
+    expect(state.footer).toBe(COPY.motiveSystem);
+    expect(trade.footer).toBe(COPY.motiveSystem);
   });
 });
