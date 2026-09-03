@@ -119,13 +119,26 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // trigger wakes the decider — it is not a rule the agent acts on, and this
   // line never becomes an "alert level".
   //
-  // ONE type has a ruled string. api/_utils/agentTriggerGate.js also persists
-  // `forced_open`, `forced_close`, `threshold_proximity`, `bench_outperformance`,
-  // `vwap_deviation`, `bandwidth_squeeze`, `nr7_contraction` and `news_catalyst`;
-  // each needs its own founder-ruled sentence (proposals are in the A2 handover).
-  // An unruled or unknown type renders NOTHING — never a raw type string.
+  // ALL NINE persisted types are now ruled (D-81; the addendum's ruling 2
+  // accepted the A2 handover's §5 proposals with one edit — `near`, not
+  // `nearing`, because a piece's distance to a tier is a STATE and `nearing`
+  // is a motion the surface cannot see). Each names a FACT ABOUT WHY THE
+  // MODEL WAS WOKEN and never what it will do: a trigger is the gate's reason
+  // for running the tick, not a rule the agent acts on (D-78).
+  //
+  // An UNKNOWN type still renders NOTHING — never a raw type string. The gate
+  // is the only writer, and a tenth type added there arrives here unruled and
+  // silent until it has its own sentence.
   wokenByType: Object.freeze({
     price_drop: 'Woken by a price drop',
+    forced_open: 'Woken by the first check of the battle',
+    forced_close: 'Woken by the final hour',
+    threshold_proximity: 'Woken by a piece near a scoring tier',
+    bench_outperformance: 'Woken by a bench name outrunning the book',
+    vwap_deviation: 'Woken by a move away from the day\'s average price',
+    bandwidth_squeeze: 'Woken by a volatility squeeze',
+    nr7_contraction: 'Woken by a narrow-range day',
+    news_catalyst: 'Woken by a news story on a piece',
   }),
   wokenBy: (triggers) => {
     if (!Array.isArray(triggers)) return null;

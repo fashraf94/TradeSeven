@@ -266,10 +266,13 @@ describe('the check card', () => {
     expect(html).not.toContain('Read more');
   });
 
-  it('says why the tick ran, when the type is ruled (D-78)', () => {
+  it('says why the tick ran, for every ruled type (D-78, D-81)', () => {
     expect(checkHtml(check({ triggers: ['price_drop'] }))).toContain('Woken by a price drop');
-    expect(checkHtml(check({ triggers: ['news_catalyst'] }))).not.toContain('Woken by');
+    expect(checkHtml(check({ triggers: ['news_catalyst'] }))).toContain('Woken by a news story on a piece');
     expect(checkHtml(check({ triggers: ['news_catalyst'] }))).not.toContain('news_catalyst');
+    // …and an unknown type is silent, never a raw string.
+    expect(checkHtml(check({ triggers: ['earnings_gap'] }))).not.toContain('Woken by');
+    expect(checkHtml(check({ triggers: ['earnings_gap'] }))).not.toContain('earnings_gap');
   });
 });
 

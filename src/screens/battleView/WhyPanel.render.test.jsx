@@ -363,8 +363,20 @@ describe('Why? V2 — `Woken by …` (A2.1, D-78)', () => {
     expect(html).not.toContain('-0.5');
   });
 
-  it('MUTATION ROW — an unruled or unknown trigger type renders NOTHING, never a raw type string', () => {
-    for (const type of ['threshold_proximity', 'news_catalyst', 'forced_open', 'vwap_deviation', 'nr7_contraction', 'not_a_real_type']) {
+  it('every ruled type renders its own sentence, and never its raw type (D-81)', () => {
+    // renderToString escapes the apostrophe in `the day's average price`, so
+    // the sentences are compared in their escaped form — the same form the
+    // browser renders back as the ruled string.
+    const escape = (t) => t.replace(/'/g, '&#x27;');
+    for (const [type, sentence] of Object.entries(COPY.wokenByType)) {
+      const html = renderRow({ ...HELD, triggers: [type] });
+      expect(html).toContain(escape(sentence));
+      expect(html).not.toContain(type);
+    }
+  });
+
+  it('MUTATION ROW — an UNKNOWN type renders NOTHING, never a raw type string', () => {
+    for (const type of ['not_a_real_type', 'earnings_gap']) {
       const html = renderRow({ ...HELD, triggers: [type] });
       expect(html).not.toContain('Woken by');
       expect(html).not.toContain(type);
@@ -372,7 +384,8 @@ describe('Why? V2 — `Woken by …` (A2.1, D-78)', () => {
   });
 
   it('the first RULED type in the persisted order wins; no triggers renders nothing', () => {
-    expect(renderRow({ ...HELD, triggers: ['forced_open', 'price_drop'] })).toContain('Woken by a price drop');
+    expect(renderRow({ ...HELD, triggers: ['forced_open', 'price_drop'] })).toContain('Woken by the first check of the battle');
+    expect(renderRow({ ...HELD, triggers: ['not_a_real_type', 'price_drop'] })).toContain('Woken by a price drop');
     expect(renderRow({ ...HELD, triggers: [] })).not.toContain('Woken by');
     expect(renderRow(HELD)).not.toContain('Woken by');
   });

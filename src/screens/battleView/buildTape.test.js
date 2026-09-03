@@ -436,16 +436,17 @@ describe('`N checks · no change` — every conjunct of D-77', () => {
 
   it('MUTATION ROW (review L1-F6) — two quiet checks whose CARDS would differ never become one line', () => {
     // Every entry carries a trigger (the cron writes one only when
-    // `shouldEvaluate` is true) and exactly one type has a ruled string, so
-    // this is the normal case, not an edge one: check 1 renders `Woken by a
-    // price drop`, check 2 renders nothing. Collapsing them deleted a line the
+    // `shouldEvaluate` is true), and since D-81 all nine persisted types have
+    // their own sentence — so adjacent quiet checks differ in what their cards
+    // render whenever the gate woke them for different reasons, which is the
+    // normal case rather than an edge one. Collapsing them deleted a line the
     // player was shown, while every D-77 data conjunct agreed.
     const items = buildCheckEntries([
       check('14:00', { triggers: ['price_drop'] }),
-      check('14:15', { triggers: ['threshold_proximity'] }),
+      check('14:15', { triggers: ['news_catalyst'] }),
     ], {}, []);
     expect(COPY.wokenBy(items[0].triggers)).toBe('Woken by a price drop');
-    expect(COPY.wokenBy(items[1].triggers)).toBeNull();
+    expect(COPY.wokenBy(items[1].triggers)).toBe('Woken by a news story on a piece');
     expect(run(items).map((f) => f._type)).toEqual([TAPE_KIND.CHECK, TAPE_KIND.CHECK]);
     // …and two checks that WOULD render the same line still fold.
     const same = buildCheckEntries([
@@ -454,12 +455,14 @@ describe('`N checks · no change` — every conjunct of D-77', () => {
     ], {}, []);
     expect(run(same)).toHaveLength(1);
     expect(run(same)[0].count).toBe(2);
-    // Two UNRULED types both render nothing, so they are the same line too —
-    // the key is the rendered string, not the raw type.
+    // Two UNKNOWN types both render nothing, so they are the same line too —
+    // the key is the RENDERED STRING, not the raw type.
     const bothSilent = buildCheckEntries([
-      check('14:00', { triggers: ['threshold_proximity'] }),
-      check('14:15', { triggers: ['news_catalyst'] }),
+      check('14:00', { triggers: ['earnings_gap'] }),
+      check('14:15', { triggers: ['sector_rotation'] }),
     ], {}, []);
+    expect(COPY.wokenBy(['earnings_gap'])).toBeNull();
+    expect(COPY.wokenBy(['sector_rotation'])).toBeNull();
     expect(run(bothSilent)).toHaveLength(1);
   });
 

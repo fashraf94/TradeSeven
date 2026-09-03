@@ -525,14 +525,37 @@ describe('the state carries the tick\'s triggers (A2.1, D-78)', () => {
     expect(s.triggers).toEqual(['price_drop']);
   });
 
-  it('MUTATION ROW — only a RULED type produces copy; an unknown one renders nothing (D-78)', () => {
+  it('ALL NINE persisted types have their ruled sentence (D-81)', () => {
     expect(COPY.wokenBy(['price_drop'])).toBe('Woken by a price drop');
-    for (const type of ['forced_open', 'forced_close', 'threshold_proximity', 'bench_outperformance', 'vwap_deviation', 'bandwidth_squeeze', 'nr7_contraction', 'news_catalyst', 'made_up']) {
+    expect(COPY.wokenBy(['forced_open'])).toBe('Woken by the first check of the battle');
+    expect(COPY.wokenBy(['forced_close'])).toBe('Woken by the final hour');
+    // `near`, not `nearing`: the addendum's one edit to the handover's
+    // proposals — a piece's distance to a tier is a STATE, and `nearing` is a
+    // motion this surface cannot see.
+    expect(COPY.wokenBy(['threshold_proximity'])).toBe('Woken by a piece near a scoring tier');
+    expect(COPY.wokenBy(['bench_outperformance'])).toBe('Woken by a bench name outrunning the book');
+    expect(COPY.wokenBy(['vwap_deviation'])).toBe('Woken by a move away from the day\'s average price');
+    expect(COPY.wokenBy(['bandwidth_squeeze'])).toBe('Woken by a volatility squeeze');
+    expect(COPY.wokenBy(['nr7_contraction'])).toBe('Woken by a narrow-range day');
+    expect(COPY.wokenBy(['news_catalyst'])).toBe('Woken by a news story on a piece');
+    expect(Object.keys(COPY.wokenByType)).toHaveLength(9);
+  });
+
+  it('MUTATION ROW — an UNKNOWN type still renders nothing, never a raw type string (D-78)', () => {
+    // The gate is the only writer; a tenth type added there arrives here
+    // unruled and SILENT until it has its own sentence.
+    for (const type of ['made_up', 'earnings_gap', 'sector_rotation', '']) {
       expect(COPY.wokenBy([type])).toBeNull();
     }
     expect(COPY.wokenBy([])).toBeNull();
     expect(COPY.wokenBy(null)).toBeNull();
     expect(COPY.wokenBy('price_drop')).toBeNull();
+    // …and no sentence is ever a raw type.
+    for (const [type, sentence] of Object.entries(COPY.wokenByType)) {
+      expect(sentence).not.toContain(type);
+      expect(sentence).not.toContain('_');
+      expect(sentence.startsWith('Woken by ')).toBe(true);
+    }
   });
 
   it('TRIPWIRE — the trigger TYPES are the ones the gate writes, read from its source', () => {
