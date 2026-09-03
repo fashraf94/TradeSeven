@@ -324,6 +324,44 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     ? `Showing ${n} ${symbol} ${n === 1 ? 'entry' : 'entries'}`
     : 'Showing the whole tape'),
 
+  // ── What KIND of entry this is (flip-prep, extends D-84) ──────────────────
+  //
+  // D-84 made the tape's four visual CLASSES unmistakable — speech, the
+  // player's messages, engine records, directive cards. This names the kinds
+  // INSIDE the speech class, which the eye cannot separate: a bench note, a
+  // trade narration, the seeded opener and an answer to something the player
+  // typed all arrive as the same left bubble in the same voice, and only the
+  // record says which is which.
+  //
+  // FROM THE PERSISTED TYPE, NEVER FROM THE TEXT. Every value below is one the
+  // server writes on the exchange itself — `first_message` (decide.js:1639,
+  // ensure-opener.js:99), `anticipation` (voiceLayerAnticipation.js:200),
+  // `trade_narration` (voiceLayerTradeNarration.js:203) — so an eyebrow is a
+  // fact about the record rather than a reading of the prose. Guessing from
+  // the words is exactly the class of inference hazard 24 forbids elsewhere on
+  // this screen, and it would be wrong the moment a character mentions the
+  // bench in an ordinary reply.
+  //
+  // AN UNKNOWN TYPE GETS NO EYEBROW. A new server type must reach the design
+  // chat and get a word before it reaches the screen; falling back to a
+  // neighbour's label would put a name on something nobody has named.
+  //
+  // `auto_debrief` is deliberately absent: it already has the shipped
+  // `Post-Market Debrief` eyebrow (RENDER_CONFIG), and one exchange with two
+  // eyebrows is worse than one with none.
+  tapeKindEyebrow: (messageType, hasUserHalf) => {
+    if (messageType === 'first_message') return 'Opener';
+    if (messageType === 'anticipation') return 'Bench note';
+    if (messageType === 'trade_narration') return 'Trade note';
+    // `Reply` is a claim about a PAIR — the player wrote and the character
+    // answered — so it needs the user half to exist. `deriveChatMessages`
+    // defaults a legacy exchange with no type to `user_initiated`, and one of
+    // those with no `userMessage` is an agent-initiated exchange nobody
+    // labelled: calling its answer a reply would invent the question.
+    if (messageType === 'user_initiated' && hasUserHalf) return 'Reply';
+    return null;
+  },
+
   // ── The tape (A2.2, D-72 / D-77) ──────────────────────────────────────────
   // A trade card per EXECUTED swap: when, the pair, the tier. The tier is the
   // scoring tier the closed position sat in, from the trade record itself.
@@ -348,21 +386,23 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // `Acted`, unchanged wording).
   fromDirective: '↳ from directive',
 
-  // A check card per decided check: the tick's own header and its state label,
-  // in one line, then the first sentence of the rationale.
+  // A check card per decided check: what KIND of entry it is, the tick's own
+  // slot, and its state label, in one line — then the first sentence of the
+  // rationale. `Status check` is the check card's answer to the same question
+  // `Bench note` and `Opener` answer for the speech kinds: a stream of records
+  // and bubbles should say what each thing IS without the player parsing it.
   checkCardLabel: (iso, label) => {
-    const header = BATTLE_VIEW_COPY.atCheck(iso);
-    if (!header) return label ?? null;
-    if (!label) return header;
-    // The two absence labels already END in "at this check" (D-65, D-69), so
-    // the full header in front of them said "check" three times in one line
-    // (review L5-F7). The time alone carries the same fact. Composed from the
-    // ruled strings either way — no third string is invented here.
-    if (label.includes('at this check')) {
-      const t = slotLabel(iso);
-      return t ? `${t} · ${label}` : label;
-    }
-    return `${header} · ${label}`;
+    const t = slotLabel(iso);
+    if (!t) return label ?? null;
+    // THE TWO ABSENCE LABELS ALREADY END IN "at this check" (D-65, D-69), so
+    // the kind word in front of them says "check" twice in one line (the
+    // stutter review L5-F7 found in the previous composition, in its new
+    // shape). The slot alone carries the same fact, and the ruled string is
+    // untouched — those two are the founder's words and rewording them to fit
+    // an eyebrow would be a ruling, not a composition.
+    if (label && label.includes('at this check')) return `${t} · ${label}`;
+    if (!label) return `Status check · ${t}`;
+    return `Status check · ${t} · ${label}`;
   },
   readMore: 'Read more',
   // D-89 — the book panel's own close. The glyph is decorative; this is the

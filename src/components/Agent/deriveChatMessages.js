@@ -71,6 +71,14 @@ export function deriveChatMessages(chatExchanges) {
         : null,
       isAutoDebrief: !!ex.isAutoDebrief,
       messageType,
+      // Whether the exchange has a USER HALF that renders (flip-prep, item 2).
+      // `Reply` is a claim about a PAIR — the player wrote and the character
+      // answered — and `messageType` alone cannot make it: the default above
+      // is `user_initiated`, so a legacy exchange with no type and no
+      // `userMessage` would have had its answer labelled a reply to a question
+      // nobody asked. This is the same conjunct that decides whether the user
+      // bubble renders, carried onto the agent half rather than re-derived.
+      _hasUserHalf: !isAgentInitiated,
       mode: ex.mode || 'battle',
       timestamp: ts,
       _serverIndex: i,

@@ -481,7 +481,7 @@ describe('the piece scope (A2.3, D-73) — the door, the chip, and the way back'
     expect(column).toBeTruthy();
     expect(column.querySelectorAll('[data-tape-kind]').length).toBe(n);
     expect(column.textContent).toContain('MU → SLB');
-    expect(column.textContent).toContain('At the 12:45 PM check');
+    expect(column.textContent).toContain('Status check · 12:45 PM');
     expect(column.textContent).not.toContain('Protect the lead into the close');
     expect(column.querySelector('[data-receipt]')).toBeNull();
   });
@@ -606,7 +606,7 @@ describe('the piece scope (A2.3, D-73) — the door, the chip, and the way back'
     expect(container.querySelector('[data-tape-scope="SLB"]')).toBeNull();
     expect(container.querySelectorAll('[data-tape-kind]').length).toBeGreaterThanOrEqual(before);
     // The trade card that is not about SLB is back.
-    expect(container.textContent).toContain('At the 12:45 PM check');
+    expect(container.textContent).toContain('Status check · 12:45 PM');
   });
 
   it('the ROSTER is the battle\'s universe under the flag — a bench name is an entity', () => {
@@ -655,7 +655,7 @@ describe('the tape (A2.2, D-72) — one stream, built in the screen, rendered in
     const check = container.querySelector('[data-tape-kind="check"]');
     expect(check).toBeTruthy();
     // The SAME label the Why? panel gives this tick (BUILD_RULES §9).
-    expect(check.textContent).toContain('At the 12:45 PM check · Argued for a swap · held by a guardrail');
+    expect(check.textContent).toContain('Status check · 12:45 PM · Argued for a swap · held by a guardrail');
     expect(check.textContent).toContain('SLB lost its bid; swap SLB for DVN.');
   });
 

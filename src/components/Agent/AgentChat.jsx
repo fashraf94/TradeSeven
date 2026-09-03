@@ -211,7 +211,7 @@ function ExecutionCard({ directive, receipt }) {
   );
 }
 
-function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending, onSymbolClick, knownTickers, receipts }) {
+function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending, onSymbolClick, knownTickers, receipts, showKindEyebrow = false }) {
   if (message.role === 'user') {
     return (
       <motion.div
@@ -242,6 +242,19 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
   const cfg = RENDER_CONFIG[messageType] || RENDER_CONFIG.user_initiated;
   const accent = cfg.accent;
   const label = cfg.label;
+  // WHAT KIND OF THING THIS IS (flip-prep, extends D-84). D-84 separated the
+  // four visual CLASSES; this names the kinds inside the speech class, which
+  // the eye cannot separate — a bench note, a trade narration, the seeded
+  // opener and an answer to something the player typed all arrive as the same
+  // bubble in the same voice. Read off the persisted `messageType`, never
+  // inferred from the words.
+  //
+  // Only where the shipped `label` is absent: `auto_debrief` already has
+  // `Post-Market Debrief`, and one bubble with two eyebrows is worse than one
+  // with none. Controller-gated by the caller, so flag-off emits nothing.
+  const kindEyebrow = (showKindEyebrow && !label)
+    ? BATTLE_VIEW_COPY.tapeKindEyebrow(messageType, message.role === 'agent' && message._hasUserHalf === true)
+    : null;
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -264,6 +277,22 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
         }}>
           <span>{label.emoji}</span>
           <span>{label.text}</span>
+        </div>
+      ) : null}
+      {kindEyebrow ? (
+        <div
+          data-tape-kind-eyebrow={kindEyebrow}
+          style={{
+            color: cssVar('text-muted'),
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            marginBottom: 3,
+            paddingLeft: 4,
+          }}
+        >
+          {kindEyebrow}
         </div>
       ) : null}
       <div style={{
@@ -1219,6 +1248,11 @@ export default function AgentChat({
                   onSymbolClick={onSymbolClick}
                   knownTickers={knownTickers}
                   receipts={receipts}
+                  // Gated on the TAPE, not on `controllerCopy`: the eyebrow
+                  // names a kind of tape entry, so it belongs where the stream
+                  // is the tape. Flag-off `tapeEntries` is null and the bubbles
+                  // are byte-identical.
+                  showKindEyebrow={Array.isArray(tapeEntries)}
                 />
               );
             }

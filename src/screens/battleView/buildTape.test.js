@@ -597,7 +597,7 @@ describe('a check is named by its SLOT, a trade by its instant (D-83)', () => {
     // `Checked 12:30 PM`.
     const entry = { ...check('16:31'), timestamp: TS('16:31:07') };
     const [card] = buildCheckEntries([entry], {}, []);
-    expect(COPY.checkCardLabel(card.at, card.label)).toBe('At the 12:30 PM check · Held');
+    expect(COPY.checkCardLabel(card.at, card.label)).toBe('Status check · 12:30 PM · Held');
     expect(COPY.atCheck(TS('16:30:02'))).toBe('At the 12:30 PM check');
     expect(COPY.fromCheck(TS('16:30:02'))).toBe('From the 12:30 PM check');
     // …and the ordering key is still the exact instant.
@@ -607,7 +607,7 @@ describe('a check is named by its SLOT, a trade by its instant (D-83)', () => {
 
   it('a 12:44:59 entry is still the 12:30 check', () => {
     const [card] = buildCheckEntries([{ ...check('16:44'), timestamp: TS('16:44:59') }], {}, []);
-    expect(COPY.checkCardLabel(card.at, card.label)).toBe('At the 12:30 PM check · Held');
+    expect(COPY.checkCardLabel(card.at, card.label)).toBe('Status check · 12:30 PM · Held');
   });
 
   it('the collapsed run ORDERS on the first check\'s exact instant and names no time at all', () => {
