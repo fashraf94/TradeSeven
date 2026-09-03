@@ -357,6 +357,51 @@ describe('`N checks · no change` — every conjunct of D-77', () => {
     expect('at' in folded[0]).toBe(false);
   });
 
+  it('THE PINNED CARD IS NEVER FOLDED — at any position in the run (D-89)', () => {
+    // `Read the full check` opens a named check's card, and a HOLD with words
+    // is `quiet` by D-77's conjuncts — so the ordinary target of that door is
+    // the ordinary member of a run. Excluding it from `joins` alone was NOT
+    // enough: the `else` branch puts a quiet check into a NEW run rather than
+    // letting it stand alone, so the pinned card was swallowed again by the
+    // very next member. It rendered only when it happened to be the LAST check
+    // in the document — which is the shape the first fixture had, so the
+    // mounted row passed while two of the three positions were broken.
+    const items = quietChecks(['14:00', '14:15', '14:30']);
+    const idOf = (i) => items[i].id;
+    const kinds = (out) => out.map((o) => [o._type, o.id, o.count ?? null]);
+
+    // FIRST: it stands alone and the two behind it still fold.
+    expect(kinds(collapseQuietChecks(items, idOf(0)))).toEqual([
+      [TAPE_KIND.CHECK, idOf(0), null],
+      [TAPE_KIND.CHECK_RUN, `tape-run-${idOf(1)}`, 2],
+    ]);
+
+    // LAST: the two in front of it fold and it stands alone.
+    expect(kinds(collapseQuietChecks(items, idOf(2)))).toEqual([
+      [TAPE_KIND.CHECK_RUN, `tape-run-${idOf(0)}`, 2],
+      [TAPE_KIND.CHECK, idOf(2), null],
+    ]);
+
+    // MIDDLE: it breaks contiguity, so each fragment is a run of ONE and the
+    // existing rule leaves those as the cards they are. A `2 checks · no
+    // change` line that skipped over an expanded card in its middle would be
+    // lying about the contiguous slice it stands for.
+    expect(kinds(collapseQuietChecks(items, idOf(1)))).toEqual([
+      [TAPE_KIND.CHECK, idOf(0), null],
+      [TAPE_KIND.CHECK, idOf(1), null],
+      [TAPE_KIND.CHECK, idOf(2), null],
+    ]);
+
+    // An id that names nothing in the stream changes nothing at all.
+    expect(kinds(collapseQuietChecks(items, 'tape-check-not-here'))).toEqual([
+      [TAPE_KIND.CHECK_RUN, `tape-run-${idOf(0)}`, 3],
+    ]);
+    // …and so does no pin, which is every caller but the door.
+    expect(kinds(collapseQuietChecks(items))).toEqual([
+      [TAPE_KIND.CHECK_RUN, `tape-run-${idOf(0)}`, 3],
+    ]);
+  });
+
   it('a run of ONE is left as the card it is', () => {
     const folded = run(quietChecks(['14:00']));
     expect(folded).toHaveLength(1);

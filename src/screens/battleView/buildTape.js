@@ -348,10 +348,17 @@ export function collapseQuietChecks(items, pinnedId = null) {
   };
 
   for (const item of items) {
+    // The card the player asked to read (D-89) is not foldable AT ALL — not
+    // into the run it interrupts, and not into the one that starts after it.
+    // Excluding it from `joins` alone was not enough: the `else` below puts a
+    // quiet check into a NEW run rather than letting it stand alone, so the
+    // pinned card was swallowed again by the very next member. It only ever
+    // rendered when it happened to be the LAST check in the document, which is
+    // the shape the first fixture had.
+    const pinned = pinnedId != null && item?.id === pinnedId;
     const joins = item?._type === TAPE_KIND.CHECK
       && item.quiet
-      // …and it is not the card the player asked to read (D-89).
-      && !(pinnedId != null && item.id === pinnedId)
+      && !pinned
       && (run.length === 0 || run[run.length - 1].runKey === item.runKey);
     if (joins) {
       run.push(item);
@@ -359,8 +366,9 @@ export function collapseQuietChecks(items, pinnedId = null) {
     }
     flush();
     // A quiet check whose run key DIFFERS from the run it just broke starts
-    // the next run rather than standing alone.
-    if (item?._type === TAPE_KIND.CHECK && item.quiet) run.push(item);
+    // the next run rather than standing alone — unless it is the pinned one,
+    // which stands alone by definition.
+    if (!pinned && item?._type === TAPE_KIND.CHECK && item.quiet) run.push(item);
     else out.push(item);
   }
   flush();
