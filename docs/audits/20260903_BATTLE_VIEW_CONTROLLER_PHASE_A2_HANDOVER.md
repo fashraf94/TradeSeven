@@ -6,7 +6,7 @@
 **Inputs:** `PHASE_A2_SEED_TAPE_AND_PIECE_V1.md` (the seed) and **`20260902_BATTLE_VIEW_CONTROLLER_PHASE_A2_PHASE0_REPORT.md` — Phase A2 rulings and amendments after Phase 0 (V1)**, which wins wherever the two disagree. Both were attached to the build session; the rulings document is committed on this branch as the Phase 0 report's companion.
 **Branch:** `claude/phase-a2-tape-piece-javcyf` — the branch the rulings document names. The harness assigned this session `claude/phase-a2-rulings-amendments-slkui4`; per the rulings document ("the harness-assigned branch of any later session is not used") and the founder's confirmation at session start, it is unused.
 **Base:** `056a4c14` (the Phase 0 report, this branch's docs-only first commit) on `bf4bc84f` = `origin/main`.
-**Commits:** A2.0 `b2c18b0f` · A2.1 `5ed5fa8c` · **A2.1b `ff98084f`** · A2.2 `57824041` · this handover and the ledger rows.
+**Commits:** A2.0 `b2c18b0f` · A2.1 `5ed5fa8c` · **A2.1b `ff98084f`** · A2.2 `57824041` · the handover and ledger rows `c9ecbd97` · **the adversarial review's confirmed fixes `a16e6d37` and after**.
 **Flag:** `BATTLE_VIEW_CONTROLLER_ENABLED = false`, unchanged. No new flag. Smoke override `?battleViewController=1`.
 **STOP:** this session ends here, for the founder's smoke after A2.2. **A2.3 (the piece scope) and A2.4 (the peek line and the desktop collapse) are the next session's**, as the rulings document sequences them. No PR opened.
 
@@ -100,7 +100,10 @@ Copy guard (`deskHonesty.test.js`, 197 rows, scans `battleViewCopy.js` and every
 47. **The deploy plan's fallback gate is a string match, by necessity.** The doc carries no `models` stamp, so `innerMonologue.strategy` beginning `Algorithmic selection` is the only available discriminator (Phase 0 §2.4 says so). A source tripwire reds if `decide.js` rewords the template, rather than letting the gate fail open and ship the template as the agent's plan.
 48. **The deploy plan renders model-authored prose verbatim**, exactly as Why? already renders `rationale` verbatim (C1). The copy guard scans source files, not persisted text, so a brief containing a forbidden verb would render it. That is the standing property of every verbatim surface on this screen, not a new one.
 49. **`Banked {n} pts` renders a negative value as it stands** (`Banked -3.2 pts`) — a locked loss is a scoreboard fact. `Banked 0.0 pts` likewise.
-50. **A2.1b is revertible in isolation** (`ff98084f`): reverting it removes `selectDeployPlan.js` and its guard entries, the two copy helpers, the panel's section and the screen's memo and props, and leaves A2.1's Why? V2 intact. It is the commit Sol's pass acts on.
+50. **A2.1b is revertible in isolation** (`ff98084f`): reverting it removes `selectDeployPlan.js` and its guard entries, the two copy helpers, the panel's section and the screen's memo and props, and leaves A2.1's Why? V2 intact. It is the commit Sol's pass acts on. **This was not true when A2.1b was written** — it introduced `TIER_LABEL`, which A2.2 then consumed, so the revert silently deleted the declaration and left every trade card throwing (review L5-F1). It is now a `tierLabel()` function neither commit's diff resembles, verified by performing the revert in a scratch worktree.
+51. **The motive's author is the RATIONALE, not `source`** (review L1-F3 / L1-F4). `isEngineAuthoredMotive` matches three prefixes — `Guardrail override`, `Risk manager:`, `Deterministic guardrail enforcement` — each pinned to its writer by a source tripwire. A new engine writer with a new sentence shape would be labelled the agent's, which is why the tripwires enumerate the shapes: whoever adds one sees the list.
+52. **A machinery-provenance code reaches the screen inside the engine's own verbatim sentence** (`Guardrail override (guardrail_stopLoss): …`). C1 renders a motive verbatim; hazard 29 keeps that class off the screen. **A founder copy question**, recorded rather than decided — the render test pins the token's presence, so flipping the expectation is a one-line change when it is ruled.
+53. **`{n} checks · no change` also requires the two cards to render the same line**, not only D-77's data conjuncts (review L1-F6). Every evaluation entry carries a trigger and exactly one type has a ruled string, so adjacent quiet checks routinely differed in what they showed while agreeing on every data conjunct — folding them deleted a line the player was shown. A scoring-tier crossing still folds: that is D-77's stated exclusion (the live score moves every tick and the board shows it), refuter-confirmed as design rather than defect, and now pinned by a row.
 
 ---
 
@@ -147,18 +150,26 @@ Nothing new was found outside the task in this session.
 
 ## 8. Verification
 
-- **Full suite:** 573 files, **9789 passed**, 63 skipped, 0 failed.
-- **`vite build`:** green (28.8 s; the pre-existing chunk-size warning only).
-- **Flag-off goldens:** `agentBattleScreen.tabbed.html` and `agentChat.tabbed.html` unchanged and passing — the first paint is byte-identical flag-off.
-- **Theme guards:** green with the three new files listed and their baselines committed alongside.
+- **Full suite:** 574 files, **9816 passed**, 63 skipped, 0 failed (9642 before the review pass).
+- **`vite build`:** green (the pre-existing chunk-size warning only).
+- **Flag-off goldens:** `agentBattleScreen.tabbed.html` and `agentChat.tabbed.html` unchanged and passing — the first paint is byte-identical flag-off. A new composition test closes the seam they could not see (§9).
+- **Theme guards:** green with the three new files listed and their baselines committed alongside, and both guards now assert the directory mechanically (hazard 34).
 - **Copy guard:** green.
-- **Adversarial review:** see §9 and `docs/audits/20260903_BATTLE_VIEW_CONTROLLER_PHASE_A2_BUILD_REVIEW.md`.
+- **Adversarial review:** `docs/audits/20260903_BATTLE_VIEW_CONTROLLER_PHASE_A2_BUILD_REVIEW.md`.
 
 ---
 
-## 9. Review
+## 9. Review — what it changed
 
-See the review record. It is cited from the PR the founder opens after the smoke.
+Five isolated lenses and two refuters; **43 findings raised, 31 CONFIRMED, 23 fixed on this branch**; 56 source mutations executed. The full record is the file above. What the founder should know:
+
+1. **A ruling was implemented wrong and the review put it back.** A2.2 discriminated the motive's author on `trades[].source`; ruling 5 named the **rationale**, and two independent findings proved the ruling right. `source` records who chose the *exit*, not who wrote the *sentence*, and it was wrong in both directions — a guardrail-forced swap that **executed** rendered the cron's sentence as the agent's words on one card while the card beside it called the same string the system's. That was the most severe finding of the review and it is routine, not exotic: any user stop-loss that fires and executes.
+2. **D-71's stated equivalence was false.** `deriveDueAt`'s clamp is blind to the calendar date, so the line claimed yesterday's check was today's on day 2 of a battle. Fixed with a day conjunct; a refuter then re-rated it LOW because multi-day battles are unreachable at HEAD (`AGENT_BATTLE_DURATION_MODE = 'fullday'` is hardcoded). Worth knowing when the D-14 multi-day arc lands.
+3. **A2.1b was not revertible in isolation** — the reason D-76 gave for making it its own commit. It is now, verified by actually reverting it.
+4. **The flag-off goldens could not see a tape leak** through the screen → chat wiring. Removing both flag gates leaked the whole tape into the shipped page with 3506 tests green. A new mounted composition test closes it.
+5. **Five of the selectors' C1 gates were unenforced at their call site** — every one of lens 4's five surviving mutations. The unit tests were strong; the wiring was not. The mounted suite now varies the subscribed document.
+6. **Eight findings are recorded and NOT fixed** (§5 of the record), each with a reason. One needs a founder ruling: the cron writes `Guardrail override (guardrail_stopLoss): …` into the rationale we render verbatim, so a machinery-provenance code reaches the screen. C1 says render verbatim; hazard 29 says no provenance codes. **May the parenthetical be dropped when rendering an engine motive?**
+7. **Two process defects are disclosed** rather than smoothed over: the five lenses shared one snapshot (which mutation-checking corrupts — one false red and two contradictory failures, both caught and re-verified), and four of the five were handed the Phase 0 report where the rulings document should have been. The build itself was written against the correct document, and the one lens that noticed reconstructed the binding text from the ledger and matched every ruled string.
 
 ---
 

@@ -24,6 +24,7 @@ import {
   MIN_RUN,
 } from './buildTape';
 import { WHY_KIND, isEngineAuthoredMotive, ENGINE_MOTIVE_PREFIXES } from './selectWhyState';
+import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { deriveReceipts } from './deriveReceipts';
 
 const T = (hhmm) => `2026-09-01T${hhmm}:00.000Z`;
@@ -380,8 +381,53 @@ describe('`N checks · no change` — every conjunct of D-77', () => {
     expect(keyUnder(filed)).toContain('dir_1:filed');
     expect(keyUnder(expired)).toContain('dir_1:expired');
     expect(keyUnder(filed)).not.toBe(keyUnder(expired));
-    // …and with no directive at all the key still carries the banked score.
-    expect(buildCheckEntries([check('14:00')], {}, [])[0].runKey).toBe('40|');
+    // …and with no directive and no ruled trigger the key is the banked score
+    // and two empty fields — banked | disposition | the rendered `Woken by`.
+    expect(buildCheckEntries([check('14:00')], {}, [])[0].runKey).toBe('40||');
+    expect(buildCheckEntries([check('14:00', { triggers: ['price_drop'] })], {}, [])[0].runKey)
+      .toBe('40||Woken by a price drop');
+  });
+
+  it('MUTATION ROW (review L1-F6) — two quiet checks whose CARDS would differ never become one line', () => {
+    // Every entry carries a trigger (the cron writes one only when
+    // `shouldEvaluate` is true) and exactly one type has a ruled string, so
+    // this is the normal case, not an edge one: check 1 renders `Woken by a
+    // price drop`, check 2 renders nothing. Collapsing them deleted a line the
+    // player was shown, while every D-77 data conjunct agreed.
+    const items = buildCheckEntries([
+      check('14:00', { triggers: ['price_drop'] }),
+      check('14:15', { triggers: ['threshold_proximity'] }),
+    ], {}, []);
+    expect(COPY.wokenBy(items[0].triggers)).toBe('Woken by a price drop');
+    expect(COPY.wokenBy(items[1].triggers)).toBeNull();
+    expect(run(items).map((f) => f._type)).toEqual([TAPE_KIND.CHECK, TAPE_KIND.CHECK]);
+    // …and two checks that WOULD render the same line still fold.
+    const same = buildCheckEntries([
+      check('14:00', { triggers: ['price_drop'] }),
+      check('14:15', { triggers: ['price_drop'] }),
+    ], {}, []);
+    expect(run(same)).toHaveLength(1);
+    expect(run(same)[0].count).toBe(2);
+    // Two UNRULED types both render nothing, so they are the same line too —
+    // the key is the rendered string, not the raw type.
+    const bothSilent = buildCheckEntries([
+      check('14:00', { triggers: ['threshold_proximity'] }),
+      check('14:15', { triggers: ['news_catalyst'] }),
+    ], {}, []);
+    expect(run(bothSilent)).toHaveLength(1);
+  });
+
+  it('a scoring-tier crossing still folds — the LIVE score is D-77\'s stated exclusion, not an oversight', () => {
+    // Refuter A REFUTED the claim that this is a defect: `scores.active` moves
+    // with price on nearly every tick and the board already shows it, which is
+    // the same reason D-77 excludes the live total. Pinned so the exclusion is
+    // a decision on the record rather than an accident.
+    const items = buildCheckEntries([
+      check('14:00', { scores: { active: 1, banked: 40, total: 41 } }),
+      check('14:15', { scores: { active: 14.5, banked: 40, total: 54.5 } }),
+    ], {}, []);
+    expect(run(items)).toHaveLength(1);
+    expect(run(items)[0].count).toBe(2);
   });
 
   it('MUTATION ROW — a TRADE between two quiet checks breaks the run: the position set changed', () => {

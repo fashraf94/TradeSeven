@@ -43,6 +43,7 @@
 import { toIso, toMillis } from '../../adapters/baggerbombAdapter';
 import { selectWhyState, splitSentences, isEngineAuthoredMotive } from './selectWhyState';
 import { directiveFilings } from './deriveReceipts';
+import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 
 export const TAPE_KIND = Object.freeze({
   TRADE: 'trade',
@@ -200,7 +201,17 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges) {
       rationale,
       firstSentence: splitSentences(rationale)[0] ?? null,
       quiet,
-      runKey: `${evaluation.scores?.banked ?? ''}|${dispositionAt(ms)}`,
+      // THE RUN KEY IS ALSO WHAT THE CARD WOULD SAY (review L1-F6, refuter A:
+      // CONFIRMED, and the NORMAL case rather than an edge one). D-77's
+      // conjuncts are about the DATA; a collapsed line also has to be honest
+      // about the DISPLAY it replaces. Every entry carries at least one
+      // trigger — the cron only writes one when `shouldEvaluate` is true — and
+      // exactly one type has a ruled string, so adjacent quiet checks
+      // routinely differ in what their cards render while agreeing on every
+      // data conjunct. Folding those two together deleted a line the player
+      // was shown. Two checks may only become one line when they would have
+      // rendered the same line.
+      runKey: `${evaluation.scores?.banked ?? ''}|${dispositionAt(ms)}|${COPY.wokenBy(state.triggers) ?? ''}`,
     });
   }
   return entries;
