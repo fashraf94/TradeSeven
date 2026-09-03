@@ -202,6 +202,46 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   askFollowUp: 'Ask a follow-up · 1 message',
   followUpPrefill: (symbol) => `About ${symbol} — `,
 
+  // ── The tape (A2.2, D-72 / D-77) ──────────────────────────────────────────
+  // A trade card per EXECUTED swap: when, the pair, the tier. The tier is the
+  // scoring tier the closed position sat in, from the trade record itself.
+  tradeCardLine: (iso, symbolOut, symbolIn, tier) => {
+    const t = etTime(iso);
+    const pair = `${symbolOut ?? '—'} → ${symbolIn ?? '—'}`;
+    const tierLabel = TIER_LABEL[tier];
+    return [t, pair, tierLabel].filter(Boolean).join(' · ');
+  },
+  // The points the closed position locked in — a scoreboard fact, from the
+  // trade record's own `lockedPoints`. Absent when the record carries none.
+  banked: (points) => {
+    if (typeof points !== 'number' || !Number.isFinite(points)) return null;
+    return `Banked ${points.toFixed(1)} pts`;
+  },
+  // WHOSE WORDS the motive is (ruling 5). The engine writes the rationale on
+  // the risk loop, the guardrail path and the R11 pass; only the model's own
+  // swap carries the agent's argument. An unlabelled system sentence under
+  // the agent's name is the C1 failure this pair exists to prevent.
+  motiveAgent: 'The agent\'s own words',
+  motiveSystem: 'The system\'s reason',
+  // The shipped echo on a swap the model attributed to a directive (D-51's
+  // `Acted`, unchanged wording).
+  fromDirective: '↳ from directive',
+
+  // A check card per decided check: the tick's own header and its state label,
+  // in one line, then the first sentence of the rationale.
+  checkCardLabel: (iso, label) => {
+    const header = BATTLE_VIEW_COPY.atCheck(iso);
+    if (!header) return label ?? null;
+    return label ? `${header} · ${label}` : header;
+  },
+  readMore: 'Read more',
+  // A run of consecutive checks that changed nothing a player can see (D-77):
+  // HOLD, not downgraded, no outage, banked score unchanged, the position set
+  // unchanged and the directive disposition unchanged. The live TOTAL is
+  // deliberately not among them — it moves with price on nearly every tick,
+  // and the board already shows it.
+  checksNoChange: (n) => `${n} checks · no change`,
+
   // ── This turn (A3) ─────────────────────────────────────────────────────────
   // Strict membership (D-49): only the current directive. `Filed {t}` is the
   // filing EXCHANGE's timestamp. No "for the ~{t} check" — filed is not heard

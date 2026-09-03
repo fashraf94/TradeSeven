@@ -42,6 +42,31 @@ const threadIdOf = (exchange) => {
 };
 
 /**
+ * Every directive-carrying exchange, in write order, FIRST FILING WINS per
+ * thread id (a thread id is minted once, chat.js; a duplicate would be a
+ * replay and must not move the filed time).
+ *
+ * Exported because the tape's "no change" rule needs to know WHICH directive
+ * was current at a given instant (D-77), and that answer must come from the
+ * same walk that produces the receipts — two walks of the same list is how
+ * the receipt line and the tape would start disagreeing (BUILD_RULES §9).
+ *
+ * @returns {Array<{ threadId: string, at: string|null }>} oldest first
+ */
+export function directiveFilings(chatExchanges) {
+  const filings = [];
+  if (!Array.isArray(chatExchanges)) return filings;
+  const seen = new Set();
+  for (const exchange of chatExchanges) {
+    const threadId = threadIdOf(exchange);
+    if (!threadId || seen.has(threadId)) continue;
+    seen.add(threadId);
+    filings.push({ threadId, at: toIso(exchange.timestamp) });
+  }
+  return filings;
+}
+
+/**
  * @param {Array} chatExchanges   battle.chatExchanges, in write order
  * @param {object|null} directive battle.directive — the single active slot
  * @param {string|null} battleStatus battle.status
@@ -54,17 +79,9 @@ export function deriveReceipts(chatExchanges, directive, battleStatus) {
   const receipts = {};
   if (!Array.isArray(chatExchanges) || chatExchanges.length === 0) return receipts;
 
-  // Every directive-carrying exchange, in write order, first filing wins per
-  // thread id (a thread id is minted once, chat.js; a duplicate would be a
-  // replay and must not move the filed time).
-  const filings = [];
-  for (const exchange of chatExchanges) {
-    const threadId = threadIdOf(exchange);
-    if (!threadId) continue;
-    if (receipts[threadId]) continue;
-    const at = toIso(exchange.timestamp);
+  const filings = directiveFilings(chatExchanges);
+  for (const { threadId, at } of filings) {
     receipts[threadId] = { state: RECEIPT_STATE.FILED, at };
-    filings.push({ threadId, at });
   }
   if (filings.length === 0) return receipts;
 

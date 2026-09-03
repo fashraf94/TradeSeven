@@ -227,3 +227,45 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
     expect(container.textContent).not.toContain('11:33');
   });
 });
+
+describe('the tape (A2.2, D-72) — one stream, built in the screen, rendered in the chat', () => {
+  it('the chat carries a trade card and a check card beside the messages', () => {
+    mount();
+    const cards = [...container.querySelectorAll('[data-tape-kind]')];
+    expect(cards.length).toBeGreaterThanOrEqual(2);
+
+    const trade = container.querySelector('[data-tape-kind="trade"]');
+    expect(trade).toBeTruthy();
+    // The pair, the time and the motive — from trades[], not the feed.
+    expect(trade.textContent).toContain('11:02 AM · MU → SLB');
+    expect(trade.textContent).toContain('MU rolled over; SLB leads energy.');
+    // No `source` on this record, so the motive is the system's by default —
+    // under-crediting the agent is the safe direction under C1.
+    expect(trade.textContent).toContain('The system\'s reason');
+    // The machinery code never reaches the screen (hazard 29, D-64).
+    expect(trade.textContent).not.toContain('haiku_decision');
+
+    const check = container.querySelector('[data-tape-kind="check"]');
+    expect(check).toBeTruthy();
+    // The SAME label the Why? panel gives this tick (BUILD_RULES §9).
+    expect(check.textContent).toContain('At the 12:47 PM check · Argued for a swap · held by a guardrail');
+    expect(check.textContent).toContain('SLB lost its bid; swap SLB for DVN.');
+  });
+
+  it('ONE SORT — the cards sit in time order among the messages, oldest first', () => {
+    mount();
+    // The tape's own entries, in DOM order: the 11:02 trade precedes the
+    // 12:47 check. A second array with its own sort could not guarantee this.
+    const kinds = [...container.querySelectorAll('[data-tape-kind]')].map((el) => el.getAttribute('data-tape-kind'));
+    expect(kinds.indexOf('trade')).toBeLessThan(kinds.indexOf('check'));
+  });
+
+  it('the shipped slim trade line is REPLACED by the card under the flag, not shown beside it', () => {
+    mount();
+    // TradeTickerCard renders the pair as its own markup; under the flag the
+    // tape's card is the only trade rendering in the stream.
+    expect(container.querySelectorAll('[data-tape-kind="trade"]')).toHaveLength(1);
+    const pairMentions = container.innerHTML.split('MU → SLB').length - 1;
+    expect(pairMentions).toBe(1);
+  });
+});

@@ -16,6 +16,8 @@ import { OPENER_LAZY_FALLBACK_ENABLED } from '../../config/featureFlags';
 // copy module, never inline here (this file is not under the copy guard —
 // its error strings would trip it).
 import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
+import { TradeCard, CheckCard, CheckRunLine } from '../../screens/battleView/TapeCards';
+import { collapseQuietChecks, TAPE_KIND } from '../../screens/battleView/buildTape';
 import { cssVar } from '../../theme/cssTokens';
 
 // "Didn't respond" means the proposal hit its deadline without the user
@@ -433,6 +435,12 @@ export default function AgentChat({
   // flag-off (rulings §2.5). Absent flag-off, so the shipped layouts are
   // untouched. The message list also contains its overscroll so the mobile
   // sheet owns the scroll at half / full.
+  // Phase A2 (A2.2, D-72): the tape's NON-MESSAGE entries — a card per executed
+  // swap and a card per decided check — built ONCE in the screen from the
+  // subscribed doc (buildTape.js) and merged into the one timeline below. Null
+  // flag-off, where `tradeEvents` keeps the shipped slim notification line
+  // byte for byte.
+  tapeEntries = null,
   controllerLayout = false,
   // Controller layout only: the mobile sheet at PEEK collapses the message
   // list so the sheet is the handle plus the composer, however tall the
@@ -876,17 +884,25 @@ export default function AgentChat({
 
   // ── Combined timeline: messages + trade events sorted chronologically ─────
 
+  // ONE ARRAY, ONE SORT (A2.2). Under the controller flag the tape's entries
+  // REPLACE the slim notification line — same array, same sort, richer items —
+  // and runs of quiet checks fold afterwards, on the merged stream, where
+  // adjacency is knowable (a swap between two checks is a trade card between
+  // them, which is what makes "positions unchanged" true by construction).
+  // Flag-off `tapeEntries` is null and this is the shipped path exactly.
   const combinedTimeline = React.useMemo(() => {
+    const nonMessages = Array.isArray(tapeEntries) ? tapeEntries : tradeEvents;
     const allItems = [
       ...messages.map(m => ({ ...m, _type: 'message', timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp || 0) })),
-      ...tradeEvents,
+      ...nonMessages,
     ];
-    return allItems.sort((a, b) => {
+    const sorted = allItems.sort((a, b) => {
       const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : 0;
       const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
       return timeA - timeB;
     });
-  }, [messages, tradeEvents]);
+    return Array.isArray(tapeEntries) ? collapseQuietChecks(sorted) : sorted;
+  }, [messages, tradeEvents, tapeEntries]);
 
   // ── Review-mode injection points in the timeline ──────────────────────────
   // Unanswered proposals render BEFORE the first auto-debrief (transition point
@@ -1015,7 +1031,16 @@ export default function AgentChat({
             ) : null;
 
             let body;
-            if (item._type === 'trade') {
+            if (item._type === TAPE_KIND.CHECK) {
+              body = <CheckCard key={item.id} entry={item} />;
+            } else if (item._type === TAPE_KIND.CHECK_RUN) {
+              body = <CheckRunLine key={item.id} entry={item} />;
+            } else if (item._type === 'trade' && Array.isArray(tapeEntries)) {
+              // Under the flag the card carries the tier, the banked points and
+              // the motive with its author named — everything the slim line
+              // could not (D-72). The `↳ from directive` echo rides the card.
+              body = <TradeCard key={item.id} entry={item} />;
+            } else if (item._type === 'trade') {
               const isDirectiveLinked = !!item.directiveThreadId;
               body = (
                 <React.Fragment key={item.id}>

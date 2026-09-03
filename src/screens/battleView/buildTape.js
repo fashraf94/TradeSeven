@@ -1,0 +1,266 @@
+// src/screens/battleView/buildTape.js
+//
+// The tape — Phase A2 (A2.2, D-72, D-77). PURE.
+//
+// The chat becomes a record of the game: the messages it already carried, plus
+// a card for every executed swap and a card for every decided check, in one
+// chronological stream. Before A2.2 the conversation carried two of the five
+// swap actions as a slim notification line and no checks at all, so "why a
+// swap happened" left the screen with the Live Activity panel.
+//
+// ONE ARRAY, ONE SORT (seed §A2.2). This module builds the NON-MESSAGE entries
+// from the subscribed doc; the chat merges them into its existing
+// `combinedTimeline` and sorts once. There is no second list beside the chat.
+//
+// THE SPINE IS `trades[]` (D-72, ruling 5), not the feed. `trades[]` is the one
+// list of EXECUTED swaps (agentSwapExecution.js), and it carries the three
+// things a card needs that the feed entry does not have: `tier`, `lockedPoints`
+// and `rationale`. The feed is joined only for the `↳ from directive` echo.
+// Two consequences, both deliberate:
+//
+//   · All five swap actions appear. The shipped chat filtered the feed to
+//     `swap | emergency_swap | trade_executed`, so VWAP exits, stepped-trail
+//     exits and every guardrail exit were invisible (hazard 26).
+//   · A guardrail-forced swap that did NOT execute gets no card (hazard 25).
+//     The feed announces `guardrail_forced_swap` before the outcome is known;
+//     `trades[]` only ever holds swaps that happened.
+//
+// THE MOTIVE IS `rationale`, AND ITS AUTHOR IS NAMED (ruling 5). On the risk
+// loop, the guardrail path and the R11 pass, that text is the SYSTEM's
+// sentence (`Risk manager: …`, `Guardrail override (…): …`, a statusMessage) —
+// rendering it unlabelled would put the system's words in the agent's mouth
+// (C1). The discriminator is the persisted `source` on the trade record, not a
+// prefix match on the text: one persisted fact, read once. `source` itself is
+// never RENDERED (hazard 12, D-64) — it decides which footer to show.
+//
+// `message` IS NEVER THE MOTIVE (hazard 24): the feed's `message` is the
+// optional `status_feed_update`, null on a legal SWAP, and on a
+// guardrail-forced swap it is the model's PRE-override line.
+
+import { toIso, toMillis } from '../../adapters/baggerbombAdapter';
+import { selectWhyState, splitSentences } from './selectWhyState';
+import { directiveFilings } from './deriveReceipts';
+
+export const TAPE_KIND = Object.freeze({
+  TRADE: 'trade',
+  CHECK: 'check',
+  CHECK_RUN: 'checkRun',
+});
+
+/**
+ * The one `source` value that means a model wrote the rationale. Everything
+ * else — `guardrail`, `risk_manager`, `archetype`, and any source added later
+ * — is the system's own sentence and is labelled as such. Defaulting the
+ * UNKNOWN case to the system is the safe direction under C1: under-crediting
+ * the agent is a smaller error than putting words in its mouth.
+ */
+export const AGENT_TRADE_SOURCE = 'haiku';
+
+const cleanText = (value) => (typeof value === 'string' && value.trim() ? value : null);
+
+/**
+ * The feed entry that belongs to a trade, for the `↳ from directive` echo.
+ *
+ * `evaluationId` first. The symbol pair is the fallback, because the risk loop
+ * and the R11 pass write `evalId: null` (hazard 35) — and among several
+ * entries with the same pair over a battle, the one NEAREST IN TIME to the
+ * swap is the one that describes it (the shipped chat's last-wins map would
+ * hand a second GILD → MOS rotation the first one's directive echo).
+ */
+function joinFeedEntry(trade, feedByEvalId, feedByPair) {
+  const byId = trade.evaluationId ? feedByEvalId.get(trade.evaluationId) : null;
+  if (byId) return byId;
+  if (!trade.symbolOut || !trade.symbolIn) return null;
+  const candidates = feedByPair.get(`${trade.symbolOut}__${trade.symbolIn}`);
+  if (!candidates || candidates.length === 0) return null;
+  const at = toMillis(trade.swappedOutAt);
+  if (at == null) return candidates[0].entry;
+  let best = candidates[0];
+  for (const candidate of candidates) {
+    if (Math.abs(candidate.ms - at) < Math.abs(best.ms - at)) best = candidate;
+  }
+  return best.entry;
+}
+
+/**
+ * A trade card per executed swap.
+ *
+ * NOTHING from the DO-NOT list rides the entry (hazard 29, D-64): no
+ * `pvpContext`, `hypothesis`, `conviction`, `trade_reasoning`, `citedRules`,
+ * `regime`, `exitReason`, `source` or `triggeredBy`. What is not carried
+ * cannot be rendered by accident later.
+ */
+export function buildTradeEntries(trades, statusFeed) {
+  if (!Array.isArray(trades)) return [];
+
+  const feedByEvalId = new Map();
+  const feedByPair = new Map();
+  if (Array.isArray(statusFeed)) {
+    for (const entry of statusFeed) {
+      if (!entry || typeof entry !== 'object') continue;
+      if (entry.evalId && !feedByEvalId.has(entry.evalId)) feedByEvalId.set(entry.evalId, entry);
+      if (entry.symbolOut && entry.symbolIn) {
+        const key = `${entry.symbolOut}__${entry.symbolIn}`;
+        const ms = toMillis(entry.timestamp) ?? 0;
+        if (!feedByPair.has(key)) feedByPair.set(key, []);
+        feedByPair.get(key).push({ entry, ms });
+      }
+    }
+  }
+
+  const entries = [];
+  for (const trade of trades) {
+    if (!trade || typeof trade !== 'object') continue;
+    const at = toIso(trade.swappedOutAt);
+    const ms = toMillis(at);
+    if (ms == null) continue;
+    const feed = joinFeedEntry(trade, feedByEvalId, feedByPair);
+    entries.push({
+      _type: TAPE_KIND.TRADE,
+      id: `tape-trade-${ms}-${trade.symbolOut ?? ''}-${trade.symbolIn ?? ''}`,
+      timestamp: new Date(ms),
+      at,
+      symbolOut: cleanText(trade.symbolOut),
+      symbolIn: cleanText(trade.symbolIn),
+      tier: cleanText(trade.tier),
+      lockedPoints: typeof trade.lockedPoints === 'number' && Number.isFinite(trade.lockedPoints)
+        ? trade.lockedPoints
+        : null,
+      motive: cleanText(trade.rationale),
+      // The author of the motive — the footer, not the text.
+      motiveIsAgent: trade.source === AGENT_TRADE_SOURCE,
+      // The model's own echo of the directive it was acting on, on the feed
+      // entry for this swap. The receipt vocabulary's `Acted` (D-51).
+      fromDirective: Boolean(feed?.directiveThreadId),
+    });
+  }
+  return entries;
+}
+
+/**
+ * A check card per decided check, from `evaluations[]`.
+ *
+ * The label comes from selectWhyState — the SAME five-state selector the Why?
+ * panel renders from, so a check card and the panel cannot disagree about a
+ * tick (BUILD_RULES §9). It is called with the entry's OWN timestamp as the
+ * scoring stamp: the `>=` join exists to tell the LATEST check from a stale
+ * one, and every entry here is the latest check of its own moment.
+ *
+ * `quiet` and `runKey` carry the D-77 test for a collapsible run; the fold
+ * itself happens later, on the merged stream, where contiguity is knowable.
+ */
+export function buildCheckEntries(evaluations, receipts, chatExchanges) {
+  if (!Array.isArray(evaluations)) return [];
+
+  // WHICH DIRECTIVE WAS CURRENT AT AN INSTANT — the receipts' own walk of the
+  // exchanges (D-77: "receipts unchanged"), never a second copy of the rule.
+  const filings = directiveFilings(chatExchanges).map((f) => ({ ...f, ms: toMillis(f.at) }));
+  const dispositionAt = (ms) => {
+    let current = null;
+    for (const filing of filings) {
+      if (filing.ms == null || filing.ms > ms) break;
+      current = filing.threadId;
+    }
+    if (!current) return '';
+    return `${current}:${receipts?.[current]?.state ?? ''}`;
+  };
+
+  const entries = [];
+  for (const evaluation of evaluations) {
+    if (!evaluation || typeof evaluation !== 'object') continue;
+    const at = toIso(evaluation.timestamp);
+    const ms = toMillis(at);
+    if (ms == null) continue;
+    const state = selectWhyState(evaluation, null, at);
+    const rationale = state.rationale;
+
+    // D-77 — the four facts ON THE ENTRY that make a check "no change". The
+    // fifth and sixth (positions, receipts) are the run key and contiguity.
+    // The live `total` is deliberately NOT among them: it moves with price on
+    // nearly every tick, and the board already shows it.
+    const quiet = evaluation.decision === 'HOLD'
+      && evaluation.downgraded !== true
+      && !evaluation.haikuError;
+
+    entries.push({
+      _type: TAPE_KIND.CHECK,
+      id: `tape-check-${evaluation.evalId || ms}`,
+      timestamp: new Date(ms),
+      at,
+      kind: state.kind,
+      label: state.label,
+      triggers: state.triggers,
+      rationale,
+      firstSentence: splitSentences(rationale)[0] ?? null,
+      quiet,
+      runKey: `${evaluation.scores?.banked ?? ''}|${dispositionAt(ms)}`,
+    });
+  }
+  return entries;
+}
+
+/**
+ * The non-message half of the tape: trade cards and check cards, unsorted (the
+ * chat sorts the merged stream once).
+ */
+export function buildTape({ trades, statusFeed, evaluations, receipts, chatExchanges }) {
+  return [
+    ...buildTradeEntries(trades, statusFeed),
+    ...buildCheckEntries(evaluations, receipts, chatExchanges),
+  ];
+}
+
+/**
+ * Fold runs of quiet checks into `{n} checks · no change` (D-48 / D-77).
+ *
+ * Runs over the SORTED, MERGED stream, and only over entries that are ADJACENT
+ * in it. That is what makes "the position set unchanged" true by construction:
+ * every executed swap is a trade card in this same stream, so a swap between
+ * two checks breaks their adjacency. It is also the only ordering that can
+ * work — a collapsed card occupies one slot, so it may only ever stand for a
+ * contiguous slice of the tape.
+ *
+ * A run of one is left as the card it is; two or more become one line.
+ */
+export const MIN_RUN = 2;
+
+export function collapseQuietChecks(items) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const out = [];
+  let run = [];
+
+  const flush = () => {
+    if (run.length === 0) return;
+    if (run.length >= MIN_RUN) {
+      out.push({
+        _type: TAPE_KIND.CHECK_RUN,
+        id: `tape-run-${run[0].id}`,
+        timestamp: run[0].timestamp,
+        at: run[0].at,
+        count: run.length,
+      });
+    } else {
+      out.push(...run);
+    }
+    run = [];
+  };
+
+  for (const item of items) {
+    const joins = item?._type === TAPE_KIND.CHECK
+      && item.quiet
+      && (run.length === 0 || run[run.length - 1].runKey === item.runKey);
+    if (joins) {
+      run.push(item);
+      continue;
+    }
+    flush();
+    // A quiet check whose run key DIFFERS from the run it just broke starts
+    // the next run rather than standing alone.
+    if (item?._type === TAPE_KIND.CHECK && item.quiet) run.push(item);
+    else out.push(item);
+  }
+  flush();
+  return out;
+}
+
+export default buildTape;

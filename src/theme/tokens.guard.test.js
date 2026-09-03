@@ -58,11 +58,13 @@ const GUARDED_FILES = [
   // from birth — a zero-literal ratchet on the whole directory (BUILD_RULES §10: the
   // guarded-file list expands as files migrate).
   'src/screens/battleView/ChatSheet.jsx',
+  'src/screens/battleView/TapeCards.jsx',
   'src/screens/battleView/LandingWash.jsx',
   'src/screens/battleView/ThisTurnStrip.jsx',
   'src/screens/battleView/TurnLine.jsx',
   'src/screens/battleView/WhyPanel.jsx',
   'src/screens/battleView/battleViewCopy.js',
+  'src/screens/battleView/buildTape.js',
   'src/screens/battleView/deriveReceipts.js',
   'src/screens/battleView/deriveTurnLine.js',
   'src/screens/battleView/selectDeployPlan.js',

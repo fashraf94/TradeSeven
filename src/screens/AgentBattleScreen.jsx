@@ -28,6 +28,7 @@ import TurnLine from './battleView/TurnLine';
 import WhyPanel from './battleView/WhyPanel';
 import { selectWhyState, selectTradesForSymbol, deriveTierPrices } from './battleView/selectWhyState';
 import { selectDeployPlan, selectDeployPlanForSymbol } from './battleView/selectDeployPlan';
+import { buildTape } from './battleView/buildTape';
 import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
 import { deriveReceipts } from './battleView/deriveReceipts';
 import ThisTurnStrip from './battleView/ThisTurnStrip';
@@ -1061,6 +1062,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     if (!controllerOn || !agentBattle) return null;
     return deriveReceipts(chatExchanges, agentBattle.directive ?? null, agentBattle.status ?? null);
   }, [controllerOn, agentBattle, chatExchanges]);
+  // ── The tape (A2.2, D-72) ─────────────────────────────────────────────────
+  // Built ONCE here, from the subscribed doc, and passed down: the chat merges
+  // it into the one timeline it already sorts. No second list, and the screen
+  // stays the only place that reads the document (rulings §3.3).
+  const tapeEntries = useMemo(() => (controllerOn ? buildTape({
+    trades: agentBattle?.trades,
+    statusFeed: agentBattle?.statusFeed,
+    evaluations: agentBattle?.evaluations,
+    receipts,
+    chatExchanges: agentBattle?.chatExchanges,
+  }) : null), [
+    controllerOn,
+    agentBattle?.trades,
+    agentBattle?.statusFeed,
+    agentBattle?.evaluations,
+    agentBattle?.chatExchanges,
+    receipts,
+  ]);
+
   const thisTurnStrip = controllerOn && agentBattle ? (
     <ThisTurnStrip
       directive={agentBattle.directive ?? null}
@@ -1218,6 +1238,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       composerPrefill={composerPrefill}
       onComposerPrefillConsumed={handleComposerPrefillConsumed}
       receipts={receipts}
+      // A2.2: the tape's trade and check cards, merged into the chat's one
+      // timeline. Built above from the subscribed doc; null flag-off.
+      tapeEntries={tapeEntries}
       controllerLayout
       // Peek is the composer alone: the message list is collapsed so the
       // sheet can size itself to the handle + the composer, however tall the
@@ -1616,6 +1639,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 composerPrefill={controllerOn ? composerPrefill : null}
                 onComposerPrefillConsumed={controllerOn ? handleComposerPrefillConsumed : null}
                 receipts={receipts}
+                // A2.2: null flag-off, so this shipped mount keeps the slim
+                // trade line byte for byte (the tabbed tree is not rendered
+                // under the flag — the controller layout replaces it).
+                tapeEntries={controllerOn ? tapeEntries : null}
               />
             </motion.div>
           )}

@@ -60,11 +60,13 @@ const GUARDED_FILES = [
   // vocabulary from birth (motionToken / the named tokens) — a zero-literal ratchet on
   // the whole directory, not a D3 retrofit of an existing surface.
   'src/screens/battleView/ChatSheet.jsx',
+  'src/screens/battleView/TapeCards.jsx',
   'src/screens/battleView/LandingWash.jsx',
   'src/screens/battleView/ThisTurnStrip.jsx',
   'src/screens/battleView/TurnLine.jsx',
   'src/screens/battleView/WhyPanel.jsx',
   'src/screens/battleView/battleViewCopy.js',
+  'src/screens/battleView/buildTape.js',
   'src/screens/battleView/deriveReceipts.js',
   'src/screens/battleView/deriveTurnLine.js',
   'src/screens/battleView/selectDeployPlan.js',
