@@ -49,6 +49,10 @@
       "count": 0,
       "authority": "Phase A2 (A2.1b) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
+    "src/screens/battleView/selectSymbolRoster.js": {
+      "count": 0,
+      "authority": "Phase A2 (A2.3) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); a pure selector with no motion at all."
+    },
     "src/screens/battleView/landing.js": {
       "count": 0,
       "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."

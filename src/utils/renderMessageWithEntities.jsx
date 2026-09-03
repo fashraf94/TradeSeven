@@ -1,5 +1,5 @@
 import React from 'react';
-import { TERM_TOKENS_SET } from '../data/termUniverse';
+import { scanEntities, ENTITY_KIND } from './findKnownTickers';
 
 // Entity detection in chat messages (Phase 2.5 Voice Layer Rework).
 //
@@ -24,24 +24,22 @@ export function renderMessageWithEntities(text, onSymbolClick, knownTickers) {
 
   const parts = [];
   let lastIndex = 0;
-  const regex = /\b([A-Z]{1,5})\b/g;
-  let match;
 
-  while ((match = regex.exec(text)) !== null) {
-    const word = match[1];
-    const isTicker = knownTickers?.has(word);
-    const isTerm = !isTicker && TERM_TOKENS_SET.has(word);
+  // A2.3 (ruling 8): the scan is `findKnownTickers.js`'s, so the underline the
+  // player sees and the `In the chat · {n}` count are the same rule by
+  // construction. The loop below is otherwise the shipped one — the golden
+  // proves the output is byte-identical.
+  for (const { word, index, kind } of scanEntities(text, knownTickers)) {
+    const isTicker = kind === ENTITY_KIND.TICKER;
 
-    if (!isTicker && !isTerm) continue;
-
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
+    if (index > lastIndex) {
+      parts.push(text.slice(lastIndex, index));
     }
 
     if (isTicker) {
       parts.push(
         <span
-          key={match.index}
+          key={index}
           role="button"
           tabIndex={0}
           aria-label={`Open research for ${word}`}
@@ -64,7 +62,7 @@ export function renderMessageWithEntities(text, onSymbolClick, knownTickers) {
     } else {
       parts.push(
         <span
-          key={match.index}
+          key={index}
           role="button"
           tabIndex={0}
           aria-label={`Open glossary for ${word}`}
@@ -86,7 +84,7 @@ export function renderMessageWithEntities(text, onSymbolClick, knownTickers) {
       );
     }
 
-    lastIndex = match.index + word.length;
+    lastIndex = index + word.length;
   }
 
   if (lastIndex === 0) return text;

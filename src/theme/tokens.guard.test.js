@@ -68,6 +68,7 @@ const GUARDED_FILES = [
   'src/screens/battleView/deriveReceipts.js',
   'src/screens/battleView/deriveTurnLine.js',
   'src/screens/battleView/selectDeployPlan.js',
+  'src/screens/battleView/selectSymbolRoster.js',
   'src/screens/battleView/landing.js',
   'src/screens/battleView/selectWhyState.js',
   'src/screens/battleView/useChatSheet.js',

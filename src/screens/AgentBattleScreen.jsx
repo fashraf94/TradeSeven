@@ -21,6 +21,7 @@ import { TAB_KEYS, tabLabels } from './agentBattleTabs';
 // the screen is byte-identical to the tabbed screen it was before Phase A.
 import { getMarketState } from '../utils/marketSchedule';
 import { deriveTurnLine } from './battleView/deriveTurnLine';
+import { selectSymbolRoster } from './battleView/selectSymbolRoster';
 import useCoarseNow from './battleView/useCoarseNow';
 import { useLandingKey } from './battleView/landing';
 import LandingWash from './battleView/LandingWash';
@@ -856,7 +857,13 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
 
   // ── Known tickers for chat ticker linking ─────────────────────────────────
 
+  // A2.3 (ruling 8, hazard 27): under the flag the roster is the battle's own
+  // UNIVERSE — the book plus the three persisted bench lists — so a message
+  // about a name the agent is one tick from buying is underlined and counted.
+  // Flag-off it is the book alone, byte for byte: widening it would widen what
+  // the shipped chat underlines, and the underline opens a research modal.
   const knownTickers = useMemo(() => {
+    if (controllerOn) return selectSymbolRoster(agentBattle);
     const tickers = new Set();
     ['star', 'core', 'support'].forEach(tier => {
       (enrichedPlayerPortfolio[tier] || []).forEach(a => {
@@ -864,7 +871,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       });
     });
     return tickers;
-  }, [enrichedPlayerPortfolio]);
+  }, [controllerOn, agentBattle, enrichedPlayerPortfolio]);
 
   // ── Computed scores ───────────────────────────────────────────────────────
 
