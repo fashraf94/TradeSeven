@@ -139,6 +139,11 @@ export function buildTradeEntries(trades, statusFeed) {
       // `renderMotive` — the same trim `This piece today` applies to the same
       // field (review FIX-3), now in one place rather than two.
       motive: renderMotive(trade.rationale),
+      // The first sentence, so a trade card collapses exactly as a check card
+      // does (D-84): an engine RECORD shows one sentence and a `Read more`,
+      // never a wall of prose in the middle of a conversation. Split from the
+      // rendered text, so the door opens on the sentence the card shows.
+      motiveFirstSentence: splitSentences(renderMotive(trade.rationale))[0] ?? null,
       // The author of the motive — the footer, not the text.
       motiveIsAgent: !engineAuthored,
       // The model's own echo of the directive it was acting on, on the feed

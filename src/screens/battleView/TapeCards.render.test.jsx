@@ -94,7 +94,11 @@ describe('the trade card', () => {
     const forced = { ...HOSTILE_TRADE, source: 'guardrail', rationale: 'Guardrail override (guardrail_stopLoss): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.' };
     const html = tradeHtml(forced);
     expect(html).toContain('The system&#x27;s reason');
-    expect(html).toContain('Guardrail override (stop-loss): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+    // The card is collapsed to its first sentence (D-84); the translation
+    // rides that sentence, and the whole rewritten motive is on the entry.
+    expect(html).toContain('Guardrail override (stop-loss): stop-loss at 8% breached on GILD (-9.24%).');
+    expect(buildTradeEntries([forced], FEED)[0].motive)
+      .toBe('Guardrail override (stop-loss): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
     expect(html).not.toContain('guardrail_stopLoss');
     expect(html).not.toContain('guardrail_');
   });
@@ -120,7 +124,7 @@ describe('the trade card', () => {
       ...HOSTILE_TRADE, source: 'guardrail',
       rationale: 'Guardrail override (guardrail_max_sector_weight): sector cap breached. Forcing exit → MOS.',
     });
-    expect(sector).toContain('Guardrail override: sector cap breached. Forcing exit → MOS.');
+    expect(sector).toContain('Guardrail override: sector cap breached.');
     expect(sector).not.toContain('guardrail_max_sector_weight');
     expect(sector).not.toContain('Guardrail override (');
 
