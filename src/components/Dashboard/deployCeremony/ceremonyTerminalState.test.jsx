@@ -6,10 +6,11 @@
 // state it has not verified."
 //
 // THE DEFECT: the ceremony asserted "no battle was created" without checking
-// whether one was. `decide.js:929` (`await agentRef.update({ activeBattleId })`)
-// is the only statement that can throw between the battle commit at `:910` and
-// the 200 at `:963` — so in the founding incident the battle was DURABLE, the
-// client saw a 500, and the ceremony told the user nothing had happened.
+// whether one was. In the founding incident the battle was DURABLE, the client
+// saw a 500, and the ceremony told the user nothing had happened. Why a 500 can
+// mean that — and, for the attribution rows below, what it does NOT prove — is
+// stated once, in the FAILURE MODEL block at the top of
+// `services/agentBattleVerify.js`.
 //
 // THE MIRROR DEFECT, found in review: a check that answers "does a battle exist
 // on this agent" is not an answer to "did THIS deploy create one". Swapping an
@@ -98,8 +99,9 @@ describe('useCeremonyStageMachine — the verification seam', () => {
     deployHttpStatus: null, deployPostIssued: false,
   };
   // The client outcome that leaves a battle POSSIBLE: the POST reached the server
-  // and came back 500 — the only status decide.js can return after the battle
-  // commit at :910 (its catch at :1012), i.e. the canonical :929 failure.
+  // and came back 500. NOT "the battle is ours" — a 500 is also what decide.js
+  // returns for a throw before the commit (FAILURE MODEL, in
+  // services/agentBattleVerify.js). Eligibility, not attribution.
   const COULD_HAVE_COMMITTED = { deployStatus: 'error', deployPostIssued: true, deployHttpStatus: 500 };
   let verify;
 
@@ -401,6 +403,66 @@ describe('useCeremonyStageMachine — the verification seam', () => {
     expect(seen.phase).toBe('reveal');
   });
 
+  // ── R3 · THE SERVER'S OWN BATTLE ID ──────────────────────────────────────
+  // One failure path hands us the id: a 200 carrying `agentBattleId` whose client
+  // handoff then threw. That id is EXACT attribution — strictly stronger than the
+  // status heuristic — so it both admits the 200 and pins the reveal to that
+  // document. A 200 on its own must never buy a reveal: decide.js:748-758 returns
+  // 200 + success:true carrying only `existingBattleId`, for a battle this deploy
+  // did not create.
+  const HANDOFF_THREW = {
+    deployStatus: 'error', deployPostIssued: true, deployHttpStatus: 200, deployBattleId: FOUND_BATTLE.id,
+  };
+
+  // DIES UNDER: dropping deployBattleId from the gate (200 is not otherwise
+  // eligible, so the reveal never happens).
+  it('R3 — a handoff failure after a 200 reveals the battle the server named', async () => {
+    verify.mockResolvedValue({ found: true, battle: FOUND_BATTLE });
+    armBaseline(PRIOR);
+    step({ ...T, stage: 'complete', deployId: PRIOR, updatedAt: PRIOR, ...HANDOFF_THREW });
+    await flush();
+    expect(seen.phase).toBe('reveal');
+    expect(seen.recoveredBattle).toEqual(FOUND_BATTLE);
+  });
+
+  // The id is a KEY, not a permission slip. If the document the check found is not
+  // the one the server named, the reveal would open a battle this deploy did not
+  // create — the mirror defect, reached through the 200 door.
+  // DIES UNDER: admitting 200 on the status alone (dropping the id match).
+  it('R3 — a 200 whose id does not match the found battle never reveals', async () => {
+    verify.mockResolvedValue({ found: true, battle: { id: 'battle-someone-elses', status: 'active' } });
+    armBaseline(PRIOR);
+    step({ ...T, stage: 'complete', deployId: PRIOR, updatedAt: PRIOR, ...HANDOFF_THREW });
+    await flush();
+    expect(seen.phase).toBe('error');
+    expect(seen.recoveredBattle).toBeNull();
+  });
+
+  // The decide.js:748-758 branch: 200, success:true, `existingBattleId` only. No
+  // id reaches the machine, so 200 falls back to being an ordinary refusal status.
+  // DIES UNDER: widening the gate to admit httpStatus === 200.
+  it('R3 — a 200 with no battle id is not eligible, however loud the query', async () => {
+    verify.mockResolvedValue({ found: true, battle: FOUND_BATTLE });
+    armBaseline(PRIOR);
+    step({ ...T, stage: 'complete', deployId: PRIOR, updatedAt: PRIOR,
+           deployStatus: 'error', deployPostIssued: true, deployHttpStatus: 200, deployBattleId: null });
+    await flush();
+    expect(seen.phase).toBe('error');
+    expect(seen.errorTone).toBe('lost_contact');
+    expect(seen.recoveredBattle).toBeNull();
+  });
+
+  // The 500 path carries no id, so the match is vacuous and the status heuristic
+  // (plus the verifier's league filter) is all the narrowing there is. Guards
+  // against the match being written as a REQUIREMENT rather than a refinement.
+  it('R3 — the id match does not gate the paths that never have an id', async () => {
+    verify.mockResolvedValue({ found: true, battle: FOUND_BATTLE });
+    armBaseline(PRIOR);
+    step({ ...T, stage: 'complete', deployId: PRIOR, updatedAt: PRIOR, ...COULD_HAVE_COMMITTED });
+    await flush();
+    expect(seen.phase).toBe('reveal');
+  });
+
   // §3 — the bounded retry absorbs CLIENT propagation lag. It retries an EMPTY
   // answer only; it is not a poll and must stay inside the budget.
   it('a second attempt absorbs propagation lag: empty, then found → reveal', async () => {
@@ -625,9 +687,9 @@ describe('DeployCeremony — the recovered path and the honest headline', () => 
     id: RANKED,
     name: 'Nova',
     archetype: 'contrarian',
-    // DELIBERATELY ABSENT. If decide.js:929 is the failure then this was never
-    // written — that update IS the statement that threw — so any CTA that reads
-    // it dead-ends the user in exactly the recovered case.
+    // DELIBERATELY ABSENT. On the recovered path the write that sets this IS the
+    // statement that threw (FAILURE MODEL, services/agentBattleVerify.js), so any
+    // CTA that reads it dead-ends the user in exactly the recovered case.
     activeBattleId: undefined,
     lastDeployedAt: null,
   };
@@ -776,6 +838,43 @@ describe('DeployCeremony — the recovered path and the honest headline', () => 
     // Still dismissible. During the theater the escape hatch is the overlay's
     // icon button (aria-labelled), not the text button the terminal surfaces use.
     expect(document.querySelector('button[aria-label="Back to hub"]')).toBeTruthy();
+  });
+
+  // ── R5 · THE CONTINUITY GUARD ────────────────────────────────────────────
+  // "Renders as theater" is a claim about what the theater KEEPS, and the row
+  // above cannot see that: it asserts on the presence of copy and of the overlay's
+  // own dismiss button, both of which survive any amount of loss around them. The
+  // mutation that broke this — `canSkip` gated on `phase === 'theater'` alone —
+  // reddened ZERO of 111 rows while the Skip control vanished for the whole 2s
+  // budget, in the one window a user is most likely to be reaching for it.
+  //
+  // So compare the CONTROLS either side of the transition, not the prose.
+  // DIES UNDER: dropping 'verifying' from canSkip (useCeremonyStageMachine.js).
+  const controls = () => [...document.body.querySelectorAll('button')]
+    .map((b) => b.getAttribute('aria-label') || (b.textContent || '').trim())
+    .sort();
+
+  it('R5 — the theater keeps every control across the theater → verifying transition', async () => {
+    verifyMock.mockReturnValue(new Promise(() => {}));   // hold the check open
+    const AT_COMPLETE = { stage: 'strategy_complete', deployId: OURS, updatedAt: `${OURS}-2` };
+
+    renderWith(null, { status: 'pending' }, {}, {});
+    renderWith(OUR_PROGRESS, { status: 'pending' }, {}, {});
+    await tick();
+    // strategy_complete is what puts Skip on screen (spec §5.2), so the row has
+    // something to lose. Assert that first — otherwise it could pass vacuously.
+    renderWith(AT_COMPLETE, { status: 'pending' }, {}, {});
+    await tick(300);
+    const before = controls();
+    expect(before).toContain('Skip to reveal');
+
+    // The deploy fails. The machine enters 'verifying', which renders as theater.
+    renderWith(AT_COMPLETE, { status: 'error', error: 'boom', postIssued: true, httpStatus: 500 }, {}, {});
+    await tick(300);
+
+    expect(verifyMock).toHaveBeenCalled();               // the check IS running
+    expect(document.body.textContent).not.toMatch(/Deployment (complete|failed|unconfirmed)/);
+    expect(controls()).toEqual(before);                  // nothing gained, nothing lost
   });
 
   // The live region must not out-claim the headline it accompanies: a screen

@@ -6615,11 +6615,11 @@ export default function PortfolioDuel() {
   };
   // [Deploy Ceremony PR 2 §5] `recoveredBattle` is the agentBattles doc the
   // ceremony's existence check FOUND after a failed-looking deploy. It exists
-  // only on the recovered path, and on that path there is nothing else to use:
-  // the canonical failure is decide.js:929 (`agentRef.update({ activeBattleId })`
-  // rejecting AFTER the battle committed at :910), so `agent.activeBattleId` was
-  // never written and the POST never returned — pendingCeremonyBattleRef is null
-  // too. Hydrating from the found doc is the only route that does not dead-end
+  // only on the recovered path, and on that path there is nothing else to use: in
+  // the canonical failure (THE POST-COMMIT WINDOW, in
+  // src/services/agentBattleVerify.js) the write that sets `agent.activeBattleId`
+  // IS the statement that threw, and the POST never returned — so
+  // pendingCeremonyBattleRef is null too. Hydrating from the found doc is the only route that does not dead-end
   // the user on a null pointer. Ordinary reveal: no recovered battle, and the
   // battle built at deploy time is used exactly as before.
   const handleEnterCeremonyBattle = (recoveredBattle = null) => {

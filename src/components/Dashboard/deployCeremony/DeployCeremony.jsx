@@ -86,6 +86,10 @@ export default function DeployCeremony({
     // see the attribution block in the machine.
     deployHttpStatus: deployResult?.httpStatus ?? null,
     deployPostIssued: deployResult?.postIssued === true,
+    // Present only when the server 200'd with a real battle id and the client
+    // handoff then threw (agentDeploy.js). It names the battle THIS deploy made,
+    // so the machine pins the reveal to it instead of inferring from the status.
+    deployBattleId: deployResult?.battleId ?? null,
     // Baseline scoping (§5): until a snapshot for the target has been observed,
     // these primitives are all null and MUST NOT establish a baseline.
     targetKnown,
@@ -150,12 +154,12 @@ export default function DeployCeremony({
 
   const showBack = machine.phase !== 'reveal'; // reveal has its own explicit CTAs
 
-  // PR 2 §5 — the trap. If decide.js:929 is the failure, `activeBattleId` was
-  // never written to the agent doc: that write IS the statement that threw. So a
-  // recovered reveal MUST carry the id the verification query found, and must
-  // never fall back to `agent.activeBattleId`, which in this exact scenario is
-  // guaranteed absent. On the ordinary reveal path this is null and the app falls
-  // through to the battle it already built at deploy time.
+  // PR 2 §5 — the trap. On the recovered path `agent.activeBattleId` is guaranteed
+  // ABSENT (the FAILURE MODEL block in services/agentBattleVerify.js says why: the
+  // write that sets it is the statement that threw), so the reveal MUST carry the
+  // id the verification query found and must never fall back to it. On the
+  // ordinary reveal path this is null and the app falls through to the battle it
+  // already built at deploy time.
   const enterBattle = () => onEnterBattle?.(machine.recoveredBattle || null);
 
   let body;

@@ -96,15 +96,12 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   // Step 1: generate the portfolio via the AI decision endpoint.
   //
   // From here on the caller must be able to tell WHERE a failure happened, because
-  // the Deploy Ceremony's recovered-reveal gate turns on it: decide.js commits the
-  // battle at :910, and every pre-battle refusal returns a 4xx/409/503 (:106, :111,
-  // :140, :153, :165, :168, :171, :178, :187, :298, :337, :844, :907). The ONLY
-  // status it can return AFTER that commit is the catch's 500 at :1012 — which is
-  // exactly the :929 failure (`agentRef.update({ activeBattleId })` rejecting on a
-  // durable battle). So `httpStatus` distinguishes "the server refused before it
-  // could create anything" from "a battle may well exist", and `postIssued`
-  // separates a transport failure — where we genuinely do not know — from a
-  // client-side bail that never reached the server.
+  // the Deploy Ceremony's recovered-reveal gate turns on it. `httpStatus` carries
+  // what the status proves — and, just as importantly, what it does not; the one
+  // statement of that is THE FAILURE MODEL block in `services/agentBattleVerify.js`
+  // and it is not restated here. `postIssued` separates a transport failure — where
+  // we genuinely do not know — from a client-side bail that never reached the
+  // server.
   ceremonyTiming.markPostIssued();
   let response;
   try {
@@ -161,21 +158,47 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   // Step 2: hand off to the app's battle-creation callback (it navigates).
   console.log('[Deploy] Agent battle created:', data.agentBattleId || '(existing)');
   if (onCreateAgentBattle) {
-    await onCreateAgentBattle(
-      data.portfolio,
-      data.bench,
-      {
-        // The deployed agent's id (the casual clone when the feature is on) — kept
-        // consistent with the created battle's agentId. Flag off: === agentId.
-        agentId: deployAgentId,
-        agentBattleId: data.agentBattleId || null,
-        innerMonologue: data.innerMonologue || null,
-        strategyBrief: data.strategyBrief || null,
-        expiresAt: data.expiresAt || null,
-        opponent: data.opponent || null,
-        opponentBench: data.opponentBench || null,
-      }
-    );
+    try {
+      await onCreateAgentBattle(
+        data.portfolio,
+        data.bench,
+        {
+          // The deployed agent's id (the casual clone when the feature is on) — kept
+          // consistent with the created battle's agentId. Flag off: === agentId.
+          agentId: deployAgentId,
+          agentBattleId: data.agentBattleId || null,
+          innerMonologue: data.innerMonologue || null,
+          strategyBrief: data.strategyBrief || null,
+          expiresAt: data.expiresAt || null,
+          opponent: data.opponent || null,
+          opponentBench: data.opponentBench || null,
+        }
+      );
+    } catch (err) {
+      // THE IDENTIFIER MUST SURVIVE THE TRIP. This is the §5 trap one seam later:
+      // the server has already 200'd with a real, durable battle id and the
+      // callback threw while building the in-memory battle — so the battle exists,
+      // we are holding its id, and letting the throw escape would report the whole
+      // deploy through the shells' catch as `postIssued: false` ("never reached the
+      // server") for a deploy that definitively did.
+      //
+      // `battleId` is returned rather than merely `httpStatus: 200`, because 200 on
+      // its own must NEVER buy a reveal: `decide.js:748-758` (the "agent already has
+      // an active battle" branch) also returns 200 + `success: true`, carrying
+      // `existingBattleId` and NO `agentBattleId` — a battle this deploy did not
+      // create. So the id is the gate, not the status: absent here, this resolves as
+      // an ordinary unknown and the ceremony says "lost contact".
+      console.error('[Deploy] Battle created but the client handoff threw:', err?.message || err);
+      return {
+        success: false,
+        status: response.status,
+        postIssued: true,
+        httpStatus: response.status,
+        battleId: data.agentBattleId || null,
+        error: 'deploy_handoff',
+        details: err?.message || 'The battle was created but could not be opened.',
+      };
+    }
   }
 
   return { success: true, agentBattleId: data.agentBattleId || null };

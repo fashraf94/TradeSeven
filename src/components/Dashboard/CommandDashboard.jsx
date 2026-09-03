@@ -240,6 +240,12 @@ export default function CommandDashboard({
       result = await deployAgent(agent.id, onCreateAgentBattle, setDeployTargetId);
     } catch (err) {
       console.error('[Deploy] Error:', err);
+      // `postIssued: false` is now TRUE of every throw that can reach here.
+      // deployAgent's only remaining throw site is getIdToken(), which runs before
+      // the POST; the battle-creation handoff — which runs AFTER a 200 and used to
+      // arrive here mislabelled as "never reached the server" — is caught inside
+      // deployAgent and returns its battle id instead. Anything unforeseen still
+      // lands on the conservative pair, which fails toward "lost contact".
       if (ceremonyOn) result = { success: false, error: err?.message, postIssued: false, httpStatus: null };
     }
     setDeploying(false);
@@ -253,6 +259,10 @@ export default function CommandDashboard({
             // is why the ceremony could not tell a refusal from a real failure.
             httpStatus: result?.httpStatus ?? null,
             postIssued: result?.postIssued === true,
+            // Set only when the server 200'd with a real battle id and the client
+            // handoff then threw. The battle exists and we are holding its id, so
+            // the ceremony pins the reveal to it rather than inferring from status.
+            battleId: result?.battleId ?? null,
           });
     }
     return result;

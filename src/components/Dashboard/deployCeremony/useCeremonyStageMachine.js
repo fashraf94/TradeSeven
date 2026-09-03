@@ -30,6 +30,12 @@
 //     claim than the one it replaced: it says "lost contact", never "no battle
 //     was created".
 //
+// What a `decide.js` status does and does not prove — the reasoning the
+// attribution gate below rests on — is stated ONCE, in the FAILURE MODEL block at
+// the top of `services/agentBattleVerify.js`. It is pinned to line numbers in a
+// fenced file, so it lives in one place rather than five. Read it before touching
+// the gate.
+//
 // The deployProgress it consumes comes from the DEPLOY-TARGET document, not the
 // ranked agent doc: on the casual-clone path the server writes progress to
 // agents/{cloneId}, which the ranked-agent subscription excludes by design.
@@ -67,9 +73,10 @@ const STAGE_KEYS = ['loadout', 'scanning', 'brief', 'portfolio'];
 // ── Existence-check budget (PR 2 §3) ────────────────────────────────────────
 // A HARD cap: the user is already waiting, and this is not a poll. Discovery Q4
 // established there is no server-side unreadable window — the battle write is
-// committed and AWAITED before `decide.js:929` can throw — so the only thing a
-// second attempt absorbs is CLIENT propagation lag, not a still-running server.
-// Never extend this to wait one out.
+// committed and AWAITED before the post-commit window opens (FAILURE MODEL, in
+// services/agentBattleVerify.js) — so the only thing a second attempt absorbs is
+// CLIENT propagation lag, not a still-running server. Never extend it to wait one
+// out.
 const VERIFY_BUDGET_MS = 2000;
 const VERIFY_ATTEMPTS = 2;
 const VERIFY_RETRY_GAP_MS = 400;
@@ -84,6 +91,12 @@ export default function useCeremonyStageMachine({
   stage, deployId, updatedAt, errorPhase, deployStatus,
   // What the client's own POST learned. See the attribution block below.
   deployHttpStatus = null, deployPostIssued = false,
+  // The battle id the SERVER returned, on the one failure path that has one: a
+  // 200 carrying `agentBattleId` whose client handoff then threw. Absent on every
+  // other path, including the 200 that carries only `existingBattleId`. When
+  // present it is EXACT attribution — the id names the battle this deploy made —
+  // and the gate below leans on it instead of the status heuristic.
+  deployBattleId = null,
   // Deploy-target scoping (§5). `targetKnown` is TRUE only once a snapshot for
   // `targetAgentId` has actually been observed — see useDeployTargetProgress.
   targetKnown = true, targetAgentId = null,
@@ -110,8 +123,8 @@ export default function useCeremonyStageMachine({
 
   // Latest inputs, mirrored into refs so the single interval reads fresh values
   // without re-subscribing on every snapshot tick.
-  const inRef = useRef({ stage, deployId, updatedAt, errorPhase, deployStatus, targetKnown, targetAgentId, deployHttpStatus, deployPostIssued });
-  inRef.current = { stage, deployId, updatedAt, errorPhase, deployStatus, targetKnown, targetAgentId, deployHttpStatus, deployPostIssued };
+  const inRef = useRef({ stage, deployId, updatedAt, errorPhase, deployStatus, targetKnown, targetAgentId, deployHttpStatus, deployPostIssued, deployBattleId });
+  inRef.current = { stage, deployId, updatedAt, errorPhase, deployStatus, targetKnown, targetAgentId, deployHttpStatus, deployPostIssued, deployBattleId };
   // Mirrored for the same reason as the inputs: the mount-once effect must call
   // the CURRENT checker, not the one captured at first render.
   const verifyRef = useRef(verifyBattle);
@@ -144,9 +157,9 @@ export default function useCeremonyStageMachine({
   const phaseRef = useRef('theater');
   // Whether the SERVER wrote a terminal error for OUR deploy. This is the second
   // of the two conditions a confirmed-failure claim requires; on its own it is
-  // NOT evidence of non-creation (decide.js:690 writes stage:'complete' before
-  // battle creation at :910, and the catch at :1004 fires for a throw anywhere
-  // after it), which is why it is only ever read alongside an empty query.
+  // NOT evidence of non-creation — see WHY THE CHEAP SIGNALS ARE NOT EVIDENCE in
+  // services/agentBattleVerify.js — which is why it is only ever read alongside an
+  // empty query.
   const serverErrorSeenRef = useRef(false);
   stageIndexRef.current = stageIndex;
 
@@ -282,17 +295,26 @@ export default function useCeremonyStageMachine({
       // invariant inverted, an unverified POSITIVE claim swapped in for the
       // unverified negative one this PR removes.
       //
-      // The tie is the client's own HTTP status, and it is exact rather than
-      // inferred. decide.js commits the battle at :910; EVERY pre-battle refusal
-      // returns a 4xx/409/503 (:106, :111, :140, :153, :165, :168, :171, :178,
-      // :187, :298, :337, :844, :907), and the ONLY status it can return after
-      // that commit is the catch's 500 at :1012 — which is precisely the :929
-      // failure this recovery exists for. So a status other than 500 PROVES the
-      // server refused before it could create anything.
+      // The first tie is the client's own HTTP status: a status OTHER than 500
+      // proves the server refused before it could create anything. That inference
+      // and — critically — WHERE IT STOPS are stated once, in the FAILURE MODEL
+      // block at the top of `services/agentBattleVerify.js`. The short version of
+      // the boundary, because the gate below is exactly where it gets misread:
+      // decide.js's single catch also returns 500 for a throw ~780 lines BEFORE
+      // the commit, so `failureCouldFollowCommit` means "a battle MAY exist",
+      // never "a battle from THIS deploy exists". It admits, it does not attribute.
       //
       // A transport failure (postIssued with no status) is genuinely unknowable
       // and stays eligible: the request may have landed and committed. A deploy
       // that never reached the POST at all is not.
+      //
+      // The second tie is EXACT where we have it. `deployBattleId` is set on the
+      // one failure path that returns the server's own battle id — a 200 whose
+      // client handoff threw — and it names the battle THIS deploy created. When
+      // present it both admits the 200 (which nothing else may do: decide.js's
+      // "already has an active battle" branch returns 200 too, and carries no
+      // `agentBattleId`) and pins the reveal to that document. This is the
+      // battle-id round-trip PR 4 generalises, available for free in this one case.
       //
       // Deliberately NOT keyed on `ourDeployIdRef`: that pin is inferred by
       // DIFFERENCE from a baseline, and review proved it wrong in both
@@ -302,10 +324,18 @@ export default function useCeremonyStageMachine({
       // cache-then-server delivery or another device pins as "ours" and buys a
       // false reveal. The §5.3 unsolicited-progress hole belongs to PR 4; the
       // reveal must not be built on top of it.
-      const { deployHttpStatus: httpStatus, deployPostIssued: postIssued } = inRef.current;
-      const failureCouldFollowCommit = postIssued && (httpStatus == null || httpStatus === 500);
+      const {
+        deployHttpStatus: httpStatus, deployPostIssued: postIssued, deployBattleId: knownBattleId,
+      } = inRef.current;
+      const failureCouldFollowCommit = postIssued
+        && (httpStatus == null || httpStatus === 500 || knownBattleId != null);
+      // When the server handed us an id, the found document must BE that document.
+      // Without an id this is vacuously true and the status heuristic (plus the
+      // league filter in the verifier) is all the narrowing there is.
+      const matchesKnownBattle = knownBattleId == null
+        || (!checkFailed && outcome.found && outcome.battle?.id === knownBattleId);
 
-      if (!checkFailed && outcome.found && failureCouldFollowCommit) {
+      if (!checkFailed && outcome.found && failureCouldFollowCommit && matchesKnownBattle) {
         // A durable battle exists AND this deploy reached the server. The failure
         // was downstream of the commit — decide.js:929 is the canonical case — so
         // the honest terminal state is the reveal, carrying the id the query
@@ -422,8 +452,9 @@ export default function useCeremonyStageMachine({
       }
 
       // ── Client's own deploy outcome (dual-signal / post-persistence failure).
-      // The founding incident: decide.js:929 rejects, the client sees a 500, and
-      // the battle committed at :910 is durable. Verify before claiming.
+      // The founding incident: the client sees a 500 and the battle is durable
+      // anyway (THE POST-COMMIT WINDOW, in services/agentBattleVerify.js). Verify
+      // before claiming.
       if (ds === 'error') {
         beginVerification('deploy');
         return;
@@ -437,6 +468,15 @@ export default function useCeremonyStageMachine({
         if (sinceProgress >= WATCHDOG_MS) {
           // A watchdog firing means we stopped hearing, not that nothing
           // happened. Check before committing to either claim.
+          //
+          // OPEN-3, named rather than left implicit: this fires while the POST is
+          // still in flight, so a found battle here has NO client outcome to
+          // corroborate it. It cannot author a reveal only because the shells set
+          // `deployResult` to `{ status: 'pending' }` BEFORE the POST
+          // (CommandDashboard.jsx / CommandDashboardDesktop.jsx), which leaves
+          // `deployPostIssued` false and fails the attribution gate above. That
+          // ordering is load-bearing for this path — do not move the assignment
+          // after the await, and do not seed `deployResult` from a previous run.
           beginVerification('timeout');
           return;
         }
@@ -490,7 +530,22 @@ export default function useCeremonyStageMachine({
   }, []);
 
   // canSkip: after strategy_complete, before the reveal (spec §5.2).
-  const canSkip = serverRank >= SERVER_RANK.strategy_complete && phase === 'theater';
+  //
+  // 'verifying' belongs here BECAUSE it renders as theater. The contract is that
+  // the check is invisible — no new screen, no discontinuity — and a Skip control
+  // that vanishes for up to the 2s budget and then is replaced by a terminal
+  // surface is a discontinuity, in the one window where the user is most likely to
+  // be reaching for it. Dropping 'verifying' from this line is the mutation the
+  // continuity guard in ceremonyTerminalState.test.jsx exists to kill: it compares
+  // the theater's rendered controls either side of the transition, so a control
+  // that disappears reds the row rather than passing on the copy that stayed.
+  //
+  // Skipping during 'verifying' is inert by construction — `requestSkip` only
+  // zeroes the stage floors, and the advancement path it feeds is behind the same
+  // latch the check holds. So this restores the affordance without giving it a way
+  // to race the terminal commit.
+  const canSkip = serverRank >= SERVER_RANK.strategy_complete
+    && (phase === 'theater' || phase === 'verifying');
 
   return {
     phase,

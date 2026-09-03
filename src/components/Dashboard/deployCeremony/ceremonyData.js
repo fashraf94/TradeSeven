@@ -110,9 +110,9 @@ export function useEquippedWatchlistSymbols(equippedWatchlistId) {
 // `recoveredBattle` is the agentBattles doc the ceremony's existence check read
 // back as active, for this deploy target, moments ago.
 //
-// THE RECOVERED BATTLE WINS. In the canonical failure — decide.js:929 rejecting
-// after the battle committed at :910 — there is no stash at all, because the POST
-// never returned. But the stash is only cleared when a CTA actually fires, so a
+// THE RECOVERED BATTLE WINS. In the canonical failure — the post-commit window in
+// services/agentBattleVerify.js — there is no stash at all, because the POST never
+// returned. But the stash is only cleared when a CTA actually fires, so a
 // reveal the user dismissed with "Back to hub" leaves the PREVIOUS deploy's
 // battle sitting in the ref for the rest of the SPA session. Preferring it would
 // open that stale, possibly expired battle instead of the one just verified —

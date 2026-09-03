@@ -136,10 +136,9 @@ describe('agentDeploy — reports the resolved deploy target (§3)', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // PR 2 — what deployAgent reports about WHERE a failure happened
 //
-// The ceremony's recovered-reveal gate turns on this. decide.js commits the
-// battle at :910; every pre-battle refusal returns a 4xx/409/503, and the ONLY
-// status it can return after that commit is the catch's 500 at :1012 — the :929
-// failure this recovery exists for. Both fields were previously computed and
+// The ceremony's recovered-reveal gate turns on this: what a `decide.js` status
+// does and does not prove is stated once, in the FAILURE MODEL block at the top
+// of `services/agentBattleVerify.js`. Both fields were previously computed and
 // dropped, which is why the ceremony could not tell a refusal from a real
 // failure and would announce a refused deploy as a success.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -189,6 +188,65 @@ describe('agentDeploy — reports where the failure happened (PR 2)', () => {
     const r = await deployAgent(RANKED, null, () => {});
     expect(r.postIssued).toBe(false);
     expect(await deployAgent(null, null, () => {})).toMatchObject({ postIssued: false });
+  });
+
+  // ── R3 · THE IDENTIFIER MUST SURVIVE THE TRIP ────────────────────────────
+  // The handoff runs AFTER a 200 carrying a real, durable battle id. Letting the
+  // throw escape reported the whole deploy through the shells' catch as
+  // `postIssued: false` — "never reached the server" — for a deploy that
+  // definitively did, and threw the id away with it.
+  const postSucceeding = (body) => {
+    getIdTokenMock.mockResolvedValue('tok');
+    vi.stubGlobal('fetch', vi.fn(async (url) => (
+      url === '/api/agent/ensure-casual-clone'
+        ? { ok: true, status: 200, text: async () => JSON.stringify({ cloneId: CLONE }) }
+        : { ok: true, status: 200, text: async () => JSON.stringify(body) }
+    )));
+  };
+
+  // DIES UNDER: dropping `battleId` from the handoff-failure return; letting the
+  // callback throw escape; reporting postIssued false for it.
+  it('a callback throw after a 200 returns the server battle id instead of throwing', async () => {
+    postSucceeding({ success: true, agentBattleId: 'battle-real-1', portfolio: {}, bench: {} });
+    const boom = () => { throw new Error('could not build the battle'); };
+
+    const r = await deployAgent(RANKED, boom, () => {});
+    expect(r.success).toBe(false);
+    expect(r.battleId).toBe('battle-real-1');         // the id survived
+    expect(r.postIssued).toBe(true);                  // it DID reach the server
+    expect(r.httpStatus).toBe(200);
+    expect(r.error).toBe('deploy_handoff');
+  });
+
+  it('an async callback rejection after a 200 is caught the same way', async () => {
+    postSucceeding({ success: true, agentBattleId: 'battle-real-2', portfolio: {}, bench: {} });
+    const boom = async () => { throw new Error('async build failure'); };
+
+    const r = await deployAgent(RANKED, boom, () => {});
+    expect(r.battleId).toBe('battle-real-2');
+    expect(r.postIssued).toBe(true);
+  });
+
+  // decide.js:748-758 — "agent already has an active battle" — also returns 200 +
+  // success:true, carrying `existingBattleId` and NO `agentBattleId`. That battle
+  // was not created by this deploy, so there is no id to carry and the 200 must
+  // buy nothing. The machine's gate keys on the id, not the status, precisely so
+  // this row cannot become a reveal.
+  // DIES UNDER: fabricating an id here, or admitting 200 on the status alone.
+  it('a 200 carrying only existingBattleId yields NO battle id to carry', async () => {
+    postSucceeding({ success: true, existingBattleId: 'battle-someone-elses', portfolio: {}, bench: {} });
+    const boom = () => { throw new Error('could not build the battle'); };
+
+    const r = await deployAgent(RANKED, boom, () => {});
+    expect(r.battleId).toBeNull();
+    expect(r.postIssued).toBe(true);
+  });
+
+  // The ordinary success path is untouched: no battleId key, still success.
+  it('a callback that does NOT throw still reports plain success', async () => {
+    postSucceeding({ success: true, agentBattleId: 'battle-ok', portfolio: {}, bench: {} });
+    const r = await deployAgent(RANKED, async () => {}, () => {});
+    expect(r).toEqual({ success: true, agentBattleId: 'battle-ok' });
   });
 });
 
