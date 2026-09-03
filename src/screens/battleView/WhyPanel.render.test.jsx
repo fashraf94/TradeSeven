@@ -383,3 +383,55 @@ describe('Why? V2 — `Woken by …` (A2.1, D-78)', () => {
     expect(renderBook({ ...HELD, triggers: ['price_drop'] })).toContain('Woken by a price drop');
   });
 });
+
+describe('Why? V2 — the plan at deploy (A2.1b, D-76)', () => {
+  const PLAN = {
+    activatedAt: '2026-09-01T13:30:00.000Z',
+    brief: 'Energy is the only sector with a bid this week; semis are extended.',
+    rationales: {
+      star: 'SLB and DVN are the two cleanest energy breakouts on the board.',
+      core: 'CF gives fertilizer exposure. MOS is the hedge.',
+      support: null,
+    },
+  };
+  const FOR_SLB = { tier: 'star', sentences: ['SLB and DVN are the two cleanest energy breakouts on the board.'] };
+
+  it('a ROW carries its tier\'s sentences, labelled with the TIER and dated with the deploy', () => {
+    const html = renderRow(HELD, { deployPlan: PLAN, deployPlanForSymbol: FOR_SLB });
+    expect(html).toContain('At deploy · Star tier');
+    expect(html).toContain('The plan at deploy · Sep 1');
+    expect(html).toContain('are the two cleanest energy breakouts on the board.');
+    // Never the brief on a row, and never another tier's words.
+    expect(html).not.toContain('Energy is the only sector');
+    expect(html).not.toContain('CF gives fertilizer exposure');
+  });
+
+  it('the BOOK panel carries the brief, dated, and no tier label', () => {
+    const html = renderBook(HELD, { deployPlan: PLAN });
+    expect(html).toContain('The plan at deploy · Sep 1');
+    expect(html).toContain('Energy is the only sector with a bid this week');
+    expect(html).not.toContain('At deploy ·');
+  });
+
+  it('MUTATION ROW — gated off, the section is absent whole: no label, no date, no placeholder', () => {
+    // This is what a tournament battle or an algorithmic fallback renders
+    // (selectDeployPlan returns null and the screen passes nothing).
+    const row = renderRow(HELD);
+    expect(row).not.toContain('At deploy');
+    expect(row).not.toContain('The plan at deploy');
+    const book = renderBook(HELD);
+    expect(book).not.toContain('The plan at deploy');
+  });
+
+  it('a row whose tier rationale never names it renders no plan section at all', () => {
+    const html = renderRow(HELD, { deployPlan: PLAN, deployPlanForSymbol: null });
+    expect(html).not.toContain('At deploy');
+    expect(html).not.toContain('The plan at deploy');
+  });
+
+  it('the plan never reads as a current decision — the check block keeps its own label above it', () => {
+    const html = renderRow(HELD, { deployPlan: PLAN, deployPlanForSymbol: FOR_SLB });
+    expect(html.indexOf('From the 12:47 PM check')).toBeLessThan(html.indexOf('At deploy · Star tier'));
+    expect(html.indexOf('At deploy · Star tier')).toBeLessThan(html.indexOf('Entry $34.10'));
+  });
+});

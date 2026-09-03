@@ -15,11 +15,16 @@
 //      (extractSentences). `Not named at the {t} check` when the check spoke
 //      and none of it was about this piece. `Read the full check` opens the
 //      book panel, which is where the whole paragraph lives.
-//   4. Facts — the row's proximity text (passed in), entry, held since.
-//   5. One door: Ask a follow-up · 1 message → the composer, prefilled.
-// Book-level (the score header): 3 with the FULL rationale → the door. No
-// lines, no facts. This turn has ONE home — the strip above the board (A4);
-// the panel carries no second copy.
+//   4. The plan at deploy (A2.1b, D-76) — the deploy decision's own persisted
+//      output, labelled with the deploy date so it reads as history. A row
+//      carries only the sentences of ITS TIER's rationale that name it; the
+//      book panel carries the brief. Gated off system strings by
+//      selectDeployPlan.js; absent entirely when the caller passes nothing.
+//   5. Facts — the row's proximity text (passed in), entry, held since.
+//   6. One door: Ask a follow-up · 1 message → the composer, prefilled.
+// Book-level (the score header): 3 with the FULL rationale, 4's brief → the
+// door. No lines, no facts. This turn has ONE home — the strip above the board
+// (A4); the panel carries no second copy.
 //
 // THE FULL PARAGRAPH NEVER RENDERS ON A ROW (D-75). Before A2 every one of the
 // seven rows showed the same block of text — one paragraph about the book,
@@ -87,6 +92,8 @@ export default function WhyPanel({
   entryPrice = null,
   heldSince = null,
   lines = null,
+  deployPlan = null,
+  deployPlanForSymbol = null,
   trades = [],
   onAskFollowUp,
   onReadFullCheck = null,
@@ -224,14 +231,35 @@ export default function WhyPanel({
           )}
         </div>
 
-        {/* 4. Facts — the row's own numbers, passed in. No lock line. */}
+        {/* 4. The plan at deploy — history, never a current decision. The row
+               shows its TIER's sentences that name it; the book shows the
+               brief. Absent whole when the caller gates it off. */}
+        {isBook && deployPlan?.brief && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={eyebrow}>{COPY.planAtDeploy(deployPlan.activatedAt)}</div>
+            <Rationale text={deployPlan.brief} symbol={symbol} />
+          </div>
+        )}
+        {!isBook && deployPlanForSymbol && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={eyebrow}>{COPY.atDeployTier(deployPlanForSymbol.tier)}</div>
+            {deployPlanForSymbol.sentences.map((sentence, i) => (
+              <Rationale key={`d-${i}`} text={sentence} symbol={symbol} />
+            ))}
+            <div style={{ fontSize: 10.5, color: cssVar('text-muted'), letterSpacing: '0.02em' }}>
+              {COPY.planAtDeploy(deployPlan?.activatedAt ?? null)}
+            </div>
+          </div>
+        )}
+
+        {/* 5. Facts — the row's own numbers, passed in. No lock line. */}
         {facts.length > 0 && (
           <div style={{ ...mono, fontSize: 11.5, color: cssVar('text-secondary') }}>
             {facts.join(' · ')}
           </div>
         )}
 
-        {/* 5. The one door */}
+        {/* 6. The one door */}
         {typeof onAskFollowUp === 'function' && (
           <div>
             <button

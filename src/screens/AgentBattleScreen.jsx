@@ -27,6 +27,7 @@ import LandingWash from './battleView/LandingWash';
 import TurnLine from './battleView/TurnLine';
 import WhyPanel from './battleView/WhyPanel';
 import { selectWhyState, selectTradesForSymbol, deriveTierPrices } from './battleView/selectWhyState';
+import { selectDeployPlan, selectDeployPlanForSymbol } from './battleView/selectDeployPlan';
 import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
 import { deriveReceipts } from './battleView/deriveReceipts';
 import ThisTurnStrip from './battleView/ThisTurnStrip';
@@ -842,6 +843,16 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     };
   }, [opponentPortfolioSource, enrichAsset]);
 
+  // ── The plan at deploy (A2.1b, D-76) ──────────────────────────────────────
+  // Derived ONCE from the subscribed doc: frozen at creation, so it changes
+  // only when the doc's identity does. Null whenever it must not render — a
+  // tournament battle's plan and the algorithmic fallback's template are
+  // system strings (the gates live in selectDeployPlan.js, with the reasons).
+  const deployPlan = useMemo(
+    () => (controllerOn ? selectDeployPlan(agentBattle) : null),
+    [controllerOn, agentBattle?.agentContext, agentBattle?.gameMode, agentBattle?.activatedAt, agentBattle?.createdAt],
+  );
+
   // ── Known tickers for chat ticker linking ─────────────────────────────────
 
   const knownTickers = useMemo(() => {
@@ -1142,6 +1153,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     // A2.1: the two scoring tiers as prices, from the row's own
                     // baseline and its own baseATR — never a third source.
                     lines={deriveTierPrices(leftAsset.thresholdBaseline, leftAsset.baseATR, leftAsset.direction)}
+                    // A2.1b: only the sentences of THIS tier's deploy
+                    // rationale that name THIS piece — else nothing.
+                    deployPlan={deployPlan}
+                    deployPlanForSymbol={selectDeployPlanForSymbol(deployPlan, leftAsset.symbol, tier.key)}
                     trades={selectTradesForSymbol(agentBattle?.trades, leftAsset.symbol)}
                     onAskFollowUp={handleAskFollowUp}
                     onReadFullCheck={handleReadFullCheck}
@@ -1443,6 +1458,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 key="book"
                 symbol={null}
                 state={selectWhyState(latestDecision, null, lastScoredAt)}
+                deployPlan={deployPlan}
                 onAskFollowUp={handleAskFollowUp}
                 reducedMotion={reducedMotion}
                 headingId="why-book-heading"

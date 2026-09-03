@@ -24,6 +24,21 @@
 
 import { etTime } from '../../components/Dashboard/desk/deskCopy';
 
+/**
+ * "Sep 1" — an ET calendar date, for a fact that is about a DAY (the deploy)
+ * rather than an instant. deskCopy owns the time formatters both surfaces
+ * share; this one is Battle-View-only, so it lives here with its one caller.
+ */
+const etDate = (raw) => {
+  if (raw == null) return null;
+  const d = raw?.toDate?.() ?? new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
+};
+
+/** The board's tier keys as the words a player reads on the tier headers. */
+const TIER_LABEL = Object.freeze({ star: 'Star', core: 'Core', support: 'Support' });
+
 const money = (value) => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -89,6 +104,24 @@ export const BATTLE_VIEW_COPY = Object.freeze({
       if (line) return line;
     }
     return null;
+  },
+
+  // ── The plan at deploy (A2.1b, D-76) ──────────────────────────────────────
+  // The deploy decision's own persisted output, frozen at creation and in
+  // front of the decider on every tick. It is HISTORY: every label carries the
+  // deploy date so it can never read as a decision made now. Gated by
+  // selectDeployPlan.js — a tournament battle's plan and the algorithmic
+  // fallback's template are SYSTEM strings and never render (C1).
+  planAtDeploy: (iso) => {
+    const d = etDate(iso);
+    return d ? `The plan at deploy · ${d}` : 'The plan at deploy';
+  },
+  // A row shows only its TIER's rationale, and only the sentences of it that
+  // name the row's piece. The label says "tier" out loud, because the sentence
+  // was written about the tier — never about this position alone.
+  atDeployTier: (tier) => {
+    const label = TIER_LABEL[tier];
+    return label ? `At deploy · ${label} tier` : null;
   },
 
   // The panel header names the CHECK (the tick), never the piece: the tick's
