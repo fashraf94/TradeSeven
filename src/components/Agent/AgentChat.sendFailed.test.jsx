@@ -119,12 +119,16 @@ describe('item 11 — the send-failure line under the flag', () => {
     // assertion passes on three SUCCESSFUL sends (review RB-F5).
     //
     // The claim also cannot be discharged here in full. `nothing was sent` is
-    // a statement about the SERVER, and `api/agent/chat.js:617-623` writes the
-    // exchange and increments the budget INSIDE the `try` whose `catch` is the
-    // 500 this row stubs — so a 500 raised after that point HAS charged the
-    // player (review RB-F4, recorded for the founder, not fixed here: `api/`
-    // is behind the §1 fence). The network-drop path below needs no such
-    // caveat: a request that threw never reached a writer.
+    // a statement about the SERVER, and `api/agent/chat.js` writes the
+    // exchange and increments the budget in ONE `battleRef.update()` —
+    // `chatExchanges: arrayUnion(exchange)` beside `[budgetField]:
+    // increment(1)` — INSIDE the `try` whose `catch` is the 500 this row
+    // stubs. A 500 raised after that point HAS charged the player (review
+    // RB-F4, recorded for the founder, not fixed here: `api/` is behind the
+    // §1 fence). Cited by symbol because the line numbers move: they were
+    // `:617-623` when the finding was written and `:687`/`:692` a day later.
+    // The network-drop path below needs no such caveat: a request that threw
+    // never reached a writer.
     //
     // What IS this component's own behaviour, and what these rows hold:
     //
