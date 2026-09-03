@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Send } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
@@ -16,8 +16,10 @@ import { OPENER_LAZY_FALLBACK_ENABLED } from '../../config/featureFlags';
 // copy module, never inline here (this file is not under the copy guard —
 // its error strings would trip it).
 import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
+import { deriveChatMessages } from './deriveChatMessages';
 import { TradeCard, CheckCard, CheckRunLine } from '../../screens/battleView/TapeCards';
 import { collapseQuietChecks, TAPE_KIND } from '../../screens/battleView/buildTape';
+import { scopeTape } from '../../screens/battleView/scopeTape';
 import { cssVar } from '../../theme/cssTokens';
 
 // "Didn't respond" means the proposal hit its deadline without the user
@@ -452,6 +454,11 @@ export default function AgentChat({
   // controller's words without its columns, or the reverse, should not have to
   // unpick this. False flag-off, where the shipped strings stand.
   controllerCopy = false,
+  // Phase A2 (A2.3, D-73): the piece the stream is scoped to, and the way out.
+  // DISPLAY FILTERING ONLY — nothing is sent, the composer is untouched, and
+  // both are null flag-off, where the stream is the shipped one.
+  scopeSymbol = null,
+  onClearScope = null,
 }) {
   // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
   // reactively from the chatExchanges prop so Firestore-initiated writes
@@ -465,6 +472,11 @@ export default function AgentChat({
   const [error, setError] = useState(null);
   const [activeSubTab, setActiveSubTab] = useState('chat');
   const messagesEndRef = useRef(null);
+  // A2.3: the scroll area, and where the WHOLE tape was when the player
+  // scoped away from it. Recorded on every scroll while unscoped, so there is
+  // no transition to intercept and a remount cannot lose it mid-gesture.
+  const listRef = useRef(null);
+  const unscopedScrollRef = useRef(0);
   const textareaRef = useRef(null);
   // The last prefill this composer applied (Phase A). A composer that still
   // holds exactly that text is untouched and may be re-prefilled; anything
@@ -508,55 +520,9 @@ export default function AgentChat({
   // messages is type-driven (messageType > isAutoDebrief > userMessage check),
   // covering both the new typed schema and legacy entries.
 
-  const serverMessages = React.useMemo(() => {
-    if (!chatExchanges || chatExchanges.length === 0) return [];
-
-    const out = [];
-    chatExchanges.forEach((ex, i) => {
-      const ts = ex.timestamp?.toMillis?.()
-        || (typeof ex.timestamp === 'string' ? new Date(ex.timestamp).getTime() : null)
-        || Date.now();
-
-      const messageType = ex.messageType
-        || (ex.isAutoDebrief ? 'auto_debrief' : 'user_initiated');
-
-      // Suppress user half for any agent-initiated exchange.
-      const isAgentInitiated =
-        messageType !== 'user_initiated'
-        || ex.userMessage == null
-        || ex.userMessage === '__REVIEW_START__'; // legacy compat
-
-      if (!isAgentInitiated) {
-        out.push({
-          id: `exchange-${i}-user`,
-          role: 'user',
-          text: ex.userMessage,
-          suggestedActions: null,
-          timestamp: ts,
-          _serverIndex: i,
-        });
-      }
-
-      const isLast = i === chatExchanges.length - 1;
-      out.push({
-        id: `exchange-${i}-agent`,
-        role: 'agent',
-        text: ex.agentResponse,
-        suggestedActions: isLast ? (ex.suggestedActions || null) : null,
-        scratchpad: ex.scratchpad || null,
-        hasDirective: ex.hasDirective || false,
-        directive: ex.hasDirective && ex.directive
-          ? { text: ex.directive.text, directiveThreadId: ex.directive.directiveThreadId || null }
-          : null,
-        isAutoDebrief: !!ex.isAutoDebrief,
-        messageType,
-        mode: ex.mode || 'battle',
-        timestamp: ts,
-        _serverIndex: i,
-      });
-    });
-    return out;
-  }, [chatExchanges]);
+  // A2.3: the derivation itself is `deriveChatMessages.js` — the screen's
+  // `In the chat · {n}` counts the same list this renders (BUILD_RULES §9).
+  const serverMessages = React.useMemo(() => deriveChatMessages(chatExchanges), [chatExchanges]);
 
   // ── Reconcile in-flight optimistic bubbles against server arrivals ────────
   // When the server confirms a user-initiated exchange whose userMessage
@@ -675,6 +641,18 @@ export default function AgentChat({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, tapeEntries?.length ?? 0]);
+
+  // A2.3: SCOPING moves the stream to its newest entry — the premise of the
+  // whole surface is newest-at-the-bottom, and a filtered list is short, so a
+  // carried-over scrollTop would land the reader in clamped whitespace.
+  // CLEARING puts the whole tape back where the player left it (seed §A2.3),
+  // from the position recorded by the scroll handler below. Layout effect, so
+  // the restore happens before paint and the list never flashes at the top.
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el || !Array.isArray(tapeEntries)) return;
+    el.scrollTop = scopeSymbol ? el.scrollHeight : unscopedScrollRef.current;
+  }, [scopeSymbol, tapeEntries]);
 
   // ── Composer prefill (Phase A — the Why? door) ─────────────────────────────
   useEffect(() => {
@@ -920,8 +898,15 @@ export default function AgentChat({
       const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
       return timeA - timeB;
     });
-    return Array.isArray(tapeEntries) ? collapseQuietChecks(sorted) : sorted;
-  }, [messages, tradeEvents, tapeEntries]);
+    if (!Array.isArray(tapeEntries)) return sorted;
+    // A2.3: SCOPED runs over the unfolded stream and does NOT fold. `{n}
+    // checks · no change` stands for a contiguous slice of the WHOLE tape;
+    // a filtered stream has different adjacency, so a run built for one is
+    // meaningless in the other — and a folded run shows no text, so it names
+    // no piece either way (scopeTape.js).
+    if (scopeSymbol) return scopeTape(sorted, scopeSymbol, knownTickers);
+    return collapseQuietChecks(sorted);
+  }, [messages, tradeEvents, tapeEntries, scopeSymbol, knownTickers]);
 
   // ── Review-mode injection points in the timeline ──────────────────────────
   // Unanswered proposals render BEFORE the first auto-debrief (transition point
@@ -987,16 +972,51 @@ export default function AgentChat({
 
   const chatContent = (
     <>
+      {/* ── The piece scope (A2.3, D-73) ─────────────────────────────────
+          The chip says what the stream is filtered to and how to leave:
+          `NVDA · All`, where `All` is the way back to the whole tape. It is a
+          fact about the DISPLAY — nothing was sent and nothing changed on the
+          battle — so it sits above the stream rather than in it. Absent
+          unscoped, and gated on the TAPE rather than on the caller: flag-off
+          the filter below cannot run, so a chip would name a scope that is
+          not applied. */}
+      {Array.isArray(tapeEntries) && scopeSymbol && typeof onClearScope === 'function' && (
+        <div style={{ padding: '8px 12px 0', display: 'flex' }}>
+          <button
+            type="button"
+            data-tape-scope={scopeSymbol}
+            onClick={onClearScope}
+            style={{
+              background: 'transparent',
+              border: `1px solid ${cssVar('teal')}`,
+              color: cssVar('teal'),
+              borderRadius: 14,
+              padding: '3px 10px',
+              fontSize: 11.5,
+              fontWeight: 700,
+              letterSpacing: '0.02em',
+              cursor: 'pointer',
+            }}
+          >
+            {BATTLE_VIEW_COPY.scopeChip(scopeSymbol)}
+          </button>
+        </div>
+      )}
+
       {/* ── Message scroll area ──────────────────────────────────────── */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '12px 12px 8px',
-        display: 'flex',
-        flexDirection: 'column',
-        ...(controllerLayout ? { overscrollBehavior: 'contain' } : {}),
-        ...(controllerLayout && listCollapsed ? { display: 'none' } : {}),
-      }}>
+      <div
+        ref={listRef}
+        onScroll={(e) => { if (!scopeSymbol) unscopedScrollRef.current = e.currentTarget.scrollTop; }}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '12px 12px 8px',
+          display: 'flex',
+          flexDirection: 'column',
+          ...(controllerLayout ? { overscrollBehavior: 'contain' } : {}),
+          ...(controllerLayout && listCollapsed ? { display: 'none' } : {}),
+        }}
+      >
         {/* The empty state asks whether the TIMELINE is empty, not whether two
             of its inputs are (review L1-F8 / L2-F1 / L2-F2). Flag-off the two
             questions have the same answer — `combinedTimeline` is exactly

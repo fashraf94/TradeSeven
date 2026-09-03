@@ -99,6 +99,12 @@ export default function WhyPanel({
   onReadFullCheck = null,
   reducedMotion = false,
   headingId,
+  // A2.3 (D-73): how much of the conversation is about this piece, and the
+  // handler that scopes the tape to it. `mentionCount` is the LENGTH of the
+  // list `onScopeToPiece` opens (scopeTape.js) — the panel renders it, it
+  // never derives it. Both null on the book panel and flag-off.
+  mentionCount = null,
+  onScopeToPiece = null,
 }) {
   if (!state) return null;
   const isBook = symbol == null;
@@ -142,6 +148,10 @@ export default function WhyPanel({
       {...(decisionHeading ? { 'aria-labelledby': id } : { 'aria-label': state.label })}
       data-why-kind={state.kind}
       data-why-symbol={isBook ? 'book' : symbol}
+      // A2.3 (ruling 4): `Read the full check` moves focus into this panel.
+      // The heading below is the target; the region is the fallback for a
+      // check with no time to name, where there is no heading to move to.
+      tabIndex={-1}
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: 'auto' }}
       exit={{ opacity: 0, height: 0 }}
@@ -194,7 +204,7 @@ export default function WhyPanel({
                book panel carries the whole paragraph; a row carries only the
                sentences that name it, verbatim. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {decisionHeading && <div id={id} style={eyebrow}>{decisionHeading}</div>}
+          {decisionHeading && <div id={id} tabIndex={-1} style={eyebrow}>{decisionHeading}</div>}
           <div style={{ fontSize: 12.5, fontWeight: 700, color: LABEL_COLOR[state.kind] || cssVar('text-secondary') }}>
             {state.label}
           </div>
@@ -269,9 +279,12 @@ export default function WhyPanel({
           </div>
         )}
 
-        {/* 6. The one door */}
-        {typeof onAskFollowUp === 'function' && (
-          <div>
+        {/* 6. The doors — the follow-up, and the way into the conversation
+               about this piece (A2.3). Both are the piece's; the book panel
+               keeps the follow-up alone, because "the chat about the book" is
+               the chat. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {typeof onAskFollowUp === 'function' && (
             <button
               type="button"
               onClick={() => onAskFollowUp(isBook ? null : symbol)}
@@ -288,8 +301,30 @@ export default function WhyPanel({
             >
               {COPY.askFollowUp}
             </button>
-          </div>
-        )}
+          )}
+          {/* Zero still renders (seed §A2.3): `In the chat · 0` is a true
+              thing to say about a piece, and the tap opens the whole tape at
+              the piece's prefill rather than an empty one. */}
+          {!isBook && typeof onScopeToPiece === 'function' && COPY.inTheChat(mentionCount) && (
+            <button
+              type="button"
+              data-why-scope={symbol}
+              onClick={() => onScopeToPiece(symbol)}
+              style={{
+                background: 'transparent',
+                border: `1px solid ${cssVar('text-muted')}`,
+                color: cssVar('text-secondary'),
+                borderRadius: 16,
+                padding: '6px 12px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {COPY.inTheChat(mentionCount)}
+            </button>
+          )}
+        </div>
       </div>
     </motion.section>
   );

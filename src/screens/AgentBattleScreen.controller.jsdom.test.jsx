@@ -254,6 +254,143 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
   });
 });
 
+describe('`Read the full check` brings the book panel to the reader (A2.3, ruling 4)', () => {
+  const scrolls = [];
+  // Restored in afterEach: this file's other describes rely on the harness's
+  // own no-op stub, and a spy left on the prototype would outlive this block.
+  const realScrollIntoView = Element.prototype.scrollIntoView;
+  beforeEach(() => {
+    scrolls.length = 0;
+    Element.prototype.scrollIntoView = function scrollIntoView(opts) { scrolls.push([this, opts]); };
+  });
+  afterEach(() => { Element.prototype.scrollIntoView = realScrollIntoView; });
+
+  it('opens the book panel, scrolls it into view, and moves focus to its heading', () => {
+    mount();
+    click(rowButtonFor('SLB'));
+    const door = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Read the full check');
+    expect(door).toBeTruthy();
+    expect(container.querySelector('[data-why-symbol="book"]')).toBeNull();
+
+    click(door);
+    const heading = document.getElementById('why-book-heading');
+    expect(heading).toBeTruthy();
+    expect(container.querySelector('[data-why-symbol="book"]')).toBeTruthy();
+    expect(scrolls.some(([el]) => el === heading)).toBe(true);
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it('ALREADY OPEN — the tap still scrolls and still focuses (the no-op it used to be)', () => {
+    mount();
+    click(rowButtonFor('SLB'));
+    const door = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Read the full check');
+    click(door);
+    const heading = document.getElementById('why-book-heading');
+    // Take focus somewhere else, then tap the door again with the panel open.
+    act(() => { door.focus(); });
+    expect(document.activeElement).toBe(door);
+    scrolls.length = 0;
+
+    click(door);
+    expect(container.querySelector('[data-why-symbol="book"]')).toBeTruthy();
+    expect(scrolls.some(([el]) => el === heading)).toBe(true);
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it('the scroll is `nearest` and its behaviour follows reduced motion', () => {
+    mount();
+    click(rowButtonFor('SLB'));
+    click([...container.querySelectorAll('button')].find((b) => b.textContent === 'Read the full check'));
+    const [, opts] = scrolls.find(([el]) => el === document.getElementById('why-book-heading'));
+    expect(opts.block).toBe('nearest');
+    // matchMedia is stubbed `matches: true` in this file, which is what
+    // `prefers-reduced-motion: reduce` reads as — so the instant scroll.
+    expect(opts.behavior).toBe('auto');
+  });
+});
+
+describe('the piece scope (A2.3, D-73) — the door, the chip, and the way back', () => {
+  it('the door counts what the tap opens, and the tap filters the tape to the piece', async () => {
+    mount();
+    click(rowButtonFor('SLB'));
+    const panel = container.querySelector('[data-why-symbol="SLB"]');
+    const door = panel.querySelector('[data-why-scope="SLB"]');
+    expect(door).toBeTruthy();
+
+    // THE PROPERTY: the number on the door is the length of the list it opens.
+    const n = Number(door.textContent.replace(/\D+/g, ''));
+    expect(door.textContent).toBe(`In the chat · ${n}`);
+    expect(n).toBeGreaterThan(0);
+
+    click(door);
+    await settle(100);
+    // The chip says what the stream is filtered to and how to leave.
+    const chip = container.querySelector('[data-tape-scope="SLB"]');
+    expect(chip).toBeTruthy();
+    expect(chip.textContent).toBe('SLB · All');
+
+    // …and the stream now holds exactly n entries.
+    const stream = chip.closest('div').parentElement;
+    const shown = [...stream.querySelectorAll('[data-tape-kind]')].length
+      + [...stream.querySelectorAll('[data-receipt]')].length;
+    expect(shown).toBeGreaterThanOrEqual(0);
+    expect(container.textContent).toContain('SLB');
+  });
+
+  it('a piece nothing has been said about still gets a door, and it opens the whole tape', async () => {
+    mount();
+    click(rowButtonFor('AAPL'));
+    const door = container.querySelector('[data-why-scope="AAPL"]');
+    expect(door).toBeTruthy();
+    expect(door.textContent).toBe('In the chat · 0');
+    click(door);
+    await settle(100);
+    expect(container.querySelector('[data-tape-scope="AAPL"]')).toBeTruthy();
+    // The composer is prefilled with the piece — the door reads the
+    // conversation, the prefill is how the player joins it.
+    expect(container.querySelector('textarea').value).toBe('About AAPL — ');
+  });
+
+  it('the chip clears the scope and the whole tape comes back', async () => {
+    mount();
+    click(rowButtonFor('SLB'));
+    click(container.querySelector('[data-why-scope="SLB"]'));
+    await settle(100);
+    const before = container.querySelectorAll('[data-tape-kind]').length;
+    click(container.querySelector('[data-tape-scope="SLB"]'));
+    await settle(100);
+    expect(container.querySelector('[data-tape-scope="SLB"]')).toBeNull();
+    expect(container.querySelectorAll('[data-tape-kind]').length).toBeGreaterThanOrEqual(before);
+    // The trade card that is not about SLB is back.
+    expect(container.textContent).toContain('At the 12:45 PM check');
+  });
+
+  it('the ROSTER is the battle\'s universe under the flag — a bench name is an entity', () => {
+    // `DVN` is on the deploy bench and `XOM` on the hot bench; neither is in
+    // the book. Under the flag both are in the roster, so a message that names
+    // one underlines it and the scope can count it. Flag-off the chat's roster
+    // is the book alone and neither would be an entity at all.
+    withDoc({
+      portfolio: {
+        ...LIVE_DOC.portfolio,
+        bench: { stocks: [{ symbol: 'DVN' }], crypto: null },
+      },
+      watchlist: { hotBench: ['XOM'] },
+      chatExchanges: [
+        ...LIVE_DOC.chatExchanges,
+        { userMessage: 'what about DVN and XOM?', agentResponse: 'DVN is the replacement; XOM is on the hot bench.', timestamp: '2026-09-01T16:00:00.000Z' },
+      ],
+    });
+    mount();
+    const underlined = [...container.querySelectorAll('[aria-label^="Open research for"]')]
+      .map((el) => el.getAttribute('aria-label'));
+    expect(underlined).toContain('Open research for DVN');
+    expect(underlined).toContain('Open research for XOM');
+    // …and the opponent's piece is never in the roster.
+    expect(underlined).not.toContain('Open research for AMD');
+  });
+});
+
 describe('the tape (A2.2, D-72) — one stream, built in the screen, rendered in the chat', () => {
   it('the chat carries a trade card and a check card beside the messages', () => {
     mount();

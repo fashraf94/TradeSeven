@@ -22,6 +22,8 @@ import { TAB_KEYS, tabLabels } from './agentBattleTabs';
 import { getMarketState } from '../utils/marketSchedule';
 import { deriveTurnLine } from './battleView/deriveTurnLine';
 import { selectSymbolRoster } from './battleView/selectSymbolRoster';
+import { countMentions, mergeRecordedTape } from './battleView/scopeTape';
+import { deriveChatMessages } from '../components/Agent/deriveChatMessages';
 import useCoarseNow from './battleView/useCoarseNow';
 import { useLandingKey } from './battleView/landing';
 import LandingWash from './battleView/LandingWash';
@@ -514,6 +516,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const [whyOpen, setWhyOpen] = useState(null); // { key, symbol } | null
   const [bookWhyOpen, setBookWhyOpen] = useState(false);
   const [composerPrefill, setComposerPrefill] = useState(null); // { text, nonce } | null
+  // A2.3 (D-73): the piece the tape is scoped to — display filtering only,
+  // nothing sent, nothing persisted. Null flag-off and when unscoped.
+  const [scopeSymbol, setScopeSymbol] = useState(null);
 
   // The layout (A4, controller flag): the mobile chat sheet's detent (inert
   // on desktop and flag-off), the viewport height it is sized from, the
@@ -1009,7 +1014,18 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // A2.1: `Read the full check` on a row opens the BOOK panel, which is where
   // the whole paragraph lives (D-75). It opens rather than toggles — the door
   // is never a way to close what the user just asked to read.
-  const handleReadFullCheck = useCallback(() => setBookWhyOpen(true), []);
+  // A2.3 (ruling 4): the door OPENS the book panel, then brings it into view
+  // and moves focus to its heading — on both shells. The panel sits under the
+  // score header, above the board, so a row lower down the board opened it off
+  // the top of the screen (A2 handover item 38 / review L2-F3); and when it was
+  // already open the tap did nothing at all. The tick is what fixes the second
+  // case: it changes on every tap, so the effect runs whether or not the state
+  // moved.
+  const [readFullCheckTick, setReadFullCheckTick] = useState(0);
+  const handleReadFullCheck = useCallback(() => {
+    setBookWhyOpen(true);
+    setReadFullCheckTick((n) => n + 1);
+  }, []);
   const handleAskFollowUp = useCallback((symbol) => {
     // The invoking control, captured synchronously so the mobile sheet can
     // hand focus back to it on collapse (A4).
@@ -1025,6 +1041,41 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     if (!isDesktop) sheet.open(invoker);
   }, [isDesktop, sheet.open]);
   const handleComposerPrefillConsumed = useCallback(() => setComposerPrefill(null), []);
+
+  // The scroll and the focus for the door above (ruling 4). Runs AFTER the
+  // panel has rendered, so the target exists on the tap that opened it; and
+  // it is `block: 'nearest'`, so a panel already fully on screen does not
+  // move under the reader.
+  //
+  // Reduced motion takes the instant scroll — the same rule every other
+  // motion on this screen follows (BUILD_RULES §11). Focus is moved with
+  // `preventScroll` so the browser cannot undo the scroll that just ran.
+  //
+  // The mobile sheet's own focus rules are untouched: this is the board
+  // column, the sheet is non-modal, and nothing here reads or writes the
+  // sheet's return-focus ref.
+  useEffect(() => {
+    if (!controllerOn || readFullCheckTick === 0 || typeof document === 'undefined') return;
+    const target = document.getElementById('why-book-heading')
+      || document.querySelector('[data-why-symbol="book"]');
+    if (!target) return;
+    target.scrollIntoView?.({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'nearest' });
+    target.focus?.({ preventScroll: true });
+  }, [readFullCheckTick, controllerOn, reducedMotion]);
+
+  // A2.3: the second door. Scope is DISPLAY FILTERING — nothing is sent — and
+  // the composer prefill is the existing one, so the door reads the
+  // conversation and the follow-up door still writes to it. Mobile opens the
+  // sheet to at least half (the same rule the follow-up door uses), because a
+  // filtered stream behind a peek strip is a filter nobody can see.
+  const handleScopeToPiece = useCallback((symbol) => {
+    if (!symbol) return;
+    const invoker = typeof document !== 'undefined' ? document.activeElement : null;
+    setScopeSymbol(symbol);
+    setComposerPrefill({ text: BATTLE_VIEW_COPY.followUpPrefill(symbol), nonce: Date.now() });
+    if (!isDesktop) sheet.open(invoker);
+  }, [isDesktop, sheet.open]);
+  const handleClearScope = useCallback(() => setScopeSymbol(null), []);
 
   // Game Tape (A4, rulings §2.5): one header link renders the shipped view
   // full-screen over the page, with a way back. Focus goes to the way back on
@@ -1087,6 +1138,23 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     agentBattle?.chatExchanges,
     receipts,
   ]);
+
+  // A2.3: the merged, UNFOLDED stream over the persisted record — messages
+  // (the chat's own derivation, so the count and the bubbles are one list) plus
+  // the tape's cards, one concat and one sort exactly as the chat merges them.
+  // Null flag-off, so nothing here runs on the shipped path.
+  const recordedTape = useMemo(() => (controllerOn
+    ? mergeRecordedTape(deriveChatMessages(chatExchanges), tapeEntries)
+    : null), [controllerOn, chatExchanges, tapeEntries]);
+
+  // `In the chat · {n}` for the OPEN row's piece — the length of the list the
+  // door opens, computed with the same function the chat filters with
+  // (BUILD_RULES §9). Only the open row needs it, so a board of seven pieces
+  // costs one scan, not seven.
+  const openWhySymbol = whyOpen?.symbol ?? null;
+  const mentionCount = useMemo(() => (controllerOn && openWhySymbol
+    ? countMentions(recordedTape, openWhySymbol, knownTickers)
+    : null), [controllerOn, openWhySymbol, recordedTape, knownTickers]);
 
   const thisTurnStrip = controllerOn && agentBattle ? (
     <ThisTurnStrip
@@ -1195,6 +1263,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     trades={selectTradesForSymbol(agentBattle?.trades, leftAsset.symbol)}
                     onAskFollowUp={handleAskFollowUp}
                     onReadFullCheck={handleReadFullCheck}
+                    // A2.3: the count and the door that opens the filtered
+                    // tape. The count is only computed for the OPEN row, and
+                    // this panel only renders when its row is the open one.
+                    mentionCount={mentionCount}
+                    onScopeToPiece={handleScopeToPiece}
                     reducedMotion={reducedMotion}
                     headingId={`why-${rowKey}-heading`}
                   />
@@ -1256,6 +1329,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       // A2.2: the tape's trade and check cards, merged into the chat's one
       // timeline. Built above from the subscribed doc; null flag-off.
       tapeEntries={tapeEntries}
+      // A2.3: the scoped stream and the way out of it.
+      scopeSymbol={scopeSymbol}
+      onClearScope={handleClearScope}
       controllerLayout
       // Item 11: the controller's own line when a send never reaches the
       // model. Passed on the FLAG, beside the layout rather than through it.

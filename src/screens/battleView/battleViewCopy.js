@@ -268,6 +268,18 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   askFollowUp: 'Ask a follow-up · 1 message',
   followUpPrefill: (symbol) => `About ${symbol} — `,
 
+  // ── The piece scope (A2.3, D-73) ──────────────────────────────────────────
+  // The SECOND door: how much of the conversation is about this piece, and the
+  // way into it. `n` is the LENGTH of the list the tap opens (scopeTape.js) —
+  // never a second count — so the number and the filtered tape cannot
+  // disagree (BUILD_RULES §9). Zero is a real answer and still renders: `In
+  // the chat · 0` says something true about the piece and opens the whole
+  // tape at its composer prefill. Free — a count of what is already on screen.
+  inTheChat: (n) => (Number.isFinite(n) ? `In the chat · ${n}` : null),
+  // The chip on the scoped stream. `All` is the way OUT — the whole tape —
+  // and it is a noun about the display, never a claim about the battle.
+  scopeChip: (symbol) => (symbol ? `${symbol} · All` : null),
+
   // ── The tape (A2.2, D-72 / D-77) ──────────────────────────────────────────
   // A trade card per EXECUTED swap: when, the pair, the tier. The tier is the
   // scoring tier the closed position sat in, from the trade record itself.
