@@ -34,59 +34,39 @@
 import {
   buildBaggerbombAdapter,
   deriveDueAt,
+  toIso,
   toMillis,
   PHASE,
 } from '../../adapters/baggerbombAdapter';
-import { DESK_COPY, etTime } from '../../components/Dashboard/desk/deskCopy';
+import { DESK_COPY, etSlotTime, SLOT_MS } from '../../components/Dashboard/desk/deskCopy';
 
 // The adapter's normalisation is the one boundary for the Firestore-Timestamp
 // / ISO / Date / number union; re-exported so the Why? selector shares it.
 export { toMillis };
 
-/**
- * The cron's slot, in milliseconds. The evaluate cron runs on the quarter
- * hour; every check belongs to one of `:00 / :15 / :30 / :45`.
- */
-export const SLOT_MS = 15 * 60 * 1000;
+// D-83's slot width, re-exported from where the flooring lives so this
+// module's own tests can pin it against the cron's schedule.
+export { SLOT_MS };
 
 /**
- * An instant floored to the check slot it belongs to. PRIVATE — `slotLabel`
- * below is the one thing this phase exposes, and the exact instants stay on
- * the derived object for ordering and the `>=` join.
+ * A CHECK, named by its cron slot (D-83) — the ruling's one helper.
  *
- * Floored on ABSOLUTE time, then formatted in ET, so no offset is hand-rolled
- * (BUILD_RULES §6). That is exact for America/New_York because its offset is a
- * whole number of hours in both halves of the year, which makes a 15-minute
- * absolute boundary the same instant as a 15-minute ET wall-clock boundary.
- * The assumption is not left implicit: deriveTurnLine.test.js walks both 2026
- * DST switches and asserts every label lands on `:00 / :15 / :30 / :45`.
- */
-function floorToSlot(iso) {
-  const ms = toMillis(iso);
-  if (ms == null) return null;
-  return new Date(Math.floor(ms / SLOT_MS) * SLOT_MS).toISOString();
-}
-
-/**
- * A CHECK, named by its cron slot (D-83).
+ * The arithmetic and the reason both live with `etTime` in deskCopy.js, as
+ * `etSlotTime`, because the DESK needs the same rule: the posture strings the
+ * turn line renders are the Desk's own, shared deliberately under D-62, and
+ * flooring in only one of their two callers made one tick read `12:47 PM` on
+ * the Desk and `12:45 PM` on the Battle View (A2.3 review L1-F2 / L5-F1).
+ * This is the name the ruling gave it and the name this phase's surfaces
+ * import; it is a delegation, not a second rule.
  *
- * The founder's A2.2 smoke found the score header reading `Checked 12:30 PM`
- * while the tape's card read `At the 12:31 PM check` — one tick, two labels,
- * because `scoreState.lastScoredAt` and the evaluation entry's own `timestamp`
- * are two `new Date()` calls inside one cron run (agent-evaluate.js:881 vs
- * :2059) and the second one had crossed a minute boundary. Neither number was
- * wrong; naming a check by an exact instant is what was wrong, because the
- * instant is write latency and the SLOT is the thing that happened.
- *
- * So every label that names a check floors to the slot, and only labels do:
- * the exact timestamps still sort the tape and still answer the `>=` join, and
- * a TRADE keeps its exact minute (a swap executes at an instant, and
- * `1:31 PM · GILD → MOS` is that instant, not a check).
+ * Only LABELS floor. The exact timestamps still sort the tape and still answer
+ * the `>=` join, and a TRADE keeps its exact minute — a swap executes at an
+ * instant, and `1:31 PM · GILD → MOS` is that instant, not a check.
  *
  * @returns {string|null} `12:30 PM`, or null when there is no instant
  */
 export function slotLabel(iso) {
-  return etTime(floorToSlot(iso));
+  return etSlotTime(toIso(iso));
 }
 
 /**
@@ -164,12 +144,11 @@ export function deriveTurnLine(battle, now, marketState) {
   const dueMs = toMillis(dueAt);
   const decision = selectLatestDecision(battle);
 
-  // THE LABELS NAME THE SLOT (D-83); the returned fields keep the exact
-  // instants, because the late branch's arithmetic and every caller's ordering
-  // are about real time, not about what the line says.
-  const lastSlot = floorToSlot(lastCheckedAt);
-  const nextSlot = floorToSlot(nextDecisionAt);
-  const dueSlot = floorToSlot(dueAt);
+  // THE LABELS NAME THE SLOT (D-83) — and they do it inside the posture
+  // strings themselves (`etSlotTime`), so the Desk cannot render the same
+  // sentence with a different minute. The exact instants are passed straight
+  // through and returned unchanged, because the late branch's arithmetic and
+  // every caller's ordering are about real time, not about what the line says.
 
   let state;
   let text;
@@ -181,7 +160,7 @@ export function deriveTurnLine(battle, now, marketState) {
     text = DESK_COPY.posturePreOpen;
   } else if (phase === PHASE.LIVE_CLOSED) {
     state = TURN_STATE.CLOSED;
-    text = DESK_COPY.postureClosed(nextOpenEt, lastSlot);
+    text = DESK_COPY.postureClosed(nextOpenEt, lastCheckedAt);
   } else if (!lastCheckedAt) {
     state = TURN_STATE.FIRST_CHECK;
     text = DESK_COPY.postureLive(null, null);
@@ -190,15 +169,15 @@ export function deriveTurnLine(battle, now, marketState) {
     // true exactly when deriveDueAt() is null, and the late branch needs a
     // non-null dueAt, so the two are mutually exclusive by construction.
     state = TURN_STATE.LAST_OF_SESSION;
-    text = DESK_COPY.postureLastOfSession(lastSlot);
+    text = DESK_COPY.postureLastOfSession(lastCheckedAt);
   } else if (dueMs != null && nowMs != null && nowMs > dueMs + LATE_GRACE_MS) {
     // Strictly past the grace: at exactly dueAt + grace the line still reads
     // as live (`Checked {t}`, its next already withheld by the adapter).
     state = TURN_STATE.LATE;
-    text = DESK_COPY.postureLate(lastSlot, dueSlot);
+    text = DESK_COPY.postureLate(lastCheckedAt, dueAt);
   } else {
     state = TURN_STATE.LIVE;
-    text = DESK_COPY.postureLive(lastSlot, nextSlot);
+    text = DESK_COPY.postureLive(lastCheckedAt, nextDecisionAt);
   }
 
   return {

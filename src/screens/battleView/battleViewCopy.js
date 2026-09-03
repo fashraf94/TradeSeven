@@ -75,6 +75,14 @@ const money = (value) => {
 };
 
 export const BATTLE_VIEW_COPY = Object.freeze({
+  // A PRICE, as this screen writes one (A2.3 review L5-F6). The row's current
+  // price and the panel's `Bagger $ · Bust $` / `Entry $` are the same class of
+  // number about the same piece, two lines apart — `src/utils/formatters.js`'s
+  // `formatPrice` is `$${n.toFixed(2)}`, which drops the thousands separator
+  // and made NVDA read `$1234.50` on the row beside `Entry $1,234.50` in the
+  // panel. One formatter, so they cannot disagree (BUILD_RULES §9).
+  price: (value) => money(value),
+
   // ── Why? (A2) ──────────────────────────────────────────────────────────────
   // The verb on a piece. Free — a pure read of persisted decision-path text.
   why: 'Why?',
@@ -284,10 +292,12 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // ── The piece scope (A2.3, D-73) ──────────────────────────────────────────
   // The SECOND door: how much of the conversation is about this piece, and the
   // way into it. `n` is the LENGTH of the list the tap opens (scopeTape.js) —
-  // never a second count — so the number and the filtered tape cannot
-  // disagree (BUILD_RULES §9). Zero is a real answer and still renders: `In
-  // the chat · 0` says something true about the piece and opens the whole
-  // tape at its composer prefill. Free — a count of what is already on screen.
+  // never a second count — so the number and the filter cannot drift as rules
+  // (BUILD_RULES §9); see that module's header for the one input they do not
+  // share. Zero is a real answer and still renders: `In the chat · 0` says
+  // something true about the piece, and the tap opens the WHOLE tape at its
+  // composer prefill rather than a filter onto nothing (seed §A2.3). Free — a
+  // count of what is already on screen.
   inTheChat: (n) => (Number.isFinite(n) ? `In the chat · ${n}` : null),
   // The chip on the scoped stream. `All` is the way OUT — the whole tape —
   // and it is a noun about the display, never a claim about the battle.

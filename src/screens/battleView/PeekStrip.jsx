@@ -61,6 +61,11 @@ export function PeekLine({ text }) {
  * than a chevron — the same shape the mobile handle takes.
  */
 export function PeekStrip({
+  // A2.4 (review L2-F4): the control the screen hands focus BACK to. Collapsing
+  // and expanding each destroy the control that was clicked, and without this
+  // a keyboard user was dropped to `document.body` — the mobile sheet has had a
+  // return-focus contract for this exact transition since A4 (review CR4).
+  expandRef = null,
   turnText = null,
   line = null,
   unread = false,
@@ -81,6 +86,7 @@ export function PeekStrip({
       }}
     >
       <button
+        ref={expandRef}
         type="button"
         onClick={onExpand}
         aria-expanded="false"
@@ -124,16 +130,21 @@ export function PeekStrip({
         <span aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 12, lineHeight: 1 }}>▴</span>
       </button>
       <PeekLine text={line} />
-      <div
-        data-peek-content="1"
-        style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}
-        // `reducedMotion` is accepted and deliberately unused: nothing here
-        // animates, and a strip that grew a transition later must take it from
-        // the vocabulary with this flag, not invent one (BUILD_RULES §11).
-        data-reduced-motion={reducedMotion ? 'true' : 'false'}
-      >
-        {children}
-      </div>
+      {/* `children` is optional: on the desktop the chat is the strip's
+          SIBLING, not its child, so that collapsing cannot remount it
+          (review L2-F1). `reducedMotion` is accepted and deliberately
+          unused — nothing here animates, and a strip that grew a transition
+          later must take it from the vocabulary with this flag rather than
+          invent one (BUILD_RULES §11). */}
+      {children ? (
+        <div
+          data-peek-content="1"
+          style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}
+          data-reduced-motion={reducedMotion ? 'true' : 'false'}
+        >
+          {children}
+        </div>
+      ) : null}
     </div>
   );
 }

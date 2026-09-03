@@ -13,7 +13,9 @@
 //   Filed 3:50 PM · Widen the spread   a directive (COPY.filed + its text)
 //   3:45 PM · Held                     a check (its slot + the Why? label)
 //   1:31 PM · GILD → MOS               a trade (COPY.tradeLine)
-//   3:45 PM · 3 checks · no change     a folded run
+//   3 checks · no change               a folded run — NO time: its `at` is the
+//                                      run's FIRST member and the card it
+//                                      stands for shows no time either
 //   3:52 PM · I'd hold the energy slot a message, the speaker's own words
 //
 // A CHECK IS NAMED BY ITS SLOT here as everywhere (D-83); a trade keeps its
@@ -41,7 +43,13 @@ const line = (time, what) => {
 /** The instant an item carries, whichever shape it is in. */
 function atOf(item) {
   if (item?.at) return item.at;
-  if (item?.timestamp instanceof Date) return item.timestamp.toISOString();
+  // An Invalid Date is still `instanceof Date` and throws on `toISOString`
+  // (review L2-F12). Unreachable through `deriveChatMessages`, which
+  // normalises every stamp to a finite number — but `mergeRecordedTape` can
+  // manufacture one from any other caller, and a strip is not worth a crash.
+  if (item?.timestamp instanceof Date) {
+    return Number.isFinite(item.timestamp.getTime()) ? item.timestamp.toISOString() : null;
+  }
   if (item?.timestamp != null) return item.timestamp;
   return null;
 }
@@ -62,7 +70,13 @@ export function peekLineFor(item) {
     return line(slotLabel(at), item.label);
   }
   if (item._type === TAPE_KIND.CHECK_RUN) {
-    return line(slotLabel(at), COPY.checksNoChange(item.count));
+    // NO TIME (review L1-F4 / L5-F3). A run's `at` is its FIRST member's — the
+    // sort position `collapseQuietChecks` needs — so stamping the line with it
+    // named the OLDEST check in the run while the turn line directly above
+    // named the newest. The card the run stands for renders no time either
+    // (TapeCards.CheckRunLine), so the strip now says exactly what the stream
+    // says, which is the whole point of folding first (BUILD_RULES §9).
+    return COPY.checksNoChange(item.count);
   }
   if (item._type === TAPE_MESSAGE) {
     // A directive is the one message whose LINE is its directive, not its

@@ -134,16 +134,28 @@ describe('D-84 — four kinds in one stream', () => {
     expect(html).not.toMatch(/data-receipt="filed"[^>]*>[\s\S]{0,200}border-radius:0;/);
   });
 
-  it('MUTATION ROW — the four shells are four DIFFERENT shells', () => {
+  it('MUTATION ROW — the four shells land in four DISJOINT subtrees', () => {
+    // The old form ended `expect(new Set(shells).size).toBe(4)` — an assertion
+    // about the test's own literal array, which no rendering could fail
+    // (review L4-F7). This one asks the DOM: each kind's own slice must carry
+    // its marker and none of the other three's.
     const html = render();
-    const shells = [
-      'border-radius:0 12px 12px 12px', // speech
-      'border-radius:12px 12px 0 12px', // the player
-      RECORD_SHELL,                     // records
-      '>Directive<',                    // the directive card
-    ];
-    for (const shell of shells) expect(html).toContain(shell);
-    expect(new Set(shells).size).toBe(4);
+    const sliceFrom = (marker, next) => {
+      const start = html.indexOf(marker);
+      expect(start).toBeGreaterThan(-1);
+      const end = next ? html.indexOf(next, start) : html.length;
+      return html.slice(start, end > start ? end : html.length);
+    };
+    // A record's slice: from its marker to the end of its own div's styles.
+    const record = sliceFrom('data-tape-kind="trade"', 'data-tape-kind="check"');
+    expect(record).toContain(RECORD_SHELL);
+    expect(record).not.toContain('border-radius:0 12px 12px 12px');
+    expect(record).not.toContain('border-radius:12px 12px 0 12px');
+    expect(record).not.toContain('>Directive<');
+    // The player's bubble carries neither the record shell nor speech's tail.
+    const player = sliceFrom('border-radius:12px 12px 0 12px', 'border-radius:0 12px 12px 12px');
+    expect(player).not.toContain(RECORD_SHELL);
+    expect(player).not.toContain('border-radius:0 12px 12px 12px');
   });
 
   it('the record family is one family — the collapsed run wears the same shell', () => {

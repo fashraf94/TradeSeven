@@ -17,7 +17,12 @@
 // player wrote once. One derivation, so the number and the bubbles cannot
 // disagree (BUILD_RULES §9).
 //
-// Nothing here changed in the lift; the chat golden is the proof.
+// Nothing here changed in the lift. The chat golden covers the SHAPE, but it
+// cannot see two of the rules above (review L3-F2's sibling finding): its
+// fixture's first exchange is an `auto_debrief`, so the `__REVIEW_START__`
+// sentinel is never the conjunct that fires, and every non-last exchange
+// carries `suggestedActions: null`. Both are pinned by name in
+// `deriveChatMessages.test.js` instead.
 
 /**
  * @param {Array|null} chatExchanges  the subscribed doc's exchanges

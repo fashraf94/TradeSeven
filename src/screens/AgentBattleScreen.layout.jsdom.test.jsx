@@ -57,7 +57,7 @@ vi.mock('../components/Agent/LiveActivityPanel', () => ({
 
 // The feed the hook hands back is mutable so a test can grow it between
 // renders (the unread dot).
-const store = vi.hoisted(() => ({ statusFeed: [], lastScoredAt: '2026-09-01T16:47:00.000Z', pendingProposal: null, feedBookmarks: [] }));
+const store = vi.hoisted(() => ({ statusFeed: [], lastScoredAt: '2026-09-01T16:47:00.000Z', pendingProposal: null, feedBookmarks: [], evaluations: null }));
 
 const LIVE_DOC = {
   id: 'ab-1',
@@ -87,13 +87,18 @@ const LIVE_DOC = {
 };
 vi.mock('../hooks/useAgentBattle', () => ({
   default: () => ({
-    battle: { ...LIVE_DOC, statusFeed: store.statusFeed, scoreState: { ...LIVE_DOC.scoreState, lastScoredAt: store.lastScoredAt } }, statusFeed: store.statusFeed,
+    battle: { ...LIVE_DOC, statusFeed: store.statusFeed, evaluations: store.evaluations || LIVE_DOC.evaluations, scoreState: { ...LIVE_DOC.scoreState, lastScoredAt: store.lastScoredAt } }, statusFeed: store.statusFeed,
     executionMode: 'copilot', pendingProposal: store.pendingProposal, strategyPreset: 'balanced', gameplanMeeting: null,
     chatExchanges: LIVE_DOC.chatExchanges, feedBookmarks: store.feedBookmarks, loading: false,
   }),
 }));
 
 import AgentBattleScreen from './AgentBattleScreen';
+import { derivePeekLine } from './battleView/derivePeekLine';
+import { mergeRecordedTape } from './battleView/scopeTape';
+import { buildTape } from './battleView/buildTape';
+import { deriveReceipts } from './battleView/deriveReceipts';
+import { deriveChatMessages } from '../components/Agent/deriveChatMessages';
 
 const BATTLE = {
   agentId: 'agent-1', agentBattleId: 'ab-1',
@@ -159,6 +164,7 @@ beforeEach(() => {
   store.lastScoredAt = '2026-09-01T16:47:00.000Z';
   store.pendingProposal = null;
   store.feedBookmarks = [];
+  store.evaluations = null;
   mq.listeners.clear();
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -274,26 +280,101 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     expect(collapse.getAttribute('aria-label')).toBe('Collapse the chat');
     click(collapse);
 
-    expect(q('[data-chat-column]')).toBeNull();
-    expect(q('[data-board]').style.flex).toBe('1 1 0%');
-    // The strip is IN the board column, at its bottom, with the one chat.
+    // The column is the chat's ONE home and it does not go away — it wraps
+    // onto its own line as the strip (review L2-F1). What changes is its
+    // chrome and its flex basis, never its position in the tree.
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
+    expect(q('[data-chat-collapse]')).toBeNull();
+    expect(q('[data-board]').style.flex).toBe('0 0 100%');
+    expect(q('[data-layout="desktop"]').style.flexWrap).toBe('wrap');
+    // The strip sits BENEATH the full-width board, on its own wrapped line.
+    // It is the board's SIBLING, not its child (review L2-F1): nesting it in
+    // the board column is what moved the chat between two tree positions and
+    // remounted it on every collapse. Same picture, stable tree.
     const strip = q('[data-peek-strip]');
     expect(strip).toBeTruthy();
-    expect(q('[data-board]').contains(strip)).toBe(true);
+    const row = q('[data-layout="desktop"]');
+    const children = [...row.children];
+    expect(children.indexOf(q('[data-board]'))).toBeLessThan(children.indexOf(q('[data-chat-column]')));
+    expect(q('[data-chat-column]').contains(strip)).toBe(true);
     expect(qa('textarea').length).toBe(1);
-    expect(strip.contains(q('textarea'))).toBe(true);
+    expect(q('[data-chat-column]').contains(q('textarea'))).toBe(true);
     // …and the strip carries the turn line and the newest tape line.
     const expand = q('[data-peek-expand]');
     expect(expand.getAttribute('aria-label')).toBe('Expand the chat');
     expect(expand.textContent).toContain('Checked 12:45 PM');
     expect(q('[data-peek-line]')).toBeTruthy();
 
-    // Expanding restores the column and the 60/40 split.
+    // Expanding restores the chrome and the 60/40 split.
     click(expand);
-    expect(q('[data-chat-column]')).toBeTruthy();
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('false');
     expect(q('[data-peek-strip]')).toBeNull();
     expect(q('[data-board]').style.flex).toBe('3 1 0%');
+    expect(q('[data-layout="desktop"]').style.flexWrap).toBe('');
     expect(qa('textarea').length).toBe(1);
+  });
+
+  it('A2.4 (review L2-F1) — collapsing and expanding NEVER remount the chat: the draft survives', () => {
+    // A4's F13 rule, on the desktop's new control. `{chat}` is rendered in ONE
+    // tree position; only its chrome and the column's flex basis change.
+    mount();
+    const before = q('[data-chat-layout="controller"]');
+    const ta = q('textarea');
+    typeDraft('sell SLB at the open');
+    expect(q('textarea').value).toBe('sell SLB at the open');
+
+    click(q('[data-chat-collapse]'));
+    expect(q('[data-peek-strip]')).toBeTruthy();
+    expect(q('textarea').value).toBe('sell SLB at the open');
+    // …the very same DOM node, not a fresh one with a restored value.
+    expect(q('[data-chat-layout="controller"]')).toBe(before);
+    expect(q('textarea')).toBe(ta);
+
+    click(q('[data-peek-expand]'));
+    expect(q('textarea').value).toBe('sell SLB at the open');
+    expect(q('[data-chat-layout="controller"]')).toBe(before);
+  });
+
+  it('A2.4 (review L2-F4) — focus moves to the control that replaces the one that vanished', () => {
+    mount();
+    const collapse = q('[data-chat-collapse]');
+    act(() => { collapse.focus(); });
+    expect(document.activeElement).toBe(collapse);
+    click(collapse);
+    expect(document.activeElement).toBe(q('[data-peek-expand]'));
+    click(q('[data-peek-expand]'));
+    expect(document.activeElement).toBe(q('[data-chat-collapse]'));
+  });
+
+  it('A2.4 (review L4-F2) — the strip\'s line IS the tape\'s newest entry, not a constant', () => {
+    // The presence assertions could not tell `derivePeekLine`'s output from
+    // any other string. This one recomputes it from the fixture's own doc and
+    // then moves the tape to prove the strip follows.
+    mount();
+    click(q('[data-chat-collapse]'));
+    const expected = derivePeekLine(mergeRecordedTape(
+      deriveChatMessages(LIVE_DOC.chatExchanges),
+      buildTape({
+        trades: LIVE_DOC.trades, statusFeed: LIVE_DOC.statusFeed,
+        evaluations: LIVE_DOC.evaluations,
+        receipts: deriveReceipts(LIVE_DOC.chatExchanges, LIVE_DOC.directive, LIVE_DOC.status),
+        chatExchanges: LIVE_DOC.chatExchanges,
+      }),
+    ));
+    expect(expected).toBeTruthy();
+    expect(q('[data-peek-line]').textContent).toBe(expected);
+
+    // A newer entry lands: the line moves with it.
+    store.evaluations = [...LIVE_DOC.evaluations, {
+      evalId: 'eval_new', timestamp: '2026-09-01T19:46:00.000Z', decision: 'HOLD',
+      downgraded: false, rationale: 'The book is quiet.', scores: { banked: 0 },
+    }];
+    // `rerender` re-renders the same root, so the detent survives — the strip
+    // is still up and only its line should have moved.
+    rerender();
+    expect(q('[data-peek-strip]')).toBeTruthy();
+    expect(q('[data-peek-line]').textContent).toBe('3:45 PM · Held');
+    expect(q('[data-peek-line]').textContent).not.toBe(expected);
   });
 
   it('A2.4 (D-74) — a COLLAPSED desktop shows the dot on the strip, the mobile rule', () => {
@@ -543,7 +624,7 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     expect(q('[data-chat-column]')).toBeTruthy();
     click(q('[data-chat-collapse]'));
     expect(q('[data-peek-strip]')).toBeTruthy();
-    expect(q('[data-chat-column]')).toBeNull();
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
     expect(qa('textarea').length).toBe(1);
 
     crossTo(390);
@@ -555,7 +636,7 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     // …and the phone's peek is the desktop's strip when it goes back.
     crossTo(1280);
     expect(q('[data-peek-strip]')).toBeTruthy();
-    expect(q('[data-chat-column]')).toBeNull();
+    expect(q('[data-chat-column]').getAttribute('data-chat-collapsed')).toBe('true');
     expect(qa('textarea').length).toBe(1);
   });
 

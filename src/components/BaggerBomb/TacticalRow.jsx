@@ -11,7 +11,12 @@ import BadgeRow from './BadgeRow';
 import ProximityLabel from './ProximityLabel';
 import { computeProximity } from './computeProximity';
 import DataStrike from '../shared/DataStrike';
-import { formatPrice } from '../../utils/formatters';
+// A2 (D-85): the row's price uses the SAME formatter the Why? panel two lines
+// below uses for `Entry $` and `Bagger $ · Bust $` — `formatPrice` drops the
+// thousands separator and disagreed above $1,000 (review L5-F6). Importing a
+// copy string module from a shipped component is safe: the value is read only
+// on the flag path and the module is pure.
+import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
 
 const DEFAULT_HISTORY = { maxMultiplier: 0, minMultiplier: 0 };
 
@@ -222,9 +227,10 @@ function AssetSide({
   // price exists. The opponent's side never receives the prop (the screen
   // passes it to the left AssetSide alone) and the `!isRight` conjunct keeps
   // that true even if a future caller passes it to both.
+  // `Number.isFinite` does not coerce, so it subsumes a `typeof` test — a
+  // conjunct that cannot fail is not a guard (review L4-F10).
   const showPrice = showCurrentPrice
     && !isRight
-    && typeof asset.currentPrice === 'number'
     && Number.isFinite(asset.currentPrice)
     && asset.currentPrice > 0;
 
@@ -386,11 +392,15 @@ function AssetSide({
             //
             // Absent when there is no live price to show — never `$0.00`,
             // which `formatPrice` would produce from a missing one.
-            if (!showPrice) return pctBlock;
+            // The wrapper renders on the FLAG path whether or not a price is
+            // ready (review L2-F10): a live price arriving turned the bare
+            // block into a wrapped one, which remounts the AnimatePresence
+            // percent and momentarily breaks the `aria-describedby` target.
+            if (!showCurrentPrice || isRight) return pctBlock;
             return (
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                 {pctBlock}
-                <span
+                {showPrice && <span
                   data-row-price={asset.symbol}
                   style={{
                     fontSize: '12px',
@@ -399,8 +409,8 @@ function AssetSide({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {formatPrice(asset.currentPrice)}
-                </span>
+                  {BATTLE_VIEW_COPY.price(asset.currentPrice)}
+                </span>}
               </div>
             );
           })()}

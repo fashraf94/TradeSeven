@@ -329,15 +329,24 @@ describe('the piece scope (A2.3, D-73) — the door, the chip, and the way back'
     expect(chip).toBeTruthy();
     expect(chip.textContent).toBe('SLB · All');
 
-    // …and the stream now holds exactly n entries.
-    const stream = chip.closest('div').parentElement;
-    const shown = [...stream.querySelectorAll('[data-tape-kind]')].length
-      + [...stream.querySelectorAll('[data-receipt]')].length;
-    expect(shown).toBeGreaterThanOrEqual(0);
-    expect(container.textContent).toContain('SLB');
+    // …and the stream really is FILTERED (review L4-F9: the old row summed two
+    // lengths and asserted `>= 0`, which no defect could fail). In this
+    // fixture n = 2: the `MU → SLB` trade and the check whose first sentence
+    // names SLB. The directive exchange, which names no piece, is gone from
+    // the chat — asserted INSIDE the chat column, because `This turn` renders
+    // the same directive text above the board.
+    const column = chip.closest('[data-chat-column]');
+    expect(column).toBeTruthy();
+    expect(column.querySelectorAll('[data-tape-kind]').length).toBe(n);
+    expect(column.textContent).toContain('MU → SLB');
+    expect(column.textContent).toContain('At the 12:45 PM check');
+    expect(column.textContent).not.toContain('Protect the lead into the close');
+    expect(column.querySelector('[data-receipt]')).toBeNull();
   });
 
-  it('a piece nothing has been said about still gets a door, and it opens the whole tape', async () => {
+  it('a piece nothing has been said about still gets a door, and it opens the WHOLE tape', async () => {
+    // Seed §A2.3, verbatim: "Zero → the door still renders as `In the chat ·
+    // 0`, opens the unscoped tape at the piece's composer prefill."
     mount();
     click(rowButtonFor('AAPL'));
     const door = container.querySelector('[data-why-scope="AAPL"]');
@@ -345,7 +354,11 @@ describe('the piece scope (A2.3, D-73) — the door, the chip, and the way back'
     expect(door.textContent).toBe('In the chat · 0');
     click(door);
     await settle(100);
-    expect(container.querySelector('[data-tape-scope="AAPL"]')).toBeTruthy();
+    // NO chip, and the whole tape is still there — never the filtered-to-
+    // nothing stream, which fell through to the fresh-battle EmptyState.
+    expect(container.querySelector('[data-tape-scope]')).toBeNull();
+    expect(container.querySelector('[data-tape-kind]')).toBeTruthy();
+    expect(container.textContent).not.toContain('Your agent is ready');
     // The composer is prefilled with the piece — the door reads the
     // conversation, the prefill is how the player joins it.
     expect(container.querySelector('textarea').value).toBe('About AAPL — ');

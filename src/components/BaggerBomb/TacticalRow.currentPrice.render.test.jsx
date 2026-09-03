@@ -24,7 +24,7 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import TacticalRow, { AssetSide } from './TacticalRow';
 import { computeProximity } from './computeProximity';
-import { formatPrice } from '../../utils/formatters';
+import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
 
 const strip = (h) => h.replace(/<!-- -->/g, '');
 
@@ -54,9 +54,15 @@ describe('D-85 — the current price on the player\'s row', () => {
     expect(html).toContain('▲ +2.34%');
   });
 
-  it('uses the EXISTING price formatter, not a new one', () => {
-    expect(row({ showCurrentPrice: true })).toContain(formatPrice(PLAYER.currentPrice));
-    expect(formatPrice(264.75)).toBe('$264.75');
+  it('uses the SAME formatter the Why? panel two lines below uses', () => {
+    // `src/utils/formatters.js`'s `formatPrice` is `$${n.toFixed(2)}` — no
+    // thousands separator — so it read `$1234.50` on the row beside
+    // `Entry $1,234.50` in the panel (review L5-F6). One formatter now.
+    expect(row({ showCurrentPrice: true })).toContain(BATTLE_VIEW_COPY.price(PLAYER.currentPrice));
+    expect(BATTLE_VIEW_COPY.price(264.75)).toBe('$264.75');
+    expect(BATTLE_VIEW_COPY.price(1234.5)).toBe('$1,234.50');
+    expect(row({ showCurrentPrice: true, leftAsset: { ...PLAYER, currentPrice: 1234.5 } }))
+      .toContain('$1,234.50');
   });
 
   it('ONE SOURCE — the dollar and the proximity move together off `currentPrice` (§9)', () => {
@@ -66,18 +72,25 @@ describe('D-85 — the current price on the player\'s row', () => {
     expect(row({ showCurrentPrice: true, leftAsset: moved })).toContain('$271.40');
     expect(row({ showCurrentPrice: true, leftAsset: moved })).not.toContain('$264.75');
 
-    const before = computeProximity({
-      priceChange: PLAYER.thresholdPriceChange, baseATR: PLAYER.baseATR,
-      history: PLAYER.history, dailyLevels: undefined, currentPrice: PLAYER.currentPrice,
+    // …and the PROXIMITY moves with it. The old form of this row passed
+    // `dailyLevels: undefined`, which makes `computeDollarInfo` return null and
+    // the two results byte-identical — it then asserted only `toBeTruthy()` on
+    // each, so no defect could fail it (review L4-F3). With levels present the
+    // dollar branch runs and the two genuinely differ.
+    // The cron's own level keys (computeProximity's LABEL_TO_LEVEL_KEY).
+    const levels = { baggerBomb: 275, bust: 250 };
+    const inputs = (asset) => ({
+      priceChange: asset.thresholdPriceChange, baseATR: asset.baseATR,
+      history: asset.history, dailyLevels: levels, currentPrice: asset.currentPrice,
     });
-    const after = computeProximity({
-      priceChange: moved.thresholdPriceChange, baseATR: moved.baseATR,
-      history: moved.history, dailyLevels: undefined, currentPrice: moved.currentPrice,
-    });
-    // Both derivations consumed the field this row renders — the point is that
-    // there is no second price anywhere in the path.
-    expect(before).toBeTruthy();
-    expect(after).toBeTruthy();
+    const before = computeProximity(inputs(PLAYER));
+    const after = computeProximity(inputs(moved));
+    expect(before.dollarInfo).toBeTruthy();
+    expect(after.dollarInfo).toBeTruthy();
+    expect(after.dollarInfo).not.toEqual(before.dollarInfo);
+    // The row renders the SAME field both derivations consumed.
+    expect(row({ showCurrentPrice: true, leftAsset: { ...PLAYER, dailyLevels: levels } }))
+      .toContain(BATTLE_VIEW_COPY.price(PLAYER.currentPrice));
   });
 
   it('the CPU side never shows a price, whichever way the prop arrives', () => {
@@ -100,10 +113,15 @@ describe('D-85 — the current price on the player\'s row', () => {
     }
   });
 
-  it('FLAG OFF — the row markup is byte-identical to the shipped one', () => {
-    // Not "the dollar is absent": the whole string, compared. The wrapper the
-    // flag adds around the percent block must not exist flag-off either.
+  it('FLAG OFF — the row markup carries none of the flag path', () => {
+    // The whole-string self-comparison this row used to open with compared two
+    // renders down the SAME code path and could not fail (review L4-F4). The
+    // byte-identity claim is discharged where it can be: the flag-off golden,
+    // `AgentBattleScreen.flagOff.golden.test.jsx`, which reds when the screen
+    // passes `showCurrentPrice` unconditionally. What this row proves is that
+    // the wrapper the flag adds is absent, not merely the dollar.
     expect(row()).toBe(row({ showCurrentPrice: false }));
+    expect(row()).not.toContain('align-items:baseline;gap:6px');
     expect(row()).not.toContain('data-row-price');
     expect(row()).not.toContain('$264.75');
   });

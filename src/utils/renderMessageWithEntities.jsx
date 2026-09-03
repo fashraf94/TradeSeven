@@ -27,8 +27,14 @@ export function renderMessageWithEntities(text, onSymbolClick, knownTickers) {
 
   // A2.3 (ruling 8): the scan is `findKnownTickers.js`'s, so the underline the
   // player sees and the `In the chat · {n}` count are the same rule by
-  // construction. The loop below is otherwise the shipped one — the golden
-  // proves the output is byte-identical.
+  // construction. The loop below is otherwise the shipped one.
+  //
+  // WHAT PROVES THAT is `renderMessageWithEntities.render.test.jsx`, NOT the
+  // chat golden (review L3-F2). Ruling 8 cited the golden and this comment
+  // used to repeat it; the golden's fixture passes no `onSymbolClick`, so the
+  // function returns two lines above and neither golden contains a single
+  // entity span — `TICKER_ACCENT` could be changed to `#ff0000` with the whole
+  // suite green.
   for (const { word, index, kind } of scanEntities(text, knownTickers)) {
     const isTicker = kind === ENTITY_KIND.TICKER;
 

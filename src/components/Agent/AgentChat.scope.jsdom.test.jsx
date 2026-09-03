@@ -147,6 +147,27 @@ describe('A2.3 — the scoped stream', () => {
     expect(el.scrollTop).toBe(300);
   });
 
+  it('a re-render with an UNCHANGED scope writes no scroll at all (review L2-F5)', () => {
+    // `tapeEntries` is a fresh array on every Firestore snapshot — and through
+    // `receipts`, on renders that touch nothing in the tape — so keeping it in
+    // this effect's deps wrote `scrollTop` on the coarse clock's minute tick
+    // and on every price poll, cancelling the smooth auto-scroll that runs two
+    // effects earlier. The scope's TRANSITION is the whole trigger.
+    render();
+    const el = giveLayout(listEl(), { scrollHeight: 900, scrollTop: 0 });
+    let writes = 0;
+    Object.defineProperty(el, 'scrollTop', {
+      configurable: true, get: () => 0, set: () => { writes += 1; },
+    });
+    // A fresh tape array, twice, with the scope unchanged.
+    render({ tapeEntries: [...tapeEntries] });
+    render({ tapeEntries: [...tapeEntries] });
+    expect(writes).toBe(0);
+    // …and the transition itself still writes.
+    render({ tapeEntries: [...tapeEntries], scopeSymbol: 'SLB' });
+    expect(writes).toBe(1);
+  });
+
   it('FLAG OFF — no chip, no filter, and the scroll effect never runs', () => {
     act(() => { root.render(<AgentChat {...BASE} scopeSymbol="SLB" onClearScope={() => {}} />); });
     expect(container.querySelector('[data-tape-scope]')).toBeNull();

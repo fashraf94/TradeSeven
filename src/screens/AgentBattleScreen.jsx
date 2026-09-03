@@ -521,6 +521,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // A2.3 (D-73): the piece the tape is scoped to — display filtering only,
   // nothing sent, nothing persisted. Null flag-off and when unscoped.
   const [scopeSymbol, setScopeSymbol] = useState(null);
+  // A2.4 (review L2-F4): which desktop chat control should take focus after
+  // the next collapse or expand, resolved in an effect once it has rendered.
+  const [pendingChatFocus, setPendingChatFocus] = useState(null);
+  const collapseControlRef = useRef(null);
+  const expandControlRef = useRef(null);
 
   // The layout (A4, controller flag): the mobile chat sheet's detent (inert
   // on desktop and flag-off), the viewport height it is sized from, the
@@ -876,15 +881,26 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // Flag-off it is the book alone, byte for byte: widening it would widen what
   // the shipped chat underlines, and the underline opens a research modal.
   const knownTickers = useMemo(() => {
-    if (controllerOn) return selectSymbolRoster(agentBattle);
     const tickers = new Set();
+    // The BOOK, from the same source the rows render (review L1-F5 / L5-F10):
+    // `selectSymbolRoster` reads `agentBattle.portfolio`, and on a document
+    // that has none the board still renders from the prop fallback — so the
+    // roster would have been empty while seven pieces were on screen.
     ['star', 'core', 'support'].forEach(tier => {
       (enrichedPlayerPortfolio[tier] || []).forEach(a => {
         if (a?.symbol) tickers.add(a.symbol);
       });
     });
+    if (!controllerOn) return tickers;
+    // …plus the three bench lists, under the flag only (hazard 27).
+    for (const symbol of selectSymbolRoster(agentBattle)) tickers.add(symbol);
     return tickers;
-  }, [controllerOn, agentBattle, enrichedPlayerPortfolio]);
+    // Narrowed to the three subtrees `selectSymbolRoster` reads (review
+    // L2-F11): `agentBattle` is a fresh object on every Firestore snapshot, so
+    // depending on it rebuilt this Set — and the chat's whole timeline behind
+    // it — on writes that touch nothing in the roster, on the SHIPPED path too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controllerOn, enrichedPlayerPortfolio, agentBattle?.portfolio, agentBattle?.watchlist, agentBattle?.agentContext]);
 
   // ── Computed scores ───────────────────────────────────────────────────────
 
@@ -1081,24 +1097,57 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // conversation and the follow-up door still writes to it. Mobile opens the
   // sheet to at least half (the same rule the follow-up door uses), because a
   // filtered stream behind a peek strip is a filter nobody can see.
-  const handleScopeToPiece = useCallback((symbol) => {
+  const handleScopeToPiece = useCallback((symbol, count) => {
     if (!symbol) return;
     const invoker = typeof document !== 'undefined' ? document.activeElement : null;
-    setScopeSymbol(symbol);
+    // ZERO OPENS THE WHOLE TAPE (seed §A2.3, review L1-F3 / L2-F3 / L5-F5).
+    // `In the chat · 0` is a true thing to say about a piece, and the ruling
+    // says the tap opens the UNSCOPED tape at the piece's prefill. Scoping to
+    // an empty filter instead dropped the chat through to its EmptyState —
+    // the fresh-battle onboarding copy — on a battle with a conversation.
+    setScopeSymbol(count > 0 ? symbol : null);
     setComposerPrefill({ text: BATTLE_VIEW_COPY.followUpPrefill(symbol), nonce: Date.now() });
-    if (!isDesktop) sheet.open(invoker);
-  }, [isDesktop, sheet.open]);
+    // …and the chat has to be ON SCREEN for a filter to mean anything
+    // (review L2-F2): since A2.4 the DESKTOP can be collapsed too, so the
+    // question is the detent's, not the breakpoint's.
+    if (!chatOpen) sheet.open(invoker);
+  }, [chatOpen, sheet.open]);
   const handleClearScope = useCallback(() => setScopeSymbol(null), []);
+
+  // A2.3 (review L2-F7): the scope clears itself when its piece leaves the
+  // battle's universe — the agent swapped it out, or the doc changed under
+  // the player. A chip naming a piece the battle no longer has filters a
+  // stream nobody can get back to except by tapping it.
+  useEffect(() => {
+    if (!scopeSymbol) return;
+    if (!knownTickers.has(scopeSymbol)) setScopeSymbol(null);
+  }, [scopeSymbol, knownTickers]);
 
   // A2.4 (D-74): the desktop's two states, through the SAME detent the mobile
   // sheet uses. Expanding opens at HALF rather than FULL so a crossing to the
   // phone lands on half, which is the ruled behaviour; the choice lives in
   // the hook's state for the session and is never stored.
+  //
+  // FOCUS GOES TO THE CONTROL THAT REPLACES THE ONE THAT VANISHED (review
+  // L2-F4). Each control lives inside the chrome the other renders, so a
+  // keyboard user who collapsed the chat was dropped to `document.body` and
+  // their next Tab restarted at the top of the document. The mobile sheet has
+  // had a return-focus contract for this transition since A4 (review CR4);
+  // this is the desktop's.
   const handleExpandChat = useCallback(() => {
-    const invoker = typeof document !== 'undefined' ? document.activeElement : null;
-    sheet.open(invoker);
+    sheet.open(null);
+    setPendingChatFocus('collapse');
   }, [sheet.open]);
-  const handleCollapseChat = useCallback(() => sheet.collapse(), [sheet.collapse]);
+  const handleCollapseChat = useCallback(() => {
+    sheet.collapse();
+    setPendingChatFocus('expand');
+  }, [sheet.collapse]);
+  useEffect(() => {
+    if (!pendingChatFocus) return;
+    const target = pendingChatFocus === 'expand' ? expandControlRef.current : collapseControlRef.current;
+    target?.focus?.();
+    setPendingChatFocus(null);
+  }, [pendingChatFocus]);
 
   // Game Tape (A4, rulings §2.5): one header link renders the shipped view
   // full-screen over the page, with a way back. Focus goes to the way back on
@@ -1653,6 +1702,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             minHeight: 0,
             display: 'flex',
             flexDirection: 'row',
+            // A2.4: collapsed, the desktop chat column wraps onto its own
+            // line beneath a full-width board. Wrapping is what lets the
+            // chat keep ONE parent across the collapse (see the column).
+            ...(isDesktop && !chatOpen ? { flexWrap: 'wrap' } : {}),
             position: 'relative',
             zIndex: 2,
             ...(gameTapeOpen ? { visibility: 'hidden' } : {}),
@@ -1666,7 +1719,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           <div
             data-board="1"
             style={isDesktop ? {
-              flex: chatOpen ? '3 1 0%' : '1 1 0%',
+              flex: chatOpen ? '3 1 0%' : '0 0 100%',
               minWidth: 0,
               minHeight: 0,
               display: 'flex',
@@ -1686,57 +1739,78 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               {boardRows}
               {closedTrades}
             </div>
-            {isDesktop && !chatOpen && (
-              <PeekStrip
-                turnText={turnLine?.text ?? null}
-                line={peekLine}
-                unread={Boolean(hasCommandDot)}
-                unreadColor={hasPendingProposal ? cssVar('amber') : cssVar('teal')}
-                onExpand={handleExpandChat}
-                reducedMotion={reducedMotion}
-              >
-                {chat}
-              </PeekStrip>
-            )}
           </div>
-          {isDesktop && chatOpen && (
+          {isDesktop && (
+            /* THE CHAT'S ONE HOME ON THE DESKTOP (A2.4, review L2-F1 / L5-F7).
+               Collapsed and open are the SAME element with different chrome
+               and a different flex basis — never two tree positions. React
+               reconciles by position, so rendering `{chat}` in two places made
+               every collapse and every expand a full unmount: the typed draft,
+               the optimistic bubbles of a send still in flight, the error
+               banner and the scope's own scroll memory all went with it. A4
+               paid for the draft-survival rule explicitly (F13); a one-click
+               control that discards a half-typed message is not a layout
+               choice.
+
+               Collapsed, the row wraps: the board takes the whole first line
+               and this column takes the whole second, which is the ruled
+               layout (the board at full width, the strip beneath it). */
             <div
               data-chat-column="1"
+              data-chat-collapsed={chatOpen ? 'false' : 'true'}
               style={{
-                flex: '2 1 0%',
                 minWidth: 0,
                 minHeight: 0,
                 display: 'flex',
                 flexDirection: 'column',
-                borderLeft: `1px solid rgba(${cssVar('scrim-rgb')}, 0.07)`,
+                ...(chatOpen ? {
+                  flex: '2 1 0%',
+                  borderLeft: `1px solid rgba(${cssVar('scrim-rgb')}, 0.07)`,
+                } : {
+                  flex: '0 0 100%',
+                  width: '100%',
+                }),
               }}
             >
-              {/* The way out of the column, named for what it does next. */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 8px 0' }}>
-                <button
-                  type="button"
-                  onClick={handleCollapseChat}
-                  aria-expanded="true"
-                  aria-label={BATTLE_VIEW_COPY.sheetCollapse}
-                  data-chat-collapse="1"
-                  style={{
-                    background: 'transparent',
-                    border: `1px solid rgba(${cssVar('scrim-rgb')}, 0.12)`,
-                    borderRadius: 8,
-                    color: cssVar('text-secondary'),
-                    cursor: 'pointer',
-                    width: 32,
-                    height: 26,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 12,
-                    lineHeight: 1,
-                  }}
-                >
-                  <span aria-hidden="true">▾</span>
-                </button>
-              </div>
+              {chatOpen ? (
+                /* The way out of the column, named for what it does next. */
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 8px 0' }}>
+                  <button
+                    ref={collapseControlRef}
+                    type="button"
+                    onClick={handleCollapseChat}
+                    aria-expanded="true"
+                    aria-label={BATTLE_VIEW_COPY.sheetCollapse}
+                    data-chat-collapse="1"
+                    style={{
+                      background: 'transparent',
+                      border: `1px solid rgba(${cssVar('scrim-rgb')}, 0.12)`,
+                      borderRadius: 8,
+                      color: cssVar('text-secondary'),
+                      cursor: 'pointer',
+                      width: 32,
+                      height: 26,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 12,
+                      lineHeight: 1,
+                    }}
+                  >
+                    <span aria-hidden="true">▾</span>
+                  </button>
+                </div>
+              ) : (
+                <PeekStrip
+                  expandRef={expandControlRef}
+                  turnText={turnLine?.text ?? null}
+                  line={peekLine}
+                  unread={Boolean(hasCommandDot)}
+                  unreadColor={hasPendingProposal ? cssVar('amber') : cssVar('teal')}
+                  onExpand={handleExpandChat}
+                  reducedMotion={reducedMotion}
+                />
+              )}
               {chat}
             </div>
           )}

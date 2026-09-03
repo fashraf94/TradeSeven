@@ -21,7 +21,10 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 vi.mock('../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
-vi.mock('firebase/auth', () => ({ getAuth: vi.fn(() => ({ currentUser: null })) }));
+// A signed-in user, so the failed-send row below reaches the FETCH branch
+// rather than the `Session expired` early return. Nothing else in this file
+// reads auth.
+vi.mock('firebase/auth', () => ({ getAuth: vi.fn(() => ({ currentUser: { getIdToken: async () => 'token' } })) }));
 vi.mock('../services/agentService', () => ({ submitDailyGrades: vi.fn() }));
 vi.mock('../contexts/ThemeContext', () => {
   const tokens = new Proxy({}, { get: () => '#000000' });
@@ -61,16 +64,24 @@ const LIVE_DOC = {
     agentName: 'Aurora',
     strategyBrief: 'Energy is the only sector with a bid this week.',
     innerMonologue: { strategy: 'Lean energy.', starRationale: 'SLB is the cleanest energy breakout.' },
+    equippedWatchlist: { watchlistId: 'w1', tickers: ['XOM'] },
   },
   scoreState: { currentScore: 12, opponentScore: 3, tradeCount: 1, evaluationCount: 5, lastScoredAt: '2026-09-01T16:47:00.000Z' },
   portfolio: {
     star: [{ symbol: 'AAPL' }, { symbol: 'SLB', swapPrice: 34.1, swappedInAt: '2026-09-01T15:02:00.000Z' }],
     core: [{ symbol: 'NVDA' }],
     support: [],
+    bench: { stocks: [{ symbol: 'DVN' }], crypto: null },
     startingPrices: { AAPL: 150, NVDA: 900, MU: 90 },
   },
   opponent: { portfolio: { star: [{ symbol: 'AMD' }], core: [], support: [] } },
   evaluations: [quiet('14:00'), quiet('14:15'), quiet('14:30'), quiet('14:45')],
+  // A2.3 (review L3-F1 / L4-F1): three bench lists, none of them in the book.
+  // Under the flag the detector's roster is the union of all four; flag-off it
+  // is the book alone, and the rows below are what says so. The golden cannot:
+  // it is captured on the matchups tab, and the chat golden renders AgentChat
+  // directly with a hardcoded `knownTickers`.
+  watchlist: { active: [], hotBench: ['GILD'], monitoring: [] },
   trades: [
     { symbolOut: 'MU', symbolIn: 'SLB', tier: 'star', lockedPoints: 8, swappedOutAt: '2026-09-01T15:02:00.000Z', evaluationId: 'eval_005', source: 'haiku', rationale: 'MU rolled over; SLB leads energy.' },
   ],
@@ -79,7 +90,16 @@ const LIVE_DOC = {
   ],
   chatExchanges: [
     { userMessage: 'protect the lead', agentResponse: 'Got it.', timestamp: '2026-09-01T15:31:00.000Z' },
+    // Names SLB (in the book) and DVN / GILD / XOM (bench only) — so the
+    // roster's width is readable straight off the rendered entity spans.
+    { userMessage: 'what about DVN, GILD and XOM?', agentResponse: 'NVDA leads; DVN, GILD and XOM are bench.', timestamp: '2026-09-01T15:41:00.000Z' },
+    {
+      userMessage: 'lock it in', agentResponse: 'Filed.', hasDirective: true,
+      directive: { text: 'Protect the lead into the close', expiry: 'end_of_battle', directiveThreadId: 't-1' },
+      directiveThreadId: 't-1', timestamp: '2026-09-01T15:51:00.000Z',
+    },
   ],
+  directive: { text: 'Protect the lead into the close', expiry: 'end_of_battle', directiveThreadId: 't-1', createdAt: '2026-09-01T15:51:00.000Z' },
 };
 vi.mock('../hooks/useAgentBattle', () => ({
   default: () => ({
@@ -167,6 +187,66 @@ describe('flag-off, through the SCREEN: the tape never reaches the shipped chat 
       expect(text, `flag-off page must not contain "${shouldNotAppear}"`).not.toContain(shouldNotAppear);
     }
   });
+
+  it('A2.3 (review L3-F1 / L4-F1) — the DETECTOR\'s roster is the BOOK, never the bench lists', async () => {
+    // The gate on `knownTickers` was the one load-bearing flag gate on a
+    // SHIPPED surface that no test could see: removing it left all 3701 tests
+    // green while widening what the shipped chat underlines — and an underline
+    // is a tappable span that opens AssetResearchModal.
+    await openTheChat();
+    const named = [...container.querySelectorAll('[aria-label^="Open research for"]')]
+      .map((el) => el.getAttribute('aria-label'));
+    // The book underlines…
+    expect(named).toContain('Open research for NVDA');
+    // …the three bench lists do NOT.
+    expect(named).not.toContain('Open research for DVN');   // portfolio.bench.stocks
+    expect(named).not.toContain('Open research for GILD');  // watchlist.hotBench
+    expect(named).not.toContain('Open research for XOM');   // equippedWatchlist.tickers
+  });
+
+  it('A2.3 (review L3-F4) — the shipped mount gets no controller COPY and no RECEIPTS', async () => {
+    // Two more gates the component-level tests cannot see, because they guard
+    // the SCREEN's wiring rather than the component's prop contract.
+    await openTheChat();
+    // The receipts gate: the shipped eyebrow, never `Directive` + a receipt.
+    expect(container.textContent).toContain('DIRECTIVE LOCKED IN');
+    expect(container.querySelector('[data-receipt]')).toBeNull();
+    expect(container.textContent).toContain('Executing on next evaluation window');
+  });
+
+  it('A2.3 (review L3-F4) — a FAILED SEND on the shipped page keeps the shipped words', async () => {
+    // The copy gate cannot be seen by looking at a page nobody has sent from:
+    // item 11's line only exists on a failed send, so the row has to make one.
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })));
+    await openTheChat();
+    const ta = container.querySelector('textarea');
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(ta, 'sell it');
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    // Enter in the composer, not a button lookup: this page has a dozen
+    // buttons with an svg in them and the chat's send control is not the first.
+    await act(async () => {
+      ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain('Agent is thinking too hard. Try again.');
+    expect(container.textContent).not.toContain('The character couldn\u2019t answer just now');
+    expect(container.textContent).not.toContain("The character couldn't answer just now");
+    vi.unstubAllGlobals();
+  });
+
+  // NOT A ROW HERE, DELIBERATELY (review L3-F3): "the A2.3 scroll effect never
+  // runs flag-off" cannot be made to fail flag-off. Its only dependency is
+  // `scopeSymbol`, which is permanently null on the shipped path, so the
+  // effect fires once on mount and never again whatever its gates say — and
+  // that one write puts 0 into a list already at 0. A row asserting it would
+  // be a row that cannot fail, which is worse than no row. The falsifiable
+  // half of the claim — that a re-render with an unchanged scope writes
+  // nothing — lives where it CAN fail, on the flag path, in
+  // AgentChat.scope.jsdom.test.jsx.
 
   it('and the SHIPPED chat is really on screen — this asserts a rendered chat, not a blank page', async () => {
     // Without this row the two above would pass on a blank page, which is the

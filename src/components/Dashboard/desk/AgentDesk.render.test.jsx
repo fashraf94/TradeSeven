@@ -71,7 +71,7 @@ describe('the Desk says which battle it describes (F-1)', () => {
 describe('posture line — discrete, never continuous', () => {
   it('LIVE names the last check and an APPROXIMATE next one', () => {
     const html = render();
-    expect(html).toContain('Checked 12:47 PM · next ~1:02 PM');
+    expect(html).toContain('Checked 12:45 PM · next ~1:00 PM');
     // The ~ is required copy: the cron is not a metronome.
     expect(html).toContain('next ~');
   });
@@ -81,15 +81,15 @@ describe('posture line — discrete, never continuous', () => {
     // null during LIVE: the +15 min slot lands at or after the close. ONE
     // field, rendered here and by the Battle View turn line (BUILD_RULES §9).
     const html = render({ lastCheckedAt: '2026-09-01T19:46:00.000Z', nextDecisionAt: null, lastCheckOfSession: true });
-    expect(html).toContain('Checked 3:46 PM · last check today');
+    expect(html).toContain('Checked 3:45 PM · last check today');
     expect(html).not.toContain('next ~');
   });
 
   it('D-71 MUTATION ROW — a LIVE check with a slot still to come keeps the live line', () => {
-    expect(render({ lastCheckOfSession: false })).toContain('Checked 12:47 PM · next ~1:02 PM');
+    expect(render({ lastCheckOfSession: false })).toContain('Checked 12:45 PM · next ~1:00 PM');
     expect(render({ lastCheckOfSession: false })).not.toContain('last check today');
     // Absent (an adapter built before the field existed) is falsy — the live line.
-    expect(render()).toContain('Checked 12:47 PM · next ~1:02 PM');
+    expect(render()).toContain('Checked 12:45 PM · next ~1:00 PM');
   });
 
   it('D-71 never fabricates a time — no last check means the coming-check line, not `last check today`', () => {
@@ -116,7 +116,8 @@ describe('posture line — discrete, never continuous', () => {
     // Wednesday 9:31 AM ET, with TUESDAY's 3:50 PM stamp still on the doc.
     expect(at(doc('2026-09-01T19:50:00.000Z'), '2026-09-02T13:31:00.000Z')).not.toContain('last check today');
     // …and Wednesday's own last check does say so.
-    expect(at(doc('2026-09-02T19:50:00.000Z'), '2026-09-02T19:55:00.000Z')).toContain('Checked 3:50 PM · last check today');
+    // D-83: the label names the check's SLOT, so a 3:50 PM stamp reads 3:45 PM.
+    expect(at(doc('2026-09-02T19:50:00.000Z'), '2026-09-02T19:55:00.000Z')).toContain('Checked 3:45 PM · last check today');
   });
 
   it('LIVE with no eval yet says a check is coming — never a fabricated time', () => {
@@ -131,7 +132,7 @@ describe('posture line — discrete, never continuous', () => {
     // time but not the as-of; the Battle View seed had the as-of but not the
     // resume time. Two surfaces, one sentence.
     const html = render({ phase: 'LIVE_CLOSED', nextDecisionAt: null });
-    expect(html).toContain('Market closed · last check 12:47 PM · next Tue 9:30 AM ET');
+    expect(html).toContain('Market closed · last check 12:45 PM · next Tue 9:30 AM ET');
   });
 
   it('the next-check time comes from WALL-CLOCK FIELDS, so it cannot shift with the viewer zone', () => {
@@ -152,7 +153,7 @@ describe('posture line — discrete, never continuous', () => {
 
   it('falls back to the as-of alone when the next open is unknown', () => {
     const html = render({ phase: 'LIVE_CLOSED', nextOpenEt: null });
-    expect(html).toContain('Market closed · last check 12:47 PM');
+    expect(html).toContain('Market closed · last check 12:45 PM');
     expect(html).not.toContain('· next ');
   });
 

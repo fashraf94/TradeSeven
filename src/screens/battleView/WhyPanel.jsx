@@ -309,7 +309,7 @@ export default function WhyPanel({
             <button
               type="button"
               data-why-scope={symbol}
-              onClick={() => onScopeToPiece(symbol)}
+              onClick={() => onScopeToPiece(symbol, mentionCount)}
               style={{
                 background: 'transparent',
                 border: `1px solid ${cssVar('text-muted')}`,

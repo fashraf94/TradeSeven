@@ -86,10 +86,20 @@ describe('scanEntities — the ONE scan the renderer and the count share', () =>
     expect(scanEntities(`${madeUp} is not a thing`, ROSTER)).toEqual([]);
   });
 
-  it('a fresh matcher per scan — a global regex\'s lastIndex never leaks between calls', () => {
+  it('repeat calls are stable — and the safety is the LOOP, not the fresh instance', () => {
+    // Recorded honestly (review L4-F6): the old title claimed a fresh matcher
+    // per scan guards against a leaked `lastIndex`, and sharing one module-level
+    // regex passes every row here. It has to: the loop always runs to
+    // `exec() === null`, which resets `lastIndex` to 0. The rows below prove
+    // what is actually true — repeat calls agree — and the comment no longer
+    // claims a guard the code does not need.
     const text = 'NVDA and SLB';
     expect(scanEntities(text, ROSTER)).toEqual(scanEntities(text, ROSTER));
     expect(findKnownTickers(text, ROSTER)).toEqual(['NVDA', 'SLB']);
+    expect(findKnownTickers(text, ROSTER)).toEqual(['NVDA', 'SLB']);
+    // …including interleaved with a scan that finds nothing, which is where a
+    // shared, half-consumed regex would actually show.
+    expect(scanEntities('nothing here', ROSTER)).toEqual([]);
     expect(findKnownTickers(text, ROSTER)).toEqual(['NVDA', 'SLB']);
   });
 });

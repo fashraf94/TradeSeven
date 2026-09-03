@@ -648,11 +648,25 @@ export default function AgentChat({
   // CLEARING puts the whole tape back where the player left it (seed §A2.3),
   // from the position recorded by the scroll handler below. Layout effect, so
   // the restore happens before paint and the list never flashes at the top.
+  // THE DEP IS THE SCOPE ALONE (review L2-F5). `tapeEntries` is a fresh array
+  // on every Firestore snapshot — and, through `receipts`, on renders that
+  // touch nothing in the tape at all — so keeping it here made this effect
+  // write `scrollTop` on the coarse clock's minute tick and on every price
+  // poll. A programmatic write cancels the smooth scroll the effect above
+  // starts, and nothing re-fires to finish it: the reader is left parked
+  // partway with the newest card below the fold.
+  const scopedRef = useRef(Boolean(scopeSymbol));
   useLayoutEffect(() => {
+    const wasScoped = scopedRef.current;
+    scopedRef.current = Boolean(scopeSymbol);
     const el = listRef.current;
     if (!el || !Array.isArray(tapeEntries)) return;
+    if (wasScoped === Boolean(scopeSymbol)) return;
     el.scrollTop = scopeSymbol ? el.scrollHeight : unscopedScrollRef.current;
-  }, [scopeSymbol, tapeEntries]);
+    // `tapeEntries` is read for the flag gate only and is deliberately not a
+    // dependency; the scope's transition is the whole trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeSymbol]);
 
   // ── Composer prefill (Phase A — the Why? door) ─────────────────────────────
   useEffect(() => {

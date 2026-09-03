@@ -3,9 +3,17 @@
 // THE PIECE SCOPE — Phase A2 (A2.3, D-73). PURE.
 //
 // `In the chat · {n}` on a piece's Why? panel, and the filtered tape that
-// number opens. ONE function answers both, and that is the whole design: `n`
-// IS the length of the list the tap shows, by construction, so the door can
-// never promise three things and open onto two (BUILD_RULES §9).
+// number opens. ONE function answers both — `countMentions` is
+// `scopeTape(...).length`, not a second count — so the two cannot drift as
+// rules (BUILD_RULES §9).
+//
+// THEY CAN DIFFER BY ONE INPUT, AND ONLY ONE (review L1-F6 / L5-F4): the
+// screen counts the RECORDED stream (`mergeRecordedTape` below), while the
+// chat filters that stream plus its own optimistic in-flight bubbles. For the
+// few hundred milliseconds between a send and the server's write, the door
+// says n and opens onto n+1. That is the honest direction — `In the chat`
+// counts what the battle recorded, and a request still in flight has recorded
+// nothing — but it is a difference, and this header does not claim otherwise.
 //
 // THREE RULES, ONE PER KIND, each the rule that already governs its own
 // surface (rulings §3, A2.3):

@@ -86,12 +86,27 @@ describe('the three rules, one per kind', () => {
   });
 
   it('a COLLAPSED RUN never scopes — it shows no text, so it names no piece', () => {
-    const run = collapseQuietChecks(tape.filter((e) => e._type === TAPE_KIND.CHECK))
-      .find((e) => e._type === TAPE_KIND.CHECK_RUN);
-    // (the two checks differ in what they'd render, so they do not fold —
-    //  build one directly to hold the rule regardless)
-    expect(run ?? { _type: TAPE_KIND.CHECK_RUN, count: 2 }).toBeTruthy();
-    expect(tapeItemNamesSymbol({ _type: TAPE_KIND.CHECK_RUN, count: 3 }, 'NVDA', ROSTER)).toBe(false);
+    // A run built by the REAL folder, from two checks that genuinely fold
+    // (review L4-F8: the old row's `run ?? {…}` fallback was an object
+    // literal, so its `toBeTruthy` could not fail, and the two checks it
+    // reached for never folded). Both name NVDA in their first sentence, and
+    // the run that replaces them names nothing.
+    const quiet = (evalId, hhmm) => ({
+      evalId, timestamp: T(hhmm), decision: 'HOLD', downgraded: false,
+      rationale: 'NVDA is extending. The rest is quiet.',
+      scores: { active: 1, banked: 40 },
+    });
+    const checks = buildTape({
+      trades: [], statusFeed: [], receipts: {}, chatExchanges: [],
+      evaluations: [quiet('q1', '18:31'), quiet('q2', '18:46')],
+    });
+    expect(checks.every((c) => tapeItemNamesSymbol(c, 'NVDA', ROSTER))).toBe(true);
+    const folded = collapseQuietChecks(checks);
+    expect(folded).toHaveLength(1);
+    const [run] = folded;
+    expect(run._type).toBe(TAPE_KIND.CHECK_RUN);
+    expect(run.count).toBe(2);
+    expect(tapeItemNamesSymbol(run, 'NVDA', ROSTER)).toBe(false);
   });
 
   it('an item of an UNKNOWN kind answers false rather than guessing', () => {

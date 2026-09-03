@@ -53,9 +53,16 @@ describe('the seed\'s four lines', () => {
     expect(peekLineFor(trade)).toBe(COPY.tradeLine(trade.at, 'GILD', 'MOS'));
   });
 
-  it('a FOLDED RUN reads `{t} · {n} checks · no change`', () => {
+  it('a FOLDED RUN reads `{n} checks · no change` — with NO time (review L1-F4)', () => {
+    // A run's `at` is its FIRST member's, which is the sort position
+    // `collapseQuietChecks` needs and NOT the newest thing that happened.
+    // Stamping it named the oldest check in the run while the turn line
+    // directly above named the newest; the card the run stands for shows no
+    // time either, so neither does this.
     expect(peekLineFor({ _type: TAPE_KIND.CHECK_RUN, at: T('19:31'), count: 3 }))
-      .toBe('3:30 PM · 3 checks · no change');
+      .toBe('3 checks · no change');
+    expect(peekLineFor({ _type: TAPE_KIND.CHECK_RUN, at: T('19:31'), count: 3 }))
+      .not.toMatch(/\d:\d\d/);
   });
 
   it('a plain MESSAGE reads `{t} · {the speaker\'s own words}`', () => {
@@ -100,8 +107,9 @@ describe('the properties', () => {
     const folded = collapseQuietChecks(merged);
     expect(folded).toHaveLength(1);
     expect(folded[0]._type).toBe(TAPE_KIND.CHECK_RUN);
-    // …and the strip says the same thing, not `4:01 PM · Held`.
-    expect(derivePeekLine(merged)).toBe('3:45 PM · 2 checks · no change');
+    // …and the strip says the same thing the card says — the card renders no
+    // time, so the strip does not invent one.
+    expect(derivePeekLine(merged)).toBe('2 checks · no change');
   });
 
   it('walks BACKWARDS past an entry with nothing to say', () => {
@@ -125,9 +133,14 @@ describe('the properties', () => {
   it('NEVER truncates the string — the strip clips it at the reader\'s width', () => {
     const long = 'x'.repeat(400);
     const [agent] = deriveChatMessages([{ userMessage: null, agentResponse: long, messageType: 'first_message', timestamp: T('19:52') }]);
-    const out = peekLineFor({ ...agent, _type: 'message' });
-    expect(out).toContain(long);
-    expect(out).not.toContain('…');
-    expect(out).not.toContain('...');
+    // Through BOTH entry points (review L4-F5): the row used to call
+    // `peekLineFor` only, and the strip consumes `derivePeekLine` — so a
+    // truncation added at the exported entry point survived it.
+    const item = { ...agent, _type: 'message', timestamp: new Date(T('19:52')) };
+    for (const out of [peekLineFor(item), derivePeekLine([item])]) {
+      expect(out).toContain(long);
+      expect(out).not.toContain('…');
+      expect(out).not.toContain('...');
+    }
   });
 });
