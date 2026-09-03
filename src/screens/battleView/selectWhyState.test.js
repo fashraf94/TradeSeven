@@ -15,6 +15,11 @@ import {
   emphasizeSymbol,
   selectTradesForSymbol,
   guardrailForcedExit,
+  splitSentences,
+  extractSentences,
+  namesSymbol,
+  symbolPattern,
+  deriveTierPrices,
   SWAP_FAILED_PREFIX,
   GUARDRAIL_SOURCE_PREFIX,
   GUARDRAIL_FORCED_EXIT,
@@ -354,5 +359,169 @@ describe('selectTradesForSymbol — the piece\'s trades today, engine text verba
   it('the copy line is the receipt\'s own time and symbols', () => {
     expect(COPY.tradeLine('2026-09-01T15:02:00.000Z', 'MU', 'SLB')).toBe('11:02 AM · MU → SLB');
     expect(COPY.tradeLine(null, 'MU', 'SLB')).toBe('MU → SLB');
+  });
+});
+
+describe('splitSentences — verbatim, and numbers survive (A2.1)', () => {
+  it('splits on `. ! ?` followed by whitespace or the end', () => {
+    expect(splitSentences('One. Two! Three?')).toEqual(['One.', 'Two!', 'Three?']);
+    expect(splitSentences('No terminator')).toEqual(['No terminator']);
+    expect(splitSentences('Trailing space. ')).toEqual(['Trailing space.']);
+  });
+
+  it('MUTATION ROW — a decimal is not a sentence boundary; these paragraphs are full of numbers', () => {
+    const text = 'SLB is down 8.4% from entry (-1.05x ATR). DVN is up 2.1%.';
+    expect(splitSentences(text)).toEqual([
+      'SLB is down 8.4% from entry (-1.05x ATR).',
+      'DVN is up 2.1%.',
+    ]);
+  });
+
+  it('VERBATIM — the pieces reassemble the original, punctuation and all', () => {
+    const text = RATIONALE_SWAP + ' ' + RATIONALE_HOLD;
+    expect(splitSentences(text).join(' ')).toBe(text);
+  });
+
+  it('an ellipsis or a run of terminators is ONE boundary, not several empties', () => {
+    expect(splitSentences('Waiting... Then acting.')).toEqual(['Waiting...', 'Then acting.']);
+    expect(splitSentences('Really?! Yes.')).toEqual(['Really?!', 'Yes.']);
+  });
+
+  it('the empty cases return [] — never [""]', () => {
+    expect(splitSentences('')).toEqual([]);
+    expect(splitSentences('   ')).toEqual([]);
+    expect(splitSentences(null)).toEqual([]);
+    expect(splitSentences(undefined)).toEqual([]);
+    expect(splitSentences(42)).toEqual([]);
+  });
+});
+
+describe('extractSentences — the sentences that name the piece (A2.1, D-75)', () => {
+  const PARAGRAPH = 'CF is the weakest name in the book. SLB held its bid through the 12:45 bar. MOS remains the hedge and SLB stays as sized.';
+
+  it('returns only the naming sentences, in order, verbatim', () => {
+    expect(extractSentences(PARAGRAPH, 'SLB')).toEqual([
+      'SLB held its bid through the 12:45 bar.',
+      'MOS remains the hedge and SLB stays as sized.',
+    ]);
+    expect(extractSentences(PARAGRAPH, 'CF')).toEqual(['CF is the weakest name in the book.']);
+  });
+
+  it('the empty case is [] — a paragraph that never names the piece', () => {
+    expect(extractSentences(PARAGRAPH, 'NVDA')).toEqual([]);
+    expect(extractSentences('', 'SLB')).toEqual([]);
+    expect(extractSentences(null, 'SLB')).toEqual([]);
+    expect(extractSentences(PARAGRAPH, null)).toEqual([]);
+    expect(extractSentences(PARAGRAPH, '')).toEqual([]);
+  });
+
+  it('THE ONE SYMBOL RULE — the same prefix rule the emphasis pass uses (BUILD_RULES §9)', () => {
+    // A captured non-alphanumeric prefix, no lookbehind (Safari < 16.4).
+    expect(namesSymbol('$SLB is bid.', 'SLB')).toBe(true);
+    expect(namesSymbol('(SLB) is bid.', 'SLB')).toBe(true);
+    expect(namesSymbol('SLB is bid.', 'SLB')).toBe(true);
+    // …and the shipped caveats, kept deliberately.
+    expect(namesSymbol('slb is bid.', 'SLB')).toBe(false);   // case-sensitive
+    expect(namesSymbol('SLBX is bid.', 'SLB')).toBe(false);  // whole word
+    expect(namesSymbol('XSLB is bid.', 'SLB')).toBe(false);
+    // The extractor and the emphasiser cannot disagree about "names it": both
+    // consume symbolPattern(). A sentence the extractor keeps has something for
+    // the emphasiser to mark.
+    for (const sentence of extractSentences(PARAGRAPH, 'SLB')) {
+      expect(emphasizeSymbol(sentence, 'SLB').some((seg) => seg.emphasized)).toBe(true);
+    }
+    expect(symbolPattern('SLB')).toBeInstanceOf(RegExp);
+    expect(symbolPattern('')).toBeNull();
+    expect(symbolPattern(null)).toBeNull();
+  });
+
+  it('a symbol with regex metacharacters is escaped, not interpreted', () => {
+    expect(namesSymbol('BRK.B is flat.', 'BRK.B')).toBe(true);
+    expect(namesSymbol('BRKXB is flat.', 'BRK.B')).toBe(false);
+  });
+
+  it('a fresh matcher per call — a global regex\'s lastIndex never leaks between sentences', () => {
+    const text = 'SLB one. SLB two. SLB three.';
+    expect(extractSentences(text, 'SLB')).toHaveLength(3);
+    expect(extractSentences(text, 'SLB')).toHaveLength(3);
+  });
+});
+
+describe('deriveTierPrices — arithmetic on two persisted values (A2.1, ruling 1)', () => {
+  it('is the levels cron\'s own formula: baseline × (1 ± threshold/100)', () => {
+    const p = deriveTierPrices(145, 3.2);
+    expect(p.bagger).toBeCloseTo(149.64, 10);
+    expect(p.bust).toBeCloseTo(140.36, 10);
+  });
+
+  it('is the exact INVERSE of the percent the row renders beside it', () => {
+    // The row's number is thresholdPriceChange in percent of the baseline; at
+    // the bagger price it is exactly +baseATR, at the bust price exactly
+    // -baseATR. If these two ever disagreed the panel would contradict the row.
+    const baseline = 34.1;
+    const baseATR = 2.75;
+    const { bagger, bust } = deriveTierPrices(baseline, baseATR);
+    expect(((bagger - baseline) / baseline) * 100).toBeCloseTo(baseATR, 10);
+    expect(((bust - baseline) / baseline) * 100).toBeCloseTo(-baseATR, 10);
+  });
+
+  it('MUTATION ROW — null, never an estimate, when either input is missing or non-positive', () => {
+    expect(deriveTierPrices(null, 3.2)).toBeNull();
+    expect(deriveTierPrices(145, null)).toBeNull();
+    expect(deriveTierPrices(0, 3.2)).toBeNull();
+    expect(deriveTierPrices(145, 0)).toBeNull();
+    expect(deriveTierPrices(-145, 3.2)).toBeNull();
+    expect(deriveTierPrices(145, -3.2)).toBeNull();
+    expect(deriveTierPrices(NaN, 3.2)).toBeNull();
+    expect(deriveTierPrices(145, Infinity)).toBeNull();
+    expect(deriveTierPrices('145', 3.2)).toBeNull();
+    expect(deriveTierPrices(undefined, undefined)).toBeNull();
+  });
+
+  it('a SHORT gets no lines — the inversion has no persisted example to check against', () => {
+    expect(deriveTierPrices(145, 3.2, 'short')).toBeNull();
+    expect(deriveTierPrices(145, 3.2, 'long')).not.toBeNull();
+    expect(deriveTierPrices(145, 3.2, null)).not.toBeNull();
+  });
+});
+
+describe('the state carries the tick\'s triggers (A2.1, D-78)', () => {
+  it('types only, from the persisted array', () => {
+    const s = selectWhyState({ timestamp: TS, decision: 'HOLD', rationale: RATIONALE_HOLD, triggers: ['price_drop', 'news_catalyst'] }, 'SLB', LAST);
+    expect(s.triggers).toEqual(['price_drop', 'news_catalyst']);
+    expect(COPY.wokenBy(s.triggers)).toBe('Woken by a price drop');
+  });
+
+  it('null when there are none, and on an absence with no entry at all', () => {
+    expect(selectWhyState({ timestamp: TS, decision: 'HOLD', rationale: RATIONALE_HOLD }, 'SLB', LAST).triggers).toBeNull();
+    expect(selectWhyState({ timestamp: TS, decision: 'HOLD', rationale: RATIONALE_HOLD, triggers: [] }, 'SLB', LAST).triggers).toBeNull();
+    expect(selectWhyState(null, 'SLB', LAST).triggers).toBeNull();
+  });
+
+  it('carried on an OUTAGE entry too — why it ran and that it recorded nothing are both true', () => {
+    const s = selectWhyState({ timestamp: TS, decision: 'HOLD', triggers: ['price_drop'], haikuError: { failureClass: 'timeout' } }, 'SLB', LAST);
+    expect(s.kind).toBe(WHY_KIND.ABSENT);
+    expect(s.triggers).toEqual(['price_drop']);
+  });
+
+  it('MUTATION ROW — only a RULED type produces copy; an unknown one renders nothing (D-78)', () => {
+    expect(COPY.wokenBy(['price_drop'])).toBe('Woken by a price drop');
+    for (const type of ['forced_open', 'forced_close', 'threshold_proximity', 'bench_outperformance', 'vwap_deviation', 'bandwidth_squeeze', 'nr7_contraction', 'news_catalyst', 'made_up']) {
+      expect(COPY.wokenBy([type])).toBeNull();
+    }
+    expect(COPY.wokenBy([])).toBeNull();
+    expect(COPY.wokenBy(null)).toBeNull();
+    expect(COPY.wokenBy('price_drop')).toBeNull();
+  });
+
+  it('TRIPWIRE — the trigger TYPES are the ones the gate writes, read from its source', () => {
+    const gate = readFileSync(new URL('../../../api/_utils/agentTriggerGate.js', import.meta.url), 'utf8');
+    // Every type this copy module rules on must still exist in the gate.
+    for (const type of Object.keys(COPY.wokenByType)) {
+      expect(gate).toContain(`type: '${type}'`);
+    }
+    // …and the cron persists the TYPE, not the gate's detail string.
+    const cron = readFileSync(new URL('../../../api/cron/agent-evaluate.js', import.meta.url), 'utf8');
+    expect(cron).toContain('triggers: triggers.map(t => t.type)');
   });
 });

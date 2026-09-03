@@ -34,6 +34,63 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // The verb on a piece. Free — a pure read of persisted decision-path text.
   why: 'Why?',
 
+  // ── Why? V2 — the piece's lines (A2.1, D-75, ruling 1) ────────────────────
+  // The two SCORING tiers as prices: `thresholdBaseline × (1 ± baseATR/100)`,
+  // the exact inverse of the percent the row already renders beside them and
+  // the same formula the levels cron applies to V4 battles
+  // (api/cron/compute-daily-baggerbomb-levels.js). Arithmetic on two persisted
+  // values, never a third source — no agent battle persists a dollar level
+  // (Phase 0 §2.1). NO stop line and NO alert line: the stop's entry basis is
+  // fenced-private arithmetic (D-79) and `-0.5× ATR` is a wake-up trigger, not
+  // a rule the agent acts on (D-78). Nothing here is estimated.
+  tierPrices: (bagger, bust) => {
+    const b = money(bagger);
+    const s = money(bust);
+    return b && s ? `Bagger ${b} · Bust ${s}` : null;
+  },
+  // The footer names where the two numbers come from, so the player can tell a
+  // scoreboard fact from a trading level. There is no second source to name.
+  fromScoringPath: 'from the scoring path',
+
+  // The row's decision block (A2.1). The row carries the sentences that name
+  // THIS piece — an extract — so its eyebrow says where they came from; the
+  // book panel keeps `atCheck` below, because it IS the whole check.
+  fromCheck: (iso) => {
+    const t = etTime(iso);
+    return t ? `From the ${t} check` : null;
+  },
+  // The door out of the extract and into the whole paragraph (the book panel).
+  readFullCheck: 'Read the full check',
+  // A truthful state, not an absence of data: the check recorded words, and
+  // none of its sentences named this piece. The full paragraph is one tap away.
+  notNamedAtCheck: (iso) => {
+    const t = etTime(iso);
+    return t ? `Not named at the ${t} check` : null;
+  },
+
+  // Why the tick ran at all (A2.1, D-78). `evaluation.triggers` persists the
+  // TYPES only (agent-evaluate.js:2651 `triggers.map(t => t.type)`); the detail
+  // string is not persisted, so the copy names the type and nothing more. A
+  // trigger wakes the decider — it is not a rule the agent acts on, and this
+  // line never becomes an "alert level".
+  //
+  // ONE type has a ruled string. api/_utils/agentTriggerGate.js also persists
+  // `forced_open`, `forced_close`, `threshold_proximity`, `bench_outperformance`,
+  // `vwap_deviation`, `bandwidth_squeeze`, `nr7_contraction` and `news_catalyst`;
+  // each needs its own founder-ruled sentence (proposals are in the A2 handover).
+  // An unruled or unknown type renders NOTHING — never a raw type string.
+  wokenByType: Object.freeze({
+    price_drop: 'Woken by a price drop',
+  }),
+  wokenBy: (triggers) => {
+    if (!Array.isArray(triggers)) return null;
+    for (const type of triggers) {
+      const line = BATTLE_VIEW_COPY.wokenByType[type];
+      if (line) return line;
+    }
+    return null;
+  },
+
   // The panel header names the CHECK (the tick), never the piece: the tick's
   // rationale is the agent's reasoning for the book at that check, and the
   // header must not imply a per-position record that does not exist.

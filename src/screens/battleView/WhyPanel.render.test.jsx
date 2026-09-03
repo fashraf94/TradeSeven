@@ -52,6 +52,15 @@ const renderRow = (evaluation, over = {}) => strip(renderToString(
   />,
 ));
 
+const renderBook = (evaluation, over = {}) => strip(renderToString(
+  <WhyPanel
+    symbol={null}
+    state={selectWhyState(evaluation, null, LAST)}
+    onAskFollowUp={() => {}}
+    {...over}
+  />,
+));
+
 describe('the downgraded state (smoke step 3 fallback)', () => {
   it('labels the tick `Argued for a swap · held by a guardrail`, never `Held`, with the footer', () => {
     const html = renderRow(DOWNGRADED);
@@ -114,8 +123,20 @@ describe('the other states', () => {
 });
 
 describe('the header, the facts and the trades', () => {
-  it('the header names the CHECK: `At the 12:47 PM check`', () => {
-    expect(renderRow(HELD)).toContain('At the 12:47 PM check');
+  it('a ROW\'s eyebrow says where its sentences came FROM: `From the 12:47 PM check` (A2.1)', () => {
+    const html = renderRow(HELD);
+    expect(html).toContain('From the 12:47 PM check');
+    // `At the {t} check` is the BOOK panel's eyebrow — the panel that IS the
+    // whole check. One string each, so a row never claims to be the check.
+    expect(html).not.toContain('At the 12:47 PM check');
+  });
+
+  it('the BOOK panel keeps `At the 12:47 PM check` and the WHOLE paragraph', () => {
+    const html = renderBook(DOWNGRADED);
+    expect(html).toContain('At the 12:47 PM check');
+    expect(html).not.toContain('From the 12:47 PM check');
+    expect(html).toContain('SLB has lost its bid and DVN is showing the stronger tape');
+    expect(html).toContain('keeps the energy exposure with the leader.');
   });
 
   it('the facts repeat the ROW\'s proximity text verbatim, plus entry and held-since', () => {
@@ -255,5 +276,110 @@ describe('copy guard on the rendered output', () => {
     expect(html).toContain('role="region"');
     expect(html).toContain('aria-labelledby="why-SLB-heading"');
     expect(html).toContain('id="why-SLB-heading"');
+  });
+});
+
+describe('Why? V2 — the piece\'s lines (A2.1, ruling 1)', () => {
+  it('renders `Bagger $ · Bust $` footed `from the scoring path`, and nothing else', () => {
+    const html = renderRow(HELD, { lines: { bagger: 149.64, bust: 140.36 } });
+    expect(html).toContain('Bagger $149.64 · Bust $140.36');
+    expect(html).toContain('from the scoring path');
+    // D-79 / D-78: neither of the two lines the seed proposed has a persisted
+    // source, so neither ships. A guard, not a preference.
+    expect(html).not.toContain('Stop $');
+    expect(html).not.toContain('Alert line');
+    expect(html).not.toContain('the agent&#x27;s rule');
+  });
+
+  it('MUTATION ROW — no lines means NO section, never an estimate or a placeholder', () => {
+    const html = renderRow(HELD);
+    expect(html).not.toContain('Bagger $');
+    expect(html).not.toContain('from the scoring path');
+    expect(html).not.toContain('Bust $');
+  });
+
+  it('the book panel has no lines — they are a fact about a piece', () => {
+    const html = renderBook(HELD, { lines: { bagger: 149.64, bust: 140.36 } });
+    expect(html).not.toContain('Bagger $');
+  });
+});
+
+describe('Why? V2 — the sentences that name the piece (A2.1, D-75)', () => {
+  const MULTI = {
+    evalId: 'eval_040', timestamp: TS, decision: 'HOLD', downgraded: false,
+    rationale: 'CF is the weakest name in the book and I am close to cutting it. SLB held its bid through the 12:45 bar, so the position stays as sized. MOS remains the hedge.',
+  };
+
+  it('MUTATION ROW — a row renders ONLY the sentences naming it; the full paragraph never lands on a row again', () => {
+    const html = renderRow(MULTI);
+    // The symbol is wrapped for emphasis, so the sentence is asserted around it.
+    expect(html).toContain('<strong style="color:var(--ft-teal);font-weight:700">SLB</strong> held its bid through the 12:45 bar, so the position stays as sized.');
+    expect(html).not.toContain('CF is the weakest name in the book');
+    expect(html).not.toContain('MOS remains the hedge');
+  });
+
+  it('the sentences are VERBATIM — the same characters the decider wrote, with the piece emphasised', () => {
+    const html = renderRow(MULTI);
+    expect(html).toContain('held its bid through the 12:45 bar, so the position stays as sized.');
+    expect(html).toContain('<strong style="color:var(--ft-teal);font-weight:700">SLB</strong>');
+  });
+
+  it('a check that spoke and never named this piece is a truthful state, not an empty panel', () => {
+    const other = { ...MULTI, rationale: 'CF is the weakest name in the book. MOS remains the hedge.' };
+    const html = renderRow(other);
+    expect(html).toContain('Not named at the 12:47 PM check');
+    expect(html).not.toContain('CF is the weakest name');
+    // …and the way to the whole paragraph is still there.
+    expect(renderRow(other, { onReadFullCheck: () => {} })).toContain('Read the full check');
+  });
+
+  it('a check with NO words says nothing about naming — the label already carries the tick', () => {
+    const outage = { ...MULTI, rationale: 'Haiku call failed — defaulting to HOLD', haikuError: { failureClass: 'timeout' } };
+    const html = renderRow(outage, { onReadFullCheck: () => {} });
+    expect(html).not.toContain('Not named at the');
+    // Nothing to read: no paragraph behind the door.
+    expect(html).not.toContain('Read the full check');
+  });
+
+  it('`Read the full check` renders on a row only, and only with a handler', () => {
+    expect(renderRow(MULTI, { onReadFullCheck: () => {} })).toContain('Read the full check');
+    expect(renderRow(MULTI)).not.toContain('Read the full check');
+    expect(renderBook(MULTI, { onReadFullCheck: () => {} })).not.toContain('Read the full check');
+  });
+});
+
+describe('Why? V2 — `Woken by …` (A2.1, D-78)', () => {
+  it('renders the ruled string for a persisted `price_drop` trigger, beneath the label', () => {
+    const woken = { ...HELD, triggers: ['price_drop'] };
+    const html = renderRow(woken);
+    expect(html).toContain('Woken by a price drop');
+    expect(html.indexOf('>Held<')).toBeLessThan(html.indexOf('Woken by a price drop'));
+    // It is a trigger to EVALUATE, never a level or a rule (D-78).
+    expect(html).not.toContain('ATR');
+    expect(html).not.toContain('-0.5');
+  });
+
+  it('MUTATION ROW — an unruled or unknown trigger type renders NOTHING, never a raw type string', () => {
+    for (const type of ['threshold_proximity', 'news_catalyst', 'forced_open', 'vwap_deviation', 'nr7_contraction', 'not_a_real_type']) {
+      const html = renderRow({ ...HELD, triggers: [type] });
+      expect(html).not.toContain('Woken by');
+      expect(html).not.toContain(type);
+    }
+  });
+
+  it('the first RULED type in the persisted order wins; no triggers renders nothing', () => {
+    expect(renderRow({ ...HELD, triggers: ['forced_open', 'price_drop'] })).toContain('Woken by a price drop');
+    expect(renderRow({ ...HELD, triggers: [] })).not.toContain('Woken by');
+    expect(renderRow(HELD)).not.toContain('Woken by');
+  });
+
+  it('an outage tick still says why it ran — two true facts, not one over-claim', () => {
+    const html = renderRow({ ...HELD, triggers: ['price_drop'], haikuError: { failureClass: 'timeout' } });
+    expect(html).toContain('No decision recorded at this check · the evaluation timed out');
+    expect(html).toContain('Woken by a price drop');
+  });
+
+  it('the book panel carries it too', () => {
+    expect(renderBook({ ...HELD, triggers: ['price_drop'] })).toContain('Woken by a price drop');
   });
 });

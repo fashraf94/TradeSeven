@@ -26,7 +26,7 @@ import { useLandingKey } from './battleView/landing';
 import LandingWash from './battleView/LandingWash';
 import TurnLine from './battleView/TurnLine';
 import WhyPanel from './battleView/WhyPanel';
-import { selectWhyState, selectTradesForSymbol } from './battleView/selectWhyState';
+import { selectWhyState, selectTradesForSymbol, deriveTierPrices } from './battleView/selectWhyState';
 import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
 import { deriveReceipts } from './battleView/deriveReceipts';
 import ThisTurnStrip from './battleView/ThisTurnStrip';
@@ -811,6 +811,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       // Phase A: the entry the row's % is computed from, carried so the Why?
       // facts read the ROW's number (never the adapter's book — rulings §3.3).
       openPrice,
+      // A2.1 (ruling 1): the baseline the THRESHOLD percent is measured from —
+      // the one field the Why? tier lines need. `Bagger $ · Bust $` is
+      // `thresholdBaseline × (1 ± baseATR/100)`, the exact inverse of the
+      // percent the row renders beside it (deriveTierPrices). Computed here
+      // already; before A2.1 it was simply not returned.
+      thresholdBaseline,
     };
   }, [effectivePrices, startingPrices, thresholds, previousClosePrices, agentBattle?.thresholdHistory, agentBattle?.activatedAt, agentBattle?.createdAt]);
 
@@ -981,6 +987,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     ));
   }, []);
   const handleBookWhyToggle = useCallback(() => setBookWhyOpen(open => !open), []);
+  // A2.1: `Read the full check` on a row opens the BOOK panel, which is where
+  // the whole paragraph lives (D-75). It opens rather than toggles — the door
+  // is never a way to close what the user just asked to read.
+  const handleReadFullCheck = useCallback(() => setBookWhyOpen(true), []);
   const handleAskFollowUp = useCallback((symbol) => {
     // The invoking control, captured synchronously so the mobile sheet can
     // hand focus back to it on collapse (A4).
@@ -1129,8 +1139,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     proximity={proximity}
                     entryPrice={leftAsset.openPrice ?? null}
                     heldSince={leftAsset.swappedInAt || agentBattle?.activatedAt || null}
+                    // A2.1: the two scoring tiers as prices, from the row's own
+                    // baseline and its own baseATR — never a third source.
+                    lines={deriveTierPrices(leftAsset.thresholdBaseline, leftAsset.baseATR, leftAsset.direction)}
                     trades={selectTradesForSymbol(agentBattle?.trades, leftAsset.symbol)}
                     onAskFollowUp={handleAskFollowUp}
+                    onReadFullCheck={handleReadFullCheck}
                     reducedMotion={reducedMotion}
                     headingId={`why-${rowKey}-heading`}
                   />

@@ -95,6 +95,12 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
     symbolIn: null,
     rationale: null,
     footer: null,
+    // Why the tick ran (D-78). Types only — the trigger gate's `detail` string
+    // is not persisted (agent-evaluate.js:2651). Null on an absence with no
+    // entry at all; carried on every entry that exists, the outage included,
+    // because "this check was woken by X and recorded nothing" is a true and
+    // useful pair of facts.
+    triggers: null,
   };
 
   const present = evaluation
@@ -119,6 +125,10 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
   // honesty rule 8: the verb needs evidence for exactly that verb); every
   // other outage keeps the plain absence label until a class-neutral line is
   // ruled (copy request in the A4 handover).
+  base.triggers = Array.isArray(evaluation.triggers) && evaluation.triggers.length
+    ? evaluation.triggers.filter((t) => typeof t === 'string' && t)
+    : null;
+
   if (evaluation.haikuError) {
     const timedOut = evaluation.haikuError?.failureClass === 'timeout';
     return {
@@ -192,18 +202,117 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
 }
 
 /**
+ * THE ONE SYMBOL RULE (BUILD_RULES §9). A fresh global matcher for whole-word
+ * occurrences of `symbol`, used by BOTH the emphasis pass below and the
+ * sentence extractor: "this sentence names SLB" and "emphasise SLB here" must
+ * never be able to disagree about what naming a piece means.
+ *
+ * No lookbehind: Safari before 16.4 throws at RegExp construction on `(?<!…)`,
+ * inside Vite's default browser target (review finding F2). The leading
+ * boundary is a CAPTURED prefix character, re-emitted unemphasised by the
+ * caller. Consequences, kept deliberately (they are the shipped underline's,
+ * §9): case-sensitive, so `slb` does not match; `$SLB` DOES match, because `$`
+ * is a non-alphanumeric prefix; a symbol that is also an English word matches
+ * the word.
+ *
+ * A new instance per call: `lastIndex` is stateful on a global regex, and a
+ * shared one would skip matches between callers.
+ *
+ * @returns {RegExp|null} null when there is no symbol to match
+ */
+export function symbolPattern(symbol) {
+  if (typeof symbol !== 'string' || !symbol.trim()) return null;
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^A-Za-z0-9])(${escaped})(?![A-Za-z0-9])`, 'g');
+}
+
+/** Whether `text` names `symbol` under the one rule above. */
+export function namesSymbol(text, symbol) {
+  if (typeof text !== 'string' || !text) return false;
+  const re = symbolPattern(symbol);
+  return re ? re.test(text) : false;
+}
+
+/**
+ * Split a paragraph into sentences, VERBATIM (A2.1).
+ *
+ * A boundary is a run of `. ! ?` followed by whitespace or the end of the
+ * text. Requiring the trailing whitespace is what keeps `8.4%`, `-1.0x` and
+ * `U.S.` intact — a bare `[.!?]` split would cut a rationale mid-number, and
+ * these paragraphs are full of numbers. Each piece is trimmed at its edges and
+ * otherwise untouched: no re-punctuation, no capitalisation, no ellipsis.
+ *
+ * @returns {string[]} the sentences in order; [] for empty or non-text input
+ */
+export function splitSentences(text) {
+  if (typeof text !== 'string' || !text.trim()) return [];
+  const out = [];
+  const re = /[.!?]+(?=\s|$)/g;
+  let start = 0;
+  let match = re.exec(text);
+  while (match !== null) {
+    const end = match.index + match[0].length;
+    const piece = text.slice(start, end).trim();
+    if (piece) out.push(piece);
+    start = end;
+    match = re.exec(text);
+  }
+  const tail = text.slice(start).trim();
+  if (tail) out.push(tail);
+  return out;
+}
+
+/**
+ * The sentences of a check's rationale that NAME this piece — verbatim, in
+ * order (A2.1, D-75). This is what a row shows instead of the whole paragraph:
+ * the same block of text was rendered under every row before A2, so seven
+ * pieces claimed one paragraph about the book.
+ *
+ * Empty means one of two very different things, and the caller must tell them
+ * apart: no rationale at all (the label already says so) versus a rationale
+ * that never names this piece (`Not named at the {t} check`).
+ *
+ * @returns {string[]}
+ */
+export function extractSentences(text, symbol) {
+  if (!symbol) return [];
+  return splitSentences(text).filter((sentence) => namesSymbol(sentence, symbol));
+}
+
+/**
+ * The two SCORING tiers as prices (A2.1, ruling 1): the levels cron's own
+ * formula — `baseline × (1 ± threshold/100)` — applied to the row's own
+ * baseline, which makes them the exact inverse of the percent the row renders
+ * beside them. Both inputs are persisted: `thresholdBaseline` is the entry the
+ * row's `%` is computed from, `baseATR` is
+ * `scoring.thresholds[symbol].threshold` (a percent of price).
+ *
+ * Null — never an estimate — when either input is missing or non-positive.
+ *
+ * A SHORT returns null: `thresholdPriceChange` is direction-adjusted upstream,
+ * so a short's bagger is a price DECREASE, and no persisted short exists to
+ * check that inversion against (the agent layer is long-only in V1,
+ * BUILD_RULES §7). Omitting is the honest answer until one does.
+ */
+export function deriveTierPrices(thresholdBaseline, baseATR, direction = null) {
+  if (direction === 'short') return null;
+  const positiveNumber = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+  if (!positiveNumber(thresholdBaseline) || !positiveNumber(baseATR)) return null;
+  return {
+    bagger: thresholdBaseline * (1 + baseATR / 100),
+    bust: thresholdBaseline * (1 - baseATR / 100),
+  };
+}
+
+/**
  * Split a rationale into segments, marking every whole-word occurrence of the
  * tapped symbol so the panel can emphasise it. Pure; never alters the text.
  * @returns {Array<{ text: string, emphasized: boolean }>}
  */
 export function emphasizeSymbol(text, symbol) {
   if (typeof text !== 'string' || !text) return [];
-  if (typeof symbol !== 'string' || !symbol.trim()) return [{ text, emphasized: false }];
-  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // No lookbehind: Safari before 16.4 throws at RegExp construction on
-  // `(?<!…)`, inside Vite's default browser target (review finding F2). The
-  // leading boundary is a captured prefix character re-emitted unemphasised.
-  const re = new RegExp(`(^|[^A-Za-z0-9])(${escaped})(?![A-Za-z0-9])`, 'g');
+  const re = symbolPattern(symbol);
+  if (!re) return [{ text, emphasized: false }];
   const out = [];
   let last = 0;
   for (const m of text.matchAll(re)) {

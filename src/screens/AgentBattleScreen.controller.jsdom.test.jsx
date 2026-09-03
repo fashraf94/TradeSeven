@@ -128,7 +128,19 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
     expect(panel).toBeTruthy();
     expect(panel.getAttribute('data-why-kind')).toBe('downgraded');
     expect(panel.textContent).toContain('Argued for a swap · held by a guardrail');
-    expect(panel.textContent).toContain('At the 12:47 PM check');
+    // A2.1: a ROW's eyebrow says where its sentences came FROM; `At the {t}
+    // check` is the book panel's, because that panel IS the whole check.
+    expect(panel.textContent).toContain('From the 12:47 PM check');
+    expect(panel.textContent).not.toContain('At the 12:47 PM check');
+    // A2.1 (ruling 1): the two scoring tiers as prices, from the enriched
+    // asset's own thresholdBaseline × (1 ± baseATR/100) — the lift is wired.
+    expect(panel.textContent).toMatch(/Bagger \$[\d,]+\.\d{2} · Bust \$[\d,]+\.\d{2}/);
+    expect(panel.textContent).toContain('from the scoring path');
+    // …and never the two lines with no persisted source (D-78, D-79).
+    expect(panel.textContent).not.toContain('Stop $');
+    expect(panel.textContent).not.toContain('Alert line');
+    // The sentences that name SLB, verbatim — this rationale names it.
+    expect(panel.textContent).toContain('SLB lost its bid; swap SLB for DVN.');
     // Facts: the row's number, the enriched asset's entry and held-since.
     expect(panel.textContent).toContain('Entry $34.10');
     expect(panel.textContent).toContain('Held since 11:02 AM');
