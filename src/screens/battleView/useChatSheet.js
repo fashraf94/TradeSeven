@@ -104,14 +104,30 @@ export function useViewportHeight(enabled) {
  *
  * `setDetent(next, invoker)` records `invoker` as the return-focus target
  * whenever the sheet goes from peek to open; `open(invoker)` is the door's
- * "at least half"; `collapse()` is peek. Disabled (desktop, or flag-off) the
- * detent reads peek and resets to peek, so a viewport that crosses the
- * breakpoint and comes back starts closed.
+ * "at least half"; `collapse()` is peek. Disabled (flag-off) the detent reads
+ * peek and resets to peek.
+ *
+ * BOTH SHELLS, from A2.4 (ruling 7). The desktop column is not a third state:
+ * it reads the SAME detent, as two — peek is the strip at the bottom of the
+ * board column, open is the column itself. That is what makes the ruled
+ * crossing behaviour true by construction rather than by a synchroniser: the
+ * detent SURVIVES a breakpoint crossing, so a chat left open on the desktop
+ * arrives at half on the phone, and one collapsed to the strip arrives at
+ * peek. Phase A reset it on every crossing because the hook was disabled on
+ * desktop; the A4 guard row that asserted that reset now asserts the survival.
+ *
+ * `initialDetent` is what each shell OPENS at, and only the first render reads
+ * it: the phone starts at peek (the board is the page), the desktop at half
+ * (the column is the layout). `isDesktop` resolves synchronously from
+ * `window.innerWidth` before the first render, so this is not a flash.
  *
  * @param {boolean} enabled
+ * @param {string} [initialDetent]
  */
-export function useChatSheet(enabled) {
-  const [detent, setDetentState] = useState(SHEET_DETENT.PEEK);
+export function useChatSheet(enabled, initialDetent = SHEET_DETENT.PEEK) {
+  const [detent, setDetentState] = useState(
+    isDetent(initialDetent) ? initialDetent : SHEET_DETENT.PEEK,
+  );
   const returnFocusRef = useRef(null);
 
   const setDetent = useCallback((next, invoker = null) => {

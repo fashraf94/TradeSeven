@@ -241,21 +241,80 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     expect(washes.map((w) => w.getAttribute('data-wash-index'))).toEqual(['0', '1', '2', '3', '4', '5', '6']);
   });
 
-  it('the unread dot has nowhere to show on desktop, and the desktop column MARKS the feed seen — a later crossing to mobile shows no dot for those entries', () => {
+  it('an OPEN desktop column has nowhere to show the dot and MARKS the feed seen — the entries stay seen across a crossing', () => {
     mount();
     store.statusFeed = [{ action: 'hold', message: 'Held.', timestamp: '2026-09-01T16:47:00.000Z' }, { action: 'hold', message: 'Held again.', timestamp: '2026-09-01T17:02:00.000Z' }];
     rerender();
     expect(q('[data-sheet-dot]')).toBeNull();
+    expect(q('[data-peek-dot]')).toBeNull();
     expect(q('[data-unread]')).toBeNull();
-    // Seen on desktop (the effect ran with the column visible): the handle
-    // that appears after a crossing to mobile carries no dot for them…
+    // Seen on the desktop (the effect ran with the column visible). A2.4: the
+    // detent SURVIVES the crossing, so the phone arrives at half — still
+    // visible, still no dot — and only a collapse can show one again.
     crossTo(390);
     expect(q('[data-layout="mobile"]')).toBeTruthy();
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('half');
     expect(q('[data-sheet-cycle]').getAttribute('data-unread')).toBe('false');
+    click(q('[data-sheet-collapse]'));
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
     // …and a NEW entry at peek does show.
     store.statusFeed = [...store.statusFeed, { action: 'hold', message: 'Held once more.', timestamp: '2026-09-01T17:17:00.000Z' }];
     rerender();
     expect(q('[data-sheet-cycle]').getAttribute('data-unread')).toBe('true');
+  });
+
+  it('A2.4 (D-74) — collapsing folds the chat to the strip and the board takes the full width', () => {
+    mount();
+    const board = q('[data-board]');
+    expect(board.style.flex).toBe('3 1 0%');
+    expect(q('[data-chat-column]')).toBeTruthy();
+    expect(q('[data-peek-strip]')).toBeNull();
+
+    const collapse = q('[data-chat-collapse]');
+    expect(collapse.getAttribute('aria-label')).toBe('Collapse the chat');
+    click(collapse);
+
+    expect(q('[data-chat-column]')).toBeNull();
+    expect(q('[data-board]').style.flex).toBe('1 1 0%');
+    // The strip is IN the board column, at its bottom, with the one chat.
+    const strip = q('[data-peek-strip]');
+    expect(strip).toBeTruthy();
+    expect(q('[data-board]').contains(strip)).toBe(true);
+    expect(qa('textarea').length).toBe(1);
+    expect(strip.contains(q('textarea'))).toBe(true);
+    // …and the strip carries the turn line and the newest tape line.
+    const expand = q('[data-peek-expand]');
+    expect(expand.getAttribute('aria-label')).toBe('Expand the chat');
+    expect(expand.textContent).toContain('Checked 12:45 PM');
+    expect(q('[data-peek-line]')).toBeTruthy();
+
+    // Expanding restores the column and the 60/40 split.
+    click(expand);
+    expect(q('[data-chat-column]')).toBeTruthy();
+    expect(q('[data-peek-strip]')).toBeNull();
+    expect(q('[data-board]').style.flex).toBe('3 1 0%');
+    expect(qa('textarea').length).toBe(1);
+  });
+
+  it('A2.4 (D-74) — a COLLAPSED desktop shows the dot on the strip, the mobile rule', () => {
+    mount();
+    click(q('[data-chat-collapse]'));
+    expect(q('[data-peek-strip]')).toBeTruthy();
+    // Seen while the column was open, so nothing is unread yet…
+    expect(q('[data-peek-expand]').getAttribute('data-unread')).toBe('false');
+    expect(q('[data-peek-dot]')).toBeNull();
+    // …a new entry arrives with the chat collapsed, and the strip says so.
+    store.statusFeed = [{ action: 'hold', message: 'Held.', timestamp: '2026-09-01T17:17:00.000Z' }];
+    rerender();
+    expect(q('[data-peek-expand]').getAttribute('data-unread')).toBe('true');
+    expect(q('[data-peek-dot]')).toBeTruthy();
+    // Expanding clears it, exactly as opening the sheet does.
+    click(q('[data-peek-expand]'));
+    expect(q('[data-chat-column]')).toBeTruthy();
+    expect(q('[data-peek-strip]')).toBeNull();
+    store.statusFeed = [...store.statusFeed];
+    rerender();
+    expect(q('[data-peek-dot]')).toBeNull();
   });
 
   it('the Game Tape link carries the bookmark dot exactly when a bookmark exists', () => {
@@ -450,23 +509,85 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     expect(q('[data-sheet-cycle]').getAttribute('data-unread')).toBe('true');
   });
 
-  it('a breakpoint crossing keeps exactly ONE AgentChat at every moment and brings the sheet back at peek', () => {
+  it('A2.4 (ruling 7) — a breakpoint crossing keeps ONE AgentChat and the DETENT SURVIVES', () => {
+    // This row asserted "brings the sheet back at peek" through A4, because
+    // the hook was disabled on the desktop and reset on every crossing. Ruling
+    // 7 moved it: one detent, both shells, and it survives the crossing.
     mount();
     const cycle = q('[data-sheet-cycle]');
     click(cycle);
     click(cycle);
     expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('full');
+
+    // OPEN on the phone → the column on the desktop.
     crossTo(1280);
     expect(q('[data-layout="desktop"]')).toBeTruthy();
     expect(q('[data-chat-sheet]')).toBeNull();
+    expect(q('[data-chat-column]')).toBeTruthy();
+    expect(q('[data-peek-strip]')).toBeNull();
     expect(qa('textarea').length).toBe(1);
     expect(q('[data-chat-column] textarea')).toBeTruthy();
+
+    // …and back: still open, at the detent it left with.
     crossTo(390);
     expect(q('[data-layout="mobile"]')).toBeTruthy();
     expect(q('[data-chat-column]')).toBeNull();
     expect(qa('textarea').length).toBe(1);
     expect(q('[data-sheet-content] textarea')).toBeTruthy();
-    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek'); // the reset
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('full');
+  });
+
+  it('A2.4 (ruling 7) — COLLAPSED on the desktop arrives at PEEK on the phone, and back', () => {
+    setViewport(1280);
+    mount();
+    expect(q('[data-chat-column]')).toBeTruthy();
+    click(q('[data-chat-collapse]'));
+    expect(q('[data-peek-strip]')).toBeTruthy();
+    expect(q('[data-chat-column]')).toBeNull();
+    expect(qa('textarea').length).toBe(1);
+
+    crossTo(390);
+    expect(q('[data-layout="mobile"]')).toBeTruthy();
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
+    expect(q('[data-peek-strip]')).toBeNull();
+    expect(qa('textarea').length).toBe(1);
+
+    // …and the phone's peek is the desktop's strip when it goes back.
+    crossTo(1280);
+    expect(q('[data-peek-strip]')).toBeTruthy();
+    expect(q('[data-chat-column]')).toBeNull();
+    expect(qa('textarea').length).toBe(1);
+  });
+
+  it('A2.4 — expanding from the strip opens at HALF, so a crossing lands on half', () => {
+    setViewport(1280);
+    mount();
+    click(q('[data-chat-collapse]'));
+    click(q('[data-peek-expand]'));
+    expect(q('[data-chat-column]')).toBeTruthy();
+    crossTo(390);
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('half');
+  });
+
+  it('A2.4 (D-74) — the mobile peek carries the newest tape line, and open it does not', () => {
+    mount();
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
+    const line = q('[data-peek-line]');
+    expect(line).toBeTruthy();
+    // The newest entry of this fixture's tape, folded as the stream folds it.
+    expect(line.textContent.length).toBeGreaterThan(0);
+    expect(line.textContent).toContain(' · ');
+    // The turn line stays on the handle — the strip is turn line THEN the
+    // newest line, and the handle is the first of the two.
+    expect(q('[data-sheet-cycle]').textContent).toContain('Checked 12:45 PM');
+
+    // Open, the stream itself is on screen; a summary of its own last line
+    // would be noise.
+    click(q('[data-sheet-cycle]'));
+    expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('half');
+    expect(q('[data-peek-line]')).toBeNull();
+    click(q('[data-sheet-collapse]'));
+    expect(q('[data-peek-line]')).toBeTruthy();
   });
 
   it('the collapse control at half goes straight to peek', () => {

@@ -37,7 +37,9 @@ import { deriveReceipts } from './battleView/deriveReceipts';
 import ThisTurnStrip from './battleView/ThisTurnStrip';
 import useContentStable from './battleView/useContentStable';
 import ChatSheet from './battleView/ChatSheet';
-import { useChatSheet, useViewportHeight, isSheetOpen, SHEET_PEEK_PX } from './battleView/useChatSheet';
+import { PeekStrip } from './battleView/PeekStrip';
+import { derivePeekLine } from './battleView/derivePeekLine';
+import { useChatSheet, useViewportHeight, isSheetOpen, SHEET_PEEK_PX, SHEET_DETENT } from './battleView/useChatSheet';
 import { cssVar } from '../theme/cssTokens';
 import { motionToken } from '../theme/motion';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
@@ -525,7 +527,13 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // full-screen Game Tape, and the feed length the chat has SEEN — moved by
   // an effect, never during render (rulings §3.9). Flag-off keeps the
   // shipped render-time clear above, byte for byte.
-  const sheet = useChatSheet(controllerOn && !isDesktop);
+  // A2.4 (ruling 7): ONE detent for both shells. Desktop reads it as two —
+  // peek is the strip at the bottom of the board column, open is the column
+  // itself — which is what makes the detent survive a breakpoint crossing by
+  // construction. Each shell OPENS at its own default: the phone at peek (the
+  // board is the page), the desktop at half (the column is the layout).
+  const sheet = useChatSheet(controllerOn, isDesktop ? SHEET_DETENT.HALF : SHEET_DETENT.PEEK);
+  const chatOpen = isSheetOpen(sheet.detent);
   // The visible viewport height sizes the mobile sheet's detents AND the
   // desktop page (a fixed 100vh is the large viewport on iOS — review L2-F11).
   const viewportHeight = useViewportHeight(controllerOn);
@@ -930,7 +938,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // this effect, keyed on the feed length and the visibility — never during
   // render. Desktop under the flag therefore never shows a dot; on mobile it
   // lives on the sheet's handle and clears when the sheet opens.
-  const chatVisible = controllerOn && !gameTapeOpen && (isDesktop || isSheetOpen(sheet.detent));
+  //
+  // A2.4 (D-74): the desktop can now be COLLAPSED, so "visible" is the one
+  // detent question on both shells. The dot therefore lives on the desktop
+  // strip while it is collapsed — the mobile rule, applied to the desktop's
+  // own collapsed state — and still never shows while the column is open.
+  const chatVisible = controllerOn && !gameTapeOpen && chatOpen;
   const newestFeedStamp = feedStampOf(statusFeed[statusFeed.length - 1]);
   useEffect(() => {
     if (!chatVisible) return;
@@ -1077,6 +1090,16 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   }, [isDesktop, sheet.open]);
   const handleClearScope = useCallback(() => setScopeSymbol(null), []);
 
+  // A2.4 (D-74): the desktop's two states, through the SAME detent the mobile
+  // sheet uses. Expanding opens at HALF rather than FULL so a crossing to the
+  // phone lands on half, which is the ruled behaviour; the choice lives in
+  // the hook's state for the session and is never stored.
+  const handleExpandChat = useCallback(() => {
+    const invoker = typeof document !== 'undefined' ? document.activeElement : null;
+    sheet.open(invoker);
+  }, [sheet.open]);
+  const handleCollapseChat = useCallback(() => sheet.collapse(), [sheet.collapse]);
+
   // Game Tape (A4, rulings §2.5): one header link renders the shipped view
   // full-screen over the page, with a way back. Focus goes to the way back on
   // open and returns to the link on close. The chat stays mounted beneath
@@ -1155,6 +1178,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const mentionCount = useMemo(() => (controllerOn && openWhySymbol
     ? countMentions(recordedTape, openWhySymbol, knownTickers)
     : null), [controllerOn, openWhySymbol, recordedTape, knownTickers]);
+
+  // A2.4 (D-74): the newest tape entry as one line, folded exactly as the
+  // stream is, so the strip and the stream cannot name one moment two ways.
+  // Null flag-off and on an empty tape.
+  const peekLine = useMemo(
+    () => (controllerOn ? derivePeekLine(recordedTape) : null),
+    [controllerOn, recordedTape],
+  );
 
   const thisTurnStrip = controllerOn && agentBattle ? (
     <ThisTurnStrip
@@ -1339,7 +1370,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       // Peek is the composer alone: the message list is collapsed so the
       // sheet can size itself to the handle + the composer, however tall the
       // draft grows (review CR3).
-      listCollapsed={!isDesktop && !isSheetOpen(sheet.detent)}
+      // A2.4: at peek the chat is its composer — on both shells now, since the
+      // desktop strip is the same collapsed state.
+      listCollapsed={!chatOpen}
     />
   ) : null;
 
@@ -1625,26 +1658,48 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             ...(gameTapeOpen ? { visibility: 'hidden' } : {}),
           }}
         >
+          {/* The board column. A2.4: on the desktop it takes the FULL width
+              while the chat is collapsed, and carries the strip at its
+              bottom — so the collapse is a real gain of board, not a gap
+              where the column was. The board itself keeps its own scroller
+              inside, so the strip stays put while the board scrolls. */}
           <div
             data-board="1"
             style={isDesktop ? {
-              flex: '3 1 0%',
+              flex: chatOpen ? '3 1 0%' : '1 1 0%',
               minWidth: 0,
               minHeight: 0,
-              overflowY: 'auto',
-              paddingBottom: 24,
+              display: 'flex',
+              flexDirection: 'column',
             } : {
               flex: '1 1 auto',
               minWidth: 0,
               paddingBottom: SHEET_PEEK_PX + 32,
             }}
           >
-            {/* This turn (Phase A) — its one home, above the board. */}
-            {thisTurnStrip}
-            {boardRows}
-            {closedTrades}
+            <div
+              data-board-scroll={isDesktop ? '1' : undefined}
+              style={isDesktop ? { flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: 24 } : undefined}
+            >
+              {/* This turn (Phase A) — its one home, above the board. */}
+              {thisTurnStrip}
+              {boardRows}
+              {closedTrades}
+            </div>
+            {isDesktop && !chatOpen && (
+              <PeekStrip
+                turnText={turnLine?.text ?? null}
+                line={peekLine}
+                unread={Boolean(hasCommandDot)}
+                unreadColor={hasPendingProposal ? cssVar('amber') : cssVar('teal')}
+                onExpand={handleExpandChat}
+                reducedMotion={reducedMotion}
+              >
+                {chat}
+              </PeekStrip>
+            )}
           </div>
-          {isDesktop && (
+          {isDesktop && chatOpen && (
             <div
               data-chat-column="1"
               style={{
@@ -1656,6 +1711,32 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 borderLeft: `1px solid rgba(${cssVar('scrim-rgb')}, 0.07)`,
               }}
             >
+              {/* The way out of the column, named for what it does next. */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 8px 0' }}>
+                <button
+                  type="button"
+                  onClick={handleCollapseChat}
+                  aria-expanded="true"
+                  aria-label={BATTLE_VIEW_COPY.sheetCollapse}
+                  data-chat-collapse="1"
+                  style={{
+                    background: 'transparent',
+                    border: `1px solid rgba(${cssVar('scrim-rgb')}, 0.12)`,
+                    borderRadius: 8,
+                    color: cssVar('text-secondary'),
+                    cursor: 'pointer',
+                    width: 32,
+                    height: 26,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 12,
+                    lineHeight: 1,
+                  }}
+                >
+                  <span aria-hidden="true">▾</span>
+                </button>
+              </div>
               {chat}
             </div>
           )}
@@ -1782,6 +1863,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           returnFocusRef={sheet.returnFocusRef}
           viewportHeight={viewportHeight}
           turnText={turnLine?.text ?? null}
+          peekLine={peekLine}
           unread={Boolean(hasCommandDot)}
           unreadColor={hasPendingProposal ? cssVar('amber') : cssVar('teal')}
           reducedMotion={reducedMotion}

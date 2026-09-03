@@ -31,6 +31,7 @@ import { motion } from 'framer-motion';
 import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
+import { PeekLine } from './PeekStrip';
 import {
   SHEET_DETENT,
   SHEET_DRAG_PX,
@@ -55,6 +56,10 @@ export default function ChatSheet({
   returnFocusRef = null,
   viewportHeight,
   turnText = null,
+  // A2.4 (D-74): the newest tape entry, one line, under the handle at PEEK.
+  // The handle already carries the turn line; this is the second half of the
+  // strip the desktop shows in the board column. Null when the tape is empty.
+  peekLine = null,
   unread = false,
   unreadColor = null,
   reducedMotion = false,
@@ -261,6 +266,10 @@ export default function ChatSheet({
           </button>
         )}
       </div>
+
+      {/* A2.4: the newest tape entry, at PEEK only. Open, the stream itself is
+          on screen and a summary of its own last line would be noise. */}
+      {!open && <PeekLine text={peekLine} />}
 
       {/* The chat — its own message list is the scroll container. */}
       <div

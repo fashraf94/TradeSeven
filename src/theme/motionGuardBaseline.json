@@ -57,6 +57,14 @@
       "count": 0,
       "authority": "Phase A2 (A2.3) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); a pure selector with no motion at all."
     },
+    "src/screens/battleView/PeekStrip.jsx": {
+      "count": 0,
+      "authority": "Phase A2 (A2.4) \u2014 the peek strip does not animate at all (seed \u00a7A2.4: the line updates when the tape does, with no motion between); zero raw transition literals from birth."
+    },
+    "src/screens/battleView/derivePeekLine.js": {
+      "count": 0,
+      "authority": "Phase A2 (A2.4) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); a pure selector with no motion at all."
+    },
     "src/screens/battleView/landing.js": {
       "count": 0,
       "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."

@@ -389,6 +389,9 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   sheetOpen: 'Open the chat',
   sheetGrow: 'Show more of the chat',
   sheetCollapse: 'Collapse the chat',
+  // The desktop strip's control (A2.4). Named for what its next activation
+  // does, exactly as the sheet's three are.
+  sheetExpand: 'Expand the chat',
   sheetUnread: 'new activity',
   // The cycle control's whole name: the action, plus `new activity` while
   // the dot shows. Composed HERE so the rule lives with the words.
