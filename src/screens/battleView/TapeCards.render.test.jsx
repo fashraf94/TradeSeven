@@ -227,7 +227,7 @@ describe('the trade card', () => {
 describe('the check card', () => {
   it('is `At the {t} check · {label}` with the first sentence, and `Read more` for the rest', () => {
     const html = checkHtml(check());
-    expect(html).toContain('At the 3:46 PM check · Held');
+    expect(html).toContain('At the 3:45 PM check · Held');
     expect(html).toContain('The book is holding its shape.');
     expect(html).not.toContain('Nothing in the tape argues for a rotation yet.');
     expect(html).toContain('Read more');

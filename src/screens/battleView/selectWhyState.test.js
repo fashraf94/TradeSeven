@@ -291,20 +291,20 @@ describe('absence — a truthful state, on the `>=` join only', () => {
   });
 
   it('the header still names the check in the absence state', () => {
-    expect(selectWhyState(null, 'SLB', LAST).header).toBe('At the 12:47 PM check');
+    expect(selectWhyState(null, 'SLB', LAST).header).toBe('At the 12:45 PM check');
   });
 });
 
 describe('the header names the CHECK (lastScoredAt), never the piece', () => {
   it('`At the {t} check` from the scoring stamp, even when the entry is seconds later', () => {
     const s = selectWhyState({ timestamp: '2026-09-01T16:47:59.000Z', decision: 'HOLD' }, 'SLB', LAST);
-    expect(s.header).toBe('At the 12:47 PM check');
+    expect(s.header).toBe('At the 12:45 PM check');
     expect(s.checkedAt).toBe(LAST);
   });
 
   it('falls back to the entry timestamp when there is no scoring stamp', () => {
     const s = selectWhyState({ timestamp: TS, decision: 'HOLD' }, 'SLB', null);
-    expect(s.header).toBe('At the 12:47 PM check');
+    expect(s.header).toBe('At the 12:45 PM check');
   });
 
   it('book-level (no symbol) selects the same state with symbol null', () => {

@@ -139,8 +139,8 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
     expect(panel.textContent).toContain('Argued for a swap · held by a guardrail');
     // A2.1: a ROW's eyebrow says where its sentences came FROM; `At the {t}
     // check` is the book panel's, because that panel IS the whole check.
-    expect(panel.textContent).toContain('From the 12:47 PM check');
-    expect(panel.textContent).not.toContain('At the 12:47 PM check');
+    expect(panel.textContent).toContain('From the 12:45 PM check');
+    expect(panel.textContent).not.toContain('At the 12:45 PM check');
     // A2.1 (ruling 1): the two scoring tiers as prices, from the enriched
     // asset's own thresholdBaseline × (1 ± baseATR/100) — the lift is wired.
     expect(panel.textContent).toMatch(/Bagger \$[\d,]+\.\d{2} · Bust \$[\d,]+\.\d{2}/);
@@ -222,7 +222,7 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
     click(header);
     const book = container.querySelector('[data-why-symbol="book"]');
     expect(book).toBeTruthy();
-    expect(book.textContent).toContain('At the 12:47 PM check');
+    expect(book.textContent).toContain('At the 12:45 PM check');
     expect(book.querySelector('[data-this-turn]')).toBeNull();
     expect(container.querySelectorAll('[data-this-turn]').length).toBe(1);
     expect(book.textContent).not.toContain('Entry $');
@@ -231,7 +231,7 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
 
   it('the turn line and This turn sit in the tree with the receipts derived from the same doc', () => {
     mount();
-    expect(container.textContent).toContain('Checked 12:47 PM · next ~1:02 PM');
+    expect(container.textContent).toContain('Checked 12:45 PM · next ~1:00 PM');
     expect(container.querySelector('[data-this-turn="filed"]').textContent).toContain('Filed 11:31 AM');
     expect(container.textContent).not.toContain('11:33');
   });
@@ -257,7 +257,7 @@ describe('the tape (A2.2, D-72) — one stream, built in the screen, rendered in
     const check = container.querySelector('[data-tape-kind="check"]');
     expect(check).toBeTruthy();
     // The SAME label the Why? panel gives this tick (BUILD_RULES §9).
-    expect(check.textContent).toContain('At the 12:47 PM check · Argued for a swap · held by a guardrail');
+    expect(check.textContent).toContain('At the 12:45 PM check · Argued for a swap · held by a guardrail');
     expect(check.textContent).toContain('SLB lost its bid; swap SLB for DVN.');
   });
 

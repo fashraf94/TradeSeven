@@ -82,7 +82,7 @@ describe('the fourth state — a swap that did not go through (D-66)', () => {
   // guarded by exactly one row (selectWhyState.test.js); this row guards the
   // panel's rendering of the kind — its label, its footer, its colour slot.
   const FAILED_STATE = {
-    kind: WHY_KIND.FAILED, checkedAt: LAST, header: 'At the 12:47 PM check', symbol: 'SLB',
+    kind: WHY_KIND.FAILED, checkedAt: LAST, header: 'At the 12:45 PM check', symbol: 'SLB',
     label: COPY.failedLabel, footer: COPY.failedFooter, rationale: DOWNGRADED.rationale, symbolOut: null, symbolIn: null,
   };
 
@@ -123,18 +123,18 @@ describe('the other states', () => {
 });
 
 describe('the header, the facts and the trades', () => {
-  it('a ROW\'s eyebrow says where its sentences came FROM: `From the 12:47 PM check` (A2.1)', () => {
+  it('a ROW\'s eyebrow says where its sentences came FROM: `From the 12:45 PM check` (A2.1)', () => {
     const html = renderRow(HELD);
-    expect(html).toContain('From the 12:47 PM check');
+    expect(html).toContain('From the 12:45 PM check');
     // `At the {t} check` is the BOOK panel's eyebrow — the panel that IS the
     // whole check. One string each, so a row never claims to be the check.
-    expect(html).not.toContain('At the 12:47 PM check');
+    expect(html).not.toContain('At the 12:45 PM check');
   });
 
-  it('the BOOK panel keeps `At the 12:47 PM check` and the WHOLE paragraph', () => {
+  it('the BOOK panel keeps `At the 12:45 PM check` and the WHOLE paragraph', () => {
     const html = renderBook(DOWNGRADED);
-    expect(html).toContain('At the 12:47 PM check');
-    expect(html).not.toContain('From the 12:47 PM check');
+    expect(html).toContain('At the 12:45 PM check');
+    expect(html).not.toContain('From the 12:45 PM check');
     expect(html).toContain('SLB has lost its bid and DVN is showing the stronger tape');
     expect(html).toContain('keeps the energy exposure with the leader.');
   });
@@ -249,7 +249,7 @@ describe('the book-level panel (score header)', () => {
 
   it('renders the decision and the door, with no facts and no trades', () => {
     const html = renderBook();
-    expect(html).toContain('At the 12:47 PM check');
+    expect(html).toContain('At the 12:45 PM check');
     expect(html).toContain('>Held<');
     expect(html).toContain('Ask a follow-up · 1 message');
     expect(html).not.toContain('Entry $');
@@ -263,7 +263,7 @@ describe('the book-level panel (score header)', () => {
     expect(html).not.toContain('This turn');
     expect(html).not.toContain('data-this-turn');
     // Order: the decision, then the door — nothing between them.
-    expect(html.indexOf('At the 12:47 PM check')).toBeLessThan(html.indexOf('Ask a follow-up'));
+    expect(html.indexOf('At the 12:45 PM check')).toBeLessThan(html.indexOf('Ask a follow-up'));
   });
 });
 
@@ -331,7 +331,7 @@ describe('Why? V2 — the sentences that name the piece (A2.1, D-75)', () => {
   it('a check that spoke and never named this piece is a truthful state, not an empty panel', () => {
     const other = { ...MULTI, rationale: 'CF is the weakest name in the book. MOS remains the hedge.' };
     const html = renderRow(other);
-    expect(html).toContain('Not named at the 12:47 PM check');
+    expect(html).toContain('Not named at the 12:45 PM check');
     expect(html).not.toContain('CF is the weakest name');
     // …and the way to the whole paragraph is still there.
     expect(renderRow(other, { onReadFullCheck: () => {} })).toContain('Read the full check');
@@ -435,7 +435,7 @@ describe('Why? V2 — the plan at deploy (A2.1b, D-76)', () => {
 
   it('the plan never reads as a current decision — the check block keeps its own label above it', () => {
     const html = renderRow(HELD, { deployPlan: PLAN, deployPlanForSymbol: FOR_SLB });
-    expect(html.indexOf('From the 12:47 PM check')).toBeLessThan(html.indexOf('At deploy · Star tier'));
+    expect(html.indexOf('From the 12:45 PM check')).toBeLessThan(html.indexOf('At deploy · Star tier'));
     expect(html.indexOf('At deploy · Star tier')).toBeLessThan(html.indexOf('Entry $34.10'));
   });
 });

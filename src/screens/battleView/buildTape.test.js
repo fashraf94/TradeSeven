@@ -26,6 +26,7 @@ import {
 import { WHY_KIND, isEngineAuthoredMotive, ENGINE_MOTIVE_PREFIXES, TEXT_DECIDES_SOURCES } from './selectWhyState';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { deriveReceipts } from './deriveReceipts';
+import { slotLabel } from './deriveTurnLine';
 
 const T = (hhmm) => `2026-09-01T${hhmm}:00.000Z`;
 
@@ -571,5 +572,63 @@ describe('buildTape — one array, both kinds', () => {
       expect(entry.id.length).toBeGreaterThan(0);
     }
     expect(new Set(entries.map((e) => e.id)).size).toBe(entries.length);
+  });
+});
+
+describe('a check is named by its SLOT, a trade by its instant (D-83)', () => {
+  const TS = (hhmmss) => `2026-09-01T${hhmmss}.000Z`;
+
+  it('the check card and the Why? panel name ONE tick the same, from two different fields', () => {
+    // The founder's A2.2 smoke, end to end: the entry landed at 12:31:07 and
+    // the scoring stamp at 12:30:02, two `new Date()` calls in one cron run.
+    // Before D-83 the card said `At the 12:31 PM check` and the header said
+    // `Checked 12:30 PM`.
+    const entry = { ...check('16:31'), timestamp: TS('16:31:07') };
+    const [card] = buildCheckEntries([entry], {}, []);
+    expect(COPY.checkCardLabel(card.at, card.label)).toBe('At the 12:30 PM check · Held');
+    expect(COPY.atCheck(TS('16:30:02'))).toBe('At the 12:30 PM check');
+    expect(COPY.fromCheck(TS('16:30:02'))).toBe('From the 12:30 PM check');
+    // …and the ordering key is still the exact instant.
+    expect(card.at).toBe(TS('16:31:07'));
+    expect(card.timestamp.getTime()).toBe(new Date(TS('16:31:07')).getTime());
+  });
+
+  it('a 12:44:59 entry is still the 12:30 check', () => {
+    const [card] = buildCheckEntries([{ ...check('16:44'), timestamp: TS('16:44:59') }], {}, []);
+    expect(COPY.checkCardLabel(card.at, card.label)).toBe('At the 12:30 PM check · Held');
+  });
+
+  it('the collapsed run is bounded by its FIRST check\'s slot, and orders on the instant', () => {
+    // `{n} checks · no change` stands for a contiguous slice; the bound it
+    // carries is the slot of the check the slice opens with (the line A2.4's
+    // peek strip renders).
+    const entries = buildCheckEntries(
+      [{ ...check('16:30'), timestamp: TS('16:30:02') }, { ...check('16:45'), timestamp: TS('16:45:11') }],
+      {}, [],
+    );
+    const [run] = collapseQuietChecks(entries);
+    expect(run._type).toBe(TAPE_KIND.CHECK_RUN);
+    expect(run.count).toBe(2);
+    expect(slotLabel(run.at)).toBe('12:30 PM');
+    expect(run.at).toBe(TS('16:30:02'));
+  });
+
+  it('a TRADE keeps its exact minute — a swap executes at an instant, not at a slot', () => {
+    const [trade] = buildTradeEntries([{ ...HAIKU_TRADE, swappedOutAt: TS('17:31:07') }], FEED);
+    expect(COPY.tradeCardLine(trade.at, trade.symbolOut, trade.symbolIn, trade.tier))
+      .toBe('1:31 PM · GILD → MOS · Core');
+    expect(COPY.tradeLine(trade.at, trade.symbolOut, trade.symbolIn)).toBe('1:31 PM · GILD → MOS');
+  });
+
+  it('MUTATION ROW — the run key is unaffected by the slot label', () => {
+    // Two quiet checks in the SAME slot (a cron retry) still fold on their
+    // data conjuncts, and two in different slots still fold: the slot is a
+    // label, never a conjunct of D-77.
+    const sameSlot = collapseQuietChecks(buildCheckEntries(
+      [{ ...check('16:30'), timestamp: TS('16:30:02') }, { ...check('16:31'), timestamp: TS('16:31:44') }],
+      {}, [],
+    ));
+    expect(sameSlot).toHaveLength(1);
+    expect(sameSlot[0].count).toBe(2);
   });
 });

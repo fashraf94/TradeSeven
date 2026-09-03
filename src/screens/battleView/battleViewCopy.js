@@ -21,8 +21,17 @@
 //      never paraphrases it; the labels around it are scoreboard facts.
 //
 // Every string is a REQUEST to the design chat; change them here, never inline.
+//
+// A CHECK IS NAMED BY ITS SLOT (D-83). Four labels here name a check —
+// `fromCheck`, `notNamedAtCheck`, `atCheck` (which `checkCardLabel` composes)
+// and `nothingQueued`'s `next check ~` — and all four take `slotLabel` rather
+// than `etTime`, so a tick is called the same thing wherever it appears. The
+// labels that name something OTHER than a check keep the exact minute, on
+// purpose: `tradeLine` / `tradeCardLine` (a swap EXECUTES at an instant),
+// `filed` / `replaced` (a chat exchange), `factHeldSince` (an entry).
 
 import { etTime } from '../../components/Dashboard/desk/deskCopy';
+import { slotLabel } from './deriveTurnLine';
 
 /**
  * "Sep 1" — an ET calendar date, for a fact that is about a DAY (the deploy)
@@ -92,7 +101,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // THIS piece — an extract — so its eyebrow says where they came from; the
   // book panel keeps `atCheck` below, because it IS the whole check.
   fromCheck: (iso) => {
-    const t = etTime(iso);
+    const t = slotLabel(iso);
     return t ? `From the ${t} check` : null;
   },
   // The door out of the extract and into the whole paragraph (the book panel).
@@ -100,7 +109,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // A truthful state, not an absence of data: the check recorded words, and
   // none of its sentences named this piece. The full paragraph is one tap away.
   notNamedAtCheck: (iso) => {
-    const t = etTime(iso);
+    const t = slotLabel(iso);
     return t ? `Not named at the ${t} check` : null;
   },
 
@@ -185,7 +194,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // rationale is the agent's reasoning for the book at that check, and the
   // header must not imply a per-position record that does not exist.
   atCheck: (iso) => {
-    const t = etTime(iso);
+    const t = slotLabel(iso);
     return t ? `At the ${t} check` : null;
   },
 
@@ -294,7 +303,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     // (review L5-F7). The time alone carries the same fact. Composed from the
     // ruled strings either way — no third string is invented here.
     if (label.includes('at this check')) {
-      const t = etTime(iso);
+      const t = slotLabel(iso);
       return t ? `${t} · ${label}` : label;
     }
     return `${header} · ${label}`;
@@ -317,7 +326,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     return t ? `Filed ${t}` : 'Filed';
   },
   nothingQueued: (nextIso) => {
-    const next = etTime(nextIso);
+    const next = slotLabel(nextIso);
     return next ? `Nothing queued · next check ~${next}` : 'Nothing queued';
   },
 

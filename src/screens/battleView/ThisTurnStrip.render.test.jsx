@@ -35,7 +35,7 @@ describe('ThisTurnStrip', () => {
 
   it('empty: `Nothing queued · next check ~{t}` with the adapter\'s next', () => {
     const html = render({ directive: null, receipts: {}, battleStatus: 'active', turn: TURN });
-    expect(html).toContain('Nothing queued · next check ~1:02 PM');
+    expect(html).toContain('Nothing queued · next check ~1:00 PM');
     expect(html).toContain('data-this-turn="empty"');
   });
 

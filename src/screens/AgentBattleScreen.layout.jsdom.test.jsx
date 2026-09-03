@@ -337,8 +337,8 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     const list = q('[data-chat-layout="controller"] > div');
     expect(list.style.display).toBe('none');
     // Peek carries the turn line — the same text the header renders.
-    expect(q('[data-sheet-cycle]').textContent).toContain('Checked 12:47 PM · next ~1:02 PM');
-    expect(q('[data-turn-state]').textContent).toBe('Checked 12:47 PM · next ~1:02 PM');
+    expect(q('[data-sheet-cycle]').textContent).toContain('Checked 12:45 PM · next ~1:00 PM');
+    expect(q('[data-turn-state]').textContent).toBe('Checked 12:45 PM · next ~1:00 PM');
     // The cycle control is a real button, named for its next activation, wired to the content.
     const cycle = q('[data-sheet-cycle]');
     expect(cycle.tagName).toBe('BUTTON');
