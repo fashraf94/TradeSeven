@@ -165,6 +165,7 @@ beforeEach(() => {
   store.pendingProposal = null;
   store.feedBookmarks = [];
   store.evaluations = null;
+  evalSeq = 0;
   mq.listeners.clear();
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -188,6 +189,29 @@ const rowButtonFor = (symbol) => qa('[role="button"][aria-expanded]')
   .find((el) => el.querySelector('[data-why-label]') && el.textContent.includes(symbol));
 const doorButton = () => qa('button').find((b) => b.textContent === 'Ask a follow-up · 1 message');
 const tabButtons = () => qa('button').filter((b) => ['Matchups', 'Command Center', 'Huddle'].includes(b.textContent));
+/**
+ * A new entry the TAPE renders (flip-prep item 4). The unread mark counts what
+ * the conversation actually shows, so the rows below drive it with checks —
+ * which become cards — rather than with `statusFeed` actions, six of which
+ * ruling 9 says the tape renders as nothing at all.
+ */
+let evalSeq = 0;
+const landCheck = (hhmm, over = {}) => {
+  evalSeq += 1;
+  store.evaluations = [
+    ...(store.evaluations || LIVE_DOC.evaluations),
+    {
+      evalId: `eval_new_${evalSeq}`,
+      timestamp: `2026-09-01T${hhmm}:02.000Z`,
+      decision: 'HOLD',
+      downgraded: false,
+      rationale: 'Held SLB.',
+      haikuError: null,
+      ...over,
+    },
+  ];
+  rerender();
+};
 const typeDraft = (text) => act(() => {
   const ta = q('textarea');
   const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
@@ -280,10 +304,10 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     expect(washes.map((w) => w.getAttribute('data-wash-index'))).toEqual(['0', '1', '2', '3', '4', '5', '6']);
   });
 
-  it('an OPEN desktop column has nowhere to show the dot and MARKS the feed seen — the entries stay seen across a crossing', () => {
+  it('an OPEN desktop column has nowhere to show the dot and MARKS the TAPE seen — it stays seen across a crossing', () => {
     mount();
-    store.statusFeed = [{ action: 'hold', message: 'Held.', timestamp: '2026-09-01T16:47:00.000Z' }, { action: 'hold', message: 'Held again.', timestamp: '2026-09-01T17:02:00.000Z' }];
-    rerender();
+    landCheck('16:47');
+    landCheck('17:02');
     expect(q('[data-sheet-dot]')).toBeNull();
     expect(q('[data-peek-dot]')).toBeNull();
     expect(q('[data-unread]')).toBeNull();
@@ -296,10 +320,34 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     expect(q('[data-sheet-cycle]').getAttribute('data-unread')).toBe('false');
     click(q('[data-sheet-collapse]'));
     expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
-    // …and a NEW entry at peek does show.
-    store.statusFeed = [...store.statusFeed, { action: 'hold', message: 'Held once more.', timestamp: '2026-09-01T17:17:00.000Z' }];
-    rerender();
+    // …and a NEW card at peek does show.
+    landCheck('17:17');
     expect(q('[data-sheet-cycle]').getAttribute('data-unread')).toBe('true');
+  });
+
+  it('a FEED-ONLY write lights nothing — the tape renders it as nothing (flip-prep item 4)', () => {
+    // Ruling 9 lists six feed actions the tape shows as NOTHING. Keyed on the
+    // feed, the mark promised "new activity" for exactly those —
+    // `guardrail_forced_swap` most sharply, since a forced swap that did not
+    // execute gets no card at all (hazard 25). The player expanded, found
+    // nothing, and the dot cleared.
+    setViewport(1280);
+    mount();
+    click(q('[data-chat-collapse]'));
+    expect(q('[data-peek-expand]').getAttribute('data-unread')).toBe('false');
+
+    store.statusFeed = [
+      { action: 'watchlist_refresh', message: 'Bench refreshed.', timestamp: '2026-09-01T17:02:00.000Z' },
+      { action: 'guardrail_forced_swap', message: 'Forcing exit.', timestamp: '2026-09-01T17:03:00.000Z' },
+    ];
+    rerender();
+    expect(q('[data-peek-expand]').getAttribute('data-unread')).toBe('false');
+    expect(q('[data-peek-dot]')).toBeNull();
+
+    // …and a check, which the tape DOES render, still lights it. Without this
+    // the row above would pass on a dot that never lights at all.
+    landCheck('17:04');
+    expect(q('[data-peek-expand]').getAttribute('data-unread')).toBe('true');
   });
 
   it('A2.4 (D-74) — collapsing folds the chat to the strip and the board takes the full width', () => {
@@ -447,16 +495,14 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     // Seen while the column was open, so nothing is unread yet…
     expect(q('[data-peek-expand]').getAttribute('data-unread')).toBe('false');
     expect(q('[data-peek-dot]')).toBeNull();
-    // …a new entry arrives with the chat collapsed, and the strip says so.
-    store.statusFeed = [{ action: 'hold', message: 'Held.', timestamp: '2026-09-01T17:17:00.000Z' }];
-    rerender();
+    // …a new CARD arrives with the chat collapsed, and the strip says so.
+    landCheck('17:17');
     expect(q('[data-peek-expand]').getAttribute('data-unread')).toBe('true');
     expect(q('[data-peek-dot]')).toBeTruthy();
     // Expanding clears it, exactly as opening the sheet does.
     click(q('[data-peek-expand]'));
     expect(q('[data-chat-column]')).toBeTruthy();
     expect(q('[data-peek-strip]')).toBeNull();
-    store.statusFeed = [...store.statusFeed];
     rerender();
     expect(q('[data-peek-dot]')).toBeNull();
   });
@@ -546,7 +592,10 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     const cycle = q('[data-sheet-cycle]');
     expect(cycle.tagName).toBe('BUTTON');
     expect(cycle.getAttribute('aria-expanded')).toBe('false');
-    expect(cycle.getAttribute('aria-label')).toBe('Open the chat');
+    // …and it names the unread state with it: a fresh mount treats the whole
+    // tape as unseen (flip-prep item 4), and this fixture arrives with a
+    // conversation and a check already in it.
+    expect(cycle.getAttribute('aria-label')).toBe('Open the chat · new activity');
     expect(cycle.getAttribute('aria-controls')).toBe(q('[data-sheet-content]').id);
     expect(q('[data-sheet-collapse]')).toBeNull();
   });
@@ -622,23 +671,33 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     expect(list.style.overscrollBehavior).toBe('contain');
   });
 
-  it('at the server\'s feed cap the length stops moving — a newer entry still lights the dot; a shrink never hides one', () => {
-    const entry = (i) => ({ action: 'hold', message: `Held ${i}.`, timestamp: `2026-09-01T16:${String(i).padStart(2, '0')}:00.000Z` });
-    store.statusFeed = [entry(1), entry(2), entry(3)];
+  it('at the CAP the count stops moving — a newer card still lights the dot; a shrink never hides one', () => {
+    // The stamp is not decoration. The server caps what it stores and other
+    // writers push past the cap between ticks, so a COUNT alone plateaus and
+    // can even shrink while entries keep arriving (A2 review, refuter A on
+    // L2-F8). Re-sourcing the mark to the tape (flip-prep item 4) did not
+    // retire that hazard — `evaluations[]` has a cap of its own — so the mark
+    // is still the count AND the newest rendered entry's stamp.
+    const check = (i) => ({
+      evalId: `eval_cap_${i}`,
+      timestamp: `2026-09-01T16:${String(i).padStart(2, '0')}:00.000Z`,
+      decision: 'HOLD', downgraded: false, rationale: `Held ${i}.`, haikuError: null,
+    });
+    store.evaluations = [check(1), check(2), check(3)];
     mount();
     const cycle = q('[data-sheet-cycle]');
-    click(cycle); // half: seen (length 3, newest 16:03)
+    click(cycle); // half: seen (three checks, newest 16:03)
     expect(cycle.getAttribute('data-unread')).toBe('false');
     click(q('[data-sheet-collapse]'));
-    // A cap roll: the oldest falls off, a newer one lands — the length is still 3.
-    store.statusFeed = [entry(2), entry(3), entry(4)];
+    // A cap roll: the oldest falls off, a newer one lands — the COUNT is still 3.
+    store.evaluations = [check(2), check(3), check(4)];
     rerender();
     expect(cycle.getAttribute('data-unread')).toBe('true');
-    click(cycle); // seen again (length 3, newest 16:04)
+    click(cycle); // seen again (three checks, newest 16:04)
     expect(cycle.getAttribute('data-unread')).toBe('false');
     click(q('[data-sheet-collapse]'));
-    // A shrink below the seen length, then a newer entry: still new.
-    store.statusFeed = [entry(5)];
+    // A shrink below the seen count, then a newer card: still new.
+    store.evaluations = [check(5)];
     rerender();
     expect(cycle.getAttribute('data-unread')).toBe('true');
   });
@@ -841,9 +900,8 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     click(q('[data-game-tape-link]'));
     expect(q('[data-game-tape="open"]')).toBeTruthy();
     expect(q('[data-chat-sheet]').style.visibility).toBe('hidden');
-    store.statusFeed = [{ action: 'hold', message: 'Held.', timestamp: '2026-09-01T17:02:00.000Z' }];
-    rerender();
-    // Behind the tape the chat is not visible: the feed stays unseen.
+    landCheck('17:02');
+    // Behind the tape the chat is not visible: the tape stays unseen.
     expect(cycle.getAttribute('data-unread')).toBe('true');
     click(q('[data-game-tape-back]'));
     // Back on the page with the sheet at half, the effect marks it seen.
@@ -867,10 +925,10 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
   });
 
   it('the unread dot lives on the sheet handle and clears when the sheet opens; it returns for new entries at peek', () => {
-    store.statusFeed = [
-      { action: 'hold', message: 'Held.', timestamp: '2026-09-01T16:47:00.000Z' },
-      { action: 'hold', message: 'Held again.', timestamp: '2026-09-01T17:02:00.000Z' },
-    ];
+    // A FRESH MOUNT TREATS EVERYTHING AS UNSEEN (flip-prep item 4): the mark
+    // starts at zero, so arriving at a battle whose conversation you have not
+    // read lights the dot. This fixture already has an exchange and a check in
+    // it, which is why nothing needs adding before the first assertion.
     mount();
     const cycle = q('[data-sheet-cycle]');
     expect(cycle.getAttribute('data-unread')).toBe('true');
@@ -883,9 +941,8 @@ describe('mobile — the board as the page, the chat as a non-modal sheet', () =
     click(q('[data-sheet-collapse]'));
     expect(q('[data-chat-sheet]').getAttribute('data-chat-sheet')).toBe('peek');
     expect(cycle.getAttribute('data-unread')).toBe('false');
-    // A new entry while the sheet is at peek → the dot returns; opening clears it again.
-    store.statusFeed = [...store.statusFeed, { action: 'hold', message: 'Held once more.', timestamp: '2026-09-01T17:17:00.000Z' }];
-    rerender();
+    // A new CARD while the sheet is at peek → the dot returns; opening clears it again.
+    landCheck('17:17');
     expect(cycle.getAttribute('data-unread')).toBe('true');
     click(cycle);
     expect(cycle.getAttribute('data-unread')).toBe('false');

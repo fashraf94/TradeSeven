@@ -983,18 +983,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // strip while it is collapsed — the mobile rule, applied to the desktop's
   // own collapsed state — and still never shows while the column is open.
   const chatVisible = controllerOn && !gameTapeOpen && chatOpen;
-  const newestFeedStamp = feedStampOf(statusFeed[statusFeed.length - 1]);
-  useEffect(() => {
-    if (!chatVisible) return;
-    setSeenFeed({ length: statusFeed.length, stamp: newestFeedStamp });
-  }, [chatVisible, statusFeed.length, newestFeedStamp]);
-  const hasNewFeedEntries = controllerOn
-    ? (statusFeed.length > seenFeed.length
-      || (seenFeed.stamp != null && newestFeedStamp != null && newestFeedStamp !== seenFeed.stamp))
-    : statusFeed.length > lastSeenFeedLengthRef.current;
-  const hasCommandDot = hasPendingProposal || hasNewFeedEntries;
-  const commandDotColor = hasPendingProposal ? '#f59e0b' : '#5eead4';
   const hasGameTapeDot = (feedBookmarks?.length || 0) > 0;
+  // The unread mark itself is derived BELOW, after `recordedTape` — it counts
+  // what the tape renders now, and this component cannot see that list until
+  // it has been built. See the block that follows it.
+  //
+  // Flag-off keeps the shipped render-time clear above (`:449-451`), untouched.
 
   // ── Turn line + landing (Phase A, controller flag) ────────────────────────
   //
@@ -1285,6 +1279,52 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     () => (controllerOn ? derivePeekLine(recordedTape) : null),
     [controllerOn, recordedTape],
   );
+
+  // ── The unread mark (A4, hazard 14; re-sourced flip-prep item 4) ──────────
+  //
+  // IT COUNTS WHAT THE TAPE RENDERS. Under the flag the `statusFeed` no longer
+  // feeds the stream at all — `tapeEntries` replaced it (D-72) — and ruling 9
+  // lists six feed actions the tape shows as NOTHING (`first_message`,
+  // `eval_degraded`, `guardrail_block`, `guardrail_forced_swap`,
+  // `watchlist_refresh`, the narration twin). Keying the mark on the feed
+  // promised "new activity" for events the tape is forbidden to show —
+  // `guardrail_forced_swap` most sharply, since a forced swap that did not
+  // execute gets no card at all by hazard 25. The player expanded, found
+  // nothing, and the dot cleared.
+  //
+  // The source is `recordedTape` — messages (directive cards ride on them) plus
+  // the tape's check and trade cards, the same merged list `In the chat · n`
+  // counts and the peek line reads (BUILD_RULES §9). Not the FOLDED stream:
+  // three quiet checks arriving is three new things whether the display shows
+  // them as three cards or one line.
+  //
+  // THE A4 RULES THAT STILL APPLY, kept:
+  //   · a fresh mount treats everything as unseen — the mark starts at zero,
+  //     so arriving at a battle with a conversation you have not read lights
+  //     the dot, which is what the dot is for;
+  //   · the mark is the count AND the newest entry's stamp, so a cap roll
+  //     still lights: the server caps what it stores and other writers push
+  //     past the cap between ticks, so a length alone plateaus and can even
+  //     shrink while entries keep arriving (A2 review, refuter A on L2-F8).
+  //     The tape has its own version of the same hazard — a fold makes the
+  //     rendered length SHRINK while activity arrives — which is why the
+  //     stamp is not optional here either;
+  //   · the mark moves in an EFFECT, never during render (rulings §3.9), and
+  //     only while the chat is visible.
+  const tapeCount = Array.isArray(recordedTape) ? recordedTape.length : 0;
+  const newestTapeStamp = tapeCount > 0
+    ? (recordedTape[tapeCount - 1]?.timestamp?.getTime?.() ?? null)
+    : null;
+  useEffect(() => {
+    if (!chatVisible) return;
+    setSeenFeed({ length: tapeCount, stamp: newestTapeStamp });
+  }, [chatVisible, tapeCount, newestTapeStamp]);
+  const hasNewFeedEntries = controllerOn
+    ? (tapeCount > seenFeed.length
+      || (seenFeed.stamp != null && newestTapeStamp != null && newestTapeStamp !== seenFeed.stamp))
+    : statusFeed.length > lastSeenFeedLengthRef.current;
+  const hasCommandDot = hasPendingProposal || hasNewFeedEntries;
+  const commandDotColor = hasPendingProposal ? '#f59e0b' : '#5eead4';
 
   const thisTurnStrip = controllerOn && agentBattle ? (
     <ThisTurnStrip
