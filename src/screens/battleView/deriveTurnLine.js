@@ -17,6 +17,7 @@
 //
 // The five states (Phase A seed §A1) and the string each consumes:
 //   live      → DESK_COPY.postureLive     `Checked 12:47 PM · next ~1:02 PM`
+//   lastToday → DESK_COPY.postureLastOfSession `Checked 3:46 PM · last check today`
 //   late      → DESK_COPY.postureLate     `Last check 12:47 PM · next was due ~1:02 PM`
 //   preOpen   → DESK_COPY.posturePreOpen  `First check at 9:30 AM ET`
 //   closed    → DESK_COPY.postureClosed   `Market closed · last check 3:45 PM · next Tue 9:30 AM ET`
@@ -51,6 +52,7 @@ export const LATE_GRACE_MS = 5 * 60 * 1000;
 
 export const TURN_STATE = Object.freeze({
   LIVE: 'live',
+  LAST_OF_SESSION: 'lastOfSession',
   FIRST_CHECK: 'firstCheck',
   LATE: 'late',
   PRE_OPEN: 'preOpen',
@@ -110,7 +112,7 @@ export function deriveTurnLine(battle, now, marketState) {
   const sync = buildBaggerbombAdapter(battle, null, null, now, marketState);
   if (!sync) return null;
 
-  const { phase, lastCheckedAt, nextDecisionAt, nextOpenEt } = sync;
+  const { phase, lastCheckedAt, nextDecisionAt, nextOpenEt, lastCheckOfSession } = sync;
   const dueAt = phase === PHASE.LIVE ? deriveDueAt(lastCheckedAt, marketState) : null;
   const nowMs = toMillis(now);
   const dueMs = toMillis(dueAt);
@@ -130,6 +132,12 @@ export function deriveTurnLine(battle, now, marketState) {
   } else if (!lastCheckedAt) {
     state = TURN_STATE.FIRST_CHECK;
     text = DESK_COPY.postureLive(null, null);
+  } else if (lastCheckOfSession) {
+    // D-71. Ordered BEFORE the late branch for legibility only: the field is
+    // true exactly when deriveDueAt() is null, and the late branch needs a
+    // non-null dueAt, so the two are mutually exclusive by construction.
+    state = TURN_STATE.LAST_OF_SESSION;
+    text = DESK_COPY.postureLastOfSession(lastCheckedAt);
   } else if (dueMs != null && nowMs != null && nowMs > dueMs + LATE_GRACE_MS) {
     // Strictly past the grace: at exactly dueAt + grace the line still reads
     // as live (`Checked {t}`, its next already withheld by the adapter).

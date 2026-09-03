@@ -132,6 +132,24 @@ export const DESK_COPY = Object.freeze({
     return due ? `Last check ${last} · next was due ~${due}` : `Last check ${last}`;
   },
 
+  // LIVE, and the check that just landed is the LAST one of the session
+  // (Phase A2, D-71). The adapter's `lastCheckOfSession` is the persisted-fact
+  // discriminator: LIVE, a last check exists, and deriveDueAt() returns null
+  // because the +15 min candidate lands at or after the session close. Before
+  // this string both surfaces rendered `Checked {t}` with the next silently
+  // withheld — true, but it read as a starved cron rather than a finished
+  // trading day. ONE derivation, in the adapter, consumed by the Desk and the
+  // Battle View turn line alike (BUILD_RULES §9, D-62).
+  //
+  // "today" is a session fact, not an agent verb: it says there is no further
+  // scheduled check inside this session, and claims nothing about what the
+  // agent is doing between now and the close.
+  postureLastOfSession: (lastIso) => {
+    const last = etTime(lastIso);
+    if (!last) return DESK_COPY.postureFirstCheckComing;
+    return `Checked ${last} · last check today`;
+  },
+
   // LIVE_CLOSED. "Market closed" is a market fact; the last check is the as-of
   // stamp (handover lock #5 — it stays visible in closed phases); the next
   // check is the next open. No verb about the agent at all — it is not doing

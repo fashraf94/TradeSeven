@@ -17,6 +17,7 @@ import {
   buildBaggerbombAdapter,
   derivePhase,
   deriveDueAt,
+  deriveLastCheckOfSession,
   toIso,
   PHASE,
   PROXIMITY_STALE_MS,
@@ -611,6 +612,48 @@ describe('buildBaggerbombAdapter', () => {
     it('nextDecisionAt is deriveDueAt gated on phase and "not yet past" — one function, not two', () => {
       const a = build(makeBattle(), makeCache(), AGENT, NOW, MS.open);
       expect(a.nextDecisionAt).toBe(deriveDueAt(a.lastCheckedAt, MS.open));
+    });
+  });
+
+  describe('lastCheckOfSession — the D-71 discriminator, derived ONCE for both surfaces', () => {
+    it('LIVE with no due slot inside the session is the last check of the day', () => {
+      // 15:50 ET + 15 = 16:05 ET, past the 16:00 close.
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:50:00.000Z', MS.open)).toBe(true);
+      // 15:45 ET + 15 = 16:00 ET — AT the close, which deriveDueAt clamps too.
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:45:00.000Z', MS.open)).toBe(true);
+    });
+
+    it('MUTATION ROW — a slot still inside the session is NOT the last check, however late it is', () => {
+      // The starved-cron case: the slot exists and was missed. Late, not done.
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:44:00.000Z', MS.open)).toBe(false);
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T14:00:00.000Z', MS.open)).toBe(false);
+    });
+
+    it('no check at all is not a last check — the Desk says one is coming instead', () => {
+      expect(deriveLastCheckOfSession(PHASE.LIVE, null, MS.open)).toBe(false);
+      expect(deriveLastCheckOfSession(PHASE.LIVE, undefined, MS.open)).toBe(false);
+    });
+
+    it('every non-LIVE phase is false — the closed and complete lines carry their own sentence', () => {
+      for (const phase of [PHASE.PRE_OPEN, PHASE.LIVE_CLOSED, PHASE.POST_CLOSE]) {
+        expect(deriveLastCheckOfSession(phase, '2026-09-01T19:50:00.000Z', MS.open)).toBe(false);
+      }
+    });
+
+    it('an early close clamps earlier — a 12:55 ET check is the last one of a 13:00 session', () => {
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-11-27T17:55:00.000Z', MS.earlyCloseOpen)).toBe(true);
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-11-27T17:00:00.000Z', MS.earlyCloseOpen)).toBe(false);
+    });
+
+    it('the adapter exposes the field, so neither surface re-derives the null', () => {
+      const a = build(makeBattle(), makeCache(), AGENT, NOW, MS.open);
+      expect(a.lastCheckOfSession).toBe(deriveLastCheckOfSession(a.phase, a.lastCheckedAt, MS.open));
+      expect(a.lastCheckOfSession).toBe(false);
+      const late = build(
+        makeBattle({ scoreState: { evaluationCount: 25, lastScoredAt: '2026-09-01T19:50:00.000Z' } }),
+        makeCache(), AGENT, '2026-09-01T19:55:00.000Z', MS.open,
+      );
+      expect(late.lastCheckOfSession).toBe(true);
     });
   });
 

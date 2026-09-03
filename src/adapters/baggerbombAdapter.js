@@ -316,6 +316,25 @@ export function deriveDueAt(lastCheckedAt, marketState) {
 }
 
 /**
+ * Whether the check that just landed is the LAST one of this session (D-71).
+ *
+ * TRUE when the battle is LIVE, a check has landed, and deriveDueAt() returns
+ * null — which it does for exactly one reason during LIVE: the +15 min
+ * candidate lands at or after the session close, so there is no further
+ * scheduled check today. A starved cron BEFORE the close still has a non-null
+ * `dueAt` (it is late, not finished), so the two states cannot be confused.
+ *
+ * ONE derivation, exposed as one adapter field, because both the Desk and the
+ * Battle View turn line render from it: testing the null in two places is how
+ * two surfaces start disagreeing about the same fact (BUILD_RULES §9).
+ */
+export function deriveLastCheckOfSession(phase, lastCheckedAt, marketState) {
+  if (phase !== PHASE.LIVE) return false;
+  if (!lastCheckedAt) return false;
+  return deriveDueAt(lastCheckedAt, marketState) === null;
+}
+
+/**
  * When the agent next checks, during LIVE only.
  *
  * Returns a TRUE ISO instant or null. Off-hours the answer is the next market
@@ -446,6 +465,9 @@ export function buildBaggerbombAdapter(battle, voiceLayerCacheDoc, agent, now, m
     lastCheckedAt,
     // A true ISO instant, LIVE only (last check + 15 min, inside the session).
     nextDecisionAt: deriveNextDecisionAt(phase, lastCheckedAt, marketState, now),
+    // Whether that check was the last one of the session (D-71). Both surfaces
+    // consume THIS field rather than re-deriving the null — see the helper.
+    lastCheckOfSession: deriveLastCheckOfSession(phase, lastCheckedAt, marketState),
     // The next market open as ET WALL-CLOCK FIELDS, never an epoch — see
     // etWallClock() above for why the distinction is load-bearing.
     nextOpenEt: etWallClock(marketState?.nextOpenTime),

@@ -55,6 +55,17 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // on that prefix, so the guardrail label never over-claims on this path.
   failedLabel: 'Argued for a swap · it did not go through',
   failedFooter: 'The agent\'s own words · the position stayed as it was',
+
+  // The FIFTH state (A2.0, D-70). A guardrail — not the agent — called for the
+  // swap: applyGuardrails returned SWAP with `sourceNote: guardrail_*` and a
+  // `forced_exit` override, the cron OVERWROTE the rationale with its own
+  // `Guardrail override (…): …` text, and the swap was then blocked (a
+  // distressed replacement, validation) or threw. Under the fourth state's
+  // words that tick read `Argued for a swap · The agent's own words` over text
+  // the agent never wrote (A4 handover item 21). The subject is the guardrail
+  // and the footer names whose reason follows.
+  guardrailForcedFailedLabel: 'A guardrail called for a swap · it did not go through',
+  guardrailForcedFailedFooter: 'The guardrail\'s reason · the position stayed as it was',
   heldLabel: 'Held',
   swappedLabel: (symbolOut, symbolIn) => `Swapped · ${symbolOut ?? '—'} → ${symbolIn ?? '—'}`,
 
@@ -65,9 +76,15 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // `haikuError` with `failureClass: 'timeout'` — the model call timed out
   // and the tick defaulted to HOLD with the system's placeholder words. The
   // fact is persisted on the entry itself; the label states it and nothing
-  // more. Other outage classes (budget_skipped, truncated_response, an HTTP
-  // status) keep `noDecision` — no class-neutral line is ruled yet.
+  // more. Every other outage class takes the class-neutral line below (D-69).
   noDecisionOutage: 'No decision recorded at this check · the evaluation timed out',
+  // Every OTHER outage class (A2.0, D-69): `budget_skipped`, `truncated_response`,
+  // an HTTP status, an error's class name, `unknown`. The tick recorded an entry
+  // whose words are the cron's placeholder, so a decision is still absent — but
+  // "timed out" would name a verb the evidence does not support (honesty rule 8,
+  // A4 review L1-F1). `did not complete` is true of every class including the
+  // timeout; the timeout keeps the more specific line above.
+  noDecisionIncomplete: 'No decision recorded at this check · the evaluation did not complete',
 
   // Trades on this piece today — the section heading; each line is the swap
   // receipt's own time, symbols and reason (engine text, verbatim).

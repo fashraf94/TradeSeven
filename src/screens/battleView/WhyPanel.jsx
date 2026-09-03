@@ -29,6 +29,10 @@ import { WHY_KIND, emphasizeSymbol } from './selectWhyState';
 const LABEL_COLOR = {
   [WHY_KIND.DOWNGRADED]: cssVar('amber'),
   [WHY_KIND.FAILED]: cssVar('amber'),
+  // The fifth state (A2.0, D-70) is the same class of outcome as the fourth —
+  // a swap that did not go through — so it wears the same colour; only the
+  // subject of the sentence differs (the guardrail, not the agent).
+  [WHY_KIND.GUARDRAIL_FAILED]: cssVar('amber'),
   [WHY_KIND.SWAPPED]: cssVar('teal'),
   [WHY_KIND.HELD]: cssVar('text-secondary'),
   [WHY_KIND.ABSENT]: cssVar('text-muted'),

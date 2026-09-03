@@ -75,6 +75,28 @@ describe('posture line — discrete, never continuous', () => {
     expect(html).toContain('next ~');
   });
 
+  it('D-71 — the LAST check of the session says so, instead of a bare `Checked {t}` that reads as a starved cron', () => {
+    // The adapter's `lastCheckOfSession` is true when deriveDueAt() returns
+    // null during LIVE: the +15 min slot lands at or after the close. ONE
+    // field, rendered here and by the Battle View turn line (BUILD_RULES §9).
+    const html = render({ lastCheckedAt: '2026-09-01T19:46:00.000Z', nextDecisionAt: null, lastCheckOfSession: true });
+    expect(html).toContain('Checked 3:46 PM · last check today');
+    expect(html).not.toContain('next ~');
+  });
+
+  it('D-71 MUTATION ROW — a LIVE check with a slot still to come keeps the live line', () => {
+    expect(render({ lastCheckOfSession: false })).toContain('Checked 12:47 PM · next ~1:02 PM');
+    expect(render({ lastCheckOfSession: false })).not.toContain('last check today');
+    // Absent (an adapter built before the field existed) is falsy — the live line.
+    expect(render()).toContain('Checked 12:47 PM · next ~1:02 PM');
+  });
+
+  it('D-71 never fabricates a time — no last check means the coming-check line, not `last check today`', () => {
+    const html = render({ lastCheckedAt: null, nextDecisionAt: null, lastCheckOfSession: true });
+    expect(html).toContain('First check coming up');
+    expect(html).not.toContain('last check today');
+  });
+
   it('LIVE with no eval yet says a check is coming — never a fabricated time', () => {
     const html = render({ lastCheckedAt: null, nextDecisionAt: null });
     expect(html).toContain('First check coming up');

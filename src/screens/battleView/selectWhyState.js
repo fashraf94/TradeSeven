@@ -23,6 +23,7 @@ export const WHY_KIND = Object.freeze({
   ABSENT: 'absent',
   DOWNGRADED: 'downgraded',
   FAILED: 'failed',
+  GUARDRAIL_FAILED: 'guardrailFailed',
   HELD: 'held',
   SWAPPED: 'swapped',
 });
@@ -38,6 +39,38 @@ const swapDidNotGoThrough = (evaluation) => {
   const first = Array.isArray(evaluation.validationErrors) ? evaluation.validationErrors[0] : null;
   return typeof first === 'string' && first.startsWith(SWAP_FAILED_PREFIX);
 };
+
+/**
+ * The prefix agentGuardrails.js stamps on `sourceNote` for every guardrail
+ * verdict it authors (`guardrail_${forcedType}`, `guardrail_max_sector_weight`).
+ * NOT sufficient on its own: the `reinforced_haiku` branch stamps the same
+ * prefix while the rationale stays the AGENT's argument (agentGuardrails.js
+ * ~468-497) — hence the third conjunct below.
+ */
+export const GUARDRAIL_SOURCE_PREFIX = 'guardrail_';
+
+/**
+ * The action agentGuardrails.js stamps on the override entry when the guardrail
+ * itself chose the pair (`{ action: 'forced_exit', symbol, replacementSymbol }`).
+ * This is what separates "the guardrail called for this swap" from "the agent
+ * argued for a swap and a guardrail agreed" (`reinforced_haiku`).
+ */
+export const GUARDRAIL_FORCED_EXIT = 'forced_exit';
+
+/**
+ * The persisted three-conjunct gate for the fifth state (D-70, Phase 0 §3):
+ * `downgraded` (checked by the caller) ∧ a `guardrail_` sourceNote ∧ a
+ * `forced_exit` override. Returns the override — the pair lives on it, because
+ * the entry's own `symbolOut` / `symbolIn` are null on a downgraded HOLD
+ * (agent-evaluate.js ~2634-2635) — or null when the gate does not hold.
+ */
+export function guardrailForcedExit(evaluation) {
+  const note = evaluation?.guardrailSourceNote;
+  if (typeof note !== 'string' || !note.startsWith(GUARDRAIL_SOURCE_PREFIX)) return null;
+  const overrides = evaluation?.guardrailOverrides;
+  if (!Array.isArray(overrides)) return null;
+  return overrides.find((o) => o && o.action === GUARDRAIL_FORCED_EXIT) || null;
+}
 
 const cleanText = (value) => (typeof value === 'string' && value.trim() ? value : null);
 
@@ -88,7 +121,11 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
   // ruled (copy request in the A4 handover).
   if (evaluation.haikuError) {
     const timedOut = evaluation.haikuError?.failureClass === 'timeout';
-    return { ...base, kind: WHY_KIND.ABSENT, label: timedOut ? COPY.noDecisionOutage : COPY.noDecision };
+    return {
+      ...base,
+      kind: WHY_KIND.ABSENT,
+      label: timedOut ? COPY.noDecisionOutage : COPY.noDecisionIncomplete,
+    };
   }
 
   const rationale = cleanText(evaluation.rationale);
@@ -98,6 +135,25 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
   // SWAP_FAILED_PREFIX — no guardrail held anything, the swap did not go
   // through; every other downgrade is a guardrail holding the position.
   if (evaluation.downgraded === true) {
+    // The FIFTH state FIRST (D-70). Its gate is stricter than the fourth's —
+    // three persisted conjuncts, not a string prefix — and the two overlap: a
+    // guardrail-forced swap whose execution THREW carries the
+    // SWAP_FAILED_PREFIX as well, and under the fourth state's words would
+    // credit the agent with an argument the cron overwrote. `reinforced_haiku`
+    // (the agent argued, a guardrail agreed) fails the third conjunct and
+    // keeps the fourth state, which is correct: those ARE the agent's words.
+    const forced = guardrailForcedExit(evaluation);
+    if (forced) {
+      return {
+        ...base,
+        kind: WHY_KIND.GUARDRAIL_FAILED,
+        label: COPY.guardrailForcedFailedLabel,
+        rationale,
+        footer: COPY.guardrailForcedFailedFooter,
+        symbolOut: cleanText(forced.symbol),
+        symbolIn: cleanText(forced.replacementSymbol),
+      };
+    }
     if (swapDidNotGoThrough(evaluation)) {
       return {
         ...base,

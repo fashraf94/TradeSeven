@@ -161,11 +161,37 @@ describe('the header, the facts and the trades', () => {
     expect(html).not.toContain('Haiku call failed');
     expect(html).not.toContain('Haiku');
     expect(html).not.toMatch(/>Held</);
-    // A budget-skipped tick is an outage too — but not a timeout (L1-F1).
+    // A budget-skipped tick is an outage too — but not a timeout (L1-F1). D-69
+    // (A2.0) gives every non-timeout class the class-neutral line: true of them
+    // all, and it still never names the class to the player.
     const skipped = renderRow({ ...outage, haikuError: { failureClass: 'budget_skipped' } });
-    expect(skipped).toContain('No decision recorded at this check<');
+    expect(skipped).toContain('No decision recorded at this check · the evaluation did not complete');
+    expect(skipped).toContain('data-why-kind="absent"');
     expect(skipped).not.toContain('timed out');
     expect(skipped).not.toContain('budget');
+    expect(skipped).not.toContain('Haiku');
+  });
+
+  it('the FIFTH state (D-70) names the guardrail as the subject, never the agent', () => {
+    // A guardrail-forced exit whose replacement was rejected: the rationale on
+    // the entry is the CRON's `Guardrail override (…)` text, not the agent's.
+    const forced = {
+      ...HELD,
+      downgraded: true,
+      rationale: 'Guardrail override (guardrail_stopLoss): SLB breached the -8% stop; forcing exit to DVN.',
+      guardrailSourceNote: 'guardrail_stopLoss',
+      guardrailOverrides: [{ symbol: 'SLB', action: 'forced_exit', replacementSymbol: 'DVN' }],
+      validationErrors: ['Swap execution failed: EODHD price unavailable for DVN'],
+    };
+    const html = renderRow(forced);
+    expect(html).toContain('A guardrail called for a swap · it did not go through');
+    expect(html).toContain('The guardrail&#x27;s reason · the position stayed as it was');
+    expect(html).toContain('data-why-kind="guardrailFailed"');
+    // The system's words are still rendered verbatim — but never credited to
+    // the agent (the fourth state's footer would do exactly that).
+    expect(html).toContain('Guardrail override (guardrail_stopLoss)');
+    expect(html).not.toContain('The agent&#x27;s own words');
+    expect(html).not.toContain('Argued for a swap');
   });
 
   it('with no check time at all the region still has an accessible name (F6)', () => {

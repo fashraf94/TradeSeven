@@ -82,8 +82,14 @@ export default function AgentDesk({ sync, accent = CMD.teal }) {
   // ── 1. Posture line ────────────────────────────────────────────────────────
   // Never a fabricated time: LIVE with no eval landed says a check is coming
   // rather than inventing when.
+  // D-71: a LIVE check with no further slot inside the session says so, rather
+  // than rendering `Checked {t}` with the next silently withheld (which reads
+  // as a starved cron). The discriminator is the adapter's field, not a second
+  // null test here (BUILD_RULES §9).
   const posture = phase === 'LIVE'
-    ? DESK_COPY.postureLive(lastCheckedAt, nextDecisionAt)
+    ? (sync.lastCheckOfSession
+      ? DESK_COPY.postureLastOfSession(lastCheckedAt)
+      : DESK_COPY.postureLive(lastCheckedAt, nextDecisionAt))
     : phase === 'LIVE_CLOSED'
       ? DESK_COPY.postureClosed(sync.nextOpenEt, lastCheckedAt)
       : phase === 'PRE_OPEN'

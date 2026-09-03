@@ -11,7 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { DESK_COPY } from '../../components/Dashboard/desk/deskCopy';
-import { PHASE } from '../../adapters/baggerbombAdapter';
+import { PHASE, buildBaggerbombAdapter, deriveLastCheckOfSession } from '../../adapters/baggerbombAdapter';
 import {
   deriveTurnLine,
   selectLatestDecision,
@@ -177,14 +177,63 @@ describe('the late boundary — exactly the grace is not yet late', () => {
     expect(t.text).toBe('Checked 1:03 PM · next ~1:18 PM');
   });
 
-  it('a check whose next would land past the close is never late — there is no due check', () => {
+  it('a check whose next would land past the close is never late — there is no due check (D-71: it is the last of the session)', () => {
     // 15:50 ET + 15 = 16:05 ET, past the 16:00 close. No due instant exists
-    // inside this session, so nothing can be late; the line reads the check.
+    // inside this session, so nothing can be late — and the line now SAYS so
+    // rather than reading `Checked 3:50 PM` with the next silently withheld.
     const b = makeBattle({ scoreState: { evaluationCount: 25, lastScoredAt: '2026-09-01T19:50:00.000Z' } });
     const t = deriveTurnLine(b, '2026-09-01T19:59:59Z', MS.open);
-    expect(t.state).toBe(TURN_STATE.LIVE);
-    expect(t.text).toBe('Checked 3:50 PM');
+    expect(t.state).toBe(TURN_STATE.LAST_OF_SESSION);
+    expect(t.state).not.toBe(TURN_STATE.LATE);
+    expect(t.text).toBe('Checked 3:50 PM · last check today');
     expect(t.dueAt).toBeNull();
+  });
+});
+
+describe('D-71 — the last check of the session', () => {
+  it('MUTATION ROW — a LIVE check with a due slot inside the session is NOT the last of the day', () => {
+    // 13:03 ET + 15 = 13:18 ET, well inside the session: the ordinary live line.
+    const b = makeBattle({ scoreState: { evaluationCount: 11, lastScoredAt: '2026-09-01T17:03:00.000Z' } });
+    const t = deriveTurnLine(b, '2026-09-01T17:04:00Z', MS.open);
+    expect(t.state).toBe(TURN_STATE.LIVE);
+    expect(t.text).toBe('Checked 1:03 PM · next ~1:18 PM');
+    expect(t.text).not.toContain('last check today');
+  });
+
+  it('a STARVED cron before the close is late, not finished — the two states cannot be confused', () => {
+    // 13:03 ET + 15 = 13:18 ET; now is 13:40 ET, past the grace. dueAt is
+    // NON-null (the slot exists and was missed), so lastCheckOfSession is false.
+    const b = makeBattle({ scoreState: { evaluationCount: 11, lastScoredAt: '2026-09-01T17:03:00.000Z' } });
+    const t = deriveTurnLine(b, '2026-09-01T17:40:00Z', MS.open);
+    expect(t.state).toBe(TURN_STATE.LATE);
+    expect(t.text).toBe('Last check 1:03 PM · next was due ~1:18 PM');
+    expect(t.text).not.toContain('last check today');
+  });
+
+  it('with no check landed at all the line still says a check is coming — never `last check today`', () => {
+    const b = makeBattle({ scoreState: { evaluationCount: 0, lastScoredAt: null } });
+    const t = deriveTurnLine(b, '2026-09-01T19:59:59Z', MS.open);
+    expect(t.state).toBe(TURN_STATE.FIRST_CHECK);
+    expect(t.text).toBe('First check coming up');
+  });
+
+  it('the closed and complete phases keep their own sentences — D-71 is a LIVE state only', () => {
+    const closed = makeBattle({ scoreState: { evaluationCount: 25, lastScoredAt: '2026-09-01T19:45:00.000Z' } });
+    expect(deriveTurnLine(closed, '2026-09-01T22:00:00Z', MS.closed).text).not.toContain('last check today');
+  });
+
+  it('ONE SOURCE — the turn line reads the adapter field, so the Desk cannot disagree with it', () => {
+    // BUILD_RULES §9: the same boolean the Desk renders from. If this module
+    // re-derived the null the two surfaces could drift apart.
+    const b = makeBattle({ scoreState: { evaluationCount: 25, lastScoredAt: '2026-09-01T19:50:00.000Z' } });
+    const sync = buildBaggerbombAdapter(b, null, null, '2026-09-01T19:59:59Z', MS.open);
+    expect(sync.lastCheckOfSession).toBe(true);
+    expect(deriveLastCheckOfSession('LIVE', '2026-09-01T19:50:00.000Z', MS.open)).toBe(true);
+    expect(deriveLastCheckOfSession('LIVE', '2026-09-01T17:03:00.000Z', MS.open)).toBe(false);
+    expect(deriveLastCheckOfSession('LIVE', null, MS.open)).toBe(false);
+    expect(deriveLastCheckOfSession('LIVE_CLOSED', '2026-09-01T19:50:00.000Z', MS.closed)).toBe(false);
+    expect(deriveTurnLine(b, '2026-09-01T19:59:59Z', MS.open).text)
+      .toBe(DESK_COPY.postureLastOfSession('2026-09-01T19:50:00.000Z'));
   });
 });
 
@@ -197,7 +246,7 @@ describe('the ET/UTC slot math across the March DST boundary', () => {
 
     const late = makeBattle({ scoreState: { evaluationCount: 9, lastScoredAt: '2026-03-06T20:50:00.000Z' } }); // 15:50 EST
     const t2 = deriveTurnLine(late, '2026-03-06T20:51:00Z', MS.openEst);
-    expect(t2.text).toBe('Checked 3:50 PM');
+    expect(t2.text).toBe('Checked 3:50 PM · last check today');
     expect(t2.dueAt).toBeNull();
   });
 
@@ -209,7 +258,7 @@ describe('the ET/UTC slot math across the March DST boundary', () => {
 
     const late = makeBattle({ scoreState: { evaluationCount: 9, lastScoredAt: '2026-03-09T19:50:00.000Z' } }); // 15:50 EDT
     const t2 = deriveTurnLine(late, '2026-03-09T19:51:00Z', MS.openEdt);
-    expect(t2.text).toBe('Checked 3:50 PM');
+    expect(t2.text).toBe('Checked 3:50 PM · last check today');
     expect(t2.dueAt).toBeNull();
   });
 
