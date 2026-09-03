@@ -13,8 +13,9 @@
 //   3. From the {t} check — the state label, why the tick ran, and the
 //      sentences of the check's rationale that NAME this piece, verbatim
 //      (extractSentences). `Not named at the {t} check` when the check spoke
-//      and none of it was about this piece. `Read the full check` opens the
-//      book panel, which is where the whole paragraph lives.
+//      and none of it was about this piece. `Read the full check` opens THAT
+//      CHECK'S OWN CARD in the conversation (D-89, superseding A2.3 ruling 4,
+//      which sent it to the book panel above the board).
 //   4. The plan at deploy (A2.1b, D-76) — the deploy decision's own persisted
 //      output, labelled with the deploy date so it reads as history. A row
 //      carries only the sentences of ITS TIER's rationale that name it; the
@@ -70,11 +71,16 @@ const mono = {
  * The engine's own sentence, with the two emphases it can carry.
  *
  * MARKDOWN FIRST, THEN THE SYMBOL (flip-prep item 3). `parseEmphasis` removes
- * the `**` markers, so running it first is what lets the symbol pass see the
- * words rather than the markup — `**SLB is done**` would otherwise never match
- * SLB against a whole-word boundary that an asterisk sits on. The symbol pass
- * then runs INSIDE each segment, so a symbol inside the model's own emphasis
- * gets both and neither swallows the other.
+ * the `**` markers, so the symbol pass sees words rather than markup. The
+ * stated reason for the ordering used to be that `**SLB is done**` "would
+ * otherwise never match SLB against a whole-word boundary that an asterisk
+ * sits on" — that is FALSE and is corrected here (review L1-F7):
+ * `symbolPattern`'s leading boundary is `(^|[^A-Za-z0-9])`, which `*`
+ * satisfies, so the match survives either order. The real reason is simpler:
+ * run the symbol pass first and the markers render literally, because nothing
+ * downstream would strip them. The symbol pass then runs INSIDE each segment,
+ * so a symbol inside the model's own emphasis gets both and neither swallows
+ * the other.
  *
  * The two read differently on purpose: the symbol is teal (it is the piece you
  * tapped, and it is a link between this text and the row above it), the
@@ -198,9 +204,10 @@ export default function WhyPanel({
       {...(decisionHeading ? { 'aria-labelledby': id } : { 'aria-label': state.label })}
       data-why-kind={state.kind}
       data-why-symbol={isBook ? 'book' : symbol}
-      // A2.3 (ruling 4): `Read the full check` moves focus into this panel.
-      // The heading below is the target; the region is the fallback for a
-      // check with no time to name, where there is no heading to move to.
+      // Focusable so the panel can be moved to programmatically. A2.3's
+      // ruling 4 used to send `Read the full check` here; D-89 sends it to the
+      // check's own card instead, so the only reader who lands on this region
+      // now is one who opened it from the score header.
       tabIndex={-1}
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: 'auto' }}
@@ -259,13 +266,14 @@ export default function WhyPanel({
                that header — a region a keyboard reader can enter and not
                leave is worse than one that never opened. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {/* Ruling 4 says `Read the full check` "moves focus to its first
-              HEADING". It was a styled div, and there is no `<h*>` anywhere in
-              this panel, so heading navigation never found it and the focus
-              stop announced as plain text (review RB-F11). `role="heading"` +
-              `aria-level` is the whole fix: it changes no pixel — the eyebrow
-              keeps its own type scale — and it makes the ruling's sentence
-              true. Level 3: the panel opens under the row it belongs to. */}
+          {/* `role="heading"` + `aria-level` — added for A2.3's ruling 4, which
+              said `Read the full check` "moves focus to its first HEADING",
+              and KEPT after D-89 retargeted that door. The reason changed and
+              the value did not: this region is a disclosure the score header
+              owns, and a panel whose title is not a heading is one a screen
+              reader cannot navigate to or summarise. It changes no pixel — the
+              eyebrow keeps its own type scale. Level 3: the panel opens under
+              the row it belongs to. */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
             {decisionHeading && (
               <div id={id} tabIndex={-1} role="heading" aria-level={3} style={{ ...eyebrow, flex: 1, minWidth: 0 }}>

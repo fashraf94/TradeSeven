@@ -541,8 +541,16 @@ export function parseEmphasis(text) {
 
 /**
  * The same text with its emphasis markers removed and nothing else changed —
- * what a reader SEES. The one place any surface should ask "what does this
- * say", so a search, a count or a comparison cannot disagree with the render.
+ * what a reader SEES.
+ *
+ * NOTHING IN `src/` CALLS THIS TODAY (review L1-F12), and the docstring used
+ * to claim it was "the one place any surface should ask what this says" — a
+ * discipline nothing enforced. Kept, and honestly described, because the
+ * matchers that DO ask that question (`namesSymbol` below, `scopeTape`'s
+ * `checkNamesSymbol`) read the raw string and are right only because `*`
+ * satisfies their word boundary: `namesSymbol('**SLB** is done', 'SLB')`
+ * matches by the character class, not by design. The moment a marker lands
+ * where that boundary does not forgive, this is the function to reach for.
  */
 export function stripEmphasisMarkers(text) {
   if (typeof text !== 'string') return '';
