@@ -1,163 +1,21 @@
 // ProximityLabel - Shows distance to next threshold
 // Displays "0.4% to 🚀" style helper text
 // Shows achievement text when thresholds are crossed
+//
+// Phase A of the Battle View controller (A2, hazard 15): the threshold math,
+// the dollar-distance branch and the string assembly now live in ONE pure
+// function, computeProximity() (./computeProximity.js). This component calls
+// it when no precomputed `proximity` prop is passed — every user-side
+// BaggerBomb view, byte-identical to the inline path it replaces — and
+// renders the precomputed result when TacticalRow hands one down, so the row
+// and the Why? panel repeat the same number from the same call.
 
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { THRESHOLD_HEAT, STRIKE_COLORS } from '../../constants/animationTokens';
-
-// Threshold configuration
-const THRESHOLDS = {
-  // Positive thresholds (in order)
-  bagger: { multiplier: 1.0, icon: '💣', label: 'Bagger' },
-  doubleBagger: { multiplier: 1.5, icon: '💣💣', label: 'Double' },
-  tenBagger: { multiplier: 2.0, icon: '🚀', label: 'TenBagger' },
-  // Negative thresholds (in order of severity)
-  bust: { multiplier: -1.0, icon: '📉', label: 'Bust' },
-  crash: { multiplier: -1.5, icon: '💥', label: 'Crash' },
-  meltdown: { multiplier: -2.0, icon: '🔥', label: 'Meltdown' },
-};
-
-// Achievement display config for crossed thresholds
-const ACHIEVEMENT_CONFIG = {
-  bagger:       { text: '💣 BaggerBomb!', color: HOLO_COLORS.amber, fontWeight: 700, textShadow: 'none' },
-  doubleBagger: { text: '💣💣 Double Bagger!', color: HOLO_COLORS.cyan, fontWeight: 700, textShadow: 'none' },
-  tenBagger:    { text: '🚀 TenBagger!', color: HOLO_COLORS.gold, fontWeight: 700, textShadow: '0 0 8px rgba(255,215,0,0.6)' },
-  bust:         { text: '📉 Bust', color: HOLO_COLORS.red, fontWeight: 500, textShadow: 'none' },
-  crash:        { text: '💥 Crash', color: HOLO_COLORS.red, fontWeight: 700, textShadow: 'none' },
-  meltdown:     { text: '🔥 Meltdown', color: '#991b1b', fontWeight: 700, textShadow: 'none' },
-};
-
-/**
- * Calculate the next threshold and distance to it
- * Also returns highestCrossed for achievement text display
- */
-function calculateNextThreshold(priceChange, baseATR, history) {
-  if (!baseATR || baseATR === 0) {
-    return { distance: 0, label: '—', icon: '', direction: 'neutral', isPrimed: false, highestCrossed: null };
-  }
-
-  const maxReached = history?.maxMultiplier || 0;
-  const minReached = history?.minMultiplier || 0;
-
-  // Compute highest crossed threshold on each side
-  let highestCrossedPositive = null;
-  if (maxReached >= THRESHOLDS.tenBagger.multiplier) highestCrossedPositive = 'tenBagger';
-  else if (maxReached >= THRESHOLDS.doubleBagger.multiplier) highestCrossedPositive = 'doubleBagger';
-  else if (maxReached >= THRESHOLDS.bagger.multiplier) highestCrossedPositive = 'bagger';
-
-  let highestCrossedNegative = null;
-  if (minReached <= THRESHOLDS.meltdown.multiplier) highestCrossedNegative = 'meltdown';
-  else if (minReached <= THRESHOLDS.crash.multiplier) highestCrossedNegative = 'crash';
-  else if (minReached <= THRESHOLDS.bust.multiplier) highestCrossedNegative = 'bust';
-
-  // Determine direction based on current movement
-  const isPositive = priceChange >= 0;
-
-  if (isPositive) {
-    // Moving positive - find next upward threshold
-    if (maxReached < THRESHOLDS.bagger.multiplier) {
-      const targetPercent = baseATR * THRESHOLDS.bagger.multiplier;
-      const distance = targetPercent - priceChange;
-      const isPrimed = distance <= targetPercent * 0.5;
-      return {
-        distance: Math.max(0, distance),
-        label: THRESHOLDS.bagger.label,
-        icon: THRESHOLDS.bagger.icon,
-        direction: 'positive',
-        isPrimed,
-        highestCrossed: highestCrossedPositive,
-      };
-    }
-    if (maxReached < THRESHOLDS.doubleBagger.multiplier) {
-      const targetPercent = baseATR * THRESHOLDS.doubleBagger.multiplier;
-      const distance = targetPercent - priceChange;
-      const isPrimed = distance <= targetPercent * 0.5;
-      return {
-        distance: Math.max(0, distance),
-        label: THRESHOLDS.doubleBagger.label,
-        icon: THRESHOLDS.doubleBagger.icon,
-        direction: 'positive',
-        isPrimed,
-        highestCrossed: highestCrossedPositive,
-      };
-    }
-    if (maxReached < THRESHOLDS.tenBagger.multiplier) {
-      const targetPercent = baseATR * THRESHOLDS.tenBagger.multiplier;
-      const distance = targetPercent - priceChange;
-      const isPrimed = distance <= targetPercent * 0.5;
-      return {
-        distance: Math.max(0, distance),
-        label: THRESHOLDS.tenBagger.label,
-        icon: THRESHOLDS.tenBagger.icon,
-        direction: 'positive',
-        isPrimed,
-        highestCrossed: highestCrossedPositive,
-      };
-    }
-    // All positive thresholds reached
-    return {
-      distance: 0,
-      label: 'MAX',
-      icon: '🚀',
-      direction: 'maxed',
-      isPrimed: false,
-      highestCrossed: highestCrossedPositive,
-    };
-  } else {
-    // Moving negative - find next downward threshold
-    if (minReached > THRESHOLDS.bust.multiplier) {
-      const targetPercent = Math.abs(baseATR * THRESHOLDS.bust.multiplier);
-      const distance = priceChange - (baseATR * THRESHOLDS.bust.multiplier);
-      const isPrimed = distance <= targetPercent * 0.5;
-      return {
-        distance: Math.max(0, distance),
-        label: THRESHOLDS.bust.label,
-        icon: THRESHOLDS.bust.icon,
-        direction: 'negative',
-        isPrimed,
-        highestCrossed: highestCrossedNegative,
-      };
-    }
-    if (minReached > THRESHOLDS.crash.multiplier) {
-      const targetPercent = Math.abs(baseATR * THRESHOLDS.crash.multiplier);
-      const distance = priceChange - (baseATR * THRESHOLDS.crash.multiplier);
-      const isPrimed = distance <= targetPercent * 0.5;
-      return {
-        distance: Math.max(0, distance),
-        label: THRESHOLDS.crash.label,
-        icon: THRESHOLDS.crash.icon,
-        direction: 'negative',
-        isPrimed,
-        highestCrossed: highestCrossedNegative,
-      };
-    }
-    if (minReached > THRESHOLDS.meltdown.multiplier) {
-      const targetPercent = Math.abs(baseATR * THRESHOLDS.meltdown.multiplier);
-      const distance = priceChange - (baseATR * THRESHOLDS.meltdown.multiplier);
-      const isPrimed = distance <= targetPercent * 0.5;
-      return {
-        distance: Math.max(0, distance),
-        label: THRESHOLDS.meltdown.label,
-        icon: THRESHOLDS.meltdown.icon,
-        direction: 'negative',
-        isPrimed,
-        highestCrossed: highestCrossedNegative,
-      };
-    }
-    // All negative thresholds reached
-    return {
-      distance: 0,
-      label: 'MAX',
-      icon: '🔥',
-      direction: 'maxed',
-      isPrimed: false,
-      highestCrossed: highestCrossedNegative,
-    };
-  }
-}
+import { computeProximity, calculateNextThreshold, THRESHOLDS } from './computeProximity';
 
 /**
  * ProximityLabel - Shows distance to next threshold
@@ -172,33 +30,18 @@ export default function ProximityLabel({
   align = 'left',
   proximityRatio = 1,
   heatDirection = 'neutral',
+  // Phase A: a precomputed computeProximity() result. When absent the label
+  // computes its own from the props above — the pre-lift behaviour, verbatim.
+  proximity = null,
 }) {
-  const { distance, label, icon, direction, isPrimed, highestCrossed } = useMemo(
-    () => calculateNextThreshold(priceChange, baseATR, history),
-    [priceChange, baseATR, history]
+  const computed = useMemo(
+    () => proximity ?? computeProximity({ priceChange, baseATR, history, dailyLevels, currentPrice }),
+    [proximity, priceChange, baseATR, history, dailyLevels, currentPrice]
   );
-
-  // When cron levels available, compute dollar distance to next threshold
-  const dollarInfo = useMemo(() => {
-    if (!dailyLevels || !currentPrice || currentPrice <= 0) return null;
-    if (direction === 'maxed' || highestCrossed) return null;
-    // Map label to cron level key
-    const labelToKey = { 'Bagger': 'baggerBomb', 'Double': 'doubleBagger', 'TenBagger': 'tenBagger', 'Bust': 'bust', 'Crash': 'crash', 'Meltdown': 'meltdown' };
-    const targetKey = labelToKey[label];
-    const targetPrice = targetKey ? dailyLevels[targetKey] : null;
-    if (!targetPrice) return null;
-    const dollarDistance = Math.abs(targetPrice - currentPrice);
-    const pctDistance = (dollarDistance / currentPrice) * 100;
-    return { dollarDistance, pctDistance, targetPrice };
-  }, [dailyLevels, currentPrice, direction, highestCrossed, label]);
+  const { direction, isPrimed, achievement, text } = computed;
 
   const isSmall = size === 'small';
   const fontSize = isSmall ? '10px' : '12px';
-
-  // Check if we should show achievement text
-  const achievement = highestCrossed && (direction === 'maxed' || distance === 0)
-    ? ACHIEVEMENT_CONFIG[highestCrossed]
-    : null;
 
   // Determine text color — graduated warming based on proximity
   const getTextColor = () => {
@@ -225,21 +68,7 @@ export default function ProximityLabel({
   const isBreathing = heatDirection !== 'neutral'
     && proximityRatio < THRESHOLD_HEAT.breathingProximity;
 
-  // Format the display text - "💣 X.X% to BaggerBomb" or "💣 $3.50 to Bagger" format
-  const formatText = () => {
-    if (achievement) return achievement.text;
-    if (direction === 'maxed') {
-      return `${icon} MAX`;
-    }
-    if (distance === 0) {
-      return `${icon}`;
-    }
-    // When cron levels available, show dollar distance
-    if (dollarInfo) {
-      return `${icon} ${dollarInfo.pctDistance.toFixed(1)}% to ${label}`;
-    }
-    return `${icon} ${distance.toFixed(1)}% to ${label}`;
-  };
+  // The display text — "💣 X.X% to Bagger" — is computeProximity()'s `text`.
 
   return (
     <motion.span
@@ -264,7 +93,7 @@ export default function ProximityLabel({
         ...(isBreathing ? { animation: 'thresholdBreath 2s ease-in-out infinite' } : {}),
       }}
     >
-      {formatText()}
+      {text}
     </motion.span>
   );
 }
@@ -299,6 +128,13 @@ ProximityLabel.propTypes = {
   proximityRatio: PropTypes.number,
   /** Direction of heat approach */
   heatDirection: PropTypes.oneOf(['positive', 'negative', 'neutral']),
+  /** A precomputed computeProximity() result (Phase A) — optional */
+  proximity: PropTypes.shape({
+    text: PropTypes.string.isRequired,
+    direction: PropTypes.string,
+    isPrimed: PropTypes.bool,
+    achievement: PropTypes.object,
+  }),
 };
 
 ProximityLabel.defaultProps = {
@@ -307,5 +143,6 @@ ProximityLabel.defaultProps = {
   align: 'left',
 };
 
-// Export helper for use in other components
+// Export helper for use in other components (re-exported from
+// ./computeProximity, where the math now lives)
 export { calculateNextThreshold, THRESHOLDS };
