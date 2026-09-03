@@ -183,9 +183,56 @@ describe('flag-off, through the SCREEN: the tape never reaches the shipped chat 
       'from the scoring path',
       'Read the full check',
       'Woken by',
+      // Flip-prep item 2's kind eyebrows (review L3-F4). This list caught them
+      // before only because the CARDS leaked at the same time — the eyebrows
+      // ride the same `tapeEntries` prop but render on the MESSAGE bubbles,
+      // which the shipped page has plenty of, so a gate that leaked only the
+      // eyebrow would have gone unseen.
+      'Status check ·',
+      'Bench note',
+      'Trade note',
+      'Opener',
     ]) {
       expect(text, `flag-off page must not contain "${shouldNotAppear}"`).not.toContain(shouldNotAppear);
     }
+    // …and not by attribute either. `[data-tape-kind]` does NOT match
+    // `data-tape-kind-eyebrow` — different attribute, so the existing card
+    // sweep never covered these.
+    expect(container.querySelector('[data-tape-kind-eyebrow]')).toBeNull();
+  });
+
+  it('THE SHIPPED UNREAD DOT STILL CLEARS — the flag-off path is behaviour, not source text (review L3-F1)', async () => {
+    // Item 4 moved the controller's read from `:976` to `:1322` while the
+    // flag-off render-time write stayed at `:602`: the gap between them grew
+    // from 389 lines to 720. The only guard was a SOURCE row asserting the
+    // write's bytes and its position-independent presence — so moving that
+    // write to AFTER the read it feeds left the whole suite green while the
+    // shipped Command Center dot never cleared again.
+    //
+    // This is the behavioural half. It is deliberately about the SHIPPED tab
+    // bar, which is the surface the controller flag removes.
+    //
+    // The dot carries no test attribute and must not grow one — the flag-off
+    // golden is a byte comparison, so an attribute added for a test's
+    // convenience would break the very guarantee this file exists to hold. It
+    // is found structurally instead: the absolutely-positioned 7px circle
+    // inside the Command Center tab button.
+    act(() => {
+      root.render(<AgentBattleScreen battle={BATTLE} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />);
+    });
+    await settle();
+    const commandTab = () => [...container.querySelectorAll('button')]
+      .find((b) => /command/i.test(b.textContent || ''));
+    const dot = () => commandTab()?.querySelector('span[style*="border-radius:50%"], span[style*="border-radius: 50%"]') ?? null;
+
+    expect(commandTab()).toBeTruthy();
+    // A feed entry the player has not seen yet lights the shipped dot.
+    expect(dot()).toBeTruthy();
+
+    // Opening the Command Center marks it seen — the render-time clear.
+    click(commandTab());
+    await settle();
+    expect(dot()).toBeNull();
   });
 
   it('A2.3 (review L3-F1 / L4-F1) — the DETECTOR\'s roster is the BOOK, never the bench lists', async () => {

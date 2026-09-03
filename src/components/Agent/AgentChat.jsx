@@ -253,7 +253,11 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
   // `Post-Market Debrief`, and one bubble with two eyebrows is worse than one
   // with none. Controller-gated by the caller, so flag-off emits nothing.
   const kindEyebrow = (showKindEyebrow && !label)
-    ? BATTLE_VIEW_COPY.tapeKindEyebrow(messageType, message.role === 'agent' && message._hasUserHalf === true)
+    ? BATTLE_VIEW_COPY.tapeKindEyebrow(
+      messageType,
+      message.role === 'agent' && message._hasUserHalf === true,
+      message._anticipationDirection ?? null,
+    )
     : null;
   return (
     <motion.div

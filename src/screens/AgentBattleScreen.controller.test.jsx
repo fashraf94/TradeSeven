@@ -298,4 +298,27 @@ describe('A4 — the unread-dot clear and the door, at the source (the mounted r
     // The door never switches a tab under the flag.
     expect(source).not.toMatch(/handleAskFollowUp[\s\S]{0,900}setActiveTab\('command'\)/);
   });
+
+  it('SOURCE TRIPWIRE — the book panel gets a FRESH FIBER on every open (D-89, review L2-F5)', () => {
+    // The panel's collapsed state is local and must reset on every open. It
+    // lives inside `AnimatePresence`, so a re-open landing inside the exit
+    // window reconciles onto the EXITING fiber and keeps whatever state it
+    // had — a double-tap on the score header re-opening it fully expanded,
+    // which is the "a glance is also a decision to speak" state the ruling
+    // exists to prevent. A key that changes per open makes "starts collapsed"
+    // true by construction rather than by timing.
+    //
+    // THIS IS A SOURCE ROW ON PURPOSE, and the honest reason is worth stating:
+    // framer's `AnimatePresence` unmounts SYNCHRONOUSLY under this repo's
+    // jsdom harness — measured, at gaps of 0/10/30/100 ms with reduced motion
+    // forced off — so the behaviour cannot be reproduced in a mounted test at
+    // all, and a jsdom row asserting it would pass whether the key changed or
+    // not. Two such rows were written and deleted before this one. The finding
+    // is a browser behaviour; this is the instrument that can actually fail.
+    const source = readFileSync(new URL('./AgentBattleScreen.jsx', import.meta.url), 'utf8');
+    expect(source).toMatch(/key=\{`book-\$\{bookOpenCount\}`\}/);
+    expect(source).not.toMatch(/<WhyPanel\n\s+key="book"/);
+    // …and the counter really advances on every OPEN, not on every toggle.
+    expect(source).toMatch(/if \(!open\) setBookOpenCount\(\(n\) => n \+ 1\);/);
+  });
 });

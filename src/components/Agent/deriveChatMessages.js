@@ -79,6 +79,15 @@ export function deriveChatMessages(chatExchanges) {
       // nobody asked. This is the same conjunct that decides whether the user
       // bubble renders, carried onto the agent half rather than re-derived.
       _hasUserHalf: !isAgentInitiated,
+      // The anticipation's own DIRECTION, as the server persisted it (review
+      // L1-F1). `anticipationCandidates[].direction` is a required enum on the
+      // eval schema — `potential_entry` is a bench candidate worth bringing
+      // in, `potential_exit` is an ACTIVE HOLDING whose signal profile
+      // degraded — and `voiceLayerAnticipation.js` writes it onto the exchange
+      // as `anticipationContext.direction`. Without it here the eyebrow could
+      // only see the type, and a note about a piece in the player's own book
+      // was labelled `Bench note`.
+      _anticipationDirection: ex.anticipationContext?.direction ?? null,
       mode: ex.mode || 'battle',
       timestamp: ts,
       _serverIndex: i,

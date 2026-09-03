@@ -283,9 +283,42 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
     expect(expanded.style.maxHeight).toBe('40vh');
     expect(expanded.style.overflowY).toBe('auto');
     expect(expanded.style.overscrollBehavior).toBe('contain');
-    // …and the door and the deploy brief arrive with it.
+    // …and the door arrives with it.
     expect(container.querySelector('[data-why-symbol="book"]').textContent)
       .toContain('Ask a follow-up · 1 message');
+  });
+
+  it('the deploy brief rides the expansion AND SITS INSIDE THE BOUND (D-76, review L1-F3)', () => {
+    // Two claims the previous row only appeared to make. Its fixture had no
+    // `strategyBrief` at all, so "the deploy brief arrives with it" asserted
+    // nothing — deleting the whole book-brief block left the entire suite
+    // green. And the brief rendered as the bounded region's SIBLING, while
+    // `strategyBrief` is never truncated: one tap added 40vh of bounded
+    // rationale PLUS an unbounded brief above the board, which is the exact
+    // defect D-89 exists to close.
+    const brief = 'Energy is the only sector with a bid this week. '.repeat(12).trim();
+    withDoc({
+      agentContext: { ...LIVE_DOC.agentContext, strategyBrief: brief },
+      evaluations: [{
+        ...LIVE_DOC.evaluations[0],
+        rationale: 'The book is holding its shape. Nothing in the tape argues for a rotation yet.',
+      }],
+    });
+    mount();
+    const header = [...container.querySelectorAll('[role="button"][aria-expanded]')].find((el) => el.textContent.includes('Aurora') && el.textContent.includes('CPU'));
+    click(header);
+
+    // Collapsed: history is not what a glance at the latest check is for.
+    expect(container.querySelector('[data-why-book-plan]')).toBeNull();
+
+    click(container.querySelector('[data-why-book-more]'));
+    const plan = container.querySelector('[data-why-book-plan]');
+    expect(plan).toBeTruthy();
+    expect(plan.textContent).toContain('The plan at deploy');
+    expect(plan.textContent).toContain('Energy is the only sector with a bid this week.');
+    // THE BOUND CONTAINS IT — this is the half that could not fail before.
+    const bounded = container.querySelector('[data-why-book-body="expanded"]');
+    expect(bounded.contains(plan)).toBe(true);
   });
 
   it('the turn line and This turn sit in the tree with the receipts derived from the same doc', () => {
@@ -404,6 +437,73 @@ describe('`Read the full check` opens the check\'s own CARD (D-89)', () => {
     // collapsed record is not.
     expect(card.textContent).toContain('Nothing in the tape argues for a rotation yet.');
     expect(card.textContent).not.toContain('Read more');
+    expect(document.activeElement).toBe(card);
+  });
+
+  it('THE CARD REALLY EXPANDS when it was already on screen (review L2-F2 / L5-F2)', async () => {
+    // `startExpanded` was read once as a `useState` seed, so it was a NO-OP
+    // whenever the card was already mounted — which is the ordinary case on
+    // both shells. The door said `Read the full check` and delivered the first
+    // sentence with a `Read more` under it. The three committed rows that
+    // asserted the expansion all used ONE-sentence rationales, so
+    // `not.toContain('Read more')` was true either way; only the folded-run
+    // path — the one case where the card genuinely mounts on the pinning
+    // commit — ever exercised it.
+    //
+    // A downgraded HOLD is never `quiet`, so it is never folded: it is on
+    // screen from the first paint, and its two sentences make the claim fail
+    // when the code stops making it true.
+    withDoc({
+      evaluations: [{
+        evalId: 'eval_open', timestamp: '2026-09-01T16:47:02.000Z',
+        decision: 'HOLD', downgraded: true, haikuError: null,
+        rationale: 'SLB lost its bid. DVN is showing the stronger tape and takes the slot.',
+      }],
+    });
+    mount();
+
+    const before = container.querySelector('[data-tape-kind="check"]');
+    expect(before).toBeTruthy();                       // already mounted…
+    expect(before.textContent).toContain('Read more'); // …and collapsed
+    expect(before.textContent).not.toContain('DVN is showing the stronger tape');
+
+    click(doorFor('SLB'));
+    await settle(100);
+
+    const after = container.querySelector('[data-tape-kind="check"]');
+    expect(after.textContent).toContain('DVN is showing the stronger tape and takes the slot.');
+    expect(after.textContent).not.toContain('Read more');
+    expect(document.activeElement).toBe(after);
+  });
+
+  it('THE SCOPE COMES OFF — the door is never a silent no-op (review L2-F3 / L5-F3)', async () => {
+    // `scopeTape` runs BEFORE the pin and judges a check by whether its first
+    // sentence names the piece, while this door's gate asks whether the check
+    // has words at all. So a scoped stream routinely did not contain the check
+    // the door pointed at, and the door did nothing whatsoever — while on the
+    // phone the sheet still swallowed the screen to show a filtered tape with
+    // no target in it. Both doors are in the same panel, one under the other.
+    withDoc({
+      evaluations: [{
+        ...LIVE_DOC.evaluations[0],
+        rationale: 'The book is holding its shape. SLB is the one that worries me.',
+      }],
+    });
+    mount();
+    click(rowButtonFor('SLB'));
+    click(container.querySelector('[data-why-scope="SLB"]'));
+    await settle(100);
+    expect(container.querySelector('[data-tape-scope="SLB"]')).toBeTruthy();
+
+    // …now the OTHER door in the same panel.
+    const door = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Read the full check');
+    expect(door).toBeTruthy();
+    click(door);
+    await settle(100);
+
+    expect(container.querySelector('[data-tape-scope]')).toBeNull();
+    const card = container.querySelector(`[data-tape-entry-id="${checkEntryId(LIVE_DOC.evaluations[0])}"]`);
+    expect(card).toBeTruthy();
     expect(document.activeElement).toBe(card);
   });
 

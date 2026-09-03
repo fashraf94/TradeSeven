@@ -138,9 +138,14 @@ export default function WhyPanel({
   // lands in a bounded region rather than in the page's own height.
   //
   // LOCAL STATE, and deliberately so: an expansion is not a fact about the
-  // battle (the same rule the tape's `Read more` follows). The panel unmounts
-  // when the header closes it, so every open starts collapsed by construction
-  // rather than by a reset anyone has to remember to write.
+  // battle (the same rule the tape's `Read more` follows).
+  //
+  // "Every open starts collapsed" is true because the SCREEN gives this panel
+  // a key that changes on each open — not because it unmounts, which is what
+  // this comment used to claim (review L2-F5). It sits inside
+  // `AnimatePresence` with a 300 ms exit, so a re-open inside that window
+  // reconciles onto the exiting fiber and keeps whatever state it had. A
+  // double-tap on the score header was enough to re-open it fully expanded.
   const [expanded, setExpanded] = useState(false);
   if (!state) return null;
   const isBook = symbol == null;
@@ -276,8 +281,20 @@ export default function WhyPanel({
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  padding: 0,
-                  marginLeft: 'auto',
+                  // A REAL TARGET (review L1-F5). This was a bare 14px glyph
+                  // with `padding: 0` — roughly 8×14 CSS px, under the 24×24
+                  // minimum and nowhere near a 44px touch target. On a phone
+                  // the only way out of the panel was near-untappable, which
+                  // defeats the half of D-89 that says a reader must be able
+                  // to leave. Negative margins keep the glyph optically where
+                  // it was while the hit area grows around it.
+                  padding: 10,
+                  margin: '-10px -10px -10px auto',
+                  minWidth: 44,
+                  minHeight: 44,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'flex-end',
                   flexShrink: 0,
                   color: cssVar('text-muted'),
                   fontSize: 14,
@@ -315,10 +332,23 @@ export default function WhyPanel({
                     overscrollBehavior: 'contain',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 6,
+                    gap: 12,
                   }}
                 >
                   <Rationale text={state.rationale} symbol={symbol} />
+                  {/* THE BRIEF IS INSIDE THE BOUND (review L1-F3). It rendered
+                      as the region's SIBLING, and `strategyBrief` is never
+                      truncated — so one tap added 40vh of bounded rationale
+                      PLUS an unbounded brief above the board, which is the
+                      exact defect D-89 exists to close. "The rest" in the
+                      ruling is everything the tap reveals, not the paragraph
+                      alone. */}
+                  {deployPlan?.brief && planLabel && (
+                    <div data-why-book-plan="1" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={eyebrow}>{planLabel}</div>
+                      <Rationale text={deployPlan.brief} symbol={symbol} />
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div data-why-book-body="collapsed" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -387,12 +417,6 @@ export default function WhyPanel({
         {/* 4. The plan at deploy — history, never a current decision. The row
                shows its TIER's sentences that name it; the book shows the
                brief. Absent whole when the caller gates it off. */}
-        {isBook && expanded && deployPlan?.brief && planLabel && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={eyebrow}>{planLabel}</div>
-            <Rationale text={deployPlan.brief} symbol={symbol} />
-          </div>
-        )}
         {!isBook && deployPlanForSymbol && planLabel && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={eyebrow}>{COPY.atDeployTier(deployPlanForSymbol.tier)}</div>

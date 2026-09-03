@@ -184,7 +184,14 @@ describe('D-84 — four kinds in one stream', () => {
     // wrong the moment a character mentions the bench in an ordinary reply.
     const exchanges = [
       { userMessage: null, agentResponse: 'Opening the book with energy leadership.', messageType: 'first_message', timestamp: T('13:31') },
-      { userMessage: null, agentResponse: 'DVN is closing on the bench line.', messageType: 'anticipation', timestamp: T('14:31') },
+      // A bench candidate — `potential_entry` — which is what `Bench note`
+      // means. The `potential_exit` half has its own row below.
+      {
+        userMessage: null, agentResponse: 'DVN is closing on the bench line.',
+        messageType: 'anticipation',
+        anticipationContext: { symbol: 'DVN', direction: 'potential_entry' },
+        timestamp: T('14:31'),
+      },
       { userMessage: null, agentResponse: 'Rotated the core slot into MOS.', messageType: 'trade_narration', timestamp: T('15:01') },
       { userMessage: 'protect the lead', agentResponse: 'Understood.', timestamp: T('15:31') },
       { userMessage: '__AUTO__', agentResponse: 'Debrief: the book held.', isAutoDebrief: true, messageType: 'auto_debrief', timestamp: T('21:01') },
@@ -204,6 +211,38 @@ describe('D-84 — four kinds in one stream', () => {
     const slice = (marker, next) => html.slice(html.indexOf(marker), next ? html.indexOf(next) : html.length);
     expect(slice('data-tape-kind-eyebrow="Bench note"', 'data-tape-kind-eyebrow="Trade note"'))
       .toContain('DVN is closing on the bench line.');
+  });
+
+  it('`Bench note` is the BENCH\'s word — a `potential_exit` note is not one (review L1-F1)', () => {
+    // `anticipationCandidates[].direction` is a required enum on the eval
+    // schema: `potential_entry` is a bench candidate worth bringing in;
+    // `potential_exit` is an ACTIVE HOLDING whose signal profile degraded
+    // enough that leaving is plausible. Both persist as
+    // `messageType: 'anticipation'`, so a map keyed on the type alone called a
+    // note about a piece in the player's OWN BOOK a bench note — the
+    // reading-past-the-record error this map exists to avoid, one level down.
+    const anticipation = (direction) => render({
+      chatExchanges: [{
+        userMessage: null,
+        agentResponse: 'SLB has lost its relative strength; if it loses the 20-day I would rotate it out.',
+        messageType: 'anticipation',
+        anticipationContext: { symbol: 'SLB', direction },
+        timestamp: T('14:31'),
+      }],
+      tapeEntries: [],
+    });
+
+    // The ruled case gets the ruled word…
+    expect(anticipation('potential_entry')).toContain('data-tape-kind-eyebrow="Bench note"');
+    // …and the other gets NOTHING, by the same rule an unknown type does. A
+    // word for it has to be ruled before it reaches the screen; inventing one
+    // here would be the guess.
+    const exitNote = anticipation('potential_exit');
+    expect(exitNote).toContain('if it loses the 20-day');
+    expect(exitNote).not.toContain('data-tape-kind-eyebrow');
+    // A record with no direction at all is not a bench note either.
+    expect(anticipation(null)).not.toContain('data-tape-kind-eyebrow');
+    expect(anticipation(undefined)).not.toContain('data-tape-kind-eyebrow');
   });
 
   it('AN UNKNOWN TYPE GETS NO EYEBROW — never a guess', () => {

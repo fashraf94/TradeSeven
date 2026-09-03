@@ -134,11 +134,24 @@ const linkButton = {
  * nothing but its own disappearance.
  */
 function RecordProse({ text, firstSentence, startExpanded = false }) {
-  const [expanded, setExpanded] = useState(Boolean(startExpanded));
+  const [expanded, setExpanded] = useState(false);
   const full = typeof text === 'string' ? text.trim() : '';
   if (!full) return null;
   const opening = firstSentence || full;
   const hasMore = full !== opening;
+  // `startExpanded` is a PROP, not a seed (review L2-F2). Reading it once as a
+  // `useState` initial value made it a no-op whenever the card was already
+  // mounted — which is the ordinary case on both shells: a check that is not
+  // inside a fold is mounted from the first paint, and on the phone the peek
+  // list is only `display: none`, so every card behind it is mounted too. The
+  // door then said `Read the full check` and delivered the first sentence with
+  // a `Read more` under it. Only the folded-run path — the one case where the
+  // card genuinely mounts on the commit that pins it — ever worked.
+  //
+  // OR, not a replacement: a card the player has opened by hand stays open
+  // when the pin moves to another card, and a pinned card collapses again when
+  // it does. Both are the local, per-card state D-84 asks for.
+  const showAll = expanded || Boolean(startExpanded);
   return (
     <>
       {/* The model's own `**…**` renders as emphasis and its strays are
@@ -147,11 +160,11 @@ function RecordProse({ text, firstSentence, startExpanded = false }) {
           shown three ways (BUILD_RULES §9). No word, order or punctuation
           changes; only which characters were markup. */}
       <p style={body}>
-        {parseEmphasis(expanded ? full : opening).map((span, i) => (span.strong
+        {parseEmphasis(showAll ? full : opening).map((span, i) => (span.strong
           ? <strong key={i} style={{ fontWeight: 700 }}>{span.text}</strong>
           : <React.Fragment key={i}>{span.text}</React.Fragment>))}
       </p>
-      {hasMore && !expanded && (
+      {hasMore && !showAll && (
         <div>
           <button type="button" style={linkButton} onClick={() => setExpanded(true)}>{COPY.readMore}</button>
         </div>

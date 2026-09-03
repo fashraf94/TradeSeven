@@ -133,20 +133,6 @@ function computeTugOfWarWidth(myScore, oppScore) {
   return Math.max(10, Math.min(90, (Math.abs(myScore) / total) * 100));
 }
 
-// The newest feed entry's own stamp (its ISO / Firestore timestamp as a
-// millisecond key), for the controller's seen mark. Null when unreadable.
-function feedStampOf(entry) {
-  const ts = entry?.timestamp;
-  if (ts == null) return null;
-  if (typeof ts === 'string' || typeof ts === 'number') {
-    const ms = new Date(ts).getTime();
-    return Number.isNaN(ms) ? null : ms;
-  }
-  if (typeof ts.toMillis === 'function') return ts.toMillis();
-  if (typeof ts.seconds === 'number') return ts.seconds * 1000;
-  return null;
-}
-
 // ─── Responsive hook ──────────────────────────────────────────────────────────
 
 function useIsDesktop() {
@@ -1056,7 +1042,21 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         : { key: rowKey, symbol: asset.symbol }
     ));
   }, []);
-  const handleBookWhyToggle = useCallback(() => setBookWhyOpen(open => !open), []);
+  // D-89: the panel's open COUNT, not just its open state. The panel's
+  // collapsed/expanded state is local to it and is meant to reset on every
+  // open — but it lives inside `AnimatePresence` with a 300 ms exit, so a
+  // re-open inside that window reconciled onto the exiting fiber and kept the
+  // state (review L2-F5). A double-tap on the header, or a close followed by a
+  // second thought, re-opened the panel with the whole paragraph, the deploy
+  // brief and the follow-up door — the "a glance is also a decision" state the
+  // ruling exists to prevent. The count is the panel's React key, so every
+  // open is a fresh fiber and "starts collapsed" is true by construction
+  // rather than by timing.
+  const [bookOpenCount, setBookOpenCount] = useState(0);
+  const handleBookWhyToggle = useCallback(() => setBookWhyOpen((open) => {
+    if (!open) setBookOpenCount((n) => n + 1);
+    return !open;
+  }), []);
   // D-89 — the book panel's close. It closes the panel AND hands focus back to
   // the score header, which is the control that owns its `aria-expanded`: a
   // disclosure that leaves focus on a region it has just unmounted drops a
@@ -1103,6 +1103,21 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     const id = checkEntryId(latestDecisionRef.current);
     if (!id) return;
     setOpenCheck((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
+    // …AND THE SCOPE COMES OFF (review L2-F3 / L5-F3). `scopeTape` runs before
+    // the pin and filters a check by whether its FIRST SENTENCE names the
+    // piece, while this door's own gate asks whether the check has words at
+    // all — two different questions, so a scoped stream routinely does not
+    // contain the check the door is pointing at. The door then did nothing
+    // whatsoever: no card, no scroll, no focus, and on the phone the sheet
+    // still swallowed the screen to show a filtered tape with no target in it.
+    // Both doors live in the same panel, one under the other, so this is two
+    // taps apart rather than an edge case.
+    //
+    // Clearing is the honest resolution: the player has just asked for one
+    // specific check, and a filter that hides it is in the way of the thing
+    // they asked for. The chip is gone, so nothing on screen claims a filter
+    // that is not applied.
+    setScopeSymbol(null);
     // The conversation has to be OPEN, and at FULL rather than half: the card
     // may be far up a long tape and the reader was promised the whole check.
     // One call for both shells — since ruling 7 the detent is one thing, and
@@ -1283,21 +1298,30 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // stream is, so the strip and the stream cannot name one moment two ways.
   // Null flag-off and on an empty tape.
   const peekLine = useMemo(
-    () => (controllerOn ? derivePeekLine(recordedTape) : null),
-    [controllerOn, recordedTape],
+    () => (controllerOn ? derivePeekLine(recordedTape, openCheck?.id ?? null) : null),
+    [controllerOn, recordedTape, openCheck?.id],
   );
 
   // ── The unread mark (A4, hazard 14; re-sourced flip-prep item 4) ──────────
   //
   // IT COUNTS WHAT THE TAPE RENDERS. Under the flag the `statusFeed` no longer
-  // feeds the stream at all — `tapeEntries` replaced it (D-72) — and ruling 9
-  // lists six feed actions the tape shows as NOTHING (`first_message`,
-  // `eval_degraded`, `guardrail_block`, `guardrail_forced_swap`,
-  // `watchlist_refresh`, the narration twin). Keying the mark on the feed
-  // promised "new activity" for events the tape is forbidden to show —
-  // `guardrail_forced_swap` most sharply, since a forced swap that did not
-  // execute gets no card at all by hazard 25. The player expanded, found
-  // nothing, and the dot cleared.
+  // feeds the stream at all — `tapeEntries` replaced it (D-72) — so keying the
+  // mark on the feed promised "new activity" for events the tape does not show.
+  //
+  // The claim is STRONGER than the one first written here, which named "six
+  // feed actions ruling 9 lists" and put `guardrail_forced_swap` among them
+  // (review L5-F9: that one is hazard 25's, not ruling 9's). The accurate
+  // statement is simpler and larger: `api/` writes about thirty distinct
+  // `action` values and `buildTape` produces an entry from NONE of them — the
+  // feed is read only by `joinFeedEntry`, for the `↳ from directive` echo on a
+  // trade card. Ruling 9's list (`first_message`, `eval_degraded`,
+  // `guardrail_block`, `watchlist_refresh`, the narration twin, a `hold` with
+  // a status line) is a sample of that, not the boundary.
+  //
+  // `guardrail_forced_swap` is still the sharpest illustration, on hazard 25's
+  // authority rather than ruling 9's: a forced swap that did not execute gets
+  // no card at all, so the dot lit for precisely the event the tape is
+  // forbidden to show. The player expanded, found nothing, and it cleared.
   //
   // The source is `recordedTape` — messages (directive cards ride on them) plus
   // the tape's check and trade cards, the same merged list `In the chat · n`
@@ -1752,7 +1776,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           <AnimatePresence initial={false}>
             {bookWhyOpen ? (
               <WhyPanel
-                key="book"
+                key={`book-${bookOpenCount}`}
                 symbol={null}
                 state={selectWhyState(latestDecision, null, lastScoredAt)}
                 deployPlan={deployPlan}

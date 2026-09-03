@@ -349,9 +349,25 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // `auto_debrief` is deliberately absent: it already has the shipped
   // `Post-Market Debrief` eyebrow (RENDER_CONFIG), and one exchange with two
   // eyebrows is worse than one with none.
-  tapeKindEyebrow: (messageType, hasUserHalf) => {
+  tapeKindEyebrow: (messageType, hasUserHalf, anticipationDirection = null) => {
     if (messageType === 'first_message') return 'Opener';
-    if (messageType === 'anticipation') return 'Bench note';
+    // `Bench note` IS the bench's word, and the record splits the kind in two
+    // (review L1-F1). `anticipationCandidates[].direction` is a required enum:
+    // `potential_entry` is a bench candidate worth bringing in — a bench note,
+    // exactly as ruled — while `potential_exit` is an ACTIVE HOLDING whose
+    // signal profile degraded enough that leaving is plausible. That second
+    // one is a note about a piece in the player's OWN BOOK, and calling it a
+    // bench note is the reading-the-prose error this map exists to avoid, one
+    // level down: the record disambiguates and the label ignored it.
+    //
+    // Only the ruled case gets the ruled word. The other gets NOTHING, by the
+    // same rule an unknown type does — a word for it has to be ruled before it
+    // reaches the screen, and inventing one here would be the guess. Recorded
+    // for the founder; a direction-aware pair is one line when there is a
+    // second word to use.
+    if (messageType === 'anticipation') {
+      return anticipationDirection === 'potential_entry' ? 'Bench note' : null;
+    }
     if (messageType === 'trade_narration') return 'Trade note';
     // `Reply` is a claim about a PAIR — the player wrote and the character
     // answered — so it needs the user half to exist. `deriveChatMessages`
