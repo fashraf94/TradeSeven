@@ -9,6 +9,7 @@
 // renderToString + toContain, the repo's component-test idiom.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { TradeCard, CheckCard, CheckRunLine } from './TapeCards.jsx';
@@ -93,6 +94,16 @@ describe('the trade card', () => {
     expect(tradeHtml(HOSTILE_TRADE, [{ ...FEED[0], directiveThreadId: null }])).not.toContain('↳ from directive');
     // …and never the thread id itself.
     expect(tradeHtml()).not.toContain('dir_1');
+  });
+
+  it('the echo is the SHIPPED characters — the flag-off inline copy and the card\'s cannot drift apart', () => {
+    // AgentChat.jsx keeps its inline `↳ from directive` for the flag-off path
+    // (the golden pins those bytes); the card reads the copy module. Two homes
+    // for one string is exactly how a display starts disagreeing with itself,
+    // so this row holds them equal by reading the shipped source.
+    const chat = readFileSync(new URL('../../components/Agent/AgentChat.jsx', import.meta.url), 'utf8');
+    expect(chat).toContain(COPY.fromDirective);
+    expect(COPY.fromDirective).toBe('↳ from directive');
   });
 
   it('degrades without crashing: no tier, no points, no motive', () => {

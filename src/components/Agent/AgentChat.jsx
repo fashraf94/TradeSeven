@@ -429,18 +429,18 @@ export default function AgentChat({
   // Phase A: { [directiveThreadId]: { state, at } } from deriveReceipts, or
   // null flag-off. AgentChat never reads battle.directive itself.
   receipts = null,
-  // Phase A (A4, the controller layout): render the chat column ALONE at any
-  // width — no Live Activity panel, no sub-tab bar. Its status line is the
-  // turn line; its alerts and "Agent Reasoning" stay on the Desk and
-  // flag-off (rulings §2.5). Absent flag-off, so the shipped layouts are
-  // untouched. The message list also contains its overscroll so the mobile
-  // sheet owns the scroll at half / full.
   // Phase A2 (A2.2, D-72): the tape's NON-MESSAGE entries — a card per executed
   // swap and a card per decided check — built ONCE in the screen from the
   // subscribed doc (buildTape.js) and merged into the one timeline below. Null
   // flag-off, where `tradeEvents` keeps the shipped slim notification line
   // byte for byte.
   tapeEntries = null,
+  // Phase A (A4, the controller layout): render the chat column ALONE at any
+  // width — no Live Activity panel, no sub-tab bar. Its status line is the
+  // turn line; its alerts and "Agent Reasoning" stay on the Desk and
+  // flag-off (rulings §2.5). Absent flag-off, so the shipped layouts are
+  // untouched. The message list also contains its overscroll so the mobile
+  // sheet owns the scroll at half / full.
   controllerLayout = false,
   // Controller layout only: the mobile sheet at PEEK collapses the message
   // list so the sheet is the handle plus the composer, however tall the
