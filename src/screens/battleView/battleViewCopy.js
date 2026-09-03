@@ -346,6 +346,23 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   },
   expired: 'Expired',
 
+  // ── The chat's send failure (A2.3, addendum item 11) ──────────────────────
+  // The shipped line is `Agent is thinking too hard. Try again.` — an agent
+  // verb (honesty rule 2) on a sentence that is not even about the agent: the
+  // model was never reached, so nothing it did or did not do explains the
+  // failure. It also leaves the player unsure whether the message went, and
+  // the founder's smoke found exactly that doubt: three failed sends, the
+  // budget still reading 0/10.
+  //
+  // So the line says the two true things — the character could not answer,
+  // and NOTHING WAS SENT. The second half is the one that matters, because a
+  // message the player believes was spent is a message they will not send
+  // again. The budget is prop-driven from the server's own write, and a failed
+  // request produces no write, which is why the sentence can promise it.
+  //
+  // Flag-off keeps the shipped string until bug 2's own PR.
+  chatSendFailed: 'The character couldn\'t answer just now · nothing was sent',
+
   // ── The layout (A4) ────────────────────────────────────────────────────────
   // Game Tape is ONE header link that opens the shipped view full-screen; the
   // way back names the page it returns to. No `···` menu (rulings §2.5).

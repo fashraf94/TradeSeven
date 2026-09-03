@@ -446,6 +446,12 @@ export default function AgentChat({
   // list so the sheet is the handle plus the composer, however tall the
   // draft grows. Ignored flag-off and on desktop.
   listCollapsed = false,
+  // Phase A2 (addendum item 11): the controller flag, passed EXPLICITLY rather
+  // than inferred from `controllerLayout`. Copy and layout are two rulings and
+  // one must not silently carry the other — a future mount that wants the
+  // controller's words without its columns, or the reverse, should not have to
+  // unpick this. False flag-off, where the shipped strings stand.
+  controllerCopy = false,
 }) {
   // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
   // reactively from the chatExchanges prop so Firestore-initiated writes
@@ -712,6 +718,14 @@ export default function AgentChat({
 
   // ── Send message ───────────────────────────────────────────────────────────
 
+  // The line a send that never reached the model leaves behind (addendum item
+  // 11). One expression, so the two failure branches below — an unhandled
+  // server status and a thrown request — cannot drift apart, which is exactly
+  // what the shipped pair did nothing to prevent.
+  const sendFailedCopy = controllerCopy
+    ? BATTLE_VIEW_COPY.chatSendFailed
+    : 'Agent is thinking too hard. Try again.';
+
   async function sendMessage(text) {
     if (!text.trim() || isSending || activeBudgetUsed >= activeBudgetLimit) return;
 
@@ -773,7 +787,7 @@ export default function AgentChat({
         } else if (res.status === 504) {
           setError('Agent took too long. Try again.');
         } else {
-          setError('Agent is thinking too hard. Try again.');
+          setError(sendFailedCopy);
         }
         return;
       }
@@ -790,7 +804,7 @@ export default function AgentChat({
     } catch (err) {
       // Network error — drop both in-flight items so the user can retry.
       setInFlightMessages(prev => prev.filter(m => m.id !== typingId && m.id !== userMsg.id));
-      setError('Agent is thinking too hard. Try again.');
+      setError(sendFailedCopy);
     } finally {
       setIsSending(false);
     }

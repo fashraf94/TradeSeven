@@ -1250,6 +1250,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       // timeline. Built above from the subscribed doc; null flag-off.
       tapeEntries={tapeEntries}
       controllerLayout
+      // Item 11: the controller's own line when a send never reaches the
+      // model. Passed on the FLAG, beside the layout rather than through it.
+      controllerCopy
       // Peek is the composer alone: the message list is collapsed so the
       // sheet can size itself to the handle + the composer, however tall the
       // draft grows (review CR3).
