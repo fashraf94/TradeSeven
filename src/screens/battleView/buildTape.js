@@ -174,8 +174,24 @@ export function buildTradeEntries(trades, statusFeed) {
  * `quiet` and `runKey` carry the D-77 test for a collapsible run; the fold
  * itself happens later, on the merged stream, where contiguity is knowable.
  */
-export function buildCheckEntries(evaluations, receipts, chatExchanges) {
+export function buildCheckEntries(evaluations, receipts, chatExchanges, trades) {
   if (!Array.isArray(evaluations)) return [];
+
+  // WHICH TICKS ALSO PRODUCED A TRADE CARD (review RB-F1). `trades[].rationale`
+  // and `evaluations[].rationale` are the SAME string by construction — the
+  // cron writes `haikuResult.rationale` into both (agent-evaluate.js:2243 via
+  // agentSwapExecution.js, and :2637) — so on every model swap the tape printed
+  // the agent's sentence twice, back to back, in two records D-84 had just made
+  // look alike. The trade card is the richer of the two: it carries the tier,
+  // the banked points and the motive's AUTHOR. So the check card keeps its
+  // label and its `Woken by` — what happened at the tick — and lets the trade
+  // card carry the words.
+  const tradedEvalIds = new Set();
+  if (Array.isArray(trades)) {
+    for (const trade of trades) {
+      if (trade?.evaluationId) tradedEvalIds.add(trade.evaluationId);
+    }
+  }
 
   // WHICH DIRECTIVE WAS CURRENT AT AN INSTANT — the receipts' own walk of the
   // exchanges (D-77: "receipts unchanged"), never a second copy of the rule.
@@ -198,6 +214,7 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges) {
     if (ms == null) continue;
     const state = selectWhyState(evaluation, null, at);
     const rationale = state.rationale;
+    const tradedHere = Boolean(evaluation.evalId) && tradedEvalIds.has(evaluation.evalId);
 
     // D-77 — the four facts ON THE ENTRY that make a check "no change". The
     // fifth and sixth (positions, receipts) are the run key and contiguity.
@@ -219,8 +236,17 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges) {
       // that showed an engine-authored sentence unlabelled.
       footer: state.footer,
       triggers: state.triggers,
-      rationale,
-      firstSentence: splitSentences(rationale)[0] ?? null,
+      // The tick's words — withheld when a trade card in the same stream
+      // carries the identical string (review RB-F1). The LABEL still says what
+      // the check decided, so nothing about the tick is lost.
+      rationale: tradedHere ? null : rationale,
+      firstSentence: tradedHere ? null : (splitSentences(rationale)[0] ?? null),
+      // The pair the LABEL names on a swap (review RB-F9). `Swapped · GILD →
+      // MOS` is the first thing a player reads on the card, so the scope has
+      // to see it: judging the card by its excerpt alone dropped a card that
+      // visibly says GILD out of GILD's own filter.
+      symbolOut: state.symbolOut,
+      symbolIn: state.symbolIn,
       quiet,
       // THE RUN KEY IS ALSO WHAT THE CARD WOULD SAY (review L1-F6, refuter A:
       // CONFIRMED, and the NORMAL case rather than an edge one). D-77's
@@ -245,7 +271,7 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges) {
 export function buildTape({ trades, statusFeed, evaluations, receipts, chatExchanges }) {
   return [
     ...buildTradeEntries(trades, statusFeed),
-    ...buildCheckEntries(evaluations, receipts, chatExchanges),
+    ...buildCheckEntries(evaluations, receipts, chatExchanges, trades),
   ];
 }
 

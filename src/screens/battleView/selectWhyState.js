@@ -163,6 +163,14 @@ const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.
 const GUARDRAIL_CODE_PARENTHETICAL = /^(\s*Guardrail override)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*\)/;
 
 /**
+ * The cron's composed prefix wrapping a body that already opens with the same
+ * words (review RB-F2). Anchored, and it requires the SECOND `Guardrail
+ * override` to start the body — so it only ever removes a duplicate, never a
+ * sentence the guardrail wrote about something else.
+ */
+const GUARDRAIL_DOUBLED_PREFIX = /^(\s*Guardrail override\s*(?:\([^)]*\))?\s*:\s*)(Guardrail override\s*:)/;
+
+/**
  * A motive as it is RENDERED (D-80, ruling 1) — the one place a rationale
  * becomes display text, so the trade card, the check card, `This piece today`
  * and the book panel cannot show one sentence two ways (BUILD_RULES §9).
@@ -187,7 +195,23 @@ const GUARDRAIL_CODE_PARENTHETICAL = /^(\s*Guardrail override)\s*\(\s*([A-Za-z][
 export function renderMotive(text) {
   const cleaned = cleanText(text);
   if (cleaned == null) return null;
-  return cleaned.replace(GUARDRAIL_CODE_PARENTHETICAL, (match, prefix, token) => {
+  // THE CRON'S PREFIX IS REDUNDANT WHENEVER THE GUARDRAIL WROTE THE BODY
+  // (review RB-F2). agent-evaluate.js:2121 composes
+  // `Guardrail override (${sourceNote}): ${overrideNote}` — and on a forced
+  // exit `overrideNote` IS agentGuardrails.js's own statusMessage, which
+  // already begins `Guardrail override: ` and already carries the guardrail's
+  // name in plain words (`stop-loss at 8%`, `trailing stop at 8% from peak`,
+  // `profit target at 8%`, agentGuardrails.js:530-537). Translating the token
+  // in place therefore produced a stutter on 100% of forced exits —
+  // `Guardrail override (stop-loss): Guardrail override: stop-loss at 8%
+  // breached on GILD …` — and D-84's first-sentence collapse then spent the
+  // card on the preamble and hid `Forcing exit → MOS.` behind `Read more`.
+  //
+  // So when the body restates the prefix, the cron's wrapper goes and the
+  // guardrail's own sentence stands alone. Still verbatim engine text, still
+  // no code on the screen, and it is what ruling 1's `…` was eliding.
+  const deduped = cleaned.replace(GUARDRAIL_DOUBLED_PREFIX, '$2');
+  return deduped.replace(GUARDRAIL_CODE_PARENTHETICAL, (match, prefix, token) => {
     const words = COPY.guardrailTypeWords[token];
     return words ? `${prefix} (${words})` : prefix;
   });

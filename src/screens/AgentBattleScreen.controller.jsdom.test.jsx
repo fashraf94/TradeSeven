@@ -278,6 +278,11 @@ describe('`Read the full check` brings the book panel to the reader (A2.3, rulin
     expect(container.querySelector('[data-why-symbol="book"]')).toBeTruthy();
     expect(scrolls.some(([el]) => el === heading)).toBe(true);
     expect(document.activeElement).toBe(heading);
+    // …and it is a HEADING, which is the word the ruling uses. It was a styled
+    // div, and there is no `<h*>` in this panel, so heading navigation never
+    // found it and the focus stop announced as plain text (review RB-F11).
+    expect(heading.getAttribute('role')).toBe('heading');
+    expect(heading.getAttribute('aria-level')).toBe('3');
   });
 
   it('ALREADY OPEN — the tap still scrolls and still focuses (the no-op it used to be)', () => {
@@ -362,6 +367,67 @@ describe('the piece scope (A2.3, D-73) — the door, the chip, and the way back'
     // The composer is prefilled with the piece — the door reads the
     // conversation, the prefill is how the player joins it.
     expect(container.querySelector('textarea').value).toBe('About AAPL — ');
+  });
+
+  it('BOTH ENDS ARE NAMED AND THE CHANGE IS SPOKEN (review RB-F10)', async () => {
+    // Neither visible label says what its button DOES: `In the chat · 2` reads
+    // as a count, `SLB · All` as a label, and a screen reader announced a
+    // number and a word where a filter was about to be applied or cleared.
+    // And the door deliberately moves focus to the COMPOSER — past the stream
+    // it just changed — so the change itself needs saying out loud.
+    mount();
+    click(rowButtonFor('SLB'));
+    const door = container.querySelector('[data-why-scope="SLB"]');
+    const n = Number(door.textContent.replace(/\D+/g, ''));
+    expect(door.getAttribute('aria-label')).toBe(`Show the SLB messages · ${n} in the chat`);
+
+    // Nothing is announced for ARRIVING at the page: the region is present and
+    // empty, which is what keeps its first real change audible.
+    const region = container.querySelector('[data-scope-announce]');
+    expect(region).toBeTruthy();
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(region.textContent).toBe('');
+
+    click(door);
+    await settle(100);
+    const chip = container.querySelector('[data-tape-scope="SLB"]');
+    expect(chip.getAttribute('aria-label')).toBe('Showing SLB only · show the whole tape');
+    // The count it speaks is the SCOPED stream's own length, not the door's
+    // promise — one derivation, so the two cannot disagree (BUILD_RULES §9).
+    const shown = chip.closest('[data-chat-column]').querySelectorAll('[data-tape-kind]').length;
+    expect(region.textContent).toBe(`Showing ${shown} SLB ${shown === 1 ? 'entry' : 'entries'}`);
+
+    // …and clearing says so too.
+    click(chip);
+    await settle(100);
+    expect(container.querySelector('[data-scope-announce]').textContent)
+      .toBe('Showing the whole tape');
+  });
+
+  it('the scope region does NOT re-speak on an ordinary snapshot (review RB-F10)', async () => {
+    // A live region keyed on the stream's length would speak on every
+    // Firestore snapshot — a message, a feed entry, a tick — which is worse
+    // than silence. The scope's TRANSITION is the whole trigger.
+    mount();
+    click(rowButtonFor('SLB'));
+    click(container.querySelector('[data-why-scope="SLB"]'));
+    await settle(100);
+    const spoken = container.querySelector('[data-scope-announce]').textContent;
+    expect(spoken).toContain('SLB');
+
+    // A new exchange lands with the scope unchanged: the doc the hook hands
+    // back is a fresh object, exactly as a Firestore snapshot makes it, and
+    // the stream grows by one.
+    withDoc({
+      chatExchanges: [
+        ...LIVE_DOC.chatExchanges,
+        { userMessage: 'and now?', agentResponse: 'SLB still leads.', timestamp: '2026-09-01T16:50:00.000Z' },
+      ],
+    });
+    mount();
+    await settle(100);
+    expect(container.querySelector('[data-scope-announce]').textContent).toBe(spoken);
   });
 
   it('the chip clears the scope and the whole tape comes back', async () => {

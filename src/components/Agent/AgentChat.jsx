@@ -926,15 +926,27 @@ export default function AgentChat({
   // Unanswered proposals render BEFORE the first auto-debrief (transition point
   // from live play to review). Grading cards render AFTER the last auto-debrief
   // so the user can tag the day's trades while reading the debrief.
+  //
+  // A2.3: NEITHER RENDERS WHILE THE TAPE IS SCOPED (review RB-F8). Both blocks
+  // are attached by INDEX, after `scopeTape` has already run, and neither is a
+  // tape item that the filter could have judged: the grading block lists every
+  // trade in the battle and the proposal cards are the day's unanswered ones.
+  // So `NVDA · All` was showing a `GILD → MOS` grading card — the filter had
+  // dropped GILD's own card one line above it. Any battle past its first
+  // auto-debrief reaches this, which is every battle in review.
+  //
+  // -1 is the suppression, and it is the path the shipped code already takes
+  // when a document has no auto-debrief at all: no `idx` can equal it.
   const firstAutoDebriefIdx = React.useMemo(() => (
-    combinedTimeline.findIndex(it => it._type === 'message' && it.isAutoDebrief)
-  ), [combinedTimeline]);
+    scopeSymbol ? -1 : combinedTimeline.findIndex(it => it._type === 'message' && it.isAutoDebrief)
+  ), [combinedTimeline, scopeSymbol]);
   const lastAutoDebriefIdx = React.useMemo(() => {
+    if (scopeSymbol) return -1;
     for (let i = combinedTimeline.length - 1; i >= 0; i--) {
       if (combinedTimeline[i]._type === 'message' && combinedTimeline[i].isAutoDebrief) return i;
     }
     return -1;
-  }, [combinedTimeline]);
+  }, [combinedTimeline, scopeSymbol]);
 
   const unansweredProposals = React.useMemo(
     () => filterUnansweredProposals(proposalHistory),
@@ -980,6 +992,27 @@ export default function AgentChat({
     }
   }, [battleId, trades, dailyGrades, todayStr]);
 
+  // ── What the scope ANNOUNCES (A2.3, review RB-F10) ────────────────────────
+  //
+  // Activating the door moves focus to the COMPOSER, with the piece's prefill
+  // — deliberately, that is the door's whole point — which throws a screen
+  // reader past the stream that just changed under it with nothing said. A
+  // polite live region says it instead, without taking the focus back.
+  //
+  // Keyed on the scope's TRANSITION, never on the stream's length: the length
+  // moves on every Firestore snapshot, and a region that re-speaks on each
+  // one is worse than silence. The ref holds what was last spoken; the count
+  // is read at the moment of the change. Empty on mount, so nothing is
+  // announced for arriving at a page.
+  const [scopeAnnouncement, setScopeAnnouncement] = React.useState('');
+  const scopeSpokenRef = React.useRef(scopeSymbol ?? null);
+  React.useEffect(() => {
+    const now = scopeSymbol ?? null;
+    if (scopeSpokenRef.current === now) return;
+    scopeSpokenRef.current = now;
+    setScopeAnnouncement(BATTLE_VIEW_COPY.scopeAnnounce(now, combinedTimeline.length));
+  }, [scopeSymbol, combinedTimeline.length]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   // ── Shared JSX fragments ──────────────────────────────────────────────────
@@ -999,6 +1032,7 @@ export default function AgentChat({
           <button
             type="button"
             data-tape-scope={scopeSymbol}
+            aria-label={BATTLE_VIEW_COPY.scopeChipName(scopeSymbol)}
             onClick={onClearScope}
             style={{
               background: 'transparent',
@@ -1261,6 +1295,26 @@ export default function AgentChat({
           color: inputText.length > 1950 ? '#EF4444' : '#6B7280',
         }}>
           {inputText.length} / 2000
+        </div>
+      )}
+      {/* The scope's live region (A2.3, review RB-F10). Present whenever the
+          tape is — not only while scoped — so it is in the DOM BEFORE its text
+          changes; a region that appears together with its content is missed by
+          most readers. LAST, because the chat's own layout reads its children
+          by position and a node that says nothing must not take the stream's
+          place in that order. Off the screen, never off the accessibility
+          tree. Absent flag-off. */}
+      {Array.isArray(tapeEntries) && (
+        <div
+          data-scope-announce
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'absolute', width: 1, height: 1, overflow: 'hidden',
+            clip: 'rect(0 0 0 0)', clipPath: 'inset(50%)', whiteSpace: 'nowrap',
+          }}
+        >
+          {scopeAnnouncement}
         </div>
       )}
     </>

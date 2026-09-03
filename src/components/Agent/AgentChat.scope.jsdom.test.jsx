@@ -80,6 +80,17 @@ const render = (props = {}) => act(() => {
 /** The scroll area: the one div the chat lays out as `overflow-y: auto`. */
 const listEl = () => [...container.querySelectorAll('div')].find((el) => el.style.overflowY === 'auto');
 
+/**
+ * The stream's text WITHOUT the scope's live region — that node exists to say
+ * out loud that the filter changed, so it is the one thing that legitimately
+ * differs between two otherwise identical renders.
+ */
+const visibleText = () => {
+  const clone = container.cloneNode(true);
+  clone.querySelectorAll('[data-scope-announce]').forEach((el) => el.remove());
+  return clone.textContent;
+};
+
 /** jsdom does no layout; give the instance the two numbers the effect reads. */
 function giveLayout(el, { scrollHeight = 900, scrollTop = 0 } = {}) {
   Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });
@@ -166,6 +177,50 @@ describe('A2.3 — the scoped stream', () => {
     // …and the transition itself still writes.
     render({ tapeEntries: [...tapeEntries], scopeSymbol: 'SLB' });
     expect(writes).toBe(1);
+  });
+
+  it('the review-mode blocks do NOT leak into a scope (review RB-F8)', () => {
+    // Both blocks are attached by INDEX, after the filter has run, and neither
+    // is a tape item the filter could judge: the grading block lists EVERY
+    // trade in the battle, the proposal cards are the day's unanswered ones.
+    // With an auto-debrief that names NVDA, `NVDA · All` was rendering a
+    // `GILD → MOS` grading card — one line under a filter that had just
+    // dropped GILD's own card. Every battle past its first debrief reaches it.
+    const withDebrief = [
+      ...EXCHANGES,
+      {
+        userMessage: '__AUTO__', agentResponse: 'Debrief: NVDA carried the book today.',
+        isAutoDebrief: true, messageType: 'auto_debrief', timestamp: T('21:01'),
+      },
+    ];
+    const props = {
+      chatExchanges: withDebrief,
+      tapeEntries: buildTape({
+        trades: TRADES, statusFeed: [], evaluations: EVALUATIONS, receipts: {},
+        chatExchanges: withDebrief,
+      }),
+      trades: [{ symbolOut: 'GILD', symbolIn: 'MOS', tier: 'core', status: 'open' }],
+      proposalHistory: [{ resolution: 'lapsed', symbolOut: 'GILD', symbolIn: 'MOS' }],
+    };
+
+    // UNSCOPED both blocks are on screen, exactly as they shipped.
+    render(props);
+    expect(container.textContent).toContain("Grade Today's Trades");
+    const unscopedGrading = visibleText();
+
+    // SCOPED to the piece the debrief names — the debrief itself survives the
+    // filter, so the index it anchors is a real one and the old code fired.
+    render({ ...props, scopeSymbol: 'NVDA' });
+    expect(container.querySelector('[data-tape-scope="NVDA"]')).toBeTruthy();
+    expect(container.textContent).toContain('NVDA carried the book today.');
+    expect(container.textContent).not.toContain("Grade Today's Trades");
+
+    // MUTATION ROW — the suppression is what removes them, not the fixture.
+    // Restore the scope to null and the same two blocks come back, so neither
+    // absence above is an artefact of the props.
+    render({ ...props, scopeSymbol: null });
+    expect(container.textContent).toContain("Grade Today's Trades");
+    expect(visibleText()).toBe(unscopedGrading);
   });
 
   it('FLAG OFF — no chip, no filter, and the scroll effect never runs', () => {

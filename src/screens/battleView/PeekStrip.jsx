@@ -66,6 +66,10 @@ export function PeekStrip({
   // a keyboard user was dropped to `document.body` — the mobile sheet has had a
   // return-focus contract for this exact transition since A4 (review CR4).
   expandRef = null,
+  // A2.4 (review RB-F11): the id of the region this control expands — the
+  // desktop chat column, which contains both this strip and the collapsed
+  // chat beneath it. Without it `aria-expanded="false"` names nothing.
+  controlsId = null,
   turnText = null,
   line = null,
   unread = false,
@@ -90,6 +94,7 @@ export function PeekStrip({
         type="button"
         onClick={onExpand}
         aria-expanded="false"
+        aria-controls={controlsId || undefined}
         aria-label={COPY.sheetHandleName(COPY.sheetExpand, unread)}
         data-peek-expand="1"
         data-unread={unread ? 'true' : 'false'}

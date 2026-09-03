@@ -204,7 +204,18 @@ export default function WhyPanel({
                book panel carries the whole paragraph; a row carries only the
                sentences that name it, verbatim. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {decisionHeading && <div id={id} tabIndex={-1} style={eyebrow}>{decisionHeading}</div>}
+          {/* Ruling 4 says `Read the full check` "moves focus to its first
+              HEADING". It was a styled div, and there is no `<h*>` anywhere in
+              this panel, so heading navigation never found it and the focus
+              stop announced as plain text (review RB-F11). `role="heading"` +
+              `aria-level` is the whole fix: it changes no pixel — the eyebrow
+              keeps its own type scale — and it makes the ruling's sentence
+              true. Level 3: the panel opens under the row it belongs to. */}
+          {decisionHeading && (
+            <div id={id} tabIndex={-1} role="heading" aria-level={3} style={eyebrow}>
+              {decisionHeading}
+            </div>
+          )}
           <div style={{ fontSize: 12.5, fontWeight: 700, color: LABEL_COLOR[state.kind] || cssVar('text-secondary') }}>
             {state.label}
           </div>
@@ -309,6 +320,7 @@ export default function WhyPanel({
             <button
               type="button"
               data-why-scope={symbol}
+              aria-label={COPY.scopeDoorName(symbol, mentionCount)}
               onClick={() => onScopeToPiece(symbol, mentionCount)}
               style={{
                 background: 'transparent',

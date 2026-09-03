@@ -73,9 +73,18 @@ export function tradeNamesSymbol(entry, symbol) {
   return entry?.symbolOut === symbol || entry?.symbolIn === symbol;
 }
 
-/** A check card: the excerpt the card actually shows. */
+/**
+ * A check card: what the card actually SHOWS — its label's pair, and its
+ * excerpt.
+ *
+ * The pair is not an afterthought (review RB-F9): on a swap the label reads
+ * `Swapped · GILD → MOS` and is the first thing a player reads on the card, so
+ * a card that visibly says GILD was being dropped from GILD's own filter
+ * because its first sentence happened not to name it.
+ */
 export function checkNamesSymbol(entry, symbol) {
   if (!symbol) return false;
+  if (entry?.symbolOut === symbol || entry?.symbolIn === symbol) return true;
   return namesSymbol(entry?.firstSentence, symbol);
 }
 

@@ -278,6 +278,12 @@ describe('desktop — board left, the chat right, no tab bar', () => {
 
     const collapse = q('[data-chat-collapse]');
     expect(collapse.getAttribute('aria-label')).toBe('Collapse the chat');
+    // `aria-expanded` has to NAME something (review RB-F11). The two controls
+    // live in each other's chrome, so the region both of them are about is the
+    // COLUMN — the one node that holds the strip and the chat beneath it.
+    expect(collapse.getAttribute('aria-expanded')).toBe('true');
+    expect(collapse.getAttribute('aria-controls')).toBe(q('[data-chat-column]').id);
+    expect(q('[data-chat-column]').id).toBeTruthy();
     click(collapse);
 
     // The column is the chat's ONE home and it does not go away — it wraps
@@ -302,6 +308,11 @@ describe('desktop — board left, the chat right, no tab bar', () => {
     // …and the strip carries the turn line and the newest tape line.
     const expand = q('[data-peek-expand]');
     expect(expand.getAttribute('aria-label')).toBe('Expand the chat');
+    expect(expand.getAttribute('aria-expanded')).toBe('false');
+    // …the SAME region, across the collapse: one id, so neither reference is
+    // a dangling one and the pair reads as one disclosure (review RB-F11).
+    expect(expand.getAttribute('aria-controls')).toBe(q('[data-chat-column]').id);
+    expect(document.getElementById(expand.getAttribute('aria-controls'))).toBe(q('[data-chat-column]'));
     expect(expand.textContent).toContain('Checked 12:45 PM');
     expect(q('[data-peek-line]')).toBeTruthy();
 

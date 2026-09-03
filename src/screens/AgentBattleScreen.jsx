@@ -72,6 +72,14 @@ import { getEquippedWatchlistLabel } from '../utils/watchlistEquipUI';
 
 const PRICE_POLL_INTERVAL = 60000; // 60s
 
+// A2.4 (review RB-F11): the desktop chat column's id, so the two controls that
+// expand and collapse it — the strip's whole top row and the column's own ▾ —
+// can NAME what their `aria-expanded` is about. They live in each other's
+// chrome, and the column is the one region that contains both the strip and
+// the collapsed chat beneath it. One constant, because two spellings of an
+// `aria-controls` target is a broken reference that nothing renders.
+const CHAT_COLUMN_ID = 'battle-chat-column';
+
 const TIERS = [
   { key: 'star', label: 'Star Picks', emoji: '⭐', allocation: '2x', slots: 2 },
   { key: 'core', label: 'Core Holds', emoji: '💎', allocation: '1.5x', slots: 2 },
@@ -1705,7 +1713,16 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             // A2.4: collapsed, the desktop chat column wraps onto its own
             // line beneath a full-width board. Wrapping is what lets the
             // chat keep ONE parent across the collapse (see the column).
-            ...(isDesktop && !chatOpen ? { flexWrap: 'wrap' } : {}),
+            //
+            // `alignContent` is not decoration (review RB-F12): a MULTI-LINE
+            // flex container defaults to stretching its lines, so the leftover
+            // cross space would be split between the board's line and the
+            // strip's — the strip would grow by half the free height and float
+            // a gap under the composer instead of hugging the board. Both
+            // children are `flex: 0 0 100%`, so this is the only property that
+            // decides it. jsdom does no layout and cannot see this; the
+            // founder's smoke can.
+            ...(isDesktop && !chatOpen ? { flexWrap: 'wrap', alignContent: 'flex-start' } : {}),
             position: 'relative',
             zIndex: 2,
             ...(gameTapeOpen ? { visibility: 'hidden' } : {}),
@@ -1756,6 +1773,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                and this column takes the whole second, which is the ruled
                layout (the board at full width, the strip beneath it). */
             <div
+              id={CHAT_COLUMN_ID}
               data-chat-column="1"
               data-chat-collapsed={chatOpen ? 'false' : 'true'}
               style={{
@@ -1780,6 +1798,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     type="button"
                     onClick={handleCollapseChat}
                     aria-expanded="true"
+                    aria-controls={CHAT_COLUMN_ID}
                     aria-label={BATTLE_VIEW_COPY.sheetCollapse}
                     data-chat-collapse="1"
                     style={{
@@ -1803,6 +1822,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               ) : (
                 <PeekStrip
                   expandRef={expandControlRef}
+                  controlsId={CHAT_COLUMN_ID}
                   turnText={turnLine?.text ?? null}
                   line={peekLine}
                   unread={Boolean(hasCommandDot)}

@@ -302,6 +302,21 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // The chip on the scoped stream. `All` is the way OUT — the whole tape —
   // and it is a noun about the display, never a claim about the battle.
   scopeChip: (symbol) => (symbol ? `${symbol} · All` : null),
+  // The two ACCESSIBLE names for the scope's ends (review RB-F10). Neither
+  // visible label says what its button does: `In the chat · 2` reads as a
+  // count and `NVDA · All` as a label, so a screen reader announced a number
+  // and a word where a filter was about to be applied or cleared. Named for
+  // the ACTION, exactly as `whyName` and `sheetHandleName` are.
+  scopeDoorName: (symbol, n) => (Number.isFinite(n)
+    ? `Show the ${symbol} messages · ${n} in the chat`
+    : null),
+  scopeChipName: (symbol) => (symbol ? `Showing ${symbol} only · show the whole tape` : null),
+  // What the scoped stream announces when the filter lands or lifts. A live
+  // region, so it is spoken without moving focus — which the door does not
+  // move to the stream anyway (it goes to the composer, with the prefill).
+  scopeAnnounce: (symbol, n) => (symbol
+    ? `Showing ${n} ${symbol} ${n === 1 ? 'entry' : 'entries'}`
+    : 'Showing the whole tape'),
 
   // ── The tape (A2.2, D-72 / D-77) ──────────────────────────────────────────
   // A trade card per EXECUTED swap: when, the pair, the tier. The tier is the
