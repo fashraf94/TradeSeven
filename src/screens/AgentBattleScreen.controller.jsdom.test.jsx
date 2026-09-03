@@ -529,6 +529,11 @@ describe('`Read the full check` opens the check\'s own CARD (D-89)', () => {
     const card = container.querySelector('[data-tape-kind="check"]');
     const [, opts] = scrolls.find(([el]) => el === card);
     expect(opts.block).toBe('nearest');
+    // INSTANT (review L4, ac-05). The panel landing this replaced followed
+    // reduced motion; this one does not, because a smooth scroll would race
+    // the list's own auto-scroll-to-bottom and the card may have appeared on
+    // the very commit that pinned it.
+    expect(opts.behavior).toBe('auto');
     // `tabIndex={-1}`: a reader arrives here by asking to, never by tabbing
     // past thirty cards.
     expect(card.getAttribute('tabindex')).toBe('-1');

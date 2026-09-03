@@ -249,13 +249,25 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
   // bubble in the same voice. Read off the persisted `messageType`, never
   // inferred from the words.
   //
-  // Only where the shipped `label` is absent: `auto_debrief` already has
-  // `Post-Market Debrief`, and one bubble with two eyebrows is worse than one
-  // with none. Controller-gated by the caller, so flag-off emits nothing.
-  const kindEyebrow = (showKindEyebrow && !label)
+  // Controller-gated by the caller, so flag-off emits nothing.
+  //
+  // THREE CONJUNCTS CAME OFF HERE (review L4, mutations ac-02/03/04), because
+  // each was provably inert and BUILD_RULES §2 says a conjunct that cannot
+  // fail is not a guard:
+  //
+  //   · `!label` — meant to stop `auto_debrief` wearing two eyebrows. It
+  //     cannot fire: `auto_debrief` is deliberately absent from
+  //     `tapeKindEyebrow`'s map, so that call already returns null. The rule
+  //     is real and is enforced where it actually lives — in the map.
+  //   · `message.role === 'agent'` — this function returns for a user message
+  //     forty lines above, so the role is always 'agent' by the time we get
+  //     here.
+  //   · `_hasUserHalf === true` — `deriveChatMessages` writes a boolean, so
+  //     the strict compare and a truthiness test are the same test.
+  const kindEyebrow = showKindEyebrow
     ? BATTLE_VIEW_COPY.tapeKindEyebrow(
       messageType,
-      message.role === 'agent' && message._hasUserHalf === true,
+      message._hasUserHalf,
       message._anticipationDirection ?? null,
     )
     : null;
@@ -737,7 +749,15 @@ export default function AgentChat({
     if (openCheckNonce == null || !openCheckId) return;
     const el = listRef.current?.querySelector(`[data-tape-entry-id="${openCheckId}"]`);
     if (!el) return;
+    // INSTANT, and deliberately not reduced-motion-conditional like the
+    // panel landing it replaced (review L4, mutation ac-05). A smooth scroll
+    // here would race the list's own auto-scroll-to-bottom two effects above,
+    // and the card may have appeared on this very commit — animating to a node
+    // that did not exist a frame ago is how a reader ends up somewhere neither
+    // effect intended. BUILD_RULES §11 is about not inventing motion; this
+    // invents none.
     el.scrollIntoView?.({ behavior: 'auto', block: 'nearest' });
+    // …and the focus must not undo the scroll that just ran.
     el.focus?.({ preventScroll: true });
   }, [openCheckNonce, openCheckId]);
 
