@@ -511,4 +511,21 @@ describe('expand-signal — gemmaClient timeout class (aborted:true)', () => {
     expect(res.statusCode).toBe(504);
     expect(res.body.error).toBe('Expansion timed out');
   });
+
+  it('a NON-aborted Gemma failure still returns 502 (no over-classification)', async () => {
+    // Companion to the row above — pins the fallback arm of
+    // `gemmaResult.aborted ? 504 : 502` so a plain failure cannot drift into
+    // being reported as a timeout.
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, drop: VALID_DROP_RECORD });
+    activeFirestore = fixture.db;
+    gemmaResult.current = { success: false, error: 'OpenRouter 500: upstream', aborted: false, fallbackResponse: null };
+
+    const { req, res } = makeReqRes({
+      parsedSignal: VALID_PARSED_SIGNAL, dropId: 'drop-1', agentId: 'agent-1',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(502);
+    expect(res.body.error).toBe('Expansion failed');
+  });
 });

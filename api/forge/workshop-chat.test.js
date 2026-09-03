@@ -410,4 +410,19 @@ describe('workshop-chat — gemmaClient timeout class (aborted:true)', () => {
     expect(res.body.agentMessage).toBeTruthy();   // graceful copy, not a crash
     expect(res.body.messagesUsed).toBe(0);        // a failed turn never burns budget
   });
+
+  it('a NON-aborted Gemma failure still returns the graceful 200 (no over-classification)', async () => {
+    // The companion to the row above: pinning only the 504 arm of
+    // `gemmaResult.aborted ? 504 : 200` leaves the fallback arm free to drift,
+    // so a plain upstream failure could silently start reporting as a timeout.
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, sessionDocs: {} });
+    activeFirestore = fixture.db;
+    gemmaResult.current = { success: false, error: 'OpenRouter 500: upstream', aborted: false, fallbackResponse: null };
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', message: 'hi' });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.error).toBe(true);
+  });
 });

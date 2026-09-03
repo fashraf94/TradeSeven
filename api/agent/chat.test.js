@@ -13,6 +13,7 @@ import { TOURNAMENT_GAME_MODE, GROUP_STATUS } from '../../src/constants/leagueTo
 // ==================== HOISTED MOCK STATE ====================
 const {
   authReturnValue,
+  gateArgs,
   authDelayMs,
   callGemmaVoiceImpl,
   parseVoiceLayerResponseImpl,
@@ -23,6 +24,7 @@ const {
   budget,
 } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
+  gateArgs: { current: [] },     // pass-through capture of gateDirective's args
   authDelayMs: { current: 0 },   // simulates a slow prologue (auth + Firestore reads)
   callGemmaVoiceImpl: { current: async () => '{"response":"hi"}' },
   parseVoiceLayerResponseImpl: { current: (c) => JSON.parse(c) },
@@ -81,6 +83,18 @@ vi.mock('../_utils/tournamentTime.js', () => ({
   getTournamentClaimWindow: () => ({ isOpen: true, etTime: '12:00', reason: null }),
   formatEtDate: () => '2026-06-26',
 }));
+
+// Pass-through spy on the directive gate. importOriginal keeps the REAL
+// implementation — the ten archetype tests below still exercise it unchanged —
+// while making its arguments observable, which is the only way to prove
+// TURN_DEADLINE_MS is actually WIRED and not merely pinned.
+vi.mock('../_utils/directiveGate.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    gateDirective: (args) => { gateArgs.current.push(args); return actual.gateDirective(args); },
+  };
+});
 
 vi.mock('../_utils/marketSchedule.js', () => ({
   getMarketState: () => ({ state: 'OPEN', isOpen: true }),
@@ -212,6 +226,7 @@ const VALID_BATTLE = {
 beforeEach(() => {
   authReturnValue.current = { uid: 'test-user' };
   authDelayMs.current = 0;
+  gateArgs.current = [];
   callGemmaVoiceImpl.current = async () => '{"response":"hi"}';
   parseVoiceLayerResponseImpl.current = (c) => JSON.parse(c);
   shadowLogCalls.current = [];
@@ -333,8 +348,15 @@ describe('agent/chat — catch-block shadow logging (gap closure)', () => {
   // never false in the test.
   //
   // It now drives the REAL callGemmaVoice against a fetch whose body read
-  // rejects with a genuine AbortError, so the classification under test is the
-  // handler's own, reached the way production reaches it.
+  // rejects with a genuine AbortError, so the classification under test runs
+  // through _callGemmaOnce's real classifier — where the bug actually lived.
+  //
+  // Scope, stated honestly: the Response here is still a stub. No
+  // AbortController fires and undici is not involved, so this row proves the
+  // HANDLER wiring (classifier → 504 → gemma_timeout), not that a real undici
+  // body-read abort produces that classification. THAT is proven separately in
+  // gemmaClient.test.js, against a real http server and a real signal, with an
+  // assertion on which abort window actually fired.
   //
   // MUTATION CHECK: reverting the abort branch in gemmaClient._callGemmaOnce
   // makes this row fail with 500 / handler_exception — the production symptom.
@@ -889,5 +911,36 @@ describe('agent/chat — the voice call is clamped to the absolute turn deadline
     const { abortedAt, status } = await abortTimeUnderOverhead(OVERHEAD);
     expect(abortedAt - OVERHEAD).toBeLessThanOrEqual(100);   // immediate, not +20s
     expect(status).toBe(504);
+  });
+});
+
+// ==========================================================================
+// TURN_DEADLINE_MS IS WIRED, not merely pinned.
+//
+// chat.timeout.test.js pins the VALUE of TURN_DEADLINE_MS and four rows reason
+// about it, but nothing proved the gate actually receives it: replacing
+// `turnStartMs + TURN_DEADLINE_MS` at chat.js:519 with a bare `99_000` left
+// every one of those pins green while the real deadline drifted. That is the
+// same hole the GEMMA_TIMEOUT_MS wiring row above closes; this closes its twin.
+// ==========================================================================
+
+describe('agent/chat — the turn deadline handed to the directive gate is wired', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('gateDirective receives turnStartMs + TURN_DEADLINE_MS', async () => {
+    vi.useFakeTimers();
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    archetypeFlag.mode = 'enforce';   // the gate only runs outside 'off'
+    callGemmaVoiceImpl.current = async () => '{"response":"hi","hasDirective":false}';
+
+    const turnStart = Date.now();
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+
+    expect(gateArgs.current).toHaveLength(1);
+    // Absolute, and exactly TURN_DEADLINE_MS from the turn's start — the gate
+    // clamps its repair against this, so a wrong value silently un-budgets it.
+    expect(gateArgs.current[0].deadlineMs - turnStart).toBe(TURN_DEADLINE_MS);
   });
 });

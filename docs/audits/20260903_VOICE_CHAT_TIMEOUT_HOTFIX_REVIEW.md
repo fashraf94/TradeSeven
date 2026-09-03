@@ -23,6 +23,12 @@ The single most important result: **the first fix was incomplete.** It closed th
 | R8 | Over-classification (a genuine parse failure reported as a timeout) | classification | — | **REFUTED** — 1,248 race runs, 0 occurrences |
 | R9 | The rethrow escaping `directiveGate.attemptRepair` | blast radius | — | **REFUTED** — bare catch swallows it identically |
 | R10 | The repair-survival window narrowed by the 20s cap | timing | MEDIUM | **ACCEPTED, NOT FIXED** — founder ruling, see §5 |
+| R11 | The flagship abort rows go green **with the defect live** if headers arrive later than the 120ms budget | test integrity | **HIGH** | **CONFIRMED → fixed** |
+| R12 | `TURN_DEADLINE_MS` pinned but never proved wired to the gate | test integrity | MEDIUM | **CONFIRMED → fixed** |
+| R13 | Over-classification unguarded in `workshop-chat` and `expand-signal` (only the 504 arm pinned) | test integrity | MEDIUM | **CONFIRMED → fixed** |
+| R14 | Two branches of the fix itself (`\|\| signal?.aborted`, `asAbortError` fabrication) unreached by any row | test integrity | LOW | **CONFIRMED → fixed** |
+| R15 | `chat.test.js`'s "reached the way production reaches it" overclaimed — the Response is still a stub | test integrity | LOW | CONFIRMED → comment corrected |
+| R16 | Mock leakage, fake-timer flake (52 runs), cross-file leakage, suite pollution | test integrity | — | **REFUTED — all four clean** |
 
 ---
 
@@ -41,7 +47,7 @@ Four independent adversarial reviewers, one per dimension, each instructed to **
 
 **Coordinator posture:** no finding was accepted on assertion. R1, R2 and R3 were each independently re-derived before any fix was written.
 
-**Disclosure — the test-integrity pass is incomplete.** Three of the four reviewers reported; the test-integrity reviewer had not returned when this record was written, so its independent sweep for vacuous guards, mock leakage and fake-timer flake is **not** part of this record. The coordinator performed the mutation checks directly instead (§9 ledger — every new guard reverted individually and confirmed to redden), and the full suite was run repeatedly across the work with no flake observed. That is not a substitute for the independent pass, and it is stated here rather than reported as done, per §2's disclosure requirement. If that reviewer returns with findings, they will be appended and the branch updated.
+**All four dimensions reported.** The test-integrity pass returned after the first version of this record was written and its findings are folded in as R11–R15 (§4a); the branch was updated accordingly.
 
 ---
 
@@ -107,6 +113,41 @@ Consequence: on a slow turn, `hasDirective` can flip true→false on identical m
 
 **Not fixed — this is a consequence of the founder-ruled 20s, not a defect**, and the repair is best-effort by design. It is now pinned as executable documentation in `chat.timeout.test.js` so the trade-off is visible and any future move of these constants confronts it. **Raised to the founder for a ruling**; lowering to 19s would restore it.
 
+## 4a. R11 — the guards could be green while the defect shipped (HIGH)
+
+The most uncomfortable finding of the review, and the same failure mode this whole task exists to correct.
+
+The flagship rows assert that an abort lands on the **body read**. Nothing asserted it. Which window fires was decided by an unasserted race between a hard-coded 120ms timer and the loopback server's first byte — so if headers were ever slower than the budget, the abort would land pre-headers, on the window that was **never broken**, and the rows would silently re-test the working path.
+
+Coordinator repro — production defect restored **and** headers delayed 300ms:
+
+```
+Tests  23 passed (23)          <- the entire file green, defect live
+```
+
+That is exactly how the original `chat.test.js` guard passed for months against a live production defect. Measured margin is comfortable today (p50 ~2ms unloaded, max 48ms under 3× CPU oversubscription, vs 120ms), so it was latent rather than imminent — but no assertion would ever have noticed it flip.
+
+**Fixed** by asserting the window itself. The discriminator was free and already emitted: only the body-read path logs `timed out while reading the response body`, and its latency line carries `status: 200` where the pre-headers path carries `status: null`. Both body-read rows now assert the marker is present; the pre-headers row asserts it is **absent**, so it can no longer silently duplicate them.
+
+**Mutation check** — the same experiment, re-run after the fix:
+
+```
+× callGemmaVoice: abort DURING BODY READ throws a real AbortError
+× callGemmaVoiceWithRetry: abort DURING BODY READ reports aborted:true
+  Tests  2 failed | 21 passed (23)
+```
+
+R12–R14 were closed the same way, each with its own mutation:
+
+| Finding | Mutation | Result |
+|---|---|---|
+| R12 `TURN_DEADLINE_MS` wiring | `deadlineMs: turnStartMs + 99_000` | red — `expected 99000 to be 24000` |
+| R13 over-classification (2 handlers) | ternary → always-504 | red — `expected 504 to be 200` / `to be 502` |
+| R14 the `\|\| signal?.aborted` arm | drop the arm | red — `expected 'Error' to be 'AbortError'` |
+| R14 `asAbortError` fabrication | `throw jsonErr` | red — `expected 'SyntaxError' to be 'AbortError'` |
+
+R14 is worth naming precisely: `abort(reason)` makes undici throw the **reason object itself** (`name: 'Error'`, no cause), so the fallback arm is the only thing standing between that and a real timeout being filed as invalid JSON — and no row reached it until now.
+
 ## 6. Refuted
 
 - **Over-classification** (a genuine malformed body reported as a timeout because of the `|| signal?.aborted` arm). Attacked three ways across **1,248 race runs** — a complete-but-invalid body with the abort swept ±6ms in 0.25ms steps, and a gzip variant creating a real async gap via zlib's threadpool hop. **0 occurrences.** Structural reason: there is no macrotask boundary between the body completing and the check, so a timer-driven abort can only land before the read completes, where `isAbortError` is already true. Guarded by a dedicated row.
@@ -139,7 +180,7 @@ Non-endpoint callers, none changing on the wire: `decide.js`, `ensure-opener.js`
 
 | Check | Result |
 |---|---|
-| Full suite | **9,650 passing**, 572 files, 63 skipped |
+| Full suite | **9,654 passing**, 572 files, 63 skipped |
 | `vite build` | green (26s) |
 | `eslint` on touched files | clean — the one `process` no-undef in `gemmaClient.js` is **pre-existing** (proved by linting the HEAD version: same error at its line 66) |
 | Mutation checks | 5 fixes, each reverted individually and confirmed to redden its own guard |
@@ -154,6 +195,10 @@ Mutation-check ledger:
 | Absolute clamp | unclamped | 2 rows red — `expected 28000 to be less than or equal to 24000` |
 | Client carve-out | bare throw | 1 row red — rejected instead of resolving |
 | `GEMMA_TIMEOUT_MS` at the call site | bare literal `15000` | wiring row red — catches constant drift |
+| `.json()` abort branch + slow headers | defect restored, headers +300ms | 2 rows red (was 23/23 GREEN before R11's fix) |
+| `TURN_DEADLINE_MS` at the gate | `turnStartMs + 99_000` | wiring row red — `expected 99000 to be 24000` |
+| `workshop-chat` / `expand-signal` ternary | always-504 | companion rows red |
+| `\|\| signal?.aborted` / `asAbortError` | dropped / bypassed | fallback-arm row red |
 
 ## 10. Filed for separate tasking (§3 — reported, not fixed)
 
@@ -162,6 +207,8 @@ Mutation-check ledger:
 3. **`gemmaLatencyMs` covers the first call only.** On a gated turn, total model time can exceed it by up to `REPAIR_TIMEOUT_MS` (8s). Correct for verifying *this* fix; the comment was corrected to say so rather than widening scope. A `repairLatencyMs` would close it.
 4. **`callGemmaVoiceWithRetry` JSDoc claims malformed JSON is retried** (`gemmaClient.js:19-20`) — it is not: the `invalid_json` return carries status 200, which is not in `TRANSIENT_STATUSES`. Pre-existing.
 5. **Phase 0 report caller census** (`six` → `13`) needs a documentation correction where that report is filed.
+6. **`watchlist-dialogue`'s sibling row duplicates a pre-existing row** at `:1561` (same fixture, same 504 + `gemma_timeout` assertions). Harmless, but it is redundant coverage rather than new.
+7. **Pre-existing intra-file order dependence**: a `--sequence.shuffle` run surfaced 15 failures across 6 files (`correlation-scan.boundary`, `correlation.boundary`, `voiceLayerPrompt`, `wireGenerationConfig`, `wireFlags`, `starfield.depstability`). **None in this change's blast radius** — all eight touched files pass under shuffle — but the suite is not order-independent.
 
 ## 11. Founder decisions outstanding
 

@@ -204,7 +204,32 @@ describe('abort classification — a timeout is never reported as invalid JSON',
     })).finally(() => clearTimeout(timer));
   };
 
+  // WHICH WINDOW RAN — the assertion these rows cannot do without.
+  //
+  // Which abort window fires is decided by a race between the timer above and
+  // the loopback server's first byte. If headers are ever slower than the
+  // budget, the abort lands PRE-HEADERS — the window that was never broken —
+  // and the rows below silently degrade into re-testing the working path.
+  // Proven, not theorised: with the production defect restored AND headers
+  // delayed 300ms, this whole file went 23/23 GREEN. That is precisely how the
+  // original chat.test.js guard passed for months against a live defect, so it
+  // is not repeated here.
+  //
+  // The discriminator is free and already emitted: only the body-read path logs
+  // this marker (gemmaClient.js) and tags its latency line status:200; the
+  // pre-headers path tags status:null.
+  const BODY_READ_MARKER = /timed out while reading the response body/;
+  function watchWindow() {
+    const seen = [];
+    vi.spyOn(console, 'error').mockImplementation((...args) => { seen.push(args.join(' ')); });
+    return {
+      expectBodyReadWindow: () =>
+        expect(seen.some((l) => BODY_READ_MARKER.test(l))).toBe(true),
+    };
+  }
+
   it('callGemmaVoice: abort DURING BODY READ throws a real AbortError (not "Invalid JSON")', async () => {
+    const win = watchWindow();
     useLocalServer('/stall-body');
     const err = await call(callGemmaVoice).then(
       () => { throw new Error('expected the call to reject'); },
@@ -213,6 +238,10 @@ describe('abort classification — a timeout is never reported as invalid JSON',
 
     // The load-bearing assertion: chat.js:681 classifies on this exact name, and
     // its 504 / gemma_timeout / honest-client-string path hangs off it.
+    // FIRST: prove the abort landed in the body-read window. If it did not,
+    // everything below is testing the wrong path and must fail loudly.
+    win.expectBodyReadWindow();
+
     expect(err.name).toBe('AbortError');
     expect(isAbortError(err)).toBe(true);
     // The production string that must never be produced for an abort again.
@@ -221,8 +250,10 @@ describe('abort classification — a timeout is never reported as invalid JSON',
   });
 
   it('callGemmaVoiceWithRetry: abort DURING BODY READ reports aborted:true and does NOT retry', async () => {
+    const win = watchWindow();
     useLocalServer('/stall-body');
     const result = await call(callGemmaVoiceWithRetry);
+    win.expectBodyReadWindow();
 
     // The five sibling callers gate their 504 on this flag; without it they
     // answered HTTP 200 with "I hit a snag" on a turn that actually timed out.
@@ -235,12 +266,17 @@ describe('abort classification — a timeout is never reported as invalid JSON',
   });
 
   it('callGemmaVoice: abort BEFORE HEADERS also throws AbortError (the window that always worked)', async () => {
+    const seen = [];
+    vi.spyOn(console, 'error').mockImplementation((...args) => { seen.push(args.join(' ')); });
     useLocalServer('/stall-headers');
     const err = await call(callGemmaVoice).then(
       () => { throw new Error('expected the call to reject'); },
       (e) => e,
     );
     expect(err.name).toBe('AbortError');
+    // ...and it must be the OTHER window, or this row silently duplicates the
+    // two above instead of covering the pre-headers path.
+    expect(seen.some((l) => BODY_READ_MARKER.test(l))).toBe(false);
   });
 
   it('a genuine malformed-JSON body is STILL reported as invalid JSON (no over-classification)', async () => {
@@ -260,6 +296,29 @@ describe('abort classification — a timeout is never reported as invalid JSON',
 
     expect(err.name).toBe('Error');
     expect(err.message).toMatch(/Invalid JSON from OpenRouter/);
+  });
+
+  it('the signal?.aborted fallback arm: a non-AbortError rejection while the signal is aborted', async () => {
+    // The SECOND half of `isAbortError(jsonErr) || signal?.aborted`, and the
+    // only path that reaches asAbortError's fabrication branch. Reachable in
+    // practice: abort(reason) makes undici throw the reason object itself —
+    // name 'Error', not 'AbortError' — so without this arm a real timeout would
+    // be filed as invalid JSON all over again.
+    const controller = new AbortController();
+    controller.abort();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new SyntaxError('Unexpected end of JSON input')),
+      text: () => Promise.resolve(''),
+    });
+
+    const err = await callGemmaVoice({
+      systemPrompt: 'sys', conversationHistory: [], userMessage: 'hi', signal: controller.signal,
+    }).then(() => { throw new Error('expected the call to reject'); }, (e) => e);
+
+    expect(err.name).toBe('AbortError');            // guards the `||` arm
+    expect(err.cause).toBeInstanceOf(SyntaxError);  // guards asAbortError's fabrication
   });
 
   it('a healthy response is unaffected', async () => {
