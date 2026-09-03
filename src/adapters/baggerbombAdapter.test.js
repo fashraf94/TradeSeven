@@ -666,11 +666,19 @@ describe('buildBaggerbombAdapter', () => {
       expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:50:00.000Z', {})).toBe(false);
     });
 
-    it('the calendar day is ET, not the runner\'s zone', () => {
-      // A late-session ET check is the NEXT calendar day in UTC; comparing in
-      // any zone but ET would make the same instant land on the wrong day.
-      const close = { ...MS.open, nextCloseTime: new Date(2026, 8, 1, 16, 0) };
-      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-01T19:50:00.000Z', close)).toBe(true);
+    it('the calendar day is ET, not UTC — an instant whose UTC day differs still resolves to its ET day', () => {
+      // Review FIX-2 caught the earlier version of this row as vacuous: every
+      // IN-SESSION ET instant (13:30-20:00 UTC) shares its UTC calendar day,
+      // so it could not exercise the distinction at all. This one can:
+      // 2026-09-02T01:00Z is Sep 1 at 9 PM ET — Sep 2 in UTC, Sep 1 in ET.
+      const sep1 = { ...MS.open, nextCloseTime: new Date(2026, 8, 1, 16, 0) };
+      const sep2 = { ...MS.open, nextCloseTime: new Date(2026, 8, 2, 16, 0) };
+      // Against Sep 1's close it IS that session's day (a UTC comparison would
+      // read Sep 2 and answer false).
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-02T01:00:00.000Z', sep1)).toBe(true);
+      // Against Sep 2's close it is not (a UTC comparison would read Sep 2 and
+      // wrongly answer true — the L1-F1 defect, in the opposite direction).
+      expect(deriveLastCheckOfSession(PHASE.LIVE, '2026-09-02T01:00:00.000Z', sep2)).toBe(false);
     });
 
     it('the adapter exposes the field, so neither surface re-derives the null', () => {

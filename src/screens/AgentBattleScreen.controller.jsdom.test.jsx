@@ -373,7 +373,15 @@ describe('the SCREEN\'s own gating — the call sites, not the selectors (review
     expect(container.querySelector('[data-why-symbol="SLB"]').textContent).toContain('from the scoring path');
   });
 
-  it('MUTATION ROW (L4-F4) — the tape receives the RECEIPTS input: a directive filed between two quiet checks breaks their run', () => {
+  it('the tape is built from the doc\'s OWN chat exchanges — a filing lands between the runs it separates', () => {
+    // NOT a guard on the `receipts` input (review FIX-5 corrected the earlier
+    // claim): a directive filing IS a chat exchange, so it is a MESSAGE in the
+    // merged stream and breaks the checks' adjacency by itself — dropping
+    // `receipts` from the buildTape call leaves this render unchanged. The
+    // disposition conjunct is guarded where it is composed, in
+    // buildTape.test.js. What this row does prove is that the screen feeds the
+    // tape the subscribed document's exchanges, evaluations and directive
+    // together, and that the fold respects the message between them.
     const quiet = (hhmm) => ({
       evalId: `e_${hhmm}`, timestamp: `2026-09-01T${hhmm}:00.000Z`, decision: 'HOLD', downgraded: false,
       rationale: 'The book is holding its shape.', scores: { active: 1, banked: 40, total: 41 },
@@ -391,5 +399,8 @@ describe('the SCREEN\'s own gating — the call sites, not the selectors (review
     const runs = [...container.querySelectorAll('[data-tape-kind="checkRun"]')];
     expect(runs).toHaveLength(2);
     expect(runs.map((r) => r.getAttribute('data-tape-run-count'))).toEqual(['2', '2']);
+    // …and the exchange that filed the second directive is the thing between
+    // them, which is what makes the two runs two.
+    expect(container.textContent).toContain('b');
   });
 });

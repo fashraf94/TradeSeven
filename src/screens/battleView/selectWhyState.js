@@ -108,10 +108,41 @@ export const ENGINE_MOTIVE_PREFIXES = Object.freeze([
   'Deterministic guardrail enforcement',
 ]);
 
-export function isEngineAuthoredMotive(text) {
-  if (typeof text !== 'string') return false;
-  const trimmed = text.trimStart();
-  return ENGINE_MOTIVE_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
+/**
+ * The two `trades[].source` values under which the TEXT is the only reliable
+ * answer, so the prefixes above decide alone:
+ *
+ *   `haiku`     the model wrote the rationale — UNLESS the cron overwrote it
+ *               on a forced exit, which the prefixes catch.
+ *   `guardrail` ambiguous by construction: a forced exit's rationale is the
+ *               cron's sentence (a prefix), while a `reinforced_haiku` swap
+ *               keeps the model's own argument under the same source.
+ *
+ * Every OTHER source composes its own sentence and is engine-authored whatever
+ * the text looks like — `risk_manager`, `archetype`, and `gameplan_meeting`,
+ * whose rotation rationale is a template with no fixed prefix at all
+ * (`${sym} down ${pct}%, ${sym2} (${sector}) has tech score ${n}.`,
+ * agent-evaluate.js ~4056). Listing the two EXCEPTIONS rather than the engine
+ * sources is what keeps the default safe: a source added to the cron after
+ * today is engine-authored here until someone deliberately says otherwise,
+ * and under-crediting the agent is the smaller error under C1.
+ */
+export const TEXT_DECIDES_SOURCES = Object.freeze(['haiku', 'guardrail']);
+
+/**
+ * @param {string|null} text    the rationale
+ * @param {string|null} [source] `trades[].source` where the caller has one.
+ *   ABSENT on an `evaluations[]` entry — the panel and the check card read a
+ *   record that carries no provenance field at all, so there the text is the
+ *   only signal and is used alone.
+ */
+export function isEngineAuthoredMotive(text, source = null) {
+  if (typeof text === 'string') {
+    const trimmed = text.trimStart();
+    if (ENGINE_MOTIVE_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) return true;
+  }
+  if (source == null) return false;
+  return !TEXT_DECIDES_SOURCES.includes(source);
 }
 
 const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
@@ -400,7 +431,7 @@ export function selectTradesForSymbol(trades, symbol) {
       // WHOSE WORDS (review L5-F2). `This piece today` renders the SAME field
       // the tape's trade card does; one rule, so the two cannot describe one
       // swap differently. Null where the model wrote them.
-      footer: isEngineAuthoredMotive(t.rationale) ? COPY.motiveSystem : null,
+      footer: isEngineAuthoredMotive(t.rationale, t.source ?? null) ? COPY.motiveSystem : null,
     }))
     .sort((a, b) => (toMillis(a.at) ?? 0) - (toMillis(b.at) ?? 0));
 }

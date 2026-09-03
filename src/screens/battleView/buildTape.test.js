@@ -23,7 +23,7 @@ import {
   TAPE_KIND,
   MIN_RUN,
 } from './buildTape';
-import { WHY_KIND, isEngineAuthoredMotive, ENGINE_MOTIVE_PREFIXES } from './selectWhyState';
+import { WHY_KIND, isEngineAuthoredMotive, ENGINE_MOTIVE_PREFIXES, TEXT_DECIDES_SOURCES } from './selectWhyState';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { deriveReceipts } from './deriveReceipts';
 
@@ -160,6 +160,46 @@ describe('the motive and its author (ruling 5)', () => {
       rationale: "I'm cutting GILD here — it lost the 50-day and my thesis was the breakout, not the bounce. MOS has the better setup into the close.",
     };
     expect(buildTradeEntries([reinforced], FEED)[0].motiveIsAgent).toBe(true);
+    // …and this is why `guardrail` is one of the two sources where the TEXT
+    // decides alone: the same source carries the cron's sentence on a FORCED
+    // exit and the model's on a reinforced one.
+    expect(buildTradeEntries([{ ...reinforced, rationale: 'Guardrail override (guardrail_stopLoss): forcing exit.' }], FEED)[0].motiveIsAgent).toBe(false);
+  });
+
+  it('MUTATION ROW (review FIX-1) — the GAMEPLAN rotation is the system\'s, and its template matches no prefix', () => {
+    // agent-evaluate.js ~4056 composes `${sym} down ${pct}%, ${sym2} (${sector})
+    // has tech score ${n}.` and the receipt carries `source: 'gameplan_meeting'`.
+    // A text-only rule labelled this template `The agent's own words`.
+    const gameplan = {
+      ...HAIKU_TRADE,
+      source: 'gameplan_meeting',
+      rationale: 'MU down -8.3%, SLB (Energy) has tech score 71.',
+    };
+    expect(isEngineAuthoredMotive(gameplan.rationale)).toBe(false);
+    expect(buildTradeEntries([gameplan], FEED)[0].motiveIsAgent).toBe(false);
+  });
+
+  it('MUTATION ROW (review FIX-1) — the UNKNOWN-source default is the system, not the agent', () => {
+    // Under-crediting the agent is the smaller error under C1, and a source
+    // added to the cron after today must land on the safe side by default.
+    for (const source of ['something_new', 'risk_manager', 'archetype', 'gameplan_meeting']) {
+      const trade = { ...HAIKU_TRADE, source, rationale: 'A sentence with no engine prefix at all.' };
+      expect(buildTradeEntries([trade], FEED)[0].motiveIsAgent, source).toBe(false);
+    }
+    // The two sources under which the TEXT decides alone.
+    expect(buildTradeEntries([{ ...HAIKU_TRADE, source: 'haiku' }], FEED)[0].motiveIsAgent).toBe(true);
+    expect(buildTradeEntries([{ ...HAIKU_TRADE, source: 'guardrail' }], FEED)[0].motiveIsAgent).toBe(true);
+    // …and with NO source at all (an evaluations[] entry) the text is the only
+    // signal there is, so it is used alone.
+    expect(isEngineAuthoredMotive('A sentence with no engine prefix at all.', null)).toBe(false);
+    expect(isEngineAuthoredMotive('Risk manager: stopped out.', null)).toBe(true);
+  });
+
+  it('TRIPWIRE (review FIX-1) — the gameplan template and its source are the ones the cron still writes', () => {
+    const cron = readFileSync(new URL('../../../api/cron/agent-evaluate.js', import.meta.url), 'utf8');
+    expect(cron).toContain('has tech score ${topBenchCandidates[i].score}.');
+    expect(cron).toContain("buildSwapReceiptSource({ source: 'gameplan_meeting'");
+    expect(TEXT_DECIDES_SOURCES).toEqual(['haiku', 'guardrail']);
   });
 
   it('MUTATION ROW (review L1-F3) — the TEXT decides, so the check card and the trade card agree about one tick', () => {
@@ -350,7 +390,12 @@ describe('`N checks · no change` — every conjunct of D-77', () => {
     expect(run(items)[0].count).toBe(3);
   });
 
-  it('MUTATION ROW — a directive filed between two checks breaks the run (the receipts change)', () => {
+  it('MUTATION ROW (D-77 disposition) — a directive filed between two checks breaks the run', () => {
+    // THIS is the guard for the disposition conjunct. A mounted render cannot
+    // be (review FIX-5): a directive filing IS a chat exchange, so in the
+    // merged stream it is a MESSAGE between the two checks and breaks their
+    // adjacency by itself, whatever the run key says. The conjunct is
+    // observable only here, at the level where the key is composed.
     const exchanges = [
       { timestamp: T('13:50'), directiveThreadId: 'dir_1' },
       { timestamp: T('14:20'), directiveThreadId: 'dir_2' },

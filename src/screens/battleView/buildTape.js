@@ -32,9 +32,11 @@
 // (C1). The discriminator is `isEngineAuthoredMotive` in selectWhyState.js —
 // THE TEXT, exactly as ruling 5 describes it, and the same rule the Why? panel
 // and the check card use, so the tape cannot contradict itself about one tick.
-// It is deliberately NOT the trade's `source`: that records who chose the
-// EXIT, which is a different question from who wrote the SENTENCE, and it was
-// wrong in both directions (review L1-F3 / L1-F4).
+// The text leads, because `source` records who chose the EXIT rather than who
+// wrote the SENTENCE and is wrong in both directions on its own (review
+// L1-F3 / L1-F4) — but `source` still rules out the writers whose sentence
+// matches no prefix, and keeps the unknown-source default on the safe side
+// (review FIX-1). See the helper for which sources let the text decide alone.
 //
 // `message` IS NEVER THE MOTIVE (hazard 24): the feed's `message` is the
 // optional `status_feed_update`, null on a legal SWAP, and on a
@@ -51,7 +53,12 @@ export const TAPE_KIND = Object.freeze({
   CHECK_RUN: 'checkRun',
 });
 
-const cleanText = (value) => (typeof value === 'string' && value.trim() ? value : null);
+// Trims, exactly as selectWhyState's does (review FIX-3): `trades[].rationale`
+// is rendered by BOTH the tape's card and the panel's `This piece today`, and
+// both use `white-space: pre-wrap`, so one field trimmed on one surface and
+// not the other is the same string rendered two ways — the disagreement class
+// this module's own header claims to prevent.
+const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
 /**
  * The feed entry that belongs to a trade, for the `↳ from directive` echo.
@@ -110,7 +117,7 @@ export function buildTradeEntries(trades, statusFeed) {
     const ms = toMillis(at);
     if (ms == null) continue;
     const feed = joinFeedEntry(trade, feedByEvalId, feedByPair);
-    const engineAuthored = isEngineAuthoredMotive(trade.rationale);
+    const engineAuthored = isEngineAuthoredMotive(trade.rationale, trade.source ?? null);
     entries.push({
       _type: TAPE_KIND.TRADE,
       id: `tape-trade-${ms}-${trade.symbolOut ?? ''}-${trade.symbolIn ?? ''}`,

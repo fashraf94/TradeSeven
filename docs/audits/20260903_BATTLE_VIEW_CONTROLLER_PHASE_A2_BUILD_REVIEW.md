@@ -13,20 +13,22 @@
 | | |
 |---|---|
 | Lenses run | **5** — domain correctness / C1, wiring & lifecycle, the flag-off guarantee, test integrity, spec & cross-phase consistency |
-| Findings raised | **43** |
-| **CONFIRMED** | **31** (6 HIGH, 13 MED, 12 LOW) |
-| **REFUTED** | **2 sub-claims**, plus ~40 candidates the lenses dropped themselves before reporting |
-| Fixed on this branch | **23** |
-| Recorded, not fixed | **8** (§5 — each with a reason) |
-| Source mutations executed | **45** by lens 4, plus **11** by the coordinator and the refuters on the fixes |
-| Mutations NOT caught by the suite | **5** — all five now guarded |
+| Findings raised | **50** — 43 by the lenses, **7 more by the refuters against the fixes** |
+| **CONFIRMED** | **35** (7 HIGH, 15 MED, 13 LOW) |
+| **REFUTED** | **6** — 2 lens findings and 2 sub-claims by refuter A, 2 fix-defects by refuter B — plus ~40 candidates the lenses dropped themselves before reporting |
+| Fixed on this branch | **28** |
+| Recorded, not fixed | **7** (§5 — each with a reason) |
+| Source mutations executed | **45** by lens 4, **9** by refuter B against the fix commit, plus **11** by the coordinator |
+| Mutations NOT caught by the suite | **5** at review time (all now guarded) and **4 more** found by refuter B in the fixes themselves |
 | `vite build` | **green** (BUILD_RULES §2 requirement; no test imports `App.jsx`) |
-| Full suite | **9816 passed**, 63 skipped, 0 failed (9642 before the review) |
+| Full suite | **9819 passed**, 63 skipped, 0 failed (9642 before the review) |
 | Flag-off goldens | byte-identical throughout |
 
 **The single most severe finding was L1-F3** (refuter A's judgement and mine): a user-set stop-loss that fires *and executes* leaves `downgraded` false, so the cron's own `Guardrail override (…): …` sentence took the ordinary SWAP branch — which had no author line — and was rendered as **the agent's words** on the row and the check card, while the trade card for that same swap labelled the identical string `The system's reason`. One tape, one tick, opposite attribution. It is routine rather than anomalous, it does not self-heal, and it is a direct C1 violation. Fixed.
 
-**The review changed a founder ruling's implementation back toward the ruling.** A2.2 discriminated the motive's author on the persisted `trades[].source`; ruling 5 named the **rationale**. Two independent findings (L1-F3, L1-F4) proved the ruling right and the implementation wrong in both directions. `source` records who chose the *exit*; the footer names who wrote the *sentence*.
+**The review changed a founder ruling's implementation back toward the ruling — and then a refuter caught the correction over-rotating.** A2.2 discriminated the motive's author on the persisted `trades[].source`; ruling 5 named the **rationale**. Two independent findings (L1-F3, L1-F4) proved the ruling right and the implementation wrong in both directions. The first fix therefore used the text *alone* — and refuter B showed that inverted the C1-safe default: the gameplan-rotation writer composes a template with no fixed prefix (`{sym} down {pct}%, {sym2} ({sector}) has tech score {n}.`) under `source: 'gameplan_meeting'`, so a system sentence was labelled **the agent's own words**, which the pre-fix rule had got right. The rule that shipped uses both signals in one function: the text leads, and `source` rules out the writers whose sentence matches no prefix, with only `haiku` and `guardrail` letting the text decide alone — those two being the ones where the text genuinely is the only answer. Listing the two *exceptions* rather than the engine sources keeps the default safe for any writer added to the cron after today.
+
+**That sequence is the case for the refutation step existing.** The first fix was wrong in a way no lens could have caught, because no lens saw it; it took a second adversary pointed at the correction.
 
 ---
 
@@ -101,14 +103,31 @@ Representative rows that behaved: deleting the D-70 branch, weakening it to the 
 3. **L2-F5, the expanded card's key.** `CheckCard`'s `expanded` state is keyed by array position, so an insertion above it collapses it. Refuter-confirmed as **loss, not corruption** — the key also carries `item.id`, so state cannot land on the wrong card. Dropping `idx` risks duplicate keys on the shipped path; left alone deliberately.
 4. **L2-F6, tap targets in a trade card.** Under the flag, tickers inside a trade card are not tappable while tickers in the message above are. The Phase A precedent (A4 item 22, the row's inner targets) is to defer tap-target work rather than grow a phase's scope.
 5. **L1-F7, the trades-cap eviction.** Two quiet checks flanking an *evicted* swap can collapse — but only when the appended and evicted trades bank identical points to 2 dp, on a >50-swap day. Refuter A re-rated LOW.
-6. **L3-F5, `Array.isArray(tapeEntries)`.** An empty array would delete the shipped trade lines. Unreachable — the screen double-gates — and now also caught by the new flag-off wiring test.
-7. **L5-F10, two symbol rules.** `symbolPattern` (this phase) and the shipped `renderMessageWithEntities` detector both answer "does this text name NVDA". Reconciling them is **A2.3's first move** under ruling 8; recorded so it is not lost.
-8. **L3-F4 / handover item 40, the unflagged Desk line.** D-71 is a shared Desk string by ruling, so `Checked 3:46 PM · last check today` reaches dashboard users at merge, not at the flip. Measured window: the day's final eval until the market flips closed. Ruled — but flagged for the founder because it is the one user-visible change in A2 that does not wait.
+6. **L5-F10, two symbol rules.** `symbolPattern` (this phase) and the shipped `renderMessageWithEntities` detector both answer "does this text name NVDA". Reconciling them is **A2.3's first move** under ruling 8; recorded so it is not lost.
+7. **L3-F4 / handover item 40, the unflagged Desk line.** D-71 is a shared Desk string by ruling, so `Checked 3:46 PM · last check today` reaches dashboard users at merge, not at the flip. Measured window: the day's final eval until the market flips closed. Ruled — but flagged for the founder because it is the one user-visible change in A2 that does not wait.
+
+---
+
+## 5b. Refuter B — attacking the fixes
+
+The fix commit was itself handed to an adversary, on a fresh snapshot at the fixed HEAD, with instructions to find what the fixes broke. It ran 9 mutations against the new guards and 4 landed.
+
+| # | Finding | Disposition |
+|---|---|---|
+| **FIX-1** | **HIGH (C1).** `isEngineAuthoredMotive`, text-only, missed the gameplan-rotation writer and thereby **inverted the safe default** from "unknown ⇒ the system's" to "unknown ⇒ the agent's" — and deleted the two rows that used to pin that default. Traced live and unflagged end to end (cron trigger → the Approve control on the Game Tape tab → `handleGameplanMeeting` → `trades[]`). | **FIXED.** The rule now takes `source` as a second signal, structured so both L1-F3 and L1-F4 stay fixed. Refuter B's own suggested "text OR source ≠ haiku" would have re-broken L1-F4 (`reinforced_haiku` carries `source: 'guardrail'` over the model's words); the shipped rule lists the two text-decides sources instead. Three new rows, including a source tripwire on the template and its source. |
+| **FIX-3** | **LOW, and precisely the disagreement the fix claims to prevent.** `cleanText` began trimming in `selectWhyState` but not in `buildTape`, so one `trades[].rationale` rendered as two different strings under `white-space: pre-wrap` on the panel and the tape. | **FIXED** — both trim. |
+| **FIX-5** | **MED.** Four of the five new mounted mutation rows kill the guard they name; **the fifth does not**. The row titled "the tape receives the RECEIPTS input" guards neither `receipts` nor `chatExchanges` nor the run key: its two runs of 2 come from message adjacency, because a directive filing *is* a chat exchange and therefore a message between the checks. | **FIXED by correcting the claim, not by faking a guard.** The row now says what it proves; the disposition conjunct is guarded where it is composed, in `buildTape.test.js`, and the reason a mounted render *cannot* guard it is recorded in both files. |
+| **FIX-6** | **MED.** The source comment and the handover both claimed the A2.1b revert "leaves them alone. Verified by reverting in a scratch worktree." Refuter B executed it: five conflicted files, and `tierLabel` still falls inside a hunk git groups with the A2.1b helpers. | **FIXED by correcting the claim.** What the rewrite bought is measured rather than asserted: the revert now **conflicts** where it previously auto-merged the declaration away and left the trade card throwing (7 of 14 rows red, reproduced at `57824041`). Loud and correct beats silent and broken; it is not clean, and the comment now says so and names the resolution. |
+| **FIX-2** | **REFUTED.** The D-71 day conjunct attacked across 7 timezones, both 2026 DST switches and the early close, against the real `getMarketState()` composition — correct everywhere. One nit accepted: the "ET, not the runner's zone" row was **vacuous** (every in-session ET instant shares its UTC day) and its comment was factually wrong. | Row rewritten around `2026-09-02T01:00Z` — Sep 1 in ET, Sep 2 in UTC — which fails under a UTC comparison in both directions. |
+| **FIX-4** | **REFUTED.** The empty-state change is byte-identical flag-off *by arithmetic*, not by sampling: `sort` preserves length, so `combinedTimeline.length === 0` ⟺ the old predicate, with optimistic messages and the typing indicator counted on both sides. | No action. |
+| **FIX-7** | The new flag-off wiring test is **not vacuous** (killing `tradeEvents` reds its anti-vacuity row, so `MU` really does come from the shipped slim line) and not flaky (green at settle 0 ms). One caveat recorded: it fails only when **both** flag gates are removed — correct behaviour, since either gate alone still yields `null`. | Recorded. |
+
+Refuter B also **refuted two lens findings outright**: **L3-F5** (an empty `tapeEntries` would delete the shipped trade lines — mechanism real, state unreachable through both gates) and **L5-F10** (the two symbol rules disagree on 75 of 2401 differential inputs, *all* underscore-adjacent, never on prose, and they read disjoint corpora). **L4-F8/F9** it confirmed on the facts but judged acceptable: every unfalsifiable `not.toContain` sits inside an `it` that also carries a real positive assertion, and D-78/D-79 having *struck* those strings makes a forward-only tripwire the right instrument. One row is genuinely dead — `not.toContain('the agent&#x27;s rule')` guards the HTML-escaped form of a string no module contains in any form.
 
 ---
 
 ## 6. Disclosure
 
-The adversarial pass ran in full: five isolated lenses, two refuters, 56 executed source mutations, an explicit `vite build`, and this record. Two process defects are disclosed in §2 rather than smoothed over — a shared snapshot that produced a false red, and a wrong input file handed to four of the five lenses. Neither is known to have changed a finding; both are stated so the next reviewer can avoid them.
+The adversarial pass ran in full: five isolated lenses, two refuters — one of them pointed at the fixes rather than the build, which is where the worst remaining defect was found — 65 executed source mutations, an explicit `vite build`, and this record. Two process defects are disclosed in §2 rather than smoothed over — a shared snapshot that produced a false red, and a wrong input file handed to four of the five lenses. Neither is known to have changed a finding; both are stated so the next reviewer can avoid them.
 
 *Prepared September 3, 2026. Fixes at `a16e6d37` and the commit that carries this record.*

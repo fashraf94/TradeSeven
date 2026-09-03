@@ -43,10 +43,15 @@ const etDate = (raw) => {
  * a FUNCTION for a git reason as much as a style one (review L5-F1). A2.1b
  * introduced this mapping as a frozen object, A2.2 then consumed it, and
  * `git revert` of A2.1b — which D-76 requires to stay possible in isolation —
- * matched that declaration and deleted it, leaving every trade card throwing
- * at render. Nothing in either commit's diff resembles these lines, so the
- * revert now leaves them alone. Verified by reverting A2.1b in a scratch
- * worktree and running the suite.
+ * AUTO-MERGED that declaration away and left every trade card throwing at
+ * render, with no conflict to warn anyone.
+ *
+ * What the rewrite bought, measured rather than assumed (review FIX-6): the
+ * revert now CONFLICTS instead of corrupting. It is five conflicted files, not
+ * a clean apply — `tierLabel` still falls inside a hunk git groups with the
+ * A2.1b copy helpers, so a reviewer must resolve it by KEEPING `tierLabel` and
+ * dropping `etDate` / `planAtDeploy` / `atDeployTier`. Resolved that way the
+ * suite is green. Loud and correct beats silent and broken; it is not clean.
  */
 function tierLabel(tier) {
   if (tier === 'star') return 'Star';
