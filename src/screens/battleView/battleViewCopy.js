@@ -455,14 +455,31 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // the founder's smoke found exactly that doubt: three failed sends, the
   // budget still reading 0/10.
   //
-  // So the line says the two true things — the character could not answer,
-  // and NOTHING WAS SENT. The second half is the one that matters, because a
-  // message the player believes was spent is a message they will not send
-  // again. The budget is prop-driven from the server's own write, and a failed
-  // request produces no write, which is why the sentence can promise it.
+  // The line first said two things — the character could not answer, and
+  // `· nothing was sent`. THE SECOND CLAUSE IS GONE (flip-prep item 5), and it
+  // is worth saying why, because it was the half the ruling cared about.
   //
-  // Flag-off keeps the shipped string until bug 2's own PR.
-  chatSendFailed: 'The character couldn\'t answer just now · nothing was sent',
+  // The justification was that the budget is prop-driven from the server's own
+  // write and a failed request produces no write. That is false. In
+  // `api/agent/chat.js` the durable write and the budget increment are ONE
+  // `battleRef.update()` — `chatExchanges: arrayUnion(exchange)` beside
+  // `[budgetField]: increment(1)` — INSIDE the `try` whose `catch` returns the
+  // 500, so anything throwing after it returns 500 with the exchange appended
+  // and the player charged. The same file flags exactly this asymmetry about
+  // its League charge a few lines below and not about this one. Reproduced on
+  // the real send path: `1/10` and "nothing was sent" on screen together
+  // (A2 review RB-F4). The client's `catch` branch makes the same promise on
+  // any network drop, which cannot prove the server did nothing either.
+  //
+  // Item 11's own reasoning is what condemns the clause: "a message the player
+  // believes was spent is a message they will not send again". The mirror is
+  // worse — a message that WAS spent, believed free, re-sent, charged twice
+  // out of ten — and it is the one this sentence was causing.
+  //
+  // So the line says only what the client can see. `nothing was sent` comes
+  // back when the server attests to it, and that attestation rides the P-1
+  // concurrency branch. Flag-off keeps the shipped string until bug 2's own PR.
+  chatSendFailed: 'The character couldn\'t answer just now',
 
   // ── The layout (A4) ────────────────────────────────────────────────────────
   // Game Tape is ONE header link that opens the shipped view full-screen; the
