@@ -89,17 +89,19 @@ All three move together or CI reds — the flag-pin guard enforces exactly that 
 
 ---
 
-## 6. Five questions the build did NOT decide
+## 6. The five open questions — RULED (founder, September 4)
 
-Copy and ruling calls, not defects. Detail in the review record §7.
+All five came back ruled the same day; three changed code, two are recorded.
 
-1. **"Today" in ruling 11.** `evaluations[]` is never reset by day, so on day 2 the scan-back can reach yesterday's check and label it `At the {t} check`, and `No check yet today` can never render again. A day-aware Bench alone would disagree with the check card above it, which is equally day-blind — **this is a ruling for the whole surface family, not a Bench fix.**
-2. `Named at the last check` sits above `At the {t} check`, and under ruling 11 the words may not be from the last check.
-3. Four strings nobody requested: `No trades yet`, `Remove this bookmark`, `Show the activity log`, `Hide the activity log`.
-4. `Tap for the book` is desktop-only; the seed says "Both shells:", the mock draws it desktop-only.
-5. `{n} new` counts the player's own messages, because an exchange is written whole.
+| # | Question | Ruling | Where it landed |
+|---|---|---|---|
+| 1 | Is "today" day-blind across the surface family? | **A D-14 prerequisite — recorded, not built.** Under fullday it is unreachable. When 3-day battles are specced, the WHOLE family (Bench, the check cards, the book panel, the quiet-check runs) groups entries by ET calendar day and labels prior days. Bench keeps its scan-back. | The ledger's D-14 backlog row, beside the budget reset already scoped there; noted on D-92. |
+| 2 | `Named at the last check` under the scan-back? | **The heading becomes `Named at the {t} check`** — the slot of the check actually used. One string. | `battleViewCopy.benchNamed` is now a function of the slot; the separate `At the {t} check` line beneath it is gone, so the section says "check" once. |
+| 3 | The four unrequested strings? | **Accepted, all four.** | `No trades yet`, `Remove this bookmark`, `Show the activity log`, `Hide the activity log` stay as they are. |
+| 4 | `Tap for the book` desktop-only? | **Sustained** (the mock). On mobile the header's accessible name carries the door. | No code change; a row now asserts the phone keeps the `Why? · the whole book` name, the role and the tab stop even without the visible hint. |
+| 5 | Does `{n} new` count your own messages? | **Exclude them:** count the agent half of an exchange when a reply exists; the player's half never. | `paneUnread` filters the new tail by author. One reply landing while the pane sat on Bench read `2 new` for one event; it reads `1`. |
 
----
+Each of the three code rulings is mutation-checked: reverting the heading to "the last check", restoring the second slot line, and counting the player's halves again each red their own row.
 
 ## 7. What is NOT built
 

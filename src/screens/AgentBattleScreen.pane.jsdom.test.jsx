@@ -948,3 +948,119 @@ describe('Review lens 4 F12 — the ruled behaviours nothing was guarding', () =
     expect(ids).toEqual(['f2', 'f1']);   // newest first, as the shipped view orders them
   });
 });
+
+// ─── The founder's five rulings, September 4 2026 ──────────────────────────
+
+describe('Ruling 2 — Bench\'s heading names the check ACTUALLY USED', () => {
+  const openBench = () => { openPane(); selectTab('bench'); };
+
+  it('names the scanned-back slot, not the last check', () => {
+    // The scan-back reaches past an outage tick, so the words can be the 12:45
+    // check's while the turn line says 1:00 PM. `Named at the last check` was
+    // then simply false.
+    withDoc({
+      scoreState: { ...LIVE_DOC.scoreState, lastScoredAt: '2026-09-01T17:00:00.000Z' },
+      evaluations: [
+        { evalId: 'e1', timestamp: '2026-09-01T16:45:00.000Z', decision: 'HOLD', rationale: 'NOW would need +7.4% more to lock in the bonus.' },
+        { evalId: 'e2', timestamp: '2026-09-01T17:00:00.000Z', decision: 'HOLD', rationale: 'Haiku call failed — defaulting to HOLD', haikuError: { failureClass: 'timeout' } },
+      ],
+    });
+    mount();
+    openBench();
+    const slot = container.querySelector('[data-bench-slot]');
+    expect(slot.textContent).toBe('Named at the 12:45 PM check');
+    expect(slot.textContent).not.toContain('the last check');
+  });
+
+  it('says "check" ONCE — the separate slot line is gone', () => {
+    mount();
+    openBench();
+    const bench = container.querySelector('[data-pane-bench]');
+    const named = bench.textContent.slice(0, bench.textContent.indexOf('The rest of the roster'));
+    expect(named.match(/check/g) || []).toHaveLength(1);
+    expect(named).not.toContain('At the ');
+  });
+
+  it('renders no heading at all when there is no slot to name', () => {
+    withDoc({ evaluations: [] });
+    mount();
+    openBench();
+    expect(container.querySelector('[data-bench-slot]')).toBeNull();
+    expect(container.querySelector('[data-bench-absent]').textContent).toBe('No check yet today');
+  });
+});
+
+describe('Ruling 5 — the badge never counts the player\'s own words', () => {
+  it('ONE reply landing while the pane is elsewhere reads `1 new`, not `2`', () => {
+    // deriveChatMessages writes an exchange WHOLE: the player's half and the
+    // character's answer arrive together, so the first build read `2 new` for
+    // one event.
+    setShell(false);
+    withDoc({
+      chatExchanges: [{
+        userMessage: 'protect the lead',
+        agentResponse: 'Understood — holding the energy slot.',
+        messageType: 'user_initiated',
+        timestamp: '2026-09-01T16:50:00.000Z',
+      }],
+      evaluations: [],
+      trades: [],
+    });
+    mount();
+    const mark = container.querySelector('[data-character-mark]');
+    expect(mark.getAttribute('data-unread')).toBe('1');
+    expect(mark.getAttribute('aria-label')).toContain('1 new');
+  });
+
+  it('counts records and the character\'s speech, and nothing of the player\'s', () => {
+    setShell(false);
+    withDoc({
+      chatExchanges: [
+        { userMessage: 'protect the lead', agentResponse: 'Understood.', messageType: 'user_initiated', timestamp: '2026-09-01T16:50:00.000Z' },
+        { userMessage: 'and the bench?', agentResponse: 'NOW is the one to watch.', messageType: 'user_initiated', timestamp: '2026-09-01T16:52:00.000Z' },
+      ],
+      evaluations: [{ evalId: 'e1', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD', rationale: 'Holding the book.' }],
+      trades: [],
+    });
+    mount();
+    // Two answers + one check card = 3; the two player halves are not events to
+    // catch up on.
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBe('3');
+  });
+
+  it('the bubble and the badge agree about whose words they are', () => {
+    // The bubble already refuses the player's words (brief §4.5); the badge now
+    // refuses to count them. A player-only tail would otherwise show a count
+    // with nothing behind it.
+    setShell(false);
+    withDoc({
+      chatExchanges: [{ userMessage: 'protect the lead', agentResponse: 'Understood.', messageType: 'user_initiated', timestamp: '2026-09-01T16:50:00.000Z' }],
+      evaluations: [],
+      trades: [],
+    });
+    mount();
+    expect(container.querySelector('[data-character-bubble]').textContent).toContain('Understood.');
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBe('1');
+  });
+});
+
+describe('Ruling 4 — `Tap for the book` is desktop-only, and the door survives it', () => {
+  it('MOBILE: no visible hint, and the header still NAMES the door', () => {
+    // Sustained toward the mock. What must not go with the hint is the door
+    // itself: on a phone the header's accessible name is the only thing that
+    // says the book is reachable.
+    setShell(false);
+    mount();
+    const header = container.querySelector('[data-arena-header]');
+    expect(header.textContent).not.toContain('Tap for the book');
+    const toggle = header.querySelector('[data-why-book-toggle]');
+    expect(toggle.getAttribute('aria-label')).toBe('Why? · the whole book');
+    expect(toggle.getAttribute('role')).toBe('button');
+    expect(toggle.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('DESKTOP: the hint is there too', () => {
+    mount();
+    expect(container.querySelector('[data-arena-header]').textContent).toContain('Tap for the book');
+  });
+});

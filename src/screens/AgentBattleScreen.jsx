@@ -1468,13 +1468,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     ? (tapeCount > seenFeed.length
       || (seenFeed.stamp != null && newestTapeStamp != null && newestTapeStamp !== seenFeed.stamp))
     : statusFeed.length > lastSeenFeedLengthRef.current;
-  // A3.1: the avatar's badge is the SAME two numbers as a difference, never the
-  // raw feed (D-88). The stamp rule above still decides WHETHER anything is
-  // unread — a cap roll can leave the length flat while entries arrive — so a
-  // positive stamp difference with a flat length shows as at least one.
+  // A3.1: the avatar's badge counts unseen tape entries, never the raw feed
+  // (D-88). The stamp rule above still decides WHETHER anything is unread — a
+  // cap roll can leave the length flat while entries arrive.
+  //
+  // IT NEVER COUNTS THE PLAYER'S OWN WORDS (founder ruling Sep 4, on the
+  // review's open question 5). `deriveChatMessages` writes an exchange WHOLE —
+  // the player's half and the character's answer arrive together — so one reply
+  // landing while the pane sat on Bench read `2 new` for one event. The count is
+  // now the agent halves and the records among the new entries; the player's
+  // half is a tape entry and is never a thing to catch up on.
   const paneUnread = (() => {
     if (!paneOn || !hasNewFeedEntries) return 0;
-    return Math.max(1, tapeCount - seenFeed.length);
+    const list = Array.isArray(recordedTape) ? recordedTape : [];
+    const tail = list.slice(Math.max(0, Math.min(seenFeed.length, list.length)));
+    // The cap-roll case: the STAMP is what detected the arrival and the tail is
+    // empty, so one is the honest floor. Everywhere else the filtered count is
+    // the truth, including a legitimate zero.
+    if (tail.length === 0) return 1;
+    return tail.filter((entry) => entry?.role !== 'user').length;
   })();
   const hasCommandDot = hasPendingProposal || hasNewFeedEntries;
   const commandDotColor = hasPendingProposal ? '#f59e0b' : '#5eead4';

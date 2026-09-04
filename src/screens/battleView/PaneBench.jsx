@@ -52,7 +52,7 @@ export default function PaneBench({ bench = null }) {
   if (!bench) return null;
   const { slotIso, named, rest, watchlistName, footer } = bench;
   const subtitle = COPY.benchWatchlist(watchlistName);
-  const atCheck = COPY.atCheck(slotIso);
+  const namedHeading = COPY.benchNamed(slotIso);
 
   return (
     <div
@@ -76,12 +76,11 @@ export default function PaneBench({ bench = null }) {
       {/* The named names, each under the slot its words came from. */}
       {named.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={heading}>{COPY.benchNamed}</div>
-          {atCheck && (
-            <div data-bench-slot="1" style={{ ...mono, fontSize: 10.5, color: cssVar('text-muted') }}>
-              {atCheck}
-            </div>
-          )}
+          {/* The slot of the check ACTUALLY USED (founder ruling Sep 4). Under
+              the scan-back that need not be the last check, and one heading
+              carries it — the separate `At the {t} check` line beneath it said
+              "check" twice in two lines. */}
+          <div data-bench-slot="1" style={heading}>{namedHeading}</div>
           {named.map(({ symbol, sentences }) => (
             <div
               key={symbol}

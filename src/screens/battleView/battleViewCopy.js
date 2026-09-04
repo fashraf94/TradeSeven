@@ -568,18 +568,29 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   paneReportBug: 'Report a bug',
 
   // ── Bench (A3.3, D-92) ─────────────────────────────────────────────────────
-  // The section's own two strings. `At the {t} check` (atCheck) and `Not named
-  // at the {t} check` (notNamedAtCheck) already exist and are REUSED — Bench is
-  // not allowed a second way of naming a check (D-83).
+  // `Not named at the {t} check` (notNamedAtCheck) already exists and is REUSED
+  // — Bench is not allowed a second way of naming a check (D-83), and the
+  // heading below takes its slot from the same `slotLabel`.
   //
   // The absence line is a truthful state, not an error: no entry today carries
   // words at all. It is deliberately NOT "the agent has not checked yet" —
   // ticks may well have run; what is absent is WORDS.
   benchNoCheck: 'No check yet today',
-  // The heading over the names the decider named. `the last check` rather than
-  // a slot, because the slot is spelled out immediately below it by atCheck and
-  // saying it twice in two lines is the stutter review L5-F7 found.
-  benchNamed: 'Named at the last check',
+  // The heading over the names the decider named — the SLOT OF THE CHECK
+  // ACTUALLY USED, not "the last check" (founder ruling Sep 4, on the review's
+  // open question 2). Under the scan-back the words may come from a check that
+  // is not the last one: the turn line can say `Checked 1:00 PM` while these
+  // sentences are the 12:45 check's, and a heading that said "the last check"
+  // was then simply false.
+  //
+  // ONE string, not two. The first draft paired `Named at the last check` with
+  // a separate `At the {t} check` line beneath it, which said "check" twice in
+  // two lines — the stutter review L5-F7 found in its own shape. The slot lives
+  // in the heading now and the second line is gone.
+  benchNamed: (iso) => {
+    const t = slotLabel(iso);
+    return t ? `Named at the ${t} check` : null;
+  },
   // The section's subtitle: the equipped watchlist's BARE name. The header's
   // chip prefixes it with `Watchlist: ` (watchlistEquipUI.getEquippedWatchlistLabel);
   // here the section heading already says Bench, so the prefix would stutter.
