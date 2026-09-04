@@ -149,7 +149,6 @@ export default function CharacterPane({
   onClose,
   isDesktop = false,
   reducedMotion = false,
-  returnFocusRef = null,
   chat = null,
   bench = null,
   tape = null,

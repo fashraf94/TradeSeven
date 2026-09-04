@@ -1744,7 +1744,6 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       onClose={handleCollapseChat}
       isDesktop={isDesktop}
       reducedMotion={reducedMotion}
-      returnFocusRef={pane.returnFocusRef}
       chat={chat}
       overflow={<PaneOverflow />}
       bench={<PaneBench bench={benchState} />}
