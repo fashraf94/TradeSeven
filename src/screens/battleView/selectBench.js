@@ -7,21 +7,28 @@
 // watchlist's tickers — MINUS the book, because a piece already on the board
 // has a row of its own and is not a bench name.
 //
-// Beside each name, what the DECIDER said about it at the last check that
-// carries words, verbatim. Not the narrator: the character's `Bench note`
-// messages ("Eyeing NOW on the bench…") are Chat entries with their own kind
-// eyebrow, and putting them here would present the narrator's voice as the
-// decider's (brief §4.4). The only text input this module has is
-// `evaluations[].rationale`, so that confusion is impossible by construction
-// rather than by review.
+// What the DECIDER said about the bench at the last check that carries words,
+// verbatim. Not the narrator: the character's `Bench note` messages ("Eyeing
+// NOW on the bench…") are Chat entries with their own kind eyebrow, and putting
+// them here would present the narrator's voice as the decider's (brief §4.4).
+// The only text input this module has is `evaluations[].rationale`, so that
+// confusion is impossible by construction rather than by review.
 //
-// ONE SPLIT, THEN A FILTER PER SYMBOL. `extractSentences(text, symbol)` is
-// `splitSentences(text).filter(s => namesSymbol(s, symbol))`; calling it once
-// per bench name would split the same paragraph n times. Splitting once and
-// filtering per symbol is the same answer for one split — and it goes through
-// the SAME `splitSentences` / `namesSymbol` pair the row, the tape scope and
-// the check card use, so Bench is the fourth consumer of one naming rule and
-// never a fifth copy of it (D-87).
+// ONE SPLIT, THEN ONE PASS OVER THE SENTENCES (founder ruling, Sep 4 — the
+// smoke's shape fix). The unit is the SENTENCE, not the symbol.
+//
+// The first shape asked "for this symbol, which sentences name it?" and grouped
+// by symbol, so one sentence naming five bench names was printed five times,
+// once under each. The founder's smoke read that as a list, not a bench — and
+// it was, because the decider's paragraph had been shredded into a per-name
+// index of itself. The question is asked the other way round now: "for this
+// sentence, which bench names does it mention?" One sentence, one card, the
+// names on it as chips, in the rationale's own order.
+//
+// The pair doing the work is unchanged — the SAME `splitSentences` /
+// `namesSymbol` the row, the tape scope and the check card use, so Bench stays
+// the fourth consumer of one naming rule and never a fifth copy of it
+// (D-87).
 //
 // THE SCAN-BACK (D-92, hazard 40). `selectLatestDecision` returns null when the
 // latest tick recorded no decision — right for the turn line, which is about
@@ -143,11 +150,18 @@ export function selectLastDecidedWithWords(battle) {
 /**
  * Bench, ready to render.
  *
+ * SENTENCE-FIRST (founder ruling, Sep 4 — the smoke's shape fix). The unit is
+ * the SENTENCE, not the symbol. The first shape grouped by symbol, so a
+ * sentence naming five bench names was printed five times, once under each —
+ * the same words, five cards, and a bench that read as a list rather than a
+ * bench. Now each qualifying sentence appears ONCE, verbatim, carrying the
+ * bench names it mentions; the order is the rationale's own sentence order.
+ *
  * @param {object|null} battle  the subscribed agentBattles doc
  * @returns {{
  *   slotIso: string|null,          the check whose words these are (null = absence)
- *   named: Array<{symbol: string, sentences: string[]}>,
- *   rest: string[],                the roster the check did not name
+ *   cards: Array<{text: string, symbols: string[]}>,  sentence order, one per sentence
+ *   rest: string[],                the roster no sentence named
  *   watchlistName: string|null,    the equipped watchlist's bare name
  *   footer: string|null,           whose words these are (D-80)
  * }}
@@ -161,22 +175,32 @@ export function selectBench(battle) {
   if (!decided) {
     // ABSENCE. No entry carries the decider's words — every bench name is
     // "rest", and the caller renders the absence line above them.
-    return { slotIso: null, named: [], rest: roster, watchlistName, footer: null };
+    return { slotIso: null, cards: [], rest: roster, watchlistName, footer: null };
   }
 
-  // ONE split for the whole roster, over the DISPLAY text.
+  // ONE split for the whole roster, over the DISPLAY text — then ONE pass over
+  // the SENTENCES, not one pass per symbol. Same `namesSymbol` pair as before,
+  // read the other way round: for each sentence, which bench names does it
+  // mention? A sentence naming three is one card carrying three, and a sentence
+  // naming none is not a card at all.
   const sentences = splitSentences(decided.why.rationale);
-  const named = [];
-  const rest = [];
-  for (const symbol of roster) {
-    const mine = sentences.filter((s) => namesSymbol(s, symbol));
-    if (mine.length > 0) named.push({ symbol, sentences: mine });
-    else rest.push(symbol);
+  const cards = [];
+  const spokenFor = new Set();
+  for (const text of sentences) {
+    // ROSTER ORDER inside the card, the same order the roster itself is never
+    // re-sorted out of: the doc's order is the one every other reading uses.
+    const symbols = roster.filter((symbol) => namesSymbol(text, symbol));
+    if (symbols.length === 0) continue;
+    for (const symbol of symbols) spokenFor.add(symbol);
+    cards.push({ text, symbols });
   }
+  // The rest keeps ROSTER order too, so a name does not move between renders
+  // because a sentence elsewhere changed.
+  const rest = roster.filter((symbol) => !spokenFor.has(symbol));
 
   return {
     slotIso: decided.entry.timestamp ?? null,
-    named,
+    cards,
     rest,
     watchlistName,
     // WHOSE WORDS (D-80 / review L5-F2, the rule the check and trade cards

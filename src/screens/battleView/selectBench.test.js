@@ -63,21 +63,67 @@ describe('the roster is the bench MINUS the book, deduped, in list order', () =>
 });
 
 describe('the sentences are the decider\'s own, verbatim', () => {
-  it('gives each named symbol exactly the sentences that name it', () => {
-    const { named } = selectBench(doc());
-    expect(named.map((n) => n.symbol)).toEqual(['NOW', 'TSLA']);
+  it('gives each SENTENCE the bench names it mentions, in the rationale\'s order', () => {
+    const { cards } = selectBench(doc());
     // EXACT EQUALITY, not toContain: the claim is that the model's words reach
     // the screen unchanged.
-    expect(named[0].sentences).toEqual(['NOW would need +7.4% more to lock in the bonus.']);
-    expect(named[1].sentences).toEqual(['TSLA would need +6.6% more.']);
+    expect(cards).toEqual([
+      { text: 'NOW would need +7.4% more to lock in the bonus.', symbols: ['NOW'] },
+      { text: 'TSLA would need +6.6% more.', symbols: ['TSLA'] },
+    ]);
   });
 
-  it('puts every unnamed bench name in `rest`, and names none twice', () => {
-    const { named, rest } = selectBench(doc());
+  it('puts every unspoken-for bench name in `rest`, and names none twice', () => {
+    const { cards, rest } = selectBench(doc());
     expect(rest).toEqual(['BTC-USD', 'CRWD', 'DVN']);
-    const all = [...named.map((n) => n.symbol), ...rest];
+    const spoken = [...new Set(cards.flatMap((c) => c.symbols))];
+    const all = [...spoken, ...rest];
     expect(new Set(all).size).toBe(all.length);
     expect(all.sort()).toEqual(selectBenchRoster(doc()).sort());
+  });
+
+  it('ONE SENTENCE NAMING THREE IS ONE CARD WITH THREE — not three cards', () => {
+    // The founder's smoke, and the shape fix's whole point. The first shape
+    // asked "for this symbol, which sentences name it?", so this one sentence
+    // was printed THREE TIMES, once under each name — the decider's paragraph
+    // shredded into a per-name index of itself.
+    const b = selectBench(doc({ evaluations: [{
+      evalId: 'e1',
+      timestamp: '2026-09-01T16:45:00.000Z',
+      decision: 'HOLD',
+      rationale: 'NOW, TSLA and CRWD are all within a print of a swap. The book is steady.',
+    }] }));
+    expect(b.cards).toHaveLength(1);
+    expect(b.cards[0].text).toBe('NOW, TSLA and CRWD are all within a print of a swap.');
+    // ROSTER order inside the card — the doc's order, the one no other reading
+    // re-sorts either.
+    expect(b.cards[0].symbols).toEqual(['NOW', 'TSLA', 'CRWD']);
+    // …and the three are spoken for, so they are not ALSO in the rest.
+    expect(b.rest).toEqual(['BTC-USD', 'DVN']);
+  });
+
+  it('a sentence naming NOTHING on the bench is not a card at all', () => {
+    // `The book is steady.` names a held piece and no bench name. Sentence-first
+    // must not become "every sentence", or Bench turns into the whole rationale
+    // with chips on some of it.
+    const b = selectBench(doc());
+    expect(b.cards.map((c) => c.text)).not.toContain('The book is steady.');
+    expect(b.cards).toHaveLength(2);
+  });
+
+  it('a name mentioned in TWO sentences appears on both, and once in neither rest nor twice', () => {
+    const b = selectBench(doc({ evaluations: [{
+      evalId: 'e1',
+      timestamp: '2026-09-01T16:45:00.000Z',
+      decision: 'HOLD',
+      rationale: 'NOW is up 6.9% today. NOW would still need +7.4% more.',
+    }] }));
+    expect(b.cards).toHaveLength(2);
+    expect(b.cards[0].symbols).toEqual(['NOW']);
+    expect(b.cards[1].symbols).toEqual(['NOW']);
+    // Two cards, ONE name spoken for.
+    expect(b.rest).not.toContain('NOW');
+    expect(b.rest).toEqual(['TSLA', 'BTC-USD', 'CRWD', 'DVN']);
   });
 
   it('names the slot the words came from', () => {
@@ -100,7 +146,7 @@ describe('A NARRATOR EXCHANGE NEVER RENDERS IN BENCH (brief §4.4)', () => {
       evaluations: [],
       chatExchanges: [{ agentResponse: 'Eyeing NOW on the bench. It is showing massive relative strength.', messageType: 'anticipation' }],
     }));
-    expect(b.named).toEqual([]);
+    expect(b.cards).toEqual([]);
     expect(b.slotIso).toBeNull();
     expect(b.rest).toEqual(['NOW', 'TSLA', 'BTC-USD', 'CRWD', 'DVN']);
   });
@@ -110,7 +156,7 @@ describe('A NARRATOR EXCHANGE NEVER RENDERS IN BENCH (brief §4.4)', () => {
       evaluations: [],
       statusFeed: [{ action: 'anticipation', message: 'NOW is outrunning the book.' }],
     }));
-    expect(b.named).toEqual([]);
+    expect(b.cards).toEqual([]);
     expect(b.slotIso).toBeNull();
   });
 });
@@ -128,7 +174,7 @@ describe('the scan-back past an outage tick (D-92, hazard 40)', () => {
       ],
     }));
     expect(b.slotIso).toBe('2026-09-01T16:45:00.000Z');
-    expect(b.named.map((n) => n.symbol)).toEqual(['NOW']);
+    expect(b.cards.flatMap((c) => c.symbols)).toEqual(['NOW']);
   });
 
   it('treats a blank rationale as no words, not as words', () => {
@@ -141,7 +187,7 @@ describe('the scan-back past an outage tick (D-92, hazard 40)', () => {
   it('ABSENCE only when NO entry today carries words', () => {
     const b = selectBench(doc({ evaluations: [{ timestamp: '2026-09-01T17:00:00.000Z', rationale: null }] }));
     expect(b.slotIso).toBeNull();
-    expect(b.named).toEqual([]);
+    expect(b.cards).toEqual([]);
     // The roster still renders — the absence is about the WORDS, not the bench.
     expect(b.rest.length).toBeGreaterThan(0);
   });
@@ -158,7 +204,7 @@ describe('one naming rule, shared (D-87)', () => {
       // single sentence and the row passed while proving nothing.
       evaluations: [{ timestamp: '2026-09-01T16:45:00.000Z', rationale: 'SNOWFLAKE led the tape all afternoon.' }],
     }));
-    expect(b.named).toEqual([]);
+    expect(b.cards).toEqual([]);
     expect(b.rest).toEqual(['NOW']);
   });
 
@@ -168,14 +214,14 @@ describe('one naming rule, shared (D-87)', () => {
       watchlist: {}, agentContext: {},
       evaluations: [{ timestamp: '2026-09-01T16:45:00.000Z', rationale: 'NOW led the tape all afternoon.' }],
     }));
-    expect(b.named.map((n) => n.symbol)).toEqual(['NOW']);
+    expect(b.cards.flatMap((c) => c.symbols)).toEqual(['NOW']);
   });
 
   it('keeps the model\'s emphasis markers for the renderer to resolve', () => {
     const b = selectBench(doc({
       evaluations: [{ timestamp: '2026-09-01T16:45:00.000Z', rationale: '**NOW** is up 6.97% today.' }],
     }));
-    expect(b.named[0].sentences[0]).toBe('**NOW** is up 6.97% today.');
+    expect(b.cards[0].text).toBe('**NOW** is up 6.97% today.');
   });
 });
 
@@ -200,15 +246,15 @@ describe('Review lens 1 F4 / F5 — the decider\'s words, and only those', () =>
       ],
     }));
     expect(b.slotIso).toBe('2026-09-01T16:45:00.000Z');
-    expect(b.named.map((n) => n.symbol)).toEqual(['NOW']);
+    expect(b.cards.flatMap((c) => c.symbols)).toEqual(['NOW']);
     // The system's own sentence never reaches the screen as the agent's.
-    expect(JSON.stringify(b.named)).not.toContain('Haiku call failed');
+    expect(JSON.stringify(b.cards)).not.toContain('Haiku call failed');
   });
 
   it('an outage-only day is an ABSENCE, not a quote of the placeholder', () => {
     const b = selectBench(doc({ evaluations: [outage('2026-09-01T17:00:00.000Z')] }));
     expect(b.slotIso).toBeNull();
-    expect(b.named).toEqual([]);
+    expect(b.cards).toEqual([]);
     expect(b.footer).toBeNull();
   });
 
@@ -234,7 +280,7 @@ describe('Review lens 1 F4 / F5 — the decider\'s words, and only those', () =>
         rationale: 'Guardrail override (guardrail_stopLoss): GILD broke its stop.',
       }],
     }));
-    const text = JSON.stringify(b.named);
+    const text = JSON.stringify(b.cards);
     expect(text).not.toContain('guardrail_stopLoss');
     expect(text).toContain('GILD');
   });
@@ -245,6 +291,6 @@ describe('Review lens 1 F4 / F5 — the decider\'s words, and only those', () =>
     // going to do it unattributed.
     const b = selectBench(doc());
     expect(typeof b.footer === 'string' || b.footer === null).toBe(true);
-    expect(b.named.length).toBeGreaterThan(0);
+    expect(b.cards.length).toBeGreaterThan(0);
   });
 });

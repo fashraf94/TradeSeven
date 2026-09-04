@@ -501,18 +501,60 @@ describe('A3.2 — the pane replaces the strip and the sheet (D-93)', () => {
 describe('A3.3 — Bench quotes the decider only (D-92)', () => {
   const openPaneOn = (section) => { openPane(); selectTab(section); };
 
-  it('renders the named names with the decider\'s own sentence, and the rest', () => {
+  it('renders the decider\'s sentence as a card, with its name as a chip', () => {
     mount();
     openPaneOn('bench');
     const bench = container.querySelector('[data-pane-bench]');
     expect(bench).toBeTruthy();
-    expect(bench.querySelector('[data-bench-named="NOW"]')).toBeTruthy();
-    expect(bench.textContent).toContain('NOW would need +7.4% more to lock in the bonus.');
-    // TSLA and CRWD and DVN are on the bench but unnamed by this check.
-    expect(bench.querySelector('[data-bench-rest="TSLA"]')).toBeTruthy();
-    expect(bench.querySelector('[data-bench-rest="CRWD"]')).toBeTruthy();
-    expect(bench.querySelector('[data-bench-rest="DVN"]')).toBeTruthy();
-    expect(bench.textContent).toContain('Not named at the');
+    const card = bench.querySelector('[data-bench-card="0"]');
+    expect(card).toBeTruthy();
+    expect(card.textContent).toContain('NOW would need +7.4% more to lock in the bonus.');
+    expect(card.getAttribute('data-bench-card-symbols')).toBe('NOW');
+    expect(card.querySelector('[data-bench-chip="NOW"]')).toBeTruthy();
+    // TSLA and CRWD and DVN are on the bench but unnamed by this check: chips
+    // in the roster row, not cards.
+    const rest = bench.querySelector('[data-bench-rest-group]');
+    for (const sym of ['TSLA', 'CRWD', 'DVN']) {
+      expect(rest.querySelector(`[data-bench-chip="${sym}"]`), sym).toBeTruthy();
+    }
+    expect(bench.querySelector('[data-bench-rest-line]').textContent).toContain('Not named at the');
+  });
+
+  it('ONE CARD, THREE CHIPS, when one sentence names three (the shape fix)', () => {
+    withDoc({ evaluations: [{
+      evalId: 'eval_005',
+      timestamp: '2026-09-01T16:47:02.000Z',
+      decision: 'HOLD',
+      rationale: 'NOW, TSLA and CRWD are all within a print of a swap.',
+      haikuError: null,
+    }] });
+    mount();
+    openPaneOn('bench');
+    const bench = container.querySelector('[data-pane-bench]');
+    const cards = bench.querySelectorAll('[data-bench-card]');
+    // The defect rendered THREE cards, the same sentence in each.
+    expect(cards).toHaveLength(1);
+    expect(cards[0].querySelectorAll('[data-bench-chip]')).toHaveLength(3);
+    expect(cards[0].getAttribute('data-bench-card-symbols')).toBe('NOW TSLA CRWD');
+    // The sentence appears ONCE in the whole section.
+    const hits = bench.textContent.split('within a print of a swap').length - 1;
+    expect(hits).toBe(1);
+  });
+
+  it('the roster is ONE row of chips, not a row per name', () => {
+    mount();
+    openPaneOn('bench');
+    const bench = container.querySelector('[data-pane-bench]');
+    const group = bench.querySelectorAll('[data-bench-rest-group]');
+    expect(group).toHaveLength(1);
+    expect(bench.querySelectorAll('[data-bench-rest-line]')).toHaveLength(1);
+    // The chips are all siblings of one another — one wrapped row, which is
+    // what `flexWrap` makes of them, not n stacked rows.
+    const chips = [...group[0].querySelectorAll('[data-bench-chip]')];
+    expect(chips.length).toBeGreaterThan(1);
+    const parents = new Set(chips.map((c) => c.parentElement));
+    expect(parents.size).toBe(1);
+    expect(parents.values().next().value.style.flexWrap).toBe('wrap');
   });
 
   it('carries the equipped watchlist\'s bare name as the subtitle', () => {
@@ -529,8 +571,7 @@ describe('A3.3 — Bench quotes the decider only (D-92)', () => {
     openPaneOn('bench');
     const bench = container.querySelector('[data-pane-bench]');
     for (const held of ['AAPL', 'SLB', 'NVDA']) {
-      expect(bench.querySelector(`[data-bench-rest="${held}"]`), `${held} has a row`).toBeNull();
-      expect(bench.querySelector(`[data-bench-named="${held}"]`), `${held} has a row`).toBeNull();
+      expect(bench.querySelector(`[data-bench-chip="${held}"]`), `${held} has a row`).toBeNull();
     }
   });
 
@@ -557,8 +598,9 @@ describe('A3.3 — Bench quotes the decider only (D-92)', () => {
     const bench = container.querySelector('[data-pane-bench]');
     expect(bench.querySelector('[data-bench-absent]').textContent).toBe('No check yet today');
     // The roster still renders, without a slot to not-name it at.
-    expect(bench.querySelector('[data-bench-rest="NOW"]')).toBeTruthy();
+    expect(bench.querySelector('[data-bench-chip="NOW"]')).toBeTruthy();
     expect(bench.textContent).not.toContain('Not named at the');
+    expect(bench.querySelector('[data-bench-rest-line]').textContent).toBe('The rest of the roster');
   });
 
   it('leaves an EMPTY slot for assignments — no placeholder UI', () => {
@@ -573,8 +615,9 @@ describe('A3.3 — Bench quotes the decider only (D-92)', () => {
   it('renders no per-name percent — there is no source for one', () => {
     mount();
     openPaneOn('bench');
-    const rest = container.querySelector('[data-bench-rest="TSLA"]');
-    expect(rest.textContent).not.toMatch(/%/);
+    const chip = container.querySelector('[data-bench-rest-group] [data-bench-chip="TSLA"]');
+    expect(chip.textContent).toBe('TSLA');
+    expect(chip.textContent).not.toMatch(/%/);
   });
 });
 
@@ -977,13 +1020,31 @@ describe('Ruling 2 — Bench\'s heading names the check ACTUALLY USED', () => {
     expect(slot.textContent).not.toContain('the last check');
   });
 
-  it('says "check" ONCE — the separate slot line is gone', () => {
+  it('says "check" ONCE PER SECTION — never once per name', () => {
+    // Ruling 2 gave the named section one heading carrying its slot. The shape
+    // fix does the same for the roster: `Not named at the {t} check` is a LINE,
+    // said once, not a suffix repeated beside every name — which was n copies
+    // of one fact, and the same shredding the sentences suffered.
     mount();
     openBench();
     const bench = container.querySelector('[data-pane-bench]');
-    const named = bench.textContent.slice(0, bench.textContent.indexOf('The rest of the roster'));
-    expect(named.match(/check/g) || []).toHaveLength(1);
-    expect(named).not.toContain('At the ');
+
+    const slot = container.querySelectorAll('[data-bench-slot]');
+    expect(slot).toHaveLength(1);
+    expect(slot[0].textContent.match(/check/g) || []).toHaveLength(1);
+    // The separate `At the {t} check` line ruling 2 retired stays retired.
+    expect(bench.textContent).not.toContain('At the ');
+
+    const restLine = container.querySelectorAll('[data-bench-rest-line]');
+    expect(restLine).toHaveLength(1);
+    expect(restLine[0].textContent.match(/check/g) || []).toHaveLength(1);
+
+    // …and the names beside it are BARE chips. Three of them, and the word
+    // appears twice in the whole section — once per heading, never per name.
+    const chips = container.querySelectorAll('[data-bench-rest-group] [data-bench-chip]');
+    expect(chips.length).toBeGreaterThan(1);
+    for (const chip of chips) expect(chip.textContent).not.toContain('check');
+    expect(bench.textContent.match(/check/g) || []).toHaveLength(2);
   });
 
   it('renders no heading at all when there is no slot to name', () => {
