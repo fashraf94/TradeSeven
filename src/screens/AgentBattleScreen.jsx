@@ -544,6 +544,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // A2.4 (review L2-F4): which desktop chat control should take focus after
   // the next collapse or expand, resolved in an effect once it has rendered.
   const [pendingChatFocus, setPendingChatFocus] = useState(null);
+  // A3.2 (review lens 2 F3 / lens 5 F2): the CURRENT mark, for the focus
+  // hand-off after a collapse. The mark the player pressed to open the pane is
+  // unmounted while the pane is open (ruling 4 — no second mark on the board),
+  // so a captured node cannot be focused back; the one that reappears can.
+  const characterMarkRef = useRef(null);
   const collapseControlRef = useRef(null);
   const expandControlRef = useRef(null);
   // D-89: the evaluation `Read the full check` names. The handler is defined
@@ -572,7 +577,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // A3.2 (D-93): two states and a section, not three detents. `lockScroll` is
   // the mobile shell only — there the pane covers the board; on desktop it is a
   // column beside a board that must keep scrolling.
-  const pane = useCharacterPane(paneOn, { lockScroll: !isDesktop });
+  const pane = useCharacterPane(paneOn, { lockScroll: !isDesktop, openByDefault: isDesktop });
   // "Is the conversation on screen?" — the one question every door and the
   // unread mark ask. Under the pane it is the pane, open on Chat.
   const chatOpen = paneOn
@@ -1248,14 +1253,32 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     sheet.open(null);
     setPendingChatFocus('collapse');
   }, [paneOn, pane.openPane, sheet.open]);
+  // The bubble's door: the conversation, at the stream the bubble is quoting.
+  const handleOpenPaneOnChat = useCallback(() => {
+    const invoker = typeof document !== 'undefined' ? document.activeElement : null;
+    pane.openPane(PANE_SECTION.CHAT, invoker);
+  }, [pane.openPane]);
   const handleCollapseChat = useCallback(() => {
-    if (paneOn) { pane.close(); return; }
+    if (paneOn) {
+      pane.close();
+      // The A2.4 rule (review L2-F4), which the first draft skipped on this
+      // path: each control lives inside the chrome the other renders, so a
+      // keyboard user who collapses must be handed the control that replaces
+      // the one that just vanished — here, the mark coming back onto the board.
+      setPendingChatFocus('mark');
+      return;
+    }
     sheet.collapse();
     setPendingChatFocus('expand');
   }, [paneOn, pane.close, sheet.collapse]);
   useEffect(() => {
     if (!pendingChatFocus) return;
-    const target = pendingChatFocus === 'expand' ? expandControlRef.current : collapseControlRef.current;
+    // 'mark' is the pane's own case, on BOTH shells: collapsing on desktop and
+    // closing on the phone both put the mark back on the board, and that is
+    // where the player's place now is.
+    const target = pendingChatFocus === 'mark'
+      ? characterMarkRef.current
+      : (pendingChatFocus === 'expand' ? expandControlRef.current : collapseControlRef.current);
     target?.focus?.();
     setPendingChatFocus(null);
   }, [pendingChatFocus]);
@@ -1348,14 +1371,33 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     [controllerOn, recordedTape, openCheck?.id],
   );
 
+  // A3.3 (D-92): the bench roster and what the DECIDER said about each name at
+  // the last check that carries words. Pure, off the subscribed doc; null
+  // unless the pane is on.
+  //
+  // IT LIVES HERE, ABOVE THE `loading` EARLY RETURN, and that is not a style
+  // choice. A3.3 first placed it below, next to the pane element it feeds —
+  // which made it a CONDITIONAL HOOK (hazard 44). Every real mount renders
+  // loading (battle null) and then loaded on the SAME fiber, so the second
+  // render called one more hook than the first and React threw "Rendered more
+  // hooks than during the previous render" — on the pane-OFF path too, which is
+  // the shipped configuration. Nothing caught it: no suite renders the loading
+  // state, the goldens are single-pass renderToString, and `vite build` does not
+  // run the lint rule that names it. Review lens 2 did.
+  const benchState = useMemo(
+    () => (paneOn ? selectBench(agentBattle) : null),
+    [paneOn, agentBattle],
+  );
+
   // A3.1 (D-98): the character's one line — the newest tape entry the CHARACTER
   // said, as a kind eyebrow and a line, both taken whole from the helpers the
-  // stream renders. Same list, same fold-free source as the peek line above, so
-  // the bubble and the stream cannot name one moment two ways. Null unless the
+  // stream renders. Same list AND the same fold, with the same pin, as the peek
+  // line above, so the bubble and the stream cannot name one moment two ways
+  // (§9; the fold was missing until the review — lens 1 F1). Null unless the
   // pane is on.
   const paneBubble = useMemo(
-    () => (paneOn ? deriveBubble(recordedTape) : null),
-    [paneOn, recordedTape],
+    () => (paneOn ? deriveBubble(recordedTape, openCheck?.id ?? null) : null),
+    [paneOn, recordedTape, openCheck?.id],
   );
 
   // ── The unread mark (A4, hazard 14; re-sourced flip-prep item 4) ──────────
@@ -1637,14 +1679,6 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     />
   ) : null;
 
-  // A3.3 (D-92): the bench roster and what the DECIDER said about each name at
-  // the last check that carries words. Pure, off the subscribed doc; null
-  // unless the pane is on.
-  const benchState = useMemo(
-    () => (paneOn ? selectBench(agentBattle) : null),
-    [paneOn, agentBattle],
-  );
-
   // A3.2 — THE PANE, built once and rendered at exactly ONE point per shell
   // (the desktop column or the mobile overlay, never both). `chat` above is the
   // single AgentChat element and it is handed in here, so "one AgentChat per
@@ -1653,6 +1687,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const characterPane = paneOn ? (
     <CharacterPane
       agentBattle={agentBattle}
+      playerScore={displayPlayerScore}
+      opponentScore={displayOpponentScore}
+      open={pane.open}
       section={pane.section}
       onSelectSection={pane.setSection}
       onClose={handleCollapseChat}
@@ -2060,7 +2097,15 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           >
             <div
               data-board-scroll={isDesktop ? '1' : undefined}
-              style={isDesktop ? { flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: 24 } : undefined}
+              // A3.1 (review lens 5 F6): the DESKTOP scroller reserves the mark's
+              // clearance too. The first draft reserved it on the phone only, so
+              // at scroll end the last row's controls sat under the mark and its
+              // bubble — the exact thing brief §2.1 promises will not happen, on
+              // the shell where the pane can be folded away and the mark is the
+              // only door back.
+              style={isDesktop
+                ? { flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: paneOn ? AVATAR_CLEARANCE_PX : 24 }
+                : undefined}
             >
               {/* This turn (Phase A) — its one home, above the board. */}
               {thisTurnStrip}
@@ -2075,10 +2120,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 board's corner. Collapsed, it comes back here. */}
             {paneOn && !pane.open && (
               <CharacterAvatar
+                markRef={characterMarkRef}
                 agentBattle={agentBattle}
+                playerScore={displayPlayerScore}
+                opponentScore={displayOpponentScore}
                 bubble={paneBubble}
                 unread={paneUnread}
                 onOpen={handleExpandChat}
+                onOpenBubble={handleOpenPaneOnChat}
                 isDesktop={isDesktop}
                 reducedMotion={reducedMotion}
               />
@@ -2091,7 +2140,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               from _R_4_ to _R_5_ — a real change to the pane-OFF render, which
               the controller-on golden caught. A branch inside one slot leaves
               every sibling index where it was. */}
-          {isDesktop && (paneOn ? (pane.open && (
+          {isDesktop && (paneOn ? (
             /* A3.2 (D-93) — THE PANE IS THE DESKTOP'S RIGHT COLUMN. Collapsed,
                it is not rendered at all and the board takes the full width with
                the mark floating on it (the brief's state 2). That is the pane's
@@ -2102,12 +2151,18 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             <div
               id={CHAT_COLUMN_ID}
               data-chat-column="1"
-              data-chat-collapsed="false"
-              style={{ flex: '2 1 0%', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+              data-chat-collapsed={pane.open ? 'false' : 'true'}
+              style={pane.open
+                ? { flex: '2 1 0%', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }
+                // COLLAPSED IS HIDDEN, NOT ABSENT (hazard 45). The column keeps
+                // its place in the tree so the chat inside it keeps its draft,
+                // its in-flight send and its scroll; `display: none` is what
+                // gives the board the full width.
+                : { display: 'none' }}
             >
               {characterPane}
             </div>
-          )) : (
+          ) : (
             /* THE CHAT'S ONE HOME ON THE DESKTOP (A2.4, review L2-F1 / L5-F7).
                Collapsed and open are the SAME element with different chrome
                and a different flex basis — never two tree positions. React
@@ -2308,21 +2363,26 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           the same stacking reason the sheet is (review CR1), and in the SAME
           child slot the sheet occupies — see the desktop column's note on
           useId. */}
-      {!isDesktop && (paneOn ? (pane.open && (
+      {!isDesktop && (paneOn ? (
         <div
           data-pane-overlay="1"
+          data-pane-open={pane.open ? 'true' : 'false'}
           style={{
             position: 'fixed',
             inset: 0,
             zIndex: 40,
-            display: 'flex',
+            // Closed is HIDDEN, not absent, for the same reason the desktop
+            // column is (hazard 45): the chat inside keeps its draft. `display:
+            // none` also takes the fixed layer out of the way of the board
+            // beneath it.
+            display: pane.open ? 'flex' : 'none',
             flexDirection: 'column',
-            background: `rgba(var(--ft-shadow-rgb), 0.55)`,
+            background: `rgba(${cssVar('shadow-rgb')}, 0.55)`,
           }}
         >
           {characterPane}
         </div>
-      )) : controllerOn && (
+      ) : controllerOn && (
         <ChatSheet
           detent={sheet.detent}
           onDetentChange={sheet.setDetent}

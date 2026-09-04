@@ -34,7 +34,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { Bookmark, X } from 'lucide-react';
 import AgentActivityFeed from '../../components/Agent/AgentActivityFeed';
-import { removeFeedBookmark } from '../../services/agentService';
+import { addFeedBookmark, removeFeedBookmark } from '../../services/agentService';
 import { cssVar } from '../../theme/cssTokens';
 import { TAPE_KIND } from './buildTape';
 import { TradeCard } from './TapeCards';
@@ -89,6 +89,20 @@ export default function PaneTape({
     return matched.reverse(); // newest first, as the shipped view orders them
   }, [feedBookmarks, statusFeed]);
 
+  const onBookmark = useCallback(async (entryId) => {
+    // THE ADD HALF (review lens 5 F3). The first draft moved only `remove` and
+    // passed `onBookmark={undefined}`, which left AgentActivityFeed rendering
+    // its `Add bookmark` control wired to nothing — so under the pane a player
+    // could not add a bookmark anywhere, while looking at the button for it.
+    // Ruling #12 and D-94 both say "add / remove".
+    if (!battleId || !entryId) return;
+    try {
+      await addFeedBookmark(battleId, entryId);
+    } catch (err) {
+      console.error('[PaneTape] addFeedBookmark failed:', err?.message || err);
+    }
+  }, [battleId]);
+
   const onUnbookmark = useCallback(async (entryId) => {
     if (!battleId || !entryId) return;
     try {
@@ -142,8 +156,14 @@ export default function PaneTape({
               }}
             >
               <Bookmark size={11} style={{ color: cssVar('teal'), flexShrink: 0, marginTop: 3 }} />
+              {/* THE SHIPPED READING (review lens 1 F9). GameTapeView resolves a
+                  bookmarked entry as `message ‖ rationale ‖ 'No details
+                  available'` (:413); the first draft invented
+                  `message ‖ text ‖ action`, which rendered a legal swap — whose
+                  feed entry carries no message — as the bare machinery word
+                  `swap`. One bookmark must not read two ways. */}
               <span style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.4, color: cssVar('text-secondary') }}>
-                {entry?.message || entry?.text || entry?.action || ''}
+                {entry?.message || entry?.rationale || COPY.tapeBookmarkNoDetail}
               </span>
               <button
                 type="button"
@@ -198,7 +218,7 @@ export default function PaneTape({
           <AgentActivityFeed
             statusFeed={Array.isArray(statusFeed) ? statusFeed : []}
             feedBookmarks={Array.isArray(feedBookmarks) ? feedBookmarks : []}
-            onBookmark={undefined}
+            onBookmark={onBookmark}
             onUnbookmark={onUnbookmark}
             onChallenge={undefined}
             battleId={battleId}

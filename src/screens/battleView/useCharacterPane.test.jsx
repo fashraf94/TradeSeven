@@ -20,8 +20,8 @@ let container;
 let root;
 let api;
 
-function Probe({ enabled, lockScroll }) {
-  api = useCharacterPane(enabled, { lockScroll });
+function Probe({ enabled, lockScroll, openByDefault }) {
+  api = useCharacterPane(enabled, { lockScroll, openByDefault });
   return null;
 }
 
@@ -164,5 +164,37 @@ describe('disabled — the flag-off / pane-off arm', () => {
     mount({ enabled: false, lockScroll: true });
     act(() => api.openPane(PANE_SECTION.CHAT));
     expect(document.body.style.overflow).toBe('');
+  });
+});
+
+describe('the shell\'s opening default (brief §5 deliverable 1)', () => {
+  it('DESKTOP opens WITH the pane showing, on Chat', () => {
+    // The brief's resting working state is the pane open, and the A2 column it
+    // replaces opened at HALF. The first draft started closed on both shells.
+    mount({ enabled: true, lockScroll: false, openByDefault: true });
+    expect(api.open).toBe(true);
+    expect(api.section).toBe(PANE_SECTION.CHAT);
+  });
+
+  it('a shell the player HAS spoken to keeps their choice across a crossing', () => {
+    // useChatSheet's touchedRef rule (review L2-F6): an untouched shell adopts
+    // its own opening default, a touched one does not — or widening a window
+    // would re-open a pane the player had just folded away.
+    mount({ enabled: true, lockScroll: true, openByDefault: false });
+    act(() => api.openPane(PANE_SECTION.BENCH));
+    act(() => api.close());
+    expect(api.open).toBe(false);
+    mount({ enabled: true, lockScroll: false, openByDefault: true });
+    expect(api.open).toBe(false);           // still theirs
+    expect(api.section).toBe(PANE_SECTION.BENCH);
+  });
+
+  it('nothing untouched is pushed OPEN on the way to a phone', () => {
+    mount({ enabled: true, lockScroll: false, openByDefault: true });
+    expect(api.open).toBe(true);
+    mount({ enabled: true, lockScroll: true, openByDefault: false });
+    // The desktop's open state survives (it is the same session's state), and
+    // the rule is asymmetric on purpose: the phone never FORCES one open.
+    expect(api.open).toBe(true);
   });
 });

@@ -171,3 +171,39 @@ describe('CharacterAvatar — nothing idle (D-91)', () => {
     expect(opened).toBe(0);
   });
 });
+
+describe('Review lens 1 F6 — the face reads the pair the BOARD shows (§9, Gate 1)', () => {
+  it('passes the displayed scores through, not the persisted ones', async () => {
+    // The defect: both new mounts read scoreState.currentScore / opponentScore
+    // while the arena header two inches away renders the live pair. The
+    // presence face derives its standing from these, and presenceBinding's
+    // Gate 1 forbids a parallel recompute — so on desktop, with the pane open,
+    // two marks on one page could read different numbers, in SIGN.
+    vi.resetModules();
+    const seen = [];
+    vi.doMock('../../config/featureFlags', async (importOriginal) => ({
+      ...(await importOriginal()),
+      isAgentPresenceOn: () => true,
+    }));
+    vi.doMock('../../components/AgentPresence/AgentPresenceMount', () => ({
+      default: (props) => { seen.push(props); return null; },
+    }));
+    const Fresh = (await import('./CharacterAvatar.jsx')).default;
+    renderToString(
+      <Fresh
+        agentBattle={{ scoreState: { currentScore: -5, opponentScore: 3 } }}
+        playerScore={12}
+        opponentScore={3}
+        unread={0}
+        onOpen={() => {}}
+      />,
+    );
+    expect(seen).toHaveLength(1);
+    expect(seen[0].duel.playerScore).toBe(12);   // the board's number
+    expect(seen[0].duel.opponentScore).toBe(3);
+    expect(seen[0].duel.playerScore).not.toBe(-5); // …not the persisted one
+    vi.doUnmock('../../components/AgentPresence/AgentPresenceMount');
+    vi.doUnmock('../../config/featureFlags');
+    vi.resetModules();
+  });
+});

@@ -1152,7 +1152,12 @@ export default function AgentChat({
         fontWeight: 700,
         letterSpacing: '0.02em',
         cursor: 'pointer',
-        flexShrink: 0,
+        // ONLY in the composer (review lens 3 F1 / lens 5 F8). Hoisting the chip
+        // to serve two homes carried this one declaration into the A2 position
+        // too, so pane-off stopped being byte-identical the moment a scope was
+        // active — invisible to the golden, which photographs an unscoped first
+        // paint. In the composer it stops the chip being squeezed by the field.
+        ...(scopeInComposer ? { flexShrink: 0 } : {}),
       }}
     >
       {BATTLE_VIEW_COPY.scopeChip(scopeSymbol)}

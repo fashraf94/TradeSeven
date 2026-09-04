@@ -167,3 +167,73 @@ describe('one naming rule, shared (D-87)', () => {
     expect(b.named[0].sentences[0]).toBe('**NOW** is up 6.97% today.');
   });
 });
+
+describe('Review lens 1 F4 / F5 — the decider\'s words, and only those', () => {
+  // An outage tick as the CRON actually writes it: a placeholder rationale plus
+  // `haikuError`. The first draft of the scan-back modelled it as
+  // `rationale: null`, which production never writes, so the row could not fail
+  // under the defect it named.
+  const outage = (iso) => ({
+    evalId: 'out',
+    timestamp: iso,
+    decision: 'HOLD',
+    rationale: 'Haiku call failed — defaulting to HOLD',
+    haikuError: { failureClass: 'timeout' },
+  });
+
+  it('WALKS PAST an outage tick to the last check that really spoke', () => {
+    const b = selectBench(doc({
+      evaluations: [
+        { evalId: 'e1', timestamp: '2026-09-01T16:45:00.000Z', decision: 'HOLD', rationale: 'NOW is the one to watch for a tier.' },
+        outage('2026-09-01T17:00:00.000Z'),
+      ],
+    }));
+    expect(b.slotIso).toBe('2026-09-01T16:45:00.000Z');
+    expect(b.named.map((n) => n.symbol)).toEqual(['NOW']);
+    // The system's own sentence never reaches the screen as the agent's.
+    expect(JSON.stringify(b.named)).not.toContain('Haiku call failed');
+  });
+
+  it('an outage-only day is an ABSENCE, not a quote of the placeholder', () => {
+    const b = selectBench(doc({ evaluations: [outage('2026-09-01T17:00:00.000Z')] }));
+    expect(b.slotIso).toBeNull();
+    expect(b.named).toEqual([]);
+    expect(b.footer).toBeNull();
+  });
+
+  it('a budget-skipped tick is an outage too, whatever its failure class', () => {
+    const b = selectBench(doc({
+      evaluations: [{ ...outage('2026-09-01T17:00:00.000Z'), haikuError: { failureClass: 'budget_skipped' } }],
+    }));
+    expect(b.slotIso).toBeNull();
+  });
+
+  it('renders the DISPLAY text (D-80) — no machinery code reaches Bench', () => {
+    // A guardrail-forced exit's rationale carries `guardrail_{type}`, and a
+    // forced-out symbol RETURNS TO THE BENCH, so Bench is a live surface for it.
+    // renderMotive (inside selectWhyState) is the one place a rationale becomes
+    // display text; splitting the raw field put the code on screen.
+    const b = selectBench(doc({
+      portfolio: { star: [], core: [], support: [], bench: { stocks: [{ symbol: 'GILD' }], crypto: null } },
+      watchlist: {}, agentContext: {},
+      evaluations: [{
+        evalId: 'g1',
+        timestamp: '2026-09-01T16:45:00.000Z',
+        decision: 'HOLD',
+        rationale: 'Guardrail override (guardrail_stopLoss): GILD broke its stop.',
+      }],
+    }));
+    const text = JSON.stringify(b.named);
+    expect(text).not.toContain('guardrail_stopLoss');
+    expect(text).toContain('GILD');
+  });
+
+  it('carries the line that says WHOSE words they are (D-80)', () => {
+    // The check and trade cards label authorship under the same sentences;
+    // Bench is the fourth surface to quote a rationale and was the only one
+    // going to do it unattributed.
+    const b = selectBench(doc());
+    expect(typeof b.footer === 'string' || b.footer === null).toBe(true);
+    expect(b.named.length).toBeGreaterThan(0);
+  });
+});

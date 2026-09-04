@@ -29,11 +29,19 @@
 // component the single `chat` element and it is placed at exactly one point in
 // the tree, on both shells.
 //
-// FOCUS lives here, not in the machine, exactly as it does for the sheet: it
-// needs the DOM nodes. On the shell where the pane covers the board, focus
-// moves INTO the region on open and back to the control that opened it on
-// close — and only after a close, never on mount (the Game Tape's review CR6
-// rule: a mount pass must not steal focus).
+// FOCUS IN lives here (it needs the region node); FOCUS OUT lives in the
+// screen (it needs the mark, which this component cannot see). Review lens 2
+// found the first draft wrong on three of four transitions: the effect keyed on
+// MOUNT rather than on opening, its `wasOpenRef` guard was tautological — the
+// body set the ref before the cleanup could ever read it false — and the
+// return-focus target it restored was the board's mark, which UNMOUNTS while
+// the pane is open, so focusing it was a no-op on a detached node.
+//
+// The contract now: focus moves into the region on the false → true edge of
+// `open`, on the shell where the pane covers the board, and never on the mount
+// pass (the Game Tape's review CR6 rule). The screen focuses the CURRENT mark
+// after a close, through the same `pendingChatFocus` hand-off A2.4 built for
+// its own collapse (review L2-F4).
 //
 // HAZARD 48. index.css forces every <button> to 16px !important, so every label
 // in this file sizes an inner <span>, as ChatSheet's handle does.
@@ -129,6 +137,10 @@ function SegmentedControl({ section, onSelect }) {
 
 export default function CharacterPane({
   agentBattle = null,
+  // The pair the BOARD IS SHOWING — see CharacterAvatar's note (lens 1 F6).
+  playerScore = null,
+  opponentScore = null,
+  open = true,
   section = PANE_SECTION.CHAT,
   onSelectSection,
   onClose,
@@ -141,7 +153,7 @@ export default function CharacterPane({
   overflow = null,
 }) {
   const regionRef = React.useRef(null);
-  const wasOpenRef = React.useRef(false);
+  const wasOpenRef = React.useRef(open);
   const agentName = agentBattle?.agentContext?.agentName || 'Your Agent';
   const archetype = agentBattle?.agentContext?.archetype
     ? getArchetypeDisplayName(agentBattle.agentContext.archetype)
@@ -152,19 +164,15 @@ export default function CharacterPane({
   // it on every expand would fight the player's own place on the page.
   const modal = !isDesktop;
   React.useEffect(() => {
-    if (!modal) return undefined;
-    wasOpenRef.current = true;
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = open;
+    // The EDGE, not the state: a re-render with the pane already open must not
+    // pull focus back out of whatever the player is using inside it, and the
+    // mount pass (which seeds `wasOpenRef` from `open`) must not steal focus at
+    // all.
+    if (!modal || !open || wasOpen) return;
     regionRef.current?.focus?.();
-    return () => {
-      // Only after a real open — never on the mount pass (the Game Tape's
-      // review CR6 rule). The ref makes the cleanup say "this pane was open",
-      // not "this component existed".
-      if (!wasOpenRef.current) return;
-      wasOpenRef.current = false;
-      const back = returnFocusRef?.current;
-      back?.focus?.();
-    };
-  }, [modal, returnFocusRef]);
+  }, [modal, open]);
 
   const panel = (s, content) => (
     <div
@@ -194,19 +202,26 @@ export default function CharacterPane({
       ref={regionRef}
       data-character-pane="1"
       data-pane-shell={isDesktop ? 'desktop' : 'mobile'}
+      data-pane-open={open ? 'true' : 'false'}
       role="region"
       aria-label={COPY.paneName}
       tabIndex={-1}
+      // HIDDEN, NEVER UNMOUNTED — the same rule the SECTIONS follow, applied to
+      // the pane itself (hazard 45, rulings §4: "one tree position across
+      // collapse / expand and sections"). The first draft honoured the sections
+      // and unmounted on collapse, which lost the typed draft, the in-flight
+      // send and the scroll on every fold — review lens 2 F2 / lens 5 F1.
+      hidden={!open}
       initial={reducedMotion ? false : { opacity: 0, y: isDesktop ? 0 : 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={motionToken('smooth', { reducedMotion })}
       style={{
-        display: 'flex',
+        display: open ? 'flex' : 'none',
         flexDirection: 'column',
         minHeight: 0,
         height: '100%',
-        background: `rgba(var(--ft-shadow-rgb), 0.72)`,
-        borderLeft: isDesktop ? `1px solid rgba(var(--ft-scrim-rgb), 0.08)` : 'none',
+        background: `rgba(${cssVar('shadow-rgb')}, 0.72)`,
+        borderLeft: isDesktop ? `1px solid rgba(${cssVar('scrim-rgb')}, 0.08)` : 'none',
       }}
     >
       {/* The pane's head: the character, its name, the sections, the way out. */}
@@ -226,8 +241,8 @@ export default function CharacterPane({
             surface="duel"
             agent={agentBattle}
             duel={{
-              playerScore: agentBattle?.scoreState?.currentScore || 0,
-              opponentScore: agentBattle?.scoreState?.opponentScore || 0,
+              playerScore: playerScore ?? (agentBattle?.scoreState?.currentScore || 0),
+              opponentScore: opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0),
               statusFeed: null,
             }}
             size={36}

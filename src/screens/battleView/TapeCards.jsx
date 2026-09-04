@@ -223,7 +223,7 @@ export function TradeCard({ entry, startExpanded = false }) {
     >
       {entry.fromDirective && <div style={{ ...footnote, color: cssVar('teal') }}>{COPY.fromDirective}</div>}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ ...eyebrow, color: cssVar('teal') }}>
+        <div style={{ ...eyebrow, color: TRADE_EYEBROW_COLOR }}>
           {COPY.tradeCardLine(entry.at, entry.symbolOut, entry.symbolIn, entry.tier)}
         </div>
         {banked && <div style={{ ...mono, fontSize: 11.5, color: cssVar('text-secondary') }}>{banked}</div>}

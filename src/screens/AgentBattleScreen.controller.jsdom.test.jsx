@@ -29,6 +29,12 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
   isAgentPresenceOn: () => false,
   isMatchupsBackdropOn: () => false,
   isBattleViewControllerOn: () => true,
+  // Mocked EXPLICITLY, not left to the flag's default (review lens 3 F2).
+  // isCharacterPaneOn() calls isBattleViewControllerOn() INSIDE featureFlags,
+  // so a vi.mock of the controller never reaches it — on the day the pane flag
+  // flips, this suite would see controllerOn=false with paneOn=true, a state
+  // the screen can never be in, and red for a reason that is not a defect.
+  isCharacterPaneOn: () => false,
 }));
 vi.mock('../services/eodhdAPI', () => ({
   stockAPI: {

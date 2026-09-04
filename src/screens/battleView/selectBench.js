@@ -35,7 +35,7 @@
 // on every surface (D-83), so the label here is the label the card and the turn
 // line use for the same tick.
 
-import { splitSentences, namesSymbol } from './selectWhyState';
+import { splitSentences, namesSymbol, selectWhyState, WHY_KIND } from './selectWhyState';
 
 const TIERS = ['star', 'core', 'support'];
 
@@ -98,22 +98,44 @@ export function selectBenchRoster(battle) {
 }
 
 /**
- * The last `evaluations[]` entry that carries a rationale — the DECIDER's last
- * words, however many outage ticks have run since.
+ * The last `evaluations[]` entry that carries the DECIDER's own words, however
+ * many outage ticks have run since — with those words already rendered for
+ * display, and the line that says whose they are.
  *
- * Entries are appended chronologically (agent-evaluate.js:2710), so the scan
- * from the end stops at the first one with words.
+ * IT GOES THROUGH `selectWhyState`, and that is the whole correctness of this
+ * function (review lens 1 F4 / F5). Two things a raw `rationale` read got
+ * wrong:
  *
- * @returns {object|null}
+ *   1. AN OUTAGE TICK IS NOT WORDLESS — it carries the CRON's placeholder,
+ *      `Haiku call failed — defaulting to HOLD` (agent-evaluate.js:2637-2640),
+ *      with `haikuError` stamped beside it. A scan-back that accepts any
+ *      non-blank string stops there and quotes the system's sentence as the
+ *      agent's, on the exact tick ruling 11 and hazard 40 exist for. The card
+ *      for that same tick says `No decision recorded at this check`.
+ *   2. THE RAW FIELD IS NOT THE DISPLAY TEXT (D-80). A guardrail-forced exit's
+ *      rationale is `Guardrail override (guardrail_stopLoss): …`, and a
+ *      forced-out symbol RETURNS TO THE BENCH — so Bench is a live surface for
+ *      it. `renderMotive`, inside selectWhyState, is the ONE place a rationale
+ *      becomes display text; splitting the raw field here would have put a
+ *      machinery-provenance code on the screen.
+ *
+ * `lastScoredAt` is the entry's OWN timestamp on purpose: `selectWhyState`
+ * joins an entry to the latest check, and this walk is deliberately looking
+ * further back than that.
+ *
+ * @returns {{entry: object, why: object}|null}
  */
 export function selectLastDecidedWithWords(battle) {
   const evals = battle?.evaluations;
   if (!Array.isArray(evals) || evals.length === 0) return null;
   for (let i = evals.length - 1; i >= 0; i -= 1) {
     const entry = evals[i];
-    if (!entry || typeof entry.rationale !== 'string') continue;
-    if (!entry.rationale.trim()) continue;
-    return entry;
+    if (!entry || typeof entry.timestamp === 'undefined') continue;
+    const why = selectWhyState(entry, null, entry.timestamp);
+    // An outage, a budget skip, or an entry with no words at all: keep walking.
+    if (why.kind === WHY_KIND.ABSENT) continue;
+    if (typeof why.rationale !== 'string' || !why.rationale.trim()) continue;
+    return { entry, why };
   }
   return null;
 }
@@ -127,6 +149,7 @@ export function selectLastDecidedWithWords(battle) {
  *   named: Array<{symbol: string, sentences: string[]}>,
  *   rest: string[],                the roster the check did not name
  *   watchlistName: string|null,    the equipped watchlist's bare name
+ *   footer: string|null,           whose words these are (D-80)
  * }}
  */
 export function selectBench(battle) {
@@ -134,15 +157,15 @@ export function selectBench(battle) {
   const rawName = battle?.agentContext?.equippedWatchlist?.name;
   const watchlistName = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : null;
 
-  const decision = selectLastDecidedWithWords(battle);
-  if (!decision) {
-    // ABSENCE. No entry today carries words at all — every bench name is
+  const decided = selectLastDecidedWithWords(battle);
+  if (!decided) {
+    // ABSENCE. No entry carries the decider's words — every bench name is
     // "rest", and the caller renders the absence line above them.
-    return { slotIso: null, named: [], rest: roster, watchlistName };
+    return { slotIso: null, named: [], rest: roster, watchlistName, footer: null };
   }
 
-  // ONE split for the whole roster.
-  const sentences = splitSentences(decision.rationale);
+  // ONE split for the whole roster, over the DISPLAY text.
+  const sentences = splitSentences(decided.why.rationale);
   const named = [];
   const rest = [];
   for (const symbol of roster) {
@@ -151,7 +174,16 @@ export function selectBench(battle) {
     else rest.push(symbol);
   }
 
-  return { slotIso: decision.timestamp ?? null, named, rest, watchlistName };
+  return {
+    slotIso: decided.entry.timestamp ?? null,
+    named,
+    rest,
+    watchlistName,
+    // WHOSE WORDS (D-80 / review L5-F2, the rule the check and trade cards
+    // already follow). Bench is the fourth surface to quote a rationale and the
+    // only one that was going to do it unlabelled.
+    footer: decided.why.footer ?? null,
+  };
 }
 
 export default selectBench;

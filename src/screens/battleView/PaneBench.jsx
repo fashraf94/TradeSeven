@@ -50,7 +50,7 @@ function Sentence({ text }) {
 
 export default function PaneBench({ bench = null }) {
   if (!bench) return null;
-  const { slotIso, named, rest, watchlistName } = bench;
+  const { slotIso, named, rest, watchlistName, footer } = bench;
   const subtitle = COPY.benchWatchlist(watchlistName);
   const atCheck = COPY.atCheck(slotIso);
 
@@ -102,6 +102,14 @@ export default function PaneBench({ bench = null }) {
               ))}
             </div>
           ))}
+          {/* WHOSE WORDS (D-80). The check and trade cards carry this line
+              under the same sentences; Bench is the fourth surface to quote a
+              rationale and must not be the one that leaves it unattributed. */}
+          {footer && (
+            <div data-bench-footer="1" style={{ ...mono, fontSize: 10, color: cssVar('text-muted') }}>
+              {footer}
+            </div>
+          )}
         </div>
       )}
 

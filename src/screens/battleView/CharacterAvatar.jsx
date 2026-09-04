@@ -61,9 +61,26 @@ const TAP_MIN = 48;
 
 export default function CharacterAvatar({
   agentBattle = null,
+  // The pair the BOARD IS SHOWING (review lens 1 F6). The presence face derives
+  // its standing from these, and presenceBinding's Gate 1 forbids a parallel
+  // recompute: reading scoreState.currentScore here while the arena header two
+  // inches away renders the live pair put two marks on one page reading
+  // different numbers — in sign, not just in magnitude.
+  playerScore = null,
+  opponentScore = null,
+  // The screen focuses this node after a collapse (review lens 2 F3): the mark
+  // the player pressed to open the pane is gone by then, so the hand-off has to
+  // reach the one that came back.
+  markRef = null,
   bubble = null,
   unread = 0,
   onOpen,
+  // The BUBBLE opens the conversation, not the remembered section (the seed:
+  // "tap either → the pane, count cleared"). It names a tape entry, so landing
+  // anywhere but the stream that holds it would show the player a section they
+  // did not ask for and leave the count standing. The mark keeps the remembered
+  // section — that is what "expand restores" means.
+  onOpenBubble,
   isDesktop = false,
   reducedMotion = false,
 }) {
@@ -102,7 +119,7 @@ export default function CharacterAvatar({
           data-character-bubble="1"
           data-bubble-kind={bubble.eyebrow || 'none'}
           aria-label={COPY.paneBubbleName(bubble.eyebrow)}
-          onClick={onOpen}
+          onClick={onOpenBubble || onOpen}
           initial={reducedMotion ? false : { opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={fade}
@@ -165,6 +182,7 @@ export default function CharacterAvatar({
 
       <button
         type="button"
+        ref={markRef}
         data-character-mark="1"
         data-unread={count > 0 ? String(count) : undefined}
         aria-label={COPY.paneOpenName(count)}
@@ -189,8 +207,8 @@ export default function CharacterAvatar({
             surface="duel"
             agent={agentBattle}
             duel={{
-              playerScore: agentBattle?.scoreState?.currentScore || 0,
-              opponentScore: agentBattle?.scoreState?.opponentScore || 0,
+              playerScore: playerScore ?? (agentBattle?.scoreState?.currentScore || 0),
+              opponentScore: opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0),
               // WITHHELD (hazard 41). The mount drops events for a static face
               // anyway; passing null says so at the call site too.
               statusFeed: null,

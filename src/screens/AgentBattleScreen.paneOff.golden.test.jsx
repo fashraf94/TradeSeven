@@ -74,6 +74,8 @@ vi.mock('../hooks/useAgentBattle', async () => {
 });
 
 import AgentBattleScreen from './AgentBattleScreen';
+import AgentChat from '../components/Agent/AgentChat';
+import { CHAT_PROPS } from './agentBattleScreenGoldenFixture';
 
 const strip = (h) => h.replace(/<!-- -->/g, '');
 const golden = () => readFileSync(new URL('./__golden__/agentBattleScreen.controllerOn.paneOff.html', import.meta.url), 'utf8');
@@ -138,5 +140,38 @@ describe('pane-off is the A2 controller screen, byte for byte (D-93)', () => {
     ]) {
       expect(html, `${attr} leaked into the pane-off render`).not.toContain(attr);
     }
+  });
+});
+
+describe('pane-off is A2 in the states the first paint cannot photograph', () => {
+  it('the scope chip carries no pane-only styling in its A2 position', () => {
+    // Review lens 3 F1 / lens 5 F8. A3.2 hoisted the chip so one element could
+    // serve two homes, and carried `flex-shrink: 0` — a property the A2 chip
+    // never had — into BOTH. The golden photographs an UNSCOPED first paint, so
+    // it could not see it, and pane-off quietly stopped being byte-identical
+    // the moment a player scoped the stream.
+    const scoped = (scopeInComposer) => strip(renderToString(
+      <AgentChat
+        {...CHAT_PROPS}
+        controllerLayout
+        controllerCopy
+        tapeEntries={[]}
+        scopeSymbol="SLB"
+        onClearScope={() => {}}
+        scopeInComposer={scopeInComposer}
+      />,
+    ));
+    const a2 = scoped(false);
+    const pane = scoped(true);
+    // The chip renders on both paths…
+    expect(a2).toContain('data-tape-scope="SLB"');
+    expect(pane).toContain('data-tape-scope="SLB"');
+    // …and only the pane's carries the property.
+    const chipStyle = (html) => {
+      const at = html.indexOf('data-tape-scope="SLB"');
+      return html.slice(at, html.indexOf('>', at));
+    };
+    expect(chipStyle(a2)).not.toContain('flex-shrink');
+    expect(chipStyle(pane)).toContain('flex-shrink:0');
   });
 });

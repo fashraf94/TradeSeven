@@ -39,7 +39,7 @@
 // only thing that can change its answer is a new entry in that tape.
 
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
-import { TAPE_KIND } from './buildTape';
+import { TAPE_KIND, collapseQuietChecks } from './buildTape';
 import { TAPE_MESSAGE } from './scopeTape';
 import {
   LABEL_COLOR,
@@ -59,7 +59,13 @@ export function bubbleFor(item) {
   if (!item || typeof item !== 'object') return null;
 
   if (item._type === TAPE_KIND.CHECK) {
-    const line = item.firstSentence || peekLineFor(item);
+    // NO FALLBACK TO THE PEEK LINE (review lens 1 F3). A check with no words —
+    // an outage tick, or a swap tick whose words the trade card carries — has
+    // nothing the CHARACTER said, and `peekLineFor` would return `{slot} ·
+    // {label}`, which is what the eyebrow already says. The walk steps past it
+    // to the newest entry that has words, exactly as this module's header
+    // claims it does.
+    const line = item.firstSentence;
     if (!line) return null;
     return {
       eyebrow: COPY.checkCardLabel(item.at, item.label),
@@ -70,7 +76,13 @@ export function bubbleFor(item) {
   }
 
   if (item._type === TAPE_KIND.TRADE) {
-    const line = item.firstSentence || peekLineFor(item);
+    // `motiveFirstSentence`, NOT `firstSentence` — a trade entry has no field
+    // by that name (buildTape.js:146 vs :292), so reading the check's field
+    // here silently fell through to `peekLineFor` on every executed swap and
+    // printed the pair twice: `1:31 PM · GILD → MOS · CORE` over
+    // `1:31 PM · GILD → MOS`. Review lens 1 F2; the shipped test fixture
+    // hand-built the non-existent field and so could not fail under it.
+    const line = item.motiveFirstSentence || peekLineFor(item);
     if (!line) return null;
     return {
       eyebrow: COPY.tradeCardLine(item.at, item.symbolOut, item.symbolIn, item.tier),
@@ -139,12 +151,29 @@ export function bubbleFor(item) {
  * @param {Array|null} items  the merged, unfolded recorded tape
  * @returns {{id: string, eyebrow: string|null, line: string, eyebrowColor: string, isRecord: boolean}|null}
  */
-export function deriveBubble(items) {
+export function deriveBubble(items, pinnedId = null) {
   if (!Array.isArray(items) || items.length === 0) return null;
-  for (let i = items.length - 1; i >= 0; i -= 1) {
-    const item = items[i];
+  // FOLD FIRST, with the SAME pin the stream folds with (review lens 1 F1).
+  // The stream (AgentChat) and the strip (derivePeekLine) both collapse a run
+  // of quiet checks into one line; the bubble read the UNFOLDED list, so on a
+  // quiet run the stream said `3 checks · no change` while the character named
+  // the newest check alone. A2.4's review confirmed and fixed exactly this for
+  // the strip (L1-F4 / L5-F3); the bubble had regressed it.
+  const folded = collapseQuietChecks(items, pinnedId);
+  for (let i = folded.length - 1; i >= 0; i -= 1) {
+    const item = folded[i];
     const bubble = bubbleFor(item);
-    if (bubble) return { id: item.id ?? String(i), ...bubble };
+    if (bubble) {
+      // A GROWING RUN IS A NEW EVENT. A run's id is its FIRST member's
+      // (buildTape.js:364), so a fourth quiet check keeps the id while the LINE
+      // changes from `3 checks` to `4 checks` — the text would move with no
+      // fade, which is motion missing an event rather than marking a state.
+      // The count joins the key so each new check fades once.
+      const id = item._type === TAPE_KIND.CHECK_RUN
+        ? `${item.id ?? String(i)}:${item.count}`
+        : (item.id ?? String(i));
+      return { id, ...bubble };
+    }
   }
   return null;
 }

@@ -126,6 +126,28 @@ const mount = () => act(() => {
   root.render(<AgentBattleScreen battle={BATTLE} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />);
 });
 
+/**
+ * Open the pane, whatever the shell's opening default is. Desktop opens WITH
+ * the pane showing (the brief's resting working state, §5 deliverable 1), so
+ * there is no mark to press; the phone starts closed.
+ */
+const paneIsOpen = () => container.querySelector('[data-character-pane]')?.getAttribute('data-pane-open') === 'true';
+const openPane = () => {
+  if (paneIsOpen()) return;
+  act(() => {
+    container.querySelector('[data-character-mark]')
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+};
+const closePane = () => act(() => {
+  container.querySelector('[data-pane-close]')
+    .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+});
+const selectTab = (section) => act(() => {
+  container.querySelector(`[data-pane-tab="${section}"]`)
+    .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+});
+
 describe('A3.0 — the arena replaces the shipped header under the pane flag (D-96)', () => {
   it('mounts the arena header, and exactly one of it', () => {
     mount();
@@ -172,8 +194,18 @@ describe('A3.0 — the arena replaces the shipped header under the pane flag (D-
 });
 
 describe('A3.1 — the character on the board (D-91, D-98)', () => {
-  it('mounts exactly one mark, inside the board column', () => {
+  it('mounts exactly one mark, inside the board column, when the pane is folded', () => {
+    // Desktop OPENS with the pane showing (the brief's resting working state),
+    // and the character then stands in the pane's header — no second mark on
+    // the board (the seed's ruling 4). Collapsed, it comes back onto the board.
     mount();
+    // Open, the character stands in the pane's HEADER and the board carries no
+    // mark at all (the seed's ruling 4). The header's own face is the presence
+    // mount, which every screen harness mocks off — so zero here is the ruling,
+    // not an absence of rendering: the pane itself is present.
+    expect(container.querySelector('[data-character-pane]')).toBeTruthy();
+    expect(container.querySelectorAll('[data-character-mark]')).toHaveLength(0);
+    closePane();
     const marks = container.querySelectorAll('[data-character-mark]');
     expect(marks).toHaveLength(1);
     expect(container.querySelector('[data-board]').contains(marks[0])).toBe(true);
@@ -249,6 +281,7 @@ describe('A3.1 — the character on the board (D-91, D-98)', () => {
   it('says nothing when the tape has nothing the character said', () => {
     withDoc({ evaluations: [], chatExchanges: [], trades: [] });
     mount();
+    closePane();
     expect(container.querySelector('[data-character-mark]')).toBeTruthy();
     expect(container.querySelector('[data-character-bubble]')).toBeNull();
     expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
@@ -277,14 +310,10 @@ describe('A3.1 — the character on the board (D-91, D-98)', () => {
 });
 
 describe('A3.2 — the pane replaces the strip and the sheet (D-93)', () => {
-  const openPane = () => {
-    const mark = container.querySelector('[data-character-mark]');
-    act(() => { mark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
-  };
-
   it('DESKTOP: no strip and no sheet — the pane is the column', () => {
     mount();
-    // Closed: the board is full width and the mark floats on it.
+    // Folded: the board is full width and the mark floats on it.
+    closePane();
     expect(container.querySelector('[data-character-avatar]')).toBeTruthy();
     expect(container.querySelector('[data-chat-sheet]')).toBeNull();
     openPane();
@@ -390,11 +419,13 @@ describe('A3.2 — the pane replaces the strip and the sheet (D-93)', () => {
       container.querySelector('[data-pane-tab="tape"]')
         .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     });
-    act(() => {
-      container.querySelector('[data-pane-close]')
-        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    });
-    expect(container.querySelector('[data-character-pane]')).toBeNull();
+    closePane();
+    // HIDDEN, NOT ABSENT (hazard 45). The first draft unmounted here, which is
+    // what lost the draft; the pane keeps its tree position and `display: none`
+    // is what gives the board the full width.
+    expect(container.querySelector('[data-character-pane]')).toBeTruthy();
+    expect(container.querySelector('[data-character-pane]').getAttribute('data-pane-open')).toBe('false');
+    expect(container.querySelector('[data-character-pane]').hidden).toBe(true);
     openPane();
     expect(container.querySelector('[role="tab"][aria-selected="true"]').textContent).toBe('Tape');
   });
@@ -445,14 +476,7 @@ describe('A3.2 — the pane replaces the strip and the sheet (D-93)', () => {
 });
 
 describe('A3.3 — Bench quotes the decider only (D-92)', () => {
-  const openPaneOn = (section) => {
-    const mark = container.querySelector('[data-character-mark]');
-    act(() => { mark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
-    act(() => {
-      container.querySelector(`[data-pane-tab="${section}"]`)
-        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    });
-  };
+  const openPaneOn = (section) => { openPane(); selectTab(section); };
 
   it('renders the named names with the decider\'s own sentence, and the rest', () => {
     mount();
@@ -489,13 +513,9 @@ describe('A3.3 — Bench quotes the decider only (D-92)', () => {
 
   it('the Chat keeps its node while Bench shows (hazard 45)', () => {
     mount();
-    const mark = container.querySelector('[data-character-mark]');
-    act(() => { mark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    openPane();
     const chatNode = container.querySelector('[data-pane-section="chat"]').firstElementChild;
-    act(() => {
-      container.querySelector('[data-pane-tab="bench"]')
-        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    });
+    selectTab('bench');
     expect(container.querySelector('[data-pane-section="chat"]').firstElementChild).toBe(chatNode);
   });
 
@@ -528,16 +548,7 @@ describe('A3.3 — Bench quotes the decider only (D-92)', () => {
 });
 
 describe('A3.4 — Tape is a pane section (D-94)', () => {
-  const openPaneOn = (section) => {
-    act(() => {
-      container.querySelector('[data-character-mark]')
-        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    });
-    act(() => {
-      container.querySelector(`[data-pane-tab="${section}"]`)
-        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    });
-  };
+  const openPaneOn = (section) => { openPane(); selectTab(section); };
 
   it('the header link and the overlay are not rendered under the pane', () => {
     mount();
@@ -619,25 +630,14 @@ describe('A3.4 — Tape is a pane section (D-94)', () => {
 
   it('the Chat keeps its node while Tape shows (hazard 45)', () => {
     mount();
-    act(() => {
-      container.querySelector('[data-character-mark]')
-        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    });
+    openPane();
     const chatNode = container.querySelector('[data-pane-section="chat"]').firstElementChild;
-    act(() => {
-      container.querySelector('[data-pane-tab="tape"]')
-        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    });
+    selectTab('tape');
     expect(container.querySelector('[data-pane-section="chat"]').firstElementChild).toBe(chatNode);
   });
 });
 
 describe('A3.5 — the declutter (D-94, D-95)', () => {
-  const openPane = () => act(() => {
-    container.querySelector('[data-character-mark]')
-      .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-  });
-
   it('the watchlist chip leaves the header; its name lives in Bench', () => {
     mount();
     // The chip has been flag-INDEPENDENT since it shipped — it rendered
@@ -698,5 +698,120 @@ describe('A3.5 — the declutter (D-94, D-95)', () => {
     mount();
     openPane();
     expect(container.querySelector('button[aria-label="Report a bug"]')).toBeNull();
+  });
+});
+
+// ─── Review fixes (five-lens §2 review, September 4 2026) ──────────────────
+//
+// Every row here fails under the defect the build shipped before the review.
+// They are the review's own repros, inverted to the contract.
+
+describe('Review — hazard 45 across COLLAPSE, not only across sections', () => {
+  const typeDraft = (text) => {
+    const box = container.querySelector('textarea');
+    expect(box, 'the composer must be reachable inside the pane').toBeTruthy();
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(box, text);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    return box;
+  };
+
+  it('DESKTOP: a half-typed message survives collapse → expand', () => {
+    // The defect (review lens 2 F2 / lens 5 F1): the pane, and the AgentChat
+    // inside it, were UNMOUNTED while collapsed. The draft read '' on expand.
+    // Hazard 45 names this transition verbatim, and the A2 column it replaces
+    // kept the draft.
+    mount();
+    openPane();
+    const before = typeDraft('half a message');
+    expect(before.value).toBe('half a message');
+    closePane();
+    openPane();
+    const after = container.querySelector('textarea');
+    expect(after).toBe(before);                  // the same node, not a remount
+    expect(after.value).toBe('half a message');  // …and the draft with it
+  });
+
+  it('MOBILE: the same, across close → reopen', () => {
+    setShell(false);
+    mount();
+    openPane();
+    const before = typeDraft('half a message');
+    closePane();
+    openPane();
+    const after = container.querySelector('textarea');
+    expect(after).toBe(before);
+    expect(after.value).toBe('half a message');
+  });
+
+  it('the chat is ONE node across collapse AND a section change, together', () => {
+    mount();
+    openPane();
+    const chatNode = container.querySelector('[data-pane-section="chat"]').firstElementChild;
+    selectTab('bench');
+    closePane();
+    openPane();
+    selectTab('chat');
+    expect(container.querySelector('[data-pane-section="chat"]').firstElementChild).toBe(chatNode);
+    expect(container.querySelectorAll('[data-chat-layout="controller"]')).toHaveLength(1);
+  });
+});
+
+describe('Review — focus is handed on, never dropped', () => {
+  it('MOBILE: opening moves focus INTO the region', () => {
+    setShell(false);
+    mount();
+    openPane();
+    const region = container.querySelector('[data-character-pane]');
+    expect(region.contains(document.activeElement) || document.activeElement === region).toBe(true);
+  });
+
+  it('MOBILE: closing returns focus to the mark that comes back', () => {
+    // The defect (lens 2 F3 / lens 5 F2): the captured invoker was the mark,
+    // which UNMOUNTS while the pane is open, so focusing it was a no-op on a
+    // detached node and the player landed on document.body. The hand-off now
+    // reaches the mark that reappears.
+    setShell(false);
+    mount();
+    openPane();
+    closePane();
+    expect(document.activeElement).toBe(container.querySelector('[data-character-mark]'));
+  });
+
+  it('DESKTOP: collapsing hands focus to the mark, not to the body', () => {
+    // A2.4's review L2-F4 rule, which the pane path skipped: each control lives
+    // inside the chrome the other renders, so a keyboard user who collapses
+    // must be handed the control that replaces the one that vanished.
+    mount();
+    openPane();
+    closePane();
+    expect(document.activeElement).toBe(container.querySelector('[data-character-mark]'));
+  });
+
+  it('the mount pass does not steal focus (the Game Tape\'s CR6 rule)', () => {
+    // Desktop opens WITH the pane showing. That first paint must not pull focus
+    // into the region — only a player-driven open does.
+    mount();
+    expect(paneIsOpen()).toBe(true);
+    expect(document.activeElement === document.body || document.activeElement === null).toBe(true);
+  });
+});
+
+describe('Review — the desktop resting state is the pane OPEN (brief §5 #1)', () => {
+  it('DESKTOP opens with the pane showing, on Chat', () => {
+    mount();
+    expect(paneIsOpen()).toBe(true);
+    expect(container.querySelector('[role="tab"][aria-selected="true"]').textContent).toBe('Chat');
+  });
+
+  it('MOBILE opens with the board, and the pane closed over nothing', () => {
+    setShell(false);
+    mount();
+    expect(paneIsOpen()).toBe(false);
+    expect(container.querySelector('[data-character-mark]')).toBeTruthy();
+    // …and the closed overlay is inert: hidden, so it cannot cover the board.
+    expect(container.querySelector('[data-pane-overlay]').style.display).toBe('none');
   });
 });

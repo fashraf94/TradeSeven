@@ -61,6 +61,9 @@ export function isPaneSection(value) {
  * @param {boolean} [options.lockScroll]  lock the body while open — the mobile
  *   shell, where the pane covers the board. False on desktop, where the pane is
  *   a column beside a board that must keep scrolling.
+ * @param {boolean} [options.openByDefault]  this shell OPENS with the pane
+ *   showing, until the player says otherwise. True on desktop (the brief's
+ *   resting working state), false on the phone.
  * @returns {{
  *   open: boolean, section: string,
  *   openPane: (section?: string|null, invoker?: any) => void,
@@ -69,12 +72,19 @@ export function isPaneSection(value) {
  *   returnFocusRef: {current: any},
  * }}
  */
-export function useCharacterPane(enabled, { lockScroll = false } = {}) {
-  const [open, setOpen] = useState(false);
+export function useCharacterPane(enabled, { lockScroll = false, openByDefault = false } = {}) {
+  const [open, setOpen] = useState(Boolean(openByDefault));
   const [section, setSectionState] = useState(PANE_SECTION.CHAT);
   const returnFocusRef = useRef(null);
+  // Whether the PLAYER has ever moved the pane. `useChatSheet`'s own
+  // `touchedRef`, for the same reason (review L2-F6): a shell's untouched
+  // OPENING default is not a choice, so a session that started on a phone and
+  // was widened should arrive on the desktop's default rather than on a board
+  // with no pane and no sign that one exists.
+  const touchedRef = useRef(false);
 
   const openPane = useCallback((next = null, invoker = null) => {
+    touchedRef.current = true;
     setOpen((wasOpen) => {
       // The return-focus target is recorded on the CLOSED → OPEN edge only, so
       // a door pressed while the pane is already open does not overwrite the
@@ -89,13 +99,27 @@ export function useCharacterPane(enabled, { lockScroll = false } = {}) {
 
   const setSection = useCallback((next) => {
     if (!isPaneSection(next)) return;
+    touchedRef.current = true;
     setSectionState(next);
   }, []);
 
   const close = useCallback(() => {
+    touchedRef.current = true;
     // The section is deliberately NOT reset: collapsing is not leaving.
     setOpen(false);
   }, []);
+
+  // A shell the player has not spoken to OPENS at its own default when that
+  // default is open — the desktop, where the brief's resting working state is
+  // the pane open on Chat (§5 deliverable 1) and the A2 column it replaces
+  // opened at HALF. Asymmetric on purpose, exactly as the sheet's is: nothing
+  // untouched is pushed OPEN on the way to a phone, where the pane covers the
+  // board. Once the player has moved it, the state is theirs in both
+  // directions.
+  useEffect(() => {
+    if (touchedRef.current || !openByDefault) return;
+    setOpen(true);
+  }, [openByDefault]);
 
   // Disabled, the pane is closed and forgets where it was. Same shape as the
   // sheet's reset, and the reason the flag can be read at render scope without
@@ -104,6 +128,7 @@ export function useCharacterPane(enabled, { lockScroll = false } = {}) {
     if (enabled) return;
     setOpen(false);
     setSectionState(PANE_SECTION.CHAT);
+    touchedRef.current = false;
   }, [enabled]);
 
   // THE BODY SCROLL LOCK (mobile only). The page beneath must not scroll under

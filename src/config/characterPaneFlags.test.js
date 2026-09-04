@@ -56,12 +56,18 @@ describe('Battle View character pane flag — dark pin (BUILD_RULES §2)', () =>
     expect(fn).toMatch(/isBattleViewControllerOn\(\)\s*&&\s*BATTLE_VIEW_CHARACTER_PANE_ENABLED/);
   });
 
-  it('the controller accessor is the outer conjunct and is live', () => {
-    // Read, not pinned — the controller's own suite owns its assertion. This row
-    // states the dependency A3 was cut on: the pane replaces containers the
-    // controller introduced, so the outer conjunct being live is what makes the
-    // inner flag the only thing standing between the build and the screen.
-    expect(isBattleViewControllerOn()).toBe(true);
+  it('the accessor tracks the conjunction in whatever state both flags are in', () => {
+    // NOT `expect(isBattleViewControllerOn()).toBe(true)`, which is what this
+    // row was until the review (lens 3 F2). That pinned the CONTROLLER's live
+    // value from a second file, invisible to flagPinGuard — which only scans
+    // `expect(FLAG).toBe(…)` on the constant — so a deliberate controller
+    // rollback would have reddened THIS file while the guard's message named
+    // only battleViewControllerFlags.test.js. The dependency A3 was cut on is
+    // stated in this file's header, where it cannot red.
+    //
+    // What is asserted instead is the accessor's contract, which holds in every
+    // combination of the two flags and therefore survives a rollback intact.
+    expect(isCharacterPaneOn()).toBe(isBattleViewControllerOn() && BATTLE_VIEW_CHARACTER_PANE_ENABLED);
   });
 
   it('no query-string override has crept in', () => {

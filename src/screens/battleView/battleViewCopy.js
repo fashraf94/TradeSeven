@@ -600,6 +600,10 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // the board.
   tapeBookmarks: (n) => (n > 0 ? `Bookmarks · ${n}` : 'Bookmarks'),
   tapeNoBookmarks: 'No bookmarks yet',
+  // The shipped Game Tape's own fallback for a bookmarked entry that carries
+  // no words (GameTapeView.jsx:413) — kept identical so one bookmark cannot
+  // read two ways across the two surfaces.
+  tapeBookmarkNoDetail: 'No details available',
   tapeUnbookmark: 'Remove this bookmark',
   tapeActivityLog: 'Activity log',
   tapeActivityShow: 'Show the activity log',
