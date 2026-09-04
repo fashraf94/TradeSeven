@@ -46,7 +46,7 @@ const LIVE_DOC = {
   id: 'ab-1',
   status: 'active',
   activatedAt: '2026-09-01T13:30:00.000Z',
-  agentContext: { agentName: 'Aurora' },
+  agentContext: { agentName: 'Aurora', archetype: 'degen', equippedWatchlist: { name: 'Energy leaders', tickers: ['DVN'] } },
   scoreState: { currentScore: 12, opponentScore: 3, tradeCount: 1, evaluationCount: 5, lastScoredAt: '2026-09-01T16:47:00.000Z' },
   timing: { tradingDays: ['d1', 'd2', 'd3'], currentTradingDay: 2 },
   portfolio: {
@@ -54,10 +54,13 @@ const LIVE_DOC = {
     core: [{ symbol: 'NVDA' }],
     support: [],
     startingPrices: { AAPL: 150, NVDA: 900, MU: 90 },
+    bench: { stocks: [{ symbol: 'NOW' }, { symbol: 'TSLA' }], crypto: null },
   },
+  watchlist: { hotBench: ['CRWD'] },
+  agentContext2: null,
   opponent: { portfolio: { star: [{ symbol: 'AMD' }], core: [], support: [] } },
   evaluations: [
-    { evalId: 'eval_005', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD', rationale: 'Holding the book.', haikuError: null },
+    { evalId: 'eval_005', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD', rationale: 'Holding the book. NOW would need +7.4% more to lock in the bonus.', haikuError: null },
   ],
   trades: [],
   statusFeed: [],
@@ -411,5 +414,88 @@ describe('A3.2 — the pane replaces the strip and the sheet (D-93)', () => {
     mount();
     openPane();
     expect(container.querySelector('[data-pane-close]').getAttribute('aria-label')).toBe('Close');
+  });
+});
+
+describe('A3.3 — Bench quotes the decider only (D-92)', () => {
+  const openPaneOn = (section) => {
+    const mark = container.querySelector('[data-character-mark]');
+    act(() => { mark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    act(() => {
+      container.querySelector(`[data-pane-tab="${section}"]`)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+  };
+
+  it('renders the named names with the decider\'s own sentence, and the rest', () => {
+    mount();
+    openPaneOn('bench');
+    const bench = container.querySelector('[data-pane-bench]');
+    expect(bench).toBeTruthy();
+    expect(bench.querySelector('[data-bench-named="NOW"]')).toBeTruthy();
+    expect(bench.textContent).toContain('NOW would need +7.4% more to lock in the bonus.');
+    // TSLA and CRWD and DVN are on the bench but unnamed by this check.
+    expect(bench.querySelector('[data-bench-rest="TSLA"]')).toBeTruthy();
+    expect(bench.querySelector('[data-bench-rest="CRWD"]')).toBeTruthy();
+    expect(bench.querySelector('[data-bench-rest="DVN"]')).toBeTruthy();
+    expect(bench.textContent).toContain('Not named at the');
+  });
+
+  it('carries the equipped watchlist\'s bare name as the subtitle', () => {
+    mount();
+    openPaneOn('bench');
+    const subtitle = container.querySelector('[data-bench-watchlist]');
+    expect(subtitle.textContent).toBe('Energy leaders · equipped');
+    // The header's chip prefix does not follow it in.
+    expect(subtitle.textContent).not.toContain('Watchlist:');
+  });
+
+  it('names no piece that has a row on the board', () => {
+    mount();
+    openPaneOn('bench');
+    const bench = container.querySelector('[data-pane-bench]');
+    for (const held of ['AAPL', 'SLB', 'NVDA']) {
+      expect(bench.querySelector(`[data-bench-rest="${held}"]`), `${held} has a row`).toBeNull();
+      expect(bench.querySelector(`[data-bench-named="${held}"]`), `${held} has a row`).toBeNull();
+    }
+  });
+
+  it('the Chat keeps its node while Bench shows (hazard 45)', () => {
+    mount();
+    const mark = container.querySelector('[data-character-mark]');
+    act(() => { mark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    const chatNode = container.querySelector('[data-pane-section="chat"]').firstElementChild;
+    act(() => {
+      container.querySelector('[data-pane-tab="bench"]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[data-pane-section="chat"]').firstElementChild).toBe(chatNode);
+  });
+
+  it('says `No check yet today` when nothing today carries words', () => {
+    withDoc({ evaluations: [{ evalId: 'e', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD', rationale: null }] });
+    mount();
+    openPaneOn('bench');
+    const bench = container.querySelector('[data-pane-bench]');
+    expect(bench.querySelector('[data-bench-absent]').textContent).toBe('No check yet today');
+    // The roster still renders, without a slot to not-name it at.
+    expect(bench.querySelector('[data-bench-rest="NOW"]')).toBeTruthy();
+    expect(bench.textContent).not.toContain('Not named at the');
+  });
+
+  it('leaves an EMPTY slot for assignments — no placeholder UI', () => {
+    mount();
+    openPaneOn('bench');
+    const slot = container.querySelector('[data-bench-assignments]');
+    expect(slot).toBeTruthy();
+    expect(slot.textContent).toBe('');
+    expect(container.querySelector('[data-pane-bench]').textContent).not.toContain('Assignments');
+  });
+
+  it('renders no per-name percent — there is no source for one', () => {
+    mount();
+    openPaneOn('bench');
+    const rest = container.querySelector('[data-bench-rest="TSLA"]');
+    expect(rest.textContent).not.toMatch(/%/);
   });
 });

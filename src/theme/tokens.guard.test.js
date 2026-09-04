@@ -84,6 +84,8 @@ const GUARDED_FILES = [
   'src/screens/battleView/deriveBubble.js',
   'src/screens/battleView/CharacterPane.jsx',
   'src/screens/battleView/useCharacterPane.js',
+  'src/screens/battleView/PaneBench.jsx',
+  'src/screens/battleView/selectBench.js',
 ];
 
 /**

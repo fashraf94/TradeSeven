@@ -562,6 +562,26 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // the three dots it is drawn as.
   paneMore: 'More',
 
+  // ── Bench (A3.3, D-92) ─────────────────────────────────────────────────────
+  // The section's own two strings. `At the {t} check` (atCheck) and `Not named
+  // at the {t} check` (notNamedAtCheck) already exist and are REUSED — Bench is
+  // not allowed a second way of naming a check (D-83).
+  //
+  // The absence line is a truthful state, not an error: no entry today carries
+  // words at all. It is deliberately NOT "the agent has not checked yet" —
+  // ticks may well have run; what is absent is WORDS.
+  benchNoCheck: 'No check yet today',
+  // The heading over the names the decider named. `the last check` rather than
+  // a slot, because the slot is spelled out immediately below it by atCheck and
+  // saying it twice in two lines is the stutter review L5-F7 found.
+  benchNamed: 'Named at the last check',
+  // The section's subtitle: the equipped watchlist's BARE name. The header's
+  // chip prefixes it with `Watchlist: ` (watchlistEquipUI.getEquippedWatchlistLabel);
+  // here the section heading already says Bench, so the prefix would stutter.
+  benchWatchlist: (name) => (name ? `${name} · equipped` : null),
+  // The rest of the roster — the names this check did not mention.
+  benchRest: 'The rest of the roster',
+
   // ── The layout (A4) ────────────────────────────────────────────────────────
   // Game Tape is ONE header link that opens the shipped view full-screen; the
   // way back names the page it returns to. No `···` menu (rulings §2.5).

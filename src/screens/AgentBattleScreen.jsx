@@ -44,6 +44,8 @@ import { computeTugOfWarWidth } from './battleView/computeTugOfWarWidth';
 import ArenaHeader from './battleView/ArenaHeader';
 import CharacterAvatar from './battleView/CharacterAvatar';
 import CharacterPane from './battleView/CharacterPane';
+import PaneBench from './battleView/PaneBench';
+import { selectBench } from './battleView/selectBench';
 import { useCharacterPane, PANE_SECTION } from './battleView/useCharacterPane';
 import { deriveBubble } from './battleView/deriveBubble';
 import { cssVar } from '../theme/cssTokens';
@@ -1633,13 +1635,21 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     />
   ) : null;
 
+  // A3.3 (D-92): the bench roster and what the DECIDER said about each name at
+  // the last check that carries words. Pure, off the subscribed doc; null
+  // unless the pane is on.
+  const benchState = useMemo(
+    () => (paneOn ? selectBench(agentBattle) : null),
+    [paneOn, agentBattle],
+  );
+
   // A3.2 — THE PANE, built once and rendered at exactly ONE point per shell
   // (the desktop column or the mobile overlay, never both). `chat` above is the
   // single AgentChat element and it is handed in here, so "one AgentChat per
   // layout" (rulings §3.10) holds by construction rather than by a count.
   //
-  // Bench and Tape are null until A3.3 and A3.4; their panels exist from here
-  // so the tablist's aria-controls targets are real on the day the tabs ship.
+  // Tape is null until A3.4; its panel exists from here so the tablist's
+  // aria-controls target is real on the day the tab ships.
   const characterPane = paneOn ? (
     <CharacterPane
       agentBattle={agentBattle}
@@ -1650,6 +1660,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       reducedMotion={reducedMotion}
       returnFocusRef={pane.returnFocusRef}
       chat={chat}
+      bench={<PaneBench bench={benchState} />}
     />
   ) : null;
 

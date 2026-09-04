@@ -108,6 +108,14 @@
     "src/screens/battleView/useCharacterPane.js": {
       "count": 0,
       "authority": "Phase A3 (D-93) — the pane. Its one transition is motionToken('smooth', { reducedMotion }) on the region's arrival; the section change is a `display` swap, not an animation, because the chat must not be unmounted (hazard 45). Zero raw transition literals."
+    },
+    "src/screens/battleView/PaneBench.jsx": {
+      "count": 0,
+      "authority": "Phase A3 (D-92) — Bench. It has NO motion at all: the section is a list of the decider's own sentences and nothing on it animates. Zero raw transition literals."
+    },
+    "src/screens/battleView/selectBench.js": {
+      "count": 0,
+      "authority": "Phase A3 (D-92) — Bench. It has NO motion at all: the section is a list of the decider's own sentences and nothing on it animates. Zero raw transition literals."
     }
   }
 }
