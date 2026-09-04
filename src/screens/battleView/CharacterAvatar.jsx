@@ -36,10 +36,26 @@
 // in this repo (grep -i radius src/theme/ is empty), so the corner is the
 // literal below, written once.
 //
-// LAYOUT. Absolutely positioned inside the board column, which the screen makes
-// `position: relative` and pads at the bottom so the mark never rests over a
-// row's tap targets. The hit target is 48px at minimum on both shells (brief
-// §2.1) even when the painted face is smaller.
+// LAYOUT — AND IT DIFFERS BY SHELL (F3, the founder's smoke).
+//
+// DESKTOP: absolutely positioned inside the board column, which the screen
+// makes `position: relative`. The column is itself the scroller's parent, so
+// the mark stays put while the board scrolls beneath it.
+//
+// MOBILE: FIXED TO THE VISUAL VIEWPORT. The phone's board column is not a
+// scroller — the PAGE scrolls — so an absolutely-positioned mark hung at
+// `bottom` sat at the bottom of the board's CONTENT, off screen until the
+// player scrolled to the very end. That is what the founder saw. `fixed` puts
+// it where the mark has to be: the one door back into the pane, always
+// reachable. `viewportInset` is the visual-viewport half of it (A2.4's rule,
+// one step further on) — `fixed` anchors to the LAYOUT viewport, so without
+// the offset the mark hides behind iOS's toolbar.
+//
+// Either way the board pads its bottom by AVATAR_CLEARANCE_PX so the mark never
+// rests over a row's tap targets, and the bubble is a sibling INSIDE this
+// container, so it travels with the mark by construction. The hit target is
+// 48px at minimum on both shells (brief §2.1) even when the painted face is
+// smaller.
 
 import React from 'react';
 import { motion } from 'framer-motion';
@@ -82,6 +98,10 @@ export default function CharacterAvatar({
   // section — that is what "expand restores" means.
   onOpenBubble,
   isDesktop = false,
+  // F3: the px of layout viewport hidden behind browser chrome, from
+  // viewportInsetFrom(). Mobile only — desktop is absolute inside the column
+  // and has no viewport to miss.
+  viewportInset = 0,
   reducedMotion = false,
 }) {
   const count = Number.isFinite(unread) && unread > 0 ? unread : 0;
@@ -95,11 +115,22 @@ export default function CharacterAvatar({
   return (
     <div
       data-character-avatar="1"
+      data-avatar-anchor={isDesktop ? 'column' : 'viewport'}
       style={{
-        position: 'absolute',
+        // See the header note. The phone's mark is fixed to the viewport; the
+        // desktop's is absolute inside a board column that scrolls under it.
+        position: isDesktop ? 'absolute' : 'fixed',
         right: isDesktop ? 16 : 12,
-        bottom: isDesktop ? 16 : 14,
-        zIndex: 4,
+        // The inset lifts the phone's mark off the browser chrome that `fixed`
+        // cannot see. It is 0 on every desktop and on any browser without a
+        // visual viewport, so this reads as the plain offset there.
+        bottom: isDesktop ? 16 : 14 + viewportInset,
+        // Above the board (2) and clear of the app's bottom nav (50,
+        // BottomNav.jsx:57). That bar does not render here today — 'battle' is
+        // in GAMEPLAY_SCREENS (App.jsx:1083) — so this is headroom, not a live
+        // fight. The screen gates the mark off while the Game Tape (30) is up,
+        // so it never floats over that either.
+        zIndex: isDesktop ? 4 : 51,
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'flex-end',

@@ -78,6 +78,32 @@ export function readViewportHeight() {
 }
 
 /**
+ * The part of the LAYOUT viewport that the browser's own chrome is covering —
+ * the gap `position: fixed` does not know about.
+ *
+ * A3 F3. `position: fixed` anchors to the LAYOUT viewport, so an element pinned
+ * to `bottom: 0` sits under iOS's toolbar rather than above it — the same
+ * mismatch readViewportHeight() exists for, one step further on. The sheet only
+ * needed the visual HEIGHT because it is pinned to `bottom: 0` and sized; the
+ * character mark is pinned to the bottom with nothing behind it, so it needs
+ * the OFFSET too or the player loses the one door back into the pane behind a
+ * strip of browser chrome.
+ *
+ * Pure, and takes the visual height rather than reading it, so a caller that
+ * already subscribes via useViewportHeight re-derives this on the same render
+ * the subscription causes — no second listener, no stale read.
+ *
+ * @param {number} visualHeight - from readViewportHeight() / useViewportHeight().
+ * @returns {number} px, never negative. 0 where there is no visual viewport.
+ */
+export function viewportInsetFrom(visualHeight) {
+  if (typeof window === 'undefined') return 0;
+  const layout = window.innerHeight;
+  if (!layout || !Number.isFinite(visualHeight) || visualHeight <= 0) return 0;
+  return Math.max(0, Math.round(layout - visualHeight));
+}
+
+/**
  * The viewport height, refreshed on resize / orientation change / the visual
  * viewport's own resize (the keyboard). Listeners only while enabled (the
  * controller under the flag); a constant otherwise.

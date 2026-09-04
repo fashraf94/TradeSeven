@@ -20,6 +20,7 @@ import {
   lowerDetent,
   detentHeightPx,
   readViewportHeight,
+  viewportInsetFrom,
 } from './useChatSheet';
 
 const { PEEK, HALF, FULL } = SHEET_DETENT;
@@ -86,5 +87,16 @@ describe('the heights', () => {
   it('with no window (the server paint) the viewport is the default', () => {
     expect(typeof window).toBe('undefined');
     expect(readViewportHeight()).toBe(DEFAULT_VIEWPORT_HEIGHT);
+  });
+
+  it('with no window the F3 inset is zero, not NaN', () => {
+    // The server paint reaches viewportInsetFrom too — it is read during
+    // render, not in an effect. `window.innerHeight` would throw here and
+    // arithmetic on undefined would yield NaN, which React writes into the
+    // style as `bottom: NaNpx` and the browser drops, silently returning the
+    // mark to the corner F3 moved it out of. The windowed arithmetic is in
+    // viewportInset.jsdom.test.js.
+    expect(typeof window).toBe('undefined');
+    expect(viewportInsetFrom(600)).toBe(0);
   });
 });

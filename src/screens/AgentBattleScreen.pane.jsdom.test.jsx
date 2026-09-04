@@ -242,9 +242,14 @@ describe('A3.1 — the character on the board (D-91, D-98)', () => {
     // comment claimed this; the assertion did not, so keeping SHEET_PEEK_PX + 32
     // under the pane survived (review lens 4 F10).
     expect(reserved).not.toBe(SHEET_PEEK_PX + 32);
-    expect(board.style.position).toBe('relative');
-    // …and the mark is inside the column it reserves for.
-    expect(board.contains(container.querySelector('[data-character-mark]'))).toBe(true);
+    // F3 CHANGED THE OTHER HALF OF THIS ROW. The reservation stays — the board
+    // still has to scroll clear of the mark — but the mark is no longer INSIDE
+    // the column on the phone: it is fixed to the viewport, at the root. The
+    // old assertion (`board.contains(mark)`) was the defect written down as a
+    // guarantee, so it is replaced by the property F3 actually wants.
+    const mark = container.querySelector('[data-character-mark]');
+    expect(mark).toBeTruthy();
+    expect(board.contains(mark)).toBe(false);
   });
 
   it('speaks the newest RECORDED entry when something is unread, and clears on open', () => {
@@ -1112,5 +1117,92 @@ describe('Smoke F1 — every section is the desktop RIGHT COLUMN, not a block be
     expect(layout.style.flexDirection).toBe('column');
     expect(container.querySelector('[data-board]').style.flex).toBe('1 1 0%');
     expect(container.querySelector('[data-chat-column]').style.display).toBe('none');
+  });
+});
+
+describe('Smoke F3 — the phone\'s mark is fixed to the viewport, not parked in the board', () => {
+  // The founder's smoke: "the mobile avatar sits in the scrolling board, not
+  // the viewport." The phone's board column is not a scroller — the PAGE is —
+  // so a mark absolutely positioned at its `bottom` sat at the end of the
+  // board's CONTENT, off screen until you scrolled all the way down. It is the
+  // one door back into the pane, so being reachable only at the bottom of the
+  // board is the whole failure.
+
+  it('MOBILE: fixed, at the root, outside the scrolling board', () => {
+    setShell(false);
+    mount();
+    const avatar = container.querySelector('[data-character-avatar]');
+    expect(avatar).toBeTruthy();
+    // The fix itself.
+    expect(avatar.style.position).toBe('fixed');
+    expect(avatar.getAttribute('data-avatar-anchor')).toBe('viewport');
+    // …and it is not a descendant of the board it used to scroll away with.
+    expect(container.querySelector('[data-board]').contains(avatar)).toBe(false);
+    expect(container.querySelector('[data-layout]').contains(avatar)).toBe(false);
+    // Clear of the app's bottom nav (BottomNav.jsx:57 — z 50).
+    expect(Number(avatar.style.zIndex)).toBeGreaterThan(50);
+  });
+
+  it('DESKTOP: still absolute inside the board column, which is its scroller\'s parent', () => {
+    // The desktop was never broken and must not be "fixed" too: there the
+    // column IS the containing block and the scroller lives inside it, so the
+    // mark already stays put while the board scrolls.
+    setShell(true);
+    mount();
+    closePane();
+    const avatar = container.querySelector('[data-character-avatar]');
+    expect(avatar.style.position).toBe('absolute');
+    expect(avatar.getAttribute('data-avatar-anchor')).toBe('column');
+    expect(container.querySelector('[data-board]').contains(avatar)).toBe(true);
+  });
+
+  it('the bubble travels with the mark — it is inside the fixed container', () => {
+    // "The bubble travels with it" is by construction, not by a second
+    // position: the bubble is a sibling INSIDE the mark's container.
+    setShell(false);
+    FEED = [];
+    DOC = { ...LIVE_DOC, chatExchanges: [
+      { id: 'x1', role: 'assistant', content: 'NOW is one bad print from a swap.', timestamp: '2026-09-01T16:50:00.000Z' },
+    ] };
+    mount();
+    const avatar = container.querySelector('[data-character-avatar]');
+    const bubble = container.querySelector('[data-character-bubble]');
+    expect(bubble).toBeTruthy();
+    expect(avatar.contains(bubble)).toBe(true);
+    expect(bubble.style.position).toBe('');   // it is in flow, beside the mark
+  });
+
+  it('lifts off the browser chrome the visual viewport reports', () => {
+    // A2.4's rule, one step on: `fixed` anchors to the LAYOUT viewport, so
+    // without this offset the mark hides behind iOS's toolbar. 120px of chrome
+    // → the mark stands 120px higher than its plain inset.
+    setShell(false);
+    const inner = window.innerHeight;
+    window.visualViewport = { height: inner - 120, addEventListener() {}, removeEventListener() {} };
+    try {
+      mount();
+      const avatar = container.querySelector('[data-character-avatar]');
+      expect(avatar.style.bottom).toBe(`${14 + 120}px`);
+    } finally {
+      delete window.visualViewport;
+    }
+  });
+
+  it('reads as the plain inset where there is no visual viewport', () => {
+    setShell(false);
+    expect(window.visualViewport).toBeUndefined();
+    mount();
+    expect(container.querySelector('[data-character-avatar]').style.bottom).toBe('14px');
+  });
+
+  it('is absent while the Game Tape is up, as the board column used to make it', () => {
+    // The board column gave the mark this for free (the layout container hides
+    // with `visibility: hidden`). At the root it has to be said. Under the pane
+    // no door to the tape renders, so this is by construction rather than by
+    // reachability — which is the point of asserting it.
+    setShell(false);
+    mount();
+    expect(container.querySelector('[data-character-mark]')).toBeTruthy();
+    expect(container.querySelector('[data-game-tape]')).toBeNull();
   });
 });

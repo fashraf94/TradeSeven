@@ -39,7 +39,7 @@ import useContentStable from './battleView/useContentStable';
 import ChatSheet from './battleView/ChatSheet';
 import { PeekStrip } from './battleView/PeekStrip';
 import { derivePeekLine } from './battleView/derivePeekLine';
-import { useChatSheet, useViewportHeight, isSheetOpen, SHEET_PEEK_PX, SHEET_DETENT } from './battleView/useChatSheet';
+import { useChatSheet, useViewportHeight, viewportInsetFrom, isSheetOpen, SHEET_PEEK_PX, SHEET_DETENT } from './battleView/useChatSheet';
 import { computeTugOfWarWidth } from './battleView/computeTugOfWarWidth';
 import ArenaHeader from './battleView/ArenaHeader';
 import CharacterAvatar from './battleView/CharacterAvatar';
@@ -596,6 +596,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // The visible viewport height sizes the mobile sheet's detents AND the
   // desktop page (a fixed 100vh is the large viewport on iOS — review L2-F11).
   const viewportHeight = useViewportHeight(controllerOn);
+  // F3: how much layout viewport the browser's chrome is covering. `position:
+  // fixed` anchors to the LAYOUT viewport, so the phone's mark needs this or it
+  // hides behind iOS's toolbar. Derived from viewportHeight rather than
+  // subscribed separately, so it refreshes on exactly the renders that hook
+  // already causes.
+  const viewportInset = viewportInsetFrom(viewportHeight);
   const [gameTapeOpen, setGameTapeOpen] = useState(false);
   // The mark of what the chat has SEEN: the feed's length AND its newest
   // entry's stamp. The server caps the feed (100 entries, sliced on every
@@ -1701,6 +1707,27 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     />
   ) : null;
 
+  // A3.1 / F3 — THE MARK, built once, rendered at exactly ONE point per shell,
+  // for the same reason the pane is. The two shells anchor it differently (the
+  // desktop board column vs the visual viewport) and that is the ONLY
+  // difference: one element definition means the phone can never drift from the
+  // desktop in what the mark shows, only in where it stands.
+  const characterMark = paneOn ? (
+    <CharacterAvatar
+      markRef={characterMarkRef}
+      agentBattle={agentBattle}
+      playerScore={displayPlayerScore}
+      opponentScore={displayOpponentScore}
+      bubble={paneBubble}
+      unread={paneUnread}
+      onOpen={handleExpandChat}
+      onOpenBubble={handleOpenPaneOnChat}
+      isDesktop={isDesktop}
+      viewportInset={viewportInset}
+      reducedMotion={reducedMotion}
+    />
+  ) : null;
+
   // A3.2 — THE PANE, built once and rendered at exactly ONE point per shell
   // (the desktop column or the mobile overlay, never both). `chat` above is the
   // single AgentChat element and it is handed in here, so "one AgentChat per
@@ -2114,7 +2141,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               // targets (brief §2.1). Pane-off keeps the sheet's reservation
               // exactly as merged.
               paddingBottom: paneOn ? AVATAR_CLEARANCE_PX : SHEET_PEEK_PX + 32,
-              ...(paneOn ? { position: 'relative' } : {}),
+              // F3: no `position: relative` here any more. It existed only to be
+              // the phone mark's containing block, and the phone's mark is now
+              // fixed to the viewport at the root. Dropping it returns this
+              // column to exactly the shipped pane-off shape — which never had
+              // it — so no other absolute descendant can move.
             }}
           >
             <div
@@ -2139,21 +2170,16 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 scrolls. */}
             {/* A3.2 (the seed's ruling 4): while the pane is open the character
                 stands in the pane's HEADER, and there is no second mark on the
-                board's corner. Collapsed, it comes back here. */}
-            {paneOn && !pane.open && (
-              <CharacterAvatar
-                markRef={characterMarkRef}
-                agentBattle={agentBattle}
-                playerScore={displayPlayerScore}
-                opponentScore={displayOpponentScore}
-                bubble={paneBubble}
-                unread={paneUnread}
-                onOpen={handleExpandChat}
-                onOpenBubble={handleOpenPaneOnChat}
-                isDesktop={isDesktop}
-                reducedMotion={reducedMotion}
-              />
-            )}
+                board's corner. Collapsed, it comes back here.
+
+                F3: DESKTOP ONLY. The desktop board column IS the mark's
+                containing block and its scroller lives inside, so absolute
+                here is right. The phone's board column is not a scroller — the
+                page is — so the same markup put the mark at the bottom of the
+                board's CONTENT, off screen until you scrolled to the end. The
+                phone's mark is rendered at the root instead, fixed to the
+                viewport; see the note there. */}
+            {paneOn && isDesktop && !pane.open && characterMark}
           </div>
           {/* ONE CHILD SLOT, not two (A3.2). The pane and the A2 column are
               branches of a single expression, deliberately: React derives
@@ -2386,6 +2412,24 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           child slot the sheet occupies — see the desktop column's note on
           useId. */}
       {!isDesktop && (paneOn ? (
+        // A FRAGMENT, not a second child slot (the useId note on the desktop
+        // column). The pane-OFF arm below keeps its position among this root's
+        // children either way, so the golden's tree is untouched; only the
+        // pane-ON arm gains the mark.
+        <>
+        {/* F3 — THE PHONE'S MARK, FIXED TO THE VIEWPORT, at the ROOT.
+            Rendered here rather than inside the board column for two reasons.
+            The board column is not the phone's scroller (the page is), so an
+            absolute mark hung at `bottom` sat at the end of the board's
+            CONTENT — the founder's report. And a `fixed` descendant is trapped
+            by any ancestor with a filter or a transform, which the layout
+            container acquires the moment the pane opens; at the root there is
+            no such ancestor to be trapped by.
+            Two gates the board column used to give it for free, now explicit:
+            the mark hides while the Game Tape is up (the layout container did
+            that with `visibility: hidden`), and it is absent while the pane is
+            open (the character stands in the pane's header instead). */}
+        {!pane.open && !gameTapeOpen && characterMark}
         <div
           data-pane-overlay="1"
           data-pane-open={pane.open ? 'true' : 'false'}
@@ -2404,6 +2448,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         >
           {characterPane}
         </div>
+        </>
       ) : controllerOn && (
         <ChatSheet
           detent={sheet.detent}
