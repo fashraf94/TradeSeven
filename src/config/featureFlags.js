@@ -1966,53 +1966,64 @@ export const EQUIPPED_RULE_PRECEDENCE_ENABLED = false;
 
 /**
  * Battle View controller, Phase A (docs/design/PHASE_A_RULINGS_AND_AMENDMENTS_V1.md,
- * ledger D-59 → D-62 in docs/audits/COMMAND_CENTER_BATTLE_SYNC_DESIGN_FRAMEWORK_V1_2.md).
- * DARK — default FALSE.
+ * ledger D-59 → D-90 in docs/audits/COMMAND_CENTER_BATTLE_SYNC_DESIGN_FRAMEWORK_V1_2.md).
+ * LIVE — default TRUE since the flip PR (September 4, 2026).
  *
- * When TRUE, the live-battle screen (AgentBattleScreen) plays as a controller:
- * the score header carries the turn line (`Checked 12:47 PM · next ~1:02 PM`,
- * from the same adapter arithmetic the Desk ships), the Matchups rows read the
+ * The live-battle screen (AgentBattleScreen) plays as a controller: the score
+ * header carries the turn line (`Checked 12:47 PM · next ~1:02 PM`, from the
+ * same adapter arithmetic the Desk ships), the Matchups rows read the
  * subscribed battle doc rather than the frozen prop (D-59), every player row
  * opens Why? — the agent's own persisted words from the last decision — and
  * the chat's directive cards carry truthful receipts (`Filed · Replaced ·
  * Expired`, D-51 / D-60) in place of the shipped execution promise.
  *
  * READ-ONLY by construction. Phase A writes nothing to the battle doc, makes
- * no model call, adds no listener and never touches api/. When FALSE every
- * Battle View surface is byte-identical to today, which the screen's render
- * tests assert. The ONE change outside this flag is D-62: the dashboard
- * Desk's closed-phase string (DESK_COPY.postureClosed) now carries the as-of
- * stamp too — one sentence on both surfaces — and that string is gated by
- * the Desk's own COMMAND_CENTER_SYNC_ENABLED (dark), never by this flag.
+ * no model call, adds no listener and never touches api/. The ONE change
+ * outside this flag is D-62: the dashboard Desk's closed-phase string
+ * (DESK_COPY.postureClosed) carries the as-of stamp too — one sentence on
+ * both surfaces — and that string is gated by the Desk's own
+ * COMMAND_CENTER_SYNC_ENABLED (still dark), never by this flag.
+ *
+ * ROLLBACK IS THIS ONE LITERAL. Setting it back to false restores the shipped
+ * tabbed screen byte-for-byte: the flag-off path is not legacy debris, it is a
+ * guarded fallback. Four suites force it off through a vi.mock of the accessor
+ * — AgentBattleScreen.flagOff.golden, .flagOff.tape.jsdom, .restFallback and
+ * __golden__/captureFlagOffGolden — and two committed HTML goldens hold that
+ * output to the byte. Those suites guarded the DEFAULT before the flip and
+ * guard the FALLBACK after it; nothing about them changed, which is the point.
  *
  * INDEPENDENT of COMMAND_CENTER_SYNC_ENABLED (the dashboard Desk): neither
- * flag reads the other.
+ * flag reads the other. The Desk stays dark; this flip says nothing about it.
  *
  * Read it at RENDER scope through isBattleViewControllerOn() below, never as
  * a module-scope const (the Pass 1 hazard: 15 of 56 featureFlags vi.mock
  * sites use a bare factory with no importOriginal spread).
- *
- * The flip is its own deliberate PR after the founder's preview smoke — never
- * a build PR. It updates the pin below, drops the DARK_BY_DESIGN entry AND
- * deletes the `?battleViewController=1` override in that same commit (flip,
- * pin and override travel together — the `?fuseHero=1` precedent above).
  */
 // Pinned by: battleViewControllerFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const BATTLE_VIEW_CONTROLLER_ENABLED = false;
+export const BATTLE_VIEW_CONTROLLER_ENABLED = true;
 
 /**
- * The ONE home for the Battle View controller gate — the flag OR the
- * `?battleViewController=1` preview override (smoke Pattern B, Phase A
- * rulings §1.4). SSR/Node-safe (guards `window`); a malformed URL degrades to
- * the flag alone (the isMatchupsBackdropOn idiom). Read at render time, so a
- * test can mock it in either state without touching module scope.
+ * The ONE home for the Battle View controller gate — now the flag, and nothing
+ * else.
+ *
+ * The `?battleViewController=1` preview override (smoke Pattern B, Phase A
+ * rulings §1.4) is GONE: it existed so the founder could look at the
+ * dark-merged controller on a Vercel preview before the production flip, and
+ * it was deleted in the SAME COMMIT that flipped the flag — flip, pin and
+ * override travel together, which is the `?fuseHero=1` precedent and the
+ * `?leagueLiveOrb=1` lesson behind it (that one left a URLSearchParams read
+ * wired to nothing, and it sat here for months because nobody could tell
+ * whether it was load-bearing).
+ *
+ * The accessor SURVIVES the flip (the ARENA_LIVE_ON / FUSE_HERO_ON precedent)
+ * as the flag's one consumer seam: AgentBattleScreen calls this at render
+ * scope, never the constant, so a test can mock either state without touching
+ * module scope and the rollback stays one literal above.
+ *
+ * A source row in battleViewControllerFlags.test.js asserts no query-string
+ * read has crept back — the only instrument that can still fail here, since a
+ * behavioural row cannot observe an override the live flag short-circuits.
  */
 export function isBattleViewControllerOn() {
-  if (BATTLE_VIEW_CONTROLLER_ENABLED) return true;
-  if (typeof window === 'undefined') return false;
-  try {
-    return new URLSearchParams(window.location.search).get('battleViewController') === '1';
-  } catch {
-    return false;
-  }
+  return BATTLE_VIEW_CONTROLLER_ENABLED;
 }
