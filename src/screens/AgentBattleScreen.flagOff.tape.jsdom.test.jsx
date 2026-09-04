@@ -38,6 +38,13 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
   isMatchupsBackdropOn: () => false,
   // THE CONTROLLER OFF — the whole point of this file.
   isBattleViewControllerOn: () => false,
+  // Mocked EXPLICITLY, not left to the flag's default (review lens 3 F2, and
+  // the smoke branch that found the three files it missed).
+  // isCharacterPaneOn() calls isBattleViewControllerOn() INSIDE featureFlags,
+  // so a vi.mock of the controller never reaches it — on the day the pane flag
+  // flips, this suite would see the pane on with the controller state it asked
+  // for, which is not the state it means to test.
+  isCharacterPaneOn: () => false,
 }));
 vi.mock('../services/eodhdAPI', () => ({
   stockAPI: {
