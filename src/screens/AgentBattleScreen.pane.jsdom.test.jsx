@@ -189,6 +189,27 @@ describe('A3.1 — the character on the board (D-91, D-98)', () => {
     expect(board.style.position).toBe('relative');
   });
 
+  it('MOBILE: the reservation is the mark\'s clearance, and it clears the mark', () => {
+    // Added after the review's SURVIVOR PROBE (BUILD_RULES §2): changing
+    // AVATAR_CLEARANCE_PX from 96 to 500 left all 4156 rows green, which proved
+    // the harness can report a survivor AND that this value was guarded by
+    // nothing. The brief's §2.1 promise — the board reserves the space so the
+    // mark never rests over a row's tap targets — was unenforced.
+    //
+    // The row is stated as that promise rather than as the literal: the
+    // reservation must clear the mark's own 48px target plus its 14px inset,
+    // and must not be the sheet's (SHEET_PEEK_PX + 32 = 108 today), which is
+    // what the pane retires.
+    setShell(false);
+    mount();
+    const board = container.querySelector('[data-board]');
+    const reserved = parseInt(board.style.paddingBottom, 10);
+    expect(reserved).toBeGreaterThanOrEqual(48 + 14);
+    expect(board.style.position).toBe('relative');
+    // …and the mark is inside the column it reserves for.
+    expect(board.contains(container.querySelector('[data-character-mark]'))).toBe(true);
+  });
+
   it('speaks the newest RECORDED entry when something is unread, and clears on open', () => {
     // MOBILE, deliberately. On desktop the A2 chat column opens at HALF by
     // default, so `chatVisible` is true on the first paint and the effect marks
