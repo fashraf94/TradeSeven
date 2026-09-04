@@ -42,6 +42,8 @@ import { derivePeekLine } from './battleView/derivePeekLine';
 import { useChatSheet, useViewportHeight, isSheetOpen, SHEET_PEEK_PX, SHEET_DETENT } from './battleView/useChatSheet';
 import { computeTugOfWarWidth } from './battleView/computeTugOfWarWidth';
 import ArenaHeader from './battleView/ArenaHeader';
+import CharacterAvatar from './battleView/CharacterAvatar';
+import { deriveBubble } from './battleView/deriveBubble';
 import { cssVar } from '../theme/cssTokens';
 import { motionToken } from '../theme/motion';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
@@ -145,6 +147,13 @@ function useIsDesktop() {
 }
 
 const staggerSpring = { type: 'spring', stiffness: 200, damping: 20 };
+
+/**
+ * A3.1 — the board's bottom reservation under the pane flag: the avatar's own
+ * hit target (48) plus its inset from the bottom (14) plus a row's breathing
+ * room. Pane-off the board still reserves SHEET_PEEK_PX + 32 for the sheet.
+ */
+const AVATAR_CLEARANCE_PX = 96;
 
 // ─── Tier Header ──────────────────────────────────────────────────────────────
 
@@ -1305,6 +1314,16 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     [controllerOn, recordedTape, openCheck?.id],
   );
 
+  // A3.1 (D-98): the character's one line — the newest tape entry the CHARACTER
+  // said, as a kind eyebrow and a line, both taken whole from the helpers the
+  // stream renders. Same list, same fold-free source as the peek line above, so
+  // the bubble and the stream cannot name one moment two ways. Null unless the
+  // pane is on.
+  const paneBubble = useMemo(
+    () => (paneOn ? deriveBubble(recordedTape) : null),
+    [paneOn, recordedTape],
+  );
+
   // ── The unread mark (A4, hazard 14; re-sourced flip-prep item 4) ──────────
   //
   // IT COUNTS WHAT THE TAPE RENDERS. Under the flag the `statusFeed` no longer
@@ -1373,6 +1392,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     ? (tapeCount > seenFeed.length
       || (seenFeed.stamp != null && newestTapeStamp != null && newestTapeStamp !== seenFeed.stamp))
     : statusFeed.length > lastSeenFeedLengthRef.current;
+  // A3.1: the avatar's badge is the SAME two numbers as a difference, never the
+  // raw feed (D-88). The stamp rule above still decides WHETHER anything is
+  // unread — a cap roll can leave the length flat while entries arrive — so a
+  // positive stamp difference with a flat length shows as at least one.
+  const paneUnread = (() => {
+    if (!paneOn || !hasNewFeedEntries) return 0;
+    return Math.max(1, tapeCount - seenFeed.length);
+  })();
   const hasCommandDot = hasPendingProposal || hasNewFeedEntries;
   const commandDotColor = hasPendingProposal ? '#f59e0b' : '#5eead4';
 
@@ -1917,10 +1944,20 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               minHeight: 0,
               display: 'flex',
               flexDirection: 'column',
+              // A3.1: the avatar is absolutely positioned INSIDE this column,
+              // so the column has to be its containing block. The layout
+              // container has `position: relative`; this one did not.
+              ...(paneOn ? { position: 'relative' } : {}),
             } : {
               flex: '1 1 auto',
               minWidth: 0,
-              paddingBottom: SHEET_PEEK_PX + 32,
+              // A3.1 (D-93): under the pane the sheet is on its way out and the
+              // board reserves the AVATAR's clearance instead of the sheet's
+              // peek — enough that the mark never rests over a row's tap
+              // targets (brief §2.1). Pane-off keeps the sheet's reservation
+              // exactly as merged.
+              paddingBottom: paneOn ? AVATAR_CLEARANCE_PX : SHEET_PEEK_PX + 32,
+              ...(paneOn ? { position: 'relative' } : {}),
             }}
           >
             <div
@@ -1932,6 +1969,19 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               {boardRows}
               {closedTrades}
             </div>
+            {/* The character (A3.1, D-91). One mark per layout, inside the board
+                column and above its scroller, so it stays put while the board
+                scrolls. */}
+            {paneOn && (
+              <CharacterAvatar
+                agentBattle={agentBattle}
+                bubble={paneBubble}
+                unread={paneUnread}
+                onOpen={handleExpandChat}
+                isDesktop={isDesktop}
+                reducedMotion={reducedMotion}
+              />
+            )}
           </div>
           {isDesktop && (
             /* THE CHAT'S ONE HOME ON THE DESKTOP (A2.4, review L2-F1 / L5-F7).

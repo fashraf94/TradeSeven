@@ -83,6 +83,8 @@ const GUARDED_FILES = [
   // from motionToken (D-96, D-97): the arena's mount-in and its bar.
   'src/screens/battleView/ArenaHeader.jsx',
   'src/screens/battleView/computeTugOfWarWidth.js',
+  'src/screens/battleView/CharacterAvatar.jsx',
+  'src/screens/battleView/deriveBubble.js',
 ];
 
 /**

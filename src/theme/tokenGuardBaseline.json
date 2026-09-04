@@ -69,6 +69,8 @@
     "src/screens/battleView/useCoarseNow.js": {},
     "src/screens/battleView/useContentStable.js": {},
     "src/screens/battleView/ArenaHeader.jsx": {},
-    "src/screens/battleView/computeTugOfWarWidth.js": {}
+    "src/screens/battleView/computeTugOfWarWidth.js": {},
+    "src/screens/battleView/CharacterAvatar.jsx": {},
+    "src/screens/battleView/deriveBubble.js": {}
   }
 }

@@ -521,6 +521,29 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   arenaVs: 'VS',
   arenaBookHint: 'Tap for the book',
 
+  // ── The character (A3.1, D-91 / D-98) ──────────────────────────────────────
+  // The avatar is the ONE door to the conversation, so its accessible name says
+  // what it opens, not what it is drawn as. The unread count rides that name
+  // rather than living only in a badge — a badge is a shape, and a shape is not
+  // a name.
+  //
+  // `{n} new` is the badge's own label (the seed's string). It never counts raw
+  // feed actions: the number is the difference between what the TAPE renders and
+  // what the reader has seen (D-88).
+  paneName: 'The agent\'s pane',
+  paneOpen: 'Open the agent\'s pane',
+  paneUnread: (n) => `${n} new`,
+  paneOpenName: (n) => (n > 0
+    ? `${BATTLE_VIEW_COPY.paneOpen} · ${BATTLE_VIEW_COPY.paneUnread(n)}`
+    : BATTLE_VIEW_COPY.paneOpen),
+  // The bubble is a second door onto the same pane. Its name leads with the
+  // kind it is showing, so a screen reader hears WHAT landed before it hears
+  // what the control does; a bubble with no kind word (a folded run) names the
+  // action alone rather than an empty prefix.
+  paneBubbleName: (eyebrow) => (eyebrow
+    ? `${eyebrow} · ${BATTLE_VIEW_COPY.paneOpen.toLowerCase()}`
+    : BATTLE_VIEW_COPY.paneOpen),
+
   // ── The layout (A4) ────────────────────────────────────────────────────────
   // Game Tape is ONE header link that opens the shipped view full-screen; the
   // way back names the page it returns to. No `···` menu (rulings §2.5).

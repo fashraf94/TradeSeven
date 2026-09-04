@@ -65,6 +65,7 @@ const LIVE_DOC = {
 };
 
 let DOC = LIVE_DOC;
+const withDoc = (over) => { DOC = { ...LIVE_DOC, ...over }; };
 vi.mock('../hooks/useAgentBattle', () => ({
   default: () => ({
     battle: DOC, statusFeed: [], executionMode: 'copilot', pendingProposal: null,
@@ -91,7 +92,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-09-01T17:00:00.000Z'));
   DOC = LIVE_DOC;
-  window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
+  setShell(true);
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -101,6 +102,16 @@ afterEach(() => {
   container.remove();
   vi.useRealTimers();
 });
+
+/**
+ * The breakpoint, both halves of it: useIsDesktop seeds from window.innerWidth
+ * at MOUNT and then listens on matchMedia, so a test that sets only one of the
+ * two gets a shell that disagrees with itself.
+ */
+const setShell = (isDesktop) => {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: isDesktop ? 1280 : 480 });
+  window.matchMedia = () => ({ matches: isDesktop, addEventListener() {}, removeEventListener() {} });
+};
 
 const mount = () => act(() => {
   root.render(<AgentBattleScreen battle={BATTLE} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />);
@@ -148,5 +159,77 @@ describe('A3.0 — the arena replaces the shipped header under the pane flag (D-
     // grow its own copy of that arithmetic off `timing`.
     mount();
     expect(container.querySelector('[data-arena-header]').textContent).toContain('Day 2 of 3');
+  });
+});
+
+describe('A3.1 — the character on the board (D-91, D-98)', () => {
+  it('mounts exactly one mark, inside the board column', () => {
+    mount();
+    const marks = container.querySelectorAll('[data-character-mark]');
+    expect(marks).toHaveLength(1);
+    expect(container.querySelector('[data-board]').contains(marks[0])).toBe(true);
+  });
+
+  it('the board reserves the mark\'s clearance instead of the sheet\'s peek (D-93)', () => {
+    mount();
+    // matchMedia is stubbed true here, so this is the DESKTOP branch: the
+    // column takes `position: relative` so the absolutely-positioned mark has a
+    // containing block, and the mobile branch swaps the padding. Both are the
+    // paneOn arm of the same conditional.
+    const board = container.querySelector('[data-board]');
+    expect(board.style.position).toBe('relative');
+  });
+
+  it('speaks the newest RECORDED entry when something is unread, and clears on open', () => {
+    // MOBILE, deliberately. On desktop the A2 chat column opens at HALF by
+    // default, so `chatVisible` is true on the first paint and the effect marks
+    // everything seen before a count can exist — correct behaviour, and the
+    // reason the pane's own closed-by-default machine (A3.2) is what finally
+    // makes the desktop count meaningful. The phone starts at peek, so the
+    // unread path is live there today.
+    setShell(false);
+    // The tape is unseen on a fresh mount (the A4 rule kept in flip-prep), so
+    // the mark carries a count and the character has a line.
+    mount();
+    const mark = container.querySelector('[data-character-mark]');
+    expect(mark.getAttribute('data-unread')).toBeTruthy();
+    const bubble = container.querySelector('[data-character-bubble]');
+    expect(bubble).toBeTruthy();
+    // The eyebrow is the check CARD's own label, not a second one.
+    expect(bubble.textContent).toContain('Status check');
+
+    // Opening the conversation marks it seen; the count and the bubble go.
+    act(() => { mark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
+    expect(container.querySelector('[data-character-bubble]')).toBeNull();
+  });
+
+  it('says nothing when the tape has nothing the character said', () => {
+    withDoc({ evaluations: [], chatExchanges: [], trades: [] });
+    mount();
+    expect(container.querySelector('[data-character-mark]')).toBeTruthy();
+    expect(container.querySelector('[data-character-bubble]')).toBeNull();
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
+  });
+
+  it('a TIMER alone creates no bubble — only a tape change can (D-97)', () => {
+    // The seed's row. Mount with an empty tape, advance the clock past several
+    // cron slots, re-render: still nothing. The only input that can produce a
+    // bubble is a new entry.
+    withDoc({ evaluations: [], chatExchanges: [], trades: [] });
+    mount();
+    expect(container.querySelector('[data-character-bubble]')).toBeNull();
+    act(() => { vi.setSystemTime(new Date('2026-09-01T18:30:00.000Z')); });
+    mount();
+    expect(container.querySelector('[data-character-bubble]')).toBeNull();
+  });
+
+  it('the bubble and the mark are both doors onto the same pane', () => {
+    setShell(false);
+    mount();
+    const bubble = container.querySelector('[data-character-bubble]');
+    expect(bubble.tagName).toBe('BUTTON');
+    act(() => { bubble.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
   });
 });

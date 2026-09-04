@@ -47,7 +47,16 @@ import { cssVar } from '../../theme/cssTokens';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { WHY_KIND, parseEmphasis } from './selectWhyState';
 
-const LABEL_COLOR = {
+/**
+ * THE ONE SOURCE FOR WHAT COLOUR A KIND IS (D-98, hazard 43).
+ *
+ * Exported since A3.1 because the character's speech bubble carries the same
+ * kind eyebrows this file renders, and a second map over there would be the §9
+ * two-sources bug with colours instead of numbers: the bubble and the card
+ * would eventually paint one kind two ways, on the same page, for the same
+ * entry. deriveBubble imports these three rather than restating them.
+ */
+export const LABEL_COLOR = {
   [WHY_KIND.DOWNGRADED]: cssVar('amber'),
   [WHY_KIND.FAILED]: cssVar('amber'),
   [WHY_KIND.GUARDRAIL_FAILED]: cssVar('amber'),
@@ -55,6 +64,25 @@ const LABEL_COLOR = {
   [WHY_KIND.HELD]: cssVar('text-secondary'),
   [WHY_KIND.ABSENT]: cssVar('text-muted'),
 };
+
+/** A trade card's eyebrow — teal wherever it is rendered (see TradeCard below). */
+export const TRADE_EYEBROW_COLOR = cssVar('teal');
+
+/**
+ * A directive card's eyebrow. AgentChat renders that card with a raw '#5EEAD4'
+ * (:130, an unguarded file and a pre-existing literal) — the same value
+ * --ft-teal carries. Named here so the bubble consumes the token rather than a
+ * fourth copy of the hex; re-pointing AgentChat's literal at it is a flag-off
+ * change and belongs to the cleanup PR, not to A3.
+ */
+export const DIRECTIVE_EYEBROW_COLOR = cssVar('teal');
+
+/**
+ * The character's own speech, in the stream and in the bubble. This is the
+ * value AgentChat.jsx:302 already gives every kind eyebrow it renders, so the
+ * two surfaces agree about speech without AgentChat changing at all.
+ */
+export const SPEECH_EYEBROW_COLOR = cssVar('text-muted');
 
 const mono = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
