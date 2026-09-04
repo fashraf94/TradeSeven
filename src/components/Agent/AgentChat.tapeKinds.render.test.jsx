@@ -26,6 +26,7 @@
 //
 // renderToString (effects do not run): the markup is the whole claim.
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
@@ -39,6 +40,7 @@ import AgentChat from './AgentChat';
 import { buildTape } from '../../screens/battleView/buildTape';
 import { deriveReceipts } from '../../screens/battleView/deriveReceipts';
 import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
+import { SPEECH_EYEBROW_COLOR } from '../../screens/battleView/TapeCards';
 
 const BATTLE_VIEW_COPY_CHECK = (iso, label) => BATTLE_VIEW_COPY.checkCardLabel(iso, label);
 
@@ -296,5 +298,35 @@ describe('D-84 — four kinds in one stream', () => {
     expect(html).toContain('border-radius:0 12px 12px 12px');
     expect(html).toContain('border-radius:12px 12px 0 12px');
     expect(html).toContain('DIRECTIVE LOCKED IN');
+  });
+});
+
+describe('Review lens 4 F11 — the eyebrow\'s colour is the SHARED one (D-98)', () => {
+  it('the chat\'s speech eyebrow paints SPEECH_EYEBROW_COLOR, by identifier', () => {
+    // Hazard 43's ruling is that the bubble and the stream never disagree about
+    // a kind. A3.1 made that structural between TapeCards and deriveBubble but
+    // left the CHAT painting its own literal, so a drift here — the exact gated
+    // change the ruling describes — survived every suite but the pane-off byte
+    // golden, which cannot speak to a pane-ON agreement at all.
+    //
+    // Two rows in one: the rendered colour IS the shared constant, and the
+    // source reads it as an identifier rather than re-deriving the same value.
+    const html = render();
+    expect(html).toContain('data-tape-kind-eyebrow=');
+    const at = html.indexOf('data-tape-kind-eyebrow=');
+    const openTag = html.slice(at, html.indexOf('>', at));
+    expect(openTag).toContain(`color:${SPEECH_EYEBROW_COLOR}`);
+
+    // The source row is EXACT, not `toContain`. A gated drift —
+    // `isCharacterPaneOn() ? cssVar('text-secondary') : SPEECH_EYEBROW_COLOR`,
+    // the precise change the ruling's wording describes — still CONTAINS the
+    // identifier and would survive a containment check, while rendering a
+    // different colour under the flag. The claim is that the eyebrow's colour
+    // is the shared constant and nothing else.
+    const src = readFileSync(new URL('./AgentChat.jsx', import.meta.url), 'utf8');
+    const srcAt = src.indexOf('data-tape-kind-eyebrow={kindEyebrow}');
+    const block = src.slice(srcAt, src.indexOf('}}', srcAt));
+    const colourLine = block.split('\n').find((l) => /^\s*color:/.test(l));
+    expect(colourLine.trim()).toBe('color: SPEECH_EYEBROW_COLOR,');
   });
 });

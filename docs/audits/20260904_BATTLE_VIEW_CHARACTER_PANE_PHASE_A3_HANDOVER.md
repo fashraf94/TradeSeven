@@ -17,11 +17,11 @@
 | 3 | Pane-off (the A2 controller render) | **Byte-identical**, against a NEW golden photographed from `8e63ea65` — and now also pinned in the scoped state, which the first paint cannot photograph. |
 | 4 | Fence and ratchet | **No `api/` contact of any kind.** No new archetype-table importer. |
 | 5 | Guards | Every new file on both theme and motion lists with baselines in its creating commit (hazard 34). |
-| 6 | Tests | **4,179 pass, 2 skipped, 0 failing.** Explicit `vite build` exits 0. |
-| 7 | Review (BUILD_RULES §2) | **Run, and it found eleven defects** — one of them a P0 that crashed the screen. All fixed, all mutation-checked. See the review record. |
+| 6 | Tests | **4,196 pass, 2 skipped, 0 failing.** Explicit `vite build` exits 0. |
+| 7 | Review (BUILD_RULES §2) | **Run in full, five lenses.** Eleven code defects — one a P0 that crashed the screen — and **twenty-seven surviving mutations**, each a row of mine that could not fail. All fixed, all re-mutated. See the review record. |
 | 8 | What is not settled | Five copy / ruling questions, deliberately not decided here (§6). |
 
-**The honest headline:** the build shipped a conditional hook that crashed the Battle View on every mount, including on the pane-off path, and two of its own test rows could not fail under the defects they named. The review caught all three. Nothing was found by the instruments the build itself put in place — which is the argument for the review, not against the instruments.
+**The honest headline:** the build shipped a conditional hook that crashed the Battle View on every mount, including on the pane-off path; five of its domain selectors were wrong; and twenty-seven of its own test rows could not fail under the defects they named — including the seed's own "a timer alone does nothing" row and the row meant to prove the three doors work. Every one of those was found by the review, none by the instruments the build put in place. That is the argument for the review, not against the instruments: the sixteen kills the build DID claim all reproduce.
 
 ---
 
@@ -53,8 +53,10 @@
 | 10 | `e3215bef` | **A3.4** Tape (D-94) |
 | 11 | `e17784e0` | **A3.5** the declutter (D-94, D-95) |
 | 12 | `4b9a72fb` | review: the survivor probe's one finding, guarded |
-| 13 | `2ec25844` | **review fixes** — eleven confirmed findings |
+| 13 | `2ec25844` | **review fixes** — eleven confirmed code findings |
 | 14 | `a797fc6a` | docs: the build review record |
+| 15 | `c4d14433` | docs: this handover |
+| 16 | `f0aa87ff` | **review fixes, second pass** — the rows that could not fail |
 
 ---
 

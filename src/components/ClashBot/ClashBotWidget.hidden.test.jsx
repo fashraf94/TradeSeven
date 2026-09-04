@@ -99,10 +99,22 @@ describe('the external open door (CLASHBOT_OPEN_EVENT)', () => {
     expect(container.textContent.length).toBeGreaterThan(0);
   });
 
-  it('unsubscribes on unmount — a dispatch after it throws nothing', () => {
+  it('unsubscribes on unmount — the listener is really removed', () => {
+    // The first version of this row asserted that a dispatch after unmount
+    // "throws nothing", which it never can: dispatchEvent does not throw for
+    // listener behaviour, and a setState on an unmounted root is a React no-op.
+    // Deleting the cleanup survived it (review lens 4 F9). This watches the
+    // registration instead.
+    const removed = [];
+    const realRemove = window.removeEventListener.bind(window);
+    const spy = vi.spyOn(window, 'removeEventListener').mockImplementation((type, fn, opts) => {
+      removed.push(type);
+      return realRemove(type, fn, opts);
+    });
     mount();
     act(() => root.unmount());
-    expect(() => window.dispatchEvent(new CustomEvent(CLASHBOT_OPEN_EVENT))).not.toThrow();
+    expect(removed).toContain(CLASHBOT_OPEN_EVENT);
+    spy.mockRestore();
     root = createRoot(container);
   });
 });

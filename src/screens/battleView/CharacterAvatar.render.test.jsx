@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 import CharacterAvatar from './CharacterAvatar.jsx';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { SPEECH_EYEBROW_COLOR } from './TapeCards';
@@ -205,5 +206,45 @@ describe('Review lens 1 F6 — the face reads the pair the BOARD shows (§9, Gat
     vi.doUnmock('../../components/AgentPresence/AgentPresenceMount');
     vi.doUnmock('../../config/featureFlags');
     vi.resetModules();
+  });
+});
+
+describe('Review lens 4 F2 / F4 / F5 — the honesty rules, guarded by something', () => {
+  const SOURCE = readFileSync(new URL('./CharacterAvatar.jsx', import.meta.url), 'utf8');
+  // Comments describe the rules and legitimately name the things they forbid;
+  // strip them so a note about `setTimeout` is not read as a use of one.
+  const CODE = SOURCE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('NO CLOCK IS READ IN THIS FILE — the property behind "a timer alone does nothing"', () => {
+    // The seed asks for "a fake-timer row proves a timer alone does nothing".
+    // The row that claimed it could not fail (review lens 4 F2): the SSR render
+    // runs no effects, and the mounted row fakes only `Date`, so no timer ever
+    // fired. A 500 ms effect composing a `Thinking…` bubble — the exact thing
+    // brief §4.2 forbids — survived both.
+    //
+    // A SOURCE row is the honest instrument, as it is for the flag's deleted
+    // query override: the claim is that the component CANNOT be driven by time,
+    // and that is a property of the file, not of one render.
+    expect(CODE).not.toMatch(/setTimeout|setInterval|requestAnimationFrame/);
+    expect(CODE).not.toMatch(/Date\.now|new Date/);
+    expect(CODE).not.toMatch(/useEffect/);
+  });
+
+  it('NOTHING REPEATS — no idle loop, in CSS or in Framer (D-91)', () => {
+    // The `no CSS animation` row is honest about CSS and blind to Framer: an
+    // idle `animate={{ scale: [1,1.08,1] }}` with the transition passed as an
+    // IDENTIFIER is invisible to it, to the motion guard (its documented
+    // `transition={{` blind spot) and to a 975-row broad set (lens 4 F5, M4).
+    expect(CODE).not.toMatch(/repeat\s*:/);
+    expect(CODE).not.toMatch(/Infinity/);
+    expect(CODE).not.toMatch(/repeatType|yoyo/);
+  });
+
+  it('reduced motion means NO FADE, not a shorter one (seed §4)', () => {
+    // SSR paints framer's `initial` inline, so this is readable without a mount.
+    const moving = render({ unread: 1, reducedMotion: false });
+    const still = render({ unread: 1, reducedMotion: true });
+    expect(moving).toContain('opacity:0');
+    expect(still).not.toContain('opacity:0');
   });
 });

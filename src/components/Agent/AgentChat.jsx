@@ -17,7 +17,7 @@ import { OPENER_LAZY_FALLBACK_ENABLED } from '../../config/featureFlags';
 // its error strings would trip it).
 import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
 import { deriveChatMessages } from './deriveChatMessages';
-import { TradeCard, CheckCard, CheckRunLine } from '../../screens/battleView/TapeCards';
+import { TradeCard, CheckCard, CheckRunLine, SPEECH_EYEBROW_COLOR } from '../../screens/battleView/TapeCards';
 import { collapseQuietChecks, TAPE_KIND } from '../../screens/battleView/buildTape';
 import { scopeTape } from '../../screens/battleView/scopeTape';
 import { cssVar } from '../../theme/cssTokens';
@@ -299,7 +299,15 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
         <div
           data-tape-kind-eyebrow={kindEyebrow}
           style={{
-            color: cssVar('text-muted'),
+            // THE SHARED CONSTANT, not a second `cssVar('text-muted')` (review
+            // lens 4 F11). D-98's agreement was structural only between
+            // TapeCards and deriveBubble; the CHAT's own speech eyebrow was
+            // still an independent literal, so a drift here — the exact gated
+            // change the ruling describes — survived every suite but the
+            // pane-off byte golden, which is the wrong instrument for a pane-ON
+            // agreement. Identical value, so flag-off is byte-identical; what
+            // changes is that the three surfaces now read ONE source.
+            color: SPEECH_EYEBROW_COLOR,
             fontSize: 10,
             fontWeight: 700,
             letterSpacing: '0.08em',

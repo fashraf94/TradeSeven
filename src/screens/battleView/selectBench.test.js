@@ -152,12 +152,23 @@ describe('one naming rule, shared (D-87)', () => {
     const b = selectBench(doc({
       portfolio: { star: [], core: [], support: [], bench: { stocks: [{ symbol: 'NOW' }], crypto: null } },
       watchlist: {}, agentContext: {},
-      evaluations: [{ timestamp: '2026-09-01T16:45:00.000Z', rationale: 'SNOWFLAKE is not NOW-adjacent.' }],
+      // The only `NOW` here is INSIDE `SNOWFLAKE` (review lens 4 F8). The first
+      // fixture said `SNOWFLAKE is not NOW-adjacent.`, which also contains a
+      // genuine mention — so a naive `s.includes(symbol)` returned the same
+      // single sentence and the row passed while proving nothing.
+      evaluations: [{ timestamp: '2026-09-01T16:45:00.000Z', rationale: 'SNOWFLAKE led the tape all afternoon.' }],
     }));
-    // `namesSymbol` is word-boundary aware; NOW inside SNOWFLAKE is not a
-    // mention, and the sentence DOES name NOW on its own, so it is quoted once.
-    expect(b.named).toHaveLength(1);
-    expect(b.named[0].sentences).toEqual(['SNOWFLAKE is not NOW-adjacent.']);
+    expect(b.named).toEqual([]);
+    expect(b.rest).toEqual(['NOW']);
+  });
+
+  it('…and a genuine mention IS quoted, so the row above is not passing on silence', () => {
+    const b = selectBench(doc({
+      portfolio: { star: [], core: [], support: [], bench: { stocks: [{ symbol: 'NOW' }], crypto: null } },
+      watchlist: {}, agentContext: {},
+      evaluations: [{ timestamp: '2026-09-01T16:45:00.000Z', rationale: 'NOW led the tape all afternoon.' }],
+    }));
+    expect(b.named.map((n) => n.symbol)).toEqual(['NOW']);
   });
 
   it('keeps the model\'s emphasis markers for the renderer to resolve', () => {

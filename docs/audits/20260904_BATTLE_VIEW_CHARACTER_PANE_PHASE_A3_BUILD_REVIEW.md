@@ -17,7 +17,7 @@ The build was **not** clean. Five independent lenses found **eleven confirmed de
 | 1 | Domain correctness, display agreement (§9/§10) | 9 | 5 | The bubble read a field the builder never emits — masked by the build's own test fixture |
 | 2 | Wiring, lifecycle, focus, events | 4 | 5 | **P0:** a conditional hook crashed the screen on every mount |
 | 3 | The flag-off / pane-off guarantee | 2 | 7 | Pane-off was not byte-identical once a scope was active |
-| 4 | Test integrity and mutation | *see §6* | | *(report pending at time of writing)* |
+| 4 | Test integrity and mutation | 13 + 3 | 4 | **27 of its mutations survived** — rows of the build's own that could not fail |
 | 5 | Rulings conformance, cross-phase | 10 | 10 | Three ledger rows described code that did not exist |
 
 **The single most important result** is not any one defect. It is that **two of the build's own test rows could not fail under the defects they named** — a trade fixture that hand-built a non-existent field, and an outage fixture that modelled a state the cron never writes. Both are now produced by the real builder. BUILD_RULES §2's "a row that cannot fail is not a guard" was the rule the build broke twice while believing itself guarded.
@@ -78,7 +78,28 @@ Three rows described code that did not exist. Lens 5 caught all three.
 
 ## 6. Lens 4 — test integrity
 
-*Pending at the time of writing; this section is completed when its report lands. What is already known from the other four is that two rows could not fail under the defects they named (findings 4 and 5 above), both now rebuilt from the real producer.*
+This lens ran a mutation campaign rather than a read, and its result is the sharpest thing in the review.
+
+**Every one of the build's sixteen claimed kills reproduces.** Nothing in the commit messages over-claimed a kill.
+
+**But twenty-seven of its own adversarial mutations SURVIVED** — all twenty-seven through a 975-row broad set, and one (doors doing nothing at all under the pane) through 10,469 attributable rows of the whole repository. Each survivor is a row of mine that could not fail under the defect its title named. The worst:
+
+| # | The row | What survived it |
+|---|---|---|
+| F1 | "a row door opens the pane on CHAT" | It clicked the **book toggle** — which opens the WhyPanel and is not a pane door — and asserted `[data-why-open-check] \|\| [data-why-book-toggle]`, the second being the control it had just clicked. All three doors' pane arms were guarded by nothing: doors opening the *remembered* section, and doors doing **nothing at all**, both passed. |
+| F2 | "a TIMER alone creates no bubble" (the seed's own named row) | The SSR row runs no effects; the mounted row fakes only `Date`. A `useEffect` + `setTimeout` composing a `Thinking…` bubble — the exact thing brief §4.2 forbids — survived both. |
+| F6 | "mounts the presence face static, with its events withheld" | It asserts on a **mock** of `AgentPresenceMount`, so it proves the caller passes the right props and nothing about the mount. `events={events}` for a static face — hazard 41 itself — survived, because that file had no test at all. |
+| F7 | "has ONE seam" | It reads `data-seam-pct` and the wash; the bar's width is a framer `animate` value SSR does not paint, so a second derivation used **only for the bar** survived. Its sibling "player on teal, CPU on copper" only checked both tokens appear somewhere — swapping the sides survived. |
+| F4/F5 | reduced motion; "nothing idle" | No row passed `reducedMotion` at all. "Nothing idle" matched CSS `animation` only, so a framer loop with the transition as an identifier was invisible to it, to the motion guard (its own documented blind spot) and to the broad set. |
+| F8/F9/F10 | the substring row; "unsubscribes on unmount"; the clearance row | The substring fixture contained a genuine mention too, so `includes()` gave the same answer; `dispatchEvent` cannot throw whether or not a listener leaked; the clearance row's comment claimed more than its assertion. |
+| F11 | hazard 43's chat half | The structural agreement bound TapeCards↔deriveBubble only — `AgentChat` kept its own literal, so a **gated** drift, the precise change the ruling's wording describes, survived every suite but the pane-off byte golden (the wrong instrument for a pane-on agreement). |
+| F12 | the negative space | Ten ruled behaviours with no row: the mark in the pane header, the scope chip in the composer, the body lock's shell, the overflow's Escape, the disabled reset, Tape's card kind, bookmark order, the count's source, and more. |
+
+**All of it is fixed.** Fifteen of the survivors are now killed by rows added in `f0aa87ff`, each re-mutated to confirm; `AgentPresenceMount` gained the test it never had; and the timer and idle-loop rules are now **source** rows, because the claim is a property of the file rather than of one render — the same instrument the flag suite already uses for its deleted query override.
+
+Lens 4 also independently confirmed both fixture-shape findings (the trade field, the outage placeholder) and named one the other lenses missed: `pane.jsdom` used the same impossible `rationale: null` outage. That is fixed too.
+
+**Recorded, not fixed:** lens 4 reviewed `4b9a72fb` and did not re-check which of its findings the earlier fix commit had already addressed — F3 (focus) and F13 (the chat unmounting) were already fixed by `2ec25844` before its report landed, and its independent probes of both agree with lenses 2 and 5.
 
 ---
 

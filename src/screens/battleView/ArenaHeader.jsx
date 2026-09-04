@@ -293,6 +293,11 @@ export default function ArenaHeader({
           }}
         >
           <motion.div
+            // The number the BAR was given, stated (review lens 4 F7). SSR does
+            // not paint a framer `animate` value, so without this the bar's own
+            // width was readable by no test and a second derivation used only
+            // here survived the §9 row that claims there is one seam.
+            data-bar-pct={Math.round(myWidth)}
             animate={{ width: `${myWidth}%` }}
             transition={transition}
             style={{

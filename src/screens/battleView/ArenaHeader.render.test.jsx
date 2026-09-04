@@ -110,6 +110,26 @@ describe('ArenaHeader — the score header as an arena (D-96)', () => {
     expect(bare).not.toContain('data-turn-state');
   });
 
+  it('the arena is still under reduced motion (seed §4)', () => {
+    expect(render({ reducedMotion: false })).toContain('opacity:0');
+    expect(render({ reducedMotion: true })).not.toContain('opacity:0');
+  });
+
+  it('the player wears teal and the CPU wears copper — in their own slots', () => {
+    // The sibling row below only checks both tokens appear SOMEWHERE, so
+    // swapping the four name/score colours survived it (review lens 4 F7, M1b).
+    // This reads each side's own markup.
+    const html = render();
+    const agent = html.slice(html.indexOf('id="why-book-agent"'), html.indexOf('id="why-book-day"'));
+    // Bounded at the bar — past it the wash, the seam and the turn line all
+    // legitimately carry teal.
+    const cpu = html.slice(html.indexOf('id="why-book-cpu"'), html.indexOf('data-arena-bar'));
+    expect(agent).toContain('var(--ft-teal)');
+    expect(agent).not.toContain('var(--ft-copper)');
+    expect(cpu).toContain('var(--ft-copper)');
+    expect(cpu).not.toContain('var(--ft-teal)');
+  });
+
   it('has ONE seam: the bar\'s width and the wash hinge on the same number (§9)', () => {
     // computeTugOfWarWidth(-2, -21) = 2/23 clamped up to the 10% floor. The tint
     // stop and the bar's width must be that same 10 — the mock's second
@@ -119,6 +139,11 @@ describe('ArenaHeader — the score header as an arena (D-96)', () => {
     expect(html).toContain('data-seam-pct="10"');
     expect(html).toContain('rgba(var(--ft-teal-rgb), 0) 10%');
     expect(html).not.toContain('data-seam-pct="71"');
+    // …AND THE BAR ITSELF. `data-seam-pct` and the wash are the two the first
+    // draft read; the bar's width is a framer `animate` value SSR does not
+    // paint, so a second derivation used ONLY for the bar survived (review
+    // lens 4 F7, M38). The bar now states the number it was given.
+    expect(html).toContain('data-bar-pct="10"');
   });
 
   it('puts the player on teal and the CPU on copper, as tokens', () => {

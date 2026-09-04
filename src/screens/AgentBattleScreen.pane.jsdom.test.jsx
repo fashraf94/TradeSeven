@@ -82,6 +82,7 @@ vi.mock('../hooks/useAgentBattle', () => ({
 
 import AgentBattleScreen from './AgentBattleScreen';
 import { removeFeedBookmark } from '../services/agentService';
+import { SHEET_PEEK_PX } from './battleView/useChatSheet';
 
 const BATTLE = {
   agentId: 'agent-1', agentBattleId: 'ab-1',
@@ -237,6 +238,10 @@ describe('A3.1 — the character on the board (D-91, D-98)', () => {
     const board = container.querySelector('[data-board]');
     const reserved = parseInt(board.style.paddingBottom, 10);
     expect(reserved).toBeGreaterThanOrEqual(48 + 14);
+    // …and it is NOT the sheet's reservation, which the pane retires. The
+    // comment claimed this; the assertion did not, so keeping SHEET_PEEK_PX + 32
+    // under the pane survived (review lens 4 F10).
+    expect(reserved).not.toBe(SHEET_PEEK_PX + 32);
     expect(board.style.position).toBe('relative');
     // …and the mark is inside the column it reserves for.
     expect(board.contains(container.querySelector('[data-character-mark]'))).toBe(true);
@@ -430,22 +435,35 @@ describe('A3.2 — the pane replaces the strip and the sheet (D-93)', () => {
     expect(container.querySelector('[role="tab"][aria-selected="true"]').textContent).toBe('Tape');
   });
 
-  it('a row door opens the pane on CHAT, whatever section was last shown', () => {
+  it('A ROW DOOR opens the pane on CHAT, whatever section was last shown', () => {
+    // This row was VACUOUS until the review (lens 4 F1): it clicked the BOOK
+    // TOGGLE — `handleBookWhyToggle`, which opens the WhyPanel and never calls
+    // pane.openPane — and asserted `[data-why-open-check] || [data-why-book-toggle]`,
+    // where the second is the control it had just clicked and is always there.
+    // Doors that opened the REMEMBERED section, and doors that did nothing at
+    // all under the pane, both passed all 42 rows and a 975-row broad set.
+    //
+    // It now presses a real door and reads the pane's own state.
     mount();
     openPane();
-    act(() => {
-      container.querySelector('[data-pane-tab="bench"]')
-        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    });
-    act(() => {
-      container.querySelector('[data-pane-close]')
-        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    });
-    // The book door names Chat; a named section beats the remembered one.
-    const bookToggle = container.querySelector('[data-why-book-toggle]');
-    act(() => { bookToggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
-    const full = container.querySelector('[data-why-open-check]') || container.querySelector('[data-why-book-toggle]');
-    expect(full).toBeTruthy();
+    selectTab('bench');
+    closePane();
+    expect(paneIsOpen()).toBe(false);
+
+    // The row's Why? panel, then its `In the chat · n` door.
+    const row = [...container.querySelectorAll('[role="button"][aria-expanded]')]
+      .find((el) => el.querySelector('[data-why-label]'));
+    expect(row, 'a player row with a Why? door').toBeTruthy();
+    act(() => { row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    const door = [...container.querySelectorAll('button')]
+      .find((b) => /In the chat/.test(b.textContent || ''));
+    expect(door, 'the scope door').toBeTruthy();
+    act(() => { door.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+
+    // The door NAMES Chat, and a named section beats the remembered Bench.
+    expect(paneIsOpen()).toBe(true);
+    expect(container.querySelector('[role="tab"][aria-selected="true"]').textContent).toBe('Chat');
+    expect(container.querySelector('[data-pane-section="chat"]').hidden).toBe(false);
   });
 
   it('the pane names itself, and carries the character at its head', () => {
@@ -520,7 +538,15 @@ describe('A3.3 — Bench quotes the decider only (D-92)', () => {
   });
 
   it('says `No check yet today` when nothing today carries words', () => {
-    withDoc({ evaluations: [{ evalId: 'e', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD', rationale: null }] });
+    // The outage as the CRON writes it — a placeholder sentence plus
+    // `haikuError`, never `rationale: null` (review lens 4 FX2).
+    withDoc({ evaluations: [{
+      evalId: 'e',
+      timestamp: '2026-09-01T16:47:02.000Z',
+      decision: 'HOLD',
+      rationale: 'Haiku call failed — defaulting to HOLD',
+      haikuError: { failureClass: 'timeout' },
+    }] });
     mount();
     openPaneOn('bench');
     const bench = container.querySelector('[data-pane-bench]');
@@ -813,5 +839,112 @@ describe('Review — the desktop resting state is the pane OPEN (brief §5 #1)',
     expect(container.querySelector('[data-character-mark]')).toBeTruthy();
     // …and the closed overlay is inert: hidden, so it cannot cover the board.
     expect(container.querySelector('[data-pane-overlay]').style.display).toBe('none');
+  });
+});
+
+describe('Review lens 4 F12 — the ruled behaviours nothing was guarding', () => {
+  // Each row here kills a mutation the review ran that survived all 42 rows of
+  // this suite AND a 975-row broad set. Together they were the argument that the
+  // pane's sections were guarded "by presence of markers, not by the rulings'
+  // negative space".
+
+  it('the scope chip is INSIDE the composer under the pane (D-93)', () => {
+    // M50: `scopeInComposer={false}` survived everything.
+    // The scope door only scopes when the tape actually mentions the piece
+    // (`count > 0`), so the check has to name a piece that has a row.
+    withDoc({
+      evaluations: [{
+        evalId: 'eval_005', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD',
+        rationale: 'AAPL is holding its own relative to the market.', haikuError: null,
+      }],
+    });
+    mount();
+    openPane();
+    const row = [...container.querySelectorAll('[role="button"][aria-expanded]')]
+      .find((el) => el.querySelector('[data-why-label]') && (el.textContent || '').includes('AAPL'));
+    expect(row, 'AAPL\'s row').toBeTruthy();
+    act(() => { row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    const door = [...container.querySelectorAll('button')]
+      .find((b) => /In the chat/.test(b.textContent || ''));
+    expect(door, 'the scope door').toBeTruthy();
+    act(() => { door.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    const chip = container.querySelector('[data-tape-scope]');
+    expect(chip, 'the scope chip').toBeTruthy();
+    // The composer's row is the chip's parent under the pane; above the stream
+    // it is a lone div that holds no textarea.
+    expect(chip.parentElement.querySelector('textarea'), 'the chip rides with the field').toBeTruthy();
+  });
+
+  it('the character stands in the PANE HEADER while the pane is open (ruling 4)', () => {
+    // M52: never rendering the pane header's mount survived, because presence is
+    // mocked off in every screen harness. The header's SLOT is what this reads.
+    mount();
+    openPane();
+    const header = container.querySelector('[data-pane-header]');
+    expect(header).toBeTruthy();
+    expect(header.querySelector('[data-pane-tablist]')).toBeTruthy();
+    // …and the board's own mark is gone while it is (the other half of ruling 4).
+    expect(container.querySelector('[data-character-mark]')).toBeNull();
+  });
+
+  it('the body lock is the MOBILE shell\'s only (D-93)', () => {
+    // M64: `lockScroll: true` on both shells survived, because no row opened the
+    // pane on desktop and looked.
+    mount();                       // desktop, and the pane opens with it
+    expect(paneIsOpen()).toBe(true);
+    expect(document.body.style.overflow).toBe('');
+  });
+
+  it('the overflow closes on Escape', () => {
+    // M16: deleting the Escape handler survived.
+    mount();
+    openPane();
+    act(() => {
+      container.querySelector('[data-pane-overflow-toggle]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[role="menu"]')).toBeTruthy();
+    act(() => { window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('Tape renders TRADES as cards — not every entry it is handed', () => {
+    // M30: rendering every object entry as a TradeCard survived, because the
+    // fixture's tape held only trades to find.
+    withDoc({
+      trades: [{
+        symbolOut: 'GILD', symbolIn: 'MOS', tier: 'core',
+        swappedOutAt: '2026-09-01T15:02:00.000Z',
+        exitReason: 'haiku_decision', rationale: 'GILD rolled over.',
+      }],
+      evaluations: [
+        { evalId: 'c1', timestamp: '2026-09-01T16:00:00.000Z', decision: 'HOLD', rationale: 'Holding.' },
+        { evalId: 'c2', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD', rationale: 'Still holding.' },
+      ],
+    });
+    mount();
+    openPane();
+    selectTab('tape');
+    const tape = container.querySelector('[data-pane-tape]');
+    // One trade in, one trade card out — the checks stay in the Chat stream.
+    expect(tape.querySelectorAll('[data-tape-kind="trade"]')).toHaveLength(1);
+    expect(tape.querySelectorAll('[data-tape-kind="check"]')).toHaveLength(0);
+  });
+
+  it('bookmarks read newest-first, and the count is the RESOLVED list', () => {
+    // M31 (order dropped) and M57 (count from raw feedBookmarks) both survived.
+    FEED = [
+      { id: 'f1', timestamp: '2026-09-01T15:00:00.000Z', message: 'older' },
+      { id: 'f2', timestamp: '2026-09-01T15:30:00.000Z', message: 'newer' },
+    ];
+    // A bookmark id with no entry behind it: the count must not include it.
+    BOOKMARKS = ['f1', 'f2', 'f-gone'];
+    mount();
+    openPane();
+    selectTab('tape');
+    expect(container.querySelector('[data-tape-bookmarks-count]').getAttribute('data-tape-bookmarks-count')).toBe('2');
+    const ids = [...container.querySelectorAll('[data-tape-bookmark]')]
+      .map((el) => el.getAttribute('data-tape-bookmark'));
+    expect(ids).toEqual(['f2', 'f1']);   // newest first, as the shipped view orders them
   });
 });
