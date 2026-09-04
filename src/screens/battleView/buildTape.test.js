@@ -20,6 +20,8 @@ import {
   buildTradeEntries,
   buildCheckEntries,
   collapseQuietChecks,
+  checkEntryId,
+  tradeEntryId,
   TAPE_KIND,
   MIN_RUN,
 } from './buildTape';
@@ -355,6 +357,47 @@ describe('`N checks · no change` — every conjunct of D-77', () => {
     // meaning "the run's time" is a defect waiting to be re-read.
     expect(folded[0].at).toBeUndefined();
     expect('at' in folded[0]).toBe(false);
+  });
+
+  it('MUTATION ROW — `checkEntryId` has a LITERAL shape, not whatever it happens to return', () => {
+    // BOTH SIDES of the D-89 contract go through this function: the builder
+    // stamps `entry.id` with it and the screen asks the chat for a card with
+    // it. Every mounted row that computes its expectation by CALLING it
+    // therefore moves with the source and cannot fail — the accent-constant
+    // failure the A2 review found, one abstraction up. Five mutations walked
+    // the whole suite before this row (review L4-F1). The shape is written
+    // out once, here.
+    const TSX = '2026-09-01T16:47:02.000Z';
+    const MSX = new Date(TSX).getTime();
+    expect(checkEntryId({ evalId: 'eval_014', timestamp: TSX })).toBe('tape-check-eval_014');
+    // The instant is the FALLBACK, not decoration: the risk loop and the R11
+    // pass write `evalId: null` (hazard 35) and those ticks still get cards.
+    // Drop it and every one of them answers to `tape-check-undefined` —
+    // colliding React keys, a pin that matches several entries at once, and a
+    // door that lands on whichever the query reaches first.
+    expect(checkEntryId({ evalId: null, timestamp: TSX })).toBe(`tape-check-${MSX}`);
+    expect(checkEntryId({ timestamp: TSX })).toBe(`tape-check-${MSX}`);
+    expect(checkEntryId({ evalId: null, timestamp: TSX }))
+      .not.toBe(checkEntryId({ evalId: null, timestamp: '2026-09-01T16:48:02.000Z' }));
+    // No readable instant, no card and no address — the entry the builder skips.
+    expect(checkEntryId({ evalId: 'eval_014', timestamp: null })).toBeNull();
+    expect(checkEntryId(null)).toBeNull();
+    expect(checkEntryId('eval_014')).toBeNull();
+    // …and it is exactly what the BUILDER stamps (BUILD_RULES §9).
+    const [card] = buildCheckEntries([{ ...check('16:47'), evalId: 'eval_014' }], {}, []);
+    expect(card.id).toBe('tape-check-eval_014');
+  });
+
+  it('MUTATION ROW — `tradeEntryId` likewise, and it is what the builder stamps', () => {
+    // Same contract, same trap: D-89 makes a trade card a landing target on a
+    // swap tick, so its id is asked for by name too.
+    const t = { symbolOut: 'GILD', symbolIn: 'MOS', swappedOutAt: '2026-09-01T17:31:07.000Z' };
+    const ms = new Date(t.swappedOutAt).getTime();
+    expect(tradeEntryId(t)).toBe(`tape-trade-${ms}-GILD-MOS`);
+    expect(tradeEntryId({ ...t, symbolOut: null, symbolIn: null })).toBe(`tape-trade-${ms}--`);
+    expect(tradeEntryId({ ...t, swappedOutAt: null })).toBeNull();
+    expect(tradeEntryId(null)).toBeNull();
+    expect(buildTradeEntries([t], [])[0].id).toBe(tradeEntryId(t));
   });
 
   it('THE PINNED CARD IS NEVER FOLDED — at any position in the run (D-89)', () => {

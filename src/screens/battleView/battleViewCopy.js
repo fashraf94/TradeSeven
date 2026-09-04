@@ -407,17 +407,24 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // rationale. `Status check` is the check card's answer to the same question
   // `Bench note` and `Opener` answer for the speech kinds: a stream of records
   // and bubbles should say what each thing IS without the player parsing it.
+  //
+  // TWO DEFENSIVE BRANCHES CAME OFF (review L4-F9). `!t` and `!label` were both
+  // unreachable from the only caller: `buildCheckEntries` emits an entry only
+  // when the instant is readable, and `selectWhyState` sets a label on every
+  // branch it can return. Three mutations walked the suite through them, which
+  // is what an unreachable branch always does — §2's rule is that a branch
+  // which cannot fail is not a guard, and an unreachable one cannot even be
+  // reached to fail. The remaining `label &&` IS reachable and is the
+  // absence-label rule.
   checkCardLabel: (iso, label) => {
     const t = slotLabel(iso);
-    if (!t) return label ?? null;
     // THE TWO ABSENCE LABELS ALREADY END IN "at this check" (D-65, D-69), so
     // the kind word in front of them says "check" twice in one line (the
     // stutter review L5-F7 found in the previous composition, in its new
     // shape). The slot alone carries the same fact, and the ruled string is
     // untouched — those two are the founder's words and rewording them to fit
     // an eyebrow would be a ruling, not a composition.
-    if (label && label.includes('at this check')) return `${t} · ${label}`;
-    if (!label) return `Status check · ${t}`;
+    if (label.includes('at this check')) return `${t} · ${label}`;
     return `Status check · ${t} · ${label}`;
   },
   readMore: 'Read more',

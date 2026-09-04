@@ -125,7 +125,7 @@ export function buildTradeEntries(trades, statusFeed) {
     const engineAuthored = isEngineAuthoredMotive(trade.rationale, trade.source ?? null);
     entries.push({
       _type: TAPE_KIND.TRADE,
-      id: `tape-trade-${ms}-${trade.symbolOut ?? ''}-${trade.symbolIn ?? ''}`,
+      id: tradeEntryId(trade),
       timestamp: new Date(ms),
       at,
       symbolOut: cleanText(trade.symbolOut),
@@ -194,6 +194,23 @@ export function checkEntryId(evaluation) {
   return `tape-check-${evaluation.evalId || ms}`;
 }
 
+/**
+ * A trade card's id, from the trade it is built from (D-89, review L5-F1).
+ *
+ * The same one-rule-one-place discipline `checkEntryId` follows, and for the
+ * same reason: a second caller needs to NAME a trade card. On a tick that
+ * swapped, the check card deliberately has no words — the trade card carries
+ * them (RB-F1) — so `Read the full check` has to land there instead, and the
+ * link is stamped on the check entry by the builder rather than recomputed by
+ * a reader.
+ */
+export function tradeEntryId(trade) {
+  if (!trade || typeof trade !== 'object') return null;
+  const ms = toMillis(toIso(trade.swappedOutAt));
+  if (ms == null) return null;
+  return `tape-trade-${ms}-${trade.symbolOut ?? ''}-${trade.symbolIn ?? ''}`;
+}
+
 export function buildCheckEntries(evaluations, receipts, chatExchanges, trades) {
   if (!Array.isArray(evaluations)) return [];
 
@@ -206,10 +223,21 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges, trades) 
   // the banked points and the motive's AUTHOR. So the check card keeps its
   // label and its `Woken by` — what happened at the tick — and lets the trade
   // card carry the words.
-  const tradedEvalIds = new Set();
+  //
+  // AND WHICH CARD CARRIES THEM (review L5-F1 / L1-F2 / L2-F4 — three lenses).
+  // D-89 points `Read the full check` at the check's card, whose prose this
+  // very rule removes: on a swap tick the door landed the reader, focused, on
+  // a card whose entire content is a label, with the words on the card above
+  // it and themselves behind an unclicked `Read more`. Each rule is right
+  // alone and they are wrong together. The check entry therefore carries the
+  // id of the card that DOES have its words, so the door can follow it —
+  // stamped here, by the builder that made the decision, rather than
+  // recomputed by a reader who would have to know this rule to get it right.
+  const tradedEvalIds = new Map();
   if (Array.isArray(trades)) {
     for (const trade of trades) {
-      if (trade?.evaluationId) tradedEvalIds.add(trade.evaluationId);
+      const id = tradeEntryId(trade);
+      if (trade?.evaluationId && id) tradedEvalIds.set(trade.evaluationId, id);
     }
   }
 
@@ -235,6 +263,7 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges, trades) 
     const state = selectWhyState(evaluation, null, at);
     const rationale = state.rationale;
     const tradedHere = Boolean(evaluation.evalId) && tradedEvalIds.has(evaluation.evalId);
+    const wordsOn = tradedHere ? tradedEvalIds.get(evaluation.evalId) : null;
 
     // D-77 — the four facts ON THE ENTRY that make a check "no change". The
     // fifth and sixth (positions, receipts) are the run key and contiguity.
@@ -267,6 +296,11 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges, trades) 
       // visibly says GILD out of GILD's own filter.
       symbolOut: state.symbolOut,
       symbolIn: state.symbolIn,
+      // WHERE THIS CHECK'S WORDS ACTUALLY ARE (D-89, review L5-F1). Its own
+      // card on every ordinary tick; the trade card on a tick that swapped,
+      // because that is where `rationale` went. `Read the full check` follows
+      // it, so the door lands on the words rather than on the label.
+      wordsOn,
       quiet,
       // THE RUN KEY IS ALSO WHAT THE CARD WOULD SAY (review L1-F6, refuter A:
       // CONFIRMED, and the NORMAL case rather than an edge one). D-77's

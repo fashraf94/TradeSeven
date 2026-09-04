@@ -1343,9 +1343,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   //   · the mark moves in an EFFECT, never during render (rulings §3.9), and
   //     only while the chat is visible.
   const tapeCount = Array.isArray(recordedTape) ? recordedTape.length : 0;
-  const newestTapeStamp = tapeCount > 0
-    ? (recordedTape[tapeCount - 1]?.timestamp?.getTime?.() ?? null)
-    : null;
+  // …and NaN IS NOT A STAMP (review L4-F8). The `feedStampOf` helper this
+  // replaced carried `Number.isNaN(ms) ? null : ms`, and the guard did not
+  // survive the re-source. It matters more here than it did there: `NaN != null`
+  // is true and `NaN !== NaN` is true, so an unparseable tail stamp would light
+  // an unread dot that can never clear. `mergeRecordedTape` and
+  // `deriveChatMessages` both normalise away from NaN today, so this is latent
+  // rather than live.
+  //
+  // AND NO TEST HOLDS IT, deliberately said out loud: those two normalisers
+  // make the state unreachable from this screen, so no fixture can produce it
+  // and a mutation removing this guard survives (verified). It is
+  // defence-in-depth against a future third writer into `recordedTape`, not a
+  // guarded conjunct — §2's "a conjunct that cannot fail is not a guard" is
+  // about claims a test pretends to make, and this comment is the claim.
+  const newestTapeStamp = (() => {
+    if (tapeCount === 0) return null;
+    const ms = recordedTape[tapeCount - 1]?.timestamp?.getTime?.();
+    return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
+  })();
   useEffect(() => {
     if (!chatVisible) return;
     setSeenFeed({ length: tapeCount, stamp: newestTapeStamp });

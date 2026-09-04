@@ -177,11 +177,22 @@ function RecordProse({ text, firstSentence, startExpanded = false }) {
  * An executed swap: when, the pair, the tier, what was banked, the motive —
  * and whose words the motive is.
  */
-export function TradeCard({ entry }) {
+export function TradeCard({ entry, startExpanded = false }) {
   if (!entry) return null;
   const banked = COPY.banked(entry.lockedPoints);
   return (
-    <div data-tape-kind="trade" data-tape-pair={`${entry.symbolOut ?? ''}-${entry.symbolIn ?? ''}`} style={record(cssVar('teal'))}>
+    <div
+      data-tape-kind="trade"
+      data-tape-pair={`${entry.symbolOut ?? ''}-${entry.symbolIn ?? ''}`}
+      // D-89 (review L5-F1): a trade card is a landing target too. On a tick
+      // that swapped, THIS card holds the check's words — the check card's own
+      // prose is deliberately withheld (RB-F1) — so `Read the full check`
+      // follows the builder's link and lands here. Same addressing and same
+      // focus contract as a check card: reachable by asking, not by tabbing.
+      data-tape-entry-id={entry.id}
+      tabIndex={-1}
+      style={record(cssVar('teal'))}
+    >
       {entry.fromDirective && <div style={{ ...footnote, color: cssVar('teal') }}>{COPY.fromDirective}</div>}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ ...eyebrow, color: cssVar('teal') }}>
@@ -189,7 +200,7 @@ export function TradeCard({ entry }) {
         </div>
         {banked && <div style={{ ...mono, fontSize: 11.5, color: cssVar('text-secondary') }}>{banked}</div>}
       </div>
-      <RecordProse text={entry.motive} firstSentence={entry.motiveFirstSentence} />
+      <RecordProse text={entry.motive} firstSentence={entry.motiveFirstSentence} startExpanded={startExpanded} />
       {entry.motive && (
         <div style={footnote}>{entry.motiveIsAgent ? COPY.motiveAgent : COPY.motiveSystem}</div>
       )}

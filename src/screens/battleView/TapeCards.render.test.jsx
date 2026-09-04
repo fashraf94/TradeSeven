@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { TradeCard, CheckCard, CheckRunLine } from './TapeCards.jsx';
-import { buildTradeEntries, buildCheckEntries } from './buildTape';
+import { buildTradeEntries, buildCheckEntries, tradeEntryId } from './buildTape';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 
 const T = (hhmm) => `2026-09-01T${hhmm}:00.000Z`;
@@ -73,7 +73,14 @@ describe('the trade card', () => {
   });
 
   it('HOSTILE RENDER — not one DO-NOT field reaches the html (hazard 29, D-64)', () => {
-    const html = tradeHtml().toLowerCase();
+    // The card's own ADDRESS is not content (D-89): `data-tape-entry-id`
+    // carries the swap's epoch millis, and a bare-number entry on the list
+    // below — `conviction: 78` — matched the `78` inside that timestamp. The
+    // claim is about what a PLAYER can read, so the attribute comes off before
+    // the scan; the id itself is asserted separately two rows down.
+    const html = tradeHtml()
+      .replace(/ data-tape-entry-id="[^"]*"/g, '')
+      .toLowerCase();
     for (const forbidden of [
       'hypothesis', 'conviction', '78', 'haiku_decision', 'risk_on', 'price_drop',
       'rule_momentum_7', 'opponentscore', 'rsi_14', 'vwap_dev', 'pvpcontext',
@@ -83,6 +90,32 @@ describe('the trade card', () => {
     }
     // …and the model tier is never named on any surface.
     expect(html).not.toContain('haiku');
+  });
+
+  it('a trade card is an ADDRESSABLE landing target (D-89, review L5-F1)', () => {
+    // On a tick that also swapped, THIS card holds the check's words — the
+    // check card's prose is deliberately withheld (RB-F1) — so `Read the full
+    // check` follows the builder's link and lands here. It needs the same
+    // address and the same focus contract a check card has.
+    const html = tradeHtml();
+    const entry = buildTradeEntries([HOSTILE_TRADE], FEED)[0];
+    expect(html).toContain(`data-tape-entry-id="${entry.id}"`);
+    expect(entry.id).toBe(tradeEntryId(HOSTILE_TRADE));
+    expect(html).toContain('tabindex="-1"');
+  });
+
+  it('a trade card OPENS when it is the one asked for (D-89, review L5-F1)', () => {
+    const entry = buildTradeEntries([{
+      ...HOSTILE_TRADE,
+      rationale: 'GILD has stalled at the 200-day. MOS is breaking out on volume, so the core slot rotates.',
+    }], FEED)[0];
+    const collapsed = strip(renderToString(<TradeCard entry={entry} />));
+    expect(collapsed).toContain('Read more');
+    expect(collapsed).not.toContain('so the core slot rotates');
+
+    const opened = strip(renderToString(<TradeCard entry={entry} startExpanded />));
+    expect(opened).toContain('so the core slot rotates.');
+    expect(opened).not.toContain('Read more');
   });
 
   it('the provenance code is TRANSLATED, never rendered raw (D-80, ruling 1)', () => {

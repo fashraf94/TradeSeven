@@ -476,6 +476,51 @@ describe('`Read the full check` opens the check\'s own CARD (D-89)', () => {
     expect(document.activeElement).toBe(after);
   });
 
+  it('ON A SWAP TICK it lands on the card that HAS the words (review L5-F1 / L1-F2 / L2-F4)', async () => {
+    // Three lenses found this independently. RB-F1 made the check card
+    // withhold its prose when the same tick produced a trade card, because the
+    // two carried the identical string. D-89 then pointed this door at that
+    // card. Each rule is right alone and they are wrong together: the door's
+    // ENABLEMENT reads the evaluation's rationale (non-null on a swap) while
+    // its destination's CONTENT reads the builder's suppression (null on a
+    // swap) — the two-source pattern §9 forbids. The reader tapped `Read the
+    // full check` on the most consequential tick of the day and landed,
+    // focused, on a card whose whole content is a label.
+    const words = 'GILD has stalled at the 200-day. MOS is breaking out on volume, so the core slot rotates.';
+    withDoc({
+      evaluations: [{
+        evalId: 'eval_swap', timestamp: '2026-09-01T16:47:02.000Z',
+        decision: 'SWAP', downgraded: false, haikuError: null,
+        symbolOut: 'SLB', symbolIn: 'DVN', rationale: words,
+      }],
+      trades: [{
+        symbolOut: 'SLB', symbolIn: 'DVN', tier: 'star', lockedPoints: 3,
+        swappedOutAt: '2026-09-01T16:47:26.000Z',
+        evaluationId: 'eval_swap', source: 'haiku', rationale: words,
+      }],
+    });
+    mount();
+
+    // The check card really is wordless — that is RB-F1 working, not a bug.
+    const checkCard = container.querySelector('[data-tape-kind="check"]');
+    expect(checkCard).toBeTruthy();
+    expect(checkCard.textContent).toContain('Swapped · SLB → DVN');
+    expect(checkCard.textContent).not.toContain('GILD has stalled');
+
+    click(doorFor('SLB'));
+    await settle(100);
+
+    // The door followed the builder's link to the card that HAS the words…
+    const tradeCard = container.querySelector('[data-tape-kind="trade"]');
+    expect(tradeCard).toBeTruthy();
+    expect(document.activeElement).toBe(tradeCard);
+    // …and opened it, so "the full check" is actually on screen.
+    expect(tradeCard.textContent).toContain('so the core slot rotates.');
+    expect(tradeCard.textContent).not.toContain('Read more');
+    // The wordless check card is NOT where the reader was sent.
+    expect(document.activeElement).not.toBe(container.querySelector('[data-tape-kind="check"]'));
+  });
+
   it('THE SCOPE COMES OFF — the door is never a silent no-op (review L2-F3 / L5-F3)', async () => {
     // `scopeTape` runs BEFORE the pin and judges a check by whether its first
     // sentence names the piece, while this door's gate asks whether the check

@@ -697,7 +697,11 @@ describe('parseEmphasis — the model\'s own `**…**`, and C1 (flip-prep item 3
   });
 
   it('never throws on a non-string, and never invents one', () => {
-    for (const bad of [null, undefined, 0, {}, [], true]) {
+    // `''` is in this list because dropping `|| !text` from `parseEmphasis`
+    // makes it return `[{ text: '', strong: false }]` instead of `[]`, and no
+    // other row could see it — the byte-equality row's own `''` case compares
+    // `'' === ''` either way (review L4-F11).
+    for (const bad of [null, undefined, 0, {}, [], true, '']) {
       expect(parseEmphasis(bad)).toEqual([]);
       expect(stripEmphasisMarkers(bad)).toBe('');
     }
@@ -724,6 +728,25 @@ describe('parseEmphasis — the model\'s own `**…**`, and C1 (flip-prep item 3
     ]);
   });
 
+  it('the pair survives on a NON-FIRST sentence — the span runs BOUNDARY to BOUNDARY', () => {
+    // The docstring's central promise, tested where it can actually fail. The
+    // row above puts the emphasis on the FIRST sentence, where `rawStart` is 0
+    // and the opening marker is inside the slice whichever index the end uses
+    // — so an off-by-one on the end index survived it (review L4-F5, sws-15).
+    // Put the pair on a later sentence and it tears in half, rendering a stray
+    // marker on both sides of the break.
+    const raw = 'SLB lost its bid. **Swap SLB for DVN.** It keeps the energy exposure.';
+    expect(splitSentences(raw)).toEqual([
+      'SLB lost its bid.',
+      '**Swap SLB for DVN.**',
+      'It keeps the energy exposure.',
+    ]);
+    expect(parseEmphasis(splitSentences(raw)[1])).toEqual([{ text: 'Swap SLB for DVN.', strong: true }]);
+    // …and the pieces either side carry no stray marker at all.
+    expect(splitSentences(raw)[0]).not.toContain('*');
+    expect(splitSentences(raw)[2]).not.toContain('*');
+  });
+
   it('the split still reads the SAME boundaries as before on text with no markers', () => {
     // The transparency must not have moved anything else: `8.4%`, `U.S.` and
     // a decimal are still not boundaries, which is the rule this function was
@@ -743,6 +766,12 @@ describe('parseEmphasis — the model\'s own `**…**`, and C1 (flip-prep item 3
   it('`stripEmphasisMarkers` is what a reader SEES — one rule, so nothing disagrees', () => {
     const t = 'SLB lost its bid; **swap SLB for DVN** keeps the energy exposure.';
     expect(stripEmphasisMarkers(t)).toBe('SLB lost its bid; swap SLB for DVN keeps the energy exposure.');
-    expect(stripEmphasisMarkers(t)).toBe(parseEmphasis(t).map((s) => s.text).join(''));
+    // The second assertion used to be
+    // `.toBe(parseEmphasis(t).map((s) => s.text).join(''))`, which is the
+    // function's own body retyped: any mutation of `parseEmphasis` moved both
+    // sides identically and the row could not fail (review L4-F4). The
+    // independent definition of "minus its markers" is the one the byte-
+    // equality row above already uses.
+    expect(stripEmphasisMarkers(t)).toBe(t.split('**').join(''));
   });
 });

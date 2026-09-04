@@ -744,7 +744,18 @@ export default function AgentChat({
   // the tab order; `preventScroll` keeps the browser from undoing the scroll
   // that just ran, which is the same pairing the panel's own landing used.
   const openCheckNonce = openCheck?.nonce ?? null;
-  const openCheckId = openCheck?.id ?? null;
+  // THE CARD THE READER ACTUALLY WANTS (D-89, review L5-F1 / L1-F2 / L2-F4).
+  // The screen names a CHECK, because that is what the door is about. On a
+  // tick that also swapped, the check card deliberately has no words — the
+  // trade card carries them (RB-F1) — and the builder stamps the link. Follow
+  // it, or the door lands the reader, focused, on a card whose whole content
+  // is a label, with the words on the card above it.
+  const openCheckId = React.useMemo(() => {
+    const asked = openCheck?.id ?? null;
+    if (!asked || !Array.isArray(tapeEntries)) return asked;
+    const entry = tapeEntries.find((e) => e?.id === asked);
+    return entry?.wordsOn ?? asked;
+  }, [openCheck?.id, tapeEntries]);
   useLayoutEffect(() => {
     if (openCheckNonce == null || !openCheckId) return;
     const el = listRef.current?.querySelector(`[data-tape-entry-id="${openCheckId}"]`);
@@ -1015,8 +1026,8 @@ export default function AgentChat({
     // …and the card the player asked to read is never folded away (D-89): a
     // HOLD with words is `quiet` by D-77's conjuncts, so the ordinary target
     // of that door is the ordinary member of a run.
-    return collapseQuietChecks(sorted, openCheck?.id ?? null);
-  }, [messages, tradeEvents, tapeEntries, scopeSymbol, knownTickers, openCheck?.id]);
+    return collapseQuietChecks(sorted, openCheckId);
+  }, [messages, tradeEvents, tapeEntries, scopeSymbol, knownTickers, openCheckId]);
 
   // ── Review-mode injection points in the timeline ──────────────────────────
   // Unanswered proposals render BEFORE the first auto-debrief (transition point
@@ -1223,14 +1234,14 @@ export default function AgentChat({
 
             let body;
             if (item._type === TAPE_KIND.CHECK) {
-              body = <CheckCard key={item.id} entry={item} startExpanded={openCheck?.id === item.id} />;
+              body = <CheckCard key={item.id} entry={item} startExpanded={openCheckId === item.id} />;
             } else if (item._type === TAPE_KIND.CHECK_RUN) {
               body = <CheckRunLine key={item.id} entry={item} />;
             } else if (item._type === 'trade' && Array.isArray(tapeEntries)) {
               // Under the flag the card carries the tier, the banked points and
               // the motive with its author named — everything the slim line
               // could not (D-72). The `↳ from directive` echo rides the card.
-              body = <TradeCard key={item.id} entry={item} />;
+              body = <TradeCard key={item.id} entry={item} startExpanded={openCheckId === item.id} />;
             } else if (item._type === 'trade') {
               const isDirectiveLinked = !!item.directiveThreadId;
               body = (
