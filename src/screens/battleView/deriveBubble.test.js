@@ -8,12 +8,12 @@
 // exported map rather than a second one.
 
 import { describe, it, expect } from 'vitest';
-import { deriveBubble, bubbleFor } from './deriveBubble';
+import { deriveBubble, bubbleFor, baggerBubble } from './deriveBubble';
 import { buildTape } from './buildTape';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { TAPE_KIND } from './buildTape';
 import { TAPE_MESSAGE } from './scopeTape';
-import { LABEL_COLOR, TRADE_EYEBROW_COLOR, DIRECTIVE_EYEBROW_COLOR, SPEECH_EYEBROW_COLOR } from './TapeCards';
+import { LABEL_COLOR, TRADE_EYEBROW_COLOR, DIRECTIVE_EYEBROW_COLOR, SPEECH_EYEBROW_COLOR, BAGGER_EYEBROW_COLOR } from './TapeCards';
 import { WHY_KIND } from './selectWhyState';
 
 const AT = '2026-09-01T19:45:00.000Z';
@@ -254,5 +254,36 @@ describe('Review lens 1 F1 — the bubble folds exactly as the stream does (§9)
     const b = deriveBubble(RUN, RUN[2].id);
     expect(b.line).toBe('Holding into the close.');
     expect(b.eyebrow).toBe(COPY.checkCardLabel(RUN[2].at, RUN[2].label));
+  });
+});
+
+describe('baggerBubble — the one construction site for the moment (A3.6, hazard 43)', () => {
+  it('carries a TOKEN colour, like every other bubble', () => {
+    // The review's P1: built inline at the call site this object had no
+    // eyebrowColor at all, so the mark wrote `color: undefined` and the word
+    // rendered in the button's UA foreground on a near-black bubble.
+    const b = baggerBubble('NVDA', 'Bagger · NVDA hit +2.5%', 'Bagger', 3);
+    expect(b.eyebrowColor).toMatch(/^var\(--ft-/);
+    expect(b.eyebrowColor).toBe(BAGGER_EYEBROW_COLOR);
+  });
+
+  it('is a RECORD, and STANDALONE — it has no unread count behind it', () => {
+    const b = baggerBubble('NVDA', 'Bagger · NVDA hit +2.5%', 'Bagger', 3);
+    expect(b.isRecord).toBe(true);
+    expect(b.standalone).toBe(true);
+    expect(b.eyebrow).toBe('Bagger');
+    expect(b.line).toBe('Bagger · NVDA hit +2.5%');
+  });
+
+  it('keys on the announcement, so one crossing fades once', () => {
+    expect(baggerBubble('NVDA', 'x', 'Bagger', 3).id).toBe('bagger:NVDA:3');
+    expect(baggerBubble('NVDA', 'x', 'Bagger', 4).id).not.toBe(baggerBubble('NVDA', 'x', 'Bagger', 3).id);
+  });
+
+  it('says nothing rather than something empty', () => {
+    expect(baggerBubble('', 'x', 'Bagger', 1)).toBeNull();
+    expect(baggerBubble('NVDA', '', 'Bagger', 1)).toBeNull();
+    expect(baggerBubble('NVDA', '   ', 'Bagger', 1)).toBeNull();
+    expect(baggerBubble(null, 'x', 'Bagger', 1)).toBeNull();
   });
 });

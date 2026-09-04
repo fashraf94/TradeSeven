@@ -170,3 +170,22 @@ describe('the moment\'s two numbers come off the ROW, never re-derived', () => {
     expect(baggerMomentFacts({ baseATR: NaN }, 'star')).toBeNull();
   });
 });
+
+describe('the two numbers, after the review', () => {
+  it('takes the per-asset tierMultiplier the SCORER honours, not the tier key alone', () => {
+    // P4 flat6 stamps `tierMultiplier` per asset on League Tournament docs, and
+    // agentScoring.js:267 resolves `asset.tierMultiplier ?? CONVICTION[tier]`.
+    // Reading the key alone banked a tournament star piece at 1× and told the
+    // player 2× — the §9 bug family, from the row's own two sources.
+    expect(baggerMomentFacts({ baseATR: 2.5, tierMultiplier: 1 }, 'star').mult).toBe(1);
+    expect(baggerMomentFacts({ baseATR: 2.5, tierMultiplier: 1.5 }, 'support').mult).toBe(1.5);
+    // …and a tiered doc carries no stamp, so nothing changes for it.
+    expect(baggerMomentFacts({ baseATR: 2.5 }, 'star').mult).toBe(2);
+  });
+
+  it('refuses a SHORT, exactly as deriveTierPrices does', () => {
+    // A short's bagger is a price decrease, so `+{baseATR}%` is the wrong sign.
+    expect(baggerMomentFacts({ baseATR: 2.5, direction: 'short' }, 'star')).toBeNull();
+    expect(baggerMomentFacts({ baseATR: 2.5, direction: 'long' }, 'star')).not.toBeNull();
+  });
+});

@@ -6,6 +6,31 @@
 **Status:** A3.0 → A3.5 built, reviewed, fixed, pushed. **STOPPED for the founder's smoke**, as the rulings §7 direct. A3.6 (event motion, D-97) is the next session.
 **Companion record:** `docs/audits/20260904_BATTLE_VIEW_CHARACTER_PANE_PHASE_A3_BUILD_REVIEW.md` — read that one for the review's own findings.
 
+> ### ⚠ CORRECTION OF RECORD — appended September 4, 2026 (evening)
+>
+> **Two rows of §1's verdict table below are WRONG as written, and the next
+> session's review found them.** They are left in place rather than edited, so
+> the error and its correction both stand:
+>
+> - **Row 4 ("No new archetype-table importer")** is false.
+>   `CharacterPane.jsx:54` imports `getArchetypeDisplayName` from
+>   `src/data/archetypeDisplay`, a legacy archetype table, and BUILD_RULES §1's
+>   separate §2.3 gate required it to be recorded in
+>   `api/_utils/archetypeImportBoundaryBaseline.json` in its own commit. It was
+>   not. The branch was RED on `api/_utils/archetypeRegistry.test.js` from
+>   `5ee4f86b` (A3.2) until `0705c073`.
+> - **Row 6 ("4,196 pass, 2 skipped, 0 failing")** is a `src/`-only figure and
+>   was reported as if it were the suite. The ratchet lives in `api/`, which is
+>   why the red above was invisible for a whole session. The full suite is
+>   10,673 tests.
+>
+> **The lesson, for whoever reads this next:** a scoped run is not a suite, and
+> a verdict table must say which it is. Every claim about the tests from here on
+> is a full-suite claim or it names its scope.
+>
+> Superseded in full by
+> `docs/audits/20260904_BATTLE_VIEW_CHARACTER_PANE_A36_HANDOVER.md`.
+
 ---
 
 ## 1. Executive verdict

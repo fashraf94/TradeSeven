@@ -51,11 +51,21 @@
 // one step further on) — `fixed` anchors to the LAYOUT viewport, so without
 // the offset the mark hides behind iOS's toolbar.
 //
-// Either way the board pads its bottom by AVATAR_CLEARANCE_PX so the mark never
-// rests over a row's tap targets, and the bubble is a sibling INSIDE this
-// container, so it travels with the mark by construction. The hit target is
-// 48px at minimum on both shells (brief §2.1) even when the painted face is
-// smaller.
+// The bubble is a sibling INSIDE this container, so it travels with the mark by
+// construction, and the hit target is 48px at minimum on both shells (brief
+// §2.1) even when the painted face is smaller.
+//
+// WHAT AVATAR_CLEARANCE_PX BUYS CHANGED WITH F3, and the old comment claimed
+// more than it now delivers (the review caught it). While the mark was
+// absolutely positioned at the end of the board's content, the board's bottom
+// padding cleared it exactly. Fixed to the viewport, that padding only
+// guarantees the SCROLL END: mid-scroll, whatever row happens to sit at the
+// viewport's bottom is under the mark's 48px box. The damage is bounded — the
+// container is `pointerEvents: 'none'` and only the button and the bubble take
+// pointer events, so it is the mark's own footprint and not a full-width
+// blocker — but brief §2.1's promise is no longer delivered on the phone at
+// every scroll position. That is the cost of the founder's `fixed` ruling,
+// written down rather than left as a comment that says otherwise.
 
 import React from 'react';
 import { motion } from 'framer-motion';
@@ -92,10 +102,16 @@ export default function CharacterAvatar({
   unread = 0,
   onOpen,
   // The BUBBLE opens the conversation, not the remembered section (the seed:
-  // "tap either → the pane, count cleared"). It names a tape entry, so landing
-  // anywhere but the stream that holds it would show the player a section they
-  // did not ask for and leave the count standing. The mark keeps the remembered
-  // section — that is what "expand restores" means.
+  // "tap either → the pane, count cleared"). For a TAPE bubble that is exact:
+  // it names an entry, so landing anywhere but the stream holding it would show
+  // a section the player did not ask for and leave the count standing.
+  //
+  // A3.6's bagger bubble is `standalone` and names no tape entry, so this
+  // reasoning does not cover it (the review caught the comment claiming it
+  // did). It still opens Chat, deliberately: the bagger's own record is the
+  // row's footer, which is already on screen behind the pane, and Chat is where
+  // the character's next word about it will land. Its own source clears it when
+  // the pane opens; there is no count to clear.
   onOpenBubble,
   isDesktop = false,
   // F3: the px of layout viewport hidden behind browser chrome, from

@@ -86,6 +86,16 @@ export const DIRECTIVE_EYEBROW_COLOR = cssVar('teal');
  */
 export const SPEECH_EYEBROW_COLOR = cssVar('text-muted');
 
+/**
+ * A3.6 (D-97) — the bagger moment's eyebrow. It lives HERE, with the other
+ * three, because this file is the one source for what colour a kind is
+ * (hazard 43) — even though no bagger CARD renders in the stream today. The
+ * moment is a record, so it takes the game's own bagger token rather than the
+ * records' teal: teal is the player's side and the trade card's, and a bagger
+ * is neither of those things.
+ */
+export const BAGGER_EYEBROW_COLOR = cssVar('game-baggerbomb');
+
 const mono = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   fontVariantNumeric: 'tabular-nums',
@@ -212,11 +222,22 @@ export function TradeCard({ entry, startExpanded = false, fadeIn = false, reduce
   const banked = COPY.banked(entry.lockedPoints);
   // A3.6 (D-97) — THE ARRIVAL FADE, once per mount.
   //
-  // A PLAIN `div` UNLESS ASKED (`fadeIn` is false everywhere but the pane), so
-  // the shipped card's markup is byte-identical flag-off and the two goldens
-  // keep proving it. A `motion.div` with `initial={false}` would still write an
-  // inline opacity into the SSR output, which is why this is a branch and not a
-  // prop on one element.
+  // A PLAIN `div` UNLESS ASKED (`fadeIn` is false everywhere but the pane).
+  //
+  // BE PRECISE ABOUT WHAT THE GOLDENS PROVE HERE — the review caught this
+  // comment overclaiming. What is golden-proven is the `fadeProps` ternary:
+  // making it unconditional writes an inline opacity into the SSR output and
+  // reds the pane-off golden. The `Tag` ternary is NOT: with `fadeProps` empty,
+  // `motion.div` and `div` serialise identically, so collapsing `Tag` to an
+  // unconditional `motion.div` leaves both goldens green — it would ship a
+  // framer VisualElement per trade card on the live path for no visual gain and
+  // no test signal. `Tag` is defence in depth, unphotographed; keep it, and do
+  // not trust a golden to catch its removal.
+  //
+  // The flag-OFF goldens cannot see this component at all: flag-off falls to
+  // AgentChat's TradeTickerCard branch (`AgentChat.jsx:1274` gates TradeCard on
+  // `Array.isArray(tapeEntries)`), so `data-tape-kind="trade"` appears in
+  // exactly one photograph — the controller-on / pane-off one.
   //
   // ONCE PER MOUNT is the whole mechanism, and it is only safe because the pane
   // is HIDDEN rather than unmounted on collapse (review lens 5): before that

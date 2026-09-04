@@ -77,6 +77,12 @@ import AgentBattleScreen from './AgentBattleScreen';
 import AgentChat from '../components/Agent/AgentChat';
 import { CHAT_PROPS } from './agentBattleScreenGoldenFixture';
 
+// THE ONE NORMALISATION, stated (review lens 3). "Byte for byte" below means
+// byte for byte MODULO React's `<!-- -->` text-node separators — 62 of them in
+// this page — which are stripped from the render AND were stripped at capture.
+// They are hydration boundaries: moving one changes the shipped HTML without
+// reddening this file. Everything else, including every attribute, every space
+// and every generated id, is compared exactly.
 const strip = (h) => h.replace(/<!-- -->/g, '');
 const golden = () => readFileSync(new URL('./__golden__/agentBattleScreen.controllerOn.paneOff.html', import.meta.url), 'utf8');
 

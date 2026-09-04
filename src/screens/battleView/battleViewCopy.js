@@ -635,8 +635,12 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // value and would disagree with the line the moment the price moved again.
   //
   // The tier suffix is `×` (U+00D7), matching CONVICTION_MULTIPLIERS' own
-  // display everywhere else, and the value is written without a trailing zero:
-  // `2×`, `1.5×`, `1×`.
+  // display everywhere else, and the multiplier is written without a trailing
+  // zero: `2×`, `1.5×`, `1×`.
+  //
+  // The PERCENT keeps its decimal — `+3.0%`, not `+3%` (review lens 5). Every
+  // other percent in this view carries one (computeProximity.js:213-215), and
+  // one number in a family reading differently is the seam a reader trips on.
   baggerFooter: (mult) => {
     if (typeof mult !== 'number' || !Number.isFinite(mult) || mult <= 0) return null;
     return `Bagger hit · ${Number(mult.toFixed(2))}\u00d7 banked`;
@@ -644,7 +648,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   baggerBubble: (symbol, pct) => {
     if (typeof symbol !== 'string' || !symbol.trim()) return null;
     if (typeof pct !== 'number' || !Number.isFinite(pct) || pct <= 0) return null;
-    return `Bagger · ${symbol.trim()} hit +${Number(pct.toFixed(1))}%`;
+    return `Bagger · ${symbol.trim()} hit +${pct.toFixed(1)}%`;
   },
   // The bubble's own eyebrow, so it reads as a RECORD like the tape's cards do
   // rather than as speech (D-98: the kind carries its colour as text).

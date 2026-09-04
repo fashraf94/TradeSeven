@@ -118,7 +118,25 @@ afterEach(() => {
  * at MOUNT and then listens on matchMedia, so a test that sets only one of the
  * two gets a shell that disagrees with itself.
  */
+// framer latches `prefers-reduced-motion` in MODULE scope on the first
+// useReducedMotion call, so only the FIRST value asked for in a file has any
+// effect. A later row asking for a different one would assert silently under
+// the latched value — a row that cannot fail under the defect it names, which
+// is the exact shape this whole review hunts. So the knob refuses instead of
+// lying, and the remedy it names is what the bagger's reduced-motion rows
+// already do: a file of their own.
+let reducedMotionLatched = null;
+
 const setShell = (isDesktop, { reducedMotion = false } = {}) => {
+  if (reducedMotionLatched === null) reducedMotionLatched = reducedMotion;
+  else if (reducedMotionLatched !== reducedMotion) {
+    throw new Error(
+      `setShell: this file is latched to reducedMotion=${reducedMotionLatched}. `
+      + 'framer reads the preference once per module, so a row asking for the other '
+      + 'value here would silently assert under the latched one. Put it in its own '
+      + 'file (see AgentBattleScreen.bagger.reducedMotion.jsdom.test.jsx).',
+    );
+  }
   Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: isDesktop ? 1280 : 480 });
   // ANSWER EACH QUERY ON ITS OWN TERMS (A3.6). This used to return `isDesktop`
   // to every query, so framer's useReducedMotion — which asks for
@@ -1191,6 +1209,47 @@ describe('Smoke F1 — every section is the desktop RIGHT COLUMN, not a block be
   });
 });
 
+describe('Smoke F1 — the boundary: `rightColumnOpen` is NOT "the chat is on screen"', () => {
+  // Review lens 2 F4, a SURVIVOR: `chatVisible` correctly stayed on `chatOpen`
+  // when the two layout sites moved to `rightColumnOpen`, but nothing tested
+  // that it had to. Moving it too passed 168 rows — while silently marking an
+  // agent's answer as read because the player happened to be sitting on Bench,
+  // so the mark would show nothing on collapse and the answer would never be
+  // announced. `chatVisible` is the SEEN marker; being on Bench is not reading.
+
+  it('an answer arriving while the pane sits on BENCH is still unread on collapse', () => {
+    setShell(false);
+    withDoc({ chatExchanges: [] });
+    mount();
+    openPane();
+    selectTab('bench');
+    // The answer lands while the player is looking at the bench.
+    withDoc({ chatExchanges: [
+      { id: 'x1', role: 'assistant', content: 'NOW is one bad print from a swap.', timestamp: '2026-09-01T16:50:00.000Z' },
+    ] });
+    act(() => {
+      root.render(<AgentBattleScreen battle={BATTLE} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />);
+    });
+    closePane();
+    const mark = container.querySelector('[data-character-mark]');
+    expect(mark).toBeTruthy();
+    expect(mark.getAttribute('data-unread')).toBe('1');
+  });
+
+  it('…and reading it on CHAT does clear it — the marker still works', () => {
+    // The other half: a guard that only proves "never marks read" would pass
+    // with the marker broken entirely.
+    setShell(false);
+    withDoc({ chatExchanges: [
+      { id: 'x1', role: 'assistant', content: 'NOW is one bad print from a swap.', timestamp: '2026-09-01T16:50:00.000Z' },
+    ] });
+    mount();
+    openPane();                       // opens on Chat
+    closePane();
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
+  });
+});
+
 describe('Smoke F3 — the phone\'s mark is fixed to the viewport, not parked in the board', () => {
   // The founder's smoke: "the mobile avatar sits in the scrolling board, not
   // the viewport." The phone's board column is not a scroller — the PAGE is —
@@ -1334,13 +1393,24 @@ describe('A3.6 — the bagger moment (D-97)', () => {
     rerender();
     expect(burst()).toHaveLength(1);
 
+    // NODE IDENTITY is the assertion. The bubble is keyed on the
+    // announcement's id (`bagger:{sym}:{seq}`), so a SECOND announcement mounts
+    // a new element while a re-render of the same one does not. The footer is a
+    // pure function of the doc and is identical either way — asserting only
+    // that, as this row first did, proved nothing at all.
+    const bubbleNode = () => container.querySelector('[data-character-bubble]');
+    const first = bubbleNode();
+    expect(first).toBeTruthy();
+
     // Same doc VALUE, a new object — the shape every Firestore snapshot has.
     withHistory(1.1);
     rerender();
-    // The burst that is still on screen is the FIRST one's window, not a
-    // second announcement: the footer is unchanged and no new bubble id exists.
+    expect(bubbleNode()).toBe(first);
+
+    // …and a HIGHER peak, still past the line: monotonic, already announced.
     withHistory(1.4);
     rerender();
+    expect(bubbleNode()).toBe(first);
     expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
   });
 
@@ -1396,10 +1466,30 @@ describe('A3.6 — the bagger moment (D-97)', () => {
     mount();
     withHistory(1.1);
     rerender();
-    // The badge row still exists and still comes from the shipped path — the
-    // A3.6 additions are siblings of it, never a replacement.
     expect(container.querySelector('[data-bagger-burst]')).toBeTruthy();
     expect(container.querySelector('[data-bagger-footer]')).toBeTruthy();
+  });
+
+  it('reads the PERSISTED peak and NOTHING else — ruling 7\'s two clocks', () => {
+    // The row this replaces was titled for ruling 7 and never looked at
+    // anything ruling 7 is about (the review found it). This is the claim that
+    // IS reachable here: prices are identical across the two renders (the
+    // websocket mock returns {}), so the ONE thing that differs is a single
+    // persisted field — and the footer appears exactly at the line.
+    //
+    // The row's own BAGGER badge is untouched by all of this: it reads
+    // enrichAsset's live-merged history, which is why it can light a tick
+    // early. That is the second clock, and it stays as it ships.
+    setShell(false);
+    withHistory(0.99);
+    mount();
+    expect(footers()).toEqual([]);
+    expect(burst()).toHaveLength(0);
+
+    withHistory(1.0);
+    rerender();
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    expect(burst()).toHaveLength(1);
   });
 
   it('says nothing at all for a piece the player no longer holds', () => {
@@ -1415,17 +1505,23 @@ describe('A3.6 — the bagger moment (D-97)', () => {
     expect(container.querySelector('[data-character-bubble]')?.textContent || '').not.toContain('Bagger ·');
   });
 
-  it('none of it renders while the pane is OFF — the whole thing is flag-gated', () => {
-    // Guarded here rather than trusted: the two goldens prove the MARKUP is
-    // unchanged flag-off, and this proves the props that would change it are
-    // never passed.
+  it('the eyebrow is PAINTED — a token colour, not the button\'s default', () => {
+    // Replaces a row that claimed to prove the flag gate and could not: this
+    // file mocks isCharacterPaneOn TRUE throughout, so "none of it renders
+    // while the pane is off" asserted the opposite of its own title. The gate
+    // IS guarded — by the two goldens, which go red with `Bagger hit` in the
+    // diff if the paneOn spread is removed — so what was missing here is this:
+    // the review found the bubble built inline with no eyebrowColor at all,
+    // rendering `Bagger` in the button's UA foreground on a near-black bubble.
     setShell(false);
-    withHistory(1.6);
+    withHistory(0.8);
     mount();
-    expect(container.querySelector('[data-bagger-footer]')).toBeTruthy();
-    // …and the row it hangs off is the shipped one, still rendering its own
-    // price and badges.
-    expect(container.querySelectorAll('[data-bagger-footer]')).toHaveLength(1);
+    withHistory(1.1);
+    rerender();
+    const eyebrow = container.querySelector('[data-character-bubble] [data-bubble-eyebrow]');
+    expect(eyebrow).toBeTruthy();
+    expect(eyebrow.textContent).toBe('Bagger');
+    expect(eyebrow.style.color).toMatch(/^var\(--ft-/);
   });
 
   it('DESKTOP behaves the same — the moment is not a phone feature', () => {

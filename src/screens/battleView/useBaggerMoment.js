@@ -61,12 +61,48 @@ export function useBaggerMoment(enabled, battle, book, { paneOpen = false } = {}
       seenRef.current = null;
       return;
     }
+    // NOT UNTIL THERE IS A DOC TO SEED FROM (review lens 1, P1).
+    //
+    // This hook is called ABOVE the screen's `loading` early return — it has to
+    // be, hooks are unconditional — so its first run happens on the paint where
+    // `useAgentBattle` still has `{battle: null, loading: true}`. Seeding there
+    // read 0 for every piece (a missing doc has no history), and the very next
+    // render — the one where the doc lands — then compared 0 against a peak
+    // that had been sitting in Firestore for hours and announced it as a fresh
+    // crossing. Every already-banked piece burst, and the character spoke a
+    // line about a crossing that happened before the player opened the app:
+    // exactly the "never on mount" this file exists to guarantee, broken on the
+    // ordinary path, on every load.
+    //
+    // THE BOOK IS A SECOND DOOR TO THE SAME DEFECT, and it is shut here too.
+    // `playerPortfolioSource` falls back to the PROP's portfolio while the doc
+    // loads, so the book is normally full on that first paint — but the reverse
+    // ordering (doc first, portfolio a render later) would seed an EMPTY map,
+    // and an unseen symbol enters at 0 by design, for the swapped-in case. So
+    // every piece arriving after such a seed would announce.
+    //
+    // The precise condition is not "is there a book" but "is there anything to
+    // remember": seed only once the derive has produced at least one entry.
+    // Waiting costs nothing — with no doc and no pieces there is, by
+    // definition, nothing to announce — and `seenRef` stays null, so the first
+    // pass that HAS both is the seed.
+    if (!battle) return;
     const { crossed, next } = deriveBaggerCrossings(seenRef.current, battle, book);
+    if (seenRef.current === null && Object.keys(next).length === 0) return;
     seenRef.current = next;
     if (crossed.length === 0) return;
     seqRef.current += 1;
     const seq = seqRef.current;
-    setBurst({ symbols: crossed, seq });
+    // A SECOND CROSSING JOINS THE FIRST, it does not replace it (review lens 1).
+    // The previous shape set the new symbols alone, so a crossing landing
+    // inside an open window silently cut the first symbol's burst short — the
+    // opposite of what the timer's guard below was written to protect. The
+    // union restarts one window for both, which is the behaviour the comment
+    // there always claimed.
+    setBurst((prev) => ({
+      symbols: prev ? [...new Set([...prev.symbols, ...crossed])] : crossed,
+      seq,
+    }));
     // NOT WHILE THE PANE IS OPEN. The mark is not on the board then, so the
     // bubble would be invisible — and setting it anyway would leave a stale one
     // waiting to appear on the next collapse. Two pieces crossing on one tick
@@ -80,8 +116,11 @@ export function useBaggerMoment(enabled, battle, book, { paneOpen = false } = {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, battle, book]);
 
-  // The burst ends. `seq` guards the clear so a second crossing landing inside
-  // the window is not cut short by the first one's timer.
+  // The burst ends. The `seq` check is belt-and-braces: the effect's cleanup
+  // already clears the timer whenever `burst` changes, so the captured `seq`
+  // and the current one cannot differ by the time this runs. It is kept because
+  // it costs nothing and states the intent — but it is NOT what stops a second
+  // crossing being cut short. The union above is.
   useEffect(() => {
     if (!burst) return undefined;
     const id = setTimeout(() => {

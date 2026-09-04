@@ -61,3 +61,41 @@ describe('viewportInsetFrom — the chrome `fixed` cannot see', () => {
     expect(viewportInsetFrom(600)).toBe(0);
   });
 });
+
+describe('viewportInsetFrom — what the plain subtraction got wrong (review lens 1)', () => {
+  const withViewport = (vv) => { window.visualViewport = { addEventListener() {}, removeEventListener() {}, ...vv }; };
+
+  it('measures the BOTTOM gap, not the total — offsetTop is not chrome below', () => {
+    // iOS scrolls the visual viewport DOWN to bring a focused input into view,
+    // and a pinch-pan moves it too. `layout - visual` counted whatever sat
+    // ABOVE the visual viewport a second time at the bottom, so a page with a
+    // 50px top bar and a 44px bottom bar lifted the mark by 94 instead of 44.
+    setLayout(LAYOUT);
+    withViewport({ height: LAYOUT - 94, offsetTop: 50, scale: 1 });
+    expect(viewportInsetFrom(LAYOUT - 94)).toBe(44);
+  });
+
+  it('is zero at any zoom — a pinch is not browser chrome', () => {
+    // Zooming shrinks the visual viewport while innerHeight stays put, so the
+    // plain subtraction read a 2x zoom on an 800px page as 400px of chrome and
+    // threw the one door back into the pane into the middle of the screen.
+    setLayout(LAYOUT);
+    withViewport({ height: LAYOUT / 2, offsetTop: 0, scale: 2 });
+    expect(viewportInsetFrom(LAYOUT / 2)).toBe(0);
+    withViewport({ height: LAYOUT / 1.5, offsetTop: 0, scale: 1.5 });
+    expect(viewportInsetFrom(LAYOUT / 1.5)).toBe(0);
+  });
+
+  it('still measures chrome when the page is NOT zoomed', () => {
+    // The guard must not swallow the case the helper exists for.
+    setLayout(LAYOUT);
+    withViewport({ height: LAYOUT - 120, offsetTop: 0, scale: 1 });
+    expect(viewportInsetFrom(LAYOUT - 120)).toBe(120);
+  });
+
+  it('tolerates a browser that reports no offsetTop or no scale', () => {
+    setLayout(LAYOUT);
+    withViewport({ height: LAYOUT - 60 });
+    expect(viewportInsetFrom(LAYOUT - 60)).toBe(60);
+  });
+});

@@ -32,8 +32,10 @@
 // history entry, so a symbol swapped OUT keeps its own (`agent-daily-scores.js`
 // calls those "stale"). Walking the map would announce a bagger for a piece the
 // player no longer holds. A symbol swapped IN arrives with a zero-reset entry
-// (`agent-evaluate.js:895-899`) and seeds at 0, so its own later crossing fires
-// normally.
+// (`agentSwapExecution.js:306-311` writes `{maxMultiplier: 0, minMultiplier: 0}`
+// for the incoming symbol; `agent-evaluate.js:893-900` uses a dot-path per
+// symbol so the cron's own write cannot clobber it) and seeds at 0, so its own
+// later crossing fires normally.
 //
 // NO SECOND COPY OF THE LINE. `THRESHOLD_MULTIPLIERS.bagger` is the canonical
 // constant (BUILD_RULES §4: never create a local copy of scoring math). The
@@ -114,7 +116,28 @@ export function deriveBaggerCrossings(seen, battle, book) {
  */
 export function baggerMomentFacts(asset, tier = undefined) {
   if (!asset || typeof asset !== 'object') return null;
-  const mult = CONVICTION_MULTIPLIERS[tier ?? asset.tier];
+  // A SHORT RETURNS NULL, exactly as deriveTierPrices does (selectWhyState.js:
+  // 497-504) and for the same reason: a short's bagger is a price DECREASE, so
+  // `+{baseATR}%` would be the wrong sign, and no persisted short exists to
+  // check the inversion against. The agent layer is long-only in V1
+  // (BUILD_RULES §7), so this is latent — but two readings of one field that
+  // disagree by construction is how the display-disagreement family starts, and
+  // the sibling already refuses. Saying nothing is the honest answer until a
+  // short reaches here. (The burst still fires: it is motion, not a claim.)
+  if (asset.direction === 'short') return null;
+  // THE SCORER'S OWN EXPRESSION, not a re-derivation of it (review lens 1, P1;
+  // BUILD_RULES §9 and §4). `agentScoring.js:267` resolves
+  // `asset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[asset.tier] || support)`,
+  // because P4 flat6 stamps a per-asset override on League Tournament docs at
+  // creation (agentBattleService.js:103-105) and on swap-in
+  // (agentSwapExecution.js:297-298). Reading the tier key alone dropped that
+  // override, so a tournament star piece scored at 1× and this line told the
+  // player it banked 2× — the row's points and the row's footer from two
+  // sources that disagree, which is the §9 bug family by name. enrichAsset
+  // spreads the whole asset into the scorer precisely so the stamp rides
+  // through; this reads the same field off the same object.
+  const mult = asset.tierMultiplier
+    ?? (CONVICTION_MULTIPLIERS[tier ?? asset.tier] || undefined);
   const pct = asset.baseATR;
   if (typeof mult !== 'number' || !Number.isFinite(mult)) return null;
   if (typeof pct !== 'number' || !Number.isFinite(pct) || pct <= 0) return null;

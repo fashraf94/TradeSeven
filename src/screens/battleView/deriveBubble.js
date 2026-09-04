@@ -46,8 +46,44 @@ import {
   TRADE_EYEBROW_COLOR,
   DIRECTIVE_EYEBROW_COLOR,
   SPEECH_EYEBROW_COLOR,
+  BAGGER_EYEBROW_COLOR,
 } from './TapeCards';
 import { peekLineFor } from './derivePeekLine';
+
+/**
+ * A3.6 (D-97) — THE BAGGER BUBBLE, built here and nowhere else.
+ *
+ * It is not a tape item, so it cannot come through `bubbleFor` — but building
+ * it at the CALL SITE made it a second construction site for the same rendered
+ * object, and the review found what that costs: the screen's inline version
+ * omitted `eyebrowColor` entirely, so `CharacterAvatar` wrote
+ * `color: undefined` and the word `Bagger` rendered in the button's UA
+ * foreground on a near-black bubble. Invisible, on the loudest event in the
+ * game. Hazard 43 is precisely the rule that one construction site enforces,
+ * and this module's colour guard now reaches this shape too.
+ *
+ * `standalone` is what tells the mark to show it with no unread count behind
+ * it: a bagger is not a tape entry and carries none.
+ *
+ * @param {string} symbol  the piece that crossed.
+ * @param {string} line    the finished string, from COPY.baggerBubble.
+ * @param {string} eyebrow the kind word, from COPY.baggerEyebrow.
+ * @param {string|number} key  the announcement's seq, so the mark's one-shot
+ *   fade plays once per crossing rather than once per render.
+ * @returns {object|null} null when there is nothing honest to say.
+ */
+export function baggerBubble(symbol, line, eyebrow, key) {
+  if (typeof symbol !== 'string' || !symbol.trim()) return null;
+  if (typeof line !== 'string' || !line.trim()) return null;
+  return {
+    id: `bagger:${symbol}:${key}`,
+    eyebrow,
+    line,
+    eyebrowColor: BAGGER_EYEBROW_COLOR,
+    isRecord: true,
+    standalone: true,
+  };
+}
 
 /**
  * One tape item as the bubble's two slots.

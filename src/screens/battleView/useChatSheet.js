@@ -89,9 +89,14 @@ export function readViewportHeight() {
  * the OFFSET too or the player loses the one door back into the pane behind a
  * strip of browser chrome.
  *
- * Pure, and takes the visual height rather than reading it, so a caller that
- * already subscribes via useViewportHeight re-derives this on the same render
- * the subscription causes — no second listener, no stale read.
+ * Takes the visual HEIGHT rather than reading it, so a caller that already
+ * subscribes via useViewportHeight re-derives this on the same render the
+ * subscription causes — no second listener, no stale read. `offsetTop` and
+ * `scale` ARE read here: they change on exactly the same `visualViewport`
+ * resize that changes the height, so the caller's subscription covers them
+ * too, and threading three values through the screen to keep the function
+ * nominally pure would buy nothing (`window.innerHeight` is already read
+ * here).
  *
  * @param {number} visualHeight - from readViewportHeight() / useViewportHeight().
  * @returns {number} px, never negative. 0 where there is no visual viewport.
@@ -100,7 +105,20 @@ export function viewportInsetFrom(visualHeight) {
   if (typeof window === 'undefined') return 0;
   const layout = window.innerHeight;
   if (!layout || !Number.isFinite(visualHeight) || visualHeight <= 0) return 0;
-  return Math.max(0, Math.round(layout - visualHeight));
+  const vv = window.visualViewport;
+  // PINCH-ZOOM IS NOT CHROME (review lens 1). Zooming shrinks the visual
+  // viewport while `window.innerHeight` stays put, so the plain subtraction
+  // reads a 2x zoom on an 800px page as 400px of browser chrome and throws the
+  // mark into the middle of the screen. A zoomed page has no chrome offset
+  // worth correcting for — the browser is already showing the user what they
+  // asked to see — so the honest answer is zero.
+  if (vv && typeof vv.scale === 'number' && Math.abs(vv.scale - 1) > 0.01) return 0;
+  // THE GAP IS AT THE BOTTOM, and `layout - visual` only measures it when the
+  // visual viewport is flush with the top. iOS scrolls the visual viewport DOWN
+  // to bring a focused input into view, and a pinch-pan moves it too; whatever
+  // sits above it was being counted a second time at the bottom.
+  const offsetTop = vv && Number.isFinite(vv.offsetTop) ? vv.offsetTop : 0;
+  return Math.max(0, Math.round(layout - (offsetTop + visualHeight)));
 }
 
 /**

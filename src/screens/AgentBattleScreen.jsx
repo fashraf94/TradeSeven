@@ -51,7 +51,7 @@ import { selectBench } from './battleView/selectBench';
 import { useCharacterPane, PANE_SECTION } from './battleView/useCharacterPane';
 import { useBaggerMoment } from './battleView/useBaggerMoment';
 import { baggerMomentFacts, persistedMaxMultiplier, BAGGER_LINE } from './battleView/deriveBaggerMoment';
-import { deriveBubble } from './battleView/deriveBubble';
+import { deriveBubble, baggerBubble } from './battleView/deriveBubble';
 import { cssVar } from '../theme/cssTokens';
 import { motionToken } from '../theme/motion';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
@@ -1467,22 +1467,20 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // `standalone` because there is no count to gate it on. It takes precedence
   // over the tape's line while it stands: a bagger is the loudest thing that can
   // happen to a piece, and the tape's line will still be there behind it.
-  const baggerBubble = useMemo(() => {
+  const momentBubble = useMemo(() => {
     if (!paneOn || !baggerMoment.bubbleSymbol) return null;
     const held = playerBook.find((p) => p.symbol === baggerMoment.bubbleSymbol);
     const facts = held ? baggerMomentFacts(held.asset, held.tier) : null;
     const line = facts ? BATTLE_VIEW_COPY.baggerBubble(baggerMoment.bubbleSymbol, facts.pct) : null;
     // No line means a missing baseATR or tier — say nothing rather than guess.
     if (!line) return null;
-    return {
-      id: `bagger:${baggerMoment.bubbleSymbol}:${baggerMoment.seq}`,
-      eyebrow: BATTLE_VIEW_COPY.baggerEyebrow,
-      line,
-      standalone: true,
-    };
+    // ONE CONSTRUCTION SITE for a bubble (hazard 43). Built inline here, this
+    // object silently lacked `eyebrowColor` and the eyebrow rendered in the
+    // button's UA foreground on a near-black bubble — see deriveBubble's note.
+    return baggerBubble(baggerMoment.bubbleSymbol, line, BATTLE_VIEW_COPY.baggerEyebrow, baggerMoment.seq);
   }, [paneOn, baggerMoment.bubbleSymbol, baggerMoment.seq, playerBook]);
 
-  const paneBubble = baggerBubble || tapeBubble;
+  const paneBubble = momentBubble || tapeBubble;
 
   // ── The unread mark (A4, hazard 14; re-sourced flip-prep item 4) ──────────
   //
@@ -2221,9 +2219,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               minWidth: 0,
               // A3.1 (D-93): under the pane the sheet is on its way out and the
               // board reserves the AVATAR's clearance instead of the sheet's
-              // peek — enough that the mark never rests over a row's tap
-              // targets (brief §2.1). Pane-off keeps the sheet's reservation
-              // exactly as merged.
+              // peek, so the last row can scroll clear of the mark. Pane-off
+              // keeps the sheet's reservation exactly as merged.
+              // F3 NARROWED WHAT THIS BUYS on the phone — see CharacterAvatar's
+              // note: a viewport-fixed mark is cleared at the scroll END, not
+              // at every scroll position.
               paddingBottom: paneOn ? AVATAR_CLEARANCE_PX : SHEET_PEEK_PX + 32,
               // F3: no `position: relative` here any more. It existed only to be
               // the phone mark's containing block, and the phone's mark is now
@@ -2274,8 +2274,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               every sibling index where it was. */}
           {isDesktop && (paneOn ? (
             /* A3.2 (D-93) — THE PANE IS THE DESKTOP'S RIGHT COLUMN. Collapsed,
-               it is not rendered at all and the board takes the full width with
-               the mark floating on it (the brief's state 2). That is the pane's
+               it is `display: none` — HIDDEN, never unmounted, which the review
+               fixed and this comment kept describing the old way — and the
+               board takes the full width with the mark floating on it (the
+               brief's state 2). That is the pane's
                whole "two states, not three detents": there is no strip left
                behind, because the mark and its bubble are what the strip was
                for. The chat still has ONE tree position — inside this pane, on
