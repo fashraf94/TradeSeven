@@ -583,6 +583,16 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const chatOpen = paneOn
     ? (pane.open && pane.section === PANE_SECTION.CHAT)
     : isSheetOpen(sheet.detent);
+  // A3 F1 (the founder's smoke). "Is the RIGHT COLUMN showing?" — a DIFFERENT
+  // question from `chatOpen`, and the two coincide only pane-off. Under the
+  // pane the right column is the PANE, which holds Bench and Tape as well as
+  // the chat; `chatOpen` narrows to the Chat section, so on Bench and Tape it
+  // answered "no" and the desktop layout flipped to a column — the pane
+  // dropped BELOW the board and only Chat stayed beside it. That is the whole
+  // of F1. The two LAYOUT sites ask this; every other `chatOpen` reader really
+  // does mean the conversation (the unread mark, the sheet doors, the chat's
+  // own chrome) and is left alone.
+  const rightColumnOpen = paneOn ? pane.open : chatOpen;
   // The visible viewport height sizes the mobile sheet's detents AND the
   // desktop page (a fixed 100vh is the large viewport on iOS — review L2-F11).
   const viewportHeight = useViewportHeight(controllerOn);
@@ -2067,7 +2077,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             // jsdom does no layout, so what the rows below can hold is the
             // style contract — the direction and both children's flex — not
             // the pixels. The pixels want the founder's smoke.
-            ...(isDesktop && !chatOpen ? { flexDirection: 'column' } : {}),
+            ...(isDesktop && !rightColumnOpen ? { flexDirection: 'column' } : {}),
             position: 'relative',
             zIndex: 2,
             ...(gameTapeOpen ? { visibility: 'hidden' } : {}),
@@ -2086,7 +2096,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               // `minHeight: 0` is what gives the scroller inside it a definite
               // height to bound against (review RA-F7). `0 0 100%` here would
               // be a basis of 100% of the HEIGHT under a column direction.
-              flex: chatOpen ? '3 1 0%' : '1 1 0%',
+              flex: rightColumnOpen ? '3 1 0%' : '1 1 0%',
               minWidth: 0,
               minHeight: 0,
               display: 'flex',

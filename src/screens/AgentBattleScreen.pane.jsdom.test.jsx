@@ -1064,3 +1064,53 @@ describe('Ruling 4 — `Tap for the book` is desktop-only, and the door survives
     expect(container.querySelector('[data-arena-header]').textContent).toContain('Tap for the book');
   });
 });
+
+describe('Smoke F1 — every section is the desktop RIGHT COLUMN, not a block below the board', () => {
+  // The founder's first smoke: Bench and Tape rendered BELOW the board on the
+  // desktop and only Chat stayed in the right column. The cause was a single
+  // question asked wrong — the layout container and the board column both read
+  // `chatOpen`, which under the pane means "open AND on Chat", so selecting
+  // Bench flipped the container to `flexDirection: column` and dropped the pane
+  // onto the second line. `rightColumnOpen` is the question they meant.
+  //
+  // jsdom does no layout, so the contract is the STYLE: the container's
+  // direction and the board's flex. Containment and the chat's survival are
+  // asserted in the SAME rows rather than in rows of their own, deliberately —
+  // they hold under the F1 defect too (a column below the board is still a
+  // column), so a row carrying only those could not fail under the defect it
+  // is named for, which BUILD_RULES §2 does not count as a guard.
+
+  for (const section of ['chat', 'bench', 'tape']) {
+    it(`is a ROW with ${section} selected, in the column, chat still mounted`, () => {
+      mount();
+      openPane();
+      selectTab(section);
+      const layout = container.querySelector('[data-layout]');
+      expect(layout.getAttribute('data-layout')).toBe('desktop');
+      // The two that bite: the defect read `column` and `1 1 0%` here for
+      // bench and tape.
+      expect(layout.style.flexDirection).toBe('row');
+      expect(container.querySelector('[data-board]').style.flex).toBe('3 1 0%');
+
+      const column = container.querySelector('[data-chat-column]');
+      const panel = container.querySelector(`[data-pane-section="${section}"]`);
+      expect(column.contains(panel)).toBe(true);
+      expect(container.querySelector('[data-board]').contains(panel)).toBe(false);
+      expect(column.getAttribute('data-chat-collapsed')).toBe('false');
+      // Hazard 45 holds across the fix: one chat, mounted, on every tab.
+      expect(container.querySelectorAll('[data-chat-layout="controller"]')).toHaveLength(1);
+    });
+  }
+
+  it('COLLAPSED is still the full-width board on its own line — the fix does not widen', () => {
+    // rightColumnOpen must track pane.open, so folding the pane keeps A2.4's
+    // ruled collapsed picture: a single-line COLUMN whose board bounds its own
+    // scroller. A fix that hardcoded `row` would take this row down.
+    mount();
+    closePane();
+    const layout = container.querySelector('[data-layout]');
+    expect(layout.style.flexDirection).toBe('column');
+    expect(container.querySelector('[data-board]').style.flex).toBe('1 1 0%');
+    expect(container.querySelector('[data-chat-column]').style.display).toBe('none');
+  });
+});
