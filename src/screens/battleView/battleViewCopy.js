@@ -112,7 +112,13 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     const t = slotLabel(iso);
     return t ? `From the ${t} check` : null;
   },
-  // The door out of the extract and into the whole paragraph (the book panel).
+  // The door out of the extract and into the whole check — which, since D-89,
+  // is the check's own CARD in the conversation, not the panel at the top of
+  // the board. The words stay the same because what the player asked for did
+  // not: they want the whole check, and the tape is where it lives whole,
+  // beside the checks either side of it. The panel above the board carries the
+  // book's latest check and opens collapsed; it was never the place a row's
+  // reader was heading.
   readFullCheck: 'Read the full check',
   // A truthful state, not an absence of data: the check recorded words, and
   // none of its sentences named this piece. The full paragraph is one tap away.
@@ -318,6 +324,60 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     ? `Showing ${n} ${symbol} ${n === 1 ? 'entry' : 'entries'}`
     : 'Showing the whole tape'),
 
+  // ── What KIND of entry this is (flip-prep, extends D-84) ──────────────────
+  //
+  // D-84 made the tape's four visual CLASSES unmistakable — speech, the
+  // player's messages, engine records, directive cards. This names the kinds
+  // INSIDE the speech class, which the eye cannot separate: a bench note, a
+  // trade narration, the seeded opener and an answer to something the player
+  // typed all arrive as the same left bubble in the same voice, and only the
+  // record says which is which.
+  //
+  // FROM THE PERSISTED TYPE, NEVER FROM THE TEXT. Every value below is one the
+  // server writes on the exchange itself — `first_message` (decide.js:1639,
+  // ensure-opener.js:99), `anticipation` (voiceLayerAnticipation.js:200),
+  // `trade_narration` (voiceLayerTradeNarration.js:203) — so an eyebrow is a
+  // fact about the record rather than a reading of the prose. Guessing from
+  // the words is exactly the class of inference hazard 24 forbids elsewhere on
+  // this screen, and it would be wrong the moment a character mentions the
+  // bench in an ordinary reply.
+  //
+  // AN UNKNOWN TYPE GETS NO EYEBROW. A new server type must reach the design
+  // chat and get a word before it reaches the screen; falling back to a
+  // neighbour's label would put a name on something nobody has named.
+  //
+  // `auto_debrief` is deliberately absent: it already has the shipped
+  // `Post-Market Debrief` eyebrow (RENDER_CONFIG), and one exchange with two
+  // eyebrows is worse than one with none.
+  tapeKindEyebrow: (messageType, hasUserHalf, anticipationDirection = null) => {
+    if (messageType === 'first_message') return 'Opener';
+    // `Bench note` IS the bench's word, and the record splits the kind in two
+    // (review L1-F1). `anticipationCandidates[].direction` is a required enum:
+    // `potential_entry` is a bench candidate worth bringing in — a bench note,
+    // exactly as ruled — while `potential_exit` is an ACTIVE HOLDING whose
+    // signal profile degraded enough that leaving is plausible. That second
+    // one is a note about a piece in the player's OWN BOOK, and calling it a
+    // bench note is the reading-the-prose error this map exists to avoid, one
+    // level down: the record disambiguates and the label ignored it.
+    //
+    // Only the ruled case gets the ruled word. The other gets NOTHING, by the
+    // same rule an unknown type does — a word for it has to be ruled before it
+    // reaches the screen, and inventing one here would be the guess. Recorded
+    // for the founder; a direction-aware pair is one line when there is a
+    // second word to use.
+    if (messageType === 'anticipation') {
+      return anticipationDirection === 'potential_entry' ? 'Bench note' : null;
+    }
+    if (messageType === 'trade_narration') return 'Trade note';
+    // `Reply` is a claim about a PAIR — the player wrote and the character
+    // answered — so it needs the user half to exist. `deriveChatMessages`
+    // defaults a legacy exchange with no type to `user_initiated`, and one of
+    // those with no `userMessage` is an agent-initiated exchange nobody
+    // labelled: calling its answer a reply would invent the question.
+    if (messageType === 'user_initiated' && hasUserHalf) return 'Reply';
+    return null;
+  },
+
   // ── The tape (A2.2, D-72 / D-77) ──────────────────────────────────────────
   // A trade card per EXECUTED swap: when, the pair, the tier. The tier is the
   // scoring tier the closed position sat in, from the trade record itself.
@@ -342,23 +402,37 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // `Acted`, unchanged wording).
   fromDirective: '↳ from directive',
 
-  // A check card per decided check: the tick's own header and its state label,
-  // in one line, then the first sentence of the rationale.
+  // A check card per decided check: what KIND of entry it is, the tick's own
+  // slot, and its state label, in one line — then the first sentence of the
+  // rationale. `Status check` is the check card's answer to the same question
+  // `Bench note` and `Opener` answer for the speech kinds: a stream of records
+  // and bubbles should say what each thing IS without the player parsing it.
+  //
+  // TWO DEFENSIVE BRANCHES CAME OFF (review L4-F9). `!t` and `!label` were both
+  // unreachable from the only caller: `buildCheckEntries` emits an entry only
+  // when the instant is readable, and `selectWhyState` sets a label on every
+  // branch it can return. Three mutations walked the suite through them, which
+  // is what an unreachable branch always does — §2's rule is that a branch
+  // which cannot fail is not a guard, and an unreachable one cannot even be
+  // reached to fail. The remaining `label &&` IS reachable and is the
+  // absence-label rule.
   checkCardLabel: (iso, label) => {
-    const header = BATTLE_VIEW_COPY.atCheck(iso);
-    if (!header) return label ?? null;
-    if (!label) return header;
-    // The two absence labels already END in "at this check" (D-65, D-69), so
-    // the full header in front of them said "check" three times in one line
-    // (review L5-F7). The time alone carries the same fact. Composed from the
-    // ruled strings either way — no third string is invented here.
-    if (label.includes('at this check')) {
-      const t = slotLabel(iso);
-      return t ? `${t} · ${label}` : label;
-    }
-    return `${header} · ${label}`;
+    const t = slotLabel(iso);
+    // THE TWO ABSENCE LABELS ALREADY END IN "at this check" (D-65, D-69), so
+    // the kind word in front of them says "check" twice in one line (the
+    // stutter review L5-F7 found in the previous composition, in its new
+    // shape). The slot alone carries the same fact, and the ruled string is
+    // untouched — those two are the founder's words and rewording them to fit
+    // an eyebrow would be a ruling, not a composition.
+    if (label.includes('at this check')) return `${t} · ${label}`;
+    return `Status check · ${t} · ${label}`;
   },
   readMore: 'Read more',
+  // D-89 — the book panel's own close. The glyph is decorative; this is the
+  // accessible name, and it says what the control does rather than naming the
+  // shape it is drawn as. Focus returns to the score header that opened it,
+  // which is the disclosure contract the header's `aria-expanded` promises.
+  closeWhyBookName: 'Close the check',
   // A run of consecutive checks that changed nothing a player can see (D-77):
   // HOLD, not downgraded, no outage, banked score unchanged, the position set
   // unchanged and the directive disposition unchanged. The live TOTAL is
@@ -404,14 +478,31 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // the founder's smoke found exactly that doubt: three failed sends, the
   // budget still reading 0/10.
   //
-  // So the line says the two true things — the character could not answer,
-  // and NOTHING WAS SENT. The second half is the one that matters, because a
-  // message the player believes was spent is a message they will not send
-  // again. The budget is prop-driven from the server's own write, and a failed
-  // request produces no write, which is why the sentence can promise it.
+  // The line first said two things — the character could not answer, and
+  // `· nothing was sent`. THE SECOND CLAUSE IS GONE (flip-prep item 5), and it
+  // is worth saying why, because it was the half the ruling cared about.
   //
-  // Flag-off keeps the shipped string until bug 2's own PR.
-  chatSendFailed: 'The character couldn\'t answer just now · nothing was sent',
+  // The justification was that the budget is prop-driven from the server's own
+  // write and a failed request produces no write. That is false. In
+  // `api/agent/chat.js` the durable write and the budget increment are ONE
+  // `battleRef.update()` — `chatExchanges: arrayUnion(exchange)` beside
+  // `[budgetField]: increment(1)` — INSIDE the `try` whose `catch` returns the
+  // 500, so anything throwing after it returns 500 with the exchange appended
+  // and the player charged. The same file flags exactly this asymmetry about
+  // its League charge a few lines below and not about this one. Reproduced on
+  // the real send path: `1/10` and "nothing was sent" on screen together
+  // (A2 review RB-F4). The client's `catch` branch makes the same promise on
+  // any network drop, which cannot prove the server did nothing either.
+  //
+  // Item 11's own reasoning is what condemns the clause: "a message the player
+  // believes was spent is a message they will not send again". The mirror is
+  // worse — a message that WAS spent, believed free, re-sent, charged twice
+  // out of ten — and it is the one this sentence was causing.
+  //
+  // So the line says only what the client can see. `nothing was sent` comes
+  // back when the server attests to it, and that attestation rides the P-1
+  // concurrency branch. Flag-off keeps the shipped string until bug 2's own PR.
+  chatSendFailed: 'The character couldn\'t answer just now',
 
   // ── The layout (A4) ────────────────────────────────────────────────────────
   // Game Tape is ONE header link that opens the shipped view full-screen; the

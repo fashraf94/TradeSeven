@@ -177,7 +177,11 @@ describe('under the flag — the controller', () => {
     expect((html.match(/data-this-turn=/g) || []).length).toBe(1);
     // The sheet is a named region; its cycle control is a button named for its next activation.
     expect(html).toContain('role="region" aria-label="Agent chat" tabindex="-1"');
-    expect(html).toContain('aria-label="Open the chat"');
+    // The handle names its next action AND the unread state. A fresh mount
+    // treats the whole tape as unseen (flip-prep item 4), and this fixture has
+    // a conversation and a check in it, so arriving at the battle says so —
+    // which is what the dot is for.
+    expect(html).toContain('aria-label="Open the chat · new activity"');
   });
 
   it('shows no countdown and no agent verb', () => {
@@ -275,18 +279,46 @@ describe('flag-off — the shipped tabbed screen', () => {
 });
 
 describe('A4 — the unread-dot clear and the door, at the source (the mounted rows are in AgentBattleScreen.layout.jsdom.test.jsx)', () => {
-  it('the seen-count moves from the effect keyed on [chatVisible, statusFeed.length] — never during render; the flag-off clear is untouched', () => {
+  it('the seen mark moves from an effect keyed on the TAPE — never during render; the flag-off clear is untouched', () => {
     const source = readFileSync(new URL('./AgentBattleScreen.jsx', import.meta.url), 'utf8');
     // The shipped render-time clear (flag-off), byte for byte.
     expect(source).toContain("  // Mark feed as seen when switching to Command Center\n  if (activeTab === 'command') {\n    lastSeenFeedLengthRef.current = statusFeed.length;\n  }\n");
     // ...and it is the ONLY render-time write to the ref.
     expect((source.match(/lastSeenFeedLengthRef\.current = /g) || []).length).toBe(1);
-    // The controller path: state moved inside an effect keyed on the
-    // visibility, the feed's length and its newest stamp (the length alone
-    // plateaus at the server's cap — review refuter A on L2-F8).
-    expect(source).toMatch(/useEffect\(\(\) => \{\n\s+if \(!chatVisible\) return;\n\s+setSeenFeed\(\{ length: statusFeed\.length, stamp: newestFeedStamp \}\);\n\s+\}, \[chatVisible, statusFeed\.length, newestFeedStamp\]\);/);
+    // The controller path (flip-prep item 4): the mark is the TAPE's count and
+    // the newest RENDERED entry's stamp — the feed no longer feeds the stream
+    // and six of its actions render as nothing. Still inside an effect keyed
+    // on the visibility, never during render (rulings §3.9).
+    expect(source).toMatch(/useEffect\(\(\) => \{\n\s+if \(!chatVisible\) return;\n\s+setSeenFeed\(\{ length: tapeCount, stamp: newestTapeStamp \}\);\n\s+\}, \[chatVisible, tapeCount, newestTapeStamp\]\);/);
     expect((source.match(/setSeenFeed\(/g) || []).length).toBe(1);
+    // …and `statusFeed` is no longer what the FLAG path counts. It survives on
+    // one line only: the shipped flag-off comparison.
+    expect(source).toMatch(/: statusFeed\.length > lastSeenFeedLengthRef\.current;/);
+    expect(source).not.toMatch(/\? \(statusFeed\.length > seenFeed\.length/);
     // The door never switches a tab under the flag.
     expect(source).not.toMatch(/handleAskFollowUp[\s\S]{0,900}setActiveTab\('command'\)/);
+  });
+
+  it('SOURCE TRIPWIRE — the book panel gets a FRESH FIBER on every open (D-89, review L2-F5)', () => {
+    // The panel's collapsed state is local and must reset on every open. It
+    // lives inside `AnimatePresence`, so a re-open landing inside the exit
+    // window reconciles onto the EXITING fiber and keeps whatever state it
+    // had — a double-tap on the score header re-opening it fully expanded,
+    // which is the "a glance is also a decision to speak" state the ruling
+    // exists to prevent. A key that changes per open makes "starts collapsed"
+    // true by construction rather than by timing.
+    //
+    // THIS IS A SOURCE ROW ON PURPOSE, and the honest reason is worth stating:
+    // framer's `AnimatePresence` unmounts SYNCHRONOUSLY under this repo's
+    // jsdom harness — measured, at gaps of 0/10/30/100 ms with reduced motion
+    // forced off — so the behaviour cannot be reproduced in a mounted test at
+    // all, and a jsdom row asserting it would pass whether the key changed or
+    // not. Two such rows were written and deleted before this one. The finding
+    // is a browser behaviour; this is the instrument that can actually fail.
+    const source = readFileSync(new URL('./AgentBattleScreen.jsx', import.meta.url), 'utf8');
+    expect(source).toMatch(/key=\{`book-\$\{bookOpenCount\}`\}/);
+    expect(source).not.toMatch(/<WhyPanel\n\s+key="book"/);
+    // …and the counter really advances on every OPEN, not on every toggle.
+    expect(source).toMatch(/if \(!open\) setBookOpenCount\(\(n\) => n \+ 1\);/);
   });
 });

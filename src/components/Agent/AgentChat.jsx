@@ -211,7 +211,7 @@ function ExecutionCard({ directive, receipt }) {
   );
 }
 
-function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending, onSymbolClick, knownTickers, receipts }) {
+function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending, onSymbolClick, knownTickers, receipts, showKindEyebrow = false }) {
   if (message.role === 'user') {
     return (
       <motion.div
@@ -242,6 +242,35 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
   const cfg = RENDER_CONFIG[messageType] || RENDER_CONFIG.user_initiated;
   const accent = cfg.accent;
   const label = cfg.label;
+  // WHAT KIND OF THING THIS IS (flip-prep, extends D-84). D-84 separated the
+  // four visual CLASSES; this names the kinds inside the speech class, which
+  // the eye cannot separate — a bench note, a trade narration, the seeded
+  // opener and an answer to something the player typed all arrive as the same
+  // bubble in the same voice. Read off the persisted `messageType`, never
+  // inferred from the words.
+  //
+  // Controller-gated by the caller, so flag-off emits nothing.
+  //
+  // THREE CONJUNCTS CAME OFF HERE (review L4, mutations ac-02/03/04), because
+  // each was provably inert and BUILD_RULES §2 says a conjunct that cannot
+  // fail is not a guard:
+  //
+  //   · `!label` — meant to stop `auto_debrief` wearing two eyebrows. It
+  //     cannot fire: `auto_debrief` is deliberately absent from
+  //     `tapeKindEyebrow`'s map, so that call already returns null. The rule
+  //     is real and is enforced where it actually lives — in the map.
+  //   · `message.role === 'agent'` — this function returns for a user message
+  //     forty lines above, so the role is always 'agent' by the time we get
+  //     here.
+  //   · `_hasUserHalf === true` — `deriveChatMessages` writes a boolean, so
+  //     the strict compare and a truthiness test are the same test.
+  const kindEyebrow = showKindEyebrow
+    ? BATTLE_VIEW_COPY.tapeKindEyebrow(
+      messageType,
+      message._hasUserHalf,
+      message._anticipationDirection ?? null,
+    )
+    : null;
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -264,6 +293,22 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
         }}>
           <span>{label.emoji}</span>
           <span>{label.text}</span>
+        </div>
+      ) : null}
+      {kindEyebrow ? (
+        <div
+          data-tape-kind-eyebrow={kindEyebrow}
+          style={{
+            color: cssVar('text-muted'),
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            marginBottom: 3,
+            paddingLeft: 4,
+          }}
+        >
+          {kindEyebrow}
         </div>
       ) : null}
       <div style={{
@@ -459,6 +504,12 @@ export default function AgentChat({
   // both are null flag-off, where the stream is the shipped one.
   scopeSymbol = null,
   onClearScope = null,
+  // Phase A2 flip-prep (D-89): the check card `Read the full check` asked for.
+  // `{ id, nonce }` — the id is `buildTape`'s own `checkEntryId`, so the card
+  // the screen names and the card the builder stamps cannot drift; the nonce
+  // re-fires the scroll when the SAME card is asked for twice, exactly as the
+  // book panel's tick used to. Null flag-off and whenever nothing is pending.
+  openCheck = null,
 }) {
   // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
   // reactively from the chatExchanges prop so Firestore-initiated writes
@@ -675,6 +726,51 @@ export default function AgentChat({
     // dependency; the scope's transition is the whole trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeSymbol]);
+
+  // ── `Read the full check` lands on the card (D-89) ────────────────────────
+  //
+  // The door used to open the panel above the board and put focus on its
+  // heading. It now opens the CHECK'S OWN CARD, here, where the check sits
+  // between the checks either side of it and the player can keep reading. This
+  // effect is the landing: scroll the card into view, then focus it.
+  //
+  // A LAYOUT EFFECT, after the list has rendered: the card may not have
+  // existed on the render that requested it — it may have been inside a fold
+  // until `openCheck.id` unpinned it one memo above — so the query has to run
+  // after that render commits, not during it.
+  //
+  // Keyed on the NONCE, so asking twice for the same card scrolls twice. The
+  // card is `tabIndex={-1}`, so focus lands without putting thirty cards in
+  // the tab order; `preventScroll` keeps the browser from undoing the scroll
+  // that just ran, which is the same pairing the panel's own landing used.
+  const openCheckNonce = openCheck?.nonce ?? null;
+  // THE CARD THE READER ACTUALLY WANTS (D-89, review L5-F1 / L1-F2 / L2-F4).
+  // The screen names a CHECK, because that is what the door is about. On a
+  // tick that also swapped, the check card deliberately has no words — the
+  // trade card carries them (RB-F1) — and the builder stamps the link. Follow
+  // it, or the door lands the reader, focused, on a card whose whole content
+  // is a label, with the words on the card above it.
+  const openCheckId = React.useMemo(() => {
+    const asked = openCheck?.id ?? null;
+    if (!asked || !Array.isArray(tapeEntries)) return asked;
+    const entry = tapeEntries.find((e) => e?.id === asked);
+    return entry?.wordsOn ?? asked;
+  }, [openCheck?.id, tapeEntries]);
+  useLayoutEffect(() => {
+    if (openCheckNonce == null || !openCheckId) return;
+    const el = listRef.current?.querySelector(`[data-tape-entry-id="${openCheckId}"]`);
+    if (!el) return;
+    // INSTANT, and deliberately not reduced-motion-conditional like the
+    // panel landing it replaced (review L4, mutation ac-05). A smooth scroll
+    // here would race the list's own auto-scroll-to-bottom two effects above,
+    // and the card may have appeared on this very commit — animating to a node
+    // that did not exist a frame ago is how a reader ends up somewhere neither
+    // effect intended. BUILD_RULES §11 is about not inventing motion; this
+    // invents none.
+    el.scrollIntoView?.({ behavior: 'auto', block: 'nearest' });
+    // …and the focus must not undo the scroll that just ran.
+    el.focus?.({ preventScroll: true });
+  }, [openCheckNonce, openCheckId]);
 
   // ── Composer prefill (Phase A — the Why? door) ─────────────────────────────
   useEffect(() => {
@@ -927,8 +1023,11 @@ export default function AgentChat({
     // meaningless in the other — and a folded run shows no text, so it names
     // no piece either way (scopeTape.js).
     if (scopeSymbol) return scopeTape(sorted, scopeSymbol, knownTickers);
-    return collapseQuietChecks(sorted);
-  }, [messages, tradeEvents, tapeEntries, scopeSymbol, knownTickers]);
+    // …and the card the player asked to read is never folded away (D-89): a
+    // HOLD with words is `quiet` by D-77's conjuncts, so the ordinary target
+    // of that door is the ordinary member of a run.
+    return collapseQuietChecks(sorted, openCheckId);
+  }, [messages, tradeEvents, tapeEntries, scopeSymbol, knownTickers, openCheckId]);
 
   // ── Review-mode injection points in the timeline ──────────────────────────
   // Unanswered proposals render BEFORE the first auto-debrief (transition point
@@ -1135,14 +1234,14 @@ export default function AgentChat({
 
             let body;
             if (item._type === TAPE_KIND.CHECK) {
-              body = <CheckCard key={item.id} entry={item} />;
+              body = <CheckCard key={item.id} entry={item} startExpanded={openCheckId === item.id} />;
             } else if (item._type === TAPE_KIND.CHECK_RUN) {
               body = <CheckRunLine key={item.id} entry={item} />;
             } else if (item._type === 'trade' && Array.isArray(tapeEntries)) {
               // Under the flag the card carries the tier, the banked points and
               // the motive with its author named — everything the slim line
               // could not (D-72). The `↳ from directive` echo rides the card.
-              body = <TradeCard key={item.id} entry={item} />;
+              body = <TradeCard key={item.id} entry={item} startExpanded={openCheckId === item.id} />;
             } else if (item._type === 'trade') {
               const isDirectiveLinked = !!item.directiveThreadId;
               body = (
@@ -1184,6 +1283,11 @@ export default function AgentChat({
                   onSymbolClick={onSymbolClick}
                   knownTickers={knownTickers}
                   receipts={receipts}
+                  // Gated on the TAPE, not on `controllerCopy`: the eyebrow
+                  // names a kind of tape entry, so it belongs where the stream
+                  // is the tape. Flag-off `tapeEntries` is null and the bubbles
+                  // are byte-identical.
+                  showKindEyebrow={Array.isArray(tapeEntries)}
                 />
               );
             }

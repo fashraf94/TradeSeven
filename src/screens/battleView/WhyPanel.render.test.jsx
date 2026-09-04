@@ -131,12 +131,18 @@ describe('the header, the facts and the trades', () => {
     expect(html).not.toContain('At the 12:45 PM check');
   });
 
-  it('the BOOK panel keeps `At the 12:45 PM check` and the WHOLE paragraph', () => {
+  it('the BOOK panel keeps `At the 12:45 PM check` and is not an extract', () => {
+    // A row shows only the sentences that name its piece; the book panel is
+    // the check itself, so it shows the check's own words — collapsed to the
+    // first sentence since D-89, and this fixture's paragraph IS one sentence
+    // (a semicolon is not a sentence end), so all of it is on screen.
     const html = renderBook(DOWNGRADED);
     expect(html).toContain('At the 12:45 PM check');
     expect(html).not.toContain('From the 12:45 PM check');
     expect(html).toContain('SLB has lost its bid and DVN is showing the stronger tape');
     expect(html).toContain('keeps the energy exposure with the leader.');
+    // …and with nothing behind it, no door out of it.
+    expect(html).not.toContain('>Read more<');
   });
 
   it('the facts repeat the ROW\'s proximity text verbatim, plus entry and held-since', () => {
@@ -243,27 +249,123 @@ describe('the one door', () => {
 });
 
 describe('the book-level panel (score header)', () => {
-  const renderBook = () => strip(renderToString(
-    <WhyPanel symbol={null} state={selectWhyState(HELD, null, LAST)} onAskFollowUp={() => {}} />,
+  // TWO sentences, because D-89's collapsed state is defined by which of them
+  // shows. The module-level `HELD` is one sentence and would make the
+  // `Read more` rows below vacuous.
+  const BOOK_HELD = {
+    ...HELD,
+    rationale: 'The book is holding its shape. Nothing in the tape argues for a rotation yet.',
+  };
+  const renderBook = (evaluation = BOOK_HELD, over = {}) => strip(renderToString(
+    <WhyPanel symbol={null} state={selectWhyState(evaluation, null, LAST)} onAskFollowUp={() => {}} {...over} />,
   ));
 
-  it('renders the decision and the door, with no facts and no trades', () => {
+  it('OPENS COLLAPSED (D-89): the eyebrow, the state, the first sentence — and no door', () => {
+    // The panel used to open with the whole paragraph, the deploy brief and
+    // the door all at once, above the board. On a long check that pushed the
+    // board off the screen the panel was meant to explain. Collapsed it is
+    // five short lines about the latest check and nothing else.
     const html = renderBook();
     expect(html).toContain('At the 12:45 PM check');
     expect(html).toContain('>Held<');
-    expect(html).toContain('Ask a follow-up · 1 message');
+    expect(html).toContain('data-why-book-body="collapsed"');
+    expect(html).not.toContain('data-why-book-body="expanded"');
+    // The FIRST sentence of the check's words, and not the rest of them.
+    expect(html).toContain('The book is holding its shape.');
+    expect(html).not.toContain('Nothing in the tape argues for a rotation yet.');
+    expect(html).toContain('>Read more<');
+    // The door rides the expansion: collapsed is a glance, not a decision.
+    expect(html).not.toContain('Ask a follow-up · 1 message');
+    // …and the row panel's own furniture is still absent, as it always was.
     expect(html).not.toContain('Entry $');
     expect(html).not.toContain('Held since');
     expect(html).not.toContain('This piece today');
     expect(html).toContain('data-why-symbol="book"');
   });
 
+  it('a one-sentence check shows no `Read more` — there is nothing behind it', () => {
+    const short = { ...BOOK_HELD, rationale: 'The book is holding its shape.' };
+    const html = renderBook(short);
+    expect(html).toContain('The book is holding its shape.');
+    expect(html).not.toContain('>Read more<');
+  });
+
   it('carries NO This turn copy — the strip has one home, above the board (A4)', () => {
     const html = renderBook();
     expect(html).not.toContain('This turn');
     expect(html).not.toContain('data-this-turn');
-    // Order: the decision, then the door — nothing between them.
-    expect(html.indexOf('At the 12:45 PM check')).toBeLessThan(html.indexOf('Ask a follow-up'));
+    // Order: the eyebrow, then the state, then the words.
+    expect(html.indexOf('At the 12:45 PM check')).toBeLessThan(html.indexOf('>Held<'));
+  });
+
+  it('the CLOSE renders only with a handler, and names what it does (D-89)', () => {
+    // The score header owns this panel's `aria-expanded`; the close is how a
+    // keyboard reader gets back to it. The glyph is decorative.
+    const html = renderBook(BOOK_HELD, { onCloseBook: () => {} });
+    expect(html).toContain('data-why-book-close="1"');
+    expect(html).toContain('aria-label="Close the check"');
+    expect(html).toContain('aria-hidden="true"');
+    // Absent without a handler, and never on a ROW panel — a row closes by
+    // tapping its own row again.
+    expect(renderBook()).not.toContain('data-why-book-close');
+    expect(renderRow(HELD, { onCloseBook: () => {} })).not.toContain('data-why-book-close');
+  });
+});
+
+describe('the model\'s own emphasis (flip-prep item 3)', () => {
+  const EMPHASISED = {
+    ...HELD,
+    rationale: 'SLB lost its bid; **swap SLB for DVN** keeps the energy exposure with the leader.',
+  };
+
+  it('a matched pair renders BOLD, and its markers never reach the screen', () => {
+    // A fixture whose emphasised span names NO symbol, so the `<strong>` this
+    // row finds can only be the model's own. Asserting `font-weight:700`
+    // against the earlier fixture matched the SYMBOL's strong too — it carries
+    // the same weight — and the row passed with markdown emphasis switched off
+    // entirely.
+    const clean = { ...HELD, rationale: 'SLB lost its bid; **the energy exposure stays** either way.' };
+    const html = renderRow(clean, { trades: [] });
+    expect(html).not.toContain('**');
+    expect(html).toContain('the energy exposure stays');
+    // The model's own emphasis: bold, in the BODY colour, not the symbol teal.
+    expect(html).toMatch(/<strong style="font-weight:700">the energy exposure stays<\/strong>/);
+    // …and the symbol's is still teal and still separate.
+    expect(html).toMatch(/<strong[^>]*color:var\(--ft-teal\)[^>]*>SLB<\/strong>/);
+  });
+
+  it('THE TWO EMPHASES COMPOSE — the symbol inside the model\'s own stress gets both', () => {
+    // The symbol is teal (it is the piece you tapped, and an address); the
+    // model's stress is the body colour in bold (it is emphasis). One colour
+    // for both would read as half the paragraph underlined.
+    // `trades: []` so the only SLBs on screen are the check paragraph's own —
+    // `This piece today` renders a second rationale that would make the count
+    // below about the fixture rather than about the composition.
+    const html = renderRow(EMPHASISED, { trades: [] });
+    expect(html).toContain('color:var(--ft-teal)');
+    // BOTH SLBs in the paragraph are emphasised as the symbol, including the
+    // one inside the `**…**` — which a markdown pass that ran second could
+    // never have matched, because the marker sits on the word boundary.
+    expect((html.match(/<strong[^>]*color:var\(--ft-teal\)[^>]*>SLB<\/strong>/g) || []).length).toBe(2);
+  });
+
+  it('an UNMATCHED marker is stripped and emphasises nothing after it', () => {
+    const html = renderRow({ ...HELD, rationale: 'SLB lost its bid; **swap SLB for DVN keeps it.' });
+    expect(html).not.toContain('**');
+    expect(html).toContain('keeps it.');
+    // The only <strong> left is the symbol's.
+    const strongs = html.match(/<strong[^>]*>/g) || [];
+    expect(strongs.every((tag) => tag.includes('--ft-teal'))).toBe(true);
+  });
+
+  it('BYTE EQUALITY on the rendered output — the text is the source minus markers', () => {
+    const raw = EMPHASISED.rationale;
+    const html = renderRow(EMPHASISED);
+    // Pull the paragraph's own text back out of the markup and compare it to
+    // the source with its markers removed. Nothing else about the sentence may
+    // have moved (C1).
+    const text = html.replace(/<[^>]+>/g, '');
+    expect(text).toContain(raw.split('**').join(''));
   });
 });
 
@@ -423,11 +525,13 @@ describe('Why? V2 — the plan at deploy (A2.1b, D-76)', () => {
     expect(html).not.toContain('CF gives fertilizer exposure');
   });
 
-  it('the BOOK panel carries the brief, dated, and no tier label', () => {
-    const html = renderBook(HELD, { deployPlan: PLAN });
-    expect(html).toContain('The plan at deploy · Sep 1');
-    expect(html).toContain('Energy is the only sector with a bid this week');
-    expect(html).not.toContain('At deploy ·');
+  it('the BOOK panel carries the brief BEHIND THE EXPANSION, dated, and no tier label', () => {
+    // D-89 moved it: the brief is history, and history is not what a glance at
+    // the latest check is for. Collapsed it is absent whole; the same tap that
+    // opens the rest of the paragraph opens it.
+    const collapsed = renderBook(HELD, { deployPlan: PLAN });
+    expect(collapsed).not.toContain('The plan at deploy');
+    expect(collapsed).not.toContain('Energy is the only sector with a bid this week');
   });
 
   it('MUTATION ROW — gated off, the section is absent whole: no label, no date, no placeholder', () => {

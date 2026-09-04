@@ -12,14 +12,21 @@
 // still reading 0/10, with no way to tell from the screen whether those three
 // had been spent.
 //
-// Under the flag the line is `The character couldn't answer just now ·
-// nothing was sent`. The rows below hold three claims:
+// Under the flag the line is `The character couldn't answer just now` — and
+// nothing more. It carried `· nothing was sent` through A2, and flip-prep item
+// 5 removed that clause: the client cannot see whether the server wrote, and
+// `api/agent/chat.js` in fact writes the exchange and increments the budget
+// inside the `try` whose `catch` returns the 500, so the promise was not
+// merely unprovable but sometimes FALSE (A2 review RB-F4). The clause comes
+// back when the server attests to it, on the P-1 concurrency branch.
+//
+// The rows below hold three claims:
 //
 //   1. It renders ON A FAILED SEND, and only then — not on mount, not on a
 //      successful one, and not for the failures that have their own words
 //      (401, the budget cap, 429, 504).
-//   2. Nothing was sent is TRUE: the request that failed produced no server
-//      write, so the budget the chat displays does not move.
+//   2. The line CLAIMS NOTHING ABOUT THE SERVER — what the client can be held
+//      to is one request per attempt and a prop-driven counter.
 //   3. Flag-off the shipped string is byte-for-byte what it was.
 //
 // jsdom + createRoot + act, the repo's interaction idiom; fetch is stubbed per
@@ -40,7 +47,9 @@ import AgentChat from './AgentChat';
 import { BATTLE_VIEW_COPY as COPY } from '../../screens/battleView/battleViewCopy';
 
 const SHIPPED = 'Agent is thinking too hard. Try again.';
-const RULED = "The character couldn't answer just now · nothing was sent";
+const RULED = "The character couldn't answer just now";
+// The clause item 5 removed. No render under the flag may contain it.
+const DROPPED_CLAUSE = 'nothing was sent';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
@@ -95,13 +104,23 @@ const jsonResponse = (status, body = {}) => ({
 });
 
 describe('item 11 — the send-failure line under the flag', () => {
-  it('a 500 renders the ruled line, never the shipped one', async () => {
+  it('a 500 renders the ruled line, never the shipped one — and never the DROPPED CLAUSE', async () => {
     stubFetch(async () => jsonResponse(500, { error: 'internal' }));
     render({ controllerCopy: true });
     await send();
     expect(container.textContent).toContain(RULED);
     expect(container.textContent).not.toContain(SHIPPED);
     expect(container.textContent).not.toContain('thinking');
+    // FLIP-PREP ITEM 5. The line said `· nothing was sent` through A2 on the
+    // reasoning that a failed request produces no server write. It does not:
+    // `api/agent/chat.js` appends the exchange and increments the budget in
+    // one `battleRef.update()` inside the `try` whose `catch` returns this
+    // very 500, so the promise was not merely unprovable but sometimes FALSE
+    // (A2 review RB-F4). Item 11's own reasoning is what condemns it — "a
+    // message the player believes was spent is a message they will not send
+    // again" — and the mirror is worse: spent, believed free, re-sent, charged
+    // twice out of ten. The clause returns when the server attests to it.
+    expect(container.textContent).not.toContain(DROPPED_CLAUSE);
   });
 
   it('a thrown request (the network path) renders the same line', async () => {
@@ -111,24 +130,23 @@ describe('item 11 — the send-failure line under the flag', () => {
     expect(container.textContent).toContain(RULED);
   });
 
-  it('NOTHING WAS SENT — what the CLIENT can be held to, and what it cannot', async () => {
+  it('the line CLAIMS NOTHING ABOUT THE SERVER — only what the client can be held to', async () => {
     // The old form of this row rendered with `chatBudgetUsed: 0`, sent three
     // times, and asserted the counter still read `0/10`. `chatBudgetUsed` is a
     // fixed PROP the row never changed, so it asserted that a constant is
     // constant: no mutation of this component could move it, and the identical
     // assertion passes on three SUCCESSFUL sends (review RB-F5).
     //
-    // The claim also cannot be discharged here in full. `nothing was sent` is
-    // a statement about the SERVER, and `api/agent/chat.js` writes the
-    // exchange and increments the budget in ONE `battleRef.update()` —
-    // `chatExchanges: arrayUnion(exchange)` beside `[budgetField]:
+    // The claim could not be discharged here at all, which is why item 5
+    // removed it from the sentence rather than trying to guard it. `nothing
+    // was sent` is a statement about the SERVER, and `api/agent/chat.js`
+    // writes the exchange and increments the budget in ONE `battleRef.update()`
+    // — `chatExchanges: arrayUnion(exchange)` beside `[budgetField]:
     // increment(1)` — INSIDE the `try` whose `catch` is the 500 this row
-    // stubs. A 500 raised after that point HAS charged the player (review
-    // RB-F4, recorded for the founder, not fixed here: `api/` is behind the
-    // §1 fence). Cited by symbol because the line numbers move: they were
-    // `:617-623` when the finding was written and `:687`/`:692` a day later.
-    // The network-drop path below needs no such caveat: a request that threw
-    // never reached a writer.
+    // stubs. A 500 raised after that point HAS charged the player. (`api/` is
+    // behind the §1 fence; the server fix is its own tasking. Cited by symbol
+    // because the line numbers move: `:617-623` when the finding was written,
+    // `:687`/`:692` a day later.)
     //
     // What IS this component's own behaviour, and what these rows hold:
     //

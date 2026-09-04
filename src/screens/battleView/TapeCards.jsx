@@ -45,7 +45,7 @@
 import React, { useState } from 'react';
 import { cssVar } from '../../theme/cssTokens';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
-import { WHY_KIND } from './selectWhyState';
+import { WHY_KIND, parseEmphasis } from './selectWhyState';
 
 const LABEL_COLOR = {
   [WHY_KIND.DOWNGRADED]: cssVar('amber'),
@@ -133,16 +133,38 @@ const linkButton = {
  * sentence, so a one-sentence record showed a `Read more` that revealed
  * nothing but its own disappearance.
  */
-function RecordProse({ text, firstSentence }) {
+function RecordProse({ text, firstSentence, startExpanded = false }) {
   const [expanded, setExpanded] = useState(false);
   const full = typeof text === 'string' ? text.trim() : '';
   if (!full) return null;
   const opening = firstSentence || full;
   const hasMore = full !== opening;
+  // `startExpanded` is a PROP, not a seed (review L2-F2). Reading it once as a
+  // `useState` initial value made it a no-op whenever the card was already
+  // mounted — which is the ordinary case on both shells: a check that is not
+  // inside a fold is mounted from the first paint, and on the phone the peek
+  // list is only `display: none`, so every card behind it is mounted too. The
+  // door then said `Read the full check` and delivered the first sentence with
+  // a `Read more` under it. Only the folded-run path — the one case where the
+  // card genuinely mounts on the commit that pins it — ever worked.
+  //
+  // OR, not a replacement: a card the player has opened by hand stays open
+  // when the pin moves to another card, and a pinned card collapses again when
+  // it does. Both are the local, per-card state D-84 asks for.
+  const showAll = expanded || Boolean(startExpanded);
   return (
     <>
-      <p style={body}>{expanded ? full : opening}</p>
-      {hasMore && !expanded && (
+      {/* The model's own `**…**` renders as emphasis and its strays are
+          stripped (flip-prep item 3) — the same rule, from the same function,
+          the Why? panel and the book panel use, so one sentence cannot be
+          shown three ways (BUILD_RULES §9). No word, order or punctuation
+          changes; only which characters were markup. */}
+      <p style={body}>
+        {parseEmphasis(showAll ? full : opening).map((span, i) => (span.strong
+          ? <strong key={i} style={{ fontWeight: 700 }}>{span.text}</strong>
+          : <React.Fragment key={i}>{span.text}</React.Fragment>))}
+      </p>
+      {hasMore && !showAll && (
         <div>
           <button type="button" style={linkButton} onClick={() => setExpanded(true)}>{COPY.readMore}</button>
         </div>
@@ -155,11 +177,22 @@ function RecordProse({ text, firstSentence }) {
  * An executed swap: when, the pair, the tier, what was banked, the motive —
  * and whose words the motive is.
  */
-export function TradeCard({ entry }) {
+export function TradeCard({ entry, startExpanded = false }) {
   if (!entry) return null;
   const banked = COPY.banked(entry.lockedPoints);
   return (
-    <div data-tape-kind="trade" data-tape-pair={`${entry.symbolOut ?? ''}-${entry.symbolIn ?? ''}`} style={record(cssVar('teal'))}>
+    <div
+      data-tape-kind="trade"
+      data-tape-pair={`${entry.symbolOut ?? ''}-${entry.symbolIn ?? ''}`}
+      // D-89 (review L5-F1): a trade card is a landing target too. On a tick
+      // that swapped, THIS card holds the check's words — the check card's own
+      // prose is deliberately withheld (RB-F1) — so `Read the full check`
+      // follows the builder's link and lands here. Same addressing and same
+      // focus contract as a check card: reachable by asking, not by tabbing.
+      data-tape-entry-id={entry.id}
+      tabIndex={-1}
+      style={record(cssVar('teal'))}
+    >
       {entry.fromDirective && <div style={{ ...footnote, color: cssVar('teal') }}>{COPY.fromDirective}</div>}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ ...eyebrow, color: cssVar('teal') }}>
@@ -167,7 +200,7 @@ export function TradeCard({ entry }) {
         </div>
         {banked && <div style={{ ...mono, fontSize: 11.5, color: cssVar('text-secondary') }}>{banked}</div>}
       </div>
-      <RecordProse text={entry.motive} firstSentence={entry.motiveFirstSentence} />
+      <RecordProse text={entry.motive} firstSentence={entry.motiveFirstSentence} startExpanded={startExpanded} />
       {entry.motive && (
         <div style={footnote}>{entry.motiveIsAgent ? COPY.motiveAgent : COPY.motiveSystem}</div>
       )}
@@ -180,17 +213,27 @@ export function TradeCard({ entry }) {
  * words — `Read more` opens the rest in place. The label is the Why? panel's,
  * so the two surfaces cannot describe one tick differently.
  */
-export function CheckCard({ entry }) {
+export function CheckCard({ entry, startExpanded = false }) {
   if (!entry) return null;
   const wokenBy = COPY.wokenBy(entry.triggers);
   const edge = LABEL_COLOR[entry.kind] || cssVar('text-secondary');
   return (
-    <div data-tape-kind="check" data-tape-check-kind={entry.kind} style={record(edge)}>
+    <div
+      data-tape-kind="check"
+      data-tape-check-kind={entry.kind}
+      // D-89 — the address `Read the full check` asks for, and the focus stop
+      // it lands on. `tabIndex={-1}` makes the card programmatically focusable
+      // without putting every card in the tab order: a reader arrives here by
+      // asking to, never by tabbing past thirty of them.
+      data-tape-entry-id={entry.id}
+      tabIndex={-1}
+      style={record(edge)}
+    >
       <div style={{ ...eyebrow, color: edge }}>
         {COPY.checkCardLabel(entry.at, entry.label)}
       </div>
       {wokenBy && <div style={footnote}>{wokenBy}</div>}
-      <RecordProse text={entry.rationale} firstSentence={entry.firstSentence} />
+      <RecordProse text={entry.rationale} firstSentence={entry.firstSentence} startExpanded={startExpanded} />
       {entry.footer && entry.rationale && <div style={footnote}>{entry.footer}</div>}
     </div>
   );

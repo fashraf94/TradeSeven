@@ -1,5 +1,13 @@
 # Battle View controller — Phase A2 (A2.0 → A2.2) handover
 
+> **SUPERSEDED IN PART, Sep 3 (evening), by the flip-prep PR (D-86 → D-90).**
+> Two things below are no longer true, left in place as a record:
+> `Read the full check` opens the check's own card in the conversation, not the
+> book panel (D-89); and the check card's eyebrow is `Status check · {t} ·
+> {state}`, composed from `slotLabel`, not `At the {t} check · {state}` from
+> `atCheck` (D-86). Item 38's scroll/focus discussion describes a door that no
+> longer goes there.
+
 **Date:** September 3, 2026
 **For:** the founder (the smoke after A2.2), Sol (the D-76 pass), and the A2.3 / A2.4 session.
 **Prepared by:** Claude Code, under `docs/BUILD_RULES.md`.

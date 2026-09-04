@@ -1,5 +1,22 @@
 # Battle View controller — Phase A2 (the rulings addendum, A2.3 and A2.4) handover
 
+> **SUPERSEDED IN PART, Sep 3 (evening), by the flip-prep PR (D-86 → D-90).**
+> Three things below are no longer true and are left in place rather than
+> rewritten, because a handover is a record of what was handed over:
+>
+> - **Ruling 4 is superseded by D-89.** `Read the full check` no longer opens
+>   the book panel above the board and focuses its heading; it opens that
+>   check's own CARD in the conversation, expanded and focused. The conformance
+>   row and smoke step 6 below both describe the old behaviour.
+> - **The check card's eyebrow changed** from `At the {t} check · {state}` to
+>   `Status check · {t} · {state}` (D-86). The copy table below has the old one.
+> - **Two of this document's own recorded items are resolved by removal, not by
+>   a fix:** §5's "scrolls against the panel's collapsed box" and "on mobile at
+>   the FULL detent, focus lands underneath the sheet" both described the panel
+>   landing that D-89 deleted. Neither needs the founder ruling it asked for.
+>
+> §5 item 12 (the unread source) is ruled and built as D-88.
+
 **Date:** September 3, 2026
 **Branch:** `claude/phase-a2-tape-piece-javcyf` (the branch the rulings named; the harness's own session branch is not used).
 **Base:** `112b307d`, the A2 review's last fix. **Head at handoff:** see §8.

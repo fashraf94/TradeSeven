@@ -405,7 +405,7 @@ describe('slotLabel — a check is named by its cron slot (D-83)', () => {
     // …and the composed card label, on BOTH of its branches: the ordinary
     // one, which prefixes the whole header, and the absence one, which drops
     // the words `at the … check` because the label already ends in them.
-    expect(COPY.checkCardLabel(at, COPY.heldLabel)).toBe('At the 12:45 PM check · Held');
+    expect(COPY.checkCardLabel(at, COPY.heldLabel)).toBe('Status check · 12:45 PM · Held');
     expect(COPY.checkCardLabel(at, COPY.noDecision))
       .toBe('12:45 PM · No decision recorded at this check');
     expect(COPY.checkCardLabel(at, COPY.noDecisionOutage))

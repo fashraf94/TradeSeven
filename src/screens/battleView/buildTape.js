@@ -125,7 +125,7 @@ export function buildTradeEntries(trades, statusFeed) {
     const engineAuthored = isEngineAuthoredMotive(trade.rationale, trade.source ?? null);
     entries.push({
       _type: TAPE_KIND.TRADE,
-      id: `tape-trade-${ms}-${trade.symbolOut ?? ''}-${trade.symbolIn ?? ''}`,
+      id: tradeEntryId(trade),
       timestamp: new Date(ms),
       at,
       symbolOut: cleanText(trade.symbolOut),
@@ -174,6 +174,43 @@ export function buildTradeEntries(trades, statusFeed) {
  * `quiet` and `runKey` carry the D-77 test for a collapsible run; the fold
  * itself happens later, on the merged stream, where contiguity is knowable.
  */
+/**
+ * A check card's id, from the evaluation it is built from (D-89).
+ *
+ * EXPORTED because a second caller needs it: `Read the full check` on a row no
+ * longer opens the panel above the board — it opens that check's own CARD in
+ * the conversation — and the screen has to name the card it is asking for.
+ * One rule, in one place, so the id the screen requests and the id the builder
+ * stamps cannot drift (BUILD_RULES §9). Null for an evaluation with no
+ * readable instant, which is the same entry `buildCheckEntries` skips.
+ *
+ * `evalId` first and the instant as the fallback: the risk loop and the R11
+ * pass write `evalId: null` (hazard 35), and those ticks still get cards.
+ */
+export function checkEntryId(evaluation) {
+  if (!evaluation || typeof evaluation !== 'object') return null;
+  const ms = toMillis(toIso(evaluation.timestamp));
+  if (ms == null) return null;
+  return `tape-check-${evaluation.evalId || ms}`;
+}
+
+/**
+ * A trade card's id, from the trade it is built from (D-89, review L5-F1).
+ *
+ * The same one-rule-one-place discipline `checkEntryId` follows, and for the
+ * same reason: a second caller needs to NAME a trade card. On a tick that
+ * swapped, the check card deliberately has no words — the trade card carries
+ * them (RB-F1) — so `Read the full check` has to land there instead, and the
+ * link is stamped on the check entry by the builder rather than recomputed by
+ * a reader.
+ */
+export function tradeEntryId(trade) {
+  if (!trade || typeof trade !== 'object') return null;
+  const ms = toMillis(toIso(trade.swappedOutAt));
+  if (ms == null) return null;
+  return `tape-trade-${ms}-${trade.symbolOut ?? ''}-${trade.symbolIn ?? ''}`;
+}
+
 export function buildCheckEntries(evaluations, receipts, chatExchanges, trades) {
   if (!Array.isArray(evaluations)) return [];
 
@@ -186,10 +223,21 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges, trades) 
   // the banked points and the motive's AUTHOR. So the check card keeps its
   // label and its `Woken by` — what happened at the tick — and lets the trade
   // card carry the words.
-  const tradedEvalIds = new Set();
+  //
+  // AND WHICH CARD CARRIES THEM (review L5-F1 / L1-F2 / L2-F4 — three lenses).
+  // D-89 points `Read the full check` at the check's card, whose prose this
+  // very rule removes: on a swap tick the door landed the reader, focused, on
+  // a card whose entire content is a label, with the words on the card above
+  // it and themselves behind an unclicked `Read more`. Each rule is right
+  // alone and they are wrong together. The check entry therefore carries the
+  // id of the card that DOES have its words, so the door can follow it —
+  // stamped here, by the builder that made the decision, rather than
+  // recomputed by a reader who would have to know this rule to get it right.
+  const tradedEvalIds = new Map();
   if (Array.isArray(trades)) {
     for (const trade of trades) {
-      if (trade?.evaluationId) tradedEvalIds.add(trade.evaluationId);
+      const id = tradeEntryId(trade);
+      if (trade?.evaluationId && id) tradedEvalIds.set(trade.evaluationId, id);
     }
   }
 
@@ -215,6 +263,7 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges, trades) 
     const state = selectWhyState(evaluation, null, at);
     const rationale = state.rationale;
     const tradedHere = Boolean(evaluation.evalId) && tradedEvalIds.has(evaluation.evalId);
+    const wordsOn = tradedHere ? tradedEvalIds.get(evaluation.evalId) : null;
 
     // D-77 — the four facts ON THE ENTRY that make a check "no change". The
     // fifth and sixth (positions, receipts) are the run key and contiguity.
@@ -226,7 +275,7 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges, trades) 
 
     entries.push({
       _type: TAPE_KIND.CHECK,
-      id: `tape-check-${evaluation.evalId || ms}`,
+      id: checkEntryId(evaluation),
       timestamp: new Date(ms),
       at,
       kind: state.kind,
@@ -247,6 +296,11 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges, trades) 
       // visibly says GILD out of GILD's own filter.
       symbolOut: state.symbolOut,
       symbolIn: state.symbolIn,
+      // WHERE THIS CHECK'S WORDS ACTUALLY ARE (D-89, review L5-F1). Its own
+      // card on every ordinary tick; the trade card on a tick that swapped,
+      // because that is where `rationale` went. `Read the full check` follows
+      // it, so the door lands on the words rather than on the label.
+      wordsOn,
       quiet,
       // THE RUN KEY IS ALSO WHAT THE CARD WOULD SAY (review L1-F6, refuter A:
       // CONFIRMED, and the NORMAL case rather than an edge one). D-77's
@@ -286,10 +340,18 @@ export function buildTape({ trades, statusFeed, evaluations, receipts, chatExcha
  * contiguous slice of the tape.
  *
  * A run of one is left as the card it is; two or more become one line.
+ *
+ * `pinnedId` (D-89) is the ONE entry a fold may not swallow: `Read the full
+ * check` opens a named check's card, and a quiet check is exactly the kind
+ * that gets folded — a HOLD with words is quiet by D-77's four conjuncts, so
+ * the ordinary target of that door is the ordinary member of a run. Without
+ * this the door had nothing to scroll to. The pinned entry breaks the run the
+ * same way a trade card does, so the lines either side of it stay honest about
+ * the contiguous slices they stand for.
  */
 export const MIN_RUN = 2;
 
-export function collapseQuietChecks(items) {
+export function collapseQuietChecks(items, pinnedId = null) {
   if (!Array.isArray(items) || items.length === 0) return [];
   const out = [];
   let run = [];
@@ -320,8 +382,17 @@ export function collapseQuietChecks(items) {
   };
 
   for (const item of items) {
+    // The card the player asked to read (D-89) is not foldable AT ALL — not
+    // into the run it interrupts, and not into the one that starts after it.
+    // Excluding it from `joins` alone was not enough: the `else` below puts a
+    // quiet check into a NEW run rather than letting it stand alone, so the
+    // pinned card was swallowed again by the very next member. It only ever
+    // rendered when it happened to be the LAST check in the document, which is
+    // the shape the first fixture had.
+    const pinned = pinnedId != null && item?.id === pinnedId;
     const joins = item?._type === TAPE_KIND.CHECK
       && item.quiet
+      && !pinned
       && (run.length === 0 || run[run.length - 1].runKey === item.runKey);
     if (joins) {
       run.push(item);
@@ -329,8 +400,9 @@ export function collapseQuietChecks(items) {
     }
     flush();
     // A quiet check whose run key DIFFERS from the run it just broke starts
-    // the next run rather than standing alone.
-    if (item?._type === TAPE_KIND.CHECK && item.quiet) run.push(item);
+    // the next run rather than standing alone — unless it is the pinned one,
+    // which stands alone by definition.
+    if (!pinned && item?._type === TAPE_KIND.CHECK && item.quiet) run.push(item);
     else out.push(item);
   }
   flush();

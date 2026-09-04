@@ -38,6 +38,9 @@ vi.mock('./LiveActivityPanel', () => ({ default: () => null, BreakthroughAlerts:
 import AgentChat from './AgentChat';
 import { buildTape } from '../../screens/battleView/buildTape';
 import { deriveReceipts } from '../../screens/battleView/deriveReceipts';
+import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
+
+const BATTLE_VIEW_COPY_CHECK = (iso, label) => BATTLE_VIEW_COPY.checkCardLabel(iso, label);
 
 const T = (hhmm) => `2026-09-01T${hhmm}:00.000Z`;
 
@@ -106,7 +109,7 @@ describe('D-84 — four kinds in one stream', () => {
     }
     // The record's own lines are present…
     expect(html).toContain('1:31 PM · GILD → MOS · Core');
-    expect(html).toContain('At the 3:45 PM check · Held');
+    expect(html).toContain('Status check · 3:45 PM · Held');
     // …and NEITHER bubble's shell is anywhere near them.
     const records = html.slice(html.indexOf('data-tape-kind="trade"'));
     expect(records).not.toContain('border-radius:0 12px 12px 12px');
@@ -170,6 +173,120 @@ describe('D-84 — four kinds in one stream', () => {
     expect(run).toContain('2 checks · no change');
     expect(run).toContain(RECORD_SHELL);
     expect(run).toContain(MONO);
+  });
+
+  it('EVERY KIND IS NAMED, from the PERSISTED TYPE (flip-prep item 2)', () => {
+    // D-84 separated the four visual CLASSES. Inside the speech class the eye
+    // cannot separate anything: a bench note, a trade narration, the seeded
+    // opener and an answer to something the player typed all arrive as the
+    // same left bubble in the same voice. The eyebrow is read off the type the
+    // SERVER wrote on the exchange — never from the words, which would be
+    // wrong the moment a character mentions the bench in an ordinary reply.
+    const exchanges = [
+      { userMessage: null, agentResponse: 'Opening the book with energy leadership.', messageType: 'first_message', timestamp: T('13:31') },
+      // A bench candidate — `potential_entry` — which is what `Bench note`
+      // means. The `potential_exit` half has its own row below.
+      {
+        userMessage: null, agentResponse: 'DVN is closing on the bench line.',
+        messageType: 'anticipation',
+        anticipationContext: { symbol: 'DVN', direction: 'potential_entry' },
+        timestamp: T('14:31'),
+      },
+      { userMessage: null, agentResponse: 'Rotated the core slot into MOS.', messageType: 'trade_narration', timestamp: T('15:01') },
+      { userMessage: 'protect the lead', agentResponse: 'Understood.', timestamp: T('15:31') },
+      { userMessage: '__AUTO__', agentResponse: 'Debrief: the book held.', isAutoDebrief: true, messageType: 'auto_debrief', timestamp: T('21:01') },
+    ];
+    const html = render({ chatExchanges: exchanges, tapeEntries: [] });
+
+    expect(html).toContain('data-tape-kind-eyebrow="Opener"');
+    expect(html).toContain('data-tape-kind-eyebrow="Bench note"');
+    expect(html).toContain('data-tape-kind-eyebrow="Trade note"');
+    expect(html).toContain('data-tape-kind-eyebrow="Reply"');
+    // `auto_debrief` keeps the SHIPPED eyebrow and gains no second one: one
+    // bubble with two eyebrows is worse than one with none.
+    expect(html).toContain('Post-Market Debrief');
+    expect((html.match(/data-tape-kind-eyebrow/g) || []).length).toBe(4);
+
+    // …and each label sits with its own text, not merely somewhere on screen.
+    const slice = (marker, next) => html.slice(html.indexOf(marker), next ? html.indexOf(next) : html.length);
+    expect(slice('data-tape-kind-eyebrow="Bench note"', 'data-tape-kind-eyebrow="Trade note"'))
+      .toContain('DVN is closing on the bench line.');
+  });
+
+  it('`Bench note` is the BENCH\'s word — a `potential_exit` note is not one (review L1-F1)', () => {
+    // `anticipationCandidates[].direction` is a required enum on the eval
+    // schema: `potential_entry` is a bench candidate worth bringing in;
+    // `potential_exit` is an ACTIVE HOLDING whose signal profile degraded
+    // enough that leaving is plausible. Both persist as
+    // `messageType: 'anticipation'`, so a map keyed on the type alone called a
+    // note about a piece in the player's OWN BOOK a bench note — the
+    // reading-past-the-record error this map exists to avoid, one level down.
+    const anticipation = (direction) => render({
+      chatExchanges: [{
+        userMessage: null,
+        agentResponse: 'SLB has lost its relative strength; if it loses the 20-day I would rotate it out.',
+        messageType: 'anticipation',
+        anticipationContext: { symbol: 'SLB', direction },
+        timestamp: T('14:31'),
+      }],
+      tapeEntries: [],
+    });
+
+    // The ruled case gets the ruled word…
+    expect(anticipation('potential_entry')).toContain('data-tape-kind-eyebrow="Bench note"');
+    // …and the other gets NOTHING, by the same rule an unknown type does. A
+    // word for it has to be ruled before it reaches the screen; inventing one
+    // here would be the guess.
+    const exitNote = anticipation('potential_exit');
+    expect(exitNote).toContain('if it loses the 20-day');
+    expect(exitNote).not.toContain('data-tape-kind-eyebrow');
+    // A record with no direction at all is not a bench note either.
+    expect(anticipation(null)).not.toContain('data-tape-kind-eyebrow');
+    expect(anticipation(undefined)).not.toContain('data-tape-kind-eyebrow');
+  });
+
+  it('AN UNKNOWN TYPE GETS NO EYEBROW — never a guess', () => {
+    // A new server type has to reach the design chat and get a word before it
+    // reaches the screen. Falling back to a neighbour's label would put a name
+    // on something nobody has named.
+    const html = render({
+      chatExchanges: [
+        { userMessage: null, agentResponse: 'Something new happened.', messageType: 'weather_report', timestamp: T('14:31') },
+      ],
+      tapeEntries: [],
+    });
+    expect(html).toContain('Something new happened.');
+    expect(html).not.toContain('data-tape-kind-eyebrow');
+  });
+
+  it('`Reply` needs the PAIR — an agent-initiated exchange with no type is not one', () => {
+    // `deriveChatMessages` defaults a legacy exchange with no `messageType` to
+    // `user_initiated` and suppresses its user half when `userMessage` is
+    // null. Labelling that answer a reply would invent the question. This is
+    // the conjunct that stops it, and the second render is what makes the row
+    // fail if the conjunct goes.
+    const noQuestion = render({
+      chatExchanges: [{ userMessage: null, agentResponse: 'The book is set.', timestamp: T('13:31') }],
+      tapeEntries: [],
+    });
+    expect(noQuestion).toContain('The book is set.');
+    expect(noQuestion).not.toContain('data-tape-kind-eyebrow');
+
+    const withQuestion = render({
+      chatExchanges: [{ userMessage: 'how are we set?', agentResponse: 'The book is set.', timestamp: T('13:31') }],
+      tapeEntries: [],
+    });
+    expect(withQuestion).toContain('data-tape-kind-eyebrow="Reply"');
+  });
+
+  it('the CHECK CARD says what it is too: `Status check · {t} · {state}`', () => {
+    const html = render();
+    expect(html).toContain('Status check · 3:45 PM · Held');
+    // The absence labels keep the ruled words and drop the kind, because they
+    // already end in "at this check" — the founder's string, not a composition
+    // this module may reword.
+    expect(BATTLE_VIEW_COPY_CHECK('2026-09-01T19:46:00.000Z', 'No decision recorded at this check'))
+      .toBe('3:45 PM · No decision recorded at this check');
   });
 
   it('FLAG OFF — no record renders at all, and the bubbles are untouched', () => {

@@ -102,11 +102,20 @@ export function peekLineFor(item) {
  * blank strip while the tape plainly has entries.
  *
  * @param {Array|null} items  the merged, unfolded stream
+ * @param {string|null} pinnedId  the check the reader has open (D-89), which
+ *   the stream does not fold — so the strip must not fold it either
  * @returns {string|null} null when the tape is empty
  */
-export function derivePeekLine(items) {
+export function derivePeekLine(items, pinnedId = null) {
   if (!Array.isArray(items) || items.length === 0) return null;
-  const folded = collapseQuietChecks(items);
+  // THE SAME PIN THE STREAM FOLDS WITH (review L5-F4 / L1-F10). D-89 lets one
+  // check stand out of its run, and this function's whole promise — the line
+  // the strip shows is the line the stream shows — is void if the two fold
+  // differently. The pinned check is by construction the newest one, so the
+  // disagreement was the ordinary case for any quiet tick, not an edge one:
+  // the strip said `3 checks · no change` while the stream showed a run of two
+  // and a card. And `openCheck` is never cleared, so it lasted the mount.
+  const folded = collapseQuietChecks(items, pinnedId);
   for (let i = folded.length - 1; i >= 0; i -= 1) {
     const text = peekLineFor(folded[i]);
     if (text) return text;

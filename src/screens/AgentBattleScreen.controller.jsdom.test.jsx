@@ -85,6 +85,7 @@ vi.mock('../hooks/useAgentBattle', () => ({
 }));
 
 import AgentBattleScreen from './AgentBattleScreen';
+import { checkEntryId } from './battleView/buildTape';
 
 const BATTLE = {
   agentId: 'agent-1', agentBattleId: 'ab-1',
@@ -220,18 +221,104 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
     expect(container.textContent).not.toContain('Executing on next evaluation window');
   });
 
-  it('the score header opens the book panel — the decision and the door; This turn has ONE home, above the board (A4)', () => {
+  it('the score header opens the book panel COLLAPSED, and the close returns focus to it (D-89)', async () => {
     mount();
     const header = [...container.querySelectorAll('[role="button"][aria-expanded]')].find((el) => el.textContent.includes('Aurora') && el.textContent.includes('CPU'));
     expect(header).toBeTruthy();
+    expect(header.getAttribute('aria-expanded')).toBe('false');
     click(header);
+
     const book = container.querySelector('[data-why-symbol="book"]');
     expect(book).toBeTruthy();
+    expect(header.getAttribute('aria-expanded')).toBe('true');
     expect(book.textContent).toContain('At the 12:45 PM check');
     expect(book.querySelector('[data-this-turn]')).toBeNull();
     expect(container.querySelectorAll('[data-this-turn]').length).toBe(1);
     expect(book.textContent).not.toContain('Entry $');
-    expect(book.textContent).toContain('Ask a follow-up · 1 message');
+    // COLLAPSED (D-89): the door rides the expansion, so a glance at the
+    // latest check is not also a decision to speak.
+    expect(book.querySelector('[data-why-book-body="collapsed"]')).toBeTruthy();
+    expect(book.textContent).not.toContain('Ask a follow-up · 1 message');
+
+    // THE CLOSE. A disclosure that unmounts the region it owns and leaves
+    // focus on it drops a keyboard reader to `document.body`; the score header
+    // carries this panel's `aria-expanded`, so focus goes back there.
+    const close = book.querySelector('[data-why-book-close]');
+    expect(close).toBeTruthy();
+    expect(close.getAttribute('aria-label')).toBe('Close the check');
+    click(close);
+    // Focus moves in the same tick as the state — a reader must not be left on
+    // a region that is on its way out.
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(header);
+    // …and the panel leaves once its exit animation has run (AnimatePresence).
+    await settle(400);
+    expect(container.querySelector('[data-why-symbol="book"]')).toBeNull();
+  });
+
+  it('the book panel EXPANDS into a bounded, scrollable region (D-89)', () => {
+    // The bound is what makes the tap safe: an unbounded expansion above the
+    // board pushes the board off the screen — the defect the ruling exists to
+    // close, and a long check is the ordinary case, not the edge one. jsdom
+    // does no layout, so what this row can hold is the style contract.
+    withDoc({
+      evaluations: [{
+        ...LIVE_DOC.evaluations[0],
+        rationale: 'The book is holding its shape. Nothing in the tape argues for a rotation yet.',
+      }],
+    });
+    mount();
+    const header = [...container.querySelectorAll('[role="button"][aria-expanded]')].find((el) => el.textContent.includes('Aurora') && el.textContent.includes('CPU'));
+    click(header);
+
+    const collapsed = container.querySelector('[data-why-book-body="collapsed"]');
+    expect(collapsed).toBeTruthy();
+    expect(collapsed.textContent).toContain('The book is holding its shape.');
+    expect(collapsed.textContent).not.toContain('Nothing in the tape argues');
+
+    click(container.querySelector('[data-why-book-more]'));
+    const expanded = container.querySelector('[data-why-book-body="expanded"]');
+    expect(expanded).toBeTruthy();
+    expect(expanded.textContent).toContain('Nothing in the tape argues for a rotation yet.');
+    expect(expanded.style.maxHeight).toBe('40vh');
+    expect(expanded.style.overflowY).toBe('auto');
+    expect(expanded.style.overscrollBehavior).toBe('contain');
+    // …and the door arrives with it.
+    expect(container.querySelector('[data-why-symbol="book"]').textContent)
+      .toContain('Ask a follow-up · 1 message');
+  });
+
+  it('the deploy brief rides the expansion AND SITS INSIDE THE BOUND (D-76, review L1-F3)', () => {
+    // Two claims the previous row only appeared to make. Its fixture had no
+    // `strategyBrief` at all, so "the deploy brief arrives with it" asserted
+    // nothing — deleting the whole book-brief block left the entire suite
+    // green. And the brief rendered as the bounded region's SIBLING, while
+    // `strategyBrief` is never truncated: one tap added 40vh of bounded
+    // rationale PLUS an unbounded brief above the board, which is the exact
+    // defect D-89 exists to close.
+    const brief = 'Energy is the only sector with a bid this week. '.repeat(12).trim();
+    withDoc({
+      agentContext: { ...LIVE_DOC.agentContext, strategyBrief: brief },
+      evaluations: [{
+        ...LIVE_DOC.evaluations[0],
+        rationale: 'The book is holding its shape. Nothing in the tape argues for a rotation yet.',
+      }],
+    });
+    mount();
+    const header = [...container.querySelectorAll('[role="button"][aria-expanded]')].find((el) => el.textContent.includes('Aurora') && el.textContent.includes('CPU'));
+    click(header);
+
+    // Collapsed: history is not what a glance at the latest check is for.
+    expect(container.querySelector('[data-why-book-plan]')).toBeNull();
+
+    click(container.querySelector('[data-why-book-more]'));
+    const plan = container.querySelector('[data-why-book-plan]');
+    expect(plan).toBeTruthy();
+    expect(plan.textContent).toContain('The plan at deploy');
+    expect(plan.textContent).toContain('Energy is the only sector with a bid this week.');
+    // THE BOUND CONTAINS IT — this is the half that could not fail before.
+    const bounded = container.querySelector('[data-why-book-body="expanded"]');
+    expect(bounded.contains(plan)).toBe(true);
   });
 
   it('the turn line and This turn sit in the tree with the receipts derived from the same doc', () => {
@@ -254,7 +341,7 @@ describe('the controller, mounted — the wiring the first paint cannot reach (T
   });
 });
 
-describe('`Read the full check` brings the book panel to the reader (A2.3, ruling 4)', () => {
+describe('`Read the full check` opens the check\'s own CARD (D-89)', () => {
   const scrolls = [];
   // Restored in afterEach: this file's other describes rely on the harness's
   // own no-op stub, and a spy left on the prototype would outlive this block.
@@ -265,52 +352,252 @@ describe('`Read the full check` brings the book panel to the reader (A2.3, rulin
   });
   afterEach(() => { Element.prototype.scrollIntoView = realScrollIntoView; });
 
-  it('opens the book panel, scrolls it into view, and moves focus to its heading', () => {
-    mount();
-    click(rowButtonFor('SLB'));
+  const doorFor = (symbol) => {
+    click(rowButtonFor(symbol));
     const door = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Read the full check');
     expect(door).toBeTruthy();
+    return door;
+  };
+
+  it('opens the conversation at the CARD — scrolled to it, expanded, focused — not the panel', async () => {
+    // Ruling 4 sent this door to the book panel above the board. Two things
+    // were wrong and only a ruling could fix them: the panel is the LATEST
+    // check for the whole book, not necessarily the check the row's extract
+    // came from; and it opens above the board, so a reader on a low row was
+    // thrown to the top of the page with no way back to where they were.
+    mount();
+    const door = doorFor('SLB');
     expect(container.querySelector('[data-why-symbol="book"]')).toBeNull();
 
     click(door);
-    const heading = document.getElementById('why-book-heading');
-    expect(heading).toBeTruthy();
-    expect(container.querySelector('[data-why-symbol="book"]')).toBeTruthy();
-    expect(scrolls.some(([el]) => el === heading)).toBe(true);
-    expect(document.activeElement).toBe(heading);
-    // …and it is a HEADING, which is the word the ruling uses. It was a styled
-    // div, and there is no `<h*>` in this panel, so heading navigation never
-    // found it and the focus stop announced as plain text (review RB-F11).
-    expect(heading.getAttribute('role')).toBe('heading');
-    expect(heading.getAttribute('aria-level')).toBe('3');
+    await settle(100);
+
+    // The panel above the board is NOT what opened.
+    expect(container.querySelector('[data-why-symbol="book"]')).toBeNull();
+
+    // The card is. Its id is the builder's own — `checkEntryId` — so the
+    // screen cannot ask for an address the tape does not stamp.
+    const card = container.querySelector(`[data-tape-entry-id="${checkEntryId(LIVE_DOC.evaluations[0])}"]`);
+    expect(card).toBeTruthy();
+    expect(card.getAttribute('data-tape-kind')).toBe('check');
+    expect(scrolls.some(([el]) => el === card)).toBe(true);
+    expect(document.activeElement).toBe(card);
+    // EXPANDED: the whole check, which is what the door's words promise. This
+    // fixture's rationale is one sentence, so what proves the expansion is the
+    // absence of the door out of a collapsed record.
+    expect(card.textContent).toContain('SLB lost its bid; swap SLB for DVN.');
+    expect(card.textContent).not.toContain('Read more');
   });
 
-  it('ALREADY OPEN — the tap still scrolls and still focuses (the no-op it used to be)', () => {
+  it('UNFOLDS the card and OPENS it — a quiet check is the ordinary target of this door', async () => {
+    // The two claims a one-evaluation, one-sentence fixture cannot make, and
+    // both mutations survived without this row:
+    //
+    //   · a HOLD with words is `quiet` by D-77's four conjuncts, so the
+    //     ordinary target of `Read the full check` is the ordinary member of a
+    //     RUN — and a folded run has no card to scroll to;
+    //   · `startExpanded` is invisible unless the rationale has a second
+    //     sentence to be hiding.
+    //
+    // Three adjacent quiet checks with the SAME run key, so they fold; the
+    // newest is the one the door names.
+    const quiet = (id, hhmm, rationale) => ({
+      evalId: id,
+      timestamp: `2026-09-01T${hhmm}:02.000Z`,
+      decision: 'HOLD',
+      downgraded: false,
+      rationale,
+      haikuError: null,
+      scores: { banked: 40 },
+      triggers: ['threshold_proximity'],
+    });
+    withDoc({
+      evaluations: [
+        quiet('q1', '16:15', 'SLB is quiet.'),
+        quiet('q2', '16:30', 'SLB is still quiet.'),
+        quiet('q3', '16:47', 'SLB holds its bid into the close. Nothing in the tape argues for a rotation yet.'),
+      ],
+    });
+    mount();
+
+    // Unasked, all three are ONE line — the fold D-77 exists for.
+    expect(container.querySelector('[data-tape-kind="checkRun"]')).toBeTruthy();
+    expect(container.querySelectorAll('[data-tape-kind="check"]').length).toBe(0);
+
+    click(doorFor('SLB'));
+    await settle(100);
+
+    // The named card is out of the fold…
+    const card = container.querySelector(`[data-tape-entry-id="${checkEntryId({ evalId: 'q3', timestamp: '2026-09-01T16:47:02.000Z' })}"]`);
+    expect(card).toBeTruthy();
+    // …the other two are still folded, so the run still stands for a
+    // contiguous slice rather than being torn open around it.
+    expect(container.querySelector('[data-tape-kind="checkRun"]')).toBeTruthy();
+    // …and it is OPEN: the second sentence is on screen and the door out of a
+    // collapsed record is not.
+    expect(card.textContent).toContain('Nothing in the tape argues for a rotation yet.');
+    expect(card.textContent).not.toContain('Read more');
+    expect(document.activeElement).toBe(card);
+  });
+
+  it('THE CARD REALLY EXPANDS when it was already on screen (review L2-F2 / L5-F2)', async () => {
+    // `startExpanded` was read once as a `useState` seed, so it was a NO-OP
+    // whenever the card was already mounted — which is the ordinary case on
+    // both shells. The door said `Read the full check` and delivered the first
+    // sentence with a `Read more` under it. The three committed rows that
+    // asserted the expansion all used ONE-sentence rationales, so
+    // `not.toContain('Read more')` was true either way; only the folded-run
+    // path — the one case where the card genuinely mounts on the pinning
+    // commit — ever exercised it.
+    //
+    // A downgraded HOLD is never `quiet`, so it is never folded: it is on
+    // screen from the first paint, and its two sentences make the claim fail
+    // when the code stops making it true.
+    withDoc({
+      evaluations: [{
+        evalId: 'eval_open', timestamp: '2026-09-01T16:47:02.000Z',
+        decision: 'HOLD', downgraded: true, haikuError: null,
+        rationale: 'SLB lost its bid. DVN is showing the stronger tape and takes the slot.',
+      }],
+    });
+    mount();
+
+    const before = container.querySelector('[data-tape-kind="check"]');
+    expect(before).toBeTruthy();                       // already mounted…
+    expect(before.textContent).toContain('Read more'); // …and collapsed
+    expect(before.textContent).not.toContain('DVN is showing the stronger tape');
+
+    click(doorFor('SLB'));
+    await settle(100);
+
+    const after = container.querySelector('[data-tape-kind="check"]');
+    expect(after.textContent).toContain('DVN is showing the stronger tape and takes the slot.');
+    expect(after.textContent).not.toContain('Read more');
+    expect(document.activeElement).toBe(after);
+  });
+
+  it('ON A SWAP TICK it lands on the card that HAS the words (review L5-F1 / L1-F2 / L2-F4)', async () => {
+    // Three lenses found this independently. RB-F1 made the check card
+    // withhold its prose when the same tick produced a trade card, because the
+    // two carried the identical string. D-89 then pointed this door at that
+    // card. Each rule is right alone and they are wrong together: the door's
+    // ENABLEMENT reads the evaluation's rationale (non-null on a swap) while
+    // its destination's CONTENT reads the builder's suppression (null on a
+    // swap) — the two-source pattern §9 forbids. The reader tapped `Read the
+    // full check` on the most consequential tick of the day and landed,
+    // focused, on a card whose whole content is a label.
+    const words = 'GILD has stalled at the 200-day. MOS is breaking out on volume, so the core slot rotates.';
+    withDoc({
+      evaluations: [{
+        evalId: 'eval_swap', timestamp: '2026-09-01T16:47:02.000Z',
+        decision: 'SWAP', downgraded: false, haikuError: null,
+        symbolOut: 'SLB', symbolIn: 'DVN', rationale: words,
+      }],
+      trades: [{
+        symbolOut: 'SLB', symbolIn: 'DVN', tier: 'star', lockedPoints: 3,
+        swappedOutAt: '2026-09-01T16:47:26.000Z',
+        evaluationId: 'eval_swap', source: 'haiku', rationale: words,
+      }],
+    });
+    mount();
+
+    // The check card really is wordless — that is RB-F1 working, not a bug.
+    const checkCard = container.querySelector('[data-tape-kind="check"]');
+    expect(checkCard).toBeTruthy();
+    expect(checkCard.textContent).toContain('Swapped · SLB → DVN');
+    expect(checkCard.textContent).not.toContain('GILD has stalled');
+
+    click(doorFor('SLB'));
+    await settle(100);
+
+    // The door followed the builder's link to the card that HAS the words…
+    const tradeCard = container.querySelector('[data-tape-kind="trade"]');
+    expect(tradeCard).toBeTruthy();
+    expect(document.activeElement).toBe(tradeCard);
+    // …and opened it, so "the full check" is actually on screen.
+    expect(tradeCard.textContent).toContain('so the core slot rotates.');
+    expect(tradeCard.textContent).not.toContain('Read more');
+    // The wordless check card is NOT where the reader was sent.
+    expect(document.activeElement).not.toBe(container.querySelector('[data-tape-kind="check"]'));
+  });
+
+  it('THE SCOPE COMES OFF — the door is never a silent no-op (review L2-F3 / L5-F3)', async () => {
+    // `scopeTape` runs BEFORE the pin and judges a check by whether its first
+    // sentence names the piece, while this door's gate asks whether the check
+    // has words at all. So a scoped stream routinely did not contain the check
+    // the door pointed at, and the door did nothing whatsoever — while on the
+    // phone the sheet still swallowed the screen to show a filtered tape with
+    // no target in it. Both doors are in the same panel, one under the other.
+    withDoc({
+      evaluations: [{
+        ...LIVE_DOC.evaluations[0],
+        rationale: 'The book is holding its shape. SLB is the one that worries me.',
+      }],
+    });
     mount();
     click(rowButtonFor('SLB'));
+    click(container.querySelector('[data-why-scope="SLB"]'));
+    await settle(100);
+    expect(container.querySelector('[data-tape-scope="SLB"]')).toBeTruthy();
+
+    // …now the OTHER door in the same panel.
     const door = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Read the full check');
+    expect(door).toBeTruthy();
     click(door);
-    const heading = document.getElementById('why-book-heading');
-    // Take focus somewhere else, then tap the door again with the panel open.
+    await settle(100);
+
+    expect(container.querySelector('[data-tape-scope]')).toBeNull();
+    const card = container.querySelector(`[data-tape-entry-id="${checkEntryId(LIVE_DOC.evaluations[0])}"]`);
+    expect(card).toBeTruthy();
+    expect(document.activeElement).toBe(card);
+  });
+
+  it('the conversation is OPEN — a card far up a long tape needs the room', async () => {
+    // ONE call for both shells: since ruling 7 the detent is one thing, and
+    // FULL is an open detent on the desktop too, which renders the column.
+    // This file's matchMedia stub reads as desktop, so the column is what the
+    // door has to have opened; the mobile half (`data-chat-sheet="full"`) is
+    // held in the layout file, which mounts both widths.
+    mount();
+    click(doorFor('SLB'));
+    await settle(100);
+    const column = container.querySelector('[data-chat-column]');
+    expect(column).toBeTruthy();
+    expect(column.getAttribute('data-chat-collapsed')).toBe('false');
+    expect(container.querySelector('[data-peek-strip]')).toBeNull();
+  });
+
+  it('the scroll is `nearest`, and the card is reachable but not in the tab order', async () => {
+    mount();
+    click(doorFor('SLB'));
+    await settle(100);
+    const card = container.querySelector('[data-tape-kind="check"]');
+    const [, opts] = scrolls.find(([el]) => el === card);
+    expect(opts.block).toBe('nearest');
+    // INSTANT (review L4, ac-05). The panel landing this replaced followed
+    // reduced motion; this one does not, because a smooth scroll would race
+    // the list's own auto-scroll-to-bottom and the card may have appeared on
+    // the very commit that pinned it.
+    expect(opts.behavior).toBe('auto');
+    // `tabIndex={-1}`: a reader arrives here by asking to, never by tabbing
+    // past thirty cards.
+    expect(card.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('ASKING TWICE scrolls twice — the nonce, not the id, is what re-fires it', async () => {
+    mount();
+    const door = doorFor('SLB');
+    click(door);
+    await settle(100);
+    const card = container.querySelector('[data-tape-kind="check"]');
     act(() => { door.focus(); });
     expect(document.activeElement).toBe(door);
     scrolls.length = 0;
 
     click(door);
-    expect(container.querySelector('[data-why-symbol="book"]')).toBeTruthy();
-    expect(scrolls.some(([el]) => el === heading)).toBe(true);
-    expect(document.activeElement).toBe(heading);
-  });
-
-  it('the scroll is `nearest` and its behaviour follows reduced motion', () => {
-    mount();
-    click(rowButtonFor('SLB'));
-    click([...container.querySelectorAll('button')].find((b) => b.textContent === 'Read the full check'));
-    const [, opts] = scrolls.find(([el]) => el === document.getElementById('why-book-heading'));
-    expect(opts.block).toBe('nearest');
-    // matchMedia is stubbed `matches: true` in this file, which is what
-    // `prefers-reduced-motion: reduce` reads as — so the instant scroll.
-    expect(opts.behavior).toBe('auto');
+    await settle(100);
+    expect(scrolls.some(([el]) => el === card)).toBe(true);
+    expect(document.activeElement).toBe(card);
   });
 });
 
@@ -344,7 +631,7 @@ describe('the piece scope (A2.3, D-73) — the door, the chip, and the way back'
     expect(column).toBeTruthy();
     expect(column.querySelectorAll('[data-tape-kind]').length).toBe(n);
     expect(column.textContent).toContain('MU → SLB');
-    expect(column.textContent).toContain('At the 12:45 PM check');
+    expect(column.textContent).toContain('Status check · 12:45 PM');
     expect(column.textContent).not.toContain('Protect the lead into the close');
     expect(column.querySelector('[data-receipt]')).toBeNull();
   });
@@ -469,7 +756,7 @@ describe('the piece scope (A2.3, D-73) — the door, the chip, and the way back'
     expect(container.querySelector('[data-tape-scope="SLB"]')).toBeNull();
     expect(container.querySelectorAll('[data-tape-kind]').length).toBeGreaterThanOrEqual(before);
     // The trade card that is not about SLB is back.
-    expect(container.textContent).toContain('At the 12:45 PM check');
+    expect(container.textContent).toContain('Status check · 12:45 PM');
   });
 
   it('the ROSTER is the battle\'s universe under the flag — a bench name is an entity', () => {
@@ -518,7 +805,7 @@ describe('the tape (A2.2, D-72) — one stream, built in the screen, rendered in
     const check = container.querySelector('[data-tape-kind="check"]');
     expect(check).toBeTruthy();
     // The SAME label the Why? panel gives this tick (BUILD_RULES §9).
-    expect(check.textContent).toContain('At the 12:45 PM check · Argued for a swap · held by a guardrail');
+    expect(check.textContent).toContain('Status check · 12:45 PM · Argued for a swap · held by a guardrail');
     expect(check.textContent).toContain('SLB lost its bid; swap SLB for DVN.');
   });
 
@@ -607,10 +894,12 @@ describe('the SCREEN\'s own gating — the call sites, not the selectors (review
     click(rowButtonFor('SLB'));
     const panel = container.querySelector('[data-why-symbol="SLB"]');
     expect(panel.textContent).toContain('Read the full check');
-    // …and it opens the book panel, where the whole paragraph lives.
+    // …and since D-89 it opens the CHECK'S OWN CARD in the conversation, not
+    // the panel above the board.
     const door = [...panel.querySelectorAll('button')].find((b) => b.textContent.includes('Read the full check'));
     click(door);
-    expect(container.querySelector('[data-why-symbol="book"]')).toBeTruthy();
+    expect(container.querySelector(`[data-tape-entry-id="${checkEntryId(LIVE_DOC.evaluations[0])}"]`)).toBeTruthy();
+    expect(container.querySelector('[data-why-symbol="book"]')).toBeNull();
   });
 
   it('MUTATION ROW (L4-F7) — the row passes its DIRECTION, so a short would get no tier lines', () => {

@@ -113,6 +113,37 @@ describe('the properties', () => {
       .toBe('3:01 PM · SLB holds.');
   });
 
+  it('…AND IT FOLDS WITH THE SAME PIN THE STREAM USES (review L5-F4 / L1-F10)', () => {
+    // D-89 lets one check stand out of its run, and this function's whole
+    // promise — the line the strip shows is the line the stream shows — is
+    // void if the two fold differently. The pinned check is by construction
+    // the NEWEST one, so the disagreement was the ordinary case for any quiet
+    // tick: the strip said `3 checks · no change` while the stream showed a
+    // run of two and a card. `openCheck` is never cleared, so it lasted the
+    // whole mount rather than a moment.
+    const quiet = buildTape({
+      trades: [], statusFeed: [], receipts: {}, chatExchanges: [],
+      evaluations: [
+        { ...HELD, evalId: 'q1', timestamp: T('18:31') },
+        { ...HELD, evalId: 'q2', timestamp: T('18:46') },
+        { ...HELD, evalId: 'q3', timestamp: T('19:01') },
+      ],
+    });
+    const merged = mergeRecordedTape([], quiet);
+    const pinned = merged[merged.length - 1].id;
+
+    // Unpinned, all three are one line — and the strip says so.
+    expect(derivePeekLine(merged)).toBe(COPY.checksNoChange(3));
+    // Pinned, the stream shows a run of two and a card…
+    const stream = collapseQuietChecks(merged, pinned);
+    expect(stream.map((i) => i._type)).toEqual([TAPE_KIND.CHECK_RUN, TAPE_KIND.CHECK]);
+    // …and the strip names the CARD, which is what the stream's newest entry
+    // is. Without the pin it said `3 checks · no change` about a stream whose
+    // newest line was a single check.
+    expect(derivePeekLine(merged, pinned)).toBe(peekLineFor(stream[stream.length - 1]));
+    expect(derivePeekLine(merged, pinned)).not.toBe(COPY.checksNoChange(3));
+  });
+
   it('FOLDS exactly as the stream does — a run reads as a run, not as its last check', () => {
     const quiet = buildTape({
       trades: [], statusFeed: [],
