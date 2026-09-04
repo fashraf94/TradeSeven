@@ -582,6 +582,24 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // The rest of the roster — the names this check did not mention.
   benchRest: 'The rest of the roster',
 
+  // ── Tape (A3.4, D-94) ──────────────────────────────────────────────────────
+  // The shipped Game Tape's content, moved into the pane and simplified: trade
+  // cards, bookmarks, the activity log. The Time / P&L / Tier sort controls are
+  // dropped (the seed), and so is the overlay's `Back to the battle` — there is
+  // nothing to go back FROM once Tape is a section rather than a page.
+  tapeTrades: 'Trades',
+  tapeNoTrades: 'No trades yet',
+  // THE BOOKMARK DOT'S NEW HOME (the founder's ruling on §4 #12). The header
+  // link's dot said only "there is at least one"; as a section header it can
+  // say how many, which is the same fact with the number restored. Nowhere on
+  // the board.
+  tapeBookmarks: (n) => (n > 0 ? `Bookmarks · ${n}` : 'Bookmarks'),
+  tapeNoBookmarks: 'No bookmarks yet',
+  tapeUnbookmark: 'Remove this bookmark',
+  tapeActivityLog: 'Activity log',
+  tapeActivityShow: 'Show the activity log',
+  tapeActivityHide: 'Hide the activity log',
+
   // ── The layout (A4) ────────────────────────────────────────────────────────
   // Game Tape is ONE header link that opens the shipped view full-screen; the
   // way back names the page it returns to. No `···` menu (rulings §2.5).

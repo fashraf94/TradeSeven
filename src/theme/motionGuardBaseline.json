@@ -116,6 +116,10 @@
     "src/screens/battleView/selectBench.js": {
       "count": 0,
       "authority": "Phase A3 (D-92) — Bench. It has NO motion at all: the section is a list of the decider's own sentences and nothing on it animates. Zero raw transition literals."
+    },
+    "src/screens/battleView/PaneTape.jsx": {
+      "count": 0,
+      "authority": "Phase A3 (D-94) — Tape. No motion of its own: the shipped TradeCard carries whatever the stream gives it, and the activity log is a plain show/hide with no AnimatePresence (the overlay's height tween did not come across). Zero raw transition literals."
     }
   }
 }

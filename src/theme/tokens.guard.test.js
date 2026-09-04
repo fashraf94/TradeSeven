@@ -86,6 +86,7 @@ const GUARDED_FILES = [
   'src/screens/battleView/useCharacterPane.js',
   'src/screens/battleView/PaneBench.jsx',
   'src/screens/battleView/selectBench.js',
+  'src/screens/battleView/PaneTape.jsx',
 ];
 
 /**

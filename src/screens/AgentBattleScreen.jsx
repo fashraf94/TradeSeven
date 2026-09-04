@@ -45,6 +45,7 @@ import ArenaHeader from './battleView/ArenaHeader';
 import CharacterAvatar from './battleView/CharacterAvatar';
 import CharacterPane from './battleView/CharacterPane';
 import PaneBench from './battleView/PaneBench';
+import PaneTape from './battleView/PaneTape';
 import { selectBench } from './battleView/selectBench';
 import { useCharacterPane, PANE_SECTION } from './battleView/useCharacterPane';
 import { deriveBubble } from './battleView/deriveBubble';
@@ -1648,8 +1649,6 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // single AgentChat element and it is handed in here, so "one AgentChat per
   // layout" (rulings §3.10) holds by construction rather than by a count.
   //
-  // Tape is null until A3.4; its panel exists from here so the tablist's
-  // aria-controls target is real on the day the tab ships.
   const characterPane = paneOn ? (
     <CharacterPane
       agentBattle={agentBattle}
@@ -1661,6 +1660,15 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       returnFocusRef={pane.returnFocusRef}
       chat={chat}
       bench={<PaneBench bench={benchState} />}
+      tape={(
+        <PaneTape
+          battleId={agentBattleId}
+          tapeEntries={tapeEntries}
+          statusFeed={statusFeed}
+          feedBookmarks={feedBookmarks}
+          tokens={tokens}
+        />
+      )}
     />
   ) : null;
 
@@ -1819,8 +1827,13 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               </span>
             )}
 
-            {/* Game Tape (A4, controller flag): the one header link. */}
-            {controllerOn && (
+            {/* Game Tape (A4, controller flag): the one header link.
+                A3.4 (D-94): NOT RENDERED under the pane, where Tape is a
+                section. `gameTapeOpen` then stays false for the life of the
+                mount and its five consumers — the backdrop, the top section,
+                the layout, the sheet and chatVisible — are inert without an
+                edit to any of them. */}
+            {controllerOn && !paneOn && (
               <button
                 ref={gameTapeLinkRef}
                 type="button"

@@ -18,6 +18,7 @@ import { createRoot } from 'react-dom/client';
 vi.mock('../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 vi.mock('firebase/auth', () => ({ getAuth: vi.fn(() => ({ currentUser: null })) }));
 vi.mock('../services/agentService', () => ({ submitDailyGrades: vi.fn(), addFeedBookmark: vi.fn(), removeFeedBookmark: vi.fn() }));
+
 vi.mock('../contexts/ThemeContext', () => {
   const tokens = new Proxy({}, { get: () => '#000000' });
   return { useTheme: () => ({ tokens }), ThemeProvider: ({ children }) => children };
@@ -69,15 +70,18 @@ const LIVE_DOC = {
 
 let DOC = LIVE_DOC;
 const withDoc = (over) => { DOC = { ...LIVE_DOC, ...over }; };
+let FEED = [];
+let BOOKMARKS = [];
 vi.mock('../hooks/useAgentBattle', () => ({
   default: () => ({
-    battle: DOC, statusFeed: [], executionMode: 'copilot', pendingProposal: null,
+    battle: DOC, statusFeed: FEED, executionMode: 'copilot', pendingProposal: null,
     strategyPreset: 'balanced', gameplanMeeting: null, chatExchanges: DOC.chatExchanges,
-    feedBookmarks: [], loading: false,
+    feedBookmarks: BOOKMARKS, loading: false,
   }),
 }));
 
 import AgentBattleScreen from './AgentBattleScreen';
+import { removeFeedBookmark } from '../services/agentService';
 
 const BATTLE = {
   agentId: 'agent-1', agentBattleId: 'ab-1',
@@ -95,6 +99,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-09-01T17:00:00.000Z'));
   DOC = LIVE_DOC;
+  FEED = [];
+  BOOKMARKS = [];
   setShell(true);
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -497,5 +503,110 @@ describe('A3.3 — Bench quotes the decider only (D-92)', () => {
     openPaneOn('bench');
     const rest = container.querySelector('[data-bench-rest="TSLA"]');
     expect(rest.textContent).not.toMatch(/%/);
+  });
+});
+
+describe('A3.4 — Tape is a pane section (D-94)', () => {
+  const openPaneOn = (section) => {
+    act(() => {
+      container.querySelector('[data-character-mark]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    act(() => {
+      container.querySelector(`[data-pane-tab="${section}"]`)
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+  };
+
+  it('the header link and the overlay are not rendered under the pane', () => {
+    mount();
+    expect(container.querySelector('[data-game-tape-link]')).toBeNull();
+    expect(container.querySelector('[data-game-tape]')).toBeNull();
+    // …and the board carries no bookmark dot either — the dot's new home is
+    // Tape's own section header.
+    expect(container.querySelector('[data-game-tape-dot]')).toBeNull();
+  });
+
+  it('renders the trade cards the CHAT renders, not GameTapeView\'s own rows', () => {
+    withDoc({
+      trades: [{
+        symbolOut: 'GILD', symbolIn: 'MOS', tier: 'core',
+        swappedOutAt: '2026-09-01T15:02:00.000Z',
+        exitReason: 'haiku_decision', rationale: 'GILD rolled over; MOS leads materials.',
+      }],
+    });
+    mount();
+    openPaneOn('tape');
+    const tape = container.querySelector('[data-pane-tape]');
+    expect(tape).toBeTruthy();
+    // TapeCards' own marker — the same component the Chat section uses.
+    expect(tape.querySelector('[data-tape-kind="trade"]')).toBeTruthy();
+    expect(tape.querySelector('[data-tape-pair="GILD-MOS"]')).toBeTruthy();
+  });
+
+  it('drops the Time / P&L / Tier sort controls', () => {
+    mount();
+    openPaneOn('tape');
+    const text = container.querySelector('[data-pane-tape]').textContent;
+    for (const filter of ['P&L', 'Tier', 'Time']) {
+      expect(text, `${filter} came across`).not.toContain(filter);
+    }
+  });
+
+  it('THE BOOKMARK DOT BECOMES A COUNT on this section\'s header', () => {
+    FEED = [
+      { id: 'f1', timestamp: '2026-09-01T15:00:00.000Z', message: 'Woken by a price drop' },
+      { id: 'f2', timestamp: '2026-09-01T15:30:00.000Z', message: 'Swap executed' },
+    ];
+    BOOKMARKS = ['f1', 'f2'];
+    mount();
+    openPaneOn('tape');
+    const header = container.querySelector('[data-tape-bookmarks-count]');
+    expect(header.getAttribute('data-tape-bookmarks-count')).toBe('2');
+    expect(header.textContent).toBe('Bookmarks · 2');
+    expect(container.querySelector('[data-tape-bookmark="f1"]')).toBeTruthy();
+  });
+
+  it('says Bookmarks with no count, and why, when there are none', () => {
+    mount();
+    openPaneOn('tape');
+    expect(container.querySelector('[data-tape-bookmarks-count]').textContent).toBe('Bookmarks');
+    expect(container.querySelector('[data-pane-tape]').textContent).toContain('No bookmarks yet');
+  });
+
+  it('keeps the shipped bookmark control — a MOVED client write, not a new one', () => {
+    FEED = [{ id: 'f1', timestamp: '2026-09-01T15:00:00.000Z', message: 'Woken by a price drop' }];
+    BOOKMARKS = ['f1'];
+    mount();
+    openPaneOn('tape');
+    const row = container.querySelector('[data-tape-bookmark="f1"]');
+    const remove = row.querySelector('button[aria-label="Remove this bookmark"]');
+    expect(remove).toBeTruthy();
+    act(() => { remove.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    expect(removeFeedBookmark).toHaveBeenCalledWith('ab-1', 'f1');
+  });
+
+  it('the activity log is collapsed by default, as the shipped view mounts it', () => {
+    mount();
+    openPaneOn('tape');
+    const toggle = container.querySelector('[data-tape-log-toggle]');
+    expect(toggle.getAttribute('data-tape-log-toggle')).toBe('closed');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    act(() => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    expect(container.querySelector('[data-tape-log-toggle]').getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('the Chat keeps its node while Tape shows (hazard 45)', () => {
+    mount();
+    act(() => {
+      container.querySelector('[data-character-mark]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    const chatNode = container.querySelector('[data-pane-section="chat"]').firstElementChild;
+    act(() => {
+      container.querySelector('[data-pane-tab="tape"]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[data-pane-section="chat"]').firstElementChild).toBe(chatNode);
   });
 });
