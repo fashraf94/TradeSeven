@@ -14,6 +14,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { readFileSync } from 'node:fs';
 
 vi.mock('../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 vi.mock('firebase/auth', () => ({ getAuth: vi.fn(() => ({ currentUser: null })) }));
@@ -24,7 +25,14 @@ vi.mock('../contexts/ThemeContext', () => {
   return { useTheme: () => ({ tokens }), ThemeProvider: ({ children }) => children };
 });
 vi.mock('../hooks/useAgentBattleId', () => ({ default: () => ({ agentBattleId: null, loading: false }) }));
-vi.mock('../hooks/useWebSocketPrices', () => ({ useWebSocketPrices: () => ({ prices: {}, status: 'disconnected' }) }));
+// A LIVE PRICE, drivable. Ruling 7's two clocks cannot be told apart without
+// one: the row's badge reads enrichAsset's LIVE-merged history and the A3.6
+// additions read the persisted peak, and with no price the two can only ever
+// agree. See the two-clocks row in the A3.6 describe.
+let PRICES = {};
+vi.mock('../hooks/useWebSocketPrices', () => ({
+  useWebSocketPrices: () => ({ prices: PRICES, status: 'disconnected' }),
+}));
 vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   isAgentPresenceOn: () => false,
@@ -102,6 +110,7 @@ beforeEach(() => {
   DOC = LIVE_DOC;
   FEED = [];
   BOOKMARKS = [];
+  PRICES = {};
   setShell(true);
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -583,6 +592,41 @@ describe('A3.3 — Bench quotes the decider only (D-92)', () => {
     const parents = new Set(chips.map((c) => c.parentElement));
     expect(parents.size).toBe(1);
     expect(parents.values().next().value.style.flexWrap).toBe('wrap');
+  });
+
+  it('RENDERS the D-80 authorship line under the sentences', () => {
+    // The review (lens 4) found `data-bench-footer` asserted by NO test in the
+    // repo, on either side: the selector's own row was vacuous and the element
+    // never rendered here, because every fixture in this file produces a null
+    // footer. Bench is the fourth surface to quote a rationale and the only one
+    // that was going to do it unattributed — which is the whole of D-80.
+    withDoc({ evaluations: [{
+      evalId: 'eval_005',
+      timestamp: '2026-09-01T16:47:02.000Z',
+      decision: 'HOLD',
+      downgraded: true,
+      rationale: 'NOW would need +7.4% more to lock in the bonus.',
+      haikuError: null,
+    }] });
+    mount();
+    openPaneOn('bench');
+    const footer = container.querySelector('[data-bench-footer]');
+    expect(footer).toBeTruthy();
+    expect(footer.textContent).toBe("The agent's own words · the system held it");
+    // …under the card, not floating above it.
+    const bench = container.querySelector('[data-pane-bench]');
+    const order = [...bench.querySelectorAll('[data-bench-card], [data-bench-footer]')];
+    expect(order[0].getAttribute('data-bench-card')).toBe('0');
+    expect(order[1]).toBe(footer);
+  });
+
+  it('renders NO authorship line when the check carries none', () => {
+    // The counter-row: a plain decided check has no footer, and an element that
+    // always rendered would be as wrong as one that never did.
+    mount();
+    openPaneOn('bench');
+    expect(container.querySelector('[data-bench-card]')).toBeTruthy();
+    expect(container.querySelector('[data-bench-footer]')).toBeNull();
   });
 
   it('carries the equipped watchlist\'s bare name as the subtitle', () => {
@@ -1325,11 +1369,25 @@ describe('Smoke F3 — the phone\'s mark is fixed to the viewport, not parked in
     expect(container.querySelector('[data-character-avatar]').style.bottom).toBe('14px');
   });
 
-  it('is absent while the Game Tape is up, as the board column used to make it', () => {
-    // The board column gave the mark this for free (the layout container hides
-    // with `visibility: hidden`). At the root it has to be said. Under the pane
-    // no door to the tape renders, so this is by construction rather than by
-    // reachability — which is the point of asserting it.
+  it('carries the Game Tape gate the board column used to give it for free', () => {
+    // A SOURCE ROW, deliberately (review lens 4, VAC3). The behavioural version
+    // asserted the tape was down while never turning it on, and deleting the
+    // gate left it green — a row that cannot fail under the defect it names.
+    //
+    // It cannot be turned on: under the pane no door to the Game Tape renders
+    // at all (the header link is `controllerOn && !paneOn`, and the chat's
+    // trade cards take the TradeCard branch rather than the TradeTickerCard one
+    // that carries `onTradeClick`), so `gameTapeOpen` is unreachable here. The
+    // gate is belt-and-braces against that changing — the board column used to
+    // supply it for free, because the layout container hides with
+    // `visibility: hidden` and the mark went with it. At the root it has to be
+    // written, and this is what checks it is still written.
+    // A plain path, not `import.meta.url`: under the jsdom environment that is
+    // not a file URL and readFileSync refuses it. vitest runs from the repo root.
+    const src = readFileSync('src/screens/AgentBattleScreen.jsx', 'utf8');
+    expect(src).toContain('{!pane.open && !gameTapeOpen && characterMark}');
+    // …and the mark does render when the tape is down, which is every state
+    // this suite can reach.
     setShell(false);
     mount();
     expect(container.querySelector('[data-character-mark]')).toBeTruthy();
@@ -1470,16 +1528,11 @@ describe('A3.6 — the bagger moment (D-97)', () => {
     expect(container.querySelector('[data-bagger-footer]')).toBeTruthy();
   });
 
-  it('reads the PERSISTED peak and NOTHING else — ruling 7\'s two clocks', () => {
-    // The row this replaces was titled for ruling 7 and never looked at
-    // anything ruling 7 is about (the review found it). This is the claim that
-    // IS reachable here: prices are identical across the two renders (the
-    // websocket mock returns {}), so the ONE thing that differs is a single
-    // persisted field — and the footer appears exactly at the line.
-    //
-    // The row's own BAGGER badge is untouched by all of this: it reads
-    // enrichAsset's live-merged history, which is why it can light a tick
-    // early. That is the second clock, and it stays as it ships.
+  it('reads the PERSISTED peak and NOTHING else — the line, exactly', () => {
+    // Prices are identical across the two renders, so the ONE thing that
+    // differs is a single persisted field — and the footer and the burst turn
+    // on exactly AT the line, which no other mounted row pins (every other
+    // fixture uses 1.1 or 1.6 against a line of 1.0).
     setShell(false);
     withHistory(0.99);
     mount();
@@ -1492,9 +1545,50 @@ describe('A3.6 — the bagger moment (D-97)', () => {
     expect(burst()).toHaveLength(1);
   });
 
-  it('says nothing at all for a piece the player no longer holds', () => {
-    // The cron never deletes a history entry. Walking the map would announce a
-    // bagger with no row on the board to burst.
+  it('TWO CLOCKS: the row\'s badge may be lit while the record is not (ruling 7)', () => {
+    // The row this replaces was titled for ruling 7 and never looked at
+    // anything ruling 7 is about — and worse, making the badge and the burst
+    // read ONE source (the exact defect its comment described) left the whole
+    // file green, because with no live price the two clocks can never disagree.
+    //
+    // So drive the live one. NVDA enters at 900 with baseATR 2.5, so 925 is
+    // +2.78% — a live multiplier of 1.11, past the bagger line and short of the
+    // double — while the persisted peak stays at 0. The shipped row lights; the
+    // A3.6 additions do not.
+    setShell(false);
+    PRICES = { NVDA: 925 };
+    withHistory(0);
+    mount();
+
+    const board = container.querySelector('[data-board]');
+    // The live clock has PASSED the bagger line: the row's proximity label has
+    // moved on to the next tier, which it only does once the bagger is crossed
+    // on the merged history. Before the price it read `2.5% to Bagger`.
+    // (`to Double` is NVDA's alone here — the other three pieces are flat and
+    // still read `2.5% to Bagger`, which is the contrast that makes the point.)
+    expect(board.textContent).toContain('to Double');
+    expect(footers()).toEqual([]);                        // the record, silent
+    expect(burst()).toHaveLength(0);
+    expect(container.querySelector('[data-character-bubble]')?.textContent || '')
+      .not.toContain('Bagger ·');
+
+    // …and when the cron finally records it, the additions arrive — without the
+    // price moving at all.
+    withHistory(1.4);
+    rerender();
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    expect(burst()).toHaveLength(1);
+  });
+
+  it('shows nothing for a piece the player no longer holds (the screen\'s own half)', () => {
+    // The cron never deletes a history entry, so walking the map instead of the
+    // book would announce a bagger for a piece with no row to burst. THE GUARD
+    // FOR THAT IS AT THE PURE SEAM — deriveBaggerMoment.test.js's "a piece the
+    // player no longer holds never announces" — and the review confirmed this
+    // mounted row adds none of its own: the screen defends the same thing twice
+    // (the burst is per-row, and the bubble does its own playerBook lookup), so
+    // the map-walk is invisible in the DOM. Kept, and retitled, because that
+    // second defence is worth pinning; it is not the derivation's guard.
     setShell(false);
     withDoc({ thresholdHistory: { GILD: { maxMultiplier: 0.4 } } });
     mount();

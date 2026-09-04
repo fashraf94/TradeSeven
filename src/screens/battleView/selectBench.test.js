@@ -9,6 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { selectBench, selectBenchRoster, selectLastDecidedWithWords, selectBookSymbols } from './selectBench';
+import { selectWhyState, WHY_KIND } from './selectWhyState';
 
 const doc = (over = {}) => ({
   scoreState: { lastScoredAt: '2026-09-01T17:00:00.000Z' },
@@ -286,11 +287,67 @@ describe('Review lens 1 F4 / F5 — the decider\'s words, and only those', () =>
   });
 
   it('carries the line that says WHOSE words they are (D-80)', () => {
-    // The check and trade cards label authorship under the same sentences;
-    // Bench is the fourth surface to quote a rationale and was the only one
-    // going to do it unattributed.
-    const b = selectBench(doc());
-    expect(typeof b.footer === 'string' || b.footer === null).toBe(true);
-    expect(b.cards.length).toBeGreaterThan(0);
+    // REWRITTEN after the review (lens 4, B1). The first version asserted
+    // `typeof footer === 'string' || footer === null`, which `null` satisfies —
+    // and on its own fixture the footer WAS null, because a plain HOLD
+    // rationale carries no authorship line. So the row named for the D-80 line
+    // never once saw one, and setting `footer: null` in the selector left the
+    // whole file green.
+    //
+    // A footer exists when the check was DOWNGRADED (selectWhyState.js:294-330):
+    // the agent argued and the system held the position. That is also a live
+    // Bench case — a held-back piece is still a bench name.
+    const held = selectBench(doc({ evaluations: [{
+      evalId: 'e1',
+      timestamp: '2026-09-01T16:45:00.000Z',
+      decision: 'HOLD',
+      downgraded: true,
+      rationale: 'NOW would need +7.4% more to lock in the bonus.',
+    }] }));
+    expect(held.footer).toBe("The agent's own words · the system held it");
+    expect(held.cards).toHaveLength(1);
+
+    // …and it is the SELECTOR's footer, not a constant: a different downgrade
+    // reason gives a different line.
+    const failed = selectBench(doc({ evaluations: [{
+      evalId: 'e1',
+      timestamp: '2026-09-01T16:45:00.000Z',
+      decision: 'SWAP',
+      downgraded: true,
+      validationErrors: ['Swap execution failed: the venue rejected it'],
+      rationale: 'NOW would need +7.4% more to lock in the bonus.',
+    }] }));
+    expect(failed.footer).toBe("The agent's own words · the position stayed as it was");
+
+    // A plain decided check genuinely has none — the absence is a real state,
+    // not a hole, and the row says which is which.
+    expect(selectBench(doc()).footer).toBeNull();
+  });
+});
+
+describe('the invariant the ABSENT skip rests on (review lens 4)', () => {
+  it('every ABSENT state selectWhyState can return carries NO words', () => {
+    // selectBench walks past an ABSENT entry AND past a blank rationale. Only
+    // the second bites today, because ABSENT always spreads a base with
+    // `rationale: null` — so the mutation that deletes the first line survives.
+    // This is the coupling that makes that safe, pinned where it can break: if
+    // an absence ever reaches the display field with a placeholder in it, this
+    // reddens and sends the reader to the skip that would then be load-bearing.
+    const at = '2026-09-01T16:47:02.000Z';
+    const absences = [
+      // No entry at all.
+      [null, null],
+      // An entry the latest check has moved past.
+      [{ evalId: 'old', timestamp: '2026-09-01T15:00:00.000Z', rationale: 'NOW looks ready.' }, '2026-09-01T16:47:02.000Z'],
+      // The cron's outage placeholder — words in the RAW field, and an outage.
+      [{ evalId: 'e', timestamp: at, decision: 'HOLD', rationale: 'Haiku call failed — defaulting to HOLD', haikuError: { failureClass: 'timeout' } }, at],
+      // A budget skip: the same shape, a different failure class.
+      [{ evalId: 'e', timestamp: at, decision: 'HOLD', rationale: 'Skipped — budget', haikuError: { failureClass: 'budget' } }, at],
+    ];
+    for (const [entry, lastScoredAt] of absences) {
+      const why = selectWhyState(entry, null, lastScoredAt);
+      expect(why.kind).toBe(WHY_KIND.ABSENT);
+      expect(why.rationale).toBeNull();
+    }
   });
 });

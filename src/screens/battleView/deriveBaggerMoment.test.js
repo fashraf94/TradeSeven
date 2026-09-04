@@ -6,7 +6,7 @@
 // Timing is asserted NOWHERE (hazard 47). This file is about which crossings
 // exist; the window they live in is the hook's, and the paint is the row's.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   deriveBaggerCrossings,
   baggerMomentFacts,
@@ -20,11 +20,30 @@ const book = (...symbols) => symbols.map((symbol) => ({ symbol }));
 
 describe('the line is the canonical one, never a local copy', () => {
   it('is THRESHOLD_MULTIPLIERS.bagger itself', () => {
-    // BUILD_RULES §4: never create a local copy of scoring math. The two local
-    // THRESHOLDS copies in computeProximity.js and TacticalRow.jsx are recorded
-    // debt; this row is what stops this module becoming the third.
     expect(BAGGER_LINE).toBe(THRESHOLD_MULTIPLIERS.bagger);
     expect(BAGGER_LINE).toBe(1.0);
+  });
+
+  it('…and TRACKS it — the row above compares values, which a copy would pass', async () => {
+    // The review (lens 4) mutated `BAGGER_LINE` to the literal `1.0` and the
+    // whole file stayed green: a local copy carrying the same number has the
+    // same value, so a value comparison guards drift and not the copying
+    // BUILD_RULES §4 forbids. This moves the constant instead and watches the
+    // module follow — which only a real import can do.
+    vi.resetModules();
+    vi.doMock('../../constants/baggerBombScoring', () => ({
+      THRESHOLD_MULTIPLIERS: { bagger: 3.3 },
+      CONVICTION_MULTIPLIERS: { star: 2, core: 1.5, support: 1 },
+    }));
+    const m = await import('./deriveBaggerMoment');
+    expect(m.BAGGER_LINE).toBe(3.3);
+    // …and the derivation uses the moved line, so 1.5 is no longer a crossing.
+    expect(m.deriveBaggerCrossings({ NVDA: 0 }, doc({ NVDA: { maxMultiplier: 1.5 } }), book('NVDA')).crossed)
+      .toEqual([]);
+    expect(m.deriveBaggerCrossings({ NVDA: 0 }, doc({ NVDA: { maxMultiplier: 3.4 } }), book('NVDA')).crossed)
+      .toEqual(['NVDA']);
+    vi.doUnmock('../../constants/baggerBombScoring');
+    vi.resetModules();
   });
 });
 

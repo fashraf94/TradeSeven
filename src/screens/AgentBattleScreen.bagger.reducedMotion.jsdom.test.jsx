@@ -89,8 +89,6 @@ vi.mock('../hooks/useAgentBattle', () => ({
 }));
 
 import AgentBattleScreen from './AgentBattleScreen';
-import { removeFeedBookmark } from '../services/agentService';
-import { SHEET_PEEK_PX } from './battleView/useChatSheet';
 
 const BATTLE = {
   agentId: 'agent-1', agentBattleId: 'ab-1',
@@ -150,23 +148,11 @@ const mount = () => act(() => {
  * the pane showing (the brief's resting working state, §5 deliverable 1), so
  * there is no mark to press; the phone starts closed.
  */
-const paneIsOpen = () => container.querySelector('[data-character-pane]')?.getAttribute('data-pane-open') === 'true';
-const openPane = () => {
-  if (paneIsOpen()) return;
-  act(() => {
-    container.querySelector('[data-character-mark]')
-      .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-  });
-};
-const closePane = () => act(() => {
-  container.querySelector('[data-pane-close]')
-    .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-});
-const selectTab = (section) => act(() => {
-  container.querySelector(`[data-pane-tab="${section}"]`)
-    .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-});
-
+// NOTE: this file has no pane helpers on purpose. No row here opens the pane —
+// the reduced-motion contract is about the board's burst and the mark's bubble,
+// both of which live outside it. The copies that were here (openPane, closePane,
+// selectTab, paneIsOpen) came across with the harness and were never called;
+// the review flagged them as dead weight that reads like coverage.
 
 describe('A3.6 — reduced motion: the footer and the line, with no burst', () => {
   const withHistory = (max) => withDoc({ thresholdHistory: { NVDA: { maxMultiplier: max } } });
@@ -198,11 +184,31 @@ describe('A3.6 — reduced motion: the footer and the line, with no burst', () =
       .toContain('Bagger · NVDA hit +2.5%');
   });
 
-  it('the banked footer is there on MOUNT too, with no crossing to reduce', () => {
+  it('the BUBBLE does not animate in either — the other half of the contract', () => {
+    // The review (lens 4) found this file guarding only the burst: making the
+    // bubble's `initial` unconditional left all three rows green, in the one
+    // file whose whole purpose is the reduced-motion contract. framer writes
+    // the `initial` opacity onto the element, so a bubble that is fading is
+    // readable without asserting on time (hazard 47) — and one that is not
+    // carries the animate value from the first frame.
+    setShell(false, { reducedMotion: true });
+    withHistory(0.8);
+    mount();
+    withHistory(1.1);
+    rerender();
+    const bubble = container.querySelector('[data-character-bubble]');
+    expect(bubble).toBeTruthy();
+    expect(bubble.style.opacity).toBe('1');
+  });
+
+  it('the banked footer is there on MOUNT too — and that is the SEED, not the setting', () => {
+    // Stated because the review found this row's zero-burst assertion proved by
+    // the never-on-mount seed rather than by reduced motion: it passes with the
+    // preference either way. The footer is what this row is actually for.
     setShell(false, { reducedMotion: true });
     withHistory(1.6);
     mount();
-    expect(container.querySelectorAll('[data-bagger-burst]')).toHaveLength(0);
     expect(container.querySelector('[data-bagger-footer]').textContent).toBe('Bagger hit · 1.5× banked');
+    expect(container.querySelectorAll('[data-bagger-burst]')).toHaveLength(0);
   });
 });

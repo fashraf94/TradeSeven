@@ -57,7 +57,15 @@ describe('viewportInsetFrom — the chrome `fixed` cannot see', () => {
     expect(viewportInsetFrom(null)).toBe(0);
     expect(viewportInsetFrom(0)).toBe(0);
     expect(viewportInsetFrom(-10)).toBe(0);
+    // A LAYOUT THE CLAMP CANNOT RESCUE (review lens 4). `setLayout(0)` was
+    // proved by `Math.max(0, 0 - 600)` rather than by the guard, so dropping
+    // `!layout` from the guard left this row green. NaN is the reading that
+    // actually reaches the style as `bottom: NaNpx`.
     setLayout(0);
+    expect(viewportInsetFrom(600)).toBe(0);
+    setLayout(NaN);
+    expect(viewportInsetFrom(600)).toBe(0);
+    setLayout(undefined);
     expect(viewportInsetFrom(600)).toBe(0);
   });
 });

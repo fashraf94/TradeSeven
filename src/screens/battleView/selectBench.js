@@ -140,6 +140,16 @@ export function selectLastDecidedWithWords(battle) {
     if (!entry || typeof entry.timestamp === 'undefined') continue;
     const why = selectWhyState(entry, null, entry.timestamp);
     // An outage, a budget skip, or an entry with no words at all: keep walking.
+    //
+    // THE TWO LINES ARE NOT REDUNDANT, but only one of them BITES today, and
+    // the review was right to notice (lens 4, B4): every ABSENT state
+    // `selectWhyState` can return spreads a base whose `rationale` is null
+    // (selectWhyState.js:239, :254, :279), so the second line already catches
+    // the first line's cases. The first states the RULE — an absence is never
+    // quoted, whatever text it might one day carry — and it is what would keep
+    // Bench honest if the cron's placeholder ever reached the display field.
+    // selectBench.test.js pins that invariant directly, so this stays a
+    // deliberate belt-and-braces rather than dead weight nobody can explain.
     if (why.kind === WHY_KIND.ABSENT) continue;
     if (typeof why.rationale !== 'string' || !why.rationale.trim()) continue;
     return { entry, why };
