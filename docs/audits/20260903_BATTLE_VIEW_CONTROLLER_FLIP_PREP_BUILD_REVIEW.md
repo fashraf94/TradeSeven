@@ -57,6 +57,9 @@ independently by more than one lens; those are the ones that mattered.
 | **L1-F1** | **`Bench note` was false for half the notes it labels.** `anticipationCandidates[].direction` is a REQUIRED enum on the eval schema (`agentEvalToolSchema.js:163-170`): `potential_entry` is a bench candidate worth bringing in; `potential_exit` is an ACTIVE HOLDING whose signal profile degraded enough that leaving is plausible. Both persist as `messageType: 'anticipation'` with the direction on `anticipationContext`, so a map keyed on the type alone called a note about a piece in the player's OWN BOOK a bench note. This is the reading-past-the-record error item 2 exists to prevent, one level down: the record disambiguates and the label ignored it. | **FIXED.** `deriveChatMessages` carries the persisted direction; only the ruled case gets the ruled word. The other gets NOTHING, by the same rule an unknown type does — a word for `potential_exit` has to be ruled before it reaches the screen, and inventing one here would be the guess. **Recorded for the founder (§6 item 1).** |
 | **C-F1** *(coordinator)* | **The pinned card was folded away at two of its three positions.** See §3. | **FIXED at `563f5e78`.** |
 
+| **L5-F1 / L1-F2 / L2-F4** | **`Read the full check` landed on a card with NO WORDS on every model-swap tick.** RB-F1 makes the check card withhold its prose when the same tick produced a trade card, because the two carry the identical string; D-89 then pointed this door at that card. Each rule is right alone and wrong with the other: the door's ENABLEMENT reads the evaluation's rationale (non-null on a swap) while its destination's CONTENT reads the builder's suppression (null on a swap) — the two-source pattern §9 forbids. Reproduced by three lenses: the card renders `Status check · 1:30 PM · Swapped · GILD → MOS` and nothing else, focused, while the words sit on the trade card immediately above, themselves behind an unclicked `Read more`. | **FIXED — after first being recorded as a founder ruling, which was the wrong call.** §3's "report, don't fix" is for bugs OUTSIDE the task; this one is inside, created by D-89's own retarget. The builder stamps the check entry with `wordsOn` — the id of the card that holds its words — and the door follows it. On a swap tick the reader lands on the trade card, expanded: the same paragraph plus the pair, the tier, the banked points and the author attribution. `tradeEntryId` is exported beside `checkEntryId` so each id obeys one rule. |
+| **L4-F1** | **`checkEntryId`'s whole contract was unguarded — FIVE mutations walked the suite.** No test anywhere pinned the literal id shape: every mounted assertion computed its expected selector by CALLING the function under test, so both sides of the equality moved with the source. The accent-constant failure of the A2 review, one abstraction up. The worst survivor drops the `\|\| ms` fallback, so every hazard-35 tick (`evalId: null` on the risk loop and the R11 pass) answers to `tape-check-undefined`: colliding React keys, a pin matching several entries at once, a door landing on whichever the query reaches first. | **FIXED (guards added).** The shape is a literal now, for both ids, and asserted against what the builder stamps. |
+
 ### 4.2 MED
 
 | # | Finding | Disposition |
@@ -68,6 +71,9 @@ independently by more than one lens; those are the ones that mattered.
 | **L2-F5** | **The book panel's collapsed state survived a close/re-open inside the exit animation**, so a double-tap on the score header re-opened it fully expanded — the "a glance is also a decision to speak" state the ruling exists to prevent. | **FIXED** — the panel's key changes per open, so "starts collapsed" is true by construction rather than by timing. **The guard is a source tripwire, and §7 discloses why.** |
 | **L3-F1** | **Item 4's flag-off guarantee was held by the CODE, not the SUITE.** The rework moved the controller's read 720 lines from the flag-off write that feeds it, and the only guard was a source row asserting that write's bytes — so moving the write to AFTER the read left everything green while the shipped Command Center dot never cleared again. | **FIXED (guard added).** A behavioural row mounts flag-off, asserts the dot, clicks the tab, asserts it is gone. It dies under exactly L3's mutation. |
 
+| **L4-F5** | **`splitSentences`'s central promise was tested only where it cannot fail.** The docstring says spans run boundary to boundary so an opening `**` is not orphaned; the guarding fixture put the emphasis on the FIRST sentence, where `rawStart` is 0 and the marker is inside the slice whichever index the end uses. An off-by-one on the end index survived. On a later sentence the pair tears in half and renders a stray marker on both sides of the break. | **FIXED (guard added)** on a non-first sentence. |
+| **L4-F4** | **A §9 row whose two sides were one code path.** `stripEmphasisMarkers(t)` was compared against `parseEmphasis(t).map(...).join('')` — the function's own body retyped, so any mutation moved both sides identically. | **REWRITTEN** against the independent definition of "minus its markers". |
+
 ### 4.3 LOW
 
 - **L1-F9** — D-76's book brief was unguarded: deleting the whole block left the entire suite green, because the row that named it had a fixture with no `strategyBrief`. **Guard added.**
@@ -76,6 +82,9 @@ independently by more than one lens; those are the ones that mattered.
 - **L4 ac-05** — the landing scroll's `behavior` was unasserted. **Guarded**, and the reason it is instant rather than reduced-motion-conditional is now written down.
 - **L5-F8** — `feedStampOf` left dead by item 4. **Removed.**
 - **L5-F9** — the item-4 comment attributed `guardrail_forced_swap` to ruling 9; it is hazard 25's. The true claim is also *larger* than the one written: `api/` writes ~30 action values and `buildTape` produces an entry from none of them. **Corrected.**
+- **L4-F8** — item 4's re-source silently dropped the NaN guard `feedStampOf` carried. `NaN != null` and `NaN !== NaN` are both true, so an unparseable tail stamp would light an unread dot that can never clear. **Restored** — and the comment says out loud that no test holds it, because the upstream normalisers make the state unreachable and a mutation removing it survives.
+- **L4-F9** — two unreachable defensive branches in `checkCardLabel` through which three mutations walked. **Removed**: a branch that cannot be reached cannot be reached to fail.
+- **L4-F11** — `''` was missing from the "never invents one" list, so dropping `parseEmphasis`'s `|| !text` was invisible. **Added.**
 - **L1-F7, L1-F11, L1-F12, L5-F7, L5-F6** — comments and documents that over-claimed or described removed behaviour. **All corrected**; the two standing handovers now carry supersession notes naming exactly what is no longer true.
 
 ---
@@ -90,7 +99,11 @@ L3's instrument is stronger than either golden and deserves to be the record: it
 
 ## 5. REFUTED
 
-*(Appended.)*
+| # | Finding | Why it does not stand |
+|---|---|---|
+| **L5-F5 / L1-F15c** | "D-86 → D-89 do not exist in any document; `grep -rn 'D-89' docs/` returns zero hits, and the ledger ends at D-85." | **Refuted by timeline.** The lens trees were cut at `f4c2be08`; the ledger rows D-86 → D-90 were committed at `1a072b43`, after. Both lenses flagged it honestly and it is the same disclosure class as the A2 review's D-81 finding — the coordinator's ledger commit landed mid-review. The rows exist, and D-89 explicitly records that it supersedes A2.3's ruling 4. |
+| **L4 ac-03 / ac-04 / ac-09 / abs-09, and 13 more** | Seventeen mutations "survived". | **Provably equivalent mutants**, and L4 says which and why for each: a role check after an early return for that role; `=== true` on a value that is always a boolean; a nonce guard where id and nonce are always set together; a `+` in `/[.!?]+(?=\s\|$)/` that is decorative because only the run's final character satisfies the lookahead; a `<` interchangeable with `<=` where the extra push yields `''` and is dropped. Three of them (ac-02/03/04) were removed anyway, because §2's rule is that a conjunct which cannot fail is not a guard. |
+| **L1-F4** | "One exchange, two kind eyebrows — a directive exchange renders `Reply` and `Directive`." | **Refuted on the rule's own terms.** The exclusion the copy module states is about the BUBBLE's own eyebrow, and `Directive` belongs to the nested `ExecutionCard` — D-84's fourth visual kind, a different class stacked below the reply. The reader sees a reply, then a directive card, which is what happened. Recorded rather than changed. |
 
 ---
 
@@ -108,4 +121,11 @@ L3's instrument is stronger than either golden and deserves to be the record: it
 
 ## 7. Disclosure
 
-*(Appended at handoff.)*
+The pass ran in full: five isolated lenses on five worktrees at one review HEAD, **~140 executed mutations** (94 by L4 alone), an explicit `vite build`, and this record. Four things are disclosed rather than smoothed over.
+
+1. **One process defect of this run's own.** The ledger rows D-86 → D-90 were committed *after* the lens trees were cut, so two lenses correctly reported them missing. Refuted by timeline in §5, not on the merits — the same shape as the A2 review's D-81 disclosure, and the same lesson: cut the trees after the docs land, not before.
+2. **L4's harness lied to it once, in the dangerous direction.** Its first batch reported 15/15 KILLED. `--reporter=basic` is not a valid flag in this vitest, so the process exited non-zero on every run and every mutation read as caught. L4 noticed only because two mutations it had proved equivalent by hand came back "killed". **A broken mutation harness produces false CONFIDENCE, not false alarm** — it is the exact failure that makes a green suite meaningless, and it is worth carrying forward as a checklist item: prove the harness can report a SURVIVOR before trusting a run of kills.
+3. **One guard was written twice and deleted twice before landing as a source tripwire.** framer's `AnimatePresence` unmounts SYNCHRONOUSLY under this repo's jsdom harness — measured at gaps of 0/10/30/100 ms with reduced motion forced off — so L2-F5's re-open-inside-the-exit defect cannot be reproduced in a mounted test at all, and both jsdom rows I wrote for it passed whether the fix was present or not. The fix is right; the instrument that can actually fail is a source row, and it says so.
+4. **One finding was recorded, then re-classified and fixed.** The swap-tick landing (§4.1) was first written into §6 as a founder ruling. Three lenses finding it independently is what forced the re-read: §3's "report, don't fix" is for bugs outside the task, and D-89's own retarget created this one. Recording a defect you introduced is not discipline, it is deferral.
+
+*Prepared September 3–4, 2026. Build at `f4c2be08`; the lenses' fixes and this record follow it on the same branch. Suite 3,878 in `src/`, `vite build` green, and the branch STOPS here — the founder opens PR 1.*
