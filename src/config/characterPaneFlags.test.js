@@ -1,12 +1,19 @@
 // src/config/characterPaneFlags.test.js
 //
-// Battle View character pane — DARK pin (BUILD_RULES §2). Phase A3 builds the
-// pane behind BATTLE_VIEW_CHARACTER_PANE_ENABLED, which ships FALSE through the
-// whole build and flips in its own deliberate one-line PR after the founder's
-// A3.5 preview smoke. Until then this row is the tripwire that turns an
-// accidental flip into a loud failure naming this file, and the flag-pin guard
-// couples the two: flipping the flag without moving this assertion (and
-// dropping the DARK_BY_DESIGN entry) reds CI.
+// Battle View character pane — THE FLAG PIN (BUILD_RULES §2).
+//
+// ⚠ THIS IS THE `smoke/character-pane` BRANCH, WHERE THE FLAG IS LIT. It exists
+// only to give the founder a Vercel preview with the pane on, and it is NEVER
+// MERGED — the build branch keeps the flag dark, keeps this row pinned FALSE,
+// and keeps its DARK_BY_DESIGN entry. Do not port this file back.
+//
+// On the build branch this pins the flag DARK: Phase A3 is built behind
+// BATTLE_VIEW_CHARACTER_PANE_ENABLED, which ships FALSE through the whole build
+// and flips in its own deliberate one-line PR after the founder's smoke. The
+// flag-pin guard couples the three edits, which is why they all appear in this
+// branch's single commit: flipping the flag without moving this assertion AND
+// dropping the DARK_BY_DESIGN entry reds CI. Exercising that coupling — rather
+// than bypassing it — is half of what this branch is for.
 //
 // Deliberately pins ONLY this flag (the commandCenterSyncFlags.test.js
 // precedent): pinning a flag obliges its docstring to name this file, so an
@@ -34,22 +41,28 @@ function fnBody(name) {
   return body.slice(0, body.indexOf('\n}') + 2);
 }
 
-describe('Battle View character pane flag — dark pin (BUILD_RULES §2)', () => {
-  it('ships DARK — the pane is built behind it, never merged live', () => {
-    expect(BATTLE_VIEW_CHARACTER_PANE_ENABLED).toBe(false);
+describe('Battle View character pane flag — the pin (BUILD_RULES §2)', () => {
+  it('is LIT on this branch — the preview, never merged', () => {
+    // FALSE on the build branch. See the header: this file is the pin, and on
+    // `smoke/character-pane` the pin moves with the flag.
+    expect(BATTLE_VIEW_CHARACTER_PANE_ENABLED).toBe(true);
   });
 
-  it('the accessor is false while the flag is dark', () => {
-    expect(isCharacterPaneOn()).toBe(false);
+  it('the accessor is TRUE — the controller is live, so the conjunction lights', () => {
+    // The row the next one predicted would move. With the flag lit the nesting
+    // becomes behaviourally observable again, which is why the source row below
+    // exists on the build branch at all.
+    expect(isCharacterPaneOn()).toBe(true);
   });
 
   it('the accessor is NESTED on the controller — a source row, not a behavioural one', () => {
-    // This has to be a source row. The pane flag is false, so isCharacterPaneOn()
-    // returns false for every input and a behavioural row could not observe the
-    // nesting being dropped — it would be a test that cannot fail under the
-    // defect it names, which BUILD_RULES §2 says is not a guard. (After the flip
-    // it is behaviourally observable again, and the row above becomes the one
-    // that moves.) The nesting matters: read alone, the pane flag would light a
+    // On the BUILD branch this has to be a source row: the pane flag is false
+    // there, so isCharacterPaneOn() returns false for every input and a
+    // behavioural row could not observe the nesting being dropped — a test that
+    // cannot fail under the defect it names, which BUILD_RULES §2 says is not a
+    // guard. On THIS branch the flip has made it observable again and the row
+    // above has moved, exactly as that note predicted. The source row stays
+    // either way, so the two branches differ by the pin and nothing else. The nesting matters: read alone, the pane flag would light a
     // pane over the shipped tabbed screen, which has no board to float an
     // avatar on.
     const fn = fnBody('isCharacterPaneOn');
