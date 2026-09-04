@@ -69,6 +69,7 @@ export default function PaneTape({
   statusFeed = null,
   feedBookmarks = null,
   tokens = {},
+  reducedMotion = false,
 }) {
   const [showLog, setShowLog] = useState(false);
 
@@ -132,7 +133,11 @@ export default function PaneTape({
         {trades.length === 0 ? (
           <div data-tape-no-trades="1" style={{ ...empty, padding: '0 14px' }}>{COPY.tapeNoTrades}</div>
         ) : (
-          trades.map((entry) => <TradeCard key={entry.id} entry={entry} />)
+          // A3.6 (D-97): the arrival fade, once per mount. Unconditional here —
+          // this section exists only under the pane.
+          trades.map((entry) => (
+            <TradeCard key={entry.id} entry={entry} fadeIn reducedMotion={reducedMotion} />
+          ))
         )}
       </section>
 

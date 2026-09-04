@@ -90,6 +90,9 @@ const GUARDED_FILES = [
   'src/screens/battleView/PaneBench.jsx',
   'src/screens/battleView/selectBench.js',
   'src/screens/battleView/PaneTape.jsx',
+  // A3.6 (D-97) — the bagger moment.
+  'src/screens/battleView/deriveBaggerMoment.js',
+  'src/screens/battleView/useBaggerMoment.js',
   'src/screens/battleView/PaneOverflow.jsx',
 ];
 

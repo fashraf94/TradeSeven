@@ -119,7 +119,15 @@
     },
     "src/screens/battleView/PaneTape.jsx": {
       "count": 0,
-      "authority": "Phase A3 (D-94) — Tape. No motion of its own: the shipped TradeCard carries whatever the stream gives it, and the activity log is a plain show/hide with no AnimatePresence (the overlay's height tween did not come across). Zero raw transition literals."
+      "authority": "Phase A3 (D-94) — Tape. No motion of its own: it hands TradeCard the A3.6 arrival fade as a flag (`fadeIn`), and the card paints it through motionToken; the activity log is a plain show/hide with no AnimatePresence (the overlay's height tween did not come across). Zero raw transition literals."
+    },
+    "src/screens/battleView/deriveBaggerMoment.js": {
+      "count": 0,
+      "authority": "A3.6 (D-97) — the bagger moment's derivation and its session state: pure logic and a hook, zero transition literals, born green. All A3.6 motion is painted elsewhere and goes through motionToken (TacticalRow's burst, TapeCards' arrival fade)."
+    },
+    "src/screens/battleView/useBaggerMoment.js": {
+      "count": 0,
+      "authority": "A3.6 (D-97) — the bagger moment's derivation and its session state: pure logic and a hook, zero transition literals, born green. All A3.6 motion is painted elsewhere and goes through motionToken (TacticalRow's burst, TapeCards' arrival fade)."
     },
     "src/screens/battleView/PaneOverflow.jsx": {
       "count": 0,

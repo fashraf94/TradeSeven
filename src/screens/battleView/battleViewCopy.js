@@ -620,6 +620,36 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   tapeActivityShow: 'Show the activity log',
   tapeActivityHide: 'Hide the activity log',
 
+  // ── The bagger moment (A3.6, D-97) ─────────────────────────────────────────
+  // Two strings, both from PERSISTED scoring, both about one crossing.
+  //
+  // `{mult}` is the row's CONVICTION TIER multiplier — 2× star, 1.5× core, 1×
+  // support (CONVICTION_MULTIPLIERS) — the founder's ruling 8: it is the number
+  // the player is playing for, not the threshold multiplier that shares the
+  // word. `banked` is not a promise: the persisted peak is monotonic within the
+  // day, so the bonus cannot be taken back by a later fall.
+  //
+  // `{pct}` is the bagger LINE, `+{baseATR}%` (ruling 9) — the persisted
+  // threshold the row reads at that price, the same number deriveTierPrices
+  // turns into `Bagger $`. Not the piece's current percent, which is a live
+  // value and would disagree with the line the moment the price moved again.
+  //
+  // The tier suffix is `×` (U+00D7), matching CONVICTION_MULTIPLIERS' own
+  // display everywhere else, and the value is written without a trailing zero:
+  // `2×`, `1.5×`, `1×`.
+  baggerFooter: (mult) => {
+    if (typeof mult !== 'number' || !Number.isFinite(mult) || mult <= 0) return null;
+    return `Bagger hit · ${Number(mult.toFixed(2))}\u00d7 banked`;
+  },
+  baggerBubble: (symbol, pct) => {
+    if (typeof symbol !== 'string' || !symbol.trim()) return null;
+    if (typeof pct !== 'number' || !Number.isFinite(pct) || pct <= 0) return null;
+    return `Bagger · ${symbol.trim()} hit +${Number(pct.toFixed(1))}%`;
+  },
+  // The bubble's own eyebrow, so it reads as a RECORD like the tape's cards do
+  // rather than as speech (D-98: the kind carries its colour as text).
+  baggerEyebrow: 'Bagger',
+
   // ── The layout (A4) ────────────────────────────────────────────────────────
   // Game Tape is ONE header link that opens the shipped view full-screen; the
   // way back names the page it returns to. No `···` menu (rulings §2.5).

@@ -77,6 +77,8 @@
     "src/screens/battleView/PaneBench.jsx": {},
     "src/screens/battleView/selectBench.js": {},
     "src/screens/battleView/PaneTape.jsx": {},
+    "src/screens/battleView/deriveBaggerMoment.js": {},
+    "src/screens/battleView/useBaggerMoment.js": {},
     "src/screens/battleView/PaneOverflow.jsx": {}
   }
 }

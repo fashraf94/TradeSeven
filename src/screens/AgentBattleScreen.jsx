@@ -49,6 +49,8 @@ import PaneTape from './battleView/PaneTape';
 import PaneOverflow from './battleView/PaneOverflow';
 import { selectBench } from './battleView/selectBench';
 import { useCharacterPane, PANE_SECTION } from './battleView/useCharacterPane';
+import { useBaggerMoment } from './battleView/useBaggerMoment';
+import { baggerMomentFacts, persistedMaxMultiplier, BAGGER_LINE } from './battleView/deriveBaggerMoment';
 import { deriveBubble } from './battleView/deriveBubble';
 import { cssVar } from '../theme/cssTokens';
 import { motionToken } from '../theme/motion';
@@ -913,6 +915,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     };
   }, [playerPortfolioSource, enrichAsset]);
 
+  // A3.6 (D-97) — THE PLAYER'S BOOK, FLAT, each piece carrying the tier whose
+  // row it sits in. Two consumers need exactly this: the bagger watch (which
+  // iterates the CURRENT book, never the history map — a swapped-out piece
+  // keeps its history entry and would otherwise announce a bagger for a piece
+  // the player no longer holds) and the bubble's lookup by symbol.
+  //
+  // The tier travels WITH the piece because enrichAsset takes it as an argument
+  // and does not return it, so `asset.tier` is whatever the persisted entry
+  // happened to carry. The board knows; this keeps what the board knows.
+  const playerBook = useMemo(() => {
+    const out = [];
+    for (const key of ['star', 'core', 'support']) {
+      for (const asset of enrichedPlayerPortfolio[key] || []) {
+        if (asset && asset.symbol && !asset.isCash) out.push({ asset, tier: key, symbol: asset.symbol });
+      }
+    }
+    return out;
+  }, [enrichedPlayerPortfolio]);
+
   const enrichedOpponentPortfolio = useMemo(() => {
     const p = opponentPortfolioSource;
     if (!p) return { star: [], core: [], support: [] };
@@ -1411,10 +1432,57 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // line above, so the bubble and the stream cannot name one moment two ways
   // (§9; the fold was missing until the review — lens 1 F1). Null unless the
   // pane is on.
-  const paneBubble = useMemo(
+  const tapeBubble = useMemo(
     () => (paneOn ? deriveBubble(recordedTape, openCheck?.id ?? null) : null),
     [paneOn, recordedTape, openCheck?.id],
   );
+
+  // ── The bagger moment (A3.6, D-97) ────────────────────────────────────────
+  //
+  // Watches the PERSISTED peak per held piece and announces a crossing once.
+  // The pure comparison and the reasons are in deriveBaggerMoment.js; the two
+  // lifetimes are in the hook. Disabled pane-off, and seeded — never fired — on
+  // the first snapshot.
+  const baggerMoment = useBaggerMoment(paneOn, agentBattle, playerBook, { paneOpen: pane.open });
+
+  /**
+   * The row's `Bagger hit · {mult}× banked`, for one piece.
+   *
+   * A FACT, NOT AN EVENT: it asks the persisted peak, not the moment, so it is
+   * there for a player who opens the app an hour after the crossing — which is
+   * what `banked` promises. The row's live-merged badge is untouched (ruling 7):
+   * the badge may light a tick early from a websocket price, this line waits for
+   * the record.
+   */
+  const baggerFooterFor = (asset, tierKey) => {
+    if (!paneOn || !asset || asset.isCash || !asset.symbol) return null;
+    if (persistedMaxMultiplier(agentBattle, asset.symbol) < BAGGER_LINE) return null;
+    const facts = baggerMomentFacts(asset, tierKey);
+    return facts ? BATTLE_VIEW_COPY.baggerFooter(facts.mult) : null;
+  };
+
+  // THE BUBBLE'S SECOND SOURCE (handover §7). `Bagger · {sym} hit {pct}` is not
+  // a tape entry and carries no unread count, so it cannot come from
+  // deriveBubble — it is keyed on the persisted crossing instead, and it is
+  // `standalone` because there is no count to gate it on. It takes precedence
+  // over the tape's line while it stands: a bagger is the loudest thing that can
+  // happen to a piece, and the tape's line will still be there behind it.
+  const baggerBubble = useMemo(() => {
+    if (!paneOn || !baggerMoment.bubbleSymbol) return null;
+    const held = playerBook.find((p) => p.symbol === baggerMoment.bubbleSymbol);
+    const facts = held ? baggerMomentFacts(held.asset, held.tier) : null;
+    const line = facts ? BATTLE_VIEW_COPY.baggerBubble(baggerMoment.bubbleSymbol, facts.pct) : null;
+    // No line means a missing baseATR or tier — say nothing rather than guess.
+    if (!line) return null;
+    return {
+      id: `bagger:${baggerMoment.bubbleSymbol}:${baggerMoment.seq}`,
+      eyebrow: BATTLE_VIEW_COPY.baggerEyebrow,
+      line,
+      standalone: true,
+    };
+  }, [paneOn, baggerMoment.bubbleSymbol, baggerMoment.seq, playerBook]);
+
+  const paneBubble = baggerBubble || tapeBubble;
 
   // ── The unread mark (A4, hazard 14; re-sourced flip-prep item 4) ──────────
   //
@@ -1586,6 +1654,18 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               // dollars cannot come from two sources (BUILD_RULES §9). Absent
               // flag-off, so the shipped row markup is byte-identical.
               {...(controllerOn ? { showCurrentPrice: true } : {})}
+              // A3.6 (D-97) — the bagger moment. Spread the same way the
+              // price is, so flag-off markup is byte-identical.
+              //
+              // REDUCED MOTION IS DECIDED HERE, not in the row: the seed says
+              // "reduced motion renders the tag and footer with no burst", and
+              // the cleanest way to keep that promise is never to ask for the
+              // burst. The footer is unaffected — it is text.
+              {...(paneOn ? {
+                baggerBurst: !reducedMotion && baggerMoment.burst.has(leftAsset?.symbol),
+                baggerFooter: baggerFooterFor(leftAsset, tier.key),
+                reducedMotion,
+              } : {})}
               {...(whyable ? {
                 onWhy: (asset) => handleWhyToggle(rowKey, asset),
                 whyOpen: isWhyOpen,
@@ -1687,6 +1767,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       // otherwise. Flag-off and pane-off are byte-identical — the chat golden
       // proves it.
       scopeInComposer={paneOn}
+      // A3.6 (D-97): the arrival fade, pane-only — the chat is the card's other
+      // home and one arrival fades in each place it is rendered, once.
+      tradeFadeIn={paneOn}
+      reducedMotion={reducedMotion}
       openCheck={openCheck}
       controllerLayout
       // Item 11: the controller's own line when a send never reaches the
@@ -1754,6 +1838,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           statusFeed={statusFeed}
           feedBookmarks={feedBookmarks}
           tokens={tokens}
+          reducedMotion={reducedMotion}
         />
       )}
     />

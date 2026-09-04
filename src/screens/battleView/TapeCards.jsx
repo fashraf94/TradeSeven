@@ -43,7 +43,9 @@
 // about the battle and never leaves the component.
 
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { cssVar } from '../../theme/cssTokens';
+import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { WHY_KIND, parseEmphasis } from './selectWhyState';
 
@@ -205,11 +207,39 @@ function RecordProse({ text, firstSentence, startExpanded = false }) {
  * An executed swap: when, the pair, the tier, what was banked, the motive —
  * and whose words the motive is.
  */
-export function TradeCard({ entry, startExpanded = false }) {
+export function TradeCard({ entry, startExpanded = false, fadeIn = false, reducedMotion = false }) {
   if (!entry) return null;
   const banked = COPY.banked(entry.lockedPoints);
+  // A3.6 (D-97) — THE ARRIVAL FADE, once per mount.
+  //
+  // A PLAIN `div` UNLESS ASKED (`fadeIn` is false everywhere but the pane), so
+  // the shipped card's markup is byte-identical flag-off and the two goldens
+  // keep proving it. A `motion.div` with `initial={false}` would still write an
+  // inline opacity into the SSR output, which is why this is a branch and not a
+  // prop on one element.
+  //
+  // ONCE PER MOUNT is the whole mechanism, and it is only safe because the pane
+  // is HIDDEN rather than unmounted on collapse (review lens 5): before that
+  // fix, every expand remounted this card and replayed the fade. The card is
+  // keyed on `entry.id` at both call sites, so a re-render never remounts it
+  // either.
+  //
+  // NOTE, for the founder: a page LOAD is a mount, so the cards already on the
+  // tape fade in together on arrival at the screen. That follows the ruling's
+  // own words ("once per mount"); if the intent was the seeded idiom the check
+  // wash uses — nothing on the first paint, a fade only for what lands after —
+  // that is a different mechanism and a one-line ruling away.
+  const Tag = fadeIn ? motion.div : 'div';
+  const fadeProps = fadeIn
+    ? {
+      initial: { opacity: 0 },
+      animate: { opacity: 1 },
+      transition: motionToken('fade', { reducedMotion }),
+    }
+    : {};
   return (
-    <div
+    <Tag
+      {...fadeProps}
       data-tape-kind="trade"
       data-tape-pair={`${entry.symbolOut ?? ''}-${entry.symbolIn ?? ''}`}
       // D-89 (review L5-F1): a trade card is a landing target too. On a tick
@@ -232,7 +262,7 @@ export function TradeCard({ entry, startExpanded = false }) {
       {entry.motive && (
         <div style={footnote}>{entry.motiveIsAgent ? COPY.motiveAgent : COPY.motiveSystem}</div>
       )}
-    </div>
+    </Tag>
   );
 }
 

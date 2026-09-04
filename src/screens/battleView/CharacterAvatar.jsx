@@ -108,7 +108,12 @@ export default function CharacterAvatar({
   // NOTHING NEW → THE AVATAR STANDS ALONE (brief §5, state 8). The bubble is
   // not a persistent caption; it is the arrival of an entry the reader has not
   // seen.
-  const showBubble = count > 0 && bubble && bubble.line;
+  // A3.6 (D-97): a STANDALONE bubble has no unread count to be gated on. The
+  // bagger line is not a tape entry — it is keyed on the persisted crossing —
+  // so `count > 0` would silence the loudest thing that can happen to a piece
+  // whenever the tape happened to be caught up. Its own source clears it (the
+  // pane opening), exactly as the count clears this one.
+  const showBubble = Boolean(bubble && bubble.line && (count > 0 || bubble.standalone === true));
   const faceSize = isDesktop ? 44 : 40;
   const fade = motionToken('fade', { reducedMotion });
 

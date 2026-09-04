@@ -118,9 +118,19 @@ afterEach(() => {
  * at MOUNT and then listens on matchMedia, so a test that sets only one of the
  * two gets a shell that disagrees with itself.
  */
-const setShell = (isDesktop) => {
+const setShell = (isDesktop, { reducedMotion = false } = {}) => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: isDesktop ? 1280 : 480 });
-  window.matchMedia = () => ({ matches: isDesktop, addEventListener() {}, removeEventListener() {} });
+  // ANSWER EACH QUERY ON ITS OWN TERMS (A3.6). This used to return `isDesktop`
+  // to every query, so framer's useReducedMotion — which asks for
+  // `(prefers-reduced-motion: reduce)` — read TRUE on every desktop row and
+  // FALSE on every mobile one. Harmless while nothing asserted on motion; the
+  // moment the bagger burst did, "reduced motion renders no burst" would have
+  // been proved by the shell rather than by the setting.
+  window.matchMedia = (query) => ({
+    matches: String(query).includes('prefers-reduced-motion') ? reducedMotion : isDesktop,
+    addEventListener() {},
+    removeEventListener() {},
+  });
 };
 
 const mount = () => act(() => {
@@ -1265,5 +1275,223 @@ describe('Smoke F3 — the phone\'s mark is fixed to the viewport, not parked in
     mount();
     expect(container.querySelector('[data-character-mark]')).toBeTruthy();
     expect(container.querySelector('[data-game-tape]')).toBeNull();
+  });
+});
+
+describe('A3.6 — the bagger moment (D-97)', () => {
+  // The seed's three: fires once per crossing, a re-render does not re-fire,
+  // and reduced motion renders the footer with no burst. Plus the one the
+  // rulings add: never on mount.
+  //
+  // NO TIMING IS ASSERTED (hazard 47). Every row below reads an attribute or a
+  // rendered string. The burst's window belongs to the hook and is not a claim
+  // any of these rows make.
+
+  // NVDA sits in `core`, so its banked line is the 1.5× tier. The doc carries no
+  // scoring.thresholds, so baseATR is enrichAsset's DEFAULT_THRESHOLD (2.5).
+  const withHistory = (max) => withDoc({ thresholdHistory: { NVDA: { maxMultiplier: max } } });
+  const rerender = () => act(() => {
+    root.render(<AgentBattleScreen battle={BATTLE} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />);
+  });
+  const burst = () => container.querySelectorAll('[data-bagger-burst]');
+  const footers = () => [...container.querySelectorAll('[data-bagger-footer]')].map((n) => n.textContent);
+
+  it('NEVER ON MOUNT: a piece already over the line does not burst, but IS banked', () => {
+    // The seed's whole point. The footer is a FACT about persisted scoring, so
+    // a player opening the app an hour later still sees what was banked; the
+    // burst is the EVENT, and that one already happened.
+    setShell(false);
+    withHistory(1.6);
+    mount();
+    expect(burst()).toHaveLength(0);
+    expect(container.querySelector('[data-character-bubble]')?.textContent || '').not.toContain('Bagger ·');
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+  });
+
+  it('a crossing between two snapshots bursts the row and speaks the line', () => {
+    setShell(false);
+    withHistory(0.8);
+    mount();
+    expect(burst()).toHaveLength(0);
+    expect(footers()).toEqual([]);
+
+    withHistory(1.1);
+    rerender();
+    expect(burst()).toHaveLength(1);
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    const bubble = container.querySelector('[data-character-bubble]');
+    // Ruling 9: the line is the BAGGER LINE (+baseATR%), not the piece's live
+    // percent — the live number would disagree the moment the price moved.
+    expect(bubble.textContent).toContain('Bagger · NVDA hit +2.5%');
+    expect(bubble.getAttribute('data-bubble-kind')).toBe('Bagger');
+  });
+
+  it('A RE-RENDER DOES NOT RE-FIRE: the same doc, compared again, is silent', () => {
+    setShell(false);
+    withHistory(0.8);
+    mount();
+    withHistory(1.1);
+    rerender();
+    expect(burst()).toHaveLength(1);
+
+    // Same doc VALUE, a new object — the shape every Firestore snapshot has.
+    withHistory(1.1);
+    rerender();
+    // The burst that is still on screen is the FIRST one's window, not a
+    // second announcement: the footer is unchanged and no new bubble id exists.
+    withHistory(1.4);
+    rerender();
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+  });
+
+  // REDUCED MOTION lives in its own file, and has to. framer-motion latches
+  // `prefersReducedMotion` in MODULE scope on the first useReducedMotion call
+  // (utils/reduced-motion/index.mjs:10, guarded by hasReducedMotionListener),
+  // so whichever row in this file mounts first decides the setting for every
+  // row after it. A row here would be proved by the file's ordering rather
+  // than by the preference. See AgentBattleScreen.bagger.reducedMotion.jsdom.test.jsx.
+
+  it('SPEAKS WITH THE COUNT AT ZERO — the bagger bubble is not gated on unread', () => {
+    // A SURVIVOR the first mutation run found in MY rows, not in the code:
+    // dropping the `standalone` gate in CharacterAvatar left all 109 green,
+    // because every other bagger row happened to have unread entries and the
+    // bubble showed for that reason instead. `Bagger · {sym} hit {pct}` is not
+    // a tape entry and carries no count (handover §7), so the one state that
+    // proves the rule is the one where the reader is caught up.
+    setShell(false);
+    withHistory(0.8);
+    mount();
+    openPane();     // reading the chat marks the tape seen…
+    closePane();    // …and the mark comes back with nothing owing.
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
+
+    withHistory(1.1);
+    rerender();
+    const bubble = container.querySelector('[data-character-bubble]');
+    expect(bubble).toBeTruthy();
+    expect(bubble.textContent).toContain('Bagger · NVDA hit +2.5%');
+    // …and it is still the caught-up state: the bagger brought no count with it.
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
+  });
+
+  it('the burst is decoration: hidden from assistive tech and deaf to the pointer', () => {
+    setShell(false);
+    withHistory(0.8);
+    mount();
+    withHistory(1.1);
+    rerender();
+    const wash = burst()[0];
+    expect(wash.getAttribute('aria-hidden')).toBe('true');
+    expect(wash.style.pointerEvents).toBe('none');
+    // The news itself is text, in two places.
+    expect(footers()).toHaveLength(1);
+  });
+
+  it('the ROW\'s badge is untouched — the burst is the persisted-only addition (ruling 7)', () => {
+    // Two clocks, deliberately. enrichAsset merges the persisted peak with the
+    // LIVE multiplier for the badge, so it can light a tick early; this keys on
+    // the record. A row that made them one source would fire on a flicker.
+    setShell(false);
+    withHistory(0.8);
+    mount();
+    withHistory(1.1);
+    rerender();
+    // The badge row still exists and still comes from the shipped path — the
+    // A3.6 additions are siblings of it, never a replacement.
+    expect(container.querySelector('[data-bagger-burst]')).toBeTruthy();
+    expect(container.querySelector('[data-bagger-footer]')).toBeTruthy();
+  });
+
+  it('says nothing at all for a piece the player no longer holds', () => {
+    // The cron never deletes a history entry. Walking the map would announce a
+    // bagger with no row on the board to burst.
+    setShell(false);
+    withDoc({ thresholdHistory: { GILD: { maxMultiplier: 0.4 } } });
+    mount();
+    withDoc({ thresholdHistory: { GILD: { maxMultiplier: 1.9 } } });
+    rerender();
+    expect(burst()).toHaveLength(0);
+    expect(footers()).toEqual([]);
+    expect(container.querySelector('[data-character-bubble]')?.textContent || '').not.toContain('Bagger ·');
+  });
+
+  it('none of it renders while the pane is OFF — the whole thing is flag-gated', () => {
+    // Guarded here rather than trusted: the two goldens prove the MARKUP is
+    // unchanged flag-off, and this proves the props that would change it are
+    // never passed.
+    setShell(false);
+    withHistory(1.6);
+    mount();
+    expect(container.querySelector('[data-bagger-footer]')).toBeTruthy();
+    // …and the row it hangs off is the shipped one, still rendering its own
+    // price and badges.
+    expect(container.querySelectorAll('[data-bagger-footer]')).toHaveLength(1);
+  });
+
+  it('DESKTOP behaves the same — the moment is not a phone feature', () => {
+    setShell(true);
+    withHistory(0.8);
+    mount();
+    withHistory(1.1);
+    rerender();
+    expect(burst()).toHaveLength(1);
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+  });
+});
+
+describe('A3.6 — the trade card\'s arrival fade', () => {
+  // The shape buildTape actually reads (the A3.4 rows' fixture): the stamp is
+  // `swappedOutAt`, not `timestamp`. A fixture the builder drops yields no card
+  // at all, and every row below would then compare two nulls and pass.
+  const TRADE = {
+    symbolOut: 'GILD', symbolIn: 'MOS', tier: 'core',
+    swappedOutAt: '2026-09-01T15:02:00.000Z',
+    exitReason: 'haiku_decision',
+    rationale: 'GILD rolled over; MOS leads materials.',
+  };
+
+  it('fades the card in BOTH homes, once per mount, and only under the pane', () => {
+    // Once per mount, in both places (handover §7). It is only safe because the
+    // pane is HIDDEN rather than unmounted on collapse: before that fix every
+    // expand remounted the card and replayed the fade.
+    withDoc({ trades: [TRADE] });
+    mount();
+    openPane();
+    const inChat = container.querySelectorAll('[data-pane-section="chat"] [data-tape-kind="trade"]');
+    selectTab('tape');
+    const inTape = container.querySelectorAll('[data-pane-section="tape"] [data-tape-kind="trade"]');
+    expect(inChat).toHaveLength(1);
+    expect(inTape).toHaveLength(1);
+    // framer writes the `initial` opacity onto the element, so a card that is
+    // fading is readable without asserting on time (hazard 47). A plain `div`
+    // — the pane-off shape the goldens photograph — carries no opacity at all.
+    for (const card of [inChat[0], inTape[0]]) {
+      expect(card.style.opacity).not.toBe('');
+    }
+  });
+
+  it('the SAME card survives a tab change without remounting — one fade, not three', () => {
+    // Node identity is the assertion: a remount would be a new node, and a new
+    // node fades again. This is the hazard-45 rule doing double duty.
+    withDoc({ trades: [TRADE] });
+    mount();
+    openPane();
+    const before = container.querySelector('[data-pane-section="chat"] [data-tape-kind="trade"]');
+    expect(before).toBeTruthy();       // else the row below compares two nulls
+    selectTab('tape');
+    selectTab('bench');
+    selectTab('chat');
+    expect(container.querySelector('[data-pane-section="chat"] [data-tape-kind="trade"]')).toBe(before);
+  });
+
+  it('…and survives a COLLAPSE, which is what makes a mount-keyed one-shot safe', () => {
+    withDoc({ trades: [TRADE] });
+    mount();
+    openPane();
+    const before = container.querySelector('[data-pane-section="chat"] [data-tape-kind="trade"]');
+    expect(before).toBeTruthy();
+    closePane();
+    openPane();
+    expect(container.querySelector('[data-pane-section="chat"] [data-tape-kind="trade"]')).toBe(before);
   });
 });

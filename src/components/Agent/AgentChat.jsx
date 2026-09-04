@@ -519,6 +519,10 @@ export default function AgentChat({
   // inferred from controllerLayout: where the chip sits and how the layout is
   // built are two rulings. FALSE keeps the shipped position byte for byte.
   scopeInComposer = false,
+  // A3.6 (D-97): the trade card's arrival fade. Absent (false) flag-off and
+  // pane-off, where the card renders as the plain div the goldens photograph.
+  tradeFadeIn = false,
+  reducedMotion = false,
   // Phase A2 flip-prep (D-89): the check card `Read the full check` asked for.
   // `{ id, nonce }` — the id is `buildTape`'s own `checkEntryId`, so the card
   // the screen names and the card the builder stamps cannot drift; the nonce
@@ -1271,7 +1275,7 @@ export default function AgentChat({
               // Under the flag the card carries the tier, the banked points and
               // the motive with its author named — everything the slim line
               // could not (D-72). The `↳ from directive` echo rides the card.
-              body = <TradeCard key={item.id} entry={item} startExpanded={openCheckId === item.id} />;
+              body = <TradeCard key={item.id} entry={item} startExpanded={openCheckId === item.id} fadeIn={tradeFadeIn} reducedMotion={reducedMotion} />;
             } else if (item._type === 'trade') {
               const isDirectiveLinked = !!item.directiveThreadId;
               body = (
