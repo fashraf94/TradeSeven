@@ -100,6 +100,14 @@
     "src/screens/battleView/deriveBubble.js": {
       "count": 0,
       "authority": "Phase A3 (D-91, D-98) — the character on the board. Its ONE animation is the bubble's arrival fade, motionToken('fade', { reducedMotion }) keyed on the tape entry's id so it plays once per entry; reduced motion skips `initial` outright. No idle motion of any kind. Zero raw transition literals."
+    },
+    "src/screens/battleView/CharacterPane.jsx": {
+      "count": 0,
+      "authority": "Phase A3 (D-93) — the pane. Its one transition is motionToken('smooth', { reducedMotion }) on the region's arrival; the section change is a `display` swap, not an animation, because the chat must not be unmounted (hazard 45). Zero raw transition literals."
+    },
+    "src/screens/battleView/useCharacterPane.js": {
+      "count": 0,
+      "authority": "Phase A3 (D-93) — the pane. Its one transition is motionToken('smooth', { reducedMotion }) on the region's arrival; the section change is a `display` swap, not an animation, because the chat must not be unmounted (hazard 45). Zero raw transition literals."
     }
   }
 }

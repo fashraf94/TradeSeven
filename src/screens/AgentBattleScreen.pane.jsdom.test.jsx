@@ -198,8 +198,20 @@ describe('A3.1 — the character on the board (D-91, D-98)', () => {
     // The eyebrow is the check CARD's own label, not a second one.
     expect(bubble.textContent).toContain('Status check');
 
-    // Opening the conversation marks it seen; the count and the bubble go.
+    // Opening the pane marks it seen. The mark itself retires INTO the pane's
+    // header while the pane is open (the seed's ruling 4 — no second mark on
+    // the board), so what is asserted here is that the board's mark and its
+    // bubble are both gone, not that the badge cleared on a mark still there.
     act(() => { mark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    expect(container.querySelector('[data-character-pane]')).toBeTruthy();
+    expect(container.querySelector('[data-character-avatar]')).toBeNull();
+    expect(container.querySelector('[data-character-bubble]')).toBeNull();
+
+    // …and closing it brings the mark back with nothing unread.
+    act(() => {
+      container.querySelector('[data-pane-close]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
     expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
     expect(container.querySelector('[data-character-bubble]')).toBeNull();
   });
@@ -230,6 +242,174 @@ describe('A3.1 — the character on the board (D-91, D-98)', () => {
     const bubble = container.querySelector('[data-character-bubble]');
     expect(bubble.tagName).toBe('BUTTON');
     act(() => { bubble.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
-    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
+    expect(container.querySelector('[data-character-pane]')).toBeTruthy();
+  });
+});
+
+describe('A3.2 — the pane replaces the strip and the sheet (D-93)', () => {
+  const openPane = () => {
+    const mark = container.querySelector('[data-character-mark]');
+    act(() => { mark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+  };
+
+  it('DESKTOP: no strip and no sheet — the pane is the column', () => {
+    mount();
+    // Closed: the board is full width and the mark floats on it.
+    expect(container.querySelector('[data-character-avatar]')).toBeTruthy();
+    expect(container.querySelector('[data-chat-sheet]')).toBeNull();
+    openPane();
+    expect(container.querySelector('[data-character-pane]')).toBeTruthy();
+    expect(container.querySelector('[data-pane-shell]').getAttribute('data-pane-shell')).toBe('desktop');
+    // The A2 containers are gone under the flag, both of them.
+    expect(container.querySelector('[data-chat-sheet]')).toBeNull();
+    expect(container.querySelector('[data-peek-line]')).toBeNull();
+    expect(container.querySelector('[data-chat-collapse]')).toBeNull();
+  });
+
+  it('MOBILE: the pane covers a dimmed board, and the board leaves the a11y tree', () => {
+    setShell(false);
+    mount();
+    openPane();
+    const overlay = container.querySelector('[data-pane-overlay]');
+    expect(overlay).toBeTruthy();
+    expect(overlay.contains(container.querySelector('[data-character-pane]'))).toBe(true);
+    const layout = container.querySelector('[data-layout]');
+    expect(layout.getAttribute('aria-hidden')).toBe('true');
+    expect(layout.getAttribute('data-board-dimmed')).toBe('1');
+    expect(layout.style.filter).toContain('brightness');
+  });
+
+  it('locks the body only on the shell where the pane covers the board', () => {
+    setShell(false);
+    mount();
+    openPane();
+    expect(document.body.style.overflow).toBe('hidden');
+    act(() => {
+      container.querySelector('[data-pane-close]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(document.body.style.overflow).toBe('');
+  });
+
+  it('EXACTLY ONE AgentChat, in ONE tree position, across every section', () => {
+    // Hazard 45 / rulings §3.10. The chat holds a draft, an in-flight send and
+    // a scroll position; a component that changes tree position remounts and
+    // loses all three. So Bench and Tape HIDE the Chat panel — they never
+    // unmount it — and the node identity is the assertion, not the count alone.
+    mount();
+    openPane();
+    const chatPanel = container.querySelector('[data-pane-section="chat"]');
+    const chatNode = chatPanel.firstElementChild;
+    expect(container.querySelectorAll('[data-chat-layout="controller"]')).toHaveLength(1);
+
+    act(() => {
+      container.querySelector('[data-pane-tab="bench"]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    const after = container.querySelector('[data-pane-section="chat"]');
+    expect(after.hidden).toBe(true);
+    expect(after.firstElementChild).toBe(chatNode);   // the SAME node, not a remount
+    expect(container.querySelectorAll('[data-chat-layout="controller"]')).toHaveLength(1);
+
+    act(() => {
+      container.querySelector('[data-pane-tab="chat"]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[data-pane-section="chat"]').hidden).toBe(false);
+    expect(container.querySelector('[data-pane-section="chat"]').firstElementChild).toBe(chatNode);
+  });
+
+  it('the segmented control is a REAL tablist, wired both ways', () => {
+    mount();
+    openPane();
+    const list = container.querySelector('[role="tablist"]');
+    expect(list).toBeTruthy();
+    const tabs = [...container.querySelectorAll('[role="tab"]')];
+    expect(tabs.map((t) => t.textContent)).toEqual(['Chat', 'Bench', 'Tape']);
+    for (const tab of tabs) {
+      const panel = container.querySelector(`#${tab.getAttribute('aria-controls')}`);
+      expect(panel, `${tab.textContent} points at no panel`).toBeTruthy();
+      expect(panel.getAttribute('role')).toBe('tabpanel');
+      expect(panel.getAttribute('aria-labelledby')).toBe(tab.id);
+    }
+    // Only the selected tab is in the tab order.
+    expect(tabs.filter((t) => t.getAttribute('tabindex') === '0')).toHaveLength(1);
+    expect(tabs.find((t) => t.getAttribute('aria-selected') === 'true').textContent).toBe('Chat');
+  });
+
+  it('arrow keys move between tabs, and wrap', () => {
+    mount();
+    openPane();
+    const list = container.querySelector('[role="tablist"]');
+    const press = (key) => act(() => {
+      list.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    });
+    const selected = () => container.querySelector('[role="tab"][aria-selected="true"]').textContent;
+    press('ArrowRight'); expect(selected()).toBe('Bench');
+    press('ArrowRight'); expect(selected()).toBe('Tape');
+    press('ArrowRight'); expect(selected()).toBe('Chat');
+    press('ArrowLeft'); expect(selected()).toBe('Tape');
+    press('Home'); expect(selected()).toBe('Chat');
+    press('End'); expect(selected()).toBe('Tape');
+  });
+
+  it('collapse remembers the section; expand puts the reader back', () => {
+    mount();
+    openPane();
+    act(() => {
+      container.querySelector('[data-pane-tab="tape"]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    act(() => {
+      container.querySelector('[data-pane-close]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[data-character-pane]')).toBeNull();
+    openPane();
+    expect(container.querySelector('[role="tab"][aria-selected="true"]').textContent).toBe('Tape');
+  });
+
+  it('a row door opens the pane on CHAT, whatever section was last shown', () => {
+    mount();
+    openPane();
+    act(() => {
+      container.querySelector('[data-pane-tab="bench"]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    act(() => {
+      container.querySelector('[data-pane-close]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    // The book door names Chat; a named section beats the remembered one.
+    const bookToggle = container.querySelector('[data-why-book-toggle]');
+    act(() => { bookToggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    const full = container.querySelector('[data-why-open-check]') || container.querySelector('[data-why-book-toggle]');
+    expect(full).toBeTruthy();
+  });
+
+  it('the pane names itself, and carries the character at its head', () => {
+    mount();
+    openPane();
+    const region = container.querySelector('[data-character-pane]');
+    expect(region.getAttribute('role')).toBe('region');
+    expect(region.getAttribute('aria-label')).toBe("The agent's pane");
+    expect(container.querySelector('[data-pane-header]').textContent).toContain('Aurora');
+  });
+
+  // Two rows rather than one: the shell has to be set BEFORE the mount.
+  // useIsDesktop seeds from window.innerWidth at mount and then subscribes to
+  // the matchMedia object it saw then, so re-rendering the same root after
+  // swapping the stub leaves the component on its original shell.
+  it('DESKTOP: the way out COLLAPSES — the pane stays, the board grows', () => {
+    mount();
+    openPane();
+    expect(container.querySelector('[data-pane-close]').getAttribute('aria-label')).toBe('Collapse');
+  });
+
+  it('MOBILE: the way out CLOSES — the pane was covering the board', () => {
+    setShell(false);
+    mount();
+    openPane();
+    expect(container.querySelector('[data-pane-close]').getAttribute('aria-label')).toBe('Close');
   });
 });

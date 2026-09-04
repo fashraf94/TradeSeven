@@ -1,0 +1,308 @@
+// src/screens/battleView/CharacterPane.jsx
+//
+// A3.2 — THE PANE (D-91, D-93).
+//
+// The conversation stops living in a footer strip and a pull-up drawer and
+// becomes the agent's own place: a region with the character at its head, three
+// sections, and one way out. On desktop it is the right column and the way out
+// COLLAPSES it (the board takes the full width, the mark floats back onto it);
+// on a phone it opens full-height over the dimmed board and the way out CLOSES
+// it.
+//
+// THE SEGMENTED CONTROL IS A REAL TABLIST. The mock drew role="tablist" and
+// role="tab" with no panels, no aria-controls and no aria-labelledby, which
+// promises a widget a screen reader then cannot operate (Phase 0 §3 item 10).
+// This builds the whole set: each tab owns an id, points at its panel through
+// aria-controls, and each panel points back through aria-labelledby. Arrow keys
+// move between tabs, as the pattern requires, and only the selected tab is in
+// the tab order.
+//
+// THE CHAT IS NEVER UNMOUNTED (hazard 45, A2.4 review L2-F1). Bench and Tape
+// HIDE it — `display: none`, the sheet's own idiom at peek — because the chat
+// holds a typed draft, an in-flight send and a scroll position, and a component
+// that changes tree position remounts and loses all three. This is why the
+// three panels are siblings that all exist, rather than a switch that renders
+// one: `hidden` on a panel that still exists is a different thing from a panel
+// that is not there.
+//
+// ONE AgentChat PER LAYOUT holds by construction: the screen hands this
+// component the single `chat` element and it is placed at exactly one point in
+// the tree, on both shells.
+//
+// FOCUS lives here, not in the machine, exactly as it does for the sheet: it
+// needs the DOM nodes. On the shell where the pane covers the board, focus
+// moves INTO the region on open and back to the control that opened it on
+// close — and only after a close, never on mount (the Game Tape's review CR6
+// rule: a mount pass must not steal focus).
+//
+// HAZARD 48. index.css forces every <button> to 16px !important, so every label
+// in this file sizes an inner <span>, as ChatSheet's handle does.
+
+import React from 'react';
+import { motion } from 'framer-motion';
+import { ChevronRight, X } from 'lucide-react';
+import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
+import { isAgentPresenceOn } from '../../config/featureFlags';
+import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
+import { cssVar } from '../../theme/cssTokens';
+import { motionToken } from '../../theme/motion';
+import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
+import { PANE_SECTION, PANE_SECTIONS } from './useCharacterPane';
+
+const SECTION_LABEL = {
+  [PANE_SECTION.CHAT]: COPY.paneSectionChat,
+  [PANE_SECTION.BENCH]: COPY.paneSectionBench,
+  [PANE_SECTION.TAPE]: COPY.paneSectionTape,
+};
+
+const tabId = (section) => `pane-tab-${section}`;
+const panelId = (section) => `pane-panel-${section}`;
+
+/** The label span every control wraps its text in (hazard 48). */
+const labelSpan = (size = 12, weight = 700) => ({
+  fontSize: size,
+  fontWeight: weight,
+  letterSpacing: '0.04em',
+  lineHeight: 1.2,
+});
+
+function SegmentedControl({ section, onSelect }) {
+  const onKeyDown = (e) => {
+    const i = PANE_SECTIONS.indexOf(section);
+    if (i < 0) return;
+    // The tablist keyboard contract: left/right wrap, Home/End jump. Without
+    // it the roles above would be a promise the widget does not keep.
+    if (e.key === 'ArrowRight') { e.preventDefault(); onSelect(PANE_SECTIONS[(i + 1) % PANE_SECTIONS.length]); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); onSelect(PANE_SECTIONS[(i - 1 + PANE_SECTIONS.length) % PANE_SECTIONS.length]); }
+    else if (e.key === 'Home') { e.preventDefault(); onSelect(PANE_SECTIONS[0]); }
+    else if (e.key === 'End') { e.preventDefault(); onSelect(PANE_SECTIONS[PANE_SECTIONS.length - 1]); }
+  };
+
+  return (
+    <div
+      role="tablist"
+      aria-label={COPY.paneName}
+      data-pane-tablist="1"
+      onKeyDown={onKeyDown}
+      style={{
+        display: 'flex',
+        gap: 2,
+        padding: 2,
+        borderRadius: 6,
+        background: `rgba(var(--ft-shadow-rgb), 0.45)`,
+        border: `1px solid rgba(var(--ft-scrim-rgb), 0.08)`,
+      }}
+    >
+      {PANE_SECTIONS.map((s) => {
+        const selected = s === section;
+        return (
+          <button
+            key={s}
+            type="button"
+            role="tab"
+            id={tabId(s)}
+            aria-selected={selected ? 'true' : 'false'}
+            aria-controls={panelId(s)}
+            // Only the SELECTED tab is in the tab order; the arrows move within
+            // the list. That is the pattern, and it is what stops a three-tab
+            // control costing three tab stops on the way to the composer.
+            tabIndex={selected ? 0 : -1}
+            data-pane-tab={s}
+            onClick={() => onSelect(s)}
+            style={{
+              border: 'none',
+              cursor: 'pointer',
+              padding: '5px 10px',
+              minHeight: 30,
+              borderRadius: 5,
+              background: selected ? `rgba(var(--ft-teal-rgb), 0.16)` : 'transparent',
+              color: selected ? cssVar('teal') : cssVar('text-muted'),
+            }}
+          >
+            <span style={labelSpan()}>{SECTION_LABEL[s]}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function CharacterPane({
+  agentBattle = null,
+  section = PANE_SECTION.CHAT,
+  onSelectSection,
+  onClose,
+  isDesktop = false,
+  reducedMotion = false,
+  returnFocusRef = null,
+  chat = null,
+  bench = null,
+  tape = null,
+  overflow = null,
+}) {
+  const regionRef = React.useRef(null);
+  const wasOpenRef = React.useRef(false);
+  const agentName = agentBattle?.agentContext?.agentName || 'Your Agent';
+  const archetype = agentBattle?.agentContext?.archetype
+    ? getArchetypeDisplayName(agentBattle.agentContext.archetype)
+    : null;
+
+  // FOCUS IN ON OPEN, BACK ON CLOSE — the shell where the pane covers the board
+  // only. On desktop the pane is a column beside the board and moving focus into
+  // it on every expand would fight the player's own place on the page.
+  const modal = !isDesktop;
+  React.useEffect(() => {
+    if (!modal) return undefined;
+    wasOpenRef.current = true;
+    regionRef.current?.focus?.();
+    return () => {
+      // Only after a real open — never on the mount pass (the Game Tape's
+      // review CR6 rule). The ref makes the cleanup say "this pane was open",
+      // not "this component existed".
+      if (!wasOpenRef.current) return;
+      wasOpenRef.current = false;
+      const back = returnFocusRef?.current;
+      back?.focus?.();
+    };
+  }, [modal, returnFocusRef]);
+
+  const panel = (s, content) => (
+    <div
+      key={s}
+      role="tabpanel"
+      id={panelId(s)}
+      aria-labelledby={tabId(s)}
+      data-pane-section={s}
+      // HIDDEN, NOT UNMOUNTED (hazard 45). `display: none` keeps the subtree —
+      // and the chat's draft, in-flight send and scroll — alive. `hidden` also
+      // takes it out of the accessibility tree, which is the other half of what
+      // an unselected tabpanel must do.
+      hidden={s !== section}
+      style={{
+        display: s === section ? 'flex' : 'none',
+        flexDirection: 'column',
+        flex: 1,
+        minHeight: 0,
+      }}
+    >
+      {content}
+    </div>
+  );
+
+  return (
+    <motion.section
+      ref={regionRef}
+      data-character-pane="1"
+      data-pane-shell={isDesktop ? 'desktop' : 'mobile'}
+      role="region"
+      aria-label={COPY.paneName}
+      tabIndex={-1}
+      initial={reducedMotion ? false : { opacity: 0, y: isDesktop ? 0 : 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={motionToken('smooth', { reducedMotion })}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        height: '100%',
+        background: `rgba(var(--ft-shadow-rgb), 0.72)`,
+        borderLeft: isDesktop ? `1px solid rgba(var(--ft-scrim-rgb), 0.08)` : 'none',
+      }}
+    >
+      {/* The pane's head: the character, its name, the sections, the way out. */}
+      <div
+        data-pane-header="1"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: isDesktop ? '10px 14px' : '10px 12px',
+          borderBottom: `1px solid rgba(var(--ft-scrim-rgb), 0.08)`,
+          flexShrink: 0,
+        }}
+      >
+        {isAgentPresenceOn() && agentBattle && (
+          <AgentPresenceMount
+            surface="duel"
+            agent={agentBattle}
+            duel={{
+              playerScore: agentBattle?.scoreState?.currentScore || 0,
+              opponentScore: agentBattle?.scoreState?.opponentScore || 0,
+              statusFeed: null,
+            }}
+            size={36}
+            enableEnvironment={false}
+            reactivityLevel="static"
+          />
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flexShrink: 1 }}>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: cssVar('teal'),
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {agentName}
+          </span>
+          {/* The archetype's DISPLAY name, from the one map that owns it — the
+              persisted code-id never reaches the screen. Desktop only: the
+              phone's header has the sections and the close to fit. */}
+          {isDesktop && archetype && (
+            <span
+              data-pane-archetype="1"
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                color: cssVar('text-muted'),
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {archetype}
+            </span>
+          )}
+        </div>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <SegmentedControl section={section} onSelect={onSelectSection} />
+          {overflow}
+          <button
+            type="button"
+            data-pane-close="1"
+            aria-label={isDesktop ? COPY.paneCollapse : COPY.paneClose}
+            onClick={onClose}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: 32,
+              minHeight: 32,
+              padding: 0,
+              border: 'none',
+              background: 'transparent',
+              color: cssVar('text-muted'),
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            {isDesktop ? <ChevronRight size={18} /> : <X size={18} />}
+          </button>
+        </div>
+      </div>
+
+      {/* The three sections. All three exist; the unselected two are hidden. */}
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        {panel(PANE_SECTION.CHAT, chat)}
+        {panel(PANE_SECTION.BENCH, bench)}
+        {panel(PANE_SECTION.TAPE, tape)}
+      </div>
+    </motion.section>
+  );
+}

@@ -82,6 +82,8 @@ const GUARDED_FILES = [
   'src/screens/battleView/computeTugOfWarWidth.js',
   'src/screens/battleView/CharacterAvatar.jsx',
   'src/screens/battleView/deriveBubble.js',
+  'src/screens/battleView/CharacterPane.jsx',
+  'src/screens/battleView/useCharacterPane.js',
 ];
 
 /**

@@ -544,6 +544,24 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     ? `${eyebrow} · ${BATTLE_VIEW_COPY.paneOpen.toLowerCase()}`
     : BATTLE_VIEW_COPY.paneOpen),
 
+  // ── The pane (A3.2, D-91 / D-93) ───────────────────────────────────────────
+  // Three sections, three words. They are the tabs' visible labels AND their
+  // accessible names — a segmented control is a real tablist here, so the word
+  // the eye reads is the word a screen reader announces.
+  paneSectionChat: 'Chat',
+  paneSectionBench: 'Bench',
+  paneSectionTape: 'Tape',
+  // The way out, named for what it does on the shell it appears on. Desktop
+  // COLLAPSES (the board takes the full width, the pane is still there); mobile
+  // CLOSES (the pane was covering the board). Two words because they are two
+  // different promises — the A2 containers' longer strings (`Collapse the
+  // chat`, `Open the chat`) named a chat; these name a place.
+  paneCollapse: 'Collapse',
+  paneClose: 'Close',
+  // The overflow's control (A3.5 fills it). Named for what it holds, not for
+  // the three dots it is drawn as.
+  paneMore: 'More',
+
   // ── The layout (A4) ────────────────────────────────────────────────────────
   // Game Tape is ONE header link that opens the shipped view full-screen; the
   // way back names the page it returns to. No `···` menu (rulings §2.5).
