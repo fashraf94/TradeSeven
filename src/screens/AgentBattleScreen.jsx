@@ -484,9 +484,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const { tokens } = useTheme();
   const isDesktop = useIsDesktop();
 
-  // Battle View controller (Phase A). Read at RENDER scope, never module scope
-  // (the featureFlags mock hazard). Flag OR the ?battleViewController=1 smoke
-  // override; the flip PR deletes the override.
+  // Battle View controller (Phase A), LIVE since the 2026-09-04 flip. Read at
+  // RENDER scope, never module scope (the featureFlags mock hazard). The
+  // accessor is the flag and nothing else — the ?battleViewController=1 smoke
+  // override was deleted in the flip commit — and it survives as the one
+  // consumer seam, so rollback is one literal in featureFlags.js and the
+  // flag-off suites keep mocking this call, not the constant.
   const controllerOn = isBattleViewControllerOn();
   const prefersReducedMotion = useReducedMotion();
   const reducedMotion = Boolean(prefersReducedMotion);
