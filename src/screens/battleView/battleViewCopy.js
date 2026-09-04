@@ -561,6 +561,11 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // The overflow's control (A3.5 fills it). Named for what it holds, not for
   // the three dots it is drawn as.
   paneMore: 'More',
+  // A3.5 (D-95): the overflow holds `Report a bug` ALONE. The mock's title
+  // offers `Read · Equip · Report a bug`; Read and Equip are not built. The
+  // string is the widget's own aria-label (ClashBotWidget.jsx), taken from copy
+  // here rather than left as a literal in two places.
+  paneReportBug: 'Report a bug',
 
   // ── Bench (A3.3, D-92) ─────────────────────────────────────────────────────
   // The section's own two strings. `At the {t} check` (atCheck) and `Not named

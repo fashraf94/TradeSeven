@@ -46,6 +46,7 @@ import CharacterAvatar from './battleView/CharacterAvatar';
 import CharacterPane from './battleView/CharacterPane';
 import PaneBench from './battleView/PaneBench';
 import PaneTape from './battleView/PaneTape';
+import PaneOverflow from './battleView/PaneOverflow';
 import { selectBench } from './battleView/selectBench';
 import { useCharacterPane, PANE_SECTION } from './battleView/useCharacterPane';
 import { deriveBubble } from './battleView/deriveBubble';
@@ -1659,6 +1660,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       reducedMotion={reducedMotion}
       returnFocusRef={pane.returnFocusRef}
       chat={chat}
+      overflow={<PaneOverflow />}
       bench={<PaneBench bench={benchState} />}
       tape={(
         <PaneTape
@@ -1807,7 +1809,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 it reflects). This chrome cluster keeps the watchlist chip + status dot. */}
             {/* Phase 5B2 — read-only equipped-watchlist indicator (Q7c).
                 Sourced from the frozen agentContext.equippedWatchlist snapshot. */}
-            {getEquippedWatchlistLabel(agentBattle?.agentContext?.equippedWatchlist) && (
+            {/* The watchlist chip (shipped, flag-independent until now).
+                A3.5 (D-94): NOT RENDERED under the pane — its bare name lives
+                in Bench's subtitle, from the same field. Pane-off keeps it, and
+                the controller-on golden pins that. */}
+            {!paneOn && getEquippedWatchlistLabel(agentBattle?.agentContext?.equippedWatchlist) && (
               <span style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1823,7 +1829,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 border: '1px solid rgba(94,234,212,0.24)',
               }}>
                 <Bookmark size={10} />
-                {getEquippedWatchlistLabel(agentBattle.agentContext.equippedWatchlist)}
+                {!paneOn && getEquippedWatchlistLabel(agentBattle.agentContext.equippedWatchlist)}
               </span>
             )}
 

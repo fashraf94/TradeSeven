@@ -60,6 +60,22 @@ const KEYFRAMES_CSS = `
 // COMPONENT
 // =============================================================================
 
+/**
+ * THE EVENT THAT OPENS THIS WIDGET FROM ELSEWHERE (Battle View A3.5, D-95).
+ *
+ * The widget is mounted ONCE, globally, in App.jsx, and `handleOpen` has always
+ * been internal — there was no prop and no listener, so nothing outside this
+ * file could open it. The character pane retires the floating button into its
+ * `···` overflow, which needs exactly that: a way to open the panel without
+ * mounting a second widget (a second one would double the panel AND its
+ * cooldown state).
+ *
+ * A CustomEvent is the smallest seam that does it: no context, no store, no
+ * prop drilled through App.jsx's tree, and nothing to keep in sync. Exported so
+ * the caller dispatches a NAME rather than a string literal.
+ */
+export const CLASHBOT_OPEN_EVENT = 'clashbot:open';
+
 export default function ClashBotWidget({
   user,
   screen,
@@ -67,6 +83,13 @@ export default function ClashBotWidget({
   currentBattle,
   colors,
   isDesktop,
+  // A3.5 (D-95): the floating button sits exactly where the character's mark
+  // goes — fixed bottom-right, 48x48, z-index 9999, with an infinite CSS pulse
+  // (hazard 36). Under the character pane it is WITHHELD here rather than
+  // moved: the pane's overflow opens the same single widget through the event
+  // above. The seam is the App.jsx MOUNT, so this file needs no knowledge of
+  // which screen is up.
+  hidden = false,
 }) {
   const isMobile = !isDesktop;
 
@@ -139,6 +162,16 @@ export default function ClashBotWidget({
 
   // ─── STATE TRANSITIONS ────────────────────────────────────────
 
+  // The one external door. Subscribed unconditionally — a hidden widget is
+  // exactly the case that needs it, since the pane's overflow is then the ONLY
+  // way in — and torn down with the mount.
+  const openRef = useRef(null);
+  useEffect(() => {
+    const onOpen = () => { openRef.current?.(); };
+    window.addEventListener(CLASHBOT_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(CLASHBOT_OPEN_EVENT, onOpen);
+  }, []);
+
   const handleOpen = () => {
     resetConversation();
     setPhase(STATES.GREETING);
@@ -154,6 +187,12 @@ export default function ClashBotWidget({
       }
     }, 200);
   };
+
+  // The listener above holds a REF rather than the handler itself, so the
+  // effect stays mounted for the life of the widget and never re-subscribes
+  // when a render gives handleOpen a new identity.
+  openRef.current = handleOpen;
+
 
   const handleClose = () => {
     resetConversation();
@@ -312,9 +351,10 @@ export default function ClashBotWidget({
         )}
       </AnimatePresence>
 
-      {/* Floating bug button */}
+      {/* Floating bug button — withheld under the character pane (D-95); the
+          pane's overflow opens the same widget through CLASHBOT_OPEN_EVENT. */}
       <AnimatePresence>
-        {!isOpen && (
+        {!isOpen && !hidden && (
           <motion.button
             initial={{ opacity: 0, scale: 0.5 }}
             animate={{ opacity: 1, scale: 1 }}

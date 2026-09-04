@@ -120,6 +120,10 @@
     "src/screens/battleView/PaneTape.jsx": {
       "count": 0,
       "authority": "Phase A3 (D-94) — Tape. No motion of its own: the shipped TradeCard carries whatever the stream gives it, and the activity log is a plain show/hide with no AnimatePresence (the overlay's height tween did not come across). Zero raw transition literals."
+    },
+    "src/screens/battleView/PaneOverflow.jsx": {
+      "count": 0,
+      "authority": "Phase A3 (D-95) — the pane's overflow. No motion: the menu opens and closes with no transition, because it is a control surface and the seed's motion rules reserve movement for EVENTS (D-97). Zero raw transition literals."
     }
   }
 }

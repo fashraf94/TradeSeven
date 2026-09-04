@@ -610,3 +610,72 @@ describe('A3.4 — Tape is a pane section (D-94)', () => {
     expect(container.querySelector('[data-pane-section="chat"]').firstElementChild).toBe(chatNode);
   });
 });
+
+describe('A3.5 — the declutter (D-94, D-95)', () => {
+  const openPane = () => act(() => {
+    container.querySelector('[data-character-mark]')
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+
+  it('the watchlist chip leaves the header; its name lives in Bench', () => {
+    mount();
+    // The chip has been flag-INDEPENDENT since it shipped — it rendered
+    // flag-off and controller-on alike — so this is the first thing that ever
+    // took it off the header.
+    expect(container.textContent).not.toContain('Watchlist:');
+    openPane();
+    act(() => {
+      container.querySelector('[data-pane-tab="bench"]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[data-bench-watchlist]').textContent).toContain('Energy leaders');
+  });
+
+  it('the overflow holds `Report a bug` ALONE', () => {
+    mount();
+    openPane();
+    const toggle = container.querySelector('[data-pane-overflow-toggle]');
+    expect(toggle.getAttribute('aria-label')).toBe('More');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    act(() => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    const menu = container.querySelector('[role="menu"]');
+    expect(menu).toBeTruthy();
+    const items = menu.querySelectorAll('[role="menuitem"]');
+    expect(items).toHaveLength(1);
+    expect(items[0].textContent).toBe('Report a bug');
+    // The mock's other two are not built.
+    expect(menu.textContent).not.toContain('Read');
+    expect(menu.textContent).not.toContain('Equip');
+  });
+
+  it('the overflow DISPATCHES rather than mounting a second widget', () => {
+    // A second ClashBotWidget inside the pane would double the panel and its
+    // cooldown state (hazard 36). The door is an event onto the ONE widget the
+    // App mounts.
+    mount();
+    openPane();
+    const heard = [];
+    const listener = () => heard.push(1);
+    window.addEventListener('clashbot:open', listener);
+    act(() => {
+      container.querySelector('[data-pane-overflow-toggle]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    act(() => {
+      container.querySelector('[data-pane-report-bug]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    window.removeEventListener('clashbot:open', listener);
+    expect(heard).toHaveLength(1);
+    // …and the menu closes behind it.
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('no bug button is rendered inside the battle view itself', () => {
+    // The withholding happens at the App mount, which this suite does not
+    // render. What it CAN assert is that the pane never grew one of its own.
+    mount();
+    openPane();
+    expect(container.querySelector('button[aria-label="Report a bug"]')).toBeNull();
+  });
+});
