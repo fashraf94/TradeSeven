@@ -80,6 +80,7 @@
   "src/hooks/useTrainingDraft.js",
   "src/hooks/useTraits.js",
   "src/screens/SeasonDashboard.jsx",
+  "src/screens/battleView/CharacterPane.jsx",
   "src/services/ruleCompatClassify.js",
   "src/services/ruleCompatEvaluate.js",
   "src/utils/compatSurfaceCopy.js",
