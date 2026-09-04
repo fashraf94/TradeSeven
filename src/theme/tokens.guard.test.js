@@ -77,6 +77,9 @@ const GUARDED_FILES = [
   'src/screens/battleView/useChatSheet.js',
   'src/screens/battleView/useCoarseNow.js',
   'src/screens/battleView/useContentStable.js',
+  // Battle View character pane, Phase A3 — token-only from birth (D-96).
+  'src/screens/battleView/ArenaHeader.jsx',
+  'src/screens/battleView/computeTugOfWarWidth.js',
 ];
 
 /**

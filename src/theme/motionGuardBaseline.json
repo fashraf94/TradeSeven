@@ -3,87 +3,95 @@
   "guarded": {
     "src/components/Forge/ParamControls/ParamToggle.jsx": {
       "count": 0,
-      "authority": "Phase 2 pilot \u2014 migrated to the `snappy` token (transition={snappy}); zero raw transition literals remain."
+      "authority": "Phase 2 pilot — migrated to the `snappy` token (transition={snappy}); zero raw transition literals remain."
     },
     "src/screens/battleView/ChatSheet.jsx": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
-    },
-    "src/screens/battleView/LandingWash.jsx": {
-      "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/TapeCards.jsx": {
       "count": 0,
-      "authority": "Phase A2 (A2.2) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A2 (A2.2) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+    },
+    "src/screens/battleView/LandingWash.jsx": {
+      "count": 0,
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/ThisTurnStrip.jsx": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/TurnLine.jsx": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/WhyPanel.jsx": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/battleViewCopy.js": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/buildTape.js": {
       "count": 0,
-      "authority": "Phase A2 (A2.2) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A2 (A2.2) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/deriveReceipts.js": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/deriveTurnLine.js": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/selectDeployPlan.js": {
       "count": 0,
-      "authority": "Phase A2 (A2.1b) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A2 (A2.1b) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/selectSymbolRoster.js": {
       "count": 0,
-      "authority": "Phase A2 (A2.3) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); a pure selector with no motion at all."
+      "authority": "Phase A2 (A2.3) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); a pure selector with no motion at all."
     },
     "src/screens/battleView/scopeTape.js": {
       "count": 0,
-      "authority": "Phase A2 (A2.3) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); a pure selector with no motion at all."
+      "authority": "Phase A2 (A2.3) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); a pure selector with no motion at all."
     },
     "src/screens/battleView/PeekStrip.jsx": {
       "count": 0,
-      "authority": "Phase A2 (A2.4) \u2014 the peek strip does not animate at all (seed \u00a7A2.4: the line updates when the tape does, with no motion between); zero raw transition literals from birth."
+      "authority": "Phase A2 (A2.4) — the peek strip does not animate at all (seed §A2.4: the line updates when the tape does, with no motion between); zero raw transition literals from birth."
     },
     "src/screens/battleView/derivePeekLine.js": {
       "count": 0,
-      "authority": "Phase A2 (A2.4) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); a pure selector with no motion at all."
+      "authority": "Phase A2 (A2.4) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); a pure selector with no motion at all."
     },
     "src/screens/battleView/landing.js": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/selectWhyState.js": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/useChatSheet.js": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/useCoarseNow.js": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
     },
     "src/screens/battleView/useContentStable.js": {
       "count": 0,
-      "authority": "Phase A (A4 review L5-N6) \u2014 a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+      "authority": "Phase A (A4 review L5-N6) — a Battle View controller surface written on the vocabulary (motionToken / named tokens); zero raw transition literals from birth."
+    },
+    "src/screens/battleView/ArenaHeader.jsx": {
+      "count": 0,
+      "authority": "Phase A3 (D-96) — the character pane's arena header, written on the vocabulary from birth: its two transitions are ONE motionToken('smooth', { reducedMotion }) identifier, shared by the mount-in and the bar, so reduced motion resolves both to `instant`. Zero raw transition literals."
+    },
+    "src/screens/battleView/computeTugOfWarWidth.js": {
+      "count": 0,
+      "authority": "Phase A3 (D-96) — the character pane's arena header, written on the vocabulary from birth: its two transitions are ONE motionToken('smooth', { reducedMotion }) identifier, shared by the mount-in and the bar, so reduced motion resolves both to `instant`. Zero raw transition literals."
     }
   }
 }

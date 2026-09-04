@@ -14,7 +14,7 @@ import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
-import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn } from '../config/featureFlags';
+import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn, isCharacterPaneOn } from '../config/featureFlags';
 import { TAB_KEYS, tabLabels } from './agentBattleTabs';
 // Battle View controller, Phase A (BATTLE_VIEW_CONTROLLER_ENABLED — dark).
 // Everything imported from ./battleView renders ONLY under the flag; flag-off
@@ -40,6 +40,8 @@ import ChatSheet from './battleView/ChatSheet';
 import { PeekStrip } from './battleView/PeekStrip';
 import { derivePeekLine } from './battleView/derivePeekLine';
 import { useChatSheet, useViewportHeight, isSheetOpen, SHEET_PEEK_PX, SHEET_DETENT } from './battleView/useChatSheet';
+import { computeTugOfWarWidth } from './battleView/computeTugOfWarWidth';
+import ArenaHeader from './battleView/ArenaHeader';
 import { cssVar } from '../theme/cssTokens';
 import { motionToken } from '../theme/motion';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
@@ -125,12 +127,6 @@ function computeDayLabel(timing) {
   if (total <= 1) return '';
   const current = currentTradingDay || 1;
   return `Day ${current} of ${total}`;
-}
-
-function computeTugOfWarWidth(myScore, oppScore) {
-  const total = Math.abs(myScore) + Math.abs(oppScore);
-  if (total === 0) return 50;
-  return Math.max(10, Math.min(90, (Math.abs(myScore) / total) * 100));
 }
 
 // ─── Responsive hook ──────────────────────────────────────────────────────────
@@ -491,6 +487,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // consumer seam, so rollback is one literal in featureFlags.js and the
   // flag-off suites keep mocking this call, not the constant.
   const controllerOn = isBattleViewControllerOn();
+  // A3: the character pane. ONE accessor at render scope beside the controller's
+  // (never the constant — the Pass 1 vi.mock hazard), read by every A3 branch so
+  // pane-off renders the A2 containers exactly as merged (D-93).
+  const paneOn = isCharacterPaneOn();
   const prefersReducedMotion = useReducedMotion();
   const reducedMotion = Boolean(prefersReducedMotion);
   // A coarse clock for the turn line: once a minute or on visibilitychange,
@@ -1655,9 +1655,15 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       )}
 
       {/* ═══ PERSISTENT TOP SECTION ═══ */}
+      {/* HAZARD 39. This section is opaque at z3 over the BaggerBombBackground
+          canvas at z1, which is why the shipped header has never shown a star.
+          The arena header IS the starfield's floor (D-96), so under the pane
+          flag the fill drops to a translucent scrim and the existing canvas
+          shows through — no second starfield is mounted, and the ambient drift
+          stays exactly what it is today. Pane-off keeps the opaque fill. */}
       <div style={{
         flexShrink: 0,
-        background: tokens.bgAgent || '#1C1A27',
+        background: paneOn ? 'rgba(var(--ft-shadow-rgb), 0.42)' : (tokens.bgAgent || '#1C1A27'),
         position: 'relative',
         zIndex: 3,
         ...(controllerOn && gameTapeOpen ? { visibility: 'hidden' } : {}),
@@ -1772,22 +1778,41 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           </div>
         </div>
 
-        {/* Score header */}
-        <ScoreHeader
-          agentBattle={agentBattle}
-          tokens={tokens}
-          isDesktop={isDesktop}
-          playerScore={displayPlayerScore}
-          opponentScore={displayOpponentScore}
-          statusFeed={statusFeed}
-          turnLine={turnLine}
-          landingKey={landingKey}
-          rowCount={rowCount}
-          reducedMotion={reducedMotion}
-          onOpenBook={controllerOn ? handleBookWhyToggle : null}
-          bookOpen={bookWhyOpen}
-          bookName={controllerOn ? BATTLE_VIEW_COPY.whyBookName : null}
-        />
+        {/* Score header — the arena under the pane flag (A3.0, D-96), the
+            shipped header otherwise. The else-arm is the A2 JSX untouched, and
+            AgentBattleScreen.paneOff.golden.test.jsx holds it to that. */}
+        {paneOn ? (
+          <ArenaHeader
+            agentBattle={agentBattle}
+            isDesktop={isDesktop}
+            playerScore={displayPlayerScore}
+            opponentScore={displayOpponentScore}
+            dayLabel={computeDayLabel(agentBattle?.timing)}
+            turnLine={turnLine}
+            landingKey={landingKey}
+            rowCount={rowCount}
+            reducedMotion={reducedMotion}
+            onOpenBook={handleBookWhyToggle}
+            bookOpen={bookWhyOpen}
+            bookName={BATTLE_VIEW_COPY.whyBookName}
+          />
+        ) : (
+          <ScoreHeader
+            agentBattle={agentBattle}
+            tokens={tokens}
+            isDesktop={isDesktop}
+            playerScore={displayPlayerScore}
+            opponentScore={displayOpponentScore}
+            statusFeed={statusFeed}
+            turnLine={turnLine}
+            landingKey={landingKey}
+            rowCount={rowCount}
+            reducedMotion={reducedMotion}
+            onOpenBook={controllerOn ? handleBookWhyToggle : null}
+            bookOpen={bookWhyOpen}
+            bookName={controllerOn ? BATTLE_VIEW_COPY.whyBookName : null}
+          />
+        )}
 
         {/* Book-level Why? (Phase A, controller flag): the latest decision for
             the whole book, then This turn (A3), then the one door. */}

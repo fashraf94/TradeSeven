@@ -146,6 +146,14 @@
      consolidation-arc item, not a Task 1 item. */
   --ft-gold: #f0c75e;
 
+  /* commandUI.jsx:27 (CMD.copper), tokens.js:23 (DARK_TOKENS.warmCopper) — one
+     value under two legacy names, identical in both. Named here so the Battle
+     View arena header (D-96) can tint the CPU's side against --ft-teal without
+     authoring a hex: this is a TOKEN ADDITION of a value the repo already
+     ships, not a new colour. It is deliberately NOT --ft-danger/--ft-red — the
+     CPU is an opponent, not an error, and red already means loss on the rows. */
+  --ft-copper: #e8927c;
+
   /* tokens.js:33 (DARK_TOKENS.textWhite). 380 occ as #ffffff (+153 as #fff).
      OPAQUE USE ONLY — translucent white is a scrim, see --ft-scrim-rgb. */
   --ft-white: #ffffff;
@@ -176,6 +184,7 @@
   --ft-amber-rgb: 245, 158, 11;
   --ft-emerald-rgb: 16, 185, 129;
   --ft-teal-rgb: 94, 234, 212;
+  --ft-copper-rgb: 232, 146, 124;
 
   /* Tracks --ft-purple (#8b5cf6), per the R-S9 exception. */
   --ft-purple-rgb: 139, 92, 246;

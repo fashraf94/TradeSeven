@@ -504,6 +504,23 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // concurrency branch. Flag-off keeps the shipped string until bug 2's own PR.
   chatSendFailed: 'The character couldn\'t answer just now',
 
+  // ── The arena header (A3.0, D-96) ──────────────────────────────────────────
+  // The score header becomes the arena: the player's side tinted --ft-teal, the
+  // CPU's --ft-copper, the tug-of-war bar as the seam between them.
+  //
+  // `VS` sits in the CENTRE slot so the accessible reading order is player →
+  // VS → CPU, which is the order the eye takes and the order the scores mean.
+  // Upper case, against the arena mock's lower-case `vs`: this is a scoreboard,
+  // and the header's own name row is already upper case.
+  //
+  // `Tap for the book` is a NEW visible string. The book tap surface has shipped
+  // since Phase A with an aria-label and nothing a sighted player could read —
+  // the whole book's Why? was discoverable only by trying the header. Desktop
+  // only: on a phone the header is tighter and the turn line has the row to
+  // itself.
+  arenaVs: 'VS',
+  arenaBookHint: 'Tap for the book',
+
   // ── The layout (A4) ────────────────────────────────────────────────────────
   // Game Tape is ONE header link that opens the shipped view full-screen; the
   // way back names the page it returns to. No `···` menu (rulings §2.5).

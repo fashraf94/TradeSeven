@@ -23,6 +23,7 @@
   "--ft-purple-deep": "#9333ea",
   "--ft-blue": "#3b82f6",
   "--ft-gold": "#f0c75e",
+  "--ft-copper": "#e8927c",
   "--ft-white": "#ffffff",
 
   "--ft-scrim-rgb": "255, 255, 255",
@@ -32,6 +33,7 @@
   "--ft-amber-rgb": "245, 158, 11",
   "--ft-emerald-rgb": "16, 185, 129",
   "--ft-teal-rgb": "94, 234, 212",
+  "--ft-copper-rgb": "232, 146, 124",
   "--ft-purple-rgb": "139, 92, 246",
 
   "--ft-accent": "var(--ft-cyan)",
