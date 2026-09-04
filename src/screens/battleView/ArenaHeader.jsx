@@ -115,6 +115,16 @@ export default function ArenaHeader({
   const transition = motionToken('smooth', { reducedMotion });
   const bookable = typeof onOpenBook === 'function';
   const scoreSize = isDesktop ? 40 : 30;
+  // F2 (the founder's smoke). EnvStage's root is `width: 100%; height: 100%`
+  // (faceEnv.jsx:117) — it takes its BOX from its parent and uses `size` only
+  // for the canvas drawn inside. Rendered bare as a flex item it therefore
+  // claims the whole row: the face drew small inside a huge box (the mark and
+  // the name read as "far apart") and every sibling was squeezed, which is how
+  // the agent's name arrived as `SHAD…`. The two dashboard call sites already
+  // box it for exactly this reason and say so in their comments
+  // (IdentityPanel.jsx:80, EquipStation.jsx:218); A3's two new call sites did
+  // not. This is that box.
+  const faceSize = isDesktop ? 56 : 40;
 
   return (
     <motion.div
@@ -180,19 +190,22 @@ export default function ArenaHeader({
             style={{ display: 'flex', alignItems: 'center', gap: isDesktop ? 12 : 8, minWidth: 0 }}
           >
             {isAgentPresenceOn() && agentBattle && (
-              <AgentPresenceMount
-                surface="duel"
-                agent={agentBattle}
-                duel={{ playerScore: myScore, opponentScore: oppScore, statusFeed: null }}
-                size={isDesktop ? 56 : 40}
-                enableEnvironment={false}
-                // D-91: still, and deaf to the raw feed. The mount wires the two
-                // together — see its header note.
-                reactivityLevel="static"
-              />
+              <div data-arena-face="1" style={{ width: faceSize, height: faceSize, flexShrink: 0 }}>
+                <AgentPresenceMount
+                  surface="duel"
+                  agent={agentBattle}
+                  duel={{ playerScore: myScore, opponentScore: oppScore, statusFeed: null }}
+                  size={faceSize}
+                  enableEnvironment={false}
+                  // D-91: still, and deaf to the raw feed. The mount wires the two
+                  // together — see its header note.
+                  reactivityLevel="static"
+                />
+              </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0 }}>
               <span
+                data-arena-agent-name="1"
                 style={{
                   fontSize: isDesktop ? 11 : 10,
                   fontWeight: 700,
@@ -200,9 +213,13 @@ export default function ArenaHeader({
                   textTransform: 'uppercase',
                   letterSpacing: '0.1em',
                   marginBottom: 2,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
+                  // THE NAME NEVER TRUNCATES (F2). It wraps. `anywhere` is the
+                  // part that matters: agent names are single tokens, so plain
+                  // wrapping has no break opportunity and a long one would
+                  // overflow its cell instead of ellipsing — a worse failure
+                  // than the one being fixed.
+                  whiteSpace: 'normal',
+                  overflowWrap: 'anywhere',
                   maxWidth: '100%',
                 }}
               >

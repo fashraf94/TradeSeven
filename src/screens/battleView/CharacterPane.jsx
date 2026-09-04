@@ -66,6 +66,9 @@ const SECTION_LABEL = {
 const tabId = (section) => `pane-tab-${section}`;
 const panelId = (section) => `pane-panel-${section}`;
 
+/** The header face's box, in px. One literal, named once (the F2 box). */
+const PANE_FACE_PX = 36;
+
 /** The label span every control wraps its text in (hazard 48). */
 const labelSpan = (size = 12, weight = 700) => ({
   fontSize: size,
@@ -237,37 +240,58 @@ export default function CharacterPane({
         }}
       >
         {isAgentPresenceOn() && agentBattle && (
-          <AgentPresenceMount
-            surface="duel"
-            agent={agentBattle}
-            duel={{
-              playerScore: playerScore ?? (agentBattle?.scoreState?.currentScore || 0),
-              opponentScore: opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0),
-              statusFeed: null,
-            }}
-            size={36}
-            enableEnvironment={false}
-            reactivityLevel="static"
-          />
+          // BOXED (F2) — see ArenaHeader's note at its own face. EnvStage's root
+          // is `width: 100%; height: 100%`, so bare as a flex item it claimed
+          // the whole header: the face drew small inside a huge box (the mark
+          // and the name read as "far apart") and the name was squeezed under
+          // the segmented control to `S..`. Both dashboard call sites already
+          // box it and say why (IdentityPanel.jsx:80, EquipStation.jsx:218).
+          <div data-pane-face="1" style={{ width: PANE_FACE_PX, height: PANE_FACE_PX, flexShrink: 0 }}>
+            <AgentPresenceMount
+              surface="duel"
+              agent={agentBattle}
+              duel={{
+                playerScore: playerScore ?? (agentBattle?.scoreState?.currentScore || 0),
+                opponentScore: opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0),
+                statusFeed: null,
+              }}
+              size={PANE_FACE_PX}
+              enableEnvironment={false}
+              reactivityLevel="static"
+            />
+          </div>
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flexShrink: 1 }}>
+        {/* THE NAME TAKES THE SLACK, and gives it back last (F2). `1 1 auto`
+            with `minWidth: 0` lets the block use the room the boxed face and
+            the content-sized controls leave, and wrap rather than ellipse when
+            there is not enough. */}
+        <div data-pane-identity="1" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: '1 1 auto' }}>
           <span
+            data-pane-agent-name="1"
             style={{
               fontSize: 11,
               fontWeight: 700,
               color: cssVar('teal'),
               textTransform: 'uppercase',
               letterSpacing: '0.1em',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
+              // THE NAME NEVER TRUNCATES (F2) — it wraps. `anywhere` because
+              // agent names are single tokens with no break opportunity of
+              // their own; without it a long one would overflow instead.
+              whiteSpace: 'normal',
+              overflowWrap: 'anywhere',
             }}
           >
             {agentName}
           </span>
           {/* The archetype's DISPLAY name, from the one map that owns it — the
               persisted code-id never reaches the screen. Desktop only: the
-              phone's header has the sections and the close to fit. */}
+              phone's header has the sections and the close to fit.
+              F2's "the archetype line hides first, then the name wraps" is this
+              gate. It is a SHELL split, not a width query: the repo has no
+              container-query idiom, and the pane's width is a fixed share of
+              its shell, so the shell is the width. A genuinely narrow desktop
+              pane keeps the line and wraps the name instead — stated here
+              rather than left to be discovered. */}
           {isDesktop && archetype && (
             <span
               data-pane-archetype="1"
@@ -285,7 +309,11 @@ export default function CharacterPane({
           )}
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+        {/* Sized to its CONTENT and never shrunk (F2): the segmented control's
+            three labels are the thing the player aims at, and a control that
+            gives up width first turns three tabs into three slivers. The name
+            beside it wraps instead. */}
+        <div data-pane-controls="1" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <SegmentedControl section={section} onSelect={onSelectSection} />
           {overflow}
           <button
