@@ -95,7 +95,7 @@ This lens ran a mutation campaign rather than a read, and its result is the shar
 | F11 | hazard 43's chat half | The structural agreement bound TapeCards↔deriveBubble only — `AgentChat` kept its own literal, so a **gated** drift, the precise change the ruling's wording describes, survived every suite but the pane-off byte golden (the wrong instrument for a pane-on agreement). |
 | F12 | the negative space | Ten ruled behaviours with no row: the mark in the pane header, the scope chip in the composer, the body lock's shell, the overflow's Escape, the disabled reset, Tape's card kind, bookmark order, the count's source, and more. |
 
-**All of it is fixed.** Fifteen of the survivors are now killed by rows added in `f0aa87ff`, each re-mutated to confirm; `AgentPresenceMount` gained the test it never had; and the timer and idle-loop rules are now **source** rows, because the claim is a property of the file rather than of one render — the same instrument the flag suite already uses for its deleted query override.
+**All of it is fixed.** Fifteen of the survivors are now killed by rows added in `76f6cd9a`, each re-mutated to confirm; `AgentPresenceMount` gained the test it never had; and the timer and idle-loop rules are now **source** rows, because the claim is a property of the file rather than of one render — the same instrument the flag suite already uses for its deleted query override.
 
 Lens 4 also independently confirmed both fixture-shape findings (the trade field, the outage placeholder) and named one the other lenses missed: `pane.jsdom` used the same impossible `rationale: null` outage. That is fixed too.
 

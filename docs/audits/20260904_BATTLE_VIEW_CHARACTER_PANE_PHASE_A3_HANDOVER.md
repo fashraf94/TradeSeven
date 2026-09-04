@@ -56,7 +56,7 @@
 | 13 | `2ec25844` | **review fixes** — eleven confirmed code findings |
 | 14 | `a797fc6a` | docs: the build review record |
 | 15 | `c4d14433` | docs: this handover |
-| 16 | `f0aa87ff` | **review fixes, second pass** — the rows that could not fail |
+| 16 | `76f6cd9a` | **review fixes, second pass** — the rows that could not fail |
 
 ---
 
