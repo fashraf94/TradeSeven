@@ -29,6 +29,11 @@ import {
 // Flag-gated, battle-only; the manifest is built only when the feature is ON.
 import { buildCapabilitiesManifest } from '../_utils/agentCapabilitiesManifest.js';
 import { getTournamentClaimWindow, formatEtDate } from '../_utils/tournamentTime.js';
+// The ONE shape of a persisted directive and the per-battle chat budget —
+// shared with the deterministic filing route (voice-layer grounding §6.1), so
+// the two writers cannot drift (BUILD_RULES §9). The output here is unchanged
+// field for field; chat.test.js's ENFORCE and flag-OFF rows pin it.
+import { buildDirectiveRecord, buildDirectiveSlot, BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
 
 export const config = { maxDuration: 30 };
 
@@ -183,7 +188,7 @@ function detectMode(battle) {
 }
 
 const MODE_BUDGET = {
-  battle: { field: 'chatBudgetUsed', limit: 10 },
+  battle: { field: BATTLE_CHAT_BUDGET.field, limit: BATTLE_CHAT_BUDGET.limit },
   review: { field: 'reviewBudgetUsed', limit: 5 },
 };
 
@@ -672,21 +677,11 @@ export default async function handler(req, res) {
       agentResponse: parsed.response,
       scratchpad: cleanScratchpad,
       hasDirective: effectiveHasDirective,
+      // The shipped record, from the ONE shape (directiveFiling.js): Release 2's
+      // additive id+version ride it only when the gate minted them, so the
+      // legacy (flag-off) path keeps its exact pre-Release-2 shape.
       directive: directiveThreadId
-        ? {
-            text: normalizedDirective.text,
-            expiry: normalizedDirective.expiry || 'end_of_battle',
-            directiveThreadId,
-            // Release 2 (spec Phase 1 item 5) — additive id+version from the
-            // gate, so directive-vs-lean opposition binds to both
-            // canonicalTextVersions. Present ONLY when the gate minted them:
-            // the legacy (flag-off) normalizeDirective path writes its exact
-            // pre-Release-2 shape, keeping the OFF state byte-identical.
-            ...(normalizedDirective.adjustmentId != null ? {
-              adjustmentId: normalizedDirective.adjustmentId,
-              canonicalTextVersion: normalizedDirective.canonicalTextVersion ?? null,
-            } : {}),
-          }
+        ? buildDirectiveRecord(normalizedDirective, directiveThreadId)
         : null,
       directiveThreadId,
       suggestedActions: parsed.suggestedActions || null,
@@ -726,19 +721,9 @@ export default async function handler(req, res) {
       // createAgentBattle field + the Catalog #9 durable record — unchanged.)
       ...(!isLeagueAsk ? { [budgetField]: FieldValue.increment(1) } : {}),
       recentElicitationTargets: recentTargets,
+      // The slot, from the same ONE shape (see the exchange record above).
       ...(directiveThreadId ? {
-        directive: {
-          text: normalizedDirective.text,
-          expiry: normalizedDirective.expiry || 'end_of_battle',
-          directiveThreadId,
-          createdAt: new Date().toISOString(),
-          // Release 2 (spec Phase 1 item 5) — see the exchange record above
-          // (gate-minted only; the flag-off legacy shape stays byte-identical).
-          ...(normalizedDirective.adjustmentId != null ? {
-            adjustmentId: normalizedDirective.adjustmentId,
-            canonicalTextVersion: normalizedDirective.canonicalTextVersion ?? null,
-          } : {}),
-        },
+        directive: buildDirectiveSlot(normalizedDirective, directiveThreadId, new Date().toISOString()),
       } : {}),
     });
 

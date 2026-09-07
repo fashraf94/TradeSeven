@@ -268,7 +268,11 @@ export function selectHistoryWindow(chatExchanges, { window = HISTORY_WINDOW } =
     if (isNonEmptyString(ex.userMessage)) {
       pairs.push({ type, userMessage: ex.userMessage, agentText });
     } else if (ex.groundingVersion === GROUNDING_VERSION) {
-      agentLines.push({ type, text: agentText, timestamp: ex.timestamp ?? null });
+      // A chip filing (file-directive.js) carries no narrator words: the
+      // ExecutionCard shows the directive. In the window it reads as the
+      // directive it filed, quoted — never invented prose.
+      const text = agentText || (ex.hasDirective && isNonEmptyString(ex.directive?.text) ? `"${ex.directive.text}"` : '');
+      agentLines.push({ type, text, timestamp: ex.timestamp ?? null });
     }
     // else: a legacy proactive exchange (no marker) — excluded.
   }

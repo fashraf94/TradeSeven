@@ -248,6 +248,16 @@ describe('§3.4 — the history window', () => {
     expect(lines[1]).toBe('[anticipation · 10:16 AM] Eyeing AVGO on the bench. If it holds the 20-day I would rotate it into Core.');
   });
 
+  it('a chip filing (no narrator words) renders as the directive it filed, quoted', () => {
+    const filed = {
+      userMessage: null, agentResponse: '', hasDirective: true, messageType: 'directive_filed', source: 'chip',
+      directive: { text: 'Widen the spread (target more sectors)', expiry: 'end_of_battle', directiveThreadId: 't-1', adjustmentId: 'DV-02', canonicalTextVersion: 1 },
+      directiveThreadId: 't-1', timestamp: '2026-09-08T15:20:00.000Z', groundingVersion: GROUNDING_VERSION,
+    };
+    const block = buildEarlierMessagesBlock([filed]);
+    expect(block.split('\n')[1]).toBe('[directive_filed · 11:20 AM] "Widen the spread (target more sectors)"');
+  });
+
   it('a legacy proactive exchange (no marker) never reaches the block; none → null', () => {
     expect(buildEarlierMessagesBlock([CHAT_EXCHANGES[0], CHAT_EXCHANGES[2]])).toBeNull();
     expect(buildEarlierMessagesBlock([])).toBeNull();
