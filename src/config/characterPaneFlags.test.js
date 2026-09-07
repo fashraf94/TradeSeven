@@ -1,12 +1,18 @@
 // src/config/characterPaneFlags.test.js
 //
-// Battle View character pane — DARK pin (BUILD_RULES §2). Phase A3 builds the
-// pane behind BATTLE_VIEW_CHARACTER_PANE_ENABLED, which ships FALSE through the
-// whole build and flips in its own deliberate one-line PR after the founder's
-// A3.5 preview smoke. Until then this row is the tripwire that turns an
-// accidental flip into a loud failure naming this file, and the flag-pin guard
-// couples the two: flipping the flag without moving this assertion (and
-// dropping the DARK_BY_DESIGN entry) reds CI.
+// Battle View character pane — THE FLAG PIN (BUILD_RULES §2).
+//
+// The flag is LIT. Phase A3 was built dark behind
+// BATTLE_VIEW_CHARACTER_PANE_ENABLED, which shipped FALSE through the whole
+// build and flipped here in its own deliberate one-line PR, after the founder's
+// A3.5 preview smoke on `smoke/character-pane`. The flag-pin guard couples the
+// three edits that flip makes, which is why they all land in one commit:
+// moving the flag without moving this assertion AND dropping the
+// DARK_BY_DESIGN entry reds CI.
+//
+// The tripwire did not retire, it turned around. Pinned TRUE, this row is now
+// what turns an accidental ROLLBACK into a loud failure naming this file — and
+// a deliberate one moves the same three lines back.
 //
 // Deliberately pins ONLY this flag (the commandCenterSyncFlags.test.js
 // precedent): pinning a flag obliges its docstring to name this file, so an
@@ -34,24 +40,34 @@ function fnBody(name) {
   return body.slice(0, body.indexOf('\n}') + 2);
 }
 
-describe('Battle View character pane flag — dark pin (BUILD_RULES §2)', () => {
-  it('ships DARK — the pane is built behind it, never merged live', () => {
-    expect(BATTLE_VIEW_CHARACTER_PANE_ENABLED).toBe(false);
+describe('Battle View character pane flag — the pin (BUILD_RULES §2)', () => {
+  it('is LIT — the pane ships to every player', () => {
+    // The row flagPinGuard scans. It moved with the flag, in the flip commit;
+    // a rollback moves it back, together with the DARK_BY_DESIGN entry.
+    expect(BATTLE_VIEW_CHARACTER_PANE_ENABLED).toBe(true);
   });
 
-  it('the accessor is false while the flag is dark', () => {
-    expect(isCharacterPaneOn()).toBe(false);
+  it('the accessor is TRUE — the controller is live, so the conjunction lights', () => {
+    // The row the next one predicted would move. Invisible to flagPinGuard,
+    // which scans the constant and not the accessor, so it moves by this rule
+    // rather than by that machinery: BUILD_RULES §2 couples EVERY assertion
+    // pinning the pre-flip state to the flip commit, not just the guarded one.
+    expect(isCharacterPaneOn()).toBe(true);
   });
 
   it('the accessor is NESTED on the controller — a source row, not a behavioural one', () => {
-    // This has to be a source row. The pane flag is false, so isCharacterPaneOn()
-    // returns false for every input and a behavioural row could not observe the
-    // nesting being dropped — it would be a test that cannot fail under the
-    // defect it names, which BUILD_RULES §2 says is not a guard. (After the flip
-    // it is behaviourally observable again, and the row above becomes the one
-    // that moves.) The nesting matters: read alone, the pane flag would light a
-    // pane over the shipped tabbed screen, which has no board to float an
-    // avatar on.
+    // This was a source row of necessity while the flag was dark: the pane flag
+    // was false, so isCharacterPaneOn() returned false for every input and a
+    // behavioural row could not observe the nesting being dropped — a test that
+    // cannot fail under the defect it names, which BUILD_RULES §2 says is not a
+    // guard. The flip has made it observable again, exactly as that note
+    // predicted, and the row above is the one that moved.
+    //
+    // It STAYS a source row anyway. Behaviourally the nesting is now only
+    // visible where the controller is off, which is a state no row here can
+    // reach without mocking the module this file exists to read straight. The
+    // nesting matters: read alone, the pane flag would light a pane over the
+    // shipped tabbed screen, which has no board to float an avatar on.
     const fn = fnBody('isCharacterPaneOn');
     expect(fn).toMatch(/isBattleViewControllerOn\(\)\s*&&\s*BATTLE_VIEW_CHARACTER_PANE_ENABLED/);
   });
