@@ -190,7 +190,7 @@ describe('A3.6 — reduced motion: the footer and the line, with no burst', () =
     withHistory(1.1);
     rerender();
     expect([...container.querySelectorAll('[data-bagger-footer]')].map((n) => n.textContent))
-      .toEqual(['Bagger hit · 1.5× banked']);
+      .toEqual(['Bagger hit · +15 banked']);
     expect(container.querySelector('[data-character-bubble]').textContent)
       .toContain('Bagger · NVDA hit +2.5%');
   });
@@ -219,7 +219,7 @@ describe('A3.6 — reduced motion: the footer and the line, with no burst', () =
     setShell(false, { reducedMotion: true });
     withHistory(1.6);
     mount();
-    expect(container.querySelector('[data-bagger-footer]').textContent).toBe('Bagger hit · 1.5× banked');
+    expect(container.querySelector('[data-bagger-footer]').textContent).toBe('Bagger hit · +15 banked');
     expect(container.querySelectorAll('[data-bagger-burst]')).toHaveLength(0);
   });
 });

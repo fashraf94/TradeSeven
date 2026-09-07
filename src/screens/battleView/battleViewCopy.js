@@ -623,27 +623,42 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // ── The bagger moment (A3.6, D-97) ─────────────────────────────────────────
   // Two strings, both from PERSISTED scoring, both about one crossing.
   //
-  // `{mult}` is the row's CONVICTION TIER multiplier — 2× star, 1.5× core, 1×
-  // support (CONVICTION_MULTIPLIERS) — the founder's ruling 8: it is the number
-  // the player is playing for, not the threshold multiplier that shares the
-  // word. `banked` is not a promise: the persisted peak is monotonic within the
-  // day, so the bonus cannot be taken back by a later fall.
+  // `{pts}` is THE BAGGER BADGE'S OWN BONUS — `THRESHOLD_POINTS.bagger`, +15,
+  // the entry the scorer sums for this crossing and nothing else
+  // (`calculatePointsServer`, api/_utils/agentScoring.js:95-97, called at :286;
+  // the client twin is baggerBombUtils.js:285-289, called at :613). The caller
+  // passes it: this module holds words, not scoring constants.
+  //
+  // IT USED TO BE THE CONVICTION TIER MULTIPLIER — `Bagger hit · {mult}× banked`,
+  // ruling 8 as first ruled. The A3.6 review measured that the bonus is FLAT:
+  // the tier multiplier scales `basePoints` only (agentScoring.js:267-270,
+  // baggerBombUtils.js:584-587), never the badge bonus, so the line named a
+  // number the scoring path never applied to the thing the line is about — one
+  // row, two sources, the family BUILD_RULES §9 exists to close. Ruling 8 is
+  // CORRECTED (Sep 7, 2026; PHASE_A3_RULINGS_AND_AMENDMENTS_V1.md §2 ruling 8):
+  // the footer states the banked bonus, and states nothing the scorer did not
+  // bank.
+  //
+  // `banked` stands unchanged: the persisted peak is monotonic within the day
+  // (agent-evaluate.js:893-900, off the scorer's `effectiveMax`), so the badge —
+  // and with it the flat bonus — cannot be taken back by a later fall.
+  //
+  // NO NUMBER, NO CLAIM ABOUT ONE. An unreadable amount leaves `Bagger hit`
+  // alone rather than nothing at all: the crossing is persisted and true on its
+  // own, and the amount is the only part that could be wrong. Whether the
+  // crossing happened is still the caller's question, not this one's.
   //
   // `{pct}` is the bagger LINE, `+{baseATR}%` (ruling 9) — the persisted
   // threshold the row reads at that price, the same number deriveTierPrices
   // turns into `Bagger $`. Not the piece's current percent, which is a live
   // value and would disagree with the line the moment the price moved again.
   //
-  // The tier suffix is `×` (U+00D7), matching CONVICTION_MULTIPLIERS' own
-  // display everywhere else, and the multiplier is written without a trailing
-  // zero: `2×`, `1.5×`, `1×`.
-  //
   // The PERCENT keeps its decimal — `+3.0%`, not `+3%` (review lens 5). Every
   // other percent in this view carries one (computeProximity.js:213-215), and
   // one number in a family reading differently is the seam a reader trips on.
-  baggerFooter: (mult) => {
-    if (typeof mult !== 'number' || !Number.isFinite(mult) || mult <= 0) return null;
-    return `Bagger hit · ${Number(mult.toFixed(2))}\u00d7 banked`;
+  baggerFooter: (pts) => {
+    if (typeof pts !== 'number' || !Number.isFinite(pts) || pts <= 0) return 'Bagger hit';
+    return `Bagger hit · +${pts} banked`;
   },
   baggerBubble: (symbol, pct) => {
     if (typeof symbol !== 'string' || !symbol.trim()) return null;

@@ -100,8 +100,17 @@ export function deriveBaggerCrossings(seen, battle, book) {
  * BUILD_RULES §9: both come off the enriched asset the board is showing, never
  * re-derived here. `baseATR` is the row's own (`enrichAsset` resolves it from
  * `scoring.thresholds[symbol].threshold` with the same default the row uses),
- * and the multiplier is the conviction tier's, which is the number the player
- * is playing for (ruling 8).
+ * and the multiplier is the conviction tier's, resolved exactly as the scorer
+ * resolves it.
+ *
+ * ONLY `pct` HAS A CALLER TODAY — the bubble's `+{baseATR}%` (ruling 9). The
+ * footer read `mult` until Sep 7, 2026, when ruling 8 was corrected: the badge
+ * bonus is flat, so `Bagger hit` now names `THRESHOLD_POINTS.bagger` and nothing
+ * about the tier (PHASE_A3_RULINGS_AND_AMENDMENTS_V1.md §2 ruling 8). `mult` is
+ * kept, and kept guarded, because it is the scorer's own expression of a number
+ * the player's points DO turn on, and ruling 10's double and ten are the same
+ * path with a different constant. It is not a footer number any more: a line
+ * that names it is naming something the badge bonus was never scaled by.
  *
  * The tier is passed in rather than read off the asset: `enrichAsset` takes it
  * as an ARGUMENT and does not add it to what it returns, so `asset.tier` is
@@ -112,7 +121,8 @@ export function deriveBaggerCrossings(seen, battle, book) {
  * @param {object} asset  the ENRICHED asset the row rendered.
  * @param {string} tier   'star' | 'core' | 'support', from the row.
  * @returns {{mult: number, pct: number}|null} null when either is unusable —
- *   the caller then renders no footer and no bubble rather than a guess.
+ *   the bubble then says nothing rather than guessing. The footer no longer
+ *   asks: its number is a constant, so nothing here can make it wrong.
  */
 export function baggerMomentFacts(asset, tier = undefined) {
   if (!asset || typeof asset !== 'object') return null;

@@ -160,9 +160,15 @@ describe('the BOOK is the iteration, not the history map', () => {
 
 describe('the moment\'s two numbers come off the ROW, never re-derived', () => {
   it('takes the CONVICTION tier multiplier and the row\'s own baseATR', () => {
-    // Ruling 8: `{mult}` is the tier multiplier the player is playing for
-    // (2× / 1.5× / 1×), not the threshold multiplier that shares the word.
-    // Ruling 9: `{pct}` is the bagger LINE, the persisted `baseATR`.
+    // `mult` is the tier multiplier (2× / 1.5× / 1×), not the threshold
+    // multiplier that shares the word. NO LINE NAMES IT any more — ruling 8 was
+    // corrected on Sep 7, 2026 once the review measured the badge bonus flat, so
+    // the footer says `+{THRESHOLD_POINTS.bagger} banked` and the tier stays out
+    // of the words. The rows below keep guarding the derivation itself: it is
+    // the scorer's own expression, and ruling 10's higher tiers are the same
+    // path with a different constant.
+    // Ruling 9: `{pct}` is the bagger LINE, the persisted `baseATR` — the one
+    // number of the two that still reaches a string (the bubble's).
     expect(baggerMomentFacts({ baseATR: 7.4 }, 'star')).toEqual({ mult: CONVICTION_MULTIPLIERS.star, pct: 7.4 });
     expect(baggerMomentFacts({ baseATR: 2.5 }, 'core')).toEqual({ mult: 1.5, pct: 2.5 });
     expect(baggerMomentFacts({ baseATR: 5 }, 'support')).toEqual({ mult: 1, pct: 5 });
@@ -195,7 +201,9 @@ describe('the two numbers, after the review', () => {
     // P4 flat6 stamps `tierMultiplier` per asset on League Tournament docs, and
     // agentScoring.js:267 resolves `asset.tierMultiplier ?? CONVICTION[tier]`.
     // Reading the key alone banked a tournament star piece at 1× and told the
-    // player 2× — the §9 bug family, from the row's own two sources.
+    // player 2× — the §9 bug family, from the row's own two sources. The line
+    // that said it is gone (ruling 8, corrected), but the resolution is still
+    // the scorer's and is still guarded here.
     expect(baggerMomentFacts({ baseATR: 2.5, tierMultiplier: 1 }, 'star').mult).toBe(1);
     expect(baggerMomentFacts({ baseATR: 2.5, tierMultiplier: 1.5 }, 'support').mult).toBe(1.5);
     // …and a tiered doc carries no stamp, so nothing changes for it.

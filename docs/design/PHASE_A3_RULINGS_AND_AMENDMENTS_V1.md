@@ -21,11 +21,27 @@
 | 5 | Copper and the radius | **Add `--ft-copper` and `--ft-copper-rgb`** to `tokens.css` + `tokenBaseline.json` from the legacy value — a token addition, not a new hex (hazard 42: the review, not the guard, enforces it). The bubble's radius is the literal `4`, once, commented; no radius token this arc. |
 | 6 | The bug button | The hide seam lives at the **`App.jsx` mount**: `ClashBotWidget` takes a `hidden` prop, true when the character pane is on and the active screen is the agent Battle View. The pane's overflow opens it by dispatching a `CustomEvent('clashbot:open')` the widget subscribes to. A small widget render test covers `hidden` and the event; `App.jsx` stays covered by `vite build`. |
 | 7 | The row's tier tag | **(c)** — the `BAGGER` tag *is* the shipped badge (live-merged); the burst, the footer and the bubble are the persisted-only additions and key on the persisted transition, never the live merge (hazard 37). The fuse's 400 ms live flash stays: it marks the price crossing, the burst marks the record — two events up to a tick apart, not one event twice (hazard 38, recorded). |
-| 8 | `{mult}` | **The row's conviction tier multiplier** (`2× / 1.5× / 1×`), the mock's reading — it is the number the player is playing for. `banked` stands: the history is monotonic and the bonus banks by construction. |
+| 8 | `{mult}` | ~~**The row's conviction tier multiplier** (`2× / 1.5× / 1×`), the mock's reading — it is the number the player is playing for.~~ **CORRECTED September 7, 2026 — see the stamp below §2.** The footer names the badge's own flat bonus, not the tier: `Bagger hit · +{pts} banked`. `banked` stands, unchanged and for the reason first given: the history is monotonic and the bonus banks by construction. |
 | 9 | `{pct}` | **The bagger line** `+{baseATR}%` — the persisted threshold, the number the row reads at that price. |
 | 10 | Higher tiers | **Bagger only** in A3.6; double and ten are the same path, ruled later. |
 | 11 | Bench on an outage tick | **Scan back** to the last check with a rationale; label its slot; the absence line only when no entry today carries words. |
 | 12 | Tape's bookmarks and the dot | **Keep the shipped bookmark control** in Tape (a moved client write, shipped behaviour). The bookmark dot goes to Tape's section header as a count (`Bookmarks · n`), nowhere on the board. |
+
+### Ruling 8, corrected — September 7, 2026 (founder)
+
+**As first ruled**, the footer read `Bagger hit · {mult}× banked`, with `{mult}` the row's conviction tier multiplier — "the number the player is playing for".
+
+**The measurement that unseated it.** The A3.6 build review found the bagger bonus is **flat and unscaled**: the scorer applies the conviction multiplier to `basePoints` only (`api/_utils/agentScoring.js:270`; the client twin at `src/utils/baggerBombUtils.js:587`), while the badge bonus is `calculatePointsServer(badges)` summing `THRESHOLD_POINTS` (`agentScoring.js:95-97`, called at `:286`; client twin `baggerBombUtils.js:285-289` at `:613`). So `2×` sat beside a bonus the 2 was never applied to — a line naming one number about a thing scored by another, which is the one-row-two-sources family BUILD_RULES §9 exists to close. Recorded at `docs/audits/20260904_BATTLE_VIEW_CHARACTER_PANE_A36_BUILD_REVIEW.md` §9 item 6, where it stood *as ruled* and open beside the fix.
+
+**The ruling now.** The footer states only what the scoring path persisted:
+
+- **`Bagger hit · +{pts} banked`**, where `{pts}` is `THRESHOLD_POINTS.bagger` (`src/constants/baggerBombScoring.js:34`, `+15`) — read from the canonical table, never written as a literal (BUILD_RULES §4, the scoring-copy lesson; the same reading as the breakdown popover's `baggerBombPoints`, `AgentBattleScreen.jsx:2633-2637`).
+- **`Bagger hit` alone** when the banked amount is not readable — the crossing is persisted and true on its own; only the number could be wrong. Rendering nothing was the old behaviour and is now wrong for the same reason: it would withhold a fact because a second one is missing.
+- **The tier no longer gates the line**, because it is no longer in it. The persisted crossing (`thresholdHistory[sym].maxMultiplier >= THRESHOLD_MULTIPLIERS.bagger`) is the whole condition; `baseATR` and the tier multiplier are the BUBBLE's numbers (ruling 9) and keep their own refusal. A short still says nothing, unchanged.
+
+**Ruling 9 is untouched** — `Bagger · {sym} hit +{pct}%` still reads the bagger line. **Ruling 10 is untouched**: bagger only; double and ten are the same path with a different `THRESHOLD_POINTS` entry, ruled later.
+
+**Built:** `battleViewCopy.js` (`baggerFooter`), the render row (`AgentBattleScreen.jsx`'s `baggerFooterFor`), and the mutation row that holds it — two pieces in different tiers over the line must read the same words, which the tier-multiplier wording cannot do. `D-97`'s ledger line in `COMMAND_CENTER_BATTLE_SYNC_DESIGN_FRAMEWORK_V1_2.md` still quotes the old wording and is *not* amended here; it is flagged for the founder rather than edited under this task's scope (BUILD_RULES §8).
 
 ## 3. The mocks — what is not built (report §3), confirmed
 Not built: the avatar's 420 ms brighten and the badge pop (D-97 — the avatar never moves between events); the `New` divider, `Today ·` header and `{sym} · n entries` line; the dashed Assignments placeholder (an empty slot, no UI); the Chat tab's count pill; the bench `%` (no source); `Read · Equip` in the overflow (`Report a bug` alone); the `Command Center` back label (`Back` stays); the mock's own seam arithmetic (the shipped `computeTugOfWarWidth` is the seam); the `+` sign and text glow (`AnimatedScore` already signs); `vs` (the seed's `VS`).
