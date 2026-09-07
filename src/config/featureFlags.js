@@ -2058,7 +2058,7 @@ export function isBattleViewControllerOn() {
  * use a bare factory with no importOriginal spread).
  */
 // Pinned by: characterPaneFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const BATTLE_VIEW_CHARACTER_PANE_ENABLED = false;
+export const BATTLE_VIEW_CHARACTER_PANE_ENABLED = true;
 
 /**
  * The ONE home for the character-pane gate: the controller AND the pane flag.
