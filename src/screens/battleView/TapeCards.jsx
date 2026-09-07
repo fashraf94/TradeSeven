@@ -245,11 +245,25 @@ export function TradeCard({ entry, startExpanded = false, fadeIn = false, reduce
   // keyed on `entry.id` at both call sites, so a re-render never remounts it
   // either.
   //
-  // NOTE, for the founder: a page LOAD is a mount, so the cards already on the
-  // tape fade in together on arrival at the screen. That follows the ruling's
-  // own words ("once per mount"); if the intent was the seeded idiom the check
-  // wash uses — nothing on the first paint, a fade only for what lands after —
-  // that is a different mechanism and a one-line ruling away.
+  // RULED, AND KEPT AS BUILT (the founder, after the review). "Once per mount"
+  // is the mechanism, and these are its two consequences, both put to the
+  // founder and both accepted:
+  //
+  //   1. A page LOAD is a mount, so the cards already on the tape fade in
+  //      together on arrival at the screen.
+  //   2. All three pane sections mount whenever the pane does, and on the phone
+  //      the pane renders (hidden) even while closed. So a trade landing while
+  //      the pane is shut fades BOTH copies out of sight, and opening the pane
+  //      re-uses the same node — there is nothing left to play. The review
+  //      measured this: the fade is seen in the desktop's resting state (the
+  //      pane open on Chat, which is the brief's own §5 deliverable 1) and
+  //      nowhere else; Tape's duplicate card is structurally unwatchable,
+  //      because it always mounts behind the Chat section.
+  //
+  // The alternative — fading on first SIGHT rather than first mount — is a
+  // different mechanism, and it collides with hazard 45: making the card animate
+  // when its section is selected means remounting it, which is what the pane
+  // being hidden-not-unmounted exists to prevent. Not a change to make quietly.
   const Tag = fadeIn ? motion.div : 'div';
   const fadeProps = fadeIn
     ? {
