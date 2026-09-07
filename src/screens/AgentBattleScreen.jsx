@@ -1465,19 +1465,41 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const baggerMoment = useBaggerMoment(paneOn, agentBattle, playerBook, { paneOpen: pane.open });
 
   /**
-   * The row's `Bagger hit · {mult}× banked`, for one piece.
+   * The row's `Bagger hit · +{pts} banked`, for one piece.
    *
    * A FACT, NOT AN EVENT: it asks the persisted peak, not the moment, so it is
    * there for a player who opens the app an hour after the crossing — which is
    * what `banked` promises. The row's live-merged badge is untouched (ruling 7):
    * the badge may light a tick early from a websocket price, this line waits for
    * the record.
+   *
+   * THE NUMBER IS THE BADGE'S OWN BONUS — `THRESHOLD_POINTS.bagger`, the entry
+   * the scorer sums for this crossing (agentScoring.js:95-97, called at :286),
+   * read from the canonical table rather than written as a literal here (the
+   * scoring-copy lesson, BUILD_RULES §4; the same reading as the breakdown
+   * popover's `baggerBombPoints` below). It replaced the conviction tier
+   * multiplier on Sep 7, 2026: the bonus is FLAT — the tier scales `basePoints`
+   * only (agentScoring.js:267-270) — so `{mult}×` named a number this row never
+   * banked (ruling 8 corrected; PHASE_A3_RULINGS_AND_AMENDMENTS_V1.md §2
+   * ruling 8).
+   *
+   * SO THE TIER NO LONGER REACHES THIS LINE, and no longer gates it: the
+   * persisted crossing is the whole condition, and a piece whose `baseATR` or
+   * tier is unreadable still banked the same +15. Those two are the BUBBLE's
+   * numbers (`baggerMomentFacts`), and it still refuses without them.
+   *
+   * A SHORT still says nothing. Its bagger is a price DECREASE, so the persisted
+   * peak this reads is the wrong direction for it, and no persisted short exists
+   * to check that against — the sibling refuses for the same reason
+   * (deriveBaggerMoment.js's `baggerMomentFacts`). The agent layer is long-only
+   * in V1 (BUILD_RULES §7), so this is latent; silence is the honest answer
+   * until a short reaches here.
    */
-  const baggerFooterFor = (asset, tierKey) => {
+  const baggerFooterFor = (asset) => {
     if (!paneOn || !asset || asset.isCash || !asset.symbol) return null;
+    if (asset.direction === 'short') return null;
     if (persistedMaxMultiplier(agentBattle, asset.symbol) < BAGGER_LINE) return null;
-    const facts = baggerMomentFacts(asset, tierKey);
-    return facts ? BATTLE_VIEW_COPY.baggerFooter(facts.mult) : null;
+    return BATTLE_VIEW_COPY.baggerFooter(THRESHOLD_POINTS.bagger);
   };
 
   // THE BUBBLE'S SECOND SOURCE (handover §7). `Bagger · {sym} hit {pct}` is not
@@ -1680,7 +1702,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               // burst. The footer is unaffected — it is text.
               {...(paneOn ? {
                 baggerBurst: !reducedMotion && baggerMoment.burst.has(leftAsset?.symbol),
-                baggerFooter: baggerFooterFor(leftAsset, tier.key),
+                baggerFooter: baggerFooterFor(leftAsset),
                 reducedMotion,
               } : {})}
               {...(whyable ? {

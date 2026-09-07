@@ -91,6 +91,11 @@ vi.mock('../hooks/useAgentBattle', () => ({
 import AgentBattleScreen from './AgentBattleScreen';
 import { removeFeedBookmark } from '../services/agentService';
 import { SHEET_PEEK_PX } from './battleView/useChatSheet';
+// The footer's words and the number under them, both read from where the
+// screen reads them — a literal restated here would agree with itself while
+// disagreeing with the product (BUILD_RULES §9).
+import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
+import { THRESHOLD_POINTS } from '../constants/baggerBombScoring';
 
 const BATTLE = {
   agentId: 'agent-1', agentBattleId: 'ab-1',
@@ -1415,8 +1420,11 @@ describe('A3.6 — the bagger moment (D-97)', () => {
   // rendered string. The burst's window belongs to the hook and is not a claim
   // any of these rows make.
 
-  // NVDA sits in `core`, so its banked line is the 1.5× tier. The doc carries no
-  // scoring.thresholds, so baseATR is enrichAsset's DEFAULT_THRESHOLD (2.5).
+  // NVDA sits in `core`, but the banked line no longer names the tier: the badge
+  // bonus is flat, so every tier banks the same +15 (ruling 8, corrected Sep 7
+  // 2026 — the two-tier row at the end of this describe is that guard). The doc
+  // carries no scoring.thresholds, so baseATR is enrichAsset's DEFAULT_THRESHOLD
+  // (2.5), which is the BUBBLE's number and no longer the footer's.
   const withHistory = (max) => withDoc({ thresholdHistory: { NVDA: { maxMultiplier: max } } });
   const rerender = () => act(() => {
     root.render(<AgentBattleScreen battle={BATTLE} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />);
@@ -1433,7 +1441,7 @@ describe('A3.6 — the bagger moment (D-97)', () => {
     mount();
     expect(burst()).toHaveLength(0);
     expect(container.querySelector('[data-character-bubble]')?.textContent || '').not.toContain('Bagger ·');
-    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    expect(footers()).toEqual(['Bagger hit · +15 banked']);
   });
 
   it('a crossing between two snapshots bursts the row and speaks the line', () => {
@@ -1446,7 +1454,7 @@ describe('A3.6 — the bagger moment (D-97)', () => {
     withHistory(1.1);
     rerender();
     expect(burst()).toHaveLength(1);
-    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    expect(footers()).toEqual(['Bagger hit · +15 banked']);
     const bubble = container.querySelector('[data-character-bubble]');
     // Ruling 9: the line is the BAGGER LINE (+baseATR%), not the piece's live
     // percent — the live number would disagree the moment the price moved.
@@ -1480,7 +1488,7 @@ describe('A3.6 — the bagger moment (D-97)', () => {
     withHistory(1.4);
     rerender();
     expect(bubbleNode()).toBe(first);
-    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    expect(footers()).toEqual(['Bagger hit · +15 banked']);
   });
 
   // REDUCED MOTION lives in its own file, and has to. framer-motion latches
@@ -1552,7 +1560,7 @@ describe('A3.6 — the bagger moment (D-97)', () => {
 
     withHistory(1.0);
     rerender();
-    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    expect(footers()).toEqual(['Bagger hit · +15 banked']);
     expect(burst()).toHaveLength(1);
   });
 
@@ -1587,7 +1595,7 @@ describe('A3.6 — the bagger moment (D-97)', () => {
     // price moving at all.
     withHistory(1.4);
     rerender();
-    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    expect(footers()).toEqual(['Bagger hit · +15 banked']);
     expect(burst()).toHaveLength(1);
   });
 
@@ -1636,7 +1644,44 @@ describe('A3.6 — the bagger moment (D-97)', () => {
     withHistory(1.1);
     rerender();
     expect(burst()).toHaveLength(1);
-    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    expect(footers()).toEqual(['Bagger hit · +15 banked']);
+  });
+
+  it('TWO TIERS, ONE LINE: the banked number does not move with the conviction tier', () => {
+    // THE MUTATION ROW for ruling 8 as corrected. Every other row in this file
+    // holds one piece in `core`, so a footer that multiplied by the tier and one
+    // that did not would read the same 1.5 either way — which is how
+    // `Bagger hit · {mult}× banked` shipped naming a multiplier the scorer never
+    // applied to the bonus (the review's §9 item 6).
+    //
+    // AAPL is a star (2×) and NVDA a core (1.5×). The badge bonus is FLAT —
+    // calculatePointsServer sums THRESHOLD_POINTS.bagger and the tier scales
+    // basePoints alone (agentScoring.js:95-97, :267-270) — so the two rows bank the
+    // same +15 and must say the same words. Restore the multiplier and this row
+    // dies twice over: the strings differ from each other, and neither is the
+    // number the piece actually banked.
+    setShell(false);
+    withDoc({ thresholdHistory: { AAPL: { maxMultiplier: 1.6 }, NVDA: { maxMultiplier: 1.6 } } });
+    mount();
+    const lines = footers();
+    expect(lines).toHaveLength(2);
+    expect(new Set(lines).size).toBe(1);
+    expect(lines[0]).toBe(`Bagger hit · +${THRESHOLD_POINTS.bagger} banked`);
+    // …and the tier's own suffix is gone from the line entirely.
+    expect(lines[0]).not.toContain('\u00d7');
+  });
+
+  it('the WORDS themselves: the amount when it is readable, the bare line when it is not', () => {
+    // The copy's own two arms, at the seam rather than through a mount: the
+    // screen can only reach the first, because it reads a constant. `Bagger hit`
+    // alone is what a missing amount leaves — the crossing is persisted and true
+    // on its own, and only the number could be wrong.
+    expect(BATTLE_VIEW_COPY.baggerFooter(THRESHOLD_POINTS.bagger)).toBe('Bagger hit · +15 banked');
+    expect(BATTLE_VIEW_COPY.baggerFooter(null)).toBe('Bagger hit');
+    expect(BATTLE_VIEW_COPY.baggerFooter(undefined)).toBe('Bagger hit');
+    expect(BATTLE_VIEW_COPY.baggerFooter(NaN)).toBe('Bagger hit');
+    expect(BATTLE_VIEW_COPY.baggerFooter(0)).toBe('Bagger hit');
+    expect(BATTLE_VIEW_COPY.baggerFooter('15')).toBe('Bagger hit');
   });
 });
 
