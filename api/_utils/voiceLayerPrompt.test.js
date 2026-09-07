@@ -1682,6 +1682,58 @@ describe('buildHeaderLine — Phase 5A', () => {
     expect(out).not.toContain('ATR');
   });
 
+  // Two ATR readings, two units. `atrPercent` is percent-of-price and
+  // `atrPercentile` is a 0-1 rank; folding the percentile into atrPercent is
+  // what made a 71st-percentile name render as "ATR 0.71%".
+  it('renders atrPercent as a percent and atrPercentile as an ordinal rank', () => {
+    const out = buildHeaderLine({
+      symbol: 'NVDA',
+      tier: 'star',
+      changePercent: 2.43,
+      technicalScore: 87,
+      rsPercentile: 87,
+      atrPercent: 2.3,
+      atrPercentile: 0.71,
+    });
+    expect(out).toBe('NVDA [star] +2.43% — Score 87, RS 87th %ile, ATR 2.3%, ATR 71st %ile');
+    expect(out).not.toContain('ATR 0.71%');
+  });
+
+  it('renders the ATR percentile alone when the raw ATR is missing', () => {
+    const out = buildHeaderLine({
+      symbol: 'NVDA',
+      tier: 'star',
+      changePercent: 2.43,
+      rsPercentile: 87,
+      atrPercent: null,
+      atrPercentile: 0.71,
+    });
+    expect(out).toBe('NVDA [star] +2.43% — RS 87th %ile, ATR 71st %ile');
+  });
+
+  it('renders "ATR 0th %ile" when atrPercentile is the legitimate value 0', () => {
+    const out = buildHeaderLine({
+      symbol: 'NVDA',
+      tier: 'star',
+      changePercent: 2.43,
+      atrPercent: 0.4,
+      atrPercentile: 0,
+    });
+    expect(out).toContain('ATR 0.4%');
+    expect(out).toContain('ATR 0th %ile');
+  });
+
+  it('omits the ATR percentile segment when atrPercentile is null (missing)', () => {
+    const out = buildHeaderLine({
+      symbol: 'NVDA',
+      tier: 'star',
+      changePercent: 2.43,
+      atrPercent: 2.3,
+      atrPercentile: null,
+    });
+    expect(out).toBe('NVDA [star] +2.43% — ATR 2.3%');
+  });
+
   it('renders "Score 0" when technicalScore is the legitimate value 0', () => {
     const out = buildHeaderLine({
       symbol: 'XYZ',

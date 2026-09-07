@@ -186,6 +186,16 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
         thresholdNote = 'High ATR — volatile, could hit thresholds quickly';
       }
 
+      // The REAL ATR percent (percent-of-price, e.g. 2.3) is a different
+      // reading in a different unit from the 0-1 percentile above, and the two
+      // must never share a field: `atrPercent: atrPercentile` rendered a
+      // 71st-percentile name as "ATR 0.71%" on every voice surface. The rankings
+      // entry mirrors it under techRaw.atrPercent off the same in-memory tech
+      // object stockTechnicalScores persists at top level
+      // (compute-index-intelligence.js:1222 and :953) — ranking first, tech-score
+      // fallback, matching the precedence the other mirrored fields use.
+      const atrPercentRaw = ranking?.techRaw?.atrPercent ?? techScore?.atrPercent ?? null;
+
       // Phase 5A field propagation: surface sector context, levels, and
       // signals into the brief so buildHeaderLine / buildLevelsLine /
       // buildSignalsLine fire. Boolean flags use ?? false to match the
@@ -210,7 +220,15 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
         supportLevel: null,
         resistanceLevel: null,
         thresholdNote,
-        atrPercent: typeof atrPercentile === 'number'
+        // Two ATR readings, two units, two names (buildHeaderLine renders each
+        // with its own unit). F3.1: null sentinel for missing; a legitimate 0
+        // survives as 0.
+        //   atrPercent    — percent of price      (2.3  -> "ATR 2.3%")
+        //   atrPercentile — 0-1 cross-sectional rank (0.71 -> "ATR 71st %ile")
+        atrPercent: typeof atrPercentRaw === 'number'
+          ? Math.round(atrPercentRaw * 100) / 100
+          : null,
+        atrPercentile: typeof atrPercentile === 'number'
           ? Math.round(atrPercentile * 100) / 100
           : null,
         // Header sector context (buildHeaderLine reads brief.sector / sectorTechnicalTotal)
@@ -328,6 +346,9 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
     const technicalRank = ranking?.technicalRank ?? null;
     const rsPercentileRaw = factors?.rsPercentile;
     const atrPercentileRaw = ranking?.atrPercentile;
+    // Real ATR percent (percent-of-price), distinct from the 0-1 percentile
+    // above — same sourcing and same reason as buildPortfolioBriefs.
+    const atrPercentRaw = ranking?.techRaw?.atrPercent ?? techScore?.atrPercent ?? null;
 
     // Trend summary: emit only when factors carry SMA flags
     let trendSummary;
@@ -413,7 +434,12 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
       sector,
       cooldownUntil,
       cooldownActive,
-      atrPercent: typeof atrPercentileRaw === 'number'
+      // atrPercent = percent of price; atrPercentile = 0-1 rank. See the
+      // buildPortfolioBriefs note — the two units keep separate names.
+      atrPercent: typeof atrPercentRaw === 'number'
+        ? Math.round(atrPercentRaw * 100) / 100
+        : null,
+      atrPercentile: typeof atrPercentileRaw === 'number'
         ? Math.round(atrPercentileRaw * 100) / 100
         : null,
       // Header sector context (buildHeaderLine).

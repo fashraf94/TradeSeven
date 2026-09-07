@@ -1040,8 +1040,11 @@ function ordinalSuffix(n) {
 //   - `divergence` is one of 'bullish' | 'bearish' | 'none' | null.
 //   - `lastCandlePattern` is a snake_case key (e.g. 'bullish_engulfing');
 //     renderer normalizes via PATTERN_DISPLAY_NAMES for display.
-//   - Numeric metrics (technicalScore, atrPercent, rsPercentile) are null
-//     when missing — never 0-as-sentinel.
+//   - Numeric metrics (technicalScore, atrPercent, atrPercentile,
+//     rsPercentile) are null when missing — never 0-as-sentinel.
+//   - `atrPercent` is percent-of-price (2.3 => "ATR 2.3%"); `atrPercentile` is
+//     a 0-1 cross-sectional rank (0.71 => "ATR 71st %ile"). Two units, two
+//     fields — never fold one into the other.
 //
 // Brief vs. Snapshot schema (forward-compat note for Phase 5C):
 //   - Briefs (this file's helpers) read flat field paths: brief.nr7Flag,
@@ -1132,10 +1135,19 @@ export function buildHeaderLine(brief) {
     metricsParts.push(`RS ${ordinalSuffix(brief.rsPercentile)} %ile`);
   }
 
-  // ATR% — render as-is (already rounded to 2 decimals at write time).
-  // F3.1: cron writes null for missing; legitimate 0 renders as "ATR 0%".
+  // ATR% — percent of price, rendered as-is (already rounded to 2 decimals at
+  // write time). F3.1: cron writes null for missing; legitimate 0 renders as
+  // "ATR 0%".
   if (brief.atrPercent != null) {
     metricsParts.push(`ATR ${brief.atrPercent}%`);
+  }
+
+  // ATR percentile — a 0-1 cross-sectional rank, NOT a percent of price.
+  // Rendered in the same ordinal form as RS above so the two ATR readings can
+  // never be mistaken for each other (0.71 -> "ATR 71st %ile"). Sharing one
+  // field with atrPercent is what made a 71st-percentile name read "ATR 0.71%".
+  if (typeof brief.atrPercentile === 'number') {
+    metricsParts.push(`ATR ${ordinalSuffix(Math.round(brief.atrPercentile * 100))} %ile`);
   }
 
   if (metricsParts.length === 0) return baseHeader;
