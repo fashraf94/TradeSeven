@@ -15,7 +15,16 @@ import { resolveBudgetDay, readAgentChatBudget, chargeAgentChatBudget } from '..
 // run the literal legacy normalizeDirective path → byte-identical.
 import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
-import { ARCHETYPE_INTEGRITY_MODE, LEAGUE_AGENT_CHAT_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, LEAGUE_AGENT_CHAT_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+// Voice-layer grounding (VOICE_LAYER_GROUNDING_SPEC_V1_2): the per-caller mode
+// is read at CALL time through getVoiceGroundingMode(uid); under 'on' (battle
+// mode) the grounded prompt and the grounded history window are what the model
+// receives, and the exchange carries the top-level marker.
+import {
+  GROUNDING_VERSION,
+  buildGroundedConversationHistory,
+  GROUNDED_ELICITATION_INSTRUCTIONS,
+} from '../_utils/voiceLayerGrounding.js';
 // Archetype Integrity — Phase E2 (capabilities manifest → USER LEVERS hand-off).
 // Flag-gated, battle-only; the manifest is built only when the feature is ON.
 import { buildCapabilitiesManifest } from '../_utils/agentCapabilitiesManifest.js';
@@ -61,7 +70,9 @@ export const TURN_DEADLINE_MS = 24_000;
 
 // ==================== ELICITATION TARGET ====================
 
-const ELICITATION_INSTRUCTIONS = {
+// Exported (read-only) so the grounding vocabulary guard can prove the two
+// lines it replaces are real (voiceLayerPrompt.grounding.test.js).
+export const ELICITATION_INSTRUCTIONS = {
   risk_appetite: "Create an opening for the user to reveal their comfort with risk. Present options that range from safe to aggressive.",
   concentration_tolerance: "Present a concentrated vs diversified choice. The user's preference reveals their position-sizing philosophy.",
   sector_convictions: "Mention 2-3 different sectors in your options. Note which sector the user gravitates toward or avoids.",
@@ -87,7 +98,10 @@ const DIMENSIONS = [
   'competitive_focus', 'learning_orientation',
 ];
 
-function selectElicitationTarget(partnerProfile, recentTargets = []) {
+// `instructions` — the table to read the instruction from. The default is the
+// shipped table; the grounded turn passes the shipped table with the two
+// grounded lines laid over it (site 27 of the vocabulary guard).
+function selectElicitationTarget(partnerProfile, recentTargets = [], instructions = ELICITATION_INSTRUCTIONS) {
   const candidates = DIMENSIONS
     .filter(d => !recentTargets.includes(d))
     .map(d => ({
@@ -100,7 +114,7 @@ function selectElicitationTarget(partnerProfile, recentTargets = []) {
 
   return {
     dimension: target.dimension,
-    instruction: ELICITATION_INSTRUCTIONS[target.dimension],
+    instruction: instructions[target.dimension],
   };
 }
 
@@ -253,6 +267,13 @@ export default async function handler(req, res) {
       mode = detectMode(battle);
     }
 
+    // 8b. Voice-layer grounding — the per-caller mode, read at CALL time
+    //     (never module scope). `grounded` is true only when the NEW prompt is
+    //     what this turn SENDS: 'on', battle mode. Review mode keeps its own
+    //     prompt untouched (the grounding arc is the live-play narrator).
+    const groundingMode = getVoiceGroundingMode(user.uid);
+    const grounded = groundingMode === 'on' && mode === 'battle';
+
     // 9. Battle status check (mode-aware: review mode is valid on completed battles)
     if (battle.status !== 'active' && mode !== 'review') {
       return res.status(400).json({
@@ -395,6 +416,7 @@ export default async function handler(req, res) {
     const elicitationTarget = selectElicitationTarget(
       agent.partnerProfile,
       battle.recentElicitationTargets || [],
+      grounded ? { ...ELICITATION_INSTRUCTIONS, ...GROUNDED_ELICITATION_INSTRUCTIONS } : ELICITATION_INSTRUCTIONS,
     );
 
     // 13. Build conversation history — last 10 exchanges as messages.
@@ -411,10 +433,17 @@ export default async function handler(req, res) {
     const previousExchanges = (battle.chatExchanges || [])
       .slice(-10)
       .filter(ex => typeof ex?.userMessage === 'string' && ex.userMessage.length > 0);
-    const conversationHistory = previousExchanges.flatMap(ex => [
-      { role: 'user', content: ex.userMessage },
-      { role: 'assistant', content: ex.agentResponse || ex.agentMessage || '' },
-    ]);
+    // Voice-layer grounding §3.4: under the flag the window has ONE rule —
+    // user-initiated pairs, tagged by messageType; agent-initiated exchanges
+    // ride the system prompt when they carry the grounding marker (legacy
+    // proactive exchanges stay excluded). The legacy filter above is the
+    // shipped path, byte for byte.
+    const conversationHistory = grounded
+      ? buildGroundedConversationHistory(battle.chatExchanges)
+      : previousExchanges.flatMap(ex => [
+          { role: 'user', content: ex.userMessage },
+          { role: 'assistant', content: ex.agentResponse || ex.agentMessage || '' },
+        ]);
 
     // 14. Build system prompt
     const systemPrompt = buildVoiceLayerPrompt({
@@ -428,6 +457,7 @@ export default async function handler(req, res) {
       dailyReviews: battle.dailyReviews || [],
       dailyGrades: battle.dailyGrades || [],
       capabilitiesManifest,
+      grounded,
     });
 
     // 15. Call OpenRouter (Gemma 4) — with the GEMMA_TIMEOUT_MS budget, CLAMPED
@@ -679,6 +709,11 @@ export default async function handler(req, res) {
       // chatExchanges write, NOT a fire-and-forget log). Stamped on the EXCHANGE,
       // never as a new battle-doc key (no createAgentBattle doc-shape contact).
       ...(gateOutcome ? { archetypeGate: gateOutcome } : {}),
+      // Voice-layer grounding §3.4 (M3): every exchange produced under the
+      // grounding contract carries the TOP-LEVEL marker, so the history window
+      // has one rule. Absent when the shipped prompt was sent (off / shadow):
+      // the persisted shape is unchanged there.
+      ...(grounded ? { groundingVersion: GROUNDING_VERSION } : {}),
     };
 
     const recentTargets = [...(battle.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3);

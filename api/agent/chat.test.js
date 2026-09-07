@@ -21,6 +21,7 @@ const {
   archetypeFlag,
   voiceLayerArgs,
   leagueChatFlag,
+  grounding,
   budget,
 } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
@@ -33,6 +34,10 @@ const {
   voiceLayerArgs: { current: [] }, // Phase E2 — capture buildVoiceLayerPrompt args
   // League arena two-way ask — the kill-switch flag + a controllable budget module.
   leagueChatFlag: { on: false },
+  // Voice-layer grounding — the per-caller accessor, controllable per test;
+  // the uids it was asked about are captured (the route must ask for the
+  // TOKEN's uid, never the body's).
+  grounding: { mode: 'off', calls: [] },
   budget: {
     resolveImpl: () => ({ groupId: 'group-xyz', dayN: 1 }),
     readImpl: async () => ({ count: 0, remaining: 10 }),
@@ -118,6 +123,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get ARCHETYPE_INTEGRITY_MODE() { return archetypeFlag.mode; },
   get LEAGUE_AGENT_CHAT_ENABLED() { return leagueChatFlag.on; },
+  getVoiceGroundingMode: (uid) => { grounding.calls.push(uid); return grounding.mode; },
 }));
 
 // The per-day budget module is exercised in agentChatBudget.test.js; here it is
@@ -234,6 +240,8 @@ beforeEach(() => {
   archetypeFlag.mode = 'off';
   voiceLayerArgs.current = [];
   leagueChatFlag.on = false;
+  grounding.mode = 'off';
+  grounding.calls = [];
   budget.resolveImpl = () => ({ groupId: 'group-xyz', dayN: 1 });
   budget.readImpl = async () => ({ count: 0, remaining: 10 });
   budget.chargeImpl = async () => ({ charged: true, remaining: 9, count: 1 });
@@ -942,5 +950,103 @@ describe('agent/chat — the turn deadline handed to the directive gate is wired
     // Absolute, and exactly TURN_DEADLINE_MS from the turn's start — the gate
     // clamps its repair against this, so a wrong value silently un-budgets it.
     expect(gateArgs.current[0].deadlineMs - turnStart).toBe(TURN_DEADLINE_MS);
+  });
+});
+
+// ==================== Voice-layer grounding — the chat turn under the flag (G2) ====================
+
+describe('agent/chat — voice-layer grounding: the grounded turn (spec §3.4, ruling 23)', () => {
+  const GROUNDED_ANTICIPATION = {
+    userMessage: null, agentResponse: 'At the 11:15 AM check my trading process flagged NOW on the bench as a potential entry.',
+    messageType: 'anticipation', timestamp: '2026-09-08T15:16:00.000Z', mode: 'battle', groundingVersion: 1,
+  };
+  const LEGACY_ANTICIPATION = {
+    userMessage: null, agentResponse: 'Eyeing AVGO on the bench.', messageType: 'anticipation', timestamp: '2026-09-08T14:16:00.000Z', mode: 'battle',
+  };
+  const USER_PAIR = { userMessage: 'How are we looking?', agentResponse: 'CF is carrying the book.', timestamp: '2026-09-08T14:05:00.000Z', mode: 'battle' };
+  const HISTORY_BATTLE = { ...VALID_BATTLE, chatExchanges: [LEGACY_ANTICIPATION, USER_PAIR, GROUNDED_ANTICIPATION] };
+  // Every dimension confident except time_of_day_preference → it is the target.
+  const PROFILE_TARGETING_TIME = Object.fromEntries(
+    ['risk_appetite', 'concentration_tolerance', 'sector_convictions', 'loss_reaction', 'win_reaction', 'tier_philosophy', 'momentum_vs_value',
+      'news_sensitivity', 'macro_awareness', 'communication_frequency', 'autonomy_preference', 'feedback_style', 'competitive_focus', 'learning_orientation']
+      .map((d) => [d, { value: 'x', confidence: 0.9 }]),
+  );
+  let gemmaOpts;
+  const run = async (battle, body = {}) => {
+    gemmaOpts = [];
+    callGemmaVoiceImpl.current = async (opts) => { gemmaOpts.push(opts); return '{"response":"ok"}'; };
+    const fixture = makeFakeFirestore({ agent: { ...VALID_AGENT, partnerProfile: PROFILE_TARGETING_TIME }, battle });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', ...body });
+    await handler(req, res);
+    return { res, written: fixture.written };
+  };
+  const exchangeOf = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion').updates.chatExchanges.items[0];
+
+  it("asks the accessor for the TOKEN's uid, at call time", async () => {
+    await run(VALID_BATTLE);
+    expect(grounding.calls).toEqual(['test-user']);
+  });
+
+  it("'off': the shipped path — prompt not grounded, legacy history, no marker on the exchange", async () => {
+    grounding.mode = 'off';
+    const { res, written } = await run(HISTORY_BATTLE);
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].grounded).toBe(false);
+    expect(voiceLayerArgs.current[0].elicitationTarget.instruction).toContain("'act now at open' vs 'wait for confirmation'");
+    // The legacy filter: only the user pair, untagged, exactly as shipped.
+    expect(gemmaOpts[0].conversationHistory).toEqual([
+      { role: 'user', content: 'How are we looking?' },
+      { role: 'assistant', content: 'CF is carrying the book.' },
+    ]);
+    expect('groundingVersion' in exchangeOf(written)).toBe(false);
+  });
+
+  it("'shadow' (G2): still the shipped path for what is SENT — grounded is false, no marker", async () => {
+    grounding.mode = 'shadow';
+    const { written } = await run(HISTORY_BATTLE);
+    expect(voiceLayerArgs.current[0].grounded).toBe(false);
+    expect('groundingVersion' in exchangeOf(written)).toBe(false);
+  });
+
+  it("'on': the grounded prompt is built, the grounded history is sent (tagged pairs only), the exchange carries the marker", async () => {
+    grounding.mode = 'on';
+    const { res, written } = await run(HISTORY_BATTLE);
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].grounded).toBe(true);
+    // Site 27: the grounded elicitation line replaces the discovered one.
+    expect(voiceLayerArgs.current[0].elicitationTarget.dimension).toBe('time_of_day_preference');
+    expect(voiceLayerArgs.current[0].elicitationTarget.instruction).toContain("'file it before the next check'");
+    expect(voiceLayerArgs.current[0].elicitationTarget.instruction).not.toContain("'act now at open'");
+    // The history window: the user pair, tagged by its code-default type; the
+    // grounded anticipation rides the system prompt (the builder gets the
+    // battle), and the legacy one is nowhere.
+    expect(gemmaOpts[0].conversationHistory).toEqual([
+      { role: 'user', content: 'How are we looking?' },
+      { role: 'assistant', content: '[user_initiated] CF is carrying the book.' },
+    ]);
+    expect(voiceLayerArgs.current[0].battle.chatExchanges).toContain(GROUNDED_ANTICIPATION);
+    const ex = exchangeOf(written);
+    expect(ex.groundingVersion).toBe(1);
+    // The persisted shape is otherwise the shipped one: no messageType (ruling 23).
+    expect('messageType' in ex).toBe(false);
+  });
+
+  it("'on' in REVIEW mode: not grounded — the review prompt is untouched by this arc", async () => {
+    grounding.mode = 'on';
+    const { res, written } = await run({ ...VALID_BATTLE, status: 'completed' }, { mode: 'review' });
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].mode).toBe('review');
+    expect(voiceLayerArgs.current[0].grounded).toBe(false);
+    expect('groundingVersion' in exchangeOf(written)).toBe(false);
+  });
+
+  it("'on': a League ask is grounded too — one endpoint, one prompt (spec §8)", async () => {
+    grounding.mode = 'on';
+    leagueChatFlag.on = true;
+    const { res, written } = await run({ ...VALID_BATTLE, gameMode: TOURNAMENT_GAME_MODE, groupId: 'group-xyz' }, { leagueAsk: true });
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].grounded).toBe(true);
+    expect(exchangeOf(written).groundingVersion).toBe(1);
   });
 });

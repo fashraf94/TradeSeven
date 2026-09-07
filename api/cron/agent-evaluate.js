@@ -2829,6 +2829,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             agentId: battle.agentId,
             closedTrade: n.closedTrade,
             evalId: n.evalId,
+            // Voice-layer grounding: lets the narration's retirement gate
+            // answer before any read (spec §4 F8).
+            ownerId: battle.ownerId || null,
           })
         )
       );

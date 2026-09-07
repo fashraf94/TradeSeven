@@ -297,7 +297,7 @@ export function makeMarketSnapshot(overrides = {}) {
         intraday: { vwap: 88.1, currentPrice: 89.2, vwapDeviation: 1.25, sma20_5m: 88.8, sessionDate: '2026-09-08' },
         // §3.5 — the fundamentals mirror the cache copies under the flag. The
         // pre-grounding renderer never reads it (the off golden proves it).
-        fundamentals: { trailingPE: { value: 18.2, sectorMedian: 22.1 }, revenueGrowthPct: 12.0, earningsRevisions30d: 47.2, marketCapClass: 'large', computedAt: 1757030400000 },
+        fundamentals: { trailingPE: { value: 18.2, sectorMedian: 22.1 }, revenueGrowthPct: 12.0, earningsRevisions30d: 47.2, marketCapClass: 'large', computedAt: 1757066400000 },
       },
       {
         symbol: 'MOS',
@@ -329,7 +329,7 @@ export function makeMarketSnapshot(overrides = {}) {
         existingBadges: [],
         thresholdProximity: null,
         intraday: null,
-        fundamentals: { trailingPE: { value: 11.4 }, beatRate: 75, computedAt: 1756425600000 },
+        fundamentals: { trailingPE: { value: 11.4 }, beatRate: 75, computedAt: 1756461600000 },
       },
       {
         symbol: 'PANW',
@@ -393,7 +393,7 @@ export function makeMarketSnapshot(overrides = {}) {
         existingBadges: [],
         thresholdProximity: { currentMultiplier: 0.4, baseATR: 2.7, redZone: null, swapLock: { locked: false } },
         intraday: null,
-        fundamentals: { trailingPE: { value: 33.0, sectorMedian: 28.5 }, priceBookMRQ: 9.8, revenueGrowthPct: 20.5, marketCapClass: 'large', earningsRevisions30d: 5.1, beatRate: 92, surpriseMagPercentile: 81, computedAt: 1757030400000 },
+        fundamentals: { trailingPE: { value: 33.0, sectorMedian: 28.5 }, priceBookMRQ: 9.8, revenueGrowthPct: 20.5, marketCapClass: 'large', earningsRevisions30d: 5.1, beatRate: 92, surpriseMagPercentile: 81, computedAt: 1757066400000 },
       },
     ],
     benchBriefs: [
@@ -423,7 +423,7 @@ export function makeMarketSnapshot(overrides = {}) {
         macdFreshBearishCross: false,
         divergence: null,
         lastCandlePattern: 'hammer',
-        fundamentals: { trailingPE: { value: 58.0, sectorMedian: 28.5 }, revenueGrowthPct: 22.3, computedAt: 1757030400000 },
+        fundamentals: { trailingPE: { value: 58.0, sectorMedian: 28.5 }, revenueGrowthPct: 22.3, computedAt: 1757066400000 },
       },
       {
         symbol: 'TSLA',

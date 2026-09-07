@@ -1296,3 +1296,33 @@ describe('buildBenchBriefs — Phase 5A field propagation', () => {
     expect(briefs[0].sectorTechnicalTotal).toBeNull();
   });
 });
+
+// ==================== Voice-layer grounding §3.5 — the fundamentals mirror on the brief ====================
+
+describe('buildPortfolioBriefs / buildBenchBriefs — the fundamentals mirror (voice-layer grounding §3.5)', () => {
+  const FUND = { trailingPE: { value: 18.2, sectorMedian: 22.1 }, revenueGrowthPct: 12, earningsRevisions30d: 47.2, computedAt: 1757066400000 };
+  const portfolio = { star: [STOCK_AMD], core: [], support: [], bench: { stocks: [STOCK_PLTR], crypto: null } };
+  const priceMap = { AMD: fullPrice(150, 1.2), PLTR: fullPrice(25, -0.4) };
+  const techScoresMap = { AMD: fullTechScore(), PLTR: fullTechScore() };
+
+  it('copies the rankings entry\'s `fundamentals` onto the brief, as stored, when asked to', () => {
+    const rankingsMap = { AMD: { ...fullRanking(), fundamentals: FUND }, PLTR: { ...fullRanking(), fundamentals: FUND } };
+    const [p] = buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap, {}, {}, {}, { fundamentals: true });
+    expect(p.fundamentals).toBe(FUND);
+    const [b] = buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap, FROZEN_NOW, { fundamentals: true });
+    expect(b.fundamentals).toBe(FUND);
+  });
+
+  it('by default (the shipped call) the brief carries NO fundamentals key — field-wise byte-identical', () => {
+    const rankingsMap = { AMD: { ...fullRanking(), fundamentals: FUND }, PLTR: { ...fullRanking(), fundamentals: FUND } };
+    expect('fundamentals' in buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap)[0]).toBe(false);
+    expect('fundamentals' in buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap, FROZEN_NOW)[0]).toBe(false);
+    expect('fundamentals' in buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap, {}, {}, {}, { fundamentals: false })[0]).toBe(false);
+  });
+
+  it('is null-honest: an entry with no mirror gets no key, never null or a default', () => {
+    const rankingsMap = { AMD: fullRanking(), PLTR: { ...fullRanking(), fundamentals: 'garbage' } };
+    expect('fundamentals' in buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap, {}, {}, {}, { fundamentals: true })[0]).toBe(false);
+    expect('fundamentals' in buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap, FROZEN_NOW, { fundamentals: true })[0]).toBe(false);
+  });
+});

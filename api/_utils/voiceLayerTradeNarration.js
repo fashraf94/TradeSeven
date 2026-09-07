@@ -28,6 +28,11 @@ import {
   getAgentPhase,
 } from './voiceLayerPrompt.js';
 import { TERM_TOKENS } from './termUniverse.js';
+// Voice-layer grounding §4 (F8): trade narration is RETIRED under the flag —
+// the model call is not made; the tape's trade card (from trades[], D-72,
+// the motive quoted verbatim with its author named) is the trade notice. No
+// paraphrase of the decider's reasoning exists anywhere in the narrator's voice.
+import { getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 
 // Failure modes (each logged but never thrown):
 //   - read_context: fresh battle / agent / market / DRB / cache fetch failed,
@@ -38,12 +43,36 @@ import { TERM_TOKENS } from './termUniverse.js';
 //   - parse: parseVoiceLayerResponse returned parseError
 //   - empty_response: parsed.response missing/non-string
 //   - firestore_write: battleRef.update() failed
+// The retired-under-grounding breadcrumb: not an error, but the shadow stream
+// is where a missing narration is explained (the cron_budget_skip precedent).
+function logRetired({ agentId, battleId, closedTrade, evalId, reason }) {
+  logTradeNarration({
+    agentId: agentId || null,
+    battleId,
+    provenance: null,
+    success: false,
+    errorStep: 'grounding_retired',
+    errorReason: reason,
+    swap: closedTrade ? {
+      symbolOut: closedTrade.symbolOut,
+      symbolIn: closedTrade.symbolIn,
+      tier: closedTrade.tier,
+      evaluationId: closedTrade.evaluationId,
+    } : null,
+    evalId: evalId || null,
+  }).catch(() => {});
+}
+
 export async function generateTradeNarration({
   db,
   battleId,
   agentId,
   closedTrade,
-  evalId, // eslint-disable-line no-unused-vars -- captured in shadow log for cross-reference; not required by the prompt
+  evalId, // captured in the shadow log for cross-reference; not required by the prompt
+  // The battle owner's uid, when the caller has it (agent-evaluate.js does):
+  // lets the grounding gate answer BEFORE any read. Absent, the gate answers
+  // after the battle read, still before any model call.
+  ownerId = null,
 }) {
   let errorStep = null;
   let errorReason = null;
@@ -51,6 +80,13 @@ export async function generateTradeNarration({
   let rawResponse = null;
   let parsed = null;
   let provenance = null;
+
+  // Voice-layer grounding §4 (F8) — retired under 'on': no read, no model
+  // call, no exchange. The trade card on the tape is the notice.
+  if (ownerId && getVoiceGroundingMode(ownerId) === 'on') {
+    logRetired({ agentId, battleId, closedTrade, evalId, reason: 'voice_grounding_on' });
+    return;
+  }
 
   try {
     if (!closedTrade || typeof closedTrade !== 'object') {
@@ -109,6 +145,13 @@ export async function generateTradeNarration({
         errorReason = err.message;
       }
       throw err;
+    }
+
+    // Voice-layer grounding §4 (F8) — the same gate, answered from the doc when
+    // the caller did not pass the owner: still before any model call.
+    if (getVoiceGroundingMode(battle.ownerId) === 'on') {
+      logRetired({ agentId, battleId, closedTrade, evalId, reason: 'voice_grounding_on' });
+      return;
     }
 
     // Compute provenance from the closedTrade itself. autopilot or

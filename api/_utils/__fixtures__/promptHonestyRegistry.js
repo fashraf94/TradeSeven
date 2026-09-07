@@ -50,6 +50,7 @@ export const PROMPT_CONTRIBUTING_MODULES = [
   'fundamentalsRender.js',   // Fundamental Wire Commit 2
   'voiceLayerPrompt.js',     // Phase 2 N1.3 newsLine block (R-A3: registered in the same commit that added the flag-conditional rendering)
   'compositionAdvisoryRender.js', // Composition PR 3: D3 advisory append (registered in the same commit as the fenced splices)
+  'voiceLayerGrounding.js',  // Voice-layer grounding G2: the grounded prompt prose (registered in the commit that added it — Phase 0 item 9 note 2)
 ];
 
 // Every OTHER same-directory module the two fenced assemblers import,

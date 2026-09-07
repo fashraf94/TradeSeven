@@ -12,6 +12,11 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
+// Voice-layer grounding §3.4 (M3): the auto-debrief is the fifth agent-
+// initiated writer; under 'on' for the battle's owner it stamps the marker like
+// the others (review mode, harmless, consistent — Sep 7 rulings §3).
+import { getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';
 
 // P-6 (Command Center Sync Pass 1): completed battles still owed a debrief.
 //
@@ -391,6 +396,7 @@ ${directiveLines}`;
           mode: 'review',
           messageType: 'auto_debrief',
           isAutoDebrief: true,
+          ...(getVoiceGroundingMode(battle.ownerId) === 'on' ? { groundingVersion: GROUNDING_VERSION } : {}),
         };
 
         await battleRef.update({

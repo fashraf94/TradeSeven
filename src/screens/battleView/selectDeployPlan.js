@@ -44,13 +44,25 @@
 import { FLAT6_GAME_MODE } from '../../constants/agentGameModes';
 import { toIso } from '../../adapters/baggerbombAdapter';
 import { extractSentences } from './selectWhyState';
+// The two fallback prefixes and the C1 gates they drive are SHARED with the
+// narrator's opener (voice-grounding hazard 26, D-76): they live in the
+// zero-import src/data/decisionRecord.js and are re-exported here under their
+// shipped names.
+import {
+  FALLBACK_STRATEGY_PREFIX,
+  FALLBACK_BRIEF_PREFIX,
+  deployPlanSuppressed,
+  deployBriefText,
+} from '../../data/decisionRecord';
+
+export { FALLBACK_STRATEGY_PREFIX, FALLBACK_BRIEF_PREFIX };
 
 /**
  * The prefix decide.js's algorithmic fallback stamps on `innerMonologue.strategy`
  * when no model authored the portfolio. Pinned by a source tripwire in
  * selectDeployPlan.test.js.
  */
-export const FALLBACK_STRATEGY_PREFIX = 'Algorithmic selection';
+// FALLBACK_STRATEGY_PREFIX: imported and re-exported above (one source).
 
 /**
  * The brief `decide.js` writes when SONNET does not use the `submit_strategy`
@@ -64,7 +76,7 @@ export const FALLBACK_STRATEGY_PREFIX = 'Algorithmic selection';
  * (`decide.js` ~477-479, `ceremonyData.js` `getMonologueQuote`) — so rendering
  * it as "the plan at deploy" would have been the one surface that did.
  */
-export const FALLBACK_BRIEF_PREFIX = 'Automated selection based on';
+// FALLBACK_BRIEF_PREFIX: imported and re-exported above (one source).
 
 /** The tier keys the board renders, mapped to their persisted rationale field. */
 export const TIER_RATIONALE_KEY = Object.freeze({
@@ -87,24 +99,19 @@ const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.
  */
 export function selectDeployPlan(battle) {
   const context = battle?.agentContext;
-  if (!context || typeof context !== 'object') return null;
-
-  // GATE (a) — a tournament battle's plan is a system string, never a model's.
-  if (battle?.gameMode === FLAT6_GAME_MODE) return null;
+  // GATES (a) and (b) — a tournament battle's plan and the algorithmic
+  // fallback template are system strings, never a model's. One rule, shared
+  // with the narrator's opener (decisionRecord.js).
+  if (deployPlanSuppressed(battle, FLAT6_GAME_MODE)) return null;
 
   const monologue = context.innerMonologue && typeof context.innerMonologue === 'object'
     ? context.innerMonologue
     : {};
 
-  // GATE (b) — the algorithmic fallback template.
-  const strategy = cleanText(monologue.strategy);
-  if (strategy && strategy.startsWith(FALLBACK_STRATEGY_PREFIX)) return null;
-
   // GATE (a2) — the strategy-call fallback's brief. The brief alone is
   // suppressed, not the whole plan: Haiku's tier rationales on this deploy are
   // genuinely the model's, and a row's sentences stay honest.
-  const rawBrief = cleanText(context.strategyBrief);
-  const brief = rawBrief && rawBrief.startsWith(FALLBACK_BRIEF_PREFIX) ? null : rawBrief;
+  const brief = deployBriefText(context);
   const rationales = {
     star: cleanText(monologue[TIER_RATIONALE_KEY.star]),
     core: cleanText(monologue[TIER_RATIONALE_KEY.core]),
